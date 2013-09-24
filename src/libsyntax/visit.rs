@@ -517,14 +517,20 @@ pub fn walk_struct_field<E:Clone>(visitor: &mut Visitor<E>,
 }
 
 pub fn walk_block<E:Clone>(visitor: &mut Visitor<E>, block: &Block, env: E) {
-    debug!("visitor=%? block=%? env=%?", visitor, block, env);
+    debug!("visit::walk_block");
+    debug!("  visitor=%?", visitor);
+    debug!("  block=%?", block);
+    debug!("  env=%?", env);
 
     for view_item in block.view_items.iter() {
+        debug!("  calling for view_item");
         visitor.visit_view_item(view_item, env.clone())
     }
     for statement in block.stmts.iter() {
+        debug!("  calling for statement");
         visitor.visit_stmt(*statement, env.clone())
     }
+    debug!("  calling for expr");
     walk_expr_opt(visitor, block.expr, env)
 }
 
