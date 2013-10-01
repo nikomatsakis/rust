@@ -54,6 +54,7 @@ pub mod middle {
     pub mod ty;
     pub mod subst;
     pub mod resolve;
+    pub mod resolve_lifetime;
     pub mod typeck;
     pub mod check_loop;
     pub mod check_match;

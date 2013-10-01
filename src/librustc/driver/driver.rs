@@ -235,6 +235,9 @@ pub fn phase_3_run_analysis_passes(sess: Session,
         time(time_passes, "resolution", (), |_|
              middle::resolve::resolve_crate(sess, lang_items, crate));
 
+    let named_region_map = time(time_passes, ~"lifetime resolution", (),
+                                |_| middle::resolve_lifetime::crate(sess, crate));
+
     time(time_passes, "looking for entry point", (),
          |_| middle::entry::find_entry_point(sess, crate, ast_map));
 

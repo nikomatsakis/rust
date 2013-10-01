@@ -1494,11 +1494,11 @@ impl Parser {
     pub fn parse_lifetime(&self) -> ast::Lifetime {
         match *self.token {
             token::LIFETIME(i) => {
-                let span = self.span;
+                let span = *self.span;
                 self.bump();
                 return ast::Lifetime {
                     id: ast::DUMMY_NODE_ID,
-                    span: *span,
+                    span: span,
                     ident: i
                 };
             }

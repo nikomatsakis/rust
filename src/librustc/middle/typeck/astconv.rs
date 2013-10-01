@@ -107,6 +107,34 @@ pub fn get_region_reporting_err(
 pub fn ast_region_to_region<AC:AstConv,RS:RegionScope + Clone + 'static>(
     this: &AC,
     rscope: &RS,
+    lifetime: &ast::Lifetime)
+    -> ty::Region
+{
+    match this.tcx().lifetime_map.find(&lifetime.id) {
+        None => {
+            // should have been recorded by the `resolve_lifetime` pass
+            this.tcx().sess.span_bug(
+                lifetime.span,
+                "unresolved lifetime");
+        }
+
+        Some(&ast::DefStaticRegion) => {
+            ty::re_static
+        }
+
+        Some(&ast::DefBoundRegion(depth, _)) => {
+            ty::re_bound(depth, ty::br_named(lifetime.ident))
+        }
+
+        Some(&ast::DefFreeRegion(scope_id, _)) => {
+            ty::re_free(scope_id, ty::br_named(lifetime.ident))
+        }
+    }
+}
+
+pub fn ast_region_to_region<AC:AstConv,RS:RegionScope + Clone + 'static>(
+    this: &AC,
+    rscope: &RS,
     default_span: Span,
     opt_lifetime: &Option<ast::Lifetime>) -> ty::Region
 {
