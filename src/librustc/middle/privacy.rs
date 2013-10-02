@@ -726,7 +726,7 @@ impl<'self> Visitor<()> for PrivacyVisitor<'self> {
                                 debug2!("privacy - list {}", pid.node.id);
                                 let seg = ast::PathSegment {
                                     identifier: pid.node.name,
-                                    lifetime: None,
+                                    lifetimes: opt_vec::Empty,
                                     types: opt_vec::Empty,
                                 };
                                 let segs = ~[seg];

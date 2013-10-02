@@ -52,6 +52,7 @@ use syntax::diagnostic;
 pub mod middle {
     pub mod trans;
     pub mod ty;
+    pub mod ty_fold;
     pub mod subst;
     pub mod resolve;
     pub mod resolve_lifetime;

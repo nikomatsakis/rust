@@ -11,10 +11,10 @@
 
 use metadata::encoder;
 use middle::ty::{ReSkolemized, ReVar};
-use middle::ty::{bound_region, br_anon, br_named, br_self, br_cap_avoid};
+use middle::ty::{bound_region, br_anon, br_named};
 use middle::ty::{br_fresh, ctxt, field};
 use middle::ty::{mt, t, param_ty};
-use middle::ty::{re_bound, re_free, re_scope, re_infer, re_static, Region,
+use middle::ty::{re_free, re_scope, re_infer, re_static, Region,
                  re_empty};
 use middle::ty::{ty_bool, ty_char, ty_bot, ty_box, ty_struct, ty_enum};
 use middle::ty::{ty_err, ty_estr, ty_evec, ty_float, ty_bare_fn, ty_closure};
@@ -131,7 +131,7 @@ pub fn explain_region_and_span(cx: ctxt, region: ty::Region)
 
       // I believe these cases should not occur (except when debugging,
       // perhaps)
-      re_infer(_) | re_bound(_) => {
+      ty::re_infer(_) | ty::re_type_bound(*) | ty::re_fn_bound(*) => {
         (format!("lifetime {:?}", region), None)
       }
     };
@@ -157,11 +157,10 @@ pub fn bound_region_to_str(cx: ctxt,
     if cx.sess.verbose() { return format!("{}{:?}{}", prefix, br, space_str); }
 
     match br {
-      br_named(id)         => format!("{}'{}{}", prefix, cx.sess.str_of(id), space_str),
-      br_self              => format!("{}'self{}", prefix, space_str),
+      br_named(_, ident)   => format!("{}'{}{}", prefix,
+                                      cx.sess.str_of(ident), space_str),
       br_anon(_)           => prefix.to_str(),
       br_fresh(_)          => prefix.to_str(),
-      br_cap_avoid(_, br)  => bound_region_to_str(cx, prefix, space, *br)
     }
 }
 
@@ -223,15 +222,16 @@ pub fn region_to_str(cx: ctxt, prefix: &str, space: bool, region: Region) -> ~st
     // to fit that into a short string.  Hence the recommendation to use
     // `explain_region()` or `note_and_explain_region()`.
     match region {
-        re_scope(_) => prefix.to_str(),
-        re_bound(br) => bound_region_to_str(cx, prefix, space, br),
-        re_free(ref fr) => bound_region_to_str(cx, prefix, space, fr.bound_region),
-        re_infer(ReSkolemized(_, br)) => {
+        ty::re_scope(_) => prefix.to_str(),
+        ty::re_type_bound(_, _, ident) => cx.sess.str_of(ident).to_owned(),
+        ty::re_fn_bound(_, br) => bound_region_to_str(cx, prefix, space, br),
+        ty::re_free(ref fr) => bound_region_to_str(cx, prefix, space, fr.bound_region),
+        ty::re_infer(ReSkolemized(_, br)) => {
             bound_region_to_str(cx, prefix, space, br)
         }
-        re_infer(ReVar(_)) => prefix.to_str(),
-        re_static => format!("{}'static{}", prefix, space_str),
-        re_empty => format!("{}'<empty>{}", prefix, space_str)
+        ty::re_infer(ReVar(_)) => prefix.to_str(),
+        ty::re_static => format!("{}'static{}", prefix, space_str),
+        ty::re_empty => format!("{}'<empty>{}", prefix, space_str)
     }
 }
 
@@ -559,8 +559,17 @@ impl<T:Repr> Repr for ~[T] {
 
 impl Repr for ty::TypeParameterDef {
     fn repr(&self, tcx: ctxt) -> ~str {
-        format!("TypeParameterDef \\{{:?}, bounds: {}\\}",
-             self.def_id, self.bounds.repr(tcx))
+        format!("TypeParameterDef({:?}, {})",
+                self.def_id,
+                self.bounds.repr(tcx))
+    }
+}
+
+impl Repr for ty::RegionParameterDef {
+    fn repr(&self, tcx: ctxt) -> ~str {
+        format!("RegionParameterDef({}, {:?})",
+                tcx.sess.str_of(self.ident),
+                self.def_id)
     }
 }
 
@@ -672,23 +681,23 @@ impl Repr for ty::ty_param_bounds_and_ty {
 
 impl Repr for ty::Generics {
     fn repr(&self, tcx: ctxt) -> ~str {
-        format!("Generics \\{type_param_defs: {}, region_param: {:?}\\}",
-             self.type_param_defs.repr(tcx),
-             self.region_param)
+        format!("Generics(type_param_defs: {}, region_param_defs: {})",
+                self.type_param_defs.repr(tcx),
+                self.region_param_defs.repr(tcx))
     }
 }
 
 impl Repr for ty::Method {
     fn repr(&self, tcx: ctxt) -> ~str {
-        format!("method \\{ident: {}, generics: {}, transformed_self_ty: {}, \
-              fty: {}, explicit_self: {}, vis: {}, def_id: {}\\}",
-             self.ident.repr(tcx),
-             self.generics.repr(tcx),
-             self.transformed_self_ty.repr(tcx),
-             self.fty.repr(tcx),
-             self.explicit_self.repr(tcx),
-             self.vis.repr(tcx),
-             self.def_id.repr(tcx))
+        format!("method(ident: {}, generics: {}, transformed_self_ty: {}, \
+                fty: {}, explicit_self: {}, vis: {}, def_id: {})",
+                self.ident.repr(tcx),
+                self.generics.repr(tcx),
+                self.transformed_self_ty.repr(tcx),
+                self.fty.repr(tcx),
+                self.explicit_self.repr(tcx),
+                self.vis.repr(tcx),
+                self.def_id.repr(tcx))
     }
 }
 

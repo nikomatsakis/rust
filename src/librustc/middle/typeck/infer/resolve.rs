@@ -169,7 +169,6 @@ impl ResolveState {
                     let result = ty::fold_regions_and_ty(
                         self.infcx.tcx, typ,
                         |r| self.resolve_region(r),
-                        |t| self.resolve_type(t),
                         |t| self.resolve_type(t));
                     self.type_depth -= 1;
                     result

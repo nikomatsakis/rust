@@ -169,7 +169,7 @@ pub fn expand_expr(extsbox: @mut SyntaxEnv,
                     segments: ~[
                         ast::PathSegment {
                             identifier: ident,
-                            lifetime: None,
+                            lifetimes: opt_vec::Empty,
                             types: opt_vec::Empty,
                         }
                     ],
@@ -630,7 +630,7 @@ impl Visitor<()> for NewNameFinderContext {
                         segments: [
                             ast::PathSegment {
                                 identifier: id,
-                                lifetime: _,
+                                lifetimes: _,
                                 types: _
                             }
                         ]

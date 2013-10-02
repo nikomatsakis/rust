@@ -27,30 +27,32 @@ use syntax::parse::token::special_idents;
 use syntax::visit;
 use syntax::visit::Visitor;
 
+// maps the id of each lifetime reference to the lifetime decl
+// that it corresponds to
 pub type NamedRegionMap = HashMap<ast::NodeId, ast::DefRegion>;
 
 struct LifetimeContext {
     sess: session::Session,
-    lifetime_map: @mut NamedRegionMap,
+    named_region_map: @mut NamedRegionMap,
 }
 
 enum ScopeChain<'self> {
     ItemScope(&'self OptVec<ast::Lifetime>),
-    FnScope(&'self OptVec<ast::Lifetime>, &'self ScopeChain<'self>),
+    FnScope(ast::NodeId, &'self OptVec<ast::Lifetime>, &'self ScopeChain<'self>),
     BlockScope(ast::NodeId, &'self ScopeChain<'self>),
     RootScope
 }
 
 pub fn crate(sess: session::Session,
-             crate: @ast::Crate)
+             crate: &ast::Crate)
              -> @mut NamedRegionMap {
     let mut ctxt = LifetimeContext {
         sess: sess,
-        lifetime_map: @mut HashMap::new()
+        named_region_map: @mut HashMap::new()
     };
     visit::walk_crate(&mut ctxt, crate, &RootScope);
     sess.abort_if_errors();
-    ctxt.lifetime_map
+    ctxt.named_region_map
 }
 
 impl<'self> Visitor<&'self ScopeChain<'self>> for LifetimeContext {
@@ -70,6 +72,7 @@ impl<'self> Visitor<&'self ScopeChain<'self>> for LifetimeContext {
             ast::item_struct(_, ref generics) |
             ast::item_impl(ref generics, _, _, _) |
             ast::item_trait(ref generics, _, _) => {
+                self.check_lifetime_names(&generics.lifetimes);
                 ItemScope(&generics.lifetimes)
             }
         };
@@ -86,7 +89,8 @@ impl<'self> Visitor<&'self ScopeChain<'self>> for LifetimeContext {
         match *fk {
             visit::fk_item_fn(_, generics, _, _) |
             visit::fk_method(_, generics, _) => {
-                let scope1 = FnScope(&generics.lifetimes, scope);
+                let scope1 = FnScope(n, &generics.lifetimes, scope);
+                self.check_lifetime_names(&generics.lifetimes);
                 visit::walk_fn(self, fk, fd, b, s, n, &scope1);
             }
             visit::fk_anon(*) | visit::fk_fn_block(*) => {
@@ -101,7 +105,8 @@ impl<'self> Visitor<&'self ScopeChain<'self>> for LifetimeContext {
         match ty.node {
             ast::ty_closure(@ast::TyClosure { lifetimes: ref lifetimes, _ }) |
             ast::ty_bare_fn(@ast::TyBareFn { lifetimes: ref lifetimes, _ }) => {
-                let scope1 = FnScope(lifetimes, scope);
+                let scope1 = FnScope(ty.id, lifetimes, scope);
+                self.check_lifetime_names(lifetimes);
                 visit::walk_ty(self, ty, &scope1);
             }
             _ => {
@@ -113,7 +118,8 @@ impl<'self> Visitor<&'self ScopeChain<'self>> for LifetimeContext {
     fn visit_ty_method(&mut self,
                        m: &ast::TypeMethod,
                        scope: &'self ScopeChain<'self>) {
-        let scope1 = FnScope(&m.generics.lifetimes, scope);
+        let scope1 = FnScope(m.id, &m.generics.lifetimes, scope);
+        self.check_lifetime_names(&m.generics.lifetimes);
         visit::walk_ty_method(self, m, &scope1);
     }
 
@@ -128,23 +134,82 @@ impl<'self> Visitor<&'self ScopeChain<'self>> for LifetimeContext {
                           lifetime_ref: &ast::Lifetime,
                           scope: &'self ScopeChain<'self>) {
         if lifetime_ref.ident == special_idents::statik {
-            self.lifetime_map.insert(lifetime_ref.id, ast::DefStaticRegion);
+            self.named_region_map.insert(lifetime_ref.id, ast::DefStaticRegion);
             return;
         }
+        self.resolve_lifetime_ref(lifetime_ref, scope);
+    }
+}
 
-        // Walk back up the scopes, searching for `lifetime_ref`.
-        //
-        // `depth` - tracks the number of fn scopes (binding scopes) that we pass
-        //           through.
-        //
-        // `free` - tracks the outermost block that we pass through
+impl LifetimeContext {
+    fn resolve_lifetime_ref(&self,
+                            lifetime_ref: &ast::Lifetime,
+                            scope: &ScopeChain) {
+        // Walk up the scope chain, tracking the number of fn scopes
+        // that we pass through, until we find a lifetime with the
+        // given name or we run out of scopes. If we encounter a code
+        // block, then the lifetime is not bound but free, so switch
+        // over to `resolve_free_lifetime_ref()` to complete the
+        // search.
         let mut depth = 0;
         let mut scope = scope;
-        let mut free = None;
         loop {
             match *scope {
                 BlockScope(id, s) => {
-                    free = Some(id);
+                    return self.resolve_free_lifetime_ref(id, lifetime_ref, s);
+                }
+
+                RootScope => {
+                    break;
+                }
+
+                ItemScope(lifetimes) => {
+                    match search_lifetimes(lifetimes, lifetime_ref) {
+                        Some((index, decl_id)) => {
+                            let def = ast::DefTypeBoundRegion(index, decl_id);
+                            self.named_region_map.insert(lifetime_ref.id, def);
+                            return;
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                }
+
+                FnScope(id, lifetimes, s) => {
+                    match search_lifetimes(lifetimes, lifetime_ref) {
+                        Some((_index, decl_id)) => {
+                            let def = ast::DefFnBoundRegion(id, depth, decl_id);
+                            self.named_region_map.insert(lifetime_ref.id, def);
+                            return;
+                        }
+
+                        None => {
+                            depth += 1;
+                            scope = s;
+                        }
+                    }
+                }
+            }
+        }
+
+        self.unresolved_lifetime_ref(lifetime_ref);
+    }
+
+    fn resolve_free_lifetime_ref(&self,
+                                 scope_id: ast::NodeId,
+                                 lifetime_ref: &ast::Lifetime,
+                                 scope: &ScopeChain) {
+        // Walk up the scope chain, tracking the outermost free scope,
+        // until we encounter a scope that contains the named lifetime
+        // or we run out of scopes.
+        let mut scope_id = scope_id;
+        let mut scope = scope;
+        let mut search_result = None;
+        loop {
+            match *scope {
+                BlockScope(id, s) => {
+                    scope_id = id;
                     scope = s;
                 }
 
@@ -153,48 +218,77 @@ impl<'self> Visitor<&'self ScopeChain<'self>> for LifetimeContext {
                 }
 
                 ItemScope(lifetimes) => {
-                    if search_lifetimes(self, lifetimes, lifetime_ref,
-                                        depth, free) {
-                        return;
-                    }
-
+                    search_result = search_lifetimes(lifetimes, lifetime_ref);
                     break;
                 }
 
-                FnScope(lifetimes, s) => {
-                    if search_lifetimes(self, lifetimes, lifetime_ref,
-                                        depth, free) {
-                        return;
+                FnScope(_, lifetimes, s) => {
+                    search_result = search_lifetimes(lifetimes, lifetime_ref);
+                    if search_result.is_some() {
+                        break;
                     }
-
-                    depth += 1;
                     scope = s;
                 }
             }
         }
 
+        match search_result {
+            Some((_depth, decl_id)) => {
+                let def = ast::DefFreeRegion(scope_id, decl_id);
+                self.named_region_map.insert(lifetime_ref.id, def);
+            }
+
+            None => {
+                self.unresolved_lifetime_ref(lifetime_ref);
+            }
+        }
+
+    }
+
+    fn unresolved_lifetime_ref(&self,
+                               lifetime_ref: &ast::Lifetime) {
         self.sess.span_err(
             lifetime_ref.span,
-            fmt!("use of undeclared lifetime name `'%s`",
-                 self.sess.str_of(lifetime_ref.ident)));
+            format!("use of undeclared lifetime name `'{}`",
+                    self.sess.str_of(lifetime_ref.ident)));
+    }
 
-        fn search_lifetimes(this: &LifetimeContext,
-                            lifetimes: &OptVec<ast::Lifetime>,
-                            lifetime_ref: &ast::Lifetime,
-                            depth: uint,
-                            free: Option<ast::NodeId>)
-                            -> bool {
-            for lifetime_decl in lifetimes.iter() {
-                if lifetime_decl.ident == lifetime_ref.ident {
-                    let def = match free {
-                        None => ast::DefBoundRegion(depth, lifetime_decl.id),
-                        Some(f) => ast::DefFreeRegion(f, lifetime_decl.id)
-                    };
-                    this.lifetime_map.insert(lifetime_ref.id, def);
-                    return true;
+    fn check_lifetime_names(&self, lifetimes: &OptVec<ast::Lifetime>) {
+        for i in range(0, lifetimes.len()) {
+            let lifetime_i = lifetimes.get(i);
+
+            let special_idents = [special_idents::statik, special_idents::self_];
+            for lifetime in lifetimes.iter() {
+                if special_idents.iter().any(|&i| i == lifetime.ident) {
+                    self.sess.span_err(
+                        lifetime.span,
+                        format!("illegal lifetime parameter name: `{}`",
+                                self.sess.str_of(lifetime.ident)));
                 }
             }
-            return false;
+
+            for j in range(i + 1, lifetimes.len()) {
+                let lifetime_j = lifetimes.get(j);
+
+                if lifetime_i.ident == lifetime_j.ident {
+                    self.sess.span_err(
+                        lifetime_j.span,
+                        format!("lifetime name `'{}` declared twice in \
+                                the same scope",
+                                self.sess.str_of(lifetime_j.ident)));
+                }
+            }
         }
     }
+}
+
+fn search_lifetimes(lifetimes: &OptVec<ast::Lifetime>,
+                    lifetime_ref: &ast::Lifetime)
+                    -> Option<(uint, ast::NodeId)> {
+    for (i, lifetime_decl) in lifetimes.iter().enumerate() {
+        if lifetime_decl.ident == lifetime_ref.ident {
+            return Some((i, lifetime_decl.id));
+        }
+    }
+    return None;
 }

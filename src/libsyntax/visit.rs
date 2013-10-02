@@ -365,9 +365,9 @@ pub fn walk_path<E:Clone, V:Visitor<E>>(visitor: &mut V, path: &Path, env: E) {
         for typ in segment.types.iter() {
             visitor.visit_ty(typ, env.clone());
         }
-        visitor.visit_opt_lifetime_ref(path.span,
-                                       &segment.lifetime,
-                                       env.clone());
+        for lifetime in segment.lifetimes.iter() {
+            visitor.visit_lifetime_ref(lifetime, env.clone());
+        }
     }
 }
 

@@ -392,10 +392,10 @@ pub fn trans_intrinsic(ccx: @mut CrateContext,
                 purity: ast::impure_fn,
                 sigil: ast::BorrowedSigil,
                 onceness: ast::Many,
-                region: ty::re_bound(ty::br_anon(0)),
+                region: ty::re_fn_bound(item.id, ty::br_anon(0)),
                 bounds: ty::EmptyBuiltinBounds(),
                 sig: FnSig {
-                    bound_lifetime_names: opt_vec::Empty,
+                    binder_id: item.id,
                     inputs: ~[ star_u8 ],
                     output: ty::mk_nil()
                 }

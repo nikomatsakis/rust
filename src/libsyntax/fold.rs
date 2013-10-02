@@ -349,7 +349,7 @@ pub trait ast_fold {
             global: p.global,
             segments: p.segments.map(|segment| ast::PathSegment {
                 identifier: self.fold_ident(segment.identifier),
-                lifetime: segment.lifetime,
+                lifetimes: segment.lifetimes.map(|l| fold_lifetime(l, self)),
                 types: segment.types.map(|typ| self.fold_ty(typ)),
             })
         }

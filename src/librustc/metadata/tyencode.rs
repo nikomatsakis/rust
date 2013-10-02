@@ -142,9 +142,23 @@ fn enc_region_substs(w: @io::Writer, cx: @ctxt, substs: &ty::RegionSubsts) {
 
 fn enc_region(w: @io::Writer, cx: @ctxt, r: ty::Region) {
     match r {
-      ty::re_bound(br) => {
+      ty::re_fn_bound(id, br) => {
         w.write_char('b');
+        w.write_char('[');
+        w.write_int(id);
+        w.write_char('|');
         enc_bound_region(w, cx, br);
+        w.write_char(']');
+      }
+      ty::re_type_bound(node_id, index, ident) => {
+        w.write_char('B');
+        w.write_char('[');
+        w.write_int(node_id);
+        w.write_char('|');
+        w.write_uint(index);
+        w.write_char('|');
+        w.write_str(cx.tcx.sess.str_of(ident));
+        w.write_char(']');
       }
       ty::re_free(ref fr) => {
         w.write_char('f');
@@ -174,22 +188,17 @@ fn enc_region(w: @io::Writer, cx: @ctxt, r: ty::Region) {
 
 fn enc_bound_region(w: @io::Writer, cx: @ctxt, br: ty::bound_region) {
     match br {
-      ty::br_self => w.write_char('s'),
       ty::br_anon(idx) => {
         w.write_char('a');
         w.write_uint(idx);
         w.write_char('|');
       }
-      ty::br_named(s) => {
+      ty::br_named(d, s) => {
         w.write_char('[');
+        w.write_str((cx.ds)(d));
+        w.write_char('|');
         w.write_str(cx.tcx.sess.str_of(s));
         w.write_char(']')
-      }
-      ty::br_cap_avoid(id, br) => {
-        w.write_char('c');
-        w.write_int(id);
-        w.write_char('|');
-        enc_bound_region(w, cx, *br);
       }
       ty::br_fresh(id) => {
         w.write_uint(id);
@@ -402,6 +411,8 @@ fn enc_closure_ty(w: @io::Writer, cx: @ctxt, ft: &ty::ClosureTy) {
 
 fn enc_fn_sig(w: @io::Writer, cx: @ctxt, fsig: &ty::FnSig) {
     w.write_char('[');
+    w.write_int(fsig.binder_id);
+    w.write_char('|');
     for ty in fsig.inputs.iter() {
         enc_ty(w, cx, *ty);
     }

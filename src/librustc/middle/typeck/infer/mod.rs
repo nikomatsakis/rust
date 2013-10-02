@@ -20,8 +20,12 @@ pub use middle::typeck::infer::resolve::{resolve_ivar, resolve_all};
 pub use middle::typeck::infer::resolve::{resolve_nested_tvar};
 pub use middle::typeck::infer::resolve::{resolve_rvar};
 
+use extra::list::Nil;
+use extra::smallintmap::SmallIntMap;
 use middle::ty::{TyVid, IntVid, FloatVid, RegionVid, Vid};
 use middle::ty;
+use middle::ty_fold;
+use middle::ty_fold::TypeFolder;
 use middle::typeck::check::regionmanip::{replace_bound_regions_in_fn_sig};
 use middle::typeck::infer::coercion::Coerce;
 use middle::typeck::infer::combine::{Combine, CombineFields, eq_tys};
@@ -33,18 +37,16 @@ use middle::typeck::infer::to_str::InferStr;
 use middle::typeck::infer::unify::{ValsAndBindings, Root};
 use middle::typeck::infer::error_reporting::ErrorReporting;
 use middle::typeck::isr_alist;
-use util::common::indent;
-use util::ppaux::{bound_region_to_str, ty_to_str, trait_ref_to_str, Repr,
-                  UserString};
-
+use std::hashmap::HashMap;
 use std::result;
 use std::vec;
-use extra::list::Nil;
-use extra::smallintmap::SmallIntMap;
 use syntax::ast::{MutImmutable, MutMutable};
 use syntax::ast;
 use syntax::codemap;
 use syntax::codemap::Span;
+use util::common::indent;
+use util::ppaux::{bound_region_to_str, ty_to_str, trait_ref_to_str, Repr,
+                  UserString};
 
 pub mod doc;
 pub mod macros;
@@ -642,6 +644,17 @@ impl InferCtxt {
         ty::re_infer(ty::ReVar(self.region_vars.new_region_var(origin)))
     }
 
+    pub fn next_region_vars(&mut self,
+                            origin: RegionVariableOrigin,
+                            count: uint)
+                            -> ~[ty::Region] {
+        vec::from_fn(count, |_| self.next_region_var(origin))
+    }
+
+    pub fn fresh_bound_region(&mut self, binder_id: ast::NodeId) -> ty::Region {
+        self.region_vars.new_bound(binder_id)
+    }
+
     pub fn resolve_regions(@mut self) {
         let errors = self.region_vars.resolve_regions();
         self.report_region_errors(&errors); // see error_reporting.rs
@@ -787,9 +800,11 @@ impl InferCtxt {
     pub fn replace_bound_regions_with_fresh_regions(&mut self,
                                                     trace: TypeTrace,
                                                     fsig: &ty::FnSig)
-                                                    -> (ty::FnSig, isr_alist) {
-        let(isr, _, fn_sig) =
-            replace_bound_regions_in_fn_sig(self.tcx, @Nil, None, fsig, |br| {
+                                                    -> (ty::FnSig,
+                                                        HashMap<ty::bound_region,
+                                                                ty::Region>) {
+        let (map, _, fn_sig) =
+            replace_bound_regions_in_fn_sig(self.tcx, None, fsig, |br| {
                 let rvar = self.next_region_var(
                     BoundRegionInFnType(trace.origin.span(), br));
                 debug2!("Bound region {} maps to {:?}",
@@ -797,18 +812,16 @@ impl InferCtxt {
                        rvar);
                 rvar
             });
-        (fn_sig, isr)
+        (fn_sig, map)
     }
 }
 
 pub fn fold_regions_in_sig(
     tcx: ty::ctxt,
     fn_sig: &ty::FnSig,
-    fldr: &fn(r: ty::Region, in_fn: bool) -> ty::Region) -> ty::FnSig
+    fldr: &fn(r: ty::Region) -> ty::Region) -> ty::FnSig
 {
-    do ty::fold_sig(fn_sig) |t| {
-        ty::fold_regions(tcx, t, |r, in_fn| fldr(r, in_fn))
-    }
+    ty_fold::RegionFolder::regions(tcx, fldr).fold_sig(fn_sig)
 }
 
 impl TypeTrace {

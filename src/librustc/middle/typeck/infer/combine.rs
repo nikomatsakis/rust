@@ -123,76 +123,60 @@ pub trait Combine {
         }
     }
 
-    fn substs(&self, generics: &ty::Generics, as_: &ty::substs,
+    fn substs(&self,
+              item_def_id: ast::DefId,
+              generics: &ty::Generics,
+              as_: &ty::substs,
               bs: &ty::substs) -> cres<ty::substs> {
 
-        fn relate_region_params<C:Combine>(
-                                           this: &C,
-                                           generics: &ty::Generics,
+        fn relate_region_params<C:Combine>(this: &C,
+                                           item_def_id: ast::DefId,
                                            a: &ty::RegionSubsts,
                                            b: &ty::RegionSubsts)
-            -> cres<ty::RegionSubsts>
-            {
+                                           -> cres<ty::RegionSubsts> {
+            let tcx = this.infcx().tcx;
             match (a, b) {
-                (&ty::ErasedRegions, _) |
-                    (_, &ty::ErasedRegions) => {
+                (&ty::ErasedRegions, _) | (_, &ty::ErasedRegions) => {
                     Ok(ty::ErasedRegions)
                 }
 
                 (&ty::NonerasedRegions(ref a_rs),
                  &ty::NonerasedRegions(ref b_rs)) => {
-                    match generics.region_param {
-                        None => {
-                            assert!(a_rs.is_empty());
-                            assert!(b_rs.is_empty());
-                            Ok(ty::NonerasedRegions(opt_vec::Empty))
-                        }
-
-                        Some(variance) => {
-                            assert_eq!(a_rs.len(), 1);
-                            assert_eq!(b_rs.len(), 1);
-                            let a_r = *a_rs.get(0);
-                            let b_r = *b_rs.get(0);
-
-                            match variance {
-                                ty::rv_invariant => {
-                                    do eq_regions(this, a_r, b_r).then {
-                                        Ok(ty::NonerasedRegions(opt_vec::with(a_r)))
-                                    }
-                                }
-
-                                ty::rv_covariant => {
-                                    do this.regions(a_r, b_r).and_then |r| {
-                                        Ok(ty::NonerasedRegions(opt_vec::with(r)))
-                                    }
-                                }
-
-                                ty::rv_contravariant => {
-                                    do this.contraregions(a_r, b_r).and_then |r| {
-                                        Ok(ty::NonerasedRegions(opt_vec::with(r)))
-                                    }
-                                }
+                    let variances = ty::item_variances(tcx, item_def_id);
+                    let region_params = &variances.region_params;
+                    let num_region_params = region_params.len();
+                    assert_eq!(num_region_params, a_rs.len());
+                    assert_eq!(num_region_params, b_rs.len());
+                    let mut rs = opt_vec::Empty;
+                    for i in range(0, num_region_params) {
+                        let a_r = *a_rs.get(i);
+                        let b_r = *b_rs.get(i);
+                        let variance = *region_params.get(i);
+                        let r = match variance {
+                            ty::Invariant => {
+                                eq_regions(this, a_r, b_r)
+                                    .and_then(|()| Ok(a_r))
                             }
-                        }
+                            ty::Covariant => this.regions(a_r, b_r),
+                            ty::Contravariant => this.contraregions(a_r, b_r),
+                            ty::Bivariant => Ok(a_r),
+                        };
+                        rs.push(if_ok!(r));
                     }
+                    Ok(ty::NonerasedRegions(rs))
                 }
             }
         }
 
-        do self.tps(as_.tps, bs.tps).and_then |tps| {
-            do self.self_tys(as_.self_ty, bs.self_ty).and_then |self_ty| {
-                do relate_region_params(self,
-                                        generics,
-                                        &as_.regions,
-                                        &bs.regions).and_then |regions| {
-                    Ok(substs {
-                            regions: regions,
-                            self_ty: self_ty,
-                            tps: tps.clone()
-                        })
-                }
-            }
-        }
+        let tps = if_ok!(self.tps(as_.tps, bs.tps));
+        let self_ty = if_ok!(self.self_tys(as_.self_ty, bs.self_ty));
+        let regions = if_ok!(relate_region_params(self,
+                                                  item_def_id,
+                                                  &as_.regions,
+                                                  &bs.regions));
+        Ok(substs { regions: regions,
+                    self_ty: self_ty,
+                    tps: tps.clone() })
     }
 
     fn bare_fn_tys(&self, a: &ty::BareFnTy,
@@ -328,7 +312,8 @@ pub trait Combine {
         } else {
             let tcx = self.infcx().tcx;
             let trait_def = ty::lookup_trait_def(tcx, a.def_id);
-            let substs = if_ok!(self.substs(&trait_def.generics,
+            let substs = if_ok!(self.substs(a.def_id,
+                                            &trait_def.generics,
                                             &a.substs,
                                             &b.substs));
             Ok(ty::TraitRef {
@@ -426,14 +411,9 @@ pub fn super_fn_sigs<C:Combine>(
         }
     }
 
-    do argvecs(this, a.inputs, b.inputs)
-            .and_then |inputs| {
-        do this.tys(a.output, b.output).and_then |output| {
-            Ok(FnSig {bound_lifetime_names: opt_vec::Empty, // FIXME(#4846)
-                      inputs: inputs.clone(),
-                      output: output})
-        }
-    }
+    let inputs = if_ok!(argvecs(this, a.inputs, b.inputs));
+    let output = if_ok!(this.tys(a.output, b.output));
+    Ok(FnSig {binder_id: a.binder_id, inputs: inputs, output: output})
 }
 
 pub fn super_tys<C:Combine>(
@@ -508,35 +488,35 @@ pub fn super_tys<C:Combine>(
        &ty::ty_enum(b_id, ref b_substs))
       if a_id == b_id => {
           let type_def = ty::lookup_item_type(tcx, a_id);
-          do this.substs(&type_def.generics, a_substs, b_substs).and_then |substs| {
-              Ok(ty::mk_enum(tcx, a_id, substs))
-          }
+          let substs = if_ok!(this.substs(a_id,
+                                          &type_def.generics,
+                                          a_substs,
+                                          b_substs));
+          Ok(ty::mk_enum(tcx, a_id, substs))
       }
 
       (&ty::ty_trait(a_id, ref a_substs, a_store, a_mutbl, a_bounds),
        &ty::ty_trait(b_id, ref b_substs, b_store, b_mutbl, b_bounds))
       if a_id == b_id && a_mutbl == b_mutbl => {
           let trait_def = ty::lookup_trait_def(tcx, a_id);
-          do this.substs(&trait_def.generics, a_substs, b_substs).and_then |substs| {
-              do this.trait_stores(ty::terr_trait, a_store, b_store).and_then |s| {
-                  do this.bounds(a_bounds, b_bounds).and_then |bounds| {
-                    Ok(ty::mk_trait(tcx,
-                                    a_id,
-                                    substs.clone(),
-                                    s,
-                                    a_mutbl,
-                                    bounds))
-                  }
-              }
-          }
+          let substs = if_ok!(this.substs(a_id, &trait_def.generics,
+                                          a_substs, b_substs));
+          let s = if_ok!(this.trait_stores(ty::terr_trait, a_store, b_store));
+          let bounds = if_ok!(this.bounds(a_bounds, b_bounds));
+          Ok(ty::mk_trait(tcx,
+                          a_id,
+                          substs.clone(),
+                          s,
+                          a_mutbl,
+                          bounds))
       }
 
       (&ty::ty_struct(a_id, ref a_substs), &ty::ty_struct(b_id, ref b_substs))
       if a_id == b_id => {
-          let type_def = ty::lookup_item_type(tcx, a_id);
-          do this.substs(&type_def.generics, a_substs, b_substs).and_then |substs| {
-              Ok(ty::mk_struct(tcx, a_id, substs))
-          }
+            let type_def = ty::lookup_item_type(tcx, a_id);
+            let substs = if_ok!(this.substs(a_id, &type_def.generics,
+                                            a_substs, b_substs));
+            Ok(ty::mk_struct(tcx, a_id, substs))
       }
 
       (&ty::ty_box(ref a_mt), &ty::ty_box(ref b_mt)) => {

@@ -467,7 +467,11 @@ impl tr for ty::AutoRef {
 impl tr for ty::Region {
     fn tr(&self, xcx: @ExtendedDecodeContext) -> ty::Region {
         match *self {
-            ty::re_bound(br) => ty::re_bound(br.tr(xcx)),
+            ty::re_fn_bound(id, br) => ty::re_fn_bound(xcx.tr_id(id),
+                                                       br.tr(xcx)),
+            ty::re_type_bound(id, index, ident) => ty::re_type_bound(xcx.tr_id(id),
+                                                                     index,
+                                                                     ident),
             ty::re_scope(id) => ty::re_scope(xcx.tr_id(id)),
             ty::re_empty | ty::re_static | ty::re_infer(*) => *self,
             ty::re_free(ref fr) => {
@@ -481,10 +485,10 @@ impl tr for ty::Region {
 impl tr for ty::bound_region {
     fn tr(&self, xcx: @ExtendedDecodeContext) -> ty::bound_region {
         match *self {
-            ty::br_anon(_) | ty::br_named(_) | ty::br_self |
+            ty::br_anon(_) |
             ty::br_fresh(_) => *self,
-            ty::br_cap_avoid(id, br) => ty::br_cap_avoid(xcx.tr_id(id),
-                                                         @br.tr(xcx))
+            ty::br_named(id, ident) => ty::br_named(xcx.tr_def_id(id),
+                                                    ident),
         }
     }
 }
@@ -819,8 +823,8 @@ impl ebml_writer_helpers for writer::Encoder {
                             this.emit_type_param_def(ecx, type_param_def);
                         }
                     }
-                    do this.emit_struct_field("region_param", 1) |this| {
-                        tpbt.generics.region_param.encode(this);
+                    do this.emit_struct_field("region_param_defs", 1) |this| {
+                        tpbt.generics.region_param_defs.encode(this);
                     }
                 }
             }
@@ -1137,8 +1141,8 @@ impl ebml_decoder_decoder_helpers for reader::Decoder {
                                     @this.read_to_vec(|this|
                                         this.read_type_param_def(xcx))
                             }),
-                            region_param:
-                                this.read_struct_field("region_param",
+                            region_param_defs:
+                                this.read_struct_field("region_param_defs",
                                                        1,
                                                        |this| {
                                     Decodable::decode(this)

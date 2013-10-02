@@ -13,7 +13,8 @@
 
 use middle::ty;
 use middle::ty::{FreeRegion, Region, RegionVid};
-use middle::ty::{re_empty, re_static, re_infer, re_free, re_bound};
+use middle::ty::{re_empty, re_static, re_infer, re_free, re_type_bound,
+                 re_fn_bound};
 use middle::ty::{re_scope, ReVar, ReSkolemized, br_fresh};
 use middle::typeck::infer::cres;
 use middle::typeck::infer::{RegionVariableOrigin, SubregionOrigin};
@@ -192,24 +193,33 @@ impl RegionVarBindings {
         re_infer(ReSkolemized(sc, br))
     }
 
-    pub fn new_bound(&mut self) -> Region {
+    pub fn new_bound(&mut self, binder_id: ast::NodeId) -> Region {
         // Creates a fresh bound variable for use in GLB computations.
         // See discussion of GLB computation in the large comment at
         // the top of this file for more details.
         //
-        // This computation is mildly wrong in the face of rollover.
-        // It's conceivable, if unlikely, that one might wind up with
-        // accidental capture for nested functions in that case, if
-        // the outer function had bound regions created a very long
-        // time before and the inner function somehow wound up rolling
-        // over such that supposedly fresh identifiers were in fact
-        // shadowed.  We should convert our bound_region
-        // representation to use deBruijn indices or something like
-        // that to eliminate that possibility.
+        // This computation is potentially wrong in the face of
+        // rollover.  It's conceivable, if unlikely, that one might
+        // wind up with accidental capture for nested functions in
+        // that case, if the outer function had bound regions created
+        // a very long time before and the inner function somehow
+        // wound up rolling over such that supposedly fresh
+        // identifiers were in fact shadowed. For now, we just assert
+        // that there is no rollover -- eventually we should try to be
+        // robust against this possibility, either by checking the set
+        // of bound identifiers that appear in a given expression and
+        // ensure that we generate one that is distinct, or by
+        // changing the representation of bound regions in a fn
+        // declaration
 
         let sc = self.bound_count;
         self.bound_count += 1;
-        re_bound(br_fresh(sc))
+
+        if sc >= self.bound_count {
+            self.tcx.sess.bug("Rollover in RegionInference new_bound()");
+        }
+
+        re_fn_bound(binder_id, br_fresh(sc))
     }
 
     pub fn add_constraint(&mut self,
@@ -245,15 +255,15 @@ impl RegionVarBindings {
           (re_infer(ReVar(sub_id)), r) => {
             self.add_constraint(ConstrainVarSubReg(sub_id, r), origin);
           }
-          (re_bound(br), _) => {
+          (re_type_bound(*), _) |
+          (re_fn_bound(*), _) |
+          (_, re_type_bound(*)) |
+          (_, re_fn_bound(*)) => {
             self.tcx.sess.span_bug(
                 origin.span(),
-                format!("Cannot relate bound region as subregion: {:?}", br));
-          }
-          (_, re_bound(br)) => {
-            self.tcx.sess.span_bug(
-                origin.span(),
-                format!("Cannot relate bound region as superregion: {:?}", br));
+                format!("Cannot relate bound region: {} <= {}",
+                        sub.repr(self.tcx),
+                        sup.repr(self.tcx)));
           }
           _ => {
             self.add_constraint(ConstrainRegSubReg(sub, sup), origin);
@@ -533,15 +543,20 @@ impl RegionVarBindings {
              self.lub_free_regions(a_fr, b_fr)
           }
 
+          (re_fn_bound(*), _) |
+          (_, re_fn_bound(*)) |
+          (re_type_bound(*), _) |
+          (_, re_type_bound(*)) => {
+            self.tcx.sess.bug(
+                format!("Cannot relate bound region: LUB({}, {})",
+                        a.repr(self.tcx),
+                        b.repr(self.tcx)));
+          }
+
           // For these types, we cannot define any additional
           // relationship:
           (re_infer(ReSkolemized(*)), _) |
-          (_, re_infer(ReSkolemized(*))) |
-          (re_bound(_), re_bound(_)) |
-          (re_bound(_), re_free(_)) |
-          (re_bound(_), re_scope(_)) |
-          (re_free(_), re_bound(_)) |
-          (re_scope(_), re_bound(_)) => {
+          (_, re_infer(ReSkolemized(*))) => {
             if a == b {a} else {re_static}
           }
         }
@@ -624,15 +639,20 @@ impl RegionVarBindings {
                 self.glb_free_regions(a_fr, b_fr)
             }
 
+            (re_fn_bound(*), _) |
+            (_, re_fn_bound(*)) |
+            (re_type_bound(*), _) |
+            (_, re_type_bound(*)) => {
+              self.tcx.sess.bug(
+                  format!("Cannot relate bound region: GLB({}, {})",
+                          a.repr(self.tcx),
+                          b.repr(self.tcx)));
+            }
+
             // For these types, we cannot define any additional
             // relationship:
             (re_infer(ReSkolemized(*)), _) |
-            (_, re_infer(ReSkolemized(*))) |
-            (re_bound(_), re_bound(_)) |
-            (re_bound(_), re_free(_)) |
-            (re_bound(_), re_scope(_)) |
-            (re_free(_), re_bound(_)) |
-            (re_scope(_), re_bound(_)) => {
+            (_, re_infer(ReSkolemized(*))) => {
                 if a == b {
                     Ok(a)
                 } else {

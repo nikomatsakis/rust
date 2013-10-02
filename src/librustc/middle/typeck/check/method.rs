@@ -1010,7 +1010,7 @@ impl<'self> LookupContext<'self> {
         };
         let (_, opt_transformed_self_ty, fn_sig) =
             replace_bound_regions_in_fn_sig(
-                tcx, @Nil, Some(transformed_self_ty), &bare_fn_ty.sig,
+                tcx, Some(transformed_self_ty), &bare_fn_ty.sig,
                 |br| self.fcx.infcx().next_region_var(
                     infer::BoundRegionInFnCall(self.expr.span, br)));
         let transformed_self_ty = opt_transformed_self_ty.unwrap();

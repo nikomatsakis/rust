@@ -1548,13 +1548,13 @@ fn print_path_(s: @ps,
             }
         }
 
-        if segment.lifetime.is_some() || !segment.types.is_empty() {
+        if !segment.lifetimes.is_empty() || !segment.types.is_empty() {
             if colons_before_params {
                 word(s.s, "::")
             }
             word(s.s, "<");
 
-            for lifetime in segment.lifetime.iter() {
+            for lifetime in segment.lifetimes.iter() {
                 print_lifetime(s, lifetime);
                 if !segment.types.is_empty() {
                     word_space(s, ",")
