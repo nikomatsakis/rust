@@ -11,6 +11,7 @@
 // Generalized type folding mechanism.
 
 use middle::ty;
+use util::ppaux::Repr;
 
 pub trait TypeFolder {
     fn tcx(&self) -> ty::ctxt;
@@ -164,9 +165,12 @@ pub fn super_fold_sty<T:TypeFolder>(this: &mut T,
             ty::ty_struct(did,
                           this.fold_substs(substs))
         }
+        ty::ty_estr(vst) => {
+            ty::ty_estr(this.fold_vstore(vst))
+        }
         ty::ty_nil | ty::ty_bot | ty::ty_bool | ty::ty_char |
         ty::ty_int(_) | ty::ty_uint(_) |
-        ty::ty_float(_) | ty::ty_estr(_) | ty::ty_type |
+        ty::ty_float(_) | ty::ty_type |
         ty::ty_opaque_closure_ptr(_) |
         ty::ty_err | ty::ty_opaque_box | ty::ty_infer(_) |
         ty::ty_param(*) | ty::ty_self(_) => {
@@ -251,16 +255,13 @@ impl<'self> TypeFolder for RegionFolder<'self> {
     fn tcx(&self) -> ty::ctxt { self.tcx }
 
     fn fold_ty(&mut self, ty: ty::t) -> ty::t {
+        debug2!("RegionFolder.fold_ty({})", ty.repr(self.tcx()));
         let t1 = super_fold_ty(self, ty);
         (self.fld_t)(t1)
     }
 
-    fn fold_sig(&mut self, ty: &ty::FnSig) -> ty::FnSig {
-        let sig = super_fold_sig(self, ty);
-        sig
-    }
-
     fn fold_region(&mut self, r: ty::Region) -> ty::Region {
+        debug2!("RegionFolder.fold_region({})", r.repr(self.tcx()));
         (self.fld_r)(r)
     }
 }

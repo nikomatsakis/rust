@@ -367,14 +367,13 @@ impl TyLatticeDir for Glb {
     }
 }
 
-pub fn super_lattice_tys<L:LatticeDir + TyLatticeDir + Combine>(
-    this: &L,
-    a: ty::t,
-    b: ty::t) -> cres<ty::t> {
+pub fn super_lattice_tys<L:LatticeDir+TyLatticeDir+Combine>(this: &L,
+                                                            a: ty::t,
+                                                            b: ty::t)
+                                                            -> cres<ty::t> {
     debug2!("{}.lattice_tys({}, {})", this.tag(),
            a.inf_str(this.infcx()),
            b.inf_str(this.infcx()));
-    let _r = indenter();
 
     if a == b {
         return Ok(a);

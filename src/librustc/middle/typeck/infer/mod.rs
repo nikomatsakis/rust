@@ -570,15 +570,16 @@ impl InferCtxt {
     /// Execute `f`, unroll bindings on failure
     pub fn try<T,E>(@mut self, f: &fn() -> Result<T,E>) -> Result<T,E> {
         debug2!("try()");
-        do indent {
-            let snapshot = self.start_snapshot();
-            let r = f();
-            match r {
-              Ok(_) => (),
-              Err(_) => self.rollback_to(&snapshot)
+        let snapshot = self.start_snapshot();
+        let r = f();
+        match r {
+            Ok(_) => { debug2!("success"); }
+            Err(ref e) => {
+                debug2!("error: {:?}", *e);
+                self.rollback_to(&snapshot)
             }
-            r
         }
+        r
     }
 
     /// Execute `f` then unroll any bindings it creates

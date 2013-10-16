@@ -24,6 +24,7 @@ use syntax::codemap::Span;
 use syntax::opt_vec;
 use syntax::opt_vec::OptVec;
 use syntax::parse::token::special_idents;
+use syntax::print::pprust::{lifetime_to_str};
 use syntax::visit;
 use syntax::visit::Visitor;
 
@@ -76,7 +77,9 @@ impl<'self> Visitor<&'self ScopeChain<'self>> for LifetimeContext {
                 ItemScope(&generics.lifetimes)
             }
         };
-        visit::walk_item(self, item, &scope)
+        debug2!("entering scope {:?}", scope);
+        visit::walk_item(self, item, &scope);
+        debug2!("exiting scope {:?}", scope);
     }
 
     fn visit_fn(&mut self,
@@ -91,7 +94,9 @@ impl<'self> Visitor<&'self ScopeChain<'self>> for LifetimeContext {
             visit::fk_method(_, generics, _) => {
                 let scope1 = FnScope(n, &generics.lifetimes, scope);
                 self.check_lifetime_names(&generics.lifetimes);
+                debug2!("pushing fn scope id={} due to item/method", n);
                 visit::walk_fn(self, fk, fd, b, s, n, &scope1);
+                debug2!("popping fn scope id={} due to item/method", n);
             }
             visit::fk_anon(*) | visit::fk_fn_block(*) => {
                 visit::walk_fn(self, fk, fd, b, s, n, scope);
@@ -107,7 +112,9 @@ impl<'self> Visitor<&'self ScopeChain<'self>> for LifetimeContext {
             ast::ty_bare_fn(@ast::TyBareFn { lifetimes: ref lifetimes, _ }) => {
                 let scope1 = FnScope(ty.id, lifetimes, scope);
                 self.check_lifetime_names(lifetimes);
+                debug2!("pushing fn scope id={} due to type", ty.id);
                 visit::walk_ty(self, ty, &scope1);
+                debug2!("popping fn scope id={} due to type", ty.id);
             }
             _ => {
                 visit::walk_ty(self, ty, scope);
@@ -120,21 +127,25 @@ impl<'self> Visitor<&'self ScopeChain<'self>> for LifetimeContext {
                        scope: &'self ScopeChain<'self>) {
         let scope1 = FnScope(m.id, &m.generics.lifetimes, scope);
         self.check_lifetime_names(&m.generics.lifetimes);
+        debug2!("pushing fn scope id={} due to ty_method", m.id);
         visit::walk_ty_method(self, m, &scope1);
+        debug2!("popping fn scope id={} due to ty_method", m.id);
     }
 
     fn visit_block(&mut self,
                    b: &ast::Block,
                    scope: &'self ScopeChain<'self>) {
         let scope1 = BlockScope(b.id, scope);
+        debug2!("pushing block scope {}", b.id);
         visit::walk_block(self, b, &scope1);
+        debug2!("popping block scope {}", b.id);
     }
 
     fn visit_lifetime_ref(&mut self,
                           lifetime_ref: &ast::Lifetime,
                           scope: &'self ScopeChain<'self>) {
         if lifetime_ref.ident == special_idents::statik {
-            self.named_region_map.insert(lifetime_ref.id, ast::DefStaticRegion);
+            self.insert_lifetime(lifetime_ref, ast::DefStaticRegion);
             return;
         }
         self.resolve_lifetime_ref(lifetime_ref, scope);
@@ -167,7 +178,7 @@ impl LifetimeContext {
                     match search_lifetimes(lifetimes, lifetime_ref) {
                         Some((index, decl_id)) => {
                             let def = ast::DefTypeBoundRegion(index, decl_id);
-                            self.named_region_map.insert(lifetime_ref.id, def);
+                            self.insert_lifetime(lifetime_ref, def);
                             return;
                         }
                         None => {
@@ -180,7 +191,7 @@ impl LifetimeContext {
                     match search_lifetimes(lifetimes, lifetime_ref) {
                         Some((_index, decl_id)) => {
                             let def = ast::DefFnBoundRegion(id, depth, decl_id);
-                            self.named_region_map.insert(lifetime_ref.id, def);
+                            self.insert_lifetime(lifetime_ref, def);
                             return;
                         }
 
@@ -235,7 +246,7 @@ impl LifetimeContext {
         match search_result {
             Some((_depth, decl_id)) => {
                 let def = ast::DefFreeRegion(scope_id, decl_id);
-                self.named_region_map.insert(lifetime_ref.id, def);
+                self.insert_lifetime(lifetime_ref, def);
             }
 
             None => {
@@ -257,7 +268,7 @@ impl LifetimeContext {
         for i in range(0, lifetimes.len()) {
             let lifetime_i = lifetimes.get(i);
 
-            let special_idents = [special_idents::statik, special_idents::self_];
+            let special_idents = [special_idents::statik];
             for lifetime in lifetimes.iter() {
                 if special_idents.iter().any(|&i| i == lifetime.ident) {
                     self.sess.span_err(
@@ -279,6 +290,23 @@ impl LifetimeContext {
                 }
             }
         }
+    }
+
+    fn insert_lifetime(&self,
+                       lifetime_ref: &ast::Lifetime,
+                       def: ast::DefRegion) {
+        if lifetime_ref.id == ast::DUMMY_NODE_ID {
+            self.sess.span_bug(lifetime_ref.span,
+                               "Lifetime reference not renumbered, \
+                               probably a bug in syntax::fold");
+        }
+
+        debug2!("lifetime_ref={} id={} resolved to {:?}",
+                lifetime_to_str(lifetime_ref,
+                                self.sess.intr()),
+                lifetime_ref.id,
+                def);
+        self.named_region_map.insert(lifetime_ref.id, def);
     }
 }
 

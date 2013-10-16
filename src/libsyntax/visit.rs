@@ -110,6 +110,9 @@ pub trait Visitor<E:Clone> {
     fn visit_lifetime_decl(&mut self, _lifetime: &Lifetime, _e: E) {
         /*! Visits a declaration of a lifetime */
     }
+    fn visit_explicit_self(&mut self, es: &explicit_self, e: E) {
+        walk_explicit_self(self, es, e)
+    }
 }
 
 impl<E:Clone> Visitor<E> for @mut Visitor<E> {
@@ -195,6 +198,18 @@ pub fn walk_local<E:Clone, V:Visitor<E>>(visitor: &mut V, local: &Local, env: E)
     match local.init {
         None => {}
         Some(initializer) => visitor.visit_expr(initializer, env),
+    }
+}
+
+fn walk_explicit_self<E:Clone, V:Visitor<E>>(visitor: &mut V,
+                                             explicit_self: &explicit_self,
+                                             env: E) {
+    match explicit_self.node {
+        sty_static | sty_value | sty_box(_) | sty_uniq => {
+        }
+        sty_region(ref lifetime, _) => {
+            visitor.visit_opt_lifetime_ref(explicit_self.span, lifetime, env)
+        }
     }
 }
 
@@ -499,14 +514,7 @@ pub fn walk_fn<E:Clone, V:Visitor<E>>(visitor: &mut V,
         fk_method(_, generics, method) => {
             visitor.visit_generics(generics, env.clone());
 
-            match method.explicit_self.node {
-                sty_region(ref lifetime, _) => {
-                    visitor.visit_opt_lifetime_ref(span,
-                                                   lifetime,
-                                                   env.clone());
-                }
-                sty_static | sty_value | sty_box(*) | sty_uniq => {}
-            }
+            visitor.visit_explicit_self(&method.explicit_self, env.clone());
         }
         fk_anon(*) | fk_fn_block(*) => {
         }
@@ -516,8 +524,9 @@ pub fn walk_fn<E:Clone, V:Visitor<E>>(visitor: &mut V,
 }
 
 pub fn walk_ty_method<E:Clone, V:Visitor<E>>(visitor: &mut V,
-                                method_type: &TypeMethod,
-                                env: E) {
+                                             method_type: &TypeMethod,
+                                             env: E) {
+    visitor.visit_explicit_self(&method_type.explicit_self, env.clone());
     for argument_type in method_type.decl.inputs.iter() {
         visitor.visit_ty(&argument_type.ty, env.clone())
     }

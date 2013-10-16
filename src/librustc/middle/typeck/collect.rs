@@ -458,6 +458,10 @@ pub fn convert_methods(ccx: &CrateCtxt,
                                 rcvr_visibility,
                                 &m.generics);
         let fty = ty::mk_bare_fn(tcx, mty.fty.clone());
+        debug2!("method {} (id {}) has type {}",
+                m.ident.repr(ccx.tcx),
+                m.id,
+                fty.repr(ccx.tcx));
         tcx.tcache.insert(
             local_def(m.id),
 
@@ -570,10 +574,11 @@ pub fn convert(ccx: &CrateCtxt, it: &ast::item) {
                                   generics,
                                   parent_visibility);
 
-        for t in opt_trait_ref.iter() {
+        for trait_ref in opt_trait_ref.iter() {
+            let trait_ref = instantiate_trait_ref(ccx, trait_ref, selfty);
+
             // Prevent the builtin kind traits from being manually implemented.
-            let trait_def_id = ty::trait_ref_to_def_id(tcx, t);
-            if tcx.lang_items.to_builtin_kind(trait_def_id).is_some() {
+            if tcx.lang_items.to_builtin_kind(trait_ref.def_id).is_some() {
                 tcx.sess.span_err(it.span,
                     "cannot provide an explicit implementation \
                      for a builtin kind");

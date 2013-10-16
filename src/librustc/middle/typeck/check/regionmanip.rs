@@ -13,6 +13,7 @@
 use extra::list::Cons;
 use middle::ty;
 use middle::ty_fold;
+use middle::ty_fold::TypeFolder;
 use middle::typeck::isr_alist;
 use std::hashmap::HashMap;
 use util::common::indenter;
@@ -34,15 +35,18 @@ pub fn replace_bound_regions_in_fn_sig(
 
     let mut map = HashMap::new();
     let (fn_sig, opt_self_ty) = {
-        let mut f = ty_fold::RegionFolder::regions(tcx, |r| match r {
+        let mut f = ty_fold::RegionFolder::regions(tcx, |r| {
+                debug2!("region r={}", r.to_str());
+                match r {
                 ty::re_fn_bound(s, br) if s == fn_sig.binder_id => {
                     *map.find_or_insert_with(br, |_| mapf(br))
                 }
                 _ => r
-            });
+            }});
         (ty_fold::super_fold_sig(&mut f, fn_sig),
          ty_fold::fold_opt_ty(&mut f, opt_self_ty))
     };
+    debug2!("resulting map: {}", map.to_str());
     (map, opt_self_ty, fn_sig)
 }
 
@@ -53,7 +57,6 @@ pub fn relate_nested_regions(
     relate_op: &fn(ty::Region, ty::Region))
 {
     /*!
-     *
      * This rather specialized function walks each region `r` that appear
      * in `ty` and invokes `relate_op(r_encl, r)` for each one.  `r_encl`
      * here is the region of any enclosing `&'r T` pointer.  If there is
@@ -79,40 +82,52 @@ pub fn relate_nested_regions(
      * Hence, in the second example above, `'r2` must be a subregion of `'r3`.
      */
 
-    let mut the_stack = ~[];
-    for &r in opt_region.iter() { the_stack.push(r); }
-    walk_ty(tcx, &mut the_stack, ty, relate_op);
+    let mut rr = RegionRelator { tcx: tcx,
+                                 stack: ~[],
+                                 relate_op: relate_op };
+    rr.fold_ty(ty);
 
-    fn walk_ty(tcx: ty::ctxt,
-               the_stack: &mut ~[ty::Region],
-               ty: ty::t,
-               relate_op: &fn(ty::Region, ty::Region))
-    {
-        match ty::get(ty).sty {
-            ty::ty_rptr(r, ref mt) |
-            ty::ty_evec(ref mt, ty::vstore_slice(r)) => {
-                relate(*the_stack, r, |x,y| relate_op(x,y));
-                the_stack.push(r);
-                walk_ty(tcx, the_stack, mt.ty, |x,y| relate_op(x,y));
-                the_stack.pop();
+    struct RegionRelator<'self> {
+        tcx: ty::ctxt,
+        stack: ~[ty::Region],
+        relate_op: &'self fn(ty::Region, ty::Region),
+    }
+
+    impl<'self> TypeFolder for RegionRelator<'self> {
+        fn tcx(&self) -> ty::ctxt {
+            self.tcx
+        }
+
+        fn fold_ty(&mut self, ty: ty::t) -> ty::t {
+            match ty::get(ty).sty {
+                ty::ty_rptr(r, ref mt) |
+                ty::ty_evec(ref mt, ty::vstore_slice(r)) => {
+                    self.relate(r);
+                    self.stack.push(r);
+                    ty_fold::super_fold_ty(self, mt.ty);
+                    self.stack.pop();
+                }
+
+                _ => {
+                    ty_fold::super_fold_ty(self, ty);
+                }
             }
-            _ => {
-                ty::fold_regions_and_ty(
-                    tcx,
-                    ty,
-                    |r| { relate(  *the_stack, r, |x,y| relate_op(x,y)); r },
-                    |t| { walk_ty(tcx, the_stack, t, |x,y| relate_op(x,y)); t });
-            }
+
+            ty
+        }
+
+        fn fold_region(&mut self, r: ty::Region) -> ty::Region {
+            self.relate(r);
+            r
         }
     }
 
-    fn relate(the_stack: &[ty::Region],
-              r_sub: ty::Region,
-              relate_op: &fn(ty::Region, ty::Region))
-    {
-        for &r in the_stack.iter() {
-            if !r.is_bound() && !r_sub.is_bound() {
-                relate_op(r, r_sub);
+    impl<'self> RegionRelator<'self> {
+        fn relate(&mut self, r_sub: ty::Region) {
+            for &r in self.stack.iter() {
+                if !r.is_bound() && !r_sub.is_bound() {
+                    (self.relate_op)(r, r_sub);
+                }
             }
         }
     }

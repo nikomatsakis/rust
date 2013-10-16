@@ -154,7 +154,9 @@ pub fn bound_region_to_str(cx: ctxt,
                            br: bound_region) -> ~str {
     let space_str = if space { " " } else { "" };
 
-    if cx.sess.verbose() { return format!("{}{:?}{}", prefix, br, space_str); }
+    if cx.sess.verbose() {
+        return format!("{}{}{}", prefix, br.repr(cx), space_str);
+    }
 
     match br {
       br_named(_, ident)   => format!("{}'{}{}", prefix,
@@ -214,7 +216,7 @@ pub fn region_to_str(cx: ctxt, prefix: &str, space: bool, region: Region) -> ~st
     let space_str = if space { " " } else { "" };
 
     if cx.sess.verbose() {
-        return format!("{}{:?}{}", prefix, region, space_str);
+        return format!("{}{}{}", prefix, region.repr(cx), space_str);
     }
 
     // These printouts are concise.  They do not contain all the information
@@ -289,9 +291,10 @@ pub fn tys_to_str(cx: ctxt, ts: &[t]) -> ~str {
 }
 
 pub fn fn_sig_to_str(cx: ctxt, typ: &ty::FnSig) -> ~str {
-    format!("fn{} -> {}",
-         tys_to_str(cx, typ.inputs.map(|a| *a)),
-         ty_to_str(cx, typ.output))
+    format!("fn{}{} -> {}",
+            typ.binder_id,
+            typ.inputs.repr(cx),
+            typ.output.repr(cx))
 }
 
 pub fn trait_ref_to_str(cx: ctxt, trait_ref: &ty::TraitRef) -> ~str {
@@ -629,6 +632,15 @@ impl Repr for ast::Expr {
     }
 }
 
+impl Repr for ast::item {
+    fn repr(&self, tcx: ctxt) -> ~str {
+        format!("item({})",
+                ast_map::node_id_to_str(tcx.items,
+                                        self.id,
+                                        token::get_ident_interner()))
+    }
+}
+
 impl Repr for ast::Pat {
     fn repr(&self, tcx: ctxt) -> ~str {
         format!("pat({}: {})",
@@ -639,13 +651,56 @@ impl Repr for ast::Pat {
 
 impl Repr for ty::bound_region {
     fn repr(&self, tcx: ctxt) -> ~str {
-        bound_region_ptr_to_str(tcx, *self)
+        match *self {
+            ty::br_anon(id) => format!("br_anon({})", id),
+            ty::br_named(id, ident) => format!("br_named({}, {})",
+                                               id.repr(tcx),
+                                               ident.repr(tcx)),
+            ty::br_fresh(id) => format!("br_fresh({})", id),
+        }
     }
 }
 
 impl Repr for ty::Region {
     fn repr(&self, tcx: ctxt) -> ~str {
-        region_to_str(tcx, "", false, *self)
+        match *self {
+            ty::re_type_bound(id, index, ident) => {
+                format!("re_type_bound({}, {}, {})",
+                        id, index, ident.repr(tcx))
+            }
+
+            ty::re_fn_bound(binder_id, ref bound_region) => {
+                format!("re_fn_bound({}, {})",
+                        binder_id, bound_region.repr(tcx))
+            }
+
+            ty::re_free(ref fr) => {
+                format!("re_free({}, {})",
+                        fr.scope_id,
+                        fr.bound_region.repr(tcx))
+            }
+
+            ty::re_scope(id) => {
+                format!("re_scope({})", id)
+            }
+
+            ty::re_static => {
+                format!("re_static")
+            }
+
+            ty::re_infer(ReVar(ref vid)) => {
+                format!("re_infer({})", vid.id)
+            }
+
+            ty::re_infer(ReSkolemized(id, ref bound_region)) => {
+                format!("re_skolemized({}, {})",
+                        id, bound_region.repr(tcx))
+            }
+
+            ty::re_empty => {
+                format!("re_empty")
+            }
+        }
     }
 }
 
@@ -684,6 +739,21 @@ impl Repr for ty::Generics {
         format!("Generics(type_param_defs: {}, region_param_defs: {})",
                 self.type_param_defs.repr(tcx),
                 self.region_param_defs.repr(tcx))
+    }
+}
+
+impl Repr for ty::ItemVariances {
+    fn repr(&self, tcx: ctxt) -> ~str {
+        format!("IterVariances(self_param={}, type_params={}, region_params={})",
+                self.self_param.repr(tcx),
+                self.type_params.repr(tcx),
+                self.region_params.repr(tcx))
+    }
+}
+
+impl Repr for ty::Variance {
+    fn repr(&self, tcx: ctxt) -> ~str {
+        self.to_str().to_owned()
     }
 }
 

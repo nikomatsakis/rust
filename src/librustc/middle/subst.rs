@@ -54,6 +54,10 @@ struct SubstFolder<'self> {
 impl<'self> TypeFolder for SubstFolder<'self> {
     fn tcx(&self) -> ty::ctxt { self.tcx }
 
+    fn fold_region(&mut self, r: ty::Region) -> ty::Region {
+        r.subst(self.tcx, self.substs)
+    }
+
     fn fold_ty(&mut self, t: ty::t) -> ty::t {
         if !ty::type_needs_subst(t) {
             return t;

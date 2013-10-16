@@ -84,7 +84,7 @@ pub fn ast_region_to_region<AC:AstConv,RS:RegionScope>(
     lifetime: &ast::Lifetime)
     -> ty::Region
 {
-    match this.tcx().named_region_map.find(&lifetime.id) {
+    let r = match this.tcx().named_region_map.find(&lifetime.id) {
         None => {
             // should have been recorded by the `resolve_lifetime` pass
             this.tcx().sess.span_bug(lifetime.span, "unresolved lifetime");
@@ -110,7 +110,14 @@ pub fn ast_region_to_region<AC:AstConv,RS:RegionScope>(
                                                lifetime.ident)
                 })
         }
-    }
+    };
+
+    debug2!("ast_region_to_region(lifetime={} id={}) yields {}",
+            lifetime_to_str(lifetime, this.tcx().sess.intr()),
+            lifetime.id,
+            r.repr(this.tcx()));
+
+    r
 }
 
 pub fn opt_ast_region_to_region<AC:AstConv,RS:RegionScope>(
@@ -119,7 +126,7 @@ pub fn opt_ast_region_to_region<AC:AstConv,RS:RegionScope>(
     default_span: Span,
     opt_lifetime: &Option<ast::Lifetime>) -> ty::Region
 {
-    match *opt_lifetime {
+    let r = match *opt_lifetime {
         Some(ref lifetime) => {
             ast_region_to_region(this, rscope, lifetime)
         }
@@ -127,15 +134,24 @@ pub fn opt_ast_region_to_region<AC:AstConv,RS:RegionScope>(
         None => {
             match rscope.anon_regions(default_span, 1) {
                 None => {
+                    debug2!("optional region in illegal location");
                     this.tcx().sess.span_err(
                         default_span, "missing lifetime specifier");
-                    ty::re_static // hokey fallback
+                    ty::re_static
                 }
 
-                Some(rs) => rs[0]
+                Some(rs) => {
+                    rs[0]
+                }
             }
         }
-    }
+    };
+
+    debug2!("opt_ast_region_to_region(opt_lifetime={:?}) yields {}",
+            opt_lifetime.map(|e| lifetime_to_str(e, this.tcx().sess.intr())),
+            r.repr(this.tcx()));
+
+    r
 }
 
 fn ast_path_substs<AC:AstConv,RS:RegionScope>(
@@ -288,6 +304,7 @@ pub fn ast_ty_to_ty<AC:AstConv, RS:RegionScope>(
         constr: &fn(ty::mt) -> ty::t) -> ty::t
     {
         let tcx = this.tcx();
+        debug2!("mk_pointer(vst={:?})", vst);
 
         match a_seq_ty.ty.node {
             ast::ty_vec(ref mt) => {
@@ -295,6 +312,7 @@ pub fn ast_ty_to_ty<AC:AstConv, RS:RegionScope>(
                 if a_seq_ty.mutbl == ast::MutMutable {
                     mt = ty::mt { ty: mt.ty, mutbl: a_seq_ty.mutbl };
                 }
+                debug2!("&[]: vst={:?}", vst);
                 return ty::mk_evec(tcx, mt, vst);
             }
             ast::ty_path(ref path, ref bounds, id) => {
@@ -394,6 +412,7 @@ pub fn ast_ty_to_ty<AC:AstConv, RS:RegionScope>(
       }
       ast::ty_rptr(ref region, ref mt) => {
         let r = opt_ast_region_to_region(this, rscope, ast_ty.span, region);
+        debug2!("ty_rptr r={}", r.repr(this.tcx()));
         mk_pointer(this, rscope, mt, ty::vstore_slice(r),
                    |tmt| ty::mk_rptr(tcx, r, tmt))
       }
@@ -609,7 +628,7 @@ fn ty_of_method_or_bare_fn<AC:AstConv>(
     opt_self_info: Option<&SelfInfo>,
     decl: &ast::fn_decl) -> (Option<Option<ty::t>>, ty::BareFnTy)
 {
-    debug2!("ty_of_bare_fn");
+    debug2!("ty_of_method_or_bare_fn");
 
     // new region names that appear inside of the fn decl are bound to
     // that function type

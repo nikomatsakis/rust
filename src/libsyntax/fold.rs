@@ -143,7 +143,7 @@ pub trait ast_fold {
             ident: self.fold_ident(m.ident),
             attrs: m.attrs.map(|a| fold_attribute_(*a, self)),
             generics: fold_generics(&m.generics, self),
-            explicit_self: m.explicit_self,
+            explicit_self: self.fold_explicit_self(&m.explicit_self),
             purity: m.purity,
             decl: fold_fn_decl(&m.decl, self),
             body: self.fold_block(&m.body),
@@ -244,12 +244,14 @@ pub trait ast_fold {
             ty_uniq(ref mt) => ty_uniq(fold_mt(mt, self)),
             ty_vec(ref mt) => ty_vec(fold_mt(mt, self)),
             ty_ptr(ref mt) => ty_ptr(fold_mt(mt, self)),
-            ty_rptr(region, ref mt) => ty_rptr(region, fold_mt(mt, self)),
+            ty_rptr(ref region, ref mt) => {
+                ty_rptr(fold_opt_lifetime(region, self), fold_mt(mt, self))
+            }
             ty_closure(ref f) => {
                 ty_closure(@TyClosure {
                     sigil: f.sigil,
                     purity: f.purity,
-                    region: f.region,
+                    region: fold_opt_lifetime(&f.region, self),
                     onceness: f.onceness,
                     bounds: fold_opt_bounds(&f.bounds, self),
                     decl: fold_fn_decl(&f.decl, self),
@@ -390,6 +392,24 @@ pub trait ast_fold {
     fn new_span(&self, sp: Span) -> Span {
         sp
     }
+
+    fn fold_explicit_self(&self, es: &explicit_self) -> explicit_self {
+        Spanned {
+            span: self.new_span(es.span),
+            node: self.fold_explicit_self_(&es.node)
+        }
+    }
+
+    fn fold_explicit_self_(&self, es: &explicit_self_) -> explicit_self_ {
+        match *es {
+            sty_static | sty_value | sty_uniq | sty_box(_) => {
+                *es
+            }
+            sty_region(ref lifetime, m) => {
+                sty_region(fold_opt_lifetime(lifetime, self), m)
+            }
+        }
+    }
 }
 
 /* some little folds that probably aren't useful to have in ast_fold itself*/
@@ -504,6 +524,11 @@ pub fn fold_lifetime<T:ast_fold>(l: &Lifetime, fld: &T) -> Lifetime {
 pub fn fold_lifetimes<T:ast_fold>(lts: &OptVec<Lifetime>, fld: &T)
                                   -> OptVec<Lifetime> {
     lts.map(|l| fold_lifetime(l, fld))
+}
+
+pub fn fold_opt_lifetime<T:ast_fold>(o_lt: &Option<Lifetime>, fld: &T)
+                                     -> Option<Lifetime> {
+    o_lt.map(|lt| fold_lifetime(lt, fld))
 }
 
 pub fn fold_generics<T:ast_fold>(generics: &Generics, fld: &T) -> Generics {
@@ -676,7 +701,7 @@ pub fn noop_fold_type_method<T:ast_fold>(m: &TypeMethod, fld: &T)
         purity: m.purity,
         decl: fold_fn_decl(&m.decl, fld),
         generics: fold_generics(&m.generics, fld),
-        explicit_self: m.explicit_self,
+        explicit_self: fld.fold_explicit_self(&m.explicit_self),
         id: fld.new_id(m.id),
         span: fld.new_span(m.span),
     }

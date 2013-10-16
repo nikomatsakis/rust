@@ -698,11 +698,16 @@ fn check_impl_methods_against_trait(ccx: @mut CrateCtxt,
     }
 
     // Check for missing methods from trait
+    let provided_methods = ty::provided_trait_methods(tcx, trait_ref.def_id);
     let mut missing_methods = ~[];
     for trait_method in trait_methods.iter() {
-        let implemented =
-            impl_methods.iter().any(|m| m.ident == trait_method.ident);
-        if !implemented {
+        let is_implemented =
+            impl_methods.iter().any(
+                |m| m.ident.name == trait_method.ident.name);
+        let is_provided =
+            provided_methods.iter().any(
+                |m| m.ident.name == trait_method.ident.name);
+        if !is_implemented && !is_provided {
             missing_methods.push(
                 format!("`{}`", ccx.tcx.sess.str_of(trait_method.ident)));
         }

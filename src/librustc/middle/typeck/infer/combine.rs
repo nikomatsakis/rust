@@ -145,6 +145,17 @@ pub trait Combine {
                     let variances = ty::item_variances(tcx, item_def_id);
                     let region_params = &variances.region_params;
                     let num_region_params = region_params.len();
+
+                    debug2!("relate_region_params(\
+                            item_def_id={}, \
+                            num_region_params={}, \
+                            a_rs={}, \
+                            b_rs={})",
+                            item_def_id.repr(tcx),
+                            num_region_params,
+                            a_rs.repr(tcx),
+                            b_rs.repr(tcx));
+
                     assert_eq!(num_region_params, a_rs.len());
                     assert_eq!(num_region_params, b_rs.len());
                     let mut rs = opt_vec::Empty;
@@ -416,10 +427,12 @@ pub fn super_fn_sigs<C:Combine>(
     Ok(FnSig {binder_id: a.binder_id, inputs: inputs, output: output})
 }
 
-pub fn super_tys<C:Combine>(
-    this: &C, a: ty::t, b: ty::t) -> cres<ty::t> {
+pub fn super_tys<C:Combine>(this: &C, a: ty::t, b: ty::t) -> cres<ty::t> {
     let tcx = this.infcx().tcx;
-    return match (&ty::get(a).sty, &ty::get(b).sty) {
+    let a_sty = &ty::get(a).sty;
+    let b_sty = &ty::get(b).sty;
+    debug2!("super_tys: a_sty={:?} b_sty={:?}", a_sty, b_sty);
+    return match (a_sty, b_sty) {
       // The "subtype" ought to be handling cases involving bot or var:
       (&ty::ty_bot, _) |
       (_, &ty::ty_bot) |
@@ -468,6 +481,7 @@ pub fn super_tys<C:Combine>(
             unify_float_variable(this, !this.a_is_expected(), v_id, v)
         }
 
+      (&ty::ty_char, _) |
       (&ty::ty_nil, _) |
       (&ty::ty_bool, _) |
       (&ty::ty_int(_), _) |
@@ -552,9 +566,8 @@ pub fn super_tys<C:Combine>(
       }
 
       (&ty::ty_estr(vs_a), &ty::ty_estr(vs_b)) => {
-        do this.vstores(ty::terr_str, vs_a, vs_b).and_then |vs| {
-            Ok(ty::mk_estr(tcx,vs))
-        }
+        let vs = if_ok!(this.vstores(ty::terr_str, vs_a, vs_b));
+        Ok(ty::mk_estr(tcx,vs))
       }
 
       (&ty::ty_tup(ref as_), &ty::ty_tup(ref bs)) => {

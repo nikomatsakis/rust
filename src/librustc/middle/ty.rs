@@ -210,6 +210,7 @@ pub enum ast_ty_to_ty_cache_entry {
 
 #[deriving(Clone, Eq, Decodable, Encodable)]
 pub struct ItemVariances {
+    self_param: Option<Variance>,
     type_params: OptVec<Variance>,
     region_params: OptVec<Variance>
 }
@@ -988,6 +989,8 @@ pub fn mk_t(cx: ctxt, st: sty) -> t {
         ty_int(i) => return mk_mach_int(i),
         ty_uint(u) => return mk_mach_uint(u),
         ty_float(f) => return mk_mach_float(f),
+        ty_char => return mk_char(),
+        ty_bot => return mk_bot(),
         _ => {}
     };
 
@@ -1340,14 +1343,6 @@ pub fn maybe_walk_ty(ty: t, f: &fn(t) -> bool) {
 pub fn fold_ty(cx: ctxt, t0: t, fldop: &fn(t) -> t) -> t {
     let mut f = ty_fold::BottomUpFolder {tcx: cx, fldop: fldop};
     f.fold_ty(t0)
-}
-
-pub fn fold_regions_and_ty(cx: ctxt,
-                           ty: t,
-                           fldr: &fn(r: Region) -> Region,
-                           fldt: &fn(t: t) -> t)
-                           -> t {
-    ty_fold::RegionFolder::general(cx, fldr, fldt).fold_ty(ty)
 }
 
 pub fn walk_regions_and_ty(cx: ctxt,
