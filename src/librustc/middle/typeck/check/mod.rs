@@ -86,6 +86,7 @@ use middle::ty::{FnSig, VariantInfo};
 use middle::ty::{ty_param_bounds_and_ty, ty_param_substs_and_ty};
 use middle::ty::{substs, param_ty, Disr, ExprTyProvider};
 use middle::ty;
+use middle::ty_fold::TypeFolder;
 use middle::typeck::astconv::AstConv;
 use middle::typeck::astconv::{ast_region_to_region, ast_ty_to_ty};
 use middle::typeck::astconv;
@@ -96,6 +97,7 @@ use middle::typeck::check::method::{CheckTraitsAndInherentMethods};
 use middle::typeck::check::method::{CheckTraitsOnly, DontAutoderefReceiver};
 use middle::typeck::check::regionmanip::replace_bound_regions_in_fn_sig;
 use middle::typeck::check::regionmanip::relate_free_regions;
+use middle::typeck::check::regionmanip::TypeBoundRegionSubstitutor;
 use middle::typeck::check::vtable::{LocationInfo, VtableContext};
 use middle::typeck::CrateCtxt;
 use middle::typeck::infer::{resolve_type, force_tvar};
@@ -587,17 +589,21 @@ pub fn check_item(ccx: @mut CrateCtxt, it: @ast::item) {
         }
 
         match *opt_trait_ref {
-            Some(ref trait_ref) => {
+            Some(ref ast_trait_ref) => {
+                let impl_trait_ref =
+                    ty::node_id_to_trait_ref(ccx.tcx, ast_trait_ref.ref_id);
                 check_impl_methods_against_trait(ccx,
-                                                 it.span,
-                                                 &impl_tpt.generics,
-                                                 trait_ref,
-                                                 *ms);
+                                             it.span,
+                                             &impl_tpt.generics,
+                                             ast_trait_ref,
+                                             impl_trait_ref,
+                                             *ms);
+                vtable::resolve_impl(ccx, it, &impl_tpt.generics,
+                                     impl_trait_ref);
             }
             None => { }
         }
 
-        vtable::resolve_impl(ccx, it);
       }
       ast::item_trait(_, _, ref trait_methods) => {
         let trait_def = ty::lookup_trait_def(ccx.tcx, local_def(it.id));
@@ -657,19 +663,26 @@ fn check_method_body(ccx: @mut CrateCtxt,
      * - `method`: the method definition
      */
 
+    debug2!("check_method_body(item_generics={}, \
+            self_id={:?}, \
+            method.id={})",
+            item_generics.repr(ccx.tcx),
+            self_id,
+            method.id);
+
     let method_def_id = local_def(method.id);
     let method_ty = ty::method(ccx.tcx, method_def_id);
 
-    let free_substs = construct_free_substs(ccx, item_generics,
-                                            self_id, method.body.id);
+    let mut region_subst = TypeBoundRegionSubstitutor::new(ccx.tcx,
+                                                           method.body.id);
 
     let opt_self_info = method_ty.transformed_self_ty.map_move(|ty| {
-        SelfInfo {self_ty: ty.subst(ccx.tcx, &free_substs),
+        SelfInfo {self_ty: region_subst.fold_ty(ty),
                   self_id: method.self_id,
                   span: method.explicit_self.span}
     });
     let fty = ty::node_id_to_type(ccx.tcx, method.id);
-    let fty = fty.subst(ccx.tcx, &free_substs);
+    let fty = region_subst.fold_ty(fty);
 
     check_bare_fn(
         ccx,
@@ -679,64 +692,17 @@ fn check_method_body(ccx: @mut CrateCtxt,
         opt_self_info,
         fty
     );
-
-    fn construct_free_substs(ccx: @mut CrateCtxt,
-                             item_generics: &ty::Generics,
-                             self_id: Option<ast::NodeId>,
-                             body_id: ast::NodeId)
-                             -> ty::substs {
-        /*!
-         * Given the generics defined on an item, returns a substitution
-         * mapping each bound type/region parameter to a free version of
-         * that parameter. For example, if you had:
-         *
-         *     trait Foo<'a, T> {
-         *         fn bar(...) { ... }
-         *     }
-         *
-         * Then this would return a substitution mapping "bound 'a" to
-         * "free 'a" and "T" to "T" (for type parameters we don't
-         * currently distinguish bound parameters from free, relying
-         * instead on context).
-         */
-
-        let free_self =
-            self_id.
-            map(|&d| ty::mk_self(ccx.tcx, local_def(d)));
-
-        let free_type_params =
-            item_generics.type_param_defs.
-            iter().
-            enumerate().
-            map(|(i, d)| ty::mk_param(ccx.tcx, i, d.def_id)).
-            collect();
-
-        let free_regions =
-            item_generics.region_param_defs.
-            iter().
-            enumerate().
-            map(|(i, d)| ty::re_free(ty::FreeRegion {
-                    scope_id: body_id,
-                    bound_region: ty::br_named(d.def_id, d.ident)})).
-            collect();
-
-        ty::substs {
-            self_ty: free_self,
-            tps: free_type_params,
-            regions: ty::NonerasedRegions(free_regions),
-        }
-    }
 }
 
 fn check_impl_methods_against_trait(ccx: @mut CrateCtxt,
                                     impl_span: Span,
                                     impl_generics: &ty::Generics,
                                     ast_trait_ref: &ast::trait_ref,
+                                    impl_trait_ref: &ty::TraitRef,
                                     impl_methods: &[@ast::method]) {
     // Locate trait methods
     let tcx = ccx.tcx;
-    let trait_ref = ty::node_id_to_trait_ref(ccx.tcx, ast_trait_ref.ref_id);
-    let trait_methods = ty::trait_methods(tcx, trait_ref.def_id);
+    let trait_methods = ty::trait_methods(tcx, impl_trait_ref.def_id);
 
     // Check existing impl methods to see if they are both present in trait
     // and compatible with trait signature
@@ -757,7 +723,7 @@ fn check_impl_methods_against_trait(ccx: @mut CrateCtxt,
                                     impl_method.span,
                                     impl_method.body.id,
                                     *trait_method_ty,
-                                    &trait_ref.substs);
+                                    &impl_trait_ref.substs);
             }
             None => {
                 tcx.sess.span_err(
@@ -771,7 +737,8 @@ fn check_impl_methods_against_trait(ccx: @mut CrateCtxt,
     }
 
     // Check for missing methods from trait
-    let provided_methods = ty::provided_trait_methods(tcx, trait_ref.def_id);
+    let provided_methods = ty::provided_trait_methods(tcx,
+                                                      impl_trait_ref.def_id);
     let mut missing_methods = ~[];
     for trait_method in trait_methods.iter() {
         let is_implemented =
@@ -929,6 +896,10 @@ pub fn compare_impl_method(tcx: ty::ctxt,
         impl_generics.type_param_defs.iter().enumerate().
         map(|(i,t)| ty::mk_param(tcx, i, t.def_id)).
         collect();
+    let dummy_method_tps: ~[ty::t] =
+        impl_m.generics.type_param_defs.iter().enumerate().
+        map(|(i,t)| ty::mk_param(tcx, i + impl_tps, t.def_id)).
+        collect();
     let dummy_impl_regions: OptVec<ty::Region> =
         impl_generics.region_param_defs.iter().
         map(|l| ty::re_free(ty::FreeRegion {
@@ -936,7 +907,7 @@ pub fn compare_impl_method(tcx: ty::ctxt,
                 bound_region: ty::br_named(l.def_id, l.ident)})).
         collect();
     let dummy_substs = ty::substs {
-        tps: dummy_impl_tps,
+        tps: vec::append(dummy_impl_tps, dummy_method_tps),
         regions: ty::NonerasedRegions(dummy_impl_regions),
         self_ty: None };
 
@@ -999,16 +970,12 @@ pub fn compare_impl_method(tcx: ty::ctxt,
     debug2!("impl_fty (post-subst): {}", ppaux::ty_to_str(tcx, impl_fty));
     let trait_fty = {
         let num_trait_m_type_params = trait_m.generics.type_param_defs.len();
-        let dummy_tps = do vec::from_fn(num_trait_m_type_params) |i| {
-            ty::mk_param(tcx, i + impl_tps,
-                         impl_m.generics.type_param_defs[i].def_id)
-        };
         let substs { regions: trait_regions,
                      tps: trait_tps,
                      self_ty: self_ty } = trait_substs.subst(tcx, &dummy_substs);
         let substs = substs {
             regions: trait_regions,
-            tps: vec::append(trait_tps, dummy_tps),
+            tps: vec::append(trait_tps, dummy_method_tps),
             self_ty: self_ty,
         };
         debug2!("trait_fty (pre-subst): {} substs={}",
@@ -4139,3 +4106,4 @@ pub fn check_intrinsic_type(ccx: @mut CrateCtxt, it: @ast::foreign_item) {
                      ppaux::ty_to_str(ccx.tcx, fty)));
     }
 }
+

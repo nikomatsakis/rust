@@ -11,8 +11,10 @@
 
 use middle::ty::param_ty;
 use middle::ty;
+use middle::ty_fold::TypeFolder;
 use middle::typeck::check::{FnCtxt, impl_self_ty};
 use middle::typeck::check::{structurally_resolved_type};
+use middle::typeck::check::regionmanip::TypeBoundRegionSubstitutor;
 use middle::typeck::infer::fixup_err_to_str;
 use middle::typeck::infer::{resolve_and_force_all_but_regions, resolve_type};
 use middle::typeck::infer;
@@ -727,48 +729,52 @@ fn resolve_expr(fcx: @mut FnCtxt,
     visit::walk_expr(&mut fcx, ex, ());
 }
 
-pub fn resolve_impl(ccx: @mut CrateCtxt, impl_item: @ast::item) {
-    let def_id = ast_util::local_def(impl_item.id);
-    match ty::impl_trait_ref(ccx.tcx, def_id) {
-        None => {},
-        Some(trait_ref) => {
-            let infcx = infer::new_infer_ctxt(ccx.tcx);
-            let vcx = VtableContext { ccx: ccx, infcx: infcx };
-            let loc_info = location_info_for_item(impl_item);
+pub fn resolve_impl(ccx: @mut CrateCtxt,
+                    impl_item: @ast::item,
+                    impl_generics: &ty::Generics,
+                    impl_trait_ref: &ty::TraitRef) {
+    let mut region_subst =
+        TypeBoundRegionSubstitutor::new(ccx.tcx, impl_item.id);
 
-            // First, check that the impl implements any trait bounds
-            // on the trait.
-            let trait_def = ty::lookup_trait_def(ccx.tcx, trait_ref.def_id);
-            let vtbls = lookup_vtables(&vcx,
-                                       &loc_info,
-                                       *trait_def.generics.type_param_defs,
-                                       &trait_ref.substs,
-                                       false);
+    let impl_trait_ref = @region_subst.fold_trait_ref(impl_trait_ref);
 
-            // Now, locate the vtable for the impl itself. The real
-            // purpose of this is to check for supertrait impls,
-            // but that falls out of doing this.
-            let param_bounds = ty::ParamBounds {
-                builtin_bounds: ty::EmptyBuiltinBounds(),
-                trait_bounds: ~[trait_ref]
-            };
-            let t = ty::node_id_to_type(ccx.tcx, impl_item.id);
-            debug2!("=== Doing a self lookup now.");
-            // Right now, we don't have any place to store this.
-            // We will need to make one so we can use this information
-            // for compiling default methods that refer to supertraits.
-            let self_vtable_res =
-                lookup_vtables_for_param(&vcx, &loc_info, None,
-                                         &param_bounds, t, false);
+    let infcx = infer::new_infer_ctxt(ccx.tcx);
+    let vcx = VtableContext { ccx: ccx, infcx: infcx };
+    let loc_info = location_info_for_item(impl_item);
+
+    // First, check that the impl implements any trait bounds
+    // on the trait.
+    let trait_def = ty::lookup_trait_def(ccx.tcx, impl_trait_ref.def_id);
+    let vtbls = lookup_vtables(&vcx,
+                               &loc_info,
+                               *trait_def.generics.type_param_defs,
+                               &impl_trait_ref.substs,
+                               false);
+
+    // Now, locate the vtable for the impl itself. The real
+    // purpose of this is to check for supertrait impls,
+    // but that falls out of doing this.
+    let param_bounds = ty::ParamBounds {
+        builtin_bounds: ty::EmptyBuiltinBounds(),
+        trait_bounds: ~[impl_trait_ref]
+    };
+    let t = ty::node_id_to_type(ccx.tcx, impl_item.id);
+    let t = region_subst.fold_ty(t);
+    debug2!("=== Doing a self lookup now.");
+    // Right now, we don't have any place to store this.
+    // We will need to make one so we can use this information
+    // for compiling default methods that refer to supertraits.
+    let self_vtable_res =
+        lookup_vtables_for_param(&vcx, &loc_info, None,
+                                 &param_bounds, t, false);
 
 
-            let res = impl_res {
-                trait_vtables: vtbls,
-                self_vtables: self_vtable_res
-            };
-            ccx.tcx.impl_vtables.insert(def_id, res);
-        }
-    }
+    let res = impl_res {
+        trait_vtables: vtbls,
+        self_vtables: self_vtable_res
+    };
+    let impl_def_id = ast_util::local_def(impl_item.id);
+    ccx.tcx.impl_vtables.insert(impl_def_id, res);
 }
 
 impl visit::Visitor<()> for @mut FnCtxt {

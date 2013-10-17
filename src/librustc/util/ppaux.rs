@@ -118,6 +118,11 @@ pub fn explain_region_and_span(cx: ctxt, region: ty::Region)
             let (msg, opt_span) = explain_span(cx, "block", blk.span);
             (format!("{} {}", prefix, msg), opt_span)
           }
+          Some(&ast_map::node_item(it, _)) if match it.node {
+                ast::item_impl(*) => true, _ => false} => {
+            let (msg, opt_span) = explain_span(cx, "impl", it.span);
+            (format!("{} {}", prefix, msg), opt_span)
+          }
           Some(_) | None => {
             // this really should not happen
             (format!("{} node {}", prefix, fr.scope_id), None)

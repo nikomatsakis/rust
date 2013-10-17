@@ -20,6 +20,10 @@ pub trait TypeFolder {
         super_fold_ty(self, t)
     }
 
+    fn fold_trait_ref(&mut self, t: &ty::TraitRef) -> ty::TraitRef {
+        super_fold_trait_ref(self, t)
+    }
+
     fn fold_sty(&mut self, sty: &ty::sty) -> ty::sty {
         super_fold_sty(self, sty)
     }
@@ -111,6 +115,15 @@ pub fn super_fold_sig<T:TypeFolder>(this: &mut T,
     ty::FnSig { binder_id: sig.binder_id,
                 inputs: fold_ty_vec(this, sig.inputs),
                 output: this.fold_ty(sig.output) }
+}
+
+pub fn super_fold_trait_ref<T:TypeFolder>(this: &mut T,
+                                          t: &ty::TraitRef)
+                                          -> ty::TraitRef {
+    ty::TraitRef {
+        def_id: t.def_id,
+        substs: this.fold_substs(&t.substs)
+    }
 }
 
 pub fn super_fold_sty<T:TypeFolder>(this: &mut T,
