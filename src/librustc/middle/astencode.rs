@@ -232,6 +232,12 @@ impl tr for ast::DefId {
     }
 }
 
+impl tr for Option<ast::DefId> {
+    fn tr(&self, xcx: @ExtendedDecodeContext) -> Option<ast::DefId> {
+        self.map(|d| xcx.tr_def_id(*d))
+    }
+}
+
 impl tr for Span {
     fn tr(&self, xcx: @ExtendedDecodeContext) -> Span {
         xcx.tr_span(*self)

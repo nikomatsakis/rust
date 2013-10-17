@@ -310,8 +310,8 @@ pub fn check_bare_fn(ccx: @mut CrateCtxt,
                      decl: &ast::fn_decl,
                      body: &ast::Block,
                      id: ast::NodeId,
-                     self_info: Option<SelfInfo>) {
-    let fty = ty::node_id_to_type(ccx.tcx, id);
+                     self_info: Option<SelfInfo>,
+                     fty: ty::t) {
     match ty::get(fty).sty {
         ty::ty_bare_fn(ref fn_ty) => {
             let fcx =
@@ -575,13 +575,15 @@ pub fn check_item(ccx: @mut CrateCtxt, it: @ast::item) {
                             it.id);
       }
       ast::item_fn(ref decl, _, _, _, ref body) => {
-        check_bare_fn(ccx, decl, body, it.id, None);
+        let fty = ty::node_id_to_type(ccx.tcx, it.id);
+        check_bare_fn(ccx, decl, body, it.id, None, fty);
       }
       ast::item_impl(_, ref opt_trait_ref, _, ref ms) => {
         debug2!("item_impl {} with id {}", ccx.tcx.sess.str_of(it.ident), it.id);
+
         let impl_tpt = ty::lookup_item_type(ccx.tcx, ast_util::local_def(it.id));
         for m in ms.iter() {
-            check_method_body(ccx, *m);
+            check_method_body(ccx, &impl_tpt.generics, None, *m);
         }
 
         match *opt_trait_ref {
@@ -598,6 +600,7 @@ pub fn check_item(ccx: @mut CrateCtxt, it: @ast::item) {
         vtable::resolve_impl(ccx, it);
       }
       ast::item_trait(_, _, ref trait_methods) => {
+        let trait_def = ty::lookup_trait_def(ccx.tcx, local_def(it.id));
         for trait_method in (*trait_methods).iter() {
             match *trait_method {
               required(*) => {
@@ -605,7 +608,7 @@ pub fn check_item(ccx: @mut CrateCtxt, it: @ast::item) {
                 // bodies to check.
               }
               provided(m) => {
-                check_method_body(ccx, m);
+                check_method_body(ccx, &trait_def.generics, Some(it.id), m);
               }
             }
         }
@@ -638,21 +641,91 @@ pub fn check_item(ccx: @mut CrateCtxt, it: @ast::item) {
 }
 
 fn check_method_body(ccx: @mut CrateCtxt,
+                     item_generics: &ty::Generics,
+                     self_id: Option<ast::NodeId>,
                      method: @ast::method) {
+    /*!
+     * Type checks a method body.
+     *
+     * # Parameters
+     * - `item_generics`: generics defined on the impl/trait that contains
+     *   the method
+     * - `self_id`: if the `Self` type parameter is in scope here,
+     *   contains the id of the trait. Basically the id of the enclosing
+     *   trait, if any. This should probably be part of `item_generics`
+     *   but I found it annoying to add it there.
+     * - `method`: the method definition
+     */
+
     let method_def_id = local_def(method.id);
     let method_ty = ty::method(ccx.tcx, method_def_id);
+
+    let free_substs = construct_free_substs(ccx, item_generics,
+                                            self_id, method.body.id);
+
     let opt_self_info = method_ty.transformed_self_ty.map_move(|ty| {
-        SelfInfo {self_ty: ty,
+        SelfInfo {self_ty: ty.subst(ccx.tcx, &free_substs),
                   self_id: method.self_id,
                   span: method.explicit_self.span}
     });
+    let fty = ty::node_id_to_type(ccx.tcx, method.id);
+    let fty = fty.subst(ccx.tcx, &free_substs);
+
     check_bare_fn(
         ccx,
         &method.decl,
         &method.body,
         method.id,
-        opt_self_info
+        opt_self_info,
+        fty
     );
+
+    fn construct_free_substs(ccx: @mut CrateCtxt,
+                             item_generics: &ty::Generics,
+                             self_id: Option<ast::NodeId>,
+                             body_id: ast::NodeId)
+                             -> ty::substs {
+        /*!
+         * Given the generics defined on an item, returns a substitution
+         * mapping each bound type/region parameter to a free version of
+         * that parameter. For example, if you had:
+         *
+         *     trait Foo<'a, T> {
+         *         fn bar(...) { ... }
+         *     }
+         *
+         * Then this would return a substitution mapping "bound 'a" to
+         * "free 'a" and "T" to "T" (for type parameters we don't
+         * currently distinguish bound parameters from free, relying
+         * instead on context).
+         */
+
+        let free_self =
+            self_id.
+            map(|&d| ty::mk_self(ccx.tcx, local_def(d)));
+
+        let free_type_params =
+            item_generics.type_param_defs.
+            iter().
+            enumerate().
+            map(|(i, d)| ty::mk_param(ccx.tcx, i, d.def_id)).
+            collect();
+
+        let free_regions =
+            item_generics.region_param_defs.
+            iter().
+            enumerate().
+            map(|(i, d)| ty::re_free(ty::FreeRegion {
+                    scope_id: body_id,
+                    bound_region: ty::br_named(d.def_id, d.ident)})).
+            collect();
+
+        ty::substs {
+            self_ty: free_self,
+            tps: free_type_params,
+            regions: ty::NonerasedRegions(free_regions),
+        }
+    }
 }
 
 fn check_impl_methods_against_trait(ccx: @mut CrateCtxt,

@@ -192,7 +192,8 @@ pub fn ensure_trait_methods(ccx: &CrateCtxt,
             node: ast::item_trait(ref generics, _, ref ms),
             _
         }, _) => {
-            let trait_ty_generics = ty_generics(ccx, generics, 0);
+            let trait_ty_generics =
+                ty_generics(ccx, generics, 0);
 
             // For each method, construct a suitable ty::Method and
             // store it into the `tcx.methods` table:
@@ -586,18 +587,17 @@ pub fn convert(ccx: &CrateCtxt, it: &ast::item) {
         }
       }
       ast::item_trait(ref generics, _, ref trait_methods) => {
-          let _trait_def = trait_def_of_item(ccx, it);
+          let trait_def = trait_def_of_item(ccx, it);
 
           // Run convert_methods on the provided methods.
           let (_, provided_methods) =
               split_trait_methods(*trait_methods);
           let untransformed_rcvr_ty = ty::mk_self(tcx, local_def(it.id));
-          let ty_generics = ty_generics(ccx, generics, 0);
           let _ = convert_methods(ccx,
                                   TraitContainer(local_def(it.id)),
                                   provided_methods,
                                   untransformed_rcvr_ty,
-                                  &ty_generics,
+                                  &trait_def.generics,
                                   generics,
                                   it.vis);
 

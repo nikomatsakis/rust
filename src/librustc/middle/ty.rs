@@ -864,11 +864,14 @@ pub struct RegionParameterDef {
     def_id: ast::DefId,
 }
 
-/// Information about the type/lifetime parametesr associated with an item.
+/// Information about the type/lifetime parameters associated with an item.
 /// Analogous to ast::Generics.
 #[deriving(Clone)]
 pub struct Generics {
+    /// List of type parameters declared on the item.
     type_param_defs: @~[TypeParameterDef],
+
+    /// List of region parameters declared on the item.
     region_param_defs: @[RegionParameterDef],
 }
 

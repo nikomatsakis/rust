@@ -246,15 +246,6 @@ impl RegionVarBindings {
 
         debug2!("RegionVarBindings: make_subregion({:?}, {:?})", sub, sup);
         match (sub, sup) {
-          (re_infer(ReVar(sub_id)), re_infer(ReVar(sup_id))) => {
-            self.add_constraint(ConstrainVarSubVar(sub_id, sup_id), origin);
-          }
-          (r, re_infer(ReVar(sup_id))) => {
-            self.add_constraint(ConstrainRegSubVar(r, sup_id), origin);
-          }
-          (re_infer(ReVar(sub_id)), r) => {
-            self.add_constraint(ConstrainVarSubReg(sub_id, r), origin);
-          }
           (re_type_bound(*), _) |
           (re_fn_bound(*), _) |
           (_, re_type_bound(*)) |
@@ -264,6 +255,15 @@ impl RegionVarBindings {
                 format!("Cannot relate bound region: {} <= {}",
                         sub.repr(self.tcx),
                         sup.repr(self.tcx)));
+          }
+          (re_infer(ReVar(sub_id)), re_infer(ReVar(sup_id))) => {
+            self.add_constraint(ConstrainVarSubVar(sub_id, sup_id), origin);
+          }
+          (r, re_infer(ReVar(sup_id))) => {
+            self.add_constraint(ConstrainRegSubVar(r, sup_id), origin);
+          }
+          (re_infer(ReVar(sub_id)), r) => {
+            self.add_constraint(ConstrainVarSubReg(sub_id, r), origin);
           }
           _ => {
             self.add_constraint(ConstrainRegSubReg(sub, sup), origin);
@@ -495,6 +495,16 @@ impl RegionVarBindings {
 
     fn lub_concrete_regions(&self, a: Region, b: Region) -> Region {
         match (a, b) {
+          (re_fn_bound(*), _) |
+          (_, re_fn_bound(*)) |
+          (re_type_bound(*), _) |
+          (_, re_type_bound(*)) => {
+            self.tcx.sess.bug(
+                format!("Cannot relate bound region: LUB({}, {})",
+                        a.repr(self.tcx),
+                        b.repr(self.tcx)));
+          }
+
           (re_static, _) | (_, re_static) => {
             re_static // nothing lives longer than static
           }
@@ -543,16 +553,6 @@ impl RegionVarBindings {
              self.lub_free_regions(a_fr, b_fr)
           }
 
-          (re_fn_bound(*), _) |
-          (_, re_fn_bound(*)) |
-          (re_type_bound(*), _) |
-          (_, re_type_bound(*)) => {
-            self.tcx.sess.bug(
-                format!("Cannot relate bound region: LUB({}, {})",
-                        a.repr(self.tcx),
-                        b.repr(self.tcx)));
-          }
-
           // For these types, we cannot define any additional
           // relationship:
           (re_infer(ReSkolemized(*)), _) |
@@ -599,6 +599,16 @@ impl RegionVarBindings {
                          -> cres<Region> {
         debug2!("glb_concrete_regions({:?}, {:?})", a, b);
         match (a, b) {
+            (re_fn_bound(*), _) |
+            (_, re_fn_bound(*)) |
+            (re_type_bound(*), _) |
+            (_, re_type_bound(*)) => {
+              self.tcx.sess.bug(
+                  format!("Cannot relate bound region: GLB({}, {})",
+                          a.repr(self.tcx),
+                          b.repr(self.tcx)));
+            }
+
             (re_static, r) | (r, re_static) => {
                 // static lives longer than everything else
                 Ok(r)
@@ -637,16 +647,6 @@ impl RegionVarBindings {
 
             (re_free(ref a_fr), re_free(ref b_fr)) => {
                 self.glb_free_regions(a_fr, b_fr)
-            }
-
-            (re_fn_bound(*), _) |
-            (_, re_fn_bound(*)) |
-            (re_type_bound(*), _) |
-            (_, re_type_bound(*)) => {
-              self.tcx.sess.bug(
-                  format!("Cannot relate bound region: GLB({}, {})",
-                          a.repr(self.tcx),
-                          b.repr(self.tcx)));
             }
 
             // For these types, we cannot define any additional
