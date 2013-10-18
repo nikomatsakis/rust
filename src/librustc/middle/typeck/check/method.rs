@@ -265,8 +265,7 @@ impl<'self> LookupContext<'self> {
         self.search_for_autosliced_method(self_ty, autoderefs)
     }
 
-    fn deref(&self, ty: ty::t)
-                 -> Option<ty::t> {
+    fn deref(&self, ty: ty::t) -> Option<ty::t> {
         match ty::deref(self.tcx(), ty, false) {
             None => None,
             Some(t) => {
@@ -327,11 +326,10 @@ impl<'self> LookupContext<'self> {
                 ty_param(p) => {
                     self.push_inherent_candidates_from_param(self_ty, p);
                 }
-                ty_self(self_did) => {
+                ty_self(*) => {
                     // Call is of the form "self.foo()" and appears in one
                     // of a trait's default method implementations.
-                    self.push_inherent_candidates_from_self(
-                        self_ty, self_did);
+                    self.push_inherent_candidates_from_self(self_ty);
                 }
                 _ => { /* No bound methods in these types */ }
             }
@@ -448,32 +446,20 @@ impl<'self> LookupContext<'self> {
                                            param_ty: param_ty) {
         debug2!("push_inherent_candidates_from_param(param_ty={:?})",
                param_ty);
-        let _indenter = indenter();
-
-        let tcx = self.tcx();
-        let type_param_def = match tcx.ty_param_defs.find(&param_ty.def_id.node) {
-            Some(t) => t,
-            None => {
-                tcx.sess.span_bug(
-                    self.expr.span,
-                    format!("No param def for {:?}", param_ty));
-            }
-        };
-
         self.push_inherent_candidates_from_bounds(
-            rcvr_ty, type_param_def.bounds.trait_bounds,
+            rcvr_ty,
+            self.fcx.inh.param_env.type_param_bounds[param_ty.idx].trait_bounds,
             param_numbered(param_ty.idx));
     }
 
 
     fn push_inherent_candidates_from_self(&self,
-                                              self_ty: ty::t,
-                                              did: DefId) {
-        let tcx = self.tcx();
-
-        let trait_ref = ty::lookup_trait_def(tcx, did).trait_ref;
+                                          rcvr_ty: ty::t) {
+        debug2!("push_inherent_candidates_from_self()");
         self.push_inherent_candidates_from_bounds(
-            self_ty, &[trait_ref], param_self);
+            rcvr_ty,
+            [self.fcx.inh.param_env.self_param_bound.unwrap()],
+            param_self)
     }
 
     fn push_inherent_candidates_from_bounds(&self,
@@ -574,10 +560,7 @@ impl<'self> LookupContext<'self> {
         // determine the `self` of the impl with fresh
         // variables for each parameter:
         let location_info = &vtable::location_info_for_expr(self.self_expr);
-        let vcx = VtableContext {
-            ccx: self.fcx.ccx,
-            infcx: self.fcx.infcx()
-        };
+        let vcx = self.fcx.vtable_context();
         let ty::ty_param_substs_and_ty {
             substs: impl_substs,
             ty: impl_ty

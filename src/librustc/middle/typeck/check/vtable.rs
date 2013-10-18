@@ -70,13 +70,13 @@ pub struct LocationInfo {
 
 /// A vtable context includes an inference context, a crate context, and a
 /// callback function to call in case of type error.
-pub struct VtableContext {
-    ccx: @mut CrateCtxt,
-    infcx: @mut infer::InferCtxt
+pub struct VtableContext<'self> {
+    infcx: @mut infer::InferCtxt,
+    param_env: &'self ty::ParameterEnvironment,
 }
 
-impl VtableContext {
-    pub fn tcx(&self) -> ty::ctxt { self.ccx.tcx }
+impl<'self> VtableContext<'self> {
+    pub fn tcx(&self) -> ty::ctxt { self.infcx.tcx }
 }
 
 fn has_trait_bounds(type_param_defs: &[ty::TypeParameterDef]) -> bool {
@@ -96,7 +96,6 @@ fn lookup_vtables(vcx: &VtableContext,
            type_param_defs.repr(vcx.tcx()),
            substs.repr(vcx.tcx()));
     let _i = indenter();
-
 
     // We do this backwards for reasons discussed above.
     assert_eq!(substs.tps.len(), type_param_defs.len());
@@ -252,18 +251,21 @@ fn lookup_vtable(vcx: &VtableContext,
     // If the type is self or a param, we look at the trait/supertrait
     // bounds to see if they include the trait we are looking for.
     let vtable_opt = match ty::get(ty).sty {
-        ty::ty_param(param_ty {idx: n, def_id: did}) => {
-            let type_param_def = tcx.ty_param_defs.get(&did.node);
-            lookup_vtable_from_bounds(vcx, location_info,
-                                      type_param_def.bounds.trait_bounds,
+        ty::ty_param(param_ty {idx: n, _}) => {
+            let type_param_bounds: &[@ty::TraitRef] =
+                vcx.param_env.type_param_bounds[n].trait_bounds;
+            lookup_vtable_from_bounds(vcx,
+                                      location_info,
+                                      type_param_bounds,
                                       param_numbered(n),
                                       trait_ref)
         }
 
-        ty::ty_self(trait_id) => {
-            let self_trait_ref = ty::lookup_trait_def(tcx, trait_id).trait_ref;
-            lookup_vtable_from_bounds(vcx, location_info,
-                                      &[self_trait_ref],
+        ty::ty_self(_) => {
+            let self_param_bound = vcx.param_env.self_param_bound.unwrap();
+            lookup_vtable_from_bounds(vcx,
+                                      location_info,
+                                      [self_param_bound],
                                       param_self,
                                       trait_ref)
         }
@@ -287,7 +289,7 @@ fn lookup_vtable_from_bounds(vcx: &VtableContext,
                              bounds: &[@ty::TraitRef],
                              param: param_index,
                              trait_ref: @ty::TraitRef)
-    -> Option<vtable_origin> {
+                             -> Option<vtable_origin> {
     let tcx = vcx.tcx();
 
     let mut n_bound = 0;
@@ -319,8 +321,7 @@ fn search_for_vtable(vcx: &VtableContext,
                      ty: ty::t,
                      trait_ref: @ty::TraitRef,
                      is_early: bool)
-    -> Option<vtable_origin>
-{
+                     -> Option<vtable_origin> {
     let tcx = vcx.tcx();
 
     let mut found = ~[];
@@ -497,7 +498,8 @@ fn fixup_substs(vcx: &VtableContext,
 fn fixup_ty(vcx: &VtableContext,
             location_info: &LocationInfo,
             ty: ty::t,
-            is_early: bool) -> Option<ty::t> {
+            is_early: bool)
+            -> Option<ty::t> {
     let tcx = vcx.tcx();
     match resolve_type(vcx.infcx, ty, resolve_and_force_all_but_regions) {
         Ok(new_type) => Some(new_type),
@@ -518,8 +520,7 @@ fn connect_trait_tps(vcx: &VtableContext,
                      location_info: &LocationInfo,
                      impl_substs: &ty::substs,
                      trait_ref: @ty::TraitRef,
-                     impl_did: ast::DefId)
-{
+                     impl_did: ast::DefId) {
     let tcx = vcx.tcx();
 
     let impl_trait_ref = match ty::impl_trait_ref(tcx, impl_did) {
@@ -574,7 +575,7 @@ pub fn early_resolve_expr(ex: @ast::Expr,
             if has_trait_bounds(*item_ty.generics.type_param_defs) {
                 debug2!("early_resolve_expr: looking up vtables for type params {}",
                        item_ty.generics.type_param_defs.repr(fcx.tcx()));
-                let vcx = VtableContext { ccx: fcx.ccx, infcx: fcx.infcx() };
+                let vcx = fcx.vtable_context();
                 let vtbls = lookup_vtables(&vcx, &location_info_for_expr(ex),
                                            *item_ty.generics.type_param_defs,
                                            substs, is_early);
@@ -602,7 +603,7 @@ pub fn early_resolve_expr(ex: @ast::Expr,
                    ex.repr(fcx.tcx()));
             if has_trait_bounds(*type_param_defs) {
                 let substs = fcx.node_ty_substs(callee_id);
-                let vcx = VtableContext { ccx: fcx.ccx, infcx: fcx.infcx() };
+                let vcx = fcx.vtable_context();
                 let vtbls = lookup_vtables(&vcx, &location_info_for_expr(ex),
                                            *type_param_defs, &substs, is_early);
                 if !is_early {
@@ -645,10 +646,7 @@ pub fn early_resolve_expr(ex: @ast::Expr,
                       (&ty::ty_rptr(_, mt), ty::RegionTraitStore(*)) => {
                           let location_info =
                               &location_info_for_expr(ex);
-                          let vcx = VtableContext {
-                              ccx: fcx.ccx,
-                              infcx: fcx.infcx()
-                          };
+                          let vcx = fcx.vtable_context();
                           let target_trait_ref = @ty::TraitRef {
                               def_id: target_def_id,
                               substs: ty::substs {
@@ -733,13 +731,18 @@ pub fn resolve_impl(ccx: @mut CrateCtxt,
                     impl_item: @ast::item,
                     impl_generics: &ty::Generics,
                     impl_trait_ref: &ty::TraitRef) {
-    let mut region_subst =
-        TypeBoundRegionSubstitutor::new(ccx.tcx, impl_item.id);
+    let param_env = ty::construct_parameter_environment(
+        ccx.tcx,
+        None,
+        *impl_generics.type_param_defs,
+        [],
+        impl_generics.region_param_defs,
+        impl_item.id);
 
-    let impl_trait_ref = @region_subst.fold_trait_ref(impl_trait_ref);
+    let impl_trait_ref = @impl_trait_ref.subst(ccx.tcx, &param_env.free_substs);
 
     let infcx = infer::new_infer_ctxt(ccx.tcx);
-    let vcx = VtableContext { ccx: ccx, infcx: infcx };
+    let vcx = VtableContext { infcx: infcx, param_env: &param_env };
     let loc_info = location_info_for_item(impl_item);
 
     // First, check that the impl implements any trait bounds
@@ -759,8 +762,9 @@ pub fn resolve_impl(ccx: @mut CrateCtxt,
         trait_bounds: ~[impl_trait_ref]
     };
     let t = ty::node_id_to_type(ccx.tcx, impl_item.id);
-    let t = region_subst.fold_ty(t);
+    let t = t.subst(ccx.tcx, &param_env.free_substs);
     debug2!("=== Doing a self lookup now.");
+
     // Right now, we don't have any place to store this.
     // We will need to make one so we can use this information
     // for compiling default methods that refer to supertraits.

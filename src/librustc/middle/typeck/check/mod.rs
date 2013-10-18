@@ -157,9 +157,10 @@ pub struct SelfInfo {
 /// Here, the function `foo()` and the closure passed to
 /// `bar()` will each have their own `FnCtxt`, but they will
 /// share the inherited fields.
-pub struct inherited {
+pub struct Inherited {
     infcx: @mut infer::InferCtxt,
     locals: @mut HashMap<ast::NodeId, ty::t>,
+    param_env: ty::ParameterEnvironment,
 
     // Temporary tables:
     node_types: @mut HashMap<ast::NodeId, ty::t>,
@@ -249,20 +250,25 @@ pub struct FnCtxt {
     // function return type.
     fn_kind: FnKind,
 
-    inh: @inherited,
+    inh: @Inherited,
 
     ccx: @mut CrateCtxt,
 }
 
-pub fn blank_inherited(ccx: @mut CrateCtxt) -> @inherited {
-    @inherited {
-        infcx: infer::new_infer_ctxt(ccx.tcx),
-        locals: @mut HashMap::new(),
-        node_types: @mut HashMap::new(),
-        node_type_substs: @mut HashMap::new(),
-        adjustments: @mut HashMap::new(),
-        method_map: @mut HashMap::new(),
-        vtable_map: @mut HashMap::new(),
+impl Inherited {
+    fn new(tcx: ty::ctxt,
+           param_env: ty::ParameterEnvironment)
+           -> Inherited {
+        Inherited {
+            infcx: infer::new_infer_ctxt(tcx),
+            locals: @mut HashMap::new(),
+            param_env: param_env,
+            node_types: @mut HashMap::new(),
+            node_type_substs: @mut HashMap::new(),
+            adjustments: @mut HashMap::new(),
+            method_map: @mut HashMap::new(),
+            vtable_map: @mut HashMap::new(),
+        }
     }
 }
 
@@ -270,16 +276,19 @@ pub fn blank_inherited(ccx: @mut CrateCtxt) -> @inherited {
 pub fn blank_fn_ctxt(ccx: @mut CrateCtxt,
                      rty: ty::t,
                      region_bnd: ast::NodeId)
-                  -> @mut FnCtxt {
-// It's kind of a kludge to manufacture a fake function context
-// and statement context, but we might as well do write the code only once
+                     -> @mut FnCtxt {
+    // It's kind of a kludge to manufacture a fake function context
+    // and statement context, but we might as well do write the code only once
+    let param_env = ty::ParameterEnvironment { free_substs: substs::empty(),
+                                               self_param_bound: None,
+                                               type_param_bounds: ~[] };
     @mut FnCtxt {
         err_count_on_creation: ccx.tcx.sess.err_count(),
         ret_ty: rty,
         ps: PurityState::function(ast::impure_fn, 0),
         region_lb: region_bnd,
         fn_kind: Vanilla,
-        inh: blank_inherited(ccx),
+        inh: @Inherited::new(ccx.tcx, param_env),
         ccx: ccx
     }
 }
@@ -313,13 +322,14 @@ pub fn check_bare_fn(ccx: @mut CrateCtxt,
                      body: &ast::Block,
                      id: ast::NodeId,
                      self_info: Option<SelfInfo>,
-                     fty: ty::t) {
+                     fty: ty::t,
+                     param_env: ty::ParameterEnvironment) {
     match ty::get(fty).sty {
         ty::ty_bare_fn(ref fn_ty) => {
             let fcx =
                 check_fn(ccx, self_info, fn_ty.purity,
                          &fn_ty.sig, decl, id, body, Vanilla,
-                         blank_inherited(ccx));;
+                         @Inherited::new(ccx.tcx, param_env));
 
             vtable::resolve_in_block(fcx, body);
             regionck::regionck_fn(fcx, body);
@@ -408,10 +418,9 @@ pub fn check_fn(ccx: @mut CrateCtxt,
                 id: ast::NodeId,
                 body: &ast::Block,
                 fn_kind: FnKind,
-                inherited: @inherited) -> @mut FnCtxt
+                inherited: @Inherited) -> @mut FnCtxt
 {
     /*!
-     *
      * Helper used by check_bare_fn and check_expr_fn.  Does the
      * grungy work of checking a function body and returns the
      * function context used for that purpose, since in the case of a
@@ -424,7 +433,6 @@ pub fn check_fn(ccx: @mut CrateCtxt,
     let tcx = ccx.tcx;
     let err_count_on_creation = tcx.sess.err_count();
 
-    // ______________________________________________________________________
     // First, we have to replace any bound regions in the fn and self
     // types with free ones.  The free region references will be bound
     // the node_id of the body block.
@@ -451,7 +459,6 @@ pub fn check_fn(ccx: @mut CrateCtxt,
            ppaux::ty_to_str(tcx, ret_ty),
            opt_self_info.map(|si| ppaux::ty_to_str(tcx, si.self_ty)));
 
-    // ______________________________________________________________________
     // Create the function context.  This is either derived from scratch or,
     // in the case of function expressions, based on the outer context.
     let fcx: @mut FnCtxt = {
@@ -577,8 +584,20 @@ pub fn check_item(ccx: @mut CrateCtxt, it: @ast::item) {
                             it.id);
       }
       ast::item_fn(ref decl, _, _, _, ref body) => {
-        let fty = ty::node_id_to_type(ccx.tcx, it.id);
-        check_bare_fn(ccx, decl, body, it.id, None, fty);
+        let fn_tpt = ty::lookup_item_type(ccx.tcx, ast_util::local_def(it.id));
+
+            // FIXME -- this won't fly for the case where people reference
+            // a lifetime from within a type parameter. That's actually fairly
+            // tricky.
+        let param_env = ty::construct_parameter_environment(
+                ccx.tcx,
+                None,
+                *fn_tpt.generics.type_param_defs,
+                [],
+                [],
+                body.id);
+
+        check_bare_fn(ccx, decl, body, it.id, None, fn_tpt.ty, param_env);
       }
       ast::item_impl(_, ref opt_trait_ref, _, ref ms) => {
         debug2!("item_impl {} with id {}", ccx.tcx.sess.str_of(it.ident), it.id);
@@ -614,7 +633,8 @@ pub fn check_item(ccx: @mut CrateCtxt, it: @ast::item) {
                 // bodies to check.
               }
               provided(m) => {
-                check_method_body(ccx, &trait_def.generics, Some(it.id), m);
+                check_method_body(ccx, &trait_def.generics,
+                                  Some(trait_def.trait_ref), m);
               }
             }
         }
@@ -648,7 +668,7 @@ pub fn check_item(ccx: @mut CrateCtxt, it: @ast::item) {
 
 fn check_method_body(ccx: @mut CrateCtxt,
                      item_generics: &ty::Generics,
-                     self_id: Option<ast::NodeId>,
+                     self_bound: Option<@ty::TraitRef>,
                      method: @ast::method) {
     /*!
      * Type checks a method body.
@@ -656,33 +676,37 @@ fn check_method_body(ccx: @mut CrateCtxt,
      * # Parameters
      * - `item_generics`: generics defined on the impl/trait that contains
      *   the method
-     * - `self_id`: if the `Self` type parameter is in scope here,
-     *   contains the id of the trait. Basically the id of the enclosing
-     *   trait, if any. This should probably be part of `item_generics`
-     *   but I found it annoying to add it there.
+     * - `self_bound`: bound for the `Self` type parameter, if any
      * - `method`: the method definition
      */
 
     debug2!("check_method_body(item_generics={}, \
-            self_id={:?}, \
+            self_bound={}, \
             method.id={})",
             item_generics.repr(ccx.tcx),
-            self_id,
+            self_bound.repr(ccx.tcx),
             method.id);
-
     let method_def_id = local_def(method.id);
     let method_ty = ty::method(ccx.tcx, method_def_id);
+    let method_generics = &method_ty.generics;
 
-    let mut region_subst = TypeBoundRegionSubstitutor::new(ccx.tcx,
-                                                           method.body.id);
+    let param_env =
+        ty::construct_parameter_environment(
+            ccx.tcx,
+            self_bound,
+            *item_generics.type_param_defs,
+            *method_generics.type_param_defs,
+            item_generics.region_param_defs,
+            method.body.id);
 
+    // Compute the self type and fty from point of view of inside fn
     let opt_self_info = method_ty.transformed_self_ty.map_move(|ty| {
-        SelfInfo {self_ty: region_subst.fold_ty(ty),
+        SelfInfo {self_ty: ty.subst(ccx.tcx, &param_env.free_substs),
                   self_id: method.self_id,
                   span: method.explicit_self.span}
     });
     let fty = ty::node_id_to_type(ccx.tcx, method.id);
-    let fty = region_subst.fold_ty(fty);
+    let fty = fty.subst(ccx.tcx, &param_env.free_substs);
 
     check_bare_fn(
         ccx,
@@ -690,8 +714,8 @@ fn check_method_body(ccx: @mut CrateCtxt,
         &method.body,
         method.id,
         opt_self_info,
-        fty
-    );
+        fty,
+        param_env);
 }
 
 fn check_impl_methods_against_trait(ccx: @mut CrateCtxt,
@@ -1018,8 +1042,16 @@ impl FnCtxt {
     pub fn infcx(&self) -> @mut infer::InferCtxt {
         self.inh.infcx
     }
+
     pub fn err_count_since_creation(&self) -> uint {
         self.ccx.tcx.sess.err_count() - self.err_count_on_creation
+    }
+
+    pub fn vtable_context<'a>(&'a self) -> VtableContext<'a> {
+        VtableContext {
+            infcx: self.infcx(),
+            param_env: &self.inh.param_env
+        }
     }
 }
 

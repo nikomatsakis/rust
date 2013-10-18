@@ -881,6 +881,33 @@ impl Generics {
     }
 }
 
+/// When type checking, we use the `ParameterEnvironment` to track
+/// details about the type/lifetime parameters that are in scope.
+/// It primarily stores the bounds information.
+///
+/// Note: This information might seem to be redundant with the data in
+/// `tcx.ty_param_defs`, but it is not. That table contains the
+/// parameter definitions from an "outside" perspective, but this
+/// struct will contain the bounds for a parameter as seen from inside
+/// the function body. Currently the only real distinction is that
+/// bound lifetime parameters are replaced with free ones, but in the
+/// future I hope to refine the representation of types so as to make
+/// more distinctions clearer.
+pub struct ParameterEnvironment {
+    /// A substitution that can be applied to move from
+    /// the "outer" view of a type or method to the "inner" view.
+    /// In general, this means converting from bound parameters to
+    /// free parameters. Since we currently represent bound/free type
+    /// parameters in the same way, this only has an affect on regions.
+    free_substs: ty::substs,
+
+    /// Bound on the Self parameter
+    self_param_bound: Option<@TraitRef>,
+
+    /// Bounds on each numbered type parameter
+    type_param_bounds: ~[ParamBounds],
+}
+
 /// A polytype.
 ///
 /// - `bounds`: The list of bounds for each type parameter.  The length of the
@@ -4484,6 +4511,82 @@ impl Variance {
             Contravariant => "-",
             Invariant => "o",
             Bivariant => "*",
+        }
+    }
+}
+
+pub fn construct_parameter_environment(
+    tcx: ctxt,
+    self_bound: Option<@TraitRef>,
+    item_type_params: &[TypeParameterDef],
+    method_type_params: &[TypeParameterDef],
+    item_region_params: &[RegionParameterDef],
+    free_id: ast::NodeId)
+    -> ParameterEnvironment
+{
+    /*! See `ParameterEnvironment` struct def'n for details */
+
+    //
+    // Construct the free substs.
+    //
+
+    // map Self => Self
+    let self_ty = self_bound.map(|t| ty::mk_self(tcx, t.def_id));
+
+    // map A => A
+    let num_item_type_params = item_type_params.len();
+    let num_method_type_params = method_type_params.len();
+    let num_type_params = num_item_type_params + num_method_type_params;
+    let type_params = vec::from_fn(num_type_params, |i| {
+            let def_id = if i < num_item_type_params {
+                item_type_params[i].def_id
+            } else {
+                method_type_params[i - num_item_type_params].def_id
+            };
+
+            ty::mk_param(tcx, i, def_id)
+        });
+
+    // map bound 'a => free 'a
+    let region_params = item_region_params.iter().
+        map(|r| ty::re_free(ty::FreeRegion {
+                scope_id: free_id,
+                bound_region: ty::br_named(r.def_id, r.ident)})).
+        collect();
+
+    let free_substs = substs {
+        self_ty: self_ty,
+        tps: type_params,
+        regions: ty::NonerasedRegions(region_params)
+    };
+
+    //
+    // Compute the bounds on Self and the type parameters.
+    //
+
+    let self_bound_substd = self_bound.map(|b| b.subst(tcx, &free_substs));
+    let type_param_bounds_substd = vec::from_fn(num_type_params, |i| {
+        if i < num_item_type_params {
+            (*item_type_params[i].bounds).subst(tcx, &free_substs)
+        } else {
+            let j = i - num_item_type_params;
+            (*method_type_params[j].bounds).subst(tcx, &free_substs)
+        }
+    });
+
+    ty::ParameterEnvironment {
+        free_substs: free_substs,
+        self_param_bound: self_bound_substd,
+        type_param_bounds: type_param_bounds_substd,
+    }
+}
+
+impl substs {
+    pub fn empty() -> substs {
+        substs {
+            self_ty: None,
+            tps: ~[],
+            regions: NonerasedRegions(opt_vec::Empty)
         }
     }
 }
