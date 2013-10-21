@@ -97,7 +97,6 @@ use middle::typeck::check::method::{CheckTraitsAndInherentMethods};
 use middle::typeck::check::method::{CheckTraitsOnly, DontAutoderefReceiver};
 use middle::typeck::check::regionmanip::replace_bound_regions_in_fn_sig;
 use middle::typeck::check::regionmanip::relate_free_regions;
-use middle::typeck::check::regionmanip::TypeBoundRegionSubstitutor;
 use middle::typeck::check::vtable::{LocationInfo, VtableContext};
 use middle::typeck::CrateCtxt;
 use middle::typeck::infer::{resolve_type, force_tvar};

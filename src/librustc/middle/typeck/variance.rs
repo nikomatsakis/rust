@@ -440,7 +440,7 @@ impl<'self> ConstraintContext<'self> {
         match ty::get(ty).sty {
             ty::ty_nil | ty::ty_bot | ty::ty_bool |
             ty::ty_char | ty::ty_int(_) | ty::ty_uint(_) |
-            ty::ty_float(_) | ty::ty_estr(_) => {
+            ty::ty_float(_) => {
                 /* leaf type -- noop */
             }
 
@@ -450,9 +450,17 @@ impl<'self> ConstraintContext<'self> {
                 self.add_constraints_from_mt(mt, variance);
             }
 
+            ty::ty_estr(vstore) => {
+                self.add_constraints_from_vstore(vstore, variance);
+            }
+
+            ty::ty_evec(ref mt, vstore) => {
+                self.add_constraints_from_vstore(vstore, variance);
+                self.add_constraints_from_mt(mt, variance);
+            }
+
             ty::ty_box(ref mt) |
             ty::ty_uniq(ref mt) |
-            ty::ty_evec(ref mt, _) |
             ty::ty_ptr(ref mt) => {
                 self.add_constraints_from_mt(mt, variance);
             }
@@ -513,6 +521,20 @@ impl<'self> ConstraintContext<'self> {
                     format!("Unexpected type encountered in \
                             variance inference: {}",
                             ty.repr(self.tcx())));
+            }
+        }
+    }
+
+    fn add_constraints_from_vstore(&mut self,
+                                   vstore: ty::vstore,
+                                   variance: VarianceTermPtr<'self>) {
+        match vstore {
+            ty::vstore_slice(r) => {
+                let contra = self.contravariant(variance);
+                self.add_constraints_from_region(r, contra);
+            }
+
+            ty::vstore_fixed(_) | ty::vstore_uniq | ty::vstore_box => {
             }
         }
     }

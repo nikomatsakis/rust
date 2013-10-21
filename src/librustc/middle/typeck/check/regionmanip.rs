@@ -87,6 +87,10 @@ pub fn relate_nested_regions(
     let mut rr = RegionRelator { tcx: tcx,
                                  stack: ~[],
                                  relate_op: relate_op };
+    match opt_region {
+        Some(o_r) => { rr.stack.push(o_r); }
+        None => {}
+    }
     rr.fold_ty(ty);
 
     struct RegionRelator<'self> {
@@ -94,6 +98,16 @@ pub fn relate_nested_regions(
         stack: ~[ty::Region],
         relate_op: &'self fn(ty::Region, ty::Region),
     }
+
+    // FIXME we should define more precisely when a
+    //       region is considered "nested" and take variance into account.
+    //
+    //       I can't decide whether skipping closure parameter types and
+    //       so on is necessary or not. What is the difference, after all,
+    //       between `&'a |&'b T|` and `&'a Fn<&'b T>`? And yet in the
+    //       latter case I'm inclined to think we should probably track
+    //       the relationship (but then again maybe we should just skip
+    //       all such cases until it "proves necessary")
 
     impl<'self> TypeFolder for RegionRelator<'self> {
         fn tcx(&self) -> ty::ctxt {

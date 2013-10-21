@@ -148,13 +148,13 @@ pub trait Combine {
 
                     debug2!("relate_region_params(\
                             item_def_id={}, \
-                            num_region_params={}, \
                             a_rs={}, \
-                            b_rs={})",
+                            b_rs={},
+                            region_params={})",
                             item_def_id.repr(tcx),
-                            num_region_params,
                             a_rs.repr(tcx),
-                            b_rs.repr(tcx));
+                            b_rs.repr(tcx),
+                            region_params.repr(tcx));
 
                     assert_eq!(num_region_params, a_rs.len());
                     assert_eq!(num_region_params, b_rs.len());

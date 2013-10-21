@@ -227,8 +227,6 @@ pub enum RegionVariableOrigin {
     BoundRegionInTypeOrImpl(Span),
 
     BoundRegionInCoherence,
-
-    BoundRegionError(Span),
 }
 
 pub enum fixup_err {
@@ -924,7 +922,6 @@ impl RegionVariableOrigin {
             BoundRegionInFnType(a, _) => a,
             BoundRegionInTypeOrImpl(a) => a,
             BoundRegionInCoherence => codemap::dummy_sp(),
-            BoundRegionError(a) => a,
         }
     }
 }
@@ -945,7 +942,6 @@ impl Repr for RegionVariableOrigin {
             BoundRegionInTypeOrImpl(a) => format!("BoundRegionInTypeOrImpl({})",
                                                a.repr(tcx)),
             BoundRegionInCoherence => format!("BoundRegionInCoherence"),
-            BoundRegionError(a) => format!("BoundRegionError({})", a.repr(tcx)),
         }
     }
 }

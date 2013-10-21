@@ -14,7 +14,6 @@ use middle::ty;
 use middle::ty_fold::TypeFolder;
 use middle::typeck::check::{FnCtxt, impl_self_ty};
 use middle::typeck::check::{structurally_resolved_type};
-use middle::typeck::check::regionmanip::TypeBoundRegionSubstitutor;
 use middle::typeck::infer::fixup_err_to_str;
 use middle::typeck::infer::{resolve_and_force_all_but_regions, resolve_type};
 use middle::typeck::infer;
