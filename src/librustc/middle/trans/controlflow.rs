@@ -18,6 +18,7 @@ use middle::trans::expr;
 use middle::ty;
 use util::common::indenter;
 use util::ppaux;
+use util::ppaux::Repr;
 
 use middle::trans::type_::Type;
 
