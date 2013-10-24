@@ -803,3 +803,11 @@ extern "C" void LLVMDICompositeTypeSetTypeArray(
 {
     unwrapDI<DICompositeType>(CompositeType).setTypeArray(unwrapDI<DIArray>(TypeArray));
 }
+
+extern "C" char *LLVMTypeToString(LLVMTypeRef ty) {
+  std::string result;
+  raw_string_ostream dest(result);
+  unwrap(ty)->print(dest);
+  dest.flush();
+  return strdup(result.c_str());
+}

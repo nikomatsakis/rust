@@ -15,8 +15,10 @@
 
 use std::c_str::ToCStr;
 use std::hashmap::HashMap;
-use std::libc::{c_uint, c_ushort};
+use std::libc;
+use std::libc::{c_uint, c_ushort, c_void};
 use std::option;
+use std::str;
 
 use middle::trans::type_::Type;
 
@@ -1633,6 +1635,8 @@ pub mod llvm {
 
         pub fn LLVMSetUnnamedAddr(GlobalVar: ValueRef, UnnamedAddr: Bool);
 
+        pub fn LLVMTypeToString(typeRef: TypeRef) -> *c_char;
+
         pub fn LLVMDIBuilderCreateTemplateTypeParameter(Builder: DIBuilderRef,
                                                         Scope: ValueRef,
                                                         Name: *c_char,
@@ -1848,7 +1852,13 @@ impl TypeNames {
     }
 
     pub fn type_to_str(&self, ty: Type) -> ~str {
-        self.type_to_str_depth(ty, 30)
+        unsafe {
+            let buf = llvm::LLVMTypeToString(ty.to_ref());
+            assert!(!buf.is_null());
+            let r = str::raw::from_c_str(buf);
+            libc::free(buf as *c_void);
+            return r;
+        }
     }
 
     pub fn types_to_str(&self, tys: &[Type]) -> ~str {
