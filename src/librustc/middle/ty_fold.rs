@@ -20,6 +20,10 @@ pub trait TypeFolder {
         super_fold_ty(self, t)
     }
 
+    fn fold_mt(&mut self, t: &ty::mt) -> ty::mt {
+        super_fold_mt(self, t)
+    }
+
     fn fold_trait_ref(&mut self, t: &ty::TraitRef) -> ty::TraitRef {
         super_fold_trait_ref(self, t)
     }
@@ -126,29 +130,30 @@ pub fn super_fold_trait_ref<T:TypeFolder>(this: &mut T,
     }
 }
 
+pub fn super_fold_mt<T:TypeFolder>(this: &mut T,
+                                   mt: &ty::mt) -> ty::mt {
+    ty::mt {ty: this.fold_ty(mt.ty),
+            mutbl: mt.mutbl}
+}
+
 pub fn super_fold_sty<T:TypeFolder>(this: &mut T,
                                     sty: &ty::sty) -> ty::sty {
     match *sty {
         ty::ty_box(ref tm) => {
-            ty::ty_box(ty::mt {ty: this.fold_ty(tm.ty),
-                               mutbl: tm.mutbl})
+            ty::ty_box(this.fold_mt(tm))
         }
         ty::ty_uniq(ref tm) => {
-            ty::ty_uniq(ty::mt {ty: this.fold_ty(tm.ty),
-                                mutbl: tm.mutbl})
+            ty::ty_uniq(this.fold_mt(tm))
         }
         ty::ty_ptr(ref tm) => {
-            ty::ty_ptr(ty::mt {ty: this.fold_ty(tm.ty),
-                               mutbl: tm.mutbl})
+            ty::ty_ptr(this.fold_mt(tm))
         }
         ty::ty_unboxed_vec(ref tm) => {
-            ty::ty_unboxed_vec(ty::mt {ty: this.fold_ty(tm.ty),
-                                       mutbl: tm.mutbl})
+            ty::ty_unboxed_vec(this.fold_mt(tm))
         }
         ty::ty_evec(ref tm, vst) => {
-            ty::ty_evec(ty::mt {ty: this.fold_ty(tm.ty),
-                                mutbl: tm.mutbl},
-                    this.fold_vstore(vst))
+            ty::ty_evec(this.fold_mt(tm),
+                        this.fold_vstore(vst))
         }
         ty::ty_enum(tid, ref substs) => {
             ty::ty_enum(tid, this.fold_substs(substs))

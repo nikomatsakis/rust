@@ -4163,7 +4163,8 @@ pub fn ty_params_to_tys(tcx: ty::ctxt, generics: &ast::Generics) -> ~[t] {
 
 /// Returns an equivalent type with all the typedefs and self regions removed.
 pub fn normalize_ty(cx: ctxt, t: t) -> t {
-    return TypeNormalizer(cx).fold_ty(t);
+    let u = TypeNormalizer(cx).fold_ty(t);
+    return u;
 
     struct TypeNormalizer(ctxt);
 
@@ -4172,8 +4173,8 @@ pub fn normalize_ty(cx: ctxt, t: t) -> t {
 
         fn fold_ty(&mut self, t: ty::t) -> ty::t {
             match self.tcx().normalized_cache.find_copy(&t) {
-                Some(t) => {
-                    return t;
+                Some(u) => {
+                    return u;
                 }
                 None => {
                     let t_norm = ty_fold::super_fold_ty(self, t);
@@ -4198,7 +4199,18 @@ pub fn normalize_ty(cx: ctxt, t: t) -> t {
                        substs: &substs)
                        -> substs {
             substs { regions: ErasedRegions,
-                     .. ty_fold::super_fold_substs(self, substs) }
+                     self_ty: ty_fold::fold_opt_ty(self, substs.self_ty),
+                     tps: ty_fold::fold_ty_vec(self, substs.tps) }
+        }
+
+        fn fold_sig(&mut self,
+                    sig: &ty::FnSig)
+                    -> ty::FnSig {
+            // The binder-id is only relevant to bound regions, which
+            // are erased at trans time.
+            ty::FnSig { binder_id: ast::DUMMY_NODE_ID,
+                        inputs: ty_fold::fold_ty_vec(self, sig.inputs),
+                        output: self.fold_ty(sig.output) }
         }
     }
 }
