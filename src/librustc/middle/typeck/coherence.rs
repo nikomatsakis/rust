@@ -590,7 +590,6 @@ impl CoherenceChecker {
                     let ty_trait_ref = ty::node_id_to_trait_ref(
                         self.crate_context.tcx,
                         trait_ref.ref_id);
-                    let trait_did = ty_trait_ref.def_id;
 
                     self.instantiate_default_methods(local_def(item.id),
                                                      ty_trait_ref,

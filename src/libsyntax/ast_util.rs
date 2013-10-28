@@ -966,7 +966,9 @@ mod test {
     use std::hashmap::HashMap;
 
     fn ident_to_segment(id : &Ident) -> PathSegment {
-        PathSegment{identifier:id.clone(), lifetime: None, types: opt_vec::Empty}
+        PathSegment {identifier:id.clone(),
+                     lifetimes: opt_vec::Empty,
+                     types: opt_vec::Empty}
     }
 
     #[test] fn idents_name_eq_test() {

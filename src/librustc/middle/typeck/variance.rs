@@ -73,7 +73,6 @@ use std::vec;
 use syntax::ast;
 use syntax::ast_map;
 use syntax::ast_util;
-use syntax::attr;
 use syntax::parse::token;
 use syntax::opt_vec;
 use syntax::visit;
