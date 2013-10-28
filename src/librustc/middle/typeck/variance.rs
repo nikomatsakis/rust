@@ -305,9 +305,22 @@ impl<'self> Visitor<()> for ConstraintContext<'self> {
         let tcx = self.terms_cx.tcx;
 
         match item.node {
-            ast::item_enum(*) => {
-                let variants = ty::enum_variants(tcx, did);
-                for variant in (*variants).iter() {
+            ast::item_enum(ref enum_definition, _) => {
+                // Hack: If we directly call `ty::enum_variants`, it
+                // annoyingly takes it upon itself to run off and
+                // evaluate the discriminants eagerly (*grumpy* that's
+                // not the typical pattern). This results in double
+                // error messagees because typeck goes off and does
+                // this at a later time. All we really care about is
+                // the types of the variant arguments, so we just call
+                // `ty::VariantInfo::from_ast_variant()` ourselves
+                // here, mainly so as to mask the differences between
+                // struct-like enums and so forth.
+                for ast_variant in enum_definition.variants.iter() {
+                    let variant =
+                        ty::VariantInfo::from_ast_variant(tcx,
+                                                          ast_variant,
+                                                          /*discrimant*/ 0);
                     for &arg_ty in variant.args.iter() {
                         self.add_constraints_from_ty(arg_ty, self.covariant);
                     }

@@ -97,6 +97,20 @@ pub fn resolver(infcx: @mut InferCtxt, modes: uint) -> ResolveState {
     }
 }
 
+impl ty_fold::TypeFolder for ResolveState {
+    fn tcx(&self) -> ty::ctxt {
+        self.infcx.tcx
+    }
+
+    fn fold_ty(&mut self, t: ty::t) -> ty::t {
+        self.resolve_type(t)
+    }
+
+    fn fold_region(&mut self, r: ty::Region) -> ty::Region {
+        self.resolve_region(r)
+    }
+}
+
 impl ResolveState {
     pub fn should(&mut self, mode: uint) -> bool {
         (self.modes & mode) == mode
@@ -167,11 +181,7 @@ impl ResolveState {
                     typ
                 } else {
                     self.type_depth += 1;
-                    let mut f = ty_fold::RegionFolder::general(
-                        self.infcx.tcx,
-                        |r| self.resolve_region(r),
-                        |t| self.resolve_type(t));
-                    let result = ty_fold::super_fold_ty(&mut f, typ);
+                    let result = ty_fold::super_fold_ty(self, typ);
                     self.type_depth -= 1;
                     result
                 }

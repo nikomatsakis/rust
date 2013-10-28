@@ -29,13 +29,13 @@ struct Derived2<'a, 'b, 'c> { //~ ERROR region_params=[o, o, *]
     f: Base<'a, 'a, 'b, 'c>
 }
 
-#[rustc_variance] // Combine + and o to yield o
+#[rustc_variance] // Combine + and o to yield o (just pay attention to 'a here)
 struct Derived3<'a, 'b, 'c> { //~ ERROR region_params=[o, -, *]
     f: Base<'a, 'b, 'a, 'c>
 }
 
-#[rustc_variance] // Combine + and * to yield +
-struct Derived4<'a, 'b, 'c> { //~ ERROR region_params=[+, -, *]
+#[rustc_variance] // Combine + and * to yield + (just pay attention to 'a here)
+struct Derived4<'a, 'b, 'c> { //~ ERROR region_params=[+, -, o]
     f: Base<'a, 'b, 'c, 'a>
 }
 
