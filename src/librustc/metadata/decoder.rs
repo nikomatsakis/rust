@@ -27,8 +27,8 @@ use middle::astencode::vtable_decoder_helpers;
 
 use std::at_vec;
 use std::u64;
-use std::io::WriterUtil;
-use std::io;
+use std::rt::io;
+use std::rt::io::extensions::u64_from_be_bytes;
 use std::option;
 use std::str;
 use std::vec;
@@ -56,14 +56,14 @@ fn lookup_hash(d: ebml::Doc, eq_fn: &fn(x:&[u8]) -> bool, hash: u64) ->
     let index = reader::get_doc(d, tag_index);
     let table = reader::get_doc(index, tag_index_table);
     let hash_pos = table.start + (hash % 256 * 4) as uint;
-    let pos = io::u64_from_be_bytes(*d.data, hash_pos, 4) as uint;
+    let pos = u64_from_be_bytes(*d.data, hash_pos, 4) as uint;
     let tagged_doc = reader::doc_at(d.data, pos);
 
     let belt = tag_index_buckets_bucket_elt;
 
     let mut ret = None;
     do reader::tagged_docs(tagged_doc.doc, belt) |elt| {
-        let pos = io::u64_from_be_bytes(*elt.data, elt.start, 4) as uint;
+        let pos = u64_from_be_bytes(*elt.data, elt.start, 4) as uint;
         if eq_fn(elt.data.slice(elt.start + 4, elt.end)) {
             ret = Some(reader::doc_at(d.data, pos).doc);
             false
@@ -78,7 +78,7 @@ pub type GetCrateDataCb<'self> = &'self fn(ast::CrateNum) -> Cmd;
 
 pub fn maybe_find_item(item_id: int, items: ebml::Doc) -> Option<ebml::Doc> {
     fn eq_item(bytes: &[u8], item_id: int) -> bool {
-        return io::u64_from_be_bytes(
+        return u64_from_be_bytes(
             bytes.slice(0u, 4u), 0u, 4u) as int
             == item_id;
     }
@@ -89,7 +89,7 @@ pub fn maybe_find_item(item_id: int, items: ebml::Doc) -> Option<ebml::Doc> {
 
 fn find_item(item_id: int, items: ebml::Doc) -> ebml::Doc {
     match maybe_find_item(item_id, items) {
-       None => fail2!("lookup_item: id not found: {}", item_id),
+       None => fail!("lookup_item: id not found: {}", item_id),
        Some(d) => d
     }
 }
@@ -148,7 +148,7 @@ fn item_family(item: ebml::Doc) -> Family {
       'g' => PublicField,
       'j' => PrivateField,
       'N' => InheritedField,
-       c => fail2!("unexpected family char: {}", c)
+       c => fail!("unexpected family char: {}", c)
     }
 }
 
@@ -160,7 +160,7 @@ fn item_visibility(item: ebml::Doc) -> ast::visibility {
                 'y' => ast::public,
                 'n' => ast::private,
                 'i' => ast::inherited,
-                _ => fail2!("unknown visibility character")
+                _ => fail!("unknown visibility character")
             }
         }
     }
@@ -200,7 +200,7 @@ fn item_def_id(d: ebml::Doc, cdata: Cmd) -> ast::DefId {
 }
 
 fn get_provided_source(d: ebml::Doc, cdata: Cmd) -> Option<ast::DefId> {
-    do reader::maybe_get_doc(d, tag_item_method_provided_source).map_move |doc| {
+    do reader::maybe_get_doc(d, tag_item_method_provided_source).map |doc| {
         translate_def_id(cdata, reader::with_doc_data(doc, parse_def_id))
     }
 }
@@ -415,7 +415,7 @@ pub fn get_trait_def(cdata: Cmd,
     do reader::tagged_docs(item_doc, tag_item_super_trait_ref) |trait_doc| {
         // NB. Bypasses real supertraits. See get_supertraits() if you wanted them.
         let trait_ref = doc_trait_ref(trait_doc, tcx, cdata);
-        do tcx.lang_items.to_builtin_kind(trait_ref.def_id).map_move |bound| {
+        do tcx.lang_items.to_builtin_kind(trait_ref.def_id).map |bound| {
             bounds.add(bound);
         };
         true
@@ -455,7 +455,7 @@ pub fn get_impl_trait(cdata: Cmd,
                       tcx: ty::ctxt) -> Option<@ty::TraitRef>
 {
     let item_doc = lookup_item(id, cdata.data);
-    do reader::maybe_get_doc(item_doc, tag_item_trait_ref).map_move |tp| {
+    do reader::maybe_get_doc(item_doc, tag_item_trait_ref).map |tp| {
         @doc_trait_ref(tp, tcx, cdata)
     }
 }
@@ -503,8 +503,8 @@ pub enum DefLike {
 pub fn def_like_to_def(def_like: DefLike) -> ast::Def {
     match def_like {
         DlDef(def) => return def,
-        DlImpl(*) => fail2!("found impl in def_like_to_def"),
-        DlField => fail2!("found field in def_like_to_def")
+        DlImpl(*) => fail!("found impl in def_like_to_def"),
+        DlField => fail!("found field in def_like_to_def")
     }
 }
 
@@ -559,13 +559,13 @@ impl<'self> EachItemContext<'self> {
         let def_like = item_to_def_like(doc, def_id, self.cdata.cnum);
         match def_like {
             DlDef(def) => {
-                debug2!("(iterating over each item of a module) processing \
+                debug!("(iterating over each item of a module) processing \
                         `{}` (def {:?})",
                        *self.path_builder,
                        def);
             }
             _ => {
-                debug2!("(iterating over each item of a module) processing \
+                debug!("(iterating over each item of a module) processing \
                         `{}` ({}:{})",
                        *self.path_builder,
                        def_id.crate,
@@ -640,7 +640,7 @@ impl<'self> EachItemContext<'self> {
                 reader::get_doc(root, tag_items)
             };
 
-            debug2!("(iterating over each item of a module) looking up item \
+            debug!("(iterating over each item of a module) looking up item \
                     {}:{} in `{}`, crate {}",
                    child_def_id.crate,
                    child_def_id.node,
@@ -653,7 +653,7 @@ impl<'self> EachItemContext<'self> {
                 Some(child_item_doc) => {
                     // Push the name.
                     let child_name = item_name(self.intr, child_item_doc);
-                    debug2!("(iterating over each item of a module) pushing \
+                    debug!("(iterating over each item of a module) pushing \
                             name `{}` onto `{}`",
                            token::ident_to_str(&child_name),
                            *self.path_builder);
@@ -691,7 +691,7 @@ impl<'self> EachItemContext<'self> {
             let name = name_doc.as_str_slice();
 
             // Push the name.
-            debug2!("(iterating over each item of a module) pushing \
+            debug!("(iterating over each item of a module) pushing \
                     reexported name `{}` onto `{}` (crate {}, orig {}, \
                     in crate {})",
                    name,
@@ -909,7 +909,7 @@ pub fn maybe_get_item_ast(cdata: Cmd, tcx: ty::ctxt,
                           id: ast::NodeId,
                           decode_inlined_item: decode_inlined_item)
                        -> csearch::found_ast {
-    debug2!("Looking up item: {}", id);
+    debug!("Looking up item: {}", id);
     let item_doc = lookup_item(id, cdata.data);
     let path = {
         let item_path = item_path(item_doc);
@@ -974,7 +974,7 @@ fn get_explicit_self(item: ebml::Doc) -> ast::explicit_self_ {
         match ch as char {
             'i' => ast::MutImmutable,
             'm' => ast::MutMutable,
-            _ => fail2!("unknown mutability character: `{}`", ch as char),
+            _ => fail!("unknown mutability character: `{}`", ch as char),
         }
     }
 
@@ -984,15 +984,15 @@ fn get_explicit_self(item: ebml::Doc) -> ast::explicit_self_ {
     let explicit_self_kind = string[0];
     match explicit_self_kind as char {
         's' => { return ast::sty_static; }
-        'v' => { return ast::sty_value; }
+        'v' => { return ast::sty_value(get_mutability(string[1])); }
         '@' => { return ast::sty_box(get_mutability(string[1])); }
-        '~' => { return ast::sty_uniq; }
+        '~' => { return ast::sty_uniq(get_mutability(string[1])); }
         '&' => {
             // FIXME(#4846) expl. region
             return ast::sty_region(None, get_mutability(string[1]));
         }
         _ => {
-            fail2!("unknown self type code: `{}`", explicit_self_kind as char);
+            fail!("unknown self type code: `{}`", explicit_self_kind as char);
         }
     }
 }
@@ -1182,7 +1182,7 @@ pub fn get_static_methods_if_impl(intr: @ident_interner,
                 match item_family(impl_method_doc) {
                     StaticMethod => purity = ast::impure_fn,
                     UnsafeStaticMethod => purity = ast::unsafe_fn,
-                    _ => fail2!()
+                    _ => fail!()
                 }
 
                 static_impl_methods.push(StaticMethodInfo {
@@ -1218,7 +1218,7 @@ fn struct_field_family_to_visibility(family: Family) -> ast::visibility {
       PublicField => ast::public,
       PrivateField => ast::private,
       InheritedField => ast::inherited,
-      _ => fail2!()
+      _ => fail!()
     }
 }
 
@@ -1272,7 +1272,7 @@ fn family_names_type(fam: Family) -> bool {
 
 fn read_path(d: ebml::Doc) -> (~str, uint) {
     do reader::with_doc_data(d) |desc| {
-        let pos = io::u64_from_be_bytes(desc, 0u, 4u) as uint;
+        let pos = u64_from_be_bytes(desc, 0u, 4u) as uint;
         let pathbytes = desc.slice(4u, desc.len());
         let path = str::from_utf8(pathbytes);
 
@@ -1284,7 +1284,7 @@ fn describe_def(items: ebml::Doc, id: ast::DefId) -> ~str {
     if id.crate != ast::LOCAL_CRATE { return ~"external"; }
     let it = match maybe_find_item(id.node, items) {
         Some(it) => it,
-        None => fail2!("describe_def: item not found {:?}", id)
+        None => fail!("describe_def: item not found {:?}", id)
     };
     return item_family_to_str(item_family(it));
 }
@@ -1371,23 +1371,23 @@ fn get_attributes(md: ebml::Doc) -> ~[ast::Attribute] {
 
 fn list_meta_items(intr: @ident_interner,
                    meta_items: ebml::Doc,
-                   out: @io::Writer) {
+                   out: @mut io::Writer) {
     let r = get_meta_items(meta_items);
     for mi in r.iter() {
-        out.write_str(format!("{}\n", pprust::meta_item_to_str(*mi, intr)));
+        write!(out, "{}\n", pprust::meta_item_to_str(*mi, intr));
     }
 }
 
 fn list_crate_attributes(intr: @ident_interner, md: ebml::Doc, hash: &str,
-                         out: @io::Writer) {
-    out.write_str(format!("=Crate Attributes ({})=\n", hash));
+                         out: @mut io::Writer) {
+    write!(out, "=Crate Attributes ({})=\n", hash);
 
     let r = get_attributes(md);
     for attr in r.iter() {
-        out.write_str(format!("{}\n", pprust::attribute_to_str(attr, intr)));
+        write!(out, "{}\n", pprust::attribute_to_str(attr, intr));
     }
 
-    out.write_str("\n\n");
+    write!(out, "\n\n");
 }
 
 pub fn get_crate_attributes(data: @~[u8]) -> ~[ast::Attribute] {
@@ -1422,17 +1422,16 @@ pub fn get_crate_deps(data: @~[u8]) -> ~[CrateDep] {
     return deps;
 }
 
-fn list_crate_deps(data: @~[u8], out: @io::Writer) {
-    out.write_str("=External Dependencies=\n");
+fn list_crate_deps(data: @~[u8], out: @mut io::Writer) {
+    write!(out, "=External Dependencies=\n");
 
     let r = get_crate_deps(data);
     for dep in r.iter() {
-        out.write_str(
-            format!("{} {}-{}-{}\n",
-                 dep.cnum, token::ident_to_str(&dep.name), dep.hash, dep.vers));
+        write!(out, "{} {}-{}-{}\n",
+                 dep.cnum, token::ident_to_str(&dep.name), dep.hash, dep.vers);
     }
 
-    out.write_str("\n");
+    write!(out, "\n");
 }
 
 pub fn get_crate_hash(data: @~[u8]) -> @str {
@@ -1452,7 +1451,7 @@ pub fn get_crate_vers(data: @~[u8]) -> @str {
 }
 
 pub fn list_crate_metadata(intr: @ident_interner, bytes: @~[u8],
-                           out: @io::Writer) {
+                           out: @mut io::Writer) {
     let hash = get_crate_hash(bytes);
     let md = reader::Doc(bytes);
     list_crate_attributes(intr, md, hash, out);
@@ -1471,7 +1470,7 @@ pub fn translate_def_id(cdata: Cmd, did: ast::DefId) -> ast::DefId {
 
     match cdata.cnum_map.find(&did.crate) {
       option::Some(&n) => ast::DefId { crate: n, node: did.node },
-      option::None => fail2!("didn't find a crate in the cnum_map")
+      option::None => fail!("didn't find a crate in the cnum_map")
     }
 }
 

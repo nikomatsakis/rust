@@ -48,9 +48,9 @@ pub enum Param {
 /// Container for static and dynamic variable arrays
 pub struct Variables {
     /// Static variables A-Z
-    sta: [Param, ..26],
+    priv sta: [Param, ..26],
     /// Dynamic variables a-z
-    dyn: [Param, ..26]
+    priv dyn: [Param, ..26]
 }
 
 impl Variables {
@@ -462,7 +462,7 @@ impl FormatOp {
             'x' => FormatHex,
             'X' => FormatHEX,
             's' => FormatString,
-            _ => fail2!("bad FormatOp char")
+            _ => fail!("bad FormatOp char")
         }
     }
     fn to_char(self) -> char {

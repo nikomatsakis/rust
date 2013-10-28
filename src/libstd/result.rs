@@ -22,6 +22,7 @@ use vec;
 use vec::OwnedVector;
 use to_str::ToStr;
 use str::StrSlice;
+use fmt;
 
 /// `Result` is a type that represents either success (`Ok`) or failure (`Err`).
 ///
@@ -46,7 +47,7 @@ impl<T, E: ToStr> Result<T, E> {
     pub fn get_ref<'a>(&'a self) -> &'a T {
         match *self {
             Ok(ref t) => t,
-            Err(ref e) => fail2!("called `Result::get_ref()` on `Err` value: {}",
+            Err(ref e) => fail!("called `Result::get_ref()` on `Err` value: {}",
                                  e.to_str()),
         }
     }
@@ -107,7 +108,7 @@ impl<T, E: ToStr> Result<T, E> {
     pub fn unwrap(self) -> T {
         match self {
             Ok(t) => t,
-            Err(e) => fail2!("called `Result::unwrap()` on `Err` value: {}",
+            Err(e) => fail!("called `Result::unwrap()` on `Err` value: {}",
                              e.to_str()),
         }
     }
@@ -125,7 +126,7 @@ impl<T, E: ToStr> Result<T, E> {
     pub fn expect(self, reason: &str) -> T {
         match self {
             Ok(t) => t,
-            Err(_) => fail2!("{}", reason.to_owned()),
+            Err(_) => fail!("{}", reason.to_owned()),
         }
     }
 
@@ -135,7 +136,7 @@ impl<T, E: ToStr> Result<T, E> {
     pub fn expect_err(self, reason: &str) -> E {
         match self {
             Err(e) => e,
-            Ok(_) => fail2!("{}", reason.to_owned()),
+            Ok(_) => fail!("{}", reason.to_owned()),
         }
     }
 
@@ -290,7 +291,7 @@ pub trait AsResult<T, E> {
 
 impl<T: Clone, E> option::ToOption<T> for Result<T, E> {
     #[inline]
-    fn to_option(&self)-> Option<T> {
+    fn to_option(&self) -> Option<T> {
         match *self {
             Ok(ref t) => Some(t.clone()),
             Err(_) => None,
@@ -300,7 +301,7 @@ impl<T: Clone, E> option::ToOption<T> for Result<T, E> {
 
 impl<T, E> option::IntoOption<T> for Result<T, E> {
     #[inline]
-    fn into_option(self)-> Option<T> {
+    fn into_option(self) -> Option<T> {
         match self {
             Ok(t) => Some(t),
             Err(_) => None,
@@ -310,7 +311,7 @@ impl<T, E> option::IntoOption<T> for Result<T, E> {
 
 impl<T, E> option::AsOption<T> for Result<T, E> {
     #[inline]
-    fn as_option<'a>(&'a self)-> Option<&'a T> {
+    fn as_option<'a>(&'a self) -> Option<&'a T> {
         match *self {
             Ok(ref t) => Some(t),
             Err(_) => None,
@@ -340,7 +341,7 @@ impl<T, E> AsResult<T, E> for Result<T, E> {
 
 impl<T: Clone, E: Clone> either::ToEither<E, T> for Result<T, E> {
     #[inline]
-    fn to_either(&self)-> either::Either<E, T> {
+    fn to_either(&self) -> either::Either<E, T> {
         match *self {
             Ok(ref t) => either::Right(t.clone()),
             Err(ref e) => either::Left(e.clone()),
@@ -350,7 +351,7 @@ impl<T: Clone, E: Clone> either::ToEither<E, T> for Result<T, E> {
 
 impl<T, E> either::IntoEither<E, T> for Result<T, E> {
     #[inline]
-    fn into_either(self)-> either::Either<E, T> {
+    fn into_either(self) -> either::Either<E, T> {
         match self {
             Ok(t) => either::Right(t),
             Err(e) => either::Left(e),
@@ -360,10 +361,30 @@ impl<T, E> either::IntoEither<E, T> for Result<T, E> {
 
 impl<T, E> either::AsEither<E, T> for Result<T, E> {
     #[inline]
-    fn as_either<'a>(&'a self)-> either::Either<&'a E, &'a T> {
+    fn as_either<'a>(&'a self) -> either::Either<&'a E, &'a T> {
         match *self {
             Ok(ref t) => either::Right(t),
             Err(ref e) => either::Left(e),
+        }
+    }
+}
+
+impl<T: ToStr, E: ToStr> ToStr for Result<T, E> {
+    #[inline]
+    fn to_str(&self) -> ~str {
+        match *self {
+            Ok(ref t) => format!("Ok({:s})", t.to_str()),
+            Err(ref e) => format!("Err({:s})", e.to_str())
+        }
+    }
+}
+
+impl<T: fmt::Default, E: fmt::Default> fmt::Default for Result<T, E> {
+    #[inline]
+    fn fmt(s: &Result<T, E>, f: &mut fmt::Formatter) {
+        match *s {
+            Ok(ref t) => write!(f.buf, "Ok({})", *t),
+            Err(ref e) => write!(f.buf, "Err({})", *e)
         }
     }
 }
@@ -441,6 +462,7 @@ mod tests {
     use option;
     use str::OwnedStr;
     use vec::ImmutableVector;
+    use to_str::ToStr;
 
     pub fn op1() -> Result<int, ~str> { Ok(666) }
     pub fn op2() -> Result<int, ~str> { Err(~"sadface") }
@@ -549,7 +571,7 @@ mod tests {
                    Err(2));
 
         // test that it does not take more elements than it needs
-        let functions = [|| Ok(()), || Err(1), || fail2!()];
+        let functions = [|| Ok(()), || Err(1), || fail!()];
 
         assert_eq!(collect(functions.iter().map(|f| (*f)())),
                    Err(1));
@@ -569,7 +591,7 @@ mod tests {
                    Err(2));
 
         // test that it does not take more elements than it needs
-        let functions = [|| Ok(()), || Err(1), || fail2!()];
+        let functions = [|| Ok(()), || Err(1), || fail!()];
 
         assert_eq!(fold_(functions.iter()
                         .map(|f| (*f)())),
@@ -658,5 +680,23 @@ mod tests {
 
         assert_eq!(ok.as_either().unwrap_right(), &100);
         assert_eq!(err.as_either().unwrap_left(), &404);
+    }
+
+    #[test]
+    pub fn test_to_str() {
+        let ok: Result<int, ~str> = Ok(100);
+        let err: Result<int, ~str> = Err(~"Err");
+
+        assert_eq!(ok.to_str(), ~"Ok(100)");
+        assert_eq!(err.to_str(), ~"Err(Err)");
+    }
+
+    #[test]
+    pub fn test_fmt_default() {
+        let ok: Result<int, ~str> = Ok(100);
+        let err: Result<int, ~str> = Err(~"Err");
+
+        assert_eq!(format!("{}", ok), ~"Ok(100)");
+        assert_eq!(format!("{}", err), ~"Err(Err)");
     }
 }

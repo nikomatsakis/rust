@@ -56,38 +56,68 @@
 use prelude::*;
 
 use cell::Cell;
-use comm::{stream, Chan, GenericChan, GenericPort, Port};
-use result::Result;
-use result;
+use comm::{stream, Chan, GenericChan, GenericPort, Port, Peekable};
+use result::{Result, Ok, Err};
 use rt::in_green_task_context;
 use rt::local::Local;
+use rt::task::{UnwindReasonAny, UnwindReasonLinked, UnwindReasonStr};
+use rt::task::{UnwindResult, Success, Failure};
+use send_str::{SendStr, IntoSendStr};
 use unstable::finally::Finally;
 use util;
-use send_str::{SendStr, IntoSendStr};
 
+#[cfg(test)] use any::Any;
 #[cfg(test)] use cast;
 #[cfg(test)] use comm::SharedChan;
 #[cfg(test)] use comm;
 #[cfg(test)] use ptr;
+#[cfg(test)] use result;
 #[cfg(test)] use task;
 
 pub mod spawn;
 
-/**
- * Indicates the manner in which a task exited.
- *
- * A task that completes without failing is considered to exit successfully.
- * Supervised ancestors and linked siblings may yet fail after this task
- * succeeds. Also note that in such a case, it may be nondeterministic whether
- * linked failure or successful exit happen first.
- *
- * If you wish for this result's delivery to block until all linked and/or
- * children tasks complete, recommend using a result future.
- */
-#[deriving(Eq)]
-pub enum TaskResult {
-    Success,
-    Failure,
+/// Indicates the manner in which a task exited.
+///
+/// A task that completes without failing is considered to exit successfully.
+/// Supervised ancestors and linked siblings may yet fail after this task
+/// succeeds. Also note that in such a case, it may be nondeterministic whether
+/// linked failure or successful exit happen first.
+///
+/// If you wish for this result's delivery to block until all linked and/or
+/// children tasks complete, recommend using a result future.
+pub type TaskResult = Result<(), ~Any>;
+
+pub struct LinkedFailure;
+
+#[inline]
+fn wrap_as_any(res: UnwindResult) -> TaskResult {
+    match res {
+        Success => Ok(()),
+        Failure(UnwindReasonStr(s)) => Err(~s as ~Any),
+        Failure(UnwindReasonAny(a)) => Err(a),
+        Failure(UnwindReasonLinked) => Err(~LinkedFailure as ~Any)
+    }
+}
+
+pub struct TaskResultPort {
+    priv port: Port<UnwindResult>
+}
+
+impl GenericPort<TaskResult> for TaskResultPort {
+    #[inline]
+    fn recv(&self) -> TaskResult {
+        wrap_as_any(self.port.recv())
+    }
+
+    #[inline]
+    fn try_recv(&self) -> Option<TaskResult> {
+        self.port.try_recv().map(wrap_as_any)
+    }
+}
+
+impl Peekable<TaskResult> for TaskResultPort {
+    #[inline]
+    fn peek(&self) -> bool { self.port.peek() }
 }
 
 /// Scheduler modes
@@ -108,7 +138,7 @@ pub enum SchedMode {
  *
  */
 pub struct SchedOpts {
-    mode: SchedMode,
+    priv mode: SchedMode,
 }
 
 /**
@@ -144,11 +174,11 @@ pub struct SchedOpts {
  *           scheduler other tasks will be impeded or even blocked indefinitely.
  */
 pub struct TaskOpts {
-    linked: bool,
-    supervised: bool,
-    watched: bool,
-    indestructible: bool,
-    notify_chan: Option<Chan<TaskResult>>,
+    priv linked: bool,
+    priv supervised: bool,
+    priv watched: bool,
+    priv indestructible: bool,
+    priv notify_chan: Option<Chan<UnwindResult>>,
     name: Option<SendStr>,
     sched: SchedOpts,
     stack_size: Option<uint>
@@ -170,9 +200,9 @@ pub struct TaskOpts {
 // FIXME (#3724): Replace the 'consumed' bit with move mode on self
 pub struct TaskBuilder {
     opts: TaskOpts,
-    gen_body: Option<~fn(v: ~fn()) -> ~fn()>,
-    can_not_copy: Option<util::NonCopyable>,
-    consumed: bool,
+    priv gen_body: Option<~fn(v: ~fn()) -> ~fn()>,
+    priv can_not_copy: Option<util::NonCopyable>,
+    priv consumed: bool,
 }
 
 /**
@@ -192,7 +222,7 @@ pub fn task() -> TaskBuilder {
 impl TaskBuilder {
     fn consume(&mut self) -> TaskBuilder {
         if self.consumed {
-            fail2!("Cannot copy a task_builder"); // Fake move mode on self
+            fail!("Cannot copy a task_builder"); // Fake move mode on self
         }
         self.consumed = true;
         let gen_body = self.gen_body.take();
@@ -258,40 +288,38 @@ impl TaskBuilder {
         self.opts.indestructible = true;
     }
 
-    /**
-     * Get a future representing the exit status of the task.
-     *
-     * Taking the value of the future will block until the child task
-     * terminates. The future-receiving callback specified will be called
-     * *before* the task is spawned; as such, do not invoke .get() within the
-     * closure; rather, store it in an outer variable/list for later use.
-     *
-     * Note that the future returning by this function is only useful for
-     * obtaining the value of the next task to be spawning with the
-     * builder. If additional tasks are spawned with the same builder
-     * then a new result future must be obtained prior to spawning each
-     * task.
-     *
-     * # Failure
-     * Fails if a future_result was already set for this task.
-     */
-    pub fn future_result(&mut self, blk: &fn(v: Port<TaskResult>)) {
+    /// Get a future representing the exit status of the task.
+    ///
+    /// Taking the value of the future will block until the child task
+    /// terminates. The future result return value will be created *before* the task is
+    /// spawned; as such, do not invoke .get() on it directly;
+    /// rather, store it in an outer variable/list for later use.
+    ///
+    /// Note that the future returned by this function is only useful for
+    /// obtaining the value of the next task to be spawning with the
+    /// builder. If additional tasks are spawned with the same builder
+    /// then a new result future must be obtained prior to spawning each
+    /// task.
+    ///
+    /// # Failure
+    /// Fails if a future_result was already set for this task.
+    pub fn future_result(&mut self) -> TaskResultPort {
         // FIXME (#3725): Once linked failure and notification are
         // handled in the library, I can imagine implementing this by just
         // registering an arbitrary number of task::on_exit handlers and
         // sending out messages.
 
         if self.opts.notify_chan.is_some() {
-            fail2!("Can't set multiple future_results for one task!");
+            fail!("Can't set multiple future_results for one task!");
         }
 
         // Construct the future and give it to the caller.
-        let (notify_pipe_po, notify_pipe_ch) = stream::<TaskResult>();
-
-        blk(notify_pipe_po);
+        let (notify_pipe_po, notify_pipe_ch) = stream::<UnwindResult>();
 
         // Reconfigure self to use a notify channel.
         self.opts.notify_chan = Some(notify_pipe_ch);
+
+        TaskResultPort { port: notify_pipe_po }
     }
 
     /// Name the task-to-be. Currently the name is used for identification
@@ -396,19 +424,18 @@ impl TaskBuilder {
      * # Failure
      * Fails if a future_result was already set for this task.
      */
-    pub fn try<T:Send>(&mut self, f: ~fn() -> T) -> Result<T,()> {
+    pub fn try<T:Send>(&mut self, f: ~fn() -> T) -> Result<T, ~Any> {
         let (po, ch) = stream::<T>();
-        let mut result = None;
 
-        self.future_result(|r| { result = Some(r); });
+        let result = self.future_result();
 
         do self.spawn {
             ch.send(f());
         }
 
-        match result.unwrap().recv() {
-            Success => result::Ok(po.recv()),
-            Failure => result::Err(())
+        match result.recv() {
+            Ok(())     => Ok(po.recv()),
+            Err(cause) => Err(cause)
         }
     }
 }
@@ -515,7 +542,7 @@ pub fn spawn_sched(mode: SchedMode, f: ~fn()) {
     task.spawn(f)
 }
 
-pub fn try<T:Send>(f: ~fn() -> T) -> Result<T,()> {
+pub fn try<T:Send>(f: ~fn() -> T) -> Result<T, ~Any> {
     /*!
      * Execute a function in another task and return either the return value
      * of the function or result::err.
@@ -543,7 +570,7 @@ pub fn with_task_name<U>(blk: &fn(Option<&str>) -> U) -> U {
             }
         }
     } else {
-        fail2!("no task name exists in non-green task context")
+        fail!("no task name exists in non-green task context")
     }
 }
 
@@ -648,10 +675,10 @@ fn test_kill_unkillable_task() {
     // CPU, *after* the spawner is already switched-back-to (and passes the
     // killed check at the start of its timeslice). As far as I know, it's not
     // possible to make this race deterministic, or even more likely to happen.
-    do run_in_newsched_task {
+    do run_in_uv_task {
         do task::try {
             do task::spawn {
-                fail2!();
+                fail!();
             }
             do task::unkillable { }
         };
@@ -665,12 +692,12 @@ fn test_kill_rekillable_task() {
 
     // Tests that when a kill signal is received, 'rekillable' and
     // 'unkillable' unwind correctly in conjunction with each other.
-    do run_in_newsched_task {
+    do run_in_uv_task {
         do task::try {
             do task::unkillable {
                 do task::rekillable {
                     do task::spawn {
-                        fail2!();
+                        fail!();
                     }
                 }
             }
@@ -700,7 +727,7 @@ fn test_rekillable_nested_failure() {
         do unkillable {
             do rekillable {
                 let (port,chan) = comm::stream();
-                do task::spawn { chan.send(()); fail2!(); }
+                do task::spawn { chan.send(()); fail!(); }
                 port.recv(); // wait for child to exist
                 port.recv(); // block forever, expect to get killed.
             }
@@ -733,8 +760,8 @@ fn block_forever() { let (po, _ch) = stream::<()>(); po.recv(); }
 #[ignore(reason = "linked failure")]
 #[test]
 fn test_spawn_unlinked_unsup_no_fail_down() { // grandchild sends on a port
-    use rt::test::run_in_newsched_task;
-    do run_in_newsched_task {
+    use rt::test::run_in_uv_task;
+    do run_in_uv_task {
         let (po, ch) = stream();
         let ch = SharedChan::new(ch);
         do spawn_unlinked {
@@ -744,7 +771,7 @@ fn test_spawn_unlinked_unsup_no_fail_down() { // grandchild sends on a port
                 do 16.times { task::deschedule(); }
                 ch.send(()); // If killed first, grandparent hangs.
             }
-            fail2!(); // Shouldn't kill either (grand)parent or (grand)child.
+            fail!(); // Shouldn't kill either (grand)parent or (grand)child.
         }
         po.recv();
     }
@@ -752,17 +779,17 @@ fn test_spawn_unlinked_unsup_no_fail_down() { // grandchild sends on a port
 #[ignore(reason = "linked failure")]
 #[test]
 fn test_spawn_unlinked_unsup_no_fail_up() { // child unlinked fails
-    use rt::test::run_in_newsched_task;
-    do run_in_newsched_task {
-        do spawn_unlinked { fail2!(); }
+    use rt::test::run_in_uv_task;
+    do run_in_uv_task {
+        do spawn_unlinked { fail!(); }
     }
 }
 #[ignore(reason = "linked failure")]
 #[test]
 fn test_spawn_unlinked_sup_no_fail_up() { // child unlinked fails
-    use rt::test::run_in_newsched_task;
-    do run_in_newsched_task {
-        do spawn_supervised { fail2!(); }
+    use rt::test::run_in_uv_task;
+    do run_in_uv_task {
+        do spawn_supervised { fail!(); }
         // Give child a chance to fail-but-not-kill-us.
         do 16.times { task::deschedule(); }
     }
@@ -770,11 +797,11 @@ fn test_spawn_unlinked_sup_no_fail_up() { // child unlinked fails
 #[ignore(reason = "linked failure")]
 #[test]
 fn test_spawn_unlinked_sup_fail_down() {
-    use rt::test::run_in_newsched_task;
-    do run_in_newsched_task {
-        let result: Result<(),()> = do try {
+    use rt::test::run_in_uv_task;
+    do run_in_uv_task {
+        let result: Result<(), ~Any> = do try {
             do spawn_supervised { block_forever(); }
-            fail2!(); // Shouldn't leave a child hanging around.
+            fail!(); // Shouldn't leave a child hanging around.
         };
         assert!(result.is_err());
     }
@@ -783,9 +810,9 @@ fn test_spawn_unlinked_sup_fail_down() {
 #[ignore(reason = "linked failure")]
 #[test]
 fn test_spawn_linked_sup_fail_up() { // child fails; parent fails
-    use rt::test::run_in_newsched_task;
-    do run_in_newsched_task {
-        let result: Result<(),()> = do try {
+    use rt::test::run_in_uv_task;
+    do run_in_uv_task {
+        let result: Result<(), ~Any> = do try {
             // Unidirectional "parenting" shouldn't override bidirectional linked.
             // We have to cheat with opts - the interface doesn't support them because
             // they don't make sense (redundant with task().supervised()).
@@ -794,7 +821,7 @@ fn test_spawn_linked_sup_fail_up() { // child fails; parent fails
             b0.opts.supervised = true;
 
             do b0.spawn {
-                fail2!();
+                fail!();
             }
             block_forever(); // We should get punted awake
         };
@@ -804,16 +831,16 @@ fn test_spawn_linked_sup_fail_up() { // child fails; parent fails
 #[ignore(reason = "linked failure")]
 #[test]
 fn test_spawn_linked_sup_fail_down() { // parent fails; child fails
-    use rt::test::run_in_newsched_task;
-    do run_in_newsched_task {
-        let result: Result<(),()> = do try {
+    use rt::test::run_in_uv_task;
+    do run_in_uv_task {
+        let result: Result<(), ~Any> = do try {
             // We have to cheat with opts - the interface doesn't support them because
             // they don't make sense (redundant with task().supervised()).
             let mut b0 = task();
             b0.opts.linked = true;
             b0.opts.supervised = true;
             do b0.spawn { block_forever(); }
-            fail2!(); // *both* mechanisms would be wrong if this didn't kill the child
+            fail!(); // *both* mechanisms would be wrong if this didn't kill the child
         };
         assert!(result.is_err());
     }
@@ -821,11 +848,11 @@ fn test_spawn_linked_sup_fail_down() { // parent fails; child fails
 #[ignore(reason = "linked failure")]
 #[test]
 fn test_spawn_linked_unsup_fail_up() { // child fails; parent fails
-    use rt::test::run_in_newsched_task;
-    do run_in_newsched_task {
-        let result: Result<(),()> = do try {
+    use rt::test::run_in_uv_task;
+    do run_in_uv_task {
+        let result: Result<(), ~Any> = do try {
             // Default options are to spawn linked & unsupervised.
-            do spawn { fail2!(); }
+            do spawn { fail!(); }
             block_forever(); // We should get punted awake
         };
         assert!(result.is_err());
@@ -834,12 +861,12 @@ fn test_spawn_linked_unsup_fail_up() { // child fails; parent fails
 #[ignore(reason = "linked failure")]
 #[test]
 fn test_spawn_linked_unsup_fail_down() { // parent fails; child fails
-    use rt::test::run_in_newsched_task;
-    do run_in_newsched_task {
-        let result: Result<(),()> = do try {
+    use rt::test::run_in_uv_task;
+    do run_in_uv_task {
+        let result: Result<(), ~Any> = do try {
             // Default options are to spawn linked & unsupervised.
             do spawn { block_forever(); }
-            fail2!();
+            fail!();
         };
         assert!(result.is_err());
     }
@@ -847,14 +874,14 @@ fn test_spawn_linked_unsup_fail_down() { // parent fails; child fails
 #[ignore(reason = "linked failure")]
 #[test]
 fn test_spawn_linked_unsup_default_opts() { // parent fails; child fails
-    use rt::test::run_in_newsched_task;
-    do run_in_newsched_task {
-        let result: Result<(),()> = do try {
+    use rt::test::run_in_uv_task;
+    do run_in_uv_task {
+        let result: Result<(), ~Any> = do try {
             // Make sure the above test is the same as this one.
             let mut builder = task();
             builder.linked();
             do builder.spawn { block_forever(); }
-            fail2!();
+            fail!();
         };
         assert!(result.is_err());
     }
@@ -866,15 +893,15 @@ fn test_spawn_linked_unsup_default_opts() { // parent fails; child fails
 #[ignore(reason = "linked failure")]
 #[test]
 fn test_spawn_failure_propagate_grandchild() {
-    use rt::test::run_in_newsched_task;
-    do run_in_newsched_task {
-        let result: Result<(),()> = do try {
+    use rt::test::run_in_uv_task;
+    do run_in_uv_task {
+        let result: Result<(), ~Any> = do try {
             // Middle task exits; does grandparent's failure propagate across the gap?
             do spawn_supervised {
                 do spawn_supervised { block_forever(); }
             }
             do 16.times { task::deschedule(); }
-            fail2!();
+            fail!();
         };
         assert!(result.is_err());
     }
@@ -883,15 +910,15 @@ fn test_spawn_failure_propagate_grandchild() {
 #[ignore(reason = "linked failure")]
 #[test]
 fn test_spawn_failure_propagate_secondborn() {
-    use rt::test::run_in_newsched_task;
-    do run_in_newsched_task {
-        let result: Result<(),()> = do try {
+    use rt::test::run_in_uv_task;
+    do run_in_uv_task {
+        let result: Result<(), ~Any> = do try {
             // First-born child exits; does parent's failure propagate to sibling?
             do spawn_supervised {
                 do spawn { block_forever(); } // linked
             }
             do 16.times { task::deschedule(); }
-            fail2!();
+            fail!();
         };
         assert!(result.is_err());
     }
@@ -900,15 +927,15 @@ fn test_spawn_failure_propagate_secondborn() {
 #[ignore(reason = "linked failure")]
 #[test]
 fn test_spawn_failure_propagate_nephew_or_niece() {
-    use rt::test::run_in_newsched_task;
-    do run_in_newsched_task {
-        let result: Result<(),()> = do try {
+    use rt::test::run_in_uv_task;
+    do run_in_uv_task {
+        let result: Result<(), ~Any> = do try {
             // Our sibling exits; does our failure propagate to sibling's child?
             do spawn { // linked
                 do spawn_supervised { block_forever(); }
             }
             do 16.times { task::deschedule(); }
-            fail2!();
+            fail!();
         };
         assert!(result.is_err());
     }
@@ -917,15 +944,15 @@ fn test_spawn_failure_propagate_nephew_or_niece() {
 #[ignore(reason = "linked failure")]
 #[test]
 fn test_spawn_linked_sup_propagate_sibling() {
-    use rt::test::run_in_newsched_task;
-    do run_in_newsched_task {
-        let result: Result<(),()> = do try {
+    use rt::test::run_in_uv_task;
+    do run_in_uv_task {
+        let result: Result<(), ~Any> = do try {
             // Middle sibling exits - does eldest's failure propagate to youngest?
             do spawn { // linked
                 do spawn { block_forever(); } // linked
             }
             do 16.times { task::deschedule(); }
-            fail2!();
+            fail!();
         };
         assert!(result.is_err());
     }
@@ -933,9 +960,9 @@ fn test_spawn_linked_sup_propagate_sibling() {
 
 #[test]
 fn test_unnamed_task() {
-    use rt::test::run_in_newsched_task;
+    use rt::test::run_in_uv_task;
 
-    do run_in_newsched_task {
+    do run_in_uv_task {
         do spawn {
             do with_task_name |name| {
                 assert!(name.is_none());
@@ -946,9 +973,9 @@ fn test_unnamed_task() {
 
 #[test]
 fn test_owned_named_task() {
-    use rt::test::run_in_newsched_task;
+    use rt::test::run_in_uv_task;
 
-    do run_in_newsched_task {
+    do run_in_uv_task {
         let mut t = task();
         t.name(~"ada lovelace");
         do t.spawn {
@@ -961,9 +988,9 @@ fn test_owned_named_task() {
 
 #[test]
 fn test_static_named_task() {
-    use rt::test::run_in_newsched_task;
+    use rt::test::run_in_uv_task;
 
-    do run_in_newsched_task {
+    do run_in_uv_task {
         let mut t = task();
         t.name("ada lovelace");
         do t.spawn {
@@ -976,9 +1003,9 @@ fn test_static_named_task() {
 
 #[test]
 fn test_send_named_task() {
-    use rt::test::run_in_newsched_task;
+    use rt::test::run_in_uv_task;
 
-    do run_in_newsched_task {
+    do run_in_uv_task {
         let mut t = task();
         t.name("ada lovelace".into_send_str());
         do t.spawn {
@@ -1024,27 +1051,25 @@ fn test_add_wrapper() {
 
 #[test]
 fn test_future_result() {
-    let mut result = None;
     let mut builder = task();
-    builder.future_result(|r| result = Some(r));
+    let result = builder.future_result();
     do builder.spawn {}
-    assert_eq!(result.unwrap().recv(), Success);
+    assert!(result.recv().is_ok());
 
-    result = None;
     let mut builder = task();
-    builder.future_result(|r| result = Some(r));
+    let result = builder.future_result();
     builder.unlinked();
     do builder.spawn {
-        fail2!();
+        fail!();
     }
-    assert_eq!(result.unwrap().recv(), Failure);
+    assert!(result.recv().is_err());
 }
 
 #[test] #[should_fail]
 fn test_back_to_the_future_result() {
     let mut builder = task();
-    builder.future_result(util::ignore);
-    builder.future_result(util::ignore);
+    builder.future_result();
+    builder.future_result();
 }
 
 #[test]
@@ -1053,17 +1078,17 @@ fn test_try_success() {
         ~"Success!"
     } {
         result::Ok(~"Success!") => (),
-        _ => fail2!()
+        _ => fail!()
     }
 }
 
 #[test]
 fn test_try_fail() {
     match do try {
-        fail2!()
+        fail!()
     } {
-        result::Err(()) => (),
-        result::Ok(()) => fail2!()
+        result::Err(_) => (),
+        result::Ok(()) => fail!()
     }
 }
 
@@ -1253,7 +1278,7 @@ fn test_unkillable() {
         deschedule();
         // We want to fail after the unkillable task
         // blocks on recv
-        fail2!();
+        fail!();
     }
 
     unsafe {
@@ -1288,7 +1313,7 @@ fn test_unkillable_nested() {
         deschedule();
         // We want to fail after the unkillable task
         // blocks on recv
-        fail2!();
+        fail!();
     }
 
     unsafe {
@@ -1331,9 +1356,9 @@ fn test_child_doesnt_ref_parent() {
 
 #[test]
 fn test_simple_newsched_spawn() {
-    use rt::test::run_in_newsched_task;
+    use rt::test::run_in_uv_task;
 
-    do run_in_newsched_task {
+    do run_in_uv_task {
         spawn(||())
     }
 }
@@ -1341,8 +1366,8 @@ fn test_simple_newsched_spawn() {
 #[ignore(reason = "linked failure")]
 #[test]
 fn test_spawn_watched() {
-    use rt::test::run_in_newsched_task;
-    do run_in_newsched_task {
+    use rt::test::run_in_uv_task;
+    do run_in_uv_task {
         let result = do try {
             let mut t = task();
             t.unlinked();
@@ -1353,7 +1378,7 @@ fn test_spawn_watched() {
                 t.watched();
                 do t.spawn {
                     task::deschedule();
-                    fail2!();
+                    fail!();
                 }
             }
         };
@@ -1364,8 +1389,8 @@ fn test_spawn_watched() {
 #[ignore(reason = "linked failure")]
 #[test]
 fn test_indestructible() {
-    use rt::test::run_in_newsched_task;
-    do run_in_newsched_task {
+    use rt::test::run_in_uv_task;
+    do run_in_uv_task {
         let result = do try {
             let mut t = task();
             t.watched();
@@ -1389,12 +1414,67 @@ fn test_indestructible() {
                 do t.spawn {
                     p3.recv();
                     task::deschedule();
-                    fail2!();
+                    fail!();
                 }
                 c3.send(());
                 p2.recv();
             }
         };
         assert!(result.is_ok());
+    }
+}
+
+#[test]
+fn test_try_fail_cause_static_str() {
+    match do try {
+        fail!("static string");
+    } {
+        Err(ref e) if e.is::<SendStr>() => {}
+        Err(_) | Ok(()) => fail!()
+    }
+}
+
+#[test]
+fn test_try_fail_cause_owned_str() {
+    match do try {
+        fail!(~"owned string");
+    } {
+        Err(ref e) if e.is::<SendStr>() => {}
+        Err(_) | Ok(()) => fail!()
+    }
+}
+
+#[test]
+fn test_try_fail_cause_any() {
+    match do try {
+        fail!(~413u16 as ~Any);
+    } {
+        Err(ref e) if e.is::<u16>() => {}
+        Err(_) | Ok(()) => fail!()
+    }
+}
+
+#[ignore(reason = "linked failure")]
+#[test]
+fn test_try_fail_cause_linked() {
+    match do try {
+        do spawn {
+            fail!()
+        }
+    } {
+        Err(ref e) if e.is::<LinkedFailure>() => {}
+        Err(_) | Ok(()) => fail!()
+    }
+}
+
+#[test]
+fn test_try_fail_cause_any_wrapped() {
+    struct Juju;
+
+    match do try {
+        fail!(~Juju)
+    } {
+        Err(ref e) if e.is::<Juju>() => {}
+        Err(_) | Ok(()) => fail!()
     }
 }

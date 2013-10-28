@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 pub struct Entry<A,B> {
     key: A,
     value: B
@@ -33,7 +35,7 @@ pub fn alist_get<A:Clone + 'static,
             return entry.value.clone();
         }
     }
-    fail2!();
+    fail!();
 }
 
 #[inline]

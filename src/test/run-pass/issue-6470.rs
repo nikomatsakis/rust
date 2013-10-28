@@ -8,8 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// xfail-test
-
 pub mod Bar {
     pub struct Foo {
         v: int,
@@ -21,5 +19,4 @@ pub mod Bar {
     }
 }
 
-fn main() { }
-
+pub fn main() { }

@@ -8,7 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// error-pattern:meep
-fn f(_a: int, _b: int, _c: @int) { fail2!("moop"); }
+#[feature(managed_boxes)];
 
-fn main() { f(1, fail2!("meep"), @42); }
+// error-pattern:meep
+fn f(_a: int, _b: int, _c: @int) { fail!("moop"); }
+
+fn main() { f(1, fail!("meep"), @42); }

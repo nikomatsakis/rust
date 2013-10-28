@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 // Tests that shapes respect linearize_ty_params().
 
 enum option<T> {
@@ -26,7 +28,7 @@ fn mk<T:'static>() -> @mut Smallintmap<T> {
 
 fn f<T,U:'static>() {
     let sim = mk::<U>();
-    error2!("{:?}", sim);
+    error!("{:?}", sim);
 }
 
 pub fn main() {

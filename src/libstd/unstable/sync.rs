@@ -14,7 +14,6 @@ use comm;
 use libc;
 use ptr;
 use option::*;
-use either::{Either, Left, Right};
 use task;
 use unstable::atomics::{AtomicOption,AtomicUint,Acquire,Release,Relaxed,SeqCst};
 use unstable::finally::Finally;
@@ -29,6 +28,27 @@ use vec;
 //#[unsafe_no_drop_flag] FIXME: #9758
 pub struct UnsafeArc<T> {
     data: *mut ArcData<T>,
+}
+
+pub enum UnsafeArcUnwrap<T> {
+    UnsafeArcSelf(UnsafeArc<T>),
+    UnsafeArcT(T)
+}
+
+impl<T> UnsafeArcUnwrap<T> {
+    fn expect_t(self, msg: &'static str) -> T {
+        match self {
+            UnsafeArcSelf(_) => fail!(msg),
+            UnsafeArcT(t) => t
+        }
+    }
+
+    fn is_self(&self) -> bool {
+        match *self {
+            UnsafeArcSelf(_) => true,
+            UnsafeArcT(_) => false
+        }
+    }
 }
 
 struct ArcData<T> {
@@ -172,15 +192,15 @@ impl<T: Send> UnsafeArc<T> {
                     // If 'put' returns the server end back to us, we were rejected;
                     // someone else was trying to unwrap. Avoid guaranteed deadlock.
                     cast::forget(data);
-                    fail2!("Another task is already unwrapping this Arc!");
+                    fail!("Another task is already unwrapping this Arc!");
                 }
             }
         }
     }
 
-    /// As unwrap above, but without blocking. Returns 'Left(self)' if this is
-    /// not the last reference; 'Right(unwrapped_data)' if so.
-    pub fn try_unwrap(self) -> Either<UnsafeArc<T>, T> {
+    /// As unwrap above, but without blocking. Returns 'UnsafeArcSelf(self)' if this is
+    /// not the last reference; 'UnsafeArcT(unwrapped_data)' if so.
+    pub fn try_unwrap(self) -> UnsafeArcUnwrap<T> {
         unsafe {
             let mut this = self; // FIXME(#4330) mutable self
             // The ~ dtor needs to run if this code succeeds.
@@ -198,10 +218,10 @@ impl<T: Send> UnsafeArc<T> {
                 // Tell this handle's destructor not to run (we are now it).
                 this.data = ptr::mut_null();
                 // FIXME(#3224) as above
-                Right(data.data.take_unwrap())
+                UnsafeArcT(data.data.take_unwrap())
             } else {
                 cast::forget(data);
-                Left(this)
+                UnsafeArcSelf(this)
             }
         }
     }
@@ -304,7 +324,7 @@ pub unsafe fn atomically<U>(f: &fn() -> U) -> U {
 type rust_little_lock = *libc::c_void;
 
 pub struct LittleLock {
-    l: rust_little_lock,
+    priv l: rust_little_lock,
 }
 
 impl Drop for LittleLock {
@@ -334,6 +354,23 @@ impl LittleLock {
             }
         }
     }
+
+    pub unsafe fn signal(&self) {
+        rust_signal_little_lock(self.l);
+    }
+
+    pub unsafe fn lock_and_wait(&self, f: &fn() -> bool) {
+        do atomically {
+            rust_lock_little_lock(self.l);
+            do (|| {
+                if f() {
+                    rust_wait_little_lock(self.l);
+                }
+            }).finally {
+                rust_unlock_little_lock(self.l);
+            }
+        }
+    }
 }
 
 struct ExData<T> {
@@ -353,7 +390,7 @@ struct ExData<T> {
  * need to block or deschedule while accessing shared state, use extra::sync::RWArc.
  */
 pub struct Exclusive<T> {
-    x: UnsafeArc<ExData<T>>
+    priv x: UnsafeArc<ExData<T>>
 }
 
 impl<T:Send> Clone for Exclusive<T> {
@@ -386,7 +423,7 @@ impl<T:Send> Exclusive<T> {
         let rec = self.x.get();
         do (*rec).lock.lock {
             if (*rec).failed {
-                fail2!("Poisoned Exclusive::new - another task failed inside!");
+                fail!("Poisoned Exclusive::new - another task failed inside!");
             }
             (*rec).failed = true;
             let result = f(&mut (*rec).data);
@@ -399,6 +436,34 @@ impl<T:Send> Exclusive<T> {
     pub unsafe fn with_imm<U>(&self, f: &fn(x: &T) -> U) -> U {
         do self.with |x| {
             f(cast::transmute_immut(x))
+        }
+    }
+
+    #[inline]
+    pub unsafe fn hold_and_signal(&self, f: &fn(x: &mut T)) {
+        let rec = self.x.get();
+        do (*rec).lock.lock {
+            if (*rec).failed {
+                fail!("Poisoned Exclusive::new - another task failed inside!");
+            }
+            (*rec).failed = true;
+            f(&mut (*rec).data);
+            (*rec).failed = false;
+            (*rec).lock.signal();
+        }
+    }
+
+    #[inline]
+    pub unsafe fn hold_and_wait(&self, f: &fn(x: &T) -> bool) {
+        let rec = self.x.get();
+        do (*rec).lock.lock_and_wait {
+            if (*rec).failed {
+                fail!("Poisoned Exclusive::new - another task failed inside!");
+            }
+            (*rec).failed = true;
+            let result = f(&(*rec).data);
+            (*rec).failed = false;
+            result
         }
     }
 
@@ -415,6 +480,8 @@ externfn!(fn rust_create_little_lock() -> rust_little_lock)
 externfn!(fn rust_destroy_little_lock(lock: rust_little_lock))
 externfn!(fn rust_lock_little_lock(lock: rust_little_lock))
 externfn!(fn rust_unlock_little_lock(lock: rust_little_lock))
+externfn!(fn rust_signal_little_lock(lock: rust_little_lock))
+externfn!(fn rust_wait_little_lock(lock: rust_little_lock))
 
 #[cfg(test)]
 mod tests {
@@ -425,7 +492,7 @@ mod tests {
     use super::{Exclusive, UnsafeArc, atomically};
     use task;
     use util;
-    use sys::size_of;
+    use mem::size_of;
 
     //#[unsafe_no_drop_flag] FIXME: #9758
     #[ignore]
@@ -527,7 +594,7 @@ mod tests {
     #[test]
     fn arclike_try_unwrap() {
         let x = UnsafeArc::new(~~"hello");
-        assert!(x.try_unwrap().expect_right("try_unwrap failed") == ~~"hello");
+        assert!(x.try_unwrap().expect_t("try_unwrap failed") == ~~"hello");
     }
 
     #[test]
@@ -535,9 +602,9 @@ mod tests {
         let x = UnsafeArc::new(~~"hello");
         let x2 = x.clone();
         let left_x = x.try_unwrap();
-        assert!(left_x.is_left());
+        assert!(left_x.is_self());
         util::ignore(left_x);
-        assert!(x2.try_unwrap().expect_right("try_unwrap none") == ~~"hello");
+        assert!(x2.try_unwrap().expect_t("try_unwrap none") == ~~"hello");
     }
 
     #[test]
@@ -554,7 +621,7 @@ mod tests {
         p.recv();
         task::deschedule(); // Try to make the unwrapper get blocked first.
         let left_x = x.try_unwrap();
-        assert!(left_x.is_left());
+        assert!(left_x.is_self());
         util::ignore(left_x);
         p.recv();
     }
@@ -580,32 +647,29 @@ mod tests {
         // Now try the same thing, but with the child task blocking.
         let x = Exclusive::new(~~"hello");
         let x2 = Cell::new(x.clone());
-        let mut res = None;
         let mut builder = task::task();
-        builder.future_result(|r| res = Some(r));
+        let res = builder.future_result();
         do builder.spawn {
             let x2 = x2.take();
             assert!(x2.unwrap() == ~~"hello");
         }
         // Have to get rid of our reference before blocking.
         util::ignore(x);
-        res.unwrap().recv();
+        res.recv();
     }
 
     #[test] #[should_fail]
     fn exclusive_new_unwrap_conflict() {
         let x = Exclusive::new(~~"hello");
         let x2 = Cell::new(x.clone());
-        let mut res = None;
         let mut builder = task::task();
-        builder.future_result(|r| res = Some(r));
+        let res = builder.future_result();
         do builder.spawn {
             let x2 = x2.take();
             assert!(x2.unwrap() == ~~"hello");
         }
         assert!(x.unwrap() == ~~"hello");
-        // See #4689 for why this can't be just "res.recv()".
-        assert!(res.unwrap().recv() == task::Success);
+        assert!(res.recv().is_ok());
     }
 
     #[test]
@@ -620,7 +684,7 @@ mod tests {
             let x2 = x.clone();
             do task::spawn {
                 do 10.times { task::deschedule(); } // try to let the unwrapper go
-                fail2!(); // punt it awake from its deadlock
+                fail!(); // punt it awake from its deadlock
             }
             let _z = x.unwrap();
             unsafe { do x2.with |_hello| { } }

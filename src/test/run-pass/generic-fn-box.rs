@@ -8,8 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-
+#[feature(managed_boxes)];
 
 fn f<T>(x: @T) -> @T { return x; }
 
-pub fn main() { let x = f(@3); info2!("{:?}", *x); }
+pub fn main() { let x = f(@3); info!("{:?}", *x); }

@@ -12,25 +12,22 @@ use option::{Option, Some, None};
 use result::{Ok, Err};
 use rt::io::net::ip::SocketAddr;
 use rt::io::{Reader, Writer};
-use rt::io::{io_error, read_error, EndOfFile};
-use rt::rtio::{RtioSocket, RtioUdpSocketObject, RtioUdpSocket, IoFactory, IoFactoryObject};
-use rt::local::Local;
+use rt::io::{io_error, EndOfFile};
+use rt::rtio::{RtioSocket, RtioUdpSocket, IoFactory, with_local_io};
 
 pub struct UdpSocket {
-    priv obj: ~RtioUdpSocketObject
+    priv obj: ~RtioUdpSocket
 }
 
 impl UdpSocket {
     pub fn bind(addr: SocketAddr) -> Option<UdpSocket> {
-        let socket = unsafe {
-            let factory: *mut IoFactoryObject = Local::unsafe_borrow();
-            (*factory).udp_bind(addr)
-        };
-        match socket {
-            Ok(s) => Some(UdpSocket { obj: s }),
-            Err(ioerr) => {
-                io_error::cond.raise(ioerr);
-                None
+        do with_local_io |io| {
+            match io.udp_bind(addr) {
+                Ok(s) => Some(UdpSocket { obj: s }),
+                Err(ioerr) => {
+                    io_error::cond.raise(ioerr);
+                    None
+                }
             }
         }
     }
@@ -41,7 +38,7 @@ impl UdpSocket {
             Err(ioerr) => {
                 // EOF is indicated by returning None
                 if ioerr.kind != EndOfFile {
-                    read_error::cond.raise(ioerr);
+                    io_error::cond.raise(ioerr);
                 }
                 None
             }
@@ -94,7 +91,7 @@ impl Reader for UdpStream {
         }
     }
 
-    fn eof(&mut self) -> bool { fail2!() }
+    fn eof(&mut self) -> bool { fail!() }
 }
 
 impl Writer for UdpStream {
@@ -104,7 +101,7 @@ impl Writer for UdpStream {
         }
     }
 
-    fn flush(&mut self) { fail2!() }
+    fn flush(&mut self) { fail!() }
 }
 
 #[cfg(test)]
@@ -153,10 +150,10 @@ mod test {
                                 assert_eq!(buf[0], 99);
                                 assert_eq!(src, client_ip);
                             }
-                            None => fail2!()
+                            None => fail!()
                         }
                     }
-                    None => fail2!()
+                    None => fail!()
                 }
             }
 
@@ -166,7 +163,7 @@ mod test {
                         port.take().recv();
                         client.sendto([99], server_ip)
                     }
-                    None => fail2!()
+                    None => fail!()
                 }
             }
         }
@@ -192,10 +189,10 @@ mod test {
                                 assert_eq!(buf[0], 99);
                                 assert_eq!(src, client_ip);
                             }
-                            None => fail2!()
+                            None => fail!()
                         }
                     }
-                    None => fail2!()
+                    None => fail!()
                 }
             }
 
@@ -205,7 +202,7 @@ mod test {
                         port.take().recv();
                         client.sendto([99], server_ip)
                     }
-                    None => fail2!()
+                    None => fail!()
                 }
             }
         }
@@ -232,10 +229,10 @@ mod test {
                                 assert_eq!(nread, 1);
                                 assert_eq!(buf[0], 99);
                             }
-                            None => fail2!()
+                            None => fail!()
                         }
                     }
-                    None => fail2!()
+                    None => fail!()
                 }
             }
 
@@ -247,7 +244,7 @@ mod test {
                         port.take().recv();
                         stream.write([99]);
                     }
-                    None => fail2!()
+                    None => fail!()
                 }
             }
         }
@@ -274,10 +271,10 @@ mod test {
                                 assert_eq!(nread, 1);
                                 assert_eq!(buf[0], 99);
                             }
-                            None => fail2!()
+                            None => fail!()
                         }
                     }
-                    None => fail2!()
+                    None => fail!()
                 }
             }
 
@@ -289,7 +286,7 @@ mod test {
                         port.take().recv();
                         stream.write([99]);
                     }
-                    None => fail2!()
+                    None => fail!()
                 }
             }
         }

@@ -116,7 +116,7 @@ impl CString {
     ///
     /// Fails if the CString is null.
     pub fn with_ref<T>(&self, f: &fn(*libc::c_char) -> T) -> T {
-        if self.buf.is_null() { fail2!("CString is null!"); }
+        if self.buf.is_null() { fail!("CString is null!"); }
         f(self.buf)
     }
 
@@ -126,7 +126,7 @@ impl CString {
     ///
     /// Fails if the CString is null.
     pub fn with_mut_ref<T>(&mut self, f: &fn(*mut libc::c_char) -> T) -> T {
-        if self.buf.is_null() { fail2!("CString is null!"); }
+        if self.buf.is_null() { fail!("CString is null!"); }
         f(unsafe { cast::transmute_mut_unsafe(self.buf) })
     }
 
@@ -152,7 +152,7 @@ impl CString {
     /// Fails if the CString is null.
     #[inline]
     pub fn as_bytes<'a>(&'a self) -> &'a [u8] {
-        if self.buf.is_null() { fail2!("CString is null!"); }
+        if self.buf.is_null() { fail!("CString is null!"); }
         unsafe {
             cast::transmute((self.buf, self.len() + 1))
         }
@@ -273,7 +273,7 @@ impl<'self> ToCStr for &'self [u8] {
         do self.as_imm_buf |self_buf, self_len| {
             let buf = libc::malloc(self_len as libc::size_t + 1) as *mut u8;
             if buf.is_null() {
-                fail2!("failed to allocate memory!");
+                fail!("failed to allocate memory!");
             }
 
             ptr::copy_memory(buf, self_buf, self_len);
@@ -348,12 +348,57 @@ impl<'self> Iterator<libc::c_char> for CStringIterator<'self> {
     }
 }
 
+/// Parses a C "multistring", eg windows env values or
+/// the req->ptr result in a uv_fs_readdir() call.
+///
+/// Optionally, a `count` can be passed in, limiting the
+/// parsing to only being done `count`-times.
+///
+/// The specified closure is invoked with each string that
+/// is found, and the number of strings found is returned.
+pub unsafe fn from_c_multistring(buf: *libc::c_char,
+                                 count: Option<uint>,
+                                 f: &fn(&CString)) -> uint {
+
+    let mut curr_ptr: uint = buf as uint;
+    let mut ctr = 0;
+    let (limited_count, limit) = match count {
+        Some(limit) => (true, limit),
+        None => (false, 0)
+    };
+    while ((limited_count && ctr < limit) || !limited_count)
+          && *(curr_ptr as *libc::c_char) != 0 as libc::c_char {
+        let cstr = CString::new(curr_ptr as *libc::c_char, false);
+        f(&cstr);
+        curr_ptr += cstr.len() + 1;
+        ctr += 1;
+    }
+    return ctr;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use libc;
     use ptr;
     use option::{Some, None};
+    use vec;
+
+    #[test]
+    fn test_str_multistring_parsing() {
+        unsafe {
+            let input = bytes!("zero", "\x00", "one", "\x00", "\x00");
+            let ptr = vec::raw::to_ptr(input);
+            let expected = ["zero", "one"];
+            let mut it = expected.iter();
+            let result = do from_c_multistring(ptr as *libc::c_char, None) |c| {
+                let cbytes = c.as_bytes().slice_to(c.len());
+                assert_eq!(cbytes, it.next().unwrap().as_bytes());
+            };
+            assert_eq!(result, 2);
+            assert!(it.next().is_none());
+        }
+    }
 
     #[test]
     fn test_str_to_c_str() {

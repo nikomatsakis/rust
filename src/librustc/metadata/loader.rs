@@ -25,7 +25,7 @@ use syntax::attr::AttrMetaMethods;
 
 use std::c_str::ToCStr;
 use std::cast;
-use std::io;
+use std::rt::io;
 use std::num;
 use std::option;
 use std::os::consts::{macos, freebsd, linux, android, win32};
@@ -93,25 +93,27 @@ fn find_library_crate_aux(
     let prefix = format!("{}{}-", prefix, crate_name);
     let mut matches = ~[];
     filesearch::search(filesearch, |path| -> FileMatch {
-      let path_str = path.filename();
+      // FIXME (#9639): This needs to handle non-utf8 paths
+      let path_str = path.filename_str();
       match path_str {
           None => FileDoesntMatch,
           Some(path_str) =>
               if path_str.starts_with(prefix) && path_str.ends_with(suffix) {
-                  debug2!("{} is a candidate", path.to_str());
+                  debug!("{} is a candidate", path.display());
                   match get_metadata_section(cx.os, path) {
                       Some(cvec) =>
                           if !crate_matches(cvec, cx.metas, cx.hash) {
-                              debug2!("skipping {}, metadata doesn't match",
-                                  path.to_str());
+                              debug!("skipping {}, metadata doesn't match",
+                                  path.display());
                               FileDoesntMatch
                           } else {
-                              debug2!("found {} with matching metadata", path.to_str());
-                              matches.push((path.to_str(), cvec));
+                              debug!("found {} with matching metadata", path.display());
+                              // FIXME (#9639): This needs to handle non-utf8 paths
+                              matches.push((path.as_str().unwrap().to_owned(), cvec));
                               FileMatches
                           },
                       _ => {
-                          debug2!("could not load metadata for {}", path.to_str());
+                          debug!("could not load metadata for {}", path.display());
                           FileDoesntMatch
                       }
                   }
@@ -149,7 +151,7 @@ pub fn crate_name_from_metas(metas: &[@ast::MetaItem]) -> @str {
             _ => {}
         }
     }
-    fail2!("expected to find the crate name")
+    fail!("expected to find the crate name")
 }
 
 pub fn package_id_from_metas(metas: &[@ast::MetaItem]) -> Option<@str> {
@@ -188,7 +190,7 @@ pub fn metadata_matches(extern_metas: &[@ast::MetaItem],
 
 // extern_metas: metas we read from the crate
 // local_metas: metas we're looking for
-    debug2!("matching {} metadata requirements against {} items",
+    debug!("matching {} metadata requirements against {} items",
            local_metas.len(), extern_metas.len());
 
     do local_metas.iter().all |needed| {
@@ -211,14 +213,14 @@ fn get_metadata_section(os: Os,
         while llvm::LLVMIsSectionIteratorAtEnd(of.llof, si.llsi) == False {
             let name_buf = llvm::LLVMGetSectionName(si.llsi);
             let name = str::raw::from_c_str(name_buf);
-            debug2!("get_metadata_section: name {}", name);
+            debug!("get_metadata_section: name {}", name);
             if read_meta_section_name(os) == name {
                 let cbuf = llvm::LLVMGetSectionContents(si.llsi);
                 let csz = llvm::LLVMGetSectionSize(si.llsi) as uint;
                 let mut found = None;
                 let cvbuf: *u8 = cast::transmute(cbuf);
                 let vlen = encoder::metadata_encoding_version.len();
-                debug2!("checking {} bytes of metadata-version stamp",
+                debug!("checking {} bytes of metadata-version stamp",
                        vlen);
                 let minsz = num::min(vlen, csz);
                 let mut version_ok = false;
@@ -229,7 +231,7 @@ fn get_metadata_section(os: Os,
                 if !version_ok { return None; }
 
                 let cvbuf1 = ptr::offset(cvbuf, vlen as int);
-                debug2!("inflating {} bytes of compressed metadata",
+                debug!("inflating {} bytes of compressed metadata",
                        csz - vlen);
                 do vec::raw::buf_as_slice(cvbuf1, csz-vlen) |bytes| {
                     let inflated = flate::inflate_bytes(bytes);
@@ -269,11 +271,11 @@ pub fn read_meta_section_name(os: Os) -> &'static str {
 pub fn list_file_metadata(intr: @ident_interner,
                           os: Os,
                           path: &Path,
-                          out: @io::Writer) {
+                          out: @mut io::Writer) {
     match get_metadata_section(os, path) {
       option::Some(bytes) => decoder::list_crate_metadata(intr, bytes, out),
       option::None => {
-        out.write_str(format!("could not find metadata in {}.\n", path.to_str()))
+        write!(out, "could not find metadata in {}.\n", path.display())
       }
     }
 }

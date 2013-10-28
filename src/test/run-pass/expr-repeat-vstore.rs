@@ -1,4 +1,4 @@
-use std::io::println;
+#[feature(managed_boxes)];
 
 pub fn main() {
     let v: ~[int] = ~[ 1, ..5 ];

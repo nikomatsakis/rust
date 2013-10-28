@@ -8,10 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 // error-pattern:fail
 
 fn fold_local() -> @~[int]{
-    fail2!();
+    fail!();
 }
 
 fn main() {

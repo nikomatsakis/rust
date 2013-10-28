@@ -70,6 +70,7 @@ pub fn type_is_immediate(ccx: &mut CrateContext, ty: ty::t) -> bool {
         return true;
     }
     match ty::get(ty).sty {
+        ty::ty_bot => true,
         ty::ty_struct(*) | ty::ty_enum(*) | ty::ty_tup(*) => {
             let llty = sizing_type_of(ccx, ty);
             llsize_of_alloc(ccx, llty) <= llsize_of_alloc(ccx, ccx.int_type)
@@ -449,7 +450,7 @@ pub fn add_clean(bcx: @mut Block, val: ValueRef, t: ty::t) {
         return
     }
 
-    debug2!("add_clean({}, {}, {})", bcx.to_str(), bcx.val_to_str(val), t.repr(bcx.tcx()));
+    debug!("add_clean({}, {}, {})", bcx.to_str(), bcx.val_to_str(val), t.repr(bcx.tcx()));
 
     let cleanup_type = cleanup_type(bcx.tcx(), t);
     do in_scope_cx(bcx, None) |scope_info| {
@@ -464,7 +465,7 @@ pub fn add_clean(bcx: @mut Block, val: ValueRef, t: ty::t) {
 
 pub fn add_clean_temp_immediate(cx: @mut Block, val: ValueRef, ty: ty::t) {
     if !ty::type_needs_drop(cx.tcx(), ty) { return; }
-    debug2!("add_clean_temp_immediate({}, {}, {})",
+    debug!("add_clean_temp_immediate({}, {}, {})",
            cx.to_str(), cx.val_to_str(val),
            ty.repr(cx.tcx()));
     let cleanup_type = cleanup_type(cx.tcx(), ty);
@@ -493,7 +494,7 @@ pub fn add_clean_temp_mem_in_scope(bcx: @mut Block,
 pub fn add_clean_temp_mem_in_scope_(bcx: @mut Block, scope_id: Option<ast::NodeId>,
                                     val: ValueRef, t: ty::t) {
     if !ty::type_needs_drop(bcx.tcx(), t) { return; }
-    debug2!("add_clean_temp_mem({}, {}, {})",
+    debug!("add_clean_temp_mem({}, {}, {})",
            bcx.to_str(), bcx.val_to_str(val),
            t.repr(bcx.tcx()));
     let cleanup_type = cleanup_type(bcx.tcx(), t);
@@ -522,7 +523,7 @@ pub fn add_clean_return_to_mut(bcx: @mut Block,
     //! box was frozen initially. Here, both `frozen_val_ref` and
     //! `bits_val_ref` are in fact pointers to stack slots.
 
-    debug2!("add_clean_return_to_mut({}, {}, {})",
+    debug!("add_clean_return_to_mut({}, {}, {})",
            bcx.to_str(),
            bcx.val_to_str(frozen_val_ref),
            bcx.val_to_str(bits_val_ref));
@@ -634,7 +635,7 @@ impl get_node_info for ast::Block {
 
 impl get_node_info for Option<@ast::Expr> {
     fn info(&self) -> Option<NodeInfo> {
-        self.and_then_ref(|s| s.info())
+        self.as_ref().and_then(|s| s.info())
     }
 }
 
@@ -776,7 +777,7 @@ pub fn in_scope_cx(cx: @mut Block, scope_id: Option<ast::NodeId>, f: &fn(si: &mu
             Some(inf) => match scope_id {
                 Some(wanted) => match inf.node_info {
                     Some(NodeInfo { id: actual, _ }) if wanted == actual => {
-                        debug2!("in_scope_cx: selected cur={} (cx={})",
+                        debug!("in_scope_cx: selected cur={} (cx={})",
                                cur.to_str(), cx.to_str());
                         f(inf);
                         return;
@@ -784,7 +785,7 @@ pub fn in_scope_cx(cx: @mut Block, scope_id: Option<ast::NodeId>, f: &fn(si: &mu
                     _ => inf.parent,
                 },
                 None => {
-                    debug2!("in_scope_cx: selected cur={} (cx={})",
+                    debug!("in_scope_cx: selected cur={} (cx={})",
                            cur.to_str(), cx.to_str());
                     f(inf);
                     return;
@@ -848,7 +849,7 @@ pub fn C_floating(s: &str, t: Type) -> ValueRef {
 }
 
 pub fn C_nil() -> ValueRef {
-    return C_struct([]);
+    C_struct([], false)
 }
 
 pub fn C_bool(val: bool) -> ValueRef {
@@ -913,7 +914,25 @@ pub fn C_estr_slice(cx: &mut CrateContext, s: @str) -> ValueRef {
     unsafe {
         let len = s.len();
         let cs = llvm::LLVMConstPointerCast(C_cstr(cx, s), Type::i8p().to_ref());
-        C_struct([cs, C_uint(cx, len)])
+        C_struct([cs, C_uint(cx, len)], false)
+    }
+}
+
+pub fn C_binary_slice(cx: &mut CrateContext, data: &[u8]) -> ValueRef {
+    unsafe {
+        let len = data.len();
+        let lldata = C_bytes(data);
+
+        let gsym = token::gensym("binary");
+        let g = do format!("binary{}", gsym).with_c_str |buf| {
+            llvm::LLVMAddGlobal(cx.llmod, val_ty(lldata).to_ref(), buf)
+        };
+        llvm::LLVMSetInitializer(g, lldata);
+        llvm::LLVMSetGlobalConstant(g, True);
+        lib::llvm::SetLinkage(g, lib::llvm::InternalLinkage);
+
+        let cs = llvm::LLVMConstPointerCast(g, Type::i8p().to_ref());
+        C_struct([cs, C_uint(cx, len)], false)
     }
 }
 
@@ -927,18 +946,10 @@ pub fn C_zero_byte_arr(size: uint) -> ValueRef {
     }
 }
 
-pub fn C_struct(elts: &[ValueRef]) -> ValueRef {
+pub fn C_struct(elts: &[ValueRef], packed: bool) -> ValueRef {
     unsafe {
         do elts.as_imm_buf |ptr, len| {
-            llvm::LLVMConstStructInContext(base::task_llcx(), ptr, len as c_uint, False)
-        }
-    }
-}
-
-pub fn C_packed_struct(elts: &[ValueRef]) -> ValueRef {
-    unsafe {
-        do elts.as_imm_buf |ptr, len| {
-            llvm::LLVMConstStructInContext(base::task_llcx(), ptr, len as c_uint, True)
+            llvm::LLVMConstStructInContext(base::task_llcx(), ptr, len as c_uint, packed as Bool)
         }
     }
 }
@@ -977,7 +988,7 @@ pub fn const_get_elt(cx: &CrateContext, v: ValueRef, us: &[c_uint])
             llvm::LLVMConstExtractValue(v, p, len as c_uint)
         };
 
-        debug2!("const_get_elt(v={}, us={:?}, r={})",
+        debug!("const_get_elt(v={}, us={:?}, r={})",
                cx.tn.val_to_str(v), us, cx.tn.val_to_str(r));
 
         return r;
@@ -1145,7 +1156,7 @@ pub fn node_id_type_params(bcx: &mut Block, id: ast::NodeId) -> ~[ty::t] {
 pub fn node_vtables(bcx: @mut Block, id: ast::NodeId)
                  -> Option<typeck::vtable_res> {
     let raw_vtables = bcx.ccx().maps.vtable_map.find(&id);
-    raw_vtables.map_move(|vts| resolve_vtables_in_fn_ctxt(bcx.fcx, *vts))
+    raw_vtables.map(|vts| resolve_vtables_in_fn_ctxt(bcx.fcx, *vts))
 }
 
 // Apply the typaram substitutions in the FunctionContext to some
@@ -1220,7 +1231,7 @@ pub fn find_vtable(tcx: ty::ctxt,
                    n_param: typeck::param_index,
                    n_bound: uint)
                    -> typeck::vtable_origin {
-    debug2!("find_vtable(n_param={:?}, n_bound={}, ps={})",
+    debug!("find_vtable(n_param={:?}, n_bound={}, ps={})",
            n_param, n_bound, ps.repr(tcx));
 
     let param_bounds = match n_param {

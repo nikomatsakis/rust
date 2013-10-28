@@ -10,7 +10,7 @@
 
 use std::cast;
 use std::ptr;
-use std::sys;
+use std::mem;
 
 fn addr_of<T>(ptr: &T) -> uint {
     let ptr = ptr::to_unsafe_ptr(ptr);
@@ -20,14 +20,14 @@ fn addr_of<T>(ptr: &T) -> uint {
 fn is_aligned<T>(ptr: &T) -> bool {
     unsafe {
         let addr: uint = cast::transmute(ptr);
-        (addr % sys::min_align_of::<T>()) == 0
+        (addr % mem::min_align_of::<T>()) == 0
     }
 }
 
 pub fn main() {
     let x = Some(0u64);
     match x {
-        None => fail2!(),
+        None => fail!(),
         Some(ref y) => assert!(is_aligned(y))
     }
 }

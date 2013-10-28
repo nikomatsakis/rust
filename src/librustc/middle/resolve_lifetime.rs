@@ -76,9 +76,9 @@ impl<'self> Visitor<&'self ScopeChain<'self>> for LifetimeContext {
                 ItemScope(&generics.lifetimes)
             }
         };
-        debug2!("entering scope {:?}", scope);
+        debug!("entering scope {:?}", scope);
         visit::walk_item(self, item, &scope);
-        debug2!("exiting scope {:?}", scope);
+        debug!("exiting scope {:?}", scope);
     }
 
     fn visit_fn(&mut self,
@@ -93,9 +93,9 @@ impl<'self> Visitor<&'self ScopeChain<'self>> for LifetimeContext {
             visit::fk_method(_, generics, _) => {
                 let scope1 = FnScope(n, &generics.lifetimes, scope);
                 self.check_lifetime_names(&generics.lifetimes);
-                debug2!("pushing fn scope id={} due to item/method", n);
+                debug!("pushing fn scope id={} due to item/method", n);
                 visit::walk_fn(self, fk, fd, b, s, n, &scope1);
-                debug2!("popping fn scope id={} due to item/method", n);
+                debug!("popping fn scope id={} due to item/method", n);
             }
             visit::fk_anon(*) | visit::fk_fn_block(*) => {
                 visit::walk_fn(self, fk, fd, b, s, n, scope);
@@ -111,9 +111,9 @@ impl<'self> Visitor<&'self ScopeChain<'self>> for LifetimeContext {
             ast::ty_bare_fn(@ast::TyBareFn { lifetimes: ref lifetimes, _ }) => {
                 let scope1 = FnScope(ty.id, lifetimes, scope);
                 self.check_lifetime_names(lifetimes);
-                debug2!("pushing fn scope id={} due to type", ty.id);
+                debug!("pushing fn scope id={} due to type", ty.id);
                 visit::walk_ty(self, ty, &scope1);
-                debug2!("popping fn scope id={} due to type", ty.id);
+                debug!("popping fn scope id={} due to type", ty.id);
             }
             _ => {
                 visit::walk_ty(self, ty, scope);
@@ -126,18 +126,18 @@ impl<'self> Visitor<&'self ScopeChain<'self>> for LifetimeContext {
                        scope: &'self ScopeChain<'self>) {
         let scope1 = FnScope(m.id, &m.generics.lifetimes, scope);
         self.check_lifetime_names(&m.generics.lifetimes);
-        debug2!("pushing fn scope id={} due to ty_method", m.id);
+        debug!("pushing fn scope id={} due to ty_method", m.id);
         visit::walk_ty_method(self, m, &scope1);
-        debug2!("popping fn scope id={} due to ty_method", m.id);
+        debug!("popping fn scope id={} due to ty_method", m.id);
     }
 
     fn visit_block(&mut self,
                    b: &ast::Block,
                    scope: &'self ScopeChain<'self>) {
         let scope1 = BlockScope(b.id, scope);
-        debug2!("pushing block scope {}", b.id);
+        debug!("pushing block scope {}", b.id);
         visit::walk_block(self, b, &scope1);
-        debug2!("popping block scope {}", b.id);
+        debug!("popping block scope {}", b.id);
     }
 
     fn visit_lifetime_ref(&mut self,
@@ -300,7 +300,7 @@ impl LifetimeContext {
                                probably a bug in syntax::fold");
         }
 
-        debug2!("lifetime_ref={} id={} resolved to {:?}",
+        debug!("lifetime_ref={} id={} resolved to {:?}",
                 lifetime_to_str(lifetime_ref,
                                 self.sess.intr()),
                 lifetime_ref.id,

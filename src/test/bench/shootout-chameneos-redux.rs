@@ -14,7 +14,6 @@ extern mod extra;
 
 use std::cell::Cell;
 use std::comm::{stream, SharedChan};
-use std::io;
 use std::option;
 use std::os;
 use std::task;
@@ -66,7 +65,7 @@ fn show_digit(nn: uint) -> ~str {
         7 => {~"seven"}
         8 => {~"eight"}
         9 => {~"nine"}
-        _ => {fail2!("expected digits from 0 to 9...")}
+        _ => {fail!("expected digits from 0 to 9...")}
     }
 }
 
@@ -191,15 +190,15 @@ fn rendezvous(nn: uint, set: ~[color]) {
     }
 
     // print each color in the set
-    io::println(show_color_list(set));
+    println(show_color_list(set));
 
     // print each creature's stats
     for rep in report.iter() {
-        io::println(*rep);
+        println(*rep);
     }
 
     // print the total number of creatures met
-    io::println(show_number(creatures_met));
+    println(show_number(creatures_met));
 }
 
 fn main() {
@@ -215,10 +214,10 @@ fn main() {
     let nn = from_str::<uint>(args[1]).unwrap();
 
     print_complements();
-    io::println("");
+    println("");
 
     rendezvous(nn, ~[Blue, Red, Yellow]);
-    io::println("");
+    println("");
 
     rendezvous(nn,
         ~[Blue, Red, Yellow, Red, Yellow, Blue, Red, Yellow, Red, Blue]);

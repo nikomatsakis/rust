@@ -1,4 +1,3 @@
-// -*- rust -*-
 // Copyright 2012 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
@@ -12,18 +11,17 @@
 use std::task;
 
 pub fn main() {
-    let mut result = None;
     let mut builder = task::task();
-    builder.future_result(|r| { result = Some(r); });
+    let result = builder.future_result();
     builder.spawn(child);
-    error2!("1");
+    error!("1");
     task::deschedule();
-    error2!("2");
+    error!("2");
     task::deschedule();
-    error2!("3");
-    result.unwrap().recv();
+    error!("3");
+    result.recv();
 }
 
 fn child() {
-    error2!("4"); task::deschedule(); error2!("5"); task::deschedule(); error2!("6");
+    error!("4"); task::deschedule(); error!("5"); task::deschedule(); error!("6");
 }

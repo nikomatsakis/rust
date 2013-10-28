@@ -42,7 +42,7 @@ impl Combine for Glb {
     fn mts(&self, a: &ty::mt, b: &ty::mt) -> cres<ty::mt> {
         let tcx = self.infcx.tcx;
 
-        debug2!("{}.mts({}, {})",
+        debug!("{}.mts({}, {})",
                self.tag(),
                mt_to_str(tcx, a),
                mt_to_str(tcx, b));
@@ -98,7 +98,7 @@ impl Combine for Glb {
     }
 
     fn regions(&self, a: ty::Region, b: ty::Region) -> cres<ty::Region> {
-        debug2!("{}.regions({:?}, {:?})",
+        debug!("{}.regions({:?}, {:?})",
                self.tag(),
                a.inf_str(self.infcx),
                b.inf_str(self.infcx));
@@ -119,7 +119,7 @@ impl Combine for Glb {
         // Note: this is a subtle algorithm.  For a full explanation,
         // please see the large comment in `region_inference.rs`.
 
-        debug2!("{}.fn_sigs({:?}, {:?})",
+        debug!("{}.fn_sigs({:?}, {:?})",
                self.tag(), a.inf_str(self.infcx), b.inf_str(self.infcx));
         let _indenter = indenter();
 
@@ -141,7 +141,7 @@ impl Combine for Glb {
 
         // Collect constraints.
         let sig0 = if_ok!(super_fn_sigs(self, &a_with_fresh, &b_with_fresh));
-        debug2!("sig0 = {}", sig0.inf_str(self.infcx));
+        debug!("sig0 = {}", sig0.inf_str(self.infcx));
 
         // Generalize the regions appearing in fn_ty0 if possible
         let new_vars =
@@ -154,7 +154,7 @@ impl Combine for Glb {
                                       new_vars, sig0.binder_id,
                                       &a_map, a_vars, b_vars,
                                       r));
-        debug2!("sig1 = {}", sig1.inf_str(self.infcx));
+        debug!("sig1 = {}", sig1.inf_str(self.infcx));
         return Ok(sig1);
 
         fn generalize_region(this: &Glb,

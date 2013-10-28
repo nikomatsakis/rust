@@ -14,8 +14,9 @@
 
 
 use std::{vec, str};
-use std::io::Reader;
 use std::hashmap::HashMap;
+use std::rt::io;
+use std::rt::io::extensions::{ReaderByteConversions, ReaderUtil};
 use super::super::TermInfo;
 
 // These are the orders ncurses uses in its compiled format (as of 5.9). Not sure if portable.
@@ -160,7 +161,8 @@ pub static stringnames: &'static[&'static str] = &'static[ "cbt", "_", "cr", "cs
     "box1"];
 
 /// Parse a compiled terminfo entry, using long capability names if `longnames` is true
-pub fn parse(file: @Reader, longnames: bool) -> Result<~TermInfo, ~str> {
+pub fn parse(mut file: &mut io::Reader,
+             longnames: bool) -> Result<~TermInfo, ~str> {
     let bnames;
     let snames;
     let nnames;
@@ -176,40 +178,40 @@ pub fn parse(file: @Reader, longnames: bool) -> Result<~TermInfo, ~str> {
     }
 
     // Check magic number
-    let magic = file.read_le_u16();
+    let magic = file.read_le_u16_();
     if (magic != 0x011A) {
         return Err(format!("invalid magic number: expected {:x} but found {:x}",
                            0x011A, magic as uint));
     }
 
-    let names_bytes          = file.read_le_i16() as int;
-    let bools_bytes          = file.read_le_i16() as int;
-    let numbers_count        = file.read_le_i16() as int;
-    let string_offsets_count = file.read_le_i16() as int;
-    let string_table_bytes   = file.read_le_i16() as int;
+    let names_bytes          = file.read_le_i16_() as int;
+    let bools_bytes          = file.read_le_i16_() as int;
+    let numbers_count        = file.read_le_i16_() as int;
+    let string_offsets_count = file.read_le_i16_() as int;
+    let string_table_bytes   = file.read_le_i16_() as int;
 
     assert!(names_bytes          > 0);
 
-    debug2!("names_bytes = {}", names_bytes);
-    debug2!("bools_bytes = {}", bools_bytes);
-    debug2!("numbers_count = {}", numbers_count);
-    debug2!("string_offsets_count = {}", string_offsets_count);
-    debug2!("string_table_bytes = {}", string_table_bytes);
+    debug!("names_bytes = {}", names_bytes);
+    debug!("bools_bytes = {}", bools_bytes);
+    debug!("numbers_count = {}", numbers_count);
+    debug!("string_offsets_count = {}", string_offsets_count);
+    debug!("string_table_bytes = {}", string_table_bytes);
 
     if (bools_bytes as uint) > boolnames.len() {
-        error2!("expected bools_bytes to be less than {} but found {}", boolnames.len(),
+        error!("expected bools_bytes to be less than {} but found {}", boolnames.len(),
                bools_bytes);
         return Err(~"incompatible file: more booleans than expected");
     }
 
     if (numbers_count as uint) > numnames.len() {
-        error2!("expected numbers_count to be less than {} but found {}", numnames.len(),
+        error!("expected numbers_count to be less than {} but found {}", numnames.len(),
                numbers_count);
         return Err(~"incompatible file: more numbers than expected");
     }
 
     if (string_offsets_count as uint) > stringnames.len() {
-        error2!("expected string_offsets_count to be less than {} but found {}", stringnames.len(),
+        error!("expected string_offsets_count to be less than {} but found {}", stringnames.len(),
                string_offsets_count);
         return Err(~"incompatible file: more string offsets than expected");
     }
@@ -219,56 +221,56 @@ pub fn parse(file: @Reader, longnames: bool) -> Result<~TermInfo, ~str> {
 
     file.read_byte(); // consume NUL
 
-    debug2!("term names: {:?}", term_names);
+    debug!("term names: {:?}", term_names);
 
     let mut bools_map = HashMap::new();
     if bools_bytes != 0 {
         for i in range(0, bools_bytes) {
-            let b = file.read_byte();
+            let b = file.read_byte().unwrap();
             if b < 0 {
-                error2!("EOF reading bools after {} entries", i);
+                error!("EOF reading bools after {} entries", i);
                 return Err(~"error: expected more bools but hit EOF");
             } else if b == 1 {
-                debug2!("{} set", bnames[i]);
+                debug!("{} set", bnames[i]);
                 bools_map.insert(bnames[i].to_owned(), true);
             }
         }
     }
 
-    debug2!("bools: {:?}", bools_map);
+    debug!("bools: {:?}", bools_map);
 
     if (bools_bytes + names_bytes) % 2 == 1 {
-        debug2!("adjusting for padding between bools and numbers");
+        debug!("adjusting for padding between bools and numbers");
         file.read_byte(); // compensate for padding
     }
 
     let mut numbers_map = HashMap::new();
     if numbers_count != 0 {
         for i in range(0, numbers_count) {
-            let n = file.read_le_u16();
+            let n = file.read_le_u16_();
             if n != 0xFFFF {
-                debug2!("{}\\#{}", nnames[i], n);
+                debug!("{}\\#{}", nnames[i], n);
                 numbers_map.insert(nnames[i].to_owned(), n);
             }
         }
     }
 
-    debug2!("numbers: {:?}", numbers_map);
+    debug!("numbers: {:?}", numbers_map);
 
     let mut string_map = HashMap::new();
 
     if string_offsets_count != 0 {
         let mut string_offsets = vec::with_capacity(10);
         for _ in range(0, string_offsets_count) {
-            string_offsets.push(file.read_le_u16());
+            string_offsets.push(file.read_le_u16_());
         }
 
-        debug2!("offsets: {:?}", string_offsets);
+        debug!("offsets: {:?}", string_offsets);
 
         let string_table = file.read_bytes(string_table_bytes as uint);
 
         if string_table.len() != string_table_bytes as uint {
-            error2!("EOF reading string table after {} bytes, wanted {}", string_table.len(),
+            error!("EOF reading string table after {} bytes, wanted {}", string_table.len(),
                    string_table_bytes);
             return Err(~"error: hit EOF before end of string table");
         }

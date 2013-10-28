@@ -8,13 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern mod extra;
+use std::rc::RcMut;
 
 fn o<T: Send>(_: &T) {}
 fn c<T: Freeze>(_: &T) {}
 
 fn main() {
-    let x = extra::rc::RcMut::from_send(0);
-    o(&x); //~ ERROR instantiating a type parameter with an incompatible type `extra::rc::RcMut<int>`, which does not fulfill `Send`
-    c(&x); //~ ERROR instantiating a type parameter with an incompatible type `extra::rc::RcMut<int>`, which does not fulfill `Freeze`
+    let x = RcMut::from_send(0);
+    o(&x); //~ ERROR instantiating a type parameter with an incompatible type `std::rc::RcMut<int>`, which does not fulfill `Send`
+    c(&x); //~ ERROR instantiating a type parameter with an incompatible type `std::rc::RcMut<int>`, which does not fulfill `Freeze`
 }

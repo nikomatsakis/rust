@@ -177,7 +177,7 @@ impl<'self> TermsContext<'self> {
         let newly_added = self.inferred_map.insert(param_id, inf_index);
         assert!(newly_added);
 
-        debug2!("add_inferred(item_id={}, \
+        debug!("add_inferred(item_id={}, \
                 kind={:?}, \
                 index={}, \
                 param_id={},
@@ -194,7 +194,7 @@ impl<'self> Visitor<()> for TermsContext<'self> {
     fn visit_item(&mut self,
                   item: @ast::item,
                   (): ()) {
-        debug2!("add_inferreds for item {}", item.repr(self.tcx));
+        debug!("add_inferreds for item {}", item.repr(self.tcx));
 
         let inferreds_on_entry = self.num_inferred();
 
@@ -419,7 +419,7 @@ impl<'self> ConstraintContext<'self> {
     fn add_constraint(&mut self,
                       index: InferredIndex,
                       variance: VarianceTermPtr<'self>) {
-        debug2!("add_constraint(index={}, variance={})",
+        debug!("add_constraint(index={}, variance={})",
                 *index, variance.to_str());
         self.constraints.push(Constraint { inferred: index,
                                            variance: variance });
@@ -469,7 +469,7 @@ impl<'self> ConstraintContext<'self> {
     fn add_constraints_from_ty(&mut self,
                                ty: ty::t,
                                variance: VarianceTermPtr<'self>) {
-        debug2!("add_constraints_from_ty(ty={})", ty.repr(self.tcx()));
+        debug!("add_constraints_from_ty(ty={})", ty.repr(self.tcx()));
 
         match ty::get(ty).sty {
             ty::ty_nil | ty::ty_bot | ty::ty_bool |
@@ -578,7 +578,7 @@ impl<'self> ConstraintContext<'self> {
                                    generics: &ty::Generics,
                                    substs: &ty::substs,
                                    variance: VarianceTermPtr<'self>) {
-        debug2!("add_constraints_from_substs(def_id={:?})", def_id);
+        debug!("add_constraints_from_substs(def_id={:?})", def_id);
 
         for (i, p) in generics.type_param_defs.iter().enumerate() {
             let variance_decl =
@@ -697,7 +697,7 @@ impl<'self> SolveContext<'self> {
                 let old_value = self.solutions[*inferred];
                 let new_value = glb(variance, old_value);
                 if old_value != new_value {
-                    debug2!("Updating inferred {} (node {}) \
+                    debug!("Updating inferred {} (node {}) \
                             from {:?} to {:?} due to {}",
                             *inferred,
                             self.terms_cx.inferred_infos[*inferred].param_id,
@@ -748,7 +748,7 @@ impl<'self> SolveContext<'self> {
                 index += 1;
             }
 
-            debug2!("item_id={} item_variances={}",
+            debug!("item_id={} item_variances={}",
                     item_id,
                     item_variances.repr(tcx));
 

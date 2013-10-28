@@ -165,7 +165,7 @@ pub fn check_pat_variant(pcx: &pat_ctxt, pat: @ast::Pat, path: &ast::Path,
                     // See [Note-Type-error-reporting] in middle/typeck/infer/mod.rs
                     fcx.infcx().type_error_message_str_with_expected(pat.span,
                                                        |expected, actual| {
-                                                       expected.map_move_default(~"", |e| {
+                                                       expected.map_default(~"", |e| {
                         format!("mismatched types: expected `{}` but found {}",
                              e, actual)})},
                              Some(expected), ~"a structure pattern",
@@ -214,7 +214,7 @@ pub fn check_pat_variant(pcx: &pat_ctxt, pat: @ast::Pat, path: &ast::Path,
             // See [Note-Type-error-reporting] in middle/typeck/infer/mod.rs
             fcx.infcx().type_error_message_str_with_expected(pat.span,
                                                |expected, actual| {
-                                               expected.map_move_default(~"", |e| {
+                                               expected.map_default(~"", |e| {
                     format!("mismatched types: expected `{}` but found {}",
                          e, actual)})},
                     Some(expected), ~"an enum or structure pattern",
@@ -428,8 +428,8 @@ pub fn check_pat(pcx: &pat_ctxt, pat: @ast::Pat, expected: ty::t) {
             fcx.infcx().resolve_type_vars_if_possible(fcx.expr_ty(begin));
         let e_ty =
             fcx.infcx().resolve_type_vars_if_possible(fcx.expr_ty(end));
-        debug2!("pat_range beginning type: {:?}", b_ty);
-        debug2!("pat_range ending type: {:?}", e_ty);
+        debug!("pat_range beginning type: {:?}", b_ty);
+        debug!("pat_range ending type: {:?}", e_ty);
         if !require_same_types(
             tcx, Some(fcx.infcx()), false, pat.span, b_ty, e_ty,
             || ~"mismatched types in range")
@@ -476,7 +476,7 @@ pub fn check_pat(pcx: &pat_ctxt, pat: @ast::Pat, expected: ty::t) {
             demand::eqtype(fcx, pat.span, region_ty, typ);
           }
           // otherwise the type of x is the expected type T
-          ast::BindInfer => {
+          ast::BindByValue(_) => {
             demand::eqtype(fcx, pat.span, expected, typ);
           }
         }
@@ -488,7 +488,7 @@ pub fn check_pat(pcx: &pat_ctxt, pat: @ast::Pat, expected: ty::t) {
         }
         fcx.write_ty(pat.id, typ);
 
-        debug2!("(checking match) writing type for pat id {}", pat.id);
+        debug!("(checking match) writing type for pat id {}", pat.id);
 
         match sub {
           Some(p) => check_pat(pcx, p, expected),
@@ -519,7 +519,7 @@ pub fn check_pat(pcx: &pat_ctxt, pat: @ast::Pat, expected: ty::t) {
                // See [Note-Type-error-reporting] in middle/typeck/infer/mod.rs
                fcx.infcx().type_error_message_str_with_expected(pat.span,
                                                                 |expected, actual| {
-                            expected.map_move_default(~"", |e| {
+                            expected.map_default(~"", |e| {
                                     format!("mismatched types: expected `{}` but found {}",
                                          e, actual)})},
                                          Some(expected), ~"a structure pattern",
@@ -566,7 +566,7 @@ pub fn check_pat(pcx: &pat_ctxt, pat: @ast::Pat, expected: ty::t) {
                 };
                 // See [Note-Type-error-reporting] in middle/typeck/infer/mod.rs
                 fcx.infcx().type_error_message_str_with_expected(pat.span, |expected, actual| {
-                expected.map_move_default(~"", |e| {
+                expected.map_default(~"", |e| {
                     format!("mismatched types: expected `{}` but found {}",
                                      e, actual)})}, Some(expected), ~"tuple", Some(&type_error));
                 fcx.write_error(pat.id);
@@ -616,7 +616,7 @@ pub fn check_pat(pcx: &pat_ctxt, pat: @ast::Pat, expected: ty::t) {
               fcx.infcx().type_error_message_str_with_expected(
                   pat.span,
                   |expected, actual| {
-                      expected.map_move_default(~"", |e| {
+                      expected.map_default(~"", |e| {
                           format!("mismatched types: expected `{}` but found {}",
                                e, actual)})},
                   Some(expected),
@@ -675,7 +675,7 @@ pub fn check_pointer_pat(pcx: &pat_ctxt,
             fcx.infcx().type_error_message_str_with_expected(
                 span,
                 |expected, actual| {
-                    expected.map_move_default(~"", |e| {
+                    expected.map_default(~"", |e| {
                         format!("mismatched types: expected `{}` but found {}",
                              e, actual)})},
                 Some(expected),

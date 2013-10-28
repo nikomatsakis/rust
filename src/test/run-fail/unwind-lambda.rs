@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 // error-pattern:fail
 
 fn main() {
@@ -22,7 +24,7 @@ fn main() {
         let cheese = cheese.clone();
         let f: &fn() = || {
             let _chew = mush + cheese;
-            fail2!("so yummy")
+            fail!("so yummy")
         };
         f();
     });

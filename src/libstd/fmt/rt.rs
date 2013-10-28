@@ -38,8 +38,12 @@ pub struct FormatSpec {
     fill: char,
     align: parse::Alignment,
     flags: uint,
-    precision: parse::Count,
-    width: parse::Count,
+    precision: Count,
+    width: Count,
+}
+
+pub enum Count {
+    CountIs(uint), CountIsParam(uint), CountIsNextParam, CountImplied,
 }
 
 pub enum Position {

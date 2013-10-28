@@ -10,7 +10,8 @@
 
 #[allow(missing_doc)];
 
-use std::io;
+use std::rt::io::Reader;
+use std::rt::io::mem::BufReader;
 use std::num;
 use std::str;
 
@@ -19,7 +20,6 @@ static NSEC_PER_SEC: i32 = 1_000_000_000_i32;
 pub mod rustrt {
     use super::Tm;
 
-    #[abi = "cdecl"]
     extern {
         pub fn get_time(sec: &mut i64, nsec: &mut i32);
         pub fn precise_time_ns(ns: &mut u64);
@@ -32,9 +32,10 @@ pub mod rustrt {
 }
 
 /// A record specifying a time value in seconds and nanoseconds.
+
+
 #[deriving(Clone, DeepClone, Eq, Encodable, Decodable)]
 pub struct Timespec { sec: i64, nsec: i32 }
-
 /*
  * Timespec assumes that pre-epoch Timespecs have negative sec and positive
  * nsec fields. Darwin's and Linux's struct timespec functions handle pre-
@@ -666,61 +667,69 @@ pub fn strptime(s: &str, format: &str) -> Result<Tm, ~str> {
         }
     }
 
-    do io::with_str_reader(format) |rdr| {
-        let mut tm = Tm {
-            tm_sec: 0_i32,
-            tm_min: 0_i32,
-            tm_hour: 0_i32,
-            tm_mday: 0_i32,
-            tm_mon: 0_i32,
-            tm_year: 0_i32,
-            tm_wday: 0_i32,
-            tm_yday: 0_i32,
-            tm_isdst: 0_i32,
-            tm_gmtoff: 0_i32,
-            tm_zone: ~"",
-            tm_nsec: 0_i32,
+    let mut rdr = BufReader::new(format.as_bytes());
+    let mut tm = Tm {
+        tm_sec: 0_i32,
+        tm_min: 0_i32,
+        tm_hour: 0_i32,
+        tm_mday: 0_i32,
+        tm_mon: 0_i32,
+        tm_year: 0_i32,
+        tm_wday: 0_i32,
+        tm_yday: 0_i32,
+        tm_isdst: 0_i32,
+        tm_gmtoff: 0_i32,
+        tm_zone: ~"",
+        tm_nsec: 0_i32,
+    };
+    let mut pos = 0u;
+    let len = s.len();
+    let mut result = Err(~"Invalid time");
+
+    while pos < len {
+        let range = s.char_range_at(pos);
+        let ch = range.ch;
+        let next = range.next;
+
+        let mut buf = [0];
+        let c = match rdr.read(buf) {
+            Some(*) => buf[0] as u8 as char,
+            None => break
         };
-        let mut pos = 0u;
-        let len = s.len();
-        let mut result = Err(~"Invalid time");
-
-        while !rdr.eof() && pos < len {
-            let range = s.char_range_at(pos);
-            let ch = range.ch;
-            let next = range.next;
-
-            match rdr.read_char() {
-                '%' => {
-                    match parse_type(s, pos, rdr.read_char(), &mut tm) {
-                        Ok(next) => pos = next,
-                        Err(e) => { result = Err(e); break; }
-                    }
-                },
-                c => {
-                    if c != ch { break }
-                    pos = next;
+        match c {
+            '%' => {
+                let ch = match rdr.read(buf) {
+                    Some(*) => buf[0] as u8 as char,
+                    None => break
+                };
+                match parse_type(s, pos, ch, &mut tm) {
+                    Ok(next) => pos = next,
+                    Err(e) => { result = Err(e); break; }
                 }
+            },
+            c => {
+                if c != ch { break }
+                pos = next;
             }
         }
-
-        if pos == len && rdr.eof() {
-            Ok(Tm {
-                tm_sec: tm.tm_sec,
-                tm_min: tm.tm_min,
-                tm_hour: tm.tm_hour,
-                tm_mday: tm.tm_mday,
-                tm_mon: tm.tm_mon,
-                tm_year: tm.tm_year,
-                tm_wday: tm.tm_wday,
-                tm_yday: tm.tm_yday,
-                tm_isdst: tm.tm_isdst,
-                tm_gmtoff: tm.tm_gmtoff,
-                tm_zone: tm.tm_zone.clone(),
-                tm_nsec: tm.tm_nsec,
-            })
-        } else { result }
     }
+
+    if pos == len && rdr.eof() {
+        Ok(Tm {
+            tm_sec: tm.tm_sec,
+            tm_min: tm.tm_min,
+            tm_hour: tm.tm_hour,
+            tm_mday: tm.tm_mday,
+            tm_mon: tm.tm_mon,
+            tm_year: tm.tm_year,
+            tm_wday: tm.tm_wday,
+            tm_yday: tm.tm_yday,
+            tm_isdst: tm.tm_isdst,
+            tm_gmtoff: tm.tm_gmtoff,
+            tm_zone: tm.tm_zone.clone(),
+            tm_nsec: tm.tm_nsec,
+        })
+    } else { result }
 }
 
 /// Formats the time according to the format string.
@@ -929,18 +938,26 @@ pub fn strftime(format: &str, tm: &Tm) -> ~str {
         }
     }
 
-    let mut buf = ~"";
+    let mut buf = ~[];
 
-    do io::with_str_reader(format) |rdr| {
-        while !rdr.eof() {
-            match rdr.read_char() {
-                '%' => buf.push_str(parse_type(rdr.read_char(), tm)),
-                ch => buf.push_char(ch)
+    let mut rdr = BufReader::new(format.as_bytes());
+    loop {
+        let mut b = [0];
+        let ch = match rdr.read(b) {
+            Some(*) => b[0],
+            None => break,
+        };
+        match ch as char {
+            '%' => {
+                rdr.read(b);
+                let s = parse_type(b[0] as char, tm);
+                buf.push_all(s.as_bytes());
             }
+            ch => buf.push(ch as u8)
         }
     }
 
-    buf
+    str::from_utf8_owned(buf)
 }
 
 #[cfg(test)]
@@ -956,13 +973,13 @@ mod tests {
         static SOME_FUTURE_DATE: i64 = 1577836800i64; // 2020-01-01T00:00:00Z
 
         let tv1 = get_time();
-        debug2!("tv1={:?} sec + {:?} nsec", tv1.sec as uint, tv1.nsec as uint);
+        debug!("tv1={:?} sec + {:?} nsec", tv1.sec as uint, tv1.nsec as uint);
 
         assert!(tv1.sec > SOME_RECENT_DATE);
         assert!(tv1.nsec < 1000000000i32);
 
         let tv2 = get_time();
-        debug2!("tv2={:?} sec + {:?} nsec", tv2.sec as uint, tv2.nsec as uint);
+        debug!("tv2={:?} sec + {:?} nsec", tv2.sec as uint, tv2.nsec as uint);
 
         assert!(tv2.sec >= tv1.sec);
         assert!(tv2.sec < SOME_FUTURE_DATE);
@@ -976,16 +993,16 @@ mod tests {
         let s0 = precise_time_s();
         let ns1 = precise_time_ns();
 
-        debug2!("s0={} sec", f64::to_str_digits(s0, 9u));
+        debug!("s0={} sec", f64::to_str_digits(s0, 9u));
         assert!(s0 > 0.);
         let ns0 = (s0 * 1000000000.) as u64;
-        debug2!("ns0={:?} ns", ns0);
+        debug!("ns0={:?} ns", ns0);
 
-        debug2!("ns1={:?} ns", ns0);
+        debug!("ns1={:?} ns", ns0);
         assert!(ns1 >= ns0);
 
         let ns2 = precise_time_ns();
-        debug2!("ns2={:?} ns", ns0);
+        debug!("ns2={:?} ns", ns0);
         assert!(ns2 >= ns1);
     }
 
@@ -1017,7 +1034,7 @@ mod tests {
         let time = Timespec::new(1234567890, 54321);
         let local = at(time);
 
-        error2!("time_at: {:?}", local);
+        error!("time_at: {:?}", local);
 
         assert!(local.tm_sec == 30_i32);
         assert!(local.tm_min == 31_i32);
@@ -1092,7 +1109,7 @@ mod tests {
             == Err(~"Invalid time"));
 
         match strptime("Fri Feb 13 15:31:30.01234 2009", format) {
-          Err(e) => fail2!(e),
+          Err(e) => fail!(e),
           Ok(ref tm) => {
             assert!(tm.tm_sec == 30_i32);
             assert!(tm.tm_min == 31_i32);
@@ -1112,7 +1129,7 @@ mod tests {
         fn test(s: &str, format: &str) -> bool {
             match strptime(s, format) {
               Ok(ref tm) => tm.strftime(format) == s.to_owned(),
-              Err(e) => fail2!(e)
+              Err(e) => fail!(e)
             }
         }
 
@@ -1238,7 +1255,7 @@ mod tests {
         let utc   = at_utc(time);
         let local = at(time);
 
-        error2!("test_ctime: {:?} {:?}", utc.ctime(), local.ctime());
+        error!("test_ctime: {:?} {:?}", utc.ctime(), local.ctime());
 
         assert_eq!(utc.ctime(), ~"Fri Feb 13 23:31:30 2009");
         assert_eq!(local.ctime(), ~"Fri Feb 13 15:31:30 2009");

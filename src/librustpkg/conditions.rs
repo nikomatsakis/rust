@@ -12,15 +12,18 @@
 
 pub use std::path::Path;
 pub use package_id::PkgId;
-pub use std::libc;
-pub use std::libc::stat;
+pub use std::rt::io::FileStat;
 
 condition! {
     pub bad_path: (Path, ~str) -> Path;
 }
 
 condition! {
-    pub bad_stat: (Path, ~str) -> stat;
+    pub bad_stat: (Path, ~str) -> FileStat;
+}
+
+condition! {
+    pub bad_kind: (~str) -> ();
 }
 
 condition! {
@@ -44,9 +47,15 @@ condition! {
 }
 
 condition! {
-    pub not_a_workspace: (~str) -> Path;
+    pub failed_to_create_temp_dir: (~str) -> Path;
 }
 
 condition! {
-    pub failed_to_create_temp_dir: (~str) -> Path;
+    pub git_checkout_failed: (~str, Path) -> ();
+}
+
+condition! {
+    // str is output of applying the command (first component)
+    // to the args (second component)
+    pub command_failed: (~str, ~[~str], int) -> ~str;
 }

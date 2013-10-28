@@ -61,7 +61,7 @@ they contained the following prologue:
       html_favicon_url = "http://www.rust-lang.org/favicon.ico",
       html_root_url = "http://static.rust-lang.org/doc/master")];
 
-#[feature(macro_rules, globs)];
+#[feature(macro_rules, globs, asm, managed_boxes)];
 
 // Don't link to std. We are std.
 #[no_std];
@@ -87,9 +87,6 @@ pub mod linkhack {
     extern {
     }
 }
-
-// Internal macros
-mod macros;
 
 /* The Prelude. */
 
@@ -132,6 +129,7 @@ pub mod ptr;
 pub mod owned;
 pub mod managed;
 pub mod borrow;
+pub mod rc;
 
 
 /* Core language traits */
@@ -150,10 +148,10 @@ pub mod iter;
 pub mod to_str;
 pub mod to_bytes;
 pub mod clone;
-pub mod io;
 pub mod hash;
 pub mod container;
 pub mod default;
+pub mod any;
 
 /* Common data structures */
 
@@ -191,6 +189,7 @@ pub mod condition;
 pub mod logging;
 pub mod util;
 pub mod routine;
+pub mod mem;
 
 /* Unsupported interfaces */
 
@@ -215,15 +214,16 @@ mod std {
     pub use clone;
     pub use cmp;
     pub use condition;
-    pub use option;
+    pub use fmt;
     pub use kinds;
     pub use local_data;
     pub use logging;
-    pub use sys;
-    pub use unstable;
-    pub use str;
-    pub use os;
-    pub use fmt;
-    pub use to_bytes;
     pub use logging;
+    pub use option;
+    pub use os;
+    pub use str;
+    pub use sys;
+    pub use to_bytes;
+    pub use to_str;
+    pub use unstable;
 }

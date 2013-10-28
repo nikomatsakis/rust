@@ -11,7 +11,6 @@
 
 
 
-// -*- rust -*-
 type t = int;
 
 fn nothing() { }
@@ -37,7 +36,7 @@ fn foo(x: int) -> int {
 
 pub fn main() {
     let x: int = 2 + 2;
-    info2!("{}", x);
-    info2!("hello, world");
-    info2!("{}", 10);
+    info!("{}", x);
+    info!("hello, world");
+    info!("{}", 10);
 }

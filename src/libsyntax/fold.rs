@@ -165,7 +165,7 @@ pub trait ast_fold {
     fn fold_arm(&self, a: &Arm) -> Arm {
         Arm {
             pats: a.pats.map(|x| self.fold_pat(*x)),
-            guard: a.guard.map_move(|x| self.fold_expr(x)),
+            guard: a.guard.map(|x| self.fold_expr(x)),
             body: self.fold_block(&a.body),
         }
     }
@@ -176,12 +176,12 @@ pub trait ast_fold {
             PatIdent(binding_mode, ref pth, ref sub) => {
                 PatIdent(binding_mode,
                          self.fold_path(pth),
-                         sub.map_move(|x| self.fold_pat(x)))
+                         sub.map(|x| self.fold_pat(x)))
             }
             PatLit(e) => PatLit(self.fold_expr(e)),
             PatEnum(ref pth, ref pats) => {
                 PatEnum(self.fold_path(pth),
-                        pats.map(|pats| pats.map(|x| self.fold_pat(*x))))
+                        pats.as_ref().map(|pats| pats.map(|x| self.fold_pat(*x))))
             }
             PatStruct(ref pth, ref fields, etc) => {
                 let pth_ = self.fold_path(pth);
@@ -202,7 +202,7 @@ pub trait ast_fold {
             },
             PatVec(ref before, ref slice, ref after) => {
                 PatVec(before.map(|x| self.fold_pat(*x)),
-                       slice.map_move(|x| self.fold_pat(x)),
+                       slice.map(|x| self.fold_pat(x)),
                        after.map(|x| self.fold_pat(*x)))
             }
         };
@@ -225,7 +225,7 @@ pub trait ast_fold {
             }
         };
 
-        node.map_move(|node| {
+        node.map(|node| {
             @Spanned {
                 node: node,
                 span: d.span,
@@ -291,7 +291,6 @@ pub trait ast_fold {
 
     fn fold_foreign_mod(&self, nm: &foreign_mod) -> foreign_mod {
         ast::foreign_mod {
-            sort: nm.sort,
             abis: nm.abis,
             view_items: nm.view_items
                           .iter()
@@ -315,7 +314,7 @@ pub trait ast_fold {
                 kind = struct_variant_kind(@ast::struct_def {
                     fields: struct_def.fields.iter()
                         .map(|f| self.fold_struct_field(*f)).collect(),
-                    ctor_id: struct_def.ctor_id.map(|c| self.new_id(*c))
+                    ctor_id: struct_def.ctor_id.map(|c| self.new_id(c))
                 })
             }
         }
@@ -359,10 +358,9 @@ pub trait ast_fold {
 
     fn fold_local(&self, l: @Local) -> @Local {
         @Local {
-            is_mutbl: l.is_mutbl,
             ty: self.fold_ty(&l.ty),
             pat: self.fold_pat(l.pat),
-            init: l.init.map_move(|e| self.fold_expr(e)),
+            init: l.init.map(|e| self.fold_expr(e)),
             id: self.new_id(l.id),
             span: self.new_span(l.span),
         }
@@ -402,7 +400,7 @@ pub trait ast_fold {
 
     fn fold_explicit_self_(&self, es: &explicit_self_) -> explicit_self_ {
         match *es {
-            sty_static | sty_value | sty_uniq | sty_box(_) => {
+            sty_static | sty_value(_) | sty_uniq(_) | sty_box(_) => {
                 *es
             }
             sty_region(ref lifetime, m) => {
@@ -447,7 +445,6 @@ fn fold_attribute_<T:ast_fold>(at: Attribute, fld: &T) -> Attribute {
 //used in noop_fold_foreign_item and noop_fold_fn_decl
 fn fold_arg_<T:ast_fold>(a: &arg, fld: &T) -> arg {
     ast::arg {
-        is_mutbl: a.is_mutbl,
         ty: fld.fold_ty(&a.ty),
         pat: fld.fold_pat(a.pat),
         id: fld.new_id(a.id),
@@ -465,7 +462,7 @@ pub fn fold_tts<T:ast_fold>(tts: &[token_tree], fld: &T) -> ~[token_tree] {
             tt_seq(span, ref pattern, ref sep, is_optional) =>
             tt_seq(span,
                    @mut fold_tts(**pattern, fld),
-                   sep.map(|tok|maybe_fold_ident(tok,fld)),
+                   sep.as_ref().map(|tok|maybe_fold_ident(tok,fld)),
                    is_optional),
             tt_nonterminal(sp,ref ident) =>
             tt_nonterminal(sp,fld.fold_ident(*ident))
@@ -528,7 +525,7 @@ pub fn fold_lifetimes<T:ast_fold>(lts: &OptVec<Lifetime>, fld: &T)
 
 pub fn fold_opt_lifetime<T:ast_fold>(o_lt: &Option<Lifetime>, fld: &T)
                                      -> Option<Lifetime> {
-    o_lt.map(|lt| fold_lifetime(lt, fld))
+    o_lt.as_ref().map(|lt| fold_lifetime(lt, fld))
 }
 
 pub fn fold_generics<T:ast_fold>(generics: &Generics, fld: &T) -> Generics {
@@ -540,7 +537,7 @@ fn fold_struct_def<T:ast_fold>(struct_def: @ast::struct_def, fld: &T)
                                -> @ast::struct_def {
     @ast::struct_def {
         fields: struct_def.fields.map(|f| fold_struct_field(*f, fld)),
-        ctor_id: struct_def.ctor_id.map(|cid| fld.new_id(*cid)),
+        ctor_id: struct_def.ctor_id.map(|cid| fld.new_id(cid)),
     }
 }
 
@@ -602,7 +599,7 @@ fn fold_field<T:ast_fold>(f: TypeField, folder: &T) -> TypeField {
 
 fn fold_opt_bounds<T:ast_fold>(b: &Option<OptVec<TyParamBound>>, folder: &T)
                                -> Option<OptVec<TyParamBound>> {
-    do b.map |bounds| {
+    do b.as_ref().map |bounds| {
         do bounds.map |bound| {
             fold_ty_param_bound(bound, folder)
         }
@@ -629,7 +626,7 @@ pub fn noop_fold_block<T:ast_fold>(b: &Block, folder: &T) -> Block {
     ast::Block {
         view_items: view_items,
         stmts: stmts,
-        expr: b.expr.map(|x| folder.fold_expr(*x)),
+        expr: b.expr.map(|x| folder.fold_expr(x)),
         id: folder.new_id(b.id),
         rules: b.rules,
         span: folder.new_span(b.span),
@@ -673,7 +670,7 @@ pub fn noop_fold_item_underscore<T:ast_fold>(i: &item_, folder: &T) -> item_ {
         }
         item_impl(ref generics, ref ifce, ref ty, ref methods) => {
             item_impl(fold_generics(generics, folder),
-                      ifce.map(|p| fold_trait_ref(p, folder)),
+                      ifce.as_ref().map(|p| fold_trait_ref(p, folder)),
                       folder.fold_ty(ty),
                       methods.map(|x| folder.fold_method(*x))
             )
@@ -789,7 +786,7 @@ pub fn noop_fold_expr<T:ast_fold>(e: @ast::Expr, folder: &T) -> @ast::Expr {
         ExprIf(cond, ref tr, fl) => {
             ExprIf(folder.fold_expr(cond),
                    folder.fold_block(tr),
-                   fl.map_move(|x| folder.fold_expr(x)))
+                   fl.map(|x| folder.fold_expr(x)))
         }
         ExprWhile(cond, ref body) => {
             ExprWhile(folder.fold_expr(cond), folder.fold_block(body))
@@ -798,11 +795,11 @@ pub fn noop_fold_expr<T:ast_fold>(e: @ast::Expr, folder: &T) -> @ast::Expr {
             ExprForLoop(folder.fold_pat(pat),
                         folder.fold_expr(iter),
                         folder.fold_block(body),
-                        maybe_ident.map_move(|i| folder.fold_ident(i)))
+                        maybe_ident.map(|i| folder.fold_ident(i)))
         }
         ExprLoop(ref body, opt_ident) => {
             ExprLoop(folder.fold_block(body),
-                     opt_ident.map_move(|x| folder.fold_ident(x)))
+                     opt_ident.map(|x| folder.fold_ident(x)))
         }
         ExprMatch(expr, ref arms) => {
             ExprMatch(folder.fold_expr(expr),
@@ -839,7 +836,7 @@ pub fn noop_fold_expr<T:ast_fold>(e: @ast::Expr, folder: &T) -> @ast::Expr {
         ExprBreak(opt_ident) => ExprBreak(opt_ident),
         ExprAgain(opt_ident) => ExprAgain(opt_ident),
         ExprRet(ref e) => {
-            ExprRet(e.map_move(|x| folder.fold_expr(x)))
+            ExprRet(e.map(|x| folder.fold_expr(x)))
         }
         ExprInlineAsm(ref a) => {
             ExprInlineAsm(inline_asm {
@@ -852,7 +849,7 @@ pub fn noop_fold_expr<T:ast_fold>(e: @ast::Expr, folder: &T) -> @ast::Expr {
         ExprStruct(ref path, ref fields, maybe_expr) => {
             ExprStruct(folder.fold_path(path),
                        fields.map(|x| fold_field(*x)),
-                       maybe_expr.map_move(|x| folder.fold_expr(x)))
+                       maybe_expr.map(|x| folder.fold_expr(x)))
         },
         ExprParen(ex) => ExprParen(folder.fold_expr(ex))
     };
@@ -881,7 +878,7 @@ pub fn noop_fold_stmt<T:ast_fold>(s: &Stmt, folder: &T) -> Option<@Stmt> {
         StmtMac(ref mac, semi) => Some(StmtMac(folder.fold_mac(mac), semi))
     };
 
-    node.map_move(|node| @Spanned {
+    node.map(|node| @Spanned {
         node: node,
         span: folder.new_span(s.span),
     })
@@ -917,7 +914,7 @@ mod test {
                 let a_val = $a;
                 let b_val = $b;
                 if !(pred_val(a_val,b_val)) {
-                    fail2!("expected args satisfying {}, got {:?} and {:?}",
+                    fail!("expected args satisfying {}, got {:?} and {:?}",
                           $predname, a_val, b_val);
                 }
             }

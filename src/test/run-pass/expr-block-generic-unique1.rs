@@ -10,7 +10,6 @@
 
 
 
-// -*- rust -*-
 type compare<'self, T> = &'self fn(~T, ~T) -> bool;
 
 fn test_generic<T:Clone>(expected: ~T, eq: compare<T>) {
@@ -20,8 +19,8 @@ fn test_generic<T:Clone>(expected: ~T, eq: compare<T>) {
 
 fn test_box() {
     fn compare_box(b1: ~bool, b2: ~bool) -> bool {
-        info2!("{}", *b1);
-        info2!("{}", *b2);
+        info!("{}", *b1);
+        info!("{}", *b2);
         return *b1 == *b2;
     }
     test_generic::<bool>(~true, compare_box);

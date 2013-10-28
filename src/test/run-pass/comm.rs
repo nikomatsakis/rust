@@ -1,4 +1,3 @@
-// -*- rust -*-
 // Copyright 2012 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
@@ -15,13 +14,13 @@ pub fn main() {
     let (p, ch) = stream();
     let _t = task::spawn(|| child(&ch) );
     let y = p.recv();
-    error2!("received");
-    error2!("{:?}", y);
+    error!("received");
+    error!("{:?}", y);
     assert_eq!(y, 10);
 }
 
 fn child(c: &Chan<int>) {
-    error2!("sending");
+    error!("sending");
     c.send(10);
-    error2!("value sent");
+    error!("value sent");
 }

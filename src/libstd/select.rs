@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[allow(missing_doc)];
+
 use cell::Cell;
 use comm;
 use container::Container;
@@ -33,7 +35,7 @@ pub trait SelectPort<T> : SelectPortInner<T> { }
 /// port whose data is ready. (If multiple are ready, returns the lowest index.)
 pub fn select<A: Select>(ports: &mut [A]) -> uint {
     if ports.is_empty() {
-        fail2!("can't select on an empty list");
+        fail!("can't select on an empty list");
     }
 
     for (index, port) in ports.mut_iter().enumerate() {
@@ -114,7 +116,7 @@ pub fn select2<TA, A: SelectPort<TA>, TB, B: SelectPort<TB>>(mut a: A, mut b: B)
     match result {
         0 => Left ((a.recv_ready(), b)),
         1 => Right((a, b.recv_ready())),
-        x => fail2!("impossible case in select2: {:?}", x)
+        x => fail!("impossible case in select2: {:?}", x)
     }
 }
 
@@ -181,7 +183,7 @@ mod test {
 
     #[test]
     fn select_one() {
-        do run_in_newsched_task { select_helper(1, [0]) }
+        do run_in_uv_task { select_helper(1, [0]) }
     }
 
     #[test]
@@ -189,14 +191,14 @@ mod test {
         // NB. I would like to have a test that tests the first one that is
         // ready is the one that's returned, but that can't be reliably tested
         // with the randomized behaviour of optimistic_check.
-        do run_in_newsched_task { select_helper(2, [1]) }
-        do run_in_newsched_task { select_helper(2, [0]) }
-        do run_in_newsched_task { select_helper(2, [1,0]) }
+        do run_in_uv_task { select_helper(2, [1]) }
+        do run_in_uv_task { select_helper(2, [0]) }
+        do run_in_uv_task { select_helper(2, [1,0]) }
     }
 
     #[test]
     fn select_a_lot() {
-        do run_in_newsched_task { select_helper(12, [7,8,9]) }
+        do run_in_uv_task { select_helper(12, [7,8,9]) }
     }
 
     #[test]
@@ -206,7 +208,7 @@ mod test {
 
         // Sends 10 buffered packets, and uses select to retrieve them all.
         // Puts the port in a different spot in the vector each time.
-        do run_in_newsched_task {
+        do run_in_uv_task {
             let (ports, _) = unzip(range(0u, 10).map(|_| stream::<int>()));
             let (port, chan) = stream();
             do 10.times { chan.send(31337); }
@@ -227,7 +229,7 @@ mod test {
 
     #[test]
     fn select_unkillable() {
-        do run_in_newsched_task {
+        do run_in_uv_task {
             do task::unkillable { select_helper(2, [1]) }
         }
     }
@@ -240,7 +242,7 @@ mod test {
         select_blocking_helper(false);
 
         fn select_blocking_helper(killable: bool) {
-            do run_in_newsched_task {
+            do run_in_uv_task {
                 let (p1,_c) = oneshot();
                 let (p2,c2) = oneshot();
                 let mut ports = [p1,p2];
@@ -285,7 +287,7 @@ mod test {
         fn select_racing_senders_helper(killable: bool, send_on_chans: ~[uint]) {
             use rt::test::spawntask_random;
 
-            do run_in_newsched_task {
+            do run_in_uv_task {
                 // A bit of stress, since ordinarily this is just smoke and mirrors.
                 do 4.times {
                     let send_on_chans = send_on_chans.clone();
@@ -316,7 +318,7 @@ mod test {
 
     #[test]
     fn select_killed() {
-        do run_in_newsched_task {
+        do run_in_uv_task {
             let (success_p, success_c) = oneshot::<bool>();
             let success_c = Cell::new(success_c);
             do task::try {
@@ -333,7 +335,7 @@ mod test {
                         let _ = dead_cs;
                     }
                     do task::spawn {
-                        fail2!(); // should kill sibling awake
+                        fail!(); // should kill sibling awake
                     }
 
                     // wait for killed selector to close (NOT send on) its c.

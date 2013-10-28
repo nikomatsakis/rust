@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 // Example from lkuper's intern talk, August 2012.
 
 trait Equal {
@@ -60,5 +62,5 @@ pub fn main() {
     assert!(!branch(@leaf(magenta), @leaf(cyan))
         .isEq(branch(@leaf(magenta), @leaf(magenta))));
 
-    error2!("Assertions all succeeded!");
+    error!("Assertions all succeeded!");
 }

@@ -26,7 +26,8 @@ use util::common::time;
 use util::ppaux;
 
 use std::hashmap::{HashMap,HashSet};
-use std::io;
+use std::rt::io;
+use std::rt::io::mem::MemReader;
 use std::os;
 use std::vec;
 use extra::getopts::groups::{optopt, optmulti, optflag, optflagopt};
@@ -58,7 +59,8 @@ pub fn anon_src() -> @str { @"<anon>" }
 
 pub fn source_name(input: &input) -> @str {
     match *input {
-      file_input(ref ifile) => ifile.to_str().to_managed(),
+      // FIXME (#9639): This needs to handle non-utf8 paths
+      file_input(ref ifile) => ifile.as_str().unwrap().to_managed(),
       str_input(_) => anon_src()
     }
 }
@@ -199,6 +201,7 @@ pub fn phase_2_configure_and_expand(sess: Session,
 
 pub struct CrateAnalysis {
     exp_map2: middle::resolve::ExportMap2,
+    exported_items: middle::privacy::ExportedItems,
     ty_cx: ty::ctxt,
     maps: astencode::Maps,
     reachable: @mut HashSet<ast::NodeId>
@@ -263,9 +266,10 @@ pub fn phase_3_run_analysis_passes(sess: Session,
                                           method_map, ty_cx));
 
     let maps = (external_exports, last_private_map);
-    time(time_passes, "privacy checking", maps, |(a, b)|
-         middle::privacy::check_crate(ty_cx, &method_map, &exp_map2,
-                                      a, b, crate));
+    let exported_items =
+        time(time_passes, "privacy checking", maps, |(a, b)|
+             middle::privacy::check_crate(ty_cx, &method_map, &exp_map2,
+                                          a, b, crate));
 
     time(time_passes, "effect checking", (), |_|
          middle::effect::check_crate(ty_cx, method_map, crate));
@@ -300,7 +304,8 @@ pub fn phase_3_run_analysis_passes(sess: Session,
 
     let reachable_map =
         time(time_passes, "reachability checking", (), |_|
-             reachable::find_reachable(ty_cx, method_map, crate));
+             reachable::find_reachable(ty_cx, method_map, exp_map2,
+                                       &exported_items));
 
     time(time_passes, "lint checking", (), |_|
          lint::check_crate(ty_cx, crate));
@@ -308,6 +313,7 @@ pub fn phase_3_run_analysis_passes(sess: Session,
     CrateAnalysis {
         exp_map2: exp_map2,
         ty_cx: ty_cx,
+        exported_items: exported_items,
         maps: astencode::Maps {
             root_map: root_map,
             method_map: method_map,
@@ -350,7 +356,7 @@ pub fn phase_5_run_llvm_passes(sess: Session,
         (sess.opts.output_type == link::output_type_object ||
          sess.opts.output_type == link::output_type_exe) {
         let output_type = link::output_type_assembly;
-        let asm_filename = outputs.obj_filename.with_filetype("s");
+        let asm_filename = outputs.obj_filename.with_extension("s");
 
         time(sess.time_passes(), "LLVM passes", (), |_|
             link::write::run_passes(sess,
@@ -389,7 +395,7 @@ pub fn phase_6_link_output(sess: Session,
 
 pub fn stop_after_phase_3(sess: Session) -> bool {
    if sess.opts.no_trans {
-        debug2!("invoked with --no-trans, returning early from compile_input");
+        debug!("invoked with --no-trans, returning early from compile_input");
         return true;
     }
     return false;
@@ -397,7 +403,7 @@ pub fn stop_after_phase_3(sess: Session) -> bool {
 
 pub fn stop_after_phase_1(sess: Session) -> bool {
     if sess.opts.parse_only {
-        debug2!("invoked with --parse-only, returning early from compile_input");
+        debug!("invoked with --parse-only, returning early from compile_input");
         return true;
     }
     return false;
@@ -405,17 +411,17 @@ pub fn stop_after_phase_1(sess: Session) -> bool {
 
 pub fn stop_after_phase_5(sess: Session) -> bool {
     if sess.opts.output_type != link::output_type_exe {
-        debug2!("not building executable, returning early from compile_input");
+        debug!("not building executable, returning early from compile_input");
         return true;
     }
 
     if sess.opts.is_static && *sess.building_library {
-        debug2!("building static library, returning early from compile_input");
+        debug!("building static library, returning early from compile_input");
         return true;
     }
 
     if sess.opts.jit {
-        debug2!("running JIT, returning early from compile_input");
+        debug!("running JIT, returning early from compile_input");
         return true;
     }
     return false;
@@ -547,17 +553,16 @@ pub fn pretty_print_input(sess: Session,
     };
 
     let src = sess.codemap.get_filemap(source_name(input)).src;
-    do io::with_str_reader(src) |rdr| {
-        pprust::print_crate(sess.codemap,
-                            token::get_ident_interner(),
-                            sess.span_diagnostic,
-                            &crate,
-                            source_name(input),
-                            rdr,
-                            io::stdout(),
-                            annotation,
-                            is_expanded);
-    }
+    let rdr = @mut MemReader::new(src.as_bytes().to_owned());
+    pprust::print_crate(sess.codemap,
+                        token::get_ident_interner(),
+                        sess.span_diagnostic,
+                        &crate,
+                        source_name(input),
+                        rdr as @mut io::Reader,
+                        @mut io::stdout() as @mut io::Writer,
+                        annotation,
+                        is_expanded);
 }
 
 pub fn get_os(triple: &str) -> Option<session::Os> {
@@ -719,7 +724,7 @@ pub fn build_session_options(binary: @str,
         } else if matches.opt_present("emit-llvm") {
             link::output_type_bitcode
         } else { link::output_type_exe };
-    let sysroot_opt = matches.opt_str("sysroot").map_move(|m| @Path(m));
+    let sysroot_opt = matches.opt_str("sysroot").map(|m| @Path::new(m));
     let target = matches.opt_str("target").unwrap_or(host_triple());
     let target_cpu = matches.opt_str("target-cpu").unwrap_or(~"generic");
     let target_feature = matches.opt_str("target-feature").unwrap_or(~"");
@@ -752,7 +757,7 @@ pub fn build_session_options(binary: @str,
 
     let statik = debugging_opts & session::statik != 0;
 
-    let addl_lib_search_paths = matches.opt_strs("L").map(|s| Path(*s));
+    let addl_lib_search_paths = matches.opt_strs("L").map(|s| Path::new(s.as_slice()));
     let linker = matches.opt_str("linker");
     let linker_args = matches.opt_strs("link-args").flat_map( |a| {
         a.split_iter(' ').map(|arg| arg.to_owned()).collect()
@@ -983,7 +988,8 @@ pub fn build_output_filenames(input: &input,
           };
 
           let mut stem = match *input {
-              file_input(ref ifile) => (*ifile).filestem().unwrap().to_managed(),
+              // FIXME (#9639): This needs to handle non-utf8 paths
+              file_input(ref ifile) => (*ifile).filestem_str().unwrap().to_managed(),
               str_input(_) => @"rust_out"
           };
 
@@ -1001,20 +1007,24 @@ pub fn build_output_filenames(input: &input,
           }
 
           if *sess.building_library {
-              out_path = dirpath.push(os::dll_filename(stem));
-              obj_path = dirpath.push(stem).with_filetype(obj_suffix);
+              out_path = dirpath.join(os::dll_filename(stem));
+              obj_path = {
+                  let mut p = dirpath.join(stem);
+                  p.set_extension(obj_suffix);
+                  p
+              };
           } else {
-              out_path = dirpath.push(stem);
-              obj_path = dirpath.push(stem).with_filetype(obj_suffix);
+              out_path = dirpath.join(stem);
+              obj_path = out_path.with_extension(obj_suffix);
           }
       }
 
       Some(ref out_file) => {
-        out_path = (*out_file).clone();
+        out_path = out_file.clone();
         obj_path = if stop_after_codegen {
-            (*out_file).clone()
+            out_file.clone()
         } else {
-            (*out_file).with_filetype(obj_suffix)
+            out_file.with_extension(obj_suffix)
         };
 
         if *sess.building_library {
@@ -1035,10 +1045,10 @@ pub fn build_output_filenames(input: &input,
 
 pub fn early_error(emitter: @diagnostic::Emitter, msg: &str) -> ! {
     emitter.emit(None, msg, diagnostic::fatal);
-    fail2!();
+    fail!();
 }
 
-pub fn list_metadata(sess: Session, path: &Path, out: @io::Writer) {
+pub fn list_metadata(sess: Session, path: &Path, out: @mut io::Writer) {
     metadata::loader::list_file_metadata(
         token::get_ident_interner(),
         session::sess_os_to_meta_os(sess.targ_cfg.os), path, out);
@@ -1060,7 +1070,7 @@ mod test {
         let matches =
             &match getopts([~"--test"], optgroups()) {
               Ok(m) => m,
-              Err(f) => fail2!("test_switch_implies_cfg_test: {}", f.to_err_msg())
+              Err(f) => fail!("test_switch_implies_cfg_test: {}", f.to_err_msg())
             };
         let sessopts = build_session_options(
             @"rustc",
@@ -1081,7 +1091,7 @@ mod test {
             &match getopts([~"--test", ~"--cfg=test"], optgroups()) {
               Ok(m) => m,
               Err(f) => {
-                fail2!("test_switch_implies_cfg_test_unless_cfg_test: {}",
+                fail!("test_switch_implies_cfg_test_unless_cfg_test: {}",
                        f.to_err_msg());
               }
             };

@@ -11,19 +11,18 @@
 
 
 
-// -*- rust -*-
 pub fn main() {
     let mut x: int = 1;
     x *= 2;
-    info2!("{}", x);
+    info!("{}", x);
     assert_eq!(x, 2);
     x += 3;
-    info2!("{}", x);
+    info!("{}", x);
     assert_eq!(x, 5);
     x *= x;
-    info2!("{}", x);
+    info!("{}", x);
     assert_eq!(x, 25);
     x /= 5;
-    info2!("{}", x);
+    info!("{}", x);
     assert_eq!(x, 5);
 }

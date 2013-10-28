@@ -405,6 +405,25 @@ pub trait Iterator<A> {
         Inspect{iter: self, f: f}
     }
 
+    /// Creates a wrapper around a mutable reference to the iterator.
+    ///
+    /// This is useful to allow applying iterator adaptors while still
+    /// retaining ownership of the original iterator value.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// let mut xs = range(0, 10);
+    /// // sum the first five values
+    /// let partial_sum = xs.by_ref().take(5).fold(0, |a, b| a + b);
+    /// assert!(partial_sum == 10);
+    /// // xs.next() is now `5`
+    /// assert!(xs.next() == Some(5));
+    /// ```
+    fn by_ref<'r>(&'r mut self) -> ByRef<'r, Self> {
+        ByRef{iter: self}
+    }
+
     /// An adaptation of an external iterator to the for-loop protocol of rust.
     ///
     /// # Example
@@ -617,7 +636,7 @@ pub trait Iterator<A> {
                     Some((y, y_val))
                 }
             }
-        }).map_move(|(x, _)| x)
+        }).map(|(x, _)| x)
     }
 
     /// Return the element that gives the minimum value from the
@@ -641,7 +660,7 @@ pub trait Iterator<A> {
                     Some((y, y_val))
                 }
             }
-        }).map_move(|(x, _)| x)
+        }).map(|(x, _)| x)
     }
 }
 
@@ -723,7 +742,7 @@ pub trait ExactSize<A> : DoubleEndedIterator<A> {
                 Some(x) => {
                     i = match i.checked_sub(&1) {
                         Some(x) => x,
-                        None => fail2!("rposition: incorrect ExactSize")
+                        None => fail!("rposition: incorrect ExactSize")
                     };
                     if predicate(x) {
                         return Some(i)
@@ -769,6 +788,22 @@ impl<A, T: DoubleEndedIterator<A> + RandomAccessIterator<A>> RandomAccessIterato
     fn idx(&self, index: uint) -> Option<A> {
         self.iter.idx(self.indexable() - index - 1)
     }
+}
+
+/// A mutable reference to an iterator
+pub struct ByRef<'self, T> {
+    priv iter: &'self mut T
+}
+
+impl<'self, A, T: Iterator<A>> Iterator<A> for ByRef<'self, T> {
+    #[inline]
+    fn next(&mut self) -> Option<A> { self.iter.next() }
+    // FIXME: #9629 we cannot implement &self methods like size_hint on ByRef
+}
+
+impl<'self, A, T: DoubleEndedIterator<A>> DoubleEndedIterator<A> for ByRef<'self, T> {
+    #[inline]
+    fn next_back(&mut self) -> Option<A> { self.iter.next_back() }
 }
 
 /// A trait for iterators over elements which can be added together
@@ -1550,8 +1585,8 @@ impl<'self, A, T: Iterator<A>, B, U: Iterator<B>> Iterator<B> for FlatMap<'self,
                     return Some(x)
                 }
             }
-            match self.iter.next().map_move(|x| (self.f)(x)) {
-                None => return self.backiter.and_then_mut_ref(|it| it.next()),
+            match self.iter.next().map(|x| (self.f)(x)) {
+                None => return self.backiter.as_mut().and_then(|it| it.next()),
                 next => self.frontiter = next,
             }
         }
@@ -1559,8 +1594,8 @@ impl<'self, A, T: Iterator<A>, B, U: Iterator<B>> Iterator<B> for FlatMap<'self,
 
     #[inline]
     fn size_hint(&self) -> (uint, Option<uint>) {
-        let (flo, fhi) = self.frontiter.map_default((0, Some(0)), |it| it.size_hint());
-        let (blo, bhi) = self.backiter.map_default((0, Some(0)), |it| it.size_hint());
+        let (flo, fhi) = self.frontiter.as_ref().map_default((0, Some(0)), |it| it.size_hint());
+        let (blo, bhi) = self.backiter.as_ref().map_default((0, Some(0)), |it| it.size_hint());
         let lo = flo.saturating_add(blo);
         match (self.iter.size_hint(), fhi, bhi) {
             ((0, Some(0)), Some(a), Some(b)) => (lo, a.checked_add(&b)),
@@ -1582,8 +1617,8 @@ impl<'self,
                     y => return y
                 }
             }
-            match self.iter.next_back().map_move(|x| (self.f)(x)) {
-                None => return self.frontiter.and_then_mut_ref(|it| it.next_back()),
+            match self.iter.next_back().map(|x| (self.f)(x)) {
+                None => return self.frontiter.as_mut().and_then(|it| it.next_back()),
                 next => self.backiter = next,
             }
         }
@@ -1755,9 +1790,9 @@ impl<'self, A, St> Iterator<A> for Unfold<'self, A, St> {
 #[deriving(Clone)]
 pub struct Counter<A> {
     /// The current state the counter is at (next value to be yielded)
-    state: A,
+    priv state: A,
     /// The amount that this iterator is stepping by
-    step: A
+    priv step: A
 }
 
 /// Creates a new counter with the specified start/step
@@ -2452,7 +2487,7 @@ mod tests {
         assert!(v.iter().all(|&x| x < 10));
         assert!(!v.iter().all(|&x| x.is_even()));
         assert!(!v.iter().all(|&x| x > 100));
-        assert!(v.slice(0, 0).iter().all(|_| fail2!()));
+        assert!(v.slice(0, 0).iter().all(|_| fail!()));
     }
 
     #[test]
@@ -2461,7 +2496,7 @@ mod tests {
         assert!(v.iter().any(|&x| x < 10));
         assert!(v.iter().any(|&x| x.is_even()));
         assert!(!v.iter().any(|&x| x > 100));
-        assert!(!v.slice(0, 0).iter().any(|_| fail2!()));
+        assert!(!v.slice(0, 0).iter().any(|_| fail!()));
     }
 
     #[test]
@@ -2498,6 +2533,15 @@ mod tests {
     fn test_min_by() {
         let xs: &[int] = &[-3, 0, 1, 5, -10];
         assert_eq!(*xs.iter().min_by(|x| x.abs()).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_by_ref() {
+        let mut xs = range(0, 10);
+        // sum the first five values
+        let partial_sum = xs.by_ref().take(5).fold(0, |a, b| a + b);
+        assert_eq!(partial_sum, 10);
+        assert_eq!(xs.next(), Some(5));
     }
 
     #[test]
@@ -2602,7 +2646,7 @@ mod tests {
         let mut i = 0;
         do v.iter().rposition |_elt| {
             if i == 2 {
-                fail2!()
+                fail!()
             }
             i += 1;
             false
@@ -2746,12 +2790,12 @@ mod tests {
     fn test_double_ended_range() {
         assert_eq!(range(11i, 14).invert().collect::<~[int]>(), ~[13i, 12, 11]);
         for _ in range(10i, 0).invert() {
-            fail2!("unreachable");
+            fail!("unreachable");
         }
 
         assert_eq!(range(11u, 14).invert().collect::<~[uint]>(), ~[13u, 12, 11]);
         for _ in range(10u, 0).invert() {
-            fail2!("unreachable");
+            fail!("unreachable");
         }
     }
 

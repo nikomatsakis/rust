@@ -283,7 +283,7 @@ pub fn common_supertype(cx: @mut InferCtxt,
      * not possible, reports an error and returns ty::err.
      */
 
-    debug2!("common_supertype({}, {})", a.inf_str(cx), b.inf_str(cx));
+    debug!("common_supertype({}, {})", a.inf_str(cx), b.inf_str(cx));
 
     let trace = TypeTrace {
         origin: origin,
@@ -309,7 +309,7 @@ pub fn mk_subty(cx: @mut InferCtxt,
                 a: ty::t,
                 b: ty::t)
              -> ures {
-    debug2!("mk_subty({} <: {})", a.inf_str(cx), b.inf_str(cx));
+    debug!("mk_subty({} <: {})", a.inf_str(cx), b.inf_str(cx));
     do indent {
         do cx.commit {
             let trace = TypeTrace {
@@ -322,7 +322,7 @@ pub fn mk_subty(cx: @mut InferCtxt,
 }
 
 pub fn can_mk_subty(cx: @mut InferCtxt, a: ty::t, b: ty::t) -> ures {
-    debug2!("can_mk_subty({} <: {})", a.inf_str(cx), b.inf_str(cx));
+    debug!("can_mk_subty({} <: {})", a.inf_str(cx), b.inf_str(cx));
     do indent {
         do cx.probe {
             let trace = TypeTrace {
@@ -339,7 +339,7 @@ pub fn mk_subr(cx: @mut InferCtxt,
                origin: SubregionOrigin,
                a: ty::Region,
                b: ty::Region) {
-    debug2!("mk_subr({} <: {})", a.inf_str(cx), b.inf_str(cx));
+    debug!("mk_subr({} <: {})", a.inf_str(cx), b.inf_str(cx));
     cx.region_vars.start_snapshot();
     cx.region_vars.make_subregion(origin, a, b);
     cx.region_vars.commit();
@@ -351,7 +351,7 @@ pub fn mk_eqty(cx: @mut InferCtxt,
                a: ty::t,
                b: ty::t)
             -> ures {
-    debug2!("mk_eqty({} <: {})", a.inf_str(cx), b.inf_str(cx));
+    debug!("mk_eqty({} <: {})", a.inf_str(cx), b.inf_str(cx));
     do indent {
         do cx.commit {
             let trace = TypeTrace {
@@ -371,7 +371,7 @@ pub fn mk_sub_trait_refs(cx: @mut InferCtxt,
                          b: @ty::TraitRef)
     -> ures
 {
-    debug2!("mk_sub_trait_refs({} <: {})",
+    debug!("mk_sub_trait_refs({} <: {})",
            a.inf_str(cx), b.inf_str(cx));
     do indent {
         do cx.commit {
@@ -401,7 +401,7 @@ pub fn mk_coercety(cx: @mut InferCtxt,
                    a: ty::t,
                    b: ty::t)
                 -> CoerceResult {
-    debug2!("mk_coercety({} -> {})", a.inf_str(cx), b.inf_str(cx));
+    debug!("mk_coercety({} -> {})", a.inf_str(cx), b.inf_str(cx));
     do indent {
         do cx.commit {
             let trace = TypeTrace {
@@ -414,7 +414,7 @@ pub fn mk_coercety(cx: @mut InferCtxt,
 }
 
 pub fn can_mk_coercety(cx: @mut InferCtxt, a: ty::t, b: ty::t) -> ures {
-    debug2!("can_mk_coercety({} -> {})", a.inf_str(cx), b.inf_str(cx));
+    debug!("can_mk_coercety({} -> {})", a.inf_str(cx), b.inf_str(cx));
     do indent {
         do cx.probe {
             let trace = TypeTrace {
@@ -537,7 +537,7 @@ impl InferCtxt {
     }
 
     pub fn rollback_to(&mut self, snapshot: &Snapshot) {
-        debug2!("rollback!");
+        debug!("rollback!");
         rollback_to(&mut self.ty_var_bindings, snapshot.ty_var_bindings_len);
 
         rollback_to(&mut self.int_var_bindings,
@@ -552,7 +552,7 @@ impl InferCtxt {
     pub fn commit<T,E>(@mut self, f: &fn() -> Result<T,E>) -> Result<T,E> {
         assert!(!self.in_snapshot());
 
-        debug2!("commit()");
+        debug!("commit()");
         do indent {
             let r = self.try(|| f());
 
@@ -565,13 +565,13 @@ impl InferCtxt {
 
     /// Execute `f`, unroll bindings on failure
     pub fn try<T,E>(@mut self, f: &fn() -> Result<T,E>) -> Result<T,E> {
-        debug2!("try()");
+        debug!("try()");
         let snapshot = self.start_snapshot();
         let r = f();
         match r {
-            Ok(_) => { debug2!("success"); }
+            Ok(_) => { debug!("success"); }
             Err(ref e) => {
-                debug2!("error: {:?}", *e);
+                debug!("error: {:?}", *e);
                 self.rollback_to(&snapshot)
             }
         }
@@ -580,7 +580,7 @@ impl InferCtxt {
 
     /// Execute `f` then unroll any bindings it creates
     pub fn probe<T,E>(@mut self, f: &fn() -> Result<T,E>) -> Result<T,E> {
-        debug2!("probe()");
+        debug!("probe()");
         do indent {
             let snapshot = self.start_snapshot();
             let r = f();
@@ -735,15 +735,15 @@ impl InferCtxt {
                                                 expected_ty: Option<ty::t>,
                                                 actual_ty: ~str,
                                                 err: Option<&ty::type_err>) {
-        debug2!("hi! expected_ty = {:?}, actual_ty = {}", expected_ty, actual_ty);
+        debug!("hi! expected_ty = {:?}, actual_ty = {}", expected_ty, actual_ty);
 
-        let error_str = do err.map_move_default(~"") |t_err| {
+        let error_str = do err.map_default(~"") |t_err| {
             format!(" ({})", ty::type_err_to_str(self.tcx, t_err))
         };
-        let resolved_expected = do expected_ty.map_move |e_ty| {
+        let resolved_expected = do expected_ty.map |e_ty| {
             self.resolve_type_vars_if_possible(e_ty)
         };
-        if !resolved_expected.map_move_default(false, |e| { ty::type_is_error(e) }) {
+        if !resolved_expected.map_default(false, |e| { ty::type_is_error(e) }) {
             match resolved_expected {
                 None => self.tcx.sess.span_err(sp,
                             format!("{}{}", mk_msg(None, actual_ty), error_str)),
@@ -804,7 +804,7 @@ impl InferCtxt {
             replace_bound_regions_in_fn_sig(self.tcx, None, fsig, |br| {
                 let rvar = self.next_region_var(
                     BoundRegionInFnType(trace.origin.span(), br));
-                debug2!("Bound region {} maps to {:?}",
+                debug!("Bound region {} maps to {:?}",
                        bound_region_to_str(self.tcx, "", false, br),
                        rvar);
                 rvar

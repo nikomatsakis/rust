@@ -113,9 +113,7 @@ for more information on them.
 
 When complete, `make install` will place several programs into
 `/usr/local/bin`: `rustc`, the Rust compiler; `rustdoc`, the
-API-documentation tool; `rustpkg`, the Rust package manager;
-`rusti`, the Rust REPL; and `rust`, a tool which acts both as a unified
-interface for them, and for a few common command line scenarios.
+API-documentation tool; and `rustpkg`, the Rust package manager.
 
 [tarball]: http://static.rust-lang.org/dist/rust-0.8.tar.gz
 [win-exe]: http://static.rust-lang.org/dist/rust-0.8-install.exe
@@ -152,22 +150,6 @@ compiled to an executable. Rust does not allow code that's not a
 declaration to appear at the top level of the file: all statements must
 live inside a function.  Rust programs can also be compiled as
 libraries, and included in other programs.
-
-## Using the rust tool
-
-While using `rustc` directly to generate your executables, and then
-running them manually is a perfectly valid way to test your code,
-for smaller projects, prototypes, or if you're a beginner, it might be
-more convenient to use the `rust` tool.
-
-The `rust` tool provides central access to the other rust tools,
-as well as handy shortcuts for directly running source files.
-For example, if you have a file `foo.rs` in your current directory,
-`rust run foo.rs` would attempt to compile it and, if successful,
-directly run the resulting binary.
-
-To get a list of all available commands, simply call `rust` without any
-argument.
 
 ## Editing Rust code
 
@@ -765,7 +747,7 @@ unit, `()`, as the empty tuple if you like).
 ~~~~
 let mytup: (int, int, f64) = (10, 20, 30.0);
 match mytup {
-  (a, b, c) => info2!("{}", a + b + (c as int))
+  (a, b, c) => info!("{}", a + b + (c as int))
 }
 ~~~~
 
@@ -781,7 +763,7 @@ For example:
 struct MyTup(int, int, f64);
 let mytup: MyTup = MyTup(10, 20, 30.0);
 match mytup {
-  MyTup(a, b, c) => info2!("{}", a + b + (c as int))
+  MyTup(a, b, c) => info!("{}", a + b + (c as int))
 }
 ~~~~
 
@@ -1393,8 +1375,8 @@ Both vectors and strings support a number of useful
 [methods](#methods), defined in [`std::vec`]
 and [`std::str`]. Here are some examples.
 
-[`std::vec`]: std/vec.html
-[`std::str`]: std/str.html
+[`std::vec`]: std/vec/index.html
+[`std::str`]: std/str/index.html
 
 ~~~
 # enum Crayon {
@@ -1578,7 +1560,7 @@ arguments.
 use std::task::spawn;
 
 do spawn() || {
-    debug2!("I'm a task, whatever");
+    debug!("I'm a task, whatever");
 }
 ~~~~
 
@@ -1590,7 +1572,7 @@ may be omitted from `do` expressions.
 use std::task::spawn;
 
 do spawn {
-   debug2!("Kablam!");
+   debug!("Kablam!");
 }
 ~~~~
 
@@ -2811,7 +2793,7 @@ For every crate you can define a number of metadata items, such as link name, ve
 You can also toggle settings that have crate-global consequences. Both mechanism
 work by providing attributes in the crate root.
 
-For example, Rust uniquely identifies crates by their link metadate, which includes
+For example, Rust uniquely identifies crates by their link metadata, which includes
 the link name and the version. It also hashes the filename and the symbols in a binary
 based on the link metadata, allowing you to use two different versions of the same library in a crate
 without conflict.
@@ -2916,7 +2898,7 @@ As well as this line into every module body:
 use std::prelude::*;
 ~~~
 
-The role of the `prelude` module is to re-exports common definitions from `std`.
+The role of the `prelude` module is to re-export common definitions from `std`.
 
 This allows you to use common types and functions like `Option<T>` or `println`
 without needing to import them. And if you need something from `std` that's not in the prelude,
@@ -2925,12 +2907,12 @@ you just have to import it with an `use` statement.
 For example, it re-exports `println` which is defined in `std::io::println`:
 
 ~~~
-use puts = std::io::println;
+use puts = std::rt::io::stdio::println;
 
 fn main() {
     println("println is imported per default.");
     puts("Doesn't hinder you from importing it under an different name yourself.");
-    ::std::io::println("Or from not using the automatic import.");
+    ::std::rt::io::stdio::println("Or from not using the automatic import.");
 }
 ~~~
 
@@ -2968,30 +2950,30 @@ The full documentation for `std` can be found here: [standard library].
 
 [standard library]: std/index.html
 [`std`]: std/index.html
-[`bool`]: std/bool.html
-[tuples]: std/tuple.html
-[characters]: std/char.html
-[strings]: std/str.html
-[vectors]: std/vec.html
-[managed boxes]: std/managed.html
-[owned boxes]: std/owned.html
-[pointers]: std/ptr.html
-[`option`]: std/option.html
-[`result`]: std/result.html
-[task]: std/task.html
-[communication]: std/comm.html
-[`os`]: std/os.html
-[`path`]: std/path.html
-[`io`]: std/io.html
-[containers]: std/container.html
-[`hashmap`]: std/hashmap.html
-[`kinds`]: std/kinds.html
-[`ops`]: std/ops.html
-[`cmp`]: std/cmp.html
-[`num`]: std/num.html
-[`to_str`]: std/to_str.html
-[`clone`]: std/clone.html
-[`libc`]: std/libc.html
+[`bool`]: std/bool/index.html
+[tuples]: std/tuple/index.html
+[characters]: std/char/index.html
+[strings]: std/str/index.html
+[vectors]: std/vec/index.html
+[managed boxes]: std/managed/index.html
+[owned boxes]: std/owned/index.html
+[pointers]: std/ptr/index.html
+[`option`]: std/option/index.html
+[`result`]: std/result/index.html
+[task]: std/task/index.html
+[communication]: std/comm/index.html
+[`os`]: std/os/index.html
+[`path`]: std/path/index.html
+[`io`]: std/io/index.html
+[containers]: std/container/index.html
+[`hashmap`]: std/hashmap/index.html
+[`kinds`]: std/kinds/index.html
+[`ops`]: std/ops/index.html
+[`cmp`]: std/cmp/index.html
+[`num`]: std/num/index.html
+[`to_str`]: std/to_str/index.html
+[`clone`]: std/clone/index.html
+[`libc`]: std/libc/index.html
 
 ## The extra library
 
@@ -3014,8 +2996,8 @@ tutorials on individual topics.
 * [Tasks and communication][tasks]
 * [Macros][macros]
 * [The foreign function interface][ffi]
-* [Containers and iterators](tutorial-container.html)
-* [Error-handling and Conditions](tutorial-conditions.html)
+* [Containers and iterators][container]
+* [Error-handling and Conditions][conditions]
 * [Packaging up Rust code][rustpkg]
 
 There is further documentation on the [wiki], however those tend to be even more out of date as this document.
@@ -3024,6 +3006,8 @@ There is further documentation on the [wiki], however those tend to be even more
 [tasks]: tutorial-tasks.html
 [macros]: tutorial-macros.html
 [ffi]: tutorial-ffi.html
+[container]: tutorial-container.html
+[conditions]: tutorial-conditions.html
 [rustpkg]: tutorial-rustpkg.html
 
 [wiki]: https://github.com/mozilla/rust/wiki/Docs

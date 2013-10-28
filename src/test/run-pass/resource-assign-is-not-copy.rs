@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 struct r {
   i: @mut int,
 }
@@ -32,7 +34,7 @@ pub fn main() {
         let a = r(i);
         let b = (a, 10);
         let (c, _d) = b;
-        info2!("{:?}", c);
+        info!("{:?}", c);
     }
     assert_eq!(*i, 1);
 }

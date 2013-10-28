@@ -40,7 +40,7 @@ c = open("tmp/run_pass_stage2.rc", "w")
 i = 0
 c.write("// AUTO-GENERATED FILE: DO NOT EDIT\n")
 c.write("#[link(name=\"run_pass_stage2\", vers=\"0.1\")];\n")
-c.write("#[feature(globs, macro_rules, struct_variant)];\n")
+c.write("#[feature(globs, macro_rules, struct_variant, managed_boxes)];\n")
 for t in stage2_tests:
     p = os.path.join(run_pass, t)
     p = p.replace("\\", "\\\\")
@@ -52,19 +52,19 @@ c.close()
 
 d = open("tmp/run_pass_stage2_driver.rs", "w")
 d.write("// AUTO-GENERATED FILE: DO NOT EDIT\n")
-d.write("#[feature(globs)];\n")
+d.write("#[feature(globs, managed_boxes)];\n")
 d.write("extern mod extra;\n")
 d.write("extern mod run_pass_stage2;\n")
 d.write("use run_pass_stage2::*;\n")
-d.write("use std::io::WriterUtil;\n");
-d.write("use std::io;\n");
+d.write("use std::rt::io;\n");
+d.write("use std::rt::io::Writer;\n");
 d.write("fn main() {\n");
-d.write("    let out = io::stdout();\n");
+d.write("    let mut out = io::stdout();\n");
 i = 0
 for t in stage2_tests:
     p = os.path.join("test", "run-pass", t)
     p = p.replace("\\", "\\\\")
-    d.write("    out.write_str(\"run-pass [stage2]: %s\\n\");\n" % p)
+    d.write("    out.write(\"run-pass [stage2]: %s\\n\".as_bytes());\n" % p)
     d.write("    t_%d::main();\n" % i)
     i += 1
 d.write("}\n")

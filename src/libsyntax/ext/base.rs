@@ -222,7 +222,7 @@ pub fn syntax_expander_table() -> SyntaxEnv {
                                 span: None,
                             } as @SyntaxExpanderTTItemTrait,
                             None)));
-    syntax_expanders.insert(intern(&"oldfmt"),
+    syntax_expanders.insert(intern(&"fmt"),
                             builtin_normal_tt_no_ctxt(
                                 ext::fmt::expand_syntax_ext));
     syntax_expanders.insert(intern(&"format_args"),
@@ -540,11 +540,11 @@ impl <K: Eq + Hash + IterBytes + 'static, V: 'static> MapChain<K,V>{
     // names? I think not.
     // delaying implementing this....
     pub fn each_key (&self, _f: &fn (&K)->bool) {
-        fail2!("unimplemented 2013-02-15T10:01");
+        fail!("unimplemented 2013-02-15T10:01");
     }
 
     pub fn each_value (&self, _f: &fn (&V) -> bool) {
-        fail2!("unimplemented 2013-02-15T10:02");
+        fail!("unimplemented 2013-02-15T10:02");
     }
 
     // Returns a copy of the value that the name maps to.
@@ -565,7 +565,7 @@ impl <K: Eq + Hash + IterBytes + 'static, V: 'static> MapChain<K,V>{
             ConsMapChain(ref map,_) => map
         };
         // strip one layer of indirection off the pointer.
-        map.find(key).map_move(|r| {*r})
+        map.find(key).map(|r| {*r})
     }
 
     // insert the binding into the top-level map
@@ -587,7 +587,7 @@ impl <K: Eq + Hash + IterBytes + 'static, V: 'static> MapChain<K,V>{
                 if satisfies_pred(map,&n,pred) {
                     map.insert(key,ext);
                 } else {
-                    fail2!("expected map chain containing satisfying frame")
+                    fail!("expected map chain containing satisfying frame")
                 }
             },
             ConsMapChain (~ref mut map, rest) => {

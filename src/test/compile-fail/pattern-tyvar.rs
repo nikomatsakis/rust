@@ -1,4 +1,3 @@
-// -*- rust -*-
 // Copyright 2012 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
@@ -18,9 +17,9 @@ enum bar { t1((), Option<~[int]>), t2, }
 fn foo(t: bar) {
     match t {
       t1(_, Some::<int>(x)) => {
-        info2!("{:?}", x);
+        info!("{:?}", x);
       }
-      _ => { fail2!(); }
+      _ => { fail!(); }
     }
 }
 

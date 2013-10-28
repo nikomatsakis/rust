@@ -83,10 +83,10 @@ fn scan<R>(st: &mut PState, is_last: &fn(char) -> bool,
            op: &fn(&[u8]) -> R) -> R
 {
     let start_pos = st.pos;
-    debug2!("scan: '{}' (start)", st.data[st.pos] as char);
+    debug!("scan: '{}' (start)", st.data[st.pos] as char);
     while !is_last(st.data[st.pos] as char) {
         st.pos += 1;
-        debug2!("scan: '{}'", st.data[st.pos] as char);
+        debug!("scan: '{}'", st.data[st.pos] as char);
     }
     let end_pos = st.pos;
     st.pos += 1;
@@ -224,7 +224,7 @@ fn parse_region_substs(st: &mut PState, conv: conv_did) -> ty::RegionSubsts {
             assert_eq!(next(st), '.');
             ty::NonerasedRegions(regions)
         }
-        _ => fail2!("parse_bound_region: bad input")
+        _ => fail!("parse_bound_region: bad input")
     }
 }
 
@@ -245,7 +245,7 @@ fn parse_bound_region(st: &mut PState, conv: conv_did) -> ty::bound_region {
             assert_eq!(next(st), '|');
             ty::br_fresh(id)
         }
-        _ => fail2!("parse_bound_region: bad input")
+        _ => fail!("parse_bound_region: bad input")
     }
 }
 
@@ -288,7 +288,7 @@ fn parse_region(st: &mut PState, conv: conv_did) -> ty::Region {
       'e' => {
         ty::re_static
       }
-      _ => fail2!("parse_region: bad input")
+      _ => fail!("parse_region: bad input")
     }
 }
 
@@ -296,7 +296,7 @@ fn parse_opt<T>(st: &mut PState, f: &fn(&mut PState) -> T) -> Option<T> {
     match next(st) {
       'n' => None,
       's' => Some(f(st)),
-      _ => fail2!("parse_opt: bad input")
+      _ => fail!("parse_opt: bad input")
     }
 }
 
@@ -336,7 +336,7 @@ fn parse_ty(st: &mut PState, conv: conv_did) -> ty::t {
           'D' => return ty::mk_mach_int(ast::ty_i64),
           'f' => return ty::mk_mach_float(ast::ty_f32),
           'F' => return ty::mk_mach_float(ast::ty_f64),
-          _ => fail2!("parse_ty: bad numeric type")
+          _ => fail!("parse_ty: bad numeric type")
         }
       }
       'c' => return ty::mk_char(),
@@ -359,7 +359,7 @@ fn parse_ty(st: &mut PState, conv: conv_did) -> ty::t {
       }
       'p' => {
         let did = parse_def(st, TypeParameter, |x,y| conv(x,y));
-        debug2!("parsed ty_param: did={:?}", did);
+        debug!("parsed ty_param: did={:?}", did);
         return ty::mk_param(st.tcx, parse_uint(st), did);
       }
       's' => {
@@ -436,7 +436,7 @@ fn parse_ty(st: &mut PState, conv: conv_did) -> ty::t {
           assert_eq!(next(st), ']');
           return ty::mk_struct(st.tcx, did, substs);
       }
-      c => { error2!("unexpected char in type string: {}", c); fail2!();}
+      c => { error!("unexpected char in type string: {}", c); fail!();}
     }
 }
 
@@ -486,7 +486,7 @@ fn parse_purity(c: char) -> purity {
       'u' => unsafe_fn,
       'i' => impure_fn,
       'c' => extern_fn,
-      _ => fail2!("parse_purity: bad purity {}", c)
+      _ => fail!("parse_purity: bad purity {}", c)
     }
 }
 
@@ -507,7 +507,7 @@ fn parse_onceness(c: char) -> ast::Onceness {
     match c {
         'o' => ast::Once,
         'm' => ast::Many,
-        _ => fail2!("parse_onceness: bad onceness")
+        _ => fail!("parse_onceness: bad onceness")
     }
 }
 
@@ -560,8 +560,8 @@ pub fn parse_def_id(buf: &[u8]) -> ast::DefId {
     let len = buf.len();
     while colon_idx < len && buf[colon_idx] != ':' as u8 { colon_idx += 1u; }
     if colon_idx == len {
-        error2!("didn't find ':' when parsing def id");
-        fail2!();
+        error!("didn't find ':' when parsing def id");
+        fail!();
     }
 
     let crate_part = buf.slice(0u, colon_idx);
@@ -569,12 +569,12 @@ pub fn parse_def_id(buf: &[u8]) -> ast::DefId {
 
     let crate_num = match uint::parse_bytes(crate_part, 10u) {
        Some(cn) => cn as int,
-       None => fail2!("internal error: parse_def_id: crate number expected, but found {:?}",
+       None => fail!("internal error: parse_def_id: crate number expected, but found {:?}",
                      crate_part)
     };
     let def_num = match uint::parse_bytes(def_part, 10u) {
        Some(dn) => dn as int,
-       None => fail2!("internal error: parse_def_id: id expected, but found {:?}",
+       None => fail!("internal error: parse_def_id: id expected, but found {:?}",
                      def_part)
     };
     ast::DefId { crate: crate_num, node: def_num }
@@ -620,7 +620,7 @@ fn parse_bounds(st: &mut PState, conv: conv_did) -> ty::ParamBounds {
                 return param_bounds;
             }
             _ => {
-                fail2!("parse_bounds: bad bounds")
+                fail!("parse_bounds: bad bounds")
             }
         }
     }

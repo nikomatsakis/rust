@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 // Example from lkuper's intern talk, August 2012 -- now with static
 // methods!
 
@@ -61,5 +63,5 @@ pub fn main() {
     assert!(!Equal::isEq(branch(@leaf(magenta), @leaf(cyan)),
                  branch(@leaf(magenta), @leaf(magenta))));
 
-    error2!("Assertions all succeeded!");
+    error!("Assertions all succeeded!");
 }

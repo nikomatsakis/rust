@@ -415,7 +415,7 @@ impl<'self> Iterator<(uint, char)> for CharOffsetIterator<'self> {
                 b as uint - a as uint
             }
         };
-        self.iter.next().map_move(|ch| (offset, ch))
+        self.iter.next().map(|ch| (offset, ch))
     }
 
     #[inline]
@@ -427,7 +427,7 @@ impl<'self> Iterator<(uint, char)> for CharOffsetIterator<'self> {
 impl<'self> DoubleEndedIterator<(uint, char)> for CharOffsetIterator<'self> {
     #[inline]
     fn next_back(&mut self) -> Option<(uint, char)> {
-        self.iter.next_back().map_move(|ch| {
+        self.iter.next_back().map(|ch| {
             let offset = do self.string.as_imm_buf |a, _| {
                 do self.iter.string.as_imm_buf |b, len| {
                     b as uint - a as uint + len
@@ -828,17 +828,6 @@ pub fn eq(a: &~str, b: &~str) -> bool {
 }
 
 /*
-Section: Searching
-*/
-
-// Utility used by various searching functions
-fn match_at<'a,'b>(haystack: &'a str, needle: &'b str, at: uint) -> bool {
-    let mut i = at;
-    for c in needle.byte_iter() { if haystack[i] != c { return false; } i += 1u; }
-    return true;
-}
-
-/*
 Section: Misc
 */
 
@@ -1009,7 +998,6 @@ pub fn utf8_char_width(b: u8) -> uint {
 pub struct CharRange {
     /// Current `char`
     ch: char,
-
     /// Index of the first byte of the next `char`
     next: uint
 }
@@ -1030,7 +1018,6 @@ static TAG_CONT_U8: u8 = 128u8;
 
 /// Unsafe operations
 pub mod raw {
-    use option::{Option, Some};
     use cast;
     use libc;
     use ptr;
@@ -1184,34 +1171,6 @@ pub mod raw {
         vec::raw::set_len(as_owned_vec(s), new_len)
     }
 
-    /// Parses a C "multistring", eg windows env values or
-    /// the req->ptr result in a uv_fs_readdir() call.
-    /// Optionally, a `count` can be passed in, limiting the
-    /// parsing to only being done `count`-times.
-    #[inline]
-    pub unsafe fn from_c_multistring(buf: *libc::c_char, count: Option<uint>) -> ~[~str] {
-        #[fixed_stack_segment]; #[inline(never)];
-
-        let mut curr_ptr: uint = buf as uint;
-        let mut result = ~[];
-        let mut ctr = 0;
-        let (limited_count, limit) = match count {
-            Some(limit) => (true, limit),
-            None => (false, 0)
-        };
-        while(((limited_count && ctr < limit) || !limited_count)
-              && *(curr_ptr as *libc::c_char) != 0 as libc::c_char) {
-            let env_pair = from_c_str(
-                curr_ptr as *libc::c_char);
-            result.push(env_pair);
-            curr_ptr +=
-                libc::strlen(curr_ptr as *libc::c_char) as uint
-                + 1;
-            ctr += 1;
-        }
-        result
-    }
-
     /// Sets the length of a string
     ///
     /// This will explicitly set the size of the string, without actually
@@ -1226,26 +1185,6 @@ pub mod raw {
             assert_eq!(c, ~"AAA");
         }
     }
-
-    #[test]
-    fn test_str_multistring_parsing() {
-        use option::None;
-        unsafe {
-            let input = bytes!("zero", "\x00", "one", "\x00", "\x00");
-            let ptr = vec::raw::to_ptr(input);
-            let result = from_c_multistring(ptr as *libc::c_char, None);
-            assert!(result.len() == 2);
-            let mut ctr = 0;
-            for x in result.iter() {
-                match ctr {
-                    0 => assert_eq!(x, &~"zero"),
-                    1 => assert_eq!(x, &~"one"),
-                    _ => fail2!("shouldn't happen!")
-                }
-                ctr += 1;
-            }
-        }
-    }
 }
 
 /*
@@ -1253,6 +1192,7 @@ Section: Trait implementations
 */
 
 #[cfg(not(test))]
+#[allow(missing_doc)]
 pub mod traits {
     use ops::Add;
     use cmp::{TotalOrd, Ordering, Less, Equal, Greater, Eq, Ord, Equiv, TotalEq};
@@ -2011,24 +1951,22 @@ impl<'self> StrSlice<'self> for &'self str {
         if end_byte.is_none() && count == end { end_byte = Some(self.len()) }
 
         match (begin_byte, end_byte) {
-            (None, _) => fail2!("slice_chars: `begin` is beyond end of string"),
-            (_, None) => fail2!("slice_chars: `end` is beyond end of string"),
+            (None, _) => fail!("slice_chars: `begin` is beyond end of string"),
+            (_, None) => fail!("slice_chars: `end` is beyond end of string"),
             (Some(a), Some(b)) => unsafe { raw::slice_bytes(*self, a, b) }
         }
     }
 
+    #[inline]
     fn starts_with<'a>(&self, needle: &'a str) -> bool {
-        let (self_len, needle_len) = (self.len(), needle.len());
-        if needle_len == 0u { true }
-        else if needle_len > self_len { false }
-        else { match_at(*self, needle, 0u) }
+        let n = needle.len();
+        self.len() >= n && needle.as_bytes() == self.as_bytes().slice_to(n)
     }
 
+    #[inline]
     fn ends_with(&self, needle: &str) -> bool {
-        let (self_len, needle_len) = (self.len(), needle.len());
-        if needle_len == 0u { true }
-        else if needle_len > self_len { false }
-        else { match_at(*self, needle, self_len - needle_len) }
+        let (m, n) = (self.len(), needle.len());
+        m >= n && needle.as_bytes() == self.as_bytes().slice_from(m - n)
     }
 
     fn escape_default(&self) -> ~str {
@@ -2260,7 +2198,7 @@ impl<'self> StrSlice<'self> for &'self str {
         } else {
             self.matches_index_iter(needle)
                 .next()
-                .map_move(|(start, _end)| start)
+                .map(|(start, _end)| start)
         }
     }
 
@@ -2898,6 +2836,8 @@ mod tests {
         assert!(("abc".starts_with("a")));
         assert!((!"a".starts_with("abc")));
         assert!((!"".starts_with("abc")));
+        assert!((!"ödd".starts_with("-")));
+        assert!(("ödd".starts_with("öd")));
     }
 
     #[test]
@@ -2907,6 +2847,8 @@ mod tests {
         assert!(("abc".ends_with("c")));
         assert!((!"a".ends_with("abc")));
         assert!((!"".ends_with("abc")));
+        assert!((!"ddö".ends_with("-")));
+        assert!(("ddö".ends_with("dö")));
     }
 
     #[test]
@@ -3254,7 +3196,7 @@ mod tests {
         // original problem code path anymore.)
         let s = ~"";
         let _bytes = s.as_bytes();
-        fail2!();
+        fail!();
     }
 
     #[test]
@@ -3312,8 +3254,8 @@ mod tests {
         while i < n1 {
             let a: u8 = s1[i];
             let b: u8 = s2[i];
-            debug2!("{}", a);
-            debug2!("{}", b);
+            debug!("{}", a);
+            debug!("{}", b);
             assert_eq!(a, b);
             i += 1u;
         }

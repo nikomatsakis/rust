@@ -10,9 +10,11 @@
 
 // xfail-fast
 
+#[feature(managed_boxes)];
+
 use std::libc::c_void;
 use std::ptr;
-use std::sys;
+use std::mem;
 use std::unstable::intrinsics::{TyDesc, get_tydesc, visit_tydesc, TyVisitor, Opaque};
 use std::unstable::raw::Vec;
 
@@ -49,12 +51,12 @@ impl<V:TyVisitor + movable_ptr> ptr_visit_adaptor<V> {
 
     #[inline(always)]
     pub fn align_to<T>(&mut self) {
-        self.align(sys::min_align_of::<T>());
+        self.align(mem::min_align_of::<T>());
     }
 
     #[inline(always)]
     pub fn bump_past<T>(&mut self) {
-        self.bump(sys::size_of::<T>());
+        self.bump(mem::size_of::<T>());
     }
 
 }
@@ -551,7 +553,7 @@ impl TyVisitor for my_visitor {
                        _sz: uint, _align: uint) -> bool { true }
     fn visit_rec_field(&mut self, _i: uint, _name: &str,
                        _mtbl: uint, inner: *TyDesc) -> bool {
-        error2!("rec field!");
+        error!("rec field!");
         self.visit_inner(inner)
     }
     fn visit_leave_rec(&mut self, _n_fields: uint,
@@ -569,7 +571,7 @@ impl TyVisitor for my_visitor {
     fn visit_enter_tup(&mut self, _n_fields: uint,
                        _sz: uint, _align: uint) -> bool { true }
     fn visit_tup_field(&mut self, _i: uint, inner: *TyDesc) -> bool {
-        error2!("tup field!");
+        error!("tup field!");
         self.visit_inner(inner)
     }
     fn visit_leave_tup(&mut self, _n_fields: uint,
@@ -633,7 +635,7 @@ pub fn main() {
                                        vals: ~[]});
         let mut v = ptr_visit_adaptor(Inner {inner: u});
         let td = get_tydesc_for(r);
-        error2!("tydesc sz: {}, align: {}",
+        error!("tydesc sz: {}, align: {}",
                (*td).size, (*td).align);
         visit_tydesc(td, &mut v as &mut TyVisitor);
 
@@ -641,7 +643,7 @@ pub fn main() {
         for s in r.iter() {
             println!("val: {}", *s);
         }
-        error2!("{:?}", u.vals.clone());
+        error!("{:?}", u.vals.clone());
         assert_eq!(u.vals.clone(),
                    ~[ ~"1", ~"2", ~"3", ~"true", ~"false", ~"5", ~"4", ~"3", ~"12"]);
     }

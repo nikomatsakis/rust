@@ -28,7 +28,10 @@ use print::pp;
 use print::pprust;
 
 use std::char;
-use std::io;
+use std::str;
+use std::rt::io;
+use std::rt::io::Decorator;
+use std::rt::io::mem::MemWriter;
 
 // The @ps is stored here to prevent recursive type.
 pub enum ann_node<'self> {
@@ -83,11 +86,11 @@ pub fn end(s: @ps) {
     pp::end(s.s);
 }
 
-pub fn rust_printer(writer: @io::Writer, intr: @ident_interner) -> @ps {
+pub fn rust_printer(writer: @mut io::Writer, intr: @ident_interner) -> @ps {
     return rust_printer_annotated(writer, intr, @no_ann::new() as @pp_ann);
 }
 
-pub fn rust_printer_annotated(writer: @io::Writer,
+pub fn rust_printer_annotated(writer: @mut io::Writer,
                               intr: @ident_interner,
                               ann: @pp_ann)
                               -> @ps {
@@ -118,8 +121,8 @@ pub fn print_crate(cm: @CodeMap,
                    span_diagnostic: @mut diagnostic::span_handler,
                    crate: &ast::Crate,
                    filename: @str,
-                   input: @io::Reader,
-                   out: @io::Writer,
+                   input: @mut io::Reader,
+                   out: @mut io::Writer,
                    ann: @pp_ann,
                    is_expanded: bool) {
     let (cmnts, lits) = comments::gather_comments_and_literals(
@@ -200,26 +203,26 @@ pub fn path_to_str(p: &ast::Path, intr: @ident_interner) -> ~str {
 pub fn fun_to_str(decl: &ast::fn_decl, purity: ast::purity, name: ast::Ident,
                   opt_explicit_self: Option<ast::explicit_self_>,
                   generics: &ast::Generics, intr: @ident_interner) -> ~str {
-    do io::with_str_writer |wr| {
-        let s = rust_printer(wr, intr);
-        print_fn(s, decl, Some(purity), AbiSet::Rust(),
-                 name, generics, opt_explicit_self, ast::inherited);
-        end(s); // Close the head box
-        end(s); // Close the outer box
-        eof(s.s);
-    }
+    let wr = @mut MemWriter::new();
+    let s = rust_printer(wr as @mut io::Writer, intr);
+    print_fn(s, decl, Some(purity), AbiSet::Rust(),
+             name, generics, opt_explicit_self, ast::inherited);
+    end(s); // Close the head box
+    end(s); // Close the outer box
+    eof(s.s);
+    str::from_utf8(*wr.inner_ref())
 }
 
 pub fn block_to_str(blk: &ast::Block, intr: @ident_interner) -> ~str {
-    do io::with_str_writer |wr| {
-        let s = rust_printer(wr, intr);
-        // containing cbox, will be closed by print-block at }
-        cbox(s, indent_unit);
-        // head-ibox, will be closed by print-block after {
-        ibox(s, 0u);
-        print_block(s, blk);
-        eof(s.s);
-    }
+    let wr = @mut MemWriter::new();
+    let s = rust_printer(wr as @mut io::Writer, intr);
+    // containing cbox, will be closed by print-block at }
+    cbox(s, indent_unit);
+    // head-ibox, will be closed by print-block after {
+    ibox(s, 0u);
+    print_block(s, blk);
+    eof(s.s);
+    str::from_utf8(*wr.inner_ref())
 }
 
 pub fn meta_item_to_str(mi: &ast::MetaItem, intr: @ident_interner) -> ~str {
@@ -453,10 +456,10 @@ pub fn print_type(s: @ps, ty: &ast::Ty) {
           word(s.s, ")");
       }
       ast::ty_mac(_) => {
-          fail2!("print_type doesn't know how to print a ty_mac");
+          fail!("print_type doesn't know how to print a ty_mac");
       }
       ast::ty_infer => {
-          fail2!("print_type shouldn't see a ty_infer");
+          fail!("print_type shouldn't see a ty_infer");
       }
 
     }
@@ -539,14 +542,6 @@ pub fn print_item(s: @ps, item: &ast::item) {
       ast::item_foreign_mod(ref nmod) => {
         head(s, "extern");
         word_nbsp(s, nmod.abis.to_str());
-        match nmod.sort {
-            ast::named => {
-                word_nbsp(s, "mod");
-                print_ident(s, item.ident);
-                nbsp(s);
-            }
-            ast::anonymous => {}
-        }
         bopen(s);
         print_foreign_mod(s, nmod, item.attrs);
         bclose(s, item.span);
@@ -709,7 +704,7 @@ pub fn print_struct(s: @ps,
             popen(s);
             do commasep(s, inconsistent, struct_def.fields) |s, field| {
                 match field.node.kind {
-                    ast::named_field(*) => fail2!("unexpected named field"),
+                    ast::named_field(*) => fail!("unexpected named field"),
                     ast::unnamed_field => {
                         maybe_print_comment(s, field.span.lo);
                         print_type(s, &field.node.ty);
@@ -728,7 +723,7 @@ pub fn print_struct(s: @ps,
 
         for field in struct_def.fields.iter() {
             match field.node.kind {
-                ast::unnamed_field => fail2!("unexpected unnamed field"),
+                ast::unnamed_field => fail!("unexpected unnamed field"),
                 ast::named_field(ident, visibility) => {
                     hardbreak_if_not_bol(s);
                     maybe_print_comment(s, field.span.lo);
@@ -1017,7 +1012,7 @@ pub fn print_if(s: @ps, test: &ast::Expr, blk: &ast::Block,
               }
               // BLEAH, constraints would be great here
               _ => {
-                  fail2!("print_if saw if with weird alternative");
+                  fail!("print_if saw if with weird alternative");
               }
             }
           }
@@ -1319,7 +1314,7 @@ pub fn print_expr(s: @ps, expr: &ast::Expr) {
                         }
                         end(s); // close enclosing cbox
                     }
-                    None => fail2!()
+                    None => fail!()
                 }
             } else {
                 // the block will close the pattern's ibox
@@ -1481,10 +1476,6 @@ pub fn print_decl(s: @ps, decl: &ast::Decl) {
         ibox(s, indent_unit);
         word_nbsp(s, "let");
 
-        if loc.is_mutbl {
-            word_nbsp(s, "mut");
-        }
-
         fn print_local(s: @ps, loc: &ast::Local) {
             ibox(s, indent_unit);
             print_local_decl(s, loc);
@@ -1594,7 +1585,10 @@ pub fn print_pat(s: @ps, pat: &ast::Pat) {
                   word_nbsp(s, "ref");
                   print_mutability(s, mutbl);
               }
-              ast::BindInfer => {}
+              ast::BindByValue(ast::MutImmutable) => {}
+              ast::BindByValue(ast::MutMutable) => {
+                  word_nbsp(s, "mut");
+              }
           }
           print_path(s, path, true);
           match sub {
@@ -1694,8 +1688,14 @@ pub fn explicit_self_to_str(explicit_self: &ast::explicit_self_, intr: @ident_in
 pub fn print_explicit_self(s: @ps, explicit_self: ast::explicit_self_) -> bool {
     match explicit_self {
         ast::sty_static => { return false; }
-        ast::sty_value => { word(s.s, "self"); }
-        ast::sty_uniq => { word(s.s, "~self"); }
+        ast::sty_value(m) => {
+            print_mutability(s, m);
+            word(s.s, "self");
+        }
+        ast::sty_uniq(m) => {
+            print_mutability(s, m);
+            word(s.s, "~self");
+        }
         ast::sty_region(ref lt, m) => {
             word(s.s, "&");
             print_opt_lifetime(s, lt);
@@ -1932,9 +1932,6 @@ pub fn print_mt(s: @ps, mt: &ast::mt) {
 
 pub fn print_arg(s: @ps, input: &ast::arg) {
     ibox(s, indent_unit);
-    if input.is_mutbl {
-        word_space(s, "mut");
-    }
     match input.ty.node {
       ast::ty_infer => print_pat(s, input.pat),
       _ => {
@@ -1979,7 +1976,7 @@ pub fn print_ty_fn(s: @ps,
     print_onceness(s, onceness);
     word(s.s, "fn");
     match id { Some(id) => { word(s.s, " "); print_ident(s, id); } _ => () }
-    do opt_bounds.map |bounds| { print_bounds(s, bounds, true); };
+    do opt_bounds.as_ref().map |bounds| { print_bounds(s, bounds, true); };
     match generics { Some(g) => print_generics(s, g), _ => () }
     zerobreak(s.s);
 
@@ -2101,6 +2098,14 @@ pub fn print_literal(s: @ps, lit: &ast::lit) {
       ast::lit_bool(val) => {
         if val { word(s.s, "true"); } else { word(s.s, "false"); }
       }
+      ast::lit_binary(arr) => {
+        ibox(s, indent_unit);
+        word(s.s, "[");
+        commasep_cmnt(s, inconsistent, arr, |s, u| word(s.s, format!("{}", *u)),
+                      |_| lit.span);
+        word(s.s, "]");
+        end(s);
+      }
     }
 }
 
@@ -2191,11 +2196,11 @@ pub fn print_string(s: @ps, st: &str, style: ast::StrStyle) {
 }
 
 pub fn to_str<T>(t: &T, f: &fn(@ps, &T), intr: @ident_interner) -> ~str {
-    do io::with_str_writer |wr| {
-        let s = rust_printer(wr, intr);
-        f(s, t);
-        eof(s.s);
-    }
+    let wr = @mut MemWriter::new();
+    let s = rust_printer(wr as @mut io::Writer, intr);
+    f(s, t);
+    eof(s.s);
+    str::from_utf8(*wr.inner_ref())
 }
 
 pub fn next_comment(s: @ps) -> Option<comments::cmnt> {
@@ -2305,7 +2310,7 @@ mod test {
 
     fn string_check<T:Eq> (given : &T, expected: &T) {
         if !(given == expected) {
-            fail2!("given {:?}, expected {:?}", given, expected);
+            fail!("given {:?}, expected {:?}", given, expected);
         }
     }
 

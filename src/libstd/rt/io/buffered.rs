@@ -55,6 +55,7 @@ use prelude::*;
 
 use num;
 use vec;
+use str;
 use super::{Reader, Writer, Stream, Decorator};
 
 // libuv recommends 64k buffers to maximize throughput
@@ -84,23 +85,69 @@ impl<R: Reader> BufferedReader<R> {
     pub fn new(inner: R) -> BufferedReader<R> {
         BufferedReader::with_capacity(DEFAULT_CAPACITY, inner)
     }
-}
 
-impl<R: Reader> Reader for BufferedReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> Option<uint> {
+    /// Reads the next line of input, interpreted as a sequence of utf-8
+    /// encoded unicode codepoints. If a newline is encountered, then the
+    /// newline is contained in the returned string.
+    pub fn read_line(&mut self) -> Option<~str> {
+        self.read_until('\n' as u8).map(str::from_utf8_owned)
+    }
+
+    /// Reads a sequence of bytes leading up to a specified delimeter. Once the
+    /// specified byte is encountered, reading ceases and the bytes up to and
+    /// including the delimiter are returned.
+    pub fn read_until(&mut self, byte: u8) -> Option<~[u8]> {
+        let mut res = ~[];
+        let mut used;
+        loop {
+            {
+                let available = self.fill_buffer();
+                match available.iter().position(|&b| b == byte) {
+                    Some(i) => {
+                        res.push_all(available.slice_to(i + 1));
+                        used = i + 1;
+                        break
+                    }
+                    None => {
+                        res.push_all(available);
+                        used = available.len();
+                    }
+                }
+            }
+            if used == 0 {
+                break
+            }
+            self.pos += used;
+        }
+        self.pos += used;
+        return if res.len() == 0 {None} else {Some(res)};
+    }
+
+    fn fill_buffer<'a>(&'a mut self) -> &'a [u8] {
         if self.pos == self.cap {
             match self.inner.read(self.buf) {
                 Some(cap) => {
                     self.pos = 0;
                     self.cap = cap;
                 }
-                None => return None
+                None => {}
             }
         }
+        return self.buf.slice(self.pos, self.cap);
+    }
+}
 
-        let src = self.buf.slice(self.pos, self.cap);
-        let nread = num::min(src.len(), buf.len());
-        vec::bytes::copy_memory(buf, src, nread);
+impl<R: Reader> Reader for BufferedReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> Option<uint> {
+        let nread = {
+            let available = self.fill_buffer();
+            if available.len() == 0 {
+                return None;
+            }
+            let nread = num::min(available.len(), buf.len());
+            vec::bytes::copy_memory(buf, available, nread);
+            nread
+        };
         self.pos += nread;
         Some(nread)
     }
@@ -174,17 +221,48 @@ impl<W: Writer> Writer for BufferedWriter<W> {
 }
 
 impl<W: Writer> Decorator<W> for BufferedWriter<W> {
-    fn inner(self) -> W {
-        self.inner
+    fn inner(self) -> W { self.inner }
+    fn inner_ref<'a>(&'a self) -> &'a W { &self.inner }
+    fn inner_mut_ref<'a>(&'a mut self) -> &'a mut W { &mut self.inner }
+}
+
+/// Wraps a Writer and buffers output to it, flushing whenever a newline (0xa,
+/// '\n') is detected.
+///
+/// Note that this structure does NOT flush the output when dropped.
+pub struct LineBufferedWriter<W> {
+    priv inner: BufferedWriter<W>,
+}
+
+impl<W: Writer> LineBufferedWriter<W> {
+    /// Creates a new `LineBufferedWriter`
+    pub fn new(inner: W) -> LineBufferedWriter<W> {
+        // Lines typically aren't that long, don't use a giant buffer
+        LineBufferedWriter {
+            inner: BufferedWriter::with_capacity(1024, inner)
+        }
+    }
+}
+
+impl<W: Writer> Writer for LineBufferedWriter<W> {
+    fn write(&mut self, buf: &[u8]) {
+        match buf.iter().position(|&b| b == '\n' as u8) {
+            Some(i) => {
+                self.inner.write(buf.slice_to(i + 1));
+                self.inner.flush();
+                self.inner.write(buf.slice_from(i + 1));
+            }
+            None => self.inner.write(buf),
+        }
     }
 
-    fn inner_ref<'a>(&'a self) -> &'a W {
-        &self.inner
-    }
+    fn flush(&mut self) { self.inner.flush() }
+}
 
-    fn inner_mut_ref<'a>(&'a mut self) -> &'a mut W {
-        &mut self.inner
-    }
+impl<W: Writer> Decorator<W> for LineBufferedWriter<W> {
+    fn inner(self) -> W { self.inner.inner() }
+    fn inner_ref<'a>(&'a self) -> &'a W { self.inner.inner_ref() }
+    fn inner_mut_ref<'a>(&'a mut self) -> &'a mut W { self.inner.inner_mut_ref() }
 }
 
 struct InternalBufferedWriter<W>(BufferedWriter<W>);
@@ -354,5 +432,31 @@ mod test {
         stream.eof();
         stream.write(buf);
         stream.flush();
+    }
+
+    #[test]
+    fn test_read_until() {
+        let inner = MemReader::new(~[0, 1, 2, 1, 0]);
+        let mut reader = BufferedReader::with_capacity(2, inner);
+        assert_eq!(reader.read_until(0), Some(~[0]));
+        assert_eq!(reader.read_until(2), Some(~[1, 2]));
+        assert_eq!(reader.read_until(1), Some(~[1]));
+        assert_eq!(reader.read_until(8), Some(~[0]));
+        assert_eq!(reader.read_until(9), None);
+    }
+
+    #[test]
+    fn test_line_buffer() {
+        let mut writer = LineBufferedWriter::new(MemWriter::new());
+        writer.write([0]);
+        assert_eq!(*writer.inner_ref().inner_ref(), ~[]);
+        writer.write([1]);
+        assert_eq!(*writer.inner_ref().inner_ref(), ~[]);
+        writer.flush();
+        assert_eq!(*writer.inner_ref().inner_ref(), ~[0, 1]);
+        writer.write([0, '\n' as u8, 1]);
+        assert_eq!(*writer.inner_ref().inner_ref(), ~[0, 1, 0, '\n' as u8]);
+        writer.flush();
+        assert_eq!(*writer.inner_ref().inner_ref(), ~[0, 1, 0, '\n' as u8, 1]);
     }
 }

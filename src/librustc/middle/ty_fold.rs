@@ -81,7 +81,7 @@ pub trait TypeFolder {
 pub fn fold_opt_ty<T:TypeFolder>(this: &mut T,
                                  t: Option<ty::t>)
                                  -> Option<ty::t> {
-    t.map(|t| this.fold_ty(*t))
+    t.map(|t| this.fold_ty(t))
 }
 
 pub fn fold_ty_vec<T:TypeFolder>(this: &mut T,
@@ -273,13 +273,13 @@ impl<'self> TypeFolder for RegionFolder<'self> {
     fn tcx(&self) -> ty::ctxt { self.tcx }
 
     fn fold_ty(&mut self, ty: ty::t) -> ty::t {
-        debug2!("RegionFolder.fold_ty({})", ty.repr(self.tcx()));
+        debug!("RegionFolder.fold_ty({})", ty.repr(self.tcx()));
         let t1 = super_fold_ty(self, ty);
         (self.fld_t)(t1)
     }
 
     fn fold_region(&mut self, r: ty::Region) -> ty::Region {
-        debug2!("RegionFolder.fold_region({})", r.repr(self.tcx()));
+        debug!("RegionFolder.fold_region({})", r.repr(self.tcx()));
         (self.fld_r)(r)
     }
 }

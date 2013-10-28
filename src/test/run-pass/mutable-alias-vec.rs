@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// -*- rust -*-
 extern mod extra;
 
 fn grow(v: &mut ~[int]) {
@@ -21,6 +20,6 @@ pub fn main() {
     grow(&mut v);
     grow(&mut v);
     let len = v.len();
-    info2!("{}", len);
+    info!("{}", len);
     assert_eq!(len, 3 as uint);
 }

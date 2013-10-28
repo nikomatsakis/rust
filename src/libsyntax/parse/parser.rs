@@ -17,7 +17,7 @@ use ast::{CallSugar, NoSugar, DoSugar};
 use ast::{TyBareFn, TyClosure};
 use ast::{RegionTyParamBound, TraitTyParamBound};
 use ast::{provided, public, purity};
-use ast::{_mod, BiAdd, arg, Arm, Attribute, BindByRef, BindInfer};
+use ast::{_mod, BiAdd, arg, Arm, Attribute, BindByRef, BindByValue};
 use ast::{BiBitAnd, BiBitOr, BiBitXor, Block};
 use ast::{BlockCheckMode, UnBox};
 use ast::{Crate, CrateConfig, Decl, DeclItem};
@@ -405,7 +405,7 @@ impl Parser {
         fn tokens_to_str(p:&Parser, tokens: &[token::Token]) -> ~str {
             let mut i = tokens.iter();
             // This might be a sign we need a connect method on Iterator.
-            let b = i.next().map_default(~"", |t| p.token_to_str(*t));
+            let b = i.next().map_default(~"", |t| p.token_to_str(t));
             i.fold(b, |b,a| b + "`, `" + p.token_to_str(a))
         }
         if edible.contains(self.token) {
@@ -448,7 +448,7 @@ impl Parser {
     // followed by some token from the set edible + inedible.  Recover
     // from anticipated input errors, discarding erroneous characters.
     pub fn commit_expr(&self, e: @Expr, edible: &[token::Token], inedible: &[token::Token]) {
-        debug2!("commit_expr {:?}", e);
+        debug!("commit_expr {:?}", e);
         match e.node {
             ExprPath(*) => {
                 // might be unit-struct construction; check for recoverableinput error.
@@ -468,9 +468,9 @@ impl Parser {
     // followed by some token from the set edible + inedible.  Check
     // for recoverable input errors, discarding erroneous characters.
     pub fn commit_stmt(&self, s: @Stmt, edible: &[token::Token], inedible: &[token::Token]) {
-        debug2!("commit_stmt {:?}", s);
+        debug!("commit_stmt {:?}", s);
         let _s = s; // unused, but future checks might want to inspect `s`.
-        if self.last_token.map_default(false, |t|is_ident_or_path(*t)) {
+        if self.last_token.as_ref().map_default(false, |t| is_ident_or_path(*t)) {
             let expected = vec::append(edible.to_owned(), inedible);
             self.check_for_erroneous_unit_struct_expecting(expected);
         }
@@ -933,13 +933,13 @@ impl Parser {
             };
 
             let hi = p.last_span.hi;
-            debug2!("parse_trait_methods(): trait method signature ends in \
+            debug!("parse_trait_methods(): trait method signature ends in \
                     `{}`",
                    self.this_token_to_str());
             match *p.token {
               token::SEMI => {
                 p.bump();
-                debug2!("parse_trait_methods(): parsing required method");
+                debug!("parse_trait_methods(): parsing required method");
                 // NB: at the moment, visibility annotations on required
                 // methods are ignored; this could change.
                 if vis != ast::inherited {
@@ -958,7 +958,7 @@ impl Parser {
                 })
               }
               token::LBRACE => {
-                debug2!("parse_trait_methods(): parsing provided method");
+                debug!("parse_trait_methods(): parsing provided method");
                 let (inner_attrs, body) =
                     p.parse_inner_attrs_and_block();
                 let attrs = vec::append(attrs, inner_attrs);
@@ -1184,19 +1184,12 @@ impl Parser {
     pub fn is_named_argument(&self) -> bool {
         let offset = match *self.token {
             token::BINOP(token::AND) => 1,
-            token::BINOP(token::MINUS) => 1,
             token::ANDAND => 1,
-            token::BINOP(token::PLUS) => {
-                if self.look_ahead(1, |t| *t == token::BINOP(token::PLUS)) {
-                    2
-                } else {
-                    1
-                }
-            },
+            _ if token::is_keyword(keywords::Mut, self.token) => 1,
             _ => 0
         };
 
-        debug2!("parser is_named_argument offset:{}", offset);
+        debug!("parser is_named_argument offset:{}", offset);
 
         if offset == 0 {
             is_plain_ident_or_underscore(&*self.token)
@@ -1210,20 +1203,15 @@ impl Parser {
     // This version of parse arg doesn't necessarily require
     // identifier names.
     pub fn parse_arg_general(&self, require_name: bool) -> arg {
-        let is_mutbl = self.eat_keyword(keywords::Mut);
         let pat = if require_name || self.is_named_argument() {
-            debug2!("parse_arg_general parse_pat (require_name:{:?})",
+            debug!("parse_arg_general parse_pat (require_name:{:?})",
                    require_name);
             let pat = self.parse_pat();
-
-            if is_mutbl && !ast_util::pat_is_ident(pat) {
-                self.obsolete(*self.span, ObsoleteMutWithMultipleBindings)
-            }
 
             self.expect(&token::COLON);
             pat
         } else {
-            debug2!("parse_arg_general ident_to_pat");
+            debug!("parse_arg_general ident_to_pat");
             ast_util::ident_to_pat(ast::DUMMY_NODE_ID,
                                    *self.last_span,
                                    special_idents::invalid)
@@ -1232,7 +1220,6 @@ impl Parser {
         let t = self.parse_ty(false);
 
         ast::arg {
-            is_mutbl: is_mutbl,
             ty: t,
             pat: pat,
             id: ast::DUMMY_NODE_ID,
@@ -1246,7 +1233,6 @@ impl Parser {
 
     // parse an argument in a lambda header e.g. |arg, arg|
     pub fn parse_fn_block_arg(&self) -> arg {
-        let is_mutbl = self.eat_keyword(keywords::Mut);
         let pat = self.parse_pat();
         let t = if self.eat(&token::COLON) {
             self.parse_ty(false)
@@ -1258,7 +1244,6 @@ impl Parser {
             }
         };
         ast::arg {
-            is_mutbl: is_mutbl,
             ty: t,
             pat: pat,
             id: ast::DUMMY_NODE_ID
@@ -1784,7 +1769,7 @@ impl Parser {
                 return self.mk_mac_expr(lo, hi, mac_invoc_tt(pth, tts, EMPTY_CTXT));
             } else if *self.token == token::LBRACE {
                 // This might be a struct literal.
-                if self.looking_at_record_literal() {
+                if self.looking_at_struct_literal() {
                     // It's a struct literal.
                     self.bump();
                     let mut fields = ~[];
@@ -2445,7 +2430,7 @@ impl Parser {
                 // There may be other types of expressions that can
                 // represent the callee in `for` and `do` expressions
                 // but they aren't represented by tests
-                debug2!("sugary call on {:?}", e.node);
+                debug!("sugary call on {:?}", e.node);
                 self.span_fatal(
                     e.span,
                     format!("`{}` must be followed by a block call", keyword));
@@ -2495,12 +2480,11 @@ impl Parser {
         }
     }
 
-    // For distingishing between record literals and blocks
-    fn looking_at_record_literal(&self) -> bool {
+    // For distingishing between struct literals and blocks
+    fn looking_at_struct_literal(&self) -> bool {
         *self.token == token::LBRACE &&
-            (self.look_ahead(1, |t| token::is_keyword(keywords::Mut, t)) ||
-             (self.look_ahead(1, |t| token::is_plain_ident(t)) &&
-              self.look_ahead(2, |t| *t == token::COLON)))
+        (self.look_ahead(1, |t| token::is_plain_ident(t)) &&
+         self.look_ahead(2, |t| *t == token::COLON))
     }
 
     fn parse_match_expr(&self) -> @Expr {
@@ -2656,7 +2640,7 @@ impl Parser {
             } else {
                 subpat = @ast::Pat {
                     id: ast::DUMMY_NODE_ID,
-                    node: PatIdent(BindInfer, fieldpath, None),
+                    node: PatIdent(BindByValue(MutImmutable), fieldpath, None),
                     span: *self.last_span
                 };
             }
@@ -2838,6 +2822,8 @@ impl Parser {
             } else {
                 pat = PatLit(val);
             }
+        } else if self.eat_keyword(keywords::Mut) {
+            pat = self.parse_pat_ident(BindByValue(MutMutable));
         } else if self.eat_keyword(keywords::Ref) {
             // parse ref pat
             let mutbl = self.parse_mutability();
@@ -2866,7 +2852,7 @@ impl Parser {
                     // or just foo
                     sub = None;
                 }
-                pat = PatIdent(BindInfer, name, sub);
+                pat = PatIdent(BindByValue(MutImmutable), name, sub);
             } else {
                 // parse an enum pat
                 let enum_path = self.parse_path(LifetimeAndTypesWithColons)
@@ -2910,7 +2896,7 @@ impl Parser {
                                   // it could still be either an enum
                                   // or an identifier pattern, resolve
                                   // will sort it out:
-                                  pat = PatIdent(BindInfer,
+                                  pat = PatIdent(BindByValue(MutImmutable),
                                                   enum_path,
                                                   None);
                               } else {
@@ -2964,13 +2950,9 @@ impl Parser {
     }
 
     // parse a local variable declaration
-    fn parse_local(&self, is_mutbl: bool) -> @Local {
+    fn parse_local(&self) -> @Local {
         let lo = self.span.lo;
         let pat = self.parse_pat();
-
-        if is_mutbl && !ast_util::pat_is_ident(pat) {
-            self.obsolete(*self.span, ObsoleteMutWithMultipleBindings)
-        }
 
         let mut ty = Ty {
             id: ast::DUMMY_NODE_ID,
@@ -2980,7 +2962,6 @@ impl Parser {
         if self.eat(&token::COLON) { ty = self.parse_ty(false); }
         let init = self.parse_initializer();
         @ast::Local {
-            is_mutbl: is_mutbl,
             ty: ty,
             pat: pat,
             init: init,
@@ -2991,11 +2972,10 @@ impl Parser {
 
     // parse a "let" stmt
     fn parse_let(&self) -> @Decl {
-        let is_mutbl = self.eat_keyword(keywords::Mut);
         let lo = self.span.lo;
-        let local = self.parse_local(is_mutbl);
+        let local = self.parse_local();
         while self.eat(&token::COMMA) {
-            let _ = self.parse_local(is_mutbl);
+            let _ = self.parse_local();
             self.obsolete(*self.span, ObsoleteMultipleLocalDecl);
         }
         return @spanned(lo, self.last_span.hi, DeclLocal(local));
@@ -3413,15 +3393,11 @@ impl Parser {
 
     // parse the argument list and result type of a function
     // that may have a self type.
-    fn parse_fn_decl_with_self(
-        &self,
-        parse_arg_fn:
-        &fn(&Parser) -> arg
-    ) -> (explicit_self, fn_decl) {
-        fn maybe_parse_explicit_self(
-            cnstr: &fn(v: Mutability) -> ast::explicit_self_,
-            p: &Parser
-        ) -> ast::explicit_self_ {
+    fn parse_fn_decl_with_self(&self, parse_arg_fn: &fn(&Parser) -> arg)
+        -> (explicit_self, fn_decl) {
+
+        fn maybe_parse_explicit_self(cnstr: &fn(v: Mutability) -> ast::explicit_self_,
+                                     p: &Parser) -> ast::explicit_self_ {
             // We need to make sure it isn't a type
             if p.look_ahead(1, |t| token::is_keyword(keywords::Self, t)) ||
                 ((p.look_ahead(1, |t| token::is_keyword(keywords::Const, t)) ||
@@ -3499,25 +3475,39 @@ impl Parser {
                     self.span_err(*self.last_span,
                                   "mutability declaration not allowed here");
                 }
-                sty_uniq
+                sty_uniq(MutImmutable)
             }, self)
           }
           token::IDENT(*) if self.is_self_ident() => {
             self.bump();
-            sty_value
+            sty_value(MutImmutable)
           }
           token::BINOP(token::STAR) => {
             // Possibly "*self" or "*mut self" -- not supported. Try to avoid
             // emitting cryptic "unexpected token" errors.
             self.bump();
-            if self.token_is_mutability(self.token) {
-                self.bump();
-            }
+            let mutability = if self.token_is_mutability(self.token) {
+                self.parse_mutability()
+            } else { MutImmutable };
             if self.is_self_ident() {
                 self.span_err(*self.span, "cannot pass self by unsafe pointer");
                 self.bump();
             }
-            sty_value
+            sty_value(mutability)
+          }
+          _ if self.token_is_mutability(self.token) &&
+               self.look_ahead(1, |t| token::is_keyword(keywords::Self, t)) => {
+            let mutability = self.parse_mutability();
+            self.expect_self_ident();
+            sty_value(mutability)
+          }
+          _ if self.token_is_mutability(self.token) &&
+               self.look_ahead(1, |t| *t == token::TILDE) &&
+               self.look_ahead(2, |t| token::is_keyword(keywords::Self, t)) => {
+            let mutability = self.parse_mutability();
+            self.bump();
+            self.expect_self_ident();
+            sty_uniq(mutability)
           }
           _ => {
             sty_static
@@ -3891,7 +3881,7 @@ impl Parser {
                 attrs = attrs_remaining + attrs;
                 first = false;
             }
-            debug2!("parse_mod_items: parse_item_or_view_item(attrs={:?})",
+            debug!("parse_mod_items: parse_item_or_view_item(attrs={:?})",
                    attrs);
             match self.parse_item_or_view_item(attrs,
                                                true /* macros allowed */) {
@@ -3967,27 +3957,20 @@ impl Parser {
                     outer_attrs: &[ast::Attribute],
                     id_sp: Span)
                     -> (ast::item_, ~[ast::Attribute]) {
-        let prefix = Path(self.sess.cm.span_to_filename(*self.span));
-        let prefix = prefix.dir_path();
+        let mut prefix = Path::new(self.sess.cm.span_to_filename(*self.span));
+        prefix.pop();
         let mod_path_stack = &*self.mod_path_stack;
-        let mod_path = Path(".").push_many(*mod_path_stack);
-        let dir_path = prefix.push_many(mod_path.components);
+        let mod_path = Path::new(".").join_many(*mod_path_stack);
+        let dir_path = prefix.join(&mod_path);
         let file_path = match ::attr::first_attr_value_str_by_name(
                 outer_attrs, "path") {
-            Some(d) => {
-                let path = Path(d);
-                if !path.is_absolute {
-                    dir_path.push(d)
-                } else {
-                    path
-                }
-            }
+            Some(d) => dir_path.join(d),
             None => {
                 let mod_name = token::interner_get(id.name).to_owned();
                 let default_path_str = mod_name + ".rs";
                 let secondary_path_str = mod_name + "/mod.rs";
-                let default_path = dir_path.push(default_path_str);
-                let secondary_path = dir_path.push(secondary_path_str);
+                let default_path = dir_path.join(default_path_str.as_slice());
+                let secondary_path = dir_path.join(secondary_path_str.as_slice());
                 let default_exists = default_path.exists();
                 let secondary_exists = secondary_path.exists();
                 match (default_exists, secondary_exists) {
@@ -4014,28 +3997,30 @@ impl Parser {
                               path: Path,
                               outer_attrs: ~[ast::Attribute],
                               id_sp: Span) -> (ast::item_, ~[ast::Attribute]) {
-        let full_path = path.normalize();
-
-        let maybe_i = do self.sess.included_mod_stack.iter().position |p| { *p == full_path };
+        let maybe_i = do self.sess.included_mod_stack.iter().position |p| { *p == path };
         match maybe_i {
             Some(i) => {
                 let stack = &self.sess.included_mod_stack;
                 let mut err = ~"circular modules: ";
                 for p in stack.slice(i, stack.len()).iter() {
-                    err.push_str(p.to_str());
+                    do p.display().with_str |s| {
+                        err.push_str(s);
+                    }
                     err.push_str(" -> ");
                 }
-                err.push_str(full_path.to_str());
+                do path.display().with_str |s| {
+                    err.push_str(s);
+                }
                 self.span_fatal(id_sp, err);
             }
             None => ()
         }
-        self.sess.included_mod_stack.push(full_path.clone());
+        self.sess.included_mod_stack.push(path.clone());
 
         let p0 =
             new_sub_parser_from_file(self.sess,
                                      self.cfg.clone(),
-                                     &full_path,
+                                     &path,
                                      id_sp);
         let (inner, next) = p0.parse_inner_attrs_and_next();
         let mod_attrs = vec::append(outer_attrs, inner);
@@ -4103,7 +4088,6 @@ impl Parser {
     // at this point, this is essentially a wrapper for
     // parse_foreign_items.
     fn parse_foreign_mod_items(&self,
-                               sort: ast::foreign_mod_sort,
                                abis: AbiSet,
                                first_item_attrs: ~[Attribute])
                                -> foreign_mod {
@@ -4119,7 +4103,6 @@ impl Parser {
         }
         assert!(*self.token == token::RBRACE);
         ast::foreign_mod {
-            sort: sort,
             abis: abis,
             view_items: view_items,
             items: foreign_items
@@ -4144,7 +4127,7 @@ impl Parser {
                                  self.this_token_to_str()));
         }
 
-        let (sort, maybe_path, ident) = match *self.token {
+        let (named, maybe_path, ident) = match *self.token {
             token::IDENT(*) => {
                 let the_ident = self.parse_ident();
                 let path = if *self.token == token::EQ {
@@ -4152,7 +4135,7 @@ impl Parser {
                     Some(self.parse_str())
                 }
                 else { None };
-                (ast::named, path, the_ident)
+                (true, path, the_ident)
             }
             _ => {
                 if must_be_named_mod {
@@ -4162,7 +4145,7 @@ impl Parser {
                                          self.this_token_to_str()));
                 }
 
-                (ast::anonymous, None,
+                (false, None,
                  special_idents::clownshoes_foreign_mod)
             }
         };
@@ -4170,14 +4153,14 @@ impl Parser {
         // extern mod foo { ... } or extern { ... }
         if items_allowed && self.eat(&token::LBRACE) {
             // `extern mod foo { ... }` is obsolete.
-            if sort == ast::named {
+            if named {
                 self.obsolete(*self.last_span, ObsoleteNamedExternModule);
             }
 
             let abis = opt_abis.unwrap_or(AbiSet::C());
 
             let (inner, next) = self.parse_inner_attrs_and_next();
-            let m = self.parse_foreign_mod_items(sort, abis, next);
+            let m = self.parse_foreign_mod_items(abis, next);
             self.expect(&token::RBRACE);
 
             return iovi_item(self.mk_item(lo,
@@ -4536,9 +4519,6 @@ impl Parser {
                     || self.look_ahead(2, |t| *t == token::LPAREN)
                     || self.look_ahead(2, |t| *t == token::LBRACE)) {
             // MACRO INVOCATION ITEM
-            if attrs.len() > 0 {
-                self.fatal("attrs on macros are not yet supported");
-            }
 
             // item macro.
             let pth = self.parse_path(NoTypesAllowed).path;
@@ -4614,7 +4594,7 @@ impl Parser {
 
         let first_ident = self.parse_ident();
         let mut path = ~[first_ident];
-        debug2!("parsed view_path: {}", self.id_to_str(first_ident));
+        debug!("parsed view_path: {}", self.id_to_str(first_ident));
         match *self.token {
           token::EQ => {
             // x = foo::bar
@@ -4822,7 +4802,7 @@ impl Parser {
                     break;
                 }
                 iovi_foreign_item(_) => {
-                    fail2!();
+                    fail!();
                 }
             }
             attrs = self.parse_outer_attributes();
@@ -4845,7 +4825,7 @@ impl Parser {
                     items.push(item)
                 }
                 iovi_foreign_item(_) => {
-                    fail2!();
+                    fail!();
                 }
             }
         }

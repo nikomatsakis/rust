@@ -133,7 +133,7 @@ impl reader for TtReader {
     fn is_eof(@mut self) -> bool { self.cur_tok == token::EOF }
     fn next_token(@mut self) -> TokenAndSpan {
         let r = tt_next_token(self);
-        debug2!("TtReader: r={:?}", r);
+        debug!("TtReader: r={:?}", r);
         return r;
     }
     fn fatal(@mut self, m: ~str) -> ! {
@@ -273,7 +273,7 @@ fn hex_digit_val(c: char) -> int {
     if in_range(c, '0', '9') { return (c as int) - ('0' as int); }
     if in_range(c, 'a', 'f') { return (c as int) - ('a' as int) + 10; }
     if in_range(c, 'A', 'F') { return (c as int) - ('A' as int) + 10; }
-    fail2!();
+    fail!();
 }
 
 fn bin_digit_value(c: char) -> int { if c == '0' { return 0; } return 1; }
@@ -373,49 +373,49 @@ pub fn is_block_non_doc_comment(s: &str) -> bool {
 fn consume_block_comment(rdr: @mut StringReader)
                       -> Option<TokenAndSpan> {
     // block comments starting with "/**" or "/*!" are doc-comments
-    let res = if rdr.curr == '*' || rdr.curr == '!' {
-        let start_bpos = rdr.pos - BytePos(3u);
-        while !(rdr.curr == '*' && nextch(rdr) == '/') && !is_eof(rdr) {
-            bump(rdr);
-        }
+    let is_doc_comment = rdr.curr == '*' || rdr.curr == '!';
+    let start_bpos = rdr.pos - BytePos(if is_doc_comment {3u} else {2u});
+
+    let mut level: int = 1;
+    while level > 0 {
         if is_eof(rdr) {
-            fatal_span(rdr, start_bpos, rdr.last_pos,
-                       ~"unterminated block doc-comment");
+            let msg = if is_doc_comment {
+                ~"unterminated block doc-comment"
+            } else {
+                ~"unterminated block comment"
+            };
+            fatal_span(rdr, start_bpos, rdr.last_pos, msg);
+        } else if rdr.curr == '/' && nextch(rdr) == '*' {
+            level += 1;
+            bump(rdr);
+            bump(rdr);
+        } else if rdr.curr == '*' && nextch(rdr) == '/' {
+            level -= 1;
+            bump(rdr);
+            bump(rdr);
         } else {
             bump(rdr);
-            bump(rdr);
-            do with_str_from(rdr, start_bpos) |string| {
-                // but comments with only "*"s between two "/"s are not
-                if !is_block_non_doc_comment(string) {
-                    Some(TokenAndSpan{
-                         tok: token::DOC_COMMENT(str_to_ident(string)),
-                         sp: codemap::mk_sp(start_bpos, rdr.pos)
-                         })
-                } else {
-                    None
-                }
+        }
+    }
+
+    let res = if is_doc_comment {
+        do with_str_from(rdr, start_bpos) |string| {
+            // but comments with only "*"s between two "/"s are not
+            if !is_block_non_doc_comment(string) {
+                Some(TokenAndSpan{
+                        tok: token::DOC_COMMENT(str_to_ident(string)),
+                        sp: codemap::mk_sp(start_bpos, rdr.pos)
+                    })
+            } else {
+                None
             }
         }
     } else {
-        let start_bpos = rdr.last_pos - BytePos(2u);
-        loop {
-            if is_eof(rdr) {
-                fatal_span(rdr, start_bpos, rdr.last_pos,
-                           ~"unterminated block comment");
-            }
-            if rdr.curr == '*' && nextch(rdr) == '/' {
-                bump(rdr);
-                bump(rdr);
-                break;
-            } else {
-                bump(rdr);
-            }
-        }
         None
     };
-    // restart whitespace munch.
 
-   if res.is_some() { res } else { consume_whitespace_and_comments(rdr) }
+    // restart whitespace munch.
+    if res.is_some() { res } else { consume_whitespace_and_comments(rdr) }
 }
 
 fn scan_exponent(rdr: @mut StringReader, start_bpos: BytePos) -> Option<~str> {
@@ -576,7 +576,7 @@ fn scan_number(c: char, rdr: @mut StringReader) -> token::Token {
                                ~"int literal is too large")
         };
 
-        debug2!("lexing {} as an unsuffixed integer literal", num_str);
+        debug!("lexing {} as an unsuffixed integer literal", num_str);
         return token::LIT_INT_UNSUFFIXED(parsed as i64);
     }
 }
@@ -1056,4 +1056,12 @@ mod test {
         assert!(!is_line_non_doc_comment("/// blah"));
         assert!(is_line_non_doc_comment("////"));
     }
+
+    #[test] fn nested_block_comments() {
+        let env = setup(@"/* /* */ */'a'");
+        let TokenAndSpan {tok, sp: _} =
+            env.string_reader.next_token();
+        assert_eq!(tok,token::LIT_CHAR('a' as u32));
+    }
+
 }

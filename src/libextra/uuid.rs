@@ -66,6 +66,8 @@ use std::rand::Rng;
 use std::cmp::Eq;
 use std::cast::{transmute,transmute_copy};
 
+use serialize::{Encoder, Encodable, Decoder, Decodable};
+
 /// A 128-bit (16 byte) buffer containing the ID
 pub type UuidBytes = [u8, ..16];
 
@@ -486,6 +488,21 @@ impl TotalEq for Uuid {
     }
 }
 
+// FIXME #9845: Test these more thoroughly
+impl<T: Encoder> Encodable<T> for Uuid {
+    /// Encode a UUID as a hypenated string
+    fn encode(&self, e: &mut T) {
+        e.emit_str(self.to_hyphenated_str());
+    }
+}
+
+impl<T: Decoder> Decodable<T> for Uuid {
+    /// Decode a UUID from a string
+    fn decode(d: &mut T) -> Uuid {
+        from_str(d.read_str()).unwrap()
+    }
+}
+
 /// Generates a random instance of UUID (V4 conformant)
 impl rand::Rand for Uuid {
     #[inline]
@@ -505,6 +522,8 @@ mod test {
     use std::str;
     use std::rand;
     use std::num::Zero;
+    use std::rt::io::Decorator;
+    use std::rt::io::mem::MemWriter;
 
     #[test]
     fn test_new_nil() {
@@ -769,6 +788,20 @@ mod test {
 
         assert!(ub.len() == 16);
         assert!(! ub.iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn test_serialize_round_trip() {
+        use std;
+        use ebml;
+        use serialize::{Encodable, Decodable};
+
+        let u = Uuid::new_v4();
+        let wr = @mut MemWriter::new();
+        u.encode(&mut ebml::writer::Encoder(wr));
+        let doc = ebml::reader::Doc(@wr.inner_ref().to_owned());
+        let u2 = Decodable::decode(&mut ebml::reader::Decoder(doc));
+        assert_eq!(u, u2);
     }
 }
 

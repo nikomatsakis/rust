@@ -84,13 +84,13 @@ impl RegionMaps {
             None => {}
         }
 
-        debug2!("relate_free_regions(sub={:?}, sup={:?})", sub, sup);
+        debug!("relate_free_regions(sub={:?}, sup={:?})", sub, sup);
 
         self.free_region_map.insert(sub, ~[sup]);
     }
 
     pub fn record_parent(&mut self, sub: ast::NodeId, sup: ast::NodeId) {
-        debug2!("record_parent(sub={:?}, sup={:?})", sub, sup);
+        debug!("record_parent(sub={:?}, sup={:?})", sub, sup);
         assert!(sub != sup);
 
         self.scope_map.insert(sub, sup);
@@ -108,7 +108,7 @@ impl RegionMaps {
     pub fn opt_encl_scope(&self, id: ast::NodeId) -> Option<ast::NodeId> {
         //! Returns the narrowest scope that encloses `id`, if any.
 
-        self.scope_map.find(&id).map_move(|x| *x)
+        self.scope_map.find(&id).map(|x| *x)
     }
 
     pub fn encl_scope(&self, id: ast::NodeId) -> ast::NodeId {
@@ -116,7 +116,7 @@ impl RegionMaps {
 
         match self.scope_map.find(&id) {
             Some(&r) => r,
-            None => { fail2!("No enclosing scope for id {:?}", id); }
+            None => { fail!("No enclosing scope for id {:?}", id); }
         }
     }
 
@@ -159,7 +159,7 @@ impl RegionMaps {
         while superscope != s {
             match self.scope_map.find(&s) {
                 None => {
-                    debug2!("is_subscope_of({:?}, {:?}, s={:?})=false",
+                    debug!("is_subscope_of({:?}, {:?}, s={:?})=false",
                            subscope, superscope, s);
 
                     return false;
@@ -168,7 +168,7 @@ impl RegionMaps {
             }
         }
 
-        debug2!("is_subscope_of({:?}, {:?})=true",
+        debug!("is_subscope_of({:?}, {:?})=true",
                subscope, superscope);
 
         return true;
@@ -222,7 +222,7 @@ impl RegionMaps {
          * duplicated with the code in infer.rs.
          */
 
-        debug2!("is_subregion_of(sub_region={:?}, super_region={:?})",
+        debug!("is_subregion_of(sub_region={:?}, super_region={:?})",
                sub_region, super_region);
 
         sub_region == super_region || {
@@ -294,7 +294,7 @@ impl RegionMaps {
         fn ancestors_of(this: &RegionMaps, scope: ast::NodeId)
             -> ~[ast::NodeId]
         {
-            // debug2!("ancestors_of(scope={})", scope);
+            // debug!("ancestors_of(scope={})", scope);
             let mut result = ~[scope];
             let mut scope = scope;
             loop {
@@ -305,7 +305,7 @@ impl RegionMaps {
                         scope = superscope;
                     }
                 }
-                // debug2!("ancestors_of_loop(scope={})", scope);
+                // debug!("ancestors_of_loop(scope={})", scope);
             }
         }
     }
@@ -314,7 +314,7 @@ impl RegionMaps {
 /// Records the current parent (if any) as the parent of `child_id`.
 fn parent_to_expr(visitor: &mut RegionResolutionVisitor,
                   cx: Context, child_id: ast::NodeId, sp: Span) {
-    debug2!("region::parent_to_expr(span={:?})",
+    debug!("region::parent_to_expr(span={:?})",
            visitor.sess.codemap.span_to_str(sp));
     for parent_id in cx.parent.iter() {
         visitor.region_maps.record_parent(child_id, *parent_id);
@@ -428,7 +428,7 @@ fn resolve_fn(visitor: &mut RegionResolutionVisitor,
               sp: Span,
               id: ast::NodeId,
               cx: Context) {
-    debug2!("region::resolve_fn(id={:?}, \
+    debug!("region::resolve_fn(id={:?}, \
                                span={:?}, \
                                body.id={:?}, \
                                cx.parent={:?})",

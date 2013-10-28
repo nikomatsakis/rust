@@ -11,9 +11,12 @@
 use codemap::{Pos, Span};
 use codemap;
 
-use std::io;
+use std::rt::io;
 use std::local_data;
 use extra::term;
+
+static BUG_REPORT_URL: &'static str =
+    "https://github.com/mozilla/rust/wiki/HOWTO-submit-a-Rust-bug-report";
 
 pub trait Emitter {
     fn emit(&self,
@@ -69,7 +72,7 @@ struct CodemapT {
 impl span_handler for CodemapT {
     fn span_fatal(@mut self, sp: Span, msg: &str) -> ! {
         self.handler.emit(Some((self.cm, sp)), msg, fatal);
-        fail2!();
+        fail!();
     }
     fn span_err(@mut self, sp: Span, msg: &str) {
         self.handler.emit(Some((self.cm, sp)), msg, error);
@@ -95,7 +98,7 @@ impl span_handler for CodemapT {
 impl handler for HandlerT {
     fn fatal(@mut self, msg: &str) -> ! {
         self.emit.emit(None, msg, fatal);
-        fail2!();
+        fail!();
     }
     fn err(@mut self, msg: &str) {
         self.emit.emit(None, msg, error);
@@ -143,7 +146,8 @@ impl handler for HandlerT {
 }
 
 pub fn ice_msg(msg: &str) -> ~str {
-    format!("internal compiler error: {}", msg)
+    format!("internal compiler error: {}\nThis message reflects a bug in the Rust compiler. \
+            \nWe would appreciate a bug report: {}", msg, BUG_REPORT_URL)
 }
 
 pub fn mk_span_handler(handler: @mut handler, cm: @codemap::CodeMap)
@@ -195,10 +199,15 @@ fn diagnosticcolor(lvl: level) -> term::color::Color {
 fn print_maybe_styled(msg: &str, color: term::attr::Attr) {
     local_data_key!(tls_terminal: @Option<term::Terminal>)
 
-    let stderr = io::stderr();
+    let stderr = @mut io::stderr() as @mut io::Writer;
+    fn is_stderr_screen() -> bool {
+        #[fixed_stack_segment];
+        use std::libc;
+        unsafe { libc::isatty(libc::STDERR_FILENO) != 0 }
+    }
 
-    if stderr.get_type() == io::Screen {
-        let t = match local_data::get(tls_terminal, |v| v.map_move(|k| *k)) {
+    if is_stderr_screen() {
+        let t = match local_data::get(tls_terminal, |v| v.map(|k| *k)) {
             None => {
                 let t = term::Terminal::new(stderr);
                 let tls = @match t {
@@ -214,21 +223,21 @@ fn print_maybe_styled(msg: &str, color: term::attr::Attr) {
         match t {
             &Some(ref term) => {
                 term.attr(color);
-                stderr.write_str(msg);
+                write!(stderr, "{}", msg);
                 term.reset();
             },
-            _ => stderr.write_str(msg)
+            _ => write!(stderr, "{}", msg)
         }
     } else {
-        stderr.write_str(msg);
+        write!(stderr, "{}", msg);
     }
 }
 
 fn print_diagnostic(topic: &str, lvl: level, msg: &str) {
-    let stderr = io::stderr();
+    let mut stderr = io::stderr();
 
     if !topic.is_empty() {
-        stderr.write_str(format!("{} ", topic));
+        write!(&mut stderr as &mut io::Writer, "{} ", topic);
     }
 
     print_maybe_styled(format!("{}: ", diagnosticstr(lvl)),
@@ -262,6 +271,8 @@ fn highlight_lines(cm: @codemap::CodeMap,
                    lvl: level,
                    lines: @codemap::FileLines) {
     let fm = lines.file;
+    let mut err = io::stderr();
+    let err = &mut err as &mut io::Writer;
 
     // arbitrarily only print up to six lines of the error
     let max_lines = 6u;
@@ -273,21 +284,12 @@ fn highlight_lines(cm: @codemap::CodeMap,
     }
     // Print the offending lines
     for line in display_lines.iter() {
-        io::stderr().write_str(format!("{}:{} ", fm.name, *line + 1u));
-        let s = fm.get_line(*line as int) + "\n";
-        io::stderr().write_str(s);
+        write!(err, "{}:{} {}\n", fm.name, *line + 1, fm.get_line(*line as int));
     }
     if elided {
         let last_line = display_lines[display_lines.len() - 1u];
         let s = format!("{}:{} ", fm.name, last_line + 1u);
-        let mut indent = s.len();
-        let mut out = ~"";
-        while indent > 0u {
-            out.push_char(' ');
-            indent -= 1u;
-        }
-        out.push_str("...\n");
-        io::stderr().write_str(out);
+        write!(err, "{0:1$}...\n", "", s.len());
     }
 
     // FIXME (#3260)
@@ -321,7 +323,7 @@ fn highlight_lines(cm: @codemap::CodeMap,
                 _ => s.push_char(' '),
             };
         }
-        io::stderr().write_str(s);
+        write!(err, "{}", s);
         let mut s = ~"^";
         let hi = cm.lookup_char_pos(sp.hi);
         if hi.col != lo.col {
@@ -337,7 +339,7 @@ fn highlight_lines(cm: @codemap::CodeMap,
 
 fn print_macro_backtrace(cm: @codemap::CodeMap, sp: Span) {
     for ei in sp.expn_info.iter() {
-        let ss = ei.callee.span.map_default(~"", |span| cm.span_to_str(*span));
+        let ss = ei.callee.span.as_ref().map_default(~"", |span| cm.span_to_str(*span));
         print_diagnostic(ss, note,
                          format!("in expansion of {}!", ei.callee.name));
         let ss = cm.span_to_str(ei.call_site);

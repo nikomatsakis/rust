@@ -77,8 +77,8 @@ pub fn get_dataptr(bcx: @mut Block, vptr: ValueRef) -> ValueRef {
     GEPi(bcx, vptr, [0u, abi::vec_elt_elems, 0u])
 }
 
-pub fn pointer_add(bcx: @mut Block, ptr: ValueRef, bytes: ValueRef) -> ValueRef {
-    let _icx = push_ctxt("tvec::pointer_add");
+pub fn pointer_add_byte(bcx: @mut Block, ptr: ValueRef, bytes: ValueRef) -> ValueRef {
+    let _icx = push_ctxt("tvec::pointer_add_byte");
     let old_ty = val_ty(ptr);
     let bptr = PointerCast(bcx, ptr, Type::i8p());
     return PointerCast(bcx, InBoundsGEP(bcx, bptr, [bytes]), old_ty);
@@ -169,7 +169,7 @@ pub fn trans_fixed_vstore(bcx: @mut Block,
     // to store the array of the suitable size, so all we have to do is
     // generate the content.
 
-    debug2!("trans_fixed_vstore(vstore_expr={}, dest={:?})",
+    debug!("trans_fixed_vstore(vstore_expr={}, dest={:?})",
            bcx.expr_to_str(vstore_expr), dest.to_str(bcx.ccx()));
     let _indenter = indenter();
 
@@ -199,7 +199,7 @@ pub fn trans_slice_vstore(bcx: @mut Block,
 
     let ccx = bcx.ccx();
 
-    debug2!("trans_slice_vstore(vstore_expr={}, dest={})",
+    debug!("trans_slice_vstore(vstore_expr={}, dest={})",
            bcx.expr_to_str(vstore_expr), dest.to_str(ccx));
     let _indenter = indenter();
 
@@ -214,7 +214,7 @@ pub fn trans_slice_vstore(bcx: @mut Block,
     // Handle the &[...] case:
     let vt = vec_types_from_expr(bcx, vstore_expr);
     let count = elements_required(bcx, content_expr);
-    debug2!("vt={}, count={:?}", vt.to_str(ccx), count);
+    debug!("vt={}, count={:?}", vt.to_str(ccx), count);
 
     // Make a fixed-length backing array and allocate it on the stack.
     let llcount = C_uint(ccx, count);
@@ -237,8 +237,7 @@ pub fn trans_slice_vstore(bcx: @mut Block,
         Ignore => {}
         SaveIn(lldest) => {
             Store(bcx, llfixed, GEPi(bcx, lldest, [0u, abi::slice_elt_base]));
-            let lllen = Mul(bcx, llcount, vt.llunit_size);
-            Store(bcx, lllen, GEPi(bcx, lldest, [0u, abi::slice_elt_len]));
+            Store(bcx, llcount, GEPi(bcx, lldest, [0u, abi::slice_elt_len]));
         }
     }
 
@@ -256,7 +255,7 @@ pub fn trans_lit_str(bcx: @mut Block,
     // different from trans_slice_vstore() above because it does need to copy
     // the content anywhere.
 
-    debug2!("trans_lit_str(lit_expr={}, dest={})",
+    debug!("trans_lit_str(lit_expr={}, dest={})",
            bcx.expr_to_str(lit_expr),
            dest.to_str(bcx.ccx()));
     let _indenter = indenter();
@@ -287,7 +286,7 @@ pub fn trans_uniq_or_managed_vstore(bcx: @mut Block, heap: heap, vstore_expr: &a
     // @[...] or ~[...] (also @"..." or ~"...") allocate boxes in the
     // appropriate heap and write the array elements into them.
 
-    debug2!("trans_uniq_or_managed_vstore(vstore_expr={}, heap={:?})",
+    debug!("trans_uniq_or_managed_vstore(vstore_expr={}, heap={:?})",
            bcx.expr_to_str(vstore_expr), heap);
     let _indenter = indenter();
 
@@ -318,7 +317,7 @@ pub fn trans_uniq_or_managed_vstore(bcx: @mut Block, heap: heap, vstore_expr: &a
                 _ => {}
             }
         }
-        heap_exchange_closure => fail2!("vectors use exchange_alloc"),
+        heap_exchange_closure => fail!("vectors use exchange_alloc"),
         heap_managed | heap_managed_unique => {}
     }
 
@@ -330,7 +329,7 @@ pub fn trans_uniq_or_managed_vstore(bcx: @mut Block, heap: heap, vstore_expr: &a
     add_clean_free(bcx, val, heap);
     let dataptr = get_dataptr(bcx, get_bodyptr(bcx, val, vt.vec_ty));
 
-    debug2!("alloc_vec() returned val={}, dataptr={}",
+    debug!("alloc_vec() returned val={}, dataptr={}",
            bcx.val_to_str(val), bcx.val_to_str(dataptr));
 
     let bcx = write_content(bcx, &vt, vstore_expr,
@@ -350,7 +349,7 @@ pub fn write_content(bcx: @mut Block,
     let _icx = push_ctxt("tvec::write_content");
     let mut bcx = bcx;
 
-    debug2!("write_content(vt={}, dest={}, vstore_expr={:?})",
+    debug!("write_content(vt={}, dest={}, vstore_expr={:?})",
            vt.to_str(bcx.ccx()),
            dest.to_str(bcx.ccx()),
            bcx.expr_to_str(vstore_expr));
@@ -383,7 +382,7 @@ pub fn write_content(bcx: @mut Block,
                     let mut temp_cleanups = ~[];
                     for (i, element) in elements.iter().enumerate() {
                         let lleltptr = GEPi(bcx, lldest, [i]);
-                        debug2!("writing index {:?} with lleltptr={:?}",
+                        debug!("writing index {:?} with lleltptr={:?}",
                                i, bcx.val_to_str(lleltptr));
                         bcx = expr::trans_into(bcx, *element,
                                                SaveIn(lleltptr));
@@ -502,9 +501,44 @@ pub fn elements_required(bcx: @mut Block, content_expr: &ast::Expr) -> uint {
     }
 }
 
-pub fn get_base_and_len(bcx: @mut Block,
-                        llval: ValueRef,
+pub fn get_base_and_byte_len(bcx: @mut Block, llval: ValueRef,
                         vec_ty: ty::t) -> (ValueRef, ValueRef) {
+    //!
+    //
+    // Converts a vector into the slice pair.  The vector should be stored in
+    // `llval` which should be either immediate or by-ref as appropriate for
+    // the vector type.  If you have a datum, you would probably prefer to
+    // call `Datum::get_base_and_byte_len()` which will handle any conversions for
+    // you.
+
+    let ccx = bcx.ccx();
+    let vt = vec_types(bcx, vec_ty);
+
+    let vstore = match ty::get(vt.vec_ty).sty {
+      ty::ty_estr(vst) | ty::ty_evec(_, vst) => vst,
+      _ => ty::vstore_uniq
+    };
+
+    match vstore {
+        ty::vstore_fixed(n) => {
+            let base = GEPi(bcx, llval, [0u, 0u]);
+            let len = Mul(bcx, C_uint(ccx, n), vt.llunit_size);
+            (base, len)
+        }
+        ty::vstore_slice(_) => {
+            let base = Load(bcx, GEPi(bcx, llval, [0u, abi::slice_elt_base]));
+            let count = Load(bcx, GEPi(bcx, llval, [0u, abi::slice_elt_len]));
+            let len = Mul(bcx, count, vt.llunit_size);
+            (base, len)
+        }
+        ty::vstore_uniq | ty::vstore_box => {
+            let body = get_bodyptr(bcx, llval, vec_ty);
+            (get_dataptr(bcx, body), get_fill(bcx, body))
+        }
+    }
+}
+
+pub fn get_base_and_len(bcx: @mut Block, llval: ValueRef, vec_ty: ty::t) -> (ValueRef, ValueRef) {
     //!
     //
     // Converts a vector into the slice pair.  The vector should be stored in
@@ -524,17 +558,16 @@ pub fn get_base_and_len(bcx: @mut Block,
     match vstore {
         ty::vstore_fixed(n) => {
             let base = GEPi(bcx, llval, [0u, 0u]);
-            let len = Mul(bcx, C_uint(ccx, n), vt.llunit_size);
-            (base, len)
+            (base, C_uint(ccx, n))
         }
         ty::vstore_slice(_) => {
             let base = Load(bcx, GEPi(bcx, llval, [0u, abi::slice_elt_base]));
-            let len = Load(bcx, GEPi(bcx, llval, [0u, abi::slice_elt_len]));
-            (base, len)
+            let count = Load(bcx, GEPi(bcx, llval, [0u, abi::slice_elt_len]));
+            (base, count)
         }
         ty::vstore_uniq | ty::vstore_box => {
             let body = get_bodyptr(bcx, llval, vec_ty);
-            (get_dataptr(bcx, body), get_fill(bcx, body))
+            (get_dataptr(bcx, body), UDiv(bcx, get_fill(bcx, body), vt.llunit_size))
         }
     }
 }
@@ -551,7 +584,7 @@ pub fn iter_vec_raw(bcx: @mut Block, data_ptr: ValueRef, vec_ty: ty::t,
     // FIXME (#3729): Optimize this when the size of the unit type is
     // statically known to not use pointer casts, which tend to confuse
     // LLVM.
-    let data_end_ptr = pointer_add(bcx, data_ptr, fill);
+    let data_end_ptr = pointer_add_byte(bcx, data_ptr, fill);
 
     // Now perform the iteration.
     let header_bcx = base::sub_block(bcx, "iter_vec_loop_header");

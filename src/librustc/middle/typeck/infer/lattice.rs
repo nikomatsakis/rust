@@ -129,7 +129,7 @@ impl CombineFieldsLatticeMethods for CombineFields {
         let a_bounds = node_a.possible_types.clone();
         let b_bounds = node_b.possible_types.clone();
 
-        debug2!("vars({}={} <: {}={})",
+        debug!("vars({}={} <: {}={})",
                a_id.to_str(), a_bounds.inf_str(self.infcx),
                b_id.to_str(), b_bounds.inf_str(self.infcx));
 
@@ -177,7 +177,7 @@ impl CombineFieldsLatticeMethods for CombineFields {
         let a_bounds = &node_a.possible_types;
         let b_bounds = &Bounds { lb: None, ub: Some(b.clone()) };
 
-        debug2!("var_sub_t({}={} <: {})",
+        debug!("var_sub_t({}={} <: {})",
                a_id.to_str(),
                a_bounds.inf_str(self.infcx),
                b.inf_str(self.infcx));
@@ -201,7 +201,7 @@ impl CombineFieldsLatticeMethods for CombineFields {
         let b_id = node_b.root.clone();
         let b_bounds = &node_b.possible_types;
 
-        debug2!("t_sub_var({} <: {}={})",
+        debug!("t_sub_var({} <: {}={})",
                a.inf_str(self.infcx),
                b_id.to_str(),
                b_bounds.inf_str(self.infcx));
@@ -220,7 +220,7 @@ impl CombineFieldsLatticeMethods for CombineFields {
          *
          * Combines two bounds into a more general bound. */
 
-        debug2!("merge_bnd({},{})",
+        debug!("merge_bnd({},{})",
                a.inf_str(self.infcx),
                b.inf_str(self.infcx));
         let _r = indenter();
@@ -271,7 +271,7 @@ impl CombineFieldsLatticeMethods for CombineFields {
         //       A     \ / A
         //              B
 
-        debug2!("merge({},{},{})",
+        debug!("merge({},{},{})",
                v_id.to_str(),
                a.inf_str(self.infcx),
                b.inf_str(self.infcx));
@@ -288,7 +288,7 @@ impl CombineFieldsLatticeMethods for CombineFields {
         let ub = if_ok!(self.merge_bnd(&a.ub, &b.ub, LatticeValue::glb));
         let lb = if_ok!(self.merge_bnd(&a.lb, &b.lb, LatticeValue::lub));
         let bounds = Bounds { lb: lb, ub: ub };
-        debug2!("merge({}): bounds={}",
+        debug!("merge({}): bounds={}",
                v_id.to_str(),
                bounds.inf_str(self.infcx));
 
@@ -303,7 +303,7 @@ impl CombineFieldsLatticeMethods for CombineFields {
                                                a: &Bound<T>,
                                                b: &Bound<T>)
                                                -> ures {
-        debug2!("bnds({} <: {})", a.inf_str(self.infcx),
+        debug!("bnds({} <: {})", a.inf_str(self.infcx),
                b.inf_str(self.infcx));
         let _r = indenter();
 
@@ -368,7 +368,7 @@ pub fn super_lattice_tys<L:LatticeDir+TyLatticeDir+Combine>(this: &L,
                                                             a: ty::t,
                                                             b: ty::t)
                                                             -> cres<ty::t> {
-    debug2!("{}.lattice_tys({}, {})", this.tag(),
+    debug!("{}.lattice_tys({}, {})", this.tag(),
            a.inf_str(this.infcx()),
            b.inf_str(this.infcx()));
 
@@ -445,7 +445,7 @@ pub fn lattice_vars<L:LatticeDir + Combine,
     let a_bounds = &nde_a.possible_types;
     let b_bounds = &nde_b.possible_types;
 
-    debug2!("{}.lattice_vars({}={} <: {}={})",
+    debug!("{}.lattice_vars({}={} <: {}={})",
            this.tag(),
            a_vid.to_str(), a_bounds.inf_str(this.infcx()),
            b_vid.to_str(), b_bounds.inf_str(this.infcx()));
@@ -491,7 +491,7 @@ pub fn lattice_var_and_t<L:LatticeDir + Combine,
     // The comments in this function are written for LUB, but they
     // apply equally well to GLB if you inverse upper/lower/sub/super/etc.
 
-    debug2!("{}.lattice_var_and_t({}={} <: {})",
+    debug!("{}.lattice_var_and_t({}={} <: {})",
            this.tag(),
            a_id.to_str(),
            a_bounds.inf_str(this.infcx()),
@@ -500,13 +500,13 @@ pub fn lattice_var_and_t<L:LatticeDir + Combine,
     match this.bnd(a_bounds) {
         Some(ref a_bnd) => {
             // If a has an upper bound, return the LUB(a.ub, b)
-            debug2!("bnd=Some({})", a_bnd.inf_str(this.infcx()));
+            debug!("bnd=Some({})", a_bnd.inf_str(this.infcx()));
             lattice_dir_op(a_bnd, b)
         }
         None => {
             // If a does not have an upper bound, make b the upper bound of a
             // and then return b.
-            debug2!("bnd=None");
+            debug!("bnd=None");
             let a_bounds = this.with_bnd(a_bounds, (*b).clone());
             do this.combine_fields().bnds(&a_bounds.lb, &a_bounds.ub).then {
                 this.infcx().set(a_id.clone(),

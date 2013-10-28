@@ -114,7 +114,7 @@ impl<T: Send> GenericPort<T> for SyncPort<T> {
     }
 
     fn try_recv(&self) -> Option<T> {
-        do self.duplex_stream.try_recv().map_move |val| {
+        do self.duplex_stream.try_recv().map |val| {
             self.duplex_stream.try_send(());
             val
         }
@@ -136,7 +136,7 @@ pub fn rendezvous<T: Send>() -> (SyncPort<T>, SyncChan<T>) {
 #[cfg(test)]
 mod test {
     use comm::{DuplexStream, rendezvous};
-    use std::rt::test::run_in_newsched_task;
+    use std::rt::test::run_in_uv_task;
     use std::task::spawn_unlinked;
 
 
@@ -165,7 +165,7 @@ mod test {
     #[test]
     fn recv_a_lot() {
         // Rendezvous streams should be able to handle any number of messages being sent
-        do run_in_newsched_task {
+        do run_in_uv_task {
             let (port, chan) = rendezvous();
             do spawn {
                 do 1000000.times { chan.send(()) }
@@ -179,7 +179,7 @@ mod test {
         let (port, chan) = rendezvous();
         do spawn_unlinked {
             chan.duplex_stream.send(()); // Can't access this field outside this module
-            fail2!()
+            fail!()
         }
         port.recv()
     }
@@ -189,7 +189,7 @@ mod test {
         let (port, chan) = rendezvous();
         do spawn_unlinked {
             port.duplex_stream.recv();
-            fail2!()
+            fail!()
         }
         chan.try_send(());
     }
@@ -200,7 +200,7 @@ mod test {
         let (port, chan) = rendezvous();
         do spawn_unlinked {
             port.duplex_stream.recv();
-            fail2!()
+            fail!()
         }
         chan.send(());
     }

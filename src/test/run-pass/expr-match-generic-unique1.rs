@@ -10,13 +10,12 @@
 
 
 
-// -*- rust -*-
 type compare<T> = &'static fn(~T, ~T) -> bool;
 
 fn test_generic<T:Clone>(expected: ~T, eq: compare<T>) {
     let actual: ~T = match true {
         true => { expected.clone() },
-        _ => fail2!("wat")
+        _ => fail!("wat")
     };
     assert!((eq(expected, actual)));
 }

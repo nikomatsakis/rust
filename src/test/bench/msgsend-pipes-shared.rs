@@ -22,7 +22,6 @@ extern mod extra;
 
 use std::comm::{Port, Chan, SharedChan};
 use std::comm;
-use std::io;
 use std::os;
 use std::task;
 use std::uint;
@@ -42,7 +41,7 @@ fn server(requests: &Port<request>, responses: &Chan<uint>) {
         match requests.try_recv() {
           Some(get_count) => { responses.send(count.clone()); }
           Some(bytes(b)) => {
-            //error2!("server: received {:?} bytes", b);
+            //error!("server: received {:?} bytes", b);
             count += b;
           }
           None => { done = true; }
@@ -50,7 +49,7 @@ fn server(requests: &Port<request>, responses: &Chan<uint>) {
         }
     }
     responses.send(count);
-    //error2!("server exiting");
+    //error!("server exiting");
 }
 
 fn run(args: &[~str]) {
@@ -67,13 +66,13 @@ fn run(args: &[~str]) {
     for _ in range(0u, workers) {
         let to_child = to_child.clone();
         let mut builder = task::task();
-        builder.future_result(|r| worker_results.push(r));
+        worker_results.push(builder.future_result());
         do builder.spawn {
             for _ in range(0u, size / workers) {
-                //error2!("worker {:?}: sending {:?} bytes", i, num_bytes);
+                //error!("worker {:?}: sending {:?} bytes", i, num_bytes);
                 to_child.send(bytes(num_bytes));
             }
-            //error2!("worker {:?} exiting", i);
+            //error!("worker {:?} exiting", i);
         }
     }
     do task::spawn || {
@@ -84,16 +83,16 @@ fn run(args: &[~str]) {
         r.recv();
     }
 
-    //error2!("sending stop message");
+    //error!("sending stop message");
     to_child.send(stop);
     move_out(to_child);
     let result = from_child.recv();
     let end = extra::time::precise_time_s();
     let elapsed = end - start;
-    io::stdout().write_str(format!("Count is {:?}\n", result));
-    io::stdout().write_str(format!("Test took {:?} seconds\n", elapsed));
+    print!("Count is {:?}\n", result);
+    print!("Test took {:?} seconds\n", elapsed);
     let thruput = ((size / workers * workers) as f64) / (elapsed as f64);
-    io::stdout().write_str(format!("Throughput={} per sec\n", thruput));
+    print!("Throughput={} per sec\n", thruput);
     assert_eq!(result, num_bytes * size);
 }
 
@@ -107,6 +106,6 @@ fn main() {
         args.clone()
     };
 
-    info2!("{:?}", args);
+    info!("{:?}", args);
     run(args);
 }

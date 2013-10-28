@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 use std::cell::Cell;
 use std::task;
 
@@ -33,6 +35,6 @@ fn main() {
 
     do task::spawn {
         let y = x.take();   //~ ERROR does not fulfill `Send`
-        error2!("{:?}", y);
+        error!("{:?}", y);
     }
 }

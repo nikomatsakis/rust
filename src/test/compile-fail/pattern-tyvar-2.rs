@@ -1,4 +1,3 @@
-// -*- rust -*-
 // Copyright 2012 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
@@ -15,6 +14,6 @@ extern mod extra;
 enum bar { t1((), Option<~[int]>), t2, }
 
 // n.b. my change changes this error message, but I think it's right -- tjc
-fn foo(t: bar) -> int { match t { t1(_, Some(x)) => { return x * 3; } _ => { fail2!(); } } } //~ ERROR binary operation * cannot be applied to
+fn foo(t: bar) -> int { match t { t1(_, Some(x)) => { return x * 3; } _ => { fail!(); } } } //~ ERROR binary operation * cannot be applied to
 
 fn main() { }

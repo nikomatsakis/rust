@@ -45,7 +45,7 @@ pub fn stmt_id(s: &Stmt) -> NodeId {
       StmtDecl(_, id) => id,
       StmtExpr(_, id) => id,
       StmtSemi(_, id) => id,
-      StmtMac(*) => fail2!("attempted to analyze unexpanded stmt")
+      StmtMac(*) => fail!("attempted to analyze unexpanded stmt")
     }
 }
 
@@ -66,13 +66,13 @@ pub fn def_id_of_def(d: Def) -> DefId {
       DefUse(id) | DefStruct(id) | DefTrait(id) | DefMethod(id, _) => {
         id
       }
-      DefArg(id, _) | DefLocal(id, _) | DefSelf(id) | DefSelfTy(id)
+      DefArg(id, _) | DefLocal(id, _) | DefSelf(id, _) | DefSelfTy(id)
       | DefUpvar(id, _, _, _) | DefBinding(id, _) | DefRegion(id)
       | DefTyParamBinder(id) | DefLabel(id) => {
         local_def(id)
       }
 
-      DefPrimTy(_) => fail2!()
+      DefPrimTy(_) => fail!()
     }
 }
 
@@ -234,7 +234,7 @@ pub fn ident_to_path(s: Span, identifier: Ident) -> Path {
 
 pub fn ident_to_pat(id: NodeId, s: Span, i: Ident) -> @Pat {
     @ast::Pat { id: id,
-                node: PatIdent(BindInfer, ident_to_path(s, i), None),
+                node: PatIdent(BindByValue(MutImmutable), ident_to_path(s, i), None),
                 span: s }
 }
 
@@ -588,7 +588,7 @@ impl<'self, O: IdVisitingOperation> Visitor<()> for IdVisitor<'self, O> {
                         id: NodeId,
                         _: ()) {
         self.operation.visit_id(id);
-        struct_def.ctor_id.map(|&ctor_id| self.operation.visit_id(ctor_id));
+        struct_def.ctor_id.map(|ctor_id| self.operation.visit_id(ctor_id));
         visit::walk_struct_def(self, struct_def, ident, generics, id, ());
     }
 
@@ -735,7 +735,7 @@ pub fn new_mark_internal(m:Mrk, tail:SyntaxContext,table:&mut SCTable)
         }
         true => {
             match table.mark_memo.find(&key) {
-                None => fail2!("internal error: key disappeared 2013042901"),
+                None => fail!("internal error: key disappeared 2013042901"),
                 Some(idxptr) => {*idxptr}
             }
         }
@@ -762,7 +762,7 @@ pub fn new_rename_internal(id:Ident, to:Name, tail:SyntaxContext, table: &mut SC
         }
         true => {
             match table.rename_memo.find(&key) {
-                None => fail2!("internal error: key disappeared 2013042902"),
+                None => fail!("internal error: key disappeared 2013042902"),
                 Some(idxptr) => {*idxptr}
             }
         }
@@ -783,7 +783,7 @@ pub fn new_sctable_internal() -> SCTable {
 // fetch the SCTable from TLS, create one if it doesn't yet exist.
 pub fn get_sctable() -> @mut SCTable {
     local_data_key!(sctable_key: @@mut SCTable)
-    match local_data::get(sctable_key, |k| k.map_move(|k| *k)) {
+    match local_data::get(sctable_key, |k| k.map(|k| *k)) {
         None => {
             let new_table = @@mut new_sctable_internal();
             local_data::set(sctable_key,new_table);
@@ -795,9 +795,9 @@ pub fn get_sctable() -> @mut SCTable {
 
 /// print out an SCTable for debugging
 pub fn display_sctable(table : &SCTable) {
-    error2!("SC table:");
+    error!("SC table:");
     for (idx,val) in table.table.iter().enumerate() {
-        error2!("{:4u} : {:?}",idx,val);
+        error!("{:4u} : {:?}",idx,val);
     }
 }
 
@@ -820,7 +820,7 @@ pub type ResolveTable = HashMap<(Name,SyntaxContext),Name>;
 // fetch the SCTable from TLS, create one if it doesn't yet exist.
 pub fn get_resolve_table() -> @mut ResolveTable {
     local_data_key!(resolve_table_key: @@mut ResolveTable)
-    match local_data::get(resolve_table_key, |k| k.map(|&k| *k)) {
+    match local_data::get(resolve_table_key, |k| k.map(|k| *k)) {
         None => {
             let new_table = @@mut HashMap::new();
             local_data::set(resolve_table_key,new_table);
@@ -859,7 +859,7 @@ pub fn resolve_internal(id : Ident,
                             resolvedthis
                         }
                     }
-                    IllegalCtxt() => fail2!("expected resolvable context, got IllegalCtxt")
+                    IllegalCtxt() => fail!("expected resolvable context, got IllegalCtxt")
                 }
             };
             resolve_table.insert(key,resolved);
@@ -900,7 +900,7 @@ pub fn marksof(ctxt: SyntaxContext, stopname: Name, table: &SCTable) -> ~[Mrk] {
                     loopvar = tl;
                 }
             }
-            IllegalCtxt => fail2!("expected resolvable context, got IllegalCtxt")
+            IllegalCtxt => fail!("expected resolvable context, got IllegalCtxt")
         }
     }
 }
@@ -911,7 +911,7 @@ pub fn mtwt_outer_mark(ctxt: SyntaxContext) -> Mrk {
     let sctable = get_sctable();
     match sctable.table[ctxt] {
         ast::Mark(mrk,_) => mrk,
-        _ => fail2!("can't retrieve outer mark when outside is not a mark")
+        _ => fail!("can't retrieve outer mark when outside is not a mark")
     }
 }
 
@@ -962,7 +962,6 @@ pub fn segments_name_eq(a : &[ast::PathSegment], b : &[ast::PathSegment]) -> boo
 mod test {
     use ast::*;
     use super::*;
-    use std::io;
     use opt_vec;
     use std::hashmap::HashMap;
 
@@ -1043,7 +1042,7 @@ mod test {
                     sc = tail;
                     continue;
                 }
-                IllegalCtxt => fail2!("expected resolvable context, got IllegalCtxt")
+                IllegalCtxt => fail!("expected resolvable context, got IllegalCtxt")
             }
         }
     }
@@ -1137,7 +1136,7 @@ mod test {
         // - two renames of the same var.. can only happen if you use
         // local-expand to prevent the inner binding from being renamed
         // during the rename-pass caused by the first:
-        io::println("about to run bad test");
+        println("about to run bad test");
         { let sc = unfold_test_sc(~[R(id(a,EMPTY_CTXT),50),
                                     R(id(a,EMPTY_CTXT),51)],
                                   EMPTY_CTXT,&mut t);

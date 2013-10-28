@@ -29,7 +29,7 @@ $(foreach t,$(CFG_TARGET_TRIPLES),$(info cfg: os for $(t) is $(OSTYPE_$(t))))
 # FIXME: no-omit-frame-pointer is just so that task_start_wrapper
 # has a frame pointer and the stack walker can understand it. Turning off
 # frame pointers everywhere is overkill
-CFG_GCCISH_CFLAGS += -fno-omit-frame-pointer -DUSE_UTF8
+CFG_GCCISH_CFLAGS += -fno-omit-frame-pointer
 
 # On Darwin, we need to run dsymutil so the debugging information ends
 # up in the right place.  On other platforms, it automatically gets
@@ -145,6 +145,7 @@ CXX_x86_64-unknown-linux-gnu=$(CXX)
 CPP_x86_64-unknown-linux-gnu=$(CPP)
 AR_x86_64-unknown-linux-gnu=$(AR)
 CFG_LIB_NAME_x86_64-unknown-linux-gnu=lib$(1).so
+CFG_STATIC_LIB_NAME_x86_64-unknown-linux-gnu=lib$(1).a
 CFG_LIB_GLOB_x86_64-unknown-linux-gnu=lib$(1)-*.so
 CFG_LIB_DSYM_GLOB_x86_64-unknown-linux-gnu=lib$(1)-*.dylib.dSYM
 CFG_GCCISH_CFLAGS_x86_64-unknown-linux-gnu := -Wall -Werror -g -fPIC -m64
@@ -171,6 +172,7 @@ CXX_i686-unknown-linux-gnu=$(CXX)
 CPP_i686-unknown-linux-gnu=$(CPP)
 AR_i686-unknown-linux-gnu=$(AR)
 CFG_LIB_NAME_i686-unknown-linux-gnu=lib$(1).so
+CFG_STATIC_LIB_NAME_i686-unknown-linux-gnu=lib$(1).a
 CFG_LIB_GLOB_i686-unknown-linux-gnu=lib$(1)-*.so
 CFG_LIB_DSYM_GLOB_i686-unknown-linux-gnu=lib$(1)-*.dylib.dSYM
 CFG_GCCISH_CFLAGS_i686-unknown-linux-gnu := -Wall -Werror -g -fPIC -m32
@@ -197,11 +199,12 @@ CXX_x86_64-apple-darwin=$(CXX)
 CPP_x86_64-apple-darwin=$(CPP)
 AR_x86_64-apple-darwin=$(AR)
 CFG_LIB_NAME_x86_64-apple-darwin=lib$(1).dylib
+CFG_STATIC_LIB_NAME_x86_64-apple-darwin=lib$(1).a
 CFG_LIB_GLOB_x86_64-apple-darwin=lib$(1)-*.dylib
 CFG_LIB_DSYM_GLOB_x86_64-apple-darwin=lib$(1)-*.dylib.dSYM
 CFG_GCCISH_CFLAGS_x86_64-apple-darwin := -Wall -Werror -g -fPIC -m64 -arch x86_64
 CFG_GCCISH_CXXFLAGS_x86_64-apple-darwin := -fno-rtti
-CFG_GCCISH_LINK_FLAGS_x86_64-apple-darwin := -dynamiclib -pthread  -framework CoreServices -Wl,-no_compact_unwind -m64
+CFG_GCCISH_LINK_FLAGS_x86_64-apple-darwin := -dynamiclib -pthread  -framework CoreServices -m64
 CFG_GCCISH_DEF_FLAG_x86_64-apple-darwin := -Wl,-exported_symbols_list,
 CFG_GCCISH_PRE_LIB_FLAGS_x86_64-apple-darwin :=
 CFG_GCCISH_POST_LIB_FLAGS_x86_64-apple-darwin :=
@@ -222,11 +225,12 @@ CXX_i686-apple-darwin=$(CXX)
 CPP_i686-apple-darwin=$(CPP)
 AR_i686-apple-darwin=$(AR)
 CFG_LIB_NAME_i686-apple-darwin=lib$(1).dylib
+CFG_STATIC_LIB_NAME_i686-apple-darwin=lib$(1).a
 CFG_LIB_GLOB_i686-apple-darwin=lib$(1)-*.dylib
 CFG_LIB_DSYM_GLOB_i686-apple-darwin=lib$(1)-*.dylib.dSYM
 CFG_GCCISH_CFLAGS_i686-apple-darwin := -Wall -Werror -g -fPIC -m32 -arch i386
 CFG_GCCISH_CXXFLAGS_i686-apple-darwin := -fno-rtti
-CFG_GCCISH_LINK_FLAGS_i686-apple-darwin := -dynamiclib -pthread  -framework CoreServices -Wl,-no_compact_unwind -m32
+CFG_GCCISH_LINK_FLAGS_i686-apple-darwin := -dynamiclib -pthread  -framework CoreServices -m32
 CFG_GCCISH_DEF_FLAG_i686-apple-darwin := -Wl,-exported_symbols_list,
 CFG_GCCISH_PRE_LIB_FLAGS_i686-apple-darwin :=
 CFG_GCCISH_POST_LIB_FLAGS_i686-apple-darwin :=
@@ -247,6 +251,7 @@ CXX_arm-linux-androideabi=$(CFG_ANDROID_CROSS_PATH)/bin/arm-linux-androideabi-g+
 CPP_arm-linux-androideabi=$(CFG_ANDROID_CROSS_PATH)/bin/arm-linux-androideabi-gcc -E
 AR_arm-linux-androideabi=$(CFG_ANDROID_CROSS_PATH)/bin/arm-linux-androideabi-ar
 CFG_LIB_NAME_arm-linux-androideabi=lib$(1).so
+CFG_STATIC_LIB_NAME_arm-linux-androideabi=lib$(1).a
 CFG_LIB_GLOB_arm-linux-androideabi=lib$(1)-*.so
 CFG_LIB_DSYM_GLOB_arm-linux-androideabi=lib$(1)-*.dylib.dSYM
 CFG_GCCISH_CFLAGS_arm-linux-androideabi := -Wall -g -fPIC -D__arm__ -DANDROID -D__ANDROID__
@@ -273,6 +278,7 @@ CXX_arm-unknown-linux-gnueabihf=arm-linux-gnueabihf-g++
 CPP_arm-unknown-linux-gnueabihf=arm-linux-gnueabihf-gcc -E
 AR_arm-unknown-linux-gnueabihf=arm-linux-gnueabihf-ar
 CFG_LIB_NAME_arm-unknown-linux-gnueabihf=lib$(1).so
+CFG_STATIC_LIB_NAME_arm-unknown-linux-gnueabihf=lib$(1).a
 CFG_LIB_GLOB_arm-unknown-linux-gnueabihf=lib$(1)-*.so
 CFG_LIB_DSYM_GLOB_arm-unknown-linux-gnueabihf=lib$(1)-*.dylib.dSYM
 CFG_GCCISH_CFLAGS_arm-unknown-linux-gnueabihf := -Wall -g -fPIC -D__arm__
@@ -299,6 +305,7 @@ CXX_arm-unknown-linux-gnueabi=arm-linux-gnueabi-g++
 CPP_arm-unknown-linux-gnueabi=arm-linux-gnueabi-gcc -E
 AR_arm-unknown-linux-gnueabi=arm-linux-gnueabi-ar
 CFG_LIB_NAME_arm-unknown-linux-gnueabi=lib$(1).so
+CFG_STATIC_LIB_NAME_arm-unknown-linux-gnueabi=lib$(1).a
 CFG_LIB_GLOB_arm-unknown-linux-gnueabi=lib$(1)-*.so
 CFG_LIB_DSYM_GLOB_arm-unknown-linux-gnueabi=lib$(1)-*.dylib.dSYM
 CFG_GCCISH_CFLAGS_arm-unknown-linux-gnueabi := -Wall -g -fPIC -D__arm__
@@ -325,6 +332,7 @@ CXX_mips-unknown-linux-gnu=mips-linux-gnu-g++
 CPP_mips-unknown-linux-gnu=mips-linux-gnu-gcc -E
 AR_mips-unknown-linux-gnu=mips-linux-gnu-ar
 CFG_LIB_NAME_mips-unknown-linux-gnu=lib$(1).so
+CFG_STATIC_LIB_NAME_mips-unknown-linux-gnu=lib$(1).a
 CFG_LIB_GLOB_mips-unknown-linux-gnu=lib$(1)-*.so
 CFG_LIB_DSYM_GLOB_mips-unknown-linux-gnu=lib$(1)-*.dylib.dSYM
 CFG_GCCISH_CFLAGS_mips-unknown-linux-gnu := -Wall -g -fPIC -mips32r2 -msoft-float -mabi=32 -mno-compact-eh
@@ -351,6 +359,7 @@ CXX_i686-pc-mingw32=$(CXX)
 CPP_i686-pc-mingw32=$(CPP)
 AR_i686-pc-mingw32=$(AR)
 CFG_LIB_NAME_i686-pc-mingw32=$(1).dll
+CFG_STATIC_LIB_NAME_i686-pc-mingw32=$(1).lib
 CFG_LIB_GLOB_i686-pc-mingw32=$(1)-*.dll
 CFG_LIB_DSYM_GLOB_i686-pc-mingw32=$(1)-*.dylib.dSYM
 CFG_GCCISH_CFLAGS_i686-pc-mingw32 := -Wall -Werror -g -m32 -march=i686 -D_WIN32_WINNT=0x0600 -I$(CFG_SRC_DIR)src/etc/mingw-fix-include
@@ -377,6 +386,7 @@ CXX_i586-mingw32msvc=$(CFG_MINGW32_CROSS_PATH)/bin/i586-mingw32msvc-g++
 CPP_i586-mingw32msvc=$(CFG_MINGW32_CROSS_PATH)/bin/i586-mingw32msvc-cpp
 AR_i586-mingw32msvc=$(CFG_MINGW32_CROSS_PATH)/bin/i586-mingw32msvc-ar
 CFG_LIB_NAME_i586-mingw32msvc=$(1).dll
+CFG_STATIC_LIB_NAME_i586-mingw32msvc=$(1).lib
 CFG_LIB_GLOB_i586-mingw32msvc=$(1)-*.dll
 CFG_LIB_DSYM_GLOB_i586-mingw32msvc=$(1)-*.dylib.dSYM
 CFG_GCCISH_CFLAGS_i586-mingw32msvc := -Wall -Werror -g -march=i586 -m32
@@ -404,6 +414,7 @@ CXX_x86_64-w64-mingw32=$(CXX)
 CPP_x86_64-w64-mingw32=$(CPP)
 AR_x86_64-w64-mingw32=$(AR)
 CFG_LIB_NAME_x86_64-w64-mingw32=$(1).dll
+CFG_STATIC_LIB_NAME_x86_64-w64-mingw32=$(1).lib
 CFG_LIB_GLOB_x86_64-w64-mingw32=$(1)-*.dll
 CFG_LIB_DSYM_GLOB_x86_64-w64-mingw32=$(1)-*.dylib.dSYM
 CFG_GCCISH_CFLAGS_x86_64-w64-mingw32 := -Wall -Werror -g -m64 -D_WIN32_WINNT=0x0600
@@ -429,6 +440,7 @@ CXX_x86_64-unknown-freebsd=$(CXX)
 CPP_x86_64-unknown-freebsd=$(CPP)
 AR_x86_64-unknown-freebsd=$(AR)
 CFG_LIB_NAME_x86_64-unknown-freebsd=lib$(1).so
+CFG_STATIC_LIB_NAME_x86_64-unknown-freebsd=lib$(1).a
 CFG_LIB_GLOB_x86_64-unknown-freebsd=lib$(1)-*.so
 CFG_LIB_DSYM_GLOB_x86_64-unknown-freebsd=$(1)-*.dylib.dSYM
 CFG_GCCISH_CFLAGS_x86_64-unknown-freebsd := -Wall -Werror -g -fPIC -I/usr/local/include
@@ -495,7 +507,8 @@ define CFG_MAKE_TOOLCHAIN
 
   # For the ARM and MIPS crosses, use the toolchain assembler
   # XXX: We should be able to use the LLVM assembler
-  CFG_ASSEMBLE_$(1)=$$(CC_$(1)) $$(CFG_DEPEND_FLAGS) $$(2) -c -o $$(1)
+  CFG_ASSEMBLE_$(1)=$$(CC_$(1)) $$(CFG_GCCISH_CFLAGS_$(1)) \
+		    $$(CFG_DEPEND_FLAGS) $$(2) -c -o $$(1)
 
   endif
 

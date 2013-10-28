@@ -19,8 +19,11 @@ use parse::attr::parser_attr;
 use parse::lexer::reader;
 use parse::parser::Parser;
 
-use std::io;
 use std::path::Path;
+use std::rt::io;
+use std::rt::io::extensions::ReaderUtil;
+use std::rt::io::file::FileInfo;
+use std::str;
 
 pub mod lexer;
 pub mod parser;
@@ -260,15 +263,32 @@ pub fn new_parser_from_tts(sess: @mut ParseSess,
 /// add the path to the session's codemap and return the new filemap.
 pub fn file_to_filemap(sess: @mut ParseSess, path: &Path, spanopt: Option<Span>)
     -> @FileMap {
-    match io::read_whole_file_str(path) {
-        Ok(src) => string_to_filemap(sess, src.to_managed(), path.to_str().to_managed()),
-        Err(e) => {
-            match spanopt {
-                Some(span) => sess.span_diagnostic.span_fatal(span, e),
-                None => sess.span_diagnostic.handler().fatal(e)
-            }
+    let err = |msg: &str| {
+        match spanopt {
+            Some(sp) => sess.span_diagnostic.span_fatal(sp, msg),
+            None => sess.span_diagnostic.handler().fatal(msg),
+        }
+    };
+    let mut error = None;
+    let bytes = do io::io_error::cond.trap(|e| error = Some(e)).inside {
+        path.open_reader(io::Open).read_to_end()
+    };
+    match error {
+        Some(e) => {
+            err(format!("couldn't read {}: {}", path.display(), e.desc));
+        }
+        None => {}
+    }
+    match str::from_utf8_owned_opt(bytes) {
+        Some(s) => {
+            return string_to_filemap(sess, s.to_managed(),
+                                     path.as_str().unwrap().to_managed());
+        }
+        None => {
+            err(format!("{} is not UTF-8 encoded", path.display()))
         }
     }
+    unreachable!()
 }
 
 // given a session and a string, add the string to
@@ -317,7 +337,10 @@ mod test {
     use super::*;
     use extra::serialize::Encodable;
     use extra;
-    use std::io;
+    use std::rt::io;
+    use std::rt::io::Decorator;
+    use std::rt::io::mem::MemWriter;
+    use std::str;
     use codemap::{Span, BytePos, Spanned};
     use opt_vec;
     use ast;
@@ -329,10 +352,10 @@ mod test {
     use util::parser_testing::string_to_stmt;
 
     #[cfg(test)] fn to_json_str<E : Encodable<extra::json::Encoder>>(val: @E) -> ~str {
-        do io::with_str_writer |writer| {
-            let mut encoder = extra::json::Encoder(writer);
-            val.encode(&mut encoder);
-        }
+        let writer = @mut MemWriter::new();
+        let mut encoder = extra::json::Encoder(writer as @mut io::Writer);
+        val.encode(&mut encoder);
+        str::from_utf8(*writer.inner_ref())
     }
 
     // produce a codemap::span
@@ -416,18 +439,18 @@ mod test {
                         _ => assert_eq!("wrong 4","correct")
                     },
                     _ => {
-                        error2!("failing value 3: {:?}",first_set);
+                        error!("failing value 3: {:?}",first_set);
                         assert_eq!("wrong 3","correct")
                     }
                 },
                 _ => {
-                    error2!("failing value 2: {:?}",delim_elts);
+                    error!("failing value 2: {:?}",delim_elts);
                     assert_eq!("wrong","correct");
                 }
 
             },
             _ => {
-                error2!("failing value: {:?}",tts);
+                error!("failing value: {:?}",tts);
                 assert_eq!("wrong 1","correct");
             }
         }
@@ -616,7 +639,7 @@ mod test {
         assert_eq!(parser.parse_pat(),
                    @ast::Pat{id: ast::DUMMY_NODE_ID,
                              node: ast::PatIdent(
-                                ast::BindInfer,
+                                ast::BindByValue(ast::MutImmutable),
                                 ast::Path {
                                     span:sp(0,1),
                                     global:false,
@@ -643,7 +666,6 @@ mod test {
                             id: ast::DUMMY_NODE_ID,
                             node: ast::item_fn(ast::fn_decl{
                                 inputs: ~[ast::arg{
-                                    is_mutbl: false,
                                     ty: ast::Ty{id: ast::DUMMY_NODE_ID,
                                                 node: ast::ty_path(ast::Path{
                                         span:sp(10,13),
@@ -662,7 +684,7 @@ mod test {
                                     pat: @ast::Pat {
                                         id: ast::DUMMY_NODE_ID,
                                         node: ast::PatIdent(
-                                            ast::BindInfer,
+                                            ast::BindByValue(ast::MutImmutable),
                                             ast::Path {
                                                 span:sp(6,7),
                                                 global:false,

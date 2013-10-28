@@ -12,8 +12,6 @@ use common::config;
 use common;
 use util;
 
-use std::io;
-
 pub struct TestProps {
     // Lines that should be expected, in order, on standard out
     error_patterns: ~[~str],
@@ -104,17 +102,23 @@ pub fn is_test_ignored(config: &config, testfile: &Path) -> bool {
     !val
 }
 
-fn iter_header(testfile: &Path, it: &fn(~str) -> bool) -> bool {
-    let rdr = io::file_reader(testfile).unwrap();
-    while !rdr.eof() {
-        let ln = rdr.read_line();
+fn iter_header(testfile: &Path, it: &fn(&str) -> bool) -> bool {
+    use std::rt::io::Open;
+    use std::rt::io::file::FileInfo;
+    use std::rt::io::buffered::BufferedReader;
+
+    let mut rdr = BufferedReader::new(testfile.open_reader(Open).unwrap());
+    loop {
+        let ln = match rdr.read_line() {
+            Some(ln) => ln, None => break
+        };
 
         // Assume that any directives will be found before the first
         // module or function. This doesn't seem to be an optimization
         // with a warm page cache. Maybe with a cold one.
         if ln.starts_with("fn") || ln.starts_with("mod") {
             return true;
-        } else { if !(it(ln)) { return false; } }
+        } else { if !(it(ln.trim())) { return false; } }
     }
     return true;
 }
@@ -150,17 +154,17 @@ fn parse_exec_env(line: &str) -> Option<(~str, ~str)> {
               let end = strs.pop();
               (strs.pop(), end)
           }
-          n => fail2!("Expected 1 or 2 strings, not {}", n)
+          n => fail!("Expected 1 or 2 strings, not {}", n)
         }
     }
 }
 
 fn parse_pp_exact(line: &str, testfile: &Path) -> Option<Path> {
     match parse_name_value_directive(line, ~"pp-exact") {
-      Some(s) => Some(Path(s)),
+      Some(s) => Some(Path::new(s)),
       None => {
         if parse_name_directive(line, "pp-exact") {
-            Some(testfile.file_path())
+            testfile.filename().map(|s| Path::new(s))
         } else {
             None
         }
@@ -179,7 +183,7 @@ fn parse_name_value_directive(line: &str,
         Some(colon) => {
             let value = line.slice(colon + keycolon.len(),
                                    line.len()).to_owned();
-            debug2!("{}: {}", directive,  value);
+            debug!("{}: {}", directive,  value);
             Some(value)
         }
         None => None

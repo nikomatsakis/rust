@@ -33,7 +33,7 @@ Rust extras are part of the standard Rust distribution.
 #[license = "MIT/ASL2"];
 #[crate_type = "lib"];
 
-#[feature(macro_rules, globs)];
+#[feature(macro_rules, globs, managed_boxes)];
 
 #[deny(non_camel_case_types)];
 #[deny(missing_doc)];
@@ -45,8 +45,6 @@ pub use std::os;
 // Utility modules
 
 pub mod c_vec;
-pub mod io_util;
-pub mod rc;
 
 // Concurrency
 
@@ -55,7 +53,6 @@ pub mod arc;
 pub mod comm;
 pub mod future;
 pub mod task_pool;
-pub mod flatpipes;
 
 // Collections
 
@@ -71,32 +68,18 @@ pub mod sort;
 pub mod dlist;
 pub mod treemap;
 
-// Crypto
-#[path="crypto/cryptoutil.rs"]
-mod cryptoutil;
-#[path="crypto/digest.rs"]
-pub mod digest;
-#[path="crypto/md5.rs"]
-pub mod md5;
-#[path="crypto/sha1.rs"]
-pub mod sha1;
-#[path="crypto/sha2.rs"]
-pub mod sha2;
-
 // And ... other stuff
 
 pub mod url;
 pub mod ebml;
 pub mod getopts;
 pub mod json;
-pub mod md4;
 pub mod tempfile;
 pub mod glob;
 pub mod term;
 pub mod time;
 pub mod arena;
 pub mod base64;
-pub mod rl;
 pub mod workcache;
 pub mod enum_set;
 #[path="num/bigint.rs"]
@@ -107,7 +90,6 @@ pub mod rational;
 pub mod complex;
 pub mod stats;
 pub mod semver;
-pub mod fileinput;
 pub mod flate;
 pub mod hex;
 pub mod uuid;

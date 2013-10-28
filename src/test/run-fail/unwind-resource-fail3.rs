@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 // error-pattern:quux
 
 struct faily_box {
@@ -20,7 +22,7 @@ fn faily_box(i: @int) -> faily_box { faily_box { i: i } }
 #[unsafe_destructor]
 impl Drop for faily_box {
     fn drop(&mut self) {
-        fail2!("quux");
+        fail!("quux");
     }
 }
 

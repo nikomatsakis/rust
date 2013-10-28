@@ -9,14 +9,13 @@
 // except according to those terms.
 
 use container::Container;
+use fmt;
 use from_str::FromStr;
 use libc;
 use option::{Some, None, Option};
 use os;
 use str::StrSlice;
 use unstable::atomics::{AtomicInt, INIT_ATOMIC_INT, SeqCst};
-
-#[cfg(target_os="macos")]
 use unstable::running_on_valgrind;
 
 // Indicates whether we should perform expensive sanity checks, including rtassert!
@@ -36,21 +35,17 @@ pub fn num_cpus() -> uint {
     }
 }
 
-/// Valgrind has a fixed-sized array (size around 2000) of segment descriptors wired into it; this
-/// is a hard limit and requires rebuilding valgrind if you want to go beyond it. Normally this is
-/// not a problem, but in some tests, we produce a lot of threads casually. Making lots of threads
-/// alone might not be a problem _either_, except on OSX, the segments produced for new threads
-/// _take a while_ to get reclaimed by the OS. Combined with the fact that libuv schedulers fork off
-/// a separate thread for polling fsevents on OSX, we get a perfect storm of creating "too many
-/// mappings" for valgrind to handle when running certain stress tests in the runtime.
-#[cfg(target_os="macos")]
+/// Valgrind has a fixed-sized array (size around 2000) of segment descriptors
+/// wired into it; this is a hard limit and requires rebuilding valgrind if you
+/// want to go beyond it. Normally this is not a problem, but in some tests, we
+/// produce a lot of threads casually.  Making lots of threads alone might not
+/// be a problem _either_, except on OSX, the segments produced for new threads
+/// _take a while_ to get reclaimed by the OS. Combined with the fact that libuv
+/// schedulers fork off a separate thread for polling fsevents on OSX, we get a
+/// perfect storm of creating "too many mappings" for valgrind to handle when
+/// running certain stress tests in the runtime.
 pub fn limit_thread_creation_due_to_osx_and_valgrind() -> bool {
-    running_on_valgrind()
-}
-
-#[cfg(not(target_os="macos"))]
-pub fn limit_thread_creation_due_to_osx_and_valgrind() -> bool {
-    false
+    (cfg!(target_os="macos")) && running_on_valgrind()
 }
 
 /// Get's the number of scheduler threads requested by the environment
@@ -74,10 +69,26 @@ pub fn default_sched_threads() -> uint {
     }
 }
 
-pub fn dumb_println(s: &str) {
-    use io::WriterUtil;
-    let dbg = ::libc::STDERR_FILENO as ::io::fd_t;
-    dbg.write_str(s + "\n");
+pub fn dumb_println(args: &fmt::Arguments) {
+    use rt::io::native::stdio::stderr;
+    use rt::io::{Writer, io_error, ResourceUnavailable};
+    use rt::task::Task;
+    use rt::local::Local;
+
+    let mut out = stderr();
+    if Local::exists(None::<Task>) {
+        let mut again = true;
+        do io_error::cond.trap(|e| {
+            again = e.kind == ResourceUnavailable;
+        }).inside {
+            while again {
+                again = false;
+                fmt::writeln(&mut out as &mut Writer, args);
+            }
+        }
+    } else {
+        fmt::writeln(&mut out as &mut Writer, args);
+    }
 }
 
 pub fn abort(msg: &str) -> ! {

@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 struct Pair<A,B> {
     a: A, b: B
 }
@@ -55,7 +57,7 @@ pub fn main() {
     let z = f(~x, y);
     make_cycle(z);
     let (a, b) = z.f();
-    info2!("a={} b={}", *a as uint, b as uint);
+    info!("a={} b={}", *a as uint, b as uint);
     assert_eq!(*a, x);
     assert_eq!(b, y);
 }

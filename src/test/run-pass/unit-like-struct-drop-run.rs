@@ -16,7 +16,7 @@ struct Foo;
 
 impl Drop for Foo {
     fn drop(&mut self) {
-        fail2!("This failure should happen.");
+        fail!("This failure should happen.");
     }
 }
 
@@ -24,5 +24,7 @@ pub fn main() {
     let x = do task::try {
         let _b = Foo;
     };
-    assert_eq!(x, Err(()));
+
+    let s = x.unwrap_err().move::<SendStr>().unwrap();
+    assert_eq!(s.as_slice(), "This failure should happen.");
 }

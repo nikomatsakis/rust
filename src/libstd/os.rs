@@ -28,10 +28,10 @@
 
 #[allow(missing_doc)];
 
-use c_str::ToCStr;
+#[cfg(unix)]
+use c_str::CString;
 use clone::Clone;
 use container::Container;
-use io;
 use iter::range;
 use libc;
 use libc::{c_char, c_void, c_int, size_t};
@@ -56,7 +56,12 @@ pub fn close(fd: c_int) -> c_int {
     }
 }
 
-pub mod rustrt {
+// On Windows, wide character version of function must be used to support
+// unicode, so functions should be split into at least two versions,
+// which are for Windows and for non-Windows, if necessary.
+// See https://github.com/mozilla/rust/issues/9822 for more information.
+
+mod rustrt {
     use libc::{c_char, c_int};
     use libc;
 
@@ -64,38 +69,47 @@ pub mod rustrt {
         pub fn rust_path_is_dir(path: *libc::c_char) -> c_int;
         pub fn rust_path_exists(path: *libc::c_char) -> c_int;
     }
+
+    // Uses _wstat instead of stat.
+    #[cfg(windows)]
+    extern {
+        pub fn rust_path_is_dir_u16(path: *u16) -> c_int;
+        pub fn rust_path_exists_u16(path: *u16) -> c_int;
+    }
 }
 
 pub static TMPBUF_SZ : uint = 1000u;
 static BUF_BYTES : uint = 2048u;
 
+#[cfg(unix)]
 pub fn getcwd() -> Path {
     #[fixed_stack_segment]; #[inline(never)];
     let mut buf = [0 as libc::c_char, ..BUF_BYTES];
     do buf.as_mut_buf |buf, len| {
         unsafe {
             if libc::getcwd(buf, len as size_t).is_null() {
-                fail2!()
+                fail!()
             }
 
-            Path(str::raw::from_c_str(buf as *c_char))
+            Path::new(CString::new(buf as *c_char, false))
         }
     }
 }
 
-// FIXME: move these to str perhaps? #2620
-
-pub fn fill_charp_buf(f: &fn(*mut c_char, size_t) -> bool) -> Option<~str> {
-    let mut buf = [0 as c_char, .. TMPBUF_SZ];
-    do buf.as_mut_buf |b, sz| {
-        if f(b, sz as size_t) {
-            unsafe {
-                Some(str::raw::from_c_str(b as *c_char))
+#[cfg(windows)]
+pub fn getcwd() -> Path {
+    #[fixed_stack_segment]; #[inline(never)];
+    use libc::DWORD;
+    use libc::GetCurrentDirectoryW;
+    let mut buf = [0 as u16, ..BUF_BYTES];
+    do buf.as_mut_buf |buf, len| {
+        unsafe {
+            if libc::GetCurrentDirectoryW(len as DWORD, buf) == 0 as DWORD {
+                fail!();
             }
-        } else {
-            None
         }
     }
+    Path::new(str::from_utf16(buf))
 }
 
 #[cfg(windows)]
@@ -175,6 +189,8 @@ pub fn env() -> ~[(~str,~str)] {
         #[cfg(windows)]
         unsafe fn get_env_pairs() -> ~[~str] {
             #[fixed_stack_segment]; #[inline(never)];
+            use c_str;
+            use str::StrSlice;
 
             use libc::funcs::extra::kernel32::{
                 GetEnvironmentStringsA,
@@ -182,10 +198,13 @@ pub fn env() -> ~[(~str,~str)] {
             };
             let ch = GetEnvironmentStringsA();
             if (ch as uint == 0) {
-                fail2!("os::env() failure getting env string from OS: {}",
+                fail!("os::env() failure getting env string from OS: {}",
                        os::last_os_error());
             }
-            let result = str::raw::from_c_multistring(ch as *libc::c_char, None);
+            let mut result = ~[];
+            do c_str::from_c_multistring(ch as *libc::c_char, None) |cstr| {
+                result.push(cstr.as_str().unwrap().to_owned());
+            };
             FreeEnvironmentStringsA(ch);
             result
         }
@@ -198,13 +217,13 @@ pub fn env() -> ~[(~str,~str)] {
             }
             let environ = rust_env_pairs();
             if (environ as uint == 0) {
-                fail2!("os::env() failure getting env string from OS: {}",
+                fail!("os::env() failure getting env string from OS: {}",
                        os::last_os_error());
             }
             let mut result = ~[];
             ptr::array_each(environ, |e| {
                 let env_pair = str::raw::from_c_str(e);
-                debug2!("get_env_pairs: {}", env_pair);
+                debug!("get_env_pairs: {}", env_pair);
                 result.push(env_pair);
             });
             result
@@ -214,7 +233,7 @@ pub fn env() -> ~[(~str,~str)] {
             let mut pairs = ~[];
             for p in input.iter() {
                 let vs: ~[&str] = p.splitn_iter('=', 1).collect();
-                debug2!("splitting: len: {}", vs.len());
+                debug!("splitting: len: {}", vs.len());
                 assert_eq!(vs.len(), 2);
                 pairs.push((vs[0].to_owned(), vs[1].to_owned()));
             }
@@ -338,64 +357,6 @@ pub fn fdopen(fd: c_int) -> *FILE {
     }
 }
 
-
-// fsync related
-
-#[cfg(windows)]
-pub fn fsync_fd(fd: c_int, _level: io::fsync::Level) -> c_int {
-    #[fixed_stack_segment]; #[inline(never)];
-    unsafe {
-        use libc::funcs::extra::msvcrt::*;
-        return commit(fd);
-    }
-}
-
-#[cfg(target_os = "linux")]
-#[cfg(target_os = "android")]
-pub fn fsync_fd(fd: c_int, level: io::fsync::Level) -> c_int {
-    #[fixed_stack_segment]; #[inline(never)];
-    unsafe {
-        use libc::funcs::posix01::unistd::*;
-        match level {
-          io::fsync::FSync
-          | io::fsync::FullFSync => return fsync(fd),
-          io::fsync::FDataSync => return fdatasync(fd)
-        }
-    }
-}
-
-#[cfg(target_os = "macos")]
-pub fn fsync_fd(fd: c_int, level: io::fsync::Level) -> c_int {
-    #[fixed_stack_segment]; #[inline(never)];
-
-    unsafe {
-        use libc::consts::os::extra::*;
-        use libc::funcs::posix88::fcntl::*;
-        use libc::funcs::posix01::unistd::*;
-        match level {
-          io::fsync::FSync => return fsync(fd),
-          _ => {
-            // According to man fnctl, the ok retval is only specified to be
-            // !=-1
-            if (fcntl(F_FULLFSYNC as c_int, fd) == -1 as c_int)
-                { return -1 as c_int; }
-            else
-                { return 0 as c_int; }
-          }
-        }
-    }
-}
-
-#[cfg(target_os = "freebsd")]
-pub fn fsync_fd(fd: c_int, _l: io::fsync::Level) -> c_int {
-    #[fixed_stack_segment]; #[inline(never)];
-
-    unsafe {
-        use libc::funcs::posix01::unistd::*;
-        return fsync(fd);
-    }
-}
-
 pub struct Pipe {
     input: c_int,
     out: c_int
@@ -451,72 +412,85 @@ pub fn dll_filename(base: &str) -> ~str {
 pub fn self_exe_path() -> Option<Path> {
 
     #[cfg(target_os = "freebsd")]
-    fn load_self() -> Option<~str> {
+    fn load_self() -> Option<~[u8]> {
         #[fixed_stack_segment]; #[inline(never)];
         unsafe {
             use libc::funcs::bsd44::*;
             use libc::consts::os::extra::*;
-            do fill_charp_buf() |buf, sz| {
-                let mib = ~[CTL_KERN as c_int,
-                           KERN_PROC as c_int,
-                           KERN_PROC_PATHNAME as c_int, -1 as c_int];
-                let mut sz = sz;
+            let mib = ~[CTL_KERN as c_int,
+                        KERN_PROC as c_int,
+                        KERN_PROC_PATHNAME as c_int, -1 as c_int];
+            let mut sz: size_t = 0;
+            let err = sysctl(vec::raw::to_ptr(mib), mib.len() as ::libc::c_uint,
+                             ptr::mut_null(), &mut sz, ptr::null(), 0u as size_t);
+            if err != 0 { return None; }
+            if sz == 0 { return None; }
+            let mut v: ~[u8] = vec::with_capacity(sz as uint);
+            let err = do v.as_mut_buf |buf,_| {
                 sysctl(vec::raw::to_ptr(mib), mib.len() as ::libc::c_uint,
-                       buf as *mut c_void, &mut sz, ptr::null(),
-                       0u as size_t) == (0 as c_int)
-            }
+                       buf as *mut c_void, &mut sz, ptr::null(), 0u as size_t)
+            };
+            if err != 0 { return None; }
+            if sz == 0 { return None; }
+            vec::raw::set_len(&mut v, sz as uint - 1); // chop off trailing NUL
+            Some(v)
         }
     }
 
     #[cfg(target_os = "linux")]
     #[cfg(target_os = "android")]
-    fn load_self() -> Option<~str> {
+    fn load_self() -> Option<~[u8]> {
         #[fixed_stack_segment]; #[inline(never)];
         unsafe {
             use libc::funcs::posix01::unistd::readlink;
 
-            let mut path = [0 as c_char, .. TMPBUF_SZ];
+            let mut path: ~[u8] = vec::with_capacity(TMPBUF_SZ);
 
-            do path.as_mut_buf |buf, len| {
-                let len = do "/proc/self/exe".with_c_str |proc_self_buf| {
-                    readlink(proc_self_buf, buf, len as size_t) as uint
-                };
-
-                if len == -1 {
-                    None
-                } else {
-                    Some(str::raw::from_buf_len(buf as *u8, len))
+            let len = do path.as_mut_buf |buf, _| {
+                do "/proc/self/exe".with_c_str |proc_self_buf| {
+                    readlink(proc_self_buf, buf as *mut c_char, TMPBUF_SZ as size_t) as uint
                 }
+            };
+            if len == -1 {
+                None
+            } else {
+                vec::raw::set_len(&mut path, len as uint);
+                Some(path)
             }
         }
     }
 
     #[cfg(target_os = "macos")]
-    fn load_self() -> Option<~str> {
+    fn load_self() -> Option<~[u8]> {
         #[fixed_stack_segment]; #[inline(never)];
         unsafe {
-            do fill_charp_buf() |buf, sz| {
-                let mut sz = sz as u32;
-                libc::funcs::extra::_NSGetExecutablePath(
-                    buf, &mut sz) == (0 as c_int)
-            }
+            use libc::funcs::extra::_NSGetExecutablePath;
+            let mut sz: u32 = 0;
+            _NSGetExecutablePath(ptr::mut_null(), &mut sz);
+            if sz == 0 { return None; }
+            let mut v: ~[u8] = vec::with_capacity(sz as uint);
+            let err = do v.as_mut_buf |buf,_| {
+                _NSGetExecutablePath(buf as *mut i8, &mut sz)
+            };
+            if err != 0 { return None; }
+            vec::raw::set_len(&mut v, sz as uint - 1); // chop off trailing NUL
+            Some(v)
         }
     }
 
     #[cfg(windows)]
-    fn load_self() -> Option<~str> {
+    fn load_self() -> Option<~[u8]> {
         #[fixed_stack_segment]; #[inline(never)];
         unsafe {
             use os::win32::fill_utf16_buf_and_decode;
             do fill_utf16_buf_and_decode() |buf, sz| {
                 libc::GetModuleFileNameW(0u as libc::DWORD, buf, sz)
-            }
+            }.map(|s| s.into_bytes())
         }
     }
 
-    load_self().map_move(|path| Path(path).dir_path())
+    load_self().and_then(|path| Path::new_opt(path).map(|mut p| { p.pop(); p }))
 }
-
 
 /**
  * Returns the path to the user's home directory, if known.
@@ -532,13 +506,10 @@ pub fn self_exe_path() -> Option<Path> {
  * Otherwise, homedir returns option::none.
  */
 pub fn homedir() -> Option<Path> {
+    // FIXME (#7188): getenv needs a ~[u8] variant
     return match getenv("HOME") {
-        Some(ref p) => if !p.is_empty() {
-          Some(Path(*p))
-        } else {
-          secondary()
-        },
-        None => secondary()
+        Some(ref p) if !p.is_empty() => Path::new_opt(p.as_slice()),
+        _ => secondary()
     };
 
     #[cfg(unix)]
@@ -550,7 +521,7 @@ pub fn homedir() -> Option<Path> {
     fn secondary() -> Option<Path> {
         do getenv("USERPROFILE").and_then |p| {
             if !p.is_empty() {
-                Some(Path(p))
+                Path::new_opt(p)
             } else {
                 None
             }
@@ -579,7 +550,7 @@ pub fn tmpdir() -> Path {
                 if x.is_empty() {
                     None
                 } else {
-                    Some(Path(x))
+                    Path::new_opt(x)
                 },
             _ => None
         }
@@ -588,9 +559,9 @@ pub fn tmpdir() -> Path {
     #[cfg(unix)]
     fn lookup() -> Path {
         if cfg!(target_os = "android") {
-            Path("/data/tmp")
+            Path::new("/data/tmp")
         } else {
-            getenv_nonempty("TMPDIR").unwrap_or(Path("/tmp"))
+            getenv_nonempty("TMPDIR").unwrap_or(Path::new("/tmp"))
         }
     }
 
@@ -599,7 +570,7 @@ pub fn tmpdir() -> Path {
         getenv_nonempty("TMP").or(
             getenv_nonempty("TEMP").or(
                 getenv_nonempty("USERPROFILE").or(
-                   getenv_nonempty("WINDIR")))).unwrap_or(Path("C:\\Windows"))
+                   getenv_nonempty("WINDIR")))).unwrap_or(Path::new("C:\\Windows"))
     }
 }
 
@@ -607,11 +578,12 @@ pub fn tmpdir() -> Path {
 pub fn walk_dir(p: &Path, f: &fn(&Path) -> bool) -> bool {
     let r = list_dir(p);
     r.iter().advance(|q| {
-        let path = &p.push(*q);
+        let path = &p.join(q);
         f(path) && (!path_is_dir(path) || walk_dir(path, |p| f(p)))
     })
 }
 
+#[cfg(unix)]
 /// Indicates whether a path represents a directory
 pub fn path_is_dir(p: &Path) -> bool {
     #[fixed_stack_segment]; #[inline(never)];
@@ -622,12 +594,34 @@ pub fn path_is_dir(p: &Path) -> bool {
     }
 }
 
+
+#[cfg(windows)]
+pub fn path_is_dir(p: &Path) -> bool {
+    #[fixed_stack_segment]; #[inline(never)];
+    unsafe {
+        do os::win32::as_utf16_p(p.as_str().unwrap()) |buf| {
+            rustrt::rust_path_is_dir_u16(buf) != 0 as c_int
+        }
+    }
+}
+
+#[cfg(unix)]
 /// Indicates whether a path exists
 pub fn path_exists(p: &Path) -> bool {
     #[fixed_stack_segment]; #[inline(never)];
     unsafe {
         do p.with_c_str |buf| {
             rustrt::rust_path_exists(buf) != 0 as c_int
+        }
+    }
+}
+
+#[cfg(windows)]
+pub fn path_exists(p: &Path) -> bool {
+    #[fixed_stack_segment]; #[inline(never)];
+    unsafe {
+        do os::win32::as_utf16_p(p.as_str().unwrap()) |buf| {
+            rustrt::rust_path_exists_u16(buf) != 0 as c_int
         }
     }
 }
@@ -643,10 +637,12 @@ pub fn path_exists(p: &Path) -> bool {
 // querying; what it does depends on the process working directory, not just
 // the input paths.
 pub fn make_absolute(p: &Path) -> Path {
-    if p.is_absolute {
-        (*p).clone()
+    if p.is_absolute() {
+        p.clone()
     } else {
-        getcwd().push_many(p.components)
+        let mut ret = getcwd();
+        ret.push(p);
+        ret
     }
 }
 
@@ -661,7 +657,7 @@ pub fn make_dir(p: &Path, mode: c_int) -> bool {
         unsafe {
             use os::win32::as_utf16_p;
             // FIXME: turn mode into something useful? #2623
-            do as_utf16_p(p.to_str()) |buf| {
+            do as_utf16_p(p.as_str().unwrap()) |buf| {
                 libc::CreateDirectoryW(buf, ptr::mut_null())
                     != (0 as libc::BOOL)
             }
@@ -690,62 +686,57 @@ pub fn mkdir_recursive(p: &Path, mode: c_int) -> bool {
     if path_is_dir(p) {
         return true;
     }
-    else if p.components.is_empty() {
-        return false;
+    if p.filename().is_some() {
+        let mut p_ = p.clone();
+        p_.pop();
+        if !mkdir_recursive(&p_, mode) {
+            return false;
+        }
     }
-    else if p.components.len() == 1 {
-        // No parent directories to create
-        path_is_dir(p) || make_dir(p, mode)
-    }
-    else {
-        mkdir_recursive(&p.pop(), mode) && make_dir(p, mode)
-    }
+    return make_dir(p, mode);
 }
 
 /// Lists the contents of a directory
-pub fn list_dir(p: &Path) -> ~[~str] {
-    if p.components.is_empty() && !p.is_absolute() {
-        // Not sure what the right behavior is here, but this
-        // prevents a bounds check failure later
-        return ~[];
-    }
+///
+/// Each resulting Path is a relative path with no directory component.
+pub fn list_dir(p: &Path) -> ~[Path] {
     unsafe {
         #[cfg(target_os = "linux")]
         #[cfg(target_os = "android")]
         #[cfg(target_os = "freebsd")]
         #[cfg(target_os = "macos")]
-        unsafe fn get_list(p: &Path) -> ~[~str] {
+        unsafe fn get_list(p: &Path) -> ~[Path] {
             #[fixed_stack_segment]; #[inline(never)];
             use libc::{dirent_t};
             use libc::{opendir, readdir, closedir};
             extern {
                 fn rust_list_dir_val(ptr: *dirent_t) -> *libc::c_char;
             }
-            let mut strings = ~[];
-            debug2!("os::list_dir -- BEFORE OPENDIR");
+            let mut paths = ~[];
+            debug!("os::list_dir -- BEFORE OPENDIR");
 
             let dir_ptr = do p.with_c_str |buf| {
                 opendir(buf)
             };
 
             if (dir_ptr as uint != 0) {
-                debug2!("os::list_dir -- opendir() SUCCESS");
+                debug!("os::list_dir -- opendir() SUCCESS");
                 let mut entry_ptr = readdir(dir_ptr);
                 while (entry_ptr as uint != 0) {
-                    strings.push(str::raw::from_c_str(rust_list_dir_val(
-                        entry_ptr)));
+                    let cstr = CString::new(rust_list_dir_val(entry_ptr), false);
+                    paths.push(Path::new(cstr));
                     entry_ptr = readdir(dir_ptr);
                 }
                 closedir(dir_ptr);
             }
             else {
-                debug2!("os::list_dir -- opendir() FAILURE");
+                debug!("os::list_dir -- opendir() FAILURE");
             }
-            debug2!("os::list_dir -- AFTER -- \\#: {}", strings.len());
-            strings
+            debug!("os::list_dir -- AFTER -- \\#: {}", paths.len());
+            paths
         }
         #[cfg(windows)]
-        unsafe fn get_list(p: &Path) -> ~[~str] {
+        unsafe fn get_list(p: &Path) -> ~[Path] {
             #[fixed_stack_segment]; #[inline(never)];
             use libc::consts::os::extra::INVALID_HANDLE_VALUE;
             use libc::{wcslen, free};
@@ -765,9 +756,9 @@ pub fn list_dir(p: &Path) -> ~[~str] {
                 fn rust_list_dir_wfd_size() -> libc::size_t;
                 fn rust_list_dir_wfd_fp_buf(wfd: *libc::c_void) -> *u16;
             }
-            fn star(p: &Path) -> Path { p.push("*") }
-            do as_utf16_p(star(p).to_str()) |path_ptr| {
-                let mut strings = ~[];
+            let star = p.join("*");
+            do as_utf16_p(star.as_str().unwrap()) |path_ptr| {
+                let mut paths = ~[];
                 let wfd_ptr = malloc_raw(rust_list_dir_wfd_size() as uint);
                 let find_handle = FindFirstFileW(path_ptr, wfd_ptr as HANDLE);
                 if find_handle as libc::c_int != INVALID_HANDLE_VALUE {
@@ -775,24 +766,24 @@ pub fn list_dir(p: &Path) -> ~[~str] {
                     while more_files != 0 {
                         let fp_buf = rust_list_dir_wfd_fp_buf(wfd_ptr);
                         if fp_buf as uint == 0 {
-                            fail2!("os::list_dir() failure: got null ptr from wfd");
+                            fail!("os::list_dir() failure: got null ptr from wfd");
                         }
                         else {
                             let fp_vec = vec::from_buf(
                                 fp_buf, wcslen(fp_buf) as uint);
                             let fp_str = str::from_utf16(fp_vec);
-                            strings.push(fp_str);
+                            paths.push(Path::new(fp_str));
                         }
                         more_files = FindNextFileW(find_handle, wfd_ptr as HANDLE);
                     }
                     FindClose(find_handle);
                     free(wfd_ptr)
                 }
-                strings
+                paths
             }
         }
-        do get_list(p).move_iter().filter |filename| {
-            "." != *filename && ".." != *filename
+        do get_list(p).move_iter().filter |path| {
+            path.as_vec() != bytes!(".") && path.as_vec() != bytes!("..")
         }.collect()
     }
 }
@@ -803,7 +794,7 @@ pub fn list_dir(p: &Path) -> ~[~str] {
  * This version prepends each entry with the directory.
  */
 pub fn list_dir_path(p: &Path) -> ~[Path] {
-    list_dir(p).map(|f| p.push(*f))
+    list_dir(p).map(|f| p.join(f))
 }
 
 /// Removes a directory at the specified path, after removing
@@ -838,7 +829,7 @@ pub fn remove_dir(p: &Path) -> bool {
         #[fixed_stack_segment]; #[inline(never)];
         unsafe {
             use os::win32::as_utf16_p;
-            return do as_utf16_p(p.to_str()) |buf| {
+            return do as_utf16_p(p.as_str().unwrap()) |buf| {
                 libc::RemoveDirectoryW(buf) != (0 as libc::BOOL)
             };
         }
@@ -865,7 +856,7 @@ pub fn change_dir(p: &Path) -> bool {
         #[fixed_stack_segment]; #[inline(never)];
         unsafe {
             use os::win32::as_utf16_p;
-            return do as_utf16_p(p.to_str()) |buf| {
+            return do as_utf16_p(p.as_str().unwrap()) |buf| {
                 libc::SetCurrentDirectoryW(buf) != (0 as libc::BOOL)
             };
         }
@@ -891,8 +882,8 @@ pub fn copy_file(from: &Path, to: &Path) -> bool {
         #[fixed_stack_segment]; #[inline(never)];
         unsafe {
             use os::win32::as_utf16_p;
-            return do as_utf16_p(from.to_str()) |fromp| {
-                do as_utf16_p(to.to_str()) |top| {
+            return do as_utf16_p(from.as_str().unwrap()) |fromp| {
+                do as_utf16_p(to.as_str().unwrap()) |top| {
                     libc::CopyFileW(fromp, top, (0 as libc::BOOL)) !=
                         (0 as libc::BOOL)
                 }
@@ -968,7 +959,7 @@ pub fn remove_file(p: &Path) -> bool {
         #[fixed_stack_segment]; #[inline(never)];
         unsafe {
             use os::win32::as_utf16_p;
-            return do as_utf16_p(p.to_str()) |buf| {
+            return do as_utf16_p(p.as_str().unwrap()) |buf| {
                 libc::DeleteFileW(buf) != (0 as libc::BOOL)
             };
         }
@@ -1039,7 +1030,6 @@ pub fn errno() -> uint {
 
     #[cfg(target_arch = "x86")]
     #[link_name = "kernel32"]
-    #[abi = "stdcall"]
     extern "stdcall" {
         fn GetLastError() -> DWORD;
     }
@@ -1099,7 +1089,7 @@ pub fn last_os_error() -> ~str {
         do buf.as_mut_buf |buf, len| {
             unsafe {
                 if strerror_r(errno() as c_int, buf, len as size_t) < 0 {
-                    fail2!("strerror_r failure");
+                    fail!("strerror_r failure");
                 }
 
                 str::raw::from_c_str(buf as *c_char)
@@ -1118,7 +1108,6 @@ pub fn last_os_error() -> ~str {
 
         #[cfg(target_arch = "x86")]
         #[link_name = "kernel32"]
-        #[abi = "stdcall"]
         extern "stdcall" {
             fn FormatMessageW(flags: DWORD,
                               lpSrc: LPVOID,
@@ -1164,7 +1153,7 @@ pub fn last_os_error() -> ~str {
                                          len as DWORD,
                                          ptr::null());
                 if res == 0 {
-                    fail2!("[{}] FormatMessage failure", errno());
+                    fail!("[{}] FormatMessage failure", errno());
                 }
             }
 
@@ -1185,7 +1174,7 @@ pub fn last_os_error() -> ~str {
  */
 pub fn set_exit_status(code: int) {
     use rt;
-    rt::util::set_exit_status(code);
+    rt::set_exit_status(code);
 }
 
 unsafe fn load_argc_and_argv(argc: c_int, argv: **c_char) -> ~[~str] {
@@ -1220,7 +1209,7 @@ fn real_args() -> ~[~str] {
 
     match rt::args::clone() {
         Some(args) => args,
-        None => fail2!("process arguments not initialized")
+        None => fail!("process arguments not initialized")
     }
 }
 
@@ -1465,10 +1454,10 @@ impl Drop for MemoryMap {
             match libc::munmap(self.data as *c_void, self.len) {
                 0 => (),
                 -1 => match errno() as c_int {
-                    libc::EINVAL => error2!("invalid addr or len"),
-                    e => error2!("unknown errno={}", e)
+                    libc::EINVAL => error!("invalid addr or len"),
+                    e => error!("unknown errno={}", e)
                 },
-                r => error2!("Unexpected result {}", r)
+                r => error!("Unexpected result {}", r)
             }
         }
     }
@@ -1596,15 +1585,15 @@ impl Drop for MemoryMap {
                     if libc::VirtualFree(self.data as *mut c_void,
                                          self.len,
                                          libc::MEM_RELEASE) == FALSE {
-                        error2!("VirtualFree failed: {}", errno());
+                        error!("VirtualFree failed: {}", errno());
                     }
                 },
                 MapFile(mapping) => {
                     if libc::UnmapViewOfFile(self.data as LPCVOID) == FALSE {
-                        error2!("UnmapViewOfFile failed: {}", errno());
+                        error!("UnmapViewOfFile failed: {}", errno());
                     }
                     if libc::CloseHandle(mapping as HANDLE) == FALSE {
-                        error2!("CloseHandle failed: {}", errno());
+                        error!("CloseHandle failed: {}", errno());
                     }
                 }
             }
@@ -1659,35 +1648,45 @@ pub mod consts {
         pub static SYSNAME: &'static str = "macos";
         pub static DLL_PREFIX: &'static str = "lib";
         pub static DLL_SUFFIX: &'static str = ".dylib";
+        pub static DLL_EXTENSION: &'static str = "dylib";
         pub static EXE_SUFFIX: &'static str = "";
+        pub static EXE_EXTENSION: &'static str = "";
     }
 
     pub mod freebsd {
         pub static SYSNAME: &'static str = "freebsd";
         pub static DLL_PREFIX: &'static str = "lib";
         pub static DLL_SUFFIX: &'static str = ".so";
+        pub static DLL_EXTENSION: &'static str = "so";
         pub static EXE_SUFFIX: &'static str = "";
+        pub static EXE_EXTENSION: &'static str = "";
     }
 
     pub mod linux {
         pub static SYSNAME: &'static str = "linux";
         pub static DLL_PREFIX: &'static str = "lib";
         pub static DLL_SUFFIX: &'static str = ".so";
+        pub static DLL_EXTENSION: &'static str = "so";
         pub static EXE_SUFFIX: &'static str = "";
+        pub static EXE_EXTENSION: &'static str = "";
     }
 
     pub mod android {
         pub static SYSNAME: &'static str = "android";
         pub static DLL_PREFIX: &'static str = "lib";
         pub static DLL_SUFFIX: &'static str = ".so";
+        pub static DLL_EXTENSION: &'static str = "so";
         pub static EXE_SUFFIX: &'static str = "";
+        pub static EXE_EXTENSION: &'static str = "";
     }
 
     pub mod win32 {
         pub static SYSNAME: &'static str = "win32";
         pub static DLL_PREFIX: &'static str = "";
         pub static DLL_SUFFIX: &'static str = ".dll";
+        pub static DLL_EXTENSION: &'static str = "dll";
         pub static EXE_SUFFIX: &'static str = ".exe";
+        pub static EXE_EXTENSION: &'static str = "exe";
     }
 
 
@@ -1725,7 +1724,7 @@ mod tests {
 
     #[test]
     pub fn last_os_error() {
-        debug2!("{}", os::last_os_error());
+        debug!("{}", os::last_os_error());
     }
 
     #[test]
@@ -1780,7 +1779,7 @@ mod tests {
         }
         let n = make_rand_name();
         setenv(n, s);
-        debug2!("{}", s.clone());
+        debug!("{}", s.clone());
         assert_eq!(getenv(n), option::Some(s));
     }
 
@@ -1789,10 +1788,10 @@ mod tests {
         let path = os::self_exe_path();
         assert!(path.is_some());
         let path = path.unwrap();
-        debug2!("{:?}", path.clone());
+        debug!("{:?}", path.clone());
 
         // Hard to test this function
-        assert!(path.is_absolute);
+        assert!(path.is_absolute());
     }
 
     #[test]
@@ -1802,7 +1801,7 @@ mod tests {
         assert!(e.len() > 0u);
         for p in e.iter() {
             let (n, v) = (*p).clone();
-            debug2!("{:?}", n.clone());
+            debug!("{:?}", n.clone());
             let v2 = getenv(n);
             // MingW seems to set some funky environment variables like
             // "=C:=C:\MinGW\msys\1.0\bin" and "!::=::\" that are returned
@@ -1825,12 +1824,13 @@ mod tests {
 
     #[test]
     fn test() {
-        assert!((!Path("test-path").is_absolute));
+        assert!((!Path::new("test-path").is_absolute()));
 
-        debug2!("Current working directory: {}", getcwd().to_str());
+        let cwd = getcwd();
+        debug!("Current working directory: {}", cwd.display());
 
-        debug2!("{:?}", make_absolute(&Path("test-path")));
-        debug2!("{:?}", make_absolute(&Path("/usr/bin")));
+        debug!("{:?}", make_absolute(&Path::new("test-path")));
+        debug!("{:?}", make_absolute(&Path::new("/usr/bin")));
     }
 
     #[test]
@@ -1839,7 +1839,7 @@ mod tests {
         let oldhome = getenv("HOME");
 
         setenv("HOME", "/home/MountainView");
-        assert_eq!(os::homedir(), Some(Path("/home/MountainView")));
+        assert_eq!(os::homedir(), Some(Path::new("/home/MountainView")));
 
         setenv("HOME", "");
         assert!(os::homedir().is_none());
@@ -1860,16 +1860,16 @@ mod tests {
         assert!(os::homedir().is_none());
 
         setenv("HOME", "/home/MountainView");
-        assert_eq!(os::homedir(), Some(Path("/home/MountainView")));
+        assert_eq!(os::homedir(), Some(Path::new("/home/MountainView")));
 
         setenv("HOME", "");
 
         setenv("USERPROFILE", "/home/MountainView");
-        assert_eq!(os::homedir(), Some(Path("/home/MountainView")));
+        assert_eq!(os::homedir(), Some(Path::new("/home/MountainView")));
 
         setenv("HOME", "/home/MountainView");
         setenv("USERPROFILE", "/home/PaloAlto");
-        assert_eq!(os::homedir(), Some(Path("/home/MountainView")));
+        assert_eq!(os::homedir(), Some(Path::new("/home/MountainView")));
 
         for s in oldhome.iter() { setenv("HOME", *s) }
         for s in olduserprofile.iter() { setenv("USERPROFILE", *s) }
@@ -1877,64 +1877,92 @@ mod tests {
 
     #[test]
     fn tmpdir() {
-        assert!(!os::tmpdir().to_str().is_empty());
+        let p = os::tmpdir();
+        let s = p.as_str();
+        assert!(s.is_some() && s.unwrap() != ".");
     }
 
     // Issue #712
     #[test]
     fn test_list_dir_no_invalid_memory_access() {
-        os::list_dir(&Path("."));
+        os::list_dir(&Path::new("."));
     }
 
     #[test]
     fn list_dir() {
-        let dirs = os::list_dir(&Path("."));
+        let dirs = os::list_dir(&Path::new("."));
         // Just assuming that we've got some contents in the current directory
         assert!(dirs.len() > 0u);
 
         for dir in dirs.iter() {
-            debug2!("{:?}", (*dir).clone());
+            debug!("{:?}", (*dir).clone());
         }
-    }
-
-    #[test]
-    fn list_dir_empty_path() {
-        let dirs = os::list_dir(&Path(""));
-        assert!(dirs.is_empty());
     }
 
     #[test]
     #[cfg(not(windows))]
     fn list_dir_root() {
-        let dirs = os::list_dir(&Path("/"));
+        let dirs = os::list_dir(&Path::new("/"));
         assert!(dirs.len() > 1);
     }
     #[test]
     #[cfg(windows)]
     fn list_dir_root() {
-        let dirs = os::list_dir(&Path("C:\\"));
+        let dirs = os::list_dir(&Path::new("C:\\"));
         assert!(dirs.len() > 1);
     }
 
 
     #[test]
     fn path_is_dir() {
-        assert!((os::path_is_dir(&Path("."))));
-        assert!((!os::path_is_dir(&Path("test/stdtest/fs.rs"))));
+        use rt::io::file::open;
+        use rt::io::{OpenOrCreate, Read};
+
+        assert!((os::path_is_dir(&Path::new("."))));
+        assert!((!os::path_is_dir(&Path::new("test/stdtest/fs.rs"))));
+
+        let mut dirpath = os::tmpdir();
+        dirpath.push(format!("rust-test-{}/test-\uac00\u4e00\u30fc\u4f60\u597d",
+            rand::random::<u32>())); // 가一ー你好
+        debug!("path_is_dir dirpath: {}", dirpath.display());
+
+        let mkdir_result = os::mkdir_recursive(&dirpath, (S_IRUSR | S_IWUSR | S_IXUSR) as i32);
+        debug!("path_is_dir mkdir_result: {}", mkdir_result);
+
+        assert!((os::path_is_dir(&dirpath)));
+
+        let mut filepath = dirpath;
+        filepath.push("unicode-file-\uac00\u4e00\u30fc\u4f60\u597d.rs");
+        debug!("path_is_dir filepath: {}", filepath.display());
+
+        open(&filepath, OpenOrCreate, Read); // ignore return; touch only
+        assert!((!os::path_is_dir(&filepath)));
+
+        assert!((!os::path_is_dir(&Path::new(
+                     "test/unicode-bogus-dir-\uac00\u4e00\u30fc\u4f60\u597d"))));
     }
 
     #[test]
     fn path_exists() {
-        assert!((os::path_exists(&Path("."))));
-        assert!((!os::path_exists(&Path(
+        assert!((os::path_exists(&Path::new("."))));
+        assert!((!os::path_exists(&Path::new(
                      "test/nonexistent-bogus-path"))));
+
+        let mut dirpath = os::tmpdir();
+        dirpath.push(format!("rust-test-{}/test-\uac01\u4e01\u30fc\u518d\u89c1",
+            rand::random::<u32>())); // 각丁ー再见
+
+        os::mkdir_recursive(&dirpath, (S_IRUSR | S_IWUSR | S_IXUSR) as i32);
+        assert!((os::path_exists(&dirpath)));
+        assert!((!os::path_exists(&Path::new(
+                     "test/unicode-bogus-path-\uac01\u4e01\u30fc\u518d\u89c1"))));
     }
 
     #[test]
     fn copy_file_does_not_exist() {
-      assert!(!os::copy_file(&Path("test/nonexistent-bogus-path"),
-                            &Path("test/other-bogus-path")));
-      assert!(!os::path_exists(&Path("test/other-bogus-path")));
+      assert!(!os::copy_file(&Path::new("test/nonexistent-bogus-path"),
+                            &Path::new("test/other-bogus-path")));
+      assert!(!os::path_exists(&Path::new("test/other-bogus-path")));
     }
 
     #[test]
@@ -1944,9 +1972,8 @@ mod tests {
         unsafe {
             let tempdir = getcwd(); // would like to use $TMPDIR,
                                     // doesn't seem to work on Linux
-            assert!((tempdir.to_str().len() > 0u));
-            let input = tempdir.push("in.txt");
-            let out = tempdir.push("out.txt");
+            let input = tempdir.join("in.txt");
+            let out = tempdir.join("out.txt");
 
             /* Write the temp input file */
             let ostream = do input.with_c_str |fromp| {
@@ -1967,10 +1994,12 @@ mod tests {
             let in_mode = input.get_mode();
             let rs = os::copy_file(&input, &out);
             if (!os::path_exists(&input)) {
-                fail2!("{} doesn't exist", input.to_str());
+                fail!("{} doesn't exist", input.display());
             }
             assert!((rs));
-            let rslt = run::process_status("diff", [input.to_str(), out.to_str()]);
+            // FIXME (#9639): This needs to handle non-utf8 paths
+            let rslt = run::process_status("diff", [input.as_str().unwrap().to_owned(),
+                                                    out.as_str().unwrap().to_owned()]);
             assert_eq!(rslt, 0);
             assert_eq!(out.get_mode(), in_mode);
             assert!((remove_file(&input)));
@@ -1980,14 +2009,8 @@ mod tests {
 
     #[test]
     fn recursive_mkdir_slash() {
-        let path = Path("/");
+        let path = Path::new("/");
         assert!(os::mkdir_recursive(&path,  (S_IRUSR | S_IWUSR | S_IXUSR) as i32));
-    }
-
-    #[test]
-    fn recursive_mkdir_empty() {
-        let path = Path("");
-        assert!(!os::mkdir_recursive(&path, (S_IRUSR | S_IWUSR | S_IXUSR) as i32));
     }
 
     #[test]
@@ -1999,7 +2022,7 @@ mod tests {
             os::MapWritable
         ]) {
             Ok(chunk) => chunk,
-            Err(msg) => fail2!(msg.to_str())
+            Err(msg) => fail!(msg.to_str())
         };
         assert!(chunk.len >= 16);
 
@@ -2034,7 +2057,8 @@ mod tests {
            }
         }
 
-        let path = tmpdir().push("mmap_file.tmp");
+        let mut path = tmpdir();
+        path.push("mmap_file.tmp");
         let size = MemoryMap::granularity() * 2;
         remove_file(&path);
 
@@ -2055,7 +2079,7 @@ mod tests {
             MapOffset(size / 2)
         ]) {
             Ok(chunk) => chunk,
-            Err(msg) => fail2!(msg.to_str())
+            Err(msg) => fail!(msg.to_str())
         };
         assert!(chunk.len > 0);
 

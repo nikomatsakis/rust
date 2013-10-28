@@ -47,7 +47,7 @@ impl Eq for Ident {
             // if it should be non-hygienic (most things are), just compare the
             // 'name' fields of the idents. Or, even better, replace the idents
             // with Name's.
-            fail2!("not allowed to compare these idents: {:?}, {:?}.
+            fail!("not allowed to compare these idents: {:?}, {:?}.
                     Probably related to issue \\#6993", self, other);
         }
     }
@@ -227,13 +227,13 @@ pub enum MethodProvenance {
 pub enum Def {
     DefFn(DefId, purity),
     DefStaticMethod(/* method */ DefId, MethodProvenance, purity),
-    DefSelf(NodeId),
+    DefSelf(NodeId, bool /* is_mutbl */),
     DefSelfTy(/* trait id */ NodeId),
     DefMod(DefId),
     DefForeignMod(DefId),
     DefStatic(DefId, bool /* is_mutbl */),
-    DefArg(NodeId, bool /* is_mutbl */),
-    DefLocal(NodeId, bool /* is_mutbl */),
+    DefArg(NodeId, BindingMode),
+    DefLocal(NodeId, BindingMode),
     DefVariant(DefId /* enum */, DefId /* variant */, bool /* is_structure */),
     DefTy(DefId),
     DefTrait(DefId),
@@ -338,7 +338,7 @@ pub struct FieldPat {
 #[deriving(Clone, Eq, Encodable, Decodable, IterBytes)]
 pub enum BindingMode {
     BindByRef(Mutability),
-    BindInfer
+    BindByValue(Mutability),
 }
 
 #[deriving(Clone, Eq, Encodable, Decodable, IterBytes)]
@@ -459,7 +459,6 @@ pub enum Stmt_ {
 // a refinement on pat.
 #[deriving(Eq, Encodable, Decodable,IterBytes)]
 pub struct Local {
-    is_mutbl: bool,
     ty: Ty,
     pat: @Pat,
     init: Option<@Expr>,
@@ -705,6 +704,7 @@ pub type lit = Spanned<lit_>;
 #[deriving(Clone, Eq, Encodable, Decodable, IterBytes)]
 pub enum lit_ {
     lit_str(@str, StrStyle),
+    lit_binary(@[u8]),
     lit_char(u32),
     lit_int(i64, int_ty),
     lit_uint(u64, uint_ty),
@@ -893,7 +893,6 @@ pub struct inline_asm {
 
 #[deriving(Clone, Eq, Encodable, Decodable, IterBytes)]
 pub struct arg {
-    is_mutbl: bool,
     ty: Ty,
     pat: @Pat,
     id: NodeId,
@@ -934,10 +933,10 @@ pub enum ret_style {
 #[deriving(Clone, Eq, Encodable, Decodable, IterBytes)]
 pub enum explicit_self_ {
     sty_static,                                // no self
-    sty_value,                                 // `self`
-    sty_region(Option<Lifetime>, Mutability), // `&'lt self`
+    sty_value(Mutability),                     // `self`
+    sty_region(Option<Lifetime>, Mutability),  // `&'lt self`
     sty_box(Mutability),                       // `@self`
-    sty_uniq                                   // `~self`
+    sty_uniq(Mutability)                       // `~self`
 }
 
 pub type explicit_self = Spanned<explicit_self_>;
@@ -963,16 +962,8 @@ pub struct _mod {
     items: ~[@item],
 }
 
-// Foreign mods can be named or anonymous
-#[deriving(Clone, Eq, Encodable, Decodable,IterBytes)]
-pub enum foreign_mod_sort {
-    named,
-    anonymous,
-}
-
 #[deriving(Clone, Eq, Encodable, Decodable,IterBytes)]
 pub struct foreign_mod {
-    sort: foreign_mod_sort,
     abis: AbiSet,
     view_items: ~[view_item],
     items: ~[@foreign_item],

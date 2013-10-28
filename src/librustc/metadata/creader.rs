@@ -74,11 +74,11 @@ struct cache_entry {
 }
 
 fn dump_crates(crate_cache: &[cache_entry]) {
-    debug2!("resolved crates:");
+    debug!("resolved crates:");
     for entry in crate_cache.iter() {
-        debug2!("cnum: {:?}", entry.cnum);
-        debug2!("span: {:?}", entry.span);
-        debug2!("hash: {:?}", entry.hash);
+        debug!("cnum: {:?}", entry.cnum);
+        debug!("span: {:?}", entry.span);
+        debug!("hash: {:?}", entry.hash);
     }
 }
 
@@ -143,18 +143,19 @@ fn visit_view_item(e: @mut Env, i: &ast::view_item) {
           let meta_items = match path_opt {
               None => meta_items.clone(),
               Some((p, _path_str_style)) => {
-                  let p_path = Path(p);
-                  match p_path.filestem() {
+                  let p_path = Path::new(p);
+                  match p_path.filestem_str() {
+                      None|Some("") =>
+                          e.diag.span_bug(i.span, "Bad package path in `extern mod` item"),
                       Some(s) =>
                           vec::append(
                               ~[attr::mk_name_value_item_str(@"package_id", p),
                                attr::mk_name_value_item_str(@"name", s.to_managed())],
-                              *meta_items),
-                      None => e.diag.span_bug(i.span, "Bad package path in `extern mod` item")
+                              *meta_items)
                   }
             }
           };
-          debug2!("resolving extern mod stmt. ident: {:?}, meta: {:?}",
+          debug!("resolving extern mod stmt. ident: {:?}, meta: {:?}",
                  ident, meta_items);
           let cnum = resolve_crate(e,
                                    ident,
@@ -175,40 +176,43 @@ fn visit_item(e: &Env, i: @ast::item) {
         }
 
         let cstore = e.cstore;
-        let mut already_added = false;
         let link_args = i.attrs.iter()
             .filter_map(|at| if "link_args" == at.name() {Some(at)} else {None})
             .collect::<~[&ast::Attribute]>();
 
-        match fm.sort {
-            ast::named => {
-                let link_name = i.attrs.iter()
-                    .find(|at| "link_name" == at.name())
-                    .and_then(|at| at.value_str());
+        // XXX: two whom it may concern, this was the old logic applied to the
+        //      ast's extern mod blocks which had names (we used to allow
+        //      "extern mod foo"). This code was never run for anonymous blocks,
+        //      and we now only have anonymous blocks. We're still in the midst
+        //      of figuring out what the exact operations we'd like to support
+        //      when linking external modules, but I wanted to leave this logic
+        //      here for the time beging to refer back to it
 
-                let foreign_name = match link_name {
-                        Some(nn) => {
-                            if nn.is_empty() {
-                                e.diag.span_fatal(
-                                    i.span,
-                                    "empty #[link_name] not allowed; use \
-                                     #[nolink].");
-                            }
-                            nn
-                        }
-                        None => token::ident_to_str(&i.ident)
-                    };
-                if !attr::contains_name(i.attrs, "nolink") {
-                    already_added =
-                        !cstore::add_used_library(cstore, foreign_name);
-                }
-                if !link_args.is_empty() && already_added {
-                    e.diag.span_fatal(i.span, ~"library '" + foreign_name +
-                               "' already added: can't specify link_args.");
-                }
-            }
-            ast::anonymous => { /* do nothing */ }
-        }
+        //let mut already_added = false;
+        //let link_name = i.attrs.iter()
+        //    .find(|at| "link_name" == at.name())
+        //    .and_then(|at| at.value_str());
+
+        //let foreign_name = match link_name {
+        //        Some(nn) => {
+        //            if nn.is_empty() {
+        //                e.diag.span_fatal(
+        //                    i.span,
+        //                    "empty #[link_name] not allowed; use \
+        //                     #[nolink].");
+        //            }
+        //            nn
+        //        }
+        //        None => token::ident_to_str(&i.ident)
+        //    };
+        //if !attr::contains_name(i.attrs, "nolink") {
+        //    already_added =
+        //        !cstore::add_used_library(cstore, foreign_name);
+        //}
+        //if !link_args.is_empty() && already_added {
+        //    e.diag.span_fatal(i.span, ~"library '" + foreign_name +
+        //               "' already added: can't specify link_args.");
+        //}
 
         for m in link_args.iter() {
             match m.value_str() {
@@ -271,7 +275,7 @@ fn resolve_crate(e: @mut Env,
         };
         let (lident, ldata) = loader::load_library_crate(&load_ctxt);
 
-        let cfilename = Path(lident);
+        let cfilename = Path::new(lident);
         let cdata = ldata;
 
         let attrs = decoder::get_crate_attributes(cdata);
@@ -317,7 +321,7 @@ fn resolve_crate(e: @mut Env,
 
 // Go through the crate metadata and load any crates that it references
 fn resolve_crate_deps(e: @mut Env, cdata: @~[u8]) -> cstore::cnum_map {
-    debug2!("resolving deps of external crate");
+    debug!("resolving deps of external crate");
     // The map from crate numbers in the crate we're resolving to local crate
     // numbers
     let mut cnum_map = HashMap::new();
@@ -326,18 +330,18 @@ fn resolve_crate_deps(e: @mut Env, cdata: @~[u8]) -> cstore::cnum_map {
         let extrn_cnum = dep.cnum;
         let cname_str = token::ident_to_str(&dep.name);
         let cmetas = metas_with(dep.vers, @"vers", ~[]);
-        debug2!("resolving dep crate {} ver: {} hash: {}",
+        debug!("resolving dep crate {} ver: {} hash: {}",
                cname_str, dep.vers, dep.hash);
         match existing_match(e,
                              metas_with_ident(cname_str, cmetas.clone()),
                              dep.hash) {
           Some(local_cnum) => {
-            debug2!("already have it");
+            debug!("already have it");
             // We've already seen this crate
             cnum_map.insert(extrn_cnum, local_cnum);
           }
           None => {
-            debug2!("need to load it");
+            debug!("need to load it");
             // This is a new one so we've got to load it
             // FIXME (#2404): Need better error reporting than just a bogus
             // span.

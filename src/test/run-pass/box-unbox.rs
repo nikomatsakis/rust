@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-
+#[feature(managed_boxes)];
 
 struct Box<T> {c: @T}
 
@@ -17,6 +17,6 @@ fn unbox<T:Clone>(b: Box<T>) -> T { return (*b.c).clone(); }
 pub fn main() {
     let foo: int = 17;
     let bfoo: Box<int> = Box {c: @foo};
-    info2!("see what's in our box");
+    info!("see what's in our box");
     assert_eq!(unbox::<int>(bfoo), foo);
 }

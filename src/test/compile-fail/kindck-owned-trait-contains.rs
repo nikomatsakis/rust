@@ -20,7 +20,7 @@ fn repeater<A:Clone>(v: A) -> ~Repeat:<A> {
 
 fn main() {
     // Error results because the type of is inferred to be
-    // @repeat<&'blk int> where blk is the lifetime of the block below.
+    // ~Repeat<&'blk int> where blk is the lifetime of the block below.
 
     let y = {
         let tmp0 = 3;

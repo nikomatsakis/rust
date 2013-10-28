@@ -17,7 +17,7 @@ use super::*;
 
 /// A Writer decorator that compresses using the 'deflate' scheme
 pub struct DeflateWriter<W> {
-    inner_writer: W
+    priv inner_writer: W
 }
 
 impl<W: Writer> DeflateWriter<W> {
@@ -29,9 +29,9 @@ impl<W: Writer> DeflateWriter<W> {
 }
 
 impl<W: Writer> Writer for DeflateWriter<W> {
-    fn write(&mut self, _buf: &[u8]) { fail2!() }
+    fn write(&mut self, _buf: &[u8]) { fail!() }
 
-    fn flush(&mut self) { fail2!() }
+    fn flush(&mut self) { fail!() }
 }
 
 impl<W: Writer> Decorator<W> for DeflateWriter<W> {
@@ -56,7 +56,7 @@ impl<W: Writer> Decorator<W> for DeflateWriter<W> {
 
 /// A Reader decorator that decompresses using the 'deflate' scheme
 pub struct InflateReader<R> {
-    inner_reader: R
+    priv inner_reader: R
 }
 
 impl<R: Reader> InflateReader<R> {
@@ -68,9 +68,9 @@ impl<R: Reader> InflateReader<R> {
 }
 
 impl<R: Reader> Reader for InflateReader<R> {
-    fn read(&mut self, _buf: &mut [u8]) -> Option<uint> { fail2!() }
+    fn read(&mut self, _buf: &mut [u8]) -> Option<uint> { fail!() }
 
-    fn eof(&mut self) -> bool { fail2!() }
+    fn eof(&mut self) -> bool { fail!() }
 }
 
 impl<R: Reader> Decorator<R> for InflateReader<R> {

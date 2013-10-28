@@ -49,23 +49,23 @@ pub struct TyDesc {
     align: uint,
 
     // Called on a copy of a value of type `T` *after* memcpy
-    take_glue: GlueFn,
+    priv take_glue: GlueFn,
 
     // Called when a value of type `T` is no longer needed
     drop_glue: GlueFn,
 
     // Called by drop glue when a value of type `T` can be freed
-    free_glue: GlueFn,
+    priv free_glue: GlueFn,
 
     // Called by reflection visitor to visit a value of type `T`
-    visit_glue: GlueFn,
+    priv visit_glue: GlueFn,
 
     // If T represents a box pointer (`@U` or `~U`), then
     // `borrow_offset` is the amount that the pointer must be adjusted
     // to find the payload.  This is always derivable from the type
     // `U`, but in the case of `@Trait` or `~Trait` objects, the type
     // `U` is unknown.
-    borrow_offset: uint,
+    priv borrow_offset: uint,
 
     // Name corresponding to the type
     name: &'static str
@@ -170,8 +170,9 @@ pub trait TyVisitor {
     fn visit_closure_ptr(&mut self, ck: uint) -> bool;
 }
 
-#[abi = "rust-intrinsic"]
 extern "rust-intrinsic" {
+    /// Abort the execution of the process.
+    pub fn abort() -> !;
 
     /// Atomic compare and exchange, sequentially consistent.
     pub fn atomic_cxchg(dst: &mut int, old: int, src: int) -> int;
@@ -329,8 +330,6 @@ extern "rust-intrinsic" {
 
     pub fn visit_tydesc(td: *TyDesc, tv: &mut TyVisitor);
 
-    pub fn frame_address(f: &once fn(*u8));
-
     /// Get the address of the `__morestack` stack growth function.
     pub fn morestack_addr() -> *();
 
@@ -411,6 +410,9 @@ extern "rust-intrinsic" {
     pub fn fabsf32(x: f32) -> f32;
     pub fn fabsf64(x: f64) -> f64;
 
+    pub fn copysignf32(x: f32, y: f32) -> f32;
+    pub fn copysignf64(x: f64, y: f64) -> f64;
+
     pub fn floorf32(x: f32) -> f32;
     pub fn floorf64(x: f64) -> f64;
 
@@ -419,6 +421,15 @@ extern "rust-intrinsic" {
 
     pub fn truncf32(x: f32) -> f32;
     pub fn truncf64(x: f64) -> f64;
+
+    pub fn rintf32(x: f32) -> f32;
+    pub fn rintf64(x: f64) -> f64;
+
+    pub fn nearbyintf32(x: f32) -> f32;
+    pub fn nearbyintf64(x: f64) -> f64;
+
+    pub fn roundf32(x: f32) -> f32;
+    pub fn roundf64(x: f64) -> f64;
 
     pub fn ctpop8(x: i8) -> i8;
     pub fn ctpop16(x: i16) -> i16;

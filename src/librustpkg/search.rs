@@ -17,8 +17,8 @@ use version::Version;
 /// FIXME #8711: This ignores the desired version.
 pub fn find_installed_library_in_rust_path(pkg_path: &Path, _version: &Version) -> Option<Path> {
     let rp = rust_path();
-    debug2!("find_installed_library_in_rust_path: looking for path {}",
-            pkg_path.to_str());
+    debug!("find_installed_library_in_rust_path: looking for path {}",
+            pkg_path.display());
     for p in rp.iter() {
         match installed_library_in_workspace(pkg_path, p) {
             Some(path) => return Some(path),

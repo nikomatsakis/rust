@@ -33,7 +33,7 @@ impl Drop for DynamicLibrary {
             }
         } {
             Ok(()) => {},
-            Err(str) => fail2!("{}", str)
+            Err(str) => fail!("{}", str)
         }
     }
 }
@@ -94,13 +94,13 @@ mod test {
         // The math library does not need to be loaded since it is already
         // statically linked in
         let libm = match DynamicLibrary::open(None) {
-            Err(error) => fail2!("Could not load self as module: {}", error),
+            Err(error) => fail!("Could not load self as module: {}", error),
             Ok(libm) => libm
         };
 
         let cosine: extern fn(libc::c_double) -> libc::c_double = unsafe {
             match libm.symbol("cos") {
-                Err(error) => fail2!("Could not load function cos: {}", error),
+                Err(error) => fail!("Could not load function cos: {}", error),
                 Ok(cosine) => cosine
             }
         };
@@ -109,7 +109,7 @@ mod test {
         let expected_result = 1.0;
         let result = cosine(argument);
         if result != expected_result {
-            fail2!("cos({:?}) != {:?} but equaled {:?} instead", argument,
+            fail!("cos({:?}) != {:?} but equaled {:?} instead", argument,
                    expected_result, result)
         }
     }
@@ -121,10 +121,10 @@ mod test {
     fn test_errors_do_not_crash() {
         // Open /dev/null as a library to get an error, and make sure
         // that only causes an error, and not a crash.
-        let path = GenericPath::from_str("/dev/null");
+        let path = GenericPath::new("/dev/null");
         match DynamicLibrary::open(Some(&path)) {
             Err(_) => {}
-            Ok(_) => fail2!("Successfully opened the empty library.")
+            Ok(_) => fail!("Successfully opened the empty library.")
         }
     }
 }
@@ -225,7 +225,7 @@ pub mod dl {
 
     pub unsafe fn open_external(filename: &path::Path) -> *libc::c_void {
         #[fixed_stack_segment]; #[inline(never)];
-        do os::win32::as_utf16_p(filename.to_str()) |raw_name| {
+        do os::win32::as_utf16_p(filename.as_str().unwrap()) |raw_name| {
             LoadLibraryW(raw_name)
         }
     }

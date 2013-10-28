@@ -10,10 +10,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 extern mod extra;
 
-use std::io::{ReaderUtil, WriterUtil};
-use std::io;
+use std::rt::io;
+use std::rt::io::stdio::StdReader;
+use std::rt::io::buffered::BufferedReader;
 use std::os;
 use std::uint;
 use std::unstable::intrinsics::cttz16;
@@ -65,12 +68,14 @@ impl Sudoku {
         return true;
     }
 
-    pub fn read(reader: @io::Reader) -> Sudoku {
-        assert!(reader.read_line() == ~"9,9"); /* assert first line is exactly "9,9" */
+    pub fn read(mut reader: BufferedReader<StdReader>) -> Sudoku {
+        assert!(reader.read_line().unwrap() == ~"9,9"); /* assert first line is exactly "9,9" */
 
         let mut g = vec::from_fn(10u, { |_i| ~[0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8] });
-        while !reader.eof() {
-            let line = reader.read_line();
+        loop {
+            let line = match reader.read_line() {
+                Some(ln) => ln, None => break
+            };
             let comps: ~[&str] = line.trim().split_iter(',').collect();
 
             if comps.len() == 3u {
@@ -79,19 +84,19 @@ impl Sudoku {
                 g[row][col] = from_str::<uint>(comps[2]).unwrap() as u8;
             }
             else {
-                fail2!("Invalid sudoku file");
+                fail!("Invalid sudoku file");
             }
         }
         return Sudoku::new(g)
     }
 
-    pub fn write(&self, writer: @io::Writer) {
+    pub fn write(&self, writer: @mut io::Writer) {
         for row in range(0u8, 9u8) {
-            writer.write_str(format!("{}", self.grid[row][0] as uint));
+            write!(writer, "{}", self.grid[row][0]);
             for col in range(1u8, 9u8) {
-                writer.write_str(format!(" {}", self.grid[row][col] as uint));
+                write!(writer, " {}", self.grid[row][col]);
             }
-            writer.write_char('\n');
+            write!(writer, "\n");
          }
     }
 
@@ -117,7 +122,7 @@ impl Sudoku {
                 ptr = ptr + 1u;
             } else {
                 // no: redo this field aft recoloring pred; unless there is none
-                if ptr == 0u { fail2!("No solution found for this sudoku"); }
+                if ptr == 0u { fail!("No solution found for this sudoku"); }
                 ptr = ptr - 1u;
             }
         }
@@ -276,8 +281,8 @@ fn main() {
     let mut sudoku = if use_default {
         Sudoku::from_vec(&DEFAULT_SUDOKU)
     } else {
-        Sudoku::read(io::stdin())
+        Sudoku::read(BufferedReader::new(io::stdin()))
     };
     sudoku.solve();
-    sudoku.write(io::stdout());
+    sudoku.write(@mut io::stdout() as @mut io::Writer);
 }

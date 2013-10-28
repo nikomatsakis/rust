@@ -181,7 +181,7 @@ pub fn type_of(cx: &mut CrateContext, t: ty::t) -> Type {
         None => ()
     }
 
-    debug2!("type_of {} {:?}", t.repr(cx.tcx), t);
+    debug!("type_of {} {:?}", t.repr(cx.tcx), t);
 
     // Replace any typedef'd types with their equivalent non-typedef
     // type. This ensures that all LLVM nominal types that contain
@@ -192,7 +192,7 @@ pub fn type_of(cx: &mut CrateContext, t: ty::t) -> Type {
 
     if t != t_norm {
         let llty = type_of(cx, t_norm);
-        debug2!("--> normalized {} {:?} to {} {:?} llty={}",
+        debug!("--> normalized {} {:?} to {} {:?} llty={}",
                 t.repr(cx.tcx),
                 t,
                 t_norm.repr(cx.tcx),
@@ -308,7 +308,7 @@ pub fn type_of(cx: &mut CrateContext, t: ty::t) -> Type {
       ty::ty_err(*) => cx.tcx.sess.bug("type_of with ty_err")
     };
 
-    debug2!("--> mapped t={} {:?} to llty={}",
+    debug!("--> mapped t={} {:?} to llty={}",
             t.repr(cx.tcx),
             t,
             cx.tn.type_to_str(llty));

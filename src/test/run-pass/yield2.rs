@@ -1,4 +1,3 @@
-// -*- rust -*-
 // Copyright 2012 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
@@ -13,5 +12,5 @@ use std::task;
 
 pub fn main() {
     let mut i: int = 0;
-    while i < 100 { i = i + 1; error2!("{}", i); task::deschedule(); }
+    while i < 100 { i = i + 1; error!("{}", i); task::deschedule(); }
 }

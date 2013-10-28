@@ -53,7 +53,9 @@ pub mod errors {
     pub static EACCES: c_int = -4093;
     pub static ECONNREFUSED: c_int = -4079;
     pub static ECONNRESET: c_int = -4078;
+    pub static ENOTCONN: c_int = -4054;
     pub static EPIPE: c_int = -4048;
+    pub static ECONNABORTED: c_int = -4080;
 }
 #[cfg(not(windows))]
 pub mod errors {
@@ -63,7 +65,9 @@ pub mod errors {
     pub static EACCES: c_int = -libc::EACCES;
     pub static ECONNREFUSED: c_int = -libc::ECONNREFUSED;
     pub static ECONNRESET: c_int = -libc::ECONNRESET;
+    pub static ENOTCONN: c_int = -libc::ENOTCONN;
     pub static EPIPE: c_int = -libc::EPIPE;
+    pub static ECONNABORTED: c_int = -libc::ECONNABORTED;
 }
 
 pub static PROCESS_SETUID: c_int = 1 << 0;
@@ -129,29 +133,31 @@ pub type uv_udp_send_t = c_void;
 pub type uv_getaddrinfo_t = c_void;
 pub type uv_process_t = c_void;
 pub type uv_pipe_t = c_void;
+pub type uv_tty_t = c_void;
+pub type uv_signal_t = c_void;
 
 pub struct uv_timespec_t {
     tv_sec: libc::c_long,
-    tv_nsec: libc::c_long
+    priv tv_nsec: libc::c_long
 }
 
 pub struct uv_stat_t {
     st_dev: libc::uint64_t,
     st_mode: libc::uint64_t,
-    st_nlink: libc::uint64_t,
-    st_uid: libc::uint64_t,
-    st_gid: libc::uint64_t,
-    st_rdev: libc::uint64_t,
+    priv st_nlink: libc::uint64_t,
+    priv st_uid: libc::uint64_t,
+    priv st_gid: libc::uint64_t,
+    priv st_rdev: libc::uint64_t,
     st_ino: libc::uint64_t,
     st_size: libc::uint64_t,
-    st_blksize: libc::uint64_t,
-    st_blocks: libc::uint64_t,
-    st_flags: libc::uint64_t,
-    st_gen: libc::uint64_t,
+    priv st_blksize: libc::uint64_t,
+    priv st_blocks: libc::uint64_t,
+    priv st_flags: libc::uint64_t,
+    priv st_gen: libc::uint64_t,
     st_atim: uv_timespec_t,
     st_mtim: uv_timespec_t,
     st_ctim: uv_timespec_t,
-    st_birthtim: uv_timespec_t
+    priv st_birthtim: uv_timespec_t
 }
 
 impl uv_stat_t {
@@ -216,6 +222,8 @@ pub type uv_getaddrinfo_cb = extern "C" fn(req: *uv_getaddrinfo_t,
 pub type uv_exit_cb = extern "C" fn(handle: *uv_process_t,
                                     exit_status: c_int,
                                     term_signal: c_int);
+pub type uv_signal_cb = extern "C" fn(handle: *uv_signal_t,
+                                      signum: c_int);
 
 pub type sockaddr = c_void;
 pub type sockaddr_in = c_void;
@@ -415,18 +423,6 @@ pub unsafe fn walk(loop_handle: *c_void, cb: uv_walk_cb, arg: *c_void) {
     #[fixed_stack_segment]; #[inline(never)];
 
     rust_uv_walk(loop_handle, cb, arg);
-}
-
-pub unsafe fn idle_new() -> *uv_idle_t {
-    #[fixed_stack_segment]; #[inline(never)];
-
-    rust_uv_idle_new()
-}
-
-pub unsafe fn idle_delete(handle: *uv_idle_t) {
-    #[fixed_stack_segment]; #[inline(never)];
-
-    rust_uv_idle_delete(handle)
 }
 
 pub unsafe fn idle_init(loop_handle: *uv_loop_t, handle: *uv_idle_t) -> c_int {
@@ -956,10 +952,57 @@ pub unsafe fn freeaddrinfo(ai: *addrinfo) {
     #[fixed_stack_segment]; #[inline(never)];
     rust_uv_freeaddrinfo(ai);
 }
+pub unsafe fn pipe_open(pipe: *uv_pipe_t, file: c_int) -> c_int {
+    #[fixed_stack_segment]; #[inline(never)];
+    rust_uv_pipe_open(pipe, file)
+}
+pub unsafe fn pipe_bind(pipe: *uv_pipe_t, name: *c_char) -> c_int {
+    #[fixed_stack_segment]; #[inline(never)];
+    rust_uv_pipe_bind(pipe, name)
+}
+pub unsafe fn pipe_connect(req: *uv_connect_t, handle: *uv_pipe_t,
+                           name: *c_char, cb: uv_connect_cb) {
+    #[fixed_stack_segment]; #[inline(never)];
+    rust_uv_pipe_connect(req, handle, name, cb)
+}
+pub unsafe fn tty_init(loop_ptr: *uv_loop_t, tty: *uv_tty_t, fd: c_int,
+                       readable: c_int) -> c_int {
+    #[fixed_stack_segment]; #[inline(never)];
+    rust_uv_tty_init(loop_ptr, tty, fd, readable)
+}
+pub unsafe fn tty_set_mode(tty: *uv_tty_t, mode: c_int) -> c_int {
+    #[fixed_stack_segment]; #[inline(never)];
+    rust_uv_tty_set_mode(tty, mode)
+}
+pub unsafe fn tty_get_winsize(tty: *uv_tty_t, width: *c_int,
+                              height: *c_int) -> c_int {
+    #[fixed_stack_segment]; #[inline(never)];
+    rust_uv_tty_get_winsize(tty, width, height)
+}
+// FIXME(#9613) this should return uv_handle_type, not a c_int
+pub unsafe fn guess_handle(fd: c_int) -> c_int {
+    #[fixed_stack_segment]; #[inline(never)];
+    rust_uv_guess_handle(fd)
+}
+
+pub unsafe fn signal_init(loop_: *uv_loop_t, handle: *uv_signal_t) -> c_int {
+    #[fixed_stack_segment]; #[inline(never)];
+    return rust_uv_signal_init(loop_, handle);
+}
+pub unsafe fn signal_start(handle: *uv_signal_t,
+                           signal_cb: uv_signal_cb,
+                           signum: c_int) -> c_int {
+    #[fixed_stack_segment]; #[inline(never)];
+    return rust_uv_signal_start(handle, signal_cb, signum);
+}
+pub unsafe fn signal_stop(handle: *uv_signal_t) -> c_int {
+    #[fixed_stack_segment]; #[inline(never)];
+    return rust_uv_signal_stop(handle);
+}
 
 pub struct uv_err_data {
-    err_name: ~str,
-    err_msg: ~str,
+    priv err_name: ~str,
+    priv err_msg: ~str,
 }
 
 extern {
@@ -976,8 +1019,6 @@ extern {
     fn rust_uv_close(handle: *c_void, cb: uv_close_cb);
     fn rust_uv_walk(loop_handle: *c_void, cb: uv_walk_cb, arg: *c_void);
 
-    fn rust_uv_idle_new() -> *uv_idle_t;
-    fn rust_uv_idle_delete(handle: *uv_idle_t);
     fn rust_uv_idle_init(loop_handle: *uv_loop_t, handle: *uv_idle_t) -> c_int;
     fn rust_uv_idle_start(handle: *uv_idle_t, cb: uv_idle_cb) -> c_int;
     fn rust_uv_idle_stop(handle: *uv_idle_t) -> c_int;
@@ -1100,4 +1141,36 @@ extern {
     fn rust_set_stdio_container_stream(c: *uv_stdio_container_t,
                                        stream: *uv_stream_t);
     fn rust_uv_pipe_init(loop_ptr: *c_void, p: *uv_pipe_t, ipc: c_int) -> c_int;
+
+    fn rust_uv_pipe_open(pipe: *uv_pipe_t, file: c_int) -> c_int;
+    fn rust_uv_pipe_bind(pipe: *uv_pipe_t, name: *c_char) -> c_int;
+    fn rust_uv_pipe_connect(req: *uv_connect_t, handle: *uv_pipe_t,
+                            name: *c_char, cb: uv_connect_cb);
+    fn rust_uv_tty_init(loop_ptr: *uv_loop_t, tty: *uv_tty_t, fd: c_int,
+                        readable: c_int) -> c_int;
+    fn rust_uv_tty_set_mode(tty: *uv_tty_t, mode: c_int) -> c_int;
+    fn rust_uv_tty_get_winsize(tty: *uv_tty_t, width: *c_int,
+                               height: *c_int) -> c_int;
+    fn rust_uv_guess_handle(fd: c_int) -> c_int;
+
+    // XXX: see comments in addrinfo.rs
+    // These should all really be constants...
+    //#[rust_stack] pub fn rust_SOCK_STREAM() -> c_int;
+    //#[rust_stack] pub fn rust_SOCK_DGRAM() -> c_int;
+    //#[rust_stack] pub fn rust_SOCK_RAW() -> c_int;
+    //#[rust_stack] pub fn rust_IPPROTO_UDP() -> c_int;
+    //#[rust_stack] pub fn rust_IPPROTO_TCP() -> c_int;
+    //#[rust_stack] pub fn rust_AI_ADDRCONFIG() -> c_int;
+    //#[rust_stack] pub fn rust_AI_ALL() -> c_int;
+    //#[rust_stack] pub fn rust_AI_CANONNAME() -> c_int;
+    //#[rust_stack] pub fn rust_AI_NUMERICHOST() -> c_int;
+    //#[rust_stack] pub fn rust_AI_NUMERICSERV() -> c_int;
+    //#[rust_stack] pub fn rust_AI_PASSIVE() -> c_int;
+    //#[rust_stack] pub fn rust_AI_V4MAPPED() -> c_int;
+
+    fn rust_uv_signal_init(loop_: *uv_loop_t, handle: *uv_signal_t) -> c_int;
+    fn rust_uv_signal_start(handle: *uv_signal_t,
+                            signal_cb: uv_signal_cb,
+                            signum: c_int) -> c_int;
+    fn rust_uv_signal_stop(handle: *uv_signal_t) -> c_int;
 }

@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -383,7 +383,7 @@ impl mem_categorization_ctxt {
     }
 
     pub fn cat_expr_unadjusted(&self, expr: @ast::Expr) -> cmt {
-        debug2!("cat_expr: id={} expr={}",
+        debug!("cat_expr: id={} expr={}",
                expr.id, pprust::expr_to_str(expr, self.tcx.sess.intr()));
 
         let expr_ty = self.expr_ty(expr);
@@ -436,7 +436,7 @@ impl mem_categorization_ctxt {
             return self.cat_rvalue_node(expr, expr_ty);
           }
 
-          ast::ExprForLoop(*) => fail2!("non-desugared expr_for_loop")
+          ast::ExprForLoop(*) => fail!("non-desugared expr_for_loop")
         }
     }
 
@@ -473,12 +473,15 @@ impl mem_categorization_ctxt {
               }
           }
 
-          ast::DefArg(vid, mutbl) => {
+          ast::DefArg(vid, binding_mode) => {
             // Idea: make this could be rewritten to model by-ref
             // stuff as `&const` and `&mut`?
 
             // m: mutability of the argument
-            let m = if mutbl {McDeclared} else {McImmutable};
+            let m = match binding_mode {
+                ast::BindByValue(ast::MutMutable) => McDeclared,
+                _ => McImmutable
+            };
             @cmt_ {
                 id: id,
                 span: span,
@@ -488,12 +491,12 @@ impl mem_categorization_ctxt {
             }
           }
 
-          ast::DefSelf(self_id) => {
+          ast::DefSelf(self_id, mutbl) => {
             @cmt_ {
                 id:id,
                 span:span,
                 cat:cat_self(self_id),
-                mutbl: McImmutable,
+                mutbl: if mutbl { McDeclared } else { McImmutable },
                 ty:expr_ty
             }
           }
@@ -508,12 +511,10 @@ impl mem_categorization_ctxt {
                       let var_is_refd = match (closure_ty.sigil, closure_ty.onceness) {
                           // Many-shot stack closures can never move out.
                           (ast::BorrowedSigil, ast::Many) => true,
-                          // 1-shot stack closures can move out with "-Z once-fns".
-                          (ast::BorrowedSigil, ast::Once)
-                              if self.tcx.sess.once_fns() => false,
-                          (ast::BorrowedSigil, ast::Once) => true,
+                          // 1-shot stack closures can move out.
+                          (ast::BorrowedSigil, ast::Once) => false,
                           // Heap closures always capture by copy/move, and can
-                          // move out iff they are once.
+                          // move out if they are once.
                           (ast::OwnedSigil, _) |
                           (ast::ManagedSigil, _) => false,
 
@@ -550,25 +551,20 @@ impl mem_categorization_ctxt {
               }
           }
 
-          ast::DefLocal(vid, mutbl) => {
-            let m = if mutbl {McDeclared} else {McImmutable};
-            @cmt_ {
-                id:id,
-                span:span,
-                cat:cat_local(vid),
-                mutbl:m,
-                ty:expr_ty
-            }
-          }
-
-          ast::DefBinding(vid, _) => {
+          ast::DefLocal(vid, binding_mode) |
+          ast::DefBinding(vid, binding_mode) => {
             // by-value/by-ref bindings are local variables
+            let m = match binding_mode {
+                ast::BindByValue(ast::MutMutable) => McDeclared,
+                _ => McImmutable
+            };
+
             @cmt_ {
-                id:id,
-                span:span,
-                cat:cat_local(vid),
-                mutbl:McImmutable,
-                ty:expr_ty
+                id: id,
+                span: span,
+                cat: cat_local(vid),
+                mutbl: m,
+                ty: expr_ty
             }
           }
         }
@@ -872,7 +868,7 @@ impl mem_categorization_ctxt {
         // get the type of the *subpattern* and use that.
 
         let tcx = self.tcx;
-        debug2!("cat_pattern: id={} pat={} cmt={}",
+        debug!("cat_pattern: id={} pat={} cmt={}",
                pat.id, pprust::pat_to_str(pat, tcx.sess.intr()),
                cmt.repr(tcx));
         let _i = indenter();

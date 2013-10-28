@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 // xfail-fast
 // aux-build:cci_class_cast.rs
 extern mod cci_class_cast;
@@ -16,7 +18,7 @@ use cci_class_cast::kitty::cat;
 
 fn print_out(thing: @ToStr, expected: ~str) {
   let actual = thing.to_str();
-  info2!("{}", actual);
+  info!("{}", actual);
   assert_eq!(actual, expected);
 }
 

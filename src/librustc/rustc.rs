@@ -17,7 +17,7 @@
 #[license = "MIT/ASL2"];
 #[crate_type = "lib"];
 
-#[feature(macro_rules, globs, struct_variant)];
+#[feature(macro_rules, globs, struct_variant, managed_boxes)];
 
 // Rustc tasks always run on a fixed_stack_segment, so code in this
 // module can call C functions (in particular, LLVM functions) with
@@ -36,7 +36,8 @@ use driver::session;
 use middle::lint;
 
 use std::comm;
-use std::io;
+use std::rt::io;
+use std::rt::io::extensions::ReaderUtil;
 use std::num;
 use std::os;
 use std::result;
@@ -183,7 +184,7 @@ Available lint options:
                  lint::level_to_str(spec.default),
                  spec.desc);
     }
-    io::println("");
+    println("");
 }
 
 pub fn describe_debug_flags() {
@@ -199,9 +200,6 @@ pub fn describe_debug_flags() {
 }
 
 pub fn run_compiler(args: &[~str], demitter: @diagnostic::Emitter) {
-    // Don't display log spew by default. Can override with RUST_LOG.
-    ::std::logging::console_off();
-
     let mut args = args.to_owned();
     let binary = args.shift().to_managed();
 
@@ -252,10 +250,10 @@ pub fn run_compiler(args: &[~str], demitter: @diagnostic::Emitter) {
       1u => {
         let ifile = matches.free[0].as_slice();
         if "-" == ifile {
-            let src = str::from_utf8(io::stdin().read_whole_stream());
+            let src = str::from_utf8(io::stdin().read_to_end());
             str_input(src.to_managed())
         } else {
-            file_input(Path(ifile))
+            file_input(Path::new(ifile))
         }
       }
       _ => early_error(demitter, "multiple input filenames provided")
@@ -263,10 +261,10 @@ pub fn run_compiler(args: &[~str], demitter: @diagnostic::Emitter) {
 
     let sopts = build_session_options(binary, matches, demitter);
     let sess = build_session(sopts, demitter);
-    let odir = matches.opt_str("out-dir").map_move(|o| Path(o));
-    let ofile = matches.opt_str("o").map_move(|o| Path(o));
+    let odir = matches.opt_str("out-dir").map(|o| Path::new(o));
+    let ofile = matches.opt_str("o").map(|o| Path::new(o));
     let cfg = build_configuration(sess);
-    let pretty = do matches.opt_default("pretty", "normal").map_move |a| {
+    let pretty = do matches.opt_default("pretty", "normal").map |a| {
         parse_pretty(sess, a)
     };
     match pretty {
@@ -280,7 +278,7 @@ pub fn run_compiler(args: &[~str], demitter: @diagnostic::Emitter) {
     if ls {
         match input {
           file_input(ref ifile) => {
-            list_metadata(sess, &(*ifile), io::stdout());
+            list_metadata(sess, &(*ifile), @mut io::stdout() as @mut io::Writer);
           }
           str_input(_) => {
             early_error(demitter, "can not list metadata for stdin");
@@ -331,8 +329,12 @@ pub fn monitor(f: ~fn(@diagnostic::Emitter)) {
     use std::comm::*;
 
     // XXX: This is a hack for newsched since it doesn't support split stacks.
-    // rustc needs a lot of stack!
-    static STACK_SIZE: uint = 6000000;
+    // rustc needs a lot of stack! When optimizations are disabled, it needs
+    // even *more* stack than usual as well.
+    #[cfg(rtopt)]
+    static STACK_SIZE: uint = 6000000;  // 6MB
+    #[cfg(not(rtopt))]
+    static STACK_SIZE: uint = 20000000; // 20MB
 
     let (p, ch) = stream();
     let ch = SharedChan::new(ch);
@@ -393,7 +395,7 @@ pub fn monitor(f: ~fn(@diagnostic::Emitter)) {
                 }
             }
             // Fail so the process returns a failure code
-            fail2!();
+            fail!();
         }
     }
 }

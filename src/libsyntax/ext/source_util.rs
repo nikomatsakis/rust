@@ -19,8 +19,10 @@ use parse;
 use parse::token::{get_ident_interner};
 use print::pprust;
 
-use std::io;
-use std::result;
+use std::rt::io;
+use std::rt::io::extensions::ReaderUtil;
+use std::rt::io::file::FileInfo;
+use std::str;
 
 // These macros all relate to the file system; they either return
 // the column/row/filename of the expression, or they include
@@ -81,7 +83,7 @@ pub fn expand_include(cx: @ExtCtxt, sp: Span, tts: &[ast::token_tree])
     let file = get_single_str_from_tts(cx, sp, tts, "include!");
     let p = parse::new_sub_parser_from_file(
         cx.parse_sess(), cx.cfg(),
-        &res_rel_file(cx, sp, &Path(file)), sp);
+        &res_rel_file(cx, sp, &Path::new(file)), sp);
     base::MRExpr(p.parse_expr())
 }
 
@@ -89,28 +91,47 @@ pub fn expand_include(cx: @ExtCtxt, sp: Span, tts: &[ast::token_tree])
 pub fn expand_include_str(cx: @ExtCtxt, sp: Span, tts: &[ast::token_tree])
     -> base::MacResult {
     let file = get_single_str_from_tts(cx, sp, tts, "include_str!");
-    let res = io::read_whole_file_str(&res_rel_file(cx, sp, &Path(file)));
-    match res {
-      result::Ok(res) => {
-          base::MRExpr(cx.expr_str(sp, res.to_managed()))
-      }
-      result::Err(e) => {
-        cx.span_fatal(sp, e);
-      }
+    let file = res_rel_file(cx, sp, &Path::new(file));
+    let mut error = None;
+    let bytes = do io::io_error::cond.trap(|e| error = Some(e)).inside {
+        file.open_reader(io::Open).read_to_end()
+    };
+    match error {
+        Some(e) => {
+            cx.span_fatal(sp, format!("couldn't read {}: {}",
+                                      file.display(), e.desc));
+        }
+        None => {}
+    }
+    match str::from_utf8_owned_opt(bytes) {
+        Some(s) => base::MRExpr(cx.expr_str(sp, s.to_managed())),
+        None => {
+            cx.span_fatal(sp, format!("{} wasn't a utf-8 file", file.display()));
+        }
     }
 }
 
 pub fn expand_include_bin(cx: @ExtCtxt, sp: Span, tts: &[ast::token_tree])
-    -> base::MacResult {
+        -> base::MacResult
+{
+    use std::at_vec;
+
     let file = get_single_str_from_tts(cx, sp, tts, "include_bin!");
-    match io::read_whole_file(&res_rel_file(cx, sp, &Path(file))) {
-      result::Ok(src) => {
-        let u8_exprs: ~[@ast::Expr] = src.iter().map(|char| cx.expr_u8(sp, *char)).collect();
-        base::MRExpr(cx.expr_vec(sp, u8_exprs))
-      }
-      result::Err(ref e) => {
-        cx.parse_sess().span_diagnostic.handler().fatal((*e))
-      }
+    let file = res_rel_file(cx, sp, &Path::new(file));
+
+    let mut error = None;
+    let bytes = do io::io_error::cond.trap(|e| error = Some(e)).inside {
+        file.open_reader(io::Open).read_to_end()
+    };
+    match error {
+        Some(e) => {
+            cx.span_fatal(sp, format!("couldn't read {}: {}",
+                                      file.display(), e.desc));
+        }
+        None => {
+            let bytes = at_vec::to_managed_move(bytes);
+            base::MRExpr(cx.expr_lit(sp, ast::lit_binary(bytes)))
+        }
     }
 }
 
@@ -144,10 +165,12 @@ fn topmost_expn_info(expn_info: @codemap::ExpnInfo) -> @codemap::ExpnInfo {
 // isn't already)
 fn res_rel_file(cx: @ExtCtxt, sp: codemap::Span, arg: &Path) -> Path {
     // NB: relative paths are resolved relative to the compilation unit
-    if !arg.is_absolute {
-        let cu = Path(cx.codemap().span_to_filename(sp));
-        cu.dir_path().push_many(arg.components)
+    if !arg.is_absolute() {
+        let mut cu = Path::new(cx.codemap().span_to_filename(sp));
+        cu.pop();
+        cu.push(arg);
+        cu
     } else {
-        (*arg).clone()
+        arg.clone()
     }
 }

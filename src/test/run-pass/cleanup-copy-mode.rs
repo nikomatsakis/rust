@@ -8,10 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 use std::task;
 
 fn adder(x: @int, y: @int) -> int { return *x + *y; }
-fn failer() -> @int { fail2!(); }
+fn failer() -> @int { fail!(); }
 pub fn main() {
     assert!(task::try(|| {
         adder(@2, failer()); ()

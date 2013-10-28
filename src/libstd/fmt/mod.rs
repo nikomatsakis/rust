@@ -134,25 +134,27 @@ actually requesting that an argument ascribes to a particular trait. This allows
 multiple actual types to be formatted via `{:d}` (like `i8` as well as `int`).
 The current mapping of types to traits is:
 
-* `?` => Poly
-* `d` => Signed
-* `i` => Signed
-* `u` => Unsigned
-* `b` => Bool
-* `c` => Char
-* `o` => Octal
-* `x` => LowerHex
-* `X` => UpperHex
-* `s` => String
-* `p` => Pointer
-* `t` => Binary
-* `f` => Float
+* `?` ⇒ `Poly`
+* `d` ⇒ `Signed`
+* `i` ⇒ `Signed`
+* `u` ⇒ `Unsigned`
+* `b` ⇒ `Bool`
+* `c` ⇒ `Char`
+* `o` ⇒ `Octal`
+* `x` ⇒ `LowerHex`
+* `X` ⇒ `UpperHex`
+* `s` ⇒ `String`
+* `p` ⇒ `Pointer`
+* `t` ⇒ `Binary`
+* `f` ⇒ `Float`
+* *nothing* ⇒ `Default`
 
 What this means is that any type of argument which implements the
 `std::fmt::Binary` trait can then be formatted with `{:t}`. Implementations are
 provided for these traits for a number of primitive types by the standard
-library as well. Again, the default formatting type (if no other is specified)
-is `?` which is defined for all types by default.
+library as well. If no format is specified (as in `{}` or `{:6}`), then the
+format trait used is the `Default` trait. This is one of the more commonly
+implemented traits when formatting a custom type.
 
 When implementing a format trait for your own time, you will have to implement a
 method of the signature:
@@ -166,7 +168,50 @@ emit output into the `f.buf` stream. It is up to each format trait
 implementation to correctly adhere to the requested formatting parameters. The
 values of these parameters will be listed in the fields of the `Formatter`
 struct. In order to help with this, the `Formatter` struct also provides some
-helper methods.
+helper methods. An example of implementing the formatting traits would look
+like:
+
+```rust
+use std::fmt;
+use std::f64;
+
+struct Vector2D {
+    x: int,
+    y: int,
+}
+
+impl fmt::Default for Vector2D {
+    fn fmt(obj: &Vector2D, f: &mut fmt::Formatter) {
+        // The `f.buf` value is of the type `&mut io::Writer`, which is what th
+        // write! macro is expecting. Note that this formatting ignores the
+        // various flags provided to format strings.
+        write!(f.buf, "({}, {})", obj.x, obj.y)
+    }
+}
+
+// Different traits allow different forms of output of a type. The meaning of
+// this format is to print the magnitude of a vector.
+impl fmt::Binary for Vector2D {
+    fn fmt(obj: &Vector2D, f: &mut fmt::Formatter) {
+        let magnitude = (obj.x * obj.x + obj.y * obj.y) as f64;
+        let magnitude = magnitude.sqrt();
+
+        // Respect the formatting flags by using the helper method
+        // `pad_integral` on the Formatter object. See the method documentation
+        // for details, and the function `pad` can be used to pad strings.
+        let decimals = f.precision.unwrap_or(3);
+        let string = f64::to_str_exact(magnitude, decimals);
+        f.pad_integral(string.as_bytes(), "", true);
+    }
+}
+
+fn main() {
+    let myvector = Vector2D { x: 3, y: 4 };
+
+    println!("{}", myvector);       // => "(3, 4)"
+    println!("{:10.3t}", myvector); // => "     5.000"
+}
+```
 
 ### Related macros
 
@@ -421,7 +466,7 @@ use rt::io::Decorator;
 use rt::io::mem::MemWriter;
 use rt::io;
 use str;
-use sys;
+use repr;
 use util;
 use vec;
 
@@ -445,7 +490,6 @@ pub struct Formatter<'self> {
 
     /// Output buffer.
     buf: &'self mut io::Writer,
-
     priv curarg: vec::VecIterator<'self, Argument<'self>>,
     priv args: &'self [Argument<'self>],
 }
@@ -647,21 +691,6 @@ impl<'self> Formatter<'self> {
     // the format! syntax extension.
 
     fn run(&mut self, piece: &rt::Piece, cur: Option<&str>) {
-        let setcount = |slot: &mut Option<uint>, cnt: &parse::Count| {
-            match *cnt {
-                parse::CountIs(n) => { *slot = Some(n); }
-                parse::CountImplied => { *slot = None; }
-                parse::CountIsParam(i) => {
-                    let v = self.args[i].value;
-                    unsafe { *slot = Some(*(v as *util::Void as *uint)); }
-                }
-                parse::CountIsNextParam => {
-                    let v = self.curarg.next().unwrap().value;
-                    unsafe { *slot = Some(*(v as *util::Void as *uint)); }
-                }
-            }
-        };
-
         match *piece {
             rt::String(s) => { self.buf.write(s.as_bytes()); }
             rt::CurrentArgument(()) => { self.buf.write(cur.unwrap().as_bytes()); }
@@ -670,8 +699,8 @@ impl<'self> Formatter<'self> {
                 self.fill = arg.format.fill;
                 self.align = arg.format.align;
                 self.flags = arg.format.flags;
-                setcount(&mut self.width, &arg.format.width);
-                setcount(&mut self.precision, &arg.format.precision);
+                self.width = self.getcount(&arg.format.width);
+                self.precision = self.getcount(&arg.format.precision);
 
                 // Extract the correct argument
                 let value = match arg.position {
@@ -684,6 +713,21 @@ impl<'self> Formatter<'self> {
                     None => { (value.formatter)(value.value, self); }
                     Some(ref method) => { self.execute(*method, value); }
                 }
+            }
+        }
+    }
+
+    fn getcount(&mut self, cnt: &rt::Count) -> Option<uint> {
+        match *cnt {
+            rt::CountIs(n) => { Some(n) }
+            rt::CountImplied => { None }
+            rt::CountIsParam(i) => {
+                let v = self.args[i].value;
+                unsafe { Some(*(v as *util::Void as *uint)) }
+            }
+            rt::CountIsNextParam => {
+                let v = self.curarg.next().unwrap().value;
+                unsafe { Some(*(v as *util::Void as *uint)) }
             }
         }
     }
@@ -1042,17 +1086,13 @@ impl<T> Poly for T {
     fn fmt(t: &T, f: &mut Formatter) {
         match (f.width, f.precision) {
             (None, None) => {
-                // XXX: sys::log_str should have a variant which takes a stream
-                //      and we should directly call that (avoids unnecessary
-                //      allocations)
-                let s = sys::log_str(t);
-                f.buf.write(s.as_bytes());
+                repr::write_repr(f.buf, t);
             }
 
             // If we have a specified width for formatting, then we have to make
             // this allocation of a new string
             _ => {
-                let s = sys::log_str(t);
+                let s = repr::repr_to_str(t);
                 f.pad(s);
             }
         }

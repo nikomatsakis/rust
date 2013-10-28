@@ -15,8 +15,13 @@
  *
  * Consider this as a main "general-purpose" hash for all hashtables: it
  * runs at good speed (competitive with spooky and city) and permits
- * cryptographically strong _keyed_ hashing. Key your hashtables from a
- * CPRNG like rand::rng.
+ * strong _keyed_ hashing. Key your hashtables from a strong RNG,
+ * such as rand::rng.
+ *
+ * Although the SipHash algorithm is considered to be cryptographically
+ * strong, this implementation has not been reviewed for such purposes.
+ * As such, all cryptographic uses of this implementation are strongly
+ * discouraged.
  */
 
 #[allow(missing_doc)];
@@ -493,10 +498,10 @@ mod tests {
         }
 
         while t < 64 {
-            debug2!("siphash test {}", t);
+            debug!("siphash test {}", t);
             let vec = u8to64_le!(vecs[t], 0);
             let out = Bytes(buf.as_slice()).hash_keyed(k0, k1);
-            debug2!("got {:?}, expected {:?}", out, vec);
+            debug!("got {:?}, expected {:?}", out, vec);
             assert_eq!(vec, out);
 
             stream_full.reset();
@@ -504,7 +509,7 @@ mod tests {
             let f = stream_full.result_str();
             let i = stream_inc.result_str();
             let v = to_hex_str(&vecs[t]);
-            debug2!("{}: ({}) => inc={} full={}", t, v, i, f);
+            debug!("{}: ({}) => inc={} full={}", t, v, i, f);
 
             assert!(f == i && f == v);
 

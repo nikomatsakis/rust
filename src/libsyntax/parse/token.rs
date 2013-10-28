@@ -219,8 +219,8 @@ pub fn to_str(input: @ident_interner, t: &Token) -> ~str {
                       nt_block(*) => ~"block",
                       nt_stmt(*) => ~"statement",
                       nt_pat(*) => ~"pattern",
-                      nt_attr(*) => fail2!("should have been handled"),
-                      nt_expr(*) => fail2!("should have been handled above"),
+                      nt_attr(*) => fail!("should have been handled"),
+                      nt_expr(*) => fail!("should have been handled above"),
                       nt_ty(*) => ~"type",
                       nt_ident(*) => ~"identifier",
                       nt_path(*) => ~"path",
@@ -275,7 +275,7 @@ pub fn flip_delimiter(t: &token::Token) -> token::Token {
       RPAREN => LPAREN,
       RBRACE => LBRACE,
       RBRACKET => LBRACKET,
-      _ => fail2!()
+      _ => fail!()
     }
 }
 
@@ -499,37 +499,18 @@ fn mk_fresh_ident_interner() -> @ident_interner {
     @interner::StrInterner::prefill(init_vec)
 }
 
-// NOTE remove stage0 pub'ed special cases after next snapshot.
-#[cfg(stage0)]
-pub static SELF_KEYWORD_NAME: uint = 8;
-#[cfg(not(stage0))]
 static SELF_KEYWORD_NAME: uint = 8;
-#[cfg(stage0)]
-pub static STATIC_KEYWORD_NAME: uint = 27;
-#[cfg(not(stage0))]
 static STATIC_KEYWORD_NAME: uint = 27;
-#[cfg(stage0)]
-pub static STRICT_KEYWORD_START: uint = 32;
-#[cfg(not(stage0))]
 static STRICT_KEYWORD_START: uint = 32;
-#[cfg(stage0)]
-pub static STRICT_KEYWORD_FINAL: uint = 64;
-#[cfg(not(stage0))]
 static STRICT_KEYWORD_FINAL: uint = 64;
-#[cfg(stage0)]
-pub static RESERVED_KEYWORD_START: uint = 65;
-#[cfg(not(stage0))]
 static RESERVED_KEYWORD_START: uint = 65;
-#[cfg(stage0)]
-pub static RESERVED_KEYWORD_FINAL: uint = 71;
-#[cfg(not(stage0))]
 static RESERVED_KEYWORD_FINAL: uint = 71;
 
 // if an interner exists in TLS, return it. Otherwise, prepare a
 // fresh one.
 pub fn get_ident_interner() -> @ident_interner {
     local_data_key!(key: @@::parse::token::ident_interner)
-    match local_data::get(key, |k| k.map_move(|k| *k)) {
+    match local_data::get(key, |k| k.map(|k| *k)) {
         Some(interner) => *interner,
         None => {
             let interner = mk_fresh_ident_interner();

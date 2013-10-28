@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 struct dtor {
     x: @mut int,
 
@@ -24,7 +26,7 @@ impl Drop for dtor {
 fn unwrap<T>(o: Option<T>) -> T {
     match o {
       Some(v) => v,
-      None => fail2!()
+      None => fail!()
     }
 }
 

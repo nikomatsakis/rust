@@ -185,7 +185,7 @@ impl Ctx {
                                                          item,
                                                          p));
                     }
-                    _ => fail2!("struct def parent wasn't an item")
+                    _ => fail!("struct def parent wasn't an item")
                 }
             }
         }
@@ -294,17 +294,11 @@ impl Visitor<()> for Ctx {
                                                       nm.abis,
                                                       visibility,
                                                       // FIXME (#2543)
-                                                      if nm.sort ==
-                                                            ast::named {
-                                                          let e = path_name(
-                                                              i.ident);
-                                                          self.extend(e)
-                                                      } else {
                                                         // Anonymous extern
                                                         // mods go in the
                                                         // parent scope.
                                                         @self.path.clone()
-                                                      }));
+                                                      ));
                 }
             }
             item_struct(struct_def, _) => {
@@ -491,7 +485,7 @@ pub fn node_item_query<Result>(items: map, id: NodeId,
                                error_msg: ~str) -> Result {
     match items.find(&id) {
         Some(&node_item(it, _)) => query(it),
-        _ => fail2!("{}", error_msg)
+        _ => fail!("{}", error_msg)
     }
 }
 
@@ -501,7 +495,7 @@ pub fn item_span(items: map,
     match items.find(&id) {
         Some(&node_item(item, _)) => item.span,
         r => {
-            fail2!(format!("item_span: expected item with id {} but found {:?}",
+            fail!(format!("item_span: expected item with id {} but found {:?}",
                            id, r))
         }
     }

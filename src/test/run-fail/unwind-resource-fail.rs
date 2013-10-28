@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 // error-pattern:squirrel
 
 struct r {
@@ -15,7 +17,7 @@ struct r {
 }
 
 impl Drop for r {
-    fn drop(&mut self) { fail2!("squirrel") }
+    fn drop(&mut self) { fail!("squirrel") }
 }
 
 fn r(i: int) -> r { r { i: i } }

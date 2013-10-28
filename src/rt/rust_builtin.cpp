@@ -13,11 +13,7 @@
 #include "rust_util.h"
 #include "sync/rust_thread.h"
 #include "sync/lock_and_signal.h"
-#include "memory_region.h"
-#include "boxed_region.h"
-#include "rust_rng.h"
 #include "vg/valgrind.h"
-#include "sp.h"
 
 #include <time.h>
 
@@ -69,11 +65,6 @@ rust_env_pairs() {
 }
 #endif
 
-extern "C" CDECL void
-rand_gen_seed(uint8_t* dest, size_t size) {
-    rng_gen_seed(dest, size);
-}
-
 extern "C" CDECL char*
 #if defined(__WIN32__)
 rust_list_dir_val(WIN32_FIND_DATA* entry_ptr) {
@@ -113,7 +104,7 @@ rust_list_dir_wfd_fp_buf(void* wfd) {
 #endif
 
 extern "C" CDECL int
-rust_path_is_dir(char *path) {
+rust_path_is_dir(const char *path) {
     struct stat buf;
     if (stat(path, &buf)) {
         return 0;
@@ -122,13 +113,47 @@ rust_path_is_dir(char *path) {
 }
 
 extern "C" CDECL int
-rust_path_exists(char *path) {
+#if defined(__WIN32__)
+rust_path_is_dir_u16(const wchar_t *path) {
+    struct _stat buf;
+    // Don't use GetFileAttributesW, it cannot get attributes of
+    // some system files (e.g. pagefile.sys).
+    if (_wstat(path, &buf)) {
+        return 0;
+    }
+    return S_ISDIR(buf.st_mode);
+}
+#else
+rust_path_is_dir_u16(const void *path) {
+    // Wide version of function is only used on Windows.
+    return 0;
+}
+#endif
+
+extern "C" CDECL int
+rust_path_exists(const char *path) {
     struct stat buf;
     if (stat(path, &buf)) {
         return 0;
     }
     return 1;
 }
+
+extern "C" CDECL int
+#if defined(__WIN32__)
+rust_path_exists_u16(const wchar_t *path) {
+    struct _stat buf;
+    if (_wstat(path, &buf)) {
+        return 0;
+    }
+    return 1;
+}
+#else
+rust_path_exists_u16(const void *path) {
+    // Wide version of function is only used on Windows.
+    return 0;
+}
+#endif
 
 extern "C" CDECL FILE* rust_get_stdin() {return stdin;}
 extern "C" CDECL FILE* rust_get_stdout() {return stdout;}
@@ -300,8 +325,12 @@ rust_localtime(int64_t sec, int32_t nsec, rust_tm *timeptr) {
     const char* zone = NULL;
 #if defined(__WIN32__)
     int32_t gmtoff = -timezone;
-    char buffer[64];
-    if (strftime(buffer, sizeof(buffer), "%Z", &tm) > 0) {
+    wchar_t wbuffer[64];
+    char buffer[256];
+    // strftime("%Z") can contain non-UTF-8 characters on non-English locale (issue #9418),
+    // so time zone should be converted from UTF-16 string set by wcsftime.
+    if (wcsftime(wbuffer, sizeof(wbuffer) / sizeof(wchar_t), L"%Z", &tm) > 0) {
+        WideCharToMultiByte(CP_UTF8, 0, wbuffer, -1, buffer, sizeof(buffer), NULL, NULL);
         zone = buffer;
     }
 #else
@@ -326,27 +355,6 @@ rust_mktime(rust_tm* timeptr) {
     return mktime(&t);
 }
 
-static lock_and_signal log_lock;
-static bool log_to_console = true;
-
-extern "C" CDECL void
-rust_log_console_on() {
-    scoped_lock with(log_lock);
-    log_to_console = true;
-}
-
-extern "C" CDECL void
-rust_log_console_off() {
-    scoped_lock with(log_lock);
-    log_to_console = false;
-}
-
-extern "C" CDECL uintptr_t
-rust_should_log_console() {
-    scoped_lock with(log_lock);
-    return log_to_console;
-}
-
 extern "C" lock_and_signal*
 rust_create_little_lock() {
     return new lock_and_signal();
@@ -367,22 +375,36 @@ rust_unlock_little_lock(lock_and_signal *lock) {
     lock->unlock();
 }
 
+extern "C" void
+rust_wait_little_lock(lock_and_signal *lock) {
+    lock->wait();
+}
+
+extern "C" void
+rust_signal_little_lock(lock_and_signal *lock) {
+    lock->signal();
+}
+
+typedef void(startfn)(void*, void*);
+
 class raw_thread: public rust_thread {
 public:
-    fn_env_pair fn;
+    startfn *raw_start;
+    void *rust_fn;
+    void *rust_env;
 
-    raw_thread(fn_env_pair fn) : fn(fn) { }
+    raw_thread(startfn *raw_start, void *rust_fn, void *rust_env)
+        : raw_start(raw_start), rust_fn(rust_fn), rust_env(rust_env) { }
 
     virtual void run() {
-        record_sp_limit(0);
-        fn.f(fn.env, NULL);
+        raw_start(rust_fn, rust_env);
     }
 };
 
 extern "C" raw_thread*
-rust_raw_thread_start(fn_env_pair *fn) {
-    assert(fn);
-    raw_thread *thread = new raw_thread(*fn);
+rust_raw_thread_start(startfn *raw_start, void *rust_start, void *rust_env) {
+    assert(raw_start && rust_start);
+    raw_thread *thread = new raw_thread(raw_start, rust_start, rust_env);
     thread->start();
     return thread;
 }
@@ -451,44 +473,6 @@ rust_initialize_rt_tls_key(tls_key *key) {
 
         initialized = true;
     }
-}
-
-extern "C" CDECL memory_region*
-rust_new_memory_region(uintptr_t detailed_leaks,
-                       uintptr_t poison_on_free) {
-    return new memory_region((bool)detailed_leaks,
-                             (bool)poison_on_free);
-}
-
-extern "C" CDECL void
-rust_delete_memory_region(memory_region *region) {
-    delete region;
-}
-
-extern "C" CDECL boxed_region*
-rust_new_boxed_region(memory_region *region,
-                      uintptr_t poison_on_free) {
-    return new boxed_region(region, poison_on_free);
-}
-
-extern "C" CDECL void
-rust_delete_boxed_region(boxed_region *region) {
-    delete region;
-}
-
-extern "C" CDECL rust_opaque_box*
-rust_boxed_region_malloc(boxed_region *region, type_desc *td, size_t size) {
-    return region->malloc(td, size);
-}
-
-extern "C" CDECL rust_opaque_box*
-rust_boxed_region_realloc(boxed_region *region, rust_opaque_box *ptr, size_t size) {
-    return region->realloc(ptr, size);
-}
-
-extern "C" CDECL void
-rust_boxed_region_free(boxed_region *region, rust_opaque_box *box) {
-    region->free(box);
 }
 
 typedef void *(rust_try_fn)(void*, void*);
@@ -579,12 +563,6 @@ rust_get_global_args_ptr() {
     return &global_args_ptr;
 }
 
-// Used by i386 __morestack
-extern "C" CDECL uintptr_t
-rust_get_task() {
-    return 0;
-}
-
 static lock_and_signal env_lock;
 
 extern "C" CDECL void
@@ -595,18 +573,6 @@ rust_take_env_lock() {
 extern "C" CDECL void
 rust_drop_env_lock() {
     env_lock.unlock();
-}
-
-static lock_and_signal linenoise_lock;
-
-extern "C" CDECL void
-rust_take_linenoise_lock() {
-    linenoise_lock.lock();
-}
-
-extern "C" CDECL void
-rust_drop_linenoise_lock() {
-    linenoise_lock.unlock();
 }
 
 static lock_and_signal dlerror_lock;
@@ -654,6 +620,64 @@ rust_unset_sigprocmask() {
 
 #endif
 
+#if defined(__WIN32__)
+void
+win32_require(LPCTSTR fn, BOOL ok) {
+    if (!ok) {
+        LPTSTR buf;
+        DWORD err = GetLastError();
+        FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+                      FORMAT_MESSAGE_FROM_SYSTEM |
+                      FORMAT_MESSAGE_IGNORE_INSERTS,
+                      NULL, err,
+                      MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                      (LPTSTR) &buf, 0, NULL );
+        fprintf(stderr, "%s failed with error %ld: %s", fn, err, buf);
+        LocalFree((HLOCAL)buf);
+        abort();
+    }
+}
+
+extern "C" CDECL void
+rust_win32_rand_acquire(HCRYPTPROV* phProv) {
+    win32_require
+        (_T("CryptAcquireContext"),
+         // changes to the parameters here should be reflected in the docs of
+         // std::rand::os::OSRng
+         CryptAcquireContext(phProv, NULL, NULL, PROV_RSA_FULL,
+                             CRYPT_VERIFYCONTEXT|CRYPT_SILENT));
+
+}
+extern "C" CDECL void
+rust_win32_rand_gen(HCRYPTPROV hProv, DWORD dwLen, BYTE* pbBuffer) {
+    win32_require
+        (_T("CryptGenRandom"), CryptGenRandom(hProv, dwLen, pbBuffer));
+}
+extern "C" CDECL void
+rust_win32_rand_release(HCRYPTPROV hProv) {
+    win32_require
+        (_T("CryptReleaseContext"), CryptReleaseContext(hProv, 0));
+}
+
+#else
+
+// these symbols are listed in rustrt.def.in, so they need to exist; but they
+// should never be called.
+
+extern "C" CDECL void
+rust_win32_rand_acquire() {
+    abort();
+}
+extern "C" CDECL void
+rust_win32_rand_gen() {
+    abort();
+}
+extern "C" CDECL void
+rust_win32_rand_release() {
+    abort();
+}
+
+#endif
 //
 // Local Variables:
 // mode: C++

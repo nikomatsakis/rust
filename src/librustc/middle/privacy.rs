@@ -21,7 +21,7 @@ use middle::typeck::{method_static, method_object};
 
 use syntax::ast;
 use syntax::ast_map;
-use syntax::ast_util::is_local;
+use syntax::ast_util::{is_local, def_id_of_def};
 use syntax::attr;
 use syntax::codemap::Span;
 use syntax::parse::token;
@@ -30,6 +30,10 @@ use syntax::visit;
 use syntax::visit::Visitor;
 
 type Context<'self> = (&'self method_map, &'self resolve::ExportMap2);
+
+// A set of all nodes in the ast which can be considered "publicly exported" in
+// the sense that they are accessible from anywhere in any hierarchy.
+pub type ExportedItems = HashSet<ast::NodeId>;
 
 // This visitor is used to determine the parent of all nodes in question when it
 // comes to privacy. This is used to determine later on if a usage is actually
@@ -137,7 +141,7 @@ impl<'self> Visitor<()> for ParentVisitor<'self> {
 // This visitor is used to determine which items of the ast are embargoed,
 // otherwise known as not exported.
 struct EmbargoVisitor<'self> {
-    exported_items: &'self mut HashSet<ast::NodeId>,
+    exported_items: &'self mut ExportedItems,
     exp_map2: &'self resolve::ExportMap2,
     path_all_public: bool,
 }
@@ -188,7 +192,7 @@ impl<'self> Visitor<()> for EmbargoVisitor<'self> {
             // Trait implementation methods are all completely public
             ast::item_impl(_, Some(*), _, ref methods) => {
                 for method in methods.iter() {
-                    debug2!("exporting: {}", method.id);
+                    debug!("exporting: {}", method.id);
                     self.exported_items.insert(method.id);
                 }
             }
@@ -199,11 +203,11 @@ impl<'self> Visitor<()> for EmbargoVisitor<'self> {
                 for method in methods.iter() {
                     match *method {
                         ast::provided(ref m) => {
-                            debug2!("provided {}", m.id);
+                            debug!("provided {}", m.id);
                             self.exported_items.insert(m.id);
                         }
                         ast::required(ref m) => {
-                            debug2!("required {}", m.id);
+                            debug!("required {}", m.id);
                             self.exported_items.insert(m.id);
                         }
                     }
@@ -239,11 +243,17 @@ struct PrivacyVisitor<'self> {
     curitem: ast::NodeId,
 
     // Results of previous analyses necessary for privacy checking.
-    exported_items: &'self HashSet<ast::NodeId>,
+    exported_items: &'self ExportedItems,
     method_map: &'self method_map,
     parents: &'self HashMap<ast::NodeId, ast::NodeId>,
     external_exports: resolve::ExternalExports,
     last_private_map: resolve::LastPrivateMap,
+}
+
+enum PrivacyResult {
+    Allowable,
+    ExternallyDenied,
+    DisallowedBy(ast::NodeId),
 }
 
 impl<'self> PrivacyVisitor<'self> {
@@ -254,58 +264,62 @@ impl<'self> PrivacyVisitor<'self> {
 
     // Determines whether the given definition is public from the point of view
     // of the current item.
-    fn def_public(&self, did: ast::DefId) -> bool {
+    fn def_privacy(&self, did: ast::DefId) -> PrivacyResult {
         if !is_local(did) {
             if self.external_exports.contains(&did) {
-                debug2!("privacy - {:?} was externally exported", did);
-                return true;
+                debug!("privacy - {:?} was externally exported", did);
+                return Allowable;
             }
-            debug2!("privacy - is {:?} a public method", did);
+            debug!("privacy - is {:?} a public method", did);
             return match self.tcx.methods.find(&did) {
                 Some(meth) => {
-                    debug2!("privacy - well at least it's a method: {:?}", meth);
+                    debug!("privacy - well at least it's a method: {:?}", meth);
                     match meth.container {
                         ty::TraitContainer(id) => {
-                            debug2!("privacy - recursing on trait {:?}", id);
-                            self.def_public(id)
+                            debug!("privacy - recursing on trait {:?}", id);
+                            self.def_privacy(id)
                         }
                         ty::ImplContainer(id) => {
                             match ty::impl_trait_ref(self.tcx, id) {
                                 Some(t) => {
-                                    debug2!("privacy - impl of trait {:?}", id);
-                                    self.def_public(t.def_id)
+                                    debug!("privacy - impl of trait {:?}", id);
+                                    self.def_privacy(t.def_id)
                                 }
                                 None => {
-                                    debug2!("privacy - found a method {:?}",
+                                    debug!("privacy - found a method {:?}",
                                             meth.vis);
-                                    meth.vis == ast::public
+                                    if meth.vis == ast::public {
+                                        Allowable
+                                    } else {
+                                        ExternallyDenied
+                                    }
                                 }
                             }
                         }
                     }
                 }
                 None => {
-                    debug2!("privacy - nope, not even a method");
-                    false
+                    debug!("privacy - nope, not even a method");
+                    ExternallyDenied
                 }
             };
         } else if self.exported_items.contains(&did.node) {
-            debug2!("privacy - exported item {}", self.nodestr(did.node));
-            return true;
+            debug!("privacy - exported item {}", self.nodestr(did.node));
+            return Allowable;
         }
 
-        debug2!("privacy - local {:?} not public all the way down", did);
+        debug!("privacy - local {:?} not public all the way down", did);
         // return quickly for things in the same module
         if self.parents.find(&did.node) == self.parents.find(&self.curitem) {
-            debug2!("privacy - same parent, we're done here");
-            return true;
+            debug!("privacy - same parent, we're done here");
+            return Allowable;
         }
 
         // We now know that there is at least one private member between the
         // destination and the root.
         let mut closest_private_id = did.node;
         loop {
-            debug2!("privacy - examining {}", self.nodestr(closest_private_id));
+            debug!("privacy - examining {}", self.nodestr(closest_private_id));
             let vis = match self.tcx.items.find(&closest_private_id) {
                 Some(&ast_map::node_item(it, _)) => it.vis,
                 Some(&ast_map::node_method(ref m, _, _)) => m.vis,
@@ -325,8 +339,12 @@ impl<'self> PrivacyVisitor<'self> {
             // way down in the first place...
             assert!(closest_private_id != ast::DUMMY_NODE_ID);
         }
-        debug2!("privacy - closest priv {}", self.nodestr(closest_private_id));
-        return self.private_accessible(closest_private_id);
+        debug!("privacy - closest priv {}", self.nodestr(closest_private_id));
+        if self.private_accessible(closest_private_id) {
+            Allowable
+        } else {
+            DisallowedBy(closest_private_id)
+        }
     }
 
     /// For a local private node in the AST, this function will determine
@@ -334,7 +352,7 @@ impl<'self> PrivacyVisitor<'self> {
     /// inside.
     fn private_accessible(&self, id: ast::NodeId) -> bool {
         let parent = *self.parents.get(&id);
-        debug2!("privacy - accessible parent {}", self.nodestr(parent));
+        debug!("privacy - accessible parent {}", self.nodestr(parent));
 
         // After finding `did`'s closest private member, we roll ourselves back
         // to see if this private member's parent is anywhere in our ancestry.
@@ -342,7 +360,7 @@ impl<'self> PrivacyVisitor<'self> {
         // members, so that's why we test the parent, and not the did itself.
         let mut cur = self.curitem;
         loop {
-            debug2!("privacy - questioning {}", self.nodestr(cur));
+            debug!("privacy - questioning {}", self.nodestr(cur));
             match cur {
                 // If the relevant parent is in our history, then we're allowed
                 // to look inside any of our ancestor's immediate private items,
@@ -361,12 +379,51 @@ impl<'self> PrivacyVisitor<'self> {
         }
     }
 
+    /// Guarantee that a particular definition is public, possibly emitting an
+    /// error message if it's not.
+    fn ensure_public(&self, span: Span, to_check: ast::DefId,
+                     source_did: Option<ast::DefId>, msg: &str) -> bool {
+        match self.def_privacy(to_check) {
+            ExternallyDenied => {
+                self.tcx.sess.span_err(span, format!("{} is private", msg))
+            }
+            DisallowedBy(id) => {
+                if id == source_did.unwrap_or(to_check).node {
+                    self.tcx.sess.span_err(span, format!("{} is private", msg));
+                    return false;
+                } else {
+                    self.tcx.sess.span_err(span, format!("{} is inaccessible",
+                                                         msg));
+                }
+                match self.tcx.items.find(&id) {
+                    Some(&ast_map::node_item(item, _)) => {
+                        let desc = match item.node {
+                            ast::item_mod(*) => "module",
+                            ast::item_trait(*) => "trait",
+                            _ => return false,
+                        };
+                        let msg = format!("{} `{}` is private", desc,
+                                          token::ident_to_str(&item.ident));
+                        self.tcx.sess.span_note(span, msg);
+                    }
+                    Some(*) | None => {}
+                }
+            }
+            Allowable => return true
+        }
+        return false;
+    }
+
     // Checks that a dereference of a univariant enum can occur.
     fn check_variant(&self, span: Span, enum_id: ast::DefId) {
         let variant_info = ty::enum_variants(self.tcx, enum_id)[0];
-        if !self.def_public(variant_info.id) {
-            self.tcx.sess.span_err(span, "can only dereference enums \
-                                          with a single, public variant");
+
+        match self.def_privacy(variant_info.id) {
+            Allowable => {}
+            ExternallyDenied | DisallowedBy(*) => {
+                self.tcx.sess.span_err(span, "can only dereference enums \
+                                              with a single, public variant");
+            }
         }
     }
 
@@ -395,29 +452,24 @@ impl<'self> PrivacyVisitor<'self> {
         let method_id = ty::method(self.tcx, method_id).provided_source
                                                        .unwrap_or(method_id);
 
-        if !self.def_public(method_id) {
-            debug2!("private: {:?}", method_id);
-            self.tcx.sess.span_err(span, format!("method `{}` is private",
-                                                 token::ident_to_str(name)));
-        }
+        self.ensure_public(span, method_id, None,
+                           format!("method `{}`", token::ident_to_str(name)));
     }
 
     // Checks that a path is in scope.
     fn check_path(&mut self, span: Span, path_id: ast::NodeId, path: &ast::Path) {
-        debug2!("privacy - path {}", self.nodestr(path_id));
+        debug!("privacy - path {}", self.nodestr(path_id));
+        let def = self.tcx.def_map.get_copy(&path_id);
         let ck = |tyname: &str| {
-            let last_private = *self.last_private_map.get(&path_id);
-            debug2!("privacy - {:?}", last_private);
-            let public = match last_private {
-                resolve::AllPublic => true,
-                resolve::DependsOn(def) => self.def_public(def),
-            };
-            if !public {
-                debug2!("denying {:?}", path);
-                let name = token::ident_to_str(&path.segments.last()
-                                                    .identifier);
-                self.tcx.sess.span_err(span,
-                                  format!("{} `{}` is private", tyname, name));
+            let origdid = def_id_of_def(def);
+            match *self.last_private_map.get(&path_id) {
+                resolve::AllPublic => {},
+                resolve::DependsOn(def) => {
+                    let name = token::ident_to_str(&path.segments.last()
+                                                        .identifier);
+                    self.ensure_public(span, def, Some(origdid),
+                                       format!("{} `{}`", tyname, name));
+                }
             }
         };
         match self.tcx.def_map.get_copy(&path_id) {
@@ -452,9 +504,8 @@ impl<'self> PrivacyVisitor<'self> {
                 method_num: method_num,
                  _
             }) => {
-                if !self.def_public(trait_id) {
-                    self.tcx.sess.span_err(span, "source trait is private");
-                    return;
+                if !self.ensure_public(span, trait_id, None, "source trait") {
+                    return
                 }
                 match self.tcx.items.find(&trait_id.node) {
                     Some(&ast_map::node_item(item, _)) => {
@@ -466,12 +517,10 @@ impl<'self> PrivacyVisitor<'self> {
                                             node: method.id,
                                             crate: trait_id.crate,
                                         };
-                                        if self.def_public(def) { return }
-                                        let msg = format!("method `{}` is \
-                                                           private",
+                                        self.ensure_public(span, def, None,
+                                                  format!("method `{}`",
                                                           token::ident_to_str(
-                                                              &method.ident));
-                                        self.tcx.sess.span_err(span, msg);
+                                                              &method.ident)));
                                     }
                                     ast::required(_) => {
                                         // Required methods can't be private.
@@ -511,6 +560,20 @@ impl<'self> PrivacyVisitor<'self> {
                 tcx.sess.span_err(sp, "unnecessary `priv` qualifier");
                 if note.len() > 0 {
                     tcx.sess.span_note(sp, note);
+                }
+            }
+        };
+        let check_struct = |def: &@ast::struct_def| {
+            for f in def.fields.iter() {
+               match f.node.kind {
+                    ast::named_field(_, ast::public) => {
+                        tcx.sess.span_err(f.span, "unnecessary `pub` \
+                                                   visibility");
+                    }
+                    ast::named_field(_, ast::private) => {
+                        // Fields should really be private by default...
+                    }
+                    ast::named_field(*) | ast::unnamed_field => {}
                 }
             }
         };
@@ -561,23 +624,15 @@ impl<'self> PrivacyVisitor<'self> {
                         }
                         ast::inherited => {}
                     }
-                }
-            }
 
-            ast::item_struct(ref def, _) => {
-                for f in def.fields.iter() {
-                   match f.node.kind {
-                        ast::named_field(_, ast::public) => {
-                            tcx.sess.span_err(f.span, "unnecessary `pub` \
-                                                       visibility");
-                        }
-                        ast::named_field(_, ast::private) => {
-                            // Fields should really be private by default...
-                        }
-                        ast::named_field(*) | ast::unnamed_field => {}
+                    match v.node.kind {
+                        ast::struct_variant_kind(ref s) => check_struct(s),
+                        ast::tuple_variant_kind(*) => {}
                     }
                 }
             }
+
+            ast::item_struct(ref def, _) => check_struct(def),
 
             ast::item_trait(_, _, ref methods) => {
                 for m in methods.iter() {
@@ -648,7 +703,7 @@ impl<'self> Visitor<()> for PrivacyVisitor<'self> {
                             }
                             Some(entry) => entry
                         };
-                        debug2!("(privacy checking) checking impl method");
+                        debug!("(privacy checking) checking impl method");
                         self.check_method(expr.span, &entry.origin, ident);
                     }
                     _ => {}
@@ -718,12 +773,12 @@ impl<'self> Visitor<()> for PrivacyVisitor<'self> {
                     match vpath.node {
                         ast::view_path_simple(_, ref path, id) |
                         ast::view_path_glob(ref path, id) => {
-                            debug2!("privacy - glob/simple {}", id);
+                            debug!("privacy - glob/simple {}", id);
                             self.check_path(vpath.span, id, path);
                         }
                         ast::view_path_list(_, ref list, _) => {
                             for pid in list.iter() {
-                                debug2!("privacy - list {}", pid.node.id);
+                                debug!("privacy - list {}", pid.node.id);
                                 let seg = ast::PathSegment {
                                     identifier: pid.node.name,
                                     lifetimes: opt_vec::Empty,
@@ -785,7 +840,7 @@ pub fn check_crate(tcx: ty::ctxt,
                    exp_map2: &resolve::ExportMap2,
                    external_exports: resolve::ExternalExports,
                    last_private_map: resolve::LastPrivateMap,
-                   crate: &ast::Crate) {
+                   crate: &ast::Crate) -> ExportedItems {
     let mut parents = HashMap::new();
     let mut exported_items = HashSet::new();
 
@@ -802,7 +857,7 @@ pub fn check_crate(tcx: ty::ctxt,
     {
         // Initialize the exported items with resolve's id for the "root crate"
         // to resolve references to `super` leading to the root and such.
-        exported_items.insert(0);
+        exported_items.insert(ast::CRATE_NODE_ID);
         let mut visitor = EmbargoVisitor {
             exported_items: &mut exported_items,
             exp_map2: exp_map2,
@@ -824,4 +879,5 @@ pub fn check_crate(tcx: ty::ctxt,
         };
         visit::walk_crate(&mut visitor, crate, ());
     }
+    return exported_items;
 }

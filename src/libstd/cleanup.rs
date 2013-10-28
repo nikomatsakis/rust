@@ -11,7 +11,7 @@
 #[doc(hidden)];
 
 use libc::c_void;
-use ptr::null;
+use ptr;
 use unstable::intrinsics::TyDesc;
 use unstable::raw;
 
@@ -37,7 +37,7 @@ unsafe fn each_live_alloc(read_next_before: bool,
     use rt::local_heap;
 
     let mut box = local_heap::live_allocs();
-    while box != null() {
+    while box != ptr::mut_null() {
         let next_before = (*box).next;
         let uniq = (*box).ref_count == managed::RC_MANAGED_UNIQUE;
 
@@ -68,10 +68,7 @@ fn debug_mem() -> bool {
 /// Destroys all managed memory (i.e. @ boxes) held by the current task.
 pub unsafe fn annihilate() {
     use rt::local_heap::local_free;
-    use io::WriterUtil;
-    use io;
-    use libc;
-    use sys;
+    use mem;
     use managed;
 
     let mut stats = AnnihilateStats {
@@ -118,7 +115,7 @@ pub unsafe fn annihilate() {
         if !uniq {
             stats.n_bytes_freed +=
                 (*((*box).type_desc)).size
-                + sys::size_of::<raw::Box<()>>();
+                + mem::size_of::<raw::Box<()>>();
             local_free(box as *i8);
         }
         true
@@ -126,14 +123,10 @@ pub unsafe fn annihilate() {
 
     if debug_mem() {
         // We do logging here w/o allocation.
-        let dbg = libc::STDERR_FILENO as io::fd_t;
-        dbg.write_str("annihilator stats:");
-        dbg.write_str("\n  total_boxes: ");
-        dbg.write_uint(stats.n_total_boxes);
-        dbg.write_str("\n  unique_boxes: ");
-        dbg.write_uint(stats.n_unique_boxes);
-        dbg.write_str("\n  bytes_freed: ");
-        dbg.write_uint(stats.n_bytes_freed);
-        dbg.write_str("\n");
+        debug!("annihilator stats:\n  \
+                       total boxes: {}\n  \
+                      unique boxes: {}\n  \
+                       bytes freed: {}",
+                stats.n_total_boxes, stats.n_unique_boxes, stats.n_bytes_freed);
     }
 }

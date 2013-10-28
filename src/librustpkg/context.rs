@@ -10,7 +10,7 @@
 
 // Context data structure used by rustpkg
 
-use std::{io, os};
+use std::os;
 use extra::workcache;
 use rustc::driver::session::{OptLevel, No};
 
@@ -54,6 +54,15 @@ impl BuildContext {
     pub fn compile_upto(&self) -> StopBefore {
         self.context.compile_upto()
     }
+
+    pub fn add_library_path(&mut self, p: Path) {
+        debug!("Adding library path: {}", p.display());
+        self.context.add_library_path(p);
+    }
+
+    pub fn additional_library_paths(&self) -> ~[Path] {
+        self.context.rustc_flags.additional_library_paths.clone()
+    }
 }
 
 /*
@@ -85,6 +94,9 @@ pub struct RustcFlags {
     target: Option<~str>,
     // Target CPU (defaults to rustc's default target CPU)
     target_cpu: Option<~str>,
+    // Additional library directories, which get passed with the -L flag
+    // This can't be set with a rustpkg flag, only from package scripts
+    additional_library_paths: ~[Path],
     // Any -Z features
     experimental_features: Option<~[~str]>
 }
@@ -99,6 +111,7 @@ impl Clone for RustcFlags {
             save_temps: self.save_temps,
             target: self.target.clone(),
             target_cpu: self.target_cpu.clone(),
+            additional_library_paths: self.additional_library_paths.clone(),
             experimental_features: self.experimental_features.clone()
         }
     }
@@ -123,7 +136,7 @@ impl Context {
 
     /// Debugging
     pub fn sysroot_str(&self) -> ~str {
-        self.sysroot.to_str()
+        self.sysroot.as_str().unwrap().to_owned()
     }
 
     // Hack so that rustpkg can run either out of a rustc target dir,
@@ -132,7 +145,11 @@ impl Context {
         if !in_target(&self.sysroot) {
             self.sysroot.clone()
         } else {
-            self.sysroot.pop().pop().pop()
+            let mut p = self.sysroot.clone();
+            p.pop();
+            p.pop();
+            p.pop();
+            p
         }
     }
 
@@ -144,14 +161,20 @@ impl Context {
     pub fn compile_upto(&self) -> StopBefore {
         self.rustc_flags.compile_upto
     }
+
+    pub fn add_library_path(&mut self, p: Path) {
+        self.rustc_flags.additional_library_paths.push(p);
+    }
 }
 
 /// We assume that if ../../rustc exists, then we're running
 /// rustpkg from a Rust target directory. This is part of a
 /// kludgy hack used to adjust the sysroot.
 pub fn in_target(sysroot: &Path) -> bool {
-    debug2!("Checking whether {} is in target", sysroot.to_str());
-    os::path_is_dir(&sysroot.pop().pop().push("rustc"))
+    debug!("Checking whether {} is in target", sysroot.display());
+    let mut p = sysroot.dir_path();
+    p.set_filename("rustc");
+    os::path_is_dir(&p)
 }
 
 impl RustcFlags {
@@ -204,58 +227,59 @@ impl RustcFlags {
             save_temps: false,
             target: None,
             target_cpu: None,
+            additional_library_paths: ~[],
             experimental_features: None
         }
     }
 }
 
 /// Returns true if any of the flags given are incompatible with the cmd
-pub fn flags_ok_for_cmd(flags: &RustcFlags,
+pub fn flags_forbidden_for_cmd(flags: &RustcFlags,
                         cfgs: &[~str],
                         cmd: &str, user_supplied_opt_level: bool) -> bool {
     let complain = |s| {
-        println!("The {} option can only be used with the build command:
+        println!("The {} option can only be used with the `build` command:
                   rustpkg [options..] build {} [package-ID]", s, s);
     };
 
     if flags.linker.is_some() && cmd != "build" && cmd != "install" {
-        io::println("The --linker option can only be used with the build or install commands.");
+        println("The --linker option can only be used with the build or install commands.");
         return true;
     }
     if flags.link_args.is_some() && cmd != "build" && cmd != "install" {
-        io::println("The --link-args option can only be used with the build or install commands.");
+        println("The --link-args option can only be used with the build or install commands.");
         return true;
     }
 
     if !cfgs.is_empty() && cmd != "build" && cmd != "install" {
-        io::println("The --cfg option can only be used with the build or install commands.");
+        println("The --cfg option can only be used with the build or install commands.");
         return true;
     }
 
     if user_supplied_opt_level && cmd != "build" && cmd != "install" {
-        io::println("The -O and --opt-level options can only be used with the build \
+        println("The -O and --opt-level options can only be used with the build \
                     or install commands.");
         return true;
     }
 
     if flags.save_temps  && cmd != "build" && cmd != "install" {
-        io::println("The --save-temps option can only be used with the build \
+        println("The --save-temps option can only be used with the build \
                     or install commands.");
         return true;
     }
 
     if flags.target.is_some()  && cmd != "build" && cmd != "install" {
-        io::println("The --target option can only be used with the build \
+        println("The --target option can only be used with the build \
                     or install commands.");
         return true;
     }
     if flags.target_cpu.is_some()  && cmd != "build" && cmd != "install" {
-        io::println("The --target-cpu option can only be used with the build \
+        println("The --target-cpu option can only be used with the build \
                     or install commands.");
         return true;
     }
     if flags.experimental_features.is_some() && cmd != "build" && cmd != "install" {
-        io::println("The -Z option can only be used with the build or install commands.");
+        println("The -Z option can only be used with the build or install commands.");
         return true;
     }
 

@@ -26,14 +26,14 @@ pub fn replace_bound_regions_in_fn_sig(
     mapf: &fn(ty::bound_region) -> ty::Region)
     -> (HashMap<ty::bound_region,ty::Region>, Option<ty::t>, ty::FnSig)
 {
-    debug2!("replace_bound_regions_in_fn_sig(self_ty={}, fn_sig={})",
+    debug!("replace_bound_regions_in_fn_sig(self_ty={}, fn_sig={})",
             opt_self_ty.repr(tcx),
             fn_sig.repr(tcx));
 
     let mut map = HashMap::new();
     let (fn_sig, opt_self_ty) = {
         let mut f = ty_fold::RegionFolder::regions(tcx, |r| {
-                debug2!("region r={}", r.to_str());
+                debug!("region r={}", r.to_str());
                 match r {
                 ty::re_fn_bound(s, br) if s == fn_sig.binder_id => {
                     *map.find_or_insert_with(br, |_| mapf(br))
@@ -43,7 +43,7 @@ pub fn replace_bound_regions_in_fn_sig(
         (ty_fold::super_fold_sig(&mut f, fn_sig),
          ty_fold::fold_opt_ty(&mut f, opt_self_ty))
     };
-    debug2!("resulting map: {}", map.to_str());
+    debug!("resulting map: {}", map.to_str());
     (map, opt_self_ty, fn_sig)
 }
 
@@ -161,7 +161,7 @@ pub fn relate_free_regions(
      * Tests: `src/test/compile-fail/regions-free-region-ordering-*.rs`
      */
 
-    debug2!("relate_free_regions >>");
+    debug!("relate_free_regions >>");
 
     let mut all_tys = ~[];
     for arg in fn_sig.inputs.iter() {
@@ -172,7 +172,7 @@ pub fn relate_free_regions(
     }
 
     for &t in all_tys.iter() {
-        debug2!("relate_free_regions(t={})", ppaux::ty_to_str(tcx, t));
+        debug!("relate_free_regions(t={})", ppaux::ty_to_str(tcx, t));
         relate_nested_regions(tcx, None, t, |a, b| {
             match (&a, &b) {
                 (&ty::re_free(free_a), &ty::re_free(free_b)) => {
@@ -183,5 +183,5 @@ pub fn relate_free_regions(
         })
     }
 
-    debug2!("<< relate_free_regions");
+    debug!("<< relate_free_regions");
 }

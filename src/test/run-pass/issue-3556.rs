@@ -8,10 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern mod extra;
+#[feature(managed_boxes)];
 
-use std::io::WriterUtil;
-use std::io;
+extern mod extra;
 
 enum Token {
         Text(@~str),
@@ -26,8 +25,7 @@ fn check_strs(actual: &str, expected: &str) -> bool
 {
         if actual != expected
         {
-            io::stderr().write_line(format!("Found {}, but expected {}", actual,
-                                            expected));
+            println!("Found {}, but expected {}", actual, expected);
             return false;
         }
         return true;

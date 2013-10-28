@@ -88,7 +88,7 @@ ifneq ($(wildcard $(NON_BUILD_TARGET_TRIPLES)),)
 CFG_INFO := $(info cfg: non-build target triples $(NON_BUILD_TARGET_TRIPLES))
 endif
 
-CFG_RUSTC_FLAGS := $(RUSTFLAGS) --cfg nofmt
+CFG_RUSTC_FLAGS := $(RUSTFLAGS)
 CFG_GCCISH_CFLAGS :=
 CFG_GCCISH_LINK_FLAGS :=
 
@@ -148,11 +148,17 @@ CFG_VERSION = $(CFG_RELEASE)
 # numbers and dots here
 CFG_VERSION_WIN = 0.9
 
-ifneq ($(wildcard $(CFG_GIT)),)
-ifneq ($(wildcard $(CFG_GIT_DIR)),)
-    CFG_VERSION += $(shell git --git-dir=$(CFG_GIT_DIR) log -1 \
+# since $(CFG_GIT) may contain spaces (especially on Windows),
+# we need to escape them. (" " to r"\ ")
+# Note that $(subst ...) ignores space after `subst`,
+# so we use a hack: define $(SPACE) which contains space character.
+SPACE :=
+SPACE +=
+ifneq ($(wildcard $(subst $(SPACE),\$(SPACE),$(CFG_GIT))),)
+ifneq ($(wildcard $(subst $(SPACE),\$(SPACE),$(CFG_GIT_DIR))),)
+    CFG_VERSION += $(shell git --git-dir='$(CFG_GIT_DIR)' log -1 \
                      --pretty=format:'(%h %ci)')
-    CFG_VER_HASH = $(shell git --git-dir=$(CFG_GIT_DIR) rev-parse HEAD)
+    CFG_VER_HASH = $(shell git --git-dir='$(CFG_GIT_DIR)' rev-parse HEAD)
 endif
 endif
 
@@ -216,8 +222,6 @@ CFG_LIBRUSTC_$(1) :=$(call CFG_LIB_NAME_$(1),rustc)
 CFG_LIBSYNTAX_$(1) :=$(call CFG_LIB_NAME_$(1),syntax)
 CFG_LIBRUSTPKG_$(1) :=$(call CFG_LIB_NAME_$(1),rustpkg)
 CFG_LIBRUSTDOC_$(1) :=$(call CFG_LIB_NAME_$(1),rustdoc)
-CFG_LIBRUSTI_$(1) :=$(call CFG_LIB_NAME_$(1),rusti)
-CFG_LIBRUST_$(1) :=$(call CFG_LIB_NAME_$(1),rust)
 
 EXTRALIB_GLOB_$(1) :=$(call CFG_LIB_GLOB_$(1),extra)
 STDLIB_GLOB_$(1) :=$(call CFG_LIB_GLOB_$(1),std)
@@ -225,16 +229,12 @@ LIBRUSTC_GLOB_$(1) :=$(call CFG_LIB_GLOB_$(1),rustc)
 LIBSYNTAX_GLOB_$(1) :=$(call CFG_LIB_GLOB_$(1),syntax)
 LIBRUSTPKG_GLOB_$(1) :=$(call CFG_LIB_GLOB_$(1),rustpkg)
 LIBRUSTDOC_GLOB_$(1) :=$(call CFG_LIB_GLOB_$(1),rustdoc)
-LIBRUSTI_GLOB_$(1) :=$(call CFG_LIB_GLOB_$(1),rusti)
-LIBRUST_GLOB_$(1) :=$(call CFG_LIB_GLOB_$(1),rust)
 EXTRALIB_DSYM_GLOB_$(1) :=$(call CFG_LIB_DSYM_GLOB_$(1),extra)
 STDLIB_DSYM_GLOB_$(1) :=$(call CFG_LIB_DSYM_GLOB_$(1),std)
 LIBRUSTC_DSYM_GLOB_$(1) :=$(call CFG_LIB_DSYM_GLOB_$(1),rustc)
 LIBSYNTAX_DSYM_GLOB_$(1) :=$(call CFG_LIB_DSYM_GLOB_$(1),syntax)
 LIBRUSTPKG_DSYM_GLOB_$(1) :=$(call CFG_LIB_DSYM_GLOB_$(1),rustpkg)
 LIBRUSTDOC_DSYM_GLOB_$(1) :=$(call CFG_LIB_DSYM_GLOB_$(1),rustdoc)
-LIBRUSTI_DSYM_GLOB_$(1) :=$(call CFG_LIB_DSYM_GLOB_$(1),rusti)
-LIBRUST_DSYM_GLOB_$(1) :=$(call CFG_LIB_DSYM_GLOB_$(1),rust)
 
 endef
 
@@ -441,20 +441,14 @@ CSREQ$(1)_T_$(2)_H_$(3) = \
 	$$(TSREQ$(1)_T_$(2)_H_$(3)) \
 	$$(HBIN$(1)_H_$(3))/rustpkg$$(X_$(3)) \
 	$$(HBIN$(1)_H_$(3))/rustdoc$$(X_$(3)) \
-	$$(HBIN$(1)_H_$(3))/rusti$$(X_$(3)) \
-	$$(HBIN$(1)_H_$(3))/rust$$(X_$(3)) \
 	$$(HLIB$(1)_H_$(3))/$(CFG_LIBRUSTPKG_$(3)) \
 	$$(HLIB$(1)_H_$(3))/$(CFG_LIBRUSTDOC_$(3)) \
-	$$(HLIB$(1)_H_$(3))/$(CFG_LIBRUSTI_$(3)) \
-	$$(HLIB$(1)_H_$(3))/$(CFG_LIBRUST_$(3)) \
 	$$(TLIB$(1)_T_$(2)_H_$(3))/$(CFG_STDLIB_$(2)) \
 	$$(TLIB$(1)_T_$(2)_H_$(3))/$(CFG_EXTRALIB_$(2))  \
 	$$(TLIB$(1)_T_$(2)_H_$(3))/$(CFG_LIBSYNTAX_$(2))  \
 	$$(TLIB$(1)_T_$(2)_H_$(3))/$(CFG_LIBRUSTC_$(2)) \
 	$$(TLIB$(1)_T_$(2)_H_$(3))/$(CFG_LIBRUSTPKG_$(2)) \
-	$$(TLIB$(1)_T_$(2)_H_$(3))/$(CFG_LIBRUSTDOC_$(2)) \
-	$$(TLIB$(1)_T_$(2)_H_$(3))/$(CFG_LIBRUSTI_$(2)) \
-	$$(TLIB$(1)_T_$(2)_H_$(3))/$(CFG_LIBRUST_$(2))
+	$$(TLIB$(1)_T_$(2)_H_$(3))/$(CFG_LIBRUSTDOC_$(2))
 
 ifeq ($(1),0)
 # Don't run the the stage0 compiler under valgrind - that ship has sailed

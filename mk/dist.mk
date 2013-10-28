@@ -29,8 +29,6 @@ PKG_FILES := \
       README.txt                               \
       driver                                   \
       librustpkg                               \
-      librusti                                 \
-      librust                                  \
       librustc                                 \
       compiletest                              \
       etc                                      \

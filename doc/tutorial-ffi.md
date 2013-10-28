@@ -135,7 +135,7 @@ the true length after compression for setting the length.
 ~~~~ {.xfail-test}
 pub fn compress(src: &[u8]) -> ~[u8] {
     #[fixed_stack_segment]; #[inline(never)];
-    
+
     unsafe {
         let srclen = src.len() as size_t;
         let psrc = vec::raw::to_ptr(src);
@@ -157,7 +157,7 @@ format and `snappy_uncompressed_length` will retrieve the exact buffer size requ
 ~~~~ {.xfail-test}
 pub fn uncompress(src: &[u8]) -> Option<~[u8]> {
     #[fixed_stack_segment]; #[inline(never)];
-    
+
     unsafe {
         let srclen = src.len() as size_t;
         let psrc = vec::raw::to_ptr(src);
@@ -236,7 +236,7 @@ use std::libc::size_t;
 unsafe fn snappy_max_compressed_length(source_length: size_t) -> size_t {
     #[fixed_stack_segment]; #[inline(never)];
     return snappy_max_compressed_length(source_length);
-    
+
     #[link_args = "-lsnappy"]
     extern {
         fn snappy_max_compressed_length(source_length: size_t) -> size_t;
@@ -259,9 +259,9 @@ check that one of the following conditions holds:
 2. The call occurs inside of an `extern fn`;
 3. The call occurs within a stack closure created by some other
    safe fn.
-   
+
 All of these conditions ensure that you are running on a large stack
-segmented. However, they are sometimes too strict. If your application
+segment. However, they are sometimes too strict. If your application
 will be making many calls into C, it is often beneficial to promote
 the `#[fixed_stack_segment]` attribute higher up the call chain.  For
 example, the Rust compiler actually labels main itself as requiring a
@@ -298,9 +298,9 @@ impl<T: Send> Unique<T> {
     pub fn new(value: T) -> Unique<T> {
         #[fixed_stack_segment];
         #[inline(never)];
-        
+
         unsafe {
-            let ptr = malloc(std::sys::size_of::<T>() as size_t) as *mut T;
+            let ptr = malloc(std::mem::size_of::<T>() as size_t) as *mut T;
             assert!(!ptr::is_null(ptr));
             // `*ptr` is uninitialized, and `*ptr = value` would attempt to destroy it
             intrinsics::move_val_init(&mut *ptr, value);
@@ -324,7 +324,7 @@ impl<T: Send> Drop for Unique<T> {
     fn drop(&mut self) {
         #[fixed_stack_segment];
         #[inline(never)];
-        
+
         unsafe {
             let x = intrinsics::init(); // dummy value to swap in
             // moving the object out is needed to call the destructor
@@ -415,21 +415,18 @@ fn main() {
 
 Most foreign code exposes a C ABI, and Rust uses the platform's C calling convention by default when
 calling foreign functions. Some foreign functions, most notably the Windows API, use other calling
-conventions. Rust provides the `abi` attribute as a way to hint to the compiler which calling
-convention to use:
+conventions. Rust provides a way to tell the compiler which convention to use:
 
 ~~~~
 #[cfg(target_os = "win32")]
-#[abi = "stdcall"]
 #[link_name = "kernel32"]
-extern {
+extern "stdcall" {
     fn SetEnvironmentVariableA(n: *u8, v: *u8) -> int;
 }
 ~~~~
 
-The `abi` attribute applies to a foreign module (it cannot be applied to a single function within a
-module), and must be either `"cdecl"` or `"stdcall"`. The compiler may eventually support other
-calling conventions.
+This applies to the entire `extern` block, and must be either `"cdecl"` or
+`"stdcall"`. The compiler may eventually support other calling conventions.
 
 # Interoperability with foreign code
 

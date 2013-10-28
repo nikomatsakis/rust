@@ -24,13 +24,6 @@ use middle::{ty, typeck, moves};
 use middle;
 use util::ppaux::ty_to_str;
 
-use std::at_vec;
-use std::libc;
-use extra::ebml::reader;
-use extra::ebml;
-use extra::serialize;
-use extra::serialize::{Encoder, Encodable, EncoderHelpers, DecoderHelpers};
-use extra::serialize::{Decoder, Decodable};
 use syntax::ast;
 use syntax::ast_map;
 use syntax::ast_util::inlined_item_utils;
@@ -41,9 +34,18 @@ use syntax::fold::*;
 use syntax::fold;
 use syntax::parse::token;
 use syntax;
-use writer = extra::ebml::writer;
 
+use std::at_vec;
+use std::libc;
 use std::cast;
+use std::rt::io::Seek;
+
+use extra::ebml::reader;
+use extra::ebml;
+use extra::serialize;
+use extra::serialize::{Encoder, Encodable, EncoderHelpers, DecoderHelpers};
+use extra::serialize::{Decoder, Decodable};
+use writer = extra::ebml::writer;
 
 #[cfg(test)] use syntax::parse;
 #[cfg(test)] use syntax::print::pprust;
@@ -85,7 +87,7 @@ pub fn encode_inlined_item(ecx: &e::EncodeContext,
                            path: &[ast_map::path_elt],
                            ii: ast::inlined_item,
                            maps: Maps) {
-    debug2!("> Encoding inlined item: {}::{} ({})",
+    debug!("> Encoding inlined item: {}::{} ({})",
            ast_map::path_to_str(path, token::get_ident_interner()),
            ecx.tcx.sess.str_of(ii.ident()),
            ebml_w.writer.tell());
@@ -98,7 +100,7 @@ pub fn encode_inlined_item(ecx: &e::EncodeContext,
     encode_side_tables_for_ii(ecx, maps, ebml_w, &ii);
     ebml_w.end_tag();
 
-    debug2!("< Encoded inlined fn: {}::{} ({})",
+    debug!("< Encoded inlined fn: {}::{} ({})",
            ast_map::path_to_str(path, token::get_ident_interner()),
            ecx.tcx.sess.str_of(ii.ident()),
            ebml_w.writer.tell());
@@ -118,7 +120,7 @@ pub fn decode_inlined_item(cdata: @cstore::crate_metadata,
     match par_doc.opt_child(c::tag_ast) {
       None => None,
       Some(ast_doc) => {
-        debug2!("> Decoding inlined fn: {}::?",
+        debug!("> Decoding inlined fn: {}::?",
                ast_map::path_to_str(path, token::get_ident_interner()));
         let mut ast_dsr = reader::Decoder(ast_doc);
         let from_id_range = Decodable::decode(&mut ast_dsr);
@@ -130,8 +132,8 @@ pub fn decode_inlined_item(cdata: @cstore::crate_metadata,
         };
         let raw_ii = decode_ast(ast_doc);
         let ii = renumber_ast(xcx, raw_ii);
-        debug2!("Fn named: {}", tcx.sess.str_of(ii.ident()));
-        debug2!("< Decoded inlined fn: {}::{}",
+        debug!("Fn named: {}", tcx.sess.str_of(ii.ident()));
+        debug!("< Decoded inlined fn: {}::{}",
                ast_map::path_to_str(path, token::get_ident_interner()),
                tcx.sess.str_of(ii.ident()));
         ast_map::map_decoded_item(tcx.sess.diagnostic(),
@@ -141,7 +143,7 @@ pub fn decode_inlined_item(cdata: @cstore::crate_metadata,
         decode_side_tables(xcx, ast_doc);
         match ii {
           ast::ii_item(i) => {
-            debug2!(">>> DECODED ITEM >>>\n{}\n<<< DECODED ITEM <<<",
+            debug!(">>> DECODED ITEM >>>\n{}\n<<< DECODED ITEM <<<",
                    syntax::print::pprust::item_to_str(i, tcx.sess.intr()));
           }
           _ => { }
@@ -235,7 +237,7 @@ impl tr for ast::DefId {
 
 impl tr for Option<ast::DefId> {
     fn tr(&self, xcx: @ExtendedDecodeContext) -> Option<ast::DefId> {
-        self.map(|d| xcx.tr_def_id(*d))
+        self.map(|d| xcx.tr_def_id(d))
     }
 }
 
@@ -312,7 +314,7 @@ impl fold::ast_fold for NestedItemsDropper {
                     node: ast::DeclItem(_),
                     span: _
                 }, _) => None,
-                ast::StmtMac(*) => fail2!("unexpanded macro in astencode")
+                ast::StmtMac(*) => fail!("unexpanded macro in astencode")
             }
         }.collect();
         let blk_sans_items = ast::Block {
@@ -417,7 +419,7 @@ impl tr for ast::Def {
             ast::DefMethod(did0.tr(xcx), did1.map(|did1| did1.tr(xcx)))
           }
           ast::DefSelfTy(nid) => { ast::DefSelfTy(xcx.tr_id(nid)) }
-          ast::DefSelf(nid) => { ast::DefSelf(xcx.tr_id(nid)) }
+          ast::DefSelf(nid, m) => { ast::DefSelf(xcx.tr_id(nid), m) }
           ast::DefMod(did) => { ast::DefMod(did.tr(xcx)) }
           ast::DefForeignMod(did) => { ast::DefForeignMod(did.tr(xcx)) }
           ast::DefStatic(did, m) => { ast::DefStatic(did.tr(xcx), m) }
@@ -752,7 +754,7 @@ impl vtable_decoder_helpers for reader::Decoder {
                     )
                   }
                   // hard to avoid - user input
-                  _ => fail2!("bad enum variant")
+                  _ => fail!("bad enum variant")
                 }
             }
         }
@@ -907,7 +909,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
                              id: ast::NodeId) {
     let tcx = ecx.tcx;
 
-    debug2!("Encoding side tables for id {}", id);
+    debug!("Encoding side tables for id {}", id);
 
     {
         let r = tcx.def_map.find(&id);
@@ -1095,7 +1097,7 @@ impl ebml_decoder_decoder_helpers for reader::Decoder {
         // are not used during trans.
 
         return do self.read_opaque |this, doc| {
-            debug2!("read_ty({})", type_string(doc));
+            debug!("read_ty({})", type_string(doc));
 
             let ty = tydecode::parse_ty_data(
                 *doc.data,
@@ -1199,7 +1201,7 @@ impl ebml_decoder_decoder_helpers for reader::Decoder {
             NominalType | TypeWithId | RegionParameter => xcx.tr_def_id(did),
             TypeParameter => xcx.tr_intern_def_id(did)
         };
-        debug2!("convert_def_id(source={:?}, did={:?})={:?}", source, did, r);
+        debug!("convert_def_id(source={:?}, did={:?})={:?}", source, did, r);
         return r;
     }
 }
@@ -1212,7 +1214,7 @@ fn decode_side_tables(xcx: @ExtendedDecodeContext,
         let id0 = entry_doc.get(c::tag_table_id as uint).as_int();
         let id = xcx.tr_id(id0);
 
-        debug2!(">> Side table document with tag 0x{:x} \
+        debug!(">> Side table document with tag 0x{:x} \
                 found for id {} (orig {})",
                tag, id, id0);
 
@@ -1233,7 +1235,7 @@ fn decode_side_tables(xcx: @ExtendedDecodeContext,
                     }
                     c::tag_table_node_type => {
                         let ty = val_dsr.read_ty(xcx);
-                        debug2!("inserting ty for node {:?}: {}",
+                        debug!("inserting ty for node {:?}: {}",
                                id, ty_to_str(dcx.tcx, ty));
                         dcx.tcx.node_types.insert(id as uint, ty);
                     }
@@ -1286,7 +1288,7 @@ fn decode_side_tables(xcx: @ExtendedDecodeContext,
             }
         }
 
-        debug2!(">< Side table doc loaded");
+        debug!(">< Side table doc loaded");
         true
     };
 }
@@ -1342,14 +1344,14 @@ fn mk_ctxt() -> @fake_ext_ctxt {
 
 #[cfg(test)]
 fn roundtrip(in_item: Option<@ast::item>) {
-    use std::io;
+    use std::rt::io::Decorator;
+    use std::rt::io::mem::MemWriter;
 
     let in_item = in_item.unwrap();
-    let bytes = do io::with_bytes_writer |wr| {
-        let mut ebml_w = writer::Encoder(wr);
-        encode_item_ast(&mut ebml_w, in_item);
-    };
-    let ebml_doc = reader::Doc(@bytes);
+    let wr = @mut MemWriter::new();
+    let mut ebml_w = writer::Encoder(wr);
+    encode_item_ast(&mut ebml_w, in_item);
+    let ebml_doc = reader::Doc(@wr.inner_ref().to_owned());
     let out_item = decode_item_ast(ebml_doc);
 
     assert_eq!(in_item, out_item);
@@ -1404,6 +1406,6 @@ fn test_simplification() {
                      == pprust::item_to_str(item_exp,
                                             token::get_ident_interner()));
       }
-      _ => fail2!()
+      _ => fail!()
     }
 }

@@ -9,19 +9,16 @@
 // except according to those terms.
 
 use cell::Cell;
-use c_str::ToCStr;
-use cast::transmute;
-use io::{Writer, WriterUtil};
-use io;
-use libc::{c_char, size_t, STDERR_FILENO};
+use c_str::{ToCStr, CString};
+use libc::{c_char, size_t};
 use option::{Option, None, Some};
 use ptr::RawPtr;
 use rt::env;
 use rt::local::Local;
+use rt::task;
 use rt::task::Task;
 use str::{OwnedStr, StrSlice};
 use str;
-use sys;
 use uint;
 use unstable::raw;
 use vec::ImmutableVector;
@@ -32,9 +29,9 @@ static ALL_BITS: uint = FROZEN_BIT | MUT_BIT;
 
 #[deriving(Eq)]
 pub struct BorrowRecord {
-    box: *mut raw::Box<()>,
+    priv box: *mut raw::Box<()>,
     file: *c_char,
-    line: size_t
+    priv line: size_t
 }
 
 fn try_take_task_borrow_list() -> Option<~[BorrowRecord]> {
@@ -60,14 +57,14 @@ pub fn clear_task_borrow_list() {
     let _ = try_take_task_borrow_list();
 }
 
-unsafe fn fail_borrowed(box: *mut raw::Box<()>, file: *c_char, line: size_t) {
+unsafe fn fail_borrowed(box: *mut raw::Box<()>, file: *c_char, line: size_t) -> ! {
     debug_borrow("fail_borrowed: ", box, 0, 0, file, line);
 
     match try_take_task_borrow_list() {
         None => { // not recording borrows
             let msg = "borrowed";
             do msg.with_c_str |msg_p| {
-                sys::begin_unwind_(msg_p, file, line);
+                task::begin_unwind(msg_p, file, line);
             }
         }
         Some(borrow_list) => { // recording borrows
@@ -83,7 +80,7 @@ unsafe fn fail_borrowed(box: *mut raw::Box<()>, file: *c_char, line: size_t) {
                 }
             }
             do msg.with_c_str |msg_p| {
-                sys::begin_unwind_(msg_p, file, line)
+                task::begin_unwind(msg_p, file, line)
             }
         }
     }
@@ -113,51 +110,10 @@ unsafe fn debug_borrow<T,P:RawPtr<T>>(tag: &'static str,
                                                new_bits: uint,
                                                filename: *c_char,
                                                line: size_t) {
-        let dbg = STDERR_FILENO as io::fd_t;
-        dbg.write_str(tag);
-        dbg.write_hex(p.to_uint());
-        dbg.write_str(" ");
-        dbg.write_hex(old_bits);
-        dbg.write_str(" ");
-        dbg.write_hex(new_bits);
-        dbg.write_str(" ");
-        dbg.write_cstr(filename);
-        dbg.write_str(":");
-        dbg.write_hex(line as uint);
-        dbg.write_str("\n");
-    }
-}
-
-trait DebugPrints {
-    fn write_hex(&self, val: uint);
-    unsafe fn write_cstr(&self, str: *c_char);
-}
-
-impl DebugPrints for io::fd_t {
-    fn write_hex(&self, mut i: uint) {
-        let letters = ['0', '1', '2', '3', '4', '5', '6', '7', '8',
-                       '9', 'a', 'b', 'c', 'd', 'e', 'f'];
-        static UINT_NIBBLES: uint = ::uint::bytes << 1;
-        let mut buffer = [0_u8, ..UINT_NIBBLES+1];
-        let mut c = UINT_NIBBLES;
-        while c > 0 {
-            c -= 1;
-            buffer[c] = letters[i & 0xF] as u8;
-            i >>= 4;
-        }
-        self.write(buffer.slice(0, UINT_NIBBLES));
-    }
-
-    unsafe fn write_cstr(&self, p: *c_char) {
-        #[fixed_stack_segment]; #[inline(never)];
-        use libc::strlen;
-        use vec;
-
-        let len = strlen(p);
-        let p: *u8 = transmute(p);
-        do vec::raw::buf_as_slice(p, len as uint) |s| {
-            self.write(s);
-        }
+        let filename = CString::new(filename, false);
+        rterrln!("{}{:#x} {:x} {:x} {}:{}",
+                 tag, p.to_uint(), old_bits, new_bits,
+                 filename.as_str().unwrap(), line);
     }
 }
 
@@ -223,7 +179,7 @@ pub unsafe fn unrecord_borrow(a: *u8, old_ref_count: uint,
             if br.box != a || br.file != file || br.line != line {
                 let err = format!("wrong borrow found, br={:?}", br);
                 do err.with_c_str |msg_p| {
-                    sys::begin_unwind_(msg_p, file, line)
+                    task::begin_unwind(msg_p, file, line)
                 }
             }
             borrow_list

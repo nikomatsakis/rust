@@ -10,7 +10,6 @@
 
 mod rusti {
     #[nolink]
-    #[abi = "rust-intrinsic"]
     extern "rust-intrinsic" {
         pub fn morestack_addr() -> *();
     }
@@ -20,6 +19,6 @@ pub fn main() {
     unsafe {
         let addr = rusti::morestack_addr();
         assert!(addr.is_not_null());
-        error2!("{}", addr);
+        error!("{}", addr);
     }
 }

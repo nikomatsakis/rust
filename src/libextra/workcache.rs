@@ -10,16 +10,19 @@
 
 #[allow(missing_doc)];
 
-use digest::Digest;
 use json;
 use json::ToJson;
-use sha1::Sha1;
 use serialize::{Encoder, Encodable, Decoder, Decodable};
 use arc::{Arc,RWArc};
 use treemap::TreeMap;
 use std::cell::Cell;
 use std::comm::{PortOne, oneshot};
-use std::{io, os, task};
+use std::{os, str, task};
+use std::rt::io;
+use std::rt::io::Writer;
+use std::rt::io::Decorator;
+use std::rt::io::mem::MemWriter;
+use std::rt::io::file::FileInfo;
 
 /**
 *
@@ -128,8 +131,8 @@ impl WorkMap {
 }
 
 pub struct Database {
-    db_filename: Path,
-    db_cache: TreeMap<~str, ~str>,
+    priv db_filename: Path,
+    priv db_cache: TreeMap<~str, ~str>,
     db_dirty: bool
 }
 
@@ -174,21 +177,21 @@ impl Database {
 
     // FIXME #4330: This should have &mut self and should set self.db_dirty to false.
     fn save(&self) {
-        let f = io::file_writer(&self.db_filename, [io::Create, io::Truncate]).unwrap();
-        self.db_cache.to_json().to_pretty_writer(f);
+        let f = @mut self.db_filename.open_writer(io::CreateOrTruncate);
+        self.db_cache.to_json().to_pretty_writer(f as @mut io::Writer);
     }
 
     fn load(&mut self) {
         assert!(!self.db_dirty);
         assert!(os::path_exists(&self.db_filename));
-        let f = io::file_reader(&self.db_filename);
+        let f = self.db_filename.open_reader(io::Open);
         match f {
-            Err(e) => fail2!("Couldn't load workcache database {}: {}",
-                            self.db_filename.to_str(), e.to_str()),
-            Ok(r) =>
-                match json::from_reader(r) {
-                    Err(e) => fail2!("Couldn't parse workcache database (from file {}): {}",
-                                    self.db_filename.to_str(), e.to_str()),
+            None => fail!("Couldn't load workcache database {}",
+                          self.db_filename.display()),
+            Some(r) =>
+                match json::from_reader(@mut r as @mut io::Reader) {
+                    Err(e) => fail!("Couldn't parse workcache database (from file {}): {}",
+                                    self.db_filename.display(), e.to_str()),
                     Ok(r) => {
                         let mut decoder = json::Decoder(r);
                         self.db_cache = Decodable::decode(&mut decoder);
@@ -209,7 +212,7 @@ impl Drop for Database {
 
 pub struct Logger {
     // FIXME #4432: Fill in
-    a: ()
+    priv a: ()
 }
 
 impl Logger {
@@ -219,7 +222,7 @@ impl Logger {
     }
 
     pub fn info(&self, i: &str) {
-        io::println(~"workcache: " + i);
+        info!("workcache: {}", i);
     }
 }
 
@@ -228,26 +231,26 @@ pub type FreshnessMap = TreeMap<~str,extern fn(&str,&str)->bool>;
 #[deriving(Clone)]
 pub struct Context {
     db: RWArc<Database>,
-    logger: RWArc<Logger>,
-    cfg: Arc<json::Object>,
+    priv logger: RWArc<Logger>,
+    priv cfg: Arc<json::Object>,
     /// Map from kinds (source, exe, url, etc.) to a freshness function.
     /// The freshness function takes a name (e.g. file path) and value
     /// (e.g. hash of file contents) and determines whether it's up-to-date.
     /// For example, in the file case, this would read the file off disk,
     /// hash it, and return the result of comparing the given hash and the
     /// read hash for equality.
-    freshness: Arc<FreshnessMap>
+    priv freshness: Arc<FreshnessMap>
 }
 
 pub struct Prep<'self> {
-    ctxt: &'self Context,
-    fn_name: &'self str,
-    declared_inputs: WorkMap,
+    priv ctxt: &'self Context,
+    priv fn_name: &'self str,
+    priv declared_inputs: WorkMap,
 }
 
 pub struct Exec {
-    discovered_inputs: WorkMap,
-    discovered_outputs: WorkMap
+    priv discovered_inputs: WorkMap,
+    priv discovered_outputs: WorkMap
 }
 
 enum Work<'self, T> {
@@ -256,33 +259,18 @@ enum Work<'self, T> {
 }
 
 fn json_encode<T:Encodable<json::Encoder>>(t: &T) -> ~str {
-    do io::with_str_writer |wr| {
-        let mut encoder = json::Encoder(wr);
-        t.encode(&mut encoder);
-    }
+    let writer = @mut MemWriter::new();
+    let mut encoder = json::Encoder(writer as @mut io::Writer);
+    t.encode(&mut encoder);
+    str::from_utf8(writer.inner_ref().as_slice())
 }
 
 // FIXME(#5121)
 fn json_decode<T:Decodable<json::Decoder>>(s: &str) -> T {
-    debug2!("json decoding: {}", s);
-    do io::with_str_reader(s) |rdr| {
-        let j = json::from_reader(rdr).unwrap();
-        let mut decoder = json::Decoder(j);
-        Decodable::decode(&mut decoder)
-    }
-}
-
-fn digest<T:Encodable<json::Encoder>>(t: &T) -> ~str {
-    let mut sha = ~Sha1::new();
-    (*sha).input_str(json_encode(t));
-    (*sha).result_str()
-}
-
-fn digest_file(path: &Path) -> ~str {
-    let mut sha = ~Sha1::new();
-    let s = io::read_whole_file_str(path);
-    (*sha).input_str(s.unwrap());
-    (*sha).result_str()
+    debug!("json decoding: {}", s);
+    let j = json::from_str(s).unwrap();
+    let mut decoder = json::Decoder(j);
+    Decodable::decode(&mut decoder)
 }
 
 impl Context {
@@ -321,7 +309,7 @@ impl Exec {
                           dependency_kind: &str,
                           dependency_name: &str,
                           dependency_val: &str) {
-        debug2!("Discovering input {} {} {}", dependency_kind, dependency_name, dependency_val);
+        debug!("Discovering input {} {} {}", dependency_kind, dependency_name, dependency_val);
         self.discovered_inputs.insert_work_key(WorkKey::new(dependency_kind, dependency_name),
                                  dependency_val.to_owned());
     }
@@ -329,7 +317,7 @@ impl Exec {
                            dependency_kind: &str,
                            dependency_name: &str,
                            dependency_val: &str) {
-        debug2!("Discovering output {} {} {}", dependency_kind, dependency_name, dependency_val);
+        debug!("Discovering output {} {} {}", dependency_kind, dependency_name, dependency_val);
         self.discovered_outputs.insert_work_key(WorkKey::new(dependency_kind, dependency_name),
                                  dependency_val.to_owned());
     }
@@ -368,7 +356,7 @@ impl<'self> Prep<'self> {
 
 impl<'self> Prep<'self> {
     pub fn declare_input(&mut self, kind: &str, name: &str, val: &str) {
-        debug2!("Declaring input {} {} {}", kind, name, val);
+        debug!("Declaring input {} {} {}", kind, name, val);
         self.declared_inputs.insert_work_key(WorkKey::new(kind, name),
                                  val.to_owned());
     }
@@ -377,9 +365,9 @@ impl<'self> Prep<'self> {
                 name: &str, val: &str) -> bool {
         let k = kind.to_owned();
         let f = self.ctxt.freshness.get().find(&k);
-        debug2!("freshness for: {}/{}/{}/{}", cat, kind, name, val)
+        debug!("freshness for: {}/{}/{}/{}", cat, kind, name, val)
         let fresh = match f {
-            None => fail2!("missing freshness-function for '{}'", kind),
+            None => fail!("missing freshness-function for '{}'", kind),
             Some(f) => (*f)(name, val)
         };
         do self.ctxt.logger.write |lg| {
@@ -418,7 +406,7 @@ impl<'self> Prep<'self> {
             &'self self, blk: ~fn(&mut Exec) -> T) -> Work<'self, T> {
         let mut bo = Some(blk);
 
-        debug2!("exec_work: looking up {} and {:?}", self.fn_name,
+        debug!("exec_work: looking up {} and {:?}", self.fn_name,
                self.declared_inputs);
         let cached = do self.ctxt.db.read |db| {
             db.prepare(self.fn_name, &self.declared_inputs)
@@ -429,14 +417,14 @@ impl<'self> Prep<'self> {
             if self.all_fresh("declared input",&self.declared_inputs) &&
                self.all_fresh("discovered input", disc_in) &&
                self.all_fresh("discovered output", disc_out) => {
-                debug2!("Cache hit!");
-                debug2!("Trying to decode: {:?} / {:?} / {}",
+                debug!("Cache hit!");
+                debug!("Trying to decode: {:?} / {:?} / {}",
                        disc_in, disc_out, *res);
                 Work::from_value(json_decode(*res))
             }
 
             _ => {
-                debug2!("Cache miss!");
+                debug!("Cache miss!");
                 let (port, chan) = oneshot();
                 let blk = bo.take_unwrap();
                 let chan = Cell::new(chan);
@@ -492,13 +480,14 @@ impl<'self, T:Send +
 
 #[test]
 fn test() {
-    use std::io::WriterUtil;
     use std::{os, run};
+    use std::rt::io::ReaderUtil;
+    use std::str::from_utf8_owned;
 
     // Create a path to a new file 'filename' in the directory in which
     // this test is running.
     fn make_path(filename: ~str) -> Path {
-        let pth = os::self_exe_path().expect("workcache::test failed").pop().push(filename);
+        let pth = os::self_exe_path().expect("workcache::test failed").with_filename(filename);
         if os::path_exists(&pth) {
             os::remove_file(&pth);
         }
@@ -507,8 +496,7 @@ fn test() {
 
     let pth = make_path(~"foo.c");
     {
-        let r = io::file_writer(&pth, [io::Create]);
-        r.unwrap().write_str("int main() { return 0; }");
+        pth.open_writer(io::Create).write(bytes!("int main() { return 0; }"));
     }
 
     let db_path = make_path(~"db.json");
@@ -522,17 +510,24 @@ fn test() {
         let subcx = cx.clone();
         let pth = pth.clone();
 
-        prep.declare_input("file", pth.to_str(), digest_file(&pth));
+        let file_content = from_utf8_owned(pth.open_reader(io::Open).read_to_end());
+
+        // FIXME (#9639): This needs to handle non-utf8 paths
+        prep.declare_input("file", pth.as_str().unwrap(), file_content);
         do prep.exec |_exe| {
             let out = make_path(~"foo.o");
-            run::process_status("gcc", [pth.to_str(), ~"-o", out.to_str()]);
+            // FIXME (#9639): This needs to handle non-utf8 paths
+            run::process_status("gcc", [pth.as_str().unwrap().to_owned(),
+                                        ~"-o",
+                                        out.as_str().unwrap().to_owned()]);
 
             let _proof_of_concept = subcx.prep("subfn");
             // Could run sub-rules inside here.
 
-            out.to_str()
+            // FIXME (#9639): This needs to handle non-utf8 paths
+            out.as_str().unwrap().to_owned()
         }
     };
 
-    io::println(s);
+    println(s);
 }

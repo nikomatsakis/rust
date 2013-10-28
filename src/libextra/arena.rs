@@ -42,7 +42,7 @@ use std::cast::{transmute, transmute_mut, transmute_mut_region};
 use std::cast;
 use std::num;
 use std::ptr;
-use std::sys;
+use std::mem;
 use std::uint;
 use std::vec;
 use std::unstable::intrinsics;
@@ -123,18 +123,18 @@ unsafe fn destroy_chunk(chunk: &Chunk) {
         let (tydesc, is_done) = un_bitpack_tydesc_ptr(*tydesc_data);
         let (size, align) = ((*tydesc).size, (*tydesc).align);
 
-        let after_tydesc = idx + sys::size_of::<*TyDesc>();
+        let after_tydesc = idx + mem::size_of::<*TyDesc>();
 
         let start = round_up_to(after_tydesc, align);
 
-        //debug2!("freeing object: idx = {}, size = {}, align = {}, done = {}",
+        //debug!("freeing object: idx = {}, size = {}, align = {}, done = {}",
         //       start, size, align, is_done);
         if is_done {
             ((*tydesc).drop_glue)(ptr::offset(buf, start as int) as *i8);
         }
 
         // Find where the next tydesc lives
-        idx = round_up_to(start + size, sys::pref_align_of::<*TyDesc>());
+        idx = round_up_to(start + size, mem::pref_align_of::<*TyDesc>());
     }
 }
 
@@ -176,7 +176,7 @@ impl Arena {
             }
             this.pod_head.fill = end;
 
-            //debug2!("idx = {}, size = {}, align = {}, fill = {}",
+            //debug!("idx = {}, size = {}, align = {}, fill = {}",
             //       start, n_bytes, align, head.fill);
 
             ptr::offset(vec::raw::to_ptr(this.pod_head.data), start as int)
@@ -220,7 +220,7 @@ impl Arena {
                 let head = transmute_mut_region(&mut self.head);
 
                 tydesc_start = head.fill;
-                after_tydesc = head.fill + sys::size_of::<*TyDesc>();
+                after_tydesc = head.fill + mem::size_of::<*TyDesc>();
                 start = round_up_to(after_tydesc, align);
                 end = start + n_bytes;
             }
@@ -230,9 +230,9 @@ impl Arena {
             }
 
             let head = transmute_mut_region(&mut self.head);
-            head.fill = round_up_to(end, sys::pref_align_of::<*TyDesc>());
+            head.fill = round_up_to(end, mem::pref_align_of::<*TyDesc>());
 
-            //debug2!("idx = {}, size = {}, align = {}, fill = {}",
+            //debug!("idx = {}, size = {}, align = {}, fill = {}",
             //       start, n_bytes, align, head.fill);
 
             let buf = vec::raw::to_ptr(self.head.data);
@@ -305,6 +305,6 @@ fn test_arena_destructors_fail() {
     // Now, fail while allocating
     do arena.alloc::<@int> {
         // Now fail.
-        fail2!();
+        fail!();
     };
 }

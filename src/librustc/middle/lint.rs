@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -359,7 +359,7 @@ impl Context {
                 return *k;
             }
         }
-        fail2!("unregistered lint {:?}", lint);
+        fail!("unregistered lint {:?}", lint);
     }
 
     fn span_lint(&self, lint: lint, span: Span, msg: &str) {
@@ -372,12 +372,16 @@ impl Context {
 
         let mut note = None;
         let msg = match src {
-            Default | CommandLine => {
-                format!("{} [-{} {}{}]", msg, match level {
+            Default => {
+                format!("{}, \\#[{}({})] on by default", msg,
+                    level_to_str(level), self.lint_to_str(lint))
+            },
+            CommandLine => {
+                format!("{} [-{} {}]", msg,
+                    match level {
                         warn => 'W', deny => 'D', forbid => 'F',
-                        allow => fail2!()
-                    }, self.lint_to_str(lint).replace("_", "-"),
-                    if src == Default { " (default)" } else { "" })
+                        allow => fail!()
+                    }, self.lint_to_str(lint).replace("_", "-"))
             },
             Node(src) => {
                 note = Some(src);
@@ -387,7 +391,7 @@ impl Context {
         match level {
             warn =>          { self.tcx.sess.span_warn(span, msg); }
             deny | forbid => { self.tcx.sess.span_err(span, msg);  }
-            allow => fail2!(),
+            allow => fail!(),
         }
 
         for &span in note.iter() {
@@ -522,7 +526,7 @@ fn check_type_limits(cx: &Context, e: &ast::Expr) {
             ast::BiGt => v >= min,
             ast::BiGe => v > min,
             ast::BiEq | ast::BiNe => v >= min && v <= max,
-            _ => fail2!()
+            _ => fail!()
         }
     }
 
@@ -578,7 +582,7 @@ fn check_type_limits(cx: &Context, e: &ast::Expr) {
                         ast::lit_int_unsuffixed(v) => v,
                         _ => return true
                     },
-                    _ => fail2!()
+                    _ => fail!()
                 };
                 is_valid(norm_binop, lit_val, min, max)
             }
@@ -591,7 +595,7 @@ fn check_type_limits(cx: &Context, e: &ast::Expr) {
                         ast::lit_int_unsuffixed(v) => v as u64,
                         _ => return true
                     },
-                    _ => fail2!()
+                    _ => fail!()
                 };
                 is_valid(norm_binop, lit_val, min, max)
             }
@@ -809,27 +813,24 @@ fn check_unused_unsafe(cx: &Context, e: &ast::Expr) {
 }
 
 fn check_unused_mut_pat(cx: &Context, p: @ast::Pat) {
-    let mut used = false;
-    let mut bindings = 0;
-    do pat_util::pat_bindings(cx.tcx.def_map, p) |_, id, _, _| {
-        used = used || cx.tcx.used_mut_nodes.contains(&id);
-        bindings += 1;
-    }
-    if !used {
-        let msg = if bindings == 1 {
-            "variable does not need to be mutable"
-        } else {
-            "variables do not need to be mutable"
-        };
-        cx.span_lint(unused_mut, p.span, msg);
-    }
-}
-
-fn check_unused_mut_fn_decl(cx: &Context, fd: &ast::fn_decl) {
-    for arg in fd.inputs.iter() {
-        if arg.is_mutbl {
-            check_unused_mut_pat(cx, arg.pat);
+    match p.node {
+        ast::PatIdent(ast::BindByValue(ast::MutMutable), _, _) => {
+            let mut used = false;
+            let mut bindings = 0;
+            do pat_util::pat_bindings(cx.tcx.def_map, p) |_, id, _, _| {
+                used = used || cx.tcx.used_mut_nodes.contains(&id);
+                bindings += 1;
+            }
+            if !used {
+                let msg = if bindings == 1 {
+                    "variable does not need to be mutable"
+                } else {
+                    "variables do not need to be mutable"
+                };
+                cx.span_lint(unused_mut, p.span, msg);
+            }
         }
+        _ => ()
     }
 }
 
@@ -951,6 +952,11 @@ impl Visitor<()> for MissingDocLintVisitor {
                                  ~"missing documentation for a function");
             }
 
+            ast::item_mod(*) if it.vis == ast::public => {
+                self.check_attrs(it.attrs, it.id, it.span,
+                                 ~"missing documentation for a module");
+            }
+
             ast::item_enum(ref edef, _) if it.vis == ast::public => {
                 self.check_attrs(it.attrs, it.id, it.span,
                                  ~"missing documentation for an enum");
@@ -997,7 +1003,7 @@ fn check_stability(cx: &Context, e: &ast::Expr) {
         match cx.tcx.items.find(&id.node) {
             Some(ast_node) => {
                 let s = do ast_node.with_attrs |attrs| {
-                    do attrs.map_move |a| {
+                    do attrs.map |a| {
                         attr::find_stability(a.iter().map(|a| a.meta()))
                     }
                 };
@@ -1066,6 +1072,8 @@ impl Visitor<()> for Context {
 
     fn visit_pat(&mut self, p: @ast::Pat, _: ()) {
         check_pat_non_uppercase_statics(self, p);
+        check_unused_mut_pat(self, p);
+
         visit::walk_pat(self, p, ());
     }
 
@@ -1086,30 +1094,9 @@ impl Visitor<()> for Context {
         visit::walk_stmt(self, s, ());
     }
 
-    fn visit_ty_method(&mut self, tm: &ast::TypeMethod, _: ()) {
-        check_unused_mut_fn_decl(self, &tm.decl);
-        visit::walk_ty_method(self, tm, ());
-    }
-
-    fn visit_trait_method(&mut self, tm: &ast::trait_method, _: ()) {
-        match *tm {
-            ast::required(ref m) => check_unused_mut_fn_decl(self, &m.decl),
-            ast::provided(ref m) => check_unused_mut_fn_decl(self, &m.decl)
-        }
-        visit::walk_trait_method(self, tm, ());
-    }
-
-    fn visit_local(&mut self, l: @ast::Local, _: ()) {
-        if l.is_mutbl {
-            check_unused_mut_pat(self, l.pat);
-        }
-        visit::walk_local(self, l, ());
-    }
-
     fn visit_fn(&mut self, fk: &visit::fn_kind, decl: &ast::fn_decl,
                 body: &ast::Block, span: Span, id: ast::NodeId, _: ()) {
         let recurse = |this: &mut Context| {
-            check_unused_mut_fn_decl(this, decl);
             visit::walk_fn(this, fk, decl, body, span, id, ());
         };
 

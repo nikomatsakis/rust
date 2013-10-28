@@ -13,7 +13,7 @@
 #[allow(missing_doc)];
 
 
-use std::io;
+use std::rt::io;
 
 #[cfg(not(target_os = "win32"))] use std::os;
 #[cfg(not(target_os = "win32"))] use terminfo::*;
@@ -95,20 +95,20 @@ fn cap_for_attr(attr: attr::Attr) -> &'static str {
 
 #[cfg(not(target_os = "win32"))]
 pub struct Terminal {
-    num_colors: u16,
-    priv out: @io::Writer,
+    priv num_colors: u16,
+    priv out: @mut io::Writer,
     priv ti: ~TermInfo
 }
 
 #[cfg(target_os = "win32")]
 pub struct Terminal {
-    num_colors: u16,
-    priv out: @io::Writer,
+    priv num_colors: u16,
+    priv out: @mut io::Writer,
 }
 
 #[cfg(not(target_os = "win32"))]
 impl Terminal {
-    pub fn new(out: @io::Writer) -> Result<Terminal, ~str> {
+    pub fn new(out: @mut io::Writer) -> Result<Terminal, ~str> {
         let term = os::getenv("TERM");
         if term.is_none() {
             return Err(~"TERM environment variable undefined");
@@ -127,7 +127,7 @@ impl Terminal {
         let inf = ti.unwrap();
         let nc = if inf.strings.find_equiv(&("setaf")).is_some()
                  && inf.strings.find_equiv(&("setab")).is_some() {
-                     inf.numbers.find_equiv(&("colors")).map_move_default(0, |&n| n)
+                     inf.numbers.find_equiv(&("colors")).map_default(0, |&n| n)
                  } else { 0 };
 
         return Ok(Terminal {out: out, ti: inf, num_colors: nc});
@@ -147,7 +147,7 @@ impl Terminal {
                 self.out.write(s.unwrap());
                 return true
             } else {
-                warn2!("{}", s.unwrap_err());
+                warn!("{}", s.unwrap_err());
             }
         }
         false
@@ -167,7 +167,7 @@ impl Terminal {
                 self.out.write(s.unwrap());
                 return true
             } else {
-                warn2!("{}", s.unwrap_err());
+                warn!("{}", s.unwrap_err());
             }
         }
         false
@@ -188,7 +188,7 @@ impl Terminal {
                         self.out.write(s.unwrap());
                         return true
                     } else {
-                        warn2!("{}", s.unwrap_err());
+                        warn!("{}", s.unwrap_err());
                     }
                 }
                 false
@@ -220,17 +220,17 @@ impl Terminal {
                 cap = self.ti.strings.find_equiv(&("op"));
             }
         }
-        let s = do cap.map_move_default(Err(~"can't find terminfo capability `sgr0`")) |op| {
+        let s = do cap.map_default(Err(~"can't find terminfo capability `sgr0`")) |op| {
             expand(*op, [], &mut Variables::new())
         };
         if s.is_ok() {
             self.out.write(s.unwrap());
         } else if self.num_colors > 0 {
-            warn2!("{}", s.unwrap_err());
+            warn!("{}", s.unwrap_err());
         } else {
-            // if we support attributes but not color, it would be nice to still warn2!()
+            // if we support attributes but not color, it would be nice to still warn!()
             // but it's not worth testing all known attributes just for this.
-            debug2!("{}", s.unwrap_err());
+            debug!("{}", s.unwrap_err());
         }
     }
 
@@ -243,7 +243,7 @@ impl Terminal {
 
 #[cfg(target_os = "win32")]
 impl Terminal {
-    pub fn new(out: @io::Writer) -> Result<Terminal, ~str> {
+    pub fn new(out: @mut io::Writer) -> Result<Terminal, ~str> {
         return Ok(Terminal {out: out, num_colors: 0});
     }
 

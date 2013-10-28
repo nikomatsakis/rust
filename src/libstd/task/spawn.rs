@@ -76,21 +76,24 @@ use prelude::*;
 use cast::transmute;
 use cast;
 use cell::Cell;
-use container::MutableMap;
 use comm::{Chan, GenericChan, oneshot};
+use container::MutableMap;
 use hashmap::{HashSet, HashSetMoveIterator};
 use local_data;
-use task::{Failure, SingleThreaded};
-use task::{Success, TaskOpts, TaskResult};
-use task::unkillable;
-use uint;
-use util;
-use unstable::sync::Exclusive;
 use rt::in_green_task_context;
 use rt::local::Local;
+use rt::shouldnt_be_public::{Scheduler, KillHandle, WorkQueue, Thread, EventLoop};
 use rt::task::{Task, Sched};
-use rt::shouldnt_be_public::{Scheduler, KillHandle, WorkQueue, Thread};
+use rt::task::{UnwindReasonLinked, UnwindReasonStr};
+use rt::task::{UnwindResult, Success, Failure};
 use rt::uv::uvio::UvEventLoop;
+use send_str::IntoSendStr;
+use task::SingleThreaded;
+use task::TaskOpts;
+use task::unkillable;
+use uint;
+use unstable::sync::Exclusive;
+use util;
 
 #[cfg(test)] use task::default_task_opts;
 #[cfg(test)] use comm;
@@ -182,7 +185,7 @@ fn check_generation(_younger: uint, _older: uint) { }
 
 #[inline] #[cfg(test)]
 fn incr_generation(ancestors: &AncestorList) -> uint {
-    ancestors.map_default(0, |arc| access_ancestors(arc, |a| a.generation+1))
+    ancestors.as_ref().map_default(0, |arc| access_ancestors(arc, |a| a.generation+1))
 }
 #[inline] #[cfg(not(test))]
 fn incr_generation(_ancestors: &AncestorList) -> uint { 0 }
@@ -243,7 +246,7 @@ fn each_ancestor(list:        &mut AncestorList,
 
         // The map defaults to None, because if ancestors is None, we're at
         // the end of the list, which doesn't make sense to coalesce.
-        do ancestors.map_default((None,false)) |ancestor_arc| {
+        do ancestors.as_ref().map_default((None,false)) |ancestor_arc| {
             // NB: Takes a lock! (this ancestor node)
             do access_ancestors(ancestor_arc) |nobe| {
                 // Argh, but we couldn't give it to coalesce() otherwise.
@@ -308,10 +311,10 @@ fn each_ancestor(list:        &mut AncestorList,
 // One of these per task.
 pub struct Taskgroup {
     // List of tasks with whose fates this one's is intertwined.
-    tasks:      TaskGroupArc, // 'none' means the group has failed.
+    priv tasks:      TaskGroupArc, // 'none' means the group has failed.
     // Lists of tasks who will kill us if they fail, but whom we won't kill.
-    ancestors:  AncestorList,
-    notifier:   Option<AutoNotify>,
+    priv ancestors:  AncestorList,
+    priv notifier:   Option<AutoNotify>,
 }
 
 impl Drop for Taskgroup {
@@ -321,7 +324,7 @@ impl Drop for Taskgroup {
         do RuntimeGlue::with_task_handle_and_failing |me, failing| {
             if failing {
                 for x in self.notifier.mut_iter() {
-                    x.failed = true;
+                    x.task_result = Some(Failure(UnwindReasonLinked));
                 }
                 // Take everybody down with us. After this point, every
                 // other task in the group will see 'tg' as none, which
@@ -353,7 +356,7 @@ pub fn Taskgroup(tasks: TaskGroupArc,
        ancestors: AncestorList,
        mut notifier: Option<AutoNotify>) -> Taskgroup {
     for x in notifier.mut_iter() {
-        x.failed = false;
+        x.task_result = Some(Success);
     }
 
     Taskgroup {
@@ -364,21 +367,28 @@ pub fn Taskgroup(tasks: TaskGroupArc,
 }
 
 struct AutoNotify {
-    notify_chan: Chan<TaskResult>,
-    failed: bool,
+    notify_chan: Chan<UnwindResult>,
+
+    // XXX: By value self drop would allow this to be a plain UnwindResult
+    task_result: Option<UnwindResult>,
+}
+
+impl AutoNotify {
+    pub fn new(chan: Chan<UnwindResult>) -> AutoNotify {
+        AutoNotify {
+            notify_chan: chan,
+
+            // Un-set above when taskgroup successfully made.
+            task_result: Some(Failure(UnwindReasonStr("AutoNotify::new()".into_send_str())))
+        }
+    }
 }
 
 impl Drop for AutoNotify {
     fn drop(&mut self) {
-        let result = if self.failed { Failure } else { Success };
-        self.notify_chan.send(result);
-    }
-}
+        let result = self.task_result.take_unwrap();
 
-fn AutoNotify(chan: Chan<TaskResult>) -> AutoNotify {
-    AutoNotify {
-        notify_chan: chan,
-        failed: true // Un-set above when taskgroup successfully made.
+        self.notify_chan.send(result);
     }
 }
 
@@ -386,7 +396,7 @@ fn enlist_in_taskgroup(state: TaskGroupInner, me: KillHandle,
                            is_member: bool) -> bool {
     let me = Cell::new(me); // :(
     // If 'None', the group was failing. Can't enlist.
-    do state.map_mut_default(false) |group| {
+    do state.as_mut().map_default(false) |group| {
         (if is_member {
             &mut group.members
         } else {
@@ -400,7 +410,7 @@ fn enlist_in_taskgroup(state: TaskGroupInner, me: KillHandle,
 fn leave_taskgroup(state: TaskGroupInner, me: &KillHandle, is_member: bool) {
     let me = Cell::new(me); // :(
     // If 'None', already failing and we've already gotten a kill signal.
-    do state.map_mut |group| {
+    do state.as_mut().map |group| {
         (if is_member {
             &mut group.members
         } else {
@@ -414,7 +424,7 @@ fn kill_taskgroup(state: Option<TaskGroupData>, me: &KillHandle) {
     // Might already be None, if somebody is failing simultaneously.
     // That's ok; only one task needs to do the dirty work. (Might also
     // see 'None' if somebody already failed and we got a kill signal.)
-    do state.map_move |TaskGroupData { members: members, descendants: descendants }| {
+    do state.map |TaskGroupData { members: members, descendants: descendants }| {
         for sibling in members.move_iter() {
             // Skip self - killing ourself won't do much good.
             if &sibling != me {
@@ -439,7 +449,7 @@ fn taskgroup_key() -> local_data::Key<@@mut Taskgroup> {
 struct RuntimeGlue;
 impl RuntimeGlue {
     fn kill_task(mut handle: KillHandle) {
-        do handle.kill().map_move |killed_task| {
+        do handle.kill().map |killed_task| {
             let killed_task = Cell::new(killed_task);
             do Local::borrow |sched: &mut Scheduler| {
                 sched.enqueue_task(killed_task.take());
@@ -448,7 +458,7 @@ impl RuntimeGlue {
     }
 
     fn with_task_handle_and_failing(blk: &fn(&KillHandle, bool)) {
-        rtassert!(in_green_task_context());
+        assert!(in_green_task_context());
         unsafe {
             // Can't use safe borrow, because the taskgroup destructor needs to
             // access the scheduler again to send kill signals to other tasks.
@@ -458,7 +468,7 @@ impl RuntimeGlue {
     }
 
     fn with_my_taskgroup<U>(blk: &fn(&Taskgroup) -> U) -> U {
-        rtassert!(in_green_task_context());
+        assert!(in_green_task_context());
         unsafe {
             // Can't use safe borrow, because creating new hashmaps for the
             // tasksets requires an rng, which needs to borrow the sched.
@@ -491,7 +501,7 @@ fn gen_child_taskgroup(linked: bool, supervised: bool)
         // with_my_taskgroup will lazily initialize the parent's taskgroup if
         // it doesn't yet exist. We don't want to call it in the unlinked case.
         do RuntimeGlue::with_my_taskgroup |spawner_group| {
-            let ancestors = AncestorList(spawner_group.ancestors.map(|x| x.clone()));
+            let ancestors = AncestorList(spawner_group.ancestors.as_ref().map(|x| x.clone()));
             if linked {
                 // Child is in the same group as spawner.
                 // Child's ancestors are spawner's ancestors.
@@ -553,7 +563,7 @@ fn enlist_many(child: &KillHandle, child_arc: &TaskGroupArc,
 }
 
 pub fn spawn_raw(mut opts: TaskOpts, f: ~fn()) {
-    rtassert!(in_green_task_context());
+    assert!(in_green_task_context());
 
     let child_data = Cell::new(gen_child_taskgroup(opts.linked, opts.supervised));
     let indestructible = opts.indestructible;
@@ -562,7 +572,7 @@ pub fn spawn_raw(mut opts: TaskOpts, f: ~fn()) {
         // Child task runs this code.
 
         // If child data is 'None', the enlist is vacuously successful.
-        let enlist_success = do child_data.take().map_move_default(true) |child_data| {
+        let enlist_success = do child_data.take().map_default(true) |child_data| {
             let child_data = Cell::new(child_data); // :(
             do Local::borrow |me: &mut Task| {
                 let (child_tg, ancestors) = child_data.take();
@@ -607,7 +617,7 @@ pub fn spawn_raw(mut opts: TaskOpts, f: ~fn()) {
             let work_queue = WorkQueue::new();
 
             // Create a new scheduler to hold the new task
-            let new_loop = ~UvEventLoop::new();
+            let new_loop = ~UvEventLoop::new() as ~EventLoop;
             let mut new_sched = ~Scheduler::new_special(new_loop,
                                                         work_queue,
                                                         (*sched).work_queues.clone(),
@@ -631,7 +641,7 @@ pub fn spawn_raw(mut opts: TaskOpts, f: ~fn()) {
             let (thread_port, thread_chan) = oneshot();
             let thread_port_cell = Cell::new(thread_port);
             let join_task = do Task::build_child(None) {
-                rtdebug!("running join task");
+                debug!("running join task");
                 let thread_port = thread_port_cell.take();
                 let thread: Thread = thread_port.recv();
                 thread.join();
@@ -648,11 +658,11 @@ pub fn spawn_raw(mut opts: TaskOpts, f: ~fn()) {
                 let join_task = join_task_cell.take();
 
                 let bootstrap_task = ~do Task::new_root(&mut new_sched.stack_pool, None) || {
-                    rtdebug!("boostrapping a 1:1 scheduler");
+                    debug!("boostrapping a 1:1 scheduler");
                 };
                 new_sched.bootstrap(bootstrap_task);
 
-                rtdebug!("enqueing join_task");
+                debug!("enqueing join_task");
                 // Now tell the original scheduler to join with this thread
                 // by scheduling a thread-joining task on the original scheduler
                 orig_sched_handle.send_task_from_friend(join_task);
@@ -675,16 +685,14 @@ pub fn spawn_raw(mut opts: TaskOpts, f: ~fn()) {
     if opts.notify_chan.is_some() {
         let notify_chan = opts.notify_chan.take_unwrap();
         let notify_chan = Cell::new(notify_chan);
-        let on_exit: ~fn(bool) = |success| {
-            notify_chan.take().send(
-                if success { Success } else { Failure }
-            )
+        let on_exit: ~fn(UnwindResult) = |task_result| {
+            notify_chan.take().send(task_result)
         };
         task.death.on_exit = Some(on_exit);
     }
 
     task.name = opts.name.take();
-    rtdebug!("spawn calling run_task");
+    debug!("spawn calling run_task");
     Scheduler::run_task(task);
 
 }
@@ -707,7 +715,7 @@ fn test_spawn_raw_unsupervise() {
         .. default_task_opts()
     };
     do spawn_raw(opts) {
-        fail2!();
+        fail!();
     }
 }
 
@@ -721,7 +729,7 @@ fn test_spawn_raw_notify_success() {
     };
     do spawn_raw(opts) {
     }
-    assert_eq!(notify_po.recv(), Success);
+    assert!(notify_po.recv().is_success());
 }
 
 #[test]
@@ -736,7 +744,7 @@ fn test_spawn_raw_notify_failure() {
         .. default_task_opts()
     };
     do spawn_raw(opts) {
-        fail2!();
+        fail!();
     }
-    assert_eq!(notify_po.recv(), Failure);
+    assert!(notify_po.recv().is_failure());
 }

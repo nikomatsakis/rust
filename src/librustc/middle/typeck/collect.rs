@@ -326,7 +326,7 @@ pub fn ensure_trait_methods(ccx: &CrateCtxt,
         let substd_type_param_defs = m.generics.type_param_defs.subst(tcx, &substs);
         new_type_param_defs.push_all(*substd_type_param_defs);
 
-        debug2!("static method {} type_param_defs={} ty={}, substs={}",
+        debug!("static method {} type_param_defs={} ty={}, substs={}",
                m.def_id.repr(tcx),
                new_type_param_defs.repr(tcx),
                ty.repr(tcx),
@@ -443,7 +443,7 @@ fn convert_methods(ccx: &CrateCtxt,
                                 rcvr_ast_generics,
                                 rcvr_visibility);
         let fty = ty::mk_bare_fn(tcx, mty.fty.clone());
-        debug2!("method {} (id {}) has type {}",
+        debug!("method {} (id {}) has type {}",
                 m.ident.repr(ccx.tcx),
                 m.id,
                 fty.repr(ccx.tcx));
@@ -515,7 +515,7 @@ pub fn ensure_no_ty_param_bounds(ccx: &CrateCtxt,
 
 pub fn convert(ccx: &CrateCtxt, it: &ast::item) {
     let tcx = ccx.tcx;
-    debug2!("convert: item {} with id {}", tcx.sess.str_of(it.ident), it.id);
+    debug!("convert: item {} with id {}", tcx.sess.str_of(it.ident), it.id);
     match it.node {
         // These don't define types.
         ast::item_foreign_mod(_) | ast::item_mod(_) => {}
@@ -774,7 +774,7 @@ pub fn ty_of_item(ccx: &CrateCtxt, it: &ast::item)
                 },
                 ty: ty::mk_bare_fn(ccx.tcx, tofd)
             };
-            debug2!("type of {} (id {}) is {}",
+            debug!("type of {} (id {}) is {}",
                     tcx.sess.str_of(it.ident),
                     it.id,
                     ppaux::ty_to_str(tcx, tpt.ty));
@@ -827,8 +827,8 @@ pub fn ty_of_item(ccx: &CrateCtxt, it: &ast::item)
             return tpt;
         }
         ast::item_impl(*) | ast::item_mod(_) |
-        ast::item_foreign_mod(_) => fail2!(),
-        ast::item_mac(*) => fail2!("item macros unimplemented")
+        ast::item_foreign_mod(_) => fail!(),
+        ast::item_mac(*) => fail!("item macros unimplemented")
     }
 }
 
@@ -876,7 +876,7 @@ pub fn ty_generics(ccx: &CrateCtxt,
                         def_id: local_def(param.id),
                         bounds: bounds
                     };
-                    debug2!("def for param: {}", def.repr(ccx.tcx));
+                    debug!("def for param: {}", def.repr(ccx.tcx));
                     ccx.tcx.ty_param_defs.insert(param.id, def);
                     def
                 }

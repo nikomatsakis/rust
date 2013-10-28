@@ -8,17 +8,19 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 // error-pattern:fail
 
 fn failfn() {
-    fail2!();
+    fail!();
 }
 
 fn main() {
     let y = ~0;
     let x: @~fn() = @(|| {
-        error2!("{:?}", y.clone());
+        error!("{:?}", y.clone());
     });
     failfn();
-    error2!("{:?}", x);
+    error!("{:?}", x);
 }

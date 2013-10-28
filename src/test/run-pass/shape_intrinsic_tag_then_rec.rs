@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 // Exercises a bug in the shape code that was exposed
 // on x86_64: when there is a enum embedded in an
 // interior record which is then itself interior to
@@ -57,6 +59,6 @@ pub fn main() {
     let p_: Path_ = Path_ { global: true, idents: ~[~"hi"], types: ~[t] };
     let p: path = Spanned { data: p_, span: sp };
     let x = X { sp: sp, path: p };
-    error2!("{:?}", x.path.clone());
-    error2!("{:?}", x.clone());
+    error!("{:?}", x.path.clone());
+    error!("{:?}", x.clone());
 }

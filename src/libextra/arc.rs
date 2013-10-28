@@ -117,10 +117,12 @@ pub struct Arc<T> { priv x: UnsafeArc<T> }
  */
 impl<T:Freeze+Send> Arc<T> {
     /// Create an atomically reference counted wrapper.
+    #[inline]
     pub fn new(data: T) -> Arc<T> {
         Arc { x: UnsafeArc::new(data) }
     }
 
+    #[inline]
     pub fn get<'a>(&'a self) -> &'a T {
         unsafe { &*self.x.get_immut() }
     }
@@ -148,6 +150,7 @@ impl<T:Freeze + Send> Clone for Arc<T> {
     * object. However, one of the `arc` objects can be sent to another task,
     * allowing them to share the underlying data.
     */
+    #[inline]
     fn clone(&self) -> Arc<T> {
         Arc { x: self.x.clone() }
     }
@@ -167,6 +170,7 @@ pub struct MutexArc<T> { priv x: UnsafeArc<MutexArcInner<T>> }
 
 impl<T:Send> Clone for MutexArc<T> {
     /// Duplicate a mutex-protected Arc. See arc::clone for more details.
+    #[inline]
     fn clone(&self) -> MutexArc<T> {
         // NB: Cloning the underlying mutex is not necessary. Its reference
         // count would be exactly the same as the shared state's.
@@ -255,7 +259,7 @@ impl<T:Send> MutexArc<T> {
         let inner = x.unwrap();
         let MutexArcInner { failed: failed, data: data, _ } = inner;
         if failed {
-            fail2!("Can't unwrap poisoned MutexArc - another task failed inside!");
+            fail!("Can't unwrap poisoned MutexArc - another task failed inside!");
         }
         data
     }
@@ -300,9 +304,9 @@ impl<T:Freeze + Send> MutexArc<T> {
 fn check_poison(is_mutex: bool, failed: bool) {
     if failed {
         if is_mutex {
-            fail2!("Poisoned MutexArc - another task failed inside!");
+            fail!("Poisoned MutexArc - another task failed inside!");
         } else {
-            fail2!("Poisoned rw_arc - another task failed inside!");
+            fail!("Poisoned rw_arc - another task failed inside!");
         }
     }
 }
@@ -349,6 +353,7 @@ pub struct RWArc<T> {
 
 impl<T:Freeze + Send> Clone for RWArc<T> {
     /// Duplicate a rwlock-protected Arc. See arc::clone for more details.
+    #[inline]
     fn clone(&self) -> RWArc<T> {
         RWArc { x: self.x.clone() }
     }
@@ -505,7 +510,7 @@ impl<T:Freeze + Send> RWArc<T> {
         let inner = x.unwrap();
         let RWArcInner { failed: failed, data: data, _ } = inner;
         if failed {
-            fail2!("Can't unwrap poisoned RWArc - another task failed inside!")
+            fail!("Can't unwrap poisoned RWArc - another task failed inside!")
         }
         data
     }
@@ -521,15 +526,15 @@ fn borrow_rwlock<T:Freeze + Send>(state: *mut RWArcInner<T>) -> *RWLock {
 
 /// The "write permission" token used for RWArc.write_downgrade().
 pub struct RWWriteMode<'self, T> {
-    data: &'self mut T,
-    token: sync::RWLockWriteMode<'self>,
-    poison: PoisonOnFail,
+    priv data: &'self mut T,
+    priv token: sync::RWLockWriteMode<'self>,
+    priv poison: PoisonOnFail,
 }
 
 /// The "read permission" token used for RWArc.write_downgrade().
 pub struct RWReadMode<'self, T> {
-    data: &'self T,
-    token: sync::RWLockReadMode<'self>,
+    priv data: &'self T,
+    priv token: sync::RWLockReadMode<'self>,
 }
 
 impl<'self, T:Freeze + Send> RWWriteMode<'self, T> {
@@ -619,7 +624,7 @@ mod tests {
         assert_eq!(arc_v.get()[2], 3);
         assert_eq!(arc_v.get()[4], 5);
 
-        info2!("{:?}", arc_v);
+        info!("{:?}", arc_v);
     }
 
     #[test]
@@ -823,7 +828,7 @@ mod tests {
         do 5.times {
             let arc3 = arc.clone();
             let mut builder = task::task();
-            builder.future_result(|r| children.push(r));
+            children.push(builder.future_result());
             do builder.spawn {
                 do arc3.read |num| {
                     assert!(*num >= 0);

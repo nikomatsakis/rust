@@ -33,6 +33,9 @@ static KNOWN_FEATURES: &'static [(&'static str, Status)] = &[
     ("globs", Active),
     ("macro_rules", Active),
     ("struct_variant", Active),
+    ("once_fns", Active),
+    ("asm", Active),
+    ("managed_boxes", Active),
 
     // These are used to test this portion of the compiler, they don't actually
     // mean anything
@@ -107,24 +110,46 @@ impl Visitor<()> for Context {
                 }
             }
 
-            ast::item_mac(ref mac) => {
-                match mac.node {
-                    ast::mac_invoc_tt(ref path, _, _) => {
-                        let rules = self.sess.ident_of("macro_rules");
-                        if path.segments.last().identifier == rules {
-                            self.gate_feature("macro_rules", i.span,
-                                              "macro definitions are not \
-                                               stable enough for use and are \
-                                               subject to change");
-                        }
-                    }
-                }
-            }
-
             _ => {}
         }
 
         visit::walk_item(self, i, ());
+    }
+
+    fn visit_mac(&mut self, macro: &ast::mac, _: ()) {
+        let ast::mac_invoc_tt(ref path, _, _) = macro.node;
+
+        if path.segments.last().identifier == self.sess.ident_of("macro_rules") {
+            self.gate_feature("macro_rules", path.span, "macro definitions are \
+                not stable enough for use and are subject to change");
+        }
+
+        else if path.segments.last().identifier == self.sess.ident_of("asm") {
+            self.gate_feature("asm", path.span, "inline assembly is not \
+                stable enough for use and is subject to change");
+        }
+    }
+
+    fn visit_ty(&mut self, t: &ast::Ty, _: ()) {
+        match t.node {
+            ast::ty_closure(closure) if closure.onceness == ast::Once => {
+                self.gate_feature("once_fns", t.span,
+                                  "once functions are \
+                                   experimental and likely to be removed");
+
+            },
+            ast::ty_box(_) => {
+                self.gate_feature("managed_boxes", t.span, "The managed box syntax may be replaced \
+                                                            by a library type, and a garbage \
+                                                            collector is not yet implemented. \
+                                                            Consider using the `std::rc` module \
+                                                            as it performs much better as a \
+                                                            reference counting implementation.");
+            }
+            _ => {}
+        }
+
+        visit::walk_ty(self, t, ());
     }
 }
 

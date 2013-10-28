@@ -820,7 +820,7 @@ impl num::ToStrRadix for f32 {
     fn to_str_radix(&self, rdx: uint) -> ~str {
         let (r, special) = strconv::float_to_str_common(
             *self, rdx, true, strconv::SignNeg, strconv::DigAll);
-        if special { fail2!("number has a special value, \
+        if special { fail!("number has a special value, \
                              try to_str_radix_special() if those are expected") }
         r
     }
@@ -928,7 +928,7 @@ mod tests {
 
     use num::*;
     use num;
-    use sys;
+    use mem;
 
     #[test]
     fn test_num() {
@@ -1198,8 +1198,8 @@ mod tests {
     #[test]
     fn test_primitive() {
         let none: Option<f32> = None;
-        assert_eq!(Primitive::bits(none), sys::size_of::<f32>() * 8);
-        assert_eq!(Primitive::bytes(none), sys::size_of::<f32>());
+        assert_eq!(Primitive::bits(none), mem::size_of::<f32>() * 8);
+        assert_eq!(Primitive::bytes(none), mem::size_of::<f32>());
     }
 
     #[test]

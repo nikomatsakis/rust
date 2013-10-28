@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 struct A { a: int, b: @int }
 struct B { a: int, b: C }
 struct D { a: int, d: C }
@@ -16,7 +18,7 @@ struct C { c: int }
 pub fn main() {
     match A {a: 10, b: @20} {
         x@A {a, b: @20} => { assert!(x.a == 10); assert!(a == 10); }
-        A {b: _b, _} => { fail2!(); }
+        A {b: _b, _} => { fail!(); }
     }
     let mut x@B {b, _} = B {a: 10, b: C {c: 20}};
     x.b.c = 30;

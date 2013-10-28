@@ -15,10 +15,11 @@ with regular files & directories on a filesystem.
 
 At the top-level of the module are a set of freestanding functions,
 associated with various filesystem operations. They all operate
-on a `PathLike` object.
+on a `ToCStr` object. This trait is already defined for common
+objects such as strings and `Path` instances.
 
 All operations in this module, including those as part of `FileStream` et al
-block the task during execution. Most will raise `std::rt::io::{io_error,read_error}`
+block the task during execution. Most will raise `std::rt::io::io_error`
 conditions in the event of failure.
 
 Also included in this module are the `FileInfo` and `DirectoryInfo` traits. When
@@ -30,15 +31,14 @@ free function counterparts.
 */
 
 use prelude::*;
-use super::support::PathLike;
+use c_str::ToCStr;
 use super::{Reader, Writer, Seek};
 use super::{SeekStyle, Read, Write};
-use rt::rtio::{RtioFileStream, IoFactory, IoFactoryObject};
-use rt::io::{io_error, read_error, EndOfFile,
+use rt::rtio::{RtioFileStream, IoFactory, with_local_io};
+use rt::io::{io_error, EndOfFile,
             FileMode, FileAccess, FileStat, IoError,
             PathAlreadyExists, PathDoesntExist,
             MismatchedFileTypeForOperation, ignore_io_error};
-use rt::local::Local;
 use option::{Some, None};
 use path::Path;
 
@@ -48,7 +48,6 @@ use path::Path;
 ///
 ///     use std;
 ///     use std::path::Path;
-///     use std::rt::io::support::PathLike;
 ///     use std::rt::io::file::open;
 ///     use std::rt::io::{FileMode, FileAccess};
 ///
@@ -59,8 +58,8 @@ use path::Path;
 ///     }).inside {
 ///         let stream = match open(p, Create, ReadWrite) {
 ///             Some(s) => s,
-///             None => fail2!("whoops! I'm sure this raised, anyways..");
-///         }
+///             None => fail!("whoops! I'm sure this raised, anyways..")
+///         };
 ///         // do some stuff with that stream
 ///
 ///         // the file stream will be closed at the end of this block
@@ -87,22 +86,20 @@ use path::Path;
 /// * Attempting to open a file with a `FileAccess` that the user lacks permissions
 ///   for
 /// * Filesystem-level errors (full disk, etc)
-pub fn open<P: PathLike>(path: &P,
-                         mode: FileMode,
-                         access: FileAccess
-                        ) -> Option<FileStream> {
-    let open_result = unsafe {
-        let io: *mut IoFactoryObject = Local::unsafe_borrow();
-        (*io).fs_open(path, mode, access)
-    };
-    match open_result {
-        Ok(fd) => Some(FileStream {
-            fd: fd,
-            last_nread: -1
-        }),
-        Err(ioerr) => {
-            io_error::cond.raise(ioerr);
-            None
+pub fn open<P: ToCStr>(path: &P,
+                       mode: FileMode,
+                       access: FileAccess
+                      ) -> Option<FileStream> {
+    do with_local_io |io| {
+        match io.fs_open(&path.to_c_str(), mode, access) {
+            Ok(fd) => Some(FileStream {
+                fd: fd,
+                last_nread: -1
+            }),
+            Err(ioerr) => {
+                io_error::cond.raise(ioerr);
+                None
+            }
         }
     }
 }
@@ -113,7 +110,6 @@ pub fn open<P: PathLike>(path: &P,
 ///
 ///     use std;
 ///     use std::path::Path;
-///     use std::rt::io::support::PathLike;
 ///     use std::rt::io::file::unlink;
 ///
 ///     let p = &Path("/some/file/path.txt");
@@ -129,17 +125,16 @@ pub fn open<P: PathLike>(path: &P,
 ///
 /// This function will raise an `io_error` condition if the user lacks permissions to
 /// remove the file or if some other filesystem-level error occurs
-pub fn unlink<P: PathLike>(path: &P) {
-    let unlink_result = unsafe {
-        let io: *mut IoFactoryObject = Local::unsafe_borrow();
-        (*io).fs_unlink(path)
-    };
-    match unlink_result {
-        Ok(_) => (),
-        Err(ioerr) => {
-            io_error::cond.raise(ioerr);
+pub fn unlink<P: ToCStr>(path: &P) {
+    do with_local_io |io| {
+        match io.fs_unlink(&path.to_c_str()) {
+            Ok(_) => Some(()),
+            Err(ioerr) => {
+                io_error::cond.raise(ioerr);
+                None
+            }
         }
-    }
+    };
 }
 
 /// Create a new, empty directory at the provided path
@@ -148,7 +143,6 @@ pub fn unlink<P: PathLike>(path: &P) {
 ///
 ///     use std;
 ///     use std::path::Path;
-///     use std::rt::io::support::PathLike;
 ///     use std::rt::io::file::mkdir;
 ///
 ///     let p = &Path("/some/dir");
@@ -159,17 +153,16 @@ pub fn unlink<P: PathLike>(path: &P) {
 ///
 /// This call will raise an `io_error` condition if the user lacks permissions to make a
 /// new directory at the provided path, or if the directory already exists
-pub fn mkdir<P: PathLike>(path: &P) {
-    let mkdir_result = unsafe {
-        let io: *mut IoFactoryObject = Local::unsafe_borrow();
-        (*io).fs_mkdir(path)
-    };
-    match mkdir_result {
-        Ok(_) => (),
-        Err(ioerr) => {
-            io_error::cond.raise(ioerr);
+pub fn mkdir<P: ToCStr>(path: &P) {
+    do with_local_io |io| {
+        match io.fs_mkdir(&path.to_c_str()) {
+            Ok(_) => Some(()),
+            Err(ioerr) => {
+                io_error::cond.raise(ioerr);
+                None
+            }
         }
-    }
+    };
 }
 
 /// Remove an existing, empty directory
@@ -178,7 +171,6 @@ pub fn mkdir<P: PathLike>(path: &P) {
 ///
 ///     use std;
 ///     use std::path::Path;
-///     use std::rt::io::support::PathLike;
 ///     use std::rt::io::file::rmdir;
 ///
 ///     let p = &Path("/some/dir");
@@ -189,23 +181,22 @@ pub fn mkdir<P: PathLike>(path: &P) {
 ///
 /// This call will raise an `io_error` condition if the user lacks permissions to remove the
 /// directory at the provided path, or if the directory isn't empty
-pub fn rmdir<P: PathLike>(path: &P) {
-    let rmdir_result = unsafe {
-        let io: *mut IoFactoryObject = Local::unsafe_borrow();
-        (*io).fs_rmdir(path)
-    };
-    match rmdir_result {
-        Ok(_) => (),
-        Err(ioerr) => {
-            io_error::cond.raise(ioerr);
+pub fn rmdir<P: ToCStr>(path: &P) {
+    do with_local_io |io| {
+        match io.fs_rmdir(&path.to_c_str()) {
+            Ok(_) => Some(()),
+            Err(ioerr) => {
+                io_error::cond.raise(ioerr);
+                None
+            }
         }
-    }
+    };
 }
 
 /// Get information on the file, directory, etc at the provided path
 ///
-/// Given a `rt::io::support::PathLike`, query the file system to get
-/// information about a file, directory, etc.
+/// Given a path, query the file system to get information about a file,
+/// directory, etc.
 ///
 /// Returns a `Some(std::rt::io::PathInfo)` on success
 ///
@@ -213,7 +204,6 @@ pub fn rmdir<P: PathLike>(path: &P) {
 ///
 ///     use std;
 ///     use std::path::Path;
-///     use std::rt::io::support::PathLike;
 ///     use std::rt::io::file::stat;
 ///
 ///     let p = &Path("/some/file/path.txt");
@@ -223,7 +213,7 @@ pub fn rmdir<P: PathLike>(path: &P) {
 ///     }).inside {
 ///         let info = match stat(p) {
 ///             Some(s) => s,
-///             None => fail2!("whoops! I'm sure this raised, anyways..");
+///             None => fail!("whoops! I'm sure this raised, anyways..");
 ///         }
 ///         if stat.is_file {
 ///             // just imagine the possibilities ...
@@ -238,18 +228,14 @@ pub fn rmdir<P: PathLike>(path: &P) {
 /// This call will raise an `io_error` condition if the user lacks the requisite
 /// permissions to perform a `stat` call on the given path or if there is no
 /// entry in the filesystem at the provided path.
-pub fn stat<P: PathLike>(path: &P) -> Option<FileStat> {
-    let open_result = unsafe {
-        let io: *mut IoFactoryObject = Local::unsafe_borrow();
-        (*io).fs_stat(path)
-    };
-    match open_result {
-        Ok(p) => {
-            Some(p)
-        },
-        Err(ioerr) => {
-            io_error::cond.raise(ioerr);
-            None
+pub fn stat<P: ToCStr>(path: &P) -> Option<FileStat> {
+    do with_local_io |io| {
+        match io.fs_stat(&path.to_c_str()) {
+            Ok(p) => Some(p),
+            Err(ioerr) => {
+                io_error::cond.raise(ioerr);
+                None
+            }
         }
     }
 }
@@ -260,7 +246,6 @@ pub fn stat<P: PathLike>(path: &P) -> Option<FileStat> {
 ///
 ///     use std;
 ///     use std::path::Path;
-///     use std::rt::io::support::PathLike;
 ///     use std::rt::io::file::readdir;
 ///
 ///     fn visit_dirs(dir: &Path, cb: &fn(&Path)) {
@@ -271,7 +256,7 @@ pub fn stat<P: PathLike>(path: &P) -> Option<FileStat> {
 ///                 else { cb(entry); }
 ///             }
 ///         }
-///         else { fail2!("nope"); }
+///         else { fail!("nope"); }
 ///     }
 ///
 /// # Errors
@@ -279,18 +264,14 @@ pub fn stat<P: PathLike>(path: &P) -> Option<FileStat> {
 /// Will raise an `io_error` condition if the provided `path` doesn't exist,
 /// the process lacks permissions to view the contents or if the `path` points
 /// at a non-directory file
-pub fn readdir<P: PathLike>(path: &P) -> Option<~[Path]> {
-    let readdir_result = unsafe {
-        let io: *mut IoFactoryObject = Local::unsafe_borrow();
-        (*io).fs_readdir(path, 0)
-    };
-    match readdir_result {
-        Ok(p) => {
-            Some(p)
-        },
-        Err(ioerr) => {
-            io_error::cond.raise(ioerr);
-            None
+pub fn readdir<P: ToCStr>(path: &P) -> Option<~[Path]> {
+    do with_local_io |io| {
+        match io.fs_readdir(&path.to_c_str(), 0) {
+            Ok(p) => Some(p),
+            Err(ioerr) => {
+                io_error::cond.raise(ioerr);
+                None
+            }
         }
     }
 }
@@ -362,8 +343,8 @@ impl Seek for FileWriter {
 /// For this reason, it is best to use the access-constrained wrappers that are
 /// exposed via `FileInfo.open_reader()` and `FileInfo.open_writer()`.
 pub struct FileStream {
-    fd: ~RtioFileStream,
-    last_nread: int,
+    priv fd: ~RtioFileStream,
+    priv last_nread: int,
 }
 
 /// a `std::rt::io::Reader` trait impl for file I/O.
@@ -380,7 +361,7 @@ impl Reader for FileStream {
             Err(ioerr) => {
                 // EOF is indicated by returning None
                 if ioerr.kind != EndOfFile {
-                    read_error::cond.raise(ioerr);
+                    io_error::cond.raise(ioerr);
                 }
                 return None;
             }
@@ -407,7 +388,7 @@ impl Writer for FileStream {
         match self.fd.flush() {
             Ok(_) => (),
             Err(ioerr) => {
-                read_error::cond.raise(ioerr);
+                io_error::cond.raise(ioerr);
             }
         }
     }
@@ -420,7 +401,7 @@ impl Seek for FileStream {
         match res {
             Ok(cursor) => cursor,
             Err(ioerr) => {
-                read_error::cond.raise(ioerr);
+                io_error::cond.raise(ioerr);
                 return -1;
             }
         }
@@ -434,7 +415,7 @@ impl Seek for FileStream {
                 ()
             },
             Err(ioerr) => {
-                read_error::cond.raise(ioerr);
+                io_error::cond.raise(ioerr);
             }
         }
     }
@@ -596,10 +577,10 @@ impl FileInfo for Path { }
 ///             else { cb(entry); }
 ///         }
 ///     }
-///     else { fail2!("nope"); }
+///     else { fail!("nope"); }
 /// }
 /// ```
-trait DirectoryInfo : FileSystemInfo {
+pub trait DirectoryInfo : FileSystemInfo {
     /// Whether the underlying implemention (be it a file path,
     /// or something else) is pointing at a directory in the underlying FS.
     /// Will return false for paths to non-existent locations or if the item is
@@ -627,12 +608,13 @@ trait DirectoryInfo : FileSystemInfo {
     fn mkdir(&self) {
         match ignore_io_error(|| self.stat()) {
             Some(_) => {
+                let path = self.get_path();
                 io_error::cond.raise(IoError {
                     kind: PathAlreadyExists,
                     desc: "Path already exists",
                     detail:
                         Some(format!("{} already exists; can't mkdir it",
-                                     self.get_path().to_str()))
+                                     path.display()))
                 })
             },
             None => mkdir(self.get_path())
@@ -655,24 +637,27 @@ trait DirectoryInfo : FileSystemInfo {
                 match s.is_dir {
                     true => rmdir(self.get_path()),
                     false => {
+                        let path = self.get_path();
                         let ioerr = IoError {
                             kind: MismatchedFileTypeForOperation,
                             desc: "Cannot do rmdir() on a non-directory",
                             detail: Some(format!(
                                 "{} is a non-directory; can't rmdir it",
-                                self.get_path().to_str()))
+                                path.display()))
                         };
                         io_error::cond.raise(ioerr);
                     }
                 }
             },
-            None =>
+            None => {
+                let path = self.get_path();
                 io_error::cond.raise(IoError {
                     kind: PathDoesntExist,
                     desc: "Path doesn't exist",
                     detail: Some(format!("{} doesn't exist; can't rmdir it",
-                                         self.get_path().to_str()))
+                                         path.display()))
                 })
+            }
         }
     }
 
@@ -699,7 +684,7 @@ mod test {
     fn file_test_io_smoke_test() {
         do run_in_mt_newsched_task {
             let message = "it's alright. have a good time";
-            let filename = &Path("./tmp/file_rt_io_file_test.txt");
+            let filename = &Path::new("./tmp/file_rt_io_file_test.txt");
             {
                 let mut write_stream = open(filename, Create, ReadWrite).unwrap();
                 write_stream.write(message.as_bytes());
@@ -709,7 +694,7 @@ mod test {
                 let mut read_stream = open(filename, Open, Read).unwrap();
                 let mut read_buf = [0, .. 1028];
                 let read_str = match read_stream.read(read_buf).unwrap() {
-                    -1|0 => fail2!("shouldn't happen"),
+                    -1|0 => fail!("shouldn't happen"),
                     n => str::from_utf8(read_buf.slice_to(n))
                 };
                 assert!(read_str == message.to_owned());
@@ -721,7 +706,7 @@ mod test {
     #[test]
     fn file_test_io_invalid_path_opened_without_create_should_raise_condition() {
         do run_in_mt_newsched_task {
-            let filename = &Path("./tmp/file_that_does_not_exist.txt");
+            let filename = &Path::new("./tmp/file_that_does_not_exist.txt");
             let mut called = false;
             do io_error::cond.trap(|_| {
                 called = true;
@@ -736,7 +721,7 @@ mod test {
     #[test]
     fn file_test_iounlinking_invalid_path_should_raise_condition() {
         do run_in_mt_newsched_task {
-            let filename = &Path("./tmp/file_another_file_that_does_not_exist.txt");
+            let filename = &Path::new("./tmp/file_another_file_that_does_not_exist.txt");
             let mut called = false;
             do io_error::cond.trap(|_| {
                 called = true;
@@ -753,7 +738,7 @@ mod test {
             use str;
             let message = "ten-four";
             let mut read_mem = [0, .. 8];
-            let filename = &Path("./tmp/file_rt_io_file_test_positional.txt");
+            let filename = &Path::new("./tmp/file_rt_io_file_test_positional.txt");
             {
                 let mut rw_stream = open(filename, Create, ReadWrite).unwrap();
                 rw_stream.write(message.as_bytes());
@@ -784,7 +769,7 @@ mod test {
             let set_cursor = 4 as u64;
             let mut tell_pos_pre_read;
             let mut tell_pos_post_read;
-            let filename = &Path("./tmp/file_rt_io_file_test_seeking.txt");
+            let filename = &Path::new("./tmp/file_rt_io_file_test_seeking.txt");
             {
                 let mut rw_stream = open(filename, Create, ReadWrite).unwrap();
                 rw_stream.write(message.as_bytes());
@@ -813,7 +798,7 @@ mod test {
             let final_msg =     "foo-the-bar!!";
             let seek_idx = 3;
             let mut read_mem = [0, .. 13];
-            let filename = &Path("./tmp/file_rt_io_file_test_seek_and_write.txt");
+            let filename = &Path::new("./tmp/file_rt_io_file_test_seek_and_write.txt");
             {
                 let mut rw_stream = open(filename, Create, ReadWrite).unwrap();
                 rw_stream.write(initial_msg.as_bytes());
@@ -839,7 +824,7 @@ mod test {
             let chunk_two = "asdf";
             let chunk_three = "zxcv";
             let mut read_mem = [0, .. 4];
-            let filename = &Path("./tmp/file_rt_io_file_test_seek_shakedown.txt");
+            let filename = &Path::new("./tmp/file_rt_io_file_test_seek_shakedown.txt");
             {
                 let mut rw_stream = open(filename, Create, ReadWrite).unwrap();
                 rw_stream.write(initial_msg.as_bytes());
@@ -869,7 +854,7 @@ mod test {
     #[test]
     fn file_test_stat_is_correct_on_is_file() {
         do run_in_mt_newsched_task {
-            let filename = &Path("./tmp/file_stat_correct_on_is_file.txt");
+            let filename = &Path::new("./tmp/file_stat_correct_on_is_file.txt");
             {
                 let mut fs = open(filename, Create, ReadWrite).unwrap();
                 let msg = "hw";
@@ -877,7 +862,7 @@ mod test {
             }
             let stat_res = match stat(filename) {
                 Some(s) => s,
-                None => fail2!("shouldn't happen")
+                None => fail!("shouldn't happen")
             };
             assert!(stat_res.is_file);
             unlink(filename);
@@ -887,11 +872,11 @@ mod test {
     #[test]
     fn file_test_stat_is_correct_on_is_dir() {
         do run_in_mt_newsched_task {
-            let filename = &Path("./tmp/file_stat_correct_on_is_dir");
+            let filename = &Path::new("./tmp/file_stat_correct_on_is_dir");
             mkdir(filename);
             let stat_res = match stat(filename) {
                 Some(s) => s,
-                None => fail2!("shouldn't happen")
+                None => fail!("shouldn't happen")
             };
             assert!(stat_res.is_dir);
             rmdir(filename);
@@ -901,7 +886,7 @@ mod test {
     #[test]
     fn file_test_fileinfo_false_when_checking_is_file_on_a_directory() {
         do run_in_mt_newsched_task {
-            let dir = &Path("./tmp/fileinfo_false_on_dir");
+            let dir = &Path::new("./tmp/fileinfo_false_on_dir");
             mkdir(dir);
             assert!(dir.is_file() == false);
             rmdir(dir);
@@ -911,7 +896,7 @@ mod test {
     #[test]
     fn file_test_fileinfo_check_exists_before_and_after_file_creation() {
         do run_in_mt_newsched_task {
-            let file = &Path("./tmp/fileinfo_check_exists_b_and_a.txt");
+            let file = &Path::new("./tmp/fileinfo_check_exists_b_and_a.txt");
             {
                 let msg = "foo".as_bytes();
                 let mut w = file.open_writer(Create);
@@ -926,7 +911,7 @@ mod test {
     #[test]
     fn file_test_directoryinfo_check_exists_before_and_after_mkdir() {
         do run_in_mt_newsched_task {
-            let dir = &Path("./tmp/before_and_after_dir");
+            let dir = &Path::new("./tmp/before_and_after_dir");
             assert!(!dir.exists());
             dir.mkdir();
             assert!(dir.exists());
@@ -940,11 +925,11 @@ mod test {
     fn file_test_directoryinfo_readdir() {
         use str;
         do run_in_mt_newsched_task {
-            let dir = &Path("./tmp/di_readdir");
+            let dir = &Path::new("./tmp/di_readdir");
             dir.mkdir();
             let prefix = "foo";
             for n in range(0,3) {
-                let f = dir.push(format!("{}.txt", n));
+                let f = dir.join(format!("{}.txt", n));
                 let mut w = f.open_writer(Create);
                 let msg_str = (prefix + n.to_str().to_owned()).to_owned();
                 let msg = msg_str.as_bytes();
@@ -955,20 +940,20 @@ mod test {
                     let mut mem = [0u8, .. 4];
                     for f in files.iter() {
                         {
-                            let n = f.filestem();
+                            let n = f.filestem_str();
                             let mut r = f.open_reader(Open);
                             r.read(mem);
                             let read_str = str::from_utf8(mem);
                             let expected = match n {
-                                Some(n) => prefix+n,
-                                None => fail2!("really shouldn't happen..")
+                                None|Some("") => fail!("really shouldn't happen.."),
+                                Some(n) => prefix+n
                             };
                             assert!(expected == read_str);
                         }
                         f.unlink();
                     }
                 },
-                None => fail2!("shouldn't happen")
+                None => fail!("shouldn't happen")
             }
             dir.rmdir();
         }

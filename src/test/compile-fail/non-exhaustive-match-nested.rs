@@ -1,4 +1,3 @@
-// -*- rust -*-
 // Copyright 2012 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
@@ -16,7 +15,7 @@ enum u { c, d }
 fn main() {
   let x = a(c);
   match x {
-      a(d) => { fail2!("hello"); }
-      b => { fail2!("goodbye"); }
+      a(d) => { fail!("hello"); }
+      b => { fail!("goodbye"); }
     }
 }

@@ -12,8 +12,8 @@
 
 This module defines the Rust interface for synchronous I/O.
 It models byte-oriented input and output with the Reader and Writer traits.
-Types that implement both `Reader` and `Writer` and called 'streams',
-and automatically implement trait `Stream`.
+Types that implement both `Reader` and `Writer` are called 'streams',
+and automatically implement the `Stream` trait.
 Implementations are provided for common I/O streams like
 file, TCP, UDP, Unix domain sockets.
 Readers and Writers may be composed to add capabilities like string
@@ -261,7 +261,6 @@ pub use self::net::tcp::TcpListener;
 pub use self::net::tcp::TcpStream;
 pub use self::net::udp::UdpStream;
 pub use self::pipe::PipeStream;
-pub use self::pipe::UnboundPipeStream;
 pub use self::process::Process;
 
 // Some extension traits that all Readers and Writers get.
@@ -297,11 +296,7 @@ pub mod flate;
 pub mod comm_adapters;
 
 /// Extension traits
-mod extensions;
-
-/// Non-I/O things needed by the I/O module
-// XXX: shouldn this really be pub?
-pub mod support;
+pub mod extensions;
 
 /// Basic Timer
 pub mod timer;
@@ -313,8 +308,11 @@ pub mod buffered;
 pub mod native {
     /// Posix file I/O
     pub mod file;
-    /// # XXX - implement this
-    pub mod stdio { }
+    /// Process spawning and child management
+    pub mod process;
+    /// Posix stdio
+    pub mod stdio;
+
     /// Sockets
     /// # XXX - implement this
     pub mod net {
@@ -328,9 +326,11 @@ pub mod native {
 /// Mock implementations for testing
 mod mock;
 
+/// Signal handling
+pub mod signal;
+
 /// The default buffer size for various I/O operations
-/// XXX: Not pub
-pub static DEFAULT_BUF_SIZE: uint = 1024 * 64;
+static DEFAULT_BUF_SIZE: uint = 1024 * 64;
 
 /// The type passed to I/O condition handlers to indicate error
 ///
@@ -368,10 +368,14 @@ pub enum IoErrorKind {
     Closed,
     ConnectionRefused,
     ConnectionReset,
+    ConnectionAborted,
+    NotConnected,
     BrokenPipe,
     PathAlreadyExists,
     PathDoesntExist,
-    MismatchedFileTypeForOperation
+    MismatchedFileTypeForOperation,
+    ResourceUnavailable,
+    IoUnavailable,
 }
 
 // FIXME: #8242 implementing manually because deriving doesn't work for some reason
@@ -387,10 +391,14 @@ impl ToStr for IoErrorKind {
             Closed => ~"Closed",
             ConnectionRefused => ~"ConnectionRefused",
             ConnectionReset => ~"ConnectionReset",
+            NotConnected => ~"NotConnected",
             BrokenPipe => ~"BrokenPipe",
             PathAlreadyExists => ~"PathAlreadyExists",
             PathDoesntExist => ~"PathDoesntExist",
-            MismatchedFileTypeForOperation => ~"MismatchedFileTypeForOperation"
+            MismatchedFileTypeForOperation => ~"MismatchedFileTypeForOperation",
+            IoUnavailable => ~"IoUnavailable",
+            ResourceUnavailable => ~"ResourceUnavailable",
+            ConnectionAborted => ~"ConnectionAborted",
         }
     }
 }
@@ -399,12 +407,6 @@ impl ToStr for IoErrorKind {
 // Raised by `I/O` operations on error.
 condition! {
     pub io_error: IoError -> ();
-}
-
-// XXX: Can't put doc comments on macros
-// Raised by `read` on error
-condition! {
-    pub read_error: IoError -> ();
 }
 
 /// Helper for wrapper calls where you want to
@@ -426,7 +428,7 @@ pub trait Reader {
     ///
     /// # Failure
     ///
-    /// Raises the `read_error` condition on error. If the condition
+    /// Raises the `io_error` condition on error. If the condition
     /// is handled then no guarantee is made about the number of bytes
     /// read and the contents of `buf`. If the condition is handled
     /// returns `None` (XXX see below).
@@ -459,6 +461,16 @@ pub trait Reader {
     fn eof(&mut self) -> bool;
 }
 
+impl Reader for ~Reader {
+    fn read(&mut self, buf: &mut [u8]) -> Option<uint> { self.read(buf) }
+    fn eof(&mut self) -> bool { self.eof() }
+}
+
+impl<'self> Reader for &'self mut Reader {
+    fn read(&mut self, buf: &mut [u8]) -> Option<uint> { self.read(buf) }
+    fn eof(&mut self) -> bool { self.eof() }
+}
+
 pub trait Writer {
     /// Write the given buffer
     ///
@@ -469,6 +481,16 @@ pub trait Writer {
 
     /// Flush output
     fn flush(&mut self);
+}
+
+impl Writer for ~Writer {
+    fn write(&mut self, buf: &[u8]) { self.write(buf) }
+    fn flush(&mut self) { self.flush() }
+}
+
+impl<'self> Writer for &'self mut Writer {
+    fn write(&mut self, buf: &[u8]) { self.write(buf) }
+    fn flush(&mut self) { self.flush() }
 }
 
 pub trait Stream: Reader + Writer { }
@@ -586,7 +608,14 @@ pub fn standard_error(kind: IoErrorKind) -> IoError {
                 detail: None
             }
         }
-        _ => fail2!()
+        IoUnavailable => {
+            IoError {
+                kind: IoUnavailable,
+                desc: "I/O is unavailable",
+                detail: None
+            }
+        }
+        _ => fail!()
     }
 }
 
@@ -629,6 +658,12 @@ pub struct FileStat {
     is_file: bool,
     /// `true` if the file pointed at by the `PathInfo` is a directory
     is_dir: bool,
+    /// The file pointed at by the `PathInfo`'s device
+    device: u64,
+    /// The file pointed at by the `PathInfo`'s mode
+    mode: u64,
+    /// The file pointed at by the `PathInfo`'s inode
+    inode: u64,
     /// The file pointed at by the `PathInfo`'s size in bytes
     size: u64,
     /// The file pointed at by the `PathInfo`'s creation time

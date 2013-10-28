@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 //type t = { a: int };
 // type t = { a: bool };
 type t = bool;
@@ -29,6 +31,6 @@ pub fn main() {
     //  x.f();
     // y.f();
     // (*z).f();
-    error2!("ok so far...");
+    error!("ok so far...");
     z.f(); //segfault
 }

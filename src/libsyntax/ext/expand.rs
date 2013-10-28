@@ -429,7 +429,7 @@ fn insert_macro(exts: SyntaxEnv, name: ast::Name, transformer: @Transformer) {
         match t {
             &@BlockInfo(BlockInfo {macros_escape:false,_}) => true,
             &@BlockInfo(BlockInfo {_}) => false,
-            _ => fail2!("special identifier {:?} was bound to a non-BlockInfo",
+            _ => fail!("special identifier {:?} was bound to a non-BlockInfo",
                         special_block_name)
         }
     };
@@ -551,13 +551,13 @@ fn expand_non_macro_stmt(exts: SyntaxEnv, s: &Stmt, fld: &MacroExpander)
             let pending_renames = block_info.pending_renames;
 
             // take it apart:
-            let @Local{is_mutbl:is_mutbl,
-                       ty:_,
-                       pat:pat,
-                       init:init,
-                       id:id,
-                       span:span
-                      } = *local;
+            let @Local {
+                ty: _,
+                pat: pat,
+                init: init,
+                id: id,
+                span: span
+            } = *local;
             // types can't be copied automatically because of the owned ptr in ty_tup...
             let ty = local.ty.clone();
             // expand the pat (it might contain exprs... #:(o)>
@@ -582,10 +582,9 @@ fn expand_non_macro_stmt(exts: SyntaxEnv, s: &Stmt, fld: &MacroExpander)
             // add them to the existing pending renames:
             for pr in new_pending_renames.iter() {pending_renames.push(*pr)}
             // also, don't forget to expand the init:
-            let new_init_opt = init.map(|e| fld.fold_expr(*e));
+            let new_init_opt = init.map(|e| fld.fold_expr(e));
             let rewritten_local =
                 @Local {
-                    is_mutbl: is_mutbl,
                     ty: ty,
                     pat: rewritten_pat,
                     init: new_init_opt,
@@ -725,7 +724,7 @@ pub fn expand_block_elts(exts: SyntaxEnv, b: &Block, fld: &MacroExpander)
             None => ()
         }
     }
-    let new_expr = b.expr.map(|x| fld.fold_expr(rename_fld.fold_expr(*x)));
+    let new_expr = b.expr.map(|x| fld.fold_expr(rename_fld.fold_expr(x)));
     Block{
         view_items: new_view_items,
         stmts: new_stmts,
@@ -741,7 +740,7 @@ pub fn expand_block_elts(exts: SyntaxEnv, b: &Block, fld: &MacroExpander)
 fn mustbesome<T>(val : Option<T>) -> T {
     match val {
         Some(v) => v,
-        None => fail2!("rename_fold returned None")
+        None => fail!("rename_fold returned None")
     }
 }
 
@@ -749,7 +748,7 @@ fn mustbesome<T>(val : Option<T>) -> T {
 fn get_block_info(exts : SyntaxEnv) -> BlockInfo {
     match exts.find_in_topmost_frame(&intern(special_block_name)) {
         Some(@BlockInfo(bi)) => bi,
-        _ => fail2!("special identifier {:?} was bound to a non-BlockInfo",
+        _ => fail!("special identifier {:?} was bound to a non-BlockInfo",
                     @" block")
     }
 }
@@ -782,7 +781,7 @@ pub fn renames_to_fold(renames: @mut ~[(ast::Ident,ast::Name)]) -> @ast_fold {
 fn apply_pending_renames(folder : @ast_fold, stmt : ast::Stmt) -> @ast::Stmt {
     match folder.fold_stmt(&stmt) {
         Some(s) => s,
-        None => fail2!("renaming of stmt produced None")
+        None => fail!("renaming of stmt produced None")
     }
 }
 
@@ -809,51 +808,7 @@ pub fn std_macros() -> @str {
 
     macro_rules! ignore (($($x:tt)*) => (()))
 
-    #[cfg(not(nofmt))]
-    mod fmt_extension {
-        #[macro_escape];
-
-        macro_rules! fmt(($($arg:tt)*) => (oldfmt!($($arg)*)))
-
-        macro_rules! log(
-            ($lvl:expr, $arg:expr) => ({
-                let lvl = $lvl;
-                if lvl <= __log_level() {
-                    format_args!(|args| {
-                        ::std::logging::log(lvl, args)
-                    }, \"{}\", fmt!(\"%?\", $arg))
-                }
-            });
-            ($lvl:expr, $($arg:expr),+) => ({
-                let lvl = $lvl;
-                if lvl <= __log_level() {
-                    format_args!(|args| {
-                        ::std::logging::log(lvl, args)
-                    }, \"{}\", fmt!($($arg),+))
-                }
-            })
-        )
-        macro_rules! error( ($($arg:tt)*) => (log!(1u32, $($arg)*)) )
-        macro_rules! warn ( ($($arg:tt)*) => (log!(2u32, $($arg)*)) )
-        macro_rules! info ( ($($arg:tt)*) => (log!(3u32, $($arg)*)) )
-        macro_rules! debug( ($($arg:tt)*) => (
-            if cfg!(not(ndebug)) { log!(4u32, $($arg)*) }
-        ))
-
-        macro_rules! fail(
-            () => (
-                fail2!(\"explicit failure\")
-            );
-            ($msg:expr) => (
-                ::std::sys::FailWithCause::fail_with($msg, file!(), line!())
-            );
-            ($( $arg:expr ),+) => (
-                ::std::sys::FailWithCause::fail_with(fmt!( $($arg),+ ), file!(), line!())
-            )
-        )
-    }
-
-    macro_rules! log2(
+    macro_rules! log(
         ($lvl:expr, $($arg:tt)+) => ({
             let lvl = $lvl;
             if lvl <= __log_level() {
@@ -863,16 +818,16 @@ pub fn std_macros() -> @str {
             }
         })
     )
-    macro_rules! error2( ($($arg:tt)*) => (log2!(1u32, $($arg)*)) )
-    macro_rules! warn2 ( ($($arg:tt)*) => (log2!(2u32, $($arg)*)) )
-    macro_rules! info2 ( ($($arg:tt)*) => (log2!(3u32, $($arg)*)) )
-    macro_rules! debug2( ($($arg:tt)*) => (
-        if cfg!(not(ndebug)) { log2!(4u32, $($arg)*) }
+    macro_rules! error( ($($arg:tt)*) => (log!(1u32, $($arg)*)) )
+    macro_rules! warn ( ($($arg:tt)*) => (log!(2u32, $($arg)*)) )
+    macro_rules! info ( ($($arg:tt)*) => (log!(3u32, $($arg)*)) )
+    macro_rules! debug( ($($arg:tt)*) => (
+        if cfg!(not(ndebug)) { log!(4u32, $($arg)*) }
     ))
 
-    macro_rules! fail2(
+    macro_rules! fail(
         () => (
-            fail2!(\"explicit failure\")
+            fail!(\"explicit failure\")
         );
         ($fmt:expr) => (
             ::std::sys::FailWithCause::fail_with($fmt, file!(), line!())
@@ -909,7 +864,7 @@ pub fn std_macros() -> @str {
                 // check both directions of equality....
                 if !((*given_val == *expected_val) &&
                      (*expected_val == *given_val)) {
-                    fail2!(\"assertion failed: `(left == right) && (right == \
+                    fail!(\"assertion failed: `(left == right) && (right == \
                              left)` (left: `{:?}`, right: `{:?}`)\",
                            *given_val, *expected_val);
                 }
@@ -929,7 +884,7 @@ pub fn std_macros() -> @str {
                     given_val.approx_eq(&expected_val) &&
                     expected_val.approx_eq(&given_val)
                 ) {
-                    fail2!(\"left: {:?} does not approximately equal right: {:?}\",
+                    fail!(\"left: {:?} does not approximately equal right: {:?}\",
                            given_val, expected_val);
                 }
             }
@@ -946,7 +901,7 @@ pub fn std_macros() -> @str {
                     given_val.approx_eq_eps(&expected_val, &epsilon_val) &&
                     expected_val.approx_eq_eps(&given_val, &epsilon_val)
                 ) {
-                    fail2!(\"left: {:?} does not approximately equal right: \
+                    fail!(\"left: {:?} does not approximately equal right: \
                              {:?} with epsilon: {:?}\",
                           given_val, expected_val, epsilon_val);
                 }
@@ -981,7 +936,7 @@ pub fn std_macros() -> @str {
 
     */
     macro_rules! unreachable (() => (
-        fail2!(\"internal error: entered unreachable code\");
+        fail!(\"internal error: entered unreachable code\");
     ))
 
     macro_rules! condition (
@@ -991,6 +946,7 @@ pub fn std_macros() -> @str {
             pub mod $c {
                 #[allow(unused_imports)];
                 #[allow(non_uppercase_statics)];
+                #[allow(missing_doc)];
 
                 use super::*;
 
@@ -1034,16 +990,11 @@ pub fn std_macros() -> @str {
     macro_rules! writeln(($dst:expr, $($arg:tt)*) => (
         format_args!(|args| { ::std::fmt::writeln($dst, args) }, $($arg)*)
     ))
-    // FIXME(#6846) once stdio is redesigned, this shouldn't perform an
-    //              allocation but should rather delegate to an invocation of
-    //              write! instead of format!
     macro_rules! print (
-        ($($arg:tt)*) => (::std::io::print(format!($($arg)*)))
+        ($($arg:tt)*) => (format_args!(::std::rt::io::stdio::print_args, $($arg)*))
     )
-    // FIXME(#6846) once stdio is redesigned, this shouldn't perform an
-    //              allocation but should rather delegate to an io::Writer
     macro_rules! println (
-        ($($arg:tt)*) => (::std::io::println(format!($($arg)*)))
+        ($($arg:tt)*) => (format_args!(::std::rt::io::stdio::println_args, $($arg)*))
     )
 
     macro_rules! local_data_key (
@@ -1059,7 +1010,6 @@ pub fn std_macros() -> @str {
     // It is intended to be used like:
     //
     // externfn!(#[nolink]
-    //           #[abi = \"cdecl\"]
     //           fn memcmp(cx: *u8, ct: *u8, n: u32) -> u32)
     //
     // Due to limitations in the macro parser, this pattern must be
@@ -1164,7 +1114,7 @@ pub fn inject_std_macros(parse_sess: @mut parse::ParseSess,
                                               ~[],
                                               parse_sess) {
         Some(item) => item,
-        None => fail2!("expected core macros to parse correctly")
+        None => fail!("expected core macros to parse correctly")
     };
 
     let injector = @Injector {
@@ -1422,16 +1372,16 @@ mod test {
     use util::parser_testing::{string_to_pat, string_to_tts, strs_to_idents};
     use visit;
 
-    // make sure that fail2! is present
+    // make sure that fail! is present
     #[test] fn fail_exists_test () {
-        let src = @"fn main() { fail2!(\"something appropriately gloomy\");}";
+        let src = @"fn main() { fail!(\"something appropriately gloomy\");}";
         let sess = parse::new_parse_sess(None);
         let crate_ast = parse::parse_crate_from_source_str(
             @"<test>",
             src,
             ~[],sess);
         let crate_ast = inject_std_macros(sess, ~[], crate_ast);
-        // don't bother with striping, doesn't affect fail2!.
+        // don't bother with striping, doesn't affect fail!.
         expand_crate(sess,~[],crate_ast);
     }
 
@@ -1489,7 +1439,7 @@ mod test {
             cfg,~[],sess);
         match item_ast {
             Some(_) => (), // success
-            None => fail2!("expected this to parse")
+            None => fail!("expected this to parse")
         }
     }
 
@@ -1528,7 +1478,7 @@ mod test {
         let marked_once_ctxt =
             match marked_once[0] {
                 ast::tt_tok(_,token::IDENT(id,_)) => id.ctxt,
-                _ => fail2!(format!("unexpected shape for marked tts: {:?}",marked_once[0]))
+                _ => fail!(format!("unexpected shape for marked tts: {:?}",marked_once[0]))
             };
         assert_eq!(mtwt_marksof(marked_once_ctxt,invalid_name),~[fm]);
         let remarked = mtwt_cancel_outer_mark(marked_once,marked_once_ctxt);
@@ -1536,7 +1486,7 @@ mod test {
         match remarked[0] {
             ast::tt_tok(_,token::IDENT(id,_)) =>
             assert_eq!(mtwt_marksof(id.ctxt,invalid_name),~[]),
-            _ => fail2!(format!("unexpected shape for marked tts: {:?}",remarked[0]))
+            _ => fail!(format!("unexpected shape for marked tts: {:?}",remarked[0]))
         }
     }
 
@@ -1573,7 +1523,8 @@ mod test {
     }
 
     fn fake_print_crate(crate: &ast::Crate) {
-        let s = pprust::rust_printer(std::io::stderr(),get_ident_interner());
+        let out = @mut std::rt::io::stderr() as @mut std::rt::io::Writer;
+        let s = pprust::rust_printer(out, get_ident_interner());
         pprust::print_crate_(s, crate);
     }
 
@@ -1585,7 +1536,7 @@ mod test {
 
     //fn expand_and_resolve(crate_str: @str) -> ast::crate {
         //let expanded_ast = expand_crate_str(crate_str);
-        // std::io::println(format!("expanded: {:?}\n",expanded_ast));
+        // println(format!("expanded: {:?}\n",expanded_ast));
         //mtwt_resolve_crate(expanded_ast)
     //}
     //fn expand_and_resolve_and_pretty_print (crate_str : @str) -> ~str {
@@ -1694,9 +1645,9 @@ mod test {
                     let varref_marks = mtwt_marksof(varref.segments[0].identifier.ctxt,
                                                     invalid_name);
                     if (!(varref_name==binding_name)){
-                        std::io::println("uh oh, should match but doesn't:");
-                        std::io::println(format!("varref: {:?}",varref));
-                        std::io::println(format!("binding: {:?}", bindings[binding_idx]));
+                        println("uh oh, should match but doesn't:");
+                        println!("varref: {:?}",varref);
+                        println!("binding: {:?}", bindings[binding_idx]);
                         ast_util::display_sctable(get_sctable());
                     }
                     assert_eq!(varref_name,binding_name);
@@ -1714,12 +1665,12 @@ mod test {
                         println!("text of test case: \"{}\"", teststr);
                         println!("");
                         println!("uh oh, matches but shouldn't:");
-                        std::io::println(format!("varref: {:?}",varref));
+                        println!("varref: {:?}",varref);
                         // good lord, you can't make a path with 0 segments, can you?
                         println!("varref's first segment's uint: {}, and string: \"{}\"",
                                  varref.segments[0].identifier.name,
                                  ident_to_str(&varref.segments[0].identifier));
-                        std::io::println(format!("binding: {:?}", bindings[binding_idx]));
+                        println!("binding: {:?}", bindings[binding_idx]);
                         ast_util::display_sctable(get_sctable());
                     }
                     assert!(!fail);
@@ -1741,7 +1692,7 @@ foo_module!()
             bindings.iter().filter(|b|{@"xx" == (ident_to_str(*b))}).collect();
         let cxbind = match cxbinds {
             [b] => b,
-            _ => fail2!("expected just one binding for ext_cx")
+            _ => fail!("expected just one binding for ext_cx")
         };
         let resolved_binding = mtwt_resolve(*cxbind);
         // find all the xx varrefs:
@@ -1752,17 +1703,17 @@ foo_module!()
                                           && (@"xx" == (ident_to_str(&p.segments[0].identifier)))
                                      }).enumerate() {
             if (mtwt_resolve(v.segments[0].identifier) != resolved_binding) {
-                std::io::println("uh oh, xx binding didn't match xx varref:");
-                std::io::println(format!("this is xx varref \\# {:?}",idx));
-                std::io::println(format!("binding: {:?}",cxbind));
-                std::io::println(format!("resolves to: {:?}",resolved_binding));
-                std::io::println(format!("varref: {:?}",v.segments[0].identifier));
-                std::io::println(format!("resolves to: {:?}",
-                                         mtwt_resolve(v.segments[0].identifier)));
+                println("uh oh, xx binding didn't match xx varref:");
+                println!("this is xx varref \\# {:?}",idx);
+                println!("binding: {:?}",cxbind);
+                println!("resolves to: {:?}",resolved_binding);
+                println!("varref: {:?}",v.segments[0].identifier);
+                println!("resolves to: {:?}",
+                         mtwt_resolve(v.segments[0].identifier));
                 let table = get_sctable();
-                std::io::println("SC table:");
+                println("SC table:");
                 for (idx,val) in table.table.iter().enumerate() {
-                    std::io::println(format!("{:4u} : {:?}",idx,val));
+                    println!("{:4u} : {:?}",idx,val);
                 }
             }
             assert_eq!(mtwt_resolve(v.segments[0].identifier),resolved_binding);

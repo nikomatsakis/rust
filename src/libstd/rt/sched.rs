@@ -16,7 +16,7 @@ use unstable::raw;
 use super::sleeper_list::SleeperList;
 use super::work_queue::WorkQueue;
 use super::stack::{StackPool};
-use super::rtio::{EventLoop, EventLoopObject, RemoteCallbackObject};
+use super::rtio::EventLoop;
 use super::context::Context;
 use super::task::{Task, AnySched, Sched};
 use super::message_queue::MessageQueue;
@@ -62,30 +62,38 @@ pub struct Scheduler {
     /// no longer try to go to sleep, but exit instead.
     no_sleep: bool,
     stack_pool: StackPool,
-    /// The event loop used to drive the scheduler and perform I/O
-    event_loop: ~EventLoopObject,
     /// The scheduler runs on a special task. When it is not running
     /// it is stored here instead of the work queue.
-    sched_task: Option<~Task>,
+    priv sched_task: Option<~Task>,
     /// An action performed after a context switch on behalf of the
     /// code running before the context switch
-    cleanup_job: Option<CleanupJob>,
+    priv cleanup_job: Option<CleanupJob>,
     /// Should this scheduler run any task, or only pinned tasks?
     run_anything: bool,
     /// If the scheduler shouldn't run some tasks, a friend to send
     /// them to.
-    friend_handle: Option<SchedHandle>,
+    priv friend_handle: Option<SchedHandle>,
     /// A fast XorShift rng for scheduler use
     rng: XorShiftRng,
     /// A toggleable idle callback
-    idle_callback: Option<~PausibleIdleCallback>,
+    priv idle_callback: Option<~PausibleIdleCallback>,
     /// A countdown that starts at a random value and is decremented
     /// every time a yield check is performed. When it hits 0 a task
     /// will yield.
-    yield_check_count: uint,
+    priv yield_check_count: uint,
     /// A flag to tell the scheduler loop it needs to do some stealing
     /// in order to introduce randomness as part of a yield
-    steal_for_yield: bool
+    priv steal_for_yield: bool,
+
+    // n.b. currently destructors of an object are run in top-to-bottom in order
+    //      of field declaration. Due to its nature, the pausible idle callback
+    //      must have some sort of handle to the event loop, so it needs to get
+    //      destroyed before the event loop itself. For this reason, we destroy
+    //      the event loop last to ensure that any unsafe references to it are
+    //      destroyed before it's actually destroyed.
+
+    /// The event loop used to drive the scheduler and perform I/O
+    event_loop: ~EventLoop,
 }
 
 /// An indication of how hard to work on a given operation, the difference
@@ -107,7 +115,7 @@ impl Scheduler {
 
     // * Initialization Functions
 
-    pub fn new(event_loop: ~EventLoopObject,
+    pub fn new(event_loop: ~EventLoop,
                work_queue: WorkQueue<~Task>,
                work_queues: ~[WorkQueue<~Task>],
                sleeper_list: SleeperList)
@@ -119,7 +127,7 @@ impl Scheduler {
 
     }
 
-    pub fn new_special(event_loop: ~EventLoopObject,
+    pub fn new_special(event_loop: ~EventLoop,
                        work_queue: WorkQueue<~Task>,
                        work_queues: ~[WorkQueue<~Task>],
                        sleeper_list: SleeperList,
@@ -140,7 +148,7 @@ impl Scheduler {
             cleanup_job: None,
             run_anything: run_anything,
             friend_handle: friend,
-            rng: XorShiftRng::new(),
+            rng: new_sched_rng(),
             idle_callback: None,
             yield_check_count: 0,
             steal_for_yield: false
@@ -173,7 +181,7 @@ impl Scheduler {
 
         // Now that we have an empty task struct for the scheduler
         // task, put it in TLS.
-        Local::put::(sched_task);
+        Local::put(sched_task);
 
         // Before starting our first task, make sure the idle callback
         // is active. As we do not start in the sleep state this is
@@ -227,7 +235,7 @@ impl Scheduler {
         // mutable reference to the event_loop to give it the "run"
         // command.
         unsafe {
-            let event_loop: *mut ~EventLoopObject = &mut self_sched.event_loop;
+            let event_loop: *mut ~EventLoop = &mut self_sched.event_loop;
 
             // Our scheduler must be in the task before the event loop
             // is started.
@@ -328,6 +336,12 @@ impl Scheduler {
             Some(TaskFromFriend(task)) => {
                 rtdebug!("got a task from a friend. lovely!");
                 this.process_task(task, Scheduler::resume_task_immediately_cl);
+                return None;
+            }
+            Some(RunOnce(task)) => {
+                // bypass the process_task logic to force running this task once
+                // on this home scheduler. This is often used for I/O (homing).
+                Scheduler::resume_task_immediately_cl(this, task);
                 return None;
             }
             Some(Wake) => {
@@ -431,7 +445,7 @@ impl Scheduler {
     fn try_steals(&mut self) -> Option<~Task> {
         let work_queues = &mut self.work_queues;
         let len = work_queues.len();
-        let start_index = self.rng.gen_integer_range(0, len);
+        let start_index = self.rng.gen_range(0, len);
         for index in range(0, len).map(|i| (i + start_index) % len) {
             match work_queues[index].steal() {
                 Some(task) => {
@@ -538,7 +552,7 @@ impl Scheduler {
     /// As enqueue_task, but with the possibility for the blocked task to
     /// already have been killed.
     pub fn enqueue_blocked_task(&mut self, blocked_task: BlockedTask) {
-        do blocked_task.wake().map_move |task| {
+        do blocked_task.wake().map |task| {
             self.enqueue_task(task);
         };
     }
@@ -789,11 +803,12 @@ pub enum SchedMessage {
     Wake,
     Shutdown,
     PinnedTask(~Task),
-    TaskFromFriend(~Task)
+    TaskFromFriend(~Task),
+    RunOnce(~Task),
 }
 
 pub struct SchedHandle {
-    priv remote: ~RemoteCallbackObject,
+    priv remote: ~RemoteCallback,
     priv queue: MessageQueue<SchedMessage>,
     sched_id: uint
 }
@@ -844,6 +859,54 @@ impl ClosureConverter for UnsafeTaskReceiver {
     fn to_fn(self) -> &fn(&mut Scheduler, ~Task) { unsafe { transmute(self) } }
 }
 
+// On unix, we read randomness straight from /dev/urandom, but the
+// default constructor of an XorShiftRng does this via io::file, which
+// relies on the scheduler existing, so we have to manually load
+// randomness. Windows has its own C API for this, so we don't need to
+// worry there.
+#[cfg(windows)]
+fn new_sched_rng() -> XorShiftRng {
+    XorShiftRng::new()
+}
+#[cfg(unix)]
+#[fixed_stack_segment] #[inline(never)]
+fn new_sched_rng() -> XorShiftRng {
+    use libc;
+    use mem;
+    use c_str::ToCStr;
+    use vec::MutableVector;
+    use iter::Iterator;
+    use rand::SeedableRng;
+
+    let fd = do "/dev/urandom".with_c_str |name| {
+        unsafe { libc::open(name, libc::O_RDONLY, 0) }
+    };
+    if fd == -1 {
+        rtabort!("could not open /dev/urandom for reading.")
+    }
+
+    let mut seeds = [0u32, .. 4];
+    let size = mem::size_of_val(&seeds);
+    loop {
+        let nbytes = do seeds.as_mut_buf |buf, _| {
+            unsafe {
+                libc::read(fd,
+                           buf as *mut libc::c_void,
+                           size as libc::size_t)
+            }
+        };
+        rtassert!(nbytes as uint == size);
+
+        if !seeds.iter().all(|x| *x == 0) {
+            break;
+        }
+    }
+
+    unsafe {libc::close(fd);}
+
+    SeedableRng::from_seed(seeds)
+}
+
 #[cfg(test)]
 mod test {
     extern mod extra;
@@ -852,13 +915,14 @@ mod test {
     use rt::test::*;
     use unstable::run_in_bare_thread;
     use borrow::to_uint;
-    use rt::local::*;
     use rt::sched::{Scheduler};
     use cell::Cell;
     use rt::thread::Thread;
     use rt::task::{Task, Sched};
+    use rt::basic;
     use rt::util;
     use option::{Some};
+    use rt::task::UnwindResult;
 
     #[test]
     fn trivial_run_in_newsched_task_test() {
@@ -943,7 +1007,7 @@ mod test {
                 assert!(Task::on_appropriate_sched());
             };
 
-            let on_exit: ~fn(bool) = |exit_status| rtassert!(exit_status);
+            let on_exit: ~fn(UnwindResult) = |exit_status| rtassert!(exit_status.is_success());
             task.death.on_exit = Some(on_exit);
 
             sched.bootstrap(task);
@@ -956,7 +1020,6 @@ mod test {
     #[test]
     fn test_schedule_home_states() {
 
-        use rt::uv::uvio::UvEventLoop;
         use rt::sleeper_list::SleeperList;
         use rt::work_queue::WorkQueue;
         use rt::sched::Shutdown;
@@ -972,7 +1035,7 @@ mod test {
 
             // Our normal scheduler
             let mut normal_sched = ~Scheduler::new(
-                ~UvEventLoop::new(),
+                basic::event_loop(),
                 normal_queue,
                 queues.clone(),
                 sleepers.clone());
@@ -983,7 +1046,7 @@ mod test {
 
             // Our special scheduler
             let mut special_sched = ~Scheduler::new_special(
-                ~UvEventLoop::new(),
+                basic::event_loop(),
                 special_queue.clone(),
                 queues.clone(),
                 sleepers.clone(),
@@ -1088,22 +1151,15 @@ mod test {
 
     #[test]
     fn test_io_callback() {
+        use rt::io::timer;
+
         // This is a regression test that when there are no schedulable tasks
         // in the work queue, but we are performing I/O, that once we do put
         // something in the work queue again the scheduler picks it up and doesn't
         // exit before emptying the work queue
-        do run_in_newsched_task {
+        do run_in_uv_task {
             do spawntask {
-                let sched: ~Scheduler = Local::take();
-                do sched.deschedule_running_task_and_then |sched, task| {
-                    let task = Cell::new(task);
-                    do sched.event_loop.callback_ms(10) {
-                        rtdebug!("in callback");
-                        let mut sched: ~Scheduler = Local::take();
-                        sched.enqueue_blocked_task(task.take());
-                        Local::put(sched);
-                    }
-                }
+                timer::sleep(10);
             }
         }
     }
@@ -1143,7 +1199,6 @@ mod test {
         use rt::work_queue::WorkQueue;
         use rt::sleeper_list::SleeperList;
         use rt::stack::StackPool;
-        use rt::uv::uvio::UvEventLoop;
         use rt::sched::{Shutdown, TaskFromFriend};
         use util;
 
@@ -1154,7 +1209,7 @@ mod test {
                 let queues = ~[queue.clone()];
 
                 let mut sched = ~Scheduler::new(
-                    ~UvEventLoop::new(),
+                    basic::event_loop(),
                     queue,
                     queues.clone(),
                     sleepers.clone());
@@ -1244,12 +1299,12 @@ mod test {
             while (true) {
                 match p.recv() {
                     (1, end_chan) => {
-                                debug2!("{}\n", id);
+                                debug!("{}\n", id);
                                 end_chan.send(());
                                 return;
                     }
                     (token, end_chan) => {
-                        debug2!("thread: {}   got token: {}", id, token);
+                        debug!("thread: {}   got token: {}", id, token);
                         ch.send((token - 1, end_chan));
                         if token <= n_tasks {
                             return;

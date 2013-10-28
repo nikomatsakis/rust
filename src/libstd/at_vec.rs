@@ -14,7 +14,7 @@ use clone::Clone;
 use container::Container;
 use iter::{Iterator, FromIterator};
 use option::{Option, Some, None};
-use sys;
+use mem;
 use unstable::raw::Repr;
 use vec::{ImmutableVector, OwnedVector};
 
@@ -26,7 +26,7 @@ use vec::{ImmutableVector, OwnedVector};
 pub fn capacity<T>(v: @[T]) -> uint {
     unsafe {
         let box = v.repr();
-        (*box).data.alloc / sys::size_of::<T>()
+        (*box).data.alloc / mem::size_of::<T>()
     }
 }
 
@@ -146,6 +146,7 @@ impl<A> FromIterator<A> for @[A] {
 }
 
 #[cfg(not(test))]
+#[allow(missing_doc)]
 pub mod traits {
     use at_vec::append;
     use clone::Clone;
@@ -163,13 +164,13 @@ pub mod traits {
 #[cfg(test)]
 pub mod traits {}
 
+#[allow(missing_doc)]
 pub mod raw {
     use at_vec::capacity;
     use cast;
     use cast::{transmute, transmute_copy};
-    use libc;
     use ptr;
-    use sys;
+    use mem;
     use uint;
     use unstable::intrinsics::{move_val_init, TyDesc};
     use unstable::intrinsics;
@@ -185,7 +186,7 @@ pub mod raw {
     #[inline]
     pub unsafe fn set_len<T>(v: &mut @[T], new_len: uint) {
         let repr: *mut Box<Vec<T>> = cast::transmute_copy(v);
-        (*repr).data.fill = new_len * sys::size_of::<T>();
+        (*repr).data.fill = new_len * mem::size_of::<T>();
     }
 
     /**
@@ -208,7 +209,7 @@ pub mod raw {
     unsafe fn push_fast<T>(v: &mut @[T], initval: T) {
         let repr: *mut Box<Vec<T>> = cast::transmute_copy(v);
         let amt = v.len();
-        (*repr).data.fill += sys::size_of::<T>();
+        (*repr).data.fill += mem::size_of::<T>();
         let p = ptr::offset(&(*repr).data.data as *T, amt as int) as *mut T;
         move_val_init(&mut(*p), initval);
     }
@@ -245,9 +246,9 @@ pub mod raw {
         unsafe {
             if n > (**ptr).data.alloc / (*ty).size {
                 let alloc = n * (*ty).size;
-                let total_size = alloc + sys::size_of::<Vec<()>>();
+                let total_size = alloc + mem::size_of::<Vec<()>>();
                 if alloc / (*ty).size != n || total_size < alloc {
-                    fail2!("vector size is too large: {}", n);
+                    fail!("vector size is too large: {}", n);
                 }
                 (*ptr) = local_realloc(*ptr as *(), total_size) as *mut Box<Vec<()>>;
                 (**ptr).data.alloc = alloc;
@@ -259,7 +260,7 @@ pub mod raw {
             use rt::task::Task;
 
             do Local::borrow |task: &mut Task| {
-                task.heap.realloc(ptr as *libc::c_void, size) as *()
+                task.heap.realloc(ptr as *mut Box<()>, size) as *()
             }
         }
     }

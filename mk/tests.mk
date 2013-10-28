@@ -15,7 +15,7 @@
 
 # The names of crates that must be tested
 TEST_TARGET_CRATES = std extra
-TEST_HOST_CRATES = rust rusti rustpkg rustc rustdoc syntax
+TEST_HOST_CRATES = rustpkg rustc rustdoc syntax
 TEST_CRATES = $(TEST_TARGET_CRATES) $(TEST_HOST_CRATES)
 
 # Markdown files under doc/ that should have their code extracted and run
@@ -189,7 +189,7 @@ check-test: cleantestlibs cleantmptestlogs all check-stage2-rfail
 
 check-lite: cleantestlibs cleantmptestlogs \
 	check-stage2-std check-stage2-extra check-stage2-rpass \
-	check-stage2-rustpkg check-stage2-rusti \
+	check-stage2-rustpkg \
 	check-stage2-rfail check-stage2-cfail
 	$(Q)$(CFG_PYTHON) $(S)src/etc/check-summary.py tmp/*.log
 
@@ -227,7 +227,6 @@ ALL_CS := $(wildcard $(S)src/rt/*.cpp \
                      $(S)src/rt/*/*/*.cpp \
                      $(S)src/rustllvm/*.cpp)
 ALL_CS := $(filter-out $(S)src/rt/miniz.cpp \
-		       $(wildcard $(S)src/rt/linenoise/*.c) \
 		       $(wildcard $(S)src/rt/sundown/src/*.c) \
 		       $(wildcard $(S)src/rt/sundown/html/*.c) \
 	,$(ALL_CS))
@@ -240,8 +239,6 @@ ALL_HS := $(filter-out $(S)src/rt/vg/valgrind.h \
                        $(S)src/rt/msvc/typeof.h \
                        $(S)src/rt/msvc/stdint.h \
                        $(S)src/rt/msvc/inttypes.h \
-                       $(S)src/rt/linenoise/linenoise.h \
-                       $(S)src/rt/linenoise/utf8.h \
 		       $(wildcard $(S)src/rt/sundown/src/*.h) \
 		       $(wildcard $(S)src/rt/sundown/html/*.h) \
 	,$(ALL_HS))
@@ -268,7 +265,6 @@ tidy:
 		| grep '^$(S)src/libuv' -v \
 		| grep '^$(S)src/gyp' -v \
 		| grep '^$(S)src/etc' -v \
-		| grep '^$(S)src/rt/jemalloc' -v \
 		| xargs $(CFG_PYTHON) $(S)src/etc/check-binaries.py
 
 endif
@@ -374,26 +370,9 @@ $(3)/stage$(1)/test/rustpkgtest-$(2)$$(X_$(2)):					\
 		$$(SREQ$(1)_T_$(2)_H_$(3)) \
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBSYNTAX_$(2)) \
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTC_$(2)) \
+		$$(HBIN$(1)_H_$(3))/rustpkg$$(X_$(2)) \
 		$$(TBIN$(1)_T_$(2)_H_$(3))/rustpkg$$(X_$(2)) \
 		$$(TBIN$(1)_T_$(2)_H_$(3))/rustc$$(X_$(2))
-	@$$(call E, compile_and_link: $$@)
-	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
-
-$(3)/stage$(1)/test/rustitest-$(2)$$(X_$(2)):					\
-		$$(RUSTI_LIB) $$(RUSTI_INPUTS)		\
-		$$(SREQ$(1)_T_$(2)_H_$(3)) \
-		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBSYNTAX_$(2)) \
-		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTC_$(2))
-	@$$(call E, compile_and_link: $$@)
-	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
-
-$(3)/stage$(1)/test/rusttest-$(2)$$(X_$(2)):					\
-		$$(RUST_LIB) $$(RUST_INPUTS)		\
-		$$(SREQ$(1)_T_$(2)_H_$(3)) \
-		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTPKG_$(2)) \
-		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTDOC_$(2)) \
-		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTI_$(2)) \
-		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTC_$(2))
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
 

@@ -10,10 +10,11 @@
 
 use fmt;
 use from_str::from_str;
-use libc::{uintptr_t, exit};
+use libc::exit;
 use option::{Some, None, Option};
-use rt;
-use rt::util::dumb_println;
+use rt::io;
+use rt::io::stdio::StdWriter;
+use rt::io::buffered::LineBufferedWriter;
 use rt::crate_map::{ModEntry, CrateMap, iter_crate_map, get_crate_map};
 use str::StrSlice;
 use u32;
@@ -88,16 +89,16 @@ fn parse_logging_spec(spec: ~str) -> ~[LogDirective]{
                         log_level = num;
                     },
                     _ => {
-                        dumb_println(format!("warning: invalid logging spec \
-                                              '{}', ignoring it", parts[1]));
-                        continue;
+                        rterrln!("warning: invalid logging spec '{}', \
+                                  ignoring it", parts[1]);
+                        continue
                     }
                 }
             },
             _ => {
-                dumb_println(format!("warning: invalid logging spec '{}',\
-                                      ignoring it", s));
-                continue;
+                rterrln!("warning: invalid logging spec '{}', \
+                          ignoring it", s);
+                continue
             }
         }
         let dir = LogDirective {name: name, level: log_level};
@@ -141,9 +142,9 @@ fn update_log_settings(crate_map: &CrateMap, settings: ~str) {
     let mut dirs = ~[];
     if settings.len() > 0 {
         if settings == ~"::help" || settings == ~"?" {
-        dumb_println("\nCrate log map:\n");
+            rterrln!("\nCrate log map:\n");
             do iter_crate_map(crate_map) |entry| {
-                dumb_println(" "+entry.name);
+                rterrln!(" {}", entry.name);
             }
             unsafe { exit(1); }
         }
@@ -157,12 +158,10 @@ fn update_log_settings(crate_map: &CrateMap, settings: ~str) {
     }
 
     if n_matches < (dirs.len() as u32) {
-        dumb_println(format!("warning: got {} RUST_LOG specs but only matched\n\
-                              {} of them. You may have mistyped a RUST_LOG \
-                              spec. \n\
-                              Use RUST_LOG=::help to see the list of crates \
-                              and modules.\n",
-                             dirs.len(), n_matches));
+        rterrln!("warning: got {} RUST_LOG specs but only matched\n\
+                  {} of them. You may have mistyped a RUST_LOG spec. \n\
+                  Use RUST_LOG=::help to see the list of crates and modules.\n",
+                 dirs.len(), n_matches);
     }
 }
 
@@ -170,28 +169,24 @@ pub trait Logger {
     fn log(&mut self, args: &fmt::Arguments);
 }
 
-pub struct StdErrLogger;
+/// This logger emits output to the stderr of the process, and contains a lazily
+/// initialized event-loop driven handle to the stream.
+pub struct StdErrLogger {
+    priv handle: Option<LineBufferedWriter<StdWriter>>,
+}
+
+impl StdErrLogger {
+    pub fn new() -> StdErrLogger { StdErrLogger { handle: None } }
+}
 
 impl Logger for StdErrLogger {
     fn log(&mut self, args: &fmt::Arguments) {
-        if should_log_console() {
-            fmt::writeln(self as &mut rt::io::Writer, args);
+        // First time logging? Get a handle to the stderr of this process.
+        if self.handle.is_none() {
+            self.handle = Some(LineBufferedWriter::new(io::stderr()));
         }
+        fmt::writeln(self.handle.get_mut_ref() as &mut io::Writer, args);
     }
-}
-
-impl rt::io::Writer for StdErrLogger {
-    fn write(&mut self, buf: &[u8]) {
-        // Nothing like swapping between I/O implementations! In theory this
-        // could use the libuv bindings for writing to file descriptors, but
-        // that may not necessarily be desirable because logging should work
-        // outside of the uv loop. (modify with caution)
-        use io::Writer;
-        let dbg = ::libc::STDERR_FILENO as ::io::fd_t;
-        dbg.write(buf);
-    }
-
-    fn flush(&mut self) {}
 }
 
 /// Configure logging by traversing the crate map and setting the
@@ -214,27 +209,12 @@ pub fn init() {
         _ => {
             match log_spec {
                 Some(_) => {
-                    dumb_println("warning: RUST_LOG set, but no crate map found.");
+                    rterrln!("warning: RUST_LOG set, but no crate map found.");
                 },
                 None => {}
             }
         }
     }
-}
-
-#[fixed_stack_segment] #[inline(never)]
-pub fn console_on() { unsafe { rust_log_console_on() } }
-
-#[fixed_stack_segment] #[inline(never)]
-pub fn console_off() { unsafe { rust_log_console_off() } }
-
-#[fixed_stack_segment] #[inline(never)]
-fn should_log_console() -> bool { unsafe { rust_should_log_console() != 0 } }
-
-extern {
-    fn rust_log_console_on();
-    fn rust_log_console_off();
-    fn rust_should_log_console() -> uintptr_t;
 }
 
 // Tests for parse_logging_spec()

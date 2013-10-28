@@ -15,7 +15,6 @@
 extern mod extra;
 
 use extra::time::precise_time_s;
-use std::io;
 use std::os;
 use std::rand::Rng;
 use std::rand;
@@ -70,11 +69,15 @@ fn shift_push() {
 }
 
 fn read_line() {
-    let path = Path(env!("CFG_SRC_DIR"))
-        .push_rel(&Path("src/test/bench/shootout-k-nucleotide.data"));
+    use std::rt::io::{Reader, Open};
+    use std::rt::io::file::FileInfo;
+    use std::rt::io::buffered::BufferedReader;
+
+    let mut path = Path::new(env!("CFG_SRC_DIR"));
+    path.push("src/test/bench/shootout-k-nucleotide.data");
 
     for _ in range(0, 3) {
-        let reader = io::file_reader(&path).unwrap();
+        let mut reader = BufferedReader::new(path.open_reader(Open).unwrap());
         while !reader.eof() {
             reader.read_line();
         }
@@ -87,7 +90,7 @@ fn vec_plus() {
     let mut v = ~[];
     let mut i = 0;
     while i < 1500 {
-        let rv = vec::from_elem(r.gen_integer_range(0u, i + 1), i);
+        let rv = vec::from_elem(r.gen_range(0u, i + 1), i);
         if r.gen() {
             v.push_all_move(rv);
         } else {
@@ -103,7 +106,7 @@ fn vec_append() {
     let mut v = ~[];
     let mut i = 0;
     while i < 1500 {
-        let rv = vec::from_elem(r.gen_integer_range(0u, i + 1), i);
+        let rv = vec::from_elem(r.gen_range(0u, i + 1), i);
         if r.gen() {
             v = vec::append(v, rv);
         }
@@ -119,7 +122,7 @@ fn vec_push_all() {
 
     let mut v = ~[];
     for i in range(0u, 1500) {
-        let mut rv = vec::from_elem(r.gen_integer_range(0u, i + 1), i);
+        let mut rv = vec::from_elem(r.gen_range(0u, i + 1), i);
         if r.gen() {
             v.push_all(rv);
         }
@@ -135,7 +138,7 @@ fn is_utf8_ascii() {
     for _ in range(0u, 20000) {
         v.push('b' as u8);
         if !str::is_utf8(v) {
-            fail2!("is_utf8 failed");
+            fail!("is_utf8 failed");
         }
     }
 }
@@ -146,7 +149,7 @@ fn is_utf8_multibyte() {
     for _ in range(0u, 5000) {
         v.push_all(s.as_bytes());
         if !str::is_utf8(v) {
-            fail2!("is_utf8 failed");
+            fail!("is_utf8 failed");
         }
     }
 }

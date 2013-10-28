@@ -108,7 +108,7 @@ pub fn ast_region_to_region(
         }
     };
 
-    debug2!("ast_region_to_region(lifetime={} id={}) yields {}",
+    debug!("ast_region_to_region(lifetime={} id={}) yields {}",
             lifetime_to_str(lifetime, tcx.sess.intr()),
             lifetime.id,
             r.repr(tcx));
@@ -130,7 +130,7 @@ pub fn opt_ast_region_to_region<AC:AstConv,RS:RegionScope>(
         None => {
             match rscope.anon_regions(default_span, 1) {
                 None => {
-                    debug2!("optional region in illegal location");
+                    debug!("optional region in illegal location");
                     this.tcx().sess.span_err(
                         default_span, "missing lifetime specifier");
                     ty::re_static
@@ -143,8 +143,9 @@ pub fn opt_ast_region_to_region<AC:AstConv,RS:RegionScope>(
         }
     };
 
-    debug2!("opt_ast_region_to_region(opt_lifetime={:?}) yields {}",
-            opt_lifetime.map(|e| lifetime_to_str(e, this.tcx().sess.intr())),
+    debug!("opt_ast_region_to_region(opt_lifetime={:?}) yields {}",
+            opt_lifetime.as_ref().map(
+                |e| lifetime_to_str(e, this.tcx().sess.intr())),
             r.repr(this.tcx()));
 
     r
@@ -298,7 +299,7 @@ pub fn ast_ty_to_ty<AC:AstConv, RS:RegionScope>(
         constr: &fn(ty::mt) -> ty::t) -> ty::t
     {
         let tcx = this.tcx();
-        debug2!("mk_pointer(vst={:?})", vst);
+        debug!("mk_pointer(vst={:?})", vst);
 
         match a_seq_ty.ty.node {
             ast::ty_vec(ref mt) => {
@@ -306,7 +307,7 @@ pub fn ast_ty_to_ty<AC:AstConv, RS:RegionScope>(
                 if a_seq_ty.mutbl == ast::MutMutable {
                     mt = ty::mt { ty: mt.ty, mutbl: a_seq_ty.mutbl };
                 }
-                debug2!("&[]: vst={:?}", vst);
+                debug!("&[]: vst={:?}", vst);
                 return ty::mk_evec(tcx, mt, vst);
             }
             ast::ty_path(ref path, ref bounds, id) => {
@@ -406,7 +407,7 @@ pub fn ast_ty_to_ty<AC:AstConv, RS:RegionScope>(
       }
       ast::ty_rptr(ref region, ref mt) => {
         let r = opt_ast_region_to_region(this, rscope, ast_ty.span, region);
-        debug2!("ty_rptr r={}", r.repr(this.tcx()));
+        debug!("ty_rptr r={}", r.repr(this.tcx()));
         mk_pointer(this, rscope, mt, ty::vstore_slice(r),
                    |tmt| ty::mk_rptr(tcx, r, tmt))
       }
@@ -622,13 +623,13 @@ fn ty_of_method_or_bare_fn<AC:AstConv>(
     opt_self_info: Option<&SelfInfo>,
     decl: &ast::fn_decl) -> (Option<Option<ty::t>>, ty::BareFnTy)
 {
-    debug2!("ty_of_method_or_bare_fn");
+    debug!("ty_of_method_or_bare_fn");
 
     // new region names that appear inside of the fn decl are bound to
     // that function type
     let rb = rscope::BindingRscope::new(id);
 
-    let opt_transformed_self_ty = do opt_self_info.map_move |self_info| {
+    let opt_transformed_self_ty = do opt_self_info.map |self_info| {
         transform_self_ty(this, &rb, self_info)
     };
 
@@ -655,7 +656,7 @@ fn ty_of_method_or_bare_fn<AC:AstConv>(
     {
         match self_info.explicit_self.node {
             ast::sty_static => None,
-            ast::sty_value => {
+            ast::sty_value(_) => {
                 Some(self_info.untransformed_self_ty)
             }
             ast::sty_region(ref lifetime, mutability) => {
@@ -672,7 +673,7 @@ fn ty_of_method_or_bare_fn<AC:AstConv>(
                                 ty::mt {ty: self_info.untransformed_self_ty,
                                         mutbl: mutability}))
             }
-            ast::sty_uniq => {
+            ast::sty_uniq(_) => {
                 Some(ty::mk_uniq(this.tcx(),
                                  ty::mt {ty: self_info.untransformed_self_ty,
                                          mutbl: ast::MutImmutable}))
@@ -695,7 +696,7 @@ pub fn ty_of_closure<AC:AstConv,RS:RegionScope>(
     span: Span)
     -> ty::ClosureTy
 {
-    debug2!("ty_of_fn_decl");
+    debug!("ty_of_fn_decl");
 
     // resolve the function bound region in the original region
     // scope `rscope`, not the scope of the function parameters
@@ -723,7 +724,7 @@ pub fn ty_of_closure<AC:AstConv,RS:RegionScope>(
     let rb = rscope::BindingRscope::new(id);
 
     let input_tys = do decl.inputs.iter().enumerate().map |(i, a)| {
-        let expected_arg_ty = do expected_sig.and_then_ref |e| {
+        let expected_arg_ty = do expected_sig.as_ref().and_then |e| {
             // no guarantee that the correct number of expected args
             // were supplied
             if i < e.inputs.len() {Some(e.inputs[i])} else {None}

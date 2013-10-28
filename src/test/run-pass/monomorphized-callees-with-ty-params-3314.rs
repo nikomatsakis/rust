@@ -8,9 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern mod extra;
+#[feature(managed_boxes)];
 
-use std::io;
+extern mod extra;
 
 trait Serializer {
 }
@@ -31,15 +31,13 @@ impl<A:Serializable> Serializable for F<A> {
     }
 }
 
-impl Serializer for @io::Writer {
+impl Serializer for int {
 }
 
 pub fn main() {
-    do io::with_str_writer |wr| {
-        let foo = F { a: 1 };
-        foo.serialize(wr);
+    let foo = F { a: 1 };
+    foo.serialize(1i);
 
-        let bar = F { a: F {a: 1 } };
-        bar.serialize(wr);
-    };
+    let bar = F { a: F {a: 1 } };
+    bar.serialize(2i);
 }

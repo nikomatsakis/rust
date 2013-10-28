@@ -18,10 +18,9 @@ use std::cmp::Ord;
 use std::comm::{stream, Port, Chan};
 use std::comm;
 use std::hashmap::HashMap;
-use std::io::ReaderUtil;
-use std::io;
 use std::option;
 use std::os;
+use std::rt::io;
 use std::str;
 use std::task;
 use std::util;
@@ -156,17 +155,18 @@ fn make_sequence_processor(sz: uint,
 
 // given a FASTA file on stdin, process sequence THREE
 fn main() {
+    use std::rt::io::Reader;
+    use std::rt::io::native::stdio;
+    use std::rt::io::mem::MemReader;
+    use std::rt::io::buffered::BufferedReader;
+
     let rdr = if os::getenv("RUST_BENCH").is_some() {
-       // FIXME: Using this compile-time env variable is a crummy way to
-       // get to this massive data set, but include_bin! chokes on it (#2598)
-       let path = Path(env!("CFG_SRC_DIR"))
-           .push_rel(&Path("src/test/bench/shootout-k-nucleotide.data"));
-       io::file_reader(&path).unwrap()
-   } else {
-      io::stdin()
-   };
-
-
+        let foo = include_bin!("shootout-k-nucleotide.data");
+        ~MemReader::new(foo.to_owned()) as ~Reader
+    } else {
+        ~stdio::stdin() as ~Reader
+    };
+    let mut rdr = BufferedReader::new(rdr);
 
     // initialize each sequence sorter
     let sizes = ~[1u,2,3,4,6,12,18];
@@ -193,46 +193,49 @@ fn main() {
    // reading the sequence of interest
    let mut proc_mode = false;
 
-   while !rdr.eof() {
-      let line: ~str = rdr.read_line();
+   loop {
+       let line = match io::ignore_io_error(|| rdr.read_line()) {
+           Some(ln) => ln, None => break,
+       };
+       let line = line.trim().to_owned();
 
-      if line.len() == 0u { continue; }
+       if line.len() == 0u { continue; }
 
-      match (line[0] as char, proc_mode) {
+       match (line[0] as char, proc_mode) {
 
-         // start processing if this is the one
-         ('>', false) => {
-            match line.slice_from(1).find_str("THREE") {
-               option::Some(_) => { proc_mode = true; }
-               option::None    => { }
-            }
-         }
+           // start processing if this is the one
+           ('>', false) => {
+               match line.slice_from(1).find_str("THREE") {
+                   option::Some(_) => { proc_mode = true; }
+                   option::None    => { }
+               }
+           }
 
-         // break our processing
-         ('>', true) => { break; }
+           // break our processing
+           ('>', true) => { break; }
 
-         // process the sequence for k-mers
-         (_, true) => {
-            let line_bytes = line.as_bytes();
+           // process the sequence for k-mers
+           (_, true) => {
+               let line_bytes = line.as_bytes();
 
-           for (ii, _sz) in sizes.iter().enumerate() {
-               let lb = line_bytes.to_owned();
-               to_child[ii].send(lb);
-            }
-         }
+               for (ii, _sz) in sizes.iter().enumerate() {
+                   let lb = line_bytes.to_owned();
+                   to_child[ii].send(lb);
+               }
+           }
 
-         // whatever
-         _ => { }
-      }
+           // whatever
+           _ => { }
+       }
    }
 
    // finish...
-    for (ii, _sz) in sizes.iter().enumerate() {
-      to_child[ii].send(~[]);
+   for (ii, _sz) in sizes.iter().enumerate() {
+       to_child[ii].send(~[]);
    }
 
    // now fetch and print result messages
-    for (ii, _sz) in sizes.iter().enumerate() {
-      io::println(from_child[ii].recv());
+   for (ii, _sz) in sizes.iter().enumerate() {
+       println(from_child[ii].recv());
    }
 }

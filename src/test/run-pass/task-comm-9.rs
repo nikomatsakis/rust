@@ -28,9 +28,8 @@ fn test00() {
     let (p, ch) = comm::stream();
     let number_of_messages: int = 10;
 
-    let mut result = None;
     let mut builder = task::task();
-    builder.future_result(|r| result = Some(r));
+    let result = builder.future_result();
     do builder.spawn {
         test00_start(&ch, number_of_messages);
     }
@@ -38,11 +37,11 @@ fn test00() {
     let mut i: int = 0;
     while i < number_of_messages {
         sum += p.recv();
-        info2!("{:?}", r);
+        info!("{:?}", r);
         i += 1;
     }
 
-    result.unwrap().recv();
+    result.recv();
 
     assert_eq!(sum, number_of_messages * (number_of_messages - 1) / 2);
 }

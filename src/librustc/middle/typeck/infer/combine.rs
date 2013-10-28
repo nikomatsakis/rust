@@ -145,7 +145,7 @@ pub trait Combine {
                     let region_params = &variances.region_params;
                     let num_region_params = region_params.len();
 
-                    debug2!("relate_region_params(\
+                    debug!("relate_region_params(\
                             item_def_id={}, \
                             a_rs={}, \
                             b_rs={},
@@ -266,7 +266,7 @@ pub trait Combine {
                a: ty::vstore,
                b: ty::vstore)
                -> cres<ty::vstore> {
-        debug2!("{}.vstores(a={:?}, b={:?})", self.tag(), a, b);
+        debug!("{}.vstores(a={:?}, b={:?})", self.tag(), a, b);
 
         match (a, b) {
             (ty::vstore_slice(a_r), ty::vstore_slice(b_r)) => {
@@ -290,7 +290,7 @@ pub trait Combine {
                     a: ty::TraitStore,
                     b: ty::TraitStore)
                     -> cres<ty::TraitStore> {
-        debug2!("{}.trait_stores(a={:?}, b={:?})", self.tag(), a, b);
+        debug!("{}.trait_stores(a={:?}, b={:?})", self.tag(), a, b);
 
         match (a, b) {
             (ty::RegionTraitStore(a_r), ty::RegionTraitStore(b_r)) => {
@@ -355,7 +355,7 @@ pub fn eq_tys<C:Combine>(this: &C, a: ty::t, b: ty::t) -> ures {
 
 pub fn eq_regions<C:Combine>(this: &C, a: ty::Region, b: ty::Region)
                           -> ures {
-    debug2!("eq_regions({}, {})",
+    debug!("eq_regions({}, {})",
             a.repr(this.infcx().tcx),
             b.repr(this.infcx().tcx));
     let sub = this.sub();
@@ -425,7 +425,7 @@ pub fn super_tys<C:Combine>(this: &C, a: ty::t, b: ty::t) -> cres<ty::t> {
     let tcx = this.infcx().tcx;
     let a_sty = &ty::get(a).sty;
     let b_sty = &ty::get(b).sty;
-    debug2!("super_tys: a_sty={:?} b_sty={:?}", a_sty, b_sty);
+    debug!("super_tys: a_sty={:?} b_sty={:?}", a_sty, b_sty);
     return match (a_sty, b_sty) {
       // The "subtype" ought to be handling cases involving bot or var:
       (&ty::ty_bot, _) |

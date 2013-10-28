@@ -98,10 +98,10 @@ enum VariantState {
 }
 
 pub struct ReprVisitor<'self> {
-    ptr: *c_void,
-    ptr_stk: ~[*c_void],
-    var_stk: ~[VariantState],
-    writer: &'self mut io::Writer
+    priv ptr: *c_void,
+    priv ptr_stk: ~[*c_void],
+    priv var_stk: ~[VariantState],
+    priv writer: &'self mut io::Writer
 }
 
 pub fn ReprVisitor<'a>(ptr: *c_void,
@@ -182,16 +182,11 @@ impl<'self> ReprVisitor<'self> {
         } else if mtbl == 1 {
             // skip, this is ast::m_imm
         } else {
-            fail2!("invalid mutability value");
+            fail!("invalid mutability value");
         }
     }
 
-    pub fn write_vec_range(&mut self,
-                           _mtbl: uint,
-                           ptr: *(),
-                           len: uint,
-                           inner: *TyDesc)
-                           -> bool {
+    pub fn write_vec_range(&mut self, ptr: *(), len: uint, inner: *TyDesc) -> bool {
         let mut p = ptr as *u8;
         let (sz, al) = unsafe { ((*inner).size, (*inner).align) };
         self.writer.write(['[' as u8]);
@@ -213,13 +208,8 @@ impl<'self> ReprVisitor<'self> {
         true
     }
 
-    pub fn write_unboxed_vec_repr(&mut self,
-                                  mtbl: uint,
-                                  v: &raw::Vec<()>,
-                                  inner: *TyDesc)
-                                  -> bool {
-        self.write_vec_range(mtbl, ptr::to_unsafe_ptr(&v.data),
-                             v.fill, inner)
+    pub fn write_unboxed_vec_repr(&mut self, _: uint, v: &raw::Vec<()>, inner: *TyDesc) -> bool {
+        self.write_vec_range(ptr::to_unsafe_ptr(&v.data), v.fill, inner)
     }
 
     fn write_escaped_char(&mut self, ch: char, is_str: bool) {
@@ -304,7 +294,7 @@ impl<'self> TyVisitor for ReprVisitor<'self> {
 
     // Type no longer exists, vestigial function.
     fn visit_estr_fixed(&mut self, _n: uint, _sz: uint,
-                        _align: uint) -> bool { fail2!(); }
+                        _align: uint) -> bool { fail!(); }
 
     fn visit_box(&mut self, mtbl: uint, inner: *TyDesc) -> bool {
         self.writer.write(['@' as u8]);
@@ -347,7 +337,7 @@ impl<'self> TyVisitor for ReprVisitor<'self> {
     }
 
     // Type no longer exists, vestigial function.
-    fn visit_vec(&mut self, _mtbl: uint, _inner: *TyDesc) -> bool { fail2!(); }
+    fn visit_vec(&mut self, _mtbl: uint, _inner: *TyDesc) -> bool { fail!(); }
 
     fn visit_unboxed_vec(&mut self, mtbl: uint, inner: *TyDesc) -> bool {
         do self.get::<raw::Vec<()>> |this, b| {
@@ -381,15 +371,18 @@ impl<'self> TyVisitor for ReprVisitor<'self> {
         do self.get::<raw::Slice<()>> |this, s| {
             this.writer.write(['&' as u8]);
             this.write_mut_qualifier(mtbl);
-            this.write_vec_range(mtbl, s.data, s.len, inner);
+            let size = unsafe {
+                if (*inner).size == 0 { 1 } else { (*inner).size }
+            };
+            this.write_vec_range(s.data, s.len * size, inner);
         }
     }
 
     fn visit_evec_fixed(&mut self, n: uint, sz: uint, _align: uint,
-                        mtbl: uint, inner: *TyDesc) -> bool {
+                        _: uint, inner: *TyDesc) -> bool {
         let assumed_size = if sz == 0 { n } else { sz };
         do self.get::<()> |this, b| {
-            this.write_vec_range(mtbl, ptr::to_unsafe_ptr(b), assumed_size, inner);
+            this.write_vec_range(ptr::to_unsafe_ptr(b), assumed_size, inner);
         }
     }
 
@@ -559,7 +552,7 @@ impl<'self> TyVisitor for ReprVisitor<'self> {
                         _align: uint)
                         -> bool {
         match self.var_stk.pop() {
-            SearchingFor(*) => fail2!("enum value matched no variant"),
+            SearchingFor(*) => fail!("enum value matched no variant"),
             _ => true
         }
     }
@@ -621,6 +614,16 @@ pub fn write_repr<T>(writer: &mut io::Writer, object: &T) {
         let mut v = reflect::MovePtrAdaptor(u);
         visit_tydesc(tydesc, &mut v as &mut TyVisitor);
     }
+}
+
+pub fn repr_to_str<T>(t: &T) -> ~str {
+    use str;
+    use rt::io;
+    use rt::io::Decorator;
+
+    let mut result = io::mem::MemWriter::new();
+    write_repr(&mut result as &mut io::Writer, t);
+    str::from_utf8_owned(result.inner())
 }
 
 #[cfg(test)]

@@ -11,11 +11,10 @@
 
 
 
-// -*- rust -*-
 pub fn main() {
     let a: ~str = ~"hello";
     let b: ~str = ~"world";
     let s: ~str = a + b;
-    info2!("{}", s.clone());
+    info!("{}", s.clone());
     assert_eq!(s[9], 'd' as u8);
 }

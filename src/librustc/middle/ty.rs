@@ -1548,7 +1548,7 @@ pub fn simd_type(cx: ctxt, ty: t) -> t {
             let fields = lookup_struct_fields(cx, did);
             lookup_field_type(cx, did, fields[0].id, substs)
         }
-        _ => fail2!("simd_type called on invalid type")
+        _ => fail!("simd_type called on invalid type")
     }
 }
 
@@ -1558,14 +1558,14 @@ pub fn simd_size(cx: ctxt, ty: t) -> uint {
             let fields = lookup_struct_fields(cx, did);
             fields.len()
         }
-        _ => fail2!("simd_size called on invalid type")
+        _ => fail!("simd_size called on invalid type")
     }
 }
 
 pub fn get_element_type(ty: t, i: uint) -> t {
     match get(ty).sty {
       ty_tup(ref ts) => return ts[i],
-      _ => fail2!("get_element_type called on invalid type")
+      _ => fail!("get_element_type called on invalid type")
     }
 }
 
@@ -2216,7 +2216,7 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
 
         let mut tc = TC_ALL;
         do each_inherited_builtin_bound(cx, bounds, traits) |bound| {
-            debug2!("tc = {}, bound = {:?}", tc.to_str(), bound);
+            debug!("tc = {}, bound = {:?}", tc.to_str(), bound);
             tc = tc - match bound {
                 BoundStatic => TypeContents::nonstatic(cx),
                 BoundSend => TypeContents::nonsendable(cx),
@@ -2226,7 +2226,7 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
             };
         }
 
-        debug2!("result = {}", tc.to_str());
+        debug!("result = {}", tc.to_str());
         return tc;
 
         // Iterates over all builtin bounds on the type parameter def, including
@@ -2256,7 +2256,7 @@ pub fn type_moves_by_default(cx: ctxt, ty: t) -> bool {
 pub fn is_instantiable(cx: ctxt, r_ty: t) -> bool {
     fn type_requires(cx: ctxt, seen: &mut ~[DefId],
                      r_ty: t, ty: t) -> bool {
-        debug2!("type_requires({}, {})?",
+        debug!("type_requires({}, {})?",
                ::util::ppaux::ty_to_str(cx, r_ty),
                ::util::ppaux::ty_to_str(cx, ty));
 
@@ -2265,7 +2265,7 @@ pub fn is_instantiable(cx: ctxt, r_ty: t) -> bool {
                 subtypes_require(cx, seen, r_ty, ty)
         };
 
-        debug2!("type_requires({}, {})? {}",
+        debug!("type_requires({}, {})? {}",
                ::util::ppaux::ty_to_str(cx, r_ty),
                ::util::ppaux::ty_to_str(cx, ty),
                r);
@@ -2274,7 +2274,7 @@ pub fn is_instantiable(cx: ctxt, r_ty: t) -> bool {
 
     fn subtypes_require(cx: ctxt, seen: &mut ~[DefId],
                         r_ty: t, ty: t) -> bool {
-        debug2!("subtypes_require({}, {})?",
+        debug!("subtypes_require({}, {})?",
                ::util::ppaux::ty_to_str(cx, r_ty),
                ::util::ppaux::ty_to_str(cx, ty));
 
@@ -2348,7 +2348,7 @@ pub fn is_instantiable(cx: ctxt, r_ty: t) -> bool {
             }
         };
 
-        debug2!("subtypes_require({}, {})? {}",
+        debug!("subtypes_require({}, {})? {}",
                ::util::ppaux::ty_to_str(cx, r_ty),
                ::util::ppaux::ty_to_str(cx, ty),
                r);
@@ -2365,7 +2365,7 @@ pub fn type_structurally_contains(cx: ctxt,
                                   test: &fn(x: &sty) -> bool)
                                -> bool {
     let sty = &get(ty).sty;
-    debug2!("type_structurally_contains: {}",
+    debug!("type_structurally_contains: {}",
            ::util::ppaux::ty_to_str(cx, ty));
     if test(sty) { return true; }
     match *sty {
@@ -2663,7 +2663,7 @@ pub fn ty_fn_sig(fty: t) -> FnSig {
         ty_bare_fn(ref f) => f.sig.clone(),
         ty_closure(ref f) => f.sig.clone(),
         ref s => {
-            fail2!("ty_fn_sig() called on non-fn type: {:?}", s)
+            fail!("ty_fn_sig() called on non-fn type: {:?}", s)
         }
     }
 }
@@ -2674,7 +2674,7 @@ pub fn ty_fn_args(fty: t) -> ~[t] {
         ty_bare_fn(ref f) => f.sig.inputs.clone(),
         ty_closure(ref f) => f.sig.inputs.clone(),
         ref s => {
-            fail2!("ty_fn_args() called on non-fn type: {:?}", s)
+            fail!("ty_fn_args() called on non-fn type: {:?}", s)
         }
     }
 }
@@ -2683,7 +2683,7 @@ pub fn ty_closure_sigil(fty: t) -> Sigil {
     match get(fty).sty {
         ty_closure(ref f) => f.sigil,
         ref s => {
-            fail2!("ty_closure_sigil() called on non-closure type: {:?}", s)
+            fail!("ty_closure_sigil() called on non-closure type: {:?}", s)
         }
     }
 }
@@ -2693,7 +2693,7 @@ pub fn ty_fn_purity(fty: t) -> ast::purity {
         ty_bare_fn(ref f) => f.purity,
         ty_closure(ref f) => f.purity,
         ref s => {
-            fail2!("ty_fn_purity() called on non-fn type: {:?}", s)
+            fail!("ty_fn_purity() called on non-fn type: {:?}", s)
         }
     }
 }
@@ -2703,7 +2703,7 @@ pub fn ty_fn_ret(fty: t) -> t {
         ty_bare_fn(ref f) => f.sig.output,
         ty_closure(ref f) => f.sig.output,
         ref s => {
-            fail2!("ty_fn_ret() called on non-fn type: {:?}", s)
+            fail!("ty_fn_ret() called on non-fn type: {:?}", s)
         }
     }
 }
@@ -2720,7 +2720,7 @@ pub fn ty_vstore(ty: t) -> vstore {
     match get(ty).sty {
         ty_evec(_, vstore) => vstore,
         ty_estr(vstore) => vstore,
-        ref s => fail2!("ty_vstore() called on invalid sty: {:?}", s)
+        ref s => fail!("ty_vstore() called on invalid sty: {:?}", s)
     }
 }
 
@@ -3154,7 +3154,7 @@ pub fn expr_kind(tcx: ctxt,
             RvalueStmtExpr
         }
 
-        ast::ExprForLoop(*) => fail2!("non-desugared expr_for_loop"),
+        ast::ExprForLoop(*) => fail!("non-desugared expr_for_loop"),
 
         ast::ExprLogLevel |
         ast::ExprLit(_) | // Note: lit_str is carved out above
@@ -3182,7 +3182,7 @@ pub fn stmt_node_id(s: &ast::Stmt) -> ast::NodeId {
       ast::StmtDecl(_, id) | StmtExpr(_, id) | StmtSemi(_, id) => {
         return id;
       }
-      ast::StmtMac(*) => fail2!("unexpanded macro in trans")
+      ast::StmtMac(*) => fail!("unexpanded macro in trans")
     }
 }
 
@@ -3463,7 +3463,7 @@ pub fn def_has_ty_params(def: ast::Def) -> bool {
 }
 
 pub fn provided_source(cx: ctxt, id: ast::DefId) -> Option<ast::DefId> {
-    cx.provided_method_sources.find(&id).map_move(|x| *x)
+    cx.provided_method_sources.find(&id).map(|x| *x)
 }
 
 pub fn provided_trait_methods(cx: ctxt, id: ast::DefId) -> ~[@Method] {
@@ -3532,7 +3532,7 @@ fn lookup_locally_or_in_crate_store<V:Clone>(
     }
 
     if def_id.crate == ast::LOCAL_CRATE {
-        fail2!("No def'n found for {:?} in tcx.{}", def_id, descr);
+        fail!("No def'n found for {:?} in tcx.{}", def_id, descr);
     }
     let v = load_external();
     map.insert(def_id, v.clone());
@@ -3575,7 +3575,7 @@ pub fn impl_trait_ref(cx: ctxt, id: ast::DefId) -> Option<@TraitRef> {
         None => {}
     }
     let ret = if id.crate == ast::LOCAL_CRATE {
-        debug2!("(impl_trait_ref) searching for trait impl {:?}", id);
+        debug!("(impl_trait_ref) searching for trait impl {:?}", id);
         match cx.items.find(&id.node) {
             Some(&ast_map::node_item(@ast::item {
                                      node: ast::item_impl(_, ref opt_trait, _, _),
@@ -3634,7 +3634,7 @@ fn struct_ctor_id(cx: ctxt, struct_did: ast::DefId) -> Option<ast::DefId> {
         Some(&ast_map::node_item(item, _)) => {
             match item.node {
                 ast::item_struct(struct_def, _) => {
-                    do struct_def.ctor_id.map_move |ctor_id| {
+                    do struct_def.ctor_id.map |ctor_id| {
                         ast_util::local_def(ctor_id)
                     }
                 }
@@ -4264,6 +4264,12 @@ pub fn eval_repeat_count<T: ExprTyProvider>(tcx: &T, count_expr: &ast::Expr) -> 
                                          repeat count but found boolean");
             return 0;
         }
+        const_eval::const_binary(_) => {
+            tcx.ty_ctxt().sess.span_err(count_expr.span,
+                                        "expected positive integer for \
+                                         repeat count but found binary array");
+            return 0;
+        }
       },
       Err(*) => {
         tcx.ty_ctxt().sess.span_err(count_expr.span,
@@ -4307,7 +4313,7 @@ pub fn each_bound_trait_and_supertraits(tcx: ctxt,
 
         // Add the given trait ty to the hash map
         while i < trait_refs.len() {
-            debug2!("each_bound_trait_and_supertraits(i={:?}, trait_ref={})",
+            debug!("each_bound_trait_and_supertraits(i={:?}, trait_ref={})",
                    i, trait_refs[i].repr(tcx));
 
             if !f(trait_refs[i]) {
@@ -4317,7 +4323,7 @@ pub fn each_bound_trait_and_supertraits(tcx: ctxt,
             // Add supertraits to supertrait_set
             let supertrait_refs = trait_ref_supertraits(tcx, trait_refs[i]);
             for &supertrait_ref in supertrait_refs.iter() {
-                debug2!("each_bound_trait_and_supertraits(supertrait_ref={})",
+                debug!("each_bound_trait_and_supertraits(supertrait_ref={})",
                        supertrait_ref.repr(tcx));
 
                 let d_id = supertrait_ref.def_id;

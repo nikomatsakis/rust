@@ -22,8 +22,6 @@ use middle::trans::context::CrateContext;
 use middle::trans::type_::Type;
 
 use std::num;
-use std::option;
-use std::option::Option;
 use std::vec;
 
 #[deriving(Clone, Eq)]
@@ -114,7 +112,7 @@ fn classify_ty(ty: Type) -> ~[RegClass] {
                 let elt = ty.element_type();
                 ty_align(elt)
             }
-            _ => fail2!("ty_size: unhandled type")
+            _ => fail!("ty_size: unhandled type")
         }
     }
 
@@ -143,7 +141,7 @@ fn classify_ty(ty: Type) -> ~[RegClass] {
                 let eltsz = ty_size(elt);
                 len * eltsz
             }
-            _ => fail2!("ty_size: unhandled type")
+            _ => fail!("ty_size: unhandled type")
         }
     }
 
@@ -234,7 +232,7 @@ fn classify_ty(ty: Type) -> ~[RegClass] {
                     i += 1u;
                 }
             }
-            _ => fail2!("classify: unhandled type")
+            _ => fail!("classify: unhandled type")
         }
     }
 
@@ -327,7 +325,7 @@ fn llreg_ty(cls: &[RegClass]) -> Type {
             SSEDs => {
                 tys.push(Type::f64());
             }
-            _ => fail2!("llregtype: unhandled class")
+            _ => fail!("llregtype: unhandled class")
         }
         i += 1u;
     }
@@ -340,50 +338,34 @@ pub fn compute_abi_info(_ccx: &mut CrateContext,
                         ret_def: bool) -> FnType {
     fn x86_64_ty(ty: Type,
                  is_mem_cls: &fn(cls: &[RegClass]) -> bool,
-                 attr: Attribute) -> (LLVMType, Option<Attribute>) {
+                 attr: Attribute) -> ArgType {
 
-        let (cast, attr, ty) = if !ty.is_reg_ty() {
+        if !ty.is_reg_ty() {
             let cls = classify_ty(ty);
             if is_mem_cls(cls) {
-                (false, option::Some(attr), ty.ptr_to())
+                ArgType::indirect(ty, Some(attr))
             } else {
-                (true, option::None, llreg_ty(cls))
+                ArgType::direct(ty, Some(llreg_ty(cls)), None, None)
             }
         } else {
-            (false, option::None, ty)
-        };
-
-        (LLVMType { cast: cast, ty: ty }, attr)
+            ArgType::direct(ty, None, None, None)
+        }
     }
 
     let mut arg_tys = ~[];
-    let mut attrs = ~[];
     for t in atys.iter() {
-        let (ty, attr) = x86_64_ty(*t, |cls| cls.is_pass_byval(), ByValAttribute);
+        let ty = x86_64_ty(*t, |cls| cls.is_pass_byval(), ByValAttribute);
         arg_tys.push(ty);
-        attrs.push(attr);
     }
-    let (ret_ty, ret_attr) = x86_64_ty(rty, |cls| cls.is_ret_bysret(),
-                                       StructRetAttribute);
-    let mut ret_ty = ret_ty;
-    let sret = ret_attr.is_some();
-    if sret {
-        arg_tys = vec::append(~[ret_ty], arg_tys);
-        ret_ty = LLVMType {
-                   cast:  false,
-                   ty: Type::void()
-                 };
-        attrs = vec::append(~[ret_attr], attrs);
-    } else if !ret_def {
-        ret_ty = LLVMType {
-                   cast: false,
-                   ty: Type::void()
-                 };
-    }
+
+    let ret_ty = if ret_def {
+        x86_64_ty(rty, |cls| cls.is_ret_bysret(), StructRetAttribute)
+    } else {
+        ArgType::direct(Type::void(), None, None, None)
+    };
+
     return FnType {
         arg_tys: arg_tys,
         ret_ty: ret_ty,
-        attrs: attrs,
-        sret: sret
     };
 }

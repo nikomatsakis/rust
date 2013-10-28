@@ -8,38 +8,37 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
 
-
-// -*- rust -*-
 enum t { make_t(@int), clam, }
 
 fn foo(s: @int) {
-    info2!("{:?}", ::std::sys::refcount(s));
-    let count = ::std::sys::refcount(s);
+    info!("{:?}", ::std::managed::refcount(s));
+    let count = ::std::managed::refcount(s);
     let x: t = make_t(s); // ref up
-    assert_eq!(::std::sys::refcount(s), count + 1u);
-    info2!("{:?}", ::std::sys::refcount(s));
+    assert_eq!(::std::managed::refcount(s), count + 1u);
+    info!("{:?}", ::std::managed::refcount(s));
 
     match x {
       make_t(y) => {
-        info2!("{:?}", y); // ref up then down
+        info!("{:?}", y); // ref up then down
 
       }
-      _ => { info2!("?"); fail2!(); }
+      _ => { info!("?"); fail!(); }
     }
-    info2!("{:?}", ::std::sys::refcount(s));
-    assert_eq!(::std::sys::refcount(s), count + 1u);
-    let _ = ::std::sys::refcount(s); // don't get bitten by last-use.
+    info!("{:?}", ::std::managed::refcount(s));
+    assert_eq!(::std::managed::refcount(s), count + 1u);
+    let _ = ::std::managed::refcount(s); // don't get bitten by last-use.
 }
 
 pub fn main() {
     let s: @int = @0; // ref up
 
-    let count = ::std::sys::refcount(s);
+    let count = ::std::managed::refcount(s);
 
     foo(s); // ref up then down
 
-    info2!("{}", ::std::sys::refcount(s));
-    let count2 = ::std::sys::refcount(s);
+    info!("{}", ::std::managed::refcount(s));
+    let count2 = ::std::managed::refcount(s);
     assert_eq!(count, count2);
 }

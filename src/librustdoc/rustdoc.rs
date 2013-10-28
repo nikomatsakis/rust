@@ -17,16 +17,20 @@
 #[license = "MIT/ASL2"];
 #[crate_type = "lib"];
 
-#[feature(globs, struct_variant)];
+#[feature(globs, struct_variant, managed_boxes)];
 
 extern mod syntax;
 extern mod rustc;
 extern mod extra;
 
 use std::cell::Cell;
+use std::local_data;
 use std::rt::io::Writer;
 use std::rt::io::file::FileInfo;
 use std::rt::io;
+use std::rt::io::mem::MemWriter;
+use std::rt::io::Decorator;
+use std::str;
 use extra::getopts;
 use extra::getopts::groups;
 use extra::json;
@@ -48,7 +52,7 @@ pub mod passes;
 pub mod plugins;
 pub mod visit_ast;
 
-pub static SCHEMA_VERSION: &'static str = "0.8.0";
+pub static SCHEMA_VERSION: &'static str = "0.8.1";
 
 type Pass = (&'static str,                                      // name
              extern fn(clean::Crate) -> plugins::PluginResult,  // fn
@@ -73,6 +77,7 @@ static DEFAULT_PASSES: &'static [&'static str] = &[
 ];
 
 local_data_key!(pub ctxtkey: @core::DocContext)
+local_data_key!(pub analysiskey: core::CrateAnalysis)
 
 type Output = (clean::Crate, ~[plugins::PluginJson]);
 
@@ -132,15 +137,15 @@ pub fn main_args(args: &[~str]) -> int {
         }
     };
 
-    info2!("going to format");
+    info!("going to format");
     let started = time::precise_time_ns();
-    let output = matches.opt_str("o").map(|s| Path(*s));
+    let output = matches.opt_str("o").map(|s| Path::new(s));
     match matches.opt_str("w") {
         Some(~"html") | None => {
-            html::render::run(crate, output.unwrap_or(Path("doc")))
+            html::render::run(crate, output.unwrap_or(Path::new("doc")))
         }
         Some(~"json") => {
-            json_output(crate, res, output.unwrap_or(Path("doc.json")))
+            json_output(crate, res, output.unwrap_or(Path::new("doc.json")))
         }
         Some(s) => {
             println!("unknown output format: {}", s);
@@ -148,7 +153,7 @@ pub fn main_args(args: &[~str]) -> int {
         }
     }
     let ended = time::precise_time_ns();
-    info2!("Took {:.03f}s", (ended as f64 - started as f64) / 1e9f64);
+    info!("Took {:.03f}s", (ended as f64 - started as f64) / 1e9f64);
 
     return 0;
 }
@@ -188,14 +193,15 @@ fn rust_input(cratefile: &str, matches: &getopts::Matches) -> Output {
     let mut plugins = matches.opt_strs("plugins");
 
     // First, parse the crate and extract all relevant information.
-    let libs = Cell::new(matches.opt_strs("L").map(|s| Path(*s)));
-    let cr = Cell::new(Path(cratefile));
-    info2!("starting to run rustc");
-    let crate = do std::task::try {
+    let libs = Cell::new(matches.opt_strs("L").map(|s| Path::new(s.as_slice())));
+    let cr = Cell::new(Path::new(cratefile));
+    info!("starting to run rustc");
+    let (crate, analysis) = do std::task::try {
         let cr = cr.take();
         core::run_core(libs.take(), &cr)
     }.unwrap();
-    info2!("finished with rustc");
+    info!("finished with rustc");
+    local_data::set(analysiskey, analysis);
 
     // Process all of the crate attributes, extracting plugin metadata along
     // with the passes which we are supposed to run.
@@ -230,35 +236,35 @@ fn rust_input(cratefile: &str, matches: &getopts::Matches) -> Output {
 
     // Load all plugins/passes into a PluginManager
     let path = matches.opt_str("plugin-path").unwrap_or(~"/tmp/rustdoc_ng/plugins");
-    let mut pm = plugins::PluginManager::new(Path(path));
+    let mut pm = plugins::PluginManager::new(Path::new(path));
     for pass in passes.iter() {
         let plugin = match PASSES.iter().position(|&(p, _, _)| p == *pass) {
             Some(i) => PASSES[i].n1(),
             None => {
-                error2!("unknown pass {}, skipping", *pass);
+                error!("unknown pass {}, skipping", *pass);
                 continue
             },
         };
         pm.add_plugin(plugin);
     }
-    info2!("loading plugins...");
+    info!("loading plugins...");
     for pname in plugins.move_iter() {
         pm.load_plugin(pname);
     }
 
     // Run everything!
-    info2!("Executing passes/plugins");
+    info!("Executing passes/plugins");
     return pm.run_plugins(crate);
 }
 
 /// This input format purely deserializes the json output file. No passes are
 /// run over the deserialized output.
 fn json_input(input: &str) -> Result<Output, ~str> {
-    let input = match ::std::io::file_reader(&Path(input)) {
-        Ok(i) => i,
-        Err(s) => return Err(s),
+    let input = match Path::new(input).open_reader(io::Open) {
+        Some(f) => f,
+        None => return Err(format!("couldn't open {} for reading", input)),
     };
-    match json::from_reader(input) {
+    match json::from_reader(@mut input as @mut io::Reader) {
         Err(s) => Err(s.to_str()),
         Ok(json::Object(obj)) => {
             let mut obj = obj;
@@ -303,12 +309,14 @@ fn json_output(crate: clean::Crate, res: ~[plugins::PluginJson], dst: Path) {
 
     // FIXME #8335: yuck, Rust -> str -> JSON round trip! No way to .encode
     // straight to the Rust JSON representation.
-    let crate_json_str = do std::io::with_str_writer |w| {
-        crate.encode(&mut json::Encoder(w));
+    let crate_json_str = {
+        let w = @mut MemWriter::new();
+        crate.encode(&mut json::Encoder(w as @mut io::Writer));
+        str::from_utf8(*w.inner_ref())
     };
     let crate_json = match json::from_str(crate_json_str) {
         Ok(j) => j,
-        Err(_) => fail2!("Rust generated JSON is invalid??")
+        Err(_) => fail!("Rust generated JSON is invalid??")
     };
 
     json.insert(~"crate", crate_json);

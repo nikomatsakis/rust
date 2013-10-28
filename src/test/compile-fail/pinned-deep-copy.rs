@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[feature(managed_boxes)];
+
 struct r {
   i: @mut int,
 }
@@ -37,7 +39,7 @@ fn main() {
         // Can't do this copy
         let x = ~~~A {y: r(i)};
         let _z = x.clone(); //~ ERROR failed to find an implementation
-        info2!("{:?}", x);
+        info!("{:?}", x);
     }
-    error2!("{:?}", *i);
+    error!("{:?}", *i);
 }
