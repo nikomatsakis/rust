@@ -20,7 +20,6 @@ pub use middle::typeck::infer::resolve::{resolve_ivar, resolve_all};
 pub use middle::typeck::infer::resolve::{resolve_nested_tvar};
 pub use middle::typeck::infer::resolve::{resolve_rvar};
 
-use extra::list::Nil;
 use extra::smallintmap::SmallIntMap;
 use middle::ty::{TyVid, IntVid, FloatVid, RegionVid, Vid};
 use middle::ty;
@@ -36,7 +35,6 @@ use middle::typeck::infer::lub::Lub;
 use middle::typeck::infer::to_str::InferStr;
 use middle::typeck::infer::unify::{ValsAndBindings, Root};
 use middle::typeck::infer::error_reporting::ErrorReporting;
-use middle::typeck::isr_alist;
 use std::hashmap::HashMap;
 use std::result;
 use std::vec;

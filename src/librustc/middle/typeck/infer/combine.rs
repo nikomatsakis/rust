@@ -125,7 +125,6 @@ pub trait Combine {
 
     fn substs(&self,
               item_def_id: ast::DefId,
-              generics: &ty::Generics,
               as_: &ty::substs,
               bs: &ty::substs) -> cres<ty::substs> {
 
@@ -262,9 +261,11 @@ pub trait Combine {
                   -> cres<ty::Region>;
     fn regions(&self, a: ty::Region, b: ty::Region) -> cres<ty::Region>;
 
-    fn vstores(&self, vk: ty::terr_vstore_kind,
-               a: ty::vstore, b: ty::vstore) -> cres<ty::vstore> {
-
+    fn vstores(&self,
+               vk: ty::terr_vstore_kind,
+               a: ty::vstore,
+               b: ty::vstore)
+               -> cres<ty::vstore> {
         debug2!("{}.vstores(a={:?}, b={:?})", self.tag(), a, b);
 
         match (a, b) {
@@ -288,8 +289,7 @@ pub trait Combine {
                     vk: ty::terr_vstore_kind,
                     a: ty::TraitStore,
                     b: ty::TraitStore)
-                 -> cres<ty::TraitStore> {
-
+                    -> cres<ty::TraitStore> {
         debug2!("{}.trait_stores(a={:?}, b={:?})", self.tag(), a, b);
 
         match (a, b) {
@@ -312,7 +312,8 @@ pub trait Combine {
 
     fn trait_refs(&self,
                   a: &ty::TraitRef,
-                  b: &ty::TraitRef) -> cres<ty::TraitRef> {
+                  b: &ty::TraitRef)
+                  -> cres<ty::TraitRef> {
         // Different traits cannot be related
 
         // - NOTE in the future, expand out subtraits!
@@ -321,16 +322,9 @@ pub trait Combine {
             Err(ty::terr_traits(
                                 expected_found(self, a.def_id, b.def_id)))
         } else {
-            let tcx = self.infcx().tcx;
-            let trait_def = ty::lookup_trait_def(tcx, a.def_id);
-            let substs = if_ok!(self.substs(a.def_id,
-                                            &trait_def.generics,
-                                            &a.substs,
-                                            &b.substs));
-            Ok(ty::TraitRef {
-                    def_id: a.def_id,
-                    substs: substs
-                })
+            let substs = if_ok!(self.substs(a.def_id, &a.substs, &b.substs));
+            Ok(ty::TraitRef { def_id: a.def_id,
+                              substs: substs })
         }
     }
 }
@@ -362,8 +356,8 @@ pub fn eq_tys<C:Combine>(this: &C, a: ty::t, b: ty::t) -> ures {
 pub fn eq_regions<C:Combine>(this: &C, a: ty::Region, b: ty::Region)
                           -> ures {
     debug2!("eq_regions({}, {})",
-           a.inf_str(this.infcx()),
-           b.inf_str(this.infcx()));
+            a.repr(this.infcx().tcx),
+            b.repr(this.infcx().tcx));
     let sub = this.sub();
     do indent {
         this.infcx().try(|| {
@@ -501,9 +495,7 @@ pub fn super_tys<C:Combine>(this: &C, a: ty::t, b: ty::t) -> cres<ty::t> {
       (&ty::ty_enum(a_id, ref a_substs),
        &ty::ty_enum(b_id, ref b_substs))
       if a_id == b_id => {
-          let type_def = ty::lookup_item_type(tcx, a_id);
           let substs = if_ok!(this.substs(a_id,
-                                          &type_def.generics,
                                           a_substs,
                                           b_substs));
           Ok(ty::mk_enum(tcx, a_id, substs))
@@ -512,9 +504,7 @@ pub fn super_tys<C:Combine>(this: &C, a: ty::t, b: ty::t) -> cres<ty::t> {
       (&ty::ty_trait(a_id, ref a_substs, a_store, a_mutbl, a_bounds),
        &ty::ty_trait(b_id, ref b_substs, b_store, b_mutbl, b_bounds))
       if a_id == b_id && a_mutbl == b_mutbl => {
-          let trait_def = ty::lookup_trait_def(tcx, a_id);
-          let substs = if_ok!(this.substs(a_id, &trait_def.generics,
-                                          a_substs, b_substs));
+          let substs = if_ok!(this.substs(a_id, a_substs, b_substs));
           let s = if_ok!(this.trait_stores(ty::terr_trait, a_store, b_store));
           let bounds = if_ok!(this.bounds(a_bounds, b_bounds));
           Ok(ty::mk_trait(tcx,
@@ -527,9 +517,7 @@ pub fn super_tys<C:Combine>(this: &C, a: ty::t, b: ty::t) -> cres<ty::t> {
 
       (&ty::ty_struct(a_id, ref a_substs), &ty::ty_struct(b_id, ref b_substs))
       if a_id == b_id => {
-            let type_def = ty::lookup_item_type(tcx, a_id);
-            let substs = if_ok!(this.substs(a_id, &type_def.generics,
-                                            a_substs, b_substs));
+            let substs = if_ok!(this.substs(a_id, a_substs, b_substs));
             Ok(ty::mk_struct(tcx, a_id, substs))
       }
 

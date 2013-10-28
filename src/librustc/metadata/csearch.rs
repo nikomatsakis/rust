@@ -14,7 +14,6 @@
 use metadata::common::*;
 use metadata::cstore;
 use metadata::decoder;
-use metadata;
 use middle::ty;
 use middle::typeck;
 

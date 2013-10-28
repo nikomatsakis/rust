@@ -829,7 +829,7 @@ impl Clean<Path> for ast::Path {
 #[deriving(Clone, Encodable, Decodable)]
 pub struct PathSegment {
     name: ~str,
-    lifetime: Option<Lifetime>,
+    lifetimes: ~[Lifetime],
     types: ~[Type],
 }
 
@@ -837,7 +837,7 @@ impl Clean<PathSegment> for ast::PathSegment {
     fn clean(&self) -> PathSegment {
         PathSegment {
             name: self.identifier.clean(),
-            lifetime: self.lifetime.clean(),
+            lifetimes: self.lifetimes.clean(),
             types: self.types.clean()
         }
     }

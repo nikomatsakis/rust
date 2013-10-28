@@ -9,7 +9,6 @@
 // except according to those terms.
 
 
-use extra::list;
 use middle::ty::{BuiltinBounds};
 use middle::ty::RegionVid;
 use middle::ty;
@@ -21,7 +20,6 @@ use middle::typeck::infer::to_str::InferStr;
 use middle::typeck::infer::{cres, InferCtxt};
 use middle::typeck::infer::fold_regions_in_sig;
 use middle::typeck::infer::{TypeTrace, Subtype};
-use middle::typeck::isr_alist;
 use std::hashmap::HashMap;
 use syntax::ast::{Many, Once, extern_fn, impure_fn, NodeId};
 use syntax::ast::{unsafe_fn};

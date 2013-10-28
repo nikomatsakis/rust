@@ -24,8 +24,6 @@ use middle::typeck::infer::{TypeTrace, Subtype};
 use util::common::{indenter};
 use util::ppaux::bound_region_to_str;
 
-use extra::list::Nil;
-use extra::list;
 use syntax::ast::{Onceness, purity};
 
 pub struct Sub(CombineFields);  // "subtype", "subregion" etc

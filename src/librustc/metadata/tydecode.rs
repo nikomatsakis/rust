@@ -48,7 +48,10 @@ pub enum DefIdSource {
     TypeWithId,
 
     // Identifies a type parameter (`fn foo<X>() { ... }`).
-    TypeParameter
+    TypeParameter,
+
+    // Identifies a region parameter (`fn foo<'X>() { ... }`).
+    RegionParameter,
 }
 type conv_did<'self> =
     &'self fn(source: DefIdSource, ast::DefId) -> ast::DefId;
@@ -233,8 +236,7 @@ fn parse_bound_region(st: &mut PState, conv: conv_did) -> ty::bound_region {
             ty::br_anon(id)
         }
         '[' => {
-            let def = parse_def(st, TypeParameter, |x,y| conv(x,y));
-            assert_eq!(next(st), '|');
+            let def = parse_def(st, RegionParameter, |x,y| conv(x,y));
             let ident = st.tcx.sess.ident_of(parse_str(st, ']'));
             ty::br_named(def, ident)
         }

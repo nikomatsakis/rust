@@ -58,7 +58,6 @@ use middle::typeck::rscope;
 use middle::typeck::rscope::{RegionScope};
 use middle::typeck::lookup_def_tcx;
 
-use std::result;
 use std::vec;
 use syntax::abi::AbiSet;
 use syntax::{ast, ast_util};
@@ -66,8 +65,6 @@ use syntax::codemap::Span;
 use syntax::opt_vec::OptVec;
 use syntax::opt_vec;
 use syntax::print::pprust::{lifetime_to_str, path_to_str};
-use syntax::parse::token::special_idents;
-use util::common::indenter;
 
 pub trait AstConv {
     fn tcx(&self) -> ty::ctxt;
@@ -78,16 +75,15 @@ pub trait AstConv {
     fn ty_infer(&self, span: Span) -> ty::t;
 }
 
-pub fn ast_region_to_region<AC:AstConv,RS:RegionScope>(
-    this: &AC,
-    rscope: &RS,
+pub fn ast_region_to_region(
+    tcx: ty::ctxt,
     lifetime: &ast::Lifetime)
     -> ty::Region
 {
-    let r = match this.tcx().named_region_map.find(&lifetime.id) {
+    let r = match tcx.named_region_map.find(&lifetime.id) {
         None => {
             // should have been recorded by the `resolve_lifetime` pass
-            this.tcx().sess.span_bug(lifetime.span, "unresolved lifetime");
+            tcx.sess.span_bug(lifetime.span, "unresolved lifetime");
         }
 
         Some(&ast::DefStaticRegion) => {
@@ -113,9 +109,9 @@ pub fn ast_region_to_region<AC:AstConv,RS:RegionScope>(
     };
 
     debug2!("ast_region_to_region(lifetime={} id={}) yields {}",
-            lifetime_to_str(lifetime, this.tcx().sess.intr()),
+            lifetime_to_str(lifetime, tcx.sess.intr()),
             lifetime.id,
-            r.repr(this.tcx()));
+            r.repr(tcx));
 
     r
 }
@@ -128,7 +124,7 @@ pub fn opt_ast_region_to_region<AC:AstConv,RS:RegionScope>(
 {
     let r = match *opt_lifetime {
         Some(ref lifetime) => {
-            ast_region_to_region(this, rscope, lifetime)
+            ast_region_to_region(this.tcx(), lifetime)
         }
 
         None => {
@@ -157,7 +153,6 @@ pub fn opt_ast_region_to_region<AC:AstConv,RS:RegionScope>(
 fn ast_path_substs<AC:AstConv,RS:RegionScope>(
     this: &AC,
     rscope: &RS,
-    def_id: ast::DefId,
     decl_generics: &ty::Generics,
     self_ty: Option<ty::t>,
     path: &ast::Path) -> ty::substs
@@ -177,7 +172,7 @@ fn ast_path_substs<AC:AstConv,RS:RegionScope>(
     let supplied_num_region_params = path.segments.last().lifetimes.len();
     let regions = if expected_num_region_params == supplied_num_region_params {
         path.segments.last().lifetimes.map(
-            |l| ast_region_to_region(this, rscope, l))
+            |l| ast_region_to_region(this.tcx(), l))
     } else {
         let anon_regions =
             rscope.anon_regions(path.span, expected_num_region_params);
@@ -194,7 +189,7 @@ fn ast_path_substs<AC:AstConv,RS:RegionScope>(
         match anon_regions {
             Some(v) => opt_vec::from(v),
             None => opt_vec::from(vec::from_fn(expected_num_region_params,
-                                               |i| ty::re_static)) // hokey
+                                               |_| ty::re_static)) // hokey
         }
     };
 
@@ -234,7 +229,7 @@ pub fn ast_path_to_substs_and_ty<AC:AstConv,
         ty: decl_ty
     } = this.get_item_ty(did);
 
-    let substs = ast_path_substs(this, rscope, did, &generics, None, path);
+    let substs = ast_path_substs(this, rscope, &generics, None, path);
     let ty = ty::subst(tcx, &substs, decl_ty);
     ty_param_substs_and_ty { substs: substs, ty: ty }
 }
@@ -252,7 +247,6 @@ pub fn ast_path_to_trait_ref<AC:AstConv,RS:RegionScope>(
         ast_path_substs(
             this,
             rscope,
-            trait_def.trait_ref.def_id,
             &trait_def.generics,
             self_ty,
             path);
@@ -707,7 +701,7 @@ pub fn ty_of_closure<AC:AstConv,RS:RegionScope>(
     // scope `rscope`, not the scope of the function parameters
     let bound_region = match opt_lifetime {
         &Some(ref lifetime) => {
-            ast_region_to_region(this, rscope, lifetime)
+            ast_region_to_region(this.tcx(), lifetime)
         }
         &None => {
             match sigil {

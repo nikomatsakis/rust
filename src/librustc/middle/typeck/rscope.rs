@@ -11,13 +11,10 @@
 
 use middle::ty;
 
-use std::result;
 use std::vec;
 use syntax::ast;
 use syntax::codemap::Span;
 use syntax::opt_vec::OptVec;
-use syntax::opt_vec;
-use syntax::parse::token::special_idents;
 
 pub trait RegionScope {
     fn anon_regions(&self,

@@ -235,7 +235,7 @@ pub fn phase_3_run_analysis_passes(sess: Session,
         time(time_passes, "resolution", (), |_|
              middle::resolve::resolve_crate(sess, lang_items, crate));
 
-    let named_region_map = time(time_passes, ~"lifetime resolution", (),
+    let named_region_map = time(time_passes, "lifetime resolution", (),
                                 |_| middle::resolve_lifetime::crate(sess, crate));
 
     time(time_passes, "looking for entry point", (),
@@ -244,7 +244,7 @@ pub fn phase_3_run_analysis_passes(sess: Session,
     let freevars = time(time_passes, "freevar finding", (), |_|
                         freevars::annotate_freevars(def_map, crate));
 
-    let region_map = time(time_passes, ~"region resolution", (), |_|
+    let region_map = time(time_passes, "region resolution", (), |_|
                           middle::region::resolve_crate(sess, crate));
 
     let ty_cx = ty::mk_ctxt(sess, def_map, named_region_map, ast_map, freevars,

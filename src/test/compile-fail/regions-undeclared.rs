@@ -8,21 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-struct contravariant<'self> {
-    f: &'self int
+static c_x: &'blk int = &22; //~ ERROR use of undeclared lifetime name `'blk`
+
+enum EnumDecl {
+    Foo(&'a int), //~ ERROR use of undeclared lifetime name `'a`
+    Bar(&'self int), //~ ERROR use of undeclared lifetime name `'self`
 }
 
-fn to_same_lifetime<'r>(bi: contravariant<'r>) {
-    let bj: contravariant<'r> = bi;
-}
-
-fn to_shorter_lifetime<'r>(bi: contravariant<'r>) {
-    let bj: contravariant<'blk> = bi;
-}
-
-fn to_longer_lifetime<'r>(bi: contravariant<'r>) -> contravariant<'static> {
-    bi //~ ERROR mismatched types
-}
+fn fnDecl(x: &'a int, //~ ERROR use of undeclared lifetime name `'a`
+          y: &'self int) //~ ERROR use of undeclared lifetime name `'self`
+{}
 
 fn main() {
 }

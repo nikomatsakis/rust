@@ -10,15 +10,10 @@
 
 // #[warn(deprecated_mode)];
 
-use extra::list::Cons;
 use middle::ty;
 use middle::ty_fold;
 use middle::ty_fold::TypeFolder;
-use middle::typeck::isr_alist;
 use std::hashmap::HashMap;
-use syntax::ast;
-use syntax::ast_util;
-use util::common::indenter;
 use util::ppaux::Repr;
 use util::ppaux;
 

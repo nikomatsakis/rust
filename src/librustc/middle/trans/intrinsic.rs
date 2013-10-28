@@ -29,7 +29,6 @@ use middle::ty;
 use syntax::ast;
 use syntax::ast_map;
 use syntax::attr;
-use syntax::opt_vec;
 use util::ppaux::{ty_to_str};
 use middle::trans::machine::llsize_of;
 use middle::trans::type_::Type;

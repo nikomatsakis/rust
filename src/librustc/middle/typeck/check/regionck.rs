@@ -145,10 +145,7 @@ pub fn regionck_expr(fcx: @mut FnCtxt, e: @ast::Expr) {
     let mut rcx = Rcx { fcx: fcx, errors_reported: 0,
                          repeating_scope: e.id };
     let rcx = &mut rcx;
-    if fcx.err_count_since_creation() == 0 {
-        // regionck assumes typeck succeeded
-        rcx.visit_expr(e, ());
-    }
+    rcx.visit_expr(e, ());
     fcx.infcx().resolve_regions();
 }
 
@@ -156,10 +153,7 @@ pub fn regionck_fn(fcx: @mut FnCtxt, blk: &ast::Block) {
     let mut rcx = Rcx { fcx: fcx, errors_reported: 0,
                          repeating_scope: blk.id };
     let rcx = &mut rcx;
-    if fcx.err_count_since_creation() == 0 {
-        // regionck assumes typeck succeeded
-        rcx.visit_block(blk, ());
-    }
+    rcx.visit_block(blk, ());
     fcx.infcx().resolve_regions();
 }
 

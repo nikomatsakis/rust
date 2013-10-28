@@ -35,7 +35,6 @@
 
 use middle::ty::{RegionVid, TyVar, Vid};
 use middle::ty;
-use middle::typeck::isr_alist;
 use middle::typeck::infer::*;
 use middle::typeck::infer::combine::*;
 use middle::typeck::infer::glb::Glb;
@@ -45,8 +44,6 @@ use middle::typeck::infer::sub::Sub;
 use middle::typeck::infer::to_str::InferStr;
 use std::hashmap::HashMap;
 use util::common::indenter;
-
-use extra::list;
 
 pub trait LatticeValue {
     fn sub(cf: &CombineFields, a: &Self, b: &Self) -> ures;

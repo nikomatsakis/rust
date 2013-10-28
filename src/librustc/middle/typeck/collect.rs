@@ -39,15 +39,10 @@ use middle::subst::Subst;
 use middle::typeck::astconv::{AstConv, ty_of_arg};
 use middle::typeck::astconv::{ast_ty_to_ty};
 use middle::typeck::astconv;
-use middle::typeck::infer;
 use middle::typeck::rscope::*;
-use middle::typeck::rscope;
 use middle::typeck::{CrateCtxt, lookup_def_tcx, no_params, write_ty_to_tcx};
-use util::common::pluralize;
 use util::ppaux;
-use util::ppaux::UserString;
 
-use std::result;
 use std::vec;
 use syntax::abi::AbiSet;
 use syntax::ast::{RegionTyParamBound, TraitTyParamBound};
@@ -56,10 +51,9 @@ use syntax::ast_map;
 use syntax::ast_util::{local_def, split_trait_methods};
 use syntax::codemap::Span;
 use syntax::codemap;
-use syntax::print::pprust::{path_to_str, explicit_self_to_str};
+use syntax::print::pprust::{path_to_str};
 use syntax::visit;
 use syntax::opt_vec::OptVec;
-use syntax::opt_vec;
 use syntax::parse::token::special_idents;
 
 struct CollectItemTypesVisitor {
@@ -287,7 +281,6 @@ pub fn ensure_trait_methods(ccx: &CrateCtxt,
 
         // Convert the regions 'a, 'b, 'c defined on the trait into
         // bound regions on the fn.
-        let num_trait_rps = trait_ty_generics.region_param_defs.len();
         let rps_from_trait = trait_ty_generics.region_param_defs.iter().map(|d| {
             ty::re_fn_bound(m.fty.sig.binder_id,
                             ty::br_named(d.def_id, d.ident))
@@ -383,8 +376,8 @@ pub fn ensure_trait_methods(ccx: &CrateCtxt,
 pub fn ensure_supertraits(ccx: &CrateCtxt,
                           id: ast::NodeId,
                           sp: codemap::Span,
-                          ast_trait_refs: &[ast::trait_ref],
-                          generics: &ast::Generics) -> ty::BuiltinBounds
+                          ast_trait_refs: &[ast::trait_ref])
+                          -> ty::BuiltinBounds
 {
     let tcx = ccx.tcx;
 
@@ -431,24 +424,16 @@ pub fn convert_field(ccx: &CrateCtxt,
                           });
 }
 
-pub struct ConvertedMethod {
-    mty: @ty::Method,
-    id: ast::NodeId,
-    span: Span,
-    body_id: ast::NodeId
-}
-
-pub fn convert_methods(ccx: &CrateCtxt,
-                       container: MethodContainer,
-                       ms: &[@ast::method],
-                       untransformed_rcvr_ty: ty::t,
-                       rcvr_ty_generics: &ty::Generics,
-                       rcvr_ast_generics: &ast::Generics,
-                       rcvr_visibility: ast::visibility)
-                    -> ~[ConvertedMethod]
+fn convert_methods(ccx: &CrateCtxt,
+                   container: MethodContainer,
+                   ms: &[@ast::method],
+                   untransformed_rcvr_ty: ty::t,
+                   rcvr_ty_generics: &ty::Generics,
+                   rcvr_ast_generics: &ast::Generics,
+                   rcvr_visibility: ast::visibility)
 {
     let tcx = ccx.tcx;
-    return ms.iter().map(|m| {
+    for m in ms.iter() {
         let num_rcvr_ty_params = rcvr_ty_generics.type_param_defs.len();
         let m_ty_generics = ty_generics(ccx, &m.generics, num_rcvr_ty_params);
         let mty = @ty_of_method(ccx,
@@ -456,8 +441,7 @@ pub fn convert_methods(ccx: &CrateCtxt,
                                 *m,
                                 untransformed_rcvr_ty,
                                 rcvr_ast_generics,
-                                rcvr_visibility,
-                                &m.generics);
+                                rcvr_visibility);
         let fty = ty::mk_bare_fn(tcx, mty.fty.clone());
         debug2!("method {} (id {}) has type {}",
                 m.ident.repr(ccx.tcx),
@@ -479,17 +463,14 @@ pub fn convert_methods(ccx: &CrateCtxt,
             });
         write_ty_to_tcx(tcx, m.id, fty);
         tcx.methods.insert(mty.def_id, mty);
-        ConvertedMethod {mty: mty, id: m.id,
-                         span: m.span, body_id: m.body.id}
-    }).collect();
+    }
 
     fn ty_of_method(ccx: &CrateCtxt,
                     container: MethodContainer,
                     m: &ast::method,
                     untransformed_rcvr_ty: ty::t,
                     rcvr_generics: &ast::Generics,
-                    rcvr_visibility: ast::visibility,
-                    method_generics: &ast::Generics) -> ty::Method
+                    rcvr_visibility: ast::visibility) -> ty::Method
     {
         let (transformed_self_ty, fty) =
             astconv::ty_of_method(ccx, m.id, m.purity,
@@ -567,13 +548,13 @@ pub fn convert(ccx: &CrateCtxt, it: &ast::item) {
             it.vis
         };
 
-        let cms = convert_methods(ccx,
-                                  ImplContainer(local_def(it.id)),
-                                  *ms,
-                                  selfty,
-                                  &i_ty_generics,
-                                  generics,
-                                  parent_visibility);
+        convert_methods(ccx,
+                        ImplContainer(local_def(it.id)),
+                        *ms,
+                        selfty,
+                        &i_ty_generics,
+                        generics,
+                        parent_visibility);
 
         for trait_ref in opt_trait_ref.iter() {
             let trait_ref = instantiate_trait_ref(ccx, trait_ref, selfty);
@@ -593,13 +574,13 @@ pub fn convert(ccx: &CrateCtxt, it: &ast::item) {
           let (_, provided_methods) =
               split_trait_methods(*trait_methods);
           let untransformed_rcvr_ty = ty::mk_self(tcx, local_def(it.id));
-          let _ = convert_methods(ccx,
-                                  TraitContainer(local_def(it.id)),
-                                  provided_methods,
-                                  untransformed_rcvr_ty,
-                                  &trait_def.generics,
-                                  generics,
-                                  it.vis);
+          convert_methods(ccx,
+                          TraitContainer(local_def(it.id)),
+                          provided_methods,
+                          untransformed_rcvr_ty,
+                          &trait_def.generics,
+                          generics,
+                          it.vis);
 
           // We need to do this *after* converting methods, since
           // convert_methods produces a tcache entry that is wrong for
@@ -747,8 +728,7 @@ pub fn trait_def_of_item(ccx: &CrateCtxt, it: &ast::item) -> @ty::TraitDef {
             let self_ty = ty::mk_self(tcx, def_id);
             let ty_generics = ty_generics(ccx, generics, 0);
             let substs = mk_item_substs(ccx, &ty_generics, Some(self_ty));
-            let bounds = ensure_supertraits(ccx, it.id, it.span,
-                                            *supertraits, generics);
+            let bounds = ensure_supertraits(ccx, it.id, it.span, *supertraits);
             let trait_ref = @ty::TraitRef {def_id: def_id,
                                            substs: substs};
             let trait_def = @ty::TraitDef {generics: ty_generics,
@@ -890,8 +870,7 @@ pub fn ty_generics(ccx: &CrateCtxt,
                 None => {
                     let param_ty = ty::param_ty {idx: base_index + offset,
                                                  def_id: local_def(param.id)};
-                    let bounds = @compute_bounds(ccx, generics,
-                                                 param_ty, &param.bounds);
+                    let bounds = @compute_bounds(ccx, param_ty, &param.bounds);
                     let def = ty::TypeParameterDef {
                         ident: param.ident,
                         def_id: local_def(param.id),
@@ -907,12 +886,10 @@ pub fn ty_generics(ccx: &CrateCtxt,
 
     fn compute_bounds(
         ccx: &CrateCtxt,
-        generics: &ast::Generics,
         param_ty: ty::param_ty,
         ast_bounds: &OptVec<ast::TyParamBound>) -> ty::ParamBounds
     {
         /*!
-         *
          * Translate the AST's notion of ty param bounds (which are an
          * enum consisting of a newtyped Ty or a region) to ty's
          * notion of ty param bounds, which can either be user-defined

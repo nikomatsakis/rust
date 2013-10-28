@@ -8,17 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-struct invariant<'self> {
-    f: &'static fn() -> @mut &'self int
+// Test that anonymous lifetimes are not permitted in enum declarations
+
+enum Foo {
+    Bar(&int) //~ ERROR missing lifetime specifier
 }
 
-fn to_same_lifetime<'r>(bi: invariant<'r>) {
-    let bj: invariant<'r> = bi;
-}
-
-fn to_longer_lifetime<'r>(bi: invariant<'r>) -> invariant<'static> {
-    bi //~ ERROR mismatched types
-}
-
-fn main() {
-}
+fn main() {}

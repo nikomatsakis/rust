@@ -73,9 +73,9 @@ use std::vec;
 use syntax::ast;
 use syntax::ast_map;
 use syntax::ast_util;
+use syntax::attr;
 use syntax::parse::token;
 use syntax::opt_vec;
-use syntax::opt_vec::OptVec;
 use syntax::visit;
 use syntax::visit::Visitor;
 
@@ -196,6 +196,8 @@ impl<'self> Visitor<()> for TermsContext<'self> {
                   (): ()) {
         debug2!("add_inferreds for item {}", item.repr(self.tcx));
 
+        let inferreds_on_entry = self.num_inferred();
+
         // NB: In the code below for writing the results back into the
         // tcx, we rely on the fact that all inferreds for a particular
         // item are assigned continuous indices.
@@ -216,6 +218,25 @@ impl<'self> Visitor<()> for TermsContext<'self> {
                 for (i, p) in generics.ty_params.iter().enumerate() {
                     self.add_inferred(item.id, TypeParam, i, p.id);
                 }
+
+                // If this item has no type or lifetime parameters,
+                // then there are no variances to infer, so just
+                // insert an empty entry into the variance map.
+                // Arguably we could just leave the map empty in this
+                // case but it seems cleaner to be able to distinguish
+                // "invalid item id" from "item id with no
+                // parameters".
+                if self.num_inferred() == inferreds_on_entry {
+                    let newly_added = self.tcx.item_variance_map.insert(
+                        ast_util::local_def(item.id),
+                        @ty::ItemVariances {
+                            self_param: None,
+                            type_params: opt_vec::Empty,
+                            region_params: opt_vec::Empty
+                        });
+                    assert!(newly_added);
+                }
+
                 visit::walk_item(self, item, ());
             }
 
@@ -580,7 +601,7 @@ impl<'self> ConstraintContext<'self> {
                                    region: ty::Region,
                                    variance: VarianceTermPtr<'self>) {
         match region {
-            ty::re_type_bound(param_id, index, _) => {
+            ty::re_type_bound(param_id, _, _) => {
                 let index = self.inferred_index(param_id);
                 self.add_constraint(index, variance);
             }
@@ -683,7 +704,8 @@ impl<'self> SolveContext<'self> {
         // them into the variance map. We rely on the fact that we
         // generate all the inferreds for a particular item
         // consecutively.
-        let item_variance_map = self.terms_cx.tcx.item_variance_map;
+        let tcx = self.terms_cx.tcx;
+        let item_variance_map = tcx.item_variance_map;
         let solutions = &self.solutions;
         let inferred_infos = &self.terms_cx.inferred_infos;
         let mut index = 0;
@@ -714,11 +736,20 @@ impl<'self> SolveContext<'self> {
             }
 
             debug2!("item_id={} item_variances={}",
-                    item_id, item_variances.repr(self.terms_cx.tcx));
+                    item_id,
+                    item_variances.repr(tcx));
 
-            let newly_added = item_variance_map.insert(
-                ast_util::local_def(item_id),
-                @item_variances);
+            let item_def_id = ast_util::local_def(item_id);
+
+            // For unit testing: check for a special "rustc_variance"
+            // attribute and report an error with various results if found.
+            if ty::has_attr(tcx, item_def_id, "rustc_variance") {
+                let found = item_variances.repr(tcx);
+                tcx.sess.span_err(ast_map::item_span(tcx.items, item_id), found);
+            }
+
+            let newly_added = item_variance_map.insert(item_def_id,
+                                                       @item_variances);
             assert!(newly_added);
         }
     }

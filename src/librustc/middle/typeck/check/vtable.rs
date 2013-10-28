@@ -233,8 +233,6 @@ fn lookup_vtable(vcx: &VtableContext,
            vcx.infcx.trait_ref_to_str(trait_ref));
     let _i = indenter();
 
-    let tcx = vcx.tcx();
-
     let ty = match fixup_ty(vcx, location_info, ty, is_early) {
         Some(ty) => ty,
         None => {

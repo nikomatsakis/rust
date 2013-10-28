@@ -20,15 +20,12 @@ use middle::typeck::infer::to_str::InferStr;
 use middle::typeck::infer::{cres, InferCtxt};
 use middle::typeck::infer::{TypeTrace, Subtype};
 use middle::typeck::infer::fold_regions_in_sig;
-use middle::typeck::isr_alist;
 use syntax::ast::{Many, Once, extern_fn, impure_fn, MutImmutable, MutMutable};
 use syntax::ast::{unsafe_fn, NodeId};
 use syntax::ast::{Onceness, purity};
 use std::hashmap::HashMap;
 use util::common::{indenter};
 use util::ppaux::mt_to_str;
-
-use extra::list;
 
 pub struct Glb(CombineFields);  // "greatest lower bound" (common subtype)
 

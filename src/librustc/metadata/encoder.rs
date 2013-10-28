@@ -202,9 +202,8 @@ fn encode_region_param_defs(ebml_w: &mut writer::Encoder,
         encode_name(ecx, ebml_w, param.ident);
         ebml_w.end_tag();
 
-        ebml_w.start_tag(tag_region_param_def_def_id);
-        encode_def_id(ebml_w, param.def_id);
-        ebml_w.end_tag();
+        ebml_w.wr_tagged_str(tag_region_param_def_def_id,
+                             def_to_str(param.def_id));
 
         ebml_w.end_tag();
     }
@@ -998,6 +997,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         ebml_w.start_tag(tag_items_data_item);
         encode_def_id(ebml_w, def_id);
         encode_family(ebml_w, 't');
+        encode_item_variances(ebml_w, ecx, item.id);
         encode_bounds_and_type(ebml_w, ecx, &lookup_item_type(tcx, def_id));
         encode_name(ecx, ebml_w, item.ident);
         for v in (*enum_definition).variants.iter() {
@@ -1037,6 +1037,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         encode_family(ebml_w, 'S');
         encode_bounds_and_type(ebml_w, ecx, &lookup_item_type(tcx, def_id));
 
+        encode_item_variances(ebml_w, ecx, item.id);
         encode_name(ecx, ebml_w, item.ident);
         encode_attributes(ebml_w, item.attrs);
         encode_path(ecx, ebml_w, path, ast_map::path_name(item.ident));

@@ -15,7 +15,6 @@ use middle::ty_fold;
 use middle::ty_fold::TypeFolder;
 use syntax::opt_vec::OptVec;
 use std::at_vec;
-use util::ppaux::Repr;
 
 ///////////////////////////////////////////////////////////////////////////
 // Public trait `Subst`
@@ -186,7 +185,7 @@ impl Subst for ty::RegionParameterDef {
 }
 
 impl Subst for ty::Region {
-    fn subst(&self, tcx: ty::ctxt, substs: &ty::substs) -> ty::Region {
+    fn subst(&self, _tcx: ty::ctxt, substs: &ty::substs) -> ty::Region {
         // Note: This routine only handles regions that are bound on
         // type declarationss and other outer declarations, not those
         // bound in *fn types*. Region substitution of the bound

@@ -757,7 +757,7 @@ impl Repr for ty::ItemVariances {
 }
 
 impl Repr for ty::Variance {
-    fn repr(&self, tcx: ctxt) -> ~str {
+    fn repr(&self, _: ctxt) -> ~str {
         self.to_str().to_owned()
     }
 }

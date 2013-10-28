@@ -276,7 +276,7 @@ fn item_region_param_defs(item_doc: ebml::Doc,
         do reader::tagged_docs(item_doc, tag_region_param_def) |rp_doc| {
             let ident_str_doc = reader::get_doc(rp_doc,
                                                 tag_region_param_def_ident);
-            let ident = token::str_to_ident(ident_str_doc.as_str_slice());
+            let ident = item_name(tcx.sess.intr(), ident_str_doc);
             let def_id_doc = reader::get_doc(rp_doc,
                                              tag_region_param_def_def_id);
             let def_id = reader::with_doc_data(def_id_doc, parse_def_id);

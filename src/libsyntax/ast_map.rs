@@ -494,3 +494,15 @@ pub fn node_item_query<Result>(items: map, id: NodeId,
         _ => fail2!("{}", error_msg)
     }
 }
+
+pub fn item_span(items: map,
+                 id: ast::NodeId)
+                 -> Span {
+    match items.find(&id) {
+        Some(&node_item(item, _)) => item.span,
+        r => {
+            fail2!(format!("item_span: expected item with id {} but found {:?}",
+                           id, r))
+        }
+    }
+}

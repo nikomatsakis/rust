@@ -601,7 +601,7 @@ impl ErrorReportingHelpers for InferCtxt {
                     span,
                     "...so that variable is valid at time of its declaration");
             }
-            infer::ReferenceOutlivesReferent(ty, span) => {
+            infer::ReferenceOutlivesReferent(_, span) => {
                 self.tcx.sess.span_note(
                     span,
                     "...so that the pointer does not outlive the \

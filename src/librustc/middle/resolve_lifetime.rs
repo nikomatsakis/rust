@@ -21,7 +21,6 @@ use driver::session;
 use std::hashmap::HashMap;
 use syntax::ast;
 use syntax::codemap::Span;
-use syntax::opt_vec;
 use syntax::opt_vec::OptVec;
 use syntax::parse::token::special_idents;
 use syntax::print::pprust::{lifetime_to_str};

@@ -520,6 +520,9 @@ pub enum bound_region {
     br_anon(uint),
 
     /// Named region parameters for functions (a in &'a T)
+    ///
+    /// The def-id is needed to distinguish free regions in
+    /// the event of shadowing.
     br_named(ast::DefId, ast::Ident),
 
     /// Fresh bound identifiers created during GLB computations.

@@ -102,11 +102,10 @@ use middle::typeck::CrateCtxt;
 use middle::typeck::infer::{resolve_type, force_tvar};
 use middle::typeck::infer;
 use middle::typeck::rscope::RegionScope;
-use middle::typeck::{isr_alist, lookup_def_ccx};
+use middle::typeck::{lookup_def_ccx};
 use middle::typeck::no_params;
 use middle::typeck::{require_same_types, method_map, vtable_map};
 use util::common::{block_query, indenter, loop_query};
-use util::ppaux::{bound_region_ptr_to_str};
 use util::ppaux::UserString;
 use util::ppaux;
 
@@ -114,7 +113,6 @@ use std::hashmap::HashMap;
 use std::result;
 use std::util::replace;
 use std::vec;
-use extra::list::Nil;
 use syntax::abi::AbiSet;
 use syntax::ast::{provided, required};
 use syntax::ast;
@@ -126,7 +124,6 @@ use syntax::codemap;
 use syntax::opt_vec::OptVec;
 use syntax::opt_vec;
 use syntax::parse::token;
-use syntax::parse::token::special_idents;
 use syntax::print::pprust;
 use syntax::visit;
 use syntax::visit::Visitor;
@@ -779,7 +776,7 @@ fn check_impl_methods_against_trait(ccx: @mut CrateCtxt,
     if !missing_methods.is_empty() {
         tcx.sess.span_err(
             impl_span,
-            format!("not all trait methods implemented. Missing: {}",
+            format!("not all trait methods implemented, missing: {}",
                     missing_methods.connect(", ")));
     }
 }
@@ -992,7 +989,6 @@ pub fn compare_impl_method(tcx: ty::ctxt,
     };
     debug2!("impl_fty (post-subst): {}", ppaux::ty_to_str(tcx, impl_fty));
     let trait_fty = {
-        let num_trait_m_type_params = trait_m.generics.type_param_defs.len();
         let substs { regions: trait_regions,
                      tps: trait_tps,
                      self_ty: self_ty } = trait_substs.subst(tcx, &dummy_substs);
@@ -2165,10 +2161,10 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
                      expected: Option<ty::t>) {
         let tcx = fcx.ccx.tcx;
 
-        // Find the expected input/output types (if any).  Careful to
-        // avoid capture of bound regions in the expected type.  See
-        // def'n of br_cap_avoid() for a more lengthy explanation of
-        // what's going on here.
+        // Find the expected input/output types (if any). Substitute
+        // fresh bound regions for any bound regions we find in the
+        // expected types so as to avoid capture.
+        //
         // Also try to pick up inferred purity and sigil, defaulting
         // to impure and block. Note that we only will use those for
         // block syntax lambdas; that is, lambdas without explicit
@@ -2184,11 +2180,10 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
              expected_bounds) = {
             match expected_sty {
                 Some(ty::ty_closure(ref cenv)) => {
-                    let id = expr.id;
                     let (_, _, sig) =
                         replace_bound_regions_in_fn_sig(
                             tcx, None, &cenv.sig,
-                            |br| fcx.inh.infcx.fresh_bound_region(expr.id));
+                            |_| fcx.inh.infcx.fresh_bound_region(expr.id));
                     (Some(sig), cenv.purity, cenv.sigil,
                      cenv.onceness, cenv.bounds)
                 }
@@ -3575,7 +3570,7 @@ pub fn instantiate_path(fcx: @mut FnCtxt,
     let num_supplied_regions = pth.segments.last().lifetimes.len();
     let regions = if num_expected_regions == num_supplied_regions {
         pth.segments.last().lifetimes.map(
-            |l| ast_region_to_region(fcx, &fcx.infcx(), l))
+            |l| ast_region_to_region(fcx.tcx(), l))
     } else {
         if num_supplied_regions != 0 {
             fcx.ccx.tcx.sess.span_err(

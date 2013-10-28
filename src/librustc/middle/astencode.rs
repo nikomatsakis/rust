@@ -15,7 +15,8 @@ use driver::session::Session;
 use e = metadata::encoder;
 use metadata::decoder;
 use metadata::tydecode;
-use metadata::tydecode::{DefIdSource, NominalType, TypeWithId, TypeParameter};
+use metadata::tydecode::{DefIdSource, NominalType, TypeWithId, TypeParameter,
+                         RegionParameter};
 use metadata::tyencode;
 use middle::freevars::freevar_entry;
 use middle::typeck::{method_origin, method_map_entry};
@@ -1094,16 +1095,14 @@ impl ebml_decoder_decoder_helpers for reader::Decoder {
         // are not used during trans.
 
         return do self.read_opaque |this, doc| {
+            debug2!("read_ty({})", type_string(doc));
+
             let ty = tydecode::parse_ty_data(
                 *doc.data,
                 xcx.dcx.cdata.cnum,
                 doc.start,
                 xcx.dcx.tcx,
                 |s, a| this.convert_def_id(xcx, s, a));
-
-            debug2!("read_ty({}) = {}",
-                   type_string(doc),
-                   ty_to_str(xcx.dcx.tcx, ty));
 
             ty
         };
@@ -1169,7 +1168,6 @@ impl ebml_decoder_decoder_helpers for reader::Decoder {
                       did: ast::DefId)
                       -> ast::DefId {
         /*!
-         *
          * Converts a def-id that appears in a type.  The correct
          * translation will depend on what kind of def-id this is.
          * This is a subtle point: type definitions are not
@@ -1180,10 +1178,25 @@ impl ebml_decoder_decoder_helpers for reader::Decoder {
          * However, *type parameters* are cloned along with the function
          * they are attached to.  So we should translate those def-ids
          * to refer to the new, cloned copy of the type parameter.
+         * We only see references to free type parameters in the body of
+         * an inlined function. In such cases, we need the def-id to
+         * be a local id so that the TypeContents code is able to lookup
+         * the relevant info in the ty_param_defs table.
+         *
+         * *Region parameters*, unfortunately, are another kettle of fish.
+         * In such cases, def_id's can appear in types to distinguish
+         * shadowed bound regions and so forth. It doesn't actually
+         * matter so much what we do to these, since regions are erased
+         * at trans time, but it's good to keep them consistent just in
+         * case. We translate them with `tr_def_id()` which will map
+         * the crate numbers back to the original source crate.
+         *
+         * It'd be really nice to refactor the type repr to not include
+         * def-ids so that all these distinctions were unnecessary.
          */
 
         let r = match source {
-            NominalType | TypeWithId => xcx.tr_def_id(did),
+            NominalType | TypeWithId | RegionParameter => xcx.tr_def_id(did),
             TypeParameter => xcx.tr_intern_def_id(did)
         };
         debug2!("convert_def_id(source={:?}, did={:?})={:?}", source, did, r);

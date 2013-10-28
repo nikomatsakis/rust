@@ -22,21 +22,14 @@ Most of the documentation on regions can be found in
 
 
 use driver::session::Session;
-use metadata::csearch;
-use middle::resolve;
 use middle::ty::{FreeRegion};
 use middle::ty;
 
 use std::hashmap::{HashMap, HashSet};
-use syntax::ast_map;
 use syntax::codemap::Span;
-use syntax::print::pprust;
-use syntax::parse::token;
-use syntax::parse::token::special_idents;
 use syntax::{ast, visit};
 use syntax::visit::{Visitor,fn_kind};
 use syntax::ast::{Block,item,fn_decl,NodeId,Arm,Pat,Stmt,Expr,Local};
-use syntax::ast::{Ty,TypeMethod,struct_field};
 
 /**
 The region maps encode information about region relationships.

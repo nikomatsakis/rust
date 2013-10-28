@@ -91,7 +91,7 @@ pub trait Visitor<E:Clone> {
     }
     fn visit_struct_field(&mut self, s:@struct_field, e:E) { walk_struct_field(self, s, e) }
     fn visit_opt_lifetime_ref(&mut self,
-                              span: Span,
+                              _span: Span,
                               opt_lifetime: &Option<Lifetime>,
                               env: E) {
         /*!
@@ -502,7 +502,7 @@ pub fn walk_fn<E:Clone, V:Visitor<E>>(visitor: &mut V,
                          function_kind: &fn_kind,
                          function_declaration: &fn_decl,
                          function_body: &Block,
-                         span: Span,
+                         _span: Span,
                          _: NodeId,
                          env: E) {
     walk_fn_decl(visitor, function_declaration, env.clone());

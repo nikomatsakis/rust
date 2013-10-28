@@ -75,7 +75,6 @@ use extra::list;
 use syntax::codemap::Span;
 use syntax::print::pprust::*;
 use syntax::{ast, ast_map, abi};
-use syntax::opt_vec;
 
 pub mod check;
 pub mod rscope;
@@ -466,10 +465,10 @@ pub fn check_crate(tcx: ty::ctxt,
     // have valid types and not error
     tcx.sess.abort_if_errors();
 
-    time(time_passes, ~"variance inference", (), |_|
+    time(time_passes, "variance inference", (), |_|
          variance::infer_variance(tcx, crate));
 
-    time(time_passes, ~"coherence checking", (), |_|
+    time(time_passes, "coherence checking", (), |_|
         coherence::check_coherence(ccx, crate));
 
     time(time_passes, "type checking", (), |_|
