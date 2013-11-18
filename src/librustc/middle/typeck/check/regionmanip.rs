@@ -19,12 +19,14 @@ use util::ppaux;
 
 // Helper functions related to manipulating region types.
 
-pub fn replace_bound_regions_in_fn_sig(
-        tcx: ty::ctxt,
-        fn_sig: &ty::FnSig,
-        mapf: |ty::BoundRegion| -> ty::Region)
-        -> (HashMap<ty::BoundRegion,ty::Region>, ty::FnSig) {
-    debug!("replace_bound_regions_in_fn_sig({})", fn_sig.repr(tcx));
+pub fn replace_late_bound_regions_in_fn_sig(
+    tcx: ty::ctxt,
+    fn_sig: &ty::FnSig,
+    mapf: |ty::BoundRegion| -> ty::Region)
+    -> (HashMap<ty::BoundRegion,ty::Region>, ty::FnSig)
+{
+    debug!("replace_late_bound_regions_in_fn_sig(fn_sig={})",
+           fn_sig.repr(tcx));
 
     let mut map = HashMap::new();
     let fn_sig = {

@@ -42,7 +42,6 @@ use syntax::ast_map::NodeItem;
 use syntax::ast_map;
 use syntax::ast_util::{def_id_of_def, local_def};
 use syntax::codemap::Span;
-use syntax::opt_vec;
 use syntax::visit;
 
 use std::cell::RefCell;
@@ -497,17 +496,17 @@ impl CoherenceChecker {
     pub fn universally_quantify_polytype(&self,
                                          polytype: ty_param_bounds_and_ty)
                                          -> UniversalQuantificationResult {
-        let region_parameter_count = polytype.generics.region_param_defs().len();
         let region_parameters =
-            self.inference_context.next_region_vars(
-                infer::BoundRegionInCoherence,
-                region_parameter_count);
+            polytype.generics.region_param_defs().iter()
+            .map(|d| self.inference_context.next_region_var(
+                         infer::BoundRegionInCoherence(d.ident)))
+            .collect();
 
         let bounds_count = polytype.generics.type_param_defs().len();
         let type_parameters = self.inference_context.next_ty_vars(bounds_count);
 
         let substitutions = substs {
-            regions: ty::NonerasedRegions(opt_vec::from(region_parameters)),
+            regions: ty::NonerasedRegions(region_parameters),
             self_ty: None,
             tps: type_parameters
         };

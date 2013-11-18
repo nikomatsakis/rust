@@ -461,19 +461,21 @@ impl ErrorReportingHelpers for InferCtxt {
             infer::AddrOfSlice(_) => ~" for slice expression",
             infer::Autoref(_) => ~" for autoref",
             infer::Coercion(_) => ~" for automatic coercion",
-            infer::BoundRegionInFnCall(_, br) => {
+            infer::LateBoundRegion(_, br) => {
                 format!(" for {}in function call",
-                        bound_region_to_str(self.tcx, "region ", true, br))
+                        bound_region_to_str(self.tcx, "lifetime parameter ", true, br))
             }
             infer::BoundRegionInFnType(_, br) => {
                 format!(" for {}in function type",
-                        bound_region_to_str(self.tcx, "region ", true, br))
+                        bound_region_to_str(self.tcx, "lifetime parameter ", true, br))
             }
-            infer::BoundRegionInTypeOrImpl(_) => {
-                format!(" for region in type/impl")
+            infer::EarlyBoundRegion(_, ident) => {
+                format!(" for lifetime parameter `{}`",
+                        ident.user_string(self.tcx))
             }
-            infer::BoundRegionInCoherence(..) => {
-                format!(" for coherence check")
+            infer::BoundRegionInCoherence(ident) => {
+                format!(" for lifetime parameter `{}` in coherence check",
+                        ident.user_string(self.tcx))
             }
         };
 

@@ -93,7 +93,7 @@ use middle::typeck::infer;
 use middle::typeck::{method_map_entry, method_origin, method_param};
 use middle::typeck::{method_static, method_object};
 use middle::typeck::{param_numbered, param_self, param_index};
-use middle::typeck::check::regionmanip::replace_bound_regions_in_fn_sig;
+use middle::typeck::check::regionmanip::replace_late_bound_regions_in_fn_sig;
 use util::common::indenter;
 use util::ppaux::Repr;
 
@@ -402,7 +402,7 @@ impl<'a> LookupContext<'a> {
                                             substs: &ty::substs) {
         debug!("push_inherent_candidates_from_object(did={}, substs={})",
                self.did_to_str(did),
-               substs_to_str(self.tcx(), substs));
+               substs.repr(self.tcx()));
         let _indenter = indenter();
 
         // It is illegal to invoke a method on a trait instance that
@@ -512,7 +512,8 @@ impl<'a> LookupContext<'a> {
                     let cand = mk_cand(bound_trait_ref, method,
                                        pos, this_bound_idx);
 
-                    debug!("pushing inherent candidate for param: {:?}", cand);
+                    debug!("pushing inherent candidate for param: {}",
+                           cand.repr(self.tcx()));
                     let mut inherent_candidates = self.inherent_candidates
                                                       .borrow_mut();
                     inherent_candidates.get().push(cand);
@@ -892,8 +893,9 @@ impl<'a> LookupContext<'a> {
             let mut j = i + 1;
             while j < candidates.len() {
                 let candidate_b = &candidates[j];
-                debug!("attempting to merge {:?} and {:?}",
-                       candidate_a, candidate_b);
+                debug!("attempting to merge {} and {}",
+                       candidate_a.repr(self.tcx()),
+                       candidate_b.repr(self.tcx()));
                 let candidates_same = match (&candidate_a.origin,
                                              &candidate_b.origin) {
                     (&method_param(ref p1), &method_param(ref p2)) => {
@@ -940,7 +942,8 @@ impl<'a> LookupContext<'a> {
 
         debug!("confirm_candidate(expr={}, candidate={})",
                self.expr.repr(tcx),
-               self.cand_to_str(candidate));
+               candidate.repr(self.tcx()),
+               self.ty_to_str(fty));
 
         self.enforce_object_limitations(candidate);
         self.enforce_drop_trait_limitations(candidate);
@@ -950,7 +953,7 @@ impl<'a> LookupContext<'a> {
 
         // Determine the values for the type parameters of the method.
         // If they were not explicitly supplied, just construct fresh
-        // type variables.
+        // variables.
         let num_supplied_tps = self.supplied_tps.len();
         let num_method_tps = candidate.method_ty.generics.type_param_defs().len();
         let m_substs = {
@@ -972,11 +975,25 @@ impl<'a> LookupContext<'a> {
             }
         };
 
+        // Determine values for the early-bound lifetime parameters.
+        // FIXME -- permit users to manually specify lifetimes
+        let mut all_regions = match candidate.rcvr_substs.regions {
+            NonerasedRegions(ref v) => v.clone(),
+            ErasedRegions => tcx.sess.span_bug(self.expr.span, "ErasedRegions")
+        };
+        let m_regions =
+            self.fcx.infcx().region_vars_for_defs(
+                self.expr.span,
+                candidate.method_ty.generics.region_param_defs);
+        for &r in m_regions.iter() {
+            all_regions.push(r);
+        }
+
         // Construct the full set of type parameters for the method,
         // which is equal to the class tps + the method tps.
         let all_substs = substs {
             tps: vec::append(candidate.rcvr_substs.tps.clone(), m_substs),
-            regions: candidate.rcvr_substs.regions.clone(),
+            regions: NonerasedRegions(all_regions),
             self_ty: candidate.rcvr_substs.self_ty,
         };
 
@@ -1010,10 +1027,10 @@ impl<'a> LookupContext<'a> {
 
         // Replace any bound regions that appear in the function
         // signature with region variables
-        let (_, fn_sig) = replace_bound_regions_in_fn_sig( tcx, &fn_sig, |br| {
-            self.fcx.infcx().next_region_var(
-                infer::BoundRegionInFnCall(self.expr.span, br))
-        });
+        let (_, fn_sig) = replace_late_bound_regions_in_fn_sig(
+            tcx, &fn_sig,
+            |br| self.fcx.infcx().next_region_var(
+                infer::LateBoundRegion(self.expr.span, br)));
         let transformed_self_ty = fn_sig.inputs[0];
         let fty = ty::mk_bare_fn(tcx, ty::BareFnTy {
             sig: fn_sig,
@@ -1203,7 +1220,7 @@ impl<'a> LookupContext<'a> {
     // candidate method's `self_ty`.
     fn is_relevant(&self, rcvr_ty: ty::t, candidate: &Candidate) -> bool {
         debug!("is_relevant(rcvr_ty={}, candidate={})",
-               self.ty_to_str(rcvr_ty), self.cand_to_str(candidate));
+               self.ty_to_str(rcvr_ty), candidate.repr(self.tcx()));
 
         return match candidate.method_ty.explicit_self {
             SelfStatic => {
@@ -1372,13 +1389,6 @@ impl<'a> LookupContext<'a> {
         self.fcx.infcx().ty_to_str(t)
     }
 
-    fn cand_to_str(&self, cand: &Candidate) -> ~str {
-        format!("Candidate(rcvr_ty={}, rcvr_substs={}, origin={:?})",
-             cand.rcvr_match_condition.repr(self.tcx()),
-             ty::substs_to_str(self.tcx(), &cand.rcvr_substs),
-             cand.origin)
-    }
-
     fn did_to_str(&self, did: DefId) -> ~str {
         ty::item_path_str(self.tcx(), did)
     }
@@ -1400,3 +1410,13 @@ impl Repr for RcvrMatchCondition {
         }
     }
 }
+
+impl Repr for Candidate {
+    fn repr(&self, tcx: ty::ctxt) -> ~str {
+        format!("Candidate(rcvr_ty={}, rcvr_substs={}, origin={:?})",
+                self.rcvr_match_condition.repr(tcx),
+                self.rcvr_substs.repr(tcx),
+                self.origin)
+    }
+}
+
