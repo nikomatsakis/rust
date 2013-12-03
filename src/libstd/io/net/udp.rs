@@ -90,7 +90,8 @@ impl Reader for UdpStream {
 
 impl Writer for UdpStream {
     fn write(&mut self, buf: &[u8]) {
-        self.as_socket(|sock| sock.sendto(buf, self.connectedTo));
+        let connectedTo = self.connectedTo;
+        self.as_socket(|sock| sock.sendto(buf, connectedTo));
     }
 }
 

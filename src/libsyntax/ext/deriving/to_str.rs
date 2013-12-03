@@ -62,26 +62,28 @@ fn to_str_substructure(cx: &ExtCtxt, span: Span,
             let mut stmts = ~[cx.stmt_let(span, true, buf, init)];
             let push_str = cx.ident_of("push_str");
 
-            let push = |s: @Expr| {
-                let ebuf = cx.expr_ident(span, buf);
-                let call = cx.expr_method_call(span, ebuf, push_str, ~[s]);
-                stmts.push(cx.stmt_expr(call));
-            };
+            {
+                let push = |s: @Expr| {
+                    let ebuf = cx.expr_ident(span, buf);
+                    let call = cx.expr_method_call(span, ebuf, push_str, ~[s]);
+                    stmts.push(cx.stmt_expr(call));
+                };
 
-            for (i, &FieldInfo {name, span, self_, .. }) in fields.iter().enumerate() {
-                if i > 0 {
-                    push(cx.expr_str(span, @", "));
-                }
-                match name {
-                    None => {}
-                    Some(id) => {
-                        let name = cx.str_of(id) + ": ";
-                        push(cx.expr_str(span, name.to_managed()));
+                for (i, &FieldInfo {name, span, self_, .. }) in fields.iter().enumerate() {
+                    if i > 0 {
+                        push(cx.expr_str(span, @", "));
                     }
+                    match name {
+                        None => {}
+                        Some(id) => {
+                            let name = cx.str_of(id) + ": ";
+                            push(cx.expr_str(span, name.to_managed()));
+                        }
+                    }
+                    push(cx.expr_method_call(span, self_, to_str, ~[]));
                 }
-                push(cx.expr_method_call(span, self_, to_str, ~[]));
+                push(cx.expr_str(span, end));
             }
-            push(cx.expr_str(span, end));
 
             cx.expr_block(cx.block(span, stmts, Some(cx.expr_ident(span, buf))))
         }

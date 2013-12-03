@@ -2503,7 +2503,7 @@ impl Parser {
                               parse_decl: |&mut Parser| -> P<FnDecl>,
                               parse_body: |&mut Parser| -> @Expr)
                               -> @Expr {
-        let lo = self.last_span.lo;
+        let lo = self.span.lo;
         let decl = parse_decl(self);
         let body = parse_body(self);
         let fakeblock = P(ast::Block {

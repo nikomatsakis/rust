@@ -289,6 +289,7 @@ Out of scope
 #[allow(missing_doc)];
 
 use cast;
+use cell::Cell;
 use char::Char;
 use condition::Guard;
 use container::Container;
@@ -301,7 +302,7 @@ use str;
 use str::{StrSlice, OwnedStr};
 use to_str::ToStr;
 use uint;
-use unstable::finally::Finally;
+use unstable::finally::try_finally;
 use vec::{OwnedVector, MutableVector, ImmutableVector, OwnedCopyableVector};
 use vec;
 
@@ -538,28 +539,43 @@ pub trait Reader {
     /// on EOF. If `io_error` is handled then `push_bytes` may push less
     /// than the requested number of bytes.
     fn push_bytes(&mut self, buf: &mut ~[u8], len: uint) {
+        struct State<'a> {
+            buf: &'a mut ~[u8],
+            total_read: uint,
+        }
+
         unsafe {
-            let start_len = buf.len();
-            let mut total_read = 0;
+            let mut s = State { buf: buf,
+                                total_read: 0 };
+            let start_len = s.buf.len();
 
-            buf.reserve_additional(len);
-            buf.set_len(start_len + len);
+            // Extend buffer without initializing memory. The finally
+            // code below will fix the length in the event of failure.
 
-            (|| {
-                while total_read < len {
-                    let len = buf.len();
-                    let slice = buf.mut_slice(start_len + total_read, len);
-                    match self.read(slice) {
-                        Some(nread) => {
-                            total_read += nread;
-                        }
-                        None => {
-                            io_error::cond.raise(standard_error(EndOfFile));
-                            break;
+            s.buf.reserve_additional(len);
+            s.buf.set_len(start_len + len);
+
+            try_finally(
+                &mut s, (),
+
+                |s, _| {
+                    while s.total_read < len {
+                        let len = s.buf.len();
+                        let slice = s.buf.mut_slice(
+                            start_len + s.total_read, len);
+                        match self.read(slice) {
+                            Some(nread) => {
+                                s.total_read += nread;
+                            }
+                            None => {
+                                io_error::cond.raise(standard_error(EndOfFile));
+                                break;
+                            }
                         }
                     }
-                }
-            }).finally(|| buf.set_len(start_len + total_read))
+                },
+
+                |s| s.buf.set_len(start_len + s.total_read))
         }
     }
 
@@ -584,15 +600,15 @@ pub trait Reader {
     /// `EndOfFile` which is swallowed.
     fn read_to_end(&mut self) -> ~[u8] {
         let mut buf = vec::with_capacity(DEFAULT_BUF_SIZE);
-        let mut keep_reading = true;
+        let keep_reading = Cell::new(true);
         io_error::cond.trap(|e| {
             if e.kind == EndOfFile {
-                keep_reading = false;
+                keep_reading.set(false);
             } else {
                 io_error::cond.raise(e)
             }
         }).inside(|| {
-            while keep_reading {
+            while keep_reading.get() {
                 self.push_bytes(&mut buf, DEFAULT_BUF_SIZE)
             }
         });

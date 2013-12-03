@@ -118,7 +118,7 @@ use rt::global_heap::{malloc_raw, realloc_raw, exchange_free};
 use mem;
 use mem::size_of;
 use uint;
-use unstable::finally::Finally;
+use unstable::finally::try_finally;
 use unstable::intrinsics;
 use unstable::raw::{Repr, Slice, Vec};
 use util;
@@ -133,15 +133,16 @@ pub fn from_fn<T>(n_elts: uint, op: |uint| -> T) -> ~[T] {
     unsafe {
         let mut v = with_capacity(n_elts);
         let p = v.as_mut_ptr();
-        let mut i: uint = 0u;
-        (|| {
-            while i < n_elts {
-                intrinsics::move_val_init(&mut(*ptr::mut_offset(p, i as int)), op(i));
-                i += 1u;
-            }
-        }).finally(|| {
-            v.set_len(i);
-        });
+        let mut i = 0;
+        try_finally(
+            &mut i, (),
+            |i, ()| while *i < n_elts {
+                intrinsics::move_val_init(
+                    &mut(*ptr::mut_offset(p, *i as int)),
+                    op(*i));
+                *i += 1u;
+            },
+            |i| v.set_len(*i));
         v
     }
 }
@@ -161,14 +162,15 @@ pub fn from_elem<T:Clone>(n_elts: uint, t: T) -> ~[T] {
         let mut v = with_capacity(n_elts);
         let p = v.as_mut_ptr();
         let mut i = 0u;
-        (|| {
-            while i < n_elts {
-                intrinsics::move_val_init(&mut(*ptr::mut_offset(p, i as int)), t.clone());
-                i += 1u;
-            }
-        }).finally(|| {
-            v.set_len(i);
-        });
+        try_finally(
+            &mut i, (),
+            |i, ()| while *i < n_elts {
+                intrinsics::move_val_init(
+                    &mut(*ptr::mut_offset(p, *i as int)),
+                    t.clone());
+                *i += 1u;
+            },
+            |i| v.set_len(*i));
         v
     }
 }
@@ -295,7 +297,8 @@ impl<'a, T> Iterator<&'a [T]> for RevSplits<'a, T> {
             return Some(self.v);
         }
 
-        match self.v.iter().rposition(|x| (self.pred)(x)) {
+        let pred = &mut self.pred;
+        match self.v.iter().rposition(|x| (*pred)(x)) {
             None => {
                 self.finished = true;
                 Some(self.v)
@@ -455,11 +458,15 @@ impl Iterator<(uint, uint)> for ElementSwaps {
         // Find the index of the largest mobile element:
         // The direction should point into the vector, and the
         // swap should be with a smaller `size` element.
-        let max = self.sdir.iter().map(|&x| x).enumerate()
-                           .filter(|&(i, sd)|
-                                new_pos(i, sd.dir) < self.sdir.len() &&
-                                self.sdir[new_pos(i, sd.dir)].size < sd.size)
-                           .max_by(|&(_, sd)| sd.size);
+        let max = {
+            let this = &*self; // FIXME
+            this.sdir.iter().map(|&x| x)
+                            .enumerate()
+                            .filter(|&(i, sd)|
+                                new_pos(i, sd.dir) < this.sdir.len() &&
+                                this.sdir[new_pos(i, sd.dir)].size < sd.size)
+                            .max_by(|&(_, sd)| sd.size)
+        };
         match max {
             Some((i, sd)) => {
                 let j = new_pos(i, sd.dir);

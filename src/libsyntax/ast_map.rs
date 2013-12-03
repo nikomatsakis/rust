@@ -555,3 +555,4 @@ pub fn node_span(items: Map, id: ast::NodeId) -> Span {
         None => fail!("node_span: could not find id {}", id),
     }
 }
+

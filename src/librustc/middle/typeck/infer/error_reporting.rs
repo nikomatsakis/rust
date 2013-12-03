@@ -239,6 +239,24 @@ impl ErrorReporting for InferCtxt {
                     sup,
                     "");
             }
+            infer::ReborrowUpvar(span, ref upvar_id) => {
+                self.tcx.sess.span_err(
+                    span,
+                    format!("lifetime of borrowed pointer outlives \
+                            lifetime of captured variable `{}`...",
+                            ty::local_var_name_str(self.tcx, upvar_id.var_id)));
+                note_and_explain_region(
+                    self.tcx,
+                    "...the borrowed pointer is valid for ",
+                    sub,
+                    "...");
+                note_and_explain_region(
+                    self.tcx,
+                    format!("...but `{}` is only valid for ",
+                            ty::local_var_name_str(self.tcx, upvar_id.var_id)),
+                    sup,
+                    "");
+            }
             infer::InfStackClosure(span) => {
                 self.tcx.sess.span_err(
                     span,
@@ -274,10 +292,12 @@ impl ErrorReporting for InferCtxt {
                     sup,
                     "");
             }
-            infer::FreeVariable(span) => {
+            infer::FreeVariable(span, id) => {
                 self.tcx.sess.span_err(
                     span,
-                    "captured variable does not outlive the enclosing closure");
+                    format!("captured variable `{}` does not \
+                            outlive the enclosing closure",
+                            ty::local_var_name_str(self.tcx, id)));
                 note_and_explain_region(
                     self.tcx,
                     "captured variable is valid for ",
@@ -475,6 +495,10 @@ impl ErrorReportingHelpers for InferCtxt {
             infer::BoundRegionInCoherence(..) => {
                 format!(" for coherence check")
             }
+            infer::UpvarRegion(ref upvar_id, _) => {
+                format!(" for capture of `{}` by closure",
+                        ty::local_var_name_str(self.tcx, upvar_id.var_id))
+            }
         };
 
         self.tcx.sess.span_err(
@@ -535,6 +559,12 @@ impl ErrorReportingHelpers for InferCtxt {
                     "...so that reference does not outlive \
                     borrowed content");
             }
+            infer::ReborrowUpvar(span, ref upvar_id) => {
+                self.tcx.sess.span_note(
+                    span,
+                    format!("...so that closure can access `{}`",
+                            ty::local_var_name_str(self.tcx, upvar_id.var_id)));
+            }
             infer::InfStackClosure(span) => {
                 self.tcx.sess.span_note(
                     span,
@@ -551,11 +581,12 @@ impl ErrorReportingHelpers for InferCtxt {
                     "...so that pointer is not dereferenced \
                     outside its lifetime");
             }
-            infer::FreeVariable(span) => {
+            infer::FreeVariable(span, id) => {
                 self.tcx.sess.span_note(
                     span,
-                    "...so that captured variable does not outlive the \
-                    enclosing closure");
+                    format!("...so that captured variable `{}` \
+                            does not outlive the enclosing closure",
+                            ty::local_var_name_str(self.tcx, id)));
             }
             infer::IndexSlice(span) => {
                 self.tcx.sess.span_note(

@@ -22,7 +22,6 @@ pub trait DocFolder {
         use std::util::swap;
         let Item { attrs, name, source, visibility, id, inner } = item;
         let inner = inner;
-        let c = |x| self.fold_item(x);
         let inner = match inner {
             StructItem(mut i) => {
                 let mut foo = ~[]; swap(&mut foo, &mut i.fields);
@@ -73,6 +72,7 @@ pub trait DocFolder {
                     StructVariant(mut j) => {
                         let mut foo = ~[]; swap(&mut foo, &mut j.fields);
                         let num_fields = foo.len();
+                        let c = |x| self.fold_item(x);
                         j.fields.extend(&mut foo.move_iter().filter_map(c));
                         j.fields_stripped |= num_fields != j.fields.len();
                         VariantItem(Variant {kind: StructVariant(j), ..i2})

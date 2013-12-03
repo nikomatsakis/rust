@@ -521,6 +521,7 @@ pub fn getopts(args: &[~str], opts: &[Opt]) -> Result {
 pub mod groups {
     use getopts::{HasArg, Long, Maybe, Multi, No, Occur, Opt, Optional, Req};
     use getopts::{Short, Yes};
+    use std::cell::Cell;
 
     /// One group of options, e.g., both -h and --help, along with
     /// their shared description and properties.
@@ -680,7 +681,7 @@ pub mod groups {
 
         let desc_sep = "\n" + " ".repeat(24);
 
-        let mut rows = opts.iter().map(|optref| {
+        let rows = opts.iter().map(|optref| {
             let OptGroup{short_name: short_name,
                          long_name: long_name,
                          hint: hint,
@@ -752,9 +753,9 @@ pub mod groups {
             row.push_str(desc_rows.connect(desc_sep));
 
             row
-        });
+        }).collect::<~[~str]>();
 
-        format!("{}\n\nOptions:\n{}\n", brief, rows.collect::<~[~str]>().connect("\n"))
+        format!("{}\n\nOptions:\n{}\n", brief, rows.connect("\n"))
     }
 
     /// Splits a string into substrings with possibly internal whitespace,
@@ -793,8 +794,10 @@ pub mod groups {
         let mut fake_i = ss.len();
         let mut lim = lim;
 
-        let mut cont = true;
-        let slice: || = || { cont = it(ss.slice(slice_start, last_end)) };
+        let cont = Cell::new(true);
+        let slice: |a: uint, b: uint| = |a, b| {
+            cont.set(it(ss.slice(a, b)))
+        };
 
         // if the limit is larger than the string, lower it to save cycles
         if lim >= fake_i {
@@ -813,27 +816,37 @@ pub mod groups {
                 (B, Cr, OverLim)  if (i - last_start + 1) > lim
                                 => fail!("word starting with {} longer than limit!",
                                         ss.slice(last_start, i + 1)),
-                (B, Cr, OverLim)  => { slice(); slice_start = last_start; B }
-                (B, Ws, UnderLim) => { last_end = i; C }
-                (B, Ws, OverLim)  => { last_end = i; slice(); A }
+                (B, Cr, OverLim)  => { slice(slice_start, last_end);
+                                       slice_start = last_start;
+                                       B }
+                (B, Ws, UnderLim) => { last_end = i;
+                                       C }
+                (B, Ws, OverLim)  => { last_end = i;
+                                       slice(slice_start, last_end);
+                                       A }
 
                 (C, Cr, UnderLim) => { last_start = i; B }
-                (C, Cr, OverLim)  => { slice(); slice_start = i; last_start = i; last_end = i; B }
-                (C, Ws, OverLim)  => { slice(); A }
+                (C, Cr, OverLim)  => { slice(slice_start, last_end);
+                                       slice_start = i;
+                                       last_start = i;
+                                       last_end = i;
+                                       B }
+                (C, Ws, OverLim)  => { slice(slice_start, last_end);
+                                       A }
                 (C, Ws, UnderLim) => { C }
             };
 
-            cont
+            cont.get()
         };
 
         ss.char_indices().advance(|x| machine(x));
 
         // Let the automaton 'run out' by supplying trailing whitespace
-        while cont && match state { B | C => true, A => false } {
+        while cont.get() && match state { B | C => true, A => false } {
             machine((fake_i, ' '));
             fake_i += 1;
         }
-        return cont;
+        return cont.get();
     }
 
     #[test]
