@@ -121,6 +121,18 @@ its value as the GLB of all its successors.  Basically contracting
 nodes ensure that there is overlap between their successors; we will
 ultimately infer the largest overlap possible.
 
+## An improved algorithm which we do not yet use
+
+For future reference, I believe we could be more efficient by avoiding
+fixed-point iteration altogether. The idea is to first identify and
+remove strongly connected components (SCC) in the graph.  Note that
+such components must consist solely of region variables; all of these
+variables can effectively be unified into a single variable.  Once
+SCCs are removed, we are left with a DAG.  At this point, we can
+walk the DAG in toplogical order once to compute the expanding nodes,
+and again in reverse topological order to compute the contracting
+nodes.
+
 # The Region Hierarchy
 
 ## Without closures
@@ -263,112 +275,123 @@ that the pointee remains valid.
 
 ## Adding closures
 
-The other significant complication to the region hierarchy is
-closures. I will describe here how closures should work, though some
-of the work to implement this model is ongoing at the time of this
-writing.
+We currently fit closure bodies into the region hierarchy as follows.
+In the degenerate case, if the closure does not actually contain free
+variables, we simply assign the closure a static lifetime and declare
+it to be independent of the enclosing hierarchy, just like a separate
+fn item. Otherwise, we assign the closure a fresh variable as its
+lifetime bound. This lifetime is never permitted to outlive the
+innermost repeating/conditional scope (more on this below).
+Accordingly, the parent of the closure body is considered to be the
+innermost repeating/conditional scope, since we know a priori that the
+closure will always be contained within that lifetime.
 
-The body of closures are type-checked along with the function that
-creates them. However, unlike other expressions that appear within the
-function body, it is not entirely obvious when a closure body executes
-with respect to the other expressions. This is because the closure
-body will execute whenever the closure is called; however, we can
-never know precisely when the closure will be called, especially
-without some sort of alias analysis.
+Note that the closure bound itself may be shorter than this maximal
+lifetime; in general, the bound is the shortest lifetime that outlives
+all closed over variables and which does not outlive the maximal
+lifetime. Permitting the lifetime to be shorter than the maximal
+lifetime helps to avoid borrowck errors, since closures borrow the
+variables they close over.
 
-However, we can place some sort of limits on when the closure
-executes.  In particular, the type of every closure `fn:'r K` includes
-a region bound `'r`. This bound indicates the maximum lifetime of that
-closure; once we exit that region, the closure cannot be called
-anymore. Therefore, we say that the lifetime of the closure body is a
-sublifetime of the closure bound, but the closure body itself is unordered
-with respect to other parts of the code.
+You might be wondering why we have chosen the maximal lifetime of a
+closure to be the innermost repeating/conditional scope (aka the
+innermost postdominated scope). After all, this definition is somewhat
+larger than your average temporary, which are dropped on exit from a
+conditional/repetaing scope *or* an enclosing statement. The reason
+for this is that closures consist entirely of borrowed data and hence
+have no drop glue, so it's not really observable when they are dropped
+-- we are primarily concerned that they not outlive repeating blocks,
+which would require infinite stack space.
 
-For example, consider the following fragment of code:
+Moreover, it is convenient for closures to live beyond a statement, so
+that users can write things like the following, where closures live in
+iterators beyond the scope of a single statement:
 
-    'a: {
-         let closure: fn:'a() = || 'b: {
-             'c: ...
-         };
-         'd: ...
+   let iter = arr.iter().map(|i| ...);
+   let iter = iter..map(|| ...);
+   let vec = iter.collect();
+
+Note that with once fns, it would again become observable when the
+closure is droped, since once fns may own some of their values. In
+that case, we'd might want to limit once fns to the innermost
+enclosing statement, for consistency -- or perhaps just leave the
+definition as is, and accept that closures are a visible exception to
+the normal temporary lifetime rules.
+
+In anticipation of that circumstances, I have chosen to limit closures
+to the innermost repeating block *or* conditional expression, even
+though we need only consider repetaing blocks to ensure codegenability
+(since otherwise we'd need infinite stack space).
+
+### Modeling closures more precisely
+
+I would be happier if we could divorce closures from the lifetime
+hierarchy of their creators altogether. In general, we can model
+closures as the pair of a static fn item and a struct full of borrowed
+pointers, and I believe that the treatment of closures I describe here
+is roughly equivalent to that model. Essentially the closure would wind up
+being parameterized by a number of region variables, one for each free
+variable. To see what I mean, consider this example:
+
+    fn foo() {
+        let mut a = 1;
+        {
+            let mut b = 2;
+            {
+                 ... || a += b; ...
+            }
+        }
     }
 
-Here we have four lifetimes, `'a`, `'b`, `'c`, and `'d`. The closure
-`closure` is bounded by the lifetime `'a`. The lifetime `'b` is the
-lifetime of the closure body, and `'c` is some statement within the
-closure body. Finally, `'d` is a statement within the outer block that
-created the closure.
+The closure here could be translated to a fn item something like:
 
-We can say that the closure body `'b` is a sublifetime of `'a` due to
-the closure bound. By the usual lexical scoping conventions, the
-statement `'c` is clearly a sublifetime of `'b`, and `'d` is a
-sublifetime of `'d`. However, there is no ordering between `'c` and
-`'d` per se (this kind of ordering between statements is actually only
-an issue for dataflow; passes like the borrow checker must assume that
-closures could execute at any time from the moment they are created
-until they go out of scope).
-
-### Complications due to closure bound inference
-
-There is only one problem with the above model: in general, we do not
-actually *know* the closure bounds during region inference! In fact,
-closure bounds are almost always region variables! This is very tricky
-because the inference system implicitly assumes that we can do things
-like compute the LUB of two scoped lifetimes without needing to know
-the values of any variables.
-
-Here is an example to illustrate the problem:
-
-    fn identify<T>(x: T) -> T { x }
-
-    fn foo() { // 'foo is the function body
-      'a: {
-           let closure = identity(|| 'b: {
-               'c: ...
-           });
-           'd: closure();
-      }
-      'e: ...;
+    struct Env<'a, 'b> {
+        a: &'a mut int,
+        b: &'b int,
     }
 
-In this example, the closure bound is not explicit. At compile time,
-we will create a region variable (let's call it `V0`) to represent the
-closure bound.
+    fn body<'a, 'b>(env: &mut Env<'a, 'b>, ...) {
+        *env.a += *env.b;
+    }
 
-The primary difficulty arises during the constraint propagation phase.
-Imagine there is some variable with incoming edges from `'c` and `'d`.
-This means that the value of the variable must be `LUB('c,
-'d)`. However, without knowing what the closure bound `V0` is, we
-can't compute the LUB of `'c` and `'d`! Any we don't know the closure
-bound until inference is done.
+Note that `a` must be mutably borrowed, because it is modified in the
+closure, but `b` is immutably borrowed, because it is only read. The
+current treatment is similar in effect to this. For example, in
+regionck, we infer a mutability and borrow lifetime for each free
+variable, and we ensure that the closure bound doesn't outlive these
+borrow lifetimes.
 
-The solution is to rely on the fixed point nature of inference.
-Basically, when we must compute `LUB('c, 'd)`, we just use the current
-value for `V0` as the closure's bound. If `V0`'s binding should
-change, then we will do another round of inference, and the result of
-`LUB('c, 'd)` will change.
+However, we do not treat these free variable lifetimes as completely abstract,
+like we would if the user actually the equivalent fn item above. This shows
+up (at least) in edge cases like the following, where the closure is able
+to take advantage of the known region hierarchy:
 
-One minor implication of this is that the graph does not in fact track
-the full set of dependencies between edges. We cannot easily know
-whether the result of a LUB computation will change, since there may
-be indirect dependencies on other variables that are not reflected on
-the graph. Therefore, we must *always* iterate over all edges when
-doing the fixed point calculation, not just those adjacent to nodes
-whose values have changed.
+    fn foo() {
+        let mut a = 1;
+        {
+            let mut b = 2;
+            {
+                 ... || if cond { &a } else { &b } ...
+            }
+        }
+    }
 
-Were it not for this requirement, we could in fact avoid fixed-point
-iteration altogether. In that universe, we could instead first
-identify and remove strongly connected components (SCC) in the graph.
-Note that such components must consist solely of region variables; all
-of these variables can effectively be unified into a single variable.
-Once SCCs are removed, we are left with a DAG.  At this point, we
-could walk the DAG in toplogical order once to compute the expanding
-nodes, and again in reverse topological order to compute the
-contracting nodes. However, as I said, this does not work given the
-current treatment of closure bounds, but perhaps in the future we can
-address this problem somehow and make region inference somewhat more
-efficient. Note that this is solely a matter of performance, not
-expressiveness.
+Here the closure takes advantage of the fact that `'b` is shorter than
+`'a`. Of course, the user *could* write an equivalent env+fn-item pair
+to do the same thing which would type check by using the same variable
+for the lifetime of the a and b borrows (or in more subtle ways, in
+fact).
+
+Long story short, the closer we can get to a simple treatment of
+closures the better. I am fairly sure that the current treatment is
+sound :) and equivalent to a model without closures, but ultimately I
+would like the formalization and implementation to meet in the middle:
+at the extremes, that might mean that the the implementation treats
+closures in the same way as fn items, or that we add closures into the
+formalism, but it could also be that we continue to treat closures
+somewhat specially in the implementation, but show that the treatment
+we do can always be reduced to an equivalent fn item (which I guess is
+another variation on adding closures to the formalism).
 
 # Skolemization and functions
 

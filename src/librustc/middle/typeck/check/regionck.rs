@@ -116,9 +116,6 @@ use syntax::visit::Visitor;
 pub struct Rcx {
     fcx: @FnCtxt,
     errors_reported: uint,
-
-    // id of innermost fn or loop
-    repeating_scope: ast::NodeId,
 }
 
 fn region_of_def(fcx: @FnCtxt, def: ast::Def) -> ty::Region {
@@ -149,12 +146,6 @@ fn region_of_def(fcx: @FnCtxt, def: ast::Def) -> ty::Region {
 impl Rcx {
     pub fn tcx(&self) -> ty::ctxt {
         self.fcx.ccx.tcx
-    }
-
-    pub fn set_repeating_scope(&mut self, scope: ast::NodeId) -> ast::NodeId {
-        let old_scope = self.repeating_scope;
-        self.repeating_scope = scope;
-        old_scope
     }
 
     pub fn resolve_type(&mut self, unresolved_ty: ty::t) -> ty::t {
@@ -246,8 +237,7 @@ impl<'a> mc::Typer for &'a mut Rcx {
 }
 
 pub fn regionck_expr(fcx: @FnCtxt, e: &ast::Expr) {
-    let mut rcx = Rcx { fcx: fcx, errors_reported: 0,
-                         repeating_scope: e.id };
+    let mut rcx = Rcx { fcx: fcx, errors_reported: 0 };
     let rcx = &mut rcx;
     if fcx.err_count_since_creation() == 0 {
         // regionck assumes typeck succeeded
@@ -257,8 +247,7 @@ pub fn regionck_expr(fcx: @FnCtxt, e: &ast::Expr) {
 }
 
 pub fn regionck_fn(fcx: @FnCtxt, blk: &ast::Block) {
-    let mut rcx = Rcx { fcx: fcx, errors_reported: 0,
-                         repeating_scope: blk.id };
+    let mut rcx = Rcx { fcx: fcx, errors_reported: 0 };
     let rcx = &mut rcx;
     if fcx.err_count_since_creation() == 0 {
         // regionck assumes typeck succeeded
@@ -348,8 +337,8 @@ fn constrain_bindings_in_pat(pat: &ast::Pat, rcx: &mut Rcx) {
 }
 
 fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
-    debug!("regionck::visit_expr(e={}, repeating_scope={:?})",
-           expr.repr(rcx.fcx.tcx()), rcx.repeating_scope);
+    debug!("regionck::visit_expr(e={})",
+           expr.repr(rcx.fcx.tcx()));
 
     let has_method_map = {
         let method_map = rcx.fcx.inh.method_map;
@@ -520,24 +509,8 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
             visit::walk_expr(rcx, expr, ());
         }
 
-        ast::ExprFnBlock(_, ref body) | ast::ExprProc(_, ref body) => {
+        ast::ExprFnBlock(_, ref body) => {
             check_expr_fn_block(rcx, expr, &**body);
-        }
-
-        ast::ExprLoop(body, _) => {
-            let repeating_scope = rcx.set_repeating_scope(body.id);
-            visit::walk_expr(rcx, expr, ());
-            rcx.set_repeating_scope(repeating_scope);
-        }
-
-        ast::ExprWhile(cond, body) => {
-            let repeating_scope = rcx.set_repeating_scope(cond.id);
-            rcx.visit_expr(cond, ());
-
-            rcx.set_repeating_scope(body.id);
-            rcx.visit_block(body, ());
-
-            rcx.set_repeating_scope(repeating_scope);
         }
 
         _ => {
@@ -551,6 +524,8 @@ fn check_expr_fn_block(rcx: &mut Rcx,
                        body: &ast::Block) {
     let tcx = rcx.fcx.tcx();
     let function_type = rcx.resolve_node_type(expr.id);
+    debug("check_expr_fn_block({}) function_type={}",
+          expr.id, function_type.repr(tcx));
     match ty::get(function_type).sty {
         ty::ty_closure(ty::ClosureTy {
                 sigil: ast::BorrowedSigil, region: region, ..}) => {
@@ -563,28 +538,24 @@ fn check_expr_fn_block(rcx: &mut Rcx,
                 // Closure must not outlive the variables it closes over.
                 constrain_free_variables(rcx, region, expr, freevars);
 
-                // Closure cannot outlive the appropriate temporary scope.
-                //
-                // FIXME
-                // match rcx.tcx().region_maps.temporary_scope(expr.id) {
-                //     Some(s) => {
-                //         rcx.fcx.mk_subr(true, infer::InfStackClosure(expr.span),
-                //                         region, ty::ReScope(s));
-                //     }
-                //
-                //     None => { }
-                // }
-                let s = rcx.repeating_scope;
+                // Find the encl region for the closure body. This
+                // will be the innermost repeating or conditional
+                // scope. This is the scope when the closure is
+                // conceptually "dropped" and hence the closure cannot
+                // outlive this scope (though it may live shorter).
+                // There is a detailed discussion of the reasoning
+                // here in `typeck/infer/region_inference/doc.rs`.
+                let max_region = rcx.tcx().region_maps.encl_region(body.id);
+                debug!("check_expr_fn_block({}): max_region={}",
+                       expr.id, max_region.repr(rcx.tcx()));
                 rcx.fcx.mk_subr(true, infer::InfStackClosure(expr.span),
-                                region, ty::ReScope(s));
+                                region, max_region);
             }
         }
         _ => ()
     }
 
-    let repeating_scope = rcx.set_repeating_scope(body.id);
     visit::walk_expr(rcx, expr, ());
-    rcx.set_repeating_scope(repeating_scope);
 
     match ty::get(function_type).sty {
         ty::ty_closure(ty::ClosureTy {sigil: ast::BorrowedSigil, ..}) => {

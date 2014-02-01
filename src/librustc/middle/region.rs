@@ -22,6 +22,7 @@ Most of the documentation on regions can be found in
 
 
 use driver::session::Session;
+use middle::freevars;
 use middle::ty::{FreeRegion};
 use middle::ty;
 
@@ -36,19 +37,42 @@ use syntax::ast_util::{stmt_id};
 /**
 The region maps encode information about region relationships.
 
-- `scope_map` maps from:
-  - an expression to the expression or block encoding the maximum
-    (static) lifetime of a value produced by that expression.  This is
-    generally the innermost call, statement, match, or block.
-  - a variable or binding id to the block in which that variable is declared.
-- `free_region_map` maps from:
-  - a free region `a` to a list of free regions `bs` such that
-    `a <= b for all b in bs`
+- `scope_map` maps from a scope id to the enclosing scope id; this is
+  usually corresponding to the lexical nesting, though in the case of
+  closures the parent scope is the innermost conditinal expression or repeating
+  block
+
+- `var_map` maps from a variable or binding id to the block in which
+  that variable is declared.
+
+- `free_region_map` maps from a free region `a` to a list of free
+  regions `bs` such that `a <= b for all b in bs`
   - the free region map is populated during type check as we check
     each function. See the function `relate_free_regions` for
     more information.
-- `temporary_scopes` includes scopes where cleanups for temporaries occur.
-  These are statements and loop/fn bodies.
+
+- `rvalue_scopes` includes entries for those expressions whose cleanup
+  scope is larger than the default. The map goes from the expression
+  id to the cleanup scope id. For rvalues not present in this table,
+  the appropriate cleanup scope is the innermost enclosing statement,
+  conditional expression, or repeating block (see `terminating_scopes`).
+
+- `terminating_scopes` is a set containing the ids of each statement,
+  or conditional/repeating expression. These scopes are calling "terminating
+  scopes" because, when attempting to find the scope of a temporary, by
+  default we search up the enclosing scopes until we encounter the
+  terminating scope. A conditional/repeating
+  expression is one which is not guaranteed to execute exactly once
+  upon entering the parent scope. This could be because the expression
+  only executes conditionally, such as the expression `b` in `a && b`,
+  or because the expression may execute many times, such as a loop
+  body. The reason that we distinguish such expressions is that, upon
+  exiting the parent scope, we cannot statically know how many times
+  the expression executed, and thus if the expression creates
+  temporaries we cannot know statically how many such temporaries we
+  would have to cleanup. Therefore we ensure that the temporaries never
+  outlast the conditional/repeating expression, preventing the need
+  for dynamic checks and/or arbitrary amounts of stack space.
 */
 pub struct RegionMaps {
     priv scope_map: RefCell<HashMap<ast::NodeId, ast::NodeId>>,
@@ -64,10 +88,19 @@ pub struct Context {
 
     // Innermost enclosing expression
     parent: Option<ast::NodeId>,
+
+    // Innermost enclosing conditional or repeating expression.
+    // Updated on entry to a conditional/repeating expression
+    // or block. We call this the "postdominated scope" because
+    // it is the innermost scope whose entry is postdominated by
+    // the current expression.
+    postdominated_scope: Option<ast::NodeId>,
 }
 
 struct RegionResolutionVisitor<'a> {
     sess: Session,
+
+    freevars: &'a freevars::freevar_map,
 
     // Generated maps:
     region_maps: &'a RegionMaps,
@@ -156,6 +189,11 @@ impl RegionMaps {
             Some(&r) => r,
             None => { fail!("No enclosing scope for id {}", var_id); }
         }
+    }
+
+    fn is_terminating_scope(&self, id: ast::NodeId) -> bool {
+        let b = self.terminating_scopes.borrow();
+        b.get().contains(&id)
     }
 
     pub fn temporary_scope(&self, expr_id: ast::NodeId) -> Option<ast::NodeId> {
@@ -410,16 +448,17 @@ fn resolve_block(visitor: &mut RegionResolutionVisitor,
     // Record the parent of this block.
     record_superlifetime(visitor, cx, blk.id, blk.span);
 
-    // We treat the tail expression in the block (if any) somewhat
-    // differently from the statements. The issue has to do with
-    // temporary lifetimes. If the user writes:
-    //
-    //   {
-    //     ... (&foo()) ...
-    //   }
-    //
+    let postdominated_scope = {
+        if visitor.region_maps.is_terminating_scope(blk.id) {
+            Some(blk.id)
+        } else {
+            cx.postdominated_scope
+        }
+    };
 
-    let subcx = Context {var_parent: Some(blk.id), parent: Some(blk.id)};
+    let subcx = Context {var_parent: Some(blk.id),
+                         parent: Some(blk.id),
+                         postdominated_scope: postdominated_scope};
     visit::walk_block(visitor, blk, subcx);
 }
 
@@ -475,8 +514,13 @@ fn resolve_expr(visitor: &mut RegionResolutionVisitor,
 
     record_superlifetime(visitor, cx, expr.id, expr.span);
 
-    let mut new_cx = cx;
-    new_cx.parent = Some(expr.id);
+    // Scope to use for subexpressions:
+    let mut cx = cx;
+    cx.parent = Some(expr.id);
+    if visitor.region_maps.is_terminating_scope(expr.id) {
+        cx.postdominated_scope = Some(expr.id);
+    }
+
     match expr.node {
         // Conditional or repeating scopes are always terminating
         // scopes, meaning that temporaries cannot outlive them.
@@ -504,7 +548,7 @@ fn resolve_expr(visitor: &mut RegionResolutionVisitor,
         }
 
         ast::ExprMatch(..) => {
-            new_cx.var_parent = Some(expr.id);
+            cx.var_parent = Some(expr.id);
         }
 
         ast::ExprAssignOp(..) | ast::ExprIndex(..) |
@@ -526,14 +570,13 @@ fn resolve_expr(visitor: &mut RegionResolutionVisitor,
             // for an extended explanantion of why this distinction is
             // important.
             //
-            // record_superlifetime(new_cx, expr.callee_id);
+            // record_superlifetime(cx, expr.callee_id);
         }
 
         _ => {}
     };
 
-
-    visit::walk_expr(visitor, expr, new_cx);
+    visit::walk_expr(visitor, expr, cx);
 }
 
 fn resolve_local(visitor: &mut RegionResolutionVisitor,
@@ -701,9 +744,6 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor,
          */
 
         match expr.node {
-            ast::ExprFnBlock(..) => {
-                visitor.region_maps.record_rvalue_scope(expr.id, blk_id);
-            }
             ast::ExprAddrOf(_, subexpr) => {
                 record_rvalue_scope_if_borrow_expr(visitor, subexpr, blk_id);
                 record_rvalue_scope(visitor, subexpr, blk_id);
@@ -823,16 +863,40 @@ fn resolve_fn(visitor: &mut RegionResolutionVisitor,
 
     // The arguments and `self` are parented to the body of the fn.
     let decl_cx = Context {parent: Some(body.id),
-                           var_parent: Some(body.id)};
+                           var_parent: Some(body.id),
+                           postdominated_scope: None};
     visit::walk_fn_decl(visitor, decl, decl_cx);
 
     // The body of the fn itself is either a root scope (top-level fn)
     // or it continues with the inherited scope (closures).
     let body_cx = match *fk {
         visit::FkItemFn(..) | visit::FkMethod(..) => {
-            Context {parent: None, var_parent: None, ..cx}
+            Context {parent: None,
+                     var_parent: None,
+                     postdominated_scope: None}
         }
-        visit::FkFnBlock(..) => cx
+        visit::FkFnBlock(..) => {
+            // With respect to the region hierarchy, we designate
+            // closures as belonging to the innermost repeating scope
+            // in which they are created. The actual lifetime associated
+            // with a closure might be shorter than this (depending on
+            // the results of region inference), but it will never be larger.
+            // There is a longer discussion of the reasoning for this
+            // in `typeck/infer/region_inference/doc.rs`.
+            //
+            // One exception is when the closure contains no free variables;
+            // in that case, it is treated like a fn item.
+            let freevars = visitor.freevars.get(&id);
+            if freevars.is_empty() {
+                Context {parent: None,
+                         var_parent: None,
+                         postdominated_scope: None}
+            } else {
+                Context {parent: cx.postdominated_scope,
+                         var_parent: None,
+                         postdominated_scope: None}
+            }
+        }
     };
     visitor.visit_block(body, body_cx);
 }
@@ -868,7 +932,9 @@ impl<'a> Visitor<Context> for RegionResolutionVisitor<'a> {
     }
 }
 
-pub fn resolve_crate(sess: Session, crate: &ast::Crate) -> RegionMaps {
+pub fn resolve_crate(sess: Session,
+                     freevars: &freevars::freevar_map,
+                     crate: &ast::Crate) -> RegionMaps {
     let maps = RegionMaps {
         scope_map: RefCell::new(HashMap::new()),
         var_map: RefCell::new(HashMap::new()),
@@ -879,21 +945,27 @@ pub fn resolve_crate(sess: Session, crate: &ast::Crate) -> RegionMaps {
     {
         let mut visitor = RegionResolutionVisitor {
             sess: sess,
+            freevars: freevars,
             region_maps: &maps
         };
-        let cx = Context { parent: None, var_parent: None };
+        let cx = Context { parent: None,
+                           var_parent: None,
+                           postdominated_scope: None };
         visit::walk_crate(&mut visitor, crate, cx);
     }
     return maps;
 }
 
 pub fn resolve_inlined_item(sess: Session,
+                            freevars: &freevars::freevar_map,
                             region_maps: &RegionMaps,
                             item: &ast::InlinedItem) {
-    let cx = Context {parent: None,
-                      var_parent: None};
+    let cx = Context { parent: None,
+                       var_parent: None,
+                       postdominated_scope: None };
     let mut visitor = RegionResolutionVisitor {
         sess: sess,
+        freevars: freevars,
         region_maps: region_maps,
     };
     visit::walk_inlined_item(&mut visitor, item, cx);

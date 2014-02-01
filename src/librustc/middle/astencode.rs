@@ -154,7 +154,11 @@ pub fn decode_inlined_item(cdata: @cstore::crate_metadata,
         debug!("< Decoded inlined fn: {}::{}",
                ast_map::path_to_str(path, token::get_ident_interner()),
                tcx.sess.str_of(ident));
-        region::resolve_inlined_item(tcx.sess, &tcx.region_maps, &ii);
+        {
+            let freevars = tcx.freevars.borrow();
+            region::resolve_inlined_item(tcx.sess, freevars.get(),
+                                         &tcx.region_maps, &ii);
+        }
         decode_side_tables(xcx, ast_doc);
         match ii {
           ast::IIItem(i) => {
