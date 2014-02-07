@@ -16,8 +16,8 @@ use std::vec;
 use middle::borrowck::*;
 use mc = middle::mem_categorization;
 use middle::ty;
-use syntax::ast::{MutImmutable, MutMutable};
 use syntax::codemap::Span;
+use util::ppaux::Repr;
 
 pub enum RestrictionResult {
     Safe,
@@ -53,6 +53,9 @@ impl<'a> RestrictionsContext<'a> {
     fn restrict(&self,
                 cmt: mc::cmt,
                 restrictions: RestrictionSet) -> RestrictionResult {
+        debug!("restrict(cmt={}, restrictions={})",
+               cmt.repr(self.bccx.tcx),
+               restrictions.repr(self.bccx.tcx));
 
         // Check for those cases where we cannot control the aliasing
         // and make sure that we are not being asked to.
@@ -74,7 +77,8 @@ impl<'a> RestrictionsContext<'a> {
             }
 
             mc::cat_local(local_id) |
-            mc::cat_arg(local_id) => {
+            mc::cat_arg(local_id) |
+            mc::cat_upvar(ty::UpvarId {var_id: local_id, ..}, _) => {
                 // R-Variable
                 let lp = @LpVar(local_id);
                 SafeIf(lp, ~[Restriction {loan_path: lp,
@@ -87,7 +91,7 @@ impl<'a> RestrictionsContext<'a> {
                 // could cause the type of the memory to change.
                 self.restrict(
                     cmt_base,
-                    restrictions | RESTR_MUTATE | RESTR_CLAIM)
+                    restrictions | RESTR_MUTATE)
             }
 
             mc::cat_interior(cmt_base, i) => {
@@ -100,7 +104,7 @@ impl<'a> RestrictionsContext<'a> {
                 self.extend(result, cmt.mutbl, LpInterior(i), restrictions)
             }
 
-            mc::cat_deref(cmt_base, _, pk @ mc::uniq_ptr) => {
+            mc::cat_deref(cmt_base, _, pk @ mc::OwnedPtr) => {
                 // R-Deref-Send-Pointer
                 //
                 // When we borrow the interior of an owned pointer, we
@@ -108,7 +112,7 @@ impl<'a> RestrictionsContext<'a> {
                 // would cause the unique pointer to be freed.
                 let result = self.restrict(
                     cmt_base,
-                    restrictions | RESTR_MUTATE | RESTR_CLAIM);
+                    restrictions | RESTR_MUTATE);
                 self.extend(result, cmt.mutbl, LpDeref(pk), restrictions)
             }
 
@@ -117,7 +121,8 @@ impl<'a> RestrictionsContext<'a> {
                 Safe
             }
 
-            mc::cat_deref(cmt_base, _, mc::region_ptr(MutImmutable, lt)) => {
+            mc::cat_deref(cmt_base, _, mc::BorrowedPtr(ty::ImmBorrow, lt)) |
+            mc::cat_deref(cmt_base, _, mc::BorrowedPtr(ty::UniqueImmBorrow, lt)) => {
                 // R-Deref-Imm-Borrowed
                 if !self.bccx.is_subregion_of(self.loan_region, lt) {
                     self.bccx.report(
@@ -131,12 +136,12 @@ impl<'a> RestrictionsContext<'a> {
                 Safe
             }
 
-            mc::cat_deref(_, _, mc::gc_ptr) => {
+            mc::cat_deref(_, _, mc::GcPtr) => {
                 // R-Deref-Imm-Managed
                 Safe
             }
 
-            mc::cat_deref(cmt_base, _, pk @ mc::region_ptr(MutMutable, lt)) => {
+            mc::cat_deref(cmt_base, _, pk @ mc::BorrowedPtr(ty::MutBorrow, lt)) => {
                 // R-Deref-Mut-Borrowed
                 if !self.bccx.is_subregion_of(self.loan_region, lt) {
                     self.bccx.report(
@@ -152,12 +157,11 @@ impl<'a> RestrictionsContext<'a> {
                 self.extend(result, cmt.mutbl, LpDeref(pk), restrictions)
             }
 
-            mc::cat_deref(_, _, mc::unsafe_ptr(..)) => {
+            mc::cat_deref(_, _, mc::UnsafePtr(..)) => {
                 // We are very trusting when working with unsafe pointers.
                 Safe
             }
 
-            mc::cat_stack_upvar(cmt_base) |
             mc::cat_discr(cmt_base, _) => {
                 self.restrict(cmt_base, restrictions)
             }
