@@ -119,7 +119,7 @@ use mem;
 use mem::size_of;
 use kinds::marker;
 use uint;
-use unstable::finally::Finally;
+use unstable::finally::try_finally;
 use unstable::intrinsics;
 use unstable::raw::{Repr, Slice, Vec};
 use util;
@@ -134,15 +134,16 @@ pub fn from_fn<T>(n_elts: uint, op: |uint| -> T) -> ~[T] {
     unsafe {
         let mut v = with_capacity(n_elts);
         let p = v.as_mut_ptr();
-        let mut i: uint = 0u;
-        (|| {
-            while i < n_elts {
-                intrinsics::move_val_init(&mut(*ptr::mut_offset(p, i as int)), op(i));
-                i += 1u;
-            }
-        }).finally(|| {
-            v.set_len(i);
-        });
+        let mut i = 0;
+        try_finally(
+            &mut i, (),
+            |i, ()| while *i < n_elts {
+                intrinsics::move_val_init(
+                    &mut(*ptr::mut_offset(p, *i as int)),
+                    op(*i));
+                *i += 1u;
+            },
+            |i| v.set_len(*i));
         v
     }
 }
@@ -162,14 +163,15 @@ pub fn from_elem<T:Clone>(n_elts: uint, t: T) -> ~[T] {
         let mut v = with_capacity(n_elts);
         let p = v.as_mut_ptr();
         let mut i = 0u;
-        (|| {
-            while i < n_elts {
-                intrinsics::move_val_init(&mut(*ptr::mut_offset(p, i as int)), t.clone());
-                i += 1u;
-            }
-        }).finally(|| {
-            v.set_len(i);
-        });
+        try_finally(
+            &mut i, (),
+            |i, ()| while *i < n_elts {
+                intrinsics::move_val_init(
+                    &mut(*ptr::mut_offset(p, *i as int)),
+                    t.clone());
+                *i += 1u;
+            },
+            |i| v.set_len(*i));
         v
     }
 }
