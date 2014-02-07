@@ -1,4 +1,4 @@
-a// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -1233,7 +1233,9 @@ pub fn field_mutbl(tcx: ty::ctxt,
 pub enum AliasableReason {
     AliasableManaged,
     AliasableBorrowed,
-    AliasableOther
+    AliasableOther,
+    AliasableStatic,
+    AliasableStaticMut,
 }
 
 impl cmt_ {
@@ -1289,9 +1291,16 @@ impl cmt_ {
                 None
             }
 
-            cat_copied_upvar(CopiedUpvar {onceness: ast::Many, ..}) |
-            cat_static_item(..) => {
+            cat_copied_upvar(CopiedUpvar {onceness: ast::Many, ..}) => {
                 Some(AliasableOther)
+            }
+
+            cat_static_item(..) => {
+                if self.mutbl.is_mutable() {
+                    Some(AliasableStaticMut)
+                } else {
+                    Some(AliasableStatic)
+                }
             }
 
             cat_deref(_, _, GcPtr) => {

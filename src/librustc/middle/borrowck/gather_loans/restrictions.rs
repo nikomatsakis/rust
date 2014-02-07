@@ -61,6 +61,11 @@ impl<'a> RestrictionsContext<'a> {
         // and make sure that we are not being asked to.
         match cmt.freely_aliasable() {
             None => {}
+            Some(mc::AliasableStaticMut) => {
+                // This is nasty, but we ignore the aliasing rules if
+                // the data is based in a `static mut`, since those
+                // are always unsafe. At your own peril and all that.
+            }
             Some(cause) => {
                 self.check_aliasing_permitted(cause, restrictions);
             }

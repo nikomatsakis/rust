@@ -645,8 +645,8 @@ impl<'a> GatherLoanCtxt<'a> {
     fn restriction_set(&self, req_kind: ty::BorrowKind) -> RestrictionSet {
         match req_kind {
             ty::ImmBorrow => RESTR_EMPTY | RESTR_MUTATE,
-            ty::MutBorrow => RESTR_EMPTY | RESTR_MUTATE | RESTR_FREEZE,
-            ty::UniqueImmBorrow => RESTR_EMPTY | RESTR_MUTATE | RESTR_FREEZE,
+            ty::MutBorrow => RESTR_EMPTY | RESTR_MUTATE | RESTR_FREEZE | RESTR_ALIAS,
+            ty::UniqueImmBorrow => RESTR_EMPTY | RESTR_MUTATE | RESTR_FREEZE | RESTR_ALIAS,
         }
     }
 
