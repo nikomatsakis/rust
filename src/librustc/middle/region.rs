@@ -727,9 +727,13 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor,
          *        | ~E&
          *        | E& as ...
          *        | ( E& )
+         *        | |...| ...
          */
 
         match expr.node {
+            ast::ExprFnBlock(..) => {
+                visitor.region_maps.record_rvalue_scope(expr.id, blk_id);
+            }
             ast::ExprAddrOf(_, subexpr) => {
                 record_rvalue_scope_if_borrow_expr(visitor, subexpr, blk_id);
                 record_rvalue_scope(visitor, subexpr, blk_id);

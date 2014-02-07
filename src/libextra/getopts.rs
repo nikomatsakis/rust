@@ -681,7 +681,7 @@ pub mod groups {
 
         let desc_sep = "\n" + " ".repeat(24);
 
-        let mut rows = opts.iter().map(|optref| {
+        let rows = opts.iter().map(|optref| {
             let OptGroup{short_name: short_name,
                          long_name: long_name,
                          hint: hint,
@@ -753,9 +753,9 @@ pub mod groups {
             row.push_str(desc_rows.connect(desc_sep));
 
             row
-        });
+        }).collect::<~[~str]>();
 
-        format!("{}\n\nOptions:\n{}\n", brief, rows.collect::<~[~str]>().connect("\n"))
+        format!("{}\n\nOptions:\n{}\n", brief, rows.connect("\n"))
     }
 
     /// Splits a string into substrings with possibly internal whitespace,

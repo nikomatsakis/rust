@@ -459,11 +459,15 @@ impl Iterator<(uint, uint)> for ElementSwaps {
         // Find the index of the largest mobile element:
         // The direction should point into the vector, and the
         // swap should be with a smaller `size` element.
-        let max = self.sdir.iter().map(|&x| x).enumerate()
-                           .filter(|&(i, sd)|
-                                new_pos(i, sd.dir) < self.sdir.len() &&
-                                self.sdir[new_pos(i, sd.dir)].size < sd.size)
-                           .max_by(|&(_, sd)| sd.size);
+        let max = {
+            let this = &*self; // FIXME
+            this.sdir.iter().map(|&x| x)
+                            .enumerate()
+                            .filter(|&(i, sd)|
+                                new_pos(i, sd.dir) < this.sdir.len() &&
+                                this.sdir[new_pos(i, sd.dir)].size < sd.size)
+                            .max_by(|&(_, sd)| sd.size)
+        };
         match max {
             Some((i, sd)) => {
                 let j = new_pos(i, sd.dir);
