@@ -27,7 +27,7 @@ fn managed_receiver_1(x: @Foo) {
 }
 
 fn owned_receiver(x: ~Foo) -> &() {
-    x.borrowed() //~ ERROR borrowed value does not live long enough
+    x.borrowed() //~ ERROR `*x` does not live long enough
 }
 
 fn mut_owned_receiver(mut x: ~Foo) {

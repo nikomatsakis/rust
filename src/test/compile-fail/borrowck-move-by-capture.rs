@@ -1,8 +1,6 @@
 pub fn main() {
-    // FIXME(#2202) - Due to the way that borrowck treats closures,
-    // you get two error reports here.
     let bar = ~3;
-    let _g = || { //~ ERROR capture of moved value
-        let _h: proc() -> int = proc() *bar; //~ ERROR capture of moved value
+    let _g = || {
+        let _h: proc() -> int = proc() *bar; //~ ERROR cannot move out of captured outer variable
     };
 }
