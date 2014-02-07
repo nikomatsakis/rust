@@ -925,7 +925,6 @@ fn encode_info_for_item(ecx: &EncodeContext,
             pos: ebml_w.writer.tell().unwrap(),
         });
     }
-    let add_to_index: || = || add_to_index(item, ebml_w, index);
 
     debug!("encoding info for item at {}",
            ecx.tcx.sess.codemap.span_to_str(item.span));
@@ -933,7 +932,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
     let def_id = local_def(item.id);
     match item.node {
       ItemStatic(_, m, _) => {
-        add_to_index();
+        add_to_index(item, ebml_w, index);
         ebml_w.start_tag(tag_items_data_item);
         encode_def_id(ebml_w, def_id);
         if m == ast::MutMutable {
@@ -960,7 +959,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         ebml_w.end_tag();
       }
       ItemFn(_, purity, _, ref generics, _) => {
-        add_to_index();
+        add_to_index(item, ebml_w, index);
         ebml_w.start_tag(tag_items_data_item);
         encode_def_id(ebml_w, def_id);
         encode_family(ebml_w, purity_fn_family(purity));
@@ -978,7 +977,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         ebml_w.end_tag();
       }
       ItemMod(ref m) => {
-        add_to_index();
+        add_to_index(item, ebml_w, index);
         encode_info_for_mod(ecx,
                             ebml_w,
                             m,
@@ -988,7 +987,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
                             item.vis);
       }
       ItemForeignMod(ref fm) => {
-        add_to_index();
+        add_to_index(item, ebml_w, index);
         ebml_w.start_tag(tag_items_data_item);
         encode_def_id(ebml_w, def_id);
         encode_family(ebml_w, 'n');
@@ -1005,7 +1004,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         ebml_w.end_tag();
       }
       ItemTy(..) => {
-        add_to_index();
+        add_to_index(item, ebml_w, index);
         ebml_w.start_tag(tag_items_data_item);
         encode_def_id(ebml_w, def_id);
         encode_family(ebml_w, 'y');
@@ -1016,7 +1015,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         ebml_w.end_tag();
       }
       ItemEnum(ref enum_definition, ref generics) => {
-        add_to_index();
+        add_to_index(item, ebml_w, index);
 
         ebml_w.start_tag(tag_items_data_item);
         encode_def_id(ebml_w, def_id);
@@ -1054,7 +1053,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
                                          struct_def.fields, index);
 
         /* Index the class*/
-        add_to_index();
+        add_to_index(item, ebml_w, index);
 
         /* Now, make an item for the class itself */
         ebml_w.start_tag(tag_items_data_item);
@@ -1107,7 +1106,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         let impls = tcx.impls.borrow();
         let imp = impls.get().get(&def_id);
 
-        add_to_index();
+        add_to_index(item, ebml_w, index);
         ebml_w.start_tag(tag_items_data_item);
         encode_def_id(ebml_w, def_id);
         encode_family(ebml_w, 'i');
@@ -1171,7 +1170,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         }
       }
       ItemTrait(_, ref super_traits, ref ms) => {
-        add_to_index();
+        add_to_index(item, ebml_w, index);
         ebml_w.start_tag(tag_items_data_item);
         encode_def_id(ebml_w, def_id);
         encode_family(ebml_w, 'I');
