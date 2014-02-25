@@ -105,17 +105,20 @@ impl<'a> Visitor<Scope<'a>> for LifetimeContext {
                 ty: &ast::Ty,
                 scope: Scope<'a>) {
         match ty.node {
-            ast::TyClosure(@ast::TyClosure { lifetimes: ref lifetimes, .. }) |
-            ast::TyBareFn(@ast::TyBareFn { lifetimes: ref lifetimes, .. }) => {
-                let scope1 = LateScope(ty.id, lifetimes, scope);
-                self.check_lifetime_names(lifetimes);
-                debug!("pushing fn ty scope id={} due to type", ty.id);
-                visit::walk_ty(self, ty, &scope1);
-                debug!("popping fn ty scope id={} due to type", ty.id);
-            }
-            _ => {
-                visit::walk_ty(self, ty, scope);
-            }
+            ast::TyClosure(c) => push_fn_scope(self, ty, scope, &c.lifetimes),
+            ast::TyBareFn(c) => push_fn_scope(self, ty, scope, &c.lifetimes),
+            _ => visit::walk_ty(self, ty, scope),
+        }
+
+        fn push_fn_scope(this: &mut LifetimeContext,
+                         ty: &ast::Ty,
+                         scope: Scope,
+                         lifetimes: &OptVec<ast::Lifetime>) {
+            let scope1 = LateScope(ty.id, lifetimes, scope);
+            this.check_lifetime_names(lifetimes);
+            debug!("pushing fn ty scope id={} due to type", ty.id);
+            visit::walk_ty(this, ty, &scope1);
+            debug!("popping fn ty scope id={} due to type", ty.id);
         }
     }
 

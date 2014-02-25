@@ -942,8 +942,7 @@ impl<'a> LookupContext<'a> {
 
         debug!("confirm_candidate(expr={}, candidate={})",
                self.expr.repr(tcx),
-               candidate.repr(self.tcx()),
-               self.ty_to_str(fty));
+               candidate.repr(self.tcx()));
 
         self.enforce_object_limitations(candidate);
         self.enforce_drop_trait_limitations(candidate);
