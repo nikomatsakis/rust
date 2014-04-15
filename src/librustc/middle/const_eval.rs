@@ -24,7 +24,6 @@ use syntax::visit;
 use syntax::{ast, ast_map, ast_util};
 
 use std::cell::RefCell;
-use collections::HashMap;
 use std::rc::Rc;
 
 //
@@ -127,7 +126,6 @@ pub fn lookup_variant_by_id(tcx: &ty::ctxt,
             None => {}
         }
         let maps = astencode::Maps {
-            root_map: @RefCell::new(HashMap::new()),
             method_map: @RefCell::new(FnvHashMap::new()),
             vtable_map: @RefCell::new(FnvHashMap::new()),
             capture_map: RefCell::new(NodeMap::new())
@@ -168,7 +166,6 @@ pub fn lookup_const_by_id(tcx: &ty::ctxt, def_id: ast::DefId)
             None => {}
         }
         let maps = astencode::Maps {
-            root_map: @RefCell::new(HashMap::new()),
             method_map: @RefCell::new(FnvHashMap::new()),
             vtable_map: @RefCell::new(FnvHashMap::new()),
             capture_map: RefCell::new(NodeMap::new())

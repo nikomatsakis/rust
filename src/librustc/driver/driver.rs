@@ -362,10 +362,9 @@ pub fn phase_3_run_analysis_passes(sess: Session,
          middle::liveness::check_crate(&ty_cx, method_map,
                                        &capture_map, krate));
 
-    let root_map =
-        time(time_passes, "borrow checking", (), |_|
-             middle::borrowck::check_crate(&ty_cx, method_map,
-                                           &moves_map, &moved_variables_set,
+    time(time_passes, "borrow checking", (), |_|
+         middle::borrowck::check_crate(&ty_cx, method_map,
+                                       &moves_map, &moved_variables_set,
                                            &capture_map, krate));
 
     drop(moves_map);
@@ -395,7 +394,6 @@ pub fn phase_3_run_analysis_passes(sess: Session,
         exported_items: exported_items,
         public_items: public_items,
         maps: astencode::Maps {
-            root_map: root_map,
             method_map: method_map,
             vtable_map: vtable_map,
             capture_map: RefCell::new(capture_map)
