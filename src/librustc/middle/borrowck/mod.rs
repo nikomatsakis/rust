@@ -21,8 +21,7 @@ use middle::dataflow::DataFlowOperator;
 use util::nodemap::NodeSet;
 use util::ppaux::{note_and_explain_region, Repr, UserString};
 
-use std::cell::{Cell, RefCell};
-use collections::HashMap;
+use std::cell::Cell;
 use std::ops::{BitOr, BitAnd};
 use std::result::Result;
 use std::strbuf::StrBuf;
@@ -80,15 +79,13 @@ pub fn check_crate(tcx: &ty::ctxt,
                    moves_map: &NodeSet,
                    moved_variables_set: &NodeSet,
                    capture_map: &moves::CaptureMap,
-                   krate: &ast::Crate)
-                   -> root_map {
+                   krate: &ast::Crate) {
     let mut bccx = BorrowckCtxt {
         tcx: tcx,
         method_map: method_map,
         moves_map: moves_map,
         moved_variables_set: moved_variables_set,
         capture_map: capture_map,
-        root_map: root_map(),
         stats: @BorrowStats {
             loaned_paths_same: Cell::new(0),
             loaned_paths_imm: Cell::new(0),
@@ -111,8 +108,6 @@ pub fn check_crate(tcx: &ty::ctxt,
         println!("stable paths              : {}",
                  make_stat(bccx, bccx.stats.stable_paths.get()));
     }
-
-    return bccx.root_map;
 
     fn make_stat(bccx: &mut BorrowckCtxt, stat: uint) -> ~str {
         let stat_f = stat as f64;
@@ -180,7 +175,6 @@ pub struct BorrowckCtxt<'a> {
     moves_map: &'a NodeSet,
     moved_variables_set: &'a NodeSet,
     capture_map: &'a moves::CaptureMap,
-    root_map: root_map,
 
     // Statistics:
     stats: @BorrowStats
@@ -191,25 +185,6 @@ pub struct BorrowStats {
     loaned_paths_imm: Cell<uint>,
     stable_paths: Cell<uint>,
     guaranteed_paths: Cell<uint>,
-}
-
-// The keys to the root map combine the `id` of the deref expression
-// with the number of types that it is *autodereferenced*. So, for
-// example, imagine I have a variable `x: @@@T` and an expression
-// `(*x).f`.  This will have 3 derefs, one explicit and then two
-// autoderefs. These are the relevant `root_map_key` values that could
-// appear:
-//
-//    {id:*x, derefs:0} --> roots `x` (type: @@@T, due to explicit deref)
-//    {id:*x, derefs:1} --> roots `*x` (type: @@T, due to autoderef #1)
-//    {id:*x, derefs:2} --> roots `**x` (type: @T, due to autoderef #2)
-//
-// Note that there is no entry with derefs:3---the type of that expression
-// is T, which is not a box.
-#[deriving(Eq, TotalEq, Hash)]
-pub struct root_map_key {
-    pub id: ast::NodeId,
-    pub derefs: uint
 }
 
 pub type BckResult<T> = Result<T, BckError>;
@@ -355,35 +330,6 @@ impl Repr for RestrictionSet {
     fn repr(&self, _tcx: &ty::ctxt) -> ~str {
         format!("RestrictionSet(0x{:x})", self.bits as uint)
     }
-}
-
-///////////////////////////////////////////////////////////////////////////
-// Rooting of managed boxes
-//
-// When we borrow the interior of a managed box, it is sometimes
-// necessary to *root* the box, meaning to stash a copy of the box
-// somewhere that the garbage collector will find it. This ensures
-// that the box is not collected for the lifetime of the borrow.
-//
-// As part of this rooting, we sometimes also freeze the box at
-// runtime, meaning that we dynamically detect when the box is
-// borrowed in incompatible ways.
-//
-// Both of these actions are driven through the `root_map`, which maps
-// from a node to the dynamic rooting action that should be taken when
-// that node executes. The node is identified through a
-// `root_map_key`, which pairs a node-id and a deref count---the
-// problem is that sometimes the box that needs to be rooted is only
-// uncovered after a certain number of auto-derefs.
-
-pub struct RootInfo {
-    pub scope: ast::NodeId,
-}
-
-pub type root_map = @RefCell<HashMap<root_map_key, RootInfo>>;
-
-pub fn root_map() -> root_map {
-    return @RefCell::new(HashMap::new());
 }
 
 ///////////////////////////////////////////////////////////////////////////
