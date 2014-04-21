@@ -164,7 +164,7 @@ pub static MUTEX_INIT: StaticMutex = StaticMutex {
     q: q::Queue {
         head: atomics::INIT_ATOMIC_UINT,
         tail: Unsafe {
-            value: 0 as *mut q::Node<uint>,
+            value: 0u as *mut q::Node<uint>,
             marker1: marker::InvariantType,
         },
         stub: q::DummyNode {

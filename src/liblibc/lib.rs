@@ -2027,7 +2027,7 @@ pub mod consts {
             pub static MAP_FIXED : c_int = 0x0010;
             pub static MAP_ANON : c_int = 0x0020;
 
-            pub static MAP_FAILED : *c_void = -1 as *c_void;
+            pub static MAP_FAILED : *c_void = -1i as *c_void;
 
             pub static MCL_CURRENT : c_int = 0x0001;
             pub static MCL_FUTURE : c_int = 0x0002;

@@ -239,7 +239,7 @@ impl TcpWatcher {
                 });
                 // Make sure an erroneously fired callback doesn't have access
                 // to the context any more.
-                req.set_data(0 as *int);
+                req.set_data(0u as *int);
 
                 // If we failed because of a timeout, drop the TcpWatcher as
                 // soon as possible because it's data is now set to null and we

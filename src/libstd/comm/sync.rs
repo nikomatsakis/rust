@@ -142,8 +142,8 @@ impl<T: Send> Packet<T> {
                 cap: cap,
                 canceled: None,
                 queue: Queue {
-                    head: 0 as *mut Node,
-                    tail: 0 as *mut Node,
+                    head: 0u as *mut Node,
+                    tail: 0u as *mut Node,
                 },
                 buf: Buffer {
                     buf: Vec::from_fn(cap + if cap == 0 {1} else {0}, |_| None),
@@ -338,8 +338,8 @@ impl<T: Send> Packet<T> {
             Vec::new()
         };
         let mut queue = mem::replace(&mut state.queue, Queue {
-            head: 0 as *mut Node,
-            tail: 0 as *mut Node,
+            head: 0u as *mut Node,
+            tail: 0u as *mut Node,
         });
 
         let waiter = match mem::replace(&mut state.blocker, NoneBlocked) {
@@ -448,7 +448,7 @@ impl Queue {
         let task: ~Task = Local::take();
         let mut node = Node {
             task: None,
-            next: 0 as *mut Node,
+            next: 0u as *mut Node,
         };
         task.deschedule(1, |task| {
             node.task = Some(task);
@@ -475,10 +475,10 @@ impl Queue {
         let node = self.head;
         self.head = unsafe { (*node).next };
         if self.head.is_null() {
-            self.tail = 0 as *mut Node;
+            self.tail = 0u as *mut Node;
         }
         unsafe {
-            (*node).next = 0 as *mut Node;
+            (*node).next = 0u as *mut Node;
             Some((*node).task.take_unwrap())
         }
     }

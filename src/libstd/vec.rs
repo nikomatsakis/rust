@@ -75,7 +75,7 @@ impl<T> Vec<T> {
     /// ```
     #[inline]
     pub fn new() -> Vec<T> {
-        Vec { len: 0, cap: 0, ptr: 0 as *mut T }
+        Vec { len: 0, cap: 0, ptr: 0u as *mut T }
     }
 
     /// Constructs a new, empty `Vec` with the specified capacity.
@@ -497,7 +497,7 @@ impl<T> Vec<T> {
         if self.len == 0 {
             unsafe { free(self.ptr as *mut c_void) };
             self.cap = 0;
-            self.ptr = 0 as *mut T;
+            self.ptr = 0u as *mut T;
         } else {
             unsafe {
                 // Overflow check is unnecessary as the vector is already at least this large.

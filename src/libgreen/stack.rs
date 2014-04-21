@@ -71,7 +71,7 @@ impl Stack {
     /// Create a 0-length stack which starts (and ends) at 0.
     pub unsafe fn dummy_stack() -> Stack {
         Stack {
-            buf: MemoryMap { data: 0 as *mut u8, len: 0, kind: MapVirtual },
+            buf: MemoryMap { data: 0u as *mut u8, len: 0, kind: MapVirtual },
             min_size: 0,
             valgrind_id: 0
         }

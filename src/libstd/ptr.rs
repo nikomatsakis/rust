@@ -142,7 +142,7 @@ pub unsafe fn position<T>(buf: *T, f: |&T| -> bool) -> uint {
 /// assert!(p.is_null());
 /// ```
 #[inline]
-pub fn null<T>() -> *T { 0 as *T }
+pub fn null<T>() -> *T { 0u as *T }
 
 /// Create an unsafe mutable null pointer.
 ///
@@ -155,7 +155,7 @@ pub fn null<T>() -> *T { 0 as *T }
 /// assert!(p.is_null());
 /// ```
 #[inline]
-pub fn mut_null<T>() -> *mut T { 0 as *mut T }
+pub fn mut_null<T>() -> *mut T { 0u as *mut T }
 
 /// Copies data from one location to another.
 ///
@@ -747,7 +747,7 @@ pub mod ptr_tests {
     #[should_fail]
     fn test_ptr_array_each_with_len_null_ptr() {
         unsafe {
-            array_each_with_len(0 as **libc::c_char, 1, |e| {
+            array_each_with_len(0u as **libc::c_char, 1, |e| {
                 str::raw::from_c_str(e);
             });
         }
@@ -756,7 +756,7 @@ pub mod ptr_tests {
     #[should_fail]
     fn test_ptr_array_each_null_ptr() {
         unsafe {
-            array_each(0 as **libc::c_char, |e| {
+            array_each(0u as **libc::c_char, |e| {
                 str::raw::from_c_str(e);
             });
         }

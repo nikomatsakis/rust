@@ -27,7 +27,7 @@ pub fn main() {
     let args = os::args();
     if args.len() >= 2 && args[1] == "signal".to_owned() {
         // Raise a segfault.
-        unsafe { *(0 as *mut int) = 0; }
+        unsafe { *(0u as *mut int) = 0; }
     } else {
         let status = Process::status(args[0], ["signal".to_owned()]).unwrap();
         // Windows does not have signal, so we get exit status 0xC0000028 (STATUS_BAD_STACK).

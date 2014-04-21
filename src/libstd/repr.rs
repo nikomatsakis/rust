@@ -645,8 +645,8 @@ fn test_repr() {
     let mut x = 10;
     exact_test(&(&mut x), "&mut 10");
 
-    exact_test(&(0 as *()), "(0x0 as *())");
-    exact_test(&(0 as *mut ()), "(0x0 as *mut ())");
+    exact_test(&(0u as *()), "(0x0 as *())");
+    exact_test(&(0u as *mut ()), "(0x0 as *mut ())");
 
     exact_test(&(1,), "(1,)");
     exact_test(&(~["hi", "there"]),
