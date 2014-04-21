@@ -3062,7 +3062,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
         fcx.write_ty(id, typ);
       }
       ast::ExprRepeat(element, count_expr) => {
-        check_expr_with_hint(fcx, count_expr, ty::mk_uint());
+        check_expr_has_type(fcx, count_expr, ty::mk_uint());
         let count = ty::eval_repeat_count(fcx, count_expr);
         let t: ty::t = fcx.infcx().next_ty_var();
         check_expr_has_type(fcx, element, t);

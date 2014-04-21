@@ -17,7 +17,7 @@ use std::slice::raw;
 use std::mem;
 
 static RAND_SIZE_LEN: uint = 8;
-static RAND_SIZE: u32 = 1 << RAND_SIZE_LEN;
+static RAND_SIZE: uint = 1 << RAND_SIZE_LEN;
 
 /// A random number generator that uses the ISAAC algorithm[1].
 ///
@@ -29,17 +29,17 @@ static RAND_SIZE: u32 = 1 << RAND_SIZE_LEN;
 /// [1]: Bob Jenkins, [*ISAAC: A fast cryptographic random number
 /// generator*](http://www.burtleburtle.net/bob/rand/isaacafa.html)
 pub struct IsaacRng {
-    cnt: u32,
-    rsl: [u32, .. RAND_SIZE],
-    mem: [u32, .. RAND_SIZE],
+    cnt: uint,
+    rsl: [u32, ..RAND_SIZE],
+    mem: [u32, ..RAND_SIZE],
     a: u32,
     b: u32,
     c: u32
 }
 static EMPTY: IsaacRng = IsaacRng {
     cnt: 0,
-    rsl: [0, .. RAND_SIZE],
-    mem: [0, .. RAND_SIZE],
+    rsl: [0, ..RAND_SIZE],
+    mem: [0, ..RAND_SIZE],
     a: 0, b: 0, c: 0
 };
 
@@ -140,10 +140,10 @@ impl IsaacRng {
         let mut a = self.a;
         let mut b = self.b + self.c;
 
-        static MIDPOINT: uint = RAND_SIZE as uint / 2;
+        static MIDPOINT: uint = (RAND_SIZE / 2) as uint;
 
         macro_rules! ind (($x:expr) => {
-            self.mem[(($x >> 2) & (RAND_SIZE - 1)) as uint]
+            self.mem[(($x >> 2) as uint & (RAND_SIZE - 1))]
         });
         macro_rules! rngstep(
             ($j:expr, $shift:expr) => {{
@@ -188,7 +188,7 @@ impl Rng for IsaacRng {
             self.isaac();
         }
         self.cnt -= 1;
-        self.rsl[self.cnt as uint]
+        self.rsl[self.cnt]
     }
 }
 
