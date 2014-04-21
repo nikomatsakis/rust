@@ -425,16 +425,21 @@ pub fn mk_coercety(cx: &InferCtxt,
 
 // See comment on the type `resolve_state` below
 pub fn resolve_type(cx: &InferCtxt,
+                    span: Option<Span>,
                     a: ty::t,
                     modes: uint)
-                 -> fres<ty::t> {
-    let mut resolver = resolver(cx, modes);
+                    -> fres<ty::t>
+{
+    let mut resolver = resolver(cx, modes, span);
     resolver.resolve_type_chk(a)
 }
 
-pub fn resolve_region(cx: &InferCtxt, r: ty::Region, modes: uint)
-                   -> fres<ty::Region> {
-    let mut resolver = resolver(cx, modes);
+pub fn resolve_region(cx: &InferCtxt,
+                      r: ty::Region,
+                      modes: uint)
+                      -> fres<ty::Region>
+{
+    let mut resolver = resolver(cx, modes, None);
     resolver.resolve_region_chk(r)
 }
 
@@ -667,7 +672,7 @@ impl<'a> InferCtxt<'a> {
     }
 
     pub fn resolve_type_vars_if_possible(&self, typ: ty::t) -> ty::t {
-        match resolve_type(self, typ, resolve_nested_tvar | resolve_ivar) {
+        match resolve_type(self, None, typ, resolve_nested_tvar | resolve_ivar) {
           result::Ok(new_type) => new_type,
           result::Err(_) => typ
         }

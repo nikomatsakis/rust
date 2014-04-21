@@ -2157,7 +2157,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                        -> Option<O> {
         match expected {
             Some(t) => {
-                match resolve_type(fcx.infcx(), t, force_tvar) {
+                match resolve_type(fcx.infcx(), None, t, force_tvar) {
                     Ok(t) => unpack(&ty::get(t).sty),
                     _ => None
                 }
@@ -3828,7 +3828,7 @@ pub fn instantiate_path(fcx: &FnCtxt,
 // Resolves `typ` by a single level if `typ` is a type variable.  If no
 // resolution is possible, then an error is reported.
 pub fn structurally_resolved_type(fcx: &FnCtxt, sp: Span, tp: ty::t) -> ty::t {
-    match infer::resolve_type(fcx.infcx(), tp, force_tvar) {
+    match infer::resolve_type(fcx.infcx(), Some(sp), tp, force_tvar) {
         Ok(t_s) if !ty::type_is_ty_var(t_s) => t_s,
         _ => {
             fcx.type_error_message(sp, |_actual| {

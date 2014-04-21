@@ -36,7 +36,7 @@ use syntax::visit::Visitor;
 fn resolve_type_vars_in_type(fcx: &FnCtxt, sp: Span, typ: ty::t)
                           -> Option<ty::t> {
     if !ty::type_needs_infer(typ) { return Some(typ); }
-    match resolve_type(fcx.infcx(), typ, resolve_all | force_all) {
+    match resolve_type(fcx.infcx(), Some(sp), typ, resolve_all | force_all) {
         Ok(new_type) => return Some(new_type),
         Err(e) => {
             if !fcx.ccx.tcx.sess.has_errors() {
@@ -318,7 +318,7 @@ fn visit_pat(p: &ast::Pat, wbcx: &mut WbCtxt) {
 fn visit_local(l: &ast::Local, wbcx: &mut WbCtxt) {
     if !wbcx.success { return; }
     let var_ty = wbcx.fcx.local_ty(l.span, l.id);
-    match resolve_type(wbcx.fcx.infcx(), var_ty, resolve_all | force_all) {
+    match resolve_type(wbcx.fcx.infcx(), Some(l.span), var_ty, resolve_all | force_all) {
         Ok(lty) => {
             debug!("Type for local {} (id {}) resolved to {}",
                    pat_to_str(l.pat),

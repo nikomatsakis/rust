@@ -55,6 +55,7 @@ use middle::typeck::infer::{Bounds, cyclic_ty, fixup_err, fres, InferCtxt};
 use middle::typeck::infer::unresolved_ty;
 use middle::typeck::infer::to_str::InferStr;
 use middle::typeck::infer::unify::{Root, UnifyInferCtxtMethods};
+use syntax::codemap::Span;
 use util::common::{indent, indenter};
 use util::ppaux::ty_to_str;
 
@@ -82,16 +83,22 @@ pub struct ResolveState<'a> {
     modes: uint,
     err: Option<fixup_err>,
     v_seen: Vec<TyVid> ,
-    type_depth: uint
+    type_depth: uint,
+    span: Option<Span>,
 }
 
-pub fn resolver<'a>(infcx: &'a InferCtxt, modes: uint) -> ResolveState<'a> {
+pub fn resolver<'a>(infcx: &'a InferCtxt,
+                    modes: uint,
+                    span: Option<Span>)
+                    -> ResolveState<'a>
+{
     ResolveState {
         infcx: infcx,
         modes: modes,
         err: None,
         v_seen: Vec::new(),
-        type_depth: 0
+        type_depth: 0,
+        span: span
     }
 }
 
@@ -114,7 +121,9 @@ impl<'a> ResolveState<'a> {
         (self.modes & mode) == mode
     }
 
-    pub fn resolve_type_chk(&mut self, typ: ty::t) -> fres<ty::t> {
+    pub fn resolve_type_chk(&mut self,
+                            typ: ty::t)
+                            -> fres<ty::t> {
         self.err = None;
 
         debug!("Resolving {} (modes={:x})",
@@ -139,7 +148,8 @@ impl<'a> ResolveState<'a> {
         }
     }
 
-    pub fn resolve_region_chk(&mut self, orig: ty::Region)
+    pub fn resolve_region_chk(&mut self,
+                              orig: ty::Region)
                               -> fres<ty::Region> {
         self.err = None;
         let resolved = indent(|| self.resolve_region(orig) );
@@ -250,6 +260,16 @@ impl<'a> ResolveState<'a> {
                 // As a last resort, default to int.
                 let ty = ty::mk_int();
                 self.infcx.set(vid, Root(Some(IntType(ast::TyI)), node.rank));
+
+                match self.span {
+                    Some(sp) => {
+                        self.infcx.tcx.sess.span_warn(
+                            sp,
+                            "Forcing integral type to int");
+                    }
+                    None => { }
+                }
+
                 ty
             } else {
                 ty::mk_int_var(self.infcx.tcx, vid)
@@ -271,6 +291,16 @@ impl<'a> ResolveState<'a> {
                 // As a last resort, default to f64.
                 let ty = ty::mk_f64();
                 self.infcx.set(vid, Root(Some(ast::TyF64), node.rank));
+
+                match self.span {
+                    Some(sp) => {
+                        self.infcx.tcx.sess.span_warn(
+                            sp,
+                            "Forcing integral type to f64");
+                    }
+                    None => { }
+                }
+
                 ty
             } else {
                 ty::mk_float_var(self.infcx.tcx, vid)
