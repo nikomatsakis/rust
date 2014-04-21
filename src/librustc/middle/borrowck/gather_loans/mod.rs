@@ -487,7 +487,7 @@ impl<'a> GatherLoanCtxt<'a> {
             let var_id = ast_util::def_id_of_def(captured_var.def).node;
             let var_cmt = self.bccx.cat_captured_var(closure_expr.id,
                                                      closure_expr.span,
-                                                     captured_var);
+                                                     captured_var.def);
 
             // Lookup the kind of borrow the callee requires
             let upvar_id = ty::UpvarId { var_id: var_id,

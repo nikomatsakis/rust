@@ -439,14 +439,15 @@ impl<'a> BorrowckCtxt<'a> {
     }
 
     pub fn cat_captured_var(&self,
-                            id: ast::NodeId,
-                            span: Span,
-                            captured_var: &moves::CaptureVar) -> mc::cmt {
+                            closure_id: ast::NodeId,
+                            closure_span: Span,
+                            upvar_def: ast::Def)
+                            -> mc::cmt {
         // Create the cmt for the variable being borrowed, from the
         // caller's perspective
-        let var_id = ast_util::def_id_of_def(captured_var.def).node;
+        let var_id = ast_util::def_id_of_def(upvar_def).node;
         let var_ty = ty::node_id_to_type(self.tcx, var_id);
-        self.cat_def(id, span, var_ty, captured_var.def)
+        self.cat_def(closure_id, closure_span, var_ty, upvar_def)
     }
 
     pub fn cat_discr(&self, cmt: mc::cmt, match_id: ast::NodeId) -> mc::cmt {

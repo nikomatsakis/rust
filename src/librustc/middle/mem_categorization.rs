@@ -418,7 +418,9 @@ impl<TYPER:Typer> MemCategorizationContext<TYPER> {
         }
     }
 
-    pub fn cat_expr_autoderefd(&self, expr: &ast::Expr, autoderefs: uint)
+    pub fn cat_expr_autoderefd(&self,
+                               expr: &ast::Expr,
+                               autoderefs: uint)
                                -> McResult<cmt> {
         let mut cmt = if_ok!(self.cat_expr_unadjusted(expr));
         for deref in range(1u, autoderefs + 1) {
@@ -456,7 +458,9 @@ impl<TYPER:Typer> MemCategorizationContext<TYPER> {
             self.cat_def(expr.id, expr.span, expr_ty, def)
           }
 
-          ast::ExprParen(e) => self.cat_expr_unadjusted(e),
+          ast::ExprParen(e) => {
+            self.cat_expr(e)
+          }
 
           ast::ExprAddrOf(..) | ast::ExprCall(..) |
           ast::ExprAssign(..) | ast::ExprAssignOp(..) |

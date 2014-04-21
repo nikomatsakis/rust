@@ -85,7 +85,7 @@ pub fn gather_captures(bccx: &BorrowckCtxt,
             moves::CapMove => {
                 let cmt = bccx.cat_captured_var(closure_expr.id,
                                                 closure_expr.span,
-                                                captured_var);
+                                                captured_var.def);
                 let move_info = GatherMoveInfo {
                     id: closure_expr.id,
                     kind: Captured,
