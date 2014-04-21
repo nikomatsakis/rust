@@ -219,8 +219,8 @@ pub trait Bitwise: Bounded
                  + BitAnd<Self,Self>
                  + BitOr<Self,Self>
                  + BitXor<Self,Self>
-                 + Shl<Self,Self>
-                 + Shr<Self,Self> {
+                 + Shl<uint,Self>
+                 + Shr<uint,Self> {
     /// Returns the number of ones in the binary representation of the number.
     ///
     /// # Example
@@ -301,12 +301,12 @@ pub trait Int: Primitive
 /// Returns the smallest power of 2 greater than or equal to `n`.
 #[inline]
 pub fn next_power_of_two<T: Unsigned + Int>(n: T) -> T {
-    let halfbits: T = cast(size_of::<T>() * 4).unwrap();
+    let halfbits = size_of::<T>() * 4; // FIXME can't this overflow?
     let mut tmp: T = n - one();
-    let mut shift: T = one();
+    let mut shift = 1;
     while shift <= halfbits {
         tmp = tmp | (tmp >> shift);
-        shift = shift << one();
+        shift <<= 1;
     }
     tmp + one()
 }
@@ -322,12 +322,12 @@ pub fn is_power_of_two<T: Unsigned + Int>(n: T) -> bool {
 /// otherwise the power of 2 is wrapped in `Some`.
 #[inline]
 pub fn checked_next_power_of_two<T: Unsigned + Int>(n: T) -> Option<T> {
-    let halfbits: T = cast(size_of::<T>() * 4).unwrap();
+    let halfbits = size_of::<T>() * 4; // FIXME can't this overflow?
     let mut tmp: T = n - one();
-    let mut shift: T = one();
+    let mut shift = 1;
     while shift <= halfbits {
         tmp = tmp | (tmp >> shift);
-        shift = shift << one();
+        shift <<= 1;
     }
     tmp.checked_add(&one())
 }

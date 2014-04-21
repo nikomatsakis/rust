@@ -73,7 +73,7 @@ static K: int = 4;
 // size.
 //
 // The size in question is 1 << MIN_BITS
-static MIN_BITS: int = 7;
+static MIN_BITS: uint = 7;
 
 struct Deque<T> {
     bottom: AtomicInt,
@@ -137,7 +137,7 @@ pub struct BufferPool<T> {
 ///      LLVM is probably pretty good at doing this already.
 struct Buffer<T> {
     storage: *T,
-    log_size: int,
+    log_size: uint,
 }
 
 impl<T: Send> BufferPool<T> {
@@ -154,7 +154,7 @@ impl<T: Send> BufferPool<T> {
         (Worker { deque: a }, Stealer { deque: b })
     }
 
-    fn alloc(&mut self, bits: int) -> ~Buffer<T> {
+    fn alloc(&mut self, bits: uint) -> ~Buffer<T> {
         unsafe {
             self.pool.with(|pool| {
                 match pool.iter().position(|x| x.size() >= (1 << bits)) {
@@ -344,7 +344,7 @@ impl<T: Send> Drop for Deque<T> {
 }
 
 impl<T: Send> Buffer<T> {
-    unsafe fn new(log_size: int) -> Buffer<T> {
+    unsafe fn new(log_size: uint) -> Buffer<T> {
         let size = (1 << log_size) * mem::size_of::<T>();
         let buffer = libc::malloc(size as libc::size_t);
         assert!(!buffer.is_null());
@@ -354,10 +354,10 @@ impl<T: Send> Buffer<T> {
         }
     }
 
-    fn size(&self) -> int { 1 << self.log_size }
+    fn size(&self) -> int { (1 << self.log_size) as int }
 
     // Apparently LLVM cannot optimize (foo % (1 << bar)) into this implicitly
-    fn mask(&self) -> int { (1 << self.log_size) - 1 }
+    fn mask(&self) -> int { ((1 << self.log_size) - 1) as int }
 
     // This does not protect against loading duplicate values of the same cell,
     // nor does this clear out the contents contained within. Hence, this is a
@@ -378,7 +378,10 @@ impl<T: Send> Buffer<T> {
     // Again, unsafe because this has incredibly dubious ownership violations.
     // It is assumed that this buffer is immediately dropped.
     unsafe fn resize(&self, b: int, t: int, delta: int) -> Buffer<T> {
-        let mut buf = Buffer::new(self.log_size + delta);
+        // NB: not entirely obvious, but thanks to 2's complement,
+        // casting delta to uint and then adding gives the desired
+        // effect.
+        let mut buf = Buffer::new(self.log_size + delta as uint);
         for i in range(t, b) {
             buf.put(i, self.get(i));
         }

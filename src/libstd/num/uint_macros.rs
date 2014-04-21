@@ -119,15 +119,15 @@ impl BitXor<$T,$T> for $T {
 }
 
 #[cfg(not(test))]
-impl Shl<$T,$T> for $T {
+impl Shl<uint,$T> for $T {
     #[inline]
-    fn shl(&self, other: &$T) -> $T { *self << *other }
+    fn shl(&self, other: &uint) -> $T { *self << *other }
 }
 
 #[cfg(not(test))]
-impl Shr<$T,$T> for $T {
+impl Shr<uint,$T> for $T {
     #[inline]
-    fn shr(&self, other: &$T) -> $T { *self >> *other }
+    fn shr(&self, other: &uint) -> $T { *self >> *other }
 }
 
 #[cfg(not(test))]

@@ -2035,10 +2035,8 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                                                fcx.expr_ty(lhs));
 
         if ty::type_is_integral(lhs_t) && ast_util::is_shift_binop(op) {
-            // Shift is a special case: rhs can be any integral type
-            check_expr(fcx, rhs);
-            let rhs_t = fcx.expr_ty(rhs);
-            require_integral(fcx, rhs.span, rhs_t);
+            // Shift is a special case: rhs must be uint, no matter what lhs is
+            check_expr_has_type(fcx, rhs, ty::mk_uint());
             fcx.write_ty(expr.id, lhs_t);
             return;
         }

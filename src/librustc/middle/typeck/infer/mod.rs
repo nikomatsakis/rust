@@ -240,6 +240,7 @@ pub enum RegionVariableOrigin {
 
 pub enum fixup_err {
     unresolved_int_ty(IntVid),
+    unresolved_float_ty(FloatVid),
     unresolved_ty(TyVid),
     cyclic_ty(TyVid),
     unresolved_region(RegionVid),
@@ -249,6 +250,7 @@ pub enum fixup_err {
 pub fn fixup_err_to_str(f: fixup_err) -> ~str {
     match f {
       unresolved_int_ty(_) => "unconstrained integral type".to_owned(),
+      unresolved_float_ty(_) => "unconstrained floating point type".to_owned(),
       unresolved_ty(_) => "unconstrained type".to_owned(),
       cyclic_ty(_) => "cyclic type of infinite size".to_owned(),
       unresolved_region(_) => "unconstrained region".to_owned(),

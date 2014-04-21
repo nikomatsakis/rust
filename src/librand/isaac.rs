@@ -16,7 +16,7 @@ use std::iter::{range_step, Repeat};
 use std::slice::raw;
 use std::mem;
 
-static RAND_SIZE_LEN: u32 = 8;
+static RAND_SIZE_LEN: uint = 8;
 static RAND_SIZE: u32 = 1 << RAND_SIZE_LEN;
 
 /// A random number generator that uses the ISAAC algorithm[1].
