@@ -91,26 +91,10 @@ impl<'a> GuaranteeLifetimeContext<'a> {
                 Ok(())
             }
 
-            mc::cat_deref(base, _, mc::GcPtr) => {
-                let scope = self.scope(base);
-
-                // L-Deref-Managed-Imm-User-Root
-                let omit_root =
-                    self.is_rvalue_or_immutable(base) &&
-                    !self.is_moved(base);
-
-                if omit_root {
-                    self.check_scope(scope)
-                } else {
-                    debug!("omitting root, base={}, base_scope={:?}",
-                           base.repr(self.tcx()), scope);
-                    Ok(())
-                }
-            }
-
             mc::cat_downcast(base) |
             mc::cat_deref(base, _, mc::OwnedPtr) |     // L-Deref-Send
-            mc::cat_interior(base, _) => {             // L-Field
+            mc::cat_interior(base, _) |                // L-Field
+            mc::cat_deref(base, _, mc::GcPtr) => {
                 self.check(base, discr_scope)
             }
 
