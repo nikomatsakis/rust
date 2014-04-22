@@ -354,10 +354,10 @@ impl<T: Send> Buffer<T> {
         }
     }
 
-    fn size(&self) -> int { (1 << self.log_size) as int }
+    fn size(&self) -> int { 1 << self.log_size }
 
     // Apparently LLVM cannot optimize (foo % (1 << bar)) into this implicitly
-    fn mask(&self) -> int { ((1 << self.log_size) - 1) as int }
+    fn mask(&self) -> int { (1 << self.log_size) - 1 }
 
     // This does not protect against loading duplicate values of the same cell,
     // nor does this clear out the contents contained within. Hence, this is a
