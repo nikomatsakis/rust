@@ -10,7 +10,7 @@
 
 use std::ptr;
 
-static a: *u8 = 0u as *u8;
+static a: *u8 = 0 as *u8;
 
 pub fn main() {
     assert_eq!(a, ptr::null());

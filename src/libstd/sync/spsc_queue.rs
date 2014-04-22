@@ -75,7 +75,7 @@ impl<T: Send> Node<T> {
         unsafe {
             cast::transmute(~Node {
                 value: None,
-                next: AtomicPtr::new(0u as *mut Node<T>),
+                next: AtomicPtr::new(0 as *mut Node<T>),
             })
         }
     }
@@ -120,7 +120,7 @@ impl<T: Send> Queue<T> {
             let n = self.alloc();
             assert!((*n).value.is_none());
             (*n).value = Some(t);
-            (*n).next.store(0u as *mut Node<T>, Relaxed);
+            (*n).next.store(0 as *mut Node<T>, Relaxed);
             (*self.head).next.store(n, Release);
             self.head = n;
         }

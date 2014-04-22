@@ -29,7 +29,7 @@ type Queue = Exclusive<Vec<proc():Send>>;
 // single-task context, and then run() is called only once in another
 // single-task context. As a result of this, only the `push` function is
 // thread-safe, and it assumes that the `init` function has run previously.
-static mut QUEUE: *mut Queue = 0u as *mut Queue;
+static mut QUEUE: *mut Queue = 0 as *mut Queue;
 static mut RUNNING: bool = false;
 
 pub fn init() {
@@ -59,7 +59,7 @@ pub fn run() {
         rtassert!(!QUEUE.is_null());
         RUNNING = true;
         let state: ~Queue = cast::transmute(QUEUE);
-        QUEUE = 0u as *mut Queue;
+        QUEUE = 0 as *mut Queue;
         let mut vec = None;
         state.with(|arr| {
             vec = Some(mem::replace(arr, vec!()));

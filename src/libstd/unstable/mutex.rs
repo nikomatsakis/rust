@@ -394,8 +394,8 @@ mod imp {
                 cond: Unsafe::new(mem::init()),
             };
 
-            pthread_mutex_init(m.lock.get(), 0u as *libc::c_void);
-            pthread_cond_init(m.cond.get(), 0u as *libc::c_void);
+            pthread_mutex_init(m.lock.get(), 0 as *libc::c_void);
+            pthread_cond_init(m.cond.get(), 0 as *libc::c_void);
 
             return m;
         }

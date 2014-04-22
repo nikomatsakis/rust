@@ -91,7 +91,7 @@ pub mod compiled {
 
     #[cfg(not(test))]
     #[thread_local]
-    pub static mut RT_TLS_PTR: *mut u8 = 0u as *mut u8;
+    pub static mut RT_TLS_PTR: *mut u8 = 0 as *mut u8;
 
     pub fn init() {}
 

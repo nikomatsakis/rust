@@ -59,7 +59,7 @@ impl<T: Send> Queue<T> {
     pub fn new() -> Queue<T> {
         Queue {
             head: atomics::AtomicUint::new(0),
-            tail: Unsafe::new(0u as *mut Node<T>),
+            tail: Unsafe::new(0 as *mut Node<T>),
             stub: DummyNode {
                 next: atomics::AtomicUint::new(0),
             },

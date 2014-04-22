@@ -420,7 +420,7 @@ mod imp {
         // be in "permanent memory", so we copy it to a static and then use the
         // static as the pointer.
         unsafe fn init_state() -> *mut backtrace_state {
-            static mut STATE: *mut backtrace_state = 0u as *mut backtrace_state;
+            static mut STATE: *mut backtrace_state = 0 as *mut backtrace_state;
             static mut LAST_FILENAME: [libc::c_char, ..256] = [0, ..256];
             if !STATE.is_null() { return STATE }
             let selfname = if cfg!(target_os = "freebsd") {
@@ -458,7 +458,7 @@ mod imp {
         if state.is_null() {
             return output(w, idx, addr, None)
         }
-        let mut data = 0u as *libc::c_char;
+        let mut data = 0 as *libc::c_char;
         let data_addr = &mut data as *mut *libc::c_char;
         let ret = unsafe {
             backtrace_syminfo(state, addr as libc::uintptr_t,
@@ -710,7 +710,7 @@ mod imp {
         let image = arch::init_frame(&mut frame, &context);
 
         // Initialize this process's symbols
-        let ret = SymInitialize(process, 0u as *libc::c_void, libc::TRUE);
+        let ret = SymInitialize(process, 0 as *libc::c_void, libc::TRUE);
         if ret != libc::TRUE { return Ok(()) }
         let _c = Cleanup { handle: process, SymCleanup: SymCleanup };
 
@@ -718,8 +718,8 @@ mod imp {
         let mut i = 0;
         try!(write!(w, "stack backtrace:\n"));
         while StackWalk64(image, process, thread, &mut frame, &mut context,
-                          0u as *libc::c_void, 0 as *libc::c_void,
-                          0u as *libc::c_void, 0 as *libc::c_void) == libc::TRUE{
+                          0 as *libc::c_void, 0 as *libc::c_void,
+                          0 as *libc::c_void, 0 as *libc::c_void) == libc::TRUE{
             let addr = frame.AddrPC.Offset;
             if addr == frame.AddrReturn.Offset || addr == 0 ||
                frame.AddrReturn.Offset == 0 { break }

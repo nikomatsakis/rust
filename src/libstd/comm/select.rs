@@ -104,8 +104,8 @@ impl Select {
     pub fn new() -> Select {
         Select {
             marker1: marker::NoSend,
-            head: 0u as *mut Handle<'static, ()>,
-            tail: 0u as *mut Handle<'static, ()>,
+            head: 0 as *mut Handle<'static, ()>,
+            tail: 0 as *mut Handle<'static, ()>,
             next_id: Cell::new(1),
         }
     }
@@ -119,8 +119,8 @@ impl Select {
         Handle {
             id: id,
             selector: self,
-            next: 0u as *mut Handle<'static, ()>,
-            prev: 0u as *mut Handle<'static, ()>,
+            next: 0 as *mut Handle<'static, ()>,
+            prev: 0 as *mut Handle<'static, ()>,
             added: false,
             rx: rx,
             packet: rx,
@@ -283,8 +283,8 @@ impl<'rx, T: Send> Handle<'rx, T> {
             (*self.next).prev = self.prev;
         }
 
-        self.next = 0u as *mut Handle<'static, ()>;
-        self.prev = 0u as *mut Handle<'static, ()>;
+        self.next = 0 as *mut Handle<'static, ()>;
+        self.prev = 0 as *mut Handle<'static, ()>;
 
         self.added = false;
     }

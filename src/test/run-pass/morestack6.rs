@@ -36,13 +36,13 @@ fn calllink08() { unsafe { rustrt::get_task_id(); } }
 fn calllink10() { unsafe { rustrt::rust_get_task(); } }
 
 fn runtest(f: extern fn(), frame_backoff: u32) {
-    runtest2(f, frame_backoff, 0u as *u8);
+    runtest2(f, frame_backoff, 0 as *u8);
 }
 
 fn runtest2(f: extern fn(), frame_backoff: u32, last_stk: *u8) -> u32 {
     unsafe {
         let curr_stk = rustrt::debug_get_stk_seg();
-        if (last_stk != curr_stk && last_stk != 0u as *u8) {
+        if (last_stk != curr_stk && last_stk != 0 as *u8) {
             // We switched stacks, go back and try to hit the dynamic linker
             frame_backoff
         } else {

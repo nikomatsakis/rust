@@ -33,7 +33,7 @@ use task;
 // only torn down after everything else has exited. This means that these
 // variables are read-only during use (after initialization) and both of which
 // are safe to use concurrently.
-static mut HELPER_CHAN: *mut Sender<Req> = 0u as *mut Sender<Req>;
+static mut HELPER_CHAN: *mut Sender<Req> = 0 as *mut Sender<Req>;
 static mut HELPER_SIGNAL: imp::signal = 0 as imp::signal;
 
 static mut TIMER_HELPER_EXIT: StaticNativeMutex = NATIVE_MUTEX_INIT;
@@ -87,7 +87,7 @@ fn shutdown() {
     unsafe {
         imp::close(HELPER_SIGNAL);
         let _chan: ~Sender<Req> = cast::transmute(HELPER_CHAN);
-        HELPER_CHAN = 0u as *mut Sender<Req>;
+        HELPER_CHAN = 0 as *mut Sender<Req>;
         HELPER_SIGNAL = 0 as imp::signal;
     }
 }

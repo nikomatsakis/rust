@@ -365,7 +365,7 @@ pub fn readdir(p: &CString) -> IoResult<Vec<Path>> {
 
     if dir_ptr as uint != 0 {
         let mut paths = vec!();
-        let mut entry_ptr = 0u as *mut dirent_t;
+        let mut entry_ptr = 0 as *mut dirent_t;
         while unsafe { readdir_r(dir_ptr, ptr, &mut entry_ptr) == 0 } {
             if entry_ptr.is_null() { break }
             let cstr = unsafe {

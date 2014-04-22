@@ -604,7 +604,7 @@ fn spawn_process_os(config: p::ProcessConfig,
                         fn setgroups(ngroups: libc::c_int,
                                      ptr: *libc::c_void) -> libc::c_int;
                     }
-                    let _ = setgroups(0, 0u as *libc::c_void);
+                    let _ = setgroups(0, 0 as *libc::c_void);
 
                     if libc::setuid(u as libc::uid_t) != 0 {
                         fail(&mut output);

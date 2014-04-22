@@ -321,7 +321,7 @@ impl Loop {
     pub fn new() -> Loop {
         let handle = unsafe { uvll::loop_new() };
         assert!(handle.is_not_null());
-        unsafe { uvll::set_data_for_uv_loop(handle, 0u as *c_void) }
+        unsafe { uvll::set_data_for_uv_loop(handle, 0 as *c_void) }
         Loop::wrap(handle)
     }
 

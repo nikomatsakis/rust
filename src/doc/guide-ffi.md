@@ -463,7 +463,7 @@ use std::ptr;
 extern {
     static mut rl_prompt: *libc::c_char;
 }
-# static mut rl_prompt: *libc::c_char = 0u as *libc::c_char;
+# static mut rl_prompt: *libc::c_char = 0 as *libc::c_char;
 
 fn main() {
     "[my-awesome-shell] $".with_c_str(|buf| {

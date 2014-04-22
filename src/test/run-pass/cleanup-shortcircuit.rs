@@ -33,7 +33,7 @@ pub fn main() {
 
     if args.len() >= 2 && args[1] == "signal".to_owned() {
         // Raise a segfault.
-        unsafe { *(0u as *mut int) = 0; }
+        unsafe { *(0 as *mut int) = 0; }
     }
 }
 

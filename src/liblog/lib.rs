@@ -145,7 +145,7 @@ static DEFAULT_LOG_LEVEL: u32 = 1;
 static mut LOG_LEVEL: u32 = MAX_LOG_LEVEL;
 
 static mut DIRECTIVES: *Vec<directive::LogDirective> =
-    0u as *Vec<directive::LogDirective>;
+    0 as *Vec<directive::LogDirective>;
 
 /// Debug log level
 pub static DEBUG: u32 = 4;
@@ -293,7 +293,7 @@ fn init() {
             assert!(!DIRECTIVES.is_null());
             let _directives: ~Vec<directive::LogDirective> =
                 cast::transmute(DIRECTIVES);
-            DIRECTIVES = 0u as *Vec<directive::LogDirective>;
+            DIRECTIVES = 0 as *Vec<directive::LogDirective>;
         });
     }
 }
