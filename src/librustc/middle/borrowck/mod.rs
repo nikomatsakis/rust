@@ -15,7 +15,6 @@
 use mc = middle::mem_categorization;
 use middle::ty;
 use middle::typeck;
-use middle::moves;
 use middle::dataflow::DataFlowContext;
 use middle::dataflow::DataFlowOperator;
 use util::nodemap::{NodeMap, NodeSet};
@@ -76,13 +75,15 @@ impl<'a> Visitor<()> for BorrowckCtxt<'a> {
 }
 
 pub fn check_crate(tcx: &ty::ctxt,
-                   moves_map: &NodeSet,
-                   capture_map: &moves::CaptureMap,
-                   krate: &ast::Crate) {
+                   method_map: typeck::MethodMap,
+                   moved_variables_set: &NodeSet,
+                   krate: &ast::Crate)
+                   -> root_map {
     let mut bccx = BorrowckCtxt {
         tcx: tcx,
-        moves_map: moves_map,
-        capture_map: capture_map,
+        method_map: method_map,
+        moved_variables_set: moved_variables_set,
+        root_map: root_map(),
         stats: @BorrowStats {
             loaned_paths_same: Cell::new(0),
             loaned_paths_imm: Cell::new(0),
@@ -165,8 +166,9 @@ fn borrowck_fn(this: &mut BorrowckCtxt,
 
 pub struct BorrowckCtxt<'a> {
     tcx: &'a ty::ctxt,
-    moves_map: &'a NodeSet,
-    capture_map: &'a moves::CaptureMap,
+    method_map: typeck::MethodMap,
+    moved_variables_set: &'a NodeSet,
+    root_map: root_map,
 
     // Statistics:
     stats: @BorrowStats
@@ -370,13 +372,9 @@ impl<'a> BorrowckCtxt<'a> {
         self.tcx.region_maps.is_subscope_of(r_sub, r_sup)
     }
 
-    pub fn is_move(&self, id: ast::NodeId) -> bool {
-        self.moves_map.contains(&id)
-    }
-
-    pub fn mc(&self) -> mc::MemCategorizationContext<&'a ty::ctxt> {
+    pub fn mc(&self) -> mc::MemCategorizationContext<ty::TcxTyper<'a>> {
         mc::MemCategorizationContext {
-            typer: self.tcx,
+            typer: ty::TcxTyper::new(self.tcx, self.method_map)
         }
     }
 
@@ -832,34 +830,3 @@ impl Repr for LoanPath {
     }
 }
 
-///////////////////////////////////////////////////////////////////////////
-
-impl<'a> mc::Typer for &'a ty::ctxt {
-    fn tcx<'a>(&'a self) -> &'a ty::ctxt {
-        *self
-    }
-
-    fn node_ty(&self, id: ast::NodeId) -> mc::McResult<ty::t> {
-        Ok(ty::node_id_to_type(*self, id))
-    }
-
-    fn node_method_ty(&self, method_call: typeck::MethodCall) -> Option<ty::t> {
-        self.method_map.borrow().find(&method_call).map(|method| method.ty)
-    }
-
-    fn adjustments<'a>(&'a self) -> &'a RefCell<NodeMap<ty::AutoAdjustment>> {
-        &self.adjustments
-    }
-
-    fn is_method_call(&self, id: ast::NodeId) -> bool {
-        self.method_map.borrow().contains_key(&typeck::MethodCall::expr(id))
-    }
-
-    fn temporary_scope(&self, id: ast::NodeId) -> Option<ast::NodeId> {
-        self.region_maps.temporary_scope(id)
-    }
-
-    fn upvar_borrow(&self, id: ty::UpvarId) -> ty::UpvarBorrow {
-        self.upvar_borrow_map.borrow().get_copy(&id)
-    }
-}

@@ -17,7 +17,6 @@ use middle::borrowck::*;
 use middle::borrowck::gather_loans::move_error::{MoveError, MoveErrorCollector};
 use middle::borrowck::gather_loans::move_error::MoveSpanAndPath;
 use middle::borrowck::move_data::*;
-use middle::moves;
 use middle::ty;
 use syntax::ast;
 use syntax::codemap::Span;
@@ -74,29 +73,6 @@ pub fn gather_move_from_pat(bccx: &BorrowckCtxt,
         span_path_opt: pat_span_path_opt,
     };
     gather_move(bccx, move_data, move_error_collector, move_info);
-}
-
-pub fn gather_captures(bccx: &BorrowckCtxt,
-                       move_data: &MoveData,
-                       move_error_collector: &MoveErrorCollector,
-                       closure_expr: &ast::Expr) {
-    for captured_var in bccx.capture_map.get(&closure_expr.id).iter() {
-        match captured_var.mode {
-            moves::CapMove => {
-                let cmt = bccx.cat_captured_var(closure_expr.id,
-                                                closure_expr.span,
-                                                captured_var.def);
-                let move_info = GatherMoveInfo {
-                    id: closure_expr.id,
-                    kind: Captured,
-                    cmt: cmt,
-                    span_path_opt: None
-                };
-                gather_move(bccx, move_data, move_error_collector, move_info);
-            }
-            moves::CapCopy | moves::CapRef => {}
-        }
-    }
 }
 
 fn gather_move(bccx: &BorrowckCtxt,

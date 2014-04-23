@@ -14,7 +14,6 @@ use back::link::mangle_internal_name_by_path_and_seq;
 use driver::session::FullDebugInfo;
 use lib::llvm::ValueRef;
 use middle::lang_items::ClosureExchangeMallocFnLangItem;
-use middle::moves;
 use middle::trans::base::*;
 use middle::trans::build::*;
 use middle::trans::common::*;
@@ -98,17 +97,6 @@ use syntax::ast_util;
 //
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-pub enum EnvAction {
-    /// Copy the value from this llvm ValueRef into the environment.
-    EnvCopy,
-
-    /// Move the value from this llvm ValueRef into the environment.
-    EnvMove,
-
-    /// Access by reference (used for stack closures).
-    EnvRef
-}
-
 pub struct EnvValue {
     action: EnvAction,
     datum: Datum<Lvalue>
@@ -117,9 +105,8 @@ pub struct EnvValue {
 impl EnvAction {
     pub fn to_str(&self) -> ~str {
         match *self {
-            EnvCopy => "EnvCopy".to_owned(),
-            EnvMove => "EnvMove".to_owned(),
-            EnvRef => "EnvRef".to_owned()
+            EnvByValue => "EnvByValue".to_owned(),
+            EnvByRef => "EnvRef".to_owned()
         }
     }
 }
@@ -140,8 +127,8 @@ pub fn mk_closure_tys(tcx: &ty::ctxt,
     // converted to ptrs.
     let bound_tys = bound_values.iter().map(|bv| {
         match bv.action {
-            EnvCopy | EnvMove => bv.datum.ty,
-            EnvRef => ty::mk_mut_ptr(tcx, bv.datum.ty)
+            EnvByValue => bv.datum.ty,
+            EnvByRef => ty::mk_mut_ptr(tcx, bv.datum.ty)
         }
     }).collect();
     let cdata_ty = ty::mk_tup(tcx, bound_tys);
@@ -232,10 +219,10 @@ pub fn store_environment<'a>(
         let bound_data = GEPi(bcx, llbox, [0u, abi::box_field_body, i]);
 
         match bv.action {
-            EnvCopy | EnvMove => {
+            EnvByValue => {
                 bcx = bv.datum.store_to(bcx, bound_data);
             }
-            EnvRef => {
+            EnvByRef => {
                 Store(bcx, bv.datum.to_llref(), bound_data);
             }
         }

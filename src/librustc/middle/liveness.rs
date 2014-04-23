@@ -106,7 +106,6 @@
 use middle::lint::{UnusedVariable, DeadAssignment};
 use middle::pat_util;
 use middle::ty;
-use middle::moves;
 use util::nodemap::NodeMap;
 
 use std::cast::transmute;
@@ -170,9 +169,8 @@ impl<'a> Visitor<()> for IrMaps<'a> {
 }
 
 pub fn check_crate(tcx: &ty::ctxt,
-                   capture_map: &moves::CaptureMap,
                    krate: &Crate) {
-    visit::walk_crate(&mut IrMaps(tcx, capture_map), krate, ());
+    visit::walk_crate(&mut IrMaps(tcx), krate, ());
     tcx.sess.abort_if_errors();
 }
 
@@ -245,7 +243,6 @@ enum VarKind {
 
 struct IrMaps<'a> {
     tcx: &'a ty::ctxt,
-    capture_map: &'a moves::CaptureMap,
 
     num_live_nodes: uint,
     num_vars: uint,
@@ -257,11 +254,9 @@ struct IrMaps<'a> {
 }
 
 fn IrMaps<'a>(tcx: &'a ty::ctxt,
-              capture_map: &'a moves::CaptureMap)
               -> IrMaps<'a> {
     IrMaps {
         tcx: tcx,
-        capture_map: capture_map,
         num_live_nodes: 0,
         num_vars: 0,
         live_node_map: NodeMap::new(),
@@ -361,7 +356,7 @@ fn visit_fn(ir: &mut IrMaps,
     let _i = ::util::common::indenter();
 
     // swap in a new set of IR maps for this function body:
-    let mut fn_maps = IrMaps(ir.tcx, ir.capture_map);
+    let mut fn_maps = IrMaps(ir.tcx);
 
     unsafe {
         debug!("creating fn_maps: {}", transmute::<&IrMaps, *IrMaps>(&fn_maps));
@@ -467,18 +462,19 @@ fn visit_expr(ir: &mut IrMaps, expr: &Expr) {
         // in better error messages than just pointing at the closure
         // construction site.
         let mut call_caps = Vec::new();
-        for cv in ir.capture_map.get(&expr.id).iter() {
-            match moves::moved_variable_node_id_from_def(cv.def) {
+        let fv_mode = freevars::get_capture_mode(expr.id);
+        for fv in freevars::get_freevars(self.ir.tcx, expr.id).iter() {
+            match moves::moved_variable_node_id_from_def(fv.def) {
               Some(rv) => {
-                let cv_ln = ir.add_live_node(FreeVarNode(cv.span));
-                let is_move = match cv.mode {
+                let fv_ln = ir.add_live_node(FreeVarNode(fv.span));
+                let is_move = match fv_mode {
                     // var must be dead afterwards
                     moves::CapMove => true,
 
                     // var can still be used
                     moves::CapCopy | moves::CapRef => false
                 };
-                call_caps.push(CaptureInfo {ln: cv_ln,
+                call_caps.push(CaptureInfo {ln: fv_ln,
                                             is_move: is_move,
                                             var_nid: rv});
               }

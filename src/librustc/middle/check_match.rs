@@ -29,7 +29,6 @@ use syntax::visit::{Visitor, FnKind};
 
 struct MatchCheckCtxt<'a> {
     tcx: &'a ty::ctxt,
-    moves_map: &'a NodeSet
 }
 
 impl<'a> Visitor<()> for MatchCheckCtxt<'a> {
@@ -45,11 +44,9 @@ impl<'a> Visitor<()> for MatchCheckCtxt<'a> {
 }
 
 pub fn check_crate(tcx: &ty::ctxt,
-                   moves_map: &NodeSet,
                    krate: &Crate) {
     let mut cx = MatchCheckCtxt {
         tcx: tcx,
-        moves_map: moves_map
     };
 
     visit::walk_crate(&mut cx, krate, ());
@@ -931,12 +928,11 @@ fn is_refutable(cx: &MatchCheckCtxt, pat: &Pat) -> bool {
 // Legality of move bindings checking
 
 fn check_legality_of_move_bindings(cx: &MatchCheckCtxt,
-                                       has_guard: bool,
-                                       pats: &[@Pat]) {
+                                   has_guard: bool,
+                                   pats: &[@Pat]) {
     let tcx = cx.tcx;
     let def_map = &tcx.def_map;
     let mut by_ref_span = None;
-    let mut any_by_move = false;
     for pat in pats.iter() {
         pat_bindings(def_map, *pat, |bm, id, span, _path| {
             match bm {
@@ -944,9 +940,6 @@ fn check_legality_of_move_bindings(cx: &MatchCheckCtxt,
                     by_ref_span = Some(span);
                 }
                 BindByValue(_) => {
-                    if cx.moves_map.contains(&id) {
-                        any_by_move = true;
-                    }
                 }
             }
         })
@@ -975,13 +968,13 @@ fn check_legality_of_move_bindings(cx: &MatchCheckCtxt,
         }
     };
 
-    if !any_by_move { return; } // pointless micro-optimization
     for pat in pats.iter() {
         walk_pat(*pat, |p| {
             if pat_is_binding(def_map, p) {
                 match p.node {
                     PatIdent(_, _, sub) => {
-                        if cx.moves_map.contains(&p.id) {
+                        let pat_ty = ty::node_id_to_type(tcx, p.id);
+                        if ty::type_moves_by_default(tcx, pat_ty) {
                             check_move(p, sub);
                         }
                     }

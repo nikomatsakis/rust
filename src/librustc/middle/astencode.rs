@@ -24,7 +24,7 @@ use metadata::tydecode::{DefIdSource, NominalType, TypeWithId, TypeParameter,
                          RegionParameter};
 use metadata::tyencode;
 use middle::typeck::{MethodCall, MethodCallee, MethodOrigin};
-use middle::{ty, typeck, moves};
+use middle::{ty, typeck};
 use middle;
 use util::ppaux::ty_to_str;
 
@@ -51,11 +51,6 @@ use writer = serialize::ebml::writer;
 
 #[cfg(test)] use syntax::parse;
 #[cfg(test)] use syntax::print::pprust;
-
-// Auxiliary maps of things to be encoded
-pub struct Maps {
-    pub capture_map: RefCell<middle::moves::CaptureMap>,
-}
 
 struct DecodeContext<'a> {
     cdata: &'a cstore::crate_metadata,
@@ -1096,17 +1091,6 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
             })
         })
     }
-
-    for &cap_vars in maps.capture_map.borrow().find(&id).iter() {
-        ebml_w.tag(c::tag_table_capture_map, |ebml_w| {
-            ebml_w.id(id);
-            ebml_w.tag(c::tag_table_val, |ebml_w| {
-                ebml_w.emit_from_vec(cap_vars.as_slice(), |ebml_w, cap_var| {
-                    cap_var.encode(ebml_w)
-                });
-            })
-        })
-    }
 }
 
 trait doc_decoder_helpers {
@@ -1404,15 +1388,6 @@ fn decode_side_tables(xcx: &ExtendedDecodeContext,
                     c::tag_table_adjustments => {
                         let adj: ty::AutoAdjustment = val_dsr.read_auto_adjustment(xcx);
                         dcx.tcx.adjustments.borrow_mut().insert(id, adj);
-                    }
-                    c::tag_table_capture_map => {
-                        let cvars =
-                                val_dsr.read_to_vec(
-                                            |val_dsr| Ok(val_dsr.read_capture_var(xcx)))
-                                       .unwrap()
-                                       .move_iter()
-                                       .collect();
-                        dcx.maps.capture_map.borrow_mut().insert(id, Rc::new(cvars));
                     }
                     _ => {
                         xcx.dcx.tcx.sess.bug(

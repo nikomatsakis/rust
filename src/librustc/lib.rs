@@ -86,7 +86,6 @@ pub mod middle {
     pub mod astencode;
     pub mod lang_items;
     pub mod privacy;
-    pub mod moves;
     pub mod entry;
     pub mod effect;
     pub mod reachable;

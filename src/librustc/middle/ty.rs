@@ -13,6 +13,7 @@
 use back::svh::Svh;
 use driver::session::Session;
 use metadata::csearch;
+use mc = middle::mem_categorization;
 use middle::const_eval;
 use middle::lang_items::{ExchangeHeapLangItem, OpaqueStructLangItem};
 use middle::lang_items::{TyDescStructLangItem, TyVisitorTraitLangItem};
@@ -4783,5 +4784,55 @@ impl BorrowKind {
             ImmBorrow => "immutable",
             UniqueImmBorrow => "uniquely immutable",
         }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////
+// TcxTyper
+//
+// An implementation of the `mem_categorization::Typer` interface.
+// Suitable for user *after* type inferencing has completed.
+
+pub struct TcxTyper<'a> {
+    tcx: &'a ty::ctxt,
+    method_map: typeck::MethodMap,
+}
+
+impl<'a> TcxTyper<'a> {
+    fn new(tcx: &'a ty::ctxt, method_map: typeck::MethodMap) -> TcxTyper<'a> {
+        TcxTyper {
+            tcx: tcx,
+            method_map: method_map
+        }
+    }
+}
+
+impl<'a> mc::Typer for TcxTyper<'a> {
+    fn tcx<'a>(&'a self) -> &'a ty::ctxt {
+        self.tcx
+    }
+
+    fn node_ty(&mut self, id: ast::NodeId) -> mc::McResult<ty::t> {
+        Ok(ty::node_id_to_type(self.tcx, id))
+    }
+
+    fn node_method_ty(&self, method_call: typeck::MethodCall) -> Option<ty::t> {
+        self.method_map.borrow().find(&method_call).map(|method| method.ty)
+    }
+
+    fn adjustment(&mut self, id: ast::NodeId) -> Option<@ty::AutoAdjustment> {
+        self.tcx.adjustments.borrow().find_copy(&id)
+    }
+
+    fn is_method_call(&mut self, id: ast::NodeId) -> bool {
+        self.method_map.borrow().contains_key(&typeck::MethodCall::expr(id))
+    }
+
+    fn temporary_scope(&mut self, id: ast::NodeId) -> Option<ast::NodeId> {
+        self.tcx.region_maps.temporary_scope(id)
+    }
+
+    fn upvar_borrow(&mut self, id: ty::UpvarId) -> ty::UpvarBorrow {
+        self.tcx.upvar_borrow_map.borrow().get_copy(&id)
     }
 }

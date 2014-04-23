@@ -1,3 +1,13 @@
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// file at the top-level directory of this distribution and at
+// http://rust-lang.org/COPYRIGHT.
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 /*!
  * A different sort of visitor for walking fn bodies.  Unlike the
  * normal visitor, which just walks the entire body in one shot, the
@@ -13,6 +23,12 @@ use syntax::ast;
 use syntax::ast_util;
 use syntax::codemap::{Span, Spanned};
 use util::ppaux::Repr;
+
+///////////////////////////////////////////////////////////////////////////
+// The Delegate trait
+//
+// This trait defines the callbacks you can expect to receiver when
+// employing the ExprUseVisitor.
 
 #[deriving(Eq)]
 pub enum LoanCause {
@@ -33,6 +49,8 @@ trait Delegate {
     // The value found at `cmt` is either copied or moved, depending
     // on mode.
     fn consume(&mut self,
+               consume_id: ast::NodeId,
+               consume_span: Span,
                cmt: mc::cmt,
                mode: ConsumeMode)
     { }
@@ -40,36 +58,40 @@ trait Delegate {
     // The value found at `borrow` is being borrowed at the point
     // `borrow_id` for the region `loan_region` with kind `bk`.
     fn borrow(&mut self,
-              cmt: mc::cmt,
               borrow_id: ast::NodeId,
+              borrow_span: Span,
+              cmt: mc::cmt,
               loan_region: ty::Region,
               bk: ty::BorrowKind,
               loan_cause: LoanCause)
     { }
 
-    // Like borrow, but as a result of an autoref.
-    fn auto_ref(&mut self,
-                cmt: mc::cmt,
-                expr: @ast::Expr,
-                auto_ref: &ty::AutoRef)
-    { }
-
     // The local variable `id` is declared but not initialized.
-    fn uninit(&mut self,
-              id: ast::NodeId,
-              span: Span)
+    fn decl_without_init(&mut self,
+                         id: ast::NodeId,
+                         span: Span)
     { }
 
     // The path at `cmt` is being assigned to.
     fn mutate(&mut self,
-              cmt: mc::cmt)
+              assignment_id: ast::NodeId,
+              assignment_span: Span,
+              assignee_cmt: mc::cmt)
     { }
 }
 
-pub struct ExprUseVisitor<D,TYPER> {
+///////////////////////////////////////////////////////////////////////////
+// The ExprUseVisitor type
+//
+// This is the code that actually walks the tree. Like
+// mem_categorization, it requires a TYPER, which is a type that
+// supplies types from the tree. A reusable implementation
+// `ty::TcxTyper` is available; that implementation is only suitable
+// for user after type checking is complete.
+
+pub struct ExprUseVisitor<'d,D,TYPER> {
     mc: mc::MemCategorizationContext<TYPER>,
-    method_map: typeck::MethodMap,
-    delegate: D,
+    delegate: &'d mut D,
 }
 
 // If the TYPER results in an error, it's because the type check
@@ -85,7 +107,36 @@ macro_rules! ignore_err(
     )
 )
 
-impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
+impl<'d,D:Delegate,TYPER:mc::Typer> ExprUseVisitor<'d,D,TYPER> {
+    pub fn new(delegate: &'d mut D, typer: TYPER) -> ExprUseVisitor<D,TYPER> {
+        ExprUseVisitor { mc: mc::MemCategorizationContext { typer: typer },
+                         delegate: delegate }
+    }
+
+    pub fn walk_fn(&mut self,
+                   decl: &ast::FnDecl,
+                   body: &Block) {
+        self.walk_arg_patterns(decl, body);
+        self.walk_block(body);
+    }
+
+    fn walk_arg_patterns(&mut self,
+                         decl: &ast::FnDecl,
+                         body: &Block) {
+        let mut mc = self.bccx.mc();
+        for arg in decl.inputs.iter() {
+            let arg_ty = ty::node_id_to_type(self.tcx(), arg.pat.id);
+
+            let arg_cmt = mc.cat_rvalue(
+                arg.id,
+                arg.pat.span,
+                ty::ReScope(body.id), // Args live only as long as the fn body.
+                arg_ty);
+
+            self.walk_pat(arg_cmt, arg.pat, None);
+        }
+    }
+
     fn tcx<'a>(&'a self) -> &'a ty::ctxt {
         self.mc.typer.tcx()
     }
@@ -106,9 +157,12 @@ impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
         }
     }
 
-    fn delegate_consume(&mut self, cmt: mc::cmt) {
+    fn delegate_consume(&mut self,
+                        consume_id: ast::NodeId,
+                        consume_span: Span,
+                        cmt: mc::cmt) {
         let mode = copy_or_move(self.tcx(), cmt.ty);
-        self.delegate.consume(cmt, mode);
+        self.delegate.consume(consume_id, consume_span, cmt, mode);
     }
 
     fn consume_exprs(&mut self, exprs: &Vec<@ast::Expr>) {
@@ -119,7 +173,7 @@ impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
 
     fn consume_expr(&mut self, expr: @ast::Expr) {
         let cmt = ignore_err!(self.mc.cat_expr(expr));
-        self.delegate_consume(cmt);
+        self.delegate_consume(expr.id, expr.span, cmt);
 
         match expr.node {
             ast::ExprParen(subexpr) => {
@@ -132,9 +186,9 @@ impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
         }
     }
 
-    fn mutate_expr(&mut self, expr: @ast::Expr) {
+    fn mutate_expr(&mut self, assignment_expr: @ast::Expr, expr: @ast::Expr) {
         let cmt = ignore_err!(self.mc.cat_expr(expr));
-        self.delegate.mutate(cmt);
+        self.delegate.mutate(assignment_expr.id, assignment_expr.span, cmt);
         self.walk_expr(expr);
     }
 
@@ -144,7 +198,7 @@ impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
                    bk: ty::BorrowKind,
                    cause: LoanCause) {
         let cmt = ignore_err!(self.mc.cat_expr(expr));
-        self.delegate.borrow(cmt, expr.id, r, bk, cause);
+        self.delegate.borrow(expr.id, expr.span, cmt, r, bk, cause);
 
         // Note: Unlike consume, we can ignore ExprParen. cat_expr
         // already skips over them, and walk will uncover any
@@ -157,7 +211,7 @@ impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
     }
 
     fn walk_expr(&mut self, expr: @ast::Expr) {
-        self.adjust(expr);
+        self.walk_adjustment(expr);
 
         match expr.node {
             ast::ExprParen(subexpr) => {
@@ -233,7 +287,16 @@ impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
                 }
             }
 
-            ast::ExprInlineAsm(..) |
+            ast::ExprInlineAsm(ref ia) => {
+                for &(_, input) in ia.inputs.iter() {
+                    this.consume_expr(input);
+                }
+
+                for &(_, output) in ia.outputs.iter() {
+                    this.mutate_expr(expr, outputs);
+                }
+            }
+
             ast::ExprBreak(..) |
             ast::ExprAgain(..) |
             ast::ExprLit(..) => {}
@@ -273,7 +336,7 @@ impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
             }
 
             ast::ExprAssign(lhs, rhs) => {
-                self.mutate_expr(lhs);
+                self.mutate_expr(expr, lhs);
                 self.consume_expr(rhs);
             }
 
@@ -286,7 +349,7 @@ impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
                 //
                 // if !self.walk_overloaded_operator(expr, [lhs, rhs])
                 // {
-                self.consume_expr(lhs);
+                self.mutate_expr(expr, lhs);
                 self.consume_expr(rhs);
                 // }
             }
@@ -358,7 +421,7 @@ impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
                 // Variable declarations with
                 // initializers are considered
                 // "assigns", which is handled by
-                // `gather_pat`:
+                // `walk_pat`:
                 let init_cmt = ignore_err!(self.mc.cat_expr(expr));
                 self.walk_pat(init_cmt, local.pat);
             }
@@ -418,7 +481,7 @@ impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
                                                   with_cmt,
                                                   with_field.ident,
                                                   with_field.mt.ty);
-                self.delegate_consume(cmt_field);
+                self.delegate_consume(with_expr.id, with_expr.span, cmt_field);
             }
         }
 
@@ -434,8 +497,8 @@ impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
     // Invoke the appropriate delegate calls for anything that gets
     // consumed or borrowed as part of the automatic adjustment
     // process.
-    fn adjust(&mut self, expr: @ast::Expr) {
-        match self.tcx().adjustments.borrow().find_copy(&expr.id) {
+    fn walk_adjustment(&mut self, expr: @ast::Expr) {
+        match self.mc.typer.adjustment(expr.id) {
             None => { }
             Some(adjustment) => {
                 match *adjustment {
@@ -445,41 +508,112 @@ impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
                         // input and stores it into the resulting rvalue.
                         let cmt_unadjusted =
                             ignore_err!(self.mc.cat_expr_unadjusted(expr));
-                        self.delegate_consume(cmt_unadjusted);
+                        self.delegate_consume(expr.id, expr.span, cmt_unadjusted);
                     }
                     ty::AutoDerefRef(ty::AutoDerefRef {
-                        autoref: None, ..
-                    }) => {
-                        // Just adding autoderefs doesn't do anything but
-                        // produce a new, derived lvalue.
-                    }
-                    ty::AutoDerefRef(ty::AutoDerefRef {
-                        autoref: Some(ref auto_ref),
+                        autoref: opt_autoref,
                         autoderefs: n
                     }) => {
-                        // Adding an autoref on the other hand creates
-                        // a borrow.
-                        let cmt_derefd =
-                            ignore_err!(self.mc.cat_expr_autoderefd(expr, n));
-                        self.delegate.auto_ref(cmt_derefd, expr, auto_ref);
+                        self.walk_autoderefs(expr, n);
+
+                        match opt_autoref {
+                            None => { }
+                            Some(r) => {
+                                self.walk_auto_ref(expr, r, n);
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
+    fn walk_autoderefs(&mut self,
+                       expr: @ast::Expr,
+                       autoderefs: uint) {
+        /*!
+         * Autoderefs for overloaded Deref calls in fact reference
+         * their receiver. That is, if we have `(*x)` where `x` is of
+         * type `Rc<T>`, then this in fact is equivalent to
+         * `x.deref()`. Since `deref()` is declared with `&self`, this
+         * is an autoref of `x`.
+         */
+
+        for i in range(0, autoderefs) {
+            let deref_id = MethodCall::autoderef(expr.id, i as u32);
+            match self.mc.typer.node_method_ty(deref_id) {
+                None => {}
+                Some(method_ty) => {
+                    let cmt = ignore_err!(self.mc.cat_expr_autoderefd(expr, i));
+                    let self_ty = *ty::ty_fn_args(method_ty).get(0);
+                    let (m, r) = match ty::get(self_ty).sty {
+                        ty::ty_rptr(r, ref m) => (m.mutbl, r),
+                        _ => self.tcx().sess.span_bug(expr.span,
+                                format!("bad overloaded deref type {}",
+                                    method_ty.repr(self.tcx())))
+                    };
+                    let bk = ty::BorrowKind::from_mutbl(m);
+                    self.delegate.borrow(expr.id, expr.span, cmt,
+                                         r, bk, AutoRef);
+                }
+            }
+        }
+    }
+
+    fn walk_autoref(&mut self,
+                    expr: @ast::Expr,
+                    r: &ty::AutoRef,
+                    autoderefs: uint) {
+        let cmt_derefd = ignore_err!(
+            self.mc.cat_expr_autoderefd(expr, autoderefs));
+
+        match *autoref {
+            ty::AutoPtr(r, m) => {
+                self.delegate.borrow(expr.id,
+                                     expr.span,
+                                     cmt,
+                                     ty::BorrowKind::from_mutbl(m),
+                                     r,
+                                     AutoRef)
+            }
+            ty::AutoBorrowVec(r, m) | ty::AutoBorrowVecRef(r, m) => {
+                let cmt_index = mc.cat_index(expr, cmt, autoderefs+1);
+                self.delegate.borrow(expr.id,
+                                     expr.span,
+                                     cmt_index,
+                                     ty::BorrowKind::from_mutbl(m),
+                                     r,
+                                     AutoRef)
+            }
+            ty::AutoBorrowObj(r, m) => {
+                let cmt_deref = mc.cat_deref_obj(expr, cmt);
+                self.delegate.borrow(expr.id,
+                                     expr.span,
+                                     cmt_deref,
+                                     ty::BorrowKind::from_mutbl(m),
+                                     r,
+                                     AutoRef)
+            }
+            ty::AutoUnsafe(_) => {}
+        }
+    }
+
     fn walk_overloaded_operator(&mut self,
                                 expr: @ast::Expr,
+                                receiver: @ast::Expr,
                                 args: &[@ast::Expr])
                                 -> bool
     {
-        let method_call = typeck::MethodCall::expr(expr.id);
-        if !self.method_map.borrow().contains_key(&method_call) {
+        if !self.mc.typer.is_method_call(expr.id) {
             return false;
         }
 
-        // For overloaded operators, we always autoref the results
-        // for the duration of the call itself.
+        self.walk_expr(receiver);
+
+        // Arguments (but not receivers) to overloaded operator
+        // methods are implicitly autoref'd which sadly does not use
+        // adjustments, so we must hardcode the borrow here.
+
         let r = ty::ReScope(expr.id);
         let bk = ty::ImmBorrow;
         let cause = OverloadedOperator(expr);
@@ -507,15 +641,28 @@ impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
         let def_map = self.mc.typer.tcx().def_map;
         ignore_err!(self.mc.cat_pattern(discr_cmt, pat, |mc, pat_cmt, pat| {
             if pat_util::pat_is_binding(def_map, pat) {
+                let tcx = mc.typer.tcx();
+
+                // pat_ty: the type of the binding being produced.
+                let pat_ty = ty::node_id_to_type(tcx, pat.id);
+
+                // Each match binding is effectively an assignment to the
+                // binding being produced.
+                {
+                    let def = def_map.borrow().get_copy(&pat.id);
+                    let binding_cmt = mc.cat_def(pat.id, pat.span, pat_ty, def);
+                    self.delegate.mutate(pat.id, pat.span, binding_cmt);
+                }
+
+                // It is also a borrow or copy/move of the value being matched.
                 match pat.node {
                     ast::PatIdent(ast::BindByRef(m), _, _) => {
                         let (r, bk) = {
-                            let tcx = mc.typer.tcx();
-                            let pat_ty = ty::node_id_to_type(tcx, pat.id);
                             (ty::ty_region(tcx, pat.span, pat_ty),
                              ty::BorrowKind::from_mutbl(m))
                         };
-                        delegate.borrow(pat_cmt, pat.id, r, bk, RefBinding(pat));
+                        delegate.borrow(pat.id, pat.span, pat_cmt,
+                                        r, bk, RefBinding(pat));
                     }
                     ast::PatIdent(ast::BindByValue(_), _, _) => {
                         let mode = copy_or_move(mc.typer.tcx(), pat_cmt.ty);
@@ -534,13 +681,12 @@ impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
     fn walk_captures(&mut self, closure_expr: @ast::Expr) {
         debug!("walk_captures({})", closure_expr.repr(self.tcx()));
 
-        let fn_ty = ty::node_id_to_type(self.tcx(), closure_expr.id);
         let freevars = freevars::get_freevars(self.tcx(), closure_expr.id);
-        match ty::ty_closure_store(fn_ty) {
-            ty::RegionTraitStore(..) => {
+        match freevars::get_capture_mode(self.tcx(), closure_expr.id) {
+            freevars::CaptureByRef => {
                 self.walk_by_ref_captures(closure_expr, freevars);
             }
-            ty::UniqTraitStore => {
+            freevars::CaptureByValue => {
                 self.walk_by_value_captures(closure_expr, freevars);
             }
         }
@@ -562,8 +708,9 @@ impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
             let upvar_borrow = self.tcx().upvar_borrow_map.borrow()
                                    .get_copy(&upvar_id);
 
-            self.delegate.borrow(cmt_var,
-                                 closure_expr.id,
+            self.delegate.borrow(closure_expr.id,
+                                 freevar.span,
+                                 cmt_var,
                                  upvar_borrow.region,
                                  upvar_borrow.kind,
                                  ClosureCapture(freevar.span));
@@ -578,7 +725,7 @@ impl<D:Delegate,TYPER:mc::Typer> ExprUseVisitor<D,TYPER> {
             let cmt_var = ignore_err!(self.cat_captured_var(closure_expr.id,
                                                             closure_expr.span,
                                                             freevar.def));
-            self.delegate_consume(cmt_var);
+            self.delegate_consume(closure_expr.id, freevar.span, cmt_var);
         }
     }
 
