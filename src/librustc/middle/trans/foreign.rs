@@ -13,6 +13,7 @@ use back::{link};
 use llvm::{ValueRef, CallConv, Linkage, get_param};
 use llvm;
 use middle::weak_lang_items;
+use middle::subst::ItemSubsts;
 use middle::trans::base::push_ctxt;
 use middle::trans::base;
 use middle::trans::build::*;
@@ -601,7 +602,7 @@ pub fn trans_rust_fn_with_foreign_abi(ccx: &CrateContext,
 
         let llfn = base::decl_internal_rust_fn(ccx, t, ps.as_slice());
         base::set_llvm_fn_attrs(attrs, llfn);
-        base::trans_fn(ccx, decl, body, llfn, &param_substs::empty(), id, [],
+        base::trans_fn(ccx, decl, body, llfn, &ItemSubsts::empty(), id, [],
                        TranslateItems);
         llfn
     }

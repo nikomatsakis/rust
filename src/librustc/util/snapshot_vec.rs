@@ -86,6 +86,8 @@ impl<T,U,D:SnapshotVecDelegate<T,U>> SnapshotVec<T,U,D> {
         let len = self.values.len();
         self.values.push(elem);
 
+        debug!("push(len={})", len);
+
         if self.in_snapshot() {
             self.undo_log.push(NewElem(len));
         }
@@ -122,6 +124,7 @@ impl<T,U,D:SnapshotVecDelegate<T,U>> SnapshotVec<T,U,D> {
 
     pub fn start_snapshot(&mut self) -> Snapshot {
         let length = self.undo_log.len();
+        debug!("start_snapshot: length={}", length);
         self.undo_log.push(OpenSnapshot);
         Snapshot { length: length,
                    marker: marker::NoCopy }
@@ -157,8 +160,10 @@ impl<T,U,D:SnapshotVecDelegate<T,U>> SnapshotVec<T,U,D> {
                 }
 
                 NewElem(i) => {
-                    assert!(self.values.len() == i);
+                    debug!("rollback newelem {} ({})",
+                           i, self.values.len());
                     self.values.pop();
+                    assert!(self.values.len() == i);
                 }
 
                 SetElem(i, v) => {

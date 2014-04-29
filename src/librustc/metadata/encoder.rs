@@ -128,7 +128,7 @@ fn encode_trait_ref(rbml_w: &mut Encoder,
 
 fn encode_impl_vtables(rbml_w: &mut Encoder,
                        ecx: &EncodeContext,
-                       vtables: &typeck::vtable_res) {
+                       vtables: &typeck::VtableResult) {
     rbml_w.start_tag(tag_item_impl_vtables);
     astencode::encode_vtable_res(ecx, rbml_w, vtables);
     rbml_w.end_tag();
@@ -406,7 +406,7 @@ fn encode_reexported_static_base_methods(ecx: &EncodeContext,
     let impl_methods = ecx.tcx.impl_methods.borrow();
     match ecx.tcx.inherent_impls.borrow().find(&exp.def_id) {
         Some(implementations) => {
-            for base_impl_did in implementations.borrow().iter() {
+            for base_impl_did in implementations.iter() {
                 for &method_did in impl_methods.get(base_impl_did).iter() {
                     let m = ty::method(ecx.tcx, method_did);
                     if m.explicit_self == ty::StaticExplicitSelfCategory {
@@ -874,7 +874,7 @@ fn encode_inherent_implementations(ecx: &EncodeContext,
     match ecx.tcx.inherent_impls.borrow().find(&def_id) {
         None => {}
         Some(implementations) => {
-            for &impl_def_id in implementations.borrow().iter() {
+            for &impl_def_id in implementations.iter() {
                 rbml_w.start_tag(tag_items_data_item_inherent_impl);
                 encode_def_id(rbml_w, impl_def_id);
                 rbml_w.end_tag();
@@ -1127,7 +1127,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
                 tcx, ast_trait_ref.ref_id);
             encode_trait_ref(rbml_w, ecx, &*trait_ref, tag_item_trait_ref);
             let impl_vtables = ty::lookup_impl_vtables(tcx, def_id);
-            encode_impl_vtables(rbml_w, ecx, &impl_vtables);
+            encode_impl_vtables(rbml_w, ecx, &*impl_vtables);
         }
         encode_path(rbml_w, path.clone());
         encode_stability(rbml_w, stab);

@@ -10,71 +10,19 @@
 
 // Type substitutions.
 
+use middle::traits;
 use middle::ty;
 use middle::ty_fold;
 use middle::ty_fold::{TypeFoldable, TypeFolder};
 use util::ppaux::Repr;
 
+use std::iter::{Enumerate};
 use std::fmt;
 use std::mem;
 use std::raw;
 use std::slice::{Items, MutItems};
 use std::vec::Vec;
 use syntax::codemap::{Span, DUMMY_SP};
-
-///////////////////////////////////////////////////////////////////////////
-// HomogeneousTuple3 trait
-//
-// This could be moved into standard library at some point.
-
-trait HomogeneousTuple3<T> {
-    fn len(&self) -> uint;
-    fn as_slice<'a>(&'a self) -> &'a [T];
-    fn as_mut_slice<'a>(&'a mut self) -> &'a mut [T];
-    fn iter<'a>(&'a self) -> Items<'a, T>;
-    fn mut_iter<'a>(&'a mut self) -> MutItems<'a, T>;
-    fn get<'a>(&'a self, index: uint) -> Option<&'a T>;
-    fn get_mut<'a>(&'a mut self, index: uint) -> Option<&'a mut T>;
-}
-
-impl<T> HomogeneousTuple3<T> for (T, T, T) {
-    fn len(&self) -> uint {
-        3
-    }
-
-    fn as_slice<'a>(&'a self) -> &'a [T] {
-        unsafe {
-            let ptr: *const T = mem::transmute(self);
-            let slice = raw::Slice { data: ptr, len: 3 };
-            mem::transmute(slice)
-        }
-    }
-
-    fn as_mut_slice<'a>(&'a mut self) -> &'a mut [T] {
-        unsafe {
-            let ptr: *const T = mem::transmute(self);
-            let slice = raw::Slice { data: ptr, len: 3 };
-            mem::transmute(slice)
-        }
-    }
-
-    fn iter<'a>(&'a self) -> Items<'a, T> {
-        let slice: &'a [T] = self.as_slice();
-        slice.iter()
-    }
-
-    fn mut_iter<'a>(&'a mut self) -> MutItems<'a, T> {
-        self.as_mut_slice().mut_iter()
-    }
-
-    fn get<'a>(&'a self, index: uint) -> Option<&'a T> {
-        self.as_slice().get(index)
-    }
-
-    fn get_mut<'a>(&'a mut self, index: uint) -> Option<&'a mut T> {
-        Some(&mut self.as_mut_slice()[index]) // wrong: fallible
-    }
-}
 
 ///////////////////////////////////////////////////////////////////////////
 
@@ -217,6 +165,36 @@ impl RegionSubsts {
             ErasedRegions => ErasedRegions,
             NonerasedRegions(r) => NonerasedRegions(op(r, a))
         }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+/**
+ * An extension to Substs that also includes the vtables corresponding
+ * to each generic bound. These are frequently *created* before trans,
+ * but we never do any actual substitution based on them until
+ * during trans. Therefore, the corresponding trait is defined within
+ * the trans module (see `trans/item_subst.rs`).
+ */
+#[deriving(Clone)]
+pub struct ItemSubsts {
+    pub substs: Substs,
+    pub origins: traits::VtableOrigins,
+}
+
+impl ItemSubsts {
+    pub fn new(s: Substs, o: traits::VtableOrigins) -> ItemSubsts {
+        ItemSubsts { substs: s, origins: o }
+    }
+
+    pub fn empty() -> ItemSubsts {
+        ItemSubsts { substs: Substs::empty(),
+                     origins: VecPerParamSpace::empty(), }
+    }
+
+    pub fn is_noop(&self) -> bool {
+        self.substs.is_noop()
     }
 }
 
@@ -426,6 +404,12 @@ impl<T> VecPerParamSpace<T> {
         &mut self.get_mut_slice(space)[index]
     }
 
+    pub fn enumerated_iter<'a>(&'a self) -> EnumeratedItems<'a,T> {
+        EnumeratedItems { type_limit: self.type_limit,
+                          self_limit: self.self_limit,
+                          iter: self.content.iter().enumerate() }
+    }
+
     pub fn iter<'a>(&'a self) -> Items<'a,T> {
         self.content.iter()
     }
@@ -455,6 +439,21 @@ impl<T> VecPerParamSpace<T> {
             self.get_slice(TypeSpace).iter().map(|p| pred(p)).collect(),
             self.get_slice(SelfSpace).iter().map(|p| pred(p)).collect(),
             self.get_slice(FnSpace).iter().map(|p| pred(p)).collect())
+    }
+
+    pub fn try_map<U,E>(&self, pred: |&T| -> Result<U,E>) -> Result<VecPerParamSpace<U>,E> {
+        let mut result = VecPerParamSpace::empty();
+        for (space, _, e) in self.enumerated_iter() {
+            result.push(space, try!(pred(e)));
+        }
+        return Ok(result);
+    }
+
+    pub fn map_move<U>(self, pred: |T| -> U) -> VecPerParamSpace<U> {
+        let (t, s, f) = self.split();
+        VecPerParamSpace::new(t.move_iter().map(|p| pred(p)).collect(),
+                              s.move_iter().map(|p| pred(p)).collect(),
+                              f.move_iter().map(|p| pred(p)).collect())
     }
 
     pub fn map_rev<U>(&self, pred: |&T| -> U) -> VecPerParamSpace<U> {
@@ -508,6 +507,26 @@ impl<T> VecPerParamSpace<T> {
         assert!(self.is_empty_in(space));
         self.replace(space, vec);
         self
+    }
+}
+
+pub struct EnumeratedItems<'a, T> {
+    type_limit: uint,
+    self_limit: uint,
+    iter: Enumerate<Items<'a,T>>
+}
+
+impl<'a,T> Iterator<(ParamSpace, uint, &'a T)> for EnumeratedItems<'a, T> {
+    fn next(&mut self) -> Option<(ParamSpace, uint, &'a T)> {
+        self.iter.next().map(|(i, v)| {
+            if i >= self.self_limit {
+                (FnSpace, i - self.self_limit, v)
+            } else if i >= self.type_limit {
+                (SelfSpace, i - self.type_limit, v)
+            } else {
+                (TypeSpace, i, v)
+            }
+        })
     }
 }
 
@@ -643,5 +662,60 @@ impl<'a> TypeFolder for SubstFolder<'a> {
                 }
             }
         }
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+// HomogeneousTuple3 trait
+//
+// This could be moved into standard library at some point.
+
+trait HomogeneousTuple3<T> {
+    fn len(&self) -> uint;
+    fn as_slice<'a>(&'a self) -> &'a [T];
+    fn as_mut_slice<'a>(&'a mut self) -> &'a mut [T];
+    fn iter<'a>(&'a self) -> Items<'a, T>;
+    fn mut_iter<'a>(&'a mut self) -> MutItems<'a, T>;
+    fn get<'a>(&'a self, index: uint) -> Option<&'a T>;
+    fn get_mut<'a>(&'a mut self, index: uint) -> Option<&'a mut T>;
+}
+
+impl<T> HomogeneousTuple3<T> for (T, T, T) {
+    fn len(&self) -> uint {
+        3
+    }
+
+    fn as_slice<'a>(&'a self) -> &'a [T] {
+        unsafe {
+            let ptr: *const T = mem::transmute(self);
+            let slice = raw::Slice { data: ptr, len: 3 };
+            mem::transmute(slice)
+        }
+    }
+
+    fn as_mut_slice<'a>(&'a mut self) -> &'a mut [T] {
+        unsafe {
+            let ptr: *const T = mem::transmute(self);
+            let slice = raw::Slice { data: ptr, len: 3 };
+            mem::transmute(slice)
+        }
+    }
+
+    fn iter<'a>(&'a self) -> Items<'a, T> {
+        let slice: &'a [T] = self.as_slice();
+        slice.iter()
+    }
+
+    fn mut_iter<'a>(&'a mut self) -> MutItems<'a, T> {
+        self.as_mut_slice().mut_iter()
+    }
+
+    fn get<'a>(&'a self, index: uint) -> Option<&'a T> {
+        self.as_slice().get(index)
+    }
+
+    fn get_mut<'a>(&'a mut self, index: uint) -> Option<&'a mut T> {
+        Some(&mut self.as_mut_slice()[index]) // wrong: fallible
     }
 }

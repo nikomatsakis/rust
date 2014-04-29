@@ -25,7 +25,7 @@ use llvm;
 use metadata::csearch;
 use middle::def;
 use middle::subst;
-use middle::subst::{Subst, VecPerParamSpace};
+use middle::subst::{Subst, ItemSubsts, VecPerParamSpace};
 use middle::trans::adt;
 use middle::trans::base;
 use middle::trans::base::*;
@@ -41,6 +41,7 @@ use middle::trans::datum::{Datum, KindOps};
 use middle::trans::expr;
 use middle::trans::glue;
 use middle::trans::inline;
+use middle::trans::item_subst::ItemSubst;
 use middle::trans::foreign;
 use middle::trans::intrinsic;
 use middle::trans::meth;
@@ -247,7 +248,7 @@ fn trans_fn_ref_with_vtables_to_callee<'a>(bcx: &'a Block<'a>,
                                            def_id: ast::DefId,
                                            ref_id: ast::NodeId,
                                            substs: subst::Substs,
-                                           vtables: typeck::vtable_res)
+                                           vtables: typeck::VtableResult)
                                            -> Callee<'a> {
     Callee {
         bcx: bcx,
@@ -262,21 +263,17 @@ fn trans_fn_ref_with_vtables_to_callee<'a>(bcx: &'a Block<'a>,
 fn resolve_default_method_vtables(bcx: &Block,
                                   impl_id: ast::DefId,
                                   substs: &subst::Substs,
-                                  impl_vtables: typeck::vtable_res)
-                                  -> typeck::vtable_res
+                                  impl_vtables: typeck::VtableResult)
+                                  -> typeck::VtableResult
 {
     // Get the vtables that the impl implements the trait at
     let impl_res = ty::lookup_impl_vtables(bcx.tcx(), impl_id);
 
     // Build up a param_substs that we are going to resolve the
     // trait_vtables under.
-    let param_substs = param_substs {
-        substs: (*substs).clone(),
-        vtables: impl_vtables.clone()
-    };
-
-    let mut param_vtables = resolve_vtables_under_param_substs(
-        bcx.tcx(), &param_substs, &impl_res);
+    let param_substs = ItemSubsts::new((*substs).clone(),
+                                       impl_vtables.clone());
+    let mut param_vtables = (*impl_res).item_subst(bcx.tcx(), &param_substs);
 
     // Now we pull any vtables for parameters on the actual method.
     param_vtables.push_all(subst::FnSpace,
@@ -292,7 +289,8 @@ pub fn trans_unboxing_shim(bcx: &Block,
                            method: &ty::Method,
                            method_id: ast::DefId,
                            substs: subst::Substs)
-                           -> ValueRef {
+                           -> ValueRef
+{
     let _icx = push_ctxt("trans_unboxing_shim");
     let ccx = bcx.ccx();
     let tcx = bcx.tcx();
@@ -329,15 +327,15 @@ pub fn trans_unboxing_shim(bcx: &Block,
                                      boxed_function_type,
                                      function_name.as_slice());
 
+    let item_substs = ItemSubsts::empty();
     let block_arena = TypedArena::new();
-    let empty_param_substs = param_substs::empty();
     let return_type = ty::ty_fn_ret(boxed_function_type);
     let fcx = new_fn_ctxt(ccx,
                           llfn,
                           -1,
                           false,
                           return_type,
-                          &empty_param_substs,
+                          &item_substs,
                           None,
                           &block_arena,
                           TranslateItems);
@@ -411,11 +409,11 @@ pub fn trans_unboxing_shim(bcx: &Block,
 }
 
 pub fn trans_fn_ref_with_vtables(
-    bcx: &Block,                 //
-    def_id: ast::DefId,          // def id of fn
-    node: ExprOrMethodCall,      // node id of use of fn; may be zero if N/A
-    substs: subst::Substs,       // values for fn's ty params
-    vtables: typeck::vtable_res) // vtables for the call
+    bcx: &Block,                   //
+    def_id: ast::DefId,            // def id of fn
+    node: ExprOrMethodCall,        // where fn is used; may be zero if N/A
+    substs: subst::Substs,         // values for fn's ty params
+    vtables: typeck::VtableResult) // vtables for the call
     -> ValueRef
 {
     /*!
@@ -460,52 +458,53 @@ pub fn trans_fn_ref_with_vtables(
     // the function.
     let (is_default, def_id, substs, vtables) =
         match ty::provided_source(tcx, def_id) {
-        None => (false, def_id, substs, vtables),
-        Some(source_id) => {
-            // There are two relevant substitutions when compiling
-            // default methods. First, there is the substitution for
-            // the type parameters of the impl we are using and the
-            // method we are calling. This substitution is the substs
-            // argument we already have.
-            // In order to compile a default method, though, we need
-            // to consider another substitution: the substitution for
-            // the type parameters on trait; the impl we are using
-            // implements the trait at some particular type
-            // parameters, and we need to substitute for those first.
-            // So, what we need to do is find this substitution and
-            // compose it with the one we already have.
+            None => (false, def_id, substs, vtables),
+            Some(source_id) => {
+                // There are two relevant substitutions when compiling
+                // default methods. First, there is the substitution for
+                // the type parameters of the impl we are using and the
+                // method we are calling. This substitution is the substs
+                // argument we already have.
+                // In order to compile a default method, though, we need
+                // to consider another substitution: the substitution for
+                // the type parameters on trait; the impl we are using
+                // implements the trait at some particular type
+                // parameters, and we need to substitute for those first.
+                // So, what we need to do is find this substitution and
+                // compose it with the one we already have.
 
-            let impl_id = ty::method(tcx, def_id).container_id();
-            let method = ty::method(tcx, source_id);
-            let trait_ref = ty::impl_trait_ref(tcx, impl_id)
-                .expect("could not find trait_ref for impl with \
-                         default methods");
+                let impl_id = ty::method(tcx, def_id).container_id();
+                let method = ty::method(tcx, source_id);
+                let trait_ref = ty::impl_trait_ref(tcx, impl_id)
+                    .expect("could not find trait_ref for impl with \
+                             default methods");
 
-            // Compute the first substitution
-            let first_subst = make_substs_for_receiver_types(
-                tcx, &*trait_ref, &*method);
+                // Compute the first substitution
+                let first_subst = make_substs_for_receiver_types(
+                    tcx, &*trait_ref, &*method);
 
-            // And compose them
-            let new_substs = first_subst.subst(tcx, &substs);
+                // And compose them
+                let new_substs = first_subst.subst(tcx, &substs);
 
-            debug!("trans_fn_with_vtables - default method: \
-                    substs = {}, trait_subst = {}, \
-                    first_subst = {}, new_subst = {}, \
-                    vtables = {}",
-                   substs.repr(tcx), trait_ref.substs.repr(tcx),
-                   first_subst.repr(tcx), new_substs.repr(tcx),
-                   vtables.repr(tcx));
+                debug!("trans_fn_with_vtables - default method: \
+                        substs = {}, trait_subst = {}, \
+                        first_subst = {}, new_subst = {}, \
+                        vtables = {}",
+                       substs.repr(tcx), trait_ref.substs.repr(tcx),
+                       first_subst.repr(tcx), new_substs.repr(tcx),
+                       vtables.repr(tcx));
 
-            let param_vtables =
-                resolve_default_method_vtables(bcx, impl_id, &substs, vtables);
+                let param_vtables =
+                    resolve_default_method_vtables(bcx, impl_id,
+                                                   &substs, vtables);
 
-            debug!("trans_fn_with_vtables - default method: \
-                    param_vtables = {}",
-                   param_vtables.repr(tcx));
+                debug!("trans_fn_with_vtables - default method: \
+                        param_vtables = {}",
+                       param_vtables.repr(tcx));
 
-            (true, source_id, new_substs, param_vtables)
-        }
-    };
+                (true, source_id, new_substs, param_vtables)
+            }
+        };
 
     // If this is an unboxed closure, redirect to it.
     match closure::get_or_create_declaration_if_unboxed_closure(ccx, def_id) {
@@ -577,7 +576,7 @@ pub fn trans_fn_ref_with_vtables(
     }
 
     // Polytype of the function item (may have type params)
-    let fn_tpt = ty::lookup_item_type(tcx, def_id);
+    let fn_pty = ty::lookup_item_type(tcx, def_id);
 
     // Find the actual function pointer.
     let mut val = {
@@ -586,7 +585,7 @@ pub fn trans_fn_ref_with_vtables(
             get_item_val(ccx, def_id.node)
         } else {
             // External reference.
-            trans_external_path(ccx, def_id, fn_tpt.ty)
+            trans_external_path(ccx, def_id, fn_pty.ty)
         }
     };
 
@@ -613,7 +612,7 @@ pub fn trans_fn_ref_with_vtables(
     // This can occur on either a crate-local or crate-external
     // reference. It also occurs when testing libcore and in some
     // other weird situations. Annoying.
-    let llty = type_of::type_of_fn_from_ty(ccx, fn_tpt.ty);
+    let llty = type_of::type_of_fn_from_ty(ccx, fn_pty.ty);
     let llptrty = llty.ptr_to();
     if val_ty(val) != llptrty {
         debug!("trans_fn_ref_with_vtables(): casting pointer!");

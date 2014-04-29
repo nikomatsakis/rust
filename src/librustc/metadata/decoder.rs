@@ -440,7 +440,7 @@ pub fn get_impl_trait(cdata: Cmd,
 pub fn get_impl_vtables(cdata: Cmd,
                         id: ast::NodeId,
                         tcx: &ty::ctxt)
-                        -> typeck::vtable_res
+                        -> typeck::VtableResult
 {
     let item_doc = lookup_item(id, cdata.data());
     let vtables_doc = reader::get_doc(item_doc, tag_item_impl_vtables);

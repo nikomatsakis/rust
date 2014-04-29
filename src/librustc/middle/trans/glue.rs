@@ -19,6 +19,7 @@ use llvm::{ValueRef, True, get_param};
 use llvm;
 use middle::lang_items::{FreeFnLangItem, ExchangeFreeFnLangItem};
 use middle::subst;
+use middle::subst::ItemSubsts;
 use middle::trans::adt;
 use middle::trans::base::*;
 use middle::trans::build::*;
@@ -466,9 +467,9 @@ fn make_generic_glue(ccx: &CrateContext,
     let _s = StatRecorder::new(ccx, glue_name);
 
     let arena = TypedArena::new();
-    let empty_param_substs = param_substs::empty();
+    let empty_item_substs = ItemSubsts::empty();
     let fcx = new_fn_ctxt(ccx, llfn, -1, false, ty::mk_nil(),
-                          &empty_param_substs, None, &arena, TranslateItems);
+                          &empty_item_substs, None, &arena, TranslateItems);
 
     let bcx = init_function(&fcx, false, ty::mk_nil());
 

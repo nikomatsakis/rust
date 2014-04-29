@@ -67,6 +67,7 @@ use middle::def;
 use middle::resolve;
 use middle::subst;
 use middle::subst::VecPerParamSpace;
+use middle::traits;
 use middle::ty;
 use util::common::time;
 use util::ppaux::Repr;
@@ -74,6 +75,7 @@ use util::ppaux;
 use util::nodemap::{DefIdMap, FnvHashMap};
 
 use std::cell::RefCell;
+use std::rc::Rc;
 use syntax::codemap::Span;
 use syntax::print::pprust::*;
 use syntax::{ast, ast_map, abi};
@@ -85,12 +87,6 @@ pub mod infer;
 pub mod collect;
 pub mod coherence;
 pub mod variance;
-
-#[deriving(Clone, Encodable, Decodable, PartialEq, PartialOrd)]
-pub struct param_index {
-    pub space: subst::ParamSpace,
-    pub index: uint
-}
 
 #[deriving(Clone, Encodable, Decodable)]
 pub enum MethodOrigin {
@@ -118,12 +114,9 @@ pub struct MethodParam {
     // index of the method to be invoked amongst the trait's methods
     pub method_num: uint,
 
-    // index of the type parameter (from those that are in scope) that is
-    // the type of the receiver
-    pub param_num: param_index,
-
-    // index of the bound for this type parameter which specifies the trait
-    pub bound_num: uint,
+    // the path to the relevant obligation, which will indicate a vtable
+    // for some specific trait
+    pub path: traits::VtablePath,
 }
 
 // details for a method invoked with a receiver whose type is an object
@@ -211,75 +204,9 @@ impl MethodCall {
 // of the method to be invoked
 pub type MethodMap = RefCell<FnvHashMap<MethodCall, MethodCallee>>;
 
-pub type vtable_param_res = Vec<vtable_origin>;
-
-// Resolutions for bounds of all parameters, left to right, for a given path.
-pub type vtable_res = VecPerParamSpace<vtable_param_res>;
-
-#[deriving(Clone)]
-pub enum vtable_origin {
-    /*
-      Statically known vtable. def_id gives the impl item
-      from whence comes the vtable, and tys are the type substs.
-      vtable_res is the vtable itself.
-     */
-    vtable_static(ast::DefId, subst::Substs, vtable_res),
-
-    /*
-      Dynamic vtable, comes from a parameter that has a bound on it:
-      fn foo<T:quux,baz,bar>(a: T) -- a's vtable would have a
-      vtable_param origin
-
-      The first argument is the param index (identifying T in the example),
-      and the second is the bound number (identifying baz)
-     */
-    vtable_param(param_index, uint),
-
-    /*
-      Vtable automatically generated for an unboxed closure. The def ID is the
-      ID of the closure expression.
-     */
-    vtable_unboxed_closure(ast::DefId),
-
-    /*
-      Asked to determine the vtable for ty_err. This is the value used
-      for the vtables of `Self` in a virtual call like `foo.bar()`
-      where `foo` is of object type. The same value is also used when
-      type errors occur.
-     */
-    vtable_error,
-}
-
-impl Repr for vtable_origin {
-    fn repr(&self, tcx: &ty::ctxt) -> String {
-        match *self {
-            vtable_static(def_id, ref tys, ref vtable_res) => {
-                format!("vtable_static({:?}:{}, {}, {})",
-                        def_id,
-                        ty::item_path_str(tcx, def_id),
-                        tys.repr(tcx),
-                        vtable_res.repr(tcx))
-            }
-
-            vtable_param(x, y) => {
-                format!("vtable_param({:?}, {:?})", x, y)
-            }
-
-            vtable_unboxed_closure(def_id) => {
-                format!("vtable_unboxed_closure({})", def_id)
-            }
-
-            vtable_error => {
-                format!("vtable_error")
-            }
-        }
-    }
-}
-
-pub type vtable_map = RefCell<FnvHashMap<MethodCall, vtable_res>>;
-
-
-pub type impl_vtable_map = RefCell<DefIdMap<vtable_res>>;
+pub type VtableResult = VecPerParamSpace<traits::VtableOrigin>;
+pub type VtableMap = RefCell<FnvHashMap<MethodCall, Rc<VtableResult>>>;
+pub type ImplVtableMap = RefCell<DefIdMap<Rc<VtableResult>>>;
 
 pub struct CrateCtxt<'a> {
     // A mapping from method call sites to traits that have that method.
@@ -295,7 +222,7 @@ pub fn write_ty_to_tcx(tcx: &ty::ctxt, node_id: ast::NodeId, ty: ty::t) {
 }
 pub fn write_substs_to_tcx(tcx: &ty::ctxt,
                            node_id: ast::NodeId,
-                           item_substs: ty::ItemSubsts) {
+                           item_substs: subst::ItemSubsts) {
     if !item_substs.is_noop() {
         debug!("write_substs_to_tcx({}, {})",
                node_id,

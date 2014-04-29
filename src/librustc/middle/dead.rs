@@ -452,7 +452,7 @@ impl<'a> DeadVisitor<'a> {
         match self.tcx.inherent_impls.borrow().find(&local_def(id)) {
             None => (),
             Some(impl_list) => {
-                for impl_did in impl_list.borrow().iter() {
+                for impl_did in impl_list.iter() {
                     for method_did in impl_methods.get(impl_did).iter() {
                         if self.live_symbols.contains(&method_did.node) {
                             return true;

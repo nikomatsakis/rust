@@ -206,7 +206,8 @@ pub unsafe fn write<T>(dst: *mut T, src: T) {
 /// iterate through each *const T, up to the provided `len`,
 /// passing to the provided callback function
 #[deprecated = "old-style iteration. use a loop and RawPtr::offset"]
-pub unsafe fn array_each_with_len<T>(arr: *const *const T, len: uint,
+pub unsafe fn array_each_with_len<T>(arr: *const *const T,
+                                     len: uint,
                                      cb: |*const T|) {
     if arr.is_null() {
         fail!("ptr::array_each_with_len failure: arr input is null pointer");
@@ -337,7 +338,7 @@ impl<T> PartialEq for *const T {
         *self == *other
     }
     #[inline]
-    fn ne(&self, other: &*const T) -> bool { !self.eq(other) }
+    fn ne(&self, other: &*const T) -> bool { !(*self).eq(other) }
 }
 
 impl<T> Eq for *const T {}
@@ -348,7 +349,7 @@ impl<T> PartialEq for *mut T {
         *self == *other
     }
     #[inline]
-    fn ne(&self, other: &*mut T) -> bool { !self.eq(other) }
+    fn ne(&self, other: &*mut T) -> bool { !(*self).eq(other) }
 }
 
 impl<T> Eq for *mut T {}
@@ -417,9 +418,9 @@ mod externfnpointers {
 impl<T> PartialOrd for *const T {
     #[inline]
     fn partial_cmp(&self, other: &*const T) -> Option<Ordering> {
-        if self < other {
+        if *self < *other {
             Some(Less)
-        } else if self == other {
+        } else if *self == *other {
             Some(Equal)
         } else {
             Some(Greater)
@@ -442,9 +443,9 @@ impl<T> PartialOrd for *const T {
 impl<T> PartialOrd for *mut T {
     #[inline]
     fn partial_cmp(&self, other: &*mut T) -> Option<Ordering> {
-        if self < other {
+        if *self < *other {
             Some(Less)
-        } else if self == other {
+        } else if *self == *other {
             Some(Equal)
         } else {
             Some(Greater)

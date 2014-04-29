@@ -349,6 +349,7 @@ impl<'a> ErrorReporting for InferCtxt<'a> {
             infer::ExprAssignable(_) => "mismatched types",
             infer::RelateTraitRefs(_) => "mismatched traits",
             infer::RelateSelfType(_) => "mismatched types",
+            infer::RelateOutputImplTypes(_) => "mismatched types",
             infer::MatchExpressionArm(_, _) => "match arms have incompatible types",
             infer::IfExpression(_) => "if and else have incompatible types",
         };
@@ -1323,7 +1324,11 @@ impl<'a> ErrorReportingHelpers for InferCtxt<'a> {
                         format!("traits are compatible")
                     }
                     infer::RelateSelfType(_) => {
-                        format!("type matches impl")
+                        format!("self type matches impl self type")
+                    }
+                    infer::RelateOutputImplTypes(_) => {
+                        format!("trait type parameters matches those \
+                                 specified on the impl")
                     }
                     infer::MatchExpressionArm(_, _) => {
                         format!("match arms have compatible types")

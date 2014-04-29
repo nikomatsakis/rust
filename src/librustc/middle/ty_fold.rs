@@ -8,16 +8,43 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Generalized type folding mechanism.
+/*!
+ * Generalized type folding mechanism. The setup is a bit convoluted
+ * but allows for convenient usage. Let T be an instance of some
+ * "foldable type" (one which implements `TypeFoldable`) and F be an
+ * instance of a "folder" (a type which implements `TypeFolder`). Then
+ * the setup is intended to be:
+ *
+ *     T.fold_with(F) --calls--> F.fold_T(T) --calls--> super_fold_T(F, T)
+ *
+ * This way, when you define a new folder F, you can override
+ * `fold_T()` to customize the behavior, and invoke `super_fold_T()`
+ * to get the original behavior. Meanwhile, to actually fold
+ * something, you can just write `T.fold_with(F)`, which is
+ * convenient. (Note that `fold_with` will also transparently handle
+ * things like a `Vec<T>` where T is foldable and so on.)
+ *
+ * In this ideal setup, the only function that actually *does*
+ * anything is `super_fold_T`, which traverses the type `T`. Moreover,
+ * `super_fold_T` should only ever call `T.fold_with()`.
+ *
+ * In some cases, we follow a degenerate pattern where we do not have
+ * a `fold_T` nor `super_fold_T` method. Instead, `T.fold_with`
+ * traverses the structure directly. This is suboptimal because the
+ * behavior cannot be overriden, but it's much less work to implement.
+ * If you ever *do* need an override that doesn't exist, it's not hard
+ * to convert the degenerate pattern into the proper thing.
+ */
 
 use middle::subst;
 use middle::subst::VecPerParamSpace;
 use middle::ty;
-use middle::typeck;
+use middle::traits;
 use std::rc::Rc;
 use syntax::ast;
 use syntax::owned_slice::OwnedSlice;
 use util::ppaux::Repr;
+use util::promise::Promise;
 
 ///////////////////////////////////////////////////////////////////////////
 // Two generic traits
@@ -89,8 +116,18 @@ pub trait TypeFolder {
         super_fold_autoref(self, ar)
     }
 
-    fn fold_item_substs(&mut self, i: ty::ItemSubsts) -> ty::ItemSubsts {
+    fn fold_item_substs(&mut self, i: &subst::ItemSubsts) -> subst::ItemSubsts {
         super_fold_item_substs(self, i)
+    }
+
+    fn fold_obligation(&mut self, o: &traits::Obligation) -> traits::Obligation {
+        super_fold_obligation(self, o)
+    }
+
+    fn fold_vtable_origin(&mut self,
+                          r: &traits::VtableOrigin)
+                          -> traits::VtableOrigin {
+        super_fold_vtable_origin(self, r)
     }
 }
 
@@ -120,6 +157,12 @@ impl<T:TypeFoldable> TypeFoldable for Rc<T> {
 impl<T:TypeFoldable> TypeFoldable for Vec<T> {
     fn fold_with<F:TypeFolder>(&self, folder: &mut F) -> Vec<T> {
         self.iter().map(|t| t.fold_with(folder)).collect()
+    }
+}
+
+impl<T:TypeFoldable> TypeFoldable for Promise<T> {
+    fn fold_with<F:TypeFolder>(&self, folder: &mut F) -> Promise<T> {
+        self.map(|t| t.fold_with(folder))
     }
 }
 
@@ -195,38 +238,15 @@ impl TypeFoldable for subst::Substs {
     }
 }
 
-impl TypeFoldable for ty::ItemSubsts {
-    fn fold_with<F:TypeFolder>(&self, folder: &mut F) -> ty::ItemSubsts {
-        ty::ItemSubsts {
-            substs: self.substs.fold_with(folder),
-        }
+impl TypeFoldable for subst::ItemSubsts {
+    fn fold_with<F:TypeFolder>(&self, folder: &mut F) -> subst::ItemSubsts {
+        folder.fold_item_substs(self)
     }
 }
 
 impl TypeFoldable for ty::AutoRef {
     fn fold_with<F:TypeFolder>(&self, folder: &mut F) -> ty::AutoRef {
         folder.fold_autoref(self)
-    }
-}
-
-impl TypeFoldable for typeck::vtable_origin {
-    fn fold_with<F:TypeFolder>(&self, folder: &mut F) -> typeck::vtable_origin {
-        match *self {
-            typeck::vtable_static(def_id, ref substs, ref origins) => {
-                let r_substs = substs.fold_with(folder);
-                let r_origins = origins.fold_with(folder);
-                typeck::vtable_static(def_id, r_substs, r_origins)
-            }
-            typeck::vtable_param(n, b) => {
-                typeck::vtable_param(n, b)
-            }
-            typeck::vtable_unboxed_closure(def_id) => {
-                typeck::vtable_unboxed_closure(def_id)
-            }
-            typeck::vtable_error => {
-                typeck::vtable_error
-            }
-        }
     }
 }
 
@@ -269,6 +289,54 @@ impl TypeFoldable for ty::Generics {
         ty::Generics {
             types: self.types.fold_with(folder),
             regions: self.regions.fold_with(folder),
+        }
+    }
+}
+
+impl TypeFoldable for traits::Obligation {
+    fn fold_with<F:TypeFolder>(&self, folder: &mut F) -> traits::Obligation {
+        folder.fold_obligation(self)
+    }
+}
+
+impl TypeFoldable for traits::VtableOrigin {
+    fn fold_with<F:TypeFolder>(&self, folder: &mut F) -> traits::VtableOrigin {
+        folder.fold_vtable_origin(self)
+    }
+}
+
+impl<N:TypeFoldable> TypeFoldable for traits::VtableImpl<N> {
+    fn fold_with<F:TypeFolder>(&self, folder: &mut F) -> traits::VtableImpl<N> {
+        traits::VtableImpl {
+            impl_def_id: self.impl_def_id,
+            substs: self.substs.fold_with(folder),
+            nested: self.nested.fold_with(folder),
+        }
+    }
+}
+
+impl<N:TypeFoldable> TypeFoldable for traits::Vtable<N> {
+    fn fold_with<F:TypeFolder>(&self, folder: &mut F) -> traits::Vtable<N> {
+        match *self {
+            traits::VtableImpl(ref v) => traits::VtableImpl(v.fold_with(folder)),
+            traits::VtableUnboxedClosure(d) => traits::VtableUnboxedClosure(d),
+            traits::VtableParam(ref p) => traits::VtableParam(p.fold_with(folder)),
+            traits::VtableBuiltin => traits::VtableBuiltin,
+        }
+    }
+}
+
+impl TypeFoldable for traits::VtablePath {
+    fn fold_with<F:TypeFolder>(&self, _folder: &mut F) -> traits::VtablePath {
+        (*self).clone()
+    }
+}
+
+impl TypeFoldable for traits::VtableParam {
+    fn fold_with<F:TypeFolder>(&self, folder: &mut F) -> traits::VtableParam {
+        traits::VtableParam {
+            bound: self.bound.fold_with(folder),
+            path: self.path.fold_with(folder)
         }
     }
 }
@@ -422,19 +490,42 @@ pub fn super_fold_autoref<T:TypeFolder>(this: &mut T,
     match *autoref {
         ty::AutoPtr(r, m) => ty::AutoPtr(r.fold_with(this), m),
         ty::AutoBorrowVec(r, m) => ty::AutoBorrowVec(r.fold_with(this), m),
-        ty::AutoBorrowVecRef(r, m) => ty::AutoBorrowVecRef(r.fold_with(this), m),
+        ty::AutoBorrowVecRef(r1, r2, m) =>
+            ty::AutoBorrowVecRef(r1.fold_with(this),
+                                 r2.fold_with(this),
+                                 m),
         ty::AutoUnsafe(m) => ty::AutoUnsafe(m),
         ty::AutoBorrowObj(r, m) => ty::AutoBorrowObj(r.fold_with(this), m),
     }
 }
 
 pub fn super_fold_item_substs<T:TypeFolder>(this: &mut T,
-                                            substs: ty::ItemSubsts)
-                                            -> ty::ItemSubsts
+                                            substs: &subst::ItemSubsts)
+                                            -> subst::ItemSubsts
 {
-    ty::ItemSubsts {
+    subst::ItemSubsts {
         substs: substs.substs.fold_with(this),
+        origins: substs.origins.fold_with(this),
     }
+}
+
+pub fn super_fold_obligation<T:TypeFolder>(this: &mut T,
+                                           obligation: &traits::Obligation)
+                                            -> traits::Obligation
+{
+    traits::Obligation {
+        span: obligation.span,
+        recursion_depth: obligation.recursion_depth,
+        trait_ref: obligation.trait_ref.fold_with(this),
+    }
+}
+
+pub fn super_fold_vtable_origin<T:TypeFolder>(
+    this: &mut T,
+    origin: &traits::VtableOrigin)
+    -> traits::VtableOrigin
+{
+    traits::VtableOrigin(origin.vtable.fold_with(this))
 }
 
 ///////////////////////////////////////////////////////////////////////////

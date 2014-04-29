@@ -1249,10 +1249,19 @@ fn link_autoref(rcx: &Rcx,
                         ty::BorrowKind::from_mutbl(m), expr_cmt);
         }
 
-        ty::AutoBorrowVec(r, m) | ty::AutoBorrowVecRef(r, m) => {
+        ty::AutoBorrowVec(r, m) => {
             let cmt_index = mc.cat_index(expr, expr_cmt, autoderefs+1);
             link_region(rcx, expr.span, r,
                         ty::BorrowKind::from_mutbl(m), cmt_index);
+        }
+
+        ty::AutoBorrowVecRef(r_ptr, r_vec, m) => {
+            let cmt_index = mc.cat_index(expr, expr_cmt, autoderefs+1);
+            link_region(rcx, expr.span, r_vec,
+                        ty::BorrowKind::from_mutbl(m), cmt_index);
+
+            let cause = infer::AutoBorrow(expr.span); // FIXME wrong reason
+            rcx.fcx.mk_subr(true, cause, r_ptr, r_vec);
         }
 
         ty::AutoBorrowObj(r, m) => {

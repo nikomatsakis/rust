@@ -10,6 +10,7 @@
 
 use back::link::mangle_internal_name_by_path_and_seq;
 use llvm::{ValueRef, get_param};
+use middle::subst::ItemSubsts;
 use middle::trans::adt;
 use middle::trans::base::*;
 use middle::trans::build::*;
@@ -309,7 +310,7 @@ impl<'a, 'b> Reflector<'a, 'b> {
                                                     fn_ty,
                                                     sym.as_slice());
                 let arena = TypedArena::new();
-                let empty_param_substs = param_substs::empty();
+                let empty_param_substs = ItemSubsts::empty();
                 let fcx = new_fn_ctxt(ccx, llfdecl, -1, false,
                                       ty::mk_u64(), &empty_param_substs,
                                       None, &arena, TranslateItems);

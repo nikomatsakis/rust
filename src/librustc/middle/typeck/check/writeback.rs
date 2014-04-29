@@ -14,20 +14,23 @@
 
 use middle::def;
 use middle::pat_util;
+use middle::traits;
 use middle::ty;
 use middle::ty_fold::{TypeFolder,TypeFoldable};
+use middle::subst::{ItemSubsts};
 use middle::typeck::astconv::AstConv;
-use middle::typeck::check::FnCtxt;
+use middle::typeck::check::{FnCtxt};
 use middle::typeck::infer::{force_all, resolve_all, resolve_region};
 use middle::typeck::infer::resolve_type;
 use middle::typeck::infer;
 use middle::typeck::{MethodCall, MethodCallee};
-use middle::typeck::vtable_res;
+use middle::typeck::VtableResult;
 use middle::typeck::write_substs_to_tcx;
 use middle::typeck::write_ty_to_tcx;
 use util::ppaux::Repr;
 
 use std::cell::Cell;
+use std::rc::Rc;
 
 use syntax::ast;
 use syntax::codemap::{DUMMY_SP, Span};
@@ -67,13 +70,14 @@ pub fn resolve_type_vars_in_fn(fcx: &FnCtxt,
 
 pub fn resolve_impl_res(infcx: &infer::InferCtxt,
                         span: Span,
-                        vtable_res: &vtable_res)
-                        -> vtable_res {
-    let errors = Cell::new(false); // nobody cares
+                        vtable_res: &traits::PendingSelections)
+                        -> VtableResult
+{
+    let errors = Cell::new(false);
     let mut resolver = Resolver::from_infcx(infcx,
                                             &errors,
                                             ResolvingImplRes(span));
-    vtable_res.resolve_in(&mut resolver)
+    resolver.selections(vtable_res)
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -89,7 +93,7 @@ struct WritebackCx<'cx> {
 }
 
 impl<'cx> WritebackCx<'cx> {
-    fn new(fcx: &'cx FnCtxt) -> WritebackCx<'cx> {
+    fn new(fcx: &'cx FnCtxt<'cx>) -> WritebackCx<'cx> {
         WritebackCx { fcx: fcx }
     }
 
@@ -241,10 +245,19 @@ impl<'cx> WritebackCx<'cx> {
         write_ty_to_tcx(self.tcx(), id, n_ty);
         debug!("Node {} has type {}", id, n_ty.repr(self.tcx()));
 
-        // Resolve any substitutions
+        // Resolve any substitutions. Here we convert from the
+        // TypeckItemSubsts that we use during typeck into the
+        // ItemSubsts that we use after typeck.
         self.fcx.opt_node_ty_substs(id, |item_substs| {
-            write_substs_to_tcx(self.tcx(), id,
-                                self.resolve(item_substs, reason));
+            let substs =
+                self.resolve(&item_substs.substs, reason);
+            let origins =
+                self.resolve_selections(&item_substs.selections, reason);
+            write_substs_to_tcx(
+                self.tcx(),
+                id,
+                ItemSubsts { substs: substs,
+                             origins: origins });
         });
     }
 
@@ -336,12 +349,13 @@ impl<'cx> WritebackCx<'cx> {
                               vtable_key: MethodCall) {
         // Resolve any vtable map entry
         match self.fcx.inh.vtable_map.borrow_mut().pop(&vtable_key) {
-            Some(origins) => {
-                let r_origins = self.resolve(&origins, reason);
+            Some(selections) => {
+                let origins = self.resolve_selections(&selections, reason);
                 debug!("writeback::resolve_vtable_map_entry(\
-                        vtable_key={}, vtables={:?})",
-                       vtable_key, r_origins.repr(self.tcx()));
-                self.tcx().vtable_map.borrow_mut().insert(vtable_key, r_origins);
+                        vtable_key={}, origins={:?})",
+                       vtable_key, origins.repr(self.tcx()));
+                self.tcx().vtable_map.borrow_mut().insert(vtable_key,
+                                                          Rc::new(origins));
             }
             None => {}
         }
@@ -349,6 +363,14 @@ impl<'cx> WritebackCx<'cx> {
 
     fn resolve<T:ResolveIn>(&self, t: &T, reason: ResolveReason) -> T {
         t.resolve_in(&mut Resolver::new(self.fcx, reason))
+    }
+
+    fn resolve_selections(&self,
+                          t: &traits::PendingSelections,
+                          reason: ResolveReason)
+                          -> traits::VtableOrigins
+    {
+        Resolver::new(self.fcx, reason).selections(t)
     }
 }
 
@@ -431,6 +453,46 @@ impl<'cx> Resolver<'cx> {
                    reason: reason }
     }
 
+    fn vtable_origin(&mut self,
+                     pending_origin: &traits::PendingVtableOrigin)
+                     -> traits::VtableOrigin
+    {
+        // Here we have a version of the vtable where all promises
+        // have been replaced, but it may still contain inference
+        // variables.
+        let vtable: traits::Vtable<traits::VtableOrigin> =
+            pending_origin.map_nested(
+                |p_r| self.selection(p_r));
+
+        // Now resolve the inference variables.
+        let vtable = vtable.resolve_in(self);
+
+        traits::VtableOrigin(vtable)
+    }
+
+    fn selections(&mut self,
+                   p_rs: &traits::PendingSelections)
+                   -> traits::VtableOrigins
+    {
+        p_rs.map(|p_r| self.selection(p_r))
+    }
+
+    fn selection(&mut self,
+                  r: &traits::PendingSelection)
+                  -> traits::VtableOrigin
+    {
+        match r.promise.get() {
+            Some(&Ok(ref origin)) => {
+                self.vtable_origin(origin)
+            }
+            Some(&Err(_)) | None => {
+                // These cases should have led to an error being
+                // reported. Ignore and provide a dummy result.
+                traits::VtableOrigin(traits::VtableBuiltin)
+            }
+        }
+    }
+
     fn report_error(&self, e: infer::fixup_err) {
         self.writeback_errors.set(true);
         if !self.tcx.sess.has_errors() {
@@ -506,3 +568,11 @@ impl<'cx> TypeFolder for Resolver<'cx> {
         }
     }
 }
+
+///////////////////////////////////////////////////////////////////////////
+// During type check, we store promises with the result of trait
+// lookup rather than the actual results (because the results are not
+// necessarily available immediately). These routines unwind the
+// promises. It is expected that we will have already reported any
+// errors that may be encountered, so if the promises store an error,
+// a dummy result is returned.

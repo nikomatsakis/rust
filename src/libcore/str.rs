@@ -1062,7 +1062,7 @@ pub mod traits {
     impl<'a> PartialOrd for &'a str {
         #[inline]
         fn partial_cmp(&self, other: &&'a str) -> Option<Ordering> {
-            Some(self.cmp(other))
+            Some((*self).cmp(other))
         }
     }
 

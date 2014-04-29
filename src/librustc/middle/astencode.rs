@@ -20,6 +20,7 @@ use middle::def;
 use e = metadata::encoder;
 use middle::freevars::freevar_entry;
 use middle::region;
+use middle::traits;
 use metadata::tydecode;
 use metadata::tydecode::{DefIdSource, NominalType, TypeWithId, TypeParameter,
                          RegionParameter};
@@ -41,6 +42,7 @@ use libc;
 use std::io::Seek;
 use std::mem;
 use std::gc::GC;
+use std::rc::Rc;
 
 use rbml::io::SeekableMemWriter;
 use rbml::{reader, writer};
@@ -615,7 +617,7 @@ impl tr for MethodOrigin {
                 typeck::MethodParam(
                     typeck::MethodParam {
                         trait_id: mp.trait_id.tr(xcx),
-                        .. *mp
+                        .. (*mp).clone()
                     }
                 )
             }
@@ -637,7 +639,7 @@ impl tr for MethodOrigin {
 fn encode_vtable_res_with_key(ecx: &e::EncodeContext,
                               rbml_w: &mut Encoder,
                               adjustment: typeck::ExprAdjustment,
-                              dr: &typeck::vtable_res) {
+                              dr: &typeck::VtableResult) {
     rbml_w.emit_struct("VtableWithKey", 2, |rbml_w| {
         rbml_w.emit_struct_field("adjustment", 0u, |rbml_w| {
             adjustment.encode(rbml_w)
@@ -650,71 +652,52 @@ fn encode_vtable_res_with_key(ecx: &e::EncodeContext,
 
 pub fn encode_vtable_res(ecx: &e::EncodeContext,
                          rbml_w: &mut Encoder,
-                         dr: &typeck::vtable_res) {
+                         dr: &typeck::VtableResult) {
     // can't autogenerate this code because automatic code of
     // ty::t doesn't work, and there is no way (atm) to have
     // hand-written encoding routines combine with auto-generated
     // ones. perhaps we should fix this.
     encode_vec_per_param_space(
         rbml_w, dr,
-        |rbml_w, param_tables| encode_vtable_param_res(ecx, rbml_w,
-                                                       param_tables))
+        |rbml_w, origin| encode_vtable_origin(ecx, rbml_w, origin))
 }
-
-pub fn encode_vtable_param_res(ecx: &e::EncodeContext,
-                     rbml_w: &mut Encoder,
-                     param_tables: &typeck::vtable_param_res) {
-    rbml_w.emit_from_vec(param_tables.as_slice(), |rbml_w, vtable_origin| {
-        Ok(encode_vtable_origin(ecx, rbml_w, vtable_origin))
-    }).unwrap()
-}
-
 
 pub fn encode_vtable_origin(ecx: &e::EncodeContext,
-                        rbml_w: &mut Encoder,
-                        vtable_origin: &typeck::vtable_origin) {
-    rbml_w.emit_enum("vtable_origin", |rbml_w| {
-        match *vtable_origin {
-          typeck::vtable_static(def_id, ref substs, ref vtable_res) => {
-            rbml_w.emit_enum_variant("vtable_static", 0u, 3u, |rbml_w| {
-                rbml_w.emit_enum_variant_arg(0u, |rbml_w| {
-                    Ok(rbml_w.emit_def_id(def_id))
-                });
-                rbml_w.emit_enum_variant_arg(1u, |rbml_w| {
-                    Ok(rbml_w.emit_substs(ecx, substs))
-                });
-                rbml_w.emit_enum_variant_arg(2u, |rbml_w| {
-                    Ok(encode_vtable_res(ecx, rbml_w, vtable_res))
-                })
-            })
-          }
-          typeck::vtable_param(pn, bn) => {
-            rbml_w.emit_enum_variant("vtable_param", 1u, 3u, |rbml_w| {
-                rbml_w.emit_enum_variant_arg(0u, |rbml_w| {
-                    pn.encode(rbml_w)
-                });
-                rbml_w.emit_enum_variant_arg(1u, |rbml_w| {
-                    rbml_w.emit_uint(bn)
-                })
-            })
-          }
-          typeck::vtable_unboxed_closure(def_id) => {
-              rbml_w.emit_enum_variant("vtable_unboxed_closure",
-                                       2u,
-                                       1u,
-                                       |rbml_w| {
-                rbml_w.emit_enum_variant_arg(0u, |rbml_w| {
-                    Ok(rbml_w.emit_def_id(def_id))
-                })
-              })
-          }
-          typeck::vtable_error => {
-            rbml_w.emit_enum_variant("vtable_error", 3u, 3u, |_rbml_w| {
-                Ok(())
-            })
-          }
-        }
-    }).unwrap()
+                            rbml_w: &mut Encoder,
+                            vtable_origin: &traits::VtableOrigin) {
+    fail!("NYI")
+    //NDM rbml_w.emit_enum("vtable_origin", |rbml_w| {
+    //NDM     match *vtable_origin {
+    //NDM       typeck::vtable_static(def_id, ref substs, ref vtable_res) => {
+    //NDM         rbml_w.emit_enum_variant("vtable_static", 0u, 3u, |rbml_w| {
+    //NDM             rbml_w.emit_enum_variant_arg(0u, |rbml_w| {
+    //NDM                 Ok(rbml_w.emit_def_id(def_id))
+    //NDM             });
+    //NDM             rbml_w.emit_enum_variant_arg(1u, |rbml_w| {
+    //NDM                 Ok(rbml_w.emit_substs(ecx, substs))
+    //NDM             });
+    //NDM             rbml_w.emit_enum_variant_arg(2u, |rbml_w| {
+    //NDM                 Ok(encode_vtable_res(ecx, rbml_w, vtable_res))
+    //NDM             })
+    //NDM         })
+    //NDM       }
+    //NDM       typeck::vtable_param(pn, bn) => {
+    //NDM         rbml_w.emit_enum_variant("vtable_param", 1u, 3u, |rbml_w| {
+    //NDM             rbml_w.emit_enum_variant_arg(0u, |rbml_w| {
+    //NDM                 pn.encode(rbml_w)
+    //NDM             });
+    //NDM             rbml_w.emit_enum_variant_arg(1u, |rbml_w| {
+    //NDM                 rbml_w.emit_uint(bn)
+    //NDM             })
+    //NDM         })
+    //NDM       }
+    //NDM       typeck::vtable_error => {
+    //NDM         rbml_w.emit_enum_variant("vtable_error", 2u, 3u, |_rbml_w| {
+    //NDM             Ok(())
+    //NDM         })
+    //NDM       }
+    //NDM     }
+    //NDM }).unwrap()
 }
 
 pub trait vtable_decoder_helpers {
@@ -724,16 +707,13 @@ pub trait vtable_decoder_helpers {
     fn read_vtable_res_with_key(&mut self,
                                 tcx: &ty::ctxt,
                                 cdata: &cstore::crate_metadata)
-                                -> (typeck::ExprAdjustment, typeck::vtable_res);
+                                -> (typeck::ExprAdjustment, typeck::VtableResult);
     fn read_vtable_res(&mut self,
                        tcx: &ty::ctxt, cdata: &cstore::crate_metadata)
-                      -> typeck::vtable_res;
-    fn read_vtable_param_res(&mut self,
-                       tcx: &ty::ctxt, cdata: &cstore::crate_metadata)
-                      -> typeck::vtable_param_res;
+                      -> typeck::VtableResult;
     fn read_vtable_origin(&mut self,
                           tcx: &ty::ctxt, cdata: &cstore::crate_metadata)
-                          -> typeck::vtable_origin;
+                          -> traits::VtableOrigin;
 }
 
 impl<'a> vtable_decoder_helpers for reader::Decoder<'a> {
@@ -750,7 +730,7 @@ impl<'a> vtable_decoder_helpers for reader::Decoder<'a> {
     fn read_vtable_res_with_key(&mut self,
                                 tcx: &ty::ctxt,
                                 cdata: &cstore::crate_metadata)
-                                -> (typeck::ExprAdjustment, typeck::vtable_res) {
+                                -> (typeck::ExprAdjustment, typeck::VtableResult) {
         self.read_struct("VtableWithKey", 2, |this| {
             let adjustment = this.read_struct_field("adjustment", 0, |this| {
                 Decodable::decode(this)
@@ -764,66 +744,53 @@ impl<'a> vtable_decoder_helpers for reader::Decoder<'a> {
     fn read_vtable_res(&mut self,
                        tcx: &ty::ctxt,
                        cdata: &cstore::crate_metadata)
-                       -> typeck::vtable_res
+                       -> typeck::VtableResult
     {
         self.read_vec_per_param_space(
-            |this| this.read_vtable_param_res(tcx, cdata))
-    }
-
-    fn read_vtable_param_res(&mut self,
-                             tcx: &ty::ctxt, cdata: &cstore::crate_metadata)
-                      -> typeck::vtable_param_res {
-        self.read_to_vec(|this| Ok(this.read_vtable_origin(tcx, cdata)))
-             .unwrap().move_iter().collect()
+            |this| this.read_vtable_origin(tcx, cdata))
     }
 
     fn read_vtable_origin(&mut self,
                           tcx: &ty::ctxt, cdata: &cstore::crate_metadata)
-        -> typeck::vtable_origin {
-        self.read_enum("vtable_origin", |this| {
-            this.read_enum_variant(["vtable_static",
-                                    "vtable_param",
-                                    "vtable_error",
-                                    "vtable_unboxed_closure"],
-                                   |this, i| {
-                Ok(match i {
-                  0 => {
-                    typeck::vtable_static(
-                        this.read_enum_variant_arg(0u, |this| {
-                            Ok(this.read_def_id_noxcx(cdata))
-                        }).unwrap(),
-                        this.read_enum_variant_arg(1u, |this| {
-                            Ok(this.read_substs_noxcx(tcx, cdata))
-                        }).unwrap(),
-                        this.read_enum_variant_arg(2u, |this| {
-                            Ok(this.read_vtable_res(tcx, cdata))
-                        }).unwrap()
-                    )
-                  }
-                  1 => {
-                    typeck::vtable_param(
-                        this.read_enum_variant_arg(0u, |this| {
-                            Decodable::decode(this)
-                        }).unwrap(),
-                        this.read_enum_variant_arg(1u, |this| {
-                            this.read_uint()
-                        }).unwrap()
-                    )
-                  }
-                  2 => {
-                    typeck::vtable_unboxed_closure(
-                        this.read_enum_variant_arg(0u, |this| {
-                            Ok(this.read_def_id_noxcx(cdata))
-                        }).unwrap()
-                    )
-                  }
-                  3 => {
-                    typeck::vtable_error
-                  }
-                  _ => fail!("bad enum variant")
-                })
-            })
-        }).unwrap()
+                          -> traits::VtableOrigin
+    {
+        fail!("NYI")
+        //NDM self.read_enum("VtableOrigin", |this| {
+        //NDM     this.read_enum_variant(["vtable_static",
+        //NDM                             "vtable_param",
+        //NDM                             "vtable_error"],
+        //NDM                            |this, i| {
+        //NDM         Ok(match i {
+        //NDM           0 => {
+        //NDM             typeck::vtable_static(
+        //NDM                 this.read_enum_variant_arg(0u, |this| {
+        //NDM                     Ok(this.read_def_id_noxcx(cdata))
+        //NDM                 }).unwrap(),
+        //NDM                 this.read_enum_variant_arg(1u, |this| {
+        //NDM                     Ok(this.read_substs_noxcx(tcx, cdata))
+        //NDM                 }).unwrap(),
+        //NDM                 this.read_enum_variant_arg(2u, |this| {
+        //NDM                     Ok(this.read_vtable_res(tcx, cdata))
+        //NDM                 }).unwrap()
+        //NDM             )
+        //NDM           }
+        //NDM           1 => {
+        //NDM             typeck::vtable_param(
+        //NDM                 this.read_enum_variant_arg(0u, |this| {
+        //NDM                     Decodable::decode(this)
+        //NDM                 }).unwrap(),
+        //NDM                 this.read_enum_variant_arg(1u, |this| {
+        //NDM                     this.read_uint()
+        //NDM                 }).unwrap()
+        //NDM             )
+        //NDM           }
+        //NDM           2 => {
+        //NDM             typeck::vtable_error
+        //NDM           }
+        //NDM           _ => fail!("bad enum variant")
+        //NDM         })
+        //NDM     })
+        //NDM }).unwrap()
     }
 }
 
@@ -987,7 +954,7 @@ impl<'a,'b> ast_util::IdVisitingOperation for
     fn visit_id(&self, id: ast::NodeId) {
         // Note: this will cause a copy of rbml_w, which is bad as
         // it is mutable. But I believe it's harmless since we generate
-        // balanced EBML.
+        // balanced RBML.
         //
         // FIXME(pcwalton): Don't copy this way.
         let mut new_rbml_w = unsafe {
@@ -1097,7 +1064,8 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
         rbml_w.tag(c::tag_table_vtable_map, |rbml_w| {
             rbml_w.id(id);
             rbml_w.tag(c::tag_table_val, |rbml_w| {
-                encode_vtable_res_with_key(ecx, rbml_w, method_call.adjustment, dr);
+                encode_vtable_res_with_key(ecx, rbml_w,
+                                           method_call.adjustment, &**dr);
             })
         })
     }
@@ -1122,7 +1090,8 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
                             rbml_w.id(id);
                             rbml_w.tag(c::tag_table_val, |rbml_w| {
                                 encode_vtable_res_with_key(ecx, rbml_w,
-                                                           method_call.adjustment, dr);
+                                                           method_call.adjustment,
+                                                           &**dr);
                             })
                         })
                     }
@@ -1134,7 +1103,8 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
                     rbml_w.tag(c::tag_table_method_map, |rbml_w| {
                         rbml_w.id(id);
                         rbml_w.tag(c::tag_table_val, |rbml_w| {
-                            encode_method_callee(ecx, rbml_w, method_call.adjustment, method)
+                            encode_method_callee(ecx, rbml_w,
+                                                 method_call.adjustment, method)
                         })
                     })
                 }
@@ -1143,7 +1113,9 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
                     rbml_w.tag(c::tag_table_vtable_map, |rbml_w| {
                         rbml_w.id(id);
                         rbml_w.tag(c::tag_table_val, |rbml_w| {
-                            encode_vtable_res_with_key(ecx, rbml_w, method_call.adjustment, dr);
+                            encode_vtable_res_with_key(ecx, rbml_w,
+                                                       method_call.adjustment,
+                                                       &**dr);
                         })
                     })
                 }
@@ -1456,8 +1428,10 @@ fn decode_side_tables(xcx: &ExtendedDecodeContext,
                         dcx.tcx.node_types.borrow_mut().insert(id as uint, ty);
                     }
                     c::tag_table_item_subst => {
-                        let item_substs = ty::ItemSubsts {
-                            substs: val_dsr.read_substs(xcx)
+                        let item_substs = subst::ItemSubsts {
+                            substs: val_dsr.read_substs(xcx),
+                            origins: val_dsr.read_vtable_res(xcx.dcx.tcx,
+                                                             xcx.dcx.cdata),
                         };
                         dcx.tcx.item_substs.borrow_mut().insert(
                             id, item_substs);
@@ -1493,7 +1467,9 @@ fn decode_side_tables(xcx: &ExtendedDecodeContext,
                             expr_id: id,
                             adjustment: adjustment
                         };
-                        dcx.tcx.vtable_map.borrow_mut().insert(vtable_key, vtable_res);
+                        dcx.tcx.vtable_map.borrow_mut().insert(
+                            vtable_key,
+                            Rc::new(vtable_res));
                     }
                     c::tag_table_adjustments => {
                         let adj: ty::AutoAdjustment = val_dsr.read_auto_adjustment(xcx);

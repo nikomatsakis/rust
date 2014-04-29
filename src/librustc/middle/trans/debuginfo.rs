@@ -187,6 +187,7 @@ use metadata::csearch;
 use middle::subst;
 use middle::trans::adt;
 use middle::trans::common::*;
+use middle::trans::item_subst::ItemSubst;
 use middle::trans::machine;
 use middle::trans::_match::{BindingInfo, TrByCopy, TrByMove, TrByRef};
 use middle::trans::type_of;
@@ -1109,7 +1110,7 @@ pub fn start_emitting_source_locations(fcx: &FunctionContext) {
 /// for the function.
 pub fn create_function_debug_context(cx: &CrateContext,
                                      fn_ast_id: ast::NodeId,
-                                     param_substs: &param_substs,
+                                     item_substs: &subst::ItemSubsts,
                                      llfn: ValueRef) -> FunctionDebugContext {
     if cx.sess().opts.debuginfo == NoDebugInfo {
         return FunctionDebugContext { repr: DebugInfoDisabled };
@@ -1208,7 +1209,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
         let fn_signature = get_function_signature(cx,
                                                   fn_ast_id,
                                                   &*fn_decl,
-                                                  param_substs,
+                                                  item_substs,
                                                   span);
         llvm::LLVMDIBuilderCreateSubroutineType(DIB(cx), file_metadata, fn_signature)
     };
@@ -1218,7 +1219,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
     let mut function_name = String::from_str(token::get_ident(ident).get());
     let template_parameters = get_template_parameters(cx,
                                                       generics,
-                                                      param_substs,
+                                                      item_substs,
                                                       file_metadata,
                                                       &mut function_name);
 
@@ -1285,7 +1286,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
     fn get_function_signature(cx: &CrateContext,
                               fn_ast_id: ast::NodeId,
                               fn_decl: &ast::FnDecl,
-                              param_substs: &param_substs,
+                              item_substs: &subst::ItemSubsts,
                               error_span: Span) -> DIArray {
         if cx.sess().opts.debuginfo == LimitedDebugInfo {
             return create_DIArray(DIB(cx), []);
@@ -1302,7 +1303,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
                 assert_type_for_node_id(cx, fn_ast_id, error_span);
 
                 let return_type = ty::node_id_to_type(cx.tcx(), fn_ast_id);
-                let return_type = return_type.substp(cx.tcx(), param_substs);
+                let return_type = return_type.item_subst(cx.tcx(), item_substs);
                 signature.push(type_metadata(cx, return_type, codemap::DUMMY_SP));
             }
         }
@@ -1311,7 +1312,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
         for arg in fn_decl.inputs.iter() {
             assert_type_for_node_id(cx, arg.pat.id, arg.pat.span);
             let arg_type = ty::node_id_to_type(cx.tcx(), arg.pat.id);
-            let arg_type = arg_type.substp(cx.tcx(), param_substs);
+            let arg_type = arg_type.item_subst(cx.tcx(), item_substs);
             signature.push(type_metadata(cx, arg_type, codemap::DUMMY_SP));
         }
 
@@ -1320,11 +1321,11 @@ pub fn create_function_debug_context(cx: &CrateContext,
 
     fn get_template_parameters(cx: &CrateContext,
                                generics: &ast::Generics,
-                               param_substs: &param_substs,
+                               item_substs: &subst::ItemSubsts,
                                file_metadata: DIFile,
                                name_to_append_suffix_to: &mut String)
                                -> DIArray {
-        let self_type = param_substs.substs.self_ty();
+        let self_type = item_substs.substs.self_ty();
 
         // Only true for static default methods:
         let has_self_type = self_type.is_some();
@@ -1381,7 +1382,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
         }
 
         // Handle other generic parameters
-        let actual_types = param_substs.substs.types.get_slice(subst::FnSpace);
+        let actual_types = item_substs.substs.types.get_slice(subst::FnSpace);
         for (index, &ast::TyParam{ ident: ident, .. }) in generics.ty_params.iter().enumerate() {
             let actual_type = actual_types[index];
             // Add actual type name to <...> clause of function name

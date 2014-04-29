@@ -76,14 +76,13 @@ type parameter).
 
 */
 
-
 use middle::const_eval;
 use middle::def;
-use middle::lang_items::IteratorItem;
 use middle::pat_util::pat_id_map;
 use middle::pat_util;
 use middle::subst;
 use middle::subst::{Subst, Substs, VecPerParamSpace, ParamSpace};
+use middle::traits;
 use middle::ty::{FnSig, VariantInfo};
 use middle::ty::{Polytype};
 use middle::ty::{ParamTy, Disr, ExprTyProvider};
@@ -93,23 +92,16 @@ use middle::typeck::astconv::AstConv;
 use middle::typeck::astconv::{ast_region_to_region, ast_ty_to_ty};
 use middle::typeck::astconv;
 use middle::typeck::check::_match::pat_ctxt;
-use middle::typeck::check::method::{AutoderefReceiver};
-use middle::typeck::check::method::{AutoderefReceiverFlag};
-use middle::typeck::check::method::{CheckTraitsAndInherentMethods};
-use middle::typeck::check::method::{DontAutoderefReceiver};
-use middle::typeck::check::method::{IgnoreStaticMethods, ReportStaticMethods};
 use middle::typeck::check::regionmanip::replace_late_bound_regions_in_fn_sig;
 use middle::typeck::check::regionmanip::relate_free_regions;
-use middle::typeck::check::vtable::VtableContext;
 use middle::typeck::CrateCtxt;
 use middle::typeck::infer::{resolve_type, force_tvar};
 use middle::typeck::infer;
 use middle::typeck::rscope::RegionScope;
 use middle::typeck::{lookup_def_ccx};
 use middle::typeck::no_params;
-use middle::typeck::{require_same_types, vtable_map};
+use middle::typeck::{require_same_types};
 use middle::typeck::{MethodCall, MethodMap};
-use middle::typeck::{TypeAndSubsts};
 use middle::lang_items::TypeIdLangItem;
 use lint;
 use util::common::{block_query, indenter, loop_query};
@@ -138,13 +130,17 @@ use syntax::visit;
 use syntax::visit::Visitor;
 use syntax;
 
-pub mod _match;
-pub mod vtable;
-pub mod writeback;
+mod call;
+mod demand;
+mod deref;
+mod field;
+mod index;
+mod _match;
+mod method;
 pub mod regionmanip;
-pub mod regionck;
-pub mod demand;
-pub mod method;
+mod regionck;
+mod vtable;
+mod writeback;
 
 /// Fields that are part of a `FnCtxt` which are inherited by
 /// closures defined within the function.  For example:
@@ -161,14 +157,25 @@ pub struct Inherited<'a> {
     locals: RefCell<NodeMap<ty::t>>,
     param_env: ty::ParameterEnvironment,
 
-    // Temporary tables:
+    // Temporary tables. During type checking, we give temporary types
+    // to the nodes that are being type checked. These types may
+    // include inference variables. Once type checking completes, we
+    // then enter the *writeback* phase which will resolve any
+    // inference variables and replace them with their final
+    // results. These final types are then written into the tcx.
+
     node_types: RefCell<NodeMap<ty::t>>,
-    item_substs: RefCell<NodeMap<ty::ItemSubsts>>,
+    item_substs: RefCell<NodeMap<TypeckItemSubsts>>,
     adjustments: RefCell<NodeMap<ty::AutoAdjustment>>,
     method_map: MethodMap,
-    vtable_map: vtable_map,
+    vtable_map: RefCell<FnvHashMap<MethodCall, traits::PendingSelections>>,
     upvar_borrow_map: RefCell<ty::UpvarBorrowMap>,
     unboxed_closure_types: RefCell<DefIdMap<ty::ClosureTy>>,
+
+    // The fulfillment context tracks the trait obligations that have
+    // been registered. It creates pending resolutions.
+
+    fulfillment_context: RefCell<traits::FulfillmentContext>,
 }
 
 /// When type-checking an expression, we propagate downward
@@ -182,6 +189,14 @@ enum Expectation {
 
     /// This expression will be cast to the `ty::t`
     ExpectCastableToType(ty::t),
+}
+
+/// A version of ty::ItemSubsts that is used during typeck. The
+/// difference is that, during typeck, we track `PendingResolution`,
+/// whereas after typeck we track `SuccessfulResolution`.
+pub struct TypeckItemSubsts {
+    pub substs: Substs,
+    pub selections: traits::PendingSelections,
 }
 
 #[deriving(Clone)]
@@ -264,7 +279,8 @@ pub struct FnCtxt<'a> {
 impl<'a> Inherited<'a> {
     fn new(tcx: &'a ty::ctxt,
            param_env: ty::ParameterEnvironment)
-           -> Inherited<'a> {
+           -> Inherited<'a>
+    {
         Inherited {
             infcx: infer::new_infer_ctxt(tcx),
             locals: RefCell::new(NodeMap::new()),
@@ -276,6 +292,7 @@ impl<'a> Inherited<'a> {
             vtable_map: RefCell::new(FnvHashMap::new()),
             upvar_borrow_map: RefCell::new(HashMap::new()),
             unboxed_closure_types: RefCell::new(DefIdMap::new()),
+            fulfillment_context: RefCell::new(traits::FulfillmentContext::new()),
         }
     }
 }
@@ -297,13 +314,11 @@ fn blank_fn_ctxt<'a>(ccx: &'a CrateCtxt<'a>,
     }
 }
 
-fn blank_inherited_fields<'a>(ccx: &'a CrateCtxt<'a>) -> Inherited<'a> {
+fn blank_inherited_fields<'a>(ccx: &'a CrateCtxt<'a>)
+                              -> Inherited<'a> {
     // It's kind of a kludge to manufacture a fake function context
     // and statement context, but we might as well do write the code only once
-    let param_env = ty::ParameterEnvironment {
-        free_substs: subst::Substs::empty(),
-        bounds: subst::VecPerParamSpace::empty()
-    };
+    let param_env = ty::empty_parameter_environment();
     Inherited::new(ccx.tcx, param_env)
 }
 
@@ -360,8 +375,7 @@ fn check_bare_fn(ccx: &CrateCtxt,
             let inh = Inherited::new(ccx.tcx, param_env);
             let fcx = check_fn(ccx, fn_ty.fn_style, &fn_ty.sig,
                                decl, id, body, &inh);
-
-            vtable::resolve_in_block(&fcx, body);
+            vtable::resolve_fcx_obligations_or_error(&fcx);
             regionck::regionck_fn(&fcx, body);
             writeback::resolve_type_vars_in_fn(&fcx, decl, body);
         }
@@ -370,11 +384,11 @@ fn check_bare_fn(ccx: &CrateCtxt,
     }
 }
 
-struct GatherLocalsVisitor<'a> {
-    fcx: &'a FnCtxt<'a>
+struct GatherLocalsVisitor<'a,'cx> {
+    fcx: &'a FnCtxt<'cx>
 }
 
-impl<'a> GatherLocalsVisitor<'a> {
+impl<'a,'cx> GatherLocalsVisitor<'a,'cx> {
     fn assign(&mut self, nid: ast::NodeId, ty_opt: Option<ty::t>) {
             match ty_opt {
                 None => {
@@ -391,7 +405,7 @@ impl<'a> GatherLocalsVisitor<'a> {
     }
 }
 
-impl<'a> Visitor<()> for GatherLocalsVisitor<'a> {
+impl<'a,'cx> Visitor<()> for GatherLocalsVisitor<'a,'cx> {
     // Add explicitly-declared locals.
     fn visit_local(&mut self, local: &ast::Local, _: ()) {
         let o_ty = match local.ty.node {
@@ -498,7 +512,6 @@ fn check_fn<'a>(ccx: &'a CrateCtxt<'a>,
     };
 
     {
-
         let mut visit = GatherLocalsVisitor { fcx: &fcx, };
         // Add formal parameters.
         for (arg_ty, input) in arg_tys.iter().zip(decl.inputs.iter()) {
@@ -675,6 +688,7 @@ pub fn check_item(ccx: &CrateCtxt, it: &ast::Item) {
         let fn_pty = ty::lookup_item_type(ccx.tcx, ast_util::local_def(it.id));
 
         let param_env = ty::construct_parameter_environment(ccx.tcx,
+                                                            it.span,
                                                             &fn_pty.generics,
                                                             body.id);
 
@@ -693,11 +707,11 @@ pub fn check_item(ccx: &CrateCtxt, it: &ast::Item) {
                 let impl_trait_ref =
                     ty::node_id_to_trait_ref(ccx.tcx, ast_trait_ref.ref_id);
                 check_impl_methods_against_trait(ccx,
-                                             it.span,
-                                             ast_trait_ref,
-                                             &*impl_trait_ref,
-                                             ms.as_slice());
-                vtable::resolve_impl(ccx.tcx, it, &impl_pty.generics, &*impl_trait_ref);
+                                                 it.span,
+                                                 ast_trait_ref,
+                                                 &*impl_trait_ref,
+                                                 ms.as_slice());
+                vtable::resolve_impl(ccx, it, &impl_pty, &*impl_trait_ref);
             }
             None => { }
         }
@@ -774,6 +788,7 @@ fn check_method_body(ccx: &CrateCtxt,
     let method_generics = &method_ty.generics;
 
     let param_env = ty::construct_parameter_environment(ccx.tcx,
+                                                        method.span,
                                                         method_generics,
                                                         method.pe_body().id);
 
@@ -1097,8 +1112,11 @@ fn compare_impl_method(tcx: &ty::ctxt,
 fn check_cast(fcx: &FnCtxt,
               e: &ast::Expr,
               t: &ast::Ty,
-              id: ast::NodeId,
-              span: Span) {
+              cast_expr: &ast::Expr)
+{
+    let id = cast_expr.id;
+    let span = cast_expr.span;
+
     // Find the type of `e`. Supply hints based on the type we are casting to,
     // if appropriate.
     let t_1 = fcx.to_ty(t);
@@ -1128,8 +1146,7 @@ fn check_cast(fcx: &FnCtxt,
 
     if ty::type_is_trait(t_1) {
         // This will be looked up later on.
-        fcx.write_ty(id, t_1);
-        return
+        return vtable::check_object_cast(fcx, cast_expr, &*e, t_1);
     }
 
     let t_1 = structurally_resolved_type(fcx, span, t_1);
@@ -1243,7 +1260,9 @@ fn check_cast(fcx: &FnCtxt,
 }
 
 impl<'a> AstConv for FnCtxt<'a> {
-    fn tcx<'a>(&'a self) -> &'a ty::ctxt { self.ccx.tcx }
+    fn tcx<'a>(&'a self) -> &'a ty::ctxt {
+        self.tcx()
+    }
 
     fn get_item_ty(&self, id: ast::DefId) -> ty::Polytype {
         ty::lookup_item_type(self.tcx(), id)
@@ -1259,20 +1278,16 @@ impl<'a> AstConv for FnCtxt<'a> {
 }
 
 impl<'a> FnCtxt<'a> {
+    pub fn tcx(&self) -> &'a ty::ctxt {
+        self.ccx.tcx
+    }
+
     pub fn infcx<'b>(&'b self) -> &'b infer::InferCtxt<'a> {
         &self.inh.infcx
     }
 
     pub fn err_count_since_creation(&self) -> uint {
         self.ccx.tcx.sess.err_count() - self.err_count_on_creation
-    }
-
-    pub fn vtable_context<'a>(&'a self) -> VtableContext<'a> {
-        VtableContext {
-            infcx: self.infcx(),
-            param_env: &self.inh.param_env,
-            unboxed_closure_types: &self.inh.unboxed_closure_types,
-        }
     }
 }
 
@@ -1309,24 +1324,45 @@ impl<'a> FnCtxt<'a> {
         self.inh.node_types.borrow_mut().insert(node_id, ty);
     }
 
-    pub fn write_substs(&self, node_id: ast::NodeId, substs: ty::ItemSubsts) {
-        if !substs.substs.is_noop() {
-            debug!("write_substs({}, {}) in fcx {}",
-                   node_id,
-                   substs.repr(self.tcx()),
-                   self.tag());
+    pub fn write_vtables(&self,
+                         key: MethodCall,
+                         selections: traits::PendingSelections) {
+        self.inh.vtable_map.borrow_mut().insert(key, selections);
+    }
 
-            self.inh.item_substs.borrow_mut().insert(node_id, substs);
+    pub fn write_substs(&self,
+                        node_id: ast::NodeId,
+                        substs: Substs,
+                        obligations: VecPerParamSpace<traits::Obligation>) {
+        if substs.is_noop() && obligations.is_empty() {
+            return;
         }
+
+        debug!("write_substs({}, {}) in fcx {}",
+               node_id,
+               substs.repr(self.tcx()),
+               self.tag());
+
+        let pending_selections = obligations.map(|o| {
+            self.register_obligation((*o).clone())
+        });
+
+        let item_substs = TypeckItemSubsts {
+            substs: substs,
+            selections: pending_selections
+        };
+
+        self.inh.item_substs.borrow_mut().insert(node_id, item_substs);
     }
 
     pub fn write_ty_substs(&self,
                            node_id: ast::NodeId,
                            ty: ty::t,
-                           substs: ty::ItemSubsts) {
-        let ty = ty.subst(self.tcx(), &substs.substs);
+                           substs: Substs,
+                           obligations: VecPerParamSpace<traits::Obligation>) {
+        let ty = ty.subst(self.tcx(), &substs);
         self.write_ty(node_id, ty);
-        self.write_substs(node_id, substs);
+        self.write_substs(node_id, substs, obligations);
     }
 
     pub fn write_autoderef_adjustment(&self,
@@ -1356,6 +1392,18 @@ impl<'a> FnCtxt<'a> {
     }
     pub fn write_error(&self, node_id: ast::NodeId) {
         self.write_ty(node_id, ty::mk_err());
+    }
+
+    pub fn register_obligation(&self,
+                               obligation: traits::Obligation)
+                               -> traits::PendingSelection
+    {
+        debug!("register_obligation({})",
+               obligation.repr(self.tcx()));
+
+        self.inh.fulfillment_context
+            .borrow_mut()
+            .register_obligation(self.tcx(), obligation)
     }
 
     pub fn to_ty(&self, ast_t: &ast::Ty) -> ty::t {
@@ -1400,9 +1448,8 @@ impl<'a> FnCtxt<'a> {
         }
     }
 
-    pub fn opt_node_ty_substs(&self,
-                              id: ast::NodeId,
-                              f: |&ty::ItemSubsts|) {
+    pub fn opt_node_ty_substs(&self, id: ast::NodeId,
+                              f: |&TypeckItemSubsts|) {
         match self.inh.item_substs.borrow().find(&id) {
             Some(s) => { f(s) }
             None => { }
@@ -1499,547 +1546,6 @@ impl<'a> FnCtxt<'a> {
 pub enum LvaluePreference {
     PreferMutLvalue,
     NoPreference
-}
-
-pub fn autoderef<T>(fcx: &FnCtxt, sp: Span, base_ty: ty::t,
-                    expr_id: Option<ast::NodeId>,
-                    mut lvalue_pref: LvaluePreference,
-                    should_stop: |ty::t, uint| -> Option<T>)
-                    -> (ty::t, uint, Option<T>) {
-    /*!
-     * Executes an autoderef loop for the type `t`. At each step, invokes
-     * `should_stop` to decide whether to terminate the loop. Returns
-     * the final type and number of derefs that it performed.
-     *
-     * Note: this method does not modify the adjustments table. The caller is
-     * responsible for inserting an AutoAdjustment record into the `fcx`
-     * using one of the suitable methods.
-     */
-
-    let mut t = base_ty;
-    for autoderefs in range(0, fcx.tcx().sess.recursion_limit.get()) {
-        let resolved_t = structurally_resolved_type(fcx, sp, t);
-
-        match should_stop(resolved_t, autoderefs) {
-            Some(x) => return (resolved_t, autoderefs, Some(x)),
-            None => {}
-        }
-
-        // Otherwise, deref if type is derefable:
-        let mt = match ty::deref(resolved_t, false) {
-            Some(mt) => Some(mt),
-            None => {
-                let method_call = expr_id.map(|id| MethodCall::autoderef(id, autoderefs));
-                try_overloaded_deref(fcx, sp, method_call, None, resolved_t, lvalue_pref)
-            }
-        };
-        match mt {
-            Some(mt) => {
-                t = mt.ty;
-                if mt.mutbl == ast::MutImmutable {
-                    lvalue_pref = NoPreference;
-                }
-            }
-            None => return (resolved_t, autoderefs, None)
-        }
-    }
-
-    // We've reached the recursion limit, error gracefully.
-    span_err!(fcx.tcx().sess, sp, E0055,
-        "reached the recursion limit while auto-dereferencing {}",
-        base_ty.repr(fcx.tcx()));
-    (ty::mk_err(), 0, None)
-}
-
-/// Attempts to resolve a call expression as an overloaded call.
-fn try_overloaded_call(fcx: &FnCtxt,
-                       call_expression: &ast::Expr,
-                       callee: Gc<ast::Expr>,
-                       callee_type: ty::t,
-                       args: &[Gc<ast::Expr>])
-                       -> bool {
-    // Bail out if the callee is a bare function or a closure. We check those
-    // manually.
-    match *structure_of(fcx, callee.span, callee_type) {
-        ty::ty_bare_fn(_) | ty::ty_closure(_) => return false,
-        _ => {}
-    }
-
-    // Try `FnOnce`, then `FnMut`, then `Fn`.
-    for &(maybe_function_trait, method_name) in [
-        (fcx.tcx().lang_items.fn_once_trait(), token::intern("call_once")),
-        (fcx.tcx().lang_items.fn_mut_trait(), token::intern("call_mut")),
-        (fcx.tcx().lang_items.fn_trait(), token::intern("call"))
-    ].iter() {
-        let function_trait = match maybe_function_trait {
-            None => continue,
-            Some(function_trait) => function_trait,
-        };
-        let method_callee = match method::lookup_in_trait(
-                fcx,
-                call_expression.span,
-                Some(&*callee),
-                method_name,
-                function_trait,
-                callee_type,
-                [],
-                DontAutoderefReceiver,
-                IgnoreStaticMethods) {
-            None => continue,
-            Some(method_callee) => method_callee,
-        };
-        let method_call = MethodCall::expr(call_expression.id);
-        let output_type = check_method_argument_types(fcx,
-                                                      call_expression.span,
-                                                      method_callee.ty,
-                                                      call_expression,
-                                                      args,
-                                                      DontDerefArgs,
-                                                      TupleArguments);
-        fcx.inh.method_map.borrow_mut().insert(method_call, method_callee);
-        write_call(fcx, call_expression, output_type);
-
-        if !fcx.tcx().sess.features.overloaded_calls.get() {
-            span_err!(fcx.tcx().sess, call_expression.span, E0056,
-                "overloaded calls are experimental");
-            span_note!(fcx.tcx().sess, call_expression.span,
-                "add `#[feature(overloaded_calls)]` to \
-                the crate attributes to enable");
-        }
-
-        return true
-    }
-
-    false
-}
-
-fn try_overloaded_deref(fcx: &FnCtxt,
-                        span: Span,
-                        method_call: Option<MethodCall>,
-                        base_expr: Option<&ast::Expr>,
-                        base_ty: ty::t,
-                        lvalue_pref: LvaluePreference)
-                        -> Option<ty::mt> {
-    // Try DerefMut first, if preferred.
-    let method = match (lvalue_pref, fcx.tcx().lang_items.deref_mut_trait()) {
-        (PreferMutLvalue, Some(trait_did)) => {
-            method::lookup_in_trait(fcx, span, base_expr.map(|x| &*x),
-                                    token::intern("deref_mut"), trait_did,
-                                    base_ty, [], DontAutoderefReceiver, IgnoreStaticMethods)
-        }
-        _ => None
-    };
-
-    // Otherwise, fall back to Deref.
-    let method = match (method, fcx.tcx().lang_items.deref_trait()) {
-        (None, Some(trait_did)) => {
-            method::lookup_in_trait(fcx, span, base_expr.map(|x| &*x),
-                                    token::intern("deref"), trait_did,
-                                    base_ty, [], DontAutoderefReceiver, IgnoreStaticMethods)
-        }
-        (method, _) => method
-    };
-
-    match method {
-        Some(method) => {
-            let ref_ty = ty::ty_fn_ret(method.ty);
-            match method_call {
-                Some(method_call) => {
-                    fcx.inh.method_map.borrow_mut().insert(method_call, method);
-                }
-                None => {}
-            }
-            ty::deref(ref_ty, true)
-        }
-        None => None
-    }
-}
-
-fn try_overloaded_index(fcx: &FnCtxt,
-                        method_call: Option<MethodCall>,
-                        expr: &ast::Expr,
-                        base_expr: Gc<ast::Expr>,
-                        base_ty: ty::t,
-                        index_expr: Gc<ast::Expr>,
-                        lvalue_pref: LvaluePreference)
-                        -> Option<ty::mt> {
-    // Try `IndexMut` first, if preferred.
-    let method = match (lvalue_pref, fcx.tcx().lang_items.index_mut_trait()) {
-        (PreferMutLvalue, Some(trait_did)) => {
-            method::lookup_in_trait(fcx,
-                                    expr.span,
-                                    Some(&*base_expr),
-                                    token::intern("index_mut"),
-                                    trait_did,
-                                    base_ty,
-                                    [],
-                                    DontAutoderefReceiver,
-                                    IgnoreStaticMethods)
-        }
-        _ => None,
-    };
-
-    // Otherwise, fall back to `Index`.
-    let method = match (method, fcx.tcx().lang_items.index_trait()) {
-        (None, Some(trait_did)) => {
-            method::lookup_in_trait(fcx,
-                                    expr.span,
-                                    Some(&*base_expr),
-                                    token::intern("index"),
-                                    trait_did,
-                                    base_ty,
-                                    [],
-                                    DontAutoderefReceiver,
-                                    IgnoreStaticMethods)
-        }
-        (method, _) => method,
-    };
-
-    // Regardless of whether the lookup succeeds, check the method arguments
-    // so that we have *some* type for each argument.
-    let method_type = match method {
-        Some(ref method) => method.ty,
-        None => ty::mk_err()
-    };
-    check_method_argument_types(fcx,
-                                expr.span,
-                                method_type,
-                                expr,
-                                [base_expr, index_expr],
-                                DoDerefArgs,
-                                DontTupleArguments);
-
-    match method {
-        Some(method) => {
-            let ref_ty = ty::ty_fn_ret(method.ty);
-            match method_call {
-                Some(method_call) => {
-                    fcx.inh.method_map.borrow_mut().insert(method_call,
-                                                           method);
-                }
-                None => {}
-            }
-            ty::deref(ref_ty, true)
-        }
-        None => None,
-    }
-}
-
-/// Given the head of a `for` expression, looks up the `next` method in the
-/// `Iterator` trait. Fails if the expression does not implement `next`.
-///
-/// The return type of this function represents the concrete element type
-/// `A` in the type `Iterator<A>` that the method returns.
-fn lookup_method_for_for_loop(fcx: &FnCtxt,
-                              iterator_expr: Gc<ast::Expr>,
-                              loop_id: ast::NodeId)
-                              -> ty::t {
-    let trait_did = match fcx.tcx().lang_items.require(IteratorItem) {
-        Ok(trait_did) => trait_did,
-        Err(ref err_string) => {
-            fcx.tcx().sess.span_err(iterator_expr.span,
-                                    err_string.as_slice());
-            return ty::mk_err()
-        }
-    };
-
-    let method = method::lookup_in_trait(fcx,
-                                         iterator_expr.span,
-                                         Some(&*iterator_expr),
-                                         token::intern("next"),
-                                         trait_did,
-                                         fcx.expr_ty(&*iterator_expr),
-                                         [],
-                                         DontAutoderefReceiver,
-                                         IgnoreStaticMethods);
-
-    // Regardless of whether the lookup succeeds, check the method arguments
-    // so that we have *some* type for each argument.
-    let method_type = match method {
-        Some(ref method) => method.ty,
-        None => {
-            fcx.tcx().sess.span_err(iterator_expr.span,
-                                    "`for` loop expression does not \
-                                     implement the `Iterator` trait");
-            ty::mk_err()
-        }
-    };
-    let return_type = check_method_argument_types(fcx,
-                                                  iterator_expr.span,
-                                                  method_type,
-                                                  &*iterator_expr,
-                                                  [iterator_expr],
-                                                  DontDerefArgs,
-                                                  DontTupleArguments);
-
-    match method {
-        Some(method) => {
-            fcx.inh.method_map.borrow_mut().insert(MethodCall::expr(loop_id),
-                                                   method);
-
-            // We expect the return type to be `Option` or something like it.
-            // Grab the first parameter of its type substitution.
-            let return_type = structurally_resolved_type(fcx,
-                                                         iterator_expr.span,
-                                                         return_type);
-            match ty::get(return_type).sty {
-                ty::ty_enum(_, ref substs)
-                        if !substs.types.is_empty_in(subst::TypeSpace) => {
-                    *substs.types.get(subst::TypeSpace, 0)
-                }
-                _ => {
-                    fcx.tcx().sess.span_err(iterator_expr.span,
-                                            "`next` method of the `Iterator` \
-                                             trait has an unexpected type");
-                    ty::mk_err()
-                }
-            }
-        }
-        None => ty::mk_err()
-    }
-}
-
-fn check_method_argument_types(fcx: &FnCtxt,
-                               sp: Span,
-                               method_fn_ty: ty::t,
-                               callee_expr: &ast::Expr,
-                               args: &[Gc<ast::Expr>],
-                               deref_args: DerefArgs,
-                               tuple_arguments: TupleArgumentsFlag)
-                               -> ty::t {
-    // HACK(eddyb) ignore provided self (it has special typeck rules).
-    let args = if tuple_arguments == DontTupleArguments {
-        args.slice_from(1)
-    } else {
-        args
-    };
-    if ty::type_is_error(method_fn_ty) {
-        let err_inputs = err_args(args.len());
-        check_argument_types(fcx,
-                             sp,
-                             err_inputs.as_slice(),
-                             callee_expr,
-                             args,
-                             deref_args,
-                             false,
-                             tuple_arguments);
-        method_fn_ty
-    } else {
-        match ty::get(method_fn_ty).sty {
-            ty::ty_bare_fn(ref fty) => {
-                // HACK(eddyb) ignore self in the definition (see above).
-                check_argument_types(fcx,
-                                     sp,
-                                     fty.sig.inputs.slice_from(1),
-                                     callee_expr,
-                                     args,
-                                     deref_args,
-                                     fty.sig.variadic,
-                                     tuple_arguments);
-                fty.sig.output
-            }
-            _ => {
-                fcx.tcx().sess.span_bug(callee_expr.span,
-                                        "method without bare fn type");
-            }
-        }
-    }
-}
-
-fn check_argument_types(fcx: &FnCtxt,
-                        sp: Span,
-                        fn_inputs: &[ty::t],
-                        callee_expr: &ast::Expr,
-                        args: &[Gc<ast::Expr>],
-                        deref_args: DerefArgs,
-                        variadic: bool,
-                        tuple_arguments: TupleArgumentsFlag) {
-    /*!
-     *
-     * Generic function that factors out common logic from
-     * function calls, method calls and overloaded operators.
-     */
-
-    let tcx = fcx.ccx.tcx;
-
-    // Grab the argument types, supplying fresh type variables
-    // if the wrong number of arguments were supplied
-    let supplied_arg_count = if tuple_arguments == DontTupleArguments {
-        args.len()
-    } else {
-        1
-    };
-
-    let expected_arg_count = fn_inputs.len();
-    let formal_tys = if tuple_arguments == TupleArguments {
-        let tuple_type = structurally_resolved_type(fcx, sp, fn_inputs[0]);
-        match ty::get(tuple_type).sty {
-            ty::ty_tup(ref arg_types) => {
-                if arg_types.len() != args.len() {
-                    span_err!(tcx.sess, sp, E0057,
-                        "this function takes {} parameter{} but {} parameter{} supplied",
-                        arg_types.len(),
-                        if arg_types.len() == 1 {""} else {"s"},
-                        args.len(),
-                        if args.len() == 1 {" was"} else {"s were"});
-                    err_args(args.len())
-                } else {
-                    (*arg_types).clone()
-                }
-            }
-            ty::ty_nil => {
-                if args.len() != 0 {
-                    span_err!(tcx.sess, sp, E0058,
-                        "this function takes 0 parameters but {} parameter{} supplied",
-                        args.len(),
-                        if args.len() == 1 {" was"} else {"s were"});
-                }
-                Vec::new()
-            }
-            _ => {
-                span_err!(tcx.sess, sp, E0059,
-                    "cannot use call notation; the first type parameter \
-                     for the function trait is neither a tuple nor unit");
-                err_args(supplied_arg_count)
-            }
-        }
-    } else if expected_arg_count == supplied_arg_count {
-        fn_inputs.iter().map(|a| *a).collect()
-    } else if variadic {
-        if supplied_arg_count >= expected_arg_count {
-            fn_inputs.iter().map(|a| *a).collect()
-        } else {
-            span_err!(tcx.sess, sp, E0060,
-                "this function takes at least {} parameter{} \
-                 but {} parameter{} supplied",
-                expected_arg_count,
-                if expected_arg_count == 1 {""} else {"s"},
-                supplied_arg_count,
-                if supplied_arg_count == 1 {" was"} else {"s were"});
-            err_args(supplied_arg_count)
-        }
-    } else {
-        span_err!(tcx.sess, sp, E0061,
-            "this function takes {} parameter{} but {} parameter{} supplied",
-            expected_arg_count,
-            if expected_arg_count == 1 {""} else {"s"},
-            supplied_arg_count,
-            if supplied_arg_count == 1 {" was"} else {"s were"});
-        err_args(supplied_arg_count)
-    };
-
-    debug!("check_argument_types: formal_tys={:?}",
-           formal_tys.iter().map(|t| fcx.infcx().ty_to_string(*t)).collect::<Vec<String>>());
-
-    // Check the arguments.
-    // We do this in a pretty awful way: first we typecheck any arguments
-    // that are not anonymous functions, then we typecheck the anonymous
-    // functions. This is so that we have more information about the types
-    // of arguments when we typecheck the functions. This isn't really the
-    // right way to do this.
-    let xs = [false, true];
-    for check_blocks in xs.iter() {
-        let check_blocks = *check_blocks;
-        debug!("check_blocks={}", check_blocks);
-
-        // More awful hacks: before we check the blocks, try to do
-        // an "opportunistic" vtable resolution of any trait
-        // bounds on the call.
-        if check_blocks {
-            vtable::early_resolve_expr(callee_expr, fcx, true);
-        }
-
-        // For variadic functions, we don't have a declared type for all of
-        // the arguments hence we only do our usual type checking with
-        // the arguments who's types we do know.
-        let t = if variadic {
-            expected_arg_count
-        } else if tuple_arguments == TupleArguments {
-            args.len()
-        } else {
-            supplied_arg_count
-        };
-        for (i, arg) in args.iter().take(t).enumerate() {
-            let is_block = match arg.node {
-                ast::ExprFnBlock(..) |
-                ast::ExprProc(..) |
-                ast::ExprUnboxedFn(..) => true,
-                _ => false
-            };
-
-            if is_block == check_blocks {
-                debug!("checking the argument");
-                let mut formal_ty = *formal_tys.get(i);
-
-                match deref_args {
-                    DoDerefArgs => {
-                        match ty::get(formal_ty).sty {
-                            ty::ty_rptr(_, mt) => formal_ty = mt.ty,
-                            ty::ty_err => (),
-                            _ => {
-                                // So we hit this case when one implements the
-                                // operator traits but leaves an argument as
-                                // just T instead of &T. We'll catch it in the
-                                // mismatch impl/trait method phase no need to
-                                // ICE here.
-                                // See: #11450
-                                formal_ty = ty::mk_err();
-                            }
-                        }
-                    }
-                    DontDerefArgs => {}
-                }
-
-                check_expr_coercable_to_type(fcx, &**arg, formal_ty);
-
-            }
-        }
-    }
-
-    // We also need to make sure we at least write the ty of the other
-    // arguments which we skipped above.
-    if variadic {
-        for arg in args.iter().skip(expected_arg_count) {
-            check_expr(fcx, &**arg);
-
-            // There are a few types which get autopromoted when passed via varargs
-            // in C but we just error out instead and require explicit casts.
-            let arg_ty = structurally_resolved_type(fcx, arg.span,
-                                                    fcx.expr_ty(&**arg));
-            match ty::get(arg_ty).sty {
-                ty::ty_float(ast::TyF32) => {
-                    fcx.type_error_message(arg.span,
-                                           |t| {
-                        format!("can't pass an {} to variadic \
-                                 function, cast to c_double", t)
-                    }, arg_ty, None);
-                }
-                ty::ty_int(ast::TyI8) | ty::ty_int(ast::TyI16) | ty::ty_bool => {
-                    fcx.type_error_message(arg.span, |t| {
-                        format!("can't pass {} to variadic \
-                                 function, cast to c_int",
-                                       t)
-                    }, arg_ty, None);
-                }
-                ty::ty_uint(ast::TyU8) | ty::ty_uint(ast::TyU16) => {
-                    fcx.type_error_message(arg.span, |t| {
-                        format!("can't pass {} to variadic \
-                                 function, cast to c_uint",
-                                       t)
-                    }, arg_ty, None);
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-fn err_args(len: uint) -> Vec<ty::t> {
-    Vec::from_fn(len, |_| ty::mk_err())
-}
-
-fn write_call(fcx: &FnCtxt, call_expr: &ast::Expr, output: ty::t) {
-    fcx.write_ty(call_expr.id, output);
 }
 
 // AST fragment checking
@@ -2146,31 +1652,6 @@ fn check_expr_with_lvalue_pref(fcx: &FnCtxt, expr: &ast::Expr,
     check_expr_with_unifier(fcx, expr, NoExpectation, lvalue_pref, || ())
 }
 
-
-// determine the `self` type, using fresh variables for all variables
-// declared on the impl declaration e.g., `impl<A,B> for ~[(A,B)]`
-// would return ($0, $1) where $0 and $1 are freshly instantiated type
-// variables.
-pub fn impl_self_ty(vcx: &VtableContext,
-                    span: Span, // (potential) receiver for this impl
-                    did: ast::DefId)
-                    -> TypeAndSubsts {
-    let tcx = vcx.tcx();
-
-    let ity = ty::lookup_item_type(tcx, did);
-    let (n_tps, rps, raw_ty) =
-        (ity.generics.types.len(subst::TypeSpace),
-         ity.generics.regions.get_slice(subst::TypeSpace),
-         ity.ty);
-
-    let rps = vcx.infcx.region_vars_for_defs(span, rps);
-    let tps = vcx.infcx.next_ty_vars(n_tps);
-    let substs = subst::Substs::new_type(tps, rps);
-    let substd_ty = raw_ty.subst(tcx, &substs);
-
-    TypeAndSubsts { substs: substs, ty: substd_ty }
-}
-
 // Only for fields! Returns <none> for methods>
 // Indifferent to privacy flags
 pub fn lookup_field_ty(tcx: &ty::ctxt,
@@ -2178,7 +1659,6 @@ pub fn lookup_field_ty(tcx: &ty::ctxt,
                        items: &[ty::field_ty],
                        fieldname: ast::Name,
                        substs: &subst::Substs) -> Option<ty::t> {
-
     let o_field = items.iter().find(|f| f.name == fieldname);
     o_field.map(|f| ty::lookup_field_type(tcx, class_id, f.id, substs))
 }
@@ -2229,131 +1709,6 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                            unifier: ||)
 {
     debug!(">> typechecking");
-
-    // A generic function for doing all of the checking for call expressions
-    fn check_call(fcx: &FnCtxt,
-                  call_expr: &ast::Expr,
-                  f: &ast::Expr,
-                  args: &[Gc<ast::Expr>]) {
-        // Store the type of `f` as the type of the callee
-        let fn_ty = fcx.expr_ty(f);
-
-        // Extract the function signature from `in_fty`.
-        let fn_sty = structure_of(fcx, f.span, fn_ty);
-
-        // This is the "default" function signature, used in case of error.
-        // In that case, we check each argument against "error" in order to
-        // set up all the node type bindings.
-        let error_fn_sig = FnSig {
-            binder_id: ast::CRATE_NODE_ID,
-            inputs: err_args(args.len()),
-            output: ty::mk_err(),
-            variadic: false
-        };
-
-        let fn_sig = match *fn_sty {
-            ty::ty_bare_fn(ty::BareFnTy {sig: ref sig, ..}) |
-            ty::ty_closure(box ty::ClosureTy {sig: ref sig, ..}) => sig,
-            _ => {
-                fcx.type_error_message(call_expr.span, |actual| {
-                    format!("expected function but found `{}`", actual)
-                }, fn_ty, None);
-                &error_fn_sig
-            }
-        };
-
-        // Replace any bound regions that appear in the function
-        // signature with region variables
-        let (_, fn_sig) = replace_late_bound_regions_in_fn_sig(fcx.tcx(), fn_sig, |br| {
-            fcx.infcx().next_region_var(infer::LateBoundRegion(call_expr.span, br))
-        });
-
-        // Call the generic checker.
-        check_argument_types(fcx,
-                             call_expr.span,
-                             fn_sig.inputs.as_slice(),
-                             f,
-                             args,
-                             DontDerefArgs,
-                             fn_sig.variadic,
-                             DontTupleArguments);
-
-        write_call(fcx, call_expr, fn_sig.output);
-    }
-
-    // Checks a method call.
-    fn check_method_call(fcx: &FnCtxt,
-                         expr: &ast::Expr,
-                         method_name: ast::SpannedIdent,
-                         args: &[Gc<ast::Expr>],
-                         tps: &[ast::P<ast::Ty>]) {
-        let rcvr = args[0].clone();
-        // We can't know if we need &mut self before we look up the method,
-        // so treat the receiver as mutable just in case - only explicit
-        // overloaded dereferences care about the distinction.
-        check_expr_with_lvalue_pref(fcx, &*rcvr, PreferMutLvalue);
-
-        // no need to check for bot/err -- callee does that
-        let expr_t = structurally_resolved_type(fcx,
-                                                expr.span,
-                                                fcx.expr_ty(&*rcvr));
-
-        let tps = tps.iter().map(|ast_ty| fcx.to_ty(&**ast_ty)).collect::<Vec<_>>();
-        let fn_ty = match method::lookup(fcx, expr, &*rcvr,
-                                         method_name.node.name,
-                                         expr_t, tps.as_slice(),
-                                         DontDerefArgs,
-                                         CheckTraitsAndInherentMethods,
-                                         AutoderefReceiver, IgnoreStaticMethods) {
-            Some(method) => {
-                let method_ty = method.ty;
-                let method_call = MethodCall::expr(expr.id);
-                fcx.inh.method_map.borrow_mut().insert(method_call, method);
-                method_ty
-            }
-            None => {
-                debug!("(checking method call) failing expr is {}", expr.id);
-
-                fcx.type_error_message(method_name.span,
-                  |actual| {
-                      format!("type `{}` does not implement any \
-                               method in scope named `{}`",
-                              actual,
-                              token::get_ident(method_name.node))
-                  },
-                  expr_t,
-                  None);
-
-                // Add error type for the result
-                fcx.write_error(expr.id);
-
-                // Check for potential static matches (missing self parameters)
-                method::lookup(fcx,
-                               expr,
-                               &*rcvr,
-                               method_name.node.name,
-                               expr_t,
-                               tps.as_slice(),
-                               DontDerefArgs,
-                               CheckTraitsAndInherentMethods,
-                               DontAutoderefReceiver,
-                               ReportStaticMethods);
-
-                ty::mk_err()
-            }
-        };
-
-        // Call the generic checker.
-        let ret_ty = check_method_argument_types(fcx,
-                                                 method_name.span,
-                                                 fn_ty,
-                                                 expr,
-                                                 args,
-                                                 DontDerefArgs,
-                                                 DontTupleArguments);
-
-        write_call(fcx, expr, ret_ty);
-    }
 
     // A generic function for checking the then and else in an if
     // or if-check
@@ -2407,53 +1762,6 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
         };
 
         fcx.write_ty(id, if_ty);
-    }
-
-    fn lookup_op_method(fcx: &FnCtxt,
-                        op_ex: &ast::Expr,
-                        self_t: ty::t,
-                        opname: ast::Name,
-                        trait_did: Option<ast::DefId>,
-                        args: &[Gc<ast::Expr>],
-                        autoderef_receiver: AutoderefReceiverFlag,
-                        unbound_method: ||) -> ty::t {
-        let method = match trait_did {
-            Some(trait_did) => {
-                method::lookup_in_trait(fcx, op_ex.span, Some(&*args[0]), opname,
-                                        trait_did, self_t, [], autoderef_receiver,
-                                        IgnoreStaticMethods)
-            }
-            None => None
-        };
-        match method {
-            Some(method) => {
-                let method_ty = method.ty;
-                // HACK(eddyb) Fully qualified path to work around a resolve bug.
-                let method_call = ::middle::typeck::MethodCall::expr(op_ex.id);
-                fcx.inh.method_map.borrow_mut().insert(method_call, method);
-                check_method_argument_types(fcx,
-                                            op_ex.span,
-                                            method_ty,
-                                            op_ex,
-                                            args,
-                                            DoDerefArgs,
-                                            DontTupleArguments)
-            }
-            None => {
-                unbound_method();
-                // Check the args anyway
-                // so we get all the error messages
-                let expected_ty = ty::mk_err();
-                check_method_argument_types(fcx,
-                                            op_ex.span,
-                                            expected_ty,
-                                            op_ex,
-                                            args,
-                                            DoDerefArgs,
-                                            DontTupleArguments);
-                ty::mk_err()
-            }
-        }
     }
 
     // could be either an expr_binop or an expr_assign_binop
@@ -2590,8 +1898,8 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                 return ty::mk_err();
             }
         };
-        lookup_op_method(fcx, ex, lhs_resolved_t, token::intern(name),
-                         trait_did, [lhs_expr, rhs], DontAutoderefReceiver, || {
+        call::lookup_op_method(fcx, ex, lhs_resolved_t, token::intern(name),
+                               trait_did, [lhs_expr, rhs], || {
             fcx.type_error_message(ex.span, |actual| {
                 format!("binary operation `{}` cannot be applied to type `{}`",
                         ast_util::binop_to_string(op),
@@ -2607,8 +1915,8 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                        ex: &ast::Expr,
                        rhs_expr: Gc<ast::Expr>,
                        rhs_t: ty::t) -> ty::t {
-       lookup_op_method(fcx, ex, rhs_t, token::intern(mname),
-                        trait_did, [rhs_expr], DontAutoderefReceiver, || {
+       call::lookup_op_method(fcx, ex, rhs_t, token::intern(mname),
+                              trait_did, [rhs_expr], || {
             fcx.type_error_message(ex.span, |actual| {
                 format!("cannot apply unary operator `{}` to type `{}`",
                         op_str, actual)
@@ -2744,81 +2052,6 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                  id,
                  &*body,
                  fcx.inh);
-    }
-
-
-    // Check field access expressions
-    fn check_field(fcx: &FnCtxt,
-                   expr: &ast::Expr,
-                   lvalue_pref: LvaluePreference,
-                   base: &ast::Expr,
-                   field: &ast::SpannedIdent,
-                   tys: &[ast::P<ast::Ty>]) {
-        let tcx = fcx.ccx.tcx;
-        check_expr_with_lvalue_pref(fcx, base, lvalue_pref);
-        let expr_t = structurally_resolved_type(fcx, expr.span,
-                                                fcx.expr_ty(base));
-        // FIXME(eddyb) #12808 Integrate privacy into this auto-deref loop.
-        let (_, autoderefs, field_ty) =
-            autoderef(fcx, expr.span, expr_t, Some(base.id), lvalue_pref, |base_t, _| {
-                match ty::get(base_t).sty {
-                    ty::ty_struct(base_id, ref substs) => {
-                        debug!("struct named {}", ppaux::ty_to_string(tcx, base_t));
-                        let fields = ty::lookup_struct_fields(tcx, base_id);
-                        lookup_field_ty(tcx, base_id, fields.as_slice(),
-                                        field.node.name, &(*substs))
-                    }
-                    _ => None
-                }
-            });
-        match field_ty {
-            Some(field_ty) => {
-                fcx.write_ty(expr.id, field_ty);
-                fcx.write_autoderef_adjustment(base.id, autoderefs);
-                return;
-            }
-            None => {}
-        }
-
-        let tps: Vec<ty::t> = tys.iter().map(|ty| fcx.to_ty(&**ty)).collect();
-        match method::lookup(fcx,
-                             expr,
-                             base,
-                             field.node.name,
-                             expr_t,
-                             tps.as_slice(),
-                             DontDerefArgs,
-                             CheckTraitsAndInherentMethods,
-                             AutoderefReceiver,
-                             IgnoreStaticMethods) {
-            Some(_) => {
-                fcx.type_error_message(
-                    field.span,
-                    |actual| {
-                        format!("attempted to take value of method `{}` on type \
-                                 `{}`", token::get_ident(field.node), actual)
-                    },
-                    expr_t, None);
-
-                tcx.sess.span_note(field.span,
-                    "maybe a missing `()` to call it? If not, try an anonymous function.");
-            }
-
-            None => {
-                fcx.type_error_message(
-                    expr.span,
-                    |actual| {
-                        format!("attempted access of field `{}` on \
-                                        type `{}`, but no field with that \
-                                        name was found",
-                                       token::get_ident(field.node),
-                                       actual)
-                    },
-                    expr_t, None);
-            }
-        }
-
-        fcx.write_error(expr.id);
     }
 
     fn check_struct_or_variant_fields(fcx: &FnCtxt,
@@ -3184,38 +2417,8 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                     oprnd_t = ty::mk_uniq(tcx, oprnd_t);
                 }
                 ast::UnDeref => {
-                    oprnd_t = structurally_resolved_type(fcx, expr.span, oprnd_t);
-                    oprnd_t = match ty::deref(oprnd_t, true) {
-                        Some(mt) => mt.ty,
-                        None => match try_overloaded_deref(fcx, expr.span,
-                                                           Some(MethodCall::expr(expr.id)),
-                                                           Some(&**oprnd), oprnd_t, lvalue_pref) {
-                            Some(mt) => mt.ty,
-                            None => {
-                                let is_newtype = match ty::get(oprnd_t).sty {
-                                    ty::ty_struct(did, ref substs) => {
-                                        let fields = ty::struct_fields(fcx.tcx(), did, substs);
-                                        fields.len() == 1
-                                        && fields.get(0).ident ==
-                                        token::special_idents::unnamed_field
-                                    }
-                                    _ => false
-                                };
-                                if is_newtype {
-                                    // This is an obsolete struct deref
-                                    span_err!(tcx.sess, expr.span, E0068,
-                                        "single-field tuple-structs can \
-                                         no longer be dereferenced");
-                                } else {
-                                    fcx.type_error_message(expr.span, |actual| {
-                                        format!("type `{}` cannot be \
-                                                dereferenced", actual)
-                                    }, oprnd_t, None);
-                                }
-                                ty::mk_err()
-                            }
-                        }
-                    };
+                    oprnd_t = deref::check_deref(fcx, expr, &**oprnd, oprnd_t,
+                                                 lvalue_pref);
                 }
                 ast::UnNot => {
                     oprnd_t = structurally_resolved_type(fcx, oprnd.span,
@@ -3366,8 +2569,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
       }
       ast::ExprForLoop(ref pat, ref head, ref block, _) => {
         check_expr(fcx, &**head);
-        let typ = lookup_method_for_for_loop(fcx, *head, expr.id);
-        vtable::early_resolve_expr(expr, fcx, true);
+        let typ = call::lookup_method_for_for_loop(fcx, *head, expr.id);
 
         let pcx = pat_ctxt {
             fcx: fcx,
@@ -3421,29 +2623,11 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
         fcx.write_ty(id, fcx.node_ty(b.id));
       }
       ast::ExprCall(ref f, ref args) => {
-          // Index expressions need to be handled separately, to inform them
-          // that they appear in call position.
-          check_expr(fcx, &**f);
-          let f_ty = fcx.expr_ty(&**f);
-
-          if !try_overloaded_call(fcx, expr, f.clone(), f_ty, args.as_slice()) {
-              check_call(fcx, expr, &**f, args.as_slice());
-              let (args_bot, args_err) = args.iter().fold((false, false),
-                 |(rest_bot, rest_err), a| {
-                     // is this not working?
-                     let a_ty = fcx.expr_ty(&**a);
-                     (rest_bot || ty::type_is_bot(a_ty),
-                      rest_err || ty::type_is_error(a_ty))});
-              if ty::type_is_error(f_ty) || args_err {
-                  fcx.write_error(id);
-              }
-              else if ty::type_is_bot(f_ty) || args_bot {
-                  fcx.write_bot(id);
-              }
-          }
+          call::check_call_expr(fcx, expr, &**f, args.as_slice());
       }
       ast::ExprMethodCall(ident, ref tps, ref args) => {
-        check_method_call(fcx, expr, ident, args.as_slice(), tps.as_slice());
+        call::check_method_call(fcx, expr, ident, args.as_slice(),
+                                tps.as_slice());
         let mut arg_tys = args.iter().map(|a| fcx.expr_ty(&**a));
         let (args_bot, args_err) = arg_tys.fold((false, false),
              |(rest_bot, rest_err), a| {
@@ -3462,7 +2646,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
             }
             _ => {}
         }
-        check_cast(fcx, &**e, &**t, id, expr.span);
+        check_cast(fcx, &**e, &**t, expr);
       }
       ast::ExprVec(ref args) => {
         let (check, t) = check_fn_for_vec_elements_expected(fcx, expected);
@@ -3604,59 +2788,14 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
         }
       }
       ast::ExprField(ref base, ref field, ref tys) => {
-        check_field(fcx, expr, lvalue_pref, &**base, field, tys.as_slice());
+          let t = field::check_field(fcx, expr, lvalue_pref, &**base,
+                                     field.node.name, tys);
+          fcx.write_ty(id, t);
       }
-      ast::ExprIndex(ref base, ref idx) => {
-          check_expr_with_lvalue_pref(fcx, &**base, lvalue_pref);
-          check_expr(fcx, &**idx);
-          let raw_base_t = fcx.expr_ty(&**base);
-          let idx_t = fcx.expr_ty(&**idx);
-          if ty::type_is_error(raw_base_t) || ty::type_is_bot(raw_base_t) {
-              fcx.write_ty(id, raw_base_t);
-          } else if ty::type_is_error(idx_t) || ty::type_is_bot(idx_t) {
-              fcx.write_ty(id, idx_t);
-          } else {
-              let (_, autoderefs, field_ty) =
-                autoderef(fcx, expr.span, raw_base_t, Some(base.id),
-                          lvalue_pref, |base_t, _| ty::index(base_t));
-              match field_ty {
-                  Some(mt) => {
-                      check_expr_has_type(fcx, &**idx, ty::mk_uint());
-                      fcx.write_ty(id, mt.ty);
-                      fcx.write_autoderef_adjustment(base.id, autoderefs);
-                  }
-                  None => {
-                      // This is an overloaded method.
-                      let base_t = structurally_resolved_type(fcx,
-                                                              expr.span,
-                                                              raw_base_t);
-                      let method_call = MethodCall::expr(expr.id);
-                      match try_overloaded_index(fcx,
-                                                 Some(method_call),
-                                                 expr,
-                                                 *base,
-                                                 base_t,
-                                                 *idx,
-                                                 lvalue_pref) {
-                          Some(mt) => fcx.write_ty(id, mt.ty),
-                          None => {
-                                fcx.type_error_message(expr.span,
-                                                       |actual| {
-                                                        format!("cannot \
-                                                                 index a \
-                                                                 value of \
-                                                                 type `{}`",
-                                                                actual)
-                                                       },
-                                                       base_t,
-                                                       None);
-                                fcx.write_ty(id, ty::mk_err())
-                          }
-                      }
-                  }
-              }
-          }
-       }
+      ast::ExprIndex(base, idx) => {
+          let t = index::check_index(fcx, expr, base, idx, lvalue_pref);
+          fcx.write_ty(id, t);
+      }
     }
 
     debug!("type of expr({}) {} is...", expr.id,
@@ -4424,9 +3563,16 @@ pub fn instantiate_path(fcx: &FnCtxt,
         assert_eq!(substs.regions().len(space), region_defs.len(space));
     }
 
-    fcx.write_ty_substs(node_id, polytype.ty, ty::ItemSubsts {
-        substs: substs,
-    });
+    let obligations =
+        traits::obligations_for_generics(fcx.tcx(),
+                                         span,
+                                         &polytype.generics,
+                                         &substs);
+
+    fcx.write_ty_substs(node_id,
+                        polytype.ty,
+                        substs,
+                        obligations);
 
     fn report_error_if_segment_contains_type_parameters(
         fcx: &FnCtxt,
@@ -4613,6 +3759,15 @@ pub fn instantiate_path(fcx: &FnCtxt,
 // Resolves `typ` by a single level if `typ` is a type variable.  If no
 // resolution is possible, then an error is reported.
 pub fn structurally_resolved_type(fcx: &FnCtxt, sp: Span, tp: ty::t) -> ty::t {
+    if !ty::type_needs_infer(tp) {
+        return tp;
+    }
+
+    // Attempt to resolve pending obligations; this may give us more
+    // type information. Note: we could be more selective and wait to
+    // do this until we know we need it.
+    vtable::try_resolve_fcx_obligations(fcx);
+
     match infer::resolve_type(fcx.infcx(), Some(sp), tp, force_tvar) {
         Ok(t_s) if !ty::type_is_ty_var(t_s) => t_s,
         _ => {

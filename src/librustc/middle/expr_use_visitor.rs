@@ -736,7 +736,8 @@ impl<'d,'t,TYPER:mc::Typer> ExprUseVisitor<'d,'t,TYPER> {
                                      ty::BorrowKind::from_mutbl(m),
                                      AutoRef)
             }
-            ty::AutoBorrowVec(r, m) | ty::AutoBorrowVecRef(r, m) => {
+            ty::AutoBorrowVec(r, m) |
+            ty::AutoBorrowVecRef(r, _, m) => {
                 let cmt_index = self.mc.cat_index(expr, cmt_derefd, autoderefs+1);
                 self.delegate.borrow(expr.id,
                                      expr.span,
