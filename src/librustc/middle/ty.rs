@@ -24,8 +24,9 @@ use middle::freevars;
 use middle::resolve;
 use middle::resolve_lifetime;
 use middle::subst;
-use middle::subst::{Subst, Substs, VecPerParamSpace};
+use middle::subst::{Subst, Substs, ItemSubsts, VecPerParamSpace};
 use middle::stability;
+use middle::traits;
 use middle::ty;
 use middle::typeck;
 use middle::ty_fold;
@@ -54,7 +55,7 @@ use syntax::ast_util::{is_local, lit_is_str};
 use syntax::ast_util;
 use syntax::attr;
 use syntax::attr::AttrMetaMethods;
-use syntax::codemap::Span;
+use syntax::codemap::{Span};
 use syntax::parse::token;
 use syntax::parse::token::InternedString;
 use syntax::{ast, ast_map};
@@ -328,7 +329,7 @@ pub struct ctxt {
     /// Maps a DefId of a type to a list of its inherent impls.
     /// Contains implementations of methods that are inherent to a type.
     /// Methods in these implementations don't need to be exported.
-    pub inherent_impls: RefCell<DefIdMap<Rc<RefCell<Vec<ast::DefId>>>>>,
+    pub inherent_impls: RefCell<DefIdMap<Rc<Vec<ast::DefId>>>>,
 
     /// Maps a DefId of an impl to a list of its methods.
     /// Note that this contains all of the impls that we know about,
@@ -346,7 +347,7 @@ pub struct ctxt {
     pub used_mut_nodes: RefCell<NodeSet>,
 
     /// vtable resolution information for impl declarations
-    pub impl_vtables: typeck::impl_vtable_map,
+    pub impl_vtables: typeck::ImplVtableMap,
 
     /// The set of external nominal types whose implementations have been read.
     /// This is used for lazy resolution of methods.
@@ -365,7 +366,7 @@ pub struct ctxt {
     pub extern_const_variants: RefCell<DefIdMap<Option<Gc<ast::Expr>>>>,
 
     pub method_map: typeck::MethodMap,
-    pub vtable_map: typeck::vtable_map,
+    pub vtable_map: typeck::VtableMap,
 
     pub dependency_formats: RefCell<dependency_format::Dependencies>,
 
@@ -1000,6 +1001,12 @@ impl Generics {
     }
 }
 
+impl TraitRef {
+    pub fn self_ty(&self) -> ty::t {
+        self.substs.self_ty().unwrap()
+    }
+}
+
 /// When type checking, we use the `ParameterEnvironment` to track
 /// details about the type/lifetime parameters that are in scope.
 /// It primarily stores the bounds information.
@@ -1020,8 +1027,10 @@ pub struct ParameterEnvironment {
     /// parameters in the same way, this only has an affect on regions.
     pub free_substs: Substs,
 
-    /// Bounds on the various type parameters
-    pub bounds: VecPerParamSpace<ParamBounds>,
+    /// Obligations that the caller must satisfy. This is basically
+    /// the set of bounds on the in-scope type parameters, translated
+    /// into Obligations. Each is unresolved.
+    pub caller_obligations: VecPerParamSpace<traits::Obligation>,
 }
 
 /// A polytype.
@@ -1040,13 +1049,6 @@ pub struct TraitDef {
     pub generics: Generics,
     pub bounds: BuiltinBounds,
     pub trait_ref: Rc<ty::TraitRef>,
-}
-
-/// Records the substitutions used to translate the polytype for an
-/// item into the monotype of an item reference.
-#[deriving(Clone)]
-pub struct ItemSubsts {
-    pub substs: Substs,
 }
 
 pub type type_cache = RefCell<DefIdMap<Polytype>>;
@@ -1508,16 +1510,6 @@ pub fn walk_regions_and_ty(cx: &ctxt, ty: t, fldr: |r: Region|, fldt: |t: t|)
                                    |t| { fldt(t); t }).fold_ty(ty)
 }
 
-impl ItemSubsts {
-    pub fn empty() -> ItemSubsts {
-        ItemSubsts { substs: Substs::empty() }
-    }
-
-    pub fn is_noop(&self) -> bool {
-        self.substs.is_noop()
-    }
-}
-
 // Type utilities
 
 pub fn type_is_nil(ty: t) -> bool { get(ty).sty == ty_nil }
@@ -1546,6 +1538,13 @@ pub fn type_is_ty_var(ty: t) -> bool {
 }
 
 pub fn type_is_bool(ty: t) -> bool { get(ty).sty == ty_bool }
+
+pub fn type_is_ty_param(ty: t) -> bool {
+    match get(ty).sty {
+        ty_param(..) => true,
+        _ => false
+    }
+}
 
 pub fn type_is_self(ty: t) -> bool {
     match get(ty).sty {
@@ -3014,9 +3013,9 @@ impl AutoRef {
     }
 }
 
-pub fn method_call_type_param_defs(tcx: &ctxt, origin: typeck::MethodOrigin)
+pub fn method_call_type_param_defs(tcx: &ctxt, origin: &typeck::MethodOrigin)
                                    -> VecPerParamSpace<TypeParameterDef> {
-    match origin {
+    match *origin {
         typeck::MethodStatic(did) => {
             ty::lookup_item_type(tcx, did).generics.types.clone()
         }
@@ -3900,7 +3899,7 @@ pub fn enum_variant_with_id(cx: &ctxt,
 // the type cache. Returns the type parameters and type.
 pub fn lookup_item_type(cx: &ctxt,
                         did: ast::DefId)
-                     -> Polytype {
+                        -> Polytype {
     lookup_locally_or_in_crate_store(
         "tcache", did, &mut *cx.tcache.borrow_mut(),
         || csearch::get_type(cx, did))
@@ -3908,10 +3907,10 @@ pub fn lookup_item_type(cx: &ctxt,
 
 pub fn lookup_impl_vtables(cx: &ctxt,
                            did: ast::DefId)
-                           -> typeck::vtable_res {
+                           -> Rc<typeck::VtableResult> {
     lookup_locally_or_in_crate_store(
         "impl_vtables", did, &mut *cx.impl_vtables.borrow_mut(),
-        || csearch::get_impl_vtables(cx, did) )
+        || Rc::new(csearch::get_impl_vtables(cx, did)) )
 }
 
 /// Given the did of a trait, returns its canonical trait ref.
@@ -4432,6 +4431,7 @@ pub fn populate_implementations_for_type_if_necessary(tcx: &ctxt,
         return
     }
 
+    let mut inherent_impls = Vec::new();
     csearch::each_implementation_for_type(&tcx.sess.cstore, type_id,
             |impl_def_id| {
         let methods = csearch::get_impl_methods(&tcx.sess.cstore, impl_def_id);
@@ -4455,18 +4455,11 @@ pub fn populate_implementations_for_type_if_necessary(tcx: &ctxt,
 
         // If this is an inherent implementation, record it.
         if associated_traits.is_none() {
-            match tcx.inherent_impls.borrow().find(&type_id) {
-                Some(implementation_list) => {
-                    implementation_list.borrow_mut().push(impl_def_id);
-                    return;
-                }
-                None => {}
-            }
-            tcx.inherent_impls.borrow_mut().insert(type_id,
-                                                   Rc::new(RefCell::new(vec!(impl_def_id))));
+            inherent_impls.push(impl_def_id);
         }
     });
 
+    tcx.inherent_impls.borrow_mut().insert(type_id, Rc::new(inherent_impls));
     tcx.populated_external_types.borrow_mut().insert(type_id);
 }
 
@@ -4733,8 +4726,20 @@ impl Variance {
     }
 }
 
+pub fn empty_parameter_environment() -> ParameterEnvironment {
+    /*!
+     * Construct a parameter environment suitable for static contexts
+     * or other contexts where there are no free type/lifetime
+     * parameters in scope.
+     */
+
+    ty::ParameterEnvironment { free_substs: Substs::empty(),
+                               caller_obligations: VecPerParamSpace::empty() }
+}
+
 pub fn construct_parameter_environment(
     tcx: &ctxt,
+    span: Span,
     generics: &ty::Generics,
     free_id: ast::NodeId)
     -> ParameterEnvironment
@@ -4768,22 +4773,19 @@ pub fn construct_parameter_environment(
     // Compute the bounds on Self and the type parameters.
     //
 
-    let mut bounds = VecPerParamSpace::empty();
-    for &space in subst::ParamSpace::all().iter() {
-        push_bounds_from_defs(tcx, &mut bounds, space, &free_substs,
-                              generics.types.get_slice(space));
-    }
+    let obligations = traits::obligations_for_generics(tcx, span,
+                                                       generics, &free_substs);
 
     debug!("construct_parameter_environment: free_id={} \
            free_subst={} \
-           bounds={}",
+           obligations={}",
            free_id,
            free_substs.repr(tcx),
-           bounds.repr(tcx));
+           obligations.repr(tcx));
 
     return ty::ParameterEnvironment {
         free_substs: free_substs,
-        bounds: bounds
+        caller_obligations: obligations
     };
 
     fn push_region_params(regions: &mut VecPerParamSpace<ty::Region>,

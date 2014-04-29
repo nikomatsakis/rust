@@ -85,6 +85,20 @@ impl LanguageItems {
         }
     }
 
+    pub fn from_builtin_kind(&self, bound: ty::BuiltinBound)
+                             -> Result<ast::DefId, String>
+    {
+        match bound {
+            ty::BoundSend => self.require(SendTraitLangItem),
+            ty::BoundSized => self.require(SizedTraitLangItem),
+            ty::BoundCopy => self.require(CopyTraitLangItem),
+            ty::BoundShare => self.require(ShareTraitLangItem),
+
+            // there is no lang item for static:
+            ty::BoundStatic => Err(format!("Lang item for static"))
+        }
+    }
+
     pub fn to_builtin_kind(&self, id: ast::DefId) -> Option<ty::BuiltinBound> {
         if Some(id) == self.send_trait() {
             Some(ty::BoundSend)

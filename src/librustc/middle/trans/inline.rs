@@ -11,6 +11,7 @@
 use llvm::{AvailableExternallyLinkage, SetLinkage};
 use metadata::csearch;
 use middle::astencode;
+use middle::subst::ItemSubsts;
 use middle::trans::base::{push_ctxt, trans_item, get_item_val, trans_fn};
 use middle::trans::common::*;
 use middle::ty;
@@ -133,7 +134,7 @@ pub fn maybe_instantiate_inline(ccx: &CrateContext, fn_id: ast::DefId)
           if unparameterized {
               let llfn = get_item_val(ccx, mth.id);
                 trans_fn(ccx, &*mth.pe_fn_decl(), &*mth.pe_body(), llfn,
-                       &param_substs::empty(), mth.id, []);
+                       &ItemSubsts::empty(), mth.id, []);
           }
           local_def(mth.id)
         }

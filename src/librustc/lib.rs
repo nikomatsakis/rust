@@ -100,6 +100,7 @@ pub mod middle {
     pub mod stability;
     pub mod subst;
     pub mod trans;
+    pub mod traits;
     pub mod ty;
     pub mod ty_fold;
     pub mod typeck;
@@ -130,6 +131,7 @@ pub mod util {
     pub mod common;
     pub mod ppaux;
     pub mod nodemap;
+    pub mod promise;
     pub mod snapshot_vec;
 }
 

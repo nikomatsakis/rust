@@ -16,6 +16,7 @@ use llvm::ValueRef;
 use middle::def;
 use middle::freevars;
 use middle::lang_items::ClosureExchangeMallocFnLangItem;
+use middle::subst::ItemSubsts;
 use middle::trans::adt;
 use middle::trans::base::*;
 use middle::trans::build::*;
@@ -386,7 +387,7 @@ pub fn trans_expr_fn<'a>(
                   decl,
                   body,
                   llfn,
-                  bcx.fcx.param_substs,
+                  bcx.fcx.item_substs,
                   id,
                   [],
                   ty::ty_fn_args(fty),
@@ -571,9 +572,9 @@ pub fn get_wrapper_for_bare_fn(ccx: &CrateContext,
     let _icx = push_ctxt("closure::get_wrapper_for_bare_fn");
 
     let arena = TypedArena::new();
-    let empty_param_substs = param_substs::empty();
+    let empty_item_substs = ItemSubsts::empty();
     let fcx = new_fn_ctxt(ccx, llfn, -1, true, f.sig.output,
-                          &empty_param_substs, None, &arena);
+                          &empty_item_substs, None, &arena);
     let bcx = init_function(&fcx, true, f.sig.output);
 
     let args = create_datums_for_fn_args(&fcx,

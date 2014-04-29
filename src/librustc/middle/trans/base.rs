@@ -39,7 +39,7 @@ use middle::astencode;
 use middle::lang_items::{LangItem, ExchangeMallocFnLangItem, StartFnLangItem};
 use middle::subst;
 use middle::weak_lang_items;
-use middle::subst::Subst;
+use middle::subst::{Subst, ItemSubsts};
 use middle::trans::_match;
 use middle::trans::adt;
 use middle::trans::build::*;
@@ -58,17 +58,16 @@ use middle::trans::foreign;
 use middle::trans::glue;
 use middle::trans::inline;
 use middle::trans::intrinsic;
+use middle::trans::item_subst::ItemSubst;
 use middle::trans::machine;
 use middle::trans::machine::{llalign_of_min, llsize_of, llsize_of_real};
 use middle::trans::meth;
-use middle::trans::monomorphize;
 use middle::trans::tvec;
 use middle::trans::type_::Type;
 use middle::trans::type_of;
 use middle::trans::type_of::*;
 use middle::trans::value::Value;
 use middle::ty;
-use middle::typeck;
 use util::common::indenter;
 use util::ppaux::{Repr, ty_to_string};
 use util::sha2::Sha256;
@@ -489,10 +488,14 @@ pub fn get_res_dtor(ccx: &CrateContext,
     if !substs.types.is_empty() {
         assert_eq!(did.krate, ast::LOCAL_CRATE);
 
+        /* NDM
         let vtables = typeck::check::vtable::trans_resolve_method(ccx.tcx(), did.node, substs);
         let (val, _) = monomorphize::monomorphic_fn(ccx, did, substs, vtables, None);
 
         val
+         */
+
+        fail!("TBI")
     } else if did.krate == ast::LOCAL_CRATE {
         get_item_val(ccx, did.node)
     } else {
@@ -1198,23 +1201,23 @@ pub fn new_fn_ctxt<'a>(ccx: &'a CrateContext,
                        id: ast::NodeId,
                        has_env: bool,
                        output_type: ty::t,
-                       param_substs: &'a param_substs,
+                       item_substs: &'a ItemSubsts,
                        sp: Option<Span>,
                        block_arena: &'a TypedArena<Block<'a>>)
                        -> FunctionContext<'a> {
-    param_substs.validate();
+    //NDM item_substs.validate();
 
-    debug!("new_fn_ctxt(path={}, id={}, param_substs={})",
+    debug!("new_fn_ctxt(path={}, id={}, item_substs={})",
            if id == -1 {
                "".to_string()
            } else {
                ccx.tcx.map.path_to_string(id).to_string()
            },
-           id, param_substs.repr(ccx.tcx()));
+           id, item_substs.repr(ccx.tcx()));
 
-    let substd_output_type = output_type.substp(ccx.tcx(), param_substs);
+    let substd_output_type = output_type.item_subst(ccx.tcx(), item_substs);
     let uses_outptr = type_of::return_uses_outptr(ccx, substd_output_type);
-    let debug_context = debuginfo::create_function_debug_context(ccx, id, param_substs, llfndecl);
+    let debug_context = debuginfo::create_function_debug_context(ccx, id, item_substs, llfndecl);
 
     let mut fcx = FunctionContext {
           llfn: llfndecl,
@@ -1228,7 +1231,7 @@ pub fn new_fn_ctxt<'a>(ccx: &'a CrateContext,
           lllocals: RefCell::new(NodeMap::new()),
           llupvars: RefCell::new(NodeMap::new()),
           id: id,
-          param_substs: param_substs,
+          item_substs: item_substs,
           span: sp,
           block_arena: block_arena,
           ccx: ccx,
@@ -1259,7 +1262,7 @@ pub fn init_function<'a>(fcx: &'a FunctionContext<'a>,
 
     // This shouldn't need to recompute the return type,
     // as new_fn_ctxt did it already.
-    let substd_output_type = output_type.substp(fcx.ccx.tcx(), fcx.param_substs);
+    let substd_output_type = output_type.item_subst(fcx.ccx.tcx(), fcx.item_substs);
 
     if !return_type_is_void(fcx.ccx, substd_output_type) {
         // If the function returns nil/bot, there is no real return
@@ -1536,7 +1539,7 @@ pub fn trans_closure(ccx: &CrateContext,
                      decl: &ast::FnDecl,
                      body: &ast::Block,
                      llfndecl: ValueRef,
-                     param_substs: &param_substs,
+                     item_substs: &ItemSubsts,
                      id: ast::NodeId,
                      _attributes: &[ast::Attribute],
                      arg_types: Vec<ty::t>,
@@ -1550,8 +1553,8 @@ pub fn trans_closure(ccx: &CrateContext,
     let _icx = push_ctxt("trans_closure");
     set_uwtable(llfndecl);
 
-    debug!("trans_closure(..., param_substs={})",
-           param_substs.repr(ccx.tcx()));
+    debug!("trans_closure(..., item_substs={})",
+           item_substs.repr(ccx.tcx()));
 
     let arena = TypedArena::new();
     let fcx = new_fn_ctxt(ccx,
@@ -1559,7 +1562,7 @@ pub fn trans_closure(ccx: &CrateContext,
                           id,
                           has_env,
                           output_type,
-                          param_substs,
+                          item_substs,
                           Some(body.span),
                           &arena);
     let mut bcx = init_function(&fcx, false, output_type);
@@ -1661,11 +1664,11 @@ pub fn trans_fn(ccx: &CrateContext,
                 decl: &ast::FnDecl,
                 body: &ast::Block,
                 llfndecl: ValueRef,
-                param_substs: &param_substs,
+                item_substs: &ItemSubsts,
                 id: ast::NodeId,
                 attrs: &[ast::Attribute]) {
     let _s = StatRecorder::new(ccx, ccx.tcx.map.path_to_string(id).to_string());
-    debug!("trans_fn(param_substs={})", param_substs.repr(ccx.tcx()));
+    debug!("trans_fn(item_substs={})", item_substs.repr(ccx.tcx()));
     let _icx = push_ctxt("trans_fn");
     let fn_ty = ty::node_id_to_type(ccx.tcx(), id);
     let arg_types = ty::ty_fn_args(fn_ty);
@@ -1675,7 +1678,7 @@ pub fn trans_fn(ccx: &CrateContext,
                   decl,
                   body,
                   llfndecl,
-                  param_substs,
+                  item_substs,
                   id,
                   attrs,
                   arg_types,
@@ -1691,7 +1694,7 @@ pub fn trans_enum_variant(ccx: &CrateContext,
                           variant: &ast::Variant,
                           _args: &[ast::VariantArg],
                           disr: ty::Disr,
-                          param_substs: &param_substs,
+                          item_substs: &ItemSubsts,
                           llfndecl: ValueRef) {
     let _icx = push_ctxt("trans_enum_variant");
 
@@ -1699,7 +1702,7 @@ pub fn trans_enum_variant(ccx: &CrateContext,
         ccx,
         variant.node.id,
         disr,
-        param_substs,
+        item_substs,
         llfndecl);
 }
 
@@ -1759,7 +1762,7 @@ pub fn trans_named_tuple_constructor<'a>(mut bcx: &'a Block<'a>,
 pub fn trans_tuple_struct(ccx: &CrateContext,
                           _fields: &[ast::StructField],
                           ctor_id: ast::NodeId,
-                          param_substs: &param_substs,
+                          item_substs: &ItemSubsts,
                           llfndecl: ValueRef) {
     let _icx = push_ctxt("trans_tuple_struct");
 
@@ -1767,17 +1770,17 @@ pub fn trans_tuple_struct(ccx: &CrateContext,
         ccx,
         ctor_id,
         0,
-        param_substs,
+        item_substs,
         llfndecl);
 }
 
 fn trans_enum_variant_or_tuple_like_struct(ccx: &CrateContext,
                                            ctor_id: ast::NodeId,
                                            disr: ty::Disr,
-                                           param_substs: &param_substs,
+                                           item_substs: &ItemSubsts,
                                            llfndecl: ValueRef) {
     let ctor_ty = ty::node_id_to_type(ccx.tcx(), ctor_id);
-    let ctor_ty = ctor_ty.substp(ccx.tcx(), param_substs);
+    let ctor_ty = ctor_ty.item_subst(ccx.tcx(), item_substs);
 
     let result_ty = match ty::get(ctor_ty).sty {
         ty::ty_bare_fn(ref bft) => bft.sig.output,
@@ -1789,7 +1792,7 @@ fn trans_enum_variant_or_tuple_like_struct(ccx: &CrateContext,
 
     let arena = TypedArena::new();
     let fcx = new_fn_ctxt(ccx, llfndecl, ctor_id, false, result_ty,
-                          param_substs, None, &arena);
+                          item_substs, None, &arena);
     let bcx = init_function(&fcx, false, result_ty);
 
     let arg_tys = ty::ty_fn_args(ctor_ty);
@@ -1888,7 +1891,7 @@ pub fn trans_item(ccx: &CrateContext, item: &ast::Item) {
                      &**decl,
                      &**body,
                      llfn,
-                     &param_substs::empty(),
+                     &ItemSubsts::empty(),
                      item.id,
                      item.attrs.as_slice());
         } else {

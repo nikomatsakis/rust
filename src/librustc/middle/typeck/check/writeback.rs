@@ -14,20 +14,23 @@
 
 use middle::def;
 use middle::pat_util;
+use middle::traits;
 use middle::ty;
 use middle::ty_fold::{TypeFolder,TypeFoldable};
+use middle::subst::ItemSubsts;
 use middle::typeck::astconv::AstConv;
-use middle::typeck::check::FnCtxt;
+use middle::typeck::check::{FnCtxt, PendingResolution};
 use middle::typeck::infer::{force_all, resolve_all, resolve_region};
 use middle::typeck::infer::resolve_type;
 use middle::typeck::infer;
 use middle::typeck::{MethodCall, MethodCallee};
-use middle::typeck::vtable_res;
+use middle::typeck::VtableResult;
 use middle::typeck::write_substs_to_tcx;
 use middle::typeck::write_ty_to_tcx;
 use util::ppaux::Repr;
 
 use std::cell::Cell;
+use std::rc::Rc;
 
 use syntax::ast;
 use syntax::codemap::{DUMMY_SP, Span};
@@ -67,8 +70,8 @@ pub fn resolve_type_vars_in_fn(fcx: &FnCtxt,
 
 pub fn resolve_impl_res(infcx: &infer::InferCtxt,
                         span: Span,
-                        vtable_res: &vtable_res)
-                        -> vtable_res {
+                        vtable_res: &VtableResult)
+                        -> VtableResult {
     let errors = Cell::new(false); // nobody cares
     let mut resolver = Resolver::from_infcx(infcx,
                                             &errors,
@@ -89,7 +92,7 @@ struct WritebackCx<'cx> {
 }
 
 impl<'cx> WritebackCx<'cx> {
-    fn new(fcx: &'cx FnCtxt) -> WritebackCx<'cx> {
+    fn new(fcx: &'cx FnCtxt<'cx>) -> WritebackCx<'cx> {
         WritebackCx { fcx: fcx }
     }
 
@@ -235,10 +238,20 @@ impl<'cx> WritebackCx<'cx> {
         write_ty_to_tcx(self.tcx(), id, n_ty);
         debug!("Node {} has type {}", id, n_ty.repr(self.tcx()));
 
-        // Resolve any substitutions
+        // Resolve any substitutions. Here we convert from the
+        // TypeckItemSubsts that we use during typeck into the
+        // ItemSubsts that we use after typeck.
         self.fcx.opt_node_ty_substs(id, |item_substs| {
-            write_substs_to_tcx(self.tcx(), id,
-                                self.resolve(item_substs, reason));
+            let substs =
+                self.resolve(&item_substs.substs, reason);
+            let origins =
+                item_substs.resolutions.map(
+                    |r| self.resolve_resolution(r, reason));
+            write_substs_to_tcx(
+                self.tcx(),
+                id,
+                ItemSubsts { substs: substs,
+                             origins: origins });
         });
     }
 
@@ -330,12 +343,14 @@ impl<'cx> WritebackCx<'cx> {
                               vtable_key: MethodCall) {
         // Resolve any vtable map entry
         match self.fcx.inh.vtable_map.borrow_mut().pop(&vtable_key) {
-            Some(origins) => {
-                let r_origins = self.resolve(&origins, reason);
+            Some(resolutions) => {
+                let origins =
+                    resolutions.map(|r| self.resolve_resolution(r, reason));
                 debug!("writeback::resolve_vtable_map_entry(\
-                        vtable_key={}, vtables={:?})",
-                       vtable_key, r_origins.repr(self.tcx()));
-                self.tcx().vtable_map.borrow_mut().insert(vtable_key, r_origins);
+                        vtable_key={}, origins={:?})",
+                       vtable_key, origins.repr(self.tcx()));
+                self.tcx().vtable_map.borrow_mut().insert(vtable_key,
+                                                          Rc::new(origins));
             }
             None => {}
         }
@@ -343,6 +358,29 @@ impl<'cx> WritebackCx<'cx> {
 
     fn resolve<T:ResolveIn>(&self, t: &T, reason: ResolveReason) -> T {
         t.resolve_in(&mut Resolver::new(self.fcx, reason))
+    }
+
+    fn resolve_resolution(&self,
+                          r: &PendingResolution,
+                          reason: ResolveReason)
+                          -> traits::VtableOrigin
+    {
+        // Convert from a PendingResolution, which is used during
+        // typeck, to a VtableOrigin, which is used
+        // afterwards.  We shouldn't enter the writeback phase without
+        // having successfully resolved all traits.
+        match r.get() {
+            Some(&traits::ResolvedTo(ref v)) => {
+                self.resolve(v, reason)
+            }
+            ref r => {
+                self.tcx().sess.span_bug(
+                    reason.span(self.tcx()),
+                    format!("pending obligation \
+                             unresolved or resolved to error: {}",
+                            (*r).repr(self.tcx())).as_slice());
+            }
+        }
     }
 }
 

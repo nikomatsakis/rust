@@ -244,7 +244,8 @@ pub fn get_impl_trait(tcx: &ty::ctxt,
 // Given a def_id for an impl, return information about its vtables
 pub fn get_impl_vtables(tcx: &ty::ctxt,
                         def: ast::DefId)
-                        -> typeck::vtable_res {
+                        -> typeck::VtableResult
+{
     let cstore = &tcx.sess.cstore;
     let cdata = cstore.get_crate_data(def.krate);
     decoder::get_impl_vtables(&*cdata, def.node, tcx)
@@ -252,7 +253,8 @@ pub fn get_impl_vtables(tcx: &ty::ctxt,
 
 pub fn get_native_libraries(cstore: &cstore::CStore,
                             crate_num: ast::CrateNum)
-                                -> Vec<(cstore::NativeLibaryKind, String)> {
+                            -> Vec<(cstore::NativeLibaryKind, String)>
+{
     let cdata = cstore.get_crate_data(crate_num);
     decoder::get_native_libraries(&*cdata)
 }

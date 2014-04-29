@@ -11,7 +11,7 @@
 use std::fmt;
 use std::default::Default;
 use std::hash;
-use std::{mem, raw, ptr, slice};
+use std::{fmt, mem, raw, ptr, slice};
 use serialize::{Encodable, Decodable, Encoder, Decoder};
 
 /// A non-growable owned slice. This would preferably become `~[T]`
@@ -155,5 +155,11 @@ impl<D: Decoder<E>, T: Decodable<D, E>, E> Decodable<D, E> for OwnedSlice<T> {
             Ok(t) => t,
             Err(e) => return Err(e)
         }))
+    }
+}
+
+impl<T:fmt::Show> fmt::Show for OwnedSlice<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.as_slice().fmt(f)
     }
 }

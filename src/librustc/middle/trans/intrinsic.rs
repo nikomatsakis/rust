@@ -10,10 +10,11 @@
 
 #![allow(non_uppercase_pattern_statics)]
 
+use arena::TypedArena;
 use llvm;
 use llvm::{SequentiallyConsistent, Acquire, Release, Xchg, ValueRef};
 use middle::subst;
-use middle::subst::FnSpace;
+use middle::subst::{FnSpace, ItemSubsts};
 use middle::trans::base::*;
 use middle::trans::build::*;
 use middle::trans::callee;

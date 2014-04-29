@@ -766,9 +766,11 @@ impl<'a> PrivacyVisitor<'a> {
     }
 
     // Checks that a method is in scope.
-    fn check_method(&mut self, span: Span, origin: MethodOrigin,
+    fn check_method(&mut self,
+                    span: Span,
+                    origin: &MethodOrigin,
                     ident: ast::Ident) {
-        match origin {
+        match *origin {
             MethodStatic(method_id) => {
                 self.check_static_method(span, method_id, ident)
             }
@@ -817,7 +819,9 @@ impl<'a> Visitor<()> for PrivacyVisitor<'a> {
                     }
                     Some(method) => {
                         debug!("(privacy checking) checking impl method");
-                        self.check_method(expr.span, method.origin, ident.node);
+                        self.check_method(expr.span,
+                                          &method.origin,
+                                          ident.node);
                     }
                 }
             }

@@ -853,7 +853,7 @@ impl <'l> DxrVisitor<'l> {
                                     .unwrap_or(def_id);
                 (Some(def_id), decl_id)
             }
-            typeck::MethodParam(mp) => {
+            typeck::MethodParam(ref mp) => {
                 // method invoked on a type parameter
                 let method = ty::trait_method(&self.analysis.ty_cx,
                                               mp.trait_id,

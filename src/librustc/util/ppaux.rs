@@ -12,6 +12,7 @@
 use middle::def;
 use middle::subst;
 use middle::subst::{VecPerParamSpace,Subst};
+use middle::traits;
 use middle::ty::{ReSkolemized, ReVar};
 use middle::ty::{BoundRegion, BrAnon, BrNamed};
 use middle::ty::{ReEarlyBound, BrFresh, ctxt};
@@ -38,6 +39,7 @@ use syntax::parse::token;
 use syntax::print::pprust;
 use syntax::{ast, ast_util};
 use syntax::owned_slice::OwnedSlice;
+use util::promise::Promise;
 
 /// Produces a string suitable for debugging output.
 pub trait Repr {
@@ -530,9 +532,21 @@ impl Repr for () {
     }
 }
 
+impl<'a,T:Repr> Repr for &'a T {
+    fn repr(&self, tcx: &ctxt) -> String {
+        (&**self).repr(tcx)
+    }
+}
+
 impl<T:Repr> Repr for Rc<T> {
     fn repr(&self, tcx: &ctxt) -> String {
         (&**self).repr(tcx)
+    }
+}
+
+impl<T:Repr> Repr for Promise<T> {
+    fn repr(&self, tcx: &ctxt) -> String {
+        self.get().repr(tcx)
     }
 }
 
@@ -622,9 +636,27 @@ impl<T:Repr> Repr for subst::VecPerParamSpace<T> {
     }
 }
 
-impl Repr for ty::ItemSubsts {
+impl Repr for subst::ItemSubsts {
     fn repr(&self, tcx: &ctxt) -> String {
-        format!("ItemSubsts({})", self.substs.repr(tcx))
+        format!("ItemSubsts({},{})",
+                self.substs.repr(tcx),
+                self.origins.repr(tcx))
+    }
+}
+
+impl Repr for typeck::check::TypeckItemSubsts {
+    fn repr(&self, tcx: &ctxt) -> String {
+        format!("TypeckItemSubsts({},{})",
+                self.substs.repr(tcx),
+                self.resolutions.repr(tcx))
+    }
+}
+
+impl Repr for typeck::check::PendingObligation {
+    fn repr(&self, tcx: &ctxt) -> String {
+        format!("PendingResolution({},{})",
+                self.obligation.repr(tcx),
+                self.resolution.repr(tcx))
     }
 }
 
@@ -658,7 +690,9 @@ impl Repr for ty::ParamBounds {
 
 impl Repr for ty::TraitRef {
     fn repr(&self, tcx: &ctxt) -> String {
-        trait_ref_to_string(tcx, self)
+        format!("{}<{}>",
+                ty::item_path_str(tcx, self.def_id),
+                self.substs.repr(tcx))
     }
 }
 
@@ -895,11 +929,10 @@ impl Repr for typeck::MethodOrigin {
 
 impl Repr for typeck::MethodParam {
     fn repr(&self, tcx: &ctxt) -> String {
-        format!("MethodParam({},{:?},{:?},{:?})",
+        format!("MethodParam(trait_id={}, method_num={}, path={})",
                 self.trait_id.repr(tcx),
                 self.method_num,
-                self.param_num,
-                self.bound_num)
+                self.path.repr(tcx))
     }
 }
 
@@ -976,6 +1009,12 @@ impl UserString for ty::TraitRef {
 impl UserString for ty::t {
     fn user_string(&self, tcx: &ctxt) -> String {
         ty_to_string(tcx, *self)
+    }
+}
+
+impl UserString for ast::Name {
+    fn user_string(&self, _tcx: &ctxt) -> String {
+        token::get_name(*self).get().to_string()
     }
 }
 
@@ -1112,3 +1151,61 @@ impl Repr for ty::ExplicitSelfCategory {
     }
 }
 
+
+impl Repr for traits::Obligation {
+    fn repr(&self, tcx: &ty::ctxt) -> String {
+        format!("Obligation(trait_ref={},depth={})",
+                self.trait_ref.repr(tcx),
+                self.recursion_depth)
+    }
+}
+
+impl<R:Repr> Repr for traits::Resolution<R> {
+    fn repr(&self, tcx: &ctxt) -> String {
+        match *self {
+            traits::ResolvedTo(ref r) => r.repr(tcx),
+            traits::ResolvedToUnimpl => format!("ResolvedToUnimpl"),
+            traits::ResolvedToOverflow => format!("ResolvedToOverflow"),
+        }
+    }
+}
+
+impl Repr for traits::VtableOrigin {
+    fn repr(&self, tcx: &ctxt) -> String {
+        match *self {
+            traits::Vtable(ref v, ref o) =>
+                format!("Vtable({}, {})", v.repr(tcx),
+                        if o.is_some() { "err" } else { "ok" }),
+
+            traits::VtableParam(ref v, ref o) =>
+                format!("VtableParam({}, {})", v.repr(tcx),
+                        if o.is_some() { "err" } else { "ok" }),
+
+            traits::Builtin =>
+                format!("Builtin"),
+        }
+    }
+}
+
+impl Repr for traits::Vtable {
+    fn repr(&self, tcx: &ctxt) -> String {
+        format!("Vtable(impl_def_id={}, substs={}, resolutions={})",
+                self.impl_def_id.repr(tcx),
+                self.substs.repr(tcx),
+                self.origins.repr(tcx))
+    }
+}
+
+impl Repr for traits::VtableParam {
+    fn repr(&self, tcx: &ctxt) -> String {
+        format!("VtableParam(bound={}, path={})",
+                self.bound.repr(tcx),
+                self.path.repr(tcx))
+    }
+}
+
+impl Repr for traits::VtablePath {
+    fn repr(&self, _tcx: &ctxt) -> String {
+        format!("VtablePath({}, {})", self.obligation, self.supertraits)
+    }
+}

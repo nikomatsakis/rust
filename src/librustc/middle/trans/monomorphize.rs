@@ -12,7 +12,8 @@ use back::link::exported_name;
 use driver::session;
 use llvm::ValueRef;
 use middle::subst;
-use middle::subst::Subst;
+use middle::subst::{Subst, ItemSubsts};
+use middle::traits;
 use middle::trans::base::{set_llvm_fn_attrs, set_inline_hint};
 use middle::trans::base::{trans_enum_variant, push_ctxt, get_item_val};
 use middle::trans::base::{trans_fn, decl_internal_rust_fn};
@@ -31,9 +32,10 @@ use std::hash::{sip, Hash};
 pub fn monomorphic_fn(ccx: &CrateContext,
                       fn_id: ast::DefId,
                       real_substs: &subst::Substs,
-                      vtables: typeck::vtable_res,
+                      vtables: typeck::VtableResult,
                       ref_id: Option<ast::NodeId>)
-    -> (ValueRef, bool) {
+                      -> (ValueRef, bool)
+{
     debug!("monomorphic_fn(\
             fn_id={}, \
             real_substs={}, \
@@ -64,10 +66,7 @@ pub fn monomorphic_fn(ccx: &CrateContext,
         None => ()
     }
 
-    let psubsts = param_substs {
-        substs: (*real_substs).clone(),
-        vtables: vtables,
-    };
+    let psubsts = ItemSubsts::new((*real_substs).clone(), vtables);
 
     debug!("monomorphic_fn(\
             fn_id={}, \
@@ -243,6 +242,14 @@ pub struct MonoId {
     pub params: subst::VecPerParamSpace<ty::t>
 }
 
+pub fn make_vtable_id(_ccx: &CrateContext, vtable: &traits::Vtable) -> MonoId {
+    MonoId {
+        def: vtable.impl_def_id,
+        params: vtable.substs.types.clone()
+    }
+}
+
+/*
 pub fn make_vtable_id(_ccx: &CrateContext,
                       origin: &typeck::vtable_origin)
                       -> MonoId {
@@ -265,3 +272,4 @@ pub fn make_vtable_id(_ccx: &CrateContext,
         _ => fail!("make_vtable_id needs vtable_static")
     }
 }
+*/
