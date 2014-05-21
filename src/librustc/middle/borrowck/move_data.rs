@@ -20,6 +20,7 @@ use std::rc::Rc;
 use std::uint;
 use std::collections::{HashMap, HashSet};
 use middle::borrowck::*;
+use middle::cfg;
 use middle::dataflow::DataFlowContext;
 use middle::dataflow::DataFlowOperator;
 use euv = middle::expr_use_visitor;
@@ -499,22 +500,33 @@ impl MoveData {
 impl<'a> FlowedMoveData<'a> {
     pub fn new(move_data: MoveData,
                tcx: &'a ty::ctxt,
+               cfg: &'a cfg::CFG,
                id_range: ast_util::IdRange,
+               decl: &ast::FnDecl,
                body: &ast::Block)
                -> FlowedMoveData<'a> {
         let mut dfcx_moves =
             DataFlowContext::new(tcx,
+                                 "flowed_move_data_moves",
+                                 Some(decl),
+                                 cfg,
                                  MoveDataFlowOperator,
                                  id_range,
                                  move_data.moves.borrow().len());
         let mut dfcx_assign =
             DataFlowContext::new(tcx,
+                                 "flowed_move_data_assigns",
+                                 Some(decl),
+                                 cfg,
                                  AssignDataFlowOperator,
                                  id_range,
                                  move_data.var_assignments.borrow().len());
         move_data.add_gen_kills(tcx, &mut dfcx_moves, &mut dfcx_assign);
-        dfcx_moves.propagate(body);
-        dfcx_assign.propagate(body);
+        dfcx_moves.add_kills_from_flow_exits(cfg);
+        dfcx_assign.add_kills_from_flow_exits(cfg);
+        dfcx_moves.propagate(cfg, body);
+        dfcx_assign.propagate(cfg, body);
+
         FlowedMoveData {
             move_data: move_data,
             dfcx_moves: dfcx_moves,
