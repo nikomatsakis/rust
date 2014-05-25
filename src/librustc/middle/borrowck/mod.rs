@@ -207,6 +207,14 @@ impl LoanPath {
             LpExtend(ref base, _, _) => base.node_id()
         }
     }
+
+    pub fn contains_deref(&self) -> bool {
+        match *self {
+            LpVar(_) => false,
+            LpExtend(_, _, LpDeref(_)) => true,
+            LpExtend(ref base, _, _) => base.contains_deref()
+        }
+    }
 }
 
 pub fn opt_loan_path(cmt: &mc::cmt) -> Option<Rc<LoanPath>> {
