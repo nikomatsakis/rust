@@ -827,7 +827,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
                                file_metadata: DIFile,
                                name_to_append_suffix_to: &mut String)
                                -> DIArray {
-        let self_type = param_substs.substs.self_ty;
+        let self_type = param_substs.substs.self_ty();
 
         // Only true for static default methods:
         let has_self_type = self_type.is_some();
@@ -881,7 +881,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
         }
 
         // Handle other generic parameters
-        let actual_types = &param_substs.substs.tps;
+        let actual_types = param_substs.substs.types.get_vec(subst::FnSpace);
         for (index, &ast::TyParam{ ident: ident, .. }) in generics.ty_params.iter().enumerate() {
             let actual_type = *actual_types.get(index);
             // Add actual type name to <...> clause of function name
@@ -2246,7 +2246,8 @@ fn trait_metadata(cx: &CrateContext,
                   substs: &subst::Substs,
                   trait_store: ty::TraitStore,
                   _: &ty::BuiltinBounds)
-               -> DIType {
+                  -> DIType
+{
     // The implementation provided here is a stub. It makes sure that the trait type is
     // assigned the correct name, size, namespace, and source location. But it does not describe
     // the trait's methods.
@@ -2254,13 +2255,11 @@ fn trait_metadata(cx: &CrateContext,
     let ident_string = token::get_name(last.name());
     let mut name = ppaux::trait_store_to_str(cx.tcx(), trait_store);
     name.push_str(ident_string.get());
+
     // Add type and region parameters
-    let name = ppaux::parameterized(cx.tcx(),
-                                    name.as_slice(),
-                                    &substs.regions,
-                                    substs.tps.as_slice(),
-                                    def_id,
-                                    true);
+    let trait_def = ty::lookup_trait_def(cx.tcx(), def_id);
+    let name = ppaux::parameterized(cx.tcx(), name.as_slice(),
+                                    substs, &trait_def.generics);
 
     let (containing_scope, definition_span) = get_namespace_and_span_for_item(cx, def_id);
 
