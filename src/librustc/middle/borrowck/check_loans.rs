@@ -93,12 +93,26 @@ impl<'a> euv::Delegate for CheckLoanCtxt<'a> {
                assignment_id, assignee_cmt.repr(self.tcx()));
 
         for lp in opt_loan_path(&assignee_cmt).iter() {
-            match (mode, (**lp).contains_deref()) {
-                (euv::WriteAndRead, _) | (euv::JustWrite, true) => {
-                    self.check_if_path_is_moved(assignee_cmt.id, assignment_span,
-                                                MovedInUse, lp);
+            match mode {
+                euv::Init | euv::JustWrite => {
+                    // In a case like `path = 1`, then path does not
+                    // have to be *FULLY* initialized, but we still
+                    // must be careful lest it contains derefs of
+                    // pointers.
+                    self.check_if_assigned_path_is_moved(assignee_cmt.id,
+                                                         assignment_span,
+                                                         MovedInUse,
+                                                         lp);
                 }
-                _ => { }
+                euv::WriteAndRead => {
+                    // In a case like `path += 1`, then path must be
+                    // fully initialized, since we will read it before
+                    // we write it.
+                    self.check_if_path_is_moved(assignee_cmt.id,
+                                                assignment_span,
+                                                MovedInUse,
+                                                lp);
+                }
             }
         }
 
@@ -415,17 +429,34 @@ impl<'a> CheckLoanCtxt<'a> {
                       cmt: mc::cmt,
                       mode: euv::ConsumeMode) {
         for lp in opt_loan_path(&cmt).iter() {
-            let opt_move_kind = self.move_data.kind_of_move_of_path(id, lp);
-            match (mode, opt_move_kind) {
-                (euv::Move(_), Some(move_kind)) =>
-                    self.check_for_move_of_borrowed_path(id, span, lp, move_kind),
-                _ => { }
-            }
-
-            let moved_value_use_kind = match opt_move_kind {
-                Some(move_data::Captured) => MovedInCapture,
-                _ => MovedInUse
+            let moved_value_use_kind = match mode {
+                euv::Copy => {
+                    // FIXME(#12624) -- If we are copying the value,
+                    // we don't care if it's borrowed.
+                    MovedInUse
+                }
+                euv::Move(_) => {
+                    match self.move_data.kind_of_move_of_path(id, lp) {
+                        None => {
+                            // Sometimes moves don't have a move kind;
+                            // this either means that the original move
+                            // was from something illegal to move,
+                            // or was moved from referent of an unsafe
+                            // pointer or something like that.
+                        }
+                        Some(move_kind) => {
+                            self.check_for_move_of_borrowed_path(id, span,
+                                                                 lp, move_kind);
+                            if move_kind == move_data::Captured {
+                                MovedInCapture
+                            } else {
+                                MovedInUse
+                            }
+                        }
+                    }
+                }
             };
+
             self.check_if_path_is_moved(id, span, moved_value_use_kind, lp);
         }
     }
@@ -442,7 +473,9 @@ impl<'a> CheckLoanCtxt<'a> {
                     move_data::Captured =>
                         format!("cannot move `{}` into closure because it is borrowed",
                                 self.bccx.loan_path_to_str(&**move_path).as_slice()),
-                    _ =>
+                    move_data::Declared |
+                    move_data::MoveExpr |
+                    move_data::MovePat =>
                         format!("cannot move out of `{}` because it is borrowed",
                                 self.bccx.loan_path_to_str(&**move_path).as_slice())
                 };
@@ -457,11 +490,52 @@ impl<'a> CheckLoanCtxt<'a> {
         }
     }
 
-    pub fn check_if_path_is_moved(&self,
-                                  id: ast::NodeId,
-                                  span: Span,
-                                  use_kind: MovedValueUseKind,
-                                  lp: &Rc<LoanPath>) {
+    fn check_if_assigned_path_is_moved(&self,
+                                       id: ast::NodeId,
+                                       span: Span,
+                                       use_kind: MovedValueUseKind,
+                                       lp: &Rc<LoanPath>)
+    {
+        /*!
+         * Reports an error if assigning to `lp` will use a
+         * moved/uninitialized value. Mainly this is concerned with
+         * detecting derefs of uninitialized pointers.
+         *
+         * For example:
+         *
+         *     let a: int;
+         *     a = 10; // ok, even though a is uninitialized
+         *
+         *     struct Point { x: uint, y: uint }
+         *     let p: Point;
+         *     p.x = 22; // ok, even though `p` is uninitialized
+         *
+         *     let p: ~Point;
+         *     (*p).x = 22; // not ok, p is uninitialized, can't deref
+         */
+
+        match **lp {
+            LpVar(_) => {
+                // assigning to `x` does not require that `x` is initialized
+            }
+            LpExtend(ref lp_base, _, LpInterior(_)) => {
+                // assigning to `P.f` is ok if assigning to `P` is ok
+                self.check_if_assigned_path_is_moved(id, span,
+                                                     use_kind, lp_base);
+            }
+            LpExtend(ref lp_base, _, LpDeref(_)) => {
+                // assigning to `(*P)` requires that `P` be initialized
+                self.check_if_path_is_moved(id, span,
+                                            use_kind, lp_base);
+            }
+        }
+    }
+
+    fn check_if_path_is_moved(&self,
+                              id: ast::NodeId,
+                              span: Span,
+                              use_kind: MovedValueUseKind,
+                              lp: &Rc<LoanPath>) {
         /*!
          * Reports an error if `expr` (which should be a path)
          * is using a moved/uninitialized value
@@ -491,8 +565,10 @@ impl<'a> CheckLoanCtxt<'a> {
         // and aliasing restrictions:
         if assignee_cmt.mutbl.is_mutable() {
             if check_for_aliasable_mutable_writes(self, assignment_span, assignee_cmt.clone()) {
-                if mode != euv::Init && check_for_assignment_to_restricted_or_frozen_location(
-                    self, assignment_id, assignment_span, assignee_cmt.clone()) {
+                if mode != euv::Init &&
+                    check_for_assignment_to_restricted_or_frozen_location(
+                        self, assignment_id, assignment_span, assignee_cmt.clone())
+                {
                     // Safe, but record for lint pass later:
                     mark_variable_as_used_mut(self, assignee_cmt);
                 }
