@@ -81,7 +81,7 @@ pub enum MethodContainer {
 #[deriving(Clone)]
 pub struct Method {
     pub ident: ast::Ident,
-    pub generics: ty::Generics,
+    pub generics: Rc<ty::Generics>,
     pub fty: BareFnTy,
     pub explicit_self: ast::ExplicitSelf_,
     pub vis: ast::Visibility,
@@ -94,7 +94,7 @@ pub struct Method {
 
 impl Method {
     pub fn new(ident: ast::Ident,
-               generics: ty::Generics,
+               generics: Rc<ty::Generics>,
                fty: BareFnTy,
                explicit_self: ast::ExplicitSelf_,
                vis: ast::Visibility,
@@ -238,6 +238,9 @@ pub enum AutoRef {
 /// generates so that so that it can be reused and doesn't have to be redone
 /// later on.
 pub struct ctxt {
+    /// small optimization: keep around an empty generics everybody can share
+    pub empty_generics: Rc<ty::Generics>,
+
     /// Specifically use a speedy hash algorithm for this hash map, it's used
     /// quite often.
     pub interner: RefCell<FnvHashMap<intern_key, Box<t_box_>>>,
@@ -975,6 +978,10 @@ impl Generics {
                    regions: VecPerParamSpace::empty() }
     }
 
+    pub fn is_empty(&self) -> bool {
+        return self.types.is_empty() && self.regions.is_empty();
+    }
+
     pub fn has_type_params(&self, space: subst::ParamSpace) -> bool {
         !self.types.get_vec(space).is_empty()
     }
@@ -1016,13 +1023,13 @@ pub struct ParameterEnvironment {
 ///   region `&self` or to (unsubstituted) ty_param types
 #[deriving(Clone)]
 pub struct ty_param_bounds_and_ty {
-    pub generics: Generics,
+    pub generics: Rc<Generics>,
     pub ty: t
 }
 
 /// As `ty_param_bounds_and_ty` but for a trait ref.
 pub struct TraitDef {
-    pub generics: Generics,
+    pub generics: Rc<Generics>,
     pub bounds: BuiltinBounds,
     pub trait_ref: Rc<ty::TraitRef>,
 }
@@ -1052,6 +1059,7 @@ pub fn mk_ctxt(s: Session,
                lang_items: middle::lang_items::LanguageItems)
             -> ctxt {
     ctxt {
+        empty_generics: Rc::new(ty::Generics::empty()),
         named_region_map: named_region_map,
         item_variance_map: RefCell::new(DefIdMap::new()),
         interner: RefCell::new(FnvHashMap::new()),

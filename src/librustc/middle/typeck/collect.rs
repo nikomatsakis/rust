@@ -204,14 +204,14 @@ pub fn ensure_trait_methods(ccx: &CrateCtxt,
                         let ty_method = Rc::new(match m {
                             &ast::Required(ref m) => {
                                 ty_method_of_trait_method(
-                                    ccx, trait_id, &trait_def.generics,
+                                    ccx, trait_id, &*trait_def.generics,
                                     &m.id, &m.ident, &m.explicit_self,
                                     &m.generics, &m.fn_style, m.decl)
                             }
 
                             &ast::Provided(ref m) => {
                                 ty_method_of_trait_method(
-                                    ccx, trait_id, &trait_def.generics,
+                                    ccx, trait_id, &*trait_def.generics,
                                     &m.id, &m.ident, &m.explicit_self,
                                     &m.generics, &m.fn_style, m.decl)
                             }
@@ -287,7 +287,7 @@ pub fn ensure_trait_methods(ccx: &CrateCtxt,
 }
 
 pub fn convert_field(ccx: &CrateCtxt,
-                     struct_generics: &ty::Generics,
+                     struct_generics: &Rc<ty::Generics>,
                      v: &ast::StructField,
                      origin: ast::DefId) -> ty::field_ty {
     let tt = ccx.to_ty(&ExplicitRscope, v.node.ty);
@@ -323,7 +323,7 @@ fn convert_methods(ccx: &CrateCtxt,
                    container: MethodContainer,
                    ms: &[@ast::Method],
                    untransformed_rcvr_ty: ty::t,
-                   rcvr_ty_generics: &ty::Generics,
+                   rcvr_ty_generics: &Rc<ty::Generics>,
                    rcvr_visibility: ast::Visibility)
 {
     let tcx = ccx.tcx;
@@ -337,7 +337,7 @@ fn convert_methods(ccx: &CrateCtxt,
                                        container,
                                        *m,
                                        untransformed_rcvr_ty,
-                                       rcvr_ty_generics,
+                                       &**rcvr_ty_generics,
                                        rcvr_visibility));
         let fty = ty::mk_bare_fn(tcx, mty.fty.clone());
         debug!("method {} (id {}) has type {}",
@@ -588,7 +588,7 @@ pub fn convert_struct(ccx: &CrateCtxt,
     };
     tcx.superstructs.borrow_mut().insert(local_def(id), super_struct);
 
-    let substs = mk_item_substs(ccx, &tpt.generics);
+    let substs = mk_item_substs(ccx, &*tpt.generics);
     let selfty = ty::mk_struct(tcx, local_def(id), substs);
 
     // If this struct is enum-like or tuple-like, create the type of its
@@ -712,7 +712,7 @@ pub fn trait_def_of_item(ccx: &CrateCtxt, it: &ast::Item) -> Rc<ty::TraitDef> {
     let builtin_bounds =
         ensure_supertraits(ccx, it.id, it.span, supertraits, sized);
 
-    let substs = mk_item_substs(ccx, &ty_generics);
+    let substs = mk_item_substs(ccx, &*ty_generics);
     let trait_def = Rc::new(ty::TraitDef {
         generics: ty_generics,
         bounds: builtin_bounds,
@@ -823,7 +823,7 @@ pub fn ty_of_item(ccx: &CrateCtxt, it: &ast::Item)
     match it.node {
         ast::ItemStatic(t, _, _) => {
             let typ = ccx.to_ty(&ExplicitRscope, t);
-            let tpt = no_params(typ);
+            let tpt = no_params(ccx, typ);
 
             tcx.tcache.borrow_mut().insert(local_def(it.id), tpt.clone());
             return tpt;
@@ -868,7 +868,7 @@ pub fn ty_of_item(ccx: &CrateCtxt, it: &ast::Item)
         ast::ItemEnum(_, ref generics) => {
             // Create a new generic polytype.
             let ty_generics = ty_generics_for_type(ccx, generics);
-            let substs = mk_item_substs(ccx, &ty_generics);
+            let substs = mk_item_substs(ccx, &*ty_generics);
             let t = ty::mk_enum(tcx, local_def(it.id), substs);
             let tpt = ty_param_bounds_and_ty {
                 generics: ty_generics,
@@ -883,7 +883,7 @@ pub fn ty_of_item(ccx: &CrateCtxt, it: &ast::Item)
         }
         ast::ItemStruct(_, ref generics) => {
             let ty_generics = ty_generics_for_type(ccx, generics);
-            let substs = mk_item_substs(ccx, &ty_generics);
+            let substs = mk_item_substs(ccx, &*ty_generics);
             let t = ty::mk_struct(tcx, local_def(it.id), substs);
             let tpt = ty_param_bounds_and_ty {
                 generics: ty_generics,
@@ -912,7 +912,7 @@ pub fn ty_of_foreign_item(ccx: &CrateCtxt,
         }
         ast::ForeignItemStatic(t, _) => {
             ty::ty_param_bounds_and_ty {
-                generics: ty::Generics::empty(),
+                generics: ccx.tcx.empty_generics.clone(),
                 ty: ast_ty_to_ty(ccx, &ExplicitRscope, t)
             }
         }
@@ -921,21 +921,18 @@ pub fn ty_of_foreign_item(ccx: &CrateCtxt,
 
 fn ty_generics_for_type(ccx: &CrateCtxt,
                         generics: &ast::Generics)
-                        -> ty::Generics
+                        -> Rc<ty::Generics>
 {
     ty_generics(ccx, subst::TypeSpace, &generics.lifetimes,
-                &generics.ty_params, ty::Generics::empty())
+                &generics.ty_params, None, ty::Generics::empty())
 }
 
 fn ty_generics_for_trait(ccx: &CrateCtxt,
                          trait_id: ast::NodeId,
                          substs: &subst::Substs,
                          generics: &ast::Generics)
-                         -> ty::Generics
+                         -> Rc<ty::Generics>
 {
-    let mut generics = ty_generics(ccx, subst::TypeSpace, &generics.lifetimes,
-                                   &generics.ty_params, ty::Generics::empty());
-
     // Something of a hack: use the node id for the trait, also as
     // the node id for the Self type parameter.
     let param_id = trait_id;
@@ -958,27 +955,31 @@ fn ty_generics_for_trait(ccx: &CrateCtxt,
 
     ccx.tcx.ty_param_defs.borrow_mut().insert(param_id, def.clone());
 
-    generics.types.push(subst::SelfSpace, def);
-
-    generics
+    ty_generics(ccx,
+                subst::TypeSpace,
+                &generics.lifetimes,
+                &generics.ty_params,
+                Some(def),
+                ty::Generics::empty())
 }
 
 fn ty_generics_for_fn_or_method(ccx: &CrateCtxt,
                                 generics: &ast::Generics,
                                 base_generics: ty::Generics)
-                                -> ty::Generics
+                                -> Rc<ty::Generics>
 {
     let early_lifetimes = resolve_lifetime::early_bound_lifetimes(generics);
     ty_generics(ccx, subst::FnSpace, &early_lifetimes,
-                &generics.ty_params, base_generics)
+                &generics.ty_params, None, base_generics)
 }
 
 fn ty_generics(ccx: &CrateCtxt,
                space: subst::ParamSpace,
                lifetimes: &Vec<ast::Lifetime>,
                types: &OwnedSlice<ast::TyParam>,
+               self_type: Option<ty::TypeParameterDef>,
                base_generics: ty::Generics)
-               -> ty::Generics
+               -> Rc<ty::Generics>
 {
     let mut result = base_generics;
 
@@ -996,7 +997,18 @@ fn ty_generics(ccx: &CrateCtxt,
         result.types.push(space, def);
     }
 
-    return result;
+    match self_type {
+        None => { }
+        Some(def) => {
+            result.types.push(subst::SelfSpace, def);
+        }
+    }
+
+    return if result.is_empty() {
+        ccx.tcx.empty_generics.clone()
+    } else {
+        Rc::new(result)
+    };
 
     fn get_or_create_type_parameter_def(ccx: &CrateCtxt,
                                         space: subst::ParamSpace,

@@ -279,7 +279,7 @@ pub fn ast_path_to_trait_ref<AC:AstConv,RS:RegionScope>(
     let trait_def = this.get_trait_def(trait_def_id);
     Rc::new(ty::TraitRef {
         def_id: trait_def_id,
-        substs: ast_path_substs(this, rscope, &trait_def.generics, self_ty, path)
+        substs: ast_path_substs(this, rscope, &*trait_def.generics, self_ty, path)
     })
 }
 
@@ -296,7 +296,7 @@ pub fn ast_path_to_ty<AC:AstConv,RS:RegionScope>(
         ty: decl_ty
     } = this.get_item_ty(did);
 
-    let substs = ast_path_substs(this, rscope, &generics, None, path);
+    let substs = ast_path_substs(this, rscope, &*generics, None, path);
     let ty = decl_ty.subst(tcx, &substs);
     ty_param_substs_and_ty { substs: substs, ty: ty }
 }

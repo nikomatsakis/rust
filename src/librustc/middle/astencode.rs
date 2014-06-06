@@ -40,6 +40,7 @@ use libc;
 use std::io::Seek;
 use std::io::MemWriter;
 use std::mem;
+use std::rc::Rc;
 use std::string::String;
 
 use serialize::ebml::reader;
@@ -1224,7 +1225,7 @@ impl<'a> ebml_decoder_decoder_helpers for reader::Decoder<'a> {
                                    -> ty::ty_param_bounds_and_ty {
         self.read_struct("ty_param_bounds_and_ty", 2, |this| {
             Ok(ty::ty_param_bounds_and_ty {
-                generics: this.read_struct_field("generics", 0, |this| {
+                generics: Rc::new(this.read_struct_field("generics", 0, |this| {
                     this.read_struct("Generics", 2, |this| {
                         Ok(ty::Generics {
                             types:
@@ -1240,7 +1241,7 @@ impl<'a> ebml_decoder_decoder_helpers for reader::Decoder<'a> {
                             }).unwrap()
                         })
                     })
-                }).unwrap(),
+                }).unwrap()),
                 ty: this.read_struct_field("ty", 1, |this| {
                     Ok(this.read_ty(xcx))
                 }).unwrap()

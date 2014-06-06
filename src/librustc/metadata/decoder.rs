@@ -414,8 +414,8 @@ pub fn get_trait_def(cdata: Cmd,
     }
 
     ty::TraitDef {
-        generics: ty::Generics {types: tp_defs,
-                                regions: rp_defs},
+        generics: Rc::new(ty::Generics {types: tp_defs,
+                                        regions: rp_defs}),
         bounds: bounds,
         trait_ref: Rc::new(item_trait_ref(item_doc, tcx, cdata))
     }
@@ -433,8 +433,8 @@ pub fn get_type(cdata: Cmd, id: ast::NodeId, tcx: &ty::ctxt)
     let rp_defs = item_region_param_defs(item, cdata);
 
     ty::ty_param_bounds_and_ty {
-        generics: ty::Generics {types: tp_defs,
-                                regions: rp_defs},
+        generics: Rc::new(ty::Generics {types: tp_defs,
+                                        regions: rp_defs}),
         ty: t
     }
 }
@@ -809,10 +809,10 @@ pub fn get_method(intr: Rc<IdentInterner>, cdata: Cmd, id: ast::NodeId,
 
     ty::Method::new(
         name,
-        ty::Generics {
+        Rc::new(ty::Generics {
             types: type_param_defs,
             regions: rp_defs,
-        },
+        }),
         fty,
         explicit_self,
         vis,

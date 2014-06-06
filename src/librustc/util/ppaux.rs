@@ -387,7 +387,7 @@ pub fn ty_to_str(cx: &ctxt, typ: t) -> String {
       ty_enum(did, ref substs) | ty_struct(did, ref substs) => {
           let base = ty::item_path_str(cx, did);
           let generics = ty::lookup_item_type(cx, did).generics;
-          parameterized(cx, base.as_slice(), substs, &generics)
+          parameterized(cx, base.as_slice(), substs, &*generics)
       }
       ty_trait(box ty::TyTrait {
           def_id: did, ref substs, store, ref bounds
@@ -395,7 +395,7 @@ pub fn ty_to_str(cx: &ctxt, typ: t) -> String {
           let base = ty::item_path_str(cx, did);
           let trait_def = ty::lookup_trait_def(cx, did);
           let ty = parameterized(cx, base.as_slice(),
-                                 substs, &trait_def.generics);
+                                 substs, &*trait_def.generics);
           let bound_sep = if bounds.is_empty() { "" } else { ":" };
           let bound_str = bounds.repr(cx);
           format!("{}{}{}{}",
@@ -943,7 +943,7 @@ impl UserString for ty::TraitRef {
     fn user_string(&self, tcx: &ctxt) -> String {
         let base = ty::item_path_str(tcx, self.def_id);
         let trait_def = ty::lookup_trait_def(tcx, self.def_id);
-        parameterized(tcx, base.as_slice(), &self.substs, &trait_def.generics)
+        parameterized(tcx, base.as_slice(), &self.substs, &*trait_def.generics)
     }
 }
 

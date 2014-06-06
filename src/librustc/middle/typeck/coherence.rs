@@ -497,7 +497,7 @@ impl<'a> CoherenceChecker<'a> {
     {
         let substitutions =
             self.inference_context.fresh_substs_for_type(DUMMY_SP,
-                                                         &polytype.generics);
+                                                         &*polytype.generics);
         let monotype = polytype.ty.subst(self.crate_context.tcx, &substitutions);
 
         UniversalQuantificationResult {
@@ -751,7 +751,7 @@ fn subst_receiver_types_in_method_ty(tcx: &ty::ctxt,
     debug!("subst_receiver_types_in_method_ty: combined_substs={}",
            combined_substs.repr(tcx));
 
-    let mut method_generics = method.generics.subst(tcx, &combined_substs);
+    let mut method_generics = (*method.generics).subst(tcx, &combined_substs);
 
     // replace the type parameters declared on the trait with those
     // from the impl
@@ -772,7 +772,7 @@ fn subst_receiver_types_in_method_ty(tcx: &ty::ctxt,
 
     ty::Method::new(
         method.ident,
-        method_generics,
+        Rc::new(method_generics),
         method_fty,
         method.explicit_self,
         method.vis,

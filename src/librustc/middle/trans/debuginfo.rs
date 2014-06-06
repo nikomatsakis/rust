@@ -2259,7 +2259,7 @@ fn trait_metadata(cx: &CrateContext,
     // Add type and region parameters
     let trait_def = ty::lookup_trait_def(cx.tcx(), def_id);
     let name = ppaux::parameterized(cx.tcx(), name.as_slice(),
-                                    substs, &trait_def.generics);
+                                    substs, &*trait_def.generics);
 
     let (containing_scope, definition_span) = get_namespace_and_span_for_item(cx, def_id);
 

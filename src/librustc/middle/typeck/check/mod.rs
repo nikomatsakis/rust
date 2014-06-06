@@ -649,7 +649,7 @@ pub fn check_item(ccx: &CrateCtxt, it: &ast::Item) {
         let fn_tpt = ty::lookup_item_type(ccx.tcx, ast_util::local_def(it.id));
 
         let param_env = ty::construct_parameter_environment(ccx.tcx,
-                                                            &fn_tpt.generics,
+                                                            &*fn_tpt.generics,
                                                             body.id);
 
         check_bare_fn(ccx, decl, body, it.id, fn_tpt.ty, param_env);
@@ -659,7 +659,7 @@ pub fn check_item(ccx: &CrateCtxt, it: &ast::Item) {
 
         let impl_tpt = ty::lookup_item_type(ccx.tcx, ast_util::local_def(it.id));
         for m in ms.iter() {
-            check_method_body(ccx, &impl_tpt.generics, *m);
+            check_method_body(ccx, &*impl_tpt.generics, *m);
         }
 
         match *opt_trait_ref {
@@ -671,7 +671,7 @@ pub fn check_item(ccx: &CrateCtxt, it: &ast::Item) {
                                              ast_trait_ref,
                                              &*impl_trait_ref,
                                              ms.as_slice());
-                vtable::resolve_impl(ccx.tcx, it, &impl_tpt.generics, &*impl_trait_ref);
+                vtable::resolve_impl(ccx.tcx, it, &*impl_tpt.generics, &*impl_trait_ref);
             }
             None => { }
         }
@@ -686,7 +686,7 @@ pub fn check_item(ccx: &CrateCtxt, it: &ast::Item) {
                     // bodies to check.
                 }
                 Provided(m) => {
-                    check_method_body(ccx, &trait_def.generics, m);
+                    check_method_body(ccx, &*trait_def.generics, m);
                 }
             }
         }
@@ -744,7 +744,7 @@ fn check_method_body(ccx: &CrateCtxt,
             method.id);
     let method_def_id = local_def(method.id);
     let method_ty = ty::method(ccx.tcx, method_def_id);
-    let method_generics = &method_ty.generics;
+    let method_generics = &*method_ty.generics;
 
     let param_env = ty::construct_parameter_environment(ccx.tcx,
                                                         method_generics,
@@ -2377,7 +2377,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
 
         // Generate the struct type.
         let substitutions = fcx.infcx().fresh_substs_for_type(
-            span, &item_type.generics);
+            span, &*item_type.generics);
         let mut struct_type = raw_type.subst(tcx, &substitutions);
 
         // Look up and check the fields.
@@ -2421,7 +2421,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
         // Look up the number of type parameters and the raw type, and
         // determine whether the enum is region-parameterized.
         let item_type = ty::lookup_item_type(tcx, enum_id);
-        let substitutions = fcx.infcx().fresh_substs_for_type(span, &item_type.generics);
+        let substitutions = fcx.infcx().fresh_substs_for_type(span, &*item_type.generics);
         let enum_type = item_type.ty.subst(tcx, &substitutions);
 
         // Look up and check the enum variant fields.
@@ -3630,7 +3630,7 @@ pub fn ty_param_bounds_and_ty_for_def(fcx: &FnCtxt,
       def::DefArg(nid, _) | def::DefLocal(nid, _) |
       def::DefBinding(nid, _) => {
           let typ = fcx.local_ty(sp, nid);
-          return no_params(typ);
+          return no_params(fcx.ccx, typ);
       }
       def::DefFn(id, _) | def::DefStaticMethod(id, _, _) |
       def::DefStatic(id, _) | def::DefVariant(_, id, _) |
