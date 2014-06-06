@@ -96,6 +96,7 @@ use middle::typeck::check::regionmanip::replace_late_bound_regions_in_fn_sig;
 use util::common::indenter;
 use util::ppaux;
 use util::ppaux::Repr;
+use util::rcvec::RcVec;
 
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -1135,7 +1136,9 @@ impl<'a> LookupContext<'a> {
                 self.span,
                 candidate.method_ty.generics.regions.get_vec(subst::FnSpace));
 
-        let all_substs = candidate.rcvr_substs.clone().with_method(m_types, m_regions);
+        let all_substs =
+            candidate.rcvr_substs.clone().with_method(RcVec::from(m_types),
+                                                      RcVec::from(m_regions));
 
         let ref bare_fn_ty = candidate.method_ty.fty;
 

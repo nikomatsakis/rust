@@ -44,6 +44,7 @@ use syntax::ast;
 use syntax::codemap;
 use syntax::codemap::Span;
 use util::common::indent;
+use util::rcvec::RcVec;
 use util::ppaux::{bound_region_to_str, ty_to_str, trait_ref_to_str, Repr};
 
 pub mod doc;
@@ -626,7 +627,7 @@ impl<'a> InferCtxt<'a> {
 
     pub fn region_vars_for_defs(&self,
                                 span: Span,
-                                defs: &Vec<ty::RegionParameterDef>)
+                                defs: &RcVec<ty::RegionParameterDef>)
                                 -> Vec<ty::Region> {
         defs.iter()
             .map(|d| self.next_region_var(EarlyBoundRegion(span, d.name)))

@@ -182,9 +182,9 @@ fn parse_trait_store(st: &mut PState, conv: conv_did) -> ty::TraitStore {
     }
 }
 
-fn parse_vec_per_param_space<T>(st: &mut PState,
-                                f: |&mut PState| -> T)
-                                -> VecPerParamSpace<T>
+fn parse_vec_per_param_space<T:Clone>(st: &mut PState,
+                                      f: |&mut PState| -> T)
+                                      -> VecPerParamSpace<T>
 {
     let mut r = VecPerParamSpace::empty();
     for &space in subst::ParamSpace::all().iter() {

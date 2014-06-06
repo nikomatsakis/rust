@@ -98,10 +98,10 @@ fn enc_opt<T>(w: &mut MemWriter, t: Option<T>, enc_f: |&mut MemWriter, T|) {
     }
 }
 
-fn enc_vec_per_param_space<T>(w: &mut MemWriter,
-                              cx: &ctxt,
-                              v: &VecPerParamSpace<T>,
-                              op: |&mut MemWriter, &ctxt, &T|) {
+fn enc_vec_per_param_space<T:Clone>(w: &mut MemWriter,
+                                    cx: &ctxt,
+                                    v: &VecPerParamSpace<T>,
+                                    op: |&mut MemWriter, &ctxt, &T|) {
     for &space in subst::ParamSpace::all().iter() {
         mywrite!(w, "[");
         for t in v.get_vec(space).iter() {

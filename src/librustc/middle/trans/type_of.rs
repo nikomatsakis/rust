@@ -16,6 +16,7 @@ use middle::trans::common::*;
 use middle::trans::foreign;
 use middle::ty;
 use util::ppaux::Repr;
+use util::rcvec::RcVec;
 
 use middle::trans::type_::Type;
 
@@ -298,7 +299,7 @@ pub enum named_ty { a_struct, an_enum }
 pub fn llvm_type_name(cx: &CrateContext,
                       what: named_ty,
                       did: ast::DefId,
-                      tps: &Vec<ty::t>)
+                      tps: &RcVec<ty::t>)
                       -> String
 {
     let name = match what {

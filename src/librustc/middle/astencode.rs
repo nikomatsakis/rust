@@ -699,9 +699,9 @@ pub fn encode_vtable_origin(ecx: &e::EncodeContext,
 }
 
 pub trait vtable_decoder_helpers {
-    fn read_vec_per_param_space<T>(&mut self,
-                                   f: |&mut Self| -> T)
-                                   -> VecPerParamSpace<T>;
+    fn read_vec_per_param_space<T:Clone>(&mut self,
+                                         f: |&mut Self| -> T)
+                                         -> VecPerParamSpace<T>;
     fn read_vtable_res_with_key(&mut self,
                                 tcx: &ty::ctxt,
                                 cdata: &cstore::crate_metadata)
@@ -718,14 +718,14 @@ pub trait vtable_decoder_helpers {
 }
 
 impl<'a> vtable_decoder_helpers for reader::Decoder<'a> {
-    fn read_vec_per_param_space<T>(&mut self,
-                                   f: |&mut reader::Decoder<'a>| -> T)
-                                   -> VecPerParamSpace<T>
+    fn read_vec_per_param_space<T:Clone>(&mut self,
+                                         f: |&mut reader::Decoder<'a>| -> T)
+                                         -> VecPerParamSpace<T>
     {
         let types = self.read_to_vec(|this| Ok(f(this))).unwrap();
         let selfs = self.read_to_vec(|this| Ok(f(this))).unwrap();
         let fns = self.read_to_vec(|this| Ok(f(this))).unwrap();
-        VecPerParamSpace::new(types, selfs, fns)
+        VecPerParamSpace::from_vecs(types, selfs, fns)
     }
 
     fn read_vtable_res_with_key(&mut self,
@@ -803,9 +803,9 @@ impl<'a> vtable_decoder_helpers for reader::Decoder<'a> {
 // ___________________________________________________________________________
 //
 
-fn encode_vec_per_param_space<T>(ebml_w: &mut Encoder,
-                                 v: &subst::VecPerParamSpace<T>,
-                                 f: |&mut Encoder, &T|) {
+fn encode_vec_per_param_space<T:Clone>(ebml_w: &mut Encoder,
+                                       v: &subst::VecPerParamSpace<T>,
+                                       f: |&mut Encoder, &T|) {
     for &space in subst::ParamSpace::all().iter() {
         ebml_w.emit_from_vec(v.get_vec(space).as_slice(),
                              |ebml_w, n| Ok(f(ebml_w, n))).unwrap();
@@ -1120,6 +1120,8 @@ trait ebml_decoder_decoder_helpers {
                            -> ty::TypeParameterDef;
     fn read_ty_param_bounds_and_ty(&mut self, xcx: &ExtendedDecodeContext)
                                 -> ty::ty_param_bounds_and_ty;
+    fn read_generics(&mut self, xcx: &ExtendedDecodeContext)
+                     -> Rc<ty::Generics>;
     fn read_substs(&mut self, xcx: &ExtendedDecodeContext) -> subst::Substs;
     fn read_auto_adjustment(&mut self, xcx: &ExtendedDecodeContext) -> ty::AutoAdjustment;
     fn convert_def_id(&mut self,
@@ -1225,28 +1227,38 @@ impl<'a> ebml_decoder_decoder_helpers for reader::Decoder<'a> {
                                    -> ty::ty_param_bounds_and_ty {
         self.read_struct("ty_param_bounds_and_ty", 2, |this| {
             Ok(ty::ty_param_bounds_and_ty {
-                generics: Rc::new(this.read_struct_field("generics", 0, |this| {
-                    this.read_struct("Generics", 2, |this| {
-                        Ok(ty::Generics {
-                            types:
-                            this.read_struct_field("types", 0, |this| {
-                                Ok(this.read_vec_per_param_space(
-                                    |this| this.read_type_param_def(xcx)))
-                            }).unwrap(),
-
-                            regions:
-                            this.read_struct_field("regions", 1, |this| {
-                                Ok(this.read_vec_per_param_space(
-                                    |this| Decodable::decode(this).unwrap()))
-                            }).unwrap()
-                        })
-                    })
-                }).unwrap()),
+                generics: this.read_struct_field("generics", 0, |this| {
+                    Ok(this.read_generics(xcx))
+                }).unwrap(),
                 ty: this.read_struct_field("ty", 1, |this| {
                     Ok(this.read_ty(xcx))
                 }).unwrap()
             })
         }).unwrap()
+    }
+
+    fn read_generics(&mut self, xcx: &ExtendedDecodeContext)
+                     -> Rc<ty::Generics>
+    {
+        let generics = self.read_struct("Generics", 2, |this| {
+            Ok(ty::Generics {
+                types: this.read_struct_field("types", 0, |this| {
+                    Ok(this.read_vec_per_param_space(
+                        |this| this.read_type_param_def(xcx)))
+                }).unwrap(),
+
+                regions: this.read_struct_field("regions", 1, |this| {
+                    Ok(this.read_vec_per_param_space(
+                        |this| Decodable::decode(this).unwrap()))
+                }).unwrap()
+            })
+        }).unwrap();
+
+        if generics.is_empty() {
+            xcx.dcx.tcx.empty_generics.clone()
+        } else {
+            Rc::new(generics)
+        }
     }
 
     fn read_substs(&mut self, xcx: &ExtendedDecodeContext) -> subst::Substs {

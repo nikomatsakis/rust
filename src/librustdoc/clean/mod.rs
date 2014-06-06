@@ -29,6 +29,7 @@ use rustc::middle::def;
 use rustc::middle::subst;
 use rustc::middle::subst::VecPerParamSpace;
 use rustc::middle::ty;
+use rustc::util::rcvec::RcVec;
 
 use std::rc::Rc;
 use std::u32;
@@ -53,7 +54,13 @@ impl<T: Clean<U>, U> Clean<Vec<U>> for Vec<T> {
     }
 }
 
-impl<T: Clean<U>, U> Clean<VecPerParamSpace<U>> for VecPerParamSpace<T> {
+impl<T: Clean<U>+Clone, U: Clone> Clean<RcVec<U>> for RcVec<T> {
+    fn clean(&self) -> RcVec<U> {
+        RcVec::from(self.iter().map(|x| x.clean()).collect())
+    }
+}
+
+impl<T: Clone+Clean<U>, U: Clone> Clean<VecPerParamSpace<U>> for VecPerParamSpace<T> {
     fn clean(&self) -> VecPerParamSpace<U> {
         self.map(|x| x.clean())
     }
@@ -500,7 +507,7 @@ fn external_path(name: &str, substs: &subst::Substs) -> Path {
                     .iter()
                     .filter_map(|v| v.clean())
                     .collect();
-    let types = substs.types.get_vec(subst::TypeSpace).clean();
+    let types = substs.types.get_vec(subst::TypeSpace).clean().to_vec();
     Path {
         global: false,
         segments: vec![PathSegment {
@@ -675,8 +682,8 @@ impl Clean<Generics> for ty::Generics {
         };
 
         Generics {
-            type_params: self.types.get_vec(space).clean(),
-            lifetimes: self.regions.get_vec(space).clean(),
+            type_params: self.types.get_vec(space).clean().to_vec(),
+            lifetimes: self.regions.get_vec(space).clean().to_vec(),
         }
     }
 }

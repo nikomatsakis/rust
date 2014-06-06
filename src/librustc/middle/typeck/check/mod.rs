@@ -3903,7 +3903,7 @@ pub fn instantiate_path(fcx: &FnCtxt,
                              but found {} parameter(s)",
                             type_count,
                             segment.types.len()).as_slice());
-                    substs.types.get_mut_vec(space).truncate(0);
+                    substs.types.get_mut_vec(space).clear();
                 }
             }
         }
@@ -3923,7 +3923,7 @@ pub fn instantiate_path(fcx: &FnCtxt,
                              expected {} parameter(s) but found {} parameter(s)",
                             region_count,
                             segment.lifetimes.len()).as_slice());
-                    substs.mut_regions().get_mut_vec(space).truncate(0);
+                    substs.mut_regions().get_mut_vec(space).clear();
                 }
             }
         }
@@ -3958,7 +3958,7 @@ pub fn instantiate_path(fcx: &FnCtxt,
         // everything.
         if provided_len == 0 {
             let provided = substs.types.get_mut_vec(space);
-            *provided = fcx.infcx().next_ty_vars(desired.len());
+            provided.set(fcx.infcx().next_ty_vars(desired.len()));
             return;
         }
 
@@ -3976,7 +3976,7 @@ pub fn instantiate_path(fcx: &FnCtxt,
                             required_len,
                             provided_len).as_slice());
             let provided = substs.types.get_mut_vec(space);
-            *provided = Vec::from_elem(desired.len(), ty::mk_err());
+            provided.set(Vec::from_elem(desired.len(), ty::mk_err()));
             return;
         }
 
@@ -4012,7 +4012,7 @@ pub fn instantiate_path(fcx: &FnCtxt,
 
         // If nothing was provided, just use inference variables.
         if provided.len() == 0 {
-            *provided = fcx.infcx().region_vars_for_defs(span, desired);
+            provided.set(fcx.infcx().region_vars_for_defs(span, desired));
             return;
         }
 
@@ -4032,7 +4032,7 @@ pub fn instantiate_path(fcx: &FnCtxt,
                 desired.len(),
                 provided.len()).as_slice());
 
-        *provided = fcx.infcx().region_vars_for_defs(span, desired);
+        provided.set(fcx.infcx().region_vars_for_defs(span, desired));
     }
 }
 

@@ -36,6 +36,7 @@ use util::ppaux::{trait_store_to_str, ty_to_str};
 use util::ppaux::{Repr, UserString};
 use util::common::{indenter};
 use util::nodemap::{NodeMap, NodeSet, DefIdMap, DefIdSet, FnvHashMap};
+use util::rcvec::RcVec;
 
 use std::cell::{Cell, RefCell};
 use std::cmp;
@@ -792,7 +793,7 @@ pub enum type_err {
     terr_variadic_mismatch(expected_found<bool>)
 }
 
-#[deriving(PartialEq, Eq, Hash)]
+#[deriving(Clone, PartialEq, Eq, Hash)]
 pub struct ParamBounds {
     pub builtin_bounds: BuiltinBounds,
     pub trait_bounds: Vec<Rc<TraitRef>>
@@ -4624,7 +4625,7 @@ pub fn construct_parameter_environment(
     fn push_region_params(regions: &mut VecPerParamSpace<ty::Region>,
                           space: subst::ParamSpace,
                           free_id: ast::NodeId,
-                          region_params: &Vec<RegionParameterDef>)
+                          region_params: &RcVec<RegionParameterDef>)
     {
         for r in region_params.iter() {
             regions.push(space, ty::free_region_from_def(free_id, r));
@@ -4634,7 +4635,7 @@ pub fn construct_parameter_environment(
     fn push_types_from_defs(tcx: &ty::ctxt,
                             types: &mut subst::VecPerParamSpace<ty::t>,
                             space: subst::ParamSpace,
-                            defs: &Vec<TypeParameterDef>) {
+                            defs: &RcVec<TypeParameterDef>) {
         for (i, def) in defs.iter().enumerate() {
             let ty = ty::mk_param(tcx, space, i, def.def_id);
             types.push(space, ty);
@@ -4645,7 +4646,7 @@ pub fn construct_parameter_environment(
                              bounds: &mut subst::VecPerParamSpace<ParamBounds>,
                              space: subst::ParamSpace,
                              free_substs: &subst::Substs,
-                             defs: &Vec<TypeParameterDef>) {
+                             defs: &RcVec<TypeParameterDef>) {
         for def in defs.iter() {
             let b = (*def.bounds).subst(tcx, free_substs);
             bounds.push(space, b);

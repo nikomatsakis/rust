@@ -35,6 +35,8 @@ use syntax::print::pprust;
 use syntax::{ast, ast_util};
 use syntax::owned_slice::OwnedSlice;
 
+use util::rcvec::RcVec;
+
 /// Produces a string suitable for debugging output.
 pub trait Repr {
     fn repr(&self, tcx: &ctxt) -> String;
@@ -457,7 +459,7 @@ pub fn parameterized(cx: &ctxt,
         0
     };
 
-    for t in tps.slice_to(tps.len() - num_defaults).iter() {
+    for t in tps.as_slice().slice_to(tps.len() - num_defaults).iter() {
         strs.push(ty_to_str(cx, *t))
     }
 
@@ -540,9 +542,13 @@ impl<T:Repr> Repr for OwnedSlice<T> {
     }
 }
 
-// This is necessary to handle types like Option<~[T]>, for which
-// autoderef cannot convert the &[T] handler
 impl<T:Repr> Repr for Vec<T> {
+    fn repr(&self, tcx: &ctxt) -> String {
+        repr_vec(tcx, self.as_slice())
+    }
+}
+
+impl<T:Repr+Clone> Repr for RcVec<T> {
     fn repr(&self, tcx: &ctxt) -> String {
         repr_vec(tcx, self.as_slice())
     }
@@ -583,7 +589,7 @@ impl Repr for subst::Substs {
     }
 }
 
-impl<T:Repr> Repr for subst::VecPerParamSpace<T> {
+impl<T:Repr+Clone> Repr for subst::VecPerParamSpace<T> {
     fn repr(&self, tcx: &ctxt) -> String {
         format!("[{};{};{}]",
                        self.get_vec(subst::TypeSpace).repr(tcx),

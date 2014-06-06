@@ -192,13 +192,13 @@ represents the "variance transform" as defined in the paper:
 
 */
 
-use std::collections::HashMap;
 use arena;
 use arena::Arena;
 use rl = middle::resolve_lifetime;
 use middle::subst;
 use middle::subst::{ParamSpace, FnSpace, TypeSpace, SelfSpace, VecPerParamSpace};
 use middle::ty;
+use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 use syntax::ast;
@@ -207,6 +207,7 @@ use syntax::ast_util;
 use syntax::visit;
 use syntax::visit::Visitor;
 use util::ppaux::Repr;
+use util::rcvec::RcVec;
 
 pub fn infer_variance(tcx: &ty::ctxt,
                       krate: &ast::Crate) {
@@ -832,8 +833,8 @@ impl<'a> ConstraintContext<'a> {
     /// object, etc) appearing in a context with ambient variance `variance`
     fn add_constraints_from_substs(&mut self,
                                    def_id: ast::DefId,
-                                   type_param_defs: &Vec<ty::TypeParameterDef>,
-                                   region_param_defs: &Vec<ty::RegionParameterDef>,
+                                   type_param_defs: &RcVec<ty::TypeParameterDef>,
+                                   region_param_defs: &RcVec<ty::RegionParameterDef>,
                                    substs: &subst::Substs,
                                    variance: VarianceTermPtr<'a>) {
         debug!("add_constraints_from_substs(def_id={:?})", def_id);

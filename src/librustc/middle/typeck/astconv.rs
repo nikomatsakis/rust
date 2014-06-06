@@ -261,7 +261,9 @@ fn ast_path_substs<AC:AstConv,RS:RegionScope>(
         }
     }
 
-    for param in ty_param_defs.slice_from(supplied_ty_param_count).iter() {
+    for param in
+        ty_param_defs.as_slice().slice_from(supplied_ty_param_count).iter()
+    {
         let default = param.default.unwrap();
         let default = default.subst_spanned(tcx, &substs, Some(path.span));
         substs.types.push(subst::TypeSpace, default);

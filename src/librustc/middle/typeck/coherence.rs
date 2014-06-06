@@ -34,8 +34,10 @@ use middle::typeck::infer::combine::Combine;
 use middle::typeck::infer::InferCtxt;
 use middle::typeck::infer::{new_infer_ctxt, resolve_ivar, resolve_type};
 use middle::typeck::infer;
-use util::ppaux::Repr;
 use middle::def::{DefStruct, DefTy};
+use std::collections::HashSet;
+use std::cell::RefCell;
+use std::rc::Rc;
 use syntax::ast::{Crate, DefId};
 use syntax::ast::{Item, ItemEnum, ItemImpl, ItemMod, ItemStruct};
 use syntax::ast::{LOCAL_CRATE, TraitRef, TyPath};
@@ -46,10 +48,8 @@ use syntax::ast_util::{local_def};
 use syntax::codemap::{Span, DUMMY_SP};
 use syntax::parse::token;
 use syntax::visit;
-
-use std::collections::HashSet;
-use std::cell::RefCell;
-use std::rc::Rc;
+use util::ppaux::Repr;
+use util::rcvec::RcVec;
 
 struct UniversalQuantificationResult {
     monotype: t,
@@ -734,7 +734,8 @@ pub fn make_substs_for_receiver_types(tcx: &ty::ctxt,
               .map(|def| ty::ReEarlyBound(def.def_id.node, def.space,
                                           def.index, def.name))
               .collect();
-    trait_ref.substs.clone().with_method(meth_tps, meth_regions)
+    trait_ref.substs.clone().with_method(RcVec::from(meth_tps),
+                                         RcVec::from(meth_regions))
 }
 
 fn subst_receiver_types_in_method_ty(tcx: &ty::ctxt,

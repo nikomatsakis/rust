@@ -14,12 +14,12 @@ use middle::ty;
 use middle::ty_fold;
 use middle::ty_fold::{TypeFoldable, TypeFolder};
 use util::ppaux::Repr;
+use util::rcvec::{RcVec};
 
 use std::iter::Chain;
 use std::mem;
 use std::raw;
-use std::slice::{Items, MutItems};
-use std::vec::Vec;
+use std::slice;
 use syntax::codemap::{Span, DUMMY_SP};
 
 ///////////////////////////////////////////////////////////////////////////
@@ -31,8 +31,8 @@ trait HomogeneousTuple3<T> {
     fn len(&self) -> uint;
     fn as_slice<'a>(&'a self) -> &'a [T];
     fn as_mut_slice<'a>(&'a mut self) -> &'a mut [T];
-    fn iter<'a>(&'a self) -> Items<'a, T>;
-    fn mut_iter<'a>(&'a mut self) -> MutItems<'a, T>;
+    fn iter<'a>(&'a self) -> slice::Items<'a, T>;
+    fn mut_iter<'a>(&'a mut self) -> slice::MutItems<'a, T>;
     fn get<'a>(&'a self, index: uint) -> Option<&'a T>;
     fn get_mut<'a>(&'a mut self, index: uint) -> Option<&'a mut T>;
 }
@@ -58,12 +58,12 @@ impl<T> HomogeneousTuple3<T> for (T, T, T) {
         }
     }
 
-    fn iter<'a>(&'a self) -> Items<'a, T> {
+    fn iter<'a>(&'a self) -> slice::Items<'a, T> {
         let slice: &'a [T] = self.as_slice();
         slice.iter()
     }
 
-    fn mut_iter<'a>(&'a mut self) -> MutItems<'a, T> {
+    fn mut_iter<'a>(&'a mut self) -> slice::MutItems<'a, T> {
         self.as_mut_slice().mut_iter()
     }
 
@@ -111,9 +111,10 @@ impl Substs {
     pub fn new_type(t: Vec<ty::t>,
                     r: Vec<ty::Region>)
                     -> Substs
-    {
-        Substs::new(VecPerParamSpace::new(t, Vec::new(), Vec::new()),
-                    VecPerParamSpace::new(r, Vec::new(), Vec::new()))
+   {
+        Substs::new(
+            VecPerParamSpace::new(RcVec::from(t), RcVec::new(), RcVec::new()),
+            VecPerParamSpace::new(RcVec::from(r), RcVec::new(), RcVec::new()))
     }
 
     pub fn new_trait(t: Vec<ty::t>,
@@ -121,8 +122,9 @@ impl Substs {
                      s: ty::t)
                     -> Substs
     {
-        Substs::new(VecPerParamSpace::new(t, vec!(s), Vec::new()),
-                    VecPerParamSpace::new(r, Vec::new(), Vec::new()))
+        Substs::new(
+            VecPerParamSpace::new(RcVec::from(t), RcVec::of(s), RcVec::new()),
+            VecPerParamSpace::new(RcVec::from(r), RcVec::new(), RcVec::new()))
     }
 
     pub fn erased(t: VecPerParamSpace<ty::t>) -> Substs
@@ -196,8 +198,8 @@ impl Substs {
     }
 
     pub fn with_method(self,
-                       m_types: Vec<ty::t>,
-                       m_regions: Vec<ty::Region>)
+                       m_types: RcVec<ty::t>,
+                       m_regions: RcVec<ty::Region>)
                        -> Substs
     {
         let Substs { types, regions } = self;
@@ -261,32 +263,30 @@ impl ParamSpace {
  */
 #[deriving(PartialEq, Eq, Clone, Hash, Encodable, Decodable)]
 pub struct VecPerParamSpace<T> {
-    vecs: (Vec<T>, Vec<T>, Vec<T>)
+    vecs: (RcVec<T>, RcVec<T>, RcVec<T>)
 }
 
-impl<T> VecPerParamSpace<T> {
+impl<T:Clone> VecPerParamSpace<T> {
     pub fn empty() -> VecPerParamSpace<T> {
         VecPerParamSpace {
-            vecs: (Vec::new(), Vec::new(), Vec::new())
+            vecs: (RcVec::new(), RcVec::new(), RcVec::new())
         }
     }
 
-    pub fn params_from_type(types: Vec<T>) -> VecPerParamSpace<T> {
+    pub fn params_from_type(types: RcVec<T>) -> VecPerParamSpace<T> {
         VecPerParamSpace::empty().with_vec(TypeSpace, types)
     }
 
-    pub fn new(t: Vec<T>, s: Vec<T>, f: Vec<T>) -> VecPerParamSpace<T> {
+    pub fn new(t: RcVec<T>, s: RcVec<T>, f: RcVec<T>) -> VecPerParamSpace<T> {
         VecPerParamSpace {
             vecs: (t, s, f)
         }
     }
 
-    pub fn sort(t: Vec<T>, space: |&T| -> ParamSpace) -> VecPerParamSpace<T> {
-        let mut result = VecPerParamSpace::empty();
-        for t in t.move_iter() {
-            result.push(space(&t), t);
-        }
-        result
+    pub fn from_vecs(t: Vec<T>, s: Vec<T>, f: Vec<T>) -> VecPerParamSpace<T> {
+        VecPerParamSpace::new(RcVec::from(t),
+                              RcVec::from(s),
+                              RcVec::from(f))
     }
 
     pub fn push(&mut self, space: ParamSpace, value: T) {
@@ -294,49 +294,47 @@ impl<T> VecPerParamSpace<T> {
     }
 
     pub fn get_self<'a>(&'a self) -> Option<&'a T> {
-        let v = self.get_vec(SelfSpace);
-        assert!(v.len() <= 1);
-        if v.len() == 0 { None } else { Some(v.get(0)) }
+        self.get_vec(SelfSpace).get(0)
     }
 
     pub fn len(&self, space: ParamSpace) -> uint {
         self.get_vec(space).len()
     }
 
-    pub fn get_vec<'a>(&'a self, space: ParamSpace) -> &'a Vec<T> {
+    pub fn get_vec<'a>(&'a self, space: ParamSpace) -> &'a RcVec<T> {
         self.vecs.get(space as uint).unwrap()
     }
 
-    pub fn get_mut_vec<'a>(&'a mut self, space: ParamSpace) -> &'a mut Vec<T> {
+    pub fn get_mut_vec<'a>(&'a mut self, space: ParamSpace) -> &'a mut RcVec<T> {
         self.vecs.get_mut(space as uint).unwrap()
     }
 
     pub fn opt_get<'a>(&'a self,
                        space: ParamSpace,
                        index: uint)
-                       -> Option<&'a T> {
-        let v = self.get_vec(space);
-        if index < v.len() { Some(v.get(index)) } else { None }
+                       -> Option<&'a T>
+    {
+        self.get_vec(space).get(index)
     }
 
     pub fn get<'a>(&'a self, space: ParamSpace, index: uint) -> &'a T {
-        self.get_vec(space).get(index)
+        self.get_vec(space).get(index).unwrap()
     }
 
     pub fn get_mut<'a>(&'a mut self,
                        space: ParamSpace,
                        index: uint) -> &'a mut T {
-        self.get_mut_vec(space).get_mut(index)
+        self.get_mut_vec(space).get_mut(index).unwrap()
     }
 
-    pub fn iter<'a>(&'a self) -> Chain<Items<'a,T>,
-                                       Chain<Items<'a,T>,
-                                             Items<'a,T>>> {
+    pub fn iter<'a>(&'a self) -> Chain<slice::Items<'a,T>,
+                                       Chain<slice::Items<'a,T>,
+                                             slice::Items<'a,T>>> {
         let (ref r, ref s, ref f) = self.vecs;
         r.iter().chain(s.iter().chain(f.iter()))
     }
 
-    pub fn all_vecs(&self, pred: |&Vec<T>| -> bool) -> bool {
+    pub fn all_vecs(&self, pred: |&RcVec<T>| -> bool) -> bool {
         self.vecs.iter().all(pred)
     }
 
@@ -352,13 +350,14 @@ impl<T> VecPerParamSpace<T> {
         self.all_vecs(|v| v.is_empty())
     }
 
-    pub fn map<U>(&self, pred: |&T| -> U) -> VecPerParamSpace<U> {
-        VecPerParamSpace::new(self.vecs.ref0().iter().map(|p| pred(p)).collect(),
-                              self.vecs.ref1().iter().map(|p| pred(p)).collect(),
-                              self.vecs.ref2().iter().map(|p| pred(p)).collect())
+    pub fn map<U:Clone>(&self, pred: |&T| -> U) -> VecPerParamSpace<U> {
+        let fns = self.vecs.ref0().iter().map(|p| pred(p)).collect();
+        let selfs = self.vecs.ref1().iter().map(|p| pred(p)).collect();
+        let tys = self.vecs.ref2().iter().map(|p| pred(p)).collect();
+        VecPerParamSpace::from_vecs(fns, selfs, tys)
     }
 
-    pub fn map_rev<U>(&self, pred: |&T| -> U) -> VecPerParamSpace<U> {
+    pub fn map_rev<U:Clone>(&self, pred: |&T| -> U) -> VecPerParamSpace<U> {
         /*!
          * Executes the map but in reverse order. For hacky reasons, we rely
          * on this in table.
@@ -379,14 +378,14 @@ impl<T> VecPerParamSpace<T> {
         selfs.reverse();
         let mut tys: Vec<U> = self.vecs.ref0().iter().rev().map(|p| pred(p)).collect();
         tys.reverse();
-        VecPerParamSpace::new(tys, selfs, fns)
+        VecPerParamSpace::from_vecs(tys, selfs, fns)
     }
 
-    pub fn split(self) -> (Vec<T>, Vec<T>, Vec<T>) {
+    pub fn split(self) -> (RcVec<T>, RcVec<T>, RcVec<T>) {
         self.vecs
     }
 
-    pub fn with_vec(mut self, space: ParamSpace, vec: Vec<T>)
+    pub fn with_vec(mut self, space: ParamSpace, vec: RcVec<T>)
                     -> VecPerParamSpace<T>
     {
         assert!(self.get_vec(space).is_empty());

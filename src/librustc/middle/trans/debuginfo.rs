@@ -883,7 +883,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
         // Handle other generic parameters
         let actual_types = param_substs.substs.types.get_vec(subst::FnSpace);
         for (index, &ast::TyParam{ ident: ident, .. }) in generics.ty_params.iter().enumerate() {
-            let actual_type = *actual_types.get(index);
+            let actual_type = *actual_types.get(index).unwrap();
             // Add actual type name to <...> clause of function name
             let actual_type_name = ppaux::ty_to_str(cx.tcx(), actual_type);
             name_to_append_suffix_to.push_str(actual_type_name.as_slice());

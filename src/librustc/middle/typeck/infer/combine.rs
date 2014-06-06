@@ -63,6 +63,7 @@ use middle::typeck::infer::{InferCtxt, cres, ures};
 use middle::typeck::infer::{TypeTrace};
 use util::common::indent;
 use util::ppaux::Repr;
+use util::rcvec::RcVec;
 
 use std::result;
 
@@ -147,17 +148,17 @@ pub trait Combine {
                                                       a_regions,
                                                       b_regions));
 
-            *substs.types.get_mut_vec(space) = tps;
-            *substs.mut_regions().get_mut_vec(space) = regions;
+            substs.types.get_mut_vec(space).set(tps);
+            substs.mut_regions().get_mut_vec(space).set(regions);
         }
 
         return Ok(substs);
 
         fn relate_region_params<C:Combine>(this: &C,
                                            item_def_id: ast::DefId,
-                                           variances: &Vec<ty::Variance>,
-                                           a_rs: &Vec<ty::Region>,
-                                           b_rs: &Vec<ty::Region>)
+                                           variances: &RcVec<ty::Variance>,
+                                           a_rs: &RcVec<ty::Region>,
+                                           b_rs: &RcVec<ty::Region>)
                                            -> cres<Vec<ty::Region>>
         {
             let tcx = this.infcx().tcx;
@@ -177,9 +178,9 @@ pub trait Combine {
             assert_eq!(num_region_params, b_rs.len());
             let mut rs = vec!();
             for i in range(0, num_region_params) {
-                let a_r = *a_rs.get(i);
-                let b_r = *b_rs.get(i);
-                let variance = *variances.get(i);
+                let a_r = *a_rs.get(i).unwrap();
+                let b_r = *b_rs.get(i).unwrap();
+                let variance = *variances.get(i).unwrap();
                 let r = match variance {
                     ty::Invariant => {
                         eq_regions(this, a_r, b_r)

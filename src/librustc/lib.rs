@@ -115,6 +115,7 @@ pub mod util {
     pub mod sha2;
     pub mod nodemap;
     pub mod fs;
+    pub mod rcvec;
 }
 
 pub mod lib {

@@ -128,7 +128,7 @@ impl<T:TypeFoldable> TypeFoldable for OwnedSlice<T> {
     }
 }
 
-impl<T:TypeFoldable> TypeFoldable for VecPerParamSpace<T> {
+impl<T:TypeFoldable+Clone> TypeFoldable for VecPerParamSpace<T> {
     fn fold_with<F:TypeFolder>(&self, folder: &mut F) -> VecPerParamSpace<T> {
         self.map(|t| t.fold_with(folder))
     }
