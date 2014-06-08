@@ -520,6 +520,85 @@ impl<'a> CheckLoanCtxt<'a> {
         }
     }
 
+    pub fn analyze_restrictions_on_use(&self,
+                                       expr_id: ast::NodeId,
+                                       use_path: &LoanPath,
+                                       restr_set: RestrictionSet)
+                                       -> UseError {
+        debug!("analyze_restrictions_on_use(expr_id={:?}, use_path={})",
+               self.tcx().map.node_to_str(expr_id),
+               use_path.repr(self.tcx()));
+
+        // A borrow of a path generates restrictions for that path and any base
+        // paths of that path, e.g. an &mut borrow of `x.a` will generate freeze
+        // restrictions on `x.a` and `a`. However, we also want to prohibit the
+        // use of any extensions of `x.a`, e.g. `x.a.b`.
+        //
+        // In order to do this, we peel back each level of the path, checking
+        // restrictions at each level. If we do this naively, then an &mut
+        // borrow of `x.b` would prohibit a use of `x.a`, since the &mut borrow
+        // of `x.b` would generate freeze restrictions for `x.b` and `x`, and we
+        // would peel back each level of `x.a` to check for restrictions.
+        //
+        // To solve this problem, we ignore restrictions originating from loan
+        // paths other than the current path when at levels beyond the first.
+
+        let mut ret = UseOk;
+        let mut loan_path = use_path;
+        let mut is_use_path = true;
+        loop {
+            // check for a conflicting loan:
+            self.each_in_scope_restriction(expr_id, loan_path, |loan, restr| {
+                if (is_use_path || &*loan.loan_path == loan_path) &&
+                   restr.set.intersects(restr_set) {
+                    ret = UseWhileBorrowed(loan.loan_path.clone(), loan.span);
+                    false
+                } else {
+                    true
+                }
+            });
+
+            if ret != UseOk {
+                return ret
+            }
+
+            match *loan_path {
+                LpVar(_) => {
+                    ret = UseOk;
+                    break;
+                }
+                LpExtend(ref lp_base, _, _) => {
+                    loan_path = &**lp_base;
+                    is_use_path = false;
+                }
+            }
+        }
+        ret
+    }
+
+    fn check_if_path_is_moved(&self,
+                              id: ast::NodeId,
+                              span: Span,
+                              use_kind: MovedValueUseKind,
+                              lp: &Rc<LoanPath>) {
+        /*!
+         * Reports an error if `expr` (which should be a path)
+         * is using a moved/uninitialized value
+         */
+
+        debug!("check_if_path_is_moved(id={:?}, use_kind={:?}, lp={})",
+               id, use_kind, lp.repr(self.bccx.tcx));
+        self.move_data.each_move_of(id, lp, |move, moved_lp| {
+            self.bccx.report_use_of_moved_value(
+                span,
+                use_kind,
+                &**lp,
+                move,
+                moved_lp);
+            false
+        });
+    }
+
     fn check_if_assigned_path_is_moved(&self,
                                        id: ast::NodeId,
                                        span: Span,
@@ -559,29 +638,6 @@ impl<'a> CheckLoanCtxt<'a> {
                                             use_kind, lp_base);
             }
         }
-    }
-
-    fn check_if_path_is_moved(&self,
-                              id: ast::NodeId,
-                              span: Span,
-                              use_kind: MovedValueUseKind,
-                              lp: &Rc<LoanPath>) {
-        /*!
-         * Reports an error if `expr` (which should be a path)
-         * is using a moved/uninitialized value
-         */
-
-        debug!("check_if_path_is_moved(id={:?}, use_kind={:?}, lp={})",
-               id, use_kind, lp.repr(self.bccx.tcx));
-        self.move_data.each_move_of(id, lp, |move, moved_lp| {
-            self.bccx.report_use_of_moved_value(
-                span,
-                use_kind,
-                &**lp,
-                move,
-                moved_lp);
-            false
-        });
     }
 
     fn check_assignment(&self,
@@ -881,62 +937,6 @@ impl<'a> CheckLoanCtxt<'a> {
             loan.span,
             format!("borrow of `{}` occurs here",
                     self.bccx.loan_path_to_str(loan_path)).as_slice());
-    }
-
-    pub fn analyze_restrictions_on_use(&self,
-                                       expr_id: ast::NodeId,
-                                       use_path: &LoanPath,
-                                       restr_set: RestrictionSet)
-                                       -> UseError {
-        debug!("analyze_restrictions_on_use(expr_id={:?}, use_path={})",
-               self.tcx().map.node_to_str(expr_id),
-               use_path.repr(self.tcx()));
-
-        // A borrow of a path generates restrictions for that path and any base
-        // paths of that path, e.g. an &mut borrow of `x.a` will generate freeze
-        // restrictions on `x.a` and `a`. However, we also want to prohibit the
-        // use of any extensions of `x.a`, e.g. `x.a.b`.
-        //
-        // In order to do this, we peel back each level of the path, checking
-        // restrictions at each level. If we do this naively, then an &mut
-        // borrow of `x.b` would prohibit a use of `x.a`, since the &mut borrow
-        // of `x.b` would generate freeze restrictions for `x.b` and `x`, and we
-        // would peel back each level of `x.a` to check for restrictions.
-        //
-        // To solve this problem, we ignore restrictions originating from loan
-        // paths other than the current path when at levels beyond the first.
-
-        let mut ret = UseOk;
-        let mut loan_path = use_path;
-        let mut is_use_path = true;
-        loop {
-            // check for a conflicting loan:
-            self.each_in_scope_restriction(expr_id, loan_path, |loan, restr| {
-                if (is_use_path || &*loan.loan_path == loan_path) &&
-                   restr.set.intersects(restr_set) {
-                    ret = UseWhileBorrowed(loan.loan_path.clone(), loan.span);
-                    false
-                } else {
-                    true
-                }
-            });
-
-            if ret != UseOk {
-                return ret
-            }
-
-            match *loan_path {
-                LpVar(_) => {
-                    ret = UseOk;
-                    break;
-                }
-                LpExtend(ref lp_base, _, _) => {
-                    loan_path = &**lp_base;
-                    is_use_path = false;
-                }
-            }
-        }
-        ret
     }
 }
 
