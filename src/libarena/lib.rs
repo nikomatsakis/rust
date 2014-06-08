@@ -385,7 +385,8 @@ impl<T> TypedArenaChunk<T> {
             None => {}
             Some(mut next) => {
                 // We assume that the next chunk is completely filled.
-                next.destroy(next.capacity)
+                let capacity = next.capacity;
+                next.destroy(capacity)
             }
         }
     }
