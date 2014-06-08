@@ -476,7 +476,7 @@ impl<'a> CheckLoanCtxt<'a> {
                                        span: Span,
                                        move_path: &LoanPath,
                                        move_kind: move_data::MoveKind) {
-        match self.analyze_move_out_from(id, move_path) {
+        match self.analyze_move_out_from(id, move_path, RESTR_MUTATE | RESTR_FREEZE) {
             MoveOk => { }
             MoveWhileBorrowed(loan_path, loan_span) => {
                 let err_message = match move_kind {
@@ -865,7 +865,8 @@ impl<'a> CheckLoanCtxt<'a> {
 
     pub fn analyze_move_out_from(&self,
                                  expr_id: ast::NodeId,
-                                 move_path: &LoanPath)
+                                 move_path: &LoanPath,
+                                 restr_set: RestrictionSet)
                                  -> MoveError {
         debug!("analyze_move_out_from(expr_id={:?}, move_path={})",
                self.tcx().map.node_to_str(expr_id),
@@ -890,9 +891,9 @@ impl<'a> CheckLoanCtxt<'a> {
         let mut is_move_path = true;
         loop {
             // check for a conflicting loan:
-            self.each_in_scope_restriction(expr_id, loan_path, |loan, _| {
-                // Any restriction prevents moves.
-                if is_move_path || &*loan.loan_path == loan_path {
+            self.each_in_scope_restriction(expr_id, loan_path, |loan, restr| {
+                if (is_move_path || &*loan.loan_path == loan_path) &&
+                   restr.set.intersects(restr_set) {
                     ret = MoveWhileBorrowed(loan.loan_path.clone(), loan.span);
                     false
                 } else {
