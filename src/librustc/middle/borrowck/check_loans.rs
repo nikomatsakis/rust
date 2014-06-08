@@ -871,17 +871,33 @@ impl<'a> CheckLoanCtxt<'a> {
                self.tcx().map.node_to_str(expr_id),
                move_path.repr(self.tcx()));
 
-        // We must check every element of a move path. See
-        // `borrowck-move-subcomponent.rs` for a test case.
+        // A borrow of a path generates restrictions for that path and any base
+        // paths of that path, e.g. an &mut borrow of `x.a` will generate freeze
+        // restrictions on `x.a` and `a`. However, we also want to prohibit the
+        // use of any extensions of `x.a`, e.g. `x.a.b`.
+        //
+        // In order to do this, we peel back each level of the path, checking
+        // restrictions at each level. If we do this naively, then an &mut
+        // borrow of `x.b` would prohibit a use of `x.a`, since the &mut borrow
+        // of `x.b` would generate freeze restrictions for `x.b` and `x`, and we
+        // would peel back each level of `x.a` to check for restrictions.
+        //
+        // To solve this problem, we ignore restrictions originating from loan
+        // paths other than the current path when at levels beyond the first.
 
         let mut ret = MoveOk;
         let mut loan_path = move_path;
+        let mut is_move_path = true;
         loop {
             // check for a conflicting loan:
             self.each_in_scope_restriction(expr_id, loan_path, |loan, _| {
                 // Any restriction prevents moves.
-                ret = MoveWhileBorrowed(loan.loan_path.clone(), loan.span);
-                false
+                if is_move_path || &*loan.loan_path == loan_path {
+                    ret = MoveWhileBorrowed(loan.loan_path.clone(), loan.span);
+                    false
+                } else {
+                    true
+                }
             });
 
             if ret != MoveOk {
@@ -895,6 +911,7 @@ impl<'a> CheckLoanCtxt<'a> {
                 }
                 LpExtend(ref lp_base, _, _) => {
                     loan_path = &**lp_base;
+                    is_move_path = false;
                 }
             }
         }
