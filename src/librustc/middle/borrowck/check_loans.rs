@@ -150,9 +150,9 @@ pub fn check_loans(bccx: &BorrowckCtxt,
 }
 
 #[deriving(PartialEq)]
-enum MoveError {
-    MoveOk,
-    MoveWhileBorrowed(/*loan*/Rc<LoanPath>, /*loan*/Span)
+enum UseError {
+    UseOk,
+    UseWhileBorrowed(/*loan*/Rc<LoanPath>, /*loan*/Span)
 }
 
 impl<'a> CheckLoanCtxt<'a> {
@@ -476,9 +476,9 @@ impl<'a> CheckLoanCtxt<'a> {
                                        span: Span,
                                        move_path: &LoanPath,
                                        move_kind: move_data::MoveKind) {
-        match self.analyze_move_out_from(id, move_path, RESTR_MUTATE | RESTR_FREEZE) {
-            MoveOk => { }
-            MoveWhileBorrowed(loan_path, loan_span) => {
+        match self.analyze_restrictions_on_use(id, move_path, RESTR_MUTATE | RESTR_FREEZE) {
+            UseOk => { }
+            UseWhileBorrowed(loan_path, loan_span) => {
                 let err_message = match move_kind {
                     move_data::Captured =>
                         format!("cannot move `{}` into closure because it is borrowed",
@@ -863,14 +863,14 @@ impl<'a> CheckLoanCtxt<'a> {
                     self.bccx.loan_path_to_str(loan_path)).as_slice());
     }
 
-    pub fn analyze_move_out_from(&self,
-                                 expr_id: ast::NodeId,
-                                 move_path: &LoanPath,
-                                 restr_set: RestrictionSet)
-                                 -> MoveError {
-        debug!("analyze_move_out_from(expr_id={:?}, move_path={})",
+    pub fn analyze_restrictions_on_use(&self,
+                                       expr_id: ast::NodeId,
+                                       use_path: &LoanPath,
+                                       restr_set: RestrictionSet)
+                                       -> UseError {
+        debug!("analyze_restrictions_on_use(expr_id={:?}, use_path={})",
                self.tcx().map.node_to_str(expr_id),
-               move_path.repr(self.tcx()));
+               use_path.repr(self.tcx()));
 
         // A borrow of a path generates restrictions for that path and any base
         // paths of that path, e.g. an &mut borrow of `x.a` will generate freeze
@@ -886,33 +886,33 @@ impl<'a> CheckLoanCtxt<'a> {
         // To solve this problem, we ignore restrictions originating from loan
         // paths other than the current path when at levels beyond the first.
 
-        let mut ret = MoveOk;
-        let mut loan_path = move_path;
-        let mut is_move_path = true;
+        let mut ret = UseOk;
+        let mut loan_path = use_path;
+        let mut is_use_path = true;
         loop {
             // check for a conflicting loan:
             self.each_in_scope_restriction(expr_id, loan_path, |loan, restr| {
-                if (is_move_path || &*loan.loan_path == loan_path) &&
+                if (is_use_path || &*loan.loan_path == loan_path) &&
                    restr.set.intersects(restr_set) {
-                    ret = MoveWhileBorrowed(loan.loan_path.clone(), loan.span);
+                    ret = UseWhileBorrowed(loan.loan_path.clone(), loan.span);
                     false
                 } else {
                     true
                 }
             });
 
-            if ret != MoveOk {
+            if ret != UseOk {
                 return ret
             }
 
             match *loan_path {
                 LpVar(_) => {
-                    ret = MoveOk;
+                    ret = UseOk;
                     break;
                 }
                 LpExtend(ref lp_base, _, _) => {
                     loan_path = &**lp_base;
-                    is_move_path = false;
+                    is_use_path = false;
                 }
             }
         }
