@@ -19,6 +19,7 @@
 
 
 use middle::borrowck::*;
+use middle::borrowck::incompatible;
 use euv = middle::expr_use_visitor;
 use mc = middle::mem_categorization;
 use middle::ty;
@@ -474,7 +475,7 @@ impl<'a> CheckLoanCtxt<'a> {
                                      id: ast::NodeId,
                                      span: Span,
                                      copy_path: &LoanPath) {
-        match self.analyze_restrictions_on_use(id, copy_path, RESTR_FREEZE) {
+        match self.analyze_restrictions_on_use(id, copy_path, ty::ImmBorrow) {
             UseOk => { }
             UseWhileBorrowed(loan_path, loan_span) => {
                 self.bccx.span_err(
@@ -496,7 +497,10 @@ impl<'a> CheckLoanCtxt<'a> {
                                        span: Span,
                                        move_path: &LoanPath,
                                        move_kind: move_data::MoveKind) {
-        match self.analyze_restrictions_on_use(id, move_path, RESTR_MUTATE | RESTR_FREEZE) {
+        // We want to detect if there are any loans at all: so we
+        // search for any loans incompatible with MutBorrow, since all
+        // other kinds of loans are incompatible with that.
+        match self.analyze_restrictions_on_use(id, move_path, ty::MutBorrow) {
             UseOk => { }
             UseWhileBorrowed(loan_path, loan_span) => {
                 let err_message = match move_kind {
@@ -523,57 +527,70 @@ impl<'a> CheckLoanCtxt<'a> {
     pub fn analyze_restrictions_on_use(&self,
                                        expr_id: ast::NodeId,
                                        use_path: &LoanPath,
-                                       restr_set: RestrictionSet)
-                                       -> UseError {
+                                       borrow_kind: ty::BorrowKind)
+                                       -> UseError
+    {
         debug!("analyze_restrictions_on_use(expr_id={:?}, use_path={})",
                self.tcx().map.node_to_str(expr_id),
                use_path.repr(self.tcx()));
 
-        // A borrow of a path generates restrictions for that path and any base
-        // paths of that path, e.g. an &mut borrow of `x.a` will generate freeze
-        // restrictions on `x.a` and `a`. However, we also want to prohibit the
-        // use of any extensions of `x.a`, e.g. `x.a.b`.
-        //
-        // In order to do this, we peel back each level of the path, checking
-        // restrictions at each level. If we do this naively, then an &mut
-        // borrow of `x.b` would prohibit a use of `x.a`, since the &mut borrow
-        // of `x.b` would generate freeze restrictions for `x.b` and `x`, and we
-        // would peel back each level of `x.a` to check for restrictions.
-        //
-        // To solve this problem, we ignore restrictions originating from loan
-        // paths other than the current path when at levels beyond the first.
-
         let mut ret = UseOk;
+
+        // First, we check for a restriction on the path P being used.
+        // This accounts for borrows of P but also borrows of subpaths,
+        // like P.a.b. Consider the following example:
+        //
+        //     let x = &mut a.b.c; // Restricts a, a.b, and a.b.c
+        //     a = 10;             // Conflicts with restriction
+
+        self.each_in_scope_restriction(expr_id, use_path, |loan, _restr| {
+            if incompatible(loan.kind, borrow_kind) {
+                ret = UseWhileBorrowed(loan.loan_path.clone(),
+                                       loan.span);
+                false
+            } else {
+                true
+            }
+        });
+
+        // Next, we must check for *loans* (not restrictions) on the
+        // path P or any base path. This rejects examples
+        // like the following:
+        //
+        //     let x = &mut a.b;
+        //     a.b.c = 10;
+        //
+        // Limiting this search to *loans* and not *restrictions* means
+        // that examples like the following continue to work:
+        //
+        //     let x = &mut a.b;
+        //     a.c = 10;
+
         let mut loan_path = use_path;
-        let mut is_use_path = true;
-        loop {
-            // check for a conflicting loan:
-            self.each_in_scope_restriction(expr_id, loan_path, |loan, restr| {
-                if (is_use_path || &*loan.loan_path == loan_path) &&
-                   restr.set.intersects(restr_set) {
-                    ret = UseWhileBorrowed(loan.loan_path.clone(), loan.span);
+        while ret == UseOk {
+            self.each_in_scope_loan(expr_id, |loan| {
+                if *loan.loan_path == *loan_path &&
+                    incompatible(borrow_kind, loan.kind)
+                {
+                    ret = UseWhileBorrowed(loan.loan_path.clone(),
+                                           loan.span);
                     false
                 } else {
                     true
                 }
             });
 
-            if ret != UseOk {
-                return ret
-            }
-
             match *loan_path {
                 LpVar(_) => {
-                    ret = UseOk;
                     break;
                 }
                 LpExtend(ref lp_base, _, _) => {
                     loan_path = &**lp_base;
-                    is_use_path = false;
                 }
             }
         }
-        ret
+
+        return ret;
     }
 
     fn check_if_path_is_moved(&self,

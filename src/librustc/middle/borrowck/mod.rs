@@ -795,6 +795,26 @@ impl<'a> BorrowckCtxt<'a> {
     }
 }
 
+fn restriction_set(req_kind: ty::BorrowKind) -> RestrictionSet {
+    match req_kind {
+        // If borrowing data as immutable, no mutation allowed:
+        ty::ImmBorrow => RESTR_MUTATE,
+
+        // UniqueImmBorrow and MutBorrow act basically the same.  The
+        // only difference is whether the thing being borrowed needs
+        // to appear in a mutable context.
+        ty::UniqueImmBorrow |
+        ty::MutBorrow => RESTR_MUTATE | RESTR_FREEZE,
+    }
+}
+
+fn incompatible(req_kind1: ty::BorrowKind,
+                req_kind2: ty::BorrowKind)
+                -> bool
+{
+    req_kind1 != ty::ImmBorrow || req_kind2 != ty::ImmBorrow
+}
+
 fn is_statement_scope(tcx: &ty::ctxt, region: ty::Region) -> bool {
      match region {
          ty::ReScope(node_id) => {

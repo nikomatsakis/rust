@@ -17,6 +17,7 @@
 // sure that all of these loans are honored.
 
 use middle::borrowck::*;
+use middle::borrowck::{restriction_set};
 use middle::borrowck::move_data::MoveData;
 use euv = middle::expr_use_visitor;
 use mc = middle::mem_categorization;
@@ -259,7 +260,7 @@ impl<'a> GatherLoanCtxt<'a> {
         // loan is safe.
         let restr = restrictions::compute_restrictions(
             self.bccx, borrow_span, cause,
-            cmt.clone(), loan_region, self.restriction_set(req_kind));
+            cmt.clone(), loan_region, restriction_set(req_kind));
 
         // Create the loan record (if needed).
         let loan = match restr {
@@ -388,21 +389,6 @@ impl<'a> GatherLoanCtxt<'a> {
                     }
                 }
             }
-        }
-    }
-
-    fn restriction_set(&self, req_kind: ty::BorrowKind) -> RestrictionSet {
-        match req_kind {
-            // If borrowing data as immutable, no mutation allowed:
-            ty::ImmBorrow => RESTR_MUTATE,
-
-            // If borrowing data as mutable, no mutation nor other
-            // borrows allowed:
-            ty::MutBorrow => RESTR_MUTATE | RESTR_FREEZE,
-
-            // If borrowing data as unique imm, no mutation nor other
-            // borrows allowed:
-            ty::UniqueImmBorrow => RESTR_MUTATE | RESTR_FREEZE,
         }
     }
 
