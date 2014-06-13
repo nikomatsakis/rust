@@ -575,7 +575,7 @@ impl<'a> CheckLoanCtxt<'a> {
             });
 
             match *loan_path {
-                LpVar(_) => {
+                LpVar(_) | LpCopiedUpvar(_) => {
                     break;
                 }
                 LpExtend(ref lp_base, _, _) => {
@@ -641,7 +641,7 @@ impl<'a> CheckLoanCtxt<'a> {
          */
 
         match **lp {
-            LpVar(_) => {
+            LpVar(_) | LpCopiedUpvar(_) => {
                 // assigning to `x` does not require that `x` is initialized
             }
             LpExtend(ref lp_base, _, LpInterior(_)) => {
@@ -922,7 +922,7 @@ impl<'a> CheckLoanCtxt<'a> {
                     // Otherwise stop iterating
                     LpExtend(_, mc::McDeclared, _) |
                     LpExtend(_, mc::McImmutable, _) |
-                    LpVar(_) => {
+                    LpVar(_) | LpCopiedUpvar(_) => {
                         return true;
                     }
                 };

@@ -71,10 +71,18 @@ impl<'a> RestrictionsContext<'a> {
             }
 
             mc::cat_local(local_id) |
-            mc::cat_arg(local_id) |
-            mc::cat_upvar(ty::UpvarId {var_id: local_id, ..}, _) => {
-                // R-Variable
+            mc::cat_arg(local_id) => {
+                // R-Variable, locally declared
                 let lp = Rc::new(LpVar(local_id));
+                SafeIf(lp.clone(), vec!(Restriction {
+                    loan_path: lp,
+                    set: restrictions
+                }))
+
+            }
+            mc::cat_upvar(upvar_id, _) => {
+                // R-Variable, copied into closure
+                let lp = Rc::new(LpCopiedUpvar(upvar_id));
                 SafeIf(lp.clone(), vec!(Restriction {
                     loan_path: lp,
                     set: restrictions
