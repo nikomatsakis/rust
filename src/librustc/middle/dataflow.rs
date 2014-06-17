@@ -58,6 +58,8 @@ pub struct DataFlowContext<'a, O> {
     // So, to access the bits for any given id, you take a slice of
     // the full vector (see the method `compute_id_range()`).
 
+    // NDM This comment seems to be inaccurate. These are indexed by CFG bit.
+
     /// bits generated as we exit the scope `id`. Updated by `add_gen()`.
     gens: Vec<uint>,
 
@@ -69,13 +71,15 @@ pub struct DataFlowContext<'a, O> {
     on_entry: Vec<uint>,
 }
 
-/// Parameterization for the precise form of data flow that is used.
-pub trait DataFlowOperator {
-    /// Specifies the initial value for each bit in the `on_entry` set
-    fn initial_value(&self) -> bool;
-
+pub trait BitwiseOperator {
     /// Joins two predecessor bits together, typically either `|` or `&`
     fn join(&self, succ: uint, pred: uint) -> uint;
+}
+
+/// Parameterization for the precise form of data flow that is used.
+pub trait DataFlowOperator : BitwiseOperator {
+    /// Specifies the initial value for each bit in the `on_entry` set
+    fn initial_value(&self) -> bool;
 }
 
 struct PropagationContext<'a, 'b, O> {
@@ -290,9 +294,9 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
                self.analysis_name, cfgidx, mut_bits_to_str(bits));
         let (start, end) = self.compute_id_range(cfgidx);
         let gens = self.gens.slice(start, end);
-        bitwise(bits, gens, |a, b| a | b);
+        bitwise(bits, gens, &Union);
         let kills = self.kills.slice(start, end);
-        bitwise(bits, kills, |a, b| a & !b);
+        bitwise(bits, kills, &Subtract);
 
         debug!("{:s} apply_gen_kill(cfgidx={}, bits={}) [after]",
                self.analysis_name, cfgidx, mut_bits_to_str(bits));
@@ -391,6 +395,12 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
         //! This is usually called (if it is called at all), after
         //! all add_gen and add_kill calls, but before propagate.
 
+        // NDM -- It is interesting that we need this. It makes sense,
+        // but I had somehow expected that this should be managed as
+        // part of add_gen. Still, that would seem to require a
+        // separate index.  Anyhow, maybe this should just be part of
+        // `propagate()`?
+
         debug!("{:s} add_kills_from_flow_exits", self.analysis_name);
         if self.bits_per_id == 0 {
             // Skip the surprisingly common degenerate case.  (Note
@@ -399,6 +409,7 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
         }
         cfg.graph.each_edge(|_edge_index, edge| {
             let flow_exit = edge.source();
+            // why "ce"?
             let (ce_start, ce_end) = self.compute_id_range(flow_exit);
             let mut ce_orig_kills = self.kills.slice(ce_start, ce_end).to_owned();
 
@@ -409,8 +420,9 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
                     Some(cfg_idx) => {
                         let (start, end) = self.compute_id_range(cfg_idx);
                         let kills = self.kills.slice(start, end);
-                        bitwise(ce_orig_kills.as_mut_slice(), kills, |a, b| a | b);
-                        changed = true;
+                        if bitwise(ce_orig_kills.as_mut_slice(), kills, &Union) {
+                            changed = true;
+                        } // NDM: if we're micro-optizing, let's micro-optimize!
                     }
                     None => {
                         debug!("{:s} add_kills_from_flow_exits flow_exit={} \
@@ -490,7 +502,7 @@ impl<'a, 'b, O:DataFlowOperator> PropagationContext<'a, 'b, O> {
             // Initialize local bitvector with state on-entry.
             in_out.copy_from(self.dfcx.on_entry.slice(start, end));
 
-            // Compute state on-exit by apply transfer function to state on-entry.
+            // Compute state on-exit by applying transfer function to state on-entry.
             self.dfcx.apply_gen_kill(node_index, in_out);
 
             // Propagate state on-exit from node into its successors.
@@ -564,17 +576,19 @@ fn bits_to_str(words: &[uint]) -> String {
 fn join_bits<O:DataFlowOperator>(oper: &O,
                                  in_vec: &[uint],
                                  out_vec: &mut [uint]) -> bool {
-    bitwise(out_vec, in_vec, |a, b| oper.join(a, b))
+    bitwise(out_vec, in_vec, oper)
 }
 
 #[inline]
-fn bitwise(out_vec: &mut [uint], in_vec: &[uint], op: |uint, uint| -> uint)
-           -> bool {
+fn bitwise<O:BitwiseOperator>(out_vec: &mut [uint],
+                              in_vec: &[uint],
+                              op: &O) -> bool
+{
     assert_eq!(out_vec.len(), in_vec.len());
     let mut changed = false;
     for (out_elt, in_elt) in out_vec.mut_iter().zip(in_vec.iter()) {
         let old_val = *out_elt;
-        let new_val = op(old_val, *in_elt);
+        let new_val = op.join(old_val, *in_elt);
         *out_elt = new_val;
         changed |= old_val != new_val;
     }
@@ -598,4 +612,14 @@ fn bit_str(bit: uint) -> String {
     let byte = bit >> 8;
     let lobits = 1 << (bit & 0xFF);
     format!("[{}:{}-{:02x}]", bit, byte, lobits)
+}
+
+struct Union;
+impl BitwiseOperator for Union {
+    fn join(&self, a: uint, b: uint) -> uint { a | b }
+}
+
+struct Subtract;
+impl BitwiseOperator for Subtract {
+    fn join(&self, a: uint, b: uint) -> uint { a & !b }
 }
