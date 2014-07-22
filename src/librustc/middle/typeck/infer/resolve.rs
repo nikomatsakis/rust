@@ -48,11 +48,11 @@
 
 
 use middle::ty::{FloatVar, FloatVid, IntVar, IntVid, RegionVid, TyVar, TyVid};
-use middle::ty::{IntType, UintType};
 use middle::ty;
 use middle::ty_fold;
 use middle::typeck::infer::{cyclic_ty, fixup_err, fres, InferCtxt};
 use middle::typeck::infer::{unresolved_int_ty,unresolved_float_ty,unresolved_ty};
+use middle::typeck::infer::unify::InferCtxtMethodsForSimplyUnifiableTypes;
 use syntax::codemap::Span;
 use util::common::indent;
 use util::ppaux::{Repr, ty_to_string};
@@ -239,19 +239,15 @@ impl<'a> ResolveState<'a> {
             return ty::mk_int_var(self.infcx.tcx, vid);
         }
 
-        let tcx = self.infcx.tcx;
-        let table = &self.infcx.int_unification_table;
-        let node = table.borrow_mut().get(tcx, vid);
-        match node.value {
-          Some(IntType(t)) => ty::mk_mach_int(t),
-          Some(UintType(t)) => ty::mk_mach_uint(t),
-          None => {
-            if self.should(force_ivar) {
-                // As a last resort, emit an error.
-                self.err = Some(unresolved_int_ty(vid));
+        match self.infcx.probe_var(vid) {
+            Some(v) => v,
+            None => {
+                if self.should(force_ivar) {
+                    // As a last resort, emit an error.
+                    self.err = Some(unresolved_int_ty(vid));
+                }
+                ty::mk_int_var(self.infcx.tcx, vid)
             }
-            ty::mk_int_var(self.infcx.tcx, vid)
-          }
         }
     }
 
@@ -260,18 +256,15 @@ impl<'a> ResolveState<'a> {
             return ty::mk_float_var(self.infcx.tcx, vid);
         }
 
-        let tcx = self.infcx.tcx;
-        let table = &self.infcx.float_unification_table;
-        let node = table.borrow_mut().get(tcx, vid);
-        match node.value {
-          Some(t) => ty::mk_mach_float(t),
-          None => {
-            if self.should(force_fvar) {
-                // As a last resort, emit an error.
-                self.err = Some(unresolved_float_ty(vid));
+        match self.infcx.probe_var(vid) {
+            Some(v) => v,
+            None => {
+                if self.should(force_fvar) {
+                    // As a last resort, emit an error.
+                    self.err = Some(unresolved_float_ty(vid));
+                }
+                ty::mk_float_var(self.infcx.tcx, vid)
             }
-            ty::mk_float_var(self.infcx.tcx, vid)
-          }
         }
     }
 }
