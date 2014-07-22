@@ -16,7 +16,7 @@ use middle::subst;
 use middle::ty;
 use middle::typeck::{MethodCall, NoAdjustment};
 use middle::typeck;
-use util::ppaux::{Repr, ty_to_string};
+use util::ppaux::ty_to_string;
 use util::ppaux::UserString;
 
 use syntax::ast::*;
