@@ -26,6 +26,7 @@ use middle::subst::Substs;
 use middle::ty::{TyVid, IntVid, FloatVid, RegionVid};
 use middle::ty;
 use middle::ty_fold;
+use middle::ty_fold::TypeFoldable;
 use middle::ty_fold::TypeFolder;
 use middle::typeck::check::regionmanip::replace_late_bound_regions_in_fn_sig;
 use middle::typeck::infer::coercion::Coerce;
@@ -57,6 +58,7 @@ pub mod lattice;
 pub mod lub;
 pub mod region_inference;
 pub mod resolve;
+mod skolemize;
 pub mod sub;
 pub mod test;
 pub mod type_variable;
@@ -352,6 +354,13 @@ pub fn mk_subr(cx: &InferCtxt,
     let snapshot = cx.region_vars.start_snapshot();
     cx.region_vars.make_subregion(origin, a, b);
     cx.region_vars.commit(snapshot);
+}
+
+pub fn skolemize(cx: &InferCtxt, a: ty::t) -> ty::t {
+    let mut skol = skolemize::TypeSkolemizer::new(cx);
+    let b = a.fold_with(&mut skol);
+    debug!("skol(a={}) -> {}", a.repr(cx.tcx), b.repr(cx.tcx));
+    b
 }
 
 pub fn mk_eqty(cx: &InferCtxt,
