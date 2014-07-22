@@ -8,15 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(managed_boxes)]
+// Test which of the builtin types are considered sendable.
 
-use std::gc::Gc;
+fn assert_send<T:Send>() { }
 
-struct BarStruct;
+// owned content are ok
+fn test30() { assert_send::<Box<int>>(); }
+fn test31() { assert_send::<String>(); }
+fn test32() { assert_send::<Vec<int> >(); }
 
-impl<'a> BarStruct {
-    fn foo(&'a mut self) -> Gc<BarStruct> { self }
-    //~^ ERROR: error: mismatched types: expected `Gc<BarStruct>`
+// but not if they own a bad thing
+fn test40<'a>(_: &'a int) {
+    assert_send::<Box<&'a int>>(); //~ ERROR lifetime is too short
 }
 
-fn main() {}
+fn main() { }

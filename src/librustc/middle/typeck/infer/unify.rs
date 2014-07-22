@@ -12,7 +12,7 @@ use std::kinds::marker;
 
 use middle::ty::{expected_found, IntVarValue};
 use middle::ty;
-use middle::typeck::infer::{Bounds, uok, ures};
+use middle::typeck::infer::{uok, ures};
 use middle::typeck::infer::InferCtxt;
 use std::cell::RefCell;
 use std::fmt::Show;
@@ -374,26 +374,6 @@ impl<'tcx,V:SimplyUnifiable,K:UnifyKey<Option<V>>>
 }
 
 ///////////////////////////////////////////////////////////////////////////
-
-// General type keys
-
-impl UnifyKey<Bounds<ty::t>> for ty::TyVid {
-    fn index(&self) -> uint { self.index }
-
-    fn from_index(i: uint) -> ty::TyVid { ty::TyVid { index: i } }
-
-    fn unification_table<'v>(infcx: &'v InferCtxt)
-        -> &'v RefCell<UnificationTable<ty::TyVid, Bounds<ty::t>>>
-    {
-        return &infcx.type_unification_table;
-    }
-
-    fn tag(_: Option<ty::TyVid>) -> &'static str {
-        "TyVid"
-    }
-}
-
-impl UnifyValue for Bounds<ty::t> { }
 
 // Integral type keys
 

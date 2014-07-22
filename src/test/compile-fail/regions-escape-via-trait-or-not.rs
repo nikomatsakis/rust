@@ -23,7 +23,7 @@ fn with<R:deref>(f: |x: &int| -> R) -> int {
 }
 
 fn return_it() -> int {
-    with(|o| o) //~ ERROR cannot infer an appropriate lifetime
+    with(|o| o) //~ ERROR cannot infer
 }
 
 fn main() {
