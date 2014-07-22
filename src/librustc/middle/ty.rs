@@ -881,7 +881,8 @@ pub struct RegionVid {
 pub enum InferTy {
     TyVar(TyVid),
     IntVar(IntVid),
-    FloatVar(FloatVid)
+    FloatVar(FloatVid),
+    SkolemizedTy(uint)
 }
 
 #[deriving(Clone, Encodable, Decodable, Eq, Hash, Show)]
@@ -944,6 +945,7 @@ impl fmt::Show for InferTy {
             TyVar(ref v) => v.fmt(f),
             IntVar(ref v) => v.fmt(f),
             FloatVar(ref v) => v.fmt(f),
+            SkolemizedTy(v) => write!(f, "SkolemizedTy({})", v)
         }
     }
 }
@@ -3292,6 +3294,7 @@ pub fn ty_sort_string(cx: &ctxt, t: t) -> String {
         ty_infer(TyVar(_)) => "inferred type".to_string(),
         ty_infer(IntVar(_)) => "integral variable".to_string(),
         ty_infer(FloatVar(_)) => "floating-point variable".to_string(),
+        ty_infer(SkolemizedTy(_)) => "skolemized type".to_string(),
         ty_param(ref p) => {
             if p.space == subst::SelfSpace {
                 "Self".to_string()

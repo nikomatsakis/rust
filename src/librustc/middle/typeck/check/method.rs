@@ -1021,7 +1021,8 @@ impl<'a> LookupContext<'a> {
 
             ty_err => None,
 
-            ty_infer(TyVar(_)) => {
+            ty_infer(TyVar(_)) |
+            ty_infer(SkolemizedTy(_)) => {
                 self.bug(format!("unexpected type: {}",
                                  self.ty_to_string(self_ty)).as_slice());
             }
