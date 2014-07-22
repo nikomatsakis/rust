@@ -65,7 +65,7 @@ impl<'a> Baz<'a> {
     fn baz2<'b>(&self, x: &int) -> (&'b int, &'b int) {
         // The lifetime that gets assigned to `x` seems somewhat random.
         // I have disabled this test for the time being. --pcwalton
-        (self.bar, x) //~ ERROR: cannot infer
+        (self.bar, x)
         //~^ ERROR: mismatched types
         //~^^ ERROR: mismatched types
     }

@@ -8,14 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// Test which of the builtin types are considered sendable.
 
-use std::gc::GC;
+fn assert_send<T:Send>() { }
 
-fn f<T:'static>(_: T) {}
+// owned content are ok
+fn test30() { assert_send::<Box<int>>(); }
+fn test31() { assert_send::<String>(); }
+fn test32() { assert_send::<Vec<int> >(); }
 
-fn main() {
-    let x = box(GC) 3i;
-    f(x);
-    let x = &3i; //~ ERROR borrowed value does not live long enough
-    f(x);
+// but not if they own a bad thing
+fn test40<'a>(_: &'a int) {
+    assert_send::<Box<&'a int>>(); //~ ERROR lifetime is too short
 }
+
+fn main() { }
