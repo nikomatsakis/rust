@@ -394,8 +394,7 @@ pub fn super_tys<C:Combine>(this: &C, a: ty::t, b: ty::t) -> cres<ty::t> {
 
         // Relate floating-point variables to other types
         (&ty::ty_infer(FloatVar(a_id)), &ty::ty_infer(FloatVar(b_id))) => {
-            try!(this.infcx().simple_vars(this.a_is_expected(),
-                                            a_id, b_id));
+            try!(this.infcx().simple_vars(this.a_is_expected(), a_id, b_id));
             Ok(a)
         }
         (&ty::ty_infer(FloatVar(v_id)), &ty::ty_float(v)) => {

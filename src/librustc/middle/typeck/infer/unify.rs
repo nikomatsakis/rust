@@ -23,12 +23,12 @@ use sv = util::snapshot_vec;
 /**
  * This trait is implemented by any type that can serve as a type
  * variable. We call such variables *unification keys*. For example,
- * this trait is implemented by `TyVid`, which represents normal
- * type variables, and `IntVid`, which represents integral variables.
+ * this trait is implemented by `IntVid`, which represents integral
+ * variables.
  *
- * Each key type has an associated value type `V`. For example,
- * for `TyVid`, this is `Bounds<ty::t>`, representing a pair of
- * upper- and lower-bound types.
+ * Each key type has an associated value type `V`. For example, for
+ * `IntVid`, this is `Option<IntVarValue>`, representing some
+ * (possibly not yet known) sort of integer.
  *
  * Implementations of this trait are at the end of this file.
  */
@@ -48,11 +48,10 @@ pub trait UnifyKey<V> : Clone + Show + PartialEq + Repr {
 }
 
 /**
- * Trait for valid types that a type variable can be set to.  Note
- * that this is typically not the end type that the value will
- * take on, but rather some wrapper: for example, for normal type
- * variables, the associated type is not `ty::t` but rather
- * `Bounds<ty::t>`.
+ * Trait for valid types that a type variable can be set to. Note that
+ * this is typically not the end type that the value will take on, but
+ * rather an `Option` wrapper (where `None` represents a variable
+ * whose value is not yet set).
  *
  * Implementations of this trait are at the end of this file.
  */
@@ -109,9 +108,9 @@ pub struct Node<K,V> {
 pub struct Delegate;
 
 // We can't use V:LatticeValue, much as I would like to,
-// because frequently the pattern is that V=Bounds<U> for some
+// because frequently the pattern is that V=Option<U> for some
 // other type parameter U, and we have no way to say
-// Bounds<U>:
+// Option<U>:LatticeValue.
 
 impl<V:PartialEq+Clone+Repr,K:UnifyKey<V>> UnificationTable<K,V> {
     pub fn new() -> UnificationTable<K,V> {
