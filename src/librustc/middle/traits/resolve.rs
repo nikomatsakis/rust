@@ -16,7 +16,7 @@ use super::{Resolution, ResolvedTo, ResolvedToUnimpl, ResolvedToOverflow};
 use super::{ImplEvaluation};
 use super::{ToImplEvaluation};
 use super::{VtableOrigin, VtableOrigins};
-use super::{Vtable, Builtin, VtableParam, VtablePath};
+use super::{Vtable, Builtin, VtableImpl, VtableParam, VtablePath};
 use super::{util};
 
 use middle::subst::{Subst, Substs, ParamSpace, VecPerParamSpace,
@@ -97,9 +97,9 @@ impl<'cx> ResolutionContext<'cx> {
         }
 
         let (u_tys, u_selfs, u_fns) = resolutions.split();
-        let c_tys = self.confirm_many(obligations.get_vec(TypeSpace), u_tys);
-        let c_selfs = self.confirm_many(obligations.get_vec(SelfSpace), u_selfs);
-        let c_fns = self.confirm_many(obligations.get_vec(FnSpace), u_fns);
+        let c_tys = self.confirm_many(obligations.get_slice(TypeSpace), u_tys);
+        let c_selfs = self.confirm_many(obligations.get_slice(SelfSpace), u_selfs);
+        let c_fns = self.confirm_many(obligations.get_slice(FnSpace), u_fns);
         Some(ResolvedTo(VecPerParamSpace::new(c_tys, c_selfs, c_fns)))
     }
 
@@ -262,6 +262,12 @@ impl<'cx> ResolutionContext<'cx> {
             }
         };
 
+        if ty::type_is_error(t) {
+            debug!("{} --> self type is error",
+                   obligation.repr(self.tcx()));
+            return None;
+        }
+
         // Determine if builtin bound is met.
         let tc = ty::type_contents(self.tcx(), t);
         let met = match bound {
@@ -298,10 +304,11 @@ impl<'cx> ResolutionContext<'cx> {
         debug!("evaluate_obligation_against_caller_bounds({})",
                obligation.repr(self.tcx()));
 
-        let obligation_self_ty = obligation.self_ty();
+        let skol_obligation_self_ty =
+            infer::skolemize(self.infcx, obligation.self_ty());
         for &space in ParamSpace::all().iter() {
             for (i, caller_obligation) in self.param_env.caller_obligations
-                                                        .get_vec(space)
+                                                        .get_slice(space)
                                                         .iter()
                                                         .enumerate()
             {
@@ -316,7 +323,7 @@ impl<'cx> ResolutionContext<'cx> {
                     self.infcx.probe(
                         || self.match_self_types(obligation.span,
                                                  caller_self_ty,
-                                                 obligation_self_ty));
+                                                 skol_obligation_self_ty));
                 if r.is_err() {
                     continue;
                 }
@@ -403,10 +410,11 @@ impl<'cx> ResolutionContext<'cx> {
                self_ty.repr(self.tcx()));
 
         self.infcx.probe(|| {
+            let skol_self_ty = infer::skolemize(self.infcx, self_ty);
             let resolution = match self.match_impl(impl_def_id,
                                                    span,
                                                    recursion_depth,
-                                                   self_ty) {
+                                                   skol_self_ty) {
                 Some(r) => r,
                 None => {
                     // No result here means that we couldn't find a
@@ -439,7 +447,7 @@ impl<'cx> ResolutionContext<'cx> {
                       span: Span,
                       recursion_depth: uint,
                       obligation_self_ty: ty::t)
-                      -> Option<Resolution<Vtable>>
+                      -> Option<Resolution<VtableImpl>>
     {
         /*!
          * Given an impl `impl_def_id` for some trait T, tests whether
@@ -513,7 +521,11 @@ impl<'cx> ResolutionContext<'cx> {
 
     fn match_self_types(&self,
                         span: Span,
+
+                        // The self type provided by the impl/caller-obligation:
                         provided_self_ty: ty::t,
+
+                        // The self type the obligation is for:
                         required_self_ty: ty::t)
                         -> Result<(),ty::type_err>
     {
@@ -532,7 +544,7 @@ impl<'cx> ResolutionContext<'cx> {
                                 impl_substs: Substs,
                                 span: Span,
                                 recursion_depth: uint)
-                                -> Option<Resolution<Vtable>>
+                                -> Option<Resolution<VtableImpl>>
     {
         /*!
          * Determines whether the nested obligations specified on the
@@ -578,7 +590,7 @@ impl<'cx> ResolutionContext<'cx> {
             Some(ResolvedToUnimpl) => Some(ResolvedToUnimpl),
             Some(ResolvedToOverflow) => Some(ResolvedToOverflow),
             Some(ResolvedTo(origins)) => {
-                let vtable = Vtable {
+                let vtable = VtableImpl {
                     impl_def_id: impl_def_id,
                     substs: impl_substs,
                     origins: origins,
@@ -660,11 +672,12 @@ impl<'cx> ResolutionContext<'cx> {
                 // yields a vtable. We must now "confirm" that vtable
                 // and return it.
 
-                let opt_error = self.confirm_vtable(obligation.span,
-                                                    obligation.trait_ref.clone(),
-                                                    &vtable);
-
-                Vtable(vtable, opt_error)
+                let opt_error =
+                    self.confirm_impl_vtable(
+                        obligation.span,
+                        obligation.trait_ref.clone(),
+                        &vtable);
+                Vtable(VtableImpl(vtable), opt_error)
             }
             ResolvedToOverflow | ResolvedToUnimpl => {
                 self.tcx().sess.span_bug(
@@ -678,11 +691,11 @@ impl<'cx> ResolutionContext<'cx> {
         }
     }
 
-    fn confirm_vtable(&self,
-                      obligation_span: Span,
-                      obligation_trait_ref: Rc<ty::TraitRef>,
-                      vtable: &Vtable)
-                      -> Option<ty::type_err>
+    fn confirm_impl_vtable(&self,
+                           obligation_span: Span,
+                           obligation_trait_ref: Rc<ty::TraitRef>,
+                           vtable: &VtableImpl)
+                           -> Option<ty::type_err>
     {
         /*!
          * Relates the output type parameters from an impl to the
@@ -708,7 +721,7 @@ impl<'cx> ResolutionContext<'cx> {
     }
 
     fn confirm_many(&self,
-                    obligations: &Vec<Obligation>,
+                    obligations: &[Obligation],
                     resolutions: Vec<Option<Resolution<UnconfirmedVtableOrigin>>>)
                     -> Vec<VtableOrigin>
     {

@@ -69,7 +69,7 @@ pub fn check_call_expr(fcx: &FnCtxt,
         fcx.tcx().sess.span_err(
             call_expr.span,
             format!("type `{}` is not known to be callable",
-                    fcx.infcx().ty_to_str(callee_ty)).as_slice());
+                    fcx.infcx().ty_to_string(callee_ty)).as_slice());
     }
 
     check_error_arguments(fcx, arg_exprs);
@@ -411,7 +411,7 @@ fn check_argument_types(fcx: &FnCtxt,
     };
 
     debug!("check_argument_types: formal_tys={} sp={}",
-           fcx.infcx().tys_to_str(formal_tys.as_slice()),
+           formal_tys.repr(fcx.tcx()),
            sp.repr(fcx.tcx()));
 
     // Check the arguments.

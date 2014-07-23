@@ -213,9 +213,6 @@ pub struct PendingObligation {
 pub type PendingResolution =
     Rc<Promise<traits::VtableOriginResolution>>;
 
-pub type PendingResolution =
-    Rc<Promise<traits::VtableOriginResolution>>;
-
 pub type PendingResolutions =
     VecPerParamSpace<Rc<Promise<traits::VtableOriginResolution>>>;
 
@@ -1117,8 +1114,11 @@ fn compare_impl_method(tcx: &ty::ctxt,
 fn check_cast(fcx: &FnCtxt,
               e: &ast::Expr,
               t: &ast::Ty,
-              id: ast::NodeId,
-              span: Span) {
+              cast_expr: &ast::Expr)
+{
+    let id = cast_expr.id;
+    let span = cast_expr.span;
+
     // Find the type of `e`. Supply hints based on the type we are casting to,
     // if appropriate.
     let t_1 = fcx.to_ty(t);
@@ -1148,9 +1148,7 @@ fn check_cast(fcx: &FnCtxt,
 
     if ty::type_is_trait(t_1) {
         // This will be looked up later on.
-        vtable::check_object_cast(fcx, expr, &**e, t_1);
-        // fcx.write_ty(id, t_1);
-        return
+        return vtable::check_object_cast(fcx, cast_expr, &*e, t_1);
     }
 
     let t_1 = structurally_resolved_type(fcx, span, t_1);
@@ -2636,7 +2634,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
         }
       }
       ast::ExprCast(ref e, ref t) => {
-        check_cast(fcx, &**e, &**t, id, expr.span);
+        check_cast(fcx, &**e, &**t, expr);
       }
       ast::ExprVec(ref args) => {
         let (check, t) = check_fn_for_vec_elements_expected(fcx, expected);

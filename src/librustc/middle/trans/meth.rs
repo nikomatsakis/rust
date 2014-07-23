@@ -189,7 +189,7 @@ pub fn trans_static_method_callee(bcx: &Block,
                                   .item_subst_bcx(bcx);
 
     match *vtbls.get_self().unwrap() {
-        traits::Vtable(ref vtable, None) => {
+        traits::Vtable(traits::VtableImpl(ref vtable), None) => {
             assert!(vtable.substs.types.all(|t| !ty::type_needs_infer(*t)));
 
             let mth_id = method_with_name(ccx, vtable.impl_def_id, mname);
@@ -208,9 +208,6 @@ pub fn trans_static_method_callee(bcx: &Block,
             let callee_ty = node_id_type(bcx, expr_id);
             let llty = type_of_fn_from_ty(ccx, callee_ty).ptr_to();
             PointerCast(bcx, llfn, llty)
-        }
-        typeck::vtable_unboxed_closure(_) => {
-            bcx.tcx().sess.bug("can't call a closure vtable in a static way");
         }
         ref r => {
             bcx.tcx().sess.bug(
@@ -247,10 +244,11 @@ fn trans_monomorphized_callee<'a>(
                               -> Callee<'a> {
     let _icx = push_ctxt("meth::trans_monomorphized_callee");
     match vtbl {
-        traits::Vtable(traits::Vtable { impl_def_id: impl_did,
-                                        substs: rcvr_substs,
-                                        origins: rcvr_origins },
-                       None) => {
+        traits::Vtable(
+            traits::VtableImpl(
+                traits::VtableImpl { impl_def_id: impl_did,
+                                     substs: rcvr_substs,
+                                     origins: rcvr_origins }), None) => {
             let ccx = bcx.ccx();
             let mname = ty::trait_method(ccx.tcx(), trait_id, n_method).ident;
             let mth_id = method_with_name(bcx.ccx(), impl_did, mname.name);
@@ -270,26 +268,26 @@ fn trans_monomorphized_callee<'a>(
 
             Callee { bcx: bcx, data: Fn(llfn) }
         }
-      typeck::vtable_unboxed_closure(closure_def_id) => {
-          // The static region and type parameters are lies, but we're in
-          // trans so it doesn't matter.
-          //
-          // FIXME(pcwalton): Is this true in the case of type parameters?
-          let callee_substs = get_callee_substitutions_for_unboxed_closure(
+        traits::Vtable(traits::VtableUnboxedClosure(closure_def_id), _) => {
+            // The static region and type parameters are lies, but we're in
+            // trans so it doesn't matter.
+            //
+            // FIXME(pcwalton): Is this true in the case of type parameters?
+            let callee_substs = get_callee_substitutions_for_unboxed_closure(
                 bcx,
                 closure_def_id);
 
-          let llfn = trans_fn_ref_with_vtables(bcx,
-                                               closure_def_id,
-                                               MethodCall(method_call),
-                                               callee_substs,
-                                               VecPerParamSpace::empty());
+            let llfn = trans_fn_ref_with_vtables(bcx,
+                                                 closure_def_id,
+                                                 MethodCall(method_call),
+                                                 callee_substs,
+                                                 VecPerParamSpace::empty());
 
-          Callee {
-              bcx: bcx,
-              data: Fn(llfn),
-          }
-      }
+            Callee {
+                bcx: bcx,
+                data: Fn(llfn),
+            }
+        }
         ref r => {
             bcx.tcx().sess.bug(
                 format!("bad vtable: {}", r.repr(bcx.tcx())).as_slice());
@@ -498,32 +496,6 @@ fn get_vtable(bcx: &Block,
     // Not in the cache. Actually build it.
     let methods = emit_vtable_methods(bcx, vtable);
 
-    /*
-    let methods = origins.move_iter().flat_map(|origin| {
-        match origin {
-            typeck::vtable_static(id, substs, sub_vtables) => {
-                emit_vtable_methods(bcx, id, substs, sub_vtables).move_iter()
-            }
-            typeck::vtable_unboxed_closure(closure_def_id) => {
-                let callee_substs =
-                    get_callee_substitutions_for_unboxed_closure(
-                        bcx,
-                        closure_def_id);
-
-                let llfn = trans_fn_ref_with_vtables(
-                    bcx,
-                    closure_def_id,
-                    ExprId(0),
-                    callee_substs,
-                    VecPerParamSpace::empty());
-
-                (vec!(llfn)).move_iter()
-            }
-            _ => ccx.sess().bug("get_vtable: expected a static origin"),
-        }
-    });
-*/
-
     // Generate a destructor for the vtable.
     let drop_glue = glue::get_drop_glue(ccx, self_ty);
     let vtable = make_vtable(ccx, drop_glue, methods);
@@ -559,7 +531,33 @@ pub fn make_vtable(ccx: &CrateContext,
 
 fn emit_vtable_methods(bcx: &Block,
                        vtable: &traits::Vtable)
-                       -> Vec<ValueRef> {
+                       -> Vec<ValueRef>
+{
+    match *vtable {
+        traits::VtableImpl(ref vtable_impl) => {
+            emit_vtable_methods_for_impl(bcx, vtable_impl)
+        }
+        traits::VtableUnboxedClosure(closure_def_id) => {
+            let callee_substs =
+                get_callee_substitutions_for_unboxed_closure(
+                    bcx,
+                    closure_def_id);
+
+            let llfn = trans_fn_ref_with_vtables(
+                bcx,
+                closure_def_id,
+                ExprId(0),
+                callee_substs,
+                VecPerParamSpace::empty());
+
+            vec!(llfn)
+        }
+    }
+}
+
+fn emit_vtable_methods_for_impl(bcx: &Block,
+                                vtable: &traits::VtableImpl)
+                                -> Vec<ValueRef> {
     let ccx = bcx.ccx();
     let tcx = ccx.tcx();
 
@@ -597,7 +595,7 @@ fn emit_vtable_methods(bcx: &Block,
                                              fn_ref,
                                              &*m,
                                              m_id,
-                                             substs.clone());
+                                             vtable.substs.clone());
             }
             fn_ref
         }

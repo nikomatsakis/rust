@@ -11,7 +11,7 @@
 /*! Inherent method search: See doc.rs for documentation */
 
 use middle::traits;
-use middle::traits::{Vtable, DefinitelyApplicable, MaybeApplicable,
+use middle::traits::{Vtable, VtableImpl, DefinitelyApplicable, MaybeApplicable,
                      NotApplicable, Overflow, ResolvedTo};
 use middle::ty;
 use middle::typeck::check::{deref, FnCtxt};
@@ -36,8 +36,8 @@ pub fn search_inherent_methods(fcx: &FnCtxt,
     match deref::autoderef_loop(fcx, call_expr.span, self_ty,
                                 &mut inherent_test) {
         deref::FoundMatch(xform_ty, FromImpl(impl_vtable, _method)) => {
-            let impl_origin = Vtable(impl_vtable, None);
-            //                                    ^~~~
+            let impl_origin = Vtable(VtableImpl(impl_vtable), None);
+            //                                                ^~~~
             //
             // None is a suitable value here: this field is
             // supposed to record deferred errors that
@@ -66,7 +66,7 @@ struct InherentTest<'a> {
 }
 
 enum InherentResult {
-    FromImpl(Vtable, Rc<ty::Method>),
+    FromImpl(VtableImpl, Rc<ty::Method>),
 }
 
 impl<'a> InherentTest<'a> {
@@ -213,7 +213,7 @@ impl<'a> InherentTest<'a> {
     fn confirm_impl(&mut self,
                     impl_def_id: ast::DefId,
                     self_ty: ty::t)
-                    -> Vtable
+                    -> VtableImpl
     {
         match traits::match_inherent_impl(self.fcx.infcx(),
                                           &self.fcx.inh.param_env,

@@ -22,6 +22,7 @@ use syntax::ast;
 use syntax::codemap::Span;
 use syntax::parse::token;
 use util::common::ErrorReported;
+use util::ppaux::UserString;
 
 use super::FnCtxt;
 use super::structurally_resolved_type;
@@ -201,7 +202,7 @@ pub fn autoderef_loop<R,T:Test<R>>(fcx: &FnCtxt,
     fcx.tcx().sess.span_err(
         span,
         format!("reached the recursion limit while auto-dereferencing `{}`",
-                fcx.infcx().ty_to_str(initial_xform_ty)).as_slice());
+                initial_xform_ty.user_string(fcx.tcx())).as_slice());
     return FoundReportedError;
 }
 

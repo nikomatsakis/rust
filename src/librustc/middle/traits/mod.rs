@@ -110,11 +110,8 @@ pub enum VtableOrigin {
     /// type error eventually.
     Vtable(Vtable, Option<ty::type_err>),
 
-    // Vtable automatically generated for an unboxed closure. The def
-    // ID is the ID of the closure expression.
-    VtableUnboxedClosure(ast::DefId),
-
-    /// Successful resolution for a builtin trait.
+    /// Successful resolution to an obligation provided by the caller
+    /// for some type parameter.
     VtableParam(VtableParam, Option<ty::type_err>),
 
     /// Successful resolution for a builtin trait.
@@ -124,13 +121,27 @@ pub enum VtableOrigin {
 pub type VtableOrigins = subst::VecPerParamSpace<VtableOrigin>;
 
 /**
+ * A concrete vtable that can be generated to an actual set of
+ * function pointers (versus a VtableParam).
+ */
+#[deriving(Clone)]
+pub enum Vtable {
+    // Vtable derived from an impl in the source.
+    VtableImpl(VtableImpl),
+
+    // Vtable automatically generated for an unboxed closure. The def
+    // ID is the ID of the closure expression.
+    VtableUnboxedClosure(ast::DefId),
+}
+
+/**
  * Identifiers a particular impl in the source, along with a set of
  * substitutions from the impl's type/lifetime parameters.
  *
  * The `obligations` vector identifiers a nested set of obligations.
  */
 #[deriving(Clone)]
-pub struct Vtable {
+pub struct VtableImpl {
     pub impl_def_id: ast::DefId,
     pub substs: subst::Substs,
     pub origins: VtableOrigins,
@@ -178,7 +189,7 @@ pub fn try_resolve_obligation(infcx: &InferCtxt,
      */
 
     let rcx = resolve::ResolutionContext::new(infcx, param_env);
-    infcx.commit(|| rcx.try_resolve_obligation(obligation))
+    infcx.commit_unconditionally(|| rcx.try_resolve_obligation(obligation))
 }
 
 pub fn evaluate_obligation(infcx: &InferCtxt,
@@ -220,7 +231,7 @@ pub fn match_inherent_impl(infcx: &InferCtxt,
                            span: Span,
                            impl_def_id: ast::DefId,
                            self_ty: ty::t)
-                           -> Option<Resolution<Vtable>>
+                           -> Option<Resolution<VtableImpl>>
 {
     /*!
      * Matches the self type of the inherent impl `impl_def_id`

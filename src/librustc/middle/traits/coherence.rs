@@ -104,6 +104,13 @@ pub fn ty_is_local(tcx: &ty::ctxt,
             false
         }
 
+        ty::ty_unboxed_closure(..) => {
+            // This routine is invoked on types specified by users as
+            // part of an impl and hence an unboxed closure type
+            // cannot appear.
+            tcx.sess.bug("ty_is_local applied to unboxed closure type")
+        }
+
         ty::ty_bare_fn(..) |
         ty::ty_closure(..) => {
             false
@@ -126,7 +133,7 @@ pub fn ty_is_local(tcx: &ty::ctxt,
             def_id.krate == ast::LOCAL_CRATE || {
                 let variances = ty::item_variances(tcx, def_id);
                 subst::ParamSpace::all().iter().any(|&space| {
-                    substs.types.get_vec(space).iter().enumerate().any(
+                    substs.types.get_slice(space).iter().enumerate().any(
                         |(i, &t)| {
                             match *variances.types.get(space, i) {
                                 ty::Bivariant => {

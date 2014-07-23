@@ -11,7 +11,8 @@
 use middle::subst::{SelfSpace, Subst, VecPerParamSpace};
 use middle::traits::{Obligation, VtableOrigin,
                      ResolvedTo, ResolvedToUnimpl, ResolvedToOverflow,
-                     Vtable, VtableParam, Builtin, Resolution,
+                     Vtable, VtableImpl, VtableUnboxedClosure,
+                     VtableParam, Builtin, Resolution,
                      obligations_for_generics, try_resolve_obligation};
 use middle::ty;
 use middle::typeck::{CrateCtxt, MethodCall};
@@ -50,7 +51,8 @@ pub fn resolve_impl(ccx: &CrateCtxt,
      *
      *    A:Clone, Self:Bar
      *
-     * But of course after substituting the types from the impl:
+     * But of course after substituting the types from the impl
+     * (A => B, Self => int):
      *
      *    B:Clone, int:Bar
      *
@@ -183,7 +185,7 @@ pub fn check_object_cast(fcx: &FnCtxt,
                 source_expr.span,
                 format!("can only cast an boxed pointer \
                          to a boxed object, not a {}",
-                        ty::ty_sort_str(fcx.tcx(), source_ty)).as_slice());
+                        ty::ty_sort_string(fcx.tcx(), source_ty)).as_slice());
         }
 
         (_, &ty::ty_rptr(..)) => {
@@ -191,7 +193,7 @@ pub fn check_object_cast(fcx: &FnCtxt,
                 source_expr.span,
                 format!("can only cast a &-pointer \
                          to an &-object, not a {}",
-                        ty::ty_sort_str(fcx.tcx(), source_ty)).as_slice());
+                        ty::ty_sort_string(fcx.tcx(), source_ty)).as_slice());
         }
 
         _ => {
@@ -360,10 +362,13 @@ pub fn check_vtable_origin_for_error(fcx: &FnCtxt,
             ty::note_and_explain_type_err(fcx.tcx(), err);
         }
 
-        Vtable(ref vtable, None) => {
+        Vtable(VtableImpl(ref vtable), None) => {
             for r in vtable.origins.iter() {
                 check_vtable_origin_for_error(fcx, obligation, r);
             }
+        }
+
+        Vtable(VtableUnboxedClosure(..), None) => {
         }
 
         VtableParam(_, None) => {

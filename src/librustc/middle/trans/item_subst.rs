@@ -177,8 +177,16 @@ fn trace_supertraits<'a>(tcx: &ty::ctxt,
      */
 
     for &i in supertraits.iter() {
-        let superorigin = vtable.origins.get(subst::SelfSpace, i);
-        vtable = assert_vtable(tcx, superorigin);
+        match *vtable {
+            traits::VtableImpl(ref v) => {
+                let superorigin = v.origins.get(subst::SelfSpace, i);
+                vtable = assert_vtable(tcx, superorigin);
+            }
+            traits::VtableUnboxedClosure(_) => {
+                tcx.sess.bug(
+                    "trace_supertraits() encountered unboxed closure");
+            }
+        }
     }
 
     traits::Vtable((*vtable).clone(), None)

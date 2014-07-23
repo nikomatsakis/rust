@@ -497,12 +497,10 @@ impl<'a> InferCtxt<'a> {
     }
 
     pub fn sub<'a>(&'a self, a_is_expected: bool, trace: TypeTrace) -> Sub<'a> {
-        assert!(self.in_snapshot());
         Sub(self.combine_fields(a_is_expected, trace))
     }
 
     pub fn lub<'a>(&'a self, a_is_expected: bool, trace: TypeTrace) -> Lub<'a> {
-        assert!(self.in_snapshot());
         Lub(self.combine_fields(a_is_expected, trace))
     }
 
@@ -631,10 +629,9 @@ impl<'a> InferCtxt<'a> {
                           b: Rc<ty::TraitRef>)
                           -> ures
     {
-        assert!(self.in_snapshot());
         debug!("sub_trait_refs({} <: {})",
-               a.inf_str(self),
-               b.inf_str(self));
+               a.repr(self.tcx),
+               b.repr(self.tcx));
         let trace = TypeTrace {
             origin: origin,
             values: TraitRefs(expected_found(a_is_expected,
@@ -727,7 +724,7 @@ impl<'a> InferCtxt<'a> {
         assert!(generics.regions.len(subst::FnSpace) == 0);
 
         let type_parameter_count = generics.types.len(subst::TypeSpace);
-        let region_param_defs = generics.regions.get_vec(subst::TypeSpace);
+        let region_param_defs = generics.regions.get_slice(subst::TypeSpace);
         let regions = self.region_vars_for_defs(span, region_param_defs);
         let type_parameters = self.next_ty_vars(type_parameter_count);
         subst::Substs::new_trait(type_parameters, regions, self_ty)

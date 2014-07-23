@@ -18,7 +18,7 @@ use syntax::ast;
 use syntax::codemap::Span;
 use util::ppaux::Repr;
 
-use super::{Obligation, Vtable, VtableParam};
+use super::{Obligation, Vtable, VtableImpl, VtableUnboxedClosure, VtableParam};
 
 ///////////////////////////////////////////////////////////////////////////
 // Supertrait iterator
@@ -120,7 +120,16 @@ pub fn fresh_substs_for_impl(infcx: &InferCtxt,
 
 impl fmt::Show for Vtable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Vtable({})", self.impl_def_id)
+        match *self {
+            VtableImpl(ref v) => write!(f, "{}", v),
+            VtableUnboxedClosure(ref d) => write!(f, "VtableUnboxedClosure({})", d),
+        }
+    }
+}
+
+impl fmt::Show for VtableImpl {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "VtableImpl({})", self.impl_def_id)
     }
 }
 
@@ -153,7 +162,7 @@ pub fn obligations(tcx: &ty::ctxt,
     let mut obligations = VecPerParamSpace::empty();
 
     for &space in subst::ParamSpace::all().iter() {
-        let defs = generics.types.get_vec(space);
+        let defs = generics.types.get_slice(space);
         for def in defs.iter() {
             let param_ty = *substs.types.get(def.space, def.index);
 

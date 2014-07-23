@@ -289,7 +289,8 @@ pub fn trans_unboxing_shim(bcx: &Block,
                            method: &ty::Method,
                            method_id: ast::DefId,
                            substs: subst::Substs)
-                           -> ValueRef {
+                           -> ValueRef
+{
     let _icx = push_ctxt("trans_unboxing_shim");
     let ccx = bcx.ccx();
     let tcx = bcx.tcx();
@@ -326,15 +327,15 @@ pub fn trans_unboxing_shim(bcx: &Block,
                                      boxed_function_type,
                                      function_name.as_slice());
 
+    let item_substs = ItemSubsts::empty();
     let block_arena = TypedArena::new();
-    let empty_param_substs = param_substs::empty();
     let return_type = ty::ty_fn_ret(boxed_function_type);
     let fcx = new_fn_ctxt(ccx,
                           llfn,
                           -1,
                           false,
                           return_type,
-                          &empty_param_substs,
+                          &item_substs,
                           None,
                           &block_arena);
     let mut bcx = init_function(&fcx, false, return_type);

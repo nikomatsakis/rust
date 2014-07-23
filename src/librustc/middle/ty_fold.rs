@@ -315,12 +315,25 @@ impl TypeFoldable for traits::VtableOrigin {
     }
 }
 
-impl TypeFoldable for traits::Vtable {
-    fn fold_with<F:TypeFolder>(&self, folder: &mut F) -> traits::Vtable {
-        traits::Vtable {
+impl TypeFoldable for traits::VtableImpl {
+    fn fold_with<F:TypeFolder>(&self, folder: &mut F) -> traits::VtableImpl {
+        traits::VtableImpl {
             impl_def_id: self.impl_def_id,
             substs: self.substs.fold_with(folder),
             origins: self.origins.fold_with(folder),
+        }
+    }
+}
+
+impl TypeFoldable for traits::Vtable {
+    fn fold_with<F:TypeFolder>(&self, folder: &mut F) -> traits::Vtable {
+        match *self {
+            traits::VtableImpl(ref v) => {
+                traits::VtableImpl(v.fold_with(folder))
+            }
+            traits::VtableUnboxedClosure(d) => {
+                traits::VtableUnboxedClosure(d)
+            }
         }
     }
 }

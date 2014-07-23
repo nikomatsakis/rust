@@ -1478,7 +1478,7 @@ pub fn finish_fn<'a>(fcx: &'a FunctionContext<'a>,
 
     // This shouldn't need to recompute the return type,
     // as new_fn_ctxt did it already.
-    let substd_retty = retty.substp(fcx.ccx.tcx(), fcx.param_substs);
+    let substd_retty = retty.item_subst(fcx.ccx.tcx(), fcx.item_substs);
 
     let ret_cx = match fcx.llreturn.get() {
         Some(llreturn) => {

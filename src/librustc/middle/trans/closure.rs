@@ -479,7 +479,7 @@ pub fn trans_unboxed_closure<'a>(
                   decl,
                   body,
                   llfn,
-                  bcx.fcx.param_substs,
+                  bcx.fcx.item_substs,
                   id,
                   [],
                   ty::ty_fn_args(function_type),

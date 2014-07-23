@@ -242,34 +242,24 @@ pub struct MonoId {
     pub params: subst::VecPerParamSpace<ty::t>
 }
 
-pub fn make_vtable_id(_ccx: &CrateContext, vtable: &traits::Vtable) -> MonoId {
-    MonoId {
-        def: vtable.impl_def_id,
-        params: vtable.substs.types.clone()
-    }
-}
-
-/*
 pub fn make_vtable_id(_ccx: &CrateContext,
-                      origin: &typeck::vtable_origin)
-                      -> MonoId {
-    match origin {
-        &typeck::vtable_static(impl_id, ref substs, _) => {
+                      vtable: &traits::Vtable)
+                      -> MonoId
+{
+    match *vtable {
+        traits::VtableImpl(ref v) => {
             MonoId {
-                def: impl_id,
-                params: substs.types.clone()
+                def: v.impl_def_id,
+                params: v.substs.types.clone()
             }
         }
 
-        &typeck::vtable_unboxed_closure(def_id) => {
+        traits::VtableUnboxedClosure(def_id) => {
             MonoId {
                 def: def_id,
                 params: subst::VecPerParamSpace::empty(),
             }
         }
-
-        // can't this be checked at the callee?
-        _ => fail!("make_vtable_id needs vtable_static")
     }
 }
-*/
+

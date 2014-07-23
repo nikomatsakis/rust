@@ -1426,7 +1426,7 @@ pub fn each_type_parameters_and_def<TYPER:Typer>(typer: &TYPER,
     let (substs, type_param_defs) = match method_callee {
         Some(typeck::MethodCallee { substs, origin, ty: _ }) => {
             // Method call:
-            let defs = ty::method_call_type_param_defs(tcx, origin);
+            let defs = ty::method_call_type_param_defs(tcx, &origin);
             (substs, defs)
         }
 

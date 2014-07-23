@@ -19,6 +19,7 @@ use syntax::ast;
 use syntax::parse::token;
 use util::common::ErrorReported;
 use util::ppaux;
+use util::ppaux::Repr;
 
 use super::LvaluePreference;
 use super::check_expr_with_lvalue_pref;
@@ -108,7 +109,7 @@ impl<'a> deref::Test<ty::t> for HasFieldTest<'a> {
         let tcx = self.fcx.tcx();
         Ok(match ty::get(ty).sty {
             ty::ty_struct(struct_def_id, ref substs) => {
-                debug!("struct named {}", ppaux::ty_to_str(tcx, ty));
+                debug!("struct named {}", ty.repr(tcx));
                 let fields = ty::lookup_struct_fields(tcx, struct_def_id);
                 lookup_field_ty(tcx,
                                 struct_def_id,

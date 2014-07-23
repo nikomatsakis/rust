@@ -1189,7 +1189,18 @@ impl Repr for traits::VtableOrigin {
 
 impl Repr for traits::Vtable {
     fn repr(&self, tcx: &ctxt) -> String {
-        format!("Vtable(impl_def_id={}, substs={}, resolutions={})",
+        match *self {
+            traits::VtableImpl(ref v) => v.repr(tcx),
+            traits::VtableUnboxedClosure(d) => {
+                format!("VtableUnboxedClosure({})", d)
+            }
+        }
+    }
+}
+
+impl Repr for traits::VtableImpl {
+    fn repr(&self, tcx: &ctxt) -> String {
+        format!("VtableImpl(impl_def_id={}, substs={}, resolutions={})",
                 self.impl_def_id.repr(tcx),
                 self.substs.repr(tcx),
                 self.origins.repr(tcx))

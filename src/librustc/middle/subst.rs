@@ -404,19 +404,14 @@ impl<T> VecPerParamSpace<T> {
         &mut self.get_mut_slice(space)[index]
     }
 
-    pub fn enumerated_iter<'a>(&'a self) -> EnumeratedIter<'a,T>
-    {
-        let (ref r, ref s, ref f) = self.vecs;
-        r.iter().enumerate().map(|(i, e)| (TypeSpace, i, e))
-            .chain(s.iter().enumerate().map(|(i, e)| (SelfSpace, i, e)))
-            .chain(f.iter().enumerate().map(|(i, e)| (FnSpace, i, e)))
+    pub fn enumerated_iter<'a>(&'a self) -> EnumeratedItems<'a,T> {
+        EnumeratedItems { type_limit: self.type_limit,
+                          self_limit: self.self_limit,
+                          iter: self.content.iter().enumerate() }
     }
 
-    pub fn iter<'a>(&'a self) -> Chain<Items<'a,T>,
-                                       Chain<Items<'a,T>,
-                                             Items<'a,T>>> {
-        let (ref r, ref s, ref f) = self.vecs;
-        r.iter().chain(s.iter().chain(f.iter()))
+    pub fn iter<'a>(&'a self) -> Items<'a,T> {
+        self.content.iter()
     }
 
     pub fn all_vecs(&self, pred: |&[T]| -> bool) -> bool {
@@ -507,7 +502,25 @@ impl<T> VecPerParamSpace<T> {
     }
 }
 
-pub type EnumeratedIter<'a, T> = Chain<Chain<Map<'a,(uint,&'a T),(ParamSpace,uint,&'a T),Enumerate<Items<'a,T>>>,Map<'a,(uint,&'a T),(ParamSpace,uint,&'a T),Enumerate<Items<'a,T>>>>,Map<'a,(uint,&'a T),(ParamSpace,uint,&'a T),Enumerate<Items<'a,T>>>>;
+pub struct EnumeratedItems<'a, T> {
+    type_limit: uint,
+    self_limit: uint,
+    iter: Enumerate<Items<'a,T>>
+}
+
+impl<'a,T> Iterator<(ParamSpace, uint, &'a T)> for EnumeratedItems<'a, T> {
+    fn next(&mut self) -> Option<(ParamSpace, uint, &'a T)> {
+        self.iter.next().map(|(i, v)| {
+            if i >= self.self_limit {
+                (FnSpace, i - self.self_limit, v)
+            } else if i >= self.type_limit {
+                (SelfSpace, i - self.type_limit, v)
+            } else {
+                (TypeSpace, i, v)
+            }
+        })
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////////
 // Public trait `Subst`
@@ -665,7 +678,7 @@ impl<T> HomogeneousTuple3<T> for (T, T, T) {
 
     fn as_slice<'a>(&'a self) -> &'a [T] {
         unsafe {
-            let ptr: *T = mem::transmute(self);
+            let ptr: *const T = mem::transmute(self);
             let slice = raw::Slice { data: ptr, len: 3 };
             mem::transmute(slice)
         }
@@ -673,7 +686,7 @@ impl<T> HomogeneousTuple3<T> for (T, T, T) {
 
     fn as_mut_slice<'a>(&'a mut self) -> &'a mut [T] {
         unsafe {
-            let ptr: *T = mem::transmute(self);
+            let ptr: *const T = mem::transmute(self);
             let slice = raw::Slice { data: ptr, len: 3 };
             mem::transmute(slice)
         }

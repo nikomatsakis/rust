@@ -13,6 +13,7 @@ use middle::freevars::freevar_entry;
 use middle::freevars;
 use mc = middle::mem_categorization;
 use middle::subst;
+use middle::traits;
 use middle::ty;
 use middle::typeck::{MethodCall, NoAdjustment};
 use middle::typeck;
@@ -315,29 +316,29 @@ pub fn check_expr(cx: &mut Context, e: &Expr) {
 }
 
 fn check_type_parameter_bounds_in_vtable_result(
-        cx: &mut Context,
-        span: Span,
-        vtable_res: &typeck::vtable_res) {
-    for origins in vtable_res.iter() {
-        for origin in origins.iter() {
-            let (type_param_defs, substs) = match *origin {
-                typeck::vtable_static(def_id, ref tys, _) => {
-                    let type_param_defs =
-                        ty::lookup_item_type(cx.tcx, def_id).generics
-                                                            .types
-                                                            .clone();
-                    (type_param_defs, (*tys).clone())
-                }
-                _ => {
-                    // Nothing to do here.
-                    continue
-                }
-            };
-            for type_param_def in type_param_defs.iter() {
-                let typ = substs.types.get(type_param_def.space,
-                                           type_param_def.index);
-                check_typaram_bounds(cx, span, *typ, type_param_def)
+    cx: &mut Context,
+    span: Span,
+    vtable_res: &typeck::VtableResult)
+{
+    for origin in vtable_res.iter() {
+        let (type_param_defs, substs) = match *origin {
+            traits::Vtable(traits::VtableImpl(ref vtable), _) => {
+                let type_param_defs =
+                    ty::lookup_item_type(cx.tcx, vtable.impl_def_id)
+                        .generics
+                        .types
+                        .clone();
+                    (type_param_defs, vtable.substs.clone())
             }
+            _ => {
+                // Nothing to do here.
+                continue
+            }
+        };
+        for type_param_def in type_param_defs.iter() {
+            let typ = substs.types.get(type_param_def.space,
+                                       type_param_def.index);
+            check_typaram_bounds(cx, span, *typ, type_param_def)
         }
     }
 }
@@ -362,7 +363,7 @@ fn check_trait_cast(cx: &mut Context,
                             check_type_parameter_bounds_in_vtable_result(
                                 cx,
                                 span,
-                                vtable_res)
+                                &**vtable_res)
                         }
                     };
                     check_trait_cast_bounds(cx, span, source_ty, bounds);

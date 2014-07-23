@@ -12,7 +12,8 @@
 
 use middle::subst;
 use middle::subst::{Subst, Substs};
-use middle::traits::{Vtable, VtableOrigin, VtableParam, Builtin};
+use middle::traits::{Vtable, VtableImpl, VtableUnboxedClosure,
+                     VtableOrigin, VtableParam, Builtin};
 use middle::ty;
 use middle::typeck::{MethodCallee, MethodOrigin, MethodStatic,
                      MethodParam};
@@ -156,7 +157,7 @@ fn instantiate_method_params(fcx: &FnCtxt,
     // If they were not explicitly supplied, just construct fresh
     // variables.
     let num_supplied_tps = supplied_method_type_params.len();
-    let num_method_tps = method.generics.types.get_vec(subst::FnSpace).len();
+    let num_method_tps = method.generics.types.get_slice(subst::FnSpace).len();
     let m_types = if num_supplied_tps == 0u {
         fcx.infcx().next_ty_vars(num_method_tps)
     } else if num_method_tps == 0u {
@@ -178,7 +179,7 @@ fn instantiate_method_params(fcx: &FnCtxt,
     let m_regions =
         fcx.infcx().region_vars_for_defs(
             call_span,
-            method.generics.regions.get_vec(subst::FnSpace));
+            method.generics.regions.get_slice(subst::FnSpace));
 
     // Combine the method's parameters with those from the trait/impl.
     (substs.with_method(m_types, m_regions), method, method_origin)
@@ -292,7 +293,7 @@ fn report_mut_self_error(fcx: &FnCtxt,
         format!("method `{}` requires an `&mut` receiver, \
                  but type `{}` does not implement `DerefMut`",
                 method_name.user_string(fcx.tcx()),
-                self_ty.user_string(fcx.tcx())).as_slice());
+                fcx.infcx().ty_to_string(self_ty)).as_slice());
 }
 
 fn confirm_autoref_receiver(fcx: &FnCtxt,
@@ -347,8 +348,8 @@ fn report_reconciliation_error(fcx: &FnCtxt,
         format!("in call to `{}`, cannot reconcile method receiver of type `{}` \
                  with declared receiver type `{}`",
                 method_name.user_string(fcx.tcx()),
-                fcx.infcx().ty_to_str(self_ty),
-                fcx.infcx().ty_to_str(method_self_ty)).as_slice());
+                fcx.infcx().ty_to_string(self_ty),
+                fcx.infcx().ty_to_string(method_self_ty)).as_slice());
 }
 
 fn decompose_vtable_origin(fcx: &FnCtxt,
@@ -358,8 +359,12 @@ fn decompose_vtable_origin(fcx: &FnCtxt,
                            -> (Substs, Rc<ty::Method>, MethodOrigin)
 {
     match vtable_origin {
-        Vtable(vtable, None) => {
-            decompose_vtable(fcx, vtable, method_name)
+        Vtable(VtableImpl(vtable), None) => {
+            decompose_impl_vtable(fcx, vtable, method_name)
+        }
+
+        Vtable(VtableUnboxedClosure(def_id), None) => {
+            fcx.tcx().sess.bug("NYI")
         }
 
         VtableParam(param, None) => {
@@ -386,10 +391,10 @@ fn decompose_vtable_origin(fcx: &FnCtxt,
     }
 }
 
-fn decompose_vtable(fcx: &FnCtxt,
-                    vtable: Vtable,
-                    method_name: ast::Name)
-                    -> (Substs, Rc<ty::Method>, MethodOrigin)
+fn decompose_impl_vtable(fcx: &FnCtxt,
+                         vtable: VtableImpl,
+                         method_name: ast::Name)
+                         -> (Substs, Rc<ty::Method>, MethodOrigin)
 {
     let impl_methods_table = fcx.tcx().impl_methods.borrow();
     let impl_method_ids = match impl_methods_table.find(&vtable.impl_def_id) {
