@@ -85,12 +85,24 @@ impl<'a> deref::Test<InherentResult> for InherentTest<'a> {
                 let inherent_impls = self.tcx().inherent_impls.borrow();
 
                 let mut applicable_impl_dids = Vec::new();
+                let mut all_definite = true;
                 for &did in inherent_impls.find(&def_id)
                                           .move_iter()
                                           .flat_map(|dids| dids.iter())
                 {
-                    if try!(self.evaluate_impl(did, self_ty)) {
-                        applicable_impl_dids.push(did);
+                    match try!(self.evaluate_impl(did, self_ty)) {
+                        Some(true) => {
+                            debug!("did={} definitely applicable", did);
+                            applicable_impl_dids.push(did);
+                        }
+                        None => {
+                            debug!("did={} maybe applicable", did);
+                            applicable_impl_dids.push(did);
+                            all_definite = false;
+                        }
+                        Some(false) => {
+                            debug!("did={} not applicable", did);
+                        }
                     }
                 }
 
@@ -99,6 +111,11 @@ impl<'a> deref::Test<InherentResult> for InherentTest<'a> {
                 }
 
                 if applicable_impl_dids.len() > 1 {
+                    return Err(self.report_ambiguity(self_ty,
+                                                     &applicable_impl_dids));
+                }
+
+                if !all_definite {
                     return Err(self.report_ambiguity(self_ty,
                                                      &applicable_impl_dids));
                 }
@@ -127,14 +144,14 @@ impl<'a> InherentTest<'a> {
     fn evaluate_impl(&self,
                      impl_def_id: ast::DefId,
                      self_ty: ty::t)
-                     -> Result<bool, ErrorReported> {
+                     -> Result<Option<bool>, ErrorReported> {
         /*!
          * True if an inherent impl may apply to this call.
          */
 
         // Does the impl define the method we are looking for?
         if self.method_from_impl(impl_def_id).is_none() {
-            return Ok(false);
+            return Ok(Some(false));
         }
 
         // Are the conditions on the impl (maybe) met?
@@ -143,8 +160,9 @@ impl<'a> InherentTest<'a> {
                                     self.call_expr.span,
                                     impl_def_id,
                                     self_ty) {
-            DefinitelyApplicable | MaybeApplicable => Ok(true),
-            NotApplicable => Ok(false),
+            DefinitelyApplicable => Ok(Some(true)),
+            NotApplicable => Ok(Some(false)),
+            MaybeApplicable => Ok(None),
             Overflow => Err(self.report_overflow(self_ty)),
         }
     }
@@ -167,7 +185,7 @@ impl<'a> InherentTest<'a> {
          * type information is required.
          */
 
-        assert!(applicable_impl_dids.len() > 1);
+        assert!(applicable_impl_dids.len() >= 1);
 
         if !ty::type_needs_infer(self_ty) {
             // Ambiguity. Coherence should have reported an error.
@@ -221,13 +239,14 @@ impl<'a> InherentTest<'a> {
                                           impl_def_id,
                                           self_ty) {
             Some(ResolvedTo(vtable)) => vtable,
-            _ => {
+            ref r => {
                 self.tcx().sess.span_bug(
                     self.call_expr.span,
                     format!("impl `{}` evaluated to a match with `{}` \
-                             but could not be confirmed",
+                             but could not be confirmed: {}",
                             impl_def_id,
-                            self_ty.repr(self.fcx.tcx())).as_slice());
+                            self_ty.repr(self.fcx.tcx()),
+                            r).as_slice());
             }
         }
     }

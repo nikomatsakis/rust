@@ -366,19 +366,17 @@ impl<'cx> WritebackCx<'cx> {
                           -> traits::VtableOrigin
     {
         // Convert from a PendingResolution, which is used during
-        // typeck, to a VtableOrigin, which is used
-        // afterwards.  We shouldn't enter the writeback phase without
-        // having successfully resolved all traits.
+        // typeck, to a VtableOrigin, which is used afterwards.
         match r.get() {
             Some(&traits::ResolvedTo(ref v)) => {
                 self.resolve(v, reason)
             }
-            ref r => {
-                self.tcx().sess.span_bug(
-                    reason.span(self.tcx()),
-                    format!("pending obligation \
-                             unresolved or resolved to error: {}",
-                            (*r).repr(self.tcx())).as_slice());
+            Some(&traits::ResolvedToUnimpl) |
+            Some(&traits::ResolvedToOverflow) |
+            None => {
+                // These cases should have led to an error being
+                // reported. Ignore and provide a dummy result.
+                traits::Builtin
             }
         }
     }

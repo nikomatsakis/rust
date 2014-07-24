@@ -246,6 +246,7 @@ pub fn check_object_cast(fcx: &FnCtxt,
 }
 
 pub fn resolve_fcx_obligations_or_error(fcx: &FnCtxt) {
+    debug!("resolve_fcx_obligations_or_error");
     try_resolve_fcx_obligations(fcx);
 
     for pending_obligation in fcx.inh.obligations.borrow().iter() {
@@ -436,8 +437,8 @@ pub fn try_resolve_fcx_obligations(fcx: &FnCtxt) -> bool {
 
         match try_resolve_obligation(fcx.infcx(), &fcx.inh.param_env, o) {
             Some(resolution) => {
-                debug!("obligation resolved to: {}",
-                       resolution.repr(fcx.tcx()));
+                debug!("obligation {} resolved to: {}",
+                       o.repr(fcx.tcx()), resolution.repr(fcx.tcx()));
                 pending_resolution.fulfill(resolution).unwrap();
                 true
             }

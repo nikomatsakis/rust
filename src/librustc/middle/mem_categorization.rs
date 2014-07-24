@@ -383,12 +383,15 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
         match self.typer.adjustments().borrow().find(&expr.id) {
             None => {
                 // No adjustments.
+                debug!("No adjustments for expr.id={}", expr.id);
                 self.cat_expr_unadjusted(expr)
             }
 
             Some(adjustment) => {
                 match *adjustment {
                     ty::AutoObject(..) => {
+                        debug!("AutoObject for expr.id={}", expr.id);
+
                         // Implicitly cast a concrete object to trait object.
                         // Result is an rvalue.
                         let expr_ty = if_ok!(self.expr_ty_adjusted(expr));
@@ -396,6 +399,8 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
                     }
 
                     ty::AutoAddEnv(..) => {
+                        debug!("AutoAddEnv for expr.id={}", expr.id);
+
                         // Convert a bare fn to a closure by adding NULL env.
                         // Result is an rvalue.
                         let expr_ty = if_ok!(self.expr_ty_adjusted(expr));
@@ -407,6 +412,7 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
                             autoref: Some(_), ..}) => {
                         // Equivalent to &*expr or something similar.
                         // Result is an rvalue.
+                        debug!("AutoRef for expr.id={}", expr.id);
                         let expr_ty = if_ok!(self.expr_ty_adjusted(expr));
                         Ok(self.cat_rvalue_node(expr.id(), expr.span(), expr_ty))
                     }
@@ -415,6 +421,8 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
                         ty::AutoDerefRef {
                             autoref: None, autoderefs: autoderefs}) => {
                         // Equivalent to *expr or something similar.
+                        debug!("Autoderefs {} for expr.id={}",
+                               autoderefs, expr.id);
                         self.cat_expr_autoderefd(expr, autoderefs)
                     }
                 }
@@ -434,7 +442,8 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
     }
 
     pub fn cat_expr_unadjusted(&self, expr: &ast::Expr) -> McResult<cmt> {
-        debug!("cat_expr: id={} expr={}", expr.id, expr.repr(self.tcx()));
+        debug!("cat_expr_unadjusted: id={} expr={}",
+               expr.id, expr.repr(self.tcx()));
 
         let expr_ty = if_ok!(self.expr_ty(expr));
         match expr.node {

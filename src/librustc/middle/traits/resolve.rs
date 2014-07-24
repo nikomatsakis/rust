@@ -85,14 +85,17 @@ impl<'cx> ResolutionContext<'cx> {
         debug!("resolutions={}", resolutions.repr(self.tcx()));
 
         if resolutions.any(|r| r.to_impl_evaluation() == Overflow) {
+            debug!("--> overflow");
             return Some(ResolvedToOverflow);
         }
 
         if resolutions.any(|r| r.to_impl_evaluation() == NotApplicable) {
+            debug!("--> unimpl");
             return Some(ResolvedToUnimpl);
         }
 
         if resolutions.any(|r| r.to_impl_evaluation() == MaybeApplicable) {
+            debug!("--> ambig");
             return None;
         }
 
@@ -489,9 +492,10 @@ impl<'cx> ResolutionContext<'cx> {
     {
         /*!
          * Determines whether the self type declared against
-         * `impl_def_id` matches `obligation_self_ty`. If successful, returns the
-         * substitutions used to make them match. See `match_impl()`.
-         * For example, if `impl_def_id` is declared as:
+         * `impl_def_id` matches `obligation_self_ty`. If successful,
+         * returns the substitutions used to make them match. See
+         * `match_impl()`.  For example, if `impl_def_id` is declared
+         * as:
          *
          *    impl<T:Copy> Foo for ~T { ... }
          *
@@ -509,7 +513,7 @@ impl<'cx> ResolutionContext<'cx> {
         let impl_self_ty = ty::lookup_item_type(self.tcx(), impl_def_id).ty;
         let impl_self_ty = impl_self_ty.subst(self.tcx(), &impl_substs);
 
-        debug!("match_self_types(obligation_self_ty={}, impl_self_ty={})",
+        debug!("match_impl_self_types(obligation_self_ty={}, impl_self_ty={})",
                obligation_self_ty.repr(self.tcx()),
                impl_self_ty.repr(self.tcx()));
 
@@ -562,6 +566,13 @@ impl<'cx> ResolutionContext<'cx> {
          * decide. Returns `None` to indicate neither success nor
          * failure, and otherwise returns a complete resolution.
          */
+
+        debug!("match_nested_obligations(impl_def_id={}, \
+               impl_substs={}, \
+               recursion_depth={})",
+               impl_def_id.repr(self.tcx()),
+               impl_substs.repr(self.tcx()),
+               recursion_depth);
 
         // Now check whether we can satisfy any obligations that the
         // impl itself requires. For example:
