@@ -2489,6 +2489,13 @@ pub fn type_is_integral(ty: t) -> bool {
     }
 }
 
+pub fn type_is_skolemized(ty: t) -> bool {
+    match get(ty).sty {
+      ty_infer(SkolemizedTy(_)) => true,
+      _ => false
+    }
+}
+
 pub fn type_is_uint(ty: t) -> bool {
     match get(ty).sty {
       ty_infer(IntVar(_)) | ty_uint(ast::TyU) => true,
@@ -2831,8 +2838,12 @@ pub fn adjust_ty(cx: &ctxt,
                  unadjusted_ty: ty::t,
                  adjustment: Option<&AutoAdjustment>,
                  method_type: |typeck::MethodCall| -> Option<ty::t>)
-                 -> ty::t {
+                 -> ty::t
+{
     /*! See `expr_ty_adjusted` */
+
+    debug!("adjust_ty: unadjusted_ty={}",
+           unadjusted_ty.repr(cx));
 
     return match adjustment {
         Some(adjustment) => {
@@ -2865,10 +2876,13 @@ pub fn adjust_ty(cx: &ctxt,
 
                     if !ty::type_is_error(adjusted_ty) {
                         for i in range(0, adj.autoderefs) {
+                            debug!("autoderef {}: {}", i, adjusted_ty.repr(cx));
                             let method_call = typeck::MethodCall::autoderef(expr_id, i);
                             match method_type(method_call) {
                                 Some(method_ty) => {
                                     adjusted_ty = ty_fn_ret(method_ty);
+                                    debug!("method_call set adjusted_ty to {}",
+                                           adjusted_ty.repr(cx));
                                 }
                                 None => {}
                             }

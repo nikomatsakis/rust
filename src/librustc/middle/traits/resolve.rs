@@ -322,13 +322,13 @@ impl<'cx> ResolutionContext<'cx> {
                 // `self_ty`.
                 let caller_bound = &caller_obligation.trait_ref;
                 let caller_self_ty = caller_bound.substs.self_ty().unwrap();
-                let r =
-                    self.infcx.probe(
-                        || self.match_self_types(obligation.span,
-                                                 caller_self_ty,
-                                                 skol_obligation_self_ty));
-                if r.is_err() {
-                    continue;
+                match self.match_self_types(obligation.span,
+                                            caller_self_ty,
+                                            skol_obligation_self_ty) {
+                    Some(ResolvedToUnimpl) => { continue; }
+                    Some(ResolvedToOverflow) => { continue; }
+                    None => { return None; }
+                    Some(ResolvedTo(())) => { }
                 }
 
                 // Does the bound match directly?
@@ -470,11 +470,10 @@ impl<'cx> ResolutionContext<'cx> {
         let impl_substs = match self.match_impl_self_types(impl_def_id,
                                                            span,
                                                            obligation_self_ty) {
-            Ok(s) => s,
-            Err(_) => {
-                // An error here means the types are just plain incompatible.
-                return Some(ResolvedToUnimpl);
-            }
+            Some(ResolvedTo(impl_substs)) => impl_substs,
+            Some(ResolvedToUnimpl) => { return Some(ResolvedToUnimpl); }
+            Some(ResolvedToOverflow) => { return Some(ResolvedToOverflow); }
+            None => { return None; }
         };
 
         // Check that the nested obligations the impl requires can be met.
@@ -488,7 +487,7 @@ impl<'cx> ResolutionContext<'cx> {
                              impl_def_id: ast::DefId,
                              span: Span,
                              obligation_self_ty: ty::t)
-                             -> Result<Substs, ty::type_err>
+                             -> Option<Resolution<Substs>>
     {
         /*!
          * Determines whether the self type declared against
@@ -517,10 +516,12 @@ impl<'cx> ResolutionContext<'cx> {
                obligation_self_ty.repr(self.tcx()),
                impl_self_ty.repr(self.tcx()));
 
-        let () =
-            try!(self.match_self_types(span, impl_self_ty, obligation_self_ty));
-
-        Ok(impl_substs)
+        match self.match_self_types(span, impl_self_ty, obligation_self_ty) {
+            Some(ResolvedTo(())) => Some(ResolvedTo(impl_substs)),
+            Some(ResolvedToUnimpl) => Some(ResolvedToUnimpl),
+            Some(ResolvedToOverflow) => Some(ResolvedToOverflow),
+            None => None,
+        }
     }
 
     fn match_self_types(&self,
@@ -531,16 +532,32 @@ impl<'cx> ResolutionContext<'cx> {
 
                         // The self type the obligation is for:
                         required_self_ty: ty::t)
-                        -> Result<(),ty::type_err>
+                        -> Option<Resolution<()>>
     {
         // FIXME(#5781) -- equating the types is stronger than
         // necessary. Should consider variance of trait w/r/t Self.
 
         let origin = infer::RelateSelfType(span);
-        self.infcx.eq_types(false,
-                            origin,
-                            provided_self_ty,
-                            required_self_ty)
+        match self.infcx.eq_types(false,
+                                  origin,
+                                  provided_self_ty,
+                                  required_self_ty) {
+            Ok(()) => Some(ResolvedTo(())),
+            Err(ty::terr_sorts(ty::expected_found{expected: t1, found: t2})) => {
+                // This error occurs when there is an unresolved type
+                // variable in the `required_self_ty` that was forced
+                // to unify with a non-type-variable. That basically
+                // means we don't know enough to say with certainty
+                // whether there is a match or not -- it depends on
+                // how that type variable is ultimately resolved.
+                if ty::type_is_skolemized(t1) || ty::type_is_skolemized(t2) {
+                    None
+                } else {
+                    Some(ResolvedToUnimpl)
+                }
+            }
+            Err(_) => Some(ResolvedToUnimpl),
+        }
     }
 
     fn match_nested_obligations(&self,

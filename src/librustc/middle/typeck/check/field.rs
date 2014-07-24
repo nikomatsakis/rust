@@ -37,12 +37,12 @@ pub fn check_field(fcx: &FnCtxt,
 {
     let tcx = fcx.ccx.tcx;
     check_expr_with_lvalue_pref(fcx, base, lvalue_pref);
-    let expr_ty = fcx.expr_ty(base);
+    let base_ty = fcx.expr_ty(base);
     let mut has_field = HasFieldTest { fcx: fcx, field: field };
-    match deref::autoderef_loop(fcx, expr.span, expr_ty, &mut has_field) {
+    match deref::autoderef_loop(fcx, expr.span, base_ty, &mut has_field) {
         // Found a field, horray!
         deref::FoundMatch(xform_ty, field_ty) => {
-            deref::record_autoderefs(fcx, expr, xform_ty, None);
+            deref::record_autoderefs(fcx, base, xform_ty, None);
             return field_ty;
         }
 
@@ -59,7 +59,7 @@ pub fn check_field(fcx: &FnCtxt,
                                  expr,
                                  base,
                                  field,
-                                 expr_ty,
+                                 base_ty,
                                  tps.as_slice()) {
                 Ok(Some(_)) => {
                     fcx.type_error_message(
@@ -68,7 +68,7 @@ pub fn check_field(fcx: &FnCtxt,
                             format!("attempted to take value of method `{}` on type \
                                  `{}`", token::get_name(field), actual)
                         },
-                        expr_ty,
+                        base_ty,
                         None);
 
                     tcx.sess.span_note(expr.span,
@@ -86,7 +86,7 @@ pub fn check_field(fcx: &FnCtxt,
                                     token::get_name(field),
                                     actual)
                         },
-                        expr_ty,
+                        base_ty,
                         None);
                 }
 

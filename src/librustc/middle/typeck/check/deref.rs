@@ -361,12 +361,12 @@ pub fn record_autoderefs(fcx: &FnCtxt,
             OverloadedDeref(box pointer_xform_ty,
                             trait_def_id,
                             origin) => {
-                let n = helper(fcx, expr, pointer_xform_ty) + 1;
+                let n = helper(fcx, expr, pointer_xform_ty);
                 let method_call = MethodCall::autoderef(expr.id, n);
                 record_overloaded_deref(fcx, expr.span, method_call,
                                         trait_def_id, origin);
 
-                n
+                n + 1
             }
         }
     }
