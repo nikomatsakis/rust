@@ -85,7 +85,7 @@ pub fn search_methods_from_traits(fcx: &FnCtxt,
         trait_test.report_no_applicable_traits(self_ty);
         Err(ErrorReported)
     } else {
-        match deref::autoderef_loop(fcx, call_span, self_ty, &mut trait_test) {
+        match deref::method_autoderef_loop(fcx, call_span, self_ty, &mut trait_test) {
             deref::FoundMatch(xform_ty, TraitResult { selection, .. }) => {
                 Ok(Some(MethodInfo { xform_ty: xform_ty,
                                      selection: selection }))
