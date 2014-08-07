@@ -15,6 +15,7 @@ use middle::traits;
 use middle::traits::{Obligation, Vtable};
 use middle::ty;
 use middle::typeck::MethodCall;
+use middle::typeck::infer;
 use std::rc::Rc;
 use syntax::ast;
 use syntax::codemap::Span;
@@ -227,12 +228,14 @@ pub fn method_autoderef_loop<R,T:Test<R>>(fcx: &FnCtxt,
 
     // Special "autoslice" behavior for vectors (to *some extent*, this
     // will go away with DST):
-    // - `&mut [referent_ty]` -> `&[referent_ty]`
+    // - `&'a mut [referent_ty]` -> `&'b [referent_ty]`
     match ty::get(xform_ty.ty).sty {
-        ty::ty_rptr(r, ty::mt { ty: referent_ty, mutbl: ast::MutMutable }) => {
+        ty::ty_rptr(r_b, ty::mt { ty: referent_ty, mutbl: ast::MutMutable }) => {
             match ty::get(referent_ty).sty {
                 ty::ty_vec(ty::mt { ty: element_ty, .. }, _) => {
-                    let new_xform = Slice(r, box xform_ty);
+                    let r_a = fcx.infcx().next_region_var(infer::Autoref(span));
+                    fcx.mk_subr(true, infer::Reborrow(span), r_a, r_b);
+                    let new_xform = Slice(r_a, box xform_ty);
                     let slice_ty =
                         ty::mk_vec(fcx.tcx(),
                                    ty::mt { ty: element_ty,
@@ -240,7 +243,7 @@ pub fn method_autoderef_loop<R,T:Test<R>>(fcx: &FnCtxt,
                                    None);
                     let new_ty =
                         ty::mk_rptr(fcx.tcx(),
-                                    r,
+                                    r_a,
                                     ty::mt { ty: slice_ty,
                                              mutbl: ast::MutImmutable });
                     let new_xform_ty =

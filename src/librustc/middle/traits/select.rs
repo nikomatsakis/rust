@@ -248,8 +248,12 @@ impl<'cx> SelectionContext<'cx> {
 
                 try!(self.assemble_candidates_from_caller_bounds(obligation,
                                                                  &mut candidates));
-                try!(self.assemble_candidates_from_impls(obligation,
-                                                         &mut candidates));
+
+                // If there is a fn bound that applies, forego the 
+                if candidates.len() == 0 {
+                    try!(self.assemble_candidates_from_impls(obligation,
+                                                             &mut candidates));
+                }
             }
         }
 

@@ -602,7 +602,7 @@ impl<'a> TypeFolder for SubstFolder<'a> {
                                 let span = self.span.unwrap_or(DUMMY_SP);
                                 self.tcx().sess.span_bug(
                                     span,
-                                    format!("Type parameter out of range \
+                                    format!("Region parameter out of range \
                                      when substituting in region {} (root type={}) \
                                      (space={}, index={})",
                                     region_name.as_str(),
