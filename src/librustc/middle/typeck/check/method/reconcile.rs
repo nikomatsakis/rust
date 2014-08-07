@@ -22,7 +22,7 @@ use middle::typeck::check::{deref, FnCtxt};
 use middle::typeck::check::regionmanip::replace_late_bound_regions_in_fn_sig;
 use middle::typeck::check::deref::{TransformedSelfType, RootType,
                                    BuiltinDeref, OverloadedDeref,
-                                   Slice};
+                                   Slice, ObjectDeref};
 use middle::typeck::infer;
 use std::rc::Rc;
 use syntax::ast;
@@ -117,7 +117,9 @@ pub fn reconcile_receiver(fcx: &FnCtxt,
                 return Err(ErrorReported);
             }
 
-            BuiltinDeref(box t) | OverloadedDeref(box t, _, _) => {
+            ObjectDeref(box t) |
+            BuiltinDeref(box t) |
+            OverloadedDeref(box t, _, _) => {
                 xform_ty = t;
             }
         }

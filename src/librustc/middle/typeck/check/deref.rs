@@ -46,6 +46,7 @@ pub enum Transformation {
                     /* deref trait def-id */ ast::DefId,
                     /* impl for deref trait */ Vtable<Obligation>),
     BuiltinDeref(Box<TransformedSelfType>),
+    ObjectDeref(Box<TransformedSelfType>),
     Slice(ty::Region, /* base type */ Box<TransformedSelfType>),
 }
 
@@ -226,6 +227,30 @@ pub fn method_autoderef_loop<R,T:Test<R>>(fcx: &FnCtxt,
 
     debug!("found no match: {}", xform_ty.repr(fcx.tcx()));
 
+    // Special hacky behavior for trait objects, kind of simulating DST.
+    match ty::get(xform_ty.ty).sty {
+        ty::ty_uniq(referent_ty) |
+        ty::ty_rptr(_, ty::mt { ty: referent_ty, .. }) => {
+            match ty::get(referent_ty).sty {
+                ty::ty_trait(..) => {
+                    let new_xform = ObjectDeref(box xform_ty);
+                    let new_xform_ty =
+                        TransformedSelfType { ty: referent_ty,
+                                              xform: new_xform };
+                    debug!("method_autoderef_loop: {}",
+                           new_xform_ty.repr(fcx.tcx()));
+                    return match test.test(referent_ty) {
+                        Ok(Some(data)) => FoundMatch(new_xform_ty, data),
+                        Ok(None) => FoundNoMatch(new_xform_ty),
+                        Err(ErrorReported) => FoundReportedError,
+                    };
+                }
+                _ => {}
+            }
+        }
+        _ => {}
+    }
+
     // Special "autoslice" behavior for vectors (to *some extent*, this
     // will go away with DST):
     // - `&'a mut [referent_ty]` -> `&'b [referent_ty]`
@@ -251,23 +276,23 @@ pub fn method_autoderef_loop<R,T:Test<R>>(fcx: &FnCtxt,
                                               xform: new_xform };
                     debug!("method_autoderef_loop: {}",
                            new_xform_ty.repr(fcx.tcx()));
-                    match test.test(new_ty) {
+                    return match test.test(new_ty) {
                         Ok(Some(data)) => FoundMatch(new_xform_ty, data),
                         Ok(None) => FoundNoMatch(new_xform_ty),
                         Err(ErrorReported) => FoundReportedError,
-                    }
+                    };
                 }
 
                 _ => {
-                    FoundNoMatch(xform_ty)
                 }
             }
         }
 
         _ => {
-            FoundNoMatch(xform_ty)
         }
     }
+
+    FoundNoMatch(xform_ty)
 }
 
 pub fn root_type(t: ty::t) -> TransformedSelfType {
@@ -410,6 +435,19 @@ pub fn record_autoderefs(fcx: &FnCtxt,
                 }
             }
 
+            ObjectDeref(..) => {
+                // Until DST lands in its full glory, the only real
+                // combination that can arise here is an autoref
+                // paired with an ObjectDeref. We take the combination
+                // of that and call it an AutoObject. Post DST, this
+                // whole "ObjectDeref" category won't be needed at
+                // all.
+                match autoptr {
+                    Some((r, m)) => Some(ty::AutoBorrowObj(r, m)),
+                    None => None,
+                }
+            }
+
             _ => {
                 match autoptr {
                     Some((r, m)) => Some(ty::AutoPtr(r, m)),
@@ -448,7 +486,17 @@ pub fn record_autoderefs(fcx: &FnCtxt,
                 n + 1
             }
 
+            ObjectDeref(box pointer_xform_ty) => {
+                // ObjectDerefs are always paired with an AutoRef into
+                // an AutoBorrowObj, and they do not therefore count
+                // as part of the "autoderef count".
+                do_autoderef(fcx, expr, pointer_xform_ty)
+            }
+
             Slice(_, box slice_xform_ty) => {
+                // Similar to ObjectDerefs, a slice always comes at the end
+                // and is integrated into the autoref portion, just ignore
+                // for purpose of counting derefs.
                 do_autoderef(fcx, expr, slice_xform_ty)
             }
         }
@@ -535,6 +583,22 @@ pub fn make_mutable(fcx: &FnCtxt,
         }
         TransformedSelfType {
             ty: referent_ty,
+            xform: ObjectDeref(box base_xform_ty) } =>
+        {
+            match try!(make_mutable(fcx, span, base_xform_ty)) {
+                Some(mut_base_xform_ty) => {
+                    Some(TransformedSelfType {
+                        ty: referent_ty,
+                        xform: ObjectDeref(box mut_base_xform_ty) })
+                }
+
+                None => {
+                    None
+                }
+            }
+        }
+        TransformedSelfType {
+            ty: referent_ty,
             xform: Slice(r, box base_xform_ty) } =>
         {
             match try!(make_mutable(fcx, span, base_xform_ty)) {
@@ -571,6 +635,9 @@ impl Repr for Transformation {
             }
             BuiltinDeref(ref a) => {
                 format!("BuiltinDeref({})", a.repr(tcx))
+            }
+            ObjectDeref(ref a) => {
+                format!("ObjectDeref({})", a.repr(tcx))
             }
             Slice(ref a, ref b) => {
                 format!("Slice({},{})", a.repr(tcx), b.repr(tcx))

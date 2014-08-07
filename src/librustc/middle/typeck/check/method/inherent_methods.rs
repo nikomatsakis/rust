@@ -203,6 +203,9 @@ impl<'a> InherentTest<'a> {
                 // Test for an obligation like T : Bar
                 let caller_bound = &caller_obligation.trait_ref;
                 let caller_self_ty = caller_bound.substs.self_ty().unwrap();
+                debug!("caller_obligation={}",
+                       caller_obligation.repr(self.tcx()));
+
                 match ty::get(caller_self_ty).sty {
                     ty::ty_param(ref caller_param_ty) => {
                         if param_ty != caller_param_ty {

@@ -103,7 +103,8 @@ impl<T: 'static> AnyPrivate for T {
     fn get_type_id(&self) -> TypeId { TypeId::of::<T>() }
 }
 
-impl<T: 'static + AnyPrivate> Any for T {}
+impl<T: 'static> Any for T {
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Extension methods for Any trait objects.
