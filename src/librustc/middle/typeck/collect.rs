@@ -1087,18 +1087,22 @@ fn add_unsized_bound(ccx: &CrateCtxt,
 
 fn ty_generics(ccx: &CrateCtxt,
                space: subst::ParamSpace,
-               lifetimes: &Vec<ast::LifetimeDef>,
-               types: &OwnedSlice<ast::TyParam>,
+               lifetime_defs: &[ast::LifetimeDef],
+               types: &[ast::TyParam],
                base_generics: ty::Generics)
                -> ty::Generics
 {
     let mut result = base_generics;
 
-    for (i, l) in lifetimes.iter().enumerate() {
+    for (i, l) in lifetime_defs.iter().enumerate() {
+        let bounds = l.bounds.iter()
+                             .map(|l| ast_region_to_region(ccx.tcx, l))
+                             .collect();
         let def = ty::RegionParameterDef { name: l.lifetime.name,
                                            space: space,
                                            index: i,
-                                           def_id: local_def(l.lifetime.id) };
+                                           def_id: local_def(l.lifetime.id),
+                                           bounds: bounds };
         debug!("ty_generics: def for region param: {}", def);
         result.regions.push(space, def);
     }
