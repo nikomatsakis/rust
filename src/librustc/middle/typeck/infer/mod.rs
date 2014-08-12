@@ -367,6 +367,18 @@ pub fn mk_subr(cx: &InferCtxt,
     cx.region_vars.commit(snapshot);
 }
 
+pub fn verify_param_bound(cx: &InferCtxt,
+                          origin: SubregionOrigin,
+                          param_ty: ty::ParamTy,
+                          a: ty::Region,
+                          bs: Vec<ty::Region>) {
+    debug!("verify_param_bound({}, {} <: {})",
+           param_ty.repr(cx.tcx),
+           a.repr(cx.tcx),
+           bs.repr(cx.tcx));
+
+    cx.region_vars.verify_param_bound(origin, param_ty, a, bs);
+}
 pub fn mk_eqty(cx: &InferCtxt,
                a_is_expected: bool,
                origin: TypeOrigin,
@@ -609,6 +621,13 @@ impl<'a> InferCtxt<'a> {
         let r = f();
         self.rollback_to(snapshot);
         r
+    }
+
+    pub fn add_given(&self,
+                     sub: ty::FreeRegion,
+                     sup: ty::RegionVid)
+    {
+        self.region_vars.add_given(sub, sup);
     }
 }
 
