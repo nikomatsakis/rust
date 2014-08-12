@@ -1001,7 +1001,7 @@ impl<'a> write_tag_and_id for Encoder<'a> {
     }
 }
 
-struct SideTableEncodingIdVisitor<'a,'b> {
+struct SideTableEncodingIdVisitor<'a,'b:'a> {
     ecx_ptr: *const libc::c_void,
     new_rbml_w: &'a mut Encoder<'b>,
 }
