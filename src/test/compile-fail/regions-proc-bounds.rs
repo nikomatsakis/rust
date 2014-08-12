@@ -8,18 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn is_send<T: Send>() {}
-fn is_freeze<T: Sync>() {}
 fn is_static<T: 'static>() {}
 
-fn main() {
-    is_send::<proc()>();
-    //~^ ERROR: instantiating a type parameter with an incompatible type
+fn foo<'a>() {
+    is_static::<proc():'a>();
+    //~^ ERROR does not fulfill required lifetime
 
-    is_freeze::<proc()>();
-    //~^ ERROR: instantiating a type parameter with an incompatible type
-
-    is_static::<proc()>();
-    //~^ ERROR: instantiating a type parameter with an incompatible type
+    is_static::<proc():'static>();
 }
 
+fn main() { }

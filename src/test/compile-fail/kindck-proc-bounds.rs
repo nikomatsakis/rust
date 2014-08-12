@@ -8,19 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn main() {
-    let mut x = Some(1);
-    let mut p: proc(&mut Option<int>) = proc(_) {};
-    match x {
-        Some(ref y) => {
-            p = proc(z: &mut Option<int>) {
-                *z = None;
-                let _ = y;
-                //~^ ERROR cannot capture variable of type `&int`, which does not fulfill `'static`
-            };
-        }
-        None => {}
-    }
-    p(&mut x);
+fn is_send<T: Send>() {}
+fn is_freeze<T: Sync>() {}
+
+fn foo<'a>() {
+    is_send::<proc()>();
+    //~^ ERROR: instantiating a type parameter with an incompatible type
+
+    is_freeze::<proc()>();
+    //~^ ERROR: instantiating a type parameter with an incompatible type
 }
 
+fn main() { }
