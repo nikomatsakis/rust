@@ -24,10 +24,8 @@ use middle::ty::{ty_uniq, ty_trait, ty_int, ty_uint, ty_infer};
 use middle::ty::{ty_unboxed_closure};
 use middle::ty;
 use middle::typeck;
+use middle::typeck::check::regionmanip;
 use middle::typeck::infer;
-use middle::typeck::infer::unify;
-use VV = middle::typeck::infer::unify::VarValue;
-use middle::typeck::infer::region_inference;
 
 use std::rc::Rc;
 use std::gc::Gc;
@@ -159,7 +157,7 @@ pub fn explain_region_and_span(cx: &ctxt, region: ty::Region)
     };
 
     fn explain_span(cx: &ctxt, heading: &str, span: Span)
-        -> (String, Option<Span>) {
+                    -> (String, Option<Span>) {
         let lo = cx.sess.codemap().lookup_char_pos_adj(span.lo);
         (format!("the {} at {}:{}", heading, lo.line, lo.col.to_uint()),
          Some(span))
@@ -289,7 +287,7 @@ pub fn ty_to_string(cx: &ctxt, typ: t) -> String {
             _ => { }
         }
 
-        push_sig_to_string(cx, &mut s, '(', ')', sig);
+        push_sig_to_string(cx, &mut s, '(', ')', sig, "");
 
         s
     }
@@ -312,34 +310,34 @@ pub fn ty_to_string(cx: &ctxt, typ: t) -> String {
             }
         };
 
+        let bounds_str = cty.bounds.user_string(cx);
+
         match cty.store {
             ty::UniqTraitStore => {
                 assert_eq!(cty.onceness, ast::Once);
                 s.push_str("proc");
-                push_sig_to_string(cx, &mut s, '(', ')', &cty.sig);
+                push_sig_to_string(cx, &mut s, '(', ')', &cty.sig,
+                                   bounds_str.as_slice());
             }
             ty::RegionTraitStore(..) => {
                 match cty.onceness {
                     ast::Many => {}
                     ast::Once => s.push_str("once ")
                 }
-                push_sig_to_string(cx, &mut s, '|', '|', &cty.sig);
+                push_sig_to_string(cx, &mut s, '|', '|', &cty.sig,
+                                   bounds_str.as_slice());
             }
         }
 
-        if !cty.bounds.is_empty() {
-            s.push_str(":");
-            s.push_str(cty.bounds.repr(cx).as_slice());
-        }
-
-        s
+        s.into_owned()
     }
 
     fn push_sig_to_string(cx: &ctxt,
                        s: &mut String,
                        bra: char,
                        ket: char,
-                       sig: &ty::FnSig) {
+                       sig: &ty::FnSig,
+                       bounds: &str) {
         s.push_char(bra);
         let strs: Vec<String> = sig.inputs.iter().map(|a| fn_input_to_string(cx, *a)).collect();
         s.push_str(strs.connect(", ").as_slice());
@@ -347,6 +345,11 @@ pub fn ty_to_string(cx: &ctxt, typ: t) -> String {
             s.push_str(", ...");
         }
         s.push_char(ket);
+
+        if !bounds.is_empty() {
+            s.push_str(":");
+            s.push_str(bounds);
+        }
 
         if ty::get(sig.output).sty != ty_nil {
             s.push_str(" -> ");
@@ -398,18 +401,8 @@ pub fn ty_to_string(cx: &ctxt, typ: t) -> String {
       }
       ty_infer(infer_ty) => infer_ty.to_string(),
       ty_err => "[type error]".to_string(),
-      ty_param(ParamTy {idx: id, def_id: did, ..}) => {
-          let ident = match cx.ty_param_defs.borrow().find(&did.node) {
-              Some(def) => token::get_ident(def.ident).get().to_string(),
-              // This can only happen when a type mismatch error happens and
-              // the actual type has more type parameters than the expected one.
-              None => format!("<generic #{}>", id),
-          };
-          if !cx.sess.verbose() {
-              ident
-          } else {
-              format!("{}:{:?}", ident, did)
-          }
+      ty_param(ref param_ty) => {
+          param_ty.repr(cx)
       }
       ty_enum(did, ref substs) | ty_struct(did, ref substs) => {
           let base = ty::item_path_str(cx, did);
@@ -423,8 +416,8 @@ pub fn ty_to_string(cx: &ctxt, typ: t) -> String {
           let trait_def = ty::lookup_trait_def(cx, did);
           let ty = parameterized(cx, base.as_slice(),
                                  substs, &trait_def.generics);
-          let bound_sep = if bounds.is_empty() { "" } else { ":" };
-          let bound_str = bounds.repr(cx);
+          let bound_str = bounds.user_string(cx);
+          let bound_sep = if bound_str.is_empty() { "" } else { "+" };
           format!("{}{}{}",
                   ty,
                   bound_sep,
@@ -588,6 +581,14 @@ impl<T:Repr> Repr for Vec<T> {
     }
 }
 
+impl<T:UserString> UserString for Vec<T> {
+    fn user_string(&self, tcx: &ctxt) -> String {
+        let strs: Vec<String> =
+            self.iter().map(|t| t.user_string(tcx)).collect();
+        strs.connect(", ")
+    }
+}
+
 impl Repr for def::Def {
     fn repr(&self, _tcx: &ctxt) -> String {
         format!("{:?}", *self)
@@ -596,16 +597,18 @@ impl Repr for def::Def {
 
 impl Repr for ty::TypeParameterDef {
     fn repr(&self, tcx: &ctxt) -> String {
-        format!("TypeParameterDef({:?}, {})", self.def_id,
+        format!("TypeParameterDef({}, {})",
+                self.def_id.repr(tcx),
                 self.bounds.repr(tcx))
     }
 }
 
 impl Repr for ty::RegionParameterDef {
-    fn repr(&self, _tcx: &ctxt) -> String {
-        format!("RegionParameterDef({}, {:?})",
+    fn repr(&self, tcx: &ctxt) -> String {
+        format!("RegionParameterDef(name={}, def_id={}, bounds={})",
                 token::get_name(self.name),
-                self.def_id)
+                self.def_id.repr(tcx),
+                self.bounds.repr(tcx))
     }
 }
 
@@ -653,18 +656,31 @@ impl Repr for subst::RegionSubsts {
     }
 }
 
+impl Repr for ty::BuiltinBounds {
+    fn repr(&self, _tcx: &ctxt) -> String {
+        let mut res = Vec::new();
+        for b in self.iter() {
+            res.push(match b {
+                ty::BoundSend => "Send".to_owned(),
+                ty::BoundSized => "Sized".to_owned(),
+                ty::BoundCopy => "Copy".to_owned(),
+                ty::BoundSync => "Sync".to_owned(),
+            });
+        }
+        res.connect("+")
+    }
+}
+
+impl Repr for ty::ExistentialBounds {
+    fn repr(&self, tcx: &ctxt) -> String {
+        self.user_string(tcx)
+    }
+}
+
 impl Repr for ty::ParamBounds {
     fn repr(&self, tcx: &ctxt) -> String {
         let mut res = Vec::new();
-        for b in self.builtin_bounds.iter() {
-            res.push(match b {
-                ty::BoundStatic => "'static".to_string(),
-                ty::BoundSend => "Send".to_string(),
-                ty::BoundSized => "Sized".to_string(),
-                ty::BoundCopy => "Copy".to_string(),
-                ty::BoundSync => "Sync".to_string(),
-            });
-        }
+        res.push(self.builtin_bounds.repr(tcx));
         for t in self.trait_bounds.iter() {
             res.push(t.repr(tcx));
         }
@@ -675,6 +691,15 @@ impl Repr for ty::ParamBounds {
 impl Repr for ty::TraitRef {
     fn repr(&self, tcx: &ctxt) -> String {
         trait_ref_to_string(tcx, self)
+    }
+}
+
+impl Repr for ty::TraitDef {
+    fn repr(&self, tcx: &ctxt) -> String {
+        format!("TraitDef(generics={}, bounds={}, trait_ref={})",
+                self.generics.repr(tcx),
+                self.bounds.repr(tcx),
+                self.trait_ref.repr(tcx))
     }
 }
 
@@ -690,9 +715,21 @@ impl Repr for ast::Path {
     }
 }
 
+impl UserString for ast::Path {
+    fn user_string(&self, _tcx: &ctxt) -> String {
+        pprust::path_to_string(self)
+    }
+}
+
 impl Repr for ast::Item {
     fn repr(&self, tcx: &ctxt) -> String {
         format!("item({})", tcx.map.node_to_string(self.id))
+    }
+}
+
+impl Repr for ast::Lifetime {
+    fn repr(&self, _tcx: &ctxt) -> String {
+        format!("lifetime({}: {})", self.id, pprust::lifetime_to_string(self))
     }
 }
 
@@ -739,11 +776,7 @@ impl Repr for ty::Region {
                         bound_region.repr(tcx))
             }
 
-            ty::ReFree(ref fr) => {
-                format!("ReFree({}, {})",
-                        fr.scope_id,
-                        fr.bound_region.repr(tcx))
-            }
+            ty::ReFree(ref fr) => fr.repr(tcx),
 
             ty::ReScope(id) => {
                 format!("ReScope({})", id)
@@ -765,6 +798,20 @@ impl Repr for ty::Region {
                 "ReEmpty".to_string()
             }
         }
+    }
+}
+
+impl UserString for ty::Region {
+    fn user_string(&self, tcx: &ctxt) -> String {
+        region_to_string(tcx, "", false, *self)
+    }
+}
+
+impl Repr for ty::FreeRegion {
+    fn repr(&self, tcx: &ctxt) -> String {
+        format!("ReFree({}, {})",
+                self.scope_id,
+                self.bound_region.repr(tcx))
     }
 }
 
@@ -844,6 +891,12 @@ impl Repr for ty::Method {
 
 impl Repr for ast::Name {
     fn repr(&self, _tcx: &ctxt) -> String {
+        token::get_name(*self).get().to_string()
+    }
+}
+
+impl UserString for ast::Name {
+    fn user_string(&self, _tcx: &ctxt) -> String {
         token::get_name(*self).get().to_string()
     }
 }
@@ -943,18 +996,11 @@ impl Repr for ty::BuiltinBound {
 impl UserString for ty::BuiltinBound {
     fn user_string(&self, _tcx: &ctxt) -> String {
         match *self {
-            ty::BoundStatic => "'static".to_string(),
-            ty::BoundSend => "Send".to_string(),
-            ty::BoundSized => "Sized".to_string(),
-            ty::BoundCopy => "Copy".to_string(),
-            ty::BoundSync => "Sync".to_string(),
+            ty::BoundSend => "Send".to_owned(),
+            ty::BoundSized => "Sized".to_owned(),
+            ty::BoundCopy => "Copy".to_owned(),
+            ty::BoundSync => "Sync".to_owned(),
         }
-    }
-}
-
-impl Repr for ty::BuiltinBounds {
-    fn repr(&self, tcx: &ctxt) -> String {
-        self.user_string(tcx)
     }
 }
 
@@ -968,6 +1014,43 @@ impl<A:UserString> UserString for Rc<A> {
     fn user_string(&self, tcx: &ctxt) -> String {
         let this: &A = &**self;
         this.user_string(tcx)
+    }
+}
+
+impl UserString for ty::ParamBounds {
+    fn user_string(&self, tcx: &ctxt) -> String {
+        let mut result = Vec::new();
+        let s = self.builtin_bounds.user_string(tcx);
+        if !s.is_empty() {
+            result.push(s);
+        }
+        for n in self.trait_bounds.iter() {
+            result.push(n.user_string(tcx));
+        }
+        result.connect("+")
+    }
+}
+
+impl UserString for ty::ExistentialBounds {
+    fn user_string(&self, tcx: &ctxt) -> String {
+        if self.builtin_bounds.contains_elem(ty::BoundSend) &&
+            self.region_bound == ty::ReStatic
+        { // Region bound is implied by builtin bounds:
+            return self.builtin_bounds.repr(tcx);
+        }
+
+        let mut res = Vec::new();
+
+        let region_str = self.region_bound.user_string(tcx);
+        if !region_str.is_empty() {
+            res.push(region_str);
+        }
+
+        for bound in self.builtin_bounds.iter() {
+            res.push(bound.user_string(tcx));
+        }
+
+        res.connect("+")
     }
 }
 
@@ -1098,33 +1181,55 @@ impl<T:Repr> Repr for infer::Bounds<T> {
     }
 }
 
-impl<K:Repr,V:Repr> Repr for VV<K,V> {
-    fn repr(&self, tcx: &ctxt) -> String {
-        match *self {
-            unify::Redirect(ref k) =>
-                format!("Redirect({})", k.repr(tcx)),
-            unify::Root(ref v, r) =>
-                format!("Root({}, {})", v.repr(tcx), r)
-        }
-    }
-}
-
-impl Repr for region_inference::VarValue {
-    fn repr(&self, tcx: &ctxt) -> String {
-        match *self {
-            infer::region_inference::NoValue =>
-                format!("NoValue"),
-            infer::region_inference::Value(r) =>
-                format!("Value({})", r.repr(tcx)),
-            infer::region_inference::ErrorValue =>
-                format!("ErrorValue"),
-        }
-    }
-}
-
 impl Repr for ty::ExplicitSelfCategory {
     fn repr(&self, _: &ctxt) -> String {
         explicit_self_category_to_str(self).to_string()
     }
 }
 
+
+impl Repr for regionmanip::WfConstraint {
+    fn repr(&self, tcx: &ctxt) -> String {
+        match *self {
+            regionmanip::RegionSubRegionConstraint(_, r_a, r_b) => {
+                format!("RegionSubRegionConstraint({}, {})",
+                        r_a.repr(tcx),
+                        r_b.repr(tcx))
+            }
+
+            regionmanip::RegionSubParamConstraint(_, r, p) => {
+                format!("RegionSubParamConstraint({}, {})",
+                        r.repr(tcx),
+                        p.repr(tcx))
+            }
+        }
+    }
+}
+
+impl UserString for ParamTy {
+    fn user_string(&self, tcx: &ctxt) -> String {
+        let id = self.idx;
+        let did = self.def_id;
+        let ident = match tcx.ty_param_defs.borrow().find(&did.node) {
+            Some(def) => token::get_ident(def.ident).get().to_string(),
+
+            // This can only happen when a type mismatch error happens and
+            // the actual type has more type parameters than the expected one.
+            None => format!("<generic #{}>", id),
+        };
+        ident
+    }
+}
+
+impl Repr for ParamTy {
+    fn repr(&self, tcx: &ctxt) -> String {
+        self.user_string(tcx)
+    }
+}
+
+impl<A:Repr,B:Repr> Repr for (A,B) {
+    fn repr(&self, tcx: &ctxt) -> String {
+        let &(ref a, ref b) = self;
+        format!("({},{})", a.repr(tcx), b.repr(tcx))
+    }
+}
