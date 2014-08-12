@@ -1560,6 +1560,10 @@ impl<'a> FnCtxt<'a> {
 }
 
 impl<'a> RegionScope for infer::InferCtxt<'a> {
+    fn default_region_bound(&self, span: Span) -> Option<ty::Region> {
+        Some(self.next_region_var(infer::MiscVariable(span)))
+    }
+
     fn anon_regions(&self, span: Span, count: uint)
                     -> Result<Vec<ty::Region> , ()> {
         Ok(Vec::from_fn(count, |_| {
