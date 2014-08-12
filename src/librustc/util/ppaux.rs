@@ -66,6 +66,22 @@ pub fn note_and_explain_region(cx: &ctxt,
     }
 }
 
+fn item_scope_tag(item: &ast::Item) -> &'static str {
+    /*!
+     * When a free region is associated with `item`, how should we describe
+     * the item in the error message.
+     */
+
+    match item.node {
+        ast::ItemImpl(..) => "impl",
+        ast::ItemStruct(..) => "struct",
+        ast::ItemEnum(..) => "enum",
+        ast::ItemTrait(..) => "trait",
+        ast::ItemFn(..) => "function body",
+        _ => "item"
+    }
+}
+
 pub fn explain_region_and_span(cx: &ctxt, region: ty::Region)
                             -> (String, Option<Span>) {
     return match region {
@@ -87,9 +103,9 @@ pub fn explain_region_and_span(cx: &ctxt, region: ty::Region)
           Some(ast_map::NodeStmt(stmt)) => {
               explain_span(cx, "statement", stmt.span)
           }
-          Some(ast_map::NodeItem(it)) if (match it.node {
-                ast::ItemFn(..) => true, _ => false}) => {
-              explain_span(cx, "function body", it.span)
+          Some(ast_map::NodeItem(it)) => {
+              let tag = item_scope_tag(&*it);
+              explain_span(cx, tag, it.span)
           }
           Some(_) | None => {
             // this really should not happen
@@ -112,17 +128,17 @@ pub fn explain_region_and_span(cx: &ctxt, region: ty::Region)
 
         match cx.map.find(fr.scope_id) {
           Some(ast_map::NodeBlock(ref blk)) => {
-            let (msg, opt_span) = explain_span(cx, "block", blk.span);
-            (format!("{} {}", prefix, msg), opt_span)
+              let (msg, opt_span) = explain_span(cx, "block", blk.span);
+              (format!("{} {}", prefix, msg), opt_span)
           }
-          Some(ast_map::NodeItem(it)) if match it.node {
-                ast::ItemImpl(..) => true, _ => false} => {
-            let (msg, opt_span) = explain_span(cx, "impl", it.span);
-            (format!("{} {}", prefix, msg), opt_span)
+          Some(ast_map::NodeItem(it)) => {
+              let tag = item_scope_tag(&*it);
+              let (msg, opt_span) = explain_span(cx, tag, it.span);
+              (format!("{} {}", prefix, msg), opt_span)
           }
           Some(_) | None => {
-            // this really should not happen
-            (format!("{} node {}", prefix, fr.scope_id), None)
+              // this really should not happen
+              (format!("{} node {}", prefix, fr.scope_id), None)
           }
         }
       }
