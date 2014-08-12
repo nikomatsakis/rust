@@ -446,8 +446,9 @@ impl<'f> Coerce<'f> {
                          trait_def_id: ast::DefId,
                          trait_substs: &subst::Substs,
                          trait_store: ty::TraitStore,
-                         bounds: ty::BuiltinBounds) -> CoerceResult {
-
+                         bounds: ty::ExistentialBounds)
+                         -> CoerceResult
+    {
         debug!("coerce_object(a={}, sty_a={:?}, b={})",
                a.repr(self.get_ref().infcx.tcx), sty_a,
                b.repr(self.get_ref().infcx.tcx));
