@@ -35,7 +35,7 @@ pub struct CleanupScope<'a> {
     kind: CleanupScopeKind<'a>,
 
     // Cleanups to run upon scope exit.
-    cleanups: Vec<Box<Cleanup>>,
+    cleanups: Vec<CleanupObj>,
 
     cached_early_exits: Vec<CachedEarlyExit>,
     cached_landing_pad: Option<BasicBlockRef>,
@@ -72,6 +72,8 @@ pub trait Cleanup {
     fn clean_on_unwind(&self) -> bool;
     fn trans<'a>(&self, bcx: &'a Block<'a>) -> &'a Block<'a>;
 }
+
+pub type CleanupObj = Box<Cleanup+'static>;
 
 pub enum ScopeId {
     AstScope(ast::NodeId),
@@ -238,7 +240,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
                cleanup_scope,
                self.ccx.tn.val_to_string(val));
 
-        self.schedule_clean(cleanup_scope, drop as Box<Cleanup>);
+        self.schedule_clean(cleanup_scope, drop as CleanupObj);
     }
 
     fn schedule_drop_mem(&self,
@@ -264,7 +266,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
                self.ccx.tn.val_to_string(val),
                ty.repr(self.ccx.tcx()));
 
-        self.schedule_clean(cleanup_scope, drop as Box<Cleanup>);
+        self.schedule_clean(cleanup_scope, drop as CleanupObj);
     }
 
     fn schedule_drop_and_zero_mem(&self,
@@ -291,7 +293,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
                ty.repr(self.ccx.tcx()),
                true);
 
-        self.schedule_clean(cleanup_scope, drop as Box<Cleanup>);
+        self.schedule_clean(cleanup_scope, drop as CleanupObj);
     }
 
     fn schedule_drop_immediate(&self,
@@ -316,7 +318,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
                self.ccx.tn.val_to_string(val),
                ty.repr(self.ccx.tcx()));
 
-        self.schedule_clean(cleanup_scope, drop as Box<Cleanup>);
+        self.schedule_clean(cleanup_scope, drop as CleanupObj);
     }
 
     fn schedule_free_value(&self,
@@ -336,12 +338,12 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
                self.ccx.tn.val_to_string(val),
                heap);
 
-        self.schedule_clean(cleanup_scope, drop as Box<Cleanup>);
+        self.schedule_clean(cleanup_scope, drop as CleanupObj);
     }
 
     fn schedule_clean(&self,
                       cleanup_scope: ScopeId,
-                      cleanup: Box<Cleanup>) {
+                      cleanup: CleanupObj) {
         match cleanup_scope {
             AstScope(id) => self.schedule_clean_in_ast_scope(id, cleanup),
             CustomScope(id) => self.schedule_clean_in_custom_scope(id, cleanup),
@@ -350,7 +352,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
 
     fn schedule_clean_in_ast_scope(&self,
                                    cleanup_scope: ast::NodeId,
-                                   cleanup: Box<Cleanup>) {
+                                   cleanup: CleanupObj) {
         /*!
          * Schedules a cleanup to occur upon exit from `cleanup_scope`.
          * If `cleanup_scope` is not provided, then the cleanup is scheduled
@@ -378,7 +380,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
 
     fn schedule_clean_in_custom_scope(&self,
                                       custom_scope: CustomScopeIndex,
-                                      cleanup: Box<Cleanup>) {
+                                      cleanup: CleanupObj) {
         /*!
          * Schedules a cleanup to occur in the top-most scope,
          * which must be a temporary scope.
@@ -1021,13 +1023,13 @@ pub trait CleanupMethods<'a> {
                            content_ty: ty::t);
     fn schedule_clean(&self,
                       cleanup_scope: ScopeId,
-                      cleanup: Box<Cleanup>);
+                      cleanup: CleanupObj);
     fn schedule_clean_in_ast_scope(&self,
                                    cleanup_scope: ast::NodeId,
-                                   cleanup: Box<Cleanup>);
+                                   cleanup: CleanupObj);
     fn schedule_clean_in_custom_scope(&self,
                                     custom_scope: CustomScopeIndex,
-                                    cleanup: Box<Cleanup>);
+                                    cleanup: CleanupObj);
     fn needs_invoke(&self) -> bool;
     fn get_landing_pad(&'a self) -> BasicBlockRef;
 }

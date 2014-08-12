@@ -119,12 +119,12 @@ impl Buffer for NullReader {
 
 /// A `Writer` which multiplexes writes to a set of `Writers`.
 pub struct MultiWriter {
-    writers: Vec<Box<Writer>>
+    writers: Vec<Box<Writer+'static>>
 }
 
 impl MultiWriter {
     /// Creates a new `MultiWriter`
-    pub fn new(writers: Vec<Box<Writer>>) -> MultiWriter {
+    pub fn new(writers: Vec<Box<Writer+'static>>) -> MultiWriter {
         MultiWriter { writers: writers }
     }
 }
