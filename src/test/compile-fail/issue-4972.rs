@@ -12,7 +12,7 @@
 trait MyTrait { }
 
 pub enum TraitWrapper {
-    A(Box<MyTrait>),
+    A(Box<MyTrait+'static>),
 }
 
 fn get_tw_map(tw: &TraitWrapper) -> &MyTrait {
