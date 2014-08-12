@@ -5439,3 +5439,11 @@ pub fn check_intrinsic_type(ccx: &CrateCtxt, it: &ast::ForeignItem) {
     }
 }
 
+impl Repr for RegionObligation {
+    fn repr(&self, tcx: &ty::ctxt) -> String {
+        format!("RegionObligation(sub_region={}, sup_type={}, origin={})",
+                self.sub_region.repr(tcx),
+                self.sup_type.repr(tcx),
+                self.origin.repr(tcx))
+    }
+}
