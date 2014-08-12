@@ -1299,6 +1299,11 @@ impl<'a> LookupContext<'a> {
             }
         }
 
+        self.fcx.add_region_obligations_for_parameters(
+            self.span,
+            &all_substs,
+            &candidate.method_ty.generics);
+
         MethodCallee {
             origin: candidate.origin,
             ty: fty,
