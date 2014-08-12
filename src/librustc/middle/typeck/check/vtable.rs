@@ -689,20 +689,6 @@ pub fn early_resolve_expr(ex: &ast::Expr, fcx: &FnCtxt, is_early: bool) {
                           r.push(subst::SelfSpace, vtables);
                           insert_vtables(fcx, key, r);
                       }
-
-                      // Now, if this is &trait, we need to link the
-                      // regions.
-                      match (&ty::get(src_ty).sty, &ty::get(target_ty).sty) {
-                          (&ty::ty_rptr(ra, _), &ty::ty_rptr(rb, _)) => {
-                              debug!("nrc - make subr");
-                              infer::mk_subr(fcx.infcx(),
-                                             false,
-                                             infer::RelateObjectBound(ex.span),
-                                             rb,
-                                             ra);
-                          }
-                          _ => {}
-                      }
                   }
                   _ => {}
               }
