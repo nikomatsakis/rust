@@ -25,7 +25,6 @@ use middle::ty;
 use syntax::ast;
 use util::ppaux::Repr;
 
-
 pub struct CleanupScope<'a> {
     // The id of this cleanup scope. If the id is None,
     // this is a *temporary scope* that is pushed during trans to
