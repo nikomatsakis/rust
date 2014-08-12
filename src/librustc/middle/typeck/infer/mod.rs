@@ -378,6 +378,20 @@ pub fn verify_param_bound(cx: &InferCtxt,
 
     cx.region_vars.verify_param_bound(origin, param_ty, a, bs);
 }
+
+pub fn glb_regions(cx: &InferCtxt,
+                   origin: SubregionOrigin,
+                   a: ty::Region,
+                   b: ty::Region)
+                   -> ty::Region
+{
+    debug!("glb_regions({},{})",
+           a.repr(cx.tcx),
+           b.repr(cx.tcx));
+
+    cx.region_vars.glb_regions(origin, a, b)
+}
+
 pub fn mk_eqty(cx: &InferCtxt,
                a_is_expected: bool,
                origin: TypeOrigin,
