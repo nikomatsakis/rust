@@ -727,14 +727,13 @@ impl<'a> InferCtxt<'a> {
     }
 
     pub fn resolve_type_vars_in_trait_ref_if_possible(&self,
-                                                      trait_ref:
-                                                      &ty::TraitRef)
+                                                      trait_ref: &ty::TraitRef)
                                                       -> ty::TraitRef {
         // make up a dummy type just to reuse/abuse the resolve machinery
         let dummy0 = ty::mk_trait(self.tcx,
                                   trait_ref.def_id,
                                   trait_ref.substs.clone(),
-                                  ty::empty_builtin_bounds());
+                                  ty::region_existential_bound(ty::ReStatic));
         let dummy1 = self.resolve_type_vars_if_possible(dummy0);
         match ty::get(dummy1).sty {
             ty::ty_trait(box ty::TyTrait { ref def_id, ref substs, .. }) => {
