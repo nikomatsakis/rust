@@ -95,7 +95,7 @@ fn lookup_vtables(vcx: &VtableContext,
     let result = type_param_defs.map_rev(|def| {
         let ty = *substs.types.get(def.space, def.index);
         lookup_vtables_for_param(vcx, span, Some(substs),
-                                 &*def.bounds, ty, is_early)
+                                 &def.bounds, ty, is_early)
     });
 
     debug!("lookup_vtables result(\
@@ -554,7 +554,7 @@ fn fixup_substs(vcx: &VtableContext,
     // use a dummy type just to package up the substs that need fixing up
     let t = ty::mk_trait(tcx,
                          id, substs,
-                         ty::empty_builtin_bounds());
+                         ty::region_existential_bound(ty::ReStatic));
     fixup_ty(vcx, span, t, is_early).map(|t_f| {
         match ty::get(t_f).sty {
           ty::ty_trait(ref inner) => inner.substs.clone(),
@@ -641,7 +641,10 @@ pub fn early_resolve_expr(ex: &ast::Expr, fcx: &FnCtxt, is_early: bool) {
           (&ty::ty_rptr(_, ty::mt{ty, ..}), &ty::ty_rptr(..)) => {
               match ty::get(ty).sty {
                   ty::ty_trait(box ty::TyTrait {
-                      def_id: target_def_id, substs: ref target_substs, ..
+                      def_id: target_def_id,
+                      substs: ref target_substs,
+                      bounds: ref bounds,
+                      ..
                   }) => {
                       debug!("nrc correct path");
                       let typ = match &ty::get(src_ty).sty {
@@ -669,7 +672,8 @@ pub fn early_resolve_expr(ex: &ast::Expr, fcx: &FnCtxt, is_early: bool) {
                       });
 
                       let param_bounds = ty::ParamBounds {
-                          builtin_bounds: ty::empty_builtin_bounds(),
+                          opt_region_bound: Some(bounds.region_bound),
+                          builtin_bounds: bounds.builtin_bounds,
                           trait_bounds: vec!(target_trait_ref)
                       };
                       let vtables =
