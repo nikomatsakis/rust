@@ -99,7 +99,6 @@ use middle::typeck::check::method::{CheckTraitsAndInherentMethods};
 use middle::typeck::check::method::{DontAutoderefReceiver};
 use middle::typeck::check::method::{IgnoreStaticMethods, ReportStaticMethods};
 use middle::typeck::check::regionmanip::replace_late_bound_regions_in_fn_sig;
-use middle::typeck::check::regionmanip::relate_free_regions;
 use middle::typeck::check::vtable::VtableContext;
 use middle::typeck::CrateCtxt;
 use middle::typeck::infer::{resolve_type, force_tvar};
@@ -4260,72 +4259,64 @@ fn check_block_with_expected(fcx: &FnCtxt,
         replace(&mut *fcx_ps, fn_style_state)
     };
 
-    fcx.with_region_lb(blk.id, || {
-        let mut warned = false;
-        let mut last_was_bot = false;
-        let mut any_bot = false;
-        let mut any_err = false;
-        for s in blk.stmts.iter() {
-            check_stmt(fcx, &**s);
-            let s_id = ast_util::stmt_id(&**s);
-            let s_ty = fcx.node_ty(s_id);
-            if last_was_bot && !warned && match s.node {
-                  ast::StmtDecl(decl, _) => {
-                      match decl.node {
-                          ast::DeclLocal(_) => true,
-                          _ => false,
-                      }
-                  }
-                  ast::StmtExpr(_, _) | ast::StmtSemi(_, _) => true,
-                  _ => false
-                } {
-                fcx.ccx
-                   .tcx
-                   .sess
-                   .add_lint(lint::builtin::UNREACHABLE_CODE,
-                             s_id,
-                             s.span,
-                             "unreachable statement".to_string());
-                warned = true;
+    let mut warned = false;
+    let mut last_was_bot = false;
+    let mut any_bot = false;
+    let mut any_err = false;
+    for s in blk.stmts.iter() {
+        check_stmt(fcx, &**s);
+        let s_id = ast_util::stmt_id(&**s);
+        let s_ty = fcx.node_ty(s_id);
+        if last_was_bot && !warned && match s.node {
+            ast::StmtDecl(decl, _) => {
+                match decl.node {
+                    ast::DeclLocal(_) => true,
+                    _ => false,
+                }
             }
-            if ty::type_is_bot(s_ty) {
-                last_was_bot = true;
-            }
-            any_bot = any_bot || ty::type_is_bot(s_ty);
-            any_err = any_err || ty::type_is_error(s_ty);
+            ast::StmtExpr(_, _) | ast::StmtSemi(_, _) => true,
+            _ => false
+        } {
+            fcx.ccx
+                .tcx
+                .sess
+                .add_lint(lint::builtin::UNREACHABLE_CODE,
+                          s_id,
+                          s.span,
+                          "unreachable statement".to_string());
+            warned = true;
         }
-        match blk.expr {
-            None => if any_err {
-                fcx.write_error(blk.id);
-            }
-            else if any_bot {
-                fcx.write_bot(blk.id);
-            }
-            else  {
-                fcx.write_nil(blk.id);
-            },
-          Some(e) => {
+        if ty::type_is_bot(s_ty) {
+            last_was_bot = true;
+        }
+        any_bot = any_bot || ty::type_is_bot(s_ty);
+        any_err = any_err || ty::type_is_error(s_ty);
+    }
+
+    let expr_ty = match blk.expr {
+        None => { ty::mk_nil() }
+        Some(e) => {
             if any_bot && !warned {
                 fcx.ccx
-                   .tcx
-                   .sess
-                   .add_lint(lint::builtin::UNREACHABLE_CODE,
-                             e.id,
-                             e.span,
-                             "unreachable expression".to_string());
+                    .tcx
+                    .sess
+                    .add_lint(lint::builtin::UNREACHABLE_CODE,
+                              e.id,
+                              e.span,
+                              "unreachable expression".to_string());
             }
             check_expr_with_expectation(fcx, &*e, expected);
-              let ety = fcx.expr_ty(&*e);
-              fcx.write_ty(blk.id, ety);
-              if any_err {
-                  fcx.write_error(blk.id);
-              }
-              else if any_bot {
-                  fcx.write_bot(blk.id);
-              }
-          }
-        };
-    });
+            fcx.expr_ty(&*e)
+        }
+    };
+
+    if any_err {
+        fcx.write_error(blk.id);
+    } else if any_bot {
+        fcx.write_bot(blk.id);
+    } else  {
+        fcx.write_ty(blk.id, expr_ty);
+    }
 
     *fcx.ps.borrow_mut() = prev;
 }
