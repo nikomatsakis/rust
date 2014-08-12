@@ -522,30 +522,42 @@ fn check_fn<'a>(
         ty::ReFree(ty::FreeRegion {scope_id: body.id, bound_region: br})
     });
 
-    relate_free_regions(tcx, &fn_sig);
-
     let arg_tys = fn_sig.inputs.as_slice();
     let ret_ty = fn_sig.output;
 
-    debug!("check_fn(arg_tys={}, ret_ty={})",
+    debug!("check_fn(arg_tys={}, ret_ty={}, fn_id={})",
            arg_tys.repr(tcx),
-           ret_ty.repr(tcx));
+           ret_ty.repr(tcx),
+           fn_id);
 
     // Create the function context.  This is either derived from scratch or,
     // in the case of function expressions, based on the outer context.
     let fcx = FnCtxt {
+        body_id: body.id,
         writeback_errors: Cell::new(false),
         err_count_on_creation: err_count_on_creation,
         ret_ty: ret_ty,
-        ps: RefCell::new(FnStyleState::function(fn_style, id)),
-        region_lb: Cell::new(body.id),
+        ps: RefCell::new(FnStyleState::function(fn_style, fn_style_id)),
         inh: inherited,
         ccx: ccx
     };
 
-    {
+    // Remember return type so that regionck can access it later.
+    let fn_sig_tys: Vec<ty::t> =
+        arg_tys.iter()
+        .chain([ret_ty].iter())
+        .map(|&ty| ty)
+        .collect();
+    debug!("fn-sig-map: fn_id={} fn_sig_tys={}",
+           fn_id,
+           fn_sig_tys.repr(tcx));
+    inherited.fn_sig_map
+        .borrow_mut()
+        .insert(fn_id, fn_sig_tys);
 
+    {
         let mut visit = GatherLocalsVisitor { fcx: &fcx, };
+
         // Add formal parameters.
         for (arg_ty, input) in arg_tys.iter().zip(decl.inputs.iter()) {
             // Create type variables for each argument.
@@ -1722,19 +1734,10 @@ impl<'a> FnCtxt<'a> {
     }
 
     pub fn mk_subr(&self,
-                   a_is_expected: bool,
                    origin: infer::SubregionOrigin,
                    sub: ty::Region,
                    sup: ty::Region) {
-        infer::mk_subr(self.infcx(), a_is_expected, origin, sub, sup)
-    }
-
-    pub fn with_region_lb<R>(&self, lb: ast::NodeId, f: || -> R) -> R {
-        let old_region_lb = self.region_lb.get();
-        self.region_lb.set(lb);
-        let v = f();
-        self.region_lb.set(old_region_lb);
-        v
+        infer::mk_subr(self.infcx(), origin, sub, sup)
     }
 
     pub fn type_error_message(&self,
@@ -2604,7 +2607,8 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                            lvalue_pref: LvaluePreference,
                            unifier: ||)
 {
-    debug!(">> typechecking");
+    debug!(">> typechecking: expr={} expected={}",
+           expr.repr(fcx.tcx()), expected.repr(fcx.tcx()));
 
     // A generic function for doing all of the checking for call expressions
     fn check_call(fcx: &FnCtxt,
@@ -5035,12 +5039,20 @@ pub fn ast_expr_vstore_to_ty(fcx: &FnCtxt,
         ast::ExprVstoreSlice | ast::ExprVstoreMutSlice => {
             match e.node {
                 ast::ExprLit(..) => {
-                    // string literals and *empty slices* live in static memory
+                    // string literals live in static memory
                     ty::mk_rptr(fcx.ccx.tcx, ty::ReStatic, mk_inner())
                 }
                 ast::ExprVec(ref elements) if elements.len() == 0 => {
-                    // string literals and *empty slices* live in static memory
-                    ty::mk_rptr(fcx.ccx.tcx, ty::ReStatic, mk_inner())
+                    // *empty slices* are just null pointers and can
+                    // have any lifetime.
+                    //
+                    // Note: we do not assign a lifetime of
+                    // static. This is because the resulting type
+                    // `&'static [T]` would require that T outlives
+                    // `'static`!
+                    let region = fcx.infcx().next_region_var(
+                        infer::AddrOfSlice(e.span));
+                    ty::mk_rptr(fcx.ccx.tcx, region, mk_inner())
                 }
                 ast::ExprRepeat(..) |
                 ast::ExprVec(..) => {
