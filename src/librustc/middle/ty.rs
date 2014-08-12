@@ -4379,6 +4379,61 @@ pub fn each_bound_trait_and_supertraits(tcx: &ctxt,
     return true;
 }
 
+pub fn required_region_bounds(tcx: &ctxt,
+                              region_bounds: &[ty::Region],
+                              builtin_bounds: BuiltinBounds,
+                              trait_bounds: &[Rc<TraitRef>])
+                              -> Vec<ty::Region>
+{
+    /*!
+     * Given a type which must meet the builtin bounds and trait
+     * bounds, returns a set of lifetimes which the type must outlive.
+     *
+     * Requires that trait definitions have been processed.
+     */
+
+    let mut all_bounds = Vec::new();
+
+    debug!("required_region_bounds(builtin_bounds={}, trait_bounds={})",
+           builtin_bounds.repr(tcx),
+           trait_bounds.repr(tcx));
+
+    all_bounds.push_all(region_bounds);
+
+    push_region_bounds([],
+                       builtin_bounds,
+                       &mut all_bounds);
+
+    debug!("from builtin bounds: all_bounds={}", all_bounds.repr(tcx));
+
+    each_bound_trait_and_supertraits(
+        tcx,
+        trait_bounds,
+        |trait_ref| {
+            let bounds = ty::bounds_for_trait_ref(tcx, &*trait_ref);
+            push_region_bounds(bounds.opt_region_bound.as_slice(),
+                               bounds.builtin_bounds,
+                               &mut all_bounds);
+            debug!("from {}: bounds={} all_bounds={}",
+                   trait_ref.repr(tcx),
+                   bounds.repr(tcx),
+                   all_bounds.repr(tcx));
+            true
+        });
+
+    return all_bounds;
+
+    fn push_region_bounds(region_bounds: &[ty::Region],
+                          builtin_bounds: ty::BuiltinBounds,
+                          all_bounds: &mut Vec<ty::Region>) {
+        all_bounds.push_all(region_bounds.as_slice());
+
+        if builtin_bounds.contains_elem(ty::BoundSend) {
+            all_bounds.push(ty::ReStatic);
+        }
+    }
+}
+
 pub fn get_tydesc_ty(tcx: &ctxt) -> Result<t, String> {
     tcx.lang_items.require(TyDescStructLangItem).map(|tydesc_lang_item| {
         tcx.intrinsic_defs.borrow().find_copy(&tydesc_lang_item)
