@@ -126,14 +126,14 @@ use middle::ty::{ReScope};
 use middle::ty;
 use middle::typeck::astconv::AstConv;
 use middle::typeck::check::FnCtxt;
-use middle::typeck::check::regionmanip::relate_nested_regions;
+use middle::typeck::check::regionmanip;
 use middle::typeck::infer::resolve_and_force_all_but_regions;
 use middle::typeck::infer::resolve_type;
 use middle::typeck::infer;
 use middle::typeck::MethodCall;
 use middle::pat_util;
 use util::nodemap::NodeMap;
-use util::ppaux::{ty_to_string, region_to_string, Repr};
+use util::ppaux::{ty_to_string, Repr};
 
 use syntax::ast;
 use syntax::codemap::Span;
@@ -142,6 +142,31 @@ use syntax::visit::Visitor;
 
 use std::cell::RefCell;
 use std::gc::Gc;
+
+///////////////////////////////////////////////////////////////////////////
+// PUBLIC ENTRY POINTS
+
+pub fn regionck_expr(fcx: &FnCtxt, e: &ast::Expr) {
+    let mut rcx = Rcx::new(fcx, e.id);
+    if fcx.err_count_since_creation() == 0 {
+        // regionck assumes typeck succeeded
+        rcx.visit_expr(e, ());
+        rcx.visit_region_obligations(e.id);
+    }
+    fcx.infcx().resolve_regions_and_report_errors();
+}
+
+pub fn regionck_fn(fcx: &FnCtxt, id: ast::NodeId, blk: &ast::Block) {
+    let mut rcx = Rcx::new(fcx, blk.id);
+    if fcx.err_count_since_creation() == 0 {
+        // regionck assumes typeck succeeded
+        rcx.visit_fn_body(id, blk);
+    }
+    fcx.infcx().resolve_regions_and_report_errors();
+}
+
+///////////////////////////////////////////////////////////////////////////
+// INTERNALS
 
 // If mem categorization results in an error, it's because the type
 // check failed (or will fail, when the error is uncovered and
@@ -290,26 +315,6 @@ impl<'fcx> mc::Typer for Rcx<'fcx> {
     fn upvar_borrow(&self, id: ty::UpvarId) -> ty::UpvarBorrow {
         self.fcx.inh.upvar_borrow_map.borrow().get_copy(&id)
     }
-}
-
-pub fn regionck_expr(fcx: &FnCtxt, e: &ast::Expr) {
-    let mut rcx = Rcx { fcx: fcx, repeating_scope: e.id };
-    let rcx = &mut rcx;
-    if fcx.err_count_since_creation() == 0 {
-        // regionck assumes typeck succeeded
-        rcx.visit_expr(e, ());
-    }
-    fcx.infcx().resolve_regions_and_report_errors();
-}
-
-pub fn regionck_fn(fcx: &FnCtxt, blk: &ast::Block) {
-    let mut rcx = Rcx { fcx: fcx, repeating_scope: blk.id };
-    let rcx = &mut rcx;
-    if fcx.err_count_since_creation() == 0 {
-        // regionck assumes typeck succeeded
-        rcx.visit_block(blk, ());
-    }
-    fcx.infcx().resolve_regions_and_report_errors();
 }
 
 impl<'a> Visitor<()> for Rcx<'a> {
