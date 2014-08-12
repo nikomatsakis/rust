@@ -53,7 +53,7 @@ pub trait IntoMaybeOwnedVector<'a,T> {
     fn into_maybe_owned(self) -> MaybeOwnedVector<'a,T>;
 }
 
-impl<'a,T> IntoMaybeOwnedVector<'a,T> for Vec<T> {
+impl<'a,T:'a> IntoMaybeOwnedVector<'a,T> for Vec<T> {
     #[inline]
     fn into_maybe_owned(self) -> MaybeOwnedVector<'a,T> { Growable(self) }
 }
