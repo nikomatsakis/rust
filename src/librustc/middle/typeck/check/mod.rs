@@ -3005,17 +3005,19 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                              expr: &ast::Expr,
                              decl: &ast::FnDecl,
                              body: ast::P<ast::Block>) {
-        // The `RegionTraitStore` is a lie, but we ignore it so it doesn't
-        // matter.
-        //
-        // FIXME(pcwalton): Refactor this API.
         let mut fn_ty = astconv::ty_of_closure(
             fcx,
             expr.id,
             ast::NormalFn,
             ast::Many,
-            ty::empty_builtin_bounds(),
+
+            // The `RegionTraitStore` and region_existential_bounds
+            // are lies, but we ignore them so it doesn't matter.
+            //
+            // FIXME(pcwalton): Refactor this API.
+            ty::region_existential_bound(ty::ReStatic),
             ty::RegionTraitStore(ty::ReStatic, ast::MutImmutable),
+
             decl,
             abi::RustCall,
             None);
@@ -3085,13 +3087,17 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                 }
                 _ => {
                     // Not an error! Means we're inferring the closure type
-                    let mut bounds = ty::empty_builtin_bounds();
-                    let onceness = match expr.node {
+                    let (bounds, onceness) = match expr.node {
                         ast::ExprProc(..) => {
-                            bounds.add(ty::BoundSend);
-                            ast::Once
+                            let mut bounds = ty::region_existential_bound(ty::ReStatic);
+                            bounds.builtin_bounds.add(ty::BoundSend); // FIXME
+                            (bounds, ast::Once)
                         }
-                        _ => ast::Many
+                        _ => {
+                            let region = fcx.infcx().next_region_var(
+                                infer::AddrOfRegion(expr.span));
+                            (ty::region_existential_bound(region), ast::Many)
+                        }
                     };
                     (None, onceness, bounds)
                 }
@@ -5233,11 +5239,13 @@ pub fn check_intrinsic_type(ccx: &CrateCtxt, it: &ast::ForeignItem) {
                   Ok(t) => t,
                   Err(s) => { tcx.sess.span_fatal(it.span, s.as_slice()); }
               };
-              let region = ty::ReLateBound(it.id, ty::BrAnon(0));
-              let visitor_object_ty = match ty::visitor_object_ty(tcx, region) {
-                  Ok((_, vot)) => vot,
-                  Err(s) => { tcx.sess.span_fatal(it.span, s.as_slice()); }
-              };
+              let region0 = ty::ReLateBound(it.id, ty::BrAnon(0));
+              let region1 = ty::ReLateBound(it.id, ty::BrAnon(1));
+              let visitor_object_ty =
+                    match ty::visitor_object_ty(tcx, region0, region1) {
+                        Ok((_, vot)) => vot,
+                        Err(s) => { tcx.sess.span_fatal(it.span, s.as_slice()); }
+                    };
 
               let td_ptr = ty::mk_ptr(ccx.tcx, ty::mt {
                   ty: tydesc_ty,
