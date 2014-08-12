@@ -80,7 +80,14 @@ pub trait DataFlowOperator : BitwiseOperator {
     fn initial_value(&self) -> bool;
 }
 
+#[cfg(stage0)]
 struct PropagationContext<'a, 'b, O> {
+    dfcx: &'a mut DataFlowContext<'b, O>,
+    changed: bool
+}
+
+#[cfg(not(stage0))]
+struct PropagationContext<'a, 'b:'a, O:'a> {
     dfcx: &'a mut DataFlowContext<'b, O>,
     changed: bool
 }

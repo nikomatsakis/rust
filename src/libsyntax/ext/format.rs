@@ -33,7 +33,7 @@ enum Position {
     Named(String),
 }
 
-struct Context<'a, 'b> {
+struct Context<'a, 'b:'a> {
     ecx: &'a mut ExtCtxt<'b>,
     fmtsp: Span,
 

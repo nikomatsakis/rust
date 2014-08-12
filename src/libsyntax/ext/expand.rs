@@ -899,7 +899,7 @@ fn expand_and_rename_fn_decl_and_block(fn_decl: &ast::FnDecl, block: Gc<ast::Blo
 }
 
 /// A tree-folder that performs macro expansion
-pub struct MacroExpander<'a, 'b> {
+pub struct MacroExpander<'a, 'b:'a> {
     pub cx: &'a mut ExtCtxt<'b>,
 }
 
