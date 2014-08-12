@@ -1619,9 +1619,13 @@ pub struct MoveItems<T> {
 
 impl<T> Iterator<T> for MoveItems<T> {
     #[inline]
-    fn next(&mut self) -> Option<T> {
+    fn next<'a>(&'a mut self) -> Option<T> {
         unsafe {
-            self.iter.next().map(|x| ptr::read(x))
+            // Unsafely transmute from Items<'static, T> to Items<'a,
+            // T> because otherwise the type checker requires that T
+            // be bounded by 'static.
+            let iter: &mut Items<'a, T> = mem::transmute(&mut self.iter);
+            iter.next().map(|x| ptr::read(x))
         }
     }
 
@@ -1633,9 +1637,13 @@ impl<T> Iterator<T> for MoveItems<T> {
 
 impl<T> DoubleEndedIterator<T> for MoveItems<T> {
     #[inline]
-    fn next_back(&mut self) -> Option<T> {
+    fn next_back<'a>(&'a mut self) -> Option<T> {
         unsafe {
-            self.iter.next_back().map(|x| ptr::read(x))
+            // Unsafely transmute from Items<'static, T> to Items<'a,
+            // T> because otherwise the type checker requires that T
+            // be bounded by 'static.
+            let iter: &mut Items<'a, T> = mem::transmute(&mut self.iter);
+            iter.next_back().map(|x| ptr::read(x))
         }
     }
 }
