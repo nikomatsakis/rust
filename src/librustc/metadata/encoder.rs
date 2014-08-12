@@ -1333,7 +1333,8 @@ fn encode_info_for_foreign_item(ecx: &EncodeContext,
         } else {
             encode_family(rbml_w, 'c');
         }
-        encode_type(ecx, rbml_w, node_id_to_type(ecx.tcx, nitem.id));
+        encode_bounds_and_type(rbml_w, ecx,
+                               &lookup_item_type(ecx.tcx,local_def(nitem.id)));
         encode_symbol(ecx, rbml_w, nitem.id);
         encode_name(rbml_w, nitem.ident.name);
       }
