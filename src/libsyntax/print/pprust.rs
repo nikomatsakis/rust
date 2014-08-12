@@ -58,15 +58,15 @@ pub struct State<'a> {
     literals: Option<Vec<comments::Literal> >,
     cur_cmnt_and_lit: CurrentCommentAndLiteral,
     boxes: Vec<pp::Breaks>,
-    ann: &'a PpAnn
+    ann: &'a PpAnn+'a
 }
 
-pub fn rust_printer(writer: Box<io::Writer>) -> State<'static> {
+pub fn rust_printer(writer: Box<io::Writer+'static>) -> State<'static> {
     static NO_ANN: NoAnn = NoAnn;
     rust_printer_annotated(writer, &NO_ANN)
 }
 
-pub fn rust_printer_annotated<'a>(writer: Box<io::Writer>,
+pub fn rust_printer_annotated<'a>(writer: Box<io::Writer+'static>,
                                   ann: &'a PpAnn) -> State<'a> {
     State {
         s: pp::mk_printer(writer, default_columns),
@@ -94,7 +94,7 @@ pub fn print_crate<'a>(cm: &'a CodeMap,
                        krate: &ast::Crate,
                        filename: String,
                        input: &mut io::Reader,
-                       out: Box<io::Writer>,
+                       out: Box<io::Writer+'static>,
                        ann: &'a PpAnn,
                        is_expanded: bool) -> IoResult<()> {
     let mut s = State::new_from_input(cm,
@@ -114,7 +114,7 @@ impl<'a> State<'a> {
                           span_diagnostic: &diagnostic::SpanHandler,
                           filename: String,
                           input: &mut io::Reader,
-                          out: Box<io::Writer>,
+                          out: Box<io::Writer+'static>,
                           ann: &'a PpAnn,
                           is_expanded: bool) -> State<'a> {
         let (cmnts, lits) = comments::gather_comments_and_literals(
@@ -134,7 +134,7 @@ impl<'a> State<'a> {
     }
 
     pub fn new(cm: &'a CodeMap,
-               out: Box<io::Writer>,
+               out: Box<io::Writer+'static>,
                ann: &'a PpAnn,
                comments: Option<Vec<comments::Comment>>,
                literals: Option<Vec<comments::Literal>>) -> State<'a> {
