@@ -347,7 +347,26 @@ impl<'a> Rcx<'a> {
         let len = self.region_param_pairs.len();
         self.relate_free_regions(fn_sig.as_slice(), body.id);
         self.visit_block(body, ());
+        self.visit_region_obligations(body.id);
         self.region_param_pairs.truncate(len);
+    }
+
+    fn visit_region_obligations(&mut self, node_id: ast::NodeId)
+    {
+        debug!("visit_region_obligations: node_id={}", node_id);
+        let region_obligations = self.fcx.inh.region_obligations.borrow();
+        match region_obligations.find(&node_id) {
+            None => { }
+            Some(vec) => {
+                for r_o in vec.iter() {
+                    debug!("visit_region_obligations: r_o={}",
+                           r_o.repr(self.tcx()));
+                    let sup_type = self.resolve_type(r_o.sup_type);
+                    type_must_outlive(self, r_o.origin.clone(),
+                                      sup_type, r_o.sub_region);
+                }
+            }
+        }
     }
 
     fn relate_free_regions(&mut self,
