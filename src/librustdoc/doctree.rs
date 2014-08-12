@@ -156,7 +156,7 @@ pub struct Trait {
     pub name: Ident,
     pub methods: Vec<ast::TraitMethod>, //should be TraitMethod
     pub generics: ast::Generics,
-    pub parents: Vec<ast::TraitRef>,
+    pub bounds: Vec<ast::TyParamBound>,
     pub attrs: Vec<ast::Attribute>,
     pub id: ast::NodeId,
     pub where: Span,
