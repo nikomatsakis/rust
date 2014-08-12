@@ -1041,6 +1041,12 @@ pub struct ParameterEnvironment {
 
     /// Bounds on the various type parameters
     pub bounds: VecPerParamSpace<ParamBounds>,
+
+    /// Each type parameter has an implicit region bound that
+    /// indicates it must outlive at least the function body (the user
+    /// may specify stronger requirements). This field indicates the
+    /// region of the callee.
+    pub implicit_region_bound: ty::Region,
 }
 
 /// A polytype.
@@ -4780,6 +4786,18 @@ pub fn construct_parameter_environment(
                               generics.types.get_slice(space));
     }
 
+    //
+    // Compute region bounds. For now, these relations are stored in a
+    // global table on the tcx, so just enter them there. I'm not
+    // crazy about this scheme, but it's convenient, at least.
+    //
+
+    for &space in subst::ParamSpace::all().iter() {
+        record_region_bounds_from_defs(tcx, space, &free_substs,
+                                       generics.regions.get_slice(space));
+    }
+
+
     debug!("construct_parameter_environment: free_id={} \
            free_subst={} \
            bounds={}",
@@ -4789,7 +4807,8 @@ pub fn construct_parameter_environment(
 
     return ty::ParameterEnvironment {
         free_substs: free_substs,
-        bounds: bounds
+        bounds: bounds,
+        implicit_region_bound: ty::ReScope(free_id),
     };
 
     fn push_region_params(regions: &mut VecPerParamSpace<ty::Region>,
@@ -4818,8 +4837,39 @@ pub fn construct_parameter_environment(
                              free_substs: &subst::Substs,
                              defs: &[TypeParameterDef]) {
         for def in defs.iter() {
-            let b = (*def.bounds).subst(tcx, free_substs);
+            let b = def.bounds.subst(tcx, free_substs);
             bounds.push(space, b);
+        }
+    }
+
+    fn record_region_bounds_from_defs(tcx: &ty::ctxt,
+                                      space: subst::ParamSpace,
+                                      free_substs: &subst::Substs,
+                                      defs: &[RegionParameterDef]) {
+        for (subst_region, def) in
+            free_substs.regions().get_slice(space).iter().zip(
+                defs.iter())
+        {
+            // For each region parameter 'subst...
+            let bounds = def.bounds.subst(tcx, free_substs);
+            for bound_region in bounds.iter() {
+                // Which is declared with a bound like 'subst:'bound...
+                match (subst_region, bound_region) {
+                    (&ty::ReFree(subst_fr), &ty::ReFree(bound_fr)) => {
+                        // Record that 'subst outlives 'bound. Or, put
+                        // another way, 'bound <= 'subst.
+                        tcx.region_maps.relate_free_regions(bound_fr, subst_fr);
+                    },
+                    _ => {
+                        // All named regions are instantiated with free regions.
+                        tcx.sess.bug(
+                            format!("push_region_bounds_from_defs: \
+                                     non free region: {} / {}",
+                                    subst_region.repr(tcx),
+                                    bound_region.repr(tcx)).as_slice());
+                    }
+                }
+            }
         }
     }
 }
