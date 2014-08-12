@@ -168,6 +168,21 @@ pub enum SubregionOrigin {
     // relating `'a` to `'b`
     RelateObjectBound(Span),
 
+    // When closing over a variable in a closure/proc, ensure that the
+    // type of the variable outlives the lifetime bound.
+    RelateProcBound(Span, ast::NodeId, ty::t),
+
+    // The given type parameter was instantiated with the given type,
+    // and that type must outlive some region.
+    RelateParamBound(Span, ty::ParamTy, ty::t),
+
+    // The given region parameter was instantiated with a region
+    // that must outlive some other region.
+    RelateRegionParamBound(Span),
+
+    //
+    RelateDefaultParamBound(Span, ty::t),
+
     // Creating a pointer `b` to contents of another reference
     Reborrow(Span),
 
@@ -176,6 +191,9 @@ pub enum SubregionOrigin {
 
     // (&'a &'b T) where a >= b
     ReferenceOutlivesReferent(ty::t, Span),
+
+    // The type T of an expression E must outlive the lifetime for E.
+    ExprTypeIsNotInScope(ty::t, Span),
 
     // A `ref b` whose region does not enclose the decl site
     BindingTypeIsNotValidAtDecl(Span),
@@ -194,6 +212,9 @@ pub enum SubregionOrigin {
 
     // An auto-borrow that does not enclose the expr where it occurs
     AutoBorrow(Span),
+
+    // Managed data cannot contain borrowed pointers.
+    Managed(Span),
 }
 
 /// Reasons to create a region inference variable
@@ -896,15 +917,21 @@ impl SubregionOrigin {
             FreeVariable(a, _) => a,
             IndexSlice(a) => a,
             RelateObjectBound(a) => a,
+            RelateProcBound(a, _, _) => a,
+            RelateParamBound(a, _, _) => a,
+            RelateRegionParamBound(a) => a,
+            RelateDefaultParamBound(a, _) => a,
             Reborrow(a) => a,
             ReborrowUpvar(a, _) => a,
             ReferenceOutlivesReferent(_, a) => a,
+            ExprTypeIsNotInScope(_, a) => a,
             BindingTypeIsNotValidAtDecl(a) => a,
             CallRcvr(a) => a,
             CallArg(a) => a,
             CallReturn(a) => a,
             AddrOf(a) => a,
             AutoBorrow(a) => a,
+            Managed(a) => a,
         }
     }
 }
@@ -933,12 +960,38 @@ impl Repr for SubregionOrigin {
             RelateObjectBound(a) => {
                 format!("RelateObjectBound({})", a.repr(tcx))
             }
+            RelateProcBound(a, b, c) => {
+                format!("RelateProcBound({},{},{})",
+                        a.repr(tcx),
+                        b,
+                        c.repr(tcx))
+            }
+            RelateParamBound(a, b, c) => {
+                format!("RelateParamBound({},{},{})",
+                        a.repr(tcx),
+                        b.repr(tcx),
+                        c.repr(tcx))
+            }
+            RelateRegionParamBound(a) => {
+                format!("RelateRegionParamBound({})",
+                        a.repr(tcx))
+            }
+            RelateDefaultParamBound(a, b) => {
+                format!("RelateDefaultParamBound({},{})",
+                        a.repr(tcx),
+                        b.repr(tcx))
+            }
             Reborrow(a) => format!("Reborrow({})", a.repr(tcx)),
             ReborrowUpvar(a, b) => {
                 format!("ReborrowUpvar({},{:?})", a.repr(tcx), b)
             }
             ReferenceOutlivesReferent(_, a) => {
                 format!("ReferenceOutlivesReferent({})", a.repr(tcx))
+            }
+            ExprTypeIsNotInScope(a, b) => {
+                format!("ExprTypeIsNotInScope({}, {})",
+                        a.repr(tcx),
+                        b.repr(tcx))
             }
             BindingTypeIsNotValidAtDecl(a) => {
                 format!("BindingTypeIsNotValidAtDecl({})", a.repr(tcx))
@@ -948,6 +1001,7 @@ impl Repr for SubregionOrigin {
             CallReturn(a) => format!("CallReturn({})", a.repr(tcx)),
             AddrOf(a) => format!("AddrOf({})", a.repr(tcx)),
             AutoBorrow(a) => format!("AutoBorrow({})", a.repr(tcx)),
+            Managed(a) => format!("Managed({})", a.repr(tcx)),
         }
     }
 }
