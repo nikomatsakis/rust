@@ -156,6 +156,21 @@ pub fn regionck_expr(fcx: &FnCtxt, e: &ast::Expr) {
     fcx.infcx().resolve_regions_and_report_errors();
 }
 
+pub fn regionck_type_defn(fcx: &FnCtxt,
+                          span: Span,
+                          component_tys: &[ty::t]) {
+    let mut rcx = Rcx::new(fcx, 0);
+    for &component_ty in component_tys.iter() {
+        // Check that each type outlives the empty region. Since the
+        // empty region is a subregion of all others, this can't fail
+        // unless the type does not meet the well-formedness
+        // requirements.
+        type_must_outlive(&mut rcx, infer::RelateRegionParamBound(span),
+                          component_ty, ty::ReEmpty);
+    }
+    fcx.infcx().resolve_regions_and_report_errors();
+}
+
 pub fn regionck_fn(fcx: &FnCtxt, id: ast::NodeId, blk: &ast::Block) {
     let mut rcx = Rcx::new(fcx, blk.id);
     if fcx.err_count_since_creation() == 0 {
