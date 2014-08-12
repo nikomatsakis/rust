@@ -42,47 +42,31 @@ use middle::ty::{Polytype};
 use middle::ty;
 use middle::ty_fold::TypeFolder;
 use middle::typeck::astconv::{AstConv, ty_of_arg};
-use middle::typeck::astconv::{ast_ty_to_ty};
+use middle::typeck::astconv::{ast_ty_to_ty, ast_region_to_region};
 use middle::typeck::astconv;
 use middle::typeck::infer;
 use middle::typeck::rscope::*;
 use middle::typeck::{CrateCtxt, lookup_def_tcx, no_params, write_ty_to_tcx};
 use middle::typeck;
 use util::ppaux;
-use util::ppaux::Repr;
+use util::ppaux::{Repr,UserString};
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::gc::Gc;
 
 use syntax::abi;
-use syntax::ast::{StaticRegionTyParamBound, OtherRegionTyParamBound};
-use syntax::ast::{TraitTyParamBound, UnboxedFnTyParamBound};
 use syntax::ast;
 use syntax::ast_map;
 use syntax::ast_util::{local_def, split_trait_methods, PostExpansionMethod};
 use syntax::codemap::Span;
-use syntax::codemap;
-use syntax::owned_slice::OwnedSlice;
-use syntax::parse::token::special_idents;
+use syntax::parse::token::{special_idents};
 use syntax::parse::token;
 use syntax::print::pprust::{path_to_string};
 use syntax::visit;
 
-struct CollectItemTypesVisitor<'a> {
-    ccx: &'a CrateCtxt<'a>
-}
-
-impl<'a> visit::Visitor<()> for CollectItemTypesVisitor<'a> {
-    fn visit_item(&mut self, i: &ast::Item, _: ()) {
-        convert(self.ccx, i);
-        visit::walk_item(self, i, ());
-    }
-    fn visit_foreign_item(&mut self, i: &ast::ForeignItem, _: ()) {
-        convert_foreign(self.ccx, i);
-        visit::walk_foreign_item(self, i, ());
-    }
-}
+///////////////////////////////////////////////////////////////////////////
+// Main entry point
 
 pub fn collect_item_types(ccx: &CrateCtxt, krate: &ast::Crate) {
     fn collect_intrinsic_type(ccx: &CrateCtxt,
@@ -99,9 +83,56 @@ pub fn collect_item_types(ccx: &CrateCtxt, krate: &ast::Crate) {
         Some(id) => { collect_intrinsic_type(ccx, id); } None => {}
     }
 
+    let mut visitor = CollectTraitDefVisitor{ ccx: ccx };
+    visit::walk_crate(&mut visitor, krate, ());
+
     let mut visitor = CollectItemTypesVisitor{ ccx: ccx };
     visit::walk_crate(&mut visitor, krate, ());
 }
+
+///////////////////////////////////////////////////////////////////////////
+// First phase: just collect *trait definitions* -- basically, the set
+// of type parameters and supertraits. This is information we need to
+// know later when parsing field defs.
+
+struct CollectTraitDefVisitor<'a> {
+    ccx: &'a CrateCtxt<'a>
+}
+
+impl<'a> visit::Visitor<()> for CollectTraitDefVisitor<'a> {
+    fn visit_item(&mut self, i: &ast::Item, _: ()) {
+        match i.node {
+            ast::ItemTrait(..) => {
+                // computing the trait def also fills in the table
+                let _ = trait_def_of_item(self.ccx, i);
+            }
+            _ => { }
+        }
+
+        visit::walk_item(self, i, ());
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Second phase: collection proper.
+
+struct CollectItemTypesVisitor<'a> {
+    ccx: &'a CrateCtxt<'a>
+}
+
+impl<'a> visit::Visitor<()> for CollectItemTypesVisitor<'a> {
+    fn visit_item(&mut self, i: &ast::Item, _: ()) {
+        convert(self.ccx, i);
+        visit::walk_item(self, i, ());
+    }
+    fn visit_foreign_item(&mut self, i: &ast::ForeignItem, _: ()) {
+        convert_foreign(self.ccx, i);
+        visit::walk_foreign_item(self, i, ());
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Utility types and common code for the above passes.
 
 pub trait ToTy {
     fn to_ty<RS:RegionScope>(&self, rs: &RS, ast_ty: &ast::Ty) -> ty::t;
@@ -193,9 +224,9 @@ pub fn get_enum_variant_types(ccx: &CrateCtxt,
     }
 }
 
-pub fn ensure_trait_methods(ccx: &CrateCtxt,
-                            trait_id: ast::NodeId,
-                            trait_def: &ty::TraitDef) {
+fn collect_trait_methods(ccx: &CrateCtxt,
+                         trait_id: ast::NodeId,
+                         trait_def: &ty::TraitDef) {
     let tcx = ccx.tcx;
     match tcx.map.get(trait_id) {
         ast_map::NodeItem(item) => {
@@ -537,7 +568,7 @@ pub fn convert(ccx: &CrateCtxt, it: &ast::Item) {
             // We need to do this *after* converting methods, since
             // convert_methods produces a tcache entry that is wrong for
             // static trait methods. This is somewhat unfortunate.
-            ensure_trait_methods(ccx, it.id, &*trait_def);
+            collect_trait_methods(ccx, it.id, &*trait_def);
         },
         ast::ItemStruct(struct_def, ref generics) => {
             ensure_no_ty_param_bounds(ccx, it.span, generics, "structure");
@@ -744,9 +775,9 @@ pub fn trait_def_of_item(ccx: &CrateCtxt, it: &ast::Item) -> Rc<ty::TraitDef> {
         _ => {}
     }
 
-    let (generics, unbound, supertraits) = match it.node {
-        ast::ItemTrait(ref generics, ref unbound, ref supertraits, _) => {
-            (generics, unbound, supertraits)
+    let (generics, unbound, bounds) = match it.node {
+        ast::ItemTrait(ref generics, ref unbound, ref bounds, _) => {
+            (generics, unbound, bounds)
         }
         ref s => {
             tcx.sess.span_bug(
@@ -762,13 +793,15 @@ pub fn trait_def_of_item(ccx: &CrateCtxt, it: &ast::Item) -> Rc<ty::TraitDef> {
                                             &substs,
                                             generics);
 
-    let builtin_bounds =
-        ensure_supertraits(ccx, it.id, it.span, supertraits, unbound);
+    let self_ty = ty::mk_self_type(ccx.tcx, def_id);
+
+    let bounds = compute_bounds(ccx, token::SELF_KEYWORD_NAME, self_ty,
+                                bounds.as_slice(), unbound, it.span);
 
     let substs = mk_item_substs(ccx, &ty_generics);
     let trait_def = Rc::new(ty::TraitDef {
         generics: ty_generics,
-        bounds: builtin_bounds,
+        bounds: bounds,
         trait_ref: Rc::new(ty::TraitRef {
             def_id: def_id,
             substs: substs
@@ -806,55 +839,6 @@ pub fn trait_def_of_item(ccx: &CrateCtxt, it: &ast::Item) -> Rc<ty::TraitDef> {
             ty::mk_param(ccx.tcx, subst::SelfSpace, 0, local_def(trait_id));
 
         subst::Substs::new_trait(types, regions, self_ty)
-    }
-
-    fn ensure_supertraits(ccx: &CrateCtxt,
-                          id: ast::NodeId,
-                          sp: codemap::Span,
-                          ast_trait_refs: &Vec<ast::TraitRef>,
-                          unbound: &Option<ast::TyParamBound>)
-                          -> ty::BuiltinBounds
-    {
-        let tcx = ccx.tcx;
-
-        // Called only the first time trait_def_of_item is called.
-        // Supertraits are ensured at the same time.
-        assert!(!tcx.supertraits.borrow().contains_key(&local_def(id)));
-
-        let self_ty = ty::mk_self_type(ccx.tcx, local_def(id));
-        let mut ty_trait_refs: Vec<Rc<ty::TraitRef>> = Vec::new();
-        let mut bounds = ty::empty_builtin_bounds();
-        for ast_trait_ref in ast_trait_refs.iter() {
-            let trait_def_id = ty::trait_ref_to_def_id(ccx.tcx, ast_trait_ref);
-
-            // FIXME(#8559): Need to instantiate the trait_ref whether
-            // or not it's a builtin trait, so that the trait's node
-            // id appears in the tcx trait_ref map. This is only
-            // needed for metadata; see the similar fixme in
-            // encoder.rs.
-
-            let trait_ref = instantiate_trait_ref(ccx, ast_trait_ref, self_ty);
-            if !ty::try_add_builtin_trait(ccx.tcx, trait_def_id, &mut bounds) {
-
-                // FIXME(#5527) Could have same trait multiple times
-                if ty_trait_refs.iter().any(
-                    |other_trait| other_trait.def_id == trait_ref.def_id)
-                {
-                    // This means a trait inherited from the same
-                    // supertrait more than once.
-                    span_err!(tcx.sess, sp, E0127,
-                              "duplicate supertrait in trait declaration");
-                    break;
-                } else {
-                    ty_trait_refs.push(trait_ref);
-                }
-            }
-        }
-
-        add_unsized_bound(ccx, unbound, &mut bounds, "trait", sp);
-        tcx.supertraits.borrow_mut().insert(local_def(id),
-                                            Rc::new(ty_trait_refs));
-        bounds
     }
 }
 

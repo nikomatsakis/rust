@@ -656,11 +656,7 @@ impl<'a, F: FoldOps> Folder for Ctx<'a, F> {
                     None => {}
                 }
             }
-            ItemTrait(_, _, ref traits, ref methods) => {
-                for t in traits.iter() {
-                    self.insert(t.ref_id, EntryItem(self.parent, i));
-                }
-
+            ItemTrait(_, _, _, ref methods) => {
                 for tm in methods.iter() {
                     match *tm {
                         Required(ref m) => {

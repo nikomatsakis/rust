@@ -12,7 +12,7 @@
 
 use abi;
 use ast::{BareFnTy, ClosureTy};
-use ast::{StaticRegionTyParamBound, OtherRegionTyParamBound, TraitTyParamBound};
+use ast::{RegionTyParamBound, TraitTyParamBound};
 use ast::{Provided, Public, FnStyle};
 use ast::{Mod, BiAdd, Arg, Arm, Attribute, BindByRef, BindByValue};
 use ast::{BiBitAnd, BiBitOr, BiBitXor, Block};
@@ -115,7 +115,7 @@ pub enum PathParsingMode {
 /// A path paired with optional type bounds.
 pub struct PathAndBounds {
     pub path: ast::Path,
-    pub bounds: Option<OwnedSlice<TyParamBound>>,
+    pub bounds: Option<ast::TyParamBounds>,
 }
 
 enum ItemOrViewItem {
@@ -1065,14 +1065,7 @@ impl<'a> Parser<'a> {
         };
 
         let (inputs, variadic) = self.parse_fn_args(false, false);
-        let bounds = {
-            if self.eat(&token::COLON) {
-                let (_, bounds) = self.parse_ty_param_bounds(false);
-                Some(bounds)
-            } else {
-                None
-            }
-        };
+        let bounds = self.parse_colon_then_ty_param_bounds();
         let (ret_style, ret_ty) = self.parse_ret_ty();
         let decl = P(FnDecl {
             inputs: inputs,
@@ -1140,14 +1133,7 @@ impl<'a> Parser<'a> {
             (is_unboxed, inputs)
         };
 
-        let (region, bounds) = {
-            if self.eat(&token::COLON) {
-                let (region, bounds) = self.parse_ty_param_bounds(true);
-                (region, Some(bounds))
-            } else {
-                (None, None)
-            }
-        };
+        let bounds = self.parse_colon_then_ty_param_bounds();
 
         let (return_style, output) = self.parse_ret_ty();
         let decl = P(FnDecl {
@@ -1168,7 +1154,7 @@ impl<'a> Parser<'a> {
                 bounds: bounds,
                 decl: decl,
                 lifetimes: lifetime_defs,
-            }, region)
+            })
         }
     }
 
@@ -1650,7 +1636,7 @@ impl<'a> Parser<'a> {
             Some(INTERPOLATED(token::NtPath(box path))) => {
                 return PathAndBounds {
                     path: path,
-                    bounds: None,
+                    bounds: None
                 }
             }
             _ => {}
@@ -1707,25 +1693,31 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // Next, parse a plus and bounded type parameters, if applicable.
-        let bounds = if mode == LifetimeAndTypesAndBounds {
-            let bounds = {
-                if self.eat(&token::BINOP(token::PLUS)) {
-                    let (_, bounds) = self.parse_ty_param_bounds(false);
-                    if bounds.len() == 0 {
-                        let last_span = self.last_span;
-                        self.span_err(last_span,
-                                      "at least one type parameter bound \
-                                       must be specified after the `+`");
-                    }
-                    Some(bounds)
-                } else {
-                    None
+        // Next, parse a plus and bounded type parameters, if
+        // applicable. We need to remember whether the separate was
+        // present for later, because in some contexts it's a parse
+        // error.
+        let opt_bounds = {
+            if mode == LifetimeAndTypesAndBounds &&
+                self.eat(&token::BINOP(token::PLUS))
+            {
+                let bounds = self.parse_ty_param_bounds();
+
+                // For some reason that I do not fully understand, we
+                // do not permit an empty list in the case where it is
+                // introduced by a `+`, but we do for `:` and other
+                // separators. -nmatsakis
+                if bounds.len() == 0 {
+                    let last_span = self.last_span;
+                    self.span_err(last_span,
+                                  "at least one type parameter bound \
+                                   must be specified");
                 }
-            };
-            bounds
-        } else {
-            None
+
+                Some(bounds)
+            } else {
+                None
+            }
         };
 
         // Assemble the span.
@@ -1738,7 +1730,7 @@ impl<'a> Parser<'a> {
                 global: is_global,
                 segments: segments,
             },
-            bounds: bounds,
+            bounds: opt_bounds,
         }
     }
 
@@ -3572,45 +3564,34 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// matches optbounds = ( ( : ( boundseq )? )? )
-    /// where   boundseq  = ( bound + boundseq ) | bound
-    /// and     bound     = 'static | ty
-    /// Returns "None" if there's no colon (e.g. "T");
-    /// Returns "Some(Empty)" if there's a colon but nothing after (e.g. "T:")
-    /// Returns "Some(stuff)" otherwise (e.g. "T:stuff").
-    /// NB: The None/Some distinction is important for issue #7264.
-    ///
-    /// Note that the `allow_any_lifetime` argument is a hack for now while the
-    /// AST doesn't support arbitrary lifetimes in bounds on type parameters. In
-    /// the future, this flag should be removed, and the return value of this
-    /// function should be Option<~[TyParamBound]>
-    fn parse_ty_param_bounds(&mut self, allow_any_lifetime: bool)
-                             -> (Option<ast::Lifetime>,
-                                 OwnedSlice<TyParamBound>) {
-        let mut ret_lifetime = None;
+    // Parses a sequence of bounds if a `:` is found,
+    // otherwise returns empty list.
+    fn parse_colon_then_ty_param_bounds(&mut self)
+                                        -> OwnedSlice<TyParamBound>
+    {
+        if !self.eat(&token::COLON) {
+            OwnedSlice::empty()
+        } else {
+            self.parse_ty_param_bounds()
+        }
+    }
+
+    // matches bounds    = ( boundseq )?
+    // where   boundseq  = ( bound + boundseq ) | bound
+    // and     bound     = 'region | ty
+    // NB: The None/Some distinction is important for issue #7264.
+    fn parse_ty_param_bounds(&mut self)
+                             -> OwnedSlice<TyParamBound>
+    {
         let mut result = vec!();
         loop {
             match self.token {
                 token::LIFETIME(lifetime) => {
-                    let lifetime_interned_string = token::get_ident(lifetime);
-                    if lifetime_interned_string.equiv(&("'static")) {
-                        result.push(StaticRegionTyParamBound);
-                        if allow_any_lifetime && ret_lifetime.is_none() {
-                            ret_lifetime = Some(ast::Lifetime {
-                                id: ast::DUMMY_NODE_ID,
-                                span: self.span,
-                                name: lifetime.name
-                            });
-                        }
-                    } else if allow_any_lifetime && ret_lifetime.is_none() {
-                        ret_lifetime = Some(ast::Lifetime {
-                            id: ast::DUMMY_NODE_ID,
-                            span: self.span,
-                            name: lifetime.name
-                        });
-                    } else {
-                        result.push(OtherRegionTyParamBound(self.span));
-                    }
+                    result.push(RegionTyParamBound(ast::Lifetime {
+                        id: ast::DUMMY_NODE_ID,
+                        span: self.span,
+                        name: lifetime.name
+                    }));
                     self.bump();
                 }
                 token::MOD_SEP | token::IDENT(..) => {
@@ -3630,7 +3611,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        return (ret_lifetime, OwnedSlice::from_vec(result));
+        return OwnedSlice::from_vec(result);
     }
 
     fn trait_ref_from_ident(ident: Ident, span: Span) -> ast::TraitRef {
@@ -3667,16 +3648,7 @@ impl<'a> Parser<'a> {
             ident = self.parse_ident();
         }
 
-        let opt_bounds = {
-            if self.eat(&token::COLON) {
-                let (_, bounds) = self.parse_ty_param_bounds(false);
-                Some(bounds)
-            } else {
-                None
-            }
-        };
-        // For typarams we don't care about the difference b/w "<T>" and "<T:>".
-        let bounds = opt_bounds.unwrap_or_default();
+        let bounds = self.parse_colon_then_ty_param_bounds();
 
         let default = if self.token == token::EQ {
             self.bump();
@@ -4190,17 +4162,11 @@ impl<'a> Parser<'a> {
         let tps = self.parse_generics();
         let sized = self.parse_for_sized();
 
-        // Parse traits, if necessary.
-        let traits;
-        if self.token == token::COLON {
-            self.bump();
-            traits = self.parse_trait_ref_list(&token::LBRACE);
-        } else {
-            traits = Vec::new();
-        }
+        // Parse supertrait bounds.
+        let bounds = self.parse_colon_then_ty_param_bounds();
 
         let meths = self.parse_trait_methods();
-        (ident, ItemTrait(tps, sized, traits, meths), None)
+        (ident, ItemTrait(tps, sized, bounds, meths), None)
     }
 
     /// Parses two variants (with the region/type params always optional):
@@ -4222,12 +4188,10 @@ impl<'a> Parser<'a> {
             // New-style trait. Reinterpret the type as a trait.
             let opt_trait_ref = match ty.node {
                 TyPath(ref path, None, node_id) => {
-                    Some(TraitRef {
-                        path: /* bad */ (*path).clone(),
-                        ref_id: node_id
-                    })
+                    Some(TraitRef { path: (*path).clone(),
+                                    ref_id: node_id })
                 }
-                TyPath(..) => {
+                TyPath(_, Some(_), _) => {
                     self.span_err(ty.span,
                                   "bounded traits are only valid in type position");
                     None
@@ -4264,15 +4228,6 @@ impl<'a> Parser<'a> {
             path: self.parse_path(LifetimeAndTypesWithoutColons).path,
             ref_id: ast::DUMMY_NODE_ID,
         }
-    }
-
-    /// Parse B + C<String,int> + D
-    fn parse_trait_ref_list(&mut self, ket: &token::Token) -> Vec<TraitRef> {
-        self.parse_seq_to_before_end(
-            ket,
-            seq_sep_trailing_disallowed(token::BINOP(token::PLUS)),
-            |p| p.parse_trait_ref()
-        )
     }
 
     /// Parse struct Foo { ... }

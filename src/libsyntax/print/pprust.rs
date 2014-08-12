@@ -9,8 +9,8 @@
 // except according to those terms.
 
 use abi;
-use ast::{P, StaticRegionTyParamBound, OtherRegionTyParamBound};
-use ast::{TraitTyParamBound, UnboxedFnTyParamBound, Required, Provided};
+use ast::{P, RegionTyParamBound, TraitTyParamBound,
+          UnboxedFnTyParamBound, Required, Provided};
 use ast;
 use ast_util;
 use owned_slice::OwnedSlice;
@@ -550,24 +550,22 @@ impl<'a> State<'a> {
                 };
                 try!(self.print_ty_fn(Some(f.abi),
                                       None,
-                                      &None,
                                       f.fn_style,
                                       ast::Many,
                                       &*f.decl,
                                       None,
-                                      &None,
+                                      &OwnedSlice::empty(),
                                       Some(&generics),
                                       None,
                                       false));
             }
-            ast::TyClosure(f, ref region) => {
+            ast::TyClosure(f) => {
                 let generics = ast::Generics {
                     lifetimes: f.lifetimes.clone(),
                     ty_params: OwnedSlice::empty()
                 };
                 try!(self.print_ty_fn(None,
                                       Some('&'),
-                                      region,
                                       f.fn_style,
                                       f.onceness,
                                       &*f.decl,
@@ -584,7 +582,6 @@ impl<'a> State<'a> {
                 };
                 try!(self.print_ty_fn(None,
                                       Some('~'),
-                                      &None,
                                       f.fn_style,
                                       f.onceness,
                                       &*f.decl,
@@ -597,12 +594,11 @@ impl<'a> State<'a> {
             ast::TyUnboxedFn(f) => {
                 try!(self.print_ty_fn(None,
                                       None,
-                                      &None,
                                       ast::NormalFn,
                                       ast::Many,
                                       &*f.decl,
                                       None,
-                                      &None,
+                                      &OwnedSlice::empty(),
                                       None,
                                       None,
                                       true));
@@ -776,7 +772,7 @@ impl<'a> State<'a> {
                 }
                 try!(self.bclose(item.span));
             }
-            ast::ItemTrait(ref generics, ref unbound, ref traits, ref methods) => {
+            ast::ItemTrait(ref generics, ref unbound, ref bounds, ref methods) => {
                 try!(self.head(visibility_qualified(item.vis,
                                                     "trait").as_slice()));
                 try!(self.print_ident(item.ident));
@@ -790,16 +786,7 @@ impl<'a> State<'a> {
                     }
                     _ => {}
                 }
-                if traits.len() != 0u {
-                    try!(word(&mut self.s, ":"));
-                    for (i, trait_) in traits.iter().enumerate() {
-                        try!(self.nbsp());
-                        if i != 0 {
-                            try!(self.word_space("+"));
-                        }
-                        try!(self.print_path(&trait_.path, false));
-                    }
-                }
+                try!(self.print_bounds("+", bounds));
                 try!(word(&mut self.s, " "));
                 try!(self.bopen());
                 for meth in methods.iter() {
@@ -1010,12 +997,11 @@ impl<'a> State<'a> {
         try!(self.print_outer_attributes(m.attrs.as_slice()));
         try!(self.print_ty_fn(None,
                               None,
-                              &None,
                               m.fn_style,
                               ast::Many,
                               &*m.decl,
                               Some(m.ident),
-                              &None,
+                              &OwnedSlice::empty(),
                               Some(&m.generics),
                               Some(m.explicit_self.node),
                               false));
@@ -1738,7 +1724,7 @@ impl<'a> State<'a> {
 
         match *opt_bounds {
             None => Ok(()),
-            Some(ref bounds) => self.print_bounds(&None, bounds, true, true),
+            Some(ref bounds) => self.print_bounds("+", bounds)
         }
     }
 
@@ -2049,30 +2035,12 @@ impl<'a> State<'a> {
     }
 
     pub fn print_bounds(&mut self,
-                        region: &Option<ast::Lifetime>,
-                        bounds: &OwnedSlice<ast::TyParamBound>,
-                        print_colon_anyway: bool,
-                        print_plus_before_bounds: bool)
+                        prefix: &str,
+                        bounds: &OwnedSlice<ast::TyParamBound>)
                         -> IoResult<()> {
-        let separator = if print_plus_before_bounds {
-            "+"
-        } else {
-            ":"
-        };
-        if !bounds.is_empty() || region.is_some() {
-            try!(word(&mut self.s, separator));
+        if !bounds.is_empty() {
+            try!(word(&mut self.s, prefix));
             let mut first = true;
-            match *region {
-                Some(ref lt) => {
-                    let token = token::get_name(lt.name);
-                    if token.get() != "'static" {
-                        try!(self.nbsp());
-                        first = false;
-                        try!(self.print_lifetime(lt));
-                    }
-                }
-                None => {}
-            }
             for bound in bounds.iter() {
                 try!(self.nbsp());
                 if first {
@@ -2082,27 +2050,27 @@ impl<'a> State<'a> {
                 }
 
                 try!(match *bound {
-                    TraitTyParamBound(ref tref) => self.print_trait_ref(tref),
-                    StaticRegionTyParamBound => word(&mut self.s, "'static"),
+                    TraitTyParamBound(ref tref) => {
+                        self.print_trait_ref(tref)
+                    }
+                    RegionTyParamBound(ref lt) => {
+                        self.print_lifetime(lt)
+                    }
                     UnboxedFnTyParamBound(ref unboxed_function_type) => {
                         self.print_ty_fn(None,
                                          None,
-                                         &None,
                                          ast::NormalFn,
                                          ast::Many,
                                          &*unboxed_function_type.decl,
                                          None,
-                                         &None,
+                                         &OwnedSlice::empty(),
                                          None,
                                          None,
                                          true)
                     }
-                    OtherRegionTyParamBound(_) => Ok(())
                 })
             }
             Ok(())
-        } else if print_colon_anyway {
-            word(&mut self.s, separator)
         } else {
             Ok(())
         }
@@ -2130,7 +2098,8 @@ impl<'a> State<'a> {
     }
 
     pub fn print_generics(&mut self,
-                          generics: &ast::Generics) -> IoResult<()> {
+                          generics: &ast::Generics)
+                          -> IoResult<()> {
         let total = generics.lifetimes.len() + generics.ty_params.len();
         if total > 0 {
             try!(word(&mut self.s, "<"));
@@ -2157,10 +2126,7 @@ impl<'a> State<'a> {
                             _ => {}
                         }
                         try!(s.print_ident(param.ident));
-                        try!(s.print_bounds(&None,
-                                            &param.bounds,
-                                            false,
-                                            false));
+                        try!(s.print_bounds(":", &param.bounds));
                         match param.default {
                             Some(ref default) => {
                                 try!(space(&mut s.s));
@@ -2305,12 +2271,11 @@ impl<'a> State<'a> {
     pub fn print_ty_fn(&mut self,
                        opt_abi: Option<abi::Abi>,
                        opt_sigil: Option<char>,
-                       opt_region: &Option<ast::Lifetime>,
                        fn_style: ast::FnStyle,
                        onceness: ast::Onceness,
                        decl: &ast::FnDecl,
                        id: Option<ast::Ident>,
-                       opt_bounds: &Option<OwnedSlice<ast::TyParamBound>>,
+                       bounds: &OwnedSlice<ast::TyParamBound>,
                        generics: Option<&ast::Generics>,
                        opt_explicit_self: Option<ast::ExplicitSelf_>,
                        is_unboxed: bool)
@@ -2368,9 +2333,7 @@ impl<'a> State<'a> {
             try!(self.pclose());
         }
 
-        opt_bounds.as_ref().map(|bounds| {
-            self.print_bounds(opt_region, bounds, true, false)
-        });
+        try!(self.print_bounds(":", bounds));
 
         try!(self.maybe_print_comment(decl.output.span.lo));
 

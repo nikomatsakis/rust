@@ -227,13 +227,18 @@ pub trait Folder {
         noop_fold_variant_arg(va, self)
     }
 
-    fn fold_ty_param_bound(&mut self, tpb: &TyParamBound) -> TyParamBound {
-        noop_fold_ty_param_bound(tpb, self)
-    }
-
     fn fold_opt_bounds(&mut self, b: &Option<OwnedSlice<TyParamBound>>)
                        -> Option<OwnedSlice<TyParamBound>> {
         noop_fold_opt_bounds(b, self)
+    }
+
+    fn fold_bounds(&mut self, b: &OwnedSlice<TyParamBound>)
+                       -> OwnedSlice<TyParamBound> {
+        noop_fold_bounds(b, self)
+    }
+
+    fn fold_ty_param_bound(&mut self, tpb: &TyParamBound) -> TyParamBound {
+        noop_fold_ty_param_bound(tpb, self)
     }
 
     fn fold_mt(&mut self, mt: &MutTy) -> MutTy {
@@ -339,20 +344,20 @@ pub fn noop_fold_ty<T: Folder>(t: P<Ty>, fld: &mut T) -> P<Ty> {
         TyRptr(ref region, ref mt) => {
             TyRptr(fld.fold_opt_lifetime(region), fld.fold_mt(mt))
         }
-        TyClosure(ref f, ref region) => {
+        TyClosure(ref f) => {
             TyClosure(box(GC) ClosureTy {
                 fn_style: f.fn_style,
                 onceness: f.onceness,
-                bounds: fld.fold_opt_bounds(&f.bounds),
+                bounds: fld.fold_bounds(&f.bounds),
                 decl: fld.fold_fn_decl(&*f.decl),
                 lifetimes: fld.fold_lifetime_defs(f.lifetimes.as_slice()),
-            }, fld.fold_opt_lifetime(region))
+            })
         }
         TyProc(ref f) => {
             TyProc(box(GC) ClosureTy {
                 fn_style: f.fn_style,
                 onceness: f.onceness,
-                bounds: fld.fold_opt_bounds(&f.bounds),
+                bounds: fld.fold_bounds(&f.bounds),
                 decl: fld.fold_fn_decl(&*f.decl),
                 lifetimes: fld.fold_lifetime_defs(f.lifetimes.as_slice()),
             })
@@ -637,13 +642,12 @@ pub fn noop_fold_ty_param_bound<T: Folder>(tpb: &TyParamBound, fld: &mut T)
                                            -> TyParamBound {
     match *tpb {
         TraitTyParamBound(ref ty) => TraitTyParamBound(fld.fold_trait_ref(ty)),
-        StaticRegionTyParamBound => StaticRegionTyParamBound,
+        RegionTyParamBound(ref lifetime) => RegionTyParamBound(fld.fold_lifetime(lifetime)),
         UnboxedFnTyParamBound(ref unboxed_function_type) => {
             UnboxedFnTyParamBound(UnboxedFnTy {
                 decl: fld.fold_fn_decl(&*unboxed_function_type.decl),
             })
         }
-        OtherRegionTyParamBound(s) => OtherRegionTyParamBound(s)
     }
 }
 
@@ -652,7 +656,7 @@ pub fn noop_fold_ty_param<T: Folder>(tp: &TyParam, fld: &mut T) -> TyParam {
     TyParam {
         ident: tp.ident,
         id: id,
-        bounds: tp.bounds.map(|x| fld.fold_ty_param_bound(x)),
+        bounds: fld.fold_bounds(&tp.bounds),
         unbound: tp.unbound.as_ref().map(|x| fld.fold_ty_param_bound(x)),
         default: tp.default.map(|x| fld.fold_ty(x)),
         span: tp.span
@@ -751,11 +755,12 @@ pub fn noop_fold_mt<T: Folder>(mt: &MutTy, folder: &mut T) -> MutTy {
 
 pub fn noop_fold_opt_bounds<T: Folder>(b: &Option<OwnedSlice<TyParamBound>>, folder: &mut T)
                               -> Option<OwnedSlice<TyParamBound>> {
-    b.as_ref().map(|bounds| {
-        bounds.map(|bound| {
-            folder.fold_ty_param_bound(bound)
-        })
-    })
+    b.as_ref().map(|bounds| folder.fold_bounds(bounds))
+}
+
+fn noop_fold_bounds<T: Folder>(bounds: &TyParamBounds, folder: &mut T)
+                          -> TyParamBounds {
+    bounds.map(|bound| folder.fold_ty_param_bound(bound))
 }
 
 pub fn noop_fold_variant_arg<T: Folder>(va: &VariantArg, folder: &mut T) -> VariantArg {
@@ -839,7 +844,8 @@ pub fn noop_fold_item_underscore<T: Folder>(i: &Item_, folder: &mut T) -> Item_ 
                      methods.iter().flat_map(|x| folder.fold_method(*x).move_iter()).collect()
             )
         }
-        ItemTrait(ref generics, ref unbound, ref traits, ref methods) => {
+        ItemTrait(ref generics, ref unbound, ref bounds, ref methods) => {
+            let bounds = folder.fold_bounds(bounds);
             let methods = methods.iter().flat_map(|method| {
                 let r = match *method {
                     Required(ref m) =>
@@ -859,7 +865,7 @@ pub fn noop_fold_item_underscore<T: Folder>(i: &Item_, folder: &mut T) -> Item_ 
             }).collect();
             ItemTrait(folder.fold_generics(generics),
                       unbound.clone(),
-                      traits.iter().map(|p| folder.fold_trait_ref(p)).collect(),
+                      bounds,
                       methods)
         }
         ItemMac(ref m) => ItemMac(folder.fold_mac(m)),

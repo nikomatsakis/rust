@@ -303,7 +303,6 @@ pub struct ctxt {
     pub lang_items: middle::lang_items::LanguageItems,
     /// A mapping of fake provided method def_ids to the default implementation
     pub provided_method_sources: RefCell<DefIdMap<ast::DefId>>,
-    pub supertraits: RefCell<DefIdMap<Rc<Vec<Rc<TraitRef>>>>>,
     pub superstructs: RefCell<DefIdMap<Option<ast::DefId>>>,
     pub struct_fields: RefCell<DefIdMap<Rc<Vec<field_ty>>>>,
 
@@ -1114,7 +1113,6 @@ pub fn mk_ctxt(s: Session,
         normalized_cache: RefCell::new(HashMap::new()),
         lang_items: lang_items,
         provided_method_sources: RefCell::new(DefIdMap::new()),
-        supertraits: RefCell::new(DefIdMap::new()),
         superstructs: RefCell::new(DefIdMap::new()),
         struct_fields: RefCell::new(DefIdMap::new()),
         destructor_for_type: RefCell::new(DefIdMap::new()),
@@ -3551,30 +3549,6 @@ pub fn provided_trait_methods(cx: &ctxt, id: ast::DefId) -> Vec<Rc<Method>> {
     }
 }
 
-pub fn trait_supertraits(cx: &ctxt, id: ast::DefId) -> Rc<Vec<Rc<TraitRef>>> {
-    // Check the cache.
-    match cx.supertraits.borrow().find(&id) {
-        Some(trait_refs) => { return trait_refs.clone(); }
-        None => {}  // Continue.
-    }
-
-    // Not in the cache. It had better be in the metadata, which means it
-    // shouldn't be local.
-    assert!(!is_local(id));
-
-    // Get the supertraits out of the metadata and create the
-    // TraitRef for each.
-    let result = Rc::new(csearch::get_supertraits(cx, id));
-    cx.supertraits.borrow_mut().insert(id, result.clone());
-    result
-}
-
-pub fn trait_ref_supertraits(cx: &ctxt, trait_ref: &ty::TraitRef) -> Vec<Rc<TraitRef>> {
-    let supertrait_refs = trait_supertraits(cx, trait_ref.def_id);
-    supertrait_refs.iter().map(
-        |supertrait_ref| supertrait_ref.subst(cx, &trait_ref.substs)).collect()
-}
-
 fn lookup_locally_or_in_crate_store<V:Clone>(
                                     descr: &str,
                                     def_id: ast::DefId,
@@ -3968,6 +3942,18 @@ pub fn lookup_trait_def(cx: &ctxt, did: ast::DefId) -> Rc<ty::TraitDef> {
             trait_def
         }
     }
+}
+
+/// Given a reference to a trait, returns the bounds declared on the
+/// trait, with appropriate substitutions applied.
+pub fn bounds_for_trait_ref(tcx: &ctxt,
+                            trait_ref: &TraitRef)
+                            -> ty::ParamBounds
+{
+    let trait_def = lookup_trait_def(tcx, trait_ref.def_id);
+    debug!("bounds_for_trait_ref(trait_def={}, trait_ref={})",
+           trait_def.repr(tcx), trait_ref.repr(tcx));
+    trait_def.bounds.subst(tcx, &trait_ref.substs)
 }
 
 /// Iterate over attributes of a definition.
@@ -4366,9 +4352,10 @@ pub fn each_bound_trait_and_supertraits(tcx: &ctxt,
             }
 
             // Add supertraits to supertrait_set
-            let supertrait_refs = trait_ref_supertraits(tcx,
-                                                        &**trait_refs.get(i));
-            for supertrait_ref in supertrait_refs.iter() {
+            let trait_ref = trait_refs.get(i).clone();
+            let trait_def = lookup_trait_def(tcx, trait_ref.def_id);
+            for supertrait_ref in trait_def.bounds.trait_bounds.iter() {
+                let supertrait_ref = supertrait_ref.subst(tcx, &trait_ref.substs);
                 debug!("each_bound_trait_and_supertraits(supertrait_ref={})",
                        supertrait_ref.repr(tcx));
 
@@ -4944,4 +4931,3 @@ pub fn accumulate_lifetimes_in_type(accumulator: &mut Vec<ty::Region>,
         }
     })
 }
-

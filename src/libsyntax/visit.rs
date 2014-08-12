@@ -289,13 +289,9 @@ pub fn walk_item<E: Clone, V: Visitor<E>>(visitor: &mut V, item: &Item, env: E) 
                                      item.id,
                                      env.clone())
         }
-        ItemTrait(ref generics, _, ref trait_paths, ref methods) => {
+        ItemTrait(ref generics, _, ref bounds, ref methods) => {
             visitor.visit_generics(generics, env.clone());
-            for trait_path in trait_paths.iter() {
-                visitor.visit_path(&trait_path.path,
-                                   trait_path.ref_id,
-                                   env.clone())
-            }
+            walk_ty_param_bounds(visitor, bounds, env.clone());
             for method in methods.iter() {
                 visitor.visit_trait_method(method, env.clone())
             }
@@ -366,18 +362,13 @@ pub fn walk_ty<E: Clone, V: Visitor<E>>(visitor: &mut V, typ: &Ty, env: E) {
                 visitor.visit_ty(&*tuple_element_type, env.clone())
             }
         }
-        TyClosure(ref function_declaration, ref region) => {
+        TyClosure(ref function_declaration) => {
             for argument in function_declaration.decl.inputs.iter() {
                 visitor.visit_ty(&*argument.ty, env.clone())
             }
             visitor.visit_ty(&*function_declaration.decl.output, env.clone());
-            for bounds in function_declaration.bounds.iter() {
-                walk_ty_param_bounds(visitor, bounds, env.clone())
-            }
-            visitor.visit_opt_lifetime_ref(
-                typ.span,
-                region,
-                env.clone());
+            walk_ty_param_bounds(visitor, &function_declaration.bounds,
+                                 env.clone());
             walk_lifetime_decls(visitor, &function_declaration.lifetimes,
                                 env.clone());
         }
@@ -386,9 +377,8 @@ pub fn walk_ty<E: Clone, V: Visitor<E>>(visitor: &mut V, typ: &Ty, env: E) {
                 visitor.visit_ty(&*argument.ty, env.clone())
             }
             visitor.visit_ty(&*function_declaration.decl.output, env.clone());
-            for bounds in function_declaration.bounds.iter() {
-                walk_ty_param_bounds(visitor, bounds, env.clone())
-            }
+            walk_ty_param_bounds(visitor, &function_declaration.bounds,
+                                 env.clone());
             walk_lifetime_decls(visitor, &function_declaration.lifetimes,
                                 env.clone());
         }
@@ -406,10 +396,13 @@ pub fn walk_ty<E: Clone, V: Visitor<E>>(visitor: &mut V, typ: &Ty, env: E) {
             }
             visitor.visit_ty(&*function_declaration.decl.output, env.clone());
         }
-        TyPath(ref path, ref bounds, id) => {
+        TyPath(ref path, ref opt_bounds, id) => {
             visitor.visit_path(path, id, env.clone());
-            for bounds in bounds.iter() {
-                walk_ty_param_bounds(visitor, bounds, env.clone())
+            match *opt_bounds {
+                Some(ref bounds) => {
+                    walk_ty_param_bounds(visitor, bounds, env.clone());
+                }
+                None => { }
             }
         }
         TyFixedLengthVec(ref ty, ref expression) => {
@@ -523,7 +516,6 @@ pub fn walk_ty_param_bounds<E: Clone, V: Visitor<E>>(visitor: &mut V,
             TraitTyParamBound(ref typ) => {
                 walk_trait_ref_helper(visitor, typ, env.clone())
             }
-            StaticRegionTyParamBound => {}
             UnboxedFnTyParamBound(ref function_declaration) => {
                 for argument in function_declaration.decl.inputs.iter() {
                     visitor.visit_ty(&*argument.ty, env.clone())
@@ -531,7 +523,9 @@ pub fn walk_ty_param_bounds<E: Clone, V: Visitor<E>>(visitor: &mut V,
                 visitor.visit_ty(&*function_declaration.decl.output,
                                  env.clone());
             }
-            OtherRegionTyParamBound(..) => {}
+            RegionTyParamBound(ref lifetime) => {
+                visitor.visit_lifetime_ref(lifetime, env.clone());
+            }
         }
     }
 }
