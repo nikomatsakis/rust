@@ -18,8 +18,8 @@ use metadata::common::*;
 use metadata::csearch::StaticMethodInfo;
 use metadata::csearch;
 use metadata::cstore;
-use metadata::tydecode::{parse_ty_data, parse_def_id,
-                         parse_type_param_def_data,
+use metadata::tydecode::{parse_ty_data, parse_region_data, parse_def_id,
+                         parse_type_param_def_data, parse_bounds_data,
                          parse_bare_fn_ty_data, parse_trait_ref_data};
 use middle::lang_items;
 use middle::def;
@@ -241,48 +241,14 @@ fn item_trait_ref(doc: rbml::Doc, tcx: &ty::ctxt, cdata: Cmd) -> ty::TraitRef {
     doc_trait_ref(tp, tcx, cdata)
 }
 
-fn item_ty_param_defs(item: rbml::Doc,
-                      tcx: &ty::ctxt,
-                      cdata: Cmd,
-                      tag: uint)
-                      -> subst::VecPerParamSpace<ty::TypeParameterDef> {
-    let mut bounds = subst::VecPerParamSpace::empty();
-    reader::tagged_docs(item, tag, |p| {
-        let bd = parse_type_param_def_data(
-            p.data, p.start, cdata.cnum, tcx,
-            |_, did| translate_def_id(cdata, did));
-        bounds.push(bd.space, bd);
-        true
-    });
-    bounds
+fn doc_bounds(doc: rbml::Doc, tcx: &ty::ctxt, cdata: Cmd) -> ty::ParamBounds {
+    parse_bounds_data(doc.data, cdata.cnum, doc.start, tcx,
+                      |_, did| translate_def_id(cdata, did))
 }
 
-fn item_region_param_defs(item_doc: rbml::Doc, cdata: Cmd)
-                          -> subst::VecPerParamSpace<ty::RegionParameterDef>
-{
-    let mut v = subst::VecPerParamSpace::empty();
-    reader::tagged_docs(item_doc, tag_region_param_def, |rp_doc| {
-        let ident_str_doc = reader::get_doc(rp_doc,
-                                            tag_region_param_def_ident);
-        let ident = item_name(&*token::get_ident_interner(), ident_str_doc);
-        let def_id_doc = reader::get_doc(rp_doc,
-                                         tag_region_param_def_def_id);
-        let def_id = reader::with_doc_data(def_id_doc, parse_def_id);
-        let def_id = translate_def_id(cdata, def_id);
-
-        let doc = reader::get_doc(rp_doc, tag_region_param_def_space);
-        let space = subst::ParamSpace::from_uint(reader::doc_as_u64(doc) as uint);
-
-        let doc = reader::get_doc(rp_doc, tag_region_param_def_index);
-        let index = reader::doc_as_u64(doc) as uint;
-
-        v.push(space, ty::RegionParameterDef { name: ident.name,
-                                               def_id: def_id,
-                                               space: space,
-                                               index: index });
-        true
-    });
-    v
+fn trait_def_bounds(doc: rbml::Doc, tcx: &ty::ctxt, cdata: Cmd) -> ty::ParamBounds {
+    let d = reader::get_doc(doc, tag_trait_def_bounds);
+    doc_bounds(d, tcx, cdata)
 }
 
 fn enum_variant_ids(item: rbml::Doc, cdata: Cmd) -> Vec<ast::DefId> {
@@ -378,24 +344,11 @@ pub fn get_trait_def(cdata: Cmd,
                      tcx: &ty::ctxt) -> ty::TraitDef
 {
     let item_doc = lookup_item(item_id, cdata.data());
-    let tp_defs = item_ty_param_defs(item_doc, tcx, cdata,
-                                     tag_items_data_item_ty_param_bounds);
-    let rp_defs = item_region_param_defs(item_doc, cdata);
-    let mut bounds = ty::empty_builtin_bounds();
-    // Collect the builtin bounds from the encoded supertraits.
-    // FIXME(#8559): They should be encoded directly.
-    reader::tagged_docs(item_doc, tag_item_super_trait_ref, |trait_doc| {
-        // NB. Bypasses real supertraits. See get_supertraits() if you wanted them.
-        let trait_ref = doc_trait_ref(trait_doc, tcx, cdata);
-        tcx.lang_items.to_builtin_kind(trait_ref.def_id).map(|bound| {
-            bounds.add(bound);
-        });
-        true
-    });
+    let generics = doc_generics(item_doc, tcx, cdata, tag_item_generics);
+    let bounds = trait_def_bounds(item_doc, tcx, cdata);
 
     ty::TraitDef {
-        generics: ty::Generics {types: tp_defs,
-                                regions: rp_defs},
+        generics: generics,
         bounds: bounds,
         trait_ref: Rc::new(item_trait_ref(item_doc, tcx, cdata))
     }
@@ -409,12 +362,10 @@ pub fn get_type(cdata: Cmd, id: ast::NodeId, tcx: &ty::ctxt)
     let t = item_type(ast::DefId { krate: cdata.cnum, node: id }, item, tcx,
                       cdata);
 
-    let tp_defs = item_ty_param_defs(item, tcx, cdata, tag_items_data_item_ty_param_bounds);
-    let rp_defs = item_region_param_defs(item, cdata);
+    let generics = doc_generics(item, tcx, cdata, tag_item_generics);
 
     ty::Polytype {
-        generics: ty::Generics {types: tp_defs,
-                                regions: rp_defs},
+        generics: generics,
         ty: t
     }
 }
@@ -769,7 +720,8 @@ pub fn get_method_name_and_explicit_self(intr: Rc<IdentInterner>,
                                          cdata: Cmd,
                                          id: ast::NodeId)
                                          -> (ast::Ident,
-                                             ty::ExplicitSelfCategory) {
+                                             ty::ExplicitSelfCategory)
+{
     let method_doc = lookup_item(id, cdata.data());
     let name = item_name(&*intr, method_doc);
     let explicit_self = get_explicit_self(method_doc);
@@ -780,6 +732,7 @@ pub fn get_method(intr: Rc<IdentInterner>, cdata: Cmd, id: ast::NodeId,
                   tcx: &ty::ctxt) -> ty::Method
 {
     let method_doc = lookup_item(id, cdata.data());
+
     let def_id = item_def_id(method_doc, cdata);
 
     let container_id = item_reqd_and_translated_parent_item(cdata.cnum,
@@ -791,9 +744,8 @@ pub fn get_method(intr: Rc<IdentInterner>, cdata: Cmd, id: ast::NodeId,
     };
 
     let name = item_name(&*intr, method_doc);
-    let type_param_defs = item_ty_param_defs(method_doc, tcx, cdata,
-                                             tag_item_method_tps);
-    let rp_defs = item_region_param_defs(method_doc, cdata);
+    let generics = doc_generics(method_doc, tcx, cdata,
+                                tag_method_ty_generics);
     let fty = doc_method_fty(method_doc, tcx, cdata);
     let vis = item_visibility(method_doc);
     let explicit_self = get_explicit_self(method_doc);
@@ -801,10 +753,7 @@ pub fn get_method(intr: Rc<IdentInterner>, cdata: Cmd, id: ast::NodeId,
 
     ty::Method::new(
         name,
-        ty::Generics {
-            types: type_param_defs,
-            regions: rp_defs,
-        },
+        generics,
         fty,
         explicit_self,
         vis,
@@ -1358,4 +1307,58 @@ pub fn is_typedef(cdata: Cmd, id: ast::NodeId) -> bool {
         Type => true,
         _ => false,
     }
+}
+
+fn doc_generics(base_doc: rbml::Doc,
+                tcx: &ty::ctxt,
+                cdata: Cmd,
+                tag: uint)
+                -> ty::Generics
+{
+    let doc = reader::get_doc(base_doc, tag);
+
+    let mut types = subst::VecPerParamSpace::empty();
+    reader::tagged_docs(doc, tag_type_param_def, |p| {
+        let bd = parse_type_param_def_data(
+            p.data, p.start, cdata.cnum, tcx,
+            |_, did| translate_def_id(cdata, did));
+        types.push(bd.space, bd);
+        true
+    });
+
+    let mut regions = subst::VecPerParamSpace::empty();
+    reader::tagged_docs(doc, tag_region_param_def, |rp_doc| {
+        let ident_str_doc = reader::get_doc(rp_doc,
+                                            tag_region_param_def_ident);
+        let ident = item_name(&*token::get_ident_interner(), ident_str_doc);
+        let def_id_doc = reader::get_doc(rp_doc,
+                                         tag_region_param_def_def_id);
+        let def_id = reader::with_doc_data(def_id_doc, parse_def_id);
+        let def_id = translate_def_id(cdata, def_id);
+
+        let doc = reader::get_doc(rp_doc, tag_region_param_def_space);
+        let space = subst::ParamSpace::from_uint(reader::doc_as_u64(doc) as uint);
+
+        let doc = reader::get_doc(rp_doc, tag_region_param_def_index);
+        let index = reader::doc_as_u64(doc) as uint;
+
+        let mut bounds = Vec::new();
+        reader::tagged_docs(rp_doc, tag_items_data_region, |p| {
+            bounds.push(
+                parse_region_data(
+                    p.data, cdata.cnum, p.start, tcx,
+                    |_, did| translate_def_id(cdata, did)));
+            true
+        });
+
+        regions.push(space, ty::RegionParameterDef { name: ident.name,
+                                                     def_id: def_id,
+                                                     space: space,
+                                                     index: index,
+                                                     bounds: bounds });
+
+        true
+    });
+
+    ty::Generics { types: types, regions: regions }
 }
