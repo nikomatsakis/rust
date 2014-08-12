@@ -3673,9 +3673,13 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
         fcx.write_ty(id, oprnd_t);
       }
       ast::ExprPath(ref pth) => {
-        let defn = lookup_def(fcx, pth.span, id);
-        let pty = polytype_for_def(fcx, expr.span, defn);
-        instantiate_path(fcx, pth, pty, defn, expr.span, expr.id);
+          let defn = lookup_def(fcx, pth.span, id);
+          let pty = polytype_for_def(fcx, expr.span, defn);
+          instantiate_path(fcx, pth, pty, defn, expr.span, expr.id);
+
+          // We always require that the type provided as the value for
+          // a type parameter outlives the moment of instantiation.
+          constrain_path_type_parameters(fcx, expr);
       }
       ast::ExprInlineAsm(ref ia) => {
           for &(_, ref input) in ia.inputs.iter() {
@@ -4055,6 +4059,18 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
            expected.repr(tcx));
 
     unifier();
+}
+
+fn constrain_path_type_parameters(fcx: &FnCtxt,
+                                  expr: &ast::Expr)
+{
+    fcx.opt_node_ty_substs(expr.id, |item_substs| {
+        for &ty in item_substs.substs.types.iter() {
+            let default_bound = ty::ReScope(expr.id);
+            let origin = infer::RelateDefaultParamBound(expr.span, ty);
+            fcx.register_region_obligation(origin, ty, default_bound);
+        }
+    });
 }
 
 impl Expectation {
