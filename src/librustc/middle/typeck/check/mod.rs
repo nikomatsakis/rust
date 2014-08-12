@@ -329,7 +329,8 @@ fn static_inherited_fields<'a>(ccx: &'a CrateCtxt<'a>) -> Inherited<'a> {
     // and statement context, but we might as well do write the code only once
     let param_env = ty::ParameterEnvironment {
         free_substs: subst::Substs::empty(),
-        bounds: subst::VecPerParamSpace::empty()
+        bounds: subst::VecPerParamSpace::empty(),
+        implicit_region_bound: ty::ReStatic,
     };
     Inherited::new(ccx.tcx, param_env)
 }
