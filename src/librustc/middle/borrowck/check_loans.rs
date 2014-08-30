@@ -774,8 +774,10 @@ impl<'a> CheckLoanCtxt<'a> {
             loop {
                 debug!("mark_variable_as_used_mut(cmt={})", cmt.repr(this.tcx()));
                 match cmt.cat.clone() {
-                    mc::cat_copied_upvar(mc::CopiedUpvar { upvar_id: id, .. }) |
-                    mc::cat_local(id) | mc::cat_arg(id) => {
+                    mc::cat_copied_upvar(mc::CopiedUpvar {
+                        upvar_id: ty::UpvarId { var_id: id, .. }, .. }) |
+                    mc::cat_local(id) |
+                    mc::cat_arg(id) => {
                         this.tcx().used_mut_nodes.borrow_mut().insert(id);
                         return;
                     }

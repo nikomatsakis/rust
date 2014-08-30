@@ -464,15 +464,6 @@ impl<'fcx> mc::Typer for Rcx<'fcx> {
         self.tcx().region_maps.temporary_scope(id)
     }
 
-    fn upvar_borrow(&self, id: ty::UpvarId) -> ty::UpvarBorrow {
-        self.fcx.inh.upvar_borrow_map.borrow().get_copy(&id)
-    }
-
-    fn capture_mode(&self, closure_expr_id: ast::NodeId)
-                    -> freevars::CaptureMode {
-        self.tcx().capture_modes.borrow().get_copy(&closure_expr_id)
-    }
-
     fn unboxed_closures<'a>(&'a self)
                         -> &'a RefCell<DefIdMap<ty::UnboxedClosure>> {
         &self.fcx.inh.unboxed_closures

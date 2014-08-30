@@ -525,13 +525,8 @@ impl<'a> mc::Typer for Block<'a> {
         &self.tcx().unboxed_closures
     }
 
-    fn upvar_borrow(&self, upvar_id: ty::UpvarId) -> ty::UpvarBorrow {
-        self.tcx().upvar_borrow_map.borrow().get_copy(&upvar_id)
-    }
-
-    fn capture_mode(&self, closure_expr_id: ast::NodeId)
-                    -> freevars::CaptureMode {
-        self.tcx().capture_modes.borrow().get_copy(&closure_expr_id)
+    fn upvar_mode(&self, upvar_id: ty::UpvarId) -> UpvarMode {
+        self.tcx().upvar_mode(upvar_id)
     }
 }
 

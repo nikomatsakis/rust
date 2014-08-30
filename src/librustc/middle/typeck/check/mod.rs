@@ -309,13 +309,6 @@ impl<'a> mem_categorization::Typer for FnCtxt<'a> {
     fn temporary_scope(&self, rvalue_id: ast::NodeId) -> Option<ast::NodeId> {
         self.ccx.tcx.temporary_scope(rvalue_id)
     }
-    fn upvar_borrow(&self, upvar_id: ty::UpvarId) -> ty::UpvarBorrow {
-        self.ccx.tcx.upvar_borrow(upvar_id)
-    }
-    fn capture_mode(&self, closure_expr_id: ast::NodeId)
-                    -> freevars::CaptureMode {
-        self.ccx.tcx.capture_mode(closure_expr_id)
-    }
     fn unboxed_closures<'a>(&'a self)
                         -> &'a RefCell<DefIdMap<ty::UnboxedClosure>> {
         &self.inh.unboxed_closures

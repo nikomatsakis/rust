@@ -1348,6 +1348,15 @@ pub enum UnboxedClosureKind {
     FnOnceUnboxedClosureKind,
 }
 
+impl UpvarId {
+    fn new(var_id: ast::NodeId,
+           closure_expr_id: ast::NodeId)
+           -> UpvarId {
+        UpvarId { var_id: var_id,
+                  closure_expr_id: closure_expr_id }
+    }
+}
+
 impl UnboxedClosureKind {
     pub fn trait_did(&self, cx: &ctxt) -> ast::DefId {
         let result = match *self {
@@ -5403,18 +5412,43 @@ impl mc::Typer for ty::ctxt {
         self.region_maps.temporary_scope(rvalue_id)
     }
 
-    fn upvar_borrow(&self, upvar_id: ty::UpvarId) -> ty::UpvarBorrow {
-        self.upvar_borrow_map.borrow().get_copy(&upvar_id)
-    }
-
-    fn capture_mode(&self, closure_expr_id: ast::NodeId)
-                    -> freevars::CaptureMode {
-        self.capture_modes.borrow().get_copy(&closure_expr_id)
-    }
-
     fn unboxed_closures<'a>(&'a self)
                         -> &'a RefCell<DefIdMap<UnboxedClosure>> {
         &self.unboxed_closures
+    }
+
+    fn upvar_mode(&self, upvar_id: ty::UpvarId) -> UpvarMode {
+        let closure_expr_id = upvar_id.closure_expr_id;
+        match freevars::get_capture_mode(self, closure_expr_id) {
+            Some(&freevars::CaptureByValue) => {
+                let closure_ty = node_id_to_type(closure_expr_id);
+                let onceness = match ty::get(closure_ty).sty {
+                    ty::ty_unboxed_closure(closure_id, _) => {
+                        match self.unboxed_closures()
+                                  .borrow()
+                                  .get(&closure_id)
+                                  .kind
+                        {
+                            ty::FnUnboxedClosureKind |
+                            ty::FnMutUnboxedClosureKind => ast::Many,
+                            ty::FnOnceUnboxedClosureKind => ast::Once,
+                        }
+                    }
+                    _ => ast::Many
+                };
+                mc::ByValue(onceness)
+            }
+            Some(&freevars::CaptureByRef) => {
+                mc::ByRef(
+                    self.upvar_borrow_map.borrow().get_copy(&upvar_id))
+            }
+            None => {
+                self.sess.bug(
+                    required.span,
+                    format!("no capture mode for {}",
+                            upvar_id).as_slice());
+            }
+        }
     }
 }
 

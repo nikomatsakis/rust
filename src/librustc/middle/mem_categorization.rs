@@ -96,9 +96,8 @@ pub enum categorization {
 
 #[deriving(Clone, PartialEq)]
 pub struct CopiedUpvar {
-    pub upvar_id: ast::NodeId,
+    pub upvar_id: ty::UpvarId,
     pub onceness: ast::Onceness,
-    pub capturing_proc: ast::NodeId,
 }
 
 // different kinds of pointers:
@@ -277,11 +276,14 @@ pub trait Typer {
     fn adjustments<'a>(&'a self) -> &'a RefCell<NodeMap<ty::AutoAdjustment>>;
     fn is_method_call(&self, id: ast::NodeId) -> bool;
     fn temporary_scope(&self, rvalue_id: ast::NodeId) -> Option<ast::NodeId>;
-    fn upvar_borrow(&self, upvar_id: ty::UpvarId) -> ty::UpvarBorrow;
-    fn capture_mode(&self, closure_expr_id: ast::NodeId)
-                    -> freevars::CaptureMode;
+    fn upvar_mode(&self, upvar_id: ty::UpvarId) -> UpvarMode;
     fn unboxed_closures<'a>(&'a self)
                         -> &'a RefCell<DefIdMap<ty::UnboxedClosure>>;
+}
+
+pub enum UpvarMode {
+    ByValue(ast::Onceness),
+    ByRef(ty::UpvarBorrow),
 }
 
 impl MutabilityCategory {
@@ -568,66 +570,23 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
           }
 
           def::DefUpvar(var_id, _, fn_node_id, _) => {
-              let ty = if_ok!(self.node_ty(fn_node_id));
-              match ty::get(ty).sty {
-                  ty::ty_closure(ref closure_ty) => {
-                      // Decide whether to use implicit reference or by copy/move
-                      // capture for the upvar. This, combined with the onceness,
-                      // determines whether the closure can move out of it.
-                      let var_is_refd = match (closure_ty.store, closure_ty.onceness) {
-                          // Many-shot stack closures can never move out.
-                          (ty::RegionTraitStore(..), ast::Many) => true,
-                          // 1-shot stack closures can move out.
-                          (ty::RegionTraitStore(..), ast::Once) => false,
-                          // Heap closures always capture by copy/move, and can
-                          // move out if they are once.
-                          (ty::UniqTraitStore, _) => false,
-
-                      };
-                      if var_is_refd {
-                          self.cat_upvar(id, span, var_id, fn_node_id)
-                      } else {
-                          Ok(Rc::new(cmt_ {
-                              id:id,
-                              span:span,
-                              cat:cat_copied_upvar(CopiedUpvar {
-                                  upvar_id: var_id,
-                                  onceness: closure_ty.onceness,
-                                  capturing_proc: fn_node_id,
-                              }),
-                              mutbl: MutabilityCategory::from_def(&def),
-                              ty:expr_ty
-                          }))
-                      }
-                  }
-                  ty::ty_unboxed_closure(closure_id, _) => {
-                      let unboxed_closures = self.typer
-                                                 .unboxed_closures()
-                                                 .borrow();
-                      let kind = unboxed_closures.get(&closure_id).kind;
-                      let onceness = match kind {
-                          ty::FnUnboxedClosureKind |
-                          ty::FnMutUnboxedClosureKind => ast::Many,
-                          ty::FnOnceUnboxedClosureKind => ast::Once,
-                      };
+              let upvar_id = ty::UpvarId::new(var_id, fn_node_id);
+              match self.typer.upvar_mode(upvar_id) {
+                  ByValue(o) => {
                       Ok(Rc::new(cmt_ {
-                          id: id,
-                          span: span,
-                          cat: cat_copied_upvar(CopiedUpvar {
-                              upvar_id: var_id,
-                              onceness: onceness,
-                              capturing_proc: fn_node_id,
+                          id:id,
+                          span:span,
+                          cat:cat_copied_upvar(CopiedUpvar {
+                              upvar_id: upvar_id,
+                              onceness: o,
                           }),
                           mutbl: MutabilityCategory::from_def(&def),
-                          ty: expr_ty
+                          ty:expr_ty
                       }))
                   }
-                  _ => {
-                      self.tcx().sess.span_bug(
-                          span,
-                          format!("Upvar of non-closure {} - {}",
-                                  fn_node_id,
-                                  ty.repr(self.tcx())).as_slice());
+
+                  ByRef(ub) => {
+                      self.cat_upvar(id, span, upvar_id, ub)
                   }
               }
           }
@@ -649,8 +608,8 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
     fn cat_upvar(&self,
                  id: ast::NodeId,
                  span: Span,
-                 var_id: ast::NodeId,
-                 fn_node_id: ast::NodeId)
+                 upvar_id: ty::UpvarId,
+                 upvar_borrow: ty::UpvarBorrow)
                  -> McResult<cmt> {
         /*!
          * Upvars through a closure are in fact indirect
@@ -662,12 +621,7 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
          * equivalence is expose in the mem-categorization.
          */
 
-        let upvar_id = ty::UpvarId { var_id: var_id,
-                                     closure_expr_id: fn_node_id };
-
-        let upvar_borrow = self.typer.upvar_borrow(upvar_id);
-
-        let var_ty = if_ok!(self.node_ty(var_id));
+        let var_ty = if_ok!(self.node_ty(upvar_id.var_id));
 
         // We can't actually represent the types of all upvars
         // as user-describable types, since upvars support const
@@ -1403,3 +1357,4 @@ fn element_kind(t: ty::t) -> ElementKind {
         _ => OtherElement
     }
 }
+
