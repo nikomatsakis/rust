@@ -22,6 +22,7 @@ use option::{Some, None, Option};
 use ptr::{RawPtr, copy_nonoverlapping_memory, zero_memory};
 use ptr;
 use rt::heap::{allocate, deallocate};
+use core::kinds::marker;
 
 static EMPTY_BUCKET: u64 = 0u64;
 
@@ -66,6 +67,7 @@ pub struct RawTable<K, V> {
     capacity: uint,
     size:     uint,
     hashes:   *mut u64,
+    marker:   marker::InvariantType<(K,V)>,
 }
 
 struct RawBucket<K, V> {
@@ -588,6 +590,7 @@ impl<K, V> RawTable<K, V> {
                 size: 0,
                 capacity: 0,
                 hashes: 0 as *mut u64,
+                marker: marker::InvariantType,
             };
         }
         // No need for `checked_mul` before a more restrictive check performed
@@ -625,6 +628,7 @@ impl<K, V> RawTable<K, V> {
             capacity: capacity,
             size:     0,
             hashes:   hashes,
+            marker:   marker::InvariantType,
         }
     }
 
