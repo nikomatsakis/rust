@@ -29,7 +29,6 @@ use ops::Index;
 use super::table;
 use super::table::{
     Bucket,
-    BucketWithTable,
     Empty,
     Full,
     FullBucket,
@@ -423,8 +422,8 @@ impl<K, V, M> SearchResult<K, V, M> {
     }
 }
 
-/// A newtyped mutable reference to the hashmap that can't be constructed
-/// by the user to prevent changes to the visible interface of HashMap.
+/// A newtyped mutable reference to the hashmap that implements Deref to avoid
+/// changes to the visible interface of HashMap.
 /// Used internally because it's accepted by the search functions above.
 struct MapMutRef<'a, K: 'a, V: 'a, H: 'a> {
     map_ref: &'a mut HashMap<K, V, H>
