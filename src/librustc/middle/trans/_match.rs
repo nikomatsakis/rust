@@ -772,13 +772,13 @@ fn any_irrefutable_adt_pat(bcx: &Block, m: &[Match], col: uint) -> bool {
 }
 
 /// What to do when the pattern match fails.
-enum FailureHandler<'a> {
+enum FailureHandler {
     Infallible,
     JumpToBasicBlock(BasicBlockRef),
     Unreachable
 }
 
-impl<'a> FailureHandler<'a> {
+impl FailureHandler {
     fn is_infallible(&self) -> bool {
         match *self {
             Infallible => true,

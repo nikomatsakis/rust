@@ -923,7 +923,7 @@ pub fn ty_of_arg<AC: AstConv, RS: RegionScope>(this: &AC, rscope: &RS, a: &ast::
     }
 }
 
-struct SelfInfo<'a> {
+struct SelfInfo {
     untransformed_self_ty: ty::t,
     explicit_self: ast::ExplicitSelf,
 }

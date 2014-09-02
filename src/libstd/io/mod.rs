@@ -494,7 +494,7 @@ pub enum IoErrorKind {
 }
 
 /// A trait that lets you add a `detail` to an IoError easily
-trait UpdateIoError<T> {
+trait UpdateIoError {
     /// Returns an IoError with updated description and detail
     fn update_err(self, desc: &'static str, detail: |&IoError| -> String) -> Self;
 
@@ -505,7 +505,7 @@ trait UpdateIoError<T> {
     fn update_desc(self, desc: &'static str) -> Self;
 }
 
-impl<T> UpdateIoError<T> for IoResult<T> {
+impl<T> UpdateIoError for IoResult<T> {
     fn update_err(self, desc: &'static str, detail: |&IoError| -> String) -> IoResult<T> {
         self.map_err(|mut e| {
             let detail = detail(&e);

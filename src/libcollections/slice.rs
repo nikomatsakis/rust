@@ -554,7 +554,7 @@ fn merge_sort<T>(v: &mut [T], compare: |&T, &T| -> Ordering) {
 
 /// Extension methods for vectors such that their elements are
 /// mutable.
-pub trait MutableSliceAllocating<'a, T> {
+pub trait MutableSliceAllocating<T> {
     /// Sorts the slice, in place, using `compare` to compare
     /// elements.
     ///
@@ -598,7 +598,7 @@ pub trait MutableSliceAllocating<'a, T> {
     fn move_from(self, src: Vec<T>, start: uint, end: uint) -> uint;
 }
 
-impl<'a,T> MutableSliceAllocating<'a, T> for &'a mut [T] {
+impl<'a,T> MutableSliceAllocating<T> for &'a mut [T] {
     #[inline]
     fn sort_by(self, compare: |&T, &T| -> Ordering) {
         merge_sort(self, compare)
@@ -615,7 +615,7 @@ impl<'a,T> MutableSliceAllocating<'a, T> for &'a mut [T] {
 
 /// Methods for mutable vectors with orderable elements, such as
 /// in-place sorting.
-pub trait MutableOrdSlice<T> {
+pub trait MutableOrdSlice {
     /// Sorts the slice, in place.
     ///
     /// This is equivalent to `self.sort_by(|a, b| a.cmp(b))`.
@@ -667,7 +667,7 @@ pub trait MutableOrdSlice<T> {
     fn prev_permutation(self) -> bool;
 }
 
-impl<'a, T: Ord> MutableOrdSlice<T> for &'a mut [T] {
+impl<'a, T: Ord> MutableOrdSlice for &'a mut [T] {
     #[inline]
     fn sort(self) {
         self.sort_by(|a,b| a.cmp(b))
