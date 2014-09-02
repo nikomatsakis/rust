@@ -37,6 +37,7 @@ extern crate core;
 #[cfg(test)] extern crate debug;
 
 use core::prelude::*;
+use core::kinds::marker;
 
 pub use isaac::{IsaacRng, Isaac64Rng};
 
@@ -160,7 +161,7 @@ pub trait Rng {
     ///                   .collect::<Vec<(f64, bool)>>());
     /// ```
     fn gen_iter<'a, T: Rand>(&'a mut self) -> Generator<'a, T, Self> {
-        Generator { rng: self }
+        Generator { rng: self, marker: marker::CovariantType }
     }
 
     /// Generate a random value in the range [`low`, `high`). Fails if
@@ -274,6 +275,7 @@ pub trait Rng {
 /// This iterator is created via the `gen_iter` method on `Rng`.
 pub struct Generator<'a, T, R:'a> {
     rng: &'a mut R,
+    marker: marker::CovariantType<T>
 }
 
 impl<'a, T: Rand, R: Rng> Iterator<T> for Generator<'a, T, R> {

@@ -14,13 +14,22 @@
 //! representation to hold C-like enum variants.
 
 use core::prelude::*;
+use core::kinds::marker;
+use core::fmt;
 
-#[deriving(Clone, PartialEq, Eq, Hash, Show)]
+#[deriving(Clone, PartialEq, Eq, Hash)]
 /// A specialized `Set` implementation to use enum types.
 pub struct EnumSet<E> {
     // We must maintain the invariant that no bits are set
     // for which no variant exists
-    bits: uint
+    bits: uint,
+    marker: marker::CovariantType<E>,
+}
+
+impl<E> fmt::Show for EnumSet<E> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "EnumSet {{ bits={} }}", self.bits)
+    }
 }
 
 /// An interface for casting C-like enum to uint and back.
@@ -38,7 +47,7 @@ fn bit<E:CLike>(e: E) -> uint {
 impl<E:CLike> EnumSet<E> {
     /// Returns an empty `EnumSet`.
     pub fn empty() -> EnumSet<E> {
-        EnumSet {bits: 0}
+        EnumSet {bits: 0, marker: marker::CovariantType}
     }
 
     /// Returns true if the `EnumSet` is empty.
@@ -53,7 +62,8 @@ impl<E:CLike> EnumSet<E> {
 
     /// Returns the intersection of both `EnumSets`.
     pub fn intersection(&self, e: EnumSet<E>) -> EnumSet<E> {
-        EnumSet {bits: self.bits & e.bits}
+        EnumSet {bits: self.bits & e.bits,
+                 marker: marker::CovariantType}
     }
 
     /// Returns `true` if a given `EnumSet` is included in an `EnumSet`.
@@ -63,7 +73,8 @@ impl<E:CLike> EnumSet<E> {
 
     /// Returns the union of both `EnumSets`.
     pub fn union(&self, e: EnumSet<E>) -> EnumSet<E> {
-        EnumSet {bits: self.bits | e.bits}
+        EnumSet {bits: self.bits | e.bits,
+                 marker: marker::CovariantType}
     }
 
     /// Adds an enum to an `EnumSet`.
@@ -84,19 +95,22 @@ impl<E:CLike> EnumSet<E> {
 
 impl<E:CLike> Sub<EnumSet<E>, EnumSet<E>> for EnumSet<E> {
     fn sub(&self, e: &EnumSet<E>) -> EnumSet<E> {
-        EnumSet {bits: self.bits & !e.bits}
+        EnumSet {bits: self.bits & !e.bits,
+                 marker: marker::CovariantType}
     }
 }
 
 impl<E:CLike> BitOr<EnumSet<E>, EnumSet<E>> for EnumSet<E> {
     fn bitor(&self, e: &EnumSet<E>) -> EnumSet<E> {
-        EnumSet {bits: self.bits | e.bits}
+        EnumSet {bits: self.bits | e.bits,
+                 marker: marker::CovariantType}
     }
 }
 
 impl<E:CLike> BitAnd<EnumSet<E>, EnumSet<E>> for EnumSet<E> {
     fn bitand(&self, e: &EnumSet<E>) -> EnumSet<E> {
-        EnumSet {bits: self.bits & e.bits}
+        EnumSet {bits: self.bits & e.bits,
+                 marker: marker::CovariantType}
     }
 }
 
@@ -104,11 +118,13 @@ impl<E:CLike> BitAnd<EnumSet<E>, EnumSet<E>> for EnumSet<E> {
 pub struct Items<E> {
     index: uint,
     bits: uint,
+    marker: marker::CovariantType<E>,
 }
 
 impl<E:CLike> Items<E> {
     fn new(bits: uint) -> Items<E> {
-        Items { index: 0, bits: bits }
+        Items { index: 0, bits: bits,
+                marker: marker::CovariantType }
     }
 }
 

@@ -24,6 +24,7 @@ that do not need to record state.
 
 use core::prelude::*;
 use core::num;
+use core::kinds::marker;
 
 use {Rng, Rand};
 
@@ -59,7 +60,13 @@ pub trait IndependentSample<Support>: Sample<Support> {
 
 /// A wrapper for generating types that implement `Rand` via the
 /// `Sample` & `IndependentSample` traits.
-pub struct RandSample<Sup>;
+pub struct RandSample<Sup> { marker: marker::CovariantType<Sup> }
+
+impl<Sup> RandSample<Sup> {
+    pub fn new() -> RandSample<Sup> {
+        RandSample { marker: marker::CovariantType }
+    }
+}
 
 impl<Sup: Rand> Sample<Sup> for RandSample<Sup> {
     fn sample<R: Rng>(&mut self, rng: &mut R) -> Sup { self.ind_sample(rng) }
