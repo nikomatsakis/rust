@@ -68,6 +68,7 @@ use core::prelude::*;
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 use core::intrinsics::TypeId;
+use core::kinds;
 use core::mem;
 
 use vec::Vec;
@@ -185,6 +186,56 @@ impl_hash_tuple!(A B C D E F G H I)
 impl_hash_tuple!(A B C D E F G H I J)
 impl_hash_tuple!(A B C D E F G H I J K)
 impl_hash_tuple!(A B C D E F G H I J K L)
+
+impl<T,S: Writer> Hash<S> for kinds::marker::CovariantType<T> {
+    #[inline]
+    fn hash(&self, _state: &mut S) { }
+}
+
+impl<T,S: Writer> Hash<S> for kinds::marker::ContravariantType<T> {
+    #[inline]
+    fn hash(&self, _state: &mut S) { }
+}
+
+impl<T,S: Writer> Hash<S> for kinds::marker::InvariantType<T> {
+    #[inline]
+    fn hash(&self, _state: &mut S) { }
+}
+
+impl<'a,S: Writer> Hash<S> for kinds::marker::CovariantLifetime<'a> {
+    #[inline]
+    fn hash(&self, _state: &mut S) { }
+}
+
+impl<'a,S: Writer> Hash<S> for kinds::marker::ContravariantLifetime<'a> {
+    #[inline]
+    fn hash(&self, _state: &mut S) { }
+}
+
+impl<'a,S: Writer> Hash<S> for kinds::marker::InvariantLifetime<'a> {
+    #[inline]
+    fn hash(&self, _state: &mut S) { }
+}
+
+impl<S: Writer> Hash<S> for kinds::marker::NoSend {
+    #[inline]
+    fn hash(&self, _state: &mut S) { }
+}
+
+impl<S: Writer> Hash<S> for kinds::marker::NoCopy {
+    #[inline]
+    fn hash(&self, _state: &mut S) { }
+}
+
+impl<S: Writer> Hash<S> for kinds::marker::NoSync {
+    #[inline]
+    fn hash(&self, _state: &mut S) { }
+}
+
+impl<S: Writer> Hash<S> for kinds::marker::Managed {
+    #[inline]
+    fn hash(&self, _state: &mut S) { }
+}
 
 impl<'a, S: Writer, T: Hash<S>> Hash<S> for &'a [T] {
     #[inline]
