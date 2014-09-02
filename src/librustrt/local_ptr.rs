@@ -19,6 +19,7 @@
 
 use core::prelude::*;
 
+use core::kinds::marker;
 use core::mem;
 use alloc::boxed::Box;
 
@@ -36,6 +37,7 @@ pub use self::compiled::{init, cleanup, put, take, try_take, unsafe_take, exists
 /// pointer is returned.
 pub struct Borrowed<T> {
     val: *const (),
+    marker: marker::CovariantType<T>,
 }
 
 #[unsafe_destructor]
@@ -75,6 +77,7 @@ pub unsafe fn borrow<T>() -> Borrowed<T> {
     let val: *const () = mem::transmute(take::<T>());
     Borrowed {
         val: val,
+        marker: marker::CovariantType,
     }
 }
 

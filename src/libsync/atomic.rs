@@ -106,6 +106,7 @@
 use alloc::boxed::Box;
 use core::mem;
 use core::prelude::{Drop, None, Option, Some};
+use core::kinds::marker;
 
 pub use core::atomic::{AtomicBool, AtomicInt, AtomicUint, AtomicPtr};
 pub use core::atomic::{Ordering, Relaxed, Release, Acquire, AcqRel, SeqCst};
@@ -121,16 +122,19 @@ pub use core::atomic::fence;
                 concept like MVar"]
 pub struct AtomicOption<T> {
     p: AtomicUint,
+    m: marker::CovariantType<T>
 }
 
 impl<T> AtomicOption<T> {
     /// Create a new `AtomicOption`
     pub fn new(p: Box<T>) -> AtomicOption<T> {
-        unsafe { AtomicOption { p: AtomicUint::new(mem::transmute(p)) } }
+        unsafe { AtomicOption { p: AtomicUint::new(mem::transmute(p)),
+                                m: marker::CovariantType } }
     }
 
     /// Create a new `AtomicOption` that doesn't contain a value
-    pub fn empty() -> AtomicOption<T> { AtomicOption { p: AtomicUint::new(0) } }
+    pub fn empty() -> AtomicOption<T> { AtomicOption { p: AtomicUint::new(0),
+                                                       m: marker::CovariantType } }
 
     /// Store a value, returning the old value
     #[inline]

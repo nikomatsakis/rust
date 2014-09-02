@@ -41,7 +41,8 @@ pub struct AtomicUint {
 #[stable]
 pub struct AtomicPtr<T> {
     p: UnsafeCell<uint>,
-    nocopy: marker::NoCopy
+    nocopy: marker::NoCopy,
+    invariant: marker::InvariantType<*mut T>,
 }
 
 /// Atomic memory orderings
@@ -548,7 +549,11 @@ impl AtomicUint {
 impl<T> AtomicPtr<T> {
     /// Create a new `AtomicPtr`
     pub fn new(p: *mut T) -> AtomicPtr<T> {
-        AtomicPtr { p: UnsafeCell::new(p as uint), nocopy: marker::NoCopy }
+        AtomicPtr {
+            p: UnsafeCell::new(p as uint),
+            nocopy: marker::NoCopy,
+            invariant: marker::InvariantType
+        }
     }
 
     /// Load the value
