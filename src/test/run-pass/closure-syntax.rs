@@ -80,7 +80,7 @@ fn bar<'b>() {
     a.foo::<<'a>||>();
 }
 
-struct B<T>;
+struct B<T>(t: T);
 impl<'b> B<<'a>||: 'b> {}
 
 pub fn main() {

@@ -14,4 +14,10 @@ struct SomeStruct<A> { x: uint } //~ ERROR E0161
 enum SomeEnum<A> { Nothing } //~ ERROR E0161
 trait SomeTrait<A> { fn foo(&self); } //~ ERROR E0161
 
+// Here T might *appear* used, but in fact it isn't.
+enum ListCell<T> {
+    Cons(Box<list_cell<T>>),
+    Nil
+} //~ ERROR E0161
+
 fn main() {}

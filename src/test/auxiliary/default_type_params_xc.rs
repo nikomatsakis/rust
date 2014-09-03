@@ -10,8 +10,12 @@
 
 #![feature(default_type_params)]
 
+use core::kinds::marker;
+
 pub struct Heap;
 
 pub struct FakeHeap;
 
-pub struct FakeVec<T, A = FakeHeap>;
+pub struct FakeVec<T, A = FakeHeap> {
+    marker: marker::CovariantType<(T,A)>
+}

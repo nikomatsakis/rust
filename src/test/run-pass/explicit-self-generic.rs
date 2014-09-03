@@ -19,19 +19,19 @@ type EqFn<K> = proc(K, K):'static -> bool;
 struct LM { resize_at: uint, size: uint }
 
 enum HashMap<K,V> {
-    HashMap_(LM)
+    HashMap_(LM, &'static [(K,V)])
 }
 
 fn linear_map<K,V>() -> HashMap<K,V> {
     HashMap_(LM{
         resize_at: 32,
-        size: 0})
+        size: 0}, &{})
 }
 
 impl<K,V> HashMap<K,V> {
     pub fn len(&mut self) -> uint {
         match *self {
-            HashMap_(l) => l.size
+            HashMap_(l, _) => l.size
         }
     }
 }

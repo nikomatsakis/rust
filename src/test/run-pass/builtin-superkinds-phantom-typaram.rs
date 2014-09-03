@@ -12,9 +12,11 @@
 // super-builtin-kind of a trait, if the type parameter is never used,
 // the type can implement the trait anyway.
 
+use std::kinds::marker;
+
 trait Foo : Send { }
 
-struct X<T>(());
+struct X<T>(marker: marker::CovariantType<T>);
 
 impl <T> Foo for X<T> { }
 
