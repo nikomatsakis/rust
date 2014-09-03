@@ -72,62 +72,37 @@ pub trait Combine {
     fn contratys(&self, a: ty::t, b: ty::t) -> cres<ty::t>;
     fn tys(&self, a: ty::t, b: ty::t) -> cres<ty::t>;
 
-    fn tps(&self,
-           _: subst::ParamSpace,
-           as_: &[ty::t],
-           bs: &[ty::t])
-           -> cres<Vec<ty::t>> {
-        // FIXME -- In general, we treat variance a bit wrong
-        // here. For historical reasons, we treat tps and Self
-        // as invariant. This is overly conservative.
-
-        if as_.len() != bs.len() {
-            return Err(ty::terr_ty_param_size(expected_found(self,
-                                                             as_.len(),
-                                                             bs.len())));
-        }
-
-        try!(result::fold_(as_
-                          .iter()
-                          .zip(bs.iter())
-                          .map(|(a, b)| self.equate().tys(*a, *b))));
-        Ok(Vec::from_slice(as_))
-    }
-
     fn substs(&self,
               item_def_id: ast::DefId,
               a_subst: &subst::Substs,
               b_subst: &subst::Substs)
               -> cres<subst::Substs>
     {
+        debug!("substs: item_def_id={} a_subst={} b_subst={}",
+               item_def_id.repr(self.infcx().tcx),
+               a_subst.repr(self.infcx().tcx),
+               b_subst.repr(self.infcx().tcx));
+
         let variances = if self.infcx().tcx.variance_computed.get() {
             Some(ty::item_variances(self.infcx().tcx, item_def_id))
         } else {
             None
         };
+        let variances = variances.as_ref();
+
         let mut substs = subst::Substs::empty();
 
         for &space in subst::ParamSpace::all().iter() {
             let a_tps = a_subst.types.get_slice(space);
             let b_tps = b_subst.types.get_slice(space);
-            let tps = try!(self.tps(space, a_tps, b_tps));
+            let t_variances = variances.map(|v| v.types.get_slice(space));
+            let tps = try!(relate_type_params(self, t_variances, a_tps, b_tps));
 
             let a_regions = a_subst.regions().get_slice(space);
             let b_regions = b_subst.regions().get_slice(space);
 
-            let mut invariance = Vec::new();
-            let r_variances = match variances {
-                Some(ref variances) => variances.regions.get_slice(space),
-                None => {
-                    for _ in a_regions.iter() {
-                        invariance.push(ty::Invariant);
-                    }
-                    invariance.as_slice()
-                }
-            };
-
+            let r_variances = variances.map(|v| v.regions.get_slice(space));
             let regions = try!(relate_region_params(self,
-                                                    item_def_id,
                                                     r_variances,
                                                     a_regions,
                                                     b_regions));
@@ -138,42 +113,68 @@ pub trait Combine {
 
         return Ok(substs);
 
+        fn relate_type_params<C:Combine>(this: &C,
+                                         variances: Option<&[ty::Variance]>,
+                                         a_tys: &[ty::t],
+                                         b_tys: &[ty::t])
+                                         -> cres<Vec<ty::t>>
+        {
+            if a_tys.len() != b_tys.len() {
+                return Err(ty::terr_ty_param_size(expected_found(this,
+                                                                 a_tys.len(),
+                                                                 b_tys.len())));
+            }
+
+            let tys = range(0, a_tys.len()).map(|i| {
+                let a_ty = a_tys[i];
+                let b_ty = b_tys[i];
+                let v = variances.map_or(ty::Invariant, |v| v[i]);
+
+                match v {
+                    ty::Invariant => this.equate().tys(a_ty, b_ty),
+                    ty::Covariant => this.tys(a_ty, b_ty),
+                    ty::Contravariant => this.contratys(a_ty, b_ty),
+                    ty::Bivariant => Ok(a_ty),
+                }
+            });
+            result::collect(tys)
+        }
+
         fn relate_region_params<C:Combine>(this: &C,
-                                           item_def_id: ast::DefId,
-                                           variances: &[ty::Variance],
+                                           variances: Option<&[ty::Variance]>,
                                            a_rs: &[ty::Region],
                                            b_rs: &[ty::Region])
                                            -> cres<Vec<ty::Region>>
         {
             let tcx = this.infcx().tcx;
-            let num_region_params = variances.len();
+            let num_region_params = a_rs.len();
 
             debug!("relate_region_params(\
-                   item_def_id={}, \
                    a_rs={}, \
                    b_rs={},
                    variances={})",
-                   item_def_id.repr(tcx),
                    a_rs.repr(tcx),
                    b_rs.repr(tcx),
                    variances.repr(tcx));
 
-            assert_eq!(num_region_params, a_rs.len());
+            assert_eq!(num_region_params,
+                       variances.map_or(num_region_params,
+                                        |v| v.len()));
+
             assert_eq!(num_region_params, b_rs.len());
-            let mut rs = vec!();
-            for i in range(0, num_region_params) {
+
+            let rs = range(0, a_rs.len()).map(|i| {
                 let a_r = a_rs[i];
                 let b_r = b_rs[i];
-                let variance = variances[i];
-                let r = match variance {
+                let variance = variances.map_or(ty::Invariant, |v| v[i]);
+                match variance {
                     ty::Invariant => this.equate().regions(a_r, b_r),
                     ty::Covariant => this.regions(a_r, b_r),
                     ty::Contravariant => this.contraregions(a_r, b_r),
                     ty::Bivariant => Ok(a_r),
-                };
-                rs.push(try!(r));
-            }
-            Ok(rs)
+                }
+            });
+            result::collect(rs)
         }
     }
 
