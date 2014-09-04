@@ -1553,6 +1553,9 @@ declare_lint!(pub VARIANT_SIZE_DIFFERENCE, Allow,
 declare_lint!(pub TRANSMUTE_FAT_PTR, Allow,
               "detects transmutes of fat pointers")
 
+declare_lint!(pub BIVARIANCE, Deny,
+              "detect type/lifetime parameters that are not used in any way")
+
 /// Does nothing as a lint pass, but registers some `Lint`s
 /// which are used by other parts of the compiler.
 pub struct HardwiredLints;
@@ -1560,6 +1563,7 @@ pub struct HardwiredLints;
 impl LintPass for HardwiredLints {
     fn get_lints(&self) -> LintArray {
         lint_array!(
+            BIVARIANCE,
             UNUSED_IMPORTS,
             UNNECESSARY_QUALIFICATION,
             UNRECOGNIZED_LINT,

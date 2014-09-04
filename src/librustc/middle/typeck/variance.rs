@@ -195,6 +195,7 @@ represents the "variance transform" as defined in the paper:
 use std::collections::HashMap;
 use arena;
 use arena::Arena;
+use lint;
 use middle::resolve_lifetime as rl;
 use middle::subst;
 use middle::subst::{ParamSpace, FnSpace, TypeSpace, SelfSpace, VecPerParamSpace};
@@ -1085,22 +1086,24 @@ impl<'a> SolveContext<'a> {
                         types.push(info.space, variance);
 
                         if variance == ty::Bivariant {
-                            span_err!(tcx.sess, info.span, E0161,
-                                      "type parameter `{}` is never used; \
-                                      either remove it, or use a marker such as \
-                                      `std::kinds::marker::CovariantType`",
-                                      info.name.user_string(tcx));
+                            tcx.sess.add_lint(
+                                lint::builtin::BIVARIANCE, info.item_id, info.span,
+                                format!("type parameter `{}` is never used; \
+                                        either remove it, or use a marker such as \
+                                        `std::kinds::marker::CovariantType`",
+                                        info.name.user_string(tcx)));
                         }
                     }
                     RegionParam => {
                         regions.push(info.space, variance);
 
                         if variance == ty::Bivariant {
-                            span_err!(tcx.sess, info.span, E0162,
-                                      "lifetime parameter `{}` is never used; \
-                                      either remove it, or use a marker such as \
-                                      `std::kinds::marker::ContravariantLifetime`",
-                                      info.name.user_string(tcx));
+                            tcx.sess.add_lint(
+                                lint::builtin::BIVARIANCE, info.item_id, info.span,
+                                format!("lifetime parameter `{}` is never used; \
+                                        either remove it, or use a marker such as \
+                                        `std::kinds::marker::CovariantType`",
+                                        info.name.user_string(tcx)));
                         }
                     }
                 }

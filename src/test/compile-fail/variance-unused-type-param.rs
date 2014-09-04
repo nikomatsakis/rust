@@ -8,16 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![allow(dead_code)]
+
 // Test that we report an error for unused type parameters in types.
 
-struct SomeStruct<A> { x: uint } //~ ERROR E0161
-enum SomeEnum<A> { Nothing } //~ ERROR E0161
-trait SomeTrait<A> { fn foo(&self); } //~ ERROR E0161
+struct SomeStruct<A> { x: uint } //~ ERROR bivariance
+enum SomeEnum<A> { Nothing } //~ ERROR bivariance
+trait SomeTrait<A> { fn foo(&self); } //~ ERROR bivariance
 
 // Here T might *appear* used, but in fact it isn't.
-enum ListCell<T> {
-    Cons(Box<list_cell<T>>),
+enum ListCell<T> { //~ ERROR bivariance
+    Cons(Box<ListCell<T>>),
     Nil
-} //~ ERROR E0161
+}
 
 fn main() {}
