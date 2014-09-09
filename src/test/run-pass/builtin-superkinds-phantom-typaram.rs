@@ -16,7 +16,7 @@ use std::kinds::marker;
 
 trait Foo : Send { }
 
-struct X<T>(marker: marker::CovariantType<T>);
+struct X<T> { marker: marker::CovariantType<T> }
 
 impl <T> Foo for X<T> { }
 

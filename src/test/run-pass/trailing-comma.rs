@@ -10,7 +10,7 @@
 
 fn f<T,>(_: T,) {}
 
-struct Foo<T,>;
+struct Foo<T,>(T);
 
 struct Bar;
 
@@ -28,7 +28,7 @@ pub fn main() {
     f::<int,>(0i,);
     let (_, _,) = (1i, 1i,);
 
-    let x: Foo<int,> = Foo::<int,>;
+    let x: Foo<int,> = Foo::<int,>(1);
 
     Bar::f(0i,);
     Bar.g(0i,);

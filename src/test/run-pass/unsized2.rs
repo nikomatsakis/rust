@@ -65,8 +65,8 @@ fn f7<Sized? X: T3>(x: &X) {
 }
 
 trait T4<X> {
-    fn m1(x: &T4<X>);
-    fn m2(x: &T5<X>);
+    fn m1(x: &T4<X>, y: X);
+    fn m2(x: &T5<X>, y: X);
 }
 trait T5<Sized? X> {
     // not an error (for now)

@@ -12,13 +12,17 @@
 
 // this code used to cause an ICE
 
-trait X<T> {}
+trait X<T> {
+    fn produce(self) -> T;
+}
 
 struct S<T> {f: Box<X<T>+'static>,
              g: Box<X<T>+'static>}
 
 struct F;
-impl X<int> for F {}
+impl X<int> for F {
+    fn produce(self) -> int { 22 }
+}
 
 fn main() {
   S {f: box F, g: box F};

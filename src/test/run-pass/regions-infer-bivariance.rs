@@ -11,6 +11,8 @@
 // Test that a type whose lifetime parameters is never used is
 // inferred to be bivariant.
 
+#![allow(bivariance)]
+
 use std::kinds::marker;
 
 struct Bivariant<'a>;

@@ -12,7 +12,7 @@
 
 
 pub trait Trait2<A> {
-    fn doit(&self);
+    fn doit(&self) -> A;
 }
 
 pub struct Impl<A1, A2, A3> {
@@ -26,7 +26,7 @@ pub struct Impl<A1, A2, A3> {
 
 impl<A1, A2, A3> Impl<A1, A2, A3> {
     pub fn step(&self) {
-        self.t.doit()
+        self.t.doit();
     }
 }
 

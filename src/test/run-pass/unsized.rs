@@ -12,6 +12,8 @@
 
 // Test syntax checks for `Sized?` syntax.
 
+#![allow(bivariance)]
+
 trait T1 for Sized? {}
 pub trait T2 for Sized? {}
 trait T3<X: T1> for Sized?: T2 {}

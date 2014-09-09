@@ -21,7 +21,7 @@ trait Ingot<R, S> {
 #[allow(dead_code)]
 struct HelloWorld;
 
-struct SendFile<'a>;
+struct SendFile;
 struct Alloy;
 enum Status {
     Continue
@@ -33,7 +33,7 @@ impl Alloy {
     }
 }
 
-impl<'a, 'b> Fn<(&'b mut Response+'b,),()> for SendFile<'a> {
+impl<'b> Fn<(&'b mut Response+'b,),()> for SendFile {
     extern "rust-call" fn call(&self, (_res,): (&'b mut Response+'b,)) {}
 }
 

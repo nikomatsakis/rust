@@ -10,12 +10,11 @@
 
 #![feature(default_type_params)]
 
-use core::kinds::marker;
+use std::kinds::marker;
 
 pub struct Heap;
 
 pub struct FakeHeap;
 
-pub struct FakeVec<T, A = FakeHeap> {
-    marker: marker::CovariantType<(T,A)>
-}
+pub struct FakeVec<T, A = FakeHeap>(pub Option<(T,A)>);
+

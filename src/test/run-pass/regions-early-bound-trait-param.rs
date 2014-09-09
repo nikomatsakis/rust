@@ -51,11 +51,11 @@ fn field_invoke2<'l, 'm, 'n>(x: &'n Struct2<'l,'m>) -> int {
     x.f.short()
 }
 
-trait MakerTrait<'o> {
+trait MakerTrait {
     fn mk() -> Self;
 }
 
-fn make_val<'p, T:MakerTrait<'p>>() -> T {
+fn make_val<T:MakerTrait>() -> T {
     MakerTrait::mk()
 }
 
@@ -78,7 +78,7 @@ impl<'s> Trait<'s> for (int,int) {
     }
 }
 
-impl<'t> MakerTrait<'t> for Box<Trait<'t>+'static> {
+impl<'t> MakerTrait for Box<Trait<'t>+'static> {
     fn mk() -> Box<Trait<'t>+'static> { box() (4i,5i) as Box<Trait> }
 }
 

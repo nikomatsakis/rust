@@ -12,10 +12,10 @@
 #![crate_type = "lib"]
 
 
-pub trait i<T> { }
+pub trait i<T> { fn get(self) -> T; }
 
 pub fn f<T>() -> Box<i<T>+'static> {
-    impl<T> i<T> for () { }
+    impl<T> i<T> for () { fn get(self) -> T { fail!() } }
 
     box() () as Box<i<T>+'static>
 }

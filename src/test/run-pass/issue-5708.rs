@@ -48,7 +48,7 @@ pub fn main() {
 
 
 // minimal
-trait MyTrait<T> { }
+trait MyTrait<T> { fn get(self) -> T; }
 
 pub struct MyContainer<'a, T> {
     foos: Vec<&'a MyTrait<T>+'a> ,
