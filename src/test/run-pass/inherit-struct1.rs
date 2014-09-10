@@ -11,6 +11,11 @@
 // Test struct inheritance.
 #![feature(struct_inherit)]
 
+// FIXME the variance analysis does not consider superstructs,
+// partially because the code for them is messed up. e.g., it stores
+// the supertype information over top the id ofthe base type!
+#![allow(bivariance)]
+
 virtual struct S1 {
     f1: int,
 }

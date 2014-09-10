@@ -10,6 +10,7 @@
 
 #![crate_type="lib"]
 #![deny(warnings)]
+#![allow(dead_code)]
 
 pub use src::aliases::B;
 pub use src::hidden_core::make;

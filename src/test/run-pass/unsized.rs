@@ -10,9 +10,11 @@
 //
 // ignore-lexer-test FIXME #15879
 
-// Test syntax checks for `Sized?` syntax.
-
 #![allow(bivariance)]
+
+use std::kinds::marker;
+
+// Test syntax checks for `Sized?` syntax.
 
 trait T1 for Sized? {}
 pub trait T2 for Sized? {}
@@ -22,7 +24,7 @@ trait T5<Sized? X, Y> {}
 trait T6<Y, Sized? X> {}
 trait T7<Sized? X, Sized? Y> {}
 trait T8<Sized? X: T2> {}
-struct S1<Sized? X>;
+struct S1<Sized? X> { marker: marker::CovariantType<X> }
 enum E<Sized? X> {}
 impl <Sized? X> T1 for S1<X> {}
 fn f<Sized? X>() {}

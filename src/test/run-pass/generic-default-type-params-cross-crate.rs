@@ -21,6 +21,6 @@ struct Foo;
 fn main() {
     let _a = Vec::<int>;
     let _b = Vec::<int, default_type_params_xc::FakeHeap>;
-    let _c = default_type_params_xc::FakeVec::<int>(None);
-    let _d = default_type_params_xc::FakeVec::<int, Foo>(None);
+    let _c = default_type_params_xc::FakeVec::<int> { f: None };
+    let _d = default_type_params_xc::FakeVec::<int, Foo> { f: None };
 }

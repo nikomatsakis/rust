@@ -8,8 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub struct A<T>(T);
-pub struct B<T>(T);
+pub struct A<T> { v: T }
+pub struct B<T> { v: T }
 
 pub mod test {
     pub struct A<T> { pub t: T }

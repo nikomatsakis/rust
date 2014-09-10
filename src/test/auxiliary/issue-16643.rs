@@ -10,9 +10,9 @@
 
 #![crate_type = "lib"]
 
-pub struct TreeBuilder;
+pub struct TreeBuilder<H> { pub h: H }
 
-impl TreeBuilder {
+impl<H> TreeBuilder<H> {
     pub fn process_token(&mut self) {
         match self {
             _ => for _y in *self {}
@@ -20,7 +20,7 @@ impl TreeBuilder {
     }
 }
 
-impl<H> Iterator<H> for TreeBuilder {
+impl<H> Iterator<H> for TreeBuilder<H> {
     fn next(&mut self) -> Option<H> {
         None
     }

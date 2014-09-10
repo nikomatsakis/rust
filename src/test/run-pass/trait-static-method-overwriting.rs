@@ -38,6 +38,6 @@ mod base {
 }
 
 pub fn main() {
-    let _f: base::Foo = base::HasNew::<base::Foo>::new();
-    let _b: base::Bar = base::HasNew::<base::Bar>::new();
+    let _f: base::Foo = base::HasNew::new();
+    let _b: base::Bar = base::HasNew::new();
 }

@@ -507,6 +507,9 @@ impl<'a> Visitor<()> for ConstraintContext<'a> {
 
         match item.node {
             ast::ItemEnum(ref enum_definition, _) => {
+                let polytype = ty::lookup_item_type(tcx, did);
+                self.add_constraints_from_generics(&polytype.generics);
+
                 // Hack: If we directly call `ty::enum_variants`, it
                 // annoyingly takes it upon itself to run off and
                 // evaluate the discriminants eagerly (*grumpy* that's
@@ -529,6 +532,9 @@ impl<'a> Visitor<()> for ConstraintContext<'a> {
             }
 
             ast::ItemStruct(..) => {
+                let polytype = ty::lookup_item_type(tcx, did);
+                self.add_constraints_from_generics(&polytype.generics);
+
                 let struct_fields = ty::lookup_struct_fields(tcx, did);
                 for field_info in struct_fields.iter() {
                     assert_eq!(field_info.id.krate, ast::LOCAL_CRATE);
@@ -538,6 +544,10 @@ impl<'a> Visitor<()> for ConstraintContext<'a> {
             }
 
             ast::ItemTrait(..) => {
+                let trait_def = ty::lookup_trait_def(tcx, did);
+                self.add_constraints_from_generics(&trait_def.generics);
+                self.add_constraints_from_param_bounds(&trait_def.bounds);
+
                 let trait_items = ty::trait_items(tcx, did);
                 for trait_item in trait_items.iter() {
                     match *trait_item {
@@ -755,17 +765,6 @@ impl<'a> ConstraintContext<'a> {
             generics.regions.get_slice(subst::TypeSpace),
             substs,
             variance);
-
-        // Note: for trait refs that appear in object types, the self
-        // type will not be present, so ignore it in that case.
-        if !substs.types.is_empty_in(subst::SelfSpace) {
-            self.add_constraints_from_substs(
-                def_id,
-                generics.types.get_slice(subst::SelfSpace),
-                generics.regions.get_slice(subst::SelfSpace),
-                substs,
-                variance);
-        }
     }
 
     /// Adds constraints appropriate for an instance of `ty` appearing
@@ -903,16 +902,7 @@ impl<'a> ConstraintContext<'a> {
     fn add_constraints_from_generics(&mut self,
                                      generics: &ty::Generics) {
         for type_def in generics.types.iter() {
-            for bound in type_def.bounds.opt_region_bound.iter() {
-                self.add_constraints_from_region(*bound,
-                                                 self.contravariant);
-            }
-
-            for bound in type_def.bounds.trait_bounds.iter() {
-                self.add_constraints_from_trait_ref(bound.def_id,
-                                                    &bound.substs,
-                                                    self.covariant);
-            }
+            self.add_constraints_from_param_bounds(&type_def.bounds);
         }
 
         for region_def in generics.regions.iter() {
@@ -920,6 +910,20 @@ impl<'a> ConstraintContext<'a> {
                 self.add_constraints_from_region(*bound,
                                                  self.contravariant);
             }
+        }
+    }
+
+    fn add_constraints_from_param_bounds(&mut self,
+                                         bounds: &ty::ParamBounds) {
+        for bound in bounds.opt_region_bound.iter() {
+            self.add_constraints_from_region(*bound,
+                                             self.contravariant);
+        }
+
+        for bound in bounds.trait_bounds.iter() {
+            self.add_constraints_from_trait_ref(bound.def_id,
+                                                &bound.substs,
+                                                self.covariant);
         }
     }
 
