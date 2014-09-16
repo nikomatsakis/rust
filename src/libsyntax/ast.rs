@@ -271,8 +271,17 @@ pub struct WhereClause {
 pub struct WherePredicate {
     pub id: NodeId,
     pub span: Span,
-    pub ident: Ident,
-    pub bounds: OwnedSlice<TyParamBound>,
+    pub kind: WherePredicateKind
+}
+
+#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+pub enum WherePredicateKind {
+    // T : Trait
+    // T : 'a
+    TypePredicate(P<Ty>, OwnedSlice<TyParamBound>),
+
+    // 'a : 'b
+    LifetimePredicate(Lifetime, Vec<Lifetime>),
 }
 
 /// The set of MetaItems that define the compilation environment of the crate,

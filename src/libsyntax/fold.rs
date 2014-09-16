@@ -296,6 +296,11 @@ pub trait Folder {
         noop_fold_associated_type(associated_type, self)
     }
 
+    fn fold_where_predicate_kind(&mut self, where_predicate_kind: WherePredicateKind)
+                                 -> WherePredicateKind {
+        noop_fold_where_predicate_kind(where_predicate_kind, self)
+    }
+
     fn new_id(&mut self, i: NodeId) -> NodeId {
         i
     }
@@ -764,14 +769,31 @@ pub fn noop_fold_where_clause<T: Folder>(
 }
 
 pub fn noop_fold_where_predicate<T: Folder>(
-                                 WherePredicate {id, ident, bounds, span}: WherePredicate,
+                                 WherePredicate {id, span, kind}: WherePredicate,
                                  fld: &mut T)
                                  -> WherePredicate {
     WherePredicate {
         id: fld.new_id(id),
-        ident: fld.fold_ident(ident),
-        bounds: bounds.move_map(|x| fld.fold_ty_param_bound(x)),
-        span: fld.new_span(span)
+        span: fld.new_span(span),
+        kind: fld.fold_where_predicate_kind(kind)
+    }
+}
+
+pub fn noop_fold_where_predicate_kind<T>(
+    kind: WherePredicateKind,
+    fld: &mut T)
+    -> WherePredicateKind
+    where T : Folder
+{
+    match kind {
+        TypePredicate(ty, bounds) => {
+            TypePredicate(fld.fold_ty(ty),
+                          bounds.move_map(|x| fld.fold_ty_param_bound(x)))
+        }
+        LifetimePredicate(a, bs) => {
+            LifetimePredicate(fld.fold_lifetime(a),
+                              bs.move_map(|b| fld.fold_lifetime(b)))
+        }
     }
 }
 

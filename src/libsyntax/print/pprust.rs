@@ -2303,6 +2303,16 @@ impl<'a> State<'a> {
         self.print_name(lifetime.name)
     }
 
+    pub fn print_lifetimes(&mut self,
+                           lifetimes: &[ast::Lifetime])
+                           -> IoResult<()>
+    {
+        for lifetime in lifetimes.iter() {
+            try!(self.print_lifetime(lifetime));
+        }
+        Ok(())
+    }
+
     pub fn print_lifetime_def(&mut self,
                               lifetime: &ast::LifetimeDef)
                               -> IoResult<()>
@@ -2376,13 +2386,23 @@ impl<'a> State<'a> {
         for (i, predicate) in generics.where_clause
                                       .predicates
                                       .iter()
-                                      .enumerate() {
+                                      .enumerate()
+        {
             if i != 0 {
                 try!(self.word_space(","));
             }
 
-            try!(self.print_ident(predicate.ident));
-            try!(self.print_bounds(":", &predicate.bounds));
+            match predicate.kind {
+                ast::TypePredicate(ref ty, ref bounds) => {
+                    try!(self.print_type(&**ty));
+                    try!(self.print_bounds(":", bounds));
+                }
+
+                ast::LifetimePredicate(ref lifetime, ref bounds) => {
+                    try!(self.print_lifetime(lifetime));
+                    try!(self.print_lifetimes(bounds.as_slice()));
+                }
+            }
         }
 
         Ok(())

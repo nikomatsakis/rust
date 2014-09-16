@@ -517,8 +517,18 @@ pub fn walk_generics<'v, V: Visitor<'v>>(visitor: &mut V, generics: &'v Generics
     }
     walk_lifetime_decls(visitor, &generics.lifetimes);
     for predicate in generics.where_clause.predicates.iter() {
-        visitor.visit_ident(predicate.span, predicate.ident);
-        walk_ty_param_bounds(visitor, &predicate.bounds);
+        match predicate.kind {
+            TypePredicate(ref ty, ref bounds) => {
+                visitor.visit_ty(&**ty);
+                walk_ty_param_bounds(visitor, bounds);
+            }
+            LifetimePredicate(ref a, ref bs) => {
+                visitor.visit_lifetime_ref(a);
+                for b in bs.iter() {
+                    visitor.visit_lifetime_ref(b);
+                }
+            }
+        }
     }
 }
 

@@ -34,7 +34,8 @@ use ast::{ForeignItem, ForeignItemStatic, ForeignItemFn, ForeignMod};
 use ast::{Ident, NormalFn, Inherited, ImplItem, Item, Item_, ItemStatic};
 use ast::{ItemEnum, ItemFn, ItemForeignMod, ItemImpl, ItemConst};
 use ast::{ItemMac, ItemMod, ItemStruct, ItemTrait, ItemTy};
-use ast::{LifetimeDef, Lit, Lit_};
+use ast::{LifetimeDef, LifetimePredicate};
+use ast::{Lit, Lit_};
 use ast::{LitBool, LitChar, LitByte, LitBinary};
 use ast::{LitNil, LitStr, LitInt, Local, LocalLet};
 use ast::{MutImmutable, MutMutable, Mac_, MacInvocTT, Matcher, MatchNonterminal, MatchNormal};
@@ -54,7 +55,7 @@ use ast::{TypeField, TyFixedLengthVec, TyClosure, TyProc, TyBareFn};
 use ast::{TyTypeof, TyInfer, TypeMethod};
 use ast::{TyNil, TyParam, TyParamBound, TyParen, TyPath, TyPtr, TyQPath};
 use ast::{TyRptr, TyTup, TyU32, TyUnboxedFn, TyUniq, TyVec, UnUniq};
-use ast::{TypeImplItem, TypeTraitItem, Typedef, UnboxedClosureKind};
+use ast::{TypePredicate, TypeImplItem, TypeTraitItem, Typedef, UnboxedClosureKind};
 use ast::{UnboxedFnBound, UnboxedFnTy, UnboxedFnTyParamBound};
 use ast::{UnnamedField, UnsafeBlock};
 use ast::{UnsafeFn, ViewItem, ViewItem_, ViewItemExternCrate, ViewItemUse};
@@ -4002,6 +4003,10 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses an optional `where` clause and places it in `generics`.
+    ///
+    /// ```
+    /// where T : Trait<U,V> + 'b, 'a : 'b
+    /// ```
     fn parse_where_clause(&mut self, generics: &mut ast::Generics) {
         if !self.eat_keyword(keywords::Where) {
             return
@@ -4010,30 +4015,48 @@ impl<'a> Parser<'a> {
         let mut parsed_something = false;
         loop {
             let lo = self.span.lo;
-            let ident = match self.token {
-                token::IDENT(..) => self.parse_ident(),
-                _ => break,
-            };
-            self.expect(&token::COLON);
+            let kind = match self.token {
+                token::LBRACE => {
+                    break;
+                }
 
-            let bounds = self.parse_ty_param_bounds();
+                token::LIFETIME(..) => {
+                    let lifetime =
+                        self.parse_lifetime();
+                    let bounds =
+                        self.parse_lifetimes(token::BINOP(token::PLUS));
+                    LifetimePredicate(lifetime, bounds)
+                }
+
+                _ => {
+                    // where Type : Trait, Type : 'a, etc
+                    let ty = self.parse_ty(true);
+                    self.expect(&token::COLON);
+                    let bounds = self.parse_ty_param_bounds();
+                    TypePredicate(ty, bounds)
+                }
+            };
+
             let hi = self.span.hi;
             let span = mk_sp(lo, hi);
 
-            if bounds.len() == 0 {
+            let len = match kind {
+                TypePredicate(_, ref bounds) => bounds.len(),
+                LifetimePredicate(_, ref bounds) => bounds.len(),
+            };
+            if len == 0 {
                 self.span_err(span,
                               "each predicate in a `where` clause must have \
-                               at least one bound in it");
+                              at least one bound in it");
             }
 
             generics.where_clause.predicates.push(ast::WherePredicate {
                 id: ast::DUMMY_NODE_ID,
                 span: span,
-                ident: ident,
-                bounds: bounds,
+                kind: kind,
             });
-            parsed_something = true;
 
+                    parsed_something = true;
             if !self.eat(&token::COMMA) {
                 break
             }
