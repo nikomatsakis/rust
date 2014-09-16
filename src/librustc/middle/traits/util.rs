@@ -24,90 +24,87 @@ use super::{ErrorReported, Obligation, ObligationCause, VtableImpl,
             VtableParam, VtableParamData, VtableImplData};
 
 ///////////////////////////////////////////////////////////////////////////
-// Supertrait iterator
+// Elaboration iterator
 
-pub struct Supertraits<'cx, 'tcx:'cx> {
+pub struct Elaborator<'cx, 'tcx:'cx> {
     tcx: &'cx ty::ctxt<'tcx>,
-    stack: Vec<SupertraitEntry>,
+    stack: Vec<StackEntry>,
     visited: HashSet<Rc<ty::TraitRef>>,
 }
 
-struct SupertraitEntry {
+struct StackEntry {
     position: uint,
-    supertraits: Vec<Rc<ty::TraitRef>>,
+    predicates: Vec<ty::Predicate>,
 }
 
-pub fn supertraits<'cx, 'tcx>(tcx: &'cx ty::ctxt<'tcx>,
-                              trait_ref: Rc<ty::TraitRef>)
-                              -> Supertraits<'cx, 'tcx>
+pub fn elaborate_trait_ref<'cx, 'tcx>(
+    tcx: &'cx ty::ctxt<'tcx>,
+    trait_ref: Rc<ty::TraitRef>)
+    -> Elaborator<'cx, 'tcx>
 {
-    /*!
-     * Returns an iterator over the trait reference `T` and all of its
-     * supertrait references. May contain duplicates. In general
-     * the ordering is not defined.
-     *
-     * Example:
-     *
-     * ```
-     * trait Foo { ... }
-     * trait Bar : Foo { ... }
-     * trait Baz : Bar+Foo { ... }
-     * ```
-     *
-     * `supertraits(Baz)` yields `[Baz, Bar, Foo, Foo]` in some order.
-     */
-
-    transitive_bounds(tcx, [trait_ref])
+    elaborate(tcx, vec![ty::TraitPredicate(trait_ref)])
 }
 
-pub fn transitive_bounds<'cx, 'tcx>(tcx: &'cx ty::ctxt<'tcx>,
-                                    bounds: &[Rc<ty::TraitRef>])
-                                    -> Supertraits<'cx, 'tcx>
+pub fn elaborate_predicates<'cx, 'tcx>(
+    tcx: &'cx ty::ctxt<'tcx>,
+    predicates: Vec<ty::Predicate>)
+    -> Elaborator<'cx, 'tcx>
 {
-    let bounds = Vec::from_fn(bounds.len(), |i| bounds[i].clone());
-
     let visited: HashSet<Rc<ty::TraitRef>> =
-        bounds.iter()
-              .map(|b| (*b).clone())
-              .collect();
+        predicates.iter()
+                  .map(|b| (*b).clone())
+                  .collect();
 
-    let entry = SupertraitEntry { position: 0, supertraits: bounds };
-    Supertraits { tcx: tcx, stack: vec![entry], visited: visited }
+    let entry = StackEntry { position: 0, predicates: predicates };
+    Elaborator { tcx: tcx, stack: vec![entry], visited: visited }
 }
 
-impl<'cx, 'tcx> Supertraits<'cx, 'tcx> {
-    fn push(&mut self, trait_ref: &ty::TraitRef) {
-        let ty::ParamBounds { builtin_bounds, mut trait_bounds, .. } =
-            ty::bounds_for_trait_ref(self.tcx, trait_ref);
-        for builtin_bound in builtin_bounds.iter() {
-            let bound_trait_ref = trait_ref_for_builtin_bound(self.tcx,
-                                                              builtin_bound,
-                                                              trait_ref.self_ty());
-            bound_trait_ref.map(|trait_ref| trait_bounds.push(trait_ref));
+impl<'cx, 'tcx> Elaborator<'cx, 'tcx> {
+    fn push(&mut self, predicate: &ty::Predicate) {
+        match *predicate {
+            ty::TraitPredicate(ref trait_ref) => {
+                let mut predicates =
+                    ty::predicates_for_trait_ref(self.tcx, trait_ref);
+
+                // Only keep those bounds that we haven't already
+                // seen.  This is necessary to prevent infinite
+                // recursion in some cases.  One common case is when
+                // people define `trait Sized { }` rather than `trait
+                // Sized for Sized? { }`.
+                predicates.retain(|r| self.visited.insert((*r).clone()));
+
+                let entry =
+                    SupertraitEntry { position: 0,
+                                      predicates: predicates };
+                self.stack.push(entry);
+            }
+            ty::OutlivesPredicate(..) => {
+                // Currently, we do not "elaborate" predicates like
+                // `'a : 'b` or `T : 'a`.  We could conceivably do
+                // more here.  For example,
+                //
+                //     &'a int : 'b
+                //
+                // implies that
+                //
+                //     'a : 'b
+                //
+                // and we could get even more if we took WF
+                // constraints into account. For example,
+                //
+                //     &'a &'b int : 'c
+                //
+                // implies that
+                //
+                //     'b : 'a
+                //     'a : 'c
+            }
         }
-
-        // Only keep those bounds that we haven't already seen.  This
-        // is necessary to prevent infinite recursion in some cases.
-        // One common case is when people define `trait Sized { }`
-        // rather than `trait Sized for Sized? { }`.
-        trait_bounds.retain(|r| self.visited.insert((*r).clone()));
-
-        let entry = SupertraitEntry { position: 0, supertraits: trait_bounds };
-        self.stack.push(entry);
-    }
-
-    pub fn indices(&self) -> Vec<uint> {
-        /*!
-         * Returns the path taken through the trait supertraits to
-         * reach the current point.
-         */
-
-        self.stack.iter().map(|e| e.position).collect()
     }
 }
 
-impl<'cx, 'tcx> Iterator<Rc<ty::TraitRef>> for Supertraits<'cx, 'tcx> {
-    fn next(&mut self) -> Option<Rc<ty::TraitRef>> {
+impl<'cx, 'tcx> Iterator<ty::Predicate> for Elaborator<'cx, 'tcx> {
+    fn next(&mut self) -> Option<ty::Predicate> {
         loop {
             // Extract next item from top-most stack frame, if any.
             let next_trait = match self.stack.mut_last() {
@@ -117,23 +114,24 @@ impl<'cx, 'tcx> Iterator<Rc<ty::TraitRef>> for Supertraits<'cx, 'tcx> {
                 }
                 Some(entry) => {
                     let p = entry.position;
-                    if p < entry.supertraits.len() {
-                        // Still more supertraits left in the top stack frame.
+                    if p < entry.predicates.len() {
+                        // Still more predicates left in the top stack frame.
                         entry.position += 1;
 
-                        let next_trait =
-                            (*entry.supertraits.get(p)).clone();
-                        Some(next_trait)
+                        let next_predicate =
+                            (*entry.predicates.get(p)).clone();
+
+                        Some(next_predicate)
                     } else {
                         None
                     }
                 }
             };
 
-            match next_trait {
-                Some(next_trait) => {
-                    self.push(&*next_trait);
-                    return Some(next_trait);
+            match next_predicate {
+                Some(next_predicate) => {
+                    self.push(&*next_predicate);
+                    return Some(next_predicate);
                 }
 
                 None => {
@@ -144,6 +142,7 @@ impl<'cx, 'tcx> Iterator<Rc<ty::TraitRef>> for Supertraits<'cx, 'tcx> {
         }
     }
 }
+
 
 // determine the `self` type, using fresh variables for all variables
 // declared on the impl declaration e.g., `impl<A,B> for ~[(A,B)]`

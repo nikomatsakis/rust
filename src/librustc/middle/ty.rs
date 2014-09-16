@@ -1210,7 +1210,6 @@ pub struct TypeParameterDef {
     pub space: subst::ParamSpace,
     pub index: uint,
     pub associated_with: Option<ast::DefId>,
-    pub bounds: ParamBounds,
     pub default: Option<ty::t>,
 }
 
@@ -1223,12 +1222,28 @@ pub struct RegionParameterDef {
     pub bounds: Vec<ty::Region>,
 }
 
+#[deriving(Clone, Show)]
+pub enum Predicate {
+    TraitPredicate(Rc<TraitRef>),
+    OutlivesPredicate(OutlivesPredicate),
+}
+
+#[deriving(Clone, Show)]
+pub enum OutlivesPredicate {
+    /// T : 'a
+    TypeOutlivesPredicate(t, Region),
+
+    /// 'a : 'b ('a outlives 'b)
+    RegionOutlivesPredicate(Region, Region),
+}
+
 /// Information about the type/lifetime parameters associated with an
 /// item or method. Analogous to ast::Generics.
 #[deriving(Clone, Show)]
 pub struct Generics {
     pub types: VecPerParamSpace<TypeParameterDef>,
     pub regions: VecPerParamSpace<RegionParameterDef>,
+    pub predicates: Vec<Predicate>,
 }
 
 impl Generics {
@@ -1249,6 +1264,14 @@ impl Generics {
 impl TraitRef {
     pub fn self_ty(&self) -> ty::t {
         self.substs.self_ty().unwrap()
+    }
+
+    pub fn from_builtin_bound(tcx: &ctxt,
+                              for_ty: ty::t,
+                              bound: BuiltinBound)
+                              -> Rc<TraitRef>
+    {
+        
     }
 }
 
@@ -1271,9 +1294,6 @@ pub struct ParameterEnvironment {
     /// free parameters. Since we currently represent bound/free type
     /// parameters in the same way, this only has an effect on regions.
     pub free_substs: Substs,
-
-    /// Bounds on the various type parameters
-    pub bounds: VecPerParamSpace<ParamBounds>,
 
     /// Each type parameter has an implicit region bound that
     /// indicates it must outlive at least the function body (the user
@@ -1418,8 +1438,6 @@ pub struct TraitDef {
     /// implements the trait.
     pub generics: Generics,
 
-    /// The "supertrait" bounds.
-    pub bounds: ParamBounds,
     pub trait_ref: Rc<ty::TraitRef>,
 }
 
@@ -4462,14 +4480,14 @@ pub fn lookup_trait_def(cx: &ctxt, did: ast::DefId) -> Rc<ty::TraitDef> {
 
 /// Given a reference to a trait, returns the bounds declared on the
 /// trait, with appropriate substitutions applied.
-pub fn bounds_for_trait_ref(tcx: &ctxt,
-                            trait_ref: &TraitRef)
-                            -> ty::ParamBounds
+pub fn predicates_for_trait_ref(tcx: &ctxt,
+                                trait_ref: &TraitRef)
+                                -> Vec<Predicate>
 {
     let trait_def = lookup_trait_def(tcx, trait_ref.def_id);
     debug!("bounds_for_trait_ref(trait_def={}, trait_ref={})",
            trait_def.repr(tcx), trait_ref.repr(tcx));
-    trait_def.bounds.subst(tcx, &trait_ref.substs)
+    trait_def.generics.predicates.subst(tcx, &trait_ref.substs)
 }
 
 /// Iterate over attributes of a definition.
@@ -4868,9 +4886,7 @@ pub fn each_bound_trait_and_supertraits(tcx: &ctxt,
 }
 
 pub fn required_region_bounds(tcx: &ctxt,
-                              region_bounds: &[ty::Region],
-                              builtin_bounds: BuiltinBounds,
-                              trait_bounds: &[Rc<TraitRef>])
+                              predicates: &[ty::Predicate])
                               -> Vec<ty::Region>
 {
     /*!
@@ -4880,46 +4896,6 @@ pub fn required_region_bounds(tcx: &ctxt,
      * Requires that trait definitions have been processed.
      */
 
-    let mut all_bounds = Vec::new();
-
-    debug!("required_region_bounds(builtin_bounds={}, trait_bounds={})",
-           builtin_bounds.repr(tcx),
-           trait_bounds.repr(tcx));
-
-    all_bounds.push_all(region_bounds);
-
-    push_region_bounds([],
-                       builtin_bounds,
-                       &mut all_bounds);
-
-    debug!("from builtin bounds: all_bounds={}", all_bounds.repr(tcx));
-
-    each_bound_trait_and_supertraits(
-        tcx,
-        trait_bounds,
-        |trait_ref| {
-            let bounds = ty::bounds_for_trait_ref(tcx, &*trait_ref);
-            push_region_bounds(bounds.region_bounds.as_slice(),
-                               bounds.builtin_bounds,
-                               &mut all_bounds);
-            debug!("from {}: bounds={} all_bounds={}",
-                   trait_ref.repr(tcx),
-                   bounds.repr(tcx),
-                   all_bounds.repr(tcx));
-            true
-        });
-
-    return all_bounds;
-
-    fn push_region_bounds(region_bounds: &[ty::Region],
-                          builtin_bounds: ty::BuiltinBounds,
-                          all_bounds: &mut Vec<ty::Region>) {
-        all_bounds.push_all(region_bounds.as_slice());
-
-        if builtin_bounds.contains_elem(ty::BoundSend) {
-            all_bounds.push(ty::ReStatic);
-        }
-    }
 }
 
 pub fn get_tydesc_ty(tcx: &ctxt) -> Result<t, String> {
