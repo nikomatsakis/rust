@@ -25,6 +25,8 @@ use middle::ty;
 use middle::typeck::check::regionmanip;
 use middle::typeck::infer;
 use middle::typeck::infer::InferCtxt;
+use std::cell::RefCell;
+use std::collections::hashmap::HashMap;
 use std::rc::Rc;
 use syntax::ast;
 use util::nodemap::DefIdMap;
@@ -36,15 +38,15 @@ pub struct SelectionContext<'cx, 'tcx:'cx> {
     unboxed_closures: &'cx DefIdMap<ty::UnboxedClosure>,
 }
 
-// pub struct SelectionCache {
-//     hashmap: RefCell<HashMap<CacheKey, Candidate>>,
-// }
+pub struct SelectionCache {
+    hashmap: RefCell<HashMap<CacheKey, SelectionResult<Candidate>>>,
+}
 
-// #[deriving(Hash,Eq,PartialEq)]
-// struct CacheKey {
-//     trait_def_id: ast::DefId,
-//     skol_obligation_self_ty: ty::t,
-// }
+#[deriving(Hash,Eq,PartialEq)]
+struct CacheKey {
+    trait_def_id: ast::DefId,
+    skol_obligation_self_ty: ty::t,
+}
 
 enum MatchResult<T> {
     Matched(T),
@@ -239,11 +241,28 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         // First, check the cache.
         match self.check_candidate_cache(obligation, skol_obligation_self_ty) {
             Some(c) => {
-                return Ok(Some(c));
+                debug!("check_candidate_cache(obligation={}, skol_obligation_self_ty={}, \
+                       candidate={})",
+                       obligation.trait_ref.def_id,
+                       skol_obligation_self_ty.repr(self.tcx()),
+                       c.repr(self.tcx()));
+                return c;
             }
             None => { }
         }
 
+        // If no match, compute result and insert into cache.
+        let result = self.pick_candidate(obligation, skol_obligation_self_ty);
+        self.insert_candidate_cache(obligation, skol_obligation_self_ty,
+                                    result.clone());
+        result
+    }
+
+    fn pick_candidate(&self,
+                      obligation: &Obligation,
+                      skol_obligation_self_ty: ty::t)
+                      -> SelectionResult<Candidate>
+    {
         let mut candidates =
             try!(self.assemble_candidates(obligation,
                                           skol_obligation_self_ty));
@@ -262,7 +281,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             // be bound to a new type from some other crate which will
             // also contain impls.
             let trait_ref = &*obligation.trait_ref;
-            return if !self.trait_ref_unconstrained(trait_ref) {
+            if !self.trait_ref_unconstrained(trait_ref) {
                 debug!("candidate_from_obligation({}) -> 0 matches, unimpl",
                        obligation.repr(self.tcx()));
                 Err(Unimplemented)
@@ -270,51 +289,62 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                 debug!("candidate_from_obligation({}) -> 0 matches, ambig",
                        obligation.repr(self.tcx()));
                 Ok(None)
-            };
-        }
-
-        if candidates.len() > 1 {
+            }
+        } else if candidates.len() > 1 {
             // Ambiguity. Possibly we should report back more
             // information on the potential candidates so we can give
             // a better error message.
             debug!("candidate_from_obligation({}) -> multiple matches, ambig",
                    obligation.repr(self.tcx()));
-
-            return Ok(None);
+            Ok(None)
+        } else {
+            let candidate = candidates.pop().unwrap();
+            Ok(Some(candidate))
         }
+    }
 
-        let candidate = candidates.pop().unwrap();
-        self.insert_candidate_cache(obligation, skol_obligation_self_ty,
-                                    candidate.clone());
-        Ok(Some(candidate))
+    fn pick_candidate_cache(&self,
+                            _obligation: &Obligation,
+                            skol_obligation_self_ty: ty::t)
+                            -> &SelectionCache
+    {
+        if
+            ty::type_has_self(skol_obligation_self_ty) ||
+            ty::type_has_params(skol_obligation_self_ty)
+        {
+            &self.param_env.selection_cache
+        } else {
+            &self.tcx().selection_cache
+        }
     }
 
     fn check_candidate_cache(&self,
-                             _obligation: &Obligation,
-                             _skol_obligation_self_ty: ty::t)
-                             -> Option<Candidate>
+                             obligation: &Obligation,
+                             skol_obligation_self_ty: ty::t)
+                             -> Option<SelectionResult<Candidate>>
     {
-        // let cache_key = CacheKey::new(obligation.trait_ref.def_id,
-        //                               skol_obligation_self_ty);
-        // let hashmap = self.tcx().selection_cache.hashmap.borrow();
-        // hashmap.find(&cache_key).map(|c| (*c).clone())
-        None
+        let cache = self.pick_candidate_cache(obligation, skol_obligation_self_ty);
+        let cache_key = CacheKey::new(obligation.trait_ref.def_id,
+                                      skol_obligation_self_ty);
+        let hashmap = cache.hashmap.borrow();
+        hashmap.find(&cache_key).map(|c| (*c).clone())
     }
 
     fn insert_candidate_cache(&self,
-                              _obligation: &Obligation,
-                              _skol_obligation_self_ty: ty::t,
-                              _candidate: Candidate)
+                              obligation: &Obligation,
+                              skol_obligation_self_ty: ty::t,
+                              candidate: SelectionResult<Candidate>)
     {
-        // FIXME -- Enable caching. I think the right place to put the cache
-        // is in the ParameterEnvironment, not the tcx, because otherwise
-        // when there are distinct where clauses in scope the cache can get
-        // confused.
-        //
-        //let cache_key = CacheKey::new(obligation.trait_ref.def_id,
-        //                              skol_obligation_self_ty);
-        //let mut hashmap = self.tcx().selection_cache.hashmap.borrow_mut();
-        //hashmap.insert(cache_key, candidate);
+        debug!("insert_candidate_cache(obligation={}, skol_obligation_self_ty={}, candidate={})",
+               obligation.trait_ref.def_id,
+               skol_obligation_self_ty.repr(self.tcx()),
+               candidate.repr(self.tcx()));
+
+        let cache = self.pick_candidate_cache(obligation, skol_obligation_self_ty);
+        let cache_key = CacheKey::new(obligation.trait_ref.def_id,
+                                      skol_obligation_self_ty);
+        let mut hashmap = cache.hashmap.borrow_mut();
+        hashmap.insert(cache_key, candidate);
     }
 
     fn assemble_candidates(&self,
@@ -1002,23 +1032,22 @@ impl Repr for ImplCandidate {
     }
 }
 
+impl SelectionCache {
+    pub fn new() -> SelectionCache {
+        SelectionCache {
+            hashmap: RefCell::new(HashMap::new())
+        }
+    }
+}
 
-// impl SelectionCache {
-//     pub fn new() -> SelectionCache {
-//         SelectionCache {
-//             hashmap: RefCell::new(HashMap::new())
-//         }
-//     }
-// }
-
-// impl CacheKey {
-//     pub fn new(trait_def_id: ast::DefId,
-//                skol_obligation_self_ty: ty::t)
-//                -> CacheKey
-//     {
-//         CacheKey {
-//             trait_def_id: trait_def_id,
-//             skol_obligation_self_ty: skol_obligation_self_ty
-//         }
-//     }
-// }
+impl CacheKey {
+    pub fn new(trait_def_id: ast::DefId,
+               skol_obligation_self_ty: ty::t)
+               -> CacheKey
+    {
+        CacheKey {
+            trait_def_id: trait_def_id,
+            skol_obligation_self_ty: skol_obligation_self_ty
+        }
+    }
+}
