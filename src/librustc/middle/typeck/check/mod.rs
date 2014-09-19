@@ -2113,9 +2113,7 @@ fn try_overloaded_call<'a>(fcx: &FnCtxt,
                 method_name,
                 function_trait,
                 callee_type,
-                [],
-                DontAutoderefReceiver,
-                IgnoreStaticMethods) {
+                []) {
             None => continue,
             Some(method_callee) => method_callee,
         };
@@ -2156,7 +2154,7 @@ fn try_overloaded_deref(fcx: &FnCtxt,
         (PreferMutLvalue, Some(trait_did)) => {
             method::lookup_in_trait(fcx, span, base_expr.map(|x| &*x),
                                     token::intern("deref_mut"), trait_did,
-                                    base_ty, [], DontAutoderefReceiver, IgnoreStaticMethods)
+                                    base_ty, [])
         }
         _ => None
     };
@@ -2166,7 +2164,7 @@ fn try_overloaded_deref(fcx: &FnCtxt,
         (None, Some(trait_did)) => {
             method::lookup_in_trait(fcx, span, base_expr.map(|x| &*x),
                                     token::intern("deref"), trait_did,
-                                    base_ty, [], DontAutoderefReceiver, IgnoreStaticMethods)
+                                    base_ty, [])
         }
         (method, _) => method
     };
@@ -2310,9 +2308,7 @@ fn try_overloaded_index(fcx: &FnCtxt,
                                     token::intern("index_mut"),
                                     trait_did,
                                     base_ty,
-                                    [],
-                                    DontAutoderefReceiver,
-                                    IgnoreStaticMethods)
+                                    [])
         }
         _ => None,
     };
@@ -2326,9 +2322,7 @@ fn try_overloaded_index(fcx: &FnCtxt,
                                     token::intern("index"),
                                     trait_did,
                                     base_ty,
-                                    [],
-                                    DontAutoderefReceiver,
-                                    IgnoreStaticMethods)
+                                    [])
         }
         (method, _) => method,
     };
@@ -2372,9 +2366,7 @@ fn lookup_method_for_for_loop(fcx: &FnCtxt,
                                          token::intern("next"),
                                          trait_did,
                                          expr_type,
-                                         [],
-                                         DontAutoderefReceiver,
-                                         IgnoreStaticMethods);
+                                         []);
 
     // Regardless of whether the lookup succeeds, check the method arguments
     // so that we have *some* type for each argument.
@@ -3061,13 +3053,11 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                                   trait_did: Option<ast::DefId>,
                                   lhs: &'a ast::Expr,
                                   rhs: Option<&P<ast::Expr>>,
-                                  autoderef_receiver: AutoderefReceiverFlag,
                                   unbound_method: ||) -> ty::t {
         let method = match trait_did {
             Some(trait_did) => {
                 method::lookup_in_trait(fcx, op_ex.span, Some(lhs), opname,
-                                        trait_did, lhs_ty, &[], autoderef_receiver,
-                                        IgnoreStaticMethods)
+                                        trait_did, lhs_ty, &[])
             }
             None => None
         };
@@ -3241,7 +3231,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
             }
         };
         lookup_op_method(fcx, ex, lhs_resolved_t, token::intern(name),
-                         trait_did, lhs_expr, Some(rhs), DontAutoderefReceiver, || {
+                         trait_did, lhs_expr, Some(rhs), || {
             fcx.type_error_message(ex.span, |actual| {
                 format!("binary operation `{}` cannot be applied to type `{}`",
                         ast_util::binop_to_string(op),
@@ -3258,7 +3248,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                        rhs_expr: &ast::Expr,
                        rhs_t: ty::t) -> ty::t {
        lookup_op_method(fcx, ex, rhs_t, token::intern(mname),
-                        trait_did, rhs_expr, None, DontAutoderefReceiver, || {
+                        trait_did, rhs_expr, None, || {
             fcx.type_error_message(ex.span, |actual| {
                 format!("cannot apply unary operator `{}` to type `{}`",
                         op_str, actual)
