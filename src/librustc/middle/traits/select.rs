@@ -31,6 +31,7 @@ use middle::ty_fold::TypeFoldable;
 use std::cell::RefCell;
 use std::collections::hashmap::HashMap;
 use std::rc::Rc;
+use std::result;
 use syntax::ast;
 use util::ppaux::Repr;
 
@@ -60,23 +61,6 @@ struct ObligationStack<'prev> {
 
 pub struct SelectionCache {
     hashmap: RefCell<HashMap<Rc<ty::TraitRef>, SelectionResult<Candidate>>>,
-}
-
-pub enum MethodMatchResult {
-    MethodMatched(MethodMatchedData),
-    MethodAmbiguous(/* list of impls that could apply */ Vec<ast::DefId>),
-    MethodDidNotMatch,
-}
-
-#[deriving(Show)]
-pub enum MethodMatchedData {
-    // In the case of a precise match, we don't really need to store
-    // how the match was found. So don't.
-    PreciseMethodMatch,
-
-    // In the case of a coercion, we need to know the precise impl so
-    // that we can determine the type to which things were coerced.
-    CoerciveMethodMatch(/* impl we matched */ ast::DefId)
 }
 
 /**
@@ -832,7 +816,20 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         // who might care about this case, like coherence, should use
         // that function).
         if candidates.len() == 0 {
+            // Annoying edge case: if there are no impls, then there
+            // is no way that this trait reference is implemented,
+            // *unless* it contains unbound variables. In that case,
+            // it is possible that one of those unbound variables will
+            // be bound to a new type from some other crate which will
+            // also contain impls.
+            let skol_obligation_self_ty = self.infcx.skolemize(stack.obligation.self_ty());
+            return if !self.contains_skolemized_types(skol_obligation_self_ty) {
+                debug!("0 matches, unimpl");
             return Err(Unimplemented);
+            } else {
+                debug!("0 matches, ambig");
+                Ok(None)
+            };
         }
 
         // Just one candidate left.
@@ -850,7 +847,10 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         // scope whenever where clauses might affect the result.
 
         // If the trait refers to any parameters in scope, then use
-        // the cache of the param-environment.
+        // the cache of the param-environment. This is because the
+        // result will depend on the where clauses that are in
+        // scope. Otherwise, use the generic tcx cache, since the
+        // result holds across all environments.
         if
             cache_skol_trait_ref.input_types().iter().any(
                 |&t| ty::type_has_self(t) || ty::type_has_params(t))
@@ -1007,6 +1007,34 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         debug!("assemble_unboxed_candidates: self_ty={} obligation={}",
                self_ty.repr(self.tcx()),
                obligation.repr(self.tcx()));
+
+        let tcx = self.tcx();
+        let fn_traits = [
+            (ty::FnUnboxedClosureKind, tcx.lang_items.fn_trait()),
+            (ty::FnMutUnboxedClosureKind, tcx.lang_items.fn_mut_trait()),
+            (ty::FnOnceUnboxedClosureKind, tcx.lang_items.fn_once_trait()),
+            ];
+        for tuple in fn_traits.iter() {
+            let kind = match tuple {
+                &(kind, Some(ref fn_trait))
+                    if *fn_trait == obligation.trait_ref.def_id =>
+                {
+                    kind
+                }
+                _ => continue,
+            };
+
+            // Check to see whether the argument and return types match.
+            let closure_kind = match self.typer.unboxed_closures().borrow().find(&closure_def_id) {
+                Some(closure) => closure.kind,
+                None => {
+                    self.tcx().sess.span_bug(
+                        obligation.cause.span,
+                        format!("No entry for unboxed closure: {}",
+                                closure_def_id.repr(self.tcx())).as_slice());
+                }
+            };
+        }
 
         let closure_kind = match self.typer.unboxed_closures().borrow().find(&closure_def_id) {
             Some(closure) => closure.kind,
@@ -1200,6 +1228,23 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             ty::ty_char => {
                 // safe for everything
                 Ok(If(Vec::new()))
+            }
+
+            ty::ty_box(_) => {
+                match bound {
+                    ty::BoundSync |
+                    ty::BoundSend |
+                    ty::BoundCopy => {
+                        // Managed data is not copyable, sendable, nor
+                        // synchronized, regardless of referent.
+                        Err(Unimplemented)
+                    }
+
+                    ty::BoundSized => {
+                        // But it is sized, regardless of referent.
+                        Ok(If(Vec::new()))
+                    }
+                }
             }
 
             ty::ty_uniq(referent_ty) => {  // Box<T>
@@ -1596,14 +1641,18 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                            nested: Vec<ty::t>)
                            -> VtableBuiltinData<Obligation>
     {
-        let obligations = nested.iter().map(|&t| {
-            util::obligation_for_builtin_bound(
-                self.tcx(),
-                obligation.cause,
-                bound,
-                obligation.recursion_depth + 1,
-                t)
-        }).collect::<Result<_, _>>();
+        let obligations =
+            result::collect(
+                nested
+                    .iter()
+                    .map(|&t| {
+                        util::obligation_for_builtin_bound(
+                            self.tcx(),
+                            obligation.cause,
+                            bound,
+                            obligation.recursion_depth + 1,
+                            t)
+                    }));
         let obligations = match obligations {
             Ok(o) => o,
             Err(ErrorReported) => Vec::new()
