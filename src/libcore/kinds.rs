@@ -20,24 +20,26 @@ by the compiler automatically for the types to which they apply.
 
 */
 
+use self::marker::Invariant;
+
 #[deprecated = "This has been renamed to Sync"]
 pub use self::Sync as Share;
 
 /// Types able to be transferred across task boundaries.
 #[lang="send"]
-pub trait Send for Sized? {
+pub trait Send for Sized? : Invariant {
     // empty.
 }
 
 /// Types with a constant size known at compile-time.
 #[lang="sized"]
-pub trait Sized for Sized? {
+pub trait Sized for Sized? : Invariant {
     // Empty.
 }
 
 /// Types that can be copied by simply copying bits (i.e. `memcpy`).
 #[lang="copy"]
-pub trait Copy for Sized? {
+pub trait Copy for Sized? : Invariant {
     // Empty.
 }
 
@@ -87,7 +89,7 @@ pub trait Copy for Sized? {
 /// reference; not doing this is undefined behaviour (for example,
 /// `transmute`-ing from `&T` to `&mut T` is illegal).
 #[lang="sync"]
-pub trait Sync for Sized? {
+pub trait Sync for Sized? : Invariant {
     // Empty
 }
 
@@ -97,20 +99,25 @@ pub trait Sync for Sized? {
 /// implemented using unsafe code. In that case, you may want to embed
 /// some of the marker types below into your type.
 pub mod marker {
+    use super::Sized;
+
+    /// FIXME Document me.
     #[lang="invariant_trait"]
-    pub trait Invariant { }
+    pub trait Invariant for Sized? { }
 
-    impl<T> Invariant for T { }
+    impl<Sized? T> Invariant for T { }
 
+    /// FIXME Document me.
     #[lang="covariant_trait"]
-    pub trait Covariant { }
+    pub trait Covariant for Sized? { }
 
-    impl<T> Covariant for T { }
+    impl<Sized? T> Covariant for T { }
 
+    /// FIXME Document me.
     #[lang="contravariant_trait"]
-    pub trait Contravariant { }
+    pub trait Contravariant for Sized? { }
 
-    impl<T> Contravariant for T { }
+    impl<Sized? T> Contravariant for T { }
 
     /// A marker type whose type parameter `T` is considered to be
     /// covariant with respect to the type itself. This is (typically)

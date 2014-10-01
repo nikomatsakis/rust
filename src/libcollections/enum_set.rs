@@ -26,12 +26,6 @@ pub struct EnumSet<E> {
     marker: marker::CovariantType<E>,
 }
 
-impl<E> fmt::Show for EnumSet<E> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "EnumSet {{ bits={} }}", self.bits)
-    }
-}
-
 impl<E:CLike+fmt::Show> fmt::Show for EnumSet<E> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         try!(write!(fmt, "{{"));

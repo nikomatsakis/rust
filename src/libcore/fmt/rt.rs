@@ -15,7 +15,7 @@
 //! these can be statically allocated and are slightly optimized for the runtime
 
 #[doc(hidden)]
-pub struct Argument {
+pub struct Argument<'a> {
     pub position: Position,
     pub format: FormatSpec,
 }

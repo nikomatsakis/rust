@@ -113,7 +113,6 @@ pub trait Combine<'tcx> {
                     let b_regions = b.get_slice(space);
                     let r_variances = variances.map(|v| v.regions.get_slice(space));
                     let regions = try!(relate_region_params(self,
-                                                            item_def_id,
                                                             r_variances,
                                                             a_regions,
                                                             b_regions));
@@ -152,8 +151,7 @@ pub trait Combine<'tcx> {
         }
 
         fn relate_region_params<'tcx, C: Combine<'tcx>>(this: &C,
-                                                        item_def_id: ast::DefId,
-                                                        variances: &[ty::Variance],
+                                                        variances: Option<&[ty::Variance]>,
                                                         a_rs: &[ty::Region],
                                                         b_rs: &[ty::Region])
                                                         -> cres<Vec<ty::Region>>

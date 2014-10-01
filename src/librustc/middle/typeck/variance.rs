@@ -195,7 +195,6 @@ represents the "variance transform" as defined in the paper:
 use std::collections::HashMap;
 use arena;
 use arena::Arena;
-use lint;
 use middle::resolve_lifetime as rl;
 use middle::subst;
 use middle::subst::{ParamSpace, FnSpace, TypeSpace, SelfSpace, VecPerParamSpace};
@@ -511,6 +510,9 @@ impl<'a, 'tcx, 'v> Visitor<'v> for ConstraintContext<'a, 'tcx> {
         let did = ast_util::local_def(item.id);
         let tcx = self.terms_cx.tcx;
 
+        debug!("adding constraints from {}",
+               did.repr(self.tcx()));
+
         match item.node {
             ast::ItemEnum(ref enum_definition, _) => {
                 let polytype = ty::lookup_item_type(tcx, did);
@@ -752,26 +754,25 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
 
     fn add_constraints_from_trait_ref(&mut self,
                                       def_id: ast::DefId,
+                                      spaces: &[subst::ParamSpace],
                                       substs: &subst::Substs,
                                       variance: VarianceTermPtr<'a>) {
+        debug!("add_constraints_from_trait_ref: def_id={} substs={} variance={}",
+               def_id.repr(self.tcx()),
+               substs.repr(self.tcx()),
+               variance);
+
         let trait_def = ty::lookup_trait_def(self.tcx(), def_id);
         let generics = &trait_def.generics;
 
-        // Traits never declare region parameters in the self
-        // space.
-        assert!(generics.regions.is_empty_in(subst::SelfSpace));
-
-        // Traits never declare type/region parameters in the
-        // fn space.
-        assert!(generics.types.is_empty_in(subst::FnSpace));
-        assert!(generics.regions.is_empty_in(subst::FnSpace));
-
-        self.add_constraints_from_substs(
-            def_id,
-            generics.types.get_slice(subst::TypeSpace),
-            generics.regions.get_slice(subst::TypeSpace),
-            substs,
-            variance);
+        for &space in spaces.iter() {
+            self.add_constraints_from_substs(
+                def_id,
+                generics.types.get_slice(space),
+                generics.regions.get_slice(space),
+                substs,
+                variance);
+        }
     }
 
     /// Adds constraints appropriate for an instance of `ty` appearing
@@ -834,7 +835,9 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
             }
 
             ty::ty_trait(box ty::TyTrait { def_id, ref substs, .. }) => {
-                self.add_constraints_from_trait_ref(def_id, substs, variance);
+                // Ignore the SelfSpace, it is erased.
+                self.add_constraints_from_trait_ref(
+                    def_id, [subst::TypeSpace], substs, variance);
             }
 
             ty::ty_param(ty::ParamTy { def_id: ref def_id, .. }) => {
@@ -885,7 +888,10 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                                    region_param_defs: &[ty::RegionParameterDef],
                                    substs: &subst::Substs,
                                    variance: VarianceTermPtr<'a>) {
-        debug!("add_constraints_from_substs(def_id={:?})", def_id);
+        debug!("add_constraints_from_substs(def_id={}, substs={}, variance={})",
+               def_id.repr(self.tcx()),
+               substs.repr(self.tcx()),
+               variance);
 
         for p in type_param_defs.iter() {
             let variance_decl =
@@ -908,6 +914,9 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
 
     fn add_constraints_from_generics(&mut self,
                                      generics: &ty::Generics) {
+        debug!("add_constraints_from_generics({})",
+               generics.repr(self.tcx()));
+
         for type_def in generics.types.iter() {
             self.add_constraints_from_param_bounds(&type_def.bounds);
         }
@@ -922,13 +931,14 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
 
     fn add_constraints_from_param_bounds(&mut self,
                                          bounds: &ty::ParamBounds) {
-        for bound in bounds.opt_region_bound.iter() {
+        for bound in bounds.region_bounds.iter() {
             self.add_constraints_from_region(*bound,
                                              self.contravariant);
         }
 
         for bound in bounds.trait_bounds.iter() {
             self.add_constraints_from_trait_ref(bound.def_id,
+                                                subst::ParamSpace::all(),
                                                 &bound.substs,
                                                 self.covariant);
         }
@@ -1097,24 +1107,25 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                         types.push(info.space, variance);
 
                         if variance == ty::Bivariant {
-                            tcx.sess.add_lint(
-                                lint::builtin::BIVARIANCE, info.item_id, info.span,
-                                format!("type parameter `{}` is never used; \
-                                        either remove it, or use a marker such as \
-                                        `std::kinds::marker::InvariantType`",
-                                        info.name.user_string(tcx)));
+                            span_err!(tcx.sess, info.span, E0163,
+                                      "type parameter `{}` is never used; \
+                                       either remove it, or use a marker such as \
+                                       `std::kinds::marker::Invariance`",
+                                        info.name.user_string(tcx));
                         }
                     }
                     RegionParam => {
                         regions.push(info.space, variance);
 
                         if variance == ty::Bivariant {
-                            tcx.sess.add_lint(
-                                lint::builtin::BIVARIANCE, info.item_id, info.span,
-                                format!("lifetime parameter `{}` is never used; \
-                                        either remove it, or use a marker such as \
-                                        `std::kinds::marker::CovariantType`",
-                                        info.name.user_string(tcx)));
+                            span_err!(tcx.sess, info.span, E0164,
+                                      "lifetime parameter `{}` is never used; \
+                                      either remove it, or use a marker such as \
+                                      `std::kinds::marker::Invariance` applied to a \
+                                      type referencing `{}`, such as `&{} int`",
+                                      info.name.user_string(tcx),
+                                      info.name.user_string(tcx),
+                                      info.name.user_string(tcx));
                         }
                     }
                 }
