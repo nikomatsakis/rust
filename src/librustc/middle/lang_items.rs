@@ -286,6 +286,10 @@ lets_do_this! {
     GcLangItem,                      "gc",                      gc;
     OwnedBoxLangItem,                "owned_box",               owned_box;
 
+    CovariantTraitItem,              "covariant_trait",         covariant_trait;
+    ContravariantTraitItem,          "contravariant_trait",     contravariant_trait;
+    InvariantTraitItem,              "invariant_trait",         invariant_trait;
+
     CovariantTypeItem,               "covariant_type",          covariant_type;
     ContravariantTypeItem,           "contravariant_type",      contravariant_type;
     InvariantTypeItem,               "invariant_type",          invariant_type;

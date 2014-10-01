@@ -97,6 +97,27 @@ pub trait Sync {
 /// implemented using unsafe code. In that case, you may want to embed
 /// some of the marker types below into your type.
 pub mod marker {
+    #[cfg(not(stage0))]
+    #[lang="invariant_trait"]
+    pub trait Invariant { }
+
+    #[cfg(not(stage0))]
+    impl<T> Invariant for T { }
+
+    #[cfg(not(stage0))]
+    #[lang="covariant_trait"]
+    pub trait Covariant { }
+
+    #[cfg(not(stage0))]
+    impl<T> Covariant for T { }
+
+    #[cfg(not(stage0))]
+    #[lang="contravariant_trait"]
+    pub trait Contravariant { }
+
+    #[cfg(not(stage0))]
+    impl<T> Contravariant for T { }
+
     /// A marker type whose type parameter `T` is considered to be
     /// covariant with respect to the type itself. This is (typically)
     /// used to indicate that an instance of the type `T` is being stored

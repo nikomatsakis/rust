@@ -325,10 +325,13 @@ fn determine_parameters_to_be_inferred<'a>(tcx: &'a ty::ctxt,
 
 fn lang_items(tcx: &ty::ctxt) -> Vec<(ast::NodeId,ty::Variance)> {
     let all = vec![
+        (tcx.lang_items.covariant_trait(), ty::Covariant),
         (tcx.lang_items.covariant_type(), ty::Covariant),
         (tcx.lang_items.covariant_lifetime(), ty::Covariant),
+        (tcx.lang_items.contravariant_trait(), ty::Contravariant),
         (tcx.lang_items.contravariant_type(), ty::Contravariant),
         (tcx.lang_items.contravariant_lifetime(), ty::Contravariant),
+        (tcx.lang_items.invariant_trait(), ty::Invariant),
         (tcx.lang_items.invariant_type(), ty::Invariant),
         (tcx.lang_items.invariant_lifetime(), ty::Invariant),
         (tcx.lang_items.unsafe_type(), ty::Invariant)];
@@ -377,10 +380,12 @@ impl<'a> TermsContext<'a> {
                              space: ParamSpace)
                              -> ty::Variance
     {
-        // Traits are always invariant w/r/t `Self` and their input
-        // type parameters.
-        if space == SelfSpace {
-            return ty::Invariant;
+        if is_stage0() {
+            // Traits are always invariant w/r/t `Self` and their input
+            // type parameters.
+            if space == SelfSpace {
+                return ty::Invariant;
+            }
         }
 
         match self.lang_items.iter().find(|&&(n, _)| n == item_id) {
@@ -1210,3 +1215,9 @@ fn glb(v1: ty::Variance, v2: ty::Variance) -> ty::Variance {
         (x, ty::Bivariant) | (ty::Bivariant, x) => x,
     }
 }
+
+#[cfg(stage0)]
+fn is_stage0() -> bool { true }
+
+#[cfg(not(stage0))]
+fn is_stage0() -> bool { false }
