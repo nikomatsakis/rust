@@ -565,10 +565,11 @@ fn fixup_substs(vcx: &VtableContext,
     let t = ty::mk_trait(tcx,
                          id, substs,
                          ty::region_existential_bound(ty::ReStatic));
-    fixup_ty(vcx, span, t, is_early).map(|t_f| {
+    fixup_ty(vcx, span, t, is_early).and_then(|t_f| {
         match ty::get(t_f).sty {
-          ty::ty_trait(ref inner) => inner.substs.clone(),
-          _ => fail!("t_f should be a trait")
+            ty::ty_trait(ref inner) => Some(inner.substs.clone()),
+            ty::ty_err => None,
+            _ => vcx.tcx().sess.span_bug(span, format!("t_f should be a trait, not {}", t_f.repr(vcx.tcx())).as_slice())
         }
     })
 }

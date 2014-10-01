@@ -1094,7 +1094,7 @@ impl<'a> SolveContext<'a> {
                                 lint::builtin::BIVARIANCE, info.item_id, info.span,
                                 format!("type parameter `{}` is never used; \
                                         either remove it, or use a marker such as \
-                                        `std::kinds::marker::CovariantType`",
+                                        `std::kinds::marker::InvariantType`",
                                         info.name.user_string(tcx)));
                         }
                     }

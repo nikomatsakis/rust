@@ -52,8 +52,8 @@ impl<T> test::A<T> {
 }
 
 pub fn foo() -> int {
-    let a = A(());
-    let b = B(());
+    let a = A { v: () };
+    let b = B { v: () };
     let c = test::A { t: () };
     return a.foo() + a.bar() +
            b.foo() + b.bar() +
