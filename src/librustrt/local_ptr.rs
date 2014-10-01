@@ -23,13 +23,13 @@ use core::kinds::marker;
 use core::mem;
 use alloc::boxed::Box;
 
-#[cfg(windows)]               // mingw-w32 doesn't like thread_local things
-#[cfg(target_os = "android")] // see #10686
-#[cfg(target_os = "ios")]
+#[cfg(any(windows, // mingw-w32 doesn't like thread_local things
+          target_os = "android", // see #10686
+          target_os = "ios"))]
 pub use self::native::{init, cleanup, put, take, try_take, unsafe_take, exists,
                        unsafe_borrow, try_unsafe_borrow};
 
-#[cfg(not(windows), not(target_os = "android"), not(target_os = "ios"))]
+#[cfg(not(any(windows, target_os = "android", target_os = "ios")))]
 pub use self::compiled::{init, cleanup, put, take, try_take, unsafe_take, exists,
                          unsafe_borrow, try_unsafe_borrow};
 
@@ -85,7 +85,7 @@ pub unsafe fn borrow<T>() -> Borrowed<T> {
 /// implemented using LLVM's thread_local attribute which isn't necessarily
 /// working on all platforms. This implementation is faster, however, so we use
 /// it wherever possible.
-#[cfg(not(windows), not(target_os = "android"), not(target_os = "ios"))]
+#[cfg(not(any(windows, target_os = "android", target_os = "ios")))]
 pub mod compiled {
     use core::prelude::*;
 
@@ -110,10 +110,10 @@ pub mod compiled {
     // efficient sequence of instructions. This also involves dealing with fun
     // stuff in object files and whatnot. Regardless, it turns out this causes
     // trouble with green threads and lots of optimizations turned on. The
-    // following case study was done on linux x86_64, but I would imagine that
+    // following case study was done on Linux x86_64, but I would imagine that
     // other platforms are similar.
     //
-    // On linux, the instruction sequence for loading the tls pointer global
+    // On Linux, the instruction sequence for loading the tls pointer global
     // looks like:
     //
     //      mov %fs:0x0, %rax
@@ -285,7 +285,7 @@ pub mod native {
             rtabort!("thread-local pointer is null. bogus!");
         }
         let ptr: Box<T> = mem::transmute(void_ptr);
-        tls::set(key, ptr::mut_null());
+        tls::set(key, ptr::null_mut());
         return ptr;
     }
 
@@ -303,7 +303,7 @@ pub mod native {
                     None
                 } else {
                     let ptr: Box<T> = mem::transmute(void_ptr);
-                    tls::set(key, ptr::mut_null());
+                    tls::set(key, ptr::null_mut());
                     Some(ptr)
                 }
             }
@@ -377,7 +377,6 @@ pub mod native {
 
     #[inline]
     #[cfg(not(test))]
-    #[allow(visible_private_types)]
     pub fn maybe_tls_key() -> Option<tls::Key> {
         unsafe {
             // NB: This is a little racy because, while the key is

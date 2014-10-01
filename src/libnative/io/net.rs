@@ -13,8 +13,7 @@ use libc;
 use std::mem;
 use std::ptr;
 use std::rt::mutex;
-use std::rt::rtio;
-use std::rt::rtio::{IoResult, IoError};
+use std::rt::rtio::{mod, IoResult, IoError};
 use std::sync::atomic;
 
 use super::{retry, keep_going};
@@ -38,7 +37,7 @@ pub fn ntohs(u: u16) -> u16 {
 }
 
 enum InAddr {
-    InAddr(libc::in_addr),
+    In4Addr(libc::in_addr),
     In6Addr(libc::in6_addr),
 }
 
@@ -49,7 +48,7 @@ fn ip_to_inaddr(ip: rtio::IpAddr) -> InAddr {
                      (b as u32 << 16) |
                      (c as u32 <<  8) |
                      (d as u32 <<  0);
-            InAddr(libc::in_addr {
+            In4Addr(libc::in_addr {
                 s_addr: Int::from_be(ip)
             })
         }
@@ -75,7 +74,7 @@ fn addr_to_sockaddr(addr: rtio::SocketAddr,
                     -> libc::socklen_t {
     unsafe {
         let len = match ip_to_inaddr(addr.ip) {
-            InAddr(inaddr) => {
+            In4Addr(inaddr) => {
                 let storage = storage as *mut _ as *mut libc::sockaddr_in;
                 (*storage).sin_family = libc::AF_INET as libc::sa_family_t;
                 (*storage).sin_port = htons(addr.port);
@@ -283,20 +282,20 @@ impl TcpStream {
         }
     }
 
-    #[cfg(target_os = "macos")]
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     fn set_tcp_keepalive(&mut self, seconds: uint) -> IoResult<()> {
         setsockopt(self.fd(), libc::IPPROTO_TCP, libc::TCP_KEEPALIVE,
                    seconds as libc::c_int)
     }
-    #[cfg(target_os = "freebsd")]
-    #[cfg(target_os = "dragonfly")]
+    #[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
     fn set_tcp_keepalive(&mut self, seconds: uint) -> IoResult<()> {
         setsockopt(self.fd(), libc::IPPROTO_TCP, libc::TCP_KEEPIDLE,
                    seconds as libc::c_int)
     }
-    #[cfg(not(target_os = "macos"), not(target_os = "ios"), not(target_os = "freebsd"),
-      not(target_os = "dragonfly"))]
+    #[cfg(not(any(target_os = "macos",
+                  target_os = "ios",
+                  target_os = "freebsd",
+                  target_os = "dragonfly")))]
     fn set_tcp_keepalive(&mut self, _seconds: uint) -> IoResult<()> {
         Ok(())
     }
@@ -338,7 +337,7 @@ impl rtio::RtioTcpStream for TcpStream {
         let dowrite = |nb: bool, buf: *const u8, len: uint| unsafe {
             let flags = if nb {c::MSG_DONTWAIT} else {0};
             libc::send(fd,
-                       buf as *mut libc::c_void,
+                       buf as *const _,
                        len as wrlen,
                        flags) as i64
         };
@@ -544,7 +543,7 @@ impl TcpAcceptor {
 
         while !self.inner.closed.load(atomic::SeqCst) {
             match retry(|| unsafe {
-                libc::accept(self.fd(), ptr::mut_null(), ptr::mut_null())
+                libc::accept(self.fd(), ptr::null_mut(), ptr::null_mut())
             }) {
                 -1 if util::wouldblock() => {}
                 -1 => return Err(os::last_error()),
@@ -609,7 +608,7 @@ impl TcpAcceptor {
 
             if wsaevents.lNetworkEvents & c::FD_ACCEPT == 0 { continue }
             match unsafe {
-                libc::accept(self.fd(), ptr::mut_null(), ptr::mut_null())
+                libc::accept(self.fd(), ptr::null_mut(), ptr::null_mut())
             } {
                 -1 if util::wouldblock() => {}
                 -1 => return Err(os::last_error()),
@@ -724,7 +723,7 @@ impl UdpSocket {
     pub fn set_membership(&mut self, addr: rtio::IpAddr,
                           opt: libc::c_int) -> IoResult<()> {
         match ip_to_inaddr(addr) {
-            InAddr(addr) => {
+            In4Addr(addr) => {
                 let mreq = libc::ip_mreq {
                     imr_multiaddr: addr,
                     // interface == INADDR_ANY
@@ -901,8 +900,8 @@ impl rtio::RtioUdpSocket for UdpSocket {
 //
 // It turns out that there's this nifty MSG_DONTWAIT flag which can be passed to
 // send/recv, but the niftiness wears off once you realize it only works well on
-// linux [1] [2]. This means that it's pretty easy to get a nonblocking
-// operation on linux (no flag fiddling, no affecting other objects), but not on
+// Linux [1] [2]. This means that it's pretty easy to get a nonblocking
+// operation on Linux (no flag fiddling, no affecting other objects), but not on
 // other platforms.
 //
 // To work around this constraint on other platforms, we end up using the
@@ -922,7 +921,7 @@ impl rtio::RtioUdpSocket for UdpSocket {
 // operations performed in the lock are *nonblocking* to avoid holding the mutex
 // forever.
 //
-// So, in summary, linux uses MSG_DONTWAIT and doesn't need mutexes, everyone
+// So, in summary, Linux uses MSG_DONTWAIT and doesn't need mutexes, everyone
 // else uses O_NONBLOCK and mutexes with some trickery to make sure blocking
 // reads/writes are still blocking.
 //
@@ -959,7 +958,7 @@ pub fn read<T>(fd: sock_t,
             // wait for the socket to become readable again.
             let _guard = lock();
             match retry(|| read(deadline.is_some())) {
-                -1 if util::wouldblock() => { assert!(deadline.is_some()); }
+                -1 if util::wouldblock() => {}
                 -1 => return Err(os::last_error()),
                n => { ret = n; break }
             }
@@ -988,9 +987,7 @@ pub fn write<T>(fd: sock_t,
                 write(false, inner, len)
             });
         } else {
-            ret = retry(|| {
-                write(false, buf.as_ptr(), buf.len()) as libc::c_int
-            }) as i64;
+            ret = retry(|| { write(false, buf.as_ptr(), buf.len()) });
             if ret > 0 { written = ret as uint; }
         }
     }
@@ -1017,7 +1014,7 @@ pub fn write<T>(fd: sock_t,
             let _guard = lock();
             let ptr = buf.slice_from(written).as_ptr();
             let len = buf.len() - written;
-            match retry(|| write(deadline.is_some(), ptr, len) as libc::c_int) {
+            match retry(|| write(deadline.is_some(), ptr, len)) {
                 -1 if util::wouldblock() => {}
                 -1 => return Err(os::last_error()),
                 n => { written += n as uint; }

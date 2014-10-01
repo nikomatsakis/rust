@@ -53,6 +53,8 @@ actually operates on the path; it is only intended for display.
 ## Example
 
 ```rust
+use std::io::fs::PathExtensions;
+
 let mut path = Path::new("/tmp/path");
 println!("path: {}", path.display());
 path.set_filename("foo");
@@ -74,7 +76,7 @@ use option::{Option, None, Some};
 use str;
 use str::{MaybeOwned, Str, StrSlice};
 use string::String;
-use slice::Slice;
+use slice::{Slice, CloneableVector};
 use slice::{ImmutablePartialEqSlice, ImmutableSlice};
 use vec::Vec;
 
@@ -478,7 +480,7 @@ pub trait GenericPath: Clone + GenericPathUnsafe {
             let extlen = extension.container_as_bytes().len();
             match (name.rposition_elem(&dot), extlen) {
                 (None, 0) | (Some(0), 0) => None,
-                (Some(idx), 0) => Some(Vec::from_slice(name.slice_to(idx))),
+                (Some(idx), 0) => Some(name.slice_to(idx).to_vec()),
                 (idx, extlen) => {
                     let idx = match idx {
                         None | Some(0) => name.len(),
@@ -796,7 +798,7 @@ pub trait BytesContainer {
     /// Consumes the receiver and converts it into Vec<u8>
     #[inline]
     fn container_into_owned_bytes(self) -> Vec<u8> {
-        Vec::from_slice(self.container_as_bytes())
+        self.container_as_bytes().to_vec()
     }
     /// Returns the receiver interpreted as a utf-8 string, if possible
     #[inline]
@@ -841,7 +843,7 @@ impl<'a, P: GenericPath> Display<'a, P> {
     /// Returns the path as a possibly-owned string.
     ///
     /// If the path is not UTF-8, invalid sequences will be replaced with the
-    /// unicode replacement char. This involves allocation.
+    /// Unicode replacement char. This involves allocation.
     #[inline]
     pub fn as_maybe_owned(&self) -> MaybeOwned<'a> {
         String::from_utf8_lossy(if self.filename {

@@ -229,6 +229,7 @@ use util::fs;
 
 use std::c_str::ToCStr;
 use std::cmp;
+use std::io::fs::PathExtensions;
 use std::io;
 use std::mem;
 use std::ptr;
@@ -236,6 +237,7 @@ use std::slice;
 use std::string;
 
 use std::collections::{HashMap, HashSet};
+use std::collections::hashmap::{Occupied, Vacant};
 use flate;
 use time;
 
@@ -427,15 +429,18 @@ impl<'a> Context<'a> {
                 return FileDoesntMatch
             };
             info!("lib candidate: {}", path.display());
-            let slot = candidates.find_or_insert_with(hash.to_string(), |_| {
-                (HashSet::new(), HashSet::new())
-            });
+
+            let slot = match candidates.entry(hash.to_string()) {
+                Occupied(entry) => entry.into_mut(),
+                Vacant(entry) => entry.set((HashSet::new(), HashSet::new())),
+            };
             let (ref mut rlibs, ref mut dylibs) = *slot;
             if rlib {
                 rlibs.insert(fs::realpath(path).unwrap());
             } else {
                 dylibs.insert(fs::realpath(path).unwrap());
             }
+
             FileMatches
         });
 
@@ -448,7 +453,7 @@ impl<'a> Context<'a> {
         // libraries corresponds to the crate id and hash criteria that this
         // search is being performed for.
         let mut libraries = Vec::new();
-        for (_hash, (rlibs, dylibs)) in candidates.move_iter() {
+        for (_hash, (rlibs, dylibs)) in candidates.into_iter() {
             let mut metadata = None;
             let rlib = self.extract_one(rlibs, "rlib", &mut metadata);
             let dylib = self.extract_one(dylibs, "dylib", &mut metadata);
@@ -469,7 +474,7 @@ impl<'a> Context<'a> {
         // libraries or not.
         match libraries.len() {
             0 => None,
-            1 => Some(libraries.move_iter().next().unwrap()),
+            1 => Some(libraries.into_iter().next().unwrap()),
             _ => {
                 self.sess.span_err(self.span,
                     format!("multiple matching crates for `{}`",
@@ -520,11 +525,11 @@ impl<'a> Context<'a> {
             if m.len() == 0 {
                 return None
             } else if m.len() == 1 {
-                return Some(m.move_iter().next().unwrap())
+                return Some(m.into_iter().next().unwrap())
             }
         }
 
-        for lib in m.move_iter() {
+        for lib in m.into_iter() {
             info!("{} reading metadata from: {}", flavor, lib.display());
             let metadata = match get_metadata_section(self.os, &lib) {
                 Ok(blob) => {

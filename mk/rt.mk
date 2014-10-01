@@ -203,6 +203,9 @@ LIBUV_CFLAGS_$(1) := $(subst -Werror,,$(CFG_GCCISH_CFLAGS_$(1)))
 
 $$(LIBUV_MAKEFILE_$(1)): $$(LIBUV_DEPS) $$(MKFILE_DEPS) $$(LIBUV_STAMP_$(1))
 	(cd $(S)src/libuv/ && \
+	CC="$$(CC_$(1))" \
+	CXX="$$(CXX_$(1))" \
+	AR="$$(AR_$(1))" \
 	 $$(CFG_PYTHON) ./gyp_uv.py -f make -Dtarget_arch=$$(LIBUV_ARCH_$(1)) \
 	   -D ninja \
 	   -DOS=$$(LIBUV_OSTYPE_$(1)) \
@@ -225,6 +228,9 @@ else ifeq ($(OSTYPE_$(1)), apple-ios) # iOS
 $$(LIBUV_XCODEPROJ_$(1)): $$(LIBUV_DEPS) $$(MKFILE_DEPS) $$(LIBUV_STAMP_$(1))
 	cp -rf $(S)src/libuv/ $$(LIBUV_BUILD_DIR_$(1))
 	(cd $$(LIBUV_BUILD_DIR_$(1)) && \
+	CC="$$(CC_$(1))" \
+	CXX="$$(CXX_$(1))" \
+	AR="$$(AR_$(1))" \
 	 $$(CFG_PYTHON) ./gyp_uv.py -f xcode \
 	   -D ninja \
 	   -R libuv)
@@ -288,6 +294,10 @@ JEMALLOC_DEPS := $(wildcard \
 		   $(S)src/jemalloc/*/*/*/*)
 endif
 
+# See #17183 for details, this file is touched during the build process so we
+# don't want to consider it as a dependency.
+JEMALLOC_DEPS := $(filter-out $(S)src/jemalloc/VERSION,$(JEMALLOC_DEPS))
+
 JEMALLOC_NAME_$(1) := $$(call CFG_STATIC_LIB_NAME_$(1),jemalloc)
 ifeq ($$(CFG_WINDOWSY_$(1)),1)
   JEMALLOC_REAL_NAME_$(1) := $$(call CFG_STATIC_LIB_NAME_$(1),jemalloc_s)
@@ -301,7 +311,7 @@ JEMALLOC_LOCAL_$(1) := $$(JEMALLOC_BUILD_DIR_$(1))/lib/$$(JEMALLOC_REAL_NAME_$(1
 $$(JEMALLOC_LOCAL_$(1)): $$(JEMALLOC_DEPS) $$(MKFILE_DEPS)
 	@$$(call E, make: jemalloc)
 	cd "$$(JEMALLOC_BUILD_DIR_$(1))"; "$(S)src/jemalloc/configure" \
-		$$(JEMALLOC_ARGS_$(1)) --with-jemalloc-prefix=je_ \
+		$$(JEMALLOC_ARGS_$(1)) --with-jemalloc-prefix=je_ $(CFG_JEMALLOC_FLAGS) \
 		--build=$(CFG_BUILD) --host=$(1) \
 		CC="$$(CC_$(1))" \
 		AR="$$(AR_$(1))" \

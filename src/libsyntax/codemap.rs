@@ -25,8 +25,8 @@ source code snippets, etc.
 
 use serialize::{Encodable, Decodable, Encoder, Decoder};
 use std::cell::RefCell;
-use std::gc::Gc;
 use std::rc::Rc;
+use libc::c_uint;
 
 pub trait Pos {
     fn from_uint(n: uint) -> Self;
@@ -93,10 +93,10 @@ pub struct Span {
     pub hi: BytePos,
     /// Information about where the macro came from, if this piece of
     /// code was created by a macro expansion.
-    pub expn_info: Option<Gc<ExpnInfo>>
+    pub expn_id: ExpnId
 }
 
-pub static DUMMY_SP: Span = Span { lo: BytePos(0), hi: BytePos(0), expn_info: None };
+pub static DUMMY_SP: Span = Span { lo: BytePos(0), hi: BytePos(0), expn_id: NO_EXPANSION };
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct Spanned<T> {
@@ -140,17 +140,19 @@ pub fn dummy_spanned<T>(t: T) -> Spanned<T> {
 
 /* assuming that we're not in macro expansion */
 pub fn mk_sp(lo: BytePos, hi: BytePos) -> Span {
-    Span {lo: lo, hi: hi, expn_info: None}
+    Span {lo: lo, hi: hi, expn_id: NO_EXPANSION}
 }
 
 /// Return the span itself if it doesn't come from a macro expansion,
 /// otherwise return the call site span up to the `enclosing_sp` by
 /// following the `expn_info` chain.
-pub fn original_sp(sp: Span, enclosing_sp: Span) -> Span {
-    match (sp.expn_info, enclosing_sp.expn_info) {
+pub fn original_sp(cm: &CodeMap, sp: Span, enclosing_sp: Span) -> Span {
+    let call_site1 = cm.with_expn_info(sp.expn_id, |ei| ei.map(|ei| ei.call_site));
+    let call_site2 = cm.with_expn_info(enclosing_sp.expn_id, |ei| ei.map(|ei| ei.call_site));
+    match (call_site1, call_site2) {
         (None, _) => sp,
-        (Some(expn1), Some(expn2)) if expn1.call_site == expn2.call_site => sp,
-        (Some(expn1), _) => original_sp(expn1.call_site, enclosing_sp),
+        (Some(call_site1), Some(call_site2)) if call_site1 == call_site2 => sp,
+        (Some(call_site1), _) => original_sp(cm, call_site1, enclosing_sp),
     }
 }
 
@@ -222,6 +224,22 @@ pub struct ExpnInfo {
     pub callee: NameAndSpan
 }
 
+#[deriving(PartialEq, Eq, Clone, Show, Hash, Encodable, Decodable)]
+pub struct ExpnId(u32);
+
+pub static NO_EXPANSION: ExpnId = ExpnId(-1);
+
+impl ExpnId {
+    pub fn from_llvm_cookie(cookie: c_uint) -> ExpnId {
+        ExpnId(cookie as u32)
+    }
+
+    pub fn to_llvm_cookie(self) -> i32 {
+        let ExpnId(cookie) = self;
+        cookie as i32
+    }
+}
+
 pub type FileName = String;
 
 pub struct FileLines {
@@ -272,6 +290,9 @@ impl FileMap {
     }
 
     /// get a line from the list of pre-computed line-beginnings
+    ///
+    /// NOTE(stage0, pcwalton): Remove `#[allow(unused_mut)]` after snapshot.
+    #[allow(unused_mut)]
     pub fn get_line(&self, line: int) -> String {
         let mut lines = self.lines.borrow_mut();
         let begin: BytePos = *lines.get(line as uint) - self.start_pos;
@@ -299,13 +320,15 @@ impl FileMap {
 }
 
 pub struct CodeMap {
-    pub files: RefCell<Vec<Rc<FileMap>>>
+    pub files: RefCell<Vec<Rc<FileMap>>>,
+    expansions: RefCell<Vec<ExpnInfo>>
 }
 
 impl CodeMap {
     pub fn new() -> CodeMap {
         CodeMap {
             files: RefCell::new(Vec::new()),
+            expansions: RefCell::new(Vec::new()),
         }
     }
 
@@ -492,6 +515,8 @@ impl CodeMap {
         return a;
     }
 
+    // NOTE(stage0, pcwalton): Remove `#[allow(unused_mut)]` after snapshot.
+    #[allow(unused_mut)]
     fn lookup_line(&self, pos: BytePos) -> FileMapAndLine {
         let idx = self.lookup_filemap_idx(pos);
 
@@ -525,6 +550,19 @@ impl CodeMap {
             file: f,
             line: line,
             col: chpos - linechpos
+        }
+    }
+
+    pub fn record_expansion(&self, expn_info: ExpnInfo) -> ExpnId {
+        let mut expansions = self.expansions.borrow_mut();
+        expansions.push(expn_info);
+        ExpnId(expansions.len().to_u32().expect("too many ExpnInfo's!") - 1)
+    }
+
+    pub fn with_expn_info<T>(&self, id: ExpnId, f: |Option<&ExpnInfo>| -> T) -> T {
+        match id {
+            NO_EXPANSION => f(None),
+            ExpnId(i) => f(Some(&(*self.expansions.borrow())[i as uint]))
         }
     }
 }
@@ -665,7 +703,7 @@ mod test {
     fn t7() {
         // Test span_to_lines for a span ending at the end of filemap
         let cm = init_code_map();
-        let span = Span {lo: BytePos(12), hi: BytePos(23), expn_info: None};
+        let span = Span {lo: BytePos(12), hi: BytePos(23), expn_id: NO_EXPANSION};
         let file_lines = cm.span_to_lines(span);
 
         assert_eq!(file_lines.file.name, "blork.rs".to_string());
@@ -677,7 +715,7 @@ mod test {
     fn t8() {
         // Test span_to_snippet for a span ending at the end of filemap
         let cm = init_code_map();
-        let span = Span {lo: BytePos(12), hi: BytePos(23), expn_info: None};
+        let span = Span {lo: BytePos(12), hi: BytePos(23), expn_id: NO_EXPANSION};
         let snippet = cm.span_to_snippet(span);
 
         assert_eq!(snippet, Some("second line".to_string()));
@@ -687,7 +725,7 @@ mod test {
     fn t9() {
         // Test span_to_str for a span ending at the end of filemap
         let cm = init_code_map();
-        let span = Span {lo: BytePos(12), hi: BytePos(23), expn_info: None};
+        let span = Span {lo: BytePos(12), hi: BytePos(23), expn_id: NO_EXPANSION};
         let sstr =  cm.span_to_string(span);
 
         assert_eq!(sstr, "blork.rs:2:1: 2:12".to_string());

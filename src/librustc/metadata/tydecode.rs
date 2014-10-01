@@ -59,11 +59,11 @@ pub enum DefIdSource {
 pub type conv_did<'a> =
     |source: DefIdSource, ast::DefId|: 'a -> ast::DefId;
 
-pub struct PState<'a> {
+pub struct PState<'a, 'tcx: 'a> {
     data: &'a [u8],
     krate: ast::CrateNum,
     pos: uint,
-    tcx: &'a ty::ctxt
+    tcx: &'a ty::ctxt<'tcx>
 }
 
 fn peek(st: &PState) -> char {
@@ -105,8 +105,9 @@ fn parse_ident_(st: &mut PState, is_last: |char| -> bool) -> ast::Ident {
     })
 }
 
-pub fn parse_state_from_data<'a>(data: &'a [u8], crate_num: ast::CrateNum,
-                             pos: uint, tcx: &'a ty::ctxt) -> PState<'a> {
+pub fn parse_state_from_data<'a, 'tcx>(data: &'a [u8], crate_num: ast::CrateNum,
+                                       pos: uint, tcx: &'a ty::ctxt<'tcx>)
+                                       -> PState<'a, 'tcx> {
     PState {
         data: data,
         krate: crate_num,
@@ -629,6 +630,10 @@ fn parse_type_param_def(st: &mut PState, conv: conv_did) -> ty::TypeParameterDef
     assert_eq!(next(st), '|');
     let index = parse_uint(st);
     assert_eq!(next(st), '|');
+    let associated_with = parse_opt(st, |st| {
+        parse_def(st, NominalType, |x,y| conv(x,y))
+    });
+    assert_eq!(next(st), '|');
     let bounds = parse_bounds(st, |x,y| conv(x,y));
     let default = parse_opt(st, |st| parse_ty(st, |x,y| conv(x,y)));
 
@@ -637,6 +642,7 @@ fn parse_type_param_def(st: &mut PState, conv: conv_did) -> ty::TypeParameterDef
         def_id: def_id,
         space: space,
         index: index,
+        associated_with: associated_with,
         bounds: bounds,
         default: default
     }
@@ -679,14 +685,14 @@ fn parse_bounds(st: &mut PState, conv: conv_did) -> ty::ParamBounds {
     let builtin_bounds = parse_builtin_bounds(st, |x,y| conv(x,y));
 
     let mut param_bounds = ty::ParamBounds {
-        opt_region_bound: None,
+        region_bounds: Vec::new(),
         builtin_bounds: builtin_bounds,
         trait_bounds: Vec::new()
     };
     loop {
         match next(st) {
             'R' => {
-                param_bounds.opt_region_bound = Some(parse_region(st, |x, y| conv (x, y)));
+                param_bounds.region_bounds.push(parse_region(st, |x, y| conv (x, y)));
             }
             'I' => {
                 param_bounds.trait_bounds.push(Rc::new(parse_trait_ref(st, |x,y| conv(x,y))));

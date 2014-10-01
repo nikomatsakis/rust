@@ -163,7 +163,7 @@ impl<V:Clone> Clone for SmallIntMap<V> {
     #[inline]
     fn clone_from(&mut self, source: &SmallIntMap<V>) {
         self.v.reserve(source.v.len());
-        for (i, w) in self.v.mut_iter().enumerate() {
+        for (i, w) in self.v.iter_mut().enumerate() {
             *w = source.v[i].clone();
         }
     }
@@ -260,6 +260,12 @@ impl<V> SmallIntMap<V> {
         }
     }
 
+    /// Deprecated: use `iter_mut`
+    #[deprecated = "use iter_mut"]
+    pub fn mut_iter<'r>(&'r mut self) -> MutEntries<'r, V> {
+        self.iter_mut()
+    }
+
     /// Returns an iterator visiting all key-value pairs in ascending order by the keys,
     /// with mutable references to the values.
     /// The iterator's element type is `(uint, &'r mut V)`.
@@ -274,7 +280,7 @@ impl<V> SmallIntMap<V> {
     /// map.insert(2, "b");
     /// map.insert(3, "c");
     ///
-    /// for (key, value) in map.mut_iter() {
+    /// for (key, value) in map.iter_mut() {
     ///     *value = "x";
     /// }
     ///
@@ -282,12 +288,20 @@ impl<V> SmallIntMap<V> {
     ///     assert_eq!(value, &"x");
     /// }
     /// ```
-    pub fn mut_iter<'r>(&'r mut self) -> MutEntries<'r, V> {
+    pub fn iter_mut<'r>(&'r mut self) -> MutEntries<'r, V> {
         MutEntries {
             front: 0,
             back: self.v.len(),
-            iter: self.v.mut_iter()
+            iter: self.v.iter_mut()
         }
+    }
+
+    /// Deprecated: use `into_iter` instead.
+    #[deprecated = "use into_iter"]
+    pub fn move_iter(&mut self)
+        -> FilterMap<(uint, Option<V>), (uint, V),
+                Enumerate<vec::MoveItems<Option<V>>>> {
+        self.into_iter()
     }
 
     /// Returns an iterator visiting all key-value pairs in ascending order by
@@ -305,16 +319,16 @@ impl<V> SmallIntMap<V> {
     /// map.insert(2, "b");
     ///
     /// // Not possible with .iter()
-    /// let vec: Vec<(uint, &str)> = map.move_iter().collect();
+    /// let vec: Vec<(uint, &str)> = map.into_iter().collect();
     ///
     /// assert_eq!(vec, vec![(1, "a"), (2, "b"), (3, "c")]);
     /// ```
-    pub fn move_iter(&mut self)
+    pub fn into_iter(&mut self)
         -> FilterMap<(uint, Option<V>), (uint, V),
                 Enumerate<vec::MoveItems<Option<V>>>>
     {
         let values = replace(&mut self.v, vec!());
-        values.move_iter().enumerate().filter_map(|(i, v)| {
+        values.into_iter().enumerate().filter_map(|(i, v)| {
             v.map(|v| (i, v))
         })
     }
@@ -324,7 +338,7 @@ impl<V:Clone> SmallIntMap<V> {
     /// Updates a value in the map. If the key already exists in the map,
     /// modifies the value with `ff` taking `oldval, newval`.
     /// Otherwise, sets the value to `newval`.
-    /// Returasn `true` if the key did not already exist in the map.
+    /// Returns `true` if the key did not already exist in the map.
     ///
     /// # Example
     ///
@@ -334,11 +348,11 @@ impl<V:Clone> SmallIntMap<V> {
     /// let mut map = SmallIntMap::new();
     ///
     /// // Key does not exist, will do a simple insert
-    /// assert!(map.update(1, vec![1i, 2], |old, new| old.append(new.as_slice())));
+    /// assert!(map.update(1, vec![1i, 2], |mut old, new| { old.extend(new.into_iter()); old }));
     /// assert_eq!(map[1], vec![1i, 2]);
     ///
     /// // Key exists, update the value
-    /// assert!(!map.update(1, vec![3i, 4], |old, new| old.append(new.as_slice())));
+    /// assert!(!map.update(1, vec![3i, 4], |mut old, new| { old.extend(new.into_iter()); old }));
     /// assert_eq!(map[1], vec![1i, 2, 3, 4]);
     /// ```
     pub fn update(&mut self, key: uint, newval: V, ff: |V, V| -> V) -> bool {
@@ -438,7 +452,7 @@ impl<V> Index<uint, V> for SmallIntMap<V> {
 }*/
 
 macro_rules! iterator {
-    (impl $name:ident -> $elem:ty, $getter:ident) => {
+    (impl $name:ident -> $elem:ty, $($getter:ident),+) => {
         impl<'a, T> Iterator<$elem> for $name<'a, T> {
             #[inline]
             fn next(&mut self) -> Option<$elem> {
@@ -448,7 +462,7 @@ macro_rules! iterator {
                             if elem.is_some() {
                                 let index = self.front;
                                 self.front += 1;
-                                return Some((index, elem. $getter ()));
+                                return Some((index, elem $(. $getter ())+));
                             }
                         }
                         _ => ()
@@ -467,7 +481,7 @@ macro_rules! iterator {
 }
 
 macro_rules! double_ended_iterator {
-    (impl $name:ident -> $elem:ty, $getter:ident) => {
+    (impl $name:ident -> $elem:ty, $($getter:ident),+) => {
         impl<'a, T> DoubleEndedIterator<$elem> for $name<'a, T> {
             #[inline]
             fn next_back(&mut self) -> Option<$elem> {
@@ -476,7 +490,7 @@ macro_rules! double_ended_iterator {
                         Some(elem) => {
                             if elem.is_some() {
                                 self.back -= 1;
-                                return Some((self.back, elem. $getter ()));
+                                return Some((self.back, elem$(. $getter ())+));
                             }
                         }
                         _ => ()
@@ -496,8 +510,8 @@ pub struct Entries<'a, T:'a> {
     iter: slice::Items<'a, Option<T>>
 }
 
-iterator!(impl Entries -> (uint, &'a T), get_ref)
-double_ended_iterator!(impl Entries -> (uint, &'a T), get_ref)
+iterator!(impl Entries -> (uint, &'a T), as_ref, unwrap)
+double_ended_iterator!(impl Entries -> (uint, &'a T), as_ref, unwrap)
 
 /// Forward iterator over the key-value pairs of a map, with the
 /// values being mutable.
@@ -507,8 +521,8 @@ pub struct MutEntries<'a, T:'a> {
     iter: slice::MutItems<'a, Option<T>>
 }
 
-iterator!(impl MutEntries -> (uint, &'a mut T), get_mut_ref)
-double_ended_iterator!(impl MutEntries -> (uint, &'a mut T), get_mut_ref)
+iterator!(impl MutEntries -> (uint, &'a mut T), as_mut, unwrap)
+double_ended_iterator!(impl MutEntries -> (uint, &'a mut T), as_mut, unwrap)
 
 /// Forward iterator over the keys of a map
 pub type Keys<'a, T> =
@@ -678,8 +692,8 @@ mod test_map {
 
         assert_eq!(m.iter().size_hint(), (0, Some(11)));
         assert_eq!(m.iter().rev().size_hint(), (0, Some(11)));
-        assert_eq!(m.mut_iter().size_hint(), (0, Some(11)));
-        assert_eq!(m.mut_iter().rev().size_hint(), (0, Some(11)));
+        assert_eq!(m.iter_mut().size_hint(), (0, Some(11)));
+        assert_eq!(m.iter_mut().rev().size_hint(), (0, Some(11)));
     }
 
     #[test]
@@ -692,7 +706,7 @@ mod test_map {
         assert!(m.insert(6, 10));
         assert!(m.insert(10, 11));
 
-        for (k, v) in m.mut_iter() {
+        for (k, v) in m.iter_mut() {
             *v += k as int;
         }
 
@@ -734,7 +748,7 @@ mod test_map {
         assert!(m.insert(6, 10));
         assert!(m.insert(10, 11));
 
-        for (k, v) in m.mut_iter().rev() {
+        for (k, v) in m.iter_mut().rev() {
             *v += k as int;
         }
 
@@ -752,7 +766,7 @@ mod test_map {
         let mut m = SmallIntMap::new();
         m.insert(1, box 2i);
         let mut called = false;
-        for (k, v) in m.move_iter() {
+        for (k, v) in m.into_iter() {
             assert!(!called);
             called = true;
             assert_eq!(k, 1);

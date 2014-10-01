@@ -67,11 +67,11 @@ fn type_size_is_affected_by_type_parameters(tcx: &ty::ctxt, typ: ty::t)
     result
 }
 
-struct IntrinsicCheckingVisitor<'a> {
-    tcx: &'a ctxt,
+struct IntrinsicCheckingVisitor<'a, 'tcx: 'a> {
+    tcx: &'a ctxt<'tcx>,
 }
 
-impl<'a> IntrinsicCheckingVisitor<'a> {
+impl<'a, 'tcx> IntrinsicCheckingVisitor<'a, 'tcx> {
     fn def_id_is_transmute(&self, def_id: DefId) -> bool {
         let intrinsic = match ty::get(ty::lookup_item_type(self.tcx, def_id).ty).sty {
             ty::ty_bare_fn(ref bfty) => bfty.abi == RustIntrinsic,
@@ -116,12 +116,12 @@ impl<'a> IntrinsicCheckingVisitor<'a> {
     }
 }
 
-impl<'a> Visitor<()> for IntrinsicCheckingVisitor<'a> {
-    fn visit_expr(&mut self, expr: &ast::Expr, (): ()) {
+impl<'a, 'tcx, 'v> Visitor<'v> for IntrinsicCheckingVisitor<'a, 'tcx> {
+    fn visit_expr(&mut self, expr: &ast::Expr) {
         match expr.node {
             ast::ExprPath(..) => {
                 match ty::resolve_expr(self.tcx, expr) {
-                    DefFn(did, _) if self.def_id_is_transmute(did) => {
+                    DefFn(did, _, _) if self.def_id_is_transmute(did) => {
                         let typ = ty::node_id_to_type(self.tcx, expr.id);
                         match ty::get(typ).sty {
                             ty_bare_fn(ref bare_fn_ty)
@@ -144,15 +144,12 @@ impl<'a> Visitor<()> for IntrinsicCheckingVisitor<'a> {
             _ => {}
         }
 
-        visit::walk_expr(self, expr, ());
+        visit::walk_expr(self, expr);
     }
 }
 
-pub fn check_crate(tcx: &ctxt, krate: &ast::Crate) {
-    let mut visitor = IntrinsicCheckingVisitor {
-        tcx: tcx,
-    };
-
-    visit::walk_crate(&mut visitor, krate, ());
+pub fn check_crate(tcx: &ctxt) {
+    visit::walk_crate(&mut IntrinsicCheckingVisitor { tcx: tcx },
+                      tcx.map.krate());
 }
 

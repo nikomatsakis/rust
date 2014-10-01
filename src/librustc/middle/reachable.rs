@@ -89,9 +89,9 @@ fn method_might_be_inlined(tcx: &ty::ctxt, method: &ast::Method,
 }
 
 // Information needed while computing reachability.
-struct ReachableContext<'a> {
+struct ReachableContext<'a, 'tcx: 'a> {
     // The type context.
-    tcx: &'a ty::ctxt,
+    tcx: &'a ty::ctxt<'tcx>,
     // The set of items which must be exported in the linkage sense.
     reachable_symbols: NodeSet,
     // A worklist of item IDs. Each item ID in this worklist will be inlined
@@ -101,9 +101,9 @@ struct ReachableContext<'a> {
     any_library: bool,
 }
 
-impl<'a> Visitor<()> for ReachableContext<'a> {
+impl<'a, 'tcx, 'v> Visitor<'v> for ReachableContext<'a, 'tcx> {
 
-    fn visit_expr(&mut self, expr: &ast::Expr, _: ()) {
+    fn visit_expr(&mut self, expr: &ast::Expr) {
 
         match expr.node {
             ast::ExprPath(_) => {
@@ -155,18 +155,18 @@ impl<'a> Visitor<()> for ReachableContext<'a> {
             _ => {}
         }
 
-        visit::walk_expr(self, expr, ())
+        visit::walk_expr(self, expr)
     }
 
-    fn visit_item(&mut self, _item: &ast::Item, _: ()) {
+    fn visit_item(&mut self, _item: &ast::Item) {
         // Do not recurse into items. These items will be added to the worklist
         // and recursed into manually if necessary.
     }
 }
 
-impl<'a> ReachableContext<'a> {
+impl<'a, 'tcx> ReachableContext<'a, 'tcx> {
     // Creates a new reachability computation context.
-    fn new(tcx: &'a ty::ctxt) -> ReachableContext<'a> {
+    fn new(tcx: &'a ty::ctxt<'tcx>) -> ReachableContext<'a, 'tcx> {
         let any_library = tcx.sess.crate_types.borrow().iter().any(|ty| {
             *ty != config::CrateTypeExecutable
         });
@@ -197,11 +197,12 @@ impl<'a> ReachableContext<'a> {
                 match *trait_method {
                     ast::RequiredMethod(_) => false,
                     ast::ProvidedMethod(_) => true,
+                    ast::TypeTraitItem(_) => false,
                 }
             }
             Some(ast_map::NodeImplItem(impl_item)) => {
                 match *impl_item {
-                    ast::MethodImplItem(method) => {
+                    ast::MethodImplItem(ref method) => {
                         if generics_require_inlining(method.pe_generics()) ||
                                 attributes_specify_inlining(
                                     method.attrs.as_slice()) {
@@ -225,6 +226,7 @@ impl<'a> ReachableContext<'a> {
                             }
                         }
                     }
+                    ast::TypeImplItem(_) => false,
                 }
             }
             Some(_) => false,
@@ -291,7 +293,7 @@ impl<'a> ReachableContext<'a> {
                 match item.node {
                     ast::ItemFn(_, _, _, _, ref search_block) => {
                         if item_might_be_inlined(&*item) {
-                            visit::walk_block(self, &**search_block, ())
+                            visit::walk_block(self, &**search_block)
                         }
                     }
 
@@ -303,7 +305,7 @@ impl<'a> ReachableContext<'a> {
                                 item.attrs.as_slice()) {
                             self.reachable_symbols.remove(&search_item);
                         }
-                        visit::walk_expr(self, &**init, ());
+                        visit::walk_expr(self, &**init);
                     }
 
                     // These are normal, nothing reachable about these
@@ -327,18 +329,20 @@ impl<'a> ReachableContext<'a> {
                         // Keep going, nothing to get exported
                     }
                     ast::ProvidedMethod(ref method) => {
-                        visit::walk_block(self, &*method.pe_body(), ())
+                        visit::walk_block(self, &*method.pe_body());
                     }
+                    ast::TypeTraitItem(_) => {}
                 }
             }
             ast_map::NodeImplItem(impl_item) => {
                 match *impl_item {
-                    ast::MethodImplItem(method) => {
+                    ast::MethodImplItem(ref method) => {
                         let did = self.tcx.map.get_parent_did(search_item);
-                        if method_might_be_inlined(self.tcx, &*method, did) {
-                            visit::walk_block(self, &*method.pe_body(), ())
+                        if method_might_be_inlined(self.tcx, &**method, did) {
+                            visit::walk_block(self, method.pe_body())
                         }
                     }
+                    ast::TypeImplItem(_) => {}
                 }
             }
             // Nothing to recurse on for these

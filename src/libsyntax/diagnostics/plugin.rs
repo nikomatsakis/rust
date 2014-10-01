@@ -10,13 +10,13 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::gc::Gc;
 use ast;
 use ast::{Ident, Name, TokenTree};
 use codemap::Span;
-use ext::base::{ExtCtxt, MacExpr, MacItem, MacResult};
+use ext::base::{ExtCtxt, MacExpr, MacResult, MacItems};
 use ext::build::AstBuilder;
 use parse::token;
+use ptr::P;
 
 local_data_key!(registered_diagnostics: RefCell<HashMap<Name, Option<Name>>>)
 local_data_key!(used_diagnostics: RefCell<HashMap<Name, Span>>)
@@ -102,7 +102,7 @@ pub fn expand_register_diagnostic<'cx>(ecx: &'cx mut ExtCtxt,
     let sym = Ident::new(token::gensym((
         "__register_diagnostic_".to_string() + token::get_ident(*code).get()
     ).as_slice()));
-    MacItem::new(quote_item!(ecx, mod $sym {}).unwrap())
+    MacItems::new(vec![quote_item!(ecx, mod $sym {}).unwrap()].into_iter())
 }
 
 pub fn expand_build_diagnostic_array<'cx>(ecx: &'cx mut ExtCtxt,
@@ -116,7 +116,7 @@ pub fn expand_build_diagnostic_array<'cx>(ecx: &'cx mut ExtCtxt,
 
     let (count, expr) = with_used_diagnostics(|diagnostics_in_use| {
         with_registered_diagnostics(|diagnostics| {
-            let descriptions: Vec<Gc<ast::Expr>> = diagnostics
+            let descriptions: Vec<P<ast::Expr>> = diagnostics
                 .iter().filter_map(|(code, description)| {
                 if !diagnostics_in_use.contains_key(code) {
                     ecx.span_warn(span, format!(
@@ -133,7 +133,7 @@ pub fn expand_build_diagnostic_array<'cx>(ecx: &'cx mut ExtCtxt,
             (descriptions.len(), ecx.expr_vec(span, descriptions))
         })
     });
-    MacItem::new(quote_item!(ecx,
+    MacItems::new(vec![quote_item!(ecx,
         pub static $name: [(&'static str, &'static str), ..$count] = $expr;
-    ).unwrap())
+    ).unwrap()].into_iter())
 }

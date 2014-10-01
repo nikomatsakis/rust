@@ -15,7 +15,7 @@ use comm::{Sender, Receiver};
 use io;
 use option::{None, Option, Some};
 use result::{Ok, Err};
-use slice::{bytes, MutableSlice, ImmutableSlice};
+use slice::{bytes, MutableSlice, ImmutableSlice, CloneableVector};
 use str::StrSlice;
 use super::{Reader, Writer, IoResult};
 use vec::Vec;
@@ -62,7 +62,7 @@ impl Reader for ChanReader {
         loop {
             match self.buf {
                 Some(ref prev) => {
-                    let dst = buf.mut_slice_from(num_read);
+                    let dst = buf.slice_from_mut(num_read);
                     let src = prev.slice_from(self.pos);
                     let count = cmp::min(dst.len(), src.len());
                     bytes::copy_memory(dst, src.slice_to(count));
@@ -118,7 +118,7 @@ impl Clone for ChanWriter {
 
 impl Writer for ChanWriter {
     fn write(&mut self, buf: &[u8]) -> IoResult<()> {
-        self.tx.send_opt(Vec::from_slice(buf)).map_err(|_| {
+        self.tx.send_opt(buf.to_vec()).map_err(|_| {
             io::IoError {
                 kind: io::BrokenPipe,
                 desc: "Pipe closed",

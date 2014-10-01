@@ -47,7 +47,7 @@ mod rustrt {
     }
 }
 
-#[cfg(unix, not(target_os = "macos"), not(target_os = "ios"))]
+#[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios")))]
 mod imp {
     use libc::{c_int, timespec};
 
@@ -61,8 +61,7 @@ mod imp {
     }
 
 }
-#[cfg(target_os = "macos")]
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 mod imp {
     use libc::{timeval, timezone, c_int, mach_timebase_info};
 
@@ -103,6 +102,9 @@ impl Add<Duration, Timespec> for Timespec {
         if nsec >= NSEC_PER_SEC {
             nsec -= NSEC_PER_SEC;
             sec += 1;
+        } else if nsec < 0 {
+            nsec += NSEC_PER_SEC;
+            sec -= 1;
         }
         Timespec::new(sec, nsec)
     }
@@ -147,16 +149,15 @@ pub fn get_time() -> Timespec {
          ((ns_since_1970 % 1000000) * 1000) as i32)
     }
 
-    #[cfg(target_os = "macos")]
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     unsafe fn os_get_time() -> (i64, i32) {
         use std::ptr;
         let mut tv = libc::timeval { tv_sec: 0, tv_usec: 0 };
-        imp::gettimeofday(&mut tv, ptr::mut_null());
+        imp::gettimeofday(&mut tv, ptr::null_mut());
         (tv.tv_sec as i64, tv.tv_usec * 1000)
     }
 
-    #[cfg(not(target_os = "macos"), not(target_os = "ios"), not(windows))]
+    #[cfg(not(any(target_os = "macos", target_os = "ios", windows)))]
     unsafe fn os_get_time() -> (i64, i32) {
         let mut tv = libc::timespec { tv_sec: 0, tv_nsec: 0 };
         imp::clock_gettime(libc::CLOCK_REALTIME, &mut tv);
@@ -187,8 +188,7 @@ pub fn precise_time_ns() -> u64 {
         return (ticks as u64 * 1000000000) / (ticks_per_s as u64);
     }
 
-    #[cfg(target_os = "macos")]
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     fn os_precise_time_ns() -> u64 {
         static mut TIMEBASE: libc::mach_timebase_info = libc::mach_timebase_info { numer: 0,
                                                                                    denom: 0 };
@@ -202,7 +202,7 @@ pub fn precise_time_ns() -> u64 {
         }
     }
 
-    #[cfg(not(windows), not(target_os = "macos"), not(target_os = "ios"))]
+    #[cfg(not(any(windows, target_os = "macos", target_os = "ios")))]
     fn os_precise_time_ns() -> u64 {
         let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
         unsafe {
@@ -229,6 +229,8 @@ pub fn tzset() {
 
 /// Holds a calendar date and time broken down into its components (year, month, day, and so on),
 /// also called a broken-down time value.
+// FIXME: use c_int instead of i32?
+#[repr(C)]
 #[deriving(Clone, PartialEq, Eq, Show)]
 pub struct Tm {
     /// Seconds after the minute - [0, 60]
@@ -442,7 +444,7 @@ pub fn strptime(s: &str, format: &str) -> Result<Tm, String> {
             pos = range.next;
 
             match range.ch {
-              '0' .. '9' => {
+              '0' ... '9' => {
                 value = value * 10_i32 + (range.ch as i32 - '0' as i32);
               }
               ' ' if ws => (),
@@ -467,7 +469,7 @@ pub fn strptime(s: &str, format: &str) -> Result<Tm, String> {
             let range = ss.char_range_at(pos);
 
             match range.ch {
-                '0' .. '9' => {
+                '0' ... '9' => {
                     pos = range.next;
                     // This will drop digits after the nanoseconds place
                     let digit = range.ch as i32 - '0' as i32;
@@ -1533,6 +1535,12 @@ mod tests {
         let w = u + v;
         assert_eq!(w.sec, 4);
         assert_eq!(w.nsec, 1);
+
+        let k = Timespec::new(1, 0);
+        let l = Duration::nanoseconds(-1);
+        let m = k + l;
+        assert_eq!(m.sec, 0);
+        assert_eq!(m.nsec, 999_999_999);
     }
 
     fn test_timespec_sub() {
@@ -1553,7 +1561,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore(cfg(target_os = "android"))] // FIXME #10958
+    #[cfg_attr(target_os = "android", ignore)] // FIXME #10958
     fn run_tests() {
         // The tests race on tzset. So instead of having many independent
         // tests, we will just call the functions now.

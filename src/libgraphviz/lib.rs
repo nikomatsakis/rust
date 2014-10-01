@@ -426,7 +426,7 @@ impl<'a> LabelText<'a> {
     fn escape_str(s: &str) -> String {
         let mut out = String::with_capacity(s.len());
         for c in s.chars() {
-            LabelText::escape_char(c, |c| out.push_char(c));
+            LabelText::escape_char(c, |c| out.push(c));
         }
         out
     }
@@ -461,9 +461,11 @@ impl<'a> LabelText<'a> {
 
     /// Puts `suffix` on a line below this label, with a blank line separator.
     pub fn suffix_line(self, suffix: LabelText) -> LabelText<'static> {
-        let prefix = self.pre_escaped_content().into_string();
+        let mut prefix = self.pre_escaped_content().into_string();
         let suffix = suffix.pre_escaped_content();
-        EscStr(str::Owned(prefix.append(r"\n\n").append(suffix.as_slice())))
+        prefix.push_str(r"\n\n");
+        prefix.push_str(suffix.as_slice());
+        EscStr(str::Owned(prefix))
     }
 }
 
@@ -588,12 +590,12 @@ mod tests {
         fn to_opt_strs(self) -> Vec<Option<&'static str>> {
             match self {
                 UnlabelledNodes(len)
-                    => Vec::from_elem(len, None).move_iter().collect(),
+                    => Vec::from_elem(len, None).into_iter().collect(),
                 AllNodesLabelled(lbls)
-                    => lbls.move_iter().map(
+                    => lbls.into_iter().map(
                         |l|Some(l)).collect(),
                 SomeNodesLabelled(lbls)
-                    => lbls.move_iter().collect(),
+                    => lbls.into_iter().collect(),
             }
         }
     }
@@ -632,9 +634,9 @@ mod tests {
             id_name(n)
         }
         fn node_label(&'a self, n: &Node) -> LabelText<'a> {
-            match self.node_labels.get(*n) {
-                &Some(ref l) => LabelStr(str::Slice(l.as_slice())),
-                &None        => LabelStr(id_name(n).name()),
+            match self.node_labels[*n] {
+                Some(ref l) => LabelStr(str::Slice(l.as_slice())),
+                None        => LabelStr(id_name(n).name()),
             }
         }
         fn edge_label(&'a self, e: & &'a Edge) -> LabelText<'a> {

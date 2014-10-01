@@ -1,14 +1,5 @@
 % The Rust Guide
 
-<div style="border: 2px solid red; padding:5px;">
-This guide is a work in progress. Until it is ready, we highly recommend that
-you read the <a href="tutorial.html">Tutorial</a> instead. This work-in-progress Guide is being
-displayed here in line with Rust's open development policy. Please open any
-issues you find as usual.
-</div>
-
-# Welcome!
-
 Hey there! Welcome to the Rust guide. This is the place to be if you'd like to
 learn how to program in Rust. Rust is a systems programming language with a
 focus on "high-level, bare-metal programming": the lowest level control a
@@ -38,8 +29,11 @@ $ curl -s https://static.rust-lang.org/rustup.sh | sudo sh
 (If you're concerned about `curl | sudo sh`, please keep reading. Disclaimer
 below.)
 
-If you're on Windows, please [download this .exe and run
-it](https://static.rust-lang.org/dist/rust-nightly-install.exe).
+If you're on Windows, please download either the [32-bit
+installer](https://static.rust-lang.org/dist/rust-nightly-i686-w64-mingw32.exe)
+or the [64-bit
+installer](https://static.rust-lang.org/dist/rust-nightly-x86_64-w64-mingw32.exe)
+and run it.
 
 If you decide you don't want Rust anymore, we'll be a bit sad, but that's okay.
 Not every programming language is great for everyone. Just pass an argument to
@@ -116,10 +110,10 @@ but also working properly. And printing information to the screen is a pretty
 common thing to do.
 
 The first thing that we need to do is make a file to put our code in. I like
-to make a projects directory in my home directory, and keep all my projects
+to make a `projects` directory in my home directory, and keep all my projects
 there. Rust does not care where your code lives.
 
-This actually leads to one other concern we should address: this tutorial will
+This actually leads to one other concern we should address: this guide will
 assume that you have basic familiarity with the command line. Rust does not
 require that you know a whole ton about the command line, but until the
 language is in a more finished state, IDE support is spotty. Rust makes no
@@ -139,18 +133,19 @@ the documentation for your shell for more details.
 
 Let's make a new source file next. I'm going to use the syntax `editor
 filename` to represent editing a file in these examples, but you should use
-whatever method you want. We'll call our file `hello_world.rs`:
+whatever method you want. We'll call our file `main.rs`:
 
 ```{bash}
-$ editor hello_world.rs
+$ editor main.rs
 ```
 
 Rust files always end in a `.rs` extension. If you're using more than one word
-in your file name, use an underscore. `hello_world.rs` versus `goodbye.rs`.
+in your file name, use an underscore. `hello_world.rs` rather than
+`helloworld.rs`.
 
 Now that you've got your file open, type this in:
 
-```
+```{rust}
 fn main() {
     println!("Hello, world!");
 }
@@ -159,20 +154,20 @@ fn main() {
 Save the file, and then type this into your terminal window:
 
 ```{bash}
-$ rustc hello_world.rs
-$ ./hello_world # or hello_world.exe on Windows
+$ rustc main.rs
+$ ./main # or main.exe on Windows
 Hello, world!
 ```
 
 Success! Let's go over what just happened in detail.
 
-```
+```{rust}
 fn main() {
 
 }
 ```
 
-These two lines define a **function** in Rust. The `main` function is special:
+These lines define a **function** in Rust. The `main` function is special:
 it's the beginning of every Rust program. The first line says "I'm declaring a
 function named `main`, which takes no arguments and returns nothing." If there
 were arguments, they would go inside the parentheses (`(` and `)`), and because
@@ -186,15 +181,15 @@ declaration, with one space in between.
 
 Next up is this line:
 
-```
+```{rust}
     println!("Hello, world!");
 ```
 
 This line does all of the work in our little program. There are a number of
 details that are important here. The first is that it's indented with four
 spaces, not tabs. Please configure your editor of choice to insert four spaces
-with the tab key. We provide some sample configurations for various editors
-[here](https://github.com/rust-lang/rust/tree/master/src/etc).
+with the tab key. We provide some [sample configurations for various
+editors](https://github.com/rust-lang/rust/tree/master/src/etc).
 
 The second point is the `println!()` part. This is calling a Rust **macro**,
 which is how metaprogramming is done in Rust. If it were a function instead, it
@@ -215,13 +210,13 @@ Finally, the line ends with a semicolon (`;`). Rust is an **expression
 oriented** language, which means that most things are expressions. The `;` is
 used to indicate that this expression is over, and the next one is ready to
 begin. Most lines of Rust code end with a `;`. We will cover this in-depth
-later in the tutorial.
+later in the guide.
 
 Finally, actually **compiling** and **running** our program. We can compile
 with our compiler, `rustc`, by passing it the name of our source file:
 
 ```{bash}
-$ rustc hello_world.rs
+$ rustc main.rs
 ```
 
 This is similar to `gcc` or `clang`, if you come from a C or C++ background. Rust
@@ -229,21 +224,21 @@ will output a binary executable. You can see it with `ls`:
 
 ```{bash}
 $ ls
-hello_world  hello_world.rs
+main  main.rs
 ```
 
 Or on Windows:
 
 ```{bash}
 $ dir
-hello_world.exe  hello_world.rs
+main.exe  main.rs
 ```
 
 There are now two files: our source code, with the `.rs` extension, and the
-executable (`hello_world.exe` on Windows, `hello_world` everywhere else)
+executable (`main.exe` on Windows, `main` everywhere else)
 
 ```{bash}
-$ ./hello_world  # or hello_world.exe on Windows
+$ ./main  # or main.exe on Windows
 ```
 
 This prints out our `Hello, world!` text to our terminal.
@@ -293,7 +288,7 @@ do that part first:
 
 ```{bash}
 $ mkdir src
-$ mv hello_world.rs src/hello_world.rs
+$ mv main.rs src/main.rs
 ```
 
 Cargo expects your source files to live inside a `src` directory. That leaves
@@ -400,14 +395,10 @@ By the way, in these examples, `i` indicates that the number is an integer.
 
 Rust is a statically typed language, which means that we specify our types up
 front. So why does our first example compile? Well, Rust has this thing called
-"[Hindley-Milner type
-inference](http://en.wikipedia.org/wiki/Hindley%E2%80%93Milner_type_system)",
-named after some really smart type theorists. If you clicked that link, don't
-be scared: what this means for you is that Rust will attempt to infer the types
-in your program, and it's pretty good at it. If it can infer the type, Rust
+"type inference." If it can figure out what the type of something is, Rust
 doesn't require you to actually type it out.
 
-We can add the type if we want to. Types come after a colon (`:`):
+We can add the type if we want to, though. Types come after a colon (`:`):
 
 ```{rust}
 let x: int = 5;
@@ -461,9 +452,9 @@ let x;
 ...we'll get an error:
 
 ```{ignore}
-src/hello_world.rs:2:9: 2:10 error: cannot determine a type for this local variable: unconstrained type
-src/hello_world.rs:2     let x;
-                             ^
+src/main.rs:2:9: 2:10 error: cannot determine a type for this local variable: unconstrained type
+src/main.rs:2     let x;
+                      ^
 ```
 
 Giving it a type will compile, though:
@@ -472,7 +463,7 @@ Giving it a type will compile, though:
 let x: int;
 ```
 
-Let's try it out. Change your `src/hello_world.rs` file to look like this:
+Let's try it out. Change your `src/main.rs` file to look like this:
 
 ```{rust}
 fn main() {
@@ -487,8 +478,8 @@ but it will still print "Hello, world!":
 
 ```{ignore,notrust}
    Compiling hello_world v0.0.1 (file:///home/you/projects/hello_world)
-src/hello_world.rs:2:9: 2:10 warning: unused variable: `x`, #[warn(unused_variable)] on by default
-src/hello_world.rs:2     let x: int;
+src/main.rs:2:9: 2:10 warning: unused variable: `x`, #[warn(unused_variable)] on by default
+src/main.rs:2     let x: int;
                              ^
 ```
 
@@ -509,21 +500,19 @@ And try to build it. You'll get an error:
 ```{bash}
 $ cargo build
    Compiling hello_world v0.0.1 (file:///home/you/projects/hello_world)
-src/hello_world.rs:4:39: 4:40 error: use of possibly uninitialized variable: `x`
-src/hello_world.rs:4     println!("The value of x is: {}", x);
-                                                           ^
+src/main.rs:4:39: 4:40 error: use of possibly uninitialized variable: `x`
+src/main.rs:4     println!("The value of x is: {}", x);
+                                                    ^
 note: in expansion of format_args!
 <std macros>:2:23: 2:77 note: expansion site
 <std macros>:1:1: 3:2 note: in expansion of println!
-src/hello_world.rs:4:5: 4:42 note: expansion site
+src/main.rs:4:5: 4:42 note: expansion site
 error: aborting due to previous error
 Could not compile `hello_world`.
 ```
 
-Rust will not let us use a value that has not been initialized. So why let us
-declare a binding without initializing it? You'd think our first example would
-have errored. Well, Rust is smarter than that. Before we get to that, let's talk
-about this stuff we've added to `println!`.
+Rust will not let us use a value that has not been initialized. Next, let's
+talk about this stuff we've added to `println!`.
 
 If you include two curly braces (`{}`, some call them moustaches...) in your
 string to print, Rust will interpret this as a request to interpolate some sort
@@ -537,12 +526,6 @@ value in a meaningful way by checking out its type. If you want to specify the
 format in a more detailed manner, there are a [wide number of options
 available](std/fmt/index.html). For now, we'll just stick to the default:
 integers aren't very complicated to print.
-
-So, we've cleared up all of the confusion around bindings, with one exception:
-why does Rust let us declare a variable binding without an initial value if we
-must initialize the binding before we use it? And how does it know that we have
-or have not initialized the binding? For that, we need to learn our next
-concept: `if`.
 
 # If
 
@@ -570,7 +553,7 @@ the block is executed. If it's `false`, then it is not.
 
 If you want something to happen in the `false` case, use an `else`:
 
-```
+```{rust}
 let x = 5i;
 
 if x == 5i {
@@ -583,7 +566,7 @@ if x == 5i {
 This is all pretty standard. However, you can also do this:
 
 
-```
+```{rust}
 let x = 5i;
 
 let y = if x == 5i {
@@ -595,7 +578,7 @@ let y = if x == 5i {
 
 Which we can (and probably should) write like this:
 
-```
+```{rust}
 let x = 5i;
 
 let y = if x == 5i { 10i } else { 15i };
@@ -652,7 +635,7 @@ every line of Rust code you see.
 What is this exception that makes us say 'almost?' You saw it already, in this
 code:
 
-```
+```{rust}
 let x = 5i;
 
 let y: int = if x == 5i { 10i } else { 15i };
@@ -765,7 +748,7 @@ This is a deliberate design decision. While full-program inference is possible,
 languages which have it, like Haskell, often suggest that documenting your
 types explicitly is a best-practice. We agree that forcing functions to declare
 types while allowing for inference inside of function bodies is a wonderful
-compromise between full inference and no inference.
+sweet spot between full inference and no inference.
 
 What about returning a value? Here's a function that adds one to an integer:
 
@@ -998,7 +981,7 @@ notation: `origin.x`.
 The values in structs are immutable, like other bindings in Rust. However, you
 can use `mut` to make them mutable:
 
-```rust
+```{rust}
 struct Point {
     x: int,
     y: int,
@@ -1022,7 +1005,7 @@ called a **tuple struct**. Tuple structs do have a name, but their fields
 don't:
 
 
-```
+```{rust}
 struct Color(int, int, int);
 struct Point(int, int, int);
 ```
@@ -1037,7 +1020,7 @@ let origin = Point(0, 0, 0);
 It is almost always better to use a struct than a tuple struct. We would write
 `Color` and `Point` like this instead:
 
-```rust
+```{rust}
 struct Color {
     red: int,
     blue: int,
@@ -1058,7 +1041,7 @@ There _is_ one case when a tuple struct is very useful, though, and that's a
 tuple struct with only one element. We call this a 'newtype,' because it lets
 you create a new type that's a synonym for another one:
 
-```
+```{rust}
 struct Inches(int);
 
 let length = Inches(10);
@@ -1175,7 +1158,7 @@ what's the solution?
 Rust has a keyword, `match`, that allows you to replace complicated `if`/`else`
 groupings with something more powerful. Check it out:
 
-```rust
+```{rust}
 let x = 5i;
 
 match x {
@@ -1297,15 +1280,15 @@ two main looping constructs: `for` and `while`.
 
 The `for` loop is used to loop a particular number of times. Rust's `for` loops
 work a bit differently than in other systems languages, however. Rust's `for`
-loop doesn't look like this C `for` loop:
+loop doesn't look like this "C style" `for` loop:
 
-```{ignore,c}
+```{c}
 for (x = 0; x < 10; x++) {
     printf( "%d\n", x );
 }
 ```
 
-It looks like this:
+Instead, it looks like this:
 
 ```{rust}
 for x in range(0i, 10i) {
@@ -1328,17 +1311,13 @@ valid for the loop body. Once the body is over, the next value is fetched from
 the iterator, and we loop another time. When there are no more values, the
 `for` loop is over.
 
-In our example, the `range` function is a function, provided by Rust, that
-takes a start and an end position, and gives an iterator over those values. The
-upper bound is exclusive, though, so our loop will print `0` through `9`, not
-`10`.
+In our example, `range` is a function that takes a start and an end position,
+and gives an iterator over those values. The upper bound is exclusive, though,
+so our loop will print `0` through `9`, not `10`.
 
 Rust does not have the "C style" `for` loop on purpose. Manually controlling
 each element of the loop is complicated and error prone, even for experienced C
-developers. There's an old joke that goes, "There are two hard problems in
-computer science: naming things, cache invalidation, and off-by-one errors."
-The joke, of course, being that the setup says "two hard problems" but then
-lists three things. This happens quite a bit with "C style" `for` loops.
+developers.
 
 We'll talk more about `for` when we cover **iterator**s, later in the Guide.
 
@@ -1416,7 +1395,7 @@ We now loop forever with `loop`, and use `break` to break out early.
 `continue` is similar, but instead of ending the loop, goes to the next
 iteration: This will only print the odd numbers:
 
-```
+```{rust}
 for x in range(0i, 10i) {
     if x % 2 == 0 { continue; }
 
@@ -1528,6 +1507,7 @@ You can create an array with just square brackets:
 
 ```{rust}
 let nums = [1i, 2i, 3i];
+let nums = [1i, ..20]; // Shorthand for an array of 20 elements all initialized to 1
 ```
 
 So what's the difference? An array has a fixed size, so you can't add or
@@ -1596,8 +1576,6 @@ we haven't seen before. Here's a simple program that reads some input,
 and then prints it back out:
 
 ```{rust,ignore}
-use std::io;
-
 fn main() {
     println!("Type something!");
 
@@ -2025,7 +2003,7 @@ Great! Next up: let's compare our guess to the secret guess.
 
 ## Comparing guesses
 
-If you remember, earlier in the tutorial, we made a `cmp` function that compared
+If you remember, earlier in the guide, we made a `cmp` function that compared
 two numbers. Let's add that in, along with a `match` statement to compare the
 guess to the secret guess:
 
@@ -2174,13 +2152,9 @@ In this case, we say `x` is a `uint` explicitly, so Rust is able to properly
 tell `random()` what to generate. In a similar fashion, both of these work:
 
 ```{rust,ignore}
-let input_num = from_str::<Option<uint>>("5");
+let input_num = from_str::<uint>("5");
 let input_num: Option<uint> = from_str("5");
 ```
-
-In this case, I happen to prefer the latter, and in the `random()` case, I prefer
-the former. I think the nested `<>`s make the first option especially ugly and
-a bit harder to read.
 
 Anyway, with us now converting our input to a number, our code looks like this:
 
@@ -2762,197 +2736,8 @@ $ cargo run
 Hello, world!
 ```
 
-Nice!
-
-There's a common pattern when you're building an executable: you build both an
-executable and a library, and put most of your logic in the library. That way,
-other programs can use that library to build their own functionality.
-
-Let's do that with our project. If you remember, libraries and executables
-are both crates, so while our project has one crate now, let's make a second:
-one for the library, and one for the executable.
-
-To make the second crate, open up `src/lib.rs` and put this code in it:
-
-```{rust}
-mod hello {
-    pub fn print_hello() {
-        println!("Hello, world!");
-    }
-}
-```
-
-And change your `src/main.rs` to look like this:
-
-```{rust,ignore}
-extern crate modules;
-
-fn main() {
-    modules::hello::print_hello();
-}
-```
-
-There's been a few changes. First, we moved our `hello` module into its own
-file, `src/lib.rs`. This is the file that Cargo expects a library crate to
-be named, by convention.
-
-Next, we added an `extern crate modules` to the top of our `src/main.rs`. This,
-as you can guess, lets Rust know that our crate relies on another, external
-crate. We also had to modify our call to `print_hello`: now that it's in
-another crate, we need to specify that crate first.
-
-This doesn't _quite_ work yet. Try it:
-
-```{notrust,ignore}
-$ cargo build
-   Compiling modules v0.0.1 (file:///home/you/projects/modules)
-/home/you/projects/modules/src/lib.rs:2:5: 4:6 warning: code is never used: `print_hello`, #[warn(dead_code)] on by default
-/home/you/projects/modules/src/lib.rs:2     pub fn print_hello() {
-/home/you/projects/modules/src/lib.rs:3         println!("Hello, world!");
-/home/you/projects/modules/src/lib.rs:4     }
-/home/you/projects/modules/src/main.rs:4:5: 4:32 error: function `print_hello` is private
-/home/you/projects/modules/src/main.rs:4     modules::hello::print_hello();
-                                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~
-error: aborting due to previous error
-Could not compile `modules`.
-```
-
-First, we get a warning that some code is never used. Odd. Next, we get an error:
-`print_hello` is private, so we can't call it. Notice that the first error came
-from `src/lib.rs`, and the second came from `src/main.rs`: cargo is smart enough
-to build it all with one command. Also, after seeing the second error, the warning
-makes sense: we never actually call `hello_world`, because we're not allowed to!
-
-Just like modules, crates also have private visibility by default. Any modules
-inside of a crate can only be used by other modules in the crate, unless they
-use `pub`. In `src/lib.rs`, change this line:
-
-```{rust,ignore}
-mod hello {
-```
-
-To this:
-
-```{rust,ignore}
-pub mod hello {
-```
-
-And everything should work:
-
-```{notrust,ignore}
-$ cargo run
-   Compiling modules v0.0.1 (file:///home/you/projects/modules)
-     Running `target/modules`
-Hello, world!
-```
-
-Let's do one more thing: add a `goodbye` module as well. Imagine a `src/lib.rs`
-that looks like this:
-
-```{rust,ignore}
-pub mod hello {
-    pub fn print_hello() {
-        println!("Hello, world!");
-    }
-}
-
-pub mod goodbye {
-    pub fn print_goodbye() {
-        println!("Goodbye for now!");
-    }
-}
-```
-
-Now, these two modules are pretty small, but imagine we've written a real, large
-program: they could both be huge. So maybe we want to move them into their own
-files. We can do that pretty easily, and there are two different conventions
-for doing it. Let's give each a try. First, make `src/lib.rs` look like this:
-
-```{rust,ignore}
-pub mod hello;
-pub mod goodbye;
-```
-
-This tells Rust that this crate has two public modules: `hello` and `goodbye`.
-
-Next, make a `src/hello.rs` that contains this:
-
-```{rust,ignore}
-pub fn print_hello() {
-    println!("Hello, world!");
-}
-```
-
-When we include a module like this, we don't need to make the `mod` declaration
-in `hello.rs`, because it's already been declared in `lib.rs`. `hello.rs` just
-contains the body of the module which is defined (by the `pub mod hello`) in
-`lib.rs`.  This helps prevent 'rightward drift': when you end up indenting so
-many times that your code is hard to read.
-
-Finally, make a new directory, `src/goodbye`, and make a new file in it,
-`src/goodbye/mod.rs`:
-
-```{rust,ignore}
-pub fn print_goodbye() {
-    println!("Bye for now!");
-}
-```
-
-Same deal, but we can make a folder with a `mod.rs` instead of `mod_name.rs` in
-the same directory. If you have a lot of modules, nested folders can make
-sense.  For example, if the `goodbye` module had its _own_ modules inside of
-it, putting all of that in a folder helps keep our directory structure tidy.
-And in fact, if you place the modules in separate files, they're required to be
-in separate folders.
-
-This should all compile as usual:
-
-```{notrust,ignore}
-$ cargo build
-   Compiling modules v0.0.1 (file:///home/you/projects/modules)
-```
-
-We've seen how the `::` operator can be used to call into modules, but when
-we have deep nesting like `modules::hello::say_hello`, it can get tedious.
-That's why we have the `use` keyword.
-
-`use` allows us to bring certain names into another scope. For example, here's
-our main program:
-
-```{rust,ignore}
-extern crate modules;
-
-fn main() {
-    modules::hello::print_hello();
-}
-```
-
-We could instead write this:
-
-```{rust,ignore}
-extern crate modules;
-
-use modules::hello::print_hello;
-
-fn main() {
-    print_hello();
-}
-```
-
-By bringing `print_hello` into scope, we don't need to qualify it anymore. However,
-it's considered proper style to do write this code like like this:
-
-```{rust,ignore}
-extern crate modules;
-
-use modules::hello;
-
-fn main() {
-    hello::print_hello();
-}
-```
-
-By just bringing the module into scope, we can keep one level of namespacing.
+Nice! There are more things we can do with modules, including moving them into
+their own files. This is enough detail for now.
 
 # Testing
 
@@ -3818,9 +3603,9 @@ Here's the second note, which lets us know where the first borrow would be over.
 This is useful, because if we wait to try to borrow `x` after this borrow is
 over, then everything will work.
 
-These rules are very simple, but that doesn't mean that they're easy. For more
-advanced patterns, please consult the [Lifetime Guide](guide-lifetimes.html).
-You'll also learn what this type signature with the `'a` syntax is:
+For more advanced patterns, please consult the [Lifetime
+Guide](guide-lifetimes.html).  You'll also learn what this type signature with
+the `'a` syntax is:
 
 ```{rust,ignore}
 pub fn as_maybe_owned(&self) -> MaybeOwned<'a> { ... }
@@ -3972,27 +3757,27 @@ match x {
 }
 ```
 
-You can match a range of values with `..`:
+You can match a range of values with `...`:
 
 ```{rust}
 let x = 1i;
 
 match x {
-    1 .. 5 => println!("one through five"),
+    1 ... 5 => println!("one through five"),
     _ => println!("anything"),
 }
 ```
 
 Ranges are mostly used with integers and single characters.
 
-If you're matching multiple things, via a `|` or a `..`, you can bind
+If you're matching multiple things, via a `|` or a `...`, you can bind
 the value to a name with `@`:
 
 ```{rust}
 let x = 1i;
 
 match x {
-    x @ 1 .. 5 => println!("got {}", x),
+    x @ 1 ... 5 => println!("got {}", x),
     _ => println!("anything"),
 }
 ```
@@ -4131,7 +3916,7 @@ the ability to use this **method call syntax** via the `impl` keyword.
 
 Here's how it works:
 
-```
+```{rust}
 struct Circle {
     x: f64,
     y: f64,
@@ -4170,7 +3955,7 @@ multiplications later, and we have our area.
 You can also define methods that do not take a `self` parameter. Here's a
 pattern that's very common in Rust code:
 
-```
+```{rust}
 struct Circle {
     x: f64,
     y: f64,
@@ -4471,17 +4256,17 @@ for num in nums.iter() {
 }
 ```
 
-There are two reasons for this. First, this is more semantic. We iterate
-through the entire vector, rather than iterating through indexes, and then
-indexing the vector. Second, this version is more efficient: the first version
-will have extra bounds checking because it used indexing, `nums[i]`. But since
-we yield a reference to each element of the vector in turn with the iterator,
-there's no bounds checking in the second example. This is very common with
-iterators: we can ignore unnecessary bounds checks, but still know that we're
-safe.
+There are two reasons for this. First, this more directly expresses what we
+mean. We iterate through the entire vector, rather than iterating through
+indexes, and then indexing the vector. Second, this version is more efficient:
+the first version will have extra bounds checking because it used indexing,
+`nums[i]`. But since we yield a reference to each element of the vector in turn
+with the iterator, there's no bounds checking in the second example. This is
+very common with iterators: we can ignore unnecessary bounds checks, but still
+know that we're safe.
 
 There's another detail here that's not 100% clear because of how `println!`
-works. `num` is actually of type `&int`, that is, it's a reference to an `int`,
+works. `num` is actually of type `&int`. That is, it's a reference to an `int`,
 not an `int` itself. `println!` handles the dereferencing for us, so we don't
 see it. This code works fine too:
 
@@ -4540,8 +4325,6 @@ and so we tell it that we want a vector of integers.
 is one:
 
 ```{rust}
-let one_to_one_hundred = range(0i, 100i);
-
 let greater_than_forty_two = range(0i, 100i)
                              .find(|x| *x >= 42);
 
@@ -4705,8 +4488,8 @@ This will print
 ```
 
 `filter()` is an adapter that takes a closure as an argument. This closure
-returns `true` or `false`. The new iterator `filter()` produces returns
-only the elements that that closure returned `true` for:
+returns `true` or `false`. The new iterator `filter()` produces
+only the elements that that closure returns `true` for:
 
 ```{rust}
 for i in range(1i, 100i).filter(|x| x % 2 == 0) {

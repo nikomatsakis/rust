@@ -44,14 +44,14 @@ pub fn compute_restrictions(bccx: &BorrowckCtxt,
 ///////////////////////////////////////////////////////////////////////////
 // Private
 
-struct RestrictionsContext<'a> {
-    bccx: &'a BorrowckCtxt<'a>,
+struct RestrictionsContext<'a, 'tcx: 'a> {
+    bccx: &'a BorrowckCtxt<'a, 'tcx>,
     span: Span,
     loan_region: ty::Region,
     cause: euv::LoanCause,
 }
 
-impl<'a> RestrictionsContext<'a> {
+impl<'a, 'tcx> RestrictionsContext<'a, 'tcx> {
     fn restrict(&self,
                 cmt: mc::cmt) -> RestrictionResult {
         debug!("restrict(cmt={})", cmt.repr(self.bccx.tcx));
@@ -66,8 +66,7 @@ impl<'a> RestrictionsContext<'a> {
                 Safe
             }
 
-            mc::cat_local(local_id) |
-            mc::cat_arg(local_id) => {
+            mc::cat_local(local_id) => {
                 // R-Variable, locally declared
                 let lp = Rc::new(LpVar(local_id));
                 SafeIf(lp.clone(), vec![lp])

@@ -372,7 +372,7 @@
 #![deny(missing_doc)]
 
 #[cfg(test)]
-extern crate stdtest = "test";
+extern crate "test" as stdtest;
 #[cfg(test)]
 extern crate rand;
 
@@ -381,7 +381,7 @@ extern crate rand;
 #[cfg(test)]
 extern crate regex;
 
-// unicode tables for character classes are defined in libunicode
+// Unicode tables for character classes are defined in libunicode
 extern crate unicode;
 
 pub use parse::Error;
@@ -425,7 +425,7 @@ pub mod native {
         FLAG_EMPTY, FLAG_NOCASE, FLAG_MULTI, FLAG_DOTNL,
         FLAG_SWAP_GREED, FLAG_NEGATED,
     };
-    pub use re::{Dynamic, Native};
+    pub use re::{Dynamic, ExDynamic, Native, ExNative};
     pub use vm::{
         MatchKind, Exists, Location, Submatches,
         StepState, StepMatchEarlyReturn, StepMatch, StepContinue,

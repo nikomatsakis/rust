@@ -1,13 +1,14 @@
 #define CFG_VERSION_WIN GetEnv("CFG_VERSION_WIN")
 #define CFG_RELEASE GetEnv("CFG_RELEASE")
 #define CFG_PACKAGE_NAME GetEnv("CFG_PACKAGE_NAME")
+#define CFG_BUILD GetEnv("CFG_BUILD")
 
 [Setup]
 
 SetupIconFile=rust-logo.ico
 AppName=Rust
 AppVersion={#CFG_RELEASE}
-AppCopyright=Copyright (C) 2006-2013 Mozilla Foundation, MIT license
+AppCopyright=Copyright (C) 2006-2014 Mozilla Foundation, MIT license
 AppPublisher=Mozilla Foundation
 AppPublisherURL=http://www.rust-lang.org
 VersionInfoVersion={#CFG_VERSION_WIN}
@@ -20,7 +21,7 @@ DisableStartupPrompt=true
 
 OutputDir=.\dist\
 SourceDir=.\
-OutputBaseFilename={#CFG_PACKAGE_NAME}-install
+OutputBaseFilename={#CFG_PACKAGE_NAME}-{#CFG_BUILD}
 DefaultDirName={pf32}\Rust
 
 Compression=lzma2/ultra
@@ -42,7 +43,7 @@ Source: "tmp/dist/win/*.*" ; DestDir: "{app}"; Flags: ignoreversion recursesubdi
 [Code]
 const
 	ModPathName = 'modifypath';
-	ModPathType = 'user';
+	ModPathType = 'system';
 
 function ModPathDir(): TArrayOfString;
 begin

@@ -19,7 +19,6 @@ use std::cell::RefCell;
 use std::cmp::Equiv;
 use std::fmt;
 use std::hash::Hash;
-use std::mem;
 use std::rc::Rc;
 
 pub struct Interner<T> {
@@ -121,7 +120,7 @@ impl fmt::Show for RcStr {
 impl RcStr {
     pub fn new(string: &str) -> RcStr {
         RcStr {
-            string: Rc::new(string.to_string()),
+            string: Rc::new(string.into_string()),
         }
     }
 }
@@ -190,16 +189,6 @@ impl StrInterner {
 
     pub fn get(&self, idx: Name) -> RcStr {
         (*self.vect.borrow().get(idx.uint())).clone()
-    }
-
-    /// Returns this string with lifetime tied to the interner. Since
-    /// strings may never be removed from the interner, this is safe.
-    pub fn get_ref<'a>(&'a self, idx: Name) -> &'a str {
-        let vect = self.vect.borrow();
-        let s: &str = vect.get(idx.uint()).as_slice();
-        unsafe {
-            mem::transmute(s)
-        }
     }
 
     pub fn len(&self) -> uint {

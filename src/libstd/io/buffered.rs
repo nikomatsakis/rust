@@ -162,7 +162,7 @@ impl<W: Writer> BufferedWriter<W> {
 
     fn flush_buf(&mut self) -> IoResult<()> {
         if self.pos != 0 {
-            let ret = self.inner.get_mut_ref().write(self.buf.slice_to(self.pos));
+            let ret = self.inner.as_mut().unwrap().write(self.buf.slice_to(self.pos));
             self.pos = 0;
             ret
         } else {
@@ -174,7 +174,7 @@ impl<W: Writer> BufferedWriter<W> {
     ///
     /// This type does not expose the ability to get a mutable reference to the
     /// underlying reader because that could possibly corrupt the buffer.
-    pub fn get_ref<'a>(&'a self) -> &'a W { self.inner.get_ref() }
+    pub fn get_ref<'a>(&'a self) -> &'a W { self.inner.as_ref().unwrap() }
 
     /// Unwraps this `BufferedWriter`, returning the underlying writer.
     ///
@@ -193,9 +193,9 @@ impl<W: Writer> Writer for BufferedWriter<W> {
         }
 
         if buf.len() > self.buf.len() {
-            self.inner.get_mut_ref().write(buf)
+            self.inner.as_mut().unwrap().write(buf)
         } else {
-            let dst = self.buf.mut_slice_from(self.pos);
+            let dst = self.buf.slice_from_mut(self.pos);
             slice::bytes::copy_memory(dst, buf);
             self.pos += buf.len();
             Ok(())
@@ -203,7 +203,7 @@ impl<W: Writer> Writer for BufferedWriter<W> {
     }
 
     fn flush(&mut self) -> IoResult<()> {
-        self.flush_buf().and_then(|()| self.inner.get_mut_ref().flush())
+        self.flush_buf().and_then(|()| self.inner.as_mut().unwrap().flush())
     }
 }
 
@@ -265,7 +265,7 @@ impl<W: Writer> Writer for LineBufferedWriter<W> {
 struct InternalBufferedWriter<W>(BufferedWriter<W>);
 
 impl<W> InternalBufferedWriter<W> {
-    fn get_mut_ref<'a>(&'a mut self) -> &'a mut BufferedWriter<W> {
+    fn get_mut<'a>(&'a mut self) -> &'a mut BufferedWriter<W> {
         let InternalBufferedWriter(ref mut w) = *self;
         return w;
     }
@@ -273,7 +273,7 @@ impl<W> InternalBufferedWriter<W> {
 
 impl<W: Reader> Reader for InternalBufferedWriter<W> {
     fn read(&mut self, buf: &mut [u8]) -> IoResult<uint> {
-        self.get_mut_ref().inner.get_mut_ref().read(buf)
+        self.get_mut().inner.as_mut().unwrap().read(buf)
     }
 }
 
@@ -359,10 +359,10 @@ impl<S: Stream> Reader for BufferedStream<S> {
 
 impl<S: Stream> Writer for BufferedStream<S> {
     fn write(&mut self, buf: &[u8]) -> IoResult<()> {
-        self.inner.inner.get_mut_ref().write(buf)
+        self.inner.inner.get_mut().write(buf)
     }
     fn flush(&mut self) -> IoResult<()> {
-        self.inner.inner.get_mut_ref().flush()
+        self.inner.inner.get_mut().flush()
     }
 }
 

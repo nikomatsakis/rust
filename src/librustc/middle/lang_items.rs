@@ -85,6 +85,17 @@ impl LanguageItems {
         }
     }
 
+    pub fn from_builtin_kind(&self, bound: ty::BuiltinBound)
+                             -> Result<ast::DefId, String>
+    {
+        match bound {
+            ty::BoundSend => self.require(SendTraitLangItem),
+            ty::BoundSized => self.require(SizedTraitLangItem),
+            ty::BoundCopy => self.require(CopyTraitLangItem),
+            ty::BoundSync => self.require(SyncTraitLangItem),
+        }
+    }
+
     pub fn to_builtin_kind(&self, id: ast::DefId) -> Option<ty::BuiltinBound> {
         if Some(id) == self.send_trait() {
             Some(ty::BoundSend)
@@ -115,8 +126,8 @@ struct LanguageItemCollector<'a> {
     item_refs: HashMap<&'static str, uint>,
 }
 
-impl<'a> Visitor<()> for LanguageItemCollector<'a> {
-    fn visit_item(&mut self, item: &ast::Item, _: ()) {
+impl<'a, 'v> Visitor<'v> for LanguageItemCollector<'a> {
+    fn visit_item(&mut self, item: &ast::Item) {
         match extract(item.attrs.as_slice()) {
             Some(value) => {
                 let item_index = self.item_refs.find_equiv(&value).map(|x| *x);
@@ -131,7 +142,7 @@ impl<'a> Visitor<()> for LanguageItemCollector<'a> {
             None => {}
         }
 
-        visit::walk_item(self, item, ());
+        visit::walk_item(self, item);
     }
 }
 
@@ -166,7 +177,7 @@ impl<'a> LanguageItemCollector<'a> {
     }
 
     pub fn collect_local_language_items(&mut self, krate: &ast::Crate) {
-        visit::walk_crate(self, krate, ());
+        visit::walk_crate(self, krate);
     }
 
     pub fn collect_external_language_items(&mut self) {
@@ -236,6 +247,8 @@ lets_do_this! {
     ShrTraitLangItem,                "shr",                     shr_trait;
     IndexTraitLangItem,              "index",                   index_trait;
     IndexMutTraitLangItem,           "index_mut",               index_mut_trait;
+    SliceTraitLangItem,              "slice",                   slice_trait;
+    SliceMutTraitLangItem,           "slice_mut",               slice_mut_trait;
 
     UnsafeTypeLangItem,              "unsafe",                  unsafe_type;
 
@@ -251,7 +264,7 @@ lets_do_this! {
 
     StrEqFnLangItem,                 "str_eq",                  str_eq_fn;
 
-    // A number of failure-related lang items. The `fail_` item corresponds to
+    // A number of failure-related lang items. The `fail` item corresponds to
     // divide-by-zero and various failure cases with `match`. The
     // `fail_bounds_check` item is for indexing arrays.
     //
@@ -260,12 +273,11 @@ lets_do_this! {
     // defined to use it, but a final product is required to define it
     // somewhere. Additionally, there are restrictions on crates that use a weak
     // lang item, but do not have it defined.
-    FailFnLangItem,                  "fail_",                   fail_fn;
+    FailFnLangItem,                  "fail",                    fail_fn;
     FailBoundsCheckFnLangItem,       "fail_bounds_check",       fail_bounds_check_fn;
-    BeginUnwindLangItem,             "begin_unwind",            begin_unwind;
+    FailFmtLangItem,                 "fail_fmt",                fail_fmt;
 
     ExchangeMallocFnLangItem,        "exchange_malloc",         exchange_malloc_fn;
-    ClosureExchangeMallocFnLangItem, "closure_exchange_malloc", closure_exchange_malloc_fn;
     ExchangeFreeFnLangItem,          "exchange_free",           exchange_free_fn;
     MallocFnLangItem,                "malloc",                  malloc_fn;
     FreeFnLangItem,                  "free",                    free_fn;
@@ -300,7 +312,7 @@ lets_do_this! {
 
     NoSendItem,                      "no_send_bound",           no_send_bound;
     NoCopyItem,                      "no_copy_bound",           no_copy_bound;
-    NoSyncItem,                     "no_share_bound",          no_share_bound;
+    NoSyncItem,                      "no_sync_bound",           no_sync_bound;
     ManagedItem,                     "managed_bound",           managed_bound;
 
     IteratorItem,                    "iterator",                iterator;

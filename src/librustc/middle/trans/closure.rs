@@ -14,8 +14,7 @@ use back::link::mangle_internal_name_by_path_and_seq;
 use driver::config::FullDebugInfo;
 use llvm::ValueRef;
 use middle::def;
-use middle::freevars;
-use middle::lang_items::ClosureExchangeMallocFnLangItem;
+use middle::mem_categorization::Typer;
 use middle::trans::adt;
 use middle::trans::base::*;
 use middle::trans::build::*;
@@ -24,7 +23,6 @@ use middle::trans::common::*;
 use middle::trans::datum::{Datum, DatumBlock, Expr, Lvalue, rvalue_scratch_datum};
 use middle::trans::debuginfo;
 use middle::trans::expr;
-use middle::trans::machine::llsize_of;
 use middle::trans::type_of::*;
 use middle::trans::type_::Type;
 use middle::ty;
@@ -102,7 +100,7 @@ use syntax::ast_util;
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 pub struct EnvValue {
-    action: freevars::CaptureMode,
+    action: ast::CaptureClause,
     datum: Datum<Lvalue>
 }
 
@@ -122,8 +120,8 @@ pub fn mk_closure_tys(tcx: &ty::ctxt,
     // converted to ptrs.
     let bound_tys = bound_values.iter().map(|bv| {
         match bv.action {
-            freevars::CaptureByValue => bv.datum.ty,
-            freevars::CaptureByRef => ty::mk_mut_ptr(tcx, bv.datum.ty)
+            ast::CaptureByValue => bv.datum.ty,
+            ast::CaptureByRef => ty::mk_mut_ptr(tcx, bv.datum.ty)
         }
     }).collect();
     let cdata_ty = ty::mk_tup(tcx, bound_tys);
@@ -136,44 +134,40 @@ fn tuplify_box_ty(tcx: &ty::ctxt, t: ty::t) -> ty::t {
     ty::mk_tup(tcx, vec!(ty::mk_uint(), ty::mk_nil_ptr(tcx), ptr, ptr, t))
 }
 
-fn allocate_cbox<'a>(bcx: &'a Block<'a>,
-                     store: ty::TraitStore,
-                     cdata_ty: ty::t)
-                     -> Result<'a> {
+fn allocate_cbox<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+                             store: ty::TraitStore,
+                             cdata_ty: ty::t)
+                             -> Result<'blk, 'tcx> {
     let _icx = push_ctxt("closure::allocate_cbox");
     let tcx = bcx.tcx();
 
     // Allocate and initialize the box:
+    let cbox_ty = tuplify_box_ty(tcx, cdata_ty);
     match store {
         ty::UniqTraitStore => {
-            let ty = type_of(bcx.ccx(), cdata_ty);
-            let size = llsize_of(bcx.ccx(), ty);
-            // we treat proc as @ here, which isn't ideal
-            malloc_raw_dyn_managed(bcx, cdata_ty, ClosureExchangeMallocFnLangItem, size)
+            malloc_raw_dyn_proc(bcx, cbox_ty)
         }
         ty::RegionTraitStore(..) => {
-            let cbox_ty = tuplify_box_ty(tcx, cdata_ty);
             let llbox = alloc_ty(bcx, cbox_ty, "__closure");
             Result::new(bcx, llbox)
         }
     }
 }
 
-pub struct ClosureResult<'a> {
+pub struct ClosureResult<'blk, 'tcx: 'blk> {
     llbox: ValueRef,    // llvalue of ptr to closure
     cdata_ty: ty::t,    // type of the closure data
-    bcx: &'a Block<'a>  // final bcx
+    bcx: Block<'blk, 'tcx>  // final bcx
 }
 
 // Given a block context and a list of tydescs and values to bind
 // construct a closure out of them. If copying is true, it is a
 // heap allocated closure that copies the upvars into environment.
 // Otherwise, it is stack allocated and copies pointers to the upvars.
-pub fn store_environment<'a>(
-                         bcx: &'a Block<'a>,
-                         bound_values: Vec<EnvValue> ,
-                         store: ty::TraitStore)
-                         -> ClosureResult<'a> {
+pub fn store_environment<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+                                     bound_values: Vec<EnvValue> ,
+                                     store: ty::TraitStore)
+                                     -> ClosureResult<'blk, 'tcx> {
     let _icx = push_ctxt("closure::store_environment");
     let ccx = bcx.ccx();
     let tcx = ccx.tcx();
@@ -203,7 +197,7 @@ pub fn store_environment<'a>(
 
     // Copy expr values into boxed bindings.
     let mut bcx = bcx;
-    for (i, bv) in bound_values.move_iter().enumerate() {
+    for (i, bv) in bound_values.into_iter().enumerate() {
         debug!("Copy {} into closure", bv.to_string(ccx));
 
         if ccx.sess().asm_comments() {
@@ -214,10 +208,10 @@ pub fn store_environment<'a>(
         let bound_data = GEPi(bcx, llbox, [0u, abi::box_field_body, i]);
 
         match bv.action {
-            freevars::CaptureByValue => {
+            ast::CaptureByValue => {
                 bcx = bv.datum.store_to(bcx, bound_data);
             }
-            freevars::CaptureByRef => {
+            ast::CaptureByRef => {
                 Store(bcx, bv.datum.to_llref(), bound_data);
             }
         }
@@ -228,12 +222,11 @@ pub fn store_environment<'a>(
 
 // Given a context and a list of upvars, build a closure. This just
 // collects the upvars and packages them up for store_environment.
-fn build_closure<'a>(bcx0: &'a Block<'a>,
-                     freevar_mode: freevars::CaptureMode,
-                     freevars: &Vec<freevars::freevar_entry>,
-                     store: ty::TraitStore)
-                     -> ClosureResult<'a>
-{
+fn build_closure<'blk, 'tcx>(bcx0: Block<'blk, 'tcx>,
+                             freevar_mode: ast::CaptureClause,
+                             freevars: &Vec<ty::Freevar>,
+                             store: ty::TraitStore)
+                             -> ClosureResult<'blk, 'tcx> {
     let _icx = push_ctxt("closure::build_closure");
 
     // If we need to, package up the iterator body to call
@@ -252,11 +245,11 @@ fn build_closure<'a>(bcx0: &'a Block<'a>,
 // Given an enclosing block context, a new function context, a closure type,
 // and a list of upvars, generate code to load and populate the environment
 // with the upvars and type descriptors.
-fn load_environment<'a>(bcx: &'a Block<'a>,
-                        cdata_ty: ty::t,
-                        freevars: &Vec<freevars::freevar_entry>,
-                        store: ty::TraitStore)
-                        -> &'a Block<'a> {
+fn load_environment<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+                                cdata_ty: ty::t,
+                                freevars: &Vec<ty::Freevar>,
+                                store: ty::TraitStore)
+                                -> Block<'blk, 'tcx> {
     let _icx = push_ctxt("closure::load_environment");
 
     // Don't bother to create the block if there's nothing to load
@@ -305,12 +298,12 @@ fn load_environment<'a>(bcx: &'a Block<'a>,
     bcx
 }
 
-fn load_unboxed_closure_environment<'a>(
-                                    bcx: &'a Block<'a>,
+fn load_unboxed_closure_environment<'blk, 'tcx>(
+                                    bcx: Block<'blk, 'tcx>,
                                     arg_scope_id: ScopeId,
-                                    freevars: &Vec<freevars::freevar_entry>,
+                                    freevars: &Vec<ty::Freevar>,
                                     closure_id: ast::DefId)
-                                    -> &'a Block<'a> {
+                                    -> Block<'blk, 'tcx> {
     let _icx = push_ctxt("closure::load_environment");
 
     if freevars.len() == 0 {
@@ -347,20 +340,19 @@ fn load_unboxed_closure_environment<'a>(
     bcx
 }
 
-fn fill_fn_pair(bcx: &Block, pair: ValueRef, llfn: ValueRef, llenvptr: ValueRef) {
+fn fill_fn_pair(bcx: Block, pair: ValueRef, llfn: ValueRef, llenvptr: ValueRef) {
     Store(bcx, llfn, GEPi(bcx, pair, [0u, abi::fn_field_code]));
     let llenvptr = PointerCast(bcx, llenvptr, Type::i8p(bcx.ccx()));
     Store(bcx, llenvptr, GEPi(bcx, pair, [0u, abi::fn_field_box]));
 }
 
-pub fn trans_expr_fn<'a>(
-                     bcx: &'a Block<'a>,
-                     store: ty::TraitStore,
-                     decl: &ast::FnDecl,
-                     body: &ast::Block,
-                     id: ast::NodeId,
-                     dest: expr::Dest)
-                     -> &'a Block<'a> {
+pub fn trans_expr_fn<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+                                 store: ty::TraitStore,
+                                 decl: &ast::FnDecl,
+                                 body: &ast::Block,
+                                 id: ast::NodeId,
+                                 dest: expr::Dest)
+                                 -> Block<'blk, 'tcx> {
     /*!
      *
      * Translates the body of a closure expression.
@@ -394,11 +386,9 @@ pub fn trans_expr_fn<'a>(
     // set an inline hint for all closures
     set_inline_hint(llfn);
 
-    let freevar_mode = freevars::get_capture_mode(tcx, id);
-    let freevars: Vec<freevars::freevar_entry> =
-        freevars::with_freevars(tcx,
-                                id,
-                                |fv| fv.iter().map(|&fv| fv).collect());
+    let freevar_mode = tcx.capture_mode(id);
+    let freevars: Vec<ty::Freevar> =
+        ty::with_freevars(tcx, id, |fv| fv.iter().map(|&fv| fv).collect());
 
     let ClosureResult {
         llbox,
@@ -427,12 +417,12 @@ pub fn trans_expr_fn<'a>(
 pub fn get_or_create_declaration_if_unboxed_closure(ccx: &CrateContext,
                                                     closure_id: ast::DefId)
                                                     -> Option<ValueRef> {
-    if !ccx.tcx.unboxed_closures.borrow().contains_key(&closure_id) {
+    if !ccx.tcx().unboxed_closures.borrow().contains_key(&closure_id) {
         // Not an unboxed closure.
         return None
     }
 
-    match ccx.unboxed_closure_vals.borrow().find(&closure_id) {
+    match ccx.unboxed_closure_vals().borrow().find(&closure_id) {
         Some(llfn) => {
             debug!("get_or_create_declaration_if_unboxed_closure(): found \
                     closure");
@@ -441,10 +431,10 @@ pub fn get_or_create_declaration_if_unboxed_closure(ccx: &CrateContext,
         None => {}
     }
 
-    let function_type = ty::mk_unboxed_closure(&ccx.tcx,
+    let function_type = ty::mk_unboxed_closure(ccx.tcx(),
                                                closure_id,
                                                ty::ReStatic);
-    let symbol = ccx.tcx.map.with_path(closure_id.node, |path| {
+    let symbol = ccx.tcx().map.with_path(closure_id.node, |path| {
         mangle_internal_name_by_path_and_seq(path, "unboxed_closure")
     });
 
@@ -456,19 +446,19 @@ pub fn get_or_create_declaration_if_unboxed_closure(ccx: &CrateContext,
     debug!("get_or_create_declaration_if_unboxed_closure(): inserting new \
             closure {} (type {})",
            closure_id,
-           ccx.tn.type_to_string(val_ty(llfn)));
-    ccx.unboxed_closure_vals.borrow_mut().insert(closure_id, llfn);
+           ccx.tn().type_to_string(val_ty(llfn)));
+    ccx.unboxed_closure_vals().borrow_mut().insert(closure_id, llfn);
 
     Some(llfn)
 }
 
-pub fn trans_unboxed_closure<'a>(
-                             mut bcx: &'a Block<'a>,
+pub fn trans_unboxed_closure<'blk, 'tcx>(
+                             mut bcx: Block<'blk, 'tcx>,
                              decl: &ast::FnDecl,
                              body: &ast::Block,
                              id: ast::NodeId,
                              dest: expr::Dest)
-                             -> &'a Block<'a> {
+                             -> Block<'blk, 'tcx> {
     let _icx = push_ctxt("closure::trans_unboxed_closure");
 
     debug!("trans_unboxed_closure()");
@@ -484,10 +474,8 @@ pub fn trans_unboxed_closure<'a>(
                                         .clone();
     let function_type = ty::mk_closure(bcx.tcx(), function_type);
 
-    let freevars: Vec<freevars::freevar_entry> =
-        freevars::with_freevars(bcx.tcx(),
-                                id,
-                                |fv| fv.iter().map(|&fv| fv).collect());
+    let freevars: Vec<ty::Freevar> =
+        ty::with_freevars(bcx.tcx(), id, |fv| fv.iter().map(|&fv| fv).collect());
     let freevars_ptr = &freevars;
 
     trans_closure(bcx.ccx(),
@@ -544,7 +532,7 @@ pub fn get_wrapper_for_bare_fn(ccx: &CrateContext,
                                is_local: bool) -> ValueRef {
 
     let def_id = match def {
-        def::DefFn(did, _) | def::DefStaticMethod(did, _, _) |
+        def::DefFn(did, _, _) | def::DefStaticMethod(did, _, _) |
         def::DefVariant(_, did, _) | def::DefStruct(did) => did,
         _ => {
             ccx.sess().bug(format!("get_wrapper_for_bare_fn: \
@@ -554,7 +542,7 @@ pub fn get_wrapper_for_bare_fn(ccx: &CrateContext,
         }
     };
 
-    match ccx.closure_bare_wrapper_cache.borrow().find(&fn_ptr) {
+    match ccx.closure_bare_wrapper_cache().borrow().find(&fn_ptr) {
         Some(&llval) => return llval,
         None => {}
     }
@@ -581,7 +569,7 @@ pub fn get_wrapper_for_bare_fn(ccx: &CrateContext,
         decl_rust_fn(ccx, closure_ty, name.as_slice())
     };
 
-    ccx.closure_bare_wrapper_cache.borrow_mut().insert(fn_ptr, llfn);
+    ccx.closure_bare_wrapper_cache().borrow_mut().insert(fn_ptr, llfn);
 
     // This is only used by statics inlined from a different crate.
     if !is_local {
@@ -624,11 +612,11 @@ pub fn get_wrapper_for_bare_fn(ccx: &CrateContext,
     llfn
 }
 
-pub fn make_closure_from_bare_fn<'a>(bcx: &'a Block<'a>,
-                                     closure_ty: ty::t,
-                                     def: def::Def,
-                                     fn_ptr: ValueRef)
-                                     -> DatumBlock<'a, Expr>  {
+pub fn make_closure_from_bare_fn<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+                                             closure_ty: ty::t,
+                                             def: def::Def,
+                                             fn_ptr: ValueRef)
+                                             -> DatumBlock<'blk, 'tcx, Expr>  {
     let scratch = rvalue_scratch_datum(bcx, closure_ty, "__adjust");
     let wrapper = get_wrapper_for_bare_fn(bcx.ccx(), closure_ty, def, fn_ptr, true);
     fill_fn_pair(bcx, scratch.val, wrapper, C_null(Type::i8p(bcx.ccx())));

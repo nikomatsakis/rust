@@ -13,22 +13,22 @@
 
 #![feature(overloaded_calls, unboxed_closures)]
 
-fn a<F:|&: int, int| -> int>(f: F) -> int {
+fn a<F:Fn(int, int) -> int>(f: F) -> int {
     f(1, 2)
 }
 
-fn b<F:|&mut: int, int| -> int>(mut f: F) -> int {
+fn b<F:FnMut(int, int) -> int>(mut f: F) -> int {
     f(3, 4)
 }
 
-fn c<F:|: int, int| -> int>(f: F) -> int {
+fn c<F:FnOnce(int, int) -> int>(f: F) -> int {
     f(5, 6)
 }
 
 fn main() {
     let z = 10;
-    assert_eq!(a(|&: x: int, y| x + y + z), 13);
-    assert_eq!(b(|&mut: x: int, y| x + y + z), 17);
-    assert_eq!(c(|: x: int, y| x + y + z), 21);
+    assert_eq!(a(move |&: x: int, y| x + y + z), 13);
+    assert_eq!(b(move |&mut: x: int, y| x + y + z), 17);
+    assert_eq!(c(move |: x: int, y| x + y + z), 21);
 }
 

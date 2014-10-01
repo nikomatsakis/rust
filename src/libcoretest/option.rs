@@ -131,6 +131,7 @@ fn test_or_else() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_option_while_some() {
     let mut i = 0i;
     Some(10i).while_some(|j| {
@@ -184,6 +185,7 @@ fn test_unwrap_or_else() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_filtered() {
     let some_stuff = Some(42i);
     let modified_stuff = some_stuff.filtered(|&x| {x < 10});
@@ -211,7 +213,7 @@ fn test_mut_iter() {
 
     let mut x = Some(val);
     {
-        let mut it = x.mut_iter();
+        let mut it = x.iter_mut();
 
         assert_eq!(it.size_hint(), (1, Some(1)));
 
@@ -242,6 +244,7 @@ fn test_ord() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_mutate() {
     let mut x = Some(3i);
     assert!(x.mutate(|i| i+1));
@@ -256,6 +259,7 @@ fn test_mutate() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_collect() {
     let v: Option<Vec<int>> = collect(range(0i, 0)
                                       .map(|_| Some(0i)));
@@ -272,7 +276,7 @@ fn test_collect() {
     // test that it does not take more elements than it needs
     let mut functions = [|| Some(()), || None, || fail!()];
 
-    let v: Option<Vec<()>> = collect(functions.mut_iter().map(|f| (*f)()));
+    let v: Option<Vec<()>> = collect(functions.iter_mut().map(|f| (*f)()));
 
     assert!(v == None);
 }

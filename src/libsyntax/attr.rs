@@ -18,10 +18,10 @@ use diagnostic::SpanHandler;
 use parse::lexer::comments::{doc_comment_style, strip_doc_comment_decoration};
 use parse::token::InternedString;
 use parse::token;
+use ptr::P;
 
 use std::collections::HashSet;
 use std::collections::BitvSet;
-use std::gc::{Gc, GC};
 
 local_data_key!(used_attrs: BitvSet)
 
@@ -50,7 +50,7 @@ pub trait AttrMetaMethods {
     /// containing a string, otherwise None.
     fn value_str(&self) -> Option<InternedString>;
     /// Gets a list of inner meta items from a list MetaItem type.
-    fn meta_item_list<'a>(&'a self) -> Option<&'a [Gc<MetaItem>]>;
+    fn meta_item_list<'a>(&'a self) -> Option<&'a [P<MetaItem>]>;
 }
 
 impl AttrMetaMethods for Attribute {
@@ -65,7 +65,7 @@ impl AttrMetaMethods for Attribute {
     fn value_str(&self) -> Option<InternedString> {
         self.meta().value_str()
     }
-    fn meta_item_list<'a>(&'a self) -> Option<&'a [Gc<MetaItem>]> {
+    fn meta_item_list<'a>(&'a self) -> Option<&'a [P<MetaItem>]> {
         self.node.value.meta_item_list()
     }
 }
@@ -91,7 +91,7 @@ impl AttrMetaMethods for MetaItem {
         }
     }
 
-    fn meta_item_list<'a>(&'a self) -> Option<&'a [Gc<MetaItem>]> {
+    fn meta_item_list<'a>(&'a self) -> Option<&'a [P<MetaItem>]> {
         match self.node {
             MetaList(_, ref l) => Some(l.as_slice()),
             _ => None
@@ -100,30 +100,30 @@ impl AttrMetaMethods for MetaItem {
 }
 
 // Annoying, but required to get test_cfg to work
-impl AttrMetaMethods for Gc<MetaItem> {
+impl AttrMetaMethods for P<MetaItem> {
     fn name(&self) -> InternedString { (**self).name() }
     fn value_str(&self) -> Option<InternedString> { (**self).value_str() }
-    fn meta_item_list<'a>(&'a self) -> Option<&'a [Gc<MetaItem>]> {
+    fn meta_item_list<'a>(&'a self) -> Option<&'a [P<MetaItem>]> {
         (**self).meta_item_list()
     }
 }
 
 
 pub trait AttributeMethods {
-    fn meta(&self) -> Gc<MetaItem>;
-    fn desugar_doc(&self) -> Attribute;
+    fn meta<'a>(&'a self) -> &'a MetaItem;
+    fn with_desugared_doc<T>(&self, f: |&Attribute| -> T) -> T;
 }
 
 impl AttributeMethods for Attribute {
     /// Extract the MetaItem from inside this Attribute.
-    fn meta(&self) -> Gc<MetaItem> {
-        self.node.value
+    fn meta<'a>(&'a self) -> &'a MetaItem {
+        &*self.node.value
     }
 
     /// Convert self to a normal #[doc="foo"] comment, if it is a
     /// comment like `///` or `/** */`. (Returns self unchanged for
     /// non-sugared doc attributes.)
-    fn desugar_doc(&self) -> Attribute {
+    fn with_desugared_doc<T>(&self, f: |&Attribute| -> T) -> T {
         if self.node.is_sugared_doc {
             let comment = self.value_str().unwrap();
             let meta = mk_name_value_item_str(
@@ -131,12 +131,12 @@ impl AttributeMethods for Attribute {
                 token::intern_and_get_ident(strip_doc_comment_decoration(
                         comment.get()).as_slice()));
             if self.node.style == ast::AttrOuter {
-                mk_attr_outer(self.node.id, meta)
+                f(&mk_attr_outer(self.node.id, meta))
             } else {
-                mk_attr_inner(self.node.id, meta)
+                f(&mk_attr_inner(self.node.id, meta))
             }
         } else {
-            *self
+            f(self)
         }
     }
 }
@@ -144,23 +144,22 @@ impl AttributeMethods for Attribute {
 /* Constructors */
 
 pub fn mk_name_value_item_str(name: InternedString, value: InternedString)
-                              -> Gc<MetaItem> {
+                              -> P<MetaItem> {
     let value_lit = dummy_spanned(ast::LitStr(value, ast::CookedStr));
     mk_name_value_item(name, value_lit)
 }
 
 pub fn mk_name_value_item(name: InternedString, value: ast::Lit)
-                          -> Gc<MetaItem> {
-    box(GC) dummy_spanned(MetaNameValue(name, value))
+                          -> P<MetaItem> {
+    P(dummy_spanned(MetaNameValue(name, value)))
 }
 
-pub fn mk_list_item(name: InternedString,
-                    items: Vec<Gc<MetaItem>>) -> Gc<MetaItem> {
-    box(GC) dummy_spanned(MetaList(name, items))
+pub fn mk_list_item(name: InternedString, items: Vec<P<MetaItem>>) -> P<MetaItem> {
+    P(dummy_spanned(MetaList(name, items)))
 }
 
-pub fn mk_word_item(name: InternedString) -> Gc<MetaItem> {
-    box(GC) dummy_spanned(MetaWord(name))
+pub fn mk_word_item(name: InternedString) -> P<MetaItem> {
+    P(dummy_spanned(MetaWord(name)))
 }
 
 local_data_key!(next_attr_id: uint)
@@ -172,7 +171,7 @@ pub fn mk_attr_id() -> AttrId {
 }
 
 /// Returns an inner attribute with the given value.
-pub fn mk_attr_inner(id: AttrId, item: Gc<MetaItem>) -> Attribute {
+pub fn mk_attr_inner(id: AttrId, item: P<MetaItem>) -> Attribute {
     dummy_spanned(Attribute_ {
         id: id,
         style: ast::AttrInner,
@@ -182,7 +181,7 @@ pub fn mk_attr_inner(id: AttrId, item: Gc<MetaItem>) -> Attribute {
 }
 
 /// Returns an outer attribute with the given value.
-pub fn mk_attr_outer(id: AttrId, item: Gc<MetaItem>) -> Attribute {
+pub fn mk_attr_outer(id: AttrId, item: P<MetaItem>) -> Attribute {
     dummy_spanned(Attribute_ {
         id: id,
         style: ast::AttrOuter,
@@ -199,8 +198,8 @@ pub fn mk_sugared_doc_attr(id: AttrId, text: InternedString, lo: BytePos,
     let attr = Attribute_ {
         id: id,
         style: style,
-        value: box(GC) spanned(lo, hi, MetaNameValue(InternedString::new("doc"),
-                                              lit)),
+        value: P(spanned(lo, hi, MetaNameValue(InternedString::new("doc"),
+                                               lit))),
         is_sugared_doc: true
     };
     spanned(lo, hi, attr)
@@ -210,8 +209,7 @@ pub fn mk_sugared_doc_attr(id: AttrId, text: InternedString, lo: BytePos,
 /// Check if `needle` occurs in `haystack` by a structural
 /// comparison. This is slightly subtle, and relies on ignoring the
 /// span included in the `==` comparison a plain MetaItem.
-pub fn contains(haystack: &[Gc<ast::MetaItem>],
-                needle: Gc<ast::MetaItem>) -> bool {
+pub fn contains(haystack: &[P<MetaItem>], needle: &MetaItem) -> bool {
     debug!("attr::contains (name={})", needle.name());
     haystack.iter().any(|item| {
         debug!("  testing: {}", item.name());
@@ -234,7 +232,7 @@ pub fn first_attr_value_str_by_name(attrs: &[Attribute], name: &str)
         .and_then(|at| at.value_str())
 }
 
-pub fn last_meta_item_value_str_by_name(items: &[Gc<MetaItem>], name: &str)
+pub fn last_meta_item_value_str_by_name(items: &[P<MetaItem>], name: &str)
                                      -> Option<InternedString> {
     items.iter()
          .rev()
@@ -244,28 +242,25 @@ pub fn last_meta_item_value_str_by_name(items: &[Gc<MetaItem>], name: &str)
 
 /* Higher-level applications */
 
-pub fn sort_meta_items(items: &[Gc<MetaItem>]) -> Vec<Gc<MetaItem>> {
+pub fn sort_meta_items(items: Vec<P<MetaItem>>) -> Vec<P<MetaItem>> {
     // This is sort of stupid here, but we need to sort by
     // human-readable strings.
-    let mut v = items.iter()
-        .map(|&mi| (mi.name(), mi))
-        .collect::<Vec<(InternedString, Gc<MetaItem>)> >();
+    let mut v = items.into_iter()
+        .map(|mi| (mi.name(), mi))
+        .collect::<Vec<(InternedString, P<MetaItem>)>>();
 
     v.sort_by(|&(ref a, _), &(ref b, _)| a.cmp(b));
 
     // There doesn't seem to be a more optimal way to do this
-    v.move_iter().map(|(_, m)| {
-        match m.node {
-            MetaList(ref n, ref mis) => {
-                box(GC) Spanned {
-                    node: MetaList((*n).clone(),
-                                   sort_meta_items(mis.as_slice())),
-                    .. /*bad*/ (*m).clone()
-                }
-            }
-            _ => m
+    v.into_iter().map(|(_, m)| m.map(|Spanned {node, span}| {
+        Spanned {
+            node: match node {
+                MetaList(n, mis) => MetaList(n, sort_meta_items(mis)),
+                _ => node
+            },
+            span: span
         }
-    }).collect()
+    })).collect()
 }
 
 pub fn find_crate_name(attrs: &[Attribute]) -> Option<InternedString> {
@@ -280,7 +275,7 @@ pub enum InlineAttr {
     InlineNever,
 }
 
-/// True if something like #[inline] is found in the list of attrs.
+/// Determine what `#[inline]` attribute is present in `attrs`, if any.
 pub fn find_inline_attr(attrs: &[Attribute]) -> InlineAttr {
     // FIXME (#2809)---validate the usage of #[inline] and #[inline]
     attrs.iter().fold(InlineNone, |ia,attr| {
@@ -304,14 +299,45 @@ pub fn find_inline_attr(attrs: &[Attribute]) -> InlineAttr {
     })
 }
 
+/// True if `#[inline]` or `#[inline(always)]` is present in `attrs`.
+pub fn requests_inline(attrs: &[Attribute]) -> bool {
+    match find_inline_attr(attrs) {
+        InlineHint | InlineAlways => true,
+        InlineNone | InlineNever => false,
+    }
+}
+
+/// Tests if a cfg-pattern matches the cfg set
+pub fn cfg_matches(diagnostic: &SpanHandler, cfgs: &[P<MetaItem>], cfg: &ast::MetaItem) -> bool {
+    match cfg.node {
+        ast::MetaList(ref pred, ref mis) if pred.get() == "any" =>
+            mis.iter().any(|mi| cfg_matches(diagnostic, cfgs, &**mi)),
+        ast::MetaList(ref pred, ref mis) if pred.get() == "all" =>
+            mis.iter().all(|mi| cfg_matches(diagnostic, cfgs, &**mi)),
+        ast::MetaList(ref pred, ref mis) if pred.get() == "not" => {
+            if mis.len() != 1 {
+                diagnostic.span_warn(cfg.span, "the use of multiple cfgs in the same `not` \
+                                                statement is deprecated. Change `not(a, b)` to \
+                                                `not(all(a, b))`.");
+            }
+            !mis.iter().all(|mi| cfg_matches(diagnostic, cfgs, &**mi))
+        }
+        ast::MetaList(ref pred, _) => {
+            diagnostic.span_err(cfg.span, format!("invalid predicate `{}`", pred).as_slice());
+            false
+        },
+        ast::MetaWord(_) | ast::MetaNameValue(..) => contains(cfgs, cfg),
+    }
+}
+
 /// Tests if any `cfg(...)` meta items in `metas` match `cfg`. e.g.
 ///
 /// test_cfg(`[foo="a", bar]`, `[cfg(foo), cfg(bar)]`) == true
 /// test_cfg(`[foo="a", bar]`, `[cfg(not(bar))]`) == false
 /// test_cfg(`[foo="a", bar]`, `[cfg(bar, foo="a")]`) == true
 /// test_cfg(`[foo="a", bar]`, `[cfg(bar, foo="b")]`) == false
-pub fn test_cfg<AM: AttrMetaMethods, It: Iterator<AM>>
-    (cfg: &[Gc<MetaItem>], mut metas: It) -> bool {
+pub fn test_cfg<'a, AM: AttrMetaMethods, It: Iterator<&'a AM>>
+    (cfg: &[P<MetaItem>], mut metas: It) -> bool {
     // having no #[cfg(...)] attributes counts as matching.
     let mut no_cfgs = true;
 
@@ -336,10 +362,10 @@ pub fn test_cfg<AM: AttrMetaMethods, It: Iterator<AM>>
                                 // not match.
                                 !not_cfgs.iter().all(|mi| {
                                     debug!("cfg(not({}[...]))", mi.name());
-                                    contains(cfg, *mi)
+                                    contains(cfg, &**mi)
                                 })
                             }
-                            _ => contains(cfg, *cfg_mi)
+                            _ => contains(cfg, &**cfg_mi)
                         }
                     })
                 }
@@ -389,7 +415,7 @@ pub fn find_stability_generic<'a,
         };
 
         return Some((Stability {
-                level: level,
+            level: level,
                 text: attr.value_str()
             }, attr));
     }
@@ -404,7 +430,7 @@ pub fn find_stability(attrs: &[Attribute]) -> Option<Stability> {
     })
 }
 
-pub fn require_unique_names(diagnostic: &SpanHandler, metas: &[Gc<MetaItem>]) {
+pub fn require_unique_names(diagnostic: &SpanHandler, metas: &[P<MetaItem>]) {
     let mut set = HashSet::new();
     for meta in metas.iter() {
         let name = meta.name();
@@ -479,7 +505,7 @@ fn int_type_of_word(s: &str) -> Option<IntType> {
     }
 }
 
-#[deriving(PartialEq, Show)]
+#[deriving(PartialEq, Show, Encodable, Decodable)]
 pub enum ReprAttr {
     ReprAny,
     ReprInt(Span, IntType),
@@ -498,7 +524,7 @@ impl ReprAttr {
     }
 }
 
-#[deriving(PartialEq, Show)]
+#[deriving(Eq, Hash, PartialEq, Show, Encodable, Decodable)]
 pub enum IntType {
     SignedInt(ast::IntTy),
     UnsignedInt(ast::UintTy)

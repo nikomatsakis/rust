@@ -14,15 +14,16 @@
 extern crate libc;
 
 use std::io::TempDir;
-use std::os;
-use std::io;
+use std::io::fs::PathExtensions;
 use std::io::fs;
+use std::io;
+use std::os;
 
 fn rename_directory() {
     unsafe {
         static U_RWX: i32 = (libc::S_IRUSR | libc::S_IWUSR | libc::S_IXUSR) as i32;
 
-        let tmpdir = TempDir::new("rename_directory").expect("rename_directory failed");
+        let tmpdir = TempDir::new("rename_directory").ok().expect("rename_directory failed");
         let tmpdir = tmpdir.path();
         let old_path = tmpdir.join_many(["foo", "bar", "baz"]);
         fs::mkdir_recursive(&old_path, io::UserRWX);

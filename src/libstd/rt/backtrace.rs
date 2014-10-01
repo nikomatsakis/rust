@@ -138,7 +138,7 @@ fn demangle(writer: &mut Writer, s: &str) -> IoResult<()> {
                         "$RP$" => ")",
                         "$C$"  => ",",
 
-                        // in theory we can demangle any unicode code point, but
+                        // in theory we can demangle any Unicode code point, but
                         // for simplicity we just catch the common ones.
                         "$x20" => " ",
                         "$x27" => "'",
@@ -253,7 +253,7 @@ mod imp {
     /// play well with green threads, so while it is extremely nice
     /// and simple to use it should be used only on iOS devices as the
     /// only viable option.
-    #[cfg(target_os = "ios", target_arch = "arm")]
+    #[cfg(all(target_os = "ios", target_arch = "arm"))]
     #[inline(never)]
     pub fn write(w: &mut Writer) -> IoResult<()> {
         use iter::{Iterator, range};
@@ -278,12 +278,13 @@ mod imp {
         let cnt = unsafe { backtrace(buf.as_mut_ptr(), SIZE as libc::c_int) as uint};
 
         // skipping the first one as it is write itself
-        result::fold_(range(1, cnt).map(|i| {
+        let iter = range(1, cnt).map(|i| {
             print(w, i as int, buf[i])
-        }))
+        });
+        result::fold(iter, (), |_, _| ())
     }
 
-    #[cfg(not(target_os = "ios", target_arch = "arm"))]
+    #[cfg(not(all(target_os = "ios", target_arch = "arm")))]
     #[inline(never)] // if we know this is a function call, we can skip it when
                      // tracing
     pub fn write(w: &mut Writer) -> IoResult<()> {
@@ -364,8 +365,7 @@ mod imp {
         }
     }
 
-    #[cfg(target_os = "macos")]
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     fn print(w: &mut Writer, idx: int, addr: *mut libc::c_void) -> IoResult<()> {
         use intrinsics;
         #[repr(C)]
@@ -390,7 +390,7 @@ mod imp {
         }
     }
 
-    #[cfg(not(target_os = "macos"), not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     fn print(w: &mut Writer, idx: int, addr: *mut libc::c_void) -> IoResult<()> {
         use collections::Collection;
         use iter::Iterator;
@@ -461,7 +461,7 @@ mod imp {
         //
         // An additionally oddity in this function is that we initialize the
         // filename via self_exe_name() to pass to libbacktrace. It turns out
-        // that on linux libbacktrace seamlessly gets the filename of the
+        // that on Linux libbacktrace seamlessly gets the filename of the
         // current executable, but this fails on freebsd. by always providing
         // it, we make sure that libbacktrace never has a reason to not look up
         // the symbols. The libbacktrace API also states that the filename must
@@ -485,7 +485,7 @@ mod imp {
                     let bytes = path.as_vec();
                     if bytes.len() < LAST_FILENAME.len() {
                         let i = bytes.iter();
-                        for (slot, val) in LAST_FILENAME.mut_iter().zip(i) {
+                        for (slot, val) in LAST_FILENAME.iter_mut().zip(i) {
                             *slot = *val as libc::c_char;
                         }
                         LAST_FILENAME.as_ptr()
@@ -496,7 +496,7 @@ mod imp {
                 None => ptr::null(),
             };
             STATE = backtrace_create_state(filename, 0, error_cb,
-                                           ptr::mut_null());
+                                           ptr::null_mut());
             return STATE
         }
 
@@ -570,16 +570,17 @@ mod imp {
 
         extern {
             // No native _Unwind_Backtrace on iOS
-            #[cfg(not(target_os = "ios", target_arch = "arm"))]
+            #[cfg(not(all(target_os = "ios", target_arch = "arm")))]
             pub fn _Unwind_Backtrace(trace: _Unwind_Trace_Fn,
                                      trace_argument: *mut libc::c_void)
                         -> _Unwind_Reason_Code;
 
-            #[cfg(not(target_os = "android"),
-                  not(target_os = "linux", target_arch = "arm"))]
+            #[cfg(all(not(target_os = "android"),
+                      not(all(target_os = "linux", target_arch = "arm"))))]
             pub fn _Unwind_GetIP(ctx: *mut _Unwind_Context) -> libc::uintptr_t;
-            #[cfg(not(target_os = "android"),
-                  not(target_os = "linux", target_arch = "arm"))]
+
+            #[cfg(all(not(target_os = "android"),
+                      not(all(target_os = "linux", target_arch = "arm"))))]
             pub fn _Unwind_FindEnclosingFunction(pc: *mut libc::c_void)
                 -> *mut libc::c_void;
         }
@@ -587,8 +588,8 @@ mod imp {
         // On android, the function _Unwind_GetIP is a macro, and this is the
         // expansion of the macro. This is all copy/pasted directly from the
         // header file with the definition of _Unwind_GetIP.
-        #[cfg(target_os = "android")]
-        #[cfg(target_os = "linux", target_arch = "arm")]
+        #[cfg(any(target_os = "android",
+                  all(target_os = "linux", target_arch = "arm")))]
         pub unsafe fn _Unwind_GetIP(ctx: *mut _Unwind_Context) -> libc::uintptr_t {
             #[repr(C)]
             enum _Unwind_VRS_Result {
@@ -631,10 +632,10 @@ mod imp {
             (val & !1) as libc::uintptr_t
         }
 
-        // This function also doesn't exist on android or arm/linux, so make it
+        // This function also doesn't exist on Android or ARM/Linux, so make it
         // a no-op
-        #[cfg(target_os = "android")]
-        #[cfg(target_os = "linux", target_arch = "arm")]
+        #[cfg(any(target_os = "android",
+                  all(target_os = "linux", target_arch = "arm")))]
         pub unsafe fn _Unwind_FindEnclosingFunction(pc: *mut libc::c_void)
             -> *mut libc::c_void
         {
@@ -701,7 +702,7 @@ mod imp {
     static IMAGE_FILE_MACHINE_IA64: libc::DWORD = 0x0200;
     static IMAGE_FILE_MACHINE_AMD64: libc::DWORD = 0x8664;
 
-    #[repr(C, packed)]
+    #[repr(C)]
     struct SYMBOL_INFO {
         SizeOfStruct: libc::c_ulong,
         TypeIndex: libc::c_ulong,
@@ -831,9 +832,11 @@ mod imp {
     mod arch {
         use libc::{c_longlong, c_ulonglong};
         use libc::types::os::arch::extra::{WORD, DWORD, DWORDLONG};
+        use simd;
 
         #[repr(C)]
         pub struct CONTEXT {
+            _align_hack: [simd::u64x2, ..0], // FIXME align on 16-byte
             P1Home: DWORDLONG,
             P2Home: DWORDLONG,
             P3Home: DWORDLONG,
@@ -892,12 +895,14 @@ mod imp {
 
         #[repr(C)]
         pub struct M128A {
+            _align_hack: [simd::u64x2, ..0], // FIXME align on 16-byte
             Low:  c_ulonglong,
             High: c_longlong
         }
 
         #[repr(C)]
         pub struct FLOATING_SAVE_AREA {
+            _align_hack: [simd::u64x2, ..0], // FIXME align on 16-byte
             _Dummy: [u8, ..512] // FIXME: Fill this out
         }
 
@@ -979,8 +984,10 @@ mod imp {
             try!(write!(w, "  {:2}: {:#2$x}", i, addr, super::HEX_WIDTH));
             let mut info: SYMBOL_INFO = unsafe { intrinsics::init() };
             info.MaxNameLen = MAX_SYM_NAME as libc::c_ulong;
-            info.SizeOfStruct = (mem::size_of::<SYMBOL_INFO>() -
-                                 info.Name.len() + 1) as libc::c_ulong;
+            // the struct size in C.  the value is different to
+            // `size_of::<SYMBOL_INFO>() - MAX_SYM_NAME + 1` (== 81)
+            // due to struct alignment.
+            info.SizeOfStruct = 88;
 
             let mut displacement = 0u64;
             let ret = SymFromAddr(process, addr as u64, &mut displacement,

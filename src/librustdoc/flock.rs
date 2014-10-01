@@ -84,8 +84,7 @@ mod imp {
         pub static F_SETLKW: libc::c_int = 9;
     }
 
-    #[cfg(target_os = "macos")]
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     mod os {
         use libc;
 
@@ -183,8 +182,8 @@ mod imp {
 
     impl Lock {
         pub fn new(p: &Path) -> Lock {
-            let p_16: Vec<u16> = p.as_str().unwrap().utf16_units().collect();
-            let p_16 = p_16.append_one(0);
+            let mut p_16: Vec<u16> = p.as_str().unwrap().utf16_units().collect();
+            p_16.push(0);
             let handle = unsafe {
                 libc::CreateFileW(p_16.as_ptr(),
                                   libc::FILE_GENERIC_READ |
@@ -192,10 +191,10 @@ mod imp {
                                   libc::FILE_SHARE_READ |
                                     libc::FILE_SHARE_DELETE |
                                     libc::FILE_SHARE_WRITE,
-                                  ptr::mut_null(),
+                                  ptr::null_mut(),
                                   libc::CREATE_ALWAYS,
                                   libc::FILE_ATTRIBUTE_NORMAL,
-                                  ptr::mut_null())
+                                  ptr::null_mut())
             };
             if handle == libc::INVALID_HANDLE_VALUE {
                 fail!("create file error: {}", os::last_os_error());

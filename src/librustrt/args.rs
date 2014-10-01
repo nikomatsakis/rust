@@ -14,7 +14,7 @@
 //! the processes `argc` and `argv` arguments to be stored
 //! in a globally-accessible location for use by the `os` module.
 //!
-//! Only valid to call on linux. Mac and Windows use syscalls to
+//! Only valid to call on Linux. Mac and Windows use syscalls to
 //! discover the command line arguments.
 //!
 //! FIXME #7756: Would be nice for this to not exist.
@@ -39,14 +39,15 @@ pub fn put(args: Vec<Vec<u8>>) { imp::put(args) }
 /// Make a clone of the global arguments.
 pub fn clone() -> Option<Vec<Vec<u8>>> { imp::clone() }
 
-#[cfg(target_os = "linux")]
-#[cfg(target_os = "android")]
-#[cfg(target_os = "freebsd")]
-#[cfg(target_os = "dragonfly")]
+#[cfg(any(target_os = "linux",
+          target_os = "android",
+          target_os = "freebsd",
+          target_os = "dragonfly"))]
 mod imp {
     use core::prelude::*;
 
     use alloc::boxed::Box;
+    use collections::slice::CloneableVector;
     use collections::vec::Vec;
     use core::mem;
     use core::slice;
@@ -106,7 +107,7 @@ mod imp {
             let mut len = 0;
             while *base.offset(len) != 0 { len += 1; }
             slice::raw::buf_as_slice(base, len as uint, |slice| {
-                Vec::from_slice(slice)
+                slice.to_vec()
             })
         })
     }
@@ -145,9 +146,9 @@ mod imp {
     }
 }
 
-#[cfg(target_os = "macos")]
-#[cfg(target_os = "ios")]
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "macos",
+          target_os = "ios",
+          target_os = "windows"))]
 mod imp {
     use core::prelude::*;
     use collections::vec::Vec;

@@ -22,7 +22,6 @@ use driver::diagnostic;
 use driver::diagnostic::Emitter;
 use driver::driver;
 use driver::session;
-use middle::freevars;
 use middle::lang_items;
 use middle::region;
 use middle::resolve;
@@ -36,13 +35,13 @@ use middle::typeck::infer::glb::Glb;
 use syntax::codemap;
 use syntax::codemap::{Span, CodeMap, DUMMY_SP};
 use syntax::diagnostic::{Level, RenderSpan, Bug, Fatal, Error, Warning, Note};
-use syntax::ast;
+use syntax::{ast, ast_map};
 use util::ppaux::{ty_to_string, UserString};
 
-struct Env<'a> {
-    krate: ast::Crate,
-    tcx: &'a ty::ctxt,
-    infcx: &'a infer::InferCtxt<'a>,
+use arena::TypedArena;
+
+struct Env<'a, 'tcx: 'a> {
+    infcx: &'a infer::InferCtxt<'a, 'tcx>,
 }
 
 struct RH<'a> {
@@ -116,42 +115,42 @@ fn test_env(_test_name: &str,
     let krate_config = Vec::new();
     let input = driver::StrInput(source_string.to_string());
     let krate = driver::phase_1_parse_input(&sess, krate_config, &input);
-    let (krate, ast_map) =
-        driver::phase_2_configure_and_expand(&sess, krate, "test", None)
-            .expect("phase 2 aborted");
+    let krate = driver::phase_2_configure_and_expand(&sess, krate, "test", None)
+                    .expect("phase 2 aborted");
+
+    let mut forest = ast_map::Forest::new(krate);
+    let ast_map = driver::assign_node_ids_and_map(&sess, &mut forest);
+    let krate = ast_map.krate();
 
     // run just enough stuff to build a tcx:
-    let lang_items = lang_items::collect_language_items(&krate, &sess);
-    let resolve::CrateMap { def_map: def_map, .. } =
-        resolve::resolve_crate(&sess, &lang_items, &krate);
-    let (freevars_map, captures_map) = freevars::annotate_freevars(&def_map,
-                                                                   &krate);
-    let named_region_map = resolve_lifetime::krate(&sess, &krate);
-    let region_map = region::resolve_crate(&sess, &krate);
-    let stability_index = stability::Index::build(&krate);
+    let lang_items = lang_items::collect_language_items(krate, &sess);
+    let resolve::CrateMap { def_map, freevars, capture_mode_map, .. } =
+        resolve::resolve_crate(&sess, &lang_items, krate);
+    let named_region_map = resolve_lifetime::krate(&sess, krate);
+    let region_map = region::resolve_crate(&sess, krate);
+    let stability_index = stability::Index::build(krate);
+    let type_arena = TypedArena::new();
     let tcx = ty::mk_ctxt(sess,
+                          &type_arena,
                           def_map,
                           named_region_map,
                           ast_map,
-                          freevars_map,
-                          captures_map,
+                          freevars,
+                          capture_mode_map,
                           region_map,
                           lang_items,
                           stability_index);
     let infcx = infer::new_infer_ctxt(&tcx);
-    let env = Env {krate: krate,
-                   tcx: &tcx,
-                   infcx: &infcx};
-    body(env);
+    body(Env { infcx: &infcx });
     infcx.resolve_regions_and_report_errors();
     assert_eq!(tcx.sess.err_count(), expected_err_count);
 }
 
-impl<'a> Env<'a> {
+impl<'a, 'tcx> Env<'a, 'tcx> {
     pub fn create_region_hierarchy(&self, rh: &RH) {
         for child_rh in rh.sub.iter() {
             self.create_region_hierarchy(child_rh);
-            self.tcx.region_maps.record_encl_scope(child_rh.id, rh.id);
+            self.infcx.tcx.region_maps.record_encl_scope(child_rh.id, rh.id);
         }
     }
 
@@ -167,7 +166,7 @@ impl<'a> Env<'a> {
     }
 
     pub fn lookup_item(&self, names: &[String]) -> ast::NodeId {
-        return match search_mod(self, &self.krate.module, 0, names) {
+        return match search_mod(self, &self.infcx.tcx.map.krate().module, 0, names) {
             Some(id) => id,
             None => {
                 fail!("no item found: `{}`", names.connect("::"));
@@ -181,7 +180,7 @@ impl<'a> Env<'a> {
                       -> Option<ast::NodeId> {
             assert!(idx < names.len());
             for item in m.items.iter() {
-                if item.ident.user_string(this.tcx) == names[idx] {
+                if item.ident.user_string(this.infcx.tcx) == names[idx] {
                     return search(this, &**item, idx+1, names);
                 }
             }
@@ -220,7 +219,7 @@ impl<'a> Env<'a> {
         match infer::mk_subty(self.infcx, true, infer::Misc(DUMMY_SP), a, b) {
             Ok(_) => true,
             Err(ref e) => fail!("Encountered error: {}",
-                                ty::type_err_to_str(self.tcx, e))
+                                ty::type_err_to_str(self.infcx.tcx, e))
         }
     }
 
@@ -253,7 +252,7 @@ impl<'a> Env<'a> {
     }
 
     pub fn ty_to_string(&self, a: ty::t) -> String {
-        ty_to_string(self.tcx, a)
+        ty_to_string(self.infcx.tcx, a)
     }
 
     pub fn t_fn(&self,
@@ -262,7 +261,7 @@ impl<'a> Env<'a> {
                 output_ty: ty::t)
                 -> ty::t
     {
-        ty::mk_ctor_fn(self.tcx, binder_id, input_tys, output_ty)
+        ty::mk_ctor_fn(self.infcx.tcx, binder_id, input_tys, output_ty)
     }
 
     pub fn t_int(&self) -> ty::t {
@@ -270,23 +269,23 @@ impl<'a> Env<'a> {
     }
 
     pub fn t_rptr_late_bound(&self, binder_id: ast::NodeId, id: uint) -> ty::t {
-        ty::mk_imm_rptr(self.tcx, ty::ReLateBound(binder_id, ty::BrAnon(id)),
+        ty::mk_imm_rptr(self.infcx.tcx, ty::ReLateBound(binder_id, ty::BrAnon(id)),
                         self.t_int())
     }
 
     pub fn t_rptr_scope(&self, id: ast::NodeId) -> ty::t {
-        ty::mk_imm_rptr(self.tcx, ty::ReScope(id), self.t_int())
+        ty::mk_imm_rptr(self.infcx.tcx, ty::ReScope(id), self.t_int())
     }
 
     pub fn t_rptr_free(&self, nid: ast::NodeId, id: uint) -> ty::t {
-        ty::mk_imm_rptr(self.tcx,
+        ty::mk_imm_rptr(self.infcx.tcx,
                         ty::ReFree(ty::FreeRegion {scope_id: nid,
                                                     bound_region: ty::BrAnon(id)}),
                         self.t_int())
     }
 
     pub fn t_rptr_static(&self) -> ty::t {
-        ty::mk_imm_rptr(self.tcx, ty::ReStatic, self.t_int())
+        ty::mk_imm_rptr(self.infcx.tcx, ty::ReStatic, self.t_int())
     }
 
     pub fn dummy_type_trace(&self) -> infer::TypeTrace {
@@ -299,12 +298,12 @@ impl<'a> Env<'a> {
         }
     }
 
-    pub fn lub(&self) -> Lub<'a> {
+    pub fn lub(&self) -> Lub<'a, 'tcx> {
         let trace = self.dummy_type_trace();
         Lub(self.infcx.combine_fields(true, trace))
     }
 
-    pub fn glb(&self) -> Glb<'a> {
+    pub fn glb(&self) -> Glb<'a, 'tcx> {
         let trace = self.dummy_type_trace();
         Glb(self.infcx.combine_fields(true, trace))
     }
@@ -317,7 +316,7 @@ impl<'a> Env<'a> {
         match self.lub().tys(t1, t2) {
             Ok(t) => t,
             Err(ref e) => fail!("unexpected error computing LUB: {:?}",
-                                ty::type_err_to_str(self.tcx, e))
+                                ty::type_err_to_str(self.infcx.tcx, e))
         }
     }
 
@@ -329,7 +328,7 @@ impl<'a> Env<'a> {
             }
             Err(ref e) => {
                 fail!("unexpected error in LUB: {}",
-                      ty::type_err_to_str(self.tcx, e))
+                      ty::type_err_to_str(self.infcx.tcx, e))
             }
         }
     }

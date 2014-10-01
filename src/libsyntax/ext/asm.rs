@@ -13,13 +13,13 @@
  */
 
 use ast;
+use codemap;
 use codemap::Span;
 use ext::base;
 use ext::base::*;
 use parse::token::InternedString;
 use parse::token;
-
-use std::gc::GC;
+use ptr::P;
 
 enum State {
     Asm,
@@ -199,7 +199,16 @@ pub fn expand_asm<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
         }
     }
 
-    MacExpr::new(box(GC) ast::Expr {
+    let expn_id = cx.codemap().record_expansion(codemap::ExpnInfo {
+        call_site: sp,
+        callee: codemap::NameAndSpan {
+            name: "asm".to_string(),
+            format: codemap::MacroBang,
+            span: None,
+        },
+    });
+
+    MacExpr::new(P(ast::Expr {
         id: ast::DUMMY_NODE_ID,
         node: ast::ExprInlineAsm(ast::InlineAsm {
             asm: token::intern_and_get_ident(asm.get()),
@@ -209,8 +218,9 @@ pub fn expand_asm<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
             clobbers: token::intern_and_get_ident(cons.as_slice()),
             volatile: volatile,
             alignstack: alignstack,
-            dialect: dialect
+            dialect: dialect,
+            expn_id: expn_id,
         }),
         span: sp
-    })
+    }))
 }

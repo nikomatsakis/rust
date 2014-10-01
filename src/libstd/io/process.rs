@@ -24,6 +24,10 @@ use rt::rtio::{RtioProcess, ProcessConfig, IoFactory, LocalIo};
 use rt::rtio;
 use c_str::CString;
 use collections::HashMap;
+use hash::Hash;
+use clone::Clone;
+#[cfg(windows)]
+use std::hash::sip::SipState;
 
 /// Signal a process to exit, without forcibly killing it. Corresponds to
 /// SIGTERM on unix platforms.
@@ -78,8 +82,56 @@ pub struct Process {
     pub extra_io: Vec<Option<io::PipeStream>>,
 }
 
+/// A representation of environment variable name
+/// It compares case-insensitive on Windows and case-sensitive everywhere else.
+#[cfg(not(windows))]
+#[deriving(PartialEq, Eq, Hash, Clone, Show)]
+struct EnvKey(CString);
+
+#[doc(hidden)]
+#[cfg(windows)]
+#[deriving(Eq, Clone, Show)]
+struct EnvKey(CString);
+
+#[cfg(windows)]
+impl Hash for EnvKey {
+    fn hash(&self, state: &mut SipState) {
+        let &EnvKey(ref x) = self;
+        match x.as_str() {
+            Some(s) => for ch in s.chars() {
+                (ch as u8 as char).to_lowercase().hash(state);
+            },
+            None => x.hash(state)
+        }
+    }
+}
+
+#[cfg(windows)]
+impl PartialEq for EnvKey {
+    fn eq(&self, other: &EnvKey) -> bool {
+        let &EnvKey(ref x) = self;
+        let &EnvKey(ref y) = other;
+        match (x.as_str(), y.as_str()) {
+            (Some(xs), Some(ys)) => {
+                if xs.len() != ys.len() {
+                    return false
+                } else {
+                    for (xch, ych) in xs.chars().zip(ys.chars()) {
+                        if xch.to_lowercase() != ych.to_lowercase() {
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+            },
+            // If either is not a valid utf8 string, just compare them byte-wise
+            _ => return x.eq(y)
+        }
+    }
+}
+
 /// A HashMap representation of environment variables.
-pub type EnvMap = HashMap<CString, CString>;
+pub type EnvMap = HashMap<EnvKey, CString>;
 
 /// The `Command` type acts as a process builder, providing fine-grained control
 /// over how a new process should be spawned. A default configuration can be
@@ -161,14 +213,14 @@ impl Command {
         self
     }
     // Get a mutable borrow of the environment variable map for this `Command`.
-    fn get_env_map<'a>(&'a mut self) -> &'a mut EnvMap {
+    fn get_env_map<'a>(&'a mut self) -> &'a mut  EnvMap {
         match self.env {
             Some(ref mut map) => map,
             None => {
                 // if the env is currently just inheriting from the parent's,
                 // materialize the parent's env into a hashtable.
-                self.env = Some(os::env_as_bytes().move_iter()
-                                   .map(|(k, v)| (k.as_slice().to_c_str(),
+                self.env = Some(os::env_as_bytes().into_iter()
+                                   .map(|(k, v)| (EnvKey(k.as_slice().to_c_str()),
                                                   v.as_slice().to_c_str()))
                                    .collect());
                 self.env.as_mut().unwrap()
@@ -177,15 +229,18 @@ impl Command {
     }
 
     /// Inserts or updates an environment variable mapping.
+    ///
+    /// Note that environment variable names are case-insensitive (but case-preserving) on Windows,
+    /// and case-sensitive on all other platforms.
     pub fn env<'a, T: ToCStr, U: ToCStr>(&'a mut self, key: T, val: U)
                                          -> &'a mut Command {
-        self.get_env_map().insert(key.to_c_str(), val.to_c_str());
+        self.get_env_map().insert(EnvKey(key.to_c_str()), val.to_c_str());
         self
     }
 
     /// Removes an environment variable mapping.
     pub fn env_remove<'a, T: ToCStr>(&'a mut self, key: T) -> &'a mut Command {
-        self.get_env_map().remove(&key.to_c_str());
+        self.get_env_map().remove(&EnvKey(key.to_c_str()));
         self
     }
 
@@ -195,7 +250,7 @@ impl Command {
     /// variable, the *rightmost* instance will determine the value.
     pub fn env_set_all<'a, T: ToCStr, U: ToCStr>(&'a mut self, env: &[(T,U)])
                                                  -> &'a mut Command {
-        self.env = Some(env.iter().map(|&(ref k, ref v)| (k.to_c_str(), v.to_c_str()))
+        self.env = Some(env.iter().map(|&(ref k, ref v)| (EnvKey(k.to_c_str()), v.to_c_str()))
                                   .collect());
         self
     }
@@ -273,7 +328,9 @@ impl Command {
             let env = match self.env {
                 None => None,
                 Some(ref env_map) =>
-                    Some(env_map.iter().collect::<Vec<_>>())
+                    Some(env_map.iter()
+                                .map(|(&EnvKey(ref key), val)| (key, val))
+                                .collect::<Vec<_>>())
             };
             let cfg = ProcessConfig {
                 program: &self.program,
@@ -289,7 +346,7 @@ impl Command {
                 detach: self.detach,
             };
             io.spawn(cfg).map(|(p, io)| {
-                let mut io = io.move_iter().map(|p| {
+                let mut io = io.into_iter().map(|p| {
                     p.map(|p| io::PipeStream::new(p))
                 });
                 Process {
@@ -636,7 +693,7 @@ mod tests {
         drop(p.wait().clone());
     })
 
-    #[cfg(unix, not(target_os="android"))]
+    #[cfg(all(unix, not(target_os="android")))]
     iotest!(fn signal_reported_right() {
         let p = Command::new("/bin/sh").arg("-c").arg("kill -1 $$").spawn();
         assert!(p.is_ok());
@@ -668,7 +725,7 @@ mod tests {
         assert_eq!(run_output(cmd), "foobar\n".to_string());
     })
 
-    #[cfg(unix, not(target_os="android"))]
+    #[cfg(all(unix, not(target_os="android")))]
     iotest!(fn set_cwd_works() {
         let mut cmd = Command::new("/bin/sh");
         cmd.arg("-c").arg("pwd")
@@ -677,7 +734,7 @@ mod tests {
         assert_eq!(run_output(cmd), "/\n".to_string());
     })
 
-    #[cfg(unix, not(target_os="android"))]
+    #[cfg(all(unix, not(target_os="android")))]
     iotest!(fn stdin_works() {
         let mut p = Command::new("/bin/sh")
                             .arg("-c").arg("read line; echo $line")
@@ -702,7 +759,7 @@ mod tests {
         assert!(Command::new("test").uid(10).spawn().is_err());
     })
 
-    #[cfg(unix, not(target_os="android"))]
+    #[cfg(all(unix, not(target_os="android")))]
     iotest!(fn uid_works() {
         use libc;
         let mut p = Command::new("/bin/sh")
@@ -713,7 +770,7 @@ mod tests {
         assert!(p.wait().unwrap().success());
     })
 
-    #[cfg(unix, not(target_os="android"))]
+    #[cfg(all(unix, not(target_os="android")))]
     iotest!(fn uid_to_root_fails() {
         use libc;
 
@@ -790,7 +847,7 @@ mod tests {
         }
     })
 
-    #[cfg(unix,not(target_os="android"))]
+    #[cfg(all(unix, not(target_os="android")))]
     pub fn pwd_cmd() -> Command {
         Command::new("pwd")
     }
@@ -840,7 +897,7 @@ mod tests {
         assert_eq!(parent_stat.unstable.inode, child_stat.unstable.inode);
     })
 
-    #[cfg(unix,not(target_os="android"))]
+    #[cfg(all(unix, not(target_os="android")))]
     pub fn env_cmd() -> Command {
         Command::new("env")
     }
@@ -1039,4 +1096,16 @@ mod tests {
         assert!(cmd.status().unwrap().success());
         assert!(fdes.inner_write("extra write\n".as_bytes()).is_ok());
     })
+
+    #[test]
+    #[cfg(windows)]
+    fn env_map_keys_ci() {
+        use super::EnvKey;
+        let mut cmd = Command::new("");
+        cmd.env("path", "foo");
+        cmd.env("Path", "bar");
+        let env = &cmd.env.unwrap();
+        let val = env.find(&EnvKey("PATH".to_c_str()));
+        assert!(val.unwrap() == &"bar".to_c_str());
+    }
 }

@@ -11,12 +11,10 @@
 //! Blocking posix-based file I/O
 
 use alloc::arc::Arc;
-use libc::{c_int, c_void};
-use libc;
+use libc::{mod, c_int, c_void};
 use std::c_str::CString;
 use std::mem;
-use std::rt::rtio;
-use std::rt::rtio::IoResult;
+use std::rt::rtio::{mod, IoResult};
 
 use io::{retry, keep_going};
 use io::util;
@@ -55,7 +53,7 @@ impl FileDesc {
         let ret = retry(|| unsafe {
             libc::read(self.fd(),
                        buf.as_mut_ptr() as *mut libc::c_void,
-                       buf.len() as libc::size_t) as libc::c_int
+                       buf.len() as libc::size_t)
         });
         if ret == 0 {
             Err(util::eof())
@@ -93,7 +91,7 @@ impl rtio::RtioFileStream for FileDesc {
         match retry(|| unsafe {
             libc::pread(self.fd(), buf.as_ptr() as *mut _,
                         buf.len() as libc::size_t,
-                        offset as libc::off_t) as libc::c_int
+                        offset as libc::off_t)
         }) {
             -1 => Err(super::last_error()),
             n => Ok(n as int)
@@ -103,7 +101,7 @@ impl rtio::RtioFileStream for FileDesc {
         super::mkerr_libc(retry(|| unsafe {
             libc::pwrite(self.fd(), buf.as_ptr() as *const _,
                          buf.len() as libc::size_t, offset as libc::off_t)
-        } as c_int))
+        }))
     }
     fn seek(&mut self, pos: i64, whence: rtio::SeekStyle) -> IoResult<u64> {
         let whence = match whence {
@@ -132,8 +130,7 @@ impl rtio::RtioFileStream for FileDesc {
     fn datasync(&mut self) -> IoResult<()> {
         return super::mkerr_libc(os_datasync(self.fd()));
 
-        #[cfg(target_os = "macos")]
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         fn os_datasync(fd: c_int) -> c_int {
             unsafe { libc::fcntl(fd, libc::F_FULLFSYNC) }
         }
@@ -141,7 +138,7 @@ impl rtio::RtioFileStream for FileDesc {
         fn os_datasync(fd: c_int) -> c_int {
             retry(|| unsafe { libc::fdatasync(fd) })
         }
-        #[cfg(not(target_os = "macos"), not(target_os = "ios"), not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "linux")))]
         fn os_datasync(fd: c_int) -> c_int {
             retry(|| unsafe { libc::fsync(fd) })
         }
@@ -154,7 +151,7 @@ impl rtio::RtioFileStream for FileDesc {
 
     fn fstat(&mut self) -> IoResult<rtio::FileStat> {
         let mut stat: libc::stat = unsafe { mem::zeroed() };
-        match retry(|| unsafe { libc::fstat(self.fd(), &mut stat) }) {
+        match unsafe { libc::fstat(self.fd(), &mut stat) } {
             0 => Ok(mkstat(&stat)),
             _ => Err(super::last_error()),
         }
@@ -305,7 +302,7 @@ impl rtio::RtioFileStream for CFile {
         self.flush().and_then(|()| self.fd.fsync())
     }
     fn datasync(&mut self) -> IoResult<()> {
-        self.flush().and_then(|()| self.fd.fsync())
+        self.flush().and_then(|()| self.fd.datasync())
     }
     fn truncate(&mut self, offset: i64) -> IoResult<()> {
         self.flush().and_then(|()| self.fd.truncate(offset))
@@ -346,9 +343,7 @@ pub fn open(path: &CString, fm: rtio::FileMode, fa: rtio::FileAccess)
 }
 
 pub fn mkdir(p: &CString, mode: uint) -> IoResult<()> {
-    super::mkerr_libc(retry(|| unsafe {
-        libc::mkdir(p.as_ptr(), mode as libc::mode_t)
-    }))
+    super::mkerr_libc(unsafe { libc::mkdir(p.as_ptr(), mode as libc::mode_t) })
 }
 
 pub fn readdir(p: &CString) -> IoResult<Vec<CString>> {
@@ -359,7 +354,7 @@ pub fn readdir(p: &CString) -> IoResult<Vec<CString>> {
         let root = unsafe { CString::new(root.as_ptr(), false) };
         let root = Path::new(root);
 
-        dirs.move_iter().filter(|path| {
+        dirs.into_iter().filter(|path| {
             path.as_vec() != b"." && path.as_vec() != b".."
         }).map(|path| root.join(path).to_c_str()).collect()
     }
@@ -393,13 +388,11 @@ pub fn readdir(p: &CString) -> IoResult<Vec<CString>> {
 }
 
 pub fn unlink(p: &CString) -> IoResult<()> {
-    super::mkerr_libc(retry(|| unsafe { libc::unlink(p.as_ptr()) }))
+    super::mkerr_libc(unsafe { libc::unlink(p.as_ptr()) })
 }
 
 pub fn rename(old: &CString, new: &CString) -> IoResult<()> {
-    super::mkerr_libc(retry(|| unsafe {
-        libc::rename(old.as_ptr(), new.as_ptr())
-    }))
+    super::mkerr_libc(unsafe { libc::rename(old.as_ptr(), new.as_ptr()) })
 }
 
 pub fn chmod(p: &CString, mode: uint) -> IoResult<()> {
@@ -409,9 +402,7 @@ pub fn chmod(p: &CString, mode: uint) -> IoResult<()> {
 }
 
 pub fn rmdir(p: &CString) -> IoResult<()> {
-    super::mkerr_libc(retry(|| unsafe {
-        libc::rmdir(p.as_ptr())
-    }))
+    super::mkerr_libc(unsafe { libc::rmdir(p.as_ptr()) })
 }
 
 pub fn chown(p: &CString, uid: int, gid: int) -> IoResult<()> {
@@ -428,10 +419,10 @@ pub fn readlink(p: &CString) -> IoResult<CString> {
         len = 1024; // FIXME: read PATH_MAX from C ffi?
     }
     let mut buf: Vec<u8> = Vec::with_capacity(len as uint);
-    match retry(|| unsafe {
+    match unsafe {
         libc::readlink(p, buf.as_ptr() as *mut libc::c_char,
                        len as libc::size_t) as libc::c_int
-    }) {
+    } {
         -1 => Err(super::last_error()),
         n => {
             assert!(n > 0);
@@ -442,29 +433,25 @@ pub fn readlink(p: &CString) -> IoResult<CString> {
 }
 
 pub fn symlink(src: &CString, dst: &CString) -> IoResult<()> {
-    super::mkerr_libc(retry(|| unsafe {
-        libc::symlink(src.as_ptr(), dst.as_ptr())
-    }))
+    super::mkerr_libc(unsafe { libc::symlink(src.as_ptr(), dst.as_ptr()) })
 }
 
 pub fn link(src: &CString, dst: &CString) -> IoResult<()> {
-    super::mkerr_libc(retry(|| unsafe {
-        libc::link(src.as_ptr(), dst.as_ptr())
-    }))
+    super::mkerr_libc(unsafe { libc::link(src.as_ptr(), dst.as_ptr()) })
 }
 
 fn mkstat(stat: &libc::stat) -> rtio::FileStat {
     // FileStat times are in milliseconds
     fn mktime(secs: u64, nsecs: u64) -> u64 { secs * 1000 + nsecs / 1000000 }
 
-    #[cfg(not(target_os = "linux"), not(target_os = "android"))]
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
     fn flags(stat: &libc::stat) -> u64 { stat.st_flags as u64 }
-    #[cfg(target_os = "linux")] #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     fn flags(_stat: &libc::stat) -> u64 { 0 }
 
-    #[cfg(not(target_os = "linux"), not(target_os = "android"))]
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
     fn gen(stat: &libc::stat) -> u64 { stat.st_gen as u64 }
-    #[cfg(target_os = "linux")] #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     fn gen(_stat: &libc::stat) -> u64 { 0 }
 
     rtio::FileStat {
@@ -489,7 +476,7 @@ fn mkstat(stat: &libc::stat) -> rtio::FileStat {
 
 pub fn stat(p: &CString) -> IoResult<rtio::FileStat> {
     let mut stat: libc::stat = unsafe { mem::zeroed() };
-    match retry(|| unsafe { libc::stat(p.as_ptr(), &mut stat) }) {
+    match unsafe { libc::stat(p.as_ptr(), &mut stat) } {
         0 => Ok(mkstat(&stat)),
         _ => Err(super::last_error()),
     }
@@ -497,7 +484,7 @@ pub fn stat(p: &CString) -> IoResult<rtio::FileStat> {
 
 pub fn lstat(p: &CString) -> IoResult<rtio::FileStat> {
     let mut stat: libc::stat = unsafe { mem::zeroed() };
-    match retry(|| unsafe { libc::lstat(p.as_ptr(), &mut stat) }) {
+    match unsafe { libc::lstat(p.as_ptr(), &mut stat) } {
         0 => Ok(mkstat(&stat)),
         _ => Err(super::last_error()),
     }
@@ -508,9 +495,7 @@ pub fn utime(p: &CString, atime: u64, mtime: u64) -> IoResult<()> {
         actime: (atime / 1000) as libc::time_t,
         modtime: (mtime / 1000) as libc::time_t,
     };
-    super::mkerr_libc(retry(|| unsafe {
-        libc::utime(p.as_ptr(), &buf)
-    }))
+    super::mkerr_libc(unsafe { libc::utime(p.as_ptr(), &buf) })
 }
 
 #[cfg(test)]
@@ -520,7 +505,7 @@ mod tests {
     use std::os;
     use std::rt::rtio::{RtioFileStream, SeekSet};
 
-    #[ignore(cfg(target_os = "freebsd"))] // hmm, maybe pipes have a tiny buffer
+    #[cfg_attr(target_os = "freebsd", ignore)] // hmm, maybe pipes have a tiny buffer
     #[test]
     fn test_file_desc() {
         // Run this test with some pipes so we don't have to mess around with

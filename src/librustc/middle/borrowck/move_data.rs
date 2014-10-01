@@ -56,15 +56,15 @@ pub struct MoveData {
     pub assignee_ids: RefCell<HashSet<ast::NodeId>>,
 }
 
-pub struct FlowedMoveData<'a> {
+pub struct FlowedMoveData<'a, 'tcx: 'a> {
     pub move_data: MoveData,
 
-    pub dfcx_moves: MoveDataFlow<'a>,
+    pub dfcx_moves: MoveDataFlow<'a, 'tcx>,
 
     // We could (and maybe should, for efficiency) combine both move
     // and assign data flow into one, but this way it's easier to
     // distinguish the bits that correspond to moves and assignments.
-    pub dfcx_assign: AssignDataFlow<'a>
+    pub dfcx_assign: AssignDataFlow<'a, 'tcx>
 }
 
 /// Index into `MoveData.paths`, used like a pointer
@@ -154,12 +154,12 @@ pub struct Assignment {
 #[deriving(Clone)]
 pub struct MoveDataFlowOperator;
 
-pub type MoveDataFlow<'a> = DataFlowContext<'a, MoveDataFlowOperator>;
+pub type MoveDataFlow<'a, 'tcx> = DataFlowContext<'a, 'tcx, MoveDataFlowOperator>;
 
 #[deriving(Clone)]
 pub struct AssignDataFlowOperator;
 
-pub type AssignDataFlow<'a> = DataFlowContext<'a, AssignDataFlowOperator>;
+pub type AssignDataFlow<'a, 'tcx> = DataFlowContext<'a, 'tcx, AssignDataFlowOperator>;
 
 fn loan_path_is_precise(loan_path: &LoanPath) -> bool {
     match *loan_path {
@@ -413,8 +413,8 @@ impl MoveData {
          * killed by scoping. See `doc.rs` for more details.
          */
 
-        for (i, move) in self.moves.borrow().iter().enumerate() {
-            dfcx_moves.add_gen(move.id, i);
+        for (i, the_move) in self.moves.borrow().iter().enumerate() {
+            dfcx_moves.add_gen(the_move.id, i);
         }
 
         for (i, assignment) in self.var_assignments.borrow().iter().enumerate() {
@@ -531,14 +531,14 @@ impl MoveData {
     }
 }
 
-impl<'a> FlowedMoveData<'a> {
+impl<'a, 'tcx> FlowedMoveData<'a, 'tcx> {
     pub fn new(move_data: MoveData,
-               tcx: &'a ty::ctxt,
+               tcx: &'a ty::ctxt<'tcx>,
                cfg: &cfg::CFG,
                id_range: ast_util::IdRange,
                decl: &ast::FnDecl,
                body: &ast::Block)
-               -> FlowedMoveData<'a> {
+               -> FlowedMoveData<'a, 'tcx> {
         let mut dfcx_moves =
             DataFlowContext::new(tcx,
                                  "flowed_move_data_moves",
@@ -568,22 +568,6 @@ impl<'a> FlowedMoveData<'a> {
         }
     }
 
-    pub fn each_path_moved_by(&self,
-                              id: ast::NodeId,
-                              f: |&Move, &LoanPath| -> bool)
-                              -> bool {
-        /*!
-         * Iterates through each path moved by `id`
-         */
-
-        self.dfcx_moves.each_gen_bit(id, |index| {
-            let move = self.move_data.moves.borrow();
-            let move = move.get(index);
-            let moved_path = move.path;
-            f(move, &*self.move_data.path_loan_path(moved_path))
-        })
-    }
-
     pub fn kind_of_move_of_path(&self,
                                 id: ast::NodeId,
                                 loan_path: &Rc<LoanPath>)
@@ -593,10 +577,10 @@ impl<'a> FlowedMoveData<'a> {
         let mut ret = None;
         for loan_path_index in self.move_data.path_map.borrow().find(&*loan_path).iter() {
             self.dfcx_moves.each_gen_bit(id, |move_index| {
-                let move = self.move_data.moves.borrow();
-                let move = move.get(move_index);
-                if move.path == **loan_path_index {
-                    ret = Some(move.kind);
+                let the_move = self.move_data.moves.borrow();
+                let the_move = the_move.get(move_index);
+                if the_move.path == **loan_path_index {
+                    ret = Some(the_move.kind);
                     false
                 } else {
                     true
@@ -638,13 +622,13 @@ impl<'a> FlowedMoveData<'a> {
         let mut ret = true;
 
         self.dfcx_moves.each_bit_on_entry(id, |index| {
-            let move = self.move_data.moves.borrow();
-            let move = move.get(index);
-            let moved_path = move.path;
+            let the_move = self.move_data.moves.borrow();
+            let the_move = the_move.get(index);
+            let moved_path = the_move.path;
             if base_indices.iter().any(|x| x == &moved_path) {
                 // Scenario 1 or 2: `loan_path` or some base path of
                 // `loan_path` was moved.
-                if !f(move, &*self.move_data.path_loan_path(moved_path)) {
+                if !f(the_move, &*self.move_data.path_loan_path(moved_path)) {
                     ret = false;
                 }
             } else {
@@ -653,7 +637,8 @@ impl<'a> FlowedMoveData<'a> {
                         if p == loan_path_index {
                             // Scenario 3: some extension of `loan_path`
                             // was moved
-                            f(move, &*self.move_data.path_loan_path(moved_path))
+                            f(the_move,
+                              &*self.move_data.path_loan_path(moved_path))
                         } else {
                             true
                         }
@@ -663,13 +648,6 @@ impl<'a> FlowedMoveData<'a> {
             }
             ret
         })
-    }
-
-    pub fn is_assignee(&self,
-                       id: ast::NodeId)
-                       -> bool {
-        //! True if `id` is the id of the LHS of an assignment
-        self.move_data.assignee_ids.borrow().iter().any(|x| x == &id)
     }
 
     pub fn each_assignment_of(&self,

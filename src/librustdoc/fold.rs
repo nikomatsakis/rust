@@ -25,7 +25,7 @@ pub trait DocFolder {
             StructItem(mut i) => {
                 let mut foo = Vec::new(); swap(&mut foo, &mut i.fields);
                 let num_fields = foo.len();
-                i.fields.extend(foo.move_iter().filter_map(|x| self.fold_item(x)));
+                i.fields.extend(foo.into_iter().filter_map(|x| self.fold_item(x)));
                 i.fields_stripped |= num_fields != i.fields.len();
                 StructItem(i)
             },
@@ -35,13 +35,13 @@ pub trait DocFolder {
             EnumItem(mut i) => {
                 let mut foo = Vec::new(); swap(&mut foo, &mut i.variants);
                 let num_variants = foo.len();
-                i.variants.extend(foo.move_iter().filter_map(|x| self.fold_item(x)));
+                i.variants.extend(foo.into_iter().filter_map(|x| self.fold_item(x)));
                 i.variants_stripped |= num_variants != i.variants.len();
                 EnumItem(i)
             },
             TraitItem(mut i) => {
-                fn vtrm<T: DocFolder>(this: &mut T, trm: TraitItem)
-                        -> Option<TraitItem> {
+                fn vtrm<T: DocFolder>(this: &mut T, trm: TraitMethod)
+                        -> Option<TraitMethod> {
                     match trm {
                         RequiredMethod(it) => {
                             match this.fold_item(it) {
@@ -55,15 +55,21 @@ pub trait DocFolder {
                                 None => return None,
                             }
                         },
+                        TypeTraitItem(it) => {
+                            match this.fold_item(it) {
+                                Some(x) => return Some(TypeTraitItem(x)),
+                                None => return None,
+                            }
+                        }
                     }
                 }
                 let mut foo = Vec::new(); swap(&mut foo, &mut i.items);
-                i.items.extend(foo.move_iter().filter_map(|x| vtrm(self, x)));
+                i.items.extend(foo.into_iter().filter_map(|x| vtrm(self, x)));
                 TraitItem(i)
             },
             ImplItem(mut i) => {
                 let mut foo = Vec::new(); swap(&mut foo, &mut i.items);
-                i.items.extend(foo.move_iter()
+                i.items.extend(foo.into_iter()
                                   .filter_map(|x| self.fold_item(x)));
                 ImplItem(i)
             },
@@ -74,7 +80,7 @@ pub trait DocFolder {
                         let mut foo = Vec::new(); swap(&mut foo, &mut j.fields);
                         let num_fields = foo.len();
                         let c = |x| self.fold_item(x);
-                        j.fields.extend(foo.move_iter().filter_map(c));
+                        j.fields.extend(foo.into_iter().filter_map(c));
                         j.fields_stripped |= num_fields != j.fields.len();
                         VariantItem(Variant {kind: StructVariant(j), ..i2})
                     },
@@ -91,7 +97,7 @@ pub trait DocFolder {
     fn fold_mod(&mut self, m: Module) -> Module {
         Module {
             is_crate: m.is_crate,
-            items: m.items.move_iter().filter_map(|i| self.fold_item(i)).collect()
+            items: m.items.into_iter().filter_map(|i| self.fold_item(i)).collect()
         }
     }
 

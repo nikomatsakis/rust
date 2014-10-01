@@ -46,13 +46,12 @@ via `close` and `delete` methods.
 
 #![feature(macro_rules, unsafe_destructor)]
 #![deny(unused_result, unused_must_use)]
-#![allow(visible_private_types)]
 
 #![reexport_test_harness_main = "test_main"]
 
 #[cfg(test)] extern crate green;
 #[cfg(test)] extern crate debug;
-#[cfg(test)] extern crate realrustuv = "rustuv";
+#[cfg(test)] extern crate "rustuv" as realrustuv;
 extern crate libc;
 extern crate alloc;
 
@@ -168,7 +167,7 @@ pub trait UvHandle<T> {
         }
 
         unsafe {
-            uvll::set_data_for_uv_handle(self.uv_handle(), ptr::mut_null::<()>());
+            uvll::set_data_for_uv_handle(self.uv_handle(), ptr::null_mut::<()>());
             uvll::uv_close(self.uv_handle() as *mut uvll::uv_handle_t, close_cb)
         }
     }
@@ -179,7 +178,7 @@ pub trait UvHandle<T> {
         unsafe {
             uvll::uv_close(self.uv_handle() as *mut uvll::uv_handle_t, close_cb);
             uvll::set_data_for_uv_handle(self.uv_handle(),
-                                         ptr::mut_null::<()>());
+                                         ptr::null_mut::<()>());
 
             wait_until_woken_after(&mut slot, &self.uv_loop(), || {
                 uvll::set_data_for_uv_handle(self.uv_handle(), &mut slot);
@@ -190,7 +189,7 @@ pub trait UvHandle<T> {
             unsafe {
                 let data = uvll::get_data_for_uv_handle(handle);
                 uvll::free_handle(handle);
-                if data == ptr::mut_null() { return }
+                if data == ptr::null_mut() { return }
                 let slot: &mut Option<BlockedTask> = mem::transmute(data);
                 wakeup(slot);
             }
@@ -271,7 +270,7 @@ impl Request {
     pub fn new(ty: uvll::uv_req_type) -> Request {
         unsafe {
             let handle = uvll::malloc_req(ty);
-            uvll::set_data_for_req(handle, ptr::mut_null::<()>());
+            uvll::set_data_for_req(handle, ptr::null_mut::<()>());
             Request::wrap(handle)
         }
     }
@@ -286,7 +285,7 @@ impl Request {
 
     pub unsafe fn get_data<T>(&self) -> &'static mut T {
         let data = uvll::get_data_for_req(self.handle);
-        assert!(data != ptr::mut_null());
+        assert!(data != ptr::null_mut());
         mem::transmute(data)
     }
 
@@ -448,7 +447,7 @@ pub type Buf = uvll::uv_buf_t;
 
 pub fn empty_buf() -> Buf {
     uvll::uv_buf_t {
-        base: ptr::mut_null(),
+        base: ptr::null_mut(),
         len: 0,
     }
 }

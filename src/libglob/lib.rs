@@ -37,6 +37,7 @@
 
 use std::cell::Cell;
 use std::{cmp, os, path};
+use std::io::fs::PathExtensions;
 use std::io::fs;
 use std::path::is_sep;
 use std::string::String;
@@ -189,7 +190,7 @@ fn list_dir_sorted(path: &Path) -> Option<Vec<Path>> {
     match fs::readdir(path) {
         Ok(mut children) => {
             children.sort_by(|p1, p2| p2.filename().cmp(&p1.filename()));
-            Some(children.move_iter().collect())
+            Some(children.into_iter().collect())
         }
         Err(..) => None
     }
@@ -335,6 +336,7 @@ impl Pattern {
      * # Example
      *
      * ```rust
+     * #![allow(deprecated)]
      * use glob::Pattern;
      *
      * assert!(Pattern::new("c?t").matches("cat"));
@@ -504,7 +506,7 @@ fn fill_todo(todo: &mut Vec<(Path, uint)>, patterns: &[Pattern], idx: uint, path
         None => {
             match list_dir_sorted(path) {
                 Some(entries) => {
-                    todo.extend(entries.move_iter().map(|x|(x, idx)));
+                    todo.extend(entries.into_iter().map(|x|(x, idx)));
 
                     // Matching the special directory entries . and .. that refer to
                     // the current and parent directory respectively requires that
@@ -680,6 +682,7 @@ mod test {
     }
 
     #[test]
+    #[ignore(cfg(windows))] // FIXME (#9406)
     fn test_lots_of_files() {
         // this is a good test because it touches lots of differently named files
         glob("/*/*/*/*").skip(10000).next();

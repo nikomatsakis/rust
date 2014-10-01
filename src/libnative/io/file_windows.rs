@@ -11,8 +11,7 @@
 //! Blocking Windows-based file I/O
 
 use alloc::arc::Arc;
-use libc::{c_int, c_void};
-use libc;
+use libc::{mod, c_int};
 use std::c_str::CString;
 use std::mem;
 use std::os::windows::fill_utf16_buf_and_decode;
@@ -20,7 +19,6 @@ use std::ptr;
 use std::rt::rtio;
 use std::rt::rtio::{IoResult, IoError};
 use std::str;
-use std::vec;
 
 pub type fd_t = libc::c_int;
 
@@ -54,7 +52,7 @@ impl FileDesc {
         let ret = unsafe {
             libc::ReadFile(self.handle(), buf.as_ptr() as libc::LPVOID,
                            buf.len() as libc::DWORD, &mut read,
-                           ptr::mut_null())
+                           ptr::null_mut())
         };
         if ret != 0 {
             Ok(read as uint)
@@ -70,7 +68,7 @@ impl FileDesc {
             let ret = unsafe {
                 libc::WriteFile(self.handle(), cur as libc::LPVOID,
                                 remaining as libc::DWORD, &mut amt,
-                                ptr::mut_null())
+                                ptr::null_mut())
             };
             if ret != 0 {
                 remaining -= amt as uint;
@@ -315,10 +313,10 @@ pub fn open(path: &CString, fm: rtio::FileMode, fa: rtio::FileAccess)
         libc::CreateFileW(path.as_ptr(),
                           dwDesiredAccess,
                           dwShareMode,
-                          ptr::mut_null(),
+                          ptr::null_mut(),
                           dwCreationDisposition,
                           dwFlagsAndAttributes,
-                          ptr::mut_null())
+                          ptr::null_mut())
     };
     if handle == libc::INVALID_HANDLE_VALUE {
         Err(super::last_error())
@@ -339,54 +337,49 @@ pub fn mkdir(p: &CString, _mode: uint) -> IoResult<()> {
     let p = try!(to_utf16(p));
     super::mkerr_winbool(unsafe {
         // FIXME: turn mode into something useful? #2623
-        libc::CreateDirectoryW(p.as_ptr(), ptr::mut_null())
+        libc::CreateDirectoryW(p.as_ptr(), ptr::null_mut())
     })
 }
 
 pub fn readdir(p: &CString) -> IoResult<Vec<CString>> {
-    use std::rt::libc_heap::malloc_raw;
-
     fn prune(root: &CString, dirs: Vec<Path>) -> Vec<CString> {
         let root = unsafe { CString::new(root.as_ptr(), false) };
         let root = Path::new(root);
 
-        dirs.move_iter().filter(|path| {
+        dirs.into_iter().filter(|path| {
             path.as_vec() != b"." && path.as_vec() != b".."
         }).map(|path| root.join(path).to_c_str()).collect()
     }
 
-    extern {
-        fn rust_list_dir_wfd_size() -> libc::size_t;
-        fn rust_list_dir_wfd_fp_buf(wfd: *mut libc::c_void) -> *const u16;
-    }
     let star = Path::new(unsafe {
         CString::new(p.as_ptr(), false)
     }).join("*");
     let path = try!(to_utf16(&star.to_c_str()));
 
     unsafe {
-        let wfd_ptr = malloc_raw(rust_list_dir_wfd_size() as uint);
-        let find_handle = libc::FindFirstFileW(path.as_ptr(),
-                                               wfd_ptr as libc::HANDLE);
+        let mut wfd = mem::zeroed();
+        let find_handle = libc::FindFirstFileW(path.as_ptr(), &mut wfd);
         if find_handle != libc::INVALID_HANDLE_VALUE {
-            let mut paths = vec!();
-            let mut more_files = 1 as libc::c_int;
+            let mut paths = vec![];
+            let mut more_files = 1 as libc::BOOL;
             while more_files != 0 {
-                let fp_buf = rust_list_dir_wfd_fp_buf(wfd_ptr as *mut c_void);
-                if fp_buf as uint == 0 {
-                    fail!("os::list_dir() failure: got null ptr from wfd");
-                } else {
-                    let fp_vec = vec::raw::from_buf(fp_buf, libc::wcslen(fp_buf) as uint);
-                    let fp_trimmed = str::truncate_utf16_at_nul(fp_vec.as_slice());
-                    let fp_str = String::from_utf16(fp_trimmed)
-                            .expect("rust_list_dir_wfd_fp_buf returned invalid UTF-16");
-                    paths.push(Path::new(fp_str));
+                {
+                    let filename = str::truncate_utf16_at_nul(wfd.cFileName);
+                    match String::from_utf16(filename) {
+                        Some(filename) => paths.push(Path::new(filename)),
+                        None => {
+                            assert!(libc::FindClose(find_handle) != 0);
+                            return Err(IoError {
+                                code: super::c::ERROR_ILLEGAL_CHARACTER as uint,
+                                extra: 0,
+                                detail: Some(format!("path was not valid UTF-16: {}", filename)),
+                            })
+                        }, // FIXME #12056: Convert the UCS-2 to invalid utf-8 instead of erroring
+                    }
                 }
-                more_files = libc::FindNextFileW(find_handle,
-                                                 wfd_ptr as libc::HANDLE);
+                more_files = libc::FindNextFileW(find_handle, &mut wfd);
             }
             assert!(libc::FindClose(find_handle) != 0);
-            libc::free(wfd_ptr as *mut c_void);
             Ok(prune(p, paths))
         } else {
             Err(super::last_error())
@@ -435,10 +428,10 @@ pub fn readlink(p: &CString) -> IoResult<CString> {
         libc::CreateFileW(p.as_ptr(),
                           libc::GENERIC_READ,
                           libc::FILE_SHARE_READ,
-                          ptr::mut_null(),
+                          ptr::null_mut(),
                           libc::OPEN_EXISTING,
                           libc::FILE_ATTRIBUTE_NORMAL,
-                          ptr::mut_null())
+                          ptr::null_mut())
     };
     if handle == libc::INVALID_HANDLE_VALUE {
         return Err(super::last_error())
@@ -475,7 +468,7 @@ pub fn link(src: &CString, dst: &CString) -> IoResult<()> {
     let src = try!(to_utf16(src));
     let dst = try!(to_utf16(dst));
     super::mkerr_winbool(unsafe {
-        libc::CreateHardLinkW(dst.as_ptr(), src.as_ptr(), ptr::mut_null())
+        libc::CreateHardLinkW(dst.as_ptr(), src.as_ptr(), ptr::null_mut())
     })
 }
 

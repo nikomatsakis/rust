@@ -204,7 +204,7 @@ impl<'r, 't> Nfa<'r, 't> {
                         return StepMatch
                     }
                     Submatches => {
-                        for (slot, val) in groups.mut_iter().zip(caps.iter()) {
+                        for (slot, val) in groups.iter_mut().zip(caps.iter()) {
                             *slot = *val;
                         }
                         return StepMatch
@@ -364,7 +364,7 @@ impl<'t> CharReader<'t> {
     }
 
     /// Sets the previous and current character given any arbitrary byte
-    /// index (at a unicode codepoint boundary).
+    /// index (at a Unicode codepoint boundary).
     #[inline]
     pub fn set(&mut self, ic: uint) -> uint {
         self.prev = None;
@@ -470,7 +470,7 @@ impl Threads {
                 *t.groups.get_mut(1) = groups[1];
             }
             (false, Submatches) => {
-                for (slot, val) in t.groups.mut_iter().zip(groups.iter()) {
+                for (slot, val) in t.groups.iter_mut().zip(groups.iter()) {
                     *slot = *val;
                 }
             }
@@ -512,7 +512,7 @@ pub fn is_word(c: Option<char>) -> bool {
     };
     // Try the common ASCII case before invoking binary search.
     match c {
-        '_' | '0' .. '9' | 'a' .. 'z' | 'A' .. 'Z' => true,
+        '_' | '0' ... '9' | 'a' ... 'z' | 'A' ... 'Z' => true,
         _ => PERLW.binary_search(|&(start, end)| {
             if c >= start && c <= end {
                 Equal

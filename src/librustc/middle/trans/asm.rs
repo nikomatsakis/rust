@@ -25,10 +25,11 @@ use middle::trans::type_::Type;
 use std::c_str::ToCStr;
 use std::string::String;
 use syntax::ast;
+use libc::{c_uint, c_char};
 
 // Take an inline assembly expression and splat it out via LLVM
-pub fn trans_inline_asm<'a>(bcx: &'a Block<'a>, ia: &ast::InlineAsm)
-                        -> &'a Block<'a> {
+pub fn trans_inline_asm<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, ia: &ast::InlineAsm)
+                                    -> Block<'blk, 'tcx> {
     let fcx = bcx.fcx;
     let mut bcx = bcx;
     let mut constraints = Vec::new();
@@ -67,10 +68,10 @@ pub fn trans_inline_asm<'a>(bcx: &'a Block<'a>, ia: &ast::InlineAsm)
         let in_datum = unpack_datum!(bcx, expr::trans(bcx, &**input));
         unpack_result!(bcx, {
             callee::trans_arg_datum(bcx,
-                                   expr_ty(bcx, &**input),
-                                   in_datum,
-                                   cleanup::CustomScope(temp_scope),
-                                   callee::DontAutorefArg)
+                                    expr_ty(bcx, &**input),
+                                    in_datum,
+                                    cleanup::CustomScope(temp_scope),
+                                    callee::DontAutorefArg)
         })
     }).collect::<Vec<_>>().append(ext_inputs.as_slice());
 
@@ -80,7 +81,7 @@ pub fn trans_inline_asm<'a>(bcx: &'a Block<'a>, ia: &ast::InlineAsm)
     let mut constraints =
         String::from_str(constraints.iter()
                                     .map(|s| s.get().to_string())
-                                    .chain(ext_constraints.move_iter())
+                                    .chain(ext_constraints.into_iter())
                                     .collect::<Vec<String>>()
                                     .connect(",")
                                     .as_slice());
@@ -141,6 +142,19 @@ pub fn trans_inline_asm<'a>(bcx: &'a Block<'a>, ia: &ast::InlineAsm)
         }
     }
 
+    // Store expn_id in a metadata node so we can map LLVM errors
+    // back to source locations.  See #17552.
+    unsafe {
+        let key = "srcloc";
+        let kind = llvm::LLVMGetMDKindIDInContext(bcx.ccx().llcx(),
+            key.as_ptr() as *const c_char, key.len() as c_uint);
+
+        let val: llvm::ValueRef = C_i32(bcx.ccx(), ia.expn_id.to_llvm_cookie());
+
+        llvm::LLVMSetMetadata(r, kind,
+            llvm::LLVMMDNodeInContext(bcx.ccx().llcx(), &val, 1));
+    }
+
     return bcx;
 
 }
@@ -148,15 +162,14 @@ pub fn trans_inline_asm<'a>(bcx: &'a Block<'a>, ia: &ast::InlineAsm)
 // Default per-arch clobbers
 // Basically what clang does
 
-#[cfg(target_arch = "arm")]
-#[cfg(target_arch = "mips")]
-#[cfg(target_arch = "mipsel")]
+#[cfg(any(target_arch = "arm",
+          target_arch = "mips",
+          target_arch = "mipsel"))]
 fn get_clobbers() -> String {
     "".to_string()
 }
 
-#[cfg(target_arch = "x86")]
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn get_clobbers() -> String {
     "~{dirflag},~{fpsr},~{flags}".to_string()
 }

@@ -211,8 +211,8 @@ use syntax::visit;
 use syntax::visit::Visitor;
 use util::ppaux::{Repr, UserString};
 
-pub fn infer_variance(tcx: &ty::ctxt,
-                      krate: &ast::Crate) {
+pub fn infer_variance(tcx: &ty::ctxt) {
+    let krate = tcx.map.krate();
     let mut arena = arena::Arena::new();
     let terms_cx = determine_parameters_to_be_inferred(tcx, &mut arena, krate);
     let constraints_cx = add_constraints_from_crate(terms_cx, krate);
@@ -257,8 +257,8 @@ impl<'a> fmt::Show for VarianceTerm<'a> {
  * The first pass over the crate simply builds up the set of inferreds.
  */
 
-struct TermsContext<'a> {
-    tcx: &'a ty::ctxt,
+struct TermsContext<'a, 'tcx: 'a> {
+    tcx: &'a ty::ctxt<'tcx>,
     arena: &'a Arena,
 
     empty_variances: Rc<ty::ItemVariances>,
@@ -298,10 +298,10 @@ struct InferredInfo<'a> {
     initial_variance: ty::Variance,
 }
 
-fn determine_parameters_to_be_inferred<'a>(tcx: &'a ty::ctxt,
-                                           arena: &'a mut Arena,
-                                           krate: &ast::Crate)
-                                           -> TermsContext<'a> {
+fn determine_parameters_to_be_inferred<'a, 'tcx>(tcx: &'a ty::ctxt<'tcx>,
+                                                 arena: &'a mut Arena,
+                                                 krate: &ast::Crate)
+                                                 -> TermsContext<'a, 'tcx> {
     let mut terms_cx = TermsContext {
         tcx: tcx,
         arena: arena,
@@ -318,7 +318,7 @@ fn determine_parameters_to_be_inferred<'a>(tcx: &'a ty::ctxt,
         })
     };
 
-    visit::walk_crate(&mut terms_cx, krate, ());
+    visit::walk_crate(&mut terms_cx, krate);
 
     terms_cx
 }
@@ -343,7 +343,7 @@ fn lang_items(tcx: &ty::ctxt) -> Vec<(ast::NodeId,ty::Variance)> {
        .collect()
 }
 
-impl<'a> TermsContext<'a> {
+impl<'a, 'tcx> TermsContext<'a, 'tcx> {
     fn add_inferred(&mut self,
                     item_id: ast::NodeId,
                     kind: ParamKind,
@@ -399,8 +399,8 @@ impl<'a> TermsContext<'a> {
     }
 }
 
-impl<'a> Visitor<()> for TermsContext<'a> {
-    fn visit_item(&mut self, item: &ast::Item, _: ()) {
+impl<'a, 'tcx, 'v> Visitor<'v> for TermsContext<'a, 'tcx> {
+    fn visit_item(&mut self, item: &ast::Item) {
         debug!("add_inferreds for item {}", item.repr(self.tcx));
 
         let inferreds_on_entry = self.num_inferred();
@@ -444,7 +444,7 @@ impl<'a> Visitor<()> for TermsContext<'a> {
                     assert!(newly_added);
                 }
 
-                visit::walk_item(self, item, ());
+                visit::walk_item(self, item);
             }
 
             ast::ItemImpl(..) |
@@ -454,7 +454,7 @@ impl<'a> Visitor<()> for TermsContext<'a> {
             ast::ItemForeignMod(..) |
             ast::ItemTy(..) |
             ast::ItemMac(..) => {
-                visit::walk_item(self, item, ());
+                visit::walk_item(self, item);
             }
         }
     }
@@ -467,8 +467,8 @@ impl<'a> Visitor<()> for TermsContext<'a> {
  * We walk the set of items and, for each member, generate new constraints.
  */
 
-struct ConstraintContext<'a> {
-    terms_cx: TermsContext<'a>,
+struct ConstraintContext<'a, 'tcx: 'a> {
+    terms_cx: TermsContext<'a, 'tcx>,
 
     // These are pointers to common `ConstantTerm` instances
     covariant: VarianceTermPtr<'a>,
@@ -486,9 +486,10 @@ struct Constraint<'a> {
     variance: &'a VarianceTerm<'a>,
 }
 
-fn add_constraints_from_crate<'a>(terms_cx: TermsContext<'a>,
-                                  krate: &ast::Crate)
-                                  -> ConstraintContext<'a> {
+fn add_constraints_from_crate<'a, 'tcx>(terms_cx: TermsContext<'a, 'tcx>,
+                                        krate: &ast::Crate)
+                                        -> ConstraintContext<'a, 'tcx>
+{
     let covariant = terms_cx.arena.alloc(|| ConstantTerm(ty::Covariant));
     let contravariant = terms_cx.arena.alloc(|| ConstantTerm(ty::Contravariant));
     let invariant = terms_cx.arena.alloc(|| ConstantTerm(ty::Invariant));
@@ -501,12 +502,12 @@ fn add_constraints_from_crate<'a>(terms_cx: TermsContext<'a>,
         bivariant: bivariant,
         constraints: Vec::new(),
     };
-    visit::walk_crate(&mut constraint_cx, krate, ());
+    visit::walk_crate(&mut constraint_cx, krate);
     constraint_cx
 }
 
-impl<'a> Visitor<()> for ConstraintContext<'a> {
-    fn visit_item(&mut self, item: &ast::Item, _: ()) {
+impl<'a, 'tcx, 'v> Visitor<'v> for ConstraintContext<'a, 'tcx> {
+    fn visit_item(&mut self, item: &ast::Item) {
         let did = ast_util::local_def(item.id);
         let tcx = self.terms_cx.tcx;
 
@@ -561,6 +562,7 @@ impl<'a> Visitor<()> for ConstraintContext<'a> {
                             self.add_constraints_from_sig(&method.fty.sig,
                                                           self.covariant);
                         }
+                        ty::TypeTraitItem(_) => {}
                     }
                 }
             }
@@ -575,7 +577,7 @@ impl<'a> Visitor<()> for ConstraintContext<'a> {
             }
         }
 
-        visit::walk_item(self, item, ());
+        visit::walk_item(self, item);
     }
 }
 
@@ -586,8 +588,8 @@ fn is_lifetime(map: &ast_map::Map, param_id: ast::NodeId) -> bool {
     }
 }
 
-impl<'a> ConstraintContext<'a> {
-    fn tcx(&self) -> &'a ty::ctxt {
+impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
+    fn tcx(&self) -> &'a ty::ctxt<'tcx> {
         self.terms_cx.tcx
     }
 
@@ -1004,8 +1006,8 @@ impl<'a> ConstraintContext<'a> {
  * inferred is then written into the `variance_map` in the tcx.
  */
 
-struct SolveContext<'a> {
-    terms_cx: TermsContext<'a>,
+struct SolveContext<'a, 'tcx: 'a> {
+    terms_cx: TermsContext<'a, 'tcx>,
     constraints: Vec<Constraint<'a>> ,
 
     // Maps from an InferredIndex to the inferred value for that variable.
@@ -1028,7 +1030,7 @@ fn solve_constraints(constraints_cx: ConstraintContext) {
     solutions_cx.write();
 }
 
-impl<'a> SolveContext<'a> {
+impl<'a, 'tcx> SolveContext<'a, 'tcx> {
     fn solve(&mut self) {
         // Propagate constraints until a fixed point is reached.  Note
         // that the maximum number of iterations is 2C where C is the
@@ -1216,8 +1218,4 @@ fn glb(v1: ty::Variance, v2: ty::Variance) -> ty::Variance {
     }
 }
 
-#[cfg(stage0)]
-fn is_stage0() -> bool { true }
-
-#[cfg(not(stage0))]
 fn is_stage0() -> bool { false }

@@ -8,12 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Timers for non-linux/non-windows OSes
+//! Timers for non-Linux/non-Windows OSes
 //!
 //! This module implements timers with a worker thread, select(), and a lot of
 //! witchcraft that turns out to be horribly inaccurate timers. The unfortunate
 //! part is that I'm at a loss of what else to do one these OSes. This is also
-//! why linux has a specialized timerfd implementation and windows has its own
+//! why Linux has a specialized timerfd implementation and windows has its own
 //! implementation (they're more accurate than this one).
 //!
 //! The basic idea is that there is a worker thread that's communicated to via a
@@ -66,7 +66,7 @@ pub struct Timer {
     inner: Option<Box<Inner>>,
 }
 
-struct Inner {
+pub struct Inner {
     cb: Option<Box<rtio::Callback + Send>>,
     interval: u64,
     repeat: bool,
@@ -74,7 +74,6 @@ struct Inner {
     id: uint,
 }
 
-#[allow(visible_private_types)]
 pub enum Req {
     // Add a new timer to the helper thread.
     NewTimer(Box<Inner>),
@@ -88,7 +87,7 @@ pub enum Req {
 pub fn now() -> u64 {
     unsafe {
         let mut now: libc::timeval = mem::zeroed();
-        assert_eq!(c::gettimeofday(&mut now, ptr::mut_null()), 0);
+        assert_eq!(c::gettimeofday(&mut now, ptr::null_mut()), 0);
         return (now.tv_sec as u64) * 1000 + (now.tv_usec as u64) / 1000;
     }
 }
@@ -133,7 +132,7 @@ fn helper(input: libc::c_int, messages: Receiver<Req>, _: ()) {
     'outer: loop {
         let timeout = if active.len() == 0 {
             // Empty array? no timeout (wait forever for the next request)
-            ptr::mut_null()
+            ptr::null_mut()
         } else {
             let now = now();
             // If this request has already expired, then signal it and go
@@ -154,8 +153,8 @@ fn helper(input: libc::c_int, messages: Receiver<Req>, _: ()) {
 
         c::fd_set(&mut set, input);
         match unsafe {
-            c::select(input + 1, &mut set, ptr::mut_null(),
-                      ptr::mut_null(), timeout)
+            c::select(input + 1, &mut set, ptr::null_mut(),
+                      ptr::null_mut(), timeout)
         } {
             // timed out
             0 => signal(&mut active, &mut dead),

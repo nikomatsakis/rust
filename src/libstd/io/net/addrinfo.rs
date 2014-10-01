@@ -76,7 +76,7 @@ pub struct Info {
 /// Easy name resolution. Given a hostname, returns the list of IP addresses for
 /// that hostname.
 pub fn get_host_addresses(host: &str) -> IoResult<Vec<IpAddr>> {
-    lookup(Some(host), None, None).map(|a| a.move_iter().map(|i| i.address.ip).collect())
+    lookup(Some(host), None, None).map(|a| a.into_iter().map(|i| i.address.ip).collect())
 }
 
 /// Full-fledged resolution. This function will perform a synchronous call to
@@ -105,7 +105,7 @@ fn lookup(hostname: Option<&str>, servname: Option<&str>, hint: Option<Hint>)
     match LocalIo::maybe_raise(|io| {
         io.get_host_addresses(hostname, servname, hint)
     }) {
-        Ok(v) => Ok(v.move_iter().map(|info| {
+        Ok(v) => Ok(v.into_iter().map(|info| {
             Info {
                 address: SocketAddr {
                     ip: super::from_rtio(info.address.ip),
@@ -123,7 +123,7 @@ fn lookup(hostname: Option<&str>, servname: Option<&str>, hint: Option<Hint>)
 
 // Ignored on android since we cannot give tcp/ip
 // permission without help of apk
-#[cfg(test, not(target_os = "android"))]
+#[cfg(all(test, not(target_os = "android")))]
 mod test {
     iotest!(fn dns_smoke_test() {
         let ipaddrs = get_host_addresses("localhost").unwrap();

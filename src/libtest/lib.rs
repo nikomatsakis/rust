@@ -56,6 +56,7 @@ use std::f64;
 use std::fmt;
 use std::fmt::Show;
 use std::from_str::FromStr;
+use std::io::fs::PathExtensions;
 use std::io::stdio::StdWriter;
 use std::io::{File, ChanReader, ChanWriter};
 use std::io;
@@ -355,8 +356,7 @@ Test Attributes:
     #[ignore]      - When applied to a function which is already attributed as a
                      test, then the test runner will ignore these tests during
                      normal test runs. Running with --ignored will run these
-                     tests. This may also be written as #[ignore(cfg(...))] to
-                     ignore the test on certain configurations.",
+                     tests.",
              usage = getopts::usage(message.as_slice(),
                                     optgroups().as_slice()));
 }
@@ -948,7 +948,7 @@ fn run_tests(opts: &TestOpts,
 
     // All benchmarks run at the end, in serial.
     // (this includes metric fns)
-    for b in filtered_benchs_and_metrics.move_iter() {
+    for b in filtered_benchs_and_metrics.into_iter() {
         try!(callback(TeWait(b.desc.clone(), b.testfn.padding())));
         run_test(opts, !opts.run_benchmarks, b, tx.clone());
         let (test, result, stdout) = rx.recv();
@@ -980,7 +980,7 @@ pub fn filter_tests(opts: &TestOpts, tests: Vec<TestDescAndFn>) -> Vec<TestDescA
     filtered = match opts.filter {
         None => filtered,
         Some(ref re) => {
-            filtered.move_iter()
+            filtered.into_iter()
                 .filter(|test| re.is_match(test.desc.name.as_slice())).collect()
         }
     };
@@ -1000,7 +1000,7 @@ pub fn filter_tests(opts: &TestOpts, tests: Vec<TestDescAndFn>) -> Vec<TestDescA
                 None
             }
         };
-        filtered.move_iter().filter_map(|x| filter(x)).collect()
+        filtered.into_iter().filter_map(|x| filter(x)).collect()
     };
 
     // Sort the tests alphabetically
@@ -1010,7 +1010,7 @@ pub fn filter_tests(opts: &TestOpts, tests: Vec<TestDescAndFn>) -> Vec<TestDescA
     match opts.test_shard {
         None => filtered,
         Some((a,b)) => {
-            filtered.move_iter().enumerate()
+            filtered.into_iter().enumerate()
             // note: using a - 1 so that the valid shards, for example, are
             // 1.2 and 2.2 instead of 0.2 and 1.2
             .filter(|&(i,_)| i % b == (a - 1))
@@ -1053,7 +1053,7 @@ pub fn run_test(opts: &TestOpts,
             }
             let result_future = task.try_future(testfn);
 
-            let stdout = reader.read_to_end().unwrap().move_iter().collect();
+            let stdout = reader.read_to_end().unwrap().into_iter().collect();
             let task_result = result_future.unwrap();
             let test_result = calc_result(&desc, task_result.is_ok());
             monitor_ch.send((desc.clone(), test_result, stdout));
@@ -1327,7 +1327,7 @@ impl Bencher {
         loop {
             let loop_start = precise_time_ns();
 
-            for p in samples.mut_iter() {
+            for p in samples.iter_mut() {
                 self.bench_n(n, |x| f(x));
                 *p = self.ns_per_iter() as f64;
             };
@@ -1335,7 +1335,7 @@ impl Bencher {
             stats::winsorize(samples, 5.0);
             let summ = stats::Summary::new(samples);
 
-            for p in samples.mut_iter() {
+            for p in samples.iter_mut() {
                 self.bench_n(5 * n, |x| f(x));
                 *p = self.ns_per_iter() as f64;
             };
@@ -1518,9 +1518,9 @@ mod tests {
         let filtered = filter_tests(&opts, tests);
 
         assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered.get(0).desc.name.to_string(),
+        assert_eq!(filtered[0].desc.name.to_string(),
                    "1".to_string());
-        assert!(filtered.get(0).desc.ignore == false);
+        assert!(filtered[0].desc.ignore == false);
     }
 
     #[test]
@@ -1660,7 +1660,7 @@ mod tests {
     #[test]
     pub fn ratchet_test() {
 
-        let dpth = TempDir::new("test-ratchet").expect("missing test for ratchet");
+        let dpth = TempDir::new("test-ratchet").ok().expect("missing test for ratchet");
         let pth = dpth.path().join("ratchet.json");
 
         let mut m1 = MetricMap::new();

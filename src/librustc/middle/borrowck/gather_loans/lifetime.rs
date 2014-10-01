@@ -45,8 +45,8 @@ pub fn guarantee_lifetime(bccx: &BorrowckCtxt,
 ///////////////////////////////////////////////////////////////////////////
 // Private
 
-struct GuaranteeLifetimeContext<'a> {
-    bccx: &'a BorrowckCtxt<'a>,
+struct GuaranteeLifetimeContext<'a, 'tcx: 'a> {
+    bccx: &'a BorrowckCtxt<'a, 'tcx>,
 
     // the node id of the function body for the enclosing item
     item_scope_id: ast::NodeId,
@@ -57,7 +57,7 @@ struct GuaranteeLifetimeContext<'a> {
     cmt_original: mc::cmt
 }
 
-impl<'a> GuaranteeLifetimeContext<'a> {
+impl<'a, 'tcx> GuaranteeLifetimeContext<'a, 'tcx> {
 
     fn check(&self, cmt: &mc::cmt, discr_scope: Option<ast::NodeId>) -> R {
         //! Main routine. Walks down `cmt` until we find the "guarantor".
@@ -69,7 +69,6 @@ impl<'a> GuaranteeLifetimeContext<'a> {
             mc::cat_rvalue(..) |
             mc::cat_copied_upvar(..) |                  // L-Local
             mc::cat_local(..) |                         // L-Local
-            mc::cat_arg(..) |                           // L-Local
             mc::cat_upvar(..) |
             mc::cat_deref(_, _, mc::BorrowedPtr(..)) |  // L-Deref-Borrowed
             mc::cat_deref(_, _, mc::Implicit(..)) |
@@ -174,8 +173,7 @@ impl<'a> GuaranteeLifetimeContext<'a> {
             mc::cat_static_item => {
                 ty::ReStatic
             }
-            mc::cat_local(local_id) |
-            mc::cat_arg(local_id) => {
+            mc::cat_local(local_id) => {
                 ty::ReScope(self.bccx.tcx.region_maps.var_scope(local_id))
             }
             mc::cat_deref(_, _, mc::UnsafePtr(..)) => {

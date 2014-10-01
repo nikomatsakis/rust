@@ -28,7 +28,7 @@ Data types that can be encoded are JavaScript types (see the `Json` enum for mor
 * `Boolean`: equivalent to rust's `bool`
 * `Number`: equivalent to rust's `f64`
 * `String`: equivalent to rust's `String`
-* `Array`: equivalent to rust's `Vec<T>`, but also allowing objects of different types in the same
+* `List`: equivalent to rust's `Vec<T>`, but also allowing objects of different types in the same
 array
 * `Object`: equivalent to rust's `Treemap<String, json::Json>`
 * `Null`
@@ -201,7 +201,7 @@ use std::io::MemWriter;
 use std::mem::{swap, transmute};
 use std::num::{FPNaN, FPInfinite};
 use std::str::ScalarValue;
-use std::string::String;
+use std::string;
 use std::vec::Vec;
 
 use Encodable;
@@ -212,15 +212,15 @@ pub enum Json {
     I64(i64),
     U64(u64),
     F64(f64),
-    String(String),
+    String(string::String),
     Boolean(bool),
-    List(List),
-    Object(Object),
+    List(JsonList),
+    Object(JsonObject),
     Null,
 }
 
-pub type List = Vec<Json>;
-pub type Object = TreeMap<String, Json>;
+pub type JsonList = Vec<Json>;
+pub type JsonObject = TreeMap<string::String, Json>;
 
 /// The errors that can arise while parsing a JSON stream.
 #[deriving(Clone, PartialEq)]
@@ -234,6 +234,7 @@ pub enum ErrorCode {
     KeyMustBeAString,
     ExpectedColon,
     TrailingCharacters,
+    TrailingComma,
     InvalidEscape,
     InvalidUnicodeCodePoint,
     LoneLeadingSurrogateInHexEscape,
@@ -256,10 +257,10 @@ pub type BuilderError = ParserError;
 #[deriving(Clone, PartialEq, Show)]
 pub enum DecoderError {
     ParseError(ParserError),
-    ExpectedError(String, String),
-    MissingFieldError(String),
-    UnknownVariantError(String),
-    ApplicationError(String)
+    ExpectedError(string::String, string::String),
+    MissingFieldError(string::String),
+    UnknownVariantError(string::String),
+    ApplicationError(string::String)
 }
 
 /// Returns a readable error string for a given error code.
@@ -274,11 +275,12 @@ pub fn error_str(error: ErrorCode) -> &'static str {
         KeyMustBeAString => "key must be a string",
         ExpectedColon => "expected `:`",
         TrailingCharacters => "trailing characters",
+        TrailingComma => "trailing comma",
         InvalidEscape => "invalid escape",
         UnrecognizedHex => "invalid \\u escape (unrecognized hex)",
         NotFourDigit => "invalid \\u escape (not four digits)",
         NotUtf8 => "contents not utf-8",
-        InvalidUnicodeCodePoint => "invalid unicode code point",
+        InvalidUnicodeCodePoint => "invalid Unicode code point",
         LoneLeadingSurrogateInHexEscape => "lone leading surrogate in hex escape",
         UnexpectedEndOfHexEscape => "unexpected end of hex escape",
     }
@@ -296,9 +298,9 @@ pub fn decode<T: ::Decodable<Decoder, DecoderError>>(s: &str) -> DecodeResult<T>
 }
 
 /// Shortcut function to encode a `T` into a JSON `String`
-pub fn encode<'a, T: Encodable<Encoder<'a>, io::IoError>>(object: &T) -> String {
+pub fn encode<'a, T: Encodable<Encoder<'a>, io::IoError>>(object: &T) -> string::String {
     let buff = Encoder::buffer_encode(object);
-    String::from_utf8(buff).unwrap()
+    string::String::from_utf8(buff).unwrap()
 }
 
 impl fmt::Show for ErrorCode {
@@ -373,9 +375,9 @@ fn spaces(wr: &mut io::Writer, mut n: uint) -> Result<(), io::IoError> {
     }
 }
 
-fn fmt_number_or_null(v: f64) -> String {
+fn fmt_number_or_null(v: f64) -> string::String {
     match v.classify() {
-        FPNaN | FPInfinite => String::from_str("null"),
+        FPNaN | FPInfinite => string::String::from_str("null"),
         _ => f64::to_str_digits(v, 6u)
     }
 }
@@ -409,7 +411,7 @@ impl<'a> Encoder<'a> {
     ///
     /// Note: this function is deprecated. Consider using `json::encode` instead.
     #[deprecated = "Replaced by `json::encode`"]
-    pub fn str_encode<T: Encodable<Encoder<'a>, io::IoError>>(object: &T) -> String {
+    pub fn str_encode<T: Encodable<Encoder<'a>, io::IoError>>(object: &T) -> string::String {
         encode(object)
     }
 }
@@ -666,16 +668,23 @@ impl<'a> ::Encoder<io::IoError> for PrettyEncoder<'a> {
         if cnt == 0 {
             escape_str(self.writer, name)
         } else {
+            try!(write!(self.writer, "{{\n"));
             self.curr_indent += self.indent;
-            try!(write!(self.writer, "[\n"));
             try!(spaces(self.writer, self.curr_indent));
+            try!(write!(self.writer, "\"variant\": "));
             try!(escape_str(self.writer, name));
             try!(write!(self.writer, ",\n"));
+            try!(spaces(self.writer, self.curr_indent));
+            try!(write!(self.writer, "\"fields\": [\n"));
+            self.curr_indent += self.indent;
             try!(f(self));
             self.curr_indent -= self.indent;
             try!(write!(self.writer, "\n"));
             try!(spaces(self.writer, self.curr_indent));
-            write!(self.writer, "]")
+            self.curr_indent -= self.indent;
+            try!(write!(self.writer, "]\n"));
+            try!(spaces(self.writer, self.curr_indent));
+            write!(self.writer, "}}")
         }
     }
 
@@ -875,15 +884,15 @@ impl Json {
     }
 
     /// Encodes a json value into a string
-    pub fn to_pretty_str(&self) -> String {
+    pub fn to_pretty_str(&self) -> string::String {
         let mut s = MemWriter::new();
         self.to_pretty_writer(&mut s as &mut io::Writer).unwrap();
-        String::from_utf8(s.unwrap()).unwrap()
+        string::String::from_utf8(s.unwrap()).unwrap()
     }
 
      /// If the Json value is an Object, returns the value associated with the provided key.
     /// Otherwise, returns None.
-    pub fn find<'a>(&'a self, key: &String) -> Option<&'a Json>{
+    pub fn find<'a>(&'a self, key: &string::String) -> Option<&'a Json>{
         match self {
             &Object(ref map) => map.find(key),
             _ => None
@@ -893,7 +902,7 @@ impl Json {
     /// Attempts to get a nested Json Object for each key in `keys`.
     /// If any key is found not to exist, find_path will return None.
     /// Otherwise, it will return the Json value associated with the final key.
-    pub fn find_path<'a>(&'a self, keys: &[&String]) -> Option<&'a Json>{
+    pub fn find_path<'a>(&'a self, keys: &[&string::String]) -> Option<&'a Json>{
         let mut target = self;
         for key in keys.iter() {
             match target.find(*key) {
@@ -907,7 +916,7 @@ impl Json {
     /// If the Json value is an Object, performs a depth-first search until
     /// a value associated with the provided key is found. If no value is found
     /// or the Json value is not an Object, returns None.
-    pub fn search<'a>(&'a self, key: &String) -> Option<&'a Json> {
+    pub fn search<'a>(&'a self, key: &string::String) -> Option<&'a Json> {
         match self {
             &Object(ref map) => {
                 match map.find(key) {
@@ -935,7 +944,7 @@ impl Json {
 
     /// If the Json value is an Object, returns the associated TreeMap.
     /// Returns None otherwise.
-    pub fn as_object<'a>(&'a self) -> Option<&'a Object> {
+    pub fn as_object<'a>(&'a self) -> Option<&'a JsonObject> {
         match self {
             &Object(ref map) => Some(map),
             _ => None
@@ -949,7 +958,7 @@ impl Json {
 
     /// If the Json value is a List, returns the associated vector.
     /// Returns None otherwise.
-    pub fn as_list<'a>(&'a self) -> Option<&'a List> {
+    pub fn as_list<'a>(&'a self) -> Option<&'a JsonList> {
         match self {
             &List(ref list) => Some(&*list),
             _ => None
@@ -1073,7 +1082,7 @@ pub enum JsonEvent {
     I64Value(i64),
     U64Value(u64),
     F64Value(f64),
-    StringValue(String),
+    StringValue(string::String),
     NullValue,
     Error(ParserError),
 }
@@ -1081,7 +1090,7 @@ pub enum JsonEvent {
 #[deriving(PartialEq, Show)]
 enum ParserState {
     // Parse a value in a list, true means first element.
-    ParseList(bool),
+    ParseArray(bool),
     // Parse ',' or ']' after an element in a list.
     ParseListComma,
     // Parse a key:value in an object, true means first element.
@@ -1189,7 +1198,7 @@ impl Stack {
     }
 
     // Used by Parser to insert Key elements at the top of the stack.
-    fn push_key(&mut self, key: String) {
+    fn push_key(&mut self, key: string::String) {
         self.stack.push(InternalKey(self.str_buffer.len() as u16, key.len() as u16));
         for c in key.as_bytes().iter() {
             self.str_buffer.push(*c);
@@ -1383,14 +1392,14 @@ impl<T: Iterator<char>> Parser<T> {
 
                 // A leading '0' must be the only digit before the decimal point.
                 match self.ch_or_null() {
-                    '0' .. '9' => return self.error(InvalidNumber),
+                    '0' ... '9' => return self.error(InvalidNumber),
                     _ => ()
                 }
             },
-            '1' .. '9' => {
+            '1' ... '9' => {
                 while !self.eof() {
                     match self.ch_or_null() {
-                        c @ '0' .. '9' => {
+                        c @ '0' ... '9' => {
                             accum *= 10;
                             accum += (c as u64) - ('0' as u64);
 
@@ -1414,14 +1423,14 @@ impl<T: Iterator<char>> Parser<T> {
 
         // Make sure a digit follows the decimal place.
         match self.ch_or_null() {
-            '0' .. '9' => (),
+            '0' ... '9' => (),
              _ => return self.error(InvalidNumber)
         }
 
         let mut dec = 1.0;
         while !self.eof() {
             match self.ch_or_null() {
-                c @ '0' .. '9' => {
+                c @ '0' ... '9' => {
                     dec /= 10.0;
                     res += (((c as int) - ('0' as int)) as f64) * dec;
                     self.bump();
@@ -1448,12 +1457,12 @@ impl<T: Iterator<char>> Parser<T> {
 
         // Make sure a digit follows the exponent place.
         match self.ch_or_null() {
-            '0' .. '9' => (),
+            '0' ... '9' => (),
             _ => return self.error(InvalidNumber)
         }
         while !self.eof() {
             match self.ch_or_null() {
-                c @ '0' .. '9' => {
+                c @ '0' ... '9' => {
                     exp *= 10;
                     exp += (c as uint) - ('0' as uint);
 
@@ -1479,7 +1488,7 @@ impl<T: Iterator<char>> Parser<T> {
         while i < 4 && !self.eof() {
             self.bump();
             n = match self.ch_or_null() {
-                c @ '0' .. '9' => n * 16 + ((c as u16) - ('0' as u16)),
+                c @ '0' ... '9' => n * 16 + ((c as u16) - ('0' as u16)),
                 'a' | 'A' => n * 16 + 10,
                 'b' | 'B' => n * 16 + 11,
                 'c' | 'C' => n * 16 + 12,
@@ -1500,9 +1509,9 @@ impl<T: Iterator<char>> Parser<T> {
         Ok(n)
     }
 
-    fn parse_str(&mut self) -> Result<String, ParserError> {
+    fn parse_str(&mut self) -> Result<string::String, ParserError> {
         let mut escape = false;
-        let mut res = String::new();
+        let mut res = string::String::new();
 
         loop {
             self.bump();
@@ -1512,20 +1521,22 @@ impl<T: Iterator<char>> Parser<T> {
 
             if escape {
                 match self.ch_or_null() {
-                    '"' => res.push_char('"'),
-                    '\\' => res.push_char('\\'),
-                    '/' => res.push_char('/'),
-                    'b' => res.push_char('\x08'),
-                    'f' => res.push_char('\x0c'),
-                    'n' => res.push_char('\n'),
-                    'r' => res.push_char('\r'),
-                    't' => res.push_char('\t'),
+                    '"' => res.push('"'),
+                    '\\' => res.push('\\'),
+                    '/' => res.push('/'),
+                    'b' => res.push('\x08'),
+                    'f' => res.push('\x0c'),
+                    'n' => res.push('\n'),
+                    'r' => res.push('\r'),
+                    't' => res.push('\t'),
                     'u' => match try!(self.decode_hex_escape()) {
-                        0xDC00 .. 0xDFFF => return self.error(LoneLeadingSurrogateInHexEscape),
+                        0xDC00 ... 0xDFFF => {
+                            return self.error(LoneLeadingSurrogateInHexEscape)
+                        }
 
                         // Non-BMP characters are encoded as a sequence of
                         // two hex escapes, representing UTF-16 surrogates.
-                        n1 @ 0xD800 .. 0xDBFF => {
+                        n1 @ 0xD800 ... 0xDBFF => {
                             match (self.next_char(), self.next_char()) {
                                 (Some('\\'), Some('u')) => (),
                                 _ => return self.error(UnexpectedEndOfHexEscape),
@@ -1533,13 +1544,13 @@ impl<T: Iterator<char>> Parser<T> {
 
                             let buf = [n1, try!(self.decode_hex_escape())];
                             match str::utf16_items(buf.as_slice()).next() {
-                                Some(ScalarValue(c)) => res.push_char(c),
+                                Some(ScalarValue(c)) => res.push(c),
                                 _ => return self.error(LoneLeadingSurrogateInHexEscape),
                             }
                         }
 
                         n => match char::from_u32(n as u32) {
-                            Some(c) => res.push_char(c),
+                            Some(c) => res.push(c),
                             None => return self.error(InvalidUnicodeCodePoint),
                         },
                     },
@@ -1554,7 +1565,7 @@ impl<T: Iterator<char>> Parser<T> {
                         self.bump();
                         return Ok(res);
                     },
-                    Some(c) => res.push_char(c),
+                    Some(c) => res.push(c),
                     None => unreachable!()
                 }
             }
@@ -1572,7 +1583,7 @@ impl<T: Iterator<char>> Parser<T> {
             // The only paths where the loop can spin a new iteration
             // are in the cases ParseListComma and ParseObjectComma if ','
             // is parsed. In these cases the state is set to (respectively)
-            // ParseList(false) and ParseObject(false), which always return,
+            // ParseArray(false) and ParseObject(false), which always return,
             // so there is no risk of getting stuck in an infinite loop.
             // All other paths return before the end of the loop's iteration.
             self.parse_whitespace();
@@ -1581,7 +1592,7 @@ impl<T: Iterator<char>> Parser<T> {
                 ParseStart => {
                     return self.parse_start();
                 }
-                ParseList(first) => {
+                ParseArray(first) => {
                     return self.parse_list(first);
                 }
                 ParseListComma => {
@@ -1613,7 +1624,7 @@ impl<T: Iterator<char>> Parser<T> {
         let val = self.parse_value();
         self.state = match val {
             Error(_) => { ParseFinished }
-            ListStart => { ParseList(true) }
+            ListStart => { ParseArray(true) }
             ObjectStart => { ParseObject(true) }
             _ => { ParseBeforeFinish }
         };
@@ -1645,7 +1656,7 @@ impl<T: Iterator<char>> Parser<T> {
 
         self.state = match val {
             Error(_) => { ParseFinished }
-            ListStart => { ParseList(true) }
+            ListStart => { ParseArray(true) }
             ObjectStart => { ParseObject(true) }
             _ => { ParseListComma }
         };
@@ -1655,7 +1666,7 @@ impl<T: Iterator<char>> Parser<T> {
     fn parse_list_comma_or_end(&mut self) -> Option<JsonEvent> {
         if self.ch_is(',') {
             self.stack.bump_index();
-            self.state = ParseList(false);
+            self.state = ParseArray(false);
             self.bump();
             return None;
         } else if self.ch_is(']') {
@@ -1681,7 +1692,11 @@ impl<T: Iterator<char>> Parser<T> {
     fn parse_object(&mut self, first: bool) -> JsonEvent {
         if self.ch_is('}') {
             if !first {
-                self.stack.pop();
+                if self.stack.is_empty() {
+                    return self.error_event(TrailingComma);
+                } else {
+                    self.stack.pop();
+                }
             }
             if self.stack.is_empty() {
                 self.state = ParseBeforeFinish;
@@ -1722,7 +1737,7 @@ impl<T: Iterator<char>> Parser<T> {
 
         self.state = match val {
             Error(_) => { ParseFinished }
-            ListStart => { ParseList(true) }
+            ListStart => { ParseArray(true) }
             ObjectStart => { ParseObject(true) }
             _ => { ParseObjectComma }
         };
@@ -1755,7 +1770,7 @@ impl<T: Iterator<char>> Parser<T> {
             'n' => { self.parse_ident("ull", NullValue) }
             't' => { self.parse_ident("rue", BooleanValue(true)) }
             'f' => { self.parse_ident("alse", BooleanValue(false)) }
-            '0' .. '9' | '-' => self.parse_number(),
+            '0' ... '9' | '-' => self.parse_number(),
             '"' => match self.parse_str() {
                 Ok(s) => StringValue(s),
                 Err(e) => Error(e),
@@ -1824,7 +1839,7 @@ impl<T: Iterator<char>> Builder<T> {
             Some(F64Value(n)) => { Ok(F64(n)) }
             Some(BooleanValue(b)) => { Ok(Boolean(b)) }
             Some(StringValue(ref mut s)) => {
-                let mut temp = String::new();
+                let mut temp = string::String::new();
                 swap(s, &mut temp);
                 Ok(String(temp))
             }
@@ -1843,7 +1858,7 @@ impl<T: Iterator<char>> Builder<T> {
 
         loop {
             if self.token == Some(ListEnd) {
-                return Ok(List(values.move_iter().collect()));
+                return Ok(List(values.into_iter().collect()));
             }
             match self.build_value() {
                 Ok(v) => values.push(v),
@@ -2028,7 +2043,7 @@ impl ::Decoder<DecoderError> for Decoder {
         Err(ExpectedError("single character string".to_string(), format!("{}", s)))
     }
 
-    fn read_str(&mut self) -> DecodeResult<String> {
+    fn read_str(&mut self) -> DecodeResult<string::String> {
         debug!("read_str");
         expect!(self.pop(), String)
     }
@@ -2059,7 +2074,7 @@ impl ::Decoder<DecoderError> for Decoder {
                 };
                 match o.pop(&"fields".to_string()) {
                     Some(List(l)) => {
-                        for field in l.move_iter().rev() {
+                        for field in l.into_iter().rev() {
                             self.stack.push(field);
                         }
                     },
@@ -2128,7 +2143,15 @@ impl ::Decoder<DecoderError> for Decoder {
         let mut obj = try!(expect!(self.pop(), Object));
 
         let value = match obj.pop(&name.to_string()) {
-            None => return Err(MissingFieldError(name.to_string())),
+            None => {
+                // Add a Null and try to parse it as an Option<_>
+                // to get None as a default value.
+                self.stack.push(Null);
+                match f(self) {
+                    Ok(x) => x,
+                    Err(_) => return Err(MissingFieldError(name.to_string())),
+                }
+            },
             Some(json) => {
                 self.stack.push(json);
                 try!(f(self))
@@ -2167,6 +2190,7 @@ impl ::Decoder<DecoderError> for Decoder {
     }
 
     fn read_option<T>(&mut self, f: |&mut Decoder, bool| -> DecodeResult<T>) -> DecodeResult<T> {
+        debug!("read_option()");
         match self.pop() {
             Null => f(self, false),
             value => { self.stack.push(value); f(self, true) }
@@ -2177,7 +2201,7 @@ impl ::Decoder<DecoderError> for Decoder {
         debug!("read_seq()");
         let list = try!(expect!(self.pop(), List));
         let len = list.len();
-        for v in list.move_iter().rev() {
+        for v in list.into_iter().rev() {
             self.stack.push(v);
         }
         f(self, len)
@@ -2194,7 +2218,7 @@ impl ::Decoder<DecoderError> for Decoder {
         debug!("read_map()");
         let obj = try!(expect!(self.pop(), Object));
         let len = obj.len();
-        for (key, value) in obj.move_iter() {
+        for (key, value) in obj.into_iter() {
             self.stack.push(value);
             self.stack.push(String(key));
         }
@@ -2269,7 +2293,7 @@ impl ToJson for bool {
     fn to_json(&self) -> Json { Boolean(*self) }
 }
 
-impl ToJson for String {
+impl ToJson for string::String {
     fn to_json(&self) -> Json { String((*self).clone()) }
 }
 
@@ -2313,7 +2337,7 @@ impl<A: ToJson> ToJson for Vec<A> {
     fn to_json(&self) -> Json { List(self.iter().map(|elt| elt.to_json()).collect()) }
 }
 
-impl<A: ToJson> ToJson for TreeMap<String, A> {
+impl<A: ToJson> ToJson for TreeMap<string::String, A> {
     fn to_json(&self) -> Json {
         let mut d = TreeMap::new();
         for (key, value) in self.iter() {
@@ -2323,7 +2347,7 @@ impl<A: ToJson> ToJson for TreeMap<String, A> {
     }
 }
 
-impl<A: ToJson> ToJson for HashMap<String, A> {
+impl<A: ToJson> ToJson for HashMap<string::String, A> {
     fn to_json(&self) -> Json {
         let mut d = TreeMap::new();
         for (key, value) in self.iter() {
@@ -2360,7 +2384,7 @@ mod tests {
     extern crate test;
     use self::test::Bencher;
     use {Encodable, Decodable};
-    use super::{Encoder, Decoder, Error, Boolean, I64, U64, F64, List, String, Null,
+    use super::{List, Encoder, Decoder, Error, Boolean, I64, U64, F64, String, Null,
                 PrettyEncoder, Object, Json, from_str, ParseError, ExpectedError,
                 MissingFieldError, UnknownVariantError, DecodeResult, DecoderError,
                 JsonEvent, Parser, StackElement,
@@ -2368,21 +2392,49 @@ mod tests {
                 F64Value, StringValue, NullValue, SyntaxError, Key, Index, Stack,
                 InvalidSyntax, InvalidNumber, EOFWhileParsingObject, EOFWhileParsingList,
                 EOFWhileParsingValue, EOFWhileParsingString, KeyMustBeAString, ExpectedColon,
-                TrailingCharacters};
+                TrailingCharacters, TrailingComma};
     use std::{i64, u64, f32, f64, io};
     use std::collections::TreeMap;
+    use std::string;
+
+    #[deriving(Decodable, Eq, PartialEq, Show)]
+    struct OptionData {
+        opt: Option<uint>,
+    }
+
+    #[test]
+    fn test_decode_option_none() {
+        let s ="{}";
+        let obj: OptionData = super::decode(s).unwrap();
+        assert_eq!(obj, OptionData { opt: None });
+    }
+
+    #[test]
+    fn test_decode_option_some() {
+        let s = "{ \"opt\": 10 }";
+        let obj: OptionData = super::decode(s).unwrap();
+        assert_eq!(obj, OptionData { opt: Some(10u) });
+    }
+
+    #[test]
+    fn test_decode_option_malformed() {
+        check_err::<OptionData>("{ \"opt\": [] }",
+                                ExpectedError("Number".to_string(), "[]".to_string()));
+        check_err::<OptionData>("{ \"opt\": false }",
+                                ExpectedError("Number".to_string(), "false".to_string()));
+    }
 
     #[deriving(PartialEq, Encodable, Decodable, Show)]
     enum Animal {
         Dog,
-        Frog(String, int)
+        Frog(string::String, int)
     }
 
     #[deriving(PartialEq, Encodable, Decodable, Show)]
     struct Inner {
         a: (),
         b: uint,
-        c: Vec<String>,
+        c: Vec<string::String>,
     }
 
     #[deriving(PartialEq, Encodable, Decodable, Show)]
@@ -2390,7 +2442,7 @@ mod tests {
         inner: Vec<Inner>,
     }
 
-    fn mk_object(items: &[(String, Json)]) -> Json {
+    fn mk_object(items: &[(string::String, Json)]) -> Json {
         let mut d = TreeMap::new();
 
         for item in items.iter() {
@@ -2568,7 +2620,7 @@ mod tests {
                    from_str(a.to_pretty_str().as_slice()).unwrap());
     }
 
-    fn with_str_writer(f: |&mut io::Writer|) -> String {
+    fn with_str_writer(f: |&mut io::Writer|) -> string::String {
         use std::io::MemWriter;
         use std::str;
 
@@ -2608,12 +2660,13 @@ mod tests {
                 let mut encoder = PrettyEncoder::new(writer);
                 animal.encode(&mut encoder).unwrap();
             }),
-            "\
-            [\n  \
-                \"Frog\",\n  \
-                \"Henry\",\n  \
-                349\n\
-            ]".to_string()
+            "{\n  \
+               \"variant\": \"Frog\",\n  \
+               \"fields\": [\n    \
+                 \"Henry\",\n    \
+                 349\n  \
+               ]\n\
+             }".to_string()
         );
     }
 
@@ -2636,7 +2689,7 @@ mod tests {
 
     #[test]
     fn test_write_none() {
-        let value: Option<String> = None;
+        let value: Option<string::String> = None;
         let s = with_str_writer(|writer| {
             let mut encoder = Encoder::new(writer);
             value.encode(&mut encoder).unwrap();
@@ -2783,7 +2836,7 @@ mod tests {
                  ("\"\\uAB12\"", "\uAB12")];
 
         for &(i, o) in s.iter() {
-            let v: String = super::decode(i).unwrap();
+            let v: string::String = super::decode(i).unwrap();
             assert_eq!(v.as_slice(), o);
         }
     }
@@ -2917,10 +2970,10 @@ mod tests {
 
     #[test]
     fn test_decode_option() {
-        let value: Option<String> = super::decode("null").unwrap();
+        let value: Option<string::String> = super::decode("null").unwrap();
         assert_eq!(value, None);
 
-        let value: Option<String> = super::decode("\"jodhpurs\"").unwrap();
+        let value: Option<string::String> = super::decode("\"jodhpurs\"").unwrap();
         assert_eq!(value, Some("jodhpurs".to_string()));
     }
 
@@ -2938,7 +2991,7 @@ mod tests {
     fn test_decode_map() {
         let s = "{\"a\": \"Dog\", \"b\": {\"variant\":\"Frog\",\
                   \"fields\":[\"Henry\", 349]}}";
-        let mut map: TreeMap<String, Animal> = super::decode(s).unwrap();
+        let mut map: TreeMap<string::String, Animal> = super::decode(s).unwrap();
 
         assert_eq!(map.pop(&"a".to_string()), Some(Dog));
         assert_eq!(map.pop(&"b".to_string()), Some(Frog("Henry".to_string(), 349)));
@@ -2955,13 +3008,13 @@ mod tests {
     struct DecodeStruct {
         x: f64,
         y: bool,
-        z: String,
+        z: string::String,
         w: Vec<DecodeStruct>
     }
     #[deriving(Decodable)]
     enum DecodeEnum {
         A(f64),
-        B(String)
+        B(string::String)
     }
     fn check_err<T: Decodable<Decoder, DecoderError>>(to_parse: &'static str,
                                                       expected: DecoderError) {
@@ -3309,7 +3362,7 @@ mod tests {
         }
     }
     #[test]
-    #[ignore(cfg(target_word_size = "32"))] // FIXME(#14064)
+    #[cfg_attr(target_word_size = "32", ignore)] // FIXME(#14064)
     fn test_streaming_parser() {
         assert_stream_equal(
             r#"{ "foo":"bar", "array" : [0, 1, 2, 3, 4, 5], "idents":[null,true,false]}"#,
@@ -3343,8 +3396,9 @@ mod tests {
             }
         }
     }
+
     #[test]
-    #[ignore(cfg(target_word_size = "32"))] // FIXME(#14064)
+    #[cfg_attr(target_word_size = "32", ignore)] // FIXME(#14064)
     fn test_read_object_streaming() {
         assert_eq!(last_event("{ "),      Error(SyntaxError(EOFWhileParsingObject, 1, 3)));
         assert_eq!(last_event("{1"),      Error(SyntaxError(KeyMustBeAString,      1, 2)));
@@ -3357,6 +3411,7 @@ mod tests {
         assert_eq!(last_event("{\"a\":1"),   Error(SyntaxError(EOFWhileParsingObject, 1, 7)));
         assert_eq!(last_event("{\"a\":1 1"), Error(SyntaxError(InvalidSyntax,         1, 8)));
         assert_eq!(last_event("{\"a\":1,"),  Error(SyntaxError(EOFWhileParsingObject, 1, 8)));
+        assert_eq!(last_event("{\"a\":1,}"), Error(SyntaxError(TrailingComma, 1, 8)));
 
         assert_stream_equal(
             "{}",
@@ -3416,7 +3471,7 @@ mod tests {
         );
     }
     #[test]
-    #[ignore(cfg(target_word_size = "32"))] // FIXME(#14064)
+    #[cfg_attr(target_word_size = "32", ignore)] // FIXME(#14064)
     fn test_read_list_streaming() {
         assert_stream_equal(
             "[]",
@@ -3665,7 +3720,7 @@ mod tests {
         });
     }
 
-    fn big_json() -> String {
+    fn big_json() -> string::String {
         let mut src = "[\n".to_string();
         for _ in range(0i, 500) {
             src.push_str(r#"{ "a": true, "b": null, "c":3.1415, "d": "Hello world", "e": \

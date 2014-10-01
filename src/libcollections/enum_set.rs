@@ -17,7 +17,7 @@ use core::prelude::*;
 use core::kinds::marker;
 use core::fmt;
 
-#[deriving(Clone, PartialEq, Eq, Hash)]
+#[deriving(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// A specialized `Set` implementation to use enum types.
 pub struct EnumSet<E> {
     // We must maintain the invariant that no bits are set
@@ -29,6 +29,21 @@ pub struct EnumSet<E> {
 impl<E> fmt::Show for EnumSet<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "EnumSet {{ bits={} }}", self.bits)
+    }
+}
+
+impl<E:CLike+fmt::Show> fmt::Show for EnumSet<E> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        try!(write!(fmt, "{{"));
+        let mut first = true;
+        for e in self.iter() {
+            if !first {
+                try!(write!(fmt, ", "));
+            }
+            try!(write!(fmt, "{}", e));
+            first = false;
+        }
+        write!(fmt, "}}")
     }
 }
 
@@ -179,6 +194,16 @@ mod test {
     fn test_empty() {
         let e: EnumSet<Foo> = EnumSet::empty();
         assert!(e.is_empty());
+    }
+
+    #[test]
+    fn test_show() {
+        let mut e = EnumSet::empty();
+        assert_eq!("{}", e.to_string().as_slice());
+        e.add(A);
+        assert_eq!("{A}", e.to_string().as_slice());
+        e.add(C);
+        assert_eq!("{A, C}", e.to_string().as_slice());
     }
 
     ///////////////////////////////////////////////////////////////////////////

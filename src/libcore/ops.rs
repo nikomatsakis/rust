@@ -55,6 +55,8 @@
  *
  */
 
+use kinds::Sized;
+
 /**
  *
  * The `Drop` trait is used to run some code when a value goes out of scope. This
@@ -636,7 +638,7 @@ shr_impl!(uint u8 u16 u32 u64 int i8 i16 i32 i64)
  * ```
  */
 #[lang="index"]
-pub trait Index<Index,Result> {
+pub trait Index<Index, Result> {
     /// The method for the indexing (`Foo[Bar]`) operation
     fn index<'a>(&'a self, index: &Index) -> &'a Result;
 }
@@ -649,7 +651,7 @@ pub trait Index<Index,Result> {
  * # Example
  *
  * A trivial implementation of `IndexMut`. When `Foo[Foo]` happens, it ends up
- * calling `index`, and therefore, `main` prints `Indexing!`.
+ * calling `index_mut`, and therefore, `main` prints `Indexing!`.
  *
  * ```
  * struct Foo;
@@ -667,11 +669,110 @@ pub trait Index<Index,Result> {
  * ```
  */
 #[lang="index_mut"]
-pub trait IndexMut<Index,Result> {
+pub trait IndexMut<Index, Result> {
     /// The method for the indexing (`Foo[Bar]`) operation
     fn index_mut<'a>(&'a mut self, index: &Index) -> &'a mut Result;
 }
 
+/**
+ *
+ * The `Slice` trait is used to specify the functionality of slicing operations
+ * like `arr[from..to]` when used in an immutable context.
+ *
+ * # Example
+ *
+ * A trivial implementation of `Slice`. When `Foo[..Foo]` happens, it ends up
+ * calling `slice_to`, and therefore, `main` prints `Slicing!`.
+ *
+ * ```
+ * struct Foo;
+ *
+ * impl ::core::ops::Slice<Foo, Foo> for Foo {
+ *     fn as_slice_<'a>(&'a self) -> &'a Foo {
+ *         println!("Slicing!");
+ *         self
+ *     }
+ *     fn slice_from_<'a>(&'a self, from: &Foo) -> &'a Foo {
+ *         println!("Slicing!");
+ *         self
+ *     }
+ *     fn slice_to_<'a>(&'a self, to: &Foo) -> &'a Foo {
+ *         println!("Slicing!");
+ *         self
+ *     }
+ *     fn slice_<'a>(&'a self, from: &Foo, to: &Foo) -> &'a Foo {
+ *         println!("Slicing!");
+ *         self
+ *     }
+ * }
+ *
+ * fn main() {
+ *     Foo[..Foo];
+ * }
+ * ```
+ */
+// FIXME(#17273) remove the postscript _s
+#[lang="slice"]
+pub trait Slice<Idx, Sized? Result> for Sized? {
+    /// The method for the slicing operation foo[]
+    fn as_slice_<'a>(&'a self) -> &'a Result;
+    /// The method for the slicing operation foo[from..]
+    fn slice_from_<'a>(&'a self, from: &Idx) -> &'a Result;
+    /// The method for the slicing operation foo[..to]
+    fn slice_to_<'a>(&'a self, to: &Idx) -> &'a Result;
+    /// The method for the slicing operation foo[from..to]
+    fn slice_<'a>(&'a self, from: &Idx, to: &Idx) -> &'a Result;
+}
+
+/**
+ *
+ * The `SliceMut` trait is used to specify the functionality of slicing
+ * operations like `arr[from..to]`, when used in a mutable context.
+ *
+ * # Example
+ *
+ * A trivial implementation of `SliceMut`. When `Foo[Foo..]` happens, it ends up
+ * calling `slice_from_mut`, and therefore, `main` prints `Slicing!`.
+ *
+ * ```
+ * struct Foo;
+ *
+ * impl ::core::ops::SliceMut<Foo, Foo> for Foo {
+ *     fn as_mut_slice_<'a>(&'a mut self) -> &'a mut Foo {
+ *         println!("Slicing!");
+ *         self
+ *     }
+ *     fn slice_from_mut_<'a>(&'a mut self, from: &Foo) -> &'a mut Foo {
+ *         println!("Slicing!");
+ *         self
+ *     }
+ *     fn slice_to_mut_<'a>(&'a mut self, to: &Foo) -> &'a mut Foo {
+ *         println!("Slicing!");
+ *         self
+ *     }
+ *     fn slice_mut_<'a>(&'a mut self, from: &Foo, to: &Foo) -> &'a mut Foo {
+ *         println!("Slicing!");
+ *         self
+ *     }
+ * }
+ *
+ * fn main() {
+ *     Foo[mut Foo..];
+ * }
+ * ```
+ */
+// FIXME(#17273) remove the postscript _s
+#[lang="slice_mut"]
+pub trait SliceMut<Idx, Sized? Result> for Sized? {
+    /// The method for the slicing operation foo[mut]
+    fn as_mut_slice_<'a>(&'a mut self) -> &'a mut Result;
+    /// The method for the slicing operation foo[mut from..]
+    fn slice_from_mut_<'a>(&'a mut self, from: &Idx) -> &'a mut Result;
+    /// The method for the slicing operation foo[mut ..to]
+    fn slice_to_mut_<'a>(&'a mut self, to: &Idx) -> &'a mut Result;
+    /// The method for the slicing operation foo[mut from..to]
+    fn slice_mut_<'a>(&'a mut self, from: &Idx, to: &Idx) -> &'a mut Result;
+}
 /**
  *
  * The `Deref` trait is used to specify the functionality of dereferencing
@@ -700,7 +801,7 @@ pub trait IndexMut<Index,Result> {
  * ```
  */
 #[lang="deref"]
-pub trait Deref<Result> {
+pub trait Deref<Sized? Result> {
     /// The method called to dereference a value
     fn deref<'a>(&'a self) -> &'a Result;
 }
@@ -740,7 +841,7 @@ pub trait Deref<Result> {
  * ```
  */
 #[lang="deref_mut"]
-pub trait DerefMut<Result>: Deref<Result> {
+pub trait DerefMut<Sized? Result>: Deref<Result> {
     /// The method called to mutably dereference a value
     fn deref_mut<'a>(&'a mut self) -> &'a mut Result;
 }

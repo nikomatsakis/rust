@@ -16,7 +16,7 @@ use driver::driver;
 use driver::session::Session;
 
 use back;
-use back::link;
+use back::write;
 use back::target_strs;
 use back::{arm, x86, x86_64, mips, mipsel};
 use lint;
@@ -30,7 +30,8 @@ use syntax::diagnostic::{ColorConfig, Auto, Always, Never};
 use syntax::parse;
 use syntax::parse::token::InternedString;
 
-use std::collections::{HashSet, HashMap};
+use std::collections::HashMap;
+use std::collections::hashmap::{Occupied, Vacant};
 use getopts::{optopt, optmulti, optflag, optflagopt};
 use getopts;
 use std::cell::{RefCell};
@@ -72,11 +73,11 @@ pub struct Options {
     pub debuginfo: DebugInfoLevel,
     pub lint_opts: Vec<(String, lint::Level)>,
     pub describe_lints: bool,
-    pub output_types: Vec<back::link::OutputType> ,
+    pub output_types: Vec<back::write::OutputType> ,
     // This was mutable for rustpkg, which updates search paths based on the
     // parsed code. It remains mutable in case its replacements wants to use
     // this.
-    pub addl_lib_search_paths: RefCell<HashSet<Path>>,
+    pub addl_lib_search_paths: RefCell<Vec<Path>>,
     pub maybe_sysroot: Option<Path>,
     pub target_triple: String,
     // User-specified cfg meta items. The compiler itself will add additional
@@ -113,7 +114,7 @@ pub fn basic_options() -> Options {
         lint_opts: Vec::new(),
         describe_lints: false,
         output_types: Vec::new(),
-        addl_lib_search_paths: RefCell::new(HashSet::new()),
+        addl_lib_search_paths: RefCell::new(Vec::new()),
         maybe_sysroot: None,
         target_triple: driver::host_triple().to_string(),
         cfg: Vec::new(),
@@ -176,11 +177,9 @@ debugging_opts!(
         SHOW_SPAN,
         COUNT_TYPE_SIZES,
         META_STATS,
-        NO_OPT,
         GC,
         PRINT_LINK_ARGS,
         PRINT_LLVM_PASSES,
-        LTO,
         AST_JSON,
         AST_JSON_NOEXPAND,
         LS,
@@ -212,14 +211,12 @@ pub fn debugging_opts_map() -> Vec<(&'static str, &'static str, u64)> {
      ("count-type-sizes", "count the sizes of aggregate types",
       COUNT_TYPE_SIZES),
      ("meta-stats", "gather metadata statistics", META_STATS),
-     ("no-opt", "do not optimize, even if -O is passed", NO_OPT),
      ("print-link-args", "Print the arguments passed to the linker",
       PRINT_LINK_ARGS),
      ("gc", "Garbage collect shared data (experimental)", GC),
      ("print-llvm-passes",
       "Prints the llvm optimization passes being run",
       PRINT_LLVM_PASSES),
-     ("lto", "Perform LLVM link-time optimizations", LTO),
      ("ast-json", "Print the AST as JSON and halt", AST_JSON),
      ("ast-json-noexpand", "Print the pre-expansion AST as JSON and halt", AST_JSON_NOEXPAND),
      ("ls", "List the symbols defined by a library crate", LS),
@@ -233,6 +230,21 @@ pub fn debugging_opts_map() -> Vec<(&'static str, &'static str, u64)> {
                        --pretty flowgraph output", FLOWGRAPH_PRINT_ASSIGNS),
      ("flowgraph-print-all", "Include all dataflow analysis data in \
                        --pretty flowgraph output", FLOWGRAPH_PRINT_ALL))
+}
+
+#[deriving(Clone)]
+pub enum Passes {
+    SomePasses(Vec<String>),
+    AllPasses,
+}
+
+impl Passes {
+    pub fn is_empty(&self) -> bool {
+        match *self {
+            SomePasses(ref v) => v.is_empty(),
+            AllPasses => false,
+        }
+    }
 }
 
 /// Declare a macro that will define all CodegenOptions fields and parsers all
@@ -261,7 +273,7 @@ macro_rules! cgoptions(
         &[ $( (stringify!($opt), cgsetters::$opt, $desc) ),* ];
 
     mod cgsetters {
-        use super::CodegenOptions;
+        use super::{CodegenOptions, Passes, SomePasses, AllPasses};
 
         $(
             pub fn $opt(cg: &mut CodegenOptions, v: Option<&str>) -> bool {
@@ -303,6 +315,31 @@ macro_rules! cgoptions(
             }
         }
 
+        fn parse_uint(slot: &mut uint, v: Option<&str>) -> bool {
+            use std::from_str::FromStr;
+            match v.and_then(FromStr::from_str) {
+                Some(i) => { *slot = i; true },
+                None => false
+            }
+        }
+
+        fn parse_passes(slot: &mut Passes, v: Option<&str>) -> bool {
+            match v {
+                Some("all") => {
+                    *slot = AllPasses;
+                    true
+                }
+                v => {
+                    let mut passes = vec!();
+                    if parse_list(&mut passes, v) {
+                        *slot = SomePasses(passes);
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+        }
     }
 ) )
 
@@ -313,6 +350,8 @@ cgoptions!(
         "system linker to link outputs with"),
     link_args: Vec<String> = (Vec::new(), parse_list,
         "extra arguments to pass to the linker (space separated)"),
+    lto: bool = (false, parse_bool,
+        "perform LLVM link-time optimizations"),
     target_cpu: String = ("generic".to_string(), parse_string,
         "select target processor (llc -mcpu=help for details)"),
     target_feature: String = ("".to_string(), parse_string,
@@ -347,12 +386,16 @@ cgoptions!(
          "metadata to mangle symbol names with"),
     extra_filename: String = ("".to_string(), parse_string,
          "extra data to put in each output filename"),
+    codegen_units: uint = (1, parse_uint,
+        "divide crate into N units to optimize in parallel"),
+    remark: Passes = (SomePasses(Vec::new()), parse_passes,
+        "print remarks for these optimization passes (space separated, or \"all\")"),
 )
 
 pub fn build_codegen_options(matches: &getopts::Matches) -> CodegenOptions
 {
     let mut cg = basic_codegen_options();
-    for option in matches.opt_strs("C").move_iter() {
+    for option in matches.opt_strs("C").into_iter() {
         let mut iter = option.as_slice().splitn(1, '=');
         let key = iter.next().unwrap();
         let value = iter.next();
@@ -442,7 +485,7 @@ pub fn build_configuration(sess: &Session) -> ast::CrateConfig {
     if sess.opts.test {
         append_configuration(&mut user_cfg, InternedString::new("test"))
     }
-    user_cfg.move_iter().collect::<Vec<_>>().append(default_cfg.as_slice())
+    user_cfg.into_iter().collect::<Vec<_>>().append(default_cfg.as_slice())
 }
 
 pub fn get_os(triple: &str) -> Option<abi::Os> {
@@ -586,7 +629,7 @@ pub fn optgroups() -> Vec<getopts::OptGroup> {
 
 // Convert strings provided as --cfg [cfgspec] into a crate_cfg
 fn parse_cfgspecs(cfgspecs: Vec<String> ) -> ast::CrateConfig {
-    cfgspecs.move_iter().map(|s| {
+    cfgspecs.into_iter().map(|s| {
         parse::parse_meta_from_source_str("cfgspec".to_string(),
                                           s.to_string(),
                                           Vec::new(),
@@ -608,7 +651,7 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
     let mut describe_lints = false;
 
     for &level in [lint::Allow, lint::Warn, lint::Deny, lint::Forbid].iter() {
-        for lint_name in matches.opt_strs(level.as_str()).move_iter() {
+        for lint_name in matches.opt_strs(level.as_str()).into_iter() {
             if lint_name.as_slice() == "help" {
                 describe_lints = true;
             } else {
@@ -646,11 +689,11 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
         for unparsed_output_type in unparsed_output_types.iter() {
             for part in unparsed_output_type.as_slice().split(',') {
                 let output_type = match part.as_slice() {
-                    "asm"  => link::OutputTypeAssembly,
-                    "ir"   => link::OutputTypeLlvmAssembly,
-                    "bc"   => link::OutputTypeBitcode,
-                    "obj"  => link::OutputTypeObject,
-                    "link" => link::OutputTypeExe,
+                    "asm"  => write::OutputTypeAssembly,
+                    "ir"   => write::OutputTypeLlvmAssembly,
+                    "bc"   => write::OutputTypeBitcode,
+                    "obj"  => write::OutputTypeObject,
+                    "link" => write::OutputTypeExe,
                     _ => {
                         early_error(format!("unknown emission type: `{}`",
                                             part).as_slice())
@@ -663,16 +706,14 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
     output_types.as_mut_slice().sort();
     output_types.dedup();
     if output_types.len() == 0 {
-        output_types.push(link::OutputTypeExe);
+        output_types.push(write::OutputTypeExe);
     }
 
     let sysroot_opt = matches.opt_str("sysroot").map(|m| Path::new(m));
     let target = matches.opt_str("target").unwrap_or(
         driver::host_triple().to_string());
     let opt_level = {
-        if (debugging_opts & NO_OPT) != 0 {
-            No
-        } else if matches.opt_present("O") {
+        if matches.opt_present("O") {
             if matches.opt_present("opt-level") {
                 early_error("-O and --opt-level both provided");
             }
@@ -707,8 +748,8 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
             None      |
             Some("2") => FullDebugInfo,
             Some(arg) => {
-                early_error(format!("optimization level needs to be between \
-                                     0-3 (instead was `{}`)",
+                early_error(format!("debug info level needs to be between \
+                                     0-2 (instead was `{}`)",
                                     arg).as_slice());
             }
         }
@@ -735,6 +776,10 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
     }
     let cg = build_codegen_options(matches);
 
+    if !cg.remark.is_empty() && debuginfo == NoDebugInfo {
+        early_warn("-C remark will not show source locations without --debuginfo");
+    }
+
     let color = match matches.opt_str("color").as_ref().map(|s| s.as_slice()) {
         Some("auto")   => Auto,
         Some("always") => Always,
@@ -760,8 +805,11 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
             Some(s) => s,
             None => early_error("--extern value must be of the format `foo=bar`"),
         };
-        let locs = externs.find_or_insert(name.to_string(), Vec::new());
-        locs.push(location.to_string());
+
+        match externs.entry(name.to_string()) {
+            Vacant(entry) => { entry.set(vec![location.to_string()]); },
+            Occupied(mut entry) => { entry.get_mut().push(location.to_string()); },
+        }
     }
 
     let crate_name = matches.opt_str("crate-name");

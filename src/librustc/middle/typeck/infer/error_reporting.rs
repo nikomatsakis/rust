@@ -60,7 +60,6 @@ time of error detection.
 */
 
 use std::collections::HashSet;
-use std::gc::GC;
 use middle::def;
 use middle::subst;
 use middle::ty;
@@ -84,12 +83,12 @@ use std::rc::Rc;
 use std::string::String;
 use syntax::ast;
 use syntax::ast_map;
-use syntax::ast_util;
 use syntax::ast_util::{name_to_dummy_lifetime, PostExpansionMethod};
 use syntax::owned_slice::OwnedSlice;
 use syntax::codemap;
 use syntax::parse::token;
 use syntax::print::pprust;
+use syntax::ptr::P;
 use util::ppaux::bound_region_to_string;
 use util::ppaux::note_and_explain_region;
 
@@ -161,12 +160,12 @@ trait ErrorReportingHelpers {
                                 decl: &ast::FnDecl,
                                 fn_style: ast::FnStyle,
                                 ident: ast::Ident,
-                                opt_explicit_self: Option<ast::ExplicitSelf_>,
+                                opt_explicit_self: Option<&ast::ExplicitSelf_>,
                                 generics: &ast::Generics,
                                 span: codemap::Span);
 }
 
-impl<'a> ErrorReporting for InferCtxt<'a> {
+impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
     fn report_region_errors(&self,
                             errors: &Vec<RegionResolutionError>) {
         let p_errors = self.process_errors(errors);
@@ -336,7 +335,7 @@ impl<'a> ErrorReporting for InferCtxt<'a> {
                                   same_frs: &FreeRegionsFromSameFn) {
             let scope_id = same_frs.scope_id;
             let (sub_fr, sup_fr) = (same_frs.sub_fr, same_frs.sup_fr);
-            for sr in same_regions.mut_iter() {
+            for sr in same_regions.iter_mut() {
                 if sr.contains(&sup_fr.bound_region)
                    && scope_id == sr.scope_id {
                     sr.push(sub_fr.bound_region);
@@ -364,6 +363,7 @@ impl<'a> ErrorReporting for InferCtxt<'a> {
             infer::ExprAssignable(_) => "mismatched types",
             infer::RelateTraitRefs(_) => "mismatched traits",
             infer::RelateSelfType(_) => "mismatched types",
+            infer::RelateOutputImplTypes(_) => "mismatched types",
             infer::MatchExpressionArm(_, _) => "match arms have incompatible types",
             infer::IfExpression(_) => "if and else have incompatible types",
         };
@@ -855,8 +855,8 @@ impl<'a> ErrorReporting for InferCtxt<'a> {
             Some(ref node) => match *node {
                 ast_map::NodeItem(ref item) => {
                     match item.node {
-                        ast::ItemFn(fn_decl, ref pur, _, ref gen, _) => {
-                            Some((fn_decl, gen, *pur, item.ident, None, item.span))
+                        ast::ItemFn(ref fn_decl, pur, _, ref gen, _) => {
+                            Some((&**fn_decl, gen, pur, item.ident, None, item.span))
                         },
                         _ => None
                     }
@@ -868,9 +868,10 @@ impl<'a> ErrorReporting for InferCtxt<'a> {
                                   m.pe_generics(),
                                   m.pe_fn_style(),
                                   m.pe_ident(),
-                                  Some(m.pe_explicit_self().node),
+                                  Some(&m.pe_explicit_self().node),
                                   m.span))
                         }
+                        ast::TypeImplItem(_) => None,
                     }
                 },
                 _ => None
@@ -885,7 +886,7 @@ impl<'a> ErrorReporting for InferCtxt<'a> {
                                        generics, same_regions, &life_giver);
         let (fn_decl, expl_self, generics) = rebuilder.rebuild();
         self.give_expl_lifetime_param(&fn_decl, fn_style, ident,
-                                      expl_self, &generics, span);
+                                      expl_self.as_ref(), &generics, span);
     }
 }
 
@@ -900,10 +901,10 @@ struct RebuildPathInfo<'a> {
     region_names: &'a HashSet<ast::Name>
 }
 
-struct Rebuilder<'a> {
-    tcx: &'a ty::ctxt,
-    fn_decl: ast::P<ast::FnDecl>,
-    expl_self_opt: Option<ast::ExplicitSelf_>,
+struct Rebuilder<'a, 'tcx: 'a> {
+    tcx: &'a ty::ctxt<'tcx>,
+    fn_decl: &'a ast::FnDecl,
+    expl_self_opt: Option<&'a ast::ExplicitSelf_>,
     generics: &'a ast::Generics,
     same_regions: &'a [SameRegions],
     life_giver: &'a LifeGiver,
@@ -916,14 +917,14 @@ enum FreshOrKept {
     Kept
 }
 
-impl<'a> Rebuilder<'a> {
-    fn new(tcx: &'a ty::ctxt,
-           fn_decl: ast::P<ast::FnDecl>,
-           expl_self_opt: Option<ast::ExplicitSelf_>,
+impl<'a, 'tcx> Rebuilder<'a, 'tcx> {
+    fn new(tcx: &'a ty::ctxt<'tcx>,
+           fn_decl: &'a ast::FnDecl,
+           expl_self_opt: Option<&'a ast::ExplicitSelf_>,
            generics: &'a ast::Generics,
            same_regions: &'a [SameRegions],
            life_giver: &'a LifeGiver)
-           -> Rebuilder<'a> {
+           -> Rebuilder<'a, 'tcx> {
         Rebuilder {
             tcx: tcx,
             fn_decl: fn_decl,
@@ -938,9 +939,9 @@ impl<'a> Rebuilder<'a> {
 
     fn rebuild(&self)
                -> (ast::FnDecl, Option<ast::ExplicitSelf_>, ast::Generics) {
-        let mut expl_self_opt = self.expl_self_opt;
+        let mut expl_self_opt = self.expl_self_opt.map(|x| x.clone());
         let mut inputs = self.fn_decl.inputs.clone();
-        let mut output = self.fn_decl.output;
+        let mut output = self.fn_decl.output.clone();
         let mut ty_params = self.generics.ty_params.clone();
         let where_clause = self.generics.where_clause.clone();
         let mut kept_lifetimes = HashSet::new();
@@ -958,7 +959,7 @@ impl<'a> Rebuilder<'a> {
                                                    &anon_nums, &region_names);
             inputs = self.rebuild_args_ty(inputs.as_slice(), lifetime,
                                           &anon_nums, &region_names);
-            output = self.rebuild_arg_ty_or_output(output, lifetime,
+            output = self.rebuild_arg_ty_or_output(&*output, lifetime,
                                                    &anon_nums, &region_names);
             ty_params = self.rebuild_ty_params(ty_params, lifetime,
                                                &region_names);
@@ -1068,7 +1069,7 @@ impl<'a> Rebuilder<'a> {
                 id: ty_param.id,
                 bounds: bounds,
                 unbound: ty_param.unbound.clone(),
-                default: ty_param.default,
+                default: ty_param.default.clone(),
                 span: ty_param.span,
             }
         })
@@ -1087,8 +1088,8 @@ impl<'a> Rebuilder<'a> {
                     // be passing down a map.
                     ast::RegionTyParamBound(lt)
                 }
-                &ast::UnboxedFnTyParamBound(unboxed_function_type) => {
-                    ast::UnboxedFnTyParamBound(unboxed_function_type)
+                &ast::UnboxedFnTyParamBound(ref unboxed_function_type) => {
+                    ast::UnboxedFnTyParamBound((*unboxed_function_type).clone())
                 }
                 &ast::TraitTyParamBound(ref tr) => {
                     let last_seg = tr.path.segments.last().unwrap();
@@ -1109,6 +1110,7 @@ impl<'a> Rebuilder<'a> {
                     ast::TraitTyParamBound(ast::TraitRef {
                         path: new_path,
                         ref_id: tr.ref_id,
+                        lifetimes: tr.lifetimes.clone(),
                     })
                 }
             }
@@ -1122,7 +1124,7 @@ impl<'a> Rebuilder<'a> {
                          region_names: &HashSet<ast::Name>)
                          -> Option<ast::ExplicitSelf_> {
         match expl_self_opt {
-            Some(expl_self) => match expl_self {
+            Some(ref expl_self) => match *expl_self {
                 ast::SelfRegion(lt_opt, muta, id) => match lt_opt {
                     Some(lt) => if region_names.contains(&lt.name) {
                         return Some(ast::SelfRegion(Some(lifetime), muta, id));
@@ -1177,11 +1179,11 @@ impl<'a> Rebuilder<'a> {
                        -> Vec<ast::Arg> {
         let mut new_inputs = Vec::new();
         for arg in inputs.iter() {
-            let new_ty = self.rebuild_arg_ty_or_output(arg.ty, lifetime,
+            let new_ty = self.rebuild_arg_ty_or_output(&*arg.ty, lifetime,
                                                        anon_nums, region_names);
             let possibly_new_arg = ast::Arg {
                 ty: new_ty,
-                pat: arg.pat,
+                pat: arg.pat.clone(),
                 id: arg.id
             };
             new_inputs.push(possibly_new_arg);
@@ -1190,36 +1192,40 @@ impl<'a> Rebuilder<'a> {
     }
 
     fn rebuild_arg_ty_or_output(&self,
-                                ty: ast::P<ast::Ty>,
+                                ty: &ast::Ty,
                                 lifetime: ast::Lifetime,
                                 anon_nums: &HashSet<uint>,
                                 region_names: &HashSet<ast::Name>)
-                                -> ast::P<ast::Ty> {
-        let mut new_ty = ty;
+                                -> P<ast::Ty> {
+        let mut new_ty = P(ty.clone());
         let mut ty_queue = vec!(ty);
-        let mut cur_ty;
         while !ty_queue.is_empty() {
-            cur_ty = ty_queue.shift().unwrap();
+            let cur_ty = ty_queue.shift().unwrap();
             match cur_ty.node {
-                ast::TyRptr(lt_opt, mut_ty) => {
-                    match lt_opt {
-                        Some(lt) => if region_names.contains(&lt.name) {
-                            new_ty = self.rebuild_ty(new_ty, cur_ty,
-                                                     lifetime, None);
-                        },
+                ast::TyRptr(lt_opt, ref mut_ty) => {
+                    let rebuild = match lt_opt {
+                        Some(lt) => region_names.contains(&lt.name),
                         None => {
                             let anon = self.cur_anon.get();
-                            if anon_nums.contains(&anon) {
-                                new_ty = self.rebuild_ty(new_ty, cur_ty,
-                                                         lifetime, None);
+                            let rebuild = anon_nums.contains(&anon);
+                            if rebuild {
                                 self.track_anon(anon);
                             }
                             self.inc_and_offset_cur_anon(1);
+                            rebuild
                         }
+                    };
+                    if rebuild {
+                        let to = ast::Ty {
+                            id: cur_ty.id,
+                            node: ast::TyRptr(Some(lifetime), mut_ty.clone()),
+                            span: cur_ty.span
+                        };
+                        new_ty = self.rebuild_ty(new_ty, P(to));
                     }
-                    ty_queue.push(mut_ty.ty);
+                    ty_queue.push(&*mut_ty.ty);
                 }
-                ast::TyPath(ref path, _, id) => {
+                ast::TyPath(ref path, ref bounds, id) => {
                     let a_def = match self.tcx.def_map.borrow().find(&id) {
                         None => {
                             self.tcx
@@ -1231,11 +1237,8 @@ impl<'a> Rebuilder<'a> {
                         Some(&d) => d
                     };
                     match a_def {
-                        def::DefTy(did) | def::DefStruct(did) => {
-                            let ty::Polytype {
-                                generics: generics,
-                                ty: _
-                            } = ty::lookup_item_type(self.tcx, did);
+                        def::DefTy(did, _) | def::DefStruct(did) => {
+                            let generics = ty::lookup_item_type(self.tcx, did).generics;
 
                             let expected =
                                 generics.regions.len(subst::TypeSpace);
@@ -1266,85 +1269,77 @@ impl<'a> Rebuilder<'a> {
                                 anon_nums: anon_nums,
                                 region_names: region_names
                             };
-                            new_ty = self.rebuild_ty(new_ty, cur_ty,
-                                                     lifetime,
-                                                     Some(rebuild_info));
+                            let new_path = self.rebuild_path(rebuild_info, lifetime);
+                            let to = ast::Ty {
+                                id: cur_ty.id,
+                                node: ast::TyPath(new_path, bounds.clone(), id),
+                                span: cur_ty.span
+                            };
+                            new_ty = self.rebuild_ty(new_ty, P(to));
                         }
                         _ => ()
                     }
 
                 }
-                _ => ty_queue.push_all_move(ast_util::get_inner_tys(cur_ty))
+
+                ast::TyPtr(ref mut_ty) => {
+                    ty_queue.push(&*mut_ty.ty);
+                }
+                ast::TyBox(ref ty) |
+                ast::TyVec(ref ty) |
+                ast::TyUniq(ref ty) |
+                ast::TyFixedLengthVec(ref ty, _) => {
+                    ty_queue.push(&**ty);
+                }
+                ast::TyTup(ref tys) => ty_queue.extend(tys.iter().map(|ty| &**ty)),
+                _ => {}
             }
         }
         new_ty
     }
 
     fn rebuild_ty(&self,
-                  from: ast::P<ast::Ty>,
-                  to: ast::P<ast::Ty>,
-                  lifetime: ast::Lifetime,
-                  rebuild_path_info: Option<RebuildPathInfo>)
-                  -> ast::P<ast::Ty> {
+                  from: P<ast::Ty>,
+                  to: P<ast::Ty>)
+                  -> P<ast::Ty> {
 
-        fn build_to(from: ast::P<ast::Ty>,
-                    to: ast::P<ast::Ty>)
-                    -> ast::P<ast::Ty> {
-            if from.id == to.id {
-                return to;
+        fn build_to(from: P<ast::Ty>,
+                    to: &mut Option<P<ast::Ty>>)
+                    -> P<ast::Ty> {
+            if Some(from.id) == to.as_ref().map(|ty| ty.id) {
+                return to.take().expect("`to` type found more than once during rebuild");
             }
-            let new_node = match from.node {
-                ast::TyRptr(ref lifetime, ref mut_ty) => {
-                    let new_mut_ty = ast::MutTy {
-                        ty: build_to(mut_ty.ty, to),
-                        mutbl: mut_ty.mutbl
-                    };
-                    ast::TyRptr(*lifetime, new_mut_ty)
-                }
-                ast::TyPtr(ref mut_ty) => {
-                    let new_mut_ty = ast::MutTy {
-                        ty: build_to(mut_ty.ty, to),
-                        mutbl: mut_ty.mutbl
-                    };
-                    ast::TyPtr(new_mut_ty)
-                }
-                ast::TyBox(ref ty) => ast::TyBox(build_to(*ty, to)),
-                ast::TyVec(ref ty) => ast::TyVec(build_to(*ty, to)),
-                ast::TyUniq(ref ty) => ast::TyUniq(build_to(*ty, to)),
-                ast::TyFixedLengthVec(ref ty, ref e) => {
-                    ast::TyFixedLengthVec(build_to(*ty, to), *e)
-                }
-                ast::TyTup(ref tys) => {
-                    let mut new_tys = Vec::new();
-                    for ty in tys.iter() {
-                        new_tys.push(build_to(*ty, to));
+            from.map(|ast::Ty {id, node, span}| {
+                let new_node = match node {
+                    ast::TyRptr(lifetime, mut_ty) => {
+                        ast::TyRptr(lifetime, ast::MutTy {
+                            mutbl: mut_ty.mutbl,
+                            ty: build_to(mut_ty.ty, to),
+                        })
                     }
-                    ast::TyTup(new_tys)
-                }
-                ast::TyParen(ref typ) => ast::TyParen(build_to(*typ, to)),
-                ref other => other.clone()
-            };
-            box(GC) ast::Ty { id: from.id, node: new_node, span: from.span }
+                    ast::TyPtr(mut_ty) => {
+                        ast::TyPtr(ast::MutTy {
+                            mutbl: mut_ty.mutbl,
+                            ty: build_to(mut_ty.ty, to),
+                        })
+                    }
+                    ast::TyBox(ty) => ast::TyBox(build_to(ty, to)),
+                    ast::TyVec(ty) => ast::TyVec(build_to(ty, to)),
+                    ast::TyUniq(ty) => ast::TyUniq(build_to(ty, to)),
+                    ast::TyFixedLengthVec(ty, e) => {
+                        ast::TyFixedLengthVec(build_to(ty, to), e)
+                    }
+                    ast::TyTup(tys) => {
+                        ast::TyTup(tys.into_iter().map(|ty| build_to(ty, to)).collect())
+                    }
+                    ast::TyParen(typ) => ast::TyParen(build_to(typ, to)),
+                    other => other
+                };
+                ast::Ty { id: id, node: new_node, span: span }
+            })
         }
 
-        let new_ty_node = match to.node {
-            ast::TyRptr(_, mut_ty) => ast::TyRptr(Some(lifetime), mut_ty),
-            ast::TyPath(_, ref bounds, id) => {
-                let rebuild_info = match rebuild_path_info {
-                    Some(ri) => ri,
-                    None => fail!("expect index_opt in rebuild_ty/ast::TyPath")
-                };
-                let new_path = self.rebuild_path(rebuild_info, lifetime);
-                ast::TyPath(new_path, bounds.clone(), id)
-            }
-            _ => fail!("expect ast::TyRptr or ast::TyPath")
-        };
-        let new_ty = box(GC) ast::Ty {
-            id: to.id,
-            node: new_ty_node,
-            span: to.span
-        };
-        build_to(from, new_ty)
+        build_to(from, &mut Some(to))
     }
 
     fn rebuild_path(&self,
@@ -1384,8 +1379,8 @@ impl<'a> Rebuilder<'a> {
                 }
             }
         }
-        let new_types = last_seg.types.map(|&t| {
-            self.rebuild_arg_ty_or_output(t, lifetime, anon_nums, region_names)
+        let new_types = last_seg.types.map(|t| {
+            self.rebuild_arg_ty_or_output(&**t, lifetime, anon_nums, region_names)
         });
         let new_seg = ast::PathSegment {
             identifier: last_seg.identifier,
@@ -1403,12 +1398,12 @@ impl<'a> Rebuilder<'a> {
     }
 }
 
-impl<'a> ErrorReportingHelpers for InferCtxt<'a> {
+impl<'a, 'tcx> ErrorReportingHelpers for InferCtxt<'a, 'tcx> {
     fn give_expl_lifetime_param(&self,
                                 decl: &ast::FnDecl,
                                 fn_style: ast::FnStyle,
                                 ident: ast::Ident,
-                                opt_explicit_self: Option<ast::ExplicitSelf_>,
+                                opt_explicit_self: Option<&ast::ExplicitSelf_>,
                                 generics: &ast::Generics,
                                 span: codemap::Span) {
         let suggested_fn = pprust::fun_to_string(decl, fn_style, ident,
@@ -1473,7 +1468,11 @@ impl<'a> ErrorReportingHelpers for InferCtxt<'a> {
                         format!("traits are compatible")
                     }
                     infer::RelateSelfType(_) => {
-                        format!("type matches impl")
+                        format!("self type matches impl self type")
+                    }
+                    infer::RelateOutputImplTypes(_) => {
+                        format!("trait type parameters matches those \
+                                 specified on the impl")
                     }
                     infer::MatchExpressionArm(_, _) => {
                         format!("match arms have compatible types")
@@ -1561,7 +1560,7 @@ impl<'a> ErrorReportingHelpers for InferCtxt<'a> {
                     "...so that it can be closed over into an object");
             }
             infer::RelateProcBound(span, var_node_id, _ty) => {
-                self.tcx.sess.span_err(
+                self.tcx.sess.span_note(
                     span,
                     format!(
                         "...so that the variable `{}` can be captured \
@@ -1647,7 +1646,7 @@ impl<'a> ErrorReportingHelpers for InferCtxt<'a> {
     }
 }
 
-trait Resolvable {
+pub trait Resolvable {
     fn resolve(&self, infcx: &InferCtxt) -> Self;
     fn contains_error(&self) -> bool;
 }
@@ -1686,10 +1685,11 @@ fn lifetimes_in_scope(tcx: &ty::ctxt,
             },
             ast_map::NodeImplItem(ii) => {
                 match *ii {
-                    ast::MethodImplItem(m) => {
+                    ast::MethodImplItem(ref m) => {
                         taken.push_all(m.pe_generics().lifetimes.as_slice());
                         Some(m.id)
                     }
+                    ast::TypeImplItem(_) => None,
                 }
             }
             _ => None

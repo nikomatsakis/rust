@@ -15,7 +15,7 @@
 //! This module contains the implementation of a Windows specific console TTY.
 //! Also converts between UTF-16 and UTF-8. Windows has very poor support for
 //! UTF-8 and some functions will fail. In particular ReadFile and ReadConsole
-//! will fail when the codepage is set to UTF-8 and a unicode character is
+//! will fail when the codepage is set to UTF-8 and a Unicode character is
 //! entered.
 //!
 //! FIXME
@@ -67,7 +67,7 @@ impl WindowsTTY {
         // If the file descriptor is one of stdin, stderr, or stdout
         // then it should not be closed by us
         let closeme = match fd {
-            0..2 => false,
+            0...2 => false,
             _ => true,
         };
         let handle = unsafe { get_osfhandle(fd) as HANDLE };
@@ -98,7 +98,7 @@ impl RtioTTY for WindowsTTY {
                                          utf16.as_mut_ptr() as LPVOID,
                                          utf16.len() as u32,
                                          &mut num as LPDWORD,
-                                         ptr::mut_null()) } {
+                                         ptr::null_mut()) } {
                 0 => return Err(super::last_error()),
                 _ => (),
             };
@@ -123,7 +123,7 @@ impl RtioTTY for WindowsTTY {
                                      utf16.as_ptr() as LPCVOID,
                                      utf16.len() as u32,
                                      &mut num as LPDWORD,
-                                     ptr::mut_null()) } {
+                                     ptr::null_mut()) } {
             0 => Err(super::last_error()),
             _ => Ok(()),
         }

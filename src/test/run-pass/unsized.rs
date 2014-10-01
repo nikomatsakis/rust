@@ -28,6 +28,7 @@ struct S1<Sized? X> { marker: marker::CovariantType<X> }
 enum E<Sized? X> {}
 impl <Sized? X> T1 for S1<X> {}
 fn f<Sized? X>() {}
+type TT<Sized? T> = T;
 
 pub fn main() {
 }

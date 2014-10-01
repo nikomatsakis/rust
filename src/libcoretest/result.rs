@@ -69,6 +69,7 @@ pub fn test_impl_map_err() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_collect() {
     let v: Result<Vec<int>, ()> = collect(range(0i, 0).map(|_| Ok::<int, ()>(0)));
     assert!(v == Ok(vec![]));
@@ -83,7 +84,7 @@ fn test_collect() {
     // test that it does not take more elements than it needs
     let mut functions = [|| Ok(()), || Err(1i), || fail!()];
 
-    let v: Result<Vec<()>, int> = collect(functions.mut_iter().map(|f| (*f)()));
+    let v: Result<Vec<()>, int> = collect(functions.iter_mut().map(|f| (*f)()));
     assert!(v == Err(1));
 }
 
@@ -103,7 +104,7 @@ fn test_fold() {
     // test that it does not take more elements than it needs
     let mut functions = [|| Ok(()), || Err(1i), || fail!()];
 
-    assert_eq!(fold_(functions.mut_iter()
+    assert_eq!(fold_(functions.iter_mut()
                     .map(|f| (*f)())),
                Err(1));
 }

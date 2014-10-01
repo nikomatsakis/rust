@@ -46,15 +46,14 @@ use ptr::RawPtr;
 use ptr;
 use result::{Err, Ok, Result};
 use slice::{Slice, ImmutableSlice, MutableSlice, ImmutablePartialEqSlice};
+use slice::CloneableVector;
 use str::{Str, StrSlice, StrAllocating};
 use string::String;
 use sync::atomic::{AtomicInt, INIT_ATOMIC_INT, SeqCst};
 use vec::Vec;
 
-#[cfg(unix)]
-use c_str::ToCStr;
-#[cfg(unix)]
-use libc::c_char;
+#[cfg(unix)] use c_str::ToCStr;
+#[cfg(unix)] use libc::c_char;
 
 /// Get the number of cores available
 pub fn num_cpus() -> uint {
@@ -218,7 +217,7 @@ fn with_env_lock<T>(f: || -> T) -> T {
 /// }
 /// ```
 pub fn env() -> Vec<(String,String)> {
-    env_as_bytes().move_iter().map(|(k,v)| {
+    env_as_bytes().into_iter().map(|(k,v)| {
         let k = String::from_utf8_lossy(k.as_slice()).into_string();
         let v = String::from_utf8_lossy(v.as_slice()).into_string();
         (k,v)
@@ -260,8 +259,11 @@ pub fn env_as_bytes() -> Vec<(Vec<u8>,Vec<u8>)> {
             let mut i = 0;
             while *ch.offset(i) != 0 {
                 let p = &*ch.offset(i);
-                let len = ptr::position(p, |c| *c == 0);
-                raw::buf_as_slice(p, len, |s| {
+                let mut len = 0;
+                while *(p as *const _).offset(len) != 0 {
+                    len += 1;
+                }
+                raw::buf_as_slice(p, len as uint, |s| {
                     result.push(String::from_utf16_lossy(s).into_bytes());
                 });
                 i += len as int + 1;
@@ -276,17 +278,18 @@ pub fn env_as_bytes() -> Vec<(Vec<u8>,Vec<u8>)> {
             extern {
                 fn rust_env_pairs() -> *const *const c_char;
             }
-            let environ = rust_env_pairs();
+            let mut environ = rust_env_pairs();
             if environ as uint == 0 {
                 fail!("os::env() failure getting env string from OS: {}",
                        os::last_os_error());
             }
             let mut result = Vec::new();
-            ptr::array_each(environ, |e| {
+            while *environ != 0 as *const _ {
                 let env_pair =
-                    Vec::from_slice(CString::new(e, false).as_bytes_no_nul());
+                    CString::new(*environ, false).as_bytes_no_nul().to_vec();
                 result.push(env_pair);
-            });
+                environ = environ.offset(1);
+            }
             result
         }
 
@@ -294,9 +297,9 @@ pub fn env_as_bytes() -> Vec<(Vec<u8>,Vec<u8>)> {
             let mut pairs = Vec::new();
             for p in input.iter() {
                 let mut it = p.as_slice().splitn(1, |b| *b == b'=');
-                let key = Vec::from_slice(it.next().unwrap());
+                let key = it.next().unwrap().to_vec();
                 let default: &[u8] = &[];
-                let val = Vec::from_slice(it.next().unwrap_or(default));
+                let val = it.next().unwrap_or(default).to_vec();
                 pairs.push((key, val));
             }
             pairs
@@ -350,8 +353,7 @@ pub fn getenv_as_bytes(n: &str) -> Option<Vec<u8>> {
             if s.is_null() {
                 None
             } else {
-                Some(Vec::from_slice(CString::new(s as *const i8,
-                                                  false).as_bytes_no_nul()))
+                Some(CString::new(s as *const i8, false).as_bytes_no_nul().to_vec())
             }
         })
     }
@@ -364,8 +366,8 @@ pub fn getenv(n: &str) -> Option<String> {
     unsafe {
         with_env_lock(|| {
             use os::windows::{fill_utf16_buf_and_decode};
-            let n: Vec<u16> = n.utf16_units().collect();
-            let n = n.append_one(0);
+            let mut n: Vec<u16> = n.utf16_units().collect();
+            n.push(0);
             fill_utf16_buf_and_decode(|buf, sz| {
                 libc::GetEnvironmentVariableW(n.as_ptr(), buf, sz)
             })
@@ -411,10 +413,10 @@ pub fn setenv<T: BytesContainer>(n: &str, v: T) {
 
     #[cfg(windows)]
     fn _setenv(n: &str, v: &[u8]) {
-        let n: Vec<u16> = n.utf16_units().collect();
-        let n = n.append_one(0);
-        let v: Vec<u16> = ::str::from_utf8(v).unwrap().utf16_units().collect();
-        let v = v.append_one(0);
+        let mut n: Vec<u16> = n.utf16_units().collect();
+        n.push(0);
+        let mut v: Vec<u16> = ::str::from_utf8(v).unwrap().utf16_units().collect();
+        v.push(0);
 
         unsafe {
             with_env_lock(|| {
@@ -441,8 +443,8 @@ pub fn unsetenv(n: &str) {
 
     #[cfg(windows)]
     fn _unsetenv(n: &str) {
-        let n: Vec<u16> = n.utf16_units().collect();
-        let n = n.append_one(0);
+        let mut n: Vec<u16> = n.utf16_units().collect();
+        n.push(0);
         unsafe {
             with_env_lock(|| {
                 libc::SetEnvironmentVariableW(n.as_ptr(), ptr::null());
@@ -651,8 +653,7 @@ pub fn dll_filename(base: &str) -> String {
 /// ```
 pub fn self_exe_name() -> Option<Path> {
 
-    #[cfg(target_os = "freebsd")]
-    #[cfg(target_os = "dragonfly")]
+    #[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
     fn load_self() -> Option<Vec<u8>> {
         unsafe {
             use libc::funcs::bsd44::*;
@@ -663,14 +664,14 @@ pub fn self_exe_name() -> Option<Path> {
                                -1 as c_int];
             let mut sz: libc::size_t = 0;
             let err = sysctl(mib.as_mut_ptr(), mib.len() as ::libc::c_uint,
-                             ptr::mut_null(), &mut sz, ptr::mut_null(),
+                             ptr::null_mut(), &mut sz, ptr::null_mut(),
                              0u as libc::size_t);
             if err != 0 { return None; }
             if sz == 0 { return None; }
             let mut v: Vec<u8> = Vec::with_capacity(sz as uint);
             let err = sysctl(mib.as_mut_ptr(), mib.len() as ::libc::c_uint,
                              v.as_mut_ptr() as *mut c_void, &mut sz,
-                             ptr::mut_null(), 0u as libc::size_t);
+                             ptr::null_mut(), 0u as libc::size_t);
             if err != 0 { return None; }
             if sz == 0 { return None; }
             v.set_len(sz as uint - 1); // chop off trailing NUL
@@ -678,8 +679,7 @@ pub fn self_exe_name() -> Option<Path> {
         }
     }
 
-    #[cfg(target_os = "linux")]
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     fn load_self() -> Option<Vec<u8>> {
         use std::io;
 
@@ -689,13 +689,12 @@ pub fn self_exe_name() -> Option<Path> {
         }
     }
 
-    #[cfg(target_os = "macos")]
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     fn load_self() -> Option<Vec<u8>> {
         unsafe {
             use libc::funcs::extra::_NSGetExecutablePath;
             let mut sz: u32 = 0;
-            _NSGetExecutablePath(ptr::mut_null(), &mut sz);
+            _NSGetExecutablePath(ptr::null_mut(), &mut sz);
             if sz == 0 { return None; }
             let mut v: Vec<u8> = Vec::with_capacity(sz as uint);
             let err = _NSGetExecutablePath(v.as_mut_ptr() as *mut i8, &mut sz);
@@ -882,7 +881,11 @@ pub fn change_dir(p: &Path) -> bool {
     #[cfg(windows)]
     fn chdir(p: &Path) -> bool {
         let p = match p.as_str() {
-            Some(s) => s.utf16_units().collect::<Vec<u16>>().append_one(0),
+            Some(s) => {
+                let mut p = s.utf16_units().collect::<Vec<u16>>();
+                p.push(0);
+                p
+            }
             None => return false,
         };
         unsafe {
@@ -903,9 +906,9 @@ pub fn change_dir(p: &Path) -> bool {
 #[cfg(unix)]
 /// Returns the platform-specific value of errno
 pub fn errno() -> int {
-    #[cfg(target_os = "macos")]
-    #[cfg(target_os = "ios")]
-    #[cfg(target_os = "freebsd")]
+    #[cfg(any(target_os = "macos",
+              target_os = "ios",
+              target_os = "freebsd"))]
     fn errno_location() -> *const c_int {
         extern {
             fn __error() -> *const c_int;
@@ -925,8 +928,7 @@ pub fn errno() -> int {
         }
     }
 
-    #[cfg(target_os = "linux")]
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     fn errno_location() -> *const c_int {
         extern {
             fn __errno_location() -> *const c_int;
@@ -969,11 +971,11 @@ pub fn error_string(errnum: uint) -> String {
 
     #[cfg(unix)]
     fn strerror(errnum: uint) -> String {
-        #[cfg(target_os = "macos")]
-        #[cfg(target_os = "ios")]
-        #[cfg(target_os = "android")]
-        #[cfg(target_os = "freebsd")]
-        #[cfg(target_os = "dragonfly")]
+        #[cfg(any(target_os = "macos",
+                  target_os = "ios",
+                  target_os = "android",
+                  target_os = "freebsd",
+                  target_os = "dragonfly"))]
         fn strerror_r(errnum: c_int, buf: *mut c_char, buflen: libc::size_t)
                       -> c_int {
             extern {
@@ -1045,7 +1047,7 @@ pub fn error_string(errnum: uint) -> String {
         unsafe {
             let res = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM |
                                      FORMAT_MESSAGE_IGNORE_INSERTS,
-                                     ptr::mut_null(),
+                                     ptr::null_mut(),
                                      errnum as DWORD,
                                      langId,
                                      buf.as_mut_ptr(),
@@ -1099,8 +1101,7 @@ unsafe fn load_argc_and_argv(argc: int,
     use c_str::CString;
 
     Vec::from_fn(argc as uint, |i| {
-        Vec::from_slice(CString::new(*argv.offset(i as int),
-                                     false).as_bytes_no_nul())
+        CString::new(*argv.offset(i as int), false).as_bytes_no_nul().to_vec()
     })
 }
 
@@ -1168,19 +1169,17 @@ fn real_args_as_bytes() -> Vec<Vec<u8>> {
             let utf_c_str: *const libc::c_char =
                 mem::transmute(objc_msgSend(tmp, utf8Sel));
             let s = CString::new(utf_c_str, false);
-            if s.is_not_null() {
-                res.push(Vec::from_slice(s.as_bytes_no_nul()))
-            }
+            res.push(s.as_bytes_no_nul().to_vec())
         }
     }
 
     res
 }
 
-#[cfg(target_os = "linux")]
-#[cfg(target_os = "android")]
-#[cfg(target_os = "freebsd")]
-#[cfg(target_os = "dragonfly")]
+#[cfg(any(target_os = "linux",
+          target_os = "android",
+          target_os = "freebsd",
+          target_os = "dragonfly"))]
 fn real_args_as_bytes() -> Vec<Vec<u8>> {
     use rt;
 
@@ -1192,7 +1191,7 @@ fn real_args_as_bytes() -> Vec<Vec<u8>> {
 
 #[cfg(not(windows))]
 fn real_args() -> Vec<String> {
-    real_args_as_bytes().move_iter()
+    real_args_as_bytes().into_iter()
                         .map(|v| {
                             String::from_utf8_lossy(v.as_slice()).into_string()
                         }).collect()
@@ -1229,7 +1228,7 @@ fn real_args() -> Vec<String> {
 
 #[cfg(windows)]
 fn real_args_as_bytes() -> Vec<Vec<u8>> {
-    real_args().move_iter().map(|s| s.into_bytes()).collect()
+    real_args().into_iter().map(|s| s.into_bytes()).collect()
 }
 
 type LPCWSTR = *const u16;
@@ -1529,7 +1528,7 @@ impl MemoryMap {
     pub fn new(min_len: uint, options: &[MapOption]) -> Result<MemoryMap, MapError> {
         use libc::types::os::arch::extra::{LPVOID, DWORD, SIZE_T, HANDLE};
 
-        let mut lpAddress: LPVOID = ptr::mut_null();
+        let mut lpAddress: LPVOID = ptr::null_mut();
         let mut readable = false;
         let mut writable = false;
         let mut executable = false;
@@ -1589,12 +1588,12 @@ impl MemoryMap {
             unsafe {
                 let hFile = libc::get_osfhandle(fd) as HANDLE;
                 let mapping = libc::CreateFileMappingW(hFile,
-                                                       ptr::mut_null(),
+                                                       ptr::null_mut(),
                                                        flProtect,
                                                        0,
                                                        0,
                                                        ptr::null());
-                if mapping == ptr::mut_null() {
+                if mapping == ptr::null_mut() {
                     return Err(ErrCreateFileMappingW(errno()));
                 }
                 if errno() as c_int == libc::ERROR_ALREADY_EXISTS {

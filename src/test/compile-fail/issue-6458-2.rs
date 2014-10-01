@@ -11,5 +11,7 @@
 extern crate debug;
 
 fn main() {
-    format!("{:?}", None); //~ ERROR: cannot determine a type for this bounded
+    // Unconstrained type:
+    format!("{:?}", None);
+    //~^ ERROR type annotations required
 }

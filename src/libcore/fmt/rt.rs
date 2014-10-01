@@ -14,13 +14,6 @@
 //! These definitions are similar to their `ct` equivalents, but differ in that
 //! these can be statically allocated and are slightly optimized for the runtime
 
-
-#[doc(hidden)]
-pub enum Piece<'a> {
-    String(&'a str),
-    Argument(Argument),
-}
-
 #[doc(hidden)]
 pub struct Argument {
     pub position: Position,
@@ -43,6 +36,8 @@ pub enum Alignment {
     AlignLeft,
     /// Indication that contents should be right-aligned.
     AlignRight,
+    /// Indication that contents should be center-aligned.
+    AlignCenter,
     /// No alignment was requested.
     AlignUnknown,
 }

@@ -112,7 +112,6 @@
 // Don't link to std. We are std.
 #![no_std]
 
-#![allow(deprecated)]
 #![deny(missing_doc)]
 
 #![reexport_test_harness_main = "test_main"]
@@ -129,14 +128,14 @@
 extern crate alloc;
 extern crate unicode;
 extern crate core;
-extern crate core_collections = "collections";
-extern crate core_rand = "rand";
-extern crate core_sync = "sync";
+extern crate "collections" as core_collections;
+extern crate "rand" as core_rand;
+extern crate "sync" as core_sync;
 extern crate libc;
 extern crate rustrt;
 
 // Make std testable by not duplicating lang items. See #2912
-#[cfg(test)] extern crate realstd = "std";
+#[cfg(test)] extern crate "std" as realstd;
 #[cfg(test)] pub use realstd::kinds;
 #[cfg(test)] pub use realstd::ops;
 #[cfg(test)] pub use realstd::cmp;
@@ -263,7 +262,6 @@ pub mod fmt;
 
 // FIXME #7809: This shouldn't be pub, and it should be reexported under 'unstable'
 // but name resolution doesn't work without it being pub.
-#[unstable]
 pub mod rt;
 mod failure;
 
@@ -281,7 +279,7 @@ mod std {
     pub use fmt; // used for any formatting strings
     pub use io; // used for println!()
     pub use local_data; // used for local_data_key!()
-    pub use option; // used for bitflags!()
+    pub use option; // used for bitflags!{}
     pub use rt; // used for fail!()
     pub use vec; // used for vec![]
 

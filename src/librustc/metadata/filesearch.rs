@@ -11,10 +11,10 @@
 #![allow(non_camel_case_types)]
 
 use std::cell::RefCell;
-use std::os;
-use std::io::fs;
-use std::dynamic_lib::DynamicLibrary;
 use std::collections::HashSet;
+use std::io::fs::PathExtensions;
+use std::io::fs;
+use std::os;
 
 use util::fs as myfs;
 
@@ -30,7 +30,7 @@ pub type pick<'a> = |path: &Path|: 'a -> FileMatch;
 
 pub struct FileSearch<'a> {
     pub sysroot: &'a Path,
-    pub addl_lib_search_paths: &'a RefCell<HashSet<Path>>,
+    pub addl_lib_search_paths: &'a RefCell<Vec<Path>>,
     pub triple: &'a str,
 }
 
@@ -125,7 +125,7 @@ impl<'a> FileSearch<'a> {
 
     pub fn new(sysroot: &'a Path,
                triple: &'a str,
-               addl_lib_search_paths: &'a RefCell<HashSet<Path>>) -> FileSearch<'a> {
+               addl_lib_search_paths: &'a RefCell<Vec<Path>>) -> FileSearch<'a> {
         debug!("using sysroot = {}, triple = {}", sysroot.display(), triple);
         FileSearch {
             sysroot: sysroot,
@@ -134,11 +134,28 @@ impl<'a> FileSearch<'a> {
         }
     }
 
-    pub fn add_dylib_search_paths(&self) {
+    // Returns a list of directories where target-specific dylibs might be located.
+    pub fn get_dylib_search_paths(&self) -> Vec<Path> {
+        let mut paths = Vec::new();
         self.for_each_lib_search_path(|lib_search_path| {
-            DynamicLibrary::prepend_search_path(lib_search_path);
+            paths.push(lib_search_path.clone());
             FileDoesntMatch
-        })
+        });
+        paths
+    }
+
+    // Returns a list of directories where target-specific tool binaries are located.
+    pub fn get_tools_search_paths(&self) -> Vec<Path> {
+        let mut p = Path::new(self.sysroot);
+        p.push(find_libdir(self.sysroot));
+        p.push(rustlibdir());
+        p.push(self.triple);
+        let mut p1 = p.clone();
+        p1.push("bin");
+        let mut p2 = p.clone();
+        p2.push("gcc");
+        p2.push("bin");
+        vec![p1, p2]
     }
 }
 

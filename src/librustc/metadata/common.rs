@@ -140,9 +140,10 @@ pub enum astencode_tag { // Reserves 0x40 -- 0x5f
     tag_table_unboxed_closures = 0x54,
     tag_table_upvar_borrow_map = 0x55,
     tag_table_capture_modes = 0x56,
+    tag_table_object_cast_map = 0x57,
 }
 static first_astencode_tag: uint = tag_ast as uint;
-static last_astencode_tag: uint = tag_table_capture_modes as uint;
+static last_astencode_tag: uint = tag_table_object_cast_map as uint;
 impl astencode_tag {
     pub fn from_uint(value : uint) -> Option<astencode_tag> {
         let is_a_tag = first_astencode_tag <= value && value <= last_astencode_tag;
@@ -212,6 +213,8 @@ pub static tag_reachable_extern_fns: uint = 0x90;
 pub static tag_reachable_extern_fn_id: uint = 0x91;
 
 pub static tag_items_data_item_stability: uint = 0x92;
+
+pub static tag_items_data_item_repr: uint = 0x93;
 
 #[deriving(Clone, Show)]
 pub struct LinkMeta {

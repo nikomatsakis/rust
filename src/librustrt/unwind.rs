@@ -37,11 +37,11 @@
 //! In the cleanup phase, personality routines invoke cleanup code associated
 //! with their stack frames (i.e. destructors).  Once stack has been unwound down
 //! to the handler frame level, unwinding stops and the last personality routine
-//! transfers control to its' catch block.
+//! transfers control to its catch block.
 //!
 //! ## Frame unwind info registration
 //!
-//! Each module has its' own frame unwind info section (usually ".eh_frame"), and
+//! Each module has its own frame unwind info section (usually ".eh_frame"), and
 //! unwinder needs to know about all of them in order for unwinding to be able to
 //! cross module boundaries.
 //!
@@ -61,6 +61,7 @@ use core::prelude::*;
 
 use alloc::boxed::Box;
 use collections::string::String;
+use collections::str::StrAllocating;
 use collections::vec::Vec;
 use core::any::Any;
 use core::atomic;
@@ -234,9 +235,10 @@ fn rust_exception_class() -> uw::_Unwind_Exception_Class {
 //
 // See also: rt/rust_try.ll
 
-#[cfg(not(target_arch = "arm"), not(windows, target_arch = "x86_64"), not(test))]
+#[cfg(all(not(target_arch = "arm"),
+          not(all(windows, target_arch = "x86_64")),
+          not(test)))]
 #[doc(hidden)]
-#[allow(visible_private_types)]
 pub mod eabi {
     use libunwind as uw;
     use libc::c_int;
@@ -288,9 +290,8 @@ pub mod eabi {
 // iOS on armv7 is using SjLj exceptions and therefore requires to use
 // a specialized personality routine: __gcc_personality_sj0
 
-#[cfg(target_os = "ios", target_arch = "arm", not(test))]
+#[cfg(all(target_os = "ios", target_arch = "arm", not(test)))]
 #[doc(hidden)]
-#[allow(visible_private_types)]
 pub mod eabi {
     use libunwind as uw;
     use libc::c_int;
@@ -344,9 +345,8 @@ pub mod eabi {
 
 // ARM EHABI uses a slightly different personality routine signature,
 // but otherwise works the same.
-#[cfg(target_arch = "arm", not(target_os = "ios"), not(test))]
+#[cfg(all(target_arch = "arm", not(target_os = "ios"), not(test)))]
 #[doc(hidden)]
-#[allow(visible_private_types)]
 pub mod eabi {
     use libunwind as uw;
     use libc::c_int;
@@ -394,23 +394,22 @@ pub mod eabi {
 // GCC reuses the same personality routine as for the other architectures by wrapping it
 // with an "API translator" layer (_GCC_specific_handler).
 
-#[cfg(windows, target_arch = "x86_64", not(test))]
+#[cfg(all(windows, target_arch = "x86_64", not(test)))]
 #[doc(hidden)]
-#[allow(visible_private_types)]
 #[allow(non_camel_case_types, non_snake_case)]
 pub mod eabi {
     use libunwind as uw;
     use libc::{c_void, c_int};
 
     #[repr(C)]
-    struct EXCEPTION_RECORD;
+    pub struct EXCEPTION_RECORD;
     #[repr(C)]
-    struct CONTEXT;
+    pub struct CONTEXT;
     #[repr(C)]
-    struct DISPATCHER_CONTEXT;
+    pub struct DISPATCHER_CONTEXT;
 
     #[repr(C)]
-    enum EXCEPTION_DISPOSITION {
+    pub enum EXCEPTION_DISPOSITION {
         ExceptionContinueExecution,
         ExceptionContinueSearch,
         ExceptionNestedException,
@@ -492,7 +491,7 @@ pub mod eabi {
 
 // Entry point of failure from the libcore crate
 #[cfg(not(test))]
-#[lang = "begin_unwind"]
+#[lang = "fail_fmt"]
 pub extern fn rust_begin_unwind(msg: &fmt::Arguments,
                                 file: &'static str, line: uint) -> ! {
     begin_unwind_fmt(msg, &(file, line))
@@ -525,7 +524,8 @@ pub fn begin_unwind_fmt(msg: &fmt::Arguments, file_line: &(&'static str, uint)) 
     let mut v = Vec::new();
     let _ = write!(&mut VecWriter { v: &mut v }, "{}", msg);
 
-    begin_unwind_inner(box String::from_utf8(v).unwrap(), file_line)
+    let msg = box String::from_utf8_lossy(v.as_slice()).into_string();
+    begin_unwind_inner(msg, file_line)
 }
 
 /// This is the entry point of unwinding for fail!() and assert!().
@@ -570,7 +570,7 @@ fn begin_unwind_inner(msg: Box<Any + Send>, file_line: &(&'static str, uint)) ->
             n => {
                 let f: Callback = unsafe { mem::transmute(n) };
                 let (file, line) = *file_line;
-                f(msg, file, line);
+                f(&*msg, file, line);
             }
         }
     };

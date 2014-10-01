@@ -14,10 +14,9 @@
 
 use driver::session::Session;
 use llvm;
-use llvm::{ValueRef, BasicBlockRef, BuilderRef};
+use llvm::{ValueRef, BasicBlockRef, BuilderRef, ContextRef};
 use llvm::{True, False, Bool};
 use middle::def;
-use middle::freevars;
 use middle::lang_items::LangItem;
 use middle::mem_categorization as mc;
 use middle::subst;
@@ -29,8 +28,12 @@ use middle::trans::datum;
 use middle::trans::debuginfo;
 use middle::trans::type_::Type;
 use middle::trans::type_of;
+use middle::traits;
 use middle::ty;
+use middle::ty_fold;
+use middle::ty_fold::TypeFoldable;
 use middle::typeck;
+use middle::typeck::infer;
 use util::ppaux::Repr;
 use util::nodemap::{DefIdMap, NodeMap};
 
@@ -39,6 +42,7 @@ use std::collections::HashMap;
 use libc::{c_uint, c_longlong, c_ulonglong, c_char};
 use std::c_str::ToCStr;
 use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 use std::vec::Vec;
 use syntax::ast::Ident;
 use syntax::ast;
@@ -82,7 +86,7 @@ pub fn type_is_immediate(ccx: &CrateContext, ty: ty::t) -> bool {
         ty::ty_struct(..) | ty::ty_enum(..) | ty::ty_tup(..) |
         ty::ty_unboxed_closure(..) => {
             let llty = sizing_type_of(ccx, ty);
-            llsize_of_alloc(ccx, llty) <= llsize_of_alloc(ccx, ccx.int_type)
+            llsize_of_alloc(ccx, llty) <= llsize_of_alloc(ccx, ccx.int_type())
         }
         _ => type_is_zero_size(ccx, ty)
     }
@@ -188,14 +192,12 @@ pub type ExternMap = HashMap<String, ValueRef>;
 // will only be set in the case of default methods.
 pub struct param_substs {
     pub substs: subst::Substs,
-    pub vtables: typeck::vtable_res,
 }
 
 impl param_substs {
     pub fn empty() -> param_substs {
         param_substs {
             substs: subst::Substs::trans_empty(),
-            vtables: subst::VecPerParamSpace::empty(),
         }
     }
 
@@ -204,15 +206,9 @@ impl param_substs {
     }
 }
 
-fn param_substs_to_string(this: &param_substs, tcx: &ty::ctxt) -> String {
-    format!("param_substs(substs={},vtables={})",
-            this.substs.repr(tcx),
-            this.vtables.repr(tcx))
-}
-
 impl Repr for param_substs {
     fn repr(&self, tcx: &ty::ctxt) -> String {
-        param_substs_to_string(self, tcx)
+        self.substs.repr(tcx)
     }
 }
 
@@ -233,7 +229,7 @@ pub type LvalueDatum = datum::Datum<datum::Lvalue>;
 
 // Function context.  Every LLVM function we create will have one of
 // these.
-pub struct FunctionContext<'a> {
+pub struct FunctionContext<'a, 'tcx: 'a> {
     // The ValueRef returned from a call to llvm::LLVMAddFunction; the
     // address of the first instruction in the sequence of
     // instructions for this function that will go in the .text
@@ -271,10 +267,7 @@ pub struct FunctionContext<'a> {
     // points to, but if this value is false, that slot will be a local alloca.
     pub caller_expects_out_pointer: bool,
 
-    // Maps arguments to allocas created for them in llallocas.
-    pub llargs: RefCell<NodeMap<LvalueDatum>>,
-
-    // Maps the def_ids for local variables to the allocas created for
+    // Maps the DefId's for local variables to the allocas created for
     // them in llallocas.
     pub lllocals: RefCell<NodeMap<LvalueDatum>>,
 
@@ -294,19 +287,19 @@ pub struct FunctionContext<'a> {
     pub span: Option<Span>,
 
     // The arena that blocks are allocated from.
-    pub block_arena: &'a TypedArena<Block<'a>>,
+    pub block_arena: &'a TypedArena<BlockS<'a, 'tcx>>,
 
     // This function's enclosing crate context.
-    pub ccx: &'a CrateContext,
+    pub ccx: &'a CrateContext<'a, 'tcx>,
 
     // Used and maintained by the debuginfo module.
     pub debug_context: debuginfo::FunctionDebugContext,
 
     // Cleanup scopes.
-    pub scopes: RefCell<Vec<cleanup::CleanupScope<'a>> >,
+    pub scopes: RefCell<Vec<cleanup::CleanupScope<'a, 'tcx>>>,
 }
 
-impl<'a> FunctionContext<'a> {
+impl<'a, 'tcx> FunctionContext<'a, 'tcx> {
     pub fn arg_pos(&self, arg: uint) -> uint {
         let arg = self.env_arg_pos() + arg;
         if self.llenv.is_some() {
@@ -342,7 +335,7 @@ impl<'a> FunctionContext<'a> {
 
             self.llreturn.set(Some(unsafe {
                 "return".with_c_str(|buf| {
-                    llvm::LLVMAppendBasicBlockInContext(self.ccx.llcx, self.llfn, buf)
+                    llvm::LLVMAppendBasicBlockInContext(self.ccx.llcx(), self.llfn, buf)
                 })
             }))
         }
@@ -350,7 +343,7 @@ impl<'a> FunctionContext<'a> {
         self.llreturn.get().unwrap()
     }
 
-    pub fn get_ret_slot(&self, bcx: &Block, ty: ty::t, name: &str) -> ValueRef {
+    pub fn get_ret_slot(&self, bcx: Block, ty: ty::t, name: &str) -> ValueRef {
         if self.needs_ret_allocas {
             base::alloca_no_lifetime(bcx, type_of::type_of(bcx.ccx(), ty), name)
         } else {
@@ -362,34 +355,34 @@ impl<'a> FunctionContext<'a> {
                      is_lpad: bool,
                      name: &str,
                      opt_node_id: Option<ast::NodeId>)
-                     -> &'a Block<'a> {
+                     -> Block<'a, 'tcx> {
         unsafe {
             let llbb = name.with_c_str(|buf| {
-                    llvm::LLVMAppendBasicBlockInContext(self.ccx.llcx,
+                    llvm::LLVMAppendBasicBlockInContext(self.ccx.llcx(),
                                                         self.llfn,
                                                         buf)
                 });
-            Block::new(llbb, is_lpad, opt_node_id, self)
+            BlockS::new(llbb, is_lpad, opt_node_id, self)
         }
     }
 
     pub fn new_id_block(&'a self,
                         name: &str,
                         node_id: ast::NodeId)
-                        -> &'a Block<'a> {
+                        -> Block<'a, 'tcx> {
         self.new_block(false, name, Some(node_id))
     }
 
     pub fn new_temp_block(&'a self,
                           name: &str)
-                          -> &'a Block<'a> {
+                          -> Block<'a, 'tcx> {
         self.new_block(false, name, None)
     }
 
     pub fn join_blocks(&'a self,
                        id: ast::NodeId,
-                       in_cxs: &[&'a Block<'a>])
-                       -> &'a Block<'a> {
+                       in_cxs: &[Block<'a, 'tcx>])
+                       -> Block<'a, 'tcx> {
         let out = self.new_id_block("join", id);
         let mut reachable = false;
         for bcx in in_cxs.iter() {
@@ -410,7 +403,7 @@ impl<'a> FunctionContext<'a> {
 // code.  Each basic block we generate is attached to a function, typically
 // with many basic blocks per function.  All the basic blocks attached to a
 // function are organized as a directed graph.
-pub struct Block<'a> {
+pub struct BlockS<'blk, 'tcx: 'blk> {
     // The BasicBlockRef returned from a call to
     // llvm::LLVMAppendBasicBlock(llfn, name), which adds a basic
     // block to the function pointed to by llfn.  We insert
@@ -429,17 +422,18 @@ pub struct Block<'a> {
 
     // The function context for the function to which this block is
     // attached.
-    pub fcx: &'a FunctionContext<'a>,
+    pub fcx: &'blk FunctionContext<'blk, 'tcx>,
 }
 
-impl<'a> Block<'a> {
-    pub fn new<'a>(
-               llbb: BasicBlockRef,
+pub type Block<'blk, 'tcx> = &'blk BlockS<'blk, 'tcx>;
+
+impl<'blk, 'tcx> BlockS<'blk, 'tcx> {
+    pub fn new(llbb: BasicBlockRef,
                is_lpad: bool,
                opt_node_id: Option<ast::NodeId>,
-               fcx: &'a FunctionContext<'a>)
-               -> &'a Block<'a> {
-        fcx.block_arena.alloc(Block {
+               fcx: &'blk FunctionContext<'blk, 'tcx>)
+               -> Block<'blk, 'tcx> {
+        fcx.block_arena.alloc(BlockS {
             llbb: llbb,
             terminated: Cell::new(false),
             unreachable: Cell::new(false),
@@ -449,11 +443,13 @@ impl<'a> Block<'a> {
         })
     }
 
-    pub fn ccx(&self) -> &'a CrateContext { self.fcx.ccx }
-    pub fn tcx(&self) -> &'a ty::ctxt {
-        &self.fcx.ccx.tcx
+    pub fn ccx(&self) -> &'blk CrateContext<'blk, 'tcx> {
+        self.fcx.ccx
     }
-    pub fn sess(&self) -> &'a Session { self.fcx.ccx.sess() }
+    pub fn tcx(&self) -> &'blk ty::ctxt<'tcx> {
+        self.fcx.ccx.tcx()
+    }
+    pub fn sess(&self) -> &'blk Session { self.fcx.ccx.sess() }
 
     pub fn ident(&self, ident: Ident) -> String {
         token::get_ident(ident).get().to_string()
@@ -469,7 +465,7 @@ impl<'a> Block<'a> {
 
     pub fn def(&self, nid: ast::NodeId) -> def::Def {
         match self.tcx().def_map.borrow().find(&nid) {
-            Some(&v) => v,
+            Some(v) => v.clone(),
             None => {
                 self.tcx().sess.bug(format!(
                     "no def associated with node id {:?}", nid).as_slice());
@@ -478,11 +474,11 @@ impl<'a> Block<'a> {
     }
 
     pub fn val_to_string(&self, val: ValueRef) -> String {
-        self.ccx().tn.val_to_string(val)
+        self.ccx().tn().val_to_string(val)
     }
 
     pub fn llty_str(&self, ty: Type) -> String {
-        self.ccx().tn.type_to_string(ty)
+        self.ccx().tn().type_to_string(ty)
     }
 
     pub fn ty_to_string(&self, t: ty::t) -> String {
@@ -490,13 +486,12 @@ impl<'a> Block<'a> {
     }
 
     pub fn to_str(&self) -> String {
-        let blk: *const Block = self;
-        format!("[block {}]", blk)
+        format!("[block {:p}]", self)
     }
 }
 
-impl<'a> mc::Typer for Block<'a> {
-    fn tcx<'a>(&'a self) -> &'a ty::ctxt {
+impl<'blk, 'tcx> mc::Typer<'tcx> for BlockS<'blk, 'tcx> {
+    fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> {
         self.tcx()
     }
 
@@ -530,18 +525,18 @@ impl<'a> mc::Typer for Block<'a> {
     }
 
     fn capture_mode(&self, closure_expr_id: ast::NodeId)
-                    -> freevars::CaptureMode {
+                    -> ast::CaptureClause {
         self.tcx().capture_modes.borrow().get_copy(&closure_expr_id)
     }
 }
 
-pub struct Result<'a> {
-    pub bcx: &'a Block<'a>,
+pub struct Result<'blk, 'tcx: 'blk> {
+    pub bcx: Block<'blk, 'tcx>,
     pub val: ValueRef
 }
 
-impl<'a> Result<'a> {
-    pub fn new(bcx: &'a Block<'a>, val: ValueRef) -> Result<'a> {
+impl<'b, 'tcx> Result<'b, 'tcx> {
+    pub fn new(bcx: Block<'b, 'tcx>, val: ValueRef) -> Result<'b, 'tcx> {
         Result {
             bcx: bcx,
             val: val,
@@ -601,11 +596,11 @@ pub fn C_u64(ccx: &CrateContext, i: u64) -> ValueRef {
 }
 
 pub fn C_int(ccx: &CrateContext, i: int) -> ValueRef {
-    C_integral(ccx.int_type, i as u64, true)
+    C_integral(ccx.int_type(), i as u64, true)
 }
 
 pub fn C_uint(ccx: &CrateContext, i: uint) -> ValueRef {
-    C_integral(ccx.int_type, i as u64, false)
+    C_integral(ccx.int_type(), i as u64, false)
 }
 
 pub fn C_u8(ccx: &CrateContext, i: uint) -> ValueRef {
@@ -617,25 +612,25 @@ pub fn C_u8(ccx: &CrateContext, i: uint) -> ValueRef {
 // our boxed-and-length-annotated strings.
 pub fn C_cstr(cx: &CrateContext, s: InternedString, null_terminated: bool) -> ValueRef {
     unsafe {
-        match cx.const_cstr_cache.borrow().find(&s) {
+        match cx.const_cstr_cache().borrow().find(&s) {
             Some(&llval) => return llval,
             None => ()
         }
 
-        let sc = llvm::LLVMConstStringInContext(cx.llcx,
+        let sc = llvm::LLVMConstStringInContext(cx.llcx(),
                                                 s.get().as_ptr() as *const c_char,
                                                 s.get().len() as c_uint,
                                                 !null_terminated as Bool);
 
         let gsym = token::gensym("str");
         let g = format!("str{}", gsym.uint()).with_c_str(|buf| {
-            llvm::LLVMAddGlobal(cx.llmod, val_ty(sc).to_ref(), buf)
+            llvm::LLVMAddGlobal(cx.llmod(), val_ty(sc).to_ref(), buf)
         });
         llvm::LLVMSetInitializer(g, sc);
         llvm::LLVMSetGlobalConstant(g, True);
         llvm::SetLinkage(g, llvm::InternalLinkage);
 
-        cx.const_cstr_cache.borrow_mut().insert(s, g);
+        cx.const_cstr_cache().borrow_mut().insert(s, g);
         g
     }
 }
@@ -647,7 +642,7 @@ pub fn C_str_slice(cx: &CrateContext, s: InternedString) -> ValueRef {
         let len = s.get().len();
         let cs = llvm::LLVMConstPointerCast(C_cstr(cx, s, false),
                                             Type::i8p(cx).to_ref());
-        C_named_struct(cx.tn.find_type("str_slice").unwrap(), [cs, C_uint(cx, len)])
+        C_named_struct(cx.tn().find_type("str_slice").unwrap(), [cs, C_uint(cx, len)])
     }
 }
 
@@ -658,7 +653,7 @@ pub fn C_binary_slice(cx: &CrateContext, data: &[u8]) -> ValueRef {
 
         let gsym = token::gensym("binary");
         let g = format!("binary{}", gsym.uint()).with_c_str(|buf| {
-            llvm::LLVMAddGlobal(cx.llmod, val_ty(lldata).to_ref(), buf)
+            llvm::LLVMAddGlobal(cx.llmod(), val_ty(lldata).to_ref(), buf)
         });
         llvm::LLVMSetInitializer(g, lldata);
         llvm::LLVMSetGlobalConstant(g, True);
@@ -669,9 +664,13 @@ pub fn C_binary_slice(cx: &CrateContext, data: &[u8]) -> ValueRef {
     }
 }
 
-pub fn C_struct(ccx: &CrateContext, elts: &[ValueRef], packed: bool) -> ValueRef {
+pub fn C_struct(cx: &CrateContext, elts: &[ValueRef], packed: bool) -> ValueRef {
+    C_struct_in_context(cx.llcx(), elts, packed)
+}
+
+pub fn C_struct_in_context(llcx: ContextRef, elts: &[ValueRef], packed: bool) -> ValueRef {
     unsafe {
-        llvm::LLVMConstStructInContext(ccx.llcx,
+        llvm::LLVMConstStructInContext(llcx,
                                        elts.as_ptr(), elts.len() as c_uint,
                                        packed as Bool)
     }
@@ -689,10 +688,14 @@ pub fn C_array(ty: Type, elts: &[ValueRef]) -> ValueRef {
     }
 }
 
-pub fn C_bytes(ccx: &CrateContext, bytes: &[u8]) -> ValueRef {
+pub fn C_bytes(cx: &CrateContext, bytes: &[u8]) -> ValueRef {
+    C_bytes_in_context(cx.llcx(), bytes)
+}
+
+pub fn C_bytes_in_context(llcx: ContextRef, bytes: &[u8]) -> ValueRef {
     unsafe {
         let ptr = bytes.as_ptr() as *const c_char;
-        return llvm::LLVMConstStringInContext(ccx.llcx, ptr, bytes.len() as c_uint, True);
+        return llvm::LLVMConstStringInContext(llcx, ptr, bytes.len() as c_uint, True);
     }
 }
 
@@ -702,7 +705,7 @@ pub fn const_get_elt(cx: &CrateContext, v: ValueRef, us: &[c_uint])
         let r = llvm::LLVMConstExtractValue(v, us.as_ptr(), us.len() as c_uint);
 
         debug!("const_get_elt(v={}, us={:?}, r={})",
-               cx.tn.val_to_string(v), us, cx.tn.val_to_string(r));
+               cx.tn().val_to_string(v), us, cx.tn().val_to_string(r));
 
         return r;
     }
@@ -738,22 +741,112 @@ pub fn is_null(val: ValueRef) -> bool {
     }
 }
 
-pub fn monomorphize_type(bcx: &Block, t: ty::t) -> ty::t {
+pub fn monomorphize_type(bcx: &BlockS, t: ty::t) -> ty::t {
     t.subst(bcx.tcx(), &bcx.fcx.param_substs.substs)
 }
 
-pub fn node_id_type(bcx: &Block, id: ast::NodeId) -> ty::t {
+pub fn node_id_type(bcx: &BlockS, id: ast::NodeId) -> ty::t {
     let tcx = bcx.tcx();
     let t = ty::node_id_to_type(tcx, id);
     monomorphize_type(bcx, t)
 }
 
-pub fn expr_ty(bcx: &Block, ex: &ast::Expr) -> ty::t {
+pub fn expr_ty(bcx: Block, ex: &ast::Expr) -> ty::t {
     node_id_type(bcx, ex.id)
 }
 
-pub fn expr_ty_adjusted(bcx: &Block, ex: &ast::Expr) -> ty::t {
+pub fn expr_ty_adjusted(bcx: Block, ex: &ast::Expr) -> ty::t {
     monomorphize_type(bcx, ty::expr_ty_adjusted(bcx.tcx(), ex))
+}
+
+pub fn fulfill_obligation(ccx: &CrateContext,
+                          span: Span,
+                          trait_ref: Rc<ty::TraitRef>)
+                          -> traits::Vtable<()>
+{
+    /*!
+     * Attempts to resolve an obligation. The result is a shallow
+     * vtable resolution -- meaning that we do not (necessarily) resolve
+     * all nested obligations on the impl. Note that type check should
+     * guarantee to us that all nested obligations *could be* resolved
+     * if we wanted to.
+     */
+
+    let tcx = ccx.tcx();
+
+    // Remove any references to regions; this helps improve caching.
+    let trait_ref = ty_fold::erase_regions(tcx, trait_ref);
+
+    // First check the cache.
+    match ccx.trait_cache().borrow().find(&trait_ref) {
+        Some(vtable) => {
+            info!("Cache hit: {}", trait_ref.repr(ccx.tcx()));
+            return (*vtable).clone();
+        }
+        None => { }
+    }
+
+    ty::populate_implementations_for_trait_if_necessary(tcx, trait_ref.def_id);
+    let infcx = infer::new_infer_ctxt(tcx);
+
+    // Parameter environment is used to give details about type parameters,
+    // but since we are in trans, everything is fully monomorphized.
+    let param_env = ty::empty_parameter_environment();
+
+    // Do the initial selection for the obligation. This yields the
+    // shallow result we are looking for -- that is, what specific impl.
+    let mut selcx = traits::SelectionContext::new(&infcx, &param_env, tcx);
+    let obligation = traits::Obligation::misc(span, trait_ref.clone());
+    let selection = match selcx.select(&obligation) {
+        Ok(Some(selection)) => selection,
+        Ok(None) => {
+            tcx.sess.span_bug(
+                span,
+                format!("Encountered ambiguity selecting `{}` during trans",
+                        trait_ref.repr(tcx)).as_slice())
+        }
+        Err(e) => {
+            tcx.sess.span_bug(
+                span,
+                format!("Encountered error `{}` selecting `{}` during trans",
+                        e.repr(tcx),
+                        trait_ref.repr(tcx)).as_slice())
+        }
+    };
+
+    // Currently, we use a fulfillment context to completely resolve
+    // all nested obligations. This is because they can inform the
+    // inference of the impl's type parameters. However, in principle,
+    // we only need to do this until the impl's type parameters are
+    // fully bound. It could be a slight optimization to stop
+    // iterating early.
+    let mut fulfill_cx = traits::FulfillmentContext::new();
+    let vtable = selection.map_move_nested(|obligation| {
+        fulfill_cx.register_obligation(tcx, obligation);
+    });
+    match fulfill_cx.select_all_or_error(&infcx, &param_env, tcx) {
+        Ok(()) => { }
+        Err(e) => {
+            tcx.sess.span_bug(
+                span,
+                format!("Encountered errors `{}` fulfilling `{}` during trans",
+                        e.repr(tcx),
+                        trait_ref.repr(tcx)).as_slice());
+        }
+    }
+
+    // Use skolemize to simultaneously replace all type variables with
+    // their bindings and replace all regions with 'static.  This is
+    // sort of overkill because we do not expect there to be any
+    // unbound type variables, hence no skolemized types should ever
+    // be inserted.
+    let vtable = vtable.fold_with(&mut infcx.skolemizer());
+
+    info!("Cache miss: {}", trait_ref.repr(ccx.tcx()));
+    ccx.trait_cache().borrow_mut().insert(trait_ref,
+                                          vtable.clone());
+
+    vtable
 }
 
 // Key used to lookup values supplied for type parameters in an expr.
@@ -766,9 +859,10 @@ pub enum ExprOrMethodCall {
     MethodCall(typeck::MethodCall)
 }
 
-pub fn node_id_substs(bcx: &Block,
+pub fn node_id_substs(bcx: Block,
                       node: ExprOrMethodCall)
-                      -> subst::Substs {
+                      -> subst::Substs
+{
     let tcx = bcx.tcx();
 
     let substs = match node {
@@ -788,88 +882,11 @@ pub fn node_id_substs(bcx: &Block,
                     substs.repr(bcx.tcx())).as_slice());
     }
 
+    let substs = substs.erase_regions();
     substs.substp(tcx, bcx.fcx.param_substs)
 }
 
-pub fn node_vtables(bcx: &Block, id: typeck::MethodCall)
-                 -> typeck::vtable_res {
-    bcx.tcx().vtable_map.borrow().find(&id).map(|vts| {
-        resolve_vtables_in_fn_ctxt(bcx.fcx, vts)
-    }).unwrap_or_else(|| subst::VecPerParamSpace::empty())
-}
-
-// Apply the typaram substitutions in the FunctionContext to some
-// vtables. This should eliminate any vtable_params.
-pub fn resolve_vtables_in_fn_ctxt(fcx: &FunctionContext,
-                                  vts: &typeck::vtable_res)
-                                  -> typeck::vtable_res {
-    resolve_vtables_under_param_substs(fcx.ccx.tcx(),
-                                       fcx.param_substs,
-                                       vts)
-}
-
-pub fn resolve_vtables_under_param_substs(tcx: &ty::ctxt,
-                                          param_substs: &param_substs,
-                                          vts: &typeck::vtable_res)
-                                          -> typeck::vtable_res
-{
-    vts.map(|ds| {
-        resolve_param_vtables_under_param_substs(tcx,
-                                                 param_substs,
-                                                 ds)
-    })
-}
-
-pub fn resolve_param_vtables_under_param_substs(tcx: &ty::ctxt,
-                                                param_substs: &param_substs,
-                                                ds: &typeck::vtable_param_res)
-                                                -> typeck::vtable_param_res
-{
-    ds.iter().map(|d| {
-        resolve_vtable_under_param_substs(tcx,
-                                          param_substs,
-                                          d)
-    }).collect()
-}
-
-
-
-pub fn resolve_vtable_under_param_substs(tcx: &ty::ctxt,
-                                         param_substs: &param_substs,
-                                         vt: &typeck::vtable_origin)
-                                         -> typeck::vtable_origin
-{
-    match *vt {
-        typeck::vtable_static(trait_id, ref vtable_substs, ref sub) => {
-            let vtable_substs = vtable_substs.substp(tcx, param_substs);
-            typeck::vtable_static(
-                trait_id,
-                vtable_substs,
-                resolve_vtables_under_param_substs(tcx, param_substs, sub))
-        }
-        typeck::vtable_param(n_param, n_bound) => {
-            find_vtable(tcx, param_substs, n_param, n_bound)
-        }
-        typeck::vtable_unboxed_closure(def_id) => {
-            typeck::vtable_unboxed_closure(def_id)
-        }
-        typeck::vtable_error => typeck::vtable_error
-    }
-}
-
-pub fn find_vtable(tcx: &ty::ctxt,
-                   ps: &param_substs,
-                   n_param: typeck::param_index,
-                   n_bound: uint)
-                   -> typeck::vtable_origin {
-    debug!("find_vtable(n_param={:?}, n_bound={}, ps={})",
-           n_param, n_bound, ps.repr(tcx));
-
-    let param_bounds = ps.vtables.get(n_param.space, n_param.index);
-    param_bounds.get(n_bound).clone()
-}
-
-pub fn langcall(bcx: &Block,
+pub fn langcall(bcx: Block,
                 span: Option<Span>,
                 msg: &str,
                 li: LangItem)

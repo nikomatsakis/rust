@@ -14,22 +14,32 @@
 
 # The version number
 CFG_RELEASE_NUM=0.12.0
-CFG_RELEASE_LABEL=-pre
 
 CFG_FILENAME_EXTRA=4e7c5e5c
 
-ifndef CFG_ENABLE_NIGHTLY
-# This is the normal version string
-CFG_RELEASE=$(CFG_RELEASE_NUM)$(CFG_RELEASE_LABEL)
-CFG_PACKAGE_VERS=$(CFG_RELEASE)
-else
-# Modify the version label for nightly builds
-CFG_RELEASE=$(CFG_RELEASE_NUM)$(CFG_RELEASE_LABEL)-nightly
-# When building nightly distributables just reuse the same "rust-nightly" name
-# so when we upload we'll always override the previous nighly. This doesn't actually
-# impact the version reported by rustc - it's just for file naming.
+ifeq ($(CFG_RELEASE_CHANNEL),stable)
+# This is the normal semver version string, e.g. "0.12.0", "0.12.0-nightly"
+CFG_RELEASE=$(CFG_RELEASE_NUM)
+# This is the string used in dist artifact file names, e.g. "0.12.0", "nightly"
+CFG_PACKAGE_VERS=$(CFG_RELEASE_NUM)
+endif
+ifeq ($(CFG_RELEASE_CHANNEL),beta)
+CFG_RELEASE=$(CFG_RELEASE_NUM)-beta
+# When building beta/nightly distributables just reuse the same "beta"
+# name so when we upload we'll always override the previous
+# nighly. This doesn't actually impact the version reported by rustc -
+# it's just for file naming.
+CFG_PACKAGE_VERS=beta
+endif
+ifeq ($(CFG_RELEASE_CHANNEL),nightly)
+CFG_RELEASE=$(CFG_RELEASE_NUM)-nightly
 CFG_PACKAGE_VERS=nightly
 endif
+ifeq ($(CFG_RELEASE_CHANNEL),dev)
+CFG_RELEASE=$(CFG_RELEASE_NUM)-dev
+CFG_PACKAGE_VERS=$(CFG_RELEASE_NUM)-dev
+endif
+
 # The name of the package to use for creating tarballs, installers etc.
 CFG_PACKAGE_NAME=rust-$(CFG_PACKAGE_VERS)
 
@@ -90,14 +100,18 @@ endif
 CFG_RUSTC_FLAGS := $(RUSTFLAGS)
 CFG_GCCISH_CFLAGS :=
 CFG_GCCISH_LINK_FLAGS :=
+CFG_JEMALLOC_FLAGS :=
 
 ifdef CFG_DISABLE_OPTIMIZE
   $(info cfg: disabling rustc optimization (CFG_DISABLE_OPTIMIZE))
   CFG_RUSTC_FLAGS +=
+  CFG_JEMALLOC_FLAGS += --enable-debug
 else
   # The rtopt cfg turns off runtime sanity checks
   CFG_RUSTC_FLAGS += -O --cfg rtopt
 endif
+
+CFG_JEMALLOC_FLAGS += $(JEMALLOC_FLAGS)
 
 ifdef CFG_DISABLE_DEBUG
   CFG_RUSTC_FLAGS += --cfg ndebug

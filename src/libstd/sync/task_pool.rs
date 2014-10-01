@@ -31,7 +31,7 @@ pub struct TaskPool<T> {
 #[unsafe_destructor]
 impl<T> Drop for TaskPool<T> {
     fn drop(&mut self) {
-        for channel in self.channels.mut_iter() {
+        for channel in self.channels.iter_mut() {
             channel.send(Quit);
         }
     }
@@ -79,7 +79,7 @@ impl<T> TaskPool<T> {
     /// Executes the function `f` on a task in the pool. The function
     /// receives a reference to the local data returned by the `init_fn`.
     pub fn execute(&mut self, f: proc(&T):Send) {
-        self.channels.get(self.next_index).send(Execute(f));
+        self.channels[self.next_index].send(Execute(f));
         self.next_index += 1;
         if self.next_index == self.channels.len() { self.next_index = 0; }
     }

@@ -34,11 +34,12 @@
 
 
 use middle::subst;
-use middle::subst::Substs;
+use middle::subst::{ErasedRegions, NonerasedRegions, Substs};
 use middle::ty::{FloatVar, FnSig, IntVar, TyVar};
 use middle::ty::{IntType, UintType};
 use middle::ty::{BuiltinBounds};
 use middle::ty;
+use middle::ty_fold;
 use middle::typeck::infer::equate::Equate;
 use middle::typeck::infer::glb::Glb;
 use middle::typeck::infer::lub::Lub;
@@ -48,7 +49,7 @@ use middle::typeck::infer::{InferCtxt, cres};
 use middle::typeck::infer::{MiscVariable, TypeTrace};
 use middle::typeck::infer::type_variable::{RelationDir, EqTo,
                                            SubtypeOf, SupertypeOf};
-use middle::ty_fold::{RegionFolder, TypeFoldable};
+use middle::ty_fold::{TypeFoldable};
 use util::ppaux::Repr;
 
 use std::result;
@@ -56,17 +57,18 @@ use std::result;
 use syntax::ast::{Onceness, FnStyle};
 use syntax::ast;
 use syntax::abi;
+use syntax::codemap::Span;
 
-pub trait Combine {
-    fn infcx<'a>(&'a self) -> &'a InferCtxt<'a>;
+pub trait Combine<'tcx> {
+    fn infcx<'a>(&'a self) -> &'a InferCtxt<'a, 'tcx>;
     fn tag(&self) -> String;
     fn a_is_expected(&self) -> bool;
     fn trace(&self) -> TypeTrace;
 
-    fn equate<'a>(&'a self) -> Equate<'a>;
-    fn sub<'a>(&'a self) -> Sub<'a>;
-    fn lub<'a>(&'a self) -> Lub<'a>;
-    fn glb<'a>(&'a self) -> Glb<'a>;
+    fn equate<'a>(&'a self) -> Equate<'a, 'tcx>;
+    fn sub<'a>(&'a self) -> Sub<'a, 'tcx>;
+    fn lub<'a>(&'a self) -> Lub<'a, 'tcx>;
+    fn glb<'a>(&'a self) -> Glb<'a, 'tcx>;
 
     fn mts(&self, a: &ty::mt, b: &ty::mt) -> cres<ty::mt>;
     fn contratys(&self, a: ty::t, b: ty::t) -> cres<ty::t>;
@@ -97,27 +99,36 @@ pub trait Combine {
             let b_tps = b_subst.types.get_slice(space);
             let t_variances = variances.map(|v| v.types.get_slice(space));
             let tps = try!(relate_type_params(self, t_variances, a_tps, b_tps));
-
-            let a_regions = a_subst.regions().get_slice(space);
-            let b_regions = b_subst.regions().get_slice(space);
-
-            let r_variances = variances.map(|v| v.regions.get_slice(space));
-            let regions = try!(relate_region_params(self,
-                                                    r_variances,
-                                                    a_regions,
-                                                    b_regions));
-
             substs.types.replace(space, tps);
-            substs.mut_regions().replace(space, regions);
+        }
+
+        match (&a_subst.regions, &b_subst.regions) {
+            (&ErasedRegions, _) | (_, &ErasedRegions) => {
+                substs.regions = ErasedRegions;
+            }
+
+            (&NonerasedRegions(ref a), &NonerasedRegions(ref b)) => {
+                for &space in subst::ParamSpace::all().iter() {
+                    let a_regions = a.get_slice(space);
+                    let b_regions = b.get_slice(space);
+                    let r_variances = variances.map(|v| v.regions.get_slice(space));
+                    let regions = try!(relate_region_params(self,
+                                                            item_def_id,
+                                                            r_variances,
+                                                            a_regions,
+                                                            b_regions));
+                    substs.mut_regions().replace(space, regions);
+                }
+            }
         }
 
         return Ok(substs);
 
-        fn relate_type_params<C:Combine>(this: &C,
-                                         variances: Option<&[ty::Variance]>,
-                                         a_tys: &[ty::t],
-                                         b_tys: &[ty::t])
-                                         -> cres<Vec<ty::t>>
+        fn relate_type_params<'tcx, C: Combine<'tcx>>(this: &C,
+                                                      variances: Option<&[ty::Variance]>,
+                                                      a_tys: &[ty::t],
+                                                      b_tys: &[ty::t])
+                                                      -> cres<Vec<ty::t>>
         {
             if a_tys.len() != b_tys.len() {
                 return Err(ty::terr_ty_param_size(expected_found(this,
@@ -140,11 +151,12 @@ pub trait Combine {
             result::collect(tys)
         }
 
-        fn relate_region_params<C:Combine>(this: &C,
-                                           variances: Option<&[ty::Variance]>,
-                                           a_rs: &[ty::Region],
-                                           b_rs: &[ty::Region])
-                                           -> cres<Vec<ty::Region>>
+        fn relate_region_params<'tcx, C: Combine<'tcx>>(this: &C,
+                                                        item_def_id: ast::DefId,
+                                                        variances: &[ty::Variance],
+                                                        a_rs: &[ty::Region],
+                                                        b_rs: &[ty::Region])
+                                                        -> cres<Vec<ty::Region>>
         {
             let tcx = this.infcx().tcx;
             let num_region_params = a_rs.len();
@@ -306,13 +318,13 @@ pub trait Combine {
 }
 
 #[deriving(Clone)]
-pub struct CombineFields<'a> {
-    pub infcx: &'a InferCtxt<'a>,
+pub struct CombineFields<'a, 'tcx: 'a> {
+    pub infcx: &'a InferCtxt<'a, 'tcx>,
     pub a_is_expected: bool,
     pub trace: TypeTrace,
 }
 
-pub fn expected_found<C:Combine,T>(
+pub fn expected_found<'tcx, C: Combine<'tcx>, T>(
         this: &C, a: T, b: T) -> ty::expected_found<T> {
     if this.a_is_expected() {
         ty::expected_found {expected: a, found: b}
@@ -321,9 +333,15 @@ pub fn expected_found<C:Combine,T>(
     }
 }
 
-pub fn super_fn_sigs<C:Combine>(this: &C, a: &ty::FnSig, b: &ty::FnSig) -> cres<ty::FnSig> {
+pub fn super_fn_sigs<'tcx, C: Combine<'tcx>>(this: &C,
+                                             a: &ty::FnSig,
+                                             b: &ty::FnSig)
+                                             -> cres<ty::FnSig> {
 
-    fn argvecs<C:Combine>(this: &C, a_args: &[ty::t], b_args: &[ty::t]) -> cres<Vec<ty::t> > {
+    fn argvecs<'tcx, C: Combine<'tcx>>(this: &C,
+                                       a_args: &[ty::t],
+                                       b_args: &[ty::t])
+                                       -> cres<Vec<ty::t>> {
         if a_args.len() == b_args.len() {
             result::collect(a_args.iter().zip(b_args.iter())
                             .map(|(a, b)| this.args(*a, *b)))
@@ -346,18 +364,18 @@ pub fn super_fn_sigs<C:Combine>(this: &C, a: &ty::FnSig, b: &ty::FnSig) -> cres<
               variadic: a.variadic})
 }
 
-pub fn super_tys<C:Combine>(this: &C, a: ty::t, b: ty::t) -> cres<ty::t> {
+pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C, a: ty::t, b: ty::t) -> cres<ty::t> {
 
     // This is a horrible hack - historically, [T] was not treated as a type,
     // so, for example, &T and &[U] should not unify. In fact the only thing
     // &[U] should unify with is &[T]. We preserve that behaviour with this
     // check.
-    fn check_ptr_to_unsized<C:Combine>(this: &C,
-                                       a: ty::t,
-                                       b: ty::t,
-                                       a_inner: ty::t,
-                                       b_inner: ty::t,
-                                       result: ty::t) -> cres<ty::t> {
+    fn check_ptr_to_unsized<'tcx, C: Combine<'tcx>>(this: &C,
+                                                    a: ty::t,
+                                                    b: ty::t,
+                                                    a_inner: ty::t,
+                                                    b_inner: ty::t,
+                                                    result: ty::t) -> cres<ty::t> {
         match (&ty::get(a_inner).sty, &ty::get(b_inner).sty) {
             (&ty::ty_vec(_, None), &ty::ty_vec(_, None)) |
             (&ty::ty_str, &ty::ty_str) |
@@ -548,7 +566,7 @@ pub fn super_tys<C:Combine>(this: &C, a: ty::t, b: ty::t) -> cres<ty::t> {
       _ => Err(ty::terr_sorts(expected_found(this, a, b)))
     };
 
-    fn unify_integral_variable<C:Combine>(
+    fn unify_integral_variable<'tcx, C: Combine<'tcx>>(
         this: &C,
         vid_is_expected: bool,
         vid: ty::IntVid,
@@ -561,7 +579,7 @@ pub fn super_tys<C:Combine>(this: &C, a: ty::t, b: ty::t) -> cres<ty::t> {
         }
     }
 
-    fn unify_float_variable<C:Combine>(
+    fn unify_float_variable<'tcx, C: Combine<'tcx>>(
         this: &C,
         vid_is_expected: bool,
         vid: ty::FloatVid,
@@ -572,19 +590,19 @@ pub fn super_tys<C:Combine>(this: &C, a: ty::t, b: ty::t) -> cres<ty::t> {
     }
 }
 
-impl<'f> CombineFields<'f> {
-    pub fn switch_expected(&self) -> CombineFields<'f> {
+impl<'f, 'tcx> CombineFields<'f, 'tcx> {
+    pub fn switch_expected(&self) -> CombineFields<'f, 'tcx> {
         CombineFields {
             a_is_expected: !self.a_is_expected,
             ..(*self).clone()
         }
     }
 
-    fn equate(&self) -> Equate<'f> {
+    fn equate(&self) -> Equate<'f, 'tcx> {
         Equate((*self).clone())
     }
 
-    fn sub(&self) -> Sub<'f> {
+    fn sub(&self) -> Sub<'f, 'tcx> {
         Sub((*self).clone())
     }
 
@@ -633,10 +651,14 @@ impl<'f> CombineFields<'f> {
                 Some(t) => t, // ...already instantiated.
                 None => {     // ...not yet instantiated:
                     // Generalize type if necessary.
-                    let generalized_ty = match dir {
-                        EqTo => a_ty,
-                        SupertypeOf | SubtypeOf => self.generalize(a_ty)
-                    };
+                    let generalized_ty = try!(match dir {
+                        EqTo => {
+                            self.generalize(a_ty, b_vid, false)
+                        }
+                        SupertypeOf | SubtypeOf => {
+                            self.generalize(a_ty, b_vid, true)
+                        }
+                    });
                     debug!("instantiate(a_ty={}, dir={}, \
                                         b_vid={}, generalized_ty={})",
                            a_ty.repr(tcx), dir, b_vid.repr(tcx),
@@ -674,15 +696,85 @@ impl<'f> CombineFields<'f> {
         Ok(())
     }
 
-    fn generalize(&self, t: ty::t) -> ty::t {
-        // FIXME(#16847): This is non-ideal because we don't give a
-        // very descriptive origin for this region variable.
+    fn generalize(&self,
+                  ty: ty::t,
+                  for_vid: ty::TyVid,
+                  make_region_vars: bool)
+                  -> cres<ty::t>
+    {
+        /*!
+         * Attempts to generalize `ty` for the type variable
+         * `for_vid`.  This checks for cycle -- that is, whether the
+         * type `ty` references `for_vid`. If `make_region_vars` is
+         * true, it will also replace all regions with fresh
+         * variables. Returns `ty_err` in the case of a cycle, `Ok`
+         * otherwise.
+         */
 
-        let infcx = self.infcx;
-        let span = self.trace.origin.span();
-        t.fold_with(
-            &mut RegionFolder::regions(
-                self.infcx.tcx,
-                |_| infcx.next_region_var(MiscVariable(span))))
+        let mut generalize = Generalizer { infcx: self.infcx,
+                                           span: self.trace.origin.span(),
+                                           for_vid: for_vid,
+                                           make_region_vars: make_region_vars,
+                                           cycle_detected: false };
+        let u = ty.fold_with(&mut generalize);
+        if generalize.cycle_detected {
+            Err(ty::terr_cyclic_ty)
+        } else {
+            Ok(u)
+        }
     }
 }
+
+struct Generalizer<'cx, 'tcx:'cx> {
+    infcx: &'cx InferCtxt<'cx, 'tcx>,
+    span: Span,
+    for_vid: ty::TyVid,
+    make_region_vars: bool,
+    cycle_detected: bool,
+}
+
+impl<'cx, 'tcx> ty_fold::TypeFolder<'tcx> for Generalizer<'cx, 'tcx> {
+    fn tcx(&self) -> &ty::ctxt<'tcx> {
+        self.infcx.tcx
+    }
+
+    fn fold_ty(&mut self, t: ty::t) -> ty::t {
+        // Check to see whether the type we are genealizing references
+        // `vid`. At the same time, also update any type variables to
+        // the values that they are bound to. This is needed to truly
+        // check for cycles, but also just makes things readable.
+        //
+        // (In particular, you could have something like `$0 = Box<$1>`
+        //  where `$1` has already been instantiated with `Box<$0>`)
+        match ty::get(t).sty {
+            ty::ty_infer(ty::TyVar(vid)) => {
+                if vid == self.for_vid {
+                    self.cycle_detected = true;
+                    ty::mk_err()
+                } else {
+                    match self.infcx.type_variables.borrow().probe(vid) {
+                        Some(u) => self.fold_ty(u),
+                        None => t,
+                    }
+                }
+            }
+            _ => {
+                ty_fold::super_fold_ty(self, t)
+            }
+        }
+    }
+
+    fn fold_region(&mut self, r: ty::Region) -> ty::Region {
+        match r {
+            ty::ReLateBound(..) | ty::ReEarlyBound(..) => r,
+            _ if self.make_region_vars => {
+                // FIXME: This is non-ideal because we don't give a
+                // very descriptive origin for this region variable.
+                self.infcx.next_region_var(MiscVariable(self.span))
+            }
+            _ => r,
+        }
+    }
+}
+
+

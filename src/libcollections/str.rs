@@ -44,7 +44,7 @@
 //!
 //! # Representation
 //!
-//! Rust's string type, `str`, is a sequence of unicode scalar values encoded as a
+//! Rust's string type, `str`, is a sequence of Unicode scalar values encoded as a
 //! stream of UTF-8 bytes. All strings are guaranteed to be validly encoded UTF-8
 //! sequences. Additionally, strings are not null-terminated and can contain null
 //! bytes.
@@ -67,6 +67,7 @@ use core::prelude::{range};
 use {Deque, MutableSeq};
 use hash;
 use ringbuf::RingBuf;
+use slice::CloneableVector;
 use string::String;
 use unicode;
 use vec::Vec;
@@ -697,7 +698,7 @@ pub trait StrAllocating: Str {
         let me = self.as_slice();
         let mut out = String::with_capacity(me.len());
         for c in me.chars() {
-            c.escape_default(|c| out.push_char(c));
+            c.escape_default(|c| out.push(c));
         }
         out
     }
@@ -707,7 +708,7 @@ pub trait StrAllocating: Str {
         let me = self.as_slice();
         let mut out = String::with_capacity(me.len());
         for c in me.chars() {
-            c.escape_unicode(|c| out.push_char(c));
+            c.escape_unicode(|c| out.push(c));
         }
         out
     }
@@ -754,7 +755,7 @@ pub trait StrAllocating: Str {
     #[inline]
     fn to_owned(&self) -> String {
         unsafe {
-            mem::transmute(Vec::from_slice(self.as_slice().as_bytes()))
+            mem::transmute(self.as_slice().as_bytes().to_vec())
         }
     }
 

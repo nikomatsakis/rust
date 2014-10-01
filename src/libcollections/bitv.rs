@@ -95,20 +95,6 @@ fn match_words <'a,'b>(a: &'a Bitv, b: &'b Bitv) -> (MatchWords<'a>, MatchWords<
 static TRUE: bool = true;
 static FALSE: bool = false;
 
-#[deriving(Clone)]
-struct SmallBitv {
-    /// only the lowest nbits of this value are used. the rest is undefined.
-    bits: uint
-}
-
-#[deriving(Clone)]
-struct BigBitv {
-    storage: Vec<uint>
-}
-
-#[deriving(Clone)]
-enum BitvVariant { Big(BigBitv), Small(SmallBitv) }
-
 /// The bitvector type.
 ///
 /// # Example
@@ -192,7 +178,7 @@ impl Bitv {
         // `op` is a bitwise operation, since any bits that should've
         // been masked were fine to change anyway. `b` is masked to
         // make sure its unmasked bits do not cause damage.
-        for (a, (_, b)) in self.storage.mut_iter()
+        for (a, (_, b)) in self.storage.iter_mut()
                            .zip(other.mask_words(0)) {
             let w = op(*a, b);
             if *a != w {
@@ -324,7 +310,7 @@ impl Bitv {
     /// ```
     #[inline]
     pub fn set_all(&mut self) {
-        for w in self.storage.mut_iter() { *w = !0u; }
+        for w in self.storage.iter_mut() { *w = !0u; }
     }
 
     /// Flips all bits.
@@ -343,7 +329,7 @@ impl Bitv {
     /// ```
     #[inline]
     pub fn negate(&mut self) {
-        for w in self.storage.mut_iter() { *w = !*w; }
+        for w in self.storage.iter_mut() { *w = !*w; }
     }
 
     /// Calculates the union of two bitvectors. This acts like the bitwise `or`
@@ -645,7 +631,7 @@ impl Bitv {
         let old_size = self.storage.len();
         let size = (size + uint::BITS - 1) / uint::BITS;
         if old_size < size {
-            self.storage.grow(size - old_size, &0);
+            self.storage.grow(size - old_size, 0);
         }
     }
 
@@ -701,7 +687,7 @@ impl Bitv {
         // Allocate new words, if needed
         if new_nwords > self.storage.len() {
           let to_add = new_nwords - self.storage.len();
-          self.storage.grow(to_add, &full_value);
+          self.storage.grow(to_add, full_value);
         }
         // Adjust internal bit count
         self.nbits = new_nbits;
@@ -811,7 +797,7 @@ impl Collection for Bitv {
 impl Mutable for Bitv {
     #[inline]
     fn clear(&mut self) {
-        for w in self.storage.mut_iter() { *w = 0u; }
+        for w in self.storage.iter_mut() { *w = 0u; }
     }
 }
 
@@ -845,7 +831,7 @@ impl Clone for Bitv {
     fn clone_from(&mut self, source: &Bitv) {
         self.nbits = source.nbits;
         self.storage.reserve(source.storage.len());
-        for (i, w) in self.storage.mut_iter().enumerate() { *w = source.storage[i]; }
+        for (i, w) in self.storage.iter_mut().enumerate() { *w = source.storage[i]; }
     }
 }
 
@@ -1653,6 +1639,7 @@ impl<'a> Iterator<uint> for TwoBitPositions<'a> {
 #[cfg(test)]
 mod tests {
     use std::prelude::*;
+    use std::iter::range_step;
     use std::uint;
     use std::rand;
     use std::rand::Rng;
@@ -2046,12 +2033,14 @@ mod tests {
 
     #[test]
     fn test_bitv_iterator() {
-        let bools = [true, false, true, true];
+        let bools = vec![true, false, true, true];
         let bitv: Bitv = bools.iter().map(|n| *n).collect();
 
-        for (act, &ex) in bitv.iter().zip(bools.iter()) {
-            assert_eq!(ex, act);
-        }
+        assert_eq!(bitv.iter().collect::<Vec<bool>>(), bools)
+
+        let long = Vec::from_fn(10000, |i| i % 2 == 0);
+        let bitv: Bitv = long.iter().map(|n| *n).collect();
+        assert_eq!(bitv.iter().collect::<Vec<bool>>(), long)
     }
 
     #[test]
@@ -2061,6 +2050,12 @@ mod tests {
 
         let idxs: Vec<uint> = bitv.iter().collect();
         assert_eq!(idxs, vec!(0, 2, 3));
+
+        let long: BitvSet = range(0u, 10000).map(|n| n % 2 == 0).collect();
+        let real = range_step(0, 10000, 2).collect::<Vec<uint>>();
+
+        let idxs: Vec<uint> = long.iter().collect();
+        assert_eq!(idxs, real);
     }
 
     #[test]
@@ -2574,7 +2569,7 @@ mod tests {
     }
 
     #[bench]
-    fn bench_bitv_big(b: &mut Bencher) {
+    fn bench_bitv_set_big_fixed(b: &mut Bencher) {
         let mut r = rng();
         let mut bitv = Bitv::with_capacity(BENCH_BITS, false);
         b.iter(|| {
@@ -2586,7 +2581,19 @@ mod tests {
     }
 
     #[bench]
-    fn bench_bitv_small(b: &mut Bencher) {
+    fn bench_bitv_set_big_variable(b: &mut Bencher) {
+        let mut r = rng();
+        let mut bitv = Bitv::with_capacity(BENCH_BITS, false);
+        b.iter(|| {
+            for i in range(0u, 100) {
+                bitv.set((r.next_u32() as uint) % BENCH_BITS, r.gen());
+            }
+            &bitv
+        })
+    }
+
+    #[bench]
+    fn bench_bitv_set_small(b: &mut Bencher) {
         let mut r = rng();
         let mut bitv = Bitv::with_capacity(uint::BITS, false);
         b.iter(|| {
@@ -2598,7 +2605,7 @@ mod tests {
     }
 
     #[bench]
-    fn bench_bitv_set_small(b: &mut Bencher) {
+    fn bench_bitvset_small(b: &mut Bencher) {
         let mut r = rng();
         let mut bitv = BitvSet::new();
         b.iter(|| {
@@ -2610,7 +2617,7 @@ mod tests {
     }
 
     #[bench]
-    fn bench_bitv_set_big(b: &mut Bencher) {
+    fn bench_bitvset_big(b: &mut Bencher) {
         let mut r = rng();
         let mut bitv = BitvSet::new();
         b.iter(|| {

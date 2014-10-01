@@ -25,19 +25,19 @@ pub use self::Sync as Share;
 
 /// Types able to be transferred across task boundaries.
 #[lang="send"]
-pub trait Send {
+pub trait Send for Sized? {
     // empty.
 }
 
 /// Types with a constant size known at compile-time.
 #[lang="sized"]
-pub trait Sized {
+pub trait Sized for Sized? {
     // Empty.
 }
 
 /// Types that can be copied by simply copying bits (i.e. `memcpy`).
 #[lang="copy"]
-pub trait Copy {
+pub trait Copy for Sized? {
     // Empty.
 }
 
@@ -87,7 +87,7 @@ pub trait Copy {
 /// reference; not doing this is undefined behaviour (for example,
 /// `transmute`-ing from `&T` to `&mut T` is illegal).
 #[lang="sync"]
-pub trait Sync {
+pub trait Sync for Sized? {
     // Empty
 }
 
@@ -97,25 +97,19 @@ pub trait Sync {
 /// implemented using unsafe code. In that case, you may want to embed
 /// some of the marker types below into your type.
 pub mod marker {
-    #[cfg(not(stage0))]
     #[lang="invariant_trait"]
     pub trait Invariant { }
 
-    #[cfg(not(stage0))]
     impl<T> Invariant for T { }
 
-    #[cfg(not(stage0))]
     #[lang="covariant_trait"]
     pub trait Covariant { }
 
-    #[cfg(not(stage0))]
     impl<T> Covariant for T { }
 
-    #[cfg(not(stage0))]
     #[lang="contravariant_trait"]
     pub trait Contravariant { }
 
-    #[cfg(not(stage0))]
     impl<T> Contravariant for T { }
 
     /// A marker type whose type parameter `T` is considered to be
@@ -292,7 +286,7 @@ pub mod marker {
     /// A type which is considered "not sync", meaning that
     /// its contents are not threadsafe, hence they cannot be
     /// shared between tasks.
-    #[lang="no_share_bound"]
+    #[lang="no_sync_bound"]
     #[deriving(PartialEq,Eq,PartialOrd,Ord,Clone)]
     pub struct NoSync;
 

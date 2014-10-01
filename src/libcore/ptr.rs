@@ -113,6 +113,10 @@ pub use intrinsics::set_memory;
 #[unstable = "may need a different name after pending changes to pointer types"]
 pub fn null<T>() -> *const T { 0 as *const T }
 
+/// Deprecated: use `null_mut`.
+#[deprecated = "use null_mut"]
+pub fn mut_null<T>() -> *mut T { null_mut() }
+
 /// Create an unsafe mutable null pointer.
 ///
 /// # Example
@@ -120,12 +124,12 @@ pub fn null<T>() -> *const T { 0 as *const T }
 /// ```
 /// use std::ptr;
 ///
-/// let p: *mut int = ptr::mut_null();
+/// let p: *mut int = ptr::null_mut();
 /// assert!(p.is_null());
 /// ```
 #[inline]
 #[unstable = "may need a different name after pending changes to pointer types"]
-pub fn mut_null<T>() -> *mut T { 0 as *mut T }
+pub fn null_mut<T>() -> *mut T { 0 as *mut T }
 
 /// Zeroes out `count * size_of::<T>` bytes of memory at `dst`
 #[inline]
@@ -256,25 +260,44 @@ pub unsafe fn position<T>(buf: *const T, f: |&T| -> bool) -> uint {
 pub trait RawPtr<T> {
     /// Returns the null pointer.
     fn null() -> Self;
+
     /// Returns true if the pointer is equal to the null pointer.
     fn is_null(&self) -> bool;
+
     /// Returns true if the pointer is not equal to the null pointer.
     fn is_not_null(&self) -> bool { !self.is_null() }
+
     /// Returns the value of this pointer (ie, the address it points to)
     fn to_uint(&self) -> uint;
-    /// Returns `None` if the pointer is null, or else returns the value wrapped
-    /// in `Some`.
+
+    /// Returns `None` if the pointer is null, or else returns a reference to the
+    /// value wrapped in `Some`.
     ///
     /// # Safety Notes
     ///
-    /// While this method is useful for null-safety, it is important to note
-    /// that this is still an unsafe operation because the returned value could
-    /// be pointing to invalid memory.
-    unsafe fn to_option(&self) -> Option<&T>;
+    /// While this method and its mutable counterpart are useful for null-safety,
+    /// it is important to note that this is still an unsafe operation because
+    /// the returned value could be pointing to invalid memory.
+    unsafe fn as_ref<'a>(&self) -> Option<&'a T>;
+
+    /// A synonym for `as_ref`, except with incorrect lifetime semantics
+    #[deprecated="Use `as_ref` instead"]
+    unsafe fn to_option<'a>(&'a self) -> Option<&'a T> {
+        mem::transmute(self.as_ref())
+    }
+
     /// Calculates the offset from a pointer. The offset *must* be in-bounds of
     /// the object, or one-byte-past-the-end.  `count` is in units of T; e.g. a
     /// `count` of 3 represents a pointer offset of `3 * sizeof::<T>()` bytes.
     unsafe fn offset(self, count: int) -> Self;
+}
+
+/// Methods on mutable raw pointers
+pub trait RawMutPtr<T>{
+    /// Returns `None` if the pointer is null, or else returns a mutable reference
+    /// to the value wrapped in `Some`. As with `as_ref`, this is unsafe because
+    /// it cannot verify the validity of the returned pointer.
+    unsafe fn as_mut<'a>(&self) -> Option<&'a mut T>;
 }
 
 impl<T> RawPtr<T> for *const T {
@@ -293,7 +316,7 @@ impl<T> RawPtr<T> for *const T {
     }
 
     #[inline]
-    unsafe fn to_option(&self) -> Option<&T> {
+    unsafe fn as_ref<'a>(&self) -> Option<&'a T> {
         if self.is_null() {
             None
         } else {
@@ -304,7 +327,7 @@ impl<T> RawPtr<T> for *const T {
 
 impl<T> RawPtr<T> for *mut T {
     #[inline]
-    fn null() -> *mut T { mut_null() }
+    fn null() -> *mut T { null_mut() }
 
     #[inline]
     fn is_null(&self) -> bool { *self == RawPtr::null() }
@@ -318,11 +341,22 @@ impl<T> RawPtr<T> for *mut T {
     }
 
     #[inline]
-    unsafe fn to_option(&self) -> Option<&T> {
+    unsafe fn as_ref<'a>(&self) -> Option<&'a T> {
         if self.is_null() {
             None
         } else {
             Some(&**self)
+        }
+    }
+}
+
+impl<T> RawMutPtr<T> for *mut T {
+    #[inline]
+    unsafe fn as_mut<'a>(&self) -> Option<&'a mut T> {
+        if self.is_null() {
+            None
+        } else {
+            Some(&mut **self)
         }
     }
 }

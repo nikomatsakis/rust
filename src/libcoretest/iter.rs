@@ -794,7 +794,7 @@ fn test_range_step_inclusive() {
 #[test]
 fn test_reverse() {
     let mut ys = [1i, 2, 3, 4, 5];
-    ys.mut_iter().reverse_();
+    ys.iter_mut().reverse_();
     assert!(ys == [5, 4, 3, 2, 1]);
 }
 
@@ -839,7 +839,7 @@ fn test_min_max_result() {
 
 #[test]
 fn test_iterate() {
-    let mut it = iterate(|x| x * 2, 1u);
+    let mut it = iterate(1u, |x| x * 2);
     assert_eq!(it.next(), Some(1u));
     assert_eq!(it.next(), Some(2u));
     assert_eq!(it.next(), Some(4u));

@@ -6,14 +6,14 @@ documentation.
 ## Quick Start
 
 1. Download a [binary installer][installer] for your platform.
-2. Read the [tutorial].
+2. Read the [guide].
 3. Enjoy!
 
 > ***Note:*** Windows users can read the detailed
 > [getting started][wiki-start] notes on the wiki.
 
 [installer]: http://www.rust-lang.org/install.html
-[tutorial]: http://doc.rust-lang.org/tutorial.html
+[guide]: http://doc.rust-lang.org/guide.html
 [wiki-start]: https://github.com/rust-lang/rust/wiki/Note-getting-started-developing-Rust
 [win-wiki]: https://github.com/rust-lang/rust/wiki/Using-Rust-on-Windows
 
@@ -54,7 +54,7 @@ documentation.
     When complete, `make install` will place several programs into
     `/usr/local/bin`: `rustc`, the Rust compiler, and `rustdoc`, the
     API-documentation tool.
-3. Read the [tutorial].
+3. Read the [guide].
 4. Enjoy!
 
 ### Building on Windows
@@ -76,7 +76,7 @@ To easily build on windows we can use [MSYS2](http://sourceforge.net/projects/ms
 
 [repo]: https://github.com/rust-lang/rust
 [tarball]: https://static.rust-lang.org/dist/rust-nightly.tar.gz
-[tutorial]: http://doc.rust-lang.org/tutorial.html
+[guide]: http://doc.rust-lang.org/guide.html
 
 ## Notes
 
@@ -100,6 +100,18 @@ swap, it will take a very long time to build.
 There is a lot more documentation in the [wiki].
 
 [wiki]: https://github.com/rust-lang/rust/wiki
+
+## Getting help and getting involved
+
+The Rust community congregates in a few places:
+
+* [StackOverflow] - Get help here.
+* [/r/rust] - General discussion.
+* [discuss.rust-lang.org] - For development of the Rust language itself.
+
+[StackOverflow]: http://stackoverflow.com/questions/tagged/rust
+[/r/rust]: http://reddit.com/r/rust
+[discuss.rust-lang.org]: http://discuss.rust-lang.org/
 
 ## License
 

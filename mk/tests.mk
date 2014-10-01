@@ -60,11 +60,14 @@ ifdef VERBOSE
   CTEST_TESTARGS += --verbose
 endif
 
+# Setting locale ensures that gdb's output remains consistent.
+# This prevents tests from failing with some locales (fixes #17423).
+export LC_ALL=C
+
 # If we're running perf then set this environment variable
 # to put the benchmarks into 'hard mode'
 ifeq ($(MAKECMDGOALS),perf)
-  RUST_BENCH=1
-  export RUST_BENCH
+  export RUST_BENCH=1
 endif
 
 TEST_LOG_FILE=tmp/check-stage$(1)-T-$(2)-H-$(3)-$(4).log
@@ -194,9 +197,6 @@ check-ref: cleantestlibs cleantmptestlogs check-stage2-rpass \
 check-docs: cleantestlibs cleantmptestlogs check-stage2-docs
 	$(Q)$(CFG_PYTHON) $(S)src/etc/check-summary.py tmp/*.log
 
-# NOTE: Remove after reprogramming windows bots
-check-fast: check-lite
-
 # Some less critical tests that are not prone to breakage.
 # Not run as part of the normal test suite, but tested by bors on checkin.
 check-secondary: check-lexer check-pretty
@@ -283,7 +283,7 @@ tidy:
 		| xargs -n 10 $(CFG_PYTHON) $(S)src/etc/tidy.py
 		$(Q)echo $(ALL_HS) \
 		| xargs -n 10 $(CFG_PYTHON) $(S)src/etc/tidy.py
-		$(Q)find $(S)src -type f -perm +111 \
+		$(Q)find $(S)src -type f -perm a+x \
 		    -not -name '*.rs' -and -not -name '*.py' \
 		    -and -not -name '*.sh' \
 		| grep '^$(S)src/jemalloc' -v \

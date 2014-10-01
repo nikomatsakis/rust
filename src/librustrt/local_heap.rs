@@ -24,7 +24,7 @@ use task::Task;
 
 static RC_IMMORTAL : uint = 0x77777777;
 
-pub type Box = raw::Box<()>;
+pub type Box = raw::GcBox<()>;
 
 pub struct MemoryRegion {
     live_allocations: uint,
@@ -32,14 +32,14 @@ pub struct MemoryRegion {
 
 pub struct LocalHeap {
     memory_region: MemoryRegion,
-    live_allocs: *mut raw::Box<()>,
+    live_allocs: *mut raw::GcBox<()>,
 }
 
 impl LocalHeap {
     pub fn new() -> LocalHeap {
         LocalHeap {
             memory_region: MemoryRegion { live_allocations: 0 },
-            live_allocs: ptr::mut_null(),
+            live_allocs: ptr::null_mut(),
         }
     }
 
@@ -58,7 +58,7 @@ impl LocalHeap {
             // allocations list
             mybox.drop_glue = drop_glue;
             mybox.ref_count = 1;
-            mybox.prev = ptr::mut_null();
+            mybox.prev = ptr::null_mut();
             mybox.next = self.live_allocs;
             if !self.live_allocs.is_null() {
                 unsafe { (*self.live_allocs).prev = alloc; }
@@ -161,11 +161,11 @@ impl LocalHeap {
     }
 
     unsafe fn each_live_alloc(&mut self, read_next_before: bool,
-                              f: |&mut LocalHeap, alloc: *mut raw::Box<()>|) {
+                              f: |&mut LocalHeap, alloc: *mut raw::GcBox<()>|) {
         //! Walks the internal list of allocations
 
         let mut alloc = self.live_allocs;
-        while alloc != ptr::mut_null() {
+        while alloc != ptr::null_mut() {
             let next_before = (*alloc).next;
 
             f(self, alloc);

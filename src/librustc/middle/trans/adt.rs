@@ -74,6 +74,7 @@ type Hint = attr::ReprAttr;
 
 
 /// Representations.
+#[deriving(Eq, PartialEq)]
 pub enum Repr {
     /// C-like enums; basically an int.
     CEnum(IntType, Disr, Disr), // discriminant range (signedness based on the IntType)
@@ -126,6 +127,7 @@ pub enum Repr {
 }
 
 /// For structs, and struct-like parts of anything fancier.
+#[deriving(Eq, PartialEq)]
 pub struct Struct {
     // If the struct is DST, then the size and alignment do not take into
     // account the unsized fields of the struct.
@@ -141,21 +143,21 @@ pub struct Struct {
  * these, for places in trans where the `ty::t` isn't directly
  * available.
  */
-pub fn represent_node(bcx: &Block, node: ast::NodeId) -> Rc<Repr> {
+pub fn represent_node(bcx: Block, node: ast::NodeId) -> Rc<Repr> {
     represent_type(bcx.ccx(), node_id_type(bcx, node))
 }
 
 /// Decides how to represent a given type.
 pub fn represent_type(cx: &CrateContext, t: ty::t) -> Rc<Repr> {
     debug!("Representing: {}", ty_to_string(cx.tcx(), t));
-    match cx.adt_reprs.borrow().find(&t) {
+    match cx.adt_reprs().borrow().find(&t) {
         Some(repr) => return repr.clone(),
         None => {}
     }
 
     let repr = Rc::new(represent_type_uncached(cx, t));
     debug!("Represented as: {:?}", repr)
-    cx.adt_reprs.borrow_mut().insert(t, repr.clone());
+    cx.adt_reprs().borrow_mut().insert(t, repr.clone());
     repr
 }
 
@@ -280,7 +282,7 @@ struct Case {
 }
 
 
-#[deriving(Show)]
+#[deriving(Eq, PartialEq, Show)]
 pub enum PointerField {
     ThinPointer(uint),
     FatPointer(uint, uint)
@@ -296,9 +298,8 @@ impl Case {
 
         for (i, &ty) in self.tys.iter().enumerate() {
             match ty::get(ty).sty {
-                // &T/&mut T/*T could either be a thin or fat pointer depending on T
-                ty::ty_rptr(_, ty::mt { ty, .. })
-                | ty::ty_ptr(ty::mt { ty, .. }) => match ty::get(ty).sty {
+                // &T/&mut T could either be a thin or fat pointer depending on T
+                ty::ty_rptr(_, ty::mt { ty, .. }) => match ty::get(ty).sty {
                     // &[T] and &str are a pointer and length pair
                     ty::ty_vec(_, None) | ty::ty_str => return Some(FatPointer(i, slice_elt_base)),
 
@@ -421,7 +422,7 @@ fn range_to_inttype(cx: &CrateContext, hint: Hint, bounds: &IntBounds) -> IntTyp
             attempts = choose_shortest;
         },
         attr::ReprPacked => {
-            cx.tcx.sess.bug("range_to_inttype: found ReprPacked on an enum");
+            cx.tcx().sess.bug("range_to_inttype: found ReprPacked on an enum");
         }
     }
     for &ity in attempts.iter() {
@@ -572,15 +573,15 @@ fn struct_llfields(cx: &CrateContext, st: &Struct, sizing: bool, dst: bool) -> V
  *
  * This should ideally be less tightly tied to `_match`.
  */
-pub fn trans_switch(bcx: &Block, r: &Repr, scrutinee: ValueRef)
-    -> (_match::branch_kind, Option<ValueRef>) {
+pub fn trans_switch(bcx: Block, r: &Repr, scrutinee: ValueRef)
+    -> (_match::BranchKind, Option<ValueRef>) {
     match *r {
         CEnum(..) | General(..) |
         RawNullablePointer { .. } | StructWrappedNullablePointer { .. } => {
-            (_match::switch, Some(trans_get_discr(bcx, r, scrutinee, None)))
+            (_match::Switch, Some(trans_get_discr(bcx, r, scrutinee, None)))
         }
         Univariant(..) => {
-            (_match::single, None)
+            (_match::Single, None)
         }
     }
 }
@@ -588,7 +589,7 @@ pub fn trans_switch(bcx: &Block, r: &Repr, scrutinee: ValueRef)
 
 
 /// Obtain the actual discriminant of a value.
-pub fn trans_get_discr(bcx: &Block, r: &Repr, scrutinee: ValueRef, cast_to: Option<Type>)
+pub fn trans_get_discr(bcx: Block, r: &Repr, scrutinee: ValueRef, cast_to: Option<Type>)
     -> ValueRef {
     let signed;
     let val;
@@ -623,7 +624,7 @@ pub fn trans_get_discr(bcx: &Block, r: &Repr, scrutinee: ValueRef, cast_to: Opti
     }
 }
 
-fn struct_wrapped_nullable_bitdiscr(bcx: &Block, nndiscr: Disr, ptrfield: PointerField,
+fn struct_wrapped_nullable_bitdiscr(bcx: Block, nndiscr: Disr, ptrfield: PointerField,
                                     scrutinee: ValueRef) -> ValueRef {
     let llptrptr = match ptrfield {
         ThinPointer(field) => GEPi(bcx, scrutinee, [0, field]),
@@ -635,7 +636,7 @@ fn struct_wrapped_nullable_bitdiscr(bcx: &Block, nndiscr: Disr, ptrfield: Pointe
 }
 
 /// Helper for cases where the discriminant is simply loaded.
-fn load_discr(bcx: &Block, ity: IntType, ptr: ValueRef, min: Disr, max: Disr)
+fn load_discr(bcx: Block, ity: IntType, ptr: ValueRef, min: Disr, max: Disr)
     -> ValueRef {
     let llty = ll_inttype(bcx.ccx(), ity);
     assert_eq!(val_ty(ptr), llty.ptr_to());
@@ -664,15 +665,15 @@ fn load_discr(bcx: &Block, ity: IntType, ptr: ValueRef, min: Disr, max: Disr)
  *
  * This should ideally be less tightly tied to `_match`.
  */
-pub fn trans_case<'a>(bcx: &'a Block<'a>, r: &Repr, discr: Disr)
-                  -> _match::opt_result<'a> {
+pub fn trans_case<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, r: &Repr, discr: Disr)
+                              -> _match::OptResult<'blk, 'tcx> {
     match *r {
         CEnum(ity, _, _) => {
-            _match::single_result(Result::new(bcx, C_integral(ll_inttype(bcx.ccx(), ity),
+            _match::SingleResult(Result::new(bcx, C_integral(ll_inttype(bcx.ccx(), ity),
                                                               discr as u64, true)))
         }
         General(ity, _, _) => {
-            _match::single_result(Result::new(bcx, C_integral(ll_inttype(bcx.ccx(), ity),
+            _match::SingleResult(Result::new(bcx, C_integral(ll_inttype(bcx.ccx(), ity),
                                                               discr as u64, true)))
         }
         Univariant(..) => {
@@ -681,7 +682,7 @@ pub fn trans_case<'a>(bcx: &'a Block<'a>, r: &Repr, discr: Disr)
         RawNullablePointer { .. } |
         StructWrappedNullablePointer { .. } => {
             assert!(discr == 0 || discr == 1);
-            _match::single_result(Result::new(bcx, C_bool(bcx.ccx(), discr != 0)))
+            _match::SingleResult(Result::new(bcx, C_bool(bcx.ccx(), discr != 0)))
         }
     }
 }
@@ -690,7 +691,7 @@ pub fn trans_case<'a>(bcx: &'a Block<'a>, r: &Repr, discr: Disr)
  * Set the discriminant for a new value of the given case of the given
  * representation.
  */
-pub fn trans_set_discr(bcx: &Block, r: &Repr, val: ValueRef, discr: Disr) {
+pub fn trans_set_discr(bcx: Block, r: &Repr, val: ValueRef, discr: Disr) {
     match *r {
         CEnum(ity, min, max) => {
             assert_discr_in_range(ity, min, max, discr);
@@ -768,7 +769,7 @@ pub fn num_args(r: &Repr, discr: Disr) -> uint {
 }
 
 /// Access a field, at a point when the value's case is known.
-pub fn trans_field_ptr(bcx: &Block, r: &Repr, val: ValueRef, discr: Disr,
+pub fn trans_field_ptr(bcx: Block, r: &Repr, val: ValueRef, discr: Disr,
                        ix: uint) -> ValueRef {
     // Note: if this ever needs to generate conditionals (e.g., if we
     // decide to do some kind of cdr-coding-like non-unique repr
@@ -807,7 +808,7 @@ pub fn trans_field_ptr(bcx: &Block, r: &Repr, val: ValueRef, discr: Disr,
     }
 }
 
-pub fn struct_field_ptr(bcx: &Block, st: &Struct, val: ValueRef,
+pub fn struct_field_ptr(bcx: Block, st: &Struct, val: ValueRef,
                         ix: uint, needs_cast: bool) -> ValueRef {
     let val = if needs_cast {
         let ccx = bcx.ccx();
@@ -821,10 +822,10 @@ pub fn struct_field_ptr(bcx: &Block, st: &Struct, val: ValueRef,
     GEPi(bcx, val, [0, ix])
 }
 
-pub fn fold_variants<'r, 'b>(
-    bcx: &'b Block<'b>, r: &Repr, value: ValueRef,
-    f: |&'b Block<'b>, &Struct, ValueRef|: 'r -> &'b Block<'b>
-) -> &'b Block<'b> {
+pub fn fold_variants<'blk, 'tcx>(
+        bcx: Block<'blk, 'tcx>, r: &Repr, value: ValueRef,
+        f: |Block<'blk, 'tcx>, &Struct, ValueRef| -> Block<'blk, 'tcx>)
+        -> Block<'blk, 'tcx> {
     let fcx = bcx.fcx;
     match *r {
         Univariant(ref st, _) => {
@@ -862,8 +863,8 @@ pub fn fold_variants<'r, 'b>(
 }
 
 /// Access the struct drop flag, if present.
-pub fn trans_drop_flag_ptr<'b>(mut bcx: &'b Block<'b>, r: &Repr,
-                               val: ValueRef) -> datum::DatumBlock<'b, datum::Expr> {
+pub fn trans_drop_flag_ptr<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>, r: &Repr, val: ValueRef)
+                                       -> datum::DatumBlock<'blk, 'tcx, datum::Expr> {
     let ptr_ty = ty::mk_imm_ptr(bcx.tcx(), ty::mk_bool());
     match *r {
         Univariant(ref st, true) => {

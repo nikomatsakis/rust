@@ -218,7 +218,7 @@
 
 // NB this does *not* include globs, please keep it that way.
 #![feature(macro_rules, phase, default_type_params)]
-#![allow(visible_private_types, deprecated)]
+#![allow(deprecated)]
 
 #[cfg(test)] #[phase(plugin, link)] extern crate log;
 #[cfg(test)] extern crate rustuv;
@@ -385,7 +385,7 @@ pub struct SchedPool {
 /// keep track of how many tasks are currently running in the pool and then
 /// sending on a channel once the entire pool has been drained of all tasks.
 #[deriving(Clone)]
-struct TaskState {
+pub struct TaskState {
     cnt: Arc<AtomicUint>,
     done: Sender<()>,
 }
@@ -435,7 +435,7 @@ impl SchedPool {
         // Now that we've got all our work queues, create one scheduler per
         // queue, spawn the scheduler into a thread, and be sure to keep a
         // handle to the scheduler and the thread to keep them alive.
-        for worker in workers.move_iter() {
+        for worker in workers.into_iter() {
             rtdebug!("inserting a regular scheduler");
 
             let mut sched = box Scheduler::new(pool.id,
@@ -493,7 +493,7 @@ impl SchedPool {
 
         // Tell all existing schedulers about this new scheduler so they can all
         // steal work from it
-        for handle in self.handles.mut_iter() {
+        for handle in self.handles.iter_mut() {
             handle.send(NewNeighbor(stealer.clone()));
         }
 
@@ -535,10 +535,10 @@ impl SchedPool {
         }
 
         // Now that everyone's gone, tell everything to shut down.
-        for mut handle in replace(&mut self.handles, vec![]).move_iter() {
+        for mut handle in replace(&mut self.handles, vec![]).into_iter() {
             handle.send(Shutdown);
         }
-        for thread in replace(&mut self.threads, vec![]).move_iter() {
+        for thread in replace(&mut self.threads, vec![]).into_iter() {
             thread.join();
         }
     }

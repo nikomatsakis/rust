@@ -23,15 +23,17 @@
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/master/")]
 
-#![feature(macro_rules, globs, managed_boxes, default_type_params, phase)]
+#![feature(macro_rules, globs, default_type_params, phase)]
 #![feature(quote, struct_variant, unsafe_destructor, import_shadowing)]
 #![allow(deprecated)]
 
+extern crate arena;
 extern crate fmt_macros;
 extern crate debug;
 #[phase(plugin, link)] extern crate log;
 extern crate serialize;
 extern crate term;
+extern crate libc;
 
 pub mod util {
     pub mod interner;
@@ -58,11 +60,17 @@ pub mod ast_map;
 pub mod ast_util;
 pub mod attr;
 pub mod codemap;
+pub mod config;
 pub mod crateid;
 pub mod diagnostic;
+pub mod feature_gate;
 pub mod fold;
 pub mod owned_slice;
 pub mod parse;
+pub mod ptr;
+pub mod show_span;
+pub mod std_inject;
+pub mod test;
 pub mod visit;
 
 pub mod print {
@@ -76,6 +84,7 @@ pub mod ext {
     pub mod build;
     pub mod bytes;
     pub mod cfg;
+    pub mod cfg_attr;
     pub mod concat;
     pub mod concat_idents;
     pub mod deriving;

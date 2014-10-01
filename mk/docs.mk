@@ -9,8 +9,7 @@
 # except according to those terms.
 
 ######################################################################
-# The various pieces of standalone documentation: guides, tutorial,
-# manual etc.
+# The various pieces of standalone documentation: guides, manual, etc
 #
 # The DOCS variable is their names (with no file extension).
 #
@@ -30,9 +29,9 @@ DOCS := index intro tutorial guide guide-ffi guide-macros guide-lifetimes \
 	guide-tasks guide-container guide-pointers guide-testing \
 	guide-runtime complement-bugreport \
 	complement-lang-faq complement-design-faq complement-project-faq rust \
-    rustdoc guide-unsafe guide-strings
+    rustdoc guide-unsafe guide-strings reference
 
-PDF_DOCS := tutorial rust
+PDF_DOCS := guide reference
 
 RUSTDOC_DEPS_rust := doc/full-toc.inc
 RUSTDOC_FLAGS_rust := --html-in-header=doc/full-toc.inc
@@ -76,21 +75,22 @@ endif
 
 # Check for the various external utilities for the EPUB/PDF docs:
 
-ifeq ($(CFG_PDFLATEX),)
-  $(info cfg: no pdflatex found, deferring to xelatex)
+ifeq ($(CFG_LUALATEX),)
+  $(info cfg: no lualatex found, deferring to xelatex)
   ifeq ($(CFG_XELATEX),)
-    $(info cfg: no xelatex found, deferring to lualatex)
-    ifeq ($(CFG_LUALATEX),)
-      $(info cfg: no lualatex found, disabling LaTeX docs)
+    $(info cfg: no xelatex found, deferring to pdflatex)
+    ifeq ($(CFG_PDFLATEX),)
+      $(info cfg: no pdflatex found, disabling LaTeX docs)
       NO_PDF_DOCS = 1
 	else
-      CFG_LATEX := $(CFG_LUALATEX)
+      CFG_LATEX := $(CFG_PDFLATEX)
     endif
   else
     CFG_LATEX := $(CFG_XELATEX)
+    XELATEX = 1
   endif
 else
-  CFG_LATEX := $(CFG_PDFLATEX)
+  CFG_LATEX := $(CFG_LUALATEX)
 endif
 
 
@@ -187,12 +187,25 @@ doc/$(1).tex: $$(D)/$(1).md doc/footer.tex doc/version.tex | doc/
 ifneq ($(NO_PDF_DOCS),1)
 ifeq ($$(SHOULD_BUILD_PDF_DOC_$(1)),1)
 DOC_TARGETS += doc/$(1).pdf
+ifneq ($(XELATEX),1)
 doc/$(1).pdf: doc/$(1).tex
 	@$$(call E, latex compiler: $$@)
 	$$(Q)$$(CFG_LATEX) \
 	-interaction=batchmode \
 	-output-directory=doc \
 	$$<
+else
+# The version of xelatex on the snap bots seemingly ingores -output-directory
+# So we'll output to . and move to the doc directory manually.
+# This will leave some intermediate files in the build directory.
+doc/$(1).pdf: doc/$(1).tex
+	@$$(call E, latex compiler: $$@)
+	$$(Q)$$(CFG_LATEX) \
+	-interaction=batchmode \
+	-output-directory=. \
+	$$<
+	$$(Q)mv ./$(1).pdf $$@
+endif # XELATEX
 endif # SHOULD_BUILD_PDF_DOCS_$(1)
 endif # NO_PDF_DOCS
 
@@ -212,7 +225,7 @@ $(foreach docname,$(DOCS),$(eval $(call DEF_DOC,$(docname))))
 #
 # As such, I've attempted to get it working as much as possible (and
 # switching from pandoc to rustdoc), but preserving the old behaviour
-# (e.g. only running on the tutorial)
+# (e.g. only running on the guide)
 .PHONY: l10n-mds
 l10n-mds: $(D)/po4a.conf \
 		$(foreach lang,$(L10N_LANG),$(D)/po/$(lang)/*.md.po)
@@ -230,7 +243,7 @@ doc/l10n/$(1)/$(2).html: l10n-mds $$(HTML_DEPS) $$(RUSTDOC_DEPS_$(2))
 	$$(RUSTDOC) $$(RUSTDOC_HTML_OPTS) $$(RUSTDOC_FLAGS_$(1)) doc/l10n/$(1)/$(2).md
 endef
 
-$(foreach lang,$(L10N_LANGS),$(eval $(call DEF_L10N_DOC,$(lang),tutorial)))
+$(foreach lang,$(L10N_LANGS),$(eval $(call DEF_L10N_DOC,$(lang),guide)))
 
 
 ######################################################################

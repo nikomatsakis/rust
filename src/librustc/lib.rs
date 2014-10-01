@@ -29,10 +29,9 @@ This API is completely unstable and subject to change.
       html_root_url = "http://doc.rust-lang.org/master/")]
 
 #![allow(deprecated)]
-#![feature(macro_rules, globs, struct_variant, managed_boxes, quote)]
+#![feature(macro_rules, globs, struct_variant, quote)]
 #![feature(default_type_params, phase, unsafe_destructor)]
 
-#![allow(unknown_features)] // NOTE: Remove after next snapshot
 #![feature(rustc_diagnostic_macros)]
 #![feature(import_shadowing)]
 
@@ -42,8 +41,8 @@ extern crate flate;
 extern crate getopts;
 extern crate graphviz;
 extern crate libc;
-extern crate llvm = "rustc_llvm";
-extern crate rustc_back = "rustc_back";
+extern crate rustc_llvm;
+extern crate rustc_back;
 extern crate serialize;
 extern crate rbml;
 extern crate time;
@@ -52,6 +51,8 @@ extern crate time;
 
 #[cfg(test)]
 extern crate test;
+
+pub use rustc_llvm as llvm;
 
 mod diagnostics;
 
@@ -69,6 +70,7 @@ pub mod back {
 
     pub mod link;
     pub mod lto;
+    pub mod write;
 
 }
 
@@ -77,8 +79,10 @@ pub mod middle {
     pub mod borrowck;
     pub mod cfg;
     pub mod check_const;
+    pub mod check_static_recursion;
     pub mod check_loop;
     pub mod check_match;
+    pub mod check_rvalues;
     pub mod check_static;
     pub mod const_eval;
     pub mod dataflow;
@@ -88,10 +92,8 @@ pub mod middle {
     pub mod effect;
     pub mod entry;
     pub mod expr_use_visitor;
-    pub mod freevars;
     pub mod graph;
     pub mod intrinsicck;
-    pub mod kind;
     pub mod lang_items;
     pub mod liveness;
     pub mod mem_categorization;
@@ -104,20 +106,12 @@ pub mod middle {
     pub mod save;
     pub mod stability;
     pub mod subst;
+    pub mod traits;
     pub mod trans;
     pub mod ty;
     pub mod ty_fold;
     pub mod typeck;
     pub mod weak_lang_items;
-}
-
-pub mod front {
-    pub mod config;
-    pub mod test;
-    pub mod std_inject;
-    pub mod assign_node_ids_and_map;
-    pub mod feature_gate;
-    pub mod show_span;
 }
 
 pub mod metadata;

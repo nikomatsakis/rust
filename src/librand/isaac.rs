@@ -185,7 +185,19 @@ impl Rng for IsaacRng {
             self.isaac();
         }
         self.cnt -= 1;
-        self.rsl[self.cnt as uint]
+
+        // self.cnt is at most RAND_SIZE, but that is before the
+        // subtraction above. We want to index without bounds
+        // checking, but this could lead to incorrect code if someone
+        // misrefactors, so we check, sometimes.
+        //
+        // (Changes here should be reflected in Isaac64Rng.next_u64.)
+        debug_assert!(self.cnt < RAND_SIZE);
+
+        // (the % is cheaply telling the optimiser that we're always
+        // in bounds, without unsafe. NB. this is a power of two, so
+        // it optimises to a bitwise mask).
+        self.rsl[(self.cnt % RAND_SIZE) as uint]
     }
 }
 
@@ -195,7 +207,7 @@ impl<'a> SeedableRng<&'a [u32]> for IsaacRng {
         // - 1], 0, 0, ...], to fill rng.rsl.
         let seed_iter = seed.iter().map(|&x| x).chain(Repeat::new(0u32));
 
-        for (rsl_elem, seed_elem) in self.rsl.mut_iter().zip(seed_iter) {
+        for (rsl_elem, seed_elem) in self.rsl.iter_mut().zip(seed_iter) {
             *rsl_elem = seed_elem;
         }
         self.cnt = 0;
@@ -416,7 +428,11 @@ impl Rng for Isaac64Rng {
             self.isaac64();
         }
         self.cnt -= 1;
-        unsafe { *self.rsl.unsafe_get(self.cnt) }
+
+        // See corresponding location in IsaacRng.next_u32 for
+        // explanation.
+        debug_assert!(self.cnt < RAND_SIZE_64)
+        self.rsl[(self.cnt % RAND_SIZE_64) as uint]
     }
 }
 
@@ -426,7 +442,7 @@ impl<'a> SeedableRng<&'a [u64]> for Isaac64Rng {
         // - 1], 0, 0, ...], to fill rng.rsl.
         let seed_iter = seed.iter().map(|&x| x).chain(Repeat::new(0u64));
 
-        for (rsl_elem, seed_elem) in self.rsl.mut_iter().zip(seed_iter) {
+        for (rsl_elem, seed_elem) in self.rsl.iter_mut().zip(seed_iter) {
             *rsl_elem = seed_elem;
         }
         self.cnt = 0;

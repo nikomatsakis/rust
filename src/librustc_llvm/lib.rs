@@ -28,14 +28,17 @@
 extern crate libc;
 
 use std::c_str::ToCStr;
+use std::cell::RefCell;
+use std::{raw, mem};
 use libc::{c_uint, c_ushort, uint64_t, c_int, size_t, c_char};
-use libc::{c_longlong, c_ulonglong};
+use libc::{c_longlong, c_ulonglong, c_void};
 use debuginfo::{DIBuilderRef, DIDescriptor,
                 DIFile, DILexicalBlock, DISubprogram, DIType,
                 DIBasicType, DIDerivedType, DICompositeType,
                 DIVariable, DIGlobalVariable, DIArray, DISubrange};
 
 pub mod archive_ro;
+pub mod diagnostic;
 
 pub type Opcode = u32;
 pub type Bool = c_uint;
@@ -79,34 +82,44 @@ pub enum Linkage {
     CommonLinkage = 14,
 }
 
-#[deriving(Clone)]
-pub enum Attribute {
-    ZExtAttribute = 1 << 0,
-    SExtAttribute = 1 << 1,
-    NoReturnAttribute = 1 << 2,
-    InRegAttribute = 1 << 3,
-    StructRetAttribute = 1 << 4,
-    NoUnwindAttribute = 1 << 5,
-    NoAliasAttribute = 1 << 6,
-    ByValAttribute = 1 << 7,
-    NestAttribute = 1 << 8,
-    ReadNoneAttribute = 1 << 9,
-    ReadOnlyAttribute = 1 << 10,
-    NoInlineAttribute = 1 << 11,
-    AlwaysInlineAttribute = 1 << 12,
-    OptimizeForSizeAttribute = 1 << 13,
-    StackProtectAttribute = 1 << 14,
-    StackProtectReqAttribute = 1 << 15,
-    AlignmentAttribute = 31 << 16,
-    NoCaptureAttribute = 1 << 21,
-    NoRedZoneAttribute = 1 << 22,
-    NoImplicitFloatAttribute = 1 << 23,
-    NakedAttribute = 1 << 24,
-    InlineHintAttribute = 1 << 25,
-    StackAttribute = 7 << 26,
-    ReturnsTwiceAttribute = 1 << 29,
-    UWTableAttribute = 1 << 30,
-    NonLazyBindAttribute = 1 << 31,
+#[repr(C)]
+#[deriving(Show)]
+pub enum DiagnosticSeverity {
+    Error,
+    Warning,
+    Remark,
+    Note,
+}
+
+bitflags! {
+    flags Attribute : u32 {
+        static ZExtAttribute = 1 << 0,
+        static SExtAttribute = 1 << 1,
+        static NoReturnAttribute = 1 << 2,
+        static InRegAttribute = 1 << 3,
+        static StructRetAttribute = 1 << 4,
+        static NoUnwindAttribute = 1 << 5,
+        static NoAliasAttribute = 1 << 6,
+        static ByValAttribute = 1 << 7,
+        static NestAttribute = 1 << 8,
+        static ReadNoneAttribute = 1 << 9,
+        static ReadOnlyAttribute = 1 << 10,
+        static NoInlineAttribute = 1 << 11,
+        static AlwaysInlineAttribute = 1 << 12,
+        static OptimizeForSizeAttribute = 1 << 13,
+        static StackProtectAttribute = 1 << 14,
+        static StackProtectReqAttribute = 1 << 15,
+        static AlignmentAttribute = 31 << 16,
+        static NoCaptureAttribute = 1 << 21,
+        static NoRedZoneAttribute = 1 << 22,
+        static NoImplicitFloatAttribute = 1 << 23,
+        static NakedAttribute = 1 << 24,
+        static InlineHintAttribute = 1 << 25,
+        static StackAttribute = 7 << 26,
+        static ReturnsTwiceAttribute = 1 << 29,
+        static UWTableAttribute = 1 << 30,
+        static NonLazyBindAttribute = 1 << 31,
+    }
 }
 
 #[repr(u64)]
@@ -140,7 +153,7 @@ pub enum AttributeSet {
     FunctionIndex = !0
 }
 
-trait AttrHelper {
+pub trait AttrHelper {
     fn apply_llfn(&self, idx: c_uint, llfn: ValueRef);
     fn apply_callsite(&self, idx: c_uint, callsite: ValueRef);
 }
@@ -148,13 +161,13 @@ trait AttrHelper {
 impl AttrHelper for Attribute {
     fn apply_llfn(&self, idx: c_uint, llfn: ValueRef) {
         unsafe {
-            LLVMAddFunctionAttribute(llfn, idx, *self as uint64_t);
+            LLVMAddFunctionAttribute(llfn, idx, self.bits() as uint64_t);
         }
     }
 
     fn apply_callsite(&self, idx: c_uint, callsite: ValueRef) {
         unsafe {
-            LLVMAddCallSiteAttribute(callsite, idx, *self as uint64_t);
+            LLVMAddCallSiteAttribute(callsite, idx, self.bits() as uint64_t);
         }
     }
 }
@@ -284,17 +297,17 @@ pub enum TypeKind {
 
 #[repr(C)]
 pub enum AtomicBinOp {
-    Xchg = 0,
-    Add  = 1,
-    Sub  = 2,
-    And  = 3,
-    Nand = 4,
-    Or   = 5,
-    Xor  = 6,
-    Max  = 7,
-    Min  = 8,
-    UMax = 9,
-    UMin = 10,
+    AtomicXchg = 0,
+    AtomicAdd  = 1,
+    AtomicSub  = 2,
+    AtomicAnd  = 3,
+    AtomicNand = 4,
+    AtomicOr   = 5,
+    AtomicXor  = 6,
+    AtomicMax  = 7,
+    AtomicMin  = 8,
+    AtomicUMax = 9,
+    AtomicUMin = 10,
 }
 
 #[repr(C)]
@@ -312,11 +325,11 @@ pub enum AtomicOrdering {
 // Consts for the LLVMCodeGenFileType type (in include/llvm/c/TargetMachine.h)
 #[repr(C)]
 pub enum FileType {
-    AssemblyFile = 0,
-    ObjectFile = 1
+    AssemblyFileType = 0,
+    ObjectFileType = 1
 }
 
-pub enum Metadata {
+pub enum MetadataType {
     MD_dbg = 0,
     MD_tbaa = 1,
     MD_prof = 2,
@@ -331,7 +344,7 @@ pub enum AsmDialect {
     AD_Intel = 1
 }
 
-#[deriving(PartialEq)]
+#[deriving(PartialEq, Clone)]
 #[repr(C)]
 pub enum CodeGenOptLevel {
     CodeGenLevelNone = 0,
@@ -356,6 +369,18 @@ pub enum CodeGenModel {
     CodeModelKernel = 3,
     CodeModelMedium = 4,
     CodeModelLarge = 5,
+}
+
+#[repr(C)]
+pub enum DiagnosticKind {
+    DK_InlineAsm = 0,
+    DK_StackSize,
+    DK_DebugMetadataVersion,
+    DK_SampleProfile,
+    DK_OptimizationRemark,
+    DK_OptimizationRemarkMissed,
+    DK_OptimizationRemarkAnalysis,
+    DK_OptimizationFailure,
 }
 
 // Opaque pointer types
@@ -393,6 +418,17 @@ pub enum TargetMachine_opaque {}
 pub type TargetMachineRef = *mut TargetMachine_opaque;
 pub enum Archive_opaque {}
 pub type ArchiveRef = *mut Archive_opaque;
+pub enum Twine_opaque {}
+pub type TwineRef = *mut Twine_opaque;
+pub enum DiagnosticInfo_opaque {}
+pub type DiagnosticInfoRef = *mut DiagnosticInfo_opaque;
+pub enum DebugLoc_opaque {}
+pub type DebugLocRef = *mut DebugLoc_opaque;
+pub enum SMDiagnostic_opaque {}
+pub type SMDiagnosticRef = *mut SMDiagnostic_opaque;
+
+pub type DiagnosticHandler = unsafe extern "C" fn(DiagnosticInfoRef, *mut c_void);
+pub type InlineAsmDiagHandler = unsafe extern "C" fn(SMDiagnosticRef, *const c_void, c_uint);
 
 pub mod debuginfo {
     use super::{ValueRef};
@@ -1839,8 +1875,8 @@ extern {
                                         -> ValueRef;
 
     pub fn LLVMDICompositeTypeSetTypeArray(CompositeType: ValueRef, TypeArray: ValueRef);
-    pub fn LLVMTypeToString(Type: TypeRef) -> *const c_char;
-    pub fn LLVMValueToString(value_ref: ValueRef) -> *const c_char;
+    pub fn LLVMWriteTypeToString(Type: TypeRef, s: RustStringRef);
+    pub fn LLVMWriteValueToString(value_ref: ValueRef, s: RustStringRef);
 
     pub fn LLVMIsAArgument(value_ref: ValueRef) -> ValueRef;
 
@@ -1916,6 +1952,30 @@ extern {
 
     pub fn LLVMRustGetSectionName(SI: SectionIteratorRef,
                                   data: *mut *const c_char) -> c_int;
+
+    pub fn LLVMWriteTwineToString(T: TwineRef, s: RustStringRef);
+
+    pub fn LLVMContextSetDiagnosticHandler(C: ContextRef,
+                                           Handler: DiagnosticHandler,
+                                           DiagnosticContext: *mut c_void);
+
+    pub fn LLVMUnpackOptimizationDiagnostic(DI: DiagnosticInfoRef,
+                                            pass_name_out: *mut *const c_char,
+                                            function_out: *mut ValueRef,
+                                            debugloc_out: *mut DebugLocRef,
+                                            message_out: *mut TwineRef);
+
+    pub fn LLVMWriteDiagnosticInfoToString(DI: DiagnosticInfoRef, s: RustStringRef);
+    pub fn LLVMGetDiagInfoSeverity(DI: DiagnosticInfoRef) -> DiagnosticSeverity;
+    pub fn LLVMGetDiagInfoKind(DI: DiagnosticInfoRef) -> DiagnosticKind;
+
+    pub fn LLVMWriteDebugLocToString(C: ContextRef, DL: DebugLocRef, s: RustStringRef);
+
+    pub fn LLVMSetInlineAsmDiagnosticHandler(C: ContextRef,
+                                             H: InlineAsmDiagHandler,
+                                             CX: *mut c_void);
+
+    pub fn LLVMWriteSMDiagnosticToString(d: SMDiagnosticRef, s: RustStringRef);
 }
 
 pub fn SetInstructionCallConv(instr: ValueRef, cc: CallConv) {
@@ -1959,7 +2019,7 @@ pub fn ConstFCmp(pred: RealPredicate, v1: ValueRef, v2: ValueRef) -> ValueRef {
 
 pub fn SetFunctionAttribute(fn_: ValueRef, attr: Attribute) {
     unsafe {
-        LLVMAddFunctionAttribute(fn_, FunctionIndex as c_uint, attr as uint64_t)
+        LLVMAddFunctionAttribute(fn_, FunctionIndex as c_uint, attr.bits() as uint64_t)
     }
 }
 
@@ -2044,6 +2104,40 @@ pub fn get_param(llfn: ValueRef, index: c_uint) -> ValueRef {
         assert!(index < LLVMCountParams(llfn));
         LLVMGetParam(llfn, index)
     }
+}
+
+pub enum RustString_opaque {}
+pub type RustStringRef = *mut RustString_opaque;
+type RustStringRepr = *mut RefCell<Vec<u8>>;
+
+/// Appending to a Rust string -- used by raw_rust_string_ostream.
+#[no_mangle]
+pub unsafe extern "C" fn rust_llvm_string_write_impl(sr: RustStringRef,
+                                                     ptr: *const c_char,
+                                                     size: size_t) {
+    let slice: &[u8] = mem::transmute(raw::Slice {
+        data: ptr as *const u8,
+        len: size as uint,
+    });
+
+    let sr: RustStringRepr = mem::transmute(sr);
+    (*sr).borrow_mut().push_all(slice);
+}
+
+pub fn build_string(f: |RustStringRef|) -> Option<String> {
+    let mut buf = RefCell::new(Vec::new());
+    f(&mut buf as RustStringRepr as RustStringRef);
+    String::from_utf8(buf.unwrap()).ok()
+}
+
+pub unsafe fn twine_to_string(tr: TwineRef) -> String {
+    build_string(|s| LLVMWriteTwineToString(tr, s))
+        .expect("got a non-UTF8 Twine from LLVM")
+}
+
+pub unsafe fn debug_loc_to_string(c: ContextRef, tr: DebugLocRef) -> String {
+    build_string(|s| LLVMWriteDebugLocToString(c, tr, s))
+        .expect("got a non-UTF8 DebugLoc from LLVM")
 }
 
 // FIXME #15460 - create a public function that actually calls our

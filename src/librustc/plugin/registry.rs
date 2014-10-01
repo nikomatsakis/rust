@@ -13,7 +13,7 @@
 use lint::{LintPassObject, LintId, Lint};
 
 use syntax::ext::base::{SyntaxExtension, NamedSyntaxExtension, NormalTT};
-use syntax::ext::base::{IdentTT, LetSyntaxTT, ItemDecorator, ItemModifier, BasicMacroExpander};
+use syntax::ext::base::{IdentTT, LetSyntaxTT, Decorator, Modifier};
 use syntax::ext::base::{MacroExpanderFn};
 use syntax::codemap::Span;
 use syntax::parse::token;
@@ -61,8 +61,8 @@ impl Registry {
         self.syntax_exts.push((name, match extension {
             NormalTT(ext, _) => NormalTT(ext, Some(self.krate_span)),
             IdentTT(ext, _) => IdentTT(ext, Some(self.krate_span)),
-            ItemDecorator(ext) => ItemDecorator(ext),
-            ItemModifier(ext) => ItemModifier(ext),
+            Decorator(ext) => Decorator(ext),
+            Modifier(ext) => Modifier(ext),
             // there's probably a nicer way to signal this:
             LetSyntaxTT(_, _) => fail!("can't register a new LetSyntax!"),
         }));
@@ -71,15 +71,10 @@ impl Registry {
     /// Register a macro of the usual kind.
     ///
     /// This is a convenience wrapper for `register_syntax_extension`.
-    /// It builds for you a `NormalTT` with a `BasicMacroExpander`,
+    /// It builds for you a `NormalTT` that calls `expander`,
     /// and also takes care of interning the macro's name.
     pub fn register_macro(&mut self, name: &str, expander: MacroExpanderFn) {
-        self.register_syntax_extension(
-            token::intern(name),
-            NormalTT(box BasicMacroExpander {
-                expander: expander,
-                span: None,
-            }, None));
+        self.register_syntax_extension(token::intern(name), NormalTT(box expander, None));
     }
 
     /// Register a compiler lint pass.
@@ -89,6 +84,6 @@ impl Registry {
 
     /// Register a lint group.
     pub fn register_lint_group(&mut self, name: &'static str, to: Vec<&'static Lint>) {
-        self.lint_groups.insert(name, to.move_iter().map(|x| LintId::of(x)).collect());
+        self.lint_groups.insert(name, to.into_iter().map(|x| LintId::of(x)).collect());
     }
 }

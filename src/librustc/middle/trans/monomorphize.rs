@@ -11,6 +11,7 @@
 use back::link::exported_name;
 use driver::session;
 use llvm::ValueRef;
+use llvm;
 use middle::subst;
 use middle::subst::Subst;
 use middle::trans::base::{set_llvm_fn_attrs, set_inline_hint};
@@ -20,29 +21,26 @@ use middle::trans::base;
 use middle::trans::common::*;
 use middle::trans::foreign;
 use middle::ty;
-use middle::typeck;
 use util::ppaux::Repr;
 
 use syntax::abi;
 use syntax::ast;
 use syntax::ast_map;
 use syntax::ast_util::{local_def, PostExpansionMethod};
+use syntax::attr;
 use std::hash::{sip, Hash};
 
 pub fn monomorphic_fn(ccx: &CrateContext,
                       fn_id: ast::DefId,
                       real_substs: &subst::Substs,
-                      vtables: typeck::vtable_res,
                       ref_id: Option<ast::NodeId>)
     -> (ValueRef, bool) {
     debug!("monomorphic_fn(\
             fn_id={}, \
             real_substs={}, \
-            vtables={}, \
             ref_id={:?})",
            fn_id.repr(ccx.tcx()),
            real_substs.repr(ccx.tcx()),
-           vtables.repr(ccx.tcx()),
            ref_id);
 
     assert!(real_substs.types.all(|t| {
@@ -56,7 +54,7 @@ pub fn monomorphic_fn(ccx: &CrateContext,
         params: real_substs.types.clone()
     };
 
-    match ccx.monomorphized.borrow().find(&hash_id) {
+    match ccx.monomorphized().borrow().find(&hash_id) {
         Some(&val) => {
             debug!("leaving monomorphic fn {}",
             ty::item_path_str(ccx.tcx(), fn_id));
@@ -67,7 +65,6 @@ pub fn monomorphic_fn(ccx: &CrateContext,
 
     let psubsts = param_substs {
         substs: (*real_substs).clone(),
-        vtables: vtables,
     };
 
     debug!("monomorphic_fn(\
@@ -83,7 +80,7 @@ pub fn monomorphic_fn(ccx: &CrateContext,
 
     let map_node = session::expect(
         ccx.sess(),
-        ccx.tcx.map.find(fn_id.node),
+        ccx.tcx().map.find(fn_id.node),
         || {
             format!("while monomorphizing {:?}, couldn't find it in \
                      the item map (may have attempted to monomorphize \
@@ -93,7 +90,7 @@ pub fn monomorphic_fn(ccx: &CrateContext,
 
     match map_node {
         ast_map::NodeForeignItem(_) => {
-            if ccx.tcx.map.get_foreign_abi(fn_id.node) != abi::RustIntrinsic {
+            if ccx.tcx().map.get_foreign_abi(fn_id.node) != abi::RustIntrinsic {
                 // Foreign externs don't have to be monomorphized.
                 return (get_item_val(ccx, fn_id.node), true);
             }
@@ -104,11 +101,11 @@ pub fn monomorphic_fn(ccx: &CrateContext,
     debug!("monomorphic_fn about to subst into {}", llitem_ty.repr(ccx.tcx()));
     let mono_ty = llitem_ty.subst(ccx.tcx(), real_substs);
 
-    ccx.stats.n_monos.set(ccx.stats.n_monos.get() + 1);
+    ccx.stats().n_monos.set(ccx.stats().n_monos.get() + 1);
 
     let depth;
     {
-        let mut monomorphizing = ccx.monomorphizing.borrow_mut();
+        let mut monomorphizing = ccx.monomorphizing().borrow_mut();
         depth = match monomorphizing.find(&fn_id) {
             Some(&d) => d, None => 0
         };
@@ -117,7 +114,7 @@ pub fn monomorphic_fn(ccx: &CrateContext,
         // recursively more than thirty times can probably safely be assumed
         // to be causing an infinite expansion.
         if depth > ccx.sess().recursion_limit.get() {
-            ccx.sess().span_fatal(ccx.tcx.map.span(fn_id.node),
+            ccx.sess().span_fatal(ccx.tcx().map.span(fn_id.node),
                 "reached the recursion limit during monomorphization");
         }
 
@@ -131,7 +128,7 @@ pub fn monomorphic_fn(ccx: &CrateContext,
         mono_ty.hash(&mut state);
 
         hash = format!("h{}", state.result());
-        ccx.tcx.map.with_path(fn_id.node, |path| {
+        ccx.tcx().map.with_path(fn_id.node, |path| {
             exported_name(path, hash.as_slice())
         })
     };
@@ -147,8 +144,27 @@ pub fn monomorphic_fn(ccx: &CrateContext,
             decl_internal_rust_fn(ccx, mono_ty, s.as_slice())
         };
 
-        ccx.monomorphized.borrow_mut().insert(hash_id.take().unwrap(), lldecl);
+        ccx.monomorphized().borrow_mut().insert(hash_id.take().unwrap(), lldecl);
         lldecl
+    };
+    let setup_lldecl = |lldecl, attrs: &[ast::Attribute]| {
+        base::update_linkage(ccx, lldecl, None, base::OriginalTranslation);
+        set_llvm_fn_attrs(attrs, lldecl);
+
+        let is_first = !ccx.available_monomorphizations().borrow().contains(&s);
+        if is_first {
+            ccx.available_monomorphizations().borrow_mut().insert(s.clone());
+        }
+
+        let trans_everywhere = attr::requests_inline(attrs);
+        if trans_everywhere && !is_first {
+            llvm::SetLinkage(lldecl, llvm::AvailableExternallyLinkage);
+        }
+
+        // If `true`, then `lldecl` should be given a function body.
+        // Otherwise, it should be left as a declaration of an external
+        // function, with no definition in the current compilation unit.
+        trans_everywhere || is_first
     };
 
     let lldecl = match map_node {
@@ -159,14 +175,15 @@ pub fn monomorphic_fn(ccx: &CrateContext,
                   ..
               } => {
                   let d = mk_lldecl(abi);
-                  set_llvm_fn_attrs(i.attrs.as_slice(), d);
-
-                  if abi != abi::Rust {
-                      foreign::trans_rust_fn_with_foreign_abi(
-                          ccx, &**decl, &**body, [], d, &psubsts, fn_id.node,
-                          Some(hash.as_slice()));
-                  } else {
-                      trans_fn(ccx, &**decl, &**body, d, &psubsts, fn_id.node, []);
+                  let needs_body = setup_lldecl(d, i.attrs.as_slice());
+                  if needs_body {
+                      if abi != abi::Rust {
+                          foreign::trans_rust_fn_with_foreign_abi(
+                              ccx, &**decl, &**body, [], d, &psubsts, fn_id.node,
+                              Some(hash.as_slice()));
+                      } else {
+                          trans_fn(ccx, &**decl, &**body, d, &psubsts, fn_id.node, []);
+                      }
                   }
 
                   d
@@ -177,7 +194,7 @@ pub fn monomorphic_fn(ccx: &CrateContext,
             }
         }
         ast_map::NodeVariant(v) => {
-            let parent = ccx.tcx.map.get_parent(fn_id.node);
+            let parent = ccx.tcx().map.get_parent(fn_id.node);
             let tvs = ty::enum_variants(ccx.tcx(), local_def(parent));
             let this_tv = tvs.iter().find(|tv| { tv.id.node == fn_id.node}).unwrap();
             let d = mk_lldecl(abi::Rust);
@@ -199,27 +216,34 @@ pub fn monomorphic_fn(ccx: &CrateContext,
         }
         ast_map::NodeImplItem(ii) => {
             match *ii {
-                ast::MethodImplItem(mth) => {
+                ast::MethodImplItem(ref mth) => {
                     let d = mk_lldecl(abi::Rust);
-                    set_llvm_fn_attrs(mth.attrs.as_slice(), d);
-                    trans_fn(ccx,
-                             &*mth.pe_fn_decl(),
-                             &*mth.pe_body(),
-                             d,
-                             &psubsts,
-                             mth.id,
-                             []);
+                    let needs_body = setup_lldecl(d, mth.attrs.as_slice());
+                    if needs_body {
+                        trans_fn(ccx,
+                                 mth.pe_fn_decl(),
+                                 mth.pe_body(),
+                                 d,
+                                 &psubsts,
+                                 mth.id,
+                                 []);
+                    }
                     d
+                }
+                ast::TypeImplItem(_) => {
+                    ccx.sess().bug("can't monomorphize an associated type")
                 }
             }
         }
         ast_map::NodeTraitItem(method) => {
             match *method {
-                ast::ProvidedMethod(mth) => {
+                ast::ProvidedMethod(ref mth) => {
                     let d = mk_lldecl(abi::Rust);
-                    set_llvm_fn_attrs(mth.attrs.as_slice(), d);
-                    trans_fn(ccx, &*mth.pe_fn_decl(), &*mth.pe_body(), d,
-                             &psubsts, mth.id, []);
+                    let needs_body = setup_lldecl(d, mth.attrs.as_slice());
+                    if needs_body {
+                        trans_fn(ccx, mth.pe_fn_decl(), mth.pe_body(), d,
+                                 &psubsts, mth.id, []);
+                    }
                     d
                 }
                 _ => {
@@ -254,43 +278,14 @@ pub fn monomorphic_fn(ccx: &CrateContext,
         }
     };
 
-    ccx.monomorphizing.borrow_mut().insert(fn_id, depth);
+    ccx.monomorphizing().borrow_mut().insert(fn_id, depth);
 
     debug!("leaving monomorphic fn {}", ty::item_path_str(ccx.tcx(), fn_id));
     (lldecl, true)
-}
-
-// Used to identify cached monomorphized functions and vtables
-#[deriving(PartialEq, Eq, Hash)]
-pub struct MonoParamId {
-    pub subst: ty::t,
 }
 
 #[deriving(PartialEq, Eq, Hash)]
 pub struct MonoId {
     pub def: ast::DefId,
     pub params: subst::VecPerParamSpace<ty::t>
-}
-
-pub fn make_vtable_id(_ccx: &CrateContext,
-                      origin: &typeck::vtable_origin)
-                      -> MonoId {
-    match origin {
-        &typeck::vtable_static(impl_id, ref substs, _) => {
-            MonoId {
-                def: impl_id,
-                params: substs.types.clone()
-            }
-        }
-
-        &typeck::vtable_unboxed_closure(def_id) => {
-            MonoId {
-                def: def_id,
-                params: subst::VecPerParamSpace::empty(),
-            }
-        }
-
-        // can't this be checked at the callee?
-        _ => fail!("make_vtable_id needs vtable_static")
-    }
 }

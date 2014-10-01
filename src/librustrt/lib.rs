@@ -27,7 +27,7 @@ extern crate alloc;
 extern crate libc;
 extern crate collections;
 
-#[cfg(test)] extern crate realrustrt = "rustrt";
+#[cfg(test)] extern crate "rustrt" as realrustrt;
 #[cfg(test)] extern crate test;
 #[cfg(test)] extern crate native;
 
@@ -160,7 +160,7 @@ pub unsafe fn cleanup() {
 pub mod shouldnt_be_public {
     #[cfg(not(test))]
     pub use super::local_ptr::native::maybe_tls_key;
-    #[cfg(not(windows), not(target_os = "android"), not(target_os = "ios"))]
+    #[cfg(all(not(windows), not(target_os = "android"), not(target_os = "ios")))]
     pub use super::local_ptr::compiled::RT_TLS_PTR;
 }
 

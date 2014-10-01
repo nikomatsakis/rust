@@ -25,9 +25,7 @@ use middle::ty::{ty_uniq, ty_trait, ty_int, ty_uint, ty_infer};
 use middle::ty;
 use middle::typeck;
 use middle::typeck::check::regionmanip;
-use middle::typeck::infer;
 
-use std::gc::Gc;
 use std::rc::Rc;
 use syntax::abi;
 use syntax::ast_map;
@@ -94,6 +92,7 @@ pub fn explain_region_and_span(cx: &ctxt, region: ty::Region)
               ast::ExprMethodCall(..) => {
                 explain_span(cx, "method call", expr.span)
               },
+              ast::ExprMatch(_, _, ast::MatchIfLetDesugar) => explain_span(cx, "if let", expr.span),
               ast::ExprMatch(..) => explain_span(cx, "match", expr.span),
               _ => explain_span(cx, "expression", expr.span)
             }
@@ -497,7 +496,13 @@ pub fn parameterized(cx: &ctxt,
 
     if cx.sess.verbose() {
         for t in substs.types.get_slice(subst::SelfSpace).iter() {
-            strs.push(format!("for {}", t.repr(cx)));
+            strs.push(format!("self {}", t.repr(cx)));
+        }
+
+        // generally there shouldn't be any substs in the fn param
+        // space, but in verbose mode, print them out.
+        for t in substs.types.get_slice(subst::FnSpace).iter() {
+            strs.push(format!("fn {}", t.repr(cx)));
         }
     }
 
@@ -540,13 +545,13 @@ impl Repr for () {
     }
 }
 
-impl<T:Repr> Repr for Rc<T> {
+impl<'a,T:Repr> Repr for &'a T {
     fn repr(&self, tcx: &ctxt) -> String {
         (&**self).repr(tcx)
     }
 }
 
-impl<T:Repr + 'static> Repr for Gc<T> {
+impl<T:Repr> Repr for Rc<T> {
     fn repr(&self, tcx: &ctxt) -> String {
         (&**self).repr(tcx)
     }
@@ -598,9 +603,11 @@ impl Repr for def::Def {
 
 impl Repr for ty::TypeParameterDef {
     fn repr(&self, tcx: &ctxt) -> String {
-        format!("TypeParameterDef({}, {})",
-                self.def_id.repr(tcx),
-                self.bounds.repr(tcx))
+        format!("TypeParameterDef({}, {}, {}/{})",
+                self.def_id,
+                self.bounds.repr(tcx),
+                self.space,
+                self.index)
     }
 }
 
@@ -691,7 +698,11 @@ impl Repr for ty::ParamBounds {
 
 impl Repr for ty::TraitRef {
     fn repr(&self, tcx: &ctxt) -> String {
-        trait_ref_to_string(tcx, self)
+        let base = ty::item_path_str(tcx, self.def_id);
+        let trait_def = ty::lookup_trait_def(tcx, self.def_id);
+        format!("<{} as {}>",
+                self.substs.self_ty().repr(tcx),
+                parameterized(tcx, base.as_slice(), &self.substs, &trait_def.generics))
     }
 }
 
@@ -822,21 +833,19 @@ impl Repr for ast::DefId {
         // a path for a def-id, so I'll just make a best effort for now
         // and otherwise fallback to just printing the crate/node pair
         if self.krate == ast::LOCAL_CRATE {
-            {
-                match tcx.map.find(self.node) {
-                    Some(ast_map::NodeItem(..)) |
-                    Some(ast_map::NodeForeignItem(..)) |
-                    Some(ast_map::NodeImplItem(..)) |
-                    Some(ast_map::NodeTraitItem(..)) |
-                    Some(ast_map::NodeVariant(..)) |
-                    Some(ast_map::NodeStructCtor(..)) => {
-                        return format!(
+            match tcx.map.find(self.node) {
+                Some(ast_map::NodeItem(..)) |
+                Some(ast_map::NodeForeignItem(..)) |
+                Some(ast_map::NodeImplItem(..)) |
+                Some(ast_map::NodeTraitItem(..)) |
+                Some(ast_map::NodeVariant(..)) |
+                Some(ast_map::NodeStructCtor(..)) => {
+                    return format!(
                                 "{:?}:{}",
                                 *self,
                                 ty::item_path_str(tcx, *self))
-                    }
-                    _ => {}
                 }
+                _ => {}
             }
         }
         return format!("{:?}", *self)
@@ -873,7 +882,8 @@ impl Repr for ty::Variance {
         // The first `.to_string()` returns a &'static str (it is not an implementation
         // of the ToString trait). Because of that, we need to call `.to_string()` again
         // if we want to have a `String`.
-        self.to_string().to_string()
+        let result: &'static str = (*self).to_string();
+        result.to_string()
     }
 }
 
@@ -953,10 +963,10 @@ impl Repr for typeck::MethodOrigin {
             &typeck::MethodStaticUnboxedClosure(def_id) => {
                 format!("MethodStaticUnboxedClosure({})", def_id.repr(tcx))
             }
-            &typeck::MethodParam(ref p) => {
+            &typeck::MethodTypeParam(ref p) => {
                 p.repr(tcx)
             }
-            &typeck::MethodObject(ref p) => {
+            &typeck::MethodTraitObject(ref p) => {
                 p.repr(tcx)
             }
         }
@@ -965,18 +975,16 @@ impl Repr for typeck::MethodOrigin {
 
 impl Repr for typeck::MethodParam {
     fn repr(&self, tcx: &ctxt) -> String {
-        format!("MethodParam({},{:?},{:?},{:?})",
-                self.trait_id.repr(tcx),
-                self.method_num,
-                self.param_num,
-                self.bound_num)
+        format!("MethodParam({},{})",
+                self.trait_ref.repr(tcx),
+                self.method_num)
     }
 }
 
 impl Repr for typeck::MethodObject {
     fn repr(&self, tcx: &ctxt) -> String {
         format!("MethodObject({},{:?},{:?})",
-                self.trait_id.repr(tcx),
+                self.trait_ref.repr(tcx),
                 self.method_num,
                 self.real_index)
     }
@@ -1174,14 +1182,6 @@ impl Repr for ast::FloatTy {
     }
 }
 
-impl<T:Repr> Repr for infer::Bounds<T> {
-    fn repr(&self, tcx: &ctxt) -> String {
-        format!("({} <= {})",
-                self.lb.repr(tcx),
-                self.ub.repr(tcx))
-    }
-}
-
 impl Repr for ty::ExplicitSelfCategory {
     fn repr(&self, _: &ctxt) -> String {
         explicit_self_category_to_str(self).to_string()
@@ -1234,3 +1234,4 @@ impl<A:Repr,B:Repr> Repr for (A,B) {
         format!("({},{})", a.repr(tcx), b.repr(tcx))
     }
 }
+

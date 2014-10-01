@@ -50,7 +50,7 @@ fn addr_to_sockaddr_un(addr: &CString,
         })
     }
     s.sun_family = libc::AF_UNIX as libc::sa_family_t;
-    for (slot, value) in s.sun_path.mut_iter().zip(addr.iter()) {
+    for (slot, value) in s.sun_path.iter_mut().zip(addr.iter()) {
         *slot = value;
     }
 
@@ -173,7 +173,7 @@ impl rtio::RtioPipe for UnixStream {
         let dowrite = |nb: bool, buf: *const u8, len: uint| unsafe {
             let flags = if nb {c::MSG_DONTWAIT} else {0};
             libc::send(fd,
-                       buf as *mut libc::c_void,
+                       buf as *const _,
                        len as libc::size_t,
                        flags) as i64
         };

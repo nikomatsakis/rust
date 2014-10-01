@@ -22,7 +22,6 @@ use middle::typeck::infer::{force_all, resolve_all, resolve_region};
 use middle::typeck::infer::resolve_type;
 use middle::typeck::infer;
 use middle::typeck::{MethodCall, MethodCallee};
-use middle::typeck::vtable_res;
 use middle::typeck::write_substs_to_tcx;
 use middle::typeck::write_ty_to_tcx;
 use util::ppaux::Repr;
@@ -41,9 +40,10 @@ use syntax::visit::Visitor;
 pub fn resolve_type_vars_in_expr(fcx: &FnCtxt, e: &ast::Expr) {
     assert_eq!(fcx.writeback_errors.get(), false);
     let mut wbcx = WritebackCx::new(fcx);
-    wbcx.visit_expr(e, ());
+    wbcx.visit_expr(e);
     wbcx.visit_upvar_borrow_map();
     wbcx.visit_unboxed_closures();
+    wbcx.visit_object_cast_map();
 }
 
 pub fn resolve_type_vars_in_fn(fcx: &FnCtxt,
@@ -51,9 +51,9 @@ pub fn resolve_type_vars_in_fn(fcx: &FnCtxt,
                                blk: &ast::Block) {
     assert_eq!(fcx.writeback_errors.get(), false);
     let mut wbcx = WritebackCx::new(fcx);
-    wbcx.visit_block(blk, ());
+    wbcx.visit_block(blk);
     for arg in decl.inputs.iter() {
-        wbcx.visit_pat(&*arg.pat, ());
+        wbcx.visit_pat(&*arg.pat);
 
         // Privacy needs the type for the whole pattern, not just each binding
         if !pat_util::pat_is_binding(&fcx.tcx().def_map, &*arg.pat) {
@@ -63,17 +63,7 @@ pub fn resolve_type_vars_in_fn(fcx: &FnCtxt,
     }
     wbcx.visit_upvar_borrow_map();
     wbcx.visit_unboxed_closures();
-}
-
-pub fn resolve_impl_res(infcx: &infer::InferCtxt,
-                        span: Span,
-                        vtable_res: &vtable_res)
-                        -> vtable_res {
-    let errors = Cell::new(false); // nobody cares
-    let mut resolver = Resolver::from_infcx(infcx,
-                                            &errors,
-                                            ResolvingImplRes(span));
-    vtable_res.resolve_in(&mut resolver)
+    wbcx.visit_object_cast_map();
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -84,16 +74,16 @@ pub fn resolve_impl_res(infcx: &infer::InferCtxt,
 // there, it applies a few ad-hoc checks that were not convenient to
 // do elsewhere.
 
-struct WritebackCx<'cx> {
-    fcx: &'cx FnCtxt<'cx>,
+struct WritebackCx<'cx, 'tcx: 'cx> {
+    fcx: &'cx FnCtxt<'cx, 'tcx>,
 }
 
-impl<'cx> WritebackCx<'cx> {
-    fn new(fcx: &'cx FnCtxt) -> WritebackCx<'cx> {
+impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
+    fn new(fcx: &'cx FnCtxt<'cx, 'tcx>) -> WritebackCx<'cx, 'tcx> {
         WritebackCx { fcx: fcx }
     }
 
-    fn tcx(&self) -> &'cx ty::ctxt {
+    fn tcx(&self) -> &'cx ty::ctxt<'tcx> {
         self.fcx.tcx()
     }
 }
@@ -106,29 +96,27 @@ impl<'cx> WritebackCx<'cx> {
 // below. In general, a function is made into a `visitor` if it must
 // traffic in node-ids or update tables in the type context etc.
 
-impl<'cx> Visitor<()> for WritebackCx<'cx> {
-    fn visit_item(&mut self, _: &ast::Item, _: ()) {
+impl<'cx, 'tcx, 'v> Visitor<'v> for WritebackCx<'cx, 'tcx> {
+    fn visit_item(&mut self, _: &ast::Item) {
         // Ignore items
     }
 
-    fn visit_stmt(&mut self, s: &ast::Stmt, _: ()) {
+    fn visit_stmt(&mut self, s: &ast::Stmt) {
         if self.fcx.writeback_errors.get() {
             return;
         }
 
         self.visit_node_id(ResolvingExpr(s.span), ty::stmt_node_id(s));
-        visit::walk_stmt(self, s, ());
+        visit::walk_stmt(self, s);
     }
 
-    fn visit_expr(&mut self, e:&ast::Expr, _: ()) {
+    fn visit_expr(&mut self, e: &ast::Expr) {
         if self.fcx.writeback_errors.get() {
             return;
         }
 
         self.visit_node_id(ResolvingExpr(e.span), e.id);
         self.visit_method_map_entry(ResolvingExpr(e.span),
-                                    MethodCall::expr(e.id));
-        self.visit_vtable_map_entry(ResolvingExpr(e.span),
                                     MethodCall::expr(e.id));
 
         match e.node {
@@ -143,19 +131,19 @@ impl<'cx> Visitor<()> for WritebackCx<'cx> {
             _ => {}
         }
 
-        visit::walk_expr(self, e, ());
+        visit::walk_expr(self, e);
     }
 
-    fn visit_block(&mut self, b: &ast::Block, _: ()) {
+    fn visit_block(&mut self, b: &ast::Block) {
         if self.fcx.writeback_errors.get() {
             return;
         }
 
         self.visit_node_id(ResolvingExpr(b.span), b.id);
-        visit::walk_block(self, b, ());
+        visit::walk_block(self, b);
     }
 
-    fn visit_pat(&mut self, p: &ast::Pat, _: ()) {
+    fn visit_pat(&mut self, p: &ast::Pat) {
         if self.fcx.writeback_errors.get() {
             return;
         }
@@ -167,10 +155,10 @@ impl<'cx> Visitor<()> for WritebackCx<'cx> {
                p.id,
                ty::node_id_to_type(self.tcx(), p.id).repr(self.tcx()));
 
-        visit::walk_pat(self, p, ());
+        visit::walk_pat(self, p);
     }
 
-    fn visit_local(&mut self, l: &ast::Local, _: ()) {
+    fn visit_local(&mut self, l: &ast::Local) {
         if self.fcx.writeback_errors.get() {
             return;
         }
@@ -178,21 +166,21 @@ impl<'cx> Visitor<()> for WritebackCx<'cx> {
         let var_ty = self.fcx.local_ty(l.span, l.id);
         let var_ty = self.resolve(&var_ty, ResolvingLocal(l.span));
         write_ty_to_tcx(self.tcx(), l.id, var_ty);
-        visit::walk_local(self, l, ());
+        visit::walk_local(self, l);
     }
 
-    fn visit_ty(&mut self, t: &ast::Ty, _: ()) {
+    fn visit_ty(&mut self, t: &ast::Ty) {
         match t.node {
             ast::TyFixedLengthVec(ref ty, ref count_expr) => {
-                self.visit_ty(&**ty, ());
+                self.visit_ty(&**ty);
                 write_ty_to_tcx(self.tcx(), count_expr.id, ty::mk_uint());
             }
-            _ => visit::walk_ty(self, t, ())
+            _ => visit::walk_ty(self, t)
         }
     }
 }
 
-impl<'cx> WritebackCx<'cx> {
+impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
     fn visit_upvar_borrow_map(&self) {
         if self.fcx.writeback_errors.get() {
             return;
@@ -235,6 +223,27 @@ impl<'cx> WritebackCx<'cx> {
         }
     }
 
+    fn visit_object_cast_map(&self) {
+        if self.fcx.writeback_errors.get() {
+            return
+        }
+
+        for (&node_id, trait_ref) in self.fcx
+                                            .inh
+                                            .object_cast_map
+                                            .borrow()
+                                            .iter()
+        {
+            let span = ty::expr_span(self.tcx(), node_id);
+            let reason = ResolvingExpr(span);
+            let closure_ty = self.resolve(trait_ref, reason);
+            self.tcx()
+                .object_cast_map
+                .borrow_mut()
+                .insert(node_id, closure_ty);
+        }
+    }
+
     fn visit_node_id(&self, reason: ResolveReason, id: ast::NodeId) {
         // Resolve any borrowings for the node with id `id`
         self.visit_adjustments(reason, id);
@@ -261,7 +270,7 @@ impl<'cx> WritebackCx<'cx> {
             Some(adjustment) => {
                 let adj_object = ty::adjust_is_object(&adjustment);
                 let resolved_adjustment = match adjustment {
-                    ty::AutoAddEnv(store) => {
+                    ty::AdjustAddEnv(store) => {
                         // FIXME(eddyb) #2190 Allow only statically resolved
                         // bare functions to coerce to a closure to avoid
                         // constructing (slower) indirect call wrappers.
@@ -277,23 +286,21 @@ impl<'cx> WritebackCx<'cx> {
                             }
                         }
 
-                        ty::AutoAddEnv(self.resolve(&store, reason))
+                        ty::AdjustAddEnv(self.resolve(&store, reason))
                     }
 
-                    ty::AutoDerefRef(adj) => {
+                    ty::AdjustDerefRef(adj) => {
                         for autoderef in range(0, adj.autoderefs) {
                             let method_call = MethodCall::autoderef(id, autoderef);
                             self.visit_method_map_entry(reason, method_call);
-                            self.visit_vtable_map_entry(reason, method_call);
                         }
 
                         if adj_object {
                             let method_call = MethodCall::autoobject(id);
                             self.visit_method_map_entry(reason, method_call);
-                            self.visit_vtable_map_entry(reason, method_call);
                         }
 
-                        ty::AutoDerefRef(ty::AutoDerefRef {
+                        ty::AdjustDerefRef(ty::AutoDerefRef {
                             autoderefs: adj.autoderefs,
                             autoref: self.resolve(&adj.autoref, reason),
                         })
@@ -329,22 +336,6 @@ impl<'cx> WritebackCx<'cx> {
         }
     }
 
-    fn visit_vtable_map_entry(&self,
-                              reason: ResolveReason,
-                              vtable_key: MethodCall) {
-        // Resolve any vtable map entry
-        match self.fcx.inh.vtable_map.borrow_mut().pop(&vtable_key) {
-            Some(origins) => {
-                let r_origins = self.resolve(&origins, reason);
-                debug!("writeback::resolve_vtable_map_entry(\
-                        vtable_key={}, vtables={:?})",
-                       vtable_key, r_origins.repr(self.tcx()));
-                self.tcx().vtable_map.borrow_mut().insert(vtable_key, r_origins);
-            }
-            None => {}
-        }
-    }
-
     fn resolve<T:ResolveIn>(&self, t: &T, reason: ResolveReason) -> T {
         t.resolve_in(&mut Resolver::new(self.fcx, reason))
     }
@@ -358,7 +349,6 @@ enum ResolveReason {
     ResolvingLocal(Span),
     ResolvingPattern(Span),
     ResolvingUpvar(ty::UpvarId),
-    ResolvingImplRes(Span),
     ResolvingUnboxedClosure(ast::DefId),
 }
 
@@ -371,7 +361,6 @@ impl ResolveReason {
             ResolvingUpvar(upvar_id) => {
                 ty::expr_span(tcx, upvar_id.closure_expr_id)
             }
-            ResolvingImplRes(s) => s,
             ResolvingUnboxedClosure(did) => {
                 if did.krate == ast::LOCAL_CRATE {
                     ty::expr_span(tcx, did.node)
@@ -400,28 +389,25 @@ impl<T:TypeFoldable> ResolveIn for T {
 // The Resolver. This is the type folding engine that detects
 // unresolved types and so forth.
 
-struct Resolver<'cx> {
-    tcx: &'cx ty::ctxt,
-    infcx: &'cx infer::InferCtxt<'cx>,
+struct Resolver<'cx, 'tcx: 'cx> {
+    tcx: &'cx ty::ctxt<'tcx>,
+    infcx: &'cx infer::InferCtxt<'cx, 'tcx>,
     writeback_errors: &'cx Cell<bool>,
     reason: ResolveReason,
 }
 
-impl<'cx> Resolver<'cx> {
-    fn new(fcx: &'cx FnCtxt<'cx>,
+impl<'cx, 'tcx> Resolver<'cx, 'tcx> {
+    fn new(fcx: &'cx FnCtxt<'cx, 'tcx>,
            reason: ResolveReason)
-           -> Resolver<'cx>
+           -> Resolver<'cx, 'tcx>
     {
-        Resolver { infcx: fcx.infcx(),
-                   tcx: fcx.tcx(),
-                   writeback_errors: &fcx.writeback_errors,
-                   reason: reason }
+        Resolver::from_infcx(fcx.infcx(), &fcx.writeback_errors, reason)
     }
 
-    fn from_infcx(infcx: &'cx infer::InferCtxt<'cx>,
+    fn from_infcx(infcx: &'cx infer::InferCtxt<'cx, 'tcx>,
                   writeback_errors: &'cx Cell<bool>,
                   reason: ResolveReason)
-                  -> Resolver<'cx>
+                  -> Resolver<'cx, 'tcx>
     {
         Resolver { infcx: infcx,
                    tcx: infcx.tcx,
@@ -459,11 +445,6 @@ impl<'cx> Resolver<'cx> {
                         infer::fixup_err_to_string(e));
                 }
 
-                ResolvingImplRes(span) => {
-                    span_err!(self.tcx.sess, span, E0105,
-                        "cannot determine a type for impl supertrait");
-                }
-
                 ResolvingUnboxedClosure(_) => {
                     let span = self.reason.span(self.tcx);
                     self.tcx.sess.span_err(span,
@@ -475,8 +456,8 @@ impl<'cx> Resolver<'cx> {
     }
 }
 
-impl<'cx> TypeFolder for Resolver<'cx> {
-    fn tcx<'a>(&'a self) -> &'a ty::ctxt {
+impl<'cx, 'tcx> TypeFolder<'tcx> for Resolver<'cx, 'tcx> {
+    fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> {
         self.tcx
     }
 
@@ -504,3 +485,11 @@ impl<'cx> TypeFolder for Resolver<'cx> {
         }
     }
 }
+
+///////////////////////////////////////////////////////////////////////////
+// During type check, we store promises with the result of trait
+// lookup rather than the actual results (because the results are not
+// necessarily available immediately). These routines unwind the
+// promises. It is expected that we will have already reported any
+// errors that may be encountered, so if the promises store an error,
+// a dummy result is returned.

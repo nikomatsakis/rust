@@ -56,12 +56,6 @@ loop {
 
 This `for` loop syntax can be applied to any iterator over any type.
 
-## Iteration protocol and more
-
-More detailed information about iterators can be found in the [container
-guide](http://doc.rust-lang.org/guide-container.html) with
-the rest of the rust manuals.
-
 */
 
 use clone::Clone;
@@ -372,7 +366,7 @@ pub trait Iterator<A> {
     ///     let mut sum = 0;
     ///     for x in it {
     ///         if x > 5 {
-    ///             continue;
+    ///             break;
     ///         }
     ///         sum += x;
     ///     }
@@ -383,7 +377,9 @@ pub trait Iterator<A> {
     ///     sum
     /// }
     /// let x = vec![1i,2,3,7,8,9];
-    /// assert_eq!(process(x.move_iter()), 1006);
+    /// assert_eq!(process(x.into_iter()), 6);
+    /// let x = vec![1i,2,3];
+    /// assert_eq!(process(x.into_iter()), 1006);
     /// ```
     #[inline]
     fn fuse(self) -> Fuse<Self> {
@@ -817,8 +813,7 @@ impl<A: Add<A, A> + Zero, T: Iterator<A>> AdditiveIterator<A> for T {
     }
 }
 
-/// A trait for iterators over elements whose elements can be multiplied
-/// together.
+/// A trait for iterators over elements which can be multiplied together.
 pub trait MultiplicativeIterator<A> {
     /// Iterates over the entire iterator, multiplying all the elements
     ///
@@ -846,7 +841,6 @@ impl<A: Mul<A, A> + One, T: Iterator<A>> MultiplicativeIterator<A> for T {
 }
 
 /// A trait for iterators over elements which can be compared to one another.
-/// The type of each element must ascribe to the `PartialOrd` trait.
 pub trait OrdIterator<A> {
     /// Consumes the entire iterator to return the maximum element.
     ///
@@ -1688,7 +1682,7 @@ impl<'a, A, T: Iterator<A>, B, U: Iterator<B>> Iterator<B> for FlatMap<'a, A, T,
     #[inline]
     fn next(&mut self) -> Option<B> {
         loop {
-            for inner in self.frontiter.mut_iter() {
+            for inner in self.frontiter.iter_mut() {
                 for x in *inner {
                     return Some(x)
                 }
@@ -1719,7 +1713,7 @@ impl<'a,
     #[inline]
     fn next_back(&mut self) -> Option<B> {
         loop {
-            for inner in self.backiter.mut_iter() {
+            for inner in self.backiter.iter_mut() {
                 match inner.next_back() {
                     None => (),
                     y => return y
@@ -2184,8 +2178,7 @@ pub type Iterate<'a, T> = Unfold<'a, T, IterateState<'a, T>>;
 
 /// Creates a new iterator that produces an infinite sequence of
 /// repeated applications of the given function `f`.
-#[allow(visible_private_types)]
-pub fn iterate<'a, T: Clone>(f: |T|: 'a -> T, seed: T) -> Iterate<'a, T> {
+pub fn iterate<'a, T: Clone>(seed: T, f: |T|: 'a -> T) -> Iterate<'a, T> {
     Unfold::new((f, Some(seed), true), |st| {
         let &(ref mut f, ref mut val, ref mut first) = st;
         if *first {

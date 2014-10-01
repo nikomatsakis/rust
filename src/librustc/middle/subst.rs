@@ -32,7 +32,7 @@ trait HomogeneousTuple3<T> {
     fn as_slice<'a>(&'a self) -> &'a [T];
     fn as_mut_slice<'a>(&'a mut self) -> &'a mut [T];
     fn iter<'a>(&'a self) -> Items<'a, T>;
-    fn mut_iter<'a>(&'a mut self) -> MutItems<'a, T>;
+    fn iter_mut<'a>(&'a mut self) -> MutItems<'a, T>;
     fn get<'a>(&'a self, index: uint) -> Option<&'a T>;
     fn get_mut<'a>(&'a mut self, index: uint) -> Option<&'a mut T>;
 }
@@ -63,8 +63,8 @@ impl<T> HomogeneousTuple3<T> for (T, T, T) {
         slice.iter()
     }
 
-    fn mut_iter<'a>(&'a mut self) -> MutItems<'a, T> {
-        self.as_mut_slice().mut_iter()
+    fn iter_mut<'a>(&'a mut self) -> MutItems<'a, T> {
+        self.as_mut_slice().iter_mut()
     }
 
     fn get<'a>(&'a self, index: uint) -> Option<&'a T> {
@@ -164,6 +164,11 @@ impl Substs {
         s
     }
 
+    pub fn erase_regions(self) -> Substs {
+        let Substs { types: types, regions: _ } = self;
+        Substs { types: types, regions: ErasedRegions }
+    }
+
     pub fn regions<'a>(&'a self) -> &'a VecPerParamSpace<ty::Region> {
         /*!
          * Since ErasedRegions are only to be used in trans, most of
@@ -188,11 +193,6 @@ impl Substs {
             ErasedRegions => fail!("Erased regions only expected in trans"),
             NonerasedRegions(ref mut r) => r
         }
-    }
-
-    pub fn with_method_from(self, substs: &Substs) -> Substs {
-        self.with_method(Vec::from_slice(substs.types.get_slice(FnSpace)),
-                         Vec::from_slice(substs.regions().get_slice(FnSpace)))
     }
 
     pub fn with_method(self,
@@ -287,15 +287,6 @@ impl<T:fmt::Show> fmt::Show for VecPerParamSpace<T> {
     }
 }
 
-impl<T:Clone> VecPerParamSpace<T> {
-    pub fn push_all(&mut self, space: ParamSpace, values: &[T]) {
-        // FIXME (#15435): slow; O(n^2); could enhance vec to make it O(n).
-        for t in values.iter() {
-            self.push(space, t.clone());
-        }
-    }
-}
-
 impl<T> VecPerParamSpace<T> {
     fn limits(&self, space: ParamSpace) -> (uint, uint) {
         match space {
@@ -333,12 +324,14 @@ impl<T> VecPerParamSpace<T> {
         }
     }
 
-    pub fn sort(t: Vec<T>, space: |&T| -> ParamSpace) -> VecPerParamSpace<T> {
-        let mut result = VecPerParamSpace::empty();
-        for t in t.move_iter() {
-            result.push(space(&t), t);
+    fn new_internal(content: Vec<T>, type_limit: uint, self_limit: uint)
+                    -> VecPerParamSpace<T>
+    {
+        VecPerParamSpace {
+            type_limit: type_limit,
+            self_limit: self_limit,
+            content: content,
         }
-        result
     }
 
     /// Appends `value` to the vector associated with `space`.
@@ -379,7 +372,7 @@ impl<T> VecPerParamSpace<T> {
     pub fn replace(&mut self, space: ParamSpace, elems: Vec<T>) {
         // FIXME (#15435): slow; O(n^2); could enhance vec to make it O(n).
         self.truncate(space, 0);
-        for t in elems.move_iter() {
+        for t in elems.into_iter() {
             self.push(space, t);
         }
     }
@@ -405,7 +398,7 @@ impl<T> VecPerParamSpace<T> {
 
     pub fn get_mut_slice<'a>(&'a mut self, space: ParamSpace) -> &'a mut [T] {
         let (start, limit) = self.limits(space);
-        self.content.mut_slice(start, limit)
+        self.content.slice_mut(start, limit)
     }
 
     pub fn opt_get<'a>(&'a self,
@@ -418,12 +411,6 @@ impl<T> VecPerParamSpace<T> {
 
     pub fn get<'a>(&'a self, space: ParamSpace, index: uint) -> &'a T {
         &self.get_slice(space)[index]
-    }
-
-    pub fn get_mut<'a>(&'a mut self,
-                       space: ParamSpace,
-                       index: uint) -> &'a mut T {
-        &mut self.get_mut_slice(space)[index]
     }
 
     pub fn iter<'a>(&'a self) -> Items<'a,T> {
@@ -448,37 +435,17 @@ impl<T> VecPerParamSpace<T> {
     }
 
     pub fn map<U>(&self, pred: |&T| -> U) -> VecPerParamSpace<U> {
-        // FIXME (#15418): this could avoid allocating the intermediate
-        // Vec's, but note that the values of type_limit and self_limit
-        // also need to be kept in sync during construction.
-        VecPerParamSpace::new(
-            self.get_slice(TypeSpace).iter().map(|p| pred(p)).collect(),
-            self.get_slice(SelfSpace).iter().map(|p| pred(p)).collect(),
-            self.get_slice(FnSpace).iter().map(|p| pred(p)).collect())
+        let result = self.iter().map(pred).collect();
+        VecPerParamSpace::new_internal(result,
+                                       self.type_limit,
+                                       self.self_limit)
     }
 
-    pub fn map_rev<U>(&self, pred: |&T| -> U) -> VecPerParamSpace<U> {
-        /*!
-         * Executes the map but in reverse order. For hacky reasons, we rely
-         * on this in table.
-         *
-         * FIXME(#5527) -- order of eval becomes irrelevant with newer
-         * trait reform, which features an idempotent algorithm that
-         * can be run to a fixed point
-         */
-
-        let mut fns: Vec<U> = self.get_slice(FnSpace).iter().rev().map(|p| pred(p)).collect();
-
-        // NB: Calling foo.rev().map().rev() causes the calls to map
-        // to occur in the wrong order. This was somewhat surprising
-        // to me, though it makes total sense.
-        fns.reverse();
-
-        let mut selfs: Vec<U> = self.get_slice(SelfSpace).iter().rev().map(|p| pred(p)).collect();
-        selfs.reverse();
-        let mut tys: Vec<U> = self.get_slice(TypeSpace).iter().rev().map(|p| pred(p)).collect();
-        tys.reverse();
-        VecPerParamSpace::new(tys, selfs, fns)
+    pub fn map_move<U>(self, pred: |T| -> U) -> VecPerParamSpace<U> {
+        let (t, s, f) = self.split();
+        VecPerParamSpace::new(t.into_iter().map(|p| pred(p)).collect(),
+                              s.into_iter().map(|p| pred(p)).collect(),
+                              f.into_iter().map(|p| pred(p)).collect())
     }
 
     pub fn split(self) -> (Vec<T>, Vec<T>, Vec<T>) {
@@ -548,8 +515,8 @@ impl<T:TypeFoldable> Subst for T {
 ///////////////////////////////////////////////////////////////////////////
 // The actual substitution engine itself is a type folder.
 
-struct SubstFolder<'a> {
-    tcx: &'a ty::ctxt,
+struct SubstFolder<'a, 'tcx: 'a> {
+    tcx: &'a ty::ctxt<'tcx>,
     substs: &'a Substs,
 
     // The location for which the substitution is performed, if available.
@@ -562,8 +529,8 @@ struct SubstFolder<'a> {
     ty_stack_depth: uint,
 }
 
-impl<'a> TypeFolder for SubstFolder<'a> {
-    fn tcx<'a>(&'a self) -> &'a ty::ctxt { self.tcx }
+impl<'a, 'tcx> TypeFolder<'tcx> for SubstFolder<'a, 'tcx> {
+    fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> { self.tcx }
 
     fn fold_region(&mut self, r: ty::Region) -> ty::Region {
         // Note: This routine only handles regions that are bound on
@@ -611,7 +578,12 @@ impl<'a> TypeFolder for SubstFolder<'a> {
 
         let t1 = match ty::get(t).sty {
             ty::ty_param(p) => {
-                check(self, p, t, self.substs.types.opt_get(p.space, p.idx))
+                check(self,
+                      p,
+                      t,
+                      self.substs.types.opt_get(p.space, p.idx),
+                      p.space,
+                      p.idx)
             }
             _ => {
                 ty_fold::super_fold_ty(self, t)
@@ -629,7 +601,9 @@ impl<'a> TypeFolder for SubstFolder<'a> {
         fn check(this: &SubstFolder,
                  p: ty::ParamTy,
                  source_ty: ty::t,
-                 opt_ty: Option<&ty::t>)
+                 opt_ty: Option<&ty::t>,
+                 space: ParamSpace,
+                 index: uint)
                  -> ty::t {
             match opt_ty {
                 Some(t) => *t,
@@ -637,10 +611,12 @@ impl<'a> TypeFolder for SubstFolder<'a> {
                     let span = this.span.unwrap_or(DUMMY_SP);
                     this.tcx().sess.span_bug(
                         span,
-                        format!("Type parameter `{}` ({}) out of range \
+                        format!("Type parameter `{}` ({}/{}/{}) out of range \
                                  when substituting (root type={})",
                                 p.repr(this.tcx()),
                                 source_ty.repr(this.tcx()),
+                                space,
+                                index,
                                 this.root_ty.repr(this.tcx())).as_slice());
                 }
             }

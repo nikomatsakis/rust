@@ -79,14 +79,14 @@ fn owned_ptr_base_path_rc(loan_path: &Rc<LoanPath>) -> Rc<LoanPath> {
     }
 }
 
-struct CheckLoanCtxt<'a> {
-    bccx: &'a BorrowckCtxt<'a>,
-    dfcx_loans: &'a LoanDataFlow<'a>,
-    move_data: move_data::FlowedMoveData<'a>,
+struct CheckLoanCtxt<'a, 'tcx: 'a> {
+    bccx: &'a BorrowckCtxt<'a, 'tcx>,
+    dfcx_loans: &'a LoanDataFlow<'a, 'tcx>,
+    move_data: move_data::FlowedMoveData<'a, 'tcx>,
     all_loans: &'a [Loan],
 }
 
-impl<'a> euv::Delegate for CheckLoanCtxt<'a> {
+impl<'a, 'tcx> euv::Delegate for CheckLoanCtxt<'a, 'tcx> {
     fn consume(&mut self,
                consume_id: ast::NodeId,
                consume_span: Span,
@@ -179,12 +179,12 @@ impl<'a> euv::Delegate for CheckLoanCtxt<'a> {
     fn decl_without_init(&mut self, _id: ast::NodeId, _span: Span) { }
 }
 
-pub fn check_loans(bccx: &BorrowckCtxt,
-                   dfcx_loans: &LoanDataFlow,
-                   move_data: move_data::FlowedMoveData,
-                   all_loans: &[Loan],
-                   decl: &ast::FnDecl,
-                   body: &ast::Block) {
+pub fn check_loans<'a, 'b, 'c, 'tcx>(bccx: &BorrowckCtxt<'a, 'tcx>,
+                                     dfcx_loans: &LoanDataFlow<'b, 'tcx>,
+                                     move_data: move_data::FlowedMoveData<'c, 'tcx>,
+                                     all_loans: &[Loan],
+                                     decl: &ast::FnDecl,
+                                     body: &ast::Block) {
     debug!("check_loans(body id={:?})", body.id);
 
     let mut clcx = CheckLoanCtxt {
@@ -212,8 +212,8 @@ fn compatible_borrow_kinds(borrow_kind1: ty::BorrowKind,
     borrow_kind1 == ty::ImmBorrow && borrow_kind2 == ty::ImmBorrow
 }
 
-impl<'a> CheckLoanCtxt<'a> {
-    pub fn tcx(&self) -> &'a ty::ctxt { self.bccx.tcx }
+impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
+    pub fn tcx(&self) -> &'a ty::ctxt<'tcx> { self.bccx.tcx }
 
     pub fn each_issued_loan(&self, scope_id: ast::NodeId, op: |&Loan| -> bool)
                             -> bool {
@@ -494,7 +494,8 @@ impl<'a> CheckLoanCtxt<'a> {
                 euv::AutoRef(..) |
                 euv::ClosureInvocation(..) |
                 euv::ForLoop(..) |
-                euv::RefBinding(..) => {
+                euv::RefBinding(..) |
+                euv::MatchDiscriminant(..) => {
                     format!("previous borrow of `{}` occurs here",
                             self.bccx.loan_path_to_string(&*old_loan.loan_path))
                 }
@@ -514,9 +515,9 @@ impl<'a> CheckLoanCtxt<'a> {
         true
     }
 
-    pub fn is_local_variable_or_arg(&self, cmt: mc::cmt) -> bool {
+    fn is_local_variable_or_arg(&self, cmt: mc::cmt) -> bool {
         match cmt.cat {
-          mc::cat_local(_) | mc::cat_arg(_) => true,
+          mc::cat_local(_) => true,
           _ => false
         }
     }
@@ -651,12 +652,12 @@ impl<'a> CheckLoanCtxt<'a> {
         debug!("check_if_path_is_moved(id={:?}, use_kind={:?}, lp={})",
                id, use_kind, lp.repr(self.bccx.tcx));
         let base_lp = owned_ptr_base_path_rc(lp);
-        self.move_data.each_move_of(id, &base_lp, |move, moved_lp| {
+        self.move_data.each_move_of(id, &base_lp, |the_move, moved_lp| {
             self.bccx.report_use_of_moved_value(
                 span,
                 use_kind,
                 &**lp,
-                move,
+                the_move,
                 moved_lp);
             false
         });
@@ -775,7 +776,7 @@ impl<'a> CheckLoanCtxt<'a> {
                 debug!("mark_variable_as_used_mut(cmt={})", cmt.repr(this.tcx()));
                 match cmt.cat.clone() {
                     mc::cat_copied_upvar(mc::CopiedUpvar { upvar_id: id, .. }) |
-                    mc::cat_local(id) | mc::cat_arg(id) => {
+                    mc::cat_local(id) => {
                         this.tcx().used_mut_nodes.borrow_mut().insert(id);
                         return;
                     }

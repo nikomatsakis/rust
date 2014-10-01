@@ -53,7 +53,7 @@ pub enum Ast {
     Nothing,
     Literal(char, Flags),
     Dot(Flags),
-    Class(Vec<(char, char)>, Flags),
+    AstClass(Vec<(char, char)>, Flags),
     Begin(Flags),
     End(Flags),
     WordBoundary(Flags),
@@ -101,7 +101,7 @@ impl Greed {
 /// state.
 #[deriving(Show)]
 enum BuildAst {
-    Ast(Ast),
+    Expr(Ast),
     Paren(Flags, uint, String), // '('
     Bar, // '|'
 }
@@ -152,7 +152,7 @@ impl BuildAst {
 
     fn unwrap(self) -> Result<Ast, Error> {
         match self {
-            Ast(x) => Ok(x),
+            Expr(x) => Ok(x),
             _ => fail!("Tried to unwrap non-AST item: {}", self),
         }
     }
@@ -311,7 +311,7 @@ impl Parser {
     }
 
     fn push(&mut self, ast: Ast) {
-        self.stack.push(Ast(ast))
+        self.stack.push(Expr(ast))
     }
 
     fn push_repeater(&mut self, c: char) -> Result<(), Error> {
@@ -388,8 +388,8 @@ impl Parser {
             match c {
                 '[' =>
                     match self.try_parse_ascii() {
-                        Some(Class(asciis, flags)) => {
-                            alts.push(Class(asciis, flags ^ negated));
+                        Some(AstClass(asciis, flags)) => {
+                            alts.push(AstClass(asciis, flags ^ negated));
                             continue
                         }
                         Some(ast) =>
@@ -399,8 +399,8 @@ impl Parser {
                     },
                 '\\' => {
                     match try!(self.parse_escape()) {
-                        Class(asciis, flags) => {
-                            alts.push(Class(asciis, flags ^ negated));
+                        AstClass(asciis, flags) => {
+                            alts.push(AstClass(asciis, flags ^ negated));
                             continue
                         }
                         Literal(c2, _) => c = c2, // process below
@@ -417,14 +417,14 @@ impl Parser {
                 ']' => {
                     if ranges.len() > 0 {
                         let flags = negated | (self.flags & FLAG_NOCASE);
-                        let mut ast = Class(combine_ranges(ranges), flags);
-                        for alt in alts.move_iter() {
+                        let mut ast = AstClass(combine_ranges(ranges), flags);
+                        for alt in alts.into_iter() {
                             ast = Alt(box alt, box ast)
                         }
                         self.push(ast);
                     } else if alts.len() > 0 {
                         let mut ast = alts.pop().unwrap();
-                        for alt in alts.move_iter() {
+                        for alt in alts.into_iter() {
                             ast = Alt(box alt, box ast)
                         }
                         self.push(ast);
@@ -485,7 +485,7 @@ impl Parser {
             Some(ranges) => {
                 self.chari = closer;
                 let flags = negated | (self.flags & FLAG_NOCASE);
-                Some(Class(combine_ranges(ranges), flags))
+                Some(AstClass(combine_ranges(ranges), flags))
             }
         }
     }
@@ -611,7 +611,7 @@ impl Parser {
                 let ranges = perl_unicode_class(c);
                 let mut flags = self.flags & FLAG_NOCASE;
                 if c.is_uppercase() { flags |= FLAG_NEGATED }
-                Ok(Class(ranges, flags))
+                Ok(AstClass(ranges, flags))
             }
             _ => {
                 self.err(format!("Invalid escape sequence '\\\\{}'",
@@ -620,9 +620,9 @@ impl Parser {
         }
     }
 
-    // Parses a unicode character class name, either of the form \pF where
-    // F is a one letter unicode class name or of the form \p{name} where
-    // name is the unicode class name.
+    // Parses a Unicode character class name, either of the form \pF where
+    // F is a one letter Unicode class name or of the form \p{name} where
+    // name is the Unicode class name.
     // Assumes that \p or \P has been read (and 'p' or 'P' is the current
     // character).
     fn parse_unicode_name(&mut self) -> Result<Ast, Error> {
@@ -655,7 +655,7 @@ impl Parser {
                                         name).as_slice())
             }
             Some(ranges) => {
-                Ok(Class(ranges, negated | (self.flags & FLAG_NOCASE)))
+                Ok(AstClass(ranges, negated | (self.flags & FLAG_NOCASE)))
             }
         }
     }
@@ -888,7 +888,7 @@ impl Parser {
         while i > from {
             i = i - 1;
             match self.stack.pop().unwrap() {
-                Ast(x) => combined = mk(x, combined),
+                Expr(x) => combined = mk(x, combined),
                 _ => {},
             }
         }
@@ -961,7 +961,7 @@ fn combine_ranges(unordered: Vec<(char, char)>) -> Vec<(char, char)> {
     // This is currently O(n^2), but I think with sufficient cleverness,
     // it can be reduced to O(n) **if necessary**.
     let mut ordered: Vec<(char, char)> = Vec::with_capacity(unordered.len());
-    for (us, ue) in unordered.move_iter() {
+    for (us, ue) in unordered.into_iter() {
         let (mut us, mut ue) = (us, ue);
         assert!(us <= ue);
         let mut which: Option<uint> = None;
@@ -986,9 +986,9 @@ fn combine_ranges(unordered: Vec<(char, char)>) -> Vec<(char, char)> {
 // (or any of their negated forms). Note that this does not handle negation.
 fn perl_unicode_class(which: char) -> Vec<(char, char)> {
     match which.to_lowercase() {
-        'd' => Vec::from_slice(PERLD),
-        's' => Vec::from_slice(PERLS),
-        'w' => Vec::from_slice(PERLW),
+        'd' => PERLD.to_vec(),
+        's' => PERLS.to_vec(),
+        'w' => PERLW.to_vec(),
         _ => unreachable!(),
     }
 }
@@ -997,7 +997,7 @@ fn perl_unicode_class(which: char) -> Vec<(char, char)> {
 // `Cat` expression will never be a direct child of another `Cat` expression.
 fn concat_flatten(x: Ast, y: Ast) -> Ast {
     match (x, y) {
-        (Cat(mut xs), Cat(ys)) => { xs.push_all_move(ys); Cat(xs) }
+        (Cat(mut xs), Cat(ys)) => { xs.extend(ys.into_iter()); Cat(xs) }
         (Cat(mut xs), ast) => { xs.push(ast); Cat(xs) }
         (ast, Cat(mut xs)) => { xs.insert(0, ast); Cat(xs) }
         (ast1, ast2) => Cat(vec!(ast1, ast2)),
@@ -1019,7 +1019,7 @@ fn is_valid_cap(c: char) -> bool {
 
 fn find_class(classes: NamedClasses, name: &str) -> Option<Vec<(char, char)>> {
     match classes.binary_search(|&(s, _)| s.cmp(&name)) {
-        slice::Found(i) => Some(Vec::from_slice(classes[i].val1())),
+        slice::Found(i) => Some(classes[i].val1().to_vec()),
         slice::NotFound(_) => None,
     }
 }

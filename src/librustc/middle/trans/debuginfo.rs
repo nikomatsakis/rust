@@ -207,7 +207,6 @@ use std::c_str::{CString, ToCStr};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::gc::Gc;
 use std::ptr;
 use std::rc::{Rc, Weak};
 use syntax::util::interner::Interner;
@@ -538,7 +537,7 @@ impl TypeMap {
             // First, find out the 'real' def_id of the type. Items inlined from
             // other crates have to be mapped back to their source.
             let source_def_id = if def_id.krate == ast::LOCAL_CRATE {
-                match cx.external_srcs.borrow().find_copy(&def_id.node) {
+                match cx.external_srcs().borrow().find_copy(&def_id.node) {
                     Some(source_def_id) => {
                         // The given def_id identifies the inlined copy of a
                         // type definition, let's take the source of the copy.
@@ -552,7 +551,7 @@ impl TypeMap {
 
             // Get the crate hash as first part of the identifier.
             let crate_hash = if source_def_id.krate == ast::LOCAL_CRATE {
-                cx.link_meta.crate_hash.clone()
+                cx.link_meta().crate_hash.clone()
             } else {
                 cx.sess().cstore.get_crate_hash(source_def_id.krate)
             };
@@ -665,7 +664,7 @@ pub struct FunctionDebugContext {
 }
 
 enum FunctionDebugContextRepr {
-    FunctionDebugContext(Box<FunctionDebugContextData>),
+    DebugInfo(Box<FunctionDebugContextData>),
     DebugInfoDisabled,
     FunctionWithoutDebugInfo,
 }
@@ -676,7 +675,7 @@ impl FunctionDebugContext {
                    span: Span)
                    -> &'a FunctionDebugContextData {
         match self.repr {
-            FunctionDebugContext(box ref data) => data,
+            DebugInfo(box ref data) => data,
             DebugInfoDisabled => {
                 cx.sess().span_bug(span,
                                    FunctionDebugContext::debuginfo_disabled_message());
@@ -721,7 +720,7 @@ enum VariableKind {
 
 /// Create any deferred debug metadata nodes
 pub fn finalize(cx: &CrateContext) {
-    if cx.dbg_cx.is_none() {
+    if cx.dbg_cx().is_none() {
         return;
     }
 
@@ -738,18 +737,12 @@ pub fn finalize(cx: &CrateContext) {
         if cx.sess().targ_cfg.os == abi::OsMacos ||
             cx.sess().targ_cfg.os == abi::OsiOS {
             "Dwarf Version".with_c_str(
-                |s| llvm::LLVMRustAddModuleFlag(cx.llmod, s, 2));
-        } else {
-            // FIXME(#13611) this is a kludge fix because the linux bots have
-            //               gdb 7.4 which doesn't understand dwarf4, we should
-            //               do something more graceful here.
-            "Dwarf Version".with_c_str(
-                |s| llvm::LLVMRustAddModuleFlag(cx.llmod, s, 3));
+                |s| llvm::LLVMRustAddModuleFlag(cx.llmod(), s, 2));
         }
 
         // Prevent bitcode readers from deleting the debug info.
         "Debug Info Version".with_c_str(
-            |s| llvm::LLVMRustAddModuleFlag(cx.llmod, s,
+            |s| llvm::LLVMRustAddModuleFlag(cx.llmod(), s,
                                             llvm::LLVMRustDebugMetadataVersion));
     };
 }
@@ -760,7 +753,7 @@ pub fn finalize(cx: &CrateContext) {
 pub fn create_global_var_metadata(cx: &CrateContext,
                                   node_id: ast::NodeId,
                                   global: ValueRef) {
-    if cx.dbg_cx.is_none() {
+    if cx.dbg_cx().is_none() {
         return;
     }
 
@@ -768,11 +761,11 @@ pub fn create_global_var_metadata(cx: &CrateContext,
     // crate should already contain debuginfo for it. More importantly, the
     // global might not even exist in un-inlined form anywhere which would lead
     // to a linker errors.
-    if cx.external_srcs.borrow().contains_key(&node_id) {
+    if cx.external_srcs().borrow().contains_key(&node_id) {
         return;
     }
 
-    let var_item = cx.tcx.map.get(node_id);
+    let var_item = cx.tcx().map.get(node_id);
 
     let (ident, span) = match var_item {
         ast_map::NodeItem(item) => {
@@ -823,7 +816,7 @@ pub fn create_global_var_metadata(cx: &CrateContext,
                                                         type_metadata,
                                                         is_local_to_unit,
                                                         global,
-                                                        ptr::mut_null());
+                                                        ptr::null_mut());
             }
         })
     });
@@ -832,13 +825,13 @@ pub fn create_global_var_metadata(cx: &CrateContext,
 /// Creates debug information for the given local variable.
 ///
 /// Adds the created metadata nodes directly to the crate's IR.
-pub fn create_local_var_metadata(bcx: &Block, local: &ast::Local) {
+pub fn create_local_var_metadata(bcx: Block, local: &ast::Local) {
     if fn_should_be_ignored(bcx.fcx) {
         return;
     }
 
     let cx = bcx.ccx();
-    let def_map = &cx.tcx.def_map;
+    let def_map = &cx.tcx().def_map;
 
     pat_util::pat_bindings(def_map, &*local.pat, |_, node_id, span, path1| {
         let var_ident = path1.node;
@@ -867,7 +860,7 @@ pub fn create_local_var_metadata(bcx: &Block, local: &ast::Local) {
 /// Creates debug information for a variable captured in a closure.
 ///
 /// Adds the created metadata nodes directly to the crate's IR.
-pub fn create_captured_var_metadata(bcx: &Block,
+pub fn create_captured_var_metadata(bcx: Block,
                                     node_id: ast::NodeId,
                                     env_data_type: ty::t,
                                     env_pointer: ValueRef,
@@ -880,7 +873,7 @@ pub fn create_captured_var_metadata(bcx: &Block,
 
     let cx = bcx.ccx();
 
-    let ast_item = cx.tcx.map.find(node_id);
+    let ast_item = cx.tcx().map.find(node_id);
 
     let variable_ident = match ast_item {
         None => {
@@ -954,7 +947,7 @@ pub fn create_captured_var_metadata(bcx: &Block,
 /// match-statement arm.
 ///
 /// Adds the created metadata nodes directly to the crate's IR.
-pub fn create_match_binding_metadata(bcx: &Block,
+pub fn create_match_binding_metadata(bcx: Block,
                                      variable_ident: ast::Ident,
                                      binding: BindingInfo) {
     if fn_should_be_ignored(bcx.fcx) {
@@ -963,7 +956,7 @@ pub fn create_match_binding_metadata(bcx: &Block,
 
     let scope_metadata = scope_metadata(bcx.fcx, binding.id, binding.span);
     let aops = unsafe {
-        [llvm::LLVMDIBuilderCreateOpDeref(bcx.ccx().int_type.to_ref())]
+        [llvm::LLVMDIBuilderCreateOpDeref(bcx.ccx().int_type().to_ref())]
     };
     // Regardless of the actual type (`T`) we're always passed the stack slot (alloca)
     // for the binding. For ByRef bindings that's a `T*` but for ByMove bindings we
@@ -994,7 +987,7 @@ pub fn create_match_binding_metadata(bcx: &Block,
 /// Creates debug information for the given function argument.
 ///
 /// Adds the created metadata nodes directly to the crate's IR.
-pub fn create_argument_metadata(bcx: &Block, arg: &ast::Arg) {
+pub fn create_argument_metadata(bcx: Block, arg: &ast::Arg) {
     if fn_should_be_ignored(bcx.fcx) {
         return;
     }
@@ -1002,20 +995,20 @@ pub fn create_argument_metadata(bcx: &Block, arg: &ast::Arg) {
     let fcx = bcx.fcx;
     let cx = fcx.ccx;
 
-    let def_map = &cx.tcx.def_map;
+    let def_map = &cx.tcx().def_map;
     let scope_metadata = bcx.fcx.debug_context.get_ref(cx, arg.pat.span).fn_metadata;
 
     pat_util::pat_bindings(def_map, &*arg.pat, |_, node_id, span, path1| {
-        let llarg = match bcx.fcx.llargs.borrow().find_copy(&node_id) {
+        let llarg = match bcx.fcx.lllocals.borrow().find_copy(&node_id) {
             Some(v) => v,
             None => {
                 bcx.sess().span_bug(span,
-                    format!("no entry in llargs table for {:?}",
+                    format!("no entry in lllocals table for {:?}",
                             node_id).as_slice());
             }
         };
 
-        if unsafe { llvm::LLVMIsAAllocaInst(llarg.val) } == ptr::mut_null() {
+        if unsafe { llvm::LLVMIsAAllocaInst(llarg.val) } == ptr::null_mut() {
             cx.sess().span_bug(span, "debuginfo::create_argument_metadata() - \
                                     Referenced variable location is not an alloca!");
         }
@@ -1037,6 +1030,55 @@ pub fn create_argument_metadata(bcx: &Block, arg: &ast::Arg) {
     })
 }
 
+pub fn get_cleanup_debug_loc_for_ast_node(node_id: ast::NodeId,
+                                          node_span: Span,
+                                          is_block: bool)
+                                          -> NodeInfo {
+    // A debug location needs two things:
+    // (1) A span (of which only the beginning will actually be used)
+    // (2) An AST node-id which will be used to look up the lexical scope
+    //     for the location in the functions scope-map
+    //
+    // This function will calculate the debug location for compiler-generated
+    // cleanup calls that are executed when control-flow leaves the
+    // scope identified by `node_id`.
+    //
+    // For everything but block-like things we can simply take id and span of
+    // the given expression, meaning that from a debugger's view cleanup code is
+    // executed at the same source location as the statement/expr itself.
+    //
+    // Blocks are a special case. Here we want the cleanup to be linked to the
+    // closing curly brace of the block. The *scope* the cleanup is executed in
+    // is up to debate: It could either still be *within* the block being
+    // cleaned up, meaning that locals from the block are still visible in the
+    // debugger.
+    // Or it could be in the scope that the block is contained in, so any locals
+    // from within the block are already considered out-of-scope and thus not
+    // accessible in the debugger anymore.
+    //
+    // The current implementation opts for the second option: cleanup of a block
+    // already happens in the parent scope of the block. The main reason for
+    // this decision is that scoping becomes controlflow dependent when variable
+    // shadowing is involved and it's impossible to decide statically which
+    // scope is actually left when the cleanup code is executed.
+    // In practice it shouldn't make much of a difference.
+
+    let cleanup_span = if is_block {
+        Span {
+            lo: node_span.hi - codemap::BytePos(1), // closing brace should always be 1 byte...
+            hi: node_span.hi,
+            expn_id: node_span.expn_id
+        }
+    } else {
+        node_span
+    };
+
+    NodeInfo {
+        id: node_id,
+        span: cleanup_span
+    }
+}
+
 /// Sets the current debug location at the beginning of the span.
 ///
 /// Maps to a call to llvm::LLVMSetCurrentDebugLocation(...). The node_id
@@ -1051,7 +1093,7 @@ pub fn set_source_location(fcx: &FunctionContext,
             set_debug_location(fcx.ccx, UnknownLocation);
             return;
         }
-        FunctionDebugContext(box ref function_debug_context) => {
+        DebugInfo(box ref function_debug_context) => {
             let cx = fcx.ccx;
 
             debug!("set_source_location: {}", cx.sess().codemap().span_to_string(span));
@@ -1089,7 +1131,7 @@ pub fn clear_source_location(fcx: &FunctionContext) {
 /// first real statement/expression of the function is translated.
 pub fn start_emitting_source_locations(fcx: &FunctionContext) {
     match fcx.debug_context.repr {
-        FunctionDebugContext(box ref data) => {
+        DebugInfo(box ref data) => {
             data.source_locations_enabled.set(true)
         },
         _ => { /* safe to ignore */ }
@@ -1114,13 +1156,15 @@ pub fn create_function_debug_context(cx: &CrateContext,
     // Do this here already, in case we do an early exit from this function.
     set_debug_location(cx, UnknownLocation);
 
-    if fn_ast_id == -1 {
+    if fn_ast_id == ast::DUMMY_NODE_ID {
+        // This is a function not linked to any source location, so don't
+        // generate debuginfo for it.
         return FunctionDebugContext { repr: FunctionWithoutDebugInfo };
     }
 
     let empty_generics = ast_util::empty_generics();
 
-    let fnitem = cx.tcx.map.get(fn_ast_id);
+    let fnitem = cx.tcx().map.get(fn_ast_id);
 
     let (ident, fn_decl, generics, top_level_block, span, has_path) = match fnitem {
         ast_map::NodeItem(ref item) => {
@@ -1129,8 +1173,8 @@ pub fn create_function_debug_context(cx: &CrateContext,
             }
 
             match item.node {
-                ast::ItemFn(fn_decl, _, _, ref generics, top_level_block) => {
-                    (item.ident, fn_decl, generics, top_level_block, item.span, true)
+                ast::ItemFn(ref fn_decl, _, _, ref generics, ref top_level_block) => {
+                    (item.ident, &**fn_decl, generics, &**top_level_block, item.span, true)
                 }
                 _ => {
                     cx.sess().span_bug(item.span,
@@ -1154,20 +1198,25 @@ pub fn create_function_debug_context(cx: &CrateContext,
                      method.span,
                      true)
                 }
+                ast::TypeImplItem(ref typedef) => {
+                    cx.sess().span_bug(typedef.span,
+                                       "create_function_debug_context() \
+                                        called on associated type?!")
+                }
             }
         }
         ast_map::NodeExpr(ref expr) => {
             match expr.node {
-                ast::ExprFnBlock(_, fn_decl, top_level_block) |
-                ast::ExprProc(fn_decl, top_level_block) |
-                ast::ExprUnboxedFn(_, _, fn_decl, top_level_block) => {
+                ast::ExprFnBlock(_, ref fn_decl, ref top_level_block) |
+                ast::ExprProc(ref fn_decl, ref top_level_block) |
+                ast::ExprUnboxedFn(_, _, ref fn_decl, ref top_level_block) => {
                     let name = format!("fn{}", token::gensym("fn"));
                     let name = token::str_to_ident(name.as_slice());
-                    (name, fn_decl,
+                    (name, &**fn_decl,
                         // This is not quite right. It should actually inherit
                         // the generics of the enclosing function.
                         &empty_generics,
-                        top_level_block,
+                        &**top_level_block,
                         expr.span,
                         // Don't try to lookup the item path:
                         false)
@@ -1274,7 +1323,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
                     cx.sess().opts.optimize != config::No,
                     llfn,
                     template_parameters,
-                    ptr::mut_null())
+                    ptr::null_mut())
             }
         })
     });
@@ -1287,20 +1336,20 @@ pub fn create_function_debug_context(cx: &CrateContext,
         source_locations_enabled: Cell::new(false),
     };
 
-    let arg_pats = fn_decl.inputs.iter().map(|arg_ref| arg_ref.pat).collect::<Vec<_>>();
     populate_scope_map(cx,
-                       arg_pats.as_slice(),
+                       fn_decl.inputs.as_slice(),
                        &*top_level_block,
                        fn_metadata,
+                       fn_ast_id,
                        &mut *fn_debug_context.scope_map.borrow_mut());
 
-    return FunctionDebugContext { repr: FunctionDebugContext(fn_debug_context) };
+    return FunctionDebugContext { repr: DebugInfo(fn_debug_context) };
 
     fn get_function_signature(cx: &CrateContext,
                               fn_ast_id: ast::NodeId,
                               fn_decl: &ast::FnDecl,
                               param_substs: &param_substs,
-                              error_span: Span) -> DIArray {
+                              error_reporting_span: Span) -> DIArray {
         if cx.sess().opts.debuginfo == LimitedDebugInfo {
             return create_DIArray(DIB(cx), []);
         }
@@ -1310,10 +1359,10 @@ pub fn create_function_debug_context(cx: &CrateContext,
         // Return type -- llvm::DIBuilder wants this at index 0
         match fn_decl.output.node {
             ast::TyNil => {
-                signature.push(ptr::mut_null());
+                signature.push(ptr::null_mut());
             }
             _ => {
-                assert_type_for_node_id(cx, fn_ast_id, error_span);
+                assert_type_for_node_id(cx, fn_ast_id, error_reporting_span);
 
                 let return_type = ty::node_id_to_type(cx.tcx(), fn_ast_id);
                 let return_type = return_type.substp(cx.tcx(), param_substs);
@@ -1384,7 +1433,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
                             file_metadata,
                             name,
                             actual_self_type_metadata,
-                            ptr::mut_null(),
+                            ptr::null_mut(),
                             0,
                             0)
                     }
@@ -1419,7 +1468,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
                             file_metadata,
                             name,
                             actual_type_metadata,
-                            ptr::mut_null(),
+                            ptr::null_mut(),
                             0,
                             0)
                     }
@@ -1447,7 +1496,7 @@ fn is_node_local_to_unit(cx: &CrateContext, node_id: ast::NodeId) -> bool
     // externally visible or by being inlined into something externally visible).
     // It might better to use the `exported_items` set from `driver::CrateAnalysis`
     // in the future, but (atm) this set is not available in the translation pass.
-    !cx.reachable.contains(&node_id)
+    !cx.reachable().contains(&node_id)
 }
 
 #[allow(non_snake_case)]
@@ -1514,11 +1563,11 @@ fn compile_unit_metadata(cx: &CrateContext) {
     });
 
     fn fallback_path(cx: &CrateContext) -> CString {
-        cx.link_meta.crate_name.as_slice().to_c_str()
+        cx.link_meta().crate_name.as_slice().to_c_str()
     }
 }
 
-fn declare_local(bcx: &Block,
+fn declare_local(bcx: Block,
                  variable_ident: ast::Ident,
                  variable_type: ty::t,
                  scope_metadata: DIScope,
@@ -1637,15 +1686,17 @@ fn file_metadata(cx: &CrateContext, full_path: &str) -> DIFile {
 /// Finds the scope metadata node for the given AST node.
 fn scope_metadata(fcx: &FunctionContext,
                   node_id: ast::NodeId,
-                  span: Span)
+                  error_reporting_span: Span)
                -> DIScope {
-    let scope_map = &fcx.debug_context.get_ref(fcx.ccx, span).scope_map;
+    let scope_map = &fcx.debug_context
+                        .get_ref(fcx.ccx, error_reporting_span)
+                        .scope_map;
     match scope_map.borrow().find_copy(&node_id) {
         Some(scope_metadata) => scope_metadata,
         None => {
-            let node = fcx.ccx.tcx.map.get(node_id);
+            let node = fcx.ccx.tcx().map.get(node_id);
 
-            fcx.ccx.sess().span_bug(span,
+            fcx.ccx.sess().span_bug(error_reporting_span,
                 format!("debuginfo: Could not find scope info for node {:?}",
                         node).as_slice());
         }
@@ -2412,7 +2463,7 @@ fn prepare_enum_metadata(cx: &CrateContext,
                 bytes_to_bits(enum_type_size),
                 bytes_to_bits(enum_type_align),
                 0, // Flags
-                ptr::mut_null(),
+                ptr::null_mut(),
                 0, // RuntimeLang
                 unique_type_id_str)
             }
@@ -2440,9 +2491,9 @@ fn prepare_enum_metadata(cx: &CrateContext,
                                   def_id: ast::DefId)
                                   -> token::InternedString {
         let name = if def_id.krate == ast::LOCAL_CRATE {
-            cx.tcx.map.get_path_elem(def_id.node).name()
+            cx.tcx().map.get_path_elem(def_id.node).name()
         } else {
-            csearch::get_item_path(&cx.tcx, def_id).last().unwrap().name()
+            csearch::get_item_path(cx.tcx(), def_id).last().unwrap().name()
         };
 
         token::get_name(name)
@@ -2583,10 +2634,10 @@ fn create_struct_stub(cx: &CrateContext,
                     bytes_to_bits(struct_size),
                     bytes_to_bits(struct_align),
                     0,
-                    ptr::mut_null(),
+                    ptr::null_mut(),
                     empty_array,
                     0,
-                    ptr::mut_null(),
+                    ptr::null_mut(),
                     unique_type_id)
             })
         })
@@ -2685,7 +2736,7 @@ fn at_box_metadata(cx: &CrateContext,
                              content_llvm_type: Type)
                           -> bool {
         member_llvm_types.len() == 5 &&
-        member_llvm_types[0] == cx.int_type &&
+        member_llvm_types[0] == cx.int_type() &&
         member_llvm_types[1] == Type::generic_glue_fn(cx).ptr_to() &&
         member_llvm_types[2] == Type::i8(cx).ptr_to() &&
         member_llvm_types[3] == Type::i8(cx).ptr_to() &&
@@ -2787,7 +2838,7 @@ fn vec_slice_metadata(cx: &CrateContext,
                             -> bool {
         member_llvm_types.len() == 2 &&
         member_llvm_types[0] == type_of::type_of(cx, element_type).ptr_to() &&
-        member_llvm_types[1] == cx.int_type
+        member_llvm_types[1] == cx.int_type()
     }
 }
 
@@ -2800,7 +2851,7 @@ fn subroutine_type_metadata(cx: &CrateContext,
 
     // return type
     signature_metadata.push(match ty::get(signature.output).sty {
-        ty::ty_nil => ptr::mut_null(),
+        ty::ty_nil => ptr::null_mut(),
         _ => type_metadata(cx, signature.output, span)
     });
 
@@ -3076,7 +3127,7 @@ fn set_debug_location(cx: &CrateContext, debug_location: DebugLocation) {
             let col = UNKNOWN_COLUMN_NUMBER;
             debug!("setting debug location to {} {}", line, col);
             let elements = [C_i32(cx, line as i32), C_i32(cx, col as i32),
-                            scope, ptr::mut_null()];
+                            scope, ptr::null_mut()];
             unsafe {
                 metadata_node = llvm::LLVMMDNodeInContext(debug_context(cx).llcontext,
                                                           elements.as_ptr(),
@@ -3085,12 +3136,12 @@ fn set_debug_location(cx: &CrateContext, debug_location: DebugLocation) {
         }
         UnknownLocation => {
             debug!("clearing debug location ");
-            metadata_node = ptr::mut_null();
+            metadata_node = ptr::null_mut();
         }
     };
 
     unsafe {
-        llvm::LLVMSetCurrentDebugLocation(cx.builder.b, metadata_node);
+        llvm::LLVMSetCurrentDebugLocation(cx.raw_builder(), metadata_node);
     }
 
     debug_context(cx).current_debug_location.set(debug_location);
@@ -3125,26 +3176,29 @@ fn bytes_to_bits(bytes: u64) -> c_ulonglong {
 
 #[inline]
 fn debug_context<'a>(cx: &'a CrateContext) -> &'a CrateDebugContext {
-    let debug_context: &'a CrateDebugContext = cx.dbg_cx.get_ref();
+    let debug_context: &'a CrateDebugContext = cx.dbg_cx().get_ref();
     debug_context
 }
 
 #[inline]
 #[allow(non_snake_case)]
 fn DIB(cx: &CrateContext) -> DIBuilderRef {
-    cx.dbg_cx.get_ref().builder
+    cx.dbg_cx().get_ref().builder
 }
 
 fn fn_should_be_ignored(fcx: &FunctionContext) -> bool {
     match fcx.debug_context.repr {
-        FunctionDebugContext(_) => false,
+        DebugInfo(_) => false,
         _ => true
     }
 }
 
-fn assert_type_for_node_id(cx: &CrateContext, node_id: ast::NodeId, error_span: Span) {
-    if !cx.tcx.node_types.borrow().contains_key(&(node_id as uint)) {
-        cx.sess().span_bug(error_span, "debuginfo: Could not find type for node id!");
+fn assert_type_for_node_id(cx: &CrateContext,
+                           node_id: ast::NodeId,
+                           error_reporting_span: Span) {
+    if !cx.tcx().node_types.borrow().contains_key(&(node_id as uint)) {
+        cx.sess().span_bug(error_reporting_span,
+                           "debuginfo: Could not find type for node id!");
     }
 }
 
@@ -3152,7 +3206,7 @@ fn get_namespace_and_span_for_item(cx: &CrateContext, def_id: ast::DefId)
                                    -> (DIScope, Span) {
     let containing_scope = namespace_for_item(cx, def_id).scope;
     let definition_span = if def_id.krate == ast::LOCAL_CRATE {
-        cx.tcx.map.span(def_id.node)
+        cx.tcx().map.span(def_id.node)
     } else {
         // For external items there is no span information
         codemap::DUMMY_SP
@@ -3169,11 +3223,12 @@ fn get_namespace_and_span_for_item(cx: &CrateContext, def_id: ast::DefId)
 // introducing *artificial* lexical scope descriptors where necessary. These
 // artificial scopes allow GDB to correctly handle name shadowing.
 fn populate_scope_map(cx: &CrateContext,
-                      arg_pats: &[Gc<ast::Pat>],
+                      args: &[ast::Arg],
                       fn_entry_block: &ast::Block,
                       fn_metadata: DISubprogram,
+                      fn_ast_id: ast::NodeId,
                       scope_map: &mut HashMap<ast::NodeId, DIScope>) {
-    let def_map = &cx.tcx.def_map;
+    let def_map = &cx.tcx().def_map;
 
     struct ScopeStackEntry {
         scope_metadata: DIScope,
@@ -3182,13 +3237,15 @@ fn populate_scope_map(cx: &CrateContext,
 
     let mut scope_stack = vec!(ScopeStackEntry { scope_metadata: fn_metadata,
                                                  ident: None });
+    scope_map.insert(fn_ast_id, fn_metadata);
 
     // Push argument identifiers onto the stack so arguments integrate nicely
     // with variable shadowing.
-    for &arg_pat in arg_pats.iter() {
-        pat_util::pat_bindings(def_map, &*arg_pat, |_, _, _, path1| {
+    for arg in args.iter() {
+        pat_util::pat_bindings(def_map, &*arg.pat, |_, node_id, _, path1| {
             scope_stack.push(ScopeStackEntry { scope_metadata: fn_metadata,
                                                ident: Some(path1.node) });
+            scope_map.insert(node_id, fn_metadata);
         })
     }
 
@@ -3272,10 +3329,10 @@ fn populate_scope_map(cx: &CrateContext,
                  scope_stack: &mut Vec<ScopeStackEntry> ,
                  scope_map: &mut HashMap<ast::NodeId, DIScope>) {
         match *decl {
-            codemap::Spanned { node: ast::DeclLocal(local), .. } => {
+            codemap::Spanned { node: ast::DeclLocal(ref local), .. } => {
                 scope_map.insert(local.id, scope_stack.last().unwrap().scope_metadata);
 
-                walk_pattern(cx, local.pat, scope_stack, scope_map);
+                walk_pattern(cx, &*local.pat, scope_stack, scope_map);
 
                 for exp in local.init.iter() {
                     walk_expr(cx, &**exp, scope_stack, scope_map);
@@ -3286,11 +3343,11 @@ fn populate_scope_map(cx: &CrateContext,
     }
 
     fn walk_pattern(cx: &CrateContext,
-                    pat: Gc<ast::Pat>,
+                    pat: &ast::Pat,
                     scope_stack: &mut Vec<ScopeStackEntry> ,
                     scope_map: &mut HashMap<ast::NodeId, DIScope>) {
 
-        let def_map = &cx.tcx.def_map;
+        let def_map = &cx.tcx().def_map;
 
         // Unfortunately, we cannot just use pat_util::pat_bindings() or
         // ast_util::walk_pat() here because we have to visit *all* nodes in
@@ -3367,8 +3424,8 @@ fn populate_scope_map(cx: &CrateContext,
 
                 scope_map.insert(pat.id, scope_stack.last().unwrap().scope_metadata);
 
-                for &sub_pat in sub_pat_opt.iter() {
-                    walk_pattern(cx, sub_pat, scope_stack, scope_map);
+                for sub_pat in sub_pat_opt.iter() {
+                    walk_pattern(cx, &**sub_pat, scope_stack, scope_map);
                 }
             }
 
@@ -3379,9 +3436,9 @@ fn populate_scope_map(cx: &CrateContext,
             ast::PatEnum(_, ref sub_pats_opt) => {
                 scope_map.insert(pat.id, scope_stack.last().unwrap().scope_metadata);
 
-                for ref sub_pats in sub_pats_opt.iter() {
-                    for &p in sub_pats.iter() {
-                        walk_pattern(cx, p, scope_stack, scope_map);
+                for sub_pats in sub_pats_opt.iter() {
+                    for p in sub_pats.iter() {
+                        walk_pattern(cx, &**p, scope_stack, scope_map);
                     }
                 }
             }
@@ -3389,8 +3446,8 @@ fn populate_scope_map(cx: &CrateContext,
             ast::PatStruct(_, ref field_pats, _) => {
                 scope_map.insert(pat.id, scope_stack.last().unwrap().scope_metadata);
 
-                for &ast::FieldPat { pat: sub_pat, .. } in field_pats.iter() {
-                    walk_pattern(cx, sub_pat, scope_stack, scope_map);
+                for &ast::FieldPat { pat: ref sub_pat, .. } in field_pats.iter() {
+                    walk_pattern(cx, &**sub_pat, scope_stack, scope_map);
                 }
             }
 
@@ -3398,13 +3455,13 @@ fn populate_scope_map(cx: &CrateContext,
                 scope_map.insert(pat.id, scope_stack.last().unwrap().scope_metadata);
 
                 for sub_pat in sub_pats.iter() {
-                    walk_pattern(cx, sub_pat.clone(), scope_stack, scope_map);
+                    walk_pattern(cx, &**sub_pat, scope_stack, scope_map);
                 }
             }
 
             ast::PatBox(ref sub_pat) | ast::PatRegion(ref sub_pat) => {
                 scope_map.insert(pat.id, scope_stack.last().unwrap().scope_metadata);
-                walk_pattern(cx, sub_pat.clone(), scope_stack, scope_map);
+                walk_pattern(cx, &**sub_pat, scope_stack, scope_map);
             }
 
             ast::PatLit(ref exp) => {
@@ -3421,16 +3478,16 @@ fn populate_scope_map(cx: &CrateContext,
             ast::PatVec(ref front_sub_pats, ref middle_sub_pats, ref back_sub_pats) => {
                 scope_map.insert(pat.id, scope_stack.last().unwrap().scope_metadata);
 
-                for &sub_pat in front_sub_pats.iter() {
-                    walk_pattern(cx, sub_pat, scope_stack, scope_map);
+                for sub_pat in front_sub_pats.iter() {
+                    walk_pattern(cx, &**sub_pat, scope_stack, scope_map);
                 }
 
-                for &sub_pat in middle_sub_pats.iter() {
-                    walk_pattern(cx, sub_pat, scope_stack, scope_map);
+                for sub_pat in middle_sub_pats.iter() {
+                    walk_pattern(cx, &**sub_pat, scope_stack, scope_map);
                 }
 
-                for &sub_pat in back_sub_pats.iter() {
-                    walk_pattern(cx, sub_pat, scope_stack, scope_map);
+                for sub_pat in back_sub_pats.iter() {
+                    walk_pattern(cx, &**sub_pat, scope_stack, scope_map);
                 }
             }
 
@@ -3457,6 +3514,7 @@ fn populate_scope_map(cx: &CrateContext,
             ast::ExprCast(ref sub_exp, _)     |
             ast::ExprAddrOf(_, ref sub_exp)  |
             ast::ExprField(ref sub_exp, _, _) |
+            ast::ExprTupField(ref sub_exp, _, _) |
             ast::ExprParen(ref sub_exp) =>
                 walk_expr(cx, &**sub_exp, scope_stack, scope_map),
 
@@ -3465,8 +3523,8 @@ fn populate_scope_map(cx: &CrateContext,
                 walk_expr(cx, &**sub_expr, scope_stack, scope_map);
             }
 
-            ast::ExprRet(exp_opt) => match exp_opt {
-                Some(sub_exp) => walk_expr(cx, &*sub_exp, scope_stack, scope_map),
+            ast::ExprRet(ref exp_opt) => match *exp_opt {
+                Some(ref sub_exp) => walk_expr(cx, &**sub_exp, scope_stack, scope_map),
                 None => ()
             },
 
@@ -3479,6 +3537,12 @@ fn populate_scope_map(cx: &CrateContext,
             ast::ExprBinary(_, ref lhs, ref rhs)    => {
                 walk_expr(cx, &**lhs, scope_stack, scope_map);
                 walk_expr(cx, &**rhs, scope_stack, scope_map);
+            }
+
+            ast::ExprSlice(ref base, ref start, ref end, _) => {
+                walk_expr(cx, &**base, scope_stack, scope_map);
+                start.as_ref().map(|x| walk_expr(cx, &**x, scope_stack, scope_map));
+                end.as_ref().map(|x| walk_expr(cx, &**x, scope_stack, scope_map));
             }
 
             ast::ExprVec(ref init_expressions) |
@@ -3512,6 +3576,11 @@ fn populate_scope_map(cx: &CrateContext,
                 }
             }
 
+            ast::ExprIfLet(..) => {
+                cx.sess().span_bug(exp.span, "debuginfo::populate_scope_map() - \
+                                              Found unexpanded if-let.");
+            }
+
             ast::ExprWhile(ref cond_exp, ref loop_body, _) => {
                 walk_expr(cx, &**cond_exp, scope_stack, scope_map);
 
@@ -3537,7 +3606,7 @@ fn populate_scope_map(cx: &CrateContext,
                                                 .unwrap()
                                                 .scope_metadata);
                     walk_pattern(cx,
-                                 *pattern,
+                                 &**pattern,
                                  scope_stack,
                                  scope_map);
                     walk_block(cx, &**body, scope_stack, scope_map);
@@ -3569,7 +3638,7 @@ fn populate_scope_map(cx: &CrateContext,
                                scope_map,
                                |cx, scope_stack, scope_map| {
                     for &ast::Arg { pat: ref pattern, .. } in decl.inputs.iter() {
-                        walk_pattern(cx, pattern.clone(), scope_stack, scope_map);
+                        walk_pattern(cx, &**pattern, scope_stack, scope_map);
                     }
 
                     walk_block(cx, &**block, scope_stack, scope_map);
@@ -3590,7 +3659,7 @@ fn populate_scope_map(cx: &CrateContext,
                 }
             }
 
-            ast::ExprMatch(ref discriminant_exp, ref arms) => {
+            ast::ExprMatch(ref discriminant_exp, ref arms, _) => {
                 walk_expr(cx, &**discriminant_exp, scope_stack, scope_map);
 
                 // For each arm we have to first walk the pattern as these might
@@ -3606,8 +3675,8 @@ fn populate_scope_map(cx: &CrateContext,
                                    scope_stack,
                                    scope_map,
                                    |cx, scope_stack, scope_map| {
-                        for &pat in arm_ref.pats.iter() {
-                            walk_pattern(cx, pat, scope_stack, scope_map);
+                        for pat in arm_ref.pats.iter() {
+                            walk_pattern(cx, &**pat, scope_stack, scope_map);
                         }
 
                         for guard_exp in arm_ref.guard.iter() {
@@ -3942,7 +4011,7 @@ impl NamespaceTreeNode {
 }
 
 fn crate_root_namespace<'a>(cx: &'a CrateContext) -> &'a str {
-    cx.link_meta.crate_name.as_slice()
+    cx.link_meta().crate_name.as_slice()
 }
 
 fn namespace_for_item(cx: &CrateContext, def_id: ast::DefId) -> Rc<NamespaceTreeNode> {
@@ -3954,7 +4023,7 @@ fn namespace_for_item(cx: &CrateContext, def_id: ast::DefId) -> Rc<NamespaceTree
         } else {
             None
         };
-        let mut path = krate.move_iter().chain(path).peekable();
+        let mut path = krate.into_iter().chain(path).peekable();
 
         let mut current_key = Vec::new();
         let mut parent_node: Option<Rc<NamespaceTreeNode>> = None;
@@ -3982,7 +4051,7 @@ fn namespace_for_item(cx: &CrateContext, def_id: ast::DefId) -> Rc<NamespaceTree
                     // create and insert
                     let parent_scope = match parent_node {
                         Some(ref node) => node.scope,
-                        None => ptr::mut_null()
+                        None => ptr::null_mut()
                     };
                     let namespace_name = token::get_name(name);
                     let scope = namespace_name.get().with_c_str(|namespace_name| {
@@ -3992,7 +4061,7 @@ fn namespace_for_item(cx: &CrateContext, def_id: ast::DefId) -> Rc<NamespaceTree
                                 parent_scope,
                                 namespace_name,
                                 // cannot reconstruct file ...
-                                ptr::mut_null(),
+                                ptr::null_mut(),
                                 // ... or line information, but that's not so important.
                                 0)
                         }

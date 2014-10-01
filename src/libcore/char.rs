@@ -123,9 +123,9 @@ pub fn to_digit(c: char, radix: uint) -> Option<uint> {
         fail!("to_digit: radix is too high (maximum 36)");
     }
     let val = match c {
-      '0' .. '9' => c as uint - ('0' as uint),
-      'a' .. 'z' => c as uint + 10u - ('a' as uint),
-      'A' .. 'Z' => c as uint + 10u - ('A' as uint),
+      '0' ... '9' => c as uint - ('0' as uint),
+      'a' ... 'z' => c as uint + 10u - ('a' as uint),
+      'A' ... 'Z' => c as uint + 10u - ('A' as uint),
       _ => return None,
     };
     if val < radix { Some(val) }
@@ -184,7 +184,7 @@ pub fn escape_unicode(c: char, f: |char|) {
         let offset = offset as uint;
         unsafe {
             match ((c as i32) >> offset) & 0xf {
-                i @ 0 .. 9 => { f(transmute('0' as i32 + i)); }
+                i @ 0 ... 9 => { f(transmute('0' as i32 + i)); }
                 i => { f(transmute('a' as i32 + (i - 10))); }
             }
         }
@@ -201,7 +201,7 @@ pub fn escape_unicode(c: char, f: |char|) {
 /// - Tab, CR and LF are escaped as '\t', '\r' and '\n' respectively.
 /// - Single-quote, double-quote and backslash chars are backslash-escaped.
 /// - Any other chars in the range [0x20,0x7e] are not escaped.
-/// - Any other chars are given hex unicode escapes; see `escape_unicode`.
+/// - Any other chars are given hex Unicode escapes; see `escape_unicode`.
 ///
 pub fn escape_default(c: char, f: |char|) {
     match c {
@@ -211,7 +211,7 @@ pub fn escape_default(c: char, f: |char|) {
         '\\' => { f('\\'); f('\\'); }
         '\'' => { f('\\'); f('\''); }
         '"'  => { f('\\'); f('"'); }
-        '\x20' .. '\x7e' => { f(c); }
+        '\x20' ... '\x7e' => { f(c); }
         _ => c.escape_unicode(f),
     }
 }
@@ -290,7 +290,7 @@ pub trait Char {
     /// * Single-quote, double-quote and backslash chars are backslash-
     ///   escaped.
     /// * Any other chars in the range [0x20,0x7e] are not escaped.
-    /// * Any other chars are given hex unicode escapes; see `escape_unicode`.
+    /// * Any other chars are given hex Unicode escapes; see `escape_unicode`.
     fn escape_default(&self, f: |char|);
 
     /// Returns the amount of bytes this character would need if encoded in

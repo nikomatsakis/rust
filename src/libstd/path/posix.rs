@@ -264,7 +264,7 @@ impl GenericPath for Path {
 
     #[inline]
     fn is_absolute(&self) -> bool {
-        *self.repr.get(0) == SEP_BYTE
+        self.repr[0] == SEP_BYTE
     }
 
     fn is_ancestor_of(&self, other: &Path) -> bool {
@@ -382,7 +382,7 @@ impl Path {
                         let n = if is_abs { comps.len() } else { comps.len() - 1} +
                                 comps.iter().map(|v| v.len()).sum();
                         let mut v = Vec::with_capacity(n);
-                        let mut it = comps.move_iter();
+                        let mut it = comps.into_iter();
                         if !is_abs {
                             match it.next() {
                                 None => (),
@@ -399,7 +399,7 @@ impl Path {
             }
         };
         match val {
-            None => Vec::from_slice(v.as_slice()),
+            None => v.as_slice().to_vec(),
             Some(val) => val
         }
     }
@@ -409,7 +409,7 @@ impl Path {
     /// /a/b/c and a/b/c yield the same set of components.
     /// A path of "/" yields no components. A path of "." yields one component.
     pub fn components<'a>(&'a self) -> Components<'a> {
-        let v = if *self.repr.get(0) == SEP_BYTE {
+        let v = if self.repr[0] == SEP_BYTE {
             self.repr.slice_from(1)
         } else { self.repr.as_slice() };
         let mut ret = v.split(is_sep_byte);
@@ -1201,7 +1201,7 @@ mod tests {
                     assert!(comps == exps, "components: Expected {:?}, found {:?}",
                             comps, exps);
                     let comps = path.components().rev().collect::<Vec<&[u8]>>();
-                    let exps = exps.move_iter().rev().collect::<Vec<&[u8]>>();
+                    let exps = exps.into_iter().rev().collect::<Vec<&[u8]>>();
                     assert!(comps == exps, "rev_components: Expected {:?}, found {:?}",
                             comps, exps);
                 }

@@ -17,20 +17,21 @@
 
 #![feature(globs, struct_variant, managed_boxes, macro_rules, phase)]
 
+extern crate arena;
 extern crate debug;
 extern crate getopts;
 extern crate libc;
 extern crate rustc;
 extern crate serialize;
 extern crate syntax;
-extern crate testing = "test";
+extern crate "test" as testing;
 extern crate time;
 #[phase(plugin, link)] extern crate log;
 
 use std::io;
 use std::io::{File, MemWriter};
-use std::gc::Gc;
 use std::collections::HashMap;
+use std::collections::hashmap::{Occupied, Vacant};
 use serialize::{json, Decodable, Encodable};
 use externalfiles::ExternalHtml;
 
@@ -83,53 +84,12 @@ static DEFAULT_PASSES: &'static [&'static str] = &[
     "unindent-comments",
 ];
 
-local_data_key!(pub ctxtkey: Gc<core::DocContext>)
 local_data_key!(pub analysiskey: core::CrateAnalysis)
 
 type Output = (clean::Crate, Vec<plugins::PluginJson> );
 
 pub fn main() {
-    // Why run rustdoc in a separate task? That's a good question!
-    //
-    // We first begin our adventure at the ancient commit of e7c4fb69. In this
-    // commit it was discovered that the stack limit frobbing on windows ended
-    // up causing some syscalls to fail. This was worked around manually in the
-    // relevant location.
-    //
-    // Our journey now continues with #13259 where it was discovered that this
-    // stack limit frobbing has the ability to affect nearly any syscall. Note
-    // that the key idea here is that there is currently no knowledge as to why
-    // this is happening or how to preserve it, fun times!
-    //
-    // Now we continue along to #16275 where it was discovered that --test on
-    // windows didn't work at all! Yet curiously rustdoc worked without --test.
-    // The exact reason that #16275 cropped up is that during the expansion
-    // phase the compiler attempted to open libstd to read out its macros. This
-    // invoked the LLVMRustOpenArchive shim which in turned went to LLVM to go
-    // open a file and read it. Lo and behold this function returned an error!
-    // It was then discovered that when the same fix mentioned in #13259 was
-    // applied, the error went away. The plot thickens!
-    //
-    // Remember that rustdoc works without --test, which raises the question of
-    // how because the --test and non --test paths are almost identical. The
-    // first thing both paths do is parse and expand a crate! It turns out that
-    // the difference is that --test runs on the *main task* while the normal
-    // path runs in subtask. It turns out that running --test in a sub task also
-    // fixes the problem!
-    //
-    // So, in summary, it is unknown why this is necessary, what it is
-    // preventing, or what the actual bug is. In the meantime, this allows
-    // --test to work on windows, which seems good, right? Fun times.
-    let (tx, rx) = channel();
-    spawn(proc() {
-        std::os::set_exit_status(main_args(std::os::args().as_slice()));
-        tx.send(());
-    });
-
-    // If the task failed, set an error'd exit status
-    if rx.recv_opt().is_err() {
-        std::os::set_exit_status(std::rt::DEFAULT_ERROR_CODE);
-    }
+    std::os::set_exit_status(main_args(std::os::args().as_slice()));
 }
 
 pub fn opts() -> Vec<getopts::OptGroup> {
@@ -341,7 +301,10 @@ fn parse_externs(matches: &getopts::Matches) -> Result<core::Externs, String> {
                 return Err("--extern value must be of the format `foo=bar`".to_string());
             }
         };
-        let locs = externs.find_or_insert(name.to_string(), Vec::new());
+        let locs = match externs.entry(name.to_string()) {
+            Vacant(entry) => entry.set(Vec::with_capacity(1)),
+            Occupied(entry) => entry.into_mut(),
+        };
         locs.push(location.to_string());
     }
     Ok(externs)
@@ -369,11 +332,7 @@ fn rust_input(cratefile: &str, externs: core::Externs, matches: &getopts::Matche
     info!("starting to run rustc");
     let (mut krate, analysis) = std::task::try(proc() {
         let cr = cr;
-        core::run_core(libs.move_iter().collect(),
-                       cfgs,
-                       externs,
-                       &cr,
-                       triple)
+        core::run_core(libs, cfgs, externs, &cr, triple)
     }).map_err(|boxed_any|format!("{:?}", boxed_any)).unwrap();
     info!("finished with rustc");
     analysiskey.replace(Some(analysis));
@@ -435,7 +394,7 @@ fn rust_input(cratefile: &str, externs: core::Externs, matches: &getopts::Matche
         pm.add_plugin(plugin);
     }
     info!("loading plugins...");
-    for pname in plugins.move_iter() {
+    for pname in plugins.into_iter() {
         pm.load_plugin(pname);
     }
 
@@ -499,7 +458,7 @@ fn json_output(krate: clean::Crate, res: Vec<plugins::PluginJson> ,
     // }
     let mut json = std::collections::TreeMap::new();
     json.insert("schema".to_string(), json::String(SCHEMA_VERSION.to_string()));
-    let plugins_json = res.move_iter()
+    let plugins_json = res.into_iter()
                           .filter_map(|opt| {
                               match opt {
                                   None => None,
