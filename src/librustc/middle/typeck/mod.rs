@@ -106,7 +106,6 @@ pub enum MethodOrigin {
 
     // method invoked on a trait instance
     MethodTraitObject(MethodObject),
-
 }
 
 // details for a method invoked with a receiver whose type is a type parameter

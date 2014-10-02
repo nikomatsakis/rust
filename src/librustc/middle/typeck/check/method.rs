@@ -166,37 +166,77 @@ pub fn lookup<'a, 'tcx>(
 }
 
 pub fn lookup_in_trait<'a, 'tcx>(
-        fcx: &'a FnCtxt<'a, 'tcx>,
+    fcx: &'a FnCtxt<'a, 'tcx>,
 
-        // In a call `a.b::<X, Y, ...>(...)`:
-        span: Span,                         // The expression `a.b(...)`'s span.
-        self_expr: Option<&'a ast::Expr>,   // The expression `a`, if available.
-        m_name: ast::Name,                  // The name `b`.
-        trait_did: DefId,                   // The trait to limit the lookup to.
-        self_ty: ty::t,                     // The type of `a`.
-        supplied_tps: &'a [ty::t])          // The list of types X, Y, ... .
-     -> Option<MethodCallee> {
-    let mut lcx = LookupContext {
-        fcx: fcx,
-        span: span,
-        self_expr: self_expr,
-        m_name: m_name,
-        supplied_tps: supplied_tps,
-        impl_dups: HashSet::new(),
-        inherent_candidates: Vec::new(),
-        extension_candidates: Vec::new(),
-        deref_args: check::DoDerefArgs,
-        check_traits: CheckTraitsOnly,
-        autoderef_receiver: DontAutoderefReceiver,
-        report_statics: IgnoreStaticMethods,
-    };
+    // In a call `a.b::<X, Y, ...>(...)`:
+    span: Span,                         // The expression `a.b(...)`'s span.
+    self_expr: Option<&'a ast::Expr>,   // The expression `a`, if available.
+    m_name: ast::Name,                  // The name `b`.
+    trait_did: DefId,                   // The trait to limit the lookup to.
+    self_ty: ty::t,                     // The type of `a`.
+    supplied_tps: &'a [ty::t])          // The list of types X, Y, ... .
+    -> Option<MethodCallee>
+{
+    let trait_def = ty::lookup_trait_def(fcx.tcx(), trait_did);
+    let substs = fcx.infcx().fresh_substs_for_trait(span, &trait_def.generics, self_ty);
+    let trait_ref = Rc::new(ty::TraitRef { def_id: trait_did, substs: substs });
+    let obligation = traits::Obligation::misc(span, trait_ref);
+    debug!("method lookup_in_trait(obligation={}, self_expr={})",
+           obligation.repr(fcx.tcx()),
+           self_expr.map(|e| e.repr(fcx.tcx())));
+    let selcx = traits::SelectionContext::new(fcx.infcx(), &fcx.inh.param_env, fcx);
+    match selcx.select(&obligation) {
+        Ok(Some(selection)) => {
+            to_method_callee(selection)
+        }
+        Err(traits::Unimplemented) => {
+            None
+        }
+        Ok(None) => {
+            maybe_report_ambiguity(fcx, &obligation);
+            None
+        }
+        Err(error) => {
+            report_selection_error(fcx, &obligation, &error);
+            None
+        }
+    }
+}
 
-    debug!("method lookup_in_trait(self_ty={}, self_expr={})",
-           self_ty.repr(fcx.tcx()), self_expr.map(|e| e.repr(fcx.tcx())));
-
-    lcx.push_bound_candidates(self_ty, Some(trait_did));
-    lcx.push_extension_candidate(trait_did);
-    lcx.search(self_ty)
+fn to_method_callee(fcx: &FnCtxt,
+                    span: Span,
+                    selection: traits::Selection)
+                    -> MethodCallee
+{
+    match selection {
+        traits::VtableImpl(impl_data) => {
+            let 
+            MethodCallee {
+                origin: MethodStatic(method_def_id),
+                ty: XXX,
+                substs: XXX
+            }
+        }
+        traits::VtableUnboxedClosure(def_id) => {
+            MethodCallee {
+                origin: MethodStaticUnboxedClosure(def_id),
+                ty: XXX,
+                substs: XXX
+            }
+        }
+        traits::VtableParam(param_data) => {
+            let method_param = MethodParam { trait_ref: param_data.bound.clone(),
+                                             method_num: XXX };
+            MethodCallee {
+                origin: MethodTypeParam(method_param),
+                ty: XXX,
+                substs: XXX
+            }
+        }
+        traits::VtableBuiltin(builtin_data) => {
+            fcx.sess().span_bug(span, "method call on builtin trait??");
+        }
+    }
 }
 
 // Determine the index of a method in the list of all methods belonging
