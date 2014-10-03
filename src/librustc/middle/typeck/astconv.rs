@@ -56,6 +56,7 @@ use middle::lang_items::{FnOnceTraitLangItem};
 use middle::resolve_lifetime as rl;
 use middle::subst::{FnSpace, TypeSpace, SelfSpace, Subst, Substs};
 use middle::subst::{VecPerParamSpace};
+use middle::traits;
 use middle::ty;
 use middle::typeck::lookup_def_tcx;
 use middle::typeck::infer;
@@ -1421,33 +1422,12 @@ pub fn compute_opt_region_bound(tcx: &ty::ctxt,
         return Some(ast_region_to_region(tcx, r));
     }
 
-    // The "trait bounds" in an object type, rather annoyingly, have
-    // no type specified for the `Self` parameter of the trait. The
-    // reason for this is that they are, after all, *existential*
-    // types, and hence that type is unknown. However, leaving this
-    // type missing causes the substitution code to go all awry when
-    // walking the bounds, so here we clone those trait refs and
-    // insert a skolemied type as the self type. Perhaps we should do
-    // this more generally, it'd be convenient (or perhaps something
-    // else, i.e., ty::erased).
-    let erased_self_ty = ty::mk_infer(tcx, ty::SkolemizedTy(0));
-    let trait_bounds: Vec<Rc<ty::TraitRef>> =
-        trait_bounds
-        .iter()
-        .map(|t|
-             Rc::new(ty::TraitRef {
-                 def_id: t.def_id,
-                 substs: t.substs.with_self_ty(erased_self_ty) }))
-        .collect();
-
     // No explicit region bound specified. Therefore, examine trait
     // bounds and see if we can derive region bounds from those.
     let derived_region_bounds =
-        derived_region_bounds(
-            tcx,
-            erased_self_ty,
-            builtin_bounds,
-            trait_bounds);
+        derived_region_bounds(tcx,
+                              builtin_bounds,
+                              trait_bounds);
 
     // If there are no derived region bounds, then report back that we
     // can find no region bound.
@@ -1481,28 +1461,43 @@ pub fn compute_opt_region_bound(tcx: &ty::ctxt,
         trait_bounds: &[Rc<ty::TraitRef>])
         -> Vec<ty::Region>
     {
+        // The "trait bounds" in an object type, rather annoyingly, have
+        // no type specified for the `Self` parameter of the trait. The
+        // reason for this is that they are, after all, *existential*
+        // types, and hence that type is unknown. However, leaving this
+        // type missing causes the substitution code to go all awry when
+        // walking the bounds, so here we clone those trait refs and
+        // insert a skolemied type as the self type. Perhaps we should do
+        // this more generally, it'd be convenient (or perhaps something
+        // else, i.e., ty::erased).
+        let erased_self_ty = ty::mk_infer(tcx, ty::SkolemizedTy(0));
+
+        // Create a list of predicates for this erased type.
+        let builtin_predicates =
+            builtin_bounds.iter()
+            .flat_map(|bound| traits::trait_ref_for_builtin_bound(tcx, bound, erased_self_ty));
+        let trait_predicates =
+            trait_bounds.iter()
+            .map(|trait_bound| {
+                Rc::new(ty::TraitRef {
+                    def_id: trait_bound.def_id,
+                    substs: trait_bound.substs.with_self_ty(erased_self_ty)
+                })
+            });
+        let predicates: Vec<ty::Predicate> =
+            builtin_predicates
+            .extend(trait_predicates)
+            .collect();
+
+        // Elaborate these predicates and search for anything that
+        // gives us a bound on the erased self type:
         let mut all_bounds = Vec::new();
-
-        debug!("required_region_bounds(predicates={})",
-               predicates.repr(tcx));
-
-        push_region_bounds([],
-                           builtin_bounds,
-                           &mut all_bounds);
-
-        debug!("from builtin bounds: all_bounds={}",
-               all_bounds.repr(tcx));
-
         for predicate in traits::elaborate_predicates(predicates) {
             match *predicate {
                 ty::TraitPredicate(..) |
-                ty::OutlivesPredicate(
-                    ty::RegionOutlivesPredicate(..)) =>
-                {
+                ty::OutlivesPredicate(ty::RegionOutlivesPredicate(..)) => {
                 }
-                ty::OutlivesPredicate(
-                    ty::TypeOutlivesPredicate(t, r)) =>
-                {
+                ty::OutlivesPredicate(ty::TypeOutlivesPredicate(t, r)) => {
                     if t == erased_self_ty {
                         all_bounds.push(r);
                     }
@@ -1511,35 +1506,6 @@ pub fn compute_opt_region_bound(tcx: &ty::ctxt,
         }
 
         return all_bounds;
-    }
-
-    fn push_region_bounds(region_bounds: &[ty::Region],
-                          builtin_bounds: ty::BuiltinBounds,
-                          all_bounds: &mut Vec<ty::Region>) {
-        all_bounds.push_all(region_bounds.as_slice());
-
-        if builtin_bounds.contains_elem(ty::BoundSend) {
-            all_bounds.push(ty::ReStatic);
-        }
-    }
-
-    fn push_region_bounds_from_predicates(predicates: &[ty::Predicate],
-                                          all_bounds: &mut Vec<ty::Region>) {
-        for predicate in predicates.iter() {
-            match *predicate {
-                TraitPredicate(..) => {
-                    // We are already walking all the supertrait
-                    // predicates and so forth.
-                }
-                OutlivesPredicate(..) => {
-                }
-            }
-        }
-        all_bounds.push_all(region_bounds.as_slice());
-
-        if builtin_bounds.contains_elem(ty::BoundSend) {
-            all_bounds.push(ty::ReStatic);
-        }
     }
 }
 
@@ -1641,7 +1607,6 @@ pub fn partition_bounds<'a>(tcx: &ty::ctxt,
     }
 
     PartitionedBounds {
-        builtin_bounds: builtin_bounds,
         trait_bounds: trait_bounds,
         region_bounds: region_bounds,
         unboxed_fn_ty_bounds: unboxed_fn_ty_bounds

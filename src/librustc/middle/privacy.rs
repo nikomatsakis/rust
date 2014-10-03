@@ -1317,7 +1317,9 @@ impl<'a, 'tcx> VisiblePrivateTypesVisitor<'a, 'tcx> {
                                             parameter bound");
                 }
             }
-            _ => {}
+            ast::UnboxedFnTyParamBound(_) |
+            ast::RegionTyParamBound(_) => {
+            }
         }
     }
 }
@@ -1452,7 +1454,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for VisiblePrivateTypesVisitor<'a, 'tcx> {
                             //
                             // Those in 2. are warned via walk_generics and this
                             // call here.
-                            visit::walk_trait_ref_helper(self, tr)
+                            self.visit_trait_ref(tr)
                         }
                     }
                 } else if trait_ref.is_none() && self_is_public_path {
@@ -1504,8 +1506,13 @@ impl<'a, 'tcx, 'v> Visitor<'v> for VisiblePrivateTypesVisitor<'a, 'tcx> {
             }
         }
         for predicate in generics.where_clause.predicates.iter() {
-            for bound in predicate.bounds.iter() {
-                self.check_ty_param_bound(predicate.span, bound)
+            match predicate.kind {
+                ast::TypePredicate(ref ty, ref bounds) => {
+                    for bound in bounds.iter() {
+                        self.check_ty_param_bound(predicate.span, bound)
+                    }
+                }
+                ast::LifetimePredicate(_, _) => { }
             }
         }
     }

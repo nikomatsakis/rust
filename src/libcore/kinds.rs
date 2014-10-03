@@ -25,7 +25,7 @@ pub use self::Sync as Share;
 
 /// Types able to be transferred across task boundaries.
 #[lang="send"]
-pub trait Send for Sized? {
+pub trait Send for Sized? : 'static {
     // empty.
 }
 

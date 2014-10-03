@@ -25,9 +25,10 @@ pub use self::fulfill::FulfillmentContext;
 pub use self::select::SelectionContext;
 pub use self::select::SelectionCache;
 pub use self::util::elaborate_trait_ref;
+pub use self::util::elaborate_trait_refs;
 pub use self::util::elaborate_predicates;
 pub use self::util::Elaborator;
-pub use self::util::search_trait_and_supertraits_from_bound;
+pub use self::util::trait_ref_for_builtin_bound;
 
 mod coherence;
 mod fulfill;

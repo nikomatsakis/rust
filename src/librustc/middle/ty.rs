@@ -1222,14 +1222,23 @@ pub struct RegionParameterDef {
     pub bounds: Vec<ty::Region>,
 }
 
-#[deriving(Clone, Show)]
+#[deriving(PartialEq, Eq, Hash, Clone, Show, Encodable, Decodable)]
 pub enum Predicate {
     TraitPredicate(Rc<TraitRef>),
-    OutlivesPredicate(OutlivesPredicate),
+    OutlivesPredicate(OutlivesPredicateData),
+}
+
+impl Predicate {
+    fn trait_predicate(&self) -> Option<Rc<TraitRef>> {
+        match *self {
+            TraitPredicate(ref p) => Some((*p).clone()),
+            OutlivesPredicate(..) => None
+        }
+    }
 }
 
 #[deriving(Clone, Show)]
-pub enum OutlivesPredicate {
+pub enum OutlivesPredicateData {
     /// T : 'a
     TypeOutlivesPredicate(t, Region),
 
@@ -1243,7 +1252,7 @@ pub enum OutlivesPredicate {
 pub struct Generics {
     pub types: VecPerParamSpace<TypeParameterDef>,
     pub regions: VecPerParamSpace<RegionParameterDef>,
-    pub predicates: Vec<Predicate>,
+    pub predicates: VecPerParamSpace<Predicate>,
 }
 
 impl Generics {
@@ -1307,7 +1316,7 @@ pub struct ParameterEnvironment {
     ///
     /// Note: This effectively *duplicates* the `bounds` array for
     /// now.
-    pub caller_obligations: VecPerParamSpace<traits::Obligation>,
+    pub caller_obligations: VecPerParamSpace<Predicate>,
 
     /// Caches the results of trait selection. This cache is used
     /// for things that have to do with the parameters in scope.
@@ -4877,7 +4886,9 @@ pub fn each_bound_trait_and_supertraits(tcx: &ctxt,
                                         f: |Rc<TraitRef>| -> bool)
                                         -> bool
 {
-    for bound_trait_ref in traits::transitive_bounds(tcx, bounds) {
+    for bound_trait_ref in
+        traits::elaborate_trait_refs(tcx, bounds).flat_map(|p| p.trait_predicate())
+    {
         if !f(bound_trait_ref) {
             return false;
         }
