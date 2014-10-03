@@ -746,7 +746,10 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
     {
         let tcx = self.tcx();
         let mut cache = HashSet::new();
-        for bound_trait_ref in traits::transitive_bounds(tcx, bounds) {
+        for bound_trait_ref in
+            traits::elaborate_trait_refs(tcx, bounds)
+            .flat_map(|p| p.trait_predicate().into_iter())
+        {
             // Already visited this trait, skip it.
             if !cache.insert(bound_trait_ref.def_id) {
                 continue;

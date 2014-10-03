@@ -1568,7 +1568,13 @@ impl<'a> rbml_decoder_decoder_helpers for reader::Decoder<'a> {
                             this.read_struct_field("regions", 1, |this| {
                                 Ok(this.read_vec_per_param_space(
                                     |this| Decodable::decode(this).unwrap()))
-                            }).unwrap()
+                            }).unwrap(),
+
+                            predicates:
+                            this.read_struct_field("predicates", 2, |this| {
+                                Ok(this.read_vec_per_param_space(
+                                    |this| Decodable::decode(this).unwrap()))
+                            }).unwrap(),
                         })
                     })
                 }).unwrap(),

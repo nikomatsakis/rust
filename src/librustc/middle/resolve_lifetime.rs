@@ -172,17 +172,17 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
         self.resolve_lifetime_ref(lifetime_ref);
     }
 
-    fn visit_generics(&mut self, generics: &ast::Generics) {
-        for ty_param in generics.ty_params.iter() {
-            self.visit_ty_param_bounds(&ty_param.bounds);
-            match ty_param.default {
-                Some(ref ty) => self.visit_ty(&**ty),
-                None => {}
+    fn visit_ty_param_bound(&mut self, bound: &ast::TyParamBound) {
+        match *bound {
+            ast::TraitTyParamBound(ref trait_ref) => {
+                self.visit_trait_ref(trait_ref);
             }
-        }
-        for predicate in generics.where_clause.predicates.iter() {
-            self.visit_ident(predicate.span, predicate.ident);
-            self.visit_ty_param_bounds(&predicate.bounds);
+            ast::UnboxedFnTyParamBound(ref fn_decl) => {
+                self.visit_unboxed_fn_ty_param_bound(&**fn_decl);
+            }
+            ast::RegionTyParamBound(ref lifetime) => {
+                self.visit_lifetime_ref(lifetime);
+            }
         }
     }
 }
@@ -199,19 +199,6 @@ impl<'a> LifetimeContext<'a> {
 
     fn visit_ty_param_bounds(&mut self,
                              bounds: &OwnedSlice<ast::TyParamBound>) {
-        for bound in bounds.iter() {
-            match *bound {
-                ast::TraitTyParamBound(ref trait_ref) => {
-                    self.visit_trait_ref(trait_ref);
-                }
-                ast::UnboxedFnTyParamBound(ref fn_decl) => {
-                    self.visit_unboxed_fn_ty_param_bound(&**fn_decl);
-                }
-                ast::RegionTyParamBound(ref lifetime) => {
-                    self.visit_lifetime_ref(lifetime);
-                }
-            }
-        }
     }
 
     fn visit_trait_ref(&mut self, trait_ref: &ast::TraitRef) {
@@ -495,10 +482,10 @@ fn early_bound_lifetime_names(generics: &ast::Generics) -> Vec<ast::Name> {
             FreeLifetimeCollector { early_bound: &mut early_bound,
                                     late_bound: &mut late_bound };
         for ty_param in generics.ty_params.iter() {
-            visit::walk_ty_param_bounds(&mut collector, &ty_param.bounds);
+            collector.visit_ty_param_bounds(&ty_param.bounds);
         }
         for predicate in generics.where_clause.predicates.iter() {
-            visit::walk_ty_param_bounds(&mut collector, &predicate.bounds);
+            collector.visit_predicate(predicate);
         }
     }
 

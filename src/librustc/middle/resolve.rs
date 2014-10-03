@@ -4487,25 +4487,14 @@ impl<'a> Resolver<'a> {
 
     fn resolve_where_clause(&mut self, where_clause: &ast::WhereClause) {
         for predicate in where_clause.predicates.iter() {
-            match self.resolve_identifier(predicate.ident,
-                                          TypeNS,
-                                          true,
-                                          predicate.span) {
-                Some((def @ DefTyParam(_, _, _), last_private)) => {
-                    self.record_def(predicate.id, (def, last_private));
+            match predicate.kind {
+                ast::TypePredicate(ref ty, ref bounds) => {
+                    self.resolve_type(&**ty);
+                    self.resolve_type_parameter_bounds(predicate.id,
+                                                       bounds,
+                                                       TraitBoundingTypeParameter);
                 }
-                _ => {
-                    self.resolve_error(
-                        predicate.span,
-                        format!("undeclared type parameter `{}`",
-                                token::get_ident(
-                                    predicate.ident)).as_slice());
-                }
-            }
-
-            for bound in predicate.bounds.iter() {
-                self.resolve_type_parameter_bound(predicate.id, bound,
-                                                  TraitBoundingTypeParameter);
+                ast::LifetimePredicate(_, _) => { }
             }
         }
     }

@@ -943,20 +943,14 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         debug!("assemble_candidates_from_caller_bounds({})",
                obligation.repr(self.tcx()));
 
-        let caller_trait_refs: Vec<Rc<ty::TraitRef>> =
-            self.param_env.caller_obligations.iter()
-            .map(|o| o.trait_ref.clone())
-            .collect();
-
-        let all_bounds =
-            util::transitive_bounds(
-                self.tcx(), caller_trait_refs.as_slice());
+        let all_predicates =
+            util::elaborate_predicates(
+                self.tcx(),
+                self.param_env.caller_obligations.as_slice().to_owned());
 
         let matching_bounds =
-            all_bounds.filter(
-                |bound| self.infcx.probe(
-                    || self.match_trait_refs(obligation,
-                                             (*bound).clone())).is_ok());
+            all_predicates.flat_map(
+                |predicate| self.predicate_satisfies(predicate, obligation).into_iter());
 
         let param_candidates =
             matching_bounds.map(
@@ -965,6 +959,24 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         candidates.vec.extend(param_candidates);
 
         Ok(())
+    }
+
+    fn predicate_satisfies(&self,
+                           predicate: ty::Predicate,
+                           obligation: &Obligation)
+                           -> Option<Rc<ty::TraitRef>>
+    {
+        match predicate {
+            ty::TraitPredicate(bound) => {
+                match self.infcx.probe(|| self.match_trait_refs(obligation, bound.clone())) {
+                    Ok(_) => Some(bound),
+                    Err(_) => None
+                }
+            }
+            ty::OutlivesPredicate(..) => {
+                None
+            }
+        }
     }
 
     fn assemble_unboxed_candidates(&mut self,

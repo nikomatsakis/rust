@@ -29,7 +29,7 @@ use super::{ErrorReported, Obligation, ObligationCause, VtableImpl,
 pub struct Elaborator<'cx, 'tcx:'cx> {
     tcx: &'cx ty::ctxt<'tcx>,
     stack: Vec<StackEntry>,
-    visited: HashSet<Rc<ty::TraitRef>>,
+    visited: HashSet<ty::Predicate>,
 }
 
 struct StackEntry {
@@ -42,7 +42,18 @@ pub fn elaborate_trait_ref<'cx, 'tcx>(
     trait_ref: Rc<ty::TraitRef>)
     -> Elaborator<'cx, 'tcx>
 {
-    elaborate(tcx, vec![ty::TraitPredicate(trait_ref)])
+    elaborate_predicates(tcx, vec![ty::TraitPredicate(trait_ref)])
+}
+
+pub fn elaborate_trait_refs<'cx, 'tcx>(
+    tcx: &'cx ty::ctxt<'tcx>,
+    trait_refs: &[Rc<ty::TraitRef>])
+    -> Elaborator<'cx, 'tcx>
+{
+    let predicates = trait_refs.iter()
+                               .map(|trait_ref| ty::TraitPredicate((*trait_ref).clone()))
+                               .collect();
+    elaborate_predicates(tcx, predicates)
 }
 
 pub fn elaborate_predicates<'cx, 'tcx>(
@@ -50,7 +61,7 @@ pub fn elaborate_predicates<'cx, 'tcx>(
     predicates: Vec<ty::Predicate>)
     -> Elaborator<'cx, 'tcx>
 {
-    let visited: HashSet<Rc<ty::TraitRef>> =
+    let visited: HashSet<ty::Predicate> =
         predicates.iter()
                   .map(|b| (*b).clone())
                   .collect();
@@ -64,7 +75,7 @@ impl<'cx, 'tcx> Elaborator<'cx, 'tcx> {
         match *predicate {
             ty::TraitPredicate(ref trait_ref) => {
                 let mut predicates =
-                    ty::predicates_for_trait_ref(self.tcx, trait_ref);
+                    ty::predicates_for_trait_ref(self.tcx, &**trait_ref);
 
                 // Only keep those bounds that we haven't already
                 // seen.  This is necessary to prevent infinite
@@ -73,10 +84,8 @@ impl<'cx, 'tcx> Elaborator<'cx, 'tcx> {
                 // Sized for Sized? { }`.
                 predicates.retain(|r| self.visited.insert((*r).clone()));
 
-                let entry =
-                    SupertraitEntry { position: 0,
-                                      predicates: predicates };
-                self.stack.push(entry);
+                self.stack.push(StackEntry { position: 0,
+                                             predicates: predicates });
             }
             ty::OutlivesPredicate(..) => {
                 // Currently, we do not "elaborate" predicates like
@@ -107,7 +116,7 @@ impl<'cx, 'tcx> Iterator<ty::Predicate> for Elaborator<'cx, 'tcx> {
     fn next(&mut self) -> Option<ty::Predicate> {
         loop {
             // Extract next item from top-most stack frame, if any.
-            let next_trait = match self.stack.last_mut() {
+            let next_predicate = match self.stack.mut_last() {
                 None => {
                     // No more stack frames. Done.
                     return None;
@@ -130,7 +139,7 @@ impl<'cx, 'tcx> Iterator<ty::Predicate> for Elaborator<'cx, 'tcx> {
 
             match next_predicate {
                 Some(next_predicate) => {
-                    self.push(&*next_predicate);
+                    self.push(next_predicate);
                     return Some(next_predicate);
                 }
 
@@ -184,7 +193,7 @@ pub fn obligations_for_generics(tcx: &ty::ctxt,
 
     let mut obligations = VecPerParamSpace::empty();
 
-    for def in generics.types.iter() {
+    for def in generics.predicates.iter() {
         push_obligations_for_param_bounds(tcx,
                                           cause,
                                           recursion_depth,
@@ -271,30 +280,6 @@ pub fn obligation_for_builtin_bound(
             }),
         None => Err(ErrorReported)
     }
-}
-
-pub fn search_trait_and_supertraits_from_bound(tcx: &ty::ctxt,
-                                               caller_bound: Rc<ty::TraitRef>,
-                                               test: |ast::DefId| -> bool)
-                                               -> Option<VtableParamData>
-{
-    /*!
-     * Starting from a caller obligation `caller_bound` (which has
-     * coordinates `space`/`i` in the list of caller obligations),
-     * search through the trait and supertraits to find one where
-     * `test(d)` is true, where `d` is the def-id of the
-     * trait/supertrait.  If any is found, return `Some(p)` where `p`
-     * is the path to that trait/supertrait. Else `None`.
-     */
-
-    for bound in transitive_bounds(tcx, &[caller_bound]) {
-        if test(bound.def_id) {
-            let vtable_param = VtableParamData { bound: bound };
-            return Some(vtable_param);
-        }
-    }
-
-    return None;
 }
 
 impl Repr for super::Obligation {
