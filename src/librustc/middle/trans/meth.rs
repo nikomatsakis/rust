@@ -556,7 +556,7 @@ pub fn get_vtable(bcx: Block,
     }
 
     // Not in the cache. Build it.
-    let methods = traits::elaborate_trait_refs(tcx, &[trait_ref.clone()]).flat_ref(|predicate| {
+    let methods = traits::elaborate_trait_refs(tcx, &[trait_ref.clone()]).flat_map(|predicate| {
         let trait_ref = match predicate {
             ty::TraitPredicate(trait_ref) => trait_ref,
             ty::OutlivesPredicate(..) => { return Vec::new().into_iter(); }

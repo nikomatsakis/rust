@@ -421,6 +421,10 @@ impl<T> VecPerParamSpace<T> {
         self.content.as_slice()
     }
 
+    pub fn into_vec(self) -> Vec<T> {
+        self.content
+    }
+
     pub fn all_vecs(&self, pred: |&[T]| -> bool) -> bool {
         let spaces = [TypeSpace, SelfSpace, FnSpace];
         spaces.iter().all(|&space| { pred(self.get_slice(space)) })

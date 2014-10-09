@@ -36,26 +36,47 @@ mod select;
 mod util;
 
 /**
- * An `Obligation` represents some trait reference (e.g. `int:Eq`) for
- * which the vtable must be found.  The process of finding a vtable is
- * called "resolving" the `Obligation`. This process consists of
- * either identifying an `impl` (e.g., `impl Eq for int`) that
- * provides the required vtable, or else finding a bound that is in
- * scope. The eventual result is usually a `Selection` (defined below).
+ * An `Obligation` pairs some predicate (e.g., `int:Eq` or `'a:'b`)
+ * that must be satisfied along with information about why it must be
+ * satisfied. These predicates take different forms and hence the
+ * class is parametric over the precise type of predicate.
+ *
+ * In the case of trait predicates like `int:Eq`, the process of
+ * finding a vtable is called "selecting" the `Obligation`. This
+ * process consists of either identifying an `impl` (e.g., `impl Eq
+ * for int`) that provides the required vtable, or else finding a
+ * bound that is in scope. The eventual result is usually a
+ * `Selection` (defined below).
  */
 #[deriving(Clone)]
-pub struct Obligation {
+pub struct Obligation<PREDICATE> {
     pub cause: ObligationCause,
     pub recursion_depth: uint,
-    pub trait_ref: Rc<ty::TraitRef>,
+    pub predicate: PREDICATE
 }
 
+type TraitObligation = Obligation<Rc<ty::TraitRef>>;
+type PredicateObligation = Obligation<ty::Predicate>;
+
 /**
- * Why did we incur this obligation? Used for error reporting.
+ * Why did we incur this obligation? Used for error reporting but also
+ * for determining which where clauses are in scope from the
+ * environment.
  */
 #[deriving(Clone)]
 pub struct ObligationCause {
+    /// Id of the fn body (or static declaration) within which this
+    /// obligation was incurred. In the case where this is a closure
+    /// within a fn item, this can imply that the set of predicates in
+    /// scope are greater than those on the fn item itself, due to
+    /// implied predicates derived from the closure arguments.
+    pub body_id: ast::NodeId,
+
+    /// Span in the user source code.
     pub span: Span,
+
+    /// Code explaining *why* the obligation was incurred; used for
+    /// additional error reporting.
     pub code: ObligationCauseCode
 }
 
@@ -88,13 +109,14 @@ pub enum ObligationCauseCode {
     FieldSized,
 }
 
-// An error has already been reported to the user, so no need to continue checking.
+/// An error has already been reported to the user, so no need to continue checking.
 #[deriving(Clone,Show)]
 pub struct ErrorReported;
 
-pub type Obligations = subst::VecPerParamSpace<Obligation>;
-
-pub type Selection = Vtable<Obligation>;
+/// The result of "selecting" a trait obligation. Indicates whether
+/// the trait obligation can be satisfied with an impl or bound or
+/// whatever.
+pub type Selection = Vtable<PredicateObligation>;
 
 #[deriving(Clone,Show)]
 pub enum SelectionError {
@@ -104,7 +126,7 @@ pub enum SelectionError {
 }
 
 pub struct FulfillmentError {
-    pub obligation: Obligation,
+    pub obligation: TraitObligation,
     pub code: FulfillmentErrorCode
 }
 
@@ -200,12 +222,12 @@ pub enum Vtable<N> {
 pub struct VtableImplData<N> {
     pub impl_def_id: ast::DefId,
     pub substs: subst::Substs,
-    pub nested: subst::VecPerParamSpace<N>
+    pub nested: Vec<N>
 }
 
 #[deriving(Show,Clone)]
 pub struct VtableBuiltinData<N> {
-    pub nested: subst::VecPerParamSpace<N>
+    pub nested: Vec<N>
 }
 
 /**
@@ -221,7 +243,7 @@ pub struct VtableParamData {
 
 pub fn evaluate_obligation<'a,'tcx>(infcx: &InferCtxt<'a,'tcx>,
                                     param_env: &ty::ParameterEnvironment,
-                                    obligation: &Obligation,
+                                    obligation: &TraitObligation,
                                     typer: &Typer<'tcx>)
                                     -> bool
 {
@@ -241,7 +263,7 @@ pub fn select_inherent_impl<'a,'tcx>(infcx: &InferCtxt<'a,'tcx>,
                                      cause: ObligationCause,
                                      impl_def_id: ast::DefId,
                                      self_ty: ty::t)
-                                     -> SelectionResult<VtableImplData<Obligation>>
+                                     -> SelectionResult<VtableImplData<PredicateObligation>>
 {
     /*!
      * Matches the self type of the inherent impl `impl_def_id`
@@ -294,7 +316,7 @@ pub fn obligations_for_generics(tcx: &ty::ctxt,
                                 cause: ObligationCause,
                                 generics: &ty::Generics,
                                 substs: &subst::Substs)
-                                -> subst::VecPerParamSpace<Obligation>
+                                -> Vec<PredicateObligation>
 {
     /*!
      * Given generics for an impl like:
@@ -313,38 +335,46 @@ pub fn obligation_for_builtin_bound(tcx: &ty::ctxt,
                                     cause: ObligationCause,
                                     source_ty: ty::t,
                                     builtin_bound: ty::BuiltinBound)
-                                    -> Result<Obligation, ErrorReported>
+                                    -> Result<TraitObligation, ErrorReported>
 {
     util::obligation_for_builtin_bound(tcx, cause, builtin_bound, 0, source_ty)
 }
 
-impl Obligation {
-    pub fn new(cause: ObligationCause, trait_ref: Rc<ty::TraitRef>) -> Obligation {
+impl<P> Obligation<P> {
+    pub fn new(cause: ObligationCause, predicate: P) -> Obligation<P> {
         Obligation { cause: cause,
                      recursion_depth: 0,
-                     trait_ref: trait_ref }
+                     predicate: predicate }
     }
 
-    pub fn misc(span: Span, trait_ref: Rc<ty::TraitRef>) -> Obligation {
-        Obligation::new(ObligationCause::misc(span), trait_ref)
+    pub fn with_predicate<Q>(&self, predicate: Q) -> Obligation<Q> {
+        Obligation { cause: self.cause,
+                     recursion_depth: self.recursion_depth,
+                     predicate: predicate }
     }
 
+    pub fn misc(body_id: ast::NodeId, span: Span, predicate: P) -> Obligation<P> {
+        Obligation::new(ObligationCause::misc(body_id, span), predicate)
+    }
+}
+
+impl TraitObligation {
     pub fn self_ty(&self) -> ty::t {
-        self.trait_ref.self_ty()
+        self.predicate.self_ty()
     }
 }
 
 impl ObligationCause {
-    pub fn new(span: Span, code: ObligationCauseCode) -> ObligationCause {
-        ObligationCause { span: span, code: code }
+    pub fn new(body_id: ast::NodeId, span: Span, code: ObligationCauseCode) -> ObligationCause {
+        ObligationCause { body_id: body_id, span: span, code: code }
     }
 
-    pub fn misc(span: Span) -> ObligationCause {
-        ObligationCause { span: span, code: MiscObligation }
+    pub fn misc(body_id: ast::NodeId, span: Span) -> ObligationCause {
+        ObligationCause { body_id: body_id, span: span, code: MiscObligation }
     }
 
     pub fn dummy() -> ObligationCause {
-        ObligationCause { span: DUMMY_SP, code: MiscObligation }
+        ObligationCause { body_id: ast::DUMMY_NODE_ID, span: DUMMY_SP, code: MiscObligation }
     }
 }
 
@@ -389,7 +419,7 @@ impl<N> VtableImplData<N> {
         VtableImplData {
             impl_def_id: self.impl_def_id,
             substs: self.substs.clone(),
-            nested: self.nested.map(op)
+            nested: self.nested.iter().map(op).collect(),
         }
     }
 
@@ -398,7 +428,7 @@ impl<N> VtableImplData<N> {
         VtableImplData {
             impl_def_id: impl_def_id,
             substs: substs,
-            nested: nested.map_move(op)
+            nested: nested.into_iter().map(op).collect(),
         }
     }
 }
@@ -413,19 +443,19 @@ impl<N> VtableBuiltinData<N> {
                          -> VtableBuiltinData<M>
     {
         VtableBuiltinData {
-            nested: self.nested.map(op)
+            nested: self.nested.iter().map(op).collect(),
         }
     }
 
     pub fn map_move_nested<M>(self, op: |N| -> M) -> VtableBuiltinData<M> {
         VtableBuiltinData {
-            nested: self.nested.map_move(op)
+            nested: self.nested.into_iter().map(op).collect(),
         }
     }
 }
 
 impl FulfillmentError {
-    fn new(obligation: Obligation, code: FulfillmentErrorCode)
+    fn new(obligation: TraitObligation, code: FulfillmentErrorCode)
            -> FulfillmentError
     {
         FulfillmentError { obligation: obligation, code: code }

@@ -1373,7 +1373,7 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
         }
 
         self.fcx.add_obligations_for_parameters(
-            traits::ObligationCause::misc(self.span),
+            traits::ObligationCause::misc(self.fcx.body_id, self.span),
             &all_substs,
             &candidate.method_ty.generics);
 

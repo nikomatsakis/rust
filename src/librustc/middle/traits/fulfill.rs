@@ -10,14 +10,19 @@
 
 use middle::mem_categorization::Typer;
 use middle::ty;
+use middle::typeck::infer;
 use middle::typeck::infer::InferCtxt;
+use std::collections::hashmap::{Vacant,Occupied};
+use util::nodemap::NodeMap;
 use util::ppaux::Repr;
 
 use super::CodeAmbiguity;
-use super::Obligation;
-use super::FulfillmentError;
 use super::CodeSelectionError;
+use super::FulfillmentError;
+use super::Obligation;
+use super::PredicateObligation;
 use super::select::SelectionContext;
+use super::TraitObligation;
 
 /**
  * The fulfillment context is used to drive trait resolution.  It
@@ -34,22 +39,94 @@ use super::select::SelectionContext;
 pub struct FulfillmentContext {
     // A list of all obligations that have been registered with this
     // fulfillment context.
-    trait_obligations: Vec<Obligation>,
+    trait_obligations: Vec<TraitObligation>,
+
+    // As we process traits, we also accumulate constraints on the
+    // lifetime bounding various types. Each constraint has the form
+    // `T:'a`, meaning "some type `T` must outlive the lifetime
+    // 'a". These constraints derive from instantiated type
+    // parameters. So if you had a struct defined like
+    //
+    //     struct Foo<T:'static> { ... }
+    //
+    // then in some expression `let x = Foo { ... }` it will
+    // instantiate the type parameter `T` with a fresh type `$0`. At
+    // the same time, it will record a region obligation of
+    // `$0:'static`. This will get checked later by regionck. (We
+    // can't generally check these things right away because we have
+    // to wait until types are resolved.)
+    //
+    // These are stored in a map keyed to the id of the innermost
+    // enclosing fn body / static initializer expression. This is
+    // because the location where the obligation was incurred can be
+    // relevant with respect to which sublifetime assumptions are in
+    // place. The reason that we store under the fn-id, and not
+    // something more fine-grained, is so that it is easier for
+    // regionck to be sure that it has found *all* the region
+    // obligations (otherwise, it's easy to fail to walk to a
+    // particular node-id).
+    region_obligations: NodeMap<Vec<RegionObligation>>,
+}
+
+pub struct RegionObligation {
+    sub_region: ty::Region,
+    sup_type: ty::t,
+    origin: infer::SubregionOrigin,
 }
 
 impl FulfillmentContext {
     pub fn new() -> FulfillmentContext {
         FulfillmentContext {
             trait_obligations: Vec::new(),
+            region_obligations: NodeMap::new(),
         }
     }
 
-    pub fn register_obligation(&mut self,
-                               tcx: &ty::ctxt,
-                               obligation: Obligation)
+    pub fn register_trait_ref_obligation(&mut self,
+                                         infcx: &InferCtxt,
+                                         obligation: TraitObligation)
     {
+        let obligation =
+            obligation.with_predicate(
+                ty::TraitPredicate(obligation.predicate.clone()));
+        self.register_obligation(infcx, obligation)
+    }
+
+    pub fn register_obligation(&mut self,
+                               infcx: &InferCtxt,
+                               obligation: PredicateObligation)
+    {
+        let tcx = infcx.tcx;
         debug!("register_obligation({})", obligation.repr(tcx));
-        self.trait_obligations.push(obligation);
+        let Obligation { cause, recursion_depth, predicate } = obligation;
+        match predicate {
+            ty::TraitPredicate(trait_ref) => {
+                self.trait_obligations.push(Obligation { cause: cause,
+                                                         recursion_depth: recursion_depth,
+                                                         predicate: trait_ref });
+            }
+
+            ty::OutlivesPredicate(ty::TypeOutlivesPredicate(t, r)) => {
+                // Constraints like `T:'a` we must record for later.
+                // Currently, regionck handles these, though I'd
+                // prefer to push this reasoning into the inference
+                // context itself eventually.
+                let origin = infer::RelateParamBound(cause.span, t);
+                let region_obligation = RegionObligation { origin: origin,
+                                                           sup_type: t,
+                                                           sub_region: r, };
+                match self.region_obligations.entry(cause.body_id) {
+                    Vacant(entry) => { entry.set(vec![region_obligation]); },
+                    Occupied(mut entry) => { entry.get_mut().push(region_obligation); },
+                }
+            }
+
+            ty::OutlivesPredicate(ty::RegionOutlivesPredicate(sup_region, sub_region)) => {
+                // Subregions we can refer directly to the infcx.
+                let origin = infer::RelateRegionParamBound(cause.span);
+                infcx.sub_regions(origin, sub_region, sup_region);
+            }
+        }
     }
 
     pub fn select_all_or_error<'a,'tcx>(&mut self,
@@ -129,7 +206,7 @@ impl FulfillmentContext {
             // registering any nested obligations for the future.
             for selection in selections.into_iter() {
                 selection.map_move_nested(
-                    |o| self.register_obligation(tcx, o));
+                    |o| self.register_obligation(infcx, o));
             }
         }
 

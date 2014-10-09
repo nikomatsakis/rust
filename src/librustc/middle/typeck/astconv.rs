@@ -68,6 +68,7 @@ use util::ppaux::{Repr, UserString};
 
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::iter::Extendable;
 use syntax::abi;
 use syntax::{ast, ast_util};
 use syntax::codemap::Span;
@@ -1475,14 +1476,16 @@ pub fn compute_opt_region_bound(tcx: &ty::ctxt,
         // Create a list of predicates for this erased type.
         let builtin_predicates =
             builtin_bounds.iter()
-            .flat_map(|bound| traits::trait_ref_for_builtin_bound(tcx, bound, erased_self_ty));
+            .flat_map(
+                |bound| traits::trait_ref_for_builtin_bound(tcx, bound, erased_self_ty).into_iter());
         let trait_predicates =
             trait_bounds.iter()
             .map(|trait_bound| {
-                Rc::new(ty::TraitRef {
-                    def_id: trait_bound.def_id,
-                    substs: trait_bound.substs.with_self_ty(erased_self_ty)
-                })
+                Rc::new(ty::TraitRef { def_id: trait_bound.def_id,
+                                       substs: trait_bound.substs.with_self_ty(erased_self_ty) })
+            })
+            .map(|trait_bound| {
+                ty::TraitPredicate(trait_bound)
             });
         let predicates: Vec<ty::Predicate> =
             builtin_predicates
@@ -1492,8 +1495,8 @@ pub fn compute_opt_region_bound(tcx: &ty::ctxt,
         // Elaborate these predicates and search for anything that
         // gives us a bound on the erased self type:
         let mut all_bounds = Vec::new();
-        for predicate in traits::elaborate_predicates(predicates) {
-            match *predicate {
+        for predicate in traits::elaborate_predicates(tcx, predicates) {
+            match predicate {
                 ty::TraitPredicate(..) |
                 ty::OutlivesPredicate(ty::RegionOutlivesPredicate(..)) => {
                 }

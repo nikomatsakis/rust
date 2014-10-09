@@ -842,6 +842,9 @@ trait rbml_writer_helpers {
     fn emit_type_param_def(&mut self,
                            ecx: &e::EncodeContext,
                            type_param_def: &ty::TypeParameterDef);
+    fn emit_predicate(&mut self,
+                      ecx: &e::EncodeContext,
+                      predicate: &ty::Predicate);
     fn emit_trait_ref(&mut self, ecx: &e::EncodeContext, ty: &ty::TraitRef);
     fn emit_polytype(&mut self,
                      ecx: &e::EncodeContext,
@@ -945,6 +948,16 @@ impl<'a> rbml_writer_helpers for Encoder<'a> {
         });
     }
 
+    fn emit_predicate(&mut self,
+                      ecx: &e::EncodeContext,
+                      predicate: &ty::Predicate) {
+        self.emit_opaque(|this| {
+            Ok(tyencode::enc_predicate(this.writer,
+                                       &ecx.ty_str_ctxt(),
+                                       predicate))
+        });
+    }
+
     fn emit_polytype(&mut self,
                  ecx: &e::EncodeContext,
                  pty: ty::Polytype) {
@@ -962,6 +975,11 @@ impl<'a> rbml_writer_helpers for Encoder<'a> {
                         Ok(encode_vec_per_param_space(
                             this, &pty.generics.regions,
                             |this, def| def.encode(this).unwrap()))
+                    });
+                    this.emit_struct_field("predicates", 2, |this| {
+                        Ok(encode_vec_per_param_space(
+                            this, &pty.generics.predicates,
+                            |this, p| this.emit_predicate(ecx, p)))
                     })
                 })
             });
@@ -1357,6 +1375,8 @@ trait rbml_decoder_decoder_helpers {
     fn read_trait_ref(&mut self, dcx: &DecodeContext) -> Rc<ty::TraitRef>;
     fn read_type_param_def(&mut self, dcx: &DecodeContext)
                            -> ty::TypeParameterDef;
+    fn read_predicate(&mut self, dcx: &DecodeContext)
+                      -> ty::Predicate;
     fn read_polytype(&mut self, dcx: &DecodeContext)
                      -> ty::Polytype;
     fn read_existential_bounds(&mut self, dcx: &DecodeContext) -> ty::ExistentialBounds;
@@ -1549,6 +1569,18 @@ impl<'a> rbml_decoder_decoder_helpers for reader::Decoder<'a> {
         }).unwrap()
     }
 
+    fn read_predicate(&mut self, dcx: &DecodeContext)
+                      -> ty::Predicate {
+        self.read_opaque(|this, doc| {
+            Ok(tydecode::parse_predicate_data(
+                doc.data,
+                doc.start,
+                dcx.cdata.cnum,
+                dcx.tcx,
+                |s, a| this.convert_def_id(dcx, s, a)))
+        }).unwrap()
+    }
+
     fn read_polytype(&mut self, dcx: &DecodeContext)
                                    -> ty::Polytype {
         self.read_struct("Polytype", 2, |this| {
@@ -1571,7 +1603,7 @@ impl<'a> rbml_decoder_decoder_helpers for reader::Decoder<'a> {
                             predicates:
                             this.read_struct_field("predicates", 2, |this| {
                                 Ok(this.read_vec_per_param_space(
-                                    |this| Decodable::decode(this).unwrap()))
+                                    |this| this.read_predicate(dcx)))
                             }).unwrap(),
                         })
                     })

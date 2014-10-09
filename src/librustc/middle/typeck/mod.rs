@@ -317,7 +317,8 @@ pub fn lookup_def_ccx(ccx: &CrateCtxt, sp: Span, id: ast::NodeId)
 pub fn no_params(t: ty::t) -> ty::Polytype {
     ty::Polytype {
         generics: ty::Generics {types: VecPerParamSpace::empty(),
-                                regions: VecPerParamSpace::empty()},
+                                regions: VecPerParamSpace::empty(),
+                                predicates: VecPerParamSpace::empty()},
         ty: t
     }
 }

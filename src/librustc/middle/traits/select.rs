@@ -13,10 +13,12 @@
 
 use super::{ErrorReported};
 use super::{Obligation, ObligationCause};
+use super::{PredicateObligation};
 use super::{SelectionError, Unimplemented, Overflow,
             OutputTypeParameterMismatch};
 use super::{Selection};
 use super::{SelectionResult};
+use super::{TraitObligation};
 use super::{VtableBuiltin, VtableImpl, VtableParam, VtableUnboxedClosure};
 use super::{VtableImplData, VtableParamData, VtableBuiltinData};
 use super::{util};
@@ -50,7 +52,7 @@ pub struct SelectionContext<'cx, 'tcx:'cx> {
 
 // A stack that walks back up the stack frame.
 struct ObligationStack<'prev> {
-    obligation: &'prev Obligation,
+    obligation: &'prev TraitObligation,
 
     /// Trait ref from `obligation` but skolemized with the
     /// selection-context's skolemizer. Used to check for recursion.
@@ -147,7 +149,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     //    is `Vec<Foo>:Iterable<Bar>`, but the impl specifies
     //    `impl<T> Iterable<T> for Vec<T>`, than an error would result.
 
-    pub fn select(&mut self, obligation: &Obligation) -> SelectionResult<Selection> {
+    pub fn select(&mut self, obligation: &TraitObligation) -> SelectionResult<Selection> {
         /*!
          * Evaluates whether the obligation can be satisfied. Returns
          * an indication of whether the obligation can be satisfied
@@ -168,7 +170,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                                 impl_def_id: ast::DefId,
                                 obligation_cause: ObligationCause,
                                 obligation_self_ty: ty::t)
-                                -> SelectionResult<VtableImplData<Obligation>>
+                                -> SelectionResult<VtableImplData<PredicateObligation>>
     {
         debug!("select_inherent_impl(impl_def_id={}, obligation_self_ty={})",
                impl_def_id.repr(self.tcx()),
@@ -198,7 +200,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     // we can be sure it does not.
 
     pub fn evaluate_obligation(&mut self,
-                               obligation: &Obligation)
+                               obligation: &TraitObligation)
                                -> bool
     {
         /*!
@@ -239,7 +241,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     fn evaluate_obligation_recursively(&mut self,
                                        previous_stack: Option<&ObligationStack>,
-                                       obligation: &Obligation)
+                                       obligation: &TraitObligation)
                                        -> EvaluationResult
     {
         debug!("evaluate_obligation_recursively({})",
@@ -298,7 +300,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     pub fn evaluate_impl(&mut self,
                          impl_def_id: ast::DefId,
-                         obligation: &Obligation)
+                         obligation: &TraitObligation)
                          -> bool
     {
         /*!
@@ -350,7 +352,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         // is because we want the unbound variables to be replaced
         // with fresh skolemized types starting from index 0.
         let cache_skol_trait_ref =
-            self.infcx.skolemize(stack.obligation.trait_ref.clone());
+            self.infcx.skolemize(stack.obligation.predicate.clone());
         debug!("candidate_from_obligation(cache_skol_trait_ref={}, obligation={})",
                cache_skol_trait_ref.repr(self.tcx()),
                stack.repr(self.tcx()));
@@ -528,7 +530,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         // Other bounds. Consider both in-scope bounds from fn decl
         // and applicable impls. There is a certain set of precedence rules here.
 
-        match self.tcx().lang_items.to_builtin_kind(obligation.trait_ref.def_id) {
+        match self.tcx().lang_items.to_builtin_kind(obligation.predicate.def_id) {
             Some(bound) => {
                 try!(self.assemble_builtin_bound_candidates(bound, stack, &mut candidates));
             }
@@ -546,7 +548,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     }
 
     fn assemble_candidates_from_caller_bounds(&mut self,
-                                              obligation: &Obligation,
+                                              obligation: &TraitObligation,
                                               candidates: &mut CandidateSet)
                                               -> Result<(),SelectionError>
     {
@@ -581,7 +583,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     fn predicate_satisfies(&self,
                            predicate: ty::Predicate,
-                           obligation: &Obligation)
+                           obligation: &TraitObligation)
                            -> Option<Rc<ty::TraitRef>>
     {
         match predicate {
@@ -598,7 +600,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     }
 
     fn assemble_unboxed_candidates(&mut self,
-                                   obligation: &Obligation,
+                                   obligation: &TraitObligation,
                                    candidates: &mut CandidateSet)
                                    -> Result<(),SelectionError>
     {
@@ -636,7 +638,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         for tuple in fn_traits.iter() {
             let kind = match tuple {
                 &(kind, Some(ref fn_trait))
-                    if *fn_trait == obligation.trait_ref.def_id =>
+                    if *fn_trait == obligation.predicate.def_id =>
                 {
                     kind
                 }
@@ -665,7 +667,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     }
 
     fn assemble_candidates_from_impls(&mut self,
-                                      obligation: &Obligation,
+                                      obligation: &TraitObligation,
                                       candidates: &mut CandidateSet)
                                       -> Result<(), SelectionError>
     {
@@ -673,7 +675,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
          * Search for impls that might apply to `obligation`.
          */
 
-        let all_impls = self.all_impls(obligation.trait_ref.def_id);
+        let all_impls = self.all_impls(obligation.predicate.def_id);
         for &impl_def_id in all_impls.iter() {
             self.infcx.probe(|| {
                 match self.match_impl(impl_def_id, obligation) {
@@ -724,10 +726,18 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     {
         let mut result = EvaluatedToOk;
         for obligation in selection.iter_nested() {
-            match self.evaluate_obligation_recursively(stack, obligation) {
-                EvaluatedToErr => { return EvaluatedToErr; }
-                EvaluatedToAmbig => { result = EvaluatedToAmbig; }
-                EvaluatedToOk => { }
+            match obligation.predicate {
+                ty::TraitPredicate(ref trait_ref) => {
+                    let trait_obligation = obligation.with_predicate((*trait_ref).clone());
+                    match self.evaluate_obligation_recursively(stack, &trait_obligation) {
+                        EvaluatedToErr => { return EvaluatedToErr; }
+                        EvaluatedToAmbig => { result = EvaluatedToAmbig; }
+                        EvaluatedToOk => { }
+                    }
+                }
+                ty::OutlivesPredicate(..) => {
+                    // We don't consider region bounds for purposes of selection.
+                }
             }
         }
         result
@@ -1178,7 +1188,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     // type error.  See `doc.rs` for more details.
 
     fn confirm_candidate(&mut self,
-                         obligation: &Obligation,
+                         obligation: &TraitObligation,
                          candidate: Candidate)
                          -> Result<Selection,SelectionError>
     {
@@ -1190,7 +1200,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             // FIXME -- see assemble_builtin_bound_candidates()
             BuiltinCandidate(_) |
             ErrorCandidate => {
-                Ok(VtableBuiltin(VtableBuiltinData { nested: VecPerParamSpace::empty() }))
+                Ok(VtableBuiltin(VtableBuiltinData { nested: Vec::new() }))
             }
 
             ParamCandidate(param) => {
@@ -1212,7 +1222,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     }
 
     fn confirm_param_candidate(&mut self,
-                               obligation: &Obligation,
+                               obligation: &TraitObligation,
                                param: VtableParamData)
                                -> Result<VtableParamData,SelectionError>
     {
@@ -1221,37 +1231,21 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                param.repr(self.tcx()));
 
         let () = try!(self.confirm(obligation.cause,
-                                   obligation.trait_ref.clone(),
+                                   obligation.predicate.clone(),
                                    param.bound.clone()));
         Ok(param)
     }
 
-    fn confirm_builtin_candidate(&mut self,
-                                 obligation: &Obligation,
-                                 bound: ty::BuiltinBound)
-                                 -> Result<VtableBuiltinData<Obligation>,SelectionError>
-    {
-        debug!("confirm_builtin_candidate({})",
-               obligation.repr(self.tcx()));
-
-        match try!(self.builtin_bound(bound, obligation.self_ty())) {
-            If(nested) => Ok(self.vtable_builtin_data(obligation, bound, nested)),
-            AmbiguousBuiltin |
-            ParameterBuiltin => {
-                self.tcx().sess.span_bug(
-                    obligation.cause.span,
-                    format!("builtin bound for {} was ambig",
-                            obligation.repr(self.tcx())).as_slice());
-            }
-        }
-    }
-
     fn vtable_builtin_data(&mut self,
-                           obligation: &Obligation,
+                           obligation: &TraitObligation,
                            bound: ty::BuiltinBound,
                            nested: Vec<ty::t>)
-                           -> VtableBuiltinData<Obligation>
+                           -> VtableBuiltinData<PredicateObligation>
     {
+        // Construct a set of obligations of the type `T : bound` for
+        // each type `T` in `nested`. This is somewhat complicated by
+        // the fact that we may be missing lang items, and hence
+        // `obligation_for_builtin_bound()` yields a `Result`.
         let obligations =
             result::collect(
                 nested
@@ -1264,18 +1258,27 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                             obligation.recursion_depth + 1,
                             t)
                     }));
-        let obligations = match obligations {
+
+        let obligations: Vec<TraitObligation> = match obligations {
             Ok(o) => o,
             Err(ErrorReported) => Vec::new()
         };
-        let obligations = VecPerParamSpace::new(obligations, Vec::new(), Vec::new());
+
+        // We have to convert from the Vec<TraitObligation> into a
+        // Vec<PredicateObligation>. This is sort of annoying, since
+        // really there ought to be a subtyping relationship. Ah well.
+        let obligations: Vec<PredicateObligation> =
+            obligations.iter()
+            .map(|o| o.with_predicate(ty::TraitPredicate(o.predicate.clone())))
+            .collect();
+
         VtableBuiltinData { nested: obligations }
     }
 
     fn confirm_impl_candidate(&mut self,
-                              obligation: &Obligation,
+                              obligation: &TraitObligation,
                               impl_def_id: ast::DefId)
-                              -> Result<VtableImplData<Obligation>,SelectionError>
+                              -> Result<VtableImplData<PredicateObligation>,SelectionError>
     {
         debug!("confirm_impl_candidate({},{})",
                obligation.repr(self.tcx()),
@@ -1292,7 +1295,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                    substs: Substs,
                    cause: ObligationCause,
                    recursion_depth: uint)
-                   -> VtableImplData<Obligation>
+                   -> VtableImplData<PredicateObligation>
     {
         let impl_obligations =
             self.impl_obligations(cause,
@@ -1305,7 +1308,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     }
 
     fn confirm_unboxed_closure_candidate(&mut self,
-                                         obligation: &Obligation,
+                                         obligation: &TraitObligation,
                                          closure_def_id: ast::DefId)
                                          -> Result<(),SelectionError>
     {
@@ -1335,7 +1338,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
         let arguments_tuple = *new_signature.inputs.get(0);
         let trait_ref = Rc::new(ty::TraitRef {
-            def_id: obligation.trait_ref.def_id,
+            def_id: obligation.predicate.def_id,
             substs: Substs::new_trait(
                 vec![arguments_tuple, new_signature.output],
                 vec![],
@@ -1343,7 +1346,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         });
 
         self.confirm(obligation.cause,
-                     obligation.trait_ref.clone(),
+                     obligation.predicate.clone(),
                      trait_ref)
     }
 
@@ -1359,7 +1362,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     fn rematch_impl(&mut self,
                     impl_def_id: ast::DefId,
-                    obligation: &Obligation)
+                    obligation: &TraitObligation)
                     -> Substs
     {
         match self.match_impl(impl_def_id, obligation) {
@@ -1378,7 +1381,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     fn match_impl(&mut self,
                   impl_def_id: ast::DefId,
-                  obligation: &Obligation)
+                  obligation: &TraitObligation)
                   -> Result<Substs, ()>
     {
         let impl_substs = util::fresh_substs_for_impl(self.infcx,
@@ -1397,7 +1400,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     }
 
     fn match_trait_refs(&mut self,
-                        obligation: &Obligation,
+                        obligation: &TraitObligation,
                         trait_ref: Rc<ty::TraitRef>)
                         -> Result<(),()>
     {
@@ -1405,7 +1408,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         match self.infcx.sub_trait_refs(false,
                                         origin,
                                         trait_ref,
-                                        obligation.trait_ref.clone()) {
+                                        obligation.predicate.clone()) {
             Ok(()) => Ok(()),
             Err(_) => Err(()),
         }
@@ -1570,10 +1573,10 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     fn push_stack<'o,'s:'o>(&mut self,
                             previous_stack: Option<&'s ObligationStack<'s>>,
-                            obligation: &'o Obligation)
+                            obligation: &'o TraitObligation)
                             -> ObligationStack<'o>
     {
-        let skol_trait_ref = obligation.trait_ref.fold_with(&mut self.skolemizer);
+        let skol_trait_ref = obligation.predicate.fold_with(&mut self.skolemizer);
 
         ObligationStack {
             obligation: obligation,
@@ -1600,7 +1603,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                         recursion_depth: uint,
                         impl_def_id: ast::DefId,
                         impl_substs: &Substs)
-                        -> VecPerParamSpace<Obligation>
+                        -> Vec<PredicateObligation>
     {
         let impl_generics = ty::lookup_item_type(self.tcx(),
                                                  impl_def_id).generics;
