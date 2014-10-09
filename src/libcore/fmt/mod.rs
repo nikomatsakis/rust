@@ -128,7 +128,7 @@ impl<'a> Arguments<'a> {
     /// a valid Arguments structure.
     #[doc(hidden)] #[inline]
     pub unsafe fn with_placeholders<'a>(pieces: &'static [&'static str],
-                                        fmt: &'static [rt::Argument<'static>],
+                                        fmt: &'static [rt::Argument],
                                         args: &'a [Argument<'a>]) -> Arguments<'a> {
         Arguments {
             pieces: mem::transmute(pieces),
@@ -147,15 +147,24 @@ impl<'a> Arguments<'a> {
 /// and pass it to a function or closure, passed as the first argument. The
 /// macro validates the format string at compile-time so usage of the `write`
 /// and `format` functions can be safely performed.
+#[cfg(not(stage0))]
 pub struct Arguments<'a> {
     // Format string pieces to print.
     pieces: &'a [&'a str],
 
     // Placeholder specs, or `None` if all specs are default (as in "{}{}").
-    fmt: Option<&'a [rt::Argument<'a>]>,
+    fmt: Option<&'a [rt::Argument]>,
 
     // Dynamic arguments for interpolation, to be interleaved with string
     // pieces. (Every argument is preceded by a string piece.)
+    args: &'a [Argument],
+}
+
+/// DO NOT EDIT ME
+#[cfg(stage0)]
+pub struct Arguments<'a> {
+    pieces: &'a [&'a str],
+    fmt: Option<&'a [rt::Argument<'a>]>,
     args: &'a [Argument<'a>],
 }
 
@@ -280,6 +289,19 @@ uniform_fn_call_workaround! {
     secret_upper_exp, UpperExp;
 }
 
+#[cfg(not(stage0))]
+static DEFAULT_ARGUMENT: rt::Argument = rt::Argument {
+    position: rt::ArgumentNext,
+    format: rt::FormatSpec {
+        fill: ' ',
+        align: rt::AlignUnknown,
+        flags: 0,
+        precision: rt::CountImplied,
+        width: rt::CountImplied,
+    }
+};
+
+#[cfg(stage0)]
 static DEFAULT_ARGUMENT: rt::Argument<'static> = rt::Argument {
     position: rt::ArgumentNext,
     format: rt::FormatSpec {
