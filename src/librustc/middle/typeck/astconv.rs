@@ -558,6 +558,44 @@ pub fn ast_ty_to_builtin_ty<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
                               "not enough type parameters supplied to `Box<T>`");
                     Some(ty::mk_err())
                 }
+                def::DefTy(did, _) | def::DefStruct(did)
+                        if Some(did) == this.tcx().lang_items.gc() => {
+                    if path.segments
+                           .iter()
+                           .flat_map(|s| s.types.iter())
+                           .count() > 1 {
+                        span_err!(this.tcx().sess, path.span, E0048,
+                                  "`Gc` has only one type parameter");
+                    }
+
+                    for inner_ast_type in path.segments
+                                              .iter()
+                                              .flat_map(|s| s.types.iter()) {
+                        return Some(mk_pointer(this,
+                                               rscope,
+                                               ast::MutImmutable,
+                                               &**inner_ast_type,
+                                               Box,
+                                               |typ| {
+                            match ty::get(typ).sty {
+                                ty::ty_str => {
+                                    span_err!(this.tcx().sess, path.span, E0114,
+                                              "`Gc<str>` is not a type");
+                                    ty::mk_err()
+                                }
+                                ty::ty_vec(_, None) => {
+                                    span_err!(this.tcx().sess, path.span, E0115,
+                                              "`Gc<[T]>` is not a type");
+                                    ty::mk_err()
+                                }
+                                _ => ty::mk_box(this.tcx(), typ),
+                            }
+                        }))
+                    }
+                    this.tcx().sess.span_bug(path.span,
+                                             "not enough type parameters \
+                                              supplied to `Gc<T>`")
+                }
                 _ => None
             }
         }
@@ -1464,14 +1502,16 @@ pub fn compute_opt_region_bound(tcx: &ty::ctxt,
         // Create a list of predicates for this erased type.
         let builtin_predicates =
             builtin_bounds.iter()
-            .flat_map(|bound| traits::trait_ref_for_builtin_bound(tcx, bound, erased_self_ty));
+            .flat_map(
+                |bound| traits::trait_ref_for_builtin_bound(tcx, bound, erased_self_ty).into_iter());
         let trait_predicates =
             trait_bounds.iter()
             .map(|trait_bound| {
-                Rc::new(ty::TraitRef {
-                    def_id: trait_bound.def_id,
-                    substs: trait_bound.substs.with_self_ty(erased_self_ty)
-                })
+                Rc::new(ty::TraitRef { def_id: trait_bound.def_id,
+                                       substs: trait_bound.substs.with_self_ty(erased_self_ty) })
+            })
+            .map(|trait_bound| {
+                ty::TraitPredicate(trait_bound)
             });
         let predicates: Vec<ty::Predicate> =
             builtin_predicates
@@ -1481,8 +1521,8 @@ pub fn compute_opt_region_bound(tcx: &ty::ctxt,
         // Elaborate these predicates and search for anything that
         // gives us a bound on the erased self type:
         let mut all_bounds = Vec::new();
-        for predicate in traits::elaborate_predicates(predicates) {
-            match *predicate {
+        for predicate in traits::elaborate_predicates(tcx, predicates) {
+            match predicate {
                 ty::TraitPredicate(..) |
                 ty::OutlivesPredicate(ty::RegionOutlivesPredicate(..)) => {
                 }

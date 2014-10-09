@@ -367,28 +367,39 @@ pub fn enc_existential_bounds(w: &mut SeekableMemWriter, cx: &ctxt, bs: &ty::Exi
     enc_builtin_bounds(w, cx, &bs.builtin_bounds);
 }
 
-pub fn enc_bounds(w: &mut SeekableMemWriter, cx: &ctxt, bs: &ty::ParamBounds) {
-    enc_builtin_bounds(w, cx, &bs.builtin_bounds);
-
-    for &r in bs.region_bounds.iter() {
-        mywrite!(w, "R");
-        enc_region(w, cx, r);
-    }
-
-    for tp in bs.trait_bounds.iter() {
-        mywrite!(w, "I");
-        enc_trait_ref(w, cx, &**tp);
-    }
-
-    mywrite!(w, ".");
-}
-
 pub fn enc_type_param_def(w: &mut SeekableMemWriter, cx: &ctxt, v: &ty::TypeParameterDef) {
     mywrite!(w, "{}:{}|{}|{}|",
              token::get_name(v.name), (cx.ds)(v.def_id),
              v.space.to_uint(), v.index);
     enc_opt(w, v.associated_with, |w, did| mywrite!(w, "{}", (cx.ds)(did)));
     mywrite!(w, "|");
-    enc_bounds(w, cx, &v.bounds);
     enc_opt(w, v.default, |w, t| enc_ty(w, cx, t));
+}
+
+pub fn enc_predicate(w: &mut SeekableMemWriter, cx: &ctxt, v: &ty::Predicate) {
+    match *v {
+        ty::TraitPredicate(ref p) => {
+            mywrite!(w, "t");
+            enc_trait_ref(w, cx, &**p);
+        }
+        ty::OutlivesPredicate(ref p) => {
+            mywrite!(w, "o");
+            enc_outlives_predicate(w, cx, p);
+        }
+    }
+}
+
+pub fn enc_outlives_predicate(w: &mut SeekableMemWriter, cx: &ctxt, v: &ty::OutlivesPredicateKind) {
+    match *v {
+        ty::TypeOutlivesPredicate(t1, r2) => {
+            mywrite!(w, "t");
+            enc_ty(w, cx, t1);
+            enc_region(w, cx, r2);
+        }
+        ty::RegionOutlivesPredicate(r1, r2) => {
+            mywrite!(w, "r");
+            enc_region(w, cx, r1);
+            enc_region(w, cx, r2);
+        }
+    }
 }

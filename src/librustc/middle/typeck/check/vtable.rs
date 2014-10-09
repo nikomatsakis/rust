@@ -14,6 +14,7 @@ use middle::traits::{SelectionError, OutputTypeParameterMismatch, Overflow, Unim
 use middle::traits::{Obligation, obligation_for_builtin_bound};
 use middle::traits::{FulfillmentError, CodeSelectionError, CodeAmbiguity};
 use middle::traits::{ObligationCause};
+use middle::traits::{TraitObligation};
 use middle::ty;
 use middle::typeck::check::{FnCtxt,
                             structurally_resolved_type};
@@ -64,10 +65,9 @@ pub fn check_object_cast(fcx: &FnCtxt,
                                      referent_ty);
 
                 // Ensure that if &'a T is cast to &'b Trait, then 'b <= 'a
-                infer::mk_subr(fcx.infcx(),
-                               infer::RelateObjectBound(source_expr.span),
-                               target_region,
-                               referent_region);
+                fcx.infcx().sub_regions(infer::RelateObjectBound(source_expr.span),
+                                        target_region,
+                                        referent_region);
             }
         }
 
@@ -159,9 +159,10 @@ pub fn register_object_cast_obligations(fcx: &FnCtxt,
                                substs: object_substs });
     let object_obligation =
         Obligation::new(
-            ObligationCause::new(span,
+            ObligationCause::new(fcx.body_id,
+                                 span,
                                  traits::ObjectCastObligation(object_trait_ty)),
-            object_trait_ref.clone());
+            ty::TraitPredicate(object_trait_ref.clone()));
     fcx.register_obligation(object_obligation);
 
     // Create additional obligations for all the various builtin
@@ -169,16 +170,20 @@ pub fn register_object_cast_obligations(fcx: &FnCtxt,
     // object type is Foo+Send, this would create an obligation
     // for the Send check.)
     for builtin_bound in object_trait.bounds.builtin_bounds.iter() {
-            let obligation = obligation_for_builtin_bound(
+        let obligation =
+            obligation_for_builtin_bound(
                 fcx.tcx(),
-                ObligationCause::new(span,
+                ObligationCause::new(fcx.body_id,
+                                     span,
                                      traits::ObjectCastObligation(object_trait_ty)),
                 referent_ty,
                 builtin_bound);
-            match obligation {
-                Ok(obligation) => fcx.register_obligation(obligation),
-                _ => {}
+        match obligation {
+            Ok(obligation) => {
+                fcx.register_trait_ref_obligation(obligation)
             }
+            _ => {}
+        }
     }
 
     object_trait_ref
@@ -197,12 +202,11 @@ pub fn select_all_fcx_obligations_or_error(fcx: &FnCtxt) {
     }
 }
 
-fn resolve_trait_ref(fcx: &FnCtxt, obligation: &Obligation)
+fn resolve_trait_ref(fcx: &FnCtxt, obligation: &TraitObligation)
                      -> (ty::TraitRef, ty::t)
 {
     let trait_ref =
-        fcx.infcx().resolve_type_vars_in_trait_ref_if_possible(
-            &*obligation.trait_ref);
+        fcx.infcx().resolve_type_vars_in_trait_ref_if_possible(&*obligation.predicate);
     let self_ty =
         trait_ref.substs.self_ty().unwrap();
     (trait_ref, self_ty)
@@ -228,7 +232,7 @@ pub fn report_fulfillment_error(fcx: &FnCtxt,
 }
 
 pub fn report_selection_error(fcx: &FnCtxt,
-                              obligation: &Obligation,
+                              obligation: &TraitObligation,
                               error: &SelectionError)
 {
     match *error {
@@ -275,7 +279,7 @@ pub fn report_selection_error(fcx: &FnCtxt,
     }
 }
 
-pub fn maybe_report_ambiguity(fcx: &FnCtxt, obligation: &Obligation) {
+pub fn maybe_report_ambiguity(fcx: &FnCtxt, obligation: &TraitObligation) {
     // Unable to successfully determine, probably means
     // insufficient type information, but could mean
     // ambiguous impls. The latter *ought* to be a
@@ -358,9 +362,9 @@ pub fn select_new_fcx_obligations(fcx: &FnCtxt) {
 }
 
 fn note_obligation_cause(fcx: &FnCtxt,
-                         obligation: &Obligation) {
+                         obligation: &TraitObligation) {
     let tcx = fcx.tcx();
-    let trait_name = ty::item_path_str(tcx, obligation.trait_ref.def_id);
+    let trait_name = ty::item_path_str(tcx, obligation.predicate.def_id);
     match obligation.cause.code {
         traits::MiscObligation => { }
         traits::ItemObligation(item_def_id) => {

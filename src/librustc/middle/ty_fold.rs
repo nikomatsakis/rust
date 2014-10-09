@@ -125,7 +125,7 @@ pub trait TypeFolder<'tcx> {
         super_fold_item_substs(self, i)
     }
 
-    fn fold_obligation(&mut self, o: &traits::Obligation) -> traits::Obligation {
+    fn fold_obligation<P:TypeFoldable>(&mut self, o: &traits::Obligation<P>) -> traits::Obligation<P> {
         super_fold_obligation(self, o)
     }
 }
@@ -329,7 +329,6 @@ impl TypeFoldable for ty::TypeParameterDef {
             space: self.space,
             index: self.index,
             associated_with: self.associated_with,
-            bounds: self.bounds.fold_with(folder),
             default: self.default.fold_with(folder),
         }
     }
@@ -342,7 +341,6 @@ impl TypeFoldable for ty::RegionParameterDef {
             def_id: self.def_id,
             space: self.space,
             index: self.index,
-            bounds: self.bounds.fold_with(folder)
         }
     }
 }
@@ -352,6 +350,7 @@ impl TypeFoldable for ty::Generics {
         ty::Generics {
             types: self.types.fold_with(folder),
             regions: self.regions.fold_with(folder),
+            predicates: self.predicates.fold_with(folder),
         }
     }
 }
@@ -374,13 +373,17 @@ impl TypeFoldable for ty::UnsizeKind {
     }
 }
 
-impl TypeFoldable for traits::Obligation {
-    fn fold_with<'tcx, F:TypeFolder<'tcx>>(&self, folder: &mut F) -> traits::Obligation {
+impl<P> TypeFoldable for traits::Obligation<P>
+    where P : TypeFoldable
+{
+    fn fold_with<'tcx, F:TypeFolder<'tcx>>(&self, folder: &mut F) -> traits::Obligation<P> {
         folder.fold_obligation(self)
     }
 }
 
-impl<N:TypeFoldable> TypeFoldable for traits::VtableImplData<N> {
+impl<N> TypeFoldable for traits::VtableImplData<N>
+    where N : TypeFoldable
+{
     fn fold_with<'tcx, F:TypeFolder<'tcx>>(&self, folder: &mut F) -> traits::VtableImplData<N> {
         traits::VtableImplData {
             impl_def_id: self.impl_def_id,
@@ -413,6 +416,26 @@ impl TypeFoldable for traits::VtableParamData {
     fn fold_with<'tcx, F:TypeFolder<'tcx>>(&self, folder: &mut F) -> traits::VtableParamData {
         traits::VtableParamData {
             bound: self.bound.fold_with(folder),
+        }
+    }
+}
+
+impl TypeFoldable for ty::Predicate {
+    fn fold_with<'tcx, F:TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::Predicate {
+        match *self {
+            ty::TraitPredicate(ref p) => ty::TraitPredicate(p.fold_with(folder)),
+            ty::OutlivesPredicate(ref p) => ty::OutlivesPredicate(p.fold_with(folder)),
+        }
+    }
+}
+
+impl TypeFoldable for ty::OutlivesPredicateKind {
+    fn fold_with<'tcx, F:TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::OutlivesPredicateKind {
+        match *self {
+            ty::TypeOutlivesPredicate(t, r) => ty::TypeOutlivesPredicate(t.fold_with(folder),
+                                                                         r.fold_with(folder)),
+            ty::RegionOutlivesPredicate(r1, r2) => ty::RegionOutlivesPredicate(r1.fold_with(folder),
+                                                                               r2.fold_with(folder))
         }
     }
 }
@@ -593,14 +616,16 @@ pub fn super_fold_item_substs<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
     }
 }
 
-pub fn super_fold_obligation<'tcx, T:TypeFolder<'tcx>>(this: &mut T,
-                                                       obligation: &traits::Obligation)
-                                                       -> traits::Obligation
+pub fn super_fold_obligation<'tcx, T, P>(this: &mut T,
+                                         obligation: &traits::Obligation<P>)
+                                         -> traits::Obligation<P>
+    where T : TypeFolder<'tcx>,
+          P : TypeFoldable
 {
     traits::Obligation {
         cause: obligation.cause,
         recursion_depth: obligation.recursion_depth,
-        trait_ref: obligation.trait_ref.fold_with(this),
+        predicate: obligation.predicate.fold_with(this),
     }
 }
 

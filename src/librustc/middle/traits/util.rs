@@ -20,8 +20,8 @@ use syntax::ast;
 use syntax::codemap::Span;
 use util::ppaux::Repr;
 
-use super::{ErrorReported, Obligation, ObligationCause, VtableImpl,
-            VtableParam, VtableParamData, VtableImplData};
+use super::{ErrorReported, Obligation, ObligationCause, PredicateObligation,
+            TraitObligation, VtableImpl, VtableParam, VtableParamData, VtableImplData};
 
 ///////////////////////////////////////////////////////////////////////////
 // Elaboration iterator
@@ -139,7 +139,7 @@ impl<'cx, 'tcx> Iterator<ty::Predicate> for Elaborator<'cx, 'tcx> {
 
             match next_predicate {
                 Some(next_predicate) => {
-                    self.push(next_predicate);
+                    self.push(&next_predicate);
                     return Some(next_predicate);
                 }
 
@@ -184,63 +184,18 @@ pub fn obligations_for_generics(tcx: &ty::ctxt,
                                 recursion_depth: uint,
                                 generics: &ty::Generics,
                                 substs: &Substs)
-                                -> VecPerParamSpace<Obligation>
+                                -> Vec<PredicateObligation>
 {
     /*! See `super::obligations_for_generics` */
 
     debug!("obligations_for_generics(generics={}, substs={})",
            generics.repr(tcx), substs.repr(tcx));
 
-    let mut obligations = VecPerParamSpace::empty();
-
-    for def in generics.predicates.iter() {
-        push_obligations_for_param_bounds(tcx,
-                                          cause,
-                                          recursion_depth,
-                                          def.space,
-                                          def.index,
-                                          &def.bounds,
-                                          substs,
-                                          &mut obligations);
-    }
-
-    debug!("obligations() ==> {}", obligations.repr(tcx));
-
-    return obligations;
-}
-
-fn push_obligations_for_param_bounds(
-    tcx: &ty::ctxt,
-    cause: ObligationCause,
-    recursion_depth: uint,
-    space: subst::ParamSpace,
-    index: uint,
-    param_bounds: &ty::ParamBounds,
-    param_substs: &Substs,
-    obligations: &mut VecPerParamSpace<Obligation>)
-{
-    let param_ty = *param_substs.types.get(space, index);
-
-    for builtin_bound in param_bounds.builtin_bounds.iter() {
-        let obligation = obligation_for_builtin_bound(tcx,
-                                                      cause,
-                                                      builtin_bound,
-                                                      recursion_depth,
-                                                      param_ty);
-        match obligation {
-            Ok(ob) => obligations.push(space, ob),
-            _ => {}
-        }
-    }
-
-    for bound_trait_ref in param_bounds.trait_bounds.iter() {
-        let bound_trait_ref = bound_trait_ref.subst(tcx, param_substs);
-        obligations.push(
-            space,
-            Obligation { cause: cause,
-                         recursion_depth: recursion_depth,
-                         trait_ref: bound_trait_ref });
-    }
+    generics.predicates.iter()
+        .map(|predicate| Obligation { cause: cause,
+                                      recursion_depth: recursion_depth,
+                                      predicate: predicate.subst(tcx, substs) })
+        .collect()
 }
 
 pub fn trait_ref_for_builtin_bound(
@@ -269,23 +224,23 @@ pub fn obligation_for_builtin_bound(
     builtin_bound: ty::BuiltinBound,
     recursion_depth: uint,
     param_ty: ty::t)
-    -> Result<Obligation, ErrorReported>
+    -> Result<TraitObligation, ErrorReported>
 {
     let trait_ref = trait_ref_for_builtin_bound(tcx, builtin_bound, param_ty);
     match trait_ref {
         Some(trait_ref) => Ok(Obligation {
                 cause: cause,
                 recursion_depth: recursion_depth,
-                trait_ref: trait_ref
+                predicate: trait_ref
             }),
         None => Err(ErrorReported)
     }
 }
 
-impl Repr for super::Obligation {
+impl<P:Repr> Repr for super::Obligation<P> {
     fn repr(&self, tcx: &ty::ctxt) -> String {
-        format!("Obligation(trait_ref={},depth={})",
-                self.trait_ref.repr(tcx),
+        format!("Obligation(predicate={},depth={})",
+                self.predicate.repr(tcx),
                 self.recursion_depth)
     }
 }

@@ -11,6 +11,7 @@
 // #![warn(deprecated_mode)]
 
 use middle::subst::{ParamSpace, Subst, Substs};
+use middle::traits;
 use middle::ty;
 use middle::ty_fold;
 use middle::ty_fold::{TypeFolder, TypeFoldable};
@@ -302,20 +303,6 @@ impl<'a, 'tcx> Wf<'a, 'tcx> {
                         self.push_region_constraint_from_top(region_param);
                     }
                 }
-
-                for &region_bound in region_param_def.bounds.iter() {
-                    // The type declared a constraint like
-                    //
-                    //     'b : 'a
-                    //
-                    // which means that `'a <= 'b` (after
-                    // substitution).  So take the region we
-                    // substituted for `'a` (`region_bound`) and make
-                    // it a subregion of the region we substituted
-                    // `'b` (`region_param`).
-                    self.push_sub_region_constraint(
-                        Some(ty), region_bound, region_param);
-                }
             }
 
             let types = substs.types.get_slice(space);
@@ -342,13 +329,38 @@ impl<'a, 'tcx> Wf<'a, 'tcx> {
                         self.accumulate_from_ty(type_param_ty);
                     }
                 }
+            }
 
-                // Inspect bounds on this type parameter for any
-                // region bounds.
-                for &r in type_param_def.bounds.region_bounds.iter() {
-                    self.stack.push((r, Some(ty)));
-                    self.accumulate_from_ty(type_param_ty);
-                    self.stack.pop().unwrap();
+            for predicate in generics.predicates.iter() {
+                match *predicate {
+                    ty::TraitPredicate(..) => { }
+                    ty::OutlivesPredicate(ty::TypeOutlivesPredicate(t_b, r_a)) => {
+                        // The type declared a constraint like
+                        //
+                        //     T : 'a
+                        //
+                        // so recursively generate constraints such
+                        // that T outlives 'a.
+                        let t_b = t_b.subst(self.tcx, substs);
+                        let r_a = r_a.subst(self.tcx, substs);
+                        self.stack.push((r_a, Some(ty)));
+                        self.accumulate_from_ty(t_b);
+                        self.stack.pop().unwrap();
+                    }
+                    ty::OutlivesPredicate(ty::RegionOutlivesPredicate(r_b, r_a)) => {
+                        // The type declared a constraint like
+                        //
+                        //     'b : 'a
+                        //
+                        // which means that `'a <= 'b` (after
+                        // substitution).  So take the region we
+                        // substituted for `'a` (`region_bound`) and make
+                        // it a subregion of the region we substituted
+                        // `'b` (`region_param`).
+                        let r_b = r_b.subst(self.tcx, substs);
+                        let r_a = r_a.subst(self.tcx, substs);
+                        self.push_sub_region_constraint(Some(ty), r_a, r_b);
+                    }
                 }
             }
         }
@@ -412,12 +424,19 @@ impl<'a, 'tcx> Wf<'a, 'tcx> {
         // And then, in turn, to be well-formed, the
         // `region_bound` that user specified must imply the
         // region bounds required from all of the trait types:
-        let required_region_bounds =
+        let dummy_ty = ty::mk_nil();
+        let predicates: Vec<ty::Predicate> =
+            bounds.builtin_bounds.iter()
+            .flat_map(|bound| traits::trait_ref_for_builtin_bound(self.tcx,
+                                                                  bound,
+                                                                  dummy_ty).into_iter())
+            .map(ty::TraitPredicate)
+            .collect();
+        let bounds =
             ty::required_region_bounds(self.tcx,
-                                       [],
-                                       bounds.builtin_bounds,
-                                       []);
-        for &r_d in required_region_bounds.iter() {
+                                       dummy_ty,
+                                       predicates.as_slice());
+        for &r_d in bounds.iter() {
             // Each of these is an instance of the `'c <= 'b`
             // constraint above
             self.out.push(RegionSubRegionConstraint(Some(ty), r_d, r_c));

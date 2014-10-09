@@ -19,7 +19,7 @@ use metadata::csearch::StaticMethodInfo;
 use metadata::csearch;
 use metadata::cstore;
 use metadata::tydecode::{parse_ty_data, parse_region_data, parse_def_id,
-                         parse_type_param_def_data, parse_bounds_data,
+                         parse_type_param_def_data,
                          parse_bare_fn_ty_data, parse_trait_ref_data};
 use middle::def;
 use middle::lang_items;
@@ -248,16 +248,6 @@ fn item_trait_ref(doc: rbml::Doc, tcx: &ty::ctxt, cdata: Cmd) -> ty::TraitRef {
     doc_trait_ref(tp, tcx, cdata)
 }
 
-fn doc_bounds(doc: rbml::Doc, tcx: &ty::ctxt, cdata: Cmd) -> ty::ParamBounds {
-    parse_bounds_data(doc.data, cdata.cnum, doc.start, tcx,
-                      |_, did| translate_def_id(cdata, did))
-}
-
-fn trait_def_bounds(doc: rbml::Doc, tcx: &ty::ctxt, cdata: Cmd) -> ty::ParamBounds {
-    let d = reader::get_doc(doc, tag_trait_def_bounds);
-    doc_bounds(d, tcx, cdata)
-}
-
 fn enum_variant_ids(item: rbml::Doc, cdata: Cmd) -> Vec<ast::DefId> {
     let mut ids: Vec<ast::DefId> = Vec::new();
     let v = tag_items_data_item_variant;
@@ -357,11 +347,9 @@ pub fn get_trait_def(cdata: Cmd,
 {
     let item_doc = lookup_item(item_id, cdata.data());
     let generics = doc_generics(item_doc, tcx, cdata, tag_item_generics);
-    let bounds = trait_def_bounds(item_doc, tcx, cdata);
 
     ty::TraitDef {
         generics: generics,
-        bounds: bounds,
         trait_ref: Rc::new(item_trait_ref(item_doc, tcx, cdata))
     }
 }
@@ -1409,20 +1397,10 @@ fn doc_generics(base_doc: rbml::Doc,
         let doc = reader::get_doc(rp_doc, tag_region_param_def_index);
         let index = reader::doc_as_u64(doc) as uint;
 
-        let mut bounds = Vec::new();
-        reader::tagged_docs(rp_doc, tag_items_data_region, |p| {
-            bounds.push(
-                parse_region_data(
-                    p.data, cdata.cnum, p.start, tcx,
-                    |_, did| translate_def_id(cdata, did)));
-            true
-        });
-
         regions.push(space, ty::RegionParameterDef { name: name,
                                                      def_id: def_id,
                                                      space: space,
-                                                     index: index,
-                                                     bounds: bounds });
+                                                     index: index });
 
         true
     });

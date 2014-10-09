@@ -1231,13 +1231,12 @@ pub struct RegionParameterDef {
     pub def_id: ast::DefId,
     pub space: subst::ParamSpace,
     pub index: uint,
-    pub bounds: Vec<ty::Region>,
 }
 
-#[deriving(PartialEq, Eq, Hash, Clone, Show, Encodable, Decodable)]
+#[deriving(PartialEq, Eq, Hash, Clone, Show)]
 pub enum Predicate {
     TraitPredicate(Rc<TraitRef>),
-    OutlivesPredicate(OutlivesPredicateData),
+    OutlivesPredicate(OutlivesPredicateKind),
 }
 
 impl Predicate {
@@ -1249,13 +1248,19 @@ impl Predicate {
     }
 }
 
-#[deriving(Clone, Show)]
-pub enum OutlivesPredicateData {
+#[deriving(PartialEq, Eq, Hash, Clone, Show)]
+pub enum OutlivesPredicateKind {
     /// T : 'a
     TypeOutlivesPredicate(t, Region),
 
-    /// 'a : 'b ('a outlives 'b)
-    RegionOutlivesPredicate(Region, Region),
+    /// 'b : 'a ('b outlives 'a)
+    /// i.e., 'a <: 'b
+    ///
+    /// Note that the superregion is `'b`! In the inference module, we
+    /// typically list the subregion first.  I've kept the names
+    /// consistent though (that is, `a` always refers to the subregion
+    /// both in inference module and here).
+    RegionOutlivesPredicate(/*'b*/ Region, /*'a*/ Region),
 }
 
 /// Information about the type/lifetime parameters associated with an
@@ -1270,7 +1275,8 @@ pub struct Generics {
 impl Generics {
     pub fn empty() -> Generics {
         Generics { types: VecPerParamSpace::empty(),
-                   regions: VecPerParamSpace::empty() }
+                   regions: VecPerParamSpace::empty(),
+                   predicates: VecPerParamSpace::empty() }
     }
 
     pub fn has_type_params(&self, space: subst::ParamSpace) -> bool {
@@ -1332,7 +1338,7 @@ pub struct ParameterEnvironment {
     ///
     /// Note: This effectively *duplicates* the `bounds` array for
     /// now.
-    pub caller_obligations: VecPerParamSpace<Predicate>,
+    pub caller_obligations: Vec<Predicate>,
 
     /// Caches the results of trait selection. This cache is used
     /// for things that have to do with the parameters in scope.
@@ -1441,6 +1447,13 @@ impl ParameterEnvironment {
                                     cx.map.node_to_string(id)).as_slice())
             }
         }
+    }
+
+    fn elaborated_caller_obligations<'cx,'tcx>(&self, tcx: &'cx ctxt<'tcx>)
+                                               -> traits::Elaborator<'cx,'tcx>
+    {
+        let caller_obligations = self.caller_obligations.clone();
+        traits::elaborate_predicates(tcx, caller_obligations)
     }
 }
 
@@ -2583,13 +2596,7 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
                 // failure in the cross-crate inlining code to translate a
                 // def-id.
                 assert_eq!(p.def_id.krate, ast::LOCAL_CRATE);
-
-                let ty_param_defs = cx.ty_param_defs.borrow();
-                let tp_def = &(*ty_param_defs)[p.def_id.node];
-                kind_bounds_to_contents(
-                    cx,
-                    tp_def.bounds.builtin_bounds,
-                    tp_def.bounds.trait_bounds.as_slice())
+                fail!("NYI")
             }
 
             ty_infer(_) => {
@@ -4523,7 +4530,7 @@ pub fn predicates_for_trait_ref(tcx: &ctxt,
     let trait_def = lookup_trait_def(tcx, trait_ref.def_id);
     debug!("bounds_for_trait_ref(trait_def={}, trait_ref={})",
            trait_def.repr(tcx), trait_ref.repr(tcx));
-    trait_def.generics.predicates.subst(tcx, &trait_ref.substs)
+    trait_def.generics.predicates.as_slice().to_owned().subst(tcx, &trait_ref.substs)
 }
 
 /// Iterate over attributes of a definition.
@@ -4885,7 +4892,7 @@ pub fn each_bound_trait_and_supertraits(tcx: &ctxt,
                                         -> bool
 {
     for bound_trait_ref in
-        traits::elaborate_trait_refs(tcx, bounds).flat_map(|p| p.trait_predicate())
+        traits::elaborate_trait_refs(tcx, bounds).flat_map(|p| p.trait_predicate().into_iter())
     {
         if !f(bound_trait_ref) {
             return false;
@@ -4895,6 +4902,7 @@ pub fn each_bound_trait_and_supertraits(tcx: &ctxt,
 }
 
 pub fn required_region_bounds(tcx: &ctxt,
+                              for_ty: t,
                               predicates: &[ty::Predicate])
                               -> Vec<ty::Region>
 {
@@ -4905,37 +4913,21 @@ pub fn required_region_bounds(tcx: &ctxt,
      * Requires that trait definitions have been processed.
      */
 
-    let mut all_bounds = Vec::new();
+    let mut param_bounds = Vec::new();
 
-    debug!("required_region_bounds(builtin_bounds={}, trait_bounds={})",
-           builtin_bounds.repr(tcx),
-           trait_bounds.repr(tcx));
+    for predicate in traits::elaborate_predicates(tcx, predicates.to_owned()) {
+        match predicate {
+            TraitPredicate(..) |
+            OutlivesPredicate(RegionOutlivesPredicate(..)) => {}
+            OutlivesPredicate(TypeOutlivesPredicate(t, r)) => {
+                if t == for_ty {
+                    param_bounds.push(r);
+                }
+            }
+        }
+    }
 
-    all_bounds.push_all(region_bounds);
-
-    push_region_bounds([],
-                       builtin_bounds,
-                       &mut all_bounds);
-
-    debug!("from builtin bounds: all_bounds={}", all_bounds.repr(tcx));
-
-    each_bound_trait_and_supertraits(
-        tcx,
-        trait_bounds,
-        |trait_ref| {
-            let bounds = ty::bounds_for_trait_ref(tcx, &*trait_ref);
-            push_region_bounds(bounds.region_bounds.as_slice(),
-                               bounds.builtin_bounds,
-                               &mut all_bounds);
-            debug!("from {}: bounds={} all_bounds={}",
-                   trait_ref.repr(tcx),
-                   bounds.repr(tcx),
-                   all_bounds.repr(tcx));
-            true
-        });
-
-    return all_bounds;
-
+    return param_bounds;
 }
 
 pub fn get_tydesc_ty(tcx: &ctxt) -> Result<t, String> {
@@ -5291,8 +5283,7 @@ pub fn empty_parameter_environment() -> ParameterEnvironment {
      */
 
     ty::ParameterEnvironment { free_substs: Substs::empty(),
-                               bounds: VecPerParamSpace::empty(),
-                               caller_obligations: VecPerParamSpace::empty(),
+                               caller_obligations: Vec::new(),
                                implicit_region_bound: ty::ReEmpty,
                                selection_cache: traits::SelectionCache::new(), }
 }
@@ -5329,41 +5320,15 @@ pub fn construct_parameter_environment(
         regions: subst::NonerasedRegions(regions)
     };
 
-    //
-    // Compute the bounds on Self and the type parameters.
-    //
-
-    let mut bounds = VecPerParamSpace::empty();
-    for &space in subst::ParamSpace::all().iter() {
-        push_bounds_from_defs(tcx, &mut bounds, space, &free_substs,
-                              generics.types.get_slice(space));
-    }
-
-    //
-    // Compute region bounds. For now, these relations are stored in a
-    // global table on the tcx, so just enter them there. I'm not
-    // crazy about this scheme, but it's convenient, at least.
-    //
-
-    for &space in subst::ParamSpace::all().iter() {
-        record_region_bounds_from_defs(tcx, space, &free_substs,
-                                       generics.regions.get_slice(space));
-    }
-
-
     debug!("construct_parameter_environment: free_id={} \
-           free_subst={} \
-           bounds={}",
+           free_subst={}",
            free_id,
-           free_substs.repr(tcx),
-           bounds.repr(tcx));
+           free_substs.repr(tcx));
 
-    let obligations = traits::obligations_for_generics(tcx, traits::ObligationCause::misc(span),
-                                                       generics, &free_substs);
+    let obligations = generics.predicates.subst(tcx, &free_substs).into_vec();
 
     return ty::ParameterEnvironment {
         free_substs: free_substs,
-        bounds: bounds,
         implicit_region_bound: ty::ReScope(free_id),
         caller_obligations: obligations,
         selection_cache: traits::SelectionCache::new(),
@@ -5391,48 +5356,6 @@ pub fn construct_parameter_environment(
                    i);
             let ty = ty::mk_param(tcx, space, i, def.def_id);
             types.push(space, ty);
-        }
-    }
-
-    fn push_bounds_from_defs(tcx: &ty::ctxt,
-                             bounds: &mut subst::VecPerParamSpace<ParamBounds>,
-                             space: subst::ParamSpace,
-                             free_substs: &subst::Substs,
-                             defs: &[TypeParameterDef]) {
-        for def in defs.iter() {
-            let b = def.bounds.subst(tcx, free_substs);
-            bounds.push(space, b);
-        }
-    }
-
-    fn record_region_bounds_from_defs(tcx: &ty::ctxt,
-                                      space: subst::ParamSpace,
-                                      free_substs: &subst::Substs,
-                                      defs: &[RegionParameterDef]) {
-        for (subst_region, def) in
-            free_substs.regions().get_slice(space).iter().zip(
-                defs.iter())
-        {
-            // For each region parameter 'subst...
-            let bounds = def.bounds.subst(tcx, free_substs);
-            for bound_region in bounds.iter() {
-                // Which is declared with a bound like 'subst:'bound...
-                match (subst_region, bound_region) {
-                    (&ty::ReFree(subst_fr), &ty::ReFree(bound_fr)) => {
-                        // Record that 'subst outlives 'bound. Or, put
-                        // another way, 'bound <= 'subst.
-                        tcx.region_maps.relate_free_regions(bound_fr, subst_fr);
-                    },
-                    _ => {
-                        // All named regions are instantiated with free regions.
-                        tcx.sess.bug(
-                            format!("push_region_bounds_from_defs: \
-                                     non free region: {} / {}",
-                                    subst_region.repr(tcx),
-                                    bound_region.repr(tcx)).as_slice());
-                    }
-                }
-            }
         }
     }
 }
@@ -5600,5 +5523,23 @@ pub fn with_freevars<T>(tcx: &ty::ctxt, fid: ast::NodeId, f: |&[Freevar]| -> T) 
     match tcx.freevars.borrow().find(&fid) {
         None => f(&[]),
         Some(d) => f(d.as_slice())
+    }
+}
+
+impl Repr for Predicate {
+    fn repr(&self, tcx: &ctxt) -> String {
+        match *self {
+            TraitPredicate(ref p) => p.repr(tcx),
+            OutlivesPredicate(ref p) => p.repr(tcx),
+        }
+    }
+}
+
+impl Repr for OutlivesPredicateKind {
+    fn repr(&self, tcx: &ctxt) -> String {
+        match *self {
+            TypeOutlivesPredicate(b, a) => format!("({} : {})", b.repr(tcx), a.repr(tcx)),
+            RegionOutlivesPredicate(b, a) => format!("({} : {})", b.repr(tcx), a.repr(tcx)),
+        }
     }
 }}

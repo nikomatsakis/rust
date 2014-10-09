@@ -180,7 +180,7 @@ pub enum SubregionOrigin {
 
     // The given type parameter was instantiated with the given type,
     // and that type must outlive some region.
-    RelateParamBound(Span, ty::ParamTy, ty::t),
+    RelateParamBound(Span, ty::t),
 
     // The given region parameter was instantiated with a region
     // that must outlive some other region.
@@ -357,16 +357,6 @@ pub fn can_mk_eqty(cx: &InferCtxt, a: ty::t, b: ty::t) -> ures {
         };
         cx.equate(true, trace).tys(a, b)
     }).to_ures()
-}
-
-pub fn mk_subr(cx: &InferCtxt,
-               origin: SubregionOrigin,
-               a: ty::Region,
-               b: ty::Region) {
-    debug!("mk_subr({} <: {})", a.repr(cx.tcx), b.repr(cx.tcx));
-    let snapshot = cx.region_vars.start_snapshot();
-    cx.region_vars.make_subregion(origin, a, b);
-    cx.region_vars.commit(snapshot);
 }
 
 pub fn verify_param_bound(cx: &InferCtxt,
@@ -676,10 +666,19 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
             let trace = TypeTrace {
                 origin: origin,
                 values: TraitRefs(expected_found(a_is_expected,
-                                                 a.clone(), b.clone()))
+                                                 a.clone(),
+                                                 b.clone()))
             };
             self.sub(a_is_expected, trace).trait_refs(&*a, &*b).to_ures()
         })
+    }
+
+    pub fn sub_regions(&self,
+                       origin: SubregionOrigin,
+                       a: ty::Region,
+                       b: ty::Region) {
+        debug!("sub_regions({} <: {})", a.repr(self.tcx), b.repr(self.tcx));
+        self.region_vars.make_subregion(origin, a, b);
     }
 }
 
@@ -1053,7 +1052,7 @@ impl SubregionOrigin {
             IndexSlice(a) => a,
             RelateObjectBound(a) => a,
             RelateProcBound(a, _, _) => a,
-            RelateParamBound(a, _, _) => a,
+            RelateParamBound(a, _) => a,
             RelateRegionParamBound(a) => a,
             RelateDefaultParamBound(a, _) => a,
             Reborrow(a) => a,
@@ -1103,11 +1102,10 @@ impl Repr for SubregionOrigin {
                         b,
                         c.repr(tcx))
             }
-            RelateParamBound(a, b, c) => {
-                format!("RelateParamBound({},{},{})",
+            RelateParamBound(a, b) => {
+                format!("RelateParamBound({},{})",
                         a.repr(tcx),
-                        b.repr(tcx),
-                        c.repr(tcx))
+                        b.repr(tcx))
             }
             RelateRegionParamBound(a) => {
                 format!("RelateRegionParamBound({})",

@@ -181,13 +181,6 @@ pub fn parse_substs_data(data: &[u8], crate_num: ast::CrateNum, pos: uint, tcx: 
     parse_substs(&mut st, conv)
 }
 
-pub fn parse_bounds_data(data: &[u8], crate_num: ast::CrateNum,
-                         pos: uint, tcx: &ty::ctxt, conv: conv_did)
-                         -> ty::ParamBounds {
-    let mut st = parse_state_from_data(data, crate_num, pos, tcx);
-    parse_bounds(&mut st, conv)
-}
-
 pub fn parse_existential_bounds_data(data: &[u8], crate_num: ast::CrateNum,
                                      pos: uint, tcx: &ty::ctxt, conv: conv_did)
                                      -> ty::ExistentialBounds {
@@ -452,7 +445,7 @@ fn parse_ty(st: &mut PState, conv: conv_did) -> ty::t {
         st.tcx.rcache.borrow_mut().insert(key, tt);
         return tt;
       }
-      '"' => {
+      '\"' => {
         let _ = parse_def(st, TypeWithId, |x,y| conv(x,y));
         let inner = parse_ty(st, |x,y| conv(x,y));
         inner
@@ -631,6 +624,14 @@ pub fn parse_type_param_def_data(data: &[u8], start: uint,
     parse_type_param_def(&mut st, conv)
 }
 
+pub fn parse_predicate_data(data: &[u8], start: uint,
+                            crate_num: ast::CrateNum, tcx: &ty::ctxt,
+                            conv: conv_did) -> ty::Predicate
+{
+    let mut st = parse_state_from_data(data, crate_num, start, tcx);
+    parse_predicate(&mut st, conv)
+}
+
 fn parse_type_param_def(st: &mut PState, conv: conv_did) -> ty::TypeParameterDef {
     let name = parse_name(st, ':');
     let def_id = parse_def(st, NominalType, |x,y| conv(x,y));
@@ -642,7 +643,6 @@ fn parse_type_param_def(st: &mut PState, conv: conv_did) -> ty::TypeParameterDef
         parse_def(st, NominalType, |x,y| conv(x,y))
     });
     assert_eq!(next(st), '|');
-    let bounds = parse_bounds(st, |x,y| conv(x,y));
     let default = parse_opt(st, |st| parse_ty(st, |x,y| conv(x,y)));
 
     ty::TypeParameterDef {
@@ -651,8 +651,41 @@ fn parse_type_param_def(st: &mut PState, conv: conv_did) -> ty::TypeParameterDef
         space: space,
         index: index,
         associated_with: associated_with,
-        bounds: bounds,
         default: default
+    }
+}
+
+fn parse_predicate(st: &mut PState, conv: conv_did) -> ty::Predicate {
+    match next(st) {
+        't' => {
+            let trait_ref = Rc::new(parse_trait_ref(st, conv));
+            ty::TraitPredicate(trait_ref)
+        }
+        'o' => {
+            let outlives_predicate = parse_outlives_predicate(st, conv);
+            ty::OutlivesPredicate(outlives_predicate)
+        }
+        c => {
+            fail!("parse_predicate: bad predicate code ('{}')", c)
+        }
+    }
+}
+
+fn parse_outlives_predicate(st: &mut PState, conv: conv_did) -> ty::OutlivesPredicateKind {
+    match next(st) {
+        't' => {
+            let ty = parse_ty(st, |x,y| conv(x,y));
+            let r = parse_region(st, |x,y| conv(x,y));
+            ty::TypeOutlivesPredicate(ty, r)
+        }
+        'r' => {
+            let r1 = parse_region(st, |x,y| conv(x,y));
+            let r2 = parse_region(st, |x,y| conv(x,y));
+            ty::RegionOutlivesPredicate(r1, r2)
+        }
+        c => {
+            fail!("parse_predicate: bad outlives predicate code ('{}')", c)
+        }
     }
 }
 
@@ -689,28 +722,3 @@ fn parse_builtin_bounds(st: &mut PState, _conv: conv_did) -> ty::BuiltinBounds {
     }
 }
 
-fn parse_bounds(st: &mut PState, conv: conv_did) -> ty::ParamBounds {
-    let builtin_bounds = parse_builtin_bounds(st, |x,y| conv(x,y));
-
-    let mut param_bounds = ty::ParamBounds {
-        region_bounds: Vec::new(),
-        builtin_bounds: builtin_bounds,
-        trait_bounds: Vec::new()
-    };
-    loop {
-        match next(st) {
-            'R' => {
-                param_bounds.region_bounds.push(parse_region(st, |x, y| conv (x, y)));
-            }
-            'I' => {
-                param_bounds.trait_bounds.push(Rc::new(parse_trait_ref(st, |x,y| conv(x,y))));
-            }
-            '.' => {
-                return param_bounds;
-            }
-            c => {
-                fail!("parse_bounds: bad bounds ('{}')", c)
-            }
-        }
-    }
-}

@@ -968,8 +968,9 @@ fn check_expr_fn_block(rcx: &mut Rcx,
                                                                       var_ty, builtin_bound);
                 match obligation {
                     Ok(obligation) => {
-                        rcx.fcx.inh.fulfillment_cx.borrow_mut().register_obligation(rcx.tcx(),
-                                                                                    obligation)
+                        rcx.fcx.inh.fulfillment_cx
+                            .borrow_mut()
+                            .register_trait_ref_obligation(rcx.fcx.infcx(), obligation);
                     }
                     _ => {}
                 }
@@ -1956,12 +1957,11 @@ fn param_must_outlive(rcx: &Rcx,
     let mut param_bounds;
 
     // To start, collect bounds from user:
-    let param_bound = param_env.bounds.get(param_ty.space, param_ty.idx);
     param_bounds =
-        ty::required_region_bounds(rcx.tcx(),
-                                   param_bound.region_bounds.as_slice(),
-                                   param_bound.builtin_bounds,
-                                   param_bound.trait_bounds.as_slice());
+        ty::required_region_bounds(
+            rcx.tcx(),
+            ty::mk_param(rcx.tcx(), param_ty.space, param_ty.idx, param_ty.def_id),
+            param_env.caller_obligations.as_slice());
 
     // Collect default bound of fn body that applies to all in scope
     // type parameters:

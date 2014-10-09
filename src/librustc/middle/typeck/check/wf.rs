@@ -126,13 +126,15 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
                 // For DST, all intermediate types must be sized.
                 if variant.fields.len() > 0 {
                     for field in variant.fields.init().iter() {
-                        let cause = traits::ObligationCause::new(field.span, traits::FieldSized);
+                        let cause = traits::ObligationCause::new(fcx.body_id,
+                                                                 field.span,
+                                                                 traits::FieldSized);
                         let obligation = traits::obligation_for_builtin_bound(fcx.tcx(),
                                                                               cause,
                                                                               field.ty,
                                                                               ty::BoundSized);
                         match obligation {
-                            Ok(obligation) => fcx.register_obligation(obligation),
+                            Ok(obligation) => fcx.register_trait_ref_obligation(obligation),
                             _ => {}
                         }
                     }
@@ -207,6 +209,7 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
 
             let cause =
                 traits::ObligationCause::new(
+                    fcx.body_id,
                     item.span,
                     traits::ItemObligation(trait_ref.def_id));
 
@@ -224,7 +227,7 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
                                                                       trait_ref.self_ty(),
                                                                       builtin_bound);
                 match obligation {
-                    Ok (obligation) => fcx.register_obligation(obligation),
+                    Ok (obligation) => fcx.register_trait_ref_obligation(obligation),
                     _ => {}
                 }
             }
@@ -282,6 +285,7 @@ impl<'cx,'tcx> BoundsChecker<'cx,'tcx> {
 
         self.fcx.add_obligations_for_parameters(
             traits::ObligationCause::new(
+                self.fcx.body_id,
                 self.span,
                 traits::ItemObligation(trait_ref.def_id)),
             &trait_ref.substs,
@@ -331,8 +335,9 @@ impl<'cx,'tcx> TypeFolder<'tcx> for BoundsChecker<'cx,'tcx> {
                 let polytype = ty::lookup_item_type(self.fcx.tcx(), type_id);
 
                 if self.binding_count == 0 {
-                    self.fcx.add_obligations_for_parameters(
-                        traits::ObligationCause::new(self.span,
+                    self.fcx.add_obligations_for_generics(
+                        traits::ObligationCause::new(self.fcx.body_id,
+                                                     self.span,
                                                      traits::ItemObligation(type_id)),
                         substs,
                         &polytype.generics);
@@ -359,8 +364,8 @@ impl<'cx,'tcx> TypeFolder<'tcx> for BoundsChecker<'cx,'tcx> {
                     //
                     // (I believe we should do the same for traits, but
                     // that will require an RFC. -nmatsakis)
-                    self.fcx.add_trait_obligations_for_generics(
-                        traits::ObligationCause::new(self.span,
+                    self.fcx.add_obligations_for_generics(
+                        traits::ObligationCause::new(self.span, // FIXME
                                                      traits::ItemObligation(type_id)),
                         substs,
                         &polytype.generics);
@@ -467,7 +472,7 @@ fn check_struct_safe_for_destructor(fcx: &FnCtxt,
                                                               self_ty,
                                                               ty::BoundSend);
         match obligation {
-            Ok(obligation) => fcx.register_obligation(obligation),
+            Ok(obligation) => fcx.register_trait_ref_obligation(obligation),
             _ => {}
         }
     } else {

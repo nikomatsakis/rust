@@ -541,6 +541,21 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
         });
     }
 
+    fn push_extension_candidate(&mut self, trait_did: DefId) {
+        ty::populate_implementations_for_trait_if_necessary(self.tcx(), trait_did);
+
+        // Look for explicit implementations.
+        let impl_items = self.tcx().impl_items.borrow();
+        for impl_infos in self.tcx().trait_impls.borrow().find(&trait_did).iter() {
+            for impl_did in impl_infos.borrow().iter() {
+                let items = impl_items.get(impl_did);
+                self.push_candidates_from_impl(*impl_did,
+                                               items.as_slice(),
+                                               true);
+            }
+        }
+    }
+
     fn push_extension_candidates(&mut self, expr_id: ast::NodeId) {
         debug!("push_extension_candidates(expr_id={})", expr_id);
 
@@ -1340,6 +1355,7 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
                candidate.repr(self.tcx()));
 
         let mut rcvr_substs = candidate.rcvr_substs.clone();
+        self.enforce_drop_trait_limitations(candidate);
 
         if !self.enforce_object_limitations(candidate) {
             // Here we change `Self` from `Trait` to `err` in the case that
@@ -1440,8 +1456,8 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
             MethodTraitObject(..) => {
                 let mut temp_substs = all_substs.clone();
                 temp_substs.types.get_mut_slice(SelfSpace)[0] = ty::mk_err();
-                self.fcx.add_obligations_for_parameters(
-                    traits::ObligationCause::misc(self.span),
+        self.fcx.add_obligations_for_parameters(
+            traits::ObligationCause::misc(self.fcx.body_id, self.span),
                     &temp_substs,
                     &candidate.method_ty.generics);
             }

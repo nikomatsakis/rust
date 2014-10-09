@@ -239,8 +239,9 @@ pub fn get_field_type(tcx: &ty::ctxt, class_id: ast::DefId,
         });
     let ty = decoder::item_type(def, the_field, tcx, &*cdata);
     ty::Polytype {
-        generics: ty::Generics {types: VecPerParamSpace::empty(),
-                                regions: VecPerParamSpace::empty()},
+        generics: ty::Generics { types: VecPerParamSpace::empty(),
+                                 regions: VecPerParamSpace::empty(),
+                                 predicates: VecPerParamSpace::empty() },
         ty: ty
     }
 }
