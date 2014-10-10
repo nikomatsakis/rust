@@ -42,6 +42,7 @@ use ast::{MatchSeq, MatchTok, Method, MutTy, BiMul, Mutability};
 use ast::{MethodImplItem, NamedField, UnNeg, NoReturn, UnNot};
 use ast::{Pat, PatEnum, PatIdent, PatLit, PatRange, PatRegion, PatStruct};
 use ast::{PatTup, PatBox, PatWild, PatWildMulti, PatWildSingle};
+use ast::{PolyTraitRef};
 use ast::{QPath, RequiredMethod};
 use ast::{RetStyle, Return, BiShl, BiShr, Stmt, StmtDecl};
 use ast::{StmtExpr, StmtSemi, StmtMac, StructDef, StructField};
@@ -3821,7 +3822,8 @@ impl<'a> Parser<'a> {
     {
         let mut result = vec!();
         loop {
-            let lifetime_defs = if self.eat(&token::LT) {
+            let lifetime_defs = if self.eat_keyword(keywords::For) {
+                self.expect_lt();
                 let lifetime_defs = self.parse_lifetime_defs();
                 self.expect_gt();
                 lifetime_defs
@@ -3865,11 +3867,15 @@ impl<'a> Parser<'a> {
                             ref_id: ast::DUMMY_NODE_ID,
                         })));
                     } else {
-                        result.push(TraitTyParamBound(ast::TraitRef {
-                            path: path,
-                            ref_id: ast::DUMMY_NODE_ID,
-                            lifetimes: lifetime_defs,
-                        }))
+                        let poly_trait_ref = ast::PolyTraitRef {
+                            bound_lifetimes: lifetime_defs,
+                            trait_ref: ast::TraitRef {
+                                path: path,
+                                ref_id: ast::DUMMY_NODE_ID,
+                                sugar: ast::AngleBrackets
+                            }
+                        };
+                        result.push(TraitTyParamBound(poly_trait_ref))
                     }
                 }
                 _ => break,
@@ -3883,7 +3889,7 @@ impl<'a> Parser<'a> {
         return OwnedSlice::from_vec(result);
     }
 
-    fn trait_ref_from_ident(ident: Ident, span: Span) -> ast::TraitRef {
+    fn trait_ref_from_ident(ident: Ident, span: Span) -> TraitRef {
         let segment = ast::PathSegment {
             identifier: ident,
             lifetimes: Vec::new(),
@@ -3897,7 +3903,7 @@ impl<'a> Parser<'a> {
         ast::TraitRef {
             path: path,
             ref_id: ast::DUMMY_NODE_ID,
-            lifetimes: Vec::new(),
+            sugar: ast::AngleBrackets,
         }
     }
 
@@ -3913,7 +3919,7 @@ impl<'a> Parser<'a> {
         let mut unbound = None;
         if self.eat(&token::QUESTION) {
             let tref = Parser::trait_ref_from_ident(ident, span);
-            unbound = Some(TraitTyParamBound(tref));
+            unbound = Some(tref);
             span = self.span;
             ident = self.parse_ident();
         }
@@ -4545,7 +4551,7 @@ impl<'a> Parser<'a> {
                     Some(TraitRef {
                         path: (*path).clone(),
                         ref_id: node_id,
-                        lifetimes: Vec::new(),
+                        sugar: ast::AngleBrackets,
                     })
                 }
                 TyPath(_, Some(_), _) => {
@@ -4574,6 +4580,34 @@ impl<'a> Parser<'a> {
          ItemImpl(generics, opt_trait, ty, impl_items),
          Some(attrs))
     }
+
+//    /// Parse a::B<String,int>
+//    fn parse_trait_ref(&mut self) -> TraitRef {
+//        ast::TraitRef {
+//            path: self.parse_path(LifetimeAndTypesWithoutColons).path,
+//            ref_id: ast::DUMMY_NODE_ID,
+//        }
+//    }
+//
+//    /// Parse <'l> a::B<String,int>
+//    fn parse_poly_trait_ref(&mut self) -> PolyTraitRef {
+//        let lifetime_defs = match self.token {
+//            token::LT => {
+//                self.bump();
+//                let lifetime_defs = self.parse_lifetime_defs();
+//                self.expect(&token::GT);
+//                lifetime_defs
+//            }
+//            _ => {
+//                Vec::new()
+//            }
+//        };
+//
+//        ast::PolyTraitRef {
+//            bound_lifetimes: lifetime_defs,
+//            trait_ref: self.parse_trait_ref()
+//        }
+//    }
 
     /// Parse struct Foo { ... }
     fn parse_item_struct(&mut self) -> ItemInfo {
@@ -4688,7 +4722,7 @@ impl<'a> Parser<'a> {
         else { Inherited }
     }
 
-    fn parse_for_sized(&mut self) -> Option<ast::TyParamBound> {
+    fn parse_for_sized(&mut self) -> Option<ast::TraitRef> {
         if self.eat_keyword(keywords::For) {
             let span = self.span;
             let ident = self.parse_ident();
@@ -4698,7 +4732,7 @@ impl<'a> Parser<'a> {
                 return None;
             }
             let tref = Parser::trait_ref_from_ident(ident, span);
-            Some(TraitTyParamBound(tref))
+            Some(tref)
         } else {
             None
         }

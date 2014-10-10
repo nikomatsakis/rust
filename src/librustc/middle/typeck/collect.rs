@@ -641,24 +641,33 @@ pub fn ensure_no_ty_param_bounds(ccx: &CrateCtxt,
                                  span: Span,
                                  generics: &ast::Generics,
                                  thing: &'static str) {
+    let mut warn = false;
+
     for ty_param in generics.ty_params.iter() {
-        let bounds = ty_param.bounds.iter();
-        let mut bounds = bounds.chain(ty_param.unbound.iter());
-        for bound in bounds {
+        for bound in ty_param.bounds.iter() {
             match *bound {
                 ast::TraitTyParamBound(..) | ast::UnboxedFnTyParamBound(..) => {
-                    // According to accepted RFC #XXX, we should
-                    // eventually accept these, but it will not be
-                    // part of this PR. Still, convert to warning to
-                    // make bootstrapping easier.
-                    span_warn!(ccx.tcx.sess, span, E0122,
-                               "trait bounds are not (yet) enforced \
-                                in {} definitions",
-                               thing);
+                    warn = true;
                 }
                 ast::RegionTyParamBound(..) => { }
             }
         }
+
+        match ty_param.unbound {
+            Some(_) => { warn = true; }
+            None => { }
+        }
+    }
+
+    if warn {
+        // According to accepted RFC #XXX, we should
+        // eventually accept these, but it will not be
+        // part of this PR. Still, convert to warning to
+        // make bootstrapping easier.
+        span_warn!(ccx.tcx.sess, span, E0122,
+                   "trait bounds are not (yet) enforced \
+                   in {} definitions",
+                   thing);
     }
 }
 
@@ -1749,14 +1758,14 @@ fn ty_generics_for_fn_or_method<'tcx,AC>(
 
 // Add the Sized bound, unless the type parameter is marked as `Sized?`.
 fn add_unsized_bound<'tcx,AC>(this: &AC,
-                              unbound: &Option<ast::TyParamBound>,
+                              unbound: &Option<ast::TraitRef>,
                               bounds: &mut ty::BuiltinBounds,
                               desc: &str,
                               span: Span)
                               where AC: AstConv<'tcx> {
     let kind_id = this.tcx().lang_items.require(SizedTraitLangItem);
     match unbound {
-        &Some(ast::TraitTyParamBound(ref tpb)) => {
+        &Some(ref tpb) => {
             // FIXME(#8559) currently requires the unbound to be built-in.
             let trait_def_id = ty::trait_ref_to_def_id(this.tcx(), tpb);
             match kind_id {
@@ -1781,7 +1790,7 @@ fn add_unsized_bound<'tcx,AC>(this: &AC,
             ty::try_add_builtin_trait(this.tcx(), kind_id.unwrap(), bounds);
         }
         // No lang item for Sized, so we can't add it as a bound.
-        _ => {}
+        &None => {}
     }
 }
 
@@ -1899,6 +1908,7 @@ fn ty_generics<'tcx,AC>(this: &AC,
                 for bound in param.bounds.iter() {
                     match *bound {
                         ast::TraitTyParamBound(ref trait_bound) => {
+                            let trait_bound = &trait_bound.trait_ref;
                             match lookup_def_tcx(this.tcx(),
                                                  trait_bound.path.span,
                                                  trait_bound.ref_id) {
@@ -2043,7 +2053,7 @@ fn compute_bounds<'tcx,AC>(this: &AC,
                            name_of_bounded_thing: ast::Name,
                            param_ty: ty::ParamTy,
                            ast_bounds: &[ast::TyParamBound],
-                           unbound: &Option<ast::TyParamBound>,
+                           unbound: &Option<ast::TraitRef>,
                            span: Span,
                            where_clause: &ast::WhereClause)
                            -> ty::ParamBounds

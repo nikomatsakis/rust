@@ -202,7 +202,7 @@ impl<'a> LifetimeContext<'a> {
         for bound in bounds.iter() {
             match *bound {
                 ast::TraitTyParamBound(ref trait_ref) => {
-                    self.visit_trait_ref(trait_ref);
+                    self.visit_poly_trait_ref(trait_ref);
                 }
                 ast::UnboxedFnTyParamBound(ref fn_decl) => {
                     self.visit_unboxed_fn_ty_param_bound(&**fn_decl);
@@ -214,16 +214,21 @@ impl<'a> LifetimeContext<'a> {
         }
     }
 
-    fn visit_trait_ref(&mut self, trait_ref: &ast::TraitRef) {
+    fn visit_poly_trait_ref(&mut self, trait_ref: &ast::PolyTraitRef) {
+        let ref_id = trait_ref.trait_ref.ref_id;
         self.with(|scope, f| {
-            f(LateScope(trait_ref.ref_id, &trait_ref.lifetimes, scope))
-        }, |v| {
-            v.check_lifetime_defs(&trait_ref.lifetimes);
-            for lifetime in trait_ref.lifetimes.iter() {
-                v.visit_lifetime_decl(lifetime);
+            f(LateScope(ref_id, &trait_ref.bound_lifetimes, scope))
+        }, |this| {
+            this.check_lifetime_defs(&trait_ref.bound_lifetimes);
+            for lifetime in trait_ref.bound_lifetimes.iter() {
+                this.visit_lifetime_decl(lifetime);
             }
-            v.visit_path(&trait_ref.path, trait_ref.ref_id);
+            this.visit_trait_ref(&trait_ref.trait_ref)
         })
+    }
+
+    fn visit_trait_ref(&mut self, trait_ref: &ast::TraitRef) {
+        self.visit_path(&trait_ref.path, trait_ref.ref_id);
     }
 
     fn visit_unboxed_fn_ty_param_bound(&mut self,

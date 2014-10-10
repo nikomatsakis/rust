@@ -211,6 +211,10 @@ pub trait Folder {
         noop_fold_trait_ref(p, self)
     }
 
+    fn fold_poly_trait_ref(&mut self, p: PolyTraitRef) -> PolyTraitRef {
+        noop_fold_poly_trait_ref(p, self)
+    }
+
     fn fold_struct_def(&mut self, struct_def: P<StructDef>) -> P<StructDef> {
         noop_fold_struct_def(struct_def, self)
     }
@@ -432,7 +436,10 @@ pub fn noop_fold_ty<T: Folder>(t: P<Ty>, fld: &mut T) -> P<Ty> {
             TyFixedLengthVec(ty, e) => {
                 TyFixedLengthVec(fld.fold_ty(ty), fld.fold_expr(e))
             }
-            TyTypeof(expr) => TyTypeof(fld.fold_expr(expr))
+            TyTypeof(expr) => TyTypeof(fld.fold_expr(expr)),
+            TyPolyTraitRef(poly_trait_ref) => {
+                TyPolyTraitRef(poly_trait_ref.map(|p| fld.fold_poly_trait_ref(p)))
+            },
         },
         span: fld.new_span(span)
     })
@@ -660,7 +667,7 @@ pub fn noop_fold_ty_param_bound<T>(tpb: TyParamBound, fld: &mut T)
                                    -> TyParamBound
                                    where T: Folder {
     match tpb {
-        TraitTyParamBound(ty) => TraitTyParamBound(fld.fold_trait_ref(ty)),
+        TraitTyParamBound(ty) => TraitTyParamBound(fld.fold_poly_trait_ref(ty)),
         RegionTyParamBound(lifetime) => RegionTyParamBound(fld.fold_lifetime(lifetime)),
         UnboxedFnTyParamBound(bound) => {
             match *bound {
@@ -688,7 +695,7 @@ pub fn noop_fold_ty_param<T: Folder>(tp: TyParam, fld: &mut T) -> TyParam {
         id: fld.new_id(id),
         ident: ident,
         bounds: fld.fold_bounds(bounds),
-        unbound: unbound.map(|x| fld.fold_ty_param_bound(x)),
+        unbound: unbound.map(|x| fld.fold_trait_ref(x)),
         default: default.map(|x| fld.fold_ty(x)),
         span: span
     }
@@ -811,13 +818,20 @@ pub fn noop_fold_trait_ref<T: Folder>(p: TraitRef, fld: &mut T) -> TraitRef {
     let id = fld.new_id(p.ref_id);
     let TraitRef {
         path,
-        lifetimes,
-        ..
+        sugar,
+        ref_id: _,
     } = p;
     ast::TraitRef {
         path: fld.fold_path(path),
         ref_id: id,
-        lifetimes: fld.fold_lifetime_defs(lifetimes),
+        sugar: sugar,
+    }
+}
+
+pub fn noop_fold_poly_trait_ref<T: Folder>(p: PolyTraitRef, fld: &mut T) -> PolyTraitRef {
+    ast::PolyTraitRef {
+        bound_lifetimes: fld.fold_lifetime_defs(p.bound_lifetimes),
+        trait_ref: fld.fold_trait_ref(p.trait_ref)
     }
 }
 

@@ -874,6 +874,11 @@ pub fn ast_ty_to_ty<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
                                   "cannot use unboxed functions here");
                 ty::mk_err()
             }
+            ast::TyPolyTraitRef(..) => {
+                // FIXME
+                tcx.sess.span_bug(ast_ty.span,
+                                  "higher-ranked object types not yet implemented");
+            }
             ast::TyPath(ref path, ref bounds, id) => {
                 let a_def = match tcx.def_map.borrow().find(&id) {
                     None => {
@@ -1520,6 +1525,7 @@ pub fn partition_bounds<'a>(tcx: &ty::ctxt,
     for &ast_bound in ast_bounds.iter() {
         match *ast_bound {
             ast::TraitTyParamBound(ref b) => {
+                let b = &b.trait_ref; // FIXME
                 match lookup_def_tcx(tcx, b.path.span, b.ref_id) {
                     def::DefTrait(trait_did) => {
                         match trait_def_ids.find(&trait_did) {

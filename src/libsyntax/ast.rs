@@ -212,7 +212,7 @@ pub const DUMMY_NODE_ID: NodeId = -1;
 /// detects Copy, Send and Sync.
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum TyParamBound {
-    TraitTyParamBound(TraitRef),
+    TraitTyParamBound(PolyTraitRef),
     UnboxedFnTyParamBound(P<UnboxedFnBound>),
     RegionTyParamBound(Lifetime)
 }
@@ -232,7 +232,7 @@ pub struct TyParam {
     pub ident: Ident,
     pub id: NodeId,
     pub bounds: TyParamBounds,
-    pub unbound: Option<TyParamBound>,
+    pub unbound: Option<TraitRef>,
     pub default: Option<P<Ty>>,
     pub span: Span
 }
@@ -967,6 +967,7 @@ pub enum Ty_ {
     TyUnboxedFn(P<UnboxedFnTy>),
     TyTup(Vec<P<Ty>> ),
     TyPath(Path, Option<TyParamBounds>, NodeId), // for #7264; see above
+    TyPolyTraitRef(P<PolyTraitRef>), // a type like `for<'a> Foo<&'a Bar>`
     /// A "qualified path", e.g. `<Vec<T> as SomeTrait>::SomeType`
     TyQPath(P<QPath>),
     /// No-op; kept solely so that we can pretty-print faithfully
@@ -1220,6 +1221,11 @@ pub struct Attribute_ {
     pub is_sugared_doc: bool,
 }
 
+#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+pub enum TraitRefSugar {
+    AngleBrackets, // Foo<...>
+    Parentheses,   // Foo(...)
+}
 
 /// TraitRef's appear in impls.
 /// resolve maps each TraitRef's ref_id to its defining trait; that's all
@@ -1230,7 +1236,16 @@ pub struct Attribute_ {
 pub struct TraitRef {
     pub path: Path,
     pub ref_id: NodeId,
-    pub lifetimes: Vec<LifetimeDef>,
+    pub sugar: TraitRefSugar,
+}
+
+#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+pub struct PolyTraitRef {
+    /// The `'a` in `<'a> Foo<&'a T>`
+    pub bound_lifetimes: Vec<LifetimeDef>,
+
+    /// The `Foo<&'a T>` in `<'a> Foo<&'a T>`
+    pub trait_ref: TraitRef
 }
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
@@ -1318,8 +1333,8 @@ pub enum Item_ {
     ItemStruct(P<StructDef>, Generics),
     /// Represents a Trait Declaration
     ItemTrait(Generics,
-              Option<TyParamBound>, // (optional) default bound not required for Self.
-                                    // Currently, only Sized makes sense here.
+              Option<TraitRef>, // (optional) default bound not required for Self.
+                                // Currently, only Sized makes sense here.
               TyParamBounds,
               Vec<TraitItem>),
     ItemImpl(Generics,
