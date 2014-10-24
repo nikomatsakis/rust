@@ -971,6 +971,12 @@ impl Clean<Type> for ast::TraitRef {
     }
 }
 
+impl Clean<Type> for ast::PolyTraitRef {
+    fn clean(&self, cx: &DocContext) -> Type {
+        self.trait_ref.clean(cx)
+    }
+}
+
 #[deriving(Clone, Encodable, Decodable)]
 pub enum TraitMethod {
     RequiredMethod(Item),
