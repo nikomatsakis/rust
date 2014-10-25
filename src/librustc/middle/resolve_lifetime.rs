@@ -94,35 +94,33 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
             ast::ItemMac(..) |
             ast::ItemForeignMod(..) |
             ast::ItemStatic(..) | ast::ItemConst(..) => {
-                self.with(|_, f| f(RootScope), |v| visit::walk_item(v, item));
+                self.with(RootScope, |this| visit::walk_item(this, item));
                 return;
             }
             ast::ItemTy(_, ref generics) |
             ast::ItemEnum(_, ref generics) |
             ast::ItemStruct(_, ref generics) |
             ast::ItemTrait(ref generics, _, _, _) => {
-                self.with(|scope, f| {
-                    f(EarlyScope(subst::TypeSpace,
-                                 &generics.lifetimes,
-                                 scope))
-                }, |v| v.check_lifetime_defs(&generics.lifetimes));
+                self.with(EarlyScope(subst::TypeSpace,
+                                     &generics.lifetimes,
+                                     self.scope),
+                          |this| this.check_lifetime_defs(&generics.lifetimes));
                 &generics.lifetimes
             }
             ast::ItemImpl(ref generics, _, _, _) => {
-                self.with(|scope, f| {
-                    f(EarlyScope(subst::TypeSpace,
-                                 &generics.lifetimes,
-                                 scope))
-                }, |v| v.check_lifetime_defs(&generics.lifetimes));
+                self.with(EarlyScope(subst::TypeSpace,
+                                     &generics.lifetimes,
+                                     self.scope),
+                          |this| this.check_lifetime_defs(&generics.lifetimes));
                 &generics.lifetimes
             }
         };
 
-        self.with(|_, f| f(EarlyScope(subst::TypeSpace, lifetimes, &ROOT_SCOPE)), |v| {
-            debug!("entering scope {}", v.scope);
-            v.check_lifetime_defs(lifetimes);
-            visit::walk_item(v, item);
-            debug!("exiting scope {}", v.scope);
+        self.with(EarlyScope(subst::TypeSpace, lifetimes, &ROOT_SCOPE), |this| {
+            debug!("entering scope {}", this.scope);
+            this.check_lifetime_defs(lifetimes);
+            visit::walk_item(this, item);
+            debug!("exiting scope {}", this.scope);
         });
     }
 
@@ -131,7 +129,9 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
         match fk {
             visit::FkItemFn(_, generics, _, _) |
             visit::FkMethod(_, generics, _) => {
-                self.visit_fn_decl(n, generics, |v| visit::walk_fn(v, fk, fd, b, s))
+                self.visit_early_late(
+                    subst::FnSpace, n, generics,
+                    |this| visit::walk_fn(this, fk, fd, b, s))
             }
             visit::FkFnBlock(..) => {
                 visit::walk_fn(self, fk, fd, b, s)
@@ -146,21 +146,23 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
             _ => return visit::walk_ty(self, ty)
         };
 
-        self.with(|scope, f| f(LateScope(ty.id, lifetimes, scope)), |v| {
-            v.check_lifetime_defs(lifetimes);
+        self.with(LateScope(ty.id, lifetimes, self.scope), |this| {
+            this.check_lifetime_defs(lifetimes);
             debug!("pushing fn scope id={} due to type", ty.id);
-            visit::walk_ty(v, ty);
+            visit::walk_ty(this, ty);
             debug!("popping fn scope id={} due to type", ty.id);
         });
     }
 
     fn visit_ty_method(&mut self, m: &ast::TypeMethod) {
-        self.visit_fn_decl(m.id, &m.generics, |v| visit::walk_ty_method(v, m))
+        self.visit_early_late(
+            subst::FnSpace, m.id, &m.generics,
+            |this| visit::walk_ty_method(this, m))
     }
 
     fn visit_block(&mut self, b: &ast::Block) {
         debug!("pushing block scope {}", b.id);
-        self.with(|scope, f| f(BlockScope(b.id, scope)), |v| visit::walk_block(v, b));
+        self.with(BlockScope(b.id, self.scope), |this| visit::walk_block(this, b));
         debug!("popping block scope {}", b.id);
     }
 
@@ -188,13 +190,14 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
 }
 
 impl<'a> LifetimeContext<'a> {
-    fn with(&mut self, wrap_scope: |Scope, |ScopeChain||, f: |&mut LifetimeContext|) {
-        let LifetimeContext { sess, ref mut named_region_map, scope} = *self;
-        wrap_scope(scope, |scope1| f(&mut LifetimeContext {
+    fn with(&mut self, wrap_scope: ScopeChain, f: |&mut LifetimeContext|) {
+        let LifetimeContext {sess, ref mut named_region_map, ..} = *self;
+        let mut this = LifetimeContext {
             sess: sess,
             named_region_map: *named_region_map,
-            scope: &scope1
-        }))
+            scope: &wrap_scope
+        };
+        f(&mut this);
     }
 
     fn visit_ty_param_bounds(&mut self,
@@ -216,9 +219,7 @@ impl<'a> LifetimeContext<'a> {
 
     fn visit_poly_trait_ref(&mut self, trait_ref: &ast::PolyTraitRef) {
         let ref_id = trait_ref.trait_ref.ref_id;
-        self.with(|scope, f| {
-            f(LateScope(ref_id, &trait_ref.bound_lifetimes, scope))
-        }, |this| {
+        self.with(LateScope(ref_id, &trait_ref.bound_lifetimes, self.scope), |this| {
             this.check_lifetime_defs(&trait_ref.bound_lifetimes);
             for lifetime in trait_ref.bound_lifetimes.iter() {
                 this.visit_lifetime_decl(lifetime);
@@ -233,21 +234,20 @@ impl<'a> LifetimeContext<'a> {
 
     fn visit_unboxed_fn_ty_param_bound(&mut self,
                                        bound: &ast::UnboxedFnBound) {
-        self.with(|scope, f| {
-            f(LateScope(bound.ref_id, &bound.lifetimes, scope))
-        }, |v| {
+        self.with(LateScope(bound.ref_id, &bound.lifetimes, self.scope), |this| {
             for argument in bound.decl.inputs.iter() {
-                v.visit_ty(&*argument.ty);
+                this.visit_ty(&*argument.ty);
             }
-            v.visit_ty(&*bound.decl.output);
+            this.visit_ty(&*bound.decl.output);
         })
     }
 
     /// Visits self by adding a scope and handling recursive walk over the contents with `walk`.
-    fn visit_fn_decl(&mut self,
-                     n: ast::NodeId,
-                     generics: &ast::Generics,
-                     walk: |&mut LifetimeContext|) {
+    fn visit_early_late(&mut self,
+                        early_space: subst::ParamSpace,
+                        binder_id: ast::NodeId,
+                        generics: &ast::Generics,
+                        walk: |&mut LifetimeContext|) {
         /*!
          * Handles visiting fns and methods. These are a bit
          * complicated because we must distinguish early- vs late-bound
@@ -268,33 +268,27 @@ impl<'a> LifetimeContext<'a> {
          * numbered sequentially, starting from the lowest index that
          * is already in scope (for a fn item, that will be 0, but for
          * a method it might not be). Late bound lifetimes are
-         * resolved by name and associated with a binder id (`n`), so
+         * resolved by name and associated with a binder id (`binder_id`), so
          * the ordering is not important there.
          */
 
         let referenced_idents = early_bound_lifetime_names(generics);
+
         debug!("pushing fn scope id={} due to fn item/method\
                referenced_idents={}",
-               n,
+               binder_id,
                referenced_idents.iter().map(lifetime_show).collect::<Vec<token::InternedString>>());
-        let lifetimes = &generics.lifetimes;
-        if referenced_idents.is_empty() {
-            self.with(|scope, f| f(LateScope(n, lifetimes, scope)), |v| {
-                v.check_lifetime_defs(lifetimes);
-                walk(v);
-            });
-        } else {
-            let (early, late) = lifetimes.clone().partition(
-                |l| referenced_idents.iter().any(|&i| i == l.lifetime.name));
 
-            self.with(|scope, f| f(EarlyScope(subst::FnSpace, &early, scope)), |v| {
-                v.with(|scope1, f| f(LateScope(n, &late, scope1)), |v| {
-                    v.check_lifetime_defs(lifetimes);
-                    walk(v);
-                });
+        let (early, late) = generics.lifetimes.clone().partition(
+            |l| referenced_idents.iter().any(|&i| i == l.lifetime.name));
+
+        self.with(EarlyScope(early_space, &early, self.scope), |this| {
+            this.with(LateScope(binder_id, &late, this.scope), |this| {
+                this.check_lifetime_defs(&generics.lifetimes);
+                walk(this);
             });
-        }
-        debug!("popping fn scope id={} due to fn item/method", n);
+        });
+        debug!("popping fn scope id={} due to fn item/method", binder_id);
     }
 
     fn resolve_lifetime_ref(&mut self, lifetime_ref: &ast::Lifetime) {
