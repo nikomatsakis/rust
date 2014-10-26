@@ -25,10 +25,10 @@ pub use self::skolemize::TypeSkolemizer;
 use middle::subst;
 use middle::subst::Substs;
 use middle::ty::{TyVid, IntVid, FloatVid, RegionVid};
+use middle::ty::replace_late_bound_regions;
 use middle::ty;
 use middle::ty_fold;
 use middle::ty_fold::{TypeFolder, TypeFoldable};
-use middle::typeck::check::regionmanip::replace_late_bound_regions;
 use std::cell::{RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -36,7 +36,7 @@ use syntax::ast;
 use syntax::codemap;
 use syntax::codemap::Span;
 use util::common::indent;
-use util::ppaux::{bound_region_to_string, ty_to_string, trait_ref_to_string, Repr};
+use util::ppaux::{ty_to_string, trait_ref_to_string, Repr};
 
 use self::coercion::Coerce;
 use self::combine::{Combine, CombineFields};
@@ -955,22 +955,19 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         self.type_error_message(sp, mk_msg, a, Some(err));
     }
 
-    pub fn replace_late_bound_regions_with_fresh_regions(&self,
-                                                         trace: TypeTrace,
-                                                         fsig: &ty::FnSig)
-                                                    -> (ty::FnSig,
-                                                        HashMap<ty::BoundRegion,
-                                                                ty::Region>) {
-        let (map, fn_sig) =
-            replace_late_bound_regions(self.tcx, fsig.binder_id, fsig, |br| {
-                let rvar = self.next_region_var(
-                    BoundRegionInFnType(trace.origin.span(), br));
-                debug!("Bound region {} maps to {}",
-                       bound_region_to_string(self.tcx, "", false, br),
-                       rvar);
-                rvar
-            });
-        (fn_sig, map)
+    pub fn replace_late_bound_regions_with_fresh_regions<T>(
+        &self,
+        span: Span,
+        binder_id: ast::NodeId,
+        value: &T)
+        -> (T, HashMap<ty::BoundRegion,ty::Region>)
+        where T : TypeFoldable + Repr
+    {
+        ty::replace_late_bound_regions(
+            self.tcx,
+            binder_id,
+            |br| self.next_region_var(LateBoundRegion(span, br)),
+            value)
     }
 }
 

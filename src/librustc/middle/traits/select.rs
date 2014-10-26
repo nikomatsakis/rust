@@ -24,7 +24,6 @@ use super::{util};
 use middle::mem_categorization::Typer;
 use middle::subst::{Subst, Substs, VecPerParamSpace};
 use middle::ty;
-use middle::typeck::check::regionmanip;
 use middle::typeck::infer;
 use middle::typeck::infer::{InferCtxt, TypeSkolemizer};
 use middle::ty_fold::TypeFoldable;
@@ -1649,13 +1648,13 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         // FIXME(pcwalton): This is a bogus thing to do, but
         // it'll do for now until we get the new trait-bound
         // region skolemization working.
-        let (_, new_signature) =
-            regionmanip::replace_late_bound_regions(
+        let (new_signature, _) =
+            ty::replace_late_bound_regions(
                 self.tcx(),
                 closure_type.sig.binder_id,
-                &closure_type.sig,
                 |br| self.infcx.next_region_var(
-                         infer::LateBoundRegion(obligation.cause.span, br)));
+                         infer::LateBoundRegion(obligation.cause.span, br)),
+                &closure_type.sig);
 
         let arguments_tuple = new_signature.inputs[0];
         let trait_ref = Rc::new(ty::TraitRef {

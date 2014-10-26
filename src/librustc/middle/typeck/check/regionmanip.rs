@@ -12,17 +12,15 @@
 
 use middle::subst::{ParamSpace, Subst, Substs};
 use middle::ty;
-use middle::ty_fold;
-use middle::ty_fold::{TypeFolder, TypeFoldable};
+use middle::ty_fold::{TypeFolder};
 
 use syntax::ast;
 
-use std::collections::HashMap;
-use std::collections::hashmap::{Occupied, Vacant};
 use util::ppaux::Repr;
 
 // Helper functions related to manipulating region types.
 
+<<<<<<< variant A
 pub fn replace_late_bound_regions<T>(
     tcx: &ty::ctxt,
     binder_id: ast::NodeId,
@@ -53,6 +51,8 @@ pub fn replace_late_bound_regions<T>(
     (map, new_value)
 }
 
+>>>>>>> variant B
+======= end
 pub enum WfConstraint {
     RegionSubRegionConstraint(Option<ty::t>, ty::Region, ty::Region),
     RegionSubParamConstraint(Option<ty::t>, ty::Region, ty::ParamTy),

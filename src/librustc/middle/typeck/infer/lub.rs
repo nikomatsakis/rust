@@ -127,10 +127,10 @@ impl<'f, 'tcx> Combine<'tcx> for Lub<'f, 'tcx> {
         // Instantiate each bound region with a fresh region variable.
         let (a_with_fresh, a_map) =
             self.fields.infcx.replace_late_bound_regions_with_fresh_regions(
-                self.trace(), a);
+                self.trace().origin.span(), a.binder_id, a);
         let (b_with_fresh, _) =
             self.fields.infcx.replace_late_bound_regions_with_fresh_regions(
-                self.trace(), b);
+                self.trace().origin.span(), b.binder_id, b);
 
         // Collect constraints.
         let sig0 = try!(super_fn_sigs(self, &a_with_fresh, &b_with_fresh));

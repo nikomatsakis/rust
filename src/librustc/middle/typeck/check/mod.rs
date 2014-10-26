@@ -92,6 +92,7 @@ use middle::ty::{FnSig, VariantInfo};
 use middle::ty::{Polytype};
 use middle::ty::{Disr, ParamTy, ParameterEnvironment};
 use middle::ty;
+use middle::ty::replace_late_bound_regions;
 use middle::ty_fold::TypeFolder;
 use middle::typeck::astconv::AstConv;
 use middle::typeck::astconv::{ast_region_to_region, ast_ty_to_ty};
@@ -99,7 +100,6 @@ use middle::typeck::astconv;
 use middle::typeck::check::_match::pat_ctxt;
 use middle::typeck::check::method::{AutoderefReceiver};
 use middle::typeck::check::method::{CheckTraitsAndInherentMethods};
-use middle::typeck::check::regionmanip::replace_late_bound_regions;
 use middle::typeck::CrateCtxt;
 use middle::typeck::infer::{resolve_type, force_tvar};
 use middle::typeck::infer;
@@ -527,9 +527,9 @@ fn check_fn<'a, 'tcx>(ccx: &'a CrateCtxt<'a, 'tcx>,
 
     // First, we have to replace any bound regions in the fn type with free ones.
     // The free region references will be bound the node_id of the body block.
-    let (_, fn_sig) = replace_late_bound_regions(tcx, fn_sig.binder_id, fn_sig, |br| {
+    let (fn_sig, _) = replace_late_bound_regions(tcx, fn_sig.binder_id, |br| {
         ty::ReFree(ty::FreeRegion {scope_id: body.id, bound_region: br})
-    });
+    }, fn_sig);
 
     let arg_tys = fn_sig.inputs.as_slice();
     let ret_ty = fn_sig.output;
@@ -2891,9 +2891,11 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
 
         // Replace any bound regions that appear in the function
         // signature with region variables
-        let (_, fn_sig) = replace_late_bound_regions(fcx.tcx(), fn_sig.binder_id, fn_sig, |br| {
-            fcx.infcx().next_region_var(infer::LateBoundRegion(call_expr.span, br))
-        });
+        let (fn_sig, _) =
+            fcx.infcx().replace_late_bound_regions_with_fresh_regions(
+                call_expr.span,
+                fn_sig.binder_id,
+                fn_sig);
 
         // Call the generic checker.
         check_argument_types(fcx,
@@ -3324,10 +3326,12 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
              expected_bounds) = {
             match expected_sty {
                 Some(ty::ty_closure(ref cenv)) => {
-                    let (_, sig) =
+                    let (sig, _) =
                         replace_late_bound_regions(
-                            tcx, cenv.sig.binder_id, &cenv.sig,
-                            |_| fcx.inh.infcx.fresh_bound_region(expr.id));
+                            tcx,
+                            cenv.sig.binder_id,
+                            |_| fcx.inh.infcx.fresh_bound_region(expr.id),
+                            &cenv.sig);
                     let onceness = match (&store, &cenv.store) {
                         // As the closure type and onceness go, only three
                         // combinations are legit:

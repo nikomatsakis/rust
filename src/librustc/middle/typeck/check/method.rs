@@ -94,7 +94,6 @@ use middle::typeck::infer;
 use middle::typeck::{MethodCall, MethodCallee};
 use middle::typeck::{MethodOrigin, MethodParam, MethodTypeParam};
 use middle::typeck::{MethodStatic, MethodStaticUnboxedClosure, MethodObject, MethodTraitObject};
-use middle::typeck::check::regionmanip::replace_late_bound_regions;
 use middle::typeck::TypeAndSubsts;
 use middle::ty_fold::TypeFoldable;
 use util::common::indenter;
@@ -1677,11 +1676,11 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
     fn replace_late_bound_regions_with_fresh_var<T>(&self, binder_id: ast::NodeId, value: &T) -> T
         where T : TypeFoldable + Repr
     {
-        let (_, value) = replace_late_bound_regions(
+        let (value, _) = replace_late_bound_regions(
             self.fcx.tcx(),
             binder_id,
-            value,
-            |br| self.fcx.infcx().next_region_var(infer::LateBoundRegion(self.span, br)));
+            |br| self.fcx.infcx().next_region_var(infer::LateBoundRegion(self.span, br)),
+            value);
         value
     }
 }

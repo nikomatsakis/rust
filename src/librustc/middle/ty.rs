@@ -5546,3 +5546,33 @@ pub fn with_freevars<T>(tcx: &ty::ctxt, fid: ast::NodeId, f: |&[Freevar]| -> T) 
         Some(d) => f(d.as_slice())
     }
 }
+
+pub fn replace_late_bound_regions<T>(
+    tcx: &ty::ctxt,
+    binder_id: ast::NodeId,
+    mapf: |ty::BoundRegion| -> ty::Region,
+    value: &T)
+    -> (T, HashMap<ty::BoundRegion,ty::Region>)
+    where T : TypeFoldable + Repr
+{
+    debug!("replace_late_bound_regions({})", value.repr(tcx));
+
+    let mut map = HashMap::new();
+    let value = {
+        let mut f = ty_fold::RegionFolder::regions(tcx, |r| {
+            debug!("region r={}", r.to_string());
+            match r {
+                ty::ReLateBound(s, br) if s == binder_id => {
+                    * match map.entry(br) {
+                        Vacant(entry) => entry.set(mapf(br)),
+                        Occupied(entry) => entry.into_mut(),
+                    }
+                }
+                _ => r
+            }
+        });
+        value.fold_with(&mut f)
+    };
+    debug!("resulting map: {}", map);
+    (value, map)
+}

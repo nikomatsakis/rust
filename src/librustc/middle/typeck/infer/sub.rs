@@ -12,7 +12,7 @@
 use middle::ty::{BuiltinBounds};
 use middle::ty;
 use middle::ty::TyVar;
-use middle::typeck::check::regionmanip::replace_late_bound_regions;
+use middle::ty::replace_late_bound_regions;
 use middle::typeck::infer::combine::*;
 use middle::typeck::infer::{cres, CresCompare};
 use middle::typeck::infer::equate::Equate;
@@ -184,18 +184,18 @@ impl<'f, 'tcx> Combine<'tcx> for Sub<'f, 'tcx> {
         // region variable.
         let (a_sig, _) =
             self.fields.infcx.replace_late_bound_regions_with_fresh_regions(
-                self.trace(), a);
+                self.trace().origin.span(), a.binder_id, a);
 
         // Second, we instantiate each bound region in the supertype with a
         // fresh concrete region.
-        let (skol_map, b_sig) = {
-            replace_late_bound_regions(self.fields.infcx.tcx, b.binder_id, b, |br| {
+        let (b_sig, skol_map) = {
+            replace_late_bound_regions(self.fields.infcx.tcx, b.binder_id, |br| {
                 let skol = self.fields.infcx.region_vars.new_skolemized(br);
                 debug!("Bound region {} skolemized to {}",
                        bound_region_to_string(self.fields.infcx.tcx, "", false, br),
                        skol);
                 skol
-            })
+            }, b)
         };
 
         debug!("a_sig={}", a_sig.repr(self.fields.infcx.tcx));
