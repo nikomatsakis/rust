@@ -53,12 +53,13 @@
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://doc.rust-lang.org/master/",
+       html_root_url = "http://doc.rust-lang.org/nightly/",
        html_playground_url = "http://play.rust-lang.org/")]
 
 #![no_std]
-#![feature(globs, intrinsics, lang_items, macro_rules, managed_boxes, phase)]
-#![feature(simd, unsafe_destructor)]
+#![allow(unknown_features)]
+#![feature(globs, intrinsics, lang_items, macro_rules, phase)]
+#![feature(simd, unsafe_destructor, slicing_syntax)]
 #![deny(missing_doc)]
 
 mod macros;
@@ -102,13 +103,6 @@ pub mod cmp;
 pub mod clone;
 pub mod default;
 pub mod collections;
-
-#[deprecated = "all functionality now lives in `std::cell`"]
-/// Deprecated module in favor of `std::cell`
-pub mod ty {
-    #[deprecated = "this type has been renamed to `UnsafeCell`"]
-    pub use cell::UnsafeCell as Unsafe;
-}
 
 /* Core types and methods on primitives */
 

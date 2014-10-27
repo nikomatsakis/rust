@@ -30,6 +30,7 @@ pub struct Module {
     pub id: NodeId,
     pub typedefs: Vec<Typedef>,
     pub statics: Vec<Static>,
+    pub constants: Vec<Constant>,
     pub traits: Vec<Trait>,
     pub vis: ast::Visibility,
     pub stab: Option<attr::Stability>,
@@ -56,6 +57,7 @@ impl Module {
             mods       : Vec::new(),
             typedefs   : Vec::new(),
             statics    : Vec::new(),
+            constants  : Vec::new(),
             traits     : Vec::new(),
             impls      : Vec::new(),
             view_items : Vec::new(),
@@ -139,9 +141,21 @@ pub struct Typedef {
     pub stab: Option<attr::Stability>,
 }
 
+#[deriving(Show)]
 pub struct Static {
     pub type_: P<ast::Ty>,
     pub mutability: ast::Mutability,
+    pub expr: P<ast::Expr>,
+    pub name: Ident,
+    pub attrs: Vec<ast::Attribute>,
+    pub vis: ast::Visibility,
+    pub stab: Option<attr::Stability>,
+    pub id: ast::NodeId,
+    pub whence: Span,
+}
+
+pub struct Constant {
+    pub type_: P<ast::Ty>,
     pub expr: P<ast::Expr>,
     pub name: Ident,
     pub attrs: Vec<ast::Attribute>,

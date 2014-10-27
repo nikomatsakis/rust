@@ -16,19 +16,11 @@
 #[phase(plugin, link)]
 extern crate log;
 extern crate libc;
-extern crate green;
-extern crate rustuv;
-extern crate debug;
 
 use std::io::net::tcp::{TcpListener, TcpStream};
 use std::io::{Acceptor, Listener};
 use std::task::TaskBuilder;
 use std::time::Duration;
-
-#[start]
-fn start(argc: int, argv: *const *const u8) -> int {
-    green::start(argc, argv, rustuv::event_loop, main)
-}
 
 fn main() {
     // This test has a chance to time out, try to not let it time out
@@ -48,7 +40,7 @@ fn main() {
             let mut stream = match acceptor.accept() {
                 Ok(stream) => stream,
                 Err(error) => {
-                    debug!("accept failed: {:?}", error);
+                    debug!("accept failed: {}", error);
                     continue;
                 }
             };
@@ -71,7 +63,7 @@ fn main() {
                     let mut buf = [0];
                     stream.read(buf);
                 },
-                Err(e) => debug!("{:?}", e)
+                Err(e) => debug!("{}", e)
             }
             tx.send(());
         });

@@ -626,7 +626,7 @@ shr_impl!(uint u8 u16 u32 u64 int i8 i16 i32 i64)
  * struct Foo;
  *
  * impl Index<Foo, Foo> for Foo {
- *     fn index<'a>(&'a self, _rhs: &Foo) -> &'a Foo {
+ *     fn index<'a>(&'a self, _index: &Foo) -> &'a Foo {
  *         println!("Indexing!");
  *         self
  *     }
@@ -638,7 +638,7 @@ shr_impl!(uint u8 u16 u32 u64 int i8 i16 i32 i64)
  * ```
  */
 #[lang="index"]
-pub trait Index<Index, Result> {
+pub trait Index<Index, Sized? Result> {
     /// The method for the indexing (`Foo[Bar]`) operation
     fn index<'a>(&'a self, index: &Index) -> &'a Result;
 }
@@ -657,7 +657,7 @@ pub trait Index<Index, Result> {
  * struct Foo;
  *
  * impl IndexMut<Foo, Foo> for Foo {
- *     fn index_mut<'a>(&'a mut self, _rhs: &Foo) -> &'a mut Foo {
+ *     fn index_mut<'a>(&'a mut self, _index: &Foo) -> &'a mut Foo {
  *         println!("Indexing!");
  *         self
  *     }
@@ -684,23 +684,23 @@ pub trait IndexMut<Index, Result> {
  * A trivial implementation of `Slice`. When `Foo[..Foo]` happens, it ends up
  * calling `slice_to`, and therefore, `main` prints `Slicing!`.
  *
- * ```
+ * ```ignore
  * struct Foo;
  *
- * impl ::core::ops::Slice<Foo, Foo> for Foo {
+ * impl Slice<Foo, Foo> for Foo {
  *     fn as_slice_<'a>(&'a self) -> &'a Foo {
  *         println!("Slicing!");
  *         self
  *     }
- *     fn slice_from_<'a>(&'a self, from: &Foo) -> &'a Foo {
+ *     fn slice_from_or_fail<'a>(&'a self, _from: &Foo) -> &'a Foo {
  *         println!("Slicing!");
  *         self
  *     }
- *     fn slice_to_<'a>(&'a self, to: &Foo) -> &'a Foo {
+ *     fn slice_to_or_fail<'a>(&'a self, _to: &Foo) -> &'a Foo {
  *         println!("Slicing!");
  *         self
  *     }
- *     fn slice_<'a>(&'a self, from: &Foo, to: &Foo) -> &'a Foo {
+ *     fn slice_or_fail<'a>(&'a self, _from: &Foo, _to: &Foo) -> &'a Foo {
  *         println!("Slicing!");
  *         self
  *     }
@@ -711,17 +711,16 @@ pub trait IndexMut<Index, Result> {
  * }
  * ```
  */
-// FIXME(#17273) remove the postscript _s
 #[lang="slice"]
 pub trait Slice<Idx, Sized? Result> for Sized? {
     /// The method for the slicing operation foo[]
     fn as_slice_<'a>(&'a self) -> &'a Result;
     /// The method for the slicing operation foo[from..]
-    fn slice_from_<'a>(&'a self, from: &Idx) -> &'a Result;
+    fn slice_from_or_fail<'a>(&'a self, from: &Idx) -> &'a Result;
     /// The method for the slicing operation foo[..to]
-    fn slice_to_<'a>(&'a self, to: &Idx) -> &'a Result;
+    fn slice_to_or_fail<'a>(&'a self, to: &Idx) -> &'a Result;
     /// The method for the slicing operation foo[from..to]
-    fn slice_<'a>(&'a self, from: &Idx, to: &Idx) -> &'a Result;
+    fn slice_or_fail<'a>(&'a self, from: &Idx, to: &Idx) -> &'a Result;
 }
 
 /**
@@ -734,45 +733,45 @@ pub trait Slice<Idx, Sized? Result> for Sized? {
  * A trivial implementation of `SliceMut`. When `Foo[Foo..]` happens, it ends up
  * calling `slice_from_mut`, and therefore, `main` prints `Slicing!`.
  *
- * ```
+ * ```ignore
  * struct Foo;
  *
- * impl ::core::ops::SliceMut<Foo, Foo> for Foo {
+ * impl SliceMut<Foo, Foo> for Foo {
  *     fn as_mut_slice_<'a>(&'a mut self) -> &'a mut Foo {
  *         println!("Slicing!");
  *         self
  *     }
- *     fn slice_from_mut_<'a>(&'a mut self, from: &Foo) -> &'a mut Foo {
+ *     fn slice_from_or_fail_mut<'a>(&'a mut self, _from: &Foo) -> &'a mut Foo {
  *         println!("Slicing!");
  *         self
  *     }
- *     fn slice_to_mut_<'a>(&'a mut self, to: &Foo) -> &'a mut Foo {
+ *     fn slice_to_or_fail_mut<'a>(&'a mut self, _to: &Foo) -> &'a mut Foo {
  *         println!("Slicing!");
  *         self
  *     }
- *     fn slice_mut_<'a>(&'a mut self, from: &Foo, to: &Foo) -> &'a mut Foo {
+ *     fn slice_or_fail_mut<'a>(&'a mut self, _from: &Foo, _to: &Foo) -> &'a mut Foo {
  *         println!("Slicing!");
  *         self
  *     }
  * }
  *
- * fn main() {
+ * pub fn main() {
  *     Foo[mut Foo..];
  * }
  * ```
  */
-// FIXME(#17273) remove the postscript _s
 #[lang="slice_mut"]
 pub trait SliceMut<Idx, Sized? Result> for Sized? {
-    /// The method for the slicing operation foo[mut]
+    /// The method for the slicing operation foo[]
     fn as_mut_slice_<'a>(&'a mut self) -> &'a mut Result;
-    /// The method for the slicing operation foo[mut from..]
-    fn slice_from_mut_<'a>(&'a mut self, from: &Idx) -> &'a mut Result;
-    /// The method for the slicing operation foo[mut ..to]
-    fn slice_to_mut_<'a>(&'a mut self, to: &Idx) -> &'a mut Result;
-    /// The method for the slicing operation foo[mut from..to]
-    fn slice_mut_<'a>(&'a mut self, from: &Idx, to: &Idx) -> &'a mut Result;
+    /// The method for the slicing operation foo[from..]
+    fn slice_from_or_fail_mut<'a>(&'a mut self, from: &Idx) -> &'a mut Result;
+    /// The method for the slicing operation foo[..to]
+    fn slice_to_or_fail_mut<'a>(&'a mut self, to: &Idx) -> &'a mut Result;
+    /// The method for the slicing operation foo[from..to]
+    fn slice_or_fail_mut<'a>(&'a mut self, from: &Idx, to: &Idx) -> &'a mut Result;
 }
+
 /**
  *
  * The `Deref` trait is used to specify the functionality of dereferencing
@@ -902,4 +901,3 @@ def_fn_mut!(A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 A10 A11 A12)
 def_fn_mut!(A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 A10 A11 A12 A13)
 def_fn_mut!(A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 A10 A11 A12 A13 A14)
 def_fn_mut!(A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 A10 A11 A12 A13 A14 A15)
-

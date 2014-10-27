@@ -213,6 +213,10 @@ pre code {
     color: inherit;
 }
 
+a > code {
+    color: #428BCA;
+}
+
 /* Code highlighting */
 pre.rust .kw { color: #8959A8; }
 pre.rust .kw-2, pre.rust .prelude-ty { color: #4271AE; }
@@ -334,6 +338,11 @@ pre.rust { position: relative; }
     transform: scaleX(-1);
 }
 
+.unstable-feature {
+    border: 2px solid red;
+    padding: 5px;
+}
+
 @media (min-width: 1170px) {
     pre {
         font-size: 15px;
@@ -382,4 +391,11 @@ pre.rust { position: relative; }
     table td, table th {
         background-color: #fff !important;
     }
+}
+
+#keyword-table-marker + table thead { display: none; }
+#keyword-table-marker + table td { border: none; }
+#keyword-table-marker + table {
+    margin-left: 2em;
+    margin-bottom: 1em;
 }

@@ -1,4 +1,4 @@
-// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -347,9 +347,8 @@ impl<'a, 'tcx, 'v> Visitor<'v> for EmbargoVisitor<'a, 'tcx> {
         // This code is here instead of in visit_item so that the
         // crate module gets processed as well.
         if self.prev_exported {
-            let exp_map2 = self.exp_map2.borrow();
-            assert!(exp_map2.contains_key(&id), "wut {:?}", id);
-            for export in exp_map2.get(&id).iter() {
+            assert!(self.exp_map2.contains_key(&id), "wut {}", id);
+            for export in self.exp_map2[id].iter() {
                 if is_local(export.def_id) {
                     self.reexports.insert(export.def_id.node);
                 }
@@ -395,28 +394,28 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
     fn def_privacy(&self, did: ast::DefId) -> PrivacyResult {
         if !is_local(did) {
             if self.external_exports.contains(&did) {
-                debug!("privacy - {:?} was externally exported", did);
+                debug!("privacy - {} was externally exported", did);
                 return Allowable;
             }
-            debug!("privacy - is {:?} a public method", did);
+            debug!("privacy - is {} a public method", did);
 
             return match self.tcx.impl_or_trait_items.borrow().find(&did) {
                 Some(&ty::MethodTraitItem(ref meth)) => {
-                    debug!("privacy - well at least it's a method: {:?}",
+                    debug!("privacy - well at least it's a method: {}",
                            *meth);
                     match meth.container {
                         ty::TraitContainer(id) => {
-                            debug!("privacy - recursing on trait {:?}", id);
+                            debug!("privacy - recursing on trait {}", id);
                             self.def_privacy(id)
                         }
                         ty::ImplContainer(id) => {
                             match ty::impl_trait_ref(self.tcx, id) {
                                 Some(t) => {
-                                    debug!("privacy - impl of trait {:?}", id);
+                                    debug!("privacy - impl of trait {}", id);
                                     self.def_privacy(t.def_id)
                                 }
                                 None => {
-                                    debug!("privacy - found a method {:?}",
+                                    debug!("privacy - found a method {}",
                                             meth.vis);
                                     if meth.vis == ast::Public {
                                         Allowable
@@ -431,17 +430,17 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
                 Some(&ty::TypeTraitItem(ref typedef)) => {
                     match typedef.container {
                         ty::TraitContainer(id) => {
-                            debug!("privacy - recursing on trait {:?}", id);
+                            debug!("privacy - recursing on trait {}", id);
                             self.def_privacy(id)
                         }
                         ty::ImplContainer(id) => {
                             match ty::impl_trait_ref(self.tcx, id) {
                                 Some(t) => {
-                                    debug!("privacy - impl of trait {:?}", id);
+                                    debug!("privacy - impl of trait {}", id);
                                     self.def_privacy(t.def_id)
                                 }
                                 None => {
-                                    debug!("privacy - found a typedef {:?}",
+                                    debug!("privacy - found a typedef {}",
                                             typedef.vis);
                                     if typedef.vis == ast::Public {
                                         Allowable
@@ -525,7 +524,7 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
             // if we've reached the root, then everything was allowable and this
             // access is public.
             if closest_private_id == ast::CRATE_NODE_ID { return Allowable }
-            closest_private_id = *self.parents.get(&closest_private_id);
+            closest_private_id = self.parents[closest_private_id];
 
             // If we reached the top, then we were public all the way down and
             // we can allow this access.
@@ -543,7 +542,7 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
     /// whether the node is accessible by the current module that iteration is
     /// inside.
     fn private_accessible(&self, id: ast::NodeId) -> bool {
-        let parent = *self.parents.get(&id);
+        let parent = self.parents[id];
         debug!("privacy - accessible parent {}", self.nodestr(parent));
 
         // After finding `did`'s closest private member, we roll ourselves back
@@ -552,7 +551,7 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
         // members, so that's why we test the parent, and not the did itself.
         let mut cur = self.curitem;
         loop {
-            debug!("privacy - questioning {}, {:?}", self.nodestr(cur), cur);
+            debug!("privacy - questioning {}, {}", self.nodestr(cur), cur);
             match cur {
                 // If the relevant parent is in our history, then we're allowed
                 // to look inside any of our ancestor's immediate private items,
@@ -567,7 +566,7 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
                 _ => {}
             }
 
-            cur = *self.parents.get(&cur);
+            cur = self.parents[cur];
         }
     }
 
@@ -659,7 +658,7 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
                 debug!("privacy - check named field {} in struct {}", ident.name, id);
                 fields.iter().find(|f| f.name == ident.name).unwrap()
             }
-            UnnamedField(idx) => fields.get(idx)
+            UnnamedField(idx) => &fields[idx]
         };
         if field.vis == ast::Public ||
             (is_local(field.id) && self.private_accessible(field.id.node)) {
@@ -668,21 +667,12 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
 
         let struct_type = ty::lookup_item_type(self.tcx, id).ty;
         let struct_desc = match ty::get(struct_type).sty {
-            ty::ty_struct(_, _) => format!("struct `{}`", ty::item_path_str(self.tcx, id)),
-            ty::ty_bare_fn(ty::BareFnTy { sig: ty::FnSig { output, .. }, .. }) => {
-                // Struct `id` is really a struct variant of an enum,
-                // and we're really looking at the variant's constructor
-                // function. So get the return type for a detailed error
-                // message.
-                let enum_id = match ty::get(output).sty {
-                    ty::ty_enum(id, _) => id,
-                    _ => self.tcx.sess.span_bug(span, "enum variant doesn't \
-                                                       belong to an enum")
-                };
+            ty::ty_struct(_, _) =>
+                format!("struct `{}`", ty::item_path_str(self.tcx, id)),
+            ty::ty_enum(enum_id, _) =>
                 format!("variant `{}` of enum `{}`",
                         ty::with_path(self.tcx, id, |mut p| p.last().unwrap()),
-                        ty::item_path_str(self.tcx, enum_id))
-            }
+                        ty::item_path_str(self.tcx, enum_id)),
             _ => self.tcx.sess.span_bug(span, "can't find struct for field")
         };
         let msg = match name {
@@ -735,14 +725,14 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
                                            name).as_slice())
             };
 
-            match *self.last_private_map.get(&path_id) {
+            match self.last_private_map[path_id] {
                 resolve::LastMod(resolve::AllPublic) => {},
                 resolve::LastMod(resolve::DependsOn(def)) => {
                     self.report_error(ck_public(def));
                 },
-                resolve::LastImport{value_priv: value_priv,
+                resolve::LastImport{value_priv,
                                     value_used: check_value,
-                                    type_priv: type_priv,
+                                    type_priv,
                                     type_used: check_type} => {
                     // This dance with found_error is because we don't want to report
                     // a privacy error twice for the same directive.
@@ -806,12 +796,13 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
             def::DefStaticMethod(..) => ck("static method"),
             def::DefFn(..) => ck("function"),
             def::DefStatic(..) => ck("static"),
+            def::DefConst(..) => ck("const"),
             def::DefVariant(..) => ck("variant"),
             def::DefTy(_, false) => ck("type"),
             def::DefTy(_, true) => ck("enum"),
             def::DefTrait(..) => ck("trait"),
             def::DefStruct(..) => ck("struct"),
-            def::DefMethod(_, Some(..)) => ck("trait method"),
+            def::DefMethod(_, Some(..), _) => ck("trait method"),
             def::DefMethod(..) => ck("method"),
             def::DefMod(..) => ck("module"),
             _ => {}
@@ -828,8 +819,8 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
             MethodStaticUnboxedClosure(_) => {}
             // Trait methods are always all public. The only controlling factor
             // is whether the trait itself is accessible or not.
-            MethodTypeParam(MethodParam { trait_ref: ref trait_ref, .. }) |
-            MethodTraitObject(MethodObject { trait_ref: ref trait_ref, .. }) => {
+            MethodTypeParam(MethodParam { ref trait_ref, .. }) |
+            MethodTraitObject(MethodObject { ref trait_ref, .. }) => {
                 self.report_error(self.ensure_public(span, trait_ref.def_id,
                                                      None, "source trait"));
             }
@@ -932,15 +923,6 @@ impl<'a, 'tcx, 'v> Visitor<'v> for PrivacyVisitor<'a, 'tcx> {
                             maybe_did.unwrap_or(did)
                         })
                     }
-                    // Tuple struct constructors across crates are identified as
-                    // DefFn types, so we explicitly handle that case here.
-                    Some(&def::DefFn(did, _, _)) if !is_local(did) => {
-                        match csearch::get_tuple_struct_definition_if_ctor(
-                                    &self.tcx.sess.cstore, did) {
-                            Some(did) => guard(did),
-                            None => {}
-                        }
-                    }
                     _ => {}
                 }
             }
@@ -1000,7 +982,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for PrivacyVisitor<'a, 'tcx> {
                     ty::ty_struct(id, _) => {
                         for field in fields.iter() {
                             self.check_field(pattern.span, id,
-                                             NamedField(field.ident));
+                                             NamedField(field.node.ident));
                         }
                     }
                     ty::ty_enum(_, _) => {
@@ -1008,7 +990,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for PrivacyVisitor<'a, 'tcx> {
                             Some(&def::DefVariant(_, variant_id, _)) => {
                                 for field in fields.iter() {
                                     self.check_field(pattern.span, variant_id,
-                                                     NamedField(field.ident));
+                                                     NamedField(field.node.ident));
                                 }
                             }
                             _ => self.tcx.sess.span_bug(pattern.span,
@@ -1191,7 +1173,7 @@ impl<'a, 'tcx> SanePrivacyVisitor<'a, 'tcx> {
                 }
             }
 
-            ast::ItemStatic(..) | ast::ItemStruct(..) |
+            ast::ItemConst(..) | ast::ItemStatic(..) | ast::ItemStruct(..) |
             ast::ItemFn(..) | ast::ItemMod(..) | ast::ItemTy(..) |
             ast::ItemMac(..) => {}
         }
@@ -1255,7 +1237,7 @@ impl<'a, 'tcx> SanePrivacyVisitor<'a, 'tcx> {
                 }
             }
 
-            ast::ItemStatic(..) |
+            ast::ItemStatic(..) | ast::ItemConst(..) |
             ast::ItemFn(..) | ast::ItemMod(..) | ast::ItemTy(..) |
             ast::ItemMac(..) => {}
         }

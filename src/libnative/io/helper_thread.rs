@@ -22,13 +22,14 @@
 
 #![macro_escape]
 
+use std::cell::UnsafeCell;
 use std::mem;
 use std::rt::bookkeeping;
 use std::rt::mutex::StaticNativeMutex;
 use std::rt;
-use std::cell::UnsafeCell;
+use std::task::TaskBuilder;
 
-use task;
+use NativeTaskBuilder;
 
 /// A structure for management of a helper thread.
 ///
@@ -55,8 +56,8 @@ pub struct Helper<M> {
     pub initialized: UnsafeCell<bool>,
 }
 
-macro_rules! helper_init( (static mut $name:ident: Helper<$m:ty>) => (
-    static mut $name: Helper<$m> = Helper {
+macro_rules! helper_init( (static $name:ident: Helper<$m:ty>) => (
+    static $name: Helper<$m> = Helper {
         lock: ::std::rt::mutex::NATIVE_MUTEX_INIT,
         chan: ::std::cell::UnsafeCell { value: 0 as *mut Sender<$m> },
         signal: ::std::cell::UnsafeCell { value: 0 },
@@ -86,7 +87,7 @@ impl<M: Send> Helper<M> {
                 *self.signal.get() = send as uint;
 
                 let t = f();
-                task::spawn(proc() {
+                TaskBuilder::new().native().spawn(proc() {
                     bookkeeping::decrement();
                     helper(receive, rx, t);
                     self.lock.lock().signal()

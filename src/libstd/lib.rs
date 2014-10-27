@@ -102,12 +102,13 @@
 #![crate_type = "dylib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://doc.rust-lang.org/master/",
+       html_root_url = "http://doc.rust-lang.org/nightly/",
        html_playground_url = "http://play.rust-lang.org/")]
 
-#![feature(macro_rules, globs, managed_boxes, linkage)]
+#![allow(unknown_features)]
+#![feature(macro_rules, globs, linkage)]
 #![feature(default_type_params, phase, lang_items, unsafe_destructor)]
-#![feature(import_shadowing)]
+#![feature(import_shadowing, slicing_syntax)]
 
 // Don't link to std. We are std.
 #![no_std]
@@ -116,13 +117,7 @@
 
 #![reexport_test_harness_main = "test_main"]
 
-// When testing libstd, bring in libuv as the I/O backend so tests can print
-// things and all of the std::io tests have an I/O interface to run on top
-// of
-#[cfg(test)] extern crate rustuv;
-#[cfg(test)] extern crate native;
 #[cfg(test)] extern crate green;
-#[cfg(test)] extern crate debug;
 #[cfg(test)] #[phase(plugin, link)] extern crate log;
 
 extern crate alloc;
@@ -139,9 +134,7 @@ extern crate rustrt;
 #[cfg(test)] pub use realstd::kinds;
 #[cfg(test)] pub use realstd::ops;
 #[cfg(test)] pub use realstd::cmp;
-#[cfg(test)] pub use realstd::ty;
 #[cfg(test)] pub use realstd::boxed;
-#[cfg(test)] pub use realstd::gc;
 
 
 // NB: These reexports are in the order they should be listed in rustdoc
@@ -165,13 +158,10 @@ pub use core::tuple;
 // FIXME #15320: primitive documentation needs top-level modules, this
 // should be `std::tuple::unit`.
 pub use core::unit;
-#[cfg(not(test))] pub use core::ty;
 pub use core::result;
 pub use core::option;
 
 pub use alloc::boxed;
-#[deprecated = "use boxed instead"]
-pub use boxed as owned;
 
 pub use alloc::rc;
 
@@ -186,12 +176,6 @@ pub use rustrt::local_data;
 pub use unicode::char;
 
 pub use core_sync::comm;
-
-// Run tests with libgreen instead of libnative.
-#[cfg(test)] #[start]
-fn start(argc: int, argv: *const *const u8) -> int {
-    green::start(argc, argv, rustuv::event_loop, test_main)
-}
 
 /* Exported macros */
 
@@ -229,9 +213,6 @@ pub mod prelude;
 pub mod rand;
 
 pub mod ascii;
-
-#[cfg(not(test))]
-pub mod gc;
 
 pub mod time;
 
@@ -286,7 +267,9 @@ mod std {
     // The test runner calls ::std::os::args() but really wants realstd
     #[cfg(test)] pub use realstd::os as os;
     // The test runner requires std::slice::Vector, so re-export std::slice just for it.
-    #[cfg(test)] pub use slice;
+    //
+    // It is also used in vec![]
+    pub use slice;
 
-    pub use collections; // vec!() uses MutableSeq
+    pub use boxed; // used for vec![]
 }

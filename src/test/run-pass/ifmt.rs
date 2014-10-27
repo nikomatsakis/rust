@@ -15,10 +15,7 @@
 #![deny(warnings)]
 #![allow(unused_must_use)]
 
-extern crate debug;
-
 use std::fmt;
-use std::gc::GC;
 use std::io::MemWriter;
 use std::io;
 use std::str;
@@ -46,12 +43,6 @@ impl fmt::Show for C {
 macro_rules! t(($a:expr, $b:expr) => { assert_eq!($a.as_slice(), $b) })
 
 pub fn main() {
-    // Make sure there's a poly formatter that takes anything
-    t!(format!("{:?}", 1i), "1");
-    t!(format!("{:?}", A), "A");
-    t!(format!("{:?}", ()), "()");
-    t!(format!("{:?}", box(GC) (box 1i, "foo")), "box(GC) (box 1, \"foo\")");
-
     // Various edge cases without formats
     t!(format!(""), "");
     t!(format!("hello"), "hello");
@@ -150,8 +141,8 @@ pub fn main() {
 
     // make sure that format! doesn't move out of local variables
     let a = box 3i;
-    format!("{:?}", a);
-    format!("{:?}", a);
+    format!("{}", a);
+    format!("{}", a);
 
     // make sure that format! doesn't cause spurious unused-unsafe warnings when
     // it's inside of an outer unsafe block
@@ -188,7 +179,7 @@ fn test_write() {
 // can do with them just yet (to test the output)
 fn test_print() {
     print!("hi");
-    print!("{:?}", vec!(0u8));
+    print!("{}", vec!(0u8));
     println!("hello");
     println!("this is a {}", "test");
     println!("{foo}", foo="bar");

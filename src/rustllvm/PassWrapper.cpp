@@ -71,6 +71,7 @@ LLVMRustCreateTargetMachine(const char *triple,
                             bool EnableSegmentedStacks,
                             bool UseSoftFloat,
                             bool NoFramePointerElim,
+                            bool PositionIndependentExecutable,
                             bool FunctionSections,
                             bool DataSections) {
     std::string Error;
@@ -83,6 +84,7 @@ LLVMRustCreateTargetMachine(const char *triple,
     }
 
     TargetOptions Options;
+    Options.PositionIndependentExecutable = PositionIndependentExecutable;
     Options.NoFramePointerElim = NoFramePointerElim;
 #if LLVM_VERSION_MINOR < 5
     Options.EnableSegmentedStacks = EnableSegmentedStacks;
@@ -118,7 +120,9 @@ LLVMRustAddAnalysisPasses(LLVMTargetMachineRef TM,
                           LLVMPassManagerRef PMR,
                           LLVMModuleRef M) {
     PassManagerBase *PM = unwrap(PMR);
-#if LLVM_VERSION_MINOR >= 5
+#if LLVM_VERSION_MINOR >= 6
+    PM->add(new DataLayoutPass());
+#elif LLVM_VERSION_MINOR == 5
     PM->add(new DataLayoutPass(unwrap(M)));
 #else
     PM->add(new DataLayout(unwrap(M)));
@@ -187,7 +191,12 @@ LLVMRustWriteOutputFile(LLVMTargetMachineRef Target,
   PassManager *PM = unwrap<PassManager>(PMR);
 
   std::string ErrorInfo;
-#if LLVM_VERSION_MINOR >= 4
+#if LLVM_VERSION_MINOR >= 6
+  std::error_code EC;
+  raw_fd_ostream OS(path, EC, sys::fs::F_None);
+  if (EC)
+    ErrorInfo = EC.message();
+#elif LLVM_VERSION_MINOR >= 4
   raw_fd_ostream OS(path, ErrorInfo, sys::fs::F_None);
 #else
   raw_fd_ostream OS(path, ErrorInfo, raw_fd_ostream::F_Binary);
@@ -210,7 +219,12 @@ LLVMRustPrintModule(LLVMPassManagerRef PMR,
   PassManager *PM = unwrap<PassManager>(PMR);
   std::string ErrorInfo;
 
-#if LLVM_VERSION_MINOR >= 4
+#if LLVM_VERSION_MINOR >= 6
+  std::error_code EC;
+  raw_fd_ostream OS(path, EC, sys::fs::F_None);
+  if (EC)
+    ErrorInfo = EC.message();
+#elif LLVM_VERSION_MINOR >= 4
   raw_fd_ostream OS(path, ErrorInfo, sys::fs::F_None);
 #else
   raw_fd_ostream OS(path, ErrorInfo, raw_fd_ostream::F_Binary);

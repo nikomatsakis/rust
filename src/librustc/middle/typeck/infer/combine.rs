@@ -52,7 +52,6 @@ use middle::typeck::infer::type_variable::{RelationDir, EqTo,
 use middle::ty_fold::{TypeFoldable};
 use util::ppaux::Repr;
 
-use std::result;
 
 use syntax::ast::{Onceness, FnStyle};
 use syntax::ast;
@@ -341,8 +340,8 @@ pub fn super_fn_sigs<'tcx, C: Combine<'tcx>>(this: &C,
                                        b_args: &[ty::t])
                                        -> cres<Vec<ty::t>> {
         if a_args.len() == b_args.len() {
-            result::collect(a_args.iter().zip(b_args.iter())
-                            .map(|(a, b)| this.args(*a, *b)))
+            a_args.iter().zip(b_args.iter())
+                  .map(|(a, b)| this.args(*a, *b)).collect()
         } else {
             Err(ty::terr_arg_count)
         }
@@ -364,32 +363,10 @@ pub fn super_fn_sigs<'tcx, C: Combine<'tcx>>(this: &C,
 
 pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C, a: ty::t, b: ty::t) -> cres<ty::t> {
 
-    // This is a horrible hack - historically, [T] was not treated as a type,
-    // so, for example, &T and &[U] should not unify. In fact the only thing
-    // &[U] should unify with is &[T]. We preserve that behaviour with this
-    // check.
-    fn check_ptr_to_unsized<'tcx, C: Combine<'tcx>>(this: &C,
-                                                    a: ty::t,
-                                                    b: ty::t,
-                                                    a_inner: ty::t,
-                                                    b_inner: ty::t,
-                                                    result: ty::t) -> cres<ty::t> {
-        match (&ty::get(a_inner).sty, &ty::get(b_inner).sty) {
-            (&ty::ty_vec(_, None), &ty::ty_vec(_, None)) |
-            (&ty::ty_str, &ty::ty_str) |
-            (&ty::ty_trait(..), &ty::ty_trait(..)) => Ok(result),
-            (&ty::ty_vec(_, None), _) | (_, &ty::ty_vec(_, None)) |
-            (&ty::ty_str, _) | (_, &ty::ty_str) |
-            (&ty::ty_trait(..), _) | (_, &ty::ty_trait(..))
-                => Err(ty::terr_sorts(expected_found(this, a, b))),
-            _ => Ok(result),
-        }
-    }
-
     let tcx = this.infcx().tcx;
     let a_sty = &ty::get(a).sty;
     let b_sty = &ty::get(b).sty;
-    debug!("super_tys: a_sty={:?} b_sty={:?}", a_sty, b_sty);
+    debug!("super_tys: a_sty={} b_sty={}", a_sty, b_sty);
     return match (a_sty, b_sty) {
       // The "subtype" ought to be handling cases involving bot or var:
       (&ty::ty_bot, _) |
@@ -401,6 +378,10 @@ pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C, a: ty::t, b: ty::t) -> cres<t
                     this.tag(),
                     a.repr(this.infcx().tcx),
                     b.repr(this.infcx().tcx)).as_slice());
+      }
+
+      (&ty::ty_err, _) | (_, &ty::ty_err) => {
+          Ok(ty::mk_err())
       }
 
         // Relate integral variables to other types
@@ -443,8 +424,7 @@ pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C, a: ty::t, b: ty::t) -> cres<t
       (&ty::ty_bool, _) |
       (&ty::ty_int(_), _) |
       (&ty::ty_uint(_), _) |
-      (&ty::ty_float(_), _) |
-      (&ty::ty_err, _) => {
+      (&ty::ty_float(_), _) => {
         if ty::get(a).sty == ty::get(b).sty {
             Ok(a)
         } else {
@@ -469,7 +449,7 @@ pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C, a: ty::t, b: ty::t) -> cres<t
       (&ty::ty_trait(ref a_),
        &ty::ty_trait(ref b_))
       if a_.def_id == b_.def_id => {
-          debug!("Trying to match traits {:?} and {:?}", a, b);
+          debug!("Trying to match traits {} and {}", a, b);
           let substs = try!(this.substs(a_.def_id, &a_.substs, &b_.substs));
           let bounds = try!(this.existential_bounds(a_.bounds, b_.bounds));
           Ok(ty::mk_trait(tcx,
@@ -494,18 +474,14 @@ pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C, a: ty::t, b: ty::t) -> cres<t
           Ok(ty::mk_unboxed_closure(tcx, a_id, region))
       }
 
-      (&ty::ty_box(a_inner), &ty::ty_box(b_inner)) => {
-        this.tys(a_inner, b_inner).and_then(|typ| Ok(ty::mk_box(tcx, typ)))
-      }
-
       (&ty::ty_uniq(a_inner), &ty::ty_uniq(b_inner)) => {
-            let typ = try!(this.tys(a_inner, b_inner));
-            check_ptr_to_unsized(this, a, b, a_inner, b_inner, ty::mk_uniq(tcx, typ))
+          let typ = try!(this.tys(a_inner, b_inner));
+          Ok(ty::mk_uniq(tcx, typ))
       }
 
       (&ty::ty_ptr(ref a_mt), &ty::ty_ptr(ref b_mt)) => {
-            let mt = try!(this.mts(a_mt, b_mt));
-            check_ptr_to_unsized(this, a, b, a_mt.ty, b_mt.ty, ty::mk_ptr(tcx, mt))
+          let mt = try!(this.mts(a_mt, b_mt));
+          Ok(ty::mk_ptr(tcx, mt))
       }
 
       (&ty::ty_rptr(a_r, ref a_mt), &ty::ty_rptr(b_r, ref b_mt)) => {
@@ -521,7 +497,7 @@ pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C, a: ty::t, b: ty::t) -> cres<t
                 }
                 _ => try!(this.mts(a_mt, b_mt))
             };
-            check_ptr_to_unsized(this, a, b, a_mt.ty, b_mt.ty, ty::mk_rptr(tcx, r, mt))
+            Ok(ty::mk_rptr(tcx, r, mt))
       }
 
       (&ty::ty_vec(a_t, sz_a), &ty::ty_vec(b_t, sz_b)) => {
@@ -540,9 +516,10 @@ pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C, a: ty::t, b: ty::t) -> cres<t
 
       (&ty::ty_tup(ref as_), &ty::ty_tup(ref bs)) => {
         if as_.len() == bs.len() {
-            result::collect(as_.iter().zip(bs.iter())
-                            .map(|(a, b)| this.tys(*a, *b)))
-                    .and_then(|ts| Ok(ty::mk_tup(tcx, ts)) )
+            as_.iter().zip(bs.iter())
+               .map(|(a, b)| this.tys(*a, *b))
+               .collect::<Result<_, _>>()
+               .map(|ts| ty::mk_tup(tcx, ts))
         } else {
             Err(ty::terr_tuple_size(
                 expected_found(this, as_.len(), bs.len())))

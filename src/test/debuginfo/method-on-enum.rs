@@ -8,7 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// ignore-tidy-linelength
 // ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
 // compile-flags:-g
 
@@ -20,7 +22,7 @@
 // STACK BY REF
 // gdb-command:finish
 // gdb-command:print *self
-// gdb-check:$1 = {{Variant2, [...]}, {Variant2, 117901063}}
+// gdb-check:$1 = {{RUST$ENUM$DISR = Variant2, [...]}, {RUST$ENUM$DISR = Variant2, 117901063}}
 // gdb-command:print arg1
 // gdb-check:$2 = -1
 // gdb-command:print arg2
@@ -30,7 +32,7 @@
 // STACK BY VAL
 // gdb-command:finish
 // gdb-command:print self
-// gdb-check:$4 = {{Variant2, [...]}, {Variant2, 117901063}}
+// gdb-check:$4 = {{RUST$ENUM$DISR = Variant2, [...]}, {RUST$ENUM$DISR = Variant2, 117901063}}
 // gdb-command:print arg1
 // gdb-check:$5 = -3
 // gdb-command:print arg2
@@ -40,7 +42,7 @@
 // OWNED BY REF
 // gdb-command:finish
 // gdb-command:print *self
-// gdb-check:$7 = {{Variant1, x = 1799, y = 1799}, {Variant1, [...]}}
+// gdb-check:$7 = {{RUST$ENUM$DISR = Variant1, x = 1799, y = 1799}, {RUST$ENUM$DISR = Variant1, [...]}}
 // gdb-command:print arg1
 // gdb-check:$8 = -5
 // gdb-command:print arg2
@@ -50,7 +52,7 @@
 // OWNED BY VAL
 // gdb-command:finish
 // gdb-command:print self
-// gdb-check:$10 = {{Variant1, x = 1799, y = 1799}, {Variant1, [...]}}
+// gdb-check:$10 = {{RUST$ENUM$DISR = Variant1, x = 1799, y = 1799}, {RUST$ENUM$DISR = Variant1, [...]}}
 // gdb-command:print arg1
 // gdb-check:$11 = -7
 // gdb-command:print arg2
@@ -60,7 +62,7 @@
 // OWNED MOVED
 // gdb-command:finish
 // gdb-command:print *self
-// gdb-check:$13 = {{Variant1, x = 1799, y = 1799}, {Variant1, [...]}}
+// gdb-check:$13 = {{RUST$ENUM$DISR = Variant1, x = 1799, y = 1799}, {RUST$ENUM$DISR = Variant1, [...]}}
 // gdb-command:print arg1
 // gdb-check:$14 = -9
 // gdb-command:print arg2

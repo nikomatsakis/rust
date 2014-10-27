@@ -84,7 +84,7 @@ impl<'a, T: Ord> Ord for MaybeOwnedVector<'a, T> {
     }
 }
 
-impl<'a, T: PartialEq, V: Slice<T>> Equiv<V> for MaybeOwnedVector<'a, T> {
+impl<'a, T: PartialEq, V: AsSlice<T>> Equiv<V> for MaybeOwnedVector<'a, T> {
     fn equiv(&self, other: &V) -> bool {
         self.as_slice() == other.as_slice()
     }
@@ -99,7 +99,7 @@ impl<'a, T: PartialEq, V: Slice<T>> Equiv<V> for MaybeOwnedVector<'a, T> {
 // In any case, with `Vector` in place, the client can just use
 // `as_slice` if they prefer that over `match`.
 
-impl<'b,T> Slice<T> for MaybeOwnedVector<'b,T> {
+impl<'b,T> AsSlice<T> for MaybeOwnedVector<'b,T> {
     fn as_slice<'a>(&'a self) -> &'a [T] {
         match self {
             &Growable(ref v) => v.as_slice(),
@@ -127,20 +127,12 @@ impl<'a,T:Clone> CloneableVector<T> for MaybeOwnedVector<'a,T> {
     fn to_vec(&self) -> Vec<T> {
         self.as_slice().to_vec()
     }
-
-    /// Convert `self` into an owned slice, not making a copy if possible.
-    fn into_vec(self) -> Vec<T> {
-        match self {
-            Growable(v) => v.as_slice().to_vec(),
-            Borrowed(v) => v.to_vec(),
-        }
-    }
 }
 
 impl<'a, T: Clone> Clone for MaybeOwnedVector<'a, T> {
     fn clone(&self) -> MaybeOwnedVector<'a, T> {
         match *self {
-            Growable(ref v) => Growable(v.to_vec()),
+            Growable(ref v) => Growable(v.clone()),
             Borrowed(v) => Borrowed(v)
         }
     }

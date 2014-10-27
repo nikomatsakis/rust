@@ -35,26 +35,29 @@ use rt::rtio;
 ///
 /// ```rust,no_run
 /// # #![allow(unused_must_use)]
+/// #![feature(slicing_syntax)]
+///
 /// use std::io::net::udp::UdpSocket;
 /// use std::io::net::ip::{Ipv4Addr, SocketAddr};
+/// fn main() {
+///     let addr = SocketAddr { ip: Ipv4Addr(127, 0, 0, 1), port: 34254 };
+///     let mut socket = match UdpSocket::bind(addr) {
+///         Ok(s) => s,
+///         Err(e) => fail!("couldn't bind socket: {}", e),
+///     };
 ///
-/// let addr = SocketAddr { ip: Ipv4Addr(127, 0, 0, 1), port: 34254 };
-/// let mut socket = match UdpSocket::bind(addr) {
-///     Ok(s) => s,
-///     Err(e) => fail!("couldn't bind socket: {}", e),
-/// };
-///
-/// let mut buf = [0, ..10];
-/// match socket.recv_from(buf) {
-///     Ok((amt, src)) => {
-///         // Send a reply to the socket we received data from
-///         let buf = buf.slice_to_mut(amt);
-///         buf.reverse();
-///         socket.send_to(buf, src);
+///     let mut buf = [0, ..10];
+///     match socket.recv_from(buf) {
+///         Ok((amt, src)) => {
+///             // Send a reply to the socket we received data from
+///             let buf = buf[mut ..amt];
+///             buf.reverse();
+///             socket.send_to(buf, src);
+///         }
+///         Err(e) => println!("couldn't receive a datagram: {}", e)
 ///     }
-///     Err(e) => println!("couldn't receive a datagram: {}", e)
+///     drop(socket); // close the socket
 /// }
-/// drop(socket); // close the socket
 /// ```
 pub struct UdpSocket {
     obj: Box<RtioUdpSocket + Send>,
@@ -82,13 +85,6 @@ impl UdpSocket {
         }
     }
 
-    #[allow(missing_doc)]
-    #[deprecated = "renamed to `recv_from`"]
-    pub fn recvfrom(&mut self, buf: &mut [u8])
-                    -> IoResult<(uint, SocketAddr)> {
-        self.recv_from(buf)
-    }
-
     /// Sends data on the socket to the given address. Returns nothing on
     /// success.
     pub fn send_to(&mut self, buf: &[u8], dst: SocketAddr) -> IoResult<()> {
@@ -98,18 +94,14 @@ impl UdpSocket {
         }).map_err(IoError::from_rtio_error)
     }
 
-    #[allow(missing_doc)]
-    #[deprecated = "renamed to `send_to`"]
-    pub fn sendto(&mut self, buf: &[u8], dst: SocketAddr) -> IoResult<()> {
-        self.send_to(buf, dst)
-    }
-
     /// Creates a `UdpStream`, which allows use of the `Reader` and `Writer`
     /// traits to receive and send data from the same address. This transfers
     /// ownership of the socket to the stream.
     ///
     /// Note that this call does not perform any actual network communication,
     /// because UDP is a datagram protocol.
+    #[deprecated = "`UdpStream` has been deprecated"]
+    #[allow(deprecated)]
     pub fn connect(self, other: SocketAddr) -> UdpStream {
         UdpStream {
             socket: self,
@@ -173,12 +165,6 @@ impl UdpSocket {
         }.map_err(IoError::from_rtio_error)
     }
 
-    /// Sets the broadcast flag on or off
-    #[deprecated="renamed to `set_broadcast`"]
-    pub fn set_broadast(&mut self, broadcast: bool) -> IoResult<()> {
-        self.set_broadcast(broadcast)
-    }
-
     /// Sets the read/write timeout for this socket.
     ///
     /// For more information, see `TcpStream::set_timeout`
@@ -221,6 +207,14 @@ impl Clone for UdpSocket {
 
 /// A type that allows convenient usage of a UDP stream connected to one
 /// address via the `Reader` and `Writer` traits.
+///
+/// # Note
+///
+/// This structure has been deprecated because `Reader` is a stream-oriented API but UDP
+/// is a packet-oriented protocol. Every `Reader` method will read a whole packet and
+/// throw all superfluous bytes away so that they are no longer available for further
+/// method calls.
+#[deprecated]
 pub struct UdpStream {
     socket: UdpSocket,
     connected_to: SocketAddr
@@ -241,13 +235,15 @@ impl UdpStream {
 }
 
 impl Reader for UdpStream {
+    /// Returns the next non-empty message from the specified address.
     fn read(&mut self, buf: &mut [u8]) -> IoResult<uint> {
         let peer = self.connected_to;
         self.as_socket(|sock| {
-            match sock.recv_from(buf) {
-                Ok((_nread, src)) if src != peer => Ok(0),
-                Ok((nread, _src)) => Ok(nread),
-                Err(e) => Err(e),
+            loop {
+                let (nread, src) = try!(sock.recv_from(buf));
+                if nread > 0 && src == peer {
+                    return Ok(nread);
+                }
             }
         })
     }
@@ -264,18 +260,24 @@ impl Writer for UdpStream {
 #[allow(experimental)]
 mod test {
     use super::*;
-    use io::net::ip::{SocketAddr};
+    use prelude::*;
+    use io::*;
+    use io::net::ip::*;
+    use io::test::*;
 
     // FIXME #11530 this fails on android because tests are run as root
-    iotest!(fn bind_error() {
+    #[cfg_attr(any(windows, target_os = "android"), ignore)]
+    #[test]
+    fn bind_error() {
         let addr = SocketAddr { ip: Ipv4Addr(0, 0, 0, 0), port: 1 };
         match UdpSocket::bind(addr) {
             Ok(..) => fail!(),
             Err(e) => assert_eq!(e.kind, PermissionDenied),
         }
-    } #[cfg_attr(any(windows, target_os = "android"), ignore)])
+    }
 
-    iotest!(fn socket_smoke_test_ip4() {
+    #[test]
+    fn socket_smoke_test_ip4() {
         let server_ip = next_test_ip4();
         let client_ip = next_test_ip4();
         let (tx1, rx1) = channel();
@@ -308,9 +310,10 @@ mod test {
             Err(..) => fail!()
         }
         rx2.recv();
-    })
+    }
 
-    iotest!(fn socket_smoke_test_ip6() {
+    #[test]
+    fn socket_smoke_test_ip6() {
         let server_ip = next_test_ip6();
         let client_ip = next_test_ip6();
         let (tx, rx) = channel::<()>();
@@ -340,24 +343,31 @@ mod test {
             }
             Err(..) => fail!()
         }
-    })
+    }
 
-    iotest!(fn stream_smoke_test_ip4() {
+    #[test]
+    #[allow(deprecated)]
+    fn stream_smoke_test_ip4() {
         let server_ip = next_test_ip4();
         let client_ip = next_test_ip4();
+        let dummy_ip = next_test_ip4();
         let (tx1, rx1) = channel();
         let (tx2, rx2) = channel();
 
         spawn(proc() {
-            match UdpSocket::bind(client_ip) {
-                Ok(client) => {
-                    let client = box client;
-                    let mut stream = client.connect(server_ip);
-                    rx1.recv();
-                    stream.write([99]).unwrap();
+            let send_as = |ip, val: &[u8]| {
+                match UdpSocket::bind(ip) {
+                    Ok(client) => {
+                        let client = box client;
+                        let mut stream = client.connect(server_ip);
+                        stream.write(val).unwrap();
+                    }
+                    Err(..) => fail!()
                 }
-                Err(..) => fail!()
-            }
+            };
+            rx1.recv();
+            send_as(dummy_ip, [98]);
+            send_as(client_ip, [99]);
             tx2.send(());
         });
 
@@ -372,15 +382,17 @@ mod test {
                         assert_eq!(nread, 1);
                         assert_eq!(buf[0], 99);
                     }
-                    Err(..) => fail!()
+                    Err(..) => fail!(),
                 }
             }
             Err(..) => fail!()
         }
         rx2.recv();
-    })
+    }
 
-    iotest!(fn stream_smoke_test_ip6() {
+    #[test]
+    #[allow(deprecated)]
+    fn stream_smoke_test_ip6() {
         let server_ip = next_test_ip6();
         let client_ip = next_test_ip6();
         let (tx1, rx1) = channel();
@@ -416,7 +428,7 @@ mod test {
             Err(..) => fail!()
         }
         rx2.recv();
-    })
+    }
 
     pub fn socket_name(addr: SocketAddr) {
         let server = UdpSocket::bind(addr);
@@ -431,15 +443,18 @@ mod test {
         assert_eq!(addr, so_name.unwrap());
     }
 
-    iotest!(fn socket_name_ip4() {
+    #[test]
+    fn socket_name_ip4() {
         socket_name(next_test_ip4());
-    })
+    }
 
-    iotest!(fn socket_name_ip6() {
+    #[test]
+    fn socket_name_ip6() {
         socket_name(next_test_ip6());
-    })
+    }
 
-    iotest!(fn udp_clone_smoke() {
+    #[test]
+    fn udp_clone_smoke() {
         let addr1 = next_test_ip4();
         let addr2 = next_test_ip4();
         let mut sock1 = UdpSocket::bind(addr1).unwrap();
@@ -467,9 +482,10 @@ mod test {
         let mut buf = [0, 0];
         assert_eq!(sock1.recv_from(buf), Ok((1, addr2)));
         rx2.recv();
-    })
+    }
 
-    iotest!(fn udp_clone_two_read() {
+    #[test]
+    fn udp_clone_two_read() {
         let addr1 = next_test_ip4();
         let addr2 = next_test_ip4();
         let mut sock1 = UdpSocket::bind(addr1).unwrap();
@@ -500,9 +516,10 @@ mod test {
         tx1.send(());
 
         rx.recv();
-    })
+    }
 
-    iotest!(fn udp_clone_two_write() {
+    #[test]
+    fn udp_clone_two_write() {
         let addr1 = next_test_ip4();
         let addr2 = next_test_ip4();
         let mut sock1 = UdpSocket::bind(addr1).unwrap();
@@ -543,10 +560,11 @@ mod test {
 
         rx.recv();
         serv_rx.recv();
-    })
+    }
 
     #[cfg(not(windows))] // FIXME #17553
-    iotest!(fn recv_from_timeout() {
+    #[test]
+    fn recv_from_timeout() {
         let addr1 = next_test_ip4();
         let addr2 = next_test_ip4();
         let mut a = UdpSocket::bind(addr1).unwrap();
@@ -580,9 +598,10 @@ mod test {
 
         // Make sure the child didn't die
         rx2.recv();
-    })
+    }
 
-    iotest!(fn send_to_timeout() {
+    #[test]
+    fn send_to_timeout() {
         let addr1 = next_test_ip4();
         let addr2 = next_test_ip4();
         let mut a = UdpSocket::bind(addr1).unwrap();
@@ -596,5 +615,5 @@ mod test {
                 Err(e) => fail!("other error: {}", e),
             }
         }
-    })
+    }
 }

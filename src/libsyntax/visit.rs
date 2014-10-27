@@ -211,7 +211,8 @@ pub fn walk_trait_ref_helper<'v,V>(visitor: &mut V, trait_ref: &'v TraitRef)
 pub fn walk_item<'v, V: Visitor<'v>>(visitor: &mut V, item: &'v Item) {
     visitor.visit_ident(item.span, item.ident);
     match item.node {
-        ItemStatic(ref typ, _, ref expr) => {
+        ItemStatic(ref typ, _, ref expr) |
+        ItemConst(ref typ, ref expr) => {
             visitor.visit_ty(&**typ);
             visitor.visit_expr(&**expr);
         }
@@ -326,7 +327,7 @@ pub fn skip_ty<'v, V: Visitor<'v>>(_: &mut V, _: &'v Ty) {
 
 pub fn walk_ty<'v, V: Visitor<'v>>(visitor: &mut V, typ: &'v Ty) {
     match typ.node {
-        TyUniq(ref ty) | TyVec(ref ty) | TyBox(ref ty) | TyParen(ref ty) => {
+        TyUniq(ref ty) | TyVec(ref ty) | TyParen(ref ty) => {
             visitor.visit_ty(&**ty)
         }
         TyPtr(ref mutable_type) => {
@@ -428,7 +429,7 @@ pub fn walk_pat<'v, V: Visitor<'v>>(visitor: &mut V, pattern: &'v Pat) {
         PatStruct(ref path, ref fields, _) => {
             visitor.visit_path(path, pattern.id);
             for field in fields.iter() {
-                visitor.visit_pat(&*field.pat)
+                visitor.visit_pat(&*field.node.pat)
             }
         }
         PatTup(ref tuple_elements) => {
@@ -602,10 +603,6 @@ pub fn walk_trait_item<'v, V: Visitor<'v>>(visitor: &mut V, trait_method: &'v Tr
 
 pub fn walk_struct_def<'v, V: Visitor<'v>>(visitor: &mut V,
                                            struct_definition: &'v StructDef) {
-    match struct_definition.super_struct {
-        Some(ref t) => visitor.visit_ty(&**t),
-        None => {},
-    }
     for field in struct_definition.fields.iter() {
         visitor.visit_struct_field(field)
     }
@@ -735,6 +732,11 @@ pub fn walk_expr<'v, V: Visitor<'v>>(visitor: &mut V, expression: &'v Expr) {
             visitor.visit_expr(&**subexpression);
             visitor.visit_block(&**if_block);
             walk_expr_opt(visitor, optional_else);
+        }
+        ExprWhileLet(ref pattern, ref subexpression, ref block, _) => {
+            visitor.visit_pat(&**pattern);
+            visitor.visit_expr(&**subexpression);
+            visitor.visit_block(&**block);
         }
         ExprForLoop(ref pattern, ref subexpression, ref block, _) => {
             visitor.visit_pat(&**pattern);

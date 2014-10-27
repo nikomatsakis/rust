@@ -447,10 +447,12 @@ impl<'a> TraitDef<'a> {
         attr::mark_used(&attr);
         let opt_trait_ref = Some(trait_ref);
         let ident = ast_util::impl_pretty_name(&opt_trait_ref, &*self_type);
+        let mut a = vec![attr];
+        a.extend(self.attributes.iter().map(|a| a.clone()));
         cx.item(
             self.span,
             ident,
-            (vec!(attr)).append(self.attributes.as_slice()),
+            a,
             ast::ItemImpl(trait_generics,
                           opt_trait_ref,
                           self_type,
@@ -943,8 +945,8 @@ impl<'a> MethodDef<'a> {
                         // of them (using `field_index` tracked above).
                         // That is the heart of the transposition.
                         let others = self_pats_idents.iter().map(|fields| {
-                            let &(_, _opt_ident, ref other_getter_expr) =
-                                fields.get(field_index);
+                            let (_, _opt_ident, ref other_getter_expr) =
+                                fields[field_index];
 
                             // All Self args have same variant, so
                             // opt_idents are the same.  (Assert
@@ -1246,7 +1248,10 @@ impl<'a> TraitDef<'a> {
         let pattern = if struct_type == Record {
             let field_pats = subpats.into_iter().zip(ident_expr.iter()).map(|(pat, &(_, id, _))| {
                 // id is guaranteed to be Some
-                ast::FieldPat { ident: id.unwrap(), pat: pat }
+                codemap::Spanned {
+                    span: pat.span,
+                    node: ast::FieldPat { ident: id.unwrap(), pat: pat, is_shorthand: true },
+                }
             }).collect();
             cx.pat_struct(self.span, matching_path, field_pats)
         } else {

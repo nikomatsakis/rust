@@ -81,6 +81,7 @@ pub fn get_simple_intrinsic(ccx: &CrateContext, item: &ast::ForeignItem) -> Opti
         "bswap16" => "llvm.bswap.i16",
         "bswap32" => "llvm.bswap.i32",
         "bswap64" => "llvm.bswap.i64",
+        "assume" => "llvm.assume",
         _ => return None
     };
     Some(ccx.get_intrinsic(&name))
@@ -122,7 +123,7 @@ pub fn check_intrinsics(ccx: &CrateContext) {
         if ty::type_is_fat_ptr(ccx.tcx(), transmute_restriction.to) ||
            ty::type_is_fat_ptr(ccx.tcx(), transmute_restriction.from) {
             ccx.sess()
-               .add_lint(::lint::builtin::TRANSMUTE_FAT_PTR,
+               .add_lint(::lint::builtin::FAT_PTR_TRANSMUTES,
                          transmute_restriction.id,
                          transmute_restriction.span,
                          format!("Transmuting fat pointer types; {} to {}.\
@@ -228,6 +229,10 @@ pub fn trans_intrinsic_call<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>, node: ast::N
             Unreachable(bcx);
             v
         }
+        (_, "unreachable") => {
+            Unreachable(bcx);
+            C_nil(ccx)
+        }
         (_, "breakpoint") => {
             let llfn = ccx.get_intrinsic(&("llvm.debugtrap"));
             Call(bcx, llfn, [], None)
@@ -235,16 +240,16 @@ pub fn trans_intrinsic_call<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>, node: ast::N
         (_, "size_of") => {
             let tp_ty = *substs.types.get(FnSpace, 0);
             let lltp_ty = type_of::type_of(ccx, tp_ty);
-            C_uint(ccx, machine::llsize_of_real(ccx, lltp_ty) as uint)
+            C_uint(ccx, machine::llsize_of_real(ccx, lltp_ty))
         }
         (_, "min_align_of") => {
             let tp_ty = *substs.types.get(FnSpace, 0);
-            C_uint(ccx, type_of::align_of(ccx, tp_ty) as uint)
+            C_uint(ccx, type_of::align_of(ccx, tp_ty))
         }
         (_, "pref_align_of") => {
             let tp_ty = *substs.types.get(FnSpace, 0);
             let lltp_ty = type_of::type_of(ccx, tp_ty);
-            C_uint(ccx, machine::llalign_of_pref(ccx, lltp_ty) as uint)
+            C_uint(ccx, machine::llalign_of_pref(ccx, lltp_ty))
         }
         (_, "move_val_init") => {
             // Create a datum reflecting the value being moved.
@@ -255,17 +260,16 @@ pub fn trans_intrinsic_call<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>, node: ast::N
             let tp_ty = *substs.types.get(FnSpace, 0);
             let mode = appropriate_rvalue_mode(ccx, tp_ty);
             let src = Datum {
-                val: *llargs.get(1),
+                val: llargs[1],
                 ty: tp_ty,
                 kind: Rvalue::new(mode)
             };
-            bcx = src.store_to(bcx, *llargs.get(0));
+            bcx = src.store_to(bcx, llargs[0]);
             C_nil(ccx)
         }
         (_, "get_tydesc") => {
             let tp_ty = *substs.types.get(FnSpace, 0);
             let static_ti = get_tydesc(ccx, tp_ty);
-            glue::lazily_emit_visit_glue(ccx, &*static_ti);
 
             // FIXME (#3730): ideally this shouldn't need a cast,
             // but there's a circularity between translating rust types to llvm
@@ -303,138 +307,131 @@ pub fn trans_intrinsic_call<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>, node: ast::N
             let tp_ty = *substs.types.get(FnSpace, 0);
             C_bool(ccx, ty::type_contents(ccx.tcx(), tp_ty).owns_managed())
         }
-        (_, "visit_tydesc") => {
-            let td = *llargs.get(0);
-            let visitor = *llargs.get(1);
-            let td = PointerCast(bcx, td, ccx.tydesc_type().ptr_to());
-            glue::call_visit_glue(bcx, visitor, td);
-            C_nil(ccx)
-        }
         (_, "offset") => {
-            let ptr = *llargs.get(0);
-            let offset = *llargs.get(1);
+            let ptr = llargs[0];
+            let offset = llargs[1];
             InBoundsGEP(bcx, ptr, [offset])
         }
 
         (_, "copy_nonoverlapping_memory") => {
             copy_intrinsic(bcx, false, false, *substs.types.get(FnSpace, 0),
-                           *llargs.get(0), *llargs.get(1), *llargs.get(2))
+                           llargs[0], llargs[1], llargs[2])
         }
         (_, "copy_memory") => {
             copy_intrinsic(bcx, true, false, *substs.types.get(FnSpace, 0),
-                           *llargs.get(0), *llargs.get(1), *llargs.get(2))
+                           llargs[0], llargs[1], llargs[2])
         }
         (_, "set_memory") => {
             memset_intrinsic(bcx, false, *substs.types.get(FnSpace, 0),
-                             *llargs.get(0), *llargs.get(1), *llargs.get(2))
+                             llargs[0], llargs[1], llargs[2])
         }
 
         (_, "volatile_copy_nonoverlapping_memory") => {
             copy_intrinsic(bcx, false, true, *substs.types.get(FnSpace, 0),
-                           *llargs.get(0), *llargs.get(1), *llargs.get(2))
+                           llargs[0], llargs[1], llargs[2])
         }
         (_, "volatile_copy_memory") => {
             copy_intrinsic(bcx, true, true, *substs.types.get(FnSpace, 0),
-                           *llargs.get(0), *llargs.get(1), *llargs.get(2))
+                           llargs[0], llargs[1], llargs[2])
         }
         (_, "volatile_set_memory") => {
             memset_intrinsic(bcx, true, *substs.types.get(FnSpace, 0),
-                             *llargs.get(0), *llargs.get(1), *llargs.get(2))
+                             llargs[0], llargs[1], llargs[2])
         }
         (_, "volatile_load") => {
-            VolatileLoad(bcx, *llargs.get(0))
+            VolatileLoad(bcx, llargs[0])
         },
         (_, "volatile_store") => {
-            VolatileStore(bcx, *llargs.get(1), *llargs.get(0));
+            VolatileStore(bcx, llargs[1], llargs[0]);
             C_nil(ccx)
         },
 
-        (_, "ctlz8") => count_zeros_intrinsic(bcx, "llvm.ctlz.i8", *llargs.get(0)),
-        (_, "ctlz16") => count_zeros_intrinsic(bcx, "llvm.ctlz.i16", *llargs.get(0)),
-        (_, "ctlz32") => count_zeros_intrinsic(bcx, "llvm.ctlz.i32", *llargs.get(0)),
-        (_, "ctlz64") => count_zeros_intrinsic(bcx, "llvm.ctlz.i64", *llargs.get(0)),
-        (_, "cttz8") => count_zeros_intrinsic(bcx, "llvm.cttz.i8", *llargs.get(0)),
-        (_, "cttz16") => count_zeros_intrinsic(bcx, "llvm.cttz.i16", *llargs.get(0)),
-        (_, "cttz32") => count_zeros_intrinsic(bcx, "llvm.cttz.i32", *llargs.get(0)),
-        (_, "cttz64") => count_zeros_intrinsic(bcx, "llvm.cttz.i64", *llargs.get(0)),
+        (_, "ctlz8") => count_zeros_intrinsic(bcx, "llvm.ctlz.i8", llargs[0]),
+        (_, "ctlz16") => count_zeros_intrinsic(bcx, "llvm.ctlz.i16", llargs[0]),
+        (_, "ctlz32") => count_zeros_intrinsic(bcx, "llvm.ctlz.i32", llargs[0]),
+        (_, "ctlz64") => count_zeros_intrinsic(bcx, "llvm.ctlz.i64", llargs[0]),
+        (_, "cttz8") => count_zeros_intrinsic(bcx, "llvm.cttz.i8", llargs[0]),
+        (_, "cttz16") => count_zeros_intrinsic(bcx, "llvm.cttz.i16", llargs[0]),
+        (_, "cttz32") => count_zeros_intrinsic(bcx, "llvm.cttz.i32", llargs[0]),
+        (_, "cttz64") => count_zeros_intrinsic(bcx, "llvm.cttz.i64", llargs[0]),
 
         (_, "i8_add_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.sadd.with.overflow.i8", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
         (_, "i16_add_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.sadd.with.overflow.i16", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
         (_, "i32_add_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.sadd.with.overflow.i32", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
         (_, "i64_add_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.sadd.with.overflow.i64", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
 
         (_, "u8_add_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.uadd.with.overflow.i8", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
         (_, "u16_add_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.uadd.with.overflow.i16", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
         (_, "u32_add_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.uadd.with.overflow.i32", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
         (_, "u64_add_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.uadd.with.overflow.i64", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
 
         (_, "i8_sub_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.ssub.with.overflow.i8", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
         (_, "i16_sub_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.ssub.with.overflow.i16", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
         (_, "i32_sub_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.ssub.with.overflow.i32", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
         (_, "i64_sub_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.ssub.with.overflow.i64", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
 
         (_, "u8_sub_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.usub.with.overflow.i8", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
         (_, "u16_sub_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.usub.with.overflow.i16", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
         (_, "u32_sub_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.usub.with.overflow.i32", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
         (_, "u64_sub_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.usub.with.overflow.i64", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
 
         (_, "i8_mul_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.smul.with.overflow.i8", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
         (_, "i16_mul_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.smul.with.overflow.i16", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
         (_, "i32_mul_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.smul.with.overflow.i32", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
         (_, "i64_mul_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.smul.with.overflow.i64", ret_ty,
-                                   *llargs.get(0), *llargs.get(1)),
+                                   llargs[0], llargs[1]),
 
         (_, "u8_mul_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.umul.with.overflow.i8", ret_ty,
-                                    *llargs.get(0), *llargs.get(1)),
+                                    llargs[0], llargs[1]),
         (_, "u16_mul_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.umul.with.overflow.i16", ret_ty,
-                                    *llargs.get(0), *llargs.get(1)),
+                                    llargs[0], llargs[1]),
         (_, "u32_mul_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.umul.with.overflow.i32", ret_ty,
-                                    *llargs.get(0), *llargs.get(1)),
+                                    llargs[0], llargs[1]),
         (_, "u64_mul_with_overflow") =>
             with_overflow_intrinsic(bcx, "llvm.umul.with.overflow.i64", ret_ty,
-                                    *llargs.get(0), *llargs.get(1)),
+                                    llargs[0], llargs[1]),
 
         (_, "return_address") => {
             if !fcx.caller_expects_out_pointer {
@@ -456,7 +453,7 @@ pub fn trans_intrinsic_call<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>, node: ast::N
             let order = if split.len() == 2 {
                 llvm::SequentiallyConsistent
             } else {
-                match *split.get(2) {
+                match split[2] {
                     "relaxed" => llvm::Monotonic,
                     "acq"     => llvm::Acquire,
                     "rel"     => llvm::Release,
@@ -465,7 +462,7 @@ pub fn trans_intrinsic_call<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>, node: ast::N
                 }
             };
 
-            match *split.get(1) {
+            match split[1] {
                 "cxchg" => {
                     // See include/llvm/IR/Instructions.h for their implementation
                     // of this, I assume that it's good enough for us to use for
@@ -484,8 +481,8 @@ pub fn trans_intrinsic_call<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>, node: ast::N
                             llvm::SequentiallyConsistent
                     };
 
-                    let res = AtomicCmpXchg(bcx, *llargs.get(0), *llargs.get(1),
-                                            *llargs.get(2), order,
+                    let res = AtomicCmpXchg(bcx, llargs[0], llargs[1],
+                                            llargs[2], order,
                                             strongest_failure_ordering);
                     if unsafe { llvm::LLVMVersionMinor() >= 5 } {
                         ExtractValue(bcx, res, 0)
@@ -495,10 +492,10 @@ pub fn trans_intrinsic_call<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>, node: ast::N
                 }
 
                 "load" => {
-                    AtomicLoad(bcx, *llargs.get(0), order)
+                    AtomicLoad(bcx, llargs[0], order)
                 }
                 "store" => {
-                    AtomicStore(bcx, *llargs.get(1), *llargs.get(0), order);
+                    AtomicStore(bcx, llargs[1], llargs[0], order);
                     C_nil(ccx)
                 }
 
@@ -524,7 +521,7 @@ pub fn trans_intrinsic_call<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>, node: ast::N
                         _ => ccx.sess().fatal("unknown atomic operation")
                     };
 
-                    AtomicRMW(bcx, atom_op, *llargs.get(0), *llargs.get(1), order)
+                    AtomicRMW(bcx, atom_op, llargs[0], llargs[1], order)
                 }
             }
 

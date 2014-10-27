@@ -70,9 +70,9 @@ use rustrt::thread::Thread;
 
 use mpsc_intrusive as q;
 
-pub static LOCKED: uint = 1 << 0;
-pub static GREEN_BLOCKED: uint = 1 << 1;
-pub static NATIVE_BLOCKED: uint = 1 << 2;
+pub const LOCKED: uint = 1 << 0;
+pub const GREEN_BLOCKED: uint = 1 << 1;
+pub const NATIVE_BLOCKED: uint = 1 << 2;
 
 /// A mutual exclusion primitive useful for protecting shared data
 ///
@@ -127,9 +127,9 @@ enum Flavor {
 /// ```rust
 /// use sync::mutex::{StaticMutex, MUTEX_INIT};
 ///
-/// static mut LOCK: StaticMutex = MUTEX_INIT;
+/// static LOCK: StaticMutex = MUTEX_INIT;
 ///
-/// unsafe {
+/// {
 ///     let _g = LOCK.lock();
 ///     // do some productive work
 /// }
@@ -163,7 +163,7 @@ pub struct Guard<'a> {
 
 /// Static initialization of a mutex. This constant can be used to initialize
 /// other mutex constants.
-pub static MUTEX_INIT: StaticMutex = StaticMutex {
+pub const MUTEX_INIT: StaticMutex = StaticMutex {
     lock: mutex::NATIVE_MUTEX_INIT,
     state: atomic::INIT_ATOMIC_UINT,
     flavor: UnsafeCell { value: Unlocked },
@@ -525,7 +525,6 @@ impl Drop for Mutex {
 mod test {
     use std::prelude::*;
     use super::{Mutex, StaticMutex, MUTEX_INIT};
-    use native;
 
     #[test]
     fn smoke() {
@@ -536,45 +535,45 @@ mod test {
 
     #[test]
     fn smoke_static() {
-        static mut m: StaticMutex = MUTEX_INIT;
+        static M: StaticMutex = MUTEX_INIT;
         unsafe {
-            drop(m.lock());
-            drop(m.lock());
-            m.destroy();
+            drop(M.lock());
+            drop(M.lock());
+            M.destroy();
         }
     }
 
     #[test]
     fn lots_and_lots() {
-        static mut m: StaticMutex = MUTEX_INIT;
+        static M: StaticMutex = MUTEX_INIT;
         static mut CNT: uint = 0;
-        static M: uint = 1000;
-        static N: uint = 3;
+        static J: uint = 1000;
+        static K: uint = 3;
 
         fn inc() {
-            for _ in range(0, M) {
+            for _ in range(0, J) {
                 unsafe {
-                    let _g = m.lock();
+                    let _g = M.lock();
                     CNT += 1;
                 }
             }
         }
 
         let (tx, rx) = channel();
-        for _ in range(0, N) {
+        for _ in range(0, K) {
             let tx2 = tx.clone();
-            native::task::spawn(proc() { inc(); tx2.send(()); });
+            spawn(proc() { inc(); tx2.send(()); });
             let tx2 = tx.clone();
             spawn(proc() { inc(); tx2.send(()); });
         }
 
         drop(tx);
-        for _ in range(0, 2 * N) {
+        for _ in range(0, 2 * K) {
             rx.recv();
         }
-        assert_eq!(unsafe {CNT}, M * N * 2);
+        assert_eq!(unsafe {CNT}, J * K * 2);
         unsafe {
-            m.destroy();
+            M.destroy();
         }
     }
 

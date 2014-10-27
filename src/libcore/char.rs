@@ -63,7 +63,7 @@ static MAX_THREE_B: u32 =  0x10000u32;
 */
 
 /// The highest valid code point
-pub static MAX: char = '\U0010ffff';
+pub const MAX: char = '\U0010ffff';
 
 /// Converts from `u32` to a `char`
 #[inline]
@@ -147,7 +147,7 @@ pub fn to_digit(c: char, radix: uint) -> Option<uint> {
 #[inline]
 pub fn from_digit(num: uint, radix: uint) -> Option<char> {
     if radix > 36 {
-        fail!("from_digit: radix is to high (maximum 36)");
+        fail!("from_digit: radix is too high (maximum 36)");
     }
     if num < radix {
         unsafe {

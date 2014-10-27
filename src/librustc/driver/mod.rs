@@ -29,16 +29,13 @@ use syntax::diagnostics;
 
 use getopts;
 
-
 pub mod driver;
 pub mod session;
 pub mod config;
 pub mod pretty;
 
-
-pub fn main_args(args: &[String]) -> int {
-    let owned_args = args.to_vec();
-    monitor(proc() run_compiler(owned_args.as_slice()));
+pub fn run(args: Vec<String>) -> int {
+    monitor(proc() run_compiler(args.as_slice()));
     0
 }
 
@@ -46,7 +43,7 @@ static BUG_REPORT_URL: &'static str =
     "http://doc.rust-lang.org/complement-bugreport.html";
 
 fn run_compiler(args: &[String]) {
-    let matches = match handle_options(Vec::from_slice(args)) {
+    let matches = match handle_options(args.to_vec()) {
         Some(matches) => matches,
         None => return
     };
@@ -79,7 +76,7 @@ fn run_compiler(args: &[String]) {
             early_error("no input filename given");
         }
         1u => {
-            let ifile = matches.free.get(0).as_slice();
+            let ifile = matches.free[0].as_slice();
             if ifile == "-" {
                 let contents = io::stdin().read_to_end().unwrap();
                 let src = String::from_utf8(contents).unwrap();
@@ -128,6 +125,21 @@ fn run_compiler(args: &[String]) {
     driver::compile_input(sess, cfg, &input, &odir, &ofile, None);
 }
 
+/// Returns a version string such as "0.12.0-dev".
+pub fn release_str() -> Option<&'static str> {
+    option_env!("CFG_RELEASE")
+}
+
+/// Returns the full SHA1 hash of HEAD of the Git repo from which rustc was built.
+pub fn commit_hash_str() -> Option<&'static str> {
+    option_env!("CFG_VER_HASH")
+}
+
+/// Returns the "commit date" of HEAD of the Git repo from which rustc was built as a static string.
+pub fn commit_date_str() -> Option<&'static str> {
+    option_env!("CFG_VER_DATE")
+}
+
 /// Prints version information and returns None on success or an error
 /// message on failure.
 pub fn version(binary: &str, matches: &getopts::Matches) -> Option<String> {
@@ -137,13 +149,14 @@ pub fn version(binary: &str, matches: &getopts::Matches) -> Option<String> {
         Some(s) => return Some(format!("Unrecognized argument: {}", s))
     };
 
-    println!("{} {}", binary, env!("CFG_VERSION"));
+    println!("{} {}", binary, option_env!("CFG_VERSION").unwrap_or("unknown version"));
     if verbose {
+        fn unw(x: Option<&str>) -> &str { x.unwrap_or("unknown") }
         println!("binary: {}", binary);
-        println!("commit-hash: {}", option_env!("CFG_VER_HASH").unwrap_or("unknown"));
-        println!("commit-date: {}", option_env!("CFG_VER_DATE").unwrap_or("unknown"));
+        println!("commit-hash: {}", unw(commit_hash_str()));
+        println!("commit-date: {}", unw(commit_date_str()));
         println!("host: {}", driver::host_triple());
-        println!("release: {}", env!("CFG_RELEASE"));
+        println!("release: {}", unw(release_str()));
     }
     None
 }
@@ -203,7 +216,9 @@ Available lint options:
         .map(|&s| s.name.width(true))
         .max().unwrap_or(0);
     let padded = |x: &str| {
-        " ".repeat(max_name_len - x.char_len()).append(x)
+        let mut s = " ".repeat(max_name_len - x.char_len());
+        s.push_str(x);
+        s
     };
 
     println!("Lint checks provided by rustc:\n");
@@ -227,7 +242,9 @@ Available lint options:
         .map(|&(s, _)| s.width(true))
         .max().unwrap_or(0);
     let padded = |x: &str| {
-        " ".repeat(max_name_len - x.char_len()).append(x)
+        let mut s = " ".repeat(max_name_len - x.char_len());
+        s.push_str(x);
+        s
     };
 
     println!("Lint groups provided by rustc:\n");
@@ -300,7 +317,7 @@ fn describe_codegen_flags() {
 /// returns None.
 pub fn handle_options(mut args: Vec<String>) -> Option<getopts::Matches> {
     // Throw away the first argument, the name of the binary
-    let _binary = args.shift().unwrap();
+    let _binary = args.remove(0).unwrap();
 
     if args.is_empty() {
         usage();

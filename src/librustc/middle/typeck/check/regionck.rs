@@ -140,7 +140,9 @@ use syntax::codemap::Span;
 use syntax::visit;
 use syntax::visit::Visitor;
 
-use std::cell::RefCell;
+use std::cell::{RefCell};
+use std::collections::HashMap;
+use std::collections::hashmap::{Vacant, Occupied};
 
 ///////////////////////////////////////////////////////////////////////////
 // PUBLIC ENTRY POINTS
@@ -211,6 +213,19 @@ macro_rules! ignore_err(
     )
 )
 
+// Stores parameters for a potential call to link_region()
+// to perform if an upvar reference is marked unique/mutable after
+// it has already been processed before.
+struct MaybeLink {
+    span: Span,
+    borrow_region: ty::Region,
+    borrow_kind: ty::BorrowKind,
+    borrow_cmt: mc::cmt
+}
+
+// A map associating an upvar ID to a vector of the above
+type MaybeLinkMap = RefCell<HashMap<ty::UpvarId, Vec<MaybeLink>>>;
+
 pub struct Rcx<'a, 'tcx: 'a> {
     fcx: &'a FnCtxt<'a, 'tcx>,
 
@@ -218,6 +233,10 @@ pub struct Rcx<'a, 'tcx: 'a> {
 
     // id of innermost fn or loop
     repeating_scope: ast::NodeId,
+
+    // Possible region links we will establish if an upvar
+    // turns out to be unique/mutable
+    maybe_links: MaybeLinkMap
 }
 
 fn region_of_def(fcx: &FnCtxt, def: def::Def) -> ty::Region {
@@ -239,7 +258,7 @@ fn region_of_def(fcx: &FnCtxt, def: def::Def) -> ty::Region {
             }
         }
         _ => {
-            tcx.sess.bug(format!("unexpected def in region_of_def: {:?}",
+            tcx.sess.bug(format!("unexpected def in region_of_def: {}",
                                  def).as_slice())
         }
     }
@@ -250,7 +269,8 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
                initial_repeating_scope: ast::NodeId) -> Rcx<'a, 'tcx> {
         Rcx { fcx: fcx,
               repeating_scope: initial_repeating_scope,
-              region_param_pairs: Vec::new() }
+              region_param_pairs: Vec::new(),
+              maybe_links: RefCell::new(HashMap::new()) }
     }
 
     pub fn tcx(&self) -> &'a ty::ctxt<'tcx> {
@@ -560,7 +580,7 @@ fn constrain_bindings_in_pat(pat: &ast::Pat, rcx: &mut Rcx) {
 }
 
 fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
-    debug!("regionck::visit_expr(e={}, repeating_scope={:?})",
+    debug!("regionck::visit_expr(e={}, repeating_scope={})",
            expr.repr(rcx.fcx.tcx()), rcx.repeating_scope);
 
     // No matter what, the type of each expression must outlive the
@@ -575,7 +595,7 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
 
     // Check any autoderefs or autorefs that appear.
     for &adjustment in rcx.fcx.inh.adjustments.borrow().find(&expr.id).iter() {
-        debug!("adjustment={:?}", adjustment);
+        debug!("adjustment={}", adjustment);
         match *adjustment {
             ty::AdjustDerefRef(ty::AutoDerefRef {autoderefs, autoref: ref opt_autoref}) => {
                 let expr_ty = rcx.resolve_node_type(expr.id);
@@ -621,7 +641,7 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
         }
 
         ast::ExprMethodCall(_, _, ref args) => {
-            constrain_call(rcx, expr, Some(&**args.get(0)),
+            constrain_call(rcx, expr, Some(&*args[0]),
                            args.slice_from(1).iter().map(|e| &**e), false);
 
             visit::walk_expr(rcx, expr);
@@ -660,14 +680,6 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
             constrain_call(rcx, expr, Some(&**lhs),
                            None::<ast::Expr>.iter(), true);
 
-            visit::walk_expr(rcx, expr);
-        }
-
-        ast::ExprUnary(ast::UnBox, ref base) => {
-            // Managed data must not have borrowed pointers within it:
-            let base_ty = rcx.resolve_node_type(base.id);
-            type_must_outlive(rcx, infer::Managed(expr.span),
-                              base_ty, ty::ReStatic);
             visit::walk_expr(rcx, expr);
         }
 
@@ -833,7 +845,7 @@ fn check_expr_fn_block(rcx: &mut Rcx,
 
     match ty::get(function_type).sty {
         ty::ty_closure(box ty::ClosureTy{store: ty::RegionTraitStore(..),
-                                         bounds: ref bounds,
+                                         ref bounds,
                                          ..}) => {
             // For closure, ensure that the variables outlive region
             // bound, since they are captured by reference.
@@ -844,7 +856,7 @@ fn check_expr_fn_block(rcx: &mut Rcx,
                     // has static lifetime.
                 } else {
                     // Variables being referenced must outlive closure.
-                    constrain_free_variables_in_stack_closure(
+                    constrain_free_variables_in_by_ref_closure(
                         rcx, bounds.region_bound, expr, freevars);
 
                     // Closure is stack allocated and hence cannot
@@ -856,20 +868,16 @@ fn check_expr_fn_block(rcx: &mut Rcx,
             });
         }
         ty::ty_unboxed_closure(_, region) => {
-            ty::with_freevars(tcx, expr.id, |freevars| {
-                // No free variables means that there is no environment and
-                // hence the closure has static lifetime. Otherwise, the
-                // closure must not outlive the variables it closes over
-                // by-reference.
-                //
-                // NDM -- this seems wrong, discuss with pcwalton, should
-                // be straightforward enough.
-                if !freevars.is_empty() {
-                    let bounds = ty::region_existential_bound(region);
-                    ensure_free_variable_types_outlive_closure_bound(
-                        rcx, bounds, expr, freevars);
-                }
-            })
+            if tcx.capture_modes.borrow().get_copy(&expr.id) == ast::CaptureByRef {
+                ty::with_freevars(tcx, expr.id, |freevars| {
+                    if !freevars.is_empty() {
+                        // Variables being referenced must be constrained and registered
+                        // in the upvar borrow map
+                        constrain_free_variables_in_by_ref_closure(
+                            rcx, region, expr, freevars);
+                    }
+                })
+            }
         }
         _ => { }
     }
@@ -884,12 +892,25 @@ fn check_expr_fn_block(rcx: &mut Rcx,
                 propagate_upupvar_borrow_kind(rcx, expr, freevars);
             })
         }
+        ty::ty_unboxed_closure(..) => {
+            if tcx.capture_modes.borrow().get_copy(&expr.id) == ast::CaptureByRef {
+                ty::with_freevars(tcx, expr.id, |freevars| {
+                    propagate_upupvar_borrow_kind(rcx, expr, freevars);
+                });
+            }
+        }
         _ => {}
     }
 
     match ty::get(function_type).sty {
         ty::ty_closure(box ty::ClosureTy {bounds, ..}) => {
             ty::with_freevars(tcx, expr.id, |freevars| {
+                ensure_free_variable_types_outlive_closure_bound(rcx, bounds, expr, freevars);
+            })
+        }
+        ty::ty_unboxed_closure(_, region) => {
+            ty::with_freevars(tcx, expr.id, |freevars| {
+                let bounds = ty::region_existential_bound(region);
                 ensure_free_variable_types_outlive_closure_bound(rcx, bounds, expr, freevars);
             })
         }
@@ -959,7 +980,7 @@ fn check_expr_fn_block(rcx: &mut Rcx,
         }
     }
 
-    fn constrain_free_variables_in_stack_closure(
+    fn constrain_free_variables_in_by_ref_closure(
         rcx: &mut Rcx,
         region_bound: ty::Region,
         expr: &ast::Expr,
@@ -976,7 +997,7 @@ fn check_expr_fn_block(rcx: &mut Rcx,
         debug!("constrain_free_variables({}, {})",
                region_bound.repr(tcx), expr.repr(tcx));
         for freevar in freevars.iter() {
-            debug!("freevar def is {:?}", freevar.def);
+            debug!("freevar def is {}", freevar.def);
 
             // Identify the variable being closed over and its node-id.
             let def = freevar.def;
@@ -1114,7 +1135,7 @@ fn constrain_call<'a, I: Iterator<&'a ast::Expr>>(rcx: &mut Rcx,
     let tcx = rcx.fcx.tcx();
     debug!("constrain_call(call_expr={}, \
             receiver={}, \
-            implicitly_ref_args={:?})",
+            implicitly_ref_args={})",
             call_expr.repr(tcx),
             receiver.repr(tcx),
             implicitly_ref_args);
@@ -1169,7 +1190,7 @@ fn constrain_autoderefs(rcx: &mut Rcx,
      */
     let r_deref_expr = ty::ReScope(deref_expr.id);
     for i in range(0u, derefs) {
-        debug!("constrain_autoderefs(deref_expr=?, derefd_ty={}, derefs={:?}/{:?}",
+        debug!("constrain_autoderefs(deref_expr=?, derefd_ty={}, derefs={}/{}",
                rcx.fcx.infcx().ty_to_string(derefd_ty),
                i, derefs);
 
@@ -1179,7 +1200,7 @@ fn constrain_autoderefs(rcx: &mut Rcx,
                 // Treat overloaded autoderefs as if an AutoRef adjustment
                 // was applied on the base type, as that is always the case.
                 let fn_sig = ty::ty_fn_sig(method.ty);
-                let self_ty = *fn_sig.inputs.get(0);
+                let self_ty = fn_sig.inputs[0];
                 let (m, r) = match ty::get(self_ty).sty {
                     ty::ty_rptr(r, ref m) => (m.mutbl, r),
                     _ => rcx.tcx().sess.span_bug(deref_expr.span,
@@ -1278,7 +1299,7 @@ fn type_of_node_must_outlive(
                            rcx.fcx.inh.adjustments.borrow().find(&id),
                            |method_call| rcx.resolve_method_type(method_call));
     debug!("constrain_regions_in_type_of_node(\
-            ty={}, ty0={}, id={}, minimum_lifetime={:?})",
+            ty={}, ty0={}, id={}, minimum_lifetime={})",
            ty_to_string(tcx, ty), ty_to_string(tcx, ty0),
            id, minimum_lifetime);
     type_must_outlive(rcx, origin, ty, minimum_lifetime);
@@ -1379,7 +1400,7 @@ fn link_autoref(rcx: &Rcx,
      * to lifetimes in the value being autoref'd.
      */
 
-    debug!("link_autoref(autoref={:?})", autoref);
+    debug!("link_autoref(autoref={})", autoref);
     let mc = mc::MemCategorizationContext::new(rcx);
     let expr_cmt = ignore_err!(mc.cat_expr_autoderefd(expr, autoderefs));
     debug!("expr_cmt={}", expr_cmt.repr(rcx.tcx()));
@@ -1461,7 +1482,8 @@ fn link_region(rcx: &Rcx,
                           mc::BorrowedPtr(ref_kind, ref_region)) => {
                 match link_reborrowed_region(rcx, span,
                                              borrow_region, borrow_kind,
-                                             ref_cmt, ref_region, ref_kind) {
+                                             ref_cmt, ref_region, ref_kind,
+                                             borrow_cmt.note) {
                     Some((c, k)) => {
                         borrow_cmt = c;
                         borrow_kind = k;
@@ -1472,9 +1494,7 @@ fn link_region(rcx: &Rcx,
                 }
             }
 
-            mc::cat_discr(cmt_base, _) |
             mc::cat_downcast(cmt_base) |
-            mc::cat_deref(cmt_base, _, mc::GcPtr(..)) |
             mc::cat_deref(cmt_base, _, mc::OwnedPtr) |
             mc::cat_interior(cmt_base, _) => {
                 // Borrowing interior or owned data requires the base
@@ -1485,9 +1505,8 @@ fn link_region(rcx: &Rcx,
 
             mc::cat_deref(_, _, mc::UnsafePtr(..)) |
             mc::cat_static_item |
-            mc::cat_copied_upvar(..) |
-            mc::cat_local(..) |
             mc::cat_upvar(..) |
+            mc::cat_local(..) |
             mc::cat_rvalue(..) => {
                 // These are all "base cases" with independent lifetimes
                 // that are not subject to inference
@@ -1503,7 +1522,8 @@ fn link_reborrowed_region(rcx: &Rcx,
                           borrow_kind: ty::BorrowKind,
                           ref_cmt: mc::cmt,
                           ref_region: ty::Region,
-                          ref_kind: ty::BorrowKind)
+                          mut ref_kind: ty::BorrowKind,
+                          note: mc::Note)
                           -> Option<(mc::cmt, ty::BorrowKind)>
 {
     /*!
@@ -1549,9 +1569,12 @@ fn link_reborrowed_region(rcx: &Rcx,
      * recurse and process `ref_cmt` (see case 2 above).
      */
 
-    // Detect references to an upvar `x`:
-    let cause = match ref_cmt.cat {
-        mc::cat_upvar(ref upvar_id, _) => {
+    // Possible upvar ID we may need later to create an entry in the
+    // maybe link map.
+
+    // Detect by-ref upvar `x`:
+    let cause = match note {
+        mc::NoteUpvarRef(ref upvar_id) => {
             let mut upvar_borrow_map =
                 rcx.fcx.inh.upvar_borrow_map.borrow_mut();
             match upvar_borrow_map.find_mut(upvar_id) {
@@ -1559,9 +1582,14 @@ fn link_reborrowed_region(rcx: &Rcx,
                     // Adjust mutability that we infer for the upvar
                     // so it can accommodate being borrowed with
                     // mutability `kind`:
-                    adjust_upvar_borrow_kind_for_loan(*upvar_id,
+                    adjust_upvar_borrow_kind_for_loan(rcx,
+                                                      *upvar_id,
                                                       upvar_borrow,
                                                       borrow_kind);
+
+                    // The mutability of the upvar may have been modified
+                    // by the above adjustment, so update our local variable.
+                    ref_kind = upvar_borrow.kind;
 
                     infer::ReborrowUpvar(span, *upvar_id)
                 }
@@ -1574,7 +1602,12 @@ fn link_reborrowed_region(rcx: &Rcx,
                 }
             }
         }
-
+        mc::NoteClosureEnv(ref upvar_id) => {
+            // We don't have any mutability changes to propagate, but
+            // we do want to note that an upvar reborrow caused this
+            // link
+            infer::ReborrowUpvar(span, *upvar_id)
+        }
         _ => {
             infer::Reborrow(span)
         }
@@ -1584,6 +1617,21 @@ fn link_reborrowed_region(rcx: &Rcx,
            borrow_region.repr(rcx.tcx()),
            ref_region.repr(rcx.tcx()));
     rcx.fcx.mk_subr(cause, borrow_region, ref_region);
+
+    // If we end up needing to recurse and establish a region link
+    // with `ref_cmt`, calculate what borrow kind we will end up
+    // needing. This will be used below.
+    //
+    // One interesting twist is that we can weaken the borrow kind
+    // when we recurse: to reborrow an `&mut` referent as mutable,
+    // borrowck requires a unique path to the `&mut` reference but not
+    // necessarily a *mutable* path.
+    let new_borrow_kind = match borrow_kind {
+        ty::ImmBorrow =>
+            ty::ImmBorrow,
+        ty::MutBorrow | ty::UniqueImmBorrow =>
+            ty::UniqueImmBorrow
+    };
 
     // Decide whether we need to recurse and link any regions within
     // the `ref_cmt`. This is concerned for the case where the value
@@ -1623,23 +1671,36 @@ fn link_reborrowed_region(rcx: &Rcx,
             // else the user is borrowed imm memory as mut memory,
             // which means they'll get an error downstream in borrowck
             // anyhow.)
+            //
+            // If mutability was inferred from an upvar, we may be
+            // forced to revisit this decision later if processing
+            // another borrow or nested closure ends up coverting the
+            // upvar borrow kind to mutable/unique.  Record the
+            // information needed to perform the recursive link in the
+            // maybe link map.
+            match note {
+                mc::NoteUpvarRef(upvar_id) => {
+                    let link = MaybeLink {
+                        span: span,
+                        borrow_region: borrow_region,
+                        borrow_kind: new_borrow_kind,
+                        borrow_cmt: ref_cmt
+                    };
+
+                    match rcx.maybe_links.borrow_mut().entry(upvar_id) {
+                        Vacant(entry) => { entry.set(vec![link]); }
+                        Occupied(entry) => { entry.into_mut().push(link); }
+                    }
+                },
+                _ => {}
+            }
+
             return None;
         }
 
         ty::MutBorrow | ty::UniqueImmBorrow => {
             // The reference being reborrowed is either an `&mut T` or
             // `&uniq T`. This is the case where recursion is needed.
-            //
-            // One interesting twist is that we can weaken the borrow
-            // kind when we recurse: to reborrow an `&mut` referent as
-            // mutable, borrowck requires a unique path to the `&mut`
-            // reference but not necessarily a *mutable* path.
-            let new_borrow_kind = match borrow_kind {
-                ty::ImmBorrow =>
-                    ty::ImmBorrow,
-                ty::MutBorrow | ty::UniqueImmBorrow =>
-                    ty::UniqueImmBorrow
-            };
             return Some((ref_cmt, new_borrow_kind));
         }
     }
@@ -1674,8 +1735,7 @@ fn adjust_upvar_borrow_kind_for_mut(rcx: &Rcx,
         match cmt.cat.clone() {
             mc::cat_deref(base, _, mc::OwnedPtr) |
             mc::cat_interior(base, _) |
-            mc::cat_downcast(base) |
-            mc::cat_discr(base, _) => {
+            mc::cat_downcast(base) => {
                 // Interior or owned data is mutable if base is
                 // mutable, so iterate to the base.
                 cmt = base;
@@ -1684,8 +1744,8 @@ fn adjust_upvar_borrow_kind_for_mut(rcx: &Rcx,
 
             mc::cat_deref(base, _, mc::BorrowedPtr(..)) |
             mc::cat_deref(base, _, mc::Implicit(..)) => {
-                match base.cat {
-                    mc::cat_upvar(ref upvar_id, _) => {
+                match cmt.note {
+                    mc::NoteUpvarRef(ref upvar_id) => {
                         // if this is an implicit deref of an
                         // upvar, then we need to modify the
                         // borrow_kind of the upvar to make sure it
@@ -1693,7 +1753,7 @@ fn adjust_upvar_borrow_kind_for_mut(rcx: &Rcx,
                         let mut upvar_borrow_map =
                             rcx.fcx.inh.upvar_borrow_map.borrow_mut();
                         let ub = upvar_borrow_map.get_mut(upvar_id);
-                        return adjust_upvar_borrow_kind(*upvar_id, ub, ty::MutBorrow);
+                        return adjust_upvar_borrow_kind(rcx, *upvar_id, ub, ty::MutBorrow);
                     }
 
                     _ => {}
@@ -1707,10 +1767,8 @@ fn adjust_upvar_borrow_kind_for_mut(rcx: &Rcx,
             }
 
             mc::cat_deref(_, _, mc::UnsafePtr(..)) |
-            mc::cat_deref(_, _, mc::GcPtr) |
             mc::cat_static_item |
             mc::cat_rvalue(_) |
-            mc::cat_copied_upvar(_) |
             mc::cat_local(_) |
             mc::cat_upvar(..) => {
                 return;
@@ -1728,8 +1786,7 @@ fn adjust_upvar_borrow_kind_for_unique(rcx: &Rcx, cmt: mc::cmt) {
         match cmt.cat.clone() {
             mc::cat_deref(base, _, mc::OwnedPtr) |
             mc::cat_interior(base, _) |
-            mc::cat_downcast(base) |
-            mc::cat_discr(base, _) => {
+            mc::cat_downcast(base) => {
                 // Interior or owned data is unique if base is
                 // unique.
                 cmt = base;
@@ -1738,15 +1795,15 @@ fn adjust_upvar_borrow_kind_for_unique(rcx: &Rcx, cmt: mc::cmt) {
 
             mc::cat_deref(base, _, mc::BorrowedPtr(..)) |
             mc::cat_deref(base, _, mc::Implicit(..)) => {
-                match base.cat {
-                    mc::cat_upvar(ref upvar_id, _) => {
+                match cmt.note {
+                    mc::NoteUpvarRef(ref upvar_id) => {
                         // if this is an implicit deref of an
                         // upvar, then we need to modify the
                         // borrow_kind of the upvar to make sure it
                         // is inferred to unique if necessary
                         let mut ub = rcx.fcx.inh.upvar_borrow_map.borrow_mut();
                         let ub = ub.get_mut(upvar_id);
-                        return adjust_upvar_borrow_kind(*upvar_id, ub, ty::UniqueImmBorrow);
+                        return adjust_upvar_borrow_kind(rcx, *upvar_id, ub, ty::UniqueImmBorrow);
                     }
 
                     _ => {}
@@ -1758,10 +1815,8 @@ fn adjust_upvar_borrow_kind_for_unique(rcx: &Rcx, cmt: mc::cmt) {
             }
 
             mc::cat_deref(_, _, mc::UnsafePtr(..)) |
-            mc::cat_deref(_, _, mc::GcPtr) |
             mc::cat_static_item |
             mc::cat_rvalue(_) |
-            mc::cat_copied_upvar(_) |
             mc::cat_local(_) |
             mc::cat_upvar(..) => {
                 return;
@@ -1780,29 +1835,31 @@ fn link_upvar_borrow_kind_for_nested_closures(rcx: &mut Rcx,
      * this function.
      */
 
-    debug!("link_upvar_borrow_kind: inner_upvar_id={:?} outer_upvar_id={:?}",
+    debug!("link_upvar_borrow_kind: inner_upvar_id={} outer_upvar_id={}",
            inner_upvar_id, outer_upvar_id);
 
     let mut upvar_borrow_map = rcx.fcx.inh.upvar_borrow_map.borrow_mut();
     let inner_borrow = upvar_borrow_map.get_copy(&inner_upvar_id);
     match upvar_borrow_map.find_mut(&outer_upvar_id) {
         Some(outer_borrow) => {
-            adjust_upvar_borrow_kind(outer_upvar_id, outer_borrow, inner_borrow.kind);
+            adjust_upvar_borrow_kind(rcx, outer_upvar_id, outer_borrow, inner_borrow.kind);
         }
         None => { /* outer closure is not a stack closure */ }
     }
 }
 
-fn adjust_upvar_borrow_kind_for_loan(upvar_id: ty::UpvarId,
+fn adjust_upvar_borrow_kind_for_loan(rcx: &Rcx,
+                                     upvar_id: ty::UpvarId,
                                      upvar_borrow: &mut ty::UpvarBorrow,
                                      kind: ty::BorrowKind) {
-    debug!("adjust_upvar_borrow_kind_for_loan: upvar_id={:?} kind={:?} -> {:?}",
+    debug!("adjust_upvar_borrow_kind_for_loan: upvar_id={} kind={} -> {}",
            upvar_id, upvar_borrow.kind, kind);
 
-    adjust_upvar_borrow_kind(upvar_id, upvar_borrow, kind)
+    adjust_upvar_borrow_kind(rcx, upvar_id, upvar_borrow, kind)
 }
 
-fn adjust_upvar_borrow_kind(upvar_id: ty::UpvarId,
+fn adjust_upvar_borrow_kind(rcx: &Rcx,
+                            upvar_id: ty::UpvarId,
                             upvar_borrow: &mut ty::UpvarBorrow,
                             kind: ty::BorrowKind) {
     /*!
@@ -1813,7 +1870,7 @@ fn adjust_upvar_borrow_kind(upvar_id: ty::UpvarId,
      * is required by some particular use.
      */
 
-    debug!("adjust_upvar_borrow_kind: id={:?} kind=({:?} -> {:?})",
+    debug!("adjust_upvar_borrow_kind: id={} kind=({} -> {})",
            upvar_id, upvar_borrow.kind, kind);
 
     match (upvar_borrow.kind, kind) {
@@ -1822,6 +1879,19 @@ fn adjust_upvar_borrow_kind(upvar_id: ty::UpvarId,
         (ty::ImmBorrow, ty::MutBorrow) |
         (ty::UniqueImmBorrow, ty::MutBorrow) => {
             upvar_borrow.kind = kind;
+
+            // Check if there are any region links we now need to
+            // establish due to adjusting the borrow kind of the upvar
+            match rcx.maybe_links.borrow_mut().entry(upvar_id) {
+                Occupied(entry) => {
+                    for MaybeLink { span, borrow_region,
+                                    borrow_kind, borrow_cmt } in entry.take().into_iter()
+                    {
+                        link_region(rcx, span, borrow_region, borrow_kind, borrow_cmt);
+                    }
+                }
+                Vacant(_) => {}
+            }
         }
         // Take LHS:
         (ty::ImmBorrow, ty::ImmBorrow) |

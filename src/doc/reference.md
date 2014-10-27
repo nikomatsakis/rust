@@ -185,37 +185,24 @@ grammar as double-quoted strings. Other tokens have exact rules given.
 
 ### Keywords
 
-The keywords are the following strings, organized by first letter:
+<p id="keyword-table-marker">The keywords are the following strings, organized by first letter:</p>
 
+|          |        |        |       |
 |----------|--------|--------|-------|
 | as       |        |        |       |
-|----------|--------|--------|-------|
 | box      | break  |        |       |
-|----------|--------|--------|-------|
 | continue | crate  |        |       |
-|----------|--------|--------|-------|
 | else     | enum   | extern |       |
-|----------|--------|--------|-------|
 | false    | fn     | for    |       |
-|----------|--------|--------|-------|
 | if       | impl   | in     |       |
-|----------|--------|--------|-------|
 | let      | loop   |        |       |
-|----------|--------|--------|-------|
 | match    | mod    | mut    |       |
-|----------|--------|--------|-------|
 | priv     | proc   | pub    |       |
-|----------|--------|--------|-------|
 | ref      | return |        |       |
-|----------|--------|--------|-------|
 | self     | static | struct | super |
-|----------|--------|--------|-------|
 | trait    | true   | type   |       |
-|----------|--------|--------|-------|
 | unsafe   | use    |        |       |
-|----------|--------|--------|-------|
 | while    |        |        |       |
-|----------|--------|--------|-------|
 
 Each of these keywords has special meaning in its grammar, and all of them are
 excluded from the `ident` rule.
@@ -354,7 +341,7 @@ following forms:
   escaped in order to denote its ASCII encoding `0x5C`.
 
 Raw byte string literals do not process any escapes. They start with the
-character `U+0072` (`r`), followed by `U+0062` (`b`), followed by zero or more
+character `U+0062` (`b`), followed by `U+0072` (`r`), followed by zero or more
 of the character `U+0023` (`#`), and a `U+0022` (double-quote) character. The
 _raw string body_ is not defined in the EBNF grammar above: it can contain any
 sequence of ASCII characters and is terminated only by another `U+0022`
@@ -598,6 +585,14 @@ names, and invoked through a consistent syntax: `name!(...)`. Examples include:
 
 All of the above extensions are expressions with values.
 
+Users of `rustc` can define new syntax extensions in two ways:
+
+* [Compiler plugins](guide-plugin.html#syntax-extensions) can include arbitrary
+  Rust code that manipulates syntax trees at compile time.
+
+* [Macros](guide-macros.html) define new syntax in a higher-level,
+  declarative way.
+
 ## Macros
 
 ```{.ebnf .gram}
@@ -615,7 +610,7 @@ transcriber : '(' transcriber * ')' | '[' transcriber * ']'
 
 User-defined syntax extensions are called "macros", and the `macro_rules`
 syntax extension defines them. Currently, user-defined macros can expand to
-expressions, statements, or items.
+expressions, statements, items, or patterns.
 
 (A `sep_token` is any token other than `*` and `+`. A `non_special_token` is
 any token other than a delimiter or `$`.)
@@ -1182,7 +1177,7 @@ This is a list of behaviour not considered *unsafe* in Rust terms, but that may
 be undesired.
 
 * Deadlocks
-* Reading data from private fields (`std::repr`, `format!("{:?}", x)`)
+* Reading data from private fields (`std::repr`)
 * Leaks due to reference count cycles, even in the global heap
 * Exiting without calling destructors
 * Sending signals
@@ -1317,23 +1312,6 @@ let c = [Cookie, Cookie, Cookie, Cookie];
 The precise memory layout of a structure is not specified. One can specify a
 particular layout using the [`repr` attribute](#ffi-attributes).
 
-By using the `struct_inherit` feature gate, structures may use single
-inheritance. A Structure may only inherit from a single other structure, called
-the _super-struct_. The inheriting structure (sub-struct) acts as if all fields
-in the super-struct were present in the sub-struct. Fields declared in a
-sub-struct must not have the same name as any field in any (transitive)
-super-struct. All fields (both declared and inherited) must be specified in any
-initializers. Inheritance between structures does not give subtyping or
-coercion. The super-struct and sub-struct must be defined in the same crate.
-The super-struct must be declared using the `virtual` keyword. For example:
-
-```{.ignore}
-virtual struct Sup { x: int }
-struct Sub : Sup { y: int }
-let s = Sub {x: 10, y: 11};
-let sx = s.x;
-```
-
 ### Enumerations
 
 An _enumeration_ is a simultaneous definition of a nominal [enumerated
@@ -1372,42 +1350,85 @@ a = Cat { name: "Spotty".to_string(), weight: 2.7 };
 In this example, `Cat` is a _struct-like enum variant_,
 whereas `Dog` is simply called an enum variant.
 
-### Static items
+### Constant items
 
 ```{.ebnf .gram}
-static_item : "static" ident ':' type '=' expr ';' ;
+const_item : "const" ident ':' type '=' expr ';' ;
 ```
 
-A *static item* is a named _constant value_ stored in the global data section
-of a crate. Immutable static items are stored in the read-only data section.
-The constant value bound to a static item is, like all constant values,
-evaluated at compile time. Static items have the `static` lifetime, which
-outlives all other lifetimes in a Rust program. Only values stored in the
-global data section (such as string constants and static items) can have the
-`static` lifetime; dynamically constructed values cannot safely be assigned the
-`static` lifetime. Static items are declared with the `static` keyword. A
-static item must have a _constant expression_ giving its definition.
+A *constant item* is a named _constant value_ which is not associated with a
+specific memory location in the program. Constants are essentially inlined
+wherever they are used, meaning that they are copied directly into the relevant
+context when used. References to the same constant are not necessarily
+guaranteed to refer to the same memory address.
 
-Static items must be explicitly typed. The type may be `bool`, `char`,
-a number, or a type derived from those primitive types. The derived types are
-references with the `static` lifetime, fixed-size arrays, tuples, and structs.
+Constant values must not have destructors, and otherwise permit most forms of
+data. Constants may refer to the address of other constants, in which case the
+address will have the `static` lifetime. The compiler is, however, still at
+liberty to translate the constant many times, so the address referred to may not
+be stable.
+
+Constants must be explicitly typed. The type may be `bool`, `char`, a number, or
+a type derived from those primitive types. The derived types are references with
+the `static` lifetime, fixed-size arrays, tuples, enum variants, and structs.
 
 ```
-static BIT1: uint = 1 << 0;
-static BIT2: uint = 1 << 1;
+const BIT1: uint = 1 << 0;
+const BIT2: uint = 1 << 1;
 
-static BITS: [uint, ..2] = [BIT1, BIT2];
-static STRING: &'static str = "bitstring";
+const BITS: [uint, ..2] = [BIT1, BIT2];
+const STRING: &'static str = "bitstring";
 
 struct BitsNStrings<'a> {
     mybits: [uint, ..2],
     mystring: &'a str
 }
 
-static bits_n_strings: BitsNStrings<'static> = BitsNStrings {
+const BITS_N_STRINGS: BitsNStrings<'static> = BitsNStrings {
     mybits: BITS,
     mystring: STRING
 };
+```
+
+### Static items
+
+```{.ebnf .gram}
+static_item : "static" ident ':' type '=' expr ';' ;
+```
+
+A *static item* is similar to a *constant*, except that it represents a precise
+memory location in the program. A static is never "inlined" at the usage site,
+and all references to it refer to the same memory location. Static items have
+the `static` lifetime, which outlives all other lifetimes in a Rust program.
+Static items may be placed in read-only memory if they do not contain any
+interior mutability.
+
+Statics may contain interior mutability through the `UnsafeCell` language item.
+All access to a static is safe, but there are a number of restrictions on
+statics:
+
+* Statics may not contain any destructors.
+* The types of static values must ascribe to `Sync` to allow threadsafe access.
+* Statics may not refer to other statics by value, only by reference.
+* Constants cannot refer to statics.
+
+Constants should in general be preferred over statics, unless large amounts of
+data are being stored, or single-address and mutability properties are required.
+
+```
+use std::sync::atomic;
+
+// Note that INIT_ATOMIC_UINT is a *const*, but it may be used to initialize a
+// static. This static can be modified, so it is not placed in read-only memory.
+static COUNTER: atomic::AtomicUint = atomic::INIT_ATOMIC_UINT;
+
+// This table is a candidate to be placed in read-only memory.
+static TABLE: &'static [uint] = &[1, 2, 3, /* ... */];
+
+for slot in TABLE.iter() {
+    println!("{}", slot);
+}
+COUNTER.fetch_add(1, atomic::SeqCst);
 ```
 
 #### Mutable statics
@@ -1443,6 +1464,9 @@ unsafe fn bump_levels_unsafe2() -> uint {
     return atomic_add(&mut LEVELS, 1);
 }
 ```
+
+Mutable statics have the same restrictions as normal statics, except that the
+type of the value is not required to ascribe to `Sync`.
 
 ### Traits
 
@@ -1886,7 +1910,7 @@ type int8_t = i8;
 
 ### Crate-only attributes
 
-- `crate_id` - specify the this crate's crate ID.
+- `crate_name` - specify the this crate's crate name.
 - `crate_type` - see [linkage](#linkage).
 - `feature` - see [compiler features](#compiler-features).
 - `no_builtins` - disable optimizing certain code patterns to invocations of
@@ -1912,10 +1936,12 @@ type int8_t = i8;
 - `main` - indicates that this function should be passed to the entry point,
   rather than the function in the crate root named `main`.
 - `plugin_registrar` - mark this function as the registration point for
-  compiler plugins, such as loadable syntax extensions.
+  [compiler plugins][plugin], such as loadable syntax extensions.
 - `start` - indicates that this function should be used as the entry point,
   overriding the "start" language item. See the "start" [language
   item](#language-items) for more details.
+- `test` - indicates that this function is a test function, to only be compiled
+  in case of `--test`.
 
 ### Static-only attributes
 
@@ -1972,8 +1998,8 @@ On `struct`s:
   align fields.
 - `phase` - on `extern crate` statements, allows specifying which "phase" of
   compilation the crate should be loaded for. Currently, there are two
-  choices: `link` and `plugin`. `link` is the default. `plugin` will load the
-  crate at compile-time and use any syntax extensions or lints that the crate
+  choices: `link` and `plugin`. `link` is the default. `plugin` will [load the
+  crate at compile-time][plugin] and use any syntax extensions or lints that the crate
   defines. They can both be specified, `#[phase(link, plugin)]` to use a crate
   both at runtime and compiletime.
 - `simd` - on certain tuple structs, derive the arithmetic operators, which
@@ -2007,26 +2033,28 @@ fn macos_only() {
 }
 
 // This function is only included when either foo or bar is defined
-#[cfg(foo)]
-#[cfg(bar)]
+#[cfg(any(foo, bar))]
 fn needs_foo_or_bar() {
   // ...
 }
 
 // This function is only included when compiling for a unixish OS with a 32-bit
 // architecture
-#[cfg(unix, target_word_size = "32")]
+#[cfg(all(unix, target_word_size = "32"))]
 fn on_32bit_unix() {
+  // ...
+}
+
+// This function is only included when foo is not defined
+#[cfg(not(foo))]
+fn needs_not_foo() {
   // ...
 }
 ```
 
 This illustrates some conditional compilation can be achieved using the
-`#[cfg(...)]` attribute. Note that `#[cfg(foo, bar)]` is a condition that needs
-both `foo` and `bar` to be defined while `#[cfg(foo)] #[cfg(bar)]` only needs
-one of `foo` and `bar` to be defined (this resembles in the disjunctive normal
-form). Additionally, one can reverse a condition by enclosing it in a
-`not(...)`, like e. g. `#[cfg(not(target_os = "win32"))]`.
+`#[cfg(...)]` attribute. `any`, `all` and `not` can be used to assemble
+arbitrarily complex configurations through nesting.
 
 The following configurations must be defined by the implementation:
 
@@ -2061,7 +2089,8 @@ For any lint check `C`:
 * `warn(C)` warns about violations of `C` but continues compilation.
 
 The lint checks supported by the compiler can be found via `rustc -W help`,
-along with their default settings.
+along with their default settings.  [Compiler
+plugins](guide-plugin.html#lint-plugins) can provide additional lint checks.
 
 ```{.ignore}
 mod m1 {
@@ -2250,8 +2279,6 @@ These types help drive the compiler's analysis
   : The lifetime parameter should be considered invariant
 * `malloc`
   : Allocate memory on the managed heap.
-* `opaque`
-  : ___Needs filling in___
 * `owned_box`
   : ___Needs filling in___
 * `stack_exhausted`
@@ -2265,8 +2292,6 @@ These types help drive the compiler's analysis
 * `invariant_type`
   : The type parameter should be considered invariant
 * `ty_desc`
-  : ___Needs filling in___
-* `ty_visitor`
   : ___Needs filling in___
 
 > **Note:** This list is likely to become out of date. We should auto-generate
@@ -2443,6 +2468,8 @@ The currently implemented features of the reference compiler are:
 
 * `if_let` - Allows use of the `if let` syntax.
 
+* `while_let` - Allows use of the `while let` syntax.
+
 * `intrinsics` - Allows use of the "rust-intrinsics" ABI. Compiler intrinsics
                  are inherently unstable and no promise about them is made.
 
@@ -2490,7 +2517,7 @@ The currently implemented features of the reference compiler are:
             considered unwholesome and in need of overhaul, and it is not clear
             what they will look like moving forward.
 
-* `plugin_registrar` - Indicates that a crate has compiler plugins that it
+* `plugin_registrar` - Indicates that a crate has [compiler plugins][plugin] that it
                        wants to load. As with `phase`, the implementation is
                        in need of a overhaul, and it is not clear that plugins
                        defined using this will continue to work.
@@ -3381,7 +3408,7 @@ fn main() {
 
 ```
 
-Patterns can also dereference pointers by using the `&`, `box` or `@` symbols,
+Patterns can also dereference pointers by using the `&`, `box` symbols,
 as appropriate. For example, these two matches on `x: &int` are equivalent:
 
 ```
@@ -3448,6 +3475,18 @@ An `if let` expression is semantically identical to an `if` expression but in pl
 of a condition expression it expects a refutable let statement. If the value of the
 expression on the right hand side of the let statement matches the pattern, the corresponding
 block will execute, otherwise flow proceeds to the first `else` block that follows.
+
+### While let loops
+
+```{.ebnf .gram}
+while_let_expr : "while" "let" pat '=' expr '{' block '}' ;
+```
+
+A `while let` loop is semantically identical to a `while` loop but in place of a
+condition expression it expects a refutable let statement. If the value of the
+expression on the right hand side of the let statement matches the pattern, the
+loop body block executes and control returns to the pattern matching statement.
+Otherwise, the while expression completes.
 
 ### Return expressions
 
@@ -3828,7 +3867,7 @@ type signature of `print`, and the cast expression in `main`.
 Within the body of an item that has type parameter declarations, the names of
 its type parameters are types:
 
-```
+```ignore
 fn map<A: Clone, B: Clone>(f: |A| -> B, xs: &[A]) -> Vec<B> {
     if xs.len() == 0 {
        return vec![];
@@ -4304,3 +4343,4 @@ Additional specific influences can be seen from the following languages:
 * The block syntax of Ruby.
 
 [ffi]: guide-ffi.html
+[plugin]: guide-plugin.html

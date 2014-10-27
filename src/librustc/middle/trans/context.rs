@@ -25,6 +25,7 @@ use middle::trans::debuginfo;
 use middle::trans::monomorphize::MonoId;
 use middle::trans::type_::{Type, TypeNames};
 use middle::ty;
+use util::ppaux::Repr;
 use util::sha2::Sha256;
 use util::nodemap::{NodeMap, NodeSet, DefIdMap};
 
@@ -66,17 +67,12 @@ pub struct SharedCrateContext<'tcx> {
     reachable: NodeSet,
     item_symbols: RefCell<NodeMap<String>>,
     link_meta: LinkMeta,
-    /// A set of static items which cannot be inlined into other crates. This
-    /// will prevent in IIItem() structures from being encoded into the metadata
-    /// that is generated
-    non_inlineable_statics: RefCell<NodeSet>,
     symbol_hasher: RefCell<Sha256>,
     tcx: ty::ctxt<'tcx>,
     stats: Stats,
 
     available_monomorphizations: RefCell<HashSet<String>>,
     available_drop_glues: RefCell<HashMap<ty::t, String>>,
-    available_visit_glues: RefCell<HashMap<ty::t, String>>,
 }
 
 /// The local portion of a `CrateContext`.  There is one `LocalCrateContext`
@@ -120,6 +116,9 @@ pub struct LocalCrateContext {
 
     /// Cache of emitted const values
     const_values: RefCell<NodeMap<ValueRef>>,
+
+    /// Cache of emitted static values
+    static_values: RefCell<NodeMap<ValueRef>>,
 
     /// Cache of external const values
     extern_const_values: RefCell<DefIdMap<ValueRef>>,
@@ -259,7 +258,6 @@ impl<'tcx> SharedCrateContext<'tcx> {
             reachable: reachable,
             item_symbols: RefCell::new(NodeMap::new()),
             link_meta: link_meta,
-            non_inlineable_statics: RefCell::new(NodeSet::new()),
             symbol_hasher: RefCell::new(symbol_hasher),
             tcx: tcx,
             stats: Stats {
@@ -277,7 +275,6 @@ impl<'tcx> SharedCrateContext<'tcx> {
             },
             available_monomorphizations: RefCell::new(HashSet::new()),
             available_drop_glues: RefCell::new(HashMap::new()),
-            available_visit_glues: RefCell::new(HashMap::new()),
         };
 
         for i in range(0, local_count) {
@@ -351,10 +348,6 @@ impl<'tcx> SharedCrateContext<'tcx> {
         &self.link_meta
     }
 
-    pub fn non_inlineable_statics<'a>(&'a self) -> &'a RefCell<NodeSet> {
-        &self.non_inlineable_statics
-    }
-
     pub fn symbol_hasher<'a>(&'a self) -> &'a RefCell<Sha256> {
         &self.symbol_hasher
     }
@@ -414,6 +407,7 @@ impl LocalCrateContext {
                 const_cstr_cache: RefCell::new(HashMap::new()),
                 const_globals: RefCell::new(HashMap::new()),
                 const_values: RefCell::new(NodeMap::new()),
+                static_values: RefCell::new(NodeMap::new()),
                 extern_const_values: RefCell::new(DefIdMap::new()),
                 impl_method_cache: RefCell::new(HashMap::new()),
                 closure_bare_wrapper_cache: RefCell::new(HashMap::new()),
@@ -610,10 +604,6 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
         &self.local.external_srcs
     }
 
-    pub fn non_inlineable_statics<'a>(&'a self) -> &'a RefCell<NodeSet> {
-        &self.shared.non_inlineable_statics
-    }
-
     pub fn monomorphized<'a>(&'a self) -> &'a RefCell<HashMap<MonoId, ValueRef>> {
         &self.local.monomorphized
     }
@@ -636,6 +626,10 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
 
     pub fn const_values<'a>(&'a self) -> &'a RefCell<NodeMap<ValueRef>> {
         &self.local.const_values
+    }
+
+    pub fn static_values<'a>(&'a self) -> &'a RefCell<NodeMap<ValueRef>> {
+        &self.local.static_values
     }
 
     pub fn extern_const_values<'a>(&'a self) -> &'a RefCell<DefIdMap<ValueRef>> {
@@ -687,10 +681,6 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
         &self.shared.available_drop_glues
     }
 
-    pub fn available_visit_glues<'a>(&'a self) -> &'a RefCell<HashMap<ty::t, String>> {
-        &self.shared.available_visit_glues
-    }
-
     pub fn int_type(&self) -> Type {
         self.local.int_type
     }
@@ -721,6 +711,16 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
 
     pub fn trait_cache(&self) -> &RefCell<HashMap<Rc<ty::TraitRef>, traits::Vtable<()>>> {
         &self.local.trait_cache
+    }
+
+    pub fn max_obj_size(&self) -> u64 {
+        1<<31 /* FIXME #18069: select based on architecture */
+    }
+
+    pub fn report_overbig_object(&self, obj: ty::t) -> ! {
+        self.sess().fatal(
+            format!("the type `{}` is too big for the current architecture",
+                    obj.repr(self.tcx())).as_slice())
     }
 }
 
@@ -860,6 +860,7 @@ fn declare_intrinsic(ccx: &CrateContext, key: & &'static str) -> Option<ValueRef
     ifn!("llvm.lifetime.end" fn(t_i64, i8p) -> void);
 
     ifn!("llvm.expect.i1" fn(i1, i1) -> i1);
+    ifn!("llvm.assume" fn(i1) -> void);
 
     // Some intrinsics were introduced in later versions of LLVM, but they have
     // fallbacks in libc or libm and such. Currently, all of these intrinsics

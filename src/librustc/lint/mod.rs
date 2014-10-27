@@ -98,12 +98,13 @@ macro_rules! declare_lint (
 #[macro_export]
 macro_rules! lint_array ( ($( $lint:expr ),*) => (
     {
-        static array: LintArray = &[ $( $lint ),* ];
+        #[allow(non_uppercase_statics)]
+        static array: LintArray = &[ $( &$lint ),* ];
         array
     }
 ))
 
-pub type LintArray = &'static [&'static Lint];
+pub type LintArray = &'static [&'static &'static Lint];
 
 /// Trait for types providing lint checks.
 ///

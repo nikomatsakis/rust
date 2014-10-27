@@ -251,6 +251,33 @@ impl TypeFoldable for ty::AutoRef {
     }
 }
 
+impl TypeFoldable for typeck::MethodOrigin {
+    fn fold_with<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> typeck::MethodOrigin {
+        match *self {
+            typeck::MethodStatic(def_id) => {
+                typeck::MethodStatic(def_id)
+            }
+            typeck::MethodStaticUnboxedClosure(def_id) => {
+                typeck::MethodStaticUnboxedClosure(def_id)
+            }
+            typeck::MethodTypeParam(ref param) => {
+                typeck::MethodTypeParam(typeck::MethodParam {
+                    trait_ref: param.trait_ref.fold_with(folder),
+                    method_num: param.method_num
+                })
+            }
+            typeck::MethodTraitObject(ref object) => {
+                typeck::MethodTraitObject(typeck::MethodObject {
+                    trait_ref: object.trait_ref.fold_with(folder),
+                    object_trait_id: object.object_trait_id,
+                    method_num: object.method_num,
+                    real_index: object.real_index
+                })
+            }
+        }
+    }
+}
+
 impl TypeFoldable for typeck::vtable_origin {
     fn fold_with<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> typeck::vtable_origin {
         match *self {
@@ -297,7 +324,7 @@ impl TypeFoldable for ty::ParamBounds {
 impl TypeFoldable for ty::TypeParameterDef {
     fn fold_with<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::TypeParameterDef {
         ty::TypeParameterDef {
-            ident: self.ident,
+            name: self.name,
             def_id: self.def_id,
             space: self.space,
             index: self.index,
@@ -334,7 +361,7 @@ impl TypeFoldable for ty::UnsizeKind {
         match *self {
             ty::UnsizeLength(len) => ty::UnsizeLength(len),
             ty::UnsizeStruct(box ref k, n) => ty::UnsizeStruct(box k.fold_with(folder), n),
-            ty::UnsizeVtable(ty::TyTrait{bounds, def_id, substs: ref substs}, self_ty) => {
+            ty::UnsizeVtable(ty::TyTrait{bounds, def_id, ref substs}, self_ty) => {
                 ty::UnsizeVtable(
                     ty::TyTrait {
                         bounds: bounds.fold_with(folder),
@@ -363,13 +390,21 @@ impl<N:TypeFoldable> TypeFoldable for traits::VtableImplData<N> {
     }
 }
 
+impl<N:TypeFoldable> TypeFoldable for traits::VtableBuiltinData<N> {
+    fn fold_with<'tcx, F:TypeFolder<'tcx>>(&self, folder: &mut F) -> traits::VtableBuiltinData<N> {
+        traits::VtableBuiltinData {
+            nested: self.nested.fold_with(folder),
+        }
+    }
+}
+
 impl<N:TypeFoldable> TypeFoldable for traits::Vtable<N> {
     fn fold_with<'tcx, F:TypeFolder<'tcx>>(&self, folder: &mut F) -> traits::Vtable<N> {
         match *self {
             traits::VtableImpl(ref v) => traits::VtableImpl(v.fold_with(folder)),
             traits::VtableUnboxedClosure(d) => traits::VtableUnboxedClosure(d),
             traits::VtableParam(ref p) => traits::VtableParam(p.fold_with(folder)),
-            traits::VtableBuiltin => traits::VtableBuiltin,
+            traits::VtableBuiltin(ref d) => traits::VtableBuiltin(d.fold_with(folder)),
         }
     }
 }
@@ -458,9 +493,6 @@ pub fn super_fold_mt<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
 pub fn super_fold_sty<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
                                                  sty: &ty::sty) -> ty::sty {
     match *sty {
-        ty::ty_box(typ) => {
-            ty::ty_box(typ.fold_with(this))
-        }
         ty::ty_uniq(typ) => {
             ty::ty_uniq(typ.fold_with(this))
         }

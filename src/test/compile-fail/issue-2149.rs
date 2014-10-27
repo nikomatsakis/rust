@@ -18,9 +18,10 @@ impl<A> vec_monad<A> for Vec<A> {
         let mut r = fail!();
         for elt in self.iter() { r = r + f(*elt); }
         //~^ ERROR the type of this value must be known
+        //~^^ ERROR not implemented
    }
 }
 fn main() {
     ["hi"].bind(|x| [x] );
-    //~^ ERROR type `[&str, .. 1]` does not implement any method in scope named `bind`
+    //~^ ERROR type `[&str, ..1]` does not implement any method in scope named `bind`
 }

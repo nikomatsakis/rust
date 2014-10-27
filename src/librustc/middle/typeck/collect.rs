@@ -71,16 +71,18 @@ use syntax::visit;
 pub fn collect_item_types(ccx: &CrateCtxt) {
     fn collect_intrinsic_type(ccx: &CrateCtxt,
                               lang_item: ast::DefId) {
-        let ty::Polytype { ty: ty, .. } =
+        let ty::Polytype { ty, .. } =
             ccx.get_item_ty(lang_item);
         ccx.tcx.intrinsic_defs.borrow_mut().insert(lang_item, ty);
     }
 
     match ccx.tcx.lang_items.ty_desc() {
-        Some(id) => { collect_intrinsic_type(ccx, id); } None => {}
+        Some(id) => { collect_intrinsic_type(ccx, id); }
+        None => {}
     }
     match ccx.tcx.lang_items.opaque() {
-        Some(id) => { collect_intrinsic_type(ccx, id); } None => {}
+        Some(id) => { collect_intrinsic_type(ccx, id); }
+        None => {}
     }
 
     let mut visitor = CollectTraitDefVisitor{ ccx: ccx };
@@ -169,7 +171,7 @@ impl<'a, 'tcx> AstConv<'tcx> for CrateCtxt<'a, 'tcx> {
             }
             x => {
                 self.tcx.sess.bug(format!("unexpected sort of node \
-                                           in get_item_ty(): {:?}",
+                                           in get_item_ty(): {}",
                                           x).as_slice());
             }
         }
@@ -234,10 +236,7 @@ pub fn get_enum_variant_types(ccx: &CrateCtxt,
                 };
 
                 convert_struct(ccx, &**struct_def, pty, variant.node.id);
-
-                let input_tys: Vec<_> = struct_def.fields.iter().map(
-                    |f| ty::node_id_to_type(ccx.tcx, f.node.id)).collect();
-                ty::mk_ctor_fn(tcx, scope, input_tys.as_slice(), enum_ty)
+                enum_ty
             }
         };
 
@@ -277,7 +276,7 @@ fn collect_trait_methods(ccx: &CrateCtxt,
                                             &trait_def.generics,
                                             trait_items.as_slice(),
                                             &m.id,
-                                            &m.ident,
+                                            &m.ident.name,
                                             &m.explicit_self,
                                             m.abi,
                                             &m.generics,
@@ -291,7 +290,7 @@ fn collect_trait_methods(ccx: &CrateCtxt,
                                             &trait_def.generics,
                                             trait_items.as_slice(),
                                             &m.id,
-                                            &m.pe_ident(),
+                                            &m.pe_ident().name,
                                             m.pe_explicit_self(),
                                             m.pe_abi(),
                                             m.pe_generics(),
@@ -306,10 +305,7 @@ fn collect_trait_methods(ccx: &CrateCtxt,
                                     }
                                 });
 
-                                if ty_method.explicit_self ==
-                                        ty::StaticExplicitSelfCategory {
-                                    make_static_method_ty(ccx, &*ty_method);
-                                }
+                                make_method_ty(ccx, &*ty_method);
 
                                 tcx.impl_or_trait_items
                                    .borrow_mut()
@@ -319,7 +315,7 @@ fn collect_trait_methods(ccx: &CrateCtxt,
                             ast::TypeTraitItem(ref ast_associated_type) => {
                                 let trait_did = local_def(trait_id);
                                 let associated_type = ty::AssociatedType {
-                                    ident: ast_associated_type.ident,
+                                    name: ast_associated_type.ident.name,
                                     vis: ast::Public,
                                     def_id: local_def(ast_associated_type.id),
                                     container: TraitContainer(trait_did),
@@ -364,7 +360,7 @@ fn collect_trait_methods(ccx: &CrateCtxt,
         _ => { /* Ignore things that aren't traits */ }
     }
 
-    fn make_static_method_ty(ccx: &CrateCtxt, m: &ty::Method) {
+    fn make_method_ty(ccx: &CrateCtxt, m: &ty::Method) {
         ccx.tcx.tcache.borrow_mut().insert(
             m.def_id,
             Polytype {
@@ -377,7 +373,7 @@ fn collect_trait_methods(ccx: &CrateCtxt,
                                  trait_generics: &ty::Generics,
                                  trait_items: &[ast::TraitItem],
                                  m_id: &ast::NodeId,
-                                 m_ident: &ast::Ident,
+                                 m_name: &ast::Name,
                                  m_explicit_self: &ast::ExplicitSelf,
                                  m_abi: abi::Abi,
                                  m_generics: &ast::Generics,
@@ -410,7 +406,7 @@ fn collect_trait_methods(ccx: &CrateCtxt,
         };
 
         ty::Method::new(
-            *m_ident,
+            *m_name,
             ty_generics,
             fty,
             explicit_self_category,
@@ -490,7 +486,7 @@ fn convert_associated_type(ccx: &CrateCtxt,
     write_ty_to_tcx(ccx.tcx, associated_type.id, param_type);
 
     let associated_type = Rc::new(ty::AssociatedType {
-        ident: associated_type.ident,
+        name: associated_type.ident.name,
         vis: ast::Public,
         def_id: local_def(associated_type.id),
         container: TraitContainer(trait_def.trait_ref.def_id),
@@ -630,7 +626,7 @@ fn convert_methods<'a,I>(ccx: &CrateCtxt,
         // foo(); }`).
         let method_vis = m.pe_vis().inherit_from(rcvr_visibility);
 
-        ty::Method::new(m.pe_ident(),
+        ty::Method::new(m.pe_ident().name,
                         m_ty_generics,
                         fty,
                         explicit_self_category,
@@ -807,10 +803,8 @@ impl<'a,'tcx> AstConv<'tcx> for ImplCtxt<'a,'tcx> {
                     match *impl_item {
                         ast::MethodImplItem(_) => {}
                         ast::TypeImplItem(ref typedef) => {
-                            if associated_type.ident().name == typedef.ident
-                                                                      .name {
-                                return self.ccx.to_ty(&ExplicitRscope,
-                                                      &*typedef.typ)
+                            if associated_type.name() == typedef.ident.name {
+                                return self.ccx.to_ty(&ExplicitRscope, &*typedef.typ)
                             }
                         }
                     }
@@ -1146,7 +1140,7 @@ pub fn convert(ccx: &CrateCtxt, it: &ast::Item) {
                         write_ty_to_tcx(ccx.tcx, typedef.id, typ);
 
                         let associated_type = Rc::new(ty::AssociatedType {
-                            ident: typedef.ident,
+                            name: typedef.ident.name,
                             vis: typedef.vis,
                             def_id: local_def(typedef.id),
                             container: ty::ImplContainer(local_def(it.id)),
@@ -1235,15 +1229,6 @@ pub fn convert(ccx: &CrateCtxt, it: &ast::Item) {
 
             tcx.tcache.borrow_mut().insert(local_def(it.id), pty.clone());
 
-            // Write the super-struct type, if it exists.
-            match struct_def.super_struct {
-                Some(ref ty) => {
-                    let supserty = ccx.to_ty(&ExplicitRscope, &**ty);
-                    write_ty_to_tcx(tcx, it.id, supserty);
-                },
-                _ => {},
-            }
-
             convert_struct(ccx, &**struct_def, pty, it.id);
         },
         ast::ItemTy(_, ref generics) => {
@@ -1295,39 +1280,6 @@ pub fn convert_struct(ccx: &CrateCtxt,
 
     tcx.struct_fields.borrow_mut().insert(local_def(id), Rc::new(field_tys));
 
-    let super_struct = match struct_def.super_struct {
-        Some(ref t) => match t.node {
-            ast::TyPath(_, _, path_id) => {
-                let def_map = tcx.def_map.borrow();
-                match def_map.find(&path_id) {
-                    Some(&def::DefStruct(def_id)) => {
-                        // FIXME(#12511) Check for cycles in the inheritance hierarchy.
-                        // Check super-struct is virtual.
-                        match tcx.map.find(def_id.node) {
-                            Some(ast_map::NodeItem(i)) => match i.node {
-                                ast::ItemStruct(ref struct_def, _) => {
-                                    if !struct_def.is_virtual {
-                                        span_err!(tcx.sess, t.span, E0126,
-                                                  "struct inheritance is only \
-                                                   allowed from virtual structs");
-                                    }
-                                },
-                                _ => {},
-                            },
-                            _ => {},
-                        }
-
-                        Some(def_id)
-                    },
-                    _ => None,
-                }
-            }
-            _ => None,
-        },
-        None => None,
-    };
-    tcx.superstructs.borrow_mut().insert(local_def(id), super_struct);
-
     let substs = mk_item_substs(ccx, &pty.generics);
     let selfty = ty::mk_struct(tcx, local_def(id), substs);
 
@@ -1341,11 +1293,11 @@ pub fn convert_struct(ccx: &CrateCtxt,
                 write_ty_to_tcx(tcx, ctor_id, selfty);
 
                 tcx.tcache.borrow_mut().insert(local_def(ctor_id), pty);
-            } else if struct_def.fields.get(0).node.kind.is_unnamed() {
+            } else if struct_def.fields[0].node.kind.is_unnamed() {
                 // Tuple-like.
                 let inputs: Vec<_> = struct_def.fields.iter().map(
-                        |field| tcx.tcache.borrow().get(
-                            &local_def(field.node.id)).ty).collect();
+                        |field| (*tcx.tcache.borrow())[
+                            local_def(field.node.id)].ty).collect();
                 let ctor_fn_ty = ty::mk_ctor_fn(tcx,
                                                 ctor_id,
                                                 inputs.as_slice(),
@@ -1464,7 +1416,7 @@ pub fn trait_def_of_item(ccx: &CrateCtxt, it: &ast::Item) -> Rc<ty::TraitDef> {
         ref s => {
             tcx.sess.span_bug(
                 it.span,
-                format!("trait_def_of_item invoked on {:?}", s).as_slice());
+                format!("trait_def_of_item invoked on {}", s).as_slice());
         }
     };
 
@@ -1550,7 +1502,7 @@ pub fn ty_of_item(ccx: &CrateCtxt, it: &ast::Item)
         _ => {}
     }
     match it.node {
-        ast::ItemStatic(ref t, _, _) => {
+        ast::ItemStatic(ref t, _, _) | ast::ItemConst(ref t, _) => {
             let typ = ccx.to_ty(&ExplicitRscope, &**t);
             let pty = no_params(typ);
 
@@ -1728,7 +1680,7 @@ fn ty_generics_for_trait(ccx: &CrateCtxt,
                 let def = ty::TypeParameterDef {
                     space: subst::TypeSpace,
                     index: generics.types.len(subst::TypeSpace),
-                    ident: associated_type.ident,
+                    name: associated_type.ident.name,
                     def_id: local_def(associated_type.id),
                     bounds: ty::ParamBounds {
                         builtin_bounds: ty::empty_builtin_bounds(),
@@ -1759,7 +1711,7 @@ fn ty_generics_for_trait(ccx: &CrateCtxt,
     let def = ty::TypeParameterDef {
         space: subst::SelfSpace,
         index: 0,
-        ident: special_idents::type_self,
+        name: special_idents::type_self.name,
         def_id: local_def(param_id),
         bounds: ty::ParamBounds {
             region_bounds: vec!(),
@@ -1860,7 +1812,7 @@ fn ensure_associated_types<'tcx,AC>(this: &AC, trait_id: ast::DefId)
                                     let info = ty::AssociatedTypeInfo {
                                         def_id: local_def(associated_type.id),
                                         index: index,
-                                        ident: associated_type.ident,
+                                        name: associated_type.ident.name,
                                     };
                                     result.push(info);
                                     index += 1;
@@ -1898,7 +1850,7 @@ fn ensure_associated_types<'tcx,AC>(this: &AC, trait_id: ast::DefId)
                 let info = ty::AssociatedTypeInfo {
                     def_id: associated_type.def_id,
                     index: index,
-                    ident: associated_type.ident
+                    name: associated_type.name
                 };
                 result.push(info);
                 index += 1;
@@ -1963,10 +1915,8 @@ fn ty_generics<'tcx,AC>(this: &AC,
                                                 this.tcx(),
                                                 associated_type_info.def_id);
                                         let def = ty::TypeParameterDef {
-                                            ident: associated_type_trait_item
-                                                       .ident(),
-                                            def_id:
-                                                associated_type_info.def_id,
+                                            name: associated_type_trait_item.name(),
+                                            def_id: associated_type_info.def_id,
                                             space: space,
                                             index: types.len() + index,
                                             bounds: ty::ParamBounds {
@@ -2076,7 +2026,7 @@ fn ty_generics<'tcx,AC>(this: &AC,
         let def = ty::TypeParameterDef {
             space: space,
             index: index,
-            ident: param.ident,
+            name: param.ident.name,
             def_id: local_def(param.id),
             associated_with: None,
             bounds: bounds,
@@ -2167,8 +2117,8 @@ fn conv_param_bounds<'tcx,AC>(this: &AC,
                                      unboxed_fn_ty_bounds } =
         astconv::partition_bounds(this.tcx(), span, all_bounds.as_slice());
 
-    let unboxed_fn_ty_bounds = unboxed_fn_ty_bounds.move_iter().map(|b| {
-        let trait_id = this.tcx().def_map.borrow().get(&b.ref_id).def_id();
+    let unboxed_fn_ty_bounds = unboxed_fn_ty_bounds.into_iter().map(|b| {
+        let trait_id = (*this.tcx().def_map.borrow())[b.ref_id].def_id();
         let mut kind = None;
         for &(lang_item, this_kind) in [
             (this.tcx().lang_items.fn_trait(), ast::FnUnboxedClosureKind),
@@ -2213,7 +2163,7 @@ fn conv_param_bounds<'tcx,AC>(this: &AC,
         .chain(unboxed_fn_ty_bounds)
         .collect();
     let region_bounds: Vec<ty::Region> =
-        region_bounds.move_iter()
+        region_bounds.into_iter()
         .map(|r| ast_region_to_region(this.tcx(), r))
         .collect();
     ty::ParamBounds {

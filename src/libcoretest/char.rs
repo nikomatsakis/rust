@@ -117,7 +117,7 @@ fn test_is_digit() {
 fn test_escape_default() {
     fn string(c: char) -> String {
         let mut result = String::new();
-        escape_default(c, |c| { result.push_char(c); });
+        escape_default(c, |c| { result.push(c); });
         return result;
     }
     let s = string('\n');
@@ -152,7 +152,7 @@ fn test_escape_default() {
 fn test_escape_unicode() {
     fn string(c: char) -> String {
         let mut result = String::new();
-        escape_unicode(c, |c| { result.push_char(c); });
+        escape_unicode(c, |c| { result.push(c); });
         return result;
     }
     let s = string('\x00');
@@ -174,7 +174,7 @@ fn test_encode_utf8() {
     fn check(input: char, expect: &[u8]) {
         let mut buf = [0u8, ..4];
         let n = input.encode_utf8(buf.as_mut_slice()).unwrap_or(0);
-        assert_eq!(buf.slice_to(n), expect);
+        assert_eq!(buf[..n], expect);
     }
 
     check('x', [0x78]);
@@ -188,7 +188,7 @@ fn test_encode_utf16() {
     fn check(input: char, expect: &[u16]) {
         let mut buf = [0u16, ..2];
         let n = input.encode_utf16(buf.as_mut_slice()).unwrap_or(0);
-        assert_eq!(buf.slice_to(n), expect);
+        assert_eq!(buf[..n], expect);
     }
 
     check('x', [0x0078]);

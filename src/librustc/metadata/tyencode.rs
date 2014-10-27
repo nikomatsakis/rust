@@ -175,6 +175,9 @@ fn enc_bound_region(w: &mut SeekableMemWriter, cx: &ctxt, br: ty::BoundRegion) {
         ty::BrFresh(id) => {
             mywrite!(w, "f{}|", id);
         }
+        ty::BrEnv => {
+            mywrite!(w, "e|");
+        }
     }
 }
 
@@ -244,7 +247,6 @@ fn enc_sty(w: &mut SeekableMemWriter, cx: &ctxt, st: &ty::sty) {
             for t in ts.iter() { enc_ty(w, cx, *t); }
             mywrite!(w, "]");
         }
-        ty::ty_box(typ) => { mywrite!(w, "@"); enc_ty(w, cx, typ); }
         ty::ty_uniq(typ) => { mywrite!(w, "~"); enc_ty(w, cx, typ); }
         ty::ty_ptr(mt) => { mywrite!(w, "*"); enc_mt(w, cx, mt); }
         ty::ty_rptr(r, mt) => {
@@ -381,7 +383,7 @@ pub fn enc_bounds(w: &mut SeekableMemWriter, cx: &ctxt, bs: &ty::ParamBounds) {
 
 pub fn enc_type_param_def(w: &mut SeekableMemWriter, cx: &ctxt, v: &ty::TypeParameterDef) {
     mywrite!(w, "{}:{}|{}|{}|",
-             token::get_ident(v.ident), (cx.ds)(v.def_id),
+             token::get_name(v.name), (cx.ds)(v.def_id),
              v.space.to_uint(), v.index);
     enc_opt(w, v.associated_with, |w, did| mywrite!(w, "{}", (cx.ds)(did)));
     mywrite!(w, "|");

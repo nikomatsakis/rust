@@ -29,9 +29,10 @@
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
       html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-      html_root_url = "http://doc.rust-lang.org/")]
+      html_root_url = "http://doc.rust-lang.org/nightly/")]
 
-#![feature(globs, phase, macro_rules)]
+#![allow(unknown_features)]
+#![feature(globs, phase, macro_rules, slicing_syntax)]
 
 #[phase(plugin, link)]
 extern crate log;

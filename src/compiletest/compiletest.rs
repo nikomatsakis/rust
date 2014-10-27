@@ -9,17 +9,12 @@
 // except according to those terms.
 
 #![crate_type = "bin"]
-#![feature(phase)]
-
-// we use our own (green) start below; do not link in libnative; issue #13247.
-#![no_start]
+#![feature(phase, slicing_syntax)]
 
 #![deny(warnings)]
 
 extern crate test;
 extern crate getopts;
-extern crate green;
-extern crate rustuv;
 #[phase(plugin, link)] extern crate log;
 
 extern crate regex;
@@ -41,14 +36,14 @@ pub mod runtest;
 pub mod common;
 pub mod errors;
 
-#[start]
-fn start(argc: int, argv: *const *const u8) -> int {
-    green::start(argc, argv, rustuv::event_loop, main)
-}
-
 pub fn main() {
     let args = os::args();
     let config = parse_config(args);
+
+    if config.valgrind_path.is_none() && config.force_valgrind {
+        fail!("Can't find Valgrind to run Valgrind tests");
+    }
+
     log_config(&config);
     run_tests(&config);
 }
@@ -60,13 +55,15 @@ pub fn parse_config(args: Vec<String> ) -> Config {
           reqopt("", "run-lib-path", "path to target shared libraries", "PATH"),
           reqopt("", "rustc-path", "path to rustc to use for compiling", "PATH"),
           optopt("", "clang-path", "path to  executable for codegen tests", "PATH"),
+          optopt("", "valgrind-path", "path to Valgrind executable for Valgrind tests", "PROGRAM"),
+          optflag("", "force-valgrind", "fail if Valgrind tests cannot be run under Valgrind"),
           optopt("", "llvm-bin-path", "path to directory holding llvm binaries", "DIR"),
           reqopt("", "src-base", "directory to scan for test files", "PATH"),
           reqopt("", "build-base", "directory to deposit test outputs", "PATH"),
           reqopt("", "aux-base", "directory to find auxiliary test files", "PATH"),
           reqopt("", "stage-id", "the target-stage identifier", "stageN-TARGET"),
           reqopt("", "mode", "which sort of compile tests to run",
-                 "(compile-fail|run-fail|run-pass|pretty|debug-info)"),
+                 "(compile-fail|run-fail|run-pass|run-pass-valgrind|pretty|debug-info)"),
           optflag("", "ignored", "run tests marked as ignored"),
           optopt("", "runtool", "supervisor program to run tests under \
                                  (eg. emulator, valgrind)", "PROGRAM"),
@@ -81,7 +78,8 @@ pub fn parse_config(args: Vec<String> ) -> Config {
           optflag("", "jit", "run tests under the JIT"),
           optopt("", "target", "the target to build for", "TARGET"),
           optopt("", "host", "the host to build for", "HOST"),
-          optopt("", "gdb-version", "the version of GDB used", "MAJOR.MINOR"),
+          optopt("", "gdb-version", "the version of GDB used", "VERSION STRING"),
+          optopt("", "lldb-version", "the version of LLDB used", "VERSION STRING"),
           optopt("", "android-cross-path", "Android NDK standalone path", "PATH"),
           optopt("", "adb-path", "path to the android debugger", "PATH"),
           optopt("", "adb-test-dir", "path to tests for the android debugger", "PATH"),
@@ -134,6 +132,8 @@ pub fn parse_config(args: Vec<String> ) -> Config {
         run_lib_path: matches.opt_str("run-lib-path").unwrap(),
         rustc_path: opt_path(matches, "rustc-path"),
         clang_path: matches.opt_str("clang-path").map(|s| Path::new(s)),
+        valgrind_path: matches.opt_str("valgrind-path"),
+        force_valgrind: matches.opt_present("force-valgrind"),
         llvm_bin_path: matches.opt_str("llvm-bin-path").map(|s| Path::new(s)),
         src_base: opt_path(matches, "src-base"),
         build_base: opt_path(matches, "build-base"),
@@ -159,6 +159,7 @@ pub fn parse_config(args: Vec<String> ) -> Config {
         target: opt_str2(matches.opt_str("target")),
         host: opt_str2(matches.opt_str("host")),
         gdb_version: extract_gdb_version(matches.opt_str("gdb-version")),
+        lldb_version: extract_lldb_version(matches.opt_str("lldb-version")),
         android_cross_path: opt_path(matches, "android-cross-path"),
         adb_path: opt_str2(matches.opt_str("adb-path")),
         adb_test_dir: opt_str2(matches.opt_str("adb-test-dir")),
@@ -170,7 +171,7 @@ pub fn parse_config(args: Vec<String> ) -> Config {
             !opt_str2(matches.opt_str("adb-test-dir")).is_empty(),
         lldb_python_dir: matches.opt_str("lldb-python-dir"),
         test_shard: test::opt_shard(matches.opt_str("test-shard")),
-        verbose: matches.opt_present("verbose")
+        verbose: matches.opt_present("verbose"),
     }
 }
 
@@ -393,6 +394,40 @@ fn extract_gdb_version(full_version_line: Option<String>) -> Option<String> {
                 }
                 None => {
                     println!("Could not extract GDB version from line '{}'",
+                             full_version_line);
+                    None
+                }
+            }
+        },
+        _ => None
+    }
+}
+
+fn extract_lldb_version(full_version_line: Option<String>) -> Option<String> {
+    // Extract the major LLDB version from the given version string.
+    // LLDB version strings are different for Apple and non-Apple platforms.
+    // At the moment, this function only supports the Apple variant, which looks
+    // like this:
+    //
+    // LLDB-179.5 (older versions)
+    // lldb-300.2.51 (new versions)
+    //
+    // We are only interested in the major version number, so this function
+    // will return `Some("179")` and `Some("300")` respectively.
+
+    match full_version_line {
+        Some(ref full_version_line)
+          if full_version_line.as_slice().trim().len() > 0 => {
+            let full_version_line = full_version_line.as_slice().trim();
+
+            let re = Regex::new(r"[Ll][Ll][Dd][Bb]-([0-9]+)").unwrap();
+
+            match re.captures(full_version_line) {
+                Some(captures) => {
+                    Some(captures.at(1).to_string())
+                }
+                None => {
+                    println!("Could not extract LLDB version from line '{}'",
                              full_version_line);
                     None
                 }

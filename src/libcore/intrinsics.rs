@@ -58,17 +58,21 @@ pub struct TyDesc {
     pub drop_glue: GlueFn,
 
     // Called by reflection visitor to visit a value of type `T`
+    #[cfg(stage0)]
     pub visit_glue: GlueFn,
 
     // Name corresponding to the type
     pub name: &'static str,
 }
 
+#[cfg(stage0)]
 #[lang="opaque"]
 pub enum Opaque { }
 
+#[cfg(stage0)]
 pub type Disr = u64;
 
+#[cfg(stage0)]
 #[lang="ty_visitor"]
 pub trait TyVisitor {
     fn visit_bot(&mut self) -> bool;
@@ -250,6 +254,23 @@ extern "rust-intrinsic" {
     /// Abort the execution of the process.
     pub fn abort() -> !;
 
+    /// Tell LLVM that this point in the code is not reachable,
+    /// enabling further optimizations.
+    ///
+    /// NB: This is very different from the `unreachable!()` macro!
+    pub fn unreachable() -> !;
+
+    /// Inform the optimizer that a condition is always true.
+    /// If the condition is false, the behavior is undefined.
+    ///
+    /// No code is generated for this intrinsic, but the optimizer will try
+    /// to preserve it (and its condition) between passes, which may interfere
+    /// with optimization of surrounding code and reduce performance. It should
+    /// not be used if the invariant can be discovered by the optimizer on its
+    /// own, or if it does not enable any significant optimizations.
+    #[cfg(not(stage0))]
+    pub fn assume(b: bool);
+
     /// Execute a breakpoint trap, for inspection by a debugger.
     pub fn breakpoint();
 
@@ -320,8 +341,6 @@ extern "rust-intrinsic" {
 
     /// Returns `true` if a type is managed (will be allocated on the local heap)
     pub fn owns_managed<T>() -> bool;
-
-    pub fn visit_tydesc(td: *const TyDesc, tv: &mut TyVisitor);
 
     /// Calculates the offset from a pointer. The offset *must* be in-bounds of
     /// the object, or one-byte-past-the-end. An arithmetic overflow is also

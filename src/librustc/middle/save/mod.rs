@@ -193,7 +193,7 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
         if len <= 2 {
             return;
         }
-        let sub_paths = sub_paths.slice(0, len-2);
+        let sub_paths = sub_paths[..len-2];
         for &(ref span, ref qualname) in sub_paths.iter() {
             self.fmt.sub_mod_ref_str(path.span,
                                      *span,
@@ -208,7 +208,7 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
             self.sess.bug(format!("def_map has no key for {} in lookup_type_ref",
                                   ref_id).as_slice());
         }
-        let def = *self.analysis.ty_cx.def_map.borrow().get(&ref_id);
+        let def = (*self.analysis.ty_cx.def_map.borrow())[ref_id];
         match def {
             def::DefPrimTy(_) => None,
             _ => Some(def.def_id()),
@@ -221,7 +221,7 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
             self.sess.span_bug(span, format!("def_map has no key for {} in lookup_def_kind",
                                              ref_id).as_slice());
         }
-        let def = *def_map.get(&ref_id);
+        let def = (*def_map)[ref_id];
         match def {
             def::DefMod(_) |
             def::DefForeignMod(_) => Some(recorder::ModRef),
@@ -230,6 +230,7 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
             def::DefAssociatedTy(..) |
             def::DefTrait(_) => Some(recorder::TypeRef),
             def::DefStatic(_, _) |
+            def::DefConst(_) |
             def::DefLocal(_) |
             def::DefVariant(_, _, _) |
             def::DefUpvar(..) => Some(recorder::VarRef),
@@ -243,9 +244,9 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
             def::DefStaticMethod(_, _, _) |
             def::DefTyParam(..) |
             def::DefUse(_) |
-            def::DefMethod(_, _) |
+            def::DefMethod(..) |
             def::DefPrimTy(_) => {
-                self.sess.span_bug(span, format!("lookup_def_kind for unexpected item: {:?}",
+                self.sess.span_bug(span, format!("lookup_def_kind for unexpected item: {}",
                                                  def).as_slice());
             },
         }
@@ -260,7 +261,7 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
             let span_utils = self.span;
             for &(id, ref p, _, _) in self.collected_paths.iter() {
                 let typ = ppaux::ty_to_string(&self.analysis.ty_cx,
-                    *self.analysis.ty_cx.node_types.borrow().get(&(id as uint)));
+                    (*self.analysis.ty_cx.node_types.borrow())[id as uint]);
                 // get the span only for the name of the variable (I hope the path is only ever a
                 // variable name, but who knows?)
                 self.fmt.formal_str(p.span,
@@ -301,7 +302,8 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
                                 },
                                 None => {}
                             }
-                            result.append(">::")
+                            result.push_str(">::");
+                            result
                         }
                         _ => {
                             self.sess.span_bug(method.span,
@@ -312,7 +314,7 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
                 },
                 _ => {
                     self.sess.span_bug(method.span,
-                                       format!("Container {} for method {} is not a node item {:?}",
+                                       format!("Container {} for method {} is not a node item {}",
                                                impl_id.node,
                                                method.id,
                                                self.analysis.ty_cx.map.get(impl_id.node)
@@ -325,8 +327,9 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
                     scope_id = def_id.node;
                     match self.analysis.ty_cx.map.get(def_id.node) {
                         NodeItem(_) => {
-                            let result = ty::item_path_str(&self.analysis.ty_cx, def_id);
-                            result.append("::")
+                            let mut result = ty::item_path_str(&self.analysis.ty_cx, def_id);
+                            result.push_str("::");
+                            result
                         }
                         _ => {
                             self.sess.span_bug(method.span,
@@ -349,12 +352,16 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
         // record the decl for this def (if it has one)
         let decl_id = ty::trait_item_of_item(&self.analysis.ty_cx,
                                              ast_util::local_def(method.id))
-            .filtered(|def_id| {
-                match *def_id {
+            .and_then(|def_id| {
+                if match def_id {
                     ty::MethodTraitItemId(def_id) => {
                         method.id != 0 && def_id.node == 0
                     }
                     ty::TypeTraitItemId(_) => false,
+                } {
+                    Some(def_id)
+                } else {
+                    None
                 }
             });
         let decl_id = match decl_id {
@@ -420,7 +427,7 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
                 let name = get_ident(ident);
                 let qualname = format!("{}::{}", qualname, name);
                 let typ = ppaux::ty_to_string(&self.analysis.ty_cx,
-                    *self.analysis.ty_cx.node_types.borrow().get(&(field.node.id as uint)));
+                    (*self.analysis.ty_cx.node_types.borrow())[field.node.id as uint]);
                 match self.span.sub_span_before_token(field.span, token::COLON) {
                     Some(sub_span) => self.fmt.field_str(field.span,
                                                          Some(sub_span),
@@ -521,6 +528,29 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
         self.visit_expr(expr);
     }
 
+    fn process_const(&mut self,
+                      item: &ast::Item,
+                      typ: &ast::Ty,
+                      expr: &ast::Expr)
+    {
+        let qualname = self.analysis.ty_cx.map.path_to_string(item.id);
+
+        let sub_span = self.span.sub_span_after_keyword(item.span,
+                                                        keywords::Const);
+        self.fmt.static_str(item.span,
+                            sub_span,
+                            item.id,
+                            get_ident(item.ident).get(),
+                            qualname.as_slice(),
+                            "",
+                            ty_to_string(&*typ).as_slice(),
+                            self.cur_scope);
+
+        // walk type and init value
+        self.visit_ty(&*typ);
+        self.visit_expr(expr);
+    }
+
     fn process_struct(&mut self,
                       item: &ast::Item,
                       def: &ast::StructDef,
@@ -566,7 +596,9 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
         for variant in enum_definition.variants.iter() {
             let name = get_ident(variant.node.name);
             let name = name.get();
-            let qualname = qualname.clone().append("::").append(name);
+            let mut qualname = qualname.clone();
+            qualname.push_str("::");
+            qualname.push_str(name);
             let val = self.span.snippet(variant.span);
             match variant.node.kind {
                 ast::TupleVariantKind(ref args) => {
@@ -734,12 +766,13 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
                                format!("def_map has no key for {} in visit_expr",
                                        ex.id).as_slice());
         }
-        let def = def_map.get(&ex.id);
+        let def = &(*def_map)[ex.id];
         let sub_span = self.span.span_for_last_ident(ex.span);
         match *def {
             def::DefUpvar(..) |
             def::DefLocal(..) |
             def::DefStatic(..) |
+            def::DefConst(..) |
             def::DefVariant(..) => self.fmt.ref_str(recorder::VarRef,
                                                     ex.span,
                                                     sub_span,
@@ -761,7 +794,7 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
                                                  def_id)
                                     .iter()
                                     .find(|mr| {
-                                        mr.ident().name == ti.ident().name
+                                        mr.name() == ti.name()
                                     })
                                     .unwrap()
                                     .def_id())
@@ -771,13 +804,13 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
                                                  .ty_cx
                                                  .impl_items
                                                  .borrow();
-                            Some(impl_items.get(&def_id)
+                            Some((*impl_items)[def_id]
                                            .iter()
                                            .find(|mr| {
-                                            ty::impl_or_trait_item(
-                                                &self.analysis.ty_cx,
-                                                mr.def_id()).ident().name ==
-                                                ti.ident().name
+                                                ty::impl_or_trait_item(
+                                                    &self.analysis.ty_cx,
+                                                    mr.def_id()
+                                                ).name() == ti.name()
                                             })
                                            .unwrap()
                                            .def_id())
@@ -807,6 +840,7 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
             },
             def::DefLocal(_) |
             def::DefStatic(_,_) |
+            def::DefConst(..) |
             def::DefStruct(_) |
             def::DefFn(..) => self.write_sub_paths_truncated(path),
             _ => {},
@@ -871,7 +905,7 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
                            ex: &ast::Expr,
                            args: &Vec<P<ast::Expr>>) {
         let method_map = self.analysis.ty_cx.method_map.borrow();
-        let method_callee = method_map.get(&typeck::MethodCall::expr(ex.id));
+        let method_callee = &(*method_map)[typeck::MethodCall::expr(ex.id)];
         let (def_id, decl_id) = match method_callee.origin {
             typeck::MethodStatic(def_id) |
             typeck::MethodStaticUnboxedClosure(def_id) => {
@@ -938,28 +972,14 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
                                                    self.span.snippet(p.span)).as_slice());
                     }
                 };
-                // The AST doesn't give us a span for the struct field, so we have
-                // to figure out where it is by assuming it's the token before each colon.
-                let field_spans = self.span.sub_spans_before_tokens(p.span,
-                                                                    token::COMMA,
-                                                                    token::COLON);
-                if fields.len() != field_spans.len() {
-                    self.sess.span_bug(p.span,
-                        format!("Mismatched field count in '{}', found {}, expected {}",
-                                self.span.snippet(p.span), field_spans.len(), fields.len()
-                               ).as_slice());
-                }
-                for (field, &span) in fields.iter().zip(field_spans.iter()) {
+                for &Spanned { node: ref field, span } in fields.iter() {
                     self.visit_pat(&*field.pat);
-                    if span.is_none() {
-                        continue;
-                    }
                     let fields = ty::lookup_struct_fields(&self.analysis.ty_cx, struct_def);
                     for f in fields.iter() {
                         if f.name == field.ident.name {
                             self.fmt.ref_str(recorder::VarRef,
                                              p.span,
-                                             span,
+                                             Some(span),
                                              f.id,
                                              self.cur_scope);
                             break;
@@ -1008,6 +1028,8 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DxrVisitor<'l, 'tcx> {
                 self.process_fn(item, &**decl, ty_params, &**body),
             ast::ItemStatic(ref typ, mt, ref expr) =>
                 self.process_static(item, &**typ, mt, &**expr),
+            ast::ItemConst(ref typ, ref expr) =>
+                self.process_const(item, &**typ, &**expr),
             ast::ItemStruct(ref def, ref ty_params) => self.process_struct(item, &**def, ty_params),
             ast::ItemEnum(ref def, ref ty_params) => self.process_enum(item, def, ty_params),
             ast::ItemImpl(ref ty_params,
@@ -1088,7 +1110,9 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DxrVisitor<'l, 'tcx> {
                                                            ast_util::local_def(method_type.id)) {
                     Some(def_id) => {
                         scope_id = def_id.node;
-                        ty::item_path_str(&self.analysis.ty_cx, def_id).append("::")
+                        let mut s = ty::item_path_str(&self.analysis.ty_cx, def_id);
+                        s.push_str("::");
+                        s
                     },
                     None => {
                         self.sess.span_bug(method_type.span,
@@ -1319,7 +1343,8 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DxrVisitor<'l, 'tcx> {
                     return
                 }
 
-                let id = String::from_str("$").append(ex.id.to_string().as_slice());
+                let mut id = String::from_str("$");
+                id.push_str(ex.id.to_string().as_slice());
                 self.process_formals(&decl.inputs, id.as_slice());
 
                 // walk arg and return types
@@ -1371,7 +1396,7 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DxrVisitor<'l, 'tcx> {
                                    format!("def_map has no key for {} in visit_arm",
                                            id).as_slice());
             }
-            let def = def_map.get(&id);
+            let def = &(*def_map)[id];
             match *def {
                 def::DefLocal(id)  => self.fmt.variable_str(p.span,
                                                             sub_span,
@@ -1386,7 +1411,8 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DxrVisitor<'l, 'tcx> {
                                                             self.cur_scope),
                 // FIXME(nrc) what is this doing here?
                 def::DefStatic(_, _) => {}
-                _ => error!("unexpected definition kind when processing collected paths: {:?}",
+                def::DefConst(..) => {}
+                _ => error!("unexpected definition kind when processing collected paths: {}",
                             *def)
             }
         }
@@ -1420,7 +1446,7 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DxrVisitor<'l, 'tcx> {
         for &(id, ref p, ref immut, _) in self.collected_paths.iter() {
             let value = if *immut { value.to_string() } else { "<mutable>".to_string() };
             let types = self.analysis.ty_cx.node_types.borrow();
-            let typ = ppaux::ty_to_string(&self.analysis.ty_cx, *types.get(&(id as uint)));
+            let typ = ppaux::ty_to_string(&self.analysis.ty_cx, (*types)[id as uint]);
             // Get the span only for the name of the variable (I hope the path
             // is only ever a variable name, but who knows?).
             let sub_span = self.span.span_for_last_ident(p.span);
@@ -1467,7 +1493,7 @@ pub fn process_crate(sess: &Session,
         },
     };
 
-    match fs::mkdir_recursive(&root_path, io::UserRWX) {
+    match fs::mkdir_recursive(&root_path, io::USER_RWX) {
         Err(e) => sess.err(format!("Could not create directory {}: {}",
                            root_path.display(), e).as_slice()),
         _ => (),

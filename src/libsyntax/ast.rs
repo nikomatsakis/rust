@@ -81,7 +81,7 @@ impl PartialEq for Ident {
             // one example and its non-hygienic counterpart would be:
             //      syntax::parse::token::mtwt_token_eq
             //      syntax::ext::tt::macro_parser::token_name_eq
-            fail!("not allowed to compare these idents: {:?}, {:?}. \
+            fail!("not allowed to compare these idents: {}, {}. \
                    Probably related to issue \\#6993", self, other);
         }
     }
@@ -104,8 +104,8 @@ impl PartialEq for Ident {
 // this uint is a reference to a table stored in thread-local
 // storage.
 pub type SyntaxContext = u32;
-pub static EMPTY_CTXT : SyntaxContext = 0;
-pub static ILLEGAL_CTXT : SyntaxContext = 1;
+pub const EMPTY_CTXT : SyntaxContext = 0;
+pub const ILLEGAL_CTXT : SyntaxContext = 1;
 
 /// A name is a part of an identifier, representing a string or gensym. It's
 /// the result of interning.
@@ -198,13 +198,13 @@ pub struct DefId {
 
 /// Item definitions in the currently-compiled crate would have the CrateNum
 /// LOCAL_CRATE in their DefId.
-pub static LOCAL_CRATE: CrateNum = 0;
-pub static CRATE_NODE_ID: NodeId = 0;
+pub const LOCAL_CRATE: CrateNum = 0;
+pub const CRATE_NODE_ID: NodeId = 0;
 
 /// When parsing and doing expansions, we initially give all AST nodes this AST
 /// node value. Then later, in the renumber pass, we renumber them to have
 /// small, positive ids.
-pub static DUMMY_NODE_ID: NodeId = -1;
+pub const DUMMY_NODE_ID: NodeId = -1;
 
 /// The AST represents all type param bounds as types.
 /// typeck::collect::compute_bounds matches these against
@@ -340,6 +340,7 @@ pub struct Pat {
 pub struct FieldPat {
     pub ident: Ident,
     pub pat: P<Pat>,
+    pub is_shorthand: bool,
 }
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
@@ -374,7 +375,7 @@ pub enum Pat_ {
     /// "None" means a * pattern where we don't bind the fields to names.
     PatEnum(Path, Option<Vec<P<Pat>>>),
 
-    PatStruct(Path, Vec<FieldPat>, bool),
+    PatStruct(Path, Vec<Spanned<FieldPat>>, bool),
     PatTup(Vec<P<Pat>>),
     PatBox(P<Pat>),
     PatRegion(P<Pat>), // reference pattern
@@ -416,7 +417,6 @@ pub enum BinOp {
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum UnOp {
-    UnBox,
     UnUniq,
     UnDeref,
     UnNot,
@@ -525,6 +525,8 @@ pub enum Expr_ {
     // FIXME #6993: change to Option<Name> ... or not, if these are hygienic.
     ExprWhile(P<Expr>, P<Block>, Option<Ident>),
     // FIXME #6993: change to Option<Name> ... or not, if these are hygienic.
+    ExprWhileLet(P<Pat>, P<Expr>, P<Block>, Option<Ident>),
+    // FIXME #6993: change to Option<Name> ... or not, if these are hygienic.
     ExprForLoop(P<Pat>, P<Expr>, P<Block>, Option<Ident>),
     // Conditionless loop (can be exited with break, cont, or ret)
     // FIXME #6993: change to Option<Name> ... or not, if these are hygienic.
@@ -580,7 +582,8 @@ pub struct QPath {
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum MatchSource {
     MatchNormal,
-    MatchIfLetDesugar
+    MatchIfLetDesugar,
+    MatchWhileLetDesugar,
 }
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
@@ -953,7 +956,6 @@ pub struct UnboxedFnTy {
 pub enum Ty_ {
     TyNil,
     TyBot, /* bottom type */
-    TyBox(P<Ty>),
     TyUniq(P<Ty>),
     TyVec(P<Ty>),
     TyFixedLengthVec(P<Ty>, P<Expr>),
@@ -1288,10 +1290,6 @@ pub struct StructDef {
     /// ID of the constructor. This is only used for tuple- or enum-like
     /// structs.
     pub ctor_id: Option<NodeId>,
-    /// Super struct, if specified.
-    pub super_struct: Option<P<Ty>>,
-    /// True iff the struct may be inherited from.
-    pub is_virtual: bool,
 }
 
 /*
@@ -1311,6 +1309,7 @@ pub struct Item {
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum Item_ {
     ItemStatic(P<Ty>, Mutability, P<Expr>),
+    ItemConst(P<Ty>, P<Expr>),
     ItemFn(P<FnDecl>, FnStyle, Abi, Generics, P<Block>),
     ItemMod(Mod),
     ItemForeignMod(ForeignMod),
@@ -1335,6 +1334,7 @@ impl Item_ {
     pub fn descriptive_variant(&self) -> &str {
         match *self {
             ItemStatic(..) => "static item",
+            ItemConst(..) => "constant item",
             ItemFn(..) => "function",
             ItemMod(..) => "module",
             ItemForeignMod(..) => "foreign module",
@@ -1342,7 +1342,8 @@ impl Item_ {
             ItemEnum(..) => "enum",
             ItemStruct(..) => "struct",
             ItemTrait(..) => "trait",
-            _ => "item"
+            ItemMac(..) |
+            ItemImpl(..) => "item"
         }
     }
 }

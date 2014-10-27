@@ -89,9 +89,11 @@ pub fn rust_printer_annotated<'a>(writer: Box<io::Writer+'static>,
     }
 }
 
-pub static indent_unit: uint = 4u;
+#[allow(non_uppercase_statics)]
+pub const indent_unit: uint = 4u;
 
-pub static default_columns: uint = 78u;
+#[allow(non_uppercase_statics)]
+pub const default_columns: uint = 78u;
 
 /// Requires you to pass an input filename and reader so that
 /// it can scan the input text for comments and literals to
@@ -173,7 +175,7 @@ pub fn to_string(f: |&mut State| -> IoResult<()>) -> String {
         let obj: TraitObject = mem::transmute_copy(&s.s.out);
         let wr: Box<MemWriter> = mem::transmute(obj.data);
         let result =
-            String::from_utf8(Vec::from_slice(wr.get_ref().as_slice())).unwrap();
+            String::from_utf8(wr.get_ref().as_slice().to_vec()).unwrap();
         mem::forget(wr);
         result.to_string()
     }
@@ -546,10 +548,6 @@ impl<'a> State<'a> {
         match ty.node {
             ast::TyNil => try!(word(&mut self.s, "()")),
             ast::TyBot => try!(word(&mut self.s, "!")),
-            ast::TyBox(ref ty) => {
-                try!(word(&mut self.s, "@"));
-                try!(self.print_type(&**ty));
-            }
             ast::TyUniq(ref ty) => {
                 try!(word(&mut self.s, "~"));
                 try!(self.print_type(&**ty));
@@ -759,6 +757,20 @@ impl<'a> State<'a> {
                 try!(word(&mut self.s, ";"));
                 try!(self.end()); // end the outer cbox
             }
+            ast::ItemConst(ref ty, ref expr) => {
+                try!(self.head(visibility_qualified(item.vis,
+                                                    "const").as_slice()));
+                try!(self.print_ident(item.ident));
+                try!(self.word_space(":"));
+                try!(self.print_type(&**ty));
+                try!(space(&mut self.s));
+                try!(self.end()); // end the head-ibox
+
+                try!(self.word_space("="));
+                try!(self.print_expr(&**expr));
+                try!(word(&mut self.s, ";"));
+                try!(self.end()); // end the outer cbox
+            }
             ast::ItemFn(ref decl, fn_style, abi, ref typarams, ref body) => {
                 try!(self.print_fn(
                     &**decl,
@@ -814,9 +826,6 @@ impl<'a> State<'a> {
                 ));
             }
             ast::ItemStruct(ref struct_def, ref generics) => {
-                if struct_def.is_virtual {
-                    try!(self.word_space("virtual"));
-                }
                 try!(self.head(visibility_qualified(item.vis,"struct").as_slice()));
                 try!(self.print_struct(&**struct_def, generics, item.ident, item.span));
             }
@@ -956,13 +965,6 @@ impl<'a> State<'a> {
                         span: codemap::Span) -> IoResult<()> {
         try!(self.print_ident(ident));
         try!(self.print_generics(generics));
-        match struct_def.super_struct {
-            Some(ref t) => {
-                try!(self.word_space(":"));
-                try!(self.print_type(&**t));
-            },
-            None => {},
-        }
         if ast_util::struct_def_is_tuple_like(struct_def) {
             if !struct_def.fields.is_empty() {
                 try!(self.popen());
@@ -1464,7 +1466,7 @@ impl<'a> State<'a> {
             }
             ast::ExprMethodCall(ident, ref tys, ref args) => {
                 let base_args = args.slice_from(1);
-                try!(self.print_expr(&**args.get(0)));
+                try!(self.print_expr(&*args[0]));
                 try!(word(&mut self.s, "."));
                 try!(self.print_ident(ident.node));
                 if tys.len() > 0u {
@@ -1510,6 +1512,19 @@ impl<'a> State<'a> {
                 }
                 try!(self.head("while"));
                 try!(self.print_expr(&**test));
+                try!(space(&mut self.s));
+                try!(self.print_block(&**blk));
+            }
+            ast::ExprWhileLet(ref pat, ref expr, ref blk, opt_ident) => {
+                for ident in opt_ident.iter() {
+                    try!(self.print_ident(*ident));
+                    try!(self.word_space(":"));
+                }
+                try!(self.head("while let"));
+                try!(self.print_pat(&**pat));
+                try!(space(&mut self.s));
+                try!(self.word_space("="));
+                try!(self.print_expr(&**expr));
                 try!(space(&mut self.s));
                 try!(self.print_block(&**blk));
             }
@@ -1968,12 +1983,12 @@ impl<'a> State<'a> {
                     Consistent, fields.as_slice(),
                     |s, f| {
                         try!(s.cbox(indent_unit));
-                        try!(s.print_ident(f.ident));
+                        try!(s.print_ident(f.node.ident));
                         try!(s.word_nbsp(":"));
-                        try!(s.print_pat(&*f.pat));
+                        try!(s.print_pat(&*f.node.pat));
                         s.end()
                     },
-                    |f| f.pat.span));
+                    |f| f.node.pat.span));
                 if etc {
                     if fields.len() != 0u { try!(self.word_space(",")); }
                     try!(word(&mut self.s, ".."));
@@ -2129,7 +2144,7 @@ impl<'a> State<'a> {
         for &explicit_self in opt_explicit_self.iter() {
             let m = match explicit_self {
                 &ast::SelfStatic => ast::MutImmutable,
-                _ => match decl.inputs.get(0).pat.node {
+                _ => match decl.inputs[0].pat.node {
                     ast::PatIdent(ast::BindByValue(m), _, _) => m,
                     _ => ast::MutImmutable
                 }
@@ -2304,7 +2319,7 @@ impl<'a> State<'a> {
 
         try!(self.commasep(Inconsistent, ints.as_slice(), |s, &idx| {
             if idx < generics.lifetimes.len() {
-                let lifetime = generics.lifetimes.get(idx);
+                let lifetime = &generics.lifetimes[idx];
                 s.print_lifetime_def(lifetime)
             } else {
                 let idx = idx - generics.lifetimes.len();
@@ -2648,14 +2663,14 @@ impl<'a> State<'a> {
             ast::LitStr(ref st, style) => self.print_string(st.get(), style),
             ast::LitByte(byte) => {
                 let mut res = String::from_str("b'");
-                (byte as char).escape_default(|c| res.push_char(c));
-                res.push_char('\'');
+                (byte as char).escape_default(|c| res.push(c));
+                res.push('\'');
                 word(&mut self.s, res.as_slice())
             }
             ast::LitChar(ch) => {
                 let mut res = String::from_str("'");
-                ch.escape_default(|c| res.push_char(c));
-                res.push_char('\'');
+                ch.escape_default(|c| res.push(c));
+                res.push('\'');
                 word(&mut self.s, res.as_slice())
             }
             ast::LitInt(i, t) => {
@@ -2665,8 +2680,9 @@ impl<'a> State<'a> {
                              ast_util::int_ty_to_string(st, Some(i as i64)).as_slice())
                     }
                     ast::SignedIntLit(st, ast::Minus) => {
+                        let istr = ast_util::int_ty_to_string(st, Some(-(i as i64)));
                         word(&mut self.s,
-                             ast_util::int_ty_to_string(st, Some(-(i as i64))).as_slice())
+                             format!("-{}", istr).as_slice())
                     }
                     ast::UnsignedIntLit(ut) => {
                         word(&mut self.s, ast_util::uint_ty_to_string(ut, Some(i)).as_slice())
@@ -2702,7 +2718,7 @@ impl<'a> State<'a> {
         match self.literals {
             Some(ref lits) => {
                 while self.cur_cmnt_and_lit.cur_lit < lits.len() {
-                    let ltrl = (*(*lits).get(self.cur_cmnt_and_lit.cur_lit)).clone();
+                    let ltrl = (*lits)[self.cur_cmnt_and_lit.cur_lit].clone();
                     if ltrl.pos > pos { return None; }
                     self.cur_cmnt_and_lit.cur_lit += 1u;
                     if ltrl.pos == pos { return Some(ltrl); }
@@ -2734,7 +2750,7 @@ impl<'a> State<'a> {
             comments::Mixed => {
                 assert_eq!(cmnt.lines.len(), 1u);
                 try!(zerobreak(&mut self.s));
-                try!(word(&mut self.s, cmnt.lines.get(0).as_slice()));
+                try!(word(&mut self.s, cmnt.lines[0].as_slice()));
                 zerobreak(&mut self.s)
             }
             comments::Isolated => {
@@ -2752,7 +2768,7 @@ impl<'a> State<'a> {
             comments::Trailing => {
                 try!(word(&mut self.s, " "));
                 if cmnt.lines.len() == 1u {
-                    try!(word(&mut self.s, cmnt.lines.get(0).as_slice()));
+                    try!(word(&mut self.s, cmnt.lines[0].as_slice()));
                     hardbreak(&mut self.s)
                 } else {
                     try!(self.ibox(0u));
@@ -2798,7 +2814,7 @@ impl<'a> State<'a> {
         match self.comments {
             Some(ref cmnts) => {
                 if self.cur_cmnt_and_lit.cur_cmnt < cmnts.len() {
-                    Some((*cmnts.get(self.cur_cmnt_and_lit.cur_cmnt)).clone())
+                    Some(cmnts[self.cur_cmnt_and_lit.cur_cmnt].clone())
                 } else {
                     None
                 }
@@ -2914,5 +2930,13 @@ mod test {
 
         let varstr = variant_to_string(&var);
         assert_eq!(&varstr,&"pub principal_skinner".to_string());
+    }
+
+    #[test]
+    fn test_signed_int_to_string() {
+        let pos_int = ast::LitInt(42, ast::SignedIntLit(ast::TyI32, ast::Plus));
+        let neg_int = ast::LitInt((-42) as u64, ast::SignedIntLit(ast::TyI32, ast::Minus));
+        assert_eq!(format!("-{}", lit_to_string(&codemap::dummy_spanned(pos_int))),
+                   lit_to_string(&codemap::dummy_spanned(neg_int)));
     }
 }

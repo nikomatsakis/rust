@@ -22,9 +22,10 @@ use ast::*;
 use ast;
 use ast_util;
 use codemap::{respan, Span, Spanned};
+use owned_slice::OwnedSlice;
 use parse::token;
 use ptr::P;
-use owned_slice::OwnedSlice;
+use std::ptr;
 use util::small_vector::SmallVector;
 
 use std::rc::Rc;
@@ -36,11 +37,10 @@ pub trait MoveMap<T> {
 
 impl<T> MoveMap<T> for Vec<T> {
     fn move_map(mut self, f: |T| -> T) -> Vec<T> {
-        use std::{mem, ptr};
         for p in self.iter_mut() {
             unsafe {
                 // FIXME(#5016) this shouldn't need to zero to be safe.
-                mem::move_val_init(p, f(ptr::read_and_zero(p)));
+                ptr::write(p, f(ptr::read_and_zero(p)));
             }
         }
         self
@@ -372,7 +372,6 @@ pub fn noop_fold_ty<T: Folder>(t: P<Ty>, fld: &mut T) -> P<Ty> {
         id: fld.new_id(id),
         node: match node {
             TyNil | TyBot | TyInfer => node,
-            TyBox(ty) => TyBox(fld.fold_ty(ty)),
             TyUniq(ty) => TyUniq(fld.fold_ty(ty)),
             TyVec(ty) => TyVec(fld.fold_ty(ty)),
             TyPtr(mt) => TyPtr(fld.fold_mt(mt)),
@@ -802,11 +801,9 @@ pub fn noop_fold_associated_type<T>(at: AssociatedType, folder: &mut T)
 }
 
 pub fn noop_fold_struct_def<T: Folder>(struct_def: P<StructDef>, fld: &mut T) -> P<StructDef> {
-    struct_def.map(|StructDef {fields, ctor_id, super_struct, is_virtual}| StructDef {
+    struct_def.map(|StructDef { fields, ctor_id }| StructDef {
         fields: fields.move_map(|f| fld.fold_struct_field(f)),
         ctor_id: ctor_id.map(|cid| fld.new_id(cid)),
-        super_struct: super_struct.map(|t| fld.fold_ty(t)),
-        is_virtual: is_virtual
     })
 }
 
@@ -904,6 +901,9 @@ pub fn noop_fold_item_underscore<T: Folder>(i: Item_, folder: &mut T) -> Item_ {
         ItemStatic(t, m, e) => {
             ItemStatic(folder.fold_ty(t), m, folder.fold_expr(e))
         }
+        ItemConst(t, e) => {
+            ItemConst(folder.fold_ty(t), folder.fold_expr(e))
+        }
         ItemFn(decl, fn_style, abi, generics, body) => {
             ItemFn(
                 folder.fold_fn_decl(decl),
@@ -935,7 +935,7 @@ pub fn noop_fold_item_underscore<T: Folder>(i: Item_, folder: &mut T) -> Item_ {
                 match *impl_item {
                     MethodImplItem(ref x) => {
                         for method in folder.fold_method((*x).clone())
-                                            .move_iter() {
+                                            .into_iter() {
                             new_impl_items.push(MethodImplItem(method))
                         }
                     }
@@ -963,7 +963,7 @@ pub fn noop_fold_item_underscore<T: Folder>(i: Item_, folder: &mut T) -> Item_ {
                     RequiredMethod(m) => {
                             SmallVector::one(RequiredMethod(
                                     folder.fold_type_method(m)))
-                                .move_iter()
+                                .into_iter()
                     }
                     ProvidedMethod(method) => {
                         // the awkward collect/iter idiom here is because
@@ -971,15 +971,15 @@ pub fn noop_fold_item_underscore<T: Folder>(i: Item_, folder: &mut T) -> Item_ {
                         // trait bound, they're not actually the same type, so
                         // the method arms don't unify.
                         let methods: SmallVector<ast::TraitItem> =
-                            folder.fold_method(method).move_iter()
+                            folder.fold_method(method).into_iter()
                             .map(|m| ProvidedMethod(m)).collect();
-                        methods.move_iter()
+                        methods.into_iter()
                     }
                     TypeTraitItem(at) => {
                         SmallVector::one(TypeTraitItem(P(
                                     folder.fold_associated_type(
                                         (*at).clone()))))
-                            .move_iter()
+                            .into_iter()
                     }
                 };
                 r
@@ -1139,10 +1139,12 @@ pub fn noop_fold_pat<T: Folder>(p: P<Pat>, folder: &mut T) -> P<Pat> {
             PatStruct(pth, fields, etc) => {
                 let pth = folder.fold_path(pth);
                 let fs = fields.move_map(|f| {
-                    ast::FieldPat {
-                        ident: f.ident,
-                        pat: folder.fold_pat(f.pat)
-                    }
+                    Spanned { span: folder.new_span(f.span),
+                              node: ast::FieldPat {
+                                  ident: f.node.ident,
+                                  pat: folder.fold_pat(f.node.pat),
+                                  is_shorthand: f.node.is_shorthand,
+                              }}
                 });
                 PatStruct(pth, fs, etc)
             }
@@ -1215,6 +1217,12 @@ pub fn noop_fold_expr<T: Folder>(Expr {id, node, span}: Expr, folder: &mut T) ->
                 ExprWhile(folder.fold_expr(cond),
                           folder.fold_block(body),
                           opt_ident.map(|i| folder.fold_ident(i)))
+            }
+            ExprWhileLet(pat, expr, body, opt_ident) => {
+                ExprWhileLet(folder.fold_pat(pat),
+                             folder.fold_expr(expr),
+                             folder.fold_block(body),
+                             opt_ident.map(|i| folder.fold_ident(i)))
             }
             ExprForLoop(pat, iter, body, opt_ident) => {
                 ExprForLoop(folder.fold_pat(pat),
@@ -1383,7 +1391,7 @@ mod test {
                 let a_val = $a;
                 let b_val = $b;
                 if !(pred_val(a_val.as_slice(),b_val.as_slice())) {
-                    fail!("expected args satisfying {}, got {:?} and {:?}",
+                    fail!("expected args satisfying {}, got {} and {}",
                           $predname, a_val, b_val);
                 }
             }

@@ -10,18 +10,15 @@
 
 #![feature(unsafe_destructor)]
 
-extern crate collections;
 extern crate time;
 
 use time::precise_time_s;
 use std::os;
 use std::task;
-use std::vec;
-use std::gc::{Gc, GC};
 
 #[deriving(Clone)]
 enum List<T> {
-    Nil, Cons(T, Gc<List<T>>)
+    Nil, Cons(T, Box<List<T>>)
 }
 
 enum UniqueList {
@@ -53,15 +50,13 @@ type nillist = List<()>;
 // Filled with things that have to be unwound
 
 struct State {
-    managed: Gc<nillist>,
     unique: Box<nillist>,
-    tuple: (Gc<nillist>, Box<nillist>),
-    vec: Vec<Gc<nillist>>,
+    vec: Vec<Box<nillist>>,
     res: r
 }
 
 struct r {
-  _l: Gc<nillist>,
+  _l: Box<nillist>,
 }
 
 #[unsafe_destructor]
@@ -69,7 +64,7 @@ impl Drop for r {
     fn drop(&mut self) {}
 }
 
-fn r(l: Gc<nillist>) -> r {
+fn r(l: Box<nillist>) -> r {
     r {
         _l: l
     }
@@ -83,26 +78,22 @@ fn recurse_or_fail(depth: int, st: Option<State>) {
         let depth = depth - 1;
 
         let st = match st {
-          None => {
-            State {
-                managed: box(GC) Nil,
-                unique: box Nil,
-                tuple: (box(GC) Nil, box Nil),
-                vec: vec!(box(GC) Nil),
-                res: r(box(GC) Nil)
+            None => {
+                State {
+                    unique: box Nil,
+                    vec: vec!(box Nil),
+                    res: r(box Nil)
+                }
             }
-          }
-          Some(st) => {
-            State {
-                managed: box(GC) Cons((), st.managed),
-                unique: box Cons((), box(GC) *st.unique),
-                tuple: (box(GC) Cons((), st.tuple.ref0().clone()),
-                        box Cons((), box(GC) *st.tuple.ref1().clone())),
-                vec: st.vec.clone().append(
-                        &[box(GC) Cons((), *st.vec.last().unwrap())]),
-                res: r(box(GC) Cons((), st.res._l))
+            Some(st) => {
+                let mut v = st.vec.clone();
+                v.push_all(&[box Cons((), st.vec.last().unwrap().clone())]);
+                State {
+                    unique: box Cons((), box *st.unique),
+                    vec: v,
+                    res: r(box Cons((), st.res._l.clone())),
+                }
             }
-          }
         };
 
         recurse_or_fail(depth, Some(st));

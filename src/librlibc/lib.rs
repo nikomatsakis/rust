@@ -26,7 +26,7 @@
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://doc.rust-lang.org/master/")]
+       html_root_url = "http://doc.rust-lang.org/nightly/")]
 
 #![feature(import_shadowing, intrinsics, phase)]
 #![no_std]
@@ -39,7 +39,6 @@
 
 #[cfg(test)] extern crate native;
 #[cfg(test)] extern crate test;
-#[cfg(test)] extern crate debug;
 
 #[cfg(test)] #[phase(plugin, link)] extern crate std;
 

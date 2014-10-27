@@ -36,7 +36,7 @@
 //! use std::rt::mutex::{NativeMutex, StaticNativeMutex, NATIVE_MUTEX_INIT};
 //!
 //! // Use a statically initialized mutex
-//! static mut LOCK: StaticNativeMutex = NATIVE_MUTEX_INIT;
+//! static LOCK: StaticNativeMutex = NATIVE_MUTEX_INIT;
 //!
 //! unsafe {
 //!     let _guard = LOCK.lock();
@@ -88,7 +88,7 @@ pub struct LockGuard<'a> {
     lock: &'a StaticNativeMutex
 }
 
-pub static NATIVE_MUTEX_INIT: StaticNativeMutex = StaticNativeMutex {
+pub const NATIVE_MUTEX_INIT: StaticNativeMutex = StaticNativeMutex {
     inner: imp::MUTEX_INIT,
 };
 
@@ -109,7 +109,7 @@ impl StaticNativeMutex {
     ///
     /// ```rust
     /// use std::rt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
-    /// static mut LOCK: StaticNativeMutex = NATIVE_MUTEX_INIT;
+    /// static LOCK: StaticNativeMutex = NATIVE_MUTEX_INIT;
     /// unsafe {
     ///     let _guard = LOCK.lock();
     ///     // critical section...
@@ -353,9 +353,9 @@ mod imp {
         pub type pthread_mutex_t = *mut libc::c_void;
         pub type pthread_cond_t = *mut libc::c_void;
 
-        pub static PTHREAD_MUTEX_INITIALIZER: pthread_mutex_t =
+        pub const PTHREAD_MUTEX_INITIALIZER: pthread_mutex_t =
             0 as pthread_mutex_t;
-        pub static PTHREAD_COND_INITIALIZER: pthread_cond_t =
+        pub const PTHREAD_COND_INITIALIZER: pthread_cond_t =
             0 as pthread_cond_t;
     }
 
@@ -364,20 +364,20 @@ mod imp {
         use libc;
 
         #[cfg(target_arch = "x86_64")]
-        static __PTHREAD_MUTEX_SIZE__: uint = 56;
+        const __PTHREAD_MUTEX_SIZE__: uint = 56;
         #[cfg(target_arch = "x86_64")]
-        static __PTHREAD_COND_SIZE__: uint = 40;
+        const __PTHREAD_COND_SIZE__: uint = 40;
         #[cfg(target_arch = "x86")]
-        static __PTHREAD_MUTEX_SIZE__: uint = 40;
+        const __PTHREAD_MUTEX_SIZE__: uint = 40;
         #[cfg(target_arch = "x86")]
-        static __PTHREAD_COND_SIZE__: uint = 24;
+        const __PTHREAD_COND_SIZE__: uint = 24;
         #[cfg(target_arch = "arm")]
-        static __PTHREAD_MUTEX_SIZE__: uint = 40;
+        const __PTHREAD_MUTEX_SIZE__: uint = 40;
         #[cfg(target_arch = "arm")]
-        static __PTHREAD_COND_SIZE__: uint = 24;
+        const __PTHREAD_COND_SIZE__: uint = 24;
 
-        static _PTHREAD_MUTEX_SIG_init: libc::c_long = 0x32AAABA7;
-        static _PTHREAD_COND_SIG_init: libc::c_long = 0x3CB0B1BB;
+        const _PTHREAD_MUTEX_SIG_INIT: libc::c_long = 0x32AAABA7;
+        const _PTHREAD_COND_SIG_INIT: libc::c_long = 0x3CB0B1BB;
 
         #[repr(C)]
         pub struct pthread_mutex_t {
@@ -390,12 +390,12 @@ mod imp {
             __opaque: [u8, ..__PTHREAD_COND_SIZE__],
         }
 
-        pub static PTHREAD_MUTEX_INITIALIZER: pthread_mutex_t = pthread_mutex_t {
-            __sig: _PTHREAD_MUTEX_SIG_init,
+        pub const PTHREAD_MUTEX_INITIALIZER: pthread_mutex_t = pthread_mutex_t {
+            __sig: _PTHREAD_MUTEX_SIG_INIT,
             __opaque: [0, ..__PTHREAD_MUTEX_SIZE__],
         };
-        pub static PTHREAD_COND_INITIALIZER: pthread_cond_t = pthread_cond_t {
-            __sig: _PTHREAD_COND_SIG_init,
+        pub const PTHREAD_COND_INITIALIZER: pthread_cond_t = pthread_cond_t {
+            __sig: _PTHREAD_COND_SIG_INIT,
             __opaque: [0, ..__PTHREAD_COND_SIZE__],
         };
     }
@@ -406,25 +406,25 @@ mod imp {
 
         // minus 8 because we have an 'align' field
         #[cfg(target_arch = "x86_64")]
-        static __SIZEOF_PTHREAD_MUTEX_T: uint = 40 - 8;
+        const __SIZEOF_PTHREAD_MUTEX_T: uint = 40 - 8;
         #[cfg(target_arch = "x86")]
-        static __SIZEOF_PTHREAD_MUTEX_T: uint = 24 - 8;
+        const __SIZEOF_PTHREAD_MUTEX_T: uint = 24 - 8;
         #[cfg(target_arch = "arm")]
-        static __SIZEOF_PTHREAD_MUTEX_T: uint = 24 - 8;
+        const __SIZEOF_PTHREAD_MUTEX_T: uint = 24 - 8;
         #[cfg(target_arch = "mips")]
-        static __SIZEOF_PTHREAD_MUTEX_T: uint = 24 - 8;
+        const __SIZEOF_PTHREAD_MUTEX_T: uint = 24 - 8;
         #[cfg(target_arch = "mipsel")]
-        static __SIZEOF_PTHREAD_MUTEX_T: uint = 24 - 8;
+        const __SIZEOF_PTHREAD_MUTEX_T: uint = 24 - 8;
         #[cfg(target_arch = "x86_64")]
-        static __SIZEOF_PTHREAD_COND_T: uint = 48 - 8;
+        const __SIZEOF_PTHREAD_COND_T: uint = 48 - 8;
         #[cfg(target_arch = "x86")]
-        static __SIZEOF_PTHREAD_COND_T: uint = 48 - 8;
+        const __SIZEOF_PTHREAD_COND_T: uint = 48 - 8;
         #[cfg(target_arch = "arm")]
-        static __SIZEOF_PTHREAD_COND_T: uint = 48 - 8;
+        const __SIZEOF_PTHREAD_COND_T: uint = 48 - 8;
         #[cfg(target_arch = "mips")]
-        static __SIZEOF_PTHREAD_COND_T: uint = 48 - 8;
+        const __SIZEOF_PTHREAD_COND_T: uint = 48 - 8;
         #[cfg(target_arch = "mipsel")]
-        static __SIZEOF_PTHREAD_COND_T: uint = 48 - 8;
+        const __SIZEOF_PTHREAD_COND_T: uint = 48 - 8;
 
         #[repr(C)]
         pub struct pthread_mutex_t {
@@ -437,11 +437,11 @@ mod imp {
             size: [u8, ..__SIZEOF_PTHREAD_COND_T],
         }
 
-        pub static PTHREAD_MUTEX_INITIALIZER: pthread_mutex_t = pthread_mutex_t {
+        pub const PTHREAD_MUTEX_INITIALIZER: pthread_mutex_t = pthread_mutex_t {
             __align: 0,
             size: [0, ..__SIZEOF_PTHREAD_MUTEX_T],
         };
-        pub static PTHREAD_COND_INITIALIZER: pthread_cond_t = pthread_cond_t {
+        pub const PTHREAD_COND_INITIALIZER: pthread_cond_t = pthread_cond_t {
             __align: 0,
             size: [0, ..__SIZEOF_PTHREAD_COND_T],
         };
@@ -455,10 +455,10 @@ mod imp {
         #[repr(C)]
         pub struct pthread_cond_t { value: libc::c_int }
 
-        pub static PTHREAD_MUTEX_INITIALIZER: pthread_mutex_t = pthread_mutex_t {
+        pub const PTHREAD_MUTEX_INITIALIZER: pthread_mutex_t = pthread_mutex_t {
             value: 0,
         };
-        pub static PTHREAD_COND_INITIALIZER: pthread_cond_t = pthread_cond_t {
+        pub const PTHREAD_COND_INITIALIZER: pthread_cond_t = pthread_cond_t {
             value: 0,
         };
     }
@@ -468,7 +468,7 @@ mod imp {
         cond: UnsafeCell<pthread_cond_t>,
     }
 
-    pub static MUTEX_INIT: Mutex = Mutex {
+    pub const MUTEX_INIT: Mutex = Mutex {
         lock: UnsafeCell { value: PTHREAD_MUTEX_INITIALIZER },
         cond: UnsafeCell { value: PTHREAD_COND_INITIALIZER },
     };
@@ -516,18 +516,18 @@ mod imp {
 
 #[cfg(windows)]
 mod imp {
-    use alloc::libc_heap::malloc_raw;
+    use alloc::heap;
     use core::atomic;
     use core::ptr;
     use libc::{HANDLE, BOOL, LPSECURITY_ATTRIBUTES, c_void, DWORD, LPCSTR};
     use libc;
 
     type LPCRITICAL_SECTION = *mut c_void;
-    static SPIN_COUNT: DWORD = 4000;
+    const SPIN_COUNT: DWORD = 4000;
     #[cfg(target_arch = "x86")]
-    static CRIT_SECTION_SIZE: uint = 24;
+    const CRIT_SECTION_SIZE: uint = 24;
     #[cfg(target_arch = "x86_64")]
-    static CRIT_SECTION_SIZE: uint = 40;
+    const CRIT_SECTION_SIZE: uint = 40;
 
     pub struct Mutex {
         // pointers for the lock/cond handles, atomically updated
@@ -535,7 +535,7 @@ mod imp {
         cond: atomic::AtomicUint,
     }
 
-    pub static MUTEX_INIT: Mutex = Mutex {
+    pub const MUTEX_INIT: Mutex = Mutex {
         lock: atomic::INIT_ATOMIC_UINT,
         cond: atomic::INIT_ATOMIC_UINT,
     };
@@ -607,7 +607,7 @@ mod imp {
     }
 
     pub unsafe fn init_lock() -> uint {
-        let block = malloc_raw(CRIT_SECTION_SIZE as uint) as *mut c_void;
+        let block = heap::allocate(CRIT_SECTION_SIZE, 8) as *mut c_void;
         InitializeCriticalSectionAndSpinCount(block, SPIN_COUNT);
         return block as uint;
     }
@@ -619,7 +619,7 @@ mod imp {
 
     pub unsafe fn free_lock(h: uint) {
         DeleteCriticalSection(h as LPCRITICAL_SECTION);
-        libc::free(h as *mut c_void);
+        heap::deallocate(h as *mut u8, CRIT_SECTION_SIZE, 8);
     }
 
     pub unsafe fn free_cond(h: uint) {
@@ -655,19 +655,19 @@ mod test {
 
     #[test]
     fn smoke_lock() {
-        static mut lock: StaticNativeMutex = NATIVE_MUTEX_INIT;
+        static LK: StaticNativeMutex = NATIVE_MUTEX_INIT;
         unsafe {
-            let _guard = lock.lock();
+            let _guard = LK.lock();
         }
     }
 
     #[test]
     fn smoke_cond() {
-        static mut lock: StaticNativeMutex = NATIVE_MUTEX_INIT;
+        static LK: StaticNativeMutex = NATIVE_MUTEX_INIT;
         unsafe {
-            let guard = lock.lock();
+            let guard = LK.lock();
             let t = Thread::start(proc() {
-                let guard = lock.lock();
+                let guard = LK.lock();
                 guard.signal();
             });
             guard.wait();
@@ -679,25 +679,25 @@ mod test {
 
     #[test]
     fn smoke_lock_noguard() {
-        static mut lock: StaticNativeMutex = NATIVE_MUTEX_INIT;
+        static LK: StaticNativeMutex = NATIVE_MUTEX_INIT;
         unsafe {
-            lock.lock_noguard();
-            lock.unlock_noguard();
+            LK.lock_noguard();
+            LK.unlock_noguard();
         }
     }
 
     #[test]
     fn smoke_cond_noguard() {
-        static mut lock: StaticNativeMutex = NATIVE_MUTEX_INIT;
+        static LK: StaticNativeMutex = NATIVE_MUTEX_INIT;
         unsafe {
-            lock.lock_noguard();
+            LK.lock_noguard();
             let t = Thread::start(proc() {
-                lock.lock_noguard();
-                lock.signal_noguard();
-                lock.unlock_noguard();
+                LK.lock_noguard();
+                LK.signal_noguard();
+                LK.unlock_noguard();
             });
-            lock.wait_noguard();
-            lock.unlock_noguard();
+            LK.wait_noguard();
+            LK.unlock_noguard();
 
             t.join();
         }

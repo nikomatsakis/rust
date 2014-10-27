@@ -38,21 +38,23 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 // OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#![feature(slicing_syntax)]
+
 use std::cmp::min;
 use std::io::{stdout, IoResult};
 use std::os;
 use std::slice::bytes::copy_memory;
 
-static LINE_LEN: uint = 60;
-static LOOKUP_SIZE: uint = 4 * 1024;
-static LOOKUP_SCALE: f32 = (LOOKUP_SIZE - 1) as f32;
+const LINE_LEN: uint = 60;
+const LOOKUP_SIZE: uint = 4 * 1024;
+const LOOKUP_SCALE: f32 = (LOOKUP_SIZE - 1) as f32;
 
 // Random number generator constants
-static IM: u32 = 139968;
-static IA: u32 = 3877;
-static IC: u32 = 29573;
+const IM: u32 = 139968;
+const IA: u32 = 3877;
+const IC: u32 = 29573;
 
-static ALU: &'static str = "GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTG\
+const ALU: &'static str = "GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTG\
                             GGAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGA\
                             GACCAGCCTGGCCAACATGGTGAAACCCCGTCTCTACTAAA\
                             AATACAAAAATTAGCCGGGCGTGGTGGCGCGCGCCTGTAAT\
@@ -60,7 +62,7 @@ static ALU: &'static str = "GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTG\
                             CCGGGAGGCGGAGGTTGCAGTGAGCCGAGATCGCGCCACTG\
                             CACTCCAGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAA";
 
-static NULL_AMINO_ACID: AminoAcid = AminoAcid { c: ' ' as u8, p: 0.0 };
+const NULL_AMINO_ACID: AminoAcid = AminoAcid { c: ' ' as u8, p: 0.0 };
 
 static IUB: [AminoAcid, ..15] = [
     AminoAcid { c: 'a' as u8, p: 0.27 },
@@ -124,8 +126,8 @@ impl<'a, W: Writer> RepeatFasta<'a, W> {
 
         copy_memory(buf.as_mut_slice(), alu);
         let buf_len = buf.len();
-        copy_memory(buf.slice_mut(alu_len, buf_len),
-                    alu.slice_to(LINE_LEN));
+        copy_memory(buf[mut alu_len..buf_len],
+                    alu[..LINE_LEN]);
 
         let mut pos = 0;
         let mut bytes;
@@ -201,7 +203,7 @@ impl<'a, W: Writer> RandomFasta<'a, W> {
         for i in range(0u, chars_left) {
             buf[i] = self.nextc();
         }
-        self.out.write(buf.slice_to(chars_left))
+        self.out.write(buf[..chars_left])
     }
 }
 

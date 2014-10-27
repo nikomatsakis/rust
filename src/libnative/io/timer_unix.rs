@@ -59,7 +59,7 @@ use io::c;
 use io::file::FileDesc;
 use io::helper_thread::Helper;
 
-helper_init!(static mut HELPER: Helper<Req>)
+helper_init!(static HELPER: Helper<Req>)
 
 pub struct Timer {
     id: uint,
@@ -115,7 +115,7 @@ fn helper(input: libc::c_int, messages: Receiver<Req>, _: ()) {
     // signals the first requests in the queue, possible re-enqueueing it.
     fn signal(active: &mut Vec<Box<Inner>>,
               dead: &mut Vec<(uint, Box<Inner>)>) {
-        let mut timer = match active.shift() {
+        let mut timer = match active.remove(0) {
             Some(timer) => timer, None => return
         };
         let mut cb = timer.cb.take().unwrap();
@@ -137,7 +137,7 @@ fn helper(input: libc::c_int, messages: Receiver<Req>, _: ()) {
             let now = now();
             // If this request has already expired, then signal it and go
             // through another iteration
-            if active.get(0).target <= now {
+            if active[0].target <= now {
                 signal(&mut active, &mut dead);
                 continue;
             }
@@ -145,7 +145,7 @@ fn helper(input: libc::c_int, messages: Receiver<Req>, _: ()) {
             // The actual timeout listed in the requests array is an
             // absolute date, so here we translate the absolute time to a
             // relative time.
-            let tm = active.get(0).target - now;
+            let tm = active[0].target - now;
             timeout.tv_sec = (tm / 1000) as libc::time_t;
             timeout.tv_usec = ((tm % 1000) * 1000) as libc::suseconds_t;
             &mut timeout as *mut libc::timeval
@@ -204,10 +204,10 @@ impl Timer {
     pub fn new() -> IoResult<Timer> {
         // See notes above regarding using int return value
         // instead of ()
-        unsafe { HELPER.boot(|| {}, helper); }
+        HELPER.boot(|| {}, helper);
 
-        static mut ID: atomic::AtomicUint = atomic::INIT_ATOMIC_UINT;
-        let id = unsafe { ID.fetch_add(1, atomic::Relaxed) };
+        static ID: atomic::AtomicUint = atomic::INIT_ATOMIC_UINT;
+        let id = ID.fetch_add(1, atomic::Relaxed);
         Ok(Timer {
             id: id,
             inner: Some(box Inner {
@@ -237,7 +237,7 @@ impl Timer {
             Some(i) => i,
             None => {
                 let (tx, rx) = channel();
-                unsafe { HELPER.send(RemoveTimer(self.id, tx)); }
+                HELPER.send(RemoveTimer(self.id, tx));
                 rx.recv()
             }
         }
@@ -262,7 +262,7 @@ impl rtio::RtioTimer for Timer {
         inner.interval = msecs;
         inner.target = now + msecs;
 
-        unsafe { HELPER.send(NewTimer(inner)); }
+        HELPER.send(NewTimer(inner));
     }
 
     fn period(&mut self, msecs: u64, cb: Box<rtio::Callback + Send>) {
@@ -274,7 +274,7 @@ impl rtio::RtioTimer for Timer {
         inner.interval = msecs;
         inner.target = now + msecs;
 
-        unsafe { HELPER.send(NewTimer(inner)); }
+        HELPER.send(NewTimer(inner));
     }
 }
 

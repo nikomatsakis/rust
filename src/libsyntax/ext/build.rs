@@ -112,7 +112,6 @@ pub trait AstBuilder {
     fn expr_deref(&self, sp: Span, e: P<ast::Expr>) -> P<ast::Expr>;
     fn expr_unary(&self, sp: Span, op: ast::UnOp, e: P<ast::Expr>) -> P<ast::Expr>;
 
-    fn expr_managed(&self, sp: Span, e: P<ast::Expr>) -> P<ast::Expr>;
     fn expr_addr_of(&self, sp: Span, e: P<ast::Expr>) -> P<ast::Expr>;
     fn expr_mut_addr_of(&self, sp: Span, e: P<ast::Expr>) -> P<ast::Expr>;
     fn expr_field_access(&self, span: Span, expr: P<ast::Expr>, ident: ast::Ident) -> P<ast::Expr>;
@@ -148,6 +147,8 @@ pub trait AstBuilder {
     fn expr_some(&self, sp: Span, expr: P<ast::Expr>) -> P<ast::Expr>;
     fn expr_none(&self, sp: Span) -> P<ast::Expr>;
 
+    fn expr_break(&self, sp: Span) -> P<ast::Expr>;
+
     fn expr_tuple(&self, sp: Span, exprs: Vec<P<ast::Expr>>) -> P<ast::Expr>;
 
     fn expr_fail(&self, span: Span, msg: InternedString) -> P<ast::Expr>;
@@ -168,7 +169,7 @@ pub trait AstBuilder {
                               bm: ast::BindingMode) -> P<ast::Pat>;
     fn pat_enum(&self, span: Span, path: ast::Path, subpats: Vec<P<ast::Pat>> ) -> P<ast::Pat>;
     fn pat_struct(&self, span: Span,
-                  path: ast::Path, field_pats: Vec<ast::FieldPat> ) -> P<ast::Pat>;
+                  path: ast::Path, field_pats: Vec<Spanned<ast::FieldPat>> ) -> P<ast::Pat>;
     fn pat_tuple(&self, span: Span, pats: Vec<P<ast::Pat>>) -> P<ast::Pat>;
 
     fn pat_some(&self, span: Span, pat: P<ast::Pat>) -> P<ast::Pat>;
@@ -248,6 +249,13 @@ pub trait AstBuilder {
                    name: Ident,
                    ty: P<ast::Ty>,
                    mutbl: ast::Mutability,
+                   expr: P<ast::Expr>)
+                   -> P<ast::Item>;
+
+    fn item_const(&self,
+                   span: Span,
+                   name: Ident,
+                   ty: P<ast::Ty>,
                    expr: P<ast::Expr>)
                    -> P<ast::Item>;
 
@@ -565,10 +573,6 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
         self.expr(sp, ast::ExprUnary(op, e))
     }
 
-    fn expr_managed(&self, sp: Span, e: P<ast::Expr>) -> P<ast::Expr> {
-        self.expr_unary(sp, ast::UnBox, e)
-    }
-
     fn expr_field_access(&self, sp: Span, expr: P<ast::Expr>, ident: ast::Ident) -> P<ast::Expr> {
         let field_name = token::get_ident(ident);
         let field_span = Span {
@@ -614,7 +618,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
                         ident: ast::Ident,
                         mut args: Vec<P<ast::Expr>> ) -> P<ast::Expr> {
         let id = Spanned { node: ident, span: span };
-        args.unshift(expr);
+        args.insert(0, expr);
         self.expr(span, ast::ExprMethodCall(id, Vec::new(), args))
     }
     fn expr_block(&self, b: P<ast::Block>) -> P<ast::Expr> {
@@ -685,6 +689,12 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
             self.ident_of("None")));
         self.expr_path(none)
     }
+
+
+    fn expr_break(&self, sp: Span) -> P<ast::Expr> {
+        self.expr(sp, ast::ExprBreak(None))
+    }
+
 
     fn expr_tuple(&self, sp: Span, exprs: Vec<P<ast::Expr>>) -> P<ast::Expr> {
         self.expr(sp, ast::ExprTup(exprs))
@@ -786,7 +796,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
         self.pat(span, pat)
     }
     fn pat_struct(&self, span: Span,
-                  path: ast::Path, field_pats: Vec<ast::FieldPat>) -> P<ast::Pat> {
+                  path: ast::Path, field_pats: Vec<Spanned<ast::FieldPat>>) -> P<ast::Pat> {
         let pat = ast::PatStruct(path, field_pats, false);
         self.pat(span, pat)
     }
@@ -1036,6 +1046,15 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
                    expr: P<ast::Expr>)
                    -> P<ast::Item> {
         self.item(span, name, Vec::new(), ast::ItemStatic(ty, mutbl, expr))
+    }
+
+    fn item_const(&self,
+                  span: Span,
+                  name: Ident,
+                  ty: P<ast::Ty>,
+                  expr: P<ast::Expr>)
+                  -> P<ast::Item> {
+        self.item(span, name, Vec::new(), ast::ItemConst(ty, expr))
     }
 
     fn item_ty_poly(&self, span: Span, name: Ident, ty: P<ast::Ty>,

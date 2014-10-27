@@ -58,16 +58,14 @@ use core::default::Default;
 use core::fmt;
 use core::cmp;
 use core::iter::AdditiveIterator;
-use core::mem;
 use core::prelude::{Char, Clone, Collection, Eq, Equiv, ImmutableSlice};
 use core::prelude::{Iterator, MutableSlice, None, Option, Ord, Ordering};
-use core::prelude::{PartialEq, PartialOrd, Result, Slice, Some, Tuple2};
+use core::prelude::{PartialEq, PartialOrd, Result, AsSlice, Some, Tuple2};
 use core::prelude::{range};
 
 use {Deque, MutableSeq};
 use hash;
 use ringbuf::RingBuf;
-use slice::CloneableVector;
 use string::String;
 use unicode;
 use vec::Vec;
@@ -75,7 +73,7 @@ use vec::Vec;
 pub use core::str::{from_utf8, CharEq, Chars, CharOffsets};
 pub use core::str::{Bytes, CharSplits};
 pub use core::str::{CharSplitsN, AnyLines, MatchIndices, StrSplits};
-pub use core::str::{eq_slice, is_utf8, is_utf16, Utf16Items};
+pub use core::str::{Utf16CodeUnits, eq_slice, is_utf8, is_utf16, Utf16Items};
 pub use core::str::{Utf16Item, ScalarValue, LoneSurrogate, utf16_items};
 pub use core::str::{truncate_utf16_at_nul, utf8_char_width, CharRange};
 pub use core::str::{Str, StrSlice};
@@ -84,31 +82,6 @@ pub use unicode::str::{UnicodeStrSlice, Words, Graphemes, GraphemeIndices};
 /*
 Section: Creating a string
 */
-
-/// Deprecated. Replaced by `String::from_utf8`.
-#[deprecated = "Replaced by `String::from_utf8`"]
-pub fn from_utf8_owned(vv: Vec<u8>) -> Result<String, Vec<u8>> {
-    String::from_utf8(vv)
-}
-
-/// Deprecated. Replaced by `String::from_byte`.
-#[deprecated = "Replaced by String::from_byte"]
-pub fn from_byte(b: u8) -> String {
-    assert!(b < 128u8);
-    String::from_char(1, b as char)
-}
-
-/// Deprecated. Use `String::from_char` or `char::to_string()` instead.
-#[deprecated = "use String::from_char or char.to_string()"]
-pub fn from_char(ch: char) -> String {
-    String::from_char(1, ch)
-}
-
-/// Deprecated. Replaced by `String::from_chars`.
-#[deprecated = "use String::from_chars instead"]
-pub fn from_chars(chs: &[char]) -> String {
-    chs.iter().map(|c| *c).collect()
-}
 
 /// Methods for vectors of strings.
 pub trait StrVector {
@@ -427,18 +400,6 @@ pub fn replace(s: &str, from: &str, to: &str) -> String {
 Section: Misc
 */
 
-/// Deprecated. Use `String::from_utf16`.
-#[deprecated = "Replaced by String::from_utf16"]
-pub fn from_utf16(v: &[u16]) -> Option<String> {
-    String::from_utf16(v)
-}
-
-/// Deprecated. Use `String::from_utf16_lossy`.
-#[deprecated = "Replaced by String::from_utf16_lossy"]
-pub fn from_utf16_lossy(v: &[u16]) -> String {
-    String::from_utf16_lossy(v)
-}
-
 // Return the initial codepoint accumulator for the first byte.
 // The first byte is special, only want bottom 5 bits for width 2, 4 bits
 // for width 3, and 3 bits for width 4
@@ -450,12 +411,6 @@ macro_rules! utf8_first_byte(
 macro_rules! utf8_acc_cont_byte(
     ($ch:expr, $byte:expr) => (($ch << 6) | ($byte & 63u8) as u32)
 )
-
-/// Deprecated. Use `String::from_utf8_lossy`.
-#[deprecated = "Replaced by String::from_utf8_lossy"]
-pub fn from_utf8_lossy<'a>(v: &'a [u8]) -> MaybeOwned<'a> {
-    String::from_utf8_lossy(v)
-}
 
 /*
 Section: MaybeOwned
@@ -644,38 +599,8 @@ impl<'a> fmt::Show for MaybeOwned<'a> {
 
 /// Unsafe string operations.
 pub mod raw {
-    use string;
-    use string::String;
-    use vec::Vec;
-
-    use MutableSeq;
-
     pub use core::str::raw::{from_utf8, c_str_to_static_slice, slice_bytes};
     pub use core::str::raw::{slice_unchecked};
-
-    /// Deprecated. Replaced by `string::raw::from_buf_len`
-    #[deprecated = "Use string::raw::from_buf_len"]
-    pub unsafe fn from_buf_len(buf: *const u8, len: uint) -> String {
-        string::raw::from_buf_len(buf, len)
-    }
-
-    /// Deprecated. Use `string::raw::from_buf`
-    #[deprecated = "Use string::raw::from_buf"]
-    pub unsafe fn from_c_str(c_string: *const i8) -> String {
-        string::raw::from_buf(c_string as *const u8)
-    }
-
-    /// Deprecated. Replaced by `string::raw::from_utf8`
-    #[deprecated = "Use string::raw::from_utf8"]
-    pub unsafe fn from_utf8_owned(v: Vec<u8>) -> String {
-        string::raw::from_utf8(v)
-    }
-
-    /// Deprecated. Use `string::raw::from_utf8`
-    #[deprecated = "Use string::raw::from_utf8"]
-    pub unsafe fn from_byte(u: u8) -> String {
-        string::raw::from_utf8(vec![u])
-    }
 }
 
 /*
@@ -686,12 +611,6 @@ Section: Trait implementations
 pub trait StrAllocating: Str {
     /// Converts `self` into a `String`, not making a copy if possible.
     fn into_string(self) -> String;
-
-    #[allow(missing_doc)]
-    #[deprecated = "replaced by .into_string()"]
-    fn into_owned(self) -> String {
-        self.into_string()
-    }
 
     /// Escapes each char in `s` with `char::escape_default`.
     fn escape_default(&self) -> String {
@@ -750,21 +669,6 @@ pub trait StrAllocating: Str {
         result
     }
 
-    #[allow(missing_doc)]
-    #[deprecated = "obsolete, use `to_string`"]
-    #[inline]
-    fn to_owned(&self) -> String {
-        unsafe {
-            mem::transmute(self.as_slice().as_bytes().to_vec())
-        }
-    }
-
-    /// Converts to a vector of `u16` encoded as UTF-16.
-    #[deprecated = "use `utf16_units` instead"]
-    fn to_utf16(&self) -> Vec<u16> {
-        self.as_slice().utf16_units().collect::<Vec<u16>>()
-    }
-
     /// Given a string, makes a new string with repeated copies of it.
     fn repeat(&self, nn: uint) -> String {
         let me = self.as_slice();
@@ -778,13 +682,11 @@ pub trait StrAllocating: Str {
     /// Returns the Levenshtein Distance between two strings.
     fn lev_distance(&self, t: &str) -> uint {
         let me = self.as_slice();
-        let slen = me.len();
-        let tlen = t.len();
+        if me.is_empty() { return t.char_len(); }
+        if t.is_empty() { return me.char_len(); }
 
-        if slen == 0 { return tlen; }
-        if tlen == 0 { return slen; }
-
-        let mut dcol = Vec::from_fn(tlen + 1, |x| x);
+        let mut dcol = Vec::from_fn(t.len() + 1, |x| x);
+        let mut t_last = 0;
 
         for (i, sc) in me.chars().enumerate() {
 
@@ -799,15 +701,15 @@ pub trait StrAllocating: Str {
                     *dcol.get_mut(j + 1) = current;
                 } else {
                     *dcol.get_mut(j + 1) = cmp::min(current, next);
-                    *dcol.get_mut(j + 1) = cmp::min(dcol[j + 1],
-                                                    dcol[j]) + 1;
+                    *dcol.get_mut(j + 1) = cmp::min(dcol[j + 1], dcol[j]) + 1;
                 }
 
                 current = next;
+                t_last = j;
             }
         }
 
-        return dcol[tlen];
+        dcol[t_last + 1]
     }
 
     /// Returns an iterator over the string in Unicode Normalization Form D
@@ -882,9 +784,10 @@ mod tests {
     use {Collection, MutableSeq};
 
     use super::*;
-    use std::slice::{Slice, ImmutableSlice};
+    use std::slice::{AsSlice, ImmutableSlice};
     use string::String;
     use vec::Vec;
+    use slice::CloneableVector;
 
     use unicode::char::UnicodeChar;
 
@@ -1506,7 +1409,7 @@ mod tests {
     fn vec_str_conversions() {
         let s1: String = String::from_str("All mimsy were the borogoves");
 
-        let v: Vec<u8> = Vec::from_slice(s1.as_bytes());
+        let v: Vec<u8> = s1.as_bytes().to_vec();
         let s2: String = String::from_str(from_utf8(v.as_slice()).unwrap());
         let mut i: uint = 0u;
         let n1: uint = s1.len();
@@ -1680,7 +1583,7 @@ mod tests {
         let mut bytes = [0u8, ..4];
         for c in range(0u32, 0x110000).filter_map(|c| ::core::char::from_u32(c)) {
             let len = c.encode_utf8(bytes).unwrap_or(0);
-            let s = ::core::str::from_utf8(bytes.slice_to(len)).unwrap();
+            let s = ::core::str::from_utf8(bytes[..len]).unwrap();
             if Some(c) != s.chars().next() {
                 fail!("character {:x}={} does not decode correctly", c as u32, c);
             }
@@ -1692,7 +1595,7 @@ mod tests {
         let mut bytes = [0u8, ..4];
         for c in range(0u32, 0x110000).filter_map(|c| ::core::char::from_u32(c)) {
             let len = c.encode_utf8(bytes).unwrap_or(0);
-            let s = ::core::str::from_utf8(bytes.slice_to(len)).unwrap();
+            let s = ::core::str::from_utf8(bytes[..len]).unwrap();
             if Some(c) != s.chars().rev().next() {
                 fail!("character {:x}={} does not decode correctly", c as u32, c);
             }
@@ -1876,6 +1779,27 @@ mod tests {
         let data = "\n \tMäry   häd\tä  little lämb\nLittle lämb\n";
         let words: Vec<&str> = data.words().collect();
         assert_eq!(words, vec!["Märy", "häd", "ä", "little", "lämb", "Little", "lämb"])
+    }
+
+    #[test]
+    fn test_lev_distance() {
+        use std::char::{ from_u32, MAX };
+        // Test bytelength agnosticity
+        for c in range(0u32, MAX as u32)
+                 .filter_map(|i| from_u32(i))
+                 .map(|i| String::from_char(1, i)) {
+            assert_eq!(c[].lev_distance(c[]), 0);
+        }
+
+        let a = "\nMäry häd ä little lämb\n\nLittle lämb\n";
+        let b = "\nMary häd ä little lämb\n\nLittle lämb\n";
+        let c = "Mary häd ä little lämb\n\nLittle lämb\n";
+        assert_eq!(a.lev_distance(b), 1);
+        assert_eq!(b.lev_distance(a), 1);
+        assert_eq!(a.lev_distance(c), 2);
+        assert_eq!(c.lev_distance(a), 2);
+        assert_eq!(b.lev_distance(c), 1);
+        assert_eq!(c.lev_distance(b), 1);
     }
 
     #[test]

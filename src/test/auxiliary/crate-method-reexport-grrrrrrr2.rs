@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![crate_id="crate_method_reexport_grrrrrrr2"]
+#![crate_name="crate_method_reexport_grrrrrrr2"]
 
 pub use name_pool::add;
 
@@ -27,9 +27,8 @@ pub mod name_pool {
 
 pub mod rust {
     pub use name_pool::add;
-    use std::gc::Gc;
 
-    pub type rt = Gc<()>;
+    pub type rt = Box<()>;
 
     pub trait cx {
         fn cx(&self);

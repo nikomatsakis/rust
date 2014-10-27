@@ -26,7 +26,7 @@
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://doc.rust-lang.org/",
+       html_root_url = "http://doc.rust-lang.org/nightly/",
        html_playground_url = "http://play.rust-lang.org/")]
 #![no_std]
 
@@ -64,6 +64,7 @@ pub mod char {
     pub use normalize::{decompose_canonical, decompose_compatible, compose};
 
     pub use tables::normalization::canonical_combining_class;
+    pub use tables::UNICODE_VERSION;
 
     pub use u_char::{is_alphabetic, is_XID_start, is_XID_continue};
     pub use u_char::{is_lowercase, is_uppercase, is_whitespace};

@@ -333,14 +333,14 @@ def emit_property_module(f, mod, tbl, emit_fn):
 def emit_regex_module(f, cats, w_data):
     f.write("pub mod regex {\n")
     regex_class = "&'static [(char, char)]"
-    class_table = "&'static [(&'static str, %s)]" % regex_class
+    class_table = "&'static [(&'static str, &'static %s)]" % regex_class
 
     emit_table(f, "UNICODE_CLASSES", cats, class_table,
-        pfun=lambda x: "(\"%s\",super::%s::%s_table)" % (x[0], x[1], x[0]))
+        pfun=lambda x: "(\"%s\",&super::%s::%s_table)" % (x[0], x[1], x[0]))
 
-    f.write("    pub static PERLD: %s = super::general_category::Nd_table;\n\n"
+    f.write("    pub static PERLD: &'static %s = &super::general_category::Nd_table;\n\n"
             % regex_class)
-    f.write("    pub static PERLS: %s = super::property::White_Space_table;\n\n"
+    f.write("    pub static PERLS: &'static %s = &super::property::White_Space_table;\n\n"
             % regex_class)
 
     emit_table(f, "PERLW", w_data, regex_class)
@@ -604,6 +604,15 @@ if __name__ == "__main__":
         rf.write(preamble)
 
         # download and parse all the data
+        fetch("ReadMe.txt")
+        with open("ReadMe.txt") as readme:
+            pattern = "for Version (\d+)\.(\d+)\.(\d+) of the Unicode"
+            unicode_version = re.search(pattern, readme.read()).groups()
+        rf.write("""
+/// The version of [Unicode](http://www.unicode.org/)
+/// that the `UnicodeChar` and `UnicodeStrSlice` traits are based on.
+pub const UNICODE_VERSION: (uint, uint, uint) = (%s, %s, %s);
+""" % unicode_version)
         (canon_decomp, compat_decomp, gencats, combines,
                 lowerupper, upperlower) = load_unicode_data("UnicodeData.txt")
         want_derived = ["XID_Start", "XID_Continue", "Alphabetic", "Lowercase", "Uppercase"]

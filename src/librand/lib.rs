@@ -21,7 +21,7 @@
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://doc.rust-lang.org/master/",
+       html_root_url = "http://doc.rust-lang.org/nightly/",
        html_playground_url = "http://play.rust-lang.org/")]
 
 #![feature(macro_rules, phase, globs)]
@@ -34,12 +34,12 @@ extern crate core;
 #[cfg(test)] #[phase(plugin, link)] extern crate std;
 #[cfg(test)] #[phase(plugin, link)] extern crate log;
 #[cfg(test)] extern crate native;
-#[cfg(test)] extern crate debug;
 
 use core::prelude::*;
 use core::kinds::marker;
 
 pub use isaac::{IsaacRng, Isaac64Rng};
+pub use chacha::ChaChaRng;
 
 use distributions::{Range, IndependentSample};
 use distributions::range::SampleRange;
@@ -49,6 +49,7 @@ static RAND_BENCH_N: u64 = 100;
 
 pub mod distributions;
 pub mod isaac;
+pub mod chacha;
 pub mod reseeding;
 mod rand_impls;
 
@@ -229,7 +230,7 @@ pub trait Rng {
     /// let choices = [1i, 2, 4, 8, 16, 32];
     /// let mut rng = task_rng();
     /// println!("{}", rng.choose(choices));
-    /// assert_eq!(rng.choose(choices.slice_to(0)), None);
+    /// assert_eq!(rng.choose(choices[..0]), None);
     /// ```
     fn choose<'a, T>(&mut self, values: &'a [T]) -> Option<&'a T> {
         if values.is_empty() {
@@ -237,12 +238,6 @@ pub trait Rng {
         } else {
             Some(&values[self.gen_range(0u, values.len())])
         }
-    }
-
-    /// Deprecated name for `choose()`.
-    #[deprecated = "replaced by .choose()"]
-    fn choose_option<'a, T>(&mut self, values: &'a [T]) -> Option<&'a T> {
-        self.choose(values)
     }
 
     /// Shuffle a mutable slice in place.

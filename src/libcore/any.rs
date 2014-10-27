@@ -76,11 +76,6 @@ use option::{Option, Some, None};
 use raw::TraitObject;
 use intrinsics::TypeId;
 
-/// A type with no inhabitants
-#[deprecated = "this type is being removed, define a type locally if \
-                necessary"]
-pub enum Void { }
-
 ///////////////////////////////////////////////////////////////////////////////
 // Any trait
 ///////////////////////////////////////////////////////////////////////////////
@@ -91,19 +86,14 @@ pub enum Void { }
 /// Every type with no non-`'static` references implements `Any`, so `Any` can
 /// be used as a trait object to emulate the effects dynamic typing.
 #[stable]
-pub trait Any: AnyPrivate + 'static {}
-
-/// An inner trait to ensure that only this module can call `get_type_id()`.
-pub trait AnyPrivate {
+pub trait Any: 'static {
     /// Get the `TypeId` of `self`
     fn get_type_id(&self) -> TypeId;
 }
 
-impl<T: 'static> AnyPrivate for T {
+impl<T: 'static> Any for T {
     fn get_type_id(&self) -> TypeId { TypeId::of::<T>() }
 }
-
-impl<T: 'static + AnyPrivate> Any for T {}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Extension methods for Any trait objects.
@@ -122,13 +112,6 @@ pub trait AnyRefExt<'a> {
     /// `None` if it isn't.
     #[unstable = "naming conventions around acquiring references may change"]
     fn downcast_ref<T: 'static>(self) -> Option<&'a T>;
-
-    /// Returns some reference to the boxed value if it is of type `T`, or
-    /// `None` if it isn't.
-    #[deprecated = "this function has been renamed to `downcast_ref`"]
-    fn as_ref<T: 'static>(self) -> Option<&'a T> {
-        self.downcast_ref::<T>()
-    }
 }
 
 #[stable]
@@ -171,13 +154,6 @@ pub trait AnyMutRefExt<'a> {
     /// `None` if it isn't.
     #[unstable = "naming conventions around acquiring references may change"]
     fn downcast_mut<T: 'static>(self) -> Option<&'a mut T>;
-
-    /// Returns some mutable reference to the boxed value if it is of type `T`, or
-    /// `None` if it isn't.
-    #[deprecated = "this function has been renamed to `downcast_mut`"]
-    fn as_mut<T: 'static>(self) -> Option<&'a mut T> {
-        self.downcast_mut::<T>()
-    }
 }
 
 #[stable]

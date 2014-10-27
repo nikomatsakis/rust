@@ -334,7 +334,7 @@ pub fn escape_bytes(wr: &mut io::Writer, bytes: &[u8]) -> Result<(), io::IoError
         };
 
         if start < i {
-            try!(wr.write(bytes.slice(start, i)));
+            try!(wr.write(bytes[start..i]));
         }
 
         try!(wr.write_str(escaped));
@@ -343,7 +343,7 @@ pub fn escape_bytes(wr: &mut io::Writer, bytes: &[u8]) -> Result<(), io::IoError
     }
 
     if start != bytes.len() {
-        try!(wr.write(bytes.slice_from(start)));
+        try!(wr.write(bytes[start..]));
     }
 
     wr.write_str("\"")
@@ -360,16 +360,16 @@ fn escape_char(writer: &mut io::Writer, v: char) -> Result<(), io::IoError> {
 }
 
 fn spaces(wr: &mut io::Writer, mut n: uint) -> Result<(), io::IoError> {
-    static len: uint = 16;
-    static buf: [u8, ..len] = [b' ', ..len];
+    const LEN: uint = 16;
+    static BUF: [u8, ..LEN] = [b' ', ..LEN];
 
-    while n >= len {
-        try!(wr.write(buf));
-        n -= len;
+    while n >= LEN {
+        try!(wr.write(BUF));
+        n -= LEN;
     }
 
     if n > 0 {
-        wr.write(buf.slice_to(n))
+        wr.write(BUF[..n])
     } else {
         Ok(())
     }
@@ -405,14 +405,6 @@ impl<'a> Encoder<'a> {
             let _ = object.encode(transmute(&mut encoder));
         }
         m.unwrap()
-    }
-
-    /// Encode the specified struct into a json str
-    ///
-    /// Note: this function is deprecated. Consider using `json::encode` instead.
-    #[deprecated = "Replaced by `json::encode`"]
-    pub fn str_encode<T: Encodable<Encoder<'a>, io::IoError>>(object: &T) -> string::String {
-        encode(object)
     }
 }
 
@@ -1149,7 +1141,7 @@ impl Stack {
             InternalIndex(i) => { Index(i) }
             InternalKey(start, size) => {
                 Key(str::from_utf8(
-                    self.str_buffer.slice(start as uint, start as uint + size as uint)).unwrap())
+                    self.str_buffer[start as uint .. start as uint + size as uint]).unwrap())
             }
         }
     }
@@ -1191,7 +1183,7 @@ impl Stack {
             Some(&InternalIndex(i)) => Some(Index(i)),
             Some(&InternalKey(start, size)) => {
                 Some(Key(str::from_utf8(
-                    self.str_buffer.slice(start as uint, (start+size) as uint)
+                    self.str_buffer[start as uint .. (start+size) as uint]
                 ).unwrap()))
             }
         }
@@ -2964,8 +2956,8 @@ mod tests {
         let s = "{\"f\":null,\"a\":[null,123]}";
         let obj: FloatStruct = super::decode(s).unwrap();
         assert!(obj.f.is_nan());
-        assert!(obj.a.get(0).is_nan());
-        assert_eq!(obj.a.get(1), &123f64);
+        assert!(obj.a[0].is_nan());
+        assert_eq!(obj.a[1], 123f64);
     }
 
     #[test]

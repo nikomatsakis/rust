@@ -1374,7 +1374,7 @@ macro_rules! checkeddiv_int_impl(
                 if *v == 0 || (*self == $min && *v == -1) {
                     None
                 } else {
-                    Some(self / *v)
+                    Some(*self / *v)
                 }
             }
         }
@@ -1395,7 +1395,7 @@ macro_rules! checkeddiv_uint_impl(
                 if *v == 0 {
                     None
                 } else {
-                    Some(self / *v)
+                    Some(*self / *v)
                 }
             }
         }
@@ -1501,6 +1501,8 @@ pub trait Float: Signed + Primitive {
     fn frac_1_sqrt2() -> Self;
 
     /// Take the square root of a number.
+    ///
+    /// Returns NaN if `self` is not a non-negative number.
     fn sqrt(self) -> Self;
     /// Take the reciprocal (inverse) square root of a number, `1/sqrt(x)`.
     fn rsqrt(self) -> Self;

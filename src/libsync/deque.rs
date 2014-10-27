@@ -545,22 +545,20 @@ mod tests {
     fn stress() {
         static AMT: int = 100000;
         static NTHREADS: int = 8;
-        static mut DONE: AtomicBool = INIT_ATOMIC_BOOL;
-        static mut HITS: AtomicUint = INIT_ATOMIC_UINT;
+        static DONE: AtomicBool = INIT_ATOMIC_BOOL;
+        static HITS: AtomicUint = INIT_ATOMIC_UINT;
         let pool = BufferPool::<int>::new();
         let (w, s) = pool.deque();
 
         let threads = range(0, NTHREADS).map(|_| {
             let s = s.clone();
             Thread::start(proc() {
-                unsafe {
-                    loop {
-                        match s.steal() {
-                            Data(2) => { HITS.fetch_add(1, SeqCst); }
-                            Data(..) => fail!(),
-                            _ if DONE.load(SeqCst) => break,
-                            _ => {}
-                        }
+                loop {
+                    match s.steal() {
+                        Data(2) => { HITS.fetch_add(1, SeqCst); }
+                        Data(..) => fail!(),
+                        _ if DONE.load(SeqCst) => break,
+                        _ => {}
                     }
                 }
             })
@@ -572,7 +570,7 @@ mod tests {
             if rng.gen_range(0i, 3) == 2 {
                 match w.pop() {
                     None => {}
-                    Some(2) => unsafe { HITS.fetch_add(1, SeqCst); },
+                    Some(2) => { HITS.fetch_add(1, SeqCst); },
                     Some(_) => fail!(),
                 }
             } else {
@@ -581,22 +579,20 @@ mod tests {
             }
         }
 
-        unsafe {
-            while HITS.load(SeqCst) < AMT as uint {
-                match w.pop() {
-                    None => {}
-                    Some(2) => { HITS.fetch_add(1, SeqCst); },
-                    Some(_) => fail!(),
-                }
+        while HITS.load(SeqCst) < AMT as uint {
+            match w.pop() {
+                None => {}
+                Some(2) => { HITS.fetch_add(1, SeqCst); },
+                Some(_) => fail!(),
             }
-            DONE.store(true, SeqCst);
         }
+        DONE.store(true, SeqCst);
 
         for thread in threads.into_iter() {
             thread.join();
         }
 
-        assert_eq!(unsafe { HITS.load(SeqCst) }, expected as uint);
+        assert_eq!(HITS.load(SeqCst), expected as uint);
     }
 
     #[test]
@@ -604,7 +600,7 @@ mod tests {
     fn no_starvation() {
         static AMT: int = 10000;
         static NTHREADS: int = 4;
-        static mut DONE: AtomicBool = INIT_ATOMIC_BOOL;
+        static DONE: AtomicBool = INIT_ATOMIC_BOOL;
         let pool = BufferPool::<(int, uint)>::new();
         let (w, s) = pool.deque();
 
@@ -655,7 +651,7 @@ mod tests {
             }
         }
 
-        unsafe { DONE.store(true, SeqCst); }
+        DONE.store(true, SeqCst);
 
         for thread in threads.into_iter() {
             thread.join();

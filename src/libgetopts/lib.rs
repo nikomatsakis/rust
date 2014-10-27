@@ -85,13 +85,12 @@
 #![license = "MIT/ASL2"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://doc.rust-lang.org/master/",
+       html_root_url = "http://doc.rust-lang.org/nightly/",
        html_playground_url = "http://play.rust-lang.org/")]
 #![feature(globs, phase)]
 #![feature(import_shadowing)]
 #![deny(missing_doc)]
 
-#[cfg(test)] extern crate debug;
 #[cfg(test)] #[phase(plugin, link)] extern crate log;
 
 use std::cmp::PartialEq;
@@ -236,10 +235,10 @@ impl OptGroup {
     /// (Both short and long names correspond to different Opts).
     pub fn long_to_short(&self) -> Opt {
         let OptGroup {
-            short_name: short_name,
-            long_name: long_name,
-            hasarg: hasarg,
-            occur: occur,
+            short_name,
+            long_name,
+            hasarg,
+            occur,
             ..
         } = (*self).clone();
 
@@ -672,11 +671,11 @@ pub fn usage(brief: &str, opts: &[OptGroup]) -> String {
     let desc_sep = format!("\n{}", " ".repeat(24));
 
     let mut rows = opts.iter().map(|optref| {
-        let OptGroup{short_name: short_name,
-                     long_name: long_name,
-                     hint: hint,
-                     desc: desc,
-                     hasarg: hasarg,
+        let OptGroup{short_name,
+                     long_name,
+                     hint,
+                     desc,
+                     hasarg,
                      ..} = (*optref).clone();
 
         let mut row = " ".repeat(4);
@@ -805,7 +804,7 @@ pub fn short_usage(program_name: &str, opts: &[OptGroup]) -> String {
 /// whitespace removed, and are only cut at whitespace boundaries.
 ///
 /// Note: Function was moved here from `std::str` because this module is the only place that
-/// uses it, and because it was to specific for a general string function.
+/// uses it, and because it was too specific for a general string function.
 ///
 /// #Failure:
 ///

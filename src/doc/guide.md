@@ -85,7 +85,7 @@ $ rustc --version
 You should see some output that looks something like this:
 
 ```{ignore}
-rustc 0.12.0-pre (443a1cd 2014-06-08 14:56:52 -0700)
+rustc 0.12.0-nightly (b7aa03a3c 2014-09-28 11:38:01 +0000)
 ```
 
 If you did, Rust has been installed successfully! Congrats!
@@ -195,9 +195,11 @@ The second point is the `println!()` part. This is calling a Rust **macro**,
 which is how metaprogramming is done in Rust. If it were a function instead, it
 would look like this: `println()`. For our purposes, we don't need to worry
 about this difference. Just know that sometimes, you'll see a `!`, and that
-means that you're calling a macro instead of a normal function. One last thing
-to mention: Rust's macros are significantly different than C macros, if you've
-used those. Don't be scared of using macros. We'll get to the details
+means that you're calling a macro instead of a normal function. Rust implements
+`println!` as a macro rather than a function for good reasons, but that's a
+very advanced topic. You'll learn more when we talk about macros later. One
+last thing to mention: Rust's macros are significantly different than C macros,
+if you've used those. Don't be scared of using macros. We'll get to the details
 eventually, you'll just have to trust us for now.
 
 Next, `"Hello, world!"` is a **string**. Strings are a surprisingly complicated
@@ -480,7 +482,7 @@ but it will still print "Hello, world!":
    Compiling hello_world v0.0.1 (file:///home/you/projects/hello_world)
 src/main.rs:2:9: 2:10 warning: unused variable: `x`, #[warn(unused_variable)] on by default
 src/main.rs:2     let x: int;
-                             ^
+                      ^
 ```
 
 Rust warns us that we never use the variable binding, but since we never use it,
@@ -659,14 +661,12 @@ error: mismatched types: expected `int` but found `()` (expected int but found (
 ```
 
 We expected an integer, but we got `()`. `()` is pronounced 'unit', and is a
-special type in Rust's type system. `()` is different than `null` in other
-languages, because `()` is distinct from other types. For example, in C, `null`
-is a valid value for a variable of type `int`. In Rust, `()` is _not_ a valid
-value for a variable of type `int`. It's only a valid value for variables of
-the type `()`, which aren't very useful. Remember how we said statements don't
-return a value? Well, that's the purpose of unit in this case. The semicolon
-turns any expression into a statement by throwing away its value and returning
-unit instead.
+special type in Rust's type system. In Rust, `()` is _not_ a valid value for a
+variable of type `int`. It's only a valid value for variables of the type `()`,
+which aren't very useful. Remember how we said statements don't return a value?
+Well, that's the purpose of unit in this case. The semicolon turns any
+expression into a statement by throwing away its value and returning unit
+instead.
 
 There's one more time in which you won't see a semicolon at the end of a line
 of Rust code. For that, we'll need our next concept: functions.
@@ -914,12 +914,23 @@ or 'breaks up,' the tuple, and assigns the bits to three bindings.
 
 This pattern is very powerful, and we'll see it repeated more later.
 
-The last thing to say about tuples is that they are only equivalent if
-the arity, types, and values are all identical.
+There also a few things you can do with a tuple as a whole, without
+destructuring. You can assign one tuple into another, if they have the same
+arity and contained types.
+
+```rust
+let mut x = (1i, 2i);
+let y = (2i, 3i);
+
+x = y;
+```
+
+You can also check for equality with `==`. Again, this will only compile if the
+tuples have the same type.
 
 ```rust
 let x = (1i, 2i, 3i);
-let y = (2i, 3i, 4i);
+let y = (2i, 2i, 4i);
 
 if x == y {
     println!("yes");
@@ -928,7 +939,7 @@ if x == y {
 }
 ```
 
-This will print `no`, as the values aren't equal.
+This will print `no`, because some of the values aren't equal.
 
 One other use of tuples is to return multiple values from a function:
 
@@ -961,7 +972,7 @@ struct Point {
 }
 
 fn main() {
-    let origin = Point { x: 0i, y:  0i };
+    let origin = Point { x: 0i, y: 0i };
 
     println!("The origin is at ({}, {})", origin.x, origin.y);
 }
@@ -988,7 +999,7 @@ struct Point {
 }
 
 fn main() {
-    let mut point = Point { x: 0i, y:  0i };
+    let mut point = Point { x: 0i, y: 0i };
 
     point.x = 5;
 
@@ -1140,13 +1151,13 @@ You can have any number of values in an enum:
 ```{rust}
 enum OptionalColor {
     Color(int, int, int),
-    Missing
+    Missing,
 }
 ```
 
 Enums with values are quite useful, but as I mentioned, they're even more
 useful when they're generic across types. But before we get to generics, let's
-talk about how to fix this big `if`/`else` statements we've been writing. We'll
+talk about how to fix these big `if`/`else` statements we've been writing. We'll
 do that with `match`.
 
 # Match
@@ -1244,8 +1255,9 @@ version, if we had forgotten the `Greater` case, for example, our program would
 have happily compiled. If we forget in the `match`, it will not. Rust helps us
 make sure to cover all of our bases.
 
-`match` is also an expression, which means we can use it on the right hand side
-of a `let` binding. We could also implement the previous line like this:
+`match` is also an expression, which means we can use it on the right
+hand side of a `let` binding or directly where an expression is
+used. We could also implement the previous line like this:
 
 ```{rust}
 fn cmp(a: int, b: int) -> Ordering {
@@ -1258,18 +1270,15 @@ fn main() {
     let x = 5i;
     let y = 10i;
 
-    let result = match cmp(x, y) {
+    println!("{}", match cmp(x, y) {
         Less    => "less",
         Greater => "greater",
         Equal   => "equal",
-    };
-
-    println!("{}", result);
+    });
 }
 ```
 
-In this case, it doesn't make a lot of sense, as we are just making a temporary
-string where we don't need to, but sometimes, it's a nice pattern.
+Sometimes, it's a nice pattern.
 
 # Looping
 
@@ -1485,73 +1494,42 @@ low-level details matter, they really matter. Just remember that `String`s
 allocate memory and control their data, while `&str`s are a reference to
 another string, and you'll be all set.
 
-# Vectors
+# Arrays, Vectors, and Slices
 
-Like many programming languages, Rust has a list type for when you want a list
-of things. But similar to strings, Rust has different types to represent this
-idea: `Vec<T>` (a 'vector'), `[T, .. N]` (an 'array'), and `&[T]` (a 'slice').
-Whew!
-
-Vectors are similar to `String`s: they have a dynamic length, and they
-allocate enough memory to fit. You can create a vector with the `vec!` macro:
+Like many programming languages, Rust has list types to represent a sequence of
+things. The most basic is the **array**, a fixed-size list of elements of the
+same type. By default, arrays are immutable.
 
 ```{rust}
-let nums = vec![1i, 2i, 3i];
+let a = [1i, 2i, 3i];
+let mut m = [1i, 2i, 3i];
 ```
 
-Notice that unlike the `println!` macro we've used in the past, we use square
-brackets (`[]`) with `vec!`. Rust allows you to use either in either situation,
-this is just convention.
-
-You can create an array with just square brackets:
+You can create an array with a given number of elements, all initialized to the
+same value, with `[val, ..N]` syntax. The compiler ensures that arrays are
+always initialized.
 
 ```{rust}
-let nums = [1i, 2i, 3i];
-let nums = [1i, ..20]; // Shorthand for an array of 20 elements all initialized to 1
+let a = [0i, ..20];  // Shorthand for array of 20 elements all initialized to 0
 ```
 
-So what's the difference? An array has a fixed size, so you can't add or
-subtract elements:
+Arrays have type `[T,..N]`. We'll talk about this `T` notation later, when we
+cover generics.
 
-```{rust,ignore}
-let mut nums = vec![1i, 2i, 3i];
-nums.push(4i); // works
-
-let mut nums = [1i, 2i, 3i];
-nums.push(4i); //  error: type `[int, .. 3]` does not implement any method
-               // in scope named `push`
-```
-
-The `push()` method lets you append a value to the end of the vector. But
-since arrays have fixed sizes, adding an element doesn't make any sense.
-You can see how it has the exact type in the error message: `[int, .. 3]`.
-An array of `int`s, with length 3.
-
-Similar to `&str`, a slice is a reference to another array. We can get a
-slice from a vector by using the `as_slice()` method:
+You can get the number of elements in an array `a` with `a.len()`, and use
+`a.iter()` to iterate over them with a for loop. This code will print each
+number in order:
 
 ```{rust}
-let vec = vec![1i, 2i, 3i];
-let slice = vec.as_slice();
-```
+let a = [1i, 2, 3];     // Only the first item needs a type suffix
 
-All three types implement an `iter()` method, which returns an iterator. We'll
-talk more about the details of iterators later, but for now, the `iter()` method
-allows you to write a `for` loop that prints out the contents of a vector, array,
-or slice:
-
-```{rust}
-let vec = vec![1i, 2i, 3i];
-
-for i in vec.iter() {
-    println!("{}", i);
+println!("a has {} elements", a.len());
+for e in a.iter() {
+    println!("{}", e);
 }
 ```
 
-This code will print each number in order, on its own line.
-
-You can access a particular element of a vector, array, or slice by using
-**subscript notation**:
+You can access a particular element of an array with **subscript notation**:
 
 ```{rust}
 let names = ["Graydon", "Brian", "Niko"];
@@ -1559,13 +1537,59 @@ let names = ["Graydon", "Brian", "Niko"];
 println!("The second name is: {}", names[1]);
 ```
 
-These subscripts start at zero, like in most programming languages, so the
-first name is `names[0]` and the second name is `names[1]`. The above example
-prints `The second name is Brian`.
+Subscripts start at zero, like in most programming languages, so the first name
+is `names[0]` and the second name is `names[1]`. The above example prints
+`The second name is: Brian`. If you try to use a subscript that is not in the
+array, you will get an error: array access is bounds-checked at run-time. Such
+errant access is the source of many bugs in other systems programming
+languages.
 
-There's a whole lot more to vectors, but that's enough to get started. We have
-now learned all of the most basic Rust concepts. We're ready to start building
-our guessing game, but we need to know how to do one last thing first: get
+A **vector** is a dynamic or "growable" array, implemented as the standard
+library type [`Vec<T>`](std/vec/) (we'll talk about what the `<T>` means
+later). Vectors are to arrays what `String` is to `&str`. You can create them
+with the `vec!` macro:
+
+```{rust}
+let v = vec![1i, 2, 3];
+```
+
+(Notice that unlike the `println!` macro we've used in the past, we use square
+brackets `[]` with `vec!`. Rust allows you to use either in either situation,
+this is just convention.)
+
+You can get the length of, iterate over, and subscript vectors just like
+arrays. In addition, (mutable) vectors can grow automatically:
+
+```{rust}
+let mut nums = vec![1i, 2, 3];
+nums.push(4);
+println!("The length of nums is now {}", nums.len());   // Prints 4
+```
+
+Vectors have many more useful methods.
+
+A **slice** is a reference to (or "view" into) an array. They are useful for
+allowing safe, efficient access to a portion of an array without copying. For
+example, you might want to reference just one line of a file read into memory.
+By nature, a slice is not created directly, but from an existing variable.
+Slices have a length, can be mutable or not, and in many ways behave like
+arrays:
+
+```{rust}
+let a = [0i, 1, 2, 3, 4];
+let middle = a.slice(1, 4);     // A slice of a: just the elements [1,2,3]
+
+for e in middle.iter() {
+    println!("{}", e);          // Prints 1, 2, 3
+}
+```
+
+You can also take a slice of a vector, `String`, or `&str`, because they are
+backed by arrays. Slices have type `&[T]`, which we'll talk about when we cover
+generics.
+
+We have now learned all of the most basic Rust concepts. We're ready to start
+building our guessing game, we just need to know one last thing: how to get
 input from the keyboard. You can't have a guessing game without the ability to
 guess!
 
@@ -1680,11 +1704,11 @@ just `int`s.
 
 Rust provides a method on these `IoResult<T>`s called `ok()`, which does the
 same thing as our `match` statement, but assuming that we have a valid value.
-If we don't, it will terminate our program. In this case, if we can't get
-input, our program doesn't work, so we're okay with that. In most cases, we
-would want to handle the error case explicitly. The result of `ok()` has a
-method, `expect()`, which allows us to give an error message if this crash
-happens.
+We then call `expect()` on the result, which will terminate our program if we
+don't have a valid value. In this case, if we can't get input, our program
+doesn't work, so we're okay with that. In most cases, we would want to handle
+the error case explicitly. `expect()` allows us to give an error message if
+this crash happens.
 
 We will cover the exact details of how all of this works later in the Guide.
 For now, this gives you enough of a basic understanding to work with.
@@ -1735,8 +1759,7 @@ For our first project, we'll implement a classic beginner programming problem:
 the guessing game. Here's how it works: Our program will generate a random
 integer between one and a hundred. It will then prompt us to enter a guess.
 Upon entering our guess, it will tell us if we're too low or too high. Once we
-guess correctly, it will congratulate us, and print the number of guesses we've
-taken to the screen. Sound good?
+guess correctly, it will congratulate us. Sound good?
 
 ## Set up
 
@@ -1843,9 +1866,9 @@ that page, but the best part is the search bar. Right up at the top, there's
 a box that you can enter in a search term. The search is pretty primitive
 right now, but is getting better all the time. If you type 'random' in that
 box, the page will update to [this
-one](http://doc.rust-lang.org/std/index.html?search=random). The very first
+one](std/index.html?search=random). The very first
 result is a link to
-[std::rand::random](http://doc.rust-lang.org/std/rand/fn.random.html). If we
+[std::rand::random](std/rand/fn.random.html). If we
 click on that result, we'll be taken to its documentation page.
 
 This page shows us a few things: the type signature of the function, some
@@ -2030,7 +2053,7 @@ fn main() {
     match cmp(input, secret_number) {
         Less    => println!("Too small!"),
         Greater => println!("Too big!"),
-        Equal   => { println!("You win!"); },
+        Equal   => println!("You win!"),
     }
 }
 
@@ -2084,7 +2107,7 @@ fn main() {
     match cmp(input, secret_number) {
         Less    => println!("Too small!"),
         Greater => println!("Too big!"),
-        Equal   => { println!("You win!"); },
+        Equal   => println!("You win!"),
     }
 }
 
@@ -2176,14 +2199,12 @@ fn main() {
                            .expect("Failed to read line");
     let input_num: Option<uint> = from_str(input.as_slice());
 
-
-
     println!("You guessed: {}", input_num);
 
     match cmp(input_num, secret_number) {
         Less    => println!("Too small!"),
         Greater => println!("Too big!"),
-        Equal   => { println!("You win!"); },
+        Equal   => println!("You win!"),
     }
 }
 
@@ -2241,7 +2262,7 @@ fn main() {
     match cmp(num, secret_number) {
         Less    => println!("Too small!"),
         Greater => println!("Too big!"),
-        Equal   => { println!("You win!"); },
+        Equal   => println!("You win!"),
     }
 }
 
@@ -2307,7 +2328,7 @@ fn main() {
     match cmp(num, secret_number) {
         Less    => println!("Too small!"),
         Greater => println!("Too big!"),
-        Equal   => { println!("You win!"); },
+        Equal   => println!("You win!"),
     }
 }
 
@@ -2382,7 +2403,7 @@ fn main() {
         match cmp(num, secret_number) {
             Less    => println!("Too small!"),
             Greater => println!("Too big!"),
-            Equal   => { println!("You win!"); },
+            Equal   => println!("You win!"),
         }
     }
 }
@@ -2619,7 +2640,7 @@ Rust's more unique features.
 
 Rust features a strong module system, but it works a bit differently than in
 other programming languages. Rust's module system has two main components:
-**crate**s, and **module**s.
+**crate**s and **module**s.
 
 A crate is Rust's unit of independent compilation. Rust always compiles one
 crate at a time, producing either a library or an executable. However, executables
@@ -2640,6 +2661,7 @@ Enough talk, let's build something! Let's make a new project called `modules`.
 ```{bash,ignore}
 $ cd ~/projects
 $ cargo new modules --bin
+$ cd modules
 ```
 
 Let's double check our work by compiling:
@@ -2727,7 +2749,8 @@ mod hello {
 }
 ```
 
-This will work:
+Usage of the `pub` keyword is sometimes called 'exporting', because
+we're making the function available for other modules. This will work:
 
 ```{notrust,ignore}
 $ cargo run
@@ -3072,10 +3095,10 @@ And try to run the test:
 
 ```{notrust,ignore}
 $ cargo test
-   Compiling testing v0.0.1 (file:///home/youg/projects/testing)
-/home/youg/projects/testing/tests/lib.rs:3:18: 3:38 error: unresolved name `add_three_times_four`.
-/home/youg/projects/testing/tests/lib.rs:3     let result = add_three_times_four(5i);
-                                                            ^~~~~~~~~~~~~~~~~~~~
+   Compiling testing v0.0.1 (file:///home/you/projects/testing)
+/home/you/projects/testing/tests/lib.rs:3:18: 3:38 error: unresolved name `add_three_times_four`.
+/home/you/projects/testing/tests/lib.rs:3     let result = add_three_times_four(5i);
+                                                           ^~~~~~~~~~~~~~~~~~~~
 error: aborting due to previous error
 Build failed, waiting for other jobs to finish...
 Could not compile `testing`.
@@ -3261,11 +3284,11 @@ Let's give it a shot:
 $ cargo test
    Compiling testing v0.0.1 (file:///home/you/projects/testing)
 
-running 1 test
+running 2 tests
 test test::test_times_four ... ok
 test test::test_add_three ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured
 
 
 running 0 tests
@@ -3291,8 +3314,7 @@ use super::times_four;
 
 Because we've made a nested module, we can import functions from the parent
 module by using `super`. Sub-modules are allowed to 'see' private functions in
-the parent. We sometimes call this usage of `use` a 're-export,' because we're
-exporting the name again, somewhere else.
+the parent.
 
 We've now covered the basics of testing. Rust's tools are primitive, but they
 work well in the simple cases. There are some Rustaceans working on building
@@ -3444,13 +3466,14 @@ for destroying that resource as well. Given that we're discussing pointers
 right now, let's discuss this in the context of memory allocation, though
 it applies to other resources as well.
 
-When you allocate heap memory, you need a mechanism to free that memory.  Many
-languages let the programmer control the allocation, and then use a garbage
-collector to handle the deallocation. This is a valid, time-tested strategy,
-but it's not without its drawbacks. Because the programmer does not have to
-think as much about deallocation, allocation becomes something commonplace,
-because it's easy. And if you need precise control over when something is
-deallocated, leaving it up to your runtime can make this difficult.
+When you allocate heap memory, you need a mechanism to free that memory. Many
+languages use a garbage collector to handle deallocation. This is a valid,
+time-tested strategy, but it's not without its drawbacks: it adds overhead, and
+can lead to unpredictable pauses in execution. Because the programmer does not
+have to think as much about deallocation, allocation becomes something
+commonplace, leading to more memory usage. And if you need precise control
+over when something is deallocated, leaving it up to your runtime can make this
+difficult.
 
 Rust chooses a different path, and that path is called **ownership**. Any
 binding that creates a resource is the **owner** of that resource.
@@ -3476,17 +3499,19 @@ memory. The length of time that the borrower is borrowing the pointer
 from you is called a **lifetime**.
 
 If two distinct bindings share a pointer, and the memory that pointer points to
-is immutable, then there are no problems. But if it's mutable, both pointers
-can attempt to write to the memory at the same time, causing a **race
-condition**. Therefore, if someone wants to mutate something that they've
-borrowed from you, you must not have lent out that pointer to anyone else.
+is immutable, then there are no problems. But if it's mutable, the result of
+changing it can vary unpredictably depending on who happens to access it first,
+which is called a **race condition**. To avoid this, if someone wants to mutate
+something that they've borrowed from you, you must not have lent out that
+pointer to anyone else.
 
 Rust has a sophisticated system called the **borrow checker** to make sure that
 everyone plays by these rules. At compile time, it verifies that none of these
-rules are broken. If there's no problem, our program compiles successfully, and
-there is no runtime overhead for any of this. The borrow checker works only at
-compile time. If the borrow checker did find a problem, it will report a
-**lifetime error**, and your program will refuse to compile.
+rules are broken. If our program compiles successfully, Rust can guarantee it
+is free of data races and other memory errors, and there is no runtime overhead
+for any of this. The borrow checker works only at compile time. If the borrow
+checker did find a problem, it will report a **lifetime error**, and your
+program will refuse to compile.
 
 That's a lot to take in. It's also one of the _most_ important concepts in
 all of Rust. Let's see this syntax in action:
@@ -3528,9 +3553,8 @@ restriction:
 
 1. If the borrow is immutable, you may read the data the pointer points to.
 2. If the borrow is mutable, you may read and write the data the pointer points to.
-3. You may lend the pointer to someone else in an immutable fashion, **BUT**
-4. When you do so, they must return it to you before you must give your own
-   borrow back.
+3. You may lend the pointer to someone else, **BUT**
+4. When you do so, they must return it before you can give your own borrow back.
 
 This last requirement can seem odd, but it also makes sense. If you have to
 return something, and you've lent it to someone, they need to give it back to
@@ -3622,7 +3646,7 @@ let x = box 5i;
 ```
 
 This allocates an integer `5` on the heap, and creates a binding `x` that
-refers to it.. The great thing about boxed pointers is that we don't have to
+refers to it. The great thing about boxed pointers is that we don't have to
 manually free this allocation! If we write
 
 ```{rust}
@@ -3723,7 +3747,7 @@ If you use `Rc<T>` or `Arc<T>`, you have to be careful about introducing
 cycles. If you have two `Rc<T>`s that point to each other, the reference counts
 will never drop to zero, and you'll have a memory leak. To learn more, check
 out [the section on `Rc<T>` and `Arc<T>` in the pointers
-guide](http://doc.rust-lang.org/guide-pointers.html#rc-and-arc).
+guide](guide-pointers.html#rc-and-arc).
 
 # Patterns
 
@@ -3856,6 +3880,7 @@ match x {
 If you have a struct, you can destructure it inside of a pattern:
 
 ```{rust}
+# #![allow(non_shorthand_field_patterns)]
 struct Point {
     x: int,
     y: int,
@@ -3871,6 +3896,7 @@ match origin {
 If we only care about some of the values, we don't have to give them all names:
 
 ```{rust}
+# #![allow(non_shorthand_field_patterns)]
 struct Point {
     x: int,
     y: int,
@@ -3956,6 +3982,7 @@ You can also define methods that do not take a `self` parameter. Here's a
 pattern that's very common in Rust code:
 
 ```{rust}
+# #![allow(non_shorthand_field_patterns)]
 struct Circle {
     x: f64,
     y: f64,
@@ -3994,7 +4021,7 @@ Let's make a closure:
 ```{rust}
 let add_one = |x| { 1i + x };
 
-println!("The 5 plus 1 is {}.", add_one(5i));
+println!("The sum of 5 plus 1 is {}.", add_one(5i));
 ```
 
 We create a closure using the `|...| { ... }` syntax, and then we create a
@@ -4089,7 +4116,7 @@ fn main() {
 }
 ```
 
-Let's break example down, starting with `main`:
+Let's break the example down, starting with `main`:
 
 ```{rust}
 let square = |x: int| { x * x };
@@ -4210,7 +4237,7 @@ loop {
     match range.next() {
         Some(x) => {
             println!("{}", x);
-        }
+        },
         None => { break }
     }
 }
@@ -4305,7 +4332,7 @@ The most common consumer is `collect()`. This code doesn't quite compile,
 but it shows the intention:
 
 ```{rust,ignore}
-let one_to_one_hundred = range(0i, 100i).collect();
+let one_to_one_hundred = range(1i, 101i).collect();
 ```
 
 As you can see, we call `collect()` on our iterator. `collect()` takes
@@ -4315,7 +4342,7 @@ type of things you want to collect, and so you need to let it know.
 Here's the version that does compile:
 
 ```{rust}
-let one_to_one_hundred = range(0i, 100i).collect::<Vec<int>>();
+let one_to_one_hundred = range(1i, 101i).collect::<Vec<int>>();
 ```
 
 If you remember, the `::<>` syntax allows us to give a type hint,
@@ -4342,7 +4369,7 @@ element, `find` returns an `Option` rather than the element itself.
 Another important consumer is `fold`. Here's what it looks like:
 
 ```{rust}
-let sum = range(1i, 100i)
+let sum = range(1i, 4i)
               .fold(0i, |sum, x| sum + x);
 ```
 
@@ -4366,7 +4393,7 @@ in this iterator:
 We called `fold()` with these arguments:
 
 ```{rust}
-# range(1i, 5i)
+# range(1i, 4i)
 .fold(0i, |sum, x| sum + x);
 ```
 
@@ -5052,8 +5079,8 @@ println!("The value of x[0] is: {}", x[0]); // error: use of moved value: `x`
 ```
 
 `x` is now owned by the proc, and so we can't use it anymore. Many other
-languages would let us do this, but it's not safe to do so. Rust's type system
-catches the error.
+languages would let us do this, but it's not safe to do so. Rust's borrow
+checker catches the error.
 
 If tasks were only able to capture these values, they wouldn't be very useful.
 Luckily, tasks can communicate with each other through **channel**s. Channels
@@ -5074,7 +5101,7 @@ The `channel()` function returns two endpoints: a `Receiver<T>` and a
 `Sender<T>`. You can use the `.send()` method on the `Sender<T>` end, and
 receive the message on the `Receiver<T>` side with the `recv()` method.  This
 method blocks until it gets a message. There's a similar method, `.try_recv()`,
-which returns an `Option<T>` and does not block.
+which returns an `Result<T, TryRecvError>` and does not block.
 
 If you want to send messages to the task as well, create two channels!
 
@@ -5202,8 +5229,8 @@ We can check this out using a special flag to `rustc`. This code, in a file
 
 ```{rust}
 fn main() {
-    let x = "Hello";
-    println!("x is: {:s}", x);
+    let x = 5i;
+    println!("x is: {}", x);
 }
 ```
 
@@ -5215,32 +5242,19 @@ give us this huge result:
 #![no_std]
 #![feature(globs)]
 #[phase(plugin, link)]
-extern crate std = "std";
-extern crate rt = "native";
+extern crate "std" as std;
+extern crate "native" as rt;
+#[prelude_import]
 use std::prelude::*;
 fn main() {
-    let x = "Hello";
+    let x = 5i;
     match (&x,) {
         (__arg0,) => {
             #[inline]
             #[allow(dead_code)]
-            static __STATIC_FMTSTR: [::std::fmt::rt::Piece<'static>, ..2u] =
-                [::std::fmt::rt::String("x is: "),
-                 ::std::fmt::rt::Argument(::std::fmt::rt::Argument{position:
-                                                                       ::std::fmt::rt::ArgumentNext,
-                                                                   format:
-                                                                       ::std::fmt::rt::FormatSpec{fill:
-                                                                                                      ' ',
-                                                                                                  align:
-                                                                                                      ::std::fmt::rt::AlignUnknown,
-                                                                                                  flags:
-                                                                                                      0u,
-                                                                                                  precision:
-                                                                                                      ::std::fmt::rt::CountImplied,
-                                                                                                  width:
-                                                                                                      ::std::fmt::rt::CountImplied,},})];
+            static __STATIC_FMTSTR: [&'static str, ..1u] = ["x is: "];
             let __args_vec =
-                &[::std::fmt::argument(::std::fmt::secret_string, __arg0)];
+                &[::std::fmt::argument(::std::fmt::secret_show, __arg0)];
             let __args =
                 unsafe {
                     ::std::fmt::Arguments::new(__STATIC_FMTSTR, __args_vec)
@@ -5251,45 +5265,16 @@ fn main() {
 }
 ```
 
-Intense. Here's a trimmed down version that's a bit easier to read:
-
-```{rust,ignore}
-fn main() {
-    let x = 5i;
-    match (&x,) {
-        (__arg0,) => {
-            static __STATIC_FMTSTR:  =
-                [String("x is: "),
-                 Argument(Argument {
-                    position: ArgumentNext,
-                    format: FormatSpec {
-                        fill: ' ',
-                        align: AlignUnknown,
-                        flags: 0u,
-                        precision: CountImplied,
-                        width: CountImplied,
-                    },
-                },
-               ];
-            let __args_vec = &[argument(secret_string, __arg0)];
-            let __args = unsafe { Arguments::new(__STATIC_FMTSTR, __args_vec) };
-
-            println_args(&__args)
-        }
-    };
-}
-```
-
 Whew! This isn't too terrible. You can see that we still `let x = 5i`,
 but then things get a little bit hairy. Three more bindings get set: a
 static format string, an argument vector, and the arguments. We then
 invoke the `println_args` function with the generated arguments.
 
-This is the code (well, the full version) that Rust actually compiles. You can
-see all of the extra information that's here. We get all of the type safety and
-options that it provides, but at compile time, and without needing to type all
-of this out. This is how macros are powerful. Without them, you would need to
-type all of this by hand to get a type checked `println`.
+This is the code that Rust actually compiles. You can see all of the extra
+information that's here. We get all of the type safety and options that it
+provides, but at compile time, and without needing to type all of this out.
+This is how macros are powerful. Without them, you would need to type all of
+this by hand to get a type checked `println`.
 
 For more on macros, please consult [the Macros Guide](guide-macros.html).
 Macros are a very advanced and still slightly experimental feature, but don't
@@ -5336,6 +5321,6 @@ you will have a firm grasp of basic Rust development. There's a whole lot more
 out there, we've just covered the surface. There's tons of topics that you can
 dig deeper into, and we've built specialized guides for many of them. To learn
 more, dig into the [full documentation
-index](http://doc.rust-lang.org/index.html).
+index](index.html).
 
 Happy hacking!

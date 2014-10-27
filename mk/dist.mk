@@ -35,7 +35,7 @@ LICENSE.txt: $(S)COPYRIGHT $(S)LICENSE-APACHE $(S)LICENSE-MIT
 
 PKG_TAR = dist/$(PKG_NAME).tar.gz
 
-PKG_GITMODULES := $(S)src/libuv $(S)src/llvm $(S)src/gyp $(S)src/compiler-rt \
+PKG_GITMODULES := $(S)src/llvm $(S)src/compiler-rt \
 		  $(S)src/rt/hoedown $(S)src/jemalloc
 PKG_FILES := \
     $(S)COPYRIGHT                              \
@@ -44,7 +44,7 @@ PKG_FILES := \
     $(S)AUTHORS.txt                            \
     $(S)CONTRIBUTING.md                        \
     $(S)README.md                              \
-    $(S)RELEASES.txt                           \
+    $(S)RELEASES.md                            \
     $(S)configure $(S)Makefile.in              \
     $(S)man                                    \
     $(addprefix $(S)src/,                      \

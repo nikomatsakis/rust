@@ -33,7 +33,7 @@ use syntax::parse::token;
 use std::collections::hashmap::HashMap;
 
 pub struct StaticMethodInfo {
-    pub ident: ast::Ident,
+    pub name: ast::Name,
     pub def_id: ast::DefId,
     pub fn_style: ast::FnStyle,
     pub vis: ast::Visibility,
@@ -57,7 +57,7 @@ pub fn each_lang_item(cstore: &cstore::CStore,
 pub fn each_child_of_item(cstore: &cstore::CStore,
                           def_id: ast::DefId,
                           callback: |decoder::DefLike,
-                                     ast::Ident,
+                                     ast::Name,
                                      ast::Visibility|) {
     let crate_data = cstore.get_crate_data(def_id.krate);
     let get_crate_data: decoder::GetCrateDataCb = |cnum| {
@@ -74,7 +74,7 @@ pub fn each_child_of_item(cstore: &cstore::CStore,
 pub fn each_top_level_item_of_crate(cstore: &cstore::CStore,
                                     cnum: ast::CrateNum,
                                     callback: |decoder::DefLike,
-                                               ast::Ident,
+                                               ast::Name,
                                                ast::Visibility|) {
     let crate_data = cstore.get_crate_data(cnum);
     let get_crate_data: decoder::GetCrateDataCb = |cnum| {
@@ -93,8 +93,9 @@ pub fn get_item_path(tcx: &ty::ctxt, def: ast::DefId) -> Vec<ast_map::PathElem> 
 
     // FIXME #1920: This path is not always correct if the crate is not linked
     // into the root namespace.
-    (vec!(ast_map::PathMod(token::intern(cdata.name.as_slice())))).append(
-        path.as_slice())
+    let mut r = vec![ast_map::PathMod(token::intern(cdata.name.as_slice()))];
+    r.push_all(path.as_slice());
+    r
 }
 
 pub enum found_ast<'ast> {
@@ -138,7 +139,7 @@ pub fn get_impl_or_trait_item(tcx: &ty::ctxt, def: ast::DefId)
 }
 
 pub fn get_trait_item_name_and_kind(cstore: &cstore::CStore, def: ast::DefId)
-                                    -> (ast::Ident, resolve::TraitItemKind) {
+                                    -> (ast::Name, resolve::TraitItemKind) {
     let cdata = cstore.get_crate_data(def.krate);
     decoder::get_trait_item_name_and_kind(cstore.intr.clone(),
                                           &*cdata,
@@ -172,7 +173,7 @@ pub fn get_supertraits(tcx: &ty::ctxt, def: ast::DefId) -> Vec<Rc<ty::TraitRef>>
 }
 
 pub fn get_type_name_if_impl(cstore: &cstore::CStore, def: ast::DefId)
-                          -> Option<ast::Ident> {
+                          -> Option<ast::Name> {
     let cdata = cstore.get_crate_data(def.krate);
     decoder::get_type_name_if_impl(&*cdata, def.node)
 }
@@ -226,13 +227,13 @@ pub fn get_field_type(tcx: &ty::ctxt, class_id: ast::DefId,
     let class_doc = expect(tcx.sess.diagnostic(),
                            decoder::maybe_find_item(class_id.node, all_items),
                            || {
-        (format!("get_field_type: class ID {:?} not found",
+        (format!("get_field_type: class ID {} not found",
                  class_id)).to_string()
     });
     let the_field = expect(tcx.sess.diagnostic(),
         decoder::maybe_find_item(def.node, class_doc),
         || {
-            (format!("get_field_type: in class {:?}, field ID {:?} not found",
+            (format!("get_field_type: in class {}, field ID {} not found",
                     class_id,
                     def)).to_string()
         });

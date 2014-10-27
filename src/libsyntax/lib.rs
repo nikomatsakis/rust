@@ -21,15 +21,14 @@
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://doc.rust-lang.org/master/")]
+       html_root_url = "http://doc.rust-lang.org/nightly/")]
 
-#![feature(macro_rules, globs, default_type_params, phase)]
+#![allow(unknown_features)]
+#![feature(macro_rules, globs, default_type_params, phase, slicing_syntax)]
 #![feature(quote, struct_variant, unsafe_destructor, import_shadowing)]
-#![allow(deprecated)]
 
 extern crate arena;
 extern crate fmt_macros;
-extern crate debug;
 #[phase(plugin, link)] extern crate log;
 extern crate serialize;
 extern crate term;
@@ -61,7 +60,6 @@ pub mod ast_util;
 pub mod attr;
 pub mod codemap;
 pub mod config;
-pub mod crateid;
 pub mod diagnostic;
 pub mod feature_gate;
 pub mod fold;

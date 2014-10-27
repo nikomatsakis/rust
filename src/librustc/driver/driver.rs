@@ -284,13 +284,14 @@ pub fn phase_2_configure_and_expand(sess: &Session,
             if cfg!(windows) {
                 _old_path = os::getenv("PATH").unwrap_or(_old_path);
                 let mut new_path = sess.host_filesearch().get_dylib_search_paths();
-                new_path.push_all_move(os::split_paths(_old_path.as_slice()));
+                new_path.extend(os::split_paths(_old_path.as_slice()).into_iter());
                 os::setenv("PATH", os::join_paths(new_path.as_slice()).unwrap());
             }
             let cfg = syntax::ext::expand::ExpansionConfig {
                 crate_name: crate_name.to_string(),
                 deriving_hash_type_parameter: sess.features.borrow().default_type_params,
                 enable_quotes: sess.features.borrow().quote,
+                recursion_limit: sess.recursion_limit.get(),
             };
             let ret = syntax::ext::expand::expand_crate(&sess.parse_sess,
                                               cfg,
@@ -568,7 +569,7 @@ pub fn phase_6_link_output(sess: &Session,
                            outputs: &OutputFilenames) {
     let old_path = os::getenv("PATH").unwrap_or_else(||String::new());
     let mut new_path = os::split_paths(old_path.as_slice());
-    new_path.push_all_move(sess.host_filesearch().get_tools_search_paths());
+    new_path.extend(sess.host_filesearch().get_tools_search_paths().into_iter());
     os::setenv("PATH", os::join_paths(new_path.as_slice()).unwrap());
 
     time(sess.time_passes(), "linking", (), |_|
@@ -615,6 +616,12 @@ pub fn stop_after_phase_5(sess: &Session) -> bool {
     return false;
 }
 
+fn escape_dep_filename(filename: &str) -> String {
+    // Apparently clang and gcc *only* escape spaces:
+    // http://llvm.org/klaus/clang/commit/9d50634cfc268ecc9a7250226dd5ca0e945240d4
+    filename.replace(" ", "\\ ")
+}
+
 fn write_out_deps(sess: &Session,
                   input: &Input,
                   outputs: &OutputFilenames,
@@ -658,7 +665,7 @@ fn write_out_deps(sess: &Session,
         // write Makefile-compatible dependency rules
         let files: Vec<String> = sess.codemap().files.borrow()
                                    .iter().filter(|fmap| fmap.is_real_file())
-                                   .map(|fmap| fmap.name.to_string())
+                                   .map(|fmap| escape_dep_filename(fmap.name.as_slice()))
                                    .collect();
         let mut file = try!(io::File::create(&deps_filename));
         for path in out_filenames.iter() {
@@ -697,7 +704,7 @@ pub fn collect_crate_types(session: &Session,
                 }
                 Some(ref n) if n.equiv(&("bin")) => Some(config::CrateTypeExecutable),
                 Some(_) => {
-                    session.add_lint(lint::builtin::UNKNOWN_CRATE_TYPE,
+                    session.add_lint(lint::builtin::UNKNOWN_CRATE_TYPES,
                                      ast::CRATE_NODE_ID,
                                      a.span,
                                      "invalid `crate_type` \
@@ -705,7 +712,7 @@ pub fn collect_crate_types(session: &Session,
                     None
                 }
                 _ => {
-                    session.add_lint(lint::builtin::UNKNOWN_CRATE_TYPE,
+                    session.add_lint(lint::builtin::UNKNOWN_CRATE_TYPES,
                                      ast::CRATE_NODE_ID,
                                      a.span,
                                      "`crate_type` requires a \
@@ -811,17 +818,6 @@ pub fn build_output_filenames(input: &Input,
             // If a crate name is present, we use it as the link name
             let stem = sess.opts.crate_name.clone().or_else(|| {
                 attr::find_crate_name(attrs).map(|n| n.get().to_string())
-            }).or_else(|| {
-                // NB: this clause can be removed once #[crate_id] is no longer
-                // deprecated.
-                //
-                // Also note that this will be warned about later so we don't
-                // warn about it here.
-                use syntax::crateid::CrateId;
-                attrs.iter().find(|at| at.check_name("crate_id"))
-                     .and_then(|at| at.value_str())
-                     .and_then(|s| from_str::<CrateId>(s.get()))
-                     .map(|id| id.name)
             }).unwrap_or(input.filestem());
 
             OutputFilenames {

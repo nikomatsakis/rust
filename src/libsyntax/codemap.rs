@@ -96,7 +96,7 @@ pub struct Span {
     pub expn_id: ExpnId
 }
 
-pub static DUMMY_SP: Span = Span { lo: BytePos(0), hi: BytePos(0), expn_id: NO_EXPANSION };
+pub const DUMMY_SP: Span = Span { lo: BytePos(0), hi: BytePos(0), expn_id: NO_EXPANSION };
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct Spanned<T> {
@@ -227,7 +227,7 @@ pub struct ExpnInfo {
 #[deriving(PartialEq, Eq, Clone, Show, Hash, Encodable, Decodable)]
 pub struct ExpnId(u32);
 
-pub static NO_EXPANSION: ExpnId = ExpnId(-1);
+pub const NO_EXPANSION: ExpnId = ExpnId(-1);
 
 impl ExpnId {
     pub fn from_llvm_cookie(cookie: c_uint) -> ExpnId {
@@ -283,19 +283,17 @@ impl FileMap {
     /// filemap.start_pos + newline_offset_relative_to_the_start_of_filemap.
     pub fn next_line(&self, pos: BytePos) {
         // the new charpos must be > the last one (or it's the first one).
-        let mut lines = self.lines.borrow_mut();;
+        let mut lines = self.lines.borrow_mut();
         let line_len = lines.len();
-        assert!(line_len == 0 || (*lines.get(line_len - 1) < pos))
+        assert!(line_len == 0 || ((*lines)[line_len - 1] < pos))
         lines.push(pos);
     }
 
     /// get a line from the list of pre-computed line-beginnings
     ///
-    /// NOTE(stage0, pcwalton): Remove `#[allow(unused_mut)]` after snapshot.
-    #[allow(unused_mut)]
     pub fn get_line(&self, line: int) -> String {
-        let mut lines = self.lines.borrow_mut();
-        let begin: BytePos = *lines.get(line as uint) - self.start_pos;
+        let lines = self.lines.borrow();
+        let begin: BytePos = (*lines)[line as uint] - self.start_pos;
         let begin = begin.to_uint();
         let slice = self.src.as_slice().slice_from(begin);
         match slice.find('\n') {
@@ -353,7 +351,7 @@ impl CodeMap {
         // overflowing into the next filemap in case the last byte of span is also the last
         // byte of filemap, which leads to incorrect results from CodeMap.span_to_*.
         if src.len() > 0 && !src.as_slice().ends_with("\n") {
-            src.push_char('\n');
+            src.push('\n');
         }
 
         let filemap = Rc::new(FileMap {
@@ -448,7 +446,7 @@ impl CodeMap {
 
     pub fn lookup_byte_offset(&self, bpos: BytePos) -> FileMapAndBytePos {
         let idx = self.lookup_filemap_idx(bpos);
-        let fm = self.files.borrow().get(idx).clone();
+        let fm = (*self.files.borrow())[idx].clone();
         let offset = bpos - fm.start_pos;
         FileMapAndBytePos {fm: fm, pos: offset}
     }
@@ -457,7 +455,7 @@ impl CodeMap {
     pub fn bytepos_to_file_charpos(&self, bpos: BytePos) -> CharPos {
         let idx = self.lookup_filemap_idx(bpos);
         let files = self.files.borrow();
-        let map = files.get(idx);
+        let map = &(*files)[idx];
 
         // The number of extra bytes due to multibyte chars in the FileMap
         let mut total_extra_bytes = 0;
@@ -482,53 +480,54 @@ impl CodeMap {
 
     fn lookup_filemap_idx(&self, pos: BytePos) -> uint {
         let files = self.files.borrow();
-        let files = files;
+        let files = &*files;
         let len = files.len();
         let mut a = 0u;
         let mut b = len;
         while b - a > 1u {
             let m = (a + b) / 2u;
-            if files.get(m).start_pos > pos {
+            if files[m].start_pos > pos {
                 b = m;
             } else {
                 a = m;
             }
         }
-        // There can be filemaps with length 0. These have the same start_pos as the previous
-        // filemap, but are not the filemaps we want (because they are length 0, they cannot
-        // contain what we are looking for). So, rewind until we find a useful filemap.
+        // There can be filemaps with length 0. These have the same start_pos as
+        // the previous filemap, but are not the filemaps we want (because they
+        // are length 0, they cannot contain what we are looking for). So,
+        // rewind until we find a useful filemap.
         loop {
-            let lines = files.get(a).lines.borrow();
+            let lines = files[a].lines.borrow();
             let lines = lines;
             if lines.len() > 0 {
                 break;
             }
             if a == 0 {
-                fail!("position {} does not resolve to a source location", pos.to_uint());
+                fail!("position {} does not resolve to a source location",
+                      pos.to_uint());
             }
             a -= 1;
         }
         if a >= len {
-            fail!("position {} does not resolve to a source location", pos.to_uint())
+            fail!("position {} does not resolve to a source location",
+                  pos.to_uint())
         }
 
         return a;
     }
 
-    // NOTE(stage0, pcwalton): Remove `#[allow(unused_mut)]` after snapshot.
-    #[allow(unused_mut)]
     fn lookup_line(&self, pos: BytePos) -> FileMapAndLine {
         let idx = self.lookup_filemap_idx(pos);
 
         let files = self.files.borrow();
-        let f = files.get(idx).clone();
+        let f = (*files)[idx].clone();
         let mut a = 0u;
         {
-            let mut lines = f.lines.borrow_mut();
+            let lines = f.lines.borrow();
             let mut b = lines.len();
             while b - a > 1u {
                 let m = (a + b) / 2u;
-                if *lines.get(m) > pos { b = m; } else { a = m; }
+                if (*lines)[m] > pos { b = m; } else { a = m; }
             }
         }
         FileMapAndLine {fm: f, line: a}
@@ -538,7 +537,7 @@ impl CodeMap {
         let FileMapAndLine {fm: f, line: a} = self.lookup_line(pos);
         let line = a + 1u; // Line numbers start at 1
         let chpos = self.bytepos_to_file_charpos(pos);
-        let linebpos = *f.lines.borrow().get(a);
+        let linebpos = (*f.lines.borrow())[a];
         let linechpos = self.bytepos_to_file_charpos(linebpos);
         debug!("byte pos {} is on the line at byte pos {}",
                pos, linebpos);
@@ -708,7 +707,7 @@ mod test {
 
         assert_eq!(file_lines.file.name, "blork.rs".to_string());
         assert_eq!(file_lines.lines.len(), 1);
-        assert_eq!(*file_lines.lines.get(0), 1u);
+        assert_eq!(file_lines.lines[0], 1u);
     }
 
     #[test]

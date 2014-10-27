@@ -118,7 +118,10 @@ impl Writer for PipeStream {
 
 #[cfg(test)]
 mod test {
-    iotest!(fn partial_read() {
+    use prelude::*;
+
+    #[test]
+    fn partial_read() {
         use os;
         use io::pipe::PipeStream;
 
@@ -135,5 +138,5 @@ mod test {
         let mut buf = [0, ..10];
         input.read(buf).unwrap();
         tx.send(());
-    })
+    }
 }

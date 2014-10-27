@@ -53,11 +53,12 @@
 #![crate_type = "dylib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://doc.rust-lang.org/master/")]
+       html_root_url = "http://doc.rust-lang.org/nightly/")]
 
 #![deny(unused_result, unused_must_use)]
-#![allow(non_camel_case_types, deprecated)]
-#![feature(default_type_params, lang_items)]
+#![allow(non_camel_case_types)]
+#![allow(unknown_features)]
+#![feature(default_type_params, lang_items, slicing_syntax)]
 
 // NB this crate explicitly does *not* allow glob imports, please seriously
 //    consider whether they're needed before adding that feature here (the
@@ -66,7 +67,6 @@
 
 extern crate alloc;
 extern crate libc;
-#[cfg(test)] extern crate debug;
 
 use std::os;
 use std::rt;
@@ -132,7 +132,8 @@ pub fn start(argc: int, argv: *const *const u8, main: proc()) -> int {
     rt::init(argc, argv);
     let mut exit_code = None;
     let mut main = Some(main);
-    let mut task = task::new((my_stack_bottom, my_stack_top));
+    let mut task = task::new((my_stack_bottom, my_stack_top),
+                             rt::thread::main_guard_page());
     task.name = Some(str::Slice("<main>"));
     drop(task.run(|| {
         unsafe {

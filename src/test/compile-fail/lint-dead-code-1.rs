@@ -11,15 +11,14 @@
 #![no_std]
 #![allow(unused_variable)]
 #![allow(non_camel_case_types)]
+#![allow(non_uppercase_statics)]
 #![deny(dead_code)]
-#![feature(lang_items)]
 
 #![crate_type="lib"]
 
-pub use foo2::Bar2;
+extern crate core;
 
-#[lang="sized"]
-pub trait Sized {}
+pub use foo2::Bar2;
 
 mod foo {
     pub struct Bar; //~ ERROR: struct is never used
@@ -31,10 +30,17 @@ mod foo2 {
 
 pub static pub_static: int = 0;
 static priv_static: int = 0; //~ ERROR: static item is never used
-static used_static: int = 0;
+const used_static: int = 0;
 pub static used_static2: int = used_static;
-static USED_STATIC: int = 0;
-static STATIC_USED_IN_ENUM_DISCRIMINANT: int = 10;
+const USED_STATIC: int = 0;
+const STATIC_USED_IN_ENUM_DISCRIMINANT: int = 10;
+
+pub const pub_const: int = 0;
+const priv_const: int = 0; //~ ERROR: constant item is never used
+const used_const: int = 0;
+pub const used_const2: int = used_const;
+const USED_CONST: int = 1;
+const CONST_USED_IN_ENUM_DISCRIMINANT: int = 11;
 
 pub type typ = *const UsedStruct4;
 pub struct PubStruct;
@@ -62,7 +68,10 @@ pub struct PubStruct2 {
 
 pub enum pub_enum { foo1, bar1 }
 pub enum pub_enum2 { a(*const StructUsedInEnum) }
-pub enum pub_enum3 { Foo = STATIC_USED_IN_ENUM_DISCRIMINANT }
+pub enum pub_enum3 {
+    Foo = STATIC_USED_IN_ENUM_DISCRIMINANT,
+    Bar = CONST_USED_IN_ENUM_DISCRIMINANT,
+}
 
 enum priv_enum { foo2, bar2 } //~ ERROR: enum is never used
 enum used_enum {
@@ -83,6 +92,7 @@ pub fn pub_fn() {
     let i = 1i;
     match i {
         USED_STATIC => (),
+        USED_CONST => (),
         _ => ()
     }
     f::<StructUsedInGeneric>();
@@ -106,7 +116,3 @@ fn bar() { //~ ERROR: function is never used
 #[allow(dead_code)]
 fn g() { h(); }
 fn h() {}
-
-// Similarly, lang items are live
-#[lang="fail"]
-fn fail(_: *const u8, _: *const u8, _: uint) -> ! { loop {} }

@@ -12,8 +12,6 @@ use abi::Abi;
 use ast::*;
 use ast;
 use ast_util;
-use attr::{InlineNever, InlineNone};
-use attr;
 use codemap;
 use codemap::Span;
 use owned_slice::OwnedSlice;
@@ -90,7 +88,6 @@ pub fn is_shift_binop(b: BinOp) -> bool {
 
 pub fn unop_to_string(op: UnOp) -> &'static str {
     match op {
-      UnBox => "box(GC) ",
       UnUniq => "box() ",
       UnDeref => "*",
       UnNot => "!",
@@ -205,7 +202,7 @@ pub fn impl_pretty_name(trait_ref: &Option<TraitRef>, ty: &Ty) -> Ident {
     let mut pretty = pprust::ty_to_string(ty);
     match *trait_ref {
         Some(ref trait_ref) => {
-            pretty.push_char('.');
+            pretty.push('.');
             pretty.push_str(pprust::path_to_string(&trait_ref.path).as_slice());
         }
         None => {}
@@ -294,6 +291,7 @@ pub fn operator_prec(op: ast::BinOp) -> uint {
 
 /// Precedence of the `as` operator, which is a binary operator
 /// not appearing in the prior table.
+#[allow(non_uppercase_statics)]
 pub static as_prec: uint = 12u;
 
 pub fn empty_generics() -> Generics {
@@ -310,7 +308,7 @@ pub fn empty_generics() -> Generics {
 // ______________________________________________________________________
 // Enumerating the IDs which appear in an AST
 
-#[deriving(Encodable, Decodable)]
+#[deriving(Encodable, Decodable, Show)]
 pub struct IdRange {
     pub min: NodeId,
     pub max: NodeId,
@@ -604,7 +602,7 @@ pub fn walk_pat(pat: &Pat, it: |&Pat| -> bool) -> bool {
     match pat.node {
         PatIdent(_, _, Some(ref p)) => walk_pat(&**p, it),
         PatStruct(_, ref fields, _) => {
-            fields.iter().all(|field| walk_pat(&*field.pat, |p| it(p)))
+            fields.iter().all(|field| walk_pat(&*field.node.pat, |p| it(p)))
         }
         PatEnum(_, Some(ref s)) | PatTup(ref s) => {
             s.iter().all(|p| walk_pat(&**p, |p| it(p)))
@@ -704,18 +702,6 @@ pub fn lit_is_str(lit: &Lit) -> bool {
         LitStr(..) => true,
         _ => false,
     }
-}
-
-/// Returns true if the static with the given mutability and attributes
-/// has a significant address and false otherwise.
-pub fn static_has_significant_address(mutbl: ast::Mutability,
-                                              attrs: &[ast::Attribute])
-                                              -> bool {
-    if mutbl == ast::MutMutable {
-        return true
-    }
-    let inline = attr::find_inline_attr(attrs);
-    inline == InlineNever || inline == InlineNone
 }
 
 /// Macro invocations are guaranteed not to occur after expansion is complete.

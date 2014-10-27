@@ -43,6 +43,7 @@ use syntax::parse::token;
 // def-id will depend on where it originated from.  Therefore, the conversion
 // function is given an indicator of the source of the def-id.  See
 // astencode.rs for more information.
+#[deriving(Show)]
 pub enum DefIdSource {
     // Identifies a struct, trait, enum, etc.
     NominalType,
@@ -91,17 +92,21 @@ fn scan<R>(st: &mut PState, is_last: |char| -> bool, op: |&[u8]| -> R) -> R {
     }
     let end_pos = st.pos;
     st.pos += 1;
-    return op(st.data.slice(start_pos, end_pos));
+    return op(st.data[start_pos..end_pos]);
 }
 
 pub fn parse_ident(st: &mut PState, last: char) -> ast::Ident {
-    fn is_last(b: char, c: char) -> bool { return c == b; }
-    return parse_ident_(st, |a| is_last(last, a) );
+    ast::Ident::new(parse_name(st, last))
 }
 
-fn parse_ident_(st: &mut PState, is_last: |char| -> bool) -> ast::Ident {
+pub fn parse_name(st: &mut PState, last: char) -> ast::Name {
+    fn is_last(b: char, c: char) -> bool { return c == b; }
+    parse_name_(st, |a| is_last(last, a) )
+}
+
+fn parse_name_(st: &mut PState, is_last: |char| -> bool) -> ast::Name {
     scan(st, is_last, |bytes| {
-        token::str_to_ident(str::from_utf8(bytes).unwrap())
+        token::intern(str::from_utf8(bytes).unwrap())
     })
 }
 
@@ -122,9 +127,9 @@ fn data_log_string(data: &[u8], pos: uint) -> String {
     for i in range(pos, data.len()) {
         let c = data[i];
         if c > 0x20 && c <= 0x7F {
-            buf.push_char(c as char);
+            buf.push(c as char);
         } else {
-            buf.push_char('.');
+            buf.push('.');
         }
     }
     buf.push_str(">>");
@@ -276,6 +281,7 @@ fn parse_bound_region(st: &mut PState, conv: conv_did) -> ty::BoundRegion {
             assert_eq!(next(st), '|');
             ty::BrFresh(id)
         }
+        'e' => ty::BrEnv,
         _ => fail!("parse_bound_region: bad input")
     }
 }
@@ -337,7 +343,7 @@ fn parse_str(st: &mut PState, term: char) -> String {
     let mut result = String::new();
     while peek(st) != term {
         unsafe {
-            result.push_bytes([next_byte(st)])
+            result.as_mut_vec().push_all([next_byte(st)])
         }
     }
     next(st);
@@ -390,14 +396,13 @@ fn parse_ty(st: &mut PState, conv: conv_did) -> ty::t {
       }
       'p' => {
         let did = parse_def(st, TypeParameter, |x,y| conv(x,y));
-        debug!("parsed ty_param: did={:?}", did);
+        debug!("parsed ty_param: did={}", did);
         let index = parse_uint(st);
         assert_eq!(next(st), '|');
         let space = parse_param_space(st);
         assert_eq!(next(st), '|');
         return ty::mk_param(st.tcx, space, index, did);
       }
-      '@' => return ty::mk_box(st.tcx, parse_ty(st, |x,y| conv(x,y))),
       '~' => return ty::mk_uniq(st.tcx, parse_ty(st, |x,y| conv(x,y))),
       '*' => return ty::mk_ptr(st.tcx, parse_mt(st, |x,y| conv(x,y))),
       '&' => {
@@ -599,17 +604,17 @@ pub fn parse_def_id(buf: &[u8]) -> ast::DefId {
         fail!();
     }
 
-    let crate_part = buf.slice(0u, colon_idx);
-    let def_part = buf.slice(colon_idx + 1u, len);
+    let crate_part = buf[0u..colon_idx];
+    let def_part = buf[colon_idx + 1u..len];
 
     let crate_num = match uint::parse_bytes(crate_part, 10u) {
        Some(cn) => cn as ast::CrateNum,
-       None => fail!("internal error: parse_def_id: crate number expected, found {:?}",
+       None => fail!("internal error: parse_def_id: crate number expected, found {}",
                      crate_part)
     };
     let def_num = match uint::parse_bytes(def_part, 10u) {
        Some(dn) => dn as ast::NodeId,
-       None => fail!("internal error: parse_def_id: id expected, found {:?}",
+       None => fail!("internal error: parse_def_id: id expected, found {}",
                      def_part)
     };
     ast::DefId { krate: crate_num, node: def_num }
@@ -624,7 +629,7 @@ pub fn parse_type_param_def_data(data: &[u8], start: uint,
 }
 
 fn parse_type_param_def(st: &mut PState, conv: conv_did) -> ty::TypeParameterDef {
-    let ident = parse_ident(st, ':');
+    let name = parse_name(st, ':');
     let def_id = parse_def(st, NominalType, |x,y| conv(x,y));
     let space = parse_param_space(st);
     assert_eq!(next(st), '|');
@@ -638,7 +643,7 @@ fn parse_type_param_def(st: &mut PState, conv: conv_did) -> ty::TypeParameterDef
     let default = parse_opt(st, |st| parse_ty(st, |x,y| conv(x,y)));
 
     ty::TypeParameterDef {
-        ident: ident,
+        name: name,
         def_id: def_id,
         space: space,
         index: index,

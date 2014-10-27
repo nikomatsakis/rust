@@ -132,22 +132,14 @@ fn check_and_get_illegal_move_origin(bccx: &BorrowckCtxt,
     match cmt.cat {
         mc::cat_deref(_, _, mc::BorrowedPtr(..)) |
         mc::cat_deref(_, _, mc::Implicit(..)) |
-        mc::cat_deref(_, _, mc::GcPtr) |
         mc::cat_deref(_, _, mc::UnsafePtr(..)) |
-        mc::cat_upvar(..) | mc::cat_static_item |
-        mc::cat_copied_upvar(mc::CopiedUpvar { onceness: ast::Many, .. }) => {
+        mc::cat_static_item => {
             Some(cmt.clone())
         }
 
-        // Can move out of captured upvars only if the destination closure
-        // type is 'once'. 1-shot stack closures emit the copied_upvar form
-        // (see mem_categorization.rs).
-        mc::cat_copied_upvar(mc::CopiedUpvar { onceness: ast::Once, .. }) => {
-            None
-        }
-
         mc::cat_rvalue(..) |
-        mc::cat_local(..) => {
+        mc::cat_local(..) |
+        mc::cat_upvar(..) => {
             None
         }
 
@@ -167,8 +159,7 @@ fn check_and_get_illegal_move_origin(bccx: &BorrowckCtxt,
             }
         }
 
-        mc::cat_deref(ref b, _, mc::OwnedPtr) |
-        mc::cat_discr(ref b, _) => {
+        mc::cat_deref(ref b, _, mc::OwnedPtr) => {
             check_and_get_illegal_move_origin(bccx, b)
         }
     }

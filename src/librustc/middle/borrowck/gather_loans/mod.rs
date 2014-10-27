@@ -112,7 +112,7 @@ impl<'a, 'tcx> euv::Delegate for GatherLoanCtxt<'a, 'tcx> {
               loan_cause: euv::LoanCause)
     {
         debug!("borrow(borrow_id={}, cmt={}, loan_region={}, \
-               bk={}, loan_cause={:?})",
+               bk={}, loan_cause={})",
                borrow_id, cmt.repr(self.tcx()), loan_region,
                bk, loan_cause);
 
@@ -169,15 +169,11 @@ fn check_aliasability(bccx: &BorrowckCtxt,
             // Borrow of an immutable static item:
             match safety {
                 mc::InteriorUnsafe => {
-                    // If the static item contains an Unsafe<T>, it has interior mutability.
-                    // In such cases, we cannot permit it to be borrowed, because the
-                    // static item resides in immutable memory and mutating it would
-                    // cause segfaults.
-                    bccx.tcx.sess.span_err(borrow_span,
-                                           "borrow of immutable static items \
-                                            with unsafe interior is not \
-                                            allowed");
-                    Err(())
+                    // If the static item contains an Unsafe<T>, it has interior
+                    // mutability.  In such cases, another phase of the compiler
+                    // will ensure that the type is `Sync` and then trans will
+                    // not put it in rodata, so this is ok to allow.
+                    Ok(())
                 }
                 mc::InteriorSafe => {
                     // Immutable static can be borrowed, no problem.
@@ -217,13 +213,11 @@ impl<'a, 'tcx> GatherLoanCtxt<'a, 'tcx> {
         /*!
          * Guarantees that `addr_of(cmt)` will be valid for the duration of
          * `static_scope_r`, or reports an error.  This may entail taking
-         * out loans, which will be added to the `req_loan_map`.  This can
-         * also entail "rooting" GC'd pointers, which means ensuring
-         * dynamically that they are not freed.
+         * out loans, which will be added to the `req_loan_map`.
          */
 
-        debug!("guarantee_valid(borrow_id={:?}, cmt={}, \
-                req_mutbl={:?}, loan_region={:?})",
+        debug!("guarantee_valid(borrow_id={}, cmt={}, \
+                req_mutbl={}, loan_region={})",
                borrow_id,
                cmt.repr(self.tcx()),
                req_kind,
@@ -261,7 +255,7 @@ impl<'a, 'tcx> GatherLoanCtxt<'a, 'tcx> {
             self.bccx, borrow_span, cause,
             cmt.clone(), loan_region);
 
-        debug!("guarantee_valid(): restrictions={:?}", restr);
+        debug!("guarantee_valid(): restrictions={}", restr);
 
         // Create the loan record (if needed).
         let loan = match restr {
@@ -293,17 +287,17 @@ impl<'a, 'tcx> GatherLoanCtxt<'a, 'tcx> {
                     ty::ReInfer(..) => {
                         self.tcx().sess.span_bug(
                             cmt.span,
-                            format!("invalid borrow lifetime: {:?}",
+                            format!("invalid borrow lifetime: {}",
                                     loan_region).as_slice());
                     }
                 };
-                debug!("loan_scope = {:?}", loan_scope);
+                debug!("loan_scope = {}", loan_scope);
 
                 let gen_scope = self.compute_gen_scope(borrow_id, loan_scope);
-                debug!("gen_scope = {:?}", gen_scope);
+                debug!("gen_scope = {}", gen_scope);
 
                 let kill_scope = self.compute_kill_scope(loan_scope, &*loan_path);
-                debug!("kill_scope = {:?}", kill_scope);
+                debug!("kill_scope = {}", kill_scope);
 
                 if req_kind == ty::MutBorrow {
                     self.mark_loan_path_as_mutated(&*loan_path);
@@ -322,7 +316,7 @@ impl<'a, 'tcx> GatherLoanCtxt<'a, 'tcx> {
             }
         };
 
-        debug!("guarantee_valid(borrow_id={:?}), loan={}",
+        debug!("guarantee_valid(borrow_id={}), loan={}",
                borrow_id, loan.repr(self.tcx()));
 
         // let loan_path = loan.loan_path;

@@ -48,16 +48,16 @@ pub struct Markdown<'a>(pub &'a str);
 /// table of contents.
 pub struct MarkdownWithToc<'a>(pub &'a str);
 
-static DEF_OUNIT: libc::size_t = 64;
-static HOEDOWN_EXT_NO_INTRA_EMPHASIS: libc::c_uint = 1 << 10;
-static HOEDOWN_EXT_TABLES: libc::c_uint = 1 << 0;
-static HOEDOWN_EXT_FENCED_CODE: libc::c_uint = 1 << 1;
-static HOEDOWN_EXT_AUTOLINK: libc::c_uint = 1 << 3;
-static HOEDOWN_EXT_STRIKETHROUGH: libc::c_uint = 1 << 4;
-static HOEDOWN_EXT_SUPERSCRIPT: libc::c_uint = 1 << 8;
-static HOEDOWN_EXT_FOOTNOTES: libc::c_uint = 1 << 2;
+const DEF_OUNIT: libc::size_t = 64;
+const HOEDOWN_EXT_NO_INTRA_EMPHASIS: libc::c_uint = 1 << 10;
+const HOEDOWN_EXT_TABLES: libc::c_uint = 1 << 0;
+const HOEDOWN_EXT_FENCED_CODE: libc::c_uint = 1 << 1;
+const HOEDOWN_EXT_AUTOLINK: libc::c_uint = 1 << 3;
+const HOEDOWN_EXT_STRIKETHROUGH: libc::c_uint = 1 << 4;
+const HOEDOWN_EXT_SUPERSCRIPT: libc::c_uint = 1 << 8;
+const HOEDOWN_EXT_FOOTNOTES: libc::c_uint = 1 << 2;
 
-static HOEDOWN_EXTENSIONS: libc::c_uint =
+const HOEDOWN_EXTENSIONS: libc::c_uint =
     HOEDOWN_EXT_NO_INTRA_EMPHASIS | HOEDOWN_EXT_TABLES |
     HOEDOWN_EXT_FENCED_CODE | HOEDOWN_EXT_AUTOLINK |
     HOEDOWN_EXT_STRIKETHROUGH | HOEDOWN_EXT_SUPERSCRIPT |
@@ -228,7 +228,7 @@ pub fn render(w: &mut fmt::Formatter, s: &str, print_toc: bool) -> fmt::Result {
         // Transform the contents of the header into a hyphenated string
         let id = s.as_slice().words().map(|s| {
             match s.to_ascii_opt() {
-                Some(s) => s.to_lower().into_string(),
+                Some(s) => s.to_lowercase().into_string(),
                 None => s.to_string()
             }
         }).collect::<Vec<String>>().connect("-");
@@ -266,6 +266,10 @@ pub fn render(w: &mut fmt::Formatter, s: &str, print_toc: bool) -> fmt::Result {
                            });
 
         text.with_c_str(|p| unsafe { hoedown_buffer_puts(ob, p) });
+    }
+
+    if used_header_map.get().is_none() {
+        reset_headers();
     }
 
     unsafe {
@@ -446,7 +450,7 @@ impl<'a> fmt::Show for MarkdownWithToc<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::LangString;
+    use super::{LangString, Markdown};
 
     #[test]
     fn test_lang_string_parse() {
@@ -473,5 +477,11 @@ mod tests {
         t("{.sh .should_fail}", true,false,false,false,false);
         t("{.example .rust}", false,false,false,false,false);
         t("{.test_harness .rust}", false,false,false,false,true);
+    }
+
+    #[test]
+    fn issue_17736() {
+        let markdown = "# title";
+        format!("{}", Markdown(markdown.as_slice()));
     }
 }

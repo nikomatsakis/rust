@@ -73,13 +73,13 @@ impl BasicLoop {
             RunRemote(i) => {
                 match self.remotes.iter_mut().find(|& &(id, _)| id == i) {
                     Some(&(_, ref mut f)) => f.call(),
-                    None => unreachable!()
+                    None => fail!("bad remote: {}", i),
                 }
             }
             RemoveRemote(i) => {
                 match self.remotes.iter().position(|&(id, _)| id == i) {
                     Some(i) => { self.remotes.remove(i).unwrap(); }
-                    None => unreachable!()
+                    None => fail!("bad remote: {}", i),
                 }
             }
         }
@@ -89,7 +89,7 @@ impl BasicLoop {
     fn idle(&mut self) {
         match self.idle {
             Some(ref mut idle) => {
-                if self.idle_active.get_ref().load(atomic::SeqCst) {
+                if self.idle_active.as_ref().unwrap().load(atomic::SeqCst) {
                     idle.call();
                 }
             }
@@ -98,7 +98,7 @@ impl BasicLoop {
     }
 
     fn has_idle(&self) -> bool {
-        self.idle.is_some() && self.idle_active.get_ref().load(atomic::SeqCst)
+        self.idle.is_some() && self.idle_active.as_ref().unwrap().load(atomic::SeqCst)
     }
 }
 

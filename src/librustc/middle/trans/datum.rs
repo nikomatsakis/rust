@@ -20,12 +20,12 @@ use middle::trans::common::*;
 use middle::trans::cleanup;
 use middle::trans::cleanup::CleanupMethods;
 use middle::trans::expr;
-use middle::trans::glue;
 use middle::trans::tvec;
 use middle::trans::type_of;
 use middle::ty;
 use util::ppaux::{ty_to_string};
 
+use std::fmt;
 use syntax::ast;
 
 /**
@@ -52,6 +52,7 @@ pub struct DatumBlock<'blk, 'tcx: 'blk, K> {
     pub datum: Datum<K>,
 }
 
+#[deriving(Show)]
 pub enum Expr {
     /// a fresh value that was produced and which has no cleanup yet
     /// because it has not yet "landed" into its permanent home
@@ -63,9 +64,10 @@ pub enum Expr {
     LvalueExpr,
 }
 
-#[deriving(Clone)]
+#[deriving(Clone, Show)]
 pub struct Lvalue;
 
+#[deriving(Show)]
 pub struct Rvalue {
     pub mode: RvalueMode
 }
@@ -81,7 +83,7 @@ impl Drop for Rvalue {
     fn drop(&mut self) { }
 }
 
-#[deriving(PartialEq, Eq, Hash)]
+#[deriving(PartialEq, Eq, Hash, Show)]
 pub enum RvalueMode {
     /// `val` is a pointer to the actual value (and thus has type *T)
     ByRef,
@@ -240,14 +242,9 @@ impl KindOps for Lvalue {
          */
 
         if ty::type_needs_drop(bcx.tcx(), ty) {
-            if ty::type_moves_by_default(bcx.tcx(), ty) {
-                // cancel cleanup of affine values by zeroing out
-                let () = zero_mem(bcx, val, ty);
-                bcx
-            } else {
-                // incr. refcount for @T or newtype'd @T
-                glue::take_ty(bcx, val, ty)
-            }
+            // cancel cleanup of affine values by zeroing out
+            let () = zero_mem(bcx, val, ty);
+            bcx
         } else {
             bcx
         }
@@ -545,7 +542,7 @@ impl Datum<Lvalue> {
 /**
  * Generic methods applicable to any sort of datum.
  */
-impl<K:KindOps> Datum<K> {
+impl<K: KindOps + fmt::Show> Datum<K> {
     pub fn new(val: ValueRef, ty: ty::t, kind: K) -> Datum<K> {
         Datum { val: val, ty: ty, kind: kind }
     }
@@ -567,15 +564,15 @@ impl<K:KindOps> Datum<K> {
          * is moved).
          */
 
-        self.shallow_copy(bcx, dst);
+        self.shallow_copy_raw(bcx, dst);
 
         self.kind.post_store(bcx, self.val, self.ty)
     }
 
-    fn shallow_copy<'blk, 'tcx>(&self,
-                                bcx: Block<'blk, 'tcx>,
-                                dst: ValueRef)
-                                -> Block<'blk, 'tcx> {
+    fn shallow_copy_raw<'blk, 'tcx>(&self,
+                                    bcx: Block<'blk, 'tcx>,
+                                    dst: ValueRef)
+                                    -> Block<'blk, 'tcx> {
         /*!
          * Helper function that performs a shallow copy of this value
          * into `dst`, which should be a pointer to a memory location
@@ -584,10 +581,9 @@ impl<K:KindOps> Datum<K> {
          *
          * This function is private to datums because it leaves memory
          * in an unstable state, where the source value has been
-         * copied but not zeroed. Public methods are `store_to` (if
-         * you no longer need the source value) or
-         * `shallow_copy_and_take` (if you wish the source value to
-         * remain valid).
+         * copied but not zeroed. Public methods are `store_to`
+         * (if you no longer need the source value) or `shallow_copy`
+         * (if you wish the source value to remain valid).
          */
 
         let _icx = push_ctxt("copy_to_no_check");
@@ -605,27 +601,24 @@ impl<K:KindOps> Datum<K> {
         return bcx;
     }
 
-    pub fn shallow_copy_and_take<'blk, 'tcx>(&self,
-                                             bcx: Block<'blk, 'tcx>,
-                                             dst: ValueRef)
-                                             -> Block<'blk, 'tcx> {
+    pub fn shallow_copy<'blk, 'tcx>(&self,
+                                    bcx: Block<'blk, 'tcx>,
+                                    dst: ValueRef)
+                                    -> Block<'blk, 'tcx> {
         /*!
-         * Copies the value into a new location and runs any necessary
-         * take glue on the new location. This function always
+         * Copies the value into a new location. This function always
          * preserves the existing datum as a valid value. Therefore,
          * it does not consume `self` and, also, cannot be applied to
          * affine values (since they must never be duplicated).
          */
 
         assert!(!ty::type_moves_by_default(bcx.tcx(), self.ty));
-        let mut bcx = bcx;
-        bcx = self.shallow_copy(bcx, dst);
-        glue::take_ty(bcx, dst, self.ty)
+        self.shallow_copy_raw(bcx, dst)
     }
 
     #[allow(dead_code)] // useful for debugging
     pub fn to_string(&self, ccx: &CrateContext) -> String {
-        format!("Datum({}, {}, {:?})",
+        format!("Datum({}, {}, {})",
                 ccx.tn().val_to_string(self.val),
                 ty_to_string(ccx.tcx(), self.ty),
                 self.kind)
@@ -668,7 +661,7 @@ impl<'blk, 'tcx, K> DatumBlock<'blk, 'tcx, K> {
     }
 }
 
-impl<'blk, 'tcx, K:KindOps> DatumBlock<'blk, 'tcx, K> {
+impl<'blk, 'tcx, K: KindOps + fmt::Show> DatumBlock<'blk, 'tcx, K> {
     pub fn to_expr_datumblock(self) -> DatumBlock<'blk, 'tcx, Expr> {
         DatumBlock::new(self.bcx, self.datum.to_expr_datum())
     }

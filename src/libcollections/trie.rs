@@ -24,6 +24,7 @@ use core::fmt;
 use core::fmt::Show;
 use core::mem::zeroed;
 use core::mem;
+use core::ops::{Slice,SliceMut};
 use core::uint;
 use core::iter;
 use std::hash::{Writer, Hash};
@@ -33,10 +34,10 @@ use slice::{Items, MutItems};
 use slice;
 
 // FIXME: #5244: need to manually update the TrieNode constructor
-static SHIFT: uint = 4;
-static SIZE: uint = 1 << SHIFT;
-static MASK: uint = SIZE - 1;
-static NUM_CHUNKS: uint = uint::BITS / SHIFT;
+const SHIFT: uint = 4;
+const SIZE: uint = 1 << SHIFT;
+const MASK: uint = SIZE - 1;
+const NUM_CHUNKS: uint = uint::BITS / SHIFT;
 
 #[deriving(Clone)]
 enum Child<T> {
@@ -267,12 +268,6 @@ impl<T> TrieMap<T> {
         iter
     }
 
-    /// Deprecated: use `iter_mut`.
-    #[deprecated = "use iter_mut"]
-    pub fn mut_iter<'a>(&'a mut self) -> MutEntries<'a, T> {
-        self.iter_mut()
-    }
-
     /// Gets an iterator over the key-value pairs in the map, with the
     /// ability to mutate the values.
     ///
@@ -378,7 +373,7 @@ macro_rules! bound {
                         }
                     };
                     // push to the stack.
-                    it.stack[it.length] = children.$slice_from(slice_idx).$iter();
+                    it.stack[it.length] = children.$slice_from(&slice_idx).$iter();
                     it.length += 1;
                     if ret { return it }
                 })
@@ -392,7 +387,7 @@ impl<T> TrieMap<T> {
     fn bound<'a>(&'a self, key: uint, upper: bool) -> Entries<'a, T> {
         bound!(Entries, self = self,
                key = key, is_upper = upper,
-               slice_from = slice_from, iter = iter,
+               slice_from = slice_from_or_fail, iter = iter,
                mutability = )
     }
 
@@ -434,14 +429,8 @@ impl<T> TrieMap<T> {
     fn bound_mut<'a>(&'a mut self, key: uint, upper: bool) -> MutEntries<'a, T> {
         bound!(MutEntries, self = self,
                key = key, is_upper = upper,
-               slice_from = slice_from_mut, iter = iter_mut,
+               slice_from = slice_from_or_fail_mut, iter = iter_mut,
                mutability = mut)
-    }
-
-    /// Deprecated: use `lower_bound_mut`.
-    #[deprecated = "use lower_bound_mut"]
-    pub fn mut_lower_bound<'a>(&'a mut self, key: uint) -> MutEntries<'a, T> {
-        self.lower_bound_mut(key)
     }
 
     /// Gets an iterator pointing to the first key-value pair whose key is not less than `key`.
@@ -467,12 +456,6 @@ impl<T> TrieMap<T> {
     /// ```
     pub fn lower_bound_mut<'a>(&'a mut self, key: uint) -> MutEntries<'a, T> {
         self.bound_mut(key, false)
-    }
-
-    /// Deprecated: use `upper_bound_mut`.
-    #[deprecated = "use upper_bound_mut"]
-    pub fn mut_upper_bound<'a>(&'a mut self, key: uint) -> MutEntries<'a, T> {
-        self.upper_bound_mut(key)
     }
 
     /// Gets an iterator pointing to the first key-value pair whose key is greater than `key`.
@@ -948,8 +931,8 @@ macro_rules! iterator_impl {
                 // rules, and are just manipulating raw pointers like there's no
                 // such thing as invalid pointers and memory unsafety. The
                 // reason is performance, without doing this we can get the
-                // bench_iter_large microbenchmark down to about 30000 ns/iter
-                // (using .unsafe_get to index self.stack directly, 38000
+                // (now replaced) bench_iter_large microbenchmark down to about
+                // 30000 ns/iter (using .unsafe_get to index self.stack directly, 38000
                 // ns/iter with [] checked indexing), but this smashes that down
                 // to 13500 ns/iter.
                 //
@@ -1458,31 +1441,39 @@ mod test_map {
 mod bench_map {
     use std::prelude::*;
     use std::rand::{weak_rng, Rng};
-    use test::Bencher;
+    use test::{Bencher, black_box};
 
     use MutableMap;
     use super::TrieMap;
 
-    #[bench]
-    fn bench_iter_small(b: &mut Bencher) {
-        let mut m = TrieMap::<uint>::new();
+    fn bench_iter(b: &mut Bencher, size: uint) {
+        let mut map = TrieMap::<uint>::new();
         let mut rng = weak_rng();
-        for _ in range(0u, 20) {
-            m.insert(rng.gen(), rng.gen());
+
+        for _ in range(0, size) {
+            map.swap(rng.gen(), rng.gen());
         }
 
-        b.iter(|| for _ in m.iter() {})
+        b.iter(|| {
+            for entry in map.iter() {
+                black_box(entry);
+            }
+        });
     }
 
     #[bench]
-    fn bench_iter_large(b: &mut Bencher) {
-        let mut m = TrieMap::<uint>::new();
-        let mut rng = weak_rng();
-        for _ in range(0u, 1000) {
-            m.insert(rng.gen(), rng.gen());
-        }
+    pub fn iter_20(b: &mut Bencher) {
+        bench_iter(b, 20);
+    }
 
-        b.iter(|| for _ in m.iter() {})
+    #[bench]
+    pub fn iter_1000(b: &mut Bencher) {
+        bench_iter(b, 1000);
+    }
+
+    #[bench]
+    pub fn iter_100000(b: &mut Bencher) {
+        bench_iter(b, 100000);
     }
 
     #[bench]

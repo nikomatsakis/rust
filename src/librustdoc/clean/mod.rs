@@ -17,7 +17,7 @@ use syntax::ast_util;
 use syntax::ast_util::PostExpansionMethod;
 use syntax::attr;
 use syntax::attr::{AttributeMethods, AttrMetaMethods};
-use syntax::codemap::{DUMMY_SP, Pos};
+use syntax::codemap::{DUMMY_SP, Pos, Spanned};
 use syntax::parse::token::InternedString;
 use syntax::parse::token;
 use syntax::ptr::P;
@@ -300,6 +300,7 @@ pub enum ItemEnum {
     ModuleItem(Module),
     TypedefItem(Typedef),
     StaticItem(Static),
+    ConstantItem(Constant),
     TraitItem(Trait),
     ImplItem(Impl),
     /// `use` and `extern crate`
@@ -347,6 +348,7 @@ impl Clean<Item> for doctree::Module {
             self.mods.clean(cx),
             self.typedefs.clean(cx),
             self.statics.clean(cx),
+            self.constants.clean(cx),
             self.traits.clean(cx),
             self.impls.clean(cx),
             self.view_items.clean(cx).into_iter()
@@ -461,9 +463,9 @@ impl Clean<TyParam> for ast::TyParam {
 impl Clean<TyParam> for ty::TypeParameterDef {
     fn clean(&self, cx: &DocContext) -> TyParam {
         cx.external_typarams.borrow_mut().as_mut().unwrap()
-          .insert(self.def_id, self.ident.clean(cx));
+          .insert(self.def_id, self.name.clean(cx));
         TyParam {
-            name: self.ident.clean(cx),
+            name: self.name.clean(cx),
             did: self.def_id,
             bounds: self.bounds.clean(cx),
             default: self.default.clean(cx)
@@ -473,18 +475,16 @@ impl Clean<TyParam> for ty::TypeParameterDef {
 
 #[deriving(Clone, Encodable, Decodable, PartialEq)]
 pub enum TyParamBound {
-    RegionBound, // FIXME(#16518) -- need to include name of actual region
+    RegionBound(Lifetime),
+    UnboxedFnBound(UnboxedFnType),
     TraitBound(Type)
 }
 
 impl Clean<TyParamBound> for ast::TyParamBound {
     fn clean(&self, cx: &DocContext) -> TyParamBound {
         match *self {
-            ast::RegionTyParamBound(_) => RegionBound,
-            ast::UnboxedFnTyParamBound(_) => {
-                // FIXME(pcwalton): Wrong.
-                RegionBound
-            }
+            ast::RegionTyParamBound(lt) => RegionBound(lt.clean(cx)),
+            ast::UnboxedFnTyParamBound(ref ty) => { UnboxedFnBound(ty.clean(cx)) },
             ast::TraitTyParamBound(ref t) => TraitBound(t.clean(cx)),
         }
     }
@@ -492,7 +492,8 @@ impl Clean<TyParamBound> for ast::TyParamBound {
 
 impl Clean<Vec<TyParamBound>> for ty::ExistentialBounds {
     fn clean(&self, cx: &DocContext) -> Vec<TyParamBound> {
-        let mut vec = vec!(RegionBound);
+        let mut vec = vec![];
+        self.region_bound.clean(cx).map(|b| vec.push(RegionBound(b)));
         for bb in self.builtin_bounds.iter() {
             vec.push(bb.clean(cx));
         }
@@ -521,7 +522,7 @@ impl Clean<TyParamBound> for ty::BuiltinBound {
     fn clean(&self, cx: &DocContext) -> TyParamBound {
         let tcx = match cx.tcx_opt() {
             Some(tcx) => tcx,
-            None => return RegionBound,
+            None => return RegionBound(Lifetime::statik())
         };
         let empty = subst::Substs::empty();
         let (did, path) = match *self {
@@ -554,7 +555,7 @@ impl Clean<TyParamBound> for ty::TraitRef {
     fn clean(&self, cx: &DocContext) -> TyParamBound {
         let tcx = match cx.tcx_opt() {
             Some(tcx) => tcx,
-            None => return RegionBound,
+            None => return RegionBound(Lifetime::statik())
         };
         let fqn = csearch::get_item_path(tcx, self.def_id);
         let fqn = fqn.into_iter().map(|i| i.to_string())
@@ -582,6 +583,9 @@ impl Clean<Vec<TyParamBound>> for ty::ParamBounds {
         for t in self.trait_bounds.iter() {
             v.push(t.clean(cx));
         }
+        for r in self.region_bounds.iter().filter_map(|r| r.clean(cx)) {
+            v.push(RegionBound(r));
+        }
         return v;
     }
 }
@@ -589,9 +593,24 @@ impl Clean<Vec<TyParamBound>> for ty::ParamBounds {
 impl Clean<Option<Vec<TyParamBound>>> for subst::Substs {
     fn clean(&self, cx: &DocContext) -> Option<Vec<TyParamBound>> {
         let mut v = Vec::new();
-        v.extend(self.regions().iter().map(|_| RegionBound));
+        v.extend(self.regions().iter().filter_map(|r| r.clean(cx)).map(RegionBound));
         v.extend(self.types.iter().map(|t| TraitBound(t.clean(cx))));
         if v.len() > 0 {Some(v)} else {None}
+    }
+}
+
+#[deriving(Clone, Encodable, Decodable, PartialEq)]
+pub struct UnboxedFnType {
+    pub path: Path,
+    pub decl: FnDecl
+}
+
+impl Clean<UnboxedFnType> for ast::UnboxedFnBound {
+    fn clean(&self, cx: &DocContext) -> UnboxedFnType {
+        UnboxedFnType {
+            path: self.path.clean(cx),
+            decl: self.decl.clean(cx)
+        }
     }
 }
 
@@ -603,6 +622,10 @@ impl Lifetime {
         let Lifetime(ref s) = *self;
         let s: &'a str = s.as_slice();
         return s;
+    }
+
+    pub fn statik() -> Lifetime {
+        Lifetime("'static".to_string())
     }
 }
 
@@ -627,7 +650,7 @@ impl Clean<Lifetime> for ty::RegionParameterDef {
 impl Clean<Option<Lifetime>> for ty::Region {
     fn clean(&self, cx: &DocContext) -> Option<Lifetime> {
         match *self {
-            ty::ReStatic => Some(Lifetime("'static".to_string())),
+            ty::ReStatic => Some(Lifetime::statik()),
             ty::ReLateBound(_, ty::BrNamed(_, name)) =>
                 Some(Lifetime(token::get_name(name).get().to_string())),
             ty::ReEarlyBound(_, _, _, name) => Some(Lifetime(name.clean(cx))),
@@ -698,7 +721,7 @@ impl Clean<Item> for ast::Method {
         let all_inputs = &self.pe_fn_decl().inputs;
         let inputs = match self.pe_explicit_self().node {
             ast::SelfStatic => all_inputs.as_slice(),
-            _ => all_inputs.slice_from(1)
+            _ => all_inputs[1..]
         };
         let decl = FnDecl {
             inputs: Arguments {
@@ -737,7 +760,7 @@ impl Clean<Item> for ast::TypeMethod {
     fn clean(&self, cx: &DocContext) -> Item {
         let inputs = match self.explicit_self.node {
             ast::SelfStatic => self.decl.inputs.as_slice(),
-            _ => self.decl.inputs.slice_from(1)
+            _ => self.decl.inputs[1..]
         };
         let decl = FnDecl {
             inputs: Arguments {
@@ -1009,7 +1032,7 @@ impl Clean<Item> for ty::Method {
                                                self.fty.sig.clone()),
             s => {
                 let sig = ty::FnSig {
-                    inputs: self.fty.sig.inputs.slice_from(1).to_vec(),
+                    inputs: self.fty.sig.inputs[1..].to_vec(),
                     ..self.fty.sig.clone()
                 };
                 let s = match s {
@@ -1032,7 +1055,7 @@ impl Clean<Item> for ty::Method {
         };
 
         Item {
-            name: Some(self.ident.clean(cx)),
+            name: Some(self.name.clean(cx)),
             visibility: Some(ast::Inherited),
             stability: get_stability(cx, self.def_id),
             def_id: self.def_id,
@@ -1087,7 +1110,6 @@ pub enum Type {
     /// aka TyBot
     Bottom,
     Unique(Box<Type>),
-    Managed(Box<Type>),
     RawPointer(Mutability, Box<Type>),
     BorrowedRef {
         pub lifetime: Option<Lifetime>,
@@ -1215,7 +1237,6 @@ impl Clean<Type> for ast::Ty {
             TyRptr(ref l, ref m) =>
                 BorrowedRef {lifetime: l.clean(cx), mutability: m.mutbl.clean(cx),
                              type_: box m.ty.clean(cx)},
-            TyBox(ref ty) => Managed(box ty.clean(cx)),
             TyUniq(ref ty) => Unique(box ty.clean(cx)),
             TyVec(ref ty) => Vector(box ty.clean(cx)),
             TyFixedLengthVec(ref ty, ref e) => FixedVector(box ty.clean(cx),
@@ -1229,7 +1250,7 @@ impl Clean<Type> for ast::Ty {
             TyBareFn(ref barefn) => BareFunction(box barefn.clean(cx)),
             TyParen(ref ty) => ty.clean(cx),
             TyBot => Bottom,
-            ref x => fail!("Unimplemented type {:?}", x),
+            ref x => fail!("Unimplemented type {}", x),
         }
     }
 }
@@ -1254,12 +1275,6 @@ impl Clean<Type> for ty::t {
             ty::ty_float(ast::TyF32) => Primitive(F32),
             ty::ty_float(ast::TyF64) => Primitive(F64),
             ty::ty_str => Primitive(Str),
-            ty::ty_box(t) => {
-                let gc_did = cx.tcx_opt().and_then(|tcx| {
-                    tcx.lang_items.gc()
-                });
-                lang_struct(cx, gc_did, t, "Gc", Managed)
-            }
             ty::ty_uniq(t) => {
                 let box_did = cx.tcx_opt().and_then(|tcx| {
                     tcx.lang_items.owned_box()
@@ -1559,7 +1574,7 @@ impl Clean<VariantKind> for ast::VariantKind {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, Encodable, Decodable, Show)]
 pub struct Span {
     pub filename: String,
     pub loline: uint,
@@ -1698,7 +1713,7 @@ impl Clean<BareFunctionDecl> for ast::BareFnTy {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, Encodable, Decodable, Show)]
 pub struct Static {
     pub type_: Type,
     pub mutability: Mutability,
@@ -1710,7 +1725,7 @@ pub struct Static {
 
 impl Clean<Item> for doctree::Static {
     fn clean(&self, cx: &DocContext) -> Item {
-        debug!("claning static {}: {:?}", self.name.clean(cx), self);
+        debug!("claning static {}: {}", self.name.clean(cx), self);
         Item {
             name: Some(self.name.clean(cx)),
             attrs: self.attrs.clean(cx),
@@ -1721,6 +1736,29 @@ impl Clean<Item> for doctree::Static {
             inner: StaticItem(Static {
                 type_: self.type_.clean(cx),
                 mutability: self.mutability.clean(cx),
+                expr: self.expr.span.to_src(cx),
+            }),
+        }
+    }
+}
+
+#[deriving(Clone, Encodable, Decodable)]
+pub struct Constant {
+    pub type_: Type,
+    pub expr: String,
+}
+
+impl Clean<Item> for doctree::Constant {
+    fn clean(&self, cx: &DocContext) -> Item {
+        Item {
+            name: Some(self.name.clean(cx)),
+            attrs: self.attrs.clean(cx),
+            source: self.whence.clean(cx),
+            def_id: ast_util::local_def(self.id),
+            visibility: self.vis.clean(cx),
+            stability: self.stab.clean(cx),
+            inner: ConstantItem(Constant {
+                type_: self.type_.clean(cx),
                 expr: self.expr.span.to_src(cx),
             }),
         }
@@ -1965,7 +2003,7 @@ trait ToSource {
 
 impl ToSource for syntax::codemap::Span {
     fn to_src(&self, cx: &DocContext) -> String {
-        debug!("converting span {:?} to snippet", self.clean(cx));
+        debug!("converting span {} to snippet", self.clean(cx));
         let sn = match cx.sess().codemap().span_to_snippet(*self) {
             Some(x) => x.to_string(),
             None    => "".to_string()
@@ -1978,7 +2016,7 @@ impl ToSource for syntax::codemap::Span {
 fn lit_to_string(lit: &ast::Lit) -> String {
     match lit.node {
         ast::LitStr(ref st, _) => st.get().to_string(),
-        ast::LitBinary(ref data) => format!("{:?}", data.as_slice()),
+        ast::LitBinary(ref data) => format!("{}", data),
         ast::LitByte(b) => {
             let mut res = String::from_str("b'");
             (b as char).escape_default(|c| {
@@ -1998,7 +2036,7 @@ fn lit_to_string(lit: &ast::Lit) -> String {
 
 fn name_from_pat(p: &ast::Pat) -> String {
     use syntax::ast::*;
-    debug!("Trying to get a name from pattern: {:?}", p);
+    debug!("Trying to get a name from pattern: {}", p);
 
     match p.node {
         PatWild(PatWildSingle) => "_".to_string(),
@@ -2007,7 +2045,7 @@ fn name_from_pat(p: &ast::Pat) -> String {
         PatEnum(ref p, _) => path_to_string(p),
         PatStruct(ref name, ref fields, etc) => {
             format!("{} {{ {}{} }}", path_to_string(name),
-                fields.iter().map(|fp|
+                fields.iter().map(|&Spanned { node: ref fp, .. }|
                                   format!("{}: {}", fp.ident.as_str(), name_from_pat(&*fp.pat)))
                              .collect::<Vec<String>>().connect(", "),
                 if etc { ", ..." } else { "" }
@@ -2043,7 +2081,7 @@ fn resolve_type(cx: &DocContext, path: Path,
         // If we're extracting tests, this return value doesn't matter.
         None => return Primitive(Bool),
     };
-    debug!("searching for {:?} in defmap", id);
+    debug!("searching for {} in defmap", id);
     let def = match tcx.def_map.borrow().find(&id) {
         Some(&k) => k,
         None => fail!("unresolved id not in defmap")
@@ -2172,7 +2210,7 @@ impl Clean<Item> for ty::AssociatedType {
     fn clean(&self, cx: &DocContext) -> Item {
         Item {
             source: DUMMY_SP.clean(cx),
-            name: Some(self.ident.clean(cx)),
+            name: Some(self.name.clean(cx)),
             attrs: Vec::new(),
             inner: AssociatedTypeItem,
             visibility: None,

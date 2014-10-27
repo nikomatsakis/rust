@@ -71,7 +71,6 @@ fn main() {
 
 */
 
-use alloc::libc_heap::malloc_raw;
 use collections::string::String;
 use collections::hash;
 use core::fmt;
@@ -101,7 +100,8 @@ impl Clone for CString {
     /// with C's allocator API, rather than the usual shallow clone.
     fn clone(&self) -> CString {
         let len = self.len() + 1;
-        let buf = unsafe { malloc_raw(len) } as *mut libc::c_char;
+        let buf = unsafe { libc::malloc(len as libc::size_t) } as *mut libc::c_char;
+        if buf.is_null() { fail!("out of memory") }
         unsafe { ptr::copy_nonoverlapping_memory(buf, self.buf, len); }
         CString { buf: buf as *const libc::c_char, owns_buffer_: true }
     }
@@ -204,30 +204,6 @@ impl CString {
         self.buf as *mut _
     }
 
-    /// Calls a closure with a reference to the underlying `*libc::c_char`.
-    #[deprecated="use `.as_ptr()`"]
-    pub fn with_ref<T>(&self, f: |*const libc::c_char| -> T) -> T {
-        f(self.buf)
-    }
-
-    /// Calls a closure with a mutable reference to the underlying `*libc::c_char`.
-    #[deprecated="use `.as_mut_ptr()`"]
-    pub fn with_mut_ref<T>(&mut self, f: |*mut libc::c_char| -> T) -> T {
-        f(self.buf as *mut libc::c_char)
-    }
-
-    /// Returns true if the CString is a null.
-    #[deprecated="a CString cannot be null"]
-    pub fn is_null(&self) -> bool {
-        self.buf.is_null()
-    }
-
-    /// Returns true if the CString is not null.
-    #[deprecated="a CString cannot be null"]
-    pub fn is_not_null(&self) -> bool {
-        self.buf.is_not_null()
-    }
-
     /// Returns whether or not the `CString` owns the buffer.
     pub fn owns_buffer(&self) -> bool {
         self.owns_buffer_
@@ -299,15 +275,7 @@ impl Collection for CString {
     /// Return the number of bytes in the CString (not including the NUL terminator).
     #[inline]
     fn len(&self) -> uint {
-        let mut cur = self.buf;
-        let mut len = 0;
-        unsafe {
-            while *cur != 0 {
-                len += 1;
-                cur = cur.offset(1);
-            }
-        }
-        return len;
+        unsafe { libc::strlen(self.buf) as uint }
     }
 }
 
@@ -414,7 +382,7 @@ impl ToCStr for String {
 }
 
 // The length of the stack allocated buffer for `vec.with_c_str()`
-static BUF_LEN: uint = 128;
+const BUF_LEN: uint = 128;
 
 impl<'a> ToCStr for &'a [u8] {
     fn to_c_str(&self) -> CString {
@@ -425,7 +393,8 @@ impl<'a> ToCStr for &'a [u8] {
 
     unsafe fn to_c_str_unchecked(&self) -> CString {
         let self_len = self.len();
-        let buf = malloc_raw(self_len + 1);
+        let buf = libc::malloc(self_len as libc::size_t + 1) as *mut u8;
+        if buf.is_null() { fail!("out of memory") }
 
         ptr::copy_memory(buf, self.as_ptr(), self_len);
         *buf.offset(self_len as int) = 0;
@@ -733,9 +702,9 @@ mod bench {
         }
     }
 
-    static s_short: &'static str = "Mary";
-    static s_medium: &'static str = "Mary had a little lamb";
-    static s_long: &'static str = "\
+    static S_SHORT: &'static str = "Mary";
+    static S_MEDIUM: &'static str = "Mary had a little lamb";
+    static S_LONG: &'static str = "\
         Mary had a little lamb, Little lamb
         Mary had a little lamb, Little lamb
         Mary had a little lamb, Little lamb
@@ -752,17 +721,17 @@ mod bench {
 
     #[bench]
     fn bench_to_c_str_short(b: &mut Bencher) {
-        bench_to_string(b, s_short)
+        bench_to_string(b, S_SHORT)
     }
 
     #[bench]
     fn bench_to_c_str_medium(b: &mut Bencher) {
-        bench_to_string(b, s_medium)
+        bench_to_string(b, S_MEDIUM)
     }
 
     #[bench]
     fn bench_to_c_str_long(b: &mut Bencher) {
-        bench_to_string(b, s_long)
+        bench_to_string(b, S_LONG)
     }
 
     fn bench_to_c_str_unchecked(b: &mut Bencher, s: &str) {
@@ -774,17 +743,17 @@ mod bench {
 
     #[bench]
     fn bench_to_c_str_unchecked_short(b: &mut Bencher) {
-        bench_to_c_str_unchecked(b, s_short)
+        bench_to_c_str_unchecked(b, S_SHORT)
     }
 
     #[bench]
     fn bench_to_c_str_unchecked_medium(b: &mut Bencher) {
-        bench_to_c_str_unchecked(b, s_medium)
+        bench_to_c_str_unchecked(b, S_MEDIUM)
     }
 
     #[bench]
     fn bench_to_c_str_unchecked_long(b: &mut Bencher) {
-        bench_to_c_str_unchecked(b, s_long)
+        bench_to_c_str_unchecked(b, S_LONG)
     }
 
     fn bench_with_c_str(b: &mut Bencher, s: &str) {
@@ -795,17 +764,17 @@ mod bench {
 
     #[bench]
     fn bench_with_c_str_short(b: &mut Bencher) {
-        bench_with_c_str(b, s_short)
+        bench_with_c_str(b, S_SHORT)
     }
 
     #[bench]
     fn bench_with_c_str_medium(b: &mut Bencher) {
-        bench_with_c_str(b, s_medium)
+        bench_with_c_str(b, S_MEDIUM)
     }
 
     #[bench]
     fn bench_with_c_str_long(b: &mut Bencher) {
-        bench_with_c_str(b, s_long)
+        bench_with_c_str(b, S_LONG)
     }
 
     fn bench_with_c_str_unchecked(b: &mut Bencher, s: &str) {
@@ -818,16 +787,16 @@ mod bench {
 
     #[bench]
     fn bench_with_c_str_unchecked_short(b: &mut Bencher) {
-        bench_with_c_str_unchecked(b, s_short)
+        bench_with_c_str_unchecked(b, S_SHORT)
     }
 
     #[bench]
     fn bench_with_c_str_unchecked_medium(b: &mut Bencher) {
-        bench_with_c_str_unchecked(b, s_medium)
+        bench_with_c_str_unchecked(b, S_MEDIUM)
     }
 
     #[bench]
     fn bench_with_c_str_unchecked_long(b: &mut Bencher) {
-        bench_with_c_str_unchecked(b, s_long)
+        bench_with_c_str_unchecked(b, S_LONG)
     }
 }

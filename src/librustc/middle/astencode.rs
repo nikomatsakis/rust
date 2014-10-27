@@ -453,13 +453,14 @@ impl tr for def::Def {
                                    },
                                    p)
           }
-          def::DefMethod(did0, did1) => {
-            def::DefMethod(did0.tr(dcx), did1.map(|did1| did1.tr(dcx)))
+          def::DefMethod(did0, did1, p) => {
+            def::DefMethod(did0.tr(dcx), did1.map(|did1| did1.tr(dcx)), p)
           }
           def::DefSelfTy(nid) => { def::DefSelfTy(dcx.tr_id(nid)) }
           def::DefMod(did) => { def::DefMod(did.tr(dcx)) }
           def::DefForeignMod(did) => { def::DefForeignMod(did.tr(dcx)) }
           def::DefStatic(did, m) => { def::DefStatic(did.tr(dcx), m) }
+          def::DefConst(did) => { def::DefConst(did.tr(dcx)) }
           def::DefLocal(nid) => { def::DefLocal(dcx.tr_id(nid)) }
           def::DefVariant(e_did, v_did, is_s) => {
             def::DefVariant(e_did.tr(dcx), v_did.tr(dcx), is_s)
@@ -515,7 +516,8 @@ impl tr for ty::BoundRegion {
     fn tr(&self, dcx: &DecodeContext) -> ty::BoundRegion {
         match *self {
             ty::BrAnon(_) |
-            ty::BrFresh(_) => *self,
+            ty::BrFresh(_) |
+            ty::BrEnv => *self,
             ty::BrNamed(id, ident) => ty::BrNamed(dcx.tr_def_id(id),
                                                     ident),
         }
@@ -1091,9 +1093,9 @@ impl<'a> rbml_writer_helpers for Encoder<'a> {
                         this.emit_enum_variant_arg(1, |this| idx.encode(this))
                     })
                 }
-                ty::UnsizeVtable(ty::TyTrait { def_id: def_id,
+                ty::UnsizeVtable(ty::TyTrait { def_id,
                                                bounds: ref b,
-                                               substs: ref substs },
+                                               ref substs },
                                  self_ty) => {
                     this.emit_enum_variant("UnsizeVtable", 2, 4, |this| {
                         this.emit_enum_variant_arg(
@@ -1515,7 +1517,7 @@ impl<'a> rbml_decoder_decoder_helpers for reader::Decoder<'a> {
         fn type_string(doc: rbml::Doc) -> String {
             let mut str = String::new();
             for i in range(doc.start, doc.end) {
-                str.push_char(doc.data[i] as char);
+                str.push(doc.data[i] as char);
             }
             str
         }
@@ -1806,7 +1808,7 @@ impl<'a> rbml_decoder_decoder_helpers for reader::Decoder<'a> {
             NominalType | TypeWithId | RegionParameter => dcx.tr_def_id(did),
             TypeParameter => dcx.tr_intern_def_id(did)
         };
-        debug!("convert_def_id(source={:?}, did={:?})={:?}", source, did, r);
+        debug!("convert_def_id(source={}, did={})={}", source, did, r);
         return r;
     }
 }
@@ -1840,7 +1842,7 @@ fn decode_side_tables(dcx: &DecodeContext,
                     }
                     c::tag_table_node_type => {
                         let ty = val_dsr.read_ty(dcx);
-                        debug!("inserting ty for node {:?}: {}",
+                        debug!("inserting ty for node {}: {}",
                                id, ty_to_string(dcx.tcx, ty));
                         dcx.tcx.node_types.borrow_mut().insert(id as uint, ty);
                     }

@@ -18,60 +18,22 @@ use prelude::*;
 use std::io::net::ip::*;
 use sync::atomic::{AtomicUint, INIT_ATOMIC_UINT, Relaxed};
 
-macro_rules! iotest (
-    { fn $name:ident() $b:block $(#[$a:meta])* } => (
-        mod $name {
-            #![allow(unused_imports)]
-
-            use super::super::*;
-            use super::*;
-            use io;
-            use prelude::*;
-            use io::*;
-            use io::fs::*;
-            use io::test::*;
-            use io::net::tcp::*;
-            use io::net::ip::*;
-            use io::net::udp::*;
-            #[cfg(unix)]
-            use io::net::pipe::*;
-            use io::timer::*;
-            use io::process::*;
-            use rt::running_on_valgrind;
-            use str;
-            use time::Duration;
-
-            fn f() $b
-
-            $(#[$a])* #[test] fn green() { f() }
-            $(#[$a])* #[test] fn native() {
-                use native;
-                let (tx, rx) = channel();
-                native::task::spawn(proc() { tx.send(f()) });
-                rx.recv();
-            }
-        }
-    )
-)
-
 /// Get a port number, starting at 9600, for use in tests
 pub fn next_test_port() -> u16 {
-    static mut next_offset: AtomicUint = INIT_ATOMIC_UINT;
-    unsafe {
-        base_port() + next_offset.fetch_add(1, Relaxed) as u16
-    }
+    static NEXT_OFFSET: AtomicUint = INIT_ATOMIC_UINT;
+    base_port() + NEXT_OFFSET.fetch_add(1, Relaxed) as u16
 }
 
 /// Get a temporary path which could be the location of a unix socket
 pub fn next_test_unix() -> Path {
-    static mut COUNT: AtomicUint = INIT_ATOMIC_UINT;
+    static COUNT: AtomicUint = INIT_ATOMIC_UINT;
     // base port and pid are an attempt to be unique between multiple
     // test-runners of different configurations running on one
     // buildbot, the count is to be unique within this executable.
     let string = format!("rust-test-unix-path-{}-{}-{}",
                          base_port(),
                          unsafe {libc::getpid()},
-                         unsafe {COUNT.fetch_add(1, Relaxed)});
+                         COUNT.fetch_add(1, Relaxed));
     if cfg!(unix) {
         os::tmpdir().join(string)
     } else {

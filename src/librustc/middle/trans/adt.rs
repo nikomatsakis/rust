@@ -45,7 +45,6 @@
 
 #![allow(unsigned_negate)]
 
-use libc::c_ulonglong;
 use std::collections::Map;
 use std::num::Int;
 use std::rc::Rc;
@@ -74,7 +73,7 @@ type Hint = attr::ReprAttr;
 
 
 /// Representations.
-#[deriving(Eq, PartialEq)]
+#[deriving(Eq, PartialEq, Show)]
 pub enum Repr {
     /// C-like enums; basically an int.
     CEnum(IntType, Disr, Disr), // discriminant range (signedness based on the IntType)
@@ -127,12 +126,12 @@ pub enum Repr {
 }
 
 /// For structs, and struct-like parts of anything fancier.
-#[deriving(Eq, PartialEq)]
+#[deriving(Eq, PartialEq, Show)]
 pub struct Struct {
     // If the struct is DST, then the size and alignment do not take into
     // account the unsized fields of the struct.
     pub size: u64,
-    pub align: u64,
+    pub align: u32,
     pub sized: bool,
     pub packed: bool,
     pub fields: Vec<ty::t>
@@ -156,7 +155,7 @@ pub fn represent_type(cx: &CrateContext, t: ty::t) -> Rc<Repr> {
     }
 
     let repr = Rc::new(represent_type_uncached(cx, t));
-    debug!("Represented as: {:?}", repr)
+    debug!("Represented as: {}", repr)
     cx.adt_reprs().borrow_mut().insert(t, repr.clone());
     repr
 }
@@ -164,7 +163,7 @@ pub fn represent_type(cx: &CrateContext, t: ty::t) -> Rc<Repr> {
 fn represent_type_uncached(cx: &CrateContext, t: ty::t) -> Repr {
     match ty::get(t).sty {
         ty::ty_tup(ref elems) => {
-            return Univariant(mk_struct(cx, elems.as_slice(), false), false)
+            return Univariant(mk_struct(cx, elems.as_slice(), false, t), false)
         }
         ty::ty_struct(def_id, ref substs) => {
             let fields = ty::lookup_struct_fields(cx.tcx(), def_id);
@@ -175,12 +174,12 @@ fn represent_type_uncached(cx: &CrateContext, t: ty::t) -> Repr {
             let dtor = ty::ty_dtor(cx.tcx(), def_id).has_drop_flag();
             if dtor { ftys.push(ty::mk_bool()); }
 
-            return Univariant(mk_struct(cx, ftys.as_slice(), packed), dtor)
+            return Univariant(mk_struct(cx, ftys.as_slice(), packed, t), dtor)
         }
         ty::ty_unboxed_closure(def_id, _) => {
             let upvars = ty::unboxed_closure_upvars(cx.tcx(), def_id);
             let upvar_types = upvars.iter().map(|u| u.ty).collect::<Vec<_>>();
-            return Univariant(mk_struct(cx, upvar_types.as_slice(), false),
+            return Univariant(mk_struct(cx, upvar_types.as_slice(), false, t),
                               false)
         }
         ty::ty_enum(def_id, ref substs) => {
@@ -195,7 +194,8 @@ fn represent_type_uncached(cx: &CrateContext, t: ty::t) -> Repr {
                 // (Typechecking will reject discriminant-sizing attrs.)
                 assert_eq!(hint, attr::ReprAny);
                 let ftys = if dtor { vec!(ty::mk_bool()) } else { vec!() };
-                return Univariant(mk_struct(cx, ftys.as_slice(), false), dtor);
+                return Univariant(mk_struct(cx, ftys.as_slice(), false, t),
+                                  dtor);
             }
 
             if !dtor && cases.iter().all(|c| c.tys.len() == 0) {
@@ -224,23 +224,25 @@ fn represent_type_uncached(cx: &CrateContext, t: ty::t) -> Repr {
                 // Equivalent to a struct/tuple/newtype.
                 // (Typechecking will reject discriminant-sizing attrs.)
                 assert_eq!(hint, attr::ReprAny);
-                let mut ftys = cases.get(0).tys.clone();
+                let mut ftys = cases[0].tys.clone();
                 if dtor { ftys.push(ty::mk_bool()); }
-                return Univariant(mk_struct(cx, ftys.as_slice(), false), dtor);
+                return Univariant(mk_struct(cx, ftys.as_slice(), false, t),
+                                  dtor);
             }
 
             if !dtor && cases.len() == 2 && hint == attr::ReprAny {
                 // Nullable pointer optimization
                 let mut discr = 0;
                 while discr < 2 {
-                    if cases.get(1 - discr).is_zerolen(cx) {
-                        let st = mk_struct(cx, cases.get(discr).tys.as_slice(), false);
-                        match cases.get(discr).find_ptr() {
+                    if cases[1 - discr].is_zerolen(cx, t) {
+                        let st = mk_struct(cx, cases[discr].tys.as_slice(),
+                                           false, t);
+                        match cases[discr].find_ptr() {
                             Some(ThinPointer(_)) if st.fields.len() == 1 => {
                                 return RawNullablePointer {
                                     nndiscr: discr as Disr,
-                                    nnty: *st.fields.get(0),
-                                    nullfields: cases.get(1 - discr).tys.clone()
+                                    nnty: st.fields[0],
+                                    nullfields: cases[1 - discr].tys.clone()
                                 };
                             }
                             Some(ptrfield) => {
@@ -248,7 +250,7 @@ fn represent_type_uncached(cx: &CrateContext, t: ty::t) -> Repr {
                                     nndiscr: discr as Disr,
                                     nonnull: st,
                                     ptrfield: ptrfield,
-                                    nullfields: cases.get(1 - discr).tys.clone()
+                                    nullfields: cases[1 - discr].tys.clone()
                                 };
                             }
                             None => { }
@@ -264,11 +266,16 @@ fn represent_type_uncached(cx: &CrateContext, t: ty::t) -> Repr {
                                      slo: 0, shi: (cases.len() - 1) as i64 };
             let ity = range_to_inttype(cx, hint, &bounds);
 
-            return General(ity, cases.iter().map(|c| {
-                let mut ftys = vec!(ty_of_inttype(ity)).append(c.tys.as_slice());
+            let fields : Vec<_> = cases.iter().map(|c| {
+                let mut ftys = vec!(ty_of_inttype(ity));
+                ftys.push_all(c.tys.as_slice());
                 if dtor { ftys.push(ty::mk_bool()); }
-                mk_struct(cx, ftys.as_slice(), false)
-            }).collect(), dtor);
+                mk_struct(cx, ftys.as_slice(), false, t)
+            }).collect();
+
+            ensure_enum_fits_in_address_space(cx, ity, fields.as_slice(), t);
+
+            General(ity, fields, dtor)
         }
         _ => cx.sess().bug(format!("adt::represent_type called on non-ADT type: {}",
                            ty_to_string(cx.tcx(), t)).as_slice())
@@ -289,8 +296,8 @@ pub enum PointerField {
 }
 
 impl Case {
-    fn is_zerolen(&self, cx: &CrateContext) -> bool {
-        mk_struct(cx, self.tys.as_slice(), false).size == 0
+    fn is_zerolen(&self, cx: &CrateContext, scapegoat: ty::t) -> bool {
+        mk_struct(cx, self.tys.as_slice(), false, scapegoat).size == 0
     }
 
     fn find_ptr(&self) -> Option<PointerField> {
@@ -321,9 +328,6 @@ impl Case {
                     _ => return Some(ThinPointer(i))
                 },
 
-                // Gc<T> is just a pointer
-                ty::ty_box(..) => return Some(ThinPointer(i)),
-
                 // Functions are just pointers
                 ty::ty_bare_fn(..) => return Some(ThinPointer(i)),
 
@@ -348,32 +352,29 @@ fn get_cases(tcx: &ty::ctxt, def_id: ast::DefId, substs: &subst::Substs) -> Vec<
     }).collect()
 }
 
-fn mk_struct(cx: &CrateContext, tys: &[ty::t], packed: bool) -> Struct {
-    if tys.iter().all(|&ty| ty::type_is_sized(cx.tcx(), ty)) {
-        let lltys = tys.iter().map(|&ty| type_of::sizing_type_of(cx, ty)).collect::<Vec<_>>();
-        let llty_rec = Type::struct_(cx, lltys.as_slice(), packed);
-        Struct {
-            size: machine::llsize_of_alloc(cx, llty_rec),
-            align: machine::llalign_of_min(cx, llty_rec),
-            sized: true,
-            packed: packed,
-            fields: Vec::from_slice(tys),
-        }
+fn mk_struct(cx: &CrateContext, tys: &[ty::t], packed: bool, scapegoat: ty::t) -> Struct {
+    let sized = tys.iter().all(|&ty| ty::type_is_sized(cx.tcx(), ty));
+    let lltys : Vec<Type> = if sized {
+        tys.iter()
+           .map(|&ty| type_of::sizing_type_of(cx, ty)).collect()
     } else {
-        // Ignore any dynamically sized fields.
-        let lltys = tys.iter().filter(|&ty| ty::type_is_sized(cx.tcx(), *ty))
-            .map(|&ty| type_of::sizing_type_of(cx, ty)).collect::<Vec<_>>();
-        let llty_rec = Type::struct_(cx, lltys.as_slice(), packed);
-        Struct {
-            size: machine::llsize_of_alloc(cx, llty_rec),
-            align: machine::llalign_of_min(cx, llty_rec),
-            sized: false,
-            packed: packed,
-            fields: Vec::from_slice(tys),
-        }
+        tys.iter().filter(|&ty| ty::type_is_sized(cx.tcx(), *ty))
+           .map(|&ty| type_of::sizing_type_of(cx, ty)).collect()
+    };
+
+    ensure_struct_fits_in_address_space(cx, lltys.as_slice(), packed, scapegoat);
+
+    let llty_rec = Type::struct_(cx, lltys.as_slice(), packed);
+    Struct {
+        size: machine::llsize_of_alloc(cx, llty_rec),
+        align: machine::llalign_of_min(cx, llty_rec),
+        sized: sized,
+        packed: packed,
+        fields: tys.to_vec(),
     }
 }
 
+#[deriving(Show)]
 struct IntBounds {
     slo: i64,
     shi: i64,
@@ -390,12 +391,14 @@ fn mk_cenum(cx: &CrateContext, hint: Hint, bounds: &IntBounds) -> Repr {
 }
 
 fn range_to_inttype(cx: &CrateContext, hint: Hint, bounds: &IntBounds) -> IntType {
-    debug!("range_to_inttype: {:?} {:?}", hint, bounds);
+    debug!("range_to_inttype: {} {}", hint, bounds);
     // Lists of sizes to try.  u64 is always allowed as a fallback.
+    #[allow(non_uppercase_statics)]
     static choose_shortest: &'static[IntType] = &[
         attr::UnsignedInt(ast::TyU8), attr::SignedInt(ast::TyI8),
         attr::UnsignedInt(ast::TyU16), attr::SignedInt(ast::TyI16),
         attr::UnsignedInt(ast::TyU32), attr::SignedInt(ast::TyI32)];
+    #[allow(non_uppercase_statics)]
     static at_least_32: &'static[IntType] = &[
         attr::UnsignedInt(ast::TyU32), attr::SignedInt(ast::TyI32)];
 
@@ -441,7 +444,7 @@ pub fn ll_inttype(cx: &CrateContext, ity: IntType) -> Type {
 }
 
 fn bounds_usable(cx: &CrateContext, ity: IntType, bounds: &IntBounds) -> bool {
-    debug!("bounds_usable: {:?} {:?}", ity, bounds);
+    debug!("bounds_usable: {} {}", ity, bounds);
     match ity {
         attr::SignedInt(_) => {
             let lllo = C_integral(ll_inttype(cx, ity), bounds.slo as u64, true);
@@ -460,6 +463,51 @@ pub fn ty_of_inttype(ity: IntType) -> ty::t {
     match ity {
         attr::SignedInt(t) => ty::mk_mach_int(t),
         attr::UnsignedInt(t) => ty::mk_mach_uint(t)
+    }
+}
+
+// LLVM doesn't like types that don't fit in the address space
+fn ensure_struct_fits_in_address_space(ccx: &CrateContext,
+                                       fields: &[Type],
+                                       packed: bool,
+                                       scapegoat: ty::t) {
+    let mut offset = 0;
+    for &llty in fields.iter() {
+        // Invariant: offset < ccx.max_obj_size() <= 1<<61
+        if !packed {
+            let type_align = machine::llalign_of_min(ccx, llty);
+            offset = roundup(offset, type_align);
+        }
+        // type_align is a power-of-2, so still offset < ccx.max_obj_size()
+        // llsize_of_alloc(ccx, llty) is also less than ccx.max_obj_size()
+        // so the sum is less than 1<<62 (and therefore can't overflow).
+        offset += machine::llsize_of_alloc(ccx, llty);
+
+        if offset >= ccx.max_obj_size() {
+            ccx.report_overbig_object(scapegoat);
+        }
+    }
+}
+
+fn union_size_and_align(sts: &[Struct]) -> (machine::llsize, machine::llalign) {
+    let size = sts.iter().map(|st| st.size).max().unwrap();
+    let most_aligned = sts.iter().max_by(|st| st.align).unwrap();
+    (size, most_aligned.align)
+}
+
+fn ensure_enum_fits_in_address_space(ccx: &CrateContext,
+                                     discr: IntType,
+                                     fields: &[Struct],
+                                     scapegoat: ty::t) {
+    let discr_size = machine::llsize_of_alloc(ccx, ll_inttype(ccx, discr));
+    let (field_size, field_align) = union_size_and_align(fields);
+
+    // field_align < 1<<32, discr_size <= 8, field_size < MAX_OBJ_SIZE <= 1<<61
+    // so the sum is less than 1<<62 (and can't overflow).
+    let total_size = roundup(discr_size, field_align) + field_size;
+
+    if total_size >= ccx.max_obj_size() {
+        ccx.report_overbig_object(scapegoat);
     }
 }
 
@@ -525,13 +573,12 @@ fn generic_type_of(cx: &CrateContext,
             // of the size.
             //
             // FIXME #10604: this breaks when vector types are present.
-            let size = sts.iter().map(|st| st.size).max().unwrap();
-            let most_aligned = sts.iter().max_by(|st| st.align).unwrap();
-            let align = most_aligned.align;
+            let (size, align) = union_size_and_align(sts.as_slice());
+            let align_s = align as u64;
             let discr_ty = ll_inttype(cx, ity);
-            let discr_size = machine::llsize_of_alloc(cx, discr_ty) as u64;
-            let align_units = (size + align - 1) / align - 1;
-            let pad_ty = match align {
+            let discr_size = machine::llsize_of_alloc(cx, discr_ty);
+            let align_units = (size + align_s - 1) / align_s - 1;
+            let pad_ty = match align_s {
                 1 => Type::array(&Type::i8(cx), align_units),
                 2 => Type::array(&Type::i16(cx), align_units),
                 4 => Type::array(&Type::i32(cx), align_units),
@@ -539,12 +586,12 @@ fn generic_type_of(cx: &CrateContext,
                                  Type::array(&Type::i64(cx), align_units),
                 a if a.count_ones() == 1 => Type::array(&Type::vector(&Type::i32(cx), a / 4),
                                                               align_units),
-                _ => fail!("unsupported enum alignment: {:?}", align)
+                _ => fail!("unsupported enum alignment: {}", align)
             };
-            assert_eq!(machine::llalign_of_min(cx, pad_ty) as u64, align);
-            assert_eq!(align % discr_size, 0);
+            assert_eq!(machine::llalign_of_min(cx, pad_ty), align);
+            assert_eq!(align_s % discr_size, 0);
             let fields = vec!(discr_ty,
-                           Type::array(&discr_ty, align / discr_size - 1),
+                           Type::array(&discr_ty, align_s / discr_size - 1),
                            pad_ty);
             match name {
                 None => Type::struct_(cx, fields.as_slice(), false),
@@ -653,9 +700,7 @@ fn load_discr(bcx: Block, ity: IntType, ptr: ValueRef, min: Disr, max: Disr)
     } else {
         // llvm::ConstantRange can deal with ranges that wrap around,
         // so an overflow on (max + 1) is fine.
-        LoadRangeAssert(bcx, ptr, min as c_ulonglong,
-                        (max + 1) as c_ulonglong,
-                        /* signed: */ True)
+        LoadRangeAssert(bcx, ptr, min, (max+1), /* signed: */ True)
     }
 }
 
@@ -701,7 +746,7 @@ pub fn trans_set_discr(bcx: Block, r: &Repr, val: ValueRef, discr: Disr) {
         General(ity, ref cases, dtor) => {
             if dtor {
                 let ptr = trans_field_ptr(bcx, r, val, discr,
-                                          cases.get(discr as uint).fields.len() - 2);
+                                          cases[discr as uint].fields.len() - 2);
                 Store(bcx, C_u8(bcx.ccx(), 1), ptr);
             }
             Store(bcx, C_integral(ll_inttype(bcx.ccx(), ity), discr as u64, true),
@@ -720,12 +765,12 @@ pub fn trans_set_discr(bcx: Block, r: &Repr, val: ValueRef, discr: Disr) {
                 Store(bcx, C_null(llptrty), val)
             }
         }
-        StructWrappedNullablePointer { nonnull: ref nonnull, nndiscr, ptrfield, .. } => {
+        StructWrappedNullablePointer { ref nonnull, nndiscr, ptrfield, .. } => {
             if discr != nndiscr {
                 let (llptrptr, llptrty) = match ptrfield {
                     ThinPointer(field) =>
                         (GEPi(bcx, val, [0, field]),
-                         type_of::type_of(bcx.ccx(), *nonnull.fields.get(field))),
+                         type_of::type_of(bcx.ccx(), nonnull.fields[field])),
                     FatPointer(field, pair) => {
                         let v = GEPi(bcx, val, [0, field, pair]);
                         (v, val_ty(v).element_type())
@@ -756,13 +801,13 @@ pub fn num_args(r: &Repr, discr: Disr) -> uint {
             st.fields.len() - (if dtor { 1 } else { 0 })
         }
         General(_, ref cases, dtor) => {
-            cases.get(discr as uint).fields.len() - 1 - (if dtor { 1 } else { 0 })
+            cases[discr as uint].fields.len() - 1 - (if dtor { 1 } else { 0 })
         }
         RawNullablePointer { nndiscr, ref nullfields, .. } => {
             if discr == nndiscr { 1 } else { nullfields.len() }
         }
-        StructWrappedNullablePointer { nonnull: ref nonnull, nndiscr,
-                                       nullfields: ref nullfields, .. } => {
+        StructWrappedNullablePointer { ref nonnull, nndiscr,
+                                       ref nullfields, .. } => {
             if discr == nndiscr { nonnull.fields.len() } else { nullfields.len() }
         }
     }
@@ -783,13 +828,13 @@ pub fn trans_field_ptr(bcx: Block, r: &Repr, val: ValueRef, discr: Disr,
             struct_field_ptr(bcx, st, val, ix, false)
         }
         General(_, ref cases, _) => {
-            struct_field_ptr(bcx, cases.get(discr as uint), val, ix + 1, true)
+            struct_field_ptr(bcx, &cases[discr as uint], val, ix + 1, true)
         }
         RawNullablePointer { nndiscr, ref nullfields, .. } |
         StructWrappedNullablePointer { nndiscr, ref nullfields, .. } if discr != nndiscr => {
             // The unit-like case might have a nonzero number of unit-like fields.
             // (e.d., Result of Either with (), as one side.)
-            let ty = type_of::type_of(bcx.ccx(), *nullfields.get(ix));
+            let ty = type_of::type_of(bcx.ccx(), nullfields[ix]);
             assert_eq!(machine::llsize_of_alloc(bcx.ccx(), ty), 0);
             // The contents of memory at this pointer can't matter, but use
             // the value that's "reasonable" in case of pointer comparison.
@@ -921,14 +966,14 @@ pub fn trans_const(ccx: &CrateContext, r: &Repr, discr: Disr,
             C_integral(ll_inttype(ccx, ity), discr as u64, true)
         }
         General(ity, ref cases, _) => {
-            let case = cases.get(discr as uint);
+            let case = &cases[discr as uint];
             let max_sz = cases.iter().map(|x| x.size).max().unwrap();
             let lldiscr = C_integral(ll_inttype(ccx, ity), discr as u64, true);
-            let contents = build_const_struct(ccx,
-                                              case,
-                                              (vec!(lldiscr)).append(vals).as_slice());
-            C_struct(ccx, contents.append([padding(ccx, max_sz - case.size)]).as_slice(),
-                     false)
+            let mut f = vec![lldiscr];
+            f.push_all(vals);
+            let mut contents = build_const_struct(ccx, case, f.as_slice());
+            contents.push_all([padding(ccx, max_sz - case.size)]);
+            C_struct(ccx, contents.as_slice(), false)
         }
         Univariant(ref st, _dro) => {
             assert!(discr == 0);
@@ -943,7 +988,7 @@ pub fn trans_const(ccx: &CrateContext, r: &Repr, discr: Disr,
                 C_null(type_of::sizing_type_of(ccx, nnty))
             }
         }
-        StructWrappedNullablePointer { nonnull: ref nonnull, nndiscr, .. } => {
+        StructWrappedNullablePointer { ref nonnull, nndiscr, .. } => {
             if discr == nndiscr {
                 C_struct(ccx, build_const_struct(ccx,
                                                  nonnull,
@@ -974,11 +1019,11 @@ fn compute_struct_field_offsets(ccx: &CrateContext, st: &Struct) -> Vec<u64> {
     for &ty in st.fields.iter() {
         let llty = type_of::sizing_type_of(ccx, ty);
         if !st.packed {
-            let type_align = type_of::align_of(ccx, ty) as u64;
+            let type_align = type_of::align_of(ccx, ty);
             offset = roundup(offset, type_align);
         }
         offsets.push(offset);
-        offset += machine::llsize_of_alloc(ccx, llty) as u64;
+        offset += machine::llsize_of_alloc(ccx, llty);
     }
     assert_eq!(st.fields.len(), offsets.len());
     offsets
@@ -1005,8 +1050,7 @@ fn build_const_struct(ccx: &CrateContext, st: &Struct, vals: &[ValueRef])
     let mut cfields = Vec::new();
     for (&val, &target_offset) in vals.iter().zip(target_offsets.iter()) {
         if !st.packed {
-            let val_align = machine::llalign_of_min(ccx, val_ty(val))
-                /*bad*/as u64;
+            let val_align = machine::llalign_of_min(ccx, val_ty(val));
             offset = roundup(offset, val_align);
         }
         if offset != target_offset {
@@ -1015,7 +1059,7 @@ fn build_const_struct(ccx: &CrateContext, st: &Struct, vals: &[ValueRef])
         }
         assert!(!is_undef(val));
         cfields.push(val);
-        offset += machine::llsize_of_alloc(ccx, val_ty(val)) as u64;
+        offset += machine::llsize_of_alloc(ccx, val_ty(val));
     }
 
     assert!(st.sized && offset <= st.size);
@@ -1032,7 +1076,7 @@ fn padding(ccx: &CrateContext, size: u64) -> ValueRef {
 
 // FIXME this utility routine should be somewhere more general
 #[inline]
-fn roundup(x: u64, a: u64) -> u64 { ((x + (a - 1)) / a) * a }
+fn roundup(x: u64, a: u32) -> u64 { let a = a as u64; ((x + (a - 1)) / a) * a }
 
 /// Get the discriminant of a constant value.  (Not currently used.)
 pub fn const_get_discrim(ccx: &CrateContext, r: &Repr, val: ValueRef)

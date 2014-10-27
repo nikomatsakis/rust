@@ -102,12 +102,12 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
                     }
                     typeck::MethodStaticUnboxedClosure(_) => {}
                     typeck::MethodTypeParam(typeck::MethodParam {
-                        trait_ref: ref trait_ref,
+                        ref trait_ref,
                         method_num: index,
                         ..
                     }) |
                     typeck::MethodTraitObject(typeck::MethodObject {
-                        trait_ref: ref trait_ref,
+                        ref trait_ref,
                         method_num: index,
                         ..
                     }) => {
@@ -156,9 +156,10 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
         }
     }
 
-    fn handle_field_pattern_match(&mut self, lhs: &ast::Pat, pats: &[ast::FieldPat]) {
-        let id = match self.tcx.def_map.borrow().get(&lhs.id) {
-            &def::DefVariant(_, id, _) => id,
+    fn handle_field_pattern_match(&mut self, lhs: &ast::Pat,
+                                  pats: &[codemap::Spanned<ast::FieldPat>]) {
+        let id = match (*self.tcx.def_map.borrow())[lhs.id] {
+            def::DefVariant(_, id, _) => id,
             _ => {
                 match ty::ty_to_def_id(ty::node_id_to_type(self.tcx,
                                                            lhs.id)) {
@@ -174,7 +175,7 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
         let fields = ty::lookup_struct_fields(self.tcx, id);
         for pat in pats.iter() {
             let field_id = fields.iter()
-                .find(|field| field.name == pat.ident.name).unwrap().id;
+                .find(|field| field.name == pat.node.ident.name).unwrap().id;
             self.live_symbols.insert(field_id.node);
         }
     }
@@ -215,7 +216,8 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
                     ast::ItemFn(..)
                     | ast::ItemEnum(..)
                     | ast::ItemTy(..)
-                    | ast::ItemStatic(..) => {
+                    | ast::ItemStatic(..)
+                    | ast::ItemConst(..) => {
                         visit::walk_item(self, &*item);
                     }
                     _ => ()
@@ -440,6 +442,7 @@ impl<'a, 'tcx> DeadVisitor<'a, 'tcx> {
     fn should_warn_about_item(&mut self, item: &ast::Item) -> bool {
         let should_warn = match item.node {
             ast::ItemStatic(..)
+            | ast::ItemConst(..)
             | ast::ItemFn(..)
             | ast::ItemEnum(..)
             | ast::ItemStruct(..) => true,
@@ -492,7 +495,7 @@ impl<'a, 'tcx> DeadVisitor<'a, 'tcx> {
             None => (),
             Some(impl_list) => {
                 for impl_did in impl_list.iter() {
-                    for item_did in impl_items.get(impl_did).iter() {
+                    for item_did in (*impl_items)[*impl_did].iter() {
                         if self.live_symbols.contains(&item_did.def_id()
                                                                .node) {
                             return true;

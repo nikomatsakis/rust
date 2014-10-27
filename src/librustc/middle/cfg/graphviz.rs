@@ -41,9 +41,9 @@ fn replace_newline_with_backslash_l(s: String) -> String {
             s.as_slice().chars().rev().take(2).collect();
         last_two.reverse();
         if last_two.as_slice() != ['\\', 'l'] {
-            s = s.append("\\l");
+            s.push_str("\\l");
         }
-        s.to_string()
+        s
     } else {
         s
     }
@@ -76,35 +76,34 @@ impl<'a, 'ast> dot::Labeller<'a, Node<'a>, Edge<'a>> for LabelledCFG<'a, 'ast> {
         let mut put_one = false;
         for (i, &node_id) in e.data.exiting_scopes.iter().enumerate() {
             if put_one {
-                label = label.append(",\\l");
+                label.push_str(",\\l");
             } else {
                 put_one = true;
             }
             let s = self.ast_map.node_to_string(node_id);
             // left-aligns the lines
             let s = replace_newline_with_backslash_l(s);
-            label = label.append(format!("exiting scope_{} {}",
-                                         i,
-                                         s.as_slice()).as_slice());
+            label.push_str(format!("exiting scope_{} {}", i,
+                                   s.as_slice()).as_slice());
         }
         dot::EscStr(label.into_maybe_owned())
     }
 }
 
 impl<'a> dot::GraphWalk<'a, Node<'a>, Edge<'a>> for &'a cfg::CFG {
-    fn nodes(&self) -> dot::Nodes<'a, Node<'a>> {
+    fn nodes(&'a self) -> dot::Nodes<'a, Node<'a>> {
         let mut v = Vec::new();
         self.graph.each_node(|i, nd| { v.push((i, nd)); true });
         dot::maybe_owned_vec::Growable(v)
     }
-    fn edges(&self) -> dot::Edges<'a, Edge<'a>> {
+    fn edges(&'a self) -> dot::Edges<'a, Edge<'a>> {
         self.graph.all_edges().iter().collect()
     }
-    fn source(&self, edge: &Edge<'a>) -> Node<'a> {
+    fn source(&'a self, edge: &Edge<'a>) -> Node<'a> {
         let i = edge.source();
         (i, self.graph.node(i))
     }
-    fn target(&self, edge: &Edge<'a>) -> Node<'a> {
+    fn target(&'a self, edge: &Edge<'a>) -> Node<'a> {
         let i = edge.target();
         (i, self.graph.node(i))
     }
@@ -112,9 +111,9 @@ impl<'a> dot::GraphWalk<'a, Node<'a>, Edge<'a>> for &'a cfg::CFG {
 
 impl<'a, 'ast> dot::GraphWalk<'a, Node<'a>, Edge<'a>> for LabelledCFG<'a, 'ast>
 {
-    fn nodes(&self) -> dot::Nodes<'a, Node<'a>> { self.cfg.nodes() }
-    fn edges(&self) -> dot::Edges<'a, Edge<'a>> { self.cfg.edges() }
-    fn source(&self, edge: &Edge<'a>) -> Node<'a> { self.cfg.source(edge) }
-    fn target(&self, edge: &Edge<'a>) -> Node<'a> { self.cfg.target(edge) }
+    fn nodes(&'a self) -> dot::Nodes<'a, Node<'a>> { self.cfg.nodes() }
+    fn edges(&'a self) -> dot::Edges<'a, Edge<'a>> { self.cfg.edges() }
+    fn source(&'a self, edge: &Edge<'a>) -> Node<'a> { self.cfg.source(edge) }
+    fn target(&'a self, edge: &Edge<'a>) -> Node<'a> { self.cfg.target(edge) }
 }
 

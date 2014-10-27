@@ -40,6 +40,8 @@
 
 // ignore-android see #10393 #13206
 
+#![feature(slicing_syntax)]
+
 use std::string::String;
 use std::slice;
 use std::sync::{Arc, Future};
@@ -121,8 +123,8 @@ struct Entry {
 }
 
 struct Table {
-    count: uint,
-    items: Vec<Option<Box<Entry>>> }
+    items: Vec<Option<Box<Entry>>>
+}
 
 struct Items<'a> {
     cur: Option<&'a Entry>,
@@ -132,7 +134,6 @@ struct Items<'a> {
 impl Table {
     fn new() -> Table {
         Table {
-            count: 0,
             items: Vec::from_fn(TABLE_SIZE, |_| None),
         }
     }
@@ -163,7 +164,7 @@ impl Table {
         let index = key.hash() % (TABLE_SIZE as u64);
 
         {
-            if self.items.get(index as uint).is_none() {
+            if self.items[index as uint].is_none() {
                 let mut entry = box Entry {
                     code: key,
                     count: 0,
@@ -176,7 +177,7 @@ impl Table {
         }
 
         {
-            let entry = &mut *self.items.get_mut(index as uint).get_mut_ref();
+            let entry = self.items.get_mut(index as uint).as_mut().unwrap();
             if entry.code == key {
                 c.f(&mut **entry);
                 return;
@@ -240,14 +241,14 @@ fn generate_frequencies(mut input: &[u8], frame: uint) -> Table {
     // Pull first frame.
     for _ in range(0, frame) {
         code = code.push_char(input[0]);
-        input = input.slice_from(1);
+        input = input[1..];
     }
     frequencies.lookup(code, BumpCallback);
 
     while input.len() != 0 && input[0] != ('>' as u8) {
         code = code.rotate(input[0], frame);
         frequencies.lookup(code, BumpCallback);
-        input = input.slice_from(1);
+        input = input[1..];
     }
     frequencies
 }
@@ -284,7 +285,7 @@ fn get_sequence<R: Buffer>(r: &mut R, key: &str) -> Vec<u8> {
         res.push_all(l.as_slice().trim().as_bytes());
     }
     for b in res.iter_mut() {
-        *b = b.to_ascii().to_upper().to_byte();
+        *b = b.to_ascii().to_uppercase().to_byte();
     }
     res
 }

@@ -191,6 +191,17 @@ impl<T:Copy> Cell<T> {
             *self.value.get() = value;
         }
     }
+
+    /// Get a reference to the underlying `UnsafeCell`.
+    ///
+    /// This can be used to circumvent `Cell`'s safety checks.
+    ///
+    /// This function is `unsafe` because `UnsafeCell`'s field is public.
+    #[inline]
+    #[experimental]
+    pub unsafe fn as_unsafe_cell<'a>(&'a self) -> &'a UnsafeCell<T> {
+        &self.value
+    }
 }
 
 #[unstable = "waiting for `Clone` trait to become stable"]
@@ -219,8 +230,8 @@ pub struct RefCell<T> {
 // Values [1, MAX-1] represent the number of `Ref` active
 // (will not outgrow its range since `uint` is the size of the address space)
 type BorrowFlag = uint;
-static UNUSED: BorrowFlag = 0;
-static WRITING: BorrowFlag = -1;
+const UNUSED: BorrowFlag = 0;
+const WRITING: BorrowFlag = -1;
 
 impl<T> RefCell<T> {
     /// Create a new `RefCell` containing `value`
@@ -305,6 +316,17 @@ impl<T> RefCell<T> {
             Some(ptr) => ptr,
             None => fail!("RefCell<T> already borrowed")
         }
+    }
+
+    /// Get a reference to the underlying `UnsafeCell`.
+    ///
+    /// This can be used to circumvent `RefCell`'s safety checks.
+    ///
+    /// This function is `unsafe` because `UnsafeCell`'s field is public.
+    #[inline]
+    #[experimental]
+    pub unsafe fn as_unsafe_cell<'a>(&'a self) -> &'a UnsafeCell<T> {
+        &self.value
     }
 }
 

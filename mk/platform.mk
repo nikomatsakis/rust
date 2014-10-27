@@ -58,6 +58,20 @@ ifdef CFG_VALGRIND
   endif
 endif
 
+# If we actually want to run Valgrind on a given platform, set this variable
+define DEF_GOOD_VALGRIND
+  ifeq ($(OSTYPE_$(1)),unknown-linux-gnu)
+    GOOD_VALGRIND_$(1) = 1
+  endif
+  ifneq (,$(filter $(OSTYPE_$(1)),darwin freebsd))
+    ifeq (HOST_$(1),x86_64)
+      GOOD_VALGRIND_$(1) = 1
+    endif
+  endif
+endef
+$(foreach t,$(CFG_TARGET),$(eval $(call DEF_GOOD_VALGRIND,$(t))))
+$(foreach t,$(CFG_TARGET),$(info cfg: good valgrind for $(t) is $(GOOD_VALGRIND_$(t))))
+
 ifneq ($(findstring linux,$(CFG_OSTYPE)),)
   ifdef CFG_PERF
     ifneq ($(CFG_PERF_WITH_LOGFD),)
@@ -118,7 +132,6 @@ CFG_GCCISH_POST_LIB_FLAGS_x86_64-unknown-linux-gnu := -Wl,-no-whole-archive
 CFG_DEF_SUFFIX_x86_64-unknown-linux-gnu := .linux.def
 CFG_LLC_FLAGS_x86_64-unknown-linux-gnu :=
 CFG_INSTALL_NAME_x86_64-unknown-linux-gnu =
-CFG_LIBUV_LINK_FLAGS_x86_64-unknown-linux-gnu =
 CFG_EXE_SUFFIX_x86_64-unknown-linux-gnu =
 CFG_WINDOWSY_x86_64-unknown-linux-gnu :=
 CFG_UNIXY_x86_64-unknown-linux-gnu := 1
@@ -146,7 +159,6 @@ CFG_GCCISH_POST_LIB_FLAGS_i686-unknown-linux-gnu := -Wl,-no-whole-archive
 CFG_DEF_SUFFIX_i686-unknown-linux-gnu := .linux.def
 CFG_LLC_FLAGS_i686-unknown-linux-gnu :=
 CFG_INSTALL_NAME_i686-unknown-linux-gnu =
-CFG_LIBUV_LINK_FLAGS_i686-unknown-linux-gnu =
 CFG_EXE_SUFFIX_i686-unknown-linux-gnu =
 CFG_WINDOWSY_i686-unknown-linux-gnu :=
 CFG_UNIXY_i686-unknown-linux-gnu := 1
@@ -180,7 +192,6 @@ CFG_GCCISH_POST_LIB_FLAGS_arm-apple-ios :=
 CFG_DEF_SUFFIX_arm-apple-ios := .darwin.def
 CFG_LLC_FLAGS_arm-apple-ios := -mattr=+vfp3,+v7,+thumb2,+neon -march=arm
 CFG_INSTALL_NAME_arm-apple-ios = -Wl,-install_name,@rpath/$(1)
-CFG_LIBUV_LINK_FLAGS_arm-apple-ios =
 CFG_EXE_SUFFIX_arm-apple-ios :=
 CFG_WINDOWSY_arm-apple-ios :=
 CFG_UNIXY_arm-apple-ios := 1
@@ -216,7 +227,6 @@ CFG_GCCISH_POST_LIB_FLAGS_i386-apple-ios =
 CFG_DEF_SUFFIX_i386-apple-ios = .darwin.def
 CFG_LLC_FLAGS_i386-apple-ios =
 CFG_INSTALL_NAME_i386-apple-ios = -Wl,-install_name,@rpath/$(1)
-CFG_LIBUV_LINK_FLAGS_i386-apple-ios =
 CFG_EXE_SUFFIX_i386-apple-ios =
 CFG_WINDOWSY_i386-apple-ios =
 CFG_UNIXY_i386-apple-ios = 1
@@ -245,7 +255,6 @@ CFG_GCCISH_POST_LIB_FLAGS_x86_64-apple-darwin :=
 CFG_DEF_SUFFIX_x86_64-apple-darwin := .darwin.def
 CFG_LLC_FLAGS_x86_64-apple-darwin :=
 CFG_INSTALL_NAME_x86_64-apple-darwin = -Wl,-install_name,@rpath/$(1)
-CFG_LIBUV_LINK_FLAGS_x86_64-apple-darwin =
 CFG_EXE_SUFFIX_x86_64-apple-darwin :=
 CFG_WINDOWSY_x86_64-apple-darwin :=
 CFG_UNIXY_x86_64-apple-darwin := 1
@@ -273,7 +282,6 @@ CFG_GCCISH_POST_LIB_FLAGS_i686-apple-darwin :=
 CFG_DEF_SUFFIX_i686-apple-darwin := .darwin.def
 CFG_LLC_FLAGS_i686-apple-darwin :=
 CFG_INSTALL_NAME_i686-apple-darwin = -Wl,-install_name,@rpath/$(1)
-CFG_LIBUV_LINK_FLAGS_i686-apple-darwin =
 CFG_EXE_SUFFIX_i686-apple-darwin :=
 CFG_WINDOWSY_i686-apple-darwin :=
 CFG_UNIXY_i686-apple-darwin := 1
@@ -301,7 +309,6 @@ CFG_GCCISH_POST_LIB_FLAGS_arm-linux-androideabi := -Wl,-no-whole-archive
 CFG_DEF_SUFFIX_arm-linux-androideabi := .android.def
 CFG_LLC_FLAGS_arm-linux-androideabi :=
 CFG_INSTALL_NAME_arm-linux-androideabi =
-CFG_LIBUV_LINK_FLAGS_arm-linux-androideabi =
 CFG_EXE_SUFFIX_arm-linux-androideabi :=
 CFG_WINDOWSY_arm-linux-androideabi :=
 CFG_UNIXY_arm-linux-androideabi := 1
@@ -332,7 +339,6 @@ CFG_GCCISH_POST_LIB_FLAGS_arm-unknown-linux-gnueabihf := -Wl,-no-whole-archive
 CFG_DEF_SUFFIX_arm-unknown-linux-gnueabihf := .linux.def
 CFG_LLC_FLAGS_arm-unknown-linux-gnueabihf :=
 CFG_INSTALL_NAME_ar,-unknown-linux-gnueabihf =
-CFG_LIBUV_LINK_FLAGS_arm-unknown-linux-gnueabihf =
 CFG_EXE_SUFFIX_arm-unknown-linux-gnueabihf :=
 CFG_WINDOWSY_arm-unknown-linux-gnueabihf :=
 CFG_UNIXY_arm-unknown-linux-gnueabihf := 1
@@ -363,7 +369,6 @@ CFG_GCCISH_POST_LIB_FLAGS_arm-unknown-linux-gnueabi := -Wl,-no-whole-archive
 CFG_DEF_SUFFIX_arm-unknown-linux-gnueabi := .linux.def
 CFG_LLC_FLAGS_arm-unknown-linux-gnueabi :=
 CFG_INSTALL_NAME_arm-unknown-linux-gnueabi =
-CFG_LIBUV_LINK_FLAGS_arm-unknown-linux-gnueabi =
 CFG_EXE_SUFFIX_arm-unknown-linux-gnueabi :=
 CFG_WINDOWSY_arm-unknown-linux-gnueabi :=
 CFG_UNIXY_arm-unknown-linux-gnueabi := 1
@@ -393,7 +398,6 @@ CFG_GCCISH_POST_LIB_FLAGS_mipsel-linux := -Wl,-no-whole-archive
 CFG_DEF_SUFFIX_mipsel-linux := .linux.def
 CFG_LLC_FLAGS_mipsel-linux :=
 CFG_INSTALL_NAME_mipsel-linux =
-CFG_LIBUV_LINK_FLAGS_mipsel-linux =
 CFG_EXE_SUFFIX_mipsel-linux :=
 CFG_WINDOWSY_mipsel-linux :=
 CFG_UNIXY_mipsel-linux := 1
@@ -423,7 +427,6 @@ CFG_GCCISH_POST_LIB_FLAGS_mips-unknown-linux-gnu := -Wl,-no-whole-archive
 CFG_DEF_SUFFIX_mips-unknown-linux-gnu := .linux.def
 CFG_LLC_FLAGS_mips-unknown-linux-gnu :=
 CFG_INSTALL_NAME_mips-unknown-linux-gnu =
-CFG_LIBUV_LINK_FLAGS_mips-unknown-linux-gnu =
 CFG_EXE_SUFFIX_mips-unknown-linux-gnu :=
 CFG_WINDOWSY_mips-unknown-linux-gnu :=
 CFG_UNIXY_mips-unknown-linux-gnu := 1
@@ -452,7 +455,6 @@ CFG_GCCISH_POST_LIB_FLAGS_i586-mingw32msvc :=
 CFG_DEF_SUFFIX_i586-mingw32msvc := .mingw32.def
 CFG_LLC_FLAGS_i586-mingw32msvc :=
 CFG_INSTALL_NAME_i586-mingw32msvc =
-CFG_LIBUV_LINK_FLAGS_i586-mingw32msvc := -L$(CFG_MINGW32_CROSS_PATH)/i586-mingw32msvc/lib -lws2_32 -lpsapi -liphlpapi
 CFG_EXE_SUFFIX_i586-mingw32msvc := .exe
 CFG_WINDOWSY_i586-mingw32msvc := 1
 CFG_UNIXY_i586-mingw32msvc :=
@@ -483,7 +485,6 @@ CFG_GCCISH_POST_LIB_FLAGS_i686-w64-mingw32 :=
 CFG_DEF_SUFFIX_i686-w64-mingw32 := .mingw32.def
 CFG_LLC_FLAGS_i686-w64-mingw32 :=
 CFG_INSTALL_NAME_i686-w64-mingw32 =
-CFG_LIBUV_LINK_FLAGS_i686-w64-mingw32 := -lws2_32 -lpsapi -liphlpapi
 CFG_EXE_SUFFIX_i686-w64-mingw32 := .exe
 CFG_WINDOWSY_i686-w64-mingw32 := 1
 CFG_UNIXY_i686-w64-mingw32 :=
@@ -515,7 +516,6 @@ CFG_GCCISH_POST_LIB_FLAGS_x86_64-w64-mingw32 :=
 CFG_DEF_SUFFIX_x86_64-w64-mingw32 := .mingw32.def
 CFG_LLC_FLAGS_x86_64-w64-mingw32 :=
 CFG_INSTALL_NAME_x86_64-w64-mingw32 =
-CFG_LIBUV_LINK_FLAGS_x86_64-w64-mingw32 := -lws2_32 -lpsapi -liphlpapi
 CFG_EXE_SUFFIX_x86_64-w64-mingw32 := .exe
 CFG_WINDOWSY_x86_64-w64-mingw32 := 1
 CFG_UNIXY_x86_64-w64-mingw32 :=
@@ -543,7 +543,6 @@ CFG_GCCISH_POST_LIB_FLAGS_x86_64-unknown-freebsd := -Wl,-no-whole-archive
 CFG_DEF_SUFFIX_x86_64-unknown-freebsd := .bsd.def
 CFG_LLC_FLAGS_x86_64-unknown-freebsd :=
 CFG_INSTALL_NAME_x86_64-unknown-freebsd =
-CFG_LIBUV_LINK_FLAGS_x86_64-unknown-freebsd := -pthread  -lkvm
 CFG_EXE_SUFFIX_x86_64-unknown-freebsd :=
 CFG_WINDOWSY_x86_64-unknown-freebsd :=
 CFG_UNIXY_x86_64-unknown-freebsd := 1
@@ -570,7 +569,6 @@ CFG_GCCISH_POST_LIB_FLAGS_x86_64-unknown-dragonfly := -Wl,-no-whole-archive
 CFG_DEF_SUFFIX_x86_64-unknown-dragonfly := .bsd.def
 CFG_LLC_FLAGS_x86_64-unknown-dragonfly :=
 CFG_INSTALL_NAME_x86_64-unknown-dragonfly =
-CFG_LIBUV_LINK_FLAGS_x86_64-unknown-dragonfly := -pthread  -lkvm
 CFG_EXE_SUFFIX_x86_64-unknown-dragonfly :=
 CFG_WINDOWSY_x86_64-unknown-dragonfly :=
 CFG_UNIXY_x86_64-unknown-dragonfly := 1

@@ -82,6 +82,11 @@ impl Stack {
         }
     }
 
+    /// Point to the last writable byte of the stack
+    pub fn guard(&self) -> *const uint {
+        (self.start() as uint + page_size()) as *const uint
+    }
+
     /// Point to the low end of the allocated stack
     pub fn start(&self) -> *const uint {
         self.buf.as_ref().map(|m| m.data() as *const uint)
@@ -158,8 +163,8 @@ impl StackPool {
 }
 
 fn max_cached_stacks() -> uint {
-    static mut AMT: atomic::AtomicUint = atomic::INIT_ATOMIC_UINT;
-    match unsafe { AMT.load(atomic::SeqCst) } {
+    static AMT: atomic::AtomicUint = atomic::INIT_ATOMIC_UINT;
+    match AMT.load(atomic::SeqCst) {
         0 => {}
         n => return n - 1,
     }
@@ -169,7 +174,7 @@ fn max_cached_stacks() -> uint {
     let amt = amt.unwrap_or(10);
     // 0 is our sentinel value, so ensure that we'll never see 0 after
     // initialization has run
-    unsafe { AMT.store(amt + 1, atomic::SeqCst); }
+    AMT.store(amt + 1, atomic::SeqCst);
     return amt;
 }
 

@@ -9,6 +9,9 @@
 // except according to those terms.
 
 //! Collection types.
+//!
+//! See [std::collections](../std/collections) for a detailed discussion of collections in Rust.
+
 
 #![crate_name = "collections"]
 #![experimental]
@@ -16,11 +19,12 @@
 #![license = "MIT/ASL2"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://doc.rust-lang.org/master/",
+       html_root_url = "http://doc.rust-lang.org/nightly/",
        html_playground_url = "http://play.rust-lang.org/")]
 
-#![feature(macro_rules, managed_boxes, default_type_params, phase, globs)]
-#![feature(unsafe_destructor, import_shadowing)]
+#![allow(unknown_features)]
+#![feature(macro_rules, default_type_params, phase, globs)]
+#![feature(unsafe_destructor, import_shadowing, slicing_syntax)]
 #![no_std]
 
 #[phase(plugin, link)] extern crate core;
@@ -29,7 +33,6 @@ extern crate alloc;
 
 #[cfg(test)] extern crate native;
 #[cfg(test)] extern crate test;
-#[cfg(test)] extern crate debug;
 
 #[cfg(test)] #[phase(plugin, link)] extern crate std;
 #[cfg(test)] #[phase(plugin, link)] extern crate log;
@@ -498,40 +501,6 @@ pub trait Deque<T> : MutableSeq<T> {
     /// assert_eq!(d.front(), Some(&2i));
     /// ```
     fn push_front(&mut self, elt: T);
-
-    /// Inserts an element last in the sequence.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// use std::collections::{DList, Deque};
-    ///
-    /// let mut d = DList::new();
-    /// d.push_back(1i);
-    /// d.push_back(2i);
-    /// assert_eq!(d.front(), Some(&1i));
-    /// ```
-    #[deprecated = "use the `push` method"]
-    fn push_back(&mut self, elt: T) { self.push(elt) }
-
-    /// Removes the last element and returns it, or `None` if the sequence is
-    /// empty.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// use std::collections::{RingBuf, Deque};
-    ///
-    /// let mut d = RingBuf::new();
-    /// d.push_back(1i);
-    /// d.push_back(2i);
-    ///
-    /// assert_eq!(d.pop_back(), Some(2i));
-    /// assert_eq!(d.pop_back(), Some(1i));
-    /// assert_eq!(d.pop_back(), None);
-    /// ```
-    #[deprecated = "use the `pop` method"]
-    fn pop_back(&mut self) -> Option<T> { self.pop() }
 
     /// Removes the first element and returns it, or `None` if the sequence is
     /// empty.

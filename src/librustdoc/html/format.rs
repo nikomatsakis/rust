@@ -140,8 +140,11 @@ impl fmt::Show for clean::Lifetime {
 impl fmt::Show for clean::TyParamBound {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            clean::RegionBound => {
-                f.write("'static".as_bytes())
+            clean::RegionBound(ref lt) => {
+                write!(f, "{}", *lt)
+            }
+            clean::UnboxedFnBound(ref ty) => {
+                write!(f, "{}{}", ty.path, ty.decl)
             }
             clean::TraitBound(ref ty) => {
                 write!(f, "{}", *ty)
@@ -249,7 +252,7 @@ fn path(w: &mut fmt::Formatter, path: &clean::Path, print_all: bool,
         match rel_root {
             Some(root) => {
                 let mut root = String::from_str(root.as_slice());
-                for seg in path.segments.slice_to(amt).iter() {
+                for seg in path.segments[..amt].iter() {
                     if "super" == seg.name.as_slice() ||
                             "self" == seg.name.as_slice() {
                         try!(write!(w, "{}::", seg.name));
@@ -264,7 +267,7 @@ fn path(w: &mut fmt::Formatter, path: &clean::Path, print_all: bool,
                 }
             }
             None => {
-                for seg in path.segments.slice_to(amt).iter() {
+                for seg in path.segments[..amt].iter() {
                     try!(write!(w, "{}::", seg.name));
                 }
             }
@@ -275,7 +278,7 @@ fn path(w: &mut fmt::Formatter, path: &clean::Path, print_all: bool,
         // This is a documented path, link to it!
         Some((ref fqp, shortty)) if abs_root.is_some() => {
             let mut url = String::from_str(abs_root.unwrap().as_slice());
-            let to_link = fqp.slice_to(fqp.len() - 1);
+            let to_link = fqp[..fqp.len() - 1];
             for component in to_link.iter() {
                 url.push_str(component.as_slice());
                 url.push_str("/");
@@ -401,7 +404,8 @@ impl fmt::Show for clean::Type {
                            let mut ret = String::new();
                            for bound in decl.bounds.iter() {
                                 match *bound {
-                                    clean::RegionBound => {}
+                                    clean::RegionBound(..) |
+                                    clean::UnboxedFnBound(..) => {}
                                     clean::TraitBound(ref t) => {
                                         if ret.len() == 0 {
                                             ret.push_str(": ");
@@ -474,9 +478,27 @@ impl fmt::Show for clean::Type {
                     Some(ref l) => format!("{} ", *l),
                     _ => "".to_string(),
                 };
-                write!(f, "&amp;{}{}{}", lt, MutableSpace(mutability), **ty)
+                let m = MutableSpace(mutability);
+                match **ty {
+                    clean::Vector(ref bt) => { // BorrowedRef{ ... Vector(T) } is &[T]
+                        match **bt {
+                            clean::Generic(_) =>
+                                primitive_link(f, clean::Slice,
+                                    format!("&amp;{}{}[{}]", lt, m, **bt).as_slice()),
+                            _ => {
+                                try!(primitive_link(f, clean::Slice,
+                                    format!("&amp;{}{}[", lt, m).as_slice()));
+                                try!(write!(f, "{}", **bt));
+                                primitive_link(f, clean::Slice, "]")
+                            }
+                        }
+                    }
+                    _ => {
+                        write!(f, "&amp;{}{}{}", lt, m, **ty)
+                    }
+                }
             }
-            clean::Unique(..) | clean::Managed(..) => {
+            clean::Unique(..) => {
                 fail!("should have been cleaned")
             }
         }
@@ -686,9 +708,11 @@ impl fmt::Show for ModuleSummary {
             let path = context.connect("::");
 
             try!(write!(f, "<tr>"));
-            try!(write!(f, "<td><a href='{}'>{}</a></td>",
-                        Vec::from_slice(context.slice_from(1))
-                            .append_one("index.html").connect("/"),
+            try!(write!(f, "<td><a href='{}'>{}</a></td>", {
+                            let mut url = context.slice_from(1).to_vec();
+                            url.push("index.html");
+                            url.connect("/")
+                        },
                         path));
             try!(write!(f, "<td class='summary-column'>"));
             try!(write!(f, "<span class='summary Stable' \

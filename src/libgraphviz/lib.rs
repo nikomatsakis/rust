@@ -273,7 +273,7 @@ pub fn main() {
 #![license = "MIT/ASL2"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://doc.rust-lang.org/master/")]
+       html_root_url = "http://doc.rust-lang.org/nightly/")]
 
 use std::io;
 use std::str;
@@ -731,6 +731,20 @@ r#"digraph single_edge {
     N0[label="N0"];
     N1[label="N1"];
     N0 -> N1[label="E"];
+}
+"#);
+    }
+
+    #[test]
+    fn test_some_labelled() {
+        let labels : Trivial = SomeNodesLabelled(vec![Some("A"), None]);
+        let result = test_input(LabelledGraph::new("test_some_labelled", labels,
+                                                   vec![edge(0, 1, "A-1")]));
+        assert_eq!(result.unwrap().as_slice(),
+r#"digraph test_some_labelled {
+    N0[label="A"];
+    N1[label="N1"];
+    N0 -> N1[label="A-1"];
 }
 "#);
     }

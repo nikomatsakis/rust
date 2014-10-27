@@ -10,10 +10,10 @@
 
 
 use std::cell::RefCell;
-use std::gc::{Gc, GC};
 
 // Regresion test for issue 7364
-static managed: Gc<RefCell<int>> = box(GC) RefCell::new(0);
-//~^ ERROR static items are not allowed to have custom pointers
+static boxed: Box<RefCell<int>> = box RefCell::new(0);
+//~^ ERROR statics are not allowed to have custom pointers
+//~^^ ERROR: shared static items must have a type which implements Sync
 
 fn main() { }

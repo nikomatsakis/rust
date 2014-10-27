@@ -13,7 +13,7 @@
 ######################################################################
 
 # The version number
-CFG_RELEASE_NUM=0.12.0
+CFG_RELEASE_NUM=0.13.0
 
 CFG_FILENAME_EXTRA=4e7c5e5c
 
@@ -157,6 +157,13 @@ RUSTFLAGS_STAGE1 += -C prefer-dynamic
 # by not emitting them.
 RUSTFLAGS_STAGE0 += -Z no-landing-pads
 
+# Go fast for stage0, and also for stage1/stage2 if optimization is off.
+RUSTFLAGS_STAGE0 += -C codegen-units=4
+ifdef CFG_DISABLE_OPTIMIZE
+	RUSTFLAGS_STAGE1 += -C codegen-units=4
+	RUSTFLAGS_STAGE2 += -C codegen-units=4
+endif
+
 # platform-specific auto-configuration
 include $(CFG_SRC_DIR)mk/platform.mk
 
@@ -167,16 +174,20 @@ else
   CFG_VALGRIND_COMPILE :=
 endif
 
+
+ifndef CFG_DISABLE_VALGRIND_RPASS
+  $(info cfg: enabling valgrind run-pass tests (CFG_ENABLE_VALGRIND_RPASS))
+  CFG_VALGRIND_RPASS :=$(CFG_VALGRIND)
+else
+  CFG_VALGRIND_RPASS :=
+endif
+
+
 ifdef CFG_ENABLE_VALGRIND
   $(info cfg: enabling valgrind (CFG_ENABLE_VALGRIND))
 else
   CFG_VALGRIND :=
 endif
-ifdef CFG_BAD_VALGRIND
-  $(info cfg: disabling valgrind due to its unreliability on this platform)
-  CFG_VALGRIND :=
-endif
-
 
 ######################################################################
 # Target-and-rule "utility variables"
@@ -246,7 +257,7 @@ endif
 ######################################################################
 
 # FIXME: x86-ism
-LLVM_COMPONENTS=x86 arm mips ipo bitreader bitwriter linker asmparser jit mcjit \
+LLVM_COMPONENTS=x86 arm mips ipo bitreader bitwriter linker asmparser mcjit \
                 interpreter instrumentation
 
 # Only build these LLVM tools

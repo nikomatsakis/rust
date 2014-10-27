@@ -78,19 +78,19 @@ pub enum Ordering {
 
 /// An `AtomicBool` initialized to `false`
 #[unstable = "may be renamed, pending conventions for static initalizers"]
-pub static INIT_ATOMIC_BOOL: AtomicBool =
+pub const INIT_ATOMIC_BOOL: AtomicBool =
         AtomicBool { v: UnsafeCell { value: 0 }, nocopy: marker::NoCopy };
 /// An `AtomicInt` initialized to `0`
 #[unstable = "may be renamed, pending conventions for static initalizers"]
-pub static INIT_ATOMIC_INT: AtomicInt =
+pub const INIT_ATOMIC_INT: AtomicInt =
         AtomicInt { v: UnsafeCell { value: 0 }, nocopy: marker::NoCopy };
 /// An `AtomicUint` initialized to `0`
 #[unstable = "may be renamed, pending conventions for static initalizers"]
-pub static INIT_ATOMIC_UINT: AtomicUint =
+pub const INIT_ATOMIC_UINT: AtomicUint =
         AtomicUint { v: UnsafeCell { value: 0, }, nocopy: marker::NoCopy };
 
 // NB: Needs to be -1 (0b11111111...) to make fetch_nand work correctly
-static UINT_TRUE: uint = -1;
+const UINT_TRUE: uint = -1;
 
 #[stable]
 impl AtomicBool {
@@ -383,9 +383,9 @@ impl AtomicInt {
     /// # Examples
     ///
     /// ```
-    /// use std::sync::atomic::{AtomicUint, SeqCst};
+    /// use std::sync::atomic::{AtomicInt, SeqCst};
     ///
-    /// let foo = AtomicUint::new(0b101101);
+    /// let foo = AtomicInt::new(0b101101);
     /// assert_eq!(0b101101, foo.fetch_and(0b110011, SeqCst));
     /// assert_eq!(0b100001, foo.load(SeqCst));
     #[inline]
@@ -398,9 +398,9 @@ impl AtomicInt {
     /// # Examples
     ///
     /// ```
-    /// use std::sync::atomic::{AtomicUint, SeqCst};
+    /// use std::sync::atomic::{AtomicInt, SeqCst};
     ///
-    /// let foo = AtomicUint::new(0b101101);
+    /// let foo = AtomicInt::new(0b101101);
     /// assert_eq!(0b101101, foo.fetch_or(0b110011, SeqCst));
     /// assert_eq!(0b111111, foo.load(SeqCst));
     #[inline]
@@ -413,9 +413,9 @@ impl AtomicInt {
     /// # Examples
     ///
     /// ```
-    /// use std::sync::atomic::{AtomicUint, SeqCst};
+    /// use std::sync::atomic::{AtomicInt, SeqCst};
     ///
-    /// let foo = AtomicUint::new(0b101101);
+    /// let foo = AtomicInt::new(0b101101);
     /// assert_eq!(0b101101, foo.fetch_xor(0b110011, SeqCst));
     /// assert_eq!(0b011110, foo.load(SeqCst));
     #[inline]

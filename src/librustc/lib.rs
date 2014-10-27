@@ -26,17 +26,13 @@ This API is completely unstable and subject to change.
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
       html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-      html_root_url = "http://doc.rust-lang.org/master/")]
+      html_root_url = "http://doc.rust-lang.org/nightly/")]
 
-#![allow(deprecated)]
-#![feature(macro_rules, globs, struct_variant, quote)]
-#![feature(default_type_params, phase, unsafe_destructor)]
-
+#![feature(default_type_params, globs, if_let, import_shadowing, macro_rules, phase, quote)]
+#![feature(slicing_syntax, struct_variant, unsafe_destructor)]
 #![feature(rustc_diagnostic_macros)]
-#![feature(import_shadowing)]
 
 extern crate arena;
-extern crate debug;
 extern crate flate;
 extern crate getopts;
 extern crate graphviz;
@@ -149,5 +145,6 @@ mod rustc {
 
 pub fn main() {
     let args = std::os::args();
-    std::os::set_exit_status(driver::main_args(args.as_slice()));
+    let result = driver::run(args);
+    std::os::set_exit_status(result);
 }

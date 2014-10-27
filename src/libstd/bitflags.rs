@@ -24,22 +24,22 @@
 /// ```{.rust}
 /// bitflags! {
 ///     flags Flags: u32 {
-///         static FlagA       = 0x00000001,
-///         static FlagB       = 0x00000010,
-///         static FlagC       = 0x00000100,
-///         static FlagABC     = FlagA.bits
-///                            | FlagB.bits
-///                            | FlagC.bits,
+///         const FLAG_A       = 0x00000001,
+///         const FLAG_B       = 0x00000010,
+///         const FLAG_C       = 0x00000100,
+///         const FLAG_ABC     = FLAG_A.bits
+///                            | FLAG_B.bits
+///                            | FLAG_C.bits,
 ///     }
 /// }
 ///
 /// fn main() {
-///     let e1 = FlagA | FlagC;
-///     let e2 = FlagB | FlagC;
-///     assert!((e1 | e2) == FlagABC);   // union
-///     assert!((e1 & e2) == FlagC);     // intersection
-///     assert!((e1 - e2) == FlagA);     // set difference
-///     assert!(!e2 == FlagA);           // set complement
+///     let e1 = FLAG_A | FLAG_C;
+///     let e2 = FLAG_B | FLAG_C;
+///     assert!((e1 | e2) == FLAG_ABC);   // union
+///     assert!((e1 & e2) == FLAG_C);     // intersection
+///     assert!((e1 - e2) == FLAG_A);     // set difference
+///     assert!(!e2 == FLAG_A);           // set complement
 /// }
 /// ```
 ///
@@ -50,8 +50,8 @@
 ///
 /// bitflags! {
 ///     flags Flags: u32 {
-///         static FlagA   = 0x00000001,
-///         static FlagB   = 0x00000010,
+///         const FLAG_A   = 0x00000001,
+///         const FLAG_B   = 0x00000010,
 ///     }
 /// }
 ///
@@ -69,7 +69,7 @@
 /// }
 ///
 /// fn main() {
-///     let mut flags = FlagA | FlagB;
+///     let mut flags = FLAG_A | FLAG_B;
 ///     flags.clear();
 ///     assert!(flags.is_empty());
 ///     assert_eq!(format!("{}", flags).as_slice(), "hi!");
@@ -115,7 +115,7 @@
 #[macro_export]
 macro_rules! bitflags {
     ($(#[$attr:meta])* flags $BitFlags:ident: $T:ty {
-        $($(#[$Flag_attr:meta])* static $Flag:ident = $value:expr),+
+        $($(#[$Flag_attr:meta])* const $Flag:ident = $value:expr),+
     }) => {
         #[deriving(PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
         $(#[$attr])*
@@ -123,26 +123,30 @@ macro_rules! bitflags {
             bits: $T,
         }
 
-        $($(#[$Flag_attr])* pub static $Flag: $BitFlags = $BitFlags { bits: $value };)+
+        $($(#[$Flag_attr])* pub const $Flag: $BitFlags = $BitFlags { bits: $value };)+
 
         impl $BitFlags {
             /// Returns an empty set of flags.
+            #[inline]
             pub fn empty() -> $BitFlags {
                 $BitFlags { bits: 0 }
             }
 
             /// Returns the set containing all flags.
+            #[inline]
             pub fn all() -> $BitFlags {
                 $BitFlags { bits: $($value)|+ }
             }
 
             /// Returns the raw value of the flags currently stored.
+            #[inline]
             pub fn bits(&self) -> $T {
                 self.bits
             }
 
             /// Convert from underlying bit representation, unless that
             /// representation contains bits that do not correspond to a flag.
+            #[inline]
             pub fn from_bits(bits: $T) -> ::std::option::Option<$BitFlags> {
                 if (bits & !$BitFlags::all().bits()) != 0 {
                     ::std::option::None
@@ -153,21 +157,25 @@ macro_rules! bitflags {
 
             /// Convert from underlying bit representation, dropping any bits
             /// that do not correspond to flags.
+            #[inline]
             pub fn from_bits_truncate(bits: $T) -> $BitFlags {
                 $BitFlags { bits: bits } & $BitFlags::all()
             }
 
             /// Returns `true` if no flags are currently stored.
+            #[inline]
             pub fn is_empty(&self) -> bool {
                 *self == $BitFlags::empty()
             }
 
             /// Returns `true` if all flags are currently set.
+            #[inline]
             pub fn is_all(&self) -> bool {
                 *self == $BitFlags::all()
             }
 
             /// Returns `true` if there are flags common to both `self` and `other`.
+            #[inline]
             pub fn intersects(&self, other: $BitFlags) -> bool {
                 !(self & other).is_empty()
             }
@@ -179,16 +187,19 @@ macro_rules! bitflags {
             }
 
             /// Inserts the specified flags in-place.
+            #[inline]
             pub fn insert(&mut self, other: $BitFlags) {
                 self.bits |= other.bits;
             }
 
             /// Removes the specified flags in-place.
+            #[inline]
             pub fn remove(&mut self, other: $BitFlags) {
                 self.bits &= !other.bits;
             }
 
             /// Toggles the specified flags in-place.
+            #[inline]
             pub fn toggle(&mut self, other: $BitFlags) {
                 self.bits ^= other.bits;
             }
@@ -235,18 +246,19 @@ macro_rules! bitflags {
         }
     };
     ($(#[$attr:meta])* flags $BitFlags:ident: $T:ty {
-        $($(#[$Flag_attr:meta])* static $Flag:ident = $value:expr),+,
+        $($(#[$Flag_attr:meta])* const $Flag:ident = $value:expr),+,
     }) => {
         bitflags! {
             $(#[$attr])*
             flags $BitFlags: $T {
-                $($(#[$Flag_attr])* static $Flag = $value),+
+                $($(#[$Flag_attr])* const $Flag = $value),+
             }
         }
     };
 }
 
 #[cfg(test)]
+#[allow(non_uppercase_statics)]
 mod tests {
     use hash;
     use option::{Some, None};
@@ -258,22 +270,22 @@ mod tests {
         #[doc = "> "]
         #[doc = "> - Richard Feynman"]
         flags Flags: u32 {
-            static FlagA       = 0x00000001,
+            const FlagA       = 0x00000001,
             #[doc = "<pcwalton> macros are way better at generating code than trans is"]
-            static FlagB       = 0x00000010,
-            static FlagC       = 0x00000100,
+            const FlagB       = 0x00000010,
+            const FlagC       = 0x00000100,
             #[doc = "* cmr bed"]
             #[doc = "* strcat table"]
             #[doc = "<strcat> wait what?"]
-            static FlagABC     = FlagA.bits
+            const FlagABC     = FlagA.bits
                                | FlagB.bits
                                | FlagC.bits,
         }
     }
 
     bitflags! {
-        flags AnotherSetOfFlags: uint {
-            static AnotherFlag = 1u,
+        flags AnotherSetOfFlags: i8 {
+            const AnotherFlag = -1_i8,
         }
     }
 
@@ -282,6 +294,9 @@ mod tests {
         assert_eq!(Flags::empty().bits(), 0x00000000);
         assert_eq!(FlagA.bits(), 0x00000001);
         assert_eq!(FlagABC.bits(), 0x00000111);
+
+        assert_eq!(AnotherSetOfFlags::empty().bits(), 0x00);
+        assert_eq!(AnotherFlag.bits(), !0_i8);
     }
 
     #[test]
@@ -291,6 +306,8 @@ mod tests {
         assert!(Flags::from_bits(0x10) == Some(FlagB));
         assert!(Flags::from_bits(0x11) == Some(FlagA | FlagB));
         assert!(Flags::from_bits(0x1000) == None);
+
+        assert!(AnotherSetOfFlags::from_bits(!0_i8) == Some(AnotherFlag));
     }
 
     #[test]
@@ -301,6 +318,8 @@ mod tests {
         assert!(Flags::from_bits_truncate(0x11) == (FlagA | FlagB));
         assert!(Flags::from_bits_truncate(0x1000) == Flags::empty());
         assert!(Flags::from_bits_truncate(0x1001) == FlagA);
+
+        assert!(AnotherSetOfFlags::from_bits_truncate(0_i8) == AnotherSetOfFlags::empty());
     }
 
     #[test]
@@ -308,6 +327,8 @@ mod tests {
         assert!(Flags::empty().is_empty());
         assert!(!FlagA.is_empty());
         assert!(!FlagABC.is_empty());
+
+        assert!(!AnotherFlag.is_empty());
     }
 
     #[test]
@@ -315,6 +336,8 @@ mod tests {
         assert!(Flags::all().is_all());
         assert!(!FlagA.is_all());
         assert!(FlagABC.is_all());
+
+        assert!(AnotherFlag.is_all());
     }
 
     #[test]
@@ -322,6 +345,8 @@ mod tests {
         let e1 = Flags::empty();
         let e2 = Flags::empty();
         assert!(!e1.intersects(e2));
+
+        assert!(AnotherFlag.intersects(AnotherFlag));
     }
 
     #[test]
@@ -352,6 +377,8 @@ mod tests {
         assert!(!e1.contains(e2));
         assert!(e2.contains(e1));
         assert!(FlagABC.contains(e2));
+
+        assert!(AnotherFlag.contains(AnotherFlag));
     }
 
     #[test]
@@ -360,6 +387,10 @@ mod tests {
         let e2 = FlagA | FlagB;
         e1.insert(e2);
         assert!(e1 == e2);
+
+        let mut e3 = AnotherSetOfFlags::empty();
+        e3.insert(AnotherFlag);
+        assert!(e3 == AnotherFlag);
     }
 
     #[test]
@@ -368,6 +399,10 @@ mod tests {
         let e2 = FlagA | FlagC;
         e1.remove(e2);
         assert!(e1 == FlagB);
+
+        let mut e3 = AnotherFlag;
+        e3.remove(AnotherFlag);
+        assert!(e3 == AnotherSetOfFlags::empty());
     }
 
     #[test]
@@ -382,6 +417,10 @@ mod tests {
         let mut e3 = e1;
         e3.toggle(e2);
         assert!(e3 == FlagA | FlagB);
+
+        let mut m4 = AnotherSetOfFlags::empty();
+        m4.toggle(AnotherSetOfFlags::empty());
+        assert!(m4 == AnotherSetOfFlags::empty());
     }
 
     #[test]

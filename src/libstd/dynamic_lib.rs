@@ -29,7 +29,7 @@ use option::*;
 use os;
 use path::{Path,GenericPath};
 use result::*;
-use slice::{Slice,ImmutableSlice};
+use slice::{AsSlice,ImmutableSlice};
 use str;
 use string::String;
 use vec::Vec;
@@ -183,7 +183,7 @@ mod test {
         let expected_result = 1.0;
         let result = cosine(argument);
         if result != expected_result {
-            fail!("cos({:?}) != {:?} but equaled {:?} instead", argument,
+            fail!("cos({}) != {} but equaled {} instead", argument,
                    expected_result, result)
         }
     }
@@ -230,11 +230,11 @@ pub mod dl {
 
     pub fn check_for_errors_in<T>(f: || -> T) -> Result<T, String> {
         use rt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
-        static mut lock: StaticNativeMutex = NATIVE_MUTEX_INIT;
+        static LOCK: StaticNativeMutex = NATIVE_MUTEX_INIT;
         unsafe {
             // dlerror isn't thread safe, so we need to lock around this entire
             // sequence
-            let _guard = lock.lock();
+            let _guard = LOCK.lock();
             let _old_error = dlerror();
 
             let result = f();

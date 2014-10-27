@@ -21,7 +21,7 @@
 `std::io` provides Rust's basic I/O types,
 for reading and writing to files, TCP, UDP,
 and other types of sockets and pipes,
-manipulating the file system, spawning processes and signal handling.
+manipulating the file system, spawning processes.
 
 # Examples
 
@@ -235,7 +235,7 @@ use os;
 use boxed::Box;
 use result::{Ok, Err, Result};
 use rt::rtio;
-use slice::{Slice, MutableSlice, ImmutableSlice};
+use slice::{AsSlice, ImmutableSlice};
 use str::{Str, StrSlice};
 use str;
 use string::String;
@@ -265,9 +265,6 @@ pub use self::buffered::{BufferedReader, BufferedWriter, BufferedStream,
                          LineBufferedWriter};
 pub use self::comm_adapters::{ChanReader, ChanWriter};
 
-// this comes first to get the iotest! macro
-pub mod test;
-
 mod buffered;
 mod comm_adapters;
 mod mem;
@@ -278,15 +275,15 @@ pub mod fs;
 pub mod net;
 pub mod pipe;
 pub mod process;
-pub mod signal;
 pub mod stdio;
+pub mod test;
 pub mod timer;
 pub mod util;
 
 /// The default buffer size for various I/O operations
 // libuv recommends 64k buffers to maximize throughput
 // https://groups.google.com/forum/#!topic/libuv/oQO1HJAIDdA
-static DEFAULT_BUF_SIZE: uint = 1024 * 64;
+const DEFAULT_BUF_SIZE: uint = 1024 * 64;
 
 /// A convenient typedef of the return value of any I/O action.
 pub type IoResult<T> = Result<T, IoError>;
@@ -578,7 +575,7 @@ pub trait Reader {
         while read < min {
             let mut zeroes = 0;
             loop {
-                match self.read(buf.slice_from_mut(read)) {
+                match self.read(buf[mut read..]) {
                     Ok(0) => {
                         zeroes += 1;
                         if zeroes >= NO_PROGRESS_LIMIT {
@@ -1114,8 +1111,8 @@ pub trait Writer {
     #[inline]
     fn write_char(&mut self, c: char) -> IoResult<()> {
         let mut buf = [0u8, ..4];
-        let n = c.encode_utf8(buf.as_mut_slice()).unwrap_or(0);
-        self.write(buf.slice_to(n))
+        let n = c.encode_utf8(buf[mut]).unwrap_or(0);
+        self.write(buf[..n])
     }
 
     /// Write the result of passing n through `int::to_str_bytes`.
@@ -1296,10 +1293,10 @@ impl<'a> Writer for Box<Writer+'a> {
 
 impl<'a> Writer for &'a mut Writer+'a {
     #[inline]
-    fn write(&mut self, buf: &[u8]) -> IoResult<()> { self.write(buf) }
+    fn write(&mut self, buf: &[u8]) -> IoResult<()> { (**self).write(buf) }
 
     #[inline]
-    fn flush(&mut self) -> IoResult<()> { self.flush() }
+    fn flush(&mut self) -> IoResult<()> { (**self).flush() }
 }
 
 /// A `RefWriter` is a struct implementing `Writer` which contains a reference
@@ -1499,7 +1496,7 @@ pub trait Buffer: Reader {
                 };
                 match available.iter().position(|&b| b == byte) {
                     Some(i) => {
-                        res.push_all(available.slice_to(i + 1));
+                        res.push_all(available[..i + 1]);
                         used = i + 1;
                         break
                     }
@@ -1531,14 +1528,14 @@ pub trait Buffer: Reader {
         {
             let mut start = 1;
             while start < width {
-                match try!(self.read(buf.slice_mut(start, width))) {
+                match try!(self.read(buf[mut start..width])) {
                     n if n == width - start => break,
                     n if n < width - start => { start += n; }
                     _ => return Err(standard_error(InvalidInput)),
                 }
             }
         }
-        match str::from_utf8(buf.slice_to(width)) {
+        match str::from_utf8(buf[..width]) {
             Some(s) => Ok(s.char_at(0)),
             None => Err(standard_error(InvalidInput))
         }
@@ -1806,35 +1803,93 @@ bitflags! {
     #[doc = "A set of permissions for a file or directory is represented"]
     #[doc = "by a set of flags which are or'd together."]
     flags FilePermission: u32 {
-        static UserRead     = 0o400,
-        static UserWrite    = 0o200,
-        static UserExecute  = 0o100,
-        static GroupRead    = 0o040,
-        static GroupWrite   = 0o020,
-        static GroupExecute = 0o010,
-        static OtherRead    = 0o004,
-        static OtherWrite   = 0o002,
-        static OtherExecute = 0o001,
+        const USER_READ     = 0o400,
+        const USER_WRITE    = 0o200,
+        const USER_EXECUTE  = 0o100,
+        const GROUP_READ    = 0o040,
+        const GROUP_WRITE   = 0o020,
+        const GROUP_EXECUTE = 0o010,
+        const OTHER_READ    = 0o004,
+        const OTHER_WRITE   = 0o002,
+        const OTHER_EXECUTE = 0o001,
 
-        static UserRWX  = UserRead.bits | UserWrite.bits | UserExecute.bits,
-        static GroupRWX = GroupRead.bits | GroupWrite.bits | GroupExecute.bits,
-        static OtherRWX = OtherRead.bits | OtherWrite.bits | OtherExecute.bits,
+        const USER_RWX  = USER_READ.bits | USER_WRITE.bits | USER_EXECUTE.bits,
+        const GROUP_RWX = GROUP_READ.bits | GROUP_WRITE.bits | GROUP_EXECUTE.bits,
+        const OTHER_RWX = OTHER_READ.bits | OTHER_WRITE.bits | OTHER_EXECUTE.bits,
 
         #[doc = "Permissions for user owned files, equivalent to 0644 on"]
         #[doc = "unix-like systems."]
-        static UserFile = UserRead.bits | UserWrite.bits | GroupRead.bits | OtherRead.bits,
+        const USER_FILE = USER_READ.bits | USER_WRITE.bits | GROUP_READ.bits | OTHER_READ.bits,
 
         #[doc = "Permissions for user owned directories, equivalent to 0755 on"]
         #[doc = "unix-like systems."]
-        static UserDir  = UserRWX.bits | GroupRead.bits | GroupExecute.bits |
-                   OtherRead.bits | OtherExecute.bits,
+        const USER_DIR  = USER_RWX.bits | GROUP_READ.bits | GROUP_EXECUTE.bits |
+                   OTHER_READ.bits | OTHER_EXECUTE.bits,
 
         #[doc = "Permissions for user owned executables, equivalent to 0755"]
         #[doc = "on unix-like systems."]
-        static UserExec = UserDir.bits,
+        const USER_EXEC = USER_DIR.bits,
 
         #[doc = "All possible permissions enabled."]
-        static AllPermissions = UserRWX.bits | GroupRWX.bits | OtherRWX.bits,
+        const ALL_PERMISSIONS = USER_RWX.bits | GROUP_RWX.bits | OTHER_RWX.bits,
+
+        // Deprecated names
+        #[allow(non_uppercase_statics)]
+        #[deprecated = "use USER_READ instead"]
+        const UserRead     = USER_READ.bits,
+        #[allow(non_uppercase_statics)]
+        #[deprecated = "use USER_WRITE instead"]
+        const UserWrite    = USER_WRITE.bits,
+        #[allow(non_uppercase_statics)]
+        #[deprecated = "use USER_EXECUTE instead"]
+        const UserExecute  = USER_EXECUTE.bits,
+        #[allow(non_uppercase_statics)]
+        #[deprecated = "use GROUP_READ instead"]
+        const GroupRead    = GROUP_READ.bits,
+        #[allow(non_uppercase_statics)]
+        #[deprecated = "use GROUP_WRITE instead"]
+        const GroupWrite   = GROUP_WRITE.bits,
+        #[allow(non_uppercase_statics)]
+        #[deprecated = "use GROUP_EXECUTE instead"]
+        const GroupExecute = GROUP_EXECUTE.bits,
+        #[allow(non_uppercase_statics)]
+        #[deprecated = "use OTHER_READ instead"]
+        const OtherRead    = OTHER_READ.bits,
+        #[allow(non_uppercase_statics)]
+        #[deprecated = "use OTHER_WRITE instead"]
+        const OtherWrite   = OTHER_WRITE.bits,
+        #[allow(non_uppercase_statics)]
+        #[deprecated = "use OTHER_EXECUTE instead"]
+        const OtherExecute = OTHER_EXECUTE.bits,
+
+        #[allow(non_uppercase_statics)]
+        #[deprecated = "use USER_RWX instead"]
+        const UserRWX  = USER_RWX.bits,
+        #[allow(non_uppercase_statics)]
+        #[deprecated = "use GROUP_RWX instead"]
+        const GroupRWX = GROUP_RWX.bits,
+        #[allow(non_uppercase_statics)]
+        #[deprecated = "use OTHER_RWX instead"]
+        const OtherRWX = OTHER_RWX.bits,
+
+        #[doc = "Deprecated: use `USER_FILE` instead."]
+        #[allow(non_uppercase_statics)]
+        #[deprecated = "use USER_FILE instead"]
+        const UserFile = USER_FILE.bits,
+
+        #[doc = "Deprecated: use `USER_DIR` instead."]
+        #[allow(non_uppercase_statics)]
+        #[deprecated = "use USER_DIR instead"]
+        const UserDir  = USER_DIR.bits,
+        #[doc = "Deprecated: use `USER_EXEC` instead."]
+        #[allow(non_uppercase_statics)]
+        #[deprecated = "use USER_EXEC instead"]
+        const UserExec = USER_EXEC.bits,
+
+        #[doc = "Deprecated: use `ALL_PERMISSIONS` instead"]
+        #[allow(non_uppercase_statics)]
+        #[deprecated = "use ALL_PERMISSIONS instead"]
+        const AllPermissions = ALL_PERMISSIONS.bits,
     }
 }
 
@@ -1894,62 +1949,62 @@ mod tests {
                         return Ok(0);
                     }
                 };
-                behavior.shift();
+                behavior.remove(0);
             }
         }
     }
 
     #[test]
     fn test_read_at_least() {
-        let mut r = BadReader::new(MemReader::new(Vec::from_slice(b"hello, world!")),
-                                   Vec::from_slice([GoodBehavior(uint::MAX)]));
+        let mut r = BadReader::new(MemReader::new(b"hello, world!".to_vec()),
+                                   vec![GoodBehavior(uint::MAX)]);
         let mut buf = [0u8, ..5];
         assert!(r.read_at_least(1, buf).unwrap() >= 1);
         assert!(r.read_exact(5).unwrap().len() == 5); // read_exact uses read_at_least
         assert!(r.read_at_least(0, buf).is_ok());
 
-        let mut r = BadReader::new(MemReader::new(Vec::from_slice(b"hello, world!")),
-                                   Vec::from_slice([BadBehavior(50), GoodBehavior(uint::MAX)]));
+        let mut r = BadReader::new(MemReader::new(b"hello, world!".to_vec()),
+                                   vec![BadBehavior(50), GoodBehavior(uint::MAX)]);
         assert!(r.read_at_least(1, buf).unwrap() >= 1);
 
-        let mut r = BadReader::new(MemReader::new(Vec::from_slice(b"hello, world!")),
-                                   Vec::from_slice([BadBehavior(1), GoodBehavior(1),
-                                                    BadBehavior(50), GoodBehavior(uint::MAX)]));
+        let mut r = BadReader::new(MemReader::new(b"hello, world!".to_vec()),
+                                   vec![BadBehavior(1), GoodBehavior(1),
+                                        BadBehavior(50), GoodBehavior(uint::MAX)]);
         assert!(r.read_at_least(1, buf).unwrap() >= 1);
         assert!(r.read_at_least(1, buf).unwrap() >= 1);
 
-        let mut r = BadReader::new(MemReader::new(Vec::from_slice(b"hello, world!")),
-                                   Vec::from_slice([BadBehavior(uint::MAX)]));
+        let mut r = BadReader::new(MemReader::new(b"hello, world!".to_vec()),
+                                   vec![BadBehavior(uint::MAX)]);
         assert_eq!(r.read_at_least(1, buf).unwrap_err().kind, NoProgress);
 
-        let mut r = MemReader::new(Vec::from_slice(b"hello, world!"));
+        let mut r = MemReader::new(b"hello, world!".to_vec());
         assert_eq!(r.read_at_least(5, buf).unwrap(), 5);
         assert_eq!(r.read_at_least(6, buf).unwrap_err().kind, InvalidInput);
     }
 
     #[test]
     fn test_push_at_least() {
-        let mut r = BadReader::new(MemReader::new(Vec::from_slice(b"hello, world!")),
-                                   Vec::from_slice([GoodBehavior(uint::MAX)]));
+        let mut r = BadReader::new(MemReader::new(b"hello, world!".to_vec()),
+                                   vec![GoodBehavior(uint::MAX)]);
         let mut buf = Vec::new();
         assert!(r.push_at_least(1, 5, &mut buf).unwrap() >= 1);
         assert!(r.push_at_least(0, 5, &mut buf).is_ok());
 
-        let mut r = BadReader::new(MemReader::new(Vec::from_slice(b"hello, world!")),
-                                   Vec::from_slice([BadBehavior(50), GoodBehavior(uint::MAX)]));
+        let mut r = BadReader::new(MemReader::new(b"hello, world!".to_vec()),
+                                   vec![BadBehavior(50), GoodBehavior(uint::MAX)]);
         assert!(r.push_at_least(1, 5, &mut buf).unwrap() >= 1);
 
-        let mut r = BadReader::new(MemReader::new(Vec::from_slice(b"hello, world!")),
-                                   Vec::from_slice([BadBehavior(1), GoodBehavior(1),
-                                                    BadBehavior(50), GoodBehavior(uint::MAX)]));
+        let mut r = BadReader::new(MemReader::new(b"hello, world!".to_vec()),
+                                   vec![BadBehavior(1), GoodBehavior(1),
+                                        BadBehavior(50), GoodBehavior(uint::MAX)]);
         assert!(r.push_at_least(1, 5, &mut buf).unwrap() >= 1);
         assert!(r.push_at_least(1, 5, &mut buf).unwrap() >= 1);
 
-        let mut r = BadReader::new(MemReader::new(Vec::from_slice(b"hello, world!")),
-                                   Vec::from_slice([BadBehavior(uint::MAX)]));
+        let mut r = BadReader::new(MemReader::new(b"hello, world!".to_vec()),
+                                   vec![BadBehavior(uint::MAX)]);
         assert_eq!(r.push_at_least(1, 5, &mut buf).unwrap_err().kind, NoProgress);
 
-        let mut r = MemReader::new(Vec::from_slice(b"hello, world!"));
+        let mut r = MemReader::new(b"hello, world!".to_vec());
         assert_eq!(r.push_at_least(5, 1, &mut buf).unwrap_err().kind, InvalidInput);
     }
 
@@ -1957,13 +2012,13 @@ mod tests {
     fn test_show() {
         use super::*;
 
-        assert_eq!(format!("{}", UserRead), "0400".to_string());
-        assert_eq!(format!("{}", UserFile), "0644".to_string());
-        assert_eq!(format!("{}", UserExec), "0755".to_string());
-        assert_eq!(format!("{}", UserRWX),  "0700".to_string());
-        assert_eq!(format!("{}", GroupRWX), "0070".to_string());
-        assert_eq!(format!("{}", OtherRWX), "0007".to_string());
-        assert_eq!(format!("{}", AllPermissions), "0777".to_string());
-        assert_eq!(format!("{}", UserRead | UserWrite | OtherWrite), "0602".to_string());
+        assert_eq!(format!("{}", USER_READ), "0400".to_string());
+        assert_eq!(format!("{}", USER_FILE), "0644".to_string());
+        assert_eq!(format!("{}", USER_EXEC), "0755".to_string());
+        assert_eq!(format!("{}", USER_RWX),  "0700".to_string());
+        assert_eq!(format!("{}", GROUP_RWX), "0070".to_string());
+        assert_eq!(format!("{}", OTHER_RWX), "0007".to_string());
+        assert_eq!(format!("{}", ALL_PERMISSIONS), "0777".to_string());
+        assert_eq!(format!("{}", USER_READ | USER_WRITE | OTHER_WRITE), "0602".to_string());
     }
 }

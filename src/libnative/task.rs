@@ -26,14 +26,14 @@ use std::rt::thread::Thread;
 use std::rt;
 
 use io;
-use task;
 use std::task::{TaskBuilder, Spawner};
 
 /// Creates a new Task which is ready to execute as a 1:1 task.
-pub fn new(stack_bounds: (uint, uint)) -> Box<Task> {
+pub fn new(stack_bounds: (uint, uint), stack_guard: uint) -> Box<Task> {
     let mut task = box Task::new();
     let mut ops = ops();
     ops.stack_bounds = stack_bounds;
+    ops.stack_guard = stack_guard;
     task.put_runtime(ops);
     return task;
 }
@@ -45,56 +45,8 @@ fn ops() -> Box<Ops> {
         io: io::IoFactory::new(),
         // these *should* get overwritten
         stack_bounds: (0, 0),
+        stack_guard: 0
     }
-}
-
-/// Spawns a function with the default configuration
-#[deprecated = "use the native method of NativeTaskBuilder instead"]
-pub fn spawn(f: proc():Send) {
-    spawn_opts(TaskOpts { name: None, stack_size: None, on_exit: None }, f)
-}
-
-/// Spawns a new task given the configuration options and a procedure to run
-/// inside the task.
-#[deprecated = "use the native method of NativeTaskBuilder instead"]
-pub fn spawn_opts(opts: TaskOpts, f: proc():Send) {
-    let TaskOpts { name, stack_size, on_exit } = opts;
-
-    let mut task = box Task::new();
-    task.name = name;
-    task.death.on_exit = on_exit;
-
-    let stack = stack_size.unwrap_or(rt::min_stack());
-    let task = task;
-    let ops = ops();
-
-    // Note that this increment must happen *before* the spawn in order to
-    // guarantee that if this task exits it will always end up waiting for the
-    // spawned task to exit.
-    let token = bookkeeping::increment();
-
-    // Spawning a new OS thread guarantees that __morestack will never get
-    // triggered, but we must manually set up the actual stack bounds once this
-    // function starts executing. This raises the lower limit by a bit because
-    // by the time that this function is executing we've already consumed at
-    // least a little bit of stack (we don't know the exact byte address at
-    // which our stack started).
-    Thread::spawn_stack(stack, proc() {
-        let something_around_the_top_of_the_stack = 1;
-        let addr = &something_around_the_top_of_the_stack as *const int;
-        let my_stack = addr as uint;
-        unsafe {
-            stack::record_os_managed_stack_bounds(my_stack - stack + 1024, my_stack);
-        }
-        let mut ops = ops;
-        ops.stack_bounds = (my_stack - stack + 1024, my_stack);
-
-        let mut f = Some(f);
-        let mut task = task;
-        task.put_runtime(ops);
-        drop(task.run(|| { f.take().unwrap()() }).destroy());
-        drop(token);
-    })
 }
 
 /// A spawner for native tasks
@@ -102,7 +54,45 @@ pub struct NativeSpawner;
 
 impl Spawner for NativeSpawner {
     fn spawn(self, opts: TaskOpts, f: proc():Send) {
-        spawn_opts(opts, f)
+        let TaskOpts { name, stack_size, on_exit } = opts;
+
+        let mut task = box Task::new();
+        task.name = name;
+        task.death.on_exit = on_exit;
+
+        let stack = stack_size.unwrap_or(rt::min_stack());
+        let task = task;
+        let ops = ops();
+
+        // Note that this increment must happen *before* the spawn in order to
+        // guarantee that if this task exits it will always end up waiting for
+        // the spawned task to exit.
+        let token = bookkeeping::increment();
+
+        // Spawning a new OS thread guarantees that __morestack will never get
+        // triggered, but we must manually set up the actual stack bounds once
+        // this function starts executing. This raises the lower limit by a bit
+        // because by the time that this function is executing we've already
+        // consumed at least a little bit of stack (we don't know the exact byte
+        // address at which our stack started).
+        Thread::spawn_stack(stack, proc() {
+            let something_around_the_top_of_the_stack = 1;
+            let addr = &something_around_the_top_of_the_stack as *const int;
+            let my_stack = addr as uint;
+            unsafe {
+                stack::record_os_managed_stack_bounds(my_stack - stack + 1024,
+                                                      my_stack);
+            }
+            let mut ops = ops;
+            ops.stack_guard = rt::thread::current_guard_page();
+            ops.stack_bounds = (my_stack - stack + 1024, my_stack);
+
+            let mut f = Some(f);
+            let mut task = task;
+            task.put_runtime(ops);
+            drop(task.run(|| { f.take().unwrap()() }).destroy());
+            drop(token);
+        })
     }
 }
 
@@ -128,6 +118,8 @@ struct Ops {
     // native tasks necessarily know their precise bounds, hence this is
     // optional.
     stack_bounds: (uint, uint),
+
+    stack_guard: uint
 }
 
 impl rt::Runtime for Ops {
@@ -150,6 +142,14 @@ impl rt::Runtime for Ops {
     }
 
     fn stack_bounds(&self) -> (uint, uint) { self.stack_bounds }
+
+    fn stack_guard(&self) -> Option<uint> {
+        if self.stack_guard != 0 {
+            Some(self.stack_guard)
+        } else {
+            None
+        }
+    }
 
     fn can_block(&self) -> bool { true }
 
@@ -270,7 +270,7 @@ impl rt::Runtime for Ops {
         cur_task.put_runtime(self);
         Local::put(cur_task);
 
-        task::spawn_opts(opts, f);
+        NativeSpawner.spawn(opts, f);
     }
 
     fn local_io<'a>(&'a mut self) -> Option<rtio::LocalIo<'a>> {
@@ -283,8 +283,9 @@ mod tests {
     use std::rt::local::Local;
     use std::rt::task::{Task, TaskOpts};
     use std::task;
-    use std::task::TaskBuilder;
-    use super::{spawn, spawn_opts, Ops, NativeTaskBuilder};
+    use std::task::{TaskBuilder, Spawner};
+
+    use super::{Ops, NativeTaskBuilder, NativeSpawner};
 
     #[test]
     fn smoke() {
@@ -312,7 +313,7 @@ mod tests {
         opts.stack_size = Some(20 * 4096);
         let (tx, rx) = channel();
         opts.on_exit = Some(proc(r) tx.send(r));
-        spawn_opts(opts, proc() {});
+        NativeSpawner.spawn(opts, proc() {});
         assert!(rx.recv().is_ok());
     }
 
@@ -321,7 +322,7 @@ mod tests {
         let mut opts = TaskOpts::new();
         let (tx, rx) = channel();
         opts.on_exit = Some(proc(r) tx.send(r));
-        spawn_opts(opts, proc() { fail!() });
+        NativeSpawner.spawn(opts, proc() { fail!() });
         assert!(rx.recv().is_err());
     }
 
@@ -357,7 +358,7 @@ mod tests {
     #[test]
     fn spawn_inherits() {
         let (tx, rx) = channel();
-        spawn(proc() {
+        TaskBuilder::new().spawner(NativeSpawner).spawn(proc() {
             spawn(proc() {
                 let mut task: Box<Task> = Local::take();
                 match task.maybe_take_runtime::<Ops>() {

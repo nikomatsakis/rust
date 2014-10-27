@@ -96,6 +96,7 @@ pub fn path_to_string<PI: Iterator<PathElem>>(mut path: PI) -> String {
     }).to_string()
 }
 
+#[deriving(Show)]
 pub enum Node<'ast> {
     NodeItem(&'ast Item),
     NodeForeignItem(&'ast ForeignItem),
@@ -387,7 +388,7 @@ impl<'ast> Map<'ast> {
                                 PathName(ident.name)
                             }
                             MethMac(_) => {
-                                fail!("no path elem for {:?}", node)
+                                fail!("no path elem for {}", node)
                             }
                         }
                     }
@@ -401,13 +402,13 @@ impl<'ast> Map<'ast> {
                         MethDecl(ident, _, _, _, _, _, _, _) => {
                             PathName(ident.name)
                         }
-                        MethMac(_) => fail!("no path elem for {:?}", node),
+                        MethMac(_) => fail!("no path elem for {}", node),
                     }
                 }
                 TypeTraitItem(ref m) => PathName(m.ident.name),
             },
             NodeVariant(v) => PathName(v.node.name.name),
-            _ => fail!("no path elem for {:?}", node)
+            _ => fail!("no path elem for {}", node)
         }
     }
 
@@ -496,7 +497,7 @@ impl<'ast> Map<'ast> {
         NodesMatchingSuffix {
             map: self,
             item_name: parts.last().unwrap(),
-            in_which: parts.slice_to(parts.len() - 1),
+            in_which: parts[..parts.len() - 1],
             idx: 0,
         }
     }
@@ -533,6 +534,14 @@ impl<'ast> Map<'ast> {
     pub fn span(&self, id: NodeId) -> Span {
         self.opt_span(id)
             .unwrap_or_else(|| fail!("AstMap.span: could not find span for id {}", id))
+    }
+
+    pub fn def_id_span(&self, def_id: DefId, fallback: Span) -> Span {
+        if def_id.krate == LOCAL_CRATE {
+            self.span(def_id.node)
+        } else {
+            fallback
+        }
     }
 
     pub fn node_to_string(&self, id: NodeId) -> String {
@@ -698,8 +707,12 @@ struct NodeCollector<'ast> {
 
 impl<'ast> NodeCollector<'ast> {
     fn insert_entry(&mut self, id: NodeId, entry: MapEntry<'ast>) {
-        self.map.grow_set(id as uint, &NotPresent, entry);
         debug!("ast_map: {} => {}", id, entry);
+        let len = self.map.len();
+        if id as uint >= len {
+            self.map.grow(id as uint - len + 1, NotPresent);
+        }
+        *self.map.get_mut(id as uint) = entry;
     }
 
     fn insert(&mut self, id: NodeId, node: Node<'ast>) {
@@ -1018,6 +1031,7 @@ fn node_id_to_string(map: &Map, id: NodeId) -> String {
             let path_str = map.path_to_str_with_ident(id, item.ident);
             let item_str = match item.node {
                 ItemStatic(..) => "static",
+                ItemConst(..) => "const",
                 ItemFn(..) => "fn",
                 ItemMod(..) => "mod",
                 ItemForeignMod(..) => "foreign mod",

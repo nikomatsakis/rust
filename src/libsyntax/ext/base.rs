@@ -463,6 +463,7 @@ pub struct ExtCtxt<'a> {
     pub exported_macros: Vec<P<ast::Item>>,
 
     pub syntax_env: SyntaxEnv,
+    pub recursion_count: uint,
 }
 
 impl<'a> ExtCtxt<'a> {
@@ -478,6 +479,7 @@ impl<'a> ExtCtxt<'a> {
             trace_mac: false,
             exported_macros: Vec::new(),
             syntax_env: env,
+            recursion_count: 0,
         }
     }
 
@@ -493,7 +495,7 @@ impl<'a> ExtCtxt<'a> {
 
     pub fn new_parser_from_tts(&self, tts: &[ast::TokenTree])
         -> parser::Parser<'a> {
-        parse::tts_to_parser(self.parse_sess, Vec::from_slice(tts), self.cfg())
+        parse::tts_to_parser(self.parse_sess, tts.to_vec(), self.cfg())
     }
 
     pub fn codemap(&self) -> &'a CodeMap { &self.parse_sess.span_diagnostic.cm }
@@ -552,6 +554,13 @@ impl<'a> ExtCtxt<'a> {
         return v;
     }
     pub fn bt_push(&mut self, ei: ExpnInfo) {
+        self.recursion_count += 1;
+        if self.recursion_count > self.ecfg.recursion_limit {
+            self.span_fatal(ei.call_site,
+                            format!("recursion limit reached while expanding the macro `{}`",
+                                    ei.callee.name).as_slice());
+        }
+
         let mut call_site = ei.call_site;
         call_site.expn_id = self.backtrace;
         self.backtrace = self.codemap().record_expansion(ExpnInfo {
@@ -563,6 +572,7 @@ impl<'a> ExtCtxt<'a> {
         match self.backtrace {
             NO_EXPANSION => self.bug("tried to pop without a push"),
             expn_id => {
+                self.recursion_count -= 1;
                 self.backtrace = self.codemap().with_expn_info(expn_id, |expn_info| {
                     expn_info.map_or(NO_EXPANSION, |ei| ei.call_site.expn_id)
                 });
@@ -609,6 +619,10 @@ impl<'a> ExtCtxt<'a> {
     pub fn span_note(&self, sp: Span, msg: &str) {
         self.print_backtrace();
         self.parse_sess.span_diagnostic.span_note(sp, msg);
+    }
+    pub fn span_help(&self, sp: Span, msg: &str) {
+        self.print_backtrace();
+        self.parse_sess.span_diagnostic.span_help(sp, msg);
     }
     pub fn bug(&self, msg: &str) -> ! {
         self.print_backtrace();

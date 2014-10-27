@@ -154,10 +154,10 @@ pub enum CrateType {
 
 macro_rules! debugging_opts(
     ([ $opt:ident ] $cnt:expr ) => (
-        pub static $opt: u64 = 1 << $cnt;
+        pub const $opt: u64 = 1 << $cnt;
     );
     ([ $opt:ident, $($rest:ident),* ] $cnt:expr ) => (
-        pub static $opt: u64 = 1 << $cnt;
+        pub const $opt: u64 = 1 << $cnt;
         debugging_opts!([ $($rest),* ] $cnt + 1)
     )
 )
@@ -268,7 +268,7 @@ macro_rules! cgoptions(
     }
 
     pub type CodegenSetter = fn(&mut CodegenOptions, v: Option<&str>) -> bool;
-    pub static CG_OPTIONS: &'static [(&'static str, CodegenSetter,
+    pub const CG_OPTIONS: &'static [(&'static str, CodegenSetter,
                                       &'static str)] =
         &[ $( (stringify!($opt), cgsetters::$opt, $desc) ),* ];
 
@@ -390,6 +390,8 @@ cgoptions!(
         "divide crate into N units to optimize in parallel"),
     remark: Passes = (SomePasses(Vec::new()), parse_passes,
         "print remarks for these optimization passes (space separated, or \"all\")"),
+    no_stack_check: bool = (false, parse_bool,
+        "disable checks for stack exhaustion (a memory-safety hazard!)"),
 )
 
 pub fn build_codegen_options(matches: &getopts::Matches) -> CodegenOptions
@@ -485,7 +487,9 @@ pub fn build_configuration(sess: &Session) -> ast::CrateConfig {
     if sess.opts.test {
         append_configuration(&mut user_cfg, InternedString::new("test"))
     }
-    user_cfg.into_iter().collect::<Vec<_>>().append(default_cfg.as_slice())
+    let mut v = user_cfg.into_iter().collect::<Vec<_>>();
+    v.push_all(default_cfg.as_slice());
+    v
 }
 
 pub fn get_os(triple: &str) -> Option<abi::Os> {
@@ -494,6 +498,7 @@ pub fn get_os(triple: &str) -> Option<abi::Os> {
     }
     None
 }
+#[allow(non_uppercase_statics)]
 static os_names : &'static [(&'static str, abi::Os)] = &[
     ("mingw32",   abi::OsWindows),
     ("win32",     abi::OsWindows),
@@ -511,6 +516,7 @@ pub fn get_arch(triple: &str) -> Option<abi::Architecture> {
     }
     None
 }
+#[allow(non_uppercase_statics)]
 static architecture_abis : &'static [(&'static str, abi::Architecture)] = &[
     ("i386",   abi::X86),
     ("i486",   abi::X86),
@@ -628,7 +634,7 @@ pub fn optgroups() -> Vec<getopts::OptGroup> {
 
 
 // Convert strings provided as --cfg [cfgspec] into a crate_cfg
-fn parse_cfgspecs(cfgspecs: Vec<String> ) -> ast::CrateConfig {
+pub fn parse_cfgspecs(cfgspecs: Vec<String> ) -> ast::CrateConfig {
     cfgspecs.into_iter().map(|s| {
         parse::parse_meta_from_source_str("cfgspec".to_string(),
                                           s.to_string(),
@@ -774,7 +780,20 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
         early_warn("the --crate-file-name argument has been renamed to \
                     --print-file-name");
     }
-    let cg = build_codegen_options(matches);
+
+    let mut cg = build_codegen_options(matches);
+
+    if cg.codegen_units == 0 {
+        match opt_level {
+            // `-C lto` doesn't work with multiple codegen units.
+            _ if cg.lto => cg.codegen_units = 1,
+
+            No | Less => cg.codegen_units = 2,
+            Default | Aggressive => cg.codegen_units = 1,
+        }
+    }
+    let cg = cg;
+
 
     if !cg.remark.is_empty() && debuginfo == NoDebugInfo {
         early_warn("-C remark will not show source locations without --debuginfo");

@@ -28,7 +28,7 @@ use super::util;
 #[cfg(unix)] use io::helper_thread::Helper;
 
 #[cfg(unix)]
-helper_init!(static mut HELPER: Helper<Req>)
+helper_init!(static HELPER: Helper<Req>)
 
 /**
  * A value representing a child process.
@@ -350,8 +350,8 @@ fn spawn_process_os(cfg: ProcessConfig,
                         lpSecurityDescriptor: ptr::null_mut(),
                         bInheritHandle: 1,
                     };
-                    let filename: Vec<u16> = "NUL".utf16_units().collect();
-                    let filename = filename.append_one(0);
+                    let mut filename: Vec<u16> = "NUL".utf16_units().collect();
+                    filename.push(0);
                     *slot = libc::CreateFileW(filename.as_ptr(),
                                               access,
                                               libc::FILE_SHARE_READ |
@@ -396,7 +396,7 @@ fn spawn_process_os(cfg: ProcessConfig,
         with_envp(cfg.env, |envp| {
             with_dirp(cfg.cwd, |dirp| {
                 let mut cmd_str: Vec<u16> = cmd_str.as_slice().utf16_units().collect();
-                cmd_str = cmd_str.append_one(0);
+                cmd_str.push(0);
                 let created = CreateProcessW(ptr::null(),
                                              cmd_str.as_mut_ptr(),
                                              ptr::null_mut(),
@@ -473,7 +473,7 @@ fn make_command_line(prog: &CString, args: &[CString]) -> String {
     append_arg(&mut cmd, prog.as_str()
                              .expect("expected program name to be utf-8 encoded"));
     for arg in args.iter() {
-        cmd.push_char(' ');
+        cmd.push(' ');
         append_arg(&mut cmd, arg.as_str()
                                 .expect("expected argument to be utf-8 encoded"));
     }
@@ -485,19 +485,19 @@ fn make_command_line(prog: &CString, args: &[CString]) -> String {
         // it will be dropped entirely when parsed on the other end.
         let quote = arg.chars().any(|c| c == ' ' || c == '\t') || arg.len() == 0;
         if quote {
-            cmd.push_char('"');
+            cmd.push('"');
         }
         let argvec: Vec<char> = arg.chars().collect();
         for i in range(0u, argvec.len()) {
-            append_char_at(cmd, &argvec, i);
+            append_char_at(cmd, argvec.as_slice(), i);
         }
         if quote {
-            cmd.push_char('"');
+            cmd.push('"');
         }
     }
 
-    fn append_char_at(cmd: &mut String, arg: &Vec<char>, i: uint) {
-        match *arg.get(i) {
+    fn append_char_at(cmd: &mut String, arg: &[char], i: uint) {
+        match arg[i] {
             '"' => {
                 // Escape quotes.
                 cmd.push_str("\\\"");
@@ -508,20 +508,20 @@ fn make_command_line(prog: &CString, args: &[CString]) -> String {
                     cmd.push_str("\\\\");
                 } else {
                     // Pass other backslashes through unescaped.
-                    cmd.push_char('\\');
+                    cmd.push('\\');
                 }
             }
             c => {
-                cmd.push_char(c);
+                cmd.push(c);
             }
         }
     }
 
-    fn backslash_run_ends_in_quote(s: &Vec<char>, mut i: uint) -> bool {
-        while i < s.len() && *s.get(i) == '\\' {
+    fn backslash_run_ends_in_quote(s: &[char], mut i: uint) -> bool {
+        while i < s.len() && s[i] == '\\' {
             i += 1;
         }
-        return i < s.len() && *s.get(i) == '"';
+        return i < s.len() && s[i] == '"';
     }
 }
 
@@ -583,10 +583,11 @@ fn spawn_process_os(cfg: ProcessConfig,
                 let mut bytes = [0, ..4];
                 return match input.inner_read(bytes) {
                     Ok(4) => {
-                        let errno = (bytes[0] << 24) as i32 |
-                                    (bytes[1] << 16) as i32 |
-                                    (bytes[2] <<  8) as i32 |
-                                    (bytes[3] <<  0) as i32;
+                        let errno = (bytes[0] as i32 << 24) |
+                                    (bytes[1] as i32 << 16) |
+                                    (bytes[2] as i32 <<  8) |
+                                    (bytes[3] as i32 <<  0);
+
                         Err(IoError {
                             code: errno as uint,
                             detail: None,
@@ -637,10 +638,10 @@ fn spawn_process_os(cfg: ProcessConfig,
             fn fail(output: &mut file::FileDesc) -> ! {
                 let errno = os::errno();
                 let bytes = [
-                    (errno << 24) as u8,
-                    (errno << 16) as u8,
-                    (errno <<  8) as u8,
-                    (errno <<  0) as u8,
+                    (errno >> 24) as u8,
+                    (errno >> 16) as u8,
+                    (errno >>  8) as u8,
+                    (errno >>  0) as u8,
                 ];
                 assert!(output.inner_write(bytes).is_ok());
                 unsafe { libc::_exit(1) }
@@ -816,9 +817,8 @@ fn with_dirp<T>(d: Option<&CString>, cb: |*const u16| -> T) -> T {
       Some(dir) => {
           let dir_str = dir.as_str()
                            .expect("expected workingdirectory to be utf-8 encoded");
-          let dir_str: Vec<u16> = dir_str.utf16_units().collect();
-          let dir_str = dir_str.append_one(0);
-
+          let mut dir_str: Vec<u16> = dir_str.utf16_units().collect();
+          dir_str.push(0);
           cb(dir_str.as_ptr())
       },
       None => cb(ptr::null())
@@ -987,7 +987,7 @@ fn waitpid(pid: pid_t, deadline: u64) -> IoResult<rtio::ProcessExit> {
     // The actual communication between the helper thread and this thread is
     // quite simple, just a channel moving data around.
 
-    unsafe { HELPER.boot(register_sigchld, waitpid_helper) }
+    HELPER.boot(register_sigchld, waitpid_helper);
 
     match waitpid_nowait(pid) {
         Some(ret) => return Ok(ret),
@@ -995,7 +995,7 @@ fn waitpid(pid: pid_t, deadline: u64) -> IoResult<rtio::ProcessExit> {
     }
 
     let (tx, rx) = channel();
-    unsafe { HELPER.send(NewChild(pid, tx, deadline)); }
+    HELPER.send(NewChild(pid, tx, deadline));
     return match rx.recv_opt() {
         Ok(e) => Ok(e),
         Err(()) => Err(util::timeout("wait timed out")),

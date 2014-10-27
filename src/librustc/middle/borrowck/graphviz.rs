@@ -91,14 +91,15 @@ impl<'a, 'tcx> DataflowLabeller<'a, 'tcx> {
             saw_some = true;
             true
         });
-        set.append("}")
+        set.push_str("}");
+        set
     }
 
     fn dataflow_loans_for(&self, e: EntryOrExit, cfgidx: CFGIndex) -> String {
         let dfcx = &self.analysis_data.loans;
         let loan_index_to_path = |loan_index| {
             let all_loans = &self.analysis_data.all_loans;
-            all_loans.get(loan_index).loan_path()
+            all_loans[loan_index].loan_path()
         };
         self.build_set(e, cfgidx, dfcx, loan_index_to_path)
     }
@@ -108,7 +109,7 @@ impl<'a, 'tcx> DataflowLabeller<'a, 'tcx> {
         let move_index_to_path = |move_index| {
             let move_data = &self.analysis_data.move_data.move_data;
             let moves = move_data.moves.borrow();
-            let the_move = moves.get(move_index);
+            let the_move = &(*moves)[move_index];
             move_data.path_loan_path(the_move.path)
         };
         self.build_set(e, cfgidx, dfcx, move_index_to_path)
@@ -119,7 +120,7 @@ impl<'a, 'tcx> DataflowLabeller<'a, 'tcx> {
         let assign_index_to_path = |assign_index| {
             let move_data = &self.analysis_data.move_data.move_data;
             let assignments = move_data.var_assignments.borrow();
-            let assignment = assignments.get(assign_index);
+            let assignment = &(*assignments)[assign_index];
             move_data.path_loan_path(assignment.path)
         };
         self.build_set(e, cfgidx, dfcx, assign_index_to_path)
@@ -141,8 +142,8 @@ impl<'a, 'tcx> dot::Labeller<'a, Node<'a>, Edge<'a>> for DataflowLabeller<'a, 't
 }
 
 impl<'a, 'tcx> dot::GraphWalk<'a, Node<'a>, Edge<'a>> for DataflowLabeller<'a, 'tcx> {
-    fn nodes(&self) -> dot::Nodes<'a, Node<'a>> { self.inner.nodes() }
-    fn edges(&self) -> dot::Edges<'a, Edge<'a>> { self.inner.edges() }
-    fn source(&self, edge: &Edge<'a>) -> Node<'a> { self.inner.source(edge) }
-    fn target(&self, edge: &Edge<'a>) -> Node<'a> { self.inner.target(edge) }
+    fn nodes(&'a self) -> dot::Nodes<'a, Node<'a>> { self.inner.nodes() }
+    fn edges(&'a self) -> dot::Edges<'a, Edge<'a>> { self.inner.edges() }
+    fn source(&'a self, edge: &Edge<'a>) -> Node<'a> { self.inner.source(edge) }
+    fn target(&'a self, edge: &Edge<'a>) -> Node<'a> { self.inner.target(edge) }
 }

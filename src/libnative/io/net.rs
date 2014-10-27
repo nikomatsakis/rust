@@ -1012,7 +1012,7 @@ pub fn write<T>(fd: sock_t,
             // Also as with read(), we use MSG_DONTWAIT to guard ourselves
             // against unforeseen circumstances.
             let _guard = lock();
-            let ptr = buf.slice_from(written).as_ptr();
+            let ptr = buf[written..].as_ptr();
             let len = buf.len() - written;
             match retry(|| write(deadline.is_some(), ptr, len)) {
                 -1 if util::wouldblock() => {}
@@ -1063,7 +1063,7 @@ mod os {
         unsafe {
             use std::rt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
             static mut INITIALIZED: bool = false;
-            static mut LOCK: StaticNativeMutex = NATIVE_MUTEX_INIT;
+            static LOCK: StaticNativeMutex = NATIVE_MUTEX_INIT;
 
             let _guard = LOCK.lock();
             if !INITIALIZED {
