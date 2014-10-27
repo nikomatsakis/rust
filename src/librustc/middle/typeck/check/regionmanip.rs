@@ -20,39 +20,6 @@ use util::ppaux::Repr;
 
 // Helper functions related to manipulating region types.
 
-<<<<<<< variant A
-pub fn replace_late_bound_regions<T>(
-    tcx: &ty::ctxt,
-    binder_id: ast::NodeId,
-    value: &T,
-    map_fn: |ty::BoundRegion| -> ty::Region)
-    -> (HashMap<ty::BoundRegion,ty::Region>, T)
-    where T : TypeFoldable + Repr
-{
-    debug!("replace_late_bound_regions(binder_id={}, value={})",
-           binder_id, value.repr(tcx));
-
-    let mut map = HashMap::new();
-    let new_value = {
-        let mut folder = ty_fold::RegionFolder::regions(tcx, |r| {
-            match r {
-                ty::ReLateBound(s, br) if s == binder_id => {
-                    match map.entry(br) {
-                        Vacant(entry) => *entry.set(map_fn(br)),
-                        Occupied(entry) => *entry.into_mut(),
-                    }
-                }
-                _ => r
-            }
-        });
-        value.fold_with(&mut folder)
-    };
-    debug!("resulting map: {}", map);
-    (map, new_value)
-}
-
->>>>>>> variant B
-======= end
 pub enum WfConstraint {
     RegionSubRegionConstraint(Option<ty::t>, ty::Region, ty::Region),
     RegionSubParamConstraint(Option<ty::t>, ty::Region, ty::ParamTy),

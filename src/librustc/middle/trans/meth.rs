@@ -40,6 +40,7 @@ use std::rc::Rc;
 use syntax::abi::{Rust, RustCall};
 use syntax::parse::token;
 use syntax::{ast, ast_map, attr, visit};
+use syntax::ast::DUMMY_NODE_ID;
 use syntax::ast_util::PostExpansionMethod;
 use syntax::codemap::DUMMY_SP;
 

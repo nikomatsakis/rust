@@ -53,7 +53,6 @@ struct LifetimeContext<'a> {
     scope: Scope<'a>
 }
 
-#[deriving(Show)]
 enum ScopeChain<'a> {
     /// EarlyScope(i, ['a, 'b, ...], s) extends s with early-bound
     /// lifetimes, assigning indexes 'a => i, 'b => i+1, ... etc.

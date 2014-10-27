@@ -1647,7 +1647,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
         let closure_sig = &closure_type.sig;
 
-        let arguments_tuple = new_signature.inputs[0];
+        let arguments_tuple = closure_sig.inputs[0];
         let trait_ref = Rc::new(ty::TraitRef {
             binder_id: closure_sig.binder_id,
             def_id: obligation.trait_ref.def_id,
