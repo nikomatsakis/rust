@@ -479,6 +479,7 @@ pub fn super_fold_trait_ref<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
                                                        t: &ty::TraitRef)
                                                        -> ty::TraitRef {
     ty::TraitRef {
+        binder_id: t.binder_id,
         def_id: t.def_id,
         substs: t.substs.fold_with(this),
     }

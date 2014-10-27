@@ -607,6 +607,7 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
         // argument type like `&Trait`.
         let rcvr_substs = substs.with_self_ty(self_ty);
         let trait_ref = Rc::new(TraitRef {
+            binder_id: ,
             def_id: did,
             substs: rcvr_substs.clone()
         });

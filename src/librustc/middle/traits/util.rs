@@ -243,6 +243,7 @@ pub fn trait_ref_for_builtin_bound(
     match tcx.lang_items.from_builtin_kind(builtin_bound) {
         Ok(def_id) => {
             Some(Rc::new(ty::TraitRef {
+                binder_id: ,
                 def_id: def_id,
                 substs: Substs::empty().with_self_ty(param_ty)
             }))

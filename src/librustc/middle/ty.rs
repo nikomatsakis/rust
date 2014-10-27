@@ -968,13 +968,14 @@ pub enum sty {
 
 #[deriving(Clone, PartialEq, Eq, Hash, Show)]
 pub struct TyTrait {
-    pub def_id: DefId,
-    pub substs: Substs,
+    // Principal trait reference.
+    pub principal: TraitRef,
     pub bounds: ExistentialBounds
 }
 
 #[deriving(PartialEq, Eq, Hash, Show)]
 pub struct TraitRef {
+    pub binder_id: ast::NodeId,
     pub def_id: DefId,
     pub substs: Substs,
 }
@@ -1247,8 +1248,12 @@ impl Generics {
 }
 
 impl TraitRef {
-    pub fn new(def_id: ast::DefId, substs: Substs) -> TraitRef {
-        TraitRef { def_id: def_id, substs: substs }
+    pub fn new(binder_id: ast::NodeId,
+               def_id: DefId,
+               substs: Substs)
+               -> TraitRef
+    {
+        TraitRef { binder_id: binder_id, def_id: def_id, substs: substs }
     }
 
     pub fn self_ty(&self) -> ty::t {

@@ -149,13 +149,14 @@ pub fn register_object_cast_obligations(fcx: &FnCtxt,
     // Take the type parameters from the object type, but set
     // the Self type (which is unknown, for the object type)
     // to be the type we are casting from.
-    let mut object_substs = object_trait.substs.clone();
+    let mut object_substs = object_trait.principal.substs.clone();
     assert!(object_substs.self_ty().is_none());
     object_substs.types.push(SelfSpace, referent_ty);
 
     // Create the obligation for casting from T to Trait.
     let object_trait_ref =
-        Rc::new(ty::TraitRef { def_id: object_trait.def_id,
+        Rc::new(ty::TraitRef { binder_id: object_trait.principal.binder_id,
+                               def_id: object_trait.principal.def_id,
                                substs: object_substs });
     let object_obligation =
         Obligation::new(
