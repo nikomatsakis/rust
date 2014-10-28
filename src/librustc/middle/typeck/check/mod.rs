@@ -144,6 +144,7 @@ pub mod regionmanip;
 pub mod regionck;
 pub mod demand;
 pub mod method;
+pub mod method2;
 pub mod wf;
 
 /// Fields that are part of a `FnCtxt` which are inherited by

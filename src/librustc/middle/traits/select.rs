@@ -235,8 +235,8 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     }
 
     pub fn evaluate_obligation_intracrate(&mut self,
-                                            obligation: &Obligation)
-                                            -> bool
+                                          obligation: &Obligation)
+                                          -> bool
     {
         /*!
          * Evaluates whether the obligation `obligation` can be
