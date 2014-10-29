@@ -24,6 +24,8 @@ use syntax::codemap::{Span, DUMMY_SP};
 pub use self::fulfill::FulfillmentContext;
 pub use self::select::SelectionContext;
 pub use self::select::SelectionCache;
+pub use self::select::{MethodMatchResult, MethodMatched, MethodAmbiguous, MethodDidNotMatch};
+pub use self::select::{MethodMatchedData}; // intentionally don't export variants
 pub use self::util::elaborate_trait_ref;
 pub use self::util::elaborate_trait_refs;
 pub use self::util::elaborate_predicates;

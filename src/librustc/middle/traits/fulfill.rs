@@ -254,7 +254,7 @@ impl FulfillmentContext {
             // registering any nested obligations for the future.
             for selection in selections.into_iter() {
                 selection.map_move_nested(
-                    |o| self.register_obligation(infcx, o));
+                    |o| self.register_obligation(tcx, o));
             }
         }
 

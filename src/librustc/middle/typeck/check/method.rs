@@ -381,7 +381,7 @@ struct Candidate {
 // we'll construct a normal candidate from that. There is no deep
 // reason for this, the code just worked out a bit cleaner.
 struct ExtensionCandidate {
-    obligation: traits::Obligation,
+    obligation: traits::TraitObligation,
     xform_self_ty: ty::t,
     method_ty: Rc<ty::Method>,
     method_num: uint,
@@ -541,21 +541,6 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
         });
     }
 
-    fn push_extension_candidate(&mut self, trait_did: DefId) {
-        ty::populate_implementations_for_trait_if_necessary(self.tcx(), trait_did);
-
-        // Look for explicit implementations.
-        let impl_items = self.tcx().impl_items.borrow();
-        for impl_infos in self.tcx().trait_impls.borrow().find(&trait_did).iter() {
-            for impl_did in impl_infos.borrow().iter() {
-                let items = impl_items.get(impl_did);
-                self.push_candidates_from_impl(*impl_did,
-                                               items.as_slice(),
-                                               true);
-            }
-        }
-    }
-
     fn push_extension_candidates(&mut self, expr_id: ast::NodeId) {
         debug!("push_extension_candidates(expr_id={})", expr_id);
 
@@ -610,7 +595,9 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
         let trait_ref =
             Rc::new(ty::TraitRef::new(trait_def_id, substs));
         let obligation =
-            traits::Obligation::misc(self.span, trait_ref);
+            traits::Obligation::misc(self.span, trait_ref, traits::ObligationCause::misc(
+                trait_def_id, self.span
+            ));
 
         debug!("extension-candidate(xform_self_ty={} obligation={})",
                self.infcx().ty_to_string(xform_self_ty),

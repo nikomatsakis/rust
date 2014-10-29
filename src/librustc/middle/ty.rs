@@ -2864,8 +2864,6 @@ pub enum Representability {
     SelfRecursive,
 }
 
-/// Check whether a type is representable. This means it cannot contain unboxed
-/// structural recursion. This check is needed for structs and enums.
 pub fn is_type_representable(cx: &ctxt, sp: Span, ty: t) -> Representability {
 
     // Iterate until something non-representable is found
@@ -2874,27 +2872,6 @@ pub fn is_type_representable(cx: &ctxt, sp: Span, ty: t) -> Representability {
         iter.fold(Representable,
                   |r, ty| cmp::max(r, is_type_structurally_recursive(cx, sp, seen, ty)))
     }
-
-    // Does the type `ty` directly (without indirection through a pointer)
-    // contain any types on stack `seen`?
-    fn type_structurally_recursive(cx: &ctxt, sp: Span, seen: &mut Vec<DefId>,
-                                   ty: t) -> Representability {
-        debug!("type_structurally_recursive: {}",
-               ::util::ppaux::ty_to_string(cx, ty));
-
-        // Compare current type to previously seen types
-        match get(ty).sty {
-            ty_struct(did, _) |
-            ty_enum(did, _) => {
-                for (i, &seen_did) in seen.iter().enumerate() {
-                    if did == seen_did {
-                        return if i == 0 { SelfRecursive }
-                               else { ContainsRecursive }
-                    }
-                }
-            }
-            _ => (),
-        }
 
     fn are_inner_types_recursive(cx: &ctxt, sp: Span,
                                  seen: &mut Vec<t>, ty: t) -> Representability {
@@ -5542,4 +5519,4 @@ impl Repr for OutlivesPredicateKind {
             RegionOutlivesPredicate(b, a) => format!("({} : {})", b.repr(tcx), a.repr(tcx)),
         }
     }
-}}
+}

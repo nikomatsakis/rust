@@ -1622,11 +1622,6 @@ impl<'a, 'tcx> ErrorReportingHelpers for InferCtxt<'a, 'tcx> {
                              does not outlive the data it points at",
                             self.ty_to_string(ty)).as_slice());
             }
-            infer::RelateParamBound(span, param_ty, t) => {
-                self.tcx.sess.span_note(
-                    span,
-                    "...so that the value can be stored in managed memory.");
-            }
             infer::RelateParamBound(span, t) => {
                 self.tcx.sess.span_note(
                     span,

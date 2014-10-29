@@ -558,44 +558,6 @@ pub fn ast_ty_to_builtin_ty<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
                               "not enough type parameters supplied to `Box<T>`");
                     Some(ty::mk_err())
                 }
-                def::DefTy(did, _) | def::DefStruct(did)
-                        if Some(did) == this.tcx().lang_items.gc() => {
-                    if path.segments
-                           .iter()
-                           .flat_map(|s| s.types.iter())
-                           .count() > 1 {
-                        span_err!(this.tcx().sess, path.span, E0048,
-                                  "`Gc` has only one type parameter");
-                    }
-
-                    for inner_ast_type in path.segments
-                                              .iter()
-                                              .flat_map(|s| s.types.iter()) {
-                        return Some(mk_pointer(this,
-                                               rscope,
-                                               ast::MutImmutable,
-                                               &**inner_ast_type,
-                                               Box,
-                                               |typ| {
-                            match ty::get(typ).sty {
-                                ty::ty_str => {
-                                    span_err!(this.tcx().sess, path.span, E0114,
-                                              "`Gc<str>` is not a type");
-                                    ty::mk_err()
-                                }
-                                ty::ty_vec(_, None) => {
-                                    span_err!(this.tcx().sess, path.span, E0115,
-                                              "`Gc<[T]>` is not a type");
-                                    ty::mk_err()
-                                }
-                                _ => ty::mk_box(this.tcx(), typ),
-                            }
-                        }))
-                    }
-                    this.tcx().sess.span_bug(path.span,
-                                             "not enough type parameters \
-                                              supplied to `Gc<T>`")
-                }
                 _ => None
             }
         }

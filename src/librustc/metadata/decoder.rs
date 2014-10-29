@@ -1405,7 +1405,7 @@ fn doc_generics(base_doc: rbml::Doc,
         true
     });
 
-    ty::Generics { types: types, regions: regions }
+    ty::Generics { types: types, regions: regions, predicates: fail!("NYI") }
 }
 
 pub fn is_associated_type(cdata: Cmd, id: ast::NodeId) -> bool {
@@ -1415,4 +1415,3 @@ pub fn is_associated_type(cdata: Cmd, id: ast::NodeId) -> bool {
         Some(item) => item_sort(item) == 't',
     }
 }
-

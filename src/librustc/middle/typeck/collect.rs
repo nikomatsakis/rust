@@ -1954,7 +1954,7 @@ fn ty_generics<'tcx,AC>(this: &AC,
         result.types.push(space, def);
 
         // Add bounds to the predicate list.
-        let param_ty = ty::mk_param(space, i, local_def(param.id));
+        let param_ty = ty::mk_param(this.tcx(), space, i, local_def(param.id));
         push_type_predicates(this, &mut result, param_ty, param.bounds.as_slice());
 
         add_unsized_bound(this, &mut result, &param.unbound, "type parameter", param.span);
@@ -1975,12 +1975,12 @@ fn ty_generics<'tcx,AC>(this: &AC,
     // Finally, convert the predicates.
     for predicate in where_clause.predicates {
         match predicate.kind {
-            TypePredicate(ref ast_ty, ref bounds) => {
+            ast::TypePredicate(ref ast_ty, ref bounds) => {
                 let ty = ast_ty_to_ty(this, &ExplicitRscope, &**ast_ty);
                 push_type_predicates(&mut result, ty, bounds.as_slice());
             }
 
-            LifetimePredicate(ref lt, ref bounds) => {
+            ast::LifetimePredicate(ref lt, ref bounds) => {
                 let lt = ast_region_to_region(this.tcx(), lt);
                 push_region_predicates(&mut result, lt, bounds.as_slice());
             }
@@ -2039,20 +2039,20 @@ fn ty_generics<'tcx,AC>(this: &AC,
         def
     }
 
-    fn push_region_predicates(result: &mut Generics,
+    fn push_region_predicates(result: &mut ty::Generics,
                               space: subst::ParamSpace,
                               this_region: ty::Region,
                               bound_regions: &[ast::Lifetime]) {
         for bound_region in bound_regions.iter() {
-            let bound_region = ast_region_to_region(this.tcx(), bound_region);
+            let bound_region = ast_region_to_region(this_region.tcx(), bound_region);
             let predicate = ty::OutlivesPredicate(ty::RegionOutlivesPredicate(this_region,
                                                                               bound_region));
-            result.push(space, predicate);
+            result.predicates.push(space, predicate);
         }
     }
 
     fn push_type_predicates<'tcx,AC>(this: &AC,
-                                     result: &mut Generics,
+                                     result: &mut ty::Generics,
                                      space: subst::ParamSpace,
                                      this_ty: ty::t,
                                      bounds: &[ast::TyParamBound])
@@ -2060,28 +2060,28 @@ fn ty_generics<'tcx,AC>(this: &AC,
     {
         for bound in bounds.iter() {
             let predicate = match *bound {
-                TraitTyParamBound(ref trait_ref) => {
+                ast::TraitTyParamBound(ref trait_ref) => {
                     ty::TraitPredicate(
                         instantiate_trait_ref(this, trait_ref, this_ty, Some(this_ty)))
                 }
 
-                UnboxedFnTyParamBound(ref unboxed) => {
+                ast::UnboxedFnTyParamBound(ref unboxed) => {
                     ty::TraitPredicate(
                         unboxed_predicate(this, this_ty, unboxed))
                 }
 
-                RegionTyParamBound(ref r) => {
+                ast::RegionTyParamBound(ref r) => {
                     let r = ast_region_to_region(this.tcx(), r);
                     ty::OutlivesPredicate(ty::TypeOutlivesPredicate(this_ty, r))
                 }
             };
-            result.push(space, predicate);
+            result.predicates.push(space, predicate);
         }
     }
 
     fn unboxed_predicate<'tcx,AC>(this: &AC,
                                   this_ty: ty::t,
-                                  b: &ast::UnboxedFnTyParamBound)
+                                  b: &ast::TyParamBound)
                                   -> Rc<ty::TraitRef>
         where AC : AstConv<'tcx>
     {
@@ -2111,7 +2111,7 @@ fn ty_generics<'tcx,AC>(this: &AC,
         };
 
         let rscope = ExplicitRscope;
-        let param_ty = param_ty.to_ty(this.tcx());
+        let param_ty = this_ty.to_ty(this.tcx());
         Rc::new(astconv::trait_ref_for_unboxed_function(this,
                                                         &rscope,
                                                         kind,
@@ -2136,11 +2136,11 @@ fn compute_bounds<'tcx,AC>(this: &AC,
      * traits, or the built-in trait (formerly known as kind): Send.
      */
 
-    let mut param_bounds = conv_param_bounds(this,
+    let mut param_bounds = fail!(""); /*conv_param_bounds(this,
                                              span,
                                              param_ty,
                                              ast_bounds,
-                                             where_clause);
+                                             where_clause); */
 
 
     add_unsized_bound(this,

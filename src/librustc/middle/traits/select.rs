@@ -65,6 +65,23 @@ pub struct SelectionCache {
     hashmap: RefCell<HashMap<Rc<ty::TraitRef>, SelectionResult<Candidate>>>,
 }
 
+pub enum MethodMatchResult {
+    MethodMatched(MethodMatchedData),
+    MethodAmbiguous(/* list of impls that could apply */ Vec<ast::DefId>),
+    MethodDidNotMatch,
+}
+
+#[deriving(Show)]
+pub enum MethodMatchedData {
+    // In the case of a precise match, we don't really need to store
+    // how the match was found. So don't.
+    PreciseMethodMatch,
+
+    // In the case of a coercion, we need to know the precise impl so
+    // that we can determine the type to which things were coerced.
+    CoerciveMethodMatch(/* impl we matched */ ast::DefId)
+}
+
 /**
  * The selection process begins by considering all impls, where
  * clauses, and so forth that might resolve an obligation.  Sometimes
@@ -221,7 +238,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     }
 
     pub fn evaluate_obligation_intracrate(&mut self,
-                                            obligation: &Obligation)
+                                            obligation: &TraitObligation)
                                             -> bool
     {
         /*!
@@ -401,7 +418,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     pub fn evaluate_method_obligation(&mut self,
                                       rcvr_ty: ty::t,
                                       xform_self_ty: ty::t,
-                                      obligation: &Obligation)
+                                      obligation: &TraitObligation)
                                       -> MethodMatchResult
     {
         /*!
@@ -529,7 +546,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     pub fn confirm_method_match(&mut self,
                                 rcvr_ty: ty::t,
                                 xform_self_ty: ty::t,
-                                obligation: &Obligation,
+                                obligation: &TraitObligation,
                                 data: MethodMatchedData)
     {
         /*!
@@ -563,7 +580,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     fn match_method_precise(&mut self,
                             rcvr_ty: ty::t,
                             xform_self_ty: ty::t,
-                            obligation: &Obligation)
+                            obligation: &TraitObligation)
                             -> Result<(),()>
     {
         /*!
@@ -589,7 +606,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     fn assemble_method_candidates_from_impls(&mut self,
                                              rcvr_ty: ty::t,
                                              xform_self_ty: ty::t,
-                                             obligation: &Obligation)
+                                             obligation: &TraitObligation)
                                              -> Vec<ast::DefId>
     {
         /*!
@@ -617,7 +634,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                            impl_def_id: ast::DefId,
                            rcvr_ty: ty::t,
                            xform_self_ty: ty::t,
-                           obligation: &Obligation)
+                           obligation: &TraitObligation)
                            -> Result<Substs, ()>
     {
         /*!
@@ -650,7 +667,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                           impl_def_id: ast::DefId,
                           rcvr_ty: ty::t,
                           xform_self_ty: ty::t,
-                          obligation: &Obligation)
+                          obligation: &TraitObligation)
                           -> bool
     {
         /*!
@@ -1252,23 +1269,6 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                 Ok(If(Vec::new()))
             }
 
-            ty::ty_box(_) => {
-                match bound {
-                    ty::BoundSync |
-                    ty::BoundSend |
-                    ty::BoundCopy => {
-                        // Managed data is not copyable, sendable, nor
-                        // synchronized, regardless of referent.
-                        Err(Unimplemented)
-                    }
-
-                    ty::BoundSized => {
-                        // But it is sized, regardless of referent.
-                        Ok(If(Vec::new()))
-                    }
-                }
-            }
-
             ty::ty_uniq(referent_ty) => {  // Box<T>
                 match bound {
                     ty::BoundCopy => {
@@ -1638,9 +1638,9 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     }
 
     fn confirm_builtin_candidate(&mut self,
-                                 obligation: &Obligation,
+                                 obligation: &TraitObligation,
                                  bound: ty::BuiltinBound)
-                                 -> Result<VtableBuiltinData<Obligation>,SelectionError>
+                                 -> Result<VtableBuiltinData<TraitObligation>,SelectionError>
     {
         debug!("confirm_builtin_candidate({})",
                obligation.repr(self.tcx()));
@@ -1667,18 +1667,14 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         // each type `T` in `nested`. This is somewhat complicated by
         // the fact that we may be missing lang items, and hence
         // `obligation_for_builtin_bound()` yields a `Result`.
-        let obligations =
-            result::collect(
-                nested
-                    .iter()
-                    .map(|&t| {
-                        util::obligation_for_builtin_bound(
-                            self.tcx(),
-                            obligation.cause,
-                            bound,
-                            obligation.recursion_depth + 1,
-                            t)
-                    }));
+        let obligations = nested.iter().map(|&t| {
+            util::obligation_for_builtin_bound(
+                self.tcx(),
+                obligation.cause,
+                bound,
+                obligation.recursion_depth + 1,
+                t)
+        }).collect::<Result<_, _>>();
 
         let obligations: Vec<TraitObligation> = match obligations {
             Ok(o) => o,
