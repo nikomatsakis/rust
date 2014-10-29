@@ -11,8 +11,7 @@
 /*! Method lookup: the secret sauce of Rust. See `doc.rs`. */
 
 use middle::ty;
-use middle::typeck::check::{FnCtxt, NoPreference};
-use middle::typeck::{MethodCall, MethodCallee};
+use middle::typeck::check::{FnCtxt};
 use syntax::ast;
 use syntax::codemap::Span;
 use std::rc::Rc;

@@ -59,9 +59,9 @@ enum ProbeKind {
     WhereClauseProbe(Rc<ty::TraitRef>, MethodIndex),
 }
 
-struct Pick {
+pub struct Pick {
     method_ty: Rc<ty::Method>,
-    adjustment: Option<ty::AutoAdjustment>,
+    adjustment: PickAdjustment,
     kind: PickKind,
 }
 
@@ -73,7 +73,17 @@ pub enum PickKind {
     WhereClausePick(Rc<ty::TraitRef>, MethodIndex),
 }
 
-type PickResult = Result<Pick, MethodError>;
+pub type PickResult = Result<Pick, MethodError>;
+
+// This is a kind of "abstracted" version of ty::AutoAdjustment.  The
+// difference is that it doesn't embed any regions or other
+// specifics. The "confirmation" step recreates those details as
+// needed.
+pub enum PickAdjustment {
+    AutoDeref(/* number of autoderefs */ uint),     // A = expr, *expr, **expr
+    AutoRef(ast::Mutability, Box<PickAdjustment>),  // A = &A | &mut A
+    AutoUnsize(Box<PickAdjustment>),                // [T, ..n] => [T]
+}
 
 impl<'a,'tcx> ProbeContext<'a,'tcx> {
     pub fn new(fcx: &'a FnCtxt<'a,'tcx>,
@@ -458,7 +468,37 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                             autoderefs: uint)
                             -> Option<PickResult>
     {
-        fail!("NYI")
+        if ty::type_is_error(self_ty) {
+            return None;
+        }
+
+        let tcx = self.tcx();
+        self.search_mutabilities(
+            autoderefs,
+            [ast::MutImmutable, ast::MutMutable],
+            |m| AutoRef(m, box AutoDeref(autoderefs)),
+            |m,r| ty::mk_rptr(tcx, r, ty::mt {ty:self_ty, mutbl:m}))
+    }
+
+    fn search_mutabilities(&mut self,
+                           autoderefs: uint,
+                           mutbls: &[ast::Mutability],
+                           mk_adjustment: |ast::Mutability| -> PickAdjustment,
+                           mk_autoref_ty: |ast::Mutability, ty::Region| -> ty::t)
+                           -> Option<PickResult>
+    {
+        let region = self.infcx().next_region_var(infer::Autoref(self.span));
+
+        // Search through mutabilities in order to find one where pick works:
+        mutbls
+            .iter()
+            .flat_map(|&m| {
+                let autoref_ty = mk_autoref_ty(m, region);
+                self.pick_method(autoref_ty)
+                    .map(|r| self.adjust(r, mk_adjustment(m)))
+                    .into_iter()
+            })
+            .nth(0)
     }
 
     fn pick_autofatptrd_method(&mut self,
@@ -484,12 +524,15 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
 
         let (self_ty, auto_deref_ref) = self.consider_reborrow(self_ty, autoderefs);
 
-        match self.pick_method(self_ty) {
-            None => None,
-            Some(Err(e)) => Some(Err(e)),
-            Some(Ok(mut pick)) => {
-                pick.adjustment = Some(ty::AdjustDerefRef(auto_deref_ref));
-                Some(Ok(pick))
+        self.pick_method(self_ty).map(|r| self.adjust(r, AutoDeref(autoderefs)))
+    }
+
+    fn adjust(&mut self, result: PickResult, adjustment: PickAdjustment) -> PickResult {
+        match result {
+            Err(e) => Err(e),
+            Ok(mut pick) => {
+                pick.adjustment = adjustment;
+                Ok(pick)
             }
         }
     }
@@ -500,8 +543,8 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
         debug!("searching inherent candidates");
         match self.consider_probes(self_ty, self.inherent_probes[]) {
             None => {}
-            Some(mme) => {
-                return Some(mme);
+            Some(pick) => {
+                return Some(pick);
             }
         }
 
@@ -713,7 +756,7 @@ impl Probe {
     fn to_unadjusted_pick(&self) -> Pick {
         Pick {
             method_ty: self.method_ty.clone(),
-            adjustment: None,
+            adjustment: AutoDeref(0),
             kind: match self.kind {
                 InherentImplProbe(def_id, _) => {
                     InherentImplPick(def_id)
