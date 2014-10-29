@@ -52,12 +52,12 @@ fn no_prelude(attrs: &[ast::Attribute]) -> bool {
     attr::contains_name(attrs, "no_implicit_prelude")
 }
 
-struct StandardLibraryInjector<'a> {
+struct StandardLibraryInjector {
     alt_std_name: Option<String>,
     any_exe: bool,
 }
 
-impl<'a> fold::Folder for StandardLibraryInjector<'a> {
+impl fold::Folder for StandardLibraryInjector {
     fn fold_crate(&mut self, mut krate: ast::Crate) -> ast::Crate {
 
         // The name to use in `extern crate "name" as std;`

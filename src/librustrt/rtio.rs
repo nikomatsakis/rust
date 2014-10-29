@@ -15,6 +15,7 @@ use alloc::boxed::Box;
 use collections::string::String;
 use collections::vec::Vec;
 use core::fmt;
+use core::kinds::marker;
 use core::mem;
 use libc::c_int;
 use libc;
@@ -354,7 +355,8 @@ pub trait PausableIdleCallback {
     fn resume(&mut self);
 }
 
-pub trait RtioSignal {}
+pub trait RtioSignal : marker::Invariant {
+}
 
 #[deriving(Show)]
 pub struct IoError {

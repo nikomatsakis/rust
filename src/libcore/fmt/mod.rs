@@ -157,10 +157,10 @@ pub struct Arguments<'a> {
 
     // Dynamic arguments for interpolation, to be interleaved with string
     // pieces. (Every argument is preceded by a string piece.)
-    args: &'a [Argument],
+    args: &'a [Argument<'a>],
 }
 
-/// DO NOT EDIT ME
+/// STAGE0 SPECIFIC, DO NOT EDIT.
 #[cfg(stage0)]
 pub struct Arguments<'a> {
     pieces: &'a [&'a str],

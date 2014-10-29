@@ -336,7 +336,7 @@ fn lang_items(tcx: &ty::ctxt) -> Vec<(ast::NodeId,ty::Variance)> {
         (tcx.lang_items.invariant_lifetime(), ty::Invariant),
         (tcx.lang_items.unsafe_type(), ty::Invariant)];
 
-    all.move_iter()
+    all.into_iter()
        .filter(|&(ref d,_)| d.is_some())
        .filter(|&(ref d,_)| d.as_ref().unwrap().krate == ast::LOCAL_CRATE)
        .map(|(d, v)| (d.unwrap().node, v))
@@ -1109,7 +1109,7 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                         types.push(info.space, variance);
 
                         if variance == ty::Bivariant {
-                            span_err!(tcx.sess, info.span, E0163,
+                            span_err!(tcx.sess, info.span, E0166,
                                       "type parameter `{}` is never used; \
                                        either remove it, or use a marker such as \
                                        `std::kinds::marker::Invariance`",
@@ -1120,7 +1120,7 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                         regions.push(info.space, variance);
 
                         if variance == ty::Bivariant {
-                            span_err!(tcx.sess, info.span, E0164,
+                            span_err!(tcx.sess, info.span, E0167,
                                       "lifetime parameter `{}` is never used; \
                                       either remove it, or use a marker such as \
                                       `std::kinds::marker::Invariance` applied to a \

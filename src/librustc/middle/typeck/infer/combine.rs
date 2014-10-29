@@ -134,7 +134,7 @@ pub trait Combine<'tcx> {
                                                                  b_tys.len())));
             }
 
-            let tys = range(0, a_tys.len()).map(|i| {
+            range(0, a_tys.len()).map(|i| {
                 let a_ty = a_tys[i];
                 let b_ty = b_tys[i];
                 let v = variances.map_or(ty::Invariant, |v| v[i]);
@@ -145,8 +145,7 @@ pub trait Combine<'tcx> {
                     ty::Contravariant => this.contratys(a_ty, b_ty),
                     ty::Bivariant => Ok(a_ty),
                 }
-            });
-            result::collect(tys)
+            }).collect()
         }
 
         fn relate_region_params<'tcx, C: Combine<'tcx>>(this: &C,
@@ -172,7 +171,7 @@ pub trait Combine<'tcx> {
 
             assert_eq!(num_region_params, b_rs.len());
 
-            let rs = range(0, a_rs.len()).map(|i| {
+            range(0, a_rs.len()).map(|i| {
                 let a_r = a_rs[i];
                 let b_r = b_rs[i];
                 let variance = variances.map_or(ty::Invariant, |v| v[i]);
@@ -182,8 +181,7 @@ pub trait Combine<'tcx> {
                     ty::Contravariant => this.contraregions(a_r, b_r),
                     ty::Bivariant => Ok(a_r),
                 }
-            });
-            result::collect(rs)
+            }).collect()
         }
     }
 
