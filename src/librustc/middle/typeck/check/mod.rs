@@ -527,9 +527,9 @@ fn check_fn<'a, 'tcx>(ccx: &'a CrateCtxt<'a, 'tcx>,
 
     // First, we have to replace any bound regions in the fn type with free ones.
     // The free region references will be bound the node_id of the body block.
-    let (fn_sig, _) = replace_late_bound_regions(tcx, fn_sig.binder_id, |br| {
+    let (fn_sig, _) = replace_late_bound_regions(tcx, fn_sig.binder_id, fn_sig, |br| {
         ty::ReFree(ty::FreeRegion {scope_id: body.id, bound_region: br})
-    }, fn_sig);
+    });
 
     let arg_tys = fn_sig.inputs.as_slice();
     let ret_ty = fn_sig.output;
@@ -3330,8 +3330,8 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                         replace_late_bound_regions(
                             tcx,
                             cenv.sig.binder_id,
-                            |_| fcx.inh.infcx.fresh_bound_region(expr.id),
-                            &cenv.sig);
+                            &cenv.sig,
+                            |_| fcx.inh.infcx.fresh_bound_region(expr.id));
                     let onceness = match (&store, &cenv.store) {
                         // As the closure type and onceness go, only three
                         // combinations are legit:

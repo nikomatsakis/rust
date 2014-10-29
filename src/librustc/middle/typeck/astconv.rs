@@ -363,6 +363,7 @@ pub fn ast_path_to_trait_ref<'tcx,AC,RS>(this: &AC,
                                                RS: RegionScope {
     let trait_def = this.get_trait_def(trait_def_id);
     Rc::new(ty::TraitRef {
+        binder_id: path.id,
         def_id: trait_def_id,
         substs: ast_path_substs(this,
                                 rscope,
@@ -638,18 +639,15 @@ fn mk_pointer<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
             return constr(ty::mk_vec(tcx, ty, None));
         }
         ast::TyUnboxedFn(ref unboxed_function) => {
-            let ty::TraitRef {
-                def_id,
-                substs
-            } = trait_ref_for_unboxed_function(this,
+            let trait_ref =
+                trait_ref_for_unboxed_function(this,
                                                rscope,
                                                unboxed_function.kind,
                                                &*unboxed_function.decl,
                                                None);
             let r = ptr_ty.default_region();
             let tr = ty::mk_trait(this.tcx(),
-                                  def_id,
-                                  substs,
+                                  Rc::new(trait_ref),
                                   ty::region_existential_bound(r));
             match ptr_ty {
                 Uniq => {

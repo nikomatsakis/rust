@@ -138,8 +138,7 @@ pub fn register_object_cast_obligations(fcx: &FnCtxt,
     // needs some refactoring so there is a more convenient type to pass around.
     let object_trait_ty =
         ty::mk_trait(fcx.tcx(),
-                     object_trait.def_id,
-                     object_trait.substs.clone(),
+                     object_trait.principal.clone(),
                      object_trait.bounds);
 
     debug!("register_object_cast_obligations: referent_ty={} object_trait_ty={}",

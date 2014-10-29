@@ -378,14 +378,14 @@ pub fn type_of_adjust(cx: &ctxt, adj: &AutoAdjustment) -> Option<t> {
     fn type_of_autoref(cx: &ctxt, autoref: &AutoRef) -> Option<t> {
         match autoref {
             &AutoUnsize(ref k) => match k {
-                &UnsizeVtable(TyTrait { def_id, ref substs, bounds }, _) => {
-                    Some(mk_trait(cx, def_id, substs.clone(), bounds))
+                &UnsizeVtable(TyTrait { ref principal, bounds }, _) => {
+                    Some(mk_trait(cx, (*principal).clone(), bounds))
                 }
                 _ => None
             },
             &AutoUnsizeUniq(ref k) => match k {
-                &UnsizeVtable(TyTrait { def_id, ref substs, bounds }, _) => {
-                    Some(mk_uniq(cx, mk_trait(cx, def_id, substs.clone(), bounds)))
+                &UnsizeVtable(TyTrait { ref principal, bounds }, _) => {
+                    Some(mk_uniq(cx, mk_trait(cx, (*principal).clone(), bounds)))
                 }
                 _ => None
             },
@@ -969,7 +969,7 @@ pub enum sty {
 #[deriving(Clone, PartialEq, Eq, Hash, Show)]
 pub struct TyTrait {
     // Principal trait reference.
-    pub principal: TraitRef,
+    pub principal: Rc<TraitRef>,
     pub bounds: ExistentialBounds
 }
 
@@ -1634,8 +1634,8 @@ pub fn mk_t(cx: &ctxt, st: sty) -> t {
       &ty_enum(_, ref substs) | &ty_struct(_, ref substs) => {
           flags |= sflags(substs);
       }
-      &ty_trait(box TyTrait { ref substs, ref bounds, .. }) => {
-          flags |= sflags(substs);
+      &ty_trait(box TyTrait { ref principal, ref bounds }) => {
+          flags |= sflags(&principal.substs);
           flags |= flags_for_bounds(bounds);
       }
       &ty_uniq(tt) | &ty_vec(tt, _) | &ty_open(tt) => {
@@ -1860,14 +1860,12 @@ pub fn mk_ctor_fn(cx: &ctxt,
 
 
 pub fn mk_trait(cx: &ctxt,
-                did: ast::DefId,
-                substs: Substs,
+                principal: Rc<ty::TraitRef>,
                 bounds: ExistentialBounds)
                 -> t {
     // take a copy of substs so that we own the vectors inside
     let inner = box TyTrait {
-        def_id: did,
-        substs: substs,
+        principal: principal,
         bounds: bounds
     };
     mk_t(cx, ty_trait(inner))
@@ -1920,9 +1918,14 @@ pub fn maybe_walk_ty(ty: t, f: |t| -> bool) {
         ty_ptr(ref tm) | ty_rptr(_, ref tm) => {
             maybe_walk_ty(tm.ty, f);
         }
-        ty_enum(_, ref substs) | ty_struct(_, ref substs) |
-        ty_trait(box TyTrait { ref substs, .. }) => {
-            for subty in (*substs).types.iter() {
+        ty_trait(box TyTrait { ref principal, .. }) => {
+            for subty in principal.substs.types.iter() {
+                maybe_walk_ty(*subty, |x| f(x));
+            }
+        }
+        ty_enum(_, ref substs) |
+        ty_struct(_, ref substs) => {
+            for subty in substs.types.iter() {
                 maybe_walk_ty(*subty, |x| f(x));
             }
         }
@@ -3527,8 +3530,8 @@ pub fn unsize_ty(cx: &ctxt,
                                   format!("UnsizeStruct with bad sty: {}",
                                           ty_to_string(cx, ty)).as_slice())
         },
-        &UnsizeVtable(TyTrait { def_id, ref substs, bounds }, _) => {
-            mk_trait(cx, def_id, substs.clone(), bounds)
+        &UnsizeVtable(TyTrait { ref principal, bounds }, _) => {
+            mk_trait(cx, (*principal).clone(), bounds)
         }
     }
 }
@@ -3781,7 +3784,7 @@ pub fn ty_sort_string(cx: &ctxt, t: t) -> String {
         ty_bare_fn(_) => "extern fn".to_string(),
         ty_closure(_) => "fn".to_string(),
         ty_trait(ref inner) => {
-            format!("trait {}", item_path_str(cx, inner.def_id))
+            format!("trait {}", item_path_str(cx, inner.principal.def_id))
         }
         ty_struct(id, _) => {
             format!("struct {}", item_path_str(cx, id))
@@ -4213,11 +4216,17 @@ pub fn try_add_builtin_trait(
 
 pub fn ty_to_def_id(ty: t) -> Option<ast::DefId> {
     match get(ty).sty {
-        ty_trait(box TyTrait { def_id: id, .. }) |
+        ty_trait(ref tt) => {
+            Some(tt.principal.def_id)
+        }
         ty_struct(id, _) |
         ty_enum(id, _) |
-        ty_unboxed_closure(id, _) => Some(id),
-        _ => None
+        ty_unboxed_closure(id, _) => {
+            Some(id)
+        }
+        _ => {
+            None
+        }
     }
 }
 
@@ -4469,9 +4478,87 @@ pub fn bounds_for_trait_ref(tcx: &ctxt,
                             -> ty::ParamBounds
 {
     let trait_def = lookup_trait_def(tcx, trait_ref.def_id);
+
     debug!("bounds_for_trait_ref(trait_def={}, trait_ref={})",
            trait_def.repr(tcx), trait_ref.repr(tcx));
-    trait_def.bounds.subst(tcx, &trait_ref.substs)
+
+    // The interaction between HRTB and supertraits is not entirely
+    // obvious. Let me walk you (and myself) through an example.
+    //
+    // Let's start with an easy case. Consider two traits:
+    //
+    //     trait Foo<'a> : Bar<'a,'a> { }
+    //     trait Bar<'b,'c> { }
+    //
+    // Now, if we have a trait reference `for<'x> T : Foo<'x>`, then
+    // we can deduce that `for<'x> T : Bar<'x,'x>`. Basically, if we
+    // knew that `Foo<'x>` (for any 'x) then we also know that
+    // `Bar<'x,'x>` (for any 'x). This more-or-less falls out from
+    // normal substitution.
+    //
+    // In terms of why this is sound, the idea is that whenever there
+    // is an impl of `T:Foo<'a>`, it must show that `T:Bar<'a,'a>`
+    // holds.  So if there is an impl of `T:Foo<'a>` that applies to
+    // all `'a`, then we must know that `T:Bar<'a,'a>` holds for all
+    // `'a`.
+    //
+    // For the moment, we disallow the use of early-bound regions in
+    // trait where clauses. This is a total hack to help us get HRTB
+    // out the door without thinking too hard about a better
+    // representation for bound regions. If we *were* to permit
+    // HRTB in traits, it would mean that we'd have an example like this:
+    //
+    //     trait Foo1<'a> : for<'b> Bar1<'a,'b> { }
+    //     trait Bar1<'b,'c> { }
+    //
+    // Here, if we have `for<'x> T : Foo1<'x>`, then what do we know?
+    // The answer is that we know `for<'x,'b> T : Bar1<'x,'b>`. The
+    // reason is similar to the previous example: any impl of
+    // `T:Foo1<'x>` must show that `for<'b> T : Bar1<'x, 'b>`.  So
+    // basically we would want to collapse the bound lifetimes from
+    // the input (`trait_ref`) and the supertraits.
+    //
+    // The main reason to disallow it is that I am afraid of
+    // accidental capture and don't think our current early/late-bound
+    // region representation is the right thing. -nmatsakis
+
+    // The previous comment laid out things in the abstract. Let's
+    // walk through the concrete mechanics. On input, we have `for<'x>
+    // T : Foo1<'x>`, which is represented as having a trait-ref with
+    // a `binder_id` of `B`, so that `'x` is `ReLate(B, 'x)`.
+    // Once we apply these substitutions, we'll have a trait-ref
+    // like
+    //
+    //     Bar1<ReLate(B,'x), ReLate(C,'b)>
+    //
+    // where C is the binder_id of `Bar1`. This corresponds (roughly)
+    // to `for<'b> Bar1<'x, 'b>`.
+    let raw_bounds = trait_def.bounds.subst(tcx, &trait_ref.substs);
+
+    // Next we translate all things with binder-id B to binder-id C,
+    // thus extending the `for` binder to cover them.
+    let ty::ParamBounds {
+        region_bounds: raw_regions,
+        builtin_bounds: raw_builtin,
+        trait_bounds: raw_traits
+    } = raw_bounds;
+
+    let trait_bounds =
+        raw_traits
+        .iter()
+        .map(|raw_trait| replace_late_bound_regions(tcx, trait_ref.binder_id, raw_trait,
+                                                    |br| ty::ReLateBound(raw_trait.binder_id, br)).0)
+        .collect();
+
+    ty::ParamBounds {
+        trait_bounds: trait_bounds,
+
+        // Region and builtin-bounds, at least presently, do not have
+        // binders of their own and hence "inherit" the binder-id from
+        // the trait.
+        region_bounds: raw_regions,
+        builtin_bounds: raw_builtin,
+    }
 }
 
 /// Iterate over attributes of a definition.
@@ -5196,9 +5283,9 @@ pub fn hash_crate_independent(tcx: &ctxt, t: t, svh: &Svh) -> u64 {
                     }
                 }
             }
-            ty_trait(box TyTrait { def_id: d, bounds, .. }) => {
+            ty_trait(box TyTrait { ref principal, bounds }) => {
                 byte!(17);
-                did(&mut state, d);
+                did(&mut state, principal.def_id);
                 hash!(bounds);
             }
             ty_struct(d, _) => {
@@ -5487,21 +5574,15 @@ pub fn accumulate_lifetimes_in_type(accumulator: &mut Vec<ty::Region>,
                                     typ: t) {
     walk_ty(typ, |typ| {
         match get(typ).sty {
-            ty_rptr(region, _) => accumulator.push(region),
+            ty_rptr(region, _) => {
+                accumulator.push(region)
+            }
+            ty_trait(ref t) => {
+                accumulator.push_all(t.principal.substs.regions().as_slice());
+            }
             ty_enum(_, ref substs) |
-            ty_trait(box TyTrait {
-                ref substs,
-                ..
-            }) |
             ty_struct(_, ref substs) => {
-                match substs.regions {
-                    subst::ErasedRegions => {}
-                    subst::NonerasedRegions(ref regions) => {
-                        for region in regions.iter() {
-                            accumulator.push(*region)
-                        }
-                    }
-                }
+                accumulator.push_all(substs.regions().as_slice());
             }
             ty_closure(ref closure_ty) => {
                 match closure_ty.store {
@@ -5509,7 +5590,9 @@ pub fn accumulate_lifetimes_in_type(accumulator: &mut Vec<ty::Region>,
                     UniqTraitStore => {}
                 }
             }
-            ty_unboxed_closure(_, ref region) => accumulator.push(*region),
+            ty_unboxed_closure(_, region) => {
+                accumulator.push(region);
+            }
             ty_nil |
             ty_bot |
             ty_bool |
@@ -5526,7 +5609,8 @@ pub fn accumulate_lifetimes_in_type(accumulator: &mut Vec<ty::Region>,
             ty_param(_) |
             ty_infer(_) |
             ty_open(_) |
-            ty_err => {}
+            ty_err => {
+            }
         }
     })
 }
@@ -5555,8 +5639,8 @@ pub fn with_freevars<T>(tcx: &ty::ctxt, fid: ast::NodeId, f: |&[Freevar]| -> T) 
 pub fn replace_late_bound_regions<T>(
     tcx: &ty::ctxt,
     binder_id: ast::NodeId,
-    mapf: |ty::BoundRegion| -> ty::Region,
-    value: &T)
+    value: &T,
+    mapf: |ty::BoundRegion| -> ty::Region)
     -> (T, HashMap<ty::BoundRegion,ty::Region>)
     where T : TypeFoldable + Repr
 {

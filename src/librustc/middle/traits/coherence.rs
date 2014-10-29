@@ -150,7 +150,7 @@ pub fn ty_is_local(tcx: &ty::ctxt,
         }
 
         ty::ty_trait(ref tt) => {
-            tt.def_id.krate == ast::LOCAL_CRATE
+            tt.principal.def_id.krate == ast::LOCAL_CRATE
         }
 
         // Type parameters may be bound to types that are not local to

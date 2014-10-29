@@ -1099,13 +1099,13 @@ impl<'a> rbml_writer_helpers for Encoder<'a> {
                     this.emit_enum_variant("UnsizeVtable", 2, 4, |this| {
                         this.emit_enum_variant_arg(0, |this| {
                             try!(this.emit_struct_field("principal", 0, |this| {
-                                Ok(this.emit_trait_ref(ecx, &*principal))
+                                Ok(this.emit_trait_ref(ecx, &**principal))
                             }));
                             this.emit_struct_field("bounds", 1, |this| {
                                 Ok(this.emit_existential_bounds(ecx, b))
                             })
                         });
-                        this.emit_enum_variant_arg(1, |this| Ok(this.emit_ty(ecx, self_ty)));
+                        this.emit_enum_variant_arg(1, |this| Ok(this.emit_ty(ecx, self_ty)))
                     })
                 }
             }
@@ -1725,16 +1725,16 @@ impl<'a> rbml_decoder_decoder_helpers for reader::Decoder<'a> {
                         ty::UnsizeStruct(box uk, idx)
                     }
                     2 => {
-                        let ty_trait = this.read_enum_variant_arg(0, |this| {
-                            ty::TyTrait {
+                        let ty_trait = try!(this.read_enum_variant_arg(0, |this| {
+                            Ok(ty::TyTrait {
                                 principal: try!(this.read_struct_field("principal", 0, |this| {
                                     Ok(this.read_trait_ref(dcx))
                                 })),
                                 bounds: try!(this.read_struct_field("bounds", 1, |this| {
                                     Ok(this.read_existential_bounds(dcx))
                                 })),
-                            }
-                        });
+                            })
+                        }));
                         let self_ty =
                             this.read_enum_variant_arg(1, |this| Ok(this.read_ty(dcx))).unwrap();
                         ty::UnsizeVtable(ty_trait, self_ty)

@@ -265,6 +265,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                 previous_stack.obligation.cause,
                 bound,
                 previous_stack.obligation.recursion_depth + 1,
+                previous_stack.obligation.trait_ref.binder_id,
                 ty);
 
         match obligation {
@@ -1584,6 +1585,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                 obligation.cause,
                 bound,
                 obligation.recursion_depth + 1,
+                obligation.trait_ref.binder_id,
                 t)
         }).collect::<Result<_, _>>();
         let obligations = match obligations {

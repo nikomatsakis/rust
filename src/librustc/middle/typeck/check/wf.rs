@@ -376,9 +376,9 @@ impl<'cx,'tcx> TypeFolder<'tcx> for BoundsChecker<'cx,'tcx> {
                     replace_late_bound_regions(
                         self.fcx.tcx(),
                         fn_sig.binder_id,
+                        fn_sig,
                         |br| ty::ReFree(ty::FreeRegion{scope_id: self.scope_id,
-                                                       bound_region: br}),
-                        fn_sig);
+                                                       bound_region: br}));
 
                 debug!("late-bound regions replaced: {}",
                        fn_sig.repr(self.tcx()));

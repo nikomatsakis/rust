@@ -82,6 +82,7 @@ impl<'cx, 'tcx> Supertraits<'cx, 'tcx> {
         for builtin_bound in builtin_bounds.iter() {
             let bound_trait_ref = trait_ref_for_builtin_bound(self.tcx,
                                                               builtin_bound,
+                                                              trait_ref.binder_id,
                                                               trait_ref.self_ty());
             bound_trait_ref.map(|trait_ref| trait_bounds.push(trait_ref));
         }
@@ -217,6 +218,7 @@ fn push_obligations_for_param_bounds(
                                                       cause,
                                                       builtin_bound,
                                                       recursion_depth,
+                                                      ast::DUMMY_NODE_ID,
                                                       param_ty);
         match obligation {
             Ok(ob) => obligations.push(space, ob),
@@ -237,12 +239,14 @@ fn push_obligations_for_param_bounds(
 pub fn trait_ref_for_builtin_bound(
     tcx: &ty::ctxt,
     builtin_bound: ty::BuiltinBound,
+    binder_id: ast::NodeId,
     param_ty: ty::t)
     -> Option<Rc<ty::TraitRef>>
 {
     match tcx.lang_items.from_builtin_kind(builtin_bound) {
         Ok(def_id) => {
             Some(Rc::new(ty::TraitRef {
+                binder_id: binder_id,
                 def_id: def_id,
                 substs: Substs::empty().with_self_ty(param_ty)
             }))
@@ -259,10 +263,11 @@ pub fn obligation_for_builtin_bound(
     cause: ObligationCause,
     builtin_bound: ty::BuiltinBound,
     recursion_depth: uint,
+    binder_id: ast::NodeId,
     param_ty: ty::t)
     -> Result<Obligation, ErrorReported>
 {
-    let trait_ref = trait_ref_for_builtin_bound(tcx, builtin_bound, param_ty);
+    let trait_ref = trait_ref_for_builtin_bound(tcx, builtin_bound, binder_id, param_ty);
     match trait_ref {
         Some(trait_ref) => Ok(Obligation {
                 cause: cause,
