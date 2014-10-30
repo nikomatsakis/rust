@@ -1240,7 +1240,7 @@ pub enum Predicate {
 }
 
 impl Predicate {
-    fn trait_predicate(&self) -> Option<Rc<TraitRef>> {
+    pub fn trait_predicate(&self) -> Option<Rc<TraitRef>> {
         match *self {
             TraitPredicate(ref p) => Some((*p).clone()),
             OutlivesPredicate(..) => None
@@ -1476,7 +1476,6 @@ pub struct TraitDef {
     /// default methods get to assume that the `Self` parameters
     /// implements the trait.
     pub generics: Generics,
-
     pub trait_ref: Rc<ty::TraitRef>,
 }
 
@@ -2717,9 +2716,10 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
 
             each_bound_trait_and_supertraits(cx, traits, |trait_ref| {
                 let trait_def = lookup_trait_def(cx, trait_ref.def_id);
-                for bound in trait_def.bounds.builtin_bounds.iter() {
-                    f(bound);
-                }
+                fail!("NYI");
+                // for bound in trait_def.bounds.builtin_bounds.iter() {
+                //     f(bound);
+                // }
                 true
             });
         }
@@ -4507,7 +4507,7 @@ pub fn predicates_for_trait_ref(tcx: &ctxt,
     let trait_def = lookup_trait_def(tcx, trait_ref.def_id);
     debug!("bounds_for_trait_ref(trait_def={}, trait_ref={})",
            trait_def.repr(tcx), trait_ref.repr(tcx));
-    trait_def.generics.predicates.as_slice().to_owned().subst(tcx, &trait_ref.substs)
+    trait_def.generics.predicates.as_slice().to_vec().subst(tcx, &trait_ref.substs)
 }
 
 /// Iterate over attributes of a definition.
@@ -4892,7 +4892,7 @@ pub fn required_region_bounds(tcx: &ctxt,
 
     let mut param_bounds = Vec::new();
 
-    for predicate in traits::elaborate_predicates(tcx, predicates.to_owned()) {
+    for predicate in traits::elaborate_predicates(tcx, predicates.to_vec()) {
         match predicate {
             TraitPredicate(..) |
             OutlivesPredicate(RegionOutlivesPredicate(..)) => {}

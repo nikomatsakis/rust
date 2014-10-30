@@ -57,8 +57,23 @@ pub struct Obligation<PREDICATE> {
     pub predicate: PREDICATE
 }
 
-type TraitObligation = Obligation<Rc<ty::TraitRef>>;
-type PredicateObligation = Obligation<ty::Predicate>;
+pub type TraitObligation = Obligation<Rc<ty::TraitRef>>;
+pub type PredicateObligation = Obligation<ty::Predicate>;
+
+// TODO: Jared Move me down below.
+impl TraitObligation {
+    pub fn trait_ref(&self) -> Rc<ty::TraitRef> {
+        self.predicate.clone()
+    }
+
+    pub fn as_predicate(&self) -> PredicateObligation {
+        Obligation {
+            cause: self.cause,
+            recursion_depth: self.recursion_depth,
+            predicate: ty::TraitPredicate(self.predicate.clone())
+        }
+    }
+}
 
 /**
  * Why did we incur this obligation? Used for error reporting but also
@@ -257,7 +272,7 @@ pub fn evaluate_obligation<'a,'tcx>(infcx: &InferCtxt<'a,'tcx>,
      */
 
     let mut selcx = select::SelectionContext::new(infcx, param_env, typer);
-    selcx.evaluate_obligation(obligation)
+    fail!("eval_oblig"); //selcx.evaluate_obligation(obligation)
 }
 
 pub fn select_inherent_impl<'a,'tcx>(infcx: &InferCtxt<'a,'tcx>,

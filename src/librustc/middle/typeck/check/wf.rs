@@ -217,25 +217,26 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
             //
             // FIXME -- This is a bit ill-factored. There is very similar
             // code in traits::util::obligations_for_generics.
-            fcx.add_region_obligations_for_type_parameter(item.span,
-                                                          ty::ParamTy::for_self(trait_ref.def_id),
-                                                          &trait_def.bounds,
-                                                          trait_ref.self_ty());
-            for builtin_bound in trait_def.bounds.builtin_bounds.iter() {
-                let obligation = traits::obligation_for_builtin_bound(fcx.tcx(),
-                                                                      cause,
-                                                                      trait_ref.self_ty(),
-                                                                      builtin_bound);
-                match obligation {
-                    Ok (obligation) => fcx.register_trait_ref_obligation(obligation),
-                    _ => {}
-                }
-            }
-            for trait_bound in trait_def.bounds.trait_bounds.iter() {
-                let trait_bound = trait_bound.subst(fcx.tcx(), &trait_ref.substs);
-                fcx.register_obligation(
-                    traits::Obligation::new(cause, trait_bound));
-            }
+            // fcx.add_region_obligations_for_type_parameter(item.span,
+            //                                               ty::ParamTy::for_self(trait_ref.def_id),
+            //                                               &trait_def.bounds,
+            //                                               trait_ref.self_ty());
+            // fail!("NYI")
+            // for builtin_bound in trait_def.bounds.builtin_bounds.iter() {
+            //     let obligation = traits::obligation_for_builtin_bound(fcx.tcx(),
+            //                                                           cause,
+            //                                                           trait_ref.self_ty(),
+            //                                                           builtin_bound);
+            //     match obligation {
+            //         Ok (obligation) => fcx.register_trait_ref_obligation(obligation),
+            //         _ => {}
+            //     }
+            // }
+            // for trait_bound in trait_def.bounds.trait_bounds.iter() {
+            //     let trait_bound = trait_bound.subst(fcx.tcx(), &trait_ref.substs);
+            //     fcx.register_obligation(
+            //         traits::Obligation::new(cause, trait_bound));
+            // }
         });
     }
 }
@@ -365,7 +366,7 @@ impl<'cx,'tcx> TypeFolder<'tcx> for BoundsChecker<'cx,'tcx> {
                     // (I believe we should do the same for traits, but
                     // that will require an RFC. -nmatsakis)
                     self.fcx.add_obligations_for_generics(
-                        traits::ObligationCause::new(self.span, // FIXME
+                        traits::ObligationCause::new(self.fcx.body_id, self.span, // FIXME
                                                      traits::ItemObligation(type_id)),
                         substs,
                         &polytype.generics);
@@ -466,7 +467,7 @@ fn check_struct_safe_for_destructor(fcx: &FnCtxt,
     if !struct_tpt.generics.has_type_params(subst::TypeSpace)
         && !struct_tpt.generics.has_region_params(subst::TypeSpace)
     {
-        let cause = traits::ObligationCause::new(span, traits::DropTrait);
+        let cause = traits::ObligationCause::new(fcx.body_id, span, traits::DropTrait);
         let obligation = traits::obligation_for_builtin_bound(fcx.tcx(),
                                                               cause,
                                                               self_ty,

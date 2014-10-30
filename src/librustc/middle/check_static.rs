@@ -114,10 +114,10 @@ impl<'a, 'tcx> CheckStaticVisitor<'a, 'tcx> {
         let ty = ty::node_id_to_type(self.tcx, e.id);
         let infcx = typeck::infer::new_infer_ctxt(self.tcx);
         let mut fulfill_cx = traits::FulfillmentContext::new();
-        let cause = traits::ObligationCause::misc(DUMMY_SP);
+        let cause = traits::ObligationCause::misc(e.id, DUMMY_SP);
         let obligation = traits::obligation_for_builtin_bound(self.tcx, cause, ty,
                                                               ty::BoundSync);
-        fulfill_cx.register_obligation(self.tcx, obligation.unwrap());
+        fulfill_cx.register_obligation(&infcx, obligation.unwrap().as_predicate());
         let env = ty::empty_parameter_environment();
         let result = fulfill_cx.select_all_or_error(&infcx, &env, self.tcx).is_ok();
         if !result {

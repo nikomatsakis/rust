@@ -1441,7 +1441,7 @@ pub fn trait_def_of_item(ccx: &CrateCtxt, it: &ast::Item) -> Rc<ty::TraitDef> {
     let substs = mk_item_substs(ccx, &ty_generics);
     let trait_def = Rc::new(ty::TraitDef {
         generics: ty_generics,
-        bounds: bounds, // XXX have to get this into generics.predicates
+        //bounds: bounds, // XXX have to get this into generics.predicates
         trait_ref: Rc::new(ty::TraitRef {
             def_id: def_id,
             substs: substs
@@ -1876,7 +1876,7 @@ fn ty_generics<'tcx,AC>(this: &AC,
 
         // Add bounds to the predicate list.
         let this_region = ast_region_to_region(this.tcx(), &l.lifetime);
-        push_region_predicates(&mut result, this_region, l.bounds.as_slice());
+        push_region_predicates(this, &mut result, space, this_region, l.bounds.as_slice());
     }
 
     assert!(result.types.is_empty_in(space));
@@ -1955,9 +1955,9 @@ fn ty_generics<'tcx,AC>(this: &AC,
 
         // Add bounds to the predicate list.
         let param_ty = ty::mk_param(this.tcx(), space, i, local_def(param.id));
-        push_type_predicates(this, &mut result, param_ty, param.bounds.as_slice());
+        push_type_predicates(this, &mut result, space, param_ty, param.bounds.as_slice());
 
-        add_unsized_bound(this, &mut result, &param.unbound, "type parameter", param.span);
+        fail!("add_unsized_bound") // add_unsized_bound(this, &mut result, &param.unbound, "type parameter", param.span);
     }
 
     // Append the associated types to the result.
@@ -1973,16 +1973,16 @@ fn ty_generics<'tcx,AC>(this: &AC,
     }
 
     // Finally, convert the predicates.
-    for predicate in where_clause.predicates {
+    for predicate in where_clause.predicates.iter() {
         match predicate.kind {
             ast::TypePredicate(ref ast_ty, ref bounds) => {
                 let ty = ast_ty_to_ty(this, &ExplicitRscope, &**ast_ty);
-                push_type_predicates(&mut result, ty, bounds.as_slice());
+                push_type_predicates(this, &mut result, space, ty, bounds.as_slice());
             }
 
             ast::LifetimePredicate(ref lt, ref bounds) => {
                 let lt = ast_region_to_region(this.tcx(), lt);
-                push_region_predicates(&mut result, lt, bounds.as_slice());
+                push_region_predicates(this, &mut result, space, lt, bounds.as_slice());
             }
         }
     }
@@ -2039,12 +2039,14 @@ fn ty_generics<'tcx,AC>(this: &AC,
         def
     }
 
-    fn push_region_predicates(result: &mut ty::Generics,
+    fn push_region_predicates<'tcx, AC>(this: &AC,
+                              result: &mut ty::Generics,
                               space: subst::ParamSpace,
                               this_region: ty::Region,
-                              bound_regions: &[ast::Lifetime]) {
+                              bound_regions: &[ast::Lifetime])
+                              where AC: AstConv<'tcx> {
         for bound_region in bound_regions.iter() {
-            let bound_region = ast_region_to_region(this_region.tcx(), bound_region);
+            let bound_region = ast_region_to_region(this.tcx(), bound_region);
             let predicate = ty::OutlivesPredicate(ty::RegionOutlivesPredicate(this_region,
                                                                               bound_region));
             result.predicates.push(space, predicate);
@@ -2066,8 +2068,9 @@ fn ty_generics<'tcx,AC>(this: &AC,
                 }
 
                 ast::UnboxedFnTyParamBound(ref unboxed) => {
+                    let unboxed_ref = &(*unboxed.clone());
                     ty::TraitPredicate(
-                        unboxed_predicate(this, this_ty, unboxed))
+                        unboxed_predicate(this, this_ty, unboxed_ref))
                 }
 
                 ast::RegionTyParamBound(ref r) => {
@@ -2081,11 +2084,11 @@ fn ty_generics<'tcx,AC>(this: &AC,
 
     fn unboxed_predicate<'tcx,AC>(this: &AC,
                                   this_ty: ty::t,
-                                  b: &ast::TyParamBound)
+                                  b: &ast::UnboxedFnBound)
                                   -> Rc<ty::TraitRef>
         where AC : AstConv<'tcx>
     {
-        let trait_id = this.tcx().def_map.borrow().get(&b.ref_id).def_id();
+        let trait_id = this.tcx().def_map.borrow().get_copy(&b.ref_id).def_id();
         let mut kind = None;
         for &(lang_item, this_kind) in [
             (this.tcx().lang_items.fn_trait(), ast::FnUnboxedClosureKind),
@@ -2111,7 +2114,7 @@ fn ty_generics<'tcx,AC>(this: &AC,
         };
 
         let rscope = ExplicitRscope;
-        let param_ty = this_ty.to_ty(this.tcx());
+        let param_ty = fail!("Hello"); //this.to_ty(this.tcx());
         Rc::new(astconv::trait_ref_for_unboxed_function(this,
                                                         &rscope,
                                                         kind,
@@ -2143,11 +2146,11 @@ fn compute_bounds<'tcx,AC>(this: &AC,
                                              where_clause); */
 
 
-    add_unsized_bound(this,
-                      unbound,
-                      &mut param_bounds.builtin_bounds,
-                      "type parameter",
-                      span);
+    // add_unsized_bound(this,
+    //                   unbound,
+    //                   &mut param_bounds.builtin_bounds,
+    //                   "type parameter",
+    //                   span);
 
     check_bounds_compatible(this.tcx(),
                             name_of_bounded_thing,
@@ -2163,24 +2166,25 @@ fn check_bounds_compatible(tcx: &ty::ctxt,
                            name_of_bounded_thing: ast::Name,
                            param_bounds: &ty::ParamBounds,
                            span: Span) {
-    // Currently the only bound which is incompatible with other bounds is
-    // Sized/Unsized.
-    if !param_bounds.builtin_bounds.contains_elem(ty::BoundSized) {
-        ty::each_bound_trait_and_supertraits(
-            tcx,
-            param_bounds.trait_bounds.as_slice(),
-            |trait_ref| {
-                let trait_def = ty::lookup_trait_def(tcx, trait_ref.def_id);
-                if trait_def.bounds.builtin_bounds.contains_elem(ty::BoundSized) {
-                    span_err!(tcx.sess, span, E0129,
-                              "incompatible bounds on type parameter `{}`, \
-                               bound `{}` does not allow unsized type",
-                              name_of_bounded_thing.user_string(tcx),
-                              ppaux::trait_ref_to_string(tcx, &*trait_ref));
-                }
-                true
-            });
-    }
+    // // Currently the only bound which is incompatible with other bounds is
+    // // Sized/Unsized.
+    // if !param_bounds.builtin_bounds.contains_elem(ty::BoundSized) {
+    //     ty::each_bound_trait_and_supertraits(
+    //         tcx,
+    //         param_bounds.trait_bounds.as_slice(),
+    //         |trait_ref| {
+    //             let trait_def = ty::lookup_trait_def(tcx, trait_ref.def_id);
+    //             if trait_def.bounds.builtin_bounds.contains_elem(ty::BoundSized) {
+    //                 span_err!(tcx.sess, span, E0129,
+    //                           "incompatible bounds on type parameter `{}`, \
+    //                            bound `{}` does not allow unsized type",
+    //                           name_of_bounded_thing.user_string(tcx),
+    //                           ppaux::trait_ref_to_string(tcx, &*trait_ref));
+    //             }
+    //             true
+    //         });
+    // }
+    fail!("NYI")
 }
 
 pub fn ty_of_foreign_fn_decl(ccx: &CrateCtxt,

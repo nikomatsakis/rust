@@ -66,6 +66,10 @@ pub struct FulfillmentContext {
     // obligations (otherwise, it's easy to fail to walk to a
     // particular node-id).
     region_obligations: NodeMap<Vec<RegionObligation>>,
+    // Remembers the count of trait obligations that we have already
+    // attempted to select. This is used to avoid repeating work
+    // when `select_new_obligations` is called.
+    attempted_mark: uint,
 }
 
 pub struct RegionObligation {
@@ -79,6 +83,7 @@ impl FulfillmentContext {
         FulfillmentContext {
             trait_obligations: Vec::new(),
             region_obligations: NodeMap::new(),
+            attempted_mark: 0
         }
     }
 
@@ -194,6 +199,7 @@ impl FulfillmentContext {
                only_new_obligations);
 
         let tcx = selcx.tcx();
+        let infcx = selcx.infcx();
         let mut errors = Vec::new();
 
         loop {
@@ -254,7 +260,7 @@ impl FulfillmentContext {
             // registering any nested obligations for the future.
             for selection in selections.into_iter() {
                 selection.map_move_nested(
-                    |o| self.register_obligation(tcx, o));
+                    |o| self.register_obligation(infcx, o));
             }
         }
 

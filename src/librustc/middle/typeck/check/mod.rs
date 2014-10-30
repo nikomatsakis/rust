@@ -1035,58 +1035,60 @@ fn compare_impl_method(tcx: &ty::ctxt,
     for (i, (trait_param_def, impl_param_def)) in it.enumerate() {
         // Check that the impl does not require any builtin-bounds
         // that the trait does not guarantee:
-        let extra_bounds =
-            impl_param_def.bounds.builtin_bounds -
-            trait_param_def.bounds.builtin_bounds;
-        if !extra_bounds.is_empty() {
-            span_err!(tcx.sess, impl_m_span, E0051,
-                "in method `{}`, type parameter {} requires `{}`, \
-                 which is not required by the corresponding type parameter \
-                 in the trait declaration",
-                token::get_name(trait_m.name),
-                i,
-                extra_bounds.user_string(tcx));
-           return;
-        }
+        // let extra_bounds =
+        //     impl_param_def.bounds.builtin_bounds -
+        //     trait_param_def.bounds.builtin_bounds;
+        // if !extra_bounds.is_empty() {
+        //     span_err!(tcx.sess, impl_m_span, E0051,
+        //         "in method `{}`, type parameter {} requires `{}`, \
+        //          which is not required by the corresponding type parameter \
+        //          in the trait declaration",
+        //         token::get_name(trait_m.name),
+        //         i,
+        //         extra_bounds.user_string(tcx));
+        //    return;
+        // }
 
         // Check that the trait bounds of the trait imply the bounds of its
         // implementation.
         //
         // FIXME(pcwalton): We could be laxer here regarding sub- and super-
         // traits, but I doubt that'll be wanted often, so meh.
-        for impl_trait_bound in impl_param_def.bounds.trait_bounds.iter() {
-            debug!("compare_impl_method(): impl-trait-bound subst");
-            let impl_trait_bound =
-                impl_trait_bound.subst(tcx, &impl_to_skol_substs);
-
-            let mut ok = false;
-            for trait_bound in trait_param_def.bounds.trait_bounds.iter() {
-                debug!("compare_impl_method(): trait-bound subst");
-                let trait_bound =
-                    trait_bound.subst(tcx, &trait_to_skol_substs);
-                let infcx = infer::new_infer_ctxt(tcx);
-                match infer::mk_sub_trait_refs(&infcx,
-                                               true,
-                                               infer::Misc(impl_m_span),
-                                               trait_bound,
-                                               impl_trait_bound.clone()) {
-                    Ok(_) => {
-                        ok = true;
-                        break
-                    }
-                    Err(_) => continue,
-                }
-            }
-
-            if !ok {
-                span_err!(tcx.sess, impl_m_span, E0052,
-                    "in method `{}`, type parameter {} requires bound `{}`, which is not \
-                     required by the corresponding type parameter in the trait declaration",
-                    token::get_name(trait_m.name),
-                    i,
-                    ppaux::trait_ref_to_string(tcx, &*impl_trait_bound));
-            }
-        }
+        // FIXME: jroesch
+        fail!("NYI")
+        // for impl_trait_bound in impl_param_def.bounds.trait_bounds.iter() {
+        //     debug!("compare_impl_method(): impl-trait-bound subst");
+        //     let impl_trait_bound =
+        //         impl_trait_bound.subst(tcx, &impl_to_skol_substs);
+        //
+        //     let mut ok = false;
+        //     for trait_bound in trait_param_def.bounds.trait_bounds.iter() {
+        //         debug!("compare_impl_method(): trait-bound subst");
+        //         let trait_bound =
+        //             trait_bound.subst(tcx, &trait_to_skol_substs);
+        //         let infcx = infer::new_infer_ctxt(tcx);
+        //         match infer::mk_sub_trait_refs(&infcx,
+        //                                        true,
+        //                                        infer::Misc(impl_m_span),
+        //                                        trait_bound,
+        //                                        impl_trait_bound.clone()) {
+        //             Ok(_) => {
+        //                 ok = true;
+        //                 break
+        //             }
+        //             Err(_) => continue,
+        //         }
+        //     }
+        //
+        //     if !ok {
+        //         span_err!(tcx.sess, impl_m_span, E0052,
+        //             "in method `{}`, type parameter {} requires bound `{}`, which is not \
+        //              required by the corresponding type parameter in the trait declaration",
+        //             token::get_name(trait_m.name),
+        //             i,
+        //             ppaux::trait_ref_to_string(tcx, &*impl_trait_bound));
+        //     }
+        // }
     }
 
     // Compute skolemized form of impl and trait method tys.
@@ -1165,106 +1167,107 @@ fn compare_impl_method(tcx: &ty::ctxt,
         has an early bound lifetime parameter and the method does not.
 
         */
+        // I'm pretty sure that this is going to have to be rewritten.
 
-        let trait_params = trait_generics.regions.get_slice(subst::FnSpace);
-        let impl_params = impl_generics.regions.get_slice(subst::FnSpace);
-
-        debug!("check_region_bounds_on_impl_method: \
-               trait_generics={} \
-               impl_generics={}",
-               trait_generics.repr(tcx),
-               impl_generics.repr(tcx));
-
-        // Must have same number of early-bound lifetime parameters.
-        // Unfortunately, if the user screws up the bounds, then this
-        // will change classification between early and late.  E.g.,
-        // if in trait we have `<'a,'b:'a>`, and in impl we just have
-        // `<'a,'b>`, then we have 2 early-bound lifetime parameters
-        // in trait but 0 in the impl. But if we report "expected 2
-        // but found 0" it's confusing, because it looks like there
-        // are zero. Since I don't quite know how to phrase things at
-        // the moment, give a kind of vague error message.
-        if trait_params.len() != impl_params.len() {
-            tcx.sess.span_err(
-                span,
-                format!("lifetime parameters or bounds on method `{}` do \
-                         not match the trait declaration",
-                        token::get_name(impl_m.name)).as_slice());
-            return false;
-        }
-
-        // Each parameter `'a:'b+'c+'d` in trait should have the same
-        // set of bounds in the impl, after subst.
-        for (trait_param, impl_param) in
-            trait_params.iter().zip(
-                impl_params.iter())
-        {
-            let trait_bounds =
-                trait_param.bounds.subst(tcx, trait_to_skol_substs);
-            let impl_bounds =
-                impl_param.bounds.subst(tcx, impl_to_skol_substs);
-
-            debug!("check_region_bounds_on_impl_method: \
-                   trait_param={} \
-                   impl_param={} \
-                   trait_bounds={} \
-                   impl_bounds={}",
-                   trait_param.repr(tcx),
-                   impl_param.repr(tcx),
-                   trait_bounds.repr(tcx),
-                   impl_bounds.repr(tcx));
-
-            // Collect the set of bounds present in trait but not in
-            // impl.
-            let missing: Vec<ty::Region> =
-                trait_bounds.iter()
-                .filter(|&b| !impl_bounds.contains(b))
-                .map(|&b| b)
-                .collect();
-
-            // Collect set present in impl but not in trait.
-            let extra: Vec<ty::Region> =
-                impl_bounds.iter()
-                .filter(|&b| !trait_bounds.contains(b))
-                .map(|&b| b)
-                .collect();
-
-            debug!("missing={} extra={}",
-                   missing.repr(tcx), extra.repr(tcx));
-
-            let err = if missing.len() != 0 || extra.len() != 0 {
-                tcx.sess.span_err(
-                    span,
-                    format!(
-                        "the lifetime parameter `{}` declared in the impl \
-                         has a distinct set of bounds \
-                         from its counterpart `{}` \
-                         declared in the trait",
-                        impl_param.name.user_string(tcx),
-                        trait_param.name.user_string(tcx)).as_slice());
-                true
-            } else {
-                false
-            };
-
-            if missing.len() != 0 {
-                tcx.sess.span_note(
-                    span,
-                    format!("the impl is missing the following bounds: `{}`",
-                            missing.user_string(tcx)).as_slice());
-            }
-
-            if extra.len() != 0 {
-                tcx.sess.span_note(
-                    span,
-                    format!("the impl has the following extra bounds: `{}`",
-                            extra.user_string(tcx)).as_slice());
-            }
-
-            if err {
-                return false;
-            }
-        }
+        // let trait_params = trait_generics.regions.get_slice(subst::FnSpace);
+        // let impl_params = impl_generics.regions.get_slice(subst::FnSpace);
+        //
+        // debug!("check_region_bounds_on_impl_method: \
+        //        trait_generics={} \
+        //        impl_generics={}",
+        //        trait_generics.repr(tcx),
+        //        impl_generics.repr(tcx));
+        //
+        // // Must have same number of early-bound lifetime parameters.
+        // // Unfortunately, if the user screws up the bounds, then this
+        // // will change classification between early and late.  E.g.,
+        // // if in trait we have `<'a,'b:'a>`, and in impl we just have
+        // // `<'a,'b>`, then we have 2 early-bound lifetime parameters
+        // // in trait but 0 in the impl. But if we report "expected 2
+        // // but found 0" it's confusing, because it looks like there
+        // // are zero. Since I don't quite know how to phrase things at
+        // // the moment, give a kind of vague error message.
+        // if trait_params.len() != impl_params.len() {
+        //     tcx.sess.span_err(
+        //         span,
+        //         format!("lifetime parameters or bounds on method `{}` do \
+        //                  not match the trait declaration",
+        //                 token::get_name(impl_m.name)).as_slice());
+        //     return false;
+        // }
+        //
+        // // Each parameter `'a:'b+'c+'d` in trait should have the same
+        // // set of bounds in the impl, after subst.
+        // for (trait_param, impl_param) in
+        //     trait_params.iter().zip(
+        //         impl_params.iter())
+        // {
+        //     let trait_bounds: int =
+        //         trait_param.bounds.subst(tcx, trait_to_skol_substs);
+        //     let impl_bounds =
+        //         impl_param.bounds.subst(tcx, impl_to_skol_substs);
+        //
+        //     debug!("check_region_bounds_on_impl_method: \
+        //            trait_param={} \
+        //            impl_param={} \
+        //            trait_bounds={} \
+        //            impl_bounds={}",
+        //            trait_param.repr(tcx),
+        //            impl_param.repr(tcx),
+        //            trait_bounds.repr(tcx),
+        //            impl_bounds.repr(tcx));
+        //
+        //     // Collect the set of bounds present in trait but not in
+        //     // impl.
+        //     let missing: Vec<ty::Region> =
+        //         trait_bounds.iter()
+        //         .filter(|&b| !impl_bounds.contains(b))
+        //         .map(|&b| b)
+        //         .collect();
+        //
+        //     // Collect set present in impl but not in trait.
+        //     let extra: Vec<ty::Region> =
+        //         impl_bounds.iter()
+        //         .filter(|&b| !trait_bounds.contains(b))
+        //         .map(|&b| b)
+        //         .collect();
+        //
+        //     debug!("missing={} extra={}",
+        //            missing.repr(tcx), extra.repr(tcx));
+        //
+        //     let err = if missing.len() != 0 || extra.len() != 0 {
+        //         tcx.sess.span_err(
+        //             span,
+        //             format!(
+        //                 "the lifetime parameter `{}` declared in the impl \
+        //                  has a distinct set of bounds \
+        //                  from its counterpart `{}` \
+        //                  declared in the trait",
+        //                 impl_param.name.user_string(tcx),
+        //                 trait_param.name.user_string(tcx)).as_slice());
+        //         true
+        //     } else {
+        //         false
+        //     };
+        //
+        //     if missing.len() != 0 {
+        //         tcx.sess.span_note(
+        //             span,
+        //             format!("the impl is missing the following bounds: `{}`",
+        //                     missing.user_string(tcx)).as_slice());
+        //     }
+        //
+        //     if extra.len() != 0 {
+        //         tcx.sess.span_note(
+        //             span,
+        //             format!("the impl has the following extra bounds: `{}`",
+        //                     extra.user_string(tcx)).as_slice());
+        //     }
+        //
+        //     if err {
+        //         return false;
+        //     }
+        // }
 
         return true;
     }
@@ -1651,7 +1654,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // If the type is `Foo+'a`, ensures that the type
                 // being cast to `Foo+'a` outlives `'a`:
                 let origin = infer::RelateObjectBound(span);
-                self.register_region_obligation(origin, self_ty, ty_trait.bounds.region_bound);
+                fail!("foo") //self.register_region_obligation(origin, self_ty, ty_trait.bounds.region_bound);
             }
         }
     }
@@ -1677,6 +1680,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 &polytype.generics);
         self.add_obligations_for_parameters(
             traits::ObligationCause::new(
+                self.body_id,
                 span,
                 traits::ItemObligation(def_id)),
             &substs,
@@ -1708,7 +1712,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     {
         let obligation = traits::obligation_for_builtin_bound(
             self.tcx(),
-            traits::ObligationCause::new(span, code),
+            traits::ObligationCause::new(self.body_id, span, code),
             ty,
             bound);
         match obligation {
@@ -4357,7 +4361,7 @@ fn constrain_path_type_parameters(fcx: &FnCtxt,
         for &ty in item_substs.substs.types.iter() {
             let default_bound = ty::ReScope(expr.id);
             let origin = infer::RelateDefaultParamBound(expr.span, ty);
-            fcx.register_region_obligation(origin, ty, default_bound);
+            fail!("what to do here") //fcx.register_region_obligation(origin, ty, default_bound);
         }
     });
 }
@@ -5097,7 +5101,7 @@ pub fn instantiate_path(fcx: &FnCtxt,
     }
 
     fcx.add_obligations_for_parameters(
-        traits::ObligationCause::new(span, traits::ItemObligation(def.def_id())),
+        traits::ObligationCause::new(fcx.body_id, span, traits::ItemObligation(def.def_id())),
         &substs,
         &polytype.generics);
 

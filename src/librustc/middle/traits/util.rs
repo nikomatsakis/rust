@@ -116,7 +116,7 @@ impl<'cx, 'tcx> Iterator<ty::Predicate> for Elaborator<'cx, 'tcx> {
     fn next(&mut self) -> Option<ty::Predicate> {
         loop {
             // Extract next item from top-most stack frame, if any.
-            let next_predicate = match self.stack.mut_last() {
+            let next_predicate = match self.stack.last_mut() {
                 None => {
                     // No more stack frames. Done.
                     return None;
@@ -128,7 +128,7 @@ impl<'cx, 'tcx> Iterator<ty::Predicate> for Elaborator<'cx, 'tcx> {
                         entry.position += 1;
 
                         let next_predicate =
-                            (*entry.predicates.get(p)).clone();
+                            entry.predicates[p].clone();
 
                         Some(next_predicate)
                     } else {
@@ -335,4 +335,3 @@ impl Repr for ty::type_err {
         ty::type_err_to_str(tcx, self)
     }
 }
-

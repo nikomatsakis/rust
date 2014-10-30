@@ -152,6 +152,10 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         self.infcx.tcx
     }
 
+    pub fn infcx(&self) -> &'cx InferCtxt<'cx, 'tcx> {
+      self.infcx
+    }
+
     ///////////////////////////////////////////////////////////////////////////
     // Selection
     //
@@ -617,7 +621,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
         let mut candidates = Vec::new();
 
-        let all_impls = self.all_impls(obligation.trait_ref.def_id);
+        let all_impls = self.all_impls(obligation.trait_ref().def_id);
         for &impl_def_id in all_impls.iter() {
             self.infcx.probe(|| {
                 match self.match_method_coerce(impl_def_id, rcvr_ty, xform_self_ty, obligation) {
@@ -835,20 +839,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         // who might care about this case, like coherence, should use
         // that function).
         if candidates.len() == 0 {
-            // Annoying edge case: if there are no impls, then there
-            // is no way that this trait reference is implemented,
-            // *unless* it contains unbound variables. In that case,
-            // it is possible that one of those unbound variables will
-            // be bound to a new type from some other crate which will
-            // also contain impls.
-            let skol_obligation_self_ty = self.infcx.skolemize(stack.obligation.self_ty());
-            return if !self.contains_skolemized_types(skol_obligation_self_ty) {
-                debug!("0 matches, unimpl");
             return Err(Unimplemented);
-            } else {
-                debug!("0 matches, ambig");
-                Ok(None)
-            };
         }
 
         // Just one candidate left.
@@ -965,7 +956,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         let all_predicates =
             util::elaborate_predicates(
                 self.tcx(),
-                self.param_env.caller_obligations.as_slice().to_owned());
+                self.param_env.caller_obligations.as_slice().to_vec());
 
         let matching_bounds =
             all_predicates.flat_map(
@@ -980,7 +971,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         Ok(())
     }
 
-    fn predicate_satisfies(&self,
+    fn predicate_satisfies(&mut self,
                            predicate: ty::Predicate,
                            obligation: &TraitObligation)
                            -> Option<Rc<ty::TraitRef>>
@@ -1015,11 +1006,11 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
          */
 
         let tcx = self.tcx();
-        let kind = if Some(obligation.trait_ref.def_id) == tcx.lang_items.fn_trait() {
+        let kind = if Some(obligation.trait_ref().def_id) == tcx.lang_items.fn_trait() {
             ty::FnUnboxedClosureKind
-        } else if Some(obligation.trait_ref.def_id) == tcx.lang_items.fn_mut_trait() {
+        } else if Some(obligation.trait_ref().def_id) == tcx.lang_items.fn_mut_trait() {
             ty::FnMutUnboxedClosureKind
-        } else if Some(obligation.trait_ref.def_id) == tcx.lang_items.fn_once_trait() {
+        } else if Some(obligation.trait_ref().def_id) == tcx.lang_items.fn_once_trait() {
             ty::FnOnceUnboxedClosureKind
         } else {
             return Ok(()); // not a fn trait, ignore
@@ -1640,7 +1631,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     fn confirm_builtin_candidate(&mut self,
                                  obligation: &TraitObligation,
                                  bound: ty::BuiltinBound)
-                                 -> Result<VtableBuiltinData<TraitObligation>,SelectionError>
+                                 -> Result<VtableBuiltinData<PredicateObligation>,SelectionError>
     {
         debug!("confirm_builtin_candidate({})",
                obligation.repr(self.tcx()));

@@ -594,10 +594,9 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
         // Construct the obligation which must match.
         let trait_ref =
             Rc::new(ty::TraitRef::new(trait_def_id, substs));
+        // Might not be right ObligationCause
         let obligation =
-            traits::Obligation::misc(self.span, trait_ref, traits::ObligationCause::misc(
-                trait_def_id, self.span
-            ));
+            traits::Obligation::misc(self.fcx.body_id, self.span, trait_ref);
 
         debug!("extension-candidate(xform_self_ty={} obligation={})",
                self.infcx().ty_to_string(xform_self_ty),
@@ -693,46 +692,46 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
                                             space: subst::ParamSpace,
                                             index: uint,
                                             restrict_to: Option<DefId>) {
-        let bounds =
-            self.fcx.inh.param_env.bounds.get(space, index).trait_bounds
-            .as_slice();
-        self.push_inherent_candidates_from_bounds_inner(bounds,
-            |this, trait_ref, m, method_num| {
-                match restrict_to {
-                    Some(trait_did) => {
-                        if trait_did != trait_ref.def_id {
-                            return None;
-                        }
-                    }
-                    _ => {}
-                }
-
-                let xform_self_ty =
-                    this.xform_self_ty(&m, &trait_ref.substs);
-
-                debug!("found match: trait_ref={} substs={} m={}",
-                       trait_ref.repr(this.tcx()),
-                       trait_ref.substs.repr(this.tcx()),
-                       m.repr(this.tcx()));
-                assert_eq!(m.generics.types.get_slice(subst::TypeSpace).len(),
-                           trait_ref.substs.types.get_slice(subst::TypeSpace).len());
-                assert_eq!(m.generics.regions.get_slice(subst::TypeSpace).len(),
-                           trait_ref.substs.regions().get_slice(subst::TypeSpace).len());
-                assert_eq!(m.generics.types.get_slice(subst::SelfSpace).len(),
-                           trait_ref.substs.types.get_slice(subst::SelfSpace).len());
-                assert_eq!(m.generics.regions.get_slice(subst::SelfSpace).len(),
-                           trait_ref.substs.regions().get_slice(subst::SelfSpace).len());
-
-                Some(Candidate {
-                    xform_self_ty: xform_self_ty,
-                    rcvr_substs: trait_ref.substs.clone(),
-                    method_ty: m,
-                    origin: MethodTypeParam(MethodParam {
-                        trait_ref: trait_ref,
-                        method_num: method_num,
-                    })
-                })
-            })
+        // let bounds =
+        //     self.fcx.inh.param_env.bounds.get(space, index).trait_bounds
+        //     .as_slice();
+        // self.push_inherent_candidates_from_bounds_inner(bounds,
+        //     |this, trait_ref, m, method_num| {
+        //         match restrict_to {
+        //             Some(trait_did) => {
+        //                 if trait_did != trait_ref.def_id {
+        //                     return None;
+        //                 }
+        //             }
+        //             _ => {}
+        //         }
+        //
+        //         let xform_self_ty =
+        //             this.xform_self_ty(&m, &trait_ref.substs);
+        //
+        //         debug!("found match: trait_ref={} substs={} m={}",
+        //                trait_ref.repr(this.tcx()),
+        //                trait_ref.substs.repr(this.tcx()),
+        //                m.repr(this.tcx()));
+        //         assert_eq!(m.generics.types.get_slice(subst::TypeSpace).len(),
+        //                    trait_ref.substs.types.get_slice(subst::TypeSpace).len());
+        //         assert_eq!(m.generics.regions.get_slice(subst::TypeSpace).len(),
+        //                    trait_ref.substs.regions().get_slice(subst::TypeSpace).len());
+        //         assert_eq!(m.generics.types.get_slice(subst::SelfSpace).len(),
+        //                    trait_ref.substs.types.get_slice(subst::SelfSpace).len());
+        //         assert_eq!(m.generics.regions.get_slice(subst::SelfSpace).len(),
+        //                    trait_ref.substs.regions().get_slice(subst::SelfSpace).len());
+        //
+        //         Some(Candidate {
+        //             xform_self_ty: xform_self_ty,
+        //             rcvr_substs: trait_ref.substs.clone(),
+        //             method_ty: m,
+        //             origin: MethodTypeParam(MethodParam {
+        //                 trait_ref: trait_ref,
+        //                 method_num: method_num,
+        //             })
+        //         })
+        //     })
     }
 
     // Do a search through a list of bounds, using a callback to actually
@@ -1294,9 +1293,9 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
         // (trait-based method dispatch).
         let candidate = Candidate {
             xform_self_ty: extension.xform_self_ty,
-            rcvr_substs: extension.obligation.trait_ref.substs.clone(),
+            rcvr_substs: extension.obligation.trait_ref().substs.clone(),
             method_ty: extension.method_ty.clone(),
-            origin: MethodTypeParam(MethodParam{trait_ref: extension.obligation.trait_ref.clone(),
+            origin: MethodTypeParam(MethodParam{trait_ref: extension.obligation.trait_ref().clone(),
                                                 method_num: extension.method_num})
         };
 
@@ -1450,7 +1449,7 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
             }
             _ => {
                 self.fcx.add_obligations_for_parameters(
-                    traits::ObligationCause::misc(self.span),
+                    traits::ObligationCause::misc(self.fcx.body_id, self.span),
                     &all_substs,
                     &candidate.method_ty.generics);
             }
@@ -1785,6 +1784,6 @@ impl Candidate {
 
 impl ExtensionCandidate {
     fn to_source(&self) -> CandidateSource {
-        TraitSource(self.obligation.trait_ref.def_id)
+        TraitSource(self.obligation.trait_ref().def_id)
     }
 }

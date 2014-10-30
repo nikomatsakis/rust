@@ -69,6 +69,7 @@ use util::ppaux::{Repr, UserString};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::iter::AdditiveIterator;
+use std::iter::Extendable;
 use syntax::{abi, ast, ast_util};
 use syntax::codemap::Span;
 use syntax::parse::token;
@@ -1349,8 +1350,7 @@ pub fn conv_existential_bounds<'tcx, AC: AstConv<'tcx>, RS:RegionScope>(
     let ast_bound_refs: Vec<&ast::TyParamBound> =
         ast_bounds.iter().collect();
 
-    let PartitionedBounds { builtin_bounds,
-                            trait_bounds,
+    let PartitionedBounds { trait_bounds,
                             region_bounds,
                             unboxed_fn_ty_bounds } =
         partition_bounds(this.tcx(), span, ast_bound_refs.as_slice());
@@ -1373,13 +1373,13 @@ pub fn conv_existential_bounds<'tcx, AC: AstConv<'tcx>, RS:RegionScope>(
     let region_bound = compute_region_bound(this,
                                             rscope,
                                             span,
-                                            builtin_bounds,
+                                            fail!("NYI"),
                                             region_bounds.as_slice(),
                                             main_trait_refs.as_slice());
 
     ty::ExistentialBounds {
         region_bound: region_bound,
-        builtin_bounds: builtin_bounds,
+        builtin_bounds: fail!("NYI"),
     }
 }
 
@@ -1415,6 +1415,10 @@ pub fn compute_opt_region_bound(tcx: &ty::ctxt,
     // bounds and see if we can derive region bounds from those.
     let derived_region_bounds =
         derived_region_bounds(tcx,
+                              span,
+                              // what to pass here? why have a param if
+                              // just shadow it immediately
+                              ty::mk_infer(tcx, ty::SkolemizedTy(0)),
                               builtin_bounds,
                               trait_bounds);
 
@@ -1475,10 +1479,9 @@ pub fn compute_opt_region_bound(tcx: &ty::ctxt,
             .map(|trait_bound| {
                 ty::TraitPredicate(trait_bound)
             });
-        let predicates: Vec<ty::Predicate> =
-            builtin_predicates
-            .extend(trait_predicates)
-            .collect();
+
+        let mut predicates: Vec<ty::Predicate> = builtin_predicates.map(|tr| ty::TraitPredicate(tr)).collect();
+        predicates.extend(trait_predicates);
 
         // Elaborate these predicates and search for anything that
         // gives us a bound on the erased self type:
@@ -1516,8 +1519,8 @@ fn compute_region_bound<'tcx, AC: AstConv<'tcx>, RS:RegionScope>(
      * and we are in an `rscope` that does not provide a default.
      */
 
-    match compute_opt_region_bound(this.tcx(), span, builtin_bounds,
-                                   region_bounds, trait_bounds) {
+    match compute_opt_region_bound(this.tcx(), span, builtin_bounds, region_bounds,
+                                   trait_bounds) {
         Some(r) => r,
         None => {
             match rscope.default_region_bound(span) {
