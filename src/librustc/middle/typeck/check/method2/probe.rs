@@ -82,7 +82,7 @@ pub type PickResult = Result<Pick, MethodError>;
 pub enum PickAdjustment {
     AutoDeref(/* number of autoderefs */ uint),     // A = expr, *expr, **expr
     AutoRef(ast::Mutability, Box<PickAdjustment>),  // A = &A | &mut A
-    AutoUnsize(Box<PickAdjustment>),                // [T, ..n] => [T]
+    AutoUnsizeLength(uint, Box<PickAdjustment>),    // [T, ..n] => [T]
 }
 
 impl<'a,'tcx> ProbeContext<'a,'tcx> {

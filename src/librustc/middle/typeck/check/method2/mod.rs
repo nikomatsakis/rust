@@ -12,11 +12,13 @@
 
 use middle::ty;
 use middle::typeck::check::{FnCtxt};
+use middle::typeck::MethodCallee;
 use syntax::ast;
 use syntax::codemap::Span;
 use std::rc::Rc;
 
 mod probe;
+mod confirm;
 
 pub type MethodResult = Result<MethodCallee, MethodError>;
 
