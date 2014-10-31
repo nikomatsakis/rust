@@ -63,8 +63,7 @@ pub fn main() {
     let x: Vec1 = Vec1 { x: 1.0 } * 2.0; // this is OK
 
     let x: Vec2 = Vec2 { x: 1.0, y: 2.0 } * 2.0; // trait had reversed order
-    //~^ ERROR mismatched types
-    //~^^ ERROR mismatched types
+    //~^ ERROR not implemented
 
     let x: i32 = Vec3 { x: 1.0, y: 2.0, z: 3.0 } * 2.0;
 }
