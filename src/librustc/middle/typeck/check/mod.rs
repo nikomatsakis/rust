@@ -3228,6 +3228,12 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                         let adjustment = ty::AutoDerefRef { autoderefs: 1, autoref: Some(autoptr) };
                         (adjusted_ty, adjustment)
                     }
+                    ty::ty_vec(element_ty, Some(len)) => {
+                        let adjusted_ty = ty::mk_vec(fcx.tcx(), element_ty, None);
+                        let autoptr = ty::AutoUnsize(ty::UnsizeLength(len));
+                        let adjustment = ty::AutoDerefRef { autoderefs: 0, autoref: Some(autoptr) };
+                        (adjusted_ty, adjustment)
+                    }
                     _ => {
                         (lhs_ty, ty::AutoDerefRef { autoderefs: 0, autoref: None })
                     }
