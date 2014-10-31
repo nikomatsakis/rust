@@ -895,7 +895,7 @@ impl<A, E, V: FromIterator<A>> FromIterator<Result<A, E>> for Result<V, E> {
     /// use std::uint;
     ///
     /// let v = vec!(1u, 2u);
-    /// let res: Result<Vec<uint>, &'static str> = v.iter().map(|x: &uint|
+    /// let res: Result<Vec<uint>, &'static str> = v.iter().map(|&x: &uint|
     ///     if *x == uint::MAX { Err("Overflow!") }
     ///     else { Ok(x + 1) }
     /// ).collect();

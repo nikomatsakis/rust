@@ -787,7 +787,7 @@ impl<A, V: FromIterator<A>> FromIterator<Option<A>> for Option<V> {
     /// use std::uint;
     ///
     /// let v = vec!(1u, 2u);
-    /// let res: Option<Vec<uint>> = v.iter().map(|x: &uint|
+    /// let res: Option<Vec<uint>> = v.iter().map(|&x: &uint|
     ///     if *x == uint::MAX { None }
     ///     else { Some(x + 1) }
     /// ).collect();
