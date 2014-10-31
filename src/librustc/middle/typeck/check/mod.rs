@@ -3204,15 +3204,21 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                                   unbound_method: ||) -> ty::t {
         let method = match trait_did {
             Some(trait_did) => {
-                // FIXME -- to enable multidispatch, we would want to supply
-                // explicit input-types
-
-                // Kind of a hack: if input is of type &'a T, then
-                // reborrow it to &'b T where 'b <= 'a. This makes
-                // things like `x == y`, where `x` and `y` are both
-                // region pointers, work.  We could also solve this
-                // with variance or different traits that don't force
-                // left and right to have same type.
+                // We do a few eager coercions to make using operators
+                // more ergonomic:
+                //
+                // - If the input is of type &'a T (resp. &'a mut T),
+                //   then reborrow it to &'b T (resp. &'b mut T) where
+                //   'b <= 'a.  This makes things like `x == y`, where
+                //   `x` and `y` are both region pointers, work.  We
+                //   could also solve this with variance or different
+                //   traits that don't force left and right to have same
+                //   type.
+                //
+                // - If the input is a fixed-length array `[T, ..n]`,
+                //   then convert it to a slice `[T]`. This works because
+                //   operators auto-ref their arguments. It also means that
+                //   things like `vec[] == [1, 2, 3]` compile fine.
                 let (adj_ty, adjustment) = match ty::get(lhs_ty).sty {
                     ty::ty_rptr(r_in, mt) => {
                         let r_adj = fcx.infcx().next_region_var(infer::Autoref(lhs.span));
@@ -3220,6 +3226,12 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                         let adjusted_ty = ty::mk_rptr(fcx.tcx(), r_adj, mt);
                         let autoptr = ty::AutoPtr(r_adj, mt.mutbl, None);
                         let adjustment = ty::AutoDerefRef { autoderefs: 1, autoref: Some(autoptr) };
+                        (adjusted_ty, adjustment)
+                    }
+                    ty::ty_vec(element_ty, Some(len)) => {
+                        let adjusted_ty = ty::mk_vec(fcx.tcx(), element_ty, None);
+                        let autoptr = ty::AutoUnsize(UnsizeLength(len));
+                        let adjustment = ty::AutoDerefRef { autoderefs: 0, autoref: Some(autoptr) };
                         (adjusted_ty, adjustment)
                     }
                     _ => {
