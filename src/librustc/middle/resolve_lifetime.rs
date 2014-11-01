@@ -21,6 +21,7 @@ use driver::session::Session;
 use middle::subst;
 use syntax::ast;
 use syntax::codemap::Span;
+use syntax::owned_slice::OwnedSlice;
 use syntax::parse::token::special_idents;
 use syntax::parse::token;
 use syntax::print::pprust::{lifetime_to_string};
