@@ -3527,8 +3527,8 @@ everyone plays by these rules. At compile time, it verifies that none of these
 rules are broken. If our program compiles successfully, Rust can guarantee it
 is free of data races and other memory errors, and there is no runtime overhead
 for any of this. The borrow checker works only at compile time. If the borrow
-checker did find a problem, it will report a **lifetime error**, and your
-program will refuse to compile.
+checker did find a problem, it will report an error and your program will
+refuse to compile.
 
 That's a lot to take in. It's also one of the _most_ important concepts in
 all of Rust. Let's see this syntax in action:
@@ -3852,7 +3852,7 @@ the value to a name with `@`:
 let x = 1i;
 
 match x {
-    x @ 1 ... 5 => println!("got {}", x),
+    e @ 1 ... 5 => println!("got a range element {}", e),
     _ => println!("anything"),
 }
 ```
@@ -3885,7 +3885,7 @@ enum OptionalInt {
 let x = Value(5i);
 
 match x {
-    Value(x) if x > 5 => println!("Got an int bigger than five!"),
+    Value(i) if i > 5 => println!("Got an int bigger than five!"),
     Value(..) => println!("Got an int!"),
     Missing   => println!("No such luck."),
 }
@@ -3898,12 +3898,12 @@ with. First, `&`:
 let x = &5i;
 
 match x {
-    &x => println!("Got a value: {}", x),
+    &val => println!("Got a value: {}", val),
 }
 ```
 
-Here, the `x` inside the `match` has type `int`. In other words, the left hand
-side of the pattern destructures the value. If we have `&5i`, then in `&x`, `x`
+Here, the `val` inside the `match` has type `int`. In other words, the left hand
+side of the pattern destructures the value. If we have `&5i`, then in `&val`, `val`
 would be `5i`.
 
 If you want to get a reference, use the `ref` keyword:
@@ -3912,11 +3912,11 @@ If you want to get a reference, use the `ref` keyword:
 let x = 5i;
 
 match x {
-    ref x => println!("Got a reference to {}", x),
+    ref r => println!("Got a reference to {}", r),
 }
 ```
 
-Here, the `x` inside the `match` has the type `&int`. In other words, the `ref`
+Here, the `r` inside the `match` has the type `&int`. In other words, the `ref`
 keyword _creates_ a reference, for use in the pattern. If you need a mutable
 reference, `ref mut` will work in the same way:
 
@@ -3924,7 +3924,7 @@ reference, `ref mut` will work in the same way:
 let mut x = 5i;
 
 match x {
-    ref mut x => println!("Got a mutable reference to {}", x),
+    ref mut mr => println!("Got a mutable reference to {}", mr),
 }
 ```
 
@@ -4061,8 +4061,8 @@ syntax.
 
 # Closures
 
-So far, we've made lots of functions in Rust. But we've given them all names.
-Rust also allows us to create anonymous functions too. Rust's anonymous
+So far, we've made lots of functions in Rust, but we've given them all names.
+Rust also allows us to create anonymous functions. Rust's anonymous
 functions are called **closure**s. By themselves, closures aren't all that
 interesting, but when you combine them with functions that take closures as
 arguments, really powerful things are possible.
@@ -4091,7 +4091,7 @@ don't need to declare one. This is different from named functions, which
 default to returning unit (`()`).
 
 There's one big difference between a closure and named functions, and it's in
-the name: a closure "closes over its environment." What's that mean? It means
+the name: a closure "closes over its environment." What does that mean? It means
 this:
 
 ```{rust}
@@ -4107,8 +4107,8 @@ fn main() {
 The `||` syntax means this is an anonymous closure that takes no arguments.
 Without it, we'd just have a block of code in `{}`s.
 
-In other words, a closure has access to variables in the scope that it's
-defined. The closure borrows any variables that it uses. This will error:
+In other words, a closure has access to variables in the scope where it's
+defined. The closure borrows any variables it uses, so this will error:
 
 ```{rust,ignore}
 fn main() {
@@ -4132,7 +4132,7 @@ let p = proc() { x * x };
 println!("{}", p()); // prints 25
 ```
 
-Procs have a big difference from closures: they may only be called once. This
+There is a big difference between procs and closures: procs may only be called once. This
 will error when we try to compile:
 
 ```{rust,ignore}
@@ -4225,10 +4225,10 @@ before. And we pass in our `x` argument to each one. Hence 'twice.'
 If you do the math, `(5 * 5) + (5 * 5) == 50`, so that's the output we get.
 
 Play around with this concept until you're comfortable with it. Rust's standard
-library uses lots of closures, where appropriate, so you'll be using
+library uses lots of closures where appropriate, so you'll be using
 this technique a lot.
 
-If we didn't want to give `square` a name, we could also just define it inline.
+If we didn't want to give `square` a name, we could just define it inline.
 This example is the same as the previous one:
 
 ```{rust}
@@ -4256,12 +4256,12 @@ fn main() {
 }
 ```
 
-Doing this is not particularly common, but every once in a while, it's useful.
+Doing this is not particularly common, but it's useful every once in a while.
 
 That's all you need to get the hang of closures! Closures are a little bit
-strange at first, but once you're used to using them, you'll miss them in any
-language that doesn't have them. Passing functions to other functions is
-incredibly powerful. Next, let's look at one of those things: iterators.
+strange at first, but once you're used to them, you'll miss them
+in other languages. Passing functions to other functions is
+incredibly powerful, as you will see in the following chapter about iterators.
 
 # Iterators
 
@@ -4545,9 +4545,10 @@ range(1i, 100i).map(|x| println!("{}", x));
 If you are trying to execute a closure on an iterator for its side effects,
 just use `for` instead.
 
-There are tons of interesting iterator adapters. `take(n)` will get the
-first `n` items out of an iterator, and return them as a list. Let's
-try it out with our infinite iterator from before, `count()`:
+There are tons of interesting iterator adapters. `take(n)` will return an
+iterator over the next `n` elements of the original iterator, note that this
+has no side effect on the original iterator. Let's try it out with our infinite
+iterator from before, `count()`:
 
 ```{rust}
 for i in std::iter::count(1i, 5i).take(5) {
@@ -5212,17 +5213,17 @@ immediately.
 
 ## Success and failure
 
-Tasks don't always succeed, they can also fail. A task that wishes to fail
-can call the `fail!` macro, passing a message:
+Tasks don't always succeed, they can also panic. A task that wishes to panic 
+can call the `panic!` macro, passing a message:
 
 ```{rust}
 spawn(proc() {
-    fail!("Nope.");
+    panic!("Nope.");
 });
 ```
 
-If a task fails, it is not possible for it to recover. However, it can
-notify other tasks that it has failed. We can do this with `task::try`:
+If a task panics, it is not possible for it to recover. However, it can
+notify other tasks that it has panicked. We can do this with `task::try`:
 
 ```{rust}
 use std::task;
@@ -5232,14 +5233,14 @@ let result = task::try(proc() {
     if rand::random() {
         println!("OK");
     } else {
-        fail!("oops!");
+        panic!("oops!");
     }
 });
 ```
 
-This task will randomly fail or succeed. `task::try` returns a `Result`
+This task will randomly panic or succeed. `task::try` returns a `Result`
 type, so we can handle the response like any other computation that may
-fail.
+panic.
 
 # Macros
 

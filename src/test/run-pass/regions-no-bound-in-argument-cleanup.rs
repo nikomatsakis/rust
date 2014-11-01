@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,8 +8,23 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// error-pattern:explicit failure
+#![feature(unsafe_destructor)]
 
-fn main() {
-    &fail!()
+pub struct Foo<T>;
+
+impl<T> Iterator<T> for Foo<T> {
+    fn next(&mut self) -> Option<T> {
+        None
+    }
 }
+
+#[unsafe_destructor]
+impl<T> Drop for Foo<T> {
+    fn drop(&mut self) {
+        self.next();
+    }
+}
+
+pub fn foo<'a>(_: Foo<&'a ()>) {}
+
+pub fn main() {}

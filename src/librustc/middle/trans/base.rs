@@ -50,7 +50,7 @@ use middle::trans::cleanup;
 use middle::trans::common::{Block, C_bool, C_bytes_in_context, C_i32, C_integral, C_nil};
 use middle::trans::common::{C_null, C_struct_in_context, C_u64, C_u8, C_uint, C_undef};
 use middle::trans::common::{CrateContext, ExternMap, FunctionContext};
-use middle::trans::common::{NodeInfo, Result, SubstP, monomorphize_type};
+use middle::trans::common::{NodeInfo, Result, SubstP};
 use middle::trans::common::{node_id_type, param_substs, return_type_is_void};
 use middle::trans::common::{tydesc_info, type_is_immediate};
 use middle::trans::common::{type_is_zero_size, val_ty};
@@ -180,7 +180,7 @@ impl<'a, 'tcx> Drop for StatRecorder<'a, 'tcx> {
 
 // only use this for foreign function ABIs and glue, use `decl_rust_fn` for Rust functions
 pub fn decl_fn(ccx: &CrateContext, name: &str, cc: llvm::CallConv,
-           ty: Type, output: ty::t) -> ValueRef {
+           ty: Type, output: ty::FnOutput) -> ValueRef {
 
     let llfn: ValueRef = name.with_c_str(|buf| {
         unsafe {
@@ -188,12 +188,9 @@ pub fn decl_fn(ccx: &CrateContext, name: &str, cc: llvm::CallConv,
         }
     });
 
-    match ty::get(output).sty {
-        // functions returning bottom may unwind, but can never return normally
-        ty::ty_bot => {
-            llvm::SetFunctionAttribute(llfn, llvm::NoReturnAttribute)
-        }
-        _ => {}
+    // diverging functions may unwind, but can never return normally
+    if output == ty::FnDiverging {
+        llvm::SetFunctionAttribute(llfn, llvm::NoReturnAttribute);
     }
 
     if ccx.tcx().sess.opts.cg.no_redzone {
@@ -216,7 +213,7 @@ pub fn decl_cdecl_fn(ccx: &CrateContext,
                      name: &str,
                      ty: Type,
                      output: ty::t) -> ValueRef {
-    decl_fn(ccx, name, llvm::CCallConv, ty, output)
+    decl_fn(ccx, name, llvm::CCallConv, ty, ty::FnConverging(output))
 }
 
 // only use this for foreign function ABIs and glue, use `get_extern_rust_fn` for Rust functions
@@ -227,17 +224,17 @@ pub fn get_extern_fn(ccx: &CrateContext,
                      ty: Type,
                      output: ty::t)
                      -> ValueRef {
-    match externs.find_equiv(&name) {
+    match externs.find_equiv(name) {
         Some(n) => return *n,
         None => {}
     }
-    let f = decl_fn(ccx, name, cc, ty, output);
+    let f = decl_fn(ccx, name, cc, ty, ty::FnConverging(output));
     externs.insert(name.to_string(), f);
     f
 }
 
 fn get_extern_rust_fn(ccx: &CrateContext, fn_ty: ty::t, name: &str, did: ast::DefId) -> ValueRef {
-    match ccx.externs().borrow().find_equiv(&name) {
+    match ccx.externs().borrow().find_equiv(name) {
         Some(n) => return *n,
         None => ()
     }
@@ -294,7 +291,7 @@ pub fn decl_rust_fn(ccx: &CrateContext, fn_ty: ty::t, name: &str) -> ValueRef {
              RustCall,
              Some(llenvironment_type))
         }
-        _ => fail!("expected closure or fn")
+        _ => panic!("expected closure or fn")
     };
 
     let llfty = type_of_rust_fn(ccx, env, inputs.as_slice(), output, abi);
@@ -1417,7 +1414,7 @@ pub fn new_fn_ctxt<'a, 'tcx>(ccx: &'a CrateContext<'a, 'tcx>,
                              llfndecl: ValueRef,
                              id: ast::NodeId,
                              has_env: bool,
-                             output_type: ty::t,
+                             output_type: ty::FnOutput,
                              param_substs: &'a param_substs,
                              sp: Option<Span>,
                              block_arena: &'a TypedArena<common::BlockS<'a, 'tcx>>)
@@ -1432,8 +1429,13 @@ pub fn new_fn_ctxt<'a, 'tcx>(ccx: &'a CrateContext<'a, 'tcx>,
            },
            id, param_substs.repr(ccx.tcx()));
 
-    let substd_output_type = output_type.substp(ccx.tcx(), param_substs);
-    let uses_outptr = type_of::return_uses_outptr(ccx, substd_output_type);
+    let uses_outptr = match output_type {
+        ty::FnConverging(output_type) => {
+            let substd_output_type = output_type.substp(ccx.tcx(), param_substs);
+            type_of::return_uses_outptr(ccx, substd_output_type)
+        }
+        ty::FnDiverging => false
+    };
     let debug_context = debuginfo::create_function_debug_context(ccx, id, param_substs, llfndecl);
     let nested_returns = has_nested_returns(ccx.tcx(), id);
 
@@ -1468,7 +1470,7 @@ pub fn new_fn_ctxt<'a, 'tcx>(ccx: &'a CrateContext<'a, 'tcx>,
 /// and allocating space for the return pointer.
 pub fn init_function<'a, 'tcx>(fcx: &'a FunctionContext<'a, 'tcx>,
                                skip_retptr: bool,
-                               output_type: ty::t) -> Block<'a, 'tcx> {
+                               output: ty::FnOutput) -> Block<'a, 'tcx> {
     let entry_bcx = fcx.new_temp_block("entry-block");
 
     // Use a dummy instruction as the insertion point for all allocas.
@@ -1478,18 +1480,19 @@ pub fn init_function<'a, 'tcx>(fcx: &'a FunctionContext<'a, 'tcx>,
         llvm::LLVMGetFirstInstruction(entry_bcx.llbb)
     }));
 
-    // This shouldn't need to recompute the return type,
-    // as new_fn_ctxt did it already.
-    let substd_output_type = output_type.substp(fcx.ccx.tcx(), fcx.param_substs);
-
-    if !return_type_is_void(fcx.ccx, substd_output_type) {
-        // If the function returns nil/bot, there is no real return
-        // value, so do not set `llretslotptr`.
-        if !skip_retptr || fcx.caller_expects_out_pointer {
-            // Otherwise, we normally allocate the llretslotptr, unless we
-            // have been instructed to skip it for immediate return
-            // values.
-            fcx.llretslotptr.set(Some(make_return_slot_pointer(fcx, substd_output_type)));
+    if let ty::FnConverging(output_type) = output {
+        // This shouldn't need to recompute the return type,
+        // as new_fn_ctxt did it already.
+        let substd_output_type = output_type.substp(fcx.ccx.tcx(), fcx.param_substs);
+        if !return_type_is_void(fcx.ccx, substd_output_type) {
+            // If the function returns nil/bot, there is no real return
+            // value, so do not set `llretslotptr`.
+            if !skip_retptr || fcx.caller_expects_out_pointer {
+                // Otherwise, we normally allocate the llretslotptr, unless we
+                // have been instructed to skip it for immediate return
+                // values.
+                fcx.llretslotptr.set(Some(make_return_slot_pointer(fcx, substd_output_type)));
+            }
         }
     }
 
@@ -1693,12 +1696,8 @@ fn copy_unboxed_closure_args_to_allocas<'blk, 'tcx>(
 // and builds the return block.
 pub fn finish_fn<'blk, 'tcx>(fcx: &'blk FunctionContext<'blk, 'tcx>,
                              last_bcx: Block<'blk, 'tcx>,
-                             retty: ty::t) {
+                             retty: ty::FnOutput) {
     let _icx = push_ctxt("finish_fn");
-
-    // This shouldn't need to recompute the return type,
-    // as new_fn_ctxt did it already.
-    let substd_retty = retty.substp(fcx.ccx.tcx(), fcx.param_substs);
 
     let ret_cx = match fcx.llreturn.get() {
         Some(llreturn) => {
@@ -1709,13 +1708,18 @@ pub fn finish_fn<'blk, 'tcx>(fcx: &'blk FunctionContext<'blk, 'tcx>,
         }
         None => last_bcx
     };
+
+    // This shouldn't need to recompute the return type,
+    // as new_fn_ctxt did it already.
+    let substd_retty = retty.substp(fcx.ccx.tcx(), fcx.param_substs);
     build_return_block(fcx, ret_cx, substd_retty);
+
     debuginfo::clear_source_location(fcx);
     fcx.cleanup();
 }
 
 // Builds the return block for a function.
-pub fn build_return_block(fcx: &FunctionContext, ret_cx: Block, retty: ty::t) {
+pub fn build_return_block(fcx: &FunctionContext, ret_cx: Block, retty: ty::FnOutput) {
     if fcx.llretslotptr.get().is_none() ||
        (!fcx.needs_ret_allocas && fcx.caller_expects_out_pointer) {
         return RetVoid(ret_cx);
@@ -1738,26 +1742,37 @@ pub fn build_return_block(fcx: &FunctionContext, ret_cx: Block, retty: ty::t) {
                 retptr.erase_from_parent();
             }
 
-            let retval = if ty::type_is_bool(retty) {
+            let retval = if retty == ty::FnConverging(ty::mk_bool()) {
                 Trunc(ret_cx, retval, Type::i1(fcx.ccx))
             } else {
                 retval
             };
 
             if fcx.caller_expects_out_pointer {
-                store_ty(ret_cx, retval, get_param(fcx.llfn, 0), retty);
-                return RetVoid(ret_cx);
+                if let ty::FnConverging(retty) = retty {
+                    store_ty(ret_cx, retval, get_param(fcx.llfn, 0), retty);
+                }
+                RetVoid(ret_cx)
             } else {
-                return Ret(ret_cx, retval);
+                Ret(ret_cx, retval)
             }
         }
         // Otherwise, copy the return value to the ret slot
-        None => {
-            if fcx.caller_expects_out_pointer {
-                memcpy_ty(ret_cx, get_param(fcx.llfn, 0), retslot, retty);
-                return RetVoid(ret_cx);
-            } else {
-                return Ret(ret_cx, load_ty(ret_cx, retslot, retty));
+        None => match retty {
+            ty::FnConverging(retty) => {
+                if fcx.caller_expects_out_pointer {
+                    memcpy_ty(ret_cx, get_param(fcx.llfn, 0), retslot, retty);
+                    RetVoid(ret_cx)
+                } else {
+                    Ret(ret_cx, load_ty(ret_cx, retslot, retty))
+                }
+            }
+            ty::FnDiverging => {
+                if fcx.caller_expects_out_pointer {
+                    RetVoid(ret_cx)
+                } else {
+                    Ret(ret_cx, C_undef(Type::nil(fcx.ccx)))
+                }
             }
         }
     }
@@ -1779,8 +1794,7 @@ pub fn trans_closure(ccx: &CrateContext,
                      param_substs: &param_substs,
                      fn_ast_id: ast::NodeId,
                      _attributes: &[ast::Attribute],
-                     arg_types: Vec<ty::t>,
-                     output_type: ty::t,
+                     output_type: ty::FnOutput,
                      abi: Abi,
                      has_env: bool,
                      is_unboxed_closure: IsUnboxedClosureFlag,
@@ -1814,9 +1828,19 @@ pub fn trans_closure(ccx: &CrateContext,
 
     // Set up arguments to the function.
     let monomorphized_arg_types =
-        arg_types.iter()
-                 .map(|at| monomorphize_type(bcx, *at))
-                 .collect::<Vec<_>>();
+        decl.inputs.iter()
+                   .map(|arg| node_id_type(bcx, arg.id))
+                   .collect::<Vec<_>>();
+    let monomorphized_arg_types = match is_unboxed_closure {
+        NotUnboxedClosure => monomorphized_arg_types,
+
+        // Tuple up closure argument types for the "rust-call" ABI.
+        IsUnboxedClosure => vec![if monomorphized_arg_types.is_empty() {
+            ty::mk_nil()
+        } else {
+            ty::mk_tup(ccx.tcx(), monomorphized_arg_types)
+        }]
+    };
     for monomorphized_arg_type in monomorphized_arg_types.iter() {
         debug!("trans_closure: monomorphized_arg_type: {}",
                ty_to_string(ccx.tcx(), *monomorphized_arg_type));
@@ -1860,7 +1884,7 @@ pub fn trans_closure(ccx: &CrateContext,
     debuginfo::start_emitting_source_locations(&fcx);
 
     let dest = match fcx.llretslotptr.get() {
-        Some(_) => expr::SaveIn(fcx.get_ret_slot(bcx, block_ty, "iret_slot")),
+        Some(_) => expr::SaveIn(fcx.get_ret_slot(bcx, ty::FnConverging(block_ty), "iret_slot")),
         None => {
             assert!(type_is_zero_size(bcx.ccx(), block_ty));
             expr::Ignore
@@ -1918,7 +1942,6 @@ pub fn trans_fn(ccx: &CrateContext,
     debug!("trans_fn(param_substs={})", param_substs.repr(ccx.tcx()));
     let _icx = push_ctxt("trans_fn");
     let fn_ty = ty::node_id_to_type(ccx.tcx(), id);
-    let arg_types = ty::ty_fn_args(fn_ty);
     let output_type = ty::ty_fn_ret(fn_ty);
     let abi = ty::ty_fn_abi(fn_ty);
     trans_closure(ccx,
@@ -1928,7 +1951,6 @@ pub fn trans_fn(ccx: &CrateContext,
                   param_substs,
                   id,
                   attrs,
-                  arg_types,
                   output_type,
                   abi,
                   false,
@@ -1965,7 +1987,7 @@ pub fn trans_named_tuple_constructor<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
     let tcx = ccx.tcx();
 
     let result_ty = match ty::get(ctor_ty).sty {
-        ty::ty_bare_fn(ref bft) => bft.sig.output,
+        ty::ty_bare_fn(ref bft) => bft.sig.output.unwrap(),
         _ => ccx.sess().bug(
             format!("trans_enum_variant_constructor: \
                      unexpected ctor return type {}",
@@ -2055,9 +2077,9 @@ fn trans_enum_variant_or_tuple_like_struct(ccx: &CrateContext,
 
     let arg_datums = create_datums_for_fn_args(&fcx, arg_tys.as_slice());
 
-    if !type_is_zero_size(fcx.ccx, result_ty) {
+    if !type_is_zero_size(fcx.ccx, result_ty.unwrap()) {
         let dest = fcx.get_ret_slot(bcx, result_ty, "eret_slot");
-        let repr = adt::represent_type(ccx, result_ty);
+        let repr = adt::represent_type(ccx, result_ty.unwrap());
         for (i, arg_datum) in arg_datums.into_iter().enumerate() {
             let lldestptr = adt::trans_field_ptr(bcx,
                                                  &*repr,
@@ -2334,7 +2356,7 @@ fn register_fn(ccx: &CrateContext,
         ty::ty_bare_fn(ref f) => {
             assert!(f.abi == Rust || f.abi == RustCall);
         }
-        _ => fail!("expected bare rust fn")
+        _ => panic!("expected bare rust fn")
     };
 
     let llfn = decl_rust_fn(ccx, node_type, sym.as_slice());
@@ -2393,53 +2415,55 @@ pub fn get_fn_llvm_attributes(ccx: &CrateContext, fn_ty: ty::t)
         _ => fn_sig.inputs.clone()
     };
 
-    // A function pointer is called without the declaration
-    // available, so we have to apply any attributes with ABI
-    // implications directly to the call instruction. Right now,
-    // the only attribute we need to worry about is `sret`.
-    if type_of::return_uses_outptr(ccx, ret_ty) {
-        let llret_sz = llsize_of_real(ccx, type_of::type_of(ccx, ret_ty));
+    if let ty::FnConverging(ret_ty) = ret_ty {
+        // A function pointer is called without the declaration
+        // available, so we have to apply any attributes with ABI
+        // implications directly to the call instruction. Right now,
+        // the only attribute we need to worry about is `sret`.
+        if type_of::return_uses_outptr(ccx, ret_ty) {
+            let llret_sz = llsize_of_real(ccx, type_of::type_of(ccx, ret_ty));
 
-        // The outptr can be noalias and nocapture because it's entirely
-        // invisible to the program. We also know it's nonnull as well
-        // as how many bytes we can dereference
-        attrs.arg(1, llvm::StructRetAttribute)
-             .arg(1, llvm::NoAliasAttribute)
-             .arg(1, llvm::NoCaptureAttribute)
-             .arg(1, llvm::DereferenceableAttribute(llret_sz));
+            // The outptr can be noalias and nocapture because it's entirely
+            // invisible to the program. We also know it's nonnull as well
+            // as how many bytes we can dereference
+            attrs.arg(1, llvm::StructRetAttribute)
+                 .arg(1, llvm::NoAliasAttribute)
+                 .arg(1, llvm::NoCaptureAttribute)
+                 .arg(1, llvm::DereferenceableAttribute(llret_sz));
 
-        // Add one more since there's an outptr
-        first_arg_offset += 1;
-    } else {
-        // The `noalias` attribute on the return value is useful to a
-        // function ptr caller.
-        match ty::get(ret_ty).sty {
-            // `~` pointer return values never alias because ownership
-            // is transferred
-            ty::ty_uniq(it) if !ty::type_is_sized(ccx.tcx(), it) => {}
-            ty::ty_uniq(_) => {
-                attrs.ret(llvm::NoAliasAttribute);
+            // Add one more since there's an outptr
+            first_arg_offset += 1;
+        } else {
+            // The `noalias` attribute on the return value is useful to a
+            // function ptr caller.
+            match ty::get(ret_ty).sty {
+                // `~` pointer return values never alias because ownership
+                // is transferred
+                ty::ty_uniq(it) if !ty::type_is_sized(ccx.tcx(), it) => {}
+                ty::ty_uniq(_) => {
+                    attrs.ret(llvm::NoAliasAttribute);
+                }
+                _ => {}
             }
-            _ => {}
-        }
 
-        // We can also mark the return value as `dereferenceable` in certain cases
-        match ty::get(ret_ty).sty {
-            // These are not really pointers but pairs, (pointer, len)
-            ty::ty_uniq(it) |
-            ty::ty_rptr(_, ty::mt { ty: it, .. }) if !ty::type_is_sized(ccx.tcx(), it) => {}
-            ty::ty_uniq(inner) | ty::ty_rptr(_, ty::mt { ty: inner, .. }) => {
-                let llret_sz = llsize_of_real(ccx, type_of::type_of(ccx, inner));
-                attrs.ret(llvm::DereferenceableAttribute(llret_sz));
+            // We can also mark the return value as `dereferenceable` in certain cases
+            match ty::get(ret_ty).sty {
+                // These are not really pointers but pairs, (pointer, len)
+                ty::ty_uniq(it) |
+                ty::ty_rptr(_, ty::mt { ty: it, .. }) if !ty::type_is_sized(ccx.tcx(), it) => {}
+                ty::ty_uniq(inner) | ty::ty_rptr(_, ty::mt { ty: inner, .. }) => {
+                    let llret_sz = llsize_of_real(ccx, type_of::type_of(ccx, inner));
+                    attrs.ret(llvm::DereferenceableAttribute(llret_sz));
+                }
+                _ => {}
             }
-            _ => {}
-        }
 
-        match ty::get(ret_ty).sty {
-            ty::ty_bool => {
-                attrs.ret(llvm::ZExtAttribute);
+            match ty::get(ret_ty).sty {
+                ty::ty_bool => {
+                    attrs.ret(llvm::ZExtAttribute);
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 
@@ -2523,7 +2547,7 @@ pub fn register_fn_llvmty(ccx: &CrateContext,
                           llfty: Type) -> ValueRef {
     debug!("register_fn_llvmty id={} sym={}", node_id, sym);
 
-    let llfn = decl_fn(ccx, sym.as_slice(), cc, llfty, ty::mk_nil());
+    let llfn = decl_fn(ccx, sym.as_slice(), cc, llfty, ty::FnConverging(ty::mk_nil()));
     finish_register_fn(ccx, sp, sym, node_id, llfn);
     llfn
 }
@@ -2727,7 +2751,7 @@ pub fn get_item_val(ccx: &CrateContext, id: ast::NodeId) -> ValueRef {
                     llfn
                 }
 
-                _ => fail!("get_item_val: weird result in table")
+                _ => panic!("get_item_val: weird result in table")
             };
 
             match attr::first_attr_value_str_by_name(i.attrs.as_slice(),
@@ -2794,7 +2818,7 @@ pub fn get_item_val(ccx: &CrateContext, id: ast::NodeId) -> ValueRef {
             let args = match v.node.kind {
                 ast::TupleVariantKind(ref args) => args,
                 ast::StructVariantKind(_) => {
-                    fail!("struct variant kind unexpected in get_item_val")
+                    panic!("struct variant kind unexpected in get_item_val")
                 }
             };
             assert!(args.len() != 0u);
@@ -2810,7 +2834,7 @@ pub fn get_item_val(ccx: &CrateContext, id: ast::NodeId) -> ValueRef {
                 ast::ItemEnum(_, _) => {
                     register_fn(ccx, (*v).span, sym, id, ty)
                 }
-                _ => fail!("NodeVariant, shouldn't happen")
+                _ => panic!("NodeVariant, shouldn't happen")
             };
             set_inline_hint(llfn);
             llfn
@@ -2982,7 +3006,7 @@ fn internalize_symbols(cx: &SharedCrateContext, reachable: &HashSet<String>) {
 
                 let name = CString::new(llvm::LLVMGetValueName(val), false);
                 if !declared.contains(&name) &&
-                   !reachable.contains_equiv(&name.as_str().unwrap()) {
+                   !reachable.contains_equiv(name.as_str().unwrap()) {
                     llvm::SetLinkage(val, llvm::InternalLinkage);
                 }
             }

@@ -334,7 +334,7 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
     /// Try to resolve the type for the given node.
     pub fn resolve_expr_type_adjusted(&mut self, expr: &ast::Expr) -> ty::t {
         let ty_unadjusted = self.resolve_node_type(expr.id);
-        if ty::type_is_error(ty_unadjusted) || ty::type_is_bot(ty_unadjusted) {
+        if ty::type_is_error(ty_unadjusted) {
             ty_unadjusted
         } else {
             let tcx = self.fcx.tcx();
@@ -690,7 +690,7 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
                 Some(method) => {
                     constrain_call(rcx, expr, Some(&**base),
                                    None::<ast::Expr>.iter(), true);
-                    ty::ty_fn_ret(method.ty)
+                    ty::ty_fn_ret(method.ty).unwrap()
                 }
                 None => rcx.resolve_node_type(base.id)
             };
@@ -1217,9 +1217,14 @@ fn constrain_autoderefs(rcx: &mut Rcx,
                 // Specialized version of constrain_call.
                 type_must_outlive(rcx, infer::CallRcvr(deref_expr.span),
                                   self_ty, r_deref_expr);
-                type_must_outlive(rcx, infer::CallReturn(deref_expr.span),
-                                  fn_sig.output, r_deref_expr);
-                fn_sig.output
+                match fn_sig.output {
+                    ty::FnConverging(return_type) => {
+                        type_must_outlive(rcx, infer::CallReturn(deref_expr.span),
+                                          return_type, r_deref_expr);
+                        return_type
+                    }
+                    ty::FnDiverging => unreachable!()
+                }
             }
             None => derefd_ty
         };
@@ -1445,7 +1450,7 @@ fn link_region_from_node_type(rcx: &Rcx,
      */
 
     let rptr_ty = rcx.resolve_node_type(id);
-    if !ty::type_is_bot(rptr_ty) && !ty::type_is_error(rptr_ty) {
+    if !ty::type_is_error(rptr_ty) {
         let tcx = rcx.fcx.ccx.tcx;
         debug!("rptr_ty={}", ty_to_string(tcx, rptr_ty));
         let r = ty::ty_region(tcx, span, rptr_ty);
@@ -1752,7 +1757,7 @@ fn adjust_upvar_borrow_kind_for_mut(rcx: &Rcx,
                         // is inferred to mutable if necessary
                         let mut upvar_borrow_map =
                             rcx.fcx.inh.upvar_borrow_map.borrow_mut();
-                        let ub = upvar_borrow_map.get_mut(upvar_id);
+                        let ub = &mut (*upvar_borrow_map)[*upvar_id];
                         return adjust_upvar_borrow_kind(rcx, *upvar_id, ub, ty::MutBorrow);
                     }
 
@@ -1802,7 +1807,7 @@ fn adjust_upvar_borrow_kind_for_unique(rcx: &Rcx, cmt: mc::cmt) {
                         // borrow_kind of the upvar to make sure it
                         // is inferred to unique if necessary
                         let mut ub = rcx.fcx.inh.upvar_borrow_map.borrow_mut();
-                        let ub = ub.get_mut(upvar_id);
+                        let ub = &mut (*ub)[*upvar_id];
                         return adjust_upvar_borrow_kind(rcx, *upvar_id, ub, ty::UniqueImmBorrow);
                     }
 

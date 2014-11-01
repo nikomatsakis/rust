@@ -367,7 +367,7 @@ impl Path {
 
     /// Returns a normalized byte vector representation of a path, by removing all empty
     /// components, and unnecessary . and .. components.
-    fn normalize<V: AsSlice<u8>+CloneableVector<u8>>(v: V) -> Vec<u8> {
+    fn normalize<V: AsSlice<u8>>(v: V) -> Vec<u8> {
         // borrowck is being very picky
         let val = {
             let is_abs = !v.as_slice().is_empty() && v.as_slice()[0] == SEP_BYTE;
@@ -457,9 +457,9 @@ fn normalize_helper<'a>(v: &'a [u8], is_abs: bool) -> Option<Vec<&'a [u8]>> {
     }
 }
 
-#[allow(non_uppercase_statics)]
+#[allow(non_upper_case_globals)]
 static dot_static: &'static [u8] = b".";
-#[allow(non_uppercase_statics)]
+#[allow(non_upper_case_globals)]
 static dot_dot_static: &'static [u8] = b"..";
 
 #[cfg(test)]

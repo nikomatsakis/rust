@@ -171,7 +171,7 @@ pub trait Folder {
     }
 
     fn fold_mac(&mut self, _macro: Mac) -> Mac {
-        fail!("fold_mac disabled by default");
+        panic!("fold_mac disabled by default");
         // NB: see note about macros above.
         // if you really want a folder that
         // works on macros, use this
@@ -572,18 +572,14 @@ pub fn noop_fold_tt<T: Folder>(tt: &TokenTree, fld: &mut T) -> TokenTree {
         TtToken(span, ref tok) =>
             TtToken(span, fld.fold_token(tok.clone())),
         TtDelimited(span, ref delimed) => {
-            let (ref open, ref tts, ref close) = **delimed;
-            TtDelimited(span, Rc::new((
-                            Delimiter {
-                                span: open.span,
-                                token: fld.fold_token(open.token.clone())
-                            },
-                            fld.fold_tts(tts.as_slice()),
-                            Delimiter {
-                                span: close.span,
-                                token: fld.fold_token(close.token.clone())
-                            },
-                        )))
+            TtDelimited(span, Rc::new(
+                            Delimited {
+                                delim: delimed.delim,
+                                open_span: delimed.open_span,
+                                tts: fld.fold_tts(delimed.tts.as_slice()),
+                                close_span: delimed.close_span,
+                            }
+                        ))
         },
         TtSequence(span, ref pattern, ref sep, is_optional) =>
             TtSequence(span,
@@ -602,11 +598,11 @@ pub fn noop_fold_tts<T: Folder>(tts: &[TokenTree], fld: &mut T) -> Vec<TokenTree
 // apply ident folder if it's an ident, apply other folds to interpolated nodes
 pub fn noop_fold_token<T: Folder>(t: token::Token, fld: &mut T) -> token::Token {
     match t {
-        token::IDENT(id, followed_by_colons) => {
-            token::IDENT(fld.fold_ident(id), followed_by_colons)
+        token::Ident(id, followed_by_colons) => {
+            token::Ident(fld.fold_ident(id), followed_by_colons)
         }
-        token::LIFETIME(id) => token::LIFETIME(fld.fold_ident(id)),
-        token::INTERPOLATED(nt) => token::INTERPOLATED(fld.fold_interpolated(nt)),
+        token::Lifetime(id) => token::Lifetime(fld.fold_ident(id)),
+        token::Interpolated(nt) => token::Interpolated(fld.fold_interpolated(nt)),
         _ => t
     }
 }
@@ -1404,7 +1400,7 @@ mod test {
                 let a_val = $a;
                 let b_val = $b;
                 if !(pred_val(a_val.as_slice(),b_val.as_slice())) {
-                    fail!("expected args satisfying {}, got {} and {}",
+                    panic!("expected args satisfying {}, got {} and {}",
                           $predname, a_val, b_val);
                 }
             }

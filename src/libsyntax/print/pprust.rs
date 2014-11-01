@@ -21,6 +21,7 @@ use attr::{AttrMetaMethods, AttributeMethods};
 use codemap::{CodeMap, BytePos};
 use codemap;
 use diagnostic;
+use parse::token::{BinOpToken, Token};
 use parse::token;
 use parse::lexer::comments;
 use parse;
@@ -89,10 +90,10 @@ pub fn rust_printer_annotated<'a>(writer: Box<io::Writer+'static>,
     }
 }
 
-#[allow(non_uppercase_statics)]
+#[allow(non_upper_case_globals)]
 pub const indent_unit: uint = 4u;
 
-#[allow(non_uppercase_statics)]
+#[allow(non_upper_case_globals)]
 pub const default_columns: uint = 78u;
 
 /// Requires you to pass an input filename and reader so that
@@ -178,6 +179,101 @@ pub fn to_string(f: |&mut State| -> IoResult<()>) -> String {
             String::from_utf8(wr.get_ref().as_slice().to_vec()).unwrap();
         mem::forget(wr);
         result.to_string()
+    }
+}
+
+pub fn binop_to_string(op: BinOpToken) -> &'static str {
+    match op {
+        token::Plus     => "+",
+        token::Minus    => "-",
+        token::Star     => "*",
+        token::Slash    => "/",
+        token::Percent  => "%",
+        token::Caret    => "^",
+        token::And      => "&",
+        token::Or       => "|",
+        token::Shl      => "<<",
+        token::Shr      => ">>",
+    }
+}
+
+pub fn token_to_string(tok: &Token) -> String {
+    match *tok {
+        token::Eq                   => "=".into_string(),
+        token::Lt                   => "<".into_string(),
+        token::Le                   => "<=".into_string(),
+        token::EqEq                 => "==".into_string(),
+        token::Ne                   => "!=".into_string(),
+        token::Ge                   => ">=".into_string(),
+        token::Gt                   => ">".into_string(),
+        token::Not                  => "!".into_string(),
+        token::Tilde                => "~".into_string(),
+        token::OrOr                 => "||".into_string(),
+        token::AndAnd               => "&&".into_string(),
+        token::BinOp(op)            => binop_to_string(op).into_string(),
+        token::BinOpEq(op)          => format!("{}=", binop_to_string(op)),
+
+        /* Structural symbols */
+        token::At                   => "@".into_string(),
+        token::Dot                  => ".".into_string(),
+        token::DotDot               => "..".into_string(),
+        token::DotDotDot            => "...".into_string(),
+        token::Comma                => ",".into_string(),
+        token::Semi                 => ";".into_string(),
+        token::Colon                => ":".into_string(),
+        token::ModSep               => "::".into_string(),
+        token::RArrow               => "->".into_string(),
+        token::LArrow               => "<-".into_string(),
+        token::FatArrow             => "=>".into_string(),
+        token::OpenDelim(token::Paren) => "(".into_string(),
+        token::CloseDelim(token::Paren) => ")".into_string(),
+        token::OpenDelim(token::Bracket) => "[".into_string(),
+        token::CloseDelim(token::Bracket) => "]".into_string(),
+        token::OpenDelim(token::Brace) => "{".into_string(),
+        token::CloseDelim(token::Brace) => "}".into_string(),
+        token::Pound                => "#".into_string(),
+        token::Dollar               => "$".into_string(),
+        token::Question             => "?".into_string(),
+
+        /* Literals */
+        token::LitByte(b)           => format!("b'{}'", b.as_str()),
+        token::LitChar(c)           => format!("'{}'", c.as_str()),
+        token::LitFloat(c)          => c.as_str().into_string(),
+        token::LitInteger(c)        => c.as_str().into_string(),
+        token::LitStr(s)            => format!("\"{}\"", s.as_str()),
+        token::LitStrRaw(s, n)      => format!("r{delim}\"{string}\"{delim}",
+                                               delim="#".repeat(n),
+                                               string=s.as_str()),
+        token::LitBinary(v)         => format!("b\"{}\"", v.as_str()),
+        token::LitBinaryRaw(s, n)   => format!("br{delim}\"{string}\"{delim}",
+                                               delim="#".repeat(n),
+                                               string=s.as_str()),
+
+        /* Name components */
+        token::Ident(s, _)          => token::get_ident(s).get().into_string(),
+        token::Lifetime(s)          => format!("{}", token::get_ident(s)),
+        token::Underscore           => "_".into_string(),
+
+        /* Other */
+        token::DocComment(s)        => s.as_str().into_string(),
+        token::Eof                  => "<eof>".into_string(),
+        token::Whitespace           => " ".into_string(),
+        token::Comment              => "/* */".into_string(),
+        token::Shebang(s)           => format!("/* shebang: {}*/", s.as_str()),
+
+        token::Interpolated(ref nt) => match *nt {
+            token::NtExpr(ref e)  => expr_to_string(&**e),
+            token::NtMeta(ref e)  => meta_item_to_string(&**e),
+            token::NtTy(ref e)    => ty_to_string(&**e),
+            token::NtPath(ref e)  => path_to_string(&**e),
+            token::NtItem(..)     => "an interpolated item".into_string(),
+            token::NtBlock(..)    => "an interpolated block".into_string(),
+            token::NtStmt(..)     => "an interpolated statement".into_string(),
+            token::NtPat(..)      => "an interpolated pattern".into_string(),
+            token::NtIdent(..)    => "an interpolated identifier".into_string(),
+            token::NtTT(..)       => "an interpolated tt".into_string(),
+            token::NtMatchers(..) => "an interpolated matcher sequence".into_string(),
+        }
     }
 }
 
@@ -976,7 +1072,7 @@ impl<'a> State<'a> {
                     Inconsistent, struct_def.fields.as_slice(),
                     |s, field| {
                         match field.node.kind {
-                            ast::NamedField(..) => fail!("unexpected named field"),
+                            ast::NamedField(..) => panic!("unexpected named field"),
                             ast::UnnamedField(vis) => {
                                 try!(s.print_visibility(vis));
                                 try!(s.maybe_print_comment(field.span.lo));
@@ -997,7 +1093,7 @@ impl<'a> State<'a> {
 
             for field in struct_def.fields.iter() {
                 match field.node.kind {
-                    ast::UnnamedField(..) => fail!("unexpected unnamed field"),
+                    ast::UnnamedField(..) => panic!("unexpected unnamed field"),
                     ast::NamedField(ident, visibility) => {
                         try!(self.hardbreak_if_not_bol());
                         try!(self.maybe_print_comment(field.span.lo));
@@ -1025,17 +1121,16 @@ impl<'a> State<'a> {
     pub fn print_tt(&mut self, tt: &ast::TokenTree) -> IoResult<()> {
         match *tt {
             ast::TtDelimited(_, ref delimed) => {
-                let (ref open, ref tts, ref close) = **delimed;
-                try!(word(&mut self.s, parse::token::to_string(&open.token).as_slice()));
+                try!(word(&mut self.s, token_to_string(&delimed.open_token()).as_slice()));
                 try!(space(&mut self.s));
-                try!(self.print_tts(tts.as_slice()));
+                try!(self.print_tts(delimed.tts.as_slice()));
                 try!(space(&mut self.s));
-                word(&mut self.s, parse::token::to_string(&close.token).as_slice())
+                word(&mut self.s, token_to_string(&delimed.close_token()).as_slice())
             },
             ast::TtToken(_, ref tk) => {
-                try!(word(&mut self.s, parse::token::to_string(tk).as_slice()));
+                try!(word(&mut self.s, token_to_string(tk).as_slice()));
                 match *tk {
-                    parse::token::DOC_COMMENT(..) => {
+                    parse::token::DocComment(..) => {
                         hardbreak(&mut self.s)
                     }
                     _ => Ok(())
@@ -1049,10 +1144,9 @@ impl<'a> State<'a> {
                 try!(word(&mut self.s, ")"));
                 match *separator {
                     Some(ref tk) => {
-                        try!(word(&mut self.s,
-                                  parse::token::to_string(tk).as_slice()));
+                        try!(word(&mut self.s, token_to_string(tk).as_slice()));
                     }
-                    None => ()
+                    None => {},
                 }
                 match kleene_op {
                     ast::ZeroOrMore => word(&mut self.s, "*"),
@@ -1345,7 +1439,7 @@ impl<'a> State<'a> {
                     }
                     // BLEAH, constraints would be great here
                     _ => {
-                        fail!("print_if saw if with weird alternative");
+                        panic!("print_if saw if with weird alternative");
                     }
                 }
             }

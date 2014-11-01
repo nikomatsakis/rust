@@ -835,12 +835,11 @@ fn encode_method_ty_fields(ecx: &EncodeContext,
     encode_method_fty(ecx, rbml_w, &method_ty.fty);
     encode_visibility(rbml_w, method_ty.vis);
     encode_explicit_self(rbml_w, &method_ty.explicit_self);
-    let fn_style = method_ty.fty.fn_style;
     match method_ty.explicit_self {
         ty::StaticExplicitSelfCategory => {
-            encode_family(rbml_w, fn_style_static_method_family(fn_style));
+            encode_family(rbml_w, STATIC_METHOD_FAMILY);
         }
-        _ => encode_family(rbml_w, style_fn_family(fn_style))
+        _ => encode_family(rbml_w, METHOD_FAMILY)
     }
     encode_provided_source(rbml_w, method_ty.provided_source);
 }
@@ -964,20 +963,9 @@ fn encode_inlined_item(ecx: &EncodeContext,
     (*eii)(ecx, rbml_w, ii)
 }
 
-fn style_fn_family(s: FnStyle) -> char {
-    match s {
-        UnsafeFn => 'u',
-        NormalFn => 'f',
-    }
-}
-
-fn fn_style_static_method_family(s: FnStyle) -> char {
-    match s {
-        UnsafeFn => 'U',
-        NormalFn => 'F',
-    }
-}
-
+const FN_FAMILY: char = 'f';
+const STATIC_METHOD_FAMILY: char = 'F';
+const METHOD_FAMILY: char = 'h';
 
 fn should_inline(attrs: &[Attribute]) -> bool {
     use syntax::attr::*;
@@ -1081,11 +1069,11 @@ fn encode_info_for_item(ecx: &EncodeContext,
         encode_stability(rbml_w, stab);
         rbml_w.end_tag();
       }
-      ItemFn(ref decl, fn_style, _, ref generics, _) => {
+      ItemFn(ref decl, _, _, ref generics, _) => {
         add_to_index(item, rbml_w, index);
         rbml_w.start_tag(tag_items_data_item);
         encode_def_id(rbml_w, def_id);
-        encode_family(rbml_w, style_fn_family(fn_style));
+        encode_family(rbml_w, FN_FAMILY);
         let tps_len = generics.ty_params.len();
         encode_bounds_and_type(rbml_w, ecx, &lookup_item_type(tcx, def_id));
         encode_name(rbml_w, item.ident.name);
@@ -1402,13 +1390,11 @@ fn encode_info_for_item(ecx: &EncodeContext,
                     match method_ty.explicit_self {
                         ty::StaticExplicitSelfCategory => {
                             encode_family(rbml_w,
-                                          fn_style_static_method_family(
-                                              method_ty.fty.fn_style));
+                                          STATIC_METHOD_FAMILY);
                         }
                         _ => {
                             encode_family(rbml_w,
-                                          style_fn_family(
-                                              method_ty.fty.fn_style));
+                                          METHOD_FAMILY);
                         }
                     }
                     let pty = ty::lookup_item_type(tcx,
@@ -1432,30 +1418,30 @@ fn encode_info_for_item(ecx: &EncodeContext,
             encode_parent_sort(rbml_w, 't');
 
             let trait_item = &ms[i];
-            match &ms[i] {
-                &RequiredMethod(ref tm) => {
-                    encode_attributes(rbml_w, tm.attrs.as_slice());
+            let encode_trait_item = |rbml_w: &mut Encoder| {
+                // If this is a static method, we've already
+                // encoded this.
+                if is_nonstatic_method {
+                    // FIXME: I feel like there is something funny
+                    // going on.
+                    let pty = ty::lookup_item_type(tcx, item_def_id.def_id());
+                    encode_bounds_and_type(rbml_w, ecx, &pty);
+                }
+            };
+            match trait_item {
+                &RequiredMethod(ref m) => {
+                    encode_attributes(rbml_w, m.attrs.as_slice());
+                    encode_trait_item(rbml_w);
                     encode_item_sort(rbml_w, 'r');
-                    encode_method_argument_names(rbml_w, &*tm.decl);
+                    encode_method_argument_names(rbml_w, &*m.decl);
                 }
 
                 &ProvidedMethod(ref m) => {
                     encode_attributes(rbml_w, m.attrs.as_slice());
-                    // If this is a static method, we've already
-                    // encoded this.
-                    if is_nonstatic_method {
-                        // FIXME: I feel like there is something funny
-                        // going on.
-                        let pty = ty::lookup_item_type(tcx,
-                                                       item_def_id.def_id());
-                        encode_bounds_and_type(rbml_w, ecx, &pty);
-                    }
+                    encode_trait_item(rbml_w);
                     encode_item_sort(rbml_w, 'p');
-                    encode_inlined_item(ecx,
-                                        rbml_w,
-                                        IITraitItemRef(def_id, trait_item));
-                    encode_method_argument_names(rbml_w,
-                                                 &*m.pe_fn_decl());
+                    encode_inlined_item(ecx, rbml_w, IITraitItemRef(def_id, trait_item));
+                    encode_method_argument_names(rbml_w, &*m.pe_fn_decl());
                 }
 
                 &TypeTraitItem(ref associated_type) => {
@@ -1493,7 +1479,7 @@ fn encode_info_for_foreign_item(ecx: &EncodeContext,
     encode_visibility(rbml_w, nitem.vis);
     match nitem.node {
       ForeignItemFn(..) => {
-        encode_family(rbml_w, style_fn_family(NormalFn));
+        encode_family(rbml_w, FN_FAMILY);
         encode_bounds_and_type(rbml_w, ecx,
                                &lookup_item_type(ecx.tcx,local_def(nitem.id)));
         encode_name(rbml_w, nitem.ident.name);
@@ -1619,7 +1605,7 @@ fn encode_index<T: Hash>(rbml_w: &mut Encoder, index: Vec<entry<T>>,
     let mut buckets: Vec<Vec<entry<T>>> = Vec::from_fn(256, |_| Vec::new());
     for elt in index.into_iter() {
         let h = hash::hash(&elt.val) as uint;
-        buckets.get_mut(h % 256).push(elt);
+        buckets[h % 256].push(elt);
     }
 
     rbml_w.start_tag(tag_index);
@@ -2028,7 +2014,7 @@ fn encode_dylib_dependency_formats(rbml_w: &mut Encoder, ecx: &EncodeContext) {
 }
 
 // NB: Increment this as you change the metadata encoding version.
-#[allow(non_uppercase_statics)]
+#[allow(non_upper_case_globals)]
 pub const metadata_encoding_version : &'static [u8] = &[b'r', b'u', b's', b't', 0, 0, 0, 1 ];
 
 pub fn encode_metadata(parms: EncodeParams, krate: &Crate) -> Vec<u8> {

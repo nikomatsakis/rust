@@ -10,7 +10,7 @@
 //
 // ignore-lexer-test FIXME #15679
 
-#![allow(missing_doc)]
+#![allow(missing_docs)]
 
 use char;
 use clone::Clone;
@@ -264,10 +264,10 @@ pub fn float_to_str_bytes_common<T:NumCast+Zero+One+PartialEq+PartialOrd+Float+
     assert!(2 <= radix && radix <= 36);
     match exp_format {
         ExpDec if radix >= DIGIT_E_RADIX       // decimal exponent 'e'
-          => fail!("float_to_str_bytes_common: radix {} incompatible with \
+          => panic!("float_to_str_bytes_common: radix {} incompatible with \
                     use of 'e' as decimal exponent", radix),
         ExpBin if radix >= DIGIT_P_RADIX       // binary exponent 'p'
-          => fail!("float_to_str_bytes_common: radix {} incompatible with \
+          => panic!("float_to_str_bytes_common: radix {} incompatible with \
                     use of 'p' as binary exponent", radix),
         _ => ()
     }
@@ -424,10 +424,10 @@ pub fn float_to_str_bytes_common<T:NumCast+Zero+One+PartialEq+PartialOrd+Float+
                     // or set to 0 if max and carry the 1.
                     let current_digit = ascii2value(buf[i as uint]);
                     if current_digit < (radix - 1) {
-                        *buf.get_mut(i as uint) = value2ascii(current_digit+1);
+                        buf[i as uint] = value2ascii(current_digit+1);
                         break;
                     } else {
-                        *buf.get_mut(i as uint) = value2ascii(0);
+                        buf[i as uint] = value2ascii(0);
                         i -= 1;
                     }
                 }
@@ -553,19 +553,19 @@ pub fn from_str_bytes_common<T:NumCast+Zero+One+PartialEq+PartialOrd+Div<T,T>+
         ) -> Option<T> {
     match exponent {
         ExpDec if radix >= DIGIT_E_RADIX       // decimal exponent 'e'
-          => fail!("from_str_bytes_common: radix {} incompatible with \
+          => panic!("from_str_bytes_common: radix {} incompatible with \
                     use of 'e' as decimal exponent", radix),
         ExpBin if radix >= DIGIT_P_RADIX       // binary exponent 'p'
-          => fail!("from_str_bytes_common: radix {} incompatible with \
+          => panic!("from_str_bytes_common: radix {} incompatible with \
                     use of 'p' as binary exponent", radix),
         _ if special && radix >= DIGIT_I_RADIX // first digit of 'inf'
-          => fail!("from_str_bytes_common: radix {} incompatible with \
+          => panic!("from_str_bytes_common: radix {} incompatible with \
                     special values 'inf' and 'NaN'", radix),
         _ if (radix as int) < 2
-          => fail!("from_str_bytes_common: radix {} to low, \
+          => panic!("from_str_bytes_common: radix {} to low, \
                     must lie in the range [2, 36]", radix),
         _ if (radix as int) > 36
-          => fail!("from_str_bytes_common: radix {} to high, \
+          => panic!("from_str_bytes_common: radix {} to high, \
                     must lie in the range [2, 36]", radix),
         _ => ()
     }

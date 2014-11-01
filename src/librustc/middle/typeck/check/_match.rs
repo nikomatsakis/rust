@@ -259,9 +259,9 @@ pub fn check_match(fcx: &FnCtxt,
     // bottom the type lattice, and we'll be moving up the lattice as
     // we process each arm. (Note that any match with 0 arms is matching
     // on any empty type and is therefore unreachable; should the flow
-    // of execution reach it, we will fail, so bottom is an appropriate
+    // of execution reach it, we will panic, so bottom is an appropriate
     // type in that case)
-    let result_ty = arms.iter().fold(ty::mk_bot(), |result_ty, arm| {
+    let result_ty = arms.iter().fold(fcx.infcx().next_diverging_ty_var(), |result_ty, arm| {
         check_expr(fcx, &*arm.body);
         let bty = fcx.node_ty(arm.body.id);
 
@@ -347,7 +347,10 @@ pub fn check_pat_enum(pcx: &pat_ctxt, pat: &ast::Pat,
 
     let ctor_pty = ty::lookup_item_type(tcx, enum_def);
     let path_ty = if ty::is_fn_ty(ctor_pty.ty) {
-        ty::Polytype { ty: ty::ty_fn_ret(ctor_pty.ty), ..ctor_pty }
+        ty::Polytype {
+            ty: ty::ty_fn_ret(ctor_pty.ty).unwrap(),
+            ..ctor_pty
+        }
     } else {
         ctor_pty
     };

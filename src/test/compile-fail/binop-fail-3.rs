@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,13 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-
-trait add {
-    fn plus(&self, x: Self) -> Self;
+fn foo() -> ! { panic!("quux"); }
+fn main() {
+    foo() //~ ERROR the type of this value must be known in this context
+    ==
+    foo();
 }
-
-fn do_add(x: Box<add+'static>, y: Box<add+'static>) -> Box<add+'static> {
-    x.plus(y) //~ ERROR E0038
-}
-
-fn main() {}

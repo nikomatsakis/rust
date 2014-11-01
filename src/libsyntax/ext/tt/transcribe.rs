@@ -13,7 +13,7 @@ use ast::{TokenTree, TtDelimited, TtToken, TtSequence, TtNonterminal, Ident};
 use codemap::{Span, DUMMY_SP};
 use diagnostic::SpanHandler;
 use ext::tt::macro_parser::{NamedMatch, MatchedSeq, MatchedNonterminal};
-use parse::token::{EOF, INTERPOLATED, IDENT, Token, NtIdent};
+use parse::token::{Token, NtIdent};
 use parse::token;
 use parse::lexer::TokenAndSpan;
 
@@ -66,7 +66,7 @@ pub fn new_tt_reader<'a>(sp_diag: &'a SpanHandler,
         repeat_idx: Vec::new(),
         repeat_len: Vec::new(),
         /* dummy values, never read: */
-        cur_tok: EOF,
+        cur_tok: token::Eof,
         cur_span: DUMMY_SP,
     };
     tt_next_token(&mut r); /* get cur_tok and cur_span set up */
@@ -129,8 +129,7 @@ impl Add<LockstepIterSize, LockstepIterSize> for LockstepIterSize {
 fn lockstep_iter_size(t: &TokenTree, r: &TtReader) -> LockstepIterSize {
     match *t {
         TtDelimited(_, ref delimed) => {
-            let (_, ref tts, _) = **delimed;
-            tts.iter().fold(LisUnconstrained, |size, tt| {
+            delimed.tts.iter().fold(LisUnconstrained, |size, tt| {
                 size + lockstep_iter_size(tt, r)
             })
         },
@@ -158,7 +157,7 @@ pub fn tt_next_token(r: &mut TtReader) -> TokenAndSpan {
     loop {
         let should_pop = match r.stack.last() {
             None => {
-                assert_eq!(ret_val.tok, EOF);
+                assert_eq!(ret_val.tok, token::Eof);
                 return ret_val;
             }
             Some(frame) => {
@@ -175,7 +174,7 @@ pub fn tt_next_token(r: &mut TtReader) -> TokenAndSpan {
             let prev = r.stack.pop().unwrap();
             match r.stack.last_mut() {
                 None => {
-                    r.cur_tok = EOF;
+                    r.cur_tok = token::Eof;
                     return ret_val;
                 }
                 Some(frame) => {
@@ -207,14 +206,13 @@ pub fn tt_next_token(r: &mut TtReader) -> TokenAndSpan {
         };
         match t {
             TtDelimited(_, ref delimed) => {
-                let (ref open, ref tts, ref close) = **delimed;
-                let mut forest = Vec::with_capacity(1 + tts.len() + 1);
-                forest.push(open.to_tt());
-                forest.extend(tts.iter().map(|x| (*x).clone()));
-                forest.push(close.to_tt());
+                let mut tts = Vec::with_capacity(1 + delimed.tts.len() + 1);
+                tts.push(delimed.open_tt());
+                tts.extend(delimed.tts.iter().map(|tt| tt.clone()));
+                tts.push(delimed.close_tt());
 
                 r.stack.push(TtFrame {
-                    forest: Rc::new(forest),
+                    forest: Rc::new(tts),
                     idx: 0,
                     dotdotdoted: false,
                     sep: None
@@ -272,13 +270,13 @@ pub fn tt_next_token(r: &mut TtReader) -> TokenAndSpan {
                        (b) we actually can, since it's a token. */
                     MatchedNonterminal(NtIdent(box sn, b)) => {
                         r.cur_span = sp;
-                        r.cur_tok = IDENT(sn,b);
+                        r.cur_tok = token::Ident(sn,b);
                         return ret_val;
                     }
                     MatchedNonterminal(ref other_whole_nt) => {
                         // FIXME(pcwalton): Bad copy.
                         r.cur_span = sp;
-                        r.cur_tok = INTERPOLATED((*other_whole_nt).clone());
+                        r.cur_tok = token::Interpolated((*other_whole_nt).clone());
                         return ret_val;
                     }
                     MatchedSeq(..) => {

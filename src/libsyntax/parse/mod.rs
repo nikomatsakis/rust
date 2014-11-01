@@ -65,7 +65,7 @@ impl ParseSess {
 
         match v.checked_add(&count) {
             Some(next) => { self.node_id.set(next); }
-            None => fail!("Input too large, ran out of node ids!")
+            None => panic!("Input too large, ran out of node ids!")
         }
 
         v
@@ -381,7 +381,7 @@ pub fn char_lit(lit: &str) -> (char, int) {
             '0' => Some('\0'),
             _ => { None }
         },
-        _ => fail!("lexer accepted invalid char escape `{}`", lit)
+        _ => panic!("lexer accepted invalid char escape `{}`", lit)
     };
 
     match c {
@@ -434,7 +434,7 @@ pub fn str_lit(lit: &str) -> String {
                 match c {
                     '\\' => {
                         let ch = chars.peek().unwrap_or_else(|| {
-                            fail!("{}", error(i).as_slice())
+                            panic!("{}", error(i).as_slice())
                         }).val1();
 
                         if ch == '\n' {
@@ -442,11 +442,11 @@ pub fn str_lit(lit: &str) -> String {
                         } else if ch == '\r' {
                             chars.next();
                             let ch = chars.peek().unwrap_or_else(|| {
-                                fail!("{}", error(i).as_slice())
+                                panic!("{}", error(i).as_slice())
                             }).val1();
 
                             if ch != '\n' {
-                                fail!("lexer accepted bare CR");
+                                panic!("lexer accepted bare CR");
                             }
                             eat(&mut chars);
                         } else {
@@ -460,11 +460,11 @@ pub fn str_lit(lit: &str) -> String {
                     },
                     '\r' => {
                         let ch = chars.peek().unwrap_or_else(|| {
-                            fail!("{}", error(i).as_slice())
+                            panic!("{}", error(i).as_slice())
                         }).val1();
 
                         if ch != '\n' {
-                            fail!("lexer accepted bare CR");
+                            panic!("lexer accepted bare CR");
                         }
                         chars.next();
                         res.push('\n');
@@ -494,7 +494,7 @@ pub fn raw_str_lit(lit: &str) -> String {
             Some(c) => {
                 if c == '\r' {
                     if *chars.peek().unwrap() != '\n' {
-                        fail!("lexer accepted bare CR");
+                        panic!("lexer accepted bare CR");
                     }
                     chars.next();
                     res.push('\n');
@@ -553,11 +553,11 @@ pub fn byte_lit(lit: &str) -> (u8, uint) {
                 match ::std::num::from_str_radix::<u64>(lit.slice(2, 4), 16) {
                     Some(c) =>
                         if c > 0xFF {
-                            fail!(err(2))
+                            panic!(err(2))
                         } else {
                             return (c as u8, 4)
                         },
-                    None => fail!(err(3))
+                    None => panic!(err(3))
                 }
             }
         };
@@ -594,7 +594,7 @@ pub fn binary_lit(lit: &str) -> Rc<Vec<u8>> {
                     b'\r' => {
                         chars.next();
                         if chars.peek().expect(em.as_slice()).val1() != b'\n' {
-                            fail!("lexer accepted bare CR");
+                            panic!("lexer accepted bare CR");
                         }
                         eat(&mut chars);
                     }
@@ -612,7 +612,7 @@ pub fn binary_lit(lit: &str) -> Rc<Vec<u8>> {
             Some((i, b'\r')) => {
                 let em = error(i);
                 if chars.peek().expect(em.as_slice()).val1() != b'\n' {
-                    fail!("lexer accepted bare CR");
+                    panic!("lexer accepted bare CR");
                 }
                 chars.next();
                 res.push(b'\n');
@@ -793,42 +793,36 @@ mod test {
         let tts = string_to_tts("macro_rules! zip (($a)=>($a))".to_string());
         let tts: &[ast::TokenTree] = tts.as_slice();
         match tts {
-            [ast::TtToken(_, token::IDENT(name_macro_rules, false)),
-             ast::TtToken(_, token::NOT),
-             ast::TtToken(_, token::IDENT(name_zip, false)),
+            [ast::TtToken(_, token::Ident(name_macro_rules, token::Plain)),
+             ast::TtToken(_, token::Not),
+             ast::TtToken(_, token::Ident(name_zip, token::Plain)),
              ast::TtDelimited(_, ref macro_delimed)]
             if name_macro_rules.as_str() == "macro_rules"
             && name_zip.as_str() == "zip" => {
-                let (ref macro_open, ref macro_tts, ref macro_close) = **macro_delimed;
-                match (macro_open, macro_tts.as_slice(), macro_close) {
-                    (&ast::Delimiter { token: token::LPAREN, .. },
-                     [ast::TtDelimited(_, ref first_delimed),
-                      ast::TtToken(_, token::FAT_ARROW),
-                      ast::TtDelimited(_, ref second_delimed)],
-                     &ast::Delimiter { token: token::RPAREN, .. }) => {
-                        let (ref first_open, ref first_tts, ref first_close) = **first_delimed;
-                        match (first_open, first_tts.as_slice(), first_close) {
-                            (&ast::Delimiter { token: token::LPAREN, .. },
-                             [ast::TtToken(_, token::DOLLAR),
-                              ast::TtToken(_, token::IDENT(name, false))],
-                             &ast::Delimiter { token: token::RPAREN, .. })
-                            if name.as_str() == "a" => {},
-                            _ => fail!("value 3: {}", **first_delimed),
+                match macro_delimed.tts.as_slice() {
+                    [ast::TtDelimited(_, ref first_delimed),
+                     ast::TtToken(_, token::FatArrow),
+                     ast::TtDelimited(_, ref second_delimed)]
+                    if macro_delimed.delim == token::Paren => {
+                        match first_delimed.tts.as_slice() {
+                            [ast::TtToken(_, token::Dollar),
+                             ast::TtToken(_, token::Ident(name, token::Plain))]
+                            if first_delimed.delim == token::Paren
+                            && name.as_str() == "a" => {},
+                            _ => panic!("value 3: {}", **first_delimed),
                         }
-                        let (ref second_open, ref second_tts, ref second_close) = **second_delimed;
-                        match (second_open, second_tts.as_slice(), second_close) {
-                            (&ast::Delimiter { token: token::LPAREN, .. },
-                             [ast::TtToken(_, token::DOLLAR),
-                              ast::TtToken(_, token::IDENT(name, false))],
-                             &ast::Delimiter { token: token::RPAREN, .. })
-                            if name.as_str() == "a" => {},
-                            _ => fail!("value 4: {}", **second_delimed),
+                        match second_delimed.tts.as_slice() {
+                            [ast::TtToken(_, token::Dollar),
+                             ast::TtToken(_, token::Ident(name, token::Plain))]
+                            if second_delimed.delim == token::Paren
+                            && name.as_str() == "a" => {},
+                            _ => panic!("value 4: {}", **second_delimed),
                         }
                     },
-                    _ => fail!("value 2: {}", **macro_delimed),
+                    _ => panic!("value 2: {}", **macro_delimed),
                 }
             },
-            _ => fail!("value: {}",tts),
+            _ => panic!("value: {}",tts),
         }
     }
 
@@ -842,10 +836,10 @@ mod test {
         \"fields\":[\
             null,\
             {\
-                \"variant\":\"IDENT\",\
+                \"variant\":\"Ident\",\
                 \"fields\":[\
                     \"fn\",\
-                    false\
+                    \"Plain\"\
                 ]\
             }\
         ]\
@@ -855,10 +849,10 @@ mod test {
         \"fields\":[\
             null,\
             {\
-                \"variant\":\"IDENT\",\
+                \"variant\":\"Ident\",\
                 \"fields\":[\
                     \"a\",\
-                    false\
+                    \"Plain\"\
                 ]\
             }\
         ]\
@@ -867,21 +861,19 @@ mod test {
         \"variant\":\"TtDelimited\",\
         \"fields\":[\
             null,\
-            [\
-                {\
-                    \"span\":null,\
-                    \"token\":\"LPAREN\"\
-                },\
-                [\
+            {\
+                \"delim\":\"Paren\",\
+                \"open_span\":null,\
+                \"tts\":[\
                     {\
                         \"variant\":\"TtToken\",\
                         \"fields\":[\
                             null,\
                             {\
-                                \"variant\":\"IDENT\",\
+                                \"variant\":\"Ident\",\
                                 \"fields\":[\
                                     \"b\",\
-                                    false\
+                                    \"Plain\"\
                                 ]\
                             }\
                         ]\
@@ -890,7 +882,7 @@ mod test {
                         \"variant\":\"TtToken\",\
                         \"fields\":[\
                             null,\
-                            \"COLON\"\
+                            \"Colon\"\
                         ]\
                     },\
                     {\
@@ -898,41 +890,36 @@ mod test {
                         \"fields\":[\
                             null,\
                             {\
-                                \"variant\":\"IDENT\",\
+                                \"variant\":\"Ident\",\
                                 \"fields\":[\
                                     \"int\",\
-                                    false\
+                                    \"Plain\"\
                                 ]\
                             }\
                         ]\
                     }\
                 ],\
-                {\
-                    \"span\":null,\
-                    \"token\":\"RPAREN\"\
-                }\
-            ]\
+                \"close_span\":null\
+            }\
         ]\
     },\
     {\
         \"variant\":\"TtDelimited\",\
         \"fields\":[\
             null,\
-            [\
-                {\
-                    \"span\":null,\
-                    \"token\":\"LBRACE\"\
-                },\
-                [\
+            {\
+                \"delim\":\"Brace\",\
+                \"open_span\":null,\
+                \"tts\":[\
                     {\
                         \"variant\":\"TtToken\",\
                         \"fields\":[\
                             null,\
                             {\
-                                \"variant\":\"IDENT\",\
+                                \"variant\":\"Ident\",\
                                 \"fields\":[\
                                     \"b\",\
-                                    false\
+                                    \"Plain\"\
                                 ]\
                             }\
                         ]\
@@ -941,15 +928,12 @@ mod test {
                         \"variant\":\"TtToken\",\
                         \"fields\":[\
                             null,\
-                            \"SEMI\"\
+                            \"Semi\"\
                         ]\
                     }\
                 ],\
-                {\
-                    \"span\":null,\
-                    \"token\":\"RBRACE\"\
-                }\
-            ]\
+                \"close_span\":null\
+            }\
         ]\
     }\
 ]".to_string()
@@ -1002,7 +986,7 @@ mod test {
     }
 
     fn parser_done(p: Parser){
-        assert_eq!(p.token.clone(), token::EOF);
+        assert_eq!(p.token.clone(), token::Eof);
     }
 
     #[test] fn parse_ident_pat () {

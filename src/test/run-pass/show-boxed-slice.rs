@@ -8,44 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// error-pattern:explicit failure
+#[deriving(Show)]
+struct Foo(Box<[u8]>);
 
-trait Foo {
-    fn foo(self, x: int);
+pub fn main() {
+    println!("{}", Foo(box [0, 1, 2]));
 }
-
-struct S {
-    x: int,
-    y: int,
-    z: int,
-    s: String,
-}
-
-impl Foo for S {
-    fn foo(self, x: int) {
-        fail!()
-    }
-}
-
-impl Drop for S {
-    fn drop(&mut self) {
-        println!("bye 1!");
-    }
-}
-
-fn f() {
-    let s = S {
-        x: 2,
-        y: 3,
-        z: 4,
-        s: "hello".to_string(),
-    };
-    let st = box s as Box<Foo>;
-    st.foo(5);
-}
-
-fn main() {
-    f();
-}
-
-

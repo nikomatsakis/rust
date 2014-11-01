@@ -41,7 +41,7 @@ use syntax::ast::{TyF64, TyFloat, TyI, TyI8, TyI16, TyI32, TyI64, TyInt};
 use syntax::ast::{TyParam, TyParamBound, TyPath, TyPtr, TyProc, TyQPath};
 use syntax::ast::{TyRptr, TyStr, TyU, TyU8, TyU16, TyU32, TyU64, TyUint};
 use syntax::ast::{TypeImplItem, UnboxedFnTyParamBound, UnnamedField};
-use syntax::ast::{UnsafeFn, Variant, ViewItem, ViewItemExternCrate};
+use syntax::ast::{Variant, ViewItem, ViewItemExternCrate};
 use syntax::ast::{ViewItemUse, ViewPathGlob, ViewPathList, ViewPathSimple};
 use syntax::ast::{Visibility};
 use syntax::ast;
@@ -728,7 +728,7 @@ impl NameBindings {
     fn get_module(&self) -> Rc<Module> {
         match self.get_module_if_available() {
             None => {
-                fail!("get_module called on a node with no module \
+                panic!("get_module called on a node with no module \
                        definition!")
             }
             Some(module_def) => module_def
@@ -1250,11 +1250,11 @@ impl<'a> Resolver<'a> {
                                   sp, is_public);
                 parent
             }
-            ItemFn(_, fn_style, _, _, _) => {
+            ItemFn(_, _, _, _, _) => {
                 let name_bindings =
                     self.add_child(name, parent.clone(), ForbidDuplicateValues, sp);
 
-                let def = DefFn(local_def(item.id), fn_style, false);
+                let def = DefFn(local_def(item.id), false);
                 name_bindings.define_value(def, sp, is_public);
                 parent
             }
@@ -1392,8 +1392,7 @@ impl<'a> Resolver<'a> {
                                             // Static methods become
                                             // `DefStaticMethod`s.
                                             DefStaticMethod(local_def(method.id),
-                                                            FromImpl(local_def(item.id)),
-                                                                     method.pe_fn_style())
+                                                            FromImpl(local_def(item.id)))
                                         }
                                         _ => {
                                             // Non-static methods become
@@ -1483,8 +1482,7 @@ impl<'a> Resolver<'a> {
                                     // Static methods become `DefStaticMethod`s.
                                     (DefStaticMethod(
                                             local_def(ty_m.id),
-                                            FromTrait(local_def(item.id)),
-                                            ty_m.fn_style),
+                                            FromTrait(local_def(item.id))),
                                      StaticMethodTraitItemKind)
                                 }
                                 _ => {
@@ -1711,7 +1709,7 @@ impl<'a> Resolver<'a> {
 
         match foreign_item.node {
             ForeignItemFn(_, ref generics) => {
-                let def = DefFn(local_def(foreign_item.id), UnsafeFn, false);
+                let def = DefFn(local_def(foreign_item.id), false);
                 name_bindings.define_value(def, foreign_item.span, is_public);
 
                 self.with_type_parameter_rib(
@@ -1832,12 +1830,12 @@ impl<'a> Resolver<'a> {
                 child_name_bindings.define_value(def, DUMMY_SP, is_exported);
             }
           }
-          DefFn(ctor_id, _, true) => {
+          DefFn(ctor_id, true) => {
             child_name_bindings.define_value(
                 csearch::get_tuple_struct_definition_if_ctor(&self.session.cstore, ctor_id)
                     .map_or(def, |_| DefStruct(ctor_id)), DUMMY_SP, is_public);
           }
-          DefFn(..) | DefStaticMethod(..) | DefStatic(..) | DefConst(..) => {
+          DefFn(..) | DefStaticMethod(..) | DefStatic(..) | DefConst(..) | DefMethod(..) => {
             debug!("(building reduced graph for external \
                     crate) building value (fn/static) {}", final_ident);
             child_name_bindings.define_value(def, DUMMY_SP, is_public);
@@ -1902,15 +1900,10 @@ impl<'a> Resolver<'a> {
             // Record the def ID and fields of this struct.
             self.structs.insert(def_id, fields);
           }
-          DefMethod(..) => {
-              debug!("(building reduced graph for external crate) \
-                      ignoring {}", def);
-              // Ignored; handled elsewhere.
-          }
           DefLocal(..) | DefPrimTy(..) | DefTyParam(..) |
           DefUse(..) | DefUpvar(..) | DefRegion(..) |
           DefTyParamBinder(..) | DefLabel(..) | DefSelfTy(..) => {
-            fail!("didn't expect `{}`", def);
+            panic!("didn't expect `{}`", def);
           }
         }
     }
@@ -1957,15 +1950,14 @@ impl<'a> Resolver<'a> {
                 }
             }
             DlImpl(def) => {
-                // We only process static methods of impls here.
                 match csearch::get_type_name_if_impl(&self.session.cstore, def) {
                     None => {}
                     Some(final_name) => {
-                        let static_methods_opt =
-                            csearch::get_static_methods_if_impl(&self.session.cstore, def);
-                        match static_methods_opt {
-                            Some(ref static_methods) if
-                                static_methods.len() >= 1 => {
+                        let methods_opt =
+                            csearch::get_methods_if_impl(&self.session.cstore, def);
+                        match methods_opt {
+                            Some(ref methods) if
+                                methods.len() >= 1 => {
                                 debug!("(building reduced graph for \
                                         external crate) processing \
                                         static methods for type name {}",
@@ -2015,9 +2007,8 @@ impl<'a> Resolver<'a> {
                                 // Add each static method to the module.
                                 let new_parent =
                                     ModuleReducedGraphParent(type_module);
-                                for static_method_info in
-                                        static_methods.iter() {
-                                    let name = static_method_info.name;
+                                for method_info in methods.iter() {
+                                    let name = method_info.name;
                                     debug!("(building reduced graph for \
                                              external crate) creating \
                                              static method '{}'",
@@ -2028,10 +2019,7 @@ impl<'a> Resolver<'a> {
                                                        new_parent.clone(),
                                                        OverwriteDuplicates,
                                                        DUMMY_SP);
-                                    let def = DefFn(
-                                        static_method_info.def_id,
-                                        static_method_info.fn_style,
-                                        false);
+                                    let def = DefFn(method_info.def_id, false);
 
                                     method_name_bindings.define_value(
                                         def, DUMMY_SP,
@@ -2596,7 +2584,7 @@ impl<'a> Resolver<'a> {
 
         // We've successfully resolved the import. Write the results in.
         let mut import_resolutions = module_.import_resolutions.borrow_mut();
-        let import_resolution = import_resolutions.get_mut(&target);
+        let import_resolution = &mut (*import_resolutions)[target];
 
         match value_result {
             BoundResult(ref target_module, ref name_bindings) => {
@@ -2618,7 +2606,7 @@ impl<'a> Resolver<'a> {
             }
             UnboundResult => { /* Continue. */ }
             UnknownResult => {
-                fail!("value result should be known at this point");
+                panic!("value result should be known at this point");
             }
         }
         match type_result {
@@ -2641,7 +2629,7 @@ impl<'a> Resolver<'a> {
             }
             UnboundResult => { /* Continue. */ }
             UnknownResult => {
-                fail!("type result should be known at this point");
+                panic!("type result should be known at this point");
             }
         }
 
@@ -3158,7 +3146,7 @@ impl<'a> Resolver<'a> {
                                         (_, _) => {
                                             search_module = module_def.clone();
 
-                                            // track extern crates for unused_extern_crate lint
+                                            // track extern crates for unused_extern_crates lint
                                             match module_def.def_id.get() {
                                                 Some(did) => {
                                                     self.used_crates.insert(did.krate);
@@ -5161,7 +5149,7 @@ impl<'a> Resolver<'a> {
                         target.bindings.value_def.borrow());
                 match *target.bindings.value_def.borrow() {
                     None => {
-                        fail!("resolved name in the value namespace to a \
+                        panic!("resolved name in the value namespace to a \
                               set of name bindings with no def?!");
                     }
                     Some(def) => {
@@ -5191,7 +5179,7 @@ impl<'a> Resolver<'a> {
             }
 
             Indeterminate => {
-                fail!("unexpected indeterminate result");
+                panic!("unexpected indeterminate result");
             }
             Failed(err) => {
                 match err {
@@ -5389,7 +5377,7 @@ impl<'a> Resolver<'a> {
                                                  msg.as_slice()));
                 return None;
             }
-            Indeterminate => fail!("indeterminate unexpected"),
+            Indeterminate => panic!("indeterminate unexpected"),
             Success((resulting_module, resulting_last_private)) => {
                 containing_module = resulting_module;
                 last_private = resulting_last_private;
@@ -5451,7 +5439,7 @@ impl<'a> Resolver<'a> {
             }
 
             Indeterminate => {
-                fail!("indeterminate unexpected");
+                panic!("indeterminate unexpected");
             }
 
             Success((resulting_module, resulting_last_private)) => {
@@ -5537,7 +5525,7 @@ impl<'a> Resolver<'a> {
                 }
             }
             Indeterminate => {
-                fail!("unexpected indeterminate result");
+                panic!("unexpected indeterminate result");
             }
             Failed(err) => {
                 match err {
@@ -5646,7 +5634,7 @@ impl<'a> Resolver<'a> {
                 Some(binding) => {
                     let p_str = self.path_names_to_string(&path);
                     match binding.def_for_namespace(ValueNS) {
-                        Some(DefStaticMethod(_, provenance, _)) => {
+                        Some(DefStaticMethod(_, provenance)) => {
                             match provenance {
                                 FromImpl(_) => return StaticMethod(p_str),
                                 FromTrait(_) => unreachable!()
@@ -5697,7 +5685,7 @@ impl<'a> Resolver<'a> {
 
         let mut smallest = 0;
         for (i, other) in maybes.iter().enumerate() {
-            *values.get_mut(i) = name.lev_distance(other.get());
+            values[i] = name.lev_distance(other.get());
 
             if values[i] <= values[smallest] {
                 smallest = i;
@@ -6155,7 +6143,7 @@ impl<'a> Resolver<'a> {
                 type_used: _
             }) => (v, t),
             Some(_) => {
-                fail!("we should only have LastImport for `use` directives")
+                panic!("we should only have LastImport for `use` directives")
             }
             _ => return,
         };
