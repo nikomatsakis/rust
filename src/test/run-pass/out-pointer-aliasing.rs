@@ -8,8 +8,23 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-static X: uint = 0 as *const uint as uint;
+pub struct Foo {
+    f1: int,
+    _f2: int,
+}
 
-fn main() {
-    assert_eq!(X, 0);
+#[inline(never)]
+pub fn foo(f: &mut Foo) -> Foo {
+    let ret = *f;
+    f.f1 = 0;
+    ret
+}
+
+pub fn main() {
+    let mut f = Foo {
+        f1: 8,
+        _f2: 9,
+    };
+    f = foo(&mut f);
+    assert_eq!(f.f1, 8);
 }

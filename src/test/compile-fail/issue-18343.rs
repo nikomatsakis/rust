@@ -8,44 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// error-pattern:explicit failure
-
-trait Foo {
-    fn foo(self, x: int);
-}
-
-struct S {
-    x: int,
-    y: int,
-    z: int,
-    s: String,
-}
-
-impl Foo for S {
-    fn foo(self, x: int) {
-        fail!()
-    }
-}
-
-impl Drop for S {
-    fn drop(&mut self) {
-        println!("bye 1!");
-    }
-}
-
-fn f() {
-    let s = S {
-        x: 2,
-        y: 3,
-        z: 4,
-        s: "hello".to_string(),
-    };
-    let st = box s as Box<Foo>;
-    st.foo(5);
+struct Obj<'a> {
+    closure: ||: 'a -> u32
 }
 
 fn main() {
-    f();
+    let o = Obj { closure: || 42 };
+    o.closure(); //~ ERROR type `Obj<'_>` does not implement any method in scope named `closure`
+    //~^ NOTE use `(s.closure)(...)` if you meant to call the function stored in the `closure` field
 }
-
-

@@ -22,7 +22,7 @@ use slice;
 use slice::AsSlice;
 use vec::Vec;
 
-static BUF_CAPACITY: uint = 128;
+const BUF_CAPACITY: uint = 128;
 
 fn combine(seek: SeekStyle, cur: uint, end: uint, offset: i64) -> IoResult<u64> {
     // compute offset as signed and clamp to prevent overflow
@@ -71,7 +71,12 @@ impl MemWriter {
     /// the internal buffer.
     #[inline]
     pub fn with_capacity(n: uint) -> MemWriter {
-        MemWriter { buf: Vec::with_capacity(n) }
+        MemWriter::from_vec(Vec::with_capacity(n))
+    }
+    /// Create a new `MemWriter` that will append to an existing `Vec`.
+    #[inline]
+    pub fn from_vec(buf: Vec<u8>) -> MemWriter {
+        MemWriter { buf: buf }
     }
 
     /// Acquires an immutable reference to the underlying buffer of this
@@ -404,7 +409,7 @@ mod test {
         writer.write([0]).unwrap();
 
         match writer.write([0, 0]) {
-            Ok(..) => fail!(),
+            Ok(..) => panic!(),
             Err(e) => assert_eq!(e.kind, io::OtherIoError),
         }
     }
@@ -505,7 +510,7 @@ mod test {
         let buf = [0xff];
         let mut r = BufReader::new(buf);
         match r.read_to_string() {
-            Ok(..) => fail!(),
+            Ok(..) => panic!(),
             Err(..) => {}
         }
     }

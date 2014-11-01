@@ -88,7 +88,7 @@ mod imp {
     #[repr(C)]
     struct SecRandom;
 
-    #[allow(non_uppercase_statics)]
+    #[allow(non_upper_case_globals)]
     static kSecRandomDefault: *const SecRandom = 0 as *const SecRandom;
 
     #[link(name = "Security", kind = "framework")]
@@ -120,7 +120,7 @@ mod imp {
                 SecRandomCopyBytes(kSecRandomDefault, v.len() as size_t, v.as_mut_ptr())
             };
             if ret == -1 {
-                fail!("couldn't generate random bytes: {}", os::last_os_error());
+                panic!("couldn't generate random bytes: {}", os::last_os_error());
             }
         }
     }
@@ -208,7 +208,7 @@ mod imp {
                                v.as_mut_ptr())
             };
             if ret == 0 {
-                fail!("couldn't generate random bytes: {}", os::last_os_error());
+                panic!("couldn't generate random bytes: {}", os::last_os_error());
             }
         }
     }
@@ -219,7 +219,7 @@ mod imp {
                 CryptReleaseContext(self.hcryptprov, 0)
             };
             if ret == 0 {
-                fail!("couldn't release context: {}", os::last_os_error());
+                panic!("couldn't release context: {}", os::last_os_error());
             }
         }
     }

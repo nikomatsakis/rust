@@ -138,7 +138,7 @@ pub struct LocalCrateContext {
     builder: BuilderRef_res,
 
     /// Holds the LLVM values for closure IDs.
-    unboxed_closure_vals: RefCell<DefIdMap<ValueRef>>,
+    unboxed_closure_vals: RefCell<HashMap<MonoId, ValueRef>>,
 
     dbg_cx: Option<debuginfo::CrateDebugContext>,
 
@@ -419,7 +419,7 @@ impl LocalCrateContext {
                 int_type: Type::from_ref(ptr::null_mut()),
                 opaque_vec_type: Type::from_ref(ptr::null_mut()),
                 builder: BuilderRef_res(llvm::LLVMCreateBuilderInContext(llcx)),
-                unboxed_closure_vals: RefCell::new(DefIdMap::new()),
+                unboxed_closure_vals: RefCell::new(HashMap::new()),
                 dbg_cx: dbg_cx,
                 eh_personality: RefCell::new(None),
                 intrinsics: RefCell::new(HashMap::new()),
@@ -453,7 +453,7 @@ impl LocalCrateContext {
     /// Create a dummy `CrateContext` from `self` and  the provided
     /// `SharedCrateContext`.  This is somewhat dangerous because `self` may
     /// not actually be an element of `shared.local_ccxs`, which can cause some
-    /// operations to `fail` unexpectedly.
+    /// operations to panic unexpectedly.
     ///
     /// This is used in the `LocalCrateContext` constructor to allow calling
     /// functions that expect a complete `CrateContext`, even before the local
@@ -527,7 +527,7 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
         }
         match declare_intrinsic(self, key) {
             Some(v) => return v,
-            None => fail!()
+            None => panic!()
         }
     }
 
@@ -689,7 +689,7 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
         self.local.opaque_vec_type
     }
 
-    pub fn unboxed_closure_vals<'a>(&'a self) -> &'a RefCell<DefIdMap<ValueRef>> {
+    pub fn unboxed_closure_vals<'a>(&'a self) -> &'a RefCell<HashMap<MonoId,ValueRef>> {
         &self.local.unboxed_closure_vals
     }
 

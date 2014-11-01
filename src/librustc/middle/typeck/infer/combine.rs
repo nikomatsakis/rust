@@ -89,8 +89,15 @@ pub trait Combine<'tcx> {
         } else {
             None
         };
-        let variances = variances.as_ref();
+        self.substs_variances(variances.as_ref().map(|v| &**v), a_subst, b_subst)
+    }
 
+    fn substs_variances(&self,
+                        variances: Option<&ty::ItemVariances>,
+                        a_subst: &subst::Substs,
+                        b_subst: &subst::Substs)
+                        -> cres<subst::Substs>
+    {
         let mut substs = subst::Substs::empty();
 
         for &space in subst::ParamSpace::all().iter() {
@@ -352,7 +359,18 @@ pub fn super_fn_sigs<'tcx, C: Combine<'tcx>>(this: &C,
     let inputs = try!(argvecs(this,
                                 a.inputs.as_slice(),
                                 b.inputs.as_slice()));
-    let output = try!(this.tys(a.output, b.output));
+
+    let output = try!(match (a.output, b.output) {
+        (ty::FnConverging(a_ty), ty::FnConverging(b_ty)) =>
+            Ok(ty::FnConverging(try!(this.tys(a_ty, b_ty)))),
+        (ty::FnDiverging, ty::FnDiverging) =>
+            Ok(ty::FnDiverging),
+        (a, b) =>
+            Err(ty::terr_convergence_mismatch(
+                expected_found(this, a != ty::FnDiverging, b != ty::FnDiverging)
+            )),
+    });
+
     Ok(FnSig {binder_id: a.binder_id,
               inputs: inputs,
               output: output,
@@ -366,9 +384,7 @@ pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C, a: ty::t, b: ty::t) -> cres<t
     let b_sty = &ty::get(b).sty;
     debug!("super_tys: a_sty={} b_sty={}", a_sty, b_sty);
     return match (a_sty, b_sty) {
-      // The "subtype" ought to be handling cases involving bot or var:
-      (&ty::ty_bot, _) |
-      (_, &ty::ty_bot) |
+      // The "subtype" ought to be handling cases involving var:
       (&ty::ty_infer(TyVar(_)), _) |
       (_, &ty::ty_infer(TyVar(_))) => {
         tcx.sess.bug(
@@ -462,14 +478,15 @@ pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C, a: ty::t, b: ty::t) -> cres<t
             Ok(ty::mk_struct(tcx, a_id, substs))
       }
 
-      (&ty::ty_unboxed_closure(a_id, a_region),
-       &ty::ty_unboxed_closure(b_id, b_region))
+      (&ty::ty_unboxed_closure(a_id, a_region, ref a_substs),
+       &ty::ty_unboxed_closure(b_id, b_region, ref b_substs))
       if a_id == b_id => {
           // All ty_unboxed_closure types with the same id represent
           // the (anonymous) type of the same closure expression. So
           // all of their regions should be equated.
           let region = try!(this.equate().regions(a_region, b_region));
-          Ok(ty::mk_unboxed_closure(tcx, a_id, region))
+          let substs = try!(this.substs_variances(None, a_substs, b_substs));
+          Ok(ty::mk_unboxed_closure(tcx, a_id, region, substs))
       }
 
       (&ty::ty_uniq(a_inner), &ty::ty_uniq(b_inner)) => {
@@ -496,6 +513,16 @@ pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C, a: ty::t, b: ty::t) -> cres<t
                 _ => try!(this.mts(a_mt, b_mt))
             };
             Ok(ty::mk_rptr(tcx, r, mt))
+      }
+
+      (&ty::ty_vec(a_t, Some(sz_a)), &ty::ty_vec(b_t, Some(sz_b))) => {
+        this.tys(a_t, b_t).and_then(|t| {
+            if sz_a == sz_b {
+                Ok(ty::mk_vec(tcx, t, Some(sz_a)))
+            } else {
+                Err(ty::terr_fixed_array_size(expected_found(this, sz_a, sz_b)))
+            }
+        })
       }
 
       (&ty::ty_vec(a_t, sz_a), &ty::ty_vec(b_t, sz_b)) => {

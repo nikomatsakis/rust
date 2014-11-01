@@ -49,7 +49,7 @@
 // gdb-check:[...]![...]_yyy([...])([...]);
 // gdb-command:continue
 
-#![allow(unused_variable)]
+#![allow(unused_variables)]
 
 fn main() {
     let unit: () = ();
@@ -72,4 +72,4 @@ fn main() {
 }
 
 fn _zzz() {()}
-fn _yyy() -> ! {fail!()}
+fn _yyy() -> ! {panic!()}

@@ -8,23 +8,23 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Testing casting of a generic Struct to a Trait with a generic method.
-// This is test for issue 10955.
-#![allow(unused_variable)]
+#![feature(unsafe_destructor)]
 
-trait Foo {
-    fn f<A>(a: A) -> A {
-        a
+pub struct Foo<T>;
+
+impl<T> Iterator<T> for Foo<T> {
+    fn next(&mut self) -> Option<T> {
+        None
     }
 }
 
-struct Bar<T> {
-    x: T,
+#[unsafe_destructor]
+impl<T> Drop for Foo<T> {
+    fn drop(&mut self) {
+        self.next();
+    }
 }
 
-impl<T> Foo for Bar<T> { }
+pub fn foo<'a>(_: Foo<&'a ()>) {}
 
-pub fn main() {
-    let a = Bar { x: 1u };
-    let b = &a as &Foo;
-}
+pub fn main() {}

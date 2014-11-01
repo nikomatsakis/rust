@@ -13,6 +13,7 @@
 use clone::Clone;
 use cmp::{Eq, Equiv, PartialEq};
 use collections::{Collection, Mutable, Set, MutableSet, Map, MutableMap};
+use core::kinds::Sized;
 use default::Default;
 use fmt::Show;
 use fmt;
@@ -186,7 +187,7 @@ impl<T: Eq + Hash<S>, S, H: Hasher<S>> HashSet<T, H> {
     /// # Example
     ///
     /// This is a slightly silly example where we define the number's
-    /// parity as the equivilance class. It is important that the
+    /// parity as the equivalance class. It is important that the
     /// values hash the same, which is why we implement `Hash`.
     ///
     /// ```
@@ -221,7 +222,7 @@ impl<T: Eq + Hash<S>, S, H: Hasher<S>> HashSet<T, H> {
     /// assert!(!set.contains_equiv(&EvenOrOdd { num: 2u }));
     ///
     /// ```
-    pub fn contains_equiv<Q: Hash<S> + Equiv<T>>(&self, value: &Q) -> bool {
+    pub fn contains_equiv<Sized? Q: Hash<S> + Equiv<T>>(&self, value: &Q) -> bool {
       self.map.contains_key_equiv(value)
     }
 

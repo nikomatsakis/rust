@@ -95,6 +95,7 @@ const UINT_TRUE: uint = -1;
 #[stable]
 impl AtomicBool {
     /// Create a new `AtomicBool`
+    #[inline]
     pub fn new(v: bool) -> AtomicBool {
         let val = if v { UINT_TRUE } else { 0 };
         AtomicBool { v: UnsafeCell::new(val), nocopy: marker::NoCopy }
@@ -306,6 +307,7 @@ impl AtomicBool {
 #[stable]
 impl AtomicInt {
     /// Create a new `AtomicInt`
+    #[inline]
     pub fn new(v: int) -> AtomicInt {
         AtomicInt {v: UnsafeCell::new(v), nocopy: marker::NoCopy}
     }
@@ -427,6 +429,7 @@ impl AtomicInt {
 #[stable]
 impl AtomicUint {
     /// Create a new `AtomicUint`
+    #[inline]
     pub fn new(v: uint) -> AtomicUint {
         AtomicUint { v: UnsafeCell::new(v), nocopy: marker::NoCopy }
     }
@@ -548,6 +551,7 @@ impl AtomicUint {
 #[stable]
 impl<T> AtomicPtr<T> {
     /// Create a new `AtomicPtr`
+    #[inline]
     pub fn new(p: *mut T) -> AtomicPtr<T> {
         AtomicPtr {
             p: UnsafeCell::new(p as uint),
@@ -604,8 +608,8 @@ unsafe fn atomic_store<T>(dst: *mut T, val: T, order:Ordering) {
         Release => intrinsics::atomic_store_rel(dst, val),
         Relaxed => intrinsics::atomic_store_relaxed(dst, val),
         SeqCst  => intrinsics::atomic_store(dst, val),
-        Acquire => fail!("there is no such thing as an acquire store"),
-        AcqRel  => fail!("there is no such thing as an acquire/release store"),
+        Acquire => panic!("there is no such thing as an acquire store"),
+        AcqRel  => panic!("there is no such thing as an acquire/release store"),
     }
 }
 
@@ -615,8 +619,8 @@ unsafe fn atomic_load<T>(dst: *const T, order:Ordering) -> T {
         Acquire => intrinsics::atomic_load_acq(dst),
         Relaxed => intrinsics::atomic_load_relaxed(dst),
         SeqCst  => intrinsics::atomic_load(dst),
-        Release => fail!("there is no such thing as a release load"),
-        AcqRel  => fail!("there is no such thing as an acquire/release load"),
+        Release => panic!("there is no such thing as a release load"),
+        AcqRel  => panic!("there is no such thing as an acquire/release load"),
     }
 }
 
@@ -742,7 +746,7 @@ pub fn fence(order: Ordering) {
             Release => intrinsics::atomic_fence_rel(),
             AcqRel  => intrinsics::atomic_fence_acqrel(),
             SeqCst  => intrinsics::atomic_fence(),
-            Relaxed => fail!("there is no such thing as a relaxed fence")
+            Relaxed => panic!("there is no such thing as a relaxed fence")
         }
     }
 }

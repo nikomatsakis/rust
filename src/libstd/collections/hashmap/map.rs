@@ -14,19 +14,15 @@ use clone::Clone;
 use cmp::{max, Eq, Equiv, PartialEq};
 use collections::{Collection, Mutable, MutableSet, Map, MutableMap};
 use default::Default;
-use fmt::Show;
-use fmt;
+use fmt::{mod, Show};
 use hash::{Hash, Hasher, RandomSipHasher};
-use iter::{Iterator, FromIterator, Extendable};
-use iter;
-use mem::replace;
-use mem;
+use iter::{mod, Iterator, FromIterator, Extendable};
+use kinds::Sized;
+use mem::{mod, replace};
 use num;
-use ops::Deref;
+use ops::{Deref, Index, IndexMut};
 use option::{Some, None, Option};
-use result::{Ok, Err};
-use ops::Index;
-use core::result::Result;
+use result::{Result, Ok, Err};
 
 use super::table;
 use super::table::{
@@ -120,8 +116,7 @@ impl DefaultResizePolicy {
 // is also memory and cache pressure that this would entail that would be very
 // difficult to properly see in a microbenchmark.
 //
-// Future Improvements (FIXME!)
-// ============================
+// ## Future Improvements (FIXME!)
 //
 // Allow the load factor to be changed dynamically and/or at initialization.
 //
@@ -129,8 +124,7 @@ impl DefaultResizePolicy {
 // underlying table? This is exactly the use case for 'realloc', and may
 // be worth exploring.
 //
-// Future Optimizations (FIXME!)
-// =============================
+// ## Future Optimizations (FIXME!)
 //
 // Another possible design choice that I made without any real reason is
 // parameterizing the raw table over keys and values. Technically, all we need
@@ -426,17 +420,17 @@ impl<K, V, M> SearchResult<K, V, M> {
 }
 
 impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
-    fn make_hash<X: Hash<S>>(&self, x: &X) -> SafeHash {
+    fn make_hash<Sized? X: Hash<S>>(&self, x: &X) -> SafeHash {
         table::make_hash(&self.hasher, x)
     }
 
-    fn search_equiv<'a, Q: Hash<S> + Equiv<K>>(&'a self, q: &Q)
+    fn search_equiv<'a, Sized? Q: Hash<S> + Equiv<K>>(&'a self, q: &Q)
                     -> Option<FullBucketImm<'a, K, V>> {
         let hash = self.make_hash(q);
         search_hashed_generic(&self.table, &hash, |k| q.equiv(k)).into_option()
     }
 
-    fn search_equiv_mut<'a, Q: Hash<S> + Equiv<K>>(&'a mut self, q: &Q)
+    fn search_equiv_mut<'a, Sized? Q: Hash<S> + Equiv<K>>(&'a mut self, q: &Q)
                     -> Option<FullBucketMut<'a, K, V>> {
         let hash = self.make_hash(q);
         search_hashed_generic(&mut self.table, &hash, |k| q.equiv(k)).into_option()
@@ -473,7 +467,7 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
             };
             buckets.next();
         }
-        fail!("Internal HashMap error: Out of space.");
+        panic!("Internal HashMap error: Out of space.");
     }
 }
 
@@ -829,7 +823,8 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     }
 
     /// Retrieves a mutable value for the given key.
-    /// See [`find_mut`](../trait.MutableMap.html#tymethod.find_mut) for a non-failing alternative.
+    /// See [`find_mut`](../trait.MutableMap.html#tymethod.find_mut) for a non-panicking
+    /// alternative.
     ///
     /// # Failure
     ///
@@ -838,6 +833,7 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     /// # Example
     ///
     /// ```
+    /// # #![allow(deprecated)]
     /// use std::collections::HashMap;
     ///
     /// let mut map = HashMap::new();
@@ -853,18 +849,16 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     /// *map.get_mut(&"a") = -2;
     /// assert_eq!(map["a"], -2);
     /// ```
+    #[deprecated = "use indexing instead: `&mut map[key]`"]
     pub fn get_mut<'a>(&'a mut self, k: &K) -> &'a mut V {
-        match self.find_mut(k) {
-            Some(v) => v,
-            None => fail!("no entry found for key")
-        }
+        &mut self[*k]
     }
 
     /// Return true if the map contains a value for the specified key,
     /// using equivalence.
     ///
     /// See [pop_equiv](#method.pop_equiv) for an extended example.
-    pub fn contains_key_equiv<Q: Hash<S> + Equiv<K>>(&self, key: &Q) -> bool {
+    pub fn contains_key_equiv<Sized? Q: Hash<S> + Equiv<K>>(&self, key: &Q) -> bool {
         self.search_equiv(key).is_some()
     }
 
@@ -872,7 +866,7 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     /// equivalence.
     ///
     /// See [pop_equiv](#method.pop_equiv) for an extended example.
-    pub fn find_equiv<'a, Q: Hash<S> + Equiv<K>>(&'a self, k: &Q) -> Option<&'a V> {
+    pub fn find_equiv<'a, Sized? Q: Hash<S> + Equiv<K>>(&'a self, k: &Q) -> Option<&'a V> {
         match self.search_equiv(k) {
             None      => None,
             Some(bucket) => {
@@ -928,7 +922,7 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     ///
     /// ```
     #[experimental]
-    pub fn pop_equiv<Q:Hash<S> + Equiv<K>>(&mut self, k: &Q) -> Option<V> {
+    pub fn pop_equiv<Sized? Q:Hash<S> + Equiv<K>>(&mut self, k: &Q) -> Option<V> {
         if self.table.size() == 0 {
             return None
         }
@@ -1195,13 +1189,15 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> Index<K, V> for HashMap<K, V, H> {
     }
 }
 
-// FIXME(#12825) Indexing will always try IndexMut first and that causes issues.
-/*impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> ops::IndexMut<K, V> for HashMap<K, V, H> {
+impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> IndexMut<K, V> for HashMap<K, V, H> {
     #[inline]
     fn index_mut<'a>(&'a mut self, index: &K) -> &'a mut V {
-        self.get_mut(index)
+        match self.find_mut(index) {
+            Some(v) => v,
+            None => panic!("no entry found for key")
+        }
     }
-}*/
+}
 
 /// HashMap iterator
 pub struct Entries<'a, K: 'a, V: 'a> {
@@ -1625,7 +1621,7 @@ mod test_map {
         assert!(m.insert(5i, 14i));
         let new = 100;
         match m.find_mut(&5) {
-            None => fail!(), Some(x) => *x = new
+            None => panic!(), Some(x) => *x = new
         }
         assert_eq!(m.find(&5), Some(&new));
     }
@@ -1746,7 +1742,7 @@ mod test_map {
         assert!(m.find(&1i).is_none());
         m.insert(1i, 2i);
         match m.find(&1) {
-            None => fail!(),
+            None => panic!(),
             Some(v) => assert_eq!(*v, 2)
         }
     }
@@ -1759,12 +1755,12 @@ mod test_map {
         for i in range(1i, 10000) {
             m.insert(i, i + 7);
             match m.find_copy(&i) {
-                None => fail!(),
+                None => panic!(),
                 Some(v) => assert_eq!(v, i + 7)
             }
             for j in range(1i, i/100) {
                 match m.find_copy(&j) {
-                    None => fail!(),
+                    None => panic!(),
                     Some(v) => assert_eq!(v, j + 7)
                 }
             }
@@ -1884,11 +1880,11 @@ mod test_map {
         m.insert("baz".to_string(), baz);
 
 
-        assert_eq!(m.find_equiv(&("foo")), Some(&foo));
-        assert_eq!(m.find_equiv(&("bar")), Some(&bar));
-        assert_eq!(m.find_equiv(&("baz")), Some(&baz));
+        assert_eq!(m.find_equiv("foo"), Some(&foo));
+        assert_eq!(m.find_equiv("bar"), Some(&bar));
+        assert_eq!(m.find_equiv("baz"), Some(&baz));
 
-        assert_eq!(m.find_equiv(&("qux")), None);
+        assert_eq!(m.find_equiv("qux"), None);
     }
 
     #[test]
