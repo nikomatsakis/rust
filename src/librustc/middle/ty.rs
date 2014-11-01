@@ -4233,7 +4233,7 @@ pub fn trait_ref_to_def_id(tcx: &ctxt, tr: &ast::TraitRef) -> ast::DefId {
 pub fn try_add_builtin_trait(
     tcx: &ctxt,
     trait_def_id: ast::DefId,
-    builtin_bounds: &mut EnumSet<BuiltinBound>)
+    generics: &mut ty::Generics)
     -> bool
 {
     //! Checks whether `trait_ref` refers to one of the builtin
@@ -4242,7 +4242,19 @@ pub fn try_add_builtin_trait(
     //! is a builtin trait.
 
     match tcx.lang_items.to_builtin_kind(trait_def_id) {
-        Some(bound) => { builtin_bounds.add(bound); true }
+        Some(bound) => {
+          // let obligation = traits::obligation_for_builtin_bound(
+          //   tcx,
+          //   fail!("need cause"),
+          //   node_id_to_type(tcx, trait_def_id.node),
+          //   bound
+          // ).unwrap().as_predicate();
+
+          // Jard: What is the Self type for the trait? type variable? or can we look it up given the trait_def_id
+          let trait_ref = traits::trait_ref_for_builtin_bound(tcx, bound, ty::mk_infer(tcx, ty::SkolemizedTy(0)));
+          generics.predicates.push(subst::SelfSpace, ty::TraitPredicate(trait_ref.unwrap()));
+          true
+        }
         None => false
     }
 }

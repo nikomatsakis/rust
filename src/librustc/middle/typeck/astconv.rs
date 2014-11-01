@@ -67,6 +67,7 @@ use middle::typeck;
 use util::ppaux::{Repr, UserString};
 
 use std::collections::HashMap;
+use std::collections::EnumSet;
 use std::rc::Rc;
 use std::iter::AdditiveIterator;
 use std::iter::Extendable;
@@ -1376,10 +1377,10 @@ pub fn conv_existential_bounds<'tcx, AC: AstConv<'tcx>, RS:RegionScope>(
                                             fail!("NYI"),
                                             region_bounds.as_slice(),
                                             main_trait_refs.as_slice());
-
+    // TODO: jroesch May need more trait checking here.
     ty::ExistentialBounds {
         region_bound: region_bound,
-        builtin_bounds: fail!("NYI"),
+        builtin_bounds: EnumSet::empty() //FIXME: Jared this needs to change fail!("NYI"),
     }
 }
 
@@ -1418,7 +1419,7 @@ pub fn compute_opt_region_bound(tcx: &ty::ctxt,
                               span,
                               // what to pass here? why have a param if
                               // just shadow it immediately
-                              ty::mk_infer(tcx, ty::SkolemizedTy(0)),
+                              //ty::mk_infer(tcx, ty::SkolemizedTy(0)),
                               builtin_bounds,
                               trait_bounds);
 
@@ -1449,7 +1450,6 @@ pub fn compute_opt_region_bound(tcx: &ty::ctxt,
     fn derived_region_bounds(
         tcx: &ty::ctxt,
         span: Span,
-        erased_self_ty: ty::t,
         builtin_bounds: ty::BuiltinBounds,
         trait_bounds: &[Rc<ty::TraitRef>])
         -> Vec<ty::Region>

@@ -777,6 +777,7 @@ fn encode_generics(rbml_w: &mut Encoder,
         tcx: ecx.tcx,
         abbrevs: &ecx.type_abbrevs
     };
+    
     for param in generics.types.iter() {
         rbml_w.start_tag(tag_type_param_def);
         tyencode::enc_type_param_def(rbml_w.writer, ty_str_ctxt, param);
@@ -803,8 +804,9 @@ fn encode_generics(rbml_w: &mut Encoder,
         rbml_w.end_tag();
     }
 
-    // Predicates
+    // Predicates, JARED: do I need to do anything else here?
     for predicate in generics.predicates.iter() {
+        tyencode::enc_predicate(rbml_w.writer, ty_str_ctxt, predicate)
     }
 
     rbml_w.end_tag();

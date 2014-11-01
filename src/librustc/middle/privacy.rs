@@ -1489,7 +1489,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for VisiblePrivateTypesVisitor<'a, 'tcx> {
         }
         for predicate in generics.where_clause.predicates.iter() {
             match predicate.kind {
-                ast::TypePredicate(ref ty, ref bounds) => {
+                ast::TypePredicate(_, ref bounds) => {
                     for bound in bounds.iter() {
                         self.check_ty_param_bound(predicate.span, bound)
                     }

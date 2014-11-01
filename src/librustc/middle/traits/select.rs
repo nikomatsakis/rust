@@ -12,7 +12,7 @@
 #![allow(dead_code)] // FIXME -- just temporarily
 
 use super::{ErrorReported};
-use super::{Obligation, ObligationCause};
+use super::{ObligationCause};
 use super::{PredicateObligation};
 use super::{SelectionError, Unimplemented, Overflow,
             OutputTypeParameterMismatch};
@@ -24,7 +24,7 @@ use super::{VtableImplData, VtableParamData, VtableBuiltinData};
 use super::{util};
 
 use middle::mem_categorization::Typer;
-use middle::subst::{Subst, Substs, VecPerParamSpace};
+use middle::subst::{Subst, Substs};
 use middle::ty;
 use middle::typeck::check::regionmanip;
 use middle::typeck::infer;
@@ -33,7 +33,6 @@ use middle::ty_fold::TypeFoldable;
 use std::cell::RefCell;
 use std::collections::hashmap::HashMap;
 use std::rc::Rc;
-use std::result;
 use syntax::ast;
 use util::ppaux::Repr;
 
