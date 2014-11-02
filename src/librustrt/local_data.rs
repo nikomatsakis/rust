@@ -42,7 +42,6 @@ use core::prelude::*;
 
 use alloc::heap;
 use collections::treemap::TreeMap;
-use collections::MutableMap;
 use core::cmp;
 use core::kinds::marker;
 use core::mem;
@@ -263,8 +262,6 @@ impl<T: 'static> KeyValue<T> {
     /// assert_eq!(*key.get().unwrap(), 3);
     /// ```
     pub fn get(&'static self) -> Option<Ref<T>> {
-        use collections::Map;
-
         let map = match unsafe { get_local_map() } {
             Some(map) => map,
             None => return None,

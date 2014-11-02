@@ -93,12 +93,11 @@ use core::kinds::Sized;
 use core::kinds::marker;
 use core::mem::size_of;
 use core::mem;
-use core::prelude::{Clone, Collection, Greater, Iterator, Less, None, Option};
+use core::prelude::{Clone, Greater, Iterator, Less, None, Option};
 use core::prelude::{Ord, Ordering, RawPtr, Some, range};
 use core::ptr;
 use core::iter::{range_step, MultiplicativeIterator};
 
-use MutableSeq;
 use vec::Vec;
 
 pub use core::slice::{Chunks, AsSlice, ImmutableSlice, ImmutablePartialEqSlice};
@@ -765,7 +764,6 @@ mod tests {
     use std::rt;
     use slice::*;
 
-    use {Mutable, MutableSeq};
     use vec::Vec;
 
     fn square(n: uint) -> uint { n * n }
@@ -2178,7 +2176,6 @@ mod bench {
     use test::Bencher;
 
     use vec::Vec;
-    use MutableSeq;
 
     #[bench]
     fn iterator(b: &mut Bencher) {

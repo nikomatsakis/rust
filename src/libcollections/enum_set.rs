@@ -166,8 +166,6 @@ mod test {
 
     use enum_set::{EnumSet, CLike};
 
-    use MutableSeq;
-
     #[deriving(PartialEq, Show)]
     #[repr(uint)]
     enum Foo {

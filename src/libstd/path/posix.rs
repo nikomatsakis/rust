@@ -13,7 +13,6 @@
 use c_str::{CString, ToCStr};
 use clone::Clone;
 use cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering};
-use collections::{Collection, MutableSeq};
 use from_str::FromStr;
 use hash;
 use io::Writer;
@@ -103,18 +102,6 @@ impl ToCStr for Path {
     #[inline]
     unsafe fn to_c_str_unchecked(&self) -> CString {
         self.as_vec().to_c_str_unchecked()
-    }
-}
-
-impl<'a> ToCStr for &'a Path {
-    #[inline]
-    fn to_c_str(&self) -> CString {
-        (*self).to_c_str()
-    }
-
-    #[inline]
-    unsafe fn to_c_str_unchecked(&self) -> CString {
-        (*self).to_c_str_unchecked()
     }
 }
 
