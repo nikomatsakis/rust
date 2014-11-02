@@ -190,6 +190,22 @@ represents the "variance transform" as defined in the paper:
   of a class `C` is `V1`, then the variance of `X` in the type expression
   `C<E>` is `V3 = V1.xform(V2)`.
 
+### Constraints
+
+If I have a struct or enum with where clauses:
+
+    struct Foo<T:Bar> { ... }
+
+you might wonder whether the variance of `T` with respect to `Bar`
+affects the variance `T` with respect to `Foo`. I claim no.  The
+reason: assume that `T` is invariant w/r/t `Bar` but covariant w/r/t
+`Foo`. And then we have a `Foo<X>` that is upcast to `Foo<Y>`, where
+`X <: Y`. However, while `X : Bar`, `Y : Bar` does not hold.  In that
+case, the upcast will be illegal, but not because of a variance
+failure, but rather because the target type `Foo<Y>` is itself just
+not well-formed. Basically we get to assume well-formedness of all
+types involved before considering variance.
+
 */
 
 use std::collections::HashMap;
@@ -198,6 +214,7 @@ use arena::Arena;
 use middle::resolve_lifetime as rl;
 use middle::subst;
 use middle::subst::{ParamSpace, FnSpace, TypeSpace, SelfSpace, VecPerParamSpace};
+use middle::traits;
 use middle::ty;
 use std::fmt;
 use std::rc::Rc;
@@ -517,8 +534,12 @@ impl<'a, 'tcx, 'v> Visitor<'v> for ConstraintContext<'a, 'tcx> {
 
         match item.node {
             ast::ItemEnum(ref enum_definition, _) => {
-                let polytype = ty::lookup_item_type(tcx, did);
-                self.add_constraints_from_generics(&polytype.generics);
+                // Not entirely obvious: constriants on structs/enums do not
+                // affect the variance of their type parameters. See discussion
+                // in comment at top of module.
+                //
+                //  let polytype = ty::lookup_item_type(tcx, did);
+                // self.add_constraints_from_generics(&polytype.generics);
 
                 // Hack: If we directly call `ty::enum_variants`, it
                 // annoyingly takes it upon itself to run off and
@@ -542,8 +563,12 @@ impl<'a, 'tcx, 'v> Visitor<'v> for ConstraintContext<'a, 'tcx> {
             }
 
             ast::ItemStruct(..) => {
-                let polytype = ty::lookup_item_type(tcx, did);
-                self.add_constraints_from_generics(&polytype.generics);
+                // Not entirely obvious: constriants on structs/enums do not
+                // affect the variance of their type parameters. See discussion
+                // in comment at top of module.
+                //
+                // let polytype = ty::lookup_item_type(tcx, did);
+                // self.add_constraints_from_generics(&polytype.generics);
 
                 let struct_fields = ty::lookup_struct_fields(tcx, did);
                 for field_info in struct_fields.iter() {
@@ -556,7 +581,8 @@ impl<'a, 'tcx, 'v> Visitor<'v> for ConstraintContext<'a, 'tcx> {
             ast::ItemTrait(..) => {
                 let trait_def = ty::lookup_trait_def(tcx, did);
                 self.add_constraints_from_generics(&trait_def.generics);
-                self.add_constraints_from_param_bounds(&trait_def.bounds);
+                self.add_constraints_from_param_bounds(ty::mk_self_type(tcx, did),
+                                                       &trait_def.bounds);
 
                 let trait_items = ty::trait_items(tcx, did);
                 for trait_item in trait_items.iter() {
@@ -783,7 +809,9 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
     fn add_constraints_from_ty(&mut self,
                                ty: ty::t,
                                variance: VarianceTermPtr<'a>) {
-        debug!("add_constraints_from_ty(ty={})", ty.repr(self.tcx()));
+        debug!("add_constraints_from_ty(ty={}, variance={})",
+               ty.repr(self.tcx()),
+               variance);
 
         match ty::get(ty).sty {
             ty::ty_nil | ty::ty_bool |
@@ -857,11 +885,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
             }
 
             ty::ty_bare_fn(ty::BareFnTy { ref sig, .. }) |
-            ty::ty_closure(box ty::ClosureTy {
-                    ref sig,
-                    store: ty::UniqTraitStore,
-                    ..
-                }) => {
+            ty::ty_closure(box ty::ClosureTy { ref sig, store: ty::UniqTraitStore, .. }) => {
                 self.add_constraints_from_sig(sig, variance);
             }
 
@@ -920,25 +944,51 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                generics.repr(self.tcx()));
 
         for type_def in generics.types.iter() {
-            self.add_constraints_from_param_bounds(&type_def.bounds);
+            let param_ty = ty::mk_param_from_def(self.tcx(), type_def);
+            self.add_constraints_from_param_bounds(param_ty, &type_def.bounds);
         }
 
         for region_def in generics.regions.iter() {
             for bound in region_def.bounds.iter() {
-                self.add_constraints_from_region(*bound,
-                                                 self.contravariant);
+                self.add_constraints_from_region(*bound, self.contravariant);
             }
         }
     }
 
     fn add_constraints_from_param_bounds(&mut self,
+                                         subject_ty: ty::t,
                                          bounds: &ty::ParamBounds) {
+        /*!
+         * Adds any variance constraints that occur due to `subject_ty`
+         * being bound by the bounds in `bounds`.
+         */
+
+        debug!("add_constraints_from_param_bounds(subject_ty={}, bounds={})",
+               subject_ty.repr(self.tcx()),
+               bounds.repr(self.tcx()));
+
+        for bound in bounds.builtin_bounds.iter() {
+            let trait_ref = traits::trait_ref_for_builtin_bound(self.tcx(),
+                                                                bound,
+                                                                subject_ty);
+            match trait_ref {
+                Ok(trait_ref) => {
+                    self.add_constraints_from_trait_ref(trait_ref.def_id,
+                                                        subst::ParamSpace::all(),
+                                                        &trait_ref.substs,
+                                                        self.covariant);
+                }
+                Err(traits::ErrorReported) => { }
+            }
+        }
+
         for bound in bounds.region_bounds.iter() {
             self.add_constraints_from_region(*bound,
                                              self.contravariant);
         }
 
         for bound in bounds.trait_bounds.iter() {
+            assert_eq!(bound.substs.self_ty(), Some(subject_ty));
             self.add_constraints_from_trait_ref(bound.def_id,
                                                 subst::ParamSpace::all(),
                                                 &bound.substs,
@@ -1110,7 +1160,7 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                         types.push(info.space, variance);
 
                         if variance == ty::Bivariant {
-                            span_err!(tcx.sess, info.span, E0166,
+                            span_err!(tcx.sess, info.span, E0167,
                                       "type parameter `{}` is never used; \
                                        either remove it, or use a marker such as \
                                        `std::kinds::marker::Invariance`",
@@ -1121,7 +1171,7 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                         regions.push(info.space, variance);
 
                         if variance == ty::Bivariant {
-                            span_err!(tcx.sess, info.span, E0167,
+                            span_err!(tcx.sess, info.span, E0168,
                                       "lifetime parameter `{}` is never used; \
                                       either remove it, or use a marker such as \
                                       `std::kinds::marker::Invariance` applied to a \

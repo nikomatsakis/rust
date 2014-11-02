@@ -68,7 +68,7 @@ use core::prelude::*;
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 use core::intrinsics::TypeId;
-use core::kinds;
+use core::kinds::marker;
 use core::mem;
 
 use vec::Vec;
@@ -143,6 +143,12 @@ impl<S: Writer> Hash<S> for str {
     fn hash(&self, state: &mut S) {
         state.write(self.as_bytes());
         0xffu8.hash(state)
+    }
+}
+
+impl<S: Writer,T> Hash<S> for marker::CovariantType<T> {
+    #[inline]
+    fn hash(&self, _state: &mut S) {
     }
 }
 

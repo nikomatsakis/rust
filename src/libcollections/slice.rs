@@ -90,6 +90,7 @@
 use alloc::boxed::Box;
 use core::cmp;
 use core::kinds::Sized;
+use core::kinds::marker;
 use core::mem::size_of;
 use core::mem;
 use core::prelude::{Clone, Collection, Greater, Iterator, Less, None, Option};
@@ -626,7 +627,9 @@ impl<T> MutableSliceAllocating<T> for [T] {
 
 /// Methods for mutable vectors with orderable elements, such as
 /// in-place sorting.
-pub trait MutableOrdSlice<T> for Sized? {
+pub trait MutableOrdSlice<T> for Sized?
+    where T : marker::Invariant
+{
     /// Sorts the slice, in place.
     ///
     /// This is equivalent to `self.sort_by(|a, b| a.cmp(b))`.

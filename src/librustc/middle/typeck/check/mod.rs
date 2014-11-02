@@ -1918,10 +1918,15 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
          * regionck, that the type `ty` must outlive the region `r`.
          */
 
+        debug!("register_region_obligation(origin={}, ty={}, r={})",
+               origin.repr(self.tcx()),
+               ty.repr(self.tcx()),
+               r.repr(self.tcx()));
+
         let mut region_obligations = self.inh.region_obligations.borrow_mut();
         let region_obligation = RegionObligation { sub_region: r,
-                                  sup_type: ty,
-                                  origin: origin };
+                                                   sup_type: ty,
+                                                   origin: origin };
 
         match region_obligations.entry(self.body_id) {
             Vacant(entry) => { entry.set(vec![region_obligation]); },

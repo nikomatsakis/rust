@@ -305,11 +305,13 @@ macro_rules! println(
 macro_rules! local_data_key(
     ($name:ident: $ty:ty) => (
         #[allow(non_upper_case_globals)]
-        static $name: ::std::local_data::Key<$ty> = &::std::local_data::KeyValueKey;
+        static $name: ::std::local_data::Key<$ty> =
+            &::std::local_data::KeyValueKey(0, ::std::kinds::marker::InvariantType);
     );
     (pub $name:ident: $ty:ty) => (
         #[allow(non_upper_case_globals)]
-        pub static $name: ::std::local_data::Key<$ty> = &::std::local_data::KeyValueKey;
+        pub static $name: ::std::local_data::Key<$ty> =
+            &::std::local_data::KeyValueKey(0, ::std::kinds::marker::InvariantType);
     );
 )
 

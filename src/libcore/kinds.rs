@@ -20,23 +20,23 @@ by the compiler automatically for the types to which they apply.
 
 */
 
-use self::marker::Invariant;
+use self::marker::Covariant;
 
 /// Types able to be transferred across task boundaries.
 #[lang="send"]
-pub trait Send for Sized? : Invariant {
+pub trait Send for Sized? : Covariant {
     // empty.
 }
 
 /// Types with a constant size known at compile-time.
 #[lang="sized"]
-pub trait Sized for Sized? : Invariant {
+pub trait Sized for Sized? : Covariant {
     // Empty.
 }
 
 /// Types that can be copied by simply copying bits (i.e. `memcpy`).
 #[lang="copy"]
-pub trait Copy for Sized? : Invariant {
+pub trait Copy for Sized? : Covariant {
     // Empty.
 }
 
@@ -86,7 +86,7 @@ pub trait Copy for Sized? : Invariant {
 /// reference; not doing this is undefined behaviour (for example,
 /// `transmute`-ing from `&T` to `&mut T` is illegal).
 #[lang="sync"]
-pub trait Sync for Sized? : Invariant {
+pub trait Sync for Sized? : Covariant {
     // Empty
 }
 

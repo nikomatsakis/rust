@@ -83,7 +83,10 @@ impl<'cx, 'tcx> Supertraits<'cx, 'tcx> {
             let bound_trait_ref = trait_ref_for_builtin_bound(self.tcx,
                                                               builtin_bound,
                                                               trait_ref.self_ty());
-            bound_trait_ref.map(|trait_ref| trait_bounds.push(trait_ref));
+            match bound_trait_ref {
+                Ok(trait_ref) => { trait_bounds.push(trait_ref); }
+                Err(ErrorReported) => { }
+            }
         }
 
         // Only keep those bounds that we haven't already seen.  This
@@ -238,18 +241,18 @@ pub fn trait_ref_for_builtin_bound(
     tcx: &ty::ctxt,
     builtin_bound: ty::BuiltinBound,
     param_ty: ty::t)
-    -> Option<Rc<ty::TraitRef>>
+    -> Result<Rc<ty::TraitRef>, ErrorReported>
 {
     match tcx.lang_items.from_builtin_kind(builtin_bound) {
         Ok(def_id) => {
-            Some(Rc::new(ty::TraitRef {
+            Ok(Rc::new(ty::TraitRef {
                 def_id: def_id,
                 substs: Substs::empty().with_self_ty(param_ty)
             }))
         }
         Err(e) => {
             tcx.sess.err(e.as_slice());
-            None
+            Err(ErrorReported)
         }
     }
 }
@@ -262,15 +265,12 @@ pub fn obligation_for_builtin_bound(
     param_ty: ty::t)
     -> Result<Obligation, ErrorReported>
 {
-    let trait_ref = trait_ref_for_builtin_bound(tcx, builtin_bound, param_ty);
-    match trait_ref {
-        Some(trait_ref) => Ok(Obligation {
-                cause: cause,
-                recursion_depth: recursion_depth,
-                trait_ref: trait_ref
-            }),
-        None => Err(ErrorReported)
-    }
+    let trait_ref = try!(trait_ref_for_builtin_bound(tcx, builtin_bound, param_ty));
+    Ok(Obligation {
+        cause: cause,
+        recursion_depth: recursion_depth,
+        trait_ref: trait_ref
+    })
 }
 
 pub fn search_trait_and_supertraits_from_bound(tcx: &ty::ctxt,

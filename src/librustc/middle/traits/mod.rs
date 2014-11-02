@@ -30,6 +30,7 @@ pub use self::util::supertraits;
 pub use self::util::transitive_bounds;
 pub use self::util::Supertraits;
 pub use self::util::search_trait_and_supertraits_from_bound;
+pub use self::util::trait_ref_for_builtin_bound;
 
 mod coherence;
 mod fulfill;
