@@ -36,7 +36,7 @@ use std::rc::Rc;
 use std::mem;
 use util::ppaux::Repr;
 
-struct ConfirmContext<'a, 'tcx:'a> {
+pub struct ConfirmContext<'a, 'tcx:'a> {
     fcx: &'a FnCtxt<'a, 'tcx>,
     span: Span,
     self_expr_id: ast::NodeId,
