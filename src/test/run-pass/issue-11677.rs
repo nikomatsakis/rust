@@ -12,8 +12,9 @@
 
 // this code used to cause an ICE
 
-trait X<T> {
-    fn produce(self) -> T;
+use std::kinds::marker;
+
+trait X<T> : marker::Covariant {
 }
 
 struct S<T> {f: Box<X<T>+'static>,
@@ -21,7 +22,6 @@ struct S<T> {f: Box<X<T>+'static>,
 
 struct F;
 impl X<int> for F {
-    fn produce(self) -> int { 22 }
 }
 
 fn main() {

@@ -10,7 +10,9 @@
 
 #![feature(unsafe_destructor)]
 
-pub struct Foo<T>;
+use std::kinds::marker;
+
+pub struct Foo<T>(marker::CovariantType<T>);
 
 impl<T> Iterator<T> for Foo<T> {
     fn next(&mut self) -> Option<T> {

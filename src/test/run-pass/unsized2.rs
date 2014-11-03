@@ -11,6 +11,7 @@
 // ignore-lexer-test FIXME #15879
 #![feature(struct_variant)]
 
+use std::kinds::marker;
 
 // Test sized-ness checking in substitution.
 
@@ -24,7 +25,7 @@ fn f2<X>(x: &X) {
 }
 
 // Bounded.
-trait T for Sized? {}
+trait T for Sized? : marker::Covariant {}
 fn f3<Sized? X: T>(x: &X) {
     f3::<X>(x);
 }

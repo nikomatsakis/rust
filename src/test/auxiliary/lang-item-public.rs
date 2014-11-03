@@ -11,8 +11,13 @@
 #![no_std]
 #![feature(lang_items)]
 
+#[lang="covariant_trait"]
+pub trait Covariant for Sized? { }
+
+impl<Sized? T> Covariant for T { }
+
 #[lang="sized"]
-pub trait Sized for Sized? {}
+pub trait Sized for Sized? : Covariant {}
 
 #[lang="panic"]
 fn panic(_: &(&'static str, &'static str, uint)) -> ! { loop {} }

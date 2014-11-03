@@ -16,19 +16,19 @@ use std::kinds::marker;
 
 // Test syntax checks for `Sized?` syntax.
 
-trait T1 for Sized? {}
-pub trait T2 for Sized? {}
-trait T3<X: T1> for Sized?: T2 {}
-trait T4<Sized? X> {}
-trait T5<Sized? X, Y> {}
-trait T6<Y, Sized? X> {}
-trait T7<Sized? X, Sized? Y> {}
-trait T8<Sized? X: T2> {}
+trait T1 for Sized? : marker::Covariant {}
+pub trait T2 for Sized? : marker::Covariant {}
+trait T3<X: T1> for Sized? : T2 {}
+trait T4<Sized? X : marker::Covariant> {}
+trait T5<Sized? X : marker::Covariant, Y> {}
+trait T6<Y, Sized? X : marker::Covariant> {}
+trait T7<Sized? X : marker::Covariant, Sized? Y : marker::Covariant> {}
+trait T8<Sized? X : T2> {}
 struct S1<Sized? X> { marker: marker::CovariantType<X> }
-enum E<Sized? X> {}
+enum E<Sized? X> { Dummy(marker::CovariantType<X>) }
 impl <Sized? X> T1 for S1<X> {}
 fn f<Sized? X>() {}
-type TT<Sized? T> = T;
+type TT<T> = T;
 
 pub fn main() {
 }

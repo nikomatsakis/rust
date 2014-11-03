@@ -12,7 +12,7 @@
 
 #![feature(unboxed_closures)]
 
-struct Parser<'a, I, O> {
+struct Parser<'a, I:'a, O> {
     parse: Box<FnMut<(I,), Result<O, String>> + 'a>
 }
 

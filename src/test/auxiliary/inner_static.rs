@@ -12,7 +12,7 @@ pub struct A<T> { v: T }
 pub struct B<T> { v: T }
 
 pub mod test {
-    pub struct A<T>;
+    pub struct A<T> { pub v: T };
 
     impl<T> A<T> {
         pub fn foo(&self) -> int {
@@ -54,7 +54,7 @@ impl<T> B<T> {
 pub fn foo() -> int {
     let a = A { v: () };
     let b = B { v: () };
-    let c = test::A { t: () };
+    let c = test::A { v: () };
     return a.foo() + a.bar() +
            b.foo() + b.bar() +
            c.foo() + c.bar();

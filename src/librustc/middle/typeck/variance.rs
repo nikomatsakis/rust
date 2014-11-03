@@ -864,7 +864,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                     variance);
             }
 
-            ty::ty_trait(box ty::TyTrait { def_id, ref substs, .. }) => {
+            ty::ty_trait(box ty::TyTrait { def_id, ref substs, bounds }) => {
                 // The type `Foo<T+'a>` is contravariant w/r/t `'a`:
                 let contra = self.contravariant(variance);
                 self.add_constraints_from_region(bounds.region_bound, contra);

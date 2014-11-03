@@ -8,13 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![allow(bivariance)]
-
 // Issue #12856: a lifetime formal binding introduced by a generic fn
 // should not upset the variance inference for actual occurrences of
 // that lifetime in type expressions.
 
-pub trait HasLife<'a> { }
+pub trait HasLife<'a> {
+    fn dummy(&'a self) { } // just to induce a variance on 'a
+}
 
 trait UseLife01 {
     fn refs<'a, H: HasLife<'a>>(&'a self) -> H;

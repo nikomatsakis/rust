@@ -11,11 +11,14 @@
 #![crate_name="a"]
 #![crate_type = "lib"]
 
+use std::kinds::marker;
 
-pub trait i<T> { fn get(self) -> T; }
+pub trait i<T: marker::Covariant>
+    : marker::Covariant
+{ }
 
 pub fn f<T>() -> Box<i<T>+'static> {
-    impl<T> i<T> for () { fn get(self) -> T { fail!() } }
+    impl<T> i<T> for () { }
 
     box() () as Box<i<T>+'static>
 }

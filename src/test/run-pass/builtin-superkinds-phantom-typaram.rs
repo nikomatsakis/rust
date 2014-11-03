@@ -18,6 +18,6 @@ trait Foo : Send { }
 
 struct X<T> { marker: marker::CovariantType<T> }
 
-impl <T> Foo for X<T> { }
+impl<T:Send> Foo for X<T> { }
 
 pub fn main() { }

@@ -8,11 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![allow(bivariance)]
-
-enum opt<T> { none, }
+enum opt<T> { none, some(T) }
 
 pub fn main() {
     let x = none::<int>;
-    match x { none::<int> => { println!("hello world"); } }
+    match x {
+        none::<int> => { println!("hello world"); }
+        some(_) => { }
+    }
 }

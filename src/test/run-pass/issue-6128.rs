@@ -23,7 +23,7 @@ impl<E> Graph<int, E> for HashMap<int, int> {
         panic!();
     }
     fn g(&self, _e: int) {
-        fail!();
+        panic!();
     }
 }
 

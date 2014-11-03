@@ -96,6 +96,9 @@ pub trait Sync for Sized? : Covariant {
 /// implemented using unsafe code. In that case, you may want to embed
 /// some of the marker types below into your type.
 pub mod marker {
+    use clone::Clone;
+    use cmp;
+    use option::{Option, Some};
     use super::Sized;
 
     /// FIXME Document me.
@@ -115,6 +118,37 @@ pub mod marker {
     pub trait Contravariant for Sized? { }
 
     impl<Sized? T> Contravariant for T { }
+
+    macro_rules! impls{
+        ($t: ident) => (
+            impl<Sized? T> cmp::PartialEq for $t<T> {
+                fn eq(&self, _other: &$t<T>) -> bool {
+                    true
+                }
+            }
+
+            impl<Sized? T> cmp::Eq for $t<T> {
+            }
+
+            impl<Sized? T> cmp::PartialOrd for $t<T> {
+                fn partial_cmp(&self, _other: &$t<T>) -> Option<cmp::Ordering> {
+                    Some(cmp::Equal)
+                }
+            }
+
+            impl<Sized? T> cmp::Ord for $t<T> {
+                fn cmp(&self, _other: &$t<T>) -> cmp::Ordering {
+                    cmp::Equal
+                }
+            }
+
+            impl<Sized? T> Clone for $t<T> {
+                fn clone(&self) -> $t<T> {
+                    $t
+                }
+            }
+        )
+    }
 
     /// A marker type whose type parameter `T` is considered to be
     /// covariant with respect to the type itself. This is (typically)
@@ -154,8 +188,9 @@ pub mod marker {
     /// (for example, `S<&'static int>` is a subtype of `S<&'a int>`
     /// for some lifetime `'a`, but not the other way around).
     #[lang="covariant_type"]
-    #[deriving(PartialEq,Eq,PartialOrd,Ord,Clone)]
-    pub struct CovariantType<T>;
+    pub struct CovariantType<Sized? T>;
+
+    impls! { CovariantType }
 
     /// A marker type whose type parameter `T` is considered to be
     /// contravariant with respect to the type itself. This is (typically)
@@ -197,8 +232,9 @@ pub mod marker {
     /// function requires arguments of type `T`, it must also accept
     /// arguments of type `U`, hence such a conversion is safe.
     #[lang="contravariant_type"]
-    #[deriving(PartialEq,Eq,PartialOrd,Ord,Clone)]
-    pub struct ContravariantType<T>;
+    pub struct ContravariantType<Sized? T>;
+
+    impls! { ContravariantType }
 
     /// A marker type whose type parameter `T` is considered to be
     /// invariant with respect to the type itself. This is (typically)
@@ -222,8 +258,9 @@ pub mod marker {
     /// never written, but in fact `Cell` uses unsafe code to achieve
     /// interior mutability.
     #[lang="invariant_type"]
-    #[deriving(PartialEq,Eq,PartialOrd,Ord,Clone)]
-    pub struct InvariantType<T>;
+    pub struct InvariantType<Sized? T>;
+
+    impls! { InvariantType }
 
     /// As `CovariantType`, but for lifetime parameters. Using
     /// `CovariantLifetime<'a>` indicates that it is ok to substitute
