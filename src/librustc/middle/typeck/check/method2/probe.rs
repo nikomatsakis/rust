@@ -37,7 +37,6 @@ pub struct ProbeContext<'a,'tcx:'a> {
     fcx: &'a FnCtxt<'a, 'tcx>,
     span: Span,
     method_name: ast::Name,
-    deref_args: check::DerefArgs,
     self_tys: Rc<Vec<ty::t>>,
     inherent_probes: Vec<Probe>,
     extension_probes: Vec<Probe>,
@@ -60,17 +59,16 @@ enum ProbeKind {
 }
 
 pub struct Pick {
-    method_ty: Rc<ty::Method>,
-    adjustment: PickAdjustment,
-    kind: PickKind,
+    pub method_ty: Rc<ty::Method>,
+    pub adjustment: PickAdjustment,
+    pub kind: PickKind,
 }
 
 pub enum PickKind {
     InherentImplPick(/* Impl */ ast::DefId),
-    ObjectPick(MethodObject),
+    ObjectPick(/* trait def-id */ ast::DefId, /* method_num */ uint, /* real_index */ uint),
     ExtensionImplPick(/* Impl */ ast::DefId, MethodIndex),
-    UnboxedClosureImplPick(ast::DefId),
-    WhereClausePick(Rc<ty::TraitRef>, MethodIndex),
+    WhereClausePick(/* Trait */ Rc<ty::TraitRef>, MethodIndex),
 }
 
 pub type PickResult = Result<Pick, MethodError>;
@@ -89,8 +87,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
     pub fn new(fcx: &'a FnCtxt<'a,'tcx>,
                span: Span,
                method_name: ast::Name,
-               self_ty: ty::t,
-               deref_args: check::DerefArgs)
+               self_ty: ty::t)
                -> ProbeContext<'a,'tcx>
     {
         let mut self_tys = Vec::new();
@@ -102,7 +99,6 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
             fcx: fcx,
             span: span,
             method_name: method_name,
-            deref_args: deref_args,
             inherent_probes: Vec::new(),
             extension_probes: Vec::new(),
             impl_dups: HashSet::new(),
@@ -424,30 +420,14 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
     }
 
     fn pick_step(&mut self, self_ty: ty::t, autoderefs: uint) -> Option<PickResult> {
-        match self.deref_args {
-            check::DontDerefArgs => {
-                match self.pick_autoderefd_method(self_ty, autoderefs) {
-                    Some(result) => return Some(result),
-                    None => {}
-                }
+        match self.pick_autoderefd_method(self_ty, autoderefs) {
+            Some(result) => return Some(result),
+            None => {}
+        }
 
-                match self.pick_autoptrd_method(self_ty, autoderefs) {
-                    Some(result) => return Some(result),
-                    None => {}
-                }
-            }
-
-            check::DoDerefArgs => {
-                match self.pick_autoptrd_method(self_ty, autoderefs) {
-                    Some(result) => return Some(result),
-                    None => {}
-                }
-
-                match self.pick_autoderefd_method(self_ty, autoderefs) {
-                    Some(result) => return Some(result),
-                    None => {}
-                }
-            }
+        match self.pick_autoptrd_method(self_ty, autoderefs) {
+            Some(result) => return Some(result),
+            None => {}
         }
 
         // If we are searching for an overloaded deref, no
@@ -506,7 +486,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                                autoderefs: uint)
                                -> Option<PickResult>
     {
-        fail!("NYI")
+        panic!("NYI")
     }
 
     fn pick_autoderefd_method(&mut self,
@@ -636,18 +616,9 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
 
     fn xform_self_ty(&self, method: &Rc<ty::Method>, substs: &subst::Substs) -> ty::t {
         let xform_self_ty = method.fty.sig.inputs[0].subst(self.tcx(), substs);
-        self.replace_late_bound_regions_with_fresh_var(method.fty.sig.binder_id, &xform_self_ty)
-    }
-
-    fn replace_late_bound_regions_with_fresh_var<T>(&self, binder_id: ast::NodeId, value: &T) -> T
-        where T : TypeFoldable + Repr
-    {
-        let (_, value) = replace_late_bound_regions(
-            self.fcx.tcx(),
-            binder_id,
-            value,
-            |br| self.fcx.infcx().next_region_var(infer::LateBoundRegion(self.span, br)));
-        value
+        self.infcx().replace_late_bound_regions_with_fresh_var(method.fty.sig.binder_id,
+                                                               self.span,
+                                                               &xform_self_ty)
     }
 
     fn consider_reborrow(&self,
@@ -761,14 +732,14 @@ impl Probe {
                 InherentImplProbe(def_id, _) => {
                     InherentImplPick(def_id)
                 }
-                ObjectProbe(ref obj) => {
-                    ObjectPick((*obj).clone())
+                ObjectProbe(ref data) => {
+                    ObjectPick(data.object_trait_id, data.method_num, data.real_index)
                 }
                 ExtensionImplProbe(def_id, _, _, index) => {
                     ExtensionImplPick(def_id, index)
                 }
                 UnboxedClosureImplProbe(def_id) => {
-                    UnboxedClosureImplPick(def_id)
+                    panic!("NYI")
                 }
                 WhereClauseProbe(ref trait_ref, index) => {
                     WhereClausePick((*trait_ref).clone(), index)

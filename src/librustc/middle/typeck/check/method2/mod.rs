@@ -53,12 +53,39 @@ struct CacheKey {
     method_name: ast::Name,
 }
 
-struct LookupContext<'a, 'tcx:'a> {
-    fcx: &'a FnCtxt<'a, 'tcx>,
+pub fn lookup(
+    fcx: &FnCtxt,
     span: Span,
     method_name: ast::Name,
-    types_supplied: &'a [ty::t],
-}
+    self_ty: ty::t,
+    supplied_method_types: Vec<ty::t>,
+    self_expr_id: ast::NodeId)
+    -> Result<MethodCallee, MethodError>
+{
+    /*!
+     * Performs method lookup. If lookup is successful, it will return the callee
+     * and store an appropriate adjustment for the self-expr. In some cases it may
+     * report an error (e.g., invoking the `drop` method).
+     *
+     * # Arguments
+     *
+     * Given a method call like `foo.bar::<T1,...Tn>(...)`:
+     *
+     * - `fcx`:                   the surrounding `FnCtxt` (!)
+     * - `span`:                  the span for the method call
+     * - `method_name`:           the name of the method being called (`bar`)
+     * - `self_ty`:               the (unadjusted) type of the self expression (`foo`)
+     * - `supplied_method_types`: the explicit method type parameters, if any (`T1..Tn`)
+     * - `self_expr_id`:          the id of the self expression (`foo`)
+     */
 
-pub fn lookup() {
+    let mut probe_cx = probe::ProbeContext::new(fcx,
+                                                span,
+                                                method_name,
+                                                self_ty);
+    let pick = try!(probe_cx.pick());
+    let mut confirm_cx = confirm::ConfirmContext::new(fcx,
+                                                      span,
+                                                      self_expr_id);
+    Ok(confirm_cx.confirm(self_ty, pick, supplied_method_types))
 }
