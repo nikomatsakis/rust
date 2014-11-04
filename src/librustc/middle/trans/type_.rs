@@ -17,7 +17,6 @@ use llvm::{Float, Double, X86_FP80, PPC_FP128, FP128};
 use middle::trans::context::CrateContext;
 
 use syntax::ast;
-use syntax::abi::{X86, X86_64, Arm, Mips, Mipsel};
 
 use std::c_str::ToCStr;
 use std::mem;
@@ -27,6 +26,7 @@ use std::collections::HashMap;
 use libc::c_uint;
 
 #[deriving(Clone, PartialEq, Show)]
+#[repr(C)]
 pub struct Type {
     rf: TypeRef
 }
@@ -104,9 +104,10 @@ impl Type {
     }
 
     pub fn int(ccx: &CrateContext) -> Type {
-        match ccx.tcx().sess.targ_cfg.arch {
-            X86 | Arm | Mips | Mipsel => Type::i32(ccx),
-            X86_64 => Type::i64(ccx)
+        match ccx.tcx().sess.target.target.target_word_size.as_slice() {
+            "32" => Type::i32(ccx),
+            "64" => Type::i64(ccx),
+            tws => panic!("Unsupported target word size for int: {}", tws),
         }
     }
 
@@ -283,9 +284,10 @@ impl Type {
             if n_elts == 0 {
                 return Vec::new();
             }
-            let mut elts = Vec::from_elem(n_elts, 0 as TypeRef);
-            llvm::LLVMGetStructElementTypes(self.to_ref(), &mut elts[0]);
-            mem::transmute(elts)
+            let mut elts = Vec::from_elem(n_elts, Type { rf: 0 as TypeRef });
+            llvm::LLVMGetStructElementTypes(self.to_ref(),
+                                            elts.as_mut_ptr() as *mut TypeRef);
+            elts
         }
     }
 
@@ -296,9 +298,10 @@ impl Type {
     pub fn func_params(&self) -> Vec<Type> {
         unsafe {
             let n_args = llvm::LLVMCountParamTypes(self.to_ref()) as uint;
-            let args = Vec::from_elem(n_args, 0 as TypeRef);
-            llvm::LLVMGetParamTypes(self.to_ref(), args.as_ptr());
-            mem::transmute(args)
+            let mut args = Vec::from_elem(n_args, Type { rf: 0 as TypeRef });
+            llvm::LLVMGetParamTypes(self.to_ref(),
+                                    args.as_mut_ptr() as *mut TypeRef);
+            args
         }
     }
 

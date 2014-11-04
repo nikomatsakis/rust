@@ -116,7 +116,7 @@ use util::nodemap::{DefIdMap, FnvHashMap, NodeMap};
 
 use std::cell::{Cell, Ref, RefCell};
 use std::collections::HashMap;
-use std::collections::hashmap::{Occupied, Vacant};
+use std::collections::hash_map::{Occupied, Vacant};
 use std::mem::replace;
 use std::rc::Rc;
 use syntax::abi;
@@ -1354,18 +1354,18 @@ fn check_cast(fcx: &FnCtxt,
                     ast::MutImmutable => ""
                 };
                 if ty::type_is_trait(t_1) {
-                    span_note!(fcx.tcx().sess, t.span, "did you mean `&{}{}`?", mtstr, tstr);
+                    span_help!(fcx.tcx().sess, t.span, "did you mean `&{}{}`?", mtstr, tstr);
                 } else {
-                    span_note!(fcx.tcx().sess, span,
+                    span_help!(fcx.tcx().sess, span,
                                "consider using an implicit coercion to `&{}{}` instead",
                                mtstr, tstr);
                 }
             }
             ty::ty_uniq(..) => {
-                span_note!(fcx.tcx().sess, t.span, "did you mean `Box<{}>`?", tstr);
+                span_help!(fcx.tcx().sess, t.span, "did you mean `Box<{}>`?", tstr);
             }
             _ => {
-                span_note!(fcx.tcx().sess, e.span,
+                span_help!(fcx.tcx().sess, e.span,
                            "consider using a box or reference as appropriate");
             }
         }
@@ -2141,7 +2141,7 @@ fn try_overloaded_call<'a>(fcx: &FnCtxt,
         if !fcx.tcx().sess.features.borrow().overloaded_calls {
             span_err!(fcx.tcx().sess, call_expression.span, E0056,
                 "overloaded calls are experimental");
-            span_note!(fcx.tcx().sess, call_expression.span,
+            span_help!(fcx.tcx().sess, call_expression.span,
                 "add `#![feature(overloaded_calls)]` to \
                 the crate attributes to enable");
         }
@@ -2535,7 +2535,7 @@ fn check_argument_types<'a>(fcx: &FnCtxt,
                 span_err!(tcx.sess, sp, E0059,
                     "cannot use call notation; the first type parameter \
                      for the function trait is neither a tuple nor unit");
-                err_args(supplied_arg_count)
+                err_args(args.len())
             }
         }
     } else if expected_arg_count == supplied_arg_count {
@@ -3472,8 +3472,9 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                     },
                     expr_t, None);
 
-                tcx.sess.span_note(field.span,
-                    "maybe a missing `()` to call it? If not, try an anonymous function.");
+                tcx.sess.span_help(field.span,
+                    "maybe a `()` to call it is missing? \
+                     If not, try an anonymous function");
             }
 
             Err(_) => {
@@ -4780,7 +4781,8 @@ pub fn check_instantiable(tcx: &ty::ctxt,
     if !ty::is_instantiable(tcx, item_ty) {
         span_err!(tcx.sess, sp, E0073,
             "this type cannot be instantiated without an \
-             instance of itself; consider using `Option<{}>`",
+             instance of itself");
+        span_help!(tcx.sess, sp, "consider using `Option<{}>`",
             ppaux::ty_to_string(tcx, item_ty));
         false
     } else {
@@ -4831,7 +4833,7 @@ pub fn check_enum_variants(ccx: &CrateCtxt,
                 ast::TyU16 => disr as u16 as Disr == disr,
                 ast::TyU32 => disr as u32 as Disr == disr,
                 ast::TyU64 => disr as u64 as Disr == disr,
-                ast::TyU => uint_in_range(ccx, ccx.tcx.sess.targ_cfg.uint_type, disr)
+                ast::TyU => uint_in_range(ccx, ccx.tcx.sess.target.uint_type, disr)
             }
         }
         fn int_in_range(ccx: &CrateCtxt, ty: ast::IntTy, disr: ty::Disr) -> bool {
@@ -4840,7 +4842,7 @@ pub fn check_enum_variants(ccx: &CrateCtxt,
                 ast::TyI16 => disr as i16 as Disr == disr,
                 ast::TyI32 => disr as i32 as Disr == disr,
                 ast::TyI64 => disr as i64 as Disr == disr,
-                ast::TyI => int_in_range(ccx, ccx.tcx.sess.targ_cfg.int_type, disr)
+                ast::TyI => int_in_range(ccx, ccx.tcx.sess.target.int_type, disr)
             }
         }
         match ty {

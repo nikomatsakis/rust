@@ -135,13 +135,13 @@ fn calculate_type(sess: &session::Session,
     sess.cstore.iter_crate_data(|cnum, data| {
         let src = sess.cstore.get_used_crate_source(cnum).unwrap();
         if src.dylib.is_some() {
-            add_library(sess, cnum, cstore::RequireDynamic, &mut formats);
             debug!("adding dylib: {}", data.name);
+            add_library(sess, cnum, cstore::RequireDynamic, &mut formats);
             let deps = csearch::get_dylib_dependency_formats(&sess.cstore, cnum);
             for &(depnum, style) in deps.iter() {
-                add_library(sess, depnum, style, &mut formats);
                 debug!("adding {}: {}", style,
                        sess.cstore.get_crate_data(depnum).name.clone());
+                add_library(sess, depnum, style, &mut formats);
             }
         }
     });
@@ -160,9 +160,9 @@ fn calculate_type(sess: &session::Session,
         let src = sess.cstore.get_used_crate_source(cnum).unwrap();
         if src.dylib.is_none() && !formats.contains_key(&cnum) {
             assert!(src.rlib.is_some());
+            debug!("adding staticlib: {}", data.name);
             add_library(sess, cnum, cstore::RequireStatic, &mut formats);
             ret[cnum as uint - 1] = Some(cstore::RequireStatic);
-            debug!("adding staticlib: {}", data.name);
         }
     });
 
@@ -213,7 +213,7 @@ fn add_library(sess: &session::Session,
                 sess.err(format!("cannot satisfy dependencies so `{}` only \
                                   shows up once",
                                  data.name).as_slice());
-                sess.note("having upstream crates all available in one format \
+                sess.help("having upstream crates all available in one format \
                            will likely make this go away");
             }
         }

@@ -30,22 +30,25 @@ use middle::def::*;
 use middle::typeck::astconv::ast_ty_to_ty;
 use middle::typeck::infer;
 use middle::{typeck, ty, def, pat_util, stability};
+use middle::const_eval::{eval_const_expr_partial, const_int, const_uint};
 use util::ppaux::{ty_to_string};
 use util::nodemap::NodeSet;
 use lint::{Context, LintPass, LintArray};
 
 use std::cmp;
 use std::collections::HashMap;
-use std::collections::hashmap::{Occupied, Vacant};
+use std::collections::hash_map::{Occupied, Vacant};
 use std::slice;
 use std::{i8, i16, i32, i64, u8, u16, u32, u64, f32, f64};
 use syntax::abi;
 use syntax::ast_map;
+use syntax::ast_util::is_shift_binop;
 use syntax::attr::AttrMetaMethods;
 use syntax::attr;
 use syntax::codemap::Span;
 use syntax::parse::token;
 use syntax::{ast, ast_util, visit};
+use syntax::ast::{TyI, TyU, TyI8, TyU8, TyI16, TyU16, TyI32, TyU32, TyI64, TyU64};
 use syntax::ptr::P;
 use syntax::visit::Visitor;
 
@@ -113,6 +116,9 @@ declare_lint!(UNUSED_COMPARISONS, Warn,
 declare_lint!(OVERFLOWING_LITERALS, Warn,
               "literal out of range for its type")
 
+declare_lint!(EXCEEDING_BITSHIFTS, Allow,
+              "shift exceeds the type's number of bits")
+
 pub struct TypeLimits {
     /// Id of the last visited negated expression
     negated_expr_id: ast::NodeId,
@@ -128,7 +134,8 @@ impl TypeLimits {
 
 impl LintPass for TypeLimits {
     fn get_lints(&self) -> LintArray {
-        lint_array!(UNSIGNED_NEGATION, UNUSED_COMPARISONS, OVERFLOWING_LITERALS)
+        lint_array!(UNSIGNED_NEGATION, UNUSED_COMPARISONS, OVERFLOWING_LITERALS,
+                    EXCEEDING_BITSHIFTS)
     }
 
     fn check_expr(&mut self, cx: &Context, e: &ast::Expr) {
@@ -170,6 +177,31 @@ impl LintPass for TypeLimits {
                     cx.span_lint(UNUSED_COMPARISONS, e.span,
                                  "comparison is useless due to type limits");
                 }
+
+                if is_shift_binop(binop) {
+                    let opt_ty_bits = match ty::get(ty::expr_ty(cx.tcx, &**l)).sty {
+                        ty::ty_int(t) => Some(int_ty_bits(t, cx.sess().target.int_type)),
+                        ty::ty_uint(t) => Some(uint_ty_bits(t, cx.sess().target.uint_type)),
+                        _ => None
+                    };
+
+                    if let Some(bits) = opt_ty_bits {
+                        let exceeding = if let ast::ExprLit(ref lit) = r.node {
+                            if let ast::LitInt(shift, _) = lit.node { shift >= bits }
+                            else { false }
+                        } else {
+                            match eval_const_expr_partial(cx.tcx, &**r) {
+                                Ok(const_int(shift)) => { shift as u64 >= bits },
+                                Ok(const_uint(shift)) => { shift >= bits },
+                                _ => { false }
+                            }
+                        };
+                        if exceeding {
+                            cx.span_lint(EXCEEDING_BITSHIFTS, e.span,
+                                         "bitshift exceeds the type's number of bits");
+                        }
+                    };
+                }
             },
             ast::ExprLit(ref lit) => {
                 match ty::get(ty::expr_ty(cx.tcx, e)).sty {
@@ -178,7 +210,7 @@ impl LintPass for TypeLimits {
                             ast::LitInt(v, ast::SignedIntLit(_, ast::Plus)) |
                             ast::LitInt(v, ast::UnsuffixedIntLit(ast::Plus)) => {
                                 let int_type = if t == ast::TyI {
-                                    cx.sess().targ_cfg.int_type
+                                    cx.sess().target.int_type
                                 } else { t };
                                 let (min, max) = int_ty_range(int_type);
                                 let negative = self.negated_expr_id == e.id;
@@ -195,7 +227,7 @@ impl LintPass for TypeLimits {
                     },
                     ty::ty_uint(t) => {
                         let uint_type = if t == ast::TyU {
-                            cx.sess().targ_cfg.uint_type
+                            cx.sess().target.uint_type
                         } else { t };
                         let (min, max) = uint_ty_range(uint_type);
                         let lit_val: u64 = match lit.node {
@@ -277,6 +309,26 @@ impl LintPass for TypeLimits {
             match float_ty {
                 ast::TyF32  => (f32::MIN_VALUE as f64, f32::MAX_VALUE as f64),
                 ast::TyF64  => (f64::MIN_VALUE,        f64::MAX_VALUE)
+            }
+        }
+
+        fn int_ty_bits(int_ty: ast::IntTy, target_int_ty: ast::IntTy) -> u64 {
+            match int_ty {
+                ast::TyI =>    int_ty_bits(target_int_ty, target_int_ty),
+                ast::TyI8 =>   i8::BITS  as u64,
+                ast::TyI16 =>  i16::BITS as u64,
+                ast::TyI32 =>  i32::BITS as u64,
+                ast::TyI64 =>  i64::BITS as u64
+            }
+        }
+
+        fn uint_ty_bits(uint_ty: ast::UintTy, target_uint_ty: ast::UintTy) -> u64 {
+            match uint_ty {
+                ast::TyU =>    uint_ty_bits(target_uint_ty, target_uint_ty),
+                ast::TyU8 =>   u8::BITS  as u64,
+                ast::TyU16 =>  u16::BITS as u64,
+                ast::TyU32 =>  u32::BITS as u64,
+                ast::TyU64 =>  u64::BITS as u64
             }
         }
 

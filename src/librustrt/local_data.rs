@@ -41,8 +41,7 @@ assert_eq!(*key_vector.get().unwrap(), vec![4]);
 use core::prelude::*;
 
 use alloc::heap;
-use collections::treemap::TreeMap;
-use collections::MutableMap;
+use collections::TreeMap;
 use core::cmp;
 use core::kinds::marker;
 use core::mem;
@@ -261,8 +260,6 @@ impl<T: 'static> KeyValue<T> {
     /// assert_eq!(*key.get().unwrap(), 3);
     /// ```
     pub fn get(&'static self) -> Option<Ref<T>> {
-        use collections::Map;
-
         let map = match unsafe { get_local_map() } {
             Some(map) => map,
             None => return None,
@@ -357,6 +354,7 @@ impl TLDValue {
         let box_ptr = unsafe {
             let allocation = heap::allocate(mem::size_of::<TLDValueBox<T>>(),
                                             mem::min_align_of::<TLDValueBox<T>>());
+            if allocation.is_null() { ::alloc::oom() }
             let value_box = allocation as *mut TLDValueBox<T>;
             ptr::write(value_box, TLDValueBox {
                 value: value,

@@ -400,11 +400,11 @@ An _integer literal_ has one of four forms:
 * A _decimal literal_ starts with a *decimal digit* and continues with any
   mixture of *decimal digits* and _underscores_.
 * A _hex literal_ starts with the character sequence `U+0030` `U+0078`
-  (`0x`) and continues as any mixture hex digits and underscores.
+  (`0x`) and continues as any mixture of hex digits and underscores.
 * An _octal literal_ starts with the character sequence `U+0030` `U+006F`
-  (`0o`) and continues as any mixture octal digits and underscores.
+  (`0o`) and continues as any mixture of octal digits and underscores.
 * A _binary literal_ starts with the character sequence `U+0030` `U+0062`
-  (`0b`) and continues as any mixture binary digits and underscores.
+  (`0b`) and continues as any mixture of binary digits and underscores.
 
 An integer literal may be followed (immediately, without any spaces) by an
 _integer suffix_, which changes the type of the literal. There are two kinds of
@@ -831,7 +831,7 @@ mod math {
 }
 ```
 
-Modules and types share the same namespace. Declaring a named type that has
+Modules and types share the same namespace. Declaring a named type with
 the same name as a module in scope is forbidden: that is, a type definition,
 trait, struct, enumeration, or type parameter can't shadow the name of a module
 in scope, or vice versa.
@@ -870,8 +870,8 @@ view_item : extern_crate_decl | use_decl ;
 ```
 
 A view item manages the namespace of a module. View items do not define new
-items, but rather, simply change other items' visibility. There are several
-kinds of view item:
+items, but rather, simply change other items' visibility. There are two
+kinds of view items:
 
 * [`extern crate` declarations](#extern-crate-declarations)
 * [`use` declarations](#use-declarations)
@@ -896,7 +896,7 @@ external crate when it was compiled. If no `crateid` is provided, a default
 `name` attribute is assumed, equal to the `ident` given in the
 `extern_crate_decl`.
 
-Four examples of `extern crate` declarations:
+Three examples of `extern crate` declarations:
 
 ```{.ignore}
 extern crate pcre;
@@ -944,10 +944,10 @@ An example of `use` declarations:
 ```
 use std::iter::range_step;
 use std::option::{Some, None};
-use std::collections::hashmap::{mod, HashMap};
+use std::collections::hash_map::{mod, HashMap};
 
-# fn foo<T>(_: T){}
-# fn bar(map: HashMap<String, uint>, set: hashmap::HashSet<String>){}
+fn foo<T>(_: T){}
+fn bar(map1: HashMap<String, uint>, map2: hash_map::HashMap<String, uint>){}
 
 fn main() {
     // Equivalent to 'std::iter::range_step(0u, 10u, 2u);'
@@ -957,10 +957,10 @@ fn main() {
     // std::option::None]);'
     foo(vec![Some(1.0f64), None]);
 
-    // Both `hash` and `HashMap` are in scope.
-    let map = HashMap::new();
-    let set = hashmap::HashSet::new();
-    bar(map, set);
+    // Both `hash_map` and `HashMap` are in scope.
+    let map1 = HashMap::new();
+    let map2 = hash_map::HashMap::new();
+    bar(map1, map2);
 }
 ```
 
@@ -2100,15 +2100,15 @@ plugins](guide-plugin.html#lint-plugins) can provide additional lint checks.
 ```{.ignore}
 mod m1 {
     // Missing documentation is ignored here
-    #[allow(missing_doc)]
+    #[allow(missing_docs)]
     pub fn undocumented_one() -> int { 1 }
 
     // Missing documentation signals a warning here
-    #[warn(missing_doc)]
+    #[warn(missing_docs)]
     pub fn undocumented_too() -> int { 2 }
 
     // Missing documentation signals an error here
-    #[deny(missing_doc)]
+    #[deny(missing_docs)]
     pub fn undocumented_end() -> int { 3 }
 }
 ```
@@ -2117,16 +2117,16 @@ This example shows how one can use `allow` and `warn` to toggle a particular
 check on and off.
 
 ```{.ignore}
-#[warn(missing_doc)]
+#[warn(missing_docs)]
 mod m2{
-    #[allow(missing_doc)]
+    #[allow(missing_docs)]
     mod nested {
         // Missing documentation is ignored here
         pub fn undocumented_one() -> int { 1 }
 
         // Missing documentation signals a warning here,
         // despite the allow above.
-        #[warn(missing_doc)]
+        #[warn(missing_docs)]
         pub fn undocumented_two() -> int { 2 }
     }
 
@@ -2139,10 +2139,10 @@ This example shows how one can use `forbid` to disallow uses of `allow` for
 that lint check.
 
 ```{.ignore}
-#[forbid(missing_doc)]
+#[forbid(missing_docs)]
 mod m3 {
     // Attempting to toggle warning signals an error here
-    #[allow(missing_doc)]
+    #[allow(missing_docs)]
     /// Returns 2.
     pub fn undocumented_too() -> int { 2 }
 }
@@ -4096,7 +4096,7 @@ cause transitions between the states. The lifecycle states of a task are:
 
 * running
 * blocked
-* panicked 
+* panicked
 * dead
 
 A task begins its lifecycle &mdash; once it has been spawned &mdash; in the

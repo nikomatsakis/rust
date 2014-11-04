@@ -100,7 +100,9 @@ endif
 CFG_RUSTC_FLAGS := $(RUSTFLAGS)
 CFG_GCCISH_CFLAGS :=
 CFG_GCCISH_LINK_FLAGS :=
-CFG_JEMALLOC_FLAGS :=
+
+# Turn off broken quarantine (see jemalloc/jemalloc#161)
+CFG_JEMALLOC_FLAGS := --disable-fill
 
 ifdef CFG_DISABLE_OPTIMIZE
   $(info cfg: disabling rustc optimization (CFG_DISABLE_OPTIMIZE))
@@ -309,7 +311,6 @@ export CFG_RELEASE
 export CFG_PACKAGE_NAME
 export CFG_BUILD
 export CFG_LLVM_ROOT
-export CFG_ENABLE_MINGW_CROSS
 export CFG_PREFIX
 export CFG_LIBDIR
 export CFG_LIBDIR_RELATIVE

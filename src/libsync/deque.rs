@@ -55,7 +55,7 @@ use core::prelude::*;
 use alloc::arc::Arc;
 use alloc::heap::{allocate, deallocate};
 use alloc::boxed::Box;
-use collections::{Vec, MutableSeq};
+use collections::Vec;
 use core::kinds::marker;
 use core::mem::{forget, min_align_of, size_of, transmute};
 use core::ptr;
@@ -353,6 +353,7 @@ impl<T: Send> Buffer<T> {
     unsafe fn new(log_size: uint) -> Buffer<T> {
         let size = buffer_alloc_size::<T>(log_size);
         let buffer = allocate(size, min_align_of::<T>());
+        if buffer.is_null() { ::alloc::oom() }
         Buffer {
             storage: buffer as *const T,
             log_size: log_size,

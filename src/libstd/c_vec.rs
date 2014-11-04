@@ -35,7 +35,6 @@
 
 #![experimental]
 
-use collections::Collection;
 use kinds::Send;
 use mem;
 use ops::Drop;
@@ -143,6 +142,12 @@ impl<T> CVec<T> {
         self.dtor = None;
         self.base
     }
+
+    /// Returns the number of items in this vector.
+    pub fn len(&self) -> uint { self.len }
+
+    /// Returns whether this vector is empty.
+    pub fn is_empty(&self) -> bool { self.len() == 0 }
 }
 
 impl<T> AsSlice<T> for CVec<T> {
@@ -152,10 +157,6 @@ impl<T> AsSlice<T> for CVec<T> {
             mem::transmute(raw::Slice { data: self.base as *const T, len: self.len })
         }
     }
-}
-
-impl<T> Collection for CVec<T> {
-    fn len(&self) -> uint { self.len }
 }
 
 #[cfg(test)]
@@ -169,7 +170,7 @@ mod tests {
     fn malloc(n: uint) -> CVec<u8> {
         unsafe {
             let mem = libc::malloc(n as libc::size_t);
-            if mem.is_null() { panic!("out of memory") }
+            if mem.is_null() { ::alloc::oom() }
 
             CVec::new_with_dtor(mem as *mut u8, n,
                 proc() { libc::free(mem as *mut libc::c_void); })

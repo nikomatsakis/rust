@@ -34,9 +34,9 @@ use std::hash::Hash;
 use std::hash;
 use std::io::extensions::u64_from_be_bytes;
 use std::io;
-use std::collections::hashmap::HashMap;
+use std::collections::hash_map::HashMap;
 use std::rc::Rc;
-use std::u64;
+use std::str;
 use rbml::reader;
 use rbml;
 use serialize::Decodable;
@@ -215,7 +215,9 @@ fn each_reexport(d: rbml::Doc, f: |rbml::Doc| -> bool) -> bool {
 
 fn variant_disr_val(d: rbml::Doc) -> Option<ty::Disr> {
     reader::maybe_get_doc(d, tag_disr_val).and_then(|val_doc| {
-        reader::with_doc_data(val_doc, |data| u64::parse_bytes(data, 10u))
+        reader::with_doc_data(val_doc, |data| {
+            str::from_utf8(data).and_then(from_str)
+        })
     })
 }
 
@@ -657,6 +659,24 @@ pub fn maybe_get_item_ast<'tcx>(cdata: Cmd, tcx: &ty::ctxt<'tcx>, id: ast::NodeI
             }
         }
     }
+}
+
+pub fn get_enum_variant_defs(intr: &IdentInterner,
+                             cdata: Cmd,
+                             id: ast::NodeId)
+                             -> Vec<(def::Def, ast::Name, ast::Visibility)> {
+    let data = cdata.data();
+    let items = reader::get_doc(rbml::Doc::new(data), tag_items);
+    let item = find_item(id, items);
+    enum_variant_ids(item, cdata).iter().map(|did| {
+        let item = find_item(did.node, items);
+        let name = item_name(intr, item);
+        let visibility = item_visibility(item);
+        match item_to_def_like(item, *did, cdata.cnum) {
+            DlDef(def @ def::DefVariant(..)) => (def, name, visibility),
+            _ => unreachable!()
+        }
+    }).collect()
 }
 
 pub fn get_enum_variants(intr: Rc<IdentInterner>, cdata: Cmd, id: ast::NodeId,

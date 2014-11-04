@@ -26,7 +26,6 @@ use rt::rtio;
 use c_str::CString;
 use collections::HashMap;
 use hash::Hash;
-use clone::Clone;
 #[cfg(windows)]
 use std::hash::sip::SipState;
 
@@ -918,7 +917,7 @@ mod tests {
         let prog = pwd_cmd().cwd(&parent_dir).spawn().unwrap();
 
         let output = String::from_utf8(prog.wait_with_output().unwrap().output).unwrap();
-        let child_dir = Path::new(output.as_slice().trim().into_string());
+        let child_dir = Path::new(output.as_slice().trim());
 
         let parent_stat = parent_dir.stat().unwrap();
         let child_stat = child_dir.stat().unwrap();
