@@ -913,7 +913,6 @@ mod primitives {
         )
     )
 
-    def_prim_ty!(TY_NIL,    super::ty_nil,                  0)
     def_prim_ty!(TY_BOOL,   super::ty_bool,                 1)
     def_prim_ty!(TY_CHAR,   super::ty_char,                 2)
     def_prim_ty!(TY_INT,    super::ty_int(ast::TyI),        3)
@@ -942,7 +941,6 @@ mod primitives {
 // AST structure in libsyntax/ast.rs as well.
 #[deriving(Clone, PartialEq, Eq, Hash, Show)]
 pub enum sty {
-    ty_nil,
     ty_bool,
     ty_char,
     ty_int(ast::IntTy),
@@ -1572,7 +1570,6 @@ pub fn mk_ctxt<'tcx>(s: Session,
 pub fn mk_t(cx: &ctxt, st: sty) -> t {
     // Check for primitive types.
     match st {
-        ty_nil => return mk_nil(),
         ty_err => return mk_err(),
         ty_bool => return mk_bool(),
         ty_int(i) => return mk_mach_int(i),
@@ -1618,7 +1615,7 @@ pub fn mk_t(cx: &ctxt, st: sty) -> t {
         rflags(bounds.region_bound)
     }
     match &st {
-      &ty_nil | &ty_bool | &ty_char | &ty_int(_) | &ty_float(_) | &ty_uint(_) |
+      &ty_bool | &ty_char | &ty_int(_) | &ty_float(_) | &ty_uint(_) |
       &ty_str => {}
       // You might think that we could just return ty_err for
       // any type containing ty_err as a component, and get
@@ -1706,9 +1703,6 @@ pub fn mk_prim_t(primitive: &'static t_box_) -> t {
         mem::transmute::<&'static t_box_, t>(primitive)
     }
 }
-
-#[inline]
-pub fn mk_nil() -> t { mk_prim_t(&primitives::TY_NIL) }
 
 #[inline]
 pub fn mk_err() -> t { mk_prim_t(&primitives::TY_ERR) }
@@ -1821,7 +1815,7 @@ pub fn mk_imm_ptr(cx: &ctxt, ty: t) -> t {
 }
 
 pub fn mk_nil_ptr(cx: &ctxt) -> t {
-    mk_ptr(cx, mt {ty: mk_nil(), mutbl: ast::MutImmutable})
+    mk_ptr(cx, mt {ty: mk_nil(cx), mutbl: ast::MutImmutable})
 }
 
 pub fn mk_vec(cx: &ctxt, t: t, sz: Option<uint>) -> t {
@@ -1836,7 +1830,13 @@ pub fn mk_slice(cx: &ctxt, r: Region, tm: mt) -> t {
             })
 }
 
-pub fn mk_tup(cx: &ctxt, ts: Vec<t>) -> t { mk_t(cx, ty_tup(ts)) }
+pub fn mk_tup(cx: &ctxt, ts: Vec<t>) -> t {
+    mk_t(cx, ty_tup(ts))
+}
+
+pub fn mk_nil(cx: &ctxt) -> t {
+    mk_tup(cx, Vec::new())
+}
 
 pub fn mk_closure(cx: &ctxt, fty: ClosureTy) -> t {
     mk_t(cx, ty_closure(box fty))
@@ -1920,7 +1920,7 @@ pub fn maybe_walk_ty(ty: t, f: |t| -> bool) {
         return;
     }
     match get(ty).sty {
-        ty_nil | ty_bool | ty_char | ty_int(_) | ty_uint(_) | ty_float(_) |
+        ty_bool | ty_char | ty_int(_) | ty_uint(_) | ty_float(_) |
         ty_str | ty_infer(_) | ty_param(_) | ty_err => {}
         ty_uniq(ty) | ty_vec(ty, _) | ty_open(ty) => maybe_walk_ty(ty, f),
         ty_ptr(ref tm) | ty_rptr(_, ref tm) => {
@@ -2002,7 +2002,10 @@ impl ParamBounds {
 // Type utilities
 
 pub fn type_is_nil(ty: t) -> bool {
-    get(ty).sty == ty_nil
+    match get(ty).sty {
+        ty_tup(ref tys) => tys.is_empty(),
+        _ => false
+    }
 }
 
 pub fn type_is_error(ty: t) -> bool {
@@ -2139,7 +2142,7 @@ pub fn type_is_fat_ptr(cx: &ctxt, ty: t) -> bool {
 */
 pub fn type_is_scalar(ty: t) -> bool {
     match get(ty).sty {
-      ty_nil | ty_bool | ty_char | ty_int(_) | ty_float(_) | ty_uint(_) |
+      ty_bool | ty_char | ty_int(_) | ty_float(_) | ty_uint(_) |
       ty_infer(IntVar(_)) | ty_infer(FloatVar(_)) |
       ty_bare_fn(..) | ty_ptr(_) => true,
       _ => false
@@ -2176,7 +2179,7 @@ pub fn type_needs_unwind_cleanup(cx: &ctxt, ty: t) -> bool {
         let mut needs_unwind_cleanup = false;
         maybe_walk_ty(ty, |ty| {
             needs_unwind_cleanup |= match get(ty).sty {
-                ty_nil | ty_bool | ty_int(_) | ty_uint(_) |
+                ty_bool | ty_int(_) | ty_uint(_) |
                 ty_float(_) | ty_tup(_) | ty_ptr(_) => false,
 
                 ty_enum(did, ref substs) =>
@@ -2436,7 +2439,7 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
 
             // Scalar and unique types are sendable, and durable
             ty_infer(ty::SkolemizedIntTy(_)) |
-            ty_nil | ty_bool | ty_int(_) | ty_uint(_) | ty_float(_) |
+            ty_bool | ty_int(_) | ty_uint(_) | ty_float(_) |
             ty_bare_fn(_) | ty::ty_char => {
                 TC::None
             }
@@ -2747,7 +2750,6 @@ pub fn is_instantiable(cx: &ctxt, r_ty: t) -> bool {
             ty_vec(_, Some(0)) => false, // don't need no contents
             ty_vec(ty, Some(_)) => type_requires(cx, seen, r_ty, ty),
 
-            ty_nil |
             ty_bool |
             ty_char |
             ty_int(_) |
@@ -3786,7 +3788,7 @@ pub fn impl_or_trait_item_idx(id: ast::Name, trait_items: &[ImplOrTraitItem])
 
 pub fn ty_sort_string(cx: &ctxt, t: t) -> String {
     match get(t).sty {
-        ty_nil | ty_bool | ty_char | ty_int(_) |
+        ty_bool | ty_char | ty_int(_) |
         ty_uint(_) | ty_float(_) | ty_str => {
             ::util::ppaux::ty_to_string(cx, t)
         }
@@ -5143,7 +5145,6 @@ pub fn hash_crate_independent(tcx: &ctxt, t: t, svh: &Svh) -> u64 {
     };
     ty::walk_ty(t, |t| {
         match ty::get(t).sty {
-            ty_nil => byte!(0),
             ty_bool => byte!(2),
             ty_char => byte!(3),
             ty_int(i) => {
@@ -5513,7 +5514,6 @@ pub fn accumulate_lifetimes_in_type(accumulator: &mut Vec<ty::Region>,
                 accumulator.push(*region);
                 accum_substs(accumulator, substs);
             }
-            ty_nil |
             ty_bool |
             ty_char |
             ty_int(_) |
