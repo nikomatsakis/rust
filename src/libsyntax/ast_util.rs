@@ -171,8 +171,10 @@ pub fn ident_to_path(s: Span, identifier: Ident) -> Path {
         segments: vec!(
             ast::PathSegment {
                 identifier: identifier,
-                lifetimes: Vec::new(),
-                types: OwnedSlice::empty(),
+                parameters: ast::AngleBracketedParameters(ast::AngleBracketedParameterData {
+                    lifetimes: Vec::new(),
+                    types: OwnedSlice::empty(),
+                })
             }
         ),
     }
@@ -681,11 +683,11 @@ pub fn segments_name_eq(a : &[ast::PathSegment], b : &[ast::PathSegment]) -> boo
         false
     } else {
         for (idx,seg) in a.iter().enumerate() {
-            if (seg.identifier.name != b[idx].identifier.name)
+            if seg.identifier.name != b[idx].identifier.name
                 // FIXME #7743: ident -> name problems in lifetime comparison?
-                || (seg.lifetimes != b[idx].lifetimes)
                 // can types contain idents?
-                || (seg.types != b[idx].types) {
+                || seg.parameters != b[idx].parameters
+            {
                 return false;
             }
         }
