@@ -2951,10 +2951,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                                          &*rcvr,
                                          method_name.node.name,
                                          expr_t,
-                                         tps.as_slice(),
-                                         DontDerefArgs,
-                                         CheckTraitsAndInherentMethods,
-                                         AutoderefReceiver) {
+                                         tps.as_slice()) {
             Ok(method) => {
                 let method_ty = method.ty;
                 let method_call = MethodCall::expr(expr.id);
@@ -3467,10 +3464,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                              base,
                              field.node.name,
                              expr_t,
-                             tps.as_slice(),
-                             DontDerefArgs,
-                             CheckTraitsAndInherentMethods,
-                             AutoderefReceiver) {
+                             tps.as_slice()) {
             Ok(_) => {
                 fcx.type_error_message(
                     field.span,

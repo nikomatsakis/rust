@@ -79,6 +79,13 @@ obtained the type `Foo`, we would never match this method.
 
 */
 
+use super::method2;
+pub use super::method2::MethodError;
+pub use super::method2::CandidateSource;
+pub use super::method2::NoMatch;
+pub use super::method2::Ambiguity;
+pub use super::method2::ImplSource;
+pub use super::method2::TraitSource;
 
 use middle::subst;
 use middle::subst::{Subst, SelfSpace};
@@ -119,15 +126,6 @@ pub enum AutoderefReceiverFlag {
     DontAutoderefReceiver,
 }
 
-pub enum MethodError {
-    // Did not find an applicable method, but we did find various
-    // static methods that may apply.
-    NoMatch(Vec<CandidateSource>),
-
-    // Multiple methods might apply.
-    Ambiguity(Vec<CandidateSource>),
-}
-
 pub type MethodResult = Result<MethodCallee, MethodError>;
 
 pub fn lookup<'a, 'tcx>(
@@ -138,37 +136,16 @@ pub fn lookup<'a, 'tcx>(
     self_expr: &'a ast::Expr,           // The expression `a`.
     m_name: ast::Name,                  // The name `b`.
     self_ty: ty::t,                     // The type of `a`.
-    supplied_tps: &'a [ty::t],          // The list of types X, Y, ... .
-    deref_args: check::DerefArgs,       // Whether we autopointer first.
-    check_traits: CheckTraitsFlag,      // Whether we check traits only.
-    autoderef_receiver: AutoderefReceiverFlag)
+    supplied_tps: &'a [ty::t])          // The list of types X, Y, ... .
     -> MethodResult
 {
-    let mut lcx = LookupContext {
-        fcx: fcx,
-        span: expr.span,
-        self_expr: Some(self_expr),
-        m_name: m_name,
-        supplied_tps: supplied_tps,
-        impl_dups: HashSet::new(),
-        inherent_candidates: Vec::new(),
-        extension_candidates: Vec::new(),
-        static_candidates: Vec::new(),
-        deref_args: deref_args,
-        check_traits: check_traits,
-        autoderef_receiver: autoderef_receiver,
-    };
-
-    debug!("method lookup(self_ty={}, expr={}, self_expr={})",
-           self_ty.repr(fcx.tcx()), expr.repr(fcx.tcx()),
-           self_expr.repr(fcx.tcx()));
-
-    debug!("searching inherent candidates");
-    lcx.push_inherent_candidates(self_ty);
-    debug!("searching extension candidates");
-    lcx.push_bound_candidates(self_ty, None);
-    lcx.push_extension_candidates(expr.id);
-    lcx.search(self_ty)
+    method2::lookup(fcx,
+                    expr.span,
+                    m_name,
+                    self_ty,
+                    supplied_tps.to_vec(),
+                    expr.id,
+                    self_expr.id)
 }
 
 pub fn lookup_in_trait<'a, 'tcx>(
@@ -385,14 +362,6 @@ struct ExtensionCandidate {
     xform_self_ty: ty::t,
     method_ty: Rc<ty::Method>,
     method_num: uint,
-}
-
-// A pared down enum describing just the places from which a method
-// candidate can arise. Used for error reporting only.
-#[deriving(PartialOrd, Ord, PartialEq, Eq)]
-pub enum CandidateSource {
-    ImplSource(ast::DefId),
-    TraitSource(/* trait id */ ast::DefId),
 }
 
 impl<'a, 'tcx> LookupContext<'a, 'tcx> {

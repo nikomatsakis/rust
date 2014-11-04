@@ -37,11 +37,16 @@ pub struct ProbeContext<'a,'tcx:'a> {
     fcx: &'a FnCtxt<'a, 'tcx>,
     span: Span,
     method_name: ast::Name,
-    self_tys: Rc<Vec<ty::t>>,
+    steps: Rc<Vec<ProbeStep>>,
     inherent_probes: Vec<Probe>,
     extension_probes: Vec<Probe>,
     impl_dups: HashSet<ast::DefId>,
     static_candidates: Vec<CandidateSource>,
+}
+
+struct ProbeStep {
+    self_ty: ty::t,
+    adjustment: PickAdjustment
 }
 
 struct Probe {
@@ -90,10 +95,27 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                self_ty: ty::t)
                -> ProbeContext<'a,'tcx>
     {
-        let mut self_tys = Vec::new();
-        check::autoderef(
-            fcx, span, self_ty, None, NoPreference,
-            |t, _| { self_tys.push(t); Some(()) });
+        let mut steps = Vec::new();
+        let (fully_dereferenced_ty, dereferences, _) =
+            check::autoderef(
+                fcx, span, self_ty, None, NoPreference,
+                |t, d| {
+                    steps.push(ProbeStep { self_ty: t, adjustment: AutoDeref(d) });
+                    Some(())
+                });
+
+        match ty::get(fully_dereferenced_ty).sty {
+            ty::ty_vec(elem_ty, Some(len)) => {
+                steps.push(ProbeStep {
+                    self_ty: ty::mk_vec(elem_ty, None),
+                    adjustment: AutoUnsizeLength(len, box AutoDeref(dereferences))
+                });
+            }
+            _ => {
+            }
+        }
+
+        debug!("self_tys={}", self_tys.repr(fcx.tcx()));
 
         ProbeContext {
             fcx: fcx,
@@ -102,7 +124,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
             inherent_probes: Vec::new(),
             extension_probes: Vec::new(),
             impl_dups: HashSet::new(),
-            self_tys: Rc::new(Vec::new()),
+            steps: Rc::new(steps),
             static_candidates: Vec::new(),
         }
     }
@@ -120,13 +142,16 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
 
     pub fn assemble_inherent_probes(&mut self,
                                     restrict_to_trait: Option<ast::DefId>) {
-        let self_tys = self.self_tys.clone();
-        for &t in self_tys.iter() {
-            self.assemble_probe(t, restrict_to_trait);
+        let steps = self.steps.clone();
+        for step in steps.iter() {
+            self.assemble_probe(step.self_ty, restrict_to_trait);
         }
     }
 
     fn assemble_probe(&mut self, self_ty: ty::t, restrict_to_trait: Option<ast::DefId>) {
+        debug!("assemble_probe: self_ty={}",
+               self_ty.repr(self.tcx()));
+
         match ty::get(self_ty).sty {
             ty::ty_trait(box ty::TyTrait { def_id, ref substs, bounds, .. }) => {
                 if restrict_to_trait.is_none() {
@@ -334,7 +359,8 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
 
     pub fn assemble_extension_probes_for_trait(&mut self,
                                                trait_def_id: ast::DefId) {
-        debug!("assemble_extension_probes_for_trait: trait_def_id={}", trait_def_id);
+        debug!("assemble_extension_probes_for_trait: trait_def_id={}",
+               trait_def_id.repr(self.tcx()));
 
         // Check whether `trait_def_id` defines a method with suitable name:
         let trait_items =
@@ -376,17 +402,27 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
         };
 
         for &impl_def_id in impl_def_ids.borrow().iter() {
+            debug!("assemble_extension_probes_for_trait_impl: trait_def_id={} impl_def_id={}",
+                   trait_def_id.repr(self.tcx()),
+                   impl_def_id.repr(self.tcx()));
+
             let impl_pty = check::impl_self_ty(self.fcx, self.span, impl_def_id);
             let impl_substs = impl_pty.substs;
+
+            debug!("impl_substs={}", impl_substs.repr(self.tcx()));
 
             let impl_trait_ref =
                 ty::impl_trait_ref(self.tcx(), impl_def_id)
                 .unwrap() // we know this is a trait impl
                 .subst(self.tcx(), &impl_substs);
 
+            debug!("impl_trait_ref={}", impl_trait_ref.repr(self.tcx()));
+
             // Determine the receiver type that the method itself expects.
             let xform_self_ty =
-                self.xform_self_ty(&method, &impl_substs);
+                self.xform_self_ty(&method, &impl_trait_ref.substs);
+
+            debug!("xform_self_ty={}", xform_self_ty.repr(self.tcx()));
 
             self.extension_probes.push(Probe {
                 xform_self_ty: xform_self_ty,
@@ -400,9 +436,10 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
     // THE ACTUAL SEARCH
 
     pub fn pick(mut self) -> PickResult {
-        let self_tys = self.self_tys.clone();
-        for (index, &self_ty) in self_tys.iter().enumerate() {
-            match self.pick_step(self_ty, index) {
+        let steps = self.steps.clone();
+
+        for step in steps.iter().enumerate() {
+            match self.pick_step(step) {
                 Some(r) => { return r; }
                 None => { }
             }
@@ -411,58 +448,46 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
         Err(NoMatch(self.static_candidates))
     }
 
-    pub fn pick_no_autoderef(mut self) -> PickResult {
-        let self_ty: ty::t = (*self.self_tys)[0];
-        match self.pick_step(self_ty, 0) {
-            Some(r) => r,
-            None => Err(NoMatch(self.static_candidates))
-        }
-    }
+    fn pick_step(&mut self, step: &ProbeStep) -> Option<PickResult> {
+        debug!("pick_step: step={}", step.repr(self.tcx()));
 
-    fn pick_step(&mut self, self_ty: ty::t, autoderefs: uint) -> Option<PickResult> {
-        match self.pick_autoderefd_method(self_ty, autoderefs) {
+        match self.pick_adusted_method(step) {
             Some(result) => return Some(result),
             None => {}
         }
 
-        match self.pick_autoptrd_method(self_ty, autoderefs) {
+        match self.pick_autorefd_method(step) {
             Some(result) => return Some(result),
             None => {}
-        }
-
-        // If we are searching for an overloaded deref, no
-        // need to try coercing a `~[T]` to an `&[T]` and
-        // searching for an overloaded deref on *that*.
-        if !self.is_overloaded_deref() {
-            match self.pick_autofatptrd_method(self_ty, autoderefs) {
-                Some(result) => return Some(result),
-                None => {}
-            }
         }
 
         None
     }
 
-    fn pick_autoptrd_method(&mut self,
-                            self_ty: ty::t,
-                            autoderefs: uint)
+    fn pick_adjusted_method(&mut self,
+                            step: &ProbeStep)
                             -> Option<PickResult>
     {
-        if ty::type_is_error(self_ty) {
+        self.pick_method(step.self_ty).map(|r| self.adjust(r, step.adjustment.clone()))
+    }
+
+    fn pick_autorefd_method(&mut self,
+                            step: &ProbeStep)
+                            -> Option<PickResult>
+    {
+        if ty::type_is_error(step.self_ty) {
             return None;
         }
 
         let tcx = self.tcx();
         self.search_mutabilities(
             autoderefs,
-            [ast::MutImmutable, ast::MutMutable],
-            |m| AutoRef(m, box AutoDeref(autoderefs)),
-            |m,r| ty::mk_rptr(tcx, r, ty::mt {ty:self_ty, mutbl:m}))
+            |m| AutoRef(m, box step.adjustment.clone()),
+            |m,r| ty::mk_rptr(tcx, r, ty::mt {ty:step.self_ty, mutbl:m}))
     }
 
     fn search_mutabilities(&mut self,
                            autoderefs: uint,
-                           mutbls: &[ast::Mutability],
                            mk_adjustment: |ast::Mutability| -> PickAdjustment,
                            mk_autoref_ty: |ast::Mutability, ty::Region| -> ty::t)
                            -> Option<PickResult>
@@ -470,7 +495,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
         let region = self.infcx().next_region_var(infer::Autoref(self.span));
 
         // Search through mutabilities in order to find one where pick works:
-        mutbls
+        [ast::MutImmutable, ast::MutMutable]
             .iter()
             .flat_map(|&m| {
                 let autoref_ty = mk_autoref_ty(m, region);
@@ -479,32 +504,6 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                     .into_iter()
             })
             .nth(0)
-    }
-
-    fn pick_autofatptrd_method(&mut self,
-                               self_ty: ty::t,
-                               autoderefs: uint)
-                               -> Option<PickResult>
-    {
-        panic!("NYI")
-    }
-
-    fn pick_autoderefd_method(&mut self,
-                              self_ty: ty::t,
-                              autoderefs: uint)
-                              -> Option<PickResult>
-    {
-        // Hacky. For overloaded derefs, there may be an adjustment
-        // added to the expression from the outside context, so we do not store
-        // an explicit adjustment, but rather we hardwire the single deref
-        // that occurs in trans and mem_categorization.
-        if self.is_overloaded_deref() {
-            return None;
-        }
-
-        let (self_ty, auto_deref_ref) = self.consider_reborrow(self_ty, autoderefs);
-
-        self.pick_method(self_ty).map(|r| self.adjust(r, AutoDeref(autoderefs)))
     }
 
     fn adjust(&mut self, result: PickResult, adjustment: PickAdjustment) -> PickResult {
@@ -554,6 +553,8 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
     }
 
     fn consider_probe(&self, self_ty: ty::t, probe: &Probe) -> bool {
+        debug!("consider_probe: self_ty={} probe={}",
+               self_ty.repr(self.tcx()), probe.repr(self.tcx()));
         infer::can_mk_subty(self.infcx(), self_ty, probe.xform_self_ty).is_ok()
     }
 
@@ -584,10 +585,6 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
     ///////////////////////////////////////////////////////////////////////////
     // MISCELLANY
 
-    fn is_overloaded_deref(&self) -> bool {
-        false
-    }
-
     fn has_applicable_self(&self, method: &ty::Method) -> bool {
         // "fast track" -- check for usage of sugar
         match method.explicit_self {
@@ -615,50 +612,14 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
     }
 
     fn xform_self_ty(&self, method: &Rc<ty::Method>, substs: &subst::Substs) -> ty::t {
+        debug!("xform_self_ty(self_ty={}, substs={})",
+               method.fty.sig.inputs[0].repr(self.tcx()),
+               substs.repr(self.tcx()));
+
         let xform_self_ty = method.fty.sig.inputs[0].subst(self.tcx(), substs);
         self.infcx().replace_late_bound_regions_with_fresh_var(method.fty.sig.binder_id,
                                                                self.span,
                                                                &xform_self_ty)
-    }
-
-    fn consider_reborrow(&self,
-                         self_ty: ty::t,
-                         autoderefs: uint)
-                         -> (ty::t, ty::AutoDerefRef) {
-        /*!
-         * In the event that we are invoking a method with a receiver
-         * of a borrowed type like `&T`, `&mut T`, or `&mut [T]`,
-         * we will "reborrow" the receiver implicitly.  For example, if
-         * you have a call `r.inc()` and where `r` has type `&mut T`,
-         * then we treat that like `(&mut *r).inc()`.  This avoids
-         * consuming the original pointer.
-         *
-         * You might think that this would be a natural byproduct of
-         * the auto-deref/auto-ref process.  This is true for `Box<T>`
-         * but not for an `&mut T` receiver.  With `Box<T>`, we would
-         * begin by testing for methods with a self type `Box<T>`,
-         * then autoderef to `T`, then autoref to `&mut T`.  But with
-         * an `&mut T` receiver the process begins with `&mut T`, only
-         * without any autoadjustments.
-         */
-
-        let tcx = self.tcx();
-        return match ty::get(self_ty).sty {
-            ty::ty_rptr(_, self_mt) => {
-                let region =
-                    self.infcx().next_region_var(infer::Autoref(self.span));
-                (ty::mk_rptr(tcx, region, self_mt),
-                 ty::AutoDerefRef {
-                     autoderefs: autoderefs + 1,
-                     autoref: Some(ty::AutoPtr(region, self_mt.mutbl, None))})
-            }
-            _ => {
-                (self_ty,
-                 ty::AutoDerefRef {
-                     autoderefs: autoderefs,
-                     autoref: None})
-            }
-        };
     }
 }
 
@@ -755,6 +716,32 @@ impl Probe {
             ExtensionImplProbe(_, ref trait_ref, _, _) => TraitSource(trait_ref.def_id),
             UnboxedClosureImplProbe(def_id) => TraitSource(def_id),
             WhereClauseProbe(ref trait_ref, index) => TraitSource(trait_ref.def_id),
+        }
+    }
+}
+
+impl Repr for Probe {
+    fn repr(&self, tcx: &ty::ctxt) -> String {
+        format!("Probe(xform_self_ty={}, kind={})",
+                self.xform_self_ty.repr(tcx),
+                self.kind.repr(tcx))
+    }
+}
+
+impl Repr for ProbeKind {
+    fn repr(&self, tcx: &ty::ctxt) -> String {
+        match *self {
+            InherentImplProbe(ref a, ref b) =>
+                format!("InherentImplProbe({},{})", a.repr(tcx), b.repr(tcx)),
+            ObjectProbe(ref a) =>
+                format!("ObjectProbe({})", a.repr(tcx)),
+            ExtensionImplProbe(ref a, ref b, ref c, ref d) =>
+                format!("ExtensionImplProbe({},{},{},{})", a.repr(tcx), b.repr(tcx),
+                        c.repr(tcx), d),
+            UnboxedClosureImplProbe(ref a) =>
+                format!("UnboxedClosureImplProbe({})", a.repr(tcx)),
+            WhereClauseProbe(ref a, ref b) =>
+                format!("WhereClauseProbe({},{})", a.repr(tcx), b),
         }
     }
 }

@@ -59,6 +59,7 @@ pub fn lookup(
     method_name: ast::Name,
     self_ty: ty::t,
     supplied_method_types: Vec<ty::t>,
+    call_expr_id: ast::NodeId,
     self_expr_id: ast::NodeId)
     -> Result<MethodCallee, MethodError>
 {
@@ -83,6 +84,8 @@ pub fn lookup(
                                                 span,
                                                 method_name,
                                                 self_ty);
+    probe_cx.assemble_inherent_probes(None);
+    probe_cx.assemble_extension_probes_for_traits_in_scope(call_expr_id);
     let pick = try!(probe_cx.pick());
     let mut confirm_cx = confirm::ConfirmContext::new(fcx,
                                                       span,
