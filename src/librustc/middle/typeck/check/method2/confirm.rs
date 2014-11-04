@@ -57,6 +57,11 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
                    supplied_method_types: Vec<ty::t>)
                    -> MethodCallee
     {
+        debug!("confirm(self_ty={}, pick={}, supplied_method_types={})",
+               self_ty.repr(self.tcx()),
+               pick.repr(self.tcx()),
+               supplied_method_types.repr(self.tcx()));
+
         //
         let self_ty = self.adjust_self_ty(self_ty, &pick.adjustment);
 
@@ -102,15 +107,26 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
                       adjustment: &probe::PickAdjustment)
                       -> ty::t
     {
-        let adjustment = ty::AdjustDerefRef(self.create_ty_adjustment(adjustment));
-        let adjusted_ty =
-            ty::adjust_ty(
-                self.tcx(), self.span, self.self_expr_id, self_ty, Some(&adjustment),
-                |method_call| self.fcx.inh.method_map.borrow()
-                                                     .find(&method_call)
-                                                     .map(|method| method.ty));
-        self.fcx.write_adjustment(self.self_expr_id, self.span, adjustment);
-        adjusted_ty
+        // Construct the actual adjustment and write it into the table
+        let auto_deref_ref = self.create_ty_adjustment(adjustment);
+
+        // Commit the autoderefs by calling `autoderef again, but this
+        // time writing the results into the various tables.
+        let (autoderefd_ty, n, result) =
+            check::autoderef(
+                self.fcx, self.span, self_ty, Some(self.self_expr_id), NoPreference,
+                |_, n| if n == auto_deref_ref.autoderefs { Some(()) } else { None });
+        assert_eq!(n, auto_deref_ref.autoderefs);
+        assert_eq!(result, Some(()));
+
+        let final_ty =
+            ty::adjust_ty_for_autoref(self.tcx(), self.span, autoderefd_ty,
+                                      auto_deref_ref.autoref.as_ref());
+
+        // Write out the final adjustment.
+        self.fcx.write_adjustment(self.self_expr_id, self.span, ty::AdjustDerefRef(auto_deref_ref));
+
+        final_ty
     }
 
     fn create_ty_adjustment(&mut self,
@@ -161,27 +177,29 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
             }
 
             probe::ObjectPick(trait_def_id, method_num, real_index) => {
-                match ty::get(self_ty).sty {
-                    ty::ty_trait(ref data) => {
-                        let original_trait_ref = Rc::new(ty::TraitRef::new(data.def_id,
-                                                                           data.substs.clone()));
-                        let upcast_trait_ref = self.upcast(original_trait_ref, trait_def_id);
-                        let substs = upcast_trait_ref.substs.clone();
-                        let origin = MethodTraitObject(MethodObject {
-                            trait_ref: upcast_trait_ref,
-                            object_trait_id: trait_def_id,
-                            method_num: method_num,
-                            real_index: real_index,
-                        });
-                        (substs, origin)
-                    }
-                    _ => {
-                        self.tcx().sess.span_bug(
-                            self.span,
-                            format!("ObjectPick applied to non-object type: {}",
-                                    self_ty.repr(self.tcx()))[]);
-                    }
-                }
+                self.extract_trait_ref(self_ty, |this, object_ty, data| {
+                    // The object data has no entry for the Self
+                    // Type. For the purposes of this method call, we
+                    // substitute the object type itself. This
+                    // wouldn't be a sound substitution in all cases,
+                    // since each instance of the object type is a
+                    // different existential and hence could match
+                    // distinct types (e.g., if `Self` appeared as an
+                    // argument type), but those cases have already
+                    // been ruled out when we deemed the trait to be
+                    // "object safe".
+                    let substs = data.substs.clone().with_self_ty(object_ty);
+                    let original_trait_ref = Rc::new(ty::TraitRef::new(data.def_id, substs));
+                    let upcast_trait_ref = this.upcast(original_trait_ref, trait_def_id);
+                    let substs = upcast_trait_ref.substs.clone();
+                    let origin = MethodTraitObject(MethodObject {
+                        trait_ref: upcast_trait_ref,
+                        object_trait_id: trait_def_id,
+                        method_num: method_num,
+                        real_index: real_index,
+                    });
+                    (substs, origin)
+                })
             }
 
             probe::ExtensionImplPick(impl_def_id, method_num) => {
@@ -207,6 +225,37 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
                 let origin = MethodTypeParam(MethodParam { trait_ref: (*trait_ref).clone(),
                                                            method_num: method_num });
                 (trait_ref.substs.clone(), origin)
+            }
+        }
+    }
+
+    fn extract_trait_ref<R>(&mut self,
+                            self_ty: ty::t,
+                            closure: |&mut ConfirmContext<'a,'tcx>, ty::t, &ty::TyTrait| -> R)
+                            -> R
+    {
+        // If we specified that this is an object method, then the
+        // self-type ought to be something that can be dereferenced to
+        // yield an object-type (e.g., `&Object` or `Box<Object>`
+        // etc).
+
+        let (_, _, result) =
+            check::autoderef(
+                self.fcx, self.span, self_ty, None, NoPreference,
+                |ty, _| {
+                    match ty::get(ty).sty {
+                        ty::ty_trait(ref data) => Some(closure(self, ty, &**data)),
+                        _ => None,
+                    }
+                });
+
+        match result {
+            Some(r) => r,
+            None => {
+                self.tcx().sess.span_bug(
+                    self.span,
+                    format!("self-type `{}` for ObjectPick never dereferenced to an object",
+                            self_ty.repr(self.tcx()))[])
             }
         }
     }

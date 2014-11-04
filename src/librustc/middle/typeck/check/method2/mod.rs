@@ -16,6 +16,7 @@ use middle::typeck::MethodCallee;
 use syntax::ast;
 use syntax::codemap::Span;
 use std::rc::Rc;
+use util::ppaux::Repr;
 
 mod probe;
 mod confirm;
@@ -79,6 +80,12 @@ pub fn lookup(
      * - `supplied_method_types`: the explicit method type parameters, if any (`T1..Tn`)
      * - `self_expr_id`:          the id of the self expression (`foo`)
      */
+
+    debug!("lookup(method_name={}, self_ty={}, call_expr_id={}, self_expr_id={})",
+           method_name.repr(fcx.tcx()),
+           self_ty.repr(fcx.tcx()),
+           call_expr_id,
+           self_expr_id);
 
     let mut probe_cx = probe::ProbeContext::new(fcx,
                                                 span,

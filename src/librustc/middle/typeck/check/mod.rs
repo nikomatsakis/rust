@@ -97,8 +97,6 @@ use middle::typeck::astconv::AstConv;
 use middle::typeck::astconv::{ast_region_to_region, ast_ty_to_ty};
 use middle::typeck::astconv;
 use middle::typeck::check::_match::pat_ctxt;
-use middle::typeck::check::method::{AutoderefReceiver};
-use middle::typeck::check::method::{CheckTraitsAndInherentMethods};
 use middle::typeck::check::regionmanip::replace_late_bound_regions;
 use middle::typeck::CrateCtxt;
 use middle::typeck::infer;

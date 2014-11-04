@@ -28,7 +28,7 @@ use middle::typeck::{MethodObject};
 use middle::typeck::infer;
 use middle::typeck::infer::InferCtxt;
 use syntax::ast;
-use syntax::codemap::Span;
+use syntax::codemap::{Span, DUMMY_SP};
 use std::collections::HashSet;
 use std::rc::Rc;
 use util::ppaux::Repr;
@@ -69,6 +69,7 @@ pub struct Pick {
     pub kind: PickKind,
 }
 
+#[deriving(Clone,Show)]
 pub enum PickKind {
     InherentImplPick(/* Impl */ ast::DefId),
     ObjectPick(/* trait def-id */ ast::DefId, /* method_num */ uint, /* real_index */ uint),
@@ -82,6 +83,7 @@ pub type PickResult = Result<Pick, MethodError>;
 // difference is that it doesn't embed any regions or other
 // specifics. The "confirmation" step recreates those details as
 // needed.
+#[deriving(Clone,Show)]
 pub enum PickAdjustment {
     AutoDeref(/* number of autoderefs */ uint),     // A = expr, *expr, **expr
     AutoRef(ast::Mutability, Box<PickAdjustment>),  // A = &A | &mut A
@@ -96,18 +98,19 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                -> ProbeContext<'a,'tcx>
     {
         let mut steps = Vec::new();
+
         let (fully_dereferenced_ty, dereferences, _) =
             check::autoderef(
                 fcx, span, self_ty, None, NoPreference,
                 |t, d| {
                     steps.push(ProbeStep { self_ty: t, adjustment: AutoDeref(d) });
-                    Some(())
+                    None::<()> // keep iterating until we can't anymore
                 });
 
         match ty::get(fully_dereferenced_ty).sty {
             ty::ty_vec(elem_ty, Some(len)) => {
                 steps.push(ProbeStep {
-                    self_ty: ty::mk_vec(elem_ty, None),
+                    self_ty: ty::mk_vec(fcx.tcx(), elem_ty, None),
                     adjustment: AutoUnsizeLength(len, box AutoDeref(dereferences))
                 });
             }
@@ -115,7 +118,9 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
             }
         }
 
-        debug!("self_tys={}", self_tys.repr(fcx.tcx()));
+        debug!("ProbeContext: steps for self_ty={} are {}",
+               self_ty.repr(fcx.tcx()),
+               steps.repr(fcx.tcx()));
 
         ProbeContext {
             fcx: fcx,
@@ -438,20 +443,26 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
     pub fn pick(mut self) -> PickResult {
         let steps = self.steps.clone();
 
-        for step in steps.iter().enumerate() {
+        for step in steps.iter() {
             match self.pick_step(step) {
-                Some(r) => { return r; }
+                Some(r) => {
+                    if r.is_err() {
+                        self.tcx().sess.span_bug(self.span, "Unexpected failure to resolve method");
+                    }
+                    return r;
+                }
                 None => { }
             }
         }
 
+        self.tcx().sess.span_bug(self.span, "Unexpected failure to resolve method");
         Err(NoMatch(self.static_candidates))
     }
 
     fn pick_step(&mut self, step: &ProbeStep) -> Option<PickResult> {
         debug!("pick_step: step={}", step.repr(self.tcx()));
 
-        match self.pick_adusted_method(step) {
+        match self.pick_adjusted_method(step) {
             Some(result) => return Some(result),
             None => {}
         }
@@ -481,13 +492,11 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
 
         let tcx = self.tcx();
         self.search_mutabilities(
-            autoderefs,
             |m| AutoRef(m, box step.adjustment.clone()),
             |m,r| ty::mk_rptr(tcx, r, ty::mt {ty:step.self_ty, mutbl:m}))
     }
 
     fn search_mutabilities(&mut self,
-                           autoderefs: uint,
                            mk_adjustment: |ast::Mutability| -> PickAdjustment,
                            mk_autoref_ty: |ast::Mutability, ty::Region| -> ty::t)
                            -> Option<PickResult>
@@ -537,9 +546,13 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                   .filter(|&probe| self.consider_probe(self_ty, probe))
                   .collect();
 
+        debug!("applicable_probes (start): {}", applicable_probes.repr(self.tcx()));
+
         if applicable_probes.len() > 1 {
             applicable_probes.retain(|&p| self.winnow_probe(self_ty, p));
         }
+
+        debug!("applicable_probes (winnow): {}", applicable_probes.repr(self.tcx()));
 
         if applicable_probes.len() > 1 {
             let sources = probes.iter().map(|p| p.to_source()).collect();
@@ -559,18 +572,31 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
     }
 
     fn winnow_probe(&self, self_ty: ty::t, probe: &Probe) -> bool {
+        debug!("winnow_probe(self_ty={}, probe={})",
+               self_ty.repr(self.tcx()),
+               probe.repr(self.tcx()));
         match probe.kind {
             InherentImplProbe(impl_def_id, ref substs) |
             ExtensionImplProbe(impl_def_id, _, ref substs, _) => {
                 // Check whether the impl imposes obligations we have to worry about.
-                let obligations = traits::impl_obligations(self.tcx(),
-                                                           traits::ObligationCause::misc(self.span),
-                                                           impl_def_id,
-                                                           substs);
-                let mut selcx = traits::SelectionContext::new(self.infcx(),
-                                                              &self.fcx.inh.param_env,
-                                                              self.fcx);
-                obligations.all(|o| selcx.evaluate_obligation_intracrate(o))
+                self.infcx().probe(|| {
+                    let obligations =
+                        traits::impl_obligations(
+                            self.tcx(),
+                            traits::ObligationCause::misc(self.span),
+                            impl_def_id,
+                            substs);
+
+                    self.remake_sub_ty(self_ty, probe.xform_self_ty);
+
+                    debug!("impl_obligations={}", obligations.repr(self.tcx()));
+
+                    let mut selcx = traits::SelectionContext::new(self.infcx(),
+                                                                  &self.fcx.inh.param_env,
+                                                                  self.fcx);
+
+                    obligations.all(|o| selcx.evaluate_obligation_intracrate(o))
+                })
             }
 
             ObjectProbe(_) |
@@ -584,6 +610,21 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
 
     ///////////////////////////////////////////////////////////////////////////
     // MISCELLANY
+
+    fn remake_sub_ty(&self, sub: ty::t, sup: ty::t) {
+        match self.infcx().sub_types(false, infer::Misc(DUMMY_SP),
+                                     sub, sup) {
+            Ok(()) => { }
+            Err(ref e) => {
+                self.tcx().sess.span_bug(
+                    self.span,
+                    format!("failed to remake subtype: {} <: {} = {}",
+                            self.infcx().ty_to_string(sub),
+                            self.infcx().ty_to_string(sup),
+                            ty::type_err_to_str(self.tcx(), e))[]);
+            }
+        }
+    }
 
     fn has_applicable_self(&self, method: &ty::Method) -> bool {
         // "fast track" -- check for usage of sugar
@@ -713,7 +754,8 @@ impl Probe {
         match self.kind {
             InherentImplProbe(def_id, _) => ImplSource(def_id),
             ObjectProbe(ref obj) => TraitSource(obj.trait_ref.def_id),
-            ExtensionImplProbe(_, ref trait_ref, _, _) => TraitSource(trait_ref.def_id),
+            //ExtensionImplProbe(_, ref trait_ref, _, _) => TraitSource(trait_ref.def_id),
+            ExtensionImplProbe(def_id, _, _, _) => ImplSource(def_id),
             UnboxedClosureImplProbe(def_id) => TraitSource(def_id),
             WhereClauseProbe(ref trait_ref, index) => TraitSource(trait_ref.def_id),
         }
@@ -743,5 +785,34 @@ impl Repr for ProbeKind {
             WhereClauseProbe(ref a, ref b) =>
                 format!("WhereClauseProbe({},{})", a.repr(tcx), b),
         }
+    }
+}
+
+impl Repr for ProbeStep {
+    fn repr(&self, tcx: &ty::ctxt) -> String {
+        format!("ProbeStep({},{})",
+                self.self_ty.repr(tcx),
+                self.adjustment)
+    }
+}
+
+impl Repr for PickAdjustment {
+    fn repr(&self, _tcx: &ty::ctxt) -> String {
+        format!("{}", self)
+    }
+}
+
+impl Repr for PickKind {
+    fn repr(&self, _tcx: &ty::ctxt) -> String {
+        format!("{}", self)
+    }
+}
+
+impl Repr for Pick {
+    fn repr(&self, tcx: &ty::ctxt) -> String {
+        format!("Pick(method_ty={}, adjustment={}, kind={})",
+                self.method_ty.repr(tcx),
+                self.adjustment,
+                self.kind)
     }
 }
