@@ -111,7 +111,7 @@ pub trait ErrorReporting {
 
     fn values_str(&self, values: &ValuePairs) -> Option<String>;
 
-    fn expected_found_str<T:UserString+Resolvable>(
+    fn expected_found_str<T: UserString + Resolvable>(
         &self,
         exp_found: &ty::expected_found<T>)
         -> Option<String>;
@@ -396,16 +396,12 @@ impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
          * or None if this is a derived error.
          */
         match *values {
-            infer::Types(ref exp_found) => {
-                self.expected_found_str(exp_found)
-            }
-            infer::TraitRefs(ref exp_found) => {
-                self.expected_found_str(exp_found)
-            }
+            infer::Types(ref exp_found) => self.expected_found_str(exp_found),
+            infer::TraitRefs(ref exp_found) => self.expected_found_str(exp_found)
         }
     }
 
-    fn expected_found_str<T:UserString+Resolvable>(
+    fn expected_found_str<T: UserString + Resolvable>(
         &self,
         exp_found: &ty::expected_found<T>)
         -> Option<String>
@@ -442,9 +438,12 @@ impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
                 self.tcx.sess.span_err(
                     origin.span(),
                     format!(
-                        "the parameter type `{}` may not live long enough; \
-                         consider adding an explicit lifetime bound `{}:{}`...",
-                        param_ty.user_string(self.tcx),
+                        "the parameter type `{}` may not live long enough",
+                        param_ty.user_string(self.tcx)).as_slice());
+                self.tcx.sess.span_help(
+                    origin.span(),
+                    format!(
+                        "consider adding an explicit lifetime bound `{}: {}`...",
                         param_ty.user_string(self.tcx),
                         sub.user_string(self.tcx)).as_slice());
             }
@@ -454,9 +453,12 @@ impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
                 self.tcx.sess.span_err(
                     origin.span(),
                     format!(
-                        "the parameter type `{}` may not live long enough; \
-                         consider adding an explicit lifetime bound `{}:'static`...",
-                        param_ty.user_string(self.tcx),
+                        "the parameter type `{}` may not live long enough",
+                        param_ty.user_string(self.tcx)).as_slice());
+                self.tcx.sess.span_help(
+                    origin.span(),
+                    format!(
+                        "consider adding an explicit lifetime bound `{}: 'static`...",
                         param_ty.user_string(self.tcx)).as_slice());
             }
 
@@ -465,9 +467,12 @@ impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
                 self.tcx.sess.span_err(
                     origin.span(),
                     format!(
-                        "the parameter type `{}` may not live long enough; \
-                         consider adding an explicit lifetime bound to `{}`",
-                        param_ty.user_string(self.tcx),
+                        "the parameter type `{}` may not live long enough",
+                        param_ty.user_string(self.tcx)).as_slice());
+                self.tcx.sess.span_help(
+                    origin.span(),
+                    format!(
+                        "consider adding an explicit lifetime bound to `{}`",
                         param_ty.user_string(self.tcx)).as_slice());
                 note_and_explain_region(
                     self.tcx,
@@ -1104,7 +1109,8 @@ impl<'a, 'tcx> Rebuilder<'a, 'tcx> {
                     let tr = &poly_tr.trait_ref;
                     let last_seg = tr.path.segments.last().unwrap();
                     let mut insert = Vec::new();
-                    for (i, lt) in last_seg.lifetimes.iter().enumerate() {
+                    let lifetimes = last_seg.parameters.lifetimes();
+                    for (i, lt) in lifetimes.iter().enumerate() {
                         if region_names.contains(&lt.name) {
                             insert.push(i);
                         }
@@ -1112,7 +1118,7 @@ impl<'a, 'tcx> Rebuilder<'a, 'tcx> {
                     let rebuild_info = RebuildPathInfo {
                         path: &tr.path,
                         indexes: insert,
-                        expected: last_seg.lifetimes.len(),
+                        expected: lifetimes.len(),
                         anon_nums: &HashSet::new(),
                         region_names: region_names
                     };
@@ -1256,7 +1262,7 @@ impl<'a, 'tcx> Rebuilder<'a, 'tcx> {
                             let expected =
                                 generics.regions.len(subst::TypeSpace);
                             let lifetimes =
-                                &path.segments.last().unwrap().lifetimes;
+                                path.segments.last().unwrap().parameters.lifetimes();
                             let mut insert = Vec::new();
                             if lifetimes.len() == 0 {
                                 let anon = self.cur_anon.get();
@@ -1356,7 +1362,8 @@ impl<'a, 'tcx> Rebuilder<'a, 'tcx> {
     fn rebuild_path(&self,
                     rebuild_info: RebuildPathInfo,
                     lifetime: ast::Lifetime)
-                    -> ast::Path {
+                    -> ast::Path
+    {
         let RebuildPathInfo {
             path,
             indexes,
@@ -1366,37 +1373,48 @@ impl<'a, 'tcx> Rebuilder<'a, 'tcx> {
         } = rebuild_info;
 
         let last_seg = path.segments.last().unwrap();
-        let mut new_lts = Vec::new();
-        if last_seg.lifetimes.len() == 0 {
-            // traverse once to see if there's a need to insert lifetime
-            let need_insert = range(0, expected).any(|i| {
-                indexes.contains(&i)
-            });
-            if need_insert {
-                for i in range(0, expected) {
-                    if indexes.contains(&i) {
-                        new_lts.push(lifetime);
-                    } else {
-                        new_lts.push(self.life_giver.give_lifetime());
+        let new_parameters = match last_seg.parameters {
+            ast::ParenthesizedParameters(..) => {
+                last_seg.parameters.clone()
+            }
+
+            ast::AngleBracketedParameters(ref data) => {
+                let mut new_lts = Vec::new();
+                if data.lifetimes.len() == 0 {
+                    // traverse once to see if there's a need to insert lifetime
+                    let need_insert = range(0, expected).any(|i| {
+                        indexes.contains(&i)
+                    });
+                    if need_insert {
+                        for i in range(0, expected) {
+                            if indexes.contains(&i) {
+                                new_lts.push(lifetime);
+                            } else {
+                                new_lts.push(self.life_giver.give_lifetime());
+                            }
+                        }
+                    }
+                } else {
+                    for (i, lt) in data.lifetimes.iter().enumerate() {
+                        if indexes.contains(&i) {
+                            new_lts.push(lifetime);
+                        } else {
+                            new_lts.push(*lt);
+                        }
                     }
                 }
+                let new_types = data.types.map(|t| {
+                    self.rebuild_arg_ty_or_output(&**t, lifetime, anon_nums, region_names)
+                });
+                ast::AngleBracketedParameters(ast::AngleBracketedParameterData {
+                    lifetimes: new_lts,
+                    types: new_types
+                })
             }
-        } else {
-            for (i, lt) in last_seg.lifetimes.iter().enumerate() {
-                if indexes.contains(&i) {
-                    new_lts.push(lifetime);
-                } else {
-                    new_lts.push(*lt);
-                }
-            }
-        }
-        let new_types = last_seg.types.map(|t| {
-            self.rebuild_arg_ty_or_output(&**t, lifetime, anon_nums, region_names)
-        });
+        };
         let new_seg = ast::PathSegment {
             identifier: last_seg.identifier,
-            lifetimes: new_lts,
-            types: new_types,
+            parameters: new_parameters
         };
         let mut new_segs = Vec::new();
         new_segs.push_all(path.segments.init());

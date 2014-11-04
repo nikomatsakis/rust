@@ -166,12 +166,28 @@ pub trait Folder {
         noop_fold_path(p, self)
     }
 
+    fn fold_path_parameters(&mut self, p: PathParameters) -> PathParameters {
+        noop_fold_path_parameters(p, self)
+    }
+
+    fn fold_angle_bracketed_parameter_data(&mut self, p: AngleBracketedParameterData)
+                                           -> AngleBracketedParameterData
+    {
+        noop_fold_angle_bracketed_parameter_data(p, self)
+    }
+
+    fn fold_parenthesized_parameter_data(&mut self, p: ParenthesizedParameterData)
+                                         -> ParenthesizedParameterData
+    {
+        noop_fold_parenthesized_parameter_data(p, self)
+    }
+
     fn fold_local(&mut self, l: P<Local>) -> P<Local> {
         noop_fold_local(l, self)
     }
 
     fn fold_mac(&mut self, _macro: Mac) -> Mac {
-        fail!("fold_mac disabled by default");
+        panic!("fold_mac disabled by default");
         // NB: see note about macros above.
         // if you really want a folder that
         // works on macros, use this
@@ -487,13 +503,41 @@ pub fn noop_fold_uint<T: Folder>(i: uint, _: &mut T) -> uint {
 pub fn noop_fold_path<T: Folder>(Path {global, segments, span}: Path, fld: &mut T) -> Path {
     Path {
         global: global,
-        segments: segments.move_map(|PathSegment {identifier, lifetimes, types}| PathSegment {
+        segments: segments.move_map(|PathSegment {identifier, parameters}| PathSegment {
             identifier: fld.fold_ident(identifier),
-            lifetimes: fld.fold_lifetimes(lifetimes),
-            types: types.move_map(|typ| fld.fold_ty(typ)),
+            parameters: fld.fold_path_parameters(parameters),
         }),
         span: fld.new_span(span)
     }
+}
+
+pub fn noop_fold_path_parameters<T: Folder>(path_parameters: PathParameters, fld: &mut T)
+                                            -> PathParameters
+{
+    match path_parameters {
+        AngleBracketedParameters(data) =>
+            AngleBracketedParameters(fld.fold_angle_bracketed_parameter_data(data)),
+        ParenthesizedParameters(data) =>
+            ParenthesizedParameters(fld.fold_parenthesized_parameter_data(data)),
+    }
+}
+
+pub fn noop_fold_angle_bracketed_parameter_data<T: Folder>(data: AngleBracketedParameterData,
+                                                           fld: &mut T)
+                                                           -> AngleBracketedParameterData
+{
+    let AngleBracketedParameterData { lifetimes, types } = data;
+    AngleBracketedParameterData { lifetimes: fld.fold_lifetimes(lifetimes),
+                                  types: types.move_map(|ty| fld.fold_ty(ty)) }
+}
+
+pub fn noop_fold_parenthesized_parameter_data<T: Folder>(data: ParenthesizedParameterData,
+                                                         fld: &mut T)
+                                                         -> ParenthesizedParameterData
+{
+    let ParenthesizedParameterData { inputs, output } = data;
+    ParenthesizedParameterData { inputs: inputs.move_map(|ty| fld.fold_ty(ty)),
+                                 output: output.map(|ty| fld.fold_ty(ty)) }
 }
 
 pub fn noop_fold_local<T: Folder>(l: P<Local>, fld: &mut T) -> P<Local> {
@@ -576,16 +620,25 @@ pub fn noop_fold_arg<T: Folder>(Arg {id, pat, ty}: Arg, fld: &mut T) -> Arg {
 
 pub fn noop_fold_tt<T: Folder>(tt: &TokenTree, fld: &mut T) -> TokenTree {
     match *tt {
-        TTTok(span, ref tok) =>
-            TTTok(span, fld.fold_token(tok.clone())),
-        TTDelim(ref tts) => TTDelim(Rc::new(fld.fold_tts(tts.as_slice()))),
-        TTSeq(span, ref pattern, ref sep, is_optional) =>
-            TTSeq(span,
-                  Rc::new(fld.fold_tts(pattern.as_slice())),
-                  sep.clone().map(|tok| fld.fold_token(tok)),
-                  is_optional),
-        TTNonterminal(sp,ref ident) =>
-            TTNonterminal(sp,fld.fold_ident(*ident))
+        TtToken(span, ref tok) =>
+            TtToken(span, fld.fold_token(tok.clone())),
+        TtDelimited(span, ref delimed) => {
+            TtDelimited(span, Rc::new(
+                            Delimited {
+                                delim: delimed.delim,
+                                open_span: delimed.open_span,
+                                tts: fld.fold_tts(delimed.tts.as_slice()),
+                                close_span: delimed.close_span,
+                            }
+                        ))
+        },
+        TtSequence(span, ref pattern, ref sep, is_optional) =>
+            TtSequence(span,
+                       Rc::new(fld.fold_tts(pattern.as_slice())),
+                       sep.clone().map(|tok| fld.fold_token(tok)),
+                       is_optional),
+        TtNonterminal(sp,ref ident) =>
+            TtNonterminal(sp,fld.fold_ident(*ident))
     }
 }
 
@@ -596,11 +649,11 @@ pub fn noop_fold_tts<T: Folder>(tts: &[TokenTree], fld: &mut T) -> Vec<TokenTree
 // apply ident folder if it's an ident, apply other folds to interpolated nodes
 pub fn noop_fold_token<T: Folder>(t: token::Token, fld: &mut T) -> token::Token {
     match t {
-        token::IDENT(id, followed_by_colons) => {
-            token::IDENT(fld.fold_ident(id), followed_by_colons)
+        token::Ident(id, followed_by_colons) => {
+            token::Ident(fld.fold_ident(id), followed_by_colons)
         }
-        token::LIFETIME(id) => token::LIFETIME(fld.fold_ident(id)),
-        token::INTERPOLATED(nt) => token::INTERPOLATED(fld.fold_interpolated(nt)),
+        token::Lifetime(id) => token::Lifetime(fld.fold_ident(id)),
+        token::Interpolated(nt) => token::Interpolated(fld.fold_interpolated(nt)),
         _ => t
     }
 }
@@ -791,19 +844,16 @@ pub fn noop_fold_typedef<T>(t: Typedef, folder: &mut T)
 
 pub fn noop_fold_associated_type<T>(at: AssociatedType, folder: &mut T)
                                     -> AssociatedType
-                                    where T: Folder {
-    let new_id = folder.new_id(at.id);
-    let new_span = folder.new_span(at.span);
-    let new_ident = folder.fold_ident(at.ident);
+                                    where T: Folder
+{
     let new_attrs = at.attrs
                       .iter()
                       .map(|attr| folder.fold_attribute((*attr).clone()))
                       .collect();
+    let new_param = folder.fold_ty_param(at.ty_param);
     ast::AssociatedType {
-        ident: new_ident,
         attrs: new_attrs,
-        id: new_id,
-        span: new_span,
+        ty_param: new_param,
     }
 }
 
@@ -1405,7 +1455,7 @@ mod test {
                 let a_val = $a;
                 let b_val = $b;
                 if !(pred_val(a_val.as_slice(),b_val.as_slice())) {
-                    fail!("expected args satisfying {}, got {} and {}",
+                    panic!("expected args satisfying {}, got {} and {}",
                           $predname, a_val, b_val);
                 }
             }

@@ -10,13 +10,12 @@
 
 //! Utilities for formatting and printing strings
 
-#![allow(unused_variable)]
+#![allow(unused_variables)]
 
 use any;
 use cell::{Cell, Ref, RefMut};
-use collections::Collection;
 use iter::{Iterator, range};
-use kinds::Copy;
+use kinds::{Copy, Sized};
 use mem;
 use option::{Option, Some, None};
 use ops::Deref;
@@ -168,101 +167,103 @@ impl<'a> Show for Arguments<'a> {
 /// When a format is not otherwise specified, types are formatted by ascribing
 /// to this trait. There is not an explicit way of selecting this trait to be
 /// used for formatting, it is only if no other format is specified.
-pub trait Show {
+pub trait Show for Sized? {
     /// Formats the value using the given formatter.
     fn fmt(&self, &mut Formatter) -> Result;
 }
 
 /// Format trait for the `b` character
-pub trait Bool {
+pub trait Bool for Sized? {
     /// Formats the value using the given formatter.
     fn fmt(&self, &mut Formatter) -> Result;
 }
 
 /// Format trait for the `c` character
-pub trait Char {
+pub trait Char for Sized? {
     /// Formats the value using the given formatter.
     fn fmt(&self, &mut Formatter) -> Result;
 }
 
 /// Format trait for the `i` and `d` characters
-pub trait Signed {
+pub trait Signed for Sized? {
     /// Formats the value using the given formatter.
     fn fmt(&self, &mut Formatter) -> Result;
 }
 
 /// Format trait for the `u` character
-pub trait Unsigned {
+pub trait Unsigned for Sized? {
     /// Formats the value using the given formatter.
     fn fmt(&self, &mut Formatter) -> Result;
 }
 
 /// Format trait for the `o` character
-pub trait Octal {
+pub trait Octal for Sized? {
     /// Formats the value using the given formatter.
     fn fmt(&self, &mut Formatter) -> Result;
 }
 
 /// Format trait for the `t` character
-pub trait Binary {
+pub trait Binary for Sized? {
     /// Formats the value using the given formatter.
     fn fmt(&self, &mut Formatter) -> Result;
 }
 
 /// Format trait for the `x` character
-pub trait LowerHex {
+pub trait LowerHex for Sized? {
     /// Formats the value using the given formatter.
     fn fmt(&self, &mut Formatter) -> Result;
 }
 
 /// Format trait for the `X` character
-pub trait UpperHex {
+pub trait UpperHex for Sized? {
     /// Formats the value using the given formatter.
     fn fmt(&self, &mut Formatter) -> Result;
 }
 
 /// Format trait for the `s` character
-pub trait String {
+pub trait String for Sized? {
     /// Formats the value using the given formatter.
     fn fmt(&self, &mut Formatter) -> Result;
 }
 
 /// Format trait for the `p` character
-pub trait Pointer {
+pub trait Pointer for Sized? {
     /// Formats the value using the given formatter.
     fn fmt(&self, &mut Formatter) -> Result;
 }
 
 /// Format trait for the `f` character
-pub trait Float {
+pub trait Float for Sized? {
     /// Formats the value using the given formatter.
     fn fmt(&self, &mut Formatter) -> Result;
 }
 
 /// Format trait for the `e` character
-pub trait LowerExp {
+pub trait LowerExp for Sized? {
     /// Formats the value using the given formatter.
     fn fmt(&self, &mut Formatter) -> Result;
 }
 
 /// Format trait for the `E` character
-pub trait UpperExp {
+pub trait UpperExp for Sized? {
     /// Formats the value using the given formatter.
     fn fmt(&self, &mut Formatter) -> Result;
 }
 
-// FIXME #11938 - UFCS would make us able call the above methods
-// directly Show::show(x, fmt).
+// NOTE(stage0): Remove macro after next snapshot
+#[cfg(stage0)]
 macro_rules! uniform_fn_call_workaround {
     ($( $name: ident, $trait_: ident; )*) => {
         $(
             #[doc(hidden)]
-            pub fn $name<T: $trait_>(x: &T, fmt: &mut Formatter) -> Result {
+            pub fn $name<Sized? T: $trait_>(x: &T, fmt: &mut Formatter) -> Result {
                 x.fmt(fmt)
             }
             )*
     }
 }
+// NOTE(stage0): Remove macro after next snapshot
+#[cfg(stage0)]
 uniform_fn_call_workaround! {
     secret_show, Show;
     secret_bool, Bool;
@@ -569,42 +570,79 @@ pub fn argument<'a, T>(f: extern "Rust" fn(&T, &mut Formatter) -> Result,
 
 /// When the compiler determines that the type of an argument *must* be a string
 /// (such as for select), then it invokes this method.
+// NOTE(stage0): remove function after a snapshot
+#[cfg(stage0)]
 #[doc(hidden)] #[inline]
 pub fn argumentstr<'a>(s: &'a &str) -> Argument<'a> {
     argument(secret_string, s)
 }
 
+/// When the compiler determines that the type of an argument *must* be a string
+/// (such as for select), then it invokes this method.
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+#[doc(hidden)] #[inline]
+pub fn argumentstr<'a>(s: &'a &str) -> Argument<'a> {
+    argument(String::fmt, s)
+}
+
 /// When the compiler determines that the type of an argument *must* be a uint
 /// (such as for plural), then it invokes this method.
+// NOTE(stage0): remove function after a snapshot
+#[cfg(stage0)]
 #[doc(hidden)] #[inline]
 pub fn argumentuint<'a>(s: &'a uint) -> Argument<'a> {
     argument(secret_unsigned, s)
 }
 
+/// When the compiler determines that the type of an argument *must* be a uint
+/// (such as for plural), then it invokes this method.
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+#[doc(hidden)] #[inline]
+pub fn argumentuint<'a>(s: &'a uint) -> Argument<'a> {
+    argument(Unsigned::fmt, s)
+}
+
 // Implementations of the core formatting traits
 
-impl<'a, T: Show> Show for &'a T {
-    fn fmt(&self, f: &mut Formatter) -> Result { secret_show(*self, f) }
+impl<'a, Sized? T: Show> Show for &'a T {
+    fn fmt(&self, f: &mut Formatter) -> Result { (**self).fmt(f) }
 }
-impl<'a, T: Show> Show for &'a mut T {
-    fn fmt(&self, f: &mut Formatter) -> Result { secret_show(&**self, f) }
+impl<'a, Sized? T: Show> Show for &'a mut T {
+    fn fmt(&self, f: &mut Formatter) -> Result { (**self).fmt(f) }
 }
 impl<'a> Show for &'a Show+'a {
     fn fmt(&self, f: &mut Formatter) -> Result { (*self).fmt(f) }
 }
 
+// NOTE(stage0): remove impl after a snapshot
+#[cfg(stage0)]
 impl Bool for bool {
     fn fmt(&self, f: &mut Formatter) -> Result {
         secret_string(&(if *self {"true"} else {"false"}), f)
     }
 }
 
-impl<'a, T: str::Str> String for T {
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+impl Bool for bool {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        String::fmt(if *self { "true" } else { "false" }, f)
+    }
+}
+
+impl<T: str::Str> String for T {
     fn fmt(&self, f: &mut Formatter) -> Result {
         f.pad(self.as_slice())
     }
 }
 
+impl String for str {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        f.pad(self)
+    }
+}
+
+// NOTE(stage0): remove impl after a snapshot
+#[cfg(stage0)]
 impl Char for char {
     fn fmt(&self, f: &mut Formatter) -> Result {
         use char::Char;
@@ -616,25 +654,77 @@ impl Char for char {
     }
 }
 
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+impl Char for char {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        use char::Char;
+
+        let mut utf8 = [0u8, ..4];
+        let amt = self.encode_utf8(utf8).unwrap_or(0);
+        let s: &str = unsafe { mem::transmute(utf8[..amt]) };
+        String::fmt(s, f)
+    }
+}
+
+// NOTE(stage0): remove impl after a snapshot
+#[cfg(stage0)]
 impl<T> Pointer for *const T {
     fn fmt(&self, f: &mut Formatter) -> Result {
         f.flags |= 1 << (rt::FlagAlternate as uint);
         secret_lower_hex::<uint>(&(*self as uint), f)
     }
 }
+
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+impl<T> Pointer for *const T {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        f.flags |= 1 << (rt::FlagAlternate as uint);
+        LowerHex::fmt(&(*self as uint), f)
+    }
+}
+
+// NOTE(stage0): remove impl after a snapshot
+#[cfg(stage0)]
 impl<T> Pointer for *mut T {
     fn fmt(&self, f: &mut Formatter) -> Result {
         secret_pointer::<*const T>(&(*self as *const T), f)
     }
 }
+
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+impl<T> Pointer for *mut T {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        Pointer::fmt(&(*self as *const T), f)
+    }
+}
+
+// NOTE(stage0): remove impl after a snapshot
+#[cfg(stage0)]
 impl<'a, T> Pointer for &'a T {
     fn fmt(&self, f: &mut Formatter) -> Result {
         secret_pointer::<*const T>(&(&**self as *const T), f)
     }
 }
+
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+impl<'a, T> Pointer for &'a T {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        Pointer::fmt(&(*self as *const T), f)
+    }
+}
+
+// NOTE(stage0): remove impl after a snapshot
+#[cfg(stage0)]
 impl<'a, T> Pointer for &'a mut T {
     fn fmt(&self, f: &mut Formatter) -> Result {
         secret_pointer::<*const T>(&(&**self as *const T), f)
+    }
+}
+
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+impl<'a, T> Pointer for &'a mut T {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        Pointer::fmt(&(&**self as *const T), f)
     }
 }
 
@@ -707,24 +797,67 @@ floating!(f64)
 
 // Implementation of Show for various core types
 
+// NOTE(stage0): remove macro after a snapshot
+#[cfg(stage0)]
 macro_rules! delegate(($ty:ty to $other:ident) => {
-    impl<'a> Show for $ty {
+    impl Show for $ty {
         fn fmt(&self, f: &mut Formatter) -> Result {
             (concat_idents!(secret_, $other)(self, f))
         }
     }
 })
-delegate!(&'a str to string)
+
+// NOTE(stage0): remove these macros after a snapshot
+#[cfg(stage0)]
+delegate!(str to string)
+#[cfg(stage0)]
 delegate!(bool to bool)
+#[cfg(stage0)]
 delegate!(char to char)
+#[cfg(stage0)]
 delegate!(f32 to float)
+#[cfg(stage0)]
 delegate!(f64 to float)
 
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+macro_rules! delegate(($ty:ty to $other:ident) => {
+    impl Show for $ty {
+        fn fmt(&self, f: &mut Formatter) -> Result {
+            $other::fmt(self, f)
+        }
+    }
+})
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+delegate!(str to String)
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+delegate!(bool to Bool)
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+delegate!(char to Char)
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+delegate!(f32 to Float)
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+delegate!(f64 to Float)
+
+// NOTE(stage0): remove impl after a snapshot
+#[cfg(stage0)]
 impl<T> Show for *const T {
     fn fmt(&self, f: &mut Formatter) -> Result { secret_pointer(self, f) }
 }
+
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+impl<T> Show for *const T {
+    fn fmt(&self, f: &mut Formatter) -> Result { Pointer::fmt(self, f) }
+}
+
+// NOTE(stage0): remove impl after a snapshot
+#[cfg(stage0)]
 impl<T> Show for *mut T {
     fn fmt(&self, f: &mut Formatter) -> Result { secret_pointer(self, f) }
+}
+
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+impl<T> Show for *mut T {
+    fn fmt(&self, f: &mut Formatter) -> Result { Pointer::fmt(self, f) }
 }
 
 macro_rules! peel(($name:ident, $($other:ident,)*) => (tuple!($($other,)*)))
@@ -733,7 +866,7 @@ macro_rules! tuple (
     () => ();
     ( $($name:ident,)+ ) => (
         impl<$($name:Show),*> Show for ($($name,)*) {
-            #[allow(non_snake_case, dead_assignment)]
+            #[allow(non_snake_case, unused_assignments)]
             fn fmt(&self, f: &mut Formatter) -> Result {
                 try!(write!(f, "("));
                 let ($(ref $name,)*) = *self;
@@ -761,7 +894,7 @@ impl<'a> Show for &'a any::Any+'a {
     fn fmt(&self, f: &mut Formatter) -> Result { f.pad("&Any") }
 }
 
-impl<'a, T: Show> Show for &'a [T] {
+impl<T: Show> Show for [T] {
     fn fmt(&self, f: &mut Formatter) -> Result {
         if f.flags & (1 << (rt::FlagAlternate as uint)) == 0 {
             try!(write!(f, "["));
@@ -779,12 +912,6 @@ impl<'a, T: Show> Show for &'a [T] {
             try!(write!(f, "]"));
         }
         Ok(())
-    }
-}
-
-impl<'a, T: Show> Show for &'a mut [T] {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        secret_show(&self.as_slice(), f)
     }
 }
 

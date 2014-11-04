@@ -625,11 +625,11 @@ fn const_expr_unadjusted(cx: &CrateContext, e: &ast::Expr) -> ValueRef {
           }
           ast::ExprPath(ref pth) => {
             // Assert that there are no type parameters in this path.
-            assert!(pth.segments.iter().all(|seg| seg.types.is_empty()));
+            assert!(pth.segments.iter().all(|seg| !seg.parameters.has_types()));
 
             let opt_def = cx.tcx().def_map.borrow().find_copy(&e.id);
             match opt_def {
-                Some(def::DefFn(def_id, _fn_style, _)) => {
+                Some(def::DefFn(def_id, _)) => {
                     if !ast_util::is_local(def_id) {
                         let ty = csearch::get_type(cx.tcx(), def_id).ty;
                         base::trans_external_path(cx, def_id, ty)

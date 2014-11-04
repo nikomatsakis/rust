@@ -39,7 +39,7 @@ pub fn run(config: Config, testfile: String) {
 
         "arm-linux-androideabi" => {
             if !config.adb_device_status {
-                fail!("android device not available");
+                panic!("android device not available");
             }
         }
 
@@ -316,7 +316,7 @@ actual:\n\
 ------------------------------------------\n\
 \n",
                      expected, actual);
-            fail!();
+            panic!();
         }
     }
 
@@ -364,7 +364,7 @@ fn run_debuginfo_gdb_test(config: &Config, props: &TestProps, testfile: &Path) {
         commands,
         check_lines,
         use_gdb_pretty_printer,
-        ..
+        breakpoint_lines
     } = parse_debugger_commands(testfile, "gdb");
     let mut cmds = commands.connect("\n");
 
@@ -535,10 +535,21 @@ fn run_debuginfo_gdb_test(config: &Config, props: &TestProps, testfile: &Path) {
                 }
             }
 
+            // The following line actually doesn't have to do anything with
+            // pretty printing, it just tells GDB to print values on one line:
+            script_str.push_str("set print pretty off\n");
+
             // Load the target executable
             script_str.push_str(format!("file {}\n",
                                         exe_file.as_str().unwrap().replace("\\", "\\\\"))
                                     .as_slice());
+
+            // Add line breakpoints
+            for line in breakpoint_lines.iter() {
+                script_str.push_str(format!("break '{}':{}\n",
+                                            testfile.filename_display(),
+                                            *line)[]);
+            }
 
             script_str.push_str(cmds.as_slice());
             script_str.push_str("quit\n");
@@ -616,7 +627,7 @@ fn find_rust_src_root(config: &Config) -> Option<Path> {
     let path_postfix = Path::new("src/etc/lldb_batchmode.py");
 
     while path.pop() {
-        if path.join(path_postfix.clone()).is_file() {
+        if path.join(&path_postfix).is_file() {
             return Some(path);
         }
     }
@@ -1013,7 +1024,7 @@ fn check_expected_errors(expected_errors: Vec<errors::ExpectedError> ,
                 if prefix_matches(line, prefixes[i].as_slice()) &&
                     line.contains(ee.kind.as_slice()) &&
                     line.contains(ee.msg.as_slice()) {
-                    *found_flags.get_mut(i) = true;
+                    found_flags[i] = true;
                     was_expected = true;
                     break;
                 }
@@ -1453,7 +1464,7 @@ fn maybe_dump_to_stdout(config: &Config, out: &str, err: &str) {
 
 fn error(err: &str) { println!("\nerror: {}", err); }
 
-fn fatal(err: &str) -> ! { error(err); fail!(); }
+fn fatal(err: &str) -> ! { error(err); panic!(); }
 
 fn fatal_proc_rec(err: &str, proc_res: &ProcRes) -> ! {
     print!("\n\
@@ -1471,7 +1482,7 @@ stderr:\n\
 \n",
              err, proc_res.status, proc_res.cmdline, proc_res.stdout,
              proc_res.stderr);
-    fail!();
+    panic!();
 }
 
 fn _arm_exec_compiled_test(config: &Config,

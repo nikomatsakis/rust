@@ -107,7 +107,7 @@ pub trait Visitor<'v> {
         walk_explicit_self(self, es)
     }
     fn visit_mac(&mut self, _macro: &'v Mac) {
-        fail!("visit_mac disabled by default");
+        panic!("visit_mac disabled by default");
         // NB: see note about macros above.
         // if you really want a visitor that
         // works on macros, use this
@@ -424,11 +424,23 @@ pub fn walk_path<'v, V: Visitor<'v>>(visitor: &mut V, path: &'v Path) {
     for segment in path.segments.iter() {
         visitor.visit_ident(path.span, segment.identifier);
 
-        for typ in segment.types.iter() {
-            visitor.visit_ty(&**typ);
-        }
-        for lifetime in segment.lifetimes.iter() {
-            visitor.visit_lifetime_ref(lifetime);
+        match segment.parameters {
+            ast::AngleBracketedParameters(ref data) => {
+                for typ in data.types.iter() {
+                    visitor.visit_ty(&**typ);
+                }
+                for lifetime in data.lifetimes.iter() {
+                    visitor.visit_lifetime_ref(lifetime);
+                }
+            }
+            ast::ParenthesizedParameters(ref data) => {
+                for typ in data.inputs.iter() {
+                    visitor.visit_ty(&**typ);
+                }
+                for typ in data.output.iter() {
+                    visitor.visit_ty(&**typ);
+                }
+            }
         }
     }
 }
@@ -613,7 +625,8 @@ pub fn walk_trait_item<'v, V: Visitor<'v>>(visitor: &mut V, trait_method: &'v Tr
         RequiredMethod(ref method_type) => visitor.visit_ty_method(method_type),
         ProvidedMethod(ref method) => walk_method_helper(visitor, &**method),
         TypeTraitItem(ref associated_type) => {
-            visitor.visit_ident(associated_type.span, associated_type.ident)
+            visitor.visit_ident(associated_type.ty_param.span,
+                                associated_type.ty_param.ident)
         }
     }
 }

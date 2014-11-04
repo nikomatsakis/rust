@@ -43,9 +43,8 @@
  *   taken to it, implementing them for Rust seems difficult.
  */
 
-#![allow(unsigned_negate)]
+#![allow(unsigned_negation)]
 
-use std::collections::Map;
 use std::num::Int;
 use std::rc::Rc;
 
@@ -176,8 +175,8 @@ fn represent_type_uncached(cx: &CrateContext, t: ty::t) -> Repr {
 
             return Univariant(mk_struct(cx, ftys.as_slice(), packed, t), dtor)
         }
-        ty::ty_unboxed_closure(def_id, _) => {
-            let upvars = ty::unboxed_closure_upvars(cx.tcx(), def_id);
+        ty::ty_unboxed_closure(def_id, _, ref substs) => {
+            let upvars = ty::unboxed_closure_upvars(cx.tcx(), def_id, substs);
             let upvar_types = upvars.iter().map(|u| u.ty).collect::<Vec<_>>();
             return Univariant(mk_struct(cx, upvar_types.as_slice(), false, t),
                               false)
@@ -393,12 +392,12 @@ fn mk_cenum(cx: &CrateContext, hint: Hint, bounds: &IntBounds) -> Repr {
 fn range_to_inttype(cx: &CrateContext, hint: Hint, bounds: &IntBounds) -> IntType {
     debug!("range_to_inttype: {} {}", hint, bounds);
     // Lists of sizes to try.  u64 is always allowed as a fallback.
-    #[allow(non_uppercase_statics)]
+    #[allow(non_upper_case_globals)]
     static choose_shortest: &'static[IntType] = &[
         attr::UnsignedInt(ast::TyU8), attr::SignedInt(ast::TyI8),
         attr::UnsignedInt(ast::TyU16), attr::SignedInt(ast::TyI16),
         attr::UnsignedInt(ast::TyU32), attr::SignedInt(ast::TyI32)];
-    #[allow(non_uppercase_statics)]
+    #[allow(non_upper_case_globals)]
     static at_least_32: &'static[IntType] = &[
         attr::UnsignedInt(ast::TyU32), attr::SignedInt(ast::TyI32)];
 
@@ -586,7 +585,7 @@ fn generic_type_of(cx: &CrateContext,
                                  Type::array(&Type::i64(cx), align_units),
                 a if a.count_ones() == 1 => Type::array(&Type::vector(&Type::i32(cx), a / 4),
                                                               align_units),
-                _ => fail!("unsupported enum alignment: {}", align)
+                _ => panic!("unsupported enum alignment: {}", align)
             };
             assert_eq!(machine::llalign_of_min(cx, pad_ty), align);
             assert_eq!(align_s % discr_size, 0);

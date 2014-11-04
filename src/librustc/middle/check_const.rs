@@ -119,12 +119,18 @@ fn check_expr(v: &mut CheckCrateVisitor, e: &Expr) -> bool {
             }
         }
         ExprLit(_) => (),
-        ExprCast(_, _) => {
-            let ety = ty::expr_ty(v.tcx, e);
-            if !ty::type_is_numeric(ety) && !ty::type_is_unsafe_ptr(ety) {
+        ExprCast(ref from, _) => {
+            let toty = ty::expr_ty(v.tcx, e);
+            let fromty = ty::expr_ty(v.tcx, &**from);
+            if !ty::type_is_numeric(toty) && !ty::type_is_unsafe_ptr(toty) {
                 span_err!(v.tcx.sess, e.span, E0012,
                           "can not cast to `{}` in a constant expression",
-                          ppaux::ty_to_string(v.tcx, ety));
+                          ppaux::ty_to_string(v.tcx, toty));
+            }
+            if ty::type_is_unsafe_ptr(fromty) && ty::type_is_numeric(toty) {
+                span_err!(v.tcx.sess, e.span, E0018,
+                          "can not cast a pointer to an integer in a constant \
+                           expression");
             }
         }
         ExprPath(ref pth) => {
@@ -132,7 +138,7 @@ fn check_expr(v: &mut CheckCrateVisitor, e: &Expr) -> bool {
             // to handle on-demand instantiation of functions via
             // foo::<bar> in a const. Currently that is only done on
             // a path in trans::callee that only works in block contexts.
-            if !pth.segments.iter().all(|segment| segment.types.is_empty()) {
+            if !pth.segments.iter().all(|segment| segment.parameters.is_empty()) {
                 span_err!(v.tcx.sess, e.span, E0013,
                           "paths in constants may only refer to items without \
                            type parameters");

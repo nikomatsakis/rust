@@ -21,6 +21,7 @@ use attr::{AttrMetaMethods, AttributeMethods};
 use codemap::{CodeMap, BytePos};
 use codemap;
 use diagnostic;
+use parse::token::{BinOpToken, Token};
 use parse::token;
 use parse::lexer::comments;
 use parse;
@@ -89,10 +90,10 @@ pub fn rust_printer_annotated<'a>(writer: Box<io::Writer+'static>,
     }
 }
 
-#[allow(non_uppercase_statics)]
+#[allow(non_upper_case_globals)]
 pub const indent_unit: uint = 4u;
 
-#[allow(non_uppercase_statics)]
+#[allow(non_upper_case_globals)]
 pub const default_columns: uint = 78u;
 
 /// Requires you to pass an input filename and reader so that
@@ -168,16 +169,108 @@ pub fn to_string(f: |&mut State| -> IoResult<()>) -> String {
     let mut s = rust_printer(box MemWriter::new());
     f(&mut s).unwrap();
     eof(&mut s.s).unwrap();
-    unsafe {
+    let wr = unsafe {
         // FIXME(pcwalton): A nasty function to extract the string from an `io::Writer`
         // that we "know" to be a `MemWriter` that works around the lack of checked
         // downcasts.
-        let obj: TraitObject = mem::transmute_copy(&s.s.out);
-        let wr: Box<MemWriter> = mem::transmute(obj.data);
-        let result =
-            String::from_utf8(wr.get_ref().as_slice().to_vec()).unwrap();
-        mem::forget(wr);
-        result.to_string()
+        let obj: &TraitObject = mem::transmute(&s.s.out);
+        mem::transmute::<*mut (), &MemWriter>(obj.data)
+    };
+    String::from_utf8(wr.get_ref().to_vec()).unwrap()
+}
+
+pub fn binop_to_string(op: BinOpToken) -> &'static str {
+    match op {
+        token::Plus     => "+",
+        token::Minus    => "-",
+        token::Star     => "*",
+        token::Slash    => "/",
+        token::Percent  => "%",
+        token::Caret    => "^",
+        token::And      => "&",
+        token::Or       => "|",
+        token::Shl      => "<<",
+        token::Shr      => ">>",
+    }
+}
+
+pub fn token_to_string(tok: &Token) -> String {
+    match *tok {
+        token::Eq                   => "=".into_string(),
+        token::Lt                   => "<".into_string(),
+        token::Le                   => "<=".into_string(),
+        token::EqEq                 => "==".into_string(),
+        token::Ne                   => "!=".into_string(),
+        token::Ge                   => ">=".into_string(),
+        token::Gt                   => ">".into_string(),
+        token::Not                  => "!".into_string(),
+        token::Tilde                => "~".into_string(),
+        token::OrOr                 => "||".into_string(),
+        token::AndAnd               => "&&".into_string(),
+        token::BinOp(op)            => binop_to_string(op).into_string(),
+        token::BinOpEq(op)          => format!("{}=", binop_to_string(op)),
+
+        /* Structural symbols */
+        token::At                   => "@".into_string(),
+        token::Dot                  => ".".into_string(),
+        token::DotDot               => "..".into_string(),
+        token::DotDotDot            => "...".into_string(),
+        token::Comma                => ",".into_string(),
+        token::Semi                 => ";".into_string(),
+        token::Colon                => ":".into_string(),
+        token::ModSep               => "::".into_string(),
+        token::RArrow               => "->".into_string(),
+        token::LArrow               => "<-".into_string(),
+        token::FatArrow             => "=>".into_string(),
+        token::OpenDelim(token::Paren) => "(".into_string(),
+        token::CloseDelim(token::Paren) => ")".into_string(),
+        token::OpenDelim(token::Bracket) => "[".into_string(),
+        token::CloseDelim(token::Bracket) => "]".into_string(),
+        token::OpenDelim(token::Brace) => "{".into_string(),
+        token::CloseDelim(token::Brace) => "}".into_string(),
+        token::Pound                => "#".into_string(),
+        token::Dollar               => "$".into_string(),
+        token::Question             => "?".into_string(),
+
+        /* Literals */
+        token::LitByte(b)           => format!("b'{}'", b.as_str()),
+        token::LitChar(c)           => format!("'{}'", c.as_str()),
+        token::LitFloat(c)          => c.as_str().into_string(),
+        token::LitInteger(c)        => c.as_str().into_string(),
+        token::LitStr(s)            => format!("\"{}\"", s.as_str()),
+        token::LitStrRaw(s, n)      => format!("r{delim}\"{string}\"{delim}",
+                                               delim="#".repeat(n),
+                                               string=s.as_str()),
+        token::LitBinary(v)         => format!("b\"{}\"", v.as_str()),
+        token::LitBinaryRaw(s, n)   => format!("br{delim}\"{string}\"{delim}",
+                                               delim="#".repeat(n),
+                                               string=s.as_str()),
+
+        /* Name components */
+        token::Ident(s, _)          => token::get_ident(s).get().into_string(),
+        token::Lifetime(s)          => format!("{}", token::get_ident(s)),
+        token::Underscore           => "_".into_string(),
+
+        /* Other */
+        token::DocComment(s)        => s.as_str().into_string(),
+        token::Eof                  => "<eof>".into_string(),
+        token::Whitespace           => " ".into_string(),
+        token::Comment              => "/* */".into_string(),
+        token::Shebang(s)           => format!("/* shebang: {}*/", s.as_str()),
+
+        token::Interpolated(ref nt) => match *nt {
+            token::NtExpr(ref e)  => expr_to_string(&**e),
+            token::NtMeta(ref e)  => meta_item_to_string(&**e),
+            token::NtTy(ref e)    => ty_to_string(&**e),
+            token::NtPath(ref e)  => path_to_string(&**e),
+            token::NtItem(..)     => "an interpolated item".into_string(),
+            token::NtBlock(..)    => "an interpolated block".into_string(),
+            token::NtStmt(..)     => "an interpolated statement".into_string(),
+            token::NtPat(..)      => "an interpolated pattern".into_string(),
+            token::NtIdent(..)    => "an interpolated identifier".into_string(),
+            token::NtTT(..)       => "an interpolated tt".into_string(),
+            token::NtMatchers(..) => "an interpolated matcher sequence".into_string(),
+        }
     }
 }
 
@@ -222,6 +315,10 @@ pub fn stmt_to_string(stmt: &ast::Stmt) -> String {
 
 pub fn item_to_string(i: &ast::Item) -> String {
     $to_string(|s| s.print_item(i))
+}
+
+pub fn view_item_to_string(i: &ast::ViewItem) -> String {
+    $to_string(|s| s.print_view_item(i))
 }
 
 pub fn generics_to_string(generics: &ast::Generics) -> String {
@@ -721,9 +818,11 @@ impl<'a> State<'a> {
     }
 
     fn print_associated_type(&mut self, typedef: &ast::AssociatedType)
-                             -> IoResult<()> {
+                             -> IoResult<()>
+    {
+        try!(self.print_outer_attributes(typedef.attrs[]));
         try!(self.word_space("type"));
-        try!(self.print_ident(typedef.ident));
+        try!(self.print_ty_param(&typedef.ty_param));
         word(&mut self.s, ";")
     }
 
@@ -977,7 +1076,7 @@ impl<'a> State<'a> {
                     Inconsistent, struct_def.fields.as_slice(),
                     |s, field| {
                         match field.node.kind {
-                            ast::NamedField(..) => fail!("unexpected named field"),
+                            ast::NamedField(..) => panic!("unexpected named field"),
                             ast::UnnamedField(vis) => {
                                 try!(s.print_visibility(vis));
                                 try!(s.maybe_print_comment(field.span.lo));
@@ -998,7 +1097,7 @@ impl<'a> State<'a> {
 
             for field in struct_def.fields.iter() {
                 match field.node.kind {
-                    ast::UnnamedField(..) => fail!("unexpected unnamed field"),
+                    ast::UnnamedField(..) => panic!("unexpected unnamed field"),
                     ast::NamedField(ident, visibility) => {
                         try!(self.hardbreak_if_not_bol());
                         try!(self.maybe_print_comment(field.span.lo));
@@ -1025,32 +1124,40 @@ impl<'a> State<'a> {
     /// expression arguments as expressions). It can be done! I think.
     pub fn print_tt(&mut self, tt: &ast::TokenTree) -> IoResult<()> {
         match *tt {
-            ast::TTDelim(ref tts) => self.print_tts(tts.as_slice()),
-            ast::TTTok(_, ref tk) => {
-                try!(word(&mut self.s, parse::token::to_string(tk).as_slice()));
+            ast::TtDelimited(_, ref delimed) => {
+                try!(word(&mut self.s, token_to_string(&delimed.open_token()).as_slice()));
+                try!(space(&mut self.s));
+                try!(self.print_tts(delimed.tts.as_slice()));
+                try!(space(&mut self.s));
+                word(&mut self.s, token_to_string(&delimed.close_token()).as_slice())
+            },
+            ast::TtToken(_, ref tk) => {
+                try!(word(&mut self.s, token_to_string(tk).as_slice()));
                 match *tk {
-                    parse::token::DOC_COMMENT(..) => {
+                    parse::token::DocComment(..) => {
                         hardbreak(&mut self.s)
                     }
                     _ => Ok(())
                 }
             }
-            ast::TTSeq(_, ref tts, ref sep, zerok) => {
+            ast::TtSequence(_, ref tts, ref separator, kleene_op) => {
                 try!(word(&mut self.s, "$("));
                 for tt_elt in (*tts).iter() {
                     try!(self.print_tt(tt_elt));
                 }
                 try!(word(&mut self.s, ")"));
-                match *sep {
+                match *separator {
                     Some(ref tk) => {
-                        try!(word(&mut self.s,
-                                  parse::token::to_string(tk).as_slice()));
+                        try!(word(&mut self.s, token_to_string(tk).as_slice()));
                     }
-                    None => ()
+                    None => {},
                 }
-                word(&mut self.s, if zerok { "*" } else { "+" })
+                match kleene_op {
+                    ast::ZeroOrMore => word(&mut self.s, "*"),
+                    ast::OneOrMore => word(&mut self.s, "+"),
+                }
             }
-            ast::TTNonterminal(_, name) => {
+            ast::TtNonterminal(_, name) => {
                 try!(word(&mut self.s, "$"));
                 self.print_ident(name)
             }
@@ -1336,7 +1443,7 @@ impl<'a> State<'a> {
                     }
                     // BLEAH, constraints would be great here
                     _ => {
-                        fail!("print_if saw if with weird alternative");
+                        panic!("print_if saw if with weird alternative");
                     }
                 }
             }
@@ -1892,14 +1999,34 @@ impl<'a> State<'a> {
 
             try!(self.print_ident(segment.identifier));
 
-            if !segment.lifetimes.is_empty() || !segment.types.is_empty() {
-                if colons_before_params {
-                    try!(word(&mut self.s, "::"))
-                }
+            try!(self.print_path_parameters(&segment.parameters, colons_before_params));
+        }
+
+        match *opt_bounds {
+            None => Ok(()),
+            Some(ref bounds) => self.print_bounds("+", bounds)
+        }
+    }
+
+    fn print_path_parameters(&mut self,
+                             parameters: &ast::PathParameters,
+                             colons_before_params: bool)
+                             -> IoResult<()>
+    {
+        if parameters.is_empty() {
+            return Ok(());
+        }
+
+        if colons_before_params {
+            try!(word(&mut self.s, "::"))
+        }
+
+        match *parameters {
+            ast::AngleBracketedParameters(ref data) => {
                 try!(word(&mut self.s, "<"));
 
                 let mut comma = false;
-                for lifetime in segment.lifetimes.iter() {
+                for lifetime in data.lifetimes.iter() {
                     if comma {
                         try!(self.word_space(","))
                     }
@@ -1907,24 +2034,38 @@ impl<'a> State<'a> {
                     comma = true;
                 }
 
-                if !segment.types.is_empty() {
+                if !data.types.is_empty() {
                     if comma {
                         try!(self.word_space(","))
                     }
                     try!(self.commasep(
                         Inconsistent,
-                        segment.types.as_slice(),
+                        data.types.as_slice(),
                         |s, ty| s.print_type(&**ty)));
                 }
 
                 try!(word(&mut self.s, ">"))
             }
+
+            ast::ParenthesizedParameters(ref data) => {
+                try!(word(&mut self.s, "("));
+                try!(self.commasep(
+                    Inconsistent,
+                    data.inputs.as_slice(),
+                    |s, ty| s.print_type(&**ty)));
+                try!(word(&mut self.s, ")"));
+
+                match data.output {
+                    None => { }
+                    Some(ref ty) => {
+                        try!(self.word_space("->"));
+                        try!(self.print_type(&**ty));
+                    }
+                }
+            }
         }
 
-        match *opt_bounds {
-            None => Ok(()),
-            Some(ref bounds) => self.print_bounds("+", bounds)
-        }
+        Ok(())
     }
 
     fn print_path(&mut self, path: &ast::Path,
@@ -1988,8 +2129,10 @@ impl<'a> State<'a> {
                     Consistent, fields.as_slice(),
                     |s, f| {
                         try!(s.cbox(indent_unit));
-                        try!(s.print_ident(f.node.ident));
-                        try!(s.word_nbsp(":"));
+                        if !f.node.is_shorthand {
+                            try!(s.print_ident(f.node.ident));
+                            try!(s.word_nbsp(":"));
+                        }
                         try!(s.print_pat(&*f.node.pat));
                         s.end()
                     },
@@ -2329,28 +2472,32 @@ impl<'a> State<'a> {
             } else {
                 let idx = idx - generics.lifetimes.len();
                 let param = generics.ty_params.get(idx);
-                match param.unbound {
-                    Some(ref tref) => {
-                        try!(s.print_trait_ref(tref));
-                        try!(s.word_space("?"));
-                    }
-                    _ => {}
-                }
-                try!(s.print_ident(param.ident));
-                try!(s.print_bounds(":", &param.bounds));
-                match param.default {
-                    Some(ref default) => {
-                        try!(space(&mut s.s));
-                        try!(s.word_space("="));
-                        s.print_type(&**default)
-                    }
-                    _ => Ok(())
-                }
+                s.print_ty_param(param)
             }
         }));
 
         try!(word(&mut self.s, ">"));
         Ok(())
+    }
+
+    pub fn print_ty_param(&mut self, param: &ast::TyParam) -> IoResult<()> {
+        match param.unbound {
+            Some(ref tref) => {
+                try!(self.print_trait_ref(tref));
+                try!(self.word_space("?"));
+            }
+            _ => {}
+        }
+        try!(self.print_ident(param.ident));
+        try!(self.print_bounds(":", &param.bounds));
+        match param.default {
+            Some(ref default) => {
+                try!(space(&mut self.s));
+                try!(self.word_space("="));
+                self.print_type(&**default)
+            }
+            _ => Ok(())
+        }
     }
 
     pub fn print_where_clause(&mut self, generics: &ast::Generics)

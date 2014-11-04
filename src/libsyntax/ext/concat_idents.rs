@@ -12,7 +12,6 @@ use ast;
 use codemap::Span;
 use ext::base::*;
 use ext::base;
-use owned_slice::OwnedSlice;
 use parse::token;
 use parse::token::{str_to_ident};
 use ptr::P;
@@ -23,21 +22,21 @@ pub fn expand_syntax_ext<'cx>(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree]
     for (i, e) in tts.iter().enumerate() {
         if i & 1 == 1 {
             match *e {
-                ast::TTTok(_, token::COMMA) => (),
+                ast::TtToken(_, token::Comma) => {},
                 _ => {
                     cx.span_err(sp, "concat_idents! expecting comma.");
                     return DummyResult::expr(sp);
-                }
+                },
             }
         } else {
             match *e {
-                ast::TTTok(_, token::IDENT(ident,_)) => {
+                ast::TtToken(_, token::Ident(ident, _)) => {
                     res_str.push_str(token::get_ident(ident).get())
-                }
+                },
                 _ => {
                     cx.span_err(sp, "concat_idents! requires ident args.");
                     return DummyResult::expr(sp);
-                }
+                },
             }
         }
     }
@@ -52,8 +51,7 @@ pub fn expand_syntax_ext<'cx>(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree]
                  segments: vec!(
                     ast::PathSegment {
                         identifier: res,
-                        lifetimes: Vec::new(),
-                        types: OwnedSlice::empty(),
+                        parameters: ast::PathParameters::none(),
                     }
                 )
             }

@@ -38,9 +38,7 @@ use syntax::parse::token;
 use syntax::ptr::P;
 use syntax;
 
-use libc;
 use std::io::Seek;
-use std::mem;
 use std::rc::Rc;
 
 use rbml::io::SeekableMemWriter;
@@ -81,7 +79,7 @@ pub fn encode_inlined_item(ecx: &e::EncodeContext,
         e::IIForeignRef(i) => i.id,
         e::IITraitItemRef(_, &ast::ProvidedMethod(ref m)) => m.id,
         e::IITraitItemRef(_, &ast::RequiredMethod(ref m)) => m.id,
-        e::IITraitItemRef(_, &ast::TypeTraitItem(ref ti)) => ti.id,
+        e::IITraitItemRef(_, &ast::TypeTraitItem(ref ti)) => ti.ty_param.id,
         e::IIImplItemRef(_, &ast::MethodImplItem(ref m)) => m.id,
         e::IIImplItemRef(_, &ast::TypeImplItem(ref ti)) => ti.id,
     };
@@ -156,7 +154,7 @@ pub fn decode_inlined_item<'tcx>(cdata: &cstore::crate_metadata,
                 match *ti {
                     ast::ProvidedMethod(ref m) => m.pe_ident(),
                     ast::RequiredMethod(ref ty_m) => ty_m.ident,
-                    ast::TypeTraitItem(ref ti) => ti.ident,
+                    ast::TypeTraitItem(ref ti) => ti.ty_param.ident,
                 }
             },
             ast::IIImplItem(_, ref m) => {
@@ -341,7 +339,7 @@ impl Folder for NestedItemsDropper {
                             ast::DeclItem(_) => false,
                         }
                     }
-                    ast::StmtMac(..) => fail!("unexpanded macro in astencode")
+                    ast::StmtMac(..) => panic!("unexpanded macro in astencode")
                 };
                 if use_stmt {
                     Some(stmt)
@@ -440,21 +438,14 @@ fn decode_def(dcx: &DecodeContext, doc: rbml::Doc) -> def::Def {
 impl tr for def::Def {
     fn tr(&self, dcx: &DecodeContext) -> def::Def {
         match *self {
-          def::DefFn(did, p, is_ctor) => def::DefFn(did.tr(dcx), p, is_ctor),
-          def::DefStaticMethod(did, wrapped_did2, p) => {
-            def::DefStaticMethod(did.tr(dcx),
-                                   match wrapped_did2 {
-                                    def::FromTrait(did2) => {
-                                        def::FromTrait(did2.tr(dcx))
-                                    }
-                                    def::FromImpl(did2) => {
-                                        def::FromImpl(did2.tr(dcx))
-                                    }
-                                   },
-                                   p)
+          def::DefFn(did, is_ctor) => def::DefFn(did.tr(dcx), is_ctor),
+          def::DefStaticMethod(did, p) => {
+            def::DefStaticMethod(did.tr(dcx), p.map(|did2| did2.tr(dcx)))
           }
           def::DefMethod(did0, did1, p) => {
-            def::DefMethod(did0.tr(dcx), did1.map(|did1| did1.tr(dcx)), p)
+            def::DefMethod(did0.tr(dcx),
+                           did1.map(|did1| did1.tr(dcx)),
+                           p.map(|did2| did2.tr(dcx)))
           }
           def::DefSelfTy(nid) => { def::DefSelfTy(dcx.tr_id(nid)) }
           def::DefMod(did) => { def::DefMod(did.tr(dcx)) }
@@ -718,8 +709,9 @@ impl<'a> vtable_decoder_helpers for reader::Decoder<'a> {
     {
         let types = self.read_to_vec(|this| Ok(f(this))).unwrap();
         let selfs = self.read_to_vec(|this| Ok(f(this))).unwrap();
+        let assocs = self.read_to_vec(|this| Ok(f(this))).unwrap();
         let fns = self.read_to_vec(|this| Ok(f(this))).unwrap();
-        VecPerParamSpace::new(types, selfs, fns)
+        VecPerParamSpace::new(types, selfs, assocs, fns)
     }
 
     fn read_vtable_res_with_key(&mut self,
@@ -795,7 +787,7 @@ impl<'a> vtable_decoder_helpers for reader::Decoder<'a> {
                   3 => {
                     typeck::vtable_error
                   }
-                  _ => fail!("bad enum variant")
+                  _ => panic!("bad enum variant")
                 })
             })
         }).unwrap()
@@ -1132,27 +1124,15 @@ impl<'a> write_tag_and_id for Encoder<'a> {
     }
 }
 
-struct SideTableEncodingIdVisitor<'a,'b:'a> {
-    ecx_ptr: *const libc::c_void,
-    new_rbml_w: &'a mut Encoder<'b>,
+struct SideTableEncodingIdVisitor<'a, 'b:'a, 'c:'a, 'tcx:'c> {
+    ecx: &'a e::EncodeContext<'c, 'tcx>,
+    rbml_w: &'a mut Encoder<'b>,
 }
 
-impl<'a,'b> ast_util::IdVisitingOperation for
-        SideTableEncodingIdVisitor<'a,'b> {
-    fn visit_id(&self, id: ast::NodeId) {
-        // Note: this will cause a copy of rbml_w, which is bad as
-        // it is mutable. But I believe it's harmless since we generate
-        // balanced EBML.
-        //
-        // FIXME(pcwalton): Don't copy this way.
-        let mut new_rbml_w = unsafe {
-            self.new_rbml_w.unsafe_clone()
-        };
-        // See above
-        let ecx: &e::EncodeContext = unsafe {
-            mem::transmute(self.ecx_ptr)
-        };
-        encode_side_tables_for_id(ecx, &mut new_rbml_w, id)
+impl<'a, 'b, 'c, 'tcx> ast_util::IdVisitingOperation for
+        SideTableEncodingIdVisitor<'a, 'b, 'c, 'tcx> {
+    fn visit_id(&mut self, id: ast::NodeId) {
+        encode_side_tables_for_id(self.ecx, self.rbml_w, id)
     }
 }
 
@@ -1160,18 +1140,9 @@ fn encode_side_tables_for_ii(ecx: &e::EncodeContext,
                              rbml_w: &mut Encoder,
                              ii: &ast::InlinedItem) {
     rbml_w.start_tag(c::tag_table as uint);
-    let mut new_rbml_w = unsafe {
-        rbml_w.unsafe_clone()
-    };
-
-    // Because the ast visitor uses @IdVisitingOperation, I can't pass in
-    // ecx directly, but /I/ know that it'll be fine since the lifetime is
-    // tied to the CrateContext that lives throughout this entire section.
-    ast_util::visit_ids_for_inlined_item(ii, &SideTableEncodingIdVisitor {
-        ecx_ptr: unsafe {
-            mem::transmute(ecx)
-        },
-        new_rbml_w: &mut new_rbml_w,
+    ast_util::visit_ids_for_inlined_item(ii, &mut SideTableEncodingIdVisitor {
+        ecx: ecx,
+        rbml_w: rbml_w
     });
     rbml_w.end_tag();
 }
@@ -1491,7 +1462,7 @@ impl<'a> rbml_decoder_decoder_helpers for reader::Decoder<'a> {
                         }).unwrap()
                     }
 
-                    _ => fail!("..")
+                    _ => panic!("..")
                 })
             })
         }).unwrap()
@@ -1621,7 +1592,7 @@ impl<'a> rbml_decoder_decoder_helpers for reader::Decoder<'a> {
 
                         ty::AdjustDerefRef(auto_deref_ref)
                     }
-                    _ => fail!("bad enum variant for ty::AutoAdjustment")
+                    _ => panic!("bad enum variant for ty::AutoAdjustment")
                 })
             })
         }).unwrap()
@@ -1698,7 +1669,7 @@ impl<'a> rbml_decoder_decoder_helpers for reader::Decoder<'a> {
 
                         ty::AutoUnsafe(m, a)
                     }
-                    _ => fail!("bad enum variant for ty::AutoRef")
+                    _ => panic!("bad enum variant for ty::AutoRef")
                 })
             })
         }).unwrap()
@@ -1739,7 +1710,7 @@ impl<'a> rbml_decoder_decoder_helpers for reader::Decoder<'a> {
                             this.read_enum_variant_arg(1, |this| Ok(this.read_ty(dcx))).unwrap();
                         ty::UnsizeVtable(ty_trait, self_ty)
                     }
-                    _ => fail!("bad enum variant for ty::UnsizeKind")
+                    _ => panic!("bad enum variant for ty::UnsizeKind")
                 })
             })
         }).unwrap()
@@ -1765,7 +1736,7 @@ impl<'a> rbml_decoder_decoder_helpers for reader::Decoder<'a> {
                 0 => ty::FnUnboxedClosureKind,
                 1 => ty::FnMutUnboxedClosureKind,
                 2 => ty::FnOnceUnboxedClosureKind,
-                _ => fail!("bad enum variant for ty::UnboxedClosureKind"),
+                _ => panic!("bad enum variant for ty::UnboxedClosureKind"),
             })
         }).unwrap();
         ty::UnboxedClosure {
@@ -2035,6 +2006,6 @@ fn test_simplification() {
         assert!(pprust::item_to_string(&*item_out) ==
                 pprust::item_to_string(&*item_exp));
       }
-      _ => fail!()
+      _ => panic!()
     }
 }
