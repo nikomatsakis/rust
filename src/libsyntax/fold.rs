@@ -428,12 +428,6 @@ pub fn noop_fold_ty<T: Folder>(t: P<Ty>, fld: &mut T) -> P<Ty> {
                     decl: fld.fold_fn_decl(decl)
                 }))
             }
-            TyUnboxedFn(f) => {
-                TyUnboxedFn(f.map(|UnboxedFnTy {decl, kind}| UnboxedFnTy {
-                    decl: fld.fold_fn_decl(decl),
-                    kind: kind,
-                }))
-            }
             TyTup(tys) => TyTup(tys.move_map(|ty| fld.fold_ty(ty))),
             TyParen(ty) => TyParen(fld.fold_ty(ty)),
             TyPath(path, bounds, id) => {

@@ -311,7 +311,6 @@ pub const DUMMY_NODE_ID: NodeId = -1;
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum TyParamBound {
     TraitTyParamBound(PolyTraitRef),
-    UnboxedFnTyParamBound(P<UnboxedFnBound>),
     RegionTyParamBound(Lifetime)
 }
 
@@ -1110,7 +1109,6 @@ pub enum Ty_ {
     TyClosure(P<ClosureTy>),
     TyProc(P<ClosureTy>),
     TyBareFn(P<BareFnTy>),
-    TyUnboxedFn(P<UnboxedFnTy>),
     TyTup(Vec<P<Ty>> ),
     TyPath(Path, Option<TyParamBounds>, NodeId), // for #7264; see above
     TyPolyTraitRef(P<PolyTraitRef>), // a type like `for<'a> Foo<&'a Bar>`

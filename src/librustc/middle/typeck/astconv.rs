@@ -410,7 +410,7 @@ pub fn ast_path_to_trait_ref<'tcx,AC,RS>(this: &AC,
                                                RS: RegionScope {
     let trait_def = this.get_trait_def(trait_def_id);
     Rc::new(ty::TraitRef {
-        binder_id: path.id,
+        binder_id: binder_id,
         def_id: trait_def_id,
         substs: ast_path_substs(this,
                                 rscope,
@@ -660,6 +660,7 @@ pub fn trait_ref_for_unboxed_function<'tcx, AC: AstConv<'tcx>,
     }
 
     ty::TraitRef {
+        binder_id: 
         def_id: trait_did,
         substs: substs,
     }
@@ -687,28 +688,6 @@ fn mk_pointer<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
         ast::TyVec(ref ty) => {
             let ty = ast_ty_to_ty(this, rscope, &**ty);
             return constr(ty::mk_vec(tcx, ty, None));
-        }
-        ast::TyUnboxedFn(ref unboxed_function) => {
-            let trait_ref =
-                trait_ref_for_unboxed_function(this,
-                                               rscope,
-                                               unboxed_function.kind,
-                                               &*unboxed_function.decl,
-                                               None);
-            let r = ptr_ty.default_region();
-            let tr = ty::mk_trait(this.tcx(),
-                                  Rc::new(trait_ref),
-                                  ty::region_existential_bound(r));
-            match ptr_ty {
-                Uniq => {
-                    return ty::mk_uniq(this.tcx(), tr);
-                }
-                RPtr(r) => {
-                    return ty::mk_rptr(this.tcx(),
-                                       r,
-                                       ty::mt {mutbl: a_seq_mutbl, ty: tr});
-                }
-            }
         }
         ast::TyPath(ref path, ref opt_bounds, id) => {
             // Note that the "bounds must be empty if path is not a trait"
@@ -750,10 +729,7 @@ fn mk_pointer<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
                                                     bounds.as_slice())
                         }
                     };
-                    let tr = ty::mk_trait(tcx,
-                                          result.def_id,
-                                          result.substs.clone(),
-                                          bounds);
+                    let tr = ty::mk_trait(tcx, result, bounds);
                     return match ptr_ty {
                         Uniq => {
                             return ty::mk_uniq(tcx, tr);
@@ -987,10 +963,7 @@ pub fn ast_ty_to_ty<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
                                                              ast_ty.span,
                                                              &[result.clone()],
                                                              ast_bounds);
-                        ty::mk_trait(tcx,
-                                     result.def_id,
-                                     result.substs.clone(),
-                                     bounds)
+                        ty::mk_trait(tcx, result, bounds)
                     }
                     def::DefTy(did, _) | def::DefStruct(did) => {
                         ast_path_to_ty(this, rscope, did, path, id).ty

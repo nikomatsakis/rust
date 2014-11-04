@@ -741,18 +741,6 @@ impl<'a> State<'a> {
                                       None,
                                       None));
             }
-            ast::TyUnboxedFn(ref f) => {
-                try!(self.print_ty_fn(None,
-                                      None,
-                                      ast::NormalFn,
-                                      ast::Many,
-                                      &*f.decl,
-                                      None,
-                                      &OwnedSlice::empty(),
-                                      None,
-                                      None,
-                                      Some(f.kind)));
-            }
             ast::TyPath(ref path, ref bounds, _) => {
                 try!(self.print_bounded_path(path, bounds));
             }

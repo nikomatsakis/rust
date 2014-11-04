@@ -140,11 +140,11 @@ pub fn check_object_safety(tcx: &ty::ctxt, object_trait: &ty::TyTrait, span: Spa
     // `call_once` which is the method which takes self by value. What could go
     // wrong?
     match tcx.lang_items.fn_once_trait() {
-        Some(def_id) if def_id == object_trait.def_id => return,
+        Some(def_id) if def_id == object_trait.principal.def_id => return,
         _ => {}
     }
 
-    let trait_items = ty::trait_items(tcx, object_trait.def_id);
+    let trait_items = ty::trait_items(tcx, object_trait.principal.def_id);
 
     let mut errors = Vec::new();
     for item in trait_items.iter() {
@@ -158,7 +158,7 @@ pub fn check_object_safety(tcx: &ty::ctxt, object_trait: &ty::TyTrait, span: Spa
 
     let mut errors = errors.iter().flat_map(|x| x.iter()).peekable();
     if errors.peek().is_some() {
-        let trait_name = ty::item_path_str(tcx, object_trait.def_id);
+        let trait_name = ty::item_path_str(tcx, object_trait.principal.def_id);
         span_err!(tcx.sess, span, E0038,
             "cannot convert to a trait object because trait `{}` is not object-safe",
             trait_name);

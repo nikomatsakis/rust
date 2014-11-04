@@ -54,9 +54,9 @@ use ast::{TtNonterminal, TupleVariantKind, Ty, Ty_, TyBot};
 use ast::{TypeField, TyFixedLengthVec, TyClosure, TyProc, TyBareFn};
 use ast::{TyTypeof, TyInfer, TypeMethod};
 use ast::{TyNil, TyParam, TyParamBound, TyParen, TyPath, TyPtr, TyQPath};
-use ast::{TyRptr, TyTup, TyU32, TyUnboxedFn, TyUniq, TyVec, UnUniq};
+use ast::{TyRptr, TyTup, TyU32, TyUniq, TyVec, UnUniq};
 use ast::{TypeImplItem, TypeTraitItem, Typedef, UnboxedClosureKind};
-use ast::{UnboxedFnBound, UnboxedFnTy, UnboxedFnTyParamBound};
+use ast::{UnboxedFnBound};
 use ast::{UnnamedField, UnsafeBlock};
 use ast::{UnsafeFn, ViewItem, ViewItem_, ViewItemExternCrate, ViewItemUse};
 use ast::{ViewPath, ViewPathGlob, ViewPathList, ViewPathSimple};
@@ -1129,19 +1129,16 @@ impl<'a> Parser<'a> {
             Vec::new()
         };
 
-        let (optional_unboxed_closure_kind, inputs) = if self.eat(&token::OrOr) {
-            (None, Vec::new())
+        let inputs = if self.eat(&token::OrOr) {
+            Vec::new()
         } else {
             self.expect_or();
-
-            let optional_unboxed_closure_kind =
-                self.parse_optional_unboxed_closure_kind();
 
             let inputs = self.parse_seq_to_before_or(
                 &token::Comma,
                 |p| p.parse_arg_general(false));
             self.expect_or();
-            (optional_unboxed_closure_kind, inputs)
+            inputs
         };
 
         let bounds = self.parse_colon_then_ty_param_bounds();
@@ -1154,23 +1151,13 @@ impl<'a> Parser<'a> {
             variadic: false
         });
 
-        match optional_unboxed_closure_kind {
-            Some(unboxed_closure_kind) => {
-                TyUnboxedFn(P(UnboxedFnTy {
-                    kind: unboxed_closure_kind,
-                    decl: decl,
-                }))
-            }
-            None => {
-                TyClosure(P(ClosureTy {
-                    fn_style: fn_style,
-                    onceness: onceness,
-                    bounds: bounds,
-                    decl: decl,
-                    lifetimes: lifetime_defs,
-                }))
-            }
-        }
+        TyClosure(P(ClosureTy {
+            fn_style: fn_style,
+            onceness: onceness,
+            bounds: bounds,
+            decl: decl,
+            lifetimes: lifetime_defs,
+        }))
     }
 
     pub fn parse_unsafety(&mut self) -> FnStyle {
@@ -3943,35 +3930,15 @@ impl<'a> Parser<'a> {
                 token::ModSep | token::Ident(..) => {
                     let path =
                         self.parse_path(LifetimeAndTypesWithoutColons).path;
-                    if self.token == token::OpenDelim(token::Paren) {
-                        self.bump();
-                        let inputs = self.parse_seq_to_end(
-                            &token::CloseDelim(token::Paren),
-                            seq_sep_trailing_allowed(token::Comma),
-                            |p| p.parse_arg_general(false));
-                        let (return_style, output) = self.parse_ret_ty();
-                        result.push(UnboxedFnTyParamBound(P(UnboxedFnBound {
+                    let poly_trait_ref = ast::PolyTraitRef {
+                        bound_lifetimes: lifetime_defs,
+                        trait_ref: ast::TraitRef {
                             path: path,
-                            decl: P(FnDecl {
-                                inputs: inputs,
-                                output: output,
-                                cf: return_style,
-                                variadic: false,
-                            }),
-                            lifetimes: lifetime_defs,
                             ref_id: ast::DUMMY_NODE_ID,
-                        })));
-                    } else {
-                        let poly_trait_ref = ast::PolyTraitRef {
-                            bound_lifetimes: lifetime_defs,
-                            trait_ref: ast::TraitRef {
-                                path: path,
-                                ref_id: ast::DUMMY_NODE_ID,
-                                sugar: ast::AngleBrackets
-                            }
-                        };
-                        result.push(TraitTyParamBound(poly_trait_ref))
-                    }
+                            sugar: ast::AngleBrackets
+                        }
+                    };
+                    result.push(TraitTyParamBound(poly_trait_ref))
                 }
                 _ => break,
             }

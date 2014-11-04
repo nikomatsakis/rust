@@ -379,12 +379,6 @@ pub fn walk_ty<'v, V: Visitor<'v>>(visitor: &mut V, typ: &'v Ty) {
             visitor.visit_ty(&*function_declaration.decl.output);
             walk_lifetime_decls(visitor, &function_declaration.lifetimes);
         }
-        TyUnboxedFn(ref function_declaration) => {
-            for argument in function_declaration.decl.inputs.iter() {
-                visitor.visit_ty(&*argument.ty)
-            }
-            visitor.visit_ty(&*function_declaration.decl.output);
-        }
         TyPath(ref path, ref opt_bounds, id) => {
             visitor.visit_path(path, id);
             match *opt_bounds {
