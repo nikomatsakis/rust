@@ -8,10 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// force-host
+// Test that unboxed closures work with cross-crate inlining
+// Acts as a regression test for #16790, #18378 and #18543
 
-#![crate_type = "dylib"]
+// aux-build:unboxed-closures-cross-crate.rs
+extern crate "unboxed-closures-cross-crate" as ubcc;
 
-pub fn the_answer() -> int {
-    2
+fn main() {
+    assert_eq!(ubcc::has_closures(), 2u);
+    assert_eq!(ubcc::has_generic_closures(2u, 3u), 5u);
 }

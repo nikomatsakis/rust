@@ -8,10 +8,19 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// force-host
+#![feature(unboxed_closures, overloaded_calls)]
 
-#![crate_type = "dylib"]
+#[inline]
+pub fn has_closures() -> uint {
+    let x = 1u;
+    let mut f = move |&mut:| x;
+    let y = 1u;
+    let g = |:| y;
+    f() + g()
+}
 
-pub fn the_answer() -> int {
-    2
+pub fn has_generic_closures<T: Add<T,T> + Copy>(x: T, y: T) -> T {
+    let mut f = move |&mut:| x;
+    let g = |:| y;
+    f() + g()
 }
