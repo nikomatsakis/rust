@@ -145,7 +145,7 @@ pub fn lookup<'a, 'tcx>(
                     self_ty,
                     supplied_tps.to_vec(),
                     expr.id,
-                    self_expr.id)
+                    self_expr)
 }
 
 pub fn lookup_in_trait<'a, 'tcx>(

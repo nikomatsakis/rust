@@ -570,13 +570,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                   .filter(|&probe| self.consider_probe(self_ty, probe))
                   .collect();
 
-        debug!("applicable_probes (start): {}", applicable_probes.repr(self.tcx()));
-
-        if applicable_probes.len() > 1 {
-            applicable_probes.retain(|&p| self.winnow_probe(self_ty, p));
-        }
-
-        debug!("applicable_probes (winnow): {}", applicable_probes.repr(self.tcx()));
+        debug!("applicable_probes: {}", applicable_probes.repr(self.tcx()));
 
         if applicable_probes.len() > 1 {
             let sources = probes.iter().map(|p| p.to_source()).collect();
@@ -591,27 +585,28 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
 
     fn consider_probe(&self, self_ty: ty::t, probe: &Probe) -> bool {
         debug!("consider_probe: self_ty={} probe={}",
-               self_ty.repr(self.tcx()), probe.repr(self.tcx()));
-        infer::can_mk_subty(self.infcx(), self_ty, probe.xform_self_ty).is_ok()
-    }
-
-    fn winnow_probe(&self, self_ty: ty::t, probe: &Probe) -> bool {
-        debug!("winnow_probe(self_ty={}, probe={})",
                self_ty.repr(self.tcx()),
                probe.repr(self.tcx()));
-        match probe.kind {
-            InherentImplProbe(impl_def_id, ref substs) |
-            ExtensionImplProbe(impl_def_id, _, ref substs, _) => {
-                // Check whether the impl imposes obligations we have to worry about.
-                self.infcx().probe(|| {
+
+        self.infcx().probe(|| {
+            match self.make_sub_ty(self_ty, probe.xform_self_ty) {
+                Ok(()) => { }
+                Err(_) => {
+                    debug!("--> cannot relate self-types");
+                    return false;
+                }
+            }
+
+            match probe.kind {
+                InherentImplProbe(impl_def_id, ref substs) |
+                ExtensionImplProbe(impl_def_id, _, ref substs, _) => {
+                    // Check whether the impl imposes obligations we have to worry about.
                     let obligations =
                         traits::impl_obligations(
                             self.tcx(),
                             traits::ObligationCause::misc(self.span),
                             impl_def_id,
                             substs);
-
-                    self.remake_sub_ty(self_ty, probe.xform_self_ty);
 
                     debug!("impl_obligations={}", obligations.repr(self.tcx()));
 
@@ -620,24 +615,27 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                                                                   self.fcx);
 
                     obligations.all(|o| selcx.evaluate_obligation_intracrate(o))
-                })
-            }
+                }
 
-            ObjectProbe(_) |
-            UnboxedClosureImplProbe(_) |
-            WhereClauseProbe(_, _) => {
-                // These cannot be "winnowed" any further.
-                true
+                ObjectProbe(_) |
+                UnboxedClosureImplProbe(_) |
+                WhereClauseProbe(_, _) => {
+                    // These cannot be "winnowed" any further.
+                    true
+                }
             }
-        }
+        })
     }
 
     ///////////////////////////////////////////////////////////////////////////
     // MISCELLANY
 
+    fn make_sub_ty(&self, sub: ty::t, sup: ty::t) -> infer::ures {
+        self.infcx().sub_types(false, infer::Misc(DUMMY_SP), sub, sup)
+    }
+
     fn remake_sub_ty(&self, sub: ty::t, sup: ty::t) {
-        match self.infcx().sub_types(false, infer::Misc(DUMMY_SP),
-                                     sub, sup) {
+        match self.make_sub_ty(sub, sup) {
             Ok(()) => { }
             Err(ref e) => {
                 self.tcx().sess.span_bug(
@@ -759,7 +757,7 @@ impl Probe {
                     InherentImplPick(def_id)
                 }
                 ObjectProbe(ref data) => {
-                    ObjectPick(data.object_trait_id, data.method_num, data.real_index)
+                    ObjectPick(data.trait_ref.def_id, data.method_num, data.real_index)
                 }
                 ExtensionImplProbe(def_id, _, _, index) => {
                     ExtensionImplPick(def_id, index)

@@ -61,7 +61,7 @@ pub fn lookup(
     self_ty: ty::t,
     supplied_method_types: Vec<ty::t>,
     call_expr_id: ast::NodeId,
-    self_expr_id: ast::NodeId)
+    self_expr: &ast::Expr)
     -> Result<MethodCallee, MethodError>
 {
     /*!
@@ -78,14 +78,14 @@ pub fn lookup(
      * - `method_name`:           the name of the method being called (`bar`)
      * - `self_ty`:               the (unadjusted) type of the self expression (`foo`)
      * - `supplied_method_types`: the explicit method type parameters, if any (`T1..Tn`)
-     * - `self_expr_id`:          the id of the self expression (`foo`)
+     * - `self_expr`:             the self expression (`foo`)
      */
 
-    debug!("lookup(method_name={}, self_ty={}, call_expr_id={}, self_expr_id={})",
+    debug!("lookup(method_name={}, self_ty={}, call_expr_id={}, self_expr={})",
            method_name.repr(fcx.tcx()),
            self_ty.repr(fcx.tcx()),
            call_expr_id,
-           self_expr_id);
+           self_expr.repr(fcx.tcx()));
 
     let mut probe_cx = probe::ProbeContext::new(fcx,
                                                 span,
@@ -96,6 +96,6 @@ pub fn lookup(
     let pick = try!(probe_cx.pick());
     let mut confirm_cx = confirm::ConfirmContext::new(fcx,
                                                       span,
-                                                      self_expr_id);
+                                                      self_expr);
     Ok(confirm_cx.confirm(self_ty, pick, supplied_method_types))
 }

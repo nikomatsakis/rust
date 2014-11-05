@@ -23,9 +23,9 @@ use middle::traits;
 use middle::ty;
 use middle::ty_fold::TypeFoldable;
 use middle::typeck::check;
-use middle::typeck::check::{FnCtxt, NoPreference};
+use middle::typeck::check::{FnCtxt, NoPreference, PreferMutLvalue};
 use middle::typeck::check::regionmanip::replace_late_bound_regions;
-use middle::typeck::{MethodCallee, MethodObject, MethodOrigin,
+use middle::typeck::{MethodCall, MethodCallee, MethodObject, MethodOrigin,
                      MethodParam, MethodStatic, MethodTraitObject, MethodTypeParam};
 use middle::typeck::infer;
 use middle::typeck::infer::InferCtxt;
@@ -39,16 +39,16 @@ use util::ppaux::Repr;
 pub struct ConfirmContext<'a, 'tcx:'a> {
     fcx: &'a FnCtxt<'a, 'tcx>,
     span: Span,
-    self_expr_id: ast::NodeId,
+    self_expr: &'a ast::Expr,
 }
 
 impl<'a,'tcx> ConfirmContext<'a,'tcx> {
     pub fn new(fcx: &'a FnCtxt<'a, 'tcx>,
                span: Span,
-               self_expr_id: ast::NodeId)
+               self_expr: &'a ast::Expr)
                -> ConfirmContext<'a, 'tcx>
     {
-        ConfirmContext { fcx: fcx, span: span, self_expr_id: self_expr_id }
+        ConfirmContext { fcx: fcx, span: span, self_expr: self_expr }
     }
 
     pub fn confirm(&mut self,
@@ -74,6 +74,7 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
         let (method_types, method_regions) =
             self.instantiate_method_substs(&pick, supplied_method_types);
         let all_substs = rcvr_substs.with_method(method_types, method_regions);
+        debug!("all_substs={}", all_substs.repr(self.tcx()));
 
         //
         let method_sig = self.instantiate_method_sig(&pick, &all_substs);
@@ -92,11 +93,15 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
             abi: pick.method_ty.fty.abi.clone(),
         });
 
-        MethodCallee {
+        let callee = MethodCallee {
             origin: method_origin,
             ty: fty,
             substs: all_substs
-        }
+        };
+
+        self.fixup_derefs_on_method_receiver_if_necessary(&callee);
+
+        callee
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -114,7 +119,7 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
         // time writing the results into the various tables.
         let (autoderefd_ty, n, result) =
             check::autoderef(
-                self.fcx, self.span, self_ty, Some(self.self_expr_id), NoPreference,
+                self.fcx, self.span, self_ty, Some(self.self_expr.id), NoPreference,
                 |_, n| if n == auto_deref_ref.autoderefs { Some(()) } else { None });
         assert_eq!(n, auto_deref_ref.autoderefs);
         assert_eq!(result, Some(()));
@@ -124,7 +129,7 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
                                       auto_deref_ref.autoref.as_ref());
 
         // Write out the final adjustment.
-        self.fcx.write_adjustment(self.self_expr_id, self.span, ty::AdjustDerefRef(auto_deref_ref));
+        self.fcx.write_adjustment(self.self_expr.id, self.span, ty::AdjustDerefRef(auto_deref_ref));
 
         final_ty
     }
@@ -190,7 +195,11 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
                     // "object safe".
                     let substs = data.substs.clone().with_self_ty(object_ty);
                     let original_trait_ref = Rc::new(ty::TraitRef::new(data.def_id, substs));
-                    let upcast_trait_ref = this.upcast(original_trait_ref, trait_def_id);
+                    let upcast_trait_ref = this.upcast(original_trait_ref.clone(), trait_def_id);
+                    debug!("original_trait_ref={} upcast_trait_ref={} target_trait={}",
+                           original_trait_ref.repr(this.tcx()),
+                           upcast_trait_ref.repr(this.tcx()),
+                           trait_def_id.repr(this.tcx()));
                     let substs = upcast_trait_ref.substs.clone();
                     let origin = MethodTraitObject(MethodObject {
                         trait_ref: upcast_trait_ref,
@@ -360,6 +369,103 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
                     traits::ObligationCause::misc(self.span),
                     all_substs,
                     &pick.method_ty.generics);
+            }
+        }
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    // RECONCILIATION
+
+    fn fixup_derefs_on_method_receiver_if_necessary(&self,
+                                                    method_callee: &MethodCallee)
+    {
+        let sig = match ty::get(method_callee.ty).sty {
+            ty::ty_bare_fn(ref f) => f.sig.clone(),
+            ty::ty_closure(ref f) => f.sig.clone(),
+            _ => return,
+        };
+
+        match ty::get(sig.inputs[0]).sty {
+            ty::ty_rptr(_, ty::mt {
+                ty: _,
+                mutbl: ast::MutMutable,
+            }) => {}
+            _ => return,
+        }
+
+        // Gather up expressions we want to munge.
+        let mut exprs = Vec::new();
+        exprs.push(self.self_expr);
+        loop {
+            if exprs.len() == 0 {
+                break
+            }
+            let last = exprs[exprs.len() - 1];
+            match last.node {
+                ast::ExprParen(ref expr) |
+                ast::ExprField(ref expr, _, _) |
+                ast::ExprTupField(ref expr, _, _) |
+                ast::ExprSlice(ref expr, _, _, _) |
+                ast::ExprIndex(ref expr, _) |
+                ast::ExprUnary(ast::UnDeref, ref expr) => exprs.push(&**expr),
+                _ => break,
+            }
+        }
+
+        // Fix up autoderefs and derefs.
+        for (i, expr) in exprs.iter().rev().enumerate() {
+            // Count autoderefs.
+            let autoderef_count = match self.fcx
+                                            .inh
+                                            .adjustments
+                                            .borrow()
+                                            .find(&expr.id) {
+                Some(&ty::AdjustDerefRef(ty::AutoDerefRef {
+                    autoderefs: autoderef_count,
+                    autoref: _
+                })) => autoderef_count,
+                Some(_) | None => 0,
+            };
+
+            if autoderef_count > 0 {
+                check::autoderef(self.fcx,
+                                 expr.span,
+                                 self.fcx.expr_ty(*expr),
+                                 Some(expr.id),
+                                 PreferMutLvalue,
+                                 |_, autoderefs| {
+                                     if autoderefs == autoderef_count + 1 {
+                                         Some(())
+                                     } else {
+                                         None
+                                     }
+                                 });
+            }
+
+            // Don't retry the first one or we might infinite loop!
+            if i != 0 {
+                match expr.node {
+                    ast::ExprIndex(ref base_expr, ref index_expr) => {
+                        check::try_overloaded_index(
+                                self.fcx,
+                                Some(MethodCall::expr(expr.id)),
+                                *expr,
+                                &**base_expr,
+                                self.fcx.expr_ty(&**base_expr),
+                                index_expr,
+                                PreferMutLvalue);
+                    }
+                    ast::ExprUnary(ast::UnDeref, ref base_expr) => {
+                        check::try_overloaded_deref(
+                                self.fcx,
+                                expr.span,
+                                Some(MethodCall::expr(expr.id)),
+                                Some(&**base_expr),
+                                self.fcx.expr_ty(&**base_expr),
+                                check::PreferMutLvalue);
+                    }
+                    _ => {}
+                }
             }
         }
     }
