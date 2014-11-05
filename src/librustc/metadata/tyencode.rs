@@ -182,7 +182,7 @@ fn enc_bound_region(w: &mut SeekableMemWriter, cx: &ctxt, br: ty::BoundRegion) {
 }
 
 pub fn enc_trait_ref(w: &mut SeekableMemWriter, cx: &ctxt, s: &ty::TraitRef) {
-    mywrite!(w, "{}|", (cx.ds)(s.def_id));
+    mywrite!(w, "{}|{}|", s.binder_id, (cx.ds)(s.def_id));
     enc_substs(w, cx, &s.substs);
 }
 

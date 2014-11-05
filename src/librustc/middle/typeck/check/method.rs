@@ -94,7 +94,6 @@ use middle::typeck::infer;
 use middle::typeck::{MethodCall, MethodCallee};
 use middle::typeck::{MethodOrigin, MethodParam, MethodTypeParam};
 use middle::typeck::{MethodStatic, MethodStaticUnboxedClosure, MethodObject, MethodTraitObject};
-use middle::ty::replace_late_bound_regions;
 use middle::typeck::TypeAndSubsts;
 use middle::typeck::check::vtable;
 use middle::ty_fold::TypeFoldable;
@@ -224,9 +223,11 @@ pub fn lookup_in_trait_adjusted<'a, 'tcx>(
     assert_eq!(trait_def.generics.types.len(subst::FnSpace), 0);
     assert!(trait_def.generics.regions.is_empty());
 
-    // Construct a trait-reference `self_ty : Trait<input_tys>`
+    // Construct a trait-reference `self_ty : Trait<input_tys>`.
+    //
+    // Use DUMMY_NODE_ID as binder-id because there are no bound regions in this type.
     let substs = subst::Substs::new_trait(input_types, Vec::new(), assoc_types, self_ty);
-    let trait_ref = Rc::new(ty::TraitRef::new(trait_def_id, substs));
+    let trait_ref = Rc::new(ty::TraitRef::new(ast::DUMMY_NODE_ID, trait_def_id, substs));
 
     // Construct an obligation
     let obligation = traits::Obligation::misc(span, trait_ref.clone());
@@ -726,7 +727,7 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
 
         // Construct the obligation which must match.
         let trait_ref =
-            Rc::new(ty::TraitRef::new(trait_def_id, substs));
+            Rc::new(ty::TraitRef::new(ast::DUMMY_NODE_ID, trait_def_id, substs));
         let obligation =
             traits::Obligation::misc(self.span, trait_ref);
 
@@ -759,7 +760,8 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
         // itself. Hence, a `&self` method will wind up with an
         // argument type like `&Trait`.
         let rcvr_substs = principal.substs.with_self_ty(self_ty);
-        let trait_ref = Rc::new(TraitRef { def_id: principal.def_id,
+        let trait_ref = Rc::new(TraitRef { binder_id: ast::DUMMY_NODE_ID,
+                                           def_id: principal.def_id,
                                            substs: rcvr_substs.clone() });
 
         self.push_inherent_candidates_from_bounds_inner(
@@ -1160,7 +1162,8 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
                     |r, m| AutoPtr(r, m, None),
                     autoderefs, [MutImmutable, MutMutable],
                     |m, r| {
-                        let principal = ty::TraitRef::new(trt_did,
+                        let principal = ty::TraitRef::new(ast::DUMMY_NODE_ID,
+                                                          trt_did,
                                                           trt_substs.clone());
                         let tr = ty::mk_trait(tcx, principal, b);
                         ty::mk_rptr(tcx, r, ty::mt{ ty: tr, mutbl: m })

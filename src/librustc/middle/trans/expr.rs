@@ -328,6 +328,7 @@ fn apply_adjustments<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 let substs = principal.substs.with_self_ty(unsized_ty);
                 let trait_ref =
                     Rc::new(ty::TraitRef { def_id: principal.def_id,
+                                           binder_id: principal.binder_id,
                                            substs: substs });
                 let trait_ref =
                     trait_ref.subst(bcx.tcx(), &bcx.fcx.param_substs.substs);

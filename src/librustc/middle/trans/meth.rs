@@ -40,6 +40,7 @@ use std::rc::Rc;
 use syntax::abi::{Rust, RustCall};
 use syntax::parse::token;
 use syntax::{ast, ast_map, attr, visit};
+use syntax::ast::DUMMY_NODE_ID;
 use syntax::ast_util::PostExpansionMethod;
 use syntax::codemap::DUMMY_SP;
 
@@ -240,7 +241,8 @@ pub fn trans_static_method_callee(bcx: Block,
                                              rcvr_assoc,
                                              Vec::new()));
     debug!("trait_substs={}", trait_substs.repr(bcx.tcx()));
-    let trait_ref = Rc::new(ty::TraitRef { def_id: trait_id,
+    let trait_ref = Rc::new(ty::TraitRef { binder_id: DUMMY_NODE_ID,
+                                           def_id: trait_id,
                                            substs: trait_substs });
     let vtbl = fulfill_obligation(bcx.ccx(),
                                   DUMMY_SP,

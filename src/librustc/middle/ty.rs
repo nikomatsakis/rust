@@ -990,6 +990,7 @@ pub struct TyTrait {
 
 #[deriving(Clone, PartialEq, Eq, Hash, Show)]
 pub struct TraitRef {
+    pub binder_id: ast::NodeId,
     pub def_id: DefId,
     pub substs: Substs,
 }
@@ -1261,8 +1262,12 @@ impl Generics {
 }
 
 impl TraitRef {
-    pub fn new(def_id: ast::DefId, substs: Substs) -> TraitRef {
-        TraitRef { def_id: def_id, substs: substs }
+    pub fn new(binder_id: ast::NodeId,
+               def_id: DefId,
+               substs: Substs)
+               -> TraitRef
+    {
+        TraitRef { binder_id: binder_id, def_id: def_id, substs: substs }
     }
 
     pub fn self_ty(&self) -> ty::t {
@@ -4493,9 +4498,87 @@ pub fn bounds_for_trait_ref(tcx: &ctxt,
                             -> ty::ParamBounds
 {
     let trait_def = lookup_trait_def(tcx, trait_ref.def_id);
+
     debug!("bounds_for_trait_ref(trait_def={}, trait_ref={})",
            trait_def.repr(tcx), trait_ref.repr(tcx));
-    trait_def.bounds.subst(tcx, &trait_ref.substs)
+
+    // The interaction between HRTB and supertraits is not entirely
+    // obvious. Let me walk you (and myself) through an example.
+    //
+    // Let's start with an easy case. Consider two traits:
+    //
+    //     trait Foo<'a> : Bar<'a,'a> { }
+    //     trait Bar<'b,'c> { }
+    //
+    // Now, if we have a trait reference `for<'x> T : Foo<'x>`, then
+    // we can deduce that `for<'x> T : Bar<'x,'x>`. Basically, if we
+    // knew that `Foo<'x>` (for any 'x) then we also know that
+    // `Bar<'x,'x>` (for any 'x). This more-or-less falls out from
+    // normal substitution.
+    //
+    // In terms of why this is sound, the idea is that whenever there
+    // is an impl of `T:Foo<'a>`, it must show that `T:Bar<'a,'a>`
+    // holds.  So if there is an impl of `T:Foo<'a>` that applies to
+    // all `'a`, then we must know that `T:Bar<'a,'a>` holds for all
+    // `'a`.
+    //
+    // For the moment, we disallow the use of early-bound regions in
+    // trait where clauses. This is a total hack to help us get HRTB
+    // out the door without thinking too hard about a better
+    // representation for bound regions. If we *were* to permit
+    // HRTB in traits, it would mean that we'd have an example like this:
+    //
+    //     trait Foo1<'a> : for<'b> Bar1<'a,'b> { }
+    //     trait Bar1<'b,'c> { }
+    //
+    // Here, if we have `for<'x> T : Foo1<'x>`, then what do we know?
+    // The answer is that we know `for<'x,'b> T : Bar1<'x,'b>`. The
+    // reason is similar to the previous example: any impl of
+    // `T:Foo1<'x>` must show that `for<'b> T : Bar1<'x, 'b>`.  So
+    // basically we would want to collapse the bound lifetimes from
+    // the input (`trait_ref`) and the supertraits.
+    //
+    // The main reason to disallow it is that I am afraid of
+    // accidental capture and don't think our current early/late-bound
+    // region representation is the right thing. -nmatsakis
+
+    // The previous comment laid out things in the abstract. Let's
+    // walk through the concrete mechanics. On input, we have `for<'x>
+    // T : Foo1<'x>`, which is represented as having a trait-ref with
+    // a `binder_id` of `B`, so that `'x` is `ReLate(B, 'x)`.
+    // Once we apply these substitutions, we'll have a trait-ref
+    // like
+    //
+    //     Bar1<ReLate(B,'x), ReLate(C,'b)>
+    //
+    // where C is the binder_id of `Bar1`. This corresponds (roughly)
+    // to `for<'b> Bar1<'x, 'b>`.
+    let raw_bounds = trait_def.bounds.subst(tcx, &trait_ref.substs);
+
+    // Next we translate all things with binder-id B to binder-id C,
+    // thus extending the `for` binder to cover them.
+    let ty::ParamBounds {
+        region_bounds: raw_regions,
+        builtin_bounds: raw_builtin,
+        trait_bounds: raw_traits
+    } = raw_bounds;
+
+    let trait_bounds =
+        raw_traits
+        .iter()
+        .map(|raw_trait| replace_late_bound_regions(tcx, trait_ref.binder_id, raw_trait,
+                                                    |br| ty::ReLateBound(raw_trait.binder_id, br)).0)
+        .collect();
+
+    ty::ParamBounds {
+        trait_bounds: trait_bounds,
+
+        // Region and builtin-bounds, at least presently, do not have
+        // binders of their own and hence "inherit" the binder-id from
+        // the trait.
+        region_bounds: raw_regions,
+        builtin_bounds: raw_builtin,
+    }
 }
 
 /// Iterate over attributes of a definition.

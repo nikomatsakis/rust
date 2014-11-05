@@ -448,6 +448,7 @@ pub fn ast_path_to_trait_ref<'tcx,AC,RS>(this: &AC,
                                                RS: RegionScope {
     let trait_def = this.get_trait_def(trait_def_id);
     ty::TraitRef {
+        binder_id: binder_id,
         def_id: trait_def_id,
         substs: ast_path_substs(this,
                                 rscope,
@@ -1410,10 +1411,9 @@ pub fn conv_existential_bounds<'tcx, AC: AstConv<'tcx>, RS:RegionScope>(
     // be convenient (or perhaps something else, i.e., ty::erased).
     let main_trait_refs: Vec<Rc<ty::TraitRef>> =
         main_trait_refs.iter()
-        .map(|t|
-             Rc::new(ty::TraitRef {
-                 def_id: t.def_id,
-                 substs: t.substs.with_self_ty(ty::mk_err()) }))
+        .map(|t| Rc::new(ty::TraitRef { binder_id: t.binder_id,
+                                        def_id: t.def_id,
+                                        substs: t.substs.with_self_ty(ty::mk_err()) }))
         .collect();
 
     let region_bound = compute_region_bound(this,

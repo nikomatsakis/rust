@@ -1379,6 +1379,7 @@ pub fn trait_def_of_item(ccx: &CrateCtxt, it: &ast::Item) -> Rc<ty::TraitDef> {
         generics: ty_generics,
         bounds: bounds,
         trait_ref: Rc::new(ty::TraitRef {
+            binder_id: it.id,
             def_id: def_id,
             substs: substs
         })
@@ -1644,7 +1645,8 @@ fn ty_generics_for_trait(ccx: &CrateCtxt,
     let param_id = trait_id;
 
     let self_trait_ref =
-        Rc::new(ty::TraitRef { def_id: local_def(trait_id),
+        Rc::new(ty::TraitRef { binder_id: ast::DUMMY_NODE_ID, // no bound lifetimes in here
+                               def_id: local_def(trait_id),
                                substs: (*substs).clone() });
 
     let def = ty::TypeParameterDef {

@@ -257,7 +257,8 @@ pub fn register_object_cast_obligations(fcx: &FnCtxt,
 
     // Create the obligation for casting from T to Trait.
     let object_trait_ref =
-        Rc::new(ty::TraitRef { def_id: object_trait.principal.def_id,
+        Rc::new(ty::TraitRef { binder_id: object_trait.principal.binder_id,
+                               def_id: object_trait.principal.def_id,
                                substs: object_substs });
     let object_obligation =
         Obligation::new(
@@ -300,14 +301,14 @@ pub fn select_all_fcx_obligations_or_error(fcx: &FnCtxt) {
 }
 
 fn resolve_trait_ref(fcx: &FnCtxt, obligation: &Obligation)
-                     -> (ty::TraitRef, ty::t)
+                     -> (Rc<ty::TraitRef>, ty::t)
 {
     let trait_ref =
         fcx.infcx().resolve_type_vars_in_trait_ref_if_possible(
             &*obligation.trait_ref);
     let self_ty =
         trait_ref.substs.self_ty().unwrap();
-    (trait_ref, self_ty)
+    (Rc::new(trait_ref), self_ty)
 }
 
 pub fn report_fulfillment_errors(fcx: &FnCtxt,

@@ -305,15 +305,14 @@ pub trait Combine<'tcx> {
                   b: &ty::TraitRef)
                   -> cres<ty::TraitRef> {
         // Different traits cannot be related
-
-        // - NOTE in the future, expand out subtraits!
-
         if a.def_id != b.def_id {
             Err(ty::terr_traits(
                                 expected_found(self, a.def_id, b.def_id)))
         } else {
             let substs = try!(self.substs(a.def_id, &a.substs, &b.substs));
-            Ok(ty::TraitRef { def_id: a.def_id,
+            // FIXME(#18639) -- have to apply smarter treatment here
+            Ok(ty::TraitRef { binder_id: ast::DUMMY_NODE_ID,
+                              def_id: a.def_id,
                               substs: substs })
         }
     }

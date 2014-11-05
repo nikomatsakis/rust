@@ -301,7 +301,8 @@ pub fn obligation_for_builtin_bound(tcx: &ty::ctxt,
                                     builtin_bound: ty::BuiltinBound)
                                     -> Result<Obligation, ErrorReported>
 {
-    util::obligation_for_builtin_bound(tcx, cause, builtin_bound, 0, source_ty)
+    util::obligation_for_builtin_bound(tcx, cause, builtin_bound, 0,
+                                       ast::DUMMY_NODE_ID, source_ty)
 }
 
 impl Obligation {

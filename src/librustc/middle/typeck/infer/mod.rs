@@ -805,8 +805,8 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         format!("({})", tstrs.connect(", "))
     }
 
-    pub fn trait_ref_to_string(&self, t: &ty::TraitRef) -> String {
-        let t = self.resolve_type_vars_in_trait_ref_if_possible(t);
+    pub fn trait_ref_to_string(&self, t: &Rc<ty::TraitRef>) -> String {
+        let t = self.resolve_type_vars_in_trait_ref_if_possible(&**t);
         trait_ref_to_string(self.tcx, &t)
     }
 
