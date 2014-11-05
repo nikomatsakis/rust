@@ -223,6 +223,24 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
                 (impl_trait_ref.substs.clone(), origin)
             }
 
+            probe::TraitPick(trait_def_id, method_num) => {
+                let trait_def = ty::lookup_trait_def(self.tcx(), trait_def_id);
+
+                // Make a trait reference `$0 : Trait<$1...$n>`
+                // consisting entirely of type variables. Later on in
+                // the process we will unify the transformed-self-type
+                // of the method with the actual type in order to
+                // unify some of these variables.
+                let substs = self.infcx().fresh_substs_for_trait(self.span,
+                                                                 &trait_def.generics,
+                                                                 self.infcx().next_ty_var());
+
+                let trait_ref = Rc::new(ty::TraitRef::new(trait_def_id, substs.clone()));
+                let origin = MethodTypeParam(MethodParam { trait_ref: trait_ref,
+                                                           method_num: method_num });
+                (substs, origin)
+            }
+
             probe::WhereClausePick(ref trait_ref, method_num) => {
                 let origin = MethodTypeParam(MethodParam { trait_ref: (*trait_ref).clone(),
                                                            method_num: method_num });

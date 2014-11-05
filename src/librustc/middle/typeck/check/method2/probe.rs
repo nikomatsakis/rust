@@ -69,8 +69,9 @@ pub struct Pick {
 #[deriving(Clone,Show)]
 pub enum PickKind {
     InherentImplPick(/* Impl */ ast::DefId),
-    ObjectPick(/* trait def-id */ ast::DefId, /* method_num */ uint, /* real_index */ uint),
+    ObjectPick(/* Trait */ ast::DefId, /* method_num */ uint, /* real_index */ uint),
     ExtensionImplPick(/* Impl */ ast::DefId, MethodIndex),
+    TraitPick(/* Trait */ ast::DefId, MethodIndex),
     WhereClausePick(/* Trait */ Rc<ty::TraitRef>, MethodIndex),
 }
 
@@ -638,6 +639,13 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
         debug!("applicable_probes: {}", applicable_probes.repr(self.tcx()));
 
         if applicable_probes.len() > 1 {
+            match self.collapse_probes_to_trait(applicable_probes[]) {
+                Some(pick) => { return Some(Ok(pick)); }
+                None => { }
+            }
+        }
+
+        if applicable_probes.len() > 1 {
             let sources = probes.iter().map(|p| p.to_source()).collect();
             return Some(Err(Ambiguity(sources)));
         }
@@ -688,6 +696,50 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                     true
                 }
             }
+        })
+    }
+
+    fn collapse_probes_to_trait(&self, probes: &[&Probe]) -> Option<Pick> {
+        /*!
+         * Sometimes we get in a situation where we have multiple
+         * probes that are all impls of the same trait, but we don't
+         * know which impl to use. In this case, since in all cases
+         * the external interface of the method can be determined from
+         * the trait, it's ok not to decide.  We can basically just
+         * collapse all of the probes for various impls into one
+         * where-clause probe. This will result in a pending
+         * obligation so when more type-info is available we can make
+         * the final decision.
+         *
+         * Example (`src/test/run-pass/method-two-trait-defer-resolution-1.rs`):
+         *
+         * ```
+         * trait Foo { ... }
+         * impl Foo for Vec<int> { ... }
+         * impl Foo for Vec<uint> { ... }
+         * ```
+         *
+         * Now imagine the receiver is `Vec<_>`. It doesn't really
+         * matter at this time which impl we use, so it's ok to just
+         * commit to "using the method from the trait Foo".
+         */
+
+        // Do all probes correspond to the same trait?
+        let trait_data = match probes[0].to_trait_data() {
+            Some(data) => data,
+            None => return None,
+        };
+        if probes[1..].iter().any(|p| p.to_trait_data() != Some(trait_data)) {
+            return None;
+        }
+
+        // If so, just use this trait and call it a day.
+        let (trait_def_id, method_num) = trait_data;
+        let method_ty = probes[0].method_ty.clone();
+        Some(Pick {
+            method_ty: method_ty,
+            adjustment: AutoDeref(0),
+            kind: TraitPick(trait_def_id, method_num)
         })
     }
 
@@ -823,9 +875,21 @@ impl Probe {
         match self.kind {
             InherentImplProbe(def_id, _) => ImplSource(def_id),
             ObjectProbe(ref obj) => TraitSource(obj.trait_ref.def_id),
-            //ExtensionImplProbe(_, ref trait_ref, _, _) => TraitSource(trait_ref.def_id),
             ExtensionImplProbe(def_id, _, _, _) => ImplSource(def_id),
             WhereClauseProbe(ref trait_ref, _) => TraitSource(trait_ref.def_id),
+        }
+    }
+
+    fn to_trait_data(&self) -> Option<(ast::DefId,MethodIndex)> {
+        match self.kind {
+            InherentImplProbe(..) |
+            ObjectProbe(..) => {
+                None
+            }
+            ExtensionImplProbe(_, ref trait_ref, _, method_num) |
+            WhereClauseProbe(ref trait_ref, method_num) => {
+                Some((trait_ref.def_id, method_num))
+            }
         }
     }
 }
