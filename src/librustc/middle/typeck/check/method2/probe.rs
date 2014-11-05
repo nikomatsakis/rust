@@ -103,7 +103,8 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
             check::autoderef(
                 fcx, span, self_ty, None, NoPreference,
                 |t, d| {
-                    steps.push(ProbeStep { self_ty: t, adjustment: AutoDeref(d) });
+                    let adjustment = consider_reborrow(t, d);
+                    steps.push(ProbeStep { self_ty: t, adjustment: adjustment });
                     None::<()> // keep iterating until we can't anymore
                 });
 
@@ -122,7 +123,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                self_ty.repr(fcx.tcx()),
                steps.repr(fcx.tcx()));
 
-        ProbeContext {
+        return ProbeContext {
             fcx: fcx,
             span: span,
             method_name: method_name,
@@ -131,6 +132,14 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
             impl_dups: HashSet::new(),
             steps: Rc::new(steps),
             static_candidates: Vec::new(),
+        };
+
+        fn consider_reborrow(t: ty::t, d: uint) -> PickAdjustment {
+            // Insert a `&*` or `&mut *` if this is a reference type:
+            match ty::get(t).sty {
+                ty::ty_rptr(_, ref mt) => AutoRef(mt.mutbl, box AutoDeref(d+1)),
+                _ => AutoDeref(d),
+            }
         }
     }
 
@@ -462,6 +471,10 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
     fn pick_step(&mut self, step: &ProbeStep) -> Option<PickResult> {
         debug!("pick_step: step={}", step.repr(self.tcx()));
 
+        if ty::type_is_error(step.self_ty) {
+            return None;
+        }
+
         match self.pick_adjusted_method(step) {
             Some(result) => return Some(result),
             None => {}
@@ -472,7 +485,10 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
             None => {}
         }
 
-        None
+        match ty::get(step.self_ty).sty {
+            ty::ty_vec(_, None) => self.pick_autorefrefd_method(step),
+            _ => None
+        }
     }
 
     fn pick_adjusted_method(&mut self,
@@ -486,14 +502,22 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                             step: &ProbeStep)
                             -> Option<PickResult>
     {
-        if ty::type_is_error(step.self_ty) {
-            return None;
-        }
-
         let tcx = self.tcx();
         self.search_mutabilities(
             |m| AutoRef(m, box step.adjustment.clone()),
             |m,r| ty::mk_rptr(tcx, r, ty::mt {ty:step.self_ty, mutbl:m}))
+    }
+
+    fn pick_autorefrefd_method(&mut self,
+                            step: &ProbeStep)
+                            -> Option<PickResult>
+    {
+        let tcx = self.tcx();
+        self.search_mutabilities(
+            |m| AutoRef(m, box AutoRef(m, box step.adjustment.clone())),
+            |m,r| ty::mk_rptr(tcx, r, ty::mt { ty: ty::mk_rptr(tcx, r, ty::mt { ty:step.self_ty,
+                                                                                mutbl:m}),
+                                               mutbl: m }))
     }
 
     fn search_mutabilities(&mut self,
