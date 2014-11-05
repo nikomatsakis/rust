@@ -8,30 +8,20 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::Ambiguity;
-use super::CandidateSource;
-use super::ImplSource;
-use super::MethodError;
-use super::MethodIndex;
-use super::NoMatch;
-use super::TraitSource;
 use super::probe;
 
 use middle::subst;
 use middle::subst::Subst;
 use middle::traits;
 use middle::ty;
-use middle::ty_fold::TypeFoldable;
 use middle::typeck::check;
 use middle::typeck::check::{FnCtxt, NoPreference, PreferMutLvalue};
-use middle::typeck::check::regionmanip::replace_late_bound_regions;
 use middle::typeck::{MethodCall, MethodCallee, MethodObject, MethodOrigin,
                      MethodParam, MethodStatic, MethodTraitObject, MethodTypeParam};
 use middle::typeck::infer;
 use middle::typeck::infer::InferCtxt;
 use syntax::ast;
 use syntax::codemap::Span;
-use std::collections::HashSet;
 use std::rc::Rc;
 use std::mem;
 use util::ppaux::Repr;
@@ -152,7 +142,10 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
             }
             probe::AutoUnsizeLength(n, ref sub_adjustment) => {
                 let deref = self.create_ty_adjustment(&**sub_adjustment);
-                wrap_autoref(deref, |base| ty::AutoUnsize(ty::UnsizeLength(n)))
+                wrap_autoref(deref, |wrap| {
+                    assert!(wrap.is_none());
+                    ty::AutoUnsize(ty::UnsizeLength(n))
+                })
             }
         }
     }

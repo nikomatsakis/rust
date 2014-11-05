@@ -15,7 +15,6 @@ use middle::typeck::check::{FnCtxt};
 use middle::typeck::MethodCallee;
 use syntax::ast;
 use syntax::codemap::Span;
-use std::rc::Rc;
 use util::ppaux::Repr;
 
 mod probe;
@@ -42,17 +41,10 @@ pub enum CandidateSource {
 
 type MethodIndex = uint; // just for doc purposes
 
-enum Candidate {
-    InherentImpl(ast::DefId),
-    ExtensionImpl(ast::DefId, MethodIndex),
-    UnboxedClosureImpl(ast::DefId),
-    WhereClause(Rc<ty::TraitRef>, MethodIndex),
-}
-
-struct CacheKey {
-    skol_self_ty: ty::t,
-    method_name: ast::Name,
-}
+//struct CacheKey {
+//    skol_self_ty: ty::t,
+//    method_name: ast::Name,
+//}
 
 pub fn lookup(
     fcx: &FnCtxt,

@@ -2122,8 +2122,7 @@ fn try_overloaded_call<'a>(fcx: &FnCtxt,
                 Some(&*callee),
                 method_name,
                 function_trait,
-                callee_type,
-                []) {
+                callee_type) {
             None => continue,
             Some(method_callee) => method_callee,
         };
@@ -2164,7 +2163,7 @@ fn try_overloaded_deref(fcx: &FnCtxt,
         (PreferMutLvalue, Some(trait_did)) => {
             method::lookup_in_trait(fcx, span, base_expr.map(|x| &*x),
                                     token::intern("deref_mut"), trait_did,
-                                    base_ty, [])
+                                    base_ty)
         }
         _ => None
     };
@@ -2174,7 +2173,7 @@ fn try_overloaded_deref(fcx: &FnCtxt,
         (None, Some(trait_did)) => {
             method::lookup_in_trait(fcx, span, base_expr.map(|x| &*x),
                                     token::intern("deref"), trait_did,
-                                    base_ty, [])
+                                    base_ty)
         }
         (method, _) => method
     };
@@ -2239,8 +2238,7 @@ fn try_overloaded_slice(fcx: &FnCtxt,
                                         Some(&*base_expr),
                                         token::intern(method_name),
                                         trait_did,
-                                        base_ty,
-                                        [])
+                                        base_ty)
             }
             _ => None,
         }
@@ -2262,8 +2260,7 @@ fn try_overloaded_slice(fcx: &FnCtxt,
                                         Some(&*base_expr),
                                         token::intern(method_name),
                                         trait_did,
-                                        base_ty,
-                                        [])
+                                        base_ty)
             }
             _ => None,
         }
@@ -2323,8 +2320,7 @@ fn try_overloaded_index(fcx: &FnCtxt,
                                     Some(&*base_expr),
                                     token::intern("index_mut"),
                                     trait_did,
-                                    base_ty,
-                                    [])
+                                    base_ty)
         }
         _ => None,
     };
@@ -2337,8 +2333,7 @@ fn try_overloaded_index(fcx: &FnCtxt,
                                     Some(&*base_expr),
                                     token::intern("index"),
                                     trait_did,
-                                    base_ty,
-                                    [])
+                                    base_ty)
         }
         (method, _) => method,
     };
@@ -2381,8 +2376,7 @@ fn lookup_method_for_for_loop(fcx: &FnCtxt,
                                          Some(&*iterator_expr),
                                          token::intern("next"),
                                          trait_did,
-                                         expr_type,
-                                         []);
+                                         expr_type);
 
     // Regardless of whether the lookup succeeds, check the method arguments
     // so that we have *some* type for each argument.
@@ -3057,7 +3051,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
         let method = match trait_did {
             Some(trait_did) => {
                 method::lookup_in_trait(fcx, op_ex.span, Some(lhs), opname,
-                                        trait_did, lhs_ty, &[])
+                                        trait_did, lhs_ty)
             }
             None => None
         };

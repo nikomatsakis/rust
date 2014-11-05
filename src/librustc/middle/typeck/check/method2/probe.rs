@@ -20,10 +20,8 @@ use middle::subst;
 use middle::subst::Subst;
 use middle::traits;
 use middle::ty;
-use middle::ty_fold::TypeFoldable;
 use middle::typeck::check;
 use middle::typeck::check::{FnCtxt, NoPreference};
-use middle::typeck::check::regionmanip::replace_late_bound_regions;
 use middle::typeck::{MethodObject};
 use middle::typeck::infer;
 use middle::typeck::infer::InferCtxt;
@@ -59,7 +57,6 @@ enum ProbeKind {
     InherentImplProbe(/* Impl */ ast::DefId, subst::Substs),
     ObjectProbe(MethodObject),
     ExtensionImplProbe(/* Impl */ ast::DefId, Rc<ty::TraitRef>, subst::Substs, MethodIndex),
-    UnboxedClosureImplProbe(ast::DefId),
     WhereClauseProbe(Rc<ty::TraitRef>, MethodIndex),
 }
 
@@ -268,7 +265,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                 ty::ByValueExplicitSelfCategory => {
                     let mut n = (*m).clone();
                     let self_ty = n.fty.sig.inputs[0];
-                    *n.fty.sig.inputs.get_mut(0) = ty::mk_uniq(tcx, self_ty);
+                    n.fty.sig.inputs[0] = ty::mk_uniq(tcx, self_ty);
                     m = Rc::new(n);
                 }
                 _ => { }
@@ -291,7 +288,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
     }
 
     fn assemble_inherent_probes_from_param(&mut self,
-                                           rcvr_ty: ty::t,
+                                           _rcvr_ty: ty::t,
                                            restrict_to_trait: Option<ast::DefId>,
                                            param_ty: ty::ParamTy) {
         let ty::ParamTy { space, idx: index, .. } = param_ty;
@@ -359,7 +356,8 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
     }
 
     pub fn assemble_extension_probes_for_traits_in_scope(&mut self,
-                                                         expr_id: ast::NodeId) {
+                                                         expr_id: ast::NodeId)
+    {
         let mut duplicates = HashSet::new();
         let opt_applicable_traits = self.fcx.ccx.trait_map.find(&expr_id);
         for applicable_traits in opt_applicable_traits.into_iter() {
@@ -398,14 +396,19 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
         }
 
         self.assemble_extension_probes_for_trait_impls(trait_def_id,
-                                                       method,
+                                                       method.clone(),
                                                        matching_index);
+
+        self.assemble_unboxed_closure_probes(trait_def_id,
+                                             method,
+                                             matching_index);
     }
 
     fn assemble_extension_probes_for_trait_impls(&mut self,
                                                  trait_def_id: ast::DefId,
                                                  method: Rc<ty::Method>,
-                                                 method_index: uint) {
+                                                 method_index: uint)
+    {
         ty::populate_implementations_for_trait_if_necessary(self.tcx(),
                                                             trait_def_id);
 
@@ -446,6 +449,70 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
         }
     }
 
+    fn assemble_unboxed_closure_probes(&mut self,
+                                       trait_def_id: ast::DefId,
+                                       method_ty: Rc<ty::Method>,
+                                       method_index: uint)
+    {
+        // Check if this is one of the Fn,FnMut,FnOnce traits.
+        let tcx = self.tcx();
+        let kind = if Some(trait_def_id) == tcx.lang_items.fn_trait() {
+            ty::FnUnboxedClosureKind
+        } else if Some(trait_def_id) == tcx.lang_items.fn_mut_trait() {
+            ty::FnMutUnboxedClosureKind
+        } else if Some(trait_def_id) == tcx.lang_items.fn_once_trait() {
+            ty::FnOnceUnboxedClosureKind
+        } else {
+            return;
+        };
+
+        // Check if there is an unboxed-closure self-type in the list of receivers.
+        // If so, add "synthetic impls".
+        let steps = self.steps.clone();
+        for step in steps.iter() {
+            let (closure_def_id, _, _) = match ty::get(step.self_ty).sty {
+                ty::ty_unboxed_closure(a, b, ref c) => (a, b, c),
+                _ => continue,
+            };
+
+            let unboxed_closures = self.fcx.inh.unboxed_closures.borrow();
+            let closure_data = match unboxed_closures.find(&closure_def_id) {
+                Some(data) => data,
+                None => {
+                    self.tcx().sess.span_bug(
+                        self.span,
+                        format!("No entry for unboxed closure: {}",
+                                closure_def_id.repr(self.tcx())).as_slice());
+                }
+            };
+
+            // this closure doesn't implement the right kind of `Fn` trait
+            if closure_data.kind != kind {
+                continue;
+            }
+
+            // create some substitutions for the argument/return type;
+            // for the purposes of our method lookup, we only take
+            // receiver type into account, so we can just substitute
+            // fresh types here. Trait matching will wind up unifying
+            // these appropriately later.
+            let trait_def = ty::lookup_trait_def(self.tcx(), trait_def_id);
+            let substs = self.infcx().fresh_substs_for_trait(self.span,
+                                                             &trait_def.generics,
+                                                             step.self_ty);
+
+            // add a where-clause probe, meaning that we just look to
+            // try and match the self-type and that's enough.
+            let trait_ref = Rc::new(ty::TraitRef::new(trait_def_id, substs));
+            let xform_self_ty = self.xform_self_ty(&method_ty, &trait_ref.substs);
+            self.inherent_probes.push(Probe {
+                xform_self_ty: xform_self_ty,
+                method_ty: method_ty.clone(),
+                kind: WhereClauseProbe(trait_ref, method_index)
+            });
+        }
+    }
+
     ///////////////////////////////////////////////////////////////////////////
     // THE ACTUAL SEARCH
 
@@ -455,16 +522,12 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
         for step in steps.iter() {
             match self.pick_step(step) {
                 Some(r) => {
-                    if r.is_err() {
-                        self.tcx().sess.span_bug(self.span, "Unexpected failure to resolve method");
-                    }
                     return r;
                 }
                 None => { }
             }
         }
 
-        self.tcx().sess.span_bug(self.span, "Unexpected failure to resolve method");
         Err(NoMatch(self.static_candidates))
     }
 
@@ -485,8 +548,10 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
             None => {}
         }
 
+        // FIXME -- Super hack. For DST types, we will convert to
+        // &&[T] or &&str, as part of a kind of legacy lookup scheme.
         match ty::get(step.self_ty).sty {
-            ty::ty_vec(_, None) => self.pick_autorefrefd_method(step),
+            ty::ty_str | ty::ty_vec(_, None) => self.pick_autorefrefd_method(step),
             _ => None
         }
     }
@@ -618,7 +683,6 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                 }
 
                 ObjectProbe(_) |
-                UnboxedClosureImplProbe(_) |
                 WhereClauseProbe(_, _) => {
                     // These cannot be "winnowed" any further.
                     true
@@ -632,20 +696,6 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
 
     fn make_sub_ty(&self, sub: ty::t, sup: ty::t) -> infer::ures {
         self.infcx().sub_types(false, infer::Misc(DUMMY_SP), sub, sup)
-    }
-
-    fn remake_sub_ty(&self, sub: ty::t, sup: ty::t) {
-        match self.make_sub_ty(sub, sup) {
-            Ok(()) => { }
-            Err(ref e) => {
-                self.tcx().sess.span_bug(
-                    self.span,
-                    format!("failed to remake subtype: {} <: {} = {}",
-                            self.infcx().ty_to_string(sub),
-                            self.infcx().ty_to_string(sup),
-                            ty::type_err_to_str(self.tcx(), e))[]);
-            }
-        }
     }
 
     fn has_applicable_self(&self, method: &ty::Method) -> bool {
@@ -762,9 +812,6 @@ impl Probe {
                 ExtensionImplProbe(def_id, _, _, index) => {
                     ExtensionImplPick(def_id, index)
                 }
-                UnboxedClosureImplProbe(def_id) => {
-                    panic!("NYI")
-                }
                 WhereClauseProbe(ref trait_ref, index) => {
                     WhereClausePick((*trait_ref).clone(), index)
                 }
@@ -778,8 +825,7 @@ impl Probe {
             ObjectProbe(ref obj) => TraitSource(obj.trait_ref.def_id),
             //ExtensionImplProbe(_, ref trait_ref, _, _) => TraitSource(trait_ref.def_id),
             ExtensionImplProbe(def_id, _, _, _) => ImplSource(def_id),
-            UnboxedClosureImplProbe(def_id) => TraitSource(def_id),
-            WhereClauseProbe(ref trait_ref, index) => TraitSource(trait_ref.def_id),
+            WhereClauseProbe(ref trait_ref, _) => TraitSource(trait_ref.def_id),
         }
     }
 }
@@ -802,8 +848,6 @@ impl Repr for ProbeKind {
             ExtensionImplProbe(ref a, ref b, ref c, ref d) =>
                 format!("ExtensionImplProbe({},{},{},{})", a.repr(tcx), b.repr(tcx),
                         c.repr(tcx), d),
-            UnboxedClosureImplProbe(ref a) =>
-                format!("UnboxedClosureImplProbe({})", a.repr(tcx)),
             WhereClauseProbe(ref a, ref b) =>
                 format!("WhereClauseProbe({},{})", a.repr(tcx), b),
         }
