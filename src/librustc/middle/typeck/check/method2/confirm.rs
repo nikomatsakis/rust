@@ -388,8 +388,13 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
     // RECONCILIATION
 
     fn fixup_derefs_on_method_receiver_if_necessary(&self,
-                                                    method_callee: &MethodCallee)
-    {
+                                                    method_callee: &MethodCallee) {
+        /*!
+         * When we select a method with an `&mut self` receiver, we have to go
+         * convert any auto-derefs, indices, etc from `Deref` and `Index` into
+         * `DerefMut` and `IndexMut` respectively.
+         */
+
         let sig = match ty::get(method_callee.ty).sty {
             ty::ty_bare_fn(ref f) => f.sig.clone(),
             ty::ty_closure(ref f) => f.sig.clone(),
@@ -406,7 +411,10 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
 
         // Gather up expressions we want to munge.
         let mut exprs = Vec::new();
-        exprs.push(self.self_expr);
+        match self.self_expr {
+            Some(expr) => exprs.push(expr),
+            None => {}
+        }
         loop {
             if exprs.len() == 0 {
                 break
@@ -423,6 +431,9 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
             }
         }
 
+        debug!("fixup_derefs_on_method_receiver_if_necessary: exprs={}",
+               exprs.repr(self.tcx()));
+
         // Fix up autoderefs and derefs.
         for (i, expr) in exprs.iter().rev().enumerate() {
             // Count autoderefs.
@@ -437,6 +448,9 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
                 })) => autoderef_count,
                 Some(_) | None => 0,
             };
+
+            debug!("fixup_derefs_on_method_receiver_if_necessary: i={} expr={} autoderef_count={}",
+                   i, expr.repr(self.tcx()), autoderef_count);
 
             if autoderef_count > 0 {
                 check::autoderef(self.fcx,
@@ -456,24 +470,59 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
             // Don't retry the first one or we might infinite loop!
             if i != 0 {
                 match expr.node {
-                    ast::ExprIndex(ref base_expr, ref index_expr) => {
-                        check::try_overloaded_index(
-                                self.fcx,
-                                Some(MethodCall::expr(expr.id)),
-                                *expr,
+                    ast::ExprIndex(ref base_expr, _) => {
+                        let mut base_adjustment =
+                            match self.fcx.inh.adjustments.borrow().find(&base_expr.id) {
+                                Some(&ty::AdjustDerefRef(ref adr)) => (*adr).clone(),
+                                None => ty::AutoDerefRef { autoderefs: 0, autoref: None },
+                                Some(_) => {
+                                    self.tcx().sess.span_bug(
+                                        base_expr.span,
+                                        "unexpected adjustment type");
+                                }
+                            };
+
+                        // If this is an overloaded index, the
+                        // adjustment will include an extra layer of
+                        // autoref because the method is an &self/&mut
+                        // self method. We have to peel it off to get
+                        // the raw adjustment that `try_index_step`
+                        // expects. This is annoying and horrible. We
+                        // ought to recode this routine so it doesn't
+                        // (ab)use the normal type checking paths.
+                        base_adjustment.autoref = match base_adjustment.autoref {
+                            None => { None }
+                            Some(AutoPtr(_, _, None)) => { None }
+                            Some(AutoPtr(_, _, Some(box r))) => { Some(r) }
+                            Some(_) => {
+                                self.tcx().sess.span_bug(
+                                    base_expr.span,
+                                    "unexpected adjustment autoref");
+                            }
+                        };
+
+                        let adjusted_base_ty =
+                            self.fcx.adjust_expr_ty(
                                 &**base_expr,
-                                self.fcx.expr_ty(&**base_expr),
-                                index_expr,
-                                PreferMutLvalue);
+                                Some(&ty::AdjustDerefRef(base_adjustment.clone())));
+
+                        check::try_index_step(
+                            self.fcx,
+                            MethodCall::expr(expr.id),
+                            *expr,
+                            &**base_expr,
+                            adjusted_base_ty,
+                            base_adjustment,
+                            PreferMutLvalue);
                     }
                     ast::ExprUnary(ast::UnDeref, ref base_expr) => {
                         check::try_overloaded_deref(
-                                self.fcx,
-                                expr.span,
-                                Some(MethodCall::expr(expr.id)),
-                                Some(&**base_expr),
-                                self.fcx.expr_ty(&**base_expr),
-                                check::PreferMutLvalue);
+                            self.fcx,
+                            expr.span,
+                            Some(MethodCall::expr(expr.id)),
+                            Some(&**base_expr),
+                            self.fcx.expr_ty(&**base_expr),
+                            PreferMutLvalue);
                     }
                     _ => {}
                 }
