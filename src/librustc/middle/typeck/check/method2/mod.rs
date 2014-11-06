@@ -20,8 +20,6 @@ use util::ppaux::Repr;
 mod probe;
 mod confirm;
 
-pub type MethodResult = Result<MethodCallee, MethodError>;
-
 pub enum MethodError {
     // Did not find an applicable method, but we did find various
     // static methods that may apply.

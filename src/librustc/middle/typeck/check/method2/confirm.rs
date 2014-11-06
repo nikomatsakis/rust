@@ -411,14 +411,8 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
 
         // Gather up expressions we want to munge.
         let mut exprs = Vec::new();
-        match self.self_expr {
-            Some(expr) => exprs.push(expr),
-            None => {}
-        }
+        exprs.push(self.self_expr);
         loop {
-            if exprs.len() == 0 {
-                break
-            }
             let last = exprs[exprs.len() - 1];
             match last.node {
                 ast::ExprParen(ref expr) |
@@ -492,8 +486,8 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
                         // (ab)use the normal type checking paths.
                         base_adjustment.autoref = match base_adjustment.autoref {
                             None => { None }
-                            Some(AutoPtr(_, _, None)) => { None }
-                            Some(AutoPtr(_, _, Some(box r))) => { Some(r) }
+                            Some(ty::AutoPtr(_, _, None)) => { None }
+                            Some(ty::AutoPtr(_, _, Some(box r))) => { Some(r) }
                             Some(_) => {
                                 self.tcx().sess.span_bug(
                                     base_expr.span,
