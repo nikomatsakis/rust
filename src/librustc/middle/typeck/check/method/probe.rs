@@ -92,7 +92,8 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
     pub fn new(fcx: &'a FnCtxt<'a,'tcx>,
                span: Span,
                method_name: ast::Name,
-               self_ty: ty::t)
+               self_ty: ty::t,
+               call_expr_id: ast::NodeId)
                -> ProbeContext<'a,'tcx>
     {
         let mut steps = Vec::new();
@@ -121,7 +122,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                self_ty.repr(fcx.tcx()),
                steps.repr(fcx.tcx()));
 
-        return ProbeContext {
+         let mut probe_cx = ProbeContext {
             fcx: fcx,
             span: span,
             method_name: method_name,
@@ -131,6 +132,10 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
             steps: Rc::new(steps),
             static_candidates: Vec::new(),
         };
+
+        probe_cx.assemble_inherent_probes();
+        probe_cx.assemble_extension_probes_for_traits_in_scope(call_expr_id);
+        return probe_cx;
 
         fn consider_reborrow(t: ty::t, d: uint) -> PickAdjustment {
             // Insert a `&*` or `&mut *` if this is a reference type:
@@ -152,34 +157,29 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
     ///////////////////////////////////////////////////////////////////////////
     // PROBE ASSEMBLY
 
-    pub fn assemble_inherent_probes(&mut self,
-                                    restrict_to_trait: Option<ast::DefId>) {
+    fn assemble_inherent_probes(&mut self) {
         let steps = self.steps.clone();
         for step in steps.iter() {
-            self.assemble_probe(step.self_ty, restrict_to_trait);
+            self.assemble_probe(step.self_ty);
         }
     }
 
-    fn assemble_probe(&mut self, self_ty: ty::t, restrict_to_trait: Option<ast::DefId>) {
+    fn assemble_probe(&mut self, self_ty: ty::t) {
         debug!("assemble_probe: self_ty={}",
                self_ty.repr(self.tcx()));
 
         match ty::get(self_ty).sty {
             ty::ty_trait(box ty::TyTrait { def_id, ref substs, bounds, .. }) => {
-                if restrict_to_trait.is_none() {
-                    self.assemble_inherent_probes_from_object(self_ty, def_id, substs, bounds);
-                    self.assemble_inherent_impl_probes_for_type(def_id);
-                }
+                self.assemble_inherent_probes_from_object(self_ty, def_id, substs, bounds);
+                self.assemble_inherent_impl_probes_for_type(def_id);
             }
             ty::ty_enum(did, _) |
             ty::ty_struct(did, _) |
             ty::ty_unboxed_closure(did, _, _) => {
-                if restrict_to_trait.is_none() {
-                    self.assemble_inherent_impl_probes_for_type(did);
-                }
+                self.assemble_inherent_impl_probes_for_type(did);
             }
             ty::ty_param(p) => {
-                self.assemble_inherent_probes_from_param(self_ty, restrict_to_trait, p);
+                self.assemble_inherent_probes_from_param(self_ty, p);
             }
             _ => {
             }
@@ -290,17 +290,12 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
 
     fn assemble_inherent_probes_from_param(&mut self,
                                            _rcvr_ty: ty::t,
-                                           restrict_to_trait: Option<ast::DefId>,
                                            param_ty: ty::ParamTy) {
         let ty::ParamTy { space, idx: index, .. } = param_ty;
         let bounds =
             self.fcx.inh.param_env.bounds.get(space, index).trait_bounds
             .as_slice();
         self.elaborate_bounds(bounds, |this, trait_ref, m, method_num| {
-            if Some(trait_ref.def_id) == restrict_to_trait {
-                return;
-            }
-
             let xform_self_ty =
                 this.xform_self_ty(&m, &trait_ref.substs);
 

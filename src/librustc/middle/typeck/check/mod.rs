@@ -142,7 +142,6 @@ pub mod regionmanip;
 pub mod regionck;
 pub mod demand;
 pub mod method;
-pub mod method2;
 pub mod wf;
 
 /// Fields that are part of a `FnCtxt` which are inherited by
@@ -3089,11 +3088,12 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
 
         let tps = tps.iter().map(|ast_ty| fcx.to_ty(&**ast_ty)).collect::<Vec<_>>();
         let fn_ty = match method::lookup(fcx,
-                                         expr,
-                                         &*rcvr,
+                                         method_name.span,
                                          method_name.node.name,
                                          expr_t,
-                                         tps.as_slice()) {
+                                         tps,
+                                         expr.id,
+                                         rcvr) {
             Ok(method) => {
                 let method_ty = method.ty;
                 let method_call = MethodCall::expr(expr.id);
@@ -3628,39 +3628,29 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
             None => {}
         }
 
-        let tps: Vec<ty::t> = tys.iter().map(|ty| fcx.to_ty(&**ty)).collect();
-        match method::lookup(fcx,
-                             expr,
-                             base,
-                             field.node.name,
-                             expr_t,
-                             tps.as_slice()) {
-            Ok(_) => {
-                fcx.type_error_message(
-                    field.span,
-                    |actual| {
-                        format!("attempted to take value of method `{}` on type \
-                                 `{}`", token::get_ident(field.node), actual)
-                    },
-                    expr_t, None);
+        if method::probe(fcx, field.span, field.node.name, expr_t, expr.id) {
+            fcx.type_error_message(
+                field.span,
+                |actual| {
+                    format!("attempted to take value of method `{}` on type \
+                            `{}`", token::get_ident(field.node), actual)
+                },
+                expr_t, None);
 
-                tcx.sess.span_help(field.span,
-                    "maybe a `()` to call it is missing? \
-                     If not, try an anonymous function");
-            }
-
-            Err(_) => {
-                fcx.type_error_message(
-                    expr.span,
-                    |actual| {
-                        format!("attempted access of field `{}` on \
-                                        type `{}`, but no field with that \
-                                        name was found",
-                                       token::get_ident(field.node),
-                                       actual)
-                    },
-                    expr_t, None);
-            }
+            tcx.sess.span_help(field.span,
+                               "maybe a `()` to call it is missing? \
+                               If not, try an anonymous function");
+        } else {
+            fcx.type_error_message(
+                expr.span,
+                |actual| {
+                    format!("attempted access of field `{}` on \
+                            type `{}`, but no field with that \
+                            name was found",
+                            token::get_ident(field.node),
+                            actual)
+                },
+                expr_t, None);
         }
 
         fcx.write_error(expr.id);
