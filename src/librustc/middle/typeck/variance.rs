@@ -213,7 +213,7 @@ use arena;
 use arena::Arena;
 use middle::resolve_lifetime as rl;
 use middle::subst;
-use middle::subst::{ParamSpace, FnSpace, TypeSpace, SelfSpace, VecPerParamSpace};
+use middle::subst::{ParamSpace, FnSpace, TypeSpace, SelfSpace, AssocSpace, VecPerParamSpace};
 use middle::traits;
 use middle::ty;
 use std::fmt;
@@ -361,6 +361,63 @@ fn lang_items(tcx: &ty::ctxt) -> Vec<(ast::NodeId,ty::Variance)> {
 }
 
 impl<'a, 'tcx> TermsContext<'a, 'tcx> {
+    fn add_inferreds_for_item(&mut self,
+                              item_id: ast::NodeId,
+                              item_span: Span,
+                              has_self: bool,
+                              generics: &ast::Generics,
+                              associated_types: &[&ast::P<AssociatedType>])
+    {
+        /*!
+         * Add "inferreds" for the generic parameters declared on this
+         * item. This has a lot of annoying parameters because we are
+         * trying to drive this from the AST, rather than the
+         * ty::Generics, so that we can get span info -- but this
+         * means we must accommodate syntactic distinctions.
+         */
+
+        // NB: In the code below for writing the results back into the
+        // tcx, we rely on the fact that all inferreds for a particular
+        // item are assigned continuous indices.
+
+        let inferreds_on_entry = self.num_inferred();
+
+        if has_self {
+            self.add_inferred(item_id, TypeParam, SelfSpace, 0, item_id,
+                              item_span, special_names::type_self);
+        }
+
+        for (i, p) in generics.lifetimes.iter().enumerate() {
+            let id = p.lifetime.id;
+            self.add_inferred(item.id, RegionParam, TypeSpace, i, id,
+                              p.lifetime.span, p.lifetime.name);
+        }
+
+        for (i, p) in generics.ty_params.iter().enumerate() {
+            self.add_inferred(item.id, TypeParam, TypeSpace, i, p.id,
+                              p.span, p.ident.name);
+        }
+
+        for (i, p) in associated_types.iter().enumerate() {
+            self.add_inferred(item.id, TypeParam, AssocSpace, i, p.id,
+                              p.span, p.ident.name);
+        }
+
+        // If this item has no type or lifetime parameters,
+        // then there are no variances to infer, so just
+        // insert an empty entry into the variance map.
+        // Arguably we could just leave the map empty in this
+        // case but it seems cleaner to be able to distinguish
+        // "invalid item id" from "item id with no
+        // parameters".
+        if self.num_inferred() == inferreds_on_entry {
+            let newly_added = self.tcx.item_variance_map.borrow_mut().insert(
+                ast_util::local_def(item.id),
+                self.empty_variances.clone());
+            assert!(newly_added);
+        }
+    }
+
     fn add_inferred(&mut self,
                     item_id: ast::NodeId,
                     kind: ParamKind,
@@ -397,17 +454,34 @@ impl<'a, 'tcx> TermsContext<'a, 'tcx> {
                              space: ParamSpace)
                              -> ty::Variance
     {
-        if is_stage0() {
-            // Traits are always invariant w/r/t `Self` and their input
-            // type parameters.
-            if space == SelfSpace {
-                return ty::Invariant;
-            }
-        }
+        match space {
+            AssocSpace => {
+                // Associated types must always be invariant because
+                // they can be projected out, so we can't easily
+                // enumerate the uses to which they may be put.
+                //
+                // Consider the associated type `Foo::T`:
+                //
+                //     trait Foo { type T; fn get(&self) -> T; }
+                //     fn foo<F:Foo>(x: &mut F::T) { ... }
+                //
+                // Within the trait itself, `T` only has covariant
+                // uses, but *outside of the trait*, it appears in an
+                // invariant position. So if we had an impl that was
+                // supplying a vtable targeting some particular type
+                // for `T`, and we allowed that vtable to be reused
+                // with a subtype for `T`, it seems clear we'd get
+                // into trouble.
 
-        match self.lang_items.iter().find(|&&(n, _)| n == item_id) {
-            Some(&(_, v)) => v,
-            None => ty::Bivariant
+                ty::Invariant
+            }
+
+            TypeSpace | SelfSpace | FnSpace => {
+                match self.lang_items.iter().find(|&&(n, _)| n == item_id) {
+                    Some(&(_, v)) => v,
+                    None => ty::Bivariant
+                }
+            }
         }
     }
 
@@ -420,46 +494,20 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TermsContext<'a, 'tcx> {
     fn visit_item(&mut self, item: &ast::Item) {
         debug!("add_inferreds for item {}", item.repr(self.tcx));
 
-        let inferreds_on_entry = self.num_inferred();
-
-        // NB: In the code below for writing the results back into the
-        // tcx, we rely on the fact that all inferreds for a particular
-        // item are assigned continuous indices.
-        match item.node {
-            ast::ItemTrait(..) => {
-                self.add_inferred(item.id, TypeParam, SelfSpace, 0, item.id,
-                                  item.span, special_names::type_self);
-            }
-            _ => { }
-        }
-
         match item.node {
             ast::ItemEnum(_, ref generics) |
-            ast::ItemStruct(_, ref generics) |
-            ast::ItemTrait(ref generics, _, _, _) => {
-                for (i, p) in generics.lifetimes.iter().enumerate() {
-                    let id = p.lifetime.id;
-                    self.add_inferred(item.id, RegionParam, TypeSpace, i, id,
-                                      p.lifetime.span, p.lifetime.name);
-                }
-                for (i, p) in generics.ty_params.iter().enumerate() {
-                    self.add_inferred(item.id, TypeParam, TypeSpace, i, p.id,
-                                      p.span, p.ident.name);
-                }
+            ast::ItemStruct(_, ref generics) => {
+                self.add_inferreds(item.id, item.span, false, generics, &[]);
+            }
+            ast::ItemTrait(ref generics, _, _, ref trait_items) => {
+                let assoc_types =
+                    trait_items.iter()
+                    .flat_map(|t| match *t { TypeTraitItem(ref d) => Some(d).into_iter(),
+                                             RequiredMethod(..) => None.into_iter(),
+                                             ProvidedMethod(..) => None.into_iter() })
+                    .collect();
 
-                // If this item has no type or lifetime parameters,
-                // then there are no variances to infer, so just
-                // insert an empty entry into the variance map.
-                // Arguably we could just leave the map empty in this
-                // case but it seems cleaner to be able to distinguish
-                // "invalid item id" from "item id with no
-                // parameters".
-                if self.num_inferred() == inferreds_on_entry {
-                    let newly_added = self.tcx.item_variance_map.borrow_mut().insert(
-                        ast_util::local_def(item.id),
-                        self.empty_variances.clone());
-                    assert!(newly_added);
-                }
+                self.add_inferreds(item.id, item.span, true, generics, &*assoc_types);
 
                 visit::walk_item(self, item);
             }
@@ -1286,4 +1334,3 @@ fn glb(v1: ty::Variance, v2: ty::Variance) -> ty::Variance {
     }
 }
 
-fn is_stage0() -> bool { false }
