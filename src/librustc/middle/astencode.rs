@@ -21,7 +21,7 @@ use metadata::encoder as e;
 use middle::region;
 use metadata::tydecode;
 use metadata::tydecode::{DefIdSource, NominalType, TypeWithId, TypeParameter};
-use metadata::tydecode::{RegionParameter};
+use metadata::tydecode::{RegionParameter, UnboxedClosureSource};
 use metadata::tyencode;
 use middle::mem_categorization::Typer;
 use middle::subst;
@@ -38,9 +38,7 @@ use syntax::parse::token;
 use syntax::ptr::P;
 use syntax;
 
-use libc;
 use std::io::Seek;
-use std::mem;
 use std::rc::Rc;
 
 use rbml::io::SeekableMemWriter;
@@ -81,7 +79,7 @@ pub fn encode_inlined_item(ecx: &e::EncodeContext,
         e::IIForeignRef(i) => i.id,
         e::IITraitItemRef(_, &ast::ProvidedMethod(ref m)) => m.id,
         e::IITraitItemRef(_, &ast::RequiredMethod(ref m)) => m.id,
-        e::IITraitItemRef(_, &ast::TypeTraitItem(ref ti)) => ti.id,
+        e::IITraitItemRef(_, &ast::TypeTraitItem(ref ti)) => ti.ty_param.id,
         e::IIImplItemRef(_, &ast::MethodImplItem(ref m)) => m.id,
         e::IIImplItemRef(_, &ast::TypeImplItem(ref ti)) => ti.id,
     };
@@ -156,7 +154,7 @@ pub fn decode_inlined_item<'tcx>(cdata: &cstore::crate_metadata,
                 match *ti {
                     ast::ProvidedMethod(ref m) => m.pe_ident(),
                     ast::RequiredMethod(ref ty_m) => ty_m.ident,
-                    ast::TypeTraitItem(ref ti) => ti.ident,
+                    ast::TypeTraitItem(ref ti) => ti.ty_param.ident,
                 }
             },
             ast::IIImplItem(_, ref m) => {
@@ -441,19 +439,13 @@ impl tr for def::Def {
     fn tr(&self, dcx: &DecodeContext) -> def::Def {
         match *self {
           def::DefFn(did, is_ctor) => def::DefFn(did.tr(dcx), is_ctor),
-          def::DefStaticMethod(did, wrapped_did2) => {
-            def::DefStaticMethod(did.tr(dcx),
-                                   match wrapped_did2 {
-                                    def::FromTrait(did2) => {
-                                        def::FromTrait(did2.tr(dcx))
-                                    }
-                                    def::FromImpl(did2) => {
-                                        def::FromImpl(did2.tr(dcx))
-                                    }
-                                   })
+          def::DefStaticMethod(did, p) => {
+            def::DefStaticMethod(did.tr(dcx), p.map(|did2| did2.tr(dcx)))
           }
           def::DefMethod(did0, did1, p) => {
-            def::DefMethod(did0.tr(dcx), did1.map(|did1| did1.tr(dcx)), p)
+            def::DefMethod(did0.tr(dcx),
+                           did1.map(|did1| did1.tr(dcx)),
+                           p.map(|did2| did2.tr(dcx)))
           }
           def::DefSelfTy(nid) => { def::DefSelfTy(dcx.tr_id(nid)) }
           def::DefMod(did) => { def::DefMod(did.tr(dcx)) }
@@ -717,8 +709,9 @@ impl<'a> vtable_decoder_helpers for reader::Decoder<'a> {
     {
         let types = self.read_to_vec(|this| Ok(f(this))).unwrap();
         let selfs = self.read_to_vec(|this| Ok(f(this))).unwrap();
+        let assocs = self.read_to_vec(|this| Ok(f(this))).unwrap();
         let fns = self.read_to_vec(|this| Ok(f(this))).unwrap();
-        VecPerParamSpace::new(types, selfs, fns)
+        VecPerParamSpace::new(types, selfs, assocs, fns)
     }
 
     fn read_vtable_res_with_key(&mut self,
@@ -1128,27 +1121,15 @@ impl<'a> write_tag_and_id for Encoder<'a> {
     }
 }
 
-struct SideTableEncodingIdVisitor<'a,'b:'a> {
-    ecx_ptr: *const libc::c_void,
-    new_rbml_w: &'a mut Encoder<'b>,
+struct SideTableEncodingIdVisitor<'a, 'b:'a, 'c:'a, 'tcx:'c> {
+    ecx: &'a e::EncodeContext<'c, 'tcx>,
+    rbml_w: &'a mut Encoder<'b>,
 }
 
-impl<'a,'b> ast_util::IdVisitingOperation for
-        SideTableEncodingIdVisitor<'a,'b> {
-    fn visit_id(&self, id: ast::NodeId) {
-        // Note: this will cause a copy of rbml_w, which is bad as
-        // it is mutable. But I believe it's harmless since we generate
-        // balanced EBML.
-        //
-        // FIXME(pcwalton): Don't copy this way.
-        let mut new_rbml_w = unsafe {
-            self.new_rbml_w.unsafe_clone()
-        };
-        // See above
-        let ecx: &e::EncodeContext = unsafe {
-            mem::transmute(self.ecx_ptr)
-        };
-        encode_side_tables_for_id(ecx, &mut new_rbml_w, id)
+impl<'a, 'b, 'c, 'tcx> ast_util::IdVisitingOperation for
+        SideTableEncodingIdVisitor<'a, 'b, 'c, 'tcx> {
+    fn visit_id(&mut self, id: ast::NodeId) {
+        encode_side_tables_for_id(self.ecx, self.rbml_w, id)
     }
 }
 
@@ -1156,18 +1137,9 @@ fn encode_side_tables_for_ii(ecx: &e::EncodeContext,
                              rbml_w: &mut Encoder,
                              ii: &ast::InlinedItem) {
     rbml_w.start_tag(c::tag_table as uint);
-    let mut new_rbml_w = unsafe {
-        rbml_w.unsafe_clone()
-    };
-
-    // Because the ast visitor uses @IdVisitingOperation, I can't pass in
-    // ecx directly, but /I/ know that it'll be fine since the lifetime is
-    // tied to the CrateContext that lives throughout this entire section.
-    ast_util::visit_ids_for_inlined_item(ii, &SideTableEncodingIdVisitor {
-        ecx_ptr: unsafe {
-            mem::transmute(ecx)
-        },
-        new_rbml_w: &mut new_rbml_w,
+    ast_util::visit_ids_for_inlined_item(ii, &mut SideTableEncodingIdVisitor {
+        ecx: ecx,
+        rbml_w: rbml_w
     });
     rbml_w.end_tag();
 }
@@ -1179,14 +1151,14 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     debug!("Encoding side tables for id {}", id);
 
-    for def in tcx.def_map.borrow().find(&id).iter() {
+    for def in tcx.def_map.borrow().get(&id).iter() {
         rbml_w.tag(c::tag_table_def, |rbml_w| {
             rbml_w.id(id);
             rbml_w.tag(c::tag_table_val, |rbml_w| (*def).encode(rbml_w).unwrap());
         })
     }
 
-    for &ty in tcx.node_types.borrow().find(&(id as uint)).iter() {
+    for &ty in tcx.node_types.borrow().get(&(id as uint)).iter() {
         rbml_w.tag(c::tag_table_node_type, |rbml_w| {
             rbml_w.id(id);
             rbml_w.tag(c::tag_table_val, |rbml_w| {
@@ -1195,7 +1167,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
         })
     }
 
-    for &item_substs in tcx.item_substs.borrow().find(&id).iter() {
+    for &item_substs in tcx.item_substs.borrow().get(&id).iter() {
         rbml_w.tag(c::tag_table_item_subst, |rbml_w| {
             rbml_w.id(id);
             rbml_w.tag(c::tag_table_val, |rbml_w| {
@@ -1204,7 +1176,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
         })
     }
 
-    for &fv in tcx.freevars.borrow().find(&id).iter() {
+    for &fv in tcx.freevars.borrow().get(&id).iter() {
         rbml_w.tag(c::tag_table_freevars, |rbml_w| {
             rbml_w.id(id);
             rbml_w.tag(c::tag_table_val, |rbml_w| {
@@ -1237,7 +1209,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
         }
     }
 
-    for &cm in tcx.capture_modes.borrow().find(&id).iter() {
+    for &cm in tcx.capture_modes.borrow().get(&id).iter() {
         rbml_w.tag(c::tag_table_capture_modes, |rbml_w| {
             rbml_w.id(id);
             rbml_w.tag(c::tag_table_val, |rbml_w| {
@@ -1247,7 +1219,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
     }
 
     let lid = ast::DefId { krate: ast::LOCAL_CRATE, node: id };
-    for &pty in tcx.tcache.borrow().find(&lid).iter() {
+    for &pty in tcx.tcache.borrow().get(&lid).iter() {
         rbml_w.tag(c::tag_table_tcache, |rbml_w| {
             rbml_w.id(id);
             rbml_w.tag(c::tag_table_val, |rbml_w| {
@@ -1256,7 +1228,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
         })
     }
 
-    for &type_param_def in tcx.ty_param_defs.borrow().find(&id).iter() {
+    for &type_param_def in tcx.ty_param_defs.borrow().get(&id).iter() {
         rbml_w.tag(c::tag_table_param_defs, |rbml_w| {
             rbml_w.id(id);
             rbml_w.tag(c::tag_table_val, |rbml_w| {
@@ -1266,7 +1238,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
     }
 
     let method_call = MethodCall::expr(id);
-    for &method in tcx.method_map.borrow().find(&method_call).iter() {
+    for &method in tcx.method_map.borrow().get(&method_call).iter() {
         rbml_w.tag(c::tag_table_method_map, |rbml_w| {
             rbml_w.id(id);
             rbml_w.tag(c::tag_table_val, |rbml_w| {
@@ -1275,7 +1247,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
         })
     }
 
-    for &trait_ref in tcx.object_cast_map.borrow().find(&id).iter() {
+    for &trait_ref in tcx.object_cast_map.borrow().get(&id).iter() {
         rbml_w.tag(c::tag_table_object_cast_map, |rbml_w| {
             rbml_w.id(id);
             rbml_w.tag(c::tag_table_val, |rbml_w| {
@@ -1284,11 +1256,11 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
         })
     }
 
-    for &adjustment in tcx.adjustments.borrow().find(&id).iter() {
+    for &adjustment in tcx.adjustments.borrow().get(&id).iter() {
         match *adjustment {
             _ if ty::adjust_is_object(adjustment) => {
                 let method_call = MethodCall::autoobject(id);
-                for &method in tcx.method_map.borrow().find(&method_call).iter() {
+                for &method in tcx.method_map.borrow().get(&method_call).iter() {
                     rbml_w.tag(c::tag_table_method_map, |rbml_w| {
                         rbml_w.id(id);
                         rbml_w.tag(c::tag_table_val, |rbml_w| {
@@ -1301,7 +1273,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
                 assert!(!ty::adjust_is_object(adjustment));
                 for autoderef in range(0, adj.autoderefs) {
                     let method_call = MethodCall::autoderef(id, autoderef);
-                    for &method in tcx.method_map.borrow().find(&method_call).iter() {
+                    for &method in tcx.method_map.borrow().get(&method_call).iter() {
                         rbml_w.tag(c::tag_table_method_map, |rbml_w| {
                             rbml_w.id(id);
                             rbml_w.tag(c::tag_table_val, |rbml_w| {
@@ -1327,7 +1299,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     for unboxed_closure in tcx.unboxed_closures
                               .borrow()
-                              .find(&ast_util::local_def(id))
+                              .get(&ast_util::local_def(id))
                               .iter() {
         rbml_w.tag(c::tag_table_unboxed_closures, |rbml_w| {
             rbml_w.id(id);
@@ -1756,12 +1728,14 @@ impl<'a> rbml_decoder_decoder_helpers for reader::Decoder<'a> {
             "FnMutUnboxedClosureKind",
             "FnOnceUnboxedClosureKind"
         ];
-        let kind = self.read_enum_variant(variants, |_, i| {
-            Ok(match i {
-                0 => ty::FnUnboxedClosureKind,
-                1 => ty::FnMutUnboxedClosureKind,
-                2 => ty::FnOnceUnboxedClosureKind,
-                _ => panic!("bad enum variant for ty::UnboxedClosureKind"),
+        let kind = self.read_enum("UnboxedClosureKind", |this| {
+            this.read_enum_variant(variants, |_, i| {
+                Ok(match i {
+                    0 => ty::FnUnboxedClosureKind,
+                    1 => ty::FnMutUnboxedClosureKind,
+                    2 => ty::FnOnceUnboxedClosureKind,
+                    _ => panic!("bad enum variant for ty::UnboxedClosureKind"),
+                })
             })
         }).unwrap();
         ty::UnboxedClosure {
@@ -1799,13 +1773,17 @@ impl<'a> rbml_decoder_decoder_helpers for reader::Decoder<'a> {
          * case. We translate them with `tr_def_id()` which will map
          * the crate numbers back to the original source crate.
          *
+         * Unboxed closures are cloned along with the function being
+         * inlined, and all side tables use interned node IDs, so we
+         * translate their def IDs accordingly.
+         *
          * It'd be really nice to refactor the type repr to not include
          * def-ids so that all these distinctions were unnecessary.
          */
 
         let r = match source {
             NominalType | TypeWithId | RegionParameter => dcx.tr_def_id(did),
-            TypeParameter => dcx.tr_intern_def_id(did)
+            TypeParameter | UnboxedClosureSource => dcx.tr_intern_def_id(did)
         };
         debug!("convert_def_id(source={}, did={})={}", source, did, r);
         return r;

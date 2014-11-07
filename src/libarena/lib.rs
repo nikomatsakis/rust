@@ -31,6 +31,8 @@
 #![feature(unsafe_destructor)]
 #![allow(missing_docs)]
 
+extern crate alloc;
+
 use std::cell::{Cell, RefCell};
 use std::cmp;
 use std::intrinsics::{TyDesc, get_tydesc};
@@ -131,7 +133,7 @@ impl Drop for Arena {
 
 #[inline]
 fn round_up(base: uint, align: uint) -> uint {
-    (base.checked_add(&(align - 1))).unwrap() & !(&(align - 1))
+    (base.checked_add(&(align - 1))).unwrap() & !(align - 1)
 }
 
 // Walk down a chunk, running the destructors for any objects stored
@@ -389,6 +391,7 @@ impl<T> TypedArenaChunk<T> {
         let size = calculate_size::<T>(capacity);
         let chunk = allocate(size, mem::min_align_of::<TypedArenaChunk<T>>())
                     as *mut TypedArenaChunk<T>;
+        if chunk.is_null() { alloc::oom() }
         (*chunk).next = next;
         (*chunk).capacity = capacity;
         chunk

@@ -13,7 +13,7 @@ use ast::{FnUnboxedClosureKind, FnMutUnboxedClosureKind};
 use ast::{FnOnceUnboxedClosureKind};
 use ast::{MethodImplItem, RegionTyParamBound, TraitTyParamBound};
 use ast::{RequiredMethod, ProvidedMethod, TypeImplItem, TypeTraitItem};
-use ast::{UnboxedClosureKind, UnboxedFnTyParamBound};
+use ast::{UnboxedClosureKind};
 use ast;
 use ast_util;
 use owned_slice::OwnedSlice;
@@ -30,6 +30,7 @@ use print::pp::{Breaks, Consistent, Inconsistent, eof};
 use print::pp;
 use ptr::P;
 
+use std::ascii;
 use std::io::{IoResult, MemWriter};
 use std::io;
 use std::mem;
@@ -169,17 +170,14 @@ pub fn to_string(f: |&mut State| -> IoResult<()>) -> String {
     let mut s = rust_printer(box MemWriter::new());
     f(&mut s).unwrap();
     eof(&mut s.s).unwrap();
-    unsafe {
+    let wr = unsafe {
         // FIXME(pcwalton): A nasty function to extract the string from an `io::Writer`
         // that we "know" to be a `MemWriter` that works around the lack of checked
         // downcasts.
-        let obj: TraitObject = mem::transmute_copy(&s.s.out);
-        let wr: Box<MemWriter> = mem::transmute(obj.data);
-        let result =
-            String::from_utf8(wr.get_ref().as_slice().to_vec()).unwrap();
-        mem::forget(wr);
-        result.to_string()
-    }
+        let obj: &TraitObject = mem::transmute(&s.s.out);
+        mem::transmute::<*mut (), &MemWriter>(obj.data)
+    };
+    String::from_utf8(wr.get_ref().to_vec()).unwrap()
 }
 
 pub fn binop_to_string(op: BinOpToken) -> &'static str {
@@ -701,7 +699,6 @@ impl<'a> State<'a> {
                                       None,
                                       &OwnedSlice::empty(),
                                       Some(&generics),
-                                      None,
                                       None));
             }
             ast::TyClosure(ref f) => {
@@ -721,7 +718,6 @@ impl<'a> State<'a> {
                                       None,
                                       &f.bounds,
                                       Some(&generics),
-                                      None,
                                       None));
             }
             ast::TyProc(ref f) => {
@@ -741,20 +737,7 @@ impl<'a> State<'a> {
                                       None,
                                       &f.bounds,
                                       Some(&generics),
-                                      None,
                                       None));
-            }
-            ast::TyUnboxedFn(ref f) => {
-                try!(self.print_ty_fn(None,
-                                      None,
-                                      ast::NormalFn,
-                                      ast::Many,
-                                      &*f.decl,
-                                      None,
-                                      &OwnedSlice::empty(),
-                                      None,
-                                      None,
-                                      Some(f.kind)));
             }
             ast::TyPath(ref path, ref bounds, _) => {
                 try!(self.print_bounded_path(path, bounds));
@@ -818,9 +801,11 @@ impl<'a> State<'a> {
     }
 
     fn print_associated_type(&mut self, typedef: &ast::AssociatedType)
-                             -> IoResult<()> {
+                             -> IoResult<()>
+    {
+        try!(self.print_outer_attributes(typedef.attrs[]));
         try!(self.word_space("type"));
-        try!(self.print_ident(typedef.ident));
+        try!(self.print_ty_param(&typedef.ty_param));
         word(&mut self.s, ";")
     }
 
@@ -1212,8 +1197,7 @@ impl<'a> State<'a> {
                               Some(m.ident),
                               &OwnedSlice::empty(),
                               Some(&m.generics),
-                              Some(&m.explicit_self.node),
-                              None));
+                              Some(&m.explicit_self.node)));
         word(&mut self.s, ";")
     }
 
@@ -1995,14 +1979,34 @@ impl<'a> State<'a> {
 
             try!(self.print_ident(segment.identifier));
 
-            if !segment.lifetimes.is_empty() || !segment.types.is_empty() {
-                if colons_before_params {
-                    try!(word(&mut self.s, "::"))
-                }
+            try!(self.print_path_parameters(&segment.parameters, colons_before_params));
+        }
+
+        match *opt_bounds {
+            None => Ok(()),
+            Some(ref bounds) => self.print_bounds("+", bounds)
+        }
+    }
+
+    fn print_path_parameters(&mut self,
+                             parameters: &ast::PathParameters,
+                             colons_before_params: bool)
+                             -> IoResult<()>
+    {
+        if parameters.is_empty() {
+            return Ok(());
+        }
+
+        if colons_before_params {
+            try!(word(&mut self.s, "::"))
+        }
+
+        match *parameters {
+            ast::AngleBracketedParameters(ref data) => {
                 try!(word(&mut self.s, "<"));
 
                 let mut comma = false;
-                for lifetime in segment.lifetimes.iter() {
+                for lifetime in data.lifetimes.iter() {
                     if comma {
                         try!(self.word_space(","))
                     }
@@ -2010,24 +2014,38 @@ impl<'a> State<'a> {
                     comma = true;
                 }
 
-                if !segment.types.is_empty() {
+                if !data.types.is_empty() {
                     if comma {
                         try!(self.word_space(","))
                     }
                     try!(self.commasep(
                         Inconsistent,
-                        segment.types.as_slice(),
+                        data.types.as_slice(),
                         |s, ty| s.print_type(&**ty)));
                 }
 
                 try!(word(&mut self.s, ">"))
             }
+
+            ast::ParenthesizedParameters(ref data) => {
+                try!(word(&mut self.s, "("));
+                try!(self.commasep(
+                    Inconsistent,
+                    data.inputs.as_slice(),
+                    |s, ty| s.print_type(&**ty)));
+                try!(word(&mut self.s, ")"));
+
+                match data.output {
+                    None => { }
+                    Some(ref ty) => {
+                        try!(self.word_space("->"));
+                        try!(self.print_type(&**ty));
+                    }
+                }
+            }
         }
 
-        match *opt_bounds {
-            None => Ok(()),
-            Some(ref bounds) => self.print_bounds("+", bounds)
-        }
+        Ok(())
     }
 
     fn print_path(&mut self, path: &ast::Path,
@@ -2373,15 +2391,6 @@ impl<'a> State<'a> {
                     RegionTyParamBound(ref lt) => {
                         self.print_lifetime(lt)
                     }
-                    UnboxedFnTyParamBound(ref unboxed_function_type) => {
-                        try!(self.print_path(&unboxed_function_type.path,
-                                             false));
-                        try!(self.popen());
-                        try!(self.print_fn_args(&*unboxed_function_type.decl,
-                                                None));
-                        try!(self.pclose());
-                        self.print_fn_output(&*unboxed_function_type.decl)
-                    }
                 })
             }
             Ok(())
@@ -2434,28 +2443,32 @@ impl<'a> State<'a> {
             } else {
                 let idx = idx - generics.lifetimes.len();
                 let param = generics.ty_params.get(idx);
-                match param.unbound {
-                    Some(TraitTyParamBound(ref tref)) => {
-                        try!(s.print_trait_ref(tref));
-                        try!(s.word_space("?"));
-                    }
-                    _ => {}
-                }
-                try!(s.print_ident(param.ident));
-                try!(s.print_bounds(":", &param.bounds));
-                match param.default {
-                    Some(ref default) => {
-                        try!(space(&mut s.s));
-                        try!(s.word_space("="));
-                        s.print_type(&**default)
-                    }
-                    _ => Ok(())
-                }
+                s.print_ty_param(param)
             }
         }));
 
         try!(word(&mut self.s, ">"));
         Ok(())
+    }
+
+    pub fn print_ty_param(&mut self, param: &ast::TyParam) -> IoResult<()> {
+        match param.unbound {
+            Some(TraitTyParamBound(ref tref)) => {
+                try!(self.print_trait_ref(tref));
+                try!(self.word_space("?"));
+            }
+            _ => {}
+        }
+        try!(self.print_ident(param.ident));
+        try!(self.print_bounds(":", &param.bounds));
+        match param.default {
+            Some(ref default) => {
+                try!(space(&mut self.s));
+                try!(self.word_space("="));
+                self.print_type(&**default)
+            }
+            _ => Ok(())
+        }
     }
 
     pub fn print_where_clause(&mut self, generics: &ast::Generics)
@@ -2637,9 +2650,7 @@ impl<'a> State<'a> {
                        id: Option<ast::Ident>,
                        bounds: &OwnedSlice<ast::TyParamBound>,
                        generics: Option<&ast::Generics>,
-                       opt_explicit_self: Option<&ast::ExplicitSelf_>,
-                       opt_unboxed_closure_kind:
-                        Option<ast::UnboxedClosureKind>)
+                       opt_explicit_self: Option<&ast::ExplicitSelf_>)
                        -> IoResult<()> {
         try!(self.ibox(indent_unit));
 
@@ -2656,9 +2667,7 @@ impl<'a> State<'a> {
             try!(self.print_fn_style(fn_style));
             try!(self.print_opt_abi_and_extern_if_nondefault(opt_abi));
             try!(self.print_onceness(onceness));
-            if opt_unboxed_closure_kind.is_none() {
-                try!(word(&mut self.s, "fn"));
-            }
+            try!(word(&mut self.s, "fn"));
         }
 
         match id {
@@ -2672,30 +2681,15 @@ impl<'a> State<'a> {
         match generics { Some(g) => try!(self.print_generics(g)), _ => () }
         try!(zerobreak(&mut self.s));
 
-        if opt_unboxed_closure_kind.is_some() || opt_sigil == Some('&') {
+        if opt_sigil == Some('&') {
             try!(word(&mut self.s, "|"));
         } else {
             try!(self.popen());
         }
 
-        match opt_unboxed_closure_kind {
-            Some(ast::FnUnboxedClosureKind) => {
-                try!(word(&mut self.s, "&"));
-                try!(self.word_space(":"));
-            }
-            Some(ast::FnMutUnboxedClosureKind) => {
-                try!(word(&mut self.s, "&mut"));
-                try!(self.word_space(":"));
-            }
-            Some(ast::FnOnceUnboxedClosureKind) => {
-                try!(self.word_space(":"));
-            }
-            None => {}
-        }
-
         try!(self.print_fn_args(decl, opt_explicit_self));
 
-        if opt_unboxed_closure_kind.is_some() || opt_sigil == Some('&') {
+        if opt_sigil == Some('&') {
             try!(word(&mut self.s, "|"));
         } else {
             if decl.variadic {
@@ -2773,7 +2767,7 @@ impl<'a> State<'a> {
             ast::LitStr(ref st, style) => self.print_string(st.get(), style),
             ast::LitByte(byte) => {
                 let mut res = String::from_str("b'");
-                (byte as char).escape_default(|c| res.push(c));
+                ascii::escape_default(byte, |c| res.push(c as char));
                 res.push('\'');
                 word(&mut self.s, res.as_slice())
             }
@@ -2818,8 +2812,12 @@ impl<'a> State<'a> {
                 if val { word(&mut self.s, "true") } else { word(&mut self.s, "false") }
             }
             ast::LitBinary(ref v) => {
-                let escaped: String = v.iter().map(|&b| b as char).collect();
-                word(&mut self.s, format!("b\"{}\"", escaped.escape_default()).as_slice())
+                let mut escaped: String = String::new();
+                for &ch in v.iter() {
+                    ascii::escape_default(ch as u8,
+                                          |ch| escaped.push(ch as char));
+                }
+                word(&mut self.s, format!("b\"{}\"", escaped).as_slice())
             }
         }
     }

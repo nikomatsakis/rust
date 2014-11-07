@@ -207,8 +207,8 @@ impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
         let impl_items = self.create_impl_from_item(item);
 
         for associated_trait in associated_traits.iter() {
-            let trait_ref = ty::node_id_to_trait_ref(
-                self.crate_context.tcx, associated_trait.ref_id);
+            let trait_ref = ty::node_id_to_trait_ref(self.crate_context.tcx,
+                                                     associated_trait.ref_id);
             debug!("(checking implementation) adding impl for trait '{}', item '{}'",
                    trait_ref.repr(self.crate_context.tcx),
                    token::get_ident(item.ident));
@@ -294,7 +294,7 @@ impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
     }
 
     fn add_inherent_impl(&self, base_def_id: DefId, impl_def_id: DefId) {
-        match self.inherent_impls.borrow().find(&base_def_id) {
+        match self.inherent_impls.borrow().get(&base_def_id) {
             Some(implementation_list) => {
                 implementation_list.borrow_mut().push(impl_def_id);
                 return;

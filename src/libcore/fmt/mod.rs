@@ -21,9 +21,9 @@ use option::{Option, Some, None};
 use ops::Deref;
 use result::{Ok, Err};
 use result;
-use slice::{AsSlice, ImmutableSlice};
+use slice::{AsSlice, SlicePrelude};
 use slice;
-use str::StrSlice;
+use str::StrPrelude;
 use str;
 
 pub use self::num::radix;
@@ -259,48 +259,6 @@ pub trait UpperExp for Sized? {
     fn fmt(&self, &mut Formatter) -> Result;
 }
 
-// FIXME #11938 - UFCS would make us able call the above methods
-// directly Show::show(x, fmt).
-macro_rules! uniform_fn_call_workaround {
-    ($( $name: ident, $trait_: ident; )*) => {
-        $(
-            #[doc(hidden)]
-            pub fn $name<Sized? T: $trait_>(x: &T, fmt: &mut Formatter) -> Result {
-                x.fmt(fmt)
-            }
-            )*
-    }
-}
-uniform_fn_call_workaround! {
-    secret_show, Show;
-    secret_bool, Bool;
-    secret_char, Char;
-    secret_signed, Signed;
-    secret_unsigned, Unsigned;
-    secret_octal, Octal;
-    secret_binary, Binary;
-    secret_lower_hex, LowerHex;
-    secret_upper_hex, UpperHex;
-    secret_string, String;
-    secret_pointer, Pointer;
-    secret_float, Float;
-    secret_lower_exp, LowerExp;
-    secret_upper_exp, UpperExp;
-}
-
-#[cfg(not(stage0))]
-static DEFAULT_ARGUMENT: rt::Argument = rt::Argument {
-    position: rt::ArgumentNext,
-    format: rt::FormatSpec {
-        fill: ' ',
-        align: rt::AlignUnknown,
-        flags: 0,
-        precision: rt::CountImplied,
-        width: rt::CountImplied,
-    }
-};
-
-#[cfg(stage0)]
 static DEFAULT_ARGUMENT: rt::Argument<'static> = rt::Argument {
     position: rt::ArgumentNext,
     format: rt::FormatSpec {
@@ -592,23 +550,23 @@ pub fn argument<'a, T>(f: extern "Rust" fn(&T, &mut Formatter) -> Result,
 /// (such as for select), then it invokes this method.
 #[doc(hidden)] #[inline]
 pub fn argumentstr<'a>(s: &'a &str) -> Argument<'a> {
-    argument(secret_string, s)
+    argument(String::fmt, s)
 }
 
 /// When the compiler determines that the type of an argument *must* be a uint
 /// (such as for plural), then it invokes this method.
 #[doc(hidden)] #[inline]
 pub fn argumentuint<'a>(s: &'a uint) -> Argument<'a> {
-    argument(secret_unsigned, s)
+    argument(Unsigned::fmt, s)
 }
 
 // Implementations of the core formatting traits
 
 impl<'a, Sized? T: Show> Show for &'a T {
-    fn fmt(&self, f: &mut Formatter) -> Result { secret_show(*self, f) }
+    fn fmt(&self, f: &mut Formatter) -> Result { (**self).fmt(f) }
 }
 impl<'a, Sized? T: Show> Show for &'a mut T {
-    fn fmt(&self, f: &mut Formatter) -> Result { secret_show(&**self, f) }
+    fn fmt(&self, f: &mut Formatter) -> Result { (**self).fmt(f) }
 }
 impl<'a> Show for &'a Show+'a {
     fn fmt(&self, f: &mut Formatter) -> Result { (*self).fmt(f) }
@@ -616,7 +574,7 @@ impl<'a> Show for &'a Show+'a {
 
 impl Bool for bool {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        secret_string(&(if *self {"true"} else {"false"}), f)
+        String::fmt(if *self { "true" } else { "false" }, f)
     }
 }
 
@@ -639,29 +597,32 @@ impl Char for char {
         let mut utf8 = [0u8, ..4];
         let amt = self.encode_utf8(utf8).unwrap_or(0);
         let s: &str = unsafe { mem::transmute(utf8[..amt]) };
-        secret_string(&s, f)
+        String::fmt(s, f)
     }
 }
 
 impl<T> Pointer for *const T {
     fn fmt(&self, f: &mut Formatter) -> Result {
         f.flags |= 1 << (rt::FlagAlternate as uint);
-        secret_lower_hex::<uint>(&(*self as uint), f)
+        LowerHex::fmt(&(*self as uint), f)
     }
 }
+
 impl<T> Pointer for *mut T {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        secret_pointer::<*const T>(&(*self as *const T), f)
+        Pointer::fmt(&(*self as *const T), f)
     }
 }
+
 impl<'a, T> Pointer for &'a T {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        secret_pointer::<*const T>(&(&**self as *const T), f)
+        Pointer::fmt(&(*self as *const T), f)
     }
 }
+
 impl<'a, T> Pointer for &'a mut T {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        secret_pointer::<*const T>(&(&**self as *const T), f)
+        Pointer::fmt(&(&**self as *const T), f)
     }
 }
 
@@ -737,21 +698,22 @@ floating!(f64)
 macro_rules! delegate(($ty:ty to $other:ident) => {
     impl Show for $ty {
         fn fmt(&self, f: &mut Formatter) -> Result {
-            (concat_idents!(secret_, $other)(self, f))
+            $other::fmt(self, f)
         }
     }
 })
-delegate!(str to string)
-delegate!(bool to bool)
-delegate!(char to char)
-delegate!(f32 to float)
-delegate!(f64 to float)
+delegate!(str to String)
+delegate!(bool to Bool)
+delegate!(char to Char)
+delegate!(f32 to Float)
+delegate!(f64 to Float)
 
 impl<T> Show for *const T {
-    fn fmt(&self, f: &mut Formatter) -> Result { secret_pointer(self, f) }
+    fn fmt(&self, f: &mut Formatter) -> Result { Pointer::fmt(self, f) }
 }
+
 impl<T> Show for *mut T {
-    fn fmt(&self, f: &mut Formatter) -> Result { secret_pointer(self, f) }
+    fn fmt(&self, f: &mut Formatter) -> Result { Pointer::fmt(self, f) }
 }
 
 macro_rules! peel(($name:ident, $($other:ident,)*) => (tuple!($($other,)*)))

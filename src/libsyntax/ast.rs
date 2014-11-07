@@ -24,9 +24,6 @@ use std::fmt::Show;
 use std::rc::Rc;
 use serialize::{Encodable, Decodable, Encoder, Decoder};
 
-#[cfg(stage0)]
-pub use self::TtToken as TTTok;
-
 // FIXME #6993: in librustc, uses of "ident" should be replaced
 // by just "Name".
 
@@ -119,7 +116,7 @@ impl Name {
     pub fn as_str<'a>(&'a self) -> &'a str {
         unsafe {
             // FIXME #12938: can't use copy_lifetime since &str isn't a &T
-            ::std::mem::transmute(token::get_name(*self).get())
+            ::std::mem::transmute::<&str,&str>(token::get_name(*self).get())
         }
     }
 
@@ -174,7 +171,7 @@ pub struct Path {
     /// module (like paths in an import).
     pub global: bool,
     /// The segments in the path: the things separated by `::`.
-    pub segments: Vec<PathSegment> ,
+    pub segments: Vec<PathSegment>,
 }
 
 /// A segment of a path: an identifier, an optional lifetime, and a set of
@@ -183,10 +180,105 @@ pub struct Path {
 pub struct PathSegment {
     /// The identifier portion of this path segment.
     pub identifier: Ident,
+
+    /// Type/lifetime parameters attached to this path. They come in
+    /// two flavors: `Path<A,B,C>` and `Path(A,B) -> C`. Note that
+    /// this is more than just simple syntactic sugar; the use of
+    /// parens affects the region binding rules, so we preserve the
+    /// distinction.
+    pub parameters: PathParameters,
+}
+
+#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+pub enum PathParameters {
+    AngleBracketedParameters(AngleBracketedParameterData),
+    ParenthesizedParameters(ParenthesizedParameterData),
+}
+
+impl PathParameters {
+    pub fn none() -> PathParameters {
+        AngleBracketedParameters(AngleBracketedParameterData {
+            lifetimes: Vec::new(),
+            types: OwnedSlice::empty(),
+        })
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match *self {
+            AngleBracketedParameters(ref data) => data.is_empty(),
+
+            // Even if the user supplied no types, something like
+            // `X()` is equivalent to `X<(),()>`.
+            ParenthesizedParameters(..) => false,
+        }
+    }
+
+    pub fn has_lifetimes(&self) -> bool {
+        match *self {
+            AngleBracketedParameters(ref data) => !data.lifetimes.is_empty(),
+            ParenthesizedParameters(_) => false,
+        }
+    }
+
+    pub fn has_types(&self) -> bool {
+        match *self {
+            AngleBracketedParameters(ref data) => !data.types.is_empty(),
+            ParenthesizedParameters(..) => true,
+        }
+    }
+
+    pub fn types(&self) -> Vec<&P<Ty>> {
+        /*!
+         * Returns the types that the user wrote. Note that these do not
+         * necessarily map to the type parameters in the parenthesized case.
+         */
+        match *self {
+            AngleBracketedParameters(ref data) => {
+                data.types.iter().collect()
+            }
+            ParenthesizedParameters(ref data) => {
+                data.inputs.iter()
+                    .chain(data.output.iter())
+                    .collect()
+            }
+        }
+    }
+
+    pub fn lifetimes(&self) -> Vec<&Lifetime> {
+        match *self {
+            AngleBracketedParameters(ref data) => {
+                data.lifetimes.iter().collect()
+            }
+            ParenthesizedParameters(_) => {
+                Vec::new()
+            }
+        }
+    }
+}
+
+/// A path like `Foo<'a, T>`
+#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+pub struct AngleBracketedParameterData {
     /// The lifetime parameters for this path segment.
     pub lifetimes: Vec<Lifetime>,
     /// The type parameters for this path segment, if present.
     pub types: OwnedSlice<P<Ty>>,
+}
+
+impl AngleBracketedParameterData {
+    fn is_empty(&self) -> bool {
+        self.lifetimes.is_empty() && self.types.is_empty()
+    }
+}
+
+/// A path like `Foo(A,B) -> C`
+#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+pub struct ParenthesizedParameterData {
+    /// `(A,B)`
+    pub inputs: Vec<P<Ty>>,
+
+    /// `C`
+    pub output: Option<P<Ty>>,
 }
 
 pub type CrateNum = u32;
@@ -216,19 +308,10 @@ pub const DUMMY_NODE_ID: NodeId = -1;
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum TyParamBound {
     TraitTyParamBound(TraitRef),
-    UnboxedFnTyParamBound(P<UnboxedFnBound>),
     RegionTyParamBound(Lifetime)
 }
 
 pub type TyParamBounds = OwnedSlice<TyParamBound>;
-
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
-pub struct UnboxedFnBound {
-    pub path: Path,
-    pub decl: P<FnDecl>,
-    pub lifetimes: Vec<LifetimeDef>,
-    pub ref_id: NodeId,
-}
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct TyParam {
@@ -385,7 +468,7 @@ pub enum Pat_ {
     PatLit(P<Expr>),
     PatRange(P<Expr>, P<Expr>),
     /// [a, b, ..i, y, z] is represented as:
-    ///     PatVec(~[a, b], Some(i), ~[y, z])
+    ///     PatVec(box [a, b], Some(i), box [y, z])
     PatVec(Vec<P<Pat>>, Option<P<Pat>>, Vec<P<Pat>>),
     PatMac(Mac),
 }
@@ -861,10 +944,8 @@ pub enum ImplItem {
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct AssociatedType {
-    pub id: NodeId,
-    pub span: Span,
-    pub ident: Ident,
     pub attrs: Vec<Attribute>,
+    pub ty_param: TyParam,
 }
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
@@ -1000,12 +1081,6 @@ pub struct BareFnTy {
 }
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
-pub struct UnboxedFnTy {
-    pub kind: UnboxedClosureKind,
-    pub decl: P<FnDecl>,
-}
-
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum Ty_ {
     TyNil,
     TyBot, /* bottom type */
@@ -1017,7 +1092,6 @@ pub enum Ty_ {
     TyClosure(P<ClosureTy>),
     TyProc(P<ClosureTy>),
     TyBareFn(P<BareFnTy>),
-    TyUnboxedFn(P<UnboxedFnTy>),
     TyTup(Vec<P<Ty>> ),
     TyPath(Path, Option<TyParamBounds>, NodeId), // for #7264; see above
     /// A "qualified path", e.g. `<Vec<T> as SomeTrait>::SomeType`

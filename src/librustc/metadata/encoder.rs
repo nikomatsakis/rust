@@ -29,7 +29,6 @@ use serialize::Encodable;
 use std::cell::RefCell;
 use std::hash::Hash;
 use std::hash;
-use std::mem;
 use std::collections::HashMap;
 use syntax::abi;
 use syntax::ast::*;
@@ -254,7 +253,7 @@ fn encode_symbol(ecx: &EncodeContext,
                  rbml_w: &mut Encoder,
                  id: NodeId) {
     rbml_w.start_tag(tag_items_data_item_symbol);
-    match ecx.item_symbols.borrow().find(&id) {
+    match ecx.item_symbols.borrow().get(&id) {
         Some(x) => {
             debug!("encode_symbol(id={}, str={})", id, *x);
             rbml_w.writer.write(x.as_bytes());
@@ -398,7 +397,7 @@ fn encode_reexported_static_base_methods(ecx: &EncodeContext,
                                          exp: &middle::resolve::Export2)
                                          -> bool {
     let impl_items = ecx.tcx.impl_items.borrow();
-    match ecx.tcx.inherent_impls.borrow().find(&exp.def_id) {
+    match ecx.tcx.inherent_impls.borrow().get(&exp.def_id) {
         Some(implementations) => {
             for base_impl_did in implementations.iter() {
                 for &method_did in (*impl_items)[*base_impl_did].iter() {
@@ -427,7 +426,7 @@ fn encode_reexported_static_trait_methods(ecx: &EncodeContext,
                                           rbml_w: &mut Encoder,
                                           exp: &middle::resolve::Export2)
                                           -> bool {
-    match ecx.tcx.trait_items_cache.borrow().find(&exp.def_id) {
+    match ecx.tcx.trait_items_cache.borrow().get(&exp.def_id) {
         Some(trait_items) => {
             for trait_item in trait_items.iter() {
                 match *trait_item {
@@ -532,7 +531,7 @@ fn encode_reexports(ecx: &EncodeContext,
                     id: NodeId,
                     path: PathElems) {
     debug!("(encoding info for module) encoding reexports for {}", id);
-    match ecx.reexports2.find(&id) {
+    match ecx.reexports2.get(&id) {
         Some(ref exports) => {
             debug!("(encoding info for module) found reexports for {}", id);
             for exp in exports.iter() {
@@ -979,7 +978,7 @@ fn should_inline(attrs: &[Attribute]) -> bool {
 fn encode_inherent_implementations(ecx: &EncodeContext,
                                    rbml_w: &mut Encoder,
                                    def_id: DefId) {
-    match ecx.tcx.inherent_impls.borrow().find(&def_id) {
+    match ecx.tcx.inherent_impls.borrow().get(&def_id) {
         None => {}
         Some(implementations) => {
             for &impl_def_id in implementations.iter() {
@@ -995,7 +994,7 @@ fn encode_inherent_implementations(ecx: &EncodeContext,
 fn encode_extension_implementations(ecx: &EncodeContext,
                                     rbml_w: &mut Encoder,
                                     trait_def_id: DefId) {
-    match ecx.tcx.trait_impls.borrow().find(&trait_def_id) {
+    match ecx.tcx.trait_impls.borrow().get(&trait_def_id) {
         None => {}
         Some(implementations) => {
             for &impl_def_id in implementations.borrow().iter() {
@@ -1508,44 +1507,36 @@ fn my_visit_expr(_e: &Expr) { }
 
 fn my_visit_item(i: &Item,
                  rbml_w: &mut Encoder,
-                 ecx_ptr: *const int,
+                 ecx: &EncodeContext,
                  index: &mut Vec<entry<i64>>) {
-    let mut rbml_w = unsafe { rbml_w.unsafe_clone() };
-    // See above
-    let ecx: &EncodeContext = unsafe { mem::transmute(ecx_ptr) };
     ecx.tcx.map.with_path(i.id, |path| {
-        encode_info_for_item(ecx, &mut rbml_w, i, index, path, i.vis);
+        encode_info_for_item(ecx, rbml_w, i, index, path, i.vis);
     });
 }
 
 fn my_visit_foreign_item(ni: &ForeignItem,
                          rbml_w: &mut Encoder,
-                         ecx_ptr:*const int,
+                         ecx: &EncodeContext,
                          index: &mut Vec<entry<i64>>) {
-    // See above
-    let ecx: &EncodeContext = unsafe { mem::transmute(ecx_ptr) };
     debug!("writing foreign item {}::{}",
             ecx.tcx.map.path_to_string(ni.id),
             token::get_ident(ni.ident));
 
-    let mut rbml_w = unsafe {
-        rbml_w.unsafe_clone()
-    };
     let abi = ecx.tcx.map.get_foreign_abi(ni.id);
     ecx.tcx.map.with_path(ni.id, |path| {
-        encode_info_for_foreign_item(ecx, &mut rbml_w,
+        encode_info_for_foreign_item(ecx, rbml_w,
                                      ni, index,
                                      path, abi);
     });
 }
 
-struct EncodeVisitor<'a,'b:'a> {
+struct EncodeVisitor<'a, 'b:'a, 'c:'a, 'tcx:'c> {
     rbml_w_for_visit_item: &'a mut Encoder<'b>,
-    ecx_ptr:*const int,
+    ecx: &'a EncodeContext<'c,'tcx>,
     index: &'a mut Vec<entry<i64>>,
 }
 
-impl<'a, 'b, 'v> Visitor<'v> for EncodeVisitor<'a, 'b> {
+impl<'a, 'b, 'c, 'tcx, 'v> Visitor<'v> for EncodeVisitor<'a, 'b, 'c, 'tcx> {
     fn visit_expr(&mut self, ex: &Expr) {
         visit::walk_expr(self, ex);
         my_visit_expr(ex);
@@ -1554,14 +1545,14 @@ impl<'a, 'b, 'v> Visitor<'v> for EncodeVisitor<'a, 'b> {
         visit::walk_item(self, i);
         my_visit_item(i,
                       self.rbml_w_for_visit_item,
-                      self.ecx_ptr,
+                      self.ecx,
                       self.index);
     }
     fn visit_foreign_item(&mut self, ni: &ForeignItem) {
         visit::walk_foreign_item(self, ni);
         my_visit_foreign_item(ni,
                               self.rbml_w_for_visit_item,
-                              self.ecx_ptr,
+                              self.ecx,
                               self.index);
     }
 }
@@ -1585,11 +1576,9 @@ fn encode_info_for_items(ecx: &EncodeContext,
                         syntax::parse::token::special_idents::invalid,
                         Public);
 
-    // See comment in `encode_side_tables_for_ii` in astencode
-    let ecx_ptr: *const int = unsafe { mem::transmute(ecx) };
     visit::walk_crate(&mut EncodeVisitor {
         index: &mut index,
-        ecx_ptr: ecx_ptr,
+        ecx: ecx,
         rbml_w_for_visit_item: &mut *rbml_w,
     }, krate);
 
@@ -1998,7 +1987,7 @@ fn encode_crate_triple(rbml_w: &mut Encoder, triple: &str) {
 
 fn encode_dylib_dependency_formats(rbml_w: &mut Encoder, ecx: &EncodeContext) {
     rbml_w.start_tag(tag_dylib_dependency_formats);
-    match ecx.tcx.dependency_formats.borrow().find(&config::CrateTypeDylib) {
+    match ecx.tcx.dependency_formats.borrow().get(&config::CrateTypeDylib) {
         Some(arr) => {
             let s = arr.iter().enumerate().filter_map(|(i, slot)| {
                 slot.map(|kind| (format!("{}:{}", i + 1, match kind {
@@ -2082,8 +2071,7 @@ fn encode_metadata_inner(wr: &mut SeekableMemWriter, parms: EncodeParams, krate:
     encode_crate_name(&mut rbml_w, ecx.link_meta.crate_name.as_slice());
     encode_crate_triple(&mut rbml_w,
                         tcx.sess
-                           .targ_cfg
-                           .target_strs
+                           .opts
                            .target_triple
                            .as_slice());
     encode_hash(&mut rbml_w, &ecx.link_meta.crate_hash);

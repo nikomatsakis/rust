@@ -76,9 +76,9 @@ use collections::hash;
 use core::fmt;
 use core::kinds::{Sized, marker};
 use core::mem;
-use core::prelude::{Clone, Drop, Eq, ImmutableSlice, Iterator};
-use core::prelude::{MutableSlice, None, Option, Ordering, PartialEq};
-use core::prelude::{PartialOrd, RawPtr, Some, StrSlice, range};
+use core::prelude::{Clone, Drop, Eq, Iterator};
+use core::prelude::{SlicePrelude, None, Option, Ordering, PartialEq};
+use core::prelude::{PartialOrd, RawPtr, Some, StrPrelude, range};
 use core::ptr;
 use core::raw::Slice;
 use core::slice;
@@ -101,7 +101,7 @@ impl Clone for CString {
     fn clone(&self) -> CString {
         let len = self.len() + 1;
         let buf = unsafe { libc::malloc(len as libc::size_t) } as *mut libc::c_char;
-        if buf.is_null() { panic!("out of memory") }
+        if buf.is_null() { ::alloc::oom() }
         unsafe { ptr::copy_nonoverlapping_memory(buf, self.buf, len); }
         CString { buf: buf as *const libc::c_char, owns_buffer_: true }
     }
@@ -121,9 +121,16 @@ impl PartialEq for CString {
 }
 
 impl PartialOrd for CString {
+    // NOTE(stage0): remove method after a snapshot
+    #[cfg(stage0)]
     #[inline]
     fn partial_cmp(&self, other: &CString) -> Option<Ordering> {
         self.as_bytes().partial_cmp(&other.as_bytes())
+    }
+    #[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+    #[inline]
+    fn partial_cmp(&self, other: &CString) -> Option<Ordering> {
+        self.as_bytes().partial_cmp(other.as_bytes())
     }
 }
 
@@ -388,7 +395,7 @@ impl ToCStr for [u8] {
     unsafe fn to_c_str_unchecked(&self) -> CString {
         let self_len = self.len();
         let buf = libc::malloc(self_len as libc::size_t + 1) as *mut u8;
-        if buf.is_null() { panic!("out of memory") }
+        if buf.is_null() { ::alloc::oom() }
 
         ptr::copy_memory(buf, self.as_ptr(), self_len);
         *buf.offset(self_len as int) = 0;

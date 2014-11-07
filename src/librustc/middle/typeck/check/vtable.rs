@@ -187,7 +187,11 @@ pub fn check_object_safety(tcx: &ty::ctxt, object_trait: &ty::TyTrait, span: Spa
                                    receiver through a trait object", method_name))
             }
 
-            ty::StaticExplicitSelfCategory |
+            ty::StaticExplicitSelfCategory => {
+                // Static methods are always object-safe since they
+                // can't be called through a trait object
+                return msgs
+            }
             ty::ByReferenceExplicitSelfCategory(..) |
             ty::ByBoxExplicitSelfCategory => {}
         }
@@ -521,7 +525,7 @@ fn note_obligation_cause(fcx: &FnCtxt,
             span_note!(tcx.sess, obligation.cause.span,
                       "cannot implement a destructor on a \
                       structure or enumeration that does not satisfy Send");
-            span_note!(tcx.sess, obligation.cause.span,
+            span_help!(tcx.sess, obligation.cause.span,
                        "use \"#[unsafe_destructor]\" on the implementation \
                        to force the compiler to allow this");
         }

@@ -20,8 +20,8 @@ use iter::{DoubleEndedIterator, AdditiveIterator, Extendable, Iterator, Map};
 use option::{Option, None, Some};
 use str::Str;
 use str;
-use slice::{CloneableVector, Splits, AsSlice, VectorVector,
-            ImmutablePartialEqSlice, ImmutableSlice};
+use slice::{CloneSliceAllocPrelude, Splits, AsSlice, VectorVector,
+            PartialEqSlicePrelude, SlicePrelude};
 use vec::Vec;
 
 use super::{BytesContainer, GenericPath, GenericPathUnsafe};
@@ -113,17 +113,6 @@ impl<S: hash::Writer> hash::Hash<S> for Path {
 }
 
 impl BytesContainer for Path {
-    #[inline]
-    fn container_as_bytes<'a>(&'a self) -> &'a [u8] {
-        self.as_vec()
-    }
-    #[inline]
-    fn container_into_owned_bytes(self) -> Vec<u8> {
-        self.into_vec()
-    }
-}
-
-impl<'a> BytesContainer for &'a Path {
     #[inline]
     fn container_as_bytes<'a>(&'a self) -> &'a [u8] {
         self.as_vec()
@@ -455,7 +444,7 @@ mod tests {
     use super::*;
     use mem;
     use str;
-    use str::StrSlice;
+    use str::StrPrelude;
 
     macro_rules! t(
         (s: $path:expr, $exp:expr) => (

@@ -118,7 +118,6 @@ use util::nodemap::NodeMap;
 
 use std::fmt;
 use std::io;
-use std::mem::transmute;
 use std::rc::Rc;
 use std::str;
 use std::uint;
@@ -323,7 +322,7 @@ impl<'a, 'tcx> IrMaps<'a, 'tcx> {
     }
 
     fn variable(&self, node_id: NodeId, span: Span) -> Variable {
-        match self.variable_map.find(&node_id) {
+        match self.variable_map.get(&node_id) {
           Some(&var) => var,
           None => {
             self.tcx
@@ -380,10 +379,7 @@ fn visit_fn(ir: &mut IrMaps,
     // swap in a new set of IR maps for this function body:
     let mut fn_maps = IrMaps::new(ir.tcx);
 
-    unsafe {
-        debug!("creating fn_maps: {}",
-               transmute::<&IrMaps, *const IrMaps>(&fn_maps));
-    }
+    debug!("creating fn_maps: {}", &fn_maps as *const IrMaps);
 
     for arg in decl.inputs.iter() {
         pat_util::pat_bindings(&ir.tcx.def_map,
@@ -595,7 +591,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
     }
 
     fn live_node(&self, node_id: NodeId, span: Span) -> LiveNode {
-        match self.ir.live_node_map.find(&node_id) {
+        match self.ir.live_node_map.get(&node_id) {
           Some(&ln) => ln,
           None => {
             // This must be a mismatch between the ir_map construction
@@ -723,7 +719,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
             Some(_) => {
                 // Refers to a labeled loop. Use the results of resolve
                 // to find with one
-                match self.ir.tcx.def_map.borrow().find(&id) {
+                match self.ir.tcx.def_map.borrow().get(&id) {
                     Some(&DefLabel(loop_id)) => loop_id,
                     _ => self.ir.tcx.sess.span_bug(sp, "label on break/loop \
                                                         doesn't refer to a loop")
@@ -992,7 +988,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
 
                  // the construction of a closure itself is not important,
                  // but we have to consider the closed over variables.
-                 let caps = match this.ir.capture_info_map.find(&expr.id) {
+                 let caps = match this.ir.capture_info_map.get(&expr.id) {
                     Some(caps) => caps.clone(),
                     None => {
                         this.ir.tcx.sess.span_bug(expr.span, "no registered caps");
@@ -1100,7 +1096,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
               // Now that we know the label we're going to,
               // look it up in the break loop nodes table
 
-              match self.break_ln.find(&sc) {
+              match self.break_ln.get(&sc) {
                   Some(&b) => b,
                   None => self.ir.tcx.sess.span_bug(expr.span,
                                                     "break to unknown label")
@@ -1114,7 +1110,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
               // Now that we know the label we're going to,
               // look it up in the continue loop nodes table
 
-              match self.cont_ln.find(&sc) {
+              match self.cont_ln.get(&sc) {
                   Some(&b) => b,
                   None => self.ir.tcx.sess.span_bug(expr.span,
                                                     "loop to unknown label")
@@ -1171,7 +1167,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
 
           ExprMethodCall(_, _, ref args) => {
             let method_call = typeck::MethodCall::expr(expr.id);
-            let method_ty = self.ir.tcx.method_map.borrow().find(&method_call).unwrap().ty;
+            let method_ty = self.ir.tcx.method_map.borrow().get(&method_call).unwrap().ty;
             let diverges = ty::ty_fn_ret(method_ty) == ty::FnDiverging;
             let succ = if diverges {
                 self.s.exit_ln
@@ -1524,7 +1520,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
             ty::ty_unboxed_closure(closure_def_id, _, _) =>
                 self.ir.tcx.unboxed_closures()
                     .borrow()
-                    .find(&closure_def_id)
+                    .get(&closure_def_id)
                     .unwrap()
                     .closure_type
                     .sig
@@ -1568,7 +1564,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
                             hi: original_span.hi,
                             expn_id: original_span.expn_id
                         };
-                        self.ir.tcx.sess.span_note(
+                        self.ir.tcx.sess.span_help(
                             span_semicolon, "consider removing this semicolon:");
                     }
                 }

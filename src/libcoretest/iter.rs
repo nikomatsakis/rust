@@ -356,7 +356,7 @@ fn test_iterator_size_hint() {
     assert_eq!(vi.zip(v2.iter()).size_hint(), (3, Some(3)));
     assert_eq!(vi.scan(0i, |_,_| Some(0i)).size_hint(), (0, Some(10)));
     assert_eq!(vi.filter(|_| false).size_hint(), (0, Some(10)));
-    assert_eq!(vi.map(|i| i+1).size_hint(), (10, Some(10)));
+    assert_eq!(vi.map(|&i| i+1).size_hint(), (10, Some(10)));
     assert_eq!(vi.filter_map(|_| Some(0i)).size_hint(), (0, Some(10)));
 }
 
@@ -388,9 +388,9 @@ fn test_any() {
 #[test]
 fn test_find() {
     let v: &[int] = &[1i, 3, 9, 27, 103, 14, 11];
-    assert_eq!(*v.iter().find(|x| *x & 1 == 0).unwrap(), 14);
-    assert_eq!(*v.iter().find(|x| *x % 3 == 0).unwrap(), 3);
-    assert!(v.iter().find(|x| *x % 12 == 0).is_none());
+    assert_eq!(*v.iter().find(|&&x| x & 1 == 0).unwrap(), 14);
+    assert_eq!(*v.iter().find(|&&x| x % 3 == 0).unwrap(), 3);
+    assert!(v.iter().find(|&&x| x % 12 == 0).is_none());
 }
 
 #[test]
@@ -844,6 +844,14 @@ fn test_iterate() {
     assert_eq!(it.next(), Some(2u));
     assert_eq!(it.next(), Some(4u));
     assert_eq!(it.next(), Some(8u));
+}
+
+#[test]
+fn test_repeat() {
+    let mut it = repeat(42u);
+    assert_eq!(it.next(), Some(42u));
+    assert_eq!(it.next(), Some(42u));
+    assert_eq!(it.next(), Some(42u));
 }
 
 #[bench]

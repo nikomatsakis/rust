@@ -30,22 +30,25 @@ use middle::def::*;
 use middle::typeck::astconv::ast_ty_to_ty;
 use middle::typeck::infer;
 use middle::{typeck, ty, def, pat_util, stability};
+use middle::const_eval::{eval_const_expr_partial, const_int, const_uint};
 use util::ppaux::{ty_to_string};
 use util::nodemap::NodeSet;
 use lint::{Context, LintPass, LintArray};
 
 use std::cmp;
 use std::collections::HashMap;
-use std::collections::hashmap::{Occupied, Vacant};
+use std::collections::hash_map::{Occupied, Vacant};
 use std::slice;
 use std::{i8, i16, i32, i64, u8, u16, u32, u64, f32, f64};
 use syntax::abi;
 use syntax::ast_map;
+use syntax::ast_util::is_shift_binop;
 use syntax::attr::AttrMetaMethods;
 use syntax::attr;
-use syntax::codemap::Span;
+use syntax::codemap::{Span, DUMMY_SP};
 use syntax::parse::token;
 use syntax::{ast, ast_util, visit};
+use syntax::ast::{TyI, TyU, TyI8, TyU8, TyI16, TyU16, TyI32, TyU32, TyI64, TyU64};
 use syntax::ptr::P;
 use syntax::visit::Visitor;
 
@@ -113,6 +116,9 @@ declare_lint!(UNUSED_COMPARISONS, Warn,
 declare_lint!(OVERFLOWING_LITERALS, Warn,
               "literal out of range for its type")
 
+declare_lint!(EXCEEDING_BITSHIFTS, Allow,
+              "shift exceeds the type's number of bits")
+
 pub struct TypeLimits {
     /// Id of the last visited negated expression
     negated_expr_id: ast::NodeId,
@@ -128,7 +134,8 @@ impl TypeLimits {
 
 impl LintPass for TypeLimits {
     fn get_lints(&self) -> LintArray {
-        lint_array!(UNSIGNED_NEGATION, UNUSED_COMPARISONS, OVERFLOWING_LITERALS)
+        lint_array!(UNSIGNED_NEGATION, UNUSED_COMPARISONS, OVERFLOWING_LITERALS,
+                    EXCEEDING_BITSHIFTS)
     }
 
     fn check_expr(&mut self, cx: &Context, e: &ast::Expr) {
@@ -170,6 +177,31 @@ impl LintPass for TypeLimits {
                     cx.span_lint(UNUSED_COMPARISONS, e.span,
                                  "comparison is useless due to type limits");
                 }
+
+                if is_shift_binop(binop) {
+                    let opt_ty_bits = match ty::get(ty::expr_ty(cx.tcx, &**l)).sty {
+                        ty::ty_int(t) => Some(int_ty_bits(t, cx.sess().target.int_type)),
+                        ty::ty_uint(t) => Some(uint_ty_bits(t, cx.sess().target.uint_type)),
+                        _ => None
+                    };
+
+                    if let Some(bits) = opt_ty_bits {
+                        let exceeding = if let ast::ExprLit(ref lit) = r.node {
+                            if let ast::LitInt(shift, _) = lit.node { shift >= bits }
+                            else { false }
+                        } else {
+                            match eval_const_expr_partial(cx.tcx, &**r) {
+                                Ok(const_int(shift)) => { shift as u64 >= bits },
+                                Ok(const_uint(shift)) => { shift >= bits },
+                                _ => { false }
+                            }
+                        };
+                        if exceeding {
+                            cx.span_lint(EXCEEDING_BITSHIFTS, e.span,
+                                         "bitshift exceeds the type's number of bits");
+                        }
+                    };
+                }
             },
             ast::ExprLit(ref lit) => {
                 match ty::get(ty::expr_ty(cx.tcx, e)).sty {
@@ -178,7 +210,7 @@ impl LintPass for TypeLimits {
                             ast::LitInt(v, ast::SignedIntLit(_, ast::Plus)) |
                             ast::LitInt(v, ast::UnsuffixedIntLit(ast::Plus)) => {
                                 let int_type = if t == ast::TyI {
-                                    cx.sess().targ_cfg.int_type
+                                    cx.sess().target.int_type
                                 } else { t };
                                 let (min, max) = int_ty_range(int_type);
                                 let negative = self.negated_expr_id == e.id;
@@ -195,7 +227,7 @@ impl LintPass for TypeLimits {
                     },
                     ty::ty_uint(t) => {
                         let uint_type = if t == ast::TyU {
-                            cx.sess().targ_cfg.uint_type
+                            cx.sess().target.uint_type
                         } else { t };
                         let (min, max) = uint_ty_range(uint_type);
                         let lit_val: u64 = match lit.node {
@@ -280,6 +312,26 @@ impl LintPass for TypeLimits {
             }
         }
 
+        fn int_ty_bits(int_ty: ast::IntTy, target_int_ty: ast::IntTy) -> u64 {
+            match int_ty {
+                ast::TyI =>    int_ty_bits(target_int_ty, target_int_ty),
+                ast::TyI8 =>   i8::BITS  as u64,
+                ast::TyI16 =>  i16::BITS as u64,
+                ast::TyI32 =>  i32::BITS as u64,
+                ast::TyI64 =>  i64::BITS as u64
+            }
+        }
+
+        fn uint_ty_bits(uint_ty: ast::UintTy, target_uint_ty: ast::UintTy) -> u64 {
+            match uint_ty {
+                ast::TyU =>    uint_ty_bits(target_uint_ty, target_uint_ty),
+                ast::TyU8 =>   u8::BITS  as u64,
+                ast::TyU16 =>  u16::BITS as u64,
+                ast::TyU32 =>  u32::BITS as u64,
+                ast::TyU64 =>  u64::BITS as u64
+            }
+        }
+
         fn check_limits(tcx: &ty::ctxt, binop: ast::BinOp,
                         l: &ast::Expr, r: &ast::Expr) -> bool {
             let (lit, expr, swap) = match (&l.node, &r.node) {
@@ -351,7 +403,7 @@ impl<'a, 'tcx> ImproperCTypesVisitor<'a, 'tcx> {
                                    libc::c_uint or libc::c_ulong should be used");
             }
             def::DefTy(..) => {
-                let tty = match self.cx.tcx.ast_ty_to_ty_cache.borrow().find(&ty_id) {
+                let tty = match self.cx.tcx.ast_ty_to_ty_cache.borrow().get(&ty_id) {
                     Some(&ty::atttce_resolved(t)) => t,
                     _ => panic!("ast_ty_to_ty_cache was incomplete after typeck!")
                 };
@@ -942,7 +994,7 @@ impl LintPass for NonSnakeCase {
     fn check_pat(&mut self, cx: &Context, p: &ast::Pat) {
         match &p.node {
             &ast::PatIdent(_, ref path1, _) => {
-                match cx.tcx.def_map.borrow().find(&p.id) {
+                match cx.tcx.def_map.borrow().get(&p.id) {
                     Some(&def::DefLocal(_)) => {
                         self.check_snake_case(cx, "variable", path1.node, p.span);
                     }
@@ -999,7 +1051,7 @@ impl LintPass for NonUpperCaseGlobals {
 
     fn check_pat(&mut self, cx: &Context, p: &ast::Pat) {
         // Lint for constants that look like binding identifiers (#7526)
-        match (&p.node, cx.tcx.def_map.borrow().find(&p.id)) {
+        match (&p.node, cx.tcx.def_map.borrow().get(&p.id)) {
             (&ast::PatIdent(_, ref path1, _), Some(&def::DefConst(..))) => {
                 let s = token::get_ident(path1.node);
                 if s.get().chars().any(|c| c.is_lowercase()) {
@@ -1159,7 +1211,7 @@ impl LintPass for NonShorthandFieldPatterns {
             ast::PatStruct(_, ref v, _) => {
                 for fieldpat in v.iter()
                                  .filter(|fieldpat| !fieldpat.node.is_shorthand)
-                                 .filter(|fieldpat| def_map.find(&fieldpat.node.pat.id)
+                                 .filter(|fieldpat| def_map.get(&fieldpat.node.pat.id)
                                     == Some(&def::DefLocal(fieldpat.node.pat.id))) {
                     match fieldpat.node.pat.node {
                         ast::PatIdent(_, ident, None) if ident.node.as_str()
@@ -1316,7 +1368,7 @@ impl LintPass for UnusedAllocation {
             _ => return
         }
 
-        match cx.tcx.adjustments.borrow().find(&e.id) {
+        match cx.tcx.adjustments.borrow().get(&e.id) {
             Some(adjustment) => {
                 match *adjustment {
                     ty::AdjustDerefRef(ty::AutoDerefRef { ref autoref, .. }) => {
@@ -1501,16 +1553,40 @@ declare_lint!(UNSTABLE, Allow,
 /// `#[unstable]` attributes, or no stability attribute.
 pub struct Stability;
 
-impl LintPass for Stability {
-    fn get_lints(&self) -> LintArray {
-        lint_array!(DEPRECATED, EXPERIMENTAL, UNSTABLE)
+impl Stability {
+    fn lint(&self, cx: &Context, id: ast::DefId, span: Span) {
+        let stability = stability::lookup(cx.tcx, id);
+        let cross_crate = !ast_util::is_local(id);
+
+        // stability attributes are promises made across crates; only
+        // check DEPRECATED for crate-local usage.
+        let (lint, label) = match stability {
+            // no stability attributes == Unstable
+            None if cross_crate => (UNSTABLE, "unmarked"),
+            Some(attr::Stability { level: attr::Unstable, .. }) if cross_crate =>
+                (UNSTABLE, "unstable"),
+            Some(attr::Stability { level: attr::Experimental, .. }) if cross_crate =>
+                (EXPERIMENTAL, "experimental"),
+            Some(attr::Stability { level: attr::Deprecated, .. }) =>
+                (DEPRECATED, "deprecated"),
+            _ => return
+        };
+
+        let msg = match stability {
+            Some(attr::Stability { text: Some(ref s), .. }) => {
+                format!("use of {} item: {}", label, *s)
+            }
+            _ => format!("use of {} item", label)
+        };
+
+        cx.span_lint(lint, span, msg.as_slice());
     }
 
-    fn check_expr(&mut self, cx: &Context, e: &ast::Expr) {
+    fn is_internal(&self, cx: &Context, span: Span) -> bool {
         // first, check if the given expression was generated by a macro or not
         // we need to go back the expn_info tree to check only the arguments
         // of the initial macro call, not the nested ones.
-        let mut expnid = e.span.expn_id;
+        let mut expnid = span.expn_id;
         let mut is_internal = false;
         while cx.tcx.sess.codemap().with_expn_info(expnid, |expninfo| {
             match expninfo {
@@ -1525,21 +1601,47 @@ impl LintPass for Stability {
                         true // continue looping
                     } else {
                         // was this expression from the current macro arguments ?
-                        is_internal = !( e.span.lo > info.call_site.lo &&
-                                         e.span.hi < info.call_site.hi );
+                        is_internal = !( span.lo > info.call_site.lo &&
+                                         span.hi < info.call_site.hi );
                         true // continue looping
                     }
                 },
                 _ => false // stop looping
             }
         }) { /* empty while loop body */ }
-        if is_internal { return; }
+        return is_internal;
+    }
+}
+
+impl LintPass for Stability {
+    fn get_lints(&self) -> LintArray {
+        lint_array!(DEPRECATED, EXPERIMENTAL, UNSTABLE)
+    }
+
+    fn check_view_item(&mut self, cx: &Context, item: &ast::ViewItem) {
+        // compiler-generated `extern crate` statements have a dummy span.
+        if item.span == DUMMY_SP { return }
+
+        let id = match item.node {
+            ast::ViewItemExternCrate(_, _, id) => id,
+            ast::ViewItemUse(..) => return,
+        };
+        let cnum = match cx.tcx.sess.cstore.find_extern_mod_stmt_cnum(id) {
+            Some(cnum) => cnum,
+            None => return,
+        };
+        let id = ast::DefId { krate: cnum, node: ast::CRATE_NODE_ID };
+        self.lint(cx, id, item.span);
+    }
+
+    fn check_expr(&mut self, cx: &Context, e: &ast::Expr) {
+        if self.is_internal(cx, e.span) { return; }
 
         let mut span = e.span;
 
         let id = match e.node {
             ast::ExprPath(..) | ast::ExprStruct(..) => {
-                match cx.tcx.def_map.borrow().find(&e.id) {
+                match cx.tcx.def_map.borrow().get(&e.id) {
                     Some(&def) => def.def_id(),
                     None => return
                 }
@@ -1547,7 +1649,7 @@ impl LintPass for Stability {
             ast::ExprMethodCall(i, _, _) => {
                 span = i.span;
                 let method_call = typeck::MethodCall::expr(e.id);
-                match cx.tcx.method_map.borrow().find(&method_call) {
+                match cx.tcx.method_map.borrow().get(&method_call) {
                     Some(method) => {
                         match method.origin {
                             typeck::MethodStatic(def_id) => {
@@ -1577,32 +1679,30 @@ impl LintPass for Stability {
             }
             _ => return
         };
+        self.lint(cx, id, span);
+    }
 
-        let stability = stability::lookup(cx.tcx, id);
-        let cross_crate = !ast_util::is_local(id);
+    fn check_item(&mut self, cx: &Context, item: &ast::Item) {
+        if self.is_internal(cx, item.span) { return }
 
-        // stability attributes are promises made across crates; only
-        // check DEPRECATED for crate-local usage.
-        let (lint, label) = match stability {
-            // no stability attributes == Unstable
-            None if cross_crate => (UNSTABLE, "unmarked"),
-            Some(attr::Stability { level: attr::Unstable, .. }) if cross_crate =>
-                (UNSTABLE, "unstable"),
-            Some(attr::Stability { level: attr::Experimental, .. }) if cross_crate =>
-                (EXPERIMENTAL, "experimental"),
-            Some(attr::Stability { level: attr::Deprecated, .. }) =>
-                (DEPRECATED, "deprecated"),
-            _ => return
-        };
-
-        let msg = match stability {
-            Some(attr::Stability { text: Some(ref s), .. }) => {
-                format!("use of {} item: {}", label, *s)
+        match item.node {
+            ast::ItemTrait(_, _, ref supertraits, _) => {
+                for t in supertraits.iter() {
+                    match *t {
+                        ast::TraitTyParamBound(ref t) => {
+                            let id = ty::trait_ref_to_def_id(cx.tcx, t);
+                            self.lint(cx, id, t.path.span);
+                        }
+                        _ => (/* pass */)
+                    }
+                }
             }
-            _ => format!("use of {} item", label)
-        };
-
-        cx.span_lint(lint, span, msg.as_slice());
+            ast::ItemImpl(_, Some(ref t), _, _) => {
+                let id = ty::trait_ref_to_def_id(cx.tcx, t);
+                self.lint(cx, id, t.path.span);
+            }
+            _ => (/* pass */)
+        }
     }
 }
 

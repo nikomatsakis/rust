@@ -49,6 +49,7 @@ use std::num::Int;
 use std::rc::Rc;
 
 use llvm::{ValueRef, True, IntEQ, IntNE};
+use back::abi::slice_elt_base;
 use middle::subst;
 use middle::subst::Subst;
 use middle::trans::_match;
@@ -62,7 +63,6 @@ use middle::trans::type_::Type;
 use middle::trans::type_of;
 use middle::ty;
 use middle::ty::Disr;
-use syntax::abi::{X86, X86_64, Arm, Mips, Mipsel};
 use syntax::ast;
 use syntax::attr;
 use syntax::attr::IntType;
@@ -148,7 +148,7 @@ pub fn represent_node(bcx: Block, node: ast::NodeId) -> Rc<Repr> {
 /// Decides how to represent a given type.
 pub fn represent_type(cx: &CrateContext, t: ty::t) -> Rc<Repr> {
     debug!("Representing: {}", ty_to_string(cx.tcx(), t));
-    match cx.adt_reprs().borrow().find(&t) {
+    match cx.adt_reprs().borrow().get(&t) {
         Some(repr) => return repr.clone(),
         None => {}
     }
@@ -236,7 +236,7 @@ fn represent_type_uncached(cx: &CrateContext, t: ty::t) -> Repr {
                     if cases[1 - discr].is_zerolen(cx, t) {
                         let st = mk_struct(cx, cases[discr].tys.as_slice(),
                                            false, t);
-                        match cases[discr].find_ptr() {
+                        match cases[discr].find_ptr(cx) {
                             Some(ThinPointer(_)) if st.fields.len() == 1 => {
                                 return RawNullablePointer {
                                     nndiscr: discr as Disr,
@@ -291,7 +291,7 @@ struct Case {
 #[deriving(Eq, PartialEq, Show)]
 pub enum PointerField {
     ThinPointer(uint),
-    FatPointer(uint, uint)
+    FatPointer(uint)
 }
 
 impl Case {
@@ -299,31 +299,22 @@ impl Case {
         mk_struct(cx, self.tys.as_slice(), false, scapegoat).size == 0
     }
 
-    fn find_ptr(&self) -> Option<PointerField> {
-        use back::abi::{fn_field_code, slice_elt_base, trt_field_box};
-
+    fn find_ptr(&self, cx: &CrateContext) -> Option<PointerField> {
         for (i, &ty) in self.tys.iter().enumerate() {
             match ty::get(ty).sty {
-                // &T/&mut T could either be a thin or fat pointer depending on T
-                ty::ty_rptr(_, ty::mt { ty, .. }) => match ty::get(ty).sty {
+                // &T/&mut T/Box<T> could either be a thin or fat pointer depending on T
+                ty::ty_rptr(_, ty::mt { ty, .. }) | ty::ty_uniq(ty) => match ty::get(ty).sty {
                     // &[T] and &str are a pointer and length pair
-                    ty::ty_vec(_, None) | ty::ty_str => return Some(FatPointer(i, slice_elt_base)),
+                    ty::ty_vec(_, None) | ty::ty_str => return Some(FatPointer(i)),
 
-                    // &Trait/&mut Trait are a pair of pointers: the actual object and a vtable
-                    ty::ty_trait(..) => return Some(FatPointer(i, trt_field_box)),
+                    // &Trait is a pair of pointers: the actual object and a vtable
+                    ty::ty_trait(..) => return Some(FatPointer(i)),
 
-                    // Any other &T/&mut T is just a pointer
-                    _ => return Some(ThinPointer(i))
-                },
+                    ty::ty_struct(..) if !ty::type_is_sized(cx.tcx(), ty) => {
+                        return Some(FatPointer(i))
+                    }
 
-                // Box<T> could either be a thin or fat pointer depending on T
-                ty::ty_uniq(t) => match ty::get(t).sty {
-                    ty::ty_vec(_, None) => return Some(FatPointer(i, slice_elt_base)),
-
-                    // Box<Trait> is a pair of pointers: the actual object and a vtable
-                    ty::ty_trait(..) => return Some(FatPointer(i, trt_field_box)),
-
-                    // Any other Box<T> is just a pointer
+                    // Any other &T is just a pointer
                     _ => return Some(ThinPointer(i))
                 },
 
@@ -331,7 +322,7 @@ impl Case {
                 ty::ty_bare_fn(..) => return Some(ThinPointer(i)),
 
                 // Closures are a pair of pointers: the code and environment
-                ty::ty_closure(..) => return Some(FatPointer(i, fn_field_code)),
+                ty::ty_closure(..) => return Some(FatPointer(i)),
 
                 // Anything else is not a pointer
                 _ => continue
@@ -410,14 +401,12 @@ fn range_to_inttype(cx: &CrateContext, hint: Hint, bounds: &IntBounds) -> IntTyp
             return ity;
         }
         attr::ReprExtern => {
-            attempts = match cx.sess().targ_cfg.arch {
-                X86 | X86_64 => at_least_32,
+            attempts = match cx.sess().target.target.arch.as_slice() {
                 // WARNING: the ARM EABI has two variants; the one corresponding to `at_least_32`
                 // appears to be used on Linux and NetBSD, but some systems may use the variant
                 // corresponding to `choose_shortest`.  However, we don't run on those yet...?
-                Arm => at_least_32,
-                Mips => at_least_32,
-                Mipsel => at_least_32,
+                "arm" => at_least_32,
+                _ => at_least_32,
             }
         }
         attr::ReprAny => {
@@ -639,6 +628,7 @@ pub fn trans_get_discr(bcx: Block, r: &Repr, scrutinee: ValueRef, cast_to: Optio
     -> ValueRef {
     let signed;
     let val;
+    debug!("trans_get_discr r: {}", r);
     match *r {
         CEnum(ity, min, max) => {
             val = load_discr(bcx, ity, scrutinee, min, max);
@@ -674,7 +664,7 @@ fn struct_wrapped_nullable_bitdiscr(bcx: Block, nndiscr: Disr, ptrfield: Pointer
                                     scrutinee: ValueRef) -> ValueRef {
     let llptrptr = match ptrfield {
         ThinPointer(field) => GEPi(bcx, scrutinee, [0, field]),
-        FatPointer(field, pair) => GEPi(bcx, scrutinee, [0, field, pair])
+        FatPointer(field) => GEPi(bcx, scrutinee, [0, field, slice_elt_base])
     };
     let llptr = Load(bcx, llptrptr);
     let cmp = if nndiscr == 0 { IntEQ } else { IntNE };
@@ -770,8 +760,8 @@ pub fn trans_set_discr(bcx: Block, r: &Repr, val: ValueRef, discr: Disr) {
                     ThinPointer(field) =>
                         (GEPi(bcx, val, [0, field]),
                          type_of::type_of(bcx.ccx(), nonnull.fields[field])),
-                    FatPointer(field, pair) => {
-                        let v = GEPi(bcx, val, [0, field, pair]);
+                    FatPointer(field) => {
+                        let v = GEPi(bcx, val, [0, field, slice_elt_base]);
                         (v, val_ty(v).element_type())
                     }
                 };
@@ -1105,7 +1095,7 @@ pub fn const_get_discrim(ccx: &CrateContext, r: &Repr, val: ValueRef)
         StructWrappedNullablePointer { nndiscr, ptrfield, .. } => {
             let (idx, sub_idx) = match ptrfield {
                 ThinPointer(field) => (field, None),
-                FatPointer(field, pair) => (field, Some(pair))
+                FatPointer(field) => (field, Some(slice_elt_base))
             };
             if is_null(const_struct_field(ccx, val, idx, sub_idx)) {
                 /* subtraction as uint is ok because nndiscr is either 0 or 1 */

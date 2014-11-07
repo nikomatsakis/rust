@@ -438,7 +438,7 @@ pub fn get_or_create_declaration_if_unboxed_closure<'blk, 'tcx>(bcx: Block<'blk,
         params: params
     };
 
-    match ccx.unboxed_closure_vals().borrow().find(&mono_id) {
+    match ccx.unboxed_closure_vals().borrow().get(&mono_id) {
         Some(llfn) => {
             debug!("get_or_create_declaration_if_unboxed_closure(): found \
                     closure");
@@ -564,7 +564,7 @@ pub fn get_wrapper_for_bare_fn(ccx: &CrateContext,
         }
     };
 
-    match ccx.closure_bare_wrapper_cache().borrow().find(&fn_ptr) {
+    match ccx.closure_bare_wrapper_cache().borrow().get(&fn_ptr) {
         Some(&llval) => return llval,
         None => {}
     }
@@ -623,7 +623,7 @@ pub fn get_wrapper_for_bare_fn(ccx: &CrateContext,
     let retval = Call(bcx, fn_ptr, llargs.as_slice(), None);
     match f.sig.output {
         ty::FnConverging(output_type) => {
-            if type_is_zero_size(ccx, output_type) || fcx.llretslotptr.get().is_some() {
+            if return_type_is_void(ccx, output_type) || fcx.llretslotptr.get().is_some() {
                 RetVoid(bcx);
             } else {
                 Ret(bcx, retval);

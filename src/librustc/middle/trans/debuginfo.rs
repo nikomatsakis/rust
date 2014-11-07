@@ -211,7 +211,7 @@ use std::ptr;
 use std::rc::{Rc, Weak};
 use syntax::util::interner::Interner;
 use syntax::codemap::{Span, Pos};
-use syntax::{abi, ast, codemap, ast_util, ast_map};
+use syntax::{ast, codemap, ast_util, ast_map};
 use syntax::ast_util::PostExpansionMethod;
 use syntax::parse::token;
 use syntax::parse::token::special_idents;
@@ -282,7 +282,7 @@ impl TypeMap {
                                    cx: &CrateContext,
                                    type_: ty::t,
                                    metadata: DIType) {
-        if !self.type_to_metadata.insert(ty::type_id(type_), metadata) {
+        if self.type_to_metadata.insert(ty::type_id(type_), metadata).is_some() {
             cx.sess().bug(format!("Type metadata for ty::t '{}' is already in the TypeMap!",
                                    ppaux::ty_to_string(cx.tcx(), type_)).as_slice());
         }
@@ -294,7 +294,7 @@ impl TypeMap {
                                         cx: &CrateContext,
                                         unique_type_id: UniqueTypeId,
                                         metadata: DIType) {
-        if !self.unique_id_to_metadata.insert(unique_type_id, metadata) {
+        if self.unique_id_to_metadata.insert(unique_type_id, metadata).is_some() {
             let unique_type_id_str = self.get_unique_type_id_as_string(unique_type_id);
             cx.sess().bug(format!("Type metadata for unique id '{}' is already in the TypeMap!",
                                   unique_type_id_str.as_slice()).as_slice());
@@ -468,7 +468,7 @@ impl TypeMap {
             },
             ty::ty_unboxed_closure(ref def_id, _, ref substs) => {
                 let closure_ty = cx.tcx().unboxed_closures.borrow()
-                                   .find(def_id).unwrap().closure_type.subst(cx.tcx(), substs);
+                                   .get(def_id).unwrap().closure_type.subst(cx.tcx(), substs);
                 self.get_unique_type_id_of_closure_type(cx,
                                                         closure_ty,
                                                         &mut unique_type_id);
@@ -750,8 +750,7 @@ pub fn finalize(cx: &CrateContext) {
         // instruct LLVM to emit an older version of dwarf, however,
         // for OS X to understand. For more info see #11352
         // This can be overridden using --llvm-opts -dwarf-version,N.
-        if cx.sess().targ_cfg.os == abi::OsMacos ||
-            cx.sess().targ_cfg.os == abi::OsiOS {
+        if cx.sess().target.target.options.is_like_osx {
             "Dwarf Version".with_c_str(
                 |s| llvm::LLVMRustAddModuleFlag(cx.llmod(), s, 2));
         }
@@ -2256,7 +2255,7 @@ impl EnumMemberDescriptionFactory {
                 let null_variant_name = token::get_name((*self.variants)[null_variant_index].name);
                 let discrfield = match ptrfield {
                     adt::ThinPointer(field) => format!("{}", field),
-                    adt::FatPointer(field, pair) => format!("{}${}", field, pair)
+                    adt::FatPointer(field) => format!("{}", field)
                 };
                 let union_member_name = format!("RUST$ENCODED$ENUM${}${}",
                                                 discrfield,
@@ -2940,7 +2939,7 @@ fn type_metadata(cx: &CrateContext,
         }
         ty::ty_unboxed_closure(ref def_id, _, ref substs) => {
             let sig = cx.tcx().unboxed_closures.borrow()
-                        .find(def_id).unwrap().closure_type.sig.subst(cx.tcx(), substs);
+                        .get(def_id).unwrap().closure_type.sig.subst(cx.tcx(), substs);
             subroutine_type_metadata(cx, unique_type_id, &sig, usage_site_span)
         }
         ty::ty_struct(def_id, ref substs) => {

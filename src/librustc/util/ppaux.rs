@@ -32,6 +32,7 @@ use syntax::ast_map;
 use syntax::codemap::{Span, Pos};
 use syntax::parse::token;
 use syntax::print::pprust;
+use syntax::ptr::P;
 use syntax::{ast, ast_util};
 use syntax::owned_slice::OwnedSlice;
 
@@ -48,16 +49,18 @@ pub trait UserString {
 pub fn note_and_explain_region(cx: &ctxt,
                                prefix: &str,
                                region: ty::Region,
-                               suffix: &str) {
+                               suffix: &str) -> Option<Span> {
     match explain_region_and_span(cx, region) {
       (ref str, Some(span)) => {
         cx.sess.span_note(
             span,
             format!("{}{}{}", prefix, *str, suffix).as_slice());
+        Some(span)
       }
       (ref str, None) => {
         cx.sess.note(
             format!("{}{}{}", prefix, *str, suffix).as_slice());
+        None
       }
     }
 }
@@ -370,14 +373,10 @@ pub fn ty_to_string(cx: &ctxt, typ: t) -> String {
     fn infer_ty_to_string(cx: &ctxt, ty: ty::InferTy) -> String {
         let print_var_ids = cx.sess.verbose();
         match ty {
-            ty::TyVar(ty::TyVid { index: vid }) if print_var_ids =>
-                format!("_#{}", vid),
-            ty::IntVar(ty::IntVid { index: vid }) if print_var_ids =>
-                format!("_#{}i", vid),
-            ty::FloatVar(ty::FloatVid { index: vid }) if print_var_ids =>
-                format!("_#{}f", vid),
-            ty::TyVar(_) | ty::IntVar(_) | ty::FloatVar(_) =>
-                "_".to_string(),
+            ty::TyVar(ref vid) if print_var_ids => vid.repr(cx),
+            ty::IntVar(ref vid) if print_var_ids => vid.repr(cx),
+            ty::FloatVar(ref vid) if print_var_ids => vid.repr(cx),
+            ty::TyVar(_) | ty::IntVar(_) | ty::FloatVar(_) => format!("_"),
             ty::SkolemizedTy(v) => format!("SkolemizedTy({})", v),
             ty::SkolemizedIntTy(v) => format!("SkolemizedIntTy({})", v)
         }
@@ -423,7 +422,13 @@ pub fn ty_to_string(cx: &ctxt, typ: t) -> String {
         }
         ty_infer(infer_ty) => infer_ty_to_string(cx, infer_ty),
         ty_err => "[type error]".to_string(),
-        ty_param(ref param_ty) => param_ty.repr(cx),
+        ty_param(ref param_ty) => {
+            if cx.sess.verbose() {
+                param_ty.repr(cx)
+            } else {
+                param_ty.user_string(cx)
+            }
+        }
         ty_enum(did, ref substs) | ty_struct(did, ref substs) => {
             let base = ty::item_path_str(cx, did);
             let generics = ty::lookup_item_type(cx, did).generics;
@@ -446,7 +451,7 @@ pub fn ty_to_string(cx: &ctxt, typ: t) -> String {
         ty_str => "str".to_string(),
         ty_unboxed_closure(ref did, _, ref substs) => {
             let unboxed_closures = cx.unboxed_closures.borrow();
-            unboxed_closures.find(did).map(|cl| {
+            unboxed_closures.get(did).map(|cl| {
                 closure_to_string(cx, &cl.closure_type.subst(cx, substs))
             }).unwrap_or_else(|| "closure".to_string())
         }
@@ -479,6 +484,17 @@ pub fn parameterized(cx: &ctxt,
                      generics: &ty::Generics)
                      -> String
 {
+    if cx.sess.verbose() {
+        if substs.is_noop() {
+            return format!("{}", base);
+        } else {
+            return format!("{}<{},{}>",
+                           base,
+                           substs.regions.repr(cx),
+                           substs.types.repr(cx));
+        }
+    }
+
     let mut strs = Vec::new();
 
     match substs.regions {
@@ -503,7 +519,7 @@ pub fn parameterized(cx: &ctxt,
     let tps = substs.types.get_slice(subst::TypeSpace);
     let ty_params = generics.types.get_slice(subst::TypeSpace);
     let has_defaults = ty_params.last().map_or(false, |def| def.default.is_some());
-    let num_defaults = if has_defaults && !cx.sess.verbose() {
+    let num_defaults = if has_defaults {
         ty_params.iter().zip(tps.iter()).rev().take_while(|&(def, &actual)| {
             match def.default {
                 Some(default) => default.subst(cx, substs) == actual,
@@ -516,18 +532,6 @@ pub fn parameterized(cx: &ctxt,
 
     for t in tps[..tps.len() - num_defaults].iter() {
         strs.push(ty_to_string(cx, *t))
-    }
-
-    if cx.sess.verbose() {
-        for t in substs.types.get_slice(subst::SelfSpace).iter() {
-            strs.push(format!("self {}", t.repr(cx)));
-        }
-
-        // generally there shouldn't be any substs in the fn param
-        // space, but in verbose mode, print them out.
-        for t in substs.types.get_slice(subst::FnSpace).iter() {
-            strs.push(format!("fn {}", t.repr(cx)));
-        }
     }
 
     if strs.len() > 0u {
@@ -551,6 +555,12 @@ impl<T:Repr> Repr for Option<T> {
             &None => "None".to_string(),
             &Some(ref t) => t.repr(tcx),
         }
+    }
+}
+
+impl<T:Repr> Repr for P<T> {
+    fn repr(&self, tcx: &ctxt) -> String {
+        (*self).repr(tcx)
     }
 }
 
@@ -666,10 +676,11 @@ impl Repr for subst::Substs {
 
 impl<T:Repr> Repr for subst::VecPerParamSpace<T> {
     fn repr(&self, tcx: &ctxt) -> String {
-        format!("[{};{};{}]",
-                       self.get_slice(subst::TypeSpace).repr(tcx),
-                       self.get_slice(subst::SelfSpace).repr(tcx),
-                       self.get_slice(subst::FnSpace).repr(tcx))
+        format!("[{};{};{};{}]",
+                self.get_slice(subst::TypeSpace).repr(tcx),
+                self.get_slice(subst::SelfSpace).repr(tcx),
+                self.get_slice(subst::AssocSpace).repr(tcx),
+                self.get_slice(subst::FnSpace).repr(tcx))
     }
 }
 
@@ -724,7 +735,7 @@ impl Repr for ty::TraitRef {
     fn repr(&self, tcx: &ctxt) -> String {
         let base = ty::item_path_str(tcx, self.def_id);
         let trait_def = ty::lookup_trait_def(tcx, self.def_id);
-        format!("<{} as {}>",
+        format!("<{} : {}>",
                 self.substs.self_ty().repr(tcx),
                 parameterized(tcx, base.as_slice(), &self.substs, &trait_def.generics))
     }
@@ -736,6 +747,19 @@ impl Repr for ty::TraitDef {
                 self.generics.repr(tcx),
                 self.bounds.repr(tcx),
                 self.trait_ref.repr(tcx))
+    }
+}
+
+impl Repr for ast::TraitItem {
+    fn repr(&self, _tcx: &ctxt) -> String {
+        match *self {
+            ast::RequiredMethod(ref data) => format!("RequiredMethod({}, id={})",
+                                                     data.ident, data.id),
+            ast::ProvidedMethod(ref data) => format!("ProvidedMethod(id={})",
+                                                     data.id),
+            ast::TypeTraitItem(ref data) => format!("TypeTraitItem({}, id={})",
+                                                     data.ty_param.ident, data.ty_param.id),
+        }
     }
 }
 
@@ -754,6 +778,12 @@ impl Repr for ast::Path {
 impl UserString for ast::Path {
     fn user_string(&self, _tcx: &ctxt) -> String {
         pprust::path_to_string(self)
+    }
+}
+
+impl Repr for ast::Ty {
+    fn repr(&self, _tcx: &ctxt) -> String {
+        format!("type({})", pprust::ty_to_string(self))
     }
 }
 
@@ -824,7 +854,7 @@ impl Repr for ty::Region {
             }
 
             ty::ReInfer(ReVar(ref vid)) => {
-                format!("ReInfer({})", vid.index)
+                format!("{}", vid)
             }
 
             ty::ReInfer(ReSkolemized(id, ref bound_region)) => {
@@ -1078,7 +1108,7 @@ impl UserString for ty::ParamBounds {
 
 impl UserString for ty::ExistentialBounds {
     fn user_string(&self, tcx: &ctxt) -> String {
-        if self.builtin_bounds.contains_elem(ty::BoundSend) &&
+        if self.builtin_bounds.contains(&ty::BoundSend) &&
             self.region_bound == ty::ReStatic
         { // Region bound is implied by builtin bounds:
             return self.builtin_bounds.repr(tcx);
@@ -1247,7 +1277,7 @@ impl UserString for ParamTy {
     fn user_string(&self, tcx: &ctxt) -> String {
         let id = self.idx;
         let did = self.def_id;
-        let ident = match tcx.ty_param_defs.borrow().find(&did.node) {
+        let ident = match tcx.ty_param_defs.borrow().get(&did.node) {
             Some(def) => token::get_name(def.name).get().to_string(),
 
             // This can only happen when a type mismatch error happens and
@@ -1260,7 +1290,8 @@ impl UserString for ParamTy {
 
 impl Repr for ParamTy {
     fn repr(&self, tcx: &ctxt) -> String {
-        self.user_string(tcx)
+        let ident = self.user_string(tcx);
+        format!("{}/{}.{}", ident, self.space, self.idx)
     }
 }
 

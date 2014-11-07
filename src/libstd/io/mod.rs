@@ -91,7 +91,7 @@ Some examples of obvious things you might want to do
     # // locally, we still want to be type checking this code, so lets
     # // just stop it running (#11576)
     # if false {
-    let mut socket = TcpStream::connect("127.0.0.1", 8080).unwrap();
+    let mut socket = TcpStream::connect("127.0.0.1:8080").unwrap();
     socket.write(b"GET / HTTP/1.0\n\n");
     let response = socket.read_to_end();
     # }
@@ -106,7 +106,7 @@ Some examples of obvious things you might want to do
     use std::io::{TcpListener, TcpStream};
     use std::io::{Acceptor, Listener};
 
-    let listener = TcpListener::bind("127.0.0.1", 80);
+    let listener = TcpListener::bind("127.0.0.1:80");
 
     // bind the listener to the specified address
     let mut acceptor = listener.listen();
@@ -222,7 +222,9 @@ responding to errors that may occur while attempting to read the numbers.
 #![deny(unused_must_use)]
 
 use char::Char;
+use clone::Clone;
 use default::Default;
+use error::{FromError, Error};
 use fmt;
 use int;
 use iter::Iterator;
@@ -234,8 +236,8 @@ use os;
 use boxed::Box;
 use result::{Ok, Err, Result};
 use rt::rtio;
-use slice::{AsSlice, ImmutableSlice};
-use str::{Str, StrSlice};
+use slice::{AsSlice, SlicePrelude};
+use str::{Str, StrPrelude};
 use str;
 use string::String;
 use uint;
@@ -433,6 +435,22 @@ impl fmt::Show for IoError {
     }
 }
 
+impl Error for IoError {
+    fn description(&self) -> &str {
+        self.desc
+    }
+
+    fn detail(&self) -> Option<String> {
+        self.detail.clone()
+    }
+}
+
+impl FromError<IoError> for Box<Error> {
+    fn from_error(err: IoError) -> Box<Error> {
+        box err
+    }
+}
+
 /// A list specifying general categories of I/O error.
 #[deriving(PartialEq, Eq, Clone, Show)]
 pub enum IoErrorKind {
@@ -609,7 +627,7 @@ pub trait Reader {
     /// as `Err(IoError)`. See `read()` for more details.
     fn push(&mut self, len: uint, buf: &mut Vec<u8>) -> IoResult<uint> {
         let start_len = buf.len();
-        buf.reserve_additional(len);
+        buf.reserve(len);
 
         let n = {
             let s = unsafe { slice_vec_capacity(buf, start_len, start_len + len) };
@@ -640,7 +658,7 @@ pub trait Reader {
         }
 
         let start_len = buf.len();
-        buf.reserve_additional(len);
+        buf.reserve(len);
 
         // we can't just use self.read_at_least(min, slice) because we need to push
         // successful reads onto the vector before any returned errors.
@@ -1719,7 +1737,7 @@ pub enum FileAccess {
 }
 
 /// Different kinds of files which can be identified by a call to stat
-#[deriving(PartialEq, Show, Hash)]
+#[deriving(PartialEq, Show, Hash, Clone)]
 pub enum FileType {
     /// This is a normal file, corresponding to `S_IFREG`
     TypeFile,

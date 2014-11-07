@@ -23,7 +23,6 @@ use middle::ty;
 use std::rc::Rc;
 use std::str;
 use std::string::String;
-use std::uint;
 use syntax::abi;
 use syntax::ast;
 use syntax::ast::*;
@@ -56,6 +55,9 @@ pub enum DefIdSource {
 
     // Identifies a region parameter (`fn foo<'X>() { ... }`).
     RegionParameter,
+
+    // Identifies an unboxed closure
+    UnboxedClosureSource
 }
 pub type conv_did<'a> =
     |source: DefIdSource, ast::DefId|: 'a -> ast::DefId;
@@ -465,7 +467,7 @@ fn parse_ty(st: &mut PState, conv: conv_did) -> ty::t {
       }
       'k' => {
           assert_eq!(next(st), '[');
-          let did = parse_def(st, NominalType, |x,y| conv(x,y));
+          let did = parse_def(st, UnboxedClosureSource, |x,y| conv(x,y));
           let region = parse_region(st, |x,y| conv(x,y));
           let substs = parse_substs(st, |x,y| conv(x,y));
           assert_eq!(next(st), ']');
@@ -615,12 +617,12 @@ pub fn parse_def_id(buf: &[u8]) -> ast::DefId {
     let crate_part = buf[0u..colon_idx];
     let def_part = buf[colon_idx + 1u..len];
 
-    let crate_num = match uint::parse_bytes(crate_part, 10u) {
+    let crate_num = match str::from_utf8(crate_part).and_then(from_str::<uint>) {
        Some(cn) => cn as ast::CrateNum,
        None => panic!("internal error: parse_def_id: crate number expected, found {}",
                      crate_part)
     };
-    let def_num = match uint::parse_bytes(def_part, 10u) {
+    let def_num = match str::from_utf8(def_part).and_then(from_str::<uint>) {
        Some(dn) => dn as ast::NodeId,
        None => panic!("internal error: parse_def_id: id expected, found {}",
                      def_part)
@@ -673,16 +675,16 @@ fn parse_builtin_bounds(st: &mut PState, _conv: conv_did) -> ty::BuiltinBounds {
     loop {
         match next(st) {
             'S' => {
-                builtin_bounds.add(ty::BoundSend);
+                builtin_bounds.insert(ty::BoundSend);
             }
             'Z' => {
-                builtin_bounds.add(ty::BoundSized);
+                builtin_bounds.insert(ty::BoundSized);
             }
             'P' => {
-                builtin_bounds.add(ty::BoundCopy);
+                builtin_bounds.insert(ty::BoundCopy);
             }
             'T' => {
-                builtin_bounds.add(ty::BoundSync);
+                builtin_bounds.insert(ty::BoundSync);
             }
             '.' => {
                 return builtin_bounds;

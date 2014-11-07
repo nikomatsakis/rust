@@ -53,9 +53,8 @@ use ast::{TtNonterminal, TupleVariantKind, Ty, Ty_, TyBot};
 use ast::{TypeField, TyFixedLengthVec, TyClosure, TyProc, TyBareFn};
 use ast::{TyTypeof, TyInfer, TypeMethod};
 use ast::{TyNil, TyParam, TyParamBound, TyParen, TyPath, TyPtr, TyQPath};
-use ast::{TyRptr, TyTup, TyU32, TyUnboxedFn, TyUniq, TyVec, UnUniq};
+use ast::{TyRptr, TyTup, TyU32, TyUniq, TyVec, UnUniq};
 use ast::{TypeImplItem, TypeTraitItem, Typedef, UnboxedClosureKind};
-use ast::{UnboxedFnBound, UnboxedFnTy, UnboxedFnTyParamBound};
 use ast::{UnnamedField, UnsafeBlock};
 use ast::{UnsafeFn, ViewItem, ViewItem_, ViewItemExternCrate, ViewItemUse};
 use ast::{ViewPath, ViewPathGlob, ViewPathList, ViewPathSimple};
@@ -63,7 +62,6 @@ use ast::{Visibility, WhereClause, WherePredicate};
 use ast;
 use ast_util::{as_prec, ident_to_path, operator_prec};
 use ast_util;
-use attr;
 use codemap::{Span, BytePos, Spanned, spanned, mk_sp};
 use codemap;
 use parse;
@@ -338,27 +336,13 @@ fn is_plain_ident_or_underscore(t: &token::Token) -> bool {
     t.is_plain_ident() || *t == token::Underscore
 }
 
-/// Get a token the parser cares about
-fn real_token(rdr: &mut Reader) -> TokenAndSpan {
-    let mut t = rdr.next_token();
-    loop {
-        match t.tok {
-            token::Whitespace | token::Comment | token::Shebang(_) => {
-                t = rdr.next_token();
-            },
-            _ => break
-        }
-    }
-    t
-}
-
 impl<'a> Parser<'a> {
     pub fn new(sess: &'a ParseSess,
                cfg: ast::CrateConfig,
                mut rdr: Box<Reader+'a>)
                -> Parser<'a>
     {
-        let tok0 = real_token(&mut *rdr);
+        let tok0 = rdr.real_token();
         let span = tok0.sp;
         let placeholder = TokenAndSpan {
             tok: token::Underscore,
@@ -898,7 +882,7 @@ impl<'a> Parser<'a> {
             None
         };
         let next = if self.buffer_start == self.buffer_end {
-            real_token(&mut *self.reader)
+            self.reader.real_token()
         } else {
             // Avoid token copies with `replace`.
             let buffer_start = self.buffer_start as uint;
@@ -942,7 +926,7 @@ impl<'a> Parser<'a> {
                       -> R {
         let dist = distance as int;
         while self.buffer_length() < dist {
-            self.buffer[self.buffer_end as uint] = real_token(&mut *self.reader);
+            self.buffer[self.buffer_end as uint] = self.reader.real_token();
             self.buffer_end = (self.buffer_end + 1) & 3;
         }
         f(&self.buffer[((self.buffer_start + dist - 1) & 3) as uint].tok)
@@ -1142,19 +1126,16 @@ impl<'a> Parser<'a> {
             Vec::new()
         };
 
-        let (optional_unboxed_closure_kind, inputs) = if self.eat(&token::OrOr) {
-            (None, Vec::new())
+        let inputs = if self.eat(&token::OrOr) {
+            Vec::new()
         } else {
             self.expect_or();
-
-            let optional_unboxed_closure_kind =
-                self.parse_optional_unboxed_closure_kind();
 
             let inputs = self.parse_seq_to_before_or(
                 &token::Comma,
                 |p| p.parse_arg_general(false));
             self.expect_or();
-            (optional_unboxed_closure_kind, inputs)
+            inputs
         };
 
         let bounds = self.parse_colon_then_ty_param_bounds();
@@ -1167,23 +1148,13 @@ impl<'a> Parser<'a> {
             variadic: false
         });
 
-        match optional_unboxed_closure_kind {
-            Some(unboxed_closure_kind) => {
-                TyUnboxedFn(P(UnboxedFnTy {
-                    kind: unboxed_closure_kind,
-                    decl: decl,
-                }))
-            }
-            None => {
-                TyClosure(P(ClosureTy {
-                    fn_style: fn_style,
-                    onceness: onceness,
-                    bounds: bounds,
-                    decl: decl,
-                    lifetimes: lifetime_defs,
-                }))
-            }
-        }
+        TyClosure(P(ClosureTy {
+            fn_style: fn_style,
+            onceness: onceness,
+            bounds: bounds,
+            decl: decl,
+            lifetimes: lifetime_defs,
+        }))
     }
 
     pub fn parse_unsafety(&mut self) -> FnStyle {
@@ -1229,16 +1200,13 @@ impl<'a> Parser<'a> {
     /// Parses `type Foo;` in a trait declaration only. The `type` keyword has
     /// already been parsed.
     fn parse_associated_type(&mut self, attrs: Vec<Attribute>)
-                             -> AssociatedType {
-        let lo = self.span.lo;
-        let ident = self.parse_ident();
-        let hi = self.span.hi;
+                             -> AssociatedType
+    {
+        let ty_param = self.parse_ty_param();
         self.expect(&token::Semi);
         AssociatedType {
-            id: ast::DUMMY_NODE_ID,
-            span: mk_sp(lo, hi),
-            ident: ident,
             attrs: attrs,
+            ty_param: ty_param,
         }
     }
 
@@ -1279,11 +1247,6 @@ impl<'a> Parser<'a> {
                 let vis = p.parse_visibility();
                 let abi = if p.eat_keyword(keywords::Extern) {
                     p.parse_opt_abi().unwrap_or(abi::C)
-                } else if attr::contains_name(attrs.as_slice(),
-                                              "rust_call_abi_hack") {
-                    // FIXME(stage0, pcwalton): Remove this awful hack after a
-                    // snapshot, and change to `extern "rust-call" fn`.
-                    abi::RustCall
                 } else {
                     abi::Rust
                 };
@@ -1510,9 +1473,9 @@ impl<'a> Parser<'a> {
                 trait_name: trait_name.path,
                 item_name: item_name,
             }))
-        } else if self.token == token::ModSep
-            || self.token.is_ident()
-            || self.token.is_path() {
+        } else if self.token == token::ModSep ||
+                  self.token.is_ident() ||
+                  self.token.is_path() {
             // NAMED TYPE
             let mode = if plus_allowed {
                 LifetimeAndTypesAndBounds
@@ -1729,50 +1692,18 @@ impl<'a> Parser<'a> {
         // Parse any number of segments and bound sets. A segment is an
         // identifier followed by an optional lifetime and a set of types.
         // A bound set is a set of type parameter bounds.
-        let mut segments = Vec::new();
-        loop {
-            // First, parse an identifier.
-            let identifier = self.parse_ident();
-
-            // Parse the '::' before type parameters if it's required. If
-            // it is required and wasn't present, then we're done.
-            if mode == LifetimeAndTypesWithColons &&
-                    !self.eat(&token::ModSep) {
-                segments.push(ast::PathSegment {
-                    identifier: identifier,
-                    lifetimes: Vec::new(),
-                    types: OwnedSlice::empty(),
-                });
-                break
+        let segments = match mode {
+            LifetimeAndTypesWithoutColons |
+            LifetimeAndTypesAndBounds => {
+                self.parse_path_segments_without_colons()
             }
-
-            // Parse the `<` before the lifetime and types, if applicable.
-            let (any_lifetime_or_types, lifetimes, types) = {
-                if mode != NoTypesAllowed && self.eat_lt(false) {
-                    let (lifetimes, types) =
-                        self.parse_generic_values_after_lt();
-                    (true, lifetimes, OwnedSlice::from_vec(types))
-                } else {
-                    (false, Vec::new(), OwnedSlice::empty())
-                }
-            };
-
-            // Assemble and push the result.
-            segments.push(ast::PathSegment {
-                identifier: identifier,
-                lifetimes: lifetimes,
-                types: types,
-            });
-
-            // We're done if we don't see a '::', unless the mode required
-            // a double colon to get here in the first place.
-            if !(mode == LifetimeAndTypesWithColons &&
-                    !any_lifetime_or_types) {
-                if !self.eat(&token::ModSep) {
-                    break
-                }
+            LifetimeAndTypesWithColons => {
+                self.parse_path_segments_with_colons()
             }
-        }
+            NoTypesAllowed => {
+                self.parse_path_segments_without_types()
+            }
+        };
 
         // Next, parse a plus and bounded type parameters, if
         // applicable. We need to remember whether the separate was
@@ -1812,6 +1743,123 @@ impl<'a> Parser<'a> {
                 segments: segments,
             },
             bounds: opt_bounds,
+        }
+    }
+
+    /// Examples:
+    /// - `a::b<T,U>::c<V,W>`
+    /// - `a::b<T,U>::c(V) -> W`
+    /// - `a::b<T,U>::c(V)`
+    pub fn parse_path_segments_without_colons(&mut self) -> Vec<ast::PathSegment> {
+        let mut segments = Vec::new();
+        loop {
+            // First, parse an identifier.
+            let identifier = self.parse_ident();
+
+            // Parse types, optionally.
+            let parameters = if self.eat_lt(false) {
+                let (lifetimes, types) = self.parse_generic_values_after_lt();
+
+                ast::AngleBracketedParameters(ast::AngleBracketedParameterData {
+                    lifetimes: lifetimes,
+                    types: OwnedSlice::from_vec(types),
+                })
+            } else if self.eat(&token::OpenDelim(token::Paren)) {
+                let inputs = self.parse_seq_to_end(
+                    &token::CloseDelim(token::Paren),
+                    seq_sep_trailing_allowed(token::Comma),
+                    |p| p.parse_ty(true));
+
+                let output_ty = if self.eat(&token::RArrow) {
+                    Some(self.parse_ty(true))
+                } else {
+                    None
+                };
+
+                ast::ParenthesizedParameters(ast::ParenthesizedParameterData {
+                    inputs: inputs,
+                    output: output_ty
+                })
+            } else {
+                ast::PathParameters::none()
+            };
+
+            // Assemble and push the result.
+            segments.push(ast::PathSegment { identifier: identifier,
+                                             parameters: parameters });
+
+            // Continue only if we see a `::`
+            if !self.eat(&token::ModSep) {
+                return segments;
+            }
+        }
+    }
+
+    /// Examples:
+    /// - `a::b::<T,U>::c`
+    pub fn parse_path_segments_with_colons(&mut self) -> Vec<ast::PathSegment> {
+        let mut segments = Vec::new();
+        loop {
+            // First, parse an identifier.
+            let identifier = self.parse_ident();
+
+            // If we do not see a `::`, stop.
+            if !self.eat(&token::ModSep) {
+                segments.push(ast::PathSegment {
+                    identifier: identifier,
+                    parameters: ast::AngleBracketedParameters(ast::AngleBracketedParameterData {
+                        lifetimes: Vec::new(),
+                        types: OwnedSlice::empty(),
+                    })
+                });
+                return segments;
+            }
+
+            // Check for a type segment.
+            if self.eat_lt(false) {
+                // Consumed `a::b::<`, go look for types
+                let (lifetimes, types) = self.parse_generic_values_after_lt();
+                segments.push(ast::PathSegment {
+                    identifier: identifier,
+                    parameters: ast::AngleBracketedParameters(ast::AngleBracketedParameterData {
+                        lifetimes: lifetimes,
+                        types: OwnedSlice::from_vec(types),
+                    }),
+                });
+
+                // Consumed `a::b::<T,U>`, check for `::` before proceeding
+                if !self.eat(&token::ModSep) {
+                    return segments;
+                }
+            } else {
+                // Consumed `a::`, go look for `b`
+                segments.push(ast::PathSegment {
+                    identifier: identifier,
+                    parameters: ast::PathParameters::none(),
+                });
+            }
+        }
+    }
+
+
+    /// Examples:
+    /// - `a::b::c`
+    pub fn parse_path_segments_without_types(&mut self) -> Vec<ast::PathSegment> {
+        let mut segments = Vec::new();
+        loop {
+            // First, parse an identifier.
+            let identifier = self.parse_ident();
+
+            // Assemble and push the result.
+            segments.push(ast::PathSegment {
+                identifier: identifier,
+                parameters: ast::PathParameters::none()
+            });
+
+            // If we do not see a `::`, stop.
+            if !self.eat(&token::ModSep) {
+                return segments;
+            }
         }
     }
 
@@ -2371,10 +2419,19 @@ impl<'a> Parser<'a> {
                   token::LitFloat(n) => {
                     self.bump();
                     let last_span = self.last_span;
+                    let fstr = n.as_str();
                     self.span_err(last_span,
                                   format!("unexpected token: `{}`", n.as_str()).as_slice());
-                    self.span_note(last_span,
-                                   "try parenthesizing the first index; e.g., `(foo.0).1`");
+                    if fstr.chars().all(|x| "0123456789.".contains_char(x)) {
+                        let float = match from_str::<f64>(fstr) {
+                            Some(f) => f,
+                            None => continue,
+                        };
+                        self.span_help(last_span,
+                            format!("try parenthesizing the first index; e.g., `(foo.{}){}`",
+                                    float.trunc() as uint,
+                                    float.fract().to_string()[1..]).as_slice());
+                    }
                     self.abort_if_errors();
 
                   }
@@ -2578,7 +2635,7 @@ impl<'a> Parser<'a> {
             token::Eof => {
                 let open_braces = self.open_braces.clone();
                 for sp in open_braces.iter() {
-                    self.span_note(*sp, "Did you mean to close this delimiter?");
+                    self.span_help(*sp, "did you mean to close this delimiter?");
                 }
                 // There shouldn't really be a span, but it's easier for the test runner
                 // if we give it one
@@ -3403,13 +3460,9 @@ impl<'a> Parser<'a> {
                           },
                           _ => {
                               if !enum_path.global &&
-                                    enum_path.segments.len() == 1 &&
-                                    enum_path.segments[0]
-                                             .lifetimes
-                                             .len() == 0 &&
-                                    enum_path.segments[0]
-                                             .types
-                                             .len() == 0 {
+                                  enum_path.segments.len() == 1 &&
+                                  enum_path.segments[0].parameters.is_empty()
+                              {
                                   // it could still be either an enum
                                   // or an identifier pattern, resolve
                                   // will sort it out:
@@ -3868,31 +3921,11 @@ impl<'a> Parser<'a> {
                 token::ModSep | token::Ident(..) => {
                     let path =
                         self.parse_path(LifetimeAndTypesWithoutColons).path;
-                    if self.token == token::OpenDelim(token::Paren) {
-                        self.bump();
-                        let inputs = self.parse_seq_to_end(
-                            &token::CloseDelim(token::Paren),
-                            seq_sep_trailing_allowed(token::Comma),
-                            |p| p.parse_arg_general(false));
-                        let (return_style, output) = self.parse_ret_ty();
-                        result.push(UnboxedFnTyParamBound(P(UnboxedFnBound {
-                            path: path,
-                            decl: P(FnDecl {
-                                inputs: inputs,
-                                output: output,
-                                cf: return_style,
-                                variadic: false,
-                            }),
-                            lifetimes: lifetime_defs,
-                            ref_id: ast::DUMMY_NODE_ID,
-                        })));
-                    } else {
-                        result.push(TraitTyParamBound(ast::TraitRef {
-                            path: path,
-                            ref_id: ast::DUMMY_NODE_ID,
-                            lifetimes: lifetime_defs,
-                        }))
-                    }
+                    result.push(TraitTyParamBound(ast::TraitRef {
+                        path: path,
+                        ref_id: ast::DUMMY_NODE_ID,
+                        lifetimes: lifetime_defs,
+                    }))
                 }
                 _ => break,
             }
@@ -3908,8 +3941,7 @@ impl<'a> Parser<'a> {
     fn trait_ref_from_ident(ident: Ident, span: Span) -> ast::TraitRef {
         let segment = ast::PathSegment {
             identifier: ident,
-            lifetimes: Vec::new(),
-            types: OwnedSlice::empty(),
+            parameters: ast::PathParameters::none()
         };
         let path = ast::Path {
             span: span,
@@ -4454,11 +4486,6 @@ impl<'a> Parser<'a> {
             } else {
                 let abi = if self.eat_keyword(keywords::Extern) {
                     self.parse_opt_abi().unwrap_or(abi::C)
-                } else if attr::contains_name(attrs.as_slice(),
-                                              "rust_call_abi_hack") {
-                    // FIXME(stage0, pcwalton): Remove this awful hack after a
-                    // snapshot, and change to `extern "rust-call" fn`.
-                    abi::RustCall
                 } else {
                     abi::Rust
                 };
@@ -5352,8 +5379,8 @@ impl<'a> Parser<'a> {
             self.bump();
             if self.eat_keyword(keywords::Mut) {
                 let last_span = self.last_span;
-                self.span_err(last_span, "const globals cannot be mutable, \
-                                          did you mean to declare a static?");
+                self.span_err(last_span, "const globals cannot be mutable");
+                self.span_help(last_span, "did you mean to declare a static?");
             }
             let (ident, item_, extra_attrs) = self.parse_item_const(None);
             let last_span = self.last_span;
@@ -5630,8 +5657,7 @@ impl<'a> Parser<'a> {
                 segments: path.into_iter().map(|identifier| {
                     ast::PathSegment {
                         identifier: identifier,
-                        lifetimes: Vec::new(),
-                        types: OwnedSlice::empty(),
+                        parameters: ast::PathParameters::none(),
                     }
                 }).collect()
             };
@@ -5665,8 +5691,7 @@ impl<'a> Parser<'a> {
                         segments: path.into_iter().map(|identifier| {
                             ast::PathSegment {
                                 identifier: identifier,
-                                lifetimes: Vec::new(),
-                                types: OwnedSlice::empty(),
+                                parameters: ast::PathParameters::none(),
                             }
                         }).collect()
                     };
@@ -5683,8 +5708,7 @@ impl<'a> Parser<'a> {
                         segments: path.into_iter().map(|identifier| {
                             ast::PathSegment {
                                 identifier: identifier,
-                                lifetimes: Vec::new(),
-                                types: OwnedSlice::empty(),
+                                parameters: ast::PathParameters::none(),
                             }
                         }).collect()
                     };
@@ -5705,8 +5729,7 @@ impl<'a> Parser<'a> {
             segments: path.into_iter().map(|identifier| {
                 ast::PathSegment {
                     identifier: identifier,
-                    lifetimes: Vec::new(),
-                    types: OwnedSlice::empty(),
+                    parameters: ast::PathParameters::none(),
                 }
             }).collect()
         };

@@ -21,7 +21,6 @@ use ptr::P;
 use visit::Visitor;
 use visit;
 
-use std::cell::Cell;
 use std::cmp;
 use std::u32;
 
@@ -172,8 +171,10 @@ pub fn ident_to_path(s: Span, identifier: Ident) -> Path {
         segments: vec!(
             ast::PathSegment {
                 identifier: identifier,
-                lifetimes: Vec::new(),
-                types: OwnedSlice::empty(),
+                parameters: ast::AngleBracketedParameters(ast::AngleBracketedParameterData {
+                    lifetimes: Vec::new(),
+                    types: OwnedSlice::empty(),
+                })
             }
         ),
     }
@@ -333,20 +334,20 @@ impl IdRange {
 }
 
 pub trait IdVisitingOperation {
-    fn visit_id(&self, node_id: NodeId);
+    fn visit_id(&mut self, node_id: NodeId);
 }
 
 /// A visitor that applies its operation to all of the node IDs
 /// in a visitable thing.
 
 pub struct IdVisitor<'a, O:'a> {
-    pub operation: &'a O,
+    pub operation: &'a mut O,
     pub pass_through_items: bool,
     pub visited_outermost: bool,
 }
 
 impl<'a, O: IdVisitingOperation> IdVisitor<'a, O> {
-    fn visit_generics_helper(&self, generics: &Generics) {
+    fn visit_generics_helper(&mut self, generics: &Generics) {
         for type_parameter in generics.ty_params.iter() {
             self.operation.visit_id(type_parameter.id)
         }
@@ -525,7 +526,7 @@ impl<'a, 'v, O: IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> {
         match *tm {
             ast::RequiredMethod(ref m) => self.operation.visit_id(m.id),
             ast::ProvidedMethod(ref m) => self.operation.visit_id(m.id),
-            ast::TypeTraitItem(ref typ) => self.operation.visit_id(typ.id),
+            ast::TypeTraitItem(ref typ) => self.operation.visit_id(typ.ty_param.id),
         }
         visit::walk_trait_item(self, tm);
     }
@@ -540,7 +541,7 @@ impl<'a, 'v, O: IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> {
 }
 
 pub fn visit_ids_for_inlined_item<O: IdVisitingOperation>(item: &InlinedItem,
-                                                          operation: &O) {
+                                                          operation: &mut O) {
     let mut id_visitor = IdVisitor {
         operation: operation,
         pass_through_items: true,
@@ -551,23 +552,21 @@ pub fn visit_ids_for_inlined_item<O: IdVisitingOperation>(item: &InlinedItem,
 }
 
 struct IdRangeComputingVisitor {
-    result: Cell<IdRange>,
+    result: IdRange,
 }
 
 impl IdVisitingOperation for IdRangeComputingVisitor {
-    fn visit_id(&self, id: NodeId) {
-        let mut id_range = self.result.get();
-        id_range.add(id);
-        self.result.set(id_range)
+    fn visit_id(&mut self, id: NodeId) {
+        self.result.add(id);
     }
 }
 
 pub fn compute_id_range_for_inlined_item(item: &InlinedItem) -> IdRange {
-    let visitor = IdRangeComputingVisitor {
-        result: Cell::new(IdRange::max())
+    let mut visitor = IdRangeComputingVisitor {
+        result: IdRange::max()
     };
-    visit_ids_for_inlined_item(item, &visitor);
-    visitor.result.get()
+    visit_ids_for_inlined_item(item, &mut visitor);
+    visitor.result
 }
 
 pub fn compute_id_range_for_fn_body(fk: visit::FnKind,
@@ -582,16 +581,16 @@ pub fn compute_id_range_for_fn_body(fk: visit::FnKind,
      * ignoring nested items.
      */
 
-    let visitor = IdRangeComputingVisitor {
-        result: Cell::new(IdRange::max())
+    let mut visitor = IdRangeComputingVisitor {
+        result: IdRange::max()
     };
     let mut id_visitor = IdVisitor {
-        operation: &visitor,
+        operation: &mut visitor,
         pass_through_items: false,
         visited_outermost: false,
     };
     id_visitor.visit_fn(fk, decl, body, sp, id);
-    visitor.result.get()
+    id_visitor.operation.result
 }
 
 pub fn walk_pat(pat: &Pat, it: |&Pat| -> bool) -> bool {
@@ -684,11 +683,11 @@ pub fn segments_name_eq(a : &[ast::PathSegment], b : &[ast::PathSegment]) -> boo
         false
     } else {
         for (idx,seg) in a.iter().enumerate() {
-            if (seg.identifier.name != b[idx].identifier.name)
+            if seg.identifier.name != b[idx].identifier.name
                 // FIXME #7743: ident -> name problems in lifetime comparison?
-                || (seg.lifetimes != b[idx].lifetimes)
                 // can types contain idents?
-                || (seg.types != b[idx].types) {
+                || seg.parameters != b[idx].parameters
+            {
                 return false;
             }
         }
@@ -750,12 +749,10 @@ impl PostExpansionMethod for Method {
 mod test {
     use ast::*;
     use super::*;
-    use owned_slice::OwnedSlice;
 
     fn ident_to_segment(id : &Ident) -> PathSegment {
-        PathSegment {identifier:id.clone(),
-                     lifetimes: Vec::new(),
-                     types: OwnedSlice::empty()}
+        PathSegment {identifier: id.clone(),
+                     parameters: PathParameters::none()}
     }
 
     #[test] fn idents_name_eq_test() {

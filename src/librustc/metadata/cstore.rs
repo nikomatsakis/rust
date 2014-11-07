@@ -50,7 +50,7 @@ pub enum LinkagePreference {
     RequireStatic,
 }
 
-#[deriving(PartialEq, FromPrimitive)]
+#[deriving(PartialEq, FromPrimitive, Clone)]
 pub enum NativeLibaryKind {
     NativeStatic,    // native static library (.a archive)
     NativeFramework, // OSX-specific
@@ -213,7 +213,7 @@ impl CStore {
 
     pub fn find_extern_mod_stmt_cnum(&self, emod_id: ast::NodeId)
                                      -> Option<ast::CrateNum> {
-        self.extern_mod_crate_map.borrow().find(&emod_id).map(|x| *x)
+        self.extern_mod_crate_map.borrow().get(&emod_id).map(|x| *x)
     }
 }
 

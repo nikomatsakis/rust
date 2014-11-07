@@ -41,7 +41,7 @@ assert_eq!(*key_vector.get().unwrap(), vec![4]);
 use core::prelude::*;
 
 use alloc::heap;
-use collections::treemap::TreeMap;
+use collections::TreeMap;
 use core::cmp;
 use core::kinds::marker;
 use core::mem;
@@ -188,7 +188,7 @@ impl<T: 'static> KeyValue<T> {
 
         // The following match takes a mutable borrow on the map. In order to insert
         // our data if the key isn't present, we need to let the match end first.
-        let data = match (map.find_mut(&keyval), data) {
+        let data = match (map.get_mut(&keyval), data) {
             (None, Some(data)) => {
                 // The key doesn't exist and we need to insert it. To make borrowck
                 // happy, return it up a scope and insert it there.
@@ -268,7 +268,7 @@ impl<T: 'static> KeyValue<T> {
         };
         let keyval = key_to_key_value(self);
 
-        match map.find(&keyval) {
+        match map.get(&keyval) {
             Some(slot) => {
                 let value_box = slot.box_ptr as *mut TLDValueBox<T>;
                 if unsafe { *(*value_box).refcount.get() } >= 1 {
@@ -356,6 +356,7 @@ impl TLDValue {
         let box_ptr = unsafe {
             let allocation = heap::allocate(mem::size_of::<TLDValueBox<T>>(),
                                             mem::min_align_of::<TLDValueBox<T>>());
+            if allocation.is_null() { ::alloc::oom() }
             let value_box = allocation as *mut TLDValueBox<T>;
             ptr::write(value_box, TLDValueBox {
                 value: value,

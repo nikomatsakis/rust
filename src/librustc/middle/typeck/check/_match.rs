@@ -19,7 +19,7 @@ use middle::typeck::require_same_types;
 
 use std::cmp;
 use std::collections::HashMap;
-use std::collections::hashmap::{Occupied, Vacant};
+use std::collections::hash_map::{Occupied, Vacant};
 use syntax::ast;
 use syntax::ast_util;
 use syntax::codemap::{Span, Spanned};
@@ -324,7 +324,7 @@ pub fn check_pat_struct(pcx: &pat_ctxt, pat: &ast::Pat,
 
     let item_substs = fcx
         .item_substs()
-        .find(&pat.id)
+        .get(&pat.id)
         .map(|substs| substs.substs.clone())
         .unwrap_or_else(|| Substs::empty());
 

@@ -51,7 +51,7 @@ struct MarkSymbolVisitor<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
     live_symbols: Box<HashSet<ast::NodeId>>,
     struct_has_extern_repr: bool,
-    ignore_paths: bool
+    ignore_non_const_paths: bool
 }
 
 impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
@@ -62,7 +62,7 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
             tcx: tcx,
             live_symbols: box HashSet::new(),
             struct_has_extern_repr: false,
-            ignore_paths: false
+            ignore_non_const_paths: false
         }
     }
 
@@ -74,8 +74,12 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
     }
 
     fn lookup_and_handle_definition(&mut self, id: &ast::NodeId) {
-        self.tcx.def_map.borrow().find(id).map(|def| {
+        self.tcx.def_map.borrow().get(id).map(|def| {
             match def {
+                &def::DefConst(_) => {
+                    self.check_def_id(def.def_id())
+                }
+                _ if self.ignore_non_const_paths => (),
                 &def::DefPrimTy(_) => (),
                 &def::DefVariant(enum_id, variant_id, _) => {
                     self.check_def_id(enum_id);
@@ -91,7 +95,7 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
     fn lookup_and_handle_method(&mut self, id: ast::NodeId,
                                 span: codemap::Span) {
         let method_call = typeck::MethodCall::expr(id);
-        match self.tcx.method_map.borrow().find(&method_call) {
+        match self.tcx.method_map.borrow().get(&method_call) {
             Some(method) => {
                 match method.origin {
                     typeck::MethodStatic(def_id) => {
@@ -283,21 +287,19 @@ impl<'a, 'tcx, 'v> Visitor<'v> for MarkSymbolVisitor<'a, 'tcx> {
                 self.handle_field_pattern_match(pat, fields.as_slice());
             }
             _ if pat_util::pat_is_const(def_map, pat) => {
-                // it might be the only use of a static:
+                // it might be the only use of a const
                 self.lookup_and_handle_definition(&pat.id)
             }
             _ => ()
         }
 
-        self.ignore_paths = true;
+        self.ignore_non_const_paths = true;
         visit::walk_pat(self, pat);
-        self.ignore_paths = false;
+        self.ignore_non_const_paths = false;
     }
 
     fn visit_path(&mut self, path: &ast::Path, id: ast::NodeId) {
-        if !self.ignore_paths {
-            self.lookup_and_handle_definition(&id);
-        }
+        self.lookup_and_handle_definition(&id);
         visit::walk_path(self, path);
     }
 
@@ -491,7 +493,7 @@ impl<'a, 'tcx> DeadVisitor<'a, 'tcx> {
         // method of a private type is used, but the type itself is never
         // called directly.
         let impl_items = self.tcx.impl_items.borrow();
-        match self.tcx.inherent_impls.borrow().find(&local_def(id)) {
+        match self.tcx.inherent_impls.borrow().get(&local_def(id)) {
             None => (),
             Some(impl_list) => {
                 for impl_did in impl_list.iter() {

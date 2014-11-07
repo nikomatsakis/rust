@@ -34,9 +34,9 @@ use std::hash::Hash;
 use std::hash;
 use std::io::extensions::u64_from_be_bytes;
 use std::io;
-use std::collections::hashmap::HashMap;
+use std::collections::hash_map::HashMap;
 use std::rc::Rc;
-use std::u64;
+use std::str;
 use rbml::reader;
 use rbml;
 use serialize::Decodable;
@@ -215,7 +215,9 @@ fn each_reexport(d: rbml::Doc, f: |rbml::Doc| -> bool) -> bool {
 
 fn variant_disr_val(d: rbml::Doc) -> Option<ty::Disr> {
     reader::maybe_get_doc(d, tag_disr_val).and_then(|val_doc| {
-        reader::with_doc_data(val_doc, |data| u64::parse_bytes(data, 10u))
+        reader::with_doc_data(val_doc, |data| {
+            str::from_utf8(data).and_then(from_str)
+        })
     })
 }
 
@@ -1207,7 +1209,7 @@ pub fn translate_def_id(cdata: Cmd, did: ast::DefId) -> ast::DefId {
         return ast::DefId { krate: cdata.cnum, node: did.node };
     }
 
-    match cdata.cnum_map.find(&did.krate) {
+    match cdata.cnum_map.get(&did.krate) {
         Some(&n) => {
             ast::DefId {
                 krate: n,
@@ -1319,7 +1321,7 @@ pub fn get_dylib_dependency_formats(cdata: Cmd)
         let cnum = spec.split(':').nth(0).unwrap();
         let link = spec.split(':').nth(1).unwrap();
         let cnum = from_str(cnum).unwrap();
-        let cnum = match cdata.cnum_map.find(&cnum) {
+        let cnum = match cdata.cnum_map.get(&cnum) {
             Some(&n) => n,
             None => panic!("didn't find a crate in the cnum_map")
         };

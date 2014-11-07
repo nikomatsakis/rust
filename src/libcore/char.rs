@@ -18,7 +18,7 @@
 use mem::transmute;
 use option::{None, Option, Some};
 use iter::range_step;
-use slice::ImmutableSlice;
+use slice::SlicePrelude;
 
 // UTF-8 ranges and tags for encoding characters
 static TAG_CONT: u8    = 0b1000_0000u8;
@@ -176,7 +176,7 @@ pub fn escape_unicode(c: char, f: |char|) {
     // here.
     f('\\');
     let pad = match () {
-        _ if c <= '\xff'    => { f('x'); 2 }
+        _ if c <= '\x7f'    => { f('x'); 2 }
         _ if c <= '\uffff'  => { f('u'); 4 }
         _                   => { f('U'); 8 }
     };

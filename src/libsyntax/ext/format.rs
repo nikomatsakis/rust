@@ -252,7 +252,7 @@ impl<'a, 'b> Context<'a, 'b> {
             }
 
             Named(name) => {
-                let span = match self.names.find(&name) {
+                let span = match self.names.get(&name) {
                     Some(e) => e.span,
                     None => {
                         let msg = format!("there is no argument named `{}`", name);
@@ -260,7 +260,7 @@ impl<'a, 'b> Context<'a, 'b> {
                         return;
                     }
                 };
-                self.verify_same(span, &ty, self.name_types.find(&name));
+                self.verify_same(span, &ty, self.name_types.get(&name));
                 if !self.name_types.contains_key(&name) {
                     self.name_types.insert(name.clone(), ty);
                 }
@@ -555,11 +555,11 @@ impl<'a, 'b> Context<'a, 'b> {
             heads.push(self.ecx.expr_addr_of(e.span, e));
         }
         for name in self.name_ordering.iter() {
-            let e = match self.names.pop(name) {
+            let e = match self.names.remove(name) {
                 Some(e) => e,
                 None => continue
             };
-            let arg_ty = match self.name_types.find(name) {
+            let arg_ty = match self.name_types.get(name) {
                 Some(ty) => ty,
                 None => continue
             };
@@ -663,28 +663,28 @@ impl<'a, 'b> Context<'a, 'b> {
     fn format_arg(ecx: &ExtCtxt, sp: Span,
                   ty: &ArgumentType, arg: P<ast::Expr>)
                   -> P<ast::Expr> {
-        let (krate, fmt_fn) = match *ty {
+        let trait_ = match *ty {
             Known(ref tyname) => {
                 match tyname.as_slice() {
-                    ""  => ("std", "secret_show"),
-                    "b" => ("std", "secret_bool"),
-                    "c" => ("std", "secret_char"),
-                    "d" | "i" => ("std", "secret_signed"),
-                    "e" => ("std", "secret_lower_exp"),
-                    "E" => ("std", "secret_upper_exp"),
-                    "f" => ("std", "secret_float"),
-                    "o" => ("std", "secret_octal"),
-                    "p" => ("std", "secret_pointer"),
-                    "s" => ("std", "secret_string"),
-                    "t" => ("std", "secret_binary"),
-                    "u" => ("std", "secret_unsigned"),
-                    "x" => ("std", "secret_lower_hex"),
-                    "X" => ("std", "secret_upper_hex"),
+                    ""  => "Show",
+                    "b" => "Bool",
+                    "c" => "Char",
+                    "d" | "i" => "Signed",
+                    "e" => "LowerExp",
+                    "E" => "UpperExp",
+                    "f" => "Float",
+                    "o" => "Octal",
+                    "p" => "Pointer",
+                    "s" => "String",
+                    "t" => "Binary",
+                    "u" => "Unsigned",
+                    "x" => "LowerHex",
+                    "X" => "UpperHex",
                     _ => {
                         ecx.span_err(sp,
                                      format!("unknown format trait `{}`",
                                              *tyname).as_slice());
-                        ("std", "dummy")
+                        "Dummy"
                     }
                 }
             }
@@ -697,9 +697,10 @@ impl<'a, 'b> Context<'a, 'b> {
         };
 
         let format_fn = ecx.path_global(sp, vec![
-                ecx.ident_of(krate),
+                ecx.ident_of("std"),
                 ecx.ident_of("fmt"),
-                ecx.ident_of(fmt_fn)]);
+                ecx.ident_of(trait_),
+                ecx.ident_of("fmt")]);
         ecx.expr_call_global(sp, vec![
                 ecx.ident_of("std"),
                 ecx.ident_of("fmt"),

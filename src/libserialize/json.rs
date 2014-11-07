@@ -203,6 +203,7 @@ use std::num::{FPNaN, FPInfinite};
 use std::str::ScalarValue;
 use std::string;
 use std::vec::Vec;
+use std::ops;
 
 use Encodable;
 
@@ -311,6 +312,11 @@ impl fmt::Show for ErrorCode {
 
 fn io_error_to_error(io: io::IoError) -> ParserError {
     IoError(io.kind, io.desc)
+}
+
+impl std::error::Error for DecoderError {
+    fn description(&self) -> &str { "decoder error" }
+    fn detail(&self) -> Option<std::string::String> { Some(self.to_string()) }
 }
 
 pub type EncodeResult = io::IoResult<()>;
@@ -884,9 +890,21 @@ impl Json {
 
      /// If the Json value is an Object, returns the value associated with the provided key.
     /// Otherwise, returns None.
-    pub fn find<'a>(&'a self, key: &string::String) -> Option<&'a Json>{
+    // NOTE(stage0): remove function after a snapshot
+    #[cfg(stage0)]
+    pub fn find<'a>(&'a self, key: &str) -> Option<&'a Json>{
         match self {
-            &Object(ref map) => map.find(key),
+            &Object(ref map) => map.find_with(|s| key.cmp(&s.as_slice())),
+            _ => None
+        }
+    }
+
+     /// If the Json value is an Object, returns the value associated with the provided key.
+    /// Otherwise, returns None.
+    #[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+    pub fn find<'a>(&'a self, key: &str) -> Option<&'a Json>{
+        match self {
+            &Object(ref map) => map.find_with(|s| key.cmp(s.as_slice())),
             _ => None
         }
     }
@@ -894,7 +912,7 @@ impl Json {
     /// Attempts to get a nested Json Object for each key in `keys`.
     /// If any key is found not to exist, find_path will return None.
     /// Otherwise, it will return the Json value associated with the final key.
-    pub fn find_path<'a>(&'a self, keys: &[&string::String]) -> Option<&'a Json>{
+    pub fn find_path<'a>(&'a self, keys: &[&str]) -> Option<&'a Json>{
         let mut target = self;
         for key in keys.iter() {
             match target.find(*key) {
@@ -908,20 +926,45 @@ impl Json {
     /// If the Json value is an Object, performs a depth-first search until
     /// a value associated with the provided key is found. If no value is found
     /// or the Json value is not an Object, returns None.
-    pub fn search<'a>(&'a self, key: &string::String) -> Option<&'a Json> {
+    // NOTE(stage0): remove function after a snapshot
+    #[cfg(stage0)]
+    pub fn search<'a>(&'a self, key: &str) -> Option<&'a Json> {
         match self {
             &Object(ref map) => {
-                match map.find(key) {
+                match map.find_with(|s| key.cmp(&s.as_slice())) {
                     Some(json_value) => Some(json_value),
                     None => {
-                        let mut value : Option<&'a Json> = None;
                         for (_, v) in map.iter() {
-                            value = v.search(key);
-                            if value.is_some() {
-                                break;
+                            match v.search(key) {
+                                x if x.is_some() => return x,
+                                _ => ()
                             }
                         }
-                        value
+                        None
+                    }
+                }
+            },
+            _ => None
+        }
+    }
+
+    /// If the Json value is an Object, performs a depth-first search until
+    /// a value associated with the provided key is found. If no value is found
+    /// or the Json value is not an Object, returns None.
+    #[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+    pub fn search<'a>(&'a self, key: &str) -> Option<&'a Json> {
+        match self {
+            &Object(ref map) => {
+                match map.find_with(|s| key.cmp(s.as_slice())) {
+                    Some(json_value) => Some(json_value),
+                    None => {
+                        for (_, v) in map.iter() {
+                            match v.search(key) {
+                                x if x.is_some() => return x,
+                                _ => ()
+                            }
+                        }
+                        None
                     }
                 }
             },
@@ -1059,6 +1102,21 @@ impl Json {
         match self {
             &Null => Some(()),
             _ => None
+        }
+    }
+}
+
+impl<'a> ops::Index<&'a str, Json>  for Json {
+    fn index<'a>(&'a self, idx: & &str) -> &'a Json {
+        self.find(*idx).unwrap()
+    }
+}
+
+impl ops::Index<uint, Json> for Json {
+    fn index<'a>(&'a self, idx: &uint) -> &'a Json {
+        match self {
+            &List(ref v) => v.index(idx),
+            _ => panic!("can only index Json with uint if it is a list")
         }
     }
 }
@@ -2055,7 +2113,7 @@ impl ::Decoder<DecoderError> for Decoder {
         let name = match self.pop() {
             String(s) => s,
             Object(mut o) => {
-                let n = match o.pop(&"variant".to_string()) {
+                let n = match o.remove(&"variant".to_string()) {
                     Some(String(s)) => s,
                     Some(val) => {
                         return Err(ExpectedError("String".to_string(), format!("{}", val)))
@@ -2064,7 +2122,7 @@ impl ::Decoder<DecoderError> for Decoder {
                         return Err(MissingFieldError("variant".to_string()))
                     }
                 };
-                match o.pop(&"fields".to_string()) {
+                match o.remove(&"fields".to_string()) {
                     Some(List(l)) => {
                         for field in l.into_iter().rev() {
                             self.stack.push(field);
@@ -2134,7 +2192,7 @@ impl ::Decoder<DecoderError> for Decoder {
         debug!("read_struct_field(name={}, idx={})", name, idx);
         let mut obj = try!(expect!(self.pop(), Object));
 
-        let value = match obj.pop(&name.to_string()) {
+        let value = match obj.remove(&name.to_string()) {
             None => {
                 // Add a Null and try to parse it as an Option<_>
                 // to get None as a default value.
@@ -2245,7 +2303,7 @@ impl ::Decoder<DecoderError> for Decoder {
 }
 
 /// A trait for converting values to JSON
-pub trait ToJson {
+pub trait ToJson for Sized? {
     /// Converts the value of `self` to an instance of JSON
     fn to_json(&self) -> Json;
 }
@@ -2331,7 +2389,7 @@ tuple_impl!{A, B, C, D, E, F, G, H, I, J}
 tuple_impl!{A, B, C, D, E, F, G, H, I, J, K}
 tuple_impl!{A, B, C, D, E, F, G, H, I, J, K, L}
 
-impl<'a, A: ToJson> ToJson for &'a [A] {
+impl<A: ToJson> ToJson for [A] {
     fn to_json(&self) -> Json { List(self.iter().map(|elt| elt.to_json()).collect()) }
 }
 
@@ -3014,8 +3072,8 @@ mod tests {
                   \"fields\":[\"Henry\", 349]}}";
         let mut map: TreeMap<string::String, Animal> = super::decode(s).unwrap();
 
-        assert_eq!(map.pop(&"a".to_string()), Some(Dog));
-        assert_eq!(map.pop(&"b".to_string()), Some(Frog("Henry".to_string(), 349)));
+        assert_eq!(map.remove(&"a".to_string()), Some(Dog));
+        assert_eq!(map.remove(&"b".to_string()), Some(Frog("Henry".to_string(), 349)));
     }
 
     #[test]
@@ -3084,24 +3142,31 @@ mod tests {
     #[test]
     fn test_find(){
         let json_value = from_str("{\"dog\" : \"cat\"}").unwrap();
-        let found_str = json_value.find(&"dog".to_string());
-        assert!(found_str.is_some() && found_str.unwrap().as_string().unwrap() == "cat");
+        let found_str = json_value.find("dog");
+        assert!(found_str.unwrap().as_string().unwrap() == "cat");
     }
 
     #[test]
     fn test_find_path(){
         let json_value = from_str("{\"dog\":{\"cat\": {\"mouse\" : \"cheese\"}}}").unwrap();
-        let found_str = json_value.find_path(&[&"dog".to_string(),
-                                             &"cat".to_string(), &"mouse".to_string()]);
-        assert!(found_str.is_some() && found_str.unwrap().as_string().unwrap() == "cheese");
+        let found_str = json_value.find_path(&["dog", "cat", "mouse"]);
+        assert!(found_str.unwrap().as_string().unwrap() == "cheese");
     }
 
     #[test]
     fn test_search(){
         let json_value = from_str("{\"dog\":{\"cat\": {\"mouse\" : \"cheese\"}}}").unwrap();
-        let found_str = json_value.search(&"mouse".to_string()).and_then(|j| j.as_string());
-        assert!(found_str.is_some());
+        let found_str = json_value.search("mouse").and_then(|j| j.as_string());
         assert!(found_str.unwrap() == "cheese");
+    }
+
+    #[test]
+    fn test_index(){
+        let json_value = from_str("{\"animals\":[\"dog\",\"cat\",\"mouse\"]}").unwrap();
+        let ref list = json_value["animals"];
+        assert_eq!(list[0].as_string().unwrap(), "dog");
+        assert_eq!(list[1].as_string().unwrap(), "cat");
+        assert_eq!(list[2].as_string().unwrap(), "mouse");
     }
 
     #[test]

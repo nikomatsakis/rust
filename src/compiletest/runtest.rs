@@ -444,7 +444,7 @@ fn run_debuginfo_gdb_test(config: &Config, props: &TestProps, testfile: &Path) {
                 //waiting 1 second for gdbserver start
                 timer::sleep(Duration::milliseconds(1000));
                 let result = task::try(proc() {
-                    tcp::TcpStream::connect("127.0.0.1", 5039).unwrap();
+                    tcp::TcpStream::connect("127.0.0.1:5039").unwrap();
                 });
                 if result.is_err() {
                     continue;
@@ -627,7 +627,7 @@ fn find_rust_src_root(config: &Config) -> Option<Path> {
     let path_postfix = Path::new("src/etc/lldb_batchmode.py");
 
     while path.pop() {
-        if path.join(path_postfix.clone()).is_file() {
+        if path.join(&path_postfix).is_file() {
             return Some(path);
         }
     }

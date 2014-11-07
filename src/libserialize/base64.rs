@@ -13,6 +13,7 @@
 //! Base64 binary-to-text encoding
 use std::fmt;
 use std::string;
+use std::error;
 
 /// Available encoding character sets
 pub enum CharacterSet {
@@ -53,13 +54,13 @@ static URLSAFE_CHARS: &'static[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ\
                                        0123456789-_";
 
 /// A trait for converting a value to base64 encoding.
-pub trait ToBase64 {
+pub trait ToBase64 for Sized? {
     /// Converts the value of `self` to a base64 value following the specified
     /// format configuration, returning the owned string.
     fn to_base64(&self, config: Config) -> String;
 }
 
-impl<'a> ToBase64 for &'a [u8] {
+impl ToBase64 for [u8] {
     /**
      * Turn a vector of `u8` bytes into a base64 string.
      *
@@ -154,7 +155,7 @@ impl<'a> ToBase64 for &'a [u8] {
 }
 
 /// A trait for converting from base64 encoded values.
-pub trait FromBase64 {
+pub trait FromBase64 for Sized? {
     /// Converts the value of `self`, interpreted as base64 encoded data, into
     /// an owned vector of bytes, returning the vector.
     fn from_base64(&self) -> Result<Vec<u8>, FromBase64Error>;
@@ -178,7 +179,20 @@ impl fmt::Show for FromBase64Error {
     }
 }
 
-impl<'a> FromBase64 for &'a str {
+impl error::Error for FromBase64Error {
+    fn description(&self) -> &str {
+        match *self {
+            InvalidBase64Byte(_, _) => "invalid character",
+            InvalidBase64Length => "invalid length",
+        }
+    }
+
+    fn detail(&self) -> Option<String> {
+        Some(self.to_string())
+    }
+}
+
+impl FromBase64 for str {
     /**
      * Convert any base64 encoded string (literal, `@`, `&`, or `~`)
      * to the byte values it encodes.
@@ -213,7 +227,7 @@ impl<'a> FromBase64 for &'a str {
     }
 }
 
-impl<'a> FromBase64 for &'a [u8] {
+impl FromBase64 for [u8] {
     fn from_base64(&self) -> Result<Vec<u8>, FromBase64Error> {
         let mut r = Vec::new();
         let mut buf: u32 = 0;

@@ -100,7 +100,9 @@ endif
 CFG_RUSTC_FLAGS := $(RUSTFLAGS)
 CFG_GCCISH_CFLAGS :=
 CFG_GCCISH_LINK_FLAGS :=
-CFG_JEMALLOC_FLAGS :=
+
+# Turn off broken quarantine (see jemalloc/jemalloc#161)
+CFG_JEMALLOC_FLAGS := --disable-fill
 
 ifdef CFG_DISABLE_OPTIMIZE
   $(info cfg: disabling rustc optimization (CFG_DISABLE_OPTIMIZE))
@@ -146,12 +148,14 @@ endif
 # libraries, so in the interest of space, prefer dynamic linking throughout the
 # compilation process.
 #
-# Note though that these flags are omitted for stage2+. This means that the
-# snapshot will be generated with a statically linked rustc so we only have to
-# worry about the distribution of one file (with its native dynamic
+# Note though that these flags are omitted for the *bins* in stage2+. This means
+# that the snapshot will be generated with a statically linked rustc so we only
+# have to worry about the distribution of one file (with its native dynamic
 # dependencies)
 RUSTFLAGS_STAGE0 += -C prefer-dynamic
 RUSTFLAGS_STAGE1 += -C prefer-dynamic
+RUST_LIB_FLAGS_ST2 += -C prefer-dynamic
+RUST_LIB_FLAGS_ST3 += -C prefer-dynamic
 
 # Landing pads require a lot of codegen. We can get through bootstrapping faster
 # by not emitting them.
@@ -309,7 +313,6 @@ export CFG_RELEASE
 export CFG_PACKAGE_NAME
 export CFG_BUILD
 export CFG_LLVM_ROOT
-export CFG_ENABLE_MINGW_CROSS
 export CFG_PREFIX
 export CFG_LIBDIR
 export CFG_LIBDIR_RELATIVE
