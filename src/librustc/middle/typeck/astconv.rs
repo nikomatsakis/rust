@@ -1374,7 +1374,7 @@ pub fn conv_existential_bounds<'tcx, AC: AstConv<'tcx>, RS:RegionScope>(
     let region_bound = compute_region_bound(this,
                                             rscope,
                                             span,
-                                            fail!("NYI"),
+                                            EnumSet::empty(),
                                             region_bounds.as_slice(),
                                             main_trait_refs.as_slice());
     // TODO: jroesch May need more trait checking here.

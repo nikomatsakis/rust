@@ -608,7 +608,7 @@ impl Repr for def::Def {
 }
 
 impl Repr for ty::TypeParameterDef {
-    fn repr(&self, tcx: &ctxt) -> String {
+    fn repr(&self, _: &ctxt) -> String {
         format!("TypeParameterDef({}, {}/{})",
                 self.def_id,
                 self.space,
@@ -1238,4 +1238,3 @@ impl<A:Repr,B:Repr> Repr for (A,B) {
         format!("({},{})", a.repr(tcx), b.repr(tcx))
     }
 }
-

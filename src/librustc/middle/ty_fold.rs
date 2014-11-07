@@ -335,7 +335,7 @@ impl TypeFoldable for ty::TypeParameterDef {
 }
 
 impl TypeFoldable for ty::RegionParameterDef {
-    fn fold_with<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::RegionParameterDef {
+    fn fold_with<'tcx, F: TypeFolder<'tcx>>(&self, _: &mut F) -> ty::RegionParameterDef {
         ty::RegionParameterDef {
             name: self.name,
             def_id: self.def_id,

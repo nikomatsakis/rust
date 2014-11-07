@@ -211,14 +211,6 @@ fn encode_type(ecx: &EncodeContext,
     rbml_w.end_tag();
 }
 
-fn encode_region(ecx: &EncodeContext,
-                 rbml_w: &mut Encoder,
-                 r: ty::Region) {
-    rbml_w.start_tag(tag_items_data_region);
-    write_region(ecx, rbml_w, r);
-    rbml_w.end_tag();
-}
-
 fn encode_method_fty(ecx: &EncodeContext,
                      rbml_w: &mut Encoder,
                      typ: &ty::BareFnTy) {
@@ -777,7 +769,7 @@ fn encode_generics(rbml_w: &mut Encoder,
         tcx: ecx.tcx,
         abbrevs: &ecx.type_abbrevs
     };
-    
+
     for param in generics.types.iter() {
         rbml_w.start_tag(tag_type_param_def);
         tyencode::enc_type_param_def(rbml_w.writer, ty_str_ctxt, param);

@@ -18,7 +18,7 @@ use metadata::common::*;
 use metadata::csearch::StaticMethodInfo;
 use metadata::csearch;
 use metadata::cstore;
-use metadata::tydecode::{parse_ty_data, parse_region_data, parse_def_id,
+use metadata::tydecode::{parse_ty_data, parse_def_id,
                          parse_type_param_def_data,
                          parse_bare_fn_ty_data, parse_trait_ref_data};
 use middle::def;

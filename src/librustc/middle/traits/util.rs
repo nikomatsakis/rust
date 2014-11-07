@@ -9,8 +9,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use middle::subst;
-use middle::subst::{ParamSpace, Subst, Substs, VecPerParamSpace};
+use middle::subst::{Subst, Substs};
 use middle::typeck::infer::InferCtxt;
 use middle::ty;
 use std::collections::HashSet;

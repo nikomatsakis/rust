@@ -366,7 +366,7 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
         self.region_param_pairs.truncate(len);
     }
 
-    fn visit_region_obligations(&mut self, node_id: ast::NodeId)
+    fn visit_region_obligations(&mut self, _: ast::NodeId)
     {
         // debug!("visit_region_obligations: node_id={}", node_id);
         // let region_obligations = self.fcx.inh.region_obligations.borrow();

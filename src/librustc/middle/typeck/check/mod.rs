@@ -118,6 +118,7 @@ use util::nodemap::{DefIdMap, FnvHashMap, NodeMap};
 
 use std::cell::{Cell, Ref, RefCell};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::hashmap::{Occupied, Vacant};
 use std::mem::replace;
 use std::rc::Rc;
@@ -1169,112 +1170,101 @@ fn compare_impl_method(tcx: &ty::ctxt,
         */
         // I'm pretty sure that this is going to have to be rewritten.
 
-        // let trait_params = trait_generics.regions.get_slice(subst::FnSpace);
-        // let impl_params = impl_generics.regions.get_slice(subst::FnSpace);
-        //
-        // debug!("check_region_bounds_on_impl_method: \
-        //        trait_generics={} \
-        //        impl_generics={}",
-        //        trait_generics.repr(tcx),
-        //        impl_generics.repr(tcx));
-        //
-        // // Must have same number of early-bound lifetime parameters.
-        // // Unfortunately, if the user screws up the bounds, then this
-        // // will change classification between early and late.  E.g.,
-        // // if in trait we have `<'a,'b:'a>`, and in impl we just have
-        // // `<'a,'b>`, then we have 2 early-bound lifetime parameters
-        // // in trait but 0 in the impl. But if we report "expected 2
-        // // but found 0" it's confusing, because it looks like there
-        // // are zero. Since I don't quite know how to phrase things at
-        // // the moment, give a kind of vague error message.
-        // if trait_params.len() != impl_params.len() {
-        //     tcx.sess.span_err(
-        //         span,
-        //         format!("lifetime parameters or bounds on method `{}` do \
-        //                  not match the trait declaration",
-        //                 token::get_name(impl_m.name)).as_slice());
-        //     return false;
-        // }
-        //
-        // // Each parameter `'a:'b+'c+'d` in trait should have the same
-        // // set of bounds in the impl, after subst.
-        // for (trait_param, impl_param) in
-        //     trait_params.iter().zip(
-        //         impl_params.iter())
-        // {
-        //     let trait_bounds: int =
-        //         trait_param.bounds.subst(tcx, trait_to_skol_substs);
-        //     let impl_bounds =
-        //         impl_param.bounds.subst(tcx, impl_to_skol_substs);
-        //
-        //     debug!("check_region_bounds_on_impl_method: \
-        //            trait_param={} \
-        //            impl_param={} \
-        //            trait_bounds={} \
-        //            impl_bounds={}",
-        //            trait_param.repr(tcx),
-        //            impl_param.repr(tcx),
-        //            trait_bounds.repr(tcx),
-        //            impl_bounds.repr(tcx));
-        //
-        //     // Collect the set of bounds present in trait but not in
-        //     // impl.
-        //     let missing: Vec<ty::Region> =
-        //         trait_bounds.iter()
-        //         .filter(|&b| !impl_bounds.contains(b))
-        //         .map(|&b| b)
-        //         .collect();
-        //
-        //     // Collect set present in impl but not in trait.
-        //     let extra: Vec<ty::Region> =
-        //         impl_bounds.iter()
-        //         .filter(|&b| !trait_bounds.contains(b))
-        //         .map(|&b| b)
-        //         .collect();
-        //
-        //     debug!("missing={} extra={}",
-        //            missing.repr(tcx), extra.repr(tcx));
-        //
-        //     let err = if missing.len() != 0 || extra.len() != 0 {
-        //         tcx.sess.span_err(
-        //             span,
-        //             format!(
-        //                 "the lifetime parameter `{}` declared in the impl \
-        //                  has a distinct set of bounds \
-        //                  from its counterpart `{}` \
-        //                  declared in the trait",
-        //                 impl_param.name.user_string(tcx),
-        //                 trait_param.name.user_string(tcx)).as_slice());
-        //         true
-        //     } else {
-        //         false
-        //     };
-        //
-        //     if missing.len() != 0 {
-        //         tcx.sess.span_note(
-        //             span,
-        //             format!("the impl is missing the following bounds: `{}`",
-        //                     missing.user_string(tcx)).as_slice());
-        //     }
-        //
-        //     if extra.len() != 0 {
-        //         tcx.sess.span_note(
-        //             span,
-        //             format!("the impl has the following extra bounds: `{}`",
-        //                     extra.user_string(tcx)).as_slice());
-        //     }
-        //
-        //     if err {
-        //         return false;
-        //     }
-        // }
+        let trait_params = trait_generics.regions.get_slice(subst::FnSpace);
+        let impl_params = impl_generics.regions.get_slice(subst::FnSpace);
+
+        debug!("check_region_bounds_on_impl_method: \
+               trait_generics={} \
+               impl_generics={}",
+               trait_generics.repr(tcx),
+               impl_generics.repr(tcx));
+
+        // Must have same number of early-bound lifetime parameters.
+        // Unfortunately, if the user screws up the bounds, then this
+        // will change classification between early and late.  E.g.,
+        // if in trait we have `<'a,'b:'a>`, and in impl we just have
+        // `<'a,'b>`, then we have 2 early-bound lifetime parameters
+        // in trait but 0 in the impl. But if we report "expected 2
+        // but found 0" it's confusing, because it looks like there
+        // are zero. Since I don't quite know how to phrase things at
+        // the moment, give a kind of vague error message.
+        if trait_params.len() != impl_params.len() {
+            tcx.sess.span_err(
+                span,
+                format!("lifetime parameters or bounds on method `{}` do \
+                         not match the trait declaration",
+                        token::get_name(impl_m.name)).as_slice());
+            return false;
+        }
+
+        for (trait_param, impl_param) in trait_params.iter().zip(impl_params.iter()) {
+            let trait_bounds = bounds_for(tcx, trait_param, &trait_generics.predicates, span);
+            let impl_bounds = bounds_for(tcx, impl_param, &impl_generics.predicates, span);
+
+            let missing: Vec<ty::Region> = trait_bounds.difference(&impl_bounds).map(|&r| r).collect();
+            let extra: Vec<ty::Region> = impl_bounds.difference(&trait_bounds).map(|&r| r).collect();
+
+            debug!("missing={} extra={}",
+                missing.repr(tcx), extra.repr(tcx));
+
+            let err = if missing.len() != 0 || extra.len() != 0 {
+                tcx.sess.span_err(
+                    span,
+                    format!(
+                        "the lifetime parameter `{}` declared in the impl \
+                        has a distinct set of bounds \
+                        from its counterpart `{}` \
+                        declared in the trait",
+                        impl_param.name.user_string(tcx),
+                        trait_param.name.user_string(tcx)).as_slice());
+                true
+            } else {
+                false
+            };
+
+            if missing.len() != 0 {
+                tcx.sess.span_note(
+                    span,
+                    format!("the impl is missing the following bounds: `{}`",
+                        missing.user_string(tcx)).as_slice());
+                    }
+
+            if extra.len() != 0 {
+                tcx.sess.span_note(
+                    span,
+                    format!("the impl has the following extra bounds: `{}`",
+                        extra.user_string(tcx)).as_slice());
+            }
+
+            if err {
+                return false;
+            }
+        }
 
         return true;
+        
+        fn bounds_for(tcx: &ty::ctxt, region: &ty::RegionParameterDef, predicates: &VecPerParamSpace<ty::Predicate>, span: Span) -> HashSet<ty::Region> {
+            let region = ty::ty_region(tcx, span, ty::node_id_to_type(tcx, region.def_id.node));
+            let mut result = HashSet::new();
+            for predicate in predicates.iter() {
+                match predicate {
+                    &ty::OutlivesPredicate(ref kind) => match kind {
+                        //ty::TypeOutlivesPredicate(, region),
+                        &ty::RegionOutlivesPredicate(ref super_region, ref sub_region) if sub_region == &region => {
+                            result.insert(super_region.clone());
+                        },
+                        _ => {}
+                    },
+                    _ => {}
+                }
+            }
+            result
+        }
     }
 }
 
 fn check_cast(fcx: &FnCtxt,
-              cast_expr: &ast::Expr,
+    cast_expr: &ast::Expr,
               e: &ast::Expr,
               t: &ast::Ty) {
     let id = cast_expr.id;

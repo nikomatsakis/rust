@@ -689,49 +689,52 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
 
     fn push_inherent_candidates_from_bounds(&mut self,
                                             _self_ty: ty::t,
-                                            space: subst::ParamSpace,
-                                            index: uint,
+                                            _: subst::ParamSpace,
+                                            _: uint,
                                             restrict_to: Option<DefId>) {
-        // let bounds =
-        //     self.fcx.inh.param_env.bounds.get(space, index).trait_bounds
-        //     .as_slice();
-        // self.push_inherent_candidates_from_bounds_inner(bounds,
-        //     |this, trait_ref, m, method_num| {
-        //         match restrict_to {
-        //             Some(trait_did) => {
-        //                 if trait_did != trait_ref.def_id {
-        //                     return None;
-        //                 }
-        //             }
-        //             _ => {}
-        //         }
-        //
-        //         let xform_self_ty =
-        //             this.xform_self_ty(&m, &trait_ref.substs);
-        //
-        //         debug!("found match: trait_ref={} substs={} m={}",
-        //                trait_ref.repr(this.tcx()),
-        //                trait_ref.substs.repr(this.tcx()),
-        //                m.repr(this.tcx()));
-        //         assert_eq!(m.generics.types.get_slice(subst::TypeSpace).len(),
-        //                    trait_ref.substs.types.get_slice(subst::TypeSpace).len());
-        //         assert_eq!(m.generics.regions.get_slice(subst::TypeSpace).len(),
-        //                    trait_ref.substs.regions().get_slice(subst::TypeSpace).len());
-        //         assert_eq!(m.generics.types.get_slice(subst::SelfSpace).len(),
-        //                    trait_ref.substs.types.get_slice(subst::SelfSpace).len());
-        //         assert_eq!(m.generics.regions.get_slice(subst::SelfSpace).len(),
-        //                    trait_ref.substs.regions().get_slice(subst::SelfSpace).len());
-        //
-        //         Some(Candidate {
-        //             xform_self_ty: xform_self_ty,
-        //             rcvr_substs: trait_ref.substs.clone(),
-        //             method_ty: m,
-        //             origin: MethodTypeParam(MethodParam {
-        //                 trait_ref: trait_ref,
-        //                 method_num: method_num,
-        //             })
-        //         })
-        //     })
+        let bounds: Vec<_> =
+            self.fcx.inh.param_env.caller_obligations.iter().filter_map(|predicate|
+                match predicate {
+                    &ty::TraitPredicate(ref trait_ref) => Some(trait_ref.clone()),
+                    _ => None
+                }).collect();
+        self.push_inherent_candidates_from_bounds_inner(bounds.as_slice(),
+            |this, trait_ref, m, method_num| {
+                match restrict_to {
+                    Some(trait_did) => {
+                        if trait_did != trait_ref.def_id {
+                            return None;
+                        }
+                    }
+                    _ => {}
+                }
+
+                let xform_self_ty =
+                    this.xform_self_ty(&m, &trait_ref.substs);
+
+                debug!("found match: trait_ref={} substs={} m={}",
+                       trait_ref.repr(this.tcx()),
+                       trait_ref.substs.repr(this.tcx()),
+                       m.repr(this.tcx()));
+                assert_eq!(m.generics.types.get_slice(subst::TypeSpace).len(),
+                           trait_ref.substs.types.get_slice(subst::TypeSpace).len());
+                assert_eq!(m.generics.regions.get_slice(subst::TypeSpace).len(),
+                           trait_ref.substs.regions().get_slice(subst::TypeSpace).len());
+                assert_eq!(m.generics.types.get_slice(subst::SelfSpace).len(),
+                           trait_ref.substs.types.get_slice(subst::SelfSpace).len());
+                assert_eq!(m.generics.regions.get_slice(subst::SelfSpace).len(),
+                           trait_ref.substs.regions().get_slice(subst::SelfSpace).len());
+
+                Some(Candidate {
+                    xform_self_ty: xform_self_ty,
+                    rcvr_substs: trait_ref.substs.clone(),
+                    method_ty: m,
+                    origin: MethodTypeParam(MethodParam {
+                        trait_ref: trait_ref,
+                        method_num: method_num,
+                    })
+                })
+            })
     }
 
     // Do a search through a list of bounds, using a callback to actually

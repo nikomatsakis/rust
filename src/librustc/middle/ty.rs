@@ -2716,11 +2716,23 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
 
             each_bound_trait_and_supertraits(cx, traits, |trait_ref| {
                 let trait_def = lookup_trait_def(cx, trait_ref.def_id);
-                fail!("NYI");
+                let all_bounds = all_builtin_bounds.iter().map(|b|
+                    trait_ref_for_builtin(0, 1,1)
+                );
+
+                for predicate in trait_def.generics.predicates.iter() {
+                    match predicate {
+                        &ty::TraitPredicate(ref trait_ref) => {
+                            if all_bounds.contains(trait_ref) {
+                                f // figure out which builtin here?
+                            }
+                        },
+                        _ => {}
+                    }
+                }
                 // for bound in trait_def.bounds.builtin_bounds.iter() {
                 //     f(bound);
                 // }
-                true
             });
         }
     }
@@ -5279,7 +5291,7 @@ pub fn empty_parameter_environment() -> ParameterEnvironment {
 
 pub fn construct_parameter_environment(
     tcx: &ctxt,
-    span: Span,
+    _: Span,
     generics: &ty::Generics,
     free_id: ast::NodeId)
     -> ParameterEnvironment

@@ -60,7 +60,7 @@ pub struct FulfillmentContext {
     // enclosing fn body / static initializer expression. This is
     // because the location where the obligation was incurred can be
     // relevant with respect to which sublifetime assumptions are in
-    // place. The reason that we store under the fn-id, and not
+    // place. The reason that we store under thef n-id, and not
     // something more fine-grained, is so that it is easier for
     // regionck to be sure that it has found *all* the region
     // obligations (otherwise, it's easy to fail to walk to a

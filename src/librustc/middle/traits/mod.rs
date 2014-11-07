@@ -272,7 +272,7 @@ pub fn evaluate_obligation<'a,'tcx>(infcx: &InferCtxt<'a,'tcx>,
      */
 
     let mut selcx = select::SelectionContext::new(infcx, param_env, typer);
-    fail!("eval_oblig"); //selcx.evaluate_obligation(obligation)
+    selcx.evaluate_obligation_intercrate(obligation)
 }
 
 pub fn select_inherent_impl<'a,'tcx>(infcx: &InferCtxt<'a,'tcx>,
