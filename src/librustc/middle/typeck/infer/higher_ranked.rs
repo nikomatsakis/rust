@@ -86,7 +86,7 @@ impl<'tcx,C> HigherRankedRelations for C
         debug!("b_prime={}", b_prime.repr(self.tcx()));
 
         // Compare types now that bound regions have been replaced.
-        let sig = try!(HigherRanked::super_combine(self, &a_prime, &b_prime));
+        let result = try!(HigherRanked::super_combine(self, &a_prime, &b_prime));
 
         // Presuming type comparison succeeds, we need to check
         // that the skolemized regions do not "leak".
@@ -119,7 +119,10 @@ impl<'tcx,C> HigherRankedRelations for C
             }
         }
 
-        return Ok(sig);
+        debug!("higher_ranked_sub: OK result={}",
+               result.repr(self.tcx()));
+
+        return Ok(result);
     }
 
     fn higher_ranked_lub<T>(&self, a: &T, b: &T) -> cres<T>
@@ -150,6 +153,10 @@ impl<'tcx,C> HigherRankedRelations for C
                 &result0,
                 |r| generalize_region(self.infcx(), span, mark, new_vars.as_slice(),
                                       result0.binder_id(), &a_map, r));
+
+        debug!("higher_ranked_lub: OK result1={}",
+               result1.repr(self.tcx()));
+
         return Ok(result1);
 
         fn generalize_region(infcx: &InferCtxt,
@@ -242,7 +249,10 @@ impl<'tcx,C> HigherRankedRelations for C
                                       a_vars.as_slice(),
                                       b_vars.as_slice(),
                                       r));
-        debug!("result1 = {}", result1.repr(self.tcx()));
+
+        debug!("higher_ranked_glb: OK result1={}",
+               result1.repr(self.tcx()));
+
         return Ok(result1);
 
         fn generalize_region(infcx: &InferCtxt,

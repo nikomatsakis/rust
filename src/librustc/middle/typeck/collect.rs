@@ -1156,7 +1156,7 @@ pub fn convert(ccx: &CrateCtxt, it: &ast::Item) {
 
             for trait_ref in opt_trait_ref.iter() {
                 astconv::instantiate_trait_ref(&icx, &ExplicitRscope, trait_ref,
-                                               Some(selfty), None);
+                                               Some(selfty), None, it.id);
             }
         },
         ast::ItemTrait(_, _, _, ref trait_methods) => {
@@ -2016,12 +2016,12 @@ fn conv_param_bounds<'tcx,AC>(this: &AC,
         astconv::partition_bounds(this.tcx(), span, all_bounds.as_slice());
     let trait_bounds: Vec<Rc<ty::TraitRef>> =
         trait_bounds.into_iter()
-        .map(|b| {
-            astconv::instantiate_trait_ref(this,
-                                           &ExplicitRscope,
-                                           b,
-                                           Some(param_ty.to_ty(this.tcx())),
-                                           Some(param_ty.to_ty(this.tcx())))
+        .map(|bound| {
+            astconv::instantiate_poly_trait_ref(this,
+                                                &ExplicitRscope,
+                                                bound,
+                                                Some(param_ty.to_ty(this.tcx())),
+                                                Some(param_ty.to_ty(this.tcx())))
         })
         .collect();
     let region_bounds: Vec<ty::Region> =

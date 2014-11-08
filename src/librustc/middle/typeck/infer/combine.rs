@@ -302,10 +302,9 @@ pub trait Combine<'tcx> {
     fn trait_refs(&self,
                   a: &ty::TraitRef,
                   b: &ty::TraitRef)
-                  -> cres<ty::TraitRef>
-    {
-        super_trait_refs(self, a, b)
-    }
+                  -> cres<ty::TraitRef>;
+    // this must be overridden to do correctly, so as to account for higher-ranked
+    // behavior
 }
 
 #[deriving(Clone)]
