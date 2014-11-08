@@ -297,24 +297,14 @@ pub trait Combine<'tcx> {
                 Err(ty::terr_trait_stores_differ(vk, expected_found(self, a, b)))
             }
         }
-
     }
 
     fn trait_refs(&self,
                   a: &ty::TraitRef,
                   b: &ty::TraitRef)
-                  -> cres<ty::TraitRef> {
-        // Different traits cannot be related
-        if a.def_id != b.def_id {
-            Err(ty::terr_traits(
-                                expected_found(self, a.def_id, b.def_id)))
-        } else {
-            let substs = try!(self.substs(a.def_id, &a.substs, &b.substs));
-            // FIXME(#18639) -- have to apply smarter treatment here
-            Ok(ty::TraitRef { binder_id: ast::DUMMY_NODE_ID,
-                              def_id: a.def_id,
-                              substs: substs })
-        }
+                  -> cres<ty::TraitRef>
+    {
+        super_trait_refs(self, a, b)
     }
 }
 
@@ -331,6 +321,24 @@ pub fn expected_found<'tcx, C: Combine<'tcx>, T>(
         ty::expected_found {expected: a, found: b}
     } else {
         ty::expected_found {expected: b, found: a}
+    }
+}
+
+pub fn super_trait_refs<'tcx, C: Combine<'tcx>>(this: &C,
+                                                a: &ty::TraitRef,
+                                                b: &ty::TraitRef)
+                                                -> cres<ty::TraitRef>
+{
+    // Different traits cannot be related
+    if a.def_id != b.def_id {
+        Err(ty::terr_traits(
+            expected_found(this, a.def_id, b.def_id)))
+    } else {
+        let substs = try!(this.substs(a.def_id, &a.substs, &b.substs));
+        // FIXME(#18639) -- have to apply smarter treatment here
+        Ok(ty::TraitRef { binder_id: ast::DUMMY_NODE_ID,
+                          def_id: a.def_id,
+                          substs: substs })
     }
 }
 

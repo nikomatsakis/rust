@@ -29,7 +29,7 @@ use util::ppaux::{bound_region_to_string, Repr};
 
 pub trait HigherRanked : TypeFoldable + Repr {
     fn binder_id(&self) -> ast::NodeId;
-    fn super_combine<'tcx,C:Combine<'tcx>>(combine: &C, a: &Self, b: &Self) -> cres<Self>;
+    fn super_combine<'tcx,C:Combine<'tcx>>(combiner: &C, a: &Self, b: &Self) -> cres<Self>;
 }
 
 pub trait HigherRankedRelations {
@@ -343,10 +343,22 @@ impl HigherRanked for ty::FnSig {
         self.binder_id
     }
 
-    fn super_combine<'tcx,C:Combine<'tcx>>(combine: &C, a: &ty::FnSig, b: &ty::FnSig)
+    fn super_combine<'tcx,C:Combine<'tcx>>(combiner: &C, a: &ty::FnSig, b: &ty::FnSig)
                                            -> cres<ty::FnSig>
     {
-        combine::super_fn_sigs(combine, a, b)
+        combine::super_fn_sigs(combiner, a, b)
+    }
+}
+
+impl HigherRanked for ty::TraitRef {
+    fn binder_id(&self) -> ast::NodeId {
+        self.binder_id
+    }
+
+    fn super_combine<'tcx,C:Combine<'tcx>>(combiner: &C, a: &ty::TraitRef, b: &ty::TraitRef)
+                                           -> cres<ty::TraitRef>
+    {
+        combine::super_trait_refs(combiner, a, b)
     }
 }
 

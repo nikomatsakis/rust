@@ -735,9 +735,10 @@ impl Repr for ty::TraitRef {
     fn repr(&self, tcx: &ctxt) -> String {
         let base = ty::item_path_str(tcx, self.def_id);
         let trait_def = ty::lookup_trait_def(tcx, self.def_id);
-        format!("<{} : {}>",
+        format!("<{} : {} binder_id={}>",
                 self.substs.self_ty().repr(tcx),
-                parameterized(tcx, base.as_slice(), &self.substs, &trait_def.generics))
+                parameterized(tcx, base.as_slice(), &self.substs, &trait_def.generics),
+                self.binder_id)
     }
 }
 
