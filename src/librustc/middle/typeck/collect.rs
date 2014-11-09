@@ -1765,9 +1765,13 @@ fn add_unsized_bound<'tcx,AC>(this: &AC,
                                                        supported.",
                                                       desc).as_slice());
 
-                    ty::try_add_builtin_trait(this.tcx(),
-                                              kind_id,
-                                              ty_generics);
+                    info!("TraitBoundRef: {}", tpb);
+                    // ty::try_add_builtin_trait(this.tcx(),
+                    //                           kind_id,
+                    //                           ty_generics);
+
+                    // let bounded_ty = tpb.substs.self_ty();
+                    // let trait_ref = trait_ref_for_builtin_bound(this.tcx(), ty::BoundSized, bounded_ty);
                 }
                 _ => {}
             }

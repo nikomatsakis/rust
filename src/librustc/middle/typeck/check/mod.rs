@@ -119,7 +119,6 @@ use util::nodemap::{DefIdMap, FnvHashMap, NodeMap};
 use std::cell::{Cell, Ref, RefCell};
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::collections::hashmap::{Occupied, Vacant};
 use std::mem::replace;
 use std::rc::Rc;
 use syntax::abi;
@@ -1030,67 +1029,85 @@ fn compare_impl_method(tcx: &ty::ctxt,
         return;
     }
 
-    // Check bounds.
-    let it = trait_m.generics.types.get_slice(subst::FnSpace).iter()
-        .zip(impl_m.generics.types.get_slice(subst::FnSpace).iter());
-    for (i, (trait_param_def, impl_param_def)) in it.enumerate() {
-        // Check that the impl does not require any builtin-bounds
-        // that the trait does not guarantee:
-        // let extra_bounds =
-        //     impl_param_def.bounds.builtin_bounds -
-        //     trait_param_def.bounds.builtin_bounds;
-        // if !extra_bounds.is_empty() {
-        //     span_err!(tcx.sess, impl_m_span, E0051,
-        //         "in method `{}`, type parameter {} requires `{}`, \
-        //          which is not required by the corresponding type parameter \
-        //          in the trait declaration",
-        //         token::get_name(trait_m.name),
-        //         i,
-        //         extra_bounds.user_string(tcx));
-        //    return;
-        // }
+    for impl_predicate in impl_m.generics.predicates.iter() {
+        debug!("compare_impl_method(): impl-trait-bound subst");
+        match impl_predicate {
+            &ty::TraitPredicate(ref impl_trait_ref) => {
+                let impl_trait_bound =
+                    impl_trait_ref.subst(tcx, &impl_to_skol_substs);
 
-        // Check that the trait bounds of the trait imply the bounds of its
-        // implementation.
-        //
-        // FIXME(pcwalton): We could be laxer here regarding sub- and super-
-        // traits, but I doubt that'll be wanted often, so meh.
-        // FIXME: jroesch
-        fail!("NYI")
-        // for impl_trait_bound in impl_param_def.bounds.trait_bounds.iter() {
-        //     debug!("compare_impl_method(): impl-trait-bound subst");
-        //     let impl_trait_bound =
-        //         impl_trait_bound.subst(tcx, &impl_to_skol_substs);
-        //
-        //     let mut ok = false;
-        //     for trait_bound in trait_param_def.bounds.trait_bounds.iter() {
-        //         debug!("compare_impl_method(): trait-bound subst");
-        //         let trait_bound =
-        //             trait_bound.subst(tcx, &trait_to_skol_substs);
-        //         let infcx = infer::new_infer_ctxt(tcx);
-        //         match infer::mk_sub_trait_refs(&infcx,
-        //                                        true,
-        //                                        infer::Misc(impl_m_span),
-        //                                        trait_bound,
-        //                                        impl_trait_bound.clone()) {
-        //             Ok(_) => {
-        //                 ok = true;
-        //                 break
-        //             }
-        //             Err(_) => continue,
-        //         }
-        //     }
-        //
-        //     if !ok {
-        //         span_err!(tcx.sess, impl_m_span, E0052,
-        //             "in method `{}`, type parameter {} requires bound `{}`, which is not \
-        //              required by the corresponding type parameter in the trait declaration",
-        //             token::get_name(trait_m.name),
-        //             i,
-        //             ppaux::trait_ref_to_string(tcx, &*impl_trait_bound));
-        //     }
-        // }
-    }
+                let mut ok = false;
+                for trait_predicate in trait_m.generics.predicates.iter() {
+                    debug!("compare_impl_method(): trait-bound subst");
+                    match trait_predicate {
+                        &ty::TraitPredicate(ref trait_ref) => {
+                            let trait_bound =
+                                trait_ref.subst(tcx, &trait_to_skol_substs);
+                            let infcx = infer::new_infer_ctxt(tcx);
+                            match infer::mk_sub_trait_refs(&infcx,
+                                                           true,
+                                                           infer::Misc(impl_m_span),
+                                                           trait_bound,
+                                                           impl_trait_bound.clone()) {
+                                Ok(_) => {
+                                    ok = true;
+                                    break
+                                }
+                                Err(_) => continue,
+                            }
+                        },
+                        _ => {}
+                    }
+                }
+
+                // if !ok {
+                //     span_err!(tcx.sess, impl_m_span, E0052,
+                //             "in method `{}`, type parameter {} requires bound `{}`, which is not \
+                //              required by the corresponding type parameter in the trait declaration",
+                //             token::get_name(trait_m.name),
+                //             i,
+                //             ppaux::trait_ref_to_string(tcx, &*impl_trait_bound));
+                //     }
+                },
+                _ => {}
+            }
+        }
+    //     for impl_trait_bound in impl_m.generics.trait_refs_for(impl_param_def).iter() {
+    //         debug!("compare_impl_method(): impl-trait-bound subst");
+    //         let impl_trait_bound =
+    //             impl_trait_bound.subst(tcx, &impl_to_skol_substs);
+    //
+    //         let mut ok = false;
+    //         for trait_bound in trait_m.generics.trait_refs_for(trait_param_def).iter() {
+    //             debug!("compare_impl_method(): trait-bound subst");
+    //             let trait_bound =
+    //                 trait_bound.subst(tcx, &trait_to_skol_substs);
+    //             let infcx = infer::new_infer_ctxt(tcx);
+    //             match infer::mk_sub_trait_refs(&infcx,
+    //                                            true,
+    //                                            infer::Misc(impl_m_span),
+    //                                            trait_bound,
+    //                                            impl_trait_bound.clone()) {
+    //                 Ok(_) => {
+    //                     ok = true;
+    //                     break
+    //                 }
+    //                 Err(_) => continue,
+    //             }
+    //         }
+    //
+    //         if !ok {
+    //             span_err!(tcx.sess, impl_m_span, E0052,
+    //                 "in method `{}`, type parameter {} requires bound `{}`, which is not \
+    //                  required by the corresponding type parameter in the trait declaration",
+    //                 token::get_name(trait_m.name),
+    //                 i,
+    //                 ppaux::trait_ref_to_string(tcx, &*impl_trait_bound));
+    //         }
+    //     }
+    // }
+
+
 
     // Compute skolemized form of impl and trait method tys.
     let impl_fty = ty::mk_bare_fn(tcx, impl_m.fty.clone());
@@ -1198,8 +1215,8 @@ fn compare_impl_method(tcx: &ty::ctxt,
         }
 
         for (trait_param, impl_param) in trait_params.iter().zip(impl_params.iter()) {
-            let trait_bounds = bounds_for(tcx, trait_param, &trait_generics.predicates, span);
-            let impl_bounds = bounds_for(tcx, impl_param, &impl_generics.predicates, span);
+            let trait_bounds = bounds_for(tcx, &trait_param.subst(tcx, trait_to_skol_substs), &trait_generics.predicates, span);
+            let impl_bounds = bounds_for(tcx, &impl_param.subst(tcx, impl_to_skol_substs), &impl_generics.predicates, span);
 
             let missing: Vec<ty::Region> = trait_bounds.difference(&impl_bounds).map(|&r| r).collect();
             let extra: Vec<ty::Region> = impl_bounds.difference(&trait_bounds).map(|&r| r).collect();
@@ -1242,7 +1259,7 @@ fn compare_impl_method(tcx: &ty::ctxt,
         }
 
         return true;
-        
+
         fn bounds_for(tcx: &ty::ctxt, region: &ty::RegionParameterDef, predicates: &VecPerParamSpace<ty::Predicate>, span: Span) -> HashSet<ty::Region> {
             let region = ty::ty_region(tcx, span, ty::node_id_to_type(tcx, region.def_id.node));
             let mut result = HashSet::new();
@@ -1644,7 +1661,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // If the type is `Foo+'a`, ensures that the type
                 // being cast to `Foo+'a` outlives `'a`:
                 let origin = infer::RelateObjectBound(span);
-                fail!("foo") //self.register_region_obligation(origin, self_ty, ty_trait.bounds.region_bound);
+
+                let predicate = ty::OutlivesPredicate(ty::TypeOutlivesPredicate(self_ty, ty_trait.bounds.region_bound));
+                // FIXME: what id do I get
+                self.register_obligation(traits::Obligation::misc(0, span, predicate));
             }
         }
     }
@@ -4350,8 +4370,10 @@ fn constrain_path_type_parameters(fcx: &FnCtxt,
     fcx.opt_node_ty_substs(expr.id, |item_substs| {
         for &ty in item_substs.substs.types.iter() {
             let default_bound = ty::ReScope(expr.id);
-            let origin = infer::RelateDefaultParamBound(expr.span, ty);
-            fail!("what to do here") //fcx.register_region_obligation(origin, ty, default_bound);
+            // FIXME: where does this info now go.
+            // let origin = infer::RelateDefaultParamBound(expr.span, ty);
+            let predicate = ty::OutlivesPredicate(ty::TypeOutlivesPredicate(ty, default_bound));
+            fcx.register_obligation(traits::Obligation::misc(expr.id, expr.span, predicate));
         }
     });
 }

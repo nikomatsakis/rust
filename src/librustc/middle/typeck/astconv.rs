@@ -1449,7 +1449,7 @@ pub fn compute_opt_region_bound(tcx: &ty::ctxt,
 
     fn derived_region_bounds(
         tcx: &ty::ctxt,
-        span: Span,
+        _: Span,
         builtin_bounds: ty::BuiltinBounds,
         trait_bounds: &[Rc<ty::TraitRef>])
         -> Vec<ty::Region>

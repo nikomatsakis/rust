@@ -1286,6 +1286,14 @@ impl Generics {
     pub fn has_region_params(&self, space: subst::ParamSpace) -> bool {
         !self.regions.is_empty_in(space)
     }
+
+    pub fn builtin_bounds(&self) -> BuiltinBounds {
+        fail!("builtin!")
+    }
+
+    // pub trait_bounds_for(&self, type_param: &TypeParameterDef) -> Vec<Rc<TraitRef>> {
+    //     for self.predicates
+    // }
 }
 
 impl TraitRef {
@@ -2716,24 +2724,21 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
 
             each_bound_trait_and_supertraits(cx, traits, |trait_ref| {
                 let trait_def = lookup_trait_def(cx, trait_ref.def_id);
-                let all_bounds = all_builtin_bounds.iter().map(|b|
-                    trait_ref_for_builtin(0, 1,1)
-                );
-
                 for predicate in trait_def.generics.predicates.iter() {
                     match predicate {
                         &ty::TraitPredicate(ref trait_ref) => {
-                            if all_bounds.contains(trait_ref) {
-                                f // figure out which builtin here?
+                            match traits::builtin_bound_for_trait_ref(cx, &**trait_ref) {
+                                Some(bound) => f(bound),
+                                _ => {}
                             }
                         },
                         _ => {}
                     }
                 }
-                // for bound in trait_def.bounds.builtin_bounds.iter() {
-                //     f(bound);
-                // }
+                true
             });
+
+
         }
     }
 }
@@ -4253,17 +4258,11 @@ pub fn try_add_builtin_trait(
     //! bound to the set `builtin_bounds` if so. Returns true if `trait_ref`
     //! is a builtin trait.
 
+    // FIXME: @jroesch refactor this code at some point.
     match tcx.lang_items.to_builtin_kind(trait_def_id) {
         Some(bound) => {
-          // let obligation = traits::obligation_for_builtin_bound(
-          //   tcx,
-          //   fail!("need cause"),
-          //   node_id_to_type(tcx, trait_def_id.node),
-          //   bound
-          // ).unwrap().as_predicate();
-
-          // Jard: What is the Self type for the trait? type variable? or can we look it up given the trait_def_id
-          let trait_ref = traits::trait_ref_for_builtin_bound(tcx, bound, ty::mk_infer(tcx, ty::SkolemizedTy(0)));
+          let self_ty = ty::mk_self_type(tcx, trait_def_id);
+          let trait_ref = traits::trait_ref_for_builtin_bound(tcx, bound, self_ty);
           generics.predicates.push(subst::SelfSpace, ty::TraitPredicate(trait_ref.unwrap()));
           true
         }
