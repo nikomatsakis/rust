@@ -21,6 +21,7 @@ use driver::session::Session;
 use middle::subst;
 use syntax::ast;
 use syntax::codemap::Span;
+use syntax::owned_slice::OwnedSlice;
 use syntax::parse::token::special_idents;
 use syntax::parse::token;
 use syntax::print::pprust::{lifetime_to_string};
@@ -82,13 +83,11 @@ pub fn krate(sess: &Session, krate: &ast::Crate) -> NamedRegionMap {
         scope: &ROOT_SCOPE
     }, krate);
     sess.abort_if_errors();
-    info!("RegionMap: {}", named_region_map);
     named_region_map
 }
 
 impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
     fn visit_item(&mut self, item: &ast::Item) {
-        info!("visiting item")
         let lifetimes = match item.node {
             ast::ItemFn(..) | // fn lifetimes get added in visit_fn below
             ast::ItemMod(..) |
@@ -106,12 +105,11 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
                     f(EarlyScope(subst::TypeSpace,
                                  &generics.lifetimes,
                                  scope))
-                }, |v| { info!("{}", &generics.lifetimes); v.check_lifetime_defs(&generics.lifetimes) });
+                }, |v| { v.check_lifetime_defs(&generics.lifetimes) });
                 &generics.lifetimes
             }
             ast::ItemImpl(ref generics, _, _, _) => {
                 self.with(|scope, f| {
-                    info!("in here")
                     f(EarlyScope(subst::TypeSpace,
                                  &generics.lifetimes,
                                  scope))
@@ -166,8 +164,14 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
         debug!("popping block scope {}", b.id);
     }
 
+    fn visit_lifetime_decl(&mut self, lifetime: &'v ast::LifetimeDef) {
+        self.visit_lifetime_ref(&lifetime.lifetime);
+        for bound in lifetime.bounds.iter() {
+            self.visit_lifetime_ref(bound)
+        }
+    }
+
     fn visit_lifetime_ref(&mut self, lifetime_ref: &ast::Lifetime) {
-        info!("in visit lifetime ref")
         if lifetime_ref.name == special_idents::static_lifetime.name {
             self.insert_lifetime(lifetime_ref, DefStaticRegion);
             return;
@@ -200,11 +204,10 @@ impl<'a> LifetimeContext<'a> {
         }))
     }
 
-    // fn visit_ty_param_bounds(&mut self, bounds: &OwnedSlice<ast::TyParamBound>) {
-    // }
+    fn visit_ty_param_bounds(&mut self, bounds: &OwnedSlice<ast::TyParamBound>) {
+    }
 
     fn visit_trait_ref(&mut self, trait_ref: &ast::TraitRef) {
-        info!("visit trait ref")
         self.with(|scope, f| {
             f(LateScope(trait_ref.ref_id, &trait_ref.lifetimes, scope))
         }, |v| {
