@@ -100,6 +100,7 @@ pub trait Visitor<'v> {
     }
     fn visit_lifetime_decl(&mut self, _lifetime: &'v LifetimeDef) {
         /*! Visits a declaration of a lifetime */
+        info!("Doing aboslutely nothing!")
     }
     fn visit_explicit_self(&mut self, es: &'v ExplicitSelf) {
         walk_explicit_self(self, es)
@@ -118,13 +119,11 @@ pub trait Visitor<'v> {
     fn visit_attribute(&mut self, _attr: &'v Attribute) {}
     fn visit_ty_param_bounds(&mut self,
                              bounds: &'v OwnedSlice<TyParamBound>) {
-        info!("visit ty param bounds")
         walk_ty_param_bounds(self, bounds)
     }
 
     fn visit_ty_param_bound(&mut self,
                             bound: &'v TyParamBound) {
-        info!("visit ty param bound")
         walk_ty_param_bound(self, bound)
     }
 }
@@ -216,7 +215,6 @@ pub fn walk_explicit_self<'v, V: Visitor<'v>>(visitor: &mut V,
 pub fn walk_trait_ref<'v,V>(visitor: &mut V, trait_ref: &'v TraitRef)
     where V: Visitor<'v>
 {
-    info!("in walk trait ref")
     walk_lifetime_decls(visitor, &trait_ref.lifetimes);
     visitor.visit_path(&trait_ref.path, trait_ref.ref_id)
 }
@@ -261,8 +259,6 @@ pub fn walk_item<'v, V: Visitor<'v>>(visitor: &mut V, item: &'v Item) {
                  ref impl_items) => {
             visitor.visit_generics(type_parameters);
             match *trait_reference {
-                // Question for Niko: you rewrote this to use visitor
-                //
                 Some(ref trait_reference) =>
                     visitor.visit_trait_ref(trait_reference),
                 None => ()
@@ -288,7 +284,6 @@ pub fn walk_item<'v, V: Visitor<'v>>(visitor: &mut V, item: &'v Item) {
                                      item.id)
         }
         ItemTrait(ref generics, _, ref bounds, ref methods) => {
-            info!("TRAIT ITEM")
             visitor.visit_generics(generics);
             visitor.visit_ty_param_bounds(bounds);
             for method in methods.iter() {
@@ -414,7 +409,6 @@ pub fn walk_ty<'v, V: Visitor<'v>>(visitor: &mut V, typ: &'v Ty) {
 
 fn walk_lifetime_decls<'v, V: Visitor<'v>>(visitor: &mut V,
                                            lifetimes: &'v Vec<LifetimeDef>) {
-    info!("walk lifetime delcs")
     for l in lifetimes.iter() {
         visitor.visit_lifetime_decl(l);
     }
@@ -505,7 +499,6 @@ pub fn walk_foreign_item<'v, V: Visitor<'v>>(visitor: &mut V,
 
 pub fn walk_ty_param_bounds<'v, V: Visitor<'v>>(visitor: &mut V,
                                                 bounds: &'v OwnedSlice<TyParamBound>) {
-    info!("in walk ty param bounds");
     for bound in bounds.iter() {
         visitor.visit_ty_param_bound(bound);
     }
@@ -513,7 +506,6 @@ pub fn walk_ty_param_bounds<'v, V: Visitor<'v>>(visitor: &mut V,
 
 pub fn walk_ty_param_bound<'v, V: Visitor<'v>>(visitor: &mut V,
                                                bound: &'v TyParamBound) {
-    info!("walk ty param bound (singluar)")
     match *bound {
         TraitTyParamBound(ref typ) => {
             visitor.visit_trait_ref(typ)
@@ -532,9 +524,9 @@ pub fn walk_ty_param_bound<'v, V: Visitor<'v>>(visitor: &mut V,
 }
 
 pub fn walk_generics<'v, V: Visitor<'v>>(visitor: &mut V, generics: &'v Generics) {
-    info!("walk generics")
     for type_parameter in generics.ty_params.iter() {
-        walk_ty_param_bounds(visitor, &type_parameter.bounds);
+        visitor.visit_ident(type_parameter.span, type_parameter.ident);
+        visitor.visit_ty_param_bounds(&type_parameter.bounds);
         match type_parameter.default {
             Some(ref ty) => visitor.visit_ty(&**ty),
             None => {}

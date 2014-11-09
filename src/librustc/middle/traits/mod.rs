@@ -31,6 +31,7 @@ pub use self::util::elaborate_trait_refs;
 pub use self::util::elaborate_predicates;
 pub use self::util::Elaborator;
 pub use self::util::trait_ref_for_builtin_bound;
+pub use self::util::builtin_bound_for_trait_ref;
 
 mod coherence;
 mod fulfill;

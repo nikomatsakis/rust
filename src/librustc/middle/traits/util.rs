@@ -217,6 +217,14 @@ pub fn trait_ref_for_builtin_bound(
     }
 }
 
+pub fn builtin_bound_for_trait_ref(
+    tcx: &ty::ctxt,
+    trait_ref: &ty::TraitRef)
+    -> Option<ty::BuiltinBound>
+{
+  tcx.lang_items.to_builtin_kind(trait_ref.def_id)
+}
+
 pub fn obligation_for_builtin_bound(
     tcx: &ty::ctxt,
     cause: ObligationCause,

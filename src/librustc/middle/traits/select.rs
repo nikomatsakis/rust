@@ -1004,17 +1004,6 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
          * unified during the confirmation step.
          */
 
-        let tcx = self.tcx();
-        let kind = if Some(obligation.trait_ref().def_id) == tcx.lang_items.fn_trait() {
-            ty::FnUnboxedClosureKind
-        } else if Some(obligation.trait_ref().def_id) == tcx.lang_items.fn_mut_trait() {
-            ty::FnMutUnboxedClosureKind
-        } else if Some(obligation.trait_ref().def_id) == tcx.lang_items.fn_once_trait() {
-            ty::FnOnceUnboxedClosureKind
-        } else {
-            return Ok(()); // not a fn trait, ignore
-        };
-
         let self_ty = self.infcx.shallow_resolve(obligation.self_ty());
         let (closure_def_id, substs) = match ty::get(self_ty).sty {
             ty::ty_unboxed_closure(id, _, ref substs) => (id, substs.clone()),
@@ -1045,30 +1034,19 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                 _ => continue,
             };
 
-            // Check to see whether the argument and return types match.
             let closure_kind = match self.typer.unboxed_closures().borrow().find(&closure_def_id) {
                 Some(closure) => closure.kind,
                 None => {
                     self.tcx().sess.span_bug(
                         obligation.cause.span,
                         format!("No entry for unboxed closure: {}",
-                                closure_def_id.repr(self.tcx())).as_slice());
+                            closure_def_id.repr(self.tcx())).as_slice());
                 }
             };
-        }
 
-        let closure_kind = match self.typer.unboxed_closures().borrow().find(&closure_def_id) {
-            Some(closure) => closure.kind,
-            None => {
-                self.tcx().sess.span_bug(
-                    obligation.cause.span,
-                    format!("No entry for unboxed closure: {}",
-                            closure_def_id.repr(self.tcx())).as_slice());
+            if closure_kind == kind {
+                candidates.vec.push(UnboxedClosureCandidate(closure_def_id, substs.clone()));
             }
-        };
-
-        if closure_kind == kind {
-            candidates.vec.push(UnboxedClosureCandidate(closure_def_id, substs.clone()));
         }
 
         Ok(())
