@@ -209,7 +209,8 @@ impl<E:CLike> BitAnd<EnumSet<E>, EnumSet<E>> for EnumSet<E> {
 
 impl<E:CLike> BitXor<EnumSet<E>, EnumSet<E>> for EnumSet<E> {
     fn bitxor(&self, e: &EnumSet<E>) -> EnumSet<E> {
-        EnumSet {bits: self.bits ^ e.bits}
+        EnumSet {bits: self.bits ^ e.bits,
+                 marker: marker::CovariantType}
     }
 }
 
