@@ -90,7 +90,6 @@
 use alloc::boxed::Box;
 use core::cmp;
 use core::kinds::Sized;
-use core::kinds::marker;
 use core::mem::size_of;
 use core::mem;
 use core::prelude::{Clone, Greater, Iterator, Less, None, Option};

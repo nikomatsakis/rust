@@ -10,10 +10,13 @@
 
 #![feature(default_type_params)]
 
-struct Foo<A, B, C = (A, B)>;
+use std::kinds::marker;
+
+struct Foo<A, B, C = (A, B)>(
+    marker::InvariantType<(A,B,C)>);
 
 impl<A, B, C = (A, B)> Foo<A, B, C> {
-    fn new() -> Foo<A, B, C> {Foo}
+    fn new() -> Foo<A, B, C> {Foo(marker::InvariantType)}
 }
 
 fn main() {

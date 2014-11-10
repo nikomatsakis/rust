@@ -223,6 +223,7 @@ use syntax::ast_map;
 use syntax::ast_util;
 use syntax::codemap::Span;
 use syntax::parse::token::special_names;
+use syntax::ptr::P;
 use syntax::visit;
 use syntax::visit::Visitor;
 use util::ppaux::{Repr, UserString};
@@ -366,7 +367,7 @@ impl<'a, 'tcx> TermsContext<'a, 'tcx> {
                               item_span: Span,
                               has_self: bool,
                               generics: &ast::Generics,
-                              associated_types: &[&ast::P<AssociatedType>])
+                              associated_types: &[&P<ast::AssociatedType>])
     {
         /*!
          * Add "inferreds" for the generic parameters declared on this
@@ -389,18 +390,18 @@ impl<'a, 'tcx> TermsContext<'a, 'tcx> {
 
         for (i, p) in generics.lifetimes.iter().enumerate() {
             let id = p.lifetime.id;
-            self.add_inferred(item.id, RegionParam, TypeSpace, i, id,
+            self.add_inferred(item_id, RegionParam, TypeSpace, i, id,
                               p.lifetime.span, p.lifetime.name);
         }
 
         for (i, p) in generics.ty_params.iter().enumerate() {
-            self.add_inferred(item.id, TypeParam, TypeSpace, i, p.id,
+            self.add_inferred(item_id, TypeParam, TypeSpace, i, p.id,
                               p.span, p.ident.name);
         }
 
         for (i, p) in associated_types.iter().enumerate() {
-            self.add_inferred(item.id, TypeParam, AssocSpace, i, p.id,
-                              p.span, p.ident.name);
+            self.add_inferred(item_id, TypeParam, AssocSpace, i, p.ty_param.id,
+                              p.ty_param.span, p.ty_param.ident.name);
         }
 
         // If this item has no type or lifetime parameters,
@@ -411,9 +412,10 @@ impl<'a, 'tcx> TermsContext<'a, 'tcx> {
         // "invalid item id" from "item id with no
         // parameters".
         if self.num_inferred() == inferreds_on_entry {
-            let newly_added = self.tcx.item_variance_map.borrow_mut().insert(
-                ast_util::local_def(item.id),
-                self.empty_variances.clone()).is_none();
+            let newly_added =
+                self.tcx.item_variance_map.borrow_mut().insert(
+                    ast_util::local_def(item_id),
+                    self.empty_variances.clone()).is_none();
             assert!(newly_added);
         }
     }
@@ -497,17 +499,17 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TermsContext<'a, 'tcx> {
         match item.node {
             ast::ItemEnum(_, ref generics) |
             ast::ItemStruct(_, ref generics) => {
-                self.add_inferreds(item.id, item.span, false, generics, &[]);
+                self.add_inferreds_for_item(item.id, item.span, false, generics, &[]);
             }
             ast::ItemTrait(ref generics, _, _, ref trait_items) => {
-                let assoc_types =
+                let assoc_types: Vec<_> =
                     trait_items.iter()
-                    .flat_map(|t| match *t { TypeTraitItem(ref d) => Some(d).into_iter(),
-                                             RequiredMethod(..) => None.into_iter(),
-                                             ProvidedMethod(..) => None.into_iter() })
+                    .flat_map(|t| match *t { ast::TypeTraitItem(ref d) => Some(d).into_iter(),
+                                             ast::RequiredMethod(..) => None.into_iter(),
+                                             ast::ProvidedMethod(..) => None.into_iter() })
                     .collect();
 
-                self.add_inferreds(item.id, item.span, true, generics, &*assoc_types);
+                self.add_inferreds_for_item(item.id, item.span, true, generics, &*assoc_types);
 
                 visit::walk_item(self, item);
             }
@@ -1212,7 +1214,7 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                         types.push(info.space, variance);
 
                         if variance == ty::Bivariant {
-                            span_err!(tcx.sess, info.span, E0167,
+                            span_err!(tcx.sess, info.span, E0168,
                                       "type parameter `{}` is never used; \
                                        either remove it, or use a marker such as \
                                        `std::kinds::marker::Invariance`",
@@ -1223,7 +1225,7 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                         regions.push(info.space, variance);
 
                         if variance == ty::Bivariant {
-                            span_err!(tcx.sess, info.span, E0168,
+                            span_err!(tcx.sess, info.span, E0169,
                                       "lifetime parameter `{}` is never used; \
                                       either remove it, or use a marker such as \
                                       `std::kinds::marker::Invariance` applied to a \

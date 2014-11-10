@@ -10,9 +10,12 @@
 
 #![feature(default_type_params)]
 
+use std::kinds::marker;
+
 struct Heap;
 
-struct Vec<T, A = Heap>;
+struct Vec<T, A = Heap>(
+    marker::InvariantType<(T,A)>);
 
 fn main() {
     let _: Vec; //~ ERROR wrong number of type arguments: expected at least 1, found 0

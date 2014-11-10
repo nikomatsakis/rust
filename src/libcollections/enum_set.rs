@@ -113,7 +113,8 @@ impl<E:CLike> EnumSet<E> {
 
     /// Returns the intersection of both `EnumSets`.
     pub fn intersection(&self, e: EnumSet<E>) -> EnumSet<E> {
-        EnumSet {bits: self.bits & e.bits}
+        EnumSet {bits: self.bits & e.bits,
+                 marker: marker::CovariantType}
     }
 
     /// Deprecated: Use `insert`.

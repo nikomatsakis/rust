@@ -259,6 +259,19 @@ pub trait UpperExp for Sized? {
     fn fmt(&self, &mut Formatter) -> Result;
 }
 
+#[cfg(not(stage0))]
+static DEFAULT_ARGUMENT: rt::Argument = rt::Argument {
+    position: rt::ArgumentNext,
+    format: rt::FormatSpec {
+        fill: ' ',
+        align: rt::AlignUnknown,
+        flags: 0,
+        precision: rt::CountImplied,
+        width: rt::CountImplied,
+    }
+};
+
+#[cfg(stage0)]
 static DEFAULT_ARGUMENT: rt::Argument<'static> = rt::Argument {
     position: rt::ArgumentNext,
     format: rt::FormatSpec {
