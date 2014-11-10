@@ -1,4 +1,4 @@
-// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,10 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(once_fns)]
+// Test that we don't panic on a RefCell borrow conflict in certain
+// code paths involving unboxed closures.
+
+#![feature(unboxed_closures, overloaded_calls)]
+
+// aux-build:issue-18711.rs
+extern crate "issue-18711" as issue;
+
 fn main() {
-    let f: once || = ||();
-    let g: || = f;  //~ ERROR mismatched types
-    let h: || = ||();
-    let i: once || = h;  // ok
+    (|:| issue::inner(()))();
 }

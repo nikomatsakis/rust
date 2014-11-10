@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,20 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Testing guarantees provided by once functions.
-// This program would segfault if it were legal.
+// Test that `&T` and `&mut T` implement `Deref<T>`
 
-use std::sync::Arc;
-
-fn foo(blk: ||) {
-    blk();
-    blk();
+fn deref<U:Copy,T:Deref<U>>(t: T) -> U {
+    *t
 }
 
 fn main() {
-    let x = Arc::new(true);
-    foo(|| {
-        assert!(*x);
-        drop(x); //~ ERROR cannot move out of captured outer variable
-    })
+    let x: int = 3;
+    let y = deref(&x);
+    assert_eq!(y, 3);
+
+    let mut x: int = 4;
+    let y = deref(&mut x);
+    assert_eq!(y, 4);
 }

@@ -1,4 +1,4 @@
-// Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,20 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Testing guarantees provided by once functions.
+// compile-flags: --cfg bar -D warnings
+// ignore-pretty
 
+#![cfg(bar)]
 
-#![feature(once_fns)]
-use std::sync::Arc;
-
-fn foo(blk: once ||) {
-    blk();
-}
-
-pub fn main() {
-    let x = Arc::new(true);
-    foo(|| {
-        assert!(*x);
-        drop(x);
-    })
-}
+fn main() {}

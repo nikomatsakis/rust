@@ -108,7 +108,15 @@ pub enum Token {
 
     /* For interpolation */
     Interpolated(Nonterminal),
+    // Can be expanded into several tokens.
+    /// Doc comment
     DocComment(ast::Name),
+    // In left-hand-sides of MBE macros:
+    /// Parse a nonterminal (name to bind, name of NT, styles of their idents)
+    MatchNt(ast::Ident, ast::Ident, IdentStyle, IdentStyle),
+    // In right-hand-sides of MBE macros:
+    /// A syntactic variable that will be filled in by macro expansion.
+    SubstNt(ast::Ident, IdentStyle),
 
     // Junk. These carry no data because we don't really care about the data
     // they *would* carry, and don't really want to allocate a new ident for
@@ -329,7 +337,6 @@ pub enum Nonterminal {
     NtMeta(P<ast::MetaItem>),
     NtPath(Box<ast::Path>),
     NtTT(P<ast::TokenTree>), // needs P'ed to break a circularity
-    NtMatchers(Vec<ast::Matcher>)
 }
 
 impl fmt::Show for Nonterminal {
@@ -345,7 +352,6 @@ impl fmt::Show for Nonterminal {
             NtMeta(..) => f.pad("NtMeta(..)"),
             NtPath(..) => f.pad("NtPath(..)"),
             NtTT(..) => f.pad("NtTT(..)"),
-            NtMatchers(..) => f.pad("NtMatchers(..)"),
         }
     }
 }
@@ -497,42 +503,41 @@ declare_special_idents_and_keywords! {
         (27,                         Mod,        "mod");
         (28,                         Move,       "move");
         (29,                         Mut,        "mut");
-        (30,                         Once,       "once");
-        (31,                         Pub,        "pub");
-        (32,                         Ref,        "ref");
-        (33,                         Return,     "return");
+        (30,                         Pub,        "pub");
+        (31,                         Ref,        "ref");
+        (32,                         Return,     "return");
         // Static and Self are also special idents (prefill de-dupes)
         (super::STATIC_KEYWORD_NAME_NUM, Static, "static");
         (super::SELF_KEYWORD_NAME_NUM,   Self,   "self");
-        (34,                         Struct,     "struct");
+        (33,                         Struct,     "struct");
         (super::SUPER_KEYWORD_NAME_NUM, Super,   "super");
-        (35,                         True,       "true");
-        (36,                         Trait,      "trait");
-        (37,                         Type,       "type");
-        (38,                         Unsafe,     "unsafe");
-        (39,                         Use,        "use");
-        (40,                         Virtual,    "virtual");
-        (41,                         While,      "while");
-        (42,                         Continue,   "continue");
-        (43,                         Proc,       "proc");
-        (44,                         Box,        "box");
-        (45,                         Const,      "const");
-        (46,                         Where,      "where");
+        (34,                         True,       "true");
+        (35,                         Trait,      "trait");
+        (36,                         Type,       "type");
+        (37,                         Unsafe,     "unsafe");
+        (38,                         Use,        "use");
+        (39,                         Virtual,    "virtual");
+        (40,                         While,      "while");
+        (41,                         Continue,   "continue");
+        (42,                         Proc,       "proc");
+        (43,                         Box,        "box");
+        (44,                         Const,      "const");
+        (45,                         Where,      "where");
 
         'reserved:
-        (47,                         Alignof,    "alignof");
-        (48,                         Be,         "be");
-        (49,                         Offsetof,   "offsetof");
-        (50,                         Priv,       "priv");
-        (51,                         Pure,       "pure");
-        (52,                         Sizeof,     "sizeof");
-        (53,                         Typeof,     "typeof");
-        (54,                         Unsized,    "unsized");
-        (55,                         Yield,      "yield");
-        (56,                         Do,         "do");
-        (57,                         Abstract,   "abstract");
-        (58,                         Final,      "final");
-        (59,                         Override,   "override");
+        (46,                         Alignof,    "alignof");
+        (47,                         Be,         "be");
+        (48,                         Offsetof,   "offsetof");
+        (49,                         Priv,       "priv");
+        (50,                         Pure,       "pure");
+        (51,                         Sizeof,     "sizeof");
+        (52,                         Typeof,     "typeof");
+        (53,                         Unsized,    "unsized");
+        (54,                         Yield,      "yield");
+        (55,                         Do,         "do");
+        (56,                         Abstract,   "abstract");
+        (57,                         Final,      "final");
+        (58,                         Override,   "override");
     }
 }
 

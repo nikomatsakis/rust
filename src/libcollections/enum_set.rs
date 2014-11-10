@@ -17,9 +17,7 @@ use core::prelude::*;
 use core::kinds::marker;
 use core::fmt;
 
-// FIXME(conventions): implement BitXor
 // FIXME(contentions): implement union family of methods? (general design may be wrong here)
-// FIXME(conventions): implement len
 
 #[deriving(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// A specialized `Set` implementation to use enum types.
@@ -45,7 +43,27 @@ impl<E:CLike+fmt::Show> fmt::Show for EnumSet<E> {
     }
 }
 
-/// An interface for casting C-like enum to uint and back.
+/**
+An interface for casting C-like enum to uint and back.
+A typically implementation is as below.
+
+```{rust,ignore}
+#[repr(uint)]
+enum Foo {
+    A, B, C
+}
+
+impl CLike for Foo {
+    fn to_uint(&self) -> uint {
+        *self as uint
+    }
+
+    fn from_uint(v: uint) -> Foo {
+        unsafe { mem::transmute(v) }
+    }
+}
+```
+*/
 pub trait CLike {
     /// Converts a C-like enum to a `uint`.
     fn to_uint(&self) -> uint;
@@ -54,7 +72,11 @@ pub trait CLike {
 }
 
 fn bit<E:CLike>(e: &E) -> uint {
-    1 << e.to_uint()
+    use core::uint;
+    let value = e.to_uint();
+    assert!(value < uint::BITS,
+            "EnumSet only supports up to {} variants.", uint::BITS - 1);
+    1 << value
 }
 
 impl<E:CLike> EnumSet<E> {
@@ -68,6 +90,12 @@ impl<E:CLike> EnumSet<E> {
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn new() -> EnumSet<E> {
         EnumSet {bits: 0, marker: marker::CovariantType}
+    }
+
+    /// Returns the number of elements in the given `EnumSet`.
+    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    pub fn len(&self) -> uint {
+        self.bits.count_ones()
     }
 
     /// Returns true if the `EnumSet` is empty.
@@ -179,6 +207,12 @@ impl<E:CLike> BitAnd<EnumSet<E>, EnumSet<E>> for EnumSet<E> {
     }
 }
 
+impl<E:CLike> BitXor<EnumSet<E>, EnumSet<E>> for EnumSet<E> {
+    fn bitxor(&self, e: &EnumSet<E>) -> EnumSet<E> {
+        EnumSet {bits: self.bits ^ e.bits}
+    }
+}
+
 /// An iterator over an EnumSet
 pub struct Items<E> {
     index: uint,
@@ -212,6 +246,22 @@ impl<E:CLike> Iterator<E> for Items<E> {
     fn size_hint(&self) -> (uint, Option<uint>) {
         let exact = self.bits.count_ones();
         (exact, Some(exact))
+    }
+}
+
+impl<E:CLike> FromIterator<E> for EnumSet<E> {
+    fn from_iter<I:Iterator<E>>(iterator: I) -> EnumSet<E> {
+        let mut ret = EnumSet::new();
+        ret.extend(iterator);
+        ret
+    }
+}
+
+impl<E:CLike> Extend<E> for EnumSet<E> {
+    fn extend<I: Iterator<E>>(&mut self, mut iterator: I) {
+        for element in iterator {
+            self.insert(element);
+        }
     }
 }
 
@@ -252,6 +302,20 @@ mod test {
         assert_eq!("{A}", e.to_string().as_slice());
         e.insert(C);
         assert_eq!("{A, C}", e.to_string().as_slice());
+    }
+
+    #[test]
+    fn test_len() {
+        let mut e = EnumSet::new();
+        assert_eq!(e.len(), 0);
+        e.insert(A);
+        e.insert(B);
+        e.insert(C);
+        assert_eq!(e.len(), 3);
+        e.remove(&A);
+        assert_eq!(e.len(), 2);
+        e.clear();
+        assert_eq!(e.len(), 0);
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -383,8 +447,55 @@ mod test {
         let elems = e_intersection.iter().collect();
         assert_eq!(vec![C], elems)
 
+        // Another way to express intersection
+        let e_intersection = e1 - (e1 - e2);
+        let elems = e_intersection.iter().collect();
+        assert_eq!(vec![C], elems)
+
         let e_subtract = e1 - e2;
         let elems = e_subtract.iter().collect();
         assert_eq!(vec![A], elems)
+
+        // Bitwise XOR of two sets, aka symmetric difference
+        let e_symmetric_diff = e1 ^ e2;
+        let elems = e_symmetric_diff.iter().collect();
+        assert_eq!(vec![A,B], elems)
+
+        // Another way to express symmetric difference
+        let e_symmetric_diff = (e1 - e2) | (e2 - e1);
+        let elems = e_symmetric_diff.iter().collect();
+        assert_eq!(vec![A,B], elems)
+
+        // Yet another way to express symmetric difference
+        let e_symmetric_diff = (e1 | e2) - (e1 & e2);
+        let elems = e_symmetric_diff.iter().collect();
+        assert_eq!(vec![A,B], elems)
+    }
+
+    #[test]
+    #[should_fail]
+    fn test_overflow() {
+        #[allow(dead_code)]
+        #[repr(uint)]
+        enum Bar {
+            V00, V01, V02, V03, V04, V05, V06, V07, V08, V09,
+            V10, V11, V12, V13, V14, V15, V16, V17, V18, V19,
+            V20, V21, V22, V23, V24, V25, V26, V27, V28, V29,
+            V30, V31, V32, V33, V34, V35, V36, V37, V38, V39,
+            V40, V41, V42, V43, V44, V45, V46, V47, V48, V49,
+            V50, V51, V52, V53, V54, V55, V56, V57, V58, V59,
+            V60, V61, V62, V63, V64, V65, V66, V67, V68, V69,
+        }
+        impl CLike for Bar {
+            fn to_uint(&self) -> uint {
+                *self as uint
+            }
+
+            fn from_uint(v: uint) -> Bar {
+                unsafe { mem::transmute(v) }
+            }
+        }
+        let mut set = EnumSet::empty();
+        set.add(V64);
     }
 }

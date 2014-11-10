@@ -227,6 +227,10 @@ pub trait Folder {
         noop_fold_trait_ref(p, self)
     }
 
+    fn fold_poly_trait_ref(&mut self, p: PolyTraitRef) -> PolyTraitRef {
+        noop_fold_poly_trait_ref(p, self)
+    }
+
     fn fold_struct_def(&mut self, struct_def: P<StructDef>) -> P<StructDef> {
         noop_fold_struct_def(struct_def, self)
     }
@@ -442,7 +446,10 @@ pub fn noop_fold_ty<T: Folder>(t: P<Ty>, fld: &mut T) -> P<Ty> {
             TyFixedLengthVec(ty, e) => {
                 TyFixedLengthVec(fld.fold_ty(ty), fld.fold_expr(e))
             }
-            TyTypeof(expr) => TyTypeof(fld.fold_expr(expr))
+            TyTypeof(expr) => TyTypeof(fld.fold_expr(expr)),
+            TyPolyTraitRef(poly_trait_ref) => {
+                TyPolyTraitRef(poly_trait_ref.map(|p| fld.fold_poly_trait_ref(p)))
+            },
         },
         span: fld.new_span(span)
     })
@@ -619,13 +626,13 @@ pub fn noop_fold_tt<T: Folder>(tt: &TokenTree, fld: &mut T) -> TokenTree {
                             }
                         ))
         },
-        TtSequence(span, ref pattern, ref sep, is_optional) =>
+        TtSequence(span, ref seq) =>
             TtSequence(span,
-                       Rc::new(fld.fold_tts(pattern.as_slice())),
-                       sep.clone().map(|tok| fld.fold_token(tok)),
-                       is_optional),
-        TtNonterminal(sp,ref ident) =>
-            TtNonterminal(sp,fld.fold_ident(*ident))
+                       Rc::new(SequenceRepetition {
+                           tts: fld.fold_tts(seq.tts.as_slice()),
+                           separator: seq.separator.clone().map(|tok| fld.fold_token(tok)),
+                           ..**seq
+                       })),
     }
 }
 
@@ -641,6 +648,12 @@ pub fn noop_fold_token<T: Folder>(t: token::Token, fld: &mut T) -> token::Token 
         }
         token::Lifetime(id) => token::Lifetime(fld.fold_ident(id)),
         token::Interpolated(nt) => token::Interpolated(fld.fold_interpolated(nt)),
+        token::SubstNt(ident, namep) => {
+            token::SubstNt(fld.fold_ident(ident), namep)
+        }
+        token::MatchNt(name, kind, namep, kindp) => {
+            token::MatchNt(fld.fold_ident(name), fld.fold_ident(kind), namep, kindp)
+        }
         _ => t
     }
 }
@@ -689,8 +702,6 @@ pub fn noop_fold_interpolated<T: Folder>(nt: token::Nonterminal, fld: &mut T)
         token::NtMeta(meta_item) => token::NtMeta(fld.fold_meta_item(meta_item)),
         token::NtPath(box path) => token::NtPath(box fld.fold_path(path)),
         token::NtTT(tt) => token::NtTT(P(fld.fold_tt(&*tt))),
-        // it looks to me like we can leave out the matchers: token::NtMatchers(matchers)
-        _ => nt
     }
 }
 
@@ -707,7 +718,7 @@ pub fn noop_fold_ty_param_bound<T>(tpb: TyParamBound, fld: &mut T)
                                    -> TyParamBound
                                    where T: Folder {
     match tpb {
-        TraitTyParamBound(ty) => TraitTyParamBound(fld.fold_trait_ref(ty)),
+        TraitTyParamBound(ty) => TraitTyParamBound(fld.fold_poly_trait_ref(ty)),
         RegionTyParamBound(lifetime) => RegionTyParamBound(fld.fold_lifetime(lifetime)),
     }
 }
@@ -718,7 +729,7 @@ pub fn noop_fold_ty_param<T: Folder>(tp: TyParam, fld: &mut T) -> TyParam {
         id: fld.new_id(id),
         ident: ident,
         bounds: fld.fold_bounds(bounds),
-        unbound: unbound.map(|x| fld.fold_ty_param_bound(x)),
+        unbound: unbound.map(|x| fld.fold_trait_ref(x)),
         default: default.map(|x| fld.fold_ty(x)),
         span: span
     }
@@ -838,13 +849,18 @@ pub fn noop_fold_trait_ref<T: Folder>(p: TraitRef, fld: &mut T) -> TraitRef {
     let id = fld.new_id(p.ref_id);
     let TraitRef {
         path,
-        lifetimes,
-        ..
+        ref_id: _,
     } = p;
     ast::TraitRef {
         path: fld.fold_path(path),
         ref_id: id,
-        lifetimes: fld.fold_lifetime_defs(lifetimes),
+    }
+}
+
+pub fn noop_fold_poly_trait_ref<T: Folder>(p: PolyTraitRef, fld: &mut T) -> PolyTraitRef {
+    ast::PolyTraitRef {
+        bound_lifetimes: fld.fold_lifetime_defs(p.bound_lifetimes),
+        trait_ref: fld.fold_trait_ref(p.trait_ref)
     }
 }
 
@@ -1057,12 +1073,41 @@ pub fn noop_fold_mod<T: Folder>(Mod {inner, view_items, items}: Mod, folder: &mu
 
 pub fn noop_fold_crate<T: Folder>(Crate {module, attrs, config, exported_macros, span}: Crate,
                                   folder: &mut T) -> Crate {
+    let config = folder.fold_meta_items(config);
+
+    let mut items = folder.fold_item(P(ast::Item {
+        ident: token::special_idents::invalid,
+        attrs: attrs,
+        id: ast::DUMMY_NODE_ID,
+        vis: ast::Public,
+        span: span,
+        node: ast::ItemMod(module),
+    })).into_iter();
+
+    let (module, attrs, span) = match items.next() {
+        Some(item) => {
+            assert!(items.next().is_none(),
+                    "a crate cannot expand to more than one item");
+            item.and_then(|ast::Item { attrs, span, node, .. }| {
+                match node {
+                    ast::ItemMod(m) => (m, attrs, span),
+                    _ => panic!("fold converted a module to not a module"),
+                }
+            })
+        }
+        None => (ast::Mod {
+            inner: span,
+            view_items: Vec::new(),
+            items: Vec::new(),
+        }, Vec::new(), span)
+    };
+
     Crate {
-        module: folder.fold_mod(module),
-        attrs: attrs.move_map(|x| folder.fold_attribute(x)),
-        config: folder.fold_meta_items(config),
+        module: module,
+        attrs: attrs,
+        config: config,
         exported_macros: exported_macros,
-        span: folder.new_span(span)
+        span: span,
     }
 }
 
