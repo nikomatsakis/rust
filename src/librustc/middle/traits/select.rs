@@ -1699,21 +1699,12 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             }
         };
 
-        // FIXME(pcwalton): This is a bogus thing to do, but
-        // it'll do for now until we get the new trait-bound
-        // region skolemization working.
-        let (new_signature, _) =
-            ty::replace_late_bound_regions(
-                self.tcx(),
-                &closure_type.sig,
-                |br| self.infcx.next_region_var(
-                         infer::LateBoundRegion(obligation.cause.span, br)));
-
-        let arguments_tuple = new_signature.inputs[0];
+        let closure_sig = &closure_type.sig;
+        let arguments_tuple = closure_sig.inputs[0];
         let substs =
             Substs::new_trait(
                 vec![arguments_tuple.subst(self.tcx(), substs),
-                     new_signature.output.unwrap().subst(self.tcx(), substs)],
+                     closure_sig.output.unwrap().subst(self.tcx(), substs)],
                 vec![],
                 vec![],
                 obligation.self_ty());

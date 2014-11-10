@@ -38,14 +38,17 @@ pub fn impl_can_satisfy(infcx: &InferCtxt,
         util::fresh_substs_for_impl(infcx, DUMMY_SP, impl1_def_id);
     let impl1_trait_ref =
         ty::impl_trait_ref(infcx.tcx, impl1_def_id).unwrap()
-            .subst(infcx.tcx, &impl1_substs);
+                                                   .subst(infcx.tcx, &impl1_substs);
+    let (impl1_trait_ref, _) =
+        infcx.replace_late_bound_regions_with_fresh_regions(DUMMY_SP,
+                                                            &impl1_trait_ref);
 
     // Determine whether `impl2` can provide an implementation for those
     // same types.
     let param_env = ty::empty_parameter_environment();
     let mut selcx = SelectionContext::intercrate(infcx, &param_env, infcx.tcx);
     let obligation = Obligation::misc(DUMMY_SP, impl1_trait_ref);
-    debug!("impl_can_satisfy obligation={}", obligation.repr(infcx.tcx));
+    debug!("impl_can_satisfy(obligation={})", obligation.repr(infcx.tcx));
     selcx.evaluate_impl(impl2_def_id, &obligation)
 }
 

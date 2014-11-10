@@ -518,9 +518,21 @@ pub fn super_fold_closure_ty<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
         abi: fty.abi,
     }
 }
+
 pub fn super_fold_trait_ref<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
                                                        t: &ty::TraitRef)
-                                                       -> ty::TraitRef {
+                                                       -> ty::TraitRef
+{
+    this.enter_region_binding();
+    let result = super_fold_trait_ref_contents(this, t);
+    this.exit_region_binding();
+    result
+}
+
+pub fn super_fold_trait_ref_contents<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
+                                                                t: &ty::TraitRef)
+                                                                -> ty::TraitRef
+{
     ty::TraitRef {
         def_id: t.def_id,
         substs: t.substs.fold_with(this),
@@ -647,7 +659,8 @@ pub fn super_fold_obligation<'tcx, T:TypeFolder<'tcx>>(this: &mut T,
 
 pub trait HigherRankedFoldable : TypeFoldable + Repr {
     /// Folds the contents of `self`, ignoring region binders created
-    /// by `self` (if any).
+    /// by `self` (if any). For types which do not create region binders,
+    /// `fold_contents` is identical to `fold_with`.
     fn fold_contents<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> Self;
 }
 
@@ -657,9 +670,21 @@ impl HigherRankedFoldable for ty::FnSig {
     }
 }
 
+impl HigherRankedFoldable for ty::TraitRef {
+    fn fold_contents<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::TraitRef {
+        super_fold_trait_ref_contents(folder, self)
+    }
+}
+
 impl HigherRankedFoldable for ty::t {
     fn fold_contents<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::t {
         super_fold_ty(folder, *self)
+    }
+}
+
+impl<T:HigherRankedFoldable> HigherRankedFoldable for Rc<T> {
+    fn fold_contents<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> Rc<T> {
+        Rc::new((**self).fold_contents(folder))
     }
 }
 

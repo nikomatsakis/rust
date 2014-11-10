@@ -4656,9 +4656,96 @@ pub fn bounds_for_trait_ref(tcx: &ctxt,
                             -> ty::ParamBounds
 {
     let trait_def = lookup_trait_def(tcx, trait_ref.def_id);
+
     debug!("bounds_for_trait_ref(trait_def={}, trait_ref={})",
            trait_def.repr(tcx), trait_ref.repr(tcx));
-    trait_def.bounds.subst(tcx, &trait_ref.substs)
+
+    // The interaction between HRTB and supertraits is not entirely
+    // obvious. Let me walk you (and myself) through an example.
+    //
+    // Let's start with an easy case. Consider two traits:
+    //
+    //     trait Foo<'a> : Bar<'a,'a> { }
+    //     trait Bar<'b,'c> { }
+    //
+    // Now, if we have a trait reference `for<'x> T : Foo<'x>`, then
+    // we can deduce that `for<'x> T : Bar<'x,'x>`. Basically, if we
+    // knew that `Foo<'x>` (for any 'x) then we also know that
+    // `Bar<'x,'x>` (for any 'x). This more-or-less falls out from
+    // normal substitution.
+    //
+    // In terms of why this is sound, the idea is that whenever there
+    // is an impl of `T:Foo<'a>`, it must show that `T:Bar<'a,'a>`
+    // holds.  So if there is an impl of `T:Foo<'a>` that applies to
+    // all `'a`, then we must know that `T:Bar<'a,'a>` holds for all
+    // `'a`.
+    //
+    // Another example to be careful of is this:
+    //
+    //     trait Foo1<'a> : for<'b> Bar1<'a,'b> { }
+    //     trait Bar1<'b,'c> { }
+    //
+    // Here, if we have `for<'x> T : Foo1<'x>`, then what do we know?
+    // The answer is that we know `for<'x,'b> T : Bar1<'x,'b>`. The
+    // reason is similar to the previous example: any impl of
+    // `T:Foo1<'x>` must show that `for<'b> T : Bar1<'x, 'b>`.  So
+    // basically we would want to collapse the bound lifetimes from
+    // the input (`trait_ref`) and the supertraits.
+    //
+    // To achieve this in practice is fairly straightforward. Let's
+    // consider the more complicated scenario:
+    //
+    // - We start out with `for<'x> T : Foo1<'x>`. In this case, `'x`
+    //   has a De Bruijn index of 1. We want to produce `for<'x,'b> T : Bar1<'x,'b>`,
+    //   where both `'x` and `'b` would have a DB index of 1.
+    //   The substitution from the input trait-ref is therefore going to be
+    //   `'a => 'x` (where `'x` has a DB index of 1).
+    // - The super-trait-ref is `for<'b> Bar1<'a,'b>`, where `'a` is an
+    //   early-bound parameter and `'b' is a late-bound parameter with a
+    //   DB index of 1.
+    // - If we replace `'a` with `'x` from the input, it too will have
+    //   a DB index of 1, and thus we'll have `for<'x,'b> Bar1<'x,'b>`
+    //   just as we wanted.
+    //
+    // There is only one catch. If we just apply the substitution `'a
+    // => 'x` to `for<'b> Bar1<'a,'b>`, the substitution code will
+    // adjust the DB index because we substituting into a binder (it
+    // tries to be so smart...) resulting in `for<'x> for<'b>
+    // Bar1<'x,'b>` (we have no syntax for this, so use your
+    // imagination). Basically the 'x will have DB index of 2 and 'b
+    // will have DB index of 1. Not quite what we want. So we apply
+    // the substitution to the *contents* of the trait reference,
+    // rather than the trait reference itself (put another way, the
+    // substitution code expects equal binding levels in the values
+    // from the substitution and the value being substituted into, and
+    // this trick achieves that).
+
+    // Carefully avoid the binder introduced by each trait-ref by
+    // substituting over the substs, not the trait-refs themselves,
+    // thus achieving the "collapse" described in the big comment
+    // above.
+    let trait_bounds =
+        trait_def.bounds.trait_bounds
+        .iter()
+        .map(|bound_trait_ref| {
+            ty::TraitRef::new(bound_trait_ref.def_id,
+                              bound_trait_ref.substs.subst(tcx, &trait_ref.substs))
+        })
+        .map(|bound_trait_ref| Rc::new(bound_trait_ref))
+        .collect();
+
+    // The region bounds and builtin bounds do not currently introduce
+    // binders so we can just substitute in a straightforward way here.
+    let region_bounds =
+        trait_def.bounds.region_bounds.subst(tcx, &trait_ref.substs);
+    let builtin_bounds =
+        trait_def.bounds.builtin_bounds.subst(tcx, &trait_ref.substs);
+
+    ty::ParamBounds {
+        trait_bounds: trait_bounds,
+        region_bounds: region_bounds,
+        builtin_bounds: builtin_bounds,
+    }
 }
 
 /// Iterate over attributes of a definition.

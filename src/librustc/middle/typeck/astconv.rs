@@ -393,6 +393,18 @@ fn ast_path_substs<'tcx,AC,RS>(
     }
 }
 
+pub fn instantiate_poly_trait_ref<'tcx,AC,RS>(
+    this: &AC,
+    rscope: &RS,
+    ast_trait_ref: &ast::PolyTraitRef,
+    self_ty: Option<ty::t>,
+    associated_type: Option<ty::t>)
+    -> Rc<ty::TraitRef>
+    where AC: AstConv<'tcx>, RS: RegionScope
+{
+    instantiate_trait_ref(this, rscope, &ast_trait_ref.trait_ref, self_ty, associated_type)
+}
+
 pub fn instantiate_trait_ref<'tcx,AC,RS>(this: &AC,
                                          rscope: &RS,
                                          ast_trait_ref: &ast::TraitRef,
@@ -884,8 +896,7 @@ pub fn ast_ty_to_ty<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
                 ty::mk_closure(tcx, fn_decl)
             }
             ast::TyPolyTraitRef(ref data) => {
-                // FIXME(#18639) this is just a placeholder for code to come
-                let principal = instantiate_trait_ref(this, rscope, &data.trait_ref, None, None);
+                let principal = instantiate_poly_trait_ref(this, rscope, &**data, None, None);
                 let bounds = conv_existential_bounds(this,
                                                      rscope,
                                                      ast_ty.span,
@@ -1368,7 +1379,7 @@ pub fn conv_existential_bounds<'tcx, AC: AstConv<'tcx>, RS:RegionScope>(
     if !trait_bounds.is_empty() {
         let b = &trait_bounds[0];
         this.tcx().sess.span_err(
-            b.path.span,
+            b.trait_ref.path.span,
             format!("only the builtin traits can be used \
                      as closure or object bounds").as_slice());
     }
@@ -1500,7 +1511,7 @@ fn compute_region_bound<'tcx, AC: AstConv<'tcx>, RS:RegionScope>(
 
 pub struct PartitionedBounds<'a> {
     pub builtin_bounds: ty::BuiltinBounds,
-    pub trait_bounds: Vec<&'a ast::TraitRef>,
+    pub trait_bounds: Vec<&'a ast::PolyTraitRef>,
     pub region_bounds: Vec<&'a ast::Lifetime>,
 }
 
@@ -1522,8 +1533,7 @@ pub fn partition_bounds<'a>(tcx: &ty::ctxt,
     for &ast_bound in ast_bounds.iter() {
         match *ast_bound {
             ast::TraitTyParamBound(ref b) => {
-                let b = &b.trait_ref; // FIXME
-                match lookup_def_tcx(tcx, b.path.span, b.ref_id) {
+                match lookup_def_tcx(tcx, b.trait_ref.path.span, b.trait_ref.ref_id) {
                     def::DefTrait(trait_did) => {
                         match trait_def_ids.get(&trait_did) {
                             // Already seen this trait. We forbid
@@ -1531,10 +1541,10 @@ pub fn partition_bounds<'a>(tcx: &ty::ctxt,
                             // reason).
                             Some(span) => {
                                 span_err!(
-                                    tcx.sess, b.path.span, E0127,
+                                    tcx.sess, b.trait_ref.path.span, E0127,
                                     "trait `{}` already appears in the \
                                      list of bounds",
-                                    b.path.user_string(tcx));
+                                    b.trait_ref.path.user_string(tcx));
                                 tcx.sess.span_note(
                                     *span,
                                     "previous appearance is here");
@@ -1545,7 +1555,7 @@ pub fn partition_bounds<'a>(tcx: &ty::ctxt,
                             None => { }
                         }
 
-                        trait_def_ids.insert(trait_did, b.path.span);
+                        trait_def_ids.insert(trait_did, b.trait_ref.path.span);
 
                         if ty::try_add_builtin_trait(tcx,
                                                      trait_did,

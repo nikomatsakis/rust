@@ -26,7 +26,7 @@ use syntax::codemap::Span;
 use util::ppaux::{bound_region_to_string, Repr};
 
 pub trait HigherRankedCombineable : HigherRankedFoldable + Repr {
-    fn super_combine<'tcx,C:Combine<'tcx>>(combine: &C, a: &Self, b: &Self) -> cres<Self>;
+    fn super_combine<'tcx,C:Combine<'tcx>>(combiner: &C, a: &Self, b: &Self) -> cres<Self>;
 }
 
 pub trait HigherRankedRelations {
@@ -83,7 +83,7 @@ impl<'tcx,C> HigherRankedRelations for C
         debug!("b_prime={}", b_prime.repr(self.tcx()));
 
         // Compare types now that bound regions have been replaced.
-        let sig = try!(HigherRankedCombineable::super_combine(self, &a_prime, &b_prime));
+        let result = try!(HigherRankedCombineable::super_combine(self, &a_prime, &b_prime));
 
         // Presuming type comparison succeeds, we need to check
         // that the skolemized regions do not "leak".
@@ -116,7 +116,10 @@ impl<'tcx,C> HigherRankedRelations for C
             }
         }
 
-        return Ok(sig);
+        debug!("higher_ranked_sub: OK result={}",
+               result.repr(self.tcx()));
+
+        return Ok(result);
     }
 
     fn higher_ranked_lub<T>(&self, a: &T, b: &T) -> cres<T>
@@ -136,9 +139,9 @@ impl<'tcx,C> HigherRankedRelations for C
         // Collect constraints.
         let result0 =
             try!(HigherRankedCombineable::super_combine(self, &a_with_fresh, &b_with_fresh));
-        debug!("sig0 = {}", result0.repr(self.tcx()));
+        debug!("result0 = {}", result0.repr(self.tcx()));
 
-        // Generalize the regions appearing in sig0 if possible
+        // Generalize the regions appearing in result0 if possible
         let new_vars = self.infcx().region_vars.vars_created_since_mark(mark);
         let span = self.trace().origin.span();
         let result1 =
@@ -327,21 +330,72 @@ impl<'tcx,C> HigherRankedRelations for C
 }
 
 impl HigherRankedCombineable for ty::FnSig {
-    fn super_combine<'tcx,C:Combine<'tcx>>(combine: &C, a: &ty::FnSig, b: &ty::FnSig)
+    fn super_combine<'tcx,C:Combine<'tcx>>(combiner: &C, a: &ty::FnSig, b: &ty::FnSig)
                                            -> cres<ty::FnSig>
     {
-        combine::super_fn_sigs(combine, a, b)
+        if a.variadic != b.variadic {
+            return Err(ty::terr_variadic_mismatch(
+                combine::expected_found(combiner, a.variadic, b.variadic)));
+        }
+
+        let inputs = try!(argvecs(combiner,
+                                  a.inputs.as_slice(),
+                                  b.inputs.as_slice()));
+
+        let output = try!(match (a.output, b.output) {
+            (ty::FnConverging(a_ty), ty::FnConverging(b_ty)) =>
+                Ok(ty::FnConverging(try!(combiner.tys(a_ty, b_ty)))),
+            (ty::FnDiverging, ty::FnDiverging) =>
+                Ok(ty::FnDiverging),
+            (a, b) =>
+                Err(ty::terr_convergence_mismatch(
+                    combine::expected_found(combiner, a != ty::FnDiverging, b != ty::FnDiverging))),
+        });
+
+        return Ok(ty::FnSig {inputs: inputs,
+                             output: output,
+                             variadic: a.variadic});
+
+
+        fn argvecs<'tcx, C: Combine<'tcx>>(combiner: &C,
+                                           a_args: &[ty::t],
+                                           b_args: &[ty::t])
+                                           -> cres<Vec<ty::t>>
+        {
+            if a_args.len() == b_args.len() {
+                a_args.iter().zip(b_args.iter())
+                    .map(|(a, b)| combiner.args(*a, *b)).collect()
+            } else {
+                Err(ty::terr_arg_count)
+            }
+        }
     }
 }
 
-fn var_ids<'tcx, T: Combine<'tcx>>(this: &T,
+impl HigherRankedCombineable for ty::TraitRef {
+    fn super_combine<'tcx,C:Combine<'tcx>>(combiner: &C, a: &ty::TraitRef, b: &ty::TraitRef)
+                                           -> cres<ty::TraitRef>
+    {
+        // Different traits cannot be related
+        if a.def_id != b.def_id {
+            Err(ty::terr_traits(
+                combine::expected_found(combiner, a.def_id, b.def_id)))
+        } else {
+            let substs = try!(combiner.substs(a.def_id, &a.substs, &b.substs));
+            Ok(ty::TraitRef { def_id: a.def_id,
+                              substs: substs })
+        }
+    }
+}
+
+fn var_ids<'tcx, T: Combine<'tcx>>(combiner: &T,
                                    map: &HashMap<ty::BoundRegion, ty::Region>)
                                    -> Vec<ty::RegionVid> {
     map.iter().map(|(_, r)| match *r {
             ty::ReInfer(ty::ReVar(r)) => { r }
             r => {
-                this.infcx().tcx.sess.span_bug(
-                    this.trace().origin.span(),
+                combiner.infcx().tcx.sess.span_bug(
+                    combiner.trace().origin.span(),
                     format!("found non-region-vid: {}", r).as_slice());
             }
         }).collect()
