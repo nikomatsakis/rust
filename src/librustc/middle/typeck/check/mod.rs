@@ -784,7 +784,7 @@ fn check_impl_items_against_trait(ccx: &CrateCtxt,
                                                     impl_method.span,
                                                     impl_method.pe_body().id,
                                                     &**trait_method_ty,
-                                                    &impl_trait_ref.substs);
+                                                    impl_trait_ref);
                             }
                             _ => {
                                 // This is span_bug as it should have already been
@@ -929,10 +929,18 @@ fn compare_impl_method(tcx: &ty::ctxt,
                        impl_m_span: Span,
                        impl_m_body_id: ast::NodeId,
                        trait_m: &ty::Method,
-                       trait_to_impl_substs: &subst::Substs) {
-    debug!("compare_impl_method(trait_to_impl_substs={})",
-           trait_to_impl_substs.repr(tcx));
+                       impl_trait_ref: &ty::TraitRef) {
+    debug!("compare_impl_method(impl_trait_ref={})",
+           impl_trait_ref.repr(tcx));
+
+    let impl_trait_ref = liberate_late_bound_regions(tcx, impl_m_body_id, impl_trait_ref);
+
+    debug!("impl_trait_ref (liberated) = {}",
+           impl_trait_ref.repr(tcx));
+
     let infcx = infer::new_infer_ctxt(tcx);
+
+    let trait_to_impl_substs = &impl_trait_ref.substs;
 
     // Try to give more informative error messages about self typing
     // mismatches.  Note that any mismatch will also be detected
@@ -1137,6 +1145,7 @@ fn compare_impl_method(tcx: &ty::ctxt,
     // Compute skolemized form of impl and trait method tys.
     let impl_fty = ty::mk_bare_fn(tcx, impl_m.fty.clone());
     let impl_fty = impl_fty.subst(tcx, &impl_to_skol_substs);
+    let impl_fty = liberate_late_bound_regions(tcx, impl_m_body_id, &impl_fty);
     let trait_fty = ty::mk_bare_fn(tcx, trait_m.fty.clone());
     let trait_fty = trait_fty.subst(tcx, &trait_to_skol_substs);
 
