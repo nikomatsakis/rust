@@ -736,6 +736,10 @@ fn check_method_body(ccx: &CrateCtxt,
     let param_env = ParameterEnvironment::for_item(ccx.tcx, method.id);
 
     let fty = ty::node_id_to_type(ccx.tcx, method.id);
+    debug!("fty (raw): {}", fty.repr(ccx.tcx));
+
+    let fty = liberate_late_bound_regions(ccx.tcx, method.id, &fty);
+    debug!("fty (liberated): {}", fty.repr(ccx.tcx));
 
     check_bare_fn(ccx,
                   &*method.pe_fn_decl(),

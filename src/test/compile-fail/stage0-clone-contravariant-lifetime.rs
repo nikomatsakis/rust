@@ -3,8 +3,6 @@
 // often encounter problems in the iterator trait, so it's useful to
 // have hanging around. -nmatsakis
 
-// error-pattern: requires 'start' lang_item
-
 #![no_std]
 #![feature(lang_items)]
 
