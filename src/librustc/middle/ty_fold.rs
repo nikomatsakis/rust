@@ -678,7 +678,13 @@ impl HigherRankedFoldable for ty::TraitRef {
 
 impl HigherRankedFoldable for ty::t {
     fn fold_contents<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::t {
-        super_fold_ty(folder, *self)
+        folder.fold_ty(*self)
+    }
+}
+
+impl HigherRankedFoldable for ty::BareFnTy {
+    fn fold_contents<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::BareFnTy {
+        folder.fold_bare_fn_ty(self)
     }
 }
 

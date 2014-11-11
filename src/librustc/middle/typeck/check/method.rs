@@ -1504,18 +1504,16 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
 
         let ref bare_fn_ty = candidate.method_ty.fty;
 
-        // Compute the method type with type parameters substituted
-        debug!("fty={} all_substs={}",
-               bare_fn_ty.repr(tcx),
-               all_substs.repr(tcx));
-
-        let fn_sig = bare_fn_ty.sig.subst(tcx, &all_substs);
-
-        debug!("after subst, fty={}", fn_sig.repr(tcx));
+        // Compute the method type with type parameters substituted and impl
+        // late-bound lifetimes instantiated
+        debug!("fty={} all_substs={}", bare_fn_ty.repr(tcx), all_substs.repr(tcx));
+        let bare_fn_ty = bare_fn_ty.subst(tcx, &all_substs);
+        let bare_fn_ty = self.replace_late_bound_regions_with_fresh_var(&bare_fn_ty);
+        debug!("after subst, bare_fn_ty={}", bare_fn_ty.repr(tcx));
 
         // Replace any bound regions that appear in the function
         // signature with region variables
-        let fn_sig = self.replace_late_bound_regions_with_fresh_var(&fn_sig);
+        let fn_sig = self.replace_late_bound_regions_with_fresh_var(&bare_fn_ty.sig);
         let transformed_self_ty = fn_sig.inputs[0];
         let fty = ty::mk_bare_fn(tcx, ty::BareFnTy {
             sig: fn_sig,
@@ -1793,7 +1791,17 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
     }
 
     fn xform_self_ty(&self, method: &Rc<ty::Method>, substs: &subst::Substs) -> ty::t {
-        let xform_self_ty = method.fty.sig.inputs[0].subst(self.tcx(), substs);
+        // Example:
+        //
+        //     trait Foo<'a> { fn bar<'b>(...) }
+
+        // the method's type may have late-bound regions from the
+        // impl, so replace those with fresh variables (such as 'a above).
+        let fty = self.replace_late_bound_regions_with_fresh_var(&method.fty);
+
+        // now we have to replace any variables that were declared on
+        // the method itself (like 'b)
+        let xform_self_ty = fty.sig.inputs[0].subst(self.tcx(), substs);
         self.replace_late_bound_regions_with_fresh_var(&xform_self_ty)
     }
 
