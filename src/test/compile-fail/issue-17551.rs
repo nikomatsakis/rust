@@ -10,9 +10,11 @@
 
 #![feature(unboxed_closures)]
 
-struct B<T>;
+use std::kinds::marker;
+
+struct B<T>(marker::CovariantType<T>);
 
 fn main() {
-    let foo = B; //~ ERROR unable to infer enough type information
+    let foo = B(marker::CovariantType); //~ ERROR unable to infer enough type information
     let closure = |:| foo;
 }

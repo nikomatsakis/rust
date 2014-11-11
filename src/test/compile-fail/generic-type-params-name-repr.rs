@@ -10,13 +10,15 @@
 
 #![feature(default_type_params)]
 
+use std::kinds::marker;
+
 struct A;
 struct B;
 struct C;
-struct Foo<T = A, U = B, V = C>;
+struct Foo<T = A, U = B, V = C>(marker::CovariantType<(T,U,V)>);
 
-struct Hash<T>;
-struct HashMap<K, V, H = Hash<K>>;
+struct Hash<T>(marker::CovariantType<T>);
+struct HashMap<K, V, H = Hash<K>>(marker::CovariantType<(K,V,H)>);
 
 fn main() {
     // Ensure that the printed type doesn't include the default type params...

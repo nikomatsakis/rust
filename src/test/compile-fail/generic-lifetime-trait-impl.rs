@@ -21,6 +21,7 @@ trait Bar<'a> {
 }
 
 trait Foo<'a> {
+    fn dummy(&'a self) { }
     fn bar<'a, T: Bar<'a>>(self) -> &'a str;
 }
 
