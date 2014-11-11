@@ -202,6 +202,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
          */
 
         debug!("select({})", obligation.repr(self.tcx()));
+        assert!(!obligation.trait_ref.has_escaping_regions());
 
         let stack = self.push_stack(None, obligation);
         match try!(self.candidate_from_obligation(&stack)) {
@@ -254,6 +255,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
         debug!("evaluate_obligation({})",
                obligation.repr(self.tcx()));
+        assert!(!obligation.trait_ref.has_escaping_regions());
 
         let stack = self.push_stack(None, obligation);
         self.evaluate_stack(&stack).may_apply()
@@ -738,6 +740,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         debug!("candidate_from_obligation(cache_skol_trait_ref={}, obligation={})",
                cache_skol_trait_ref.repr(self.tcx()),
                stack.repr(self.tcx()));
+        assert!(!stack.obligation.trait_ref.has_escaping_regions());
 
         match self.check_candidate_cache(cache_skol_trait_ref.clone()) {
             Some(c) => {

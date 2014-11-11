@@ -681,7 +681,11 @@ pub fn type_has_escaping_regions(t: t) -> bool {
      * body.
      */
 
-    get(t).region_depth > 0
+    type_escapes_depth(t, 0)
+}
+
+pub fn type_escapes_depth(t: t, depth: uint) -> bool {
+    get(t).region_depth > depth
 }
 
 #[deriving(Clone, PartialEq, Eq, Hash, Show)]
@@ -941,10 +945,17 @@ pub type UpvarBorrowMap = HashMap<UpvarId, UpvarBorrow>;
 
 impl Region {
     pub fn is_bound(&self) -> bool {
-        match self {
-            &ty::ReEarlyBound(..) => true,
-            &ty::ReLateBound(..) => true,
+        match *self {
+            ty::ReEarlyBound(..) => true,
+            ty::ReLateBound(..) => true,
             _ => false
+        }
+    }
+
+    pub fn escapes_depth(&self, depth: uint) -> bool {
+        match *self {
+            ty::ReLateBound(debruijn, _) => debruijn.depth > depth,
+            _ => false,
         }
     }
 }
@@ -1353,6 +1364,17 @@ impl TraitRef {
         // trait-reference, but it should eventually exclude
         // associated types.
         self.substs.types.as_slice()
+    }
+
+    pub fn has_escaping_regions(&self) -> bool {
+        self.substs.types.iter().any(|&t| ty::type_escapes_depth(t, 1)) || {
+            match self.substs.regions {
+                subst::ErasedRegions =>
+                    false,
+                subst::NonerasedRegions(ref regions) =>
+                    regions.iter().any(|r| r.escapes_depth(1)),
+            }
+        }
     }
 }
 
@@ -4724,7 +4746,7 @@ pub fn bounds_for_trait_ref(tcx: &ctxt,
     // substituting over the substs, not the trait-refs themselves,
     // thus achieving the "collapse" described in the big comment
     // above.
-    let trait_bounds =
+    let trait_bounds: Vec<_> =
         trait_def.bounds.trait_bounds
         .iter()
         .map(|bound_trait_ref| {
@@ -4733,6 +4755,9 @@ pub fn bounds_for_trait_ref(tcx: &ctxt,
         })
         .map(|bound_trait_ref| Rc::new(bound_trait_ref))
         .collect();
+
+    debug!("bounds_for_trait_ref: trait_bounds={}",
+           trait_bounds.repr(tcx));
 
     // The region bounds and builtin bounds do not currently introduce
     // binders so we can just substitute in a straightforward way here.
@@ -5846,6 +5871,23 @@ impl AutoDerefRef {
     pub fn is_identity(&self) -> bool {
         self.autoderefs == 0 && self.autoref.is_none()
     }
+}
+
+pub fn liberate_late_bound_regions<HR>(
+    tcx: &ty::ctxt,
+    scope_id: ast::NodeId,
+    value: &HR)
+    -> HR
+    where HR : HigherRankedFoldable
+{
+    /*!
+     * Replace any late-bound regions bound in `value` with free variants
+     * attached to scope-id `scope_id`.
+     */
+
+    replace_late_bound_regions(
+        tcx, value,
+        |br| ty::ReFree(ty::FreeRegion{scope_id: scope_id, bound_region: br})).0
 }
 
 pub fn replace_late_bound_regions<HR>(

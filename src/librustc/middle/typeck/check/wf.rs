@@ -12,7 +12,7 @@ use middle::subst;
 use middle::subst::{Subst};
 use middle::traits;
 use middle::ty;
-use middle::ty::replace_late_bound_regions;
+use middle::ty::liberate_late_bound_regions;
 use middle::ty_fold::{TypeFolder, TypeFoldable};
 use middle::typeck::astconv::AstConv;
 use middle::typeck::check::{FnCtxt, Inherited, blank_fn_ctxt, vtable, regionck};
@@ -168,6 +168,7 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
 
             let self_ty = ty::node_id_to_type(fcx.tcx(), item.id);
             let self_ty = self_ty.subst(fcx.tcx(), &fcx.inh.param_env.free_substs);
+            let self_ty = liberate_late_bound_regions(fcx.tcx(), item.id, &self_ty);
 
             bounds_checker.check_traits_in_ty(self_ty);
 
@@ -176,6 +177,7 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
                 Some(t) => { t }
             };
             let trait_ref = (*trait_ref).subst(fcx.tcx(), &fcx.inh.param_env.free_substs);
+            let trait_ref = liberate_late_bound_regions(fcx.tcx(), item.id, &trait_ref);
 
             // There are special rules that apply to drop.
             if
@@ -372,12 +374,7 @@ impl<'cx,'tcx> TypeFolder<'tcx> for BoundsChecker<'cx,'tcx> {
             ty::ty_closure(box ty::ClosureTy{sig: ref fn_sig, ..}) => {
                 self.binding_count += 1;
 
-                let (fn_sig, _) =
-                    replace_late_bound_regions(
-                        self.fcx.tcx(),
-                        fn_sig,
-                        |br| ty::ReFree(ty::FreeRegion{scope_id: self.scope_id,
-                                                       bound_region: br}));
+                let fn_sig = liberate_late_bound_regions(self.fcx.tcx(), self.scope_id, fn_sig);
 
                 debug!("late-bound regions replaced: {}",
                        fn_sig.repr(self.tcx()));

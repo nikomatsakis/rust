@@ -92,7 +92,7 @@ use middle::ty::{FnSig, VariantInfo};
 use middle::ty::{Polytype};
 use middle::ty::{Disr, ParamTy, ParameterEnvironment};
 use middle::ty;
-use middle::ty::replace_late_bound_regions;
+use middle::ty::{replace_late_bound_regions, liberate_late_bound_regions};
 use middle::ty_fold::TypeFolder;
 use middle::typeck::astconv::AstConv;
 use middle::typeck::astconv::{ast_region_to_region, ast_ty_to_ty};
@@ -526,9 +526,7 @@ fn check_fn<'a, 'tcx>(ccx: &'a CrateCtxt<'a, 'tcx>,
 
     // First, we have to replace any bound regions in the fn type with free ones.
     // The free region references will be bound the node_id of the body block.
-    let (fn_sig, _) = replace_late_bound_regions(tcx, fn_sig, |br| {
-        ty::ReFree(ty::FreeRegion {scope_id: body.id, bound_region: br})
-    });
+    let fn_sig = liberate_late_bound_regions(tcx, body.id, fn_sig);
 
     let arg_tys = fn_sig.inputs.as_slice();
     let ret_ty = fn_sig.output;
