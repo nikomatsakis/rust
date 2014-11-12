@@ -278,7 +278,7 @@ pub fn overlapping_impls(infcx: &InferCtxt,
 
 pub fn obligations_for_generics(tcx: &ty::ctxt,
                                 cause: ObligationCause,
-                                generics: &ty::Generics,
+                                generics: &ty::GenericBounds,
                                 substs: &subst::Substs)
                                 -> subst::VecPerParamSpace<Obligation>
 {

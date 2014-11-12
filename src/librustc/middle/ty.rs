@@ -1347,6 +1347,26 @@ impl Generics {
     pub fn has_region_params(&self, space: subst::ParamSpace) -> bool {
         !self.regions.is_empty_in(space)
     }
+
+    pub fn to_bounds(&self) -> GenericBounds {
+        GenericBounds {
+            types: self.types.map(|d| d.bounds.clone()),
+            regions: self.regions.map(|d| d.bounds.clone()),
+        }
+    }
+}
+
+#[deriving(Clone, Show)]
+pub struct GenericBounds {
+    pub types: VecPerParamSpace<ParamBounds>,
+    pub regions: VecPerParamSpace<Vec<Region>>,
+}
+
+impl GenericBounds {
+    pub fn empty() -> GenericBounds {
+        GenericBounds { types: VecPerParamSpace::empty(),
+                        regions: VecPerParamSpace::empty() }
+    }
 }
 
 impl TraitRef {
@@ -5613,7 +5633,7 @@ pub fn construct_parameter_environment(
            bounds.repr(tcx));
 
     let obligations = traits::obligations_for_generics(tcx, traits::ObligationCause::misc(span),
-                                                       generics, &free_substs);
+                                                       &generics.to_bounds(), &free_substs);
 
     return ty::ParameterEnvironment {
         free_substs: free_substs,

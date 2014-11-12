@@ -922,6 +922,14 @@ impl Repr for ty::Generics {
     }
 }
 
+impl Repr for ty::GenericBounds {
+    fn repr(&self, tcx: &ctxt) -> String {
+        format!("GenericBounds(types: {}, regions: {})",
+                self.types.repr(tcx),
+                self.regions.repr(tcx))
+    }
+}
+
 impl Repr for ty::ItemVariances {
     fn repr(&self, tcx: &ctxt) -> String {
         format!("ItemVariances(types={}, \

@@ -272,7 +272,7 @@ pub fn lookup_in_trait_adjusted<'a, 'tcx>(
     fcx.add_obligations_for_parameters(
         traits::ObligationCause::misc(span),
         &trait_ref.substs,
-        &method_ty.generics);
+        &method_ty.generics.to_bounds());
 
     // FIXME(#18653) -- Try to resolve obligations, giving us more
     // typing information, which can sometimes be needed to avoid
@@ -1560,13 +1560,13 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
                 self.fcx.add_obligations_for_parameters(
                     traits::ObligationCause::misc(self.span),
                     &temp_substs,
-                    &candidate.method_ty.generics);
+                    &candidate.method_ty.generics.to_bounds());
             }
             _ => {
                 self.fcx.add_obligations_for_parameters(
                     traits::ObligationCause::misc(self.span),
                     &all_substs,
-                    &candidate.method_ty.generics);
+                    &candidate.method_ty.generics.to_bounds());
             }
         }
 

@@ -173,7 +173,7 @@ impl fmt::Show for VtableParamData {
 pub fn obligations_for_generics(tcx: &ty::ctxt,
                                 cause: ObligationCause,
                                 recursion_depth: uint,
-                                generics: &ty::Generics,
+                                generics: &ty::GenericBounds,
                                 substs: &Substs)
                                 -> VecPerParamSpace<Obligation>
 {
@@ -184,13 +184,13 @@ pub fn obligations_for_generics(tcx: &ty::ctxt,
 
     let mut obligations = VecPerParamSpace::empty();
 
-    for def in generics.types.iter() {
+    for (space, index, bounds) in generics.types.enumerated_iter() {
         push_obligations_for_param_bounds(tcx,
                                           cause,
                                           recursion_depth,
-                                          def.space,
-                                          def.index,
-                                          &def.bounds,
+                                          space,
+                                          index,
+                                          bounds,
                                           substs,
                                           &mut obligations);
     }

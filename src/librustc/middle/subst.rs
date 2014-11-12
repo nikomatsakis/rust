@@ -395,6 +395,10 @@ impl<T> VecPerParamSpace<T> {
         self.content.iter()
     }
 
+    pub fn enumerated_iter<'a>(&'a self) -> EnumeratedItems<'a,T> {
+        EnumeratedItems::new(self)
+    }
+
     pub fn as_slice(&self) -> &[T] {
         self.content.as_slice()
     }
@@ -457,6 +461,49 @@ impl<T> VecPerParamSpace<T> {
         assert!(self.is_empty_in(space));
         self.replace(space, vec);
         self
+    }
+}
+
+pub struct EnumeratedItems<'a,T:'a> {
+    vec: &'a VecPerParamSpace<T>,
+    space_index: uint,
+    elem_index: uint
+}
+
+impl<'a,T> EnumeratedItems<'a,T> {
+    fn new(v: &'a VecPerParamSpace<T>) -> EnumeratedItems<'a,T> {
+        let mut result = EnumeratedItems { vec: v, space_index: 0, elem_index: 0 };
+        result.adjust_space();
+        result
+    }
+
+    fn adjust_space(&mut self) {
+        let spaces = ParamSpace::all();
+        while
+            self.space_index < spaces.len() &&
+            self.elem_index >= self.vec.len(spaces[self.space_index])
+        {
+            self.space_index += 1;
+            self.elem_index = 0;
+        }
+    }
+}
+
+impl<'a,T> Iterator<(ParamSpace, uint, &'a T)> for EnumeratedItems<'a,T> {
+    fn next(&mut self) -> Option<(ParamSpace, uint, &'a T)> {
+        let spaces = ParamSpace::all();
+        if self.space_index < spaces.len() {
+            let space = spaces[self.space_index];
+            let index = self.elem_index;
+            let item = self.vec.get(space, index);
+
+            self.elem_index += 1;
+            self.adjust_space();
+
+            Some((space, index, item))
+        } else {
+            None
+        }
     }
 }
 

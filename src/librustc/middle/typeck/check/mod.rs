@@ -1734,7 +1734,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 span,
                 traits::ItemObligation(def_id)),
             &substs,
-            &polytype.generics);
+            &polytype.generics.to_bounds());
         let monotype =
             polytype.ty.subst(self.tcx(), &substs);
 
@@ -1971,7 +1971,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     pub fn add_obligations_for_parameters(&self,
                                           cause: traits::ObligationCause,
                                           substs: &Substs,
-                                          generics: &ty::Generics)
+                                          generics: &ty::GenericBounds)
     {
         /*!
          * Given a set of generic parameter definitions (`generics`)
@@ -2003,7 +2003,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     fn add_trait_obligations_for_generics(&self,
                                           cause: traits::ObligationCause,
                                           substs: &Substs,
-                                          generics: &ty::Generics) {
+                                          generics: &ty::GenericBounds) {
         let obligations =
             traits::obligations_for_generics(self.tcx(),
                                              cause,
@@ -2015,29 +2015,26 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     fn add_region_obligations_for_generics(&self,
                                            cause: traits::ObligationCause,
                                            substs: &Substs,
-                                           generics: &ty::Generics)
+                                           generics: &ty::GenericBounds)
     {
         assert_eq!(generics.types.iter().len(),
                    substs.types.iter().len());
-        for (type_def, &type_param) in
+        for (type_bounds, &type_param) in
             generics.types.iter().zip(
                 substs.types.iter())
         {
-            let param_ty = ty::ParamTy { space: type_def.space,
-                                         idx: type_def.index,
-                                         def_id: type_def.def_id };
-            let bounds = type_def.bounds.subst(self.tcx(), substs);
+            let bounds = type_bounds.subst(self.tcx(), substs);
             self.add_region_obligations_for_type_parameter(
-                cause.span, param_ty, &bounds, type_param);
+                cause.span, &bounds, type_param);
         }
 
         assert_eq!(generics.regions.iter().len(),
                    substs.regions().iter().len());
-        for (region_def, &region_param) in
+        for (region_bounds, &region_param) in
             generics.regions.iter().zip(
                 substs.regions().iter())
         {
-            let bounds = region_def.bounds.subst(self.tcx(), substs);
+            let bounds = region_bounds.subst(self.tcx(), substs);
             self.add_region_obligations_for_region_parameter(
                 cause.span, bounds.as_slice(), region_param);
         }
@@ -2045,7 +2042,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     fn add_region_obligations_for_type_parameter(&self,
                                                  span: Span,
-                                                 param_ty: ty::ParamTy,
                                                  param_bound: &ty::ParamBounds,
                                                  ty: ty::t)
     {
@@ -2057,7 +2053,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 param_bound.builtin_bounds,
                 param_bound.trait_bounds.as_slice());
         for &r in region_bounds.iter() {
-            let origin = infer::RelateParamBound(span, param_ty, ty);
+            let origin = infer::RelateParamBound(span, ty);
             self.register_region_obligation(origin, ty, r);
         }
     }
@@ -5362,7 +5358,7 @@ pub fn instantiate_path(fcx: &FnCtxt,
     fcx.add_obligations_for_parameters(
         traits::ObligationCause::new(span, traits::ItemObligation(def.def_id())),
         &substs,
-        &polytype.generics);
+        &polytype.generics.to_bounds());
 
     // Substitute the values for the type parameters into the type of
     // the referenced item.

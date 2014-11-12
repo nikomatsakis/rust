@@ -217,7 +217,6 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
             // FIXME -- This is a bit ill-factored. There is very similar
             // code in traits::util::obligations_for_generics.
             fcx.add_region_obligations_for_type_parameter(item.span,
-                                                          ty::ParamTy::for_self(trait_ref.def_id),
                                                           &trait_def.bounds,
                                                           trait_ref.self_ty());
             for builtin_bound in trait_def.bounds.builtin_bounds.iter() {
@@ -287,7 +286,7 @@ impl<'cx,'tcx> BoundsChecker<'cx,'tcx> {
                 self.span,
                 traits::ItemObligation(trait_ref.def_id)),
             &trait_ref.substs,
-            &trait_def.generics);
+            &trait_def.generics.to_bounds());
 
         for &ty in trait_ref.substs.types.iter() {
             self.check_traits_in_ty(ty);
@@ -337,7 +336,7 @@ impl<'cx,'tcx> TypeFolder<'tcx> for BoundsChecker<'cx,'tcx> {
                         traits::ObligationCause::new(self.span,
                                                      traits::ItemObligation(type_id)),
                         substs,
-                        &polytype.generics);
+                        &polytype.generics.to_bounds());
                 } else {
                     // There are two circumstances in which we ignore
                     // region obligations.
@@ -365,7 +364,7 @@ impl<'cx,'tcx> TypeFolder<'tcx> for BoundsChecker<'cx,'tcx> {
                         traits::ObligationCause::new(self.span,
                                                      traits::ItemObligation(type_id)),
                         substs,
-                        &polytype.generics);
+                        &polytype.generics.to_bounds());
                 }
 
                 self.fold_substs(substs);
