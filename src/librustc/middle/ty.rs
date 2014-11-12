@@ -1384,6 +1384,11 @@ impl GenericBounds {
         GenericBounds { types: VecPerParamSpace::empty(),
                         regions: VecPerParamSpace::empty() }
     }
+
+    pub fn has_escaping_regions(&self) -> bool {
+        self.types.any(|pb| pb.trait_bounds.any(|tr| tr.has_escaping_regions())) ||
+            self.regions.any(|r| r.escapes_depth(0))
+    }
 }
 
 impl TraitRef {

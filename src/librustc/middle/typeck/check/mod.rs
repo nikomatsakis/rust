@@ -1992,6 +1992,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
          * locally.
          */
 
+        assert!(!generics.has_escaping_regions());
+
         debug!("add_obligations_for_parameters(substs={}, generics={})",
                substs.repr(self.tcx()),
                generics.repr(self.tcx()));
@@ -2004,6 +2006,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                           cause: traits::ObligationCause,
                                           substs: &Substs,
                                           generics: &ty::GenericBounds) {
+        assert!(!generics.has_escaping_regions());
+
         let obligations =
             traits::obligations_for_generics(self.tcx(),
                                              cause,
@@ -2017,8 +2021,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                            substs: &Substs,
                                            generics: &ty::GenericBounds)
     {
-        assert_eq!(generics.types.iter().len(),
-                   substs.types.iter().len());
+        assert!(!generics.has_escaping_regions());
+        assert_eq!(generics.types.iter().len(), substs.types.iter().len());
+
         for (type_bounds, &type_param) in
             generics.types.iter().zip(
                 substs.types.iter())
