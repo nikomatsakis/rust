@@ -168,7 +168,7 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
 
             let self_ty = ty::node_id_to_type(fcx.tcx(), item.id);
             let self_ty = self_ty.subst(fcx.tcx(), &fcx.inh.param_env.free_substs);
-            let self_ty = liberate_late_bound_regions(fcx.tcx(), item.id, &self_ty);
+            let self_ty = liberate_late_bound_regions(fcx.tcx(), item.id, &ty::bind(self_ty)).value;
 
             bounds_checker.check_traits_in_ty(self_ty);
 

@@ -666,10 +666,12 @@ pub fn super_fold_obligation<'tcx, T:TypeFolder<'tcx>>(this: &mut T,
 ///////////////////////////////////////////////////////////////////////////
 // Higher-ranked things
 
-pub trait HigherRankedFoldable : TypeFoldable + Repr {
-    /// Folds the contents of `self`, ignoring region binders created
-    /// by `self` (if any). For types which do not create region binders,
-    /// `fold_contents` is identical to `fold_with`.
+/**
+ * Designates a "binder" for late-bound regions.
+ */
+pub trait HigherRankedFoldable : Repr {
+    /// Folds the contents of `self`, ignoring the region binder created
+    /// by `self`.
     fn fold_contents<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> Self;
 }
 
@@ -685,15 +687,9 @@ impl HigherRankedFoldable for ty::TraitRef {
     }
 }
 
-impl HigherRankedFoldable for ty::t {
-    fn fold_contents<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::t {
-        folder.fold_ty(*self)
-    }
-}
-
-impl HigherRankedFoldable for ty::BareFnTy {
-    fn fold_contents<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::BareFnTy {
-        folder.fold_bare_fn_ty(self)
+impl<T:TypeFoldable+Repr> HigherRankedFoldable for ty::Binder<T> {
+    fn fold_contents<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::Binder<T> {
+        ty::bind(self.value.fold_with(folder))
     }
 }
 

@@ -1309,3 +1309,8 @@ impl<A:Repr,B:Repr> Repr for (A,B) {
     }
 }
 
+impl<T:Repr> Repr for ty::Binder<T> {
+    fn repr(&self, tcx: &ctxt) -> String {
+        format!("Binder({})", self.value.repr(tcx))
+    }
+}

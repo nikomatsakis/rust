@@ -1083,6 +1083,23 @@ pub struct TraitRef {
     pub substs: Substs,
 }
 
+/**
+ * Binder serves as a synthetic binder for lifetimes. It is used when
+ * we wish to replace the escaping higher-ranked lifetimes in a type
+ * or something else that is not itself a binder (this is because the
+ * `replace_late_bound_regions` function replaces all lifetimes bound
+ * by the binder supplied to it; but a type is not a binder, so you
+ * must introduce an artificial one).
+ */
+#[deriving(Clone, PartialEq, Eq, Hash, Show)]
+pub struct Binder<T> {
+    pub value: T
+}
+
+pub fn bind<T>(value: T) -> Binder<T> {
+    Binder { value: value }
+}
+
 #[deriving(Clone, PartialEq)]
 pub enum IntVarValue {
     IntType(ast::IntTy),
@@ -5931,6 +5948,10 @@ pub fn replace_late_bound_regions<HR>(
     -> (HR, HashMap<ty::BoundRegion,ty::Region>)
     where HR : HigherRankedFoldable
 {
+    /*!
+     * Replaces the late-bound-regions in `value` that are bound by `value`.
+     */
+
     debug!("replace_late_bound_regions({})", value.repr(tcx));
 
     let mut map = HashMap::new();

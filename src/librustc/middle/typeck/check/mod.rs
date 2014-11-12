@@ -739,7 +739,7 @@ fn check_method_body(ccx: &CrateCtxt,
     debug!("fty (raw): {}", fty.repr(ccx.tcx));
 
     let body_id = method.pe_body().id;
-    let fty = liberate_late_bound_regions(ccx.tcx, body_id, &fty);
+    let fty = liberate_late_bound_regions(ccx.tcx, body_id, &ty::bind(fty)).value;
     debug!("fty (liberated): {}", fty.repr(ccx.tcx));
 
     check_bare_fn(ccx,
@@ -1146,7 +1146,7 @@ fn compare_impl_method(tcx: &ty::ctxt,
     // Compute skolemized form of impl and trait method tys.
     let impl_fty = ty::mk_bare_fn(tcx, impl_m.fty.clone());
     let impl_fty = impl_fty.subst(tcx, &impl_to_skol_substs);
-    let impl_fty = liberate_late_bound_regions(tcx, impl_m_body_id, &impl_fty);
+    let impl_fty = liberate_late_bound_regions(tcx, impl_m_body_id, &ty::bind(impl_fty)).value;
     let trait_fty = ty::mk_bare_fn(tcx, trait_m.fty.clone());
     let trait_fty = trait_fty.subst(tcx, &trait_to_skol_substs);
 
@@ -5369,7 +5369,9 @@ pub fn instantiate_path(fcx: &FnCtxt,
     // the fn itself). Those should be replaced with fresh variables
     // now.
     let ty_substituted =
-        fcx.infcx().replace_late_bound_regions_with_fresh_regions(span, &ty_substituted).0;
+        fcx.infcx().replace_late_bound_regions_with_fresh_regions(span,
+                                                                  &ty::bind(ty_substituted))
+        .0.value;
 
     fcx.write_ty(node_id, ty_substituted);
     fcx.write_substs(node_id, ty::ItemSubsts { substs: substs });

@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use syntax::codemap::Span;
 use util::ppaux::{bound_region_to_string, Repr};
 
-pub trait HigherRankedCombineable : HigherRankedFoldable + Repr {
+pub trait HigherRankedCombineable : HigherRankedFoldable + TypeFoldable + Repr {
     fn super_combine<'tcx,C:Combine<'tcx>>(combiner: &C, a: &Self, b: &Self) -> cres<Self>;
 }
 

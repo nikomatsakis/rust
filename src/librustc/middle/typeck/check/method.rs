@@ -251,7 +251,9 @@ pub fn lookup_in_trait_adjusted<'a, 'tcx>(
     // instantiate late-bound regions to get the actual method type.
     let ref bare_fn_ty = method_ty.fty;
     let bare_fn_ty = bare_fn_ty.subst(tcx, &trait_ref.substs);
-    let bare_fn_ty = replace_late_bound_regions_with_fresh_var(fcx.infcx(), span, &bare_fn_ty);
+    let bare_fn_ty = replace_late_bound_regions_with_fresh_var(fcx.infcx(),
+                                                               span,
+                                                               &ty::bind(bare_fn_ty)).value;
     let fn_sig = replace_late_bound_regions_with_fresh_var(fcx.infcx(), span, &bare_fn_ty.sig);
     let transformed_self_ty = fn_sig.inputs[0];
     let fty = ty::mk_bare_fn(tcx, ty::BareFnTy {
@@ -1509,7 +1511,8 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
         // late-bound lifetimes instantiated
         debug!("fty={} all_substs={}", bare_fn_ty.repr(tcx), all_substs.repr(tcx));
         let bare_fn_ty = bare_fn_ty.subst(tcx, &all_substs);
-        let bare_fn_ty = self.replace_late_bound_regions_with_fresh_var(&bare_fn_ty);
+        let bare_fn_ty =
+            self.replace_late_bound_regions_with_fresh_var(&ty::bind(bare_fn_ty)).value;
         debug!("after subst, bare_fn_ty={}", bare_fn_ty.repr(tcx));
 
         // Replace any bound regions that appear in the function
@@ -1798,12 +1801,13 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
 
         // the method's type may have late-bound regions from the
         // impl, so replace those with fresh variables (such as 'a above).
-        let fty = self.replace_late_bound_regions_with_fresh_var(&method.fty);
+        let fty = method.fty.clone();
+        let fty = self.replace_late_bound_regions_with_fresh_var(&ty::bind(fty)).value;
 
         // now we have to replace any variables that were declared on
         // the method itself (like 'b)
         let xform_self_ty = fty.sig.inputs[0].subst(self.tcx(), substs);
-        self.replace_late_bound_regions_with_fresh_var(&xform_self_ty)
+        self.replace_late_bound_regions_with_fresh_var(&ty::bind(xform_self_ty)).value
     }
 
     fn replace_late_bound_regions_with_fresh_var<T>(&self, value: &T) -> T
