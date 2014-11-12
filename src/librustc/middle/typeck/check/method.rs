@@ -250,8 +250,9 @@ pub fn lookup_in_trait_adjusted<'a, 'tcx>(
     // Substitute the trait parameters into the method type and
     // instantiate late-bound regions to get the actual method type.
     let ref bare_fn_ty = method_ty.fty;
-    let fn_sig = bare_fn_ty.sig.subst(tcx, &trait_ref.substs);
-    let fn_sig = replace_late_bound_regions_with_fresh_var(fcx.infcx(), span, &fn_sig);
+    let bare_fn_ty = bare_fn_ty.subst(tcx, &trait_ref.substs);
+    let bare_fn_ty = replace_late_bound_regions_with_fresh_var(fcx.infcx(), span, &bare_fn_ty);
+    let fn_sig = replace_late_bound_regions_with_fresh_var(fcx.infcx(), span, &bare_fn_ty.sig);
     let transformed_self_ty = fn_sig.inputs[0];
     let fty = ty::mk_bare_fn(tcx, ty::BareFnTy {
         sig: fn_sig,

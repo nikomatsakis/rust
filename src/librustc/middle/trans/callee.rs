@@ -427,6 +427,8 @@ pub fn trans_fn_ref_with_substs(
            substs.repr(tcx));
 
     assert!(substs.types.all(|t| !ty::type_needs_infer(*t)));
+    assert!(substs.types.all(|t| !ty::type_has_escaping_regions(*t)));
+    let substs = substs.erase_regions();
 
     // Load the info for the appropriate trait if necessary.
     match ty::trait_of_item(tcx, def_id) {
@@ -460,13 +462,13 @@ pub fn trans_fn_ref_with_substs(
             let impl_or_trait_item = ty::impl_or_trait_item(tcx, source_id);
             match impl_or_trait_item {
                 ty::MethodTraitItem(method) => {
-                    let trait_ref = ty::impl_trait_ref(tcx, impl_id)
-                        .expect("could not find trait_ref for impl with \
-                                 default methods");
+                    let trait_ref = ty::impl_trait_ref(tcx, impl_id).unwrap();
+                    let trait_ref = ty::erase_late_bound_regions(tcx, &trait_ref);
 
                     // Compute the first substitution
-                    let first_subst = make_substs_for_receiver_types(
-                        tcx, &*trait_ref, &*method);
+                    let first_subst =
+                        make_substs_for_receiver_types(tcx, &*trait_ref, &*method)
+                        .erase_regions();
 
                     // And compose them
                     let new_substs = first_subst.subst(tcx, &substs);
@@ -656,7 +658,7 @@ pub fn trans_lang_call<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                 trans_fn_ref_with_substs_to_callee(bcx,
                                                                    did,
                                                                    0,
-                                                                   subst::Substs::empty())
+                                                                   subst::Substs::trans_empty())
                              },
                              ArgVals(args),
                              dest)

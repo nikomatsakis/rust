@@ -1403,7 +1403,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
                                file_metadata: DIFile,
                                name_to_append_suffix_to: &mut String)
                                -> DIArray {
-        let self_type = param_substs.substs.self_ty();
+        let self_type = param_substs.substs().self_ty();
 
         // Only true for static default methods:
         let has_self_type = self_type.is_some();
@@ -1460,7 +1460,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
         }
 
         // Handle other generic parameters
-        let actual_types = param_substs.substs.types.get_slice(subst::FnSpace);
+        let actual_types = param_substs.substs().types.get_slice(subst::FnSpace);
         for (index, &ast::TyParam{ ident, .. }) in generics.ty_params.iter().enumerate() {
             let actual_type = actual_types[index];
             // Add actual type name to <...> clause of function name

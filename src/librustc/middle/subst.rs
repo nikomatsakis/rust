@@ -162,6 +162,13 @@ impl RegionSubsts {
             NonerasedRegions(r) => NonerasedRegions(op(r, a))
         }
     }
+
+    pub fn is_erased(&self) -> bool {
+        match *self {
+            ErasedRegions => true,
+            NonerasedRegions(_) => false,
+        }
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////

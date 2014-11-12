@@ -5890,6 +5890,20 @@ pub fn liberate_late_bound_regions<HR>(
         |br| ty::ReFree(ty::FreeRegion{scope_id: scope_id, bound_region: br})).0
 }
 
+pub fn erase_late_bound_regions<HR>(
+    tcx: &ty::ctxt,
+    value: &HR)
+    -> HR
+    where HR : HigherRankedFoldable
+{
+    /*!
+     * Replace any late-bound regions bound in `value` with `'static`.
+     * Useful in trans.
+     */
+
+    replace_late_bound_regions(tcx, value, |_| ty::ReStatic).0
+}
+
 pub fn replace_late_bound_regions<HR>(
     tcx: &ty::ctxt,
     value: &HR,
