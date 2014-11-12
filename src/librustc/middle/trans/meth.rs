@@ -534,7 +534,6 @@ pub fn get_vtable(bcx: Block,
     debug!("get_vtable(box_ty={}, trait_ref={})",
            box_ty.repr(bcx.tcx()),
            trait_ref.repr(bcx.tcx()));
-    assert!(trait_ref.substs.regions.is_erased());
 
     let tcx = bcx.tcx();
     let ccx = bcx.ccx();

@@ -1613,15 +1613,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
     }
 
-    pub fn write_ty_substs(&self,
-                           node_id: ast::NodeId,
-                           ty: ty::t,
-                           substs: ty::ItemSubsts) {
-        let ty = ty.subst(self.tcx(), &substs.substs);
-        self.write_ty(node_id, ty);
-        self.write_substs(node_id, substs);
-    }
-
     pub fn write_autoderef_adjustment(&self,
                                       node_id: ast::NodeId,
                                       span: Span,
@@ -5373,9 +5364,20 @@ pub fn instantiate_path(fcx: &FnCtxt,
         &substs,
         &polytype.generics);
 
-    fcx.write_ty_substs(node_id, polytype.ty, ty::ItemSubsts {
-        substs: substs,
-    });
+    // Substitute the values for the type parameters into the type of
+    // the referenced item.
+    let ty_substituted = polytype.ty.subst(fcx.tcx(), &substs);
+
+    // In the case of static methods taken from impls, there may be
+    // late-bound regions associated with the impl (not declared on
+    // the fn itself). Those should be replaced with fresh variables
+    // now.
+    let ty_substituted =
+        fcx.infcx().replace_late_bound_regions_with_fresh_regions(span, &ty_substituted).0;
+
+    fcx.write_ty(node_id, ty_substituted);
+    fcx.write_substs(node_id, ty::ItemSubsts { substs: substs });
+    return;
 
     fn report_error_if_segment_contains_type_parameters(
         fcx: &FnCtxt,
