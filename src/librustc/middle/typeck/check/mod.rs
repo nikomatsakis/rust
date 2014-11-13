@@ -934,6 +934,23 @@ fn compare_impl_method(tcx: &ty::ctxt,
     debug!("compare_impl_method(impl_trait_ref={})",
            impl_trait_ref.repr(tcx));
 
+    // The impl's trait ref may bind late-bound regions from the impl.
+    // Liberate them and assign them the scope of the method body.
+    //
+    // An example would be:
+    //
+    //     impl<'a> Foo<&'a T> for &'a U { ... }
+    //
+    // Here, the region parameter `'a` is late-bound, so the
+    // trait reference associated with the impl will be
+    //
+    //     for<'a> Foo<&'a T>
+    //
+    // liberating will convert this into:
+    //
+    //     Foo<&'A T>
+    //
+    // where `'A` is the `ReFree` version of `'a`.
     let impl_trait_ref = liberate_late_bound_regions(tcx, impl_m_body_id, impl_trait_ref);
 
     debug!("impl_trait_ref (liberated) = {}",
@@ -1083,15 +1100,50 @@ fn compare_impl_method(tcx: &ty::ctxt,
         return;
     }
 
-    // Check bounds.
-    let it = trait_m.generics.types.get_slice(subst::FnSpace).iter()
-        .zip(impl_m.generics.types.get_slice(subst::FnSpace).iter());
-    for (i, (trait_param_def, impl_param_def)) in it.enumerate() {
+    // Check bounds. Note that the bounds from the impl may reference
+    // late-bound regions declared on the impl, so liberate those.
+    // This requires two artificial binding scopes -- one for the impl,
+    // and one for the method.
+    //
+    // An example would be:
+    //
+    //     trait Foo<T> { fn method<U:Bound<T>>() { ... } }
+    //
+    //     impl<'a> Foo<&'a T> for &'a U {
+    //         fn method<U:Bound<&'a T>>() { ... }
+    //     }
+    //
+    // Here, the region parameter `'a` is late-bound, so in the bound
+    // `Bound<&'a T>`, the lifetime `'a` will be late-bound with a
+    // depth of 3 (it is nested within 3 binders: the impl, method,
+    // and trait-ref itself). So when we do the liberation, we have
+    // two introduce two `ty::bind` scopes, one for the impl and one
+    // the method.
+    //
+    // The only late-bounded regions that can possibly appear here are
+    // from the impl, not the method. This is because region
+    // parameters declared on the method which appear in a type bound
+    // would be early bound. On the trait side, there can be no
+    // late-bound lifetimes because trait definitions do not introduce
+    // a late region binder.
+    let trait_bounds =
+        trait_m.generics.types.get_slice(subst::FnSpace).iter()
+        .map(|trait_param_def| &trait_param_def.bounds);
+    let impl_bounds =
+        impl_m.generics.types.get_slice(subst::FnSpace).iter()
+        .map(|impl_param_def|
+             liberate_late_bound_regions(
+                 tcx,
+                 impl_m_body_id,
+                 &ty::bind(ty::bind(impl_param_def.bounds.clone()))).value.value);
+    for (i, (trait_param_bounds, impl_param_bounds)) in
+        trait_bounds.zip(impl_bounds).enumerate()
+    {
         // Check that the impl does not require any builtin-bounds
         // that the trait does not guarantee:
         let extra_bounds =
-            impl_param_def.bounds.builtin_bounds -
-            trait_param_def.bounds.builtin_bounds;
+            impl_param_bounds.builtin_bounds -
+            trait_param_bounds.builtin_bounds;
         if !extra_bounds.is_empty() {
             span_err!(tcx.sess, impl_m_span, E0051,
                 "in method `{}`, type parameter {} requires `{}`, \
@@ -1108,31 +1160,28 @@ fn compare_impl_method(tcx: &ty::ctxt,
         //
         // FIXME(pcwalton): We could be laxer here regarding sub- and super-
         // traits, but I doubt that'll be wanted often, so meh.
-        for impl_trait_bound in impl_param_def.bounds.trait_bounds.iter() {
+        for impl_trait_bound in impl_param_bounds.trait_bounds.iter() {
             debug!("compare_impl_method(): impl-trait-bound subst");
             let impl_trait_bound =
                 impl_trait_bound.subst(tcx, &impl_to_skol_substs);
 
-            let mut ok = false;
-            for trait_bound in trait_param_def.bounds.trait_bounds.iter() {
-                debug!("compare_impl_method(): trait-bound subst");
-                let trait_bound =
-                    trait_bound.subst(tcx, &trait_to_skol_substs);
-                let infcx = infer::new_infer_ctxt(tcx);
-                match infer::mk_sub_trait_refs(&infcx,
-                                               true,
-                                               infer::Misc(impl_m_span),
-                                               trait_bound,
-                                               impl_trait_bound.clone()) {
-                    Ok(_) => {
-                        ok = true;
-                        break
-                    }
-                    Err(_) => continue,
-                }
-            }
+            // There may be late-bound regions from the impl in the
+            // impl's bound, so "liberate" those. They should correspond
 
-            if !ok {
+            let found_match_in_trait =
+                trait_param_bounds.trait_bounds.iter().any(|trait_bound| {
+                    debug!("compare_impl_method(): trait-bound subst");
+                    let trait_bound =
+                        trait_bound.subst(tcx, &trait_to_skol_substs);
+                    let infcx = infer::new_infer_ctxt(tcx);
+                    infer::mk_sub_trait_refs(&infcx,
+                                             true,
+                                             infer::Misc(impl_m_span),
+                                             trait_bound,
+                                             impl_trait_bound.clone()).is_ok()
+                });
+
+            if !found_match_in_trait {
                 span_err!(tcx.sess, impl_m_span, E0052,
                     "in method `{}`, type parameter {} requires bound `{}`, which is not \
                      required by the corresponding type parameter in the trait declaration",
