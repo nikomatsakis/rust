@@ -823,3 +823,33 @@ impl<'a, 'tcx> TypeFolder<'tcx> for RegionEraser<'a, 'tcx> {
         }
     }
 }
+
+///////////////////////////////////////////////////////////////////////////
+// Region shifter
+//
+// Shifts the De Bruijn indices on all escaping bound regions by a
+// fixed amount. Useful in substitution or when otherwise introducing
+// a binding level that is not intended to capture the existing bound
+// regions. See comment on `shift_regions_through_binders` method in
+// `subst.rs` for more details.
+
+pub fn shift_region(region: ty::Region, amount: uint) -> ty::Region {
+    match region {
+        ty::ReLateBound(debruijn, br) => {
+            ty::ReLateBound(debruijn.shifted(amount), br)
+        }
+        _ => {
+            region
+        }
+    }
+}
+
+pub fn shift_regions<T:TypeFoldable+Repr>(tcx: &ty::ctxt, amount: uint, value: &T) -> T {
+    debug!("shift_regions(value={}, amount={})",
+           value.repr(tcx), amount);
+
+    value.fold_with(&mut RegionFolder::new(tcx, |region, _current_depth| {
+        shift_region(region, amount)
+    }))
+}
+

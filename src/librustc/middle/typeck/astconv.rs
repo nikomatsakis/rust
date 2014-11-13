@@ -59,6 +59,7 @@ use middle::typeck::lookup_def_tcx;
 use middle::typeck::rscope::{UnelidableRscope, RegionScope, SpecificRscope, BindingRscope};
 use middle::typeck::rscope;
 use middle::typeck::TypeAndSubsts;
+use middle::ty_fold;
 use util::ppaux::{Repr, UserString};
 
 use std::collections::HashMap;
@@ -421,15 +422,16 @@ pub fn instantiate_trait_ref<'tcx,AC,RS>(this: &AC,
     match lookup_def_tcx(this.tcx(),
                          ast_trait_ref.path.span,
                          ast_trait_ref.ref_id) {
-        def::DefTrait(trait_did) => {
-            let trait_ref =
-                Rc::new(ast_path_to_trait_ref(this,
-                                              rscope,
-                                              trait_did,
-                                              self_ty,
-                                              associated_type,
-                                              &ast_trait_ref.path));
-
+        def::DefTrait(trait_def_id) => {
+            let trait_def = this.get_trait_def(trait_def_id);
+            let substs = ast_path_substs(this,
+                                         rscope,
+                                         trait_def_id,
+                                         &trait_def.generics,
+                                         self_ty,
+                                         associated_type,
+                                         &ast_trait_ref.path);
+            let trait_ref = Rc::new(ty::TraitRef::new(trait_def_id, substs));
             this.tcx().trait_refs.borrow_mut().insert(ast_trait_ref.ref_id,
                                                       trait_ref.clone());
             trait_ref
@@ -442,26 +444,49 @@ pub fn instantiate_trait_ref<'tcx,AC,RS>(this: &AC,
     }
 }
 
-pub fn ast_path_to_trait_ref<'tcx,AC,RS>(this: &AC,
-                                         rscope: &RS,
-                                         trait_def_id: ast::DefId,
-                                         self_ty: Option<ty::t>,
-                                         associated_type: Option<ty::t>,
-                                         path: &ast::Path)
-                                         -> ty::TraitRef
-                                         where AC: AstConv<'tcx>,
-                                               RS: RegionScope {
+fn ast_path_to_trait_ref<'tcx,AC,RS>(
+    this: &AC,
+    rscope: &RS,
+    trait_def_id: ast::DefId,
+    self_ty: Option<ty::t>,
+    associated_type: Option<ty::t>,
+    path: &ast::Path)
+    -> ty::TraitRef
+    where AC: AstConv<'tcx>, RS: RegionScope
+{
     let trait_def = this.get_trait_def(trait_def_id);
-    ty::TraitRef {
-        def_id: trait_def_id,
-        substs: ast_path_substs(this,
-                                rscope,
-                                trait_def_id,
-                                &trait_def.generics,
-                                self_ty,
-                                associated_type,
-                                path)
-    }
+    let substs = ast_path_substs(this,
+                                 rscope,
+                                 trait_def_id,
+                                 &trait_def.generics,
+                                 self_ty,
+                                 associated_type,
+                                 path);
+
+    // Subtle. Trait references introduce a region binder, but the
+    // resolve_lifetime pass is not always aware when a path
+    // represents a trait-reference and when it doesn't, and hence the
+    // "binder count" gets off by 1 and we have to correct it.
+    //
+    // Example:
+    //
+    // ```
+    // trait Typer<'tcx> { ... }
+    // fn g<'tcx>(typer: &Typer<'tcx>) { ... }
+    //                 // ^~~~~ Turns out to be a trait reference
+    // ```
+    //
+    // In this case, the reference to `'tcx` would have depth 1, but
+    // it should have 2, one for the fn and one for the trait
+    // reference. But we can't know this until after resolve has fully
+    // executed.
+    let shifted_substs = if substs.has_regions_escaping_depth(0) {
+        ty_fold::shift_regions(this.tcx(), 1, &substs)
+    } else {
+        substs
+    };
+
+    ty::TraitRef::new(trait_def_id, shifted_substs)
 }
 
 pub fn ast_path_to_ty<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(

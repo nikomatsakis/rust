@@ -606,7 +606,7 @@ impl<'a, 'tcx> TypeFolder<'tcx> for SubstFolder<'a, 'tcx> {
                     NonerasedRegions(ref regions) =>
                         match regions.opt_get(space, i) {
                             Some(&r) => {
-                                self.shift_region(r)
+                                self.shift_region_through_binders(r)
                             }
                             None => {
                                 let span = self.span.unwrap_or(DUMMY_SP);
@@ -678,10 +678,10 @@ impl<'a,'tcx> SubstFolder<'a,'tcx> {
             }
         };
 
-        self.shift_regions(ty)
+        self.shift_regions_through_binders(ty)
     }
 
-    fn shift_regions(&self, ty: ty::t) -> ty::t {
+    fn shift_regions_through_binders(&self, ty: ty::t) -> ty::t {
         /*!
          * It is sometimes necessary to adjust the debruijn indices
          * during substitution. This occurs when we are substituting a
@@ -741,25 +741,13 @@ impl<'a,'tcx> SubstFolder<'a,'tcx> {
             return ty;
         }
 
-        let result =
-            ty.fold_with(&mut ty_fold::RegionFolder::new(self.tcx(), |region, _current_depth| {
-                self.shift_region(region)
-            }));
-
+        let result = ty_fold::shift_regions(self.tcx(), self.region_binders_passed, &ty);
         debug!("shift_regions: shifted result = {}", result.repr(self.tcx()));
 
         result
     }
 
-    fn shift_region(&self, region: ty::Region) -> ty::Region {
-        /*! See `shift_regions()` */
-        match region {
-            ty::ReLateBound(debruijn, br) => {
-                ty::ReLateBound(debruijn.shifted(self.region_binders_passed), br)
-            }
-            _ => {
-                region
-            }
-        }
+    fn shift_region_through_binders(&self, region: ty::Region) -> ty::Region {
+        ty_fold::shift_region(region, self.region_binders_passed)
     }
 }
