@@ -97,6 +97,17 @@ impl Substs {
         regions_is_noop && self.types.is_empty()
     }
 
+    pub fn has_regions_escaping_depth(&self, depth: uint) -> bool {
+        self.types.iter().any(|&t| ty::type_escapes_depth(t, 1)) || {
+            match self.regions {
+                subst::ErasedRegions =>
+                    false,
+                subst::NonerasedRegions(ref regions) =>
+                    regions.iter().any(|r| r.escapes_depth(1)),
+            }
+        }
+    }
+
     pub fn self_ty(&self) -> Option<ty::t> {
         self.types.get_self().map(|&t| t)
     }
@@ -395,7 +406,7 @@ impl<T> VecPerParamSpace<T> {
         self.content.iter()
     }
 
-    pub fn enumerated_iter<'a>(&'a self) -> EnumeratedItems<'a,T> {
+    pub fn iter_enumerated<'a>(&'a self) -> EnumeratedItems<'a,T> {
         EnumeratedItems::new(self)
     }
 
@@ -422,6 +433,14 @@ impl<T> VecPerParamSpace<T> {
 
     pub fn map<U>(&self, pred: |&T| -> U) -> VecPerParamSpace<U> {
         let result = self.iter().map(pred).collect();
+        VecPerParamSpace::new_internal(result,
+                                       self.type_limit,
+                                       self.self_limit,
+                                       self.assoc_limit)
+    }
+
+    pub fn map_enumerated<U>(&self, pred: |(ParamSpace, uint, &T)| -> U) -> VecPerParamSpace<U> {
+        let result = self.iter_enumerated().map(pred).collect();
         VecPerParamSpace::new_internal(result,
                                        self.type_limit,
                                        self.self_limit,
@@ -565,11 +584,11 @@ struct SubstFolder<'a, 'tcx: 'a> {
 impl<'a, 'tcx> TypeFolder<'tcx> for SubstFolder<'a, 'tcx> {
     fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> { self.tcx }
 
-    fn enter_region_binding(&mut self) {
+    fn enter_region_binder(&mut self) {
         self.region_binders_passed += 1;
     }
 
-    fn exit_region_binding(&mut self) {
+    fn exit_region_binder(&mut self) {
         self.region_binders_passed -= 1;
     }
 

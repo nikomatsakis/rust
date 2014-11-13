@@ -271,10 +271,15 @@ pub fn lookup_in_trait_adjusted<'a, 'tcx>(
     // so this also effectively registers `obligation` as well.  (We
     // used to register `obligation` explicitly, but that resulted in
     // double error messages being reported.)
+    //
+    // Note that as the method comes from a trait, it should not have
+    // any late-bound regions appearing in its bounds.
+    let method_bounds = method_ty.generics.to_bounds();
+    assert!(!method_bounds.has_escaping_regions());
     fcx.add_obligations_for_parameters(
         traits::ObligationCause::misc(span),
         &trait_ref.substs,
-        &method_ty.generics.to_bounds());
+        &method_bounds);
 
     // FIXME(#18653) -- Try to resolve obligations, giving us more
     // typing information, which can sometimes be needed to avoid

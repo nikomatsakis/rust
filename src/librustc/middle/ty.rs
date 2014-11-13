@@ -1386,8 +1386,8 @@ impl GenericBounds {
     }
 
     pub fn has_escaping_regions(&self) -> bool {
-        self.types.any(|pb| pb.trait_bounds.any(|tr| tr.has_escaping_regions())) ||
-            self.regions.any(|r| r.escapes_depth(0))
+        self.types.any(|pb| pb.trait_bounds.iter().any(|tr| tr.has_escaping_regions())) ||
+            self.regions.any(|rs| r.iter().any(|r| escapes_depth(0)))
     }
 }
 
@@ -1409,14 +1409,7 @@ impl TraitRef {
     }
 
     pub fn has_escaping_regions(&self) -> bool {
-        self.substs.types.iter().any(|&t| ty::type_escapes_depth(t, 1)) || {
-            match self.substs.regions {
-                subst::ErasedRegions =>
-                    false,
-                subst::NonerasedRegions(ref regions) =>
-                    regions.iter().any(|r| r.escapes_depth(1)),
-            }
-        }
+        self.substs.has_regions_escaping_depth(1)
     }
 }
 

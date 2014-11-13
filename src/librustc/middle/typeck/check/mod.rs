@@ -1710,17 +1710,21 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
     }
 
-    pub fn instantiate_item_type(&self,
-                                 span: Span,
-                                 def_id: ast::DefId)
-                                 -> TypeAndSubsts
+    pub fn instantiate_type(&self,
+                            span: Span,
+                            def_id: ast::DefId)
+                            -> TypeAndSubsts
     {
         /*!
          * Returns the type of `def_id` with all generics replaced by
          * by fresh type/region variables. Also returns the
          * substitution from the type parameters on `def_id` to the
-         * fresh variables.  Registers any trait obligations specified
+         * fresh variables. Registers any trait obligations specified
          * on `def_id` at the same time.
+         *
+         * Note that function is only intended to be used with types
+         * (notably, not impls). This is because it doesn't do any
+         * instantiation of late-bound regions.
          */
 
         let polytype =
@@ -1959,8 +1963,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         let mut region_obligations = self.inh.region_obligations.borrow_mut();
         let region_obligation = RegionObligation { sub_region: r,
-                                  sup_type: ty,
-                                  origin: origin };
+                                                   sup_type: ty,
+                                                   origin: origin };
 
         match region_obligations.entry(self.body_id) {
             Vacant(entry) => { entry.set(vec![region_obligation]); },
@@ -3840,7 +3844,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
         let TypeAndSubsts {
             ty: mut struct_type,
             substs: struct_substs
-        } = fcx.instantiate_item_type(span, class_id);
+        } = fcx.instantiate_type(span, class_id);
 
         // Look up and check the fields.
         let class_fields = ty::lookup_struct_fields(tcx, class_id);
@@ -3882,7 +3886,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
         let TypeAndSubsts {
             ty: enum_type,
             substs: substitutions
-        } = fcx.instantiate_item_type(span, enum_id);
+        } = fcx.instantiate_type(span, enum_id);
 
         // Look up and check the enum variant fields.
         let variant_fields = ty::lookup_struct_fields(tcx, variant_id);
@@ -5360,23 +5364,34 @@ pub fn instantiate_path(fcx: &FnCtxt,
         assert_eq!(substs.regions().len(space), region_defs.len(space));
     }
 
+    // The things we are substituting into the type should not contain
+    // escaping late-bound regions.
+    assert!(!substs.has_regions_escaping_depth(0));
+
+    // In the case of static items taken from impls, there may be
+    // late-bound regions associated with the impl (not declared on
+    // the fn itself). Those should be replaced with fresh variables
+    // now. These can appear either on the type being referenced, or
+    // on the associated bounds.
+    let bounds = polytype.generics.to_bounds();
+    let (ty_late_bound, bounds) =
+        fcx.infcx().replace_late_bound_regions_with_fresh_regions(
+            span,
+            &ty::bind((polytype.ty, bounds))).0.value;
+
+    debug!("after late-bounds have been replaced: ty_late_bound={}", ty_late_bound.repr(fcx.tcx()));
+    debug!("after late-bounds have been replaced: bounds={}", bounds.repr(fcx.tcx()));
+
     fcx.add_obligations_for_parameters(
         traits::ObligationCause::new(span, traits::ItemObligation(def.def_id())),
         &substs,
-        &polytype.generics.to_bounds());
+        &bounds);
 
     // Substitute the values for the type parameters into the type of
     // the referenced item.
-    let ty_substituted = polytype.ty.subst(fcx.tcx(), &substs);
+    let ty_substituted = ty_late_bound.subst(fcx.tcx(), &substs);
 
-    // In the case of static methods taken from impls, there may be
-    // late-bound regions associated with the impl (not declared on
-    // the fn itself). Those should be replaced with fresh variables
-    // now.
-    let ty_substituted =
-        fcx.infcx().replace_late_bound_regions_with_fresh_regions(span,
-                                                                  &ty::bind(ty_substituted))
-        .0.value;
+    debug!("ty_substituted: ty_substituted={}", ty_substituted.repr(fcx.tcx()));
 
     fcx.write_ty(node_id, ty_substituted);
     fcx.write_substs(node_id, ty::ItemSubsts { substs: substs });

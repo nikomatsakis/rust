@@ -66,12 +66,12 @@ pub trait TypeFolder<'tcx> {
     /// binding level (for example, when entering a function
     /// signature). This is used by clients that want to track the
     /// Debruijn index nesting level.
-    fn enter_region_binding(&mut self) { }
+    fn enter_region_binder(&mut self) { }
 
     /// Invoked by the `super_*` routines when we exit a region
     /// binding level. This is used by clients that want to
     /// track the Debruijn index nesting level.
-    fn exit_region_binding(&mut self) { }
+    fn exit_region_binder(&mut self) { }
 
     fn fold_ty(&mut self, t: ty::t) -> ty::t {
         super_fold_ty(self, t)
@@ -163,6 +163,12 @@ impl TypeFoldable for () {
     }
 }
 
+impl<T:TypeFoldable,U:TypeFoldable> TypeFoldable for (T, U) {
+    fn fold_with<'tcx, F:TypeFolder<'tcx>>(&self, folder: &mut F) -> (T, U) {
+        (self.0.fold_with(folder), self.1.fold_with(folder))
+    }
+}
+
 impl<T:TypeFoldable> TypeFoldable for Option<T> {
     fn fold_with<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> Option<T> {
         self.as_ref().map(|t| t.fold_with(folder))
@@ -189,7 +195,16 @@ impl<T:TypeFoldable> TypeFoldable for OwnedSlice<T> {
 
 impl<T:TypeFoldable> TypeFoldable for VecPerParamSpace<T> {
     fn fold_with<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> VecPerParamSpace<T> {
-        self.map(|t| t.fold_with(folder))
+        let result = self.map_enumerated(|(space, index, elem)| {
+            if space == subst::FnSpace && index == 0 {
+                folder.enter_region_binder();
+            }
+            elem.fold_with(folder)
+        });
+        if result.len(subst::FnSpace) > 0 {
+            folder.exit_region_binder();
+        }
+        result
     }
 }
 
@@ -481,9 +496,9 @@ pub fn super_fold_fn_sig<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
                                                     sig: &ty::FnSig)
                                                     -> ty::FnSig
 {
-    this.enter_region_binding();
+    this.enter_region_binder();
     let result = super_fold_fn_sig_contents(this, sig);
-    this.exit_region_binding();
+    this.exit_region_binder();
     result
 }
 
@@ -532,9 +547,9 @@ pub fn super_fold_trait_ref<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
                                                        t: &ty::TraitRef)
                                                        -> ty::TraitRef
 {
-    this.enter_region_binding();
+    this.enter_region_binder();
     let result = super_fold_trait_ref_contents(this, t);
-    this.exit_region_binding();
+    this.exit_region_binder();
     result
 }
 
@@ -751,11 +766,11 @@ impl<'a, 'tcx> RegionFolder<'a, 'tcx> {
 impl<'a, 'tcx> TypeFolder<'tcx> for RegionFolder<'a, 'tcx> {
     fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> { self.tcx }
 
-    fn enter_region_binding(&mut self) {
+    fn enter_region_binder(&mut self) {
         self.current_depth += 1;
     }
 
-    fn exit_region_binding(&mut self) {
+    fn exit_region_binder(&mut self) {
         self.current_depth -= 1;
     }
 

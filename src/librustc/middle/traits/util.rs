@@ -184,7 +184,7 @@ pub fn obligations_for_generics(tcx: &ty::ctxt,
 
     let mut obligations = VecPerParamSpace::empty();
 
-    for (space, index, bounds) in generics.types.enumerated_iter() {
+    for (space, index, bounds) in generics.types.iter_enumerated() {
         push_obligations_for_param_bounds(tcx,
                                           cause,
                                           recursion_depth,
