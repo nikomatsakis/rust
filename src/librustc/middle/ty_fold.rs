@@ -187,6 +187,15 @@ impl<T:TypeFoldable> TypeFoldable for Vec<T> {
     }
 }
 
+impl<T:TypeFoldable> TypeFoldable for ty::Binder<T> {
+    fn fold_with<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::Binder<T> {
+        folder.enter_region_binder();
+        let result = ty::bind(self.value.fold_with(folder));
+        folder.exit_region_binder();
+        result
+    }
+}
+
 impl<T:TypeFoldable> TypeFoldable for OwnedSlice<T> {
     fn fold_with<'tcx, F: TypeFolder<'tcx>>(&self, folder: &mut F) -> OwnedSlice<T> {
         self.iter().map(|t| t.fold_with(folder)).collect()
@@ -777,11 +786,13 @@ impl<'a, 'tcx> TypeFolder<'tcx> for RegionFolder<'a, 'tcx> {
     fn fold_region(&mut self, r: ty::Region) -> ty::Region {
         match r {
             ty::ReLateBound(debruin, _) if debruin.depth < self.current_depth => {
-                debug!("RegionFolder.fold_region({}) skipped bound region", r.repr(self.tcx()));
+                debug!("RegionFolder.fold_region({}) skipped bound region (current depth={})",
+                       r.repr(self.tcx()), self.current_depth);
                 r
             }
             _ => {
-                debug!("RegionFolder.fold_region({}) folding free region", r.repr(self.tcx()));
+                debug!("RegionFolder.fold_region({}) folding free region (current_depth={})",
+                       r.repr(self.tcx()), self.current_depth);
                 (self.fld_r)(r, self.current_depth)
             }
         }

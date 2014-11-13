@@ -5619,16 +5619,6 @@ pub fn construct_parameter_environment(
     };
 
     //
-    // Compute the bounds on Self and the type parameters.
-    //
-
-    let mut type_bounds = VecPerParamSpace::empty();
-    for &space in subst::ParamSpace::all().iter() {
-        push_bounds_from_defs(tcx, &mut type_bounds, space, &free_substs,
-                              generics.types.get_slice(space));
-    }
-
-    //
     // Compute region bounds. For now, these relations are stored in a
     // global table on the tcx, so just enter them there. I'm not
     // crazy about this scheme, but it's convenient, at least.
@@ -5640,17 +5630,22 @@ pub fn construct_parameter_environment(
     }
 
 
-    debug!("construct_parameter_environment: free_id={} \
-           free_subst={} \
-           bounds={}",
-           free_id,
-           free_substs.repr(tcx),
-           type_bounds.repr(tcx));
+    //
+    // Compute the bounds on Self and the type parameters.
+    //
 
     let bounds = generics.to_bounds();
     let bounds = liberate_late_bound_regions(tcx, free_id, &bind(bounds)).value;
     let obligations = traits::obligations_for_generics(tcx, traits::ObligationCause::misc(span),
                                                        &bounds, &free_substs);
+    let type_bounds = bounds.types.subst(tcx, &free_substs);
+
+    debug!("construct_parameter_environment: free_id={} free_subst={} \
+           obligations={} type_bounds={}",
+           free_id,
+           free_substs.repr(tcx),
+           obligations.repr(tcx),
+           type_bounds.repr(tcx));
 
     return ty::ParameterEnvironment {
         free_substs: free_substs,
@@ -5682,17 +5677,6 @@ pub fn construct_parameter_environment(
                    i);
             let ty = ty::mk_param(tcx, space, i, def.def_id);
             types.push(space, ty);
-        }
-    }
-
-    fn push_bounds_from_defs(tcx: &ty::ctxt,
-                             bounds: &mut subst::VecPerParamSpace<ParamBounds>,
-                             space: subst::ParamSpace,
-                             free_substs: &subst::Substs,
-                             defs: &[TypeParameterDef]) {
-        for def in defs.iter() {
-            let b = def.bounds.subst(tcx, free_substs);
-            bounds.push(space, b);
         }
     }
 
