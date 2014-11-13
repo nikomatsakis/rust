@@ -98,12 +98,12 @@ impl Substs {
     }
 
     pub fn has_regions_escaping_depth(&self, depth: uint) -> bool {
-        self.types.iter().any(|&t| ty::type_escapes_depth(t, 1)) || {
+        self.types.iter().any(|&t| ty::type_escapes_depth(t, depth)) || {
             match self.regions {
-                subst::ErasedRegions =>
+                ErasedRegions =>
                     false,
-                subst::NonerasedRegions(ref regions) =>
-                    regions.iter().any(|r| r.escapes_depth(1)),
+                NonerasedRegions(ref regions) =>
+                    regions.iter().any(|r| r.escapes_depth(depth)),
             }
         }
     }

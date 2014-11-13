@@ -1387,7 +1387,7 @@ impl GenericBounds {
 
     pub fn has_escaping_regions(&self) -> bool {
         self.types.any(|pb| pb.trait_bounds.iter().any(|tr| tr.has_escaping_regions())) ||
-            self.regions.any(|rs| r.iter().any(|r| escapes_depth(0)))
+            self.regions.any(|rs| rs.iter().any(|r| r.escapes_depth(0)))
     }
 }
 
@@ -5622,9 +5622,9 @@ pub fn construct_parameter_environment(
     // Compute the bounds on Self and the type parameters.
     //
 
-    let mut bounds = VecPerParamSpace::empty();
+    let mut type_bounds = VecPerParamSpace::empty();
     for &space in subst::ParamSpace::all().iter() {
-        push_bounds_from_defs(tcx, &mut bounds, space, &free_substs,
+        push_bounds_from_defs(tcx, &mut type_bounds, space, &free_substs,
                               generics.types.get_slice(space));
     }
 
@@ -5645,14 +5645,16 @@ pub fn construct_parameter_environment(
            bounds={}",
            free_id,
            free_substs.repr(tcx),
-           bounds.repr(tcx));
+           type_bounds.repr(tcx));
 
+    let bounds = generics.to_bounds();
+    let bounds = liberate_late_bound_regions(tcx, free_id, &bind(bounds)).value;
     let obligations = traits::obligations_for_generics(tcx, traits::ObligationCause::misc(span),
-                                                       &generics.to_bounds(), &free_substs);
+                                                       &bounds, &free_substs);
 
     return ty::ParameterEnvironment {
         free_substs: free_substs,
-        bounds: bounds,
+        bounds: type_bounds,
         implicit_region_bound: ty::ReScope(free_id),
         caller_obligations: obligations,
         selection_cache: traits::SelectionCache::new(),

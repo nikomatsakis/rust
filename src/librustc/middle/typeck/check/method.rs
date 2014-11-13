@@ -1512,13 +1512,18 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
 
         let ref bare_fn_ty = candidate.method_ty.fty;
 
-        // Compute the method type with type parameters substituted and impl
-        // late-bound lifetimes instantiated
+        // Compute the method type with type parameters substituted
         debug!("fty={} all_substs={}", bare_fn_ty.repr(tcx), all_substs.repr(tcx));
         let bare_fn_ty = bare_fn_ty.subst(tcx, &all_substs);
-        let bare_fn_ty =
-            self.replace_late_bound_regions_with_fresh_var(&ty::bind(bare_fn_ty)).value;
         debug!("after subst, bare_fn_ty={}", bare_fn_ty.repr(tcx));
+
+        // Instantiate late-bound lifetimes
+        let bounds = candidate.method_ty.generics.to_bounds();
+        let (bare_fn_ty, bounds) =
+            self.replace_late_bound_regions_with_fresh_var(
+                &ty::bind((bare_fn_ty, bounds))).value;
+        debug!("late-bound lifetimes instantiated, bare_fn_ty={} \
+               bounds={}", bare_fn_ty.repr(tcx), bounds.repr(tcx));
 
         // Replace any bound regions that appear in the function
         // signature with region variables
