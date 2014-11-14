@@ -14,7 +14,7 @@ trait FnLike<A,R> {
     fn call(&self, arg: A) -> R;
 }
 
-type FnObject = for<'a> FnLike<&'a int, &'a int>;
+type FnObject<'b> = for<'a> FnLike<&'a int, &'a int> + 'b;
 
 struct Identity;
 

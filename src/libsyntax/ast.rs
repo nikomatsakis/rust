@@ -1097,7 +1097,7 @@ pub enum Ty_ {
     TyBareFn(P<BareFnTy>),
     TyTup(Vec<P<Ty>> ),
     TyPath(Path, Option<TyParamBounds>, NodeId), // for #7264; see above
-    TyPolyTraitRef(P<PolyTraitRef>), // a type like `for<'a> Foo<&'a Bar>`
+    TyPolyTraitRef(TyParamBounds), // a type like `for<'a> Foo<&'a Bar>+'a`
     /// A "qualified path", e.g. `<Vec<T> as SomeTrait>::SomeType`
     TyQPath(P<QPath>),
     /// No-op; kept solely so that we can pretty-print faithfully

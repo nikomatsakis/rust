@@ -400,8 +400,8 @@ pub fn walk_ty<'v, V: Visitor<'v>>(visitor: &mut V, typ: &'v Ty) {
             visitor.visit_ty(&**ty);
             visitor.visit_expr(&**expression)
         }
-        TyPolyTraitRef(ref poly_trait_ref) => {
-            visitor.visit_poly_trait_ref(&**poly_trait_ref)
+        TyPolyTraitRef(ref bounds) => {
+            walk_ty_param_bounds_helper(visitor, bounds)
         }
         TyTypeof(ref expression) => {
             visitor.visit_expr(&**expression)
