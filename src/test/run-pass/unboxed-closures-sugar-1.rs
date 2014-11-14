@@ -14,6 +14,7 @@
 // particular doesn't test bound regions.
 
 #![allow(dead_code)]
+#![feature(unboxed_closures)]
 
 struct Foo<T,U> {
     t: T, u: U

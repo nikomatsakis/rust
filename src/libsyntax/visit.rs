@@ -177,7 +177,7 @@ pub fn walk_view_item<'v, V: Visitor<'v>>(visitor: &mut V, vi: &'v ViewItem) {
                 ViewPathGlob(ref path, id) => {
                     visitor.visit_path(path, id);
                 }
-                ViewPathList(ref path, ref list, _) => {
+                ViewPathList(ref prefix, ref list, _) => {
                     for id in list.iter() {
                         match id.node {
                             PathListIdent { name, .. } => {
@@ -186,7 +186,10 @@ pub fn walk_view_item<'v, V: Visitor<'v>>(visitor: &mut V, vi: &'v ViewItem) {
                             PathListMod { .. } => ()
                         }
                     }
-                    walk_path(visitor, path);
+
+                    // Note that the `prefix` here is not a complete
+                    // path, so we don't use `visit_path`.
+                    walk_path(visitor, prefix);
                 }
             }
         }

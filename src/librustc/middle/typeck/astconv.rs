@@ -59,7 +59,6 @@ use middle::typeck::lookup_def_tcx;
 use middle::typeck::rscope::{UnelidableRscope, RegionScope, SpecificRscope, BindingRscope};
 use middle::typeck::rscope;
 use middle::typeck::TypeAndSubsts;
-use middle::ty_fold;
 use util::ppaux::{Repr, UserString};
 
 use std::collections::HashMap;
@@ -202,6 +201,15 @@ pub fn opt_ast_region_to_region<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
     r
 }
 
+/**
+ * Parenthesized parameters are only permitted when the path refers to
+ * a trait, because they may introduce higher-ranked binders.
+ */
+enum ParenthesizedFlag {
+    PermitParenthesizedParameters,
+    DoNotPermitParenthesizedParameters,
+}
+
 fn ast_path_substs<'tcx,AC,RS>(
     this: &AC,
     rscope: &RS,
@@ -209,7 +217,8 @@ fn ast_path_substs<'tcx,AC,RS>(
     decl_generics: &ty::Generics,
     self_ty: Option<ty::t>,
     associated_ty: Option<ty::t>,
-    path: &ast::Path)
+    path: &ast::Path,
+    permit_parenthesized: ParenthesizedFlag)
     -> Substs
     where AC: AstConv<'tcx>, RS: RegionScope
 {
@@ -233,10 +242,19 @@ fn ast_path_substs<'tcx,AC,RS>(
     assert!(decl_generics.types.all(|d| d.space != FnSpace));
 
     let (regions, types) = match path.segments.last().unwrap().parameters {
-        ast::AngleBracketedParameters(ref data) =>
-            angle_bracketed_parameters(this, rscope, data),
-        ast::ParenthesizedParameters(ref data) =>
-            parenthesized_parameters(this, data),
+        ast::AngleBracketedParameters(ref data) => {
+            angle_bracketed_parameters(this, rscope, data)
+        }
+        ast::ParenthesizedParameters(ref data) => {
+            match permit_parenthesized {
+                PermitParenthesizedParameters => {}
+                DoNotPermitParenthesizedParameters => {
+                    span_err!(tcx.sess, path.span, E0168,
+                              "parenthesized parameters may only be used with a trait");
+                }
+            }
+            parenthesized_parameters(this, data)
+        }
     };
 
     // If the type is parameterized by the this region, then replace this
@@ -423,15 +441,8 @@ pub fn instantiate_trait_ref<'tcx,AC,RS>(this: &AC,
                          ast_trait_ref.path.span,
                          ast_trait_ref.ref_id) {
         def::DefTrait(trait_def_id) => {
-            let trait_def = this.get_trait_def(trait_def_id);
-            let substs = ast_path_substs(this,
-                                         rscope,
-                                         trait_def_id,
-                                         &trait_def.generics,
-                                         self_ty,
-                                         associated_type,
-                                         &ast_trait_ref.path);
-            let trait_ref = Rc::new(ty::TraitRef::new(trait_def_id, substs));
+            let trait_ref = Rc::new(ast_path_to_trait_ref(this, rscope, trait_def_id, self_ty,
+                                                          associated_type, &ast_trait_ref.path));
             this.tcx().trait_refs.borrow_mut().insert(ast_trait_ref.ref_id,
                                                       trait_ref.clone());
             trait_ref
@@ -461,32 +472,9 @@ fn ast_path_to_trait_ref<'tcx,AC,RS>(
                                  &trait_def.generics,
                                  self_ty,
                                  associated_type,
-                                 path);
-
-    // Subtle. Trait references introduce a region binder, but the
-    // resolve_lifetime pass is not always aware when a path
-    // represents a trait-reference and when it doesn't, and hence the
-    // "binder count" gets off by 1 and we have to correct it.
-    //
-    // Example:
-    //
-    // ```
-    // trait Typer<'tcx> { ... }
-    // fn g<'tcx>(typer: &Typer<'tcx>) { ... }
-    //                 // ^~~~~ Turns out to be a trait reference
-    // ```
-    //
-    // In this case, the reference to `'tcx` would have depth 1, but
-    // it should have 2, one for the fn and one for the trait
-    // reference. But we can't know this until after resolve has fully
-    // executed.
-    let shifted_substs = if substs.has_regions_escaping_depth(0) {
-        ty_fold::shift_regions(this.tcx(), 1, &substs)
-    } else {
-        substs
-    };
-
-    ty::TraitRef::new(trait_def_id, shifted_substs)
+                                 path,
+                                 PermitParenthesizedParameters);
+    ty::TraitRef::new(trait_def_id, substs)
 }
 
 pub fn ast_path_to_ty<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
@@ -508,7 +496,8 @@ pub fn ast_path_to_ty<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
                                  &generics,
                                  None,
                                  None,
-                                 path);
+                                 path,
+                                 DoNotPermitParenthesizedParameters);
     let ty = decl_ty.subst(tcx, &substs);
     TypeAndSubsts { substs: substs, ty: ty }
 }
@@ -548,7 +537,8 @@ pub fn ast_path_to_ty_relaxed<'tcx,AC,RS>(
         Substs::new(VecPerParamSpace::params_from_type(type_params),
                     VecPerParamSpace::params_from_type(region_params))
     } else {
-        ast_path_substs(this, rscope, did, &generics, None, None, path)
+        ast_path_substs(this, rscope, did, &generics, None, None,
+                        path, DoNotPermitParenthesizedParameters)
     };
 
     let ty = decl_ty.subst(tcx, &substs);

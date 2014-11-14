@@ -18,6 +18,8 @@
  */
 
 use driver::session::Session;
+use middle::def;
+use middle::resolve::DefMap;
 use middle::subst;
 use middle::ty;
 use std::fmt;
@@ -49,7 +51,8 @@ pub type NamedRegionMap = NodeMap<DefRegion>;
 struct LifetimeContext<'a> {
     sess: &'a Session,
     named_region_map: &'a mut NamedRegionMap,
-    scope: Scope<'a>
+    scope: Scope<'a>,
+    def_map: &'a DefMap,
 }
 
 enum ScopeChain<'a> {
@@ -69,12 +72,13 @@ type Scope<'a> = &'a ScopeChain<'a>;
 
 static ROOT_SCOPE: ScopeChain<'static> = RootScope;
 
-pub fn krate(sess: &Session, krate: &ast::Crate) -> NamedRegionMap {
+pub fn krate(sess: &Session, krate: &ast::Crate, def_map: &DefMap) -> NamedRegionMap {
     let mut named_region_map = NodeMap::new();
     visit::walk_crate(&mut LifetimeContext {
         sess: sess,
         named_region_map: &mut named_region_map,
-        scope: &ROOT_SCOPE
+        scope: &ROOT_SCOPE,
+        def_map: def_map,
     }, krate);
     sess.abort_if_errors();
     named_region_map
@@ -154,6 +158,27 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
                     visit::walk_ty(this, ty);
                 });
             }
+            ast::TyPath(ref path, ref opt_bounds, id) => {
+                // if this path references a trait, then this will resolve to
+                // a trait ref, which introduces a binding scope.
+                match self.def_map.borrow().get(&id) {
+                    Some(&def::DefTrait(..)) => {
+                        self.with(LateScope(&Vec::new(), self.scope), |this| {
+                            this.visit_path(path, id);
+                        });
+
+                        match *opt_bounds {
+                            Some(ref bounds) => {
+                                visit::walk_ty_param_bounds_helper(self, bounds);
+                            }
+                            None => { }
+                        }
+                    }
+                    _ => {
+                        visit::walk_ty(self, ty);
+                    }
+                }
+            }
             _ => {
                 visit::walk_ty(self, ty)
             }
@@ -215,7 +240,8 @@ impl<'a> LifetimeContext<'a> {
         let mut this = LifetimeContext {
             sess: sess,
             named_region_map: *named_region_map,
-            scope: &wrap_scope
+            scope: &wrap_scope,
+            def_map: self.def_map,
         };
         debug!("entering scope {}", this.scope);
         f(&mut this);
