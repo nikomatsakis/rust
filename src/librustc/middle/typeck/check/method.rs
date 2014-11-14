@@ -831,6 +831,7 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
         let bounds =
             self.fcx.inh.param_env.bounds.get(space, index).trait_bounds
             .as_slice();
+
         self.push_inherent_candidates_from_bounds_inner(bounds,
             |this, trait_ref, m, method_num| {
                 match restrict_to {
@@ -897,8 +898,22 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
             if !self.has_applicable_self(&*method) {
                 self.record_static_candidate(TraitSource(bound_trait_ref.def_id));
             } else {
+                // If this is a higher-ranked trait reference, it's time to
+                // instantiate those bound regions. For example, if we had
+                //
+                //     where F : for<'a> Fn<&'a int, &'a int>
+                //
+                // and now we see `f.call()`, then we should replace `'a` with
+                // a fresh region variable.
+                let instantiated_trait_ref =
+                    if bound_trait_ref.has_bound_regions() { // micro-optimization
+                        self.replace_late_bound_regions_with_fresh_var(&bound_trait_ref)
+                    } else {
+                        bound_trait_ref
+                    };
+
                 match mk_cand(self,
-                              bound_trait_ref,
+                              instantiated_trait_ref,
                               method,
                               pos) {
                     Some(cand) => {

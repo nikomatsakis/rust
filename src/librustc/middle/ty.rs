@@ -1411,6 +1411,10 @@ impl TraitRef {
     pub fn has_escaping_regions(&self) -> bool {
         self.substs.has_regions_escaping_depth(1)
     }
+
+    pub fn has_bound_regions(&self) -> bool {
+        self.substs.has_regions_escaping_depth(0)
+    }
 }
 
 /// When type checking, we use the `ParameterEnvironment` to track
@@ -5619,18 +5623,6 @@ pub fn construct_parameter_environment(
     };
 
     //
-    // Compute region bounds. For now, these relations are stored in a
-    // global table on the tcx, so just enter them there. I'm not
-    // crazy about this scheme, but it's convenient, at least.
-    //
-
-    for &space in subst::ParamSpace::all().iter() {
-        record_region_bounds_from_defs(tcx, space, &free_substs,
-                                       generics.regions.get_slice(space));
-    }
-
-
-    //
     // Compute the bounds on Self and the type parameters.
     //
 
@@ -5639,6 +5631,18 @@ pub fn construct_parameter_environment(
     let obligations = traits::obligations_for_generics(tcx, traits::ObligationCause::misc(span),
                                                        &bounds, &free_substs);
     let type_bounds = bounds.types.subst(tcx, &free_substs);
+
+    //
+    // Compute region bounds. For now, these relations are stored in a
+    // global table on the tcx, so just enter them there. I'm not
+    // crazy about this scheme, but it's convenient, at least.
+    //
+
+    for &space in subst::ParamSpace::all().iter() {
+        record_region_bounds(tcx, space, &free_substs,
+                             bounds.regions.get_slice(space));
+    }
+
 
     debug!("construct_parameter_environment: free_id={} free_subst={} \
            obligations={} type_bounds={}",
@@ -5680,16 +5684,16 @@ pub fn construct_parameter_environment(
         }
     }
 
-    fn record_region_bounds_from_defs(tcx: &ty::ctxt,
-                                      space: subst::ParamSpace,
-                                      free_substs: &subst::Substs,
-                                      defs: &[RegionParameterDef]) {
-        for (subst_region, def) in
+    fn record_region_bounds(tcx: &ty::ctxt,
+                            space: subst::ParamSpace,
+                            free_substs: &subst::Substs,
+                            bound_sets: &[Vec<ty::Region>]) {
+        for (subst_region, bound_set) in
             free_substs.regions().get_slice(space).iter().zip(
-                defs.iter())
+                bound_sets.iter())
         {
             // For each region parameter 'subst...
-            let bounds = def.bounds.subst(tcx, free_substs);
+            let bounds = bound_set.subst(tcx, free_substs);
             for bound_region in bounds.iter() {
                 // Which is declared with a bound like 'subst:'bound...
                 match (subst_region, bound_region) {
@@ -5701,7 +5705,7 @@ pub fn construct_parameter_environment(
                     _ => {
                         // All named regions are instantiated with free regions.
                         tcx.sess.bug(
-                            format!("push_region_bounds_from_defs: \
+                            format!("record_region_bounds: \
                                      non free region: {} / {}",
                                     subst_region.repr(tcx),
                                     bound_region.repr(tcx)).as_slice());
