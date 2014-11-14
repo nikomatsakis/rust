@@ -964,9 +964,9 @@ pub fn ast_ty_to_ty<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
                                                              ast_ty.span,
                                                              &[Rc::new(result.clone())],
                                                              ast_bounds);
-                        ty::mk_trait(tcx,
-                                     result,
-                                     bounds)
+                        let result_ty = ty::mk_trait(tcx, result, bounds);
+                        debug!("ast_ty_to_ty: result_ty={}", result_ty.repr(this.tcx()));
+                        result_ty
                     }
                     def::DefTy(did, _) | def::DefStruct(did) => {
                         ast_path_to_ty(this, rscope, did, path).ty
@@ -1342,13 +1342,14 @@ pub fn ty_of_closure<'tcx, AC: AstConv<'tcx>>(
     expected_sig: Option<ty::FnSig>)
     -> ty::ClosureTy
 {
-    debug!("ty_of_fn_decl");
+    debug!("ty_of_closure(expected_sig={})",
+           expected_sig.repr(this.tcx()));
 
     // new region names that appear inside of the fn decl are bound to
     // that function type
     let rb = rscope::BindingRscope::new();
 
-    let input_tys = decl.inputs.iter().enumerate().map(|(i, a)| {
+    let input_tys: Vec<_> = decl.inputs.iter().enumerate().map(|(i, a)| {
         let expected_arg_ty = expected_sig.as_ref().and_then(|e| {
             // no guarantee that the correct number of expected args
             // were supplied
@@ -1369,6 +1370,9 @@ pub fn ty_of_closure<'tcx, AC: AstConv<'tcx>>(
         ast::TyInfer => ty::FnConverging(this.ty_infer(decl.output.span)),
         _ => ty::FnConverging(ast_ty_to_ty(this, &rb, &*decl.output))
     };
+
+    debug!("ty_of_closure: input_tys={}", input_tys.repr(this.tcx()));
+    debug!("ty_of_closure: output_ty={}", output_ty.repr(this.tcx()));
 
     ty::ClosureTy {
         fn_style: fn_style,

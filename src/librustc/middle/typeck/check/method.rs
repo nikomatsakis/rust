@@ -1836,7 +1836,7 @@ fn replace_late_bound_regions_with_fresh_var<T>(infcx: &infer::InferCtxt,
     replace_late_bound_regions(
         infcx.tcx,
         value,
-        |br| infcx.next_region_var(infer::LateBoundRegion(span, br))).0
+        |br, _| infcx.next_region_var(infer::LateBoundRegion(span, br))).0
 }
 
 fn trait_method(tcx: &ty::ctxt,

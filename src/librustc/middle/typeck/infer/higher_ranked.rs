@@ -70,7 +70,7 @@ impl<'tcx,C> HigherRankedRelations for C
         // Second, we instantiate each bound region in the supertype with a
         // fresh concrete region.
         let (b_prime, skol_map) = {
-            replace_late_bound_regions(self.tcx(), b, |br| {
+            replace_late_bound_regions(self.tcx(), b, |br, _| {
                 let skol = self.infcx().region_vars.new_skolemized(br);
                 debug!("Bound region {} skolemized to {}",
                        bound_region_to_string(self.tcx(), "", false, br),
@@ -139,7 +139,7 @@ impl<'tcx,C> HigherRankedRelations for C
         // Collect constraints.
         let result0 =
             try!(HigherRankedCombineable::super_combine(self, &a_with_fresh, &b_with_fresh));
-        debug!("result0 = {}", result0.repr(self.tcx()));
+        debug!("lub result0 = {}", result0.repr(self.tcx()));
 
         // Generalize the regions appearing in result0 if possible
         let new_vars = self.infcx().region_vars.vars_created_since_mark(mark);
@@ -148,13 +148,20 @@ impl<'tcx,C> HigherRankedRelations for C
             fold_regions_in(
                 self.tcx(),
                 &result0,
-                |r| generalize_region(self.infcx(), span, mark,
-                                      new_vars.as_slice(), &a_map, r));
+                |r, debruijn| generalize_region(self.infcx(), span, mark, debruijn,
+                                                new_vars.as_slice(), &a_map, r));
+
+        debug!("lub({},{}) = {}",
+               a.repr(self.tcx()),
+               b.repr(self.tcx()),
+               result1.repr(self.tcx()));
+
         return Ok(result1);
 
         fn generalize_region(infcx: &InferCtxt,
                              span: Span,
                              mark: RegionMark,
+                             debruijn: ty::DebruijnIndex,
                              new_vars: &[ty::RegionVid],
                              a_map: &HashMap<ty::BoundRegion, ty::Region>,
                              r0: ty::Region)
@@ -189,7 +196,7 @@ impl<'tcx,C> HigherRankedRelations for C
                     debug!("generalize_region(r0={}): \
                             replacing with {}, tainted={}",
                            r0, *a_br, tainted);
-                    return ty::ReLateBound(ty::DebruijnIndex::new(1), *a_br);
+                    return ty::ReLateBound(debruijn, *a_br);
                 }
             }
 
@@ -224,7 +231,7 @@ impl<'tcx,C> HigherRankedRelations for C
         // Collect constraints.
         let result0 =
             try!(HigherRankedCombineable::super_combine(self, &a_with_fresh, &b_with_fresh));
-        debug!("result0 = {}", result0.repr(self.tcx()));
+        debug!("glb result0 = {}", result0.repr(self.tcx()));
 
         // Generalize the regions appearing in fn_ty0 if possible
         let new_vars = self.infcx().region_vars.vars_created_since_mark(mark);
@@ -233,14 +240,22 @@ impl<'tcx,C> HigherRankedRelations for C
             fold_regions_in(
                 self.tcx(),
                 &result0,
-                |r| generalize_region(self.infcx(), span, mark, new_vars.as_slice(),
-                                      &a_map, a_vars.as_slice(), b_vars.as_slice(), r));
-        debug!("result1 = {}", result1.repr(self.tcx()));
+                |r, debruijn| generalize_region(self.infcx(), span, mark, debruijn,
+                                                new_vars.as_slice(),
+                                                &a_map, a_vars.as_slice(), b_vars.as_slice(),
+                                                r));
+
+        debug!("glb({},{}) = {}",
+               a.repr(self.tcx()),
+               b.repr(self.tcx()),
+               result1.repr(self.tcx()));
+
         return Ok(result1);
 
         fn generalize_region(infcx: &InferCtxt,
                              span: Span,
                              mark: RegionMark,
+                             debruijn: ty::DebruijnIndex,
                              new_vars: &[ty::RegionVid],
                              a_map: &HashMap<ty::BoundRegion, ty::Region>,
                              a_vars: &[ty::RegionVid],
@@ -259,13 +274,13 @@ impl<'tcx,C> HigherRankedRelations for C
             for r in tainted.iter() {
                 if is_var_in_set(a_vars, *r) {
                     if a_r.is_some() {
-                        return fresh_bound_variable(infcx);
+                        return fresh_bound_variable(infcx, debruijn);
                     } else {
                         a_r = Some(*r);
                     }
                 } else if is_var_in_set(b_vars, *r) {
                     if b_r.is_some() {
-                        return fresh_bound_variable(infcx);
+                        return fresh_bound_variable(infcx, debruijn);
                     } else {
                         b_r = Some(*r);
                     }
@@ -304,7 +319,7 @@ impl<'tcx,C> HigherRankedRelations for C
                 return r0;
             } else {
                 // Other:
-                return fresh_bound_variable(infcx);
+                return fresh_bound_variable(infcx, debruijn);
             }
         }
 
@@ -323,8 +338,8 @@ impl<'tcx,C> HigherRankedRelations for C
                 format!("could not find original bound region for {}", r)[]);
         }
 
-        fn fresh_bound_variable(infcx: &InferCtxt) -> ty::Region {
-            infcx.region_vars.new_bound()
+        fn fresh_bound_variable(infcx: &InferCtxt, debruijn: ty::DebruijnIndex) -> ty::Region {
+            infcx.region_vars.new_bound(debruijn)
         }
     }
 }
@@ -408,21 +423,21 @@ fn is_var_in_set(new_vars: &[ty::RegionVid], r: ty::Region) -> bool {
     }
 }
 
-fn fold_regions_in<T:TypeFoldable>(tcx: &ty::ctxt,
-                                   value: &T,
-                                   fldr: |r: ty::Region| -> ty::Region)
-                                   -> T
+fn fold_regions_in<T:HigherRankedFoldable>(tcx: &ty::ctxt,
+                                           value: &T,
+                                           fldr: |ty::Region, ty::DebruijnIndex| -> ty::Region)
+                                           -> T
 {
-    value.fold_with(&mut ty_fold::RegionFolder::new(tcx, |region, current_depth| {
+    value.fold_contents(&mut ty_fold::RegionFolder::new(tcx, |region, current_depth| {
         // we should only be encountering "escaping" late-bound regions here,
         // because the ones at the current level should have been replaced
         // with fresh variables
         assert!(match region {
-            ty::ReLateBound(debruijn, _) => debruijn.depth > current_depth,
+            ty::ReLateBound(..) => false,
             _ => true
         });
 
-        fldr(region)
+        fldr(region, ty::DebruijnIndex::new(current_depth))
     }))
 }
 

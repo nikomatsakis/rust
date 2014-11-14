@@ -786,8 +786,8 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         subst::Substs::new_trait(type_parameters, regions, assoc_type_parameters, self_ty)
     }
 
-    pub fn fresh_bound_region(&self) -> ty::Region {
-        self.region_vars.new_bound()
+    pub fn fresh_bound_region(&self, debruijn: ty::DebruijnIndex) -> ty::Region {
+        self.region_vars.new_bound(debruijn)
     }
 
     pub fn resolve_regions_and_report_errors(&self) {
@@ -965,7 +965,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         ty::replace_late_bound_regions(
             self.tcx,
             value,
-            |br| self.next_region_var(LateBoundRegion(span, br)))
+            |br, _| self.next_region_var(LateBoundRegion(span, br)))
     }
 }
 

@@ -2060,6 +2060,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                           substs: &Substs,
                                           generics: &ty::GenericBounds) {
         assert!(!generics.has_escaping_regions());
+        assert!(!substs.has_regions_escaping_depth(0));
 
         let obligations =
             traits::obligations_for_generics(self.tcx(),
@@ -3568,6 +3569,10 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                      expected: Expectation) {
         let tcx = fcx.ccx.tcx;
 
+        debug!("check_expr_fn(expr={}, expected={})",
+               expr.repr(tcx),
+               expected.repr(tcx));
+
         // Find the expected input/output types (if any). Substitute
         // fresh bound regions for any bound regions we find in the
         // expected types so as to avoid capture.
@@ -3581,7 +3586,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                         replace_late_bound_regions(
                             tcx,
                             &cenv.sig,
-                            |_| fcx.inh.infcx.fresh_bound_region());
+                            |_, debruijn| fcx.inh.infcx.fresh_bound_region(debruijn));
                     let onceness = match (&store, &cenv.store) {
                         // As the closure type and onceness go, only three
                         // combinations are legit:

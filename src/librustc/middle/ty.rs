@@ -5908,7 +5908,7 @@ pub fn liberate_late_bound_regions<HR>(
 
     replace_late_bound_regions(
         tcx, value,
-        |br| ty::ReFree(ty::FreeRegion{scope_id: scope_id, bound_region: br})).0
+        |br, _| ty::ReFree(ty::FreeRegion{scope_id: scope_id, bound_region: br})).0
 }
 
 pub fn erase_late_bound_regions<HR>(
@@ -5922,13 +5922,13 @@ pub fn erase_late_bound_regions<HR>(
      * Useful in trans.
      */
 
-    replace_late_bound_regions(tcx, value, |_| ty::ReStatic).0
+    replace_late_bound_regions(tcx, value, |_, _| ty::ReStatic).0
 }
 
 pub fn replace_late_bound_regions<HR>(
     tcx: &ty::ctxt,
     value: &HR,
-    mapf: |ty::BoundRegion| -> ty::Region)
+    mapf: |BoundRegion, DebruijnIndex| -> ty::Region)
     -> (HR, HashMap<ty::BoundRegion,ty::Region>)
     where HR : HigherRankedFoldable
 {
@@ -5945,7 +5945,7 @@ pub fn replace_late_bound_regions<HR>(
             match region {
                 ty::ReLateBound(debruijn, br) if debruijn.depth == current_depth => {
                     * match map.entry(br) {
-                        Vacant(entry) => entry.set(mapf(br)),
+                        Vacant(entry) => entry.set(mapf(br, debruijn)),
                         Occupied(entry) => entry.into_mut(),
                     }
                 }
@@ -5961,7 +5961,7 @@ pub fn replace_late_bound_regions<HR>(
         // `free`.
         value.fold_contents(&mut f)
     };
-    debug!("resulting map: {}", map);
+    debug!("resulting map: {} value: {}", map, value.repr(tcx));
     (value, map)
 }
 
