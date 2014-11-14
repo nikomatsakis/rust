@@ -120,6 +120,12 @@ pub trait Visitor<'v> {
     fn visit_path(&mut self, path: &'v Path, _id: ast::NodeId) {
         walk_path(self, path)
     }
+    fn visit_path_segment(&mut self, path_span: Span, path_segment: &'v PathSegment) {
+        walk_path_segment(self, path_span, path_segment)
+    }
+    fn visit_path_parameters(&mut self, path_span: Span, path_parameters: &'v PathParameters) {
+        walk_path_parameters(self, path_span, path_parameters)
+    }
     fn visit_attribute(&mut self, _attr: &'v Attribute) {}
 }
 
@@ -419,24 +425,35 @@ pub fn walk_lifetime_decls_helper<'v, V: Visitor<'v>>(visitor: &mut V,
 
 pub fn walk_path<'v, V: Visitor<'v>>(visitor: &mut V, path: &'v Path) {
     for segment in path.segments.iter() {
-        visitor.visit_ident(path.span, segment.identifier);
+        visitor.visit_path_segment(path.span, segment);
+    }
+}
 
-        match segment.parameters {
-            ast::AngleBracketedParameters(ref data) => {
-                for typ in data.types.iter() {
-                    visitor.visit_ty(&**typ);
-                }
-                for lifetime in data.lifetimes.iter() {
-                    visitor.visit_lifetime_ref(lifetime);
-                }
+pub fn walk_path_segment<'v, V: Visitor<'v>>(visitor: &mut V,
+                                             path_span: Span,
+                                             segment: &'v PathSegment) {
+    visitor.visit_ident(path_span, segment.identifier);
+    visitor.visit_path_parameters(path_span, &segment.parameters);
+}
+
+pub fn walk_path_parameters<'v, V: Visitor<'v>>(visitor: &mut V,
+                                                _path_span: Span,
+                                                path_parameters: &'v PathParameters) {
+    match *path_parameters {
+        ast::AngleBracketedParameters(ref data) => {
+            for typ in data.types.iter() {
+                visitor.visit_ty(&**typ);
             }
-            ast::ParenthesizedParameters(ref data) => {
-                for typ in data.inputs.iter() {
-                    visitor.visit_ty(&**typ);
-                }
-                for typ in data.output.iter() {
-                    visitor.visit_ty(&**typ);
-                }
+            for lifetime in data.lifetimes.iter() {
+                visitor.visit_lifetime_ref(lifetime);
+            }
+        }
+        ast::ParenthesizedParameters(ref data) => {
+            for typ in data.inputs.iter() {
+                visitor.visit_ty(&**typ);
+            }
+            for typ in data.output.iter() {
+                visitor.visit_ty(&**typ);
             }
         }
     }
