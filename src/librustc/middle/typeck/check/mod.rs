@@ -1023,22 +1023,23 @@ fn compare_impl_method(tcx: &ty::ctxt,
 
     // This code is best explained by example. Consider a trait:
     //
-    //     trait Trait<T> {
-    //          fn method<'a,M>(t: T, m: &'a M) -> Self;
+    //     trait Trait<'t,T> {
+    //          fn method<'a,M>(t: &'t T, m: &'a M) -> Self;
     //     }
     //
     // And an impl:
     //
-    //     impl<'i, U> Trait<&'i U> for Foo {
-    //          fn method<'b,N>(t: &'i U, m: &'b N) -> Foo;
+    //     impl<'i, 'j, U> Trait<'j, &'i U> for Foo {
+    //          fn method<'b,N>(t: &'j &'i U, m: &'b N) -> Foo;
     //     }
     //
     // We wish to decide if those two method types are compatible.
     //
-    // We start out with trait_to_impl_substs, that maps the trait type
-    // parameters to impl type parameters:
+    // We start out with trait_to_impl_substs, that maps the trait
+    // type parameters to impl type parameters. This is taken from the
+    // impl trait reference:
     //
-    //     trait_to_impl_substs = {T => &'i U, Self => Foo}
+    //     trait_to_impl_substs = {'t => 'j, T => &'i U, Self => Foo}
     //
     // We create a mapping `dummy_substs` that maps from the impl type
     // parameters to fresh types and regions. For type parameters,
@@ -1093,6 +1094,7 @@ fn compare_impl_method(tcx: &ty::ctxt,
     if !check_region_bounds_on_impl_method(tcx,
                                            impl_m_span,
                                            impl_m,
+                                           impl_m_body_id,
                                            &trait_m.generics,
                                            &impl_m.generics,
                                            &trait_to_skol_substs,
@@ -1230,6 +1232,7 @@ fn compare_impl_method(tcx: &ty::ctxt,
     fn check_region_bounds_on_impl_method(tcx: &ty::ctxt,
                                           span: Span,
                                           impl_m: &ty::Method,
+                                          impl_m_body_id: ast::NodeId,
                                           trait_generics: &ty::Generics,
                                           impl_generics: &ty::Generics,
                                           trait_to_skol_substs: &Substs,
@@ -1275,9 +1278,13 @@ fn compare_impl_method(tcx: &ty::ctxt,
 
         debug!("check_region_bounds_on_impl_method: \
                trait_generics={} \
-               impl_generics={}",
+               impl_generics={} \
+               trait_to_skol_substs={} \
+               impl_to_skol_substs={}",
                trait_generics.repr(tcx),
-               impl_generics.repr(tcx));
+               impl_generics.repr(tcx),
+               trait_to_skol_substs.repr(tcx),
+               impl_to_skol_substs.repr(tcx));
 
         // Must have same number of early-bound lifetime parameters.
         // Unfortunately, if the user screws up the bounds, then this
@@ -1307,6 +1314,18 @@ fn compare_impl_method(tcx: &ty::ctxt,
                 trait_param.bounds.subst(tcx, trait_to_skol_substs);
             let impl_bounds =
                 impl_param.bounds.subst(tcx, impl_to_skol_substs);
+
+            // The bounds may reference late-bound regions from the
+            // impl declaration. In that case, we want to replace
+            // those with the liberated variety so as to match the
+            // versions appearing in the `trait_to_skol_substs`.
+            // There are two-levels of binder to be aware of: the
+            // impl, and the method.
+            let impl_bounds =
+                ty::liberate_late_bound_regions(
+                    tcx,
+                    impl_m_body_id,
+                    &ty::bind(ty::bind(impl_bounds))).value.value;
 
             debug!("check_region_bounds_on_impl_method: \
                    trait_param={} \
