@@ -40,7 +40,8 @@ trait SomeTrait {
 impl<'a, T> SomeTrait for &'a Bar<T> {
     fn dummy1(self: &&'a Bar<T>) { }
     fn dummy2(self: &Bar<T>) {} //~ ERROR mismatched self type
-    fn dummy3(self: &&Bar<T>) {} //~ ERROR mismatched types
+    fn dummy3(self: &&Bar<T>) {} //~ ERROR lifetime mismatch
+    //~^ ERROR lifetime mismatch
 }
 
 fn main() {

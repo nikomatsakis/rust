@@ -46,7 +46,7 @@ fn bar<'a>(x: &'a int) {
     fn h(a: for<'a>|&'a int|) { } // OK
 
     // But not in the bound of a closure, it's not in scope *there*
-    fn i(a: for<'a>|&int|:'a) { } // ERROR undeclared lifetime
+    fn i(a: for<'a>|&int|:'a) { } //~ ERROR undeclared lifetime
 }
 
 // Test nesting of lifetimes in fn type declarations
