@@ -23,7 +23,6 @@ use middle::ty;
 use std::fmt;
 use syntax::ast;
 use syntax::codemap::Span;
-use syntax::owned_slice::OwnedSlice;
 use syntax::parse::token::special_idents;
 use syntax::parse::token;
 use syntax::print::pprust::{lifetime_to_string};
@@ -155,7 +154,9 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
                     visit::walk_ty(this, ty);
                 });
             }
-            _ => return visit::walk_ty(self, ty)
+            _ => {
+                visit::walk_ty(self, ty)
+            }
         }
     }
 
@@ -179,7 +180,7 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
 
     fn visit_generics(&mut self, generics: &ast::Generics) {
         for ty_param in generics.ty_params.iter() {
-            self.visit_ty_param_bounds(&ty_param.bounds);
+            visit::walk_ty_param_bounds_helper(self, &ty_param.bounds);
             match ty_param.default {
                 Some(ref ty) => self.visit_ty(&**ty),
                 None => {}
@@ -187,8 +188,24 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
         }
         for predicate in generics.where_clause.predicates.iter() {
             self.visit_ident(predicate.span, predicate.ident);
-            self.visit_ty_param_bounds(&predicate.bounds);
+            visit::walk_ty_param_bounds_helper(self, &predicate.bounds);
         }
+    }
+
+    fn visit_poly_trait_ref(&mut self, trait_ref: &ast::PolyTraitRef) {
+        debug!("visit_poly_trait_ref trait_ref={}", trait_ref);
+
+        self.with(LateScope(&trait_ref.bound_lifetimes, self.scope), |this| {
+            this.check_lifetime_defs(&trait_ref.bound_lifetimes);
+            for lifetime in trait_ref.bound_lifetimes.iter() {
+                this.visit_lifetime_decl(lifetime);
+            }
+            this.visit_trait_ref(&trait_ref.trait_ref)
+        })
+    }
+
+    fn visit_trait_ref(&mut self, trait_ref: &ast::TraitRef) {
+        self.visit_path(&trait_ref.path, trait_ref.ref_id);
     }
 }
 
@@ -203,34 +220,6 @@ impl<'a> LifetimeContext<'a> {
         debug!("entering scope {}", this.scope);
         f(&mut this);
         debug!("exiting scope {}", this.scope);
-    }
-
-    fn visit_ty_param_bounds(&mut self,
-                             bounds: &OwnedSlice<ast::TyParamBound>) {
-        for bound in bounds.iter() {
-            match *bound {
-                ast::TraitTyParamBound(ref trait_ref) => {
-                    self.visit_poly_trait_ref(trait_ref);
-                }
-                ast::RegionTyParamBound(ref lifetime) => {
-                    self.visit_lifetime_ref(lifetime);
-                }
-            }
-        }
-    }
-
-    fn visit_poly_trait_ref(&mut self, trait_ref: &ast::PolyTraitRef) {
-        self.with(LateScope(&trait_ref.bound_lifetimes, self.scope), |this| {
-            this.check_lifetime_defs(&trait_ref.bound_lifetimes);
-            for lifetime in trait_ref.bound_lifetimes.iter() {
-                this.visit_lifetime_decl(lifetime);
-            }
-            this.visit_trait_ref(&trait_ref.trait_ref)
-        })
-    }
-
-    fn visit_trait_ref(&mut self, trait_ref: &ast::TraitRef) {
-        self.visit_path(&trait_ref.path, trait_ref.ref_id);
     }
 
     /// Visits self by adding a scope and handling recursive walk over the contents with `walk`.
