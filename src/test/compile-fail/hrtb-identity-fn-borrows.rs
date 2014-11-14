@@ -8,28 +8,28 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// A basic test of using a higher-ranked trait bound.
+// Test that the `'a` in the where clause correctly links the region
+// of the output to the region of the input.
 
 trait FnLike<A,R> {
     fn call(&self, arg: A) -> R;
 }
 
-struct Identity;
-
-impl<'a, T> FnLike<&'a T, &'a T> for Identity {
-    fn call(&self, arg: &'a T) -> &'a T {
-        arg
-    }
-}
-
 fn call_repeatedly<F>(f: F)
     where F : for<'a> FnLike<&'a int, &'a int>
 {
-    let x = 3;
+    // Result is stored: cannot re-assign `x`
+    let mut x = 3;
     let y = f.call(&x);
-    assert_eq!(3, *y);
+    x = 5; //~ ERROR cannot assign
+
+    // Result is not stored: can re-assign `x`
+    let mut x = 3;
+    f.call(&x);
+    f.call(&x);
+    f.call(&x);
+    x = 5;
 }
 
 fn main() {
-    call_repeatedly(Identity);
 }
