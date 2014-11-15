@@ -13,8 +13,8 @@
 use char;
 use fmt;
 use iter::{range, DoubleEndedIterator};
-use num::{Float, FPNaN, FPInfinite, ToPrimitive, Primitive};
-use num::{Zero, One, cast};
+use num::{Float, FPNaN, FPInfinite, ToPrimitive};
+use num::cast;
 use result::Ok;
 use slice::{mod, SlicePrelude};
 use str::StrPrelude;
@@ -72,14 +72,14 @@ static DIGIT_E_RADIX: uint = ('e' as uint) - ('a' as uint) + 11u;
  * - `f`             - A closure to invoke with the bytes representing the
  *                     float.
  *
- * # Failure
- * - Fails if `radix` < 2 or `radix` > 36.
- * - Fails if `radix` > 14 and `exp_format` is `ExpDec` due to conflict
+ * # Panics
+ * - Panics if `radix` < 2 or `radix` > 36.
+ * - Panics if `radix` > 14 and `exp_format` is `ExpDec` due to conflict
  *   between digit and exponent sign `'e'`.
- * - Fails if `radix` > 25 and `exp_format` is `ExpBin` due to conflict
+ * - Panics if `radix` > 25 and `exp_format` is `ExpBin` due to conflict
  *   between digit and exponent sign `'p'`.
  */
-pub fn float_to_str_bytes_common<T: Primitive + Float, U>(
+pub fn float_to_str_bytes_common<T: Float, U>(
     num: T,
     radix: uint,
     negative_zero: bool,
@@ -97,8 +97,8 @@ pub fn float_to_str_bytes_common<T: Primitive + Float, U>(
         _ => ()
     }
 
-    let _0: T = Zero::zero();
-    let _1: T = One::one();
+    let _0: T = Float::zero();
+    let _1: T = Float::one();
 
     match num.classify() {
         FPNaN => return f("NaN".as_bytes()),

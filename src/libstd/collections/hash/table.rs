@@ -17,7 +17,7 @@ use iter::{Iterator, count};
 use kinds::{Sized, marker};
 use mem::{min_align_of, size_of};
 use mem;
-use num::{CheckedAdd, CheckedMul, is_power_of_two};
+use num::{Int, UnsignedInt};
 use ops::{Deref, DerefMut, Drop};
 use option::{Some, None, Option};
 use ptr::{RawPtr, copy_nonoverlapping_memory, zero_memory};
@@ -162,29 +162,6 @@ impl<K, V> RawBucket<K, V> {
             key:  self.key.offset(count),
             val:  self.val.offset(count),
         }
-    }
-}
-
-// For parameterizing over mutability.
-
-#[cfg(stage0)]
-impl<'t, K, V> Deref<RawTable<K, V>> for &'t RawTable<K, V> {
-    fn deref(&self) -> &RawTable<K, V> {
-        &**self
-    }
-}
-
-#[cfg(stage0)]
-impl<'t, K, V> Deref<RawTable<K, V>> for &'t mut RawTable<K, V> {
-    fn deref(&self) -> &RawTable<K,V> {
-        &**self
-    }
-}
-
-#[cfg(stage0)]
-impl<'t, K, V> DerefMut<RawTable<K, V>> for &'t mut RawTable<K, V> {
-    fn deref_mut(&mut self) -> &mut RawTable<K,V> {
-        &mut **self
     }
 }
 
@@ -512,11 +489,11 @@ impl<K, V, M: Deref<RawTable<K, V>>> GapThenFull<K, V, M> {
 /// Rounds up to a multiple of a power of two. Returns the closest multiple
 /// of `target_alignment` that is higher or equal to `unrounded`.
 ///
-/// # Failure
+/// # Panics
 ///
-/// Fails if `target_alignment` is not a power of two.
+/// Panics if `target_alignment` is not a power of two.
 fn round_up_to_next(unrounded: uint, target_alignment: uint) -> uint {
-    assert!(is_power_of_two(target_alignment));
+    assert!(target_alignment.is_power_of_two());
     (unrounded + target_alignment - 1) & !(target_alignment - 1)
 }
 
@@ -604,9 +581,9 @@ impl<K, V> RawTable<K, V> {
                 vals_size,   min_align_of::< V >());
 
         // One check for overflow that covers calculation and rounding of size.
-        let size_of_bucket = size_of::<u64>().checked_add(&size_of::<K>()).unwrap()
-                                             .checked_add(&size_of::<V>()).unwrap();
-        assert!(size >= capacity.checked_mul(&size_of_bucket)
+        let size_of_bucket = size_of::<u64>().checked_add(size_of::<K>()).unwrap()
+                                             .checked_add(size_of::<V>()).unwrap();
+        assert!(size >= capacity.checked_mul(size_of_bucket)
                                 .expect("capacity overflow"),
                 "capacity overflow");
 

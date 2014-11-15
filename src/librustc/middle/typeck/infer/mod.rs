@@ -29,7 +29,6 @@ use middle::ty::replace_late_bound_regions;
 use middle::ty;
 use middle::ty_fold::{HigherRankedFoldable, TypeFolder, TypeFoldable};
 use std::cell::{RefCell};
-use std::collections::HashMap;
 use std::rc::Rc;
 use syntax::ast;
 use syntax::codemap;
@@ -959,7 +958,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         &self,
         span: Span,
         value: &T)
-        -> (T, HashMap<ty::BoundRegion,ty::Region>)
+        -> (T, FnvHashMap<ty::BoundRegion,ty::Region>)
         where T : HigherRankedFoldable
     {
         ty::replace_late_bound_regions(

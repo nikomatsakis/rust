@@ -17,8 +17,7 @@ use char::Char;
 use from_str::from_str;
 use iter::Iterator;
 use num;
-use num::{Int, Bounded};
-use num::{Float, FPNaN, FPInfinite, ToPrimitive};
+use num::{Int, Float, FPNaN, FPInfinite, ToPrimitive};
 use option::{None, Option, Some};
 use slice::{SlicePrelude, CloneSliceAllocPrelude};
 use str::StrPrelude;
@@ -89,13 +88,13 @@ pub enum SignFormat {
  * It returns a tuple because there can be ambiguity between a special value
  * and a number representation at higher bases.
  *
- * # Failure
- * - Fails if `radix` < 2 or `radix` > 36.
+ * # Panics
+ * - Panics if `radix` < 2 or `radix` > 36.
  */
 fn int_to_str_bytes_common<T: Int>(num: T, radix: uint, sign: SignFormat, f: |u8|) {
     assert!(2 <= radix && radix <= 36);
 
-    let _0: T = num::zero();
+    let _0: T = Int::zero();
 
     let neg = num < _0;
     let radix_gen: T = num::cast(radix).unwrap();
@@ -117,7 +116,7 @@ fn int_to_str_bytes_common<T: Int>(num: T, radix: uint, sign: SignFormat, f: |u8
         // numbers [-35 .. 0] we always have [0 .. 35].
         let current_digit_signed = deccum % radix_gen;
         let current_digit = if current_digit_signed < _0 {
-            -current_digit_signed
+            _0 - current_digit_signed
         } else {
             current_digit_signed
         };
@@ -173,11 +172,11 @@ fn int_to_str_bytes_common<T: Int>(num: T, radix: uint, sign: SignFormat, f: |u8
  * It returns a tuple because there can be ambiguity between a special value
  * and a number representation at higher bases.
  *
- * # Failure
- * - Fails if `radix` < 2 or `radix` > 36.
- * - Fails if `radix` > 14 and `exp_format` is `ExpDec` due to conflict
+ * # Panics
+ * - Panics if `radix` < 2 or `radix` > 36.
+ * - Panics if `radix` > 14 and `exp_format` is `ExpDec` due to conflict
  *   between digit and exponent sign `'e'`.
- * - Fails if `radix` > 25 and `exp_format` is `ExpBin` due to conflict
+ * - Panics if `radix` > 25 and `exp_format` is `ExpBin` due to conflict
  *   between digit and exponent sign `'p'`.
  */
 pub fn float_to_str_bytes_common<T: Float>(
@@ -195,8 +194,8 @@ pub fn float_to_str_bytes_common<T: Float>(
         _ => ()
     }
 
-    let _0: T = num::zero();
-    let _1: T = num::one();
+    let _0: T = Float::zero();
+    let _1: T = Float::one();
 
     match num.classify() {
         FPNaN => { return (b"NaN".to_vec(), true); }
@@ -431,8 +430,8 @@ pub fn from_str_radix_float<T: Float>(src: &str, radix: uint) -> Option<T> {
            "from_str_radix_float: must lie in the range `[2, 36]` - found {}",
            radix);
 
-    let _0: T = num::zero();
-    let _1: T = num::one();
+    let _0: T = Float::zero();
+    let _1: T = Float::one();
     let radix_t: T = num::cast(radix as int).unwrap();
 
     // Special values
@@ -559,8 +558,8 @@ pub fn from_str_radix_float<T: Float>(src: &str, radix: uint) -> Option<T> {
             };
 
             match (is_positive, exp) {
-                (true,  Some(exp)) => num::pow(base, exp),
-                (false, Some(exp)) => _1 / num::pow(base, exp),
+                (true,  Some(exp)) => base.powi(exp as i32),
+                (false, Some(exp)) => _1 / base.powi(exp as i32),
                 (_, None)          => return None,
             }
         },
@@ -579,9 +578,9 @@ pub fn from_str_radix_int<T: Int>(src: &str, radix: uint) -> Option<T> {
         num::cast(x).unwrap()
     }
 
-    let _0: T = num::zero();
-    let _1: T = num::one();
-    let is_signed = _0 > Bounded::min_value();
+    let _0: T = Int::zero();
+    let _1: T = Int::one();
+    let is_signed = _0 > Int::min_value();
 
     let (is_positive, src) =  match src.slice_shift_char() {
         (Some('-'), src) if is_signed => (false, src),
@@ -601,11 +600,11 @@ pub fn from_str_radix_int<T: Int>(src: &str, radix: uint) -> Option<T> {
                 Some(x) => x,
                 None => return None,
             };
-            result = match result.checked_mul(&radix) {
+            result = match result.checked_mul(radix) {
                 Some(result) => result,
                 None => return None,
             };
-            result = match result.checked_add(&x) {
+            result = match result.checked_add(x) {
                 Some(result) => result,
                 None => return None,
             };
@@ -616,11 +615,11 @@ pub fn from_str_radix_int<T: Int>(src: &str, radix: uint) -> Option<T> {
                 Some(x) => x,
                 None => return None,
             };
-            result = match result.checked_mul(&radix) {
+            result = match result.checked_mul(radix) {
                 Some(result) => result,
                 None => return None,
             };
-            result = match result.checked_sub(&x) {
+            result = match result.checked_sub(x) {
                 Some(result) => result,
                 None => return None,
             };

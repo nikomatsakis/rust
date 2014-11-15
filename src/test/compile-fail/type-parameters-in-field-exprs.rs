@@ -8,10 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(struct_variant)]
-
-pub enum Foo {
-    Bar {
-        baz: int
-    }
+struct Foo {
+    x: int,
+    y: int,
 }
+
+fn main() {
+    let f = Foo {
+        x: 1,
+        y: 2,
+    };
+    f.x::<int>;
+    //~^ ERROR field expressions may not have type parameters
+}
+

@@ -39,11 +39,9 @@ extern crate getopts;
 extern crate regex;
 extern crate serialize;
 extern crate term;
-extern crate time;
 
 use std::collections::TreeMap;
 use stats::Stats;
-use time::precise_time_ns;
 use getopts::{OptGroup, optflag, optopt};
 use regex::Regex;
 use serialize::{json, Decodable};
@@ -53,16 +51,18 @@ use term::color::{Color, RED, YELLOW, GREEN, CYAN};
 
 use std::cmp;
 use std::f64;
-use std::fmt;
 use std::fmt::Show;
+use std::fmt;
 use std::from_str::FromStr;
 use std::io::fs::PathExtensions;
 use std::io::stdio::StdWriter;
 use std::io::{File, ChanReader, ChanWriter};
 use std::io;
+use std::num::{Float, FloatMath, Int};
 use std::os;
 use std::string::String;
 use std::task::TaskBuilder;
+use std::time::Duration;
 
 // to be used by rustc to compile tests in libtest
 pub mod test {
@@ -106,7 +106,6 @@ enum NamePadding { PadNone, PadOnLeft, PadOnRight }
 
 impl TestDesc {
     fn padded_name(&self, column_count: uint, align: NamePadding) -> String {
-        use std::num::Saturating;
         let mut name = String::from_str(self.name.as_slice());
         let fill = column_count.saturating_sub(name.len());
         let mut pad = " ".repeat(fill);
@@ -175,8 +174,7 @@ impl fmt::Show for TestFn {
 /// call to `iter`.
 pub struct Bencher {
     iterations: u64,
-    ns_start: u64,
-    ns_end: u64,
+    dur: Duration,
     pub bytes: u64,
 }
 
@@ -973,56 +971,6 @@ fn get_concurrency() -> uint {
     }
 }
 
-// NOTE(stage0): remove function after a snapshot
-#[cfg(stage0)]
-pub fn filter_tests(opts: &TestOpts, tests: Vec<TestDescAndFn>) -> Vec<TestDescAndFn> {
-    let mut filtered = tests;
-
-    // Remove tests that don't match the test filter
-    filtered = match opts.filter {
-        None => filtered,
-        Some(ref re) => {
-            filtered.into_iter()
-                .filter(|test| re.is_match(test.desc.name.as_slice())).collect()
-        }
-    };
-
-    // Maybe pull out the ignored test and unignore them
-    filtered = if !opts.run_ignored {
-        filtered
-    } else {
-        fn filter(test: TestDescAndFn) -> Option<TestDescAndFn> {
-            if test.desc.ignore {
-                let TestDescAndFn {desc, testfn} = test;
-                Some(TestDescAndFn {
-                    desc: TestDesc {ignore: false, ..desc},
-                    testfn: testfn
-                })
-            } else {
-                None
-            }
-        };
-        filtered.into_iter().filter_map(|x| filter(x)).collect()
-    };
-
-    // Sort the tests alphabetically
-    filtered.sort_by(|t1, t2| t1.desc.name.as_slice().cmp(&t2.desc.name.as_slice()));
-
-    // Shard the remaining tests, if sharding requested.
-    match opts.test_shard {
-        None => filtered,
-        Some((a,b)) => {
-            filtered.into_iter().enumerate()
-            // note: using a - 1 so that the valid shards, for example, are
-            // 1.2 and 2.2 instead of 0.2 and 1.2
-            .filter(|&(i,_)| i % b == (a - 1))
-            .map(|(_,t)| t)
-            .collect()
-        }
-    }
-}
-
-#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
 pub fn filter_tests(opts: &TestOpts, tests: Vec<TestDescAndFn>) -> Vec<TestDescAndFn> {
     let mut filtered = tests;
 
@@ -1168,7 +1116,7 @@ impl MetricMap {
 
     /// Load MetricDiff from a file.
     ///
-    /// # Failure
+    /// # Panics
     ///
     /// This function will panic if the path does not exist or the path does not
     /// contain a valid metric map.
@@ -1322,20 +1270,16 @@ pub fn black_box<T>(dummy: T) {
 impl Bencher {
     /// Callback for benchmark functions to run in their body.
     pub fn iter<T>(&mut self, inner: || -> T) {
-        self.ns_start = precise_time_ns();
-        let k = self.iterations;
-        for _ in range(0u64, k) {
-            black_box(inner());
-        }
-        self.ns_end = precise_time_ns();
+        self.dur = Duration::span(|| {
+            let k = self.iterations;
+            for _ in range(0u64, k) {
+                black_box(inner());
+            }
+        });
     }
 
     pub fn ns_elapsed(&mut self) -> u64 {
-        if self.ns_start == 0 || self.ns_end == 0 {
-            0
-        } else {
-            self.ns_end - self.ns_start
-        }
+        self.dur.num_nanoseconds().unwrap() as u64
     }
 
     pub fn ns_per_iter(&mut self) -> u64 {
@@ -1372,41 +1316,44 @@ impl Bencher {
         // (i.e. larger error bars).
         if n == 0 { n = 1; }
 
-        let mut total_run = 0;
+        let mut total_run = Duration::nanoseconds(0);
         let samples : &mut [f64] = [0.0_f64, ..50];
         loop {
-            let loop_start = precise_time_ns();
+            let mut summ = None;
+            let mut summ5 = None;
 
-            for p in samples.iter_mut() {
-                self.bench_n(n, |x| f(x));
-                *p = self.ns_per_iter() as f64;
-            };
+            let loop_run = Duration::span(|| {
 
-            stats::winsorize(samples, 5.0);
-            let summ = stats::Summary::new(samples);
+                for p in samples.iter_mut() {
+                    self.bench_n(n, |x| f(x));
+                    *p = self.ns_per_iter() as f64;
+                };
 
-            for p in samples.iter_mut() {
-                self.bench_n(5 * n, |x| f(x));
-                *p = self.ns_per_iter() as f64;
-            };
+                stats::winsorize(samples, 5.0);
+                summ = Some(stats::Summary::new(samples));
 
-            stats::winsorize(samples, 5.0);
-            let summ5 = stats::Summary::new(samples);
+                for p in samples.iter_mut() {
+                    self.bench_n(5 * n, |x| f(x));
+                    *p = self.ns_per_iter() as f64;
+                };
 
-            let now = precise_time_ns();
-            let loop_run = now - loop_start;
+                stats::winsorize(samples, 5.0);
+                summ5 = Some(stats::Summary::new(samples));
+            });
+            let summ = summ.unwrap();
+            let summ5 = summ5.unwrap();
 
             // If we've run for 100ms and seem to have converged to a
             // stable median.
-            if loop_run > 100_000_000 &&
+            if loop_run.num_milliseconds() > 100 &&
                 summ.median_abs_dev_pct < 1.0 &&
                 summ.median - summ5.median < summ5.median_abs_dev {
                 return summ5;
             }
 
-            total_run += loop_run;
+            total_run = total_run + loop_run;
             // Longest we ever run for is 3s.
-            if total_run > 3_000_000_000 {
+            if total_run.num_seconds() > 3 {
                 return summ5;
             }
 
@@ -1417,13 +1364,13 @@ impl Bencher {
 
 pub mod bench {
     use std::cmp;
+    use std::time::Duration;
     use super::{Bencher, BenchSamples};
 
     pub fn benchmark(f: |&mut Bencher|) -> BenchSamples {
         let mut bs = Bencher {
             iterations: 0,
-            ns_start: 0,
-            ns_end: 0,
+            dur: Duration::nanoseconds(0),
             bytes: 0
         };
 
