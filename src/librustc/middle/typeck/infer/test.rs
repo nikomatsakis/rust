@@ -295,7 +295,7 @@ impl<'a, 'tcx> Env<'a, 'tcx> {
         ty::ReEarlyBound(ast::DUMMY_NODE_ID, space, index, name)
     }
 
-    pub fn re_late_bound_with_debruin(&self, id: uint, debruijn: ty::DebruijnIndex) -> ty::Region {
+    pub fn re_late_bound_with_debruijn(&self, id: uint, debruijn: ty::DebruijnIndex) -> ty::Region {
         ty::ReLateBound(debruijn, ty::BrAnon(id))
     }
 
@@ -305,13 +305,13 @@ impl<'a, 'tcx> Env<'a, 'tcx> {
 
     pub fn t_rptr_late_bound(&self, id: uint) -> ty::t {
         ty::mk_imm_rptr(self.infcx.tcx,
-                        self.re_late_bound_with_debruin(id, ty::DebruijnIndex::new(1)),
+                        self.re_late_bound_with_debruijn(id, ty::DebruijnIndex::new(1)),
                         ty::mk_int())
     }
 
     pub fn t_rptr_late_bound_with_debruijn(&self, id: uint, debruijn: ty::DebruijnIndex) -> ty::t {
         ty::mk_imm_rptr(self.infcx.tcx,
-                        self.re_late_bound_with_debruin(id, debruijn),
+                        self.re_late_bound_with_debruijn(id, debruijn),
                         ty::mk_int())
     }
 
@@ -652,7 +652,7 @@ fn escaping() {
 
         // t_fn = |&int|+&int
         let t_fn = env.t_closure([t_rptr_bound1], ty::mk_nil(),
-                                 env.re_late_bound_with_debruin(1, ty::DebruijnIndex::new(1)));
+                                 env.re_late_bound_with_debruijn(1, ty::DebruijnIndex::new(1)));
         assert!(ty::type_has_escaping_regions(t_fn));
     })
 }
@@ -665,7 +665,7 @@ fn subst_region_renumber_region() {
      */
 
     test_env(EMPTY_SOURCE_STR, errors([]), |env| {
-        let re_bound1 = env.re_late_bound_with_debruin(1, ty::DebruijnIndex::new(1));
+        let re_bound1 = env.re_late_bound_with_debruijn(1, ty::DebruijnIndex::new(1));
 
         // type t_source<'a> = fn(&'a int)
         let t_source = {
