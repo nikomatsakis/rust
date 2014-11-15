@@ -760,7 +760,7 @@ pub struct ParamTy {
  *
  * Let's start with the reference type `&'b int` that is the first
  * argument to the inner function. This region `'b` is assigned a De
- * Bruin index of 1, meaning "the innermost binder" (in this case, a
+ * Bruijn index of 1, meaning "the innermost binder" (in this case, a
  * fn). The region `'a` that appears in the second argument type (`&'a
  * int`) would then be assigned a De Bruijn index of 2, meaning "the
  * second-innermost binder". (These indices are written on the arrays

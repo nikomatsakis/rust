@@ -22,7 +22,6 @@ use syntax::ast::{Many, Once};
 use syntax::ast::{NormalFn, UnsafeFn};
 use syntax::ast::{Onceness, FnStyle};
 use syntax::ast::{MutMutable, MutImmutable};
-use util::nodemap::FnvHashMap;
 use util::ppaux::mt_to_string;
 use util::ppaux::Repr;
 

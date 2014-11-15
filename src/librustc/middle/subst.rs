@@ -716,7 +716,7 @@ impl<'a,'tcx> SubstFolder<'a,'tcx> {
          *
          * ```
          * type FuncTuple<A> = (A,fn(A));
-         * type MetaFuncTuple = for<'a> fn(Func<&'a int>)
+         * type MetaFuncTuple = for<'a> fn(FuncTuple<&'a int>)
          * ```
          *
          * Here the final type will be:

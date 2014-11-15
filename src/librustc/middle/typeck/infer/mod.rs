@@ -34,6 +34,7 @@ use syntax::ast;
 use syntax::codemap;
 use syntax::codemap::Span;
 use util::common::indent;
+use util::nodemap::FnvHashMap;
 use util::ppaux::{ty_to_string};
 use util::ppaux::{trait_ref_to_string, Repr};
 

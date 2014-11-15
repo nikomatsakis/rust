@@ -37,7 +37,6 @@ use middle::typeck::infer::*;
 use middle::typeck::infer::combine::*;
 use middle::typeck::infer::glb::Glb;
 use middle::typeck::infer::lub::Lub;
-use util::nodemap::FnvHashMap;
 use util::ppaux::Repr;
 
 pub trait LatticeDir {
