@@ -126,7 +126,7 @@ fn test_env(source_string: &str,
     let lang_items = lang_items::collect_language_items(krate, &sess);
     let resolve::CrateMap { def_map, freevars, capture_mode_map, .. } =
         resolve::resolve_crate(&sess, &lang_items, krate);
-    let named_region_map = resolve_lifetime::krate(&sess, krate);
+    let named_region_map = resolve_lifetime::krate(&sess, krate, &def_map);
     let region_map = region::resolve_crate(&sess, krate);
     let stability_index = stability::Index::build(krate);
     let type_arena = TypedArena::new();

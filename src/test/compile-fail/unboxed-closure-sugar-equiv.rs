@@ -13,15 +13,16 @@
 // angle brackets. This test covers only simple types and in
 // particular doesn't test bound regions.
 
+#![feature(unboxed_closures)]
 #![allow(dead_code)]
 
-struct Foo<T,U> {
-    t: T, u: U
+trait Foo<T,U> {
+    fn dummy(&self, t: T, u: U);
 }
 
-trait Eq<X> { }
-impl<X> Eq<X> for X { }
-fn eq<A,B:Eq<A>>() { }
+trait Eq<Sized? X> for Sized? { }
+impl<Sized? X> Eq<X> for X { }
+fn eq<Sized? A,Sized? B:Eq<A>>() { }
 
 fn test<'a,'b>() {
     // No errors expected:
