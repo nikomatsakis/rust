@@ -29,7 +29,6 @@ use middle::typeck::check::regionmanip;
 use std::rc::Rc;
 use syntax::abi;
 use syntax::ast_map;
-use syntax::ast_util;
 use syntax::codemap::{Span, Pos};
 use syntax::parse::token;
 use syntax::print::pprust;
@@ -1186,7 +1185,7 @@ impl UserString for ty::TraitRef {
             };
 
         let trait_def = ty::lookup_trait_def(tcx, self.def_id);
-        parameterized(tcx, base.as_slice(), &self.substs, &trait_def.generics)
+        parameterized(tcx, base.as_slice(), &trait_ref.substs, &trait_def.generics)
     }
 }
 
