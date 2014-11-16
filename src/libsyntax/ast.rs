@@ -10,7 +10,7 @@
 
 // The Rust abstract syntax tree.
 
-use codemap::{Span, Spanned, DUMMY_SP, ExpnId, respan};
+use codemap::{Span, Spanned, DUMMY_SP, ExpnId};
 use abi::Abi;
 use ast_util;
 use owned_slice::OwnedSlice;
@@ -19,8 +19,8 @@ use parse::token;
 use ptr::P;
 
 use std::fmt;
-use std::num::Zero;
 use std::fmt::Show;
+use std::num::Int;
 use std::rc::Rc;
 use serialize::{Encodable, Decodable, Encoder, Decoder};
 
@@ -783,13 +783,13 @@ impl TokenTree {
                 TtToken(sp, token::Pound)
             }
             (&TtToken(sp, token::DocComment(name)), 1) => {
-                let doc = MetaNameValue(token::intern_and_get_ident("doc"),
-                                        respan(sp, LitStr(token::get_name(name), CookedStr)));
-                let doc = token::NtMeta(P(respan(sp, doc)));
                 TtDelimited(sp, Rc::new(Delimited {
                     delim: token::Bracket,
                     open_span: sp,
-                    tts: vec![TtToken(sp, token::Interpolated(doc))],
+                    tts: vec![TtToken(sp, token::Ident(token::str_to_ident("doc"),
+                                                       token::Plain)),
+                              TtToken(sp, token::Eq),
+                              TtToken(sp, token::LitStr(name))],
                     close_span: sp,
                 }))
             }
@@ -857,9 +857,9 @@ pub enum Sign {
     Plus
 }
 
-impl<T: PartialOrd+Zero> Sign {
+impl<T: Int> Sign {
     pub fn new(n: T) -> Sign {
-        if n < Zero::zero() {
+        if n < Int::zero() {
             Minus
         } else {
             Plus
@@ -893,7 +893,6 @@ pub enum Lit_ {
     LitInt(u64, LitIntType),
     LitFloat(InternedString, FloatTy),
     LitFloatUnsuffixed(InternedString),
-    LitNil,
     LitBool(bool),
 }
 
@@ -1084,24 +1083,34 @@ pub struct BareFnTy {
 }
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+/// The different kinds of types recognized by the compiler
 pub enum Ty_ {
-    TyNil,
-    TyBot, /* bottom type */
-    TyUniq(P<Ty>),
     TyVec(P<Ty>),
+    /// A fixed length array (`[T, ..n]`)
     TyFixedLengthVec(P<Ty>, P<Expr>),
+    /// A raw pointer (`*const T` or `*mut T`)
     TyPtr(MutTy),
+    /// A reference (`&'a T` or `&'a mut T`)
     TyRptr(Option<Lifetime>, MutTy),
+    /// A closure (e.g. `|uint| -> bool`)
     TyClosure(P<ClosureTy>),
+    /// A procedure (e.g `proc(uint) -> bool`)
     TyProc(P<ClosureTy>),
+    /// A bare function (e.g. `fn(uint) -> bool`)
     TyBareFn(P<BareFnTy>),
+    /// A tuple (`(A, B, C, D,...)`)
     TyTup(Vec<P<Ty>> ),
+    /// A path (`module::module::...::Type`) or primitive
+    ///
+    /// Type parameters are stored in the Path itself
     TyPath(Path, Option<TyParamBounds>, NodeId), // for #7264; see above
-    TyPolyTraitRef(P<PolyTraitRef>), // a type like `for<'a> Foo<&'a Bar>`
+    /// A type like `for<'a> Foo<&'a Bar>`
+    TyPolyTraitRef(P<PolyTraitRef>),
     /// A "qualified path", e.g. `<Vec<T> as SomeTrait>::SomeType`
     TyQPath(P<QPath>),
     /// No-op; kept solely so that we can pretty-print faithfully
     TyParen(P<Ty>),
+    /// Unused for now
     TyTypeof(P<Expr>),
     /// TyInfer means the type should be inferred instead of it having been
     /// specified. This can appear anywhere in a type.
@@ -1159,8 +1168,7 @@ impl Arg {
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct FnDecl {
     pub inputs: Vec<Arg>,
-    pub output: P<Ty>,
-    pub cf: RetStyle,
+    pub output: FunctionRetTy,
     pub variadic: bool
 }
 
@@ -1182,12 +1190,21 @@ impl fmt::Show for FnStyle {
 }
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
-pub enum RetStyle {
+pub enum FunctionRetTy {
     /// Functions with return type ! that always
     /// raise an error or exit (i.e. never return to the caller)
-    NoReturn,
+    NoReturn(Span),
     /// Everything else
-    Return,
+    Return(P<Ty>),
+}
+
+impl FunctionRetTy {
+    pub fn span(&self) -> Span {
+        match *self {
+            NoReturn(span) => span,
+            Return(ref ty) => ty.span
+        }
+    }
 }
 
 /// Represents the kind of 'self' associated with a method

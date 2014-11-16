@@ -253,11 +253,13 @@ pub fn trans_unboxing_shim(bcx: Block,
                            llshimmedfn: ValueRef,
                            fty: &ty::BareFnTy,
                            method_id: ast::DefId,
-                           substs: subst::Substs)
+                           substs: &subst::Substs)
                            -> ValueRef {
     let _icx = push_ctxt("trans_unboxing_shim");
     let ccx = bcx.ccx();
     let tcx = bcx.tcx();
+
+    let fty = fty.subst(tcx, substs);
 
     // Transform the self type to `Box<self_type>`.
     let self_type = fty.sig.inputs[0];
@@ -279,8 +281,7 @@ pub fn trans_unboxing_shim(bcx: Block,
         abi: fty.abi,
         sig: boxed_function_type,
     };
-    let boxed_function_type =
-        ty::mk_bare_fn(tcx, boxed_function_type).subst(tcx, &substs);
+    let boxed_function_type = ty::mk_bare_fn(tcx, boxed_function_type);
     let function_type = match fty.abi {
         synabi::RustCall => {
             // We're passing through to a RustCall ABI function, but
@@ -301,10 +302,10 @@ pub fn trans_unboxing_shim(bcx: Block,
                 abi: synabi::Rust,
                 sig: fake_ty,
             };
-            ty::mk_bare_fn(tcx, fake_ty).subst(tcx, &substs)
+            ty::mk_bare_fn(tcx, fake_ty)
         }
         _ => {
-            ty::mk_bare_fn(tcx, (*fty).clone()).subst(tcx, &substs)
+            ty::mk_bare_fn(tcx, fty)
         }
     };
 
@@ -763,7 +764,7 @@ pub fn trans_call_inner<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         expr::Ignore => {
             let ret_ty = match ret_ty {
                 ty::FnConverging(ret_ty) => ret_ty,
-                ty::FnDiverging => ty::mk_nil()
+                ty::FnDiverging => ty::mk_nil(ccx.tcx())
             };
             if !is_rust_fn ||
               type_of::return_uses_outptr(ccx, ret_ty) ||
@@ -956,7 +957,6 @@ fn trans_args_under_call_abi<'blk, 'tcx>(
                 llargs.push(arg_datum.add_clean(bcx.fcx, arg_cleanup_scope));
             }
         }
-        ty::ty_nil => {}
         _ => {
             bcx.sess().span_bug(tuple_expr.span,
                                 "argument to `.call()` wasn't a tuple?!")
@@ -1003,7 +1003,6 @@ fn trans_overloaded_call_args<'blk, 'tcx>(
                 }))
             }
         }
-        ty::ty_nil => {}
         _ => {
             bcx.sess().span_bug(arg_exprs[0].span,
                                 "argument to `.call()` wasn't a tuple?!")

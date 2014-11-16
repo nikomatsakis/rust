@@ -13,12 +13,11 @@
 use c_str::{CString, ToCStr};
 use clone::Clone;
 use cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering};
-use from_str::FromStr;
 use hash;
 use io::Writer;
 use iter::{DoubleEndedIterator, AdditiveIterator, Extend, Iterator, Map};
 use option::{Option, None, Some};
-use str::Str;
+use str::{FromStr, Str};
 use str;
 use slice::{CloneSliceAllocPrelude, Splits, AsSlice, VectorVector,
             PartialEqSlicePrelude, SlicePrelude};
@@ -327,9 +326,9 @@ impl GenericPath for Path {
 impl Path {
     /// Returns a new Path from a byte vector or string
     ///
-    /// # Failure
+    /// # Panics
     ///
-    /// Fails the task if the vector contains a NUL.
+    /// Panics the task if the vector contains a NUL.
     #[inline]
     pub fn new<T: BytesContainer>(path: T) -> Path {
         GenericPath::new(path)

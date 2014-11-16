@@ -16,6 +16,7 @@
 use core::prelude::*;
 use core::kinds::marker;
 use core::fmt;
+use core::num::Int;
 
 // FIXME(contentions): implement union family of methods? (general design may be wrong here)
 
@@ -496,7 +497,7 @@ mod test {
                 unsafe { mem::transmute(v) }
             }
         }
-        let mut set = EnumSet::empty();
-        set.add(V64);
+        let mut set = EnumSet::new();
+        set.insert(V64);
     }
 }

@@ -17,11 +17,10 @@
 
 use prelude::*;
 
-use from_str::FromStr;
 use intrinsics;
 use libc::c_int;
+use num::{Float, FloatMath};
 use num::strconv;
-use num;
 
 pub use core::f32::{RADIX, MANTISSA_DIGITS, DIGITS, EPSILON, MIN_VALUE};
 pub use core::f32::{MIN_POS_VALUE, MAX_VALUE, MIN_EXP, MAX_EXP, MIN_10_EXP};
@@ -106,6 +105,11 @@ impl FloatMath for f32 {
     #[inline]
     fn min(self, other: f32) -> f32 {
         unsafe { cmath::fminf(self, other) }
+    }
+
+    #[inline]
+    fn abs_sub(self, other: f32) -> f32 {
+        unsafe { cmath::fdimf(self, other) }
     }
 
     #[inline]
@@ -333,68 +337,6 @@ pub fn to_str_exp_digits(num: f32, dig: uint, upper: bool) -> String {
     r
 }
 
-#[inline]
-#[deprecated="Use `FromStrRadix::from_str_radix(src, 16)`"]
-pub fn from_str_hex(src: &str) -> Option<f32> {
-    strconv::from_str_radix_float(src, 16)
-}
-
-impl FromStr for f32 {
-    /// Convert a string in base 10 to a float.
-    /// Accepts an optional decimal exponent.
-    ///
-    /// This function accepts strings such as
-    ///
-    /// * '3.14'
-    /// * '+3.14', equivalent to '3.14'
-    /// * '-3.14'
-    /// * '2.5E10', or equivalently, '2.5e10'
-    /// * '2.5E-10'
-    /// * '.' (understood as 0)
-    /// * '5.'
-    /// * '.5', or, equivalently,  '0.5'
-    /// * '+inf', 'inf', '-inf', 'NaN'
-    ///
-    /// Leading and trailing whitespace represent an error.
-    ///
-    /// # Arguments
-    ///
-    /// * src - A string
-    ///
-    /// # Return value
-    ///
-    /// `None` if the string did not represent a valid number.  Otherwise,
-    /// `Some(n)` where `n` is the floating-point number represented by `src`.
-    #[inline]
-    fn from_str(src: &str) -> Option<f32> {
-        strconv::from_str_radix_float(src, 10u)
-    }
-}
-
-impl num::FromStrRadix for f32 {
-    /// Convert a string in a given base to a float.
-    ///
-    /// Due to possible conflicts, this function does **not** accept
-    /// the special values `inf`, `-inf`, `+inf` and `NaN`, **nor**
-    /// does it recognize exponents of any kind.
-    ///
-    /// Leading and trailing whitespace represent an error.
-    ///
-    /// # Arguments
-    ///
-    /// * src - A string
-    /// * radix - The base to use. Must lie in the range [2 .. 36]
-    ///
-    /// # Return value
-    ///
-    /// `None` if the string did not represent a valid number. Otherwise,
-    /// `Some(n)` where `n` is the floating-point number represented by `src`.
-    #[inline]
-    fn from_str_radix(src: &str, radix: uint) -> Option<f32> {
-        strconv::from_str_radix_float(src, radix)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use f32::*;
@@ -593,20 +535,20 @@ mod tests {
 
     #[test]
     fn test_abs_sub() {
-        assert_eq!((-1f32).abs_sub(&1f32), 0f32);
-        assert_eq!(1f32.abs_sub(&1f32), 0f32);
-        assert_eq!(1f32.abs_sub(&0f32), 1f32);
-        assert_eq!(1f32.abs_sub(&-1f32), 2f32);
-        assert_eq!(NEG_INFINITY.abs_sub(&0f32), 0f32);
-        assert_eq!(INFINITY.abs_sub(&1f32), INFINITY);
-        assert_eq!(0f32.abs_sub(&NEG_INFINITY), INFINITY);
-        assert_eq!(0f32.abs_sub(&INFINITY), 0f32);
+        assert_eq!((-1f32).abs_sub(1f32), 0f32);
+        assert_eq!(1f32.abs_sub(1f32), 0f32);
+        assert_eq!(1f32.abs_sub(0f32), 1f32);
+        assert_eq!(1f32.abs_sub(-1f32), 2f32);
+        assert_eq!(NEG_INFINITY.abs_sub(0f32), 0f32);
+        assert_eq!(INFINITY.abs_sub(1f32), INFINITY);
+        assert_eq!(0f32.abs_sub(NEG_INFINITY), INFINITY);
+        assert_eq!(0f32.abs_sub(INFINITY), 0f32);
     }
 
     #[test]
     fn test_abs_sub_nowin() {
-        assert!(NAN.abs_sub(&-1f32).is_nan());
-        assert!(1f32.abs_sub(&NAN).is_nan());
+        assert!(NAN.abs_sub(-1f32).is_nan());
+        assert!(1f32.abs_sub(NAN).is_nan());
     }
 
     #[test]
@@ -650,7 +592,7 @@ mod tests {
         let nan: f32 = Float::nan();
         let inf: f32 = Float::infinity();
         let neg_inf: f32 = Float::neg_infinity();
-        let zero: f32 = Zero::zero();
+        let zero: f32 = Float::zero();
         let neg_zero: f32 = Float::neg_zero();
         assert!(!nan.is_normal());
         assert!(!inf.is_normal());
@@ -667,7 +609,7 @@ mod tests {
         let nan: f32 = Float::nan();
         let inf: f32 = Float::infinity();
         let neg_inf: f32 = Float::neg_infinity();
-        let zero: f32 = Zero::zero();
+        let zero: f32 = Float::zero();
         let neg_zero: f32 = Float::neg_zero();
         assert_eq!(nan.classify(), FPNaN);
         assert_eq!(inf.classify(), FPInfinite);

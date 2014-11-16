@@ -47,7 +47,7 @@ use middle::trans::builder::{Builder, noname};
 use middle::trans::callee;
 use middle::trans::cleanup::{CleanupMethods, ScopeId};
 use middle::trans::cleanup;
-use middle::trans::common::{Block, C_bool, C_bytes_in_context, C_i32, C_integral, C_nil};
+use middle::trans::common::{Block, C_bool, C_bytes_in_context, C_i32, C_integral};
 use middle::trans::common::{C_null, C_struct_in_context, C_u64, C_u8, C_uint, C_undef};
 use middle::trans::common::{CrateContext, ExternMap, FunctionContext};
 use middle::trans::common::{NodeInfo, Result, SubstP};
@@ -97,8 +97,6 @@ use syntax::visit::Visitor;
 use syntax::visit;
 use syntax::{ast, ast_util, ast_map};
 
-use time;
-
 local_data_key!(task_local_insn_key: RefCell<Vec<&'static str>>)
 
 pub fn with_insn_ctxt(blk: |&[&'static str]|) {
@@ -138,23 +136,16 @@ pub fn push_ctxt(s: &'static str) -> _InsnCtxt {
 pub struct StatRecorder<'a, 'tcx: 'a> {
     ccx: &'a CrateContext<'a, 'tcx>,
     name: Option<String>,
-    start: u64,
     istart: uint,
 }
 
 impl<'a, 'tcx> StatRecorder<'a, 'tcx> {
     pub fn new(ccx: &'a CrateContext<'a, 'tcx>, name: String)
                -> StatRecorder<'a, 'tcx> {
-        let start = if ccx.sess().trans_stats() {
-            time::precise_time_ns()
-        } else {
-            0
-        };
         let istart = ccx.stats().n_llvm_insns.get();
         StatRecorder {
             ccx: ccx,
             name: Some(name),
-            start: start,
             istart: istart,
         }
     }
@@ -164,11 +155,8 @@ impl<'a, 'tcx> StatRecorder<'a, 'tcx> {
 impl<'a, 'tcx> Drop for StatRecorder<'a, 'tcx> {
     fn drop(&mut self) {
         if self.ccx.sess().trans_stats() {
-            let end = time::precise_time_ns();
-            let elapsed = ((end - self.start) / 1_000_000) as uint;
             let iend = self.ccx.stats().n_llvm_insns.get();
             self.ccx.stats().fn_stats.borrow_mut().push((self.name.take().unwrap(),
-                                                       elapsed,
                                                        iend - self.istart));
             self.ccx.stats().n_fns.set(self.ccx.stats().n_fns.get() + 1);
             // Reset LLVM insn count to avoid compound costs.
@@ -529,7 +517,7 @@ pub fn get_res_dtor(ccx: &CrateContext,
         let class_ty = ty::lookup_item_type(tcx, parent_id).ty.subst(tcx, substs);
         let llty = type_of_dtor(ccx, class_ty);
         let dtor_ty = ty::mk_ctor_fn(ccx.tcx(), ast::DUMMY_NODE_ID,
-                                     [glue::get_drop_glue_type(ccx, t)], ty::mk_nil());
+                                     [glue::get_drop_glue_type(ccx, t)], ty::mk_nil(ccx.tcx()));
         get_extern_fn(ccx,
                       &mut *ccx.externs().borrow_mut(),
                       name.as_slice(),
@@ -563,7 +551,7 @@ pub fn compare_scalar_types<'blk, 'tcx>(cx: Block<'blk, 'tcx>,
     let f = |a| Result::new(cx, compare_scalar_values(cx, lhs, rhs, a, op));
 
     match ty::get(t).sty {
-        ty::ty_nil => f(nil_type),
+        ty::ty_tup(ref tys) if tys.is_empty() => f(nil_type),
         ty::ty_bool | ty::ty_uint(_) | ty::ty_char => f(unsigned_int),
         ty::ty_ptr(mt) if ty::type_is_sized(cx.tcx(), mt.ty) => f(unsigned_int),
         ty::ty_int(_) => f(signed_int),
@@ -1590,12 +1578,6 @@ fn create_datums_for_fn_args_under_call_abi(
                                                                 "argtuple"));
                 result.push(tuple);
             }
-            ty::ty_nil => {
-                let mode = datum::Rvalue::new(datum::ByValue);
-                result.push(datum::Datum::new(C_nil(bcx.ccx()),
-                                              ty::mk_nil(),
-                                              mode))
-            }
             _ => {
                 bcx.tcx().sess.bug("last argument of a function with \
                                     `rust-call` ABI isn't a tuple?!")
@@ -1659,10 +1641,8 @@ fn copy_unboxed_closure_args_to_allocas<'blk, 'tcx>(
                       arg_datum.to_lvalue_datum_in_scope(bcx,
                                                          "argtuple",
                                                          arg_scope_id));
-    let empty = Vec::new();
     let untupled_arg_types = match ty::get(monomorphized_arg_types[0]).sty {
         ty::ty_tup(ref types) => types.as_slice(),
-        ty::ty_nil => empty.as_slice(),
         _ => {
             bcx.tcx().sess.span_bug(args[0].pat.span,
                                     "first arg to `rust-call` ABI function \
@@ -1799,8 +1779,8 @@ pub fn trans_closure(ccx: &CrateContext,
                      abi: Abi,
                      has_env: bool,
                      is_unboxed_closure: IsUnboxedClosureFlag,
-                     maybe_load_env: <'blk, 'tcx> |Block<'blk, 'tcx>, ScopeId|
-                                                  -> Block<'blk, 'tcx>) {
+                     maybe_load_env: for<'blk, 'tcx> |Block<'blk, 'tcx>, ScopeId|
+                                                     -> Block<'blk, 'tcx>) {
     ccx.stats().n_closures.set(ccx.stats().n_closures.get() + 1);
 
     let _icx = push_ctxt("trans_closure");
@@ -1836,7 +1816,7 @@ pub fn trans_closure(ccx: &CrateContext,
         NotUnboxedClosure => monomorphized_arg_types,
 
         // Tuple up closure argument types for the "rust-call" ABI.
-        IsUnboxedClosure => vec![ty::mk_tup_or_nil(ccx.tcx(), monomorphized_arg_types)]
+        IsUnboxedClosure => vec![ty::mk_tup(ccx.tcx(), monomorphized_arg_types)]
     };
     for monomorphized_arg_type in monomorphized_arg_types.iter() {
         debug!("trans_closure: monomorphized_arg_type: {}",
@@ -2392,7 +2372,6 @@ pub fn get_fn_llvm_attributes(ccx: &CrateContext, fn_ty: ty::t)
             assert!(abi == RustCall);
 
             match ty::get(fn_sig.inputs[0]).sty {
-                ty::ty_nil => Vec::new(),
                 ty::ty_tup(ref inputs) => inputs.clone(),
                 _ => ccx.sess().bug("expected tuple'd inputs")
             }
@@ -2401,7 +2380,6 @@ pub fn get_fn_llvm_attributes(ccx: &CrateContext, fn_ty: ty::t)
             let mut inputs = vec![fn_sig.inputs[0]];
 
             match ty::get(fn_sig.inputs[1]).sty {
-                ty::ty_nil => inputs,
                 ty::ty_tup(ref t_in) => {
                     inputs.push_all(t_in.as_slice());
                     inputs
@@ -2544,7 +2522,7 @@ pub fn register_fn_llvmty(ccx: &CrateContext,
                           llfty: Type) -> ValueRef {
     debug!("register_fn_llvmty id={} sym={}", node_id, sym);
 
-    let llfn = decl_fn(ccx, sym.as_slice(), cc, llfty, ty::FnConverging(ty::mk_nil()));
+    let llfn = decl_fn(ccx, sym.as_slice(), cc, llfty, ty::FnConverging(ty::mk_nil(ccx.tcx())));
     finish_register_fn(ccx, sp, sym, node_id, llfn);
     llfn
 }
@@ -2576,7 +2554,7 @@ pub fn create_entry_wrapper(ccx: &CrateContext,
         let llfty = Type::func([ccx.int_type(), Type::i8p(ccx).ptr_to()],
                                &ccx.int_type());
 
-        let llfn = decl_cdecl_fn(ccx, "main", llfty, ty::mk_nil());
+        let llfn = decl_cdecl_fn(ccx, "main", llfty, ty::mk_nil(ccx.tcx()));
 
         // FIXME: #16581: Marking a symbol in the executable with `dllexport`
         // linkage forces MinGW's linker to output a `.reloc` section for ASLR
@@ -3097,13 +3075,13 @@ pub fn trans_crate<'tcx>(analysis: CrateAnalysis<'tcx>)
         println!("n_inlines: {}", stats.n_inlines.get());
         println!("n_closures: {}", stats.n_closures.get());
         println!("fn stats:");
-        stats.fn_stats.borrow_mut().sort_by(|&(_, _, insns_a), &(_, _, insns_b)| {
+        stats.fn_stats.borrow_mut().sort_by(|&(_, insns_a), &(_, insns_b)| {
             insns_b.cmp(&insns_a)
         });
         for tuple in stats.fn_stats.borrow().iter() {
             match *tuple {
-                (ref name, ms, insns) => {
-                    println!("{} insns, {} ms, {}", insns, ms, *name);
+                (ref name, insns) => {
+                    println!("{} insns, {}", insns, *name);
                 }
             }
         }

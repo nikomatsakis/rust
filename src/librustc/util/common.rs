@@ -12,13 +12,13 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 use std::fmt::Show;
+use std::hash::{Hash, Hasher};
+use std::time::Duration;
+
 use syntax::ast;
 use syntax::visit;
 use syntax::visit::Visitor;
-
-use time;
 
 pub fn time<T, U>(do_it: bool, what: &str, u: U, f: |U| -> T) -> T {
     local_data_key!(depth: uint);
@@ -27,11 +27,15 @@ pub fn time<T, U>(do_it: bool, what: &str, u: U, f: |U| -> T) -> T {
     let old = depth.get().map(|d| *d).unwrap_or(0);
     depth.replace(Some(old + 1));
 
-    let start = time::precise_time_s();
-    let rv = f(u);
-    let end = time::precise_time_s();
+    let mut u = Some(u);
+    let mut rv = None;
+    let dur = Duration::span(|| {
+        rv = Some(f(u.take().unwrap()))
+    });
+    let rv = rv.unwrap();
 
-    println!("{}time: {:3.3f} s\t{}", "  ".repeat(old), end - start, what);
+    println!("{}time: {}.{:03} \t{}", "  ".repeat(old),
+             dur.num_seconds(), dur.num_milliseconds() % 1000, what);
     depth.replace(Some(old));
 
     rv
@@ -189,17 +193,7 @@ pub fn memoized<T: Clone + Hash<S> + Eq, U: Clone, S, H: Hasher<S>>(
     arg: T,
     f: |T| -> U
 ) -> U {
-    memoized_with_key(cache, arg, f, |arg| arg.clone())
-}
-
-#[inline(always)]
-pub fn memoized_with_key<T, K: Hash<S> + Eq, U: Clone, S, H: Hasher<S>>(
-    cache: &RefCell<HashMap<K, U, H>>,
-    arg: T,
-    f: |T| -> U,
-    k: |&T| -> K
-) -> U {
-    let key = k(&arg);
+    let key = arg.clone();
     let result = cache.borrow().get(&key).map(|result| result.clone());
     match result {
         Some(result) => result,

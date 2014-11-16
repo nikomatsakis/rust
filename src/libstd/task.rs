@@ -91,7 +91,8 @@
 //! # }
 //! ```
 
-#![stable]
+#![unstable = "The task spawning model will be changed as part of runtime reform, and the module \
+               will likely be renamed from `task` to `thread`."]
 
 use any::Any;
 use comm::channel;
@@ -104,9 +105,8 @@ use rt::local::Local;
 use rt::task;
 use rt::task::Task;
 use str::{Str, SendStr, IntoMaybeOwned};
-use string::String;
+use string::{String, ToString};
 use sync::Future;
-use to_string::ToString;
 
 /// A means of spawning a task
 pub trait Spawner {

@@ -16,11 +16,10 @@
 
 use prelude::*;
 
-use from_str::FromStr;
 use intrinsics;
 use libc::c_int;
+use num::{Float, FloatMath};
 use num::strconv;
-use num;
 
 pub use core::f64::{RADIX, MANTISSA_DIGITS, DIGITS, EPSILON, MIN_VALUE};
 pub use core::f64::{MIN_POS_VALUE, MAX_VALUE, MIN_EXP, MAX_EXP, MIN_10_EXP};
@@ -114,6 +113,11 @@ impl FloatMath for f64 {
     #[inline]
     fn min(self, other: f64) -> f64 {
         unsafe { cmath::fmin(self, other) }
+    }
+
+    #[inline]
+    fn abs_sub(self, other: f64) -> f64 {
+        unsafe { cmath::fdim(self, other) }
     }
 
     #[inline]
@@ -341,63 +345,6 @@ pub fn to_str_exp_digits(num: f64, dig: uint, upper: bool) -> String {
     r
 }
 
-#[inline]
-#[deprecated="Use `FromStrRadix::from_str_radix(src, 16)`"]
-pub fn from_str_hex(src: &str) -> Option<f64> {
-    strconv::from_str_radix_float(src, 16)
-}
-
-impl FromStr for f64 {
-    /// Convert a string in base 10 to a float.
-    /// Accepts an optional decimal exponent.
-    ///
-    /// This function accepts strings such as:
-    ///
-    /// * '3.14'
-    /// * '-3.14'
-    /// * '2.5E10', or equivalently, '2.5e10'
-    /// * '2.5E-10'
-    /// * '.' (understood as 0)
-    /// * '5.'
-    /// * '.5', or, equivalently,  '0.5'
-    /// * inf', '-inf', 'NaN'
-    ///
-    /// Leading and trailing whitespace represent an error.
-    ///
-    /// # Arguments
-    ///
-    /// * src - A string
-    ///
-    /// # Return value
-    ///
-    /// `none` if the string did not represent a valid number.  Otherwise,
-    /// `Some(n)` where `n` is the floating-point number represented by `src`.
-    #[inline]
-    fn from_str(src: &str) -> Option<f64> {
-        strconv::from_str_radix_float(src, 10u)
-    }
-}
-
-impl num::FromStrRadix for f64 {
-    /// Convert a string in a given base to a float.
-    ///
-    /// Leading and trailing whitespace represent an error.
-    ///
-    /// # Arguments
-    ///
-    /// * src - A string
-    /// * radix - The base to use. Must lie in the range [2 .. 36]
-    ///
-    /// # Return value
-    ///
-    /// `None` if the string did not represent a valid number. Otherwise,
-    /// `Some(n)` where `n` is the floating-point number represented by `src`.
-    #[inline]
-    fn from_str_radix(src: &str, radix: uint) -> Option<f64> {
-        strconv::from_str_radix_float(src, radix)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use f64::*;
@@ -591,20 +538,20 @@ mod tests {
 
     #[test]
     fn test_abs_sub() {
-        assert_eq!((-1f64).abs_sub(&1f64), 0f64);
-        assert_eq!(1f64.abs_sub(&1f64), 0f64);
-        assert_eq!(1f64.abs_sub(&0f64), 1f64);
-        assert_eq!(1f64.abs_sub(&-1f64), 2f64);
-        assert_eq!(NEG_INFINITY.abs_sub(&0f64), 0f64);
-        assert_eq!(INFINITY.abs_sub(&1f64), INFINITY);
-        assert_eq!(0f64.abs_sub(&NEG_INFINITY), INFINITY);
-        assert_eq!(0f64.abs_sub(&INFINITY), 0f64);
+        assert_eq!((-1f64).abs_sub(1f64), 0f64);
+        assert_eq!(1f64.abs_sub(1f64), 0f64);
+        assert_eq!(1f64.abs_sub(0f64), 1f64);
+        assert_eq!(1f64.abs_sub(-1f64), 2f64);
+        assert_eq!(NEG_INFINITY.abs_sub(0f64), 0f64);
+        assert_eq!(INFINITY.abs_sub(1f64), INFINITY);
+        assert_eq!(0f64.abs_sub(NEG_INFINITY), INFINITY);
+        assert_eq!(0f64.abs_sub(INFINITY), 0f64);
     }
 
     #[test]
     fn test_abs_sub_nowin() {
-        assert!(NAN.abs_sub(&-1f64).is_nan());
-        assert!(1f64.abs_sub(&NAN).is_nan());
+        assert!(NAN.abs_sub(-1f64).is_nan());
+        assert!(1f64.abs_sub(NAN).is_nan());
     }
 
     #[test]
@@ -648,7 +595,7 @@ mod tests {
         let nan: f64 = Float::nan();
         let inf: f64 = Float::infinity();
         let neg_inf: f64 = Float::neg_infinity();
-        let zero: f64 = Zero::zero();
+        let zero: f64 = Float::zero();
         let neg_zero: f64 = Float::neg_zero();
         assert!(!nan.is_normal());
         assert!(!inf.is_normal());
@@ -665,7 +612,7 @@ mod tests {
         let nan: f64 = Float::nan();
         let inf: f64 = Float::infinity();
         let neg_inf: f64 = Float::neg_infinity();
-        let zero: f64 = Zero::zero();
+        let zero: f64 = Float::zero();
         let neg_zero: f64 = Float::neg_zero();
         assert_eq!(nan.classify(), FPNaN);
         assert_eq!(inf.classify(), FPInfinite);

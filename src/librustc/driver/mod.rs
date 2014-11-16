@@ -182,21 +182,6 @@ Available lint options:
 
 ");
 
-    // NOTE(stage0): remove function after a snapshot
-    #[cfg(stage0)]
-    fn sort_lints(lints: Vec<(&'static Lint, bool)>) -> Vec<&'static Lint> {
-        let mut lints: Vec<_> = lints.into_iter().map(|(x, _)| x).collect();
-        lints.sort_by(|x: &&Lint, y: &&Lint| {
-            match x.default_level.cmp(&y.default_level) {
-                // The sort doesn't case-fold but it's doubtful we care.
-                Equal => x.name.cmp(&y.name),
-                r => r,
-            }
-        });
-        lints
-    }
-
-    #[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
     fn sort_lints(lints: Vec<(&'static Lint, bool)>) -> Vec<&'static Lint> {
         let mut lints: Vec<_> = lints.into_iter().map(|(x, _)| x).collect();
         lints.sort_by(|x: &&Lint, y: &&Lint| {
@@ -209,19 +194,6 @@ Available lint options:
         lints
     }
 
-    // NOTE(stage0): remove function after a snapshot
-    #[cfg(stage0)]
-    fn sort_lint_groups(lints: Vec<(&'static str, Vec<lint::LintId>, bool)>)
-                     -> Vec<(&'static str, Vec<lint::LintId>)> {
-        let mut lints: Vec<_> = lints.into_iter().map(|(x, y, _)| (x, y)).collect();
-        lints.sort_by(|&(x, _): &(&'static str, Vec<lint::LintId>),
-                       &(y, _): &(&'static str, Vec<lint::LintId>)| {
-            x.cmp(&y)
-        });
-        lints
-    }
-
-    #[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
     fn sort_lint_groups(lints: Vec<(&'static str, Vec<lint::LintId>, bool)>)
                      -> Vec<(&'static str, Vec<lint::LintId>)> {
         let mut lints: Vec<_> = lints.into_iter().map(|(x, y, _)| (x, y)).collect();
@@ -327,14 +299,10 @@ fn describe_debug_flags() {
 
 fn describe_codegen_flags() {
     println!("\nAvailable codegen options:\n");
-    let mut cg = config::basic_codegen_options();
-    for &(name, parser, desc) in config::CG_OPTIONS.iter() {
-        // we invoke the parser function on `None` to see if this option needs
-        // an argument or not.
-        let (width, extra) = if parser(&mut cg, None) {
-            (25, "")
-        } else {
-            (21, "=val")
+    for &(name, _, opt_type_desc, desc) in config::CG_OPTIONS.iter() {
+        let (width, extra) = match opt_type_desc {
+            Some(..) => (21, "=val"),
+            None => (25, "")
         };
         println!("    -C {:>width$s}{} -- {}", name.replace("_", "-"),
                  extra, desc, width=width);

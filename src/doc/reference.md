@@ -458,10 +458,9 @@ Examples of floating-point literals of various forms:
 12E+99_f64;                        // type f64
 ```
 
-##### Unit and boolean literals
+##### Boolean literals
 
-The _unit value_, the only value of the type that has the same name, is written
-as `()`. The two values of the boolean type are written `true` and `false`.
+The two values of the boolean type are written `true` and `false`.
 
 ### Symbols
 
@@ -2526,7 +2525,7 @@ The currently implemented features of the reference compiler are:
 
 * `plugin_registrar` - Indicates that a crate has [compiler plugins][plugin] that it
                        wants to load. As with `phase`, the implementation is
-                       in need of a overhaul, and it is not clear that plugins
+                       in need of an overhaul, and it is not clear that plugins
                        defined using this will continue to work.
 
 * `quote` - Allows use of the `quote_*!` family of macros, which are
@@ -2583,7 +2582,7 @@ there isn't a parser error first). The directive in this case is no longer
 necessary, and it's likely that existing code will break if the feature isn't
 removed.
 
-If a unknown feature is found in a directive, it results in a compiler error.
+If an unknown feature is found in a directive, it results in a compiler error.
 An unknown feature is one which has never been recognized by the compiler.
 
 # Statements and expressions
@@ -2653,9 +2652,10 @@ An expression may have two roles: it always produces a *value*, and it may have
 value, and has effects during *evaluation*. Many expressions contain
 sub-expressions (operands). The meaning of each kind of expression dictates
 several things:
-  * Whether or not to evaluate the sub-expressions when evaluating the
-  * expression The order in which to evaluate the sub-expressions How to
-  * combine the sub-expressions' values to obtain the value of the expression.
+
+* Whether or not to evaluate the sub-expressions when evaluating the expression
+* The order in which to evaluate the sub-expressions
+* How to combine the sub-expressions' values to obtain the value of the expression
 
 In this way, the structure of expressions dictates the structure of execution.
 Blocks are just another kind of expression, so blocks, statements, expressions,
@@ -2684,7 +2684,7 @@ When an lvalue is evaluated in an _lvalue context_, it denotes a memory
 location; when evaluated in an _rvalue context_, it denotes the value held _in_
 that memory location.
 
-When an rvalue is used in lvalue context, a temporary un-named lvalue is
+When an rvalue is used in an lvalue context, a temporary un-named lvalue is
 created and used instead. A temporary's lifetime equals the largest lifetime
 of any reference that points to it.
 
@@ -2716,7 +2716,7 @@ or an item. Path expressions are [lvalues](#lvalues,-rvalues-and-temporaries).
 
 ### Tuple expressions
 
-Tuples are written by enclosing one or more comma-separated expressions in
+Tuples are written by enclosing zero or more comma-separated expressions in
 parentheses. They are used to create [tuple-typed](#tuple-types) values.
 
 ```{.tuple}
@@ -2724,6 +2724,11 @@ parentheses. They are used to create [tuple-typed](#tuple-types) values.
 (0.0, 4.5);
 ("a", 4u, true);
 ```
+
+### Unit expressions
+
+The expression `()` denotes the _unit value_, the only value of the type with
+the same name.
 
 ### Structure expressions
 
@@ -2832,7 +2837,7 @@ foo().x;
 ```
 
 A field access is an [lvalue](#lvalues,-rvalues-and-temporaries) referring to
-the value of that field. When the type providing the field inherits mutabilty,
+the value of that field. When the type providing the field inherits mutability,
 it can be [assigned](#assignment-expressions) to.
 
 Also, if the type of the expression to the left of the dot is a pointer, it is
@@ -3107,11 +3112,10 @@ then the expression completes.
 Some examples of call expressions:
 
 ```
-# use std::from_str::FromStr;
 # fn add(x: int, y: int) -> int { 0 }
 
 let x: int = add(1, 2);
-let pi: Option<f32> = FromStr::from_str("3.14");
+let pi: Option<f32> = from_str("3.14");
 ```
 
 ### Lambda expressions
@@ -3320,7 +3324,7 @@ between `_` and `..` is that the pattern `C(_)` is only type-correct if `C` has
 exactly one argument, while the pattern `C(..)` is type-correct for any enum
 variant `C`, regardless of how many arguments `C` has.
 
-Used inside a array pattern, `..` stands for any number of elements, when the
+Used inside an array pattern, `..` stands for any number of elements, when the
 `advanced_slice_patterns` feature gate is turned on. This wildcard can be used
 at most once for a given array, which implies that it cannot be used to
 specifically match elements that are at an unknown distance from both ends of a
@@ -3583,7 +3587,7 @@ is not a surrogate), represented as a 32-bit unsigned word in the 0x0000 to
 0xD7FF or 0xE000 to 0x10FFFF range. A `[char]` array is effectively an UCS-4 /
 UTF-32 string.
 
-A value of type `str` is a Unicode string, represented as a array of 8-bit
+A value of type `str` is a Unicode string, represented as an array of 8-bit
 unsigned bytes holding a sequence of UTF-8 codepoints. Since `str` is of
 unknown size, it is not a _first class_ type, but can only be instantiated
 through a pointer type, such as `&str` or `String`.

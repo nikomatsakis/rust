@@ -199,8 +199,8 @@ use std::collections::{HashMap, TreeMap};
 use std::{char, f64, fmt, io, num, str};
 use std::io::MemWriter;
 use std::mem::{swap, transmute};
-use std::num::{FPNaN, FPInfinite};
-use std::str::ScalarValue;
+use std::num::{Float, FPNaN, FPInfinite, Int};
+use std::str::{FromStr, ScalarValue};
 use std::string;
 use std::vec::Vec;
 use std::ops;
@@ -609,7 +609,7 @@ impl<'a> PrettyEncoder<'a> {
     /// This is safe to set during encoding.
     pub fn set_indent<'a>(&mut self, indent: uint) {
         // self.indent very well could be 0 so we need to use checked division.
-        let level = self.curr_indent.checked_div(&self.indent).unwrap_or(0);
+        let level = self.curr_indent.checked_div(self.indent).unwrap_or(0);
         self.indent = indent;
         self.curr_indent = level * self.indent;
     }
@@ -890,18 +890,6 @@ impl Json {
 
      /// If the Json value is an Object, returns the value associated with the provided key.
     /// Otherwise, returns None.
-    // NOTE(stage0): remove function after a snapshot
-    #[cfg(stage0)]
-    pub fn find<'a>(&'a self, key: &str) -> Option<&'a Json>{
-        match self {
-            &Object(ref map) => map.find_with(|s| key.cmp(&s.as_slice())),
-            _ => None
-        }
-    }
-
-     /// If the Json value is an Object, returns the value associated with the provided key.
-    /// Otherwise, returns None.
-    #[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
     pub fn find<'a>(&'a self, key: &str) -> Option<&'a Json>{
         match self {
             &Object(ref map) => map.find_with(|s| key.cmp(s.as_slice())),
@@ -926,32 +914,6 @@ impl Json {
     /// If the Json value is an Object, performs a depth-first search until
     /// a value associated with the provided key is found. If no value is found
     /// or the Json value is not an Object, returns None.
-    // NOTE(stage0): remove function after a snapshot
-    #[cfg(stage0)]
-    pub fn search<'a>(&'a self, key: &str) -> Option<&'a Json> {
-        match self {
-            &Object(ref map) => {
-                match map.find_with(|s| key.cmp(&s.as_slice())) {
-                    Some(json_value) => Some(json_value),
-                    None => {
-                        for (_, v) in map.iter() {
-                            match v.search(key) {
-                                x if x.is_some() => return x,
-                                _ => ()
-                            }
-                        }
-                        None
-                    }
-                }
-            },
-            _ => None
-        }
-    }
-
-    /// If the Json value is an Object, performs a depth-first search until
-    /// a value associated with the provided key is found. If no value is found
-    /// or the Json value is not an Object, returns None.
-    #[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
     pub fn search<'a>(&'a self, key: &str) -> Option<&'a Json> {
         match self {
             &Object(ref map) => {
@@ -1522,7 +1484,7 @@ impl<T: Iterator<char>> Parser<T> {
             }
         }
 
-        let exp = num::pow(10_f64, exp);
+        let exp = 10_f64.powi(exp as i32);
         if neg_exp {
             res /= exp;
         } else {
@@ -2026,7 +1988,7 @@ macro_rules! read_primitive {
                 String(s) => {
                     // re: #12967.. a type w/ numeric keys (ie HashMap<uint, V> etc)
                     // is going to have a string here, as per JSON spec.
-                    match std::from_str::from_str(s.as_slice()) {
+                    match std::str::from_str(s.as_slice()) {
                         Some(f) => Ok(f),
                         None => Err(ExpectedError("Number".to_string(), s)),
                     }
@@ -2065,7 +2027,7 @@ impl ::Decoder<DecoderError> for Decoder {
             String(s) => {
                 // re: #12967.. a type w/ numeric keys (ie HashMap<uint, V> etc)
                 // is going to have a string here, as per JSON spec.
-                match std::from_str::from_str(s.as_slice()) {
+                match std::str::from_str(s.as_slice()) {
                     Some(f) => Ok(f),
                     None => Err(ExpectedError("Number".to_string(), s)),
                 }
@@ -2353,6 +2315,10 @@ impl ToJson for bool {
     fn to_json(&self) -> Json { Boolean(*self) }
 }
 
+impl ToJson for str {
+    fn to_json(&self) -> Json { String(self.into_string()) }
+}
+
 impl ToJson for string::String {
     fn to_json(&self) -> Json { String((*self).clone()) }
 }
@@ -2433,7 +2399,7 @@ impl fmt::Show for Json {
     }
 }
 
-impl std::from_str::FromStr for Json {
+impl FromStr for Json {
     fn from_str(s: &str) -> Option<Json> {
         from_str(s).ok()
     }
@@ -2455,6 +2421,7 @@ mod tests {
                 TrailingCharacters, TrailingComma};
     use std::{i64, u64, f32, f64, io};
     use std::collections::TreeMap;
+    use std::num::Float;
     use std::string;
 
     #[deriving(Decodable, Eq, PartialEq, Show)]
@@ -2517,7 +2484,7 @@ mod tests {
     #[test]
     fn test_from_str_trait() {
         let s = "null";
-        assert!(::std::from_str::from_str::<Json>(s).unwrap() == from_str(s).unwrap());
+        assert!(::std::str::from_str::<Json>(s).unwrap() == from_str(s).unwrap());
     }
 
     #[test]
@@ -3751,7 +3718,8 @@ mod tests {
         assert_eq!(f64::NAN.to_json(), Null);
         assert_eq!(true.to_json(), Boolean(true));
         assert_eq!(false.to_json(), Boolean(false));
-        assert_eq!("abc".to_string().to_json(), String("abc".to_string()));
+        assert_eq!("abc".to_json(), String("abc".into_string()));
+        assert_eq!("abc".into_string().to_json(), String("abc".into_string()));
         assert_eq!((1u, 2u).to_json(), list2);
         assert_eq!((1u, 2u, 3u).to_json(), list3);
         assert_eq!([1u, 2].to_json(), list2);

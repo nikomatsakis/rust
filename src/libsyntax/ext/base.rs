@@ -89,7 +89,7 @@ pub trait TTMacroExpander {
 }
 
 pub type MacroExpanderFn =
-    fn<'cx>(&'cx mut ExtCtxt, Span, &[ast::TokenTree]) -> Box<MacResult+'cx>;
+    for<'cx> fn(&'cx mut ExtCtxt, Span, &[ast::TokenTree]) -> Box<MacResult+'cx>;
 
 impl TTMacroExpander for MacroExpanderFn {
     fn expand<'cx>(&self,
@@ -111,7 +111,7 @@ pub trait IdentMacroExpander {
 }
 
 pub type IdentMacroExpanderFn =
-    fn<'cx>(&'cx mut ExtCtxt, Span, ast::Ident, Vec<ast::TokenTree>) -> Box<MacResult+'cx>;
+    for<'cx> fn(&'cx mut ExtCtxt, Span, ast::Ident, Vec<ast::TokenTree>) -> Box<MacResult+'cx>;
 
 impl IdentMacroExpander for IdentMacroExpanderFn {
     fn expand<'cx>(&self,
@@ -248,7 +248,7 @@ impl DummyResult {
     pub fn raw_expr(sp: Span) -> P<ast::Expr> {
         P(ast::Expr {
             id: ast::DUMMY_NODE_ID,
-            node: ast::ExprLit(P(codemap::respan(sp, ast::LitNil))),
+            node: ast::ExprLit(P(codemap::respan(sp, ast::LitBool(false)))),
             span: sp,
         })
     }

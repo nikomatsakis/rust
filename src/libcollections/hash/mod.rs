@@ -70,6 +70,7 @@ use alloc::rc::Rc;
 use core::intrinsics::TypeId;
 use core::kinds::marker;
 use core::mem;
+use core::num::Int;
 
 use vec::Vec;
 

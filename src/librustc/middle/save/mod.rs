@@ -261,7 +261,7 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
             let span_utils = self.span;
             for &(id, ref p, _, _) in self.collected_paths.iter() {
                 let typ = ppaux::ty_to_string(&self.analysis.ty_cx,
-                    (*self.analysis.ty_cx.node_types.borrow())[id as uint]);
+                    (*self.analysis.ty_cx.node_types.borrow())[id]);
                 // get the span only for the name of the variable (I hope the path is only ever a
                 // variable name, but who knows?)
                 self.fmt.formal_str(p.span,
@@ -383,7 +383,11 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
         for arg in method.pe_fn_decl().inputs.iter() {
             self.visit_ty(&*arg.ty);
         }
-        self.visit_ty(&*method.pe_fn_decl().output);
+
+        if let ast::Return(ref ret_ty) = method.pe_fn_decl().output {
+            self.visit_ty(&**ret_ty);
+        }
+
         // walk the fn body
         self.nest(method.id, |v| v.visit_block(&*method.pe_body()));
 
@@ -427,7 +431,7 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
                 let name = get_ident(ident);
                 let qualname = format!("{}::{}", qualname, name);
                 let typ = ppaux::ty_to_string(&self.analysis.ty_cx,
-                    (*self.analysis.ty_cx.node_types.borrow())[field.node.id as uint]);
+                    (*self.analysis.ty_cx.node_types.borrow())[field.node.id]);
                 match self.span.sub_span_before_token(field.span, token::Colon) {
                     Some(sub_span) => self.fmt.field_str(field.span,
                                                          Some(sub_span),
@@ -491,7 +495,10 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
         for arg in decl.inputs.iter() {
             self.visit_ty(&*arg.ty);
         }
-        self.visit_ty(&*decl.output);
+
+        if let ast::Return(ref ret_ty) = decl.output {
+            self.visit_ty(&**ret_ty);
+        }
 
         // walk the body
         self.nest(item.id, |v| v.visit_block(&*body));
@@ -1136,7 +1143,10 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DxrVisitor<'l, 'tcx> {
                 for arg in method_type.decl.inputs.iter() {
                     self.visit_ty(&*arg.ty);
                 }
-                self.visit_ty(&*method_type.decl.output);
+
+                if let ast::Return(ref ret_ty) = method_type.decl.output {
+                    self.visit_ty(&**ret_ty);
+                }
 
                 self.process_generic_params(&method_type.generics,
                                             method_type.span,
@@ -1352,7 +1362,10 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DxrVisitor<'l, 'tcx> {
                 for arg in decl.inputs.iter() {
                     self.visit_ty(&*arg.ty);
                 }
-                self.visit_ty(&*decl.output);
+
+                if let ast::Return(ref ret_ty) = decl.output {
+                    self.visit_ty(&**ret_ty);
+                }
 
                 // walk the body
                 self.nest(ex.id, |v| v.visit_block(&**body));
@@ -1447,7 +1460,7 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DxrVisitor<'l, 'tcx> {
         for &(id, ref p, ref immut, _) in self.collected_paths.iter() {
             let value = if *immut { value.to_string() } else { "<mutable>".to_string() };
             let types = self.analysis.ty_cx.node_types.borrow();
-            let typ = ppaux::ty_to_string(&self.analysis.ty_cx, (*types)[id as uint]);
+            let typ = ppaux::ty_to_string(&self.analysis.ty_cx, (*types)[id]);
             // Get the span only for the name of the variable (I hope the path
             // is only ever a variable name, but who knows?).
             let sub_span = self.span.span_for_last_ident(p.span);

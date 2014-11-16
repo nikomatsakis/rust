@@ -200,13 +200,12 @@ use middle::trans::type_::Type;
 use middle::trans;
 use middle::ty;
 use middle::pat_util;
+use util::nodemap::{DefIdMap, NodeMap, FnvHashMap, FnvHashSet};
 use util::ppaux;
 
 use libc::c_uint;
 use std::c_str::{CString, ToCStr};
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::ptr;
 use std::rc::{Rc, Weak};
 use syntax::util::interner::Interner;
@@ -258,11 +257,11 @@ struct TypeMap {
     // The UniqueTypeIds created so far
     unique_id_interner: Interner<Rc<String>>,
     // A map from UniqueTypeId to debuginfo metadata for that type. This is a 1:1 mapping.
-    unique_id_to_metadata: HashMap<UniqueTypeId, DIType>,
-    // A map from ty::type_id() to debuginfo metadata. This is a N:1 mapping.
-    type_to_metadata: HashMap<uint, DIType>,
-    // A map from ty::type_id() to UniqueTypeId. This is a N:1 mapping.
-    type_to_unique_id: HashMap<uint, UniqueTypeId>
+    unique_id_to_metadata: FnvHashMap<UniqueTypeId, DIType>,
+    // A map from types to debuginfo metadata. This is a N:1 mapping.
+    type_to_metadata: FnvHashMap<ty::t, DIType>,
+    // A map from types to UniqueTypeId. This is a N:1 mapping.
+    type_to_unique_id: FnvHashMap<ty::t, UniqueTypeId>
 }
 
 impl TypeMap {
@@ -270,9 +269,9 @@ impl TypeMap {
     fn new() -> TypeMap {
         TypeMap {
             unique_id_interner: Interner::new(),
-            type_to_metadata: HashMap::new(),
-            unique_id_to_metadata: HashMap::new(),
-            type_to_unique_id: HashMap::new(),
+            type_to_metadata: FnvHashMap::new(),
+            unique_id_to_metadata: FnvHashMap::new(),
+            type_to_unique_id: FnvHashMap::new(),
         }
     }
 
@@ -282,7 +281,7 @@ impl TypeMap {
                                    cx: &CrateContext,
                                    type_: ty::t,
                                    metadata: DIType) {
-        if self.type_to_metadata.insert(ty::type_id(type_), metadata).is_some() {
+        if self.type_to_metadata.insert(type_, metadata).is_some() {
             cx.sess().bug(format!("Type metadata for ty::t '{}' is already in the TypeMap!",
                                    ppaux::ty_to_string(cx.tcx(), type_)).as_slice());
         }
@@ -302,7 +301,7 @@ impl TypeMap {
     }
 
     fn find_metadata_for_type(&self, type_: ty::t) -> Option<DIType> {
-        self.type_to_metadata.find_copy(&ty::type_id(type_))
+        self.type_to_metadata.find_copy(&type_)
     }
 
     fn find_metadata_for_unique_id(&self, unique_type_id: UniqueTypeId) -> Option<DIType> {
@@ -342,7 +341,7 @@ impl TypeMap {
         // unique vec box (~[]) -> {HEAP_VEC_BOX<:pointee-uid:>}
         // gc box               -> {GC_BOX<:pointee-uid:>}
 
-        match self.type_to_unique_id.find_copy(&ty::type_id(type_)) {
+        match self.type_to_unique_id.find_copy(&type_) {
             Some(unique_type_id) => return unique_type_id,
             None => { /* generate one */}
         };
@@ -351,7 +350,6 @@ impl TypeMap {
         unique_type_id.push('{');
 
         match ty::get(type_).sty {
-            ty::ty_nil      |
             ty::ty_bool     |
             ty::ty_char     |
             ty::ty_str      |
@@ -367,6 +365,9 @@ impl TypeMap {
             ty::ty_struct(def_id, ref substs) => {
                 unique_type_id.push_str("struct ");
                 from_def_id_and_substs(self, cx, def_id, substs, &mut unique_type_id);
+            },
+            ty::ty_tup(ref component_types) if component_types.is_empty() => {
+                push_debuginfo_type_name(cx, type_, false, &mut unique_type_id);
             },
             ty::ty_tup(ref component_types) => {
                 unique_type_id.push_str("tuple ");
@@ -486,7 +487,7 @@ impl TypeMap {
         unique_type_id.shrink_to_fit();
 
         let key = self.unique_id_interner.intern(Rc::new(unique_type_id));
-        self.type_to_unique_id.insert(ty::type_id(type_), UniqueTypeId(key));
+        self.type_to_unique_id.insert(type_, UniqueTypeId(key));
 
         return UniqueTypeId(key);
 
@@ -645,15 +646,15 @@ pub struct CrateDebugContext {
     llcontext: ContextRef,
     builder: DIBuilderRef,
     current_debug_location: Cell<DebugLocation>,
-    created_files: RefCell<HashMap<String, DIFile>>,
-    created_enum_disr_types: RefCell<HashMap<ast::DefId, DIType>>,
+    created_files: RefCell<FnvHashMap<String, DIFile>>,
+    created_enum_disr_types: RefCell<DefIdMap<DIType>>,
 
     type_map: RefCell<TypeMap>,
-    namespace_map: RefCell<HashMap<Vec<ast::Name>, Rc<NamespaceTreeNode>>>,
+    namespace_map: RefCell<FnvHashMap<Vec<ast::Name>, Rc<NamespaceTreeNode>>>,
 
     // This collection is used to assert that composite types (structs, enums,
     // ...) have their members only set once:
-    composite_types_completed: RefCell<HashSet<DIType>>,
+    composite_types_completed: RefCell<FnvHashSet<DIType>>,
 }
 
 impl CrateDebugContext {
@@ -666,11 +667,11 @@ impl CrateDebugContext {
             llcontext: llcontext,
             builder: builder,
             current_debug_location: Cell::new(UnknownLocation),
-            created_files: RefCell::new(HashMap::new()),
-            created_enum_disr_types: RefCell::new(HashMap::new()),
+            created_files: RefCell::new(FnvHashMap::new()),
+            created_enum_disr_types: RefCell::new(DefIdMap::new()),
             type_map: RefCell::new(TypeMap::new()),
-            namespace_map: RefCell::new(HashMap::new()),
-            composite_types_completed: RefCell::new(HashSet::new()),
+            namespace_map: RefCell::new(FnvHashMap::new()),
+            composite_types_completed: RefCell::new(FnvHashSet::new()),
         };
     }
 }
@@ -714,7 +715,7 @@ impl FunctionDebugContext {
 }
 
 struct FunctionDebugContextData {
-    scope_map: RefCell<HashMap<ast::NodeId, DIScope>>,
+    scope_map: RefCell<NodeMap<DIScope>>,
     fn_metadata: DISubprogram,
     argument_counter: Cell<uint>,
     source_locations_enabled: Cell<bool>,
@@ -1346,7 +1347,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
 
     // Initialize fn debug context (including scope map and namespace map)
     let fn_debug_context = box FunctionDebugContextData {
-        scope_map: RefCell::new(HashMap::new()),
+        scope_map: RefCell::new(NodeMap::new()),
         fn_metadata: fn_metadata,
         argument_counter: Cell::new(1),
         source_locations_enabled: Cell::new(false),
@@ -1373,10 +1374,9 @@ pub fn create_function_debug_context(cx: &CrateContext,
         let mut signature = Vec::with_capacity(fn_decl.inputs.len() + 1);
 
         // Return type -- llvm::DIBuilder wants this at index 0
-        match fn_decl.output.node {
-            ast::TyNil => {
-                signature.push(ptr::null_mut());
-            }
+        match fn_decl.output {
+            ast::Return(ref ret_ty) if ret_ty.node == ast::TyTup(vec![]) =>
+                signature.push(ptr::null_mut()),
             _ => {
                 assert_type_for_node_id(cx, fn_ast_id, error_reporting_span);
 
@@ -1737,7 +1737,8 @@ fn basic_type_metadata(cx: &CrateContext, t: ty::t) -> DIType {
     debug!("basic_type_metadata: {}", ty::get(t));
 
     let (name, encoding) = match ty::get(t).sty {
-        ty::ty_nil => ("()".to_string(), DW_ATE_unsigned),
+        ty::ty_tup(ref elements) if elements.is_empty() =>
+            ("()".to_string(), DW_ATE_unsigned),
         ty::ty_bool => ("bool".to_string(), DW_ATE_boolean),
         ty::ty_char => ("char".to_string(), DW_ATE_unsigned_char),
         ty::ty_int(int_ty) => match int_ty {
@@ -2774,7 +2775,7 @@ fn subroutine_type_metadata(cx: &CrateContext,
     // return type
     signature_metadata.push(match signature.output {
         ty::FnConverging(ret_ty) => match ty::get(ret_ty).sty {
-            ty::ty_nil => ptr::null_mut(),
+            ty::ty_tup(ref tys) if tys.is_empty() => ptr::null_mut(),
             _ => type_metadata(cx, ret_ty, span)
         },
         ty::FnDiverging => diverging_type_metadata(cx)
@@ -2881,12 +2882,14 @@ fn type_metadata(cx: &CrateContext,
 
     let sty = &ty::get(t).sty;
     let MetadataCreationResult { metadata, already_stored_in_typemap } = match *sty {
-        ty::ty_nil      |
         ty::ty_bool     |
         ty::ty_char     |
         ty::ty_int(_)   |
         ty::ty_uint(_)  |
         ty::ty_float(_) => {
+            MetadataCreationResult::new(basic_type_metadata(cx, t), false)
+        }
+        ty::ty_tup(ref elements) if elements.is_empty() => {
             MetadataCreationResult::new(basic_type_metadata(cx, t), false)
         }
         ty::ty_enum(def_id, _) => {
@@ -3122,7 +3125,7 @@ fn fn_should_be_ignored(fcx: &FunctionContext) -> bool {
 fn assert_type_for_node_id(cx: &CrateContext,
                            node_id: ast::NodeId,
                            error_reporting_span: Span) {
-    if !cx.tcx().node_types.borrow().contains_key(&(node_id as uint)) {
+    if !cx.tcx().node_types.borrow().contains_key(&node_id) {
         cx.sess().span_bug(error_reporting_span,
                            "debuginfo: Could not find type for node id!");
     }
@@ -3153,7 +3156,7 @@ fn populate_scope_map(cx: &CrateContext,
                       fn_entry_block: &ast::Block,
                       fn_metadata: DISubprogram,
                       fn_ast_id: ast::NodeId,
-                      scope_map: &mut HashMap<ast::NodeId, DIScope>) {
+                      scope_map: &mut NodeMap<DIScope>) {
     let def_map = &cx.tcx().def_map;
 
     struct ScopeStackEntry {
@@ -3188,10 +3191,10 @@ fn populate_scope_map(cx: &CrateContext,
     fn with_new_scope(cx: &CrateContext,
                       scope_span: Span,
                       scope_stack: &mut Vec<ScopeStackEntry> ,
-                      scope_map: &mut HashMap<ast::NodeId, DIScope>,
+                      scope_map: &mut NodeMap<DIScope>,
                       inner_walk: |&CrateContext,
                                    &mut Vec<ScopeStackEntry> ,
-                                   &mut HashMap<ast::NodeId, DIScope>|) {
+                                   &mut NodeMap<DIScope>|) {
         // Create a new lexical scope and push it onto the stack
         let loc = cx.sess().codemap().lookup_char_pos(scope_span.lo);
         let file_metadata = file_metadata(cx, loc.file.name.as_slice());
@@ -3226,7 +3229,7 @@ fn populate_scope_map(cx: &CrateContext,
     fn walk_block(cx: &CrateContext,
                   block: &ast::Block,
                   scope_stack: &mut Vec<ScopeStackEntry> ,
-                  scope_map: &mut HashMap<ast::NodeId, DIScope>) {
+                  scope_map: &mut NodeMap<DIScope>) {
         scope_map.insert(block.id, scope_stack.last().unwrap().scope_metadata);
 
         // The interesting things here are statements and the concluding expression.
@@ -3252,7 +3255,7 @@ fn populate_scope_map(cx: &CrateContext,
     fn walk_decl(cx: &CrateContext,
                  decl: &ast::Decl,
                  scope_stack: &mut Vec<ScopeStackEntry> ,
-                 scope_map: &mut HashMap<ast::NodeId, DIScope>) {
+                 scope_map: &mut NodeMap<DIScope>) {
         match *decl {
             codemap::Spanned { node: ast::DeclLocal(ref local), .. } => {
                 scope_map.insert(local.id, scope_stack.last().unwrap().scope_metadata);
@@ -3270,7 +3273,7 @@ fn populate_scope_map(cx: &CrateContext,
     fn walk_pattern(cx: &CrateContext,
                     pat: &ast::Pat,
                     scope_stack: &mut Vec<ScopeStackEntry> ,
-                    scope_map: &mut HashMap<ast::NodeId, DIScope>) {
+                    scope_map: &mut NodeMap<DIScope>) {
 
         let def_map = &cx.tcx().def_map;
 
@@ -3428,7 +3431,7 @@ fn populate_scope_map(cx: &CrateContext,
     fn walk_expr(cx: &CrateContext,
                  exp: &ast::Expr,
                  scope_stack: &mut Vec<ScopeStackEntry> ,
-                 scope_map: &mut HashMap<ast::NodeId, DIScope>) {
+                 scope_map: &mut NodeMap<DIScope>) {
 
         scope_map.insert(exp.id, scope_stack.last().unwrap().scope_metadata);
 
@@ -3670,9 +3673,8 @@ fn compute_debuginfo_type_name(cx: &CrateContext,
 fn push_debuginfo_type_name(cx: &CrateContext,
                             t: ty::t,
                             qualified: bool,
-                            output:&mut String) {
+                            output: &mut String) {
     match ty::get(t).sty {
-        ty::ty_nil               => output.push_str("()"),
         ty::ty_bool              => output.push_str("bool"),
         ty::ty_char              => output.push_str("char"),
         ty::ty_str               => output.push_str("str"),
@@ -3699,8 +3701,10 @@ fn push_debuginfo_type_name(cx: &CrateContext,
                 push_debuginfo_type_name(cx, component_type, true, output);
                 output.push_str(", ");
             }
-            output.pop();
-            output.pop();
+            if !component_types.is_empty() {
+                output.pop();
+                output.pop();
+            }
             output.push(')');
         },
         ty::ty_uniq(inner_type) => {

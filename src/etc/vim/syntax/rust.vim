@@ -23,14 +23,14 @@ syn keyword   rustKeyword     box nextgroup=rustBoxPlacement skipwhite skipempty
 syn keyword   rustKeyword     continue
 syn keyword   rustKeyword     extern nextgroup=rustExternCrate,rustObsoleteExternMod skipwhite skipempty
 syn keyword   rustKeyword     fn nextgroup=rustFuncName skipwhite skipempty
-syn keyword   rustKeyword     for in if impl let move
+syn keyword   rustKeyword     for in if impl let
 syn keyword   rustKeyword     loop once proc pub
 syn keyword   rustKeyword     return super
 syn keyword   rustKeyword     unsafe virtual where while
 syn keyword   rustKeyword     use nextgroup=rustModPath skipwhite skipempty
 " FIXME: Scoped impl's name is also fallen in this category
 syn keyword   rustKeyword     mod trait struct enum type nextgroup=rustIdentifier skipwhite skipempty
-syn keyword   rustStorage     mut ref static const
+syn keyword   rustStorage     move mut ref static const
 
 syn keyword   rustInvalidBareKeyword crate
 
@@ -97,8 +97,7 @@ syn keyword rustTrait FromIterator IntoIterator Extend ExactSize
 syn keyword rustTrait Iterator DoubleEndedIterator
 syn keyword rustTrait RandomAccessIterator CloneableIterator
 syn keyword rustTrait OrdIterator MutableDoubleEndedIterator
-syn keyword rustTrait Num NumCast CheckedAdd CheckedSub CheckedMul CheckedDiv
-syn keyword rustTrait Signed Unsigned Primitive Int Float
+syn keyword rustTrait NumCast Int SignedInt UnsignedInt Float
 syn keyword rustTrait FloatMath ToPrimitive FromPrimitive
 syn keyword rustTrait Box
 syn keyword rustTrait GenericPath Path PosixPath WindowsPath
@@ -106,7 +105,7 @@ syn keyword rustTrait RawPtr
 syn keyword rustTrait Buffer Writer Reader Seek
 syn keyword rustTrait Str StrVector StrSlice
 syn keyword rustTrait IntoMaybeOwned StrAllocating UnicodeStrSlice
-syn keyword rustTrait ToString IntoStr
+syn keyword rustTrait ToString IntoString
 syn keyword rustTrait Tuple1 Tuple2 Tuple3 Tuple4
 syn keyword rustTrait Tuple5 Tuple6 Tuple7 Tuple8
 syn keyword rustTrait Tuple9 Tuple10 Tuple11 Tuple12

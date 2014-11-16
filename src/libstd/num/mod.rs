@@ -16,21 +16,20 @@
 #![experimental]
 #![allow(missing_docs)]
 
-use option::Option;
-
+#[cfg(test)] use cmp::PartialEq;
 #[cfg(test)] use fmt::Show;
+#[cfg(test)] use ops::{Add, Sub, Mul, Div, Rem};
 
 pub use core::num::{Num, div_rem, Zero, zero, One, one};
-pub use core::num::{Signed, abs, abs_sub, signum};
 pub use core::num::{Unsigned, pow, Bounded};
-pub use core::num::{Primitive, Int, Saturating};
-pub use core::num::{CheckedAdd, CheckedSub, CheckedMul, CheckedDiv};
+pub use core::num::{Primitive, Int, SignedInt, UnsignedInt};
 pub use core::num::{cast, FromPrimitive, NumCast, ToPrimitive};
 pub use core::num::{next_power_of_two, is_power_of_two};
 pub use core::num::{checked_next_power_of_two};
 pub use core::num::{from_int, from_i8, from_i16, from_i32, from_i64};
 pub use core::num::{from_uint, from_u8, from_u16, from_u32, from_u64};
 pub use core::num::{from_f32, from_f64};
+pub use core::num::{FromStrRadix, from_str_radix};
 pub use core::num::{FPCategory, FPNaN, FPInfinite, FPZero, FPSubnormal};
 pub use core::num::{FPNormal, Float};
 
@@ -57,6 +56,11 @@ pub trait FloatMath: Float {
     fn max(self, other: Self) -> Self;
     /// Returns the minimum of the two numbers.
     fn min(self, other: Self) -> Self;
+
+    /// The positive difference of two numbers. Returns `0.0` if the number is
+    /// less than or equal to `other`, otherwise the difference between`self`
+    /// and `other` is returned.
+    fn abs_sub(self, other: Self) -> Self;
 
     /// Take the cubic root of a number.
     fn cbrt(self) -> Self;
@@ -110,21 +114,21 @@ pub trait FloatMath: Float {
     fn atanh(self) -> Self;
 }
 
-/// A generic trait for converting a string with a radix (base) to a value
-#[experimental = "might need to return Result"]
-pub trait FromStrRadix {
-    fn from_str_radix(str: &str, radix: uint) -> Option<Self>;
-}
+// DEPRECATED
 
-/// A utility function that just calls FromStrRadix::from_str_radix.
-#[experimental = "might need to return Result"]
-pub fn from_str_radix<T: FromStrRadix>(str: &str, radix: uint) -> Option<T> {
-    FromStrRadix::from_str_radix(str, radix)
+#[deprecated = "Use `FloatMath::abs_sub`"]
+pub fn abs_sub<T: FloatMath>(x: T, y: T) -> T {
+    x.abs_sub(y)
 }
 
 /// Helper function for testing numeric operations
 #[cfg(test)]
-pub fn test_num<T:Num + NumCast + Show>(ten: T, two: T) {
+pub fn test_num<T>(ten: T, two: T) where
+    T: PartialEq + NumCast
+     + Add<T, T> + Sub<T, T>
+     + Mul<T, T> + Div<T, T>
+     + Rem<T, T> + Show
+{
     assert_eq!(ten.add(&two),  cast(12i).unwrap());
     assert_eq!(ten.sub(&two),  cast(8i).unwrap());
     assert_eq!(ten.mul(&two),  cast(20i).unwrap());
@@ -624,46 +628,46 @@ mod tests {
     #[test]
     fn test_checked_add() {
         let five_less = uint::MAX - 5;
-        assert_eq!(five_less.checked_add(&0), Some(uint::MAX - 5));
-        assert_eq!(five_less.checked_add(&1), Some(uint::MAX - 4));
-        assert_eq!(five_less.checked_add(&2), Some(uint::MAX - 3));
-        assert_eq!(five_less.checked_add(&3), Some(uint::MAX - 2));
-        assert_eq!(five_less.checked_add(&4), Some(uint::MAX - 1));
-        assert_eq!(five_less.checked_add(&5), Some(uint::MAX));
-        assert_eq!(five_less.checked_add(&6), None);
-        assert_eq!(five_less.checked_add(&7), None);
+        assert_eq!(five_less.checked_add(0), Some(uint::MAX - 5));
+        assert_eq!(five_less.checked_add(1), Some(uint::MAX - 4));
+        assert_eq!(five_less.checked_add(2), Some(uint::MAX - 3));
+        assert_eq!(five_less.checked_add(3), Some(uint::MAX - 2));
+        assert_eq!(five_less.checked_add(4), Some(uint::MAX - 1));
+        assert_eq!(five_less.checked_add(5), Some(uint::MAX));
+        assert_eq!(five_less.checked_add(6), None);
+        assert_eq!(five_less.checked_add(7), None);
     }
 
     #[test]
     fn test_checked_sub() {
-        assert_eq!(5u.checked_sub(&0), Some(5));
-        assert_eq!(5u.checked_sub(&1), Some(4));
-        assert_eq!(5u.checked_sub(&2), Some(3));
-        assert_eq!(5u.checked_sub(&3), Some(2));
-        assert_eq!(5u.checked_sub(&4), Some(1));
-        assert_eq!(5u.checked_sub(&5), Some(0));
-        assert_eq!(5u.checked_sub(&6), None);
-        assert_eq!(5u.checked_sub(&7), None);
+        assert_eq!(5u.checked_sub(0), Some(5));
+        assert_eq!(5u.checked_sub(1), Some(4));
+        assert_eq!(5u.checked_sub(2), Some(3));
+        assert_eq!(5u.checked_sub(3), Some(2));
+        assert_eq!(5u.checked_sub(4), Some(1));
+        assert_eq!(5u.checked_sub(5), Some(0));
+        assert_eq!(5u.checked_sub(6), None);
+        assert_eq!(5u.checked_sub(7), None);
     }
 
     #[test]
     fn test_checked_mul() {
         let third = uint::MAX / 3;
-        assert_eq!(third.checked_mul(&0), Some(0));
-        assert_eq!(third.checked_mul(&1), Some(third));
-        assert_eq!(third.checked_mul(&2), Some(third * 2));
-        assert_eq!(third.checked_mul(&3), Some(third * 3));
-        assert_eq!(third.checked_mul(&4), None);
+        assert_eq!(third.checked_mul(0), Some(0));
+        assert_eq!(third.checked_mul(1), Some(third));
+        assert_eq!(third.checked_mul(2), Some(third * 2));
+        assert_eq!(third.checked_mul(3), Some(third * 3));
+        assert_eq!(third.checked_mul(4), None);
     }
 
     macro_rules! test_next_power_of_two(
         ($test_name:ident, $T:ident) => (
             fn $test_name() {
                 #![test]
-                assert_eq!(next_power_of_two::<$T>(0), 0);
+                assert_eq!((0 as $T).next_power_of_two(), 0);
                 let mut next_power = 1;
                 for i in range::<$T>(1, 40) {
-                     assert_eq!(next_power_of_two(i), next_power);
+                     assert_eq!(i.next_power_of_two(), next_power);
                      if i == next_power { next_power *= 2 }
                 }
             }
@@ -680,15 +684,15 @@ mod tests {
         ($test_name:ident, $T:ident) => (
             fn $test_name() {
                 #![test]
-                assert_eq!(checked_next_power_of_two::<$T>(0), None);
+                assert_eq!((0 as $T).checked_next_power_of_two(), None);
                 let mut next_power = 1;
                 for i in range::<$T>(1, 40) {
-                     assert_eq!(checked_next_power_of_two(i), Some(next_power));
+                     assert_eq!(i.checked_next_power_of_two(), Some(next_power));
                      if i == next_power { next_power *= 2 }
                 }
-                assert!(checked_next_power_of_two::<$T>($T::MAX / 2).is_some());
-                assert_eq!(checked_next_power_of_two::<$T>($T::MAX - 1), None);
-                assert_eq!(checked_next_power_of_two::<$T>($T::MAX), None);
+                assert!(($T::MAX / 2).checked_next_power_of_two().is_some());
+                assert_eq!(($T::MAX - 1).checked_next_power_of_two(), None);
+                assert_eq!($T::MAX.checked_next_power_of_two(), None);
             }
         )
     )
@@ -747,8 +751,9 @@ mod tests {
 
     #[test]
     fn test_pow() {
-        fn naive_pow<T: One + Mul<T, T>>(base: T, exp: uint) -> T {
-            range(0, exp).fold(one::<T>(), |acc, _| acc * base)
+        fn naive_pow<T: Int>(base: T, exp: uint) -> T {
+            let one: T = Int::one();
+            range(0, exp).fold(one, |acc, _| acc * base)
         }
         macro_rules! assert_pow(
             (($num:expr, $exp:expr) => $expected:expr) => {{
@@ -760,10 +765,7 @@ mod tests {
         assert_pow!((3i,     0 ) => 1);
         assert_pow!((5i,     1 ) => 5);
         assert_pow!((-4i,    2 ) => 16);
-        assert_pow!((0.5f64, 5 ) => 0.03125);
         assert_pow!((8i,     3 ) => 512);
-        assert_pow!((8.0f64, 5 ) => 32768.0);
-        assert_pow!((8.5f64, 5 ) => 44370.53125);
         assert_pow!((2u64,   50) => 1125899906842624);
     }
 }

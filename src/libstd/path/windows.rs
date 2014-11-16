@@ -16,14 +16,13 @@ use ascii::AsciiCast;
 use c_str::{CString, ToCStr};
 use clone::Clone;
 use cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering};
-use from_str::FromStr;
 use hash;
 use io::Writer;
 use iter::{AdditiveIterator, DoubleEndedIterator, Extend, Iterator, Map};
 use mem;
 use option::{Option, Some, None};
 use slice::{AsSlice, SlicePrelude};
-use str::{CharSplits, Str, StrAllocating, StrVector, StrPrelude};
+use str::{CharSplits, FromStr, Str, StrAllocating, StrVector, StrPrelude};
 use string::String;
 use unicode::char::UnicodeChar;
 use vec::Vec;
@@ -159,9 +158,9 @@ impl BytesContainer for Path {
 impl GenericPathUnsafe for Path {
     /// See `GenericPathUnsafe::from_vec_unchecked`.
     ///
-    /// # Failure
+    /// # Panics
     ///
-    /// Fails if not valid UTF-8.
+    /// Panics if not valid UTF-8.
     #[inline]
     unsafe fn new_unchecked<T: BytesContainer>(path: T) -> Path {
         let (prefix, path) = Path::normalize_(path.container_as_str().unwrap());
@@ -173,9 +172,9 @@ impl GenericPathUnsafe for Path {
 
     /// See `GenericPathUnsafe::set_filename_unchecked`.
     ///
-    /// # Failure
+    /// # Panics
     ///
-    /// Fails if not valid UTF-8.
+    /// Panics if not valid UTF-8.
     unsafe fn set_filename_unchecked<T: BytesContainer>(&mut self, filename: T) {
         let filename = filename.container_as_str().unwrap();
         match self.sepidx_or_prefix_len() {
@@ -600,9 +599,9 @@ impl GenericPath for Path {
 impl Path {
     /// Returns a new `Path` from a `BytesContainer`.
     ///
-    /// # Failure
+    /// # Panics
     ///
-    /// Fails if the vector contains a `NUL`, or if it contains invalid UTF-8.
+    /// Panics if the vector contains a `NUL`, or if it contains invalid UTF-8.
     ///
     /// # Example
     ///

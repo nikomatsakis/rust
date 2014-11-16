@@ -208,7 +208,6 @@ types involved before considering variance.
 
 */
 
-use std::collections::HashMap;
 use arena;
 use arena::Arena;
 use middle::resolve_lifetime as rl;
@@ -226,6 +225,7 @@ use syntax::parse::token::special_names;
 use syntax::ptr::P;
 use syntax::visit;
 use syntax::visit::Visitor;
+use util::nodemap::NodeMap;
 use util::ppaux::{Repr, UserString};
 
 pub fn infer_variance(tcx: &ty::ctxt) {
@@ -288,7 +288,7 @@ struct TermsContext<'a, 'tcx: 'a> {
 
     // Maps from the node id of a type/generic parameter to the
     // corresponding inferred index.
-    inferred_map: HashMap<ast::NodeId, InferredIndex>,
+    inferred_map: NodeMap<InferredIndex>,
 
     // Maps from an InferredIndex to the info for that variable.
     inferred_infos: Vec<InferredInfo<'a>> ,
@@ -323,7 +323,7 @@ fn determine_parameters_to_be_inferred<'a, 'tcx>(tcx: &'a ty::ctxt<'tcx>,
     let mut terms_cx = TermsContext {
         tcx: tcx,
         arena: arena,
-        inferred_map: HashMap::new(),
+        inferred_map: NodeMap::new(),
         inferred_infos: Vec::new(),
 
         lang_items: lang_items(tcx),
@@ -865,7 +865,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                variance);
 
         match ty::get(ty).sty {
-            ty::ty_nil | ty::ty_bool |
+            ty::ty_bool |
             ty::ty_char | ty::ty_int(_) | ty::ty_uint(_) |
             ty::ty_float(_) | ty::ty_str => {
                 /* leaf type -- noop */

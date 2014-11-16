@@ -849,6 +849,7 @@ pub trait Reader {
 }
 
 /// A reader which can be converted to a RefReader.
+#[deprecated = "use ByRefReader instead"]
 pub trait AsRefReader {
     /// Creates a wrapper around a mutable reference to the reader.
     ///
@@ -857,7 +858,23 @@ pub trait AsRefReader {
     fn by_ref<'a>(&'a mut self) -> RefReader<'a, Self>;
 }
 
+#[allow(deprecated)]
 impl<T: Reader> AsRefReader for T {
+    fn by_ref<'a>(&'a mut self) -> RefReader<'a, T> {
+        RefReader { inner: self }
+    }
+}
+
+/// A reader which can be converted to a RefReader.
+pub trait ByRefReader {
+    /// Creates a wrapper around a mutable reference to the reader.
+    ///
+    /// This is useful to allow applying adaptors while still
+    /// retaining ownership of the original value.
+    fn by_ref<'a>(&'a mut self) -> RefReader<'a, Self>;
+}
+
+impl<T: Reader> ByRefReader for T {
     fn by_ref<'a>(&'a mut self) -> RefReader<'a, T> {
         RefReader { inner: self }
     }
@@ -897,9 +914,9 @@ impl<'a> Reader for &'a mut Reader+'a {
 /// Similar to `slice()` except this function only bounds the slice on the
 /// capacity of `v`, not the length.
 ///
-/// # Failure
+/// # Panics
 ///
-/// Fails when `start` or `end` point outside the capacity of `v`, or when
+/// Panics when `start` or `end` point outside the capacity of `v`, or when
 /// `start` > `end`.
 // Private function here because we aren't sure if we want to expose this as
 // API yet. If so, it should be a method on Vec.
@@ -925,7 +942,7 @@ unsafe fn slice_vec_capacity<'a, T>(v: &'a mut Vec<T>, start: uint, end: uint) -
 /// # fn process_input<R: Reader>(r: R) {}
 /// # fn foo() {
 /// use std::io;
-/// use std::io::AsRefReader;
+/// use std::io::ByRefReader;
 /// use std::io::util::LimitReader;
 ///
 /// let mut stream = io::stdin();
@@ -1211,6 +1228,7 @@ pub trait Writer {
 }
 
 /// A writer which can be converted to a RefWriter.
+#[deprecated = "use ByRefWriter instead"]
 pub trait AsRefWriter {
     /// Creates a wrapper around a mutable reference to the writer.
     ///
@@ -1220,7 +1238,24 @@ pub trait AsRefWriter {
     fn by_ref<'a>(&'a mut self) -> RefWriter<'a, Self>;
 }
 
+#[allow(deprecated)]
 impl<T: Writer> AsRefWriter for T {
+    fn by_ref<'a>(&'a mut self) -> RefWriter<'a, T> {
+        RefWriter { inner: self }
+    }
+}
+
+/// A writer which can be converted to a RefWriter.
+pub trait ByRefWriter {
+    /// Creates a wrapper around a mutable reference to the writer.
+    ///
+    /// This is useful to allow applying wrappers while still
+    /// retaining ownership of the original value.
+    #[inline]
+    fn by_ref<'a>(&'a mut self) -> RefWriter<'a, Self>;
+}
+
+impl<T: Writer> ByRefWriter for T {
     fn by_ref<'a>(&'a mut self) -> RefWriter<'a, T> {
         RefWriter { inner: self }
     }
@@ -1256,7 +1291,7 @@ impl<'a> Writer for &'a mut Writer+'a {
 /// # fn process_input<R: Reader>(r: R) {}
 /// # fn foo () {
 /// use std::io::util::TeeReader;
-/// use std::io::{stdin, MemWriter, AsRefWriter};
+/// use std::io::{stdin, MemWriter, ByRefWriter};
 ///
 /// let mut output = MemWriter::new();
 ///
@@ -1402,16 +1437,6 @@ pub trait Buffer: Reader {
         )
     }
 
-    /// Create an iterator that reads a line on each iteration until EOF.
-    ///
-    /// # Error
-    ///
-    /// Any error other than `EndOfFile` that is produced by the underlying Reader
-    /// is returned by the iterator and should be handled by the caller.
-    fn lines<'r>(&'r mut self) -> Lines<'r, Self> {
-        Lines { buffer: self }
-    }
-
     /// Reads a sequence of bytes leading up to a specified delimiter. Once the
     /// specified byte is encountered, reading ceases and the bytes up to and
     /// including the delimiter are returned.
@@ -1487,7 +1512,10 @@ pub trait Buffer: Reader {
             None => Err(standard_error(InvalidInput))
         }
     }
+}
 
+/// Extension methods for the Buffer trait which are included in the prelude.
+pub trait BufferPrelude {
     /// Create an iterator that reads a utf8-encoded character on each iteration
     /// until EOF.
     ///
@@ -1495,8 +1523,24 @@ pub trait Buffer: Reader {
     ///
     /// Any error other than `EndOfFile` that is produced by the underlying Reader
     /// is returned by the iterator and should be handled by the caller.
-    fn chars<'r>(&'r mut self) -> Chars<'r, Self> {
+    fn chars<'r>(&'r mut self) -> Chars<'r, Self>;
+
+    /// Create an iterator that reads a line on each iteration until EOF.
+    ///
+    /// # Error
+    ///
+    /// Any error other than `EndOfFile` that is produced by the underlying Reader
+    /// is returned by the iterator and should be handled by the caller.
+    fn lines<'r>(&'r mut self) -> Lines<'r, Self>;
+}
+
+impl<T: Buffer> BufferPrelude for T {
+    fn chars<'r>(&'r mut self) -> Chars<'r, T> {
         Chars { buffer: self }
+    }
+
+    fn lines<'r>(&'r mut self) -> Lines<'r, T> {
+        Lines { buffer: self }
     }
 }
 
@@ -1967,5 +2011,9 @@ mod tests {
         assert_eq!(format!("{}", OTHER_RWX), "0007".to_string());
         assert_eq!(format!("{}", ALL_PERMISSIONS), "0777".to_string());
         assert_eq!(format!("{}", USER_READ | USER_WRITE | OTHER_WRITE), "0602".to_string());
+    }
+
+    fn _ensure_buffer_is_object_safe<T: Buffer>(x: &T) -> &Buffer {
+        x as &Buffer
     }
 }

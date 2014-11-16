@@ -267,7 +267,7 @@
 //! a bug.
 //!
 //! A module that instead returns `Results` is alerting the caller
-//! that panics are possible, and providing precise control over how
+//! that failure is possible, and providing precise control over how
 //! it is handled.
 //!
 //! Furthermore, panics may not be recoverable at all, depending on
@@ -878,9 +878,10 @@ impl<A> DoubleEndedIterator<A> for Item<A> {
 impl<A> ExactSize<A> for Item<A> {}
 
 /////////////////////////////////////////////////////////////////////////////
-// Free functions
+// FromIterator
 /////////////////////////////////////////////////////////////////////////////
 
+#[stable]
 impl<A, E, V: FromIterator<A>> FromIterator<Result<A, E>> for Result<V, E> {
     /// Takes each element in the `Iterator`: if it is an `Err`, no further
     /// elements are taken, and the `Err` is returned. Should no `Err` occur, a
@@ -932,6 +933,10 @@ impl<A, E, V: FromIterator<A>> FromIterator<Result<A, E>> for Result<V, E> {
         }
     }
 }
+
+/////////////////////////////////////////////////////////////////////////////
+// FromIterator
+/////////////////////////////////////////////////////////////////////////////
 
 /// Perform a fold operation over the result values from an iterator.
 ///

@@ -25,11 +25,47 @@ use iter::{Map, Iterator};
 use iter::{DoubleEndedIterator, ExactSize};
 use iter::range;
 use kinds::Sized;
-use num::{CheckedMul, Saturating};
+use num::Int;
 use option::{Option, None, Some};
 use raw::Repr;
 use slice::{mod, SlicePrelude};
 use uint;
+
+/// A trait to abstract the idea of creating a new instance of a type from a
+/// string.
+#[experimental = "might need to return Result"]
+pub trait FromStr {
+    /// Parses a string `s` to return an optional value of this type. If the
+    /// string is ill-formatted, the None is returned.
+    fn from_str(s: &str) -> Option<Self>;
+}
+
+/// A utility function that just calls FromStr::from_str
+pub fn from_str<A: FromStr>(s: &str) -> Option<A> {
+    FromStr::from_str(s)
+}
+
+impl FromStr for bool {
+    /// Parse a `bool` from a string.
+    ///
+    /// Yields an `Option<bool>`, because `s` may or may not actually be parseable.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// assert_eq!(from_str::<bool>("true"), Some(true));
+    /// assert_eq!(from_str::<bool>("false"), Some(false));
+    /// assert_eq!(from_str::<bool>("not even a boolean"), None);
+    /// ```
+    #[inline]
+    fn from_str(s: &str) -> Option<bool> {
+        match s {
+            "true"  => Some(true),
+            "false" => Some(false),
+            _       => None,
+        }
+    }
+}
 
 /*
 Section: Creating a string
@@ -750,7 +786,7 @@ impl<'a> Iterator<u16> for Utf16CodeUnits<'a> {
         // every char gets either one u16 or two u16,
         // so this iterator is between 1 or 2 times as
         // long as the underlying iterator.
-        (low, high.and_then(|n| n.checked_mul(&2)))
+        (low, high.and_then(|n| n.checked_mul(2)))
     }
 }
 
@@ -1084,7 +1120,7 @@ pub mod raw {
     ///
     /// Returns the substring from [`begin`..`end`).
     ///
-    /// # Failure
+    /// # Panics
     ///
     /// If begin is greater than end.
     /// If end is greater than the length of the string.
@@ -1121,24 +1157,6 @@ pub mod traits {
     use ops;
     use str::{Str, StrPrelude, eq_slice};
 
-    // NOTE(stage0): remove impl after a snapshot
-    #[cfg(stage0)]
-    impl<'a> Ord for &'a str {
-        #[inline]
-        fn cmp(&self, other: & &'a str) -> Ordering {
-            for (s_b, o_b) in self.bytes().zip(other.bytes()) {
-                match s_b.cmp(&o_b) {
-                    Greater => return Greater,
-                    Less => return Less,
-                    Equal => ()
-                }
-            }
-
-            self.len().cmp(&other.len())
-        }
-    }
-
-    #[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
     impl Ord for str {
         #[inline]
         fn cmp(&self, other: &str) -> Ordering {
@@ -1154,18 +1172,6 @@ pub mod traits {
         }
     }
 
-    // NOTE(stage0): remove impl after a snapshot
-    #[cfg(stage0)]
-    impl<'a> PartialEq for &'a str {
-        #[inline]
-        fn eq(&self, other: & &'a str) -> bool {
-            eq_slice((*self), (*other))
-        }
-        #[inline]
-        fn ne(&self, other: & &'a str) -> bool { !(*self).eq(other) }
-    }
-
-    #[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
     impl PartialEq for str {
         #[inline]
         fn eq(&self, other: &str) -> bool {
@@ -1175,23 +1181,8 @@ pub mod traits {
         fn ne(&self, other: &str) -> bool { !(*self).eq(other) }
     }
 
-    // NOTE(stage0): remove impl after a snapshot
-    #[cfg(stage0)]
-    impl<'a> Eq for &'a str {}
-
-    #[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
     impl Eq for str {}
 
-    // NOTE(stage0): remove impl after a snapshot
-    #[cfg(stage0)]
-    impl<'a> PartialOrd for &'a str {
-        #[inline]
-        fn partial_cmp(&self, other: &&'a str) -> Option<Ordering> {
-            Some(self.cmp(other))
-        }
-    }
-
-    #[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
     impl PartialOrd for str {
         #[inline]
         fn partial_cmp(&self, other: &str) -> Option<Ordering> {
@@ -1477,7 +1468,7 @@ pub trait StrPrelude for Sized? {
     ///
     /// This operation is `O(1)`.
     ///
-    /// Fails when `begin` and `end` do not point to valid characters
+    /// Panics when `begin` and `end` do not point to valid characters
     /// or point beyond the last character of the string.
     ///
     /// See also `slice_to` and `slice_from` for slicing prefixes and
@@ -1508,7 +1499,7 @@ pub trait StrPrelude for Sized? {
     ///
     /// Equivalent to `self.slice(begin, self.len())`.
     ///
-    /// Fails when `begin` does not point to a valid character, or is
+    /// Panics when `begin` does not point to a valid character, or is
     /// out of bounds.
     ///
     /// See also `slice`, `slice_to` and `slice_chars`.
@@ -1519,7 +1510,7 @@ pub trait StrPrelude for Sized? {
     ///
     /// Equivalent to `self.slice(0, end)`.
     ///
-    /// Fails when `end` does not point to a valid character, or is
+    /// Panics when `end` does not point to a valid character, or is
     /// out of bounds.
     ///
     /// See also `slice`, `slice_from` and `slice_chars`.
@@ -1538,7 +1529,7 @@ pub trait StrPrelude for Sized? {
     /// variants that use byte indices rather than code point
     /// indices.
     ///
-    /// Fails if `begin` > `end` or the either `begin` or `end` are
+    /// Panics if `begin` > `end` or the either `begin` or `end` are
     /// beyond the last character of the string.
     ///
     /// # Example
@@ -1622,7 +1613,7 @@ pub trait StrPrelude for Sized? {
     /// The start and end of the string (when `index == self.len()`)
     /// are considered to be boundaries.
     ///
-    /// Fails if `index` is greater than `self.len()`.
+    /// Panics if `index` is greater than `self.len()`.
     ///
     /// # Example
     ///
@@ -1690,7 +1681,7 @@ pub trait StrPrelude for Sized? {
     /// A record {ch: char, next: uint} containing the char value and the byte
     /// index of the next Unicode character.
     ///
-    /// # Failure
+    /// # Panics
     ///
     /// If `i` is greater than or equal to the length of the string.
     /// If `i` is not the index of the beginning of a valid UTF-8 character.
@@ -1702,7 +1693,7 @@ pub trait StrPrelude for Sized? {
     ///
     /// Returns 0 for next index if called on start index 0.
     ///
-    /// # Failure
+    /// # Panics
     ///
     /// If `i` is greater than the length of the string.
     /// If `i` is not an index following a valid UTF-8 character.
@@ -1719,7 +1710,7 @@ pub trait StrPrelude for Sized? {
     /// assert_eq!(s.char_at(4), 'c');
     /// ```
     ///
-    /// # Failure
+    /// # Panics
     ///
     /// If `i` is greater than or equal to the length of the string.
     /// If `i` is not the index of the beginning of a valid UTF-8 character.
@@ -1727,7 +1718,7 @@ pub trait StrPrelude for Sized? {
 
     /// Plucks the character ending at the `i`th byte of a string.
     ///
-    /// # Failure
+    /// # Panics
     ///
     /// If `i` is greater than the length of the string.
     /// If `i` is not an index following a valid UTF-8 character.
@@ -1835,7 +1826,7 @@ pub trait StrPrelude for Sized? {
 
     /// Returns the byte offset of an inner slice relative to an enclosing outer slice.
     ///
-    /// Fails if `inner` is not a direct slice contained within self.
+    /// Panics if `inner` is not a direct slice contained within self.
     ///
     /// # Example
     ///

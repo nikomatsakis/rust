@@ -32,9 +32,9 @@ use middle;
 use util::ppaux::{note_and_explain_region, bound_region_ptr_to_string};
 use util::ppaux::{trait_store_to_string, ty_to_string};
 use util::ppaux::{Repr, UserString};
-use util::common::{indenter, memoized, memoized_with_key};
-use util::nodemap::{NodeMap, NodeSet, DefIdMap, DefIdSet, FnvHashMap};
-
+use util::common::{indenter, memoized};
+use util::nodemap::{NodeMap, NodeSet, DefIdMap, DefIdSet};
+use util::nodemap::{FnvHashMap, FnvHashSet};
 use std::cell::{Cell, RefCell};
 use std::cmp;
 use std::fmt::{mod, Show};
@@ -42,7 +42,6 @@ use std::hash::{Hash, sip, Writer};
 use std::mem;
 use std::ops;
 use std::rc::Rc;
-use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::{Occupied, Vacant};
 use arena::TypedArena;
 use syntax::abi;
@@ -226,8 +225,6 @@ pub struct creader_cache_key {
     pub pos: uint,
     pub len: uint
 }
-
-pub type creader_cache = RefCell<HashMap<creader_cache_key, t>>;
 
 pub struct intern_key {
     sty: *const sty,
@@ -438,7 +435,6 @@ pub struct ctxt<'tcx> {
     /// Specifically use a speedy hash algorithm for this hash map, it's used
     /// quite often.
     interner: RefCell<FnvHashMap<intern_key, &'tcx t_box_>>,
-    pub next_id: Cell<uint>,
     pub sess: Session,
     pub def_map: resolve::DefMap,
 
@@ -449,7 +445,7 @@ pub struct ctxt<'tcx> {
     /// Stores the types for various nodes in the AST.  Note that this table
     /// is not guaranteed to be populated until after typeck.  See
     /// typeck::check::fn_ctxt for details.
-    pub node_types: node_type_table,
+    pub node_types: RefCell<NodeMap<t>>,
 
     /// Stores the type parameters which were substituted to obtain the type
     /// of this node.  This only applies to nodes that refer to entities
@@ -478,16 +474,16 @@ pub struct ctxt<'tcx> {
     pub map: ast_map::Map<'tcx>,
     pub intrinsic_defs: RefCell<DefIdMap<t>>,
     pub freevars: RefCell<FreevarMap>,
-    pub tcache: type_cache,
-    pub rcache: creader_cache,
-    pub short_names_cache: RefCell<HashMap<t, String>>,
-    pub needs_unwind_cleanup_cache: RefCell<HashMap<t, bool>>,
-    pub tc_cache: RefCell<HashMap<uint, TypeContents>>,
+    pub tcache: RefCell<DefIdMap<Polytype>>,
+    pub rcache: RefCell<FnvHashMap<creader_cache_key, t>>,
+    pub short_names_cache: RefCell<FnvHashMap<t, String>>,
+    pub needs_unwind_cleanup_cache: RefCell<FnvHashMap<t, bool>>,
+    pub tc_cache: RefCell<FnvHashMap<t, TypeContents>>,
     pub ast_ty_to_ty_cache: RefCell<NodeMap<ast_ty_to_ty_cache_entry>>,
     pub enum_var_cache: RefCell<DefIdMap<Rc<Vec<Rc<VariantInfo>>>>>,
     pub ty_param_defs: RefCell<NodeMap<TypeParameterDef>>,
     pub adjustments: RefCell<NodeMap<AutoAdjustment>>,
-    pub normalized_cache: RefCell<HashMap<t, t>>,
+    pub normalized_cache: RefCell<FnvHashMap<t, t>>,
     pub lang_items: middle::lang_items::LanguageItems,
     /// A mapping of fake provided method def_ids to the default implementation
     pub provided_method_sources: RefCell<DefIdMap<ast::DefId>>,
@@ -556,8 +552,8 @@ pub struct ctxt<'tcx> {
     /// expression defining the unboxed closure.
     pub unboxed_closures: RefCell<DefIdMap<UnboxedClosure>>,
 
-    pub node_lint_levels: RefCell<HashMap<(ast::NodeId, lint::LintId),
-                                          lint::LevelSource>>,
+    pub node_lint_levels: RefCell<FnvHashMap<(ast::NodeId, lint::LintId),
+                                              lint::LevelSource>>,
 
     /// The types that must be asserted to be the same size for `transmute`
     /// to be valid. We gather up these restrictions in the intrinsicck pass
@@ -603,7 +599,6 @@ pub type t_box = &'static t_box_;
 #[deriving(Show)]
 pub struct t_box_ {
     pub sty: sty,
-    pub id: uint,
     pub flags: TypeFlags,
 }
 
@@ -648,7 +643,6 @@ pub fn type_has_ty_infer(t: t) -> bool { tbox_has_flag(get(t), HAS_TY_INFER) }
 pub fn type_needs_infer(t: t) -> bool {
     tbox_has_flag(get(t), HAS_TY_INFER | HAS_RE_INFER)
 }
-pub fn type_id(t: t) -> uint { get(t).id }
 
 #[deriving(Clone, PartialEq, Eq, Hash, Show)]
 pub struct BareFnTy {
@@ -861,7 +855,7 @@ pub struct UpvarBorrow {
     pub region: ty::Region,
 }
 
-pub type UpvarBorrowMap = HashMap<UpvarId, UpvarBorrow>;
+pub type UpvarBorrowMap = FnvHashMap<UpvarId, UpvarBorrow>;
 
 impl Region {
     pub fn is_bound(&self) -> bool {
@@ -904,45 +898,39 @@ mod primitives {
     use syntax::ast;
 
     macro_rules! def_prim_ty(
-        ($name:ident, $sty:expr, $id:expr) => (
+        ($name:ident, $sty:expr) => (
             pub static $name: t_box_ = t_box_ {
                 sty: $sty,
-                id: $id,
                 flags: super::NO_TYPE_FLAGS,
             };
         )
     )
 
-    def_prim_ty!(TY_NIL,    super::ty_nil,                  0)
-    def_prim_ty!(TY_BOOL,   super::ty_bool,                 1)
-    def_prim_ty!(TY_CHAR,   super::ty_char,                 2)
-    def_prim_ty!(TY_INT,    super::ty_int(ast::TyI),        3)
-    def_prim_ty!(TY_I8,     super::ty_int(ast::TyI8),       4)
-    def_prim_ty!(TY_I16,    super::ty_int(ast::TyI16),      5)
-    def_prim_ty!(TY_I32,    super::ty_int(ast::TyI32),      6)
-    def_prim_ty!(TY_I64,    super::ty_int(ast::TyI64),      7)
-    def_prim_ty!(TY_UINT,   super::ty_uint(ast::TyU),       8)
-    def_prim_ty!(TY_U8,     super::ty_uint(ast::TyU8),      9)
-    def_prim_ty!(TY_U16,    super::ty_uint(ast::TyU16),     10)
-    def_prim_ty!(TY_U32,    super::ty_uint(ast::TyU32),     11)
-    def_prim_ty!(TY_U64,    super::ty_uint(ast::TyU64),     12)
-    def_prim_ty!(TY_F32,    super::ty_float(ast::TyF32),    14)
-    def_prim_ty!(TY_F64,    super::ty_float(ast::TyF64),    15)
+    def_prim_ty!(TY_BOOL,   super::ty_bool)
+    def_prim_ty!(TY_CHAR,   super::ty_char)
+    def_prim_ty!(TY_INT,    super::ty_int(ast::TyI))
+    def_prim_ty!(TY_I8,     super::ty_int(ast::TyI8))
+    def_prim_ty!(TY_I16,    super::ty_int(ast::TyI16))
+    def_prim_ty!(TY_I32,    super::ty_int(ast::TyI32))
+    def_prim_ty!(TY_I64,    super::ty_int(ast::TyI64))
+    def_prim_ty!(TY_UINT,   super::ty_uint(ast::TyU))
+    def_prim_ty!(TY_U8,     super::ty_uint(ast::TyU8))
+    def_prim_ty!(TY_U16,    super::ty_uint(ast::TyU16))
+    def_prim_ty!(TY_U32,    super::ty_uint(ast::TyU32))
+    def_prim_ty!(TY_U64,    super::ty_uint(ast::TyU64))
+    def_prim_ty!(TY_F32,    super::ty_float(ast::TyF32))
+    def_prim_ty!(TY_F64,    super::ty_float(ast::TyF64))
 
     pub static TY_ERR: t_box_ = t_box_ {
         sty: super::ty_err,
-        id: 17,
         flags: super::HAS_TY_ERR,
     };
-
-    pub const LAST_PRIMITIVE_ID: uint = 18;
 }
 
 // NB: If you change this, you'll probably want to change the corresponding
 // AST structure in libsyntax/ast.rs as well.
 #[deriving(Clone, PartialEq, Eq, Hash, Show)]
 pub enum sty {
-    ty_nil,
     ty_bool,
     ty_char,
     ty_int(ast::IntTy),
@@ -1457,10 +1445,6 @@ pub struct ItemSubsts {
     pub substs: Substs,
 }
 
-pub type type_cache = RefCell<DefIdMap<Polytype>>;
-
-pub type node_type_table = RefCell<HashMap<uint,t>>;
-
 /// Records information about each unboxed closure.
 #[deriving(Clone)]
 pub struct UnboxedClosure {
@@ -1511,11 +1495,10 @@ pub fn mk_ctxt<'tcx>(s: Session,
         named_region_map: named_region_map,
         item_variance_map: RefCell::new(DefIdMap::new()),
         variance_computed: Cell::new(false),
-        next_id: Cell::new(primitives::LAST_PRIMITIVE_ID),
         sess: s,
         def_map: dm,
         region_maps: region_maps,
-        node_types: RefCell::new(HashMap::new()),
+        node_types: RefCell::new(FnvHashMap::new()),
         item_substs: RefCell::new(NodeMap::new()),
         trait_refs: RefCell::new(NodeMap::new()),
         trait_defs: RefCell::new(DefIdMap::new()),
@@ -1524,10 +1507,10 @@ pub fn mk_ctxt<'tcx>(s: Session,
         intrinsic_defs: RefCell::new(DefIdMap::new()),
         freevars: freevars,
         tcache: RefCell::new(DefIdMap::new()),
-        rcache: RefCell::new(HashMap::new()),
-        short_names_cache: RefCell::new(HashMap::new()),
-        needs_unwind_cleanup_cache: RefCell::new(HashMap::new()),
-        tc_cache: RefCell::new(HashMap::new()),
+        rcache: RefCell::new(FnvHashMap::new()),
+        short_names_cache: RefCell::new(FnvHashMap::new()),
+        needs_unwind_cleanup_cache: RefCell::new(FnvHashMap::new()),
+        tc_cache: RefCell::new(FnvHashMap::new()),
         ast_ty_to_ty_cache: RefCell::new(NodeMap::new()),
         enum_var_cache: RefCell::new(DefIdMap::new()),
         impl_or_trait_items: RefCell::new(DefIdMap::new()),
@@ -1536,7 +1519,7 @@ pub fn mk_ctxt<'tcx>(s: Session,
         impl_trait_cache: RefCell::new(DefIdMap::new()),
         ty_param_defs: RefCell::new(NodeMap::new()),
         adjustments: RefCell::new(NodeMap::new()),
-        normalized_cache: RefCell::new(HashMap::new()),
+        normalized_cache: RefCell::new(FnvHashMap::new()),
         lang_items: lang_items,
         provided_method_sources: RefCell::new(DefIdMap::new()),
         struct_fields: RefCell::new(DefIdMap::new()),
@@ -1549,13 +1532,13 @@ pub fn mk_ctxt<'tcx>(s: Session,
         used_mut_nodes: RefCell::new(NodeSet::new()),
         populated_external_types: RefCell::new(DefIdSet::new()),
         populated_external_traits: RefCell::new(DefIdSet::new()),
-        upvar_borrow_map: RefCell::new(HashMap::new()),
+        upvar_borrow_map: RefCell::new(FnvHashMap::new()),
         extern_const_statics: RefCell::new(DefIdMap::new()),
         extern_const_variants: RefCell::new(DefIdMap::new()),
         method_map: RefCell::new(FnvHashMap::new()),
-        dependency_formats: RefCell::new(HashMap::new()),
+        dependency_formats: RefCell::new(FnvHashMap::new()),
         unboxed_closures: RefCell::new(DefIdMap::new()),
-        node_lint_levels: RefCell::new(HashMap::new()),
+        node_lint_levels: RefCell::new(FnvHashMap::new()),
         transmute_restrictions: RefCell::new(Vec::new()),
         stability: RefCell::new(stability),
         capture_modes: capture_modes,
@@ -1572,7 +1555,6 @@ pub fn mk_ctxt<'tcx>(s: Session,
 pub fn mk_t(cx: &ctxt, st: sty) -> t {
     // Check for primitive types.
     match st {
-        ty_nil => return mk_nil(),
         ty_err => return mk_err(),
         ty_bool => return mk_bool(),
         ty_int(i) => return mk_mach_int(i),
@@ -1618,7 +1600,7 @@ pub fn mk_t(cx: &ctxt, st: sty) -> t {
         rflags(bounds.region_bound)
     }
     match &st {
-      &ty_nil | &ty_bool | &ty_char | &ty_int(_) | &ty_float(_) | &ty_uint(_) |
+      &ty_bool | &ty_char | &ty_int(_) | &ty_float(_) | &ty_uint(_) |
       &ty_str => {}
       // You might think that we could just return ty_err for
       // any type containing ty_err as a component, and get
@@ -1681,7 +1663,6 @@ pub fn mk_t(cx: &ctxt, st: sty) -> t {
 
     let t = cx.type_arena.alloc(t_box_ {
         sty: st,
-        id: cx.next_id.get(),
         flags: flags,
     });
 
@@ -1692,8 +1673,6 @@ pub fn mk_t(cx: &ctxt, st: sty) -> t {
     };
 
     cx.interner.borrow_mut().insert(key, t);
-
-    cx.next_id.set(cx.next_id.get() + 1);
 
     unsafe {
         mem::transmute::<*const sty, t>(sty_ptr)
@@ -1706,9 +1685,6 @@ pub fn mk_prim_t(primitive: &'static t_box_) -> t {
         mem::transmute::<&'static t_box_, t>(primitive)
     }
 }
-
-#[inline]
-pub fn mk_nil() -> t { mk_prim_t(&primitives::TY_NIL) }
 
 #[inline]
 pub fn mk_err() -> t { mk_prim_t(&primitives::TY_ERR) }
@@ -1821,7 +1797,7 @@ pub fn mk_imm_ptr(cx: &ctxt, ty: t) -> t {
 }
 
 pub fn mk_nil_ptr(cx: &ctxt) -> t {
-    mk_ptr(cx, mt {ty: mk_nil(), mutbl: ast::MutImmutable})
+    mk_ptr(cx, mt {ty: mk_nil(cx), mutbl: ast::MutImmutable})
 }
 
 pub fn mk_vec(cx: &ctxt, t: t, sz: Option<uint>) -> t {
@@ -1836,14 +1812,12 @@ pub fn mk_slice(cx: &ctxt, r: Region, tm: mt) -> t {
             })
 }
 
-pub fn mk_tup(cx: &ctxt, ts: Vec<t>) -> t { mk_t(cx, ty_tup(ts)) }
+pub fn mk_tup(cx: &ctxt, ts: Vec<t>) -> t {
+    mk_t(cx, ty_tup(ts))
+}
 
-pub fn mk_tup_or_nil(cx: &ctxt, ts: Vec<t>) -> t {
-    if ts.len() == 0 {
-        ty::mk_nil()
-    } else {
-        mk_t(cx, ty_tup(ts))
-    }
+pub fn mk_nil(cx: &ctxt) -> t {
+    mk_tup(cx, Vec::new())
 }
 
 pub fn mk_closure(cx: &ctxt, fty: ClosureTy) -> t {
@@ -1926,7 +1900,7 @@ pub fn maybe_walk_ty(ty: t, f: |t| -> bool) {
         return;
     }
     match get(ty).sty {
-        ty_nil | ty_bool | ty_char | ty_int(_) | ty_uint(_) | ty_float(_) |
+        ty_bool | ty_char | ty_int(_) | ty_uint(_) | ty_float(_) |
         ty_str | ty_infer(_) | ty_param(_) | ty_err => {}
         ty_uniq(ty) | ty_vec(ty, _) | ty_open(ty) => maybe_walk_ty(ty, f),
         ty_ptr(ref tm) | ty_rptr(_, ref tm) => {
@@ -2014,7 +1988,10 @@ impl ParamBounds {
 // Type utilities
 
 pub fn type_is_nil(ty: t) -> bool {
-    get(ty).sty == ty_nil
+    match get(ty).sty {
+        ty_tup(ref tys) => tys.is_empty(),
+        _ => false
+    }
 }
 
 pub fn type_is_error(ty: t) -> bool {
@@ -2151,9 +2128,10 @@ pub fn type_is_fat_ptr(cx: &ctxt, ty: t) -> bool {
 */
 pub fn type_is_scalar(ty: t) -> bool {
     match get(ty).sty {
-      ty_nil | ty_bool | ty_char | ty_int(_) | ty_float(_) | ty_uint(_) |
+      ty_bool | ty_char | ty_int(_) | ty_float(_) | ty_uint(_) |
       ty_infer(IntVar(_)) | ty_infer(FloatVar(_)) |
       ty_bare_fn(..) | ty_ptr(_) => true,
+      ty_tup(ref tys) if tys.is_empty() => true,
       _ => false
     }
 }
@@ -2176,10 +2154,10 @@ pub fn type_needs_drop(cx: &ctxt, ty: t) -> bool {
 // cleanups.
 pub fn type_needs_unwind_cleanup(cx: &ctxt, ty: t) -> bool {
     return memoized(&cx.needs_unwind_cleanup_cache, ty, |ty| {
-        type_needs_unwind_cleanup_(cx, ty, &mut HashSet::new())
+        type_needs_unwind_cleanup_(cx, ty, &mut FnvHashSet::new())
     });
 
-    fn type_needs_unwind_cleanup_(cx: &ctxt, ty: t, tycache: &mut HashSet<t>) -> bool {
+    fn type_needs_unwind_cleanup_(cx: &ctxt, ty: t, tycache: &mut FnvHashSet<t>) -> bool {
         // Prevent infinite recursion
         if !tycache.insert(ty) {
             return false;
@@ -2188,7 +2166,7 @@ pub fn type_needs_unwind_cleanup(cx: &ctxt, ty: t) -> bool {
         let mut needs_unwind_cleanup = false;
         maybe_walk_ty(ty, |ty| {
             needs_unwind_cleanup |= match get(ty).sty {
-                ty_nil | ty_bool | ty_int(_) | ty_uint(_) |
+                ty_bool | ty_int(_) | ty_uint(_) |
                 ty_float(_) | ty_tup(_) | ty_ptr(_) => false,
 
                 ty_enum(did, ref substs) =>
@@ -2400,13 +2378,13 @@ pub fn type_interior_is_unsafe(cx: &ctxt, t: ty::t) -> bool {
 }
 
 pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
-    return memoized_with_key(&cx.tc_cache, ty, |ty| {
-        tc_ty(cx, ty, &mut HashMap::new())
-    }, |&ty| type_id(ty));
+    return memoized(&cx.tc_cache, ty, |ty| {
+        tc_ty(cx, ty, &mut FnvHashMap::new())
+    });
 
     fn tc_ty(cx: &ctxt,
              ty: t,
-             cache: &mut HashMap<uint, TypeContents>) -> TypeContents
+             cache: &mut FnvHashMap<t, TypeContents>) -> TypeContents
     {
         // Subtle: Note that we are *not* using cx.tc_cache here but rather a
         // private cache for this walk.  This is needed in the case of cyclic
@@ -2429,16 +2407,15 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
         // which is incorrect.  This value was computed based on the crutch
         // value for the type contents of list.  The correct value is
         // TC::OwnsOwned.  This manifested as issue #4821.
-        let ty_id = type_id(ty);
-        match cache.get(&ty_id) {
+        match cache.get(&ty) {
             Some(tc) => { return *tc; }
             None => {}
         }
-        match cx.tc_cache.borrow().get(&ty_id) {    // Must check both caches!
+        match cx.tc_cache.borrow().get(&ty) {    // Must check both caches!
             Some(tc) => { return *tc; }
             None => {}
         }
-        cache.insert(ty_id, TC::None);
+        cache.insert(ty, TC::None);
 
         let result = match get(ty).sty {
             // uint and int are ffi-unsafe
@@ -2448,7 +2425,7 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
 
             // Scalar and unique types are sendable, and durable
             ty_infer(ty::SkolemizedIntTy(_)) |
-            ty_nil | ty_bool | ty_int(_) | ty_uint(_) | ty_float(_) |
+            ty_bool | ty_int(_) | ty_uint(_) | ty_float(_) |
             ty_bare_fn(_) | ty::ty_char => {
                 TC::None
             }
@@ -2608,13 +2585,13 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
             }
         };
 
-        cache.insert(ty_id, result);
-        return result;
+        cache.insert(ty, result);
+        result
     }
 
     fn tc_mt(cx: &ctxt,
              mt: mt,
-             cache: &mut HashMap<uint, TypeContents>) -> TypeContents
+             cache: &mut FnvHashMap<t, TypeContents>) -> TypeContents
     {
         let mc = TC::ReachesMutable.when(mt.mutbl == MutMutable);
         mc | tc_ty(cx, mt.ty, cache)
@@ -2759,7 +2736,6 @@ pub fn is_instantiable(cx: &ctxt, r_ty: t) -> bool {
             ty_vec(_, Some(0)) => false, // don't need no contents
             ty_vec(ty, Some(_)) => type_requires(cx, seen, r_ty, ty),
 
-            ty_nil |
             ty_bool |
             ty_char |
             ty_int(_) |
@@ -2922,7 +2898,7 @@ pub fn is_type_representable(cx: &ctxt, sp: Span, ty: t) -> Representability {
                 pairs.all(|(&a, &b)| same_type(a, b))
             }
             _ => {
-                type_id(a) == type_id(b)
+                a == b
             }
         }
     }
@@ -3213,7 +3189,7 @@ pub fn node_id_to_trait_ref(cx: &ctxt, id: ast::NodeId) -> Rc<ty::TraitRef> {
 }
 
 pub fn try_node_id_to_type(cx: &ctxt, id: ast::NodeId) -> Option<t> {
-    cx.node_types.borrow().find_copy(&(id as uint))
+    cx.node_types.borrow().find_copy(&id)
 }
 
 pub fn node_id_to_type(cx: &ctxt, id: ast::NodeId) -> t {
@@ -3226,7 +3202,7 @@ pub fn node_id_to_type(cx: &ctxt, id: ast::NodeId) -> t {
 }
 
 pub fn node_id_to_type_opt(cx: &ctxt, id: ast::NodeId) -> Option<t> {
-    match cx.node_types.borrow().get(&(id as uint)) {
+    match cx.node_types.borrow().get(&id) {
        Some(&t) => Some(t),
        None => None
     }
@@ -3702,7 +3678,7 @@ pub fn expr_kind(tcx: &ctxt, expr: &ast::Expr) -> ExprKind {
         }
 
         ast::ExprCast(..) => {
-            match tcx.node_types.borrow().get(&(expr.id as uint)) {
+            match tcx.node_types.borrow().get(&expr.id) {
                 Some(&t) => {
                     if type_is_trait(t) {
                         RvalueDpsExpr
@@ -3798,10 +3774,11 @@ pub fn impl_or_trait_item_idx(id: ast::Name, trait_items: &[ImplOrTraitItem])
 
 pub fn ty_sort_string(cx: &ctxt, t: t) -> String {
     match get(t).sty {
-        ty_nil | ty_bool | ty_char | ty_int(_) |
+        ty_bool | ty_char | ty_int(_) |
         ty_uint(_) | ty_float(_) | ty_str => {
             ::util::ppaux::ty_to_string(cx, t)
         }
+        ty_tup(ref tys) if tys.is_empty() => ::util::ppaux::ty_to_string(cx, t),
 
         ty_enum(id, _) => format!("enum {}", item_path_str(cx, id)),
         ty_uniq(_) => "box".to_string(),
@@ -4796,54 +4773,42 @@ pub fn normalize_ty(cx: &ctxt, t: t) -> t {
 // Returns the repeat count for a repeating vector expression.
 pub fn eval_repeat_count(tcx: &ctxt, count_expr: &ast::Expr) -> uint {
     match const_eval::eval_const_expr_partial(tcx, count_expr) {
-      Ok(ref const_val) => match *const_val {
-        const_eval::const_int(count) => if count < 0 {
-            tcx.sess.span_err(count_expr.span,
-                              "expected positive integer for \
-                               repeat count, found negative integer");
-            0
-        } else {
-            count as uint
-        },
-        const_eval::const_uint(count) => count as uint,
-        const_eval::const_float(count) => {
-            tcx.sess.span_err(count_expr.span,
-                              "expected positive integer for \
-                               repeat count, found float");
-            count as uint
+        Ok(val) => {
+            let found = match val {
+                const_eval::const_uint(count) => return count as uint,
+                const_eval::const_int(count) if count >= 0 => return count as uint,
+                const_eval::const_int(_) =>
+                    "negative integer",
+                const_eval::const_float(_) =>
+                    "float",
+                const_eval::const_str(_) =>
+                    "string",
+                const_eval::const_bool(_) =>
+                    "boolean",
+                const_eval::const_binary(_) =>
+                    "binary array"
+            };
+            tcx.sess.span_err(count_expr.span, format!(
+                "expected positive integer for repeat count, found {}",
+                found).as_slice());
         }
-        const_eval::const_str(_) => {
-            tcx.sess.span_err(count_expr.span,
-                              "expected positive integer for \
-                               repeat count, found string");
-            0
+        Err(_) => {
+            let found = match count_expr.node {
+                ast::ExprPath(ast::Path {
+                    global: false,
+                    ref segments,
+                    ..
+                }) if segments.len() == 1 =>
+                    "variable",
+                _ =>
+                    "non-constant expression"
+            };
+            tcx.sess.span_err(count_expr.span, format!(
+                "expected constant integer for repeat count, found {}",
+                found).as_slice());
         }
-        const_eval::const_bool(_) => {
-            tcx.sess.span_err(count_expr.span,
-                              "expected positive integer for \
-                               repeat count, found boolean");
-            0
-        }
-        const_eval::const_binary(_) => {
-            tcx.sess.span_err(count_expr.span,
-                              "expected positive integer for \
-                               repeat count, found binary array");
-            0
-        }
-        const_eval::const_nil => {
-            tcx.sess.span_err(count_expr.span,
-                              "expected positive integer for \
-                               repeat count, found ()");
-            0
-        }
-      },
-      Err(..) => {
-        tcx.sess.span_err(count_expr.span,
-                          "expected constant integer for repeat count, \
-                           found variable");
-        0
-      }
     }
+    0
 }
 
 // Iterate over a type parameter's bounded traits and any supertraits
@@ -5160,7 +5125,6 @@ pub fn hash_crate_independent(tcx: &ctxt, t: t, svh: &Svh) -> u64 {
     };
     ty::walk_ty(t, |t| {
         match ty::get(t).sty {
-            ty_nil => byte!(0),
             ty_bool => byte!(2),
             ty_char => byte!(3),
             ty_int(i) => {
@@ -5531,7 +5495,6 @@ pub fn accumulate_lifetimes_in_type(accumulator: &mut Vec<ty::Region>,
                 accumulator.push(*region);
                 accum_substs(accumulator, substs);
             }
-            ty_nil |
             ty_bool |
             ty_char |
             ty_int(_) |

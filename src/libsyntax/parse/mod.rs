@@ -20,6 +20,7 @@ use ptr::P;
 use std::cell::{Cell, RefCell};
 use std::io::File;
 use std::rc::Rc;
+use std::num::Int;
 use std::str;
 use std::iter;
 
@@ -63,7 +64,7 @@ impl ParseSess {
     pub fn reserve_node_ids(&self, count: ast::NodeId) -> ast::NodeId {
         let v = self.node_id.get();
 
-        match v.checked_add(&count) {
+        match v.checked_add(count) {
             Some(next) => { self.node_id.set(next); }
             None => panic!("Input too large, ran out of node ids!")
         }
@@ -1036,10 +1037,9 @@ mod test {
                                     }),
                                         id: ast::DUMMY_NODE_ID
                                     }),
-                                output: P(ast::Ty{id: ast::DUMMY_NODE_ID,
-                                                  node: ast::TyNil,
-                                                  span:sp(15,15)}), // not sure
-                                cf: ast::Return,
+                                output: ast::Return(P(ast::Ty{id: ast::DUMMY_NODE_ID,
+                                                  node: ast::TyTup(vec![]),
+                                                  span:sp(15,15)})), // not sure
                                 variadic: false
                             }),
                                     ast::NormalFn,

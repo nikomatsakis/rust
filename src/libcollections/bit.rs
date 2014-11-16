@@ -22,6 +22,7 @@
 //!
 //! ```
 //! use std::collections::{BitvSet, Bitv};
+//! use std::num::Float;
 //! use std::iter;
 //!
 //! let max_prime = 10000;
@@ -69,6 +70,7 @@ use core::default::Default;
 use core::fmt;
 use core::iter::{Chain, Enumerate, Repeat, Skip, Take};
 use core::iter;
+use core::num::Int;
 use core::slice;
 use core::u32;
 use std::hash;
@@ -256,9 +258,9 @@ impl Bitv {
 
     /// Retrieves the value at index `i`.
     ///
-    /// # Failure
+    /// # Panics
     ///
-    /// Fails if `i` is out of bounds.
+    /// Panics if `i` is out of bounds.
     ///
     /// # Example
     ///
@@ -283,9 +285,9 @@ impl Bitv {
 
     /// Sets the value of a bit at a index `i`.
     ///
-    /// # Failure
+    /// # Panics
     ///
-    /// Fails if `i` is out of bounds.
+    /// Panics if `i` is out of bounds.
     ///
     /// # Example
     ///
@@ -351,9 +353,9 @@ impl Bitv {
     /// Sets `self` to the union of `self` and `other`. Both bitvectors must be
     /// the same length. Returns `true` if `self` changed.
     ///
-    /// # Failure
+    /// # Panics
     ///
-    /// Fails if the bitvectors are of different lengths.
+    /// Panics if the bitvectors are of different lengths.
     ///
     /// # Example
     ///
@@ -381,9 +383,9 @@ impl Bitv {
     /// Sets `self` to the intersection of `self` and `other`. Both bitvectors
     /// must be the same length. Returns `true` if `self` changed.
     ///
-    /// # Failure
+    /// # Panics
     ///
-    /// Fails if the bitvectors are of different lengths.
+    /// Panics if the bitvectors are of different lengths.
     ///
     /// # Example
     ///
@@ -411,9 +413,9 @@ impl Bitv {
     /// element of `other` at the same index. Both bitvectors must be the same
     /// length. Returns `true` if `self` changed.
     ///
-    /// # Failure
+    /// # Panics
     ///
-    /// Fails if the bitvectors are of different length.
+    /// Panics if the bitvectors are of different length.
     ///
     /// # Example
     ///
@@ -578,9 +580,9 @@ impl Bitv {
     /// Compares a `Bitv` to a slice of `bool`s.
     /// Both the `Bitv` and slice must have the same length.
     ///
-    /// # Failure
+    /// # Panics
     ///
-    /// Fails if the the `Bitv` and slice are of different length.
+    /// Panics if the the `Bitv` and slice are of different length.
     ///
     /// # Example
     ///
@@ -716,7 +718,7 @@ impl Bitv {
 
     /// Shortens by one element and returns the removed element.
     ///
-    /// # Failure
+    /// # Panics
     ///
     /// Assert if empty.
     ///
