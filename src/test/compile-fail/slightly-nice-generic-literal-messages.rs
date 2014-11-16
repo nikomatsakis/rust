@@ -8,10 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-struct Foo<T,U>(T);
+use std::kinds::marker;
+
+struct Foo<T,U>(T, marker::CovariantType<U>);
 
 fn main() {
-    match Foo(1.1) {
+    match Foo(1.1, marker::CovariantType) {
         1 => {}
     //~^ ERROR expected `Foo<_, _>`, found `_`
     }

@@ -11,22 +11,23 @@
 #![deny(bivariance)]
 #![allow(dead_code)]
 
-// Check that a type parameter which is only used in a trait bound is
+// Check that bounds on type parameters (at least in types)
+// do not which is only used in a trait bound is
 // not considered bivariant.
 
 #[rustc_variance]
-trait Getter<T> { //~ ERROR types=[[+];[o];[]]
+trait Getter<T> { //~ ERROR types=[[+];[o];[];[]]
     fn get(&self) -> T;
 }
 
 #[rustc_variance]
-trait Setter<T> { //~ ERROR types=[[-];[o];[]]
+trait Setter<T> { //~ ERROR types=[[-];[o];[];[]]
     fn get(&self, T);
 }
 
 #[rustc_variance]
-struct TestStruct<U,T:Getter<U>> { //~ ERROR types=[[+, +];[o];[]]
-    t: T
+struct TestStruct<U,T:Getter<U>> { //~ ERROR types=[[+, +];[];[];[]]
+    t: T, u: U
 }
 
 #[rustc_variance]

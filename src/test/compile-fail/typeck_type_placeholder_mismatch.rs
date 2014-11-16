@@ -11,19 +11,21 @@
 // This test checks that genuine type errors with partial
 // type hints are understandable.
 
-struct Foo<T>;
-struct Bar<U>;
+use std::kinds::marker;
+
+struct Foo<T>(T);
+struct Bar<U>(U);
 
 pub fn main() {
 }
 
 fn test1() {
-    let x: Foo<_> = Bar::<uint>;
+    let x: Foo<_> = Bar::<uint>(22);
     //~^ ERROR mismatched types: expected `Foo<_>`, found `Bar<uint>`
     let y: Foo<uint> = x;
 }
 
 fn test2() {
-    let x: Foo<_> = Bar::<uint>;
+    let x: Foo<_> = Bar::<uint>(22);
     //~^ ERROR mismatched types: expected `Foo<_>`, found `Bar<uint>`
 }

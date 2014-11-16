@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::kinds::marker;
+
 fn send<T:Send + std::fmt::Show>(ch: _chan<T>, data: T) {
     println!("{}", ch);
     println!("{}", data);
@@ -15,7 +17,7 @@ fn send<T:Send + std::fmt::Show>(ch: _chan<T>, data: T) {
 }
 
 #[deriving(Show)]
-struct _chan<T>(int);
+struct _chan<T>(int, marker::CovariantType<T>);
 
 // Tests that "log(debug, message);" is flagged as using
 // message after the send deinitializes it

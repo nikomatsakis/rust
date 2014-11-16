@@ -10,7 +10,10 @@
 
 // ignore-tidy-linelength
 
-struct Foo<'x> { bar: int }
+use std::kinds::marker;
+
+struct Foo<'x> { bar: int, m: marker::ContravariantLifetime<'x> }
+
 fn foo1<'a>(x: &Foo) -> &'a int {
 //~^ HELP: consider using an explicit lifetime parameter as shown: fn foo1<'a>(x: &'a Foo) -> &'a int
     &x.bar //~ ERROR: cannot infer

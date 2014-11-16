@@ -10,7 +10,12 @@
 
 // ignore-tidy-linelength
 
-struct Bar<'x, 'y, 'z> { bar: &'y int, baz: int }
+use std::kinds::marker;
+
+struct Bar<'x, 'y, 'z> { bar: &'y int, baz: int,
+                         m: marker::ContravariantLifetime<'x>,
+                         n: marker::ContravariantLifetime<'z> }
+
 fn bar1<'a>(x: &Bar) -> (&'a int, &'a int, &'a int) {
 //~^ HELP: consider using an explicit lifetime parameter as shown: fn bar1<'b, 'c, 'a>(x: &'a Bar<'b, 'a, 'c>) -> (&'a int, &'a int, &'a int)
     (x.bar, &x.baz, &x.baz)

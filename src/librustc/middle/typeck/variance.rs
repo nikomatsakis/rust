@@ -297,7 +297,7 @@ struct TermsContext<'a, 'tcx: 'a> {
 #[deriving(Show, PartialEq)]
 enum ParamKind {
     TypeParam,
-    RegionParam
+    RegionParam,
 }
 
 struct InferredInfo<'a> {
@@ -445,10 +445,11 @@ impl<'a, 'tcx> TermsContext<'a, 'tcx> {
 
         debug!("add_inferred(item_id={}, \
                 kind={}, \
+                space={}, \
                 index={}, \
-                param_id={},
+                param_id={}, \
                 inf_index={})",
-                item_id, kind, index, param_id, inf_index);
+                item_id, kind, space, index, param_id, inf_index);
     }
 
     fn pick_initial_variance(&self,

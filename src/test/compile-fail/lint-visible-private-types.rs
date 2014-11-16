@@ -13,8 +13,10 @@
 #![allow(dead_code)]
 #![crate_type="lib"]
 
-struct Private<T>;
-pub struct Public<T>;
+use std::kinds::marker;
+
+struct Private<T>(marker::CovariantType<T>);
+pub struct Public<T>(marker::CovariantType<T>);
 
 impl Private<Public<int>> {
     pub fn a(&self) -> Private<int> { panic!() }

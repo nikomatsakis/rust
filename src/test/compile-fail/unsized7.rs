@@ -10,7 +10,9 @@
 
 // Test sized-ness checking in substitution in impls.
 
-trait T for Sized? {}
+use std::kinders::marker;
+
+trait T for Sized? : marker::Invariant {}
 
 // I would like these to fail eventually.
 // impl - bounded

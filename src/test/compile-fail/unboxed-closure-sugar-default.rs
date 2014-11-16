@@ -14,8 +14,10 @@
 #![feature(default_type_params)]
 #![allow(dead_code)]
 
+use std::kinds::marker;
+
 struct Foo<T,U,V=T> {
-    t: T, u: U
+    t: T, u: U, m: marker::CovariantType<(T,U,V)>
 }
 
 trait Eq<X> { }

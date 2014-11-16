@@ -10,6 +10,7 @@
 
 // Test sized-ness checking in substitution within fn bodies..
 
+use std::kinds::marker;
 
 // Unbounded.
 fn f1<Sized? X>(x: &X) {
@@ -20,7 +21,7 @@ fn f2<X>(x: &X) {
 }
 
 // Bounded.
-trait T for Sized? {}
+trait T for Sized? : marker::Invariant {}
 fn f3<Sized? X: T>(x: &X) {
     f4::<X>(x);
     //~^ ERROR the trait `core::kinds::Sized` is not implemented

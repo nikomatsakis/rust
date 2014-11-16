@@ -11,7 +11,10 @@
 #![feature(globs, lang_items)]
 #![no_std] // makes debugging this test *a lot* easier (during resolve)
 
-#[lang = "sized"] pub trait Sized for Sized? {}
+#[lang="covariant_trait"]
+pub trait Covariant for Sized? { }
+
+#[lang = "sized"] pub trait Sized for Sized? : Covariant {}
 
 // Test to make sure that private items imported through globs remain private
 // when  they're used.

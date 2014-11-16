@@ -11,8 +11,11 @@
 #![feature(globs, lang_items)]
 #![no_std] // makes debugging this test *a lot* easier (during resolve)
 
+#[lang="covariant_trait"]
+pub trait Covariant for Sized? { }
+
 #[lang="sized"]
-pub trait Sized {}
+pub trait Sized : Covariant {}
 
 mod bar {
     // shouldn't bring in too much
