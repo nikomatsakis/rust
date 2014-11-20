@@ -135,14 +135,6 @@ pub fn check_object_cast<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
 pub fn check_object_safety<'tcx>(tcx: &ty::ctxt<'tcx>,
                                  object_trait: &ty::TyTrait<'tcx>,
                                  span: Span) {
-    // Skip the fn_once lang item trait since only the compiler should call
-    // `call_once` which is the method which takes self by value. What could go
-    // wrong?
-    match tcx.lang_items.fn_once_trait() {
-        Some(def_id) if def_id == object_trait.principal.def_id => return,
-        _ => {}
-    }
-
     let trait_items = ty::trait_items(tcx, object_trait.principal.def_id);
 
     let mut errors = Vec::new();

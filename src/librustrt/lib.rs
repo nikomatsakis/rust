@@ -19,7 +19,7 @@
 #![allow(unknown_features)]
 #![feature(macro_rules, phase, globs, thread_local, asm)]
 #![feature(linkage, lang_items, unsafe_destructor, default_type_params)]
-#![feature(import_shadowing, slicing_syntax)]
+#![feature(import_shadowing, slicing_syntax, unboxed_closures, overloaded_calls)]
 #![no_std]
 #![experimental]
 
@@ -52,6 +52,7 @@ mod thread_local_storage;
 mod util;
 mod libunwind;
 mod stack_overflow;
+pub mod procedure;
 
 pub mod args;
 pub mod bookkeeping;
