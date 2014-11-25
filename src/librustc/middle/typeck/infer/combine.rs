@@ -131,9 +131,9 @@ pub trait Combine<'tcx> {
 
         fn relate_type_params<'tcx, C: Combine<'tcx>>(this: &C,
                                                       variances: Option<&[ty::Variance]>,
-                                                      a_tys: &[ty::t],
-                                                      b_tys: &[ty::t])
-                                                      -> cres<Vec<ty::t>>
+                                                      a_tys: &[Ty<'tcx>],
+                                                      b_tys: &[Ty<'tcx>])
+                                                      -> cres<'tcx, Vec<Ty<'tcx>>>
         {
             if a_tys.len() != b_tys.len() {
                 return Err(ty::terr_ty_param_size(expected_found(this,

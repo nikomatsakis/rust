@@ -18,8 +18,11 @@
 #![no_std]
 #![feature(lang_items)]
 
+#[lang="covariant_trait"]
+pub trait Covariant for Sized? { }
+
 #[lang = "sized"]
-pub trait Sized for Sized? {
+pub trait Sized for Sized? : Covariant {
     // Empty.
 }
 
@@ -31,6 +34,7 @@ pub mod std {
     }
 }
 
+#[lang="contravariant_lifetime"]
 pub struct ContravariantLifetime<'a>;
 
 impl <'a> ::std::clone::Clone for ContravariantLifetime<'a> {

@@ -227,6 +227,7 @@ use syntax::parse::token::special_names;
 use syntax::ptr::P;
 use syntax::visit;
 use syntax::visit::Visitor;
+use util::common::ErrorReported;
 use util::nodemap::NodeMap;
 use util::ppaux::{Repr, UserString};
 
@@ -924,7 +925,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
 
                 // Ignore the SelfSpace, it is erased.
                 self.add_constraints_from_trait_ref(
-                    principal.def_id, [subst::TypeSpace],
+                    principal.def_id, &[subst::TypeSpace],
                     &principal.substs, variance);
             }
 
@@ -1014,7 +1015,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
     }
 
     fn add_constraints_from_param_bounds(&mut self,
-                                         subject_ty: ty::t,
+                                         subject_ty: Ty<'tcx>,
                                          bounds: &ty::ParamBounds) {
         /*!
          * Adds any variance constraints that occur due to `subject_ty`
@@ -1032,11 +1033,11 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
             match trait_ref {
                 Ok(trait_ref) => {
                     self.add_constraints_from_trait_ref(trait_ref.def_id,
-                                                        subst::ParamSpace::all(),
+                                                        &subst::ParamSpace::all(),
                                                         &trait_ref.substs,
                                                         self.covariant);
                 }
-                Err(traits::ErrorReported) => { }
+                Err(ErrorReported) => { }
             }
         }
 
@@ -1048,7 +1049,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
         for bound in bounds.trait_bounds.iter() {
             assert_eq!(bound.substs.self_ty(), Some(subject_ty));
             self.add_constraints_from_trait_ref(bound.def_id,
-                                                subst::ParamSpace::all(),
+                                                &subst::ParamSpace::all(),
                                                 &bound.substs,
                                                 self.covariant);
         }
@@ -1218,7 +1219,7 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                         types.push(info.space, variance);
 
                         if variance == ty::Bivariant {
-                            span_err!(tcx.sess, info.span, E0168,
+                            span_err!(tcx.sess, info.span, E0170,
                                       "type parameter `{}` is never used; \
                                        either remove it, or use a marker such as \
                                        `std::kinds::marker::Invariance`",
@@ -1229,7 +1230,7 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                         regions.push(info.space, variance);
 
                         if variance == ty::Bivariant {
-                            span_err!(tcx.sess, info.span, E0169,
+                            span_err!(tcx.sess, info.span, E0171,
                                       "lifetime parameter `{}` is never used; \
                                       either remove it, or use a marker such as \
                                       `std::kinds::marker::Invariance` applied to a \

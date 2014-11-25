@@ -10,7 +10,7 @@
 
 // Test sized-ness checking in substitution in impls.
 
-use std::kinders::marker;
+use std::kinds::marker;
 
 trait T for Sized? : marker::Invariant {}
 
