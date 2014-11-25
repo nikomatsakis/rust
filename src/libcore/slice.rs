@@ -34,13 +34,15 @@
 // * The `raw` and `bytes` submodules.
 // * Boilerplate trait implementations.
 
+pub use self::BinarySearchResult::*;
+
 use mem::transmute;
 use clone::Clone;
 use cmp::{PartialEq, PartialOrd, Eq, Ord, Ordering, Less, Equal, Greater, Equiv};
 use cmp;
 use default::Default;
 use iter::*;
-use num::{Int, div_rem};
+use num::Int;
 use ops;
 use option::{None, Option, Some};
 use ptr;
@@ -973,11 +975,11 @@ pub trait CloneSlicePrelude<T> for Sized? {
     /// let mut dst = [0i, 0, 0];
     /// let src = [1i, 2];
     ///
-    /// assert!(dst.clone_from_slice(src) == 2);
+    /// assert!(dst.clone_from_slice(&src) == 2);
     /// assert!(dst == [1, 2, 0]);
     ///
     /// let src2 = [3i, 4, 5, 6];
-    /// assert!(dst.clone_from_slice(src2) == 3);
+    /// assert!(dst.clone_from_slice(&src2) == 3);
     /// assert!(dst == [3i, 4, 5]);
     /// ```
     fn clone_from_slice(&mut self, &[T]) -> uint;
@@ -1006,15 +1008,25 @@ impl<T: Clone> CloneSlicePrelude<T> for [T] {
 
 /// Data that is viewable as a slice.
 #[unstable = "may merge with other traits"]
-pub trait AsSlice<T> {
+pub trait AsSlice<T> for Sized? {
     /// Work with `self` as a slice.
     fn as_slice<'a>(&'a self) -> &'a [T];
 }
 
 #[unstable = "trait is unstable"]
-impl<'a,T> AsSlice<T> for &'a [T] {
+impl<T> AsSlice<T> for [T] {
     #[inline(always)]
-    fn as_slice<'a>(&'a self) -> &'a [T] { *self }
+    fn as_slice<'a>(&'a self) -> &'a [T] { self }
+}
+
+impl<'a, T, Sized? U: AsSlice<T>> AsSlice<T> for &'a U {
+    #[inline(always)]
+    fn as_slice<'a>(&'a self) -> &'a [T] { AsSlice::as_slice(*self) }
+}
+
+impl<'a, T, Sized? U: AsSlice<T>> AsSlice<T> for &'a mut U {
+    #[inline(always)]
+    fn as_slice<'a>(&'a self) -> &'a [T] { AsSlice::as_slice(*self) }
 }
 
 #[unstable = "waiting for DST"]
@@ -1092,12 +1104,57 @@ macro_rules! iterator {
     }
 }
 
+macro_rules! make_slice {
+    ($t: ty -> $result: ty: $start: expr, $end: expr) => {{
+        let diff = $end as uint - $start as uint;
+        let len = if mem::size_of::<T>() == 0 {
+            diff
+        } else {
+            diff / mem::size_of::<$t>()
+        };
+        unsafe {
+            transmute::<_, $result>(RawSlice { data: $start as *const T, len: len })
+        }
+    }}
+}
+
+
 /// Immutable slice iterator
 #[experimental = "needs review"]
 pub struct Items<'a, T: 'a> {
     ptr: *const T,
     end: *const T,
     marker: marker::ContravariantLifetime<'a>
+}
+
+#[experimental]
+impl<'a, T> ops::Slice<uint, [T]> for Items<'a, T> {
+    fn as_slice_(&self) -> &[T] {
+        self.as_slice()
+    }
+    fn slice_from_or_fail<'b>(&'b self, from: &uint) -> &'b [T] {
+        use ops::Slice;
+        self.as_slice().slice_from_or_fail(from)
+    }
+    fn slice_to_or_fail<'b>(&'b self, to: &uint) -> &'b [T] {
+        use ops::Slice;
+        self.as_slice().slice_to_or_fail(to)
+    }
+    fn slice_or_fail<'b>(&'b self, from: &uint, to: &uint) -> &'b [T] {
+        use ops::Slice;
+        self.as_slice().slice_or_fail(from, to)
+    }
+}
+
+impl<'a, T> Items<'a, T> {
+    /// View the underlying data as a subslice of the original data.
+    ///
+    /// This has the same lifetime as the original slice, and so the
+    /// iterator can continue to be used while this exists.
+    #[experimental]
+    pub fn as_slice(&self) -> &'a [T] {
+        make_slice!(T -> &'a [T]: self.ptr, self.end)
+    }
 }
 
 iterator!{struct Items -> *const T, &'a T}
@@ -1142,6 +1199,57 @@ pub struct MutItems<'a, T: 'a> {
     end: *mut T,
     marker: marker::ContravariantLifetime<'a>,
     marker2: marker::NoCopy
+}
+
+#[experimental]
+impl<'a, T> ops::Slice<uint, [T]> for MutItems<'a, T> {
+    fn as_slice_<'b>(&'b self) -> &'b [T] {
+        make_slice!(T -> &'b [T]: self.ptr, self.end)
+    }
+    fn slice_from_or_fail<'b>(&'b self, from: &uint) -> &'b [T] {
+        use ops::Slice;
+        self.as_slice_().slice_from_or_fail(from)
+    }
+    fn slice_to_or_fail<'b>(&'b self, to: &uint) -> &'b [T] {
+        use ops::Slice;
+        self.as_slice_().slice_to_or_fail(to)
+    }
+    fn slice_or_fail<'b>(&'b self, from: &uint, to: &uint) -> &'b [T] {
+        use ops::Slice;
+        self.as_slice_().slice_or_fail(from, to)
+    }
+}
+
+#[experimental]
+impl<'a, T> ops::SliceMut<uint, [T]> for MutItems<'a, T> {
+    fn as_mut_slice_<'b>(&'b mut self) -> &'b mut [T] {
+        make_slice!(T -> &'b mut [T]: self.ptr, self.end)
+    }
+    fn slice_from_or_fail_mut<'b>(&'b mut self, from: &uint) -> &'b mut [T] {
+        use ops::SliceMut;
+        self.as_mut_slice_().slice_from_or_fail_mut(from)
+    }
+    fn slice_to_or_fail_mut<'b>(&'b mut self, to: &uint) -> &'b mut [T] {
+        use ops::SliceMut;
+        self.as_mut_slice_().slice_to_or_fail_mut(to)
+    }
+    fn slice_or_fail_mut<'b>(&'b mut self, from: &uint, to: &uint) -> &'b mut [T] {
+        use ops::SliceMut;
+        self.as_mut_slice_().slice_or_fail_mut(from, to)
+    }
+}
+
+impl<'a, T> MutItems<'a, T> {
+    /// View the underlying data as a subslice of the original data.
+    ///
+    /// To avoid creating `&mut` references that alias, this is forced
+    /// to consume the iterator. Consider using the `Slice` and
+    /// `SliceMut` implementations for obtaining slices with more
+    /// restricted lifetimes that do not consume the iterator.
+    #[experimental]
+    pub fn into_slice(self) -> &'a mut [T] {
+        make_slice!(T -> &'a mut [T]: self.ptr, self.end)
+    }
 }
 
 iterator!{struct MutItems -> *mut T, &'a mut T}
@@ -1382,7 +1490,8 @@ impl<'a, T> Iterator<&'a [T]> for Chunks<'a, T> {
         if self.v.len() == 0 {
             (0, Some(0))
         } else {
-            let (n, rem) = div_rem(self.v.len(), self.size);
+            let n = self.v.len() / self.size;
+            let rem = self.v.len() % self.size;
             let n = if rem > 0 { n+1 } else { n };
             (n, Some(n))
         }
@@ -1455,7 +1564,8 @@ impl<'a, T> Iterator<&'a mut [T]> for MutChunks<'a, T> {
         if self.v.len() == 0 {
             (0, Some(0))
         } else {
-            let (n, rem) = div_rem(self.v.len(), self.chunk_size);
+            let n = self.v.len() / self.chunk_size;
+            let rem = self.v.len() % self.chunk_size;
             let n = if rem > 0 { n + 1 } else { n };
             (n, Some(n))
         }
@@ -1545,15 +1655,55 @@ pub fn mut_ref_slice<'a, A>(s: &'a mut A) -> &'a mut [A] {
     }
 }
 
+/// Forms a slice from a pointer and a length.
+///
+/// The pointer given is actually a reference to the base of the slice. This
+/// reference is used to give a concrete lifetime to tie the returned slice to.
+/// Typically this should indicate that the slice is valid for as long as the
+/// pointer itself is valid.
+///
+/// The `len` argument is the number of **elements**, not the number of bytes.
+///
+/// This function is unsafe as there is no guarantee that the given pointer is
+/// valid for `len` elements, nor whether the lifetime provided is a suitable
+/// lifetime for the returned slice.
+///
+/// # Example
+///
+/// ```rust
+/// use std::slice;
+///
+/// // manifest a slice out of thin air!
+/// let ptr = 0x1234 as *const uint;
+/// let amt = 10;
+/// unsafe {
+///     let slice = slice::from_raw_buf(&ptr, amt);
+/// }
+/// ```
+#[inline]
+#[unstable = "just renamed from `mod raw`"]
+pub unsafe fn from_raw_buf<'a, T>(p: &'a *const T, len: uint) -> &'a [T] {
+    transmute(RawSlice { data: *p, len: len })
+}
 
-
+/// Performs the same functionality as `from_raw_buf`, except that a mutable
+/// slice is returned.
+///
+/// This function is unsafe for the same reasons as `from_raw_buf`, as well as
+/// not being able to provide a non-aliasing guarantee of the returned mutable
+/// slice.
+#[inline]
+#[unstable = "just renamed from `mod raw`"]
+pub unsafe fn from_raw_mut_buf<'a, T>(p: &'a *mut T, len: uint) -> &'a mut [T] {
+    transmute(RawSlice { data: *p as *const T, len: len })
+}
 
 //
 // Submodules
 //
 
 /// Unsafe operations
-#[experimental = "needs review"]
+#[deprecated]
 pub mod raw {
     use mem::transmute;
     use ptr::RawPtr;
@@ -1565,6 +1715,7 @@ pub mod raw {
      * not bytes).
      */
     #[inline]
+    #[deprecated = "renamed to slice::from_raw_buf"]
     pub unsafe fn buf_as_slice<T,U>(p: *const T, len: uint, f: |v: &[T]| -> U)
                                -> U {
         f(transmute(Slice {
@@ -1578,6 +1729,7 @@ pub mod raw {
      * not bytes).
      */
     #[inline]
+    #[deprecated = "renamed to slice::from_raw_mut_buf"]
     pub unsafe fn mut_buf_as_slice<T,
                                    U>(
                                    p: *mut T,
@@ -1596,6 +1748,7 @@ pub mod raw {
      * if the slice is empty. O(1).
      */
      #[inline]
+    #[deprecated = "inspect `Slice::{data, len}` manually (increment data by 1)"]
     pub unsafe fn shift_ptr<T>(slice: &mut Slice<T>) -> Option<*const T> {
         if slice.len == 0 { return None; }
         let head: *const T = slice.data;
@@ -1609,7 +1762,8 @@ pub mod raw {
      * slice so it no longer contains that element. Returns None
      * if the slice is empty. O(1).
      */
-     #[inline]
+    #[inline]
+    #[deprecated = "inspect `Slice::{data, len}` manually (decrement len by 1)"]
     pub unsafe fn pop_ptr<T>(slice: &mut Slice<T>) -> Option<*const T> {
         if slice.len == 0 { return None; }
         let tail: *const T = slice.data.offset((slice.len - 1) as int);
@@ -1677,13 +1831,13 @@ impl<T: PartialEq> PartialEq for [T] {
 impl<T: Eq> Eq for [T] {}
 
 #[unstable = "waiting for DST"]
-impl<T: PartialEq, V: AsSlice<T>> Equiv<V> for [T] {
+impl<T: PartialEq, Sized? V: AsSlice<T>> Equiv<V> for [T] {
     #[inline]
     fn equiv(&self, other: &V) -> bool { self.as_slice() == other.as_slice() }
 }
 
 #[unstable = "waiting for DST"]
-impl<'a,T:PartialEq, V: AsSlice<T>> Equiv<V> for &'a mut [T] {
+impl<'a,T:PartialEq, Sized? V: AsSlice<T>> Equiv<V> for &'a mut [T] {
     #[inline]
     fn equiv(&self, other: &V) -> bool { self.as_slice() == other.as_slice() }
 }

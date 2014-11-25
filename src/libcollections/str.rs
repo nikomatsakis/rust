@@ -42,15 +42,19 @@
 //! # Representation
 //!
 //! Rust's string type, `str`, is a sequence of Unicode scalar values encoded as a
-//! stream of UTF-8 bytes. All strings are guaranteed to be validly encoded UTF-8
-//! sequences. Additionally, strings are not null-terminated and can thus contain
-//! null bytes.
+//! stream of UTF-8 bytes. All [strings](../../reference.html#literals) are
+//! guaranteed to be validly encoded UTF-8 sequences. Additionally, strings are
+//! not null-terminated and can thus contain null bytes.
 //!
 //! The actual representation of strings have direct mappings to slices: `&str`
 //! is the same as `&[u8]`.
 
 #![doc(primitive = "str")]
 
+pub use self::MaybeOwned::*;
+use self::RecompositionState::*;
+use self::DecompositionType::*;
+use core::borrow::{BorrowFrom, ToOwned};
 use core::default::Default;
 use core::fmt;
 use core::cmp;
@@ -63,18 +67,20 @@ use core::prelude::{range};
 
 use hash;
 use ring_buf::RingBuf;
-use string::String;
+use string::{String, ToString};
 use unicode;
 use vec::Vec;
 
 pub use core::str::{from_utf8, CharEq, Chars, CharOffsets};
 pub use core::str::{Bytes, CharSplits};
 pub use core::str::{CharSplitsN, AnyLines, MatchIndices, StrSplits};
-pub use core::str::{Utf16CodeUnits, eq_slice, is_utf8, is_utf16, Utf16Items};
+pub use core::str::{Utf16Encoder, Utf16CodeUnits};
+pub use core::str::{eq_slice, is_utf8, is_utf16, Utf16Items};
 pub use core::str::{Utf16Item, ScalarValue, LoneSurrogate, utf16_items};
 pub use core::str::{truncate_utf16_at_nul, utf8_char_width, CharRange};
 pub use core::str::{FromStr, from_str};
 pub use core::str::{Str, StrPrelude};
+pub use core::str::{from_utf8_unchecked, from_c_str};
 pub use unicode::str::{UnicodeStrPrelude, Words, Graphemes, GraphemeIndices};
 
 // FIXME(conventions): ensure bit/char conventions are followed by str's API
@@ -157,7 +163,7 @@ impl<S: Str> StrVector for [S] {
     }
 }
 
-impl<S: Str> StrVector for Vec<S> {
+impl<S: Str, T: AsSlice<S>> StrVector for T {
     #[inline]
     fn concat(&self) -> String {
         self.as_slice().concat()
@@ -388,11 +394,11 @@ pub fn replace(s: &str, from: &str, to: &str) -> String {
     let mut result = String::new();
     let mut last_end = 0;
     for (start, end) in s.match_indices(from) {
-        result.push_str(unsafe{raw::slice_bytes(s, last_end, start)});
+        result.push_str(unsafe { s.slice_unchecked(last_end, start) });
         result.push_str(to);
         last_end = end;
     }
-    result.push_str(unsafe{raw::slice_bytes(s, last_end, s.len())});
+    result.push_str(unsafe { s.slice_unchecked(last_end, s.len()) });
     result
 }
 
@@ -600,6 +606,16 @@ impl<'a> fmt::Show for MaybeOwned<'a> {
     }
 }
 
+#[unstable = "trait is unstable"]
+impl BorrowFrom<String> for str {
+    fn borrow_from(owned: &String) -> &str { owned[] }
+}
+
+#[unstable = "trait is unstable"]
+impl ToOwned<String> for str {
+    fn to_owned(&self) -> String { self.to_string() }
+}
+
 /// Unsafe string operations.
 pub mod raw {
     pub use core::str::raw::{from_utf8, c_str_to_static_slice, slice_bytes};
@@ -620,7 +636,9 @@ pub trait StrAllocating: Str {
         let me = self.as_slice();
         let mut out = String::with_capacity(me.len());
         for c in me.chars() {
-            c.escape_default(|c| out.push(c));
+            for c in c.escape_default() {
+                out.push(c);
+            }
         }
         out
     }
@@ -630,7 +648,9 @@ pub trait StrAllocating: Str {
         let me = self.as_slice();
         let mut out = String::with_capacity(me.len());
         for c in me.chars() {
-            c.escape_unicode(|c| out.push(c));
+            for c in c.escape_unicode() {
+                out.push(c);
+            }
         }
         out
     }
@@ -660,16 +680,7 @@ pub trait StrAllocating: Str {
     /// assert_eq!(s.replace("cookie monster", "little lamb"), s);
     /// ```
     fn replace(&self, from: &str, to: &str) -> String {
-        let me = self.as_slice();
-        let mut result = String::new();
-        let mut last_end = 0;
-        for (start, end) in me.match_indices(from) {
-            result.push_str(unsafe{raw::slice_bytes(me, last_end, start)});
-            result.push_str(to);
-            last_end = end;
-        }
-        result.push_str(unsafe{raw::slice_bytes(me, last_end, me.len())});
-        result
+        replace(self.as_slice(), from, to)
     }
 
     /// Given a string, makes a new string with repeated copies of it.
@@ -918,54 +929,93 @@ mod tests {
         assert_eq!("ะเทศไท", "ประเทศไทย中华Việt Nam".slice_chars(2, 8));
     }
 
-    #[test]
-    fn test_concat() {
-        fn t(v: &[String], s: &str) {
-            assert_eq!(v.concat().as_slice(), s);
+    struct S {
+        x: [String, .. 2]
+    }
+
+    impl AsSlice<String> for S {
+        fn as_slice<'a> (&'a self) -> &'a [String] {
+            &self.x
         }
-        t([String::from_str("you"), String::from_str("know"),
-           String::from_str("I'm"),
-           String::from_str("no"), String::from_str("good")],
-          "youknowI'mnogood");
-        let v: &[String] = [];
-        t(v, "");
-        t([String::from_str("hi")], "hi");
+    }
+
+    fn s(x: &str) -> String { x.into_string() }
+
+    macro_rules! test_concat {
+        ($expected: expr, $string: expr) => {
+            {
+                let s = $string.concat();
+                assert_eq!($expected, s.as_slice());
+            }
+        }
     }
 
     #[test]
-    fn test_connect() {
-        fn t(v: &[String], sep: &str, s: &str) {
-            assert_eq!(v.connect(sep).as_slice(), s);
+    fn test_concat_for_different_types() {
+        test_concat!("ab", ["a", "b"]);
+        test_concat!("ab", [s("a"), s("b")]);
+        test_concat!("ab", vec!["a", "b"]);
+        test_concat!("ab", vec!["a", "b"].as_slice());
+        test_concat!("ab", vec![s("a"), s("b")]);
+
+        let mut v0 = ["a", "b"];
+        let mut v1 = [s("a"), s("b")];
+        unsafe {
+            use std::c_vec::CVec;
+
+            test_concat!("ab", CVec::new(v0.as_mut_ptr(), v0.len()));
+            test_concat!("ab", CVec::new(v1.as_mut_ptr(), v1.len()));
         }
-        t([String::from_str("you"), String::from_str("know"),
-           String::from_str("I'm"),
-           String::from_str("no"), String::from_str("good")],
-          " ", "you know I'm no good");
-        let v: &[String] = [];
-        t(v, " ", "");
-        t([String::from_str("hi")], " ", "hi");
+
+        test_concat!("ab", S { x: [s("a"), s("b")] });
     }
 
     #[test]
-    fn test_concat_slices() {
-        fn t(v: &[&str], s: &str) {
-            assert_eq!(v.concat().as_slice(), s);
+    fn test_concat_for_different_lengths() {
+        let empty: &[&str] = &[];
+        test_concat!("", empty);
+        test_concat!("a", ["a"]);
+        test_concat!("ab", ["a", "b"]);
+        test_concat!("abc", ["", "a", "bc"]);
+    }
+
+    macro_rules! test_connect {
+        ($expected: expr, $string: expr, $delim: expr) => {
+            {
+                let s = $string.connect($delim);
+                assert_eq!($expected, s.as_slice());
+            }
         }
-        t(["you", "know", "I'm", "no", "good"], "youknowI'mnogood");
-        let v: &[&str] = [];
-        t(v, "");
-        t(["hi"], "hi");
     }
 
     #[test]
-    fn test_connect_slices() {
-        fn t(v: &[&str], sep: &str, s: &str) {
-            assert_eq!(v.connect(sep).as_slice(), s);
+    fn test_connect_for_different_types() {
+        test_connect!("a-b", ["a", "b"], "-");
+        let hyphen = "-".into_string();
+        test_connect!("a-b", [s("a"), s("b")], hyphen.as_slice());
+        test_connect!("a-b", vec!["a", "b"], hyphen.as_slice());
+        test_connect!("a-b", vec!["a", "b"].as_slice(), "-");
+        test_connect!("a-b", vec![s("a"), s("b")], "-");
+
+        let mut v0 = ["a", "b"];
+        let mut v1 = [s("a"), s("b")];
+        unsafe {
+            use std::c_vec::CVec;
+
+            test_connect!("a-b", CVec::new(v0.as_mut_ptr(), v0.len()), "-");
+            test_connect!("a-b", CVec::new(v1.as_mut_ptr(), v1.len()), hyphen.as_slice());
         }
-        t(["you", "know", "I'm", "no", "good"],
-          " ", "you know I'm no good");
-        t([], " ", "");
-        t(["hi"], " ", "hi");
+
+        test_connect!("a-b", S { x: [s("a"), s("b")] }, "-");
+    }
+
+    #[test]
+    fn test_connect_for_different_lengths() {
+        let empty: &[&str] = &[];
+        test_connect!("", empty, "-");
+        test_connect!("a", ["a"], "-");
+        test_connect!("a-b", ["a", "b"], "-");
+        test_connect!("-a-bc", ["", "a", "bc"], "-");
     }
 
     #[test]
@@ -1179,7 +1229,7 @@ mod tests {
         assert_eq!("11foo1bar11".trim_left_chars('1'), "foo1bar11");
         let chars: &[char] = &['1', '2'];
         assert_eq!("12foo1bar12".trim_left_chars(chars), "foo1bar12");
-        assert_eq!("123foo1bar123".trim_left_chars(|c: char| c.is_digit()), "foo1bar123");
+        assert_eq!("123foo1bar123".trim_left_chars(|c: char| c.is_numeric()), "foo1bar123");
     }
 
     #[test]
@@ -1194,7 +1244,7 @@ mod tests {
         assert_eq!("11foo1bar11".trim_right_chars('1'), "11foo1bar");
         let chars: &[char] = &['1', '2'];
         assert_eq!("12foo1bar12".trim_right_chars(chars), "12foo1bar");
-        assert_eq!("123foo1bar123".trim_right_chars(|c: char| c.is_digit()), "123foo1bar");
+        assert_eq!("123foo1bar123".trim_right_chars(|c: char| c.is_numeric()), "123foo1bar");
     }
 
     #[test]
@@ -1209,7 +1259,7 @@ mod tests {
         assert_eq!("11foo1bar11".trim_chars('1'), "foo1bar");
         let chars: &[char] = &['1', '2'];
         assert_eq!("12foo1bar12".trim_chars(chars), "foo1bar");
-        assert_eq!("123foo1bar123".trim_chars(|c: char| c.is_digit()), "foo1bar");
+        assert_eq!("123foo1bar123".trim_chars(|c: char| c.is_numeric()), "foo1bar");
     }
 
     #[test]
@@ -1254,38 +1304,38 @@ mod tests {
     #[test]
     fn test_slice_shift_char() {
         let data = "ประเทศไทย中";
-        assert_eq!(data.slice_shift_char(), (Some('ป'), "ระเทศไทย中"));
+        assert_eq!(data.slice_shift_char(), Some(('ป', "ระเทศไทย中")));
     }
 
     #[test]
     fn test_slice_shift_char_2() {
         let empty = "";
-        assert_eq!(empty.slice_shift_char(), (None, ""));
+        assert_eq!(empty.slice_shift_char(), None);
     }
 
     #[test]
     fn test_is_utf8() {
         // deny overlong encodings
-        assert!(!is_utf8([0xc0, 0x80]));
-        assert!(!is_utf8([0xc0, 0xae]));
-        assert!(!is_utf8([0xe0, 0x80, 0x80]));
-        assert!(!is_utf8([0xe0, 0x80, 0xaf]));
-        assert!(!is_utf8([0xe0, 0x81, 0x81]));
-        assert!(!is_utf8([0xf0, 0x82, 0x82, 0xac]));
-        assert!(!is_utf8([0xf4, 0x90, 0x80, 0x80]));
+        assert!(!is_utf8(&[0xc0, 0x80]));
+        assert!(!is_utf8(&[0xc0, 0xae]));
+        assert!(!is_utf8(&[0xe0, 0x80, 0x80]));
+        assert!(!is_utf8(&[0xe0, 0x80, 0xaf]));
+        assert!(!is_utf8(&[0xe0, 0x81, 0x81]));
+        assert!(!is_utf8(&[0xf0, 0x82, 0x82, 0xac]));
+        assert!(!is_utf8(&[0xf4, 0x90, 0x80, 0x80]));
 
         // deny surrogates
-        assert!(!is_utf8([0xED, 0xA0, 0x80]));
-        assert!(!is_utf8([0xED, 0xBF, 0xBF]));
+        assert!(!is_utf8(&[0xED, 0xA0, 0x80]));
+        assert!(!is_utf8(&[0xED, 0xBF, 0xBF]));
 
-        assert!(is_utf8([0xC2, 0x80]));
-        assert!(is_utf8([0xDF, 0xBF]));
-        assert!(is_utf8([0xE0, 0xA0, 0x80]));
-        assert!(is_utf8([0xED, 0x9F, 0xBF]));
-        assert!(is_utf8([0xEE, 0x80, 0x80]));
-        assert!(is_utf8([0xEF, 0xBF, 0xBF]));
-        assert!(is_utf8([0xF0, 0x90, 0x80, 0x80]));
-        assert!(is_utf8([0xF4, 0x8F, 0xBF, 0xBF]));
+        assert!(is_utf8(&[0xC2, 0x80]));
+        assert!(is_utf8(&[0xDF, 0xBF]));
+        assert!(is_utf8(&[0xE0, 0xA0, 0x80]));
+        assert!(is_utf8(&[0xED, 0x9F, 0xBF]));
+        assert!(is_utf8(&[0xEE, 0x80, 0x80]));
+        assert!(is_utf8(&[0xEF, 0xBF, 0xBF]));
+        assert!(is_utf8(&[0xF0, 0x90, 0x80, 0x80]));
+        assert!(is_utf8(&[0xF4, 0x8F, 0xBF, 0xBF]));
     }
 
     #[test]
@@ -1293,58 +1343,58 @@ mod tests {
         macro_rules! pos ( ($($e:expr),*) => { { $(assert!(is_utf16($e));)* } });
 
         // non-surrogates
-        pos!([0x0000],
-             [0x0001, 0x0002],
-             [0xD7FF],
-             [0xE000]);
+        pos!(&[0x0000],
+             &[0x0001, 0x0002],
+             &[0xD7FF],
+             &[0xE000]);
 
         // surrogate pairs (randomly generated with Python 3's
         // .encode('utf-16be'))
-        pos!([0xdb54, 0xdf16, 0xd880, 0xdee0, 0xdb6a, 0xdd45],
-             [0xd91f, 0xdeb1, 0xdb31, 0xdd84, 0xd8e2, 0xde14],
-             [0xdb9f, 0xdc26, 0xdb6f, 0xde58, 0xd850, 0xdfae]);
+        pos!(&[0xdb54, 0xdf16, 0xd880, 0xdee0, 0xdb6a, 0xdd45],
+             &[0xd91f, 0xdeb1, 0xdb31, 0xdd84, 0xd8e2, 0xde14],
+             &[0xdb9f, 0xdc26, 0xdb6f, 0xde58, 0xd850, 0xdfae]);
 
         // mixtures (also random)
-        pos!([0xd921, 0xdcc2, 0x002d, 0x004d, 0xdb32, 0xdf65],
-             [0xdb45, 0xdd2d, 0x006a, 0xdacd, 0xddfe, 0x0006],
-             [0x0067, 0xd8ff, 0xddb7, 0x000f, 0xd900, 0xdc80]);
+        pos!(&[0xd921, 0xdcc2, 0x002d, 0x004d, 0xdb32, 0xdf65],
+             &[0xdb45, 0xdd2d, 0x006a, 0xdacd, 0xddfe, 0x0006],
+             &[0x0067, 0xd8ff, 0xddb7, 0x000f, 0xd900, 0xdc80]);
 
         // negative tests
         macro_rules! neg ( ($($e:expr),*) => { { $(assert!(!is_utf16($e));)* } });
 
         neg!(
             // surrogate + regular unit
-            [0xdb45, 0x0000],
+            &[0xdb45, 0x0000],
             // surrogate + lead surrogate
-            [0xd900, 0xd900],
+            &[0xd900, 0xd900],
             // unterminated surrogate
-            [0xd8ff],
+            &[0xd8ff],
             // trail surrogate without a lead
-            [0xddb7]);
+            &[0xddb7]);
 
         // random byte sequences that Python 3's .decode('utf-16be')
         // failed on
-        neg!([0x5b3d, 0x0141, 0xde9e, 0x8fdc, 0xc6e7],
-             [0xdf5a, 0x82a5, 0x62b9, 0xb447, 0x92f3],
-             [0xda4e, 0x42bc, 0x4462, 0xee98, 0xc2ca],
-             [0xbe00, 0xb04a, 0x6ecb, 0xdd89, 0xe278],
-             [0x0465, 0xab56, 0xdbb6, 0xa893, 0x665e],
-             [0x6b7f, 0x0a19, 0x40f4, 0xa657, 0xdcc5],
-             [0x9b50, 0xda5e, 0x24ec, 0x03ad, 0x6dee],
-             [0x8d17, 0xcaa7, 0xf4ae, 0xdf6e, 0xbed7],
-             [0xdaee, 0x2584, 0x7d30, 0xa626, 0x121a],
-             [0xd956, 0x4b43, 0x7570, 0xccd6, 0x4f4a],
-             [0x9dcf, 0x1b49, 0x4ba5, 0xfce9, 0xdffe],
-             [0x6572, 0xce53, 0xb05a, 0xf6af, 0xdacf],
-             [0x1b90, 0x728c, 0x9906, 0xdb68, 0xf46e],
-             [0x1606, 0xbeca, 0xbe76, 0x860f, 0xdfa5],
-             [0x8b4f, 0xde7a, 0xd220, 0x9fac, 0x2b6f],
-             [0xb8fe, 0xebbe, 0xda32, 0x1a5f, 0x8b8b],
-             [0x934b, 0x8956, 0xc434, 0x1881, 0xddf7],
-             [0x5a95, 0x13fc, 0xf116, 0xd89b, 0x93f9],
-             [0xd640, 0x71f1, 0xdd7d, 0x77eb, 0x1cd8],
-             [0x348b, 0xaef0, 0xdb2c, 0xebf1, 0x1282],
-             [0x50d7, 0xd824, 0x5010, 0xb369, 0x22ea]);
+        neg!(&[0x5b3d, 0x0141, 0xde9e, 0x8fdc, 0xc6e7],
+             &[0xdf5a, 0x82a5, 0x62b9, 0xb447, 0x92f3],
+             &[0xda4e, 0x42bc, 0x4462, 0xee98, 0xc2ca],
+             &[0xbe00, 0xb04a, 0x6ecb, 0xdd89, 0xe278],
+             &[0x0465, 0xab56, 0xdbb6, 0xa893, 0x665e],
+             &[0x6b7f, 0x0a19, 0x40f4, 0xa657, 0xdcc5],
+             &[0x9b50, 0xda5e, 0x24ec, 0x03ad, 0x6dee],
+             &[0x8d17, 0xcaa7, 0xf4ae, 0xdf6e, 0xbed7],
+             &[0xdaee, 0x2584, 0x7d30, 0xa626, 0x121a],
+             &[0xd956, 0x4b43, 0x7570, 0xccd6, 0x4f4a],
+             &[0x9dcf, 0x1b49, 0x4ba5, 0xfce9, 0xdffe],
+             &[0x6572, 0xce53, 0xb05a, 0xf6af, 0xdacf],
+             &[0x1b90, 0x728c, 0x9906, 0xdb68, 0xf46e],
+             &[0x1606, 0xbeca, 0xbe76, 0x860f, 0xdfa5],
+             &[0x8b4f, 0xde7a, 0xd220, 0x9fac, 0x2b6f],
+             &[0xb8fe, 0xebbe, 0xda32, 0x1a5f, 0x8b8b],
+             &[0x934b, 0x8956, 0xc434, 0x1881, 0xddf7],
+             &[0x5a95, 0x13fc, 0xf116, 0xd89b, 0x93f9],
+             &[0xd640, 0x71f1, 0xdd7d, 0x77eb, 0x1cd8],
+             &[0x348b, 0xaef0, 0xdb2c, 0xebf1, 0x1282],
+             &[0x50d7, 0xd824, 0x5010, 0xb369, 0x22ea]);
     }
 
     #[test]
@@ -1456,22 +1506,22 @@ mod tests {
     fn test_truncate_utf16_at_nul() {
         let v = [];
         let b: &[u16] = &[];
-        assert_eq!(truncate_utf16_at_nul(v), b);
+        assert_eq!(truncate_utf16_at_nul(&v), b);
 
         let v = [0, 2, 3];
-        assert_eq!(truncate_utf16_at_nul(v), b);
+        assert_eq!(truncate_utf16_at_nul(&v), b);
 
         let v = [1, 0, 3];
         let b: &[u16] = &[1];
-        assert_eq!(truncate_utf16_at_nul(v), b);
+        assert_eq!(truncate_utf16_at_nul(&v), b);
 
         let v = [1, 2, 0];
         let b: &[u16] = &[1, 2];
-        assert_eq!(truncate_utf16_at_nul(v), b);
+        assert_eq!(truncate_utf16_at_nul(&v), b);
 
         let v = [1, 2, 3];
         let b: &[u16] = &[1, 2, 3];
-        assert_eq!(truncate_utf16_at_nul(v), b);
+        assert_eq!(truncate_utf16_at_nul(&v), b);
     }
 
     #[test]
@@ -1585,7 +1635,7 @@ mod tests {
     fn test_chars_decoding() {
         let mut bytes = [0u8, ..4];
         for c in range(0u32, 0x110000).filter_map(|c| ::core::char::from_u32(c)) {
-            let len = c.encode_utf8(bytes).unwrap_or(0);
+            let len = c.encode_utf8(&mut bytes).unwrap_or(0);
             let s = ::core::str::from_utf8(bytes[..len]).unwrap();
             if Some(c) != s.chars().next() {
                 panic!("character {:x}={} does not decode correctly", c as u32, c);
@@ -1597,7 +1647,7 @@ mod tests {
     fn test_chars_rev_decoding() {
         let mut bytes = [0u8, ..4];
         for c in range(0u32, 0x110000).filter_map(|c| ::core::char::from_u32(c)) {
-            let len = c.encode_utf8(bytes).unwrap_or(0);
+            let len = c.encode_utf8(&mut bytes).unwrap_or(0);
             let s = ::core::str::from_utf8(bytes[..len]).unwrap();
             if Some(c) != s.chars().rev().next() {
                 panic!("character {:x}={} does not decode correctly", c as u32, c);
@@ -2114,20 +2164,20 @@ mod tests {
             let v: Vec<&str> = s.split_str(sep).collect();
             assert_eq!(v.as_slice(), u.as_slice());
         }
-        t("--1233345--", "12345", ["--1233345--"]);
-        t("abc::hello::there", "::", ["abc", "hello", "there"]);
-        t("::hello::there", "::", ["", "hello", "there"]);
-        t("hello::there::", "::", ["hello", "there", ""]);
-        t("::hello::there::", "::", ["", "hello", "there", ""]);
-        t("ประเทศไทย中华Việt Nam", "中华", ["ประเทศไทย", "Việt Nam"]);
-        t("zzXXXzzYYYzz", "zz", ["", "XXX", "YYY", ""]);
-        t("zzXXXzYYYz", "XXX", ["zz", "zYYYz"]);
-        t(".XXX.YYY.", ".", ["", "XXX", "YYY", ""]);
-        t("", ".", [""]);
-        t("zz", "zz", ["",""]);
-        t("ok", "z", ["ok"]);
-        t("zzz", "zz", ["","z"]);
-        t("zzzzz", "zz", ["","","z"]);
+        t("--1233345--", "12345", &["--1233345--"]);
+        t("abc::hello::there", "::", &["abc", "hello", "there"]);
+        t("::hello::there", "::", &["", "hello", "there"]);
+        t("hello::there::", "::", &["hello", "there", ""]);
+        t("::hello::there::", "::", &["", "hello", "there", ""]);
+        t("ประเทศไทย中华Việt Nam", "中华", &["ประเทศไทย", "Việt Nam"]);
+        t("zzXXXzzYYYzz", "zz", &["", "XXX", "YYY", ""]);
+        t("zzXXXzYYYz", "XXX", &["zz", "zYYYz"]);
+        t(".XXX.YYY.", ".", &["", "XXX", "YYY", ""]);
+        t("", ".", &[""]);
+        t("zz", "zz", &["",""]);
+        t("ok", "z", &["ok"]);
+        t("zzz", "zz", &["","z"]);
+        t("zzzzz", "zz", &["","","z"]);
     }
 
     #[test]
@@ -2149,12 +2199,12 @@ mod tests {
         }
 
         let s = String::from_str("01234");
-        assert_eq!(5, sum_len(["012", "", "34"]));
-        assert_eq!(5, sum_len([String::from_str("01").as_slice(),
-                               String::from_str("2").as_slice(),
-                               String::from_str("34").as_slice(),
-                               String::from_str("").as_slice()]));
-        assert_eq!(5, sum_len([s.as_slice()]));
+        assert_eq!(5, sum_len(&["012", "", "34"]));
+        assert_eq!(5, sum_len(&[String::from_str("01").as_slice(),
+                                String::from_str("2").as_slice(),
+                                String::from_str("34").as_slice(),
+                                String::from_str("").as_slice()]));
+        assert_eq!(5, sum_len(&[s.as_slice()]));
     }
 
     #[test]

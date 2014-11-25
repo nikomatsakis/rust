@@ -65,14 +65,7 @@ pub unsafe fn report() {
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 unsafe fn get_task_guard_page() -> Option<uint> {
     let task: Option<*mut Task> = Local::try_unsafe_borrow();
-
-    task.map(|task| {
-        let runtime = (*task).take_runtime();
-        let guard = runtime.stack_guard();
-        (*task).put_runtime(runtime);
-
-        guard.unwrap_or(0)
-    })
+    task.map(|task| (&*task).stack_guard().unwrap_or(0))
 }
 
 #[cfg(windows)]
@@ -283,6 +276,7 @@ mod imp {
     #[cfg(any(all(target_os = "linux", target_arch = "x86"), // may not match
               all(target_os = "linux", target_arch = "x86_64"),
               all(target_os = "linux", target_arch = "arm"), // may not match
+              all(target_os = "linux", target_arch = "mips"), // may not match
               target_os = "android"))] // may not match
     mod signal {
         use libc;

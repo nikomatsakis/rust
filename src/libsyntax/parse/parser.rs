@@ -10,6 +10,9 @@
 
 #![macro_escape]
 
+pub use self::PathParsingMode::*;
+use self::ItemOrViewItem::*;
+
 use abi;
 use ast::{AssociatedType, BareFnTy, ClosureTy};
 use ast::{RegionTyParamBound, TraitTyParamBound};
@@ -22,10 +25,10 @@ use ast::{DeclLocal, DefaultBlock, UnDeref, BiDiv, EMPTY_CTXT, EnumDef, Explicit
 use ast::{Expr, Expr_, ExprAddrOf, ExprMatch, ExprAgain};
 use ast::{ExprAssign, ExprAssignOp, ExprBinary, ExprBlock, ExprBox};
 use ast::{ExprBreak, ExprCall, ExprCast};
-use ast::{ExprField, ExprTupField, ExprFnBlock, ExprIf, ExprIfLet, ExprIndex, ExprSlice};
+use ast::{ExprField, ExprTupField, ExprClosure, ExprIf, ExprIfLet, ExprIndex, ExprSlice};
 use ast::{ExprLit, ExprLoop, ExprMac};
 use ast::{ExprMethodCall, ExprParen, ExprPath, ExprProc};
-use ast::{ExprRepeat, ExprRet, ExprStruct, ExprTup, ExprUnary, ExprUnboxedFn};
+use ast::{ExprRepeat, ExprRet, ExprStruct, ExprTup, ExprUnary};
 use ast::{ExprVec, ExprWhile, ExprWhileLet, ExprForLoop, Field, FnDecl};
 use ast::{Once, Many};
 use ast::{FnUnboxedClosureKind, FnMutUnboxedClosureKind};
@@ -46,8 +49,7 @@ use ast::{PolyTraitRef};
 use ast::{QPath, RequiredMethod};
 use ast::{Return, BiShl, BiShr, Stmt, StmtDecl};
 use ast::{StmtExpr, StmtSemi, StmtMac, StructDef, StructField};
-use ast::{StructVariantKind, BiSub};
-use ast::StrStyle;
+use ast::{StructVariantKind, BiSub, StrStyle};
 use ast::{SelfExplicit, SelfRegion, SelfStatic, SelfValue};
 use ast::{Delimited, SequenceRepetition, TokenTree, TraitItem, TraitRef};
 use ast::{TtDelimited, TtSequence, TtToken};
@@ -62,23 +64,18 @@ use ast::{UnsafeFn, ViewItem, ViewItem_, ViewItemExternCrate, ViewItemUse};
 use ast::{ViewPath, ViewPathGlob, ViewPathList, ViewPathSimple};
 use ast::{Visibility, WhereClause, WherePredicate};
 use ast;
-use ast_util::{as_prec, ident_to_path, operator_prec};
-use ast_util;
-use codemap::{Span, BytePos, Spanned, spanned, mk_sp};
-use codemap;
+use ast_util::{mod, as_prec, ident_to_path, operator_prec};
+use codemap::{mod, Span, BytePos, Spanned, spanned, mk_sp};
 use diagnostic;
 use ext::tt::macro_parser;
 use parse;
 use parse::attr::ParserAttr;
 use parse::classify;
-use parse::common::{SeqSep, seq_sep_none};
-use parse::common::{seq_sep_trailing_allowed};
-use parse::lexer::Reader;
-use parse::lexer::TokenAndSpan;
+use parse::common::{SeqSep, seq_sep_none, seq_sep_trailing_allowed};
+use parse::lexer::{Reader, TokenAndSpan};
 use parse::obsolete::*;
-use parse::token::{MatchNt, SubstNt, InternedString};
+use parse::token::{mod, MatchNt, SubstNt, InternedString};
 use parse::token::{keywords, special_idents};
-use parse::token;
 use parse::{new_sub_parser_from_file, ParseSess};
 use print::pprust;
 use ptr::P;
@@ -86,7 +83,6 @@ use owned_slice::OwnedSlice;
 
 use std::collections::HashSet;
 use std::io::fs::PathExtensions;
-use std::mem::replace;
 use std::mem;
 use std::num::Float;
 use std::rc::Rc;
@@ -643,6 +639,20 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub fn expect_no_suffix(&mut self, sp: Span, kind: &str, suffix: Option<ast::Name>) {
+        match suffix {
+            None => {/* everything ok */}
+            Some(suf) => {
+                let text = suf.as_str();
+                if text.is_empty() {
+                    self.span_bug(sp, "found empty literal suffix in Some")
+                }
+                self.span_err(sp, &*format!("{} with a suffix is illegal", kind));
+            }
+        }
+    }
+
+
     /// Attempt to consume a `<`. If `<<` is seen, replace it with a single
     /// `<` and continue. If a `<` is not seen, return false.
     ///
@@ -898,7 +908,7 @@ impl<'a> Parser<'a> {
                 tok: token::Underscore,
                 sp: self.span,
             };
-            replace(&mut self.buffer[buffer_start], placeholder)
+            mem::replace(&mut self.buffer[buffer_start], placeholder)
         };
         self.span = next.sp;
         self.token = next.tok;
@@ -907,7 +917,7 @@ impl<'a> Parser<'a> {
 
     /// Advance the parser by one token and return the bumped token.
     pub fn bump_and_get(&mut self) -> token::Token {
-        let old_token = replace(&mut self.token, token::Underscore);
+        let old_token = mem::replace(&mut self.token, token::Underscore);
         self.bump();
         old_token
     }
@@ -965,6 +975,9 @@ impl<'a> Parser<'a> {
     pub fn span_err(&mut self, sp: Span, m: &str) {
         self.sess.span_diagnostic.span_err(sp, m)
     }
+    pub fn span_bug(&mut self, sp: Span, m: &str) -> ! {
+        self.sess.span_diagnostic.span_bug(sp, m)
+    }
     pub fn abort_if_errors(&mut self) {
         self.sess.span_diagnostic.handler().abort_if_errors();
     }
@@ -1020,10 +1033,21 @@ impl<'a> Parser<'a> {
             self.parse_ty_bare_fn_or_ty_closure(lifetime_defs)
         } else if self.token == token::ModSep ||
                   self.token.is_ident() ||
-                  self.token.is_path() {
+                  self.token.is_path()
+        {
             let trait_ref = self.parse_trait_ref();
-            TyPolyTraitRef(P(PolyTraitRef { bound_lifetimes: lifetime_defs,
-                                            trait_ref: trait_ref }))
+            let poly_trait_ref = ast::PolyTraitRef { bound_lifetimes: lifetime_defs,
+                                                     trait_ref: trait_ref };
+            let other_bounds = if self.eat(&token::BinOp(token::Plus)) {
+                self.parse_ty_param_bounds()
+            } else {
+                OwnedSlice::empty()
+            };
+            let all_bounds =
+                Some(TraitTyParamBound(poly_trait_ref)).into_iter()
+                .chain(other_bounds.into_vec().into_iter())
+                .collect();
+            ast::TyPolyTraitRef(all_bounds)
         } else {
             self.parse_ty_closure(lifetime_defs)
         }
@@ -1229,7 +1253,8 @@ impl<'a> Parser<'a> {
     {
         if self.eat(&token::Lt) {
             if lifetime_defs.is_empty() {
-                self.warn("deprecated syntax, use `for` keyword now");
+                self.warn("deprecated syntax; use the `for` keyword now \
+                            (e.g. change `fn<'a>` to `for<'a> fn`)");
                 let lifetime_defs = self.parse_lifetime_defs();
                 self.expect_gt();
                 lifetime_defs
@@ -1487,17 +1512,17 @@ impl<'a> Parser<'a> {
         } else if self.eat_keyword(keywords::Proc) {
             self.parse_proc_type(Vec::new())
         } else if self.token == token::Lt {
-            // QUALIFIED PATH
+            // QUALIFIED PATH `<TYPE as TRAIT_REF>::item`
             self.bump();
-            let for_type = self.parse_ty(true);
+            let self_type = self.parse_ty(true);
             self.expect_keyword(keywords::As);
-            let trait_name = self.parse_path(LifetimeAndTypesWithoutColons);
+            let trait_ref = self.parse_trait_ref();
             self.expect(&token::Gt);
             self.expect(&token::ModSep);
             let item_name = self.parse_ident();
             TyQPath(P(QPath {
-                for_type: for_type,
-                trait_name: trait_name.path,
+                self_type: self_type,
+                trait_ref: P(trait_ref),
                 item_name: item_name,
             }))
         } else if self.token == token::ModSep ||
@@ -1625,24 +1650,53 @@ impl<'a> Parser<'a> {
     /// Matches token_lit = LIT_INTEGER | ...
     pub fn lit_from_token(&mut self, tok: &token::Token) -> Lit_ {
         match *tok {
-            token::LitByte(i) => LitByte(parse::byte_lit(i.as_str()).val0()),
-            token::LitChar(i) => LitChar(parse::char_lit(i.as_str()).val0()),
-            token::LitInteger(s) => parse::integer_lit(s.as_str(),
-                                                        &self.sess.span_diagnostic,
-                                                       self.last_span),
-            token::LitFloat(s) => parse::float_lit(s.as_str()),
-            token::LitStr(s) => {
-                LitStr(token::intern_and_get_ident(parse::str_lit(s.as_str()).as_slice()),
-                       ast::CookedStr)
+            token::Literal(lit, suf) => {
+                let (suffix_illegal, out) = match lit {
+                    token::Byte(i) => (true, LitByte(parse::byte_lit(i.as_str()).val0())),
+                    token::Char(i) => (true, LitChar(parse::char_lit(i.as_str()).val0())),
+
+                    // there are some valid suffixes for integer and
+                    // float literals, so all the handling is done
+                    // internally.
+                    token::Integer(s) => {
+                        (false, parse::integer_lit(s.as_str(),
+                                                   suf.as_ref().map(|s| s.as_str()),
+                                                   &self.sess.span_diagnostic,
+                                                   self.last_span))
+                    }
+                    token::Float(s) => {
+                        (false, parse::float_lit(s.as_str(),
+                                                 suf.as_ref().map(|s| s.as_str()),
+                                                  &self.sess.span_diagnostic,
+                                                 self.last_span))
+                    }
+
+                    token::Str_(s) => {
+                        (true,
+                         LitStr(token::intern_and_get_ident(parse::str_lit(s.as_str()).as_slice()),
+                                ast::CookedStr))
+                    }
+                    token::StrRaw(s, n) => {
+                        (true,
+                         LitStr(
+                            token::intern_and_get_ident(
+                                parse::raw_str_lit(s.as_str()).as_slice()),
+                            ast::RawStr(n)))
+                    }
+                    token::Binary(i) =>
+                        (true, LitBinary(parse::binary_lit(i.as_str()))),
+                    token::BinaryRaw(i, _) =>
+                        (true,
+                         LitBinary(Rc::new(i.as_str().as_bytes().iter().map(|&x| x).collect()))),
+                };
+
+                if suffix_illegal {
+                    let sp = self.last_span;
+                    self.expect_no_suffix(sp, &*format!("{} literal", lit.short_name()), suf)
+                }
+
+                out
             }
-            token::LitStrRaw(s, n) => {
-                LitStr(token::intern_and_get_ident(parse::raw_str_lit(s.as_str()).as_slice()),
-                       ast::RawStr(n))
-            }
-            token::LitBinary(i) =>
-                LitBinary(parse::binary_lit(i.as_str())),
-            token::LitBinaryRaw(i, _) =>
-                LitBinary(Rc::new(i.as_str().as_bytes().iter().map(|&x| x).collect())),
             _ => { self.unexpected_last(tok); }
         }
     }
@@ -2042,14 +2096,12 @@ impl<'a> Parser<'a> {
         ExprSlice(expr, start, end, mutbl)
     }
 
-    pub fn mk_field(&mut self, expr: P<Expr>, ident: ast::SpannedIdent,
-                    tys: Vec<P<Ty>>) -> ast::Expr_ {
-        ExprField(expr, ident, tys)
+    pub fn mk_field(&mut self, expr: P<Expr>, ident: ast::SpannedIdent) -> ast::Expr_ {
+        ExprField(expr, ident)
     }
 
-    pub fn mk_tup_field(&mut self, expr: P<Expr>, idx: codemap::Spanned<uint>,
-                    tys: Vec<P<Ty>>) -> ast::Expr_ {
-        ExprTupField(expr, idx, tys)
+    pub fn mk_tup_field(&mut self, expr: P<Expr>, idx: codemap::Spanned<uint>) -> ast::Expr_ {
+        ExprTupField(expr, idx)
     }
 
     pub fn mk_assign_op(&mut self, binop: ast::BinOp,
@@ -2404,28 +2456,26 @@ impl<'a> Parser<'a> {
                             }
 
                             let id = spanned(dot, hi, i);
-                            let field = self.mk_field(e, id, tys);
+                            let field = self.mk_field(e, id);
                             e = self.mk_expr(lo, hi, field);
                         }
                     }
                   }
-                  token::LitInteger(n) => {
-                    let index = n.as_str();
+                  token::Literal(token::Integer(n), suf) => {
+                    let sp = self.span;
+
+                    // A tuple index may not have a suffix
+                    self.expect_no_suffix(sp, "tuple index", suf);
+
                     let dot = self.last_span.hi;
                     hi = self.span.hi;
                     self.bump();
-                    let (_, tys) = if self.eat(&token::ModSep) {
-                        self.expect_lt();
-                        self.parse_generic_values_after_lt()
-                    } else {
-                        (Vec::new(), Vec::new())
-                    };
 
-                    let num = from_str::<uint>(index);
-                    match num {
+                    let index = from_str::<uint>(n.as_str());
+                    match index {
                         Some(n) => {
                             let id = spanned(dot, hi, n);
-                            let field = self.mk_tup_field(e, id, tys);
+                            let field = self.mk_tup_field(e, id);
                             e = self.mk_expr(lo, hi, field);
                         }
                         None => {
@@ -2434,7 +2484,7 @@ impl<'a> Parser<'a> {
                         }
                     }
                   }
-                  token::LitFloat(n) => {
+                  token::Literal(token::Float(n), _suf) => {
                     self.bump();
                     let last_span = self.last_span;
                     let fstr = n.as_str();
@@ -2935,7 +2985,8 @@ impl<'a> Parser<'a> {
 
     // `|args| expr`
     pub fn parse_lambda_expr(&mut self, capture_clause: CaptureClause)
-                             -> P<Expr> {
+                             -> P<Expr>
+    {
         let lo = self.span.lo;
         let (decl, optional_unboxed_closure_kind) =
             self.parse_fn_block_decl();
@@ -2949,21 +3000,10 @@ impl<'a> Parser<'a> {
             rules: DefaultBlock,
         });
 
-        match optional_unboxed_closure_kind {
-            Some(unboxed_closure_kind) => {
-                self.mk_expr(lo,
-                             fakeblock.span.hi,
-                             ExprUnboxedFn(capture_clause,
-                                           unboxed_closure_kind,
-                                           decl,
-                                           fakeblock))
-            }
-            None => {
-                self.mk_expr(lo,
-                             fakeblock.span.hi,
-                             ExprFnBlock(capture_clause, decl, fakeblock))
-            }
-        }
+        self.mk_expr(
+            lo,
+            fakeblock.span.hi,
+            ExprClosure(capture_clause, optional_unboxed_closure_kind, decl, fakeblock))
     }
 
     pub fn parse_else_expr(&mut self) -> P<Expr> {
@@ -4612,7 +4652,7 @@ impl<'a> Parser<'a> {
             is_tuple_like = false;
             fields = Vec::new();
             while self.token != token::CloseDelim(token::Brace) {
-                fields.push(self.parse_struct_decl_field());
+                fields.push(self.parse_struct_decl_field(true));
             }
             if fields.len() == 0 {
                 self.fatal(format!("unit-like struct definition should be \
@@ -4689,12 +4729,16 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse an element of a struct definition
-    fn parse_struct_decl_field(&mut self) -> StructField {
+    fn parse_struct_decl_field(&mut self, allow_pub: bool) -> StructField {
 
         let attrs = self.parse_outer_attributes();
 
         if self.eat_keyword(keywords::Pub) {
-           return self.parse_single_struct_field(Public, attrs);
+            if !allow_pub {
+                let span = self.last_span;
+                self.span_err(span, "`pub` is not allowed here");
+            }
+            return self.parse_single_struct_field(Public, attrs);
         }
 
         return self.parse_single_struct_field(Inherited, attrs);
@@ -5066,12 +5110,17 @@ impl<'a> Parser<'a> {
                 self.expect(&token::Semi);
                 (path, the_ident)
             },
-            token::LitStr(..) | token::LitStrRaw(..) => {
-                let path = self.parse_str();
+            token::Literal(token::Str_(..), suf) | token::Literal(token::StrRaw(..), suf) => {
+                let sp = self.span;
+                self.expect_no_suffix(sp, "extern crate name", suf);
+                // forgo the internal suffix check of `parse_str` to
+                // avoid repeats (this unwrap will always succeed due
+                // to the restriction of the `match`)
+                let (s, style, _) = self.parse_optional_str().unwrap();
                 self.expect_keyword(keywords::As);
                 let the_ident = self.parse_ident();
                 self.expect(&token::Semi);
-                (Some(path), the_ident)
+                (Some((s, style)), the_ident)
             },
             _ => {
                 let span = self.span;
@@ -5142,7 +5191,7 @@ impl<'a> Parser<'a> {
     fn parse_struct_def(&mut self) -> P<StructDef> {
         let mut fields: Vec<StructField> = Vec::new();
         while self.token != token::CloseDelim(token::Brace) {
-            fields.push(self.parse_struct_decl_field());
+            fields.push(self.parse_struct_decl_field(false));
         }
         self.bump();
 
@@ -5171,7 +5220,15 @@ impl<'a> Parser<'a> {
             if self.eat(&token::OpenDelim(token::Brace)) {
                 // Parse a struct variant.
                 all_nullary = false;
-                kind = StructVariantKind(self.parse_struct_def());
+                let start_span = self.span;
+                let struct_def = self.parse_struct_def();
+                if struct_def.fields.len() == 0 {
+                    self.span_err(start_span,
+                        format!("unit-like struct variant should be written \
+                                 without braces, as `{},`",
+                                token::get_ident(ident)).as_slice());
+                }
+                kind = StructVariantKind(struct_def);
             } else if self.token == token::OpenDelim(token::Paren) {
                 all_nullary = false;
                 let arg_tys = self.parse_enum_variant_seq(
@@ -5240,7 +5297,9 @@ impl<'a> Parser<'a> {
     /// the `extern` keyword, if one is found.
     fn parse_opt_abi(&mut self) -> Option<abi::Abi> {
         match self.token {
-            token::LitStr(s) | token::LitStrRaw(s, _) => {
+            token::Literal(token::Str_(s), suf) | token::Literal(token::StrRaw(s, _), suf) => {
+                let sp = self.span;
+                self.expect_no_suffix(sp, "ABI spec", suf);
                 self.bump();
                 let the_string = s.as_str();
                 match abi::lookup(the_string) {
@@ -5593,6 +5652,14 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse a ViewItem, e.g. `use foo::bar` or `extern crate foo`
+    pub fn parse_view_item(&mut self, attrs: Vec<Attribute>) -> ViewItem {
+        match self.parse_item_or_view_item(attrs, false) {
+            IoviViewItem(vi) => vi,
+            _ => self.fatal("expected `use` or `extern crate`"),
+        }
+    }
+
     /// Parse, e.g., "use a::b::{z,y}"
     fn parse_use(&mut self) -> ViewItem_ {
         return ViewItemUse(self.parse_view_path());
@@ -5875,21 +5942,27 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_optional_str(&mut self)
-                              -> Option<(InternedString, ast::StrStyle)> {
-        let (s, style) = match self.token {
-            token::LitStr(s) => (self.id_to_interned_str(s.ident()), ast::CookedStr),
-            token::LitStrRaw(s, n) => {
-                (self.id_to_interned_str(s.ident()), ast::RawStr(n))
+                              -> Option<(InternedString, ast::StrStyle, Option<ast::Name>)> {
+        let ret = match self.token {
+            token::Literal(token::Str_(s), suf) => {
+                (self.id_to_interned_str(s.ident()), ast::CookedStr, suf)
+            }
+            token::Literal(token::StrRaw(s, n), suf) => {
+                (self.id_to_interned_str(s.ident()), ast::RawStr(n), suf)
             }
             _ => return None
         };
         self.bump();
-        Some((s, style))
+        Some(ret)
     }
 
     pub fn parse_str(&mut self) -> (InternedString, StrStyle) {
         match self.parse_optional_str() {
-            Some(s) => { s }
+            Some((s, style, suf)) => {
+                let sp = self.last_span;
+                self.expect_no_suffix(sp, "str literal", suf);
+                (s, style)
+            }
             _ =>  self.fatal("expected string literal")
         }
     }

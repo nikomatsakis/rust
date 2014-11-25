@@ -12,20 +12,14 @@
 // closely. The idea is that all reachable symbols are live, codes called
 // from live codes are live, and everything else is dead.
 
-use middle::def;
-use middle::pat_util;
-use middle::privacy;
-use middle::ty;
-use middle::typeck;
+use middle::{def, pat_util, privacy, ty, typeck};
 use lint;
 use util::nodemap::NodeSet;
 
 use std::collections::HashSet;
-use syntax::ast;
-use syntax::ast_map;
+use syntax::{ast, ast_map, codemap};
 use syntax::ast_util::{local_def, is_local, PostExpansionMethod};
 use syntax::attr::{mod, AttrMetaMethods};
-use syntax::codemap;
 use syntax::visit::{mod, Visitor};
 
 // Any local node that may call something in its body block should be
@@ -140,7 +134,7 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
     }
 
     fn handle_field_access(&mut self, lhs: &ast::Expr, name: &ast::Ident) {
-        match ty::get(ty::expr_ty_adjusted(self.tcx, lhs)).sty {
+        match ty::expr_ty_adjusted(self.tcx, lhs).sty {
             ty::ty_struct(id, _) => {
                 let fields = ty::lookup_struct_fields(self.tcx, id);
                 let field_id = fields.iter()
@@ -152,7 +146,7 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
     }
 
     fn handle_tup_field_access(&mut self, lhs: &ast::Expr, idx: uint) {
-        match ty::get(ty::expr_ty_adjusted(self.tcx, lhs)).sty {
+        match ty::expr_ty_adjusted(self.tcx, lhs).sty {
             ty::ty_struct(id, _) => {
                 let fields = ty::lookup_struct_fields(self.tcx, id);
                 let field_id = fields[idx].id;
@@ -277,10 +271,10 @@ impl<'a, 'tcx, 'v> Visitor<'v> for MarkSymbolVisitor<'a, 'tcx> {
             ast::ExprMethodCall(..) => {
                 self.lookup_and_handle_method(expr.id, expr.span);
             }
-            ast::ExprField(ref lhs, ref ident, _) => {
+            ast::ExprField(ref lhs, ref ident) => {
                 self.handle_field_access(&**lhs, &ident.node);
             }
-            ast::ExprTupField(ref lhs, idx, _) => {
+            ast::ExprTupField(ref lhs, idx) => {
                 self.handle_tup_field_access(&**lhs, idx.node);
             }
             _ => ()

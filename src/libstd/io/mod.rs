@@ -221,6 +221,12 @@ responding to errors that may occur while attempting to read the numbers.
 #![experimental]
 #![deny(unused_must_use)]
 
+pub use self::SeekStyle::*;
+pub use self::FileMode::*;
+pub use self::FileAccess::*;
+pub use self::FileType::*;
+pub use self::IoErrorKind::*;
+
 use char::Char;
 use clone::Clone;
 use default::Default;
@@ -521,7 +527,7 @@ pub trait Reader {
     /// Reads a single byte. Returns `Err` on EOF.
     fn read_byte(&mut self) -> IoResult<u8> {
         let mut buf = [0];
-        try!(self.read_at_least(1, buf));
+        try!(self.read_at_least(1, &mut buf));
         Ok(buf[0])
     }
 
@@ -1028,7 +1034,7 @@ pub trait Writer {
                     Ok(()) => Ok(()),
                     Err(e) => {
                         self.error = Err(e);
-                        Err(fmt::WriteError)
+                        Err(fmt::Error)
                     }
                 }
             }
@@ -1061,7 +1067,7 @@ pub trait Writer {
     /// that the `write` method is used specifically instead.
     #[inline]
     fn write_line(&mut self, s: &str) -> IoResult<()> {
-        self.write_str(s).and_then(|()| self.write([b'\n']))
+        self.write_str(s).and_then(|()| self.write(&[b'\n']))
     }
 
     /// Write a single char, encoded as UTF-8.
@@ -1075,13 +1081,13 @@ pub trait Writer {
     /// Write the result of passing n through `int::to_str_bytes`.
     #[inline]
     fn write_int(&mut self, n: int) -> IoResult<()> {
-        write!(self, "{:d}", n)
+        write!(self, "{}", n)
     }
 
     /// Write the result of passing n through `uint::to_str_bytes`.
     #[inline]
     fn write_uint(&mut self, n: uint) -> IoResult<()> {
-        write!(self, "{:u}", n)
+        write!(self, "{}", n)
     }
 
     /// Write a little-endian uint (number of bytes depends on system).
@@ -1217,13 +1223,13 @@ pub trait Writer {
     /// Write a u8 (1 byte).
     #[inline]
     fn write_u8(&mut self, n: u8) -> IoResult<()> {
-        self.write([n])
+        self.write(&[n])
     }
 
     /// Write an i8 (1 byte).
     #[inline]
     fn write_i8(&mut self, n: i8) -> IoResult<()> {
-        self.write([n as u8])
+        self.write(&[n as u8])
     }
 }
 
@@ -1291,9 +1297,9 @@ impl<'a> Writer for &'a mut Writer+'a {
 /// # fn process_input<R: Reader>(r: R) {}
 /// # fn foo () {
 /// use std::io::util::TeeReader;
-/// use std::io::{stdin, MemWriter, ByRefWriter};
+/// use std::io::{stdin, ByRefWriter};
 ///
-/// let mut output = MemWriter::new();
+/// let mut output = Vec::new();
 ///
 /// {
 ///     // Don't give ownership of 'output' to the 'tee'. Instead we keep a
@@ -1302,7 +1308,7 @@ impl<'a> Writer for &'a mut Writer+'a {
 ///     process_input(tee);
 /// }
 ///
-/// println!("input processed: {}", output.unwrap());
+/// println!("input processed: {}", output);
 /// # }
 /// ```
 pub struct RefWriter<'a, W:'a> {
@@ -1890,15 +1896,14 @@ impl Default for FilePermission {
 }
 
 impl fmt::Show for FilePermission {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.fill = '0';
-        formatter.width = Some(4);
-        (&self.bits as &fmt::Octal).fmt(formatter)
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:04o}", self.bits)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use self::BadReaderBehavior::*;
     use super::{IoResult, Reader, MemReader, NoProgress, InvalidInput};
     use prelude::*;
     use uint;
@@ -1949,7 +1954,7 @@ mod tests {
     fn test_read_at_least() {
         let mut r = BadReader::new(MemReader::new(b"hello, world!".to_vec()),
                                    vec![GoodBehavior(uint::MAX)]);
-        let mut buf = [0u8, ..5];
+        let buf = &mut [0u8, ..5];
         assert!(r.read_at_least(1, buf).unwrap() >= 1);
         assert!(r.read_exact(5).unwrap().len() == 5); // read_exact uses read_at_least
         assert!(r.read_at_least(0, buf).is_ok());

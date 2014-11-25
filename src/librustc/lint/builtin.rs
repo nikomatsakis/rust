@@ -24,33 +24,31 @@
 //! `add_builtin!` or `add_builtin_with_new!` invocation in `context.rs`.
 //! Use the former for unit-like structs and the latter for structs with
 //! a `pub fn new()`.
+use self::MethodContext::*;
 
 use metadata::csearch;
 use middle::def::*;
+use middle::ty::{mod, Ty};
 use middle::typeck::astconv::ast_ty_to_ty;
-use middle::typeck::infer;
-use middle::{typeck, ty, def, pat_util, stability};
+use middle::typeck::{mod, infer};
+use middle::{def, pat_util, stability};
 use middle::const_eval::{eval_const_expr_partial, const_int, const_uint};
 use util::ppaux::{ty_to_string};
 use util::nodemap::{FnvHashMap, NodeSet};
 use lint::{Context, LintPass, LintArray};
 
-use std::cmp;
+use std::{cmp, slice};
 use std::collections::hash_map::{Occupied, Vacant};
 use std::num::SignedInt;
-use std::slice;
 use std::{i8, i16, i32, i64, u8, u16, u32, u64, f32, f64};
-use syntax::abi;
-use syntax::ast_map;
-use syntax::ast_util::is_shift_binop;
-use syntax::attr::AttrMetaMethods;
-use syntax::attr;
+use syntax::{abi, ast, ast_map};
+use syntax::ast_util::{mod, is_shift_binop};
+use syntax::attr::{mod, AttrMetaMethods};
 use syntax::codemap::{Span, DUMMY_SP};
 use syntax::parse::token;
-use syntax::{ast, ast_util, visit};
 use syntax::ast::{TyI, TyU, TyI8, TyU8, TyI16, TyU16, TyI32, TyU32, TyI64, TyU64};
 use syntax::ptr::P;
-use syntax::visit::Visitor;
+use syntax::visit::{mod, Visitor};
 
 declare_lint!(WHILE_TRUE, Warn,
               "suggest using `loop { }` instead of `while true { }`")
@@ -98,7 +96,7 @@ impl LintPass for UnusedCasts {
         match e.node {
             ast::ExprCast(ref expr, ref ty) => {
                 let t_t = ast_ty_to_ty(cx, &infer::new_infer_ctxt(cx.tcx), &**ty);
-                if ty::get(ty::expr_ty(cx.tcx, &**expr)).sty == ty::get(t_t).sty {
+                if ty::expr_ty(cx.tcx, &**expr) == t_t {
                     cx.span_lint(UNUSED_TYPECASTS, ty.span, "unnecessary type cast");
                 }
             }
@@ -154,7 +152,7 @@ impl LintPass for TypeLimits {
                     },
                     _ => {
                         let t = ty::expr_ty(cx.tcx, &**expr);
-                        match ty::get(t).sty {
+                        match t.sty {
                             ty::ty_uint(_) => {
                                 cx.span_lint(UNSIGNED_NEGATION, e.span,
                                              "negation of unsigned int variable may \
@@ -179,7 +177,7 @@ impl LintPass for TypeLimits {
                 }
 
                 if is_shift_binop(binop) {
-                    let opt_ty_bits = match ty::get(ty::expr_ty(cx.tcx, &**l)).sty {
+                    let opt_ty_bits = match ty::expr_ty(cx.tcx, &**l).sty {
                         ty::ty_int(t) => Some(int_ty_bits(t, cx.sess().target.int_type)),
                         ty::ty_uint(t) => Some(uint_ty_bits(t, cx.sess().target.uint_type)),
                         _ => None
@@ -204,7 +202,7 @@ impl LintPass for TypeLimits {
                 }
             },
             ast::ExprLit(ref lit) => {
-                match ty::get(ty::expr_ty(cx.tcx, e)).sty {
+                match ty::expr_ty(cx.tcx, e).sty {
                     ty::ty_int(t) => {
                         match lit.node {
                             ast::LitInt(v, ast::SignedIntLit(_, ast::Plus)) |
@@ -342,7 +340,7 @@ impl LintPass for TypeLimits {
             // Normalize the binop so that the literal is always on the RHS in
             // the comparison
             let norm_binop = if swap { rev_binop(binop) } else { binop };
-            match ty::get(ty::expr_ty(tcx, expr)).sty {
+            match ty::expr_ty(tcx, expr).sty {
                 ty::ty_int(int_ty) => {
                     let (min, max) = int_ty_range(int_ty);
                     let lit_val: i64 = match lit.node {
@@ -391,7 +389,7 @@ struct ImproperCTypesVisitor<'a, 'tcx: 'a> {
 
 impl<'a, 'tcx> ImproperCTypesVisitor<'a, 'tcx> {
     fn check_def(&mut self, sp: Span, ty_id: ast::NodeId, path_id: ast::NodeId) {
-        match self.cx.tcx.def_map.borrow().get_copy(&path_id) {
+        match self.cx.tcx.def_map.borrow()[path_id].clone() {
             def::DefPrimTy(ast::TyInt(ast::TyI)) => {
                 self.cx.span_lint(IMPROPER_CTYPES, sp,
                                   "found rust type `int` in foreign module, while \
@@ -472,10 +470,11 @@ declare_lint!(BOX_POINTERS, Allow,
 pub struct BoxPointers;
 
 impl BoxPointers {
-    fn check_heap_type(&self, cx: &Context, span: Span, ty: ty::t) {
+    fn check_heap_type<'a, 'tcx>(&self, cx: &Context<'a, 'tcx>,
+                                 span: Span, ty: Ty<'tcx>) {
         let mut n_uniq = 0i;
         ty::fold_ty(cx.tcx, ty, |t| {
-            match ty::get(t).sty {
+            match t.sty {
                 ty::ty_uniq(_) |
                 ty::ty_closure(box ty::ClosureTy {
                     store: ty::UniqTraitStore,
@@ -575,7 +574,7 @@ impl LintPass for RawPointerDeriving {
         }
         let did = match item.node {
             ast::ItemImpl(..) => {
-                match ty::get(ty::node_id_to_type(cx.tcx, item.id)).sty {
+                match ty::node_id_to_type(cx.tcx, item.id).sty {
                     ty::ty_enum(did, _) => did,
                     ty::ty_struct(did, _) => did,
                     _ => return,
@@ -622,6 +621,7 @@ impl LintPass for UnusedAttributes {
             "link",
             "link_name",
             "link_section",
+            "linkage",
             "no_builtins",
             "no_mangle",
             "no_split_stack",
@@ -736,7 +736,7 @@ impl LintPass for UnusedResults {
 
         let t = ty::expr_ty(cx.tcx, expr);
         let mut warned = false;
-        match ty::get(t).sty {
+        match t.sty {
             ty::ty_tup(ref tys) if tys.is_empty() => return,
             ty::ty_bool => return,
             ty::ty_struct(did, _) |
@@ -869,7 +869,7 @@ fn method_context(cx: &Context, m: &ast::Method) -> MethodContext {
         node: m.id
     };
 
-    match cx.tcx.impl_or_trait_items.borrow().find_copy(&did) {
+    match cx.tcx.impl_or_trait_items.borrow().get(&did).cloned() {
         None => cx.sess().span_bug(m.span, "missing method descriptor?!"),
         Some(md) => {
             match md {
@@ -916,7 +916,7 @@ impl NonSnakeCase {
             let mut allow_underscore = true;
             ident.chars().all(|c| {
                 allow_underscore = match c {
-                    c if c.is_lowercase() || c.is_digit() => true,
+                    c if c.is_lowercase() || c.is_numeric() => true,
                     '_' if allow_underscore => false,
                     _ => return false,
                 };
@@ -990,7 +990,7 @@ impl LintPass for NonSnakeCase {
         self.check_snake_case(cx, "trait method", t.ident, t.span);
     }
 
-    fn check_lifetime_decl(&mut self, cx: &Context, t: &ast::LifetimeDef) {
+    fn check_lifetime_def(&mut self, cx: &Context, t: &ast::LifetimeDef) {
         self.check_snake_case(cx, "lifetime", t.lifetime.name.ident(), t.lifetime.span);
     }
 
@@ -1108,8 +1108,8 @@ impl UnusedParens {
                 }
                 ast::ExprUnary(_, ref x) |
                 ast::ExprCast(ref x, _) |
-                ast::ExprField(ref x, _, _) |
-                ast::ExprTupField(ref x, _, _) |
+                ast::ExprField(ref x, _) |
+                ast::ExprTupField(ref x, _) |
                 ast::ExprIndex(ref x, _) => {
                     // &X { y: 1 }, X { y: 1 }.y
                     contains_exterior_struct_lit(&**x)
@@ -1402,6 +1402,9 @@ pub struct MissingDoc {
     /// Stack of IDs of struct definitions.
     struct_def_stack: Vec<ast::NodeId>,
 
+    /// True if inside variant definition
+    in_variant: bool,
+
     /// Stack of whether #[doc(hidden)] is set
     /// at each level which has lint attributes.
     doc_hidden_stack: Vec<bool>,
@@ -1411,6 +1414,7 @@ impl MissingDoc {
     pub fn new() -> MissingDoc {
         MissingDoc {
             struct_def_stack: vec!(),
+            in_variant: false,
             doc_hidden_stack: vec!(false),
         }
     }
@@ -1525,7 +1529,7 @@ impl LintPass for MissingDoc {
 
     fn check_struct_field(&mut self, cx: &Context, sf: &ast::StructField) {
         match sf.node.kind {
-            ast::NamedField(_, vis) if vis == ast::Public => {
+            ast::NamedField(_, vis) if vis == ast::Public || self.in_variant => {
                 let cur_struct_def = *self.struct_def_stack.last()
                     .expect("empty struct_def_stack");
                 self.check_missing_docs_attrs(cx, Some(cur_struct_def),
@@ -1539,6 +1543,13 @@ impl LintPass for MissingDoc {
     fn check_variant(&mut self, cx: &Context, v: &ast::Variant, _: &ast::Generics) {
         self.check_missing_docs_attrs(cx, Some(v.node.id), v.node.attrs.as_slice(),
                                      v.span, "a variant");
+        assert!(!self.in_variant);
+        self.in_variant = true;
+    }
+
+    fn check_variant_post(&mut self, _: &Context, _: &ast::Variant, _: &ast::Generics) {
+        assert!(self.in_variant);
+        self.in_variant = false;
     }
 }
 

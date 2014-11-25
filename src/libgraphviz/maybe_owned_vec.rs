@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+pub use self::MaybeOwnedVector::*;
+
 use std::default::Default;
 use std::fmt;
 use std::iter::FromIterator;
@@ -87,7 +89,7 @@ impl<'a, T: Ord> Ord for MaybeOwnedVector<'a, T> {
     }
 }
 
-impl<'a, T: PartialEq, V: AsSlice<T>> Equiv<V> for MaybeOwnedVector<'a, T> {
+impl<'a, T: PartialEq, Sized? V: AsSlice<T>> Equiv<V> for MaybeOwnedVector<'a, T> {
     fn equiv(&self, other: &V) -> bool {
         self.as_slice() == other.as_slice()
     }

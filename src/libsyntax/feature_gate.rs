@@ -17,6 +17,7 @@
 //!
 //! Features are enabled in programs via the crate-level attributes of
 //! `#![feature(...)]` with a comma-separated list of features.
+use self::Status::*;
 
 use abi::RustIntrinsic;
 use ast::NodeId;
@@ -37,7 +38,7 @@ use std::slice;
 static KNOWN_FEATURES: &'static [(&'static str, Status)] = &[
     ("globs", Active),
     ("macro_rules", Active),
-    ("struct_variant", Active),
+    ("struct_variant", Accepted),
     ("asm", Active),
     ("managed_boxes", Removed),
     ("non_ascii_idents", Active),
@@ -57,8 +58,6 @@ static KNOWN_FEATURES: &'static [(&'static str, Status)] = &[
     ("quote", Active),
     ("linkage", Active),
     ("struct_inherit", Removed),
-    ("overloaded_calls", Active),
-    ("unboxed_closure_sugar", Active),
 
     ("quad_precision_float", Removed),
 
@@ -101,7 +100,7 @@ enum Status {
 /// A set of features to be used by later passes.
 pub struct Features {
     pub default_type_params: bool,
-    pub overloaded_calls: bool,
+    pub unboxed_closures: bool,
     pub rustc_diagnostic_macros: bool,
     pub import_shadowing: bool,
     pub visible_private_types: bool,
@@ -112,7 +111,7 @@ impl Features {
     pub fn new() -> Features {
         Features {
             default_type_params: false,
-            overloaded_calls: false,
+            unboxed_closures: false,
             rustc_diagnostic_macros: false,
             import_shadowing: false,
             visible_private_types: false,
@@ -142,8 +141,8 @@ impl<'a> Context<'a> {
 }
 
 impl<'a, 'v> Visitor<'v> for Context<'a> {
-    fn visit_ident(&mut self, sp: Span, id: ast::Ident) {
-        if !token::get_ident(id).get().is_ascii() {
+    fn visit_name(&mut self, sp: Span, name: ast::Name) {
+        if !token::get_name(name).get().is_ascii() {
             self.gate_feature("non_ascii_idents", sp,
                               "non-ascii idents are not fully supported.");
         }
@@ -181,22 +180,13 @@ impl<'a, 'v> Visitor<'v> for Context<'a> {
                                   "`#[thread_local]` is an experimental feature, and does not \
                                   currently handle destructors. There is no corresponding \
                                   `#[task_local]` mapping to the task model");
+            } else if attr.name().equiv(&("linkage")) {
+                self.gate_feature("linkage", i.span,
+                                  "the `linkage` attribute is experimental \
+                                   and not portable across platforms")
             }
         }
         match i.node {
-            ast::ItemEnum(ref def, _) => {
-                for variant in def.variants.iter() {
-                    match variant.node.kind {
-                        ast::StructVariantKind(..) => {
-                            self.gate_feature("struct_variant", variant.span,
-                                              "enum struct variants are \
-                                               experimental and possibly buggy");
-                        }
-                        _ => {}
-                    }
-                }
-            }
-
             ast::ItemForeignMod(ref foreign_module) => {
                 if attr::contains_name(i.attrs.as_slice(), "link_args") {
                     self.gate_feature("link_args", i.span,
@@ -319,7 +309,7 @@ impl<'a, 'v> Visitor<'v> for Context<'a> {
 
     fn visit_expr(&mut self, e: &ast::Expr) {
         match e.node {
-            ast::ExprUnboxedFn(..) => {
+            ast::ExprClosure(_, Some(_), _, _) => {
                 self.gate_feature("unboxed_closures",
                                   e.span,
                                   "unboxed closures are a work-in-progress \
@@ -389,7 +379,7 @@ impl<'a, 'v> Visitor<'v> for Context<'a> {
                 fn_decl: &'v ast::FnDecl,
                 block: &'v ast::Block,
                 span: Span,
-                _: NodeId) {
+                _node_id: NodeId) {
         match fn_kind {
             visit::FkItemFn(_, _, _, abi) if abi == RustIntrinsic => {
                 self.gate_feature("intrinsics",
@@ -399,6 +389,19 @@ impl<'a, 'v> Visitor<'v> for Context<'a> {
             _ => {}
         }
         visit::walk_fn(self, fn_kind, fn_decl, block, span);
+    }
+
+    fn visit_path_parameters(&mut self, path_span: Span, parameters: &'v ast::PathParameters) {
+        match *parameters {
+            ast::ParenthesizedParameters(..) => {
+                self.gate_feature("unboxed_closures",
+                                  path_span,
+                                  "parenthetical parameter notation is subject to change");
+            }
+            ast::AngleBracketedParameters(..) => { }
+        }
+
+        visit::walk_path_parameters(self, path_span, parameters)
     }
 }
 
@@ -454,7 +457,7 @@ pub fn check_crate(span_handler: &SpanHandler, krate: &ast::Crate) -> (Features,
 
     (Features {
         default_type_params: cx.has_feature("default_type_params"),
-        overloaded_calls: cx.has_feature("overloaded_calls"),
+        unboxed_closures: cx.has_feature("unboxed_closures"),
         rustc_diagnostic_macros: cx.has_feature("rustc_diagnostic_macros"),
         import_shadowing: cx.has_feature("import_shadowing"),
         visible_private_types: cx.has_feature("visible_private_types"),

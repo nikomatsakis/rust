@@ -50,6 +50,8 @@
 // FIXME: all atomic operations in this module use a SeqCst ordering. That is
 //      probably overkill
 
+pub use self::Stolen::*;
+
 use core::prelude::*;
 
 use alloc::arc::Arc;
@@ -412,7 +414,7 @@ mod tests {
     use super::{Data, BufferPool, Abort, Empty, Worker, Stealer};
 
     use std::mem;
-    use std::rt::thread::Thread;
+    use rustrt::thread::Thread;
     use std::rand;
     use std::rand::Rng;
     use atomic::{AtomicBool, INIT_ATOMIC_BOOL, SeqCst,

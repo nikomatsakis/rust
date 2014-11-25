@@ -9,11 +9,10 @@
 // except according to those terms.
 //
 // ignore-lexer-test FIXME #15879
-#![feature(struct_variant)]
-
-use std::kinds::marker;
 
 // Test sized-ness checking in substitution.
+
+use std::kinds::marker;
 
 // Unbounded.
 fn f1<Sized? X>(x: &X) {

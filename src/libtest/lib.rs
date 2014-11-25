@@ -33,12 +33,21 @@
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/nightly/")]
 
-#![feature(asm, macro_rules, phase)]
+#![feature(asm, macro_rules, phase, globs, slicing_syntax)]
 
 extern crate getopts;
 extern crate regex;
 extern crate serialize;
 extern crate term;
+
+pub use self::TestFn::*;
+pub use self::MetricChange::*;
+pub use self::ColorConfig::*;
+pub use self::TestResult::*;
+pub use self::TestName::*;
+use self::TestEvent::*;
+use self::NamePadding::*;
+use self::OutputLocation::*;
 
 use std::collections::TreeMap;
 use stats::Stats;
@@ -678,14 +687,14 @@ impl<T: Writer> ConsoleTestState<T> {
                     improved += 1;
                     try!(self.write_plain(format!(": {}", *k).as_slice()));
                     try!(self.write_improved());
-                    try!(self.write_plain(format!(" by {:.2f}%\n",
+                    try!(self.write_plain(format!(" by {:.2}%\n",
                                                   pct as f64).as_slice()));
                 }
                 Regression(pct) => {
                     regressed += 1;
                     try!(self.write_plain(format!(": {}", *k).as_slice()));
                     try!(self.write_regressed());
-                    try!(self.write_plain(format!(" by {:.2f}%\n",
+                    try!(self.write_plain(format!(" by {:.2}%\n",
                                                   pct as f64).as_slice()));
                 }
             }
@@ -839,8 +848,6 @@ pub fn run_tests_console(opts: &TestOpts, tests: Vec<TestDescAndFn> ) -> io::IoR
 
 #[test]
 fn should_sort_failures_before_printing_them() {
-    use std::io::MemWriter;
-
     let test_a = TestDesc {
         name: StaticTestName("a"),
         ignore: false,
@@ -855,7 +862,7 @@ fn should_sort_failures_before_printing_them() {
 
     let mut st = ConsoleTestState {
         log_out: None,
-        out: Raw(MemWriter::new()),
+        out: Raw(Vec::new()),
         use_color: false,
         total: 0u,
         passed: 0u,
@@ -869,7 +876,7 @@ fn should_sort_failures_before_printing_them() {
 
     st.write_failures().unwrap();
     let s = match st.out {
-        Raw(ref m) => String::from_utf8_lossy(m.get_ref()),
+        Raw(ref m) => String::from_utf8_lossy(m[]),
         Pretty(_) => unreachable!()
     };
 
@@ -1317,7 +1324,7 @@ impl Bencher {
         if n == 0 { n = 1; }
 
         let mut total_run = Duration::nanoseconds(0);
-        let samples : &mut [f64] = [0.0_f64, ..50];
+        let samples : &mut [f64] = &mut [0.0_f64, ..50];
         loop {
             let mut summ = None;
             let mut summ5 = None;

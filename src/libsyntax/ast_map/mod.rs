@@ -8,6 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+pub use self::Node::*;
+pub use self::PathElem::*;
+use self::MapEntry::*;
+
 use abi;
 use ast::*;
 use ast_util;
@@ -540,7 +544,7 @@ impl<'ast> Map<'ast> {
 
     pub fn def_id_span(&self, def_id: DefId, fallback: Span) -> Span {
         if def_id.krate == LOCAL_CRATE {
-            self.span(def_id.node)
+            self.opt_span(def_id.node).unwrap_or(fallback)
         } else {
             fallback
         }
@@ -862,7 +866,7 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
         self.insert(lifetime.id, NodeLifetime(lifetime));
     }
 
-    fn visit_lifetime_decl(&mut self, def: &'ast LifetimeDef) {
+    fn visit_lifetime_def(&mut self, def: &'ast LifetimeDef) {
         self.visit_lifetime_ref(&def.lifetime);
     }
 }

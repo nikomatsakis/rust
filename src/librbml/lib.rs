@@ -25,13 +25,16 @@
        html_root_url = "http://doc.rust-lang.org/nightly/",
        html_playground_url = "http://play.rust-lang.org/")]
 #![allow(unknown_features)]
-#![feature(macro_rules, phase, slicing_syntax)]
+#![feature(macro_rules, phase, slicing_syntax, globs)]
 #![allow(missing_docs)]
 
 extern crate serialize;
 
 #[phase(plugin, link)] extern crate log;
 #[cfg(test)] extern crate test;
+
+pub use self::EbmlEncoderTag::*;
+pub use self::Error::*;
 
 use std::str;
 
@@ -599,7 +602,7 @@ pub mod reader {
                           f: |&mut Decoder<'doc>, bool| -> DecodeResult<T>) -> DecodeResult<T> {
             debug!("read_option()");
             self.read_enum("Option", |this| {
-                this.read_enum_variant(["None", "Some"], |this, idx| {
+                this.read_enum_variant(&["None", "Some"], |this, idx| {
                     match idx {
                         0 => f(this, false),
                         1 => f(this, true),
@@ -838,7 +841,7 @@ pub mod writer {
             // the encoded EBML (normally).  This is just for
             // efficiency.  When debugging, though, we can emit such
             // labels and then they will be checked by decoder to
-            // try and check failures more quickly.
+            // try and check panics more quickly.
             if DEBUG { self.wr_tagged_str(EsLabel as uint, label) }
             else { Ok(()) }
         }
@@ -1062,7 +1065,7 @@ mod tests {
 
     #[test]
     fn test_vuint_at() {
-        let data = [
+        let data = &[
             0x80,
             0xff,
             0x40, 0x00,

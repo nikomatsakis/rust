@@ -207,6 +207,8 @@ not well-formed. Basically we get to assume well-formedness of all
 types involved before considering variance.
 
 */
+use self::VarianceTerm::*;
+use self::ParamKind::*;
 
 use arena;
 use arena::Arena;
@@ -214,7 +216,7 @@ use middle::resolve_lifetime as rl;
 use middle::subst;
 use middle::subst::{ParamSpace, FnSpace, TypeSpace, SelfSpace, AssocSpace, VecPerParamSpace};
 use middle::traits;
-use middle::ty;
+use middle::ty::{mod, Ty};
 use std::fmt;
 use std::rc::Rc;
 use syntax::ast;
@@ -721,7 +723,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
 
             let is_inferred;
             macro_rules! cannot_happen { () => { {
-                panic!("invalid parent: {:s} for {:s}",
+                panic!("invalid parent: {} for {}",
                       tcx.map.node_to_string(parent_id),
                       tcx.map.node_to_string(param_id));
             } } }
@@ -858,13 +860,13 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
     /// Adds constraints appropriate for an instance of `ty` appearing
     /// in a context with ambient variance `variance`
     fn add_constraints_from_ty(&mut self,
-                               ty: ty::t,
+                               ty: Ty<'tcx>,
                                variance: VarianceTermPtr<'a>) {
         debug!("add_constraints_from_ty(ty={}, variance={})",
                ty.repr(self.tcx()),
                variance);
 
-        match ty::get(ty).sty {
+        match ty.sty {
             ty::ty_bool |
             ty::ty_char | ty::ty_int(_) | ty::ty_uint(_) |
             ty::ty_float(_) | ty::ty_str => {
@@ -966,9 +968,9 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
     /// object, etc) appearing in a context with ambient variance `variance`
     fn add_constraints_from_substs(&mut self,
                                    def_id: ast::DefId,
-                                   type_param_defs: &[ty::TypeParameterDef],
+                                   type_param_defs: &[ty::TypeParameterDef<'tcx>],
                                    region_param_defs: &[ty::RegionParameterDef],
-                                   substs: &subst::Substs,
+                                   substs: &subst::Substs<'tcx>,
                                    variance: VarianceTermPtr<'a>) {
         debug!("add_constraints_from_substs(def_id={}, substs={}, variance={})",
                def_id.repr(self.tcx()),
@@ -1055,7 +1057,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
     /// Adds constraints appropriate for a function with signature
     /// `sig` appearing in a context with ambient variance `variance`
     fn add_constraints_from_sig(&mut self,
-                                sig: &ty::FnSig,
+                                sig: &ty::FnSig<'tcx>,
                                 variance: VarianceTermPtr<'a>) {
         let contra = self.contravariant(variance);
         for &input in sig.inputs.iter() {
@@ -1102,7 +1104,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
     /// Adds constraints appropriate for a mutability-type pair
     /// appearing in a context with ambient variance `variance`
     fn add_constraints_from_mt(&mut self,
-                               mt: &ty::mt,
+                               mt: &ty::mt<'tcx>,
                                variance: VarianceTermPtr<'a>) {
         match mt.mutbl {
             ast::MutMutable => {

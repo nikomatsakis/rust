@@ -14,11 +14,16 @@
  * `ExprUseVisitor` determines how expressions are being used.
  */
 
+pub use self::MutateMode::*;
+pub use self::LoanCause::*;
+pub use self::ConsumeMode::*;
+pub use self::MoveReason::*;
+use self::OverloadedCallType::*;
+
+use middle::{def, region, pat_util};
 use middle::mem_categorization as mc;
-use middle::def;
 use middle::mem_categorization::Typer;
-use middle::pat_util;
-use middle::ty;
+use middle::ty::{mod, Ty};
 use middle::typeck::{MethodCall, MethodObject, MethodTraitObject};
 use middle::typeck::{MethodOrigin, MethodParam, MethodTypeParam};
 use middle::typeck::{MethodStatic, MethodStaticUnboxedClosure};
@@ -34,20 +39,20 @@ use syntax::codemap::Span;
 
 /// This trait defines the callbacks you can expect to receive when
 /// employing the ExprUseVisitor.
-pub trait Delegate {
+pub trait Delegate<'tcx> {
     // The value found at `cmt` is either copied or moved, depending
     // on mode.
     fn consume(&mut self,
                consume_id: ast::NodeId,
                consume_span: Span,
-               cmt: mc::cmt,
+               cmt: mc::cmt<'tcx>,
                mode: ConsumeMode);
 
     // The value found at `cmt` is either copied or moved via the
     // pattern binding `consume_pat`, depending on mode.
     fn consume_pat(&mut self,
                    consume_pat: &ast::Pat,
-                   cmt: mc::cmt,
+                   cmt: mc::cmt<'tcx>,
                    mode: ConsumeMode);
 
     // The value found at `borrow` is being borrowed at the point
@@ -55,7 +60,7 @@ pub trait Delegate {
     fn borrow(&mut self,
               borrow_id: ast::NodeId,
               borrow_span: Span,
-              cmt: mc::cmt,
+              cmt: mc::cmt<'tcx>,
               loan_region: ty::Region,
               bk: ty::BorrowKind,
               loan_cause: LoanCause);
@@ -69,7 +74,7 @@ pub trait Delegate {
     fn mutate(&mut self,
               assignment_id: ast::NodeId,
               assignment_span: Span,
-              assignee_cmt: mc::cmt,
+              assignee_cmt: mc::cmt<'tcx>,
               mode: MutateMode);
 }
 
@@ -195,10 +200,10 @@ impl OverloadedCallType {
 // supplies types from the tree. After type checking is complete, you
 // can just use the tcx as the typer.
 
-pub struct ExprUseVisitor<'d,'t,TYPER:'t> {
+pub struct ExprUseVisitor<'d,'t,'tcx,TYPER:'t> {
     typer: &'t TYPER,
     mc: mc::MemCategorizationContext<'t,TYPER>,
-    delegate: &'d mut Delegate+'d,
+    delegate: &'d mut Delegate<'tcx>+'d,
 }
 
 // If the TYPER results in an error, it's because the type check
@@ -217,10 +222,10 @@ macro_rules! return_if_err(
     )
 )
 
-impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
-    pub fn new(delegate: &'d mut Delegate,
+impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,'tcx,TYPER> {
+    pub fn new(delegate: &'d mut Delegate<'tcx>,
                typer: &'t TYPER)
-               -> ExprUseVisitor<'d,'t,TYPER> {
+               -> ExprUseVisitor<'d,'t,'tcx,TYPER> {
         ExprUseVisitor { typer: typer,
                          mc: mc::MemCategorizationContext::new(typer),
                          delegate: delegate }
@@ -239,10 +244,11 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
         for arg in decl.inputs.iter() {
             let arg_ty = return_if_err!(self.typer.node_ty(arg.pat.id));
 
+            let fn_body_scope = region::CodeExtent::from_node_id(body.id);
             let arg_cmt = self.mc.cat_rvalue(
                 arg.id,
                 arg.pat.span,
-                ty::ReScope(body.id), // Args live only as long as the fn body.
+                ty::ReScope(fn_body_scope), // Args live only as long as the fn body.
                 arg_ty);
 
             self.walk_pat(arg_cmt, &*arg.pat);
@@ -256,7 +262,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
     fn delegate_consume(&mut self,
                         consume_id: ast::NodeId,
                         consume_span: Span,
-                        cmt: mc::cmt) {
+                        cmt: mc::cmt<'tcx>) {
         let mode = copy_or_move(self.tcx(), cmt.ty, DirectRefMove);
         self.delegate.consume(consume_id, consume_span, cmt, mode);
     }
@@ -323,11 +329,11 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                 }
             }
 
-            ast::ExprField(ref base, _, _) => {         // base.f
+            ast::ExprField(ref base, _) => {         // base.f
                 self.select_from_expr(&**base);
             }
 
-            ast::ExprTupField(ref base, _, _) => {         // base.<n>
+            ast::ExprTupField(ref base, _) => {         // base.<n>
                 self.select_from_expr(&**base);
             }
 
@@ -437,9 +443,10 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                 // Fetch the type of the value that the iteration yields to
                 // produce the pattern's categorized mutable type.
                 let pattern_type = return_if_err!(self.typer.node_ty(pat.id));
+                let blk_scope = region::CodeExtent::from_node_id(blk.id);
                 let pat_cmt = self.mc.cat_rvalue(pat.id,
                                                  pat.span,
-                                                 ty::ReScope(blk.id),
+                                                 ty::ReScope(blk_scope),
                                                  pattern_type);
                 self.walk_pat(pat_cmt, &**pat);
 
@@ -490,8 +497,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                 self.consume_expr(&**count);
             }
 
-            ast::ExprFnBlock(..) |
-            ast::ExprUnboxedFn(..) |
+            ast::ExprClosure(..) |
             ast::ExprProc(..) => {
                 self.walk_captures(expr)
             }
@@ -513,7 +519,8 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
         let callee_ty = ty::expr_ty_adjusted(self.tcx(), callee);
         debug!("walk_callee: callee={} callee_ty={}",
                callee.repr(self.tcx()), callee_ty.repr(self.tcx()));
-        match ty::get(callee_ty).sty {
+        let call_scope = region::CodeExtent::from_node_id(call.id);
+        match callee_ty.sty {
             ty::ty_bare_fn(..) => {
                 self.consume_expr(callee);
             }
@@ -521,7 +528,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                 match f.onceness {
                     ast::Many => {
                         self.borrow_expr(callee,
-                                         ty::ReScope(call.id),
+                                         ty::ReScope(call_scope),
                                          ty::UniqueImmBorrow,
                                          ClosureInvocation);
                     }
@@ -551,13 +558,13 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                 match overloaded_call_type {
                     FnMutOverloadedCall => {
                         self.borrow_expr(callee,
-                                         ty::ReScope(call.id),
+                                         ty::ReScope(call_scope),
                                          ty::MutBorrow,
                                          ClosureInvocation);
                     }
                     FnOverloadedCall => {
                         self.borrow_expr(callee,
-                                         ty::ReScope(call.id),
+                                         ty::ReScope(call_scope),
                                          ty::ImmBorrow,
                                          ClosureInvocation);
                     }
@@ -650,7 +657,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
 
         // Select just those fields of the `with`
         // expression that will actually be used
-        let with_fields = match ty::get(with_cmt.ty).sty {
+        let with_fields = match with_cmt.ty.sty {
             ty::ty_struct(did, ref substs) => {
                 ty::struct_fields(self.tcx(), did, substs)
             }
@@ -739,7 +746,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                 Some(method_ty) => {
                     let cmt = return_if_err!(self.mc.cat_expr_autoderefd(expr, i));
                     let self_ty = ty::ty_fn_args(method_ty)[0];
-                    let (m, r) = match ty::get(self_ty).sty {
+                    let (m, r) = match self_ty.sty {
                         ty::ty_rptr(r, ref m) => (m.mutbl, r),
                         _ => self.tcx().sess.span_bug(expr.span,
                                 format!("bad overloaded deref type {}",
@@ -808,7 +815,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
         // methods are implicitly autoref'd which sadly does not use
         // adjustments, so we must hardcode the borrow here.
 
-        let r = ty::ReScope(expr.id);
+        let r = ty::ReScope(region::CodeExtent::from_node_id(expr.id));
         let bk = ty::ImmBorrow;
 
         for &arg in rhs.iter() {
@@ -817,7 +824,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
         return true;
     }
 
-    fn walk_arm(&mut self, discr_cmt: mc::cmt, arm: &ast::Arm) {
+    fn walk_arm(&mut self, discr_cmt: mc::cmt<'tcx>, arm: &ast::Arm) {
         for pat in arm.pats.iter() {
             self.walk_pat(discr_cmt.clone(), &**pat);
         }
@@ -829,7 +836,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
         self.consume_expr(&*arm.body);
     }
 
-    fn walk_pat(&mut self, cmt_discr: mc::cmt, pat: &ast::Pat) {
+    fn walk_pat(&mut self, cmt_discr: mc::cmt<'tcx>, pat: &ast::Pat) {
         debug!("walk_pat cmt_discr={} pat={}", cmt_discr.repr(self.tcx()),
                pat.repr(self.tcx()));
         let mc = &self.mc;
@@ -850,7 +857,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
 
                 // Each match binding is effectively an assignment to the
                 // binding being produced.
-                let def = def_map.borrow().get_copy(&pat.id);
+                let def = def_map.borrow()[pat.id].clone();
                 match mc.cat_def(pat.id, pat.span, pat_ty, def) {
                     Ok(binding_cmt) => {
                         delegate.mutate(pat.id, pat.span, binding_cmt, Init);
@@ -957,8 +964,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
             // inferred by regionbk
             let upvar_id = ty::UpvarId { var_id: id_var,
                                          closure_expr_id: closure_expr.id };
-            let upvar_borrow = self.tcx().upvar_borrow_map.borrow()
-                                   .get_copy(&upvar_id);
+            let upvar_borrow = self.tcx().upvar_borrow_map.borrow()[upvar_id].clone();
 
             self.delegate.borrow(closure_expr.id,
                                  closure_expr.span,
@@ -985,7 +991,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                         closure_id: ast::NodeId,
                         closure_span: Span,
                         upvar_def: def::Def)
-                        -> mc::McResult<mc::cmt> {
+                        -> mc::McResult<mc::cmt<'tcx>> {
         // Create the cmt for the variable being borrowed, from the
         // caller's perspective
         let var_id = upvar_def.def_id().node;
@@ -994,7 +1000,8 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
     }
 }
 
-fn copy_or_move(tcx: &ty::ctxt, ty: ty::t, move_reason: MoveReason) -> ConsumeMode {
+fn copy_or_move<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>,
+                      move_reason: MoveReason) -> ConsumeMode {
     if ty::type_moves_by_default(tcx, ty) { Move(move_reason) } else { Copy }
 }
 

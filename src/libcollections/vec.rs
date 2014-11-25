@@ -20,6 +20,7 @@ use core::cmp::max;
 use core::default::Default;
 use core::fmt;
 use core::kinds::marker::{ContravariantLifetime, InvariantType};
+use core::kinds::Sized;
 use core::mem;
 use core::num::{Int, UnsignedInt};
 use core::ops;
@@ -47,7 +48,7 @@ use slice::{CloneSliceAllocPrelude};
 /// vec[0] = 7i;
 /// assert_eq!(vec[0], 7);
 ///
-/// vec.push_all([1, 2, 3]);
+/// vec.push_all(&[1, 2, 3]);
 ///
 /// for x in vec.iter() {
 ///     println!("{}", x);
@@ -234,10 +235,25 @@ impl<T> Vec<T> {
     ///     }
     /// }
     /// ```
-    #[experimental]
+    #[unstable = "needs finalization"]
     pub unsafe fn from_raw_parts(ptr: *mut T, length: uint,
                                  capacity: uint) -> Vec<T> {
         Vec { ptr: ptr, len: length, cap: capacity }
+    }
+
+    /// Creates a vector by copying the elements from a raw pointer.
+    ///
+    /// This function will copy `elts` contiguous elements starting at `ptr`
+    /// into a new allocation owned by the returned `Vec`. The elements of the
+    /// buffer are copied into the vector without cloning, as if `ptr::read()`
+    /// were called on them.
+    #[inline]
+    #[unstable = "just renamed from raw::from_buf"]
+    pub unsafe fn from_raw_buf(ptr: *const T, elts: uint) -> Vec<T> {
+        let mut dst = Vec::with_capacity(elts);
+        dst.set_len(elts);
+        ptr::copy_nonoverlapping_memory(dst.as_mut_ptr(), ptr, elts);
+        dst
     }
 
     /// Consumes the `Vec`, partitioning it based on a predicate.
@@ -306,7 +322,7 @@ impl<T: Clone> Vec<T> {
     ///
     /// ```
     /// let mut vec = vec![1i];
-    /// vec.push_all([2i, 3, 4]);
+    /// vec.push_all(&[2i, 3, 4]);
     /// assert_eq!(vec, vec![1, 2, 3, 4]);
     /// ```
     #[inline]
@@ -516,7 +532,7 @@ impl<T: PartialOrd> PartialOrd for Vec<T> {
 impl<T: Eq> Eq for Vec<T> {}
 
 #[experimental]
-impl<T: PartialEq, V: AsSlice<T>> Equiv<V> for Vec<T> {
+impl<T: PartialEq, Sized? V: AsSlice<T>> Equiv<V> for Vec<T> {
     #[inline]
     fn equiv(&self, other: &V) -> bool { self.as_slice() == other.as_slice() }
 }
@@ -639,7 +655,7 @@ impl<T> Vec<T> {
     ///
     /// ```
     /// let mut vec: Vec<int> = Vec::with_capacity(10);
-    /// vec.push_all([1, 2, 3]);
+    /// vec.push_all(&[1, 2, 3]);
     /// assert_eq!(vec.capacity(), 10);
     /// vec.shrink_to_fit();
     /// assert!(vec.capacity() >= 3);
@@ -1181,7 +1197,7 @@ impl<T> AsSlice<T> for Vec<T> {
     }
 }
 
-impl<T: Clone, V: AsSlice<T>> Add<V, Vec<T>> for Vec<T> {
+impl<T: Clone, Sized? V: AsSlice<T>> Add<V, Vec<T>> for Vec<T> {
     #[inline]
     fn add(&self, rhs: &V) -> Vec<T> {
         let mut res = Vec::with_capacity(self.len() + rhs.as_slice().len());
@@ -1366,23 +1382,18 @@ pub fn as_vec<'a, T>(x: &'a [T]) -> DerefVec<'a, T> {
 }
 
 /// Unsafe vector operations.
-#[unstable]
+#[deprecated]
 pub mod raw {
     use super::Vec;
-    use core::ptr;
-    use core::slice::SlicePrelude;
 
     /// Constructs a vector from an unsafe pointer to a buffer.
     ///
     /// The elements of the buffer are copied into the vector without cloning,
     /// as if `ptr::read()` were called on them.
     #[inline]
-    #[unstable]
+    #[deprecated = "renamed to Vec::from_raw_buf"]
     pub unsafe fn from_buf<T>(ptr: *const T, elts: uint) -> Vec<T> {
-        let mut dst = Vec::with_capacity(elts);
-        dst.set_len(elts);
-        ptr::copy_nonoverlapping_memory(dst.as_mut_ptr(), ptr, elts);
-        dst
+        Vec::from_raw_buf(ptr, elts)
     }
 }
 
@@ -1646,7 +1657,10 @@ impl<T> Vec<T> {
             // Create a `Vec` from our `PartialVecZeroSized` and make sure the
             // destructor of the latter will not run. None of this can panic.
             let mut result = Vec::new();
-            unsafe { result.set_len(pv.num_u); }
+            unsafe {
+                result.set_len(pv.num_u);
+                mem::forget(pv);
+            }
             result
         }
     }
@@ -1682,7 +1696,7 @@ mod tests {
     #[test]
     fn test_as_vec() {
         let xs = [1u8, 2u8, 3u8];
-        assert_eq!(as_vec(xs).as_slice(), xs.as_slice());
+        assert_eq!(as_vec(&xs).as_slice(), xs.as_slice());
     }
 
     #[test]
@@ -1772,13 +1786,13 @@ mod tests {
         let mut values = vec![1u8,2,3,4,5];
         {
             let slice = values.slice_from_mut(2);
-            assert!(slice == [3, 4, 5]);
+            assert!(slice == &mut [3, 4, 5]);
             for p in slice.iter_mut() {
                 *p += 2;
             }
         }
 
-        assert!(values.as_slice() == [1, 2, 5, 6, 7]);
+        assert!(values.as_slice() == &[1, 2, 5, 6, 7]);
     }
 
     #[test]
@@ -1786,13 +1800,13 @@ mod tests {
         let mut values = vec![1u8,2,3,4,5];
         {
             let slice = values.slice_to_mut(2);
-            assert!(slice == [1, 2]);
+            assert!(slice == &mut [1, 2]);
             for p in slice.iter_mut() {
                 *p += 1;
             }
         }
 
-        assert!(values.as_slice() == [2, 3, 3, 4, 5]);
+        assert!(values.as_slice() == &[2, 3, 3, 4, 5]);
     }
 
     #[test]

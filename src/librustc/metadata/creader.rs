@@ -13,8 +13,7 @@
 //! Validates all used crates and extern libraries and loads their metadata
 
 use back::svh::Svh;
-use driver::session::Session;
-use driver::driver;
+use session::{config, Session};
 use metadata::cstore;
 use metadata::cstore::{CStore, CrateSource};
 use metadata::decoder;
@@ -242,6 +241,8 @@ fn visit_item(e: &Env, i: &ast::Item) {
                                     cstore::NativeFramework
                                 } else if k.equiv(&("framework")) {
                                     cstore::NativeFramework
+                                } else if k.equiv(&("dylib")) {
+                                    cstore::NativeUnknown
                                 } else {
                                     e.sess.span_err(m.span,
                                         format!("unknown kind: `{}`",
@@ -321,7 +322,7 @@ fn existing_match(e: &Env, name: &str,
         // `source` stores paths which are normalized which may be different
         // from the strings on the command line.
         let source = e.sess.cstore.get_used_crate_source(cnum).unwrap();
-        match e.sess.opts.externs.find_equiv(name) {
+        match e.sess.opts.externs.get(name) {
             Some(locs) => {
                 let found = locs.iter().any(|l| {
                     let l = fs::realpath(&Path::new(l.as_slice())).ok();
@@ -453,7 +454,7 @@ impl<'a> PluginMetadataReader<'a> {
     pub fn read_plugin_metadata(&mut self, krate: &ast::ViewItem) -> PluginMetadata {
         let info = extract_crate_info(&self.env, krate).unwrap();
         let target_triple = self.env.sess.opts.target_triple.as_slice();
-        let is_cross = target_triple != driver::host_triple();
+        let is_cross = target_triple != config::host_triple();
         let mut should_link = info.should_link && !is_cross;
         let mut load_ctxt = loader::Context {
             sess: self.env.sess,
@@ -462,7 +463,7 @@ impl<'a> PluginMetadataReader<'a> {
             crate_name: info.name.as_slice(),
             hash: None,
             filesearch: self.env.sess.host_filesearch(),
-            triple: driver::host_triple(),
+            triple: config::host_triple(),
             root: &None,
             rejected_via_hash: vec!(),
             rejected_via_triple: vec!(),
@@ -479,7 +480,7 @@ impl<'a> PluginMetadataReader<'a> {
                 if decoder::get_plugin_registrar_fn(lib.metadata.as_slice()).is_some() {
                     let message = format!("crate `{}` contains a plugin_registrar fn but \
                                   only a version for triple `{}` could be found (need {})",
-                                  info.ident, target_triple, driver::host_triple());
+                                  info.ident, target_triple, config::host_triple());
                     self.env.sess.span_err(krate.span, message.as_slice());
                     // need to abort now because the syntax expansion
                     // code will shortly attempt to load and execute

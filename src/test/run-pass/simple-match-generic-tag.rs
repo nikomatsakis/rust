@@ -11,9 +11,9 @@
 enum opt<T> { none, some(T) }
 
 pub fn main() {
-    let x = none::<int>;
+    let x = opt::none::<int>;
     match x {
-        none::<int> => { println!("hello world"); }
-        some(_) => { }
+        opt::none::<int> => { println!("hello world"); }
+        opt::some(_) => { }
     }
 }

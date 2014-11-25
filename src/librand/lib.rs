@@ -33,7 +33,6 @@ extern crate core;
 
 #[cfg(test)] #[phase(plugin, link)] extern crate std;
 #[cfg(test)] #[phase(plugin, link)] extern crate log;
-#[cfg(test)] extern crate native;
 
 use core::prelude::*;
 use core::kinds::marker;
@@ -143,7 +142,7 @@ pub trait Rng {
     /// use std::rand::{task_rng, Rng};
     ///
     /// let mut v = [0u8, .. 13579];
-    /// task_rng().fill_bytes(v);
+    /// task_rng().fill_bytes(&mut v);
     /// println!("{}", v.as_slice());
     /// ```
     fn fill_bytes(&mut self, dest: &mut [u8]) {
@@ -205,14 +204,17 @@ pub trait Rng {
         Generator { rng: self, marker: marker::CovariantType }
     }
 
-    /// Generate a random value in the range [`low`, `high`). Fails if
-    /// `low >= high`.
+    /// Generate a random value in the range [`low`, `high`).
     ///
     /// This is a convenience wrapper around
     /// `distributions::Range`. If this function will be called
     /// repeatedly with the same arguments, one should use `Range`, as
     /// that will amortize the computations that allow for perfect
     /// uniformity, as they only happen on initialization.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `low >= high`.
     ///
     /// # Example
     ///
@@ -238,7 +240,7 @@ pub trait Rng {
     /// use std::rand::{task_rng, Rng};
     ///
     /// let mut rng = task_rng();
-    /// println!("{:b}", rng.gen_weighted_bool(3));
+    /// println!("{}", rng.gen_weighted_bool(3));
     /// ```
     fn gen_weighted_bool(&mut self, n: uint) -> bool {
         n == 0 || self.gen_range(0, n) == 0
@@ -269,7 +271,7 @@ pub trait Rng {
     ///
     /// let choices = [1i, 2, 4, 8, 16, 32];
     /// let mut rng = task_rng();
-    /// println!("{}", rng.choose(choices));
+    /// println!("{}", rng.choose(&choices));
     /// assert_eq!(rng.choose(choices[..0]), None);
     /// ```
     fn choose<'a, T>(&mut self, values: &'a [T]) -> Option<&'a T> {
@@ -289,9 +291,9 @@ pub trait Rng {
     ///
     /// let mut rng = task_rng();
     /// let mut y = [1i, 2, 3];
-    /// rng.shuffle(y);
+    /// rng.shuffle(&mut y);
     /// println!("{}", y.as_slice());
-    /// rng.shuffle(y);
+    /// rng.shuffle(&mut y);
     /// println!("{}", y.as_slice());
     /// ```
     fn shuffle<T>(&mut self, values: &mut [T]) {
@@ -349,7 +351,7 @@ pub trait SeedableRng<Seed>: Rng {
     /// let seed: &[_] = &[1, 2, 3, 4];
     /// let mut rng: StdRng = SeedableRng::from_seed(seed);
     /// println!("{}", rng.gen::<f64>());
-    /// rng.reseed([5, 6, 7, 8]);
+    /// rng.reseed(&[5, 6, 7, 8]);
     /// println!("{}", rng.gen::<f64>());
     /// ```
     fn reseed(&mut self, Seed);

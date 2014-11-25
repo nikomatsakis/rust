@@ -58,11 +58,12 @@ ported to this system, and which relies on string concatenation at the
 time of error detection.
 
 */
+use self::FreshOrKept::*;
 
 use std::collections::HashSet;
 use middle::def;
 use middle::subst;
-use middle::ty;
+use middle::ty::{mod, Ty};
 use middle::ty::{Region, ReFree};
 use middle::typeck::infer;
 use middle::typeck::infer::InferCtxt;
@@ -96,65 +97,65 @@ use util::ppaux::note_and_explain_region;
 // messages shouldn't include debug serializations.
 use util::ppaux::UserString;
 
-pub trait ErrorReporting {
+pub trait ErrorReporting<'tcx> {
     fn report_region_errors(&self,
-                            errors: &Vec<RegionResolutionError>);
+                            errors: &Vec<RegionResolutionError<'tcx>>);
 
-    fn process_errors(&self, errors: &Vec<RegionResolutionError>)
-                      -> Vec<RegionResolutionError>;
+    fn process_errors(&self, errors: &Vec<RegionResolutionError<'tcx>>)
+                      -> Vec<RegionResolutionError<'tcx>>;
 
-    fn report_type_error(&self, trace: TypeTrace, terr: &ty::type_err);
+    fn report_type_error(&self, trace: TypeTrace<'tcx>, terr: &ty::type_err<'tcx>);
 
     fn report_and_explain_type_error(&self,
-                                     trace: TypeTrace,
-                                     terr: &ty::type_err);
+                                     trace: TypeTrace<'tcx>,
+                                     terr: &ty::type_err<'tcx>);
 
-    fn values_str(&self, values: &ValuePairs) -> Option<String>;
+    fn values_str(&self, values: &ValuePairs<'tcx>) -> Option<String>;
 
-    fn expected_found_str<T: UserString + Resolvable>(
+    fn expected_found_str<T: UserString<'tcx> + Resolvable<'tcx>>(
         &self,
         exp_found: &ty::expected_found<T>)
         -> Option<String>;
 
     fn report_concrete_failure(&self,
-                               origin: SubregionOrigin,
+                               origin: SubregionOrigin<'tcx>,
                                sub: Region,
                                sup: Region);
 
     fn report_param_bound_failure(&self,
-                                  origin: SubregionOrigin,
+                                  origin: SubregionOrigin<'tcx>,
                                   param_ty: ty::ParamTy,
                                   sub: Region,
                                   sups: Vec<Region>);
 
     fn report_sub_sup_conflict(&self,
                                var_origin: RegionVariableOrigin,
-                               sub_origin: SubregionOrigin,
+                               sub_origin: SubregionOrigin<'tcx>,
                                sub_region: Region,
-                               sup_origin: SubregionOrigin,
+                               sup_origin: SubregionOrigin<'tcx>,
                                sup_region: Region);
 
     fn report_sup_sup_conflict(&self,
                                var_origin: RegionVariableOrigin,
-                               origin1: SubregionOrigin,
+                               origin1: SubregionOrigin<'tcx>,
                                region1: Region,
-                               origin2: SubregionOrigin,
+                               origin2: SubregionOrigin<'tcx>,
                                region2: Region);
 
     fn report_processed_errors(&self,
                                var_origin: &[RegionVariableOrigin],
-                               trace_origin: &[(TypeTrace, ty::type_err)],
+                               trace_origin: &[(TypeTrace<'tcx>, ty::type_err<'tcx>)],
                                same_regions: &[SameRegions]);
 
     fn give_suggestion(&self, same_regions: &[SameRegions]);
 }
 
-trait ErrorReportingHelpers {
+trait ErrorReportingHelpers<'tcx> {
     fn report_inference_failure(&self,
                                 var_origin: RegionVariableOrigin);
 
     fn note_region_origin(&self,
-                          origin: &SubregionOrigin);
+                          origin: &SubregionOrigin<'tcx>);
 
     fn give_expl_lifetime_param(&self,
                                 decl: &ast::FnDecl,
@@ -165,9 +166,9 @@ trait ErrorReportingHelpers {
                                 span: codemap::Span);
 }
 
-impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
+impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
     fn report_region_errors(&self,
-                            errors: &Vec<RegionResolutionError>) {
+                            errors: &Vec<RegionResolutionError<'tcx>>) {
         let p_errors = self.process_errors(errors);
         let errors = if p_errors.is_empty() { errors } else { &p_errors };
         for error in errors.iter() {
@@ -215,8 +216,8 @@ impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
     // complete view of what lifetimes should be the same.
     // If the return value is an empty vector, it means that processing
     // failed (so the return value of this method should not be used)
-    fn process_errors(&self, errors: &Vec<RegionResolutionError>)
-                      -> Vec<RegionResolutionError> {
+    fn process_errors(&self, errors: &Vec<RegionResolutionError<'tcx>>)
+                      -> Vec<RegionResolutionError<'tcx>> {
         debug!("process_errors()");
         let mut var_origins = Vec::new();
         let mut trace_origins = Vec::new();
@@ -300,11 +301,11 @@ impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
             debug!("free_regions_from_same_fn(sub={}, sup={})", sub, sup);
             let (scope_id, fr1, fr2) = match (sub, sup) {
                 (ReFree(fr1), ReFree(fr2)) => {
-                    if fr1.scope_id != fr2.scope_id {
+                    if fr1.scope != fr2.scope {
                         return None
                     }
-                    assert!(fr1.scope_id == fr2.scope_id);
-                    (fr1.scope_id, fr1, fr2)
+                    assert!(fr1.scope == fr2.scope);
+                    (fr1.scope.node_id(), fr1, fr2)
                 },
                 _ => return None
             };
@@ -349,7 +350,7 @@ impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
         }
     }
 
-    fn report_type_error(&self, trace: TypeTrace, terr: &ty::type_err) {
+    fn report_type_error(&self, trace: TypeTrace<'tcx>, terr: &ty::type_err<'tcx>) {
         let expected_found_str = match self.values_str(&trace.values) {
             Some(v) => v,
             None => {
@@ -384,13 +385,13 @@ impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
     }
 
     fn report_and_explain_type_error(&self,
-                                     trace: TypeTrace,
-                                     terr: &ty::type_err) {
+                                     trace: TypeTrace<'tcx>,
+                                     terr: &ty::type_err<'tcx>) {
         self.report_type_error(trace, terr);
         ty::note_and_explain_type_err(self.tcx, terr);
     }
 
-    fn values_str(&self, values: &ValuePairs) -> Option<String> {
+    fn values_str(&self, values: &ValuePairs<'tcx>) -> Option<String> {
         /*!
          * Returns a string of the form "expected `{}`, found `{}`",
          * or None if this is a derived error.
@@ -401,7 +402,7 @@ impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
         }
     }
 
-    fn expected_found_str<T: UserString + Resolvable>(
+    fn expected_found_str<T: UserString<'tcx> + Resolvable<'tcx>>(
         &self,
         exp_found: &ty::expected_found<T>)
         -> Option<String>
@@ -422,7 +423,7 @@ impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
     }
 
     fn report_param_bound_failure(&self,
-                                  origin: SubregionOrigin,
+                                  origin: SubregionOrigin<'tcx>,
                                   param_ty: ty::ParamTy,
                                   sub: Region,
                                   _sups: Vec<Region>) {
@@ -487,7 +488,7 @@ impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
     }
 
     fn report_concrete_failure(&self,
-                               origin: SubregionOrigin,
+                               origin: SubregionOrigin<'tcx>,
                                sub: Region,
                                sup: Region) {
         match origin {
@@ -649,14 +650,12 @@ impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
                     sup,
                     "");
             }
-            infer::RelateParamBound(span, param_ty, ty) => {
+            infer::RelateParamBound(span, ty) => {
                 self.tcx.sess.span_err(
                     span,
-                    format!("the type `{}` (provided as the value of \
-                             the parameter `{}`) does not fulfill the \
+                    format!("the type `{}` does not fulfill the \
                              required lifetime",
-                            self.ty_to_string(ty),
-                            param_ty.user_string(self.tcx)).as_slice());
+                            self.ty_to_string(ty)).as_slice());
                 note_and_explain_region(self.tcx,
                                         "type must outlive ",
                                         sub,
@@ -787,9 +786,9 @@ impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
 
     fn report_sub_sup_conflict(&self,
                                var_origin: RegionVariableOrigin,
-                               sub_origin: SubregionOrigin,
+                               sub_origin: SubregionOrigin<'tcx>,
                                sub_region: Region,
-                               sup_origin: SubregionOrigin,
+                               sup_origin: SubregionOrigin<'tcx>,
                                sup_region: Region) {
         self.report_inference_failure(var_origin);
 
@@ -812,9 +811,9 @@ impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
 
     fn report_sup_sup_conflict(&self,
                                var_origin: RegionVariableOrigin,
-                               origin1: SubregionOrigin,
+                               origin1: SubregionOrigin<'tcx>,
                                region1: Region,
-                               origin2: SubregionOrigin,
+                               origin2: SubregionOrigin<'tcx>,
                                region2: Region) {
         self.report_inference_failure(var_origin);
 
@@ -837,7 +836,7 @@ impl<'a, 'tcx> ErrorReporting for InferCtxt<'a, 'tcx> {
 
     fn report_processed_errors(&self,
                                var_origins: &[RegionVariableOrigin],
-                               trace_origins: &[(TypeTrace, ty::type_err)],
+                               trace_origins: &[(TypeTrace<'tcx>, ty::type_err<'tcx>)],
                                same_regions: &[SameRegions]) {
         for vo in var_origins.iter() {
             self.report_inference_failure(vo.clone());
@@ -1431,7 +1430,7 @@ impl<'a, 'tcx> Rebuilder<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> ErrorReportingHelpers for InferCtxt<'a, 'tcx> {
+impl<'a, 'tcx> ErrorReportingHelpers<'tcx> for InferCtxt<'a, 'tcx> {
     fn give_expl_lifetime_param(&self,
                                 decl: &ast::FnDecl,
                                 fn_style: ast::FnStyle,
@@ -1455,12 +1454,12 @@ impl<'a, 'tcx> ErrorReportingHelpers for InferCtxt<'a, 'tcx> {
             infer::AddrOfSlice(_) => " for slice expression".to_string(),
             infer::Autoref(_) => " for autoref".to_string(),
             infer::Coercion(_) => " for automatic coercion".to_string(),
-            infer::LateBoundRegion(_, br) => {
+            infer::LateBoundRegion(_, br, infer::FnCall) => {
                 format!(" for {}in function call",
                         bound_region_to_string(self.tcx, "lifetime parameter ", true, br))
             }
-            infer::BoundRegionInFnType(_, br) => {
-                format!(" for {}in function type",
+            infer::LateBoundRegion(_, br, infer::HigherRankedType) => {
+                format!(" for {}in generic type",
                         bound_region_to_string(self.tcx, "lifetime parameter ", true, br))
             }
             infer::EarlyBoundRegion(_, name) => {
@@ -1484,7 +1483,7 @@ impl<'a, 'tcx> ErrorReportingHelpers for InferCtxt<'a, 'tcx> {
                     var_description).as_slice());
     }
 
-    fn note_region_origin(&self, origin: &SubregionOrigin) {
+    fn note_region_origin(&self, origin: &SubregionOrigin<'tcx>) {
         match *origin {
             infer::Subtype(ref trace) => {
                 let desc = match trace.origin {
@@ -1650,13 +1649,11 @@ impl<'a, 'tcx> ErrorReportingHelpers for InferCtxt<'a, 'tcx> {
                              does not outlive the data it points at",
                             self.ty_to_string(ty)).as_slice());
             }
-            infer::RelateParamBound(span, param_ty, t) => {
+            infer::RelateParamBound(span, t) => {
                 self.tcx.sess.span_note(
                     span,
-                    format!("...so that the parameter `{}`, \
-                             when instantiated with `{}`, \
-                             will meet its declared lifetime bounds.",
-                            param_ty.user_string(self.tcx),
+                    format!("...so that the type `{}` \
+                             will meet the declared lifetime bounds.",
                             self.ty_to_string(t)).as_slice());
             }
             infer::RelateDefaultParamBound(span, t) => {
@@ -1677,13 +1674,13 @@ impl<'a, 'tcx> ErrorReportingHelpers for InferCtxt<'a, 'tcx> {
     }
 }
 
-pub trait Resolvable {
-    fn resolve(&self, infcx: &InferCtxt) -> Self;
+pub trait Resolvable<'tcx> {
+    fn resolve<'a>(&self, infcx: &InferCtxt<'a, 'tcx>) -> Self;
     fn contains_error(&self) -> bool;
 }
 
-impl Resolvable for ty::t {
-    fn resolve(&self, infcx: &InferCtxt) -> ty::t {
+impl<'tcx> Resolvable<'tcx> for Ty<'tcx> {
+    fn resolve<'a>(&self, infcx: &InferCtxt<'a, 'tcx>) -> Ty<'tcx> {
         infcx.resolve_type_vars_if_possible(*self)
     }
     fn contains_error(&self) -> bool {
@@ -1691,8 +1688,9 @@ impl Resolvable for ty::t {
     }
 }
 
-impl Resolvable for Rc<ty::TraitRef> {
-    fn resolve(&self, infcx: &InferCtxt) -> Rc<ty::TraitRef> {
+impl<'tcx> Resolvable<'tcx> for Rc<ty::TraitRef<'tcx>> {
+    fn resolve<'a>(&self, infcx: &InferCtxt<'a, 'tcx>)
+                   -> Rc<ty::TraitRef<'tcx>> {
         Rc::new(infcx.resolve_type_vars_in_trait_ref_if_possible(&**self))
     }
     fn contains_error(&self) -> bool {

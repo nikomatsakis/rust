@@ -10,6 +10,11 @@
 
 // Functions dealing with attributes and meta items
 
+pub use self::InlineAttr::*;
+pub use self::StabilityLevel::*;
+pub use self::ReprAttr::*;
+pub use self::IntType::*;
+
 use ast;
 use ast::{AttrId, Attribute, Attribute_, MetaItem, MetaWord, MetaNameValue, MetaList};
 use codemap::{Span, Spanned, spanned, dummy_spanned};
@@ -20,21 +25,20 @@ use parse::token::InternedString;
 use parse::token;
 use ptr::P;
 
-use std::collections::HashSet;
+use std::cell::{RefCell, Cell};
 use std::collections::BitvSet;
+use std::collections::HashSet;
 
-local_data_key!(used_attrs: BitvSet)
+thread_local!(static USED_ATTRS: RefCell<BitvSet> = RefCell::new(BitvSet::new()))
 
 pub fn mark_used(attr: &Attribute) {
-    let mut used = used_attrs.replace(None).unwrap_or_else(|| BitvSet::new());
     let AttrId(id) = attr.node.id;
-    used.insert(id);
-    used_attrs.replace(Some(used));
+    USED_ATTRS.with(|slot| slot.borrow_mut().insert(id));
 }
 
 pub fn is_used(attr: &Attribute) -> bool {
     let AttrId(id) = attr.node.id;
-    used_attrs.get().map_or(false, |used| used.contains(&id))
+    USED_ATTRS.with(|slot| slot.borrow().contains(&id))
 }
 
 pub trait AttrMetaMethods {
@@ -42,8 +46,8 @@ pub trait AttrMetaMethods {
         name == self.name().get()
     }
 
-    /// Retrieve the name of the meta item, e.g. foo in #[foo],
-    /// #[foo="bar"] and #[foo(bar)]
+    /// Retrieve the name of the meta item, e.g. `foo` in `#[foo]`,
+    /// `#[foo="bar"]` and `#[foo(bar)]`
     fn name(&self) -> InternedString;
 
     /// Gets the string value if self is a MetaNameValue variant
@@ -162,11 +166,14 @@ pub fn mk_word_item(name: InternedString) -> P<MetaItem> {
     P(dummy_spanned(MetaWord(name)))
 }
 
-local_data_key!(next_attr_id: uint)
+thread_local!(static NEXT_ATTR_ID: Cell<uint> = Cell::new(0))
 
 pub fn mk_attr_id() -> AttrId {
-    let id = next_attr_id.replace(None).unwrap_or(0);
-    next_attr_id.replace(Some(id + 1));
+    let id = NEXT_ATTR_ID.with(|slot| {
+        let r = slot.get();
+        slot.set(r + 1);
+        r
+    });
     AttrId(id)
 }
 

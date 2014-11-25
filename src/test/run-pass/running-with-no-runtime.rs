@@ -8,14 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern crate native;
+extern crate rustrt;
 
 use std::io::process::{Command, ProcessOutput};
 use std::os;
 use std::str;
-use std::rt::unwind::try;
+use std::rt;
 
-local_data_key!(foo: int)
+use rustrt::unwind::try;
 
 #[start]
 fn start(argc: int, argv: *const *const u8) -> int {
@@ -28,15 +28,13 @@ fn start(argc: int, argv: *const *const u8) -> int {
                 4 => assert!(try(|| panic!()).is_err()),
                 5 => assert!(try(|| spawn(proc() {})).is_err()),
                 6 => assert!(Command::new("test").spawn().is_err()),
-                7 => assert!(foo.get().is_none()),
-                8 => assert!(try(|| { foo.replace(Some(3)); }).is_err()),
                 _ => panic!()
             }
         }
         return 0
     }
 
-    native::start(argc, argv, main)
+    rt::start(argc, argv, main)
 }
 
 fn main() {
@@ -54,10 +52,6 @@ fn main() {
     let x: &[u8] = &[5u8];
     pass(Command::new(me).arg(x).output().unwrap());
     let x: &[u8] = &[6u8];
-    pass(Command::new(me).arg(x).output().unwrap());
-    let x: &[u8] = &[7u8];
-    pass(Command::new(me).arg(x).output().unwrap());
-    let x: &[u8] = &[8u8];
     pass(Command::new(me).arg(x).output().unwrap());
 }
 

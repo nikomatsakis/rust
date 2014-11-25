@@ -270,6 +270,7 @@ impl<E:CLike> Extend<E> for EnumSet<E> {
 #[cfg(test)]
 mod test {
     use std::prelude::*;
+    use self::Foo::*;
     use std::mem;
 
     use super::{EnumSet, CLike};
@@ -498,6 +499,6 @@ mod test {
             }
         }
         let mut set = EnumSet::new();
-        set.insert(V64);
+        set.insert(Bar::V64);
     }
 }

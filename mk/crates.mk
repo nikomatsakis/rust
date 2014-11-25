@@ -37,7 +37,7 @@
 #
 #   DEPS_<crate>
 #	These lists are the dependencies of the <crate> that is to be built.
-#	Rust dependencies are listed bare (i.e. std, green) and native
+#	Rust dependencies are listed bare (i.e. std) and native
 #	dependencies have a "native:" prefix (i.e. native:hoedown). All deps
 #	will be built before the crate itself is built.
 #
@@ -49,11 +49,11 @@
 # automatically generated for all stage/host/target combinations.
 ################################################################################
 
-TARGET_CRATES := libc std green native flate arena term \
+TARGET_CRATES := libc std flate arena term \
                  serialize sync getopts collections test time rand \
                  log regex graphviz core rbml alloc rustrt \
                  unicode
-HOST_CRATES := syntax rustc rustdoc regex_macros fmt_macros \
+HOST_CRATES := syntax rustc rustc_trans rustdoc regex_macros fmt_macros \
 	       rustc_llvm rustc_back
 CRATES := $(TARGET_CRATES) $(HOST_CRATES)
 TOOLS := compiletest rustdoc rustc
@@ -66,14 +66,13 @@ DEPS_rustrt := alloc core libc collections native:rustrt_native
 DEPS_std := core libc rand alloc collections rustrt sync unicode \
 	native:rust_builtin native:backtrace
 DEPS_graphviz := std
-DEPS_green := std native:context_switch
-DEPS_native := std
 DEPS_syntax := std term serialize log fmt_macros arena libc
+DEPS_rustc_trans := rustc rustc_back rustc_llvm libc
 DEPS_rustc := syntax flate arena serialize getopts rbml \
               time log graphviz rustc_llvm rustc_back
 DEPS_rustc_llvm := native:rustllvm libc std
 DEPS_rustc_back := std syntax rustc_llvm flate log libc
-DEPS_rustdoc := rustc native:hoedown serialize getopts \
+DEPS_rustdoc := rustc rustc_trans native:hoedown serialize getopts \
                 test time
 DEPS_flate := std native:miniz
 DEPS_arena := std
@@ -94,9 +93,9 @@ DEPS_regex := std
 DEPS_regex_macros = rustc syntax std regex
 DEPS_fmt_macros = std
 
-TOOL_DEPS_compiletest := test getopts native
-TOOL_DEPS_rustdoc := rustdoc native
-TOOL_DEPS_rustc := rustc native
+TOOL_DEPS_compiletest := test getopts
+TOOL_DEPS_rustdoc := rustdoc
+TOOL_DEPS_rustc := rustc_trans
 TOOL_SOURCE_compiletest := $(S)src/compiletest/compiletest.rs
 TOOL_SOURCE_rustdoc := $(S)src/driver/driver.rs
 TOOL_SOURCE_rustc := $(S)src/driver/driver.rs
@@ -112,8 +111,8 @@ ONLY_RLIB_unicode := 1
 # You should not need to edit below this line
 ################################################################################
 
-DOC_CRATES := $(filter-out rustc, $(filter-out syntax, $(CRATES)))
-COMPILER_DOC_CRATES := rustc syntax
+DOC_CRATES := $(filter-out rustc, $(filter-out rustc_trans, $(filter-out syntax, $(CRATES))))
+COMPILER_DOC_CRATES := rustc rustc_trans syntax
 
 # This macro creates some simple definitions for each crate being built, just
 # some munging of all of the parameters above.

@@ -71,7 +71,7 @@ fn demangle(writer: &mut Writer, s: &str) -> IoResult<()> {
         while valid {
             let mut i = 0;
             for c in chars {
-                if c.is_digit() {
+                if c.is_numeric() {
                     i = i * 10 + c as uint - '0' as uint;
                 } else {
                     break
@@ -101,7 +101,7 @@ fn demangle(writer: &mut Writer, s: &str) -> IoResult<()> {
                 first = false;
             }
             let mut rest = s;
-            while rest.char_at(0).is_digit() {
+            while rest.char_at(0).is_numeric() {
                 rest = rest.slice_from(1);
             }
             let i: uint = from_str(s.slice_to(s.len() - rest.len())).unwrap();
@@ -238,7 +238,7 @@ mod imp {
     use mem;
     use option::{Some, None, Option};
     use result::{Ok, Err};
-    use rt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
+    use rustrt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
 
     /// As always - iOS on arm uses SjLj exceptions and
     /// _Unwind_Backtrace is even not available there. Still,
@@ -527,7 +527,7 @@ mod imp {
             Some(string) => try!(super::demangle(w, string)),
             None => try!(write!(w, "<unknown>")),
         }
-        w.write(['\n' as u8])
+        w.write(&['\n' as u8])
     }
 
     /// Unwind library interface used for backtraces
@@ -541,6 +541,8 @@ mod imp {
     #[allow(non_snake_case)]
     #[allow(dead_code)]
     mod uw {
+        pub use self::_Unwind_Reason_Code::*;
+
         use libc;
 
         #[repr(C)]
@@ -622,7 +624,8 @@ mod imp {
 
             let mut val: _Unwind_Word = 0;
             let ptr = &mut val as *mut _Unwind_Word;
-            let _ = _Unwind_VRS_Get(ctx, _UVRSC_CORE, 15, _UVRSD_UINT32,
+            let _ = _Unwind_VRS_Get(ctx, _Unwind_VRS_RegClass::_UVRSC_CORE, 15,
+                                    _Unwind_VRS_DataRepresentation::_UVRSD_UINT32,
                                     ptr as *mut libc::c_void);
             (val & !1) as libc::uintptr_t
         }
@@ -664,7 +667,7 @@ mod imp {
     use option::{Some, None};
     use path::Path;
     use result::{Ok, Err};
-    use rt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
+    use rustrt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
     use slice::SlicePrelude;
     use str::StrPrelude;
     use dynamic_lib::DynamicLibrary;
@@ -813,11 +816,11 @@ mod imp {
         pub fn init_frame(frame: &mut super::STACKFRAME64,
                           ctx: &CONTEXT) -> libc::DWORD {
             frame.AddrPC.Offset = ctx.Eip as u64;
-            frame.AddrPC.Mode = super::AddrModeFlat;
+            frame.AddrPC.Mode = super::ADDRESS_MODE::AddrModeFlat;
             frame.AddrStack.Offset = ctx.Esp as u64;
-            frame.AddrStack.Mode = super::AddrModeFlat;
+            frame.AddrStack.Mode = super::ADDRESS_MODE::AddrModeFlat;
             frame.AddrFrame.Offset = ctx.Ebp as u64;
-            frame.AddrFrame.Mode = super::AddrModeFlat;
+            frame.AddrFrame.Mode = super::ADDRESS_MODE::AddrModeFlat;
             super::IMAGE_FILE_MACHINE_I386
         }
     }
@@ -903,11 +906,11 @@ mod imp {
         pub fn init_frame(frame: &mut super::STACKFRAME64,
                           ctx: &CONTEXT) -> DWORD {
             frame.AddrPC.Offset = ctx.Rip as u64;
-            frame.AddrPC.Mode = super::AddrModeFlat;
+            frame.AddrPC.Mode = super::ADDRESS_MODE::AddrModeFlat;
             frame.AddrStack.Offset = ctx.Rsp as u64;
-            frame.AddrStack.Mode = super::AddrModeFlat;
+            frame.AddrStack.Mode = super::ADDRESS_MODE::AddrModeFlat;
             frame.AddrFrame.Offset = ctx.Rbp as u64;
-            frame.AddrFrame.Mode = super::AddrModeFlat;
+            frame.AddrFrame.Mode = super::ADDRESS_MODE::AddrModeFlat;
             super::IMAGE_FILE_MACHINE_AMD64
         }
     }
@@ -996,7 +999,7 @@ mod imp {
                     None => try!(w.write(bytes[..bytes.len()-1])),
                 }
             }
-            try!(w.write(['\n' as u8]));
+            try!(w.write(&['\n' as u8]));
         }
 
         Ok(())
@@ -1006,12 +1009,10 @@ mod imp {
 #[cfg(test)]
 mod test {
     use prelude::*;
-    use io::MemWriter;
-
     macro_rules! t( ($a:expr, $b:expr) => ({
-        let mut m = MemWriter::new();
+        let mut m = Vec::new();
         super::demangle(&mut m, $a).unwrap();
-        assert_eq!(String::from_utf8(m.unwrap()).unwrap(), $b.to_string());
+        assert_eq!(String::from_utf8(m).unwrap(), $b.to_string());
     }) )
 
     #[test]

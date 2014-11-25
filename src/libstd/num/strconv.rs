@@ -12,7 +12,12 @@
 
 #![allow(missing_docs)]
 
+pub use self::ExponentFormat::*;
+pub use self::SignificantDigits::*;
+pub use self::SignFormat::*;
+
 use char;
+use char::Char;
 use num;
 use num::{Int, Float, FPNaN, FPInfinite, ToPrimitive};
 use slice::{SlicePrelude, CloneSliceAllocPrelude};
@@ -316,7 +321,7 @@ pub fn float_to_str_bytes_common<T: Float>(
         // round the remaining ones.
         if limit_digits && dig == digit_count {
             let ascii2value = |chr: u8| {
-                char::to_digit(chr as char, radix).unwrap()
+                (chr as char).to_digit(radix).unwrap()
             };
             let value2ascii = |val: uint| {
                 char::from_digit(val, radix).unwrap() as u8

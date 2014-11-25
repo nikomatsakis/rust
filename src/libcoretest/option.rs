@@ -11,6 +11,7 @@
 use core::option::*;
 use core::kinds::marker;
 use core::mem;
+use core::clone::Clone;
 
 #[test]
 fn test_get_ptr() {
@@ -238,4 +239,31 @@ fn test_collect() {
     let v: Option<Vec<()>> = functions.iter_mut().map(|f| (*f)()).collect();
 
     assert!(v == None);
+}
+
+#[test]
+fn test_cloned() {
+    let val1 = 1u32;
+    let mut val2 = 2u32;
+    let val1_ref = &val1;
+    let opt_none: Option<&'static u32> = None;
+    let opt_ref = Some(&val1);
+    let opt_ref_ref = Some(&val1_ref);
+    let opt_mut_ref = Some(&mut val2);
+
+    // None works
+    assert_eq!(opt_none.clone(), None);
+    assert_eq!(opt_none.cloned(), None);
+
+    // Mutable refs work
+    assert_eq!(opt_mut_ref.cloned(), Some(2u32));
+
+    // Immutable ref works
+    assert_eq!(opt_ref.clone(), Some(&val1));
+    assert_eq!(opt_ref.cloned(), Some(1u32));
+
+    // Double Immutable ref works
+    assert_eq!(opt_ref_ref.clone(), Some(&val1_ref));
+    assert_eq!(opt_ref_ref.clone().cloned(), Some(&val1));
+    assert_eq!(opt_ref_ref.cloned().cloned(), Some(1u32));
 }

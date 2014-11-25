@@ -11,8 +11,10 @@
 // ignore-lexer-test FIXME #15679
 
 //! Hex binary-to-text encoding
+
+pub use self::FromHexError::*;
+
 use std::fmt;
-use std::string;
 use std::error;
 
 /// A trait for converting a value to hexadecimal encoding
@@ -48,7 +50,7 @@ impl ToHex for [u8] {
         }
 
         unsafe {
-            string::raw::from_utf8(v)
+            String::from_utf8_unchecked(v)
         }
     }
 }
@@ -97,7 +99,7 @@ impl FromHex for str {
      * Convert any hexadecimal encoded string (literal, `@`, `&`, or `~`)
      * to the byte values it encodes.
      *
-     * You can use the `String::from_utf8` function in `std::string` to turn a
+     * You can use the `String::from_utf8` function to turn a
      * `Vec<u8>` into a string with characters corresponding to those values.
      *
      * # Example

@@ -105,12 +105,12 @@ fn test_is_control() {
 
 #[test]
 fn test_is_digit() {
-   assert!('2'.is_digit());
-   assert!('7'.is_digit());
-   assert!(!'c'.is_digit());
-   assert!(!'i'.is_digit());
-   assert!(!'z'.is_digit());
-   assert!(!'Q'.is_digit());
+   assert!('2'.is_numeric());
+   assert!('7'.is_numeric());
+   assert!(!'c'.is_numeric());
+   assert!(!'i'.is_numeric());
+   assert!(!'z'.is_numeric());
+   assert!(!'Q'.is_numeric());
 }
 
 #[test]
@@ -177,10 +177,10 @@ fn test_encode_utf8() {
         assert_eq!(buf[..n], expect);
     }
 
-    check('x', [0x78]);
-    check('\u00e9', [0xc3, 0xa9]);
-    check('\ua66e', [0xea, 0x99, 0xae]);
-    check('\U0001f4a9', [0xf0, 0x9f, 0x92, 0xa9]);
+    check('x', &[0x78]);
+    check('\u00e9', &[0xc3, 0xa9]);
+    check('\ua66e', &[0xea, 0x99, 0xae]);
+    check('\U0001f4a9', &[0xf0, 0x9f, 0x92, 0xa9]);
 }
 
 #[test]
@@ -191,10 +191,18 @@ fn test_encode_utf16() {
         assert_eq!(buf[..n], expect);
     }
 
-    check('x', [0x0078]);
-    check('\u00e9', [0x00e9]);
-    check('\ua66e', [0xa66e]);
-    check('\U0001f4a9', [0xd83d, 0xdca9]);
+    check('x', &[0x0078]);
+    check('\u00e9', &[0x00e9]);
+    check('\ua66e', &[0xa66e]);
+    check('\U0001f4a9', &[0xd83d, 0xdca9]);
+}
+
+#[test]
+fn test_len_utf16() {
+    assert!('x'.len_utf16() == 1);
+    assert!('\u00e9'.len_utf16() == 1);
+    assert!('\ua66e'.len_utf16() == 1);
+    assert!('\U0001f4a9'.len_utf16() == 2);
 }
 
 #[test]

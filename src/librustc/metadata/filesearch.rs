@@ -10,6 +10,8 @@
 
 #![allow(non_camel_case_types)]
 
+pub use self::FileMatch::*;
+
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::io::fs::PathExtensions;
@@ -52,7 +54,7 @@ impl<'a> FileSearch<'a> {
         debug!("filesearch: searching lib path");
         let tlib_path = make_target_lib_path(self.sysroot,
                                     self.triple);
-        if !visited_dirs.contains_equiv(tlib_path.as_vec()) {
+        if !visited_dirs.contains(tlib_path.as_vec()) {
             match f(&tlib_path) {
                 FileMatches => found = true,
                 FileDoesntMatch => ()
@@ -67,9 +69,9 @@ impl<'a> FileSearch<'a> {
                 let tlib_path = make_rustpkg_lib_path(
                     self.sysroot, path, self.triple);
                 debug!("is {} in visited_dirs? {}", tlib_path.display(),
-                        visited_dirs.contains_equiv(&tlib_path.as_vec().to_vec()));
+                        visited_dirs.contains(&tlib_path.as_vec().to_vec()));
 
-                if !visited_dirs.contains_equiv(tlib_path.as_vec()) {
+                if !visited_dirs.contains(tlib_path.as_vec()) {
                     visited_dirs.insert(tlib_path.as_vec().to_vec());
                     // Don't keep searching the RUST_PATH if one match turns up --
                     // if we did, we'd get a "multiple matching crates" error
@@ -217,7 +219,7 @@ pub fn rust_path() -> Vec<Path> {
         }
         None => Vec::new()
     };
-    let mut cwd = os::getcwd();
+    let mut cwd = os::getcwd().unwrap();
     // now add in default entries
     let cwd_dot_rust = cwd.join(".rust");
     if !env_rust_path.contains(&cwd_dot_rust) {
@@ -255,11 +257,16 @@ fn find_libdir(sysroot: &Path) -> String {
     // to lib64/lib32. This would be more foolproof by basing the sysroot off
     // of the directory where librustc is located, rather than where the rustc
     // binary is.
+    //If --libdir is set during configuration to the value other than
+    // "lib" (i.e. non-default), this value is used (see issue #16552).
 
-    if sysroot.join(primary_libdir_name()).join(rustlibdir()).exists() {
-        return primary_libdir_name();
-    } else {
-        return secondary_libdir_name();
+    match option_env!("CFG_LIBDIR_RELATIVE") {
+        Some(libdir) if libdir != "lib" => return libdir.to_string(),
+        _ => if sysroot.join(primary_libdir_name()).join(rustlibdir()).exists() {
+            return primary_libdir_name();
+        } else {
+            return secondary_libdir_name();
+        }
     }
 
     #[cfg(target_word_size = "64")]

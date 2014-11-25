@@ -10,6 +10,55 @@
 
 // The Rust abstract syntax tree.
 
+pub use self::AsmDialect::*;
+pub use self::AttrStyle::*;
+pub use self::BindingMode::*;
+pub use self::BinOp::*;
+pub use self::BlockCheckMode::*;
+pub use self::CaptureClause::*;
+pub use self::Decl_::*;
+pub use self::ExplicitSelf_::*;
+pub use self::Expr_::*;
+pub use self::FloatTy::*;
+pub use self::FnStyle::*;
+pub use self::FunctionRetTy::*;
+pub use self::ForeignItem_::*;
+pub use self::ImplItem::*;
+pub use self::InlinedItem::*;
+pub use self::IntTy::*;
+pub use self::Item_::*;
+pub use self::KleeneOp::*;
+pub use self::Lit_::*;
+pub use self::LitIntType::*;
+pub use self::LocalSource::*;
+pub use self::Mac_::*;
+pub use self::MatchSource::*;
+pub use self::MetaItem_::*;
+pub use self::Method_::*;
+pub use self::Mutability::*;
+pub use self::Onceness::*;
+pub use self::Pat_::*;
+pub use self::PathListItem_::*;
+pub use self::PatWildKind::*;
+pub use self::PrimTy::*;
+pub use self::Sign::*;
+pub use self::Stmt_::*;
+pub use self::StrStyle::*;
+pub use self::StructFieldKind::*;
+pub use self::TokenTree::*;
+pub use self::TraitItem::*;
+pub use self::Ty_::*;
+pub use self::TyParamBound::*;
+pub use self::UintTy::*;
+pub use self::UnboxedClosureKind::*;
+pub use self::UnOp::*;
+pub use self::UnsafeSource::*;
+pub use self::VariantKind::*;
+pub use self::ViewItem_::*;
+pub use self::ViewPath_::*;
+pub use self::Visibility::*;
+pub use self::PathParameters::*;
+
 use codemap::{Span, Spanned, DUMMY_SP, ExpnId};
 use abi::Abi;
 use ast_util;
@@ -46,7 +95,7 @@ impl Ident {
     }
 
     pub fn encode_with_hygiene(&self) -> String {
-        format!("\x00name_{:u},ctxt_{:u}\x00",
+        format!("\x00name_{},ctxt_{}\x00",
                 self.name.uint(),
                 self.ctxt)
     }
@@ -618,15 +667,14 @@ pub enum Expr_ {
     // FIXME #6993: change to Option<Name> ... or not, if these are hygienic.
     ExprLoop(P<Block>, Option<Ident>),
     ExprMatch(P<Expr>, Vec<Arm>, MatchSource),
-    ExprFnBlock(CaptureClause, P<FnDecl>, P<Block>),
+    ExprClosure(CaptureClause, Option<UnboxedClosureKind>, P<FnDecl>, P<Block>),
     ExprProc(P<FnDecl>, P<Block>),
-    ExprUnboxedFn(CaptureClause, UnboxedClosureKind, P<FnDecl>, P<Block>),
     ExprBlock(P<Block>),
 
     ExprAssign(P<Expr>, P<Expr>),
     ExprAssignOp(BinOp, P<Expr>, P<Expr>),
-    ExprField(P<Expr>, SpannedIdent, Vec<P<Ty>>),
-    ExprTupField(P<Expr>, Spanned<uint>, Vec<P<Ty>>),
+    ExprField(P<Expr>, SpannedIdent),
+    ExprTupField(P<Expr>, Spanned<uint>),
     ExprIndex(P<Expr>, P<Expr>),
     ExprSlice(P<Expr>, Option<P<Expr>>, Option<P<Expr>>, Mutability),
 
@@ -657,11 +705,11 @@ pub enum Expr_ {
 ///
 ///     <Vec<T> as SomeTrait>::SomeAssociatedItem
 ///      ^~~~~     ^~~~~~~~~   ^~~~~~~~~~~~~~~~~~
-///      for_type  trait_name  item_name
+///      self_type  trait_name  item_name
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct QPath {
-    pub for_type: P<Ty>,
-    pub trait_name: Path,
+    pub self_type: P<Ty>,
+    pub trait_ref: P<TraitRef>,
     pub item_name: Ident,
 }
 
@@ -789,7 +837,7 @@ impl TokenTree {
                     tts: vec![TtToken(sp, token::Ident(token::str_to_ident("doc"),
                                                        token::Plain)),
                               TtToken(sp, token::Eq),
-                              TtToken(sp, token::LitStr(name))],
+                              TtToken(sp, token::Literal(token::Str_(name), None))],
                     close_span: sp,
                 }))
             }
@@ -1105,7 +1153,7 @@ pub enum Ty_ {
     /// Type parameters are stored in the Path itself
     TyPath(Path, Option<TyParamBounds>, NodeId), // for #7264; see above
     /// A type like `for<'a> Foo<&'a Bar>`
-    TyPolyTraitRef(P<PolyTraitRef>),
+    TyPolyTraitRef(TyParamBounds),
     /// A "qualified path", e.g. `<Vec<T> as SomeTrait>::SomeType`
     TyQPath(P<QPath>),
     /// No-op; kept solely so that we can pretty-print faithfully
@@ -1293,8 +1341,8 @@ pub type Variant = Spanned<Variant_>;
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum PathListItem_ {
-    PathListIdent { pub name: Ident, pub id: NodeId },
-    PathListMod { pub id: NodeId }
+    PathListIdent { name: Ident, id: NodeId },
+    PathListMod { id: NodeId }
 }
 
 impl PathListItem_ {

@@ -23,14 +23,14 @@
 //! previous lint state is pushed onto a stack and the ast is then recursed
 //! upon.  As the ast is traversed, this keeps track of the current lint level
 //! for all lint attributes.
+use self::TargetLint::*;
 
 use middle::privacy::ExportedItems;
 use middle::subst;
-use middle::ty;
+use middle::ty::{mod, Ty};
 use middle::typeck::astconv::AstConv;
 use middle::typeck::infer;
-use driver::session::Session;
-use driver::early_error;
+use session::{early_error, Session};
 use lint::{Level, LevelSource, Lint, LintId, LintArray, LintPass, LintPassObject};
 use lint::{Default, CommandLine, Node, Allow, Warn, Deny, Forbid};
 use lint::builtin;
@@ -164,7 +164,7 @@ impl LintStore {
     }
 
     fn register_renamed(&mut self, old_name: &str, new_name: &str) {
-        let target = match self.by_name.find_equiv(new_name) {
+        let target = match self.by_name.get(new_name) {
             Some(&Id(lint_id)) => lint_id.clone(),
             _ => panic!("invalid lint renaming of {} to {}", old_name, new_name)
         };
@@ -258,7 +258,7 @@ impl LintStore {
     fn find_lint(&self, lint_name: &str, sess: &Session, span: Option<Span>)
                  -> Option<LintId>
     {
-        match self.by_name.find_equiv(lint_name) {
+        match self.by_name.get(lint_name) {
             Some(&Id(lint_id)) => Some(lint_id),
             Some(&Renamed(ref new_name, lint_id)) => {
                 let warning = format!("lint {} has been renamed to {}",
@@ -281,7 +281,7 @@ impl LintStore {
                     match self.lint_groups.iter().map(|(&x, pair)| (x, pair.ref0().clone()))
                                                  .collect::<FnvHashMap<&'static str,
                                                                        Vec<LintId>>>()
-                                                 .find_equiv(lint_name.as_slice()) {
+                                                 .get(lint_name.as_slice()) {
                         Some(v) => {
                             v.iter()
                              .map(|lint_id: &LintId|
@@ -488,7 +488,7 @@ impl<'a, 'tcx> Context<'a, 'tcx> {
                     match self.lints.find_lint(lint_name.get(), &self.tcx.sess, Some(span)) {
                         Some(lint_id) => vec![(lint_id, level, span)],
                         None => {
-                            match self.lints.lint_groups.find_equiv(lint_name.get()) {
+                            match self.lints.lint_groups.get(lint_name.get()) {
                                 Some(&(ref v, _)) => v.iter()
                                                       .map(|lint_id: &LintId|
                                                            (*lint_id, level, span))
@@ -546,19 +546,19 @@ impl<'a, 'tcx> Context<'a, 'tcx> {
 impl<'a, 'tcx> AstConv<'tcx> for Context<'a, 'tcx>{
     fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> { self.tcx }
 
-    fn get_item_ty(&self, id: ast::DefId) -> ty::Polytype {
+    fn get_item_ty(&self, id: ast::DefId) -> ty::Polytype<'tcx> {
         ty::lookup_item_type(self.tcx, id)
     }
 
-    fn get_trait_def(&self, id: ast::DefId) -> Rc<ty::TraitDef> {
+    fn get_trait_def(&self, id: ast::DefId) -> Rc<ty::TraitDef<'tcx>> {
         ty::lookup_trait_def(self.tcx, id)
     }
 
-    fn ty_infer(&self, _span: Span) -> ty::t {
+    fn ty_infer(&self, _span: Span) -> Ty<'tcx> {
         infer::new_infer_ctxt(self.tcx).next_ty_var()
     }
 
-    fn associated_types_of_trait_are_valid(&self, _: ty::t, _: ast::DefId)
+    fn associated_types_of_trait_are_valid(&self, _: Ty<'tcx>, _: ast::DefId)
                                            -> bool {
         // FIXME(pcwalton): This is wrong.
         true
@@ -566,10 +566,10 @@ impl<'a, 'tcx> AstConv<'tcx> for Context<'a, 'tcx>{
 
     fn associated_type_binding(&self,
                                _: Span,
-                               _: Option<ty::t>,
+                               _: Option<Ty<'tcx>>,
                                trait_id: ast::DefId,
                                associated_type_id: ast::DefId)
-                               -> ty::t {
+                               -> Ty<'tcx> {
         // FIXME(pcwalton): This is wrong.
         let trait_def = self.get_trait_def(trait_id);
         let index = ty::associated_type_parameter_index(self.tcx,
@@ -665,6 +665,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for Context<'a, 'tcx> {
         self.with_lint_attrs(v.node.attrs.as_slice(), |cx| {
             run_lints!(cx, check_variant, v, g);
             visit::walk_variant(cx, v, g);
+            run_lints!(cx, check_variant_post, v, g);
         })
     }
 
@@ -724,8 +725,8 @@ impl<'a, 'tcx, 'v> Visitor<'v> for Context<'a, 'tcx> {
         run_lints!(self, check_lifetime_ref, lt);
     }
 
-    fn visit_lifetime_decl(&mut self, lt: &ast::LifetimeDef) {
-        run_lints!(self, check_lifetime_decl, lt);
+    fn visit_lifetime_def(&mut self, lt: &ast::LifetimeDef) {
+        run_lints!(self, check_lifetime_def, lt);
     }
 
     fn visit_explicit_self(&mut self, es: &ast::ExplicitSelf) {

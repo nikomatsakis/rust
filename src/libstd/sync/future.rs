@@ -29,6 +29,7 @@
 use core::prelude::*;
 use core::mem::replace;
 
+use self::FutureState::*;
 use comm::{Receiver, channel};
 use task::spawn;
 
@@ -208,29 +209,5 @@ mod test {
             tx.send(f.get());
         });
         assert_eq!(rx.recv(), expected);
-    }
-
-    #[test]
-    fn test_dropped_future_doesnt_panic() {
-        struct Bomb(Sender<bool>);
-
-        local_data_key!(LOCAL: Bomb)
-
-        impl Drop for Bomb {
-            fn drop(&mut self) {
-                let Bomb(ref tx) = *self;
-                tx.send(task::failing());
-            }
-        }
-
-        // Spawn a future, but drop it immediately. When we receive the result
-        // later on, we should never view the task as having panicked.
-        let (tx, rx) = channel();
-        drop(Future::spawn(proc() {
-            LOCAL.replace(Some(Bomb(tx)));
-        }));
-
-        // Make sure the future didn't panic the task.
-        assert!(!rx.recv());
     }
 }

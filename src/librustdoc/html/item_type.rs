@@ -9,6 +9,7 @@
 // except according to those terms.
 
 //! Item types.
+pub use self::ItemType::*;
 
 use std::fmt;
 use clean;
@@ -71,12 +72,6 @@ impl ItemType {
 impl fmt::Show for ItemType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.to_static_str().fmt(f)
-    }
-}
-
-impl fmt::Unsigned for ItemType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (*self as uint).fmt(f)
     }
 }
 

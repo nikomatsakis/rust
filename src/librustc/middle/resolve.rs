@@ -10,7 +10,33 @@
 
 #![allow(non_camel_case_types)]
 
-use driver::session::Session;
+pub use self::PrivateDep::*;
+pub use self::ImportUse::*;
+pub use self::TraitItemKind::*;
+pub use self::LastPrivate::*;
+use self::PatternBindingMode::*;
+use self::Namespace::*;
+use self::NamespaceError::*;
+use self::NamespaceResult::*;
+use self::NameDefinition::*;
+use self::ImportDirectiveSubclass::*;
+use self::ReducedGraphParent::*;
+use self::ResolveResult::*;
+use self::FallbackSuggestion::*;
+use self::TypeParameters::*;
+use self::RibKind::*;
+use self::MethodSort::*;
+use self::UseLexicalScopeFlag::*;
+use self::ModulePrefixResult::*;
+use self::NameSearchType::*;
+use self::BareIdentifierPatternResolution::*;
+use self::DuplicateCheckingMode::*;
+use self::ParentLink::*;
+use self::ModuleKind::*;
+use self::TraitReferenceType::*;
+use self::FallbackChecks::*;
+
+use session::Session;
 use lint;
 use metadata::csearch;
 use metadata::decoder::{DefLike, DlDef, DlField, DlImpl};
@@ -24,8 +50,8 @@ use util::nodemap::{NodeMap, NodeSet, DefIdSet, FnvHashMap};
 
 use syntax::ast::{Arm, BindByRef, BindByValue, BindingMode, Block, Crate, CrateNum};
 use syntax::ast::{DeclItem, DefId, Expr, ExprAgain, ExprBreak, ExprField};
-use syntax::ast::{ExprFnBlock, ExprForLoop, ExprLoop, ExprWhile, ExprMethodCall};
-use syntax::ast::{ExprPath, ExprProc, ExprStruct, ExprUnboxedFn, FnDecl};
+use syntax::ast::{ExprClosure, ExprForLoop, ExprLoop, ExprWhile, ExprMethodCall};
+use syntax::ast::{ExprPath, ExprProc, ExprStruct, FnDecl};
 use syntax::ast::{ForeignItem, ForeignItemFn, ForeignItemStatic, Generics};
 use syntax::ast::{Ident, ImplItem, Item, ItemEnum, ItemFn, ItemForeignMod};
 use syntax::ast::{ItemImpl, ItemMac, ItemMod, ItemStatic, ItemStruct};
@@ -45,17 +71,13 @@ use syntax::ast::{Variant, ViewItem, ViewItemExternCrate};
 use syntax::ast::{ViewItemUse, ViewPathGlob, ViewPathList, ViewPathSimple};
 use syntax::ast::{Visibility};
 use syntax::ast;
-use syntax::ast_util::{PostExpansionMethod, local_def, walk_pat};
-use syntax::ast_util;
+use syntax::ast_util::{mod, PostExpansionMethod, local_def, walk_pat};
 use syntax::attr::AttrMetaMethods;
 use syntax::ext::mtwt;
-use syntax::parse::token::special_names;
-use syntax::parse::token::special_idents;
-use syntax::parse::token;
+use syntax::parse::token::{mod, special_names, special_idents};
 use syntax::codemap::{Span, DUMMY_SP, Pos};
 use syntax::owned_slice::OwnedSlice;
-use syntax::visit;
-use syntax::visit::Visitor;
+use syntax::visit::{mod, Visitor};
 
 use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::{Occupied, Vacant};
@@ -102,10 +124,10 @@ pub enum LastPrivate {
     // and whether the import is in fact used for each.
     // If the Option<PrivateDep> fields are None, it means there is no definition
     // in that namespace.
-    LastImport{pub value_priv: Option<PrivateDep>,
-               pub value_used: ImportUse,
-               pub type_priv: Option<PrivateDep>,
-               pub type_used: ImportUse},
+    LastImport{value_priv: Option<PrivateDep>,
+               value_used: ImportUse,
+               type_priv: Option<PrivateDep>,
+               type_used: ImportUse},
 }
 
 #[deriving(Show)]
@@ -574,7 +596,6 @@ bitflags! {
     flags DefModifiers: u8 {
         const PUBLIC            = 0b0000_0001,
         const IMPORTABLE        = 0b0000_0010,
-        const ENUM_STAGING_HACK = 0b0000_0100,
     }
 }
 
@@ -608,6 +629,7 @@ enum TraitReferenceType {
     TraitDerivation,                 // trait T : SomeTrait { ... }
     TraitBoundingTypeParameter,      // fn f<T:SomeTrait>() { ... }
     TraitObject,                     // Box<for<'a> SomeTrait>
+    TraitQPath,                      // <T as SomeTrait>::
 }
 
 impl NameBindings {
@@ -740,7 +762,7 @@ impl NameBindings {
     }
 
     /**
-     * Returns the module node. Fails if this node does not have a module
+     * Returns the module node. Panics if this node does not have a module
      * definition.
      */
     fn get_module(&self) -> Rc<Module> {
@@ -982,6 +1004,13 @@ impl<'a, 'b, 'v> Visitor<'v> for UnusedImportCheckVisitor<'a, 'b> {
     }
 }
 
+#[deriving(PartialEq)]
+enum FallbackChecks {
+    Everything,
+    OnlyTraitAndStatics
+}
+
+
 impl<'a> Resolver<'a> {
     fn new(session: &'a Session, crate_span: Span) -> Resolver<'a> {
         let graph_root = NameBindings::new();
@@ -1076,8 +1105,10 @@ impl<'a> Resolver<'a> {
      * corresponding to the innermost block ID and returns the name bindings
      * as well as the newly-created parent.
      *
-     * If this node does not have a module definition and we are not inside
-     * a block, fails.
+     * # Panics
+     *
+     * Panics if this node does not have a module definition and we are not inside
+     * a block.
      */
     fn add_child(&self,
                  name: Name,
@@ -1097,7 +1128,7 @@ impl<'a> Resolver<'a> {
                                                                    sp);
 
         // Add or reuse the child.
-        let child = module_.children.borrow().find_copy(&name);
+        let child = module_.children.borrow().get(&name).cloned();
         match child {
             None => {
                 let child = Rc::new(NameBindings::new());
@@ -1320,15 +1351,7 @@ impl<'a> Resolver<'a> {
                     self.build_reduced_graph_for_variant(
                         &**variant,
                         local_def(item.id),
-                        ModuleReducedGraphParent(name_bindings.get_module()),
-                        modifiers);
-
-                    // Temporary staging hack
-                    self.build_reduced_graph_for_variant(
-                        &**variant,
-                        local_def(item.id),
-                        parent.clone(),
-                        modifiers | ENUM_STAGING_HACK);
+                        ModuleReducedGraphParent(name_bindings.get_module()));
                 }
                 parent
             }
@@ -1381,7 +1404,7 @@ impl<'a> Resolver<'a> {
                         let mod_name = path.segments.last().unwrap().identifier.name;
 
                         let parent_opt = parent.module().children.borrow()
-                                               .find_copy(&mod_name);
+                                               .get(&mod_name).cloned();
                         let new_parent = match parent_opt {
                             // It already exists
                             Some(ref child) if child.get_module_if_available()
@@ -1596,8 +1619,7 @@ impl<'a> Resolver<'a> {
     fn build_reduced_graph_for_variant(&mut self,
                                        variant: &Variant,
                                        item_id: DefId,
-                                       parent: ReducedGraphParent,
-                                       modifiers: DefModifiers) {
+                                       parent: ReducedGraphParent) {
         let name = variant.node.name.name;
         let is_exported = match variant.node.kind {
             TupleVariantKind(_) => false,
@@ -1611,12 +1633,14 @@ impl<'a> Resolver<'a> {
         let child = self.add_child(name, parent,
                                    ForbidDuplicateTypesAndValues,
                                    variant.span);
+        // variants are always treated as importable to allow them to be glob
+        // used
         child.define_value(DefVariant(item_id,
                                       local_def(variant.node.id), is_exported),
-                           variant.span, modifiers);
+                           variant.span, PUBLIC | IMPORTABLE);
         child.define_type(DefVariant(item_id,
                                      local_def(variant.node.id), is_exported),
-                          variant.span, modifiers);
+                          variant.span, PUBLIC | IMPORTABLE);
     }
 
     /// Constructs the reduced graph for one 'view item'. View items consist
@@ -1875,28 +1899,20 @@ impl<'a> Resolver<'a> {
 
         match def {
           DefMod(_) | DefForeignMod(_) => {}
-          // Still here for staging
-          DefVariant(enum_did, variant_id, is_struct) => {
-            debug!("(building reduced graph for external crate) building \
-                    variant {}",
-                   final_ident);
-            // If this variant is public, then it was publicly reexported,
-            // otherwise we need to inherit the visibility of the enum
-            // definition.
-            let is_exported = is_public ||
-                              self.external_exports.contains(&enum_did);
-            let modifiers = IMPORTABLE | ENUM_STAGING_HACK | if is_exported {
-                PUBLIC
-            } else {
-                DefModifiers::empty()
-            };
-            if is_struct {
-                child_name_bindings.define_type(def, DUMMY_SP, modifiers);
-                // Not adding fields for variants as they are not accessed with a self receiver
-                self.structs.insert(variant_id, Vec::new());
-            } else {
-                child_name_bindings.define_value(def, DUMMY_SP, modifiers);
-            }
+          DefVariant(_, variant_id, is_struct) => {
+              debug!("(building reduced graph for external crate) building \
+                      variant {}",
+                      final_ident);
+              // variants are always treated as importable to allow them to be
+              // glob used
+              let modifiers = PUBLIC | IMPORTABLE;
+              if is_struct {
+                  child_name_bindings.define_type(def, DUMMY_SP, modifiers);
+                  // Not adding fields for variants as they are not accessed with a self receiver
+                  self.structs.insert(variant_id, Vec::new());
+              } else {
+                  child_name_bindings.define_value(def, DUMMY_SP, modifiers);
+              }
           }
           DefFn(ctor_id, true) => {
             child_name_bindings.define_value(
@@ -1953,40 +1969,6 @@ impl<'a> Resolver<'a> {
                                                   true,
                                                   is_public,
                                                   DUMMY_SP)
-          }
-          DefTy(def_id, true) => { // enums
-              debug!("(building reduced graph for external crate) building enum {}", final_ident);
-              child_name_bindings.define_type(def, DUMMY_SP, modifiers);
-              let enum_module = ModuleReducedGraphParent(child_name_bindings.get_module());
-
-              let variants = csearch::get_enum_variant_defs(&self.session.cstore, def_id);
-              for &(v_def, name, vis) in variants.iter() {
-                  let (variant_id, is_struct) = match v_def {
-                      DefVariant(_, variant_id, is_struct) => (variant_id, is_struct),
-                      _ => unreachable!()
-                  };
-                  let child = self.add_child(name, enum_module.clone(),
-                                             OverwriteDuplicates,
-                                             DUMMY_SP);
-
-                  // If this variant is public, then it was publicly reexported,
-                  // otherwise we need to inherit the visibility of the enum
-                  // definition.
-                  let variant_exported = vis == ast::Public || is_exported;
-                  let modifiers = IMPORTABLE | if variant_exported {
-                      PUBLIC
-                  } else {
-                      DefModifiers::empty()
-                  };
-                  if is_struct {
-                      child.define_type(v_def, DUMMY_SP, modifiers);
-                      // Not adding fields for variants as they are not accessed with a self
-                      // receiver
-                      self.structs.insert(variant_id, Vec::new());
-                  } else {
-                      child.define_value(v_def, DUMMY_SP, modifiers);
-                  }
-              }
           }
           DefTy(..) | DefAssociatedTy(..) => {
               debug!("(building reduced graph for external \
@@ -2676,7 +2658,7 @@ impl<'a> Resolver<'a> {
             BoundResult(..) => {}
             _ => {
                 match containing_module.external_module_children.borrow_mut()
-                                       .find_copy(&source) {
+                                       .get(&source).cloned() {
                     None => {} // Continue.
                     Some(module) => {
                         debug!("(resolving single import) found external \
@@ -2811,7 +2793,7 @@ impl<'a> Resolver<'a> {
         return Success(());
     }
 
-    // Resolves a glob import. Note that this function cannot fail; it either
+    // Resolves a glob import. Note that this function cannot panic; it either
     // succeeds or bails out (as importing * from an empty module or a module
     // that exports nothing is valid).
     fn resolve_glob_import(&mut self,
@@ -3058,8 +3040,7 @@ impl<'a> Resolver<'a> {
         match import_resolution.value_target {
             Some(ref target) if !target.shadowable => {
                 match *name_bindings.value_def.borrow() {
-                    // We want to allow the "flat" def of enum variants to be shadowed
-                    Some(ref value) if !value.modifiers.contains(ENUM_STAGING_HACK) => {
+                    Some(ref value) => {
                         let msg = format!("import `{}` conflicts with value \
                                            in this module",
                                           token::get_name(name).get());
@@ -3082,8 +3063,7 @@ impl<'a> Resolver<'a> {
         match import_resolution.type_target {
             Some(ref target) if !target.shadowable => {
                 match *name_bindings.type_def.borrow() {
-                    // We want to allow the "flat" def of enum variants to be shadowed
-                    Some(ref ty) if !ty.modifiers.contains(ENUM_STAGING_HACK) => {
+                    Some(ref ty) => {
                         match ty.module_def {
                             None => {
                                 let msg = format!("import `{}` conflicts with type in \
@@ -3191,7 +3171,7 @@ impl<'a> Resolver<'a> {
         fn search_parent_externals(needle: Name, module: &Rc<Module>)
                                 -> Option<Rc<Module>> {
             module.external_module_children.borrow()
-                                            .find_copy(&needle)
+                                            .get(&needle).cloned()
                                             .map(|_| module.clone())
                                             .or_else(|| {
                 match module.parent_link.clone() {
@@ -3478,7 +3458,7 @@ impl<'a> Resolver<'a> {
 
         // Search for external modules.
         if namespace == TypeNS {
-            match module_.external_module_children.borrow().find_copy(&name) {
+            match module_.external_module_children.borrow().get(&name).cloned() {
                 None => {}
                 Some(module) => {
                     let name_bindings =
@@ -3763,7 +3743,7 @@ impl<'a> Resolver<'a> {
 
         // Finally, search through external children.
         if namespace == TypeNS {
-            match module_.external_module_children.borrow().find_copy(&name) {
+            match module_.external_module_children.borrow().get(&name).cloned() {
                 None => {}
                 Some(module) => {
                     let name_bindings =
@@ -4043,7 +4023,7 @@ impl<'a> Resolver<'a> {
                             // item, it's ok
                             match def {
                                 DefTyParam(_, did, _) if {
-                                    self.def_map.borrow().find_copy(&did.node)
+                                    self.def_map.borrow().get(&did.node).cloned()
                                         == Some(DefTyParamBinder(item_id))
                                 } => {} // ok
                                 DefSelfTy(did) if did == item_id => {} // ok
@@ -4096,7 +4076,7 @@ impl<'a> Resolver<'a> {
                             // item, it's ok
                             match def {
                                 DefTyParam(_, did, _) if {
-                                    self.def_map.borrow().find_copy(&did.node)
+                                    self.def_map.borrow().get(&did.node).cloned()
                                         == Some(DefTyParamBinder(item_id))
                                 } => {} // ok
                                 DefSelfTy(did) if did == item_id => {} // ok
@@ -4148,7 +4128,7 @@ impl<'a> Resolver<'a> {
         // FIXME #4950: Try caching?
 
         for (i, rib) in ribs.iter().enumerate().rev() {
-            match rib.bindings.find_copy(&name) {
+            match rib.bindings.get(&name).cloned() {
                 Some(def_like) => {
                     return self.upvarify(ribs[i + 1..], def_like, span);
                 }
@@ -4551,6 +4531,7 @@ impl<'a> Resolver<'a> {
                     TraitImplementation        => "implement",
                     TraitDerivation            => "derive",
                     TraitObject                => "reference",
+                    TraitQPath                 => "extract an associated type from",
                 };
 
                 let msg = format!("attempt to {} a nonexistent trait `{}`", usage_str, path_str);
@@ -4988,65 +4969,8 @@ impl<'a> Resolver<'a> {
             }
 
             TyQPath(ref qpath) => {
-                self.resolve_type(&*qpath.for_type);
-
-                let current_module = self.current_module.clone();
-                let module_path: Vec<_> =
-                    qpath.trait_name
-                         .segments
-                         .iter()
-                         .map(|ps| ps.identifier.name)
-                         .collect();
-                match self.resolve_module_path(
-                        current_module,
-                        module_path.as_slice(),
-                        UseLexicalScope,
-                        qpath.trait_name.span,
-                        PathSearch) {
-                    Success((ref module, _)) if module.kind.get() ==
-                            TraitModuleKind => {
-                        match self.resolve_definition_of_name_in_module(
-                                (*module).clone(),
-                                qpath.item_name.name,
-                                TypeNS) {
-                            ChildNameDefinition(def, lp) |
-                            ImportNameDefinition(def, lp) => {
-                                match def {
-                                    DefAssociatedTy(trait_type_id) => {
-                                        let def = DefAssociatedTy(
-                                            trait_type_id);
-                                        self.record_def(ty.id, (def, lp));
-                                    }
-                                    _ => {
-                                        self.resolve_error(
-                                            ty.span,
-                                            "not an associated type");
-                                    }
-                                }
-                            }
-                            NoNameDefinition => {
-                                self.resolve_error(ty.span,
-                                                   "unresolved associated \
-                                                    type");
-                            }
-                        }
-                    }
-                    Success(..) => self.resolve_error(ty.span, "not a trait"),
-                    Indeterminate => {
-                        self.session.span_bug(ty.span,
-                                              "indeterminate result when \
-                                               resolving associated type")
-                    }
-                    Failed(error) => {
-                        let (span, help) = match error {
-                            Some((span, msg)) => (span, format!("; {}", msg)),
-                            None => (ty.span, String::new()),
-                        };
-                        self.resolve_error(span,
-                                           format!("unresolved trait: {}",
-                                                   help).as_slice())
-                    }
-                }
+                self.resolve_type(&*qpath.self_type);
+                self.resolve_trait_reference(ty.id, &*qpath.trait_ref, TraitQPath);
             }
 
             TyClosure(ref c) | TyProc(ref c) => {
@@ -5057,10 +4981,10 @@ impl<'a> Resolver<'a> {
                 visit::walk_ty(self, ty);
             }
 
-            TyPolyTraitRef(ref poly_trait_ref) => {
-                self.resolve_poly_trait_reference(
+            TyPolyTraitRef(ref bounds) => {
+                self.resolve_type_parameter_bounds(
                     ty.id,
-                    &**poly_trait_ref,
+                    bounds,
                     TraitObject);
                 visit::walk_ty(self, ty);
             }
@@ -5444,7 +5368,7 @@ impl<'a> Resolver<'a> {
         // Finally, search through external children.
         if namespace == TypeNS {
             match containing_module.external_module_children.borrow()
-                                   .find_copy(&name) {
+                                   .get(&name).cloned() {
                 None => {}
                 Some(module) => {
                     match module.def_id.get() {
@@ -5675,12 +5599,6 @@ impl<'a> Resolver<'a> {
     }
 
     fn find_fallback_in_self_type(&mut self, name: Name) -> FallbackSuggestion {
-        #[deriving(PartialEq)]
-        enum FallbackChecks {
-            Everything,
-            OnlyTraitAndStatics
-        }
-
         fn extract_path_and_node_id(t: &Ty, allow: FallbackChecks)
                                                     -> Option<(Path, NodeId, FallbackChecks)> {
             match t.node {
@@ -5928,20 +5846,15 @@ impl<'a> Resolver<'a> {
                 visit::walk_expr(self, expr);
             }
 
-            ExprFnBlock(capture_clause, ref fn_decl, ref block) => {
+            ExprClosure(capture_clause, _, ref fn_decl, ref block) => {
                 self.capture_mode_map.insert(expr.id, capture_clause);
                 self.resolve_function(ClosureRibKind(expr.id, ast::DUMMY_NODE_ID),
                                       Some(&**fn_decl), NoTypeParameters,
                                       &**block);
             }
+
             ExprProc(ref fn_decl, ref block) => {
                 self.capture_mode_map.insert(expr.id, ast::CaptureByValue);
-                self.resolve_function(ClosureRibKind(expr.id, block.id),
-                                      Some(&**fn_decl), NoTypeParameters,
-                                      &**block);
-            }
-            ExprUnboxedFn(capture_clause, _, ref fn_decl, ref block) => {
-                self.capture_mode_map.insert(expr.id, capture_clause);
                 self.resolve_function(ClosureRibKind(expr.id, block.id),
                                       Some(&**fn_decl), NoTypeParameters,
                                       &**block);
@@ -6042,7 +5955,7 @@ impl<'a> Resolver<'a> {
 
     fn record_candidate_traits_for_expr_if_necessary(&mut self, expr: &Expr) {
         match expr.node {
-            ExprField(_, ident, _) => {
+            ExprField(_, ident) => {
                 // FIXME(#6890): Even though you can't treat a method like a
                 // field, we need to add any trait methods we find that match
                 // the field name so that we can do some nice error reporting

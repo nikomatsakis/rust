@@ -42,7 +42,6 @@
 //! ```
 //! use std::sync::Arc;
 //! use std::sync::atomic::{AtomicUint, SeqCst};
-//! use std::task::deschedule;
 //!
 //! fn main() {
 //!     let spinlock = Arc::new(AtomicUint::new(1));
@@ -53,13 +52,7 @@
 //!     });
 //!
 //!     // Wait for the other task to release the lock
-//!     while spinlock.load(SeqCst) != 0 {
-//!         // Since tasks may not be preemptive (if they are green threads)
-//!         // yield to the scheduler to let the other task run. Low level
-//!         // concurrent code needs to take into account Rust's two threading
-//!         // models.
-//!         deschedule();
-//!     }
+//!     while spinlock.load(SeqCst) != 0 {}
 //! }
 //! ```
 //!
@@ -103,7 +96,7 @@
 
 use alloc::boxed::Box;
 use core::mem;
-use core::prelude::{Drop, None, Option, Some};
+use core::prelude::{Send, Drop, None, Option, Some};
 use core::kinds::marker;
 
 pub use core::atomic::{AtomicBool, AtomicInt, AtomicUint, AtomicPtr};
@@ -123,7 +116,7 @@ pub struct AtomicOption<T> {
     m: marker::CovariantType<T>
 }
 
-impl<T> AtomicOption<T> {
+impl<T: Send> AtomicOption<T> {
     /// Create a new `AtomicOption`
     pub fn new(p: Box<T>) -> AtomicOption<T> {
         unsafe { AtomicOption { p: AtomicUint::new(mem::transmute(p)),
@@ -181,7 +174,7 @@ impl<T> AtomicOption<T> {
 }
 
 #[unsafe_destructor]
-impl<T> Drop for AtomicOption<T> {
+impl<T: Send> Drop for AtomicOption<T> {
     fn drop(&mut self) {
         let _ = self.take(SeqCst);
     }

@@ -9,7 +9,6 @@
 // except according to those terms.
 
 use std::cell::RefCell;
-use std::char;
 use std::dynamic_lib::DynamicLibrary;
 use std::io::{Command, TempDir};
 use std::io;
@@ -19,10 +18,8 @@ use std::string::String;
 
 use std::collections::{HashSet, HashMap};
 use testing;
-use rustc::back::write;
-use rustc::driver::config;
-use rustc::driver::driver;
-use rustc::driver::session;
+use rustc::session::{mod, config};
+use rustc_trans::driver::driver;
 use syntax::ast;
 use syntax::codemap::{CodeMap, dummy_spanned};
 use syntax::diagnostic;
@@ -119,7 +116,7 @@ fn runtest(test: &str, cratename: &str, libs: Vec<Path>, externs: core::Externs,
         maybe_sysroot: Some(os::self_exe_path().unwrap().dir_path()),
         addl_lib_search_paths: RefCell::new(libs),
         crate_types: vec!(config::CrateTypeExecutable),
-        output_types: vec!(write::OutputTypeExe),
+        output_types: vec!(config::OutputTypeExe),
         no_trans: no_run,
         externs: externs,
         cg: config::CodegenOptions {
@@ -302,8 +299,8 @@ impl Collector {
             // we use these headings as test names, so it's good if
             // they're valid identifiers.
             let name = name.chars().enumerate().map(|(i, c)| {
-                    if (i == 0 && char::is_XID_start(c)) ||
-                        (i != 0 && char::is_XID_continue(c)) {
+                    if (i == 0 && c.is_xid_start()) ||
+                        (i != 0 && c.is_xid_continue()) {
                         c
                     } else {
                         '_'

@@ -12,7 +12,7 @@ use alloc::arc::Arc;
 use libc;
 use c_str::CString;
 use mem;
-use rt::mutex;
+use rustrt::mutex;
 use sync::atomic;
 use io::{mod, IoResult, IoError};
 use prelude::*;
@@ -281,8 +281,8 @@ impl UnixAcceptor {
                     fd => return Ok(UnixStream::new(Arc::new(Inner::new(fd)))),
                 }
             }
-            try!(await([self.fd(), self.inner.reader.fd()],
-                             deadline, Readable));
+            try!(await(&[self.fd(), self.inner.reader.fd()],
+                       deadline, Readable));
         }
 
         Err(eof())
@@ -295,7 +295,7 @@ impl UnixAcceptor {
     pub fn close_accept(&mut self) -> IoResult<()> {
         self.inner.closed.store(true, atomic::SeqCst);
         let fd = FileDesc::new(self.inner.writer.fd(), false);
-        match fd.write([0]) {
+        match fd.write(&[0]) {
             Ok(..) => Ok(()),
             Err(..) if wouldblock() => Ok(()),
             Err(e) => Err(e),

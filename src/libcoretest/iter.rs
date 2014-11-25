@@ -441,6 +441,23 @@ fn test_rev() {
 }
 
 #[test]
+fn test_cloned() {
+    let xs = [2u8, 4, 6, 8];
+
+    let mut it = xs.iter().cloned();
+    assert_eq!(it.len(), 4);
+    assert_eq!(it.next(), Some(2));
+    assert_eq!(it.len(), 3);
+    assert_eq!(it.next(), Some(4));
+    assert_eq!(it.len(), 2);
+    assert_eq!(it.next_back(), Some(8));
+    assert_eq!(it.len(), 1);
+    assert_eq!(it.next_back(), Some(6));
+    assert_eq!(it.len(), 0);
+    assert_eq!(it.next_back(), None);
+}
+
+#[test]
 fn test_double_ended_map() {
     let xs = [1i, 2, 3, 4, 5, 6];
     let mut it = xs.iter().map(|&x| x * -1);
@@ -627,7 +644,7 @@ fn test_random_access_zip() {
 #[test]
 fn test_random_access_take() {
     let xs = [1i, 2, 3, 4, 5];
-    let empty: &[int] = [];
+    let empty: &[int] = &[];
     check_randacc_iter(xs.iter().take(3), 3);
     check_randacc_iter(xs.iter().take(20), xs.len());
     check_randacc_iter(xs.iter().take(0), 0);
@@ -637,7 +654,7 @@ fn test_random_access_take() {
 #[test]
 fn test_random_access_skip() {
     let xs = [1i, 2, 3, 4, 5];
-    let empty: &[int] = [];
+    let empty: &[int] = &[];
     check_randacc_iter(xs.iter().skip(2), xs.len() - 2);
     check_randacc_iter(empty.iter().skip(2), 0);
 }
@@ -669,7 +686,7 @@ fn test_random_access_map() {
 #[test]
 fn test_random_access_cycle() {
     let xs = [1i, 2, 3, 4, 5];
-    let empty: &[int] = [];
+    let empty: &[int] = &[];
     check_randacc_iter(xs.iter().cycle().take(27), 27);
     check_randacc_iter(empty.iter().cycle(), 0);
 }

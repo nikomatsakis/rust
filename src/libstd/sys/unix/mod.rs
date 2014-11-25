@@ -25,7 +25,7 @@ use sys_common::mkerr_libc;
 
 macro_rules! helper_init( (static $name:ident: Helper<$m:ty>) => (
     static $name: Helper<$m> = Helper {
-        lock: ::rt::mutex::NATIVE_MUTEX_INIT,
+        lock: ::rustrt::mutex::NATIVE_MUTEX_INIT,
         chan: ::cell::UnsafeCell { value: 0 as *mut Sender<$m> },
         signal: ::cell::UnsafeCell { value: 0 },
         initialized: ::cell::UnsafeCell { value: false },
@@ -34,14 +34,15 @@ macro_rules! helper_init( (static $name:ident: Helper<$m:ty>) => (
 
 pub mod c;
 pub mod fs;
-pub mod os;
-pub mod tcp;
-pub mod udp;
-pub mod pipe;
 pub mod helper_signal;
+pub mod os;
+pub mod pipe;
 pub mod process;
+pub mod tcp;
 pub mod timer;
+pub mod thread_local;
 pub mod tty;
+pub mod udp;
 
 pub mod addrinfo {
     pub use sys_common::net::get_host_addresses;

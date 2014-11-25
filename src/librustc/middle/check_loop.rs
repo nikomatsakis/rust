@@ -7,8 +7,9 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
+use self::Context::*;
 
-use driver::session::Session;
+use session::Session;
 
 use syntax::ast;
 use syntax::codemap::Span;
@@ -47,9 +48,8 @@ impl<'a, 'v> Visitor<'v> for CheckLoopVisitor<'a> {
                 self.visit_expr(&**e);
                 self.with_context(Loop, |v| v.visit_block(&**b));
             }
-            ast::ExprFnBlock(_, _, ref b) |
-            ast::ExprProc(_, ref b) |
-            ast::ExprUnboxedFn(_, _, _, ref b) => {
+            ast::ExprClosure(_, _, _, ref b) |
+            ast::ExprProc(_, ref b) => {
                 self.with_context(Closure, |v| v.visit_block(&**b));
             }
             ast::ExprBreak(_) => self.require_loop("break", e.span),

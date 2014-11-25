@@ -29,7 +29,7 @@ This API is completely unstable and subject to change.
       html_root_url = "http://doc.rust-lang.org/nightly/")]
 
 #![feature(default_type_params, globs, if_let, import_shadowing, macro_rules, phase, quote)]
-#![feature(slicing_syntax, struct_variant, unsafe_destructor)]
+#![feature(slicing_syntax, tuple_indexing, unsafe_destructor)]
 #![feature(rustc_diagnostic_macros)]
 
 extern crate arena;
@@ -62,11 +62,6 @@ pub mod back {
     pub use rustc_back::target_strs;
     pub use rustc_back::x86;
     pub use rustc_back::x86_64;
-
-    pub mod link;
-    pub mod lto;
-    pub mod write;
-
 }
 
 pub mod middle {
@@ -87,6 +82,7 @@ pub mod middle {
     pub mod effect;
     pub mod entry;
     pub mod expr_use_visitor;
+    pub mod fast_reject;
     pub mod graph;
     pub mod intrinsicck;
     pub mod lang_items;
@@ -98,11 +94,9 @@ pub mod middle {
     pub mod region;
     pub mod resolve;
     pub mod resolve_lifetime;
-    pub mod save;
     pub mod stability;
     pub mod subst;
     pub mod traits;
-    pub mod trans;
     pub mod ty;
     pub mod ty_fold;
     pub mod typeck;
@@ -111,7 +105,7 @@ pub mod middle {
 
 pub mod metadata;
 
-pub mod driver;
+pub mod session;
 
 pub mod plugin;
 
@@ -140,10 +134,4 @@ __build_diagnostic_array!(DIAGNOSTICS)
 #[doc(hidden)]
 mod rustc {
     pub use lint;
-}
-
-pub fn main() {
-    let args = std::os::args();
-    let result = driver::run(args);
-    std::os::set_exit_status(result);
 }

@@ -130,6 +130,9 @@ impl fmt::Show for Svh {
 // declaration should be irrelevant to the ABI.
 
 mod svh_visitor {
+    pub use self::SawExprComponent::*;
+    pub use self::SawStmtComponent::*;
+    use self::SawAbiComponent::*;
     use syntax::ast;
     use syntax::ast::*;
     use syntax::codemap::Span;
@@ -178,7 +181,7 @@ mod svh_visitor {
         SawStructDef(token::InternedString),
 
         SawLifetimeRef(token::InternedString),
-        SawLifetimeDecl(token::InternedString),
+        SawLifetimeDef(token::InternedString),
 
         SawMod,
         SawViewItem,
@@ -238,8 +241,7 @@ mod svh_visitor {
         SawExprIf,
         SawExprWhile,
         SawExprMatch,
-        SawExprFnBlock,
-        SawExprUnboxedFn,
+        SawExprClosure,
         SawExprProc,
         SawExprBlock,
         SawExprAssign,
@@ -271,14 +273,13 @@ mod svh_visitor {
             ExprWhile(..)            => SawExprWhile,
             ExprLoop(_, id)          => SawExprLoop(id.map(content)),
             ExprMatch(..)            => SawExprMatch,
-            ExprFnBlock(..)          => SawExprFnBlock,
-            ExprUnboxedFn(..)        => SawExprUnboxedFn,
+            ExprClosure(..)          => SawExprClosure,
             ExprProc(..)             => SawExprProc,
             ExprBlock(..)            => SawExprBlock,
             ExprAssign(..)           => SawExprAssign,
             ExprAssignOp(op, _, _)   => SawExprAssignOp(op),
-            ExprField(_, id, _)      => SawExprField(content(id.node)),
-            ExprTupField(_, id, _)   => SawExprTupField(id.node),
+            ExprField(_, id)         => SawExprField(content(id.node)),
+            ExprTupField(_, id)      => SawExprTupField(id.node),
             ExprIndex(..)            => SawExprIndex,
             ExprSlice(..)            => SawExprSlice,
             ExprPath(..)             => SawExprPath,
@@ -411,8 +412,8 @@ mod svh_visitor {
             SawLifetimeRef(content(l.name)).hash(self.st);
         }
 
-        fn visit_lifetime_decl(&mut self, l: &LifetimeDef) {
-            SawLifetimeDecl(content(l.lifetime.name)).hash(self.st);
+        fn visit_lifetime_def(&mut self, l: &LifetimeDef) {
+            SawLifetimeDef(content(l.lifetime.name)).hash(self.st);
         }
 
         // We do recursively walk the bodies of functions/methods

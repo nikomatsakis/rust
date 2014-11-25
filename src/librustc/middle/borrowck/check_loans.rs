@@ -16,11 +16,12 @@
 // 2. loans made in overlapping scopes do not conflict
 // 3. assignments do not affect things loaned out as immutable
 // 4. moves do not affect things loaned out in any way
-
+use self::UseError::*;
 
 use middle::borrowck::*;
 use middle::expr_use_visitor as euv;
 use middle::mem_categorization as mc;
+use middle::region;
 use middle::ty;
 use syntax::ast;
 use syntax::codemap::Span;
@@ -86,11 +87,11 @@ struct CheckLoanCtxt<'a, 'tcx: 'a> {
     all_loans: &'a [Loan],
 }
 
-impl<'a, 'tcx> euv::Delegate for CheckLoanCtxt<'a, 'tcx> {
+impl<'a, 'tcx> euv::Delegate<'tcx> for CheckLoanCtxt<'a, 'tcx> {
     fn consume(&mut self,
                consume_id: ast::NodeId,
                consume_span: Span,
-               cmt: mc::cmt,
+               cmt: mc::cmt<'tcx>,
                mode: euv::ConsumeMode) {
         debug!("consume(consume_id={}, cmt={}, mode={})",
                consume_id, cmt.repr(self.tcx()), mode);
@@ -100,7 +101,7 @@ impl<'a, 'tcx> euv::Delegate for CheckLoanCtxt<'a, 'tcx> {
 
     fn consume_pat(&mut self,
                    consume_pat: &ast::Pat,
-                   cmt: mc::cmt,
+                   cmt: mc::cmt<'tcx>,
                    mode: euv::ConsumeMode) {
         debug!("consume_pat(consume_pat={}, cmt={}, mode={})",
                consume_pat.repr(self.tcx()),
@@ -113,7 +114,7 @@ impl<'a, 'tcx> euv::Delegate for CheckLoanCtxt<'a, 'tcx> {
     fn borrow(&mut self,
               borrow_id: ast::NodeId,
               borrow_span: Span,
-              cmt: mc::cmt,
+              cmt: mc::cmt<'tcx>,
               loan_region: ty::Region,
               bk: ty::BorrowKind,
               loan_cause: euv::LoanCause)
@@ -134,13 +135,13 @@ impl<'a, 'tcx> euv::Delegate for CheckLoanCtxt<'a, 'tcx> {
             None => { }
         }
 
-        self.check_for_conflicting_loans(borrow_id);
+        self.check_for_conflicting_loans(region::CodeExtent::from_node_id(borrow_id));
     }
 
     fn mutate(&mut self,
               assignment_id: ast::NodeId,
               assignment_span: Span,
-              assignee_cmt: mc::cmt,
+              assignee_cmt: mc::cmt<'tcx>,
               mode: euv::MutateMode)
     {
         debug!("mutate(assignment_id={}, assignee_cmt={})",
@@ -215,30 +216,30 @@ fn compatible_borrow_kinds(borrow_kind1: ty::BorrowKind,
 impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
     pub fn tcx(&self) -> &'a ty::ctxt<'tcx> { self.bccx.tcx }
 
-    pub fn each_issued_loan(&self, scope_id: ast::NodeId, op: |&Loan| -> bool)
+    pub fn each_issued_loan(&self, scope: region::CodeExtent, op: |&Loan| -> bool)
                             -> bool {
         //! Iterates over each loan that has been issued
-        //! on entrance to `scope_id`, regardless of whether it is
+        //! on entrance to `scope`, regardless of whether it is
         //! actually *in scope* at that point.  Sometimes loans
         //! are issued for future scopes and thus they may have been
         //! *issued* but not yet be in effect.
 
-        self.dfcx_loans.each_bit_on_entry(scope_id, |loan_index| {
+        self.dfcx_loans.each_bit_on_entry(scope.node_id(), |loan_index| {
             let loan = &self.all_loans[loan_index];
             op(loan)
         })
     }
 
     pub fn each_in_scope_loan(&self,
-                              scope_id: ast::NodeId,
+                              scope: region::CodeExtent,
                               op: |&Loan| -> bool)
                               -> bool {
         //! Like `each_issued_loan()`, but only considers loans that are
         //! currently in scope.
 
         let tcx = self.tcx();
-        self.each_issued_loan(scope_id, |loan| {
-            if tcx.region_maps.is_subscope_of(scope_id, loan.kill_scope) {
+        self.each_issued_loan(scope, |loan| {
+            if tcx.region_maps.is_subscope_of(scope, loan.kill_scope) {
                 op(loan)
             } else {
                 true
@@ -247,7 +248,7 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
     }
 
     fn each_in_scope_loan_affecting_path(&self,
-                                         scope_id: ast::NodeId,
+                                         scope: region::CodeExtent,
                                          loan_path: &LoanPath,
                                          op: |&Loan| -> bool)
                                          -> bool {
@@ -262,7 +263,7 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
         //     let y = a;          // Conflicts with restriction
 
         let loan_path = owned_ptr_base_path(loan_path);
-        let cont = self.each_in_scope_loan(scope_id, |loan| {
+        let cont = self.each_in_scope_loan(scope, |loan| {
             let mut ret = true;
             for restr_path in loan.restricted_paths.iter() {
                 if **restr_path == *loan_path {
@@ -302,7 +303,7 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                 }
             }
 
-            let cont = self.each_in_scope_loan(scope_id, |loan| {
+            let cont = self.each_in_scope_loan(scope, |loan| {
                 if *loan.loan_path == *loan_path {
                     op(loan)
                 } else {
@@ -318,30 +319,33 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
         return true;
     }
 
-    pub fn loans_generated_by(&self, scope_id: ast::NodeId) -> Vec<uint> {
+    pub fn loans_generated_by(&self, scope: region::CodeExtent) -> Vec<uint> {
         //! Returns a vector of the loans that are generated as
-        //! we encounter `scope_id`.
+        //! we enter `scope`.
 
         let mut result = Vec::new();
-        self.dfcx_loans.each_gen_bit(scope_id, |loan_index| {
+        self.dfcx_loans.each_gen_bit(scope.node_id(), |loan_index| {
             result.push(loan_index);
             true
         });
         return result;
     }
 
-    pub fn check_for_conflicting_loans(&self, scope_id: ast::NodeId) {
+    pub fn check_for_conflicting_loans(&self, scope: region::CodeExtent) {
         //! Checks to see whether any of the loans that are issued
-        //! by `scope_id` conflict with loans that have already been
-        //! issued when we enter `scope_id` (for example, we do not
+        //! on entrance to `scope` conflict with loans that have already been
+        //! issued when we enter `scope` (for example, we do not
         //! permit two `&mut` borrows of the same variable).
+        //!
+        //! (Note that some loans can be *issued* without necessarily
+        //! taking effect yet.)
 
-        debug!("check_for_conflicting_loans(scope_id={})", scope_id);
+        debug!("check_for_conflicting_loans(scope={})", scope);
 
-        let new_loan_indices = self.loans_generated_by(scope_id);
+        let new_loan_indices = self.loans_generated_by(scope);
         debug!("new_loan_indices = {}", new_loan_indices);
 
-        self.each_issued_loan(scope_id, |issued_loan| {
+        self.each_issued_loan(scope, |issued_loan| {
             for &new_loan_index in new_loan_indices.iter() {
                 let new_loan = &self.all_loans[new_loan_index];
                 self.report_error_if_loans_conflict(issued_loan, new_loan);
@@ -535,7 +539,7 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                 old_loan.span,
                 format!("{}; {}", borrow_summary, rule_summary).as_slice());
 
-            let old_loan_span = self.tcx().map.span(old_loan.kill_scope);
+            let old_loan_span = self.tcx().map.span(old_loan.kill_scope.node_id());
             self.bccx.span_end_note(old_loan_span,
                                     "previous borrow ends here");
 
@@ -657,7 +661,8 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
 
         let mut ret = UseOk;
 
-        self.each_in_scope_loan_affecting_path(expr_id, use_path, |loan| {
+        self.each_in_scope_loan_affecting_path(
+            region::CodeExtent::from_node_id(expr_id), use_path, |loan| {
             if !compatible_borrow_kinds(loan.kind, borrow_kind) {
                 ret = UseWhileBorrowed(loan.loan_path.clone(), loan.span);
                 false
@@ -737,7 +742,7 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
     fn check_assignment(&self,
                         assignment_id: ast::NodeId,
                         assignment_span: Span,
-                        assignee_cmt: mc::cmt,
+                        assignee_cmt: mc::cmt<'tcx>,
                         mode: euv::MutateMode) {
         debug!("check_assignment(assignee_cmt={})", assignee_cmt.repr(self.tcx()));
 
@@ -820,8 +825,8 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
         }
         return;
 
-        fn mark_variable_as_used_mut(this: &CheckLoanCtxt,
-                                     mut cmt: mc::cmt) {
+        fn mark_variable_as_used_mut<'a, 'tcx>(this: &CheckLoanCtxt<'a, 'tcx>,
+                                               mut cmt: mc::cmt<'tcx>) {
             //! If the mutability of the `cmt` being written is inherited
             //! from a local variable, liveness will
             //! not have been able to detect that this variable's mutability
@@ -868,9 +873,9 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
             }
         }
 
-        fn check_for_aliasable_mutable_writes(this: &CheckLoanCtxt,
-                                              span: Span,
-                                              cmt: mc::cmt) -> bool {
+        fn check_for_aliasable_mutable_writes<'a, 'tcx>(this: &CheckLoanCtxt<'a, 'tcx>,
+                                                        span: Span,
+                                                        cmt: mc::cmt<'tcx>) -> bool {
             //! Safety checks related to writes to aliasable, mutable locations
 
             let guarantor = cmt.guarantor();
@@ -889,10 +894,10 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
             return true; // no errors reported
         }
 
-        fn check_for_aliasability_violation(this: &CheckLoanCtxt,
-                                            span: Span,
-                                            cmt: mc::cmt)
-                                            -> bool {
+        fn check_for_aliasability_violation<'a, 'tcx>(this: &CheckLoanCtxt<'a, 'tcx>,
+                                                      span: Span,
+                                                      cmt: mc::cmt<'tcx>)
+                                                      -> bool {
             match cmt.freely_aliasable(this.tcx()) {
                 None => {
                     return true;
@@ -924,7 +929,8 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                 None => { return; /* no loan path, can't be any loans */ }
             };
 
-            this.each_in_scope_loan_affecting_path(assignment_id, &*loan_path, |loan| {
+            let scope = region::CodeExtent::from_node_id(assignment_id);
+            this.each_in_scope_loan_affecting_path(scope, &*loan_path, |loan| {
                 this.report_illegal_mutation(assignment_span, &*loan_path, loan);
                 false
             });

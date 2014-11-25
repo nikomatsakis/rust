@@ -11,8 +11,11 @@
 // ignore-lexer-test FIXME #15679
 
 //! Base64 binary-to-text encoding
+
+pub use self::FromBase64Error::*;
+pub use self::CharacterSet::*;
+
 use std::fmt;
-use std::string;
 use std::error;
 
 /// Available encoding character sets
@@ -148,9 +151,7 @@ impl ToBase64 for [u8] {
             _ => panic!("Algebra is broken, please alert the math police")
         }
 
-        unsafe {
-            string::raw::from_utf8(v)
-        }
+        unsafe { String::from_utf8_unchecked(v) }
     }
 }
 
@@ -197,8 +198,8 @@ impl FromBase64 for str {
      * Convert any base64 encoded string (literal, `@`, `&`, or `~`)
      * to the byte values it encodes.
      *
-     * You can use the `String::from_utf8` function in `std::string` to turn a
-     * `Vec<u8>` into a string with characters corresponding to those values.
+     * You can use the `String::from_utf8` function to turn a `Vec<u8>` into a
+     * string with characters corresponding to those values.
      *
      * # Example
      *

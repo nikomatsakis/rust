@@ -18,6 +18,8 @@
 /// module. You'll also note that the implementation of the shared and stream
 /// channels are quite similar, and this is no coincidence!
 
+pub use self::Failure::*;
+
 use core::prelude::*;
 
 use alloc::boxed::Box;
@@ -276,17 +278,6 @@ impl<T: Send> Packet<T> {
             // eventually succeed. In this case, we spin in a yield loop
             // because the remote sender should finish their enqueue
             // operation "very quickly".
-            //
-            // Note that this yield loop does *not* attempt to do a green
-            // yield (regardless of the context), but *always* performs an
-            // OS-thread yield. The reasoning for this is that the pusher in
-            // question which is causing the inconsistent state is
-            // guaranteed to *not* be a blocked task (green tasks can't get
-            // pre-empted), so it must be on a different OS thread. Also,
-            // `try_recv` is normally a "guaranteed no rescheduling" context
-            // in a green-thread situation. By yielding control of the
-            // thread, we will hopefully allow time for the remote task on
-            // the other OS thread to make progress.
             //
             // Avoiding this yield loop would require a different queue
             // abstraction which provides the guarantee that after M

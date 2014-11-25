@@ -36,7 +36,7 @@ be indexed by the direction (see the type `Direction`).
 
 #![allow(dead_code)] // still WIP
 
-use std::fmt::{Formatter, FormatError, Show};
+use std::fmt::{Formatter, Error, Show};
 use std::uint;
 
 pub struct Graph<N,E> {
@@ -57,7 +57,7 @@ pub struct Edge<E> {
 }
 
 impl<E: Show> Show for Edge<E> {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), FormatError> {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
         write!(f, "Edge {{ next_edge: [{}, {}], source: {}, target: {}, data: {} }}",
                self.next_edge[0], self.next_edge[1], self.source,
                self.target, self.data)
@@ -419,31 +419,31 @@ mod test {
     fn each_adjacent_from_a() {
         let graph = create_graph();
         test_adjacent_edges(&graph, NodeIndex(0), "A",
-                            [],
-                            [("AB", "B")]);
+                            &[],
+                            &[("AB", "B")]);
     }
 
     #[test]
     fn each_adjacent_from_b() {
         let graph = create_graph();
         test_adjacent_edges(&graph, NodeIndex(1), "B",
-                            [("FB", "F"), ("AB", "A"),],
-                            [("BD", "D"), ("BC", "C"),]);
+                            &[("FB", "F"), ("AB", "A"),],
+                            &[("BD", "D"), ("BC", "C"),]);
     }
 
     #[test]
     fn each_adjacent_from_c() {
         let graph = create_graph();
         test_adjacent_edges(&graph, NodeIndex(2), "C",
-                            [("EC", "E"), ("BC", "B")],
-                            []);
+                            &[("EC", "E"), ("BC", "B")],
+                            &[]);
     }
 
     #[test]
     fn each_adjacent_from_d() {
         let graph = create_graph();
         test_adjacent_edges(&graph, NodeIndex(3), "D",
-                            [("BD", "B")],
-                            [("DE", "E")]);
+                            &[("BD", "B")],
+                            &[("DE", "E")]);
     }
 }

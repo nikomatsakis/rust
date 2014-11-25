@@ -8,32 +8,28 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+pub use self::AnnNode::*;
+
 use abi;
-use ast::{FnUnboxedClosureKind, FnMutUnboxedClosureKind};
+use ast::{mod, FnUnboxedClosureKind, FnMutUnboxedClosureKind};
 use ast::{FnOnceUnboxedClosureKind};
 use ast::{MethodImplItem, RegionTyParamBound, TraitTyParamBound};
 use ast::{RequiredMethod, ProvidedMethod, TypeImplItem, TypeTraitItem};
 use ast::{UnboxedClosureKind};
-use ast;
 use ast_util;
 use owned_slice::OwnedSlice;
 use attr::{AttrMetaMethods, AttributeMethods};
-use codemap::{CodeMap, BytePos};
-use codemap;
+use codemap::{mod, CodeMap, BytePos};
 use diagnostic;
-use parse::token::{BinOpToken, Token};
-use parse::token;
+use parse::token::{mod, BinOpToken, Token};
 use parse::lexer::comments;
 use parse;
-use print::pp::{break_offset, word, space, zerobreak, hardbreak};
+use print::pp::{mod, break_offset, word, space, zerobreak, hardbreak};
 use print::pp::{Breaks, Consistent, Inconsistent, eof};
-use print::pp;
 use ptr::P;
 
-use std::ascii;
-use std::io::{IoResult, MemWriter};
-use std::io;
-use std::mem;
+use std::{ascii, mem};
+use std::io::{mod, IoResult};
 
 pub enum AnnNode<'a> {
     NodeIdent(&'a ast::Ident),
@@ -167,17 +163,17 @@ impl<'a> State<'a> {
 
 pub fn to_string(f: |&mut State| -> IoResult<()>) -> String {
     use std::raw::TraitObject;
-    let mut s = rust_printer(box MemWriter::new());
+    let mut s = rust_printer(box Vec::new());
     f(&mut s).unwrap();
     eof(&mut s.s).unwrap();
     let wr = unsafe {
         // FIXME(pcwalton): A nasty function to extract the string from an `io::Writer`
-        // that we "know" to be a `MemWriter` that works around the lack of checked
+        // that we "know" to be a `Vec<u8>` that works around the lack of checked
         // downcasts.
         let obj: &TraitObject = mem::transmute(&s.s.out);
-        mem::transmute::<*mut (), &MemWriter>(obj.data)
+        mem::transmute::<*mut (), &Vec<u8>>(obj.data)
     };
-    String::from_utf8(wr.get_ref().to_vec()).unwrap()
+    String::from_utf8(wr.clone()).unwrap()
 }
 
 pub fn binop_to_string(op: BinOpToken) -> &'static str {
@@ -234,18 +230,28 @@ pub fn token_to_string(tok: &Token) -> String {
         token::Question             => "?".into_string(),
 
         /* Literals */
-        token::LitByte(b)           => format!("b'{}'", b.as_str()),
-        token::LitChar(c)           => format!("'{}'", c.as_str()),
-        token::LitFloat(c)          => c.as_str().into_string(),
-        token::LitInteger(c)        => c.as_str().into_string(),
-        token::LitStr(s)            => format!("\"{}\"", s.as_str()),
-        token::LitStrRaw(s, n)      => format!("r{delim}\"{string}\"{delim}",
-                                               delim="#".repeat(n),
-                                               string=s.as_str()),
-        token::LitBinary(v)         => format!("b\"{}\"", v.as_str()),
-        token::LitBinaryRaw(s, n)   => format!("br{delim}\"{string}\"{delim}",
-                                               delim="#".repeat(n),
-                                               string=s.as_str()),
+        token::Literal(lit, suf) => {
+            let mut out = match lit {
+                token::Byte(b)           => format!("b'{}'", b.as_str()),
+                token::Char(c)           => format!("'{}'", c.as_str()),
+                token::Float(c)          => c.as_str().into_string(),
+                token::Integer(c)        => c.as_str().into_string(),
+                token::Str_(s)           => format!("\"{}\"", s.as_str()),
+                token::StrRaw(s, n)      => format!("r{delim}\"{string}\"{delim}",
+                                                    delim="#".repeat(n),
+                                                    string=s.as_str()),
+                token::Binary(v)         => format!("b\"{}\"", v.as_str()),
+                token::BinaryRaw(s, n)   => format!("br{delim}\"{string}\"{delim}",
+                                                    delim="#".repeat(n),
+                                                    string=s.as_str()),
+            };
+
+            if let Some(s) = suf {
+                out.push_str(s.as_str())
+            }
+
+            out
+        }
 
         /* Name components */
         token::Ident(s, _)          => token::get_ident(s).get().into_string(),
@@ -432,9 +438,8 @@ pub fn visibility_qualified(vis: ast::Visibility, s: &str) -> String {
 fn needs_parentheses(expr: &ast::Expr) -> bool {
     match expr.node {
         ast::ExprAssign(..) | ast::ExprBinary(..) |
-        ast::ExprFnBlock(..) | ast::ExprProc(..) |
-        ast::ExprUnboxedFn(..) | ast::ExprAssignOp(..) |
-        ast::ExprCast(..) => true,
+        ast::ExprClosure(..) | ast::ExprProc(..) |
+        ast::ExprAssignOp(..) | ast::ExprCast(..) => true,
         _ => false,
     }
 }
@@ -737,15 +742,15 @@ impl<'a> State<'a> {
             ast::TyPath(ref path, ref bounds, _) => {
                 try!(self.print_bounded_path(path, bounds));
             }
-            ast::TyPolyTraitRef(ref poly_trait_ref) => {
-                try!(self.print_poly_trait_ref(&**poly_trait_ref));
+            ast::TyPolyTraitRef(ref bounds) => {
+                try!(self.print_bounds("", bounds));
             }
             ast::TyQPath(ref qpath) => {
                 try!(word(&mut self.s, "<"));
-                try!(self.print_type(&*qpath.for_type));
+                try!(self.print_type(&*qpath.self_type));
                 try!(space(&mut self.s));
                 try!(self.word_space("as"));
-                try!(self.print_path(&qpath.trait_name, false));
+                try!(self.print_trait_ref(&*qpath.trait_ref));
                 try!(word(&mut self.s, ">"));
                 try!(word(&mut self.s, "::"));
                 try!(self.print_ident(qpath.item_name));
@@ -1650,49 +1655,11 @@ impl<'a> State<'a> {
                 }
                 try!(self.bclose_(expr.span, indent_unit));
             }
-            ast::ExprFnBlock(capture_clause, ref decl, ref body) => {
+            ast::ExprClosure(capture_clause, opt_kind, ref decl, ref body) => {
                 try!(self.print_capture_clause(capture_clause));
 
-                // in do/for blocks we don't want to show an empty
-                // argument list, but at this point we don't know which
-                // we are inside.
-                //
-                // if !decl.inputs.is_empty() {
-                try!(self.print_fn_block_args(&**decl, None));
+                try!(self.print_fn_block_args(&**decl, opt_kind));
                 try!(space(&mut self.s));
-                // }
-
-                if !body.stmts.is_empty() || !body.expr.is_some() {
-                    try!(self.print_block_unclosed(&**body));
-                } else {
-                    // we extract the block, so as not to create another set of boxes
-                    match body.expr.as_ref().unwrap().node {
-                        ast::ExprBlock(ref blk) => {
-                            try!(self.print_block_unclosed(&**blk));
-                        }
-                        _ => {
-                            // this is a bare expression
-                            try!(self.print_expr(&**body.expr.as_ref().unwrap()));
-                            try!(self.end()); // need to close a box
-                        }
-                    }
-                }
-                // a box will be closed by print_expr, but we didn't want an overall
-                // wrapper so we closed the corresponding opening. so create an
-                // empty box to satisfy the close.
-                try!(self.ibox(0));
-            }
-            ast::ExprUnboxedFn(capture_clause, kind, ref decl, ref body) => {
-                try!(self.print_capture_clause(capture_clause));
-
-                // in do/for blocks we don't want to show an empty
-                // argument list, but at this point we don't know which
-                // we are inside.
-                //
-                // if !decl.inputs.is_empty() {
-                try!(self.print_fn_block_args(&**decl, Some(kind)));
-                try!(space(&mut self.s));
-                // }
 
                 if !body.stmts.is_empty() || !body.expr.is_some() {
                     try!(self.print_block_unclosed(&**body));
@@ -1761,29 +1728,15 @@ impl<'a> State<'a> {
                 try!(self.word_space("="));
                 try!(self.print_expr(&**rhs));
             }
-            ast::ExprField(ref expr, id, ref tys) => {
+            ast::ExprField(ref expr, id) => {
                 try!(self.print_expr(&**expr));
                 try!(word(&mut self.s, "."));
                 try!(self.print_ident(id.node));
-                if tys.len() > 0u {
-                    try!(word(&mut self.s, "::<"));
-                    try!(self.commasep(
-                        Inconsistent, tys.as_slice(),
-                        |s, ty| s.print_type(&**ty)));
-                    try!(word(&mut self.s, ">"));
-                }
             }
-            ast::ExprTupField(ref expr, id, ref tys) => {
+            ast::ExprTupField(ref expr, id) => {
                 try!(self.print_expr(&**expr));
                 try!(word(&mut self.s, "."));
                 try!(self.print_uint(id.node));
-                if tys.len() > 0u {
-                    try!(word(&mut self.s, "::<"));
-                    try!(self.commasep(
-                        Inconsistent, tys.as_slice(),
-                        |s, ty| s.print_type(&**ty)));
-                    try!(word(&mut self.s, ">"));
-                }
             }
             ast::ExprIndex(ref expr, ref index) => {
                 try!(self.print_expr(&**expr));
@@ -1853,7 +1806,7 @@ impl<'a> State<'a> {
                 try!(self.commasep(Inconsistent, a.outputs.as_slice(),
                                    |s, &(ref co, ref o, is_rw)| {
                     match co.get().slice_shift_char() {
-                        (Some('='), operand) if is_rw => {
+                        Some(('=', operand)) if is_rw => {
                             try!(s.print_string(format!("+{}", operand).as_slice(),
                                                 ast::CookedStr))
                         }
@@ -2191,21 +2144,22 @@ impl<'a> State<'a> {
             try!(self.print_pat(&**p));
         }
         try!(space(&mut self.s));
-        match arm.guard {
-            Some(ref e) => {
-                try!(self.word_space("if"));
-                try!(self.print_expr(&**e));
-                try!(space(&mut self.s));
-            }
-            None => ()
+        if let Some(ref e) = arm.guard {
+            try!(self.word_space("if"));
+            try!(self.print_expr(&**e));
+            try!(space(&mut self.s));
         }
         try!(self.word_space("=>"));
 
         match arm.body.node {
             ast::ExprBlock(ref blk) => {
                 // the block will close the pattern's ibox
-                try!(self.print_block_unclosed_indent(&**blk,
-                                                      indent_unit));
+                try!(self.print_block_unclosed_indent(&**blk, indent_unit));
+
+                // If it is a user-provided unsafe block, print a comma after it
+                if let ast::UnsafeBlock(ast::UserProvided) = blk.rules {
+                    try!(word(&mut self.s, ","));
+                }
             }
             _ => {
                 try!(self.end()); // close the ibox for the pattern
@@ -2783,7 +2737,9 @@ impl<'a> State<'a> {
             }
             ast::LitChar(ch) => {
                 let mut res = String::from_str("'");
-                ch.escape_default(|c| res.push(c));
+                for c in ch.escape_default() {
+                    res.push(c);
+                }
                 res.push('\'');
                 word(&mut self.s, res.as_slice())
             }

@@ -31,10 +31,14 @@
 #![allow(missing_docs)]
 #![allow(non_snake_case)]
 
+pub use self::MemoryMapKind::*;
+pub use self::MapOption::*;
+pub use self::MapError::*;
+
 use clone::Clone;
 use error::{FromError, Error};
 use fmt;
-use io::IoResult;
+use io::{IoResult, IoError};
 use iter::Iterator;
 use libc::{c_void, c_int};
 use libc;
@@ -72,15 +76,16 @@ pub fn num_cpus() -> uint {
 pub const TMPBUF_SZ : uint = 1000u;
 const BUF_BYTES : uint = 2048u;
 
-/// Returns the current working directory as a Path.
+/// Returns the current working directory as a `Path`.
 ///
-/// # Failure
+/// # Errors
 ///
-/// Fails if the current working directory value is invalid:
-/// Possibles cases:
+/// Returns an `Err` if the current working directory value is invalid.
+/// Possible cases:
 ///
 /// * Current directory does not exist.
 /// * There are insufficient permissions to access the current directory.
+/// * The internal buffer is not large enough to hold the path.
 ///
 /// # Example
 ///
@@ -88,32 +93,34 @@ const BUF_BYTES : uint = 2048u;
 /// use std::os;
 ///
 /// // We assume that we are in a valid directory like "/home".
-/// let current_working_directory = os::getcwd();
+/// let current_working_directory = os::getcwd().unwrap();
 /// println!("The current directory is {}", current_working_directory.display());
 /// // /home
 /// ```
 #[cfg(unix)]
-pub fn getcwd() -> Path {
+pub fn getcwd() -> IoResult<Path> {
     use c_str::CString;
 
     let mut buf = [0 as c_char, ..BUF_BYTES];
     unsafe {
         if libc::getcwd(buf.as_mut_ptr(), buf.len() as libc::size_t).is_null() {
-            panic!()
+            Err(IoError::last_error())
+        } else {
+            Ok(Path::new(CString::new(buf.as_ptr(), false)))
         }
-        Path::new(CString::new(buf.as_ptr(), false))
     }
 }
 
-/// Returns the current working directory as a Path.
+/// Returns the current working directory as a `Path`.
 ///
-/// # Failure
+/// # Errors
 ///
-/// Fails if the current working directory value is invalid.
-/// Possibles cases:
+/// Returns an `Err` if the current working directory value is invalid.
+/// Possible cases:
 ///
 /// * Current directory does not exist.
 /// * There are insufficient permissions to access the current directory.
+/// * The internal buffer is not large enough to hold the path.
 ///
 /// # Example
 ///
@@ -121,23 +128,31 @@ pub fn getcwd() -> Path {
 /// use std::os;
 ///
 /// // We assume that we are in a valid directory like "C:\\Windows".
-/// let current_working_directory = os::getcwd();
+/// let current_working_directory = os::getcwd().unwrap();
 /// println!("The current directory is {}", current_working_directory.display());
 /// // C:\\Windows
 /// ```
 #[cfg(windows)]
-pub fn getcwd() -> Path {
+pub fn getcwd() -> IoResult<Path> {
     use libc::DWORD;
     use libc::GetCurrentDirectoryW;
+    use io::OtherIoError;
 
     let mut buf = [0 as u16, ..BUF_BYTES];
     unsafe {
         if libc::GetCurrentDirectoryW(buf.len() as DWORD, buf.as_mut_ptr()) == 0 as DWORD {
-            panic!();
+            return Err(IoError::last_error());
         }
     }
-    Path::new(String::from_utf16(::str::truncate_utf16_at_nul(buf))
-              .expect("GetCurrentDirectoryW returned invalid UTF-16"))
+
+    match String::from_utf16(::str::truncate_utf16_at_nul(&buf)) {
+        Some(ref cwd) => Ok(Path::new(cwd)),
+        None => Err(IoError {
+            kind: OtherIoError,
+            desc: "GetCurrentDirectoryW returned invalid UTF-16",
+            detail: None,
+        }),
+    }
 }
 
 #[cfg(windows)]
@@ -193,7 +208,7 @@ Accessing environment variables is not generally threadsafe.
 Serialize access through a global lock.
 */
 fn with_env_lock<T>(f: || -> T) -> T {
-    use rt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
+    use rustrt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
 
     static LOCK: StaticNativeMutex = NATIVE_MUTEX_INIT;
 
@@ -233,7 +248,7 @@ pub fn env_as_bytes() -> Vec<(Vec<u8>,Vec<u8>)> {
     unsafe {
         #[cfg(windows)]
         unsafe fn get_env_pairs() -> Vec<Vec<u8>> {
-            use slice::raw;
+            use slice;
 
             use libc::funcs::extra::kernel32::{
                 GetEnvironmentStringsW,
@@ -266,9 +281,9 @@ pub fn env_as_bytes() -> Vec<(Vec<u8>,Vec<u8>)> {
                 while *(p as *const _).offset(len) != 0 {
                     len += 1;
                 }
-                raw::buf_as_slice(p, len as uint, |s| {
-                    result.push(String::from_utf16_lossy(s).into_bytes());
-                });
+                let p = p as *const u16;
+                let s = slice::from_raw_buf(&p, len as uint);
+                result.push(String::from_utf16_lossy(s).into_bytes());
                 i += len as int + 1;
             }
             FreeEnvironmentStringsW(ch);
@@ -407,7 +422,9 @@ pub fn setenv<T: BytesContainer>(n: &str, v: T) {
             with_env_lock(|| {
                 n.with_c_str(|nbuf| {
                     v.with_c_str(|vbuf| {
-                        libc::funcs::posix01::unistd::setenv(nbuf, vbuf, 1);
+                        if libc::funcs::posix01::unistd::setenv(nbuf, vbuf, 1) != 0 {
+                            panic!(IoError::last_error());
+                        }
                     })
                 })
             })
@@ -423,7 +440,9 @@ pub fn setenv<T: BytesContainer>(n: &str, v: T) {
 
         unsafe {
             with_env_lock(|| {
-                libc::SetEnvironmentVariableW(n.as_ptr(), v.as_ptr());
+                if libc::SetEnvironmentVariableW(n.as_ptr(), v.as_ptr()) == 0 {
+                    panic!(IoError::last_error());
+                }
             })
         }
     }
@@ -438,7 +457,9 @@ pub fn unsetenv(n: &str) {
         unsafe {
             with_env_lock(|| {
                 n.with_c_str(|nbuf| {
-                    libc::funcs::posix01::unistd::unsetenv(nbuf);
+                    if libc::funcs::posix01::unistd::unsetenv(nbuf) != 0 {
+                        panic!(IoError::last_error());
+                    }
                 })
             })
         }
@@ -450,11 +471,14 @@ pub fn unsetenv(n: &str) {
         n.push(0);
         unsafe {
             with_env_lock(|| {
-                libc::SetEnvironmentVariableW(n.as_ptr(), ptr::null());
+                if libc::SetEnvironmentVariableW(n.as_ptr(), ptr::null()) == 0 {
+                    panic!(IoError::last_error());
+                }
             })
         }
     }
-    _unsetenv(n);
+
+    _unsetenv(n)
 }
 
 /// Parses input according to platform conventions for the `PATH`
@@ -825,20 +849,21 @@ pub fn tmpdir() -> Path {
 ///
 /// // Assume we're in a path like /home/someuser
 /// let rel_path = Path::new("..");
-/// let abs_path = os::make_absolute(&rel_path);
+/// let abs_path = os::make_absolute(&rel_path).unwrap();
 /// println!("The absolute path is {}", abs_path.display());
 /// // Prints "The absolute path is /home"
 /// ```
 // NB: this is here rather than in path because it is a form of environment
 // querying; what it does depends on the process working directory, not just
 // the input paths.
-pub fn make_absolute(p: &Path) -> Path {
+pub fn make_absolute(p: &Path) -> IoResult<Path> {
     if p.is_absolute() {
-        p.clone()
+        Ok(p.clone())
     } else {
-        let mut ret = getcwd();
-        ret.push(p);
-        ret
+        getcwd().map(|mut cwd| {
+            cwd.push(p);
+            cwd
+        })
     }
 }
 
@@ -851,32 +876,33 @@ pub fn make_absolute(p: &Path) -> Path {
 /// use std::path::Path;
 ///
 /// let root = Path::new("/");
-/// assert!(os::change_dir(&root));
+/// assert!(os::change_dir(&root).is_ok());
 /// println!("Successfully changed working directory to {}!", root.display());
 /// ```
-pub fn change_dir(p: &Path) -> bool {
+pub fn change_dir(p: &Path) -> IoResult<()> {
     return chdir(p);
 
     #[cfg(windows)]
-    fn chdir(p: &Path) -> bool {
-        let p = match p.as_str() {
-            Some(s) => {
-                let mut p = s.utf16_units().collect::<Vec<u16>>();
-                p.push(0);
-                p
-            }
-            None => return false,
-        };
+    fn chdir(p: &Path) -> IoResult<()> {
+        let mut p = p.as_str().unwrap().utf16_units().collect::<Vec<u16>>();
+        p.push(0);
+
         unsafe {
-            libc::SetCurrentDirectoryW(p.as_ptr()) != (0 as libc::BOOL)
+            match libc::SetCurrentDirectoryW(p.as_ptr()) != (0 as libc::BOOL) {
+                true => Ok(()),
+                false => Err(IoError::last_error()),
+            }
         }
     }
 
     #[cfg(unix)]
-    fn chdir(p: &Path) -> bool {
+    fn chdir(p: &Path) -> IoResult<()> {
         p.with_c_str(|buf| {
             unsafe {
-                libc::chdir(buf) == (0 as c_int)
+                match libc::chdir(buf) == (0 as c_int) {
+                    true => Ok(()),
+                    false => Err(IoError::last_error()),
+                }
             }
         })
     }
@@ -1013,9 +1039,9 @@ fn real_args_as_bytes() -> Vec<Vec<u8>> {
           target_os = "freebsd",
           target_os = "dragonfly"))]
 fn real_args_as_bytes() -> Vec<Vec<u8>> {
-    use rt;
+    use rustrt;
 
-    match rt::args::clone() {
+    match rustrt::args::clone() {
         Some(args) => args,
         None => panic!("process arguments not initialized")
     }
@@ -1045,9 +1071,9 @@ fn real_args() -> Vec<String> {
         while *ptr.offset(len as int) != 0 { len += 1; }
 
         // Push it onto the list.
-        let opt_s = slice::raw::buf_as_slice(ptr as *const _, len, |buf| {
-            String::from_utf16(::str::truncate_utf16_at_nul(buf))
-        });
+        let ptr = ptr as *const u16;
+        let buf = slice::from_raw_buf(&ptr, len);
+        let opt_s = String::from_utf16(::str::truncate_utf16_at_nul(buf));
         opt_s.expect("CommandLineToArgvW returned invalid UTF-16")
     });
 
@@ -1081,6 +1107,10 @@ extern "system" {
 
 /// Returns the arguments which this program was started with (normally passed
 /// via the command line).
+///
+/// The first element is traditionally the path to the executable, but it can be
+/// set to arbitrary text, and it may not even exist, so this property should not
+/// be relied upon for security purposes.
 ///
 /// The arguments are interpreted as utf-8, with invalid bytes replaced with \uFFFD.
 /// See `String::from_utf8_lossy` for details.
@@ -1877,11 +1907,11 @@ mod tests {
     fn test() {
         assert!((!Path::new("test-path").is_absolute()));
 
-        let cwd = getcwd();
+        let cwd = getcwd().unwrap();
         debug!("Current working directory: {}", cwd.display());
 
-        debug!("{}", make_absolute(&Path::new("test-path")).display());
-        debug!("{}", make_absolute(&Path::new("/usr/bin")).display());
+        debug!("{}", make_absolute(&Path::new("test-path")).unwrap().display());
+        debug!("{}", make_absolute(&Path::new("/usr/bin")).unwrap().display());
     }
 
     #[test]
@@ -1936,7 +1966,7 @@ mod tests {
     fn memory_map_rw() {
         use result::{Ok, Err};
 
-        let chunk = match os::MemoryMap::new(16, [
+        let chunk = match os::MemoryMap::new(16, &[
             os::MapReadable,
             os::MapWritable
         ]) {
@@ -1983,7 +2013,7 @@ mod tests {
             "x".with_c_str(|x| assert!(write(fd, x as *const c_void, 1) == 1));
             fd
         };
-        let chunk = match MemoryMap::new(size / 2, [
+        let chunk = match MemoryMap::new(size / 2, &[
             MapReadable,
             MapWritable,
             MapFd(fd),
@@ -2012,16 +2042,16 @@ mod tests {
                 parsed.iter().map(|s| Path::new(*s)).collect()
         }
 
-        assert!(check_parse("", [""]));
-        assert!(check_parse(r#""""#, [""]));
-        assert!(check_parse(";;", ["", "", ""]));
-        assert!(check_parse(r"c:\", [r"c:\"]));
-        assert!(check_parse(r"c:\;", [r"c:\", ""]));
+        assert!(check_parse("", &mut [""]));
+        assert!(check_parse(r#""""#, &mut [""]));
+        assert!(check_parse(";;", &mut ["", "", ""]));
+        assert!(check_parse(r"c:\", &mut [r"c:\"]));
+        assert!(check_parse(r"c:\;", &mut [r"c:\", ""]));
         assert!(check_parse(r"c:\;c:\Program Files\",
-                            [r"c:\", r"c:\Program Files\"]));
-        assert!(check_parse(r#"c:\;c:\"foo"\"#, [r"c:\", r"c:\foo\"]));
+                            &mut [r"c:\", r"c:\Program Files\"]));
+        assert!(check_parse(r#"c:\;c:\"foo"\"#, &mut [r"c:\", r"c:\foo\"]));
         assert!(check_parse(r#"c:\;c:\"foo;bar"\;c:\baz"#,
-                            [r"c:\", r"c:\foo;bar\", r"c:\baz"]));
+                            &mut [r"c:\", r"c:\foo;bar\", r"c:\baz"]));
     }
 
     #[test]
@@ -2032,11 +2062,11 @@ mod tests {
                 parsed.iter().map(|s| Path::new(*s)).collect()
         }
 
-        assert!(check_parse("", [""]));
-        assert!(check_parse("::", ["", "", ""]));
-        assert!(check_parse("/", ["/"]));
-        assert!(check_parse("/:", ["/", ""]));
-        assert!(check_parse("/:/usr/local", ["/", "/usr/local"]));
+        assert!(check_parse("", &mut [""]));
+        assert!(check_parse("::", &mut ["", "", ""]));
+        assert!(check_parse("/", &mut ["/"]));
+        assert!(check_parse("/:", &mut ["/", ""]));
+        assert!(check_parse("/:/usr/local", &mut ["/", "/usr/local"]));
     }
 
     #[test]
@@ -2046,12 +2076,12 @@ mod tests {
             join_paths(input).unwrap().as_slice() == output.as_bytes()
         }
 
-        assert!(test_eq([], ""));
-        assert!(test_eq(["/bin", "/usr/bin", "/usr/local/bin"],
-                        "/bin:/usr/bin:/usr/local/bin"));
-        assert!(test_eq(["", "/bin", "", "", "/usr/bin", ""],
-                        ":/bin:::/usr/bin:"));
-        assert!(join_paths(["/te:st"]).is_err());
+        assert!(test_eq(&[], ""));
+        assert!(test_eq(&["/bin", "/usr/bin", "/usr/local/bin"],
+                         "/bin:/usr/bin:/usr/local/bin"));
+        assert!(test_eq(&["", "/bin", "", "", "/usr/bin", ""],
+                         ":/bin:::/usr/bin:"));
+        assert!(join_paths(&["/te:st"]).is_err());
     }
 
     #[test]
@@ -2061,14 +2091,14 @@ mod tests {
             join_paths(input).unwrap().as_slice() == output.as_bytes()
         }
 
-        assert!(test_eq([], ""));
-        assert!(test_eq([r"c:\windows", r"c:\"],
+        assert!(test_eq(&[], ""));
+        assert!(test_eq(&[r"c:\windows", r"c:\"],
                         r"c:\windows;c:\"));
-        assert!(test_eq(["", r"c:\windows", "", "", r"c:\", ""],
+        assert!(test_eq(&["", r"c:\windows", "", "", r"c:\", ""],
                         r";c:\windows;;;c:\;"));
-        assert!(test_eq([r"c:\te;st", r"c:\"],
+        assert!(test_eq(&[r"c:\te;st", r"c:\"],
                         r#""c:\te;st";c:\"#));
-        assert!(join_paths([r#"c:\te"st"#]).is_err());
+        assert!(join_paths(&[r#"c:\te"st"#]).is_err());
     }
 
     // More recursive_mkdir tests are in extra::tempfile

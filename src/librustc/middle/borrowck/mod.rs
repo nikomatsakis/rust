@@ -12,13 +12,20 @@
 
 #![allow(non_camel_case_types)]
 
+pub use self::LoanPath::*;
+pub use self::LoanPathElem::*;
+pub use self::bckerr_code::*;
+pub use self::AliasableViolationKind::*;
+pub use self::MovedValueUseKind::*;
+
 use middle::cfg;
 use middle::dataflow::DataFlowContext;
 use middle::dataflow::BitwiseOperator;
 use middle::dataflow::DataFlowOperator;
 use middle::expr_use_visitor as euv;
 use middle::mem_categorization as mc;
-use middle::ty;
+use middle::region;
+use middle::ty::{mod, Ty};
 use util::ppaux::{note_and_explain_region, Repr, UserString};
 
 use std::rc::Rc;
@@ -59,8 +66,8 @@ pub type LoanDataFlow<'a, 'tcx> = DataFlowContext<'a, 'tcx, LoanDataFlowOperator
 
 impl<'a, 'tcx, 'v> Visitor<'v> for BorrowckCtxt<'a, 'tcx> {
     fn visit_fn(&mut self, fk: FnKind<'v>, fd: &'v FnDecl,
-                b: &'v Block, s: Span, n: NodeId) {
-        borrowck_fn(self, fk, fd, b, s, n);
+                b: &'v Block, s: Span, id: ast::NodeId) {
+        borrowck_fn(self, fk, fd, b, s, id);
     }
 
     fn visit_item(&mut self, item: &ast::Item) {
@@ -96,7 +103,7 @@ pub fn check_crate(tcx: &ty::ctxt) {
     fn make_stat(bccx: &BorrowckCtxt, stat: uint) -> String {
         let total = bccx.stats.guaranteed_paths as f64;
         let perc = if total == 0.0 { 0.0 } else { stat as f64 * 100.0 / total };
-        format!("{} ({:.0f}%)", stat, perc)
+        format!("{} ({:.0}%)", stat, perc)
     }
 }
 
@@ -163,8 +170,8 @@ fn build_borrowck_dataflow_data<'a, 'tcx>(this: &mut BorrowckCtxt<'a, 'tcx>,
                              id_range,
                              all_loans.len());
     for (loan_idx, loan) in all_loans.iter().enumerate() {
-        loan_dfcx.add_gen(loan.gen_scope, loan_idx);
-        loan_dfcx.add_kill(loan.kill_scope, loan_idx);
+        loan_dfcx.add_gen(loan.gen_scope.node_id(), loan_idx);
+        loan_dfcx.add_kill(loan.kill_scope.node_id(), loan_idx);
     }
     loan_dfcx.add_kills_from_flow_exits(cfg);
     loan_dfcx.propagate(cfg, body);
@@ -241,7 +248,7 @@ struct BorrowStats {
     guaranteed_paths: uint
 }
 
-pub type BckResult<T> = Result<T, BckError>;
+pub type BckResult<'tcx, T> = Result<T, BckError<'tcx>>;
 
 ///////////////////////////////////////////////////////////////////////////
 // Loans and loan paths
@@ -252,8 +259,19 @@ pub struct Loan {
     loan_path: Rc<LoanPath>,
     kind: ty::BorrowKind,
     restricted_paths: Vec<Rc<LoanPath>>,
-    gen_scope: ast::NodeId,
-    kill_scope: ast::NodeId,
+
+    /// gen_scope indicates where loan is introduced. Typically the
+    /// loan is introduced at the point of the borrow, but in some
+    /// cases, notably method arguments, the loan may be introduced
+    /// only later, once it comes into scope.  See also
+    /// `GatherLoanCtxt::compute_gen_scope`.
+    gen_scope: region::CodeExtent,
+
+    /// kill_scope indicates when the loan goes out of scope.  This is
+    /// either when the lifetime expires or when the local variable
+    /// which roots the loan-path goes out of scope, whichever happens
+    /// faster. See also `GatherLoanCtxt::compute_kill_scope`.
+    kill_scope: region::CodeExtent,
     span: Span,
     cause: euv::LoanCause,
 }
@@ -282,20 +300,25 @@ pub fn closure_to_block(closure_id: ast::NodeId,
     match tcx.map.get(closure_id) {
         ast_map::NodeExpr(expr) => match expr.node {
             ast::ExprProc(_, ref block) |
-            ast::ExprFnBlock(_, _, ref block) |
-            ast::ExprUnboxedFn(_, _, _, ref block) => { block.id }
-            _ => panic!("encountered non-closure id: {}", closure_id)
+            ast::ExprClosure(_, _, _, ref block) => {
+                block.id
+            }
+            _ => {
+                panic!("encountered non-closure id: {}", closure_id)
+            }
         },
         _ => panic!("encountered non-expr id: {}", closure_id)
     }
 }
 
 impl LoanPath {
-    pub fn kill_scope(&self, tcx: &ty::ctxt) -> ast::NodeId {
+    pub fn kill_scope(&self, tcx: &ty::ctxt) -> region::CodeExtent {
         match *self {
             LpVar(local_id) => tcx.region_maps.var_scope(local_id),
-            LpUpvar(upvar_id) =>
-                closure_to_block(upvar_id.closure_expr_id, tcx),
+            LpUpvar(upvar_id) => {
+                let block_id = closure_to_block(upvar_id.closure_expr_id, tcx);
+                region::CodeExtent::from_node_id(block_id)
+            }
             LpExtend(ref base, _, _) => base.kill_scope(tcx),
         }
     }
@@ -399,10 +422,10 @@ pub enum bckerr_code {
 // Combination of an error code and the categorization of the expression
 // that caused it
 #[deriving(PartialEq)]
-pub struct BckError {
+pub struct BckError<'tcx> {
     span: Span,
     cause: euv::LoanCause,
-    cmt: mc::cmt,
+    cmt: mc::cmt<'tcx>,
     code: bckerr_code
 }
 
@@ -430,7 +453,7 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
         mc::MemCategorizationContext::new(self.tcx)
     }
 
-    pub fn cat_expr(&self, expr: &ast::Expr) -> mc::cmt {
+    pub fn cat_expr(&self, expr: &ast::Expr) -> mc::cmt<'tcx> {
         match self.mc().cat_expr(expr) {
             Ok(c) => c,
             Err(()) => {
@@ -439,7 +462,7 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
         }
     }
 
-    pub fn report(&self, err: BckError) {
+    pub fn report(&self, err: BckError<'tcx>) {
         self.span_err(
             err.span,
             self.bckerr_to_string(&err).as_slice());
@@ -580,9 +603,10 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
             }
         }
 
-        fn move_suggestion(tcx: &ty::ctxt, ty: ty::t, default_msgs: (&'static str, &'static str))
-                          -> (&'static str, &'static str) {
-            match ty::get(ty).sty {
+        fn move_suggestion<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>,
+                                 default_msgs: (&'static str, &'static str))
+                                 -> (&'static str, &'static str) {
+            match ty.sty {
                 ty::ty_closure(box ty::ClosureTy {
                         store: ty::RegionTraitStore(..),
                         ..
@@ -625,7 +649,7 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
         self.tcx.sess.span_help(s, m);
     }
 
-    pub fn bckerr_to_string(&self, err: &BckError) -> String {
+    pub fn bckerr_to_string(&self, err: &BckError<'tcx>) -> String {
         match err.code {
             err_mutbl => {
                 let descr = match err.cmt.note {
@@ -760,7 +784,7 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
         }
     }
 
-    pub fn note_and_explain_bckerr(&self, err: BckError) {
+    pub fn note_and_explain_bckerr(&self, err: BckError<'tcx>) {
         let code = err.code;
         match code {
             err_mutbl(..) => {
@@ -887,15 +911,15 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
         result
     }
 
-    pub fn cmt_to_string(&self, cmt: &mc::cmt_) -> String {
+    pub fn cmt_to_string(&self, cmt: &mc::cmt_<'tcx>) -> String {
         self.mc().cmt_to_string(cmt)
     }
 }
 
 fn is_statement_scope(tcx: &ty::ctxt, region: ty::Region) -> bool {
      match region {
-         ty::ReScope(node_id) => {
-             match tcx.map.find(node_id) {
+         ty::ReScope(scope) => {
+             match tcx.map.find(scope.node_id()) {
                  Some(ast_map::NodeStmt(_)) => true,
                  _ => false
              }
@@ -918,7 +942,7 @@ impl DataFlowOperator for LoanDataFlowOperator {
     }
 }
 
-impl Repr for Loan {
+impl<'tcx> Repr<'tcx> for Loan {
     fn repr(&self, tcx: &ty::ctxt) -> String {
         format!("Loan_{}({}, {}, {}-{}, {})",
                  self.index,
@@ -930,7 +954,7 @@ impl Repr for Loan {
     }
 }
 
-impl Repr for LoanPath {
+impl<'tcx> Repr<'tcx> for LoanPath {
     fn repr(&self, tcx: &ty::ctxt) -> String {
         match self {
             &LpVar(id) => {

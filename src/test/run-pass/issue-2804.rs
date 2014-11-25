@@ -46,11 +46,11 @@ fn add_interface(_store: int, managed_ip: String, data: json::Json) -> (String, 
                               "".to_string());
             let label = format!("{}-{}", managed_ip, name);
 
-            (label, bool_value(false))
+            (label, object::bool_value(false))
         }
         _ => {
             println!("Expected dict for {} interfaces, found {}", managed_ip, data);
-            ("gnos:missing-interface".to_string(), bool_value(true))
+            ("gnos:missing-interface".to_string(), object::bool_value(true))
         }
     }
 }
@@ -59,7 +59,7 @@ fn add_interfaces(store: int, managed_ip: String, device: HashMap<String, json::
 -> Vec<(String, object)> {
     match device["interfaces".to_string()]
     {
-        json::List(ref interfaces) =>
+        json::Array(ref interfaces) =>
         {
           interfaces.iter().map(|interface| {
                 add_interface(store, managed_ip.clone(), (*interface).clone())

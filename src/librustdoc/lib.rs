@@ -16,23 +16,26 @@
 #![crate_type = "rlib"]
 
 #![allow(unknown_features)]
-#![feature(globs, struct_variant, macro_rules, phase, slicing_syntax, tuple_indexing)]
+#![feature(globs, macro_rules, phase, slicing_syntax, tuple_indexing)]
 
 extern crate arena;
 extern crate getopts;
 extern crate libc;
 extern crate rustc;
+extern crate rustc_trans;
 extern crate serialize;
 extern crate syntax;
 extern crate "test" as testing;
 #[phase(plugin, link)] extern crate log;
 
-use std::io;
-use std::io::{File, MemWriter};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::hash_map::{Occupied, Vacant};
-use serialize::{json, Decodable, Encodable};
+use std::io::File;
+use std::io;
+use std::rc::Rc;
 use externalfiles::ExternalHtml;
+use serialize::{json, Decodable, Encodable};
 
 // reexported from `clean` so it can be easily updated with the mod itself
 pub use clean::SCHEMA_VERSION;
@@ -83,9 +86,15 @@ static DEFAULT_PASSES: &'static [&'static str] = &[
     "unindent-comments",
 ];
 
-local_data_key!(pub analysiskey: core::CrateAnalysis)
+thread_local!(pub static ANALYSISKEY: Rc<RefCell<Option<core::CrateAnalysis>>> = {
+    Rc::new(RefCell::new(None))
+})
 
-type Output = (clean::Crate, Vec<plugins::PluginJson> );
+struct Output {
+    krate: clean::Crate,
+    json_plugins: Vec<plugins::PluginJson>,
+    passes: Vec<String>,
+}
 
 pub fn main() {
     std::os::set_exit_status(main_args(std::os::args().as_slice()));
@@ -155,7 +164,7 @@ pub fn main_args(args: &[String]) -> int {
         usage(args[0].as_slice());
         return 0;
     } else if matches.opt_present("version") {
-        match rustc::driver::version("rustdoc", &matches) {
+        match rustc_trans::driver::version("rustdoc", &matches) {
             Some(err) => {
                 println!("{}", err);
                 return 1
@@ -167,11 +176,11 @@ pub fn main_args(args: &[String]) -> int {
     if matches.opt_strs("passes").as_slice() == &["list".to_string()] {
         println!("Available passes for running rustdoc:");
         for &(name, _, description) in PASSES.iter() {
-            println!("{:>20s} - {}", name, description);
+            println!("{:>20} - {}", name, description);
         }
         println!("{}", "\nDefault passes for rustdoc:"); // FIXME: #9970
         for &name in DEFAULT_PASSES.iter() {
-            println!("{:>20s}", name);
+            println!("{:>20}", name);
         }
         return 0;
     }
@@ -228,24 +237,26 @@ pub fn main_args(args: &[String]) -> int {
         (false, false) => {}
     }
 
-    let (krate, res) = match acquire_input(input, externs, &matches) {
-        Ok(pair) => pair,
+    let out = match acquire_input(input, externs, &matches) {
+        Ok(out) => out,
         Err(s) => {
             println!("input error: {}", s);
             return 1;
         }
     };
-
+    let Output { krate, json_plugins, passes, } = out;
     info!("going to format");
     match matches.opt_str("w").as_ref().map(|s| s.as_slice()) {
         Some("html") | None => {
-            match html::render::run(krate, &external_html, output.unwrap_or(Path::new("doc"))) {
+            match html::render::run(krate, &external_html, output.unwrap_or(Path::new("doc")),
+                                    passes.into_iter().collect()) {
                 Ok(()) => {}
                 Err(e) => panic!("failed to generate documentation: {}", e),
             }
         }
         Some("json") => {
-            match json_output(krate, res, output.unwrap_or(Path::new("doc.json"))) {
+            match json_output(krate, json_plugins,
+                              output.unwrap_or(Path::new("doc.json"))) {
                 Ok(()) => {}
                 Err(e) => panic!("failed to write json: {}", e),
             }
@@ -331,7 +342,10 @@ fn rust_input(cratefile: &str, externs: core::Externs, matches: &getopts::Matche
         core::run_core(libs, cfgs, externs, &cr, triple)
     }).map_err(|_| "rustc failed").unwrap();
     info!("finished with rustc");
-    analysiskey.replace(Some(analysis));
+    let mut analysis = Some(analysis);
+    ANALYSISKEY.with(|s| {
+        *s.borrow_mut() = analysis.take();
+    });
 
     match matches.opt_str("crate-name") {
         Some(name) => krate.name = name,
@@ -396,7 +410,8 @@ fn rust_input(cratefile: &str, externs: core::Externs, matches: &getopts::Matche
 
     // Run everything!
     info!("Executing passes/plugins");
-    return pm.run_plugins(krate);
+    let (krate, json) = pm.run_plugins(krate);
+    return Output { krate: krate, json_plugins: json, passes: passes, };
 }
 
 /// This input format purely deserializes the json output file. No passes are
@@ -434,7 +449,7 @@ fn json_input(input: &str) -> Result<Output, String> {
             // FIXME: this should read from the "plugins" field, but currently
             //      Json doesn't implement decodable...
             let plugin_output = Vec::new();
-            Ok((krate, plugin_output))
+            Ok(Output { krate: krate, json_plugins: plugin_output, passes: Vec::new(), })
         }
         Ok(..) => {
             Err("malformed json input: expected an object at the \
@@ -467,12 +482,12 @@ fn json_output(krate: clean::Crate, res: Vec<plugins::PluginJson> ,
     // FIXME #8335: yuck, Rust -> str -> JSON round trip! No way to .encode
     // straight to the Rust JSON representation.
     let crate_json_str = {
-        let mut w = MemWriter::new();
+        let mut w = Vec::new();
         {
             let mut encoder = json::Encoder::new(&mut w as &mut io::Writer);
             krate.encode(&mut encoder).unwrap();
         }
-        String::from_utf8(w.unwrap()).unwrap()
+        String::from_utf8(w).unwrap()
     };
     let crate_json = match json::from_str(crate_json_str.as_slice()) {
         Ok(j) => j,

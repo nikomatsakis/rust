@@ -58,14 +58,17 @@ This `for` loop syntax can be applied to any iterator over any type.
 
 */
 
+pub use self::MinMaxResult::*;
+
 use clone::Clone;
 use cmp;
 use cmp::Ord;
 use mem;
 use num::{ToPrimitive, Int};
-use ops::Add;
+use ops::{Add, Deref};
 use option::{Option, Some, None};
 use uint;
+
 #[deprecated = "renamed to Extend"] pub use self::Extend as Extendable;
 
 /// Conversion from an `Iterator`
@@ -545,7 +548,9 @@ pub trait Iterator<A> {
         false
     }
 
-    /// Return the first element satisfying the specified predicate
+    /// Returns the first element satisfying the specified predicate.
+    ///
+    /// Does not consume the iterator past the first found element.
     #[inline]
     fn find(&mut self, predicate: |&A| -> bool) -> Option<A> {
         for x in *self {
@@ -1018,6 +1023,44 @@ impl<T: Clone> MinMaxResult<T> {
         }
     }
 }
+
+/// A trait for iterators that contain cloneable elements
+pub trait CloneIteratorExt<A> {
+    /// Creates an iterator that clones the elements it yields. Useful for converting an
+    /// Iterator<&T> to an Iterator<T>.
+    fn cloned(self) -> Cloned<Self>;
+}
+
+
+impl<A: Clone, D: Deref<A>, I: Iterator<D>> CloneIteratorExt<A> for I {
+    fn cloned(self) -> Cloned<I> {
+        Cloned { it: self }
+    }
+}
+
+/// An iterator that clones the elements of an underlying iterator
+pub struct Cloned<I> {
+    it: I,
+}
+
+impl<A: Clone, D: Deref<A>, I: Iterator<D>> Iterator<A> for Cloned<I> {
+    fn next(&mut self) -> Option<A> {
+        self.it.next().cloned()
+    }
+
+    fn size_hint(&self) -> (uint, Option<uint>) {
+        self.it.size_hint()
+    }
+}
+
+impl<A: Clone, D: Deref<A>, I: DoubleEndedIterator<D>>
+        DoubleEndedIterator<A> for Cloned<I> {
+    fn next_back(&mut self) -> Option<A> {
+        self.it.next_back().cloned()
+    }
+}
+
+impl<A: Clone, D: Deref<A>, I: ExactSize<D>> ExactSize<A> for Cloned<I> {}
 
 /// A trait for iterators that are cloneable.
 pub trait CloneableIterator {
