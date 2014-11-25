@@ -15,7 +15,7 @@
 use any;
 use cell::{Cell, Ref, RefMut};
 use iter::{Iterator, range};
-use kinds::{Copy, Sized};
+use kinds::{Copy, Sized, marker};
 use mem;
 use option::{Option, Some, None};
 use ops::Deref;
@@ -787,6 +787,24 @@ impl<T: Show> Show for [T] {
 impl Show for () {
     fn fmt(&self, f: &mut Formatter) -> Result {
         f.pad("()")
+    }
+}
+
+impl<T> Show for marker::CovariantType<T> {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        f.pad("CovariantType")
+    }
+}
+
+impl<T> Show for marker::ContravariantType<T> {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        f.pad("ContravariantType")
+    }
+}
+
+impl<T> Show for marker::InvariantType<T> {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        f.pad("InvariantType")
     }
 }
 
