@@ -50,14 +50,17 @@ pub trait ItemDecorator {
               push: |P<ast::Item>|);
 }
 
-impl ItemDecorator for fn(&mut ExtCtxt, Span, &ast::MetaItem, &ast::Item, |P<ast::Item>|) {
+pub struct ItemDecoratorFn(
+    fn(&mut ExtCtxt, Span, &ast::MetaItem, &ast::Item, |P<ast::Item>|));
+
+impl ItemDecorator for ItemDecoratorFn {
     fn expand(&self,
               ecx: &mut ExtCtxt,
               sp: Span,
               meta_item: &ast::MetaItem,
               item: &ast::Item,
               push: |P<ast::Item>|) {
-        (*self)(ecx, sp, meta_item, item, push)
+        (self.0)(ecx, sp, meta_item, item, push)
     }
 }
 
@@ -70,14 +73,17 @@ pub trait ItemModifier {
               -> P<ast::Item>;
 }
 
-impl ItemModifier for fn(&mut ExtCtxt, Span, &ast::MetaItem, P<ast::Item>) -> P<ast::Item> {
+pub struct ItemModifierFn(
+    fn(&mut ExtCtxt, Span, &ast::MetaItem, P<ast::Item>) -> P<ast::Item>);
+
+impl ItemModifier for ItemModifierFn {
     fn expand(&self,
               ecx: &mut ExtCtxt,
               span: Span,
               meta_item: &ast::MetaItem,
               item: P<ast::Item>)
               -> P<ast::Item> {
-        (*self)(ecx, span, meta_item, item)
+        (self.0)(ecx, span, meta_item, item)
     }
 }
 
@@ -112,8 +118,8 @@ pub trait IdentMacroExpander {
                    -> Box<MacResult+'cx>;
 }
 
-pub type IdentMacroExpanderFn =
-    for<'cx> fn(&'cx mut ExtCtxt, Span, ast::Ident, Vec<ast::TokenTree>) -> Box<MacResult+'cx>;
+pub struct IdentMacroExpanderFn(
+    for<'cx> fn(&'cx mut ExtCtxt, Span, ast::Ident, Vec<ast::TokenTree>) -> Box<MacResult+'cx>);
 
 impl IdentMacroExpander for IdentMacroExpanderFn {
     fn expand<'cx>(&self,
@@ -121,8 +127,9 @@ impl IdentMacroExpander for IdentMacroExpanderFn {
                    sp: Span,
                    ident: ast::Ident,
                    token_tree: Vec<ast::TokenTree> )
-                   -> Box<MacResult+'cx> {
-        (*self)(cx, sp, ident, token_tree)
+                   -> Box<MacResult+'cx>
+    {
+        (self.0)(cx, sp, ident, token_tree)
     }
 }
 
@@ -353,98 +360,101 @@ fn initial_syntax_expander_table(ecfg: &expand::ExpansionConfig) -> SyntaxEnv {
     }
 
     let mut syntax_expanders = SyntaxEnv::new();
-    syntax_expanders.insert(intern("macro_rules"),
-                            LetSyntaxTT(box ext::tt::macro_rules::add_new_extension, None));
-    syntax_expanders.insert(intern("fmt"),
-                            builtin_normal_expander(
-                                ext::fmt::expand_syntax_ext));
-    syntax_expanders.insert(intern("format_args"),
-                            builtin_normal_expander(
-                                ext::format::expand_format_args));
-    syntax_expanders.insert(intern("env"),
-                            builtin_normal_expander(
-                                    ext::env::expand_env));
-    syntax_expanders.insert(intern("option_env"),
-                            builtin_normal_expander(
-                                    ext::env::expand_option_env));
-    syntax_expanders.insert(intern("bytes"),
-                            builtin_normal_expander(
-                                    ext::bytes::expand_syntax_ext));
-    syntax_expanders.insert(intern("concat_idents"),
-                            builtin_normal_expander(
-                                    ext::concat_idents::expand_syntax_ext));
-    syntax_expanders.insert(intern("concat"),
-                            builtin_normal_expander(
-                                    ext::concat::expand_syntax_ext));
-    syntax_expanders.insert(intern("log_syntax"),
-                            builtin_normal_expander(
-                                    ext::log_syntax::expand_syntax_ext));
-    syntax_expanders.insert(intern("deriving"),
-                            Decorator(box ext::deriving::expand_meta_deriving));
+    syntax_expanders.insert(
+        intern("macro_rules"),
+        LetSyntaxTT(box IdentMacroExpanderFn(ext::tt::macro_rules::add_new_extension), None));
+    syntax_expanders.insert(
+        intern("fmt"),
+        builtin_normal_expander(ext::fmt::expand_syntax_ext));
+    syntax_expanders.insert(
+        intern("format_args"),
+        builtin_normal_expander(ext::format::expand_format_args));
+    syntax_expanders.insert(
+        intern("env"),
+        builtin_normal_expander(ext::env::expand_env));
+    syntax_expanders.insert(
+        intern("option_env"),
+        builtin_normal_expander(ext::env::expand_option_env));
+    syntax_expanders.insert(
+        intern("bytes"),
+        builtin_normal_expander(ext::bytes::expand_syntax_ext));
+    syntax_expanders.insert(
+        intern("concat_idents"),
+        builtin_normal_expander(ext::concat_idents::expand_syntax_ext));
+    syntax_expanders.insert(
+        intern("concat"),
+        builtin_normal_expander(ext::concat::expand_syntax_ext));
+    syntax_expanders.insert(
+        intern("log_syntax"),
+        builtin_normal_expander(ext::log_syntax::expand_syntax_ext));
+    syntax_expanders.insert(
+        intern("deriving"),
+        Decorator(box ItemDecoratorFn(ext::deriving::expand_meta_deriving)));
 
     if ecfg.enable_quotes {
         // Quasi-quoting expanders
-        syntax_expanders.insert(intern("quote_tokens"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_tokens));
-        syntax_expanders.insert(intern("quote_expr"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_expr));
-        syntax_expanders.insert(intern("quote_ty"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_ty));
-        syntax_expanders.insert(intern("quote_method"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_method));
-        syntax_expanders.insert(intern("quote_item"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_item));
-        syntax_expanders.insert(intern("quote_pat"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_pat));
-        syntax_expanders.insert(intern("quote_arm"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_arm));
-        syntax_expanders.insert(intern("quote_stmt"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_stmt));
+        syntax_expanders.insert(
+            intern("quote_tokens"),
+            builtin_normal_expander(ext::quote::expand_quote_tokens));
+        syntax_expanders.insert(
+            intern("quote_expr"),
+            builtin_normal_expander(ext::quote::expand_quote_expr));
+        syntax_expanders.insert(
+            intern("quote_ty"),
+            builtin_normal_expander(ext::quote::expand_quote_ty));
+        syntax_expanders.insert(
+            intern("quote_method"),
+            builtin_normal_expander(ext::quote::expand_quote_method));
+        syntax_expanders.insert(
+            intern("quote_item"),
+            builtin_normal_expander(ext::quote::expand_quote_item));
+        syntax_expanders.insert(
+            intern("quote_pat"),
+            builtin_normal_expander(ext::quote::expand_quote_pat));
+        syntax_expanders.insert(
+            intern("quote_arm"),
+            builtin_normal_expander(ext::quote::expand_quote_arm));
+        syntax_expanders.insert(
+            intern("quote_stmt"),
+            builtin_normal_expander(ext::quote::expand_quote_stmt));
     }
 
-    syntax_expanders.insert(intern("line"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_line));
-    syntax_expanders.insert(intern("column"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_column));
-    syntax_expanders.insert(intern("file"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_file));
-    syntax_expanders.insert(intern("stringify"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_stringify));
-    syntax_expanders.insert(intern("include"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_include));
-    syntax_expanders.insert(intern("include_str"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_include_str));
-    syntax_expanders.insert(intern("include_bin"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_include_bin));
-    syntax_expanders.insert(intern("module_path"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_mod));
-    syntax_expanders.insert(intern("asm"),
-                            builtin_normal_expander(
-                                    ext::asm::expand_asm));
-    syntax_expanders.insert(intern("cfg"),
-                            builtin_normal_expander(
-                                    ext::cfg::expand_cfg));
-    syntax_expanders.insert(intern("cfg_attr"),
-                            Modifier(box ext::cfg_attr::expand));
-    syntax_expanders.insert(intern("trace_macros"),
-                            builtin_normal_expander(
-                                    ext::trace_macros::expand_trace_macros));
+    syntax_expanders.insert(
+        intern("line"),
+        builtin_normal_expander(ext::source_util::expand_line));
+    syntax_expanders.insert(
+        intern("column"),
+        builtin_normal_expander(ext::source_util::expand_column));
+    syntax_expanders.insert(
+        intern("file"),
+        builtin_normal_expander(ext::source_util::expand_file));
+    syntax_expanders.insert(
+        intern("stringify"),
+        builtin_normal_expander(ext::source_util::expand_stringify));
+    syntax_expanders.insert(
+        intern("include"),
+        builtin_normal_expander(ext::source_util::expand_include));
+    syntax_expanders.insert(
+        intern("include_str"),
+        builtin_normal_expander(ext::source_util::expand_include_str));
+    syntax_expanders.insert(
+        intern("include_bin"),
+        builtin_normal_expander(ext::source_util::expand_include_bin));
+    syntax_expanders.insert(
+        intern("module_path"),
+        builtin_normal_expander(ext::source_util::expand_mod));
+    syntax_expanders.insert(
+        intern("asm"),
+        builtin_normal_expander(ext::asm::expand_asm));
+    syntax_expanders.insert(
+        intern("cfg"),
+        builtin_normal_expander(ext::cfg::expand_cfg));
+    syntax_expanders.insert(
+        intern("cfg_attr"),
+        Modifier(box ItemModifierFn(ext::cfg_attr::expand)));
+    syntax_expanders.insert(
+        intern("trace_macros"),
+        builtin_normal_expander(ext::trace_macros::expand_trace_macros));
     syntax_expanders
 }
 

@@ -326,6 +326,12 @@ mod imp {
         // *should* be the case that this loop always terminates because we
         // provide the guarantee that a TLS key cannot be set after it is
         // flagged for destruction.
+        #[cfg(not(stage0))]
+        static DTORS: os::StaticKey = os::StaticKey {
+            inner: os::INIT_INNER,
+            dtor: Some(run_dtors as unsafe extern "C" fn(*mut u8)),
+        };
+        #[cfg(stage0)]
         static DTORS: os::StaticKey = os::StaticKey {
             inner: os::INIT_INNER,
             dtor: Some(run_dtors),

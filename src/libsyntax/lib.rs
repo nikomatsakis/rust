@@ -24,7 +24,7 @@
 
 #![allow(unknown_features)]
 #![feature(if_let, macro_rules, globs, default_type_params, phase, slicing_syntax)]
-#![feature(quote, unsafe_destructor, import_shadowing)]
+#![feature(quote, unsafe_destructor, import_shadowing, tuple_indexing)]
 
 extern crate arena;
 extern crate fmt_macros;

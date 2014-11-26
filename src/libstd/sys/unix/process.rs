@@ -331,9 +331,11 @@ impl Process {
                 set_nonblocking(pipes[1], true).ok().unwrap();
                 WRITE_FD = pipes[1];
 
+                fn to_handler(f: extern "C" fn(i32)) -> extern "C" fn(i32) { f }
+
                 let mut old: c::sigaction = mem::zeroed();
                 let mut new: c::sigaction = mem::zeroed();
-                new.sa_handler = sigchld_handler;
+                new.sa_handler = to_handler(sigchld_handler);
                 new.sa_flags = c::SA_NOCLDSTOP;
                 assert_eq!(c::sigaction(c::SIGCHLD, &new, &mut old), 0);
                 (pipes[0], old)

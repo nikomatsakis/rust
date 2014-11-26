@@ -229,9 +229,10 @@ impl<'a> Iterator<char> for Decompositions<'a> {
         }
 
         let decomposer = match self.kind {
-            Canonical => unicode::char::decompose_canonical,
-            Compatible => unicode::char::decompose_compatible
+            Canonical => to_fn_pointer(unicode::char::decompose_canonical),
+            Compatible => to_fn_pointer(unicode::char::decompose_compatible),
         };
+        fn to_fn_pointer(f: fn(char, |char|)) -> fn(char, |char|) { f }
 
         if !self.sorted {
             for ch in self.iter {
