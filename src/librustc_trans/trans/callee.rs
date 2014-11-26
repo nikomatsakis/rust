@@ -157,7 +157,7 @@ fn trans<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, expr: &ast::Expr)
                 }
             }
             def::DefFn(did, _) if match expr_ty.sty {
-                ty::ty_bare_fn(ref f) => f.abi == synabi::RustIntrinsic,
+                ty::ty_bare_fn(_, ref f) => f.abi == synabi::RustIntrinsic,
                 _ => false
             } => {
                 let substs = node_id_substs(bcx, ExprId(ref_expr.id));
@@ -553,7 +553,7 @@ pub fn trans_call_inner<'a, 'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let mut bcx = callee.bcx;
 
     let (abi, ret_ty) = match callee_ty.sty {
-        ty::ty_bare_fn(ref f) => (f.abi, f.sig.output),
+        ty::ty_bare_fn(_, ref f) => (f.abi, f.sig.output),
         ty::ty_closure(ref f) => (f.abi, f.sig.output),
         _ => panic!("expected bare rust fn or closure in trans_call_inner")
     };

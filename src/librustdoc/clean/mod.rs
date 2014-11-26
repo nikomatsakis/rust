@@ -1338,7 +1338,7 @@ impl<'tcx> Clean<Type> for ty::Ty<'tcx> {
                 mutability: mt.mutbl.clean(cx),
                 type_: box mt.ty.clean(cx),
             },
-            ty::ty_bare_fn(ref fty) => BareFunction(box BareFunctionDecl {
+            ty::ty_bare_fn(_, ref fty) => BareFunction(box BareFunctionDecl {
                 fn_style: fty.fn_style,
                 generics: Generics {
                     lifetimes: Vec::new(),

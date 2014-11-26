@@ -431,7 +431,7 @@ impl<'tcx> TypeMap<'tcx> {
                                        &trait_data.principal.substs,
                                        &mut unique_type_id);
             },
-            ty::ty_bare_fn(ty::BareFnTy{ fn_style, abi, ref sig } ) => {
+            ty::ty_bare_fn(_, ty::BareFnTy{ fn_style, abi, ref sig } ) => {
                 if fn_style == ast::UnsafeFn {
                     unique_type_id.push_str("unsafe ");
                 }
@@ -2949,7 +2949,7 @@ fn type_metadata<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
                 }
             }
         }
-        ty::ty_bare_fn(ref barefnty) => {
+        ty::ty_bare_fn(_, ref barefnty) => {
             subroutine_type_metadata(cx, unique_type_id, &barefnty.sig, usage_site_span)
         }
         ty::ty_closure(ref closurety) => {
@@ -3761,7 +3761,7 @@ fn push_debuginfo_type_name<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
             push_item_name(cx, trait_data.principal.def_id, false, output);
             push_type_params(cx, &trait_data.principal.substs, output);
         },
-        ty::ty_bare_fn(ty::BareFnTy{ fn_style, abi, ref sig } ) => {
+        ty::ty_bare_fn(_, ty::BareFnTy{ fn_style, abi, ref sig } ) => {
             if fn_style == ast::UnsafeFn {
                 output.push_str("unsafe ");
             }

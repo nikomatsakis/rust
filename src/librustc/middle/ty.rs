@@ -1895,7 +1895,7 @@ impl FlagComputation {
                 self.add_tys(ts[]);
             }
 
-            &ty_bare_fn(ref f) => {
+            &ty_bare_fn(_, ref f) => {
                 self.add_fn_sig(&f.sig);
             }
 
@@ -2164,7 +2164,7 @@ pub fn maybe_walk_ty<'tcx>(ty: Ty<'tcx>, f: |Ty<'tcx>| -> bool) {
             }
         }
         ty_tup(ref ts) => { for tt in ts.iter() { maybe_walk_ty(*tt, |x| f(x)); } }
-        ty_bare_fn(ref ft) => {
+        ty_bare_fn(_, ref ft) => {
             for a in ft.sig.inputs.iter() { maybe_walk_ty(*a, |x| f(x)); }
             if let ty::FnConverging(output) = ft.sig.output {
                 maybe_walk_ty(output, f);
@@ -2660,7 +2660,7 @@ pub fn type_contents<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> TypeContents {
             // Scalar and unique types are sendable, and durable
             ty_infer(ty::SkolemizedIntTy(_)) |
             ty_bool | ty_int(_) | ty_uint(_) | ty_float(_) |
-            ty_bare_fn(_) | ty::ty_char => {
+            ty_bare_fn(..) | ty::ty_char => {
                 TC::None
             }
 
@@ -2969,7 +2969,7 @@ pub fn is_instantiable<'tcx>(cx: &ctxt<'tcx>, r_ty: Ty<'tcx>) -> bool {
             ty_uint(_) |
             ty_float(_) |
             ty_str |
-            ty_bare_fn(_) |
+            ty_bare_fn(..) |
             ty_closure(_) |
             ty_infer(_) |
             ty_err |
@@ -3504,7 +3504,7 @@ pub fn node_id_item_substs<'tcx>(cx: &ctxt<'tcx>, id: ast::NodeId) -> ItemSubsts
 
 pub fn fn_is_variadic(fty: Ty) -> bool {
     match fty.sty {
-        ty_bare_fn(ref f) => f.sig.variadic,
+        ty_bare_fn(_, ref f) => f.sig.variadic,
         ty_closure(ref f) => f.sig.variadic,
         ref s => {
             panic!("fn_is_variadic() called on non-fn type: {}", s)
@@ -3514,7 +3514,7 @@ pub fn fn_is_variadic(fty: Ty) -> bool {
 
 pub fn ty_fn_sig<'tcx>(fty: Ty<'tcx>) -> &'tcx FnSig<'tcx> {
     match fty.sty {
-        ty_bare_fn(ref f) => &f.sig,
+        ty_bare_fn(_, ref f) => &f.sig,
         ty_closure(ref f) => &f.sig,
         ref s => {
             panic!("ty_fn_sig() called on non-fn type: {}", s)
@@ -3525,7 +3525,7 @@ pub fn ty_fn_sig<'tcx>(fty: Ty<'tcx>) -> &'tcx FnSig<'tcx> {
 /// Returns the ABI of the given function.
 pub fn ty_fn_abi(fty: Ty) -> abi::Abi {
     match fty.sty {
-        ty_bare_fn(ref f) => f.abi,
+        ty_bare_fn(_, ref f) => f.abi,
         ty_closure(ref f) => f.abi,
         _ => panic!("ty_fn_abi() called on non-fn type"),
     }
@@ -3552,7 +3552,7 @@ pub fn ty_closure_store(fty: Ty) -> TraitStore {
 
 pub fn ty_fn_ret<'tcx>(fty: Ty<'tcx>) -> FnOutput<'tcx> {
     match fty.sty {
-        ty_bare_fn(ref f) => f.sig.output,
+        ty_bare_fn(_, ref f) => f.sig.output,
         ty_closure(ref f) => f.sig.output,
         ref s => {
             panic!("ty_fn_ret() called on non-fn type: {}", s)
@@ -3562,7 +3562,7 @@ pub fn ty_fn_ret<'tcx>(fty: Ty<'tcx>) -> FnOutput<'tcx> {
 
 pub fn is_fn_ty(fty: Ty) -> bool {
     match fty.sty {
-        ty_bare_fn(_) => true,
+        ty_bare_fn(..) => true,
         ty_closure(_) => true,
         _ => false
     }
@@ -5858,7 +5858,7 @@ pub fn accumulate_lifetimes_in_type(accumulator: &mut Vec<ty::Region>,
             ty_str |
             ty_vec(_, _) |
             ty_ptr(_) |
-            ty_bare_fn(_) |
+            ty_bare_fn(..) |
             ty_tup(_) |
             ty_param(_) |
             ty_infer(_) |

@@ -1187,7 +1187,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             ty::ty_int(_) |
             ty::ty_bool |
             ty::ty_float(_) |
-            ty::ty_bare_fn(_) |
+            ty::ty_bare_fn(..) |
             ty::ty_char => {
                 // safe for everything
                 Ok(If(Vec::new()))
