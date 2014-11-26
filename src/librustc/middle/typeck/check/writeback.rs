@@ -13,7 +13,6 @@
 // substitutions.
 use self::ResolveReason::*;
 
-use middle::def;
 use middle::pat_util;
 use middle::ty::{mod, Ty};
 use middle::ty_fold::{TypeFolder,TypeFoldable};
@@ -271,25 +270,12 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
             Some(adjustment) => {
                 let adj_object = ty::adjust_is_object(&adjustment);
                 let resolved_adjustment = match adjustment {
-                    ty::AdjustAddEnv(store) => {
-                        // FIXME(eddyb) #2190 Allow only statically resolved
-                        // bare functions to coerce to a closure to avoid
-                        // constructing (slower) indirect call wrappers.
-                        match self.tcx().def_map.borrow().get(&id) {
-                            Some(&def::DefFn(..)) |
-                            Some(&def::DefStaticMethod(..)) |
-                            Some(&def::DefVariant(..)) |
-                            Some(&def::DefStruct(_)) => {
-                            }
-                            _ => {
-                                span_err!(self.tcx().sess, reason.span(self.tcx()), E0100,
-                                    "cannot coerce non-statically resolved bare fn to closure");
-                                span_help!(self.tcx().sess, reason.span(self.tcx()),
-                                    "consider embedding the function in a closure");
-                            }
-                        }
+                    ty::AdjustAddEnv(def_id, store) => {
+                        ty::AdjustAddEnv(def_id, self.resolve(&store, reason))
+                    }
 
-                        ty::AdjustAddEnv(self.resolve(&store, reason))
+                    ty::AdjustReifyFnPointer(def_id) => {
+                        ty::AdjustReifyFnPointer(def_id)
                     }
 
                     ty::AdjustDerefRef(adj) => {

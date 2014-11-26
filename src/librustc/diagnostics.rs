@@ -99,7 +99,6 @@ register_diagnostics!(
     E0092,
     E0093,
     E0094,
-    E0100,
     E0101,
     E0102,
     E0103,

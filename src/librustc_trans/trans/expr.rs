@@ -48,7 +48,7 @@ use trans::cleanup::{mod, CleanupMethods};
 use trans::common::*;
 use trans::datum::*;
 use middle::ty::{mod, struct_fields, tup_fields};
-use middle::ty::{AdjustDerefRef, AdjustAddEnv, AutoUnsafe, AutoPtr, Ty};
+use middle::ty::{AdjustDerefRef, AdjustReifyFnPointer, AdjustAddEnv, AutoUnsafe, AutoPtr, Ty};
 use middle::typeck::{mod, MethodCall};
 use util::common::indenter;
 use util::ppaux::Repr;
@@ -169,8 +169,9 @@ fn apply_adjustments<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
            datum.to_string(bcx.ccx()),
            adjustment.repr(bcx.tcx()));
     match adjustment {
-        AdjustAddEnv(..) => {
-            datum = unpack_datum!(bcx, add_env(bcx, expr, datum));
+        AdjustAddEnv(def_id, _) => {
+            datum = unpack_datum!(bcx, add_env(bcx, def_id, expr, datum));
+        }
         }
         AdjustDerefRef(ref adj) => {
             let (autoderefs, use_autoref) = match adj.autoref {
@@ -451,6 +452,7 @@ fn apply_adjustments<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     }
 
     fn add_env<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+                           def_id: ast::DefId,
                            expr: &ast::Expr,
                            datum: Datum<'tcx, Expr>)
                            -> DatumBlock<'blk, 'tcx, Expr> {
@@ -462,8 +464,7 @@ fn apply_adjustments<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 
         let closure_ty = expr_ty_adjusted(bcx, expr);
         let fn_ptr = datum.to_llscalarish(bcx);
-        let def = ty::resolve_expr(bcx.tcx(), expr);
-        closure::make_closure_from_bare_fn(bcx, closure_ty, def, fn_ptr)
+        closure::make_closure_from_bare_fn(bcx, closure_ty, def_id, fn_ptr)
     }
 }
 

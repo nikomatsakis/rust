@@ -501,8 +501,8 @@ impl<'f, 'tcx> Coerce<'f, 'tcx> {
                b.repr(self.tcx()));
 
         match *sty_a {
-            ty::ty_bare_fn(ref f) => {
-                self.coerce_from_bare_fn(a, f, b)
+            ty::ty_bare_fn(Some(a_def_id), ref f) => {
+                self.coerce_from_fn_item(a, a_def_id, f, b)
             }
             _ => {
                 self.subtype(a, b)
@@ -510,32 +510,46 @@ impl<'f, 'tcx> Coerce<'f, 'tcx> {
         }
     }
 
-    ///  Attempts to coerce from a bare Rust function (`extern "Rust" fn`) into a closure or a
-    ///  `proc`.
-    fn coerce_from_bare_fn(&self, a: Ty<'tcx>, fn_ty_a: &ty::BareFnTy<'tcx>, b: Ty<'tcx>)
+    fn coerce_from_fn_item(&self,
+                           a: Ty<'tcx>,
+                           fn_def_id_a: ast::DefId,
+                           fn_ty_a: &ty::BareFnTy<'tcx>,
+                           b: Ty<'tcx>)
                            -> CoerceResult<'tcx> {
+        /*!
+         * Attempts to coerce from the type of a Rust function item
+         * into a closure or a `proc`.
+         */
+
         self.unpack_actual_value(b, |sty_b| {
-
             debug!("coerce_from_bare_fn(a={}, b={})",
-                   a.repr(self.get_ref().infcx.tcx), b.repr(self.get_ref().infcx.tcx));
+                   a.repr(self.tcx()), b.repr(self.tcx()));
 
-            if fn_ty_a.abi != abi::Rust || fn_ty_a.fn_style != ast::NormalFn {
-                return self.subtype(a, b);
+            match *sty_b {
+                ty::ty_closure(ref f) => {
+                    if fn_ty_a.abi != abi::Rust || fn_ty_a.fn_style != ast::NormalFn {
+                        return self.subtype(a, b);
+                    }
+
+                    let fn_ty_b = (*f).clone();
+                    let adj = ty::AdjustAddEnv(fn_def_id_a, fn_ty_b.store);
+                    let a_closure = ty::mk_closure(self.tcx(),
+                                                   ty::ClosureTy {
+                                                       sig: fn_ty_a.sig.clone(),
+                                                       .. *fn_ty_b
+                                                   });
+                    try!(self.subtype(a_closure, b));
+                    Ok(Some(adj))
+                }
+                ty::ty_bare_fn(None, _) => {
+                    let a_fn_pointer = ty::mk_bare_fn(self.tcx(), None, (*fn_ty_a).clone());
+                    try!(self.subtype(a_fn_pointer, b));
+                    Ok(Some(ty::AdjustReifyFnPointer(fn_def_id_a)))
+                }
+                _ => {
+                    return self.subtype(a, b)
+                }
             }
-
-            let fn_ty_b = match *sty_b {
-                ty::ty_closure(ref f) => (*f).clone(),
-                _ => return self.subtype(a, b)
-            };
-
-            let adj = ty::AdjustAddEnv(fn_ty_b.store);
-            let a_closure = ty::mk_closure(self.get_ref().infcx.tcx,
-                                           ty::ClosureTy {
-                                                sig: fn_ty_a.sig.clone(),
-                                                .. *fn_ty_b
-                                           });
-            try!(self.subtype(a_closure, b));
-            Ok(Some(adj))
         })
     }
 
