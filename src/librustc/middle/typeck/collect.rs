@@ -1744,6 +1744,8 @@ fn ty_generics_for_fn_or_method<'tcx,AC>(
 // Add the Sized bound, unless the type parameter is marked as `Sized?`.
 fn add_unsized_bound<'tcx,AC>(this: &AC,
                               ty_generics: &mut ty::Generics,
+                              space: subst::ParamSpace,
+                              param_ty: ty::t,
                               unbound: &Option<ast::TyParamBound>,
                               desc: &str,
                               span: Span)
@@ -1777,7 +1779,7 @@ fn add_unsized_bound<'tcx,AC>(this: &AC,
             }
         }
         _ if kind_id.is_ok() => {
-            ty::try_add_builtin_trait(this.tcx(), kind_id.unwrap(), ty_generics);
+            ty::try_add_builtin_trait(this.tcx(), space, param_ty, kind_id.unwrap(), ty_generics);
         }
         // No lang item for Sized, so we can't add it as a bound.
         _ => {}
@@ -1965,8 +1967,8 @@ fn ty_generics<'tcx,AC>(this: &AC,
         // Add bounds to the predicate list.
         let param_ty = ty::mk_param(this.tcx(), space, i, local_def(param.id));
         push_type_predicates(this, &mut result, space, param_ty, param.bounds.as_slice());
-
-        add_unsized_bound(this, &mut result, &param.unbound, "type parameter", param.span);
+        add_unsized_bound(this, &mut result, space, param_ty,
+                          &param.unbound, "type parameter", param.span);
     }
 
     // Append the associated types to the result.
@@ -1995,6 +1997,8 @@ fn ty_generics<'tcx,AC>(this: &AC,
             }
         }
     }
+
+    debug!("ty_generics() result={}", result.repr(this.tcx()));
 
     return result;
 
@@ -2185,14 +2189,16 @@ fn ty_generics<'tcx,AC>(this: &AC,
 //     // param_bounds;
 // }
 
-fn add_self_bounds<'tcx,AC>(this: &AC,
-                               name_of_bounded_thing: ast::Name,
-                               ty_generics: &mut ty::Generics,
-                               self_ty: ty::t,
-                               self_bounds: &OwnedSlice<ast::TyParamBound>,
-                               unbound: &Option<ast::TyParamBound>,
-                               span: Span)
-                               where AC: AstConv<'tcx> {
+fn add_self_bounds<'tcx,AC>(
+    this: &AC,
+    name_of_bounded_thing: ast::Name,
+    ty_generics: &mut ty::Generics,
+    self_ty: ty::t,
+    self_bounds: &OwnedSlice<ast::TyParamBound>,
+    unbound: &Option<ast::TyParamBound>,
+    span: Span)
+    where AC: AstConv<'tcx>
+{
 
     // FIXME: @jroesch I should unify this code with push_type_predicates in someway.
     for bound in self_bounds.iter() {
@@ -2210,7 +2216,8 @@ fn add_self_bounds<'tcx,AC>(this: &AC,
         ty_generics.predicates.push(subst::SelfSpace, predicate);
     }
 
-    add_unsized_bound(this, ty_generics, unbound, "type parameter", span);
+    add_unsized_bound(this, ty_generics, subst::SelfSpace, self_ty,
+                      unbound, "type parameter", span);
 
     let mut trait_refs = Vec::new();
 

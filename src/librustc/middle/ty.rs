@@ -4249,6 +4249,8 @@ pub fn trait_ref_to_def_id(tcx: &ctxt, tr: &ast::TraitRef) -> ast::DefId {
 
 pub fn try_add_builtin_trait(
     tcx: &ctxt,
+    space: subst::ParamSpace,
+    param_ty: ty::t,
     trait_def_id: ast::DefId,
     generics: &mut ty::Generics)
     -> bool
@@ -4261,9 +4263,8 @@ pub fn try_add_builtin_trait(
     // FIXME: @jroesch refactor this code at some point.
     match tcx.lang_items.to_builtin_kind(trait_def_id) {
         Some(bound) => {
-          let self_ty = ty::mk_self_type(tcx, trait_def_id);
-          let trait_ref = traits::trait_ref_for_builtin_bound(tcx, bound, self_ty);
-          generics.predicates.push(subst::SelfSpace, ty::TraitPredicate(trait_ref.unwrap()));
+          let trait_ref = traits::trait_ref_for_builtin_bound(tcx, bound, param_ty);
+          generics.predicates.push(space, ty::TraitPredicate(trait_ref.unwrap()));
           true
         }
         None => false

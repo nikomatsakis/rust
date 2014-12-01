@@ -703,10 +703,9 @@ impl Repr for ty::ParamBounds {
 impl Repr for ty::TraitRef {
     fn repr(&self, tcx: &ctxt) -> String {
         let base = ty::item_path_str(tcx, self.def_id);
-        let trait_def = ty::lookup_trait_def(tcx, self.def_id);
-        format!("<{} as {}>",
-                self.substs.self_ty().repr(tcx),
-                parameterized(tcx, base.as_slice(), &self.substs, &trait_def.generics))
+        format!("TraitRef({},{})",
+                self.def_id.repr(tcx),
+                self.substs.repr(tcx))
     }
 }
 
@@ -866,9 +865,10 @@ impl Repr for ty::Polytype {
 
 impl Repr for ty::Generics {
     fn repr(&self, tcx: &ctxt) -> String {
-        format!("Generics(types: {}, regions: {})",
+        format!("Generics(types={}, regions={}, predicates={})",
                 self.types.repr(tcx),
-                self.regions.repr(tcx))
+                self.regions.repr(tcx),
+                self.predicates.repr(tcx))
     }
 }
 

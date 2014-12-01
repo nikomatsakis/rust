@@ -1998,6 +1998,8 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                         impl_substs: &Substs)
                         -> Vec<PredicateObligation>
     {
+        debug!("impl_obligations: impl_def_id={}", impl_def_id.repr(self.tcx()));
+
         let impl_generics = ty::lookup_item_type(self.tcx(),
                                                  impl_def_id).generics;
         util::obligations_for_generics(self.tcx(), cause, recursion_depth,
