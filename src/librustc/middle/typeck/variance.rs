@@ -625,7 +625,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for ConstraintContext<'a, 'tcx> {
 
             ast::ItemTrait(..) => {
                 let trait_def = ty::lookup_trait_def(tcx, did);
-                self.add_constraints_from_generics(&trait_def.generics);
+                self.add_constraints_from_generics(&trait_def.generics, &[SelfSpace]);
                 self.add_constraints_from_param_bounds(ty::mk_self_type(tcx, did),
                                                        &trait_def.bounds);
 
@@ -633,7 +633,8 @@ impl<'a, 'tcx, 'v> Visitor<'v> for ConstraintContext<'a, 'tcx> {
                 for trait_item in trait_items.iter() {
                     match *trait_item {
                         ty::MethodTraitItem(ref method) => {
-                            self.add_constraints_from_generics(&method.generics);
+                            self.add_constraints_from_generics(&method.generics,
+                                                               &ParamSpace::all());
                             self.add_constraints_from_sig(&method.fty.sig,
                                                           self.covariant);
                         }
@@ -986,18 +987,21 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
     }
 
     fn add_constraints_from_generics(&mut self,
-                                     generics: &ty::Generics) {
+                                     generics: &ty::Generics,
+                                     spaces: &[subst::ParamSpace]) {
         debug!("add_constraints_from_generics({})",
                generics.repr(self.tcx()));
 
-        for type_def in generics.types.iter() {
-            let param_ty = ty::mk_param_from_def(self.tcx(), type_def);
-            self.add_constraints_from_param_bounds(param_ty, &type_def.bounds);
-        }
+        for &space in spaces.iter() {
+            for type_def in generics.types.get_slice(space).iter() {
+                let param_ty = ty::mk_param_from_def(self.tcx(), type_def);
+                self.add_constraints_from_param_bounds(param_ty, &type_def.bounds);
+            }
 
-        for region_def in generics.regions.iter() {
-            for bound in region_def.bounds.iter() {
-                self.add_constraints_from_region(*bound, self.contravariant);
+            for region_def in generics.regions.get_slice(space).iter() {
+                for bound in region_def.bounds.iter() {
+                    self.add_constraints_from_region(*bound, self.contravariant);
+                }
             }
         }
     }
