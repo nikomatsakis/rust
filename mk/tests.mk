@@ -412,7 +412,8 @@ $(3)/stage$(1)/test/$(4)test-$(2)$$(X_$(2)): \
 		$$(CRATEFILE_$(4)) \
 		$$(TESTDEP_$(1)_$(2)_$(3)_$(4))
 	@$$(call E, rustc: $$@)
-	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test \
+	$(Q)CFG_LLVM_LINKAGE_FILE=$$(LLVM_LINKAGE_PATH_$(3)) \
+	    $$(subst @,,$$(STAGE$(1)_T_$(2)_H_$(3))) -o $$@ $$< --test \
 		-L "$$(RT_OUTPUT_DIR_$(2))" \
 		-L "$$(LLVM_LIBDIR_$(2))" \
 		$$(RUSTFLAGS_$(4))
@@ -597,7 +598,7 @@ CTEST_DISABLE_debuginfo-lldb = "lldb tests are only run on darwin"
 endif
 
 ifeq ($(CFG_OSTYPE),apple-darwin)
-CTEST_DISABLE_debuginfo-gdb = "gdb on darwing needs root"
+CTEST_DISABLE_debuginfo-gdb = "gdb on darwin needs root"
 endif
 
 # CTEST_DISABLE_NONSELFHOST_$(TEST_GROUP), if set, will cause that
@@ -890,7 +891,8 @@ endif
 ifeq ($(2),$$(CFG_BUILD))
 $$(call TEST_OK_FILE,$(1),$(2),$(3),doc-crate-$(4)): $$(CRATEDOCTESTDEP_$(1)_$(2)_$(3)_$(4))
 	@$$(call E, run doc-crate-$(4) [$(2)])
-	$$(Q)$$(RUSTDOC_$(1)_T_$(2)_H_$(3)) --test --cfg dox \
+	$$(Q)CFG_LLVM_LINKAGE_FILE=$$(LLVM_LINKAGE_PATH_$(3)) \
+	    $$(RUSTDOC_$(1)_T_$(2)_H_$(3)) --test --cfg dox \
 	    	$$(CRATEFILE_$(4)) --test-args "$$(TESTARGS)" && touch $$@
 else
 $$(call TEST_OK_FILE,$(1),$(2),$(3),doc-crate-$(4)):

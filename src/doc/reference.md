@@ -777,13 +777,8 @@ metadata that influences the behavior of the compiler.
 
 ```{.rust}
 # #![allow(unused_attribute)]
-// Crate ID
-#![crate_id = "projx#2.5"]
-
-// Additional metadata attributes
-#![desc = "Project X"]
-#![license = "BSD"]
-#![comment = "This is a comment on Project X."]
+// Crate name
+#![crate_name = "projx"]
 
 // Specify the output type
 #![crate_type = "lib"]
@@ -1689,7 +1684,20 @@ methods in such an implementation can only be used as direct calls on the
 values of the type that the implementation targets. In such an implementation,
 the trait type and `for` after `impl` are omitted. Such implementations are
 limited to nominal types (enums, structs), and the implementation must appear
-in the same module or a sub-module as the `self` type.
+in the same module or a sub-module as the `self` type:
+
+```
+struct Point {x: int, y: int}
+
+impl Point {
+    fn log(&self) {
+        println!("Point is at ({}, {})", self.x, self.y);
+    }
+}
+
+let my_point = Point {x: 10, y:11};
+my_point.log();
+```
 
 When a trait _is_ specified in an `impl`, all methods declared as part of the
 trait must be implemented, with matching types and type parameter counts.
@@ -1948,7 +1956,7 @@ An example of attributes:
 
 ```{.rust}
 // General metadata applied to the enclosing module or crate.
-#![license = "BSD"]
+#![crate_type = "lib"]
 
 // A function marked as a unit test
 #[test]

@@ -651,7 +651,7 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
                     typ: &ast::Ty,
                     impl_items: &Vec<ast::ImplItem>) {
         match typ.node {
-            ast::TyPath(ref path, _, id) => {
+            ast::TyPath(ref path, id) => {
                 match self.lookup_type_ref(id) {
                     Some(id) => {
                         let sub_span = self.span.sub_span_for_type_name(path.span);
@@ -1073,16 +1073,12 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DxrVisitor<'l, 'tcx> {
     fn visit_generics(&mut self, generics: &ast::Generics) {
         for param in generics.ty_params.iter() {
             for bound in param.bounds.iter() {
-                match *bound {
-                    ast::TraitTyParamBound(ref trait_ref) => {
-                        self.process_trait_ref(&trait_ref.trait_ref, None);
-                    }
-                    _ => {}
+                if let ast::TraitTyParamBound(ref trait_ref) = *bound {
+                    self.process_trait_ref(&trait_ref.trait_ref, None);
                 }
             }
-            match param.default {
-                Some(ref ty) => self.visit_ty(&**ty),
-                None => {}
+            if let Some(ref ty) = param.default {
+                self.visit_ty(&**ty);
             }
         }
     }
@@ -1256,7 +1252,7 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DxrVisitor<'l, 'tcx> {
         }
 
         match t.node {
-            ast::TyPath(ref path, _, id) => {
+            ast::TyPath(ref path, id) => {
                 match self.lookup_type_ref(id) {
                     Some(id) => {
                         let sub_span = self.span.sub_span_for_type_name(t.span);

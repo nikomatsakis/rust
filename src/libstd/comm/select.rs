@@ -84,7 +84,7 @@ pub struct Handle<'rx, T:'rx> {
     next: *mut Handle<'static, ()>,
     prev: *mut Handle<'static, ()>,
     added: bool,
-    packet: &'rx Packet+'rx,
+    packet: &'rx (Packet+'rx),
 
     // due to our fun transmutes, we be sure to place this at the end. (nothing
     // previous relies on T)
@@ -325,9 +325,9 @@ impl Iterator<*mut Handle<'static, ()>> for Packets {
 #[cfg(test)]
 #[allow(unused_imports)]
 mod test {
-    use std::prelude::*;
+    use prelude::*;
 
-    use super::super::*;
+    use super::*;
 
     // Don't use the libstd version so we can pull in the right Select structure
     // (std::comm points at the wrong one)

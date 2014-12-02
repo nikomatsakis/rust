@@ -17,6 +17,7 @@
 // sure that all of these loans are honored.
 
 use middle::borrowck::*;
+use middle::borrowck::LoanPathKind::*;
 use middle::borrowck::move_data::MoveData;
 use middle::expr_use_visitor as euv;
 use middle::mem_categorization as mc;
@@ -35,10 +36,10 @@ mod restrictions;
 mod gather_moves;
 mod move_error;
 
-pub fn gather_loans_in_fn(bccx: &BorrowckCtxt,
-                          decl: &ast::FnDecl,
-                          body: &ast::Block)
-                          -> (Vec<Loan>, move_data::MoveData)
+pub fn gather_loans_in_fn<'a, 'tcx>(bccx: &BorrowckCtxt<'a, 'tcx>,
+                                    decl: &ast::FnDecl,
+                                    body: &ast::Block)
+                                    -> (Vec<Loan<'tcx>>, move_data::MoveData<'tcx>)
 {
     let mut glcx = GatherLoanCtxt {
         bccx: bccx,
@@ -60,9 +61,9 @@ pub fn gather_loans_in_fn(bccx: &BorrowckCtxt,
 
 struct GatherLoanCtxt<'a, 'tcx: 'a> {
     bccx: &'a BorrowckCtxt<'a, 'tcx>,
-    move_data: move_data::MoveData,
+    move_data: move_data::MoveData<'tcx>,
     move_error_collector: move_error::MoveErrorCollector<'tcx>,
-    all_loans: Vec<Loan>,
+    all_loans: Vec<Loan<'tcx>>,
     /// `item_ub` is used as an upper-bound on the lifetime whenever we
     /// ask for the scope of an expression categorized as an upvar.
     item_ub: region::CodeExtent,
@@ -84,6 +85,22 @@ impl<'a, 'tcx> euv::Delegate<'tcx> for GatherLoanCtxt<'a, 'tcx> {
                     consume_id, cmt, move_reason);
             }
             euv::Copy => { }
+        }
+    }
+
+    fn matched_pat(&mut self,
+                   matched_pat: &ast::Pat,
+                   cmt: mc::cmt<'tcx>,
+                   mode: euv::MatchMode) {
+        debug!("matched_pat(matched_pat={}, cmt={}, mode={})",
+               matched_pat.repr(self.tcx()),
+               cmt.repr(self.tcx()),
+               mode);
+
+        if let mc::cat_downcast(..) = cmt.cat {
+            gather_moves::gather_match_variant(
+                self.bccx, &self.move_data, &self.move_error_collector,
+                matched_pat, cmt, mode);
         }
     }
 
@@ -206,6 +223,9 @@ fn check_aliasability<'a, 'tcx>(bccx: &BorrowckCtxt<'a, 'tcx>,
 impl<'a, 'tcx> GatherLoanCtxt<'a, 'tcx> {
     pub fn tcx(&self) -> &'a ty::ctxt<'tcx> { self.bccx.tcx }
 
+    /// Guarantees that `addr_of(cmt)` will be valid for the duration of `static_scope_r`, or
+    /// reports an error.  This may entail taking out loans, which will be added to the
+    /// `req_loan_map`.
     fn guarantee_valid(&mut self,
                        borrow_id: ast::NodeId,
                        borrow_span: Span,
@@ -213,12 +233,6 @@ impl<'a, 'tcx> GatherLoanCtxt<'a, 'tcx> {
                        req_kind: ty::BorrowKind,
                        loan_region: ty::Region,
                        cause: euv::LoanCause) {
-        /*!
-         * Guarantees that `addr_of(cmt)` will be valid for the duration of
-         * `static_scope_r`, or reports an error.  This may entail taking
-         * out loans, which will be added to the `req_loan_map`.
-         */
-
         debug!("guarantee_valid(borrow_id={}, cmt={}, \
                 req_mutbl={}, loan_region={})",
                borrow_id,
@@ -395,11 +409,12 @@ impl<'a, 'tcx> GatherLoanCtxt<'a, 'tcx> {
         //! For mutable loans of content whose mutability derives
         //! from a local variable, mark the mutability decl as necessary.
 
-        match *loan_path {
+        match loan_path.kind {
             LpVar(local_id) |
             LpUpvar(ty::UpvarId{ var_id: local_id, closure_expr_id: _ }) => {
                 self.tcx().used_mut_nodes.borrow_mut().insert(local_id);
             }
+            LpDowncast(ref base, _) |
             LpExtend(ref base, mc::McInherited, _) |
             LpExtend(ref base, mc::McDeclared, _) => {
                 self.mark_loan_path_as_mutated(&**base);
@@ -426,7 +441,7 @@ impl<'a, 'tcx> GatherLoanCtxt<'a, 'tcx> {
         }
     }
 
-    pub fn compute_kill_scope(&self, loan_scope: region::CodeExtent, lp: &LoanPath)
+    pub fn compute_kill_scope(&self, loan_scope: region::CodeExtent, lp: &LoanPath<'tcx>)
                               -> region::CodeExtent {
         //! Determine when the loan restrictions go out of scope.
         //! This is either when the lifetime expires or when the
@@ -472,17 +487,14 @@ struct StaticInitializerCtxt<'a, 'tcx: 'a> {
 
 impl<'a, 'tcx, 'v> Visitor<'v> for StaticInitializerCtxt<'a, 'tcx> {
     fn visit_expr(&mut self, ex: &Expr) {
-        match ex.node {
-            ast::ExprAddrOf(mutbl, ref base) => {
-                let base_cmt = self.bccx.cat_expr(&**base);
-                let borrow_kind = ty::BorrowKind::from_mutbl(mutbl);
-                // Check that we don't allow borrows of unsafe static items.
-                if check_aliasability(self.bccx, ex.span, euv::AddrOf,
-                                      base_cmt, borrow_kind).is_err() {
-                    return; // reported an error, no sense in reporting more.
-                }
+        if let ast::ExprAddrOf(mutbl, ref base) = ex.node {
+            let base_cmt = self.bccx.cat_expr(&**base);
+            let borrow_kind = ty::BorrowKind::from_mutbl(mutbl);
+            // Check that we don't allow borrows of unsafe static items.
+            if check_aliasability(self.bccx, ex.span, euv::AddrOf,
+                                  base_cmt, borrow_kind).is_err() {
+                return; // reported an error, no sense in reporting more.
             }
-            _ => {}
         }
 
         visit::walk_expr(self, ex);

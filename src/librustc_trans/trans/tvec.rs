@@ -134,17 +134,13 @@ pub fn trans_fixed_vstore<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     };
 }
 
+/// &[...] allocates memory on the stack and writes the values into it, returning the vector (the
+/// caller must make the reference).  "..." is similar except that the memory can be statically
+/// allocated and we return a reference (strings are always by-ref).
 pub fn trans_slice_vec<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                    slice_expr: &ast::Expr,
                                    content_expr: &ast::Expr)
                                    -> DatumBlock<'blk, 'tcx, Expr> {
-    /*!
-     * &[...] allocates memory on the stack and writes the values into it,
-     * returning the vector (the caller must make the reference).  "..." is
-     * similar except that the memory can be statically allocated and we return
-     * a reference (strings are always by-ref).
-     */
-
     let fcx = bcx.fcx;
     let ccx = fcx.ccx;
     let mut bcx = bcx;
@@ -155,21 +151,15 @@ pub fn trans_slice_vec<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let vec_ty = node_id_type(bcx, slice_expr.id);
 
     // Handle the "..." case (returns a slice since strings are always unsized):
-    match content_expr.node {
-        ast::ExprLit(ref lit) => {
-            match lit.node {
-                ast::LitStr(ref s, _) => {
-                    let scratch = rvalue_scratch_datum(bcx, vec_ty, "");
-                    bcx = trans_lit_str(bcx,
-                                        content_expr,
-                                        s.clone(),
-                                        SaveIn(scratch.val));
-                    return DatumBlock::new(bcx, scratch.to_expr_datum());
-                }
-                _ => {}
-            }
+    if let ast::ExprLit(ref lit) = content_expr.node {
+        if let ast::LitStr(ref s, _) = lit.node {
+            let scratch = rvalue_scratch_datum(bcx, vec_ty, "");
+            bcx = trans_lit_str(bcx,
+                                content_expr,
+                                s.clone(),
+                                SaveIn(scratch.val));
+            return DatumBlock::new(bcx, scratch.to_expr_datum());
         }
-        _ => {}
     }
 
     // Handle the &[...] case:
@@ -208,17 +198,13 @@ pub fn trans_slice_vec<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     immediate_rvalue_bcx(bcx, llfixed, vec_ty).to_expr_datumblock()
 }
 
+/// Literal strings translate to slices into static memory.  This is different from
+/// trans_slice_vstore() above because it doesn't need to copy the content anywhere.
 pub fn trans_lit_str<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                  lit_expr: &ast::Expr,
                                  str_lit: InternedString,
                                  dest: Dest)
                                  -> Block<'blk, 'tcx> {
-    /*!
-     * Literal strings translate to slices into static memory.  This is
-     * different from trans_slice_vstore() above because it doesn't need to copy
-     * the content anywhere.
-     */
-
     debug!("trans_lit_str(lit_expr={}, dest={})",
            bcx.expr_to_string(lit_expr),
            dest.to_string(bcx.ccx()));
@@ -382,15 +368,12 @@ pub fn elements_required(bcx: Block, content_expr: &ast::Expr) -> uint {
     }
 }
 
+/// Converts a fixed-length vector into the slice pair. The vector should be stored in `llval`
+/// which should be by ref.
 pub fn get_fixed_base_and_len(bcx: Block,
                               llval: ValueRef,
                               vec_length: uint)
                               -> (ValueRef, ValueRef) {
-    /*!
-     * Converts a fixed-length vector into the slice pair.
-     * The vector should be stored in `llval` which should be by ref.
-     */
-
     let ccx = bcx.ccx();
 
     let base = expr::get_dataptr(bcx, llval);
@@ -406,18 +389,13 @@ fn get_slice_base_and_len(bcx: Block,
     (base, len)
 }
 
+/// Converts a vector into the slice pair.  The vector should be stored in `llval` which should be
+/// by-reference.  If you have a datum, you would probably prefer to call
+/// `Datum::get_base_and_len()` which will handle any conversions for you.
 pub fn get_base_and_len(bcx: Block,
                         llval: ValueRef,
                         vec_ty: Ty)
                         -> (ValueRef, ValueRef) {
-    /*!
-     * Converts a vector into the slice pair.  The vector should be
-     * stored in `llval` which should be by-reference.  If you have a
-     * datum, you would probably prefer to call
-     * `Datum::get_base_and_len()` which will handle any conversions
-     * for you.
-     */
-
     let ccx = bcx.ccx();
 
     match vec_ty.sty {

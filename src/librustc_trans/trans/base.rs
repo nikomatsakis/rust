@@ -1050,14 +1050,11 @@ pub fn load_if_immediate<'blk, 'tcx>(cx: Block<'blk, 'tcx>,
     return v;
 }
 
+/// Helper for loading values from memory. Does the necessary conversion if the in-memory type
+/// differs from the type used for SSA values. Also handles various special cases where the type
+/// gives us better information about what we are loading.
 pub fn load_ty<'blk, 'tcx>(cx: Block<'blk, 'tcx>,
                            ptr: ValueRef, t: Ty<'tcx>) -> ValueRef {
-    /*!
-     * Helper for loading values from memory. Does the necessary conversion if
-     * the in-memory type differs from the type used for SSA values. Also
-     * handles various special cases where the type gives us better information
-     * about what we are loading.
-     */
     if type_is_zero_size(cx.ccx(), t) {
         C_undef(type_of::type_of(cx.ccx(), t))
     } else if ty::type_is_bool(t) {
@@ -1071,11 +1068,9 @@ pub fn load_ty<'blk, 'tcx>(cx: Block<'blk, 'tcx>,
     }
 }
 
+/// Helper for storing values in memory. Does the necessary conversion if the in-memory type
+/// differs from the type used for SSA values.
 pub fn store_ty(cx: Block, v: ValueRef, dst: ValueRef, t: Ty) {
-    /*!
-     * Helper for storing values in memory. Does the necessary conversion if
-     * the in-memory type differs from the type used for SSA values.
-     */
     if ty::type_is_bool(t) {
         Store(cx, ZExt(cx, v, Type::i8(cx.ccx())), dst);
     } else {
@@ -2217,21 +2212,18 @@ pub fn update_linkage(ccx: &CrateContext,
         OriginalTranslation => {},
     }
 
-    match id {
-        Some(id) => {
-            let item = ccx.tcx().map.get(id);
-            if let ast_map::NodeItem(i) = item {
-                if let Some(name) =  attr::first_attr_value_str_by_name(i.attrs[], "linkage") {
-                    if let Some(linkage) = llvm_linkage_by_name(name.get()) {
-                        llvm::SetLinkage(llval, linkage);
-                    } else {
-                        ccx.sess().span_fatal(i.span, "invalid linkage specified");
-                    }
-                    return;
+    if let Some(id) = id {
+        let item = ccx.tcx().map.get(id);
+        if let ast_map::NodeItem(i) = item {
+            if let Some(name) = attr::first_attr_value_str_by_name(i.attrs[], "linkage") {
+                if let Some(linkage) = llvm_linkage_by_name(name.get()) {
+                    llvm::SetLinkage(llval, linkage);
+                } else {
+                    ccx.sess().span_fatal(i.span, "invalid linkage specified");
                 }
+                return;
             }
         }
-        _ => {}
     }
 
     match id {
@@ -2497,11 +2489,8 @@ pub fn get_fn_llvm_attributes<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, fn_ty: Ty<
                 _ => {}
             }
 
-            match ret_ty.sty {
-                ty::ty_bool => {
-                    attrs.ret(llvm::ZExtAttribute);
-                }
-                _ => {}
+            if let ty::ty_bool = ret_ty.sty {
+                attrs.ret(llvm::ZExtAttribute);
             }
         }
     }
@@ -2548,11 +2537,8 @@ pub fn get_fn_llvm_attributes<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, fn_ty: Ty<
                     attrs.arg(idx, llvm::ReadOnlyAttribute);
                 }
 
-                match b {
-                    ReLateBound(_, BrAnon(_)) => {
-                        attrs.arg(idx, llvm::NoCaptureAttribute);
-                    }
-                    _ => {}
+                if let ReLateBound(_, BrAnon(_)) = b {
+                    attrs.arg(idx, llvm::NoCaptureAttribute);
                 }
             }
 
@@ -2696,7 +2682,7 @@ fn exported_name<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, id: ast::NodeId,
         // Use provided name
         Some(name) => name.get().to_string(),
 
-        _ => ccx.tcx().map.with_path(id, |mut path| {
+        _ => ccx.tcx().map.with_path(id, |path| {
             if attr::contains_name(attrs, "no_mangle") {
                 // Don't mangle
                 path.last().unwrap().to_string()

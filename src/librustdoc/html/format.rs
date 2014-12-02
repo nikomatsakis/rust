@@ -46,9 +46,8 @@ pub struct Stability<'a>(pub &'a Option<clean::Stability>);
 pub struct ConciseStability<'a>(pub &'a Option<clean::Stability>);
 /// Wrapper struct for emitting a where clause from Generics.
 pub struct WhereClause<'a>(pub &'a clean::Generics);
-
 /// Wrapper struct for emitting type parameter bounds.
-struct TyParamBounds<'a>(pub &'a [clean::TyParamBound]);
+pub struct TyParamBounds<'a>(pub &'a [clean::TyParamBound]);
 
 impl VisSpace {
     pub fn get(&self) -> Option<ast::Visibility> {
@@ -95,6 +94,9 @@ impl fmt::Show for clean::Generics {
                 if i > 0 {
                     try!(f.write(", ".as_bytes()))
                 }
+                if let Some(ref unbound) = tp.default_unbound {
+                    try!(write!(f, "{}? ", unbound));
+                };
                 try!(f.write(tp.name.as_bytes()));
 
                 if tp.bounds.len() > 0 {
@@ -423,7 +425,7 @@ impl fmt::Show for clean::Type {
                        bounds = if decl.bounds.len() == 0 {
                            "".to_string()
                        } else {
-                           let mut m = decl.bounds
+                           let m = decl.bounds
                                            .iter()
                                            .map(|s| s.to_string());
                            format!(
@@ -485,6 +487,9 @@ impl fmt::Show for clean::Type {
                         write!(f, "&amp;{}{}{}", lt, m, **ty)
                     }
                 }
+            }
+            clean::QPath { ref name, ref self_type, ref trait_ } => {
+                write!(f, "&lt;{} as {}&gt;::{}", self_type, trait_, name)
             }
             clean::Unique(..) => {
                 panic!("should have been cleaned")

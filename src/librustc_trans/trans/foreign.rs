@@ -161,14 +161,10 @@ pub fn register_static(ccx: &CrateContext,
     }
 }
 
+/// Registers a foreign function found in a library. Just adds a LLVM global.
 pub fn register_foreign_item_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                           abi: Abi, fty: Ty<'tcx>,
                                           name: &str) -> ValueRef {
-    /*!
-     * Registers a foreign function found in a library.
-     * Just adds a LLVM global.
-     */
-
     debug!("register_foreign_item_fn(abi={}, \
             ty={}, \
             name={})",
@@ -201,6 +197,20 @@ pub fn register_foreign_item_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
     llfn
 }
 
+/// Prepares a call to a native function. This requires adapting
+/// from the Rust argument passing rules to the native rules.
+///
+/// # Parameters
+///
+/// - `callee_ty`: Rust type for the function we are calling
+/// - `llfn`: the function pointer we are calling
+/// - `llretptr`: where to store the return value of the function
+/// - `llargs_rust`: a list of the argument values, prepared
+///   as they would be if calling a Rust function
+/// - `passed_arg_tys`: Rust type for the arguments. Normally we
+///   can derive these from callee_ty but in the case of variadic
+///   functions passed_arg_tys will include the Rust type of all
+///   the arguments including the ones not specified in the fn's signature.
 pub fn trans_native_call<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                      callee_ty: Ty<'tcx>,
                                      llfn: ValueRef,
@@ -208,23 +218,6 @@ pub fn trans_native_call<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                      llargs_rust: &[ValueRef],
                                      passed_arg_tys: Vec<Ty<'tcx>>)
                                      -> Block<'blk, 'tcx> {
-    /*!
-     * Prepares a call to a native function. This requires adapting
-     * from the Rust argument passing rules to the native rules.
-     *
-     * # Parameters
-     *
-     * - `callee_ty`: Rust type for the function we are calling
-     * - `llfn`: the function pointer we are calling
-     * - `llretptr`: where to store the return value of the function
-     * - `llargs_rust`: a list of the argument values, prepared
-     *   as they would be if calling a Rust function
-     * - `passed_arg_tys`: Rust type for the arguments. Normally we
-     *   can derive these from callee_ty but in the case of variadic
-     *   functions passed_arg_tys will include the Rust type of all
-     *   the arguments including the ones not specified in the fn's signature.
-     */
-
     let ccx = bcx.ccx();
     let tcx = bcx.tcx();
 
@@ -362,9 +355,8 @@ pub fn trans_native_call<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         // skip padding
         if arg_ty.pad.is_some() { arg_idx += 1; }
 
-        match arg_ty.attr {
-            Some(attr) => { attrs.arg(arg_idx, attr); },
-            _ => {}
+        if let Some(attr) = arg_ty.attr {
+            attrs.arg(arg_idx, attr);
         }
 
         arg_idx += 1;
@@ -436,22 +428,19 @@ pub fn trans_foreign_mod(ccx: &CrateContext, foreign_mod: &ast::ForeignMod) {
     for foreign_item in foreign_mod.items.iter() {
         let lname = link_name(&**foreign_item);
 
-        match foreign_item.node {
-            ast::ForeignItemFn(..) => {
-                match foreign_mod.abi {
-                    Rust | RustIntrinsic => {}
-                    abi => {
-                        let ty = ty::node_id_to_type(ccx.tcx(), foreign_item.id);
-                        register_foreign_item_fn(ccx, abi, ty,
-                                                 lname.get().as_slice());
-                        // Unlike for other items, we shouldn't call
-                        // `base::update_linkage` here.  Foreign items have
-                        // special linkage requirements, which are handled
-                        // inside `foreign::register_*`.
-                    }
+        if let ast::ForeignItemFn(..) = foreign_item.node {
+            match foreign_mod.abi {
+                Rust | RustIntrinsic => {}
+                abi => {
+                    let ty = ty::node_id_to_type(ccx.tcx(), foreign_item.id);
+                    register_foreign_item_fn(ccx, abi, ty,
+                                             lname.get().as_slice());
+                    // Unlike for other items, we shouldn't call
+                    // `base::update_linkage` here.  Foreign items have
+                    // special linkage requirements, which are handled
+                    // inside `foreign::register_*`.
                 }
             }
-            _ => {}
         }
 
         ccx.item_symbols().borrow_mut().insert(foreign_item.id,
@@ -832,17 +821,13 @@ pub fn link_name(i: &ast::ForeignItem) -> InternedString {
     }
 }
 
+/// The ForeignSignature is the LLVM types of the arguments/return type of a function. Note that
+/// these LLVM types are not quite the same as the LLVM types would be for a native Rust function
+/// because foreign functions just plain ignore modes. They also don't pass aggregate values by
+/// pointer like we do.
 fn foreign_signature<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                fn_sig: &ty::FnSig<'tcx>, arg_tys: &[Ty<'tcx>])
                                -> LlvmSignature {
-    /*!
-     * The ForeignSignature is the LLVM types of the arguments/return type
-     * of a function.  Note that these LLVM types are not quite the same
-     * as the LLVM types would be for a native Rust function because foreign
-     * functions just plain ignore modes.  They also don't pass aggregate
-     * values by pointer like we do.
-     */
-
     let llarg_tys = arg_tys.iter().map(|&arg| arg_type_of(ccx, arg)).collect();
     let (llret_ty, ret_def) = match fn_sig.output {
         ty::FnConverging(ret_ty) =>

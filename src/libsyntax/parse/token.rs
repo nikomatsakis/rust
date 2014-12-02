@@ -421,13 +421,11 @@ macro_rules! declare_special_idents_and_keywords {(
         )*
     }
 
-    /**
-     * All the valid words that have meaning in the Rust language.
-     *
-     * Rust keywords are either 'strict' or 'reserved'.  Strict keywords may not
-     * appear as identifiers at all. Reserved keywords are not used anywhere in
-     * the language and may not appear as identifiers.
-     */
+    /// All the valid words that have meaning in the Rust language.
+    ///
+    /// Rust keywords are either 'strict' or 'reserved'.  Strict keywords may not
+    /// appear as identifiers at all. Reserved keywords are not used anywhere in
+    /// the language and may not appear as identifiers.
     pub mod keywords {
         pub use self::Keyword::*;
         use ast;
@@ -564,6 +562,12 @@ pub fn get_ident_interner() -> Rc<IdentInterner> {
         Rc::new(mk_fresh_ident_interner())
     })
     KEY.with(|k| k.clone())
+}
+
+/// Reset the ident interner to its initial state.
+pub fn reset_ident_interner() {
+    let interner = get_ident_interner();
+    interner.reset(mk_fresh_ident_interner());
 }
 
 /// Represents a string stored in the task-local interner. Because the

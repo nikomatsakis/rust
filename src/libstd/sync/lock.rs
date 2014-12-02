@@ -27,11 +27,9 @@ use core::cell::UnsafeCell;
 use rustrt::local::Local;
 use rustrt::task::Task;
 
-use raw;
+use super::raw;
 
-/****************************************************************************
- * Poisoning helpers
- ****************************************************************************/
+// Poisoning helpers
 
 struct PoisonOnFail<'a> {
     flag: &'a mut bool,
@@ -67,9 +65,7 @@ impl<'a> Drop for PoisonOnFail<'a> {
     }
 }
 
-/****************************************************************************
- * Condvar
- ****************************************************************************/
+// Condvar
 
 enum Inner<'a> {
     InnerMutex(raw::MutexGuard<'a>),
@@ -147,10 +143,6 @@ impl<'a> Condvar<'a> {
     }
 }
 
-/****************************************************************************
- * Mutex
- ****************************************************************************/
-
 /// A wrapper type which provides synchronized access to the underlying data, of
 /// type `T`. A mutex always provides exclusive access, and concurrent requests
 /// will block while the mutex is already locked.
@@ -158,7 +150,7 @@ impl<'a> Condvar<'a> {
 /// # Example
 ///
 /// ```
-/// use sync::{Mutex, Arc};
+/// use std::sync::{Mutex, Arc};
 ///
 /// let mutex = Arc::new(Mutex::new(1i));
 /// let mutex2 = mutex.clone();
@@ -249,17 +241,13 @@ impl<'a, T: Send> DerefMut<T> for MutexGuard<'a, T> {
     fn deref_mut<'a>(&'a mut self) -> &'a mut T { &mut *self._data }
 }
 
-/****************************************************************************
- * R/W lock protected lock
- ****************************************************************************/
-
 /// A dual-mode reader-writer lock. The data can be accessed mutably or
 /// immutably, and immutably-accessing tasks may run concurrently.
 ///
 /// # Example
 ///
 /// ```
-/// use sync::{RWLock, Arc};
+/// use std::sync::{RWLock, Arc};
 ///
 /// let lock1 = Arc::new(RWLock::new(1i));
 /// let lock2 = lock1.clone();
@@ -387,15 +375,11 @@ impl<'a, T: Send + Sync> DerefMut<T> for RWLockWriteGuard<'a, T> {
     fn deref_mut<'a>(&'a mut self) -> &'a mut T { &mut *self._data }
 }
 
-/****************************************************************************
- * Barrier
- ****************************************************************************/
-
 /// A barrier enables multiple tasks to synchronize the beginning
 /// of some computation.
 ///
 /// ```rust
-/// use sync::{Arc, Barrier};
+/// use std::sync::{Arc, Barrier};
 ///
 /// let barrier = Arc::new(Barrier::new(10));
 /// for _ in range(0u, 10) {
@@ -452,18 +436,14 @@ impl Barrier {
     }
 }
 
-/****************************************************************************
- * Tests
- ****************************************************************************/
-
 #[cfg(test)]
 mod tests {
-    use std::prelude::*;
-    use std::comm::Empty;
-    use std::task;
-    use std::task::try_future;
+    use prelude::*;
+    use comm::Empty;
+    use task;
+    use task::try_future;
+    use sync::Arc;
 
-    use Arc;
     use super::{Mutex, Barrier, RWLock};
 
     #[test]
@@ -795,9 +775,6 @@ mod tests {
         }
     }
 
-    /************************************************************************
-     * Barrier tests
-     ************************************************************************/
     #[test]
     fn test_barrier() {
         let barrier = Arc::new(Barrier::new(10));

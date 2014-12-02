@@ -182,7 +182,7 @@ impl<T: Send> Drop for AtomicOption<T> {
 
 #[cfg(test)]
 mod test {
-    use std::prelude::*;
+    use prelude::*;
     use super::*;
 
     #[test]

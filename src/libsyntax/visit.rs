@@ -92,14 +92,12 @@ pub trait Visitor<'v> {
     }
     fn visit_struct_field(&mut self, s: &'v StructField) { walk_struct_field(self, s) }
     fn visit_variant(&mut self, v: &'v Variant, g: &'v Generics) { walk_variant(self, v, g) }
+
+    /// Visits an optional reference to a lifetime. The `span` is the span of some surrounding
+    /// reference should opt_lifetime be None.
     fn visit_opt_lifetime_ref(&mut self,
                               _span: Span,
                               opt_lifetime: &'v Option<Lifetime>) {
-        /*!
-         * Visits an optional reference to a lifetime. The `span` is
-         * the span of some surrounding reference should opt_lifetime
-         * be None.
-         */
         match *opt_lifetime {
             Some(ref l) => self.visit_lifetime_ref(l),
             None => ()
@@ -404,14 +402,12 @@ pub fn walk_ty<'v, V: Visitor<'v>>(visitor: &mut V, typ: &'v Ty) {
             walk_fn_ret_ty(visitor, &function_declaration.decl.output);
             walk_lifetime_decls_helper(visitor, &function_declaration.lifetimes);
         }
-        TyPath(ref path, ref opt_bounds, id) => {
+        TyPath(ref path, id) => {
             visitor.visit_path(path, id);
-            match *opt_bounds {
-                Some(ref bounds) => {
-                    walk_ty_param_bounds_helper(visitor, bounds);
-                }
-                None => { }
-            }
+        }
+        TyObjectSum(ref ty, ref bounds) => {
+            visitor.visit_ty(&**ty);
+            walk_ty_param_bounds_helper(visitor, bounds);
         }
         TyQPath(ref qpath) => {
             visitor.visit_ty(&*qpath.self_type);
@@ -675,11 +671,8 @@ pub fn walk_struct_def<'v, V: Visitor<'v>>(visitor: &mut V,
 
 pub fn walk_struct_field<'v, V: Visitor<'v>>(visitor: &mut V,
                                              struct_field: &'v StructField) {
-    match struct_field.node.kind {
-        NamedField(name, _) => {
-            visitor.visit_ident(struct_field.span, name)
-        }
-        _ => {}
+    if let NamedField(name, _) = struct_field.node.kind {
+        visitor.visit_ident(struct_field.span, name);
     }
 
     visitor.visit_ty(&*struct_field.node.ty);

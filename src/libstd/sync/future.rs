@@ -8,21 +8,19 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-/*!
- * A type representing values that may be computed concurrently and
- * operations for working with them.
- *
- * # Example
- *
- * ```rust
- * use std::sync::Future;
- * # fn fib(n: uint) -> uint {42};
- * # fn make_a_sandwich() {};
- * let mut delayed_fib = Future::spawn(proc() { fib(5000) });
- * make_a_sandwich();
- * println!("fib(5000) = {}", delayed_fib.get())
- * ```
- */
+//! A type representing values that may be computed concurrently and operations for working with
+//! them.
+//!
+//! # Example
+//!
+//! ```rust
+//! use std::sync::Future;
+//! # fn fib(n: uint) -> uint {42};
+//! # fn make_a_sandwich() {};
+//! let mut delayed_fib = Future::spawn(proc() { fib(5000) });
+//! make_a_sandwich();
+//! println!("fib(5000) = {}", delayed_fib.get())
+//! ```
 
 #![allow(missing_docs)]
 
@@ -54,7 +52,7 @@ impl<A:Clone> Future<A> {
 
 impl<A> Future<A> {
     /// Gets the value from this future, forcing evaluation.
-    pub fn unwrap(mut self) -> A {
+    pub fn into_inner(mut self) -> A {
         self.get_ref();
         let state = replace(&mut self.state, Evaluating);
         match state {
@@ -62,6 +60,10 @@ impl<A> Future<A> {
             _ => panic!( "Logic error." ),
         }
     }
+
+    /// Deprecated, use into_inner() instead
+    #[deprecated = "renamed to into_inner()"]
+    pub fn unwrap(self) -> A { self.into_inner() }
 
     pub fn get_ref<'a>(&'a mut self) -> &'a A {
         /*!

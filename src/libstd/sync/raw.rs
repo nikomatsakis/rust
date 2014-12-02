@@ -15,6 +15,10 @@
 //! `sync` crate which wrap values directly and provide safer abstractions for
 //! containing data.
 
+// A side-effect of merging libsync into libstd; will go away once
+// libsync rewrite lands
+#![allow(dead_code)]
+
 use core::prelude::*;
 use self::ReacquireOrderLock::*;
 
@@ -23,14 +27,10 @@ use core::finally::Finally;
 use core::kinds::marker;
 use core::mem;
 use core::cell::UnsafeCell;
-use collections::Vec;
+use vec::Vec;
 
-use mutex;
+use super::mutex;
 use comm::{Receiver, Sender, channel};
-
-/****************************************************************************
- * Internals
- ****************************************************************************/
 
 // Each waiting task receives on one of these.
 type WaitEnd = Receiver<()>;
@@ -349,10 +349,6 @@ struct SemCondGuard<'a> {
     cvar: Condvar<'a>,
 }
 
-/****************************************************************************
- * Semaphores
- ****************************************************************************/
-
 /// A counting, blocking, bounded-waiting semaphore.
 pub struct Semaphore {
     sem: Sem<()>,
@@ -389,10 +385,6 @@ impl Semaphore {
         SemaphoreGuard { _guard: self.sem.access() }
     }
 }
-
-/****************************************************************************
- * Mutexes
- ****************************************************************************/
 
 /// A blocking, bounded-waiting, mutual exclusion lock with an associated
 /// FIFO condition variable.
@@ -436,10 +428,6 @@ impl Mutex {
         MutexGuard { _guard: guard, cond: cvar }
     }
 }
-
-/****************************************************************************
- * Reader-writer locks
- ****************************************************************************/
 
 // NB: Wikipedia - Readers-writers_problem#The_third_readers-writers_problem
 
@@ -518,8 +506,8 @@ impl RWLock {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use sync::raw::RWLock;
+    /// ```{rust,ignore}
+    /// use std::sync::raw::RWLock;
     ///
     /// let lock = RWLock::new();
     /// let write = lock.write();
@@ -614,26 +602,18 @@ impl<'a> Drop for RWLockReadGuard<'a> {
     }
 }
 
-/****************************************************************************
- * Tests
- ****************************************************************************/
-
 #[cfg(test)]
 mod tests {
     pub use self::RWLockMode::*;
 
-    use std::prelude::*;
-
-    use Arc;
+    use sync::Arc;
+    use prelude::*;
     use super::{Semaphore, Mutex, RWLock, Condvar};
 
-    use std::mem;
-    use std::result;
-    use std::task;
+    use mem;
+    use result;
+    use task;
 
-    /************************************************************************
-     * Semaphore tests
-     ************************************************************************/
     #[test]
     fn test_sem_acquire_release() {
         let s = Semaphore::new(1);
@@ -641,16 +621,19 @@ mod tests {
         s.release();
         s.acquire();
     }
+
     #[test]
     fn test_sem_basic() {
         let s = Semaphore::new(1);
         let _g = s.access();
     }
+
     #[test]
     #[should_fail]
     fn test_sem_basic2() {
         Semaphore::new(-1);
     }
+
     #[test]
     fn test_sem_as_mutex() {
         let s = Arc::new(Semaphore::new(1));
@@ -662,6 +645,7 @@ mod tests {
         let _g = s.access();
         for _ in range(0u, 5) { task::deschedule(); }
     }
+
     #[test]
     fn test_sem_as_cvar() {
         /* Child waits and parent signals */
@@ -688,6 +672,7 @@ mod tests {
         s.acquire();
         tx.send(());
     }
+
     #[test]
     fn test_sem_multi_resource() {
         // Parent and child both get in the critical section at the same
@@ -705,6 +690,7 @@ mod tests {
         tx2.send(());
         let _ = rx1.recv();
     }
+
     #[test]
     fn test_sem_runtime_friendly_blocking() {
         // Force the runtime to schedule two threads on the same sched_loop.
@@ -724,9 +710,7 @@ mod tests {
         }
         rx.recv(); // wait for child to be done
     }
-    /************************************************************************
-     * Mutex tests
-     ************************************************************************/
+
     #[test]
     fn test_mutex_lock() {
         // Unsafely achieve shared state, and do the textbook
@@ -758,6 +742,7 @@ mod tests {
             }
         }
     }
+
     #[test]
     fn test_mutex_cond_wait() {
         let m = Arc::new(Mutex::new());
@@ -817,14 +802,17 @@ mod tests {
         // wait until all children wake up
         for rx in rxs.iter_mut() { rx.recv(); }
     }
+
     #[test]
     fn test_mutex_cond_broadcast() {
         test_mutex_cond_broadcast_helper(12);
     }
+
     #[test]
     fn test_mutex_cond_broadcast_none() {
         test_mutex_cond_broadcast_helper(0);
     }
+
     #[test]
     fn test_mutex_cond_no_waiter() {
         let m = Arc::new(Mutex::new());
@@ -835,9 +823,10 @@ mod tests {
         let lock = m2.lock();
         assert!(!lock.cond.signal());
     }
+
     #[test]
     fn test_mutex_killed_simple() {
-        use std::any::Any;
+        use any::Any;
 
         // Mutex must get automatically unlocked if panicked/killed within.
         let m = Arc::new(Mutex::new());
@@ -851,6 +840,7 @@ mod tests {
         // child task must have finished by the time try returns
         drop(m.lock());
     }
+
     #[test]
     fn test_mutex_cond_signal_on_0() {
         // Tests that signal_on(0) is equivalent to signal().
@@ -863,6 +853,7 @@ mod tests {
         });
         lock.cond.wait();
     }
+
     #[test]
     fn test_mutex_no_condvars() {
         let result = task::try(proc() {
@@ -881,11 +872,10 @@ mod tests {
         });
         assert!(result.is_err());
     }
-    /************************************************************************
-     * Reader/writer lock tests
-     ************************************************************************/
+
     #[cfg(test)]
     pub enum RWLockMode { Read, Write, Downgrade, DowngradeRead }
+
     #[cfg(test)]
     fn lock_rwlock_in_mode(x: &Arc<RWLock>, mode: RWLockMode, blk: ||) {
         match mode {
@@ -895,6 +885,7 @@ mod tests {
             DowngradeRead => { let _g = x.write().downgrade(); blk() }
         }
     }
+
     #[cfg(test)]
     fn test_rwlock_exclusion(x: Arc<RWLock>,
                              mode1: RWLockMode,
@@ -931,6 +922,7 @@ mod tests {
             }
         }
     }
+
     #[test]
     fn test_rwlock_readers_wont_modify_the_data() {
         test_rwlock_exclusion(Arc::new(RWLock::new()), Read, Write);
@@ -940,6 +932,7 @@ mod tests {
         test_rwlock_exclusion(Arc::new(RWLock::new()), Write, DowngradeRead);
         test_rwlock_exclusion(Arc::new(RWLock::new()), DowngradeRead, Write);
     }
+
     #[test]
     fn test_rwlock_writers_and_writers() {
         test_rwlock_exclusion(Arc::new(RWLock::new()), Write, Write);
@@ -947,6 +940,7 @@ mod tests {
         test_rwlock_exclusion(Arc::new(RWLock::new()), Downgrade, Write);
         test_rwlock_exclusion(Arc::new(RWLock::new()), Downgrade, Downgrade);
     }
+
     #[cfg(test)]
     fn test_rwlock_handshake(x: Arc<RWLock>,
                              mode1: RWLockMode,
@@ -979,6 +973,7 @@ mod tests {
             rx1.recv();
         })
     }
+
     #[test]
     fn test_rwlock_readers_and_readers() {
         test_rwlock_handshake(Arc::new(RWLock::new()), Read, Read, false);
@@ -988,6 +983,7 @@ mod tests {
         test_rwlock_handshake(Arc::new(RWLock::new()), Read, DowngradeRead, true);
         // Two downgrade_reads can never both end up reading at the same time.
     }
+
     #[test]
     fn test_rwlock_downgrade_unlock() {
         // Tests that downgrade can unlock the lock in both modes
@@ -998,12 +994,14 @@ mod tests {
         lock_rwlock_in_mode(&y, DowngradeRead, || { });
         test_rwlock_exclusion(y, Write, Write);
     }
+
     #[test]
     fn test_rwlock_read_recursive() {
         let x = RWLock::new();
         let _g1 = x.read();
         let _g2 = x.read();
     }
+
     #[test]
     fn test_rwlock_cond_wait() {
         // As test_mutex_cond_wait above.
@@ -1037,6 +1035,7 @@ mod tests {
         rx.recv(); // Wait until child wakes up
         drop(x.read()); // Just for good measure
     }
+
     #[cfg(test)]
     fn test_rwlock_cond_broadcast_helper(num_waiters: uint) {
         // Much like the mutex broadcast test. Downgrade-enabled.
@@ -1070,14 +1069,16 @@ mod tests {
         // wait until all children wake up
         for rx in rxs.iter_mut() { let _ = rx.recv(); }
     }
+
     #[test]
     fn test_rwlock_cond_broadcast() {
         test_rwlock_cond_broadcast_helper(0);
         test_rwlock_cond_broadcast_helper(12);
     }
+
     #[cfg(test)]
     fn rwlock_kill_helper(mode1: RWLockMode, mode2: RWLockMode) {
-        use std::any::Any;
+        use any::Any;
 
         // Mutex must get automatically unlocked if panicked/killed within.
         let x = Arc::new(RWLock::new());
@@ -1092,22 +1093,27 @@ mod tests {
         // child task must have finished by the time try returns
         lock_rwlock_in_mode(&x, mode2, || { })
     }
+
     #[test]
     fn test_rwlock_reader_killed_writer() {
         rwlock_kill_helper(Read, Write);
     }
+
     #[test]
     fn test_rwlock_writer_killed_reader() {
         rwlock_kill_helper(Write, Read);
     }
+
     #[test]
     fn test_rwlock_reader_killed_reader() {
         rwlock_kill_helper(Read, Read);
     }
+
     #[test]
     fn test_rwlock_writer_killed_writer() {
         rwlock_kill_helper(Write, Write);
     }
+
     #[test]
     fn test_rwlock_kill_downgrader() {
         rwlock_kill_helper(Downgrade, Read);
