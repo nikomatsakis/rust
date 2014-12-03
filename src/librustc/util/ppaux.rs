@@ -259,12 +259,15 @@ pub fn trait_ref_to_string<'tcx>(cx: &ctxt<'tcx>,
 
 pub fn ty_to_string<'tcx>(cx: &ctxt<'tcx>, typ: &ty::TyS<'tcx>) -> String {
     fn bare_fn_to_string<'tcx>(cx: &ctxt<'tcx>,
+                               opt_def_id: Option<ast::DefId>,
                                fn_style: ast::FnStyle,
                                abi: abi::Abi,
                                ident: Option<ast::Ident>,
                                sig: &ty::FnSig<'tcx>)
-                               -> String {
+                               -> String
+    {
         let mut s = String::new();
+
         match fn_style {
             ast::NormalFn => {}
             _ => {
@@ -288,6 +291,16 @@ pub fn ty_to_string<'tcx>(cx: &ctxt<'tcx>, typ: &ty::TyS<'tcx>) -> String {
         }
 
         push_sig_to_string(cx, &mut s, '(', ')', sig, "");
+
+        match opt_def_id {
+            Some(def_id) => {
+                s.push_str(" {");
+                let path_str = ty::item_path_str(cx, def_id);
+                s.push_str(path_str[]);
+                s.push_str("}");
+            }
+            None => { }
+        }
 
         s
     }
@@ -413,8 +426,8 @@ pub fn ty_to_string<'tcx>(cx: &ctxt<'tcx>, typ: &ty::TyS<'tcx>) -> String {
         ty_closure(ref f) => {
             closure_to_string(cx, &**f)
         }
-        ty_bare_fn(_, ref f) => {
-            bare_fn_to_string(cx, f.fn_style, f.abi, None, &f.sig)
+        ty_bare_fn(opt_def_id, ref f) => {
+            bare_fn_to_string(cx, opt_def_id, f.fn_style, f.abi, None, &f.sig)
         }
         ty_infer(infer_ty) => infer_ty_to_string(cx, infer_ty),
         ty_err => "[type error]".to_string(),
