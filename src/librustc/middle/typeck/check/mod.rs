@@ -126,6 +126,7 @@ pub mod regionmanip;
 pub mod regionck;
 pub mod demand;
 pub mod method;
+mod upvar;
 pub mod wf;
 mod closure;
 
@@ -277,11 +278,19 @@ impl<'a, 'tcx> mem_categorization::Typer<'tcx> for FnCtxt<'a, 'tcx> {
         self.ccx.tcx
     }
     fn node_ty(&self, id: ast::NodeId) -> McResult<Ty<'tcx>> {
-        Ok(self.node_ty(id))
+        let ty = self.node_ty(id);
+        Ok(self.infcx().resolve_type_vars_if_possible(ty))
+    }
+    fn expr_ty_adjusted(&self, expr: &ast::Expr) -> McResult<Ty<'tcx>> {
+        let ty = self.expr_ty_adjusted(expr);
+        Ok(self.infcx().resolve_type_vars_if_possible(ty))
     }
     fn node_method_ty(&self, method_call: typeck::MethodCall)
                       -> Option<Ty<'tcx>> {
-        self.inh.method_map.borrow().get(&method_call).map(|m| m.ty)
+        self.inh.method_map.borrow()
+                           .get(&method_call)
+                           .map(|method| method.ty)
+                           .map(|ty| self.infcx().resolve_type_vars_if_possible(ty))
     }
     fn adjustments<'a>(&'a self) -> &'a RefCell<NodeMap<ty::AutoAdjustment<'tcx>>> {
         &self.inh.adjustments
@@ -393,6 +402,7 @@ fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                decl, id, body, &inh);
 
             vtable::select_all_fcx_obligations_or_error(&fcx);
+            upvar::closure_analyze_fn(&fcx, id, decl, body);
             regionck::regionck_fn(&fcx, id, body);
             fcx.default_diverging_type_variables_to_nil();
             writeback::resolve_type_vars_in_fn(&fcx, decl, body);
