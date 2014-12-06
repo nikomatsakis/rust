@@ -3745,10 +3745,7 @@ pub fn adjust_ty_for_autoref<'tcx>(cx: &ctxt<'tcx>,
         None => ty,
 
         Some(&AutoPtr(r, m, ref a)) => {
-            let adjusted_ty = match a {
-                &Some(box ref a) => adjust_ty_for_autoref(cx, span, ty, Some(a)),
-                &None => ty
-            };
+            let adjusted_ty = adjust_ty_for_autoref(cx, span, ty, a.as_ref().map(|x| &**x));
             mk_rptr(cx, r, mt {
                 ty: adjusted_ty,
                 mutbl: m
@@ -3756,10 +3753,7 @@ pub fn adjust_ty_for_autoref<'tcx>(cx: &ctxt<'tcx>,
         }
 
         Some(&AutoUnsafe(m, ref a)) => {
-            let adjusted_ty = match a {
-                &Some(box ref a) => adjust_ty_for_autoref(cx, span, ty, Some(a)),
-                &None => ty
-            };
+            let adjusted_ty = adjust_ty_for_autoref(cx, span, ty, a.as_ref().mpa(|x| &**x));
             mk_ptr(cx, mt {ty: adjusted_ty, mutbl: m})
         }
 

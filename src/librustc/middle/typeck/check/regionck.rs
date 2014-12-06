@@ -1339,42 +1339,34 @@ fn link_pattern<'a, 'tcx>(rcx: &Rcx<'a, 'tcx>,
 /// autoref'd.
 fn link_autoref<'a,'tcx>(
     rcx: &Rcx<'a,'tcx>,
-    expr_cmt: mc::cmt<'tcx>,
+    unrefd_ty: Ty<'tcx>,
     autoref: &ty::AutoRef)
+    -> Ty<'tcx> // returns type after adjustment by `autoref`
 {
     debug!("link_autoref(expr_cmt={}, autoref={})",
            expr_cmt.repr(rcx.tcx()),
            autoref.repr(rcx.tcx()));
 
     match *autoref {
+        ty::AutoPtr(r, m, Some(box ref opt_auto_ref)) => {
+            ty::mk_rptr(r, m, link_autoref(rcx, unrefd_ty, opt_auto_ref))
+        }
+
         ty::AutoPtr(r, m, None) => {
-            // Autoref like `&'a *x` (where `x` is the original
-            // expression). In this case, we must ensure that the
-            // lifetime `'a` of this new region pointer is linked to
-            // the lifetimes in `x` (e.g., if `x` has type `&'b T`, we
-            // want that `'a <= 'b`). This is not "optional": the
-            // coercion and method code relies on it and does not
-            // create the required region relationships (it's awkward
-            // and non-DRY to do so in some cases).
-            link_region(rcx, expr_cmt.span, r, ty::BorrowKind::from_mutbl(m), expr_cmt);
+            ty::mk_rptr(r, m, unrefd_ty)
         }
 
-        ty::AutoPtr(_, _, Some(box ref ptr)) => {
-            // The autoref is something like `&'a &'b * x` (two
-            // autorefs, an autoderef).  In this case, the outer
-            // autoref (which we are looking at now) is just taking
-            // the address of a temporary. The basic "type must
-            // outlive" code will already ensure that `'a <= 'b` as
-            // part of the basic WF constraints, so we just want to
-            // recurse to check the `&'b *x` base case (see previous
-            // arm).
-            link_autoref(rcx, expr_cmt, ptr);
+        ty::AutoUnsafe(m, Some(box ref opt_auto_ref)) => {
+            ty::mk_ptr(cx, mt { ty: link_autoref(rcx, unrefd_ty, opt_auto_ref),
+                                m: m });
         }
 
-        ty::AutoUnsafe(..) => {
+        ty::AutoUnsafe(m, None) => {
+            ty::mk_ptr(cx, mt { ty: link_autoref(rcx, unrefd_ty, opt_auto_ref),
+                                m: m });
         }
 
-        ty::AutoUnsizeUniq(_) | ty::AutoUnsize(_) => {
+        ty::AutoUnsizeUniq(..) | ty::AutoUnsize(..) => {
             // we are converting the `expr_cmt` to an object type.
             // the object type *does* have a region bound, but we
             // don't have to enforce it here, the fnctxt creates a
