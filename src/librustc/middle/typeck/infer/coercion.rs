@@ -215,7 +215,8 @@ impl<'f, 'tcx> Coerce<'f, 'tcx> {
                                    sty_a: &ty::sty<'tcx>,
                                    b: Ty<'tcx>,
                                    mutbl_b: ast::Mutability)
-                                   -> CoerceResult<'tcx> {
+                                   -> CoerceResult<'tcx>
+    {
         debug!("coerce_borrowed_pointer(a={}, sty_a={}, b={})",
                a.repr(self.get_ref().infcx.tcx), sty_a,
                b.repr(self.get_ref().infcx.tcx));
@@ -231,11 +232,11 @@ impl<'f, 'tcx> Coerce<'f, 'tcx> {
         let r_borrow = self.get_ref().infcx.next_region_var(coercion);
 
         let inner_ty = match *sty_a {
-            ty::ty_uniq(_) => return Err(ty::terr_mismatch),
-            ty::ty_rptr(_, mt_a) => mt_a.ty,
-            _ => {
-                return self.subtype(a, b);
-            }
+            // Note: regionck will relate `r_borrow` and `_r_a` in the
+            // `link_autoref` routine.
+            ty::ty_rptr(_r_a, mt_a) => { mt_a.ty }
+            ty::ty_uniq(_) => { return Err(ty::terr_mismatch); }
+            _ => { return self.subtype(a, b); }
         };
 
         let a_borrowed = ty::mk_rptr(self.get_ref().infcx.tcx,

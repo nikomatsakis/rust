@@ -563,46 +563,35 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
 
     // No matter what, the type of each expression must outlive the
     // scope of that expression. This also guarantees basic WF.
-    let expr_ty = rcx.resolve_node_type(expr.id);
+    let expr_ty_unadjusted = rcx.resolve_node_type(expr.id);
+    type_must_outlive(rcx, infer::ExprTypeIsNotInScope(expr_ty_unadjusted, expr.span),
+                      expr_ty_unadjusted, ty::ReScope(CodeExtent::from_node_id(expr.id)));
 
-    type_must_outlive(rcx, infer::ExprTypeIsNotInScope(expr_ty, expr.span),
-                      expr_ty, ty::ReScope(CodeExtent::from_node_id(expr.id)));
-
-    let method_call = MethodCall::expr(expr.id);
-    let has_method_map = rcx.fcx.inh.method_map.borrow().contains_key(&method_call);
-
-    // Check any autoderefs or autorefs that appear.
-    for &adjustment in rcx.fcx.inh.adjustments.borrow().get(&expr.id).iter() {
+    // Check any adjustments that might occur.
+    if let Some(adjustment) = rcx.fcx.inh.adjustments.borrow().get(&expr.id) {
         debug!("adjustment={}", adjustment);
         match *adjustment {
             ty::AdjustDerefRef(ty::AutoDerefRef {autoderefs, autoref: ref opt_autoref}) => {
-                let expr_ty = rcx.resolve_node_type(expr.id);
-                constrain_autoderefs(rcx, expr, autoderefs, expr_ty);
-                for autoref in opt_autoref.iter() {
-                    link_autoref(rcx, expr, autoderefs, autoref);
-
-                    // Require that the resulting region encompasses
-                    // the current node.
-                    //
-                    // FIXME(#6268) remove to support nested method calls
-                    type_of_node_must_outlive(
-                        rcx, infer::AutoBorrow(expr.span),
-                        expr.id, ty::ReScope(CodeExtent::from_node_id(expr.id)));
+                constrain_autoderefs(rcx, expr, autoderefs, expr_ty_unadjusted);
+                if let Some(autoref) = opt_autoref.as_ref() {
+                    let mc = mc::MemCategorizationContext::new(rcx);
+                    let expr_cmt = ignore_err!(mc.cat_expr_autoderefd(expr, autoderefs));
+                    link_autoref(rcx, expr_cmt, autoref);
                 }
             }
-            /*
-            ty::AutoObject(_, ref bounds, _, _) => {
-                // Determine if we are casting `expr` to a trait
-                // instance. If so, we have to be sure that the type
-                // of the source obeys the new region bound.
-                let source_ty = rcx.resolve_node_type(expr.id);
-                type_must_outlive(rcx, infer::RelateObjectBound(expr.span),
-                                  source_ty, bounds.region_bound);
-            }
-            */
-            _ => {}
+            ty::AdjustAddEnv(..) => { }
         }
+
+        // Require that the adjusted region encompasses the current
+        // node.
+        let expr_ty_adjusted = rcx.resolve_expr_type_adjusted(expr);
+        type_must_outlive(
+            rcx, infer::AutoBorrow(expr.span),
+            expr_ty_adjusted, ty::ReScope(CodeExtent::from_node_id(expr.id)));
     }
+
+    let method_call = MethodCall::expr(expr.id);
+    let has_method_map = rcx.fcx.inh.method_map.borrow().contains_key(&method_call);
 
     match expr.node {
         ast::ExprCall(ref callee, ref args) => {
@@ -1348,23 +1337,49 @@ fn link_pattern<'a, 'tcx>(rcx: &Rcx<'a, 'tcx>,
 
 /// Link lifetime of borrowed pointer resulting from autoref to lifetimes in the value being
 /// autoref'd.
-fn link_autoref(rcx: &Rcx,
-                expr: &ast::Expr,
-                autoderefs: uint,
-                autoref: &ty::AutoRef) {
-
-    debug!("link_autoref(autoref={})", autoref);
-    let mc = mc::MemCategorizationContext::new(rcx);
-    let expr_cmt = ignore_err!(mc.cat_expr_autoderefd(expr, autoderefs));
-    debug!("expr_cmt={}", expr_cmt.repr(rcx.tcx()));
+fn link_autoref<'a,'tcx>(
+    rcx: &Rcx<'a,'tcx>,
+    expr_cmt: mc::cmt<'tcx>,
+    autoref: &ty::AutoRef)
+{
+    debug!("link_autoref(expr_cmt={}, autoref={})",
+           expr_cmt.repr(rcx.tcx()),
+           autoref.repr(rcx.tcx()));
 
     match *autoref {
-        ty::AutoPtr(r, m, _) => {
-            link_region(rcx, expr.span, r,
-                ty::BorrowKind::from_mutbl(m), expr_cmt);
+        ty::AutoPtr(r, m, None) => {
+            // Autoref like `&'a *x` (where `x` is the original
+            // expression). In this case, we must ensure that the
+            // lifetime `'a` of this new region pointer is linked to
+            // the lifetimes in `x` (e.g., if `x` has type `&'b T`, we
+            // want that `'a <= 'b`). This is not "optional": the
+            // coercion and method code relies on it and does not
+            // create the required region relationships (it's awkward
+            // and non-DRY to do so in some cases).
+            link_region(rcx, expr_cmt.span, r, ty::BorrowKind::from_mutbl(m), expr_cmt);
         }
 
-        ty::AutoUnsafe(..) | ty::AutoUnsizeUniq(_) | ty::AutoUnsize(_) => {}
+        ty::AutoPtr(_, _, Some(box ref ptr)) => {
+            // The autoref is something like `&'a &'b * x` (two
+            // autorefs, an autoderef).  In this case, the outer
+            // autoref (which we are looking at now) is just taking
+            // the address of a temporary. The basic "type must
+            // outlive" code will already ensure that `'a <= 'b` as
+            // part of the basic WF constraints, so we just want to
+            // recurse to check the `&'b *x` base case (see previous
+            // arm).
+            link_autoref(rcx, expr_cmt, ptr);
+        }
+
+        ty::AutoUnsafe(..) => {
+        }
+
+        ty::AutoUnsizeUniq(_) | ty::AutoUnsize(_) => {
+            // we are converting the `expr_cmt` to an object type.
+            // the object type *does* have a region bound, but we
+            // don't have to enforce it here, the fnctxt creates a
+            // region obligation in `register_unsize_obligations()`
+        }
     }
 }
 

@@ -158,6 +158,11 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
         // Write out the final adjustment.
         self.fcx.write_adjustment(self.self_expr.id, self.span, ty::AdjustDerefRef(auto_deref_ref));
 
+        // N.B.: When we are reborrowing region pointers and so on,
+        // there are required subregion relationships that must be
+        // established. These are currently established by
+        // `link_autoref` routine in `regionck`.
+
         final_ty
     }
 
