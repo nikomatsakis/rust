@@ -18,9 +18,13 @@ type EqFn<K> = proc(K, K):'static -> bool;
 
 struct LM { resize_at: uint, size: uint }
 
+impl Copy for LM {}
+
 enum HashMap<K,V> {
     HashMap_(LM, Vec<(K,V)>)
 }
+
+impl<K,V> Copy for HashMap<K,V> {}
 
 fn linear_map<K,V>() -> HashMap<K,V> {
     HashMap::HashMap_(LM{

@@ -286,6 +286,9 @@ pub fn test_opts(config: &Config) -> test::TestOpts {
         test_shard: config.test_shard.clone(),
         nocapture: false,
         color: test::AutoColor,
+        show_boxplot: false,
+        boxplot_width: 50,
+        show_all_stats: false,
     }
 }
 
@@ -343,7 +346,7 @@ pub fn make_test(config: &Config, testfile: &Path, f: || -> test::TestFn)
         desc: test::TestDesc {
             name: make_test_name(config, testfile),
             ignore: header::is_test_ignored(config, testfile),
-            should_fail: false
+            should_fail: test::ShouldFail::No,
         },
         testfn: f(),
     }

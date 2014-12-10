@@ -42,6 +42,8 @@ pub enum BinOpToken {
     Shr,
 }
 
+impl Copy for BinOpToken {}
+
 /// A delimeter token
 #[deriving(Clone, Encodable, Decodable, PartialEq, Eq, Hash, Show)]
 pub enum DelimToken {
@@ -52,6 +54,8 @@ pub enum DelimToken {
     /// A curly brace: `{` or `}`
     Brace,
 }
+
+impl Copy for DelimToken {}
 
 #[deriving(Clone, Encodable, Decodable, PartialEq, Eq, Hash, Show)]
 pub enum IdentStyle {
@@ -84,6 +88,12 @@ impl Lit {
         }
     }
 }
+
+#[cfg(not(stage0))]
+impl Copy for Lit {}
+
+#[cfg(not(stage0))]
+impl Copy for IdentStyle {}
 
 #[allow(non_camel_case_types)]
 #[deriving(Clone, Encodable, Decodable, PartialEq, Eq, Hash, Show)]
@@ -435,6 +445,8 @@ macro_rules! declare_special_idents_and_keywords {(
             $( $rk_variant, )*
         }
 
+        impl Copy for Keyword {}
+
         impl Keyword {
             pub fn to_name(&self) -> ast::Name {
                 match *self {
@@ -623,9 +635,32 @@ impl fmt::Show for InternedString {
     }
 }
 
+#[allow(deprecated)]
 impl<'a> Equiv<&'a str> for InternedString {
     fn equiv(&self, other: & &'a str) -> bool {
         (*other) == self.string.as_slice()
+    }
+}
+
+impl<'a> PartialEq<&'a str> for InternedString {
+    #[inline(always)]
+    fn eq(&self, other: & &'a str) -> bool {
+        PartialEq::eq(self.string.as_slice(), *other)
+    }
+    #[inline(always)]
+    fn ne(&self, other: & &'a str) -> bool {
+        PartialEq::ne(self.string.as_slice(), *other)
+    }
+}
+
+impl<'a> PartialEq<InternedString > for &'a str {
+    #[inline(always)]
+    fn eq(&self, other: &InternedString) -> bool {
+        PartialEq::eq(*self, other.string.as_slice())
+    }
+    #[inline(always)]
+    fn ne(&self, other: &InternedString) -> bool {
+        PartialEq::ne(*self, other.string.as_slice())
     }
 }
 

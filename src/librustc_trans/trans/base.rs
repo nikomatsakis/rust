@@ -28,9 +28,11 @@
 pub use self::ValueOrigin::*;
 pub use self::scalar_type::*;
 
+use super::CrateTranslation;
+use super::ModuleTranslation;
+
 use back::link::{mangle_exported_name};
 use back::{link, abi};
-use driver::driver::{CrateAnalysis, CrateTranslation, ModuleTranslation};
 use lint;
 use llvm::{BasicBlockRef, Linkage, ValueRef, Vector, get_param};
 use llvm;
@@ -88,6 +90,7 @@ use libc::{c_uint, uint64_t};
 use std::c_str::ToCStr;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
+use std::mem;
 use std::rc::Rc;
 use std::{i8, i16, i32, i64};
 use syntax::abi::{Rust, RustCall, RustIntrinsic, Abi};
@@ -560,6 +563,8 @@ pub fn maybe_name_value(cx: &CrateContext, v: ValueRef, s: &str) {
 // Used only for creating scalar comparison glue.
 pub enum scalar_type { nil_type, signed_int, unsigned_int, floating_point, }
 
+impl Copy for scalar_type {}
+
 pub fn compare_scalar_types<'blk, 'tcx>(cx: Block<'blk, 'tcx>,
                                         lhs: ValueRef,
                                         rhs: ValueRef,
@@ -811,7 +816,10 @@ pub fn iter_structural_ty<'a, 'blk, 'tcx>(cx: Block<'blk, 'tcx>,
                                       in iter_structural_ty")
           }
       }
-      _ => cx.sess().unimpl("type in iter_structural_ty")
+      _ => {
+          cx.sess().unimpl(format!("type in iter_structural_ty: {}",
+                                   ty_to_string(cx.tcx(), t)).as_slice())
+      }
     }
     return cx;
 }
@@ -965,7 +973,7 @@ pub fn trans_external_path<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 
 pub fn invoke<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                           llfn: ValueRef,
-                          llargs: Vec<ValueRef> ,
+                          llargs: &[ValueRef],
                           fn_ty: Ty<'tcx>,
                           call_info: Option<NodeInfo>,
                           // FIXME(15064) is_lang_item is a horrible hack, please remove it
@@ -995,9 +1003,9 @@ pub fn invoke<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     }
 
     if need_invoke(bcx) {
-        debug!("invoking {} at {}", llfn, bcx.llbb);
+        debug!("invoking {} at {}", bcx.val_to_string(llfn), bcx.llbb);
         for &llarg in llargs.iter() {
-            debug!("arg: {}", llarg);
+            debug!("arg: {}", bcx.val_to_string(llarg));
         }
         let normal_bcx = bcx.fcx.new_temp_block("normal-return");
         let landing_pad = bcx.fcx.get_landing_pad();
@@ -1015,9 +1023,9 @@ pub fn invoke<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                               Some(attributes));
         return (llresult, normal_bcx);
     } else {
-        debug!("calling {} at {}", llfn, bcx.llbb);
+        debug!("calling {} at {}", bcx.val_to_string(llfn), bcx.llbb);
         for &llarg in llargs.iter() {
-            debug!("arg: {}", llarg);
+            debug!("arg: {}", bcx.val_to_string(llarg));
         }
 
         match call_info {
@@ -1076,12 +1084,6 @@ pub fn store_ty(cx: Block, v: ValueRef, dst: ValueRef, t: Ty) {
     } else {
         Store(cx, v, dst);
     };
-}
-
-pub fn ignore_lhs(_bcx: Block, local: &ast::Local) -> bool {
-    match local.pat.node {
-        ast::PatWild(ast::PatWildSingle) => true, _ => false
-    }
 }
 
 pub fn init_local<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, local: &ast::Local)
@@ -1782,6 +1784,14 @@ pub fn build_return_block<'blk, 'tcx>(fcx: &FunctionContext<'blk, 'tcx>,
     }
 }
 
+#[deriving(Clone, Eq, PartialEq)]
+pub enum IsUnboxedClosureFlag {
+    NotUnboxedClosure,
+    IsUnboxedClosure,
+}
+
+impl Copy for IsUnboxedClosureFlag {}
+
 // trans_closure: Builds an LLVM function out of a source function.
 // If the function closes over its environment a closure will be
 // returned.
@@ -1816,7 +1826,7 @@ pub fn trans_closure<'a, 'b, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 
     // cleanup scope for the incoming arguments
     let fn_cleanup_debug_loc =
-        debuginfo::get_cleanup_debug_loc_for_ast_node(fn_ast_id, body.span, true);
+        debuginfo::get_cleanup_debug_loc_for_ast_node(ccx, fn_ast_id, body.span, true);
     let arg_scope = fcx.push_custom_cleanup_scope_with_debug_loc(fn_cleanup_debug_loc);
 
     let block_ty = node_id_type(bcx, body.id);
@@ -2185,6 +2195,8 @@ pub enum ValueOrigin {
     /// item is marked `#[inline]`.
     InlinedCopy,
 }
+
+impl Copy for ValueOrigin {}
 
 /// Set the appropriate linkage for an LLVM `ValueRef` (function or global).
 /// If the `llval` is the direct translation of a specific Rust item, `id`
@@ -2743,7 +2755,7 @@ pub fn get_item_val(ccx: &CrateContext, id: ast::NodeId) -> ValueRef {
                                 format!("Illegal null byte in export_name \
                                          value: `{}`", sym).as_slice());
                         }
-                        let g = sym.as_slice().with_c_str(|buf| {
+                        let g = sym.with_c_str(|buf| {
                             llvm::LLVMAddGlobal(ccx.llmod(), llty, buf)
                         });
 
@@ -2916,12 +2928,6 @@ fn register_method(ccx: &CrateContext, id: ast::NodeId,
     llfn
 }
 
-pub fn p2i(ccx: &CrateContext, v: ValueRef) -> ValueRef {
-    unsafe {
-        return llvm::LLVMConstPtrToInt(v, ccx.int_type().to_ref());
-    }
-}
-
 pub fn crate_ctxt_to_encode_parms<'a, 'tcx>(cx: &'a SharedCrateContext<'tcx>,
                                             ie: encoder::EncodeInlinedItem<'a>)
                                             -> encoder::EncodeParams<'a, 'tcx> {
@@ -3046,7 +3052,11 @@ fn internalize_symbols(cx: &SharedCrateContext, reachable: &HashSet<String>) {
         fn next(&mut self) -> Option<ValueRef> {
             let old = self.cur;
             if !old.is_null() {
-                self.cur = unsafe { (self.step)(old) };
+                self.cur = unsafe {
+                    let step: unsafe extern "C" fn(ValueRef) -> ValueRef =
+                        mem::transmute_copy(&self.step);
+                    step(old)
+                };
                 Some(old)
             } else {
                 None
@@ -3055,9 +3065,9 @@ fn internalize_symbols(cx: &SharedCrateContext, reachable: &HashSet<String>) {
     }
 }
 
-pub fn trans_crate<'tcx>(analysis: CrateAnalysis<'tcx>)
+pub fn trans_crate<'tcx>(analysis: ty::CrateAnalysis<'tcx>)
                          -> (ty::ctxt<'tcx>, CrateTranslation) {
-    let CrateAnalysis { ty_cx: tcx, exp_map2, reachable, name, .. } = analysis;
+    let ty::CrateAnalysis { ty_cx: tcx, exp_map2, reachable, name, .. } = analysis;
     let krate = tcx.map.krate();
 
     // Before we touch LLVM, make sure that multithreading is enabled.

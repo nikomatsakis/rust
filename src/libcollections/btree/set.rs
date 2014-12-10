@@ -94,12 +94,46 @@ impl<T> BTreeSet<T> {
 
 impl<T: Ord> BTreeSet<T> {
     /// Visits the values representing the difference, in ascending order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::BTreeSet;
+    ///
+    /// let mut a = BTreeSet::new();
+    /// a.insert(1u);
+    /// a.insert(2u);
+    ///
+    /// let mut b = BTreeSet::new();
+    /// b.insert(2u);
+    /// b.insert(3u);
+    ///
+    /// let diff: Vec<uint> = a.difference(&b).cloned().collect();
+    /// assert_eq!(diff, vec![1u]);
+    /// ```
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn difference<'a>(&'a self, other: &'a BTreeSet<T>) -> DifferenceItems<'a, T> {
         DifferenceItems{a: self.iter().peekable(), b: other.iter().peekable()}
     }
 
     /// Visits the values representing the symmetric difference, in ascending order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::BTreeSet;
+    ///
+    /// let mut a = BTreeSet::new();
+    /// a.insert(1u);
+    /// a.insert(2u);
+    ///
+    /// let mut b = BTreeSet::new();
+    /// b.insert(2u);
+    /// b.insert(3u);
+    ///
+    /// let sym_diff: Vec<uint> = a.symmetric_difference(&b).cloned().collect();
+    /// assert_eq!(sym_diff, vec![1u,3]);
+    /// ```
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn symmetric_difference<'a>(&'a self, other: &'a BTreeSet<T>)
         -> SymDifferenceItems<'a, T> {
@@ -107,6 +141,23 @@ impl<T: Ord> BTreeSet<T> {
     }
 
     /// Visits the values representing the intersection, in ascending order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::BTreeSet;
+    ///
+    /// let mut a = BTreeSet::new();
+    /// a.insert(1u);
+    /// a.insert(2u);
+    ///
+    /// let mut b = BTreeSet::new();
+    /// b.insert(2u);
+    /// b.insert(3u);
+    ///
+    /// let intersection: Vec<uint> = a.intersection(&b).cloned().collect();
+    /// assert_eq!(intersection, vec![2u]);
+    /// ```
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn intersection<'a>(&'a self, other: &'a BTreeSet<T>)
         -> IntersectionItems<'a, T> {
@@ -114,6 +165,21 @@ impl<T: Ord> BTreeSet<T> {
     }
 
     /// Visits the values representing the union, in ascending order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::BTreeSet;
+    ///
+    /// let mut a = BTreeSet::new();
+    /// a.insert(1u);
+    ///
+    /// let mut b = BTreeSet::new();
+    /// b.insert(2u);
+    ///
+    /// let union: Vec<uint> = a.union(&b).cloned().collect();
+    /// assert_eq!(union, vec![1u,2]);
+    /// ```
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn union<'a>(&'a self, other: &'a BTreeSet<T>) -> UnionItems<'a, T> {
         UnionItems{a: self.iter().peekable(), b: other.iter().peekable()}
@@ -121,7 +187,7 @@ impl<T: Ord> BTreeSet<T> {
 
     /// Return the number of elements in the set
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeSet;
@@ -136,7 +202,7 @@ impl<T: Ord> BTreeSet<T> {
 
     /// Returns true if the set contains no elements
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeSet;
@@ -151,7 +217,7 @@ impl<T: Ord> BTreeSet<T> {
 
     /// Clears the set, removing all values.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeSet;
@@ -172,7 +238,7 @@ impl<T: Ord> BTreeSet<T> {
     /// but the ordering on the borrowed form *must* match the
     /// ordering on the value type.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeSet;
@@ -189,7 +255,7 @@ impl<T: Ord> BTreeSet<T> {
     /// Returns `true` if the set has no elements in common with `other`.
     /// This is equivalent to checking for an empty intersection.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeSet;
@@ -210,7 +276,7 @@ impl<T: Ord> BTreeSet<T> {
 
     /// Returns `true` if the set is a subset of another.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeSet;
@@ -252,7 +318,7 @@ impl<T: Ord> BTreeSet<T> {
 
     /// Returns `true` if the set is a superset of another.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeSet;
@@ -277,7 +343,7 @@ impl<T: Ord> BTreeSet<T> {
     /// Adds a value to the set. Returns `true` if the value was not already
     /// present in the set.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeSet;
@@ -300,7 +366,7 @@ impl<T: Ord> BTreeSet<T> {
     /// but the ordering on the borrowed form *must* match the
     /// ordering on the value type.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeSet;
@@ -580,7 +646,7 @@ mod test {
 
         let set_str = format!("{}", set);
 
-        assert!(set_str == "{1, 2}".to_string());
-        assert_eq!(format!("{}", empty), "{}".to_string());
+        assert!(set_str == "{1, 2}");
+        assert_eq!(format!("{}", empty), "{}");
     }
 }

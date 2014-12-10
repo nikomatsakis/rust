@@ -143,13 +143,19 @@
 
 #![stable]
 
+#[cfg(stage0)]
 pub use self::Option::*;
+#[cfg(not(stage0))]
+use self::Option::*;
 
 use cmp::{Eq, Ord};
 use default::Default;
-use iter::{Iterator, IteratorExt, DoubleEndedIterator, FromIterator, ExactSizeIterator};
+use iter::{Iterator, IteratorExt, DoubleEndedIterator, FromIterator};
+use iter::{ExactSizeIterator};
+use kinds::Copy;
 use mem;
-use result::{Result, Ok, Err};
+use result::Result;
+use result::Result::{Ok, Err};
 use slice;
 use slice::AsSlice;
 use clone::Clone;
@@ -274,9 +280,9 @@ impl<T> Option<T> {
     /// let mut x = Some("Diamonds");
     /// {
     ///     let v = x.as_mut_slice();
-    ///     assert!(v == &mut ["Diamonds"]);
+    ///     assert!(v == ["Diamonds"]);
     ///     v[0] = "Dirt";
-    ///     assert!(v == &mut ["Dirt"]);
+    ///     assert!(v == ["Dirt"]);
     /// }
     /// assert_eq!(x, Some("Dirt"));
     /// ```
@@ -554,7 +560,7 @@ impl<T> Option<T> {
     ///
     /// let x = None;
     /// let v: Vec<&str> = x.into_iter().collect();
-    /// assert_eq!(v, vec![]);
+    /// assert!(v.is_empty());
     /// ```
     #[inline]
     #[unstable = "waiting for iterator conventions"]
@@ -856,3 +862,6 @@ impl<A, V: FromIterator<A>> FromIterator<Option<A>> for Option<V> {
         }
     }
 }
+
+impl<T:Copy> Copy for Option<T> {}
+

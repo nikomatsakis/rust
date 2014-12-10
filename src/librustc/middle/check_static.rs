@@ -27,7 +27,7 @@ use self::Mode::*;
 
 use middle::ty;
 use middle::def;
-use middle::typeck;
+use middle::infer;
 use middle::traits;
 use middle::mem_categorization as mc;
 use middle::expr_use_visitor as euv;
@@ -47,13 +47,16 @@ enum Mode {
     InNothing,
 }
 
+impl Copy for Mode {}
+
 struct CheckStaticVisitor<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
     mode: Mode,
     checker: &'a mut GlobalChecker,
 }
 
-struct GlobalVisitor<'a, 'b, 'tcx: 'b>(euv::ExprUseVisitor<'a, 'b, 'tcx, ty::ctxt<'tcx>>);
+struct GlobalVisitor<'a,'b,'tcx:'a+'b>(
+    euv::ExprUseVisitor<'a,'b,'tcx,ty::ctxt<'tcx>>);
 struct GlobalChecker {
     static_consumptions: NodeSet,
     const_borrows: NodeSet,
@@ -69,7 +72,8 @@ pub fn check_crate(tcx: &ty::ctxt) {
         static_local_borrows: NodeSet::new(),
     };
     {
-        let visitor = euv::ExprUseVisitor::new(&mut checker, tcx);
+        let param_env = ty::empty_parameter_environment();
+        let visitor = euv::ExprUseVisitor::new(&mut checker, tcx, param_env);
         visit::walk_crate(&mut GlobalVisitor(visitor), tcx.map.krate());
     }
     visit::walk_crate(&mut CheckStaticVisitor {
@@ -113,7 +117,7 @@ impl<'a, 'tcx> CheckStaticVisitor<'a, 'tcx> {
 
     fn check_static_type(&self, e: &ast::Expr) {
         let ty = ty::node_id_to_type(self.tcx, e.id);
-        let infcx = typeck::infer::new_infer_ctxt(self.tcx);
+        let infcx = infer::new_infer_ctxt(self.tcx);
         let mut fulfill_cx = traits::FulfillmentContext::new();
         let cause = traits::ObligationCause::misc(DUMMY_SP);
         let obligation = traits::obligation_for_builtin_bound(self.tcx, cause, ty,
@@ -242,7 +246,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for CheckStaticVisitor<'a, 'tcx> {
     }
 }
 
-impl<'a, 'b, 't, 'v> Visitor<'v> for GlobalVisitor<'a, 'b, 't> {
+impl<'a,'b,'t,'v> Visitor<'v> for GlobalVisitor<'a,'b,'t> {
     fn visit_item(&mut self, item: &ast::Item) {
         match item.node {
             ast::ItemConst(_, ref e) |

@@ -15,7 +15,7 @@ use libc::{mod, c_int};
 
 use c_str::CString;
 use mem;
-use os::windows::fill_utf16_buf_and_decode;
+use os::windoze::fill_utf16_buf_and_decode;
 use path;
 use ptr;
 use str;
@@ -131,7 +131,7 @@ impl FileDesc {
         return ret;
     }
 
-    pub fn fstat(&mut self) -> IoResult<io::FileStat> {
+    pub fn fstat(&self) -> IoResult<io::FileStat> {
         let mut stat: libc::stat = unsafe { mem::zeroed() };
         match unsafe { libc::fstat(self.fd(), &mut stat) } {
             0 => Ok(mkstat(&stat)),
@@ -376,8 +376,8 @@ pub fn readlink(p: &Path) -> IoResult<Path> {
                                   libc::VOLUME_NAME_DOS)
     });
     let ret = match ret {
-        Some(ref s) if s.as_slice().starts_with(r"\\?\") => { // "
-            Ok(Path::new(s.as_slice().slice_from(4)))
+        Some(ref s) if s.starts_with(r"\\?\") => { // "
+            Ok(Path::new(s.slice_from(4)))
         }
         Some(s) => Ok(Path::new(s)),
         None => Err(super::last_error()),

@@ -496,9 +496,8 @@ Examples of integer literals of various forms:
 
 A _floating-point literal_ has one of two forms:
 
-* Two _decimal literals_ separated by a period
-  character `U+002E` (`.`), with an optional _exponent_ trailing after the
-  second decimal literal.
+* A _decimal literal_ followed by a period character `U+002E` (`.`). This is
+  optionally followed by another decimal literal, with an optional _exponent_.
 * A single _decimal literal_ followed by an _exponent_.
 
 By default, a floating-point literal has a generic type, and, like integer
@@ -509,11 +508,16 @@ types), which explicitly determine the type of the literal.
 Examples of floating-point literals of various forms:
 
 ```
-123.0f64;                          // type f64
-0.1f64;                            // type f64
-0.1f32;                            // type f32
-12E+99_f64;                        // type f64
+123.0f64;        // type f64
+0.1f64;          // type f64
+0.1f32;          // type f32
+12E+99_f64;      // type f64
+let x: f64 = 2.; // type f64
 ```
+
+This last example is different because it is not possible to use the suffix
+syntax with a floating point literal ending in a period. `2.f64` would attempt
+to call a method named `f64` on `2`.
 
 ##### Boolean literals
 
@@ -522,7 +526,7 @@ The two values of the boolean type are written `true` and `false`.
 ### Symbols
 
 ```{.ebnf .gram}
-symbol : "::" "->"
+symbol : "::" | "->"
        | '#' | '[' | ']' | '(' | ')' | '{' | '}'
        | ',' | ';' ;
 ```
@@ -994,7 +998,7 @@ An example of `use` declarations:
 
 ```
 use std::iter::range_step;
-use std::option::{Some, None};
+use std::option::Option::{Some, None};
 use std::collections::hash_map::{mod, HashMap};
 
 fn foo<T>(_: T){}
@@ -1004,8 +1008,8 @@ fn main() {
     // Equivalent to 'std::iter::range_step(0u, 10u, 2u);'
     range_step(0u, 10u, 2u);
 
-    // Equivalent to 'foo(vec![std::option::Some(1.0f64),
-    // std::option::None]);'
+    // Equivalent to 'foo(vec![std::option::Option::Some(1.0f64),
+    // std::option::Option::None]);'
     foo(vec![Some(1.0f64), None]);
 
     // Both `hash_map` and `HashMap` are in scope.
@@ -1660,6 +1664,7 @@ Implementations are defined with the keyword `impl`.
 
 ```
 # struct Point {x: f64, y: f64};
+# impl Copy for Point {}
 # type Surface = int;
 # struct BoundingBox {x: f64, y: f64, width: f64, height: f64};
 # trait Shape { fn draw(&self, Surface); fn bounding_box(&self) -> BoundingBox; }
@@ -1668,6 +1673,8 @@ struct Circle {
     radius: f64,
     center: Point,
 }
+
+impl Copy for Circle {}
 
 impl Shape for Circle {
     fn draw(&self, s: Surface) { do_draw_circle(s, *self); }
@@ -1791,6 +1798,7 @@ default visibility with the `priv` keyword. When an item is declared as `pub`,
 it can be thought of as being accessible to the outside world. For example:
 
 ```
+# #![allow(missing_copy_implementations)]
 # fn main() {}
 // Declare a private struct
 struct Foo;

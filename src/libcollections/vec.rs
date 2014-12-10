@@ -134,7 +134,7 @@ impl<T> Vec<T> {
     ///
     /// The vector will not allocate until elements are pushed onto it.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut vec: Vec<int> = Vec::new();
@@ -160,7 +160,7 @@ impl<T> Vec<T> {
     /// the main `Vec` docs above, 'Capacity and reallocation'.) To create
     /// a vector of a given length, use `Vec::from_elem` or `Vec::from_fn`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut vec: Vec<int> = Vec::with_capacity(10);
@@ -197,7 +197,7 @@ impl<T> Vec<T> {
     /// Creates a `Vec` of size `length` and initializes the elements to the
     /// value returned by the closure `op`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let vec = Vec::from_fn(3, |idx| idx * 2);
@@ -211,24 +211,18 @@ impl<T> Vec<T> {
             let mut xs = Vec::with_capacity(length);
             while xs.len < length {
                 let len = xs.len;
-                ptr::write(xs.as_mut_slice().unsafe_mut(len), op(len));
+                ptr::write(xs.unsafe_mut(len), op(len));
                 xs.len += 1;
             }
             xs
         }
     }
 
-    /// Creates a `Vec<T>` directly from the raw constituents.
+    /// Creates a `Vec<T>` directly from the raw components of another vector.
     ///
-    /// This is highly unsafe:
+    /// This is highly unsafe, due to the number of invariants that aren't checked.
     ///
-    /// - if `ptr` is null, then `length` and `capacity` should be 0
-    /// - `ptr` must point to an allocation of size `capacity`
-    /// - there must be `length` valid instances of type `T` at the
-    ///   beginning of that allocation
-    /// - `ptr` must be allocated by the default `Vec` allocator
-    ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::ptr;
@@ -285,7 +279,7 @@ impl<T> Vec<T> {
     /// satisfy `f` and all elements of `B` do not. The order of elements is
     /// preserved.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let vec = vec![1i, 2i, 3i, 4i];
@@ -316,7 +310,8 @@ impl<T: Clone> Vec<T> {
     ///
     /// Creates a `Vec` with `length` copies of `value`.
     ///
-    /// # Example
+    /// # Examples
+    ///
     /// ```
     /// let vec = Vec::from_elem(3, "hi");
     /// println!("{}", vec); // prints [hi, hi, hi]
@@ -328,7 +323,7 @@ impl<T: Clone> Vec<T> {
             let mut xs = Vec::with_capacity(length);
             while xs.len < length {
                 let len = xs.len;
-                ptr::write(xs.as_mut_slice().unsafe_mut(len),
+                ptr::write(xs.unsafe_mut(len),
                            value.clone());
                 xs.len += 1;
             }
@@ -341,7 +336,7 @@ impl<T: Clone> Vec<T> {
     /// Iterates over the slice `other`, clones each element, and then appends
     /// it to this `Vec`. The `other` vector is traversed in-order.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut vec = vec![1i];
@@ -361,7 +356,7 @@ impl<T: Clone> Vec<T> {
             // during the loop can prevent this optimisation.
             unsafe {
                 ptr::write(
-                    self.as_mut_slice().unsafe_mut(len),
+                    self.unsafe_mut(len),
                     other.unsafe_get(i).clone());
                 self.set_len(len + 1);
             }
@@ -372,7 +367,7 @@ impl<T: Clone> Vec<T> {
     ///
     /// Adds `n` copies of `value` to the `Vec`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut vec = vec!["hello"];
@@ -396,7 +391,7 @@ impl<T: Clone> Vec<T> {
     /// `(a, b)`, where all elements of `a` satisfy `f` and all elements of `b`
     /// do not. The order of elements is preserved.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let vec = vec![1i, 2, 3, 4];
@@ -535,13 +530,68 @@ impl<T> Extend<T> for Vec<T> {
     }
 }
 
-#[unstable = "waiting on PartialEq stability"]
-impl<T: PartialEq> PartialEq for Vec<T> {
+impl<A, B> PartialEq<Vec<B>> for Vec<A> where A: PartialEq<B> {
     #[inline]
-    fn eq(&self, other: &Vec<T>) -> bool {
-        self.as_slice() == other.as_slice()
+    fn eq(&self, other: &Vec<B>) -> bool { PartialEq::eq(&**self, &**other) }
+    #[inline]
+    fn ne(&self, other: &Vec<B>) -> bool { PartialEq::ne(&**self, &**other) }
+}
+
+macro_rules! impl_eq {
+    ($lhs:ty, $rhs:ty) => {
+        impl<'b, A, B> PartialEq<$rhs> for $lhs where A: PartialEq<B> {
+            #[inline]
+            fn eq(&self, other: &$rhs) -> bool { PartialEq::eq(&**self, &**other) }
+            #[inline]
+            fn ne(&self, other: &$rhs) -> bool { PartialEq::ne(&**self, &**other) }
+        }
+
+        impl<'b, A, B> PartialEq<$lhs> for $rhs where B: PartialEq<A> {
+            #[inline]
+            fn eq(&self, other: &$lhs) -> bool { PartialEq::eq(&**self, &**other) }
+            #[inline]
+            fn ne(&self, other: &$lhs) -> bool { PartialEq::ne(&**self, &**other) }
+        }
     }
 }
+
+impl_eq!(Vec<A>, &'b [B])
+impl_eq!(Vec<A>, &'b mut [B])
+
+impl<'a, A, B> PartialEq<Vec<B>> for CowVec<'a, A> where A: PartialEq<B> + Clone {
+    #[inline]
+    fn eq(&self, other: &Vec<B>) -> bool { PartialEq::eq(&**self, &**other) }
+    #[inline]
+    fn ne(&self, other: &Vec<B>) -> bool { PartialEq::ne(&**self, &**other) }
+}
+
+impl<'a, A, B> PartialEq<CowVec<'a, A>> for Vec<B> where A: Clone, B: PartialEq<A> {
+    #[inline]
+    fn eq(&self, other: &CowVec<'a, A>) -> bool { PartialEq::eq(&**self, &**other) }
+    #[inline]
+    fn ne(&self, other: &CowVec<'a, A>) -> bool { PartialEq::ne(&**self, &**other) }
+}
+
+macro_rules! impl_eq_for_cowvec {
+    ($rhs:ty) => {
+        impl<'a, 'b, A, B> PartialEq<$rhs> for CowVec<'a, A> where A: PartialEq<B> + Clone {
+            #[inline]
+            fn eq(&self, other: &$rhs) -> bool { PartialEq::eq(&**self, &**other) }
+            #[inline]
+            fn ne(&self, other: &$rhs) -> bool { PartialEq::ne(&**self, &**other) }
+        }
+
+        impl<'a, 'b, A, B> PartialEq<CowVec<'a, A>> for $rhs where A: Clone, B: PartialEq<A> {
+            #[inline]
+            fn eq(&self, other: &CowVec<'a, A>) -> bool { PartialEq::eq(&**self, &**other) }
+            #[inline]
+            fn ne(&self, other: &CowVec<'a, A>) -> bool { PartialEq::ne(&**self, &**other) }
+        }
+    }
+}
+
+impl_eq_for_cowvec!(&'b [B])
+impl_eq_for_cowvec!(&'b mut [B])
 
 #[unstable = "waiting on PartialOrd stability"]
 impl<T: PartialOrd> PartialOrd for Vec<T> {
@@ -554,7 +604,8 @@ impl<T: PartialOrd> PartialOrd for Vec<T> {
 #[unstable = "waiting on Eq stability"]
 impl<T: Eq> Eq for Vec<T> {}
 
-#[experimental]
+#[allow(deprecated)]
+#[deprecated = "Use overloaded `core::cmp::PartialEq`"]
 impl<T: PartialEq, Sized? V: AsSlice<T>> Equiv<V> for Vec<T> {
     #[inline]
     fn equiv(&self, other: &V) -> bool { self.as_slice() == other.as_slice() }
@@ -591,7 +642,7 @@ impl<T> Vec<T> {
     /// Returns the number of elements the vector can hold without
     /// reallocating.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let vec: Vec<int> = Vec::with_capacity(10);
@@ -616,7 +667,7 @@ impl<T> Vec<T> {
     ///
     /// Panics if the new capacity overflows `uint`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut vec: Vec<int> = vec![1];
@@ -632,11 +683,12 @@ impl<T> Vec<T> {
                 Some(new_cap) => {
                     let amort_cap = new_cap.next_power_of_two();
                     // next_power_of_two will overflow to exactly 0 for really big capacities
-                    if amort_cap == 0 {
-                        self.grow_capacity(new_cap);
+                    let cap = if amort_cap == 0 {
+                        new_cap
                     } else {
-                        self.grow_capacity(amort_cap);
-                    }
+                        amort_cap
+                    };
+                    self.grow_capacity(cap)
                 }
             }
         }
@@ -653,7 +705,7 @@ impl<T> Vec<T> {
     ///
     /// Panics if the new capacity overflows `uint`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut vec: Vec<int> = vec![1];
@@ -674,7 +726,7 @@ impl<T> Vec<T> {
     /// down as close as possible to the length but the allocator may still
     /// inform the vector that there is space for a few more elements.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut vec: Vec<int> = Vec::with_capacity(10);
@@ -727,7 +779,7 @@ impl<T> Vec<T> {
     /// If `len` is greater than the vector's current length, this has no
     /// effect.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut vec = vec![1i, 2, 3, 4];
@@ -742,14 +794,14 @@ impl<T> Vec<T> {
                 // decrement len before the read(), so a panic on Drop doesn't
                 // re-drop the just-failed value.
                 self.len -= 1;
-                ptr::read(self.as_slice().unsafe_get(self.len));
+                ptr::read(self.unsafe_get(self.len));
             }
         }
     }
 
     /// Returns a mutable slice of the elements of `self`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// fn foo(slice: &mut [int]) {}
@@ -772,7 +824,7 @@ impl<T> Vec<T> {
     /// value out of the vector (from start to end). The vector cannot
     /// be used after calling this.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let v = vec!["a".to_string(), "b".to_string()];
@@ -804,7 +856,7 @@ impl<T> Vec<T> {
     /// modifying its buffers, so it is up to the caller to ensure that the
     /// vector is actually the specified size.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut v = vec![1u, 2, 3, 4];
@@ -823,7 +875,8 @@ impl<T> Vec<T> {
     ///
     /// Returns `None` if `index` is out of bounds.
     ///
-    /// # Example
+    /// # Examples
+    ///
     /// ```
     /// let mut v = vec!["foo", "bar", "baz", "qux"];
     ///
@@ -840,7 +893,7 @@ impl<T> Vec<T> {
     pub fn swap_remove(&mut self, index: uint) -> Option<T> {
         let length = self.len();
         if length > 0 && index < length - 1 {
-            self.as_mut_slice().swap(index, length - 1);
+            self.swap(index, length - 1);
         } else if index >= length {
             return None
         }
@@ -855,7 +908,7 @@ impl<T> Vec<T> {
     /// Panics if `index` is not between `0` and the vector's length (both
     /// bounds inclusive).
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut vec = vec![1i, 2, 3];
@@ -890,7 +943,7 @@ impl<T> Vec<T> {
     /// shifting all elements after position `index` one position to the left.
     /// Returns `None` if `i` is out of bounds.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut v = vec![1i, 2, 3];
@@ -930,7 +983,7 @@ impl<T> Vec<T> {
     /// In other words, remove all elements `e` such that `f(&e)` returns false.
     /// This method operates in place and preserves the order of the retained elements.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut vec = vec![1i, 2, 3, 4];
@@ -962,7 +1015,7 @@ impl<T> Vec<T> {
     /// The vector is grown by `n` elements. The i-th new element are initialized to the value
     /// returned by `f(i)` where `i` is in the range [0, n).
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut vec = vec![0u, 1];
@@ -983,7 +1036,7 @@ impl<T> Vec<T> {
     ///
     /// Panics if the number of elements in the vector overflows a `uint`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// let mut vec = vec!(1i, 2);
@@ -1020,7 +1073,7 @@ impl<T> Vec<T> {
     /// Removes the last element from a vector and returns it, or `None` if
     /// it is empty.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// let mut vec = vec![1i, 2, 3];
@@ -1035,14 +1088,14 @@ impl<T> Vec<T> {
         } else {
             unsafe {
                 self.len -= 1;
-                Some(ptr::read(self.as_slice().unsafe_get(self.len())))
+                Some(ptr::read(self.unsafe_get(self.len())))
             }
         }
     }
 
     /// Clears the vector, removing all values.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut v = vec![1i, 2, 3];
@@ -1057,7 +1110,7 @@ impl<T> Vec<T> {
 
     /// Return the number of elements in the vector
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let a = vec![1i, 2, 3];
@@ -1069,7 +1122,7 @@ impl<T> Vec<T> {
 
     /// Returns true if the vector contains no elements
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut v = Vec::new();
@@ -1104,7 +1157,7 @@ impl<T: PartialEq> Vec<T> {
     ///
     /// If the vector is sorted, this removes all duplicates.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut vec = vec![1i, 2, 2, 3, 2];
@@ -1175,7 +1228,7 @@ impl<T: PartialEq> Vec<T> {
             if ln < 1 { return; }
 
             // Avoid bounds checks by using unsafe pointers.
-            let p = self.as_mut_slice().as_mut_ptr();
+            let p = self.as_mut_ptr();
             let mut r = 1;
             let mut w = 1;
 
@@ -1200,7 +1253,7 @@ impl<T: PartialEq> Vec<T> {
 impl<T> AsSlice<T> for Vec<T> {
     /// Returns a slice into `self`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// fn foo(slice: &[int]) {}
@@ -1237,7 +1290,7 @@ impl<T> Drop for Vec<T> {
         // zeroed (when moving out, because of #[unsafe_no_drop_flag]).
         if self.cap != 0 {
             unsafe {
-                for x in self.as_mut_slice().iter() {
+                for x in self.iter() {
                     ptr::read(x);
                 }
                 dealloc(self.ptr, self.cap)
@@ -1504,7 +1557,7 @@ impl<T> Vec<T> {
     /// Panics if `T` and `U` have differing sizes or are not zero-sized and
     /// have differing minimal alignments.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let v = vec![0u, 1, 2];
@@ -1723,7 +1776,7 @@ mod tests {
     #[test]
     fn test_as_vec() {
         let xs = [1u8, 2u8, 3u8];
-        assert_eq!(as_vec(&xs).as_slice(), xs.as_slice());
+        assert_eq!(as_vec(&xs).as_slice(), xs);
     }
 
     #[test]
@@ -1813,13 +1866,13 @@ mod tests {
         let mut values = vec![1u8,2,3,4,5];
         {
             let slice = values.slice_from_mut(2);
-            assert!(slice == &mut [3, 4, 5]);
+            assert!(slice == [3, 4, 5]);
             for p in slice.iter_mut() {
                 *p += 2;
             }
         }
 
-        assert!(values.as_slice() == &[1, 2, 5, 6, 7]);
+        assert!(values == [1, 2, 5, 6, 7]);
     }
 
     #[test]
@@ -1827,13 +1880,13 @@ mod tests {
         let mut values = vec![1u8,2,3,4,5];
         {
             let slice = values.slice_to_mut(2);
-            assert!(slice == &mut [1, 2]);
+            assert!(slice == [1, 2]);
             for p in slice.iter_mut() {
                 *p += 1;
             }
         }
 
-        assert!(values.as_slice() == &[2, 3, 3, 4, 5]);
+        assert!(values == [2, 3, 3, 4, 5]);
     }
 
     #[test]
@@ -1963,7 +2016,6 @@ mod tests {
 
         let (left, right) = unzip(z1.iter().map(|&x| x));
 
-        let (left, right) = (left.as_slice(), right.as_slice());
         assert_eq!((1, 4), (left[0], right[0]));
         assert_eq!((2, 5), (left[1], right[1]));
         assert_eq!((3, 6), (left[2], right[2]));
@@ -2097,7 +2149,7 @@ mod tests {
     #[test]
     fn test_map_in_place() {
         let v = vec![0u, 1, 2];
-        assert_eq!(v.map_in_place(|i: uint| i as int - 1).as_slice(), [-1i, 0, 1].as_slice());
+        assert_eq!(v.map_in_place(|i: uint| i as int - 1), [-1i, 0, 1]);
     }
 
     #[test]
@@ -2105,7 +2157,7 @@ mod tests {
         let v = vec![(), ()];
         #[deriving(PartialEq, Show)]
         struct ZeroSized;
-        assert_eq!(v.map_in_place(|_| ZeroSized).as_slice(), [ZeroSized, ZeroSized].as_slice());
+        assert_eq!(v.map_in_place(|_| ZeroSized), [ZeroSized, ZeroSized]);
     }
 
     #[test]
@@ -2142,7 +2194,7 @@ mod tests {
     fn test_into_boxed_slice() {
         let xs = vec![1u, 2, 3];
         let ys = xs.into_boxed_slice();
-        assert_eq!(ys.as_slice(), [1u, 2, 3].as_slice());
+        assert_eq!(ys.as_slice(), [1u, 2, 3]);
     }
 
     #[bench]

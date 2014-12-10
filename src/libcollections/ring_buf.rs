@@ -11,7 +11,6 @@
 //! This crate implements a double-ended queue with `O(1)` amortized inserts and removals from both
 //! ends of the container. It also has `O(1)` indexing like a vector. The contained elements are
 //! not required to be copyable, and the queue will be sendable if the contained type is sendable.
-//! Its interface `Deque` is defined in `collections`.
 
 use core::prelude::*;
 
@@ -35,7 +34,7 @@ static MINIMUM_CAPACITY: uint = 2u;
 // FIXME(conventions): implement shrink_to_fit. Awkward with the current design, but it should
 // be scrapped anyway. Defer to rewrite?
 
-/// `RingBuf` is a circular buffer that implements `Deque`.
+/// `RingBuf` is a circular buffer.
 pub struct RingBuf<T> {
     // tail and head are pointers into the buffer. Tail always points
     // to the first element that could be read, Head always points
@@ -137,7 +136,7 @@ impl<T> RingBuf<T> {
 
     /// Retrieves an element in the `RingBuf` by index.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::collections::RingBuf;
@@ -160,7 +159,7 @@ impl<T> RingBuf<T> {
 
     /// Retrieves an element in the `RingBuf` mutably by index.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::collections::RingBuf;
@@ -194,7 +193,7 @@ impl<T> RingBuf<T> {
     ///
     /// Fails if there is no element with either index.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::collections::RingBuf;
@@ -220,7 +219,7 @@ impl<T> RingBuf<T> {
     /// Returns the number of elements the `RingBuf` can hold without
     /// reallocating.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::RingBuf;
@@ -243,7 +242,7 @@ impl<T> RingBuf<T> {
     ///
     /// Panics if the new capacity overflows `uint`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::RingBuf;
@@ -264,7 +263,7 @@ impl<T> RingBuf<T> {
     ///
     /// Panics if the new capacity overflows `uint`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::RingBuf;
@@ -342,7 +341,7 @@ impl<T> RingBuf<T> {
 
     /// Returns a front-to-back iterator.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::collections::RingBuf;
@@ -365,7 +364,7 @@ impl<T> RingBuf<T> {
 
     /// Returns a front-to-back iterator which returns mutable references.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::collections::RingBuf;
@@ -402,7 +401,7 @@ impl<T> RingBuf<T> {
 
     /// Returns the number of elements in the `RingBuf`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::RingBuf;
@@ -417,7 +416,7 @@ impl<T> RingBuf<T> {
 
     /// Returns true if the buffer contains no elements
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::RingBuf;
@@ -432,7 +431,7 @@ impl<T> RingBuf<T> {
 
     /// Clears the buffer, removing all values.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::RingBuf;
@@ -452,7 +451,7 @@ impl<T> RingBuf<T> {
     /// Provides a reference to the front element, or `None` if the sequence is
     /// empty.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::RingBuf;
@@ -472,7 +471,7 @@ impl<T> RingBuf<T> {
     /// Provides a mutable reference to the front element, or `None` if the
     /// sequence is empty.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::RingBuf;
@@ -496,7 +495,7 @@ impl<T> RingBuf<T> {
     /// Provides a reference to the back element, or `None` if the sequence is
     /// empty.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::RingBuf;
@@ -516,7 +515,7 @@ impl<T> RingBuf<T> {
     /// Provides a mutable reference to the back element, or `None` if the
     /// sequence is empty.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::RingBuf;
@@ -541,7 +540,7 @@ impl<T> RingBuf<T> {
     /// Removes the first element and returns it, or `None` if the sequence is
     /// empty.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::RingBuf;
@@ -567,7 +566,7 @@ impl<T> RingBuf<T> {
 
     /// Inserts an element first in the sequence.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::RingBuf;
@@ -597,7 +596,7 @@ impl<T> RingBuf<T> {
 
     /// Appends an element to the back of a buffer
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::collections::RingBuf;
@@ -628,7 +627,7 @@ impl<T> RingBuf<T> {
     /// Removes the last element from a buffer and returns it, or `None` if
     /// it is empty.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::collections::RingBuf;
@@ -1246,7 +1245,7 @@ mod tests {
         }
         {
             let b: &[_] = &[&0,&1,&2,&3,&4];
-            assert_eq!(d.iter().collect::<Vec<&int>>().as_slice(), b);
+            assert_eq!(d.iter().collect::<Vec<&int>>(), b);
         }
 
         for i in range(6i, 9) {
@@ -1254,7 +1253,7 @@ mod tests {
         }
         {
             let b: &[_] = &[&8,&7,&6,&0,&1,&2,&3,&4];
-            assert_eq!(d.iter().collect::<Vec<&int>>().as_slice(), b);
+            assert_eq!(d.iter().collect::<Vec<&int>>(), b);
         }
 
         let mut it = d.iter();
@@ -1277,14 +1276,14 @@ mod tests {
         }
         {
             let b: &[_] = &[&4,&3,&2,&1,&0];
-            assert_eq!(d.iter().rev().collect::<Vec<&int>>().as_slice(), b);
+            assert_eq!(d.iter().rev().collect::<Vec<&int>>(), b);
         }
 
         for i in range(6i, 9) {
             d.push_front(i);
         }
         let b: &[_] = &[&4,&3,&2,&1,&0,&6,&7,&8];
-        assert_eq!(d.iter().rev().collect::<Vec<&int>>().as_slice(), b);
+        assert_eq!(d.iter().rev().collect::<Vec<&int>>(), b);
     }
 
     #[test]
@@ -1495,12 +1494,12 @@ mod tests {
     #[test]
     fn test_show() {
         let ringbuf: RingBuf<int> = range(0i, 10).collect();
-        assert!(format!("{}", ringbuf).as_slice() == "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]");
+        assert!(format!("{}", ringbuf) == "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]");
 
         let ringbuf: RingBuf<&str> = vec!["just", "one", "test", "more"].iter()
                                                                         .map(|&s| s)
                                                                         .collect();
-        assert!(format!("{}", ringbuf).as_slice() == "[just, one, test, more]");
+        assert!(format!("{}", ringbuf) == "[just, one, test, more]");
     }
 
     #[test]

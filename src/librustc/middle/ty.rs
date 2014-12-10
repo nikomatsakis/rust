@@ -35,6 +35,10 @@ pub use self::ImplOrTraitItem::*;
 pub use self::BoundRegion::*;
 pub use self::sty::*;
 pub use self::IntVarValue::*;
+pub use self::ExprAdjustment::*;
+pub use self::vtable_origin::*;
+pub use self::MethodOrigin::*;
+pub use self::CopyImplementationError::*;
 
 use back::svh::Svh;
 use session::Session;
@@ -49,11 +53,12 @@ use middle::mem_categorization as mc;
 use middle::region;
 use middle::resolve;
 use middle::resolve_lifetime;
+use middle::infer;
 use middle::stability;
 use middle::subst::{mod, Subst, Substs, VecPerParamSpace};
+use middle::traits::ObligationCause;
 use middle::traits;
 use middle::ty;
-use middle::typeck;
 use middle::ty_fold::{mod, TypeFoldable, TypeFolder, HigherRankedFoldable};
 use middle;
 use util::ppaux::{note_and_explain_region, bound_region_ptr_to_string};
@@ -70,7 +75,7 @@ use std::hash::{Hash, sip, Writer};
 use std::mem;
 use std::ops;
 use std::rc::Rc;
-use std::collections::hash_map::{Occupied, Vacant};
+use std::collections::hash_map::{HashMap, Occupied, Vacant};
 use arena::TypedArena;
 use syntax::abi;
 use syntax::ast::{CrateNum, DefId, FnStyle, Ident, ItemTrait, LOCAL_CRATE};
@@ -79,7 +84,7 @@ use syntax::ast::{Onceness, StmtExpr, StmtSemi, StructField, UnnamedField};
 use syntax::ast::{Visibility};
 use syntax::ast_util::{mod, is_local, lit_is_str, local_def, PostExpansionMethod};
 use syntax::attr::{mod, AttrMetaMethods};
-use syntax::codemap::Span;
+use syntax::codemap::{DUMMY_SP, Span};
 use syntax::parse::token::{mod, InternedString};
 use syntax::{ast, ast_map};
 use std::collections::enum_set::{EnumSet, CLike};
@@ -90,17 +95,32 @@ pub const INITIAL_DISCRIMINANT_VALUE: Disr = 0;
 
 // Data types
 
+/// The complete set of all analyses described in this module. This is
+/// produced by the driver and fed to trans and later passes.
+pub struct CrateAnalysis<'tcx> {
+    pub exp_map2: middle::resolve::ExportMap2,
+    pub exported_items: middle::privacy::ExportedItems,
+    pub public_items: middle::privacy::PublicItems,
+    pub ty_cx: ty::ctxt<'tcx>,
+    pub reachable: NodeSet,
+    pub name: String,
+}
+
 #[deriving(PartialEq, Eq, Hash)]
 pub struct field<'tcx> {
     pub name: ast::Name,
     pub mt: mt<'tcx>
 }
 
+impl<'tcx> Copy for field<'tcx> {}
+
 #[deriving(Clone, Show)]
 pub enum ImplOrTraitItemContainer {
     TraitContainer(ast::DefId),
     ImplContainer(ast::DefId),
 }
+
+impl Copy for ImplOrTraitItemContainer {}
 
 impl ImplOrTraitItemContainer {
     pub fn id(&self) -> ast::DefId {
@@ -161,6 +181,8 @@ pub enum ImplOrTraitItemId {
     MethodTraitItemId(ast::DefId),
     TypeTraitItemId(ast::DefId),
 }
+
+impl Copy for ImplOrTraitItemId {}
 
 impl ImplOrTraitItemId {
     pub fn def_id(&self) -> ast::DefId {
@@ -223,11 +245,15 @@ pub struct AssociatedType {
     pub container: ImplOrTraitItemContainer,
 }
 
+impl Copy for AssociatedType {}
+
 #[deriving(Clone, PartialEq, Eq, Hash, Show)]
 pub struct mt<'tcx> {
     pub ty: Ty<'tcx>,
     pub mutbl: ast::Mutability,
 }
+
+impl<'tcx> Copy for mt<'tcx> {}
 
 #[deriving(Clone, PartialEq, Eq, Hash, Encodable, Decodable, Show)]
 pub enum TraitStore {
@@ -237,6 +263,8 @@ pub enum TraitStore {
     RegionTraitStore(Region, ast::Mutability),
 }
 
+impl Copy for TraitStore {}
+
 #[deriving(Clone, Show)]
 pub struct field_ty {
     pub name: Name,
@@ -244,6 +272,8 @@ pub struct field_ty {
     pub vis: ast::Visibility,
     pub origin: ast::DefId,  // The DefId of the struct in which the field is declared.
 }
+
+impl Copy for field_ty {}
 
 // Contains information needed to resolve types and (in the future) look up
 // the types of AST nodes.
@@ -254,10 +284,14 @@ pub struct creader_cache_key {
     pub len: uint
 }
 
+impl Copy for creader_cache_key {}
+
 pub enum ast_ty_to_ty_cache_entry<'tcx> {
     atttce_unresolved,  /* not resolved yet */
     atttce_resolved(Ty<'tcx>)  /* resolved to a type, irrespective of region */
 }
+
+impl<'tcx> Copy for ast_ty_to_ty_cache_entry<'tcx> {}
 
 #[deriving(Clone, PartialEq, Decodable, Encodable)]
 pub struct ItemVariances {
@@ -272,6 +306,8 @@ pub enum Variance {
     Contravariant,  // T<A> <: T<B> iff B <: A -- e.g., function param type
     Bivariant,      // T<A> <: T<B>            -- e.g., unused type parameter
 }
+
+impl Copy for Variance {}
 
 #[deriving(Clone, Show)]
 pub enum AutoAdjustment<'tcx> {
@@ -412,7 +448,167 @@ pub fn type_of_adjust<'tcx>(cx: &ctxt<'tcx>, adj: &AutoAdjustment<'tcx>) -> Opti
     }
 }
 
+#[deriving(Clone, Encodable, Decodable, PartialEq, PartialOrd, Show)]
+pub struct param_index {
+    pub space: subst::ParamSpace,
+    pub index: uint
+}
 
+impl Copy for param_index {}
+
+#[deriving(Clone, Show)]
+pub enum MethodOrigin<'tcx> {
+    // fully statically resolved method
+    MethodStatic(ast::DefId),
+
+    // fully statically resolved unboxed closure invocation
+    MethodStaticUnboxedClosure(ast::DefId),
+
+    // method invoked on a type parameter with a bounded trait
+    MethodTypeParam(MethodParam<'tcx>),
+
+    // method invoked on a trait instance
+    MethodTraitObject(MethodObject<'tcx>),
+
+}
+
+// details for a method invoked with a receiver whose type is a type parameter
+// with a bounded trait.
+#[deriving(Clone, Show)]
+pub struct MethodParam<'tcx> {
+    // the precise trait reference that occurs as a bound -- this may
+    // be a supertrait of what the user actually typed.
+    pub trait_ref: Rc<ty::TraitRef<'tcx>>,
+
+    // index of uint in the list of methods for the trait
+    pub method_num: uint,
+}
+
+// details for a method invoked with a receiver whose type is an object
+#[deriving(Clone, Show)]
+pub struct MethodObject<'tcx> {
+    // the (super)trait containing the method to be invoked
+    pub trait_ref: Rc<ty::TraitRef<'tcx>>,
+
+    // the actual base trait id of the object
+    pub object_trait_id: ast::DefId,
+
+    // index of the method to be invoked amongst the trait's methods
+    pub method_num: uint,
+
+    // index into the actual runtime vtable.
+    // the vtable is formed by concatenating together the method lists of
+    // the base object trait and all supertraits;  this is the index into
+    // that vtable
+    pub real_index: uint,
+}
+
+#[deriving(Clone)]
+pub struct MethodCallee<'tcx> {
+    pub origin: MethodOrigin<'tcx>,
+    pub ty: Ty<'tcx>,
+    pub substs: subst::Substs<'tcx>
+}
+
+impl Copy for MethodCall {}
+
+/// With method calls, we store some extra information in
+/// side tables (i.e method_map). We use
+/// MethodCall as a key to index into these tables instead of
+/// just directly using the expression's NodeId. The reason
+/// for this being that we may apply adjustments (coercions)
+/// with the resulting expression also needing to use the
+/// side tables. The problem with this is that we don't
+/// assign a separate NodeId to this new expression
+/// and so it would clash with the base expression if both
+/// needed to add to the side tables. Thus to disambiguate
+/// we also keep track of whether there's an adjustment in
+/// our key.
+#[deriving(Clone, PartialEq, Eq, Hash, Show)]
+pub struct MethodCall {
+    pub expr_id: ast::NodeId,
+    pub adjustment: ExprAdjustment
+}
+
+#[deriving(Clone, PartialEq, Eq, Hash, Show, Encodable, Decodable)]
+pub enum ExprAdjustment {
+    NoAdjustment,
+    AutoDeref(uint),
+    AutoObject
+}
+
+impl Copy for ExprAdjustment {}
+
+impl MethodCall {
+    pub fn expr(id: ast::NodeId) -> MethodCall {
+        MethodCall {
+            expr_id: id,
+            adjustment: NoAdjustment
+        }
+    }
+
+    pub fn autoobject(id: ast::NodeId) -> MethodCall {
+        MethodCall {
+            expr_id: id,
+            adjustment: AutoObject
+        }
+    }
+
+    pub fn autoderef(expr_id: ast::NodeId, autoderef: uint) -> MethodCall {
+        MethodCall {
+            expr_id: expr_id,
+            adjustment: AutoDeref(1 + autoderef)
+        }
+    }
+}
+
+// maps from an expression id that corresponds to a method call to the details
+// of the method to be invoked
+pub type MethodMap<'tcx> = RefCell<FnvHashMap<MethodCall, MethodCallee<'tcx>>>;
+
+pub type vtable_param_res<'tcx> = Vec<vtable_origin<'tcx>>;
+
+// Resolutions for bounds of all parameters, left to right, for a given path.
+pub type vtable_res<'tcx> = VecPerParamSpace<vtable_param_res<'tcx>>;
+
+#[deriving(Clone)]
+pub enum vtable_origin<'tcx> {
+    /*
+      Statically known vtable. def_id gives the impl item
+      from whence comes the vtable, and tys are the type substs.
+      vtable_res is the vtable itself.
+     */
+    vtable_static(ast::DefId, subst::Substs<'tcx>, vtable_res<'tcx>),
+
+    /*
+      Dynamic vtable, comes from a parameter that has a bound on it:
+      fn foo<T:quux,baz,bar>(a: T) -- a's vtable would have a
+      vtable_param origin
+
+      The first argument is the param index (identifying T in the example),
+      and the second is the bound number (identifying baz)
+     */
+    vtable_param(param_index, uint),
+
+    /*
+      Vtable automatically generated for an unboxed closure. The def ID is the
+      ID of the closure expression.
+     */
+    vtable_unboxed_closure(ast::DefId),
+
+    /*
+      Asked to determine the vtable for ty_err. This is the value used
+      for the vtables of `Self` in a virtual call like `foo.bar()`
+      where `foo` is of object type. The same value is also used when
+      type errors occur.
+     */
+    vtable_error,
+}
+
+
+// For every explicit cast into an object type, maps from the cast
+// expr to the associated trait ref.
+pub type ObjectCastMap<'tcx> = RefCell<NodeMap<Rc<ty::TraitRef<'tcx>>>>;
 
 /// A restriction that certain types must be the same size. The use of
 /// `transmute` gives rise to these restrictions.
@@ -426,6 +622,8 @@ pub struct TransmuteRestriction<'tcx> {
     /// NodeIf of the transmute intrinsic.
     pub id: ast::NodeId,
 }
+
+impl<'tcx> Copy for TransmuteRestriction<'tcx> {}
 
 /// The data structure to keep track of all the information that typechecker
 /// generates so that so that it can be reused and doesn't have to be redone
@@ -473,7 +671,7 @@ pub struct ctxt<'tcx> {
 
     /// Maps from node-id of a trait object cast (like `foo as
     /// Box<Trait>`) to the trait reference.
-    pub object_cast_map: typeck::ObjectCastMap<'tcx>,
+    pub object_cast_map: ObjectCastMap<'tcx>,
 
     pub map: ast_map::Map<'tcx>,
     pub intrinsic_defs: RefCell<DefIdMap<Ty<'tcx>>>,
@@ -548,7 +746,7 @@ pub struct ctxt<'tcx> {
     pub extern_const_statics: RefCell<DefIdMap<ast::NodeId>>,
     pub extern_const_variants: RefCell<DefIdMap<ast::NodeId>>,
 
-    pub method_map: typeck::MethodMap<'tcx>,
+    pub method_map: MethodMap<'tcx>,
 
     pub dependency_formats: RefCell<dependency_format::Dependencies>,
 
@@ -579,6 +777,9 @@ pub struct ctxt<'tcx> {
 
     /// Caches the representation hints for struct definitions.
     pub repr_hint_cache: RefCell<DefIdMap<Rc<Vec<attr::ReprAttr>>>>,
+
+    /// Caches whether types move by default.
+    pub type_moves_by_default_cache: RefCell<HashMap<Ty<'tcx>,bool>>,
 }
 
 // Flags that we track on types. These flags are propagated upwards
@@ -598,6 +799,8 @@ bitflags! {
         const NEEDS_SUBST   = HAS_PARAMS.bits | HAS_SELF.bits | HAS_REGIONS.bits,
     }
 }
+
+impl Copy for TypeFlags {}
 
 #[deriving(Show)]
 pub struct TyS<'tcx> {
@@ -640,6 +843,7 @@ impl<'tcx> PartialEq for InternedTy<'tcx> {
         self.ty.sty == other.ty.sty
     }
 }
+
 impl<'tcx> Eq for InternedTy<'tcx> {}
 
 impl<'tcx, S: Writer> Hash<S> for InternedTy<'tcx> {
@@ -733,6 +937,8 @@ impl<'tcx> FnOutput<'tcx> {
     }
 }
 
+impl<'tcx> Copy for FnOutput<'tcx> {}
+
 /// Signature of a function type, which I have arbitrarily
 /// decided to use to refer to the input/output types.
 ///
@@ -756,6 +962,8 @@ pub struct ParamTy {
     pub idx: uint,
     pub def_id: DefId
 }
+
+impl Copy for ParamTy {}
 
 /// A [De Bruijn index][dbi] is a standard means of representing
 /// regions (and perhaps later types) in a higher-ranked setting. In
@@ -851,6 +1059,8 @@ pub struct UpvarId {
     pub closure_expr_id: ast::NodeId,
 }
 
+impl Copy for UpvarId {}
+
 #[deriving(Clone, PartialEq, Eq, Hash, Show, Encodable, Decodable)]
 pub enum BorrowKind {
     /// Data must be immutable and is aliasable.
@@ -896,6 +1106,8 @@ pub enum BorrowKind {
     /// Data is mutable and not aliasable.
     MutBorrow
 }
+
+impl Copy for BorrowKind {}
 
 /// Information describing the borrowing of an upvar. This is computed
 /// during `typeck`, specifically by `regionck`. The general idea is
@@ -952,6 +1164,8 @@ pub struct UpvarBorrow {
 
 pub type UpvarBorrowMap = FnvHashMap<UpvarId, UpvarBorrow>;
 
+impl Copy for UpvarBorrow {}
+
 impl Region {
     pub fn is_bound(&self) -> bool {
         match *self {
@@ -969,6 +1183,8 @@ impl Region {
     }
 }
 
+impl Copy for Region {}
+
 #[deriving(Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Encodable, Decodable, Show)]
 /// A "free" region `fr` can be interpreted as "some region
 /// at least as big as the scope `fr.scope`".
@@ -976,6 +1192,8 @@ pub struct FreeRegion {
     pub scope: region::CodeExtent,
     pub bound_region: BoundRegion
 }
+
+impl Copy for FreeRegion {}
 
 #[deriving(Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Encodable, Decodable, Show)]
 pub enum BoundRegion {
@@ -995,6 +1213,8 @@ pub enum BoundRegion {
     // to a closure
     BrEnv
 }
+
+impl Copy for BoundRegion {}
 
 #[inline]
 pub fn mk_prim_t<'tcx>(primitive: &'tcx TyS<'static>) -> Ty<'tcx> {
@@ -1135,6 +1355,8 @@ pub enum IntVarValue {
     UintType(ast::UintTy),
 }
 
+impl Copy for IntVarValue {}
+
 #[deriving(Clone, Show)]
 pub enum terr_vstore_kind {
     terr_vec,
@@ -1143,11 +1365,15 @@ pub enum terr_vstore_kind {
     terr_trait
 }
 
+impl Copy for terr_vstore_kind {}
+
 #[deriving(Clone, Show)]
 pub struct expected_found<T> {
     pub expected: T,
     pub found: T
 }
+
+impl<T:Copy> Copy for expected_found<T> {}
 
 // Data structures used in type unification
 #[deriving(Clone, Show)]
@@ -1183,6 +1409,8 @@ pub enum type_err<'tcx> {
     terr_convergence_mismatch(expected_found<bool>)
 }
 
+impl<'tcx> Copy for type_err<'tcx> {}
+
 /// Bounds suitable for a named type parameter like `A` in `fn foo<A>`
 /// as well as the existential type parameter in an object type.
 #[deriving(PartialEq, Eq, Hash, Clone, Show)]
@@ -1203,6 +1431,8 @@ pub struct ExistentialBounds {
     pub builtin_bounds: BuiltinBounds
 }
 
+impl Copy for ExistentialBounds {}
+
 pub type BuiltinBounds = EnumSet<BuiltinBound>;
 
 #[deriving(Clone, Encodable, PartialEq, Eq, Decodable, Hash, Show)]
@@ -1213,6 +1443,8 @@ pub enum BuiltinBound {
     BoundCopy,
     BoundSync,
 }
+
+impl Copy for BuiltinBound {}
 
 pub fn empty_builtin_bounds() -> BuiltinBounds {
     EnumSet::new()
@@ -1246,20 +1478,28 @@ pub struct TyVid {
     pub index: uint
 }
 
+impl Copy for TyVid {}
+
 #[deriving(Clone, PartialEq, Eq, Hash)]
 pub struct IntVid {
     pub index: uint
 }
+
+impl Copy for IntVid {}
 
 #[deriving(Clone, PartialEq, Eq, Hash)]
 pub struct FloatVid {
     pub index: uint
 }
 
+impl Copy for FloatVid {}
+
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash)]
 pub struct RegionVid {
     pub index: uint
 }
+
+impl Copy for RegionVid {}
 
 #[deriving(Clone, PartialEq, Eq, Hash)]
 pub enum InferTy {
@@ -1274,11 +1514,15 @@ pub enum InferTy {
     SkolemizedIntTy(uint),
 }
 
+impl Copy for InferTy {}
+
 #[deriving(Clone, Encodable, Decodable, Eq, Hash, Show)]
 pub enum InferRegion {
     ReVar(RegionVid),
     ReSkolemized(uint, BoundRegion)
 }
+
+impl Copy for InferRegion {}
 
 impl cmp::PartialEq for InferRegion {
     fn eq(&self, other: &InferRegion) -> bool {
@@ -1475,6 +1719,7 @@ impl<'tcx> TraitRef<'tcx> {
 /// bound lifetime parameters are replaced with free ones, but in the
 /// future I hope to refine the representation of types so as to make
 /// more distinctions clearer.
+#[deriving(Clone)]
 pub struct ParameterEnvironment<'tcx> {
     /// A substitution that can be applied to move from
     /// the "outer" view of a type or method to the "inner" view.
@@ -1523,14 +1768,14 @@ impl<'tcx> ParameterEnvironment<'tcx> {
                             }
                             TypeTraitItem(_) => {
                                 cx.sess
-                                  .bug("ParameterEnvironment::from_item(): \
+                                  .bug("ParameterEnvironment::for_item(): \
                                         can't create a parameter environment \
                                         for type trait items")
                             }
                         }
                     }
                     ast::TypeImplItem(_) => {
-                        cx.sess.bug("ParameterEnvironment::from_item(): \
+                        cx.sess.bug("ParameterEnvironment::for_item(): \
                                      can't create a parameter environment \
                                      for type impl items")
                     }
@@ -1540,7 +1785,7 @@ impl<'tcx> ParameterEnvironment<'tcx> {
                 match *trait_method {
                     ast::RequiredMethod(ref required) => {
                         cx.sess.span_bug(required.span,
-                                         "ParameterEnvironment::from_item():
+                                         "ParameterEnvironment::for_item():
                                           can't create a parameter \
                                           environment for required trait \
                                           methods")
@@ -1558,7 +1803,7 @@ impl<'tcx> ParameterEnvironment<'tcx> {
                             }
                             TypeTraitItem(_) => {
                                 cx.sess
-                                  .bug("ParameterEnvironment::from_item(): \
+                                  .bug("ParameterEnvironment::for_item(): \
                                         can't create a parameter environment \
                                         for type trait items")
                             }
@@ -1600,6 +1845,10 @@ impl<'tcx> ParameterEnvironment<'tcx> {
                                           environment for this kind of item")
                     }
                 }
+            }
+            Some(ast_map::NodeExpr(..)) => {
+                // This is a convenience to allow closures to work.
+                ParameterEnvironment::for_item(cx, cx.map.get_parent(id))
             }
             _ => {
                 cx.sess.bug(format!("ParameterEnvironment::from_item(): \
@@ -1657,6 +1906,8 @@ pub enum UnboxedClosureKind {
     FnMutUnboxedClosureKind,
     FnOnceUnboxedClosureKind,
 }
+
+impl Copy for UnboxedClosureKind {}
 
 impl UnboxedClosureKind {
     pub fn trait_did(&self, cx: &ctxt) -> ast::DefId {
@@ -1742,6 +1993,7 @@ pub fn mk_ctxt<'tcx>(s: Session,
         associated_types: RefCell::new(DefIdMap::new()),
         selection_cache: traits::SelectionCache::new(),
         repr_hint_cache: RefCell::new(DefIdMap::new()),
+        type_moves_by_default_cache: RefCell::new(HashMap::new()),
    }
 }
 
@@ -2437,6 +2689,8 @@ pub struct TypeContents {
     pub bits: u64
 }
 
+impl Copy for TypeContents {}
+
 macro_rules! def_type_content_sets(
     (mod $mname:ident { $($name:ident = $bits:expr),+ }) => {
         #[allow(non_snake_case)]
@@ -2463,7 +2717,6 @@ def_type_content_sets!(
         OwnsOwned                           = 0b0000_0000__0000_0001__0000,
         OwnsDtor                            = 0b0000_0000__0000_0010__0000,
         OwnsManaged /* see [1] below */     = 0b0000_0000__0000_0100__0000,
-        OwnsAffine                          = 0b0000_0000__0000_1000__0000,
         OwnsAll                             = 0b0000_0000__1111_1111__0000,
 
         // Things that are reachable by the value in any way (fourth nibble):
@@ -2473,23 +2726,11 @@ def_type_content_sets!(
         ReachesFfiUnsafe                    = 0b0010_0000__0000_0000__0000,
         ReachesAll                          = 0b0011_1111__0000_0000__0000,
 
-        // Things that cause values to *move* rather than *copy*. This
-        // is almost the same as the `Copy` trait, but for managed
-        // data -- atm, we consider managed data to copy, not move,
-        // but it does not impl Copy as a pure memcpy is not good
-        // enough. Yuck.
-        Moves                               = 0b0000_0000__0000_1011__0000,
-
         // Things that mean drop glue is necessary
         NeedsDrop                           = 0b0000_0000__0000_0111__0000,
 
         // Things that prevent values from being considered sized
         Nonsized                            = 0b0000_0000__0000_0000__0001,
-
-        // Things that make values considered not POD (would be same
-        // as `Moves`, but for the fact that managed data `@` is
-        // not considered POD)
-        Noncopy                              = 0b0000_0000__0000_1111__0000,
 
         // Bits to set when a managed value is encountered
         //
@@ -2530,10 +2771,6 @@ impl TypeContents {
 
     pub fn interior_unsized(&self) -> bool {
         self.intersects(TC::InteriorUnsized)
-    }
-
-    pub fn moves_by_default(&self, _: &ctxt) -> bool {
-        self.intersects(TC::Moves)
     }
 
     pub fn needs_drop(&self, _: &ctxt) -> bool {
@@ -2740,7 +2977,7 @@ pub fn type_contents<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> TypeContents {
                         res = res | TC::ReachesFfiUnsafe;
                     }
 
-                    match repr_hints.as_slice().get(0) {
+                    match repr_hints.get(0) {
                         Some(h) => if !h.is_ffi_safe() {
                             res = res | TC::ReachesFfiUnsafe;
                         },
@@ -2820,15 +3057,10 @@ pub fn type_contents<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> TypeContents {
         mc | tc_ty(cx, mt.ty, cache)
     }
 
-    fn apply_lang_items(cx: &ctxt,
-                        did: ast::DefId,
-                        tc: TypeContents)
-                        -> TypeContents
-    {
+    fn apply_lang_items(cx: &ctxt, did: ast::DefId, tc: TypeContents)
+                        -> TypeContents {
         if Some(did) == cx.lang_items.managed_bound() {
             tc | TC::Managed
-        } else if Some(did) == cx.lang_items.no_copy_bound() {
-            tc | TC::OwnsAffine
         } else if Some(did) == cx.lang_items.unsafe_type() {
             tc | TC::InteriorUnsafe
         } else {
@@ -2841,7 +3073,7 @@ pub fn type_contents<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> TypeContents {
                          mutbl: ast::Mutability)
                          -> TypeContents {
         let b = match mutbl {
-            ast::MutMutable => TC::ReachesMutable | TC::OwnsAffine,
+            ast::MutMutable => TC::ReachesMutable,
             ast::MutImmutable => TC::None,
         };
         b | (TC::ReachesBorrowed).when(region != ty::ReStatic)
@@ -2861,14 +3093,7 @@ pub fn type_contents<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> TypeContents {
             }
         };
 
-        // This also prohibits "@once fn" from being copied, which allows it to
-        // be called. Neither way really makes much sense.
-        let ot = match cty.onceness {
-            ast::Once => TC::OwnsAffine,
-            ast::Many => TC::None,
-        };
-
-        st | ot
+        st
     }
 
     fn object_contents(cx: &ctxt,
@@ -2886,9 +3111,8 @@ pub fn type_contents<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> TypeContents {
         let mut tc = TC::All;
         each_inherited_builtin_bound(cx, bounds, traits, |bound| {
             tc = tc - match bound {
-                BoundSync | BoundSend => TC::None,
+                BoundSync | BoundSend | BoundCopy => TC::None,
                 BoundSized => TC::Nonsized,
-                BoundCopy => TC::Noncopy,
             };
         });
         return tc;
@@ -2914,8 +3138,38 @@ pub fn type_contents<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> TypeContents {
     }
 }
 
-pub fn type_moves_by_default<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> bool {
-    type_contents(cx, ty).moves_by_default(cx)
+pub fn type_moves_by_default<'tcx>(cx: &ctxt<'tcx>,
+                                   ty: Ty<'tcx>,
+                                   param_env: &ParameterEnvironment<'tcx>)
+                                    -> bool {
+    if !type_has_params(ty) && !type_has_self(ty) {
+        match cx.type_moves_by_default_cache.borrow().get(&ty) {
+            None => {}
+            Some(&result) => {
+                debug!("determined whether {} moves by default (cached): {}",
+                       ty_to_string(cx, ty),
+                       result);
+                return result
+            }
+        }
+    }
+
+    let infcx = infer::new_infer_ctxt(cx);
+    let mut fulfill_cx = traits::FulfillmentContext::new();
+    let obligation = traits::obligation_for_builtin_bound(
+        cx,
+        ObligationCause::misc(DUMMY_SP),
+        ty,
+        ty::BoundCopy).unwrap();
+    fulfill_cx.register_obligation(cx, obligation);
+    let result = !fulfill_cx.select_all_or_error(&infcx,
+                                                 param_env,
+                                                 cx).is_ok();
+    cx.type_moves_by_default_cache.borrow_mut().insert(ty, result);
+    debug!("determined whether {} moves by default: {}",
+           ty_to_string(cx, ty),
+           result);
+    result
 }
 
 pub fn is_ffi_safe<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> bool {
@@ -3046,6 +3300,8 @@ pub enum Representability {
     ContainsRecursive,
     SelfRecursive,
 }
+
+impl Copy for Representability {}
 
 /// Check whether a type is representable. This means it cannot contain unboxed
 /// structural recursion. This check is needed for structs and enums.
@@ -3399,23 +3655,23 @@ pub fn positional_element_ty<'tcx>(cx: &ctxt<'tcx>,
                                    variant: Option<ast::DefId>) -> Option<Ty<'tcx>> {
 
     match (&ty.sty, variant) {
-        (&ty_tup(ref v), None) => v.as_slice().get(i).map(|&t| t),
+        (&ty_tup(ref v), None) => v.get(i).map(|&t| t),
 
 
         (&ty_struct(def_id, ref substs), None) => lookup_struct_fields(cx, def_id)
-            .as_slice().get(i)
+            .get(i)
             .map(|&t|lookup_item_type(cx, t.id).ty.subst(cx, substs)),
 
         (&ty_enum(def_id, ref substs), Some(variant_def_id)) => {
             let variant_info = enum_variant_with_id(cx, def_id, variant_def_id);
-            variant_info.args.as_slice().get(i).map(|t|t.subst(cx, substs))
+            variant_info.args.get(i).map(|t|t.subst(cx, substs))
         }
 
         (&ty_enum(def_id, ref substs), None) => {
             assert!(enum_is_univariant(cx, def_id));
             let enum_variants = enum_variants(cx, def_id);
             let variant_info = &(*enum_variants)[0];
-            variant_info.args.as_slice().get(i).map(|t|t.subst(cx, substs))
+            variant_info.args.get(i).map(|t|t.subst(cx, substs))
         }
 
         _ => None
@@ -3658,7 +3914,7 @@ pub fn adjust_ty<'tcx>(cx: &ctxt<'tcx>,
                        expr_id: ast::NodeId,
                        unadjusted_ty: Ty<'tcx>,
                        adjustment: Option<&AutoAdjustment<'tcx>>,
-                       method_type: |typeck::MethodCall| -> Option<Ty<'tcx>>)
+                       method_type: |MethodCall| -> Option<Ty<'tcx>>)
                        -> Ty<'tcx> {
 
     if let ty_err = unadjusted_ty.sty {
@@ -3699,7 +3955,7 @@ pub fn adjust_ty<'tcx>(cx: &ctxt<'tcx>,
 
                     if !ty::type_is_error(adjusted_ty) {
                         for i in range(0, adj.autoderefs) {
-                            let method_call = typeck::MethodCall::autoderef(expr_id, i);
+                            let method_call = MethodCall::autoderef(expr_id, i);
                             match method_type(method_call) {
                                 Some(method_ty) => {
                                     if let ty::FnConverging(result_type) = ty_fn_ret(method_ty) {
@@ -3829,8 +4085,10 @@ pub enum ExprKind {
     RvalueStmtExpr
 }
 
+impl Copy for ExprKind {}
+
 pub fn expr_kind(tcx: &ctxt, expr: &ast::Expr) -> ExprKind {
-    if tcx.method_map.borrow().contains_key(&typeck::MethodCall::expr(expr.id)) {
+    if tcx.method_map.borrow().contains_key(&MethodCall::expr(expr.id)) {
         // Overloaded operations are generally calls, and hence they are
         // generated via DPS, but there are a few exceptions:
         return match expr.node {
@@ -4388,6 +4646,8 @@ pub struct AssociatedTypeInfo {
     pub name: ast::Name,
 }
 
+impl Copy for AssociatedTypeInfo {}
+
 impl PartialOrd for AssociatedTypeInfo {
     fn partial_cmp(&self, other: &AssociatedTypeInfo) -> Option<Ordering> {
         Some(self.index.cmp(&other.index))
@@ -4570,6 +4830,8 @@ pub enum DtorKind {
     NoDtor,
     TraitDtor(DefId, bool)
 }
+
+impl Copy for DtorKind {}
 
 impl DtorKind {
     pub fn is_present(&self) -> bool {
@@ -4957,6 +5219,8 @@ pub struct UnboxedClosureUpvar<'tcx> {
     pub span: Span,
     pub ty: Ty<'tcx>,
 }
+
+impl<'tcx> Copy for UnboxedClosureUpvar<'tcx> {}
 
 // Returns a list of `UnboxedClosureUpvar`s for each upvar.
 pub fn unboxed_closure_upvars<'tcx>(tcx: &ctxt<'tcx>, closure_id: ast::DefId, substs: &Substs<'tcx>)
@@ -5747,7 +6011,7 @@ impl<'tcx> mc::Typer<'tcx> for ty::ctxt<'tcx> {
         Ok(ty::node_id_to_type(self, id))
     }
 
-    fn node_method_ty(&self, method_call: typeck::MethodCall) -> Option<Ty<'tcx>> {
+    fn node_method_ty(&self, method_call: MethodCall) -> Option<Ty<'tcx>> {
         self.method_map.borrow().get(&method_call).map(|method| method.ty)
     }
 
@@ -5756,7 +6020,7 @@ impl<'tcx> mc::Typer<'tcx> for ty::ctxt<'tcx> {
     }
 
     fn is_method_call(&self, id: ast::NodeId) -> bool {
-        self.method_map.borrow().contains_key(&typeck::MethodCall::expr(id))
+        self.method_map.borrow().contains_key(&MethodCall::expr(id))
     }
 
     fn temporary_scope(&self, rvalue_id: ast::NodeId) -> Option<region::CodeExtent> {
@@ -5786,6 +6050,8 @@ pub enum ExplicitSelfCategory {
     ByReferenceExplicitSelfCategory(Region, ast::Mutability),
     ByBoxExplicitSelfCategory,
 }
+
+impl Copy for ExplicitSelfCategory {}
 
 /// Pushes all the lifetimes in the given type onto the given list. A
 /// "lifetime in a type" is a lifetime specified by a reference or a lifetime
@@ -5855,6 +6121,8 @@ pub struct Freevar {
     // First span where it is accessed (there can be multiple).
     pub span: Span
 }
+
+impl Copy for Freevar {}
 
 pub type FreevarMap = NodeMap<Vec<Freevar>>;
 
@@ -5955,6 +6223,8 @@ impl DebruijnIndex {
     }
 }
 
+impl Copy for DebruijnIndex {}
+
 impl<'tcx> Repr<'tcx> for AutoAdjustment<'tcx> {
     fn repr(&self, tcx: &ctxt<'tcx>) -> String {
         match *self {
@@ -6009,4 +6279,96 @@ impl<'tcx> Repr<'tcx> for TyTrait<'tcx> {
                 self.principal.repr(tcx),
                 self.bounds.repr(tcx))
     }
+}
+
+impl<'tcx> Repr<'tcx> for vtable_origin<'tcx> {
+    fn repr(&self, tcx: &ty::ctxt<'tcx>) -> String {
+        match *self {
+            vtable_static(def_id, ref tys, ref vtable_res) => {
+                format!("vtable_static({}:{}, {}, {})",
+                        def_id,
+                        ty::item_path_str(tcx, def_id),
+                        tys.repr(tcx),
+                        vtable_res.repr(tcx))
+            }
+
+            vtable_param(x, y) => {
+                format!("vtable_param({}, {})", x, y)
+            }
+
+            vtable_unboxed_closure(def_id) => {
+                format!("vtable_unboxed_closure({})", def_id)
+            }
+
+            vtable_error => {
+                format!("vtable_error")
+            }
+        }
+    }
+}
+
+pub fn make_substs_for_receiver_types<'tcx>(tcx: &ty::ctxt<'tcx>,
+                                            trait_ref: &ty::TraitRef<'tcx>,
+                                            method: &ty::Method<'tcx>)
+                                            -> subst::Substs<'tcx>
+{
+    /*!
+     * Substitutes the values for the receiver's type parameters
+     * that are found in method, leaving the method's type parameters
+     * intact.
+     */
+
+    let meth_tps: Vec<Ty> =
+        method.generics.types.get_slice(subst::FnSpace)
+              .iter()
+              .map(|def| ty::mk_param_from_def(tcx, def))
+              .collect();
+    let meth_regions: Vec<ty::Region> =
+        method.generics.regions.get_slice(subst::FnSpace)
+              .iter()
+              .map(|def| ty::ReEarlyBound(def.def_id.node, def.space,
+                                          def.index, def.name))
+              .collect();
+    trait_ref.substs.clone().with_method(meth_tps, meth_regions)
+}
+
+pub enum CopyImplementationError {
+    FieldDoesNotImplementCopy(ast::Name),
+    VariantDoesNotImplementCopy(ast::Name),
+    TypeIsStructural,
+}
+
+impl Copy for CopyImplementationError {}
+
+pub fn can_type_implement_copy<'tcx>(tcx: &ctxt<'tcx>,
+                                     self_type: Ty<'tcx>,
+                                     param_env: &ParameterEnvironment<'tcx>)
+                                     -> Result<(),CopyImplementationError> {
+    match self_type.sty {
+        ty::ty_struct(struct_did, ref substs) => {
+            let fields = ty::struct_fields(tcx, struct_did, substs);
+            for field in fields.iter() {
+                if type_moves_by_default(tcx, field.mt.ty, param_env) {
+                    return Err(FieldDoesNotImplementCopy(field.name))
+                }
+            }
+        }
+        ty::ty_enum(enum_did, ref substs) => {
+            let enum_variants = ty::enum_variants(tcx, enum_did);
+            for variant in enum_variants.iter() {
+                for variant_arg_type in variant.args.iter() {
+                    let substd_arg_type =
+                        variant_arg_type.subst(tcx, substs);
+                    if type_moves_by_default(tcx,
+                                             substd_arg_type,
+                                             param_env) {
+                        return Err(VariantDoesNotImplementCopy(variant.name))
+                    }
+                }
+            }
+        }
+        _ => return Err(TypeIsStructural),
+    }
+
+    Ok(())
 }

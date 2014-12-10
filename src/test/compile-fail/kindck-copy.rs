@@ -14,6 +14,7 @@
 use std::rc::Rc;
 
 fn assert_copy<T:Copy>() { }
+
 trait Dummy { }
 
 struct MyStruct {
@@ -21,8 +22,10 @@ struct MyStruct {
     y: int,
 }
 
+impl Copy for MyStruct {}
+
 struct MyNoncopyStruct {
-    x: Box<int>,
+    x: Box<char>,
 }
 
 fn test<'a,T,U:Copy>(_: &'a int) {

@@ -74,7 +74,6 @@ pub use self::categorization::*;
 use middle::def;
 use middle::region;
 use middle::ty::{mod, Ty};
-use middle::typeck;
 use util::nodemap::{DefIdMap, NodeMap};
 use util::ppaux::{ty_to_string, Repr};
 
@@ -111,6 +110,8 @@ pub struct Upvar {
     pub is_unboxed: bool
 }
 
+impl Copy for Upvar {}
+
 // different kinds of pointers:
 #[deriving(Clone, PartialEq, Eq, Hash, Show)]
 pub enum PointerKind {
@@ -120,6 +121,8 @@ pub enum PointerKind {
     UnsafePtr(ast::Mutability)
 }
 
+impl Copy for PointerKind {}
+
 // We use the term "interior" to mean "something reachable from the
 // base without a pointer dereference", e.g. a field
 #[deriving(Clone, PartialEq, Eq, Hash, Show)]
@@ -128,11 +131,15 @@ pub enum InteriorKind {
     InteriorElement(ElementKind),
 }
 
+impl Copy for InteriorKind {}
+
 #[deriving(Clone, PartialEq, Eq, Hash, Show)]
 pub enum FieldName {
     NamedField(ast::Name),
     PositionalField(uint)
 }
+
+impl Copy for FieldName {}
 
 #[deriving(Clone, PartialEq, Eq, Hash, Show)]
 pub enum ElementKind {
@@ -140,12 +147,16 @@ pub enum ElementKind {
     OtherElement,
 }
 
+impl Copy for ElementKind {}
+
 #[deriving(Clone, PartialEq, Eq, Hash, Show)]
 pub enum MutabilityCategory {
     McImmutable, // Immutable.
     McDeclared,  // Directly declared as mutable.
     McInherited, // Inherited from the fact that owner is mutable.
 }
+
+impl Copy for MutabilityCategory {}
 
 // A note about the provenance of a `cmt`.  This is used for
 // special-case handling of upvars such as mutability inference.
@@ -158,6 +169,8 @@ pub enum Note {
     NoteUpvarRef(ty::UpvarId),   // Deref through by-ref upvar
     NoteNone                     // Nothing special
 }
+
+impl Copy for Note {}
 
 // `cmt`: "Category, Mutability, and Type".
 //
@@ -191,6 +204,8 @@ pub enum deref_kind {
     deref_ptr(PointerKind),
     deref_interior(InteriorKind),
 }
+
+impl Copy for deref_kind {}
 
 // Categorizes a derefable type.  Note that we include vectors and strings as
 // derefable (we model an index as the combination of a deref and then a
@@ -262,6 +277,8 @@ pub struct MemCategorizationContext<'t,TYPER:'t> {
     typer: &'t TYPER
 }
 
+impl<'t,TYPER:'t> Copy for MemCategorizationContext<'t,TYPER> {}
+
 pub type McResult<T> = Result<T, ()>;
 
 /// The `Typer` trait provides the interface for the mem-categorization
@@ -283,7 +300,7 @@ pub type McResult<T> = Result<T, ()>;
 pub trait Typer<'tcx> {
     fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx>;
     fn node_ty(&self, id: ast::NodeId) -> McResult<Ty<'tcx>>;
-    fn node_method_ty(&self, method_call: typeck::MethodCall) -> Option<Ty<'tcx>>;
+    fn node_method_ty(&self, method_call: ty::MethodCall) -> Option<Ty<'tcx>>;
     fn adjustments<'a>(&'a self) -> &'a RefCell<NodeMap<ty::AutoAdjustment<'tcx>>>;
     fn is_method_call(&self, id: ast::NodeId) -> bool;
     fn temporary_scope(&self, rvalue_id: ast::NodeId) -> Option<region::CodeExtent>;
@@ -509,7 +526,7 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
           }
 
           ast::ExprIndex(ref base, _) => {
-            let method_call = typeck::MethodCall::expr(expr.id());
+            let method_call = ty::MethodCall::expr(expr.id());
             match self.typer.node_method_ty(method_call) {
                 Some(method_ty) => {
                     // If this is an index implemented by a method call, then it will
@@ -890,12 +907,12 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
                              implicit: bool)
                              -> cmt<'tcx> {
         let adjustment = match self.typer.adjustments().borrow().get(&node.id()) {
-            Some(adj) if ty::adjust_is_object(adj) => typeck::AutoObject,
-            _ if deref_cnt != 0 => typeck::AutoDeref(deref_cnt),
-            _ => typeck::NoAdjustment
+            Some(adj) if ty::adjust_is_object(adj) => ty::AutoObject,
+            _ if deref_cnt != 0 => ty::AutoDeref(deref_cnt),
+            _ => ty::NoAdjustment
         };
 
-        let method_call = typeck::MethodCall {
+        let method_call = ty::MethodCall {
             expr_id: node.id(),
             adjustment: adjustment
         };
@@ -980,7 +997,7 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
         //! - `elt`: the AST node being indexed
         //! - `base_cmt`: the cmt of `elt`
 
-        let method_call = typeck::MethodCall::expr(elt.id());
+        let method_call = ty::MethodCall::expr(elt.id());
         let method_ty = self.typer.node_method_ty(method_call);
 
         let element_ty = match method_ty {
@@ -1385,6 +1402,8 @@ pub enum InteriorSafety {
     InteriorSafe
 }
 
+impl Copy for InteriorSafety {}
+
 pub enum AliasableReason {
     AliasableBorrowed,
     AliasableClosure(ast::NodeId), // Aliasable due to capture Fn closure env
@@ -1392,6 +1411,8 @@ pub enum AliasableReason {
     AliasableStatic(InteriorSafety),
     AliasableStaticMut(InteriorSafety),
 }
+
+impl Copy for AliasableReason {}
 
 impl<'tcx> cmt_<'tcx> {
     pub fn guarantor(&self) -> cmt<'tcx> {

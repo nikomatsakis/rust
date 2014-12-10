@@ -141,6 +141,7 @@
 
 #![stable]
 
+use core::borrow::BorrowFrom;
 use core::cell::Cell;
 use core::clone::Clone;
 use core::cmp::{PartialEq, PartialOrd, Eq, Ord, Ordering};
@@ -149,10 +150,12 @@ use core::fmt;
 use core::kinds::marker;
 use core::mem::{transmute, min_align_of, size_of, forget};
 use core::ops::{Deref, Drop};
-use core::option::{Option, Some, None};
+use core::option::Option;
+use core::option::Option::{Some, None};
 use core::ptr;
 use core::ptr::RawPtr;
-use core::result::{Result, Ok, Err};
+use core::result::Result;
+use core::result::Result::{Ok, Err};
 
 use heap::deallocate;
 
@@ -344,6 +347,12 @@ impl<T: Clone> Rc<T> {
         // reference to the inner value.
         let inner = unsafe { &mut *self._ptr };
         &mut inner.value
+    }
+}
+
+impl<T> BorrowFrom<Rc<T>> for T {
+    fn borrow_from(owned: &Rc<T>) -> &T {
+        &**owned
     }
 }
 
@@ -739,8 +748,9 @@ impl<T> RcBoxPtr<T> for Weak<T> {
 mod tests {
     use super::{Rc, Weak, weak_count, strong_count};
     use std::cell::RefCell;
-    use std::option::{Option, Some, None};
-    use std::result::{Err, Ok};
+    use std::option::Option;
+    use std::option::Option::{Some, None};
+    use std::result::Result::{Err, Ok};
     use std::mem::drop;
     use std::clone::Clone;
 

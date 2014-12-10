@@ -39,7 +39,6 @@ use syntax::parse::token;
 use syntax::ptr::P;
 
 use rustc_trans::back::link;
-use rustc_trans::driver::driver;
 use rustc::metadata::cstore;
 use rustc::metadata::csearch;
 use rustc::metadata::decoder;
@@ -48,6 +47,7 @@ use rustc::middle::subst;
 use rustc::middle::subst::VecPerParamSpace;
 use rustc::middle::ty;
 use rustc::middle::stability;
+use rustc::session::config;
 
 use std::rc::Rc;
 use std::u32;
@@ -131,7 +131,7 @@ impl<'a, 'tcx> Clean<Crate> for visit_ast::RustdocVisitor<'a, 'tcx> {
         externs.sort_by(|&(a, _), &(b, _)| a.cmp(&b));
 
         // Figure out the name of this crate
-        let input = driver::FileInput(cx.src.clone());
+        let input = config::Input::File(cx.src.clone());
         let name = link::find_crate_name(None, self.attrs.as_slice(), &input);
 
         // Clean the crate, translating the entire libsyntax AST to one that is
@@ -256,7 +256,7 @@ impl Item {
     pub fn doc_list<'a>(&'a self) -> Option<&'a [Attribute]> {
         for attr in self.attrs.iter() {
             match *attr {
-                List(ref x, ref list) if "doc" == x.as_slice() => {
+                List(ref x, ref list) if "doc" == *x => {
                     return Some(list.as_slice());
                 }
                 _ => {}
@@ -270,7 +270,7 @@ impl Item {
     pub fn doc_value<'a>(&'a self) -> Option<&'a str> {
         for attr in self.attrs.iter() {
             match *attr {
-                NameValue(ref x, ref v) if "doc" == x.as_slice() => {
+                NameValue(ref x, ref v) if "doc" == *x => {
                     return Some(v.as_slice());
                 }
                 _ => {}
@@ -284,7 +284,7 @@ impl Item {
             Some(ref l) => {
                 for innerattr in l.iter() {
                     match *innerattr {
-                        Word(ref s) if "hidden" == s.as_slice() => {
+                        Word(ref s) if "hidden" == *s => {
                             return true
                         }
                         _ => (),
@@ -1178,6 +1178,8 @@ pub enum PrimitiveType {
     PrimitiveTuple,
 }
 
+impl Copy for PrimitiveType {}
+
 #[deriving(Clone, Encodable, Decodable)]
 pub enum TypeKind {
     TypeEnum,
@@ -1189,6 +1191,8 @@ pub enum TypeKind {
     TypeVariant,
     TypeTypedef,
 }
+
+impl Copy for TypeKind {}
 
 impl PrimitiveType {
     fn from_str(s: &str) -> Option<PrimitiveType> {
@@ -1217,13 +1221,13 @@ impl PrimitiveType {
     fn find(attrs: &[Attribute]) -> Option<PrimitiveType> {
         for attr in attrs.iter() {
             let list = match *attr {
-                List(ref k, ref l) if k.as_slice() == "doc" => l,
+                List(ref k, ref l) if *k == "doc" => l,
                 _ => continue,
             };
             for sub_attr in list.iter() {
                 let value = match *sub_attr {
                     NameValue(ref k, ref v)
-                        if k.as_slice() == "primitive" => v.as_slice(),
+                        if *k == "primitive" => v.as_slice(),
                     _ => continue,
                 };
                 match PrimitiveType::from_str(value) {
@@ -1842,6 +1846,8 @@ pub enum Mutability {
     Mutable,
     Immutable,
 }
+
+impl Copy for Mutability {}
 
 impl Clean<Mutability> for ast::Mutability {
     fn clean(&self, _: &DocContext) -> Mutability {

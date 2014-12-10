@@ -55,12 +55,16 @@ pub enum OptLevel {
     Aggressive // -O3
 }
 
+impl Copy for OptLevel {}
+
 #[deriving(Clone, PartialEq)]
 pub enum DebugInfoLevel {
     NoDebugInfo,
     LimitedDebugInfo,
     FullDebugInfo,
 }
+
+impl Copy for DebugInfoLevel {}
 
 #[deriving(Clone, PartialEq, PartialOrd, Ord, Eq)]
 pub enum OutputType {
@@ -70,6 +74,8 @@ pub enum OutputType {
     OutputTypeObject,
     OutputTypeExe,
 }
+
+impl Copy for OutputType {}
 
 #[deriving(Clone)]
 pub struct Options {
@@ -87,7 +93,7 @@ pub struct Options {
     // parsed code. It remains mutable in case its replacements wants to use
     // this.
     pub addl_lib_search_paths: RefCell<Vec<Path>>,
-    pub libs: Vec<(String, cstore::NativeLibaryKind)>,
+    pub libs: Vec<(String, cstore::NativeLibraryKind)>,
     pub maybe_sysroot: Option<Path>,
     pub target_triple: String,
     // User-specified cfg meta items. The compiler itself will add additional
@@ -112,6 +118,59 @@ pub struct Options {
     /// written `extern crate std = "name"`. Default to "std". Used by
     /// out-of-tree drivers.
     pub alt_std_name: Option<String>
+}
+
+pub enum Input {
+    /// Load source from file
+    File(Path),
+    /// The string is the source
+    Str(String)
+}
+
+impl Input {
+    pub fn filestem(&self) -> String {
+        match *self {
+            Input::File(ref ifile) => ifile.filestem_str().unwrap().to_string(),
+            Input::Str(_) => "rust_out".to_string(),
+        }
+    }
+}
+
+#[deriving(Clone)]
+pub struct OutputFilenames {
+    pub out_directory: Path,
+    pub out_filestem: String,
+    pub single_output_file: Option<Path>,
+    pub extra: String,
+}
+
+impl OutputFilenames {
+    pub fn path(&self, flavor: OutputType) -> Path {
+        match self.single_output_file {
+            Some(ref path) => return path.clone(),
+            None => {}
+        }
+        self.temp_path(flavor)
+    }
+
+    pub fn temp_path(&self, flavor: OutputType) -> Path {
+        let base = self.out_directory.join(self.filestem());
+        match flavor {
+            OutputTypeBitcode => base.with_extension("bc"),
+            OutputTypeAssembly => base.with_extension("s"),
+            OutputTypeLlvmAssembly => base.with_extension("ll"),
+            OutputTypeObject => base.with_extension("o"),
+            OutputTypeExe => base,
+        }
+    }
+
+    pub fn with_extension(&self, extension: &str) -> Path {
+        self.out_directory.join(self.filestem()).with_extension(extension)
+    }
+
+    pub fn filestem(&self) -> String {
+        format!("{}{}", self.out_filestem, self.extra)
+    }
 }
 
 pub fn host_triple() -> &'static str {
@@ -168,6 +227,8 @@ pub enum EntryFnType {
     EntryNone,
 }
 
+impl Copy for EntryFnType {}
+
 #[deriving(PartialEq, PartialOrd, Clone, Ord, Eq, Hash)]
 pub enum CrateType {
     CrateTypeExecutable,
@@ -175,6 +236,8 @@ pub enum CrateType {
     CrateTypeRlib,
     CrateTypeStaticlib,
 }
+
+impl Copy for CrateType {}
 
 macro_rules! debugging_opts(
     ([ $opt:ident ] $cnt:expr ) => (
@@ -459,13 +522,13 @@ pub fn build_codegen_options(matches: &getopts::Matches) -> CodegenOptions
 {
     let mut cg = basic_codegen_options();
     for option in matches.opt_strs("C").into_iter() {
-        let mut iter = option.as_slice().splitn(1, '=');
+        let mut iter = option.splitn(1, '=');
         let key = iter.next().unwrap();
         let value = iter.next();
         let option_to_lookup = key.replace("-", "_");
         let mut found = false;
         for &(candidate, setter, opt_type_desc, _) in CG_OPTIONS.iter() {
-            if option_to_lookup.as_slice() != candidate { continue }
+            if option_to_lookup != candidate { continue }
             if !setter(&mut cg, value) {
                 match (value, opt_type_desc) {
                     (Some(..), None) => {
@@ -661,7 +724,7 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
 
     for &level in [lint::Allow, lint::Warn, lint::Deny, lint::Forbid].iter() {
         for lint_name in matches.opt_strs(level.as_str()).into_iter() {
-            if lint_name.as_slice() == "help" {
+            if lint_name == "help" {
                 describe_lints = true;
             } else {
                 lint_opts.push((lint_name.replace("-", "_").into_string(), level));
@@ -674,9 +737,8 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
     let debug_map = debugging_opts_map();
     for debug_flag in debug_flags.iter() {
         let mut this_bit = 0;
-        for tuple in debug_map.iter() {
-            let (name, bit) = match *tuple { (ref a, _, b) => (a, b) };
-            if *name == debug_flag.as_slice() {
+        for &(name, _, bit) in debug_map.iter() {
+            if name == *debug_flag {
                 this_bit = bit;
                 break;
             }
@@ -696,7 +758,7 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
     if !parse_only && !no_trans {
         let unparsed_output_types = matches.opt_strs("emit");
         for unparsed_output_type in unparsed_output_types.iter() {
-            for part in unparsed_output_type.as_slice().split(',') {
+            for part in unparsed_output_type.split(',') {
                 let output_type = match part.as_slice() {
                     "asm"  => OutputTypeAssembly,
                     "ir"   => OutputTypeLlvmAssembly,
@@ -712,7 +774,7 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
             }
         }
     };
-    output_types.as_mut_slice().sort();
+    output_types.sort();
     output_types.dedup();
     if output_types.len() == 0 {
         output_types.push(OutputTypeExe);
@@ -771,7 +833,7 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
     }).collect();
 
     let libs = matches.opt_strs("l").into_iter().map(|s| {
-        let mut parts = s.as_slice().rsplitn(1, ':');
+        let mut parts = s.rsplitn(1, ':');
         let kind = parts.next().unwrap();
         let (name, kind) = match (parts.next(), kind) {
             (None, name) |
@@ -822,7 +884,7 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
 
     let mut externs = HashMap::new();
     for arg in matches.opt_strs("extern").iter() {
-        let mut parts = arg.as_slice().splitn(1, '=');
+        let mut parts = arg.splitn(1, '=');
         let name = match parts.next() {
             Some(s) => s,
             None => early_error("--extern value must not be empty"),
@@ -872,7 +934,7 @@ pub fn parse_crate_types_from_list(list_list: Vec<String>) -> Result<Vec<CrateTy
 
     let mut crate_types: Vec<CrateType> = Vec::new();
     for unparsed_crate_type in list_list.iter() {
-        for part in unparsed_crate_type.as_slice().split(',') {
+        for part in unparsed_crate_type.split(',') {
             let new_part = match part {
                 "lib"       => default_lib_output(),
                 "rlib"      => CrateTypeRlib,
@@ -944,7 +1006,7 @@ mod test {
         let sessopts = build_session_options(matches);
         let sess = build_session(sessopts, None, registry);
         let cfg = build_configuration(&sess);
-        let mut test_items = cfg.iter().filter(|m| m.name().equiv(&("test")));
+        let mut test_items = cfg.iter().filter(|m| m.name() == "test");
         assert!(test_items.next().is_some());
         assert!(test_items.next().is_none());
     }

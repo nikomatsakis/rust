@@ -9,7 +9,6 @@
 // except according to those terms.
 
 // FIXME(conventions): implement bounded iterators
-// FIXME(conventions): implement BitOr, BitAnd, BitXor, and Sub
 // FIXME(conventions): replace each_reverse by making iter DoubleEnded
 // FIXME(conventions): implement iter_mut and into_iter
 
@@ -25,7 +24,7 @@ use trie_map::{TrieMap, Entries};
 
 /// A set implemented as a radix trie.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```
 /// use std::collections::TrieSet;
@@ -78,7 +77,7 @@ impl Default for TrieSet {
 impl TrieSet {
     /// Creates an empty TrieSet.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -93,7 +92,7 @@ impl TrieSet {
     /// Visits all values in reverse order. Aborts traversal when `f` returns `false`.
     /// Returns `true` if `f` returns `true` for all elements.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -116,7 +115,7 @@ impl TrieSet {
 
     /// Gets an iterator over the values in the set, in sorted order.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -141,7 +140,7 @@ impl TrieSet {
     /// Gets an iterator pointing to the first value that is not less than `val`.
     /// If all values in the set are less than `val` an empty iterator is returned.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -158,7 +157,7 @@ impl TrieSet {
     /// Gets an iterator pointing to the first value that key is greater than `val`.
     /// If all values in the set are less than or equal to `val` an empty iterator is returned.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -174,7 +173,7 @@ impl TrieSet {
 
     /// Visits the values representing the difference, in ascending order.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -202,7 +201,7 @@ impl TrieSet {
 
     /// Visits the values representing the symmetric difference, in ascending order.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -228,7 +227,7 @@ impl TrieSet {
 
     /// Visits the values representing the intersection, in ascending order.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -251,7 +250,7 @@ impl TrieSet {
 
     /// Visits the values representing the union, in ascending order.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -274,7 +273,7 @@ impl TrieSet {
 
     /// Return the number of elements in the set
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -290,7 +289,7 @@ impl TrieSet {
 
     /// Returns true if the set contains no elements
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -305,7 +304,7 @@ impl TrieSet {
 
     /// Clears the set, removing all values.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -321,7 +320,7 @@ impl TrieSet {
 
     /// Returns `true` if the set contains a value.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -339,7 +338,7 @@ impl TrieSet {
     /// Returns `true` if the set has no elements in common with `other`.
     /// This is equivalent to checking for an empty intersection.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -361,7 +360,7 @@ impl TrieSet {
 
     /// Returns `true` if the set is a subset of another.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -383,7 +382,7 @@ impl TrieSet {
 
     /// Returns `true` if the set is a superset of another.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -409,7 +408,7 @@ impl TrieSet {
     /// Adds a value to the set. Returns `true` if the value was not already
     /// present in the set.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -429,7 +428,7 @@ impl TrieSet {
     /// Removes a value from the set. Returns `true` if the value was
     /// present in the set.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TrieSet;
@@ -460,6 +459,90 @@ impl Extend<uint> for TrieSet {
         for elem in iter {
             self.insert(elem);
         }
+    }
+}
+
+#[unstable = "matches collection reform specification, waiting for dust to settle"]
+impl BitOr<TrieSet, TrieSet> for TrieSet {
+    /// Returns the union of `self` and `rhs` as a new `TrieSet`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::TrieSet;
+    ///
+    /// let a: TrieSet = vec![1, 2, 3].into_iter().collect();
+    /// let b: TrieSet = vec![3, 4, 5].into_iter().collect();
+    ///
+    /// let set: TrieSet = a | b;
+    /// let v: Vec<uint> = set.iter().collect();
+    /// assert_eq!(v, vec![1u, 2, 3, 4, 5]);
+    /// ```
+    fn bitor(&self, rhs: &TrieSet) -> TrieSet {
+        self.union(rhs).collect()
+    }
+}
+
+#[unstable = "matches collection reform specification, waiting for dust to settle"]
+impl BitAnd<TrieSet, TrieSet> for TrieSet {
+    /// Returns the intersection of `self` and `rhs` as a new `TrieSet`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::TrieSet;
+    ///
+    /// let a: TrieSet = vec![1, 2, 3].into_iter().collect();
+    /// let b: TrieSet = vec![2, 3, 4].into_iter().collect();
+    ///
+    /// let set: TrieSet = a & b;
+    /// let v: Vec<uint> = set.iter().collect();
+    /// assert_eq!(v, vec![2u, 3]);
+    /// ```
+    fn bitand(&self, rhs: &TrieSet) -> TrieSet {
+        self.intersection(rhs).collect()
+    }
+}
+
+#[unstable = "matches collection reform specification, waiting for dust to settle"]
+impl BitXor<TrieSet, TrieSet> for TrieSet {
+    /// Returns the symmetric difference of `self` and `rhs` as a new `TrieSet`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::TrieSet;
+    ///
+    /// let a: TrieSet = vec![1, 2, 3].into_iter().collect();
+    /// let b: TrieSet = vec![3, 4, 5].into_iter().collect();
+    ///
+    /// let set: TrieSet = a ^ b;
+    /// let v: Vec<uint> = set.iter().collect();
+    /// assert_eq!(v, vec![1u, 2, 4, 5]);
+    /// ```
+    fn bitxor(&self, rhs: &TrieSet) -> TrieSet {
+        self.symmetric_difference(rhs).collect()
+    }
+}
+
+#[unstable = "matches collection reform specification, waiting for dust to settle"]
+impl Sub<TrieSet, TrieSet> for TrieSet {
+    /// Returns the difference of `self` and `rhs` as a new `TrieSet`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::TrieSet;
+    ///
+    /// let a: TrieSet = vec![1, 2, 3].into_iter().collect();
+    /// let b: TrieSet = vec![3, 4, 5].into_iter().collect();
+    ///
+    /// let set: TrieSet = a - b;
+    /// let v: Vec<uint> = set.iter().collect();
+    /// assert_eq!(v, vec![1u, 2]);
+    /// ```
+    fn sub(&self, rhs: &TrieSet) -> TrieSet {
+        self.difference(rhs).collect()
     }
 }
 
@@ -569,6 +652,7 @@ impl<'a> Iterator<uint> for UnionItems<'a> {
 mod test {
     use std::prelude::*;
     use std::uint;
+    use vec::Vec;
 
     use super::TrieSet;
 
@@ -612,8 +696,8 @@ mod test {
 
         let set_str = format!("{}", set);
 
-        assert!(set_str == "{1, 2}".to_string());
-        assert_eq!(format!("{}", empty), "{}".to_string());
+        assert!(set_str == "{1, 2}");
+        assert_eq!(format!("{}", empty), "{}");
     }
 
     #[test]
@@ -737,5 +821,45 @@ mod test {
         check_union(&[1, 3, 5, 9, 11, 16, 19, 24],
                     &[1, 5, 9, 13, 19],
                     &[1, 3, 5, 9, 11, 13, 16, 19, 24]);
+    }
+
+    #[test]
+    fn test_bit_or() {
+        let a: TrieSet = vec![1, 2, 3].into_iter().collect();
+        let b: TrieSet = vec![3, 4, 5].into_iter().collect();
+
+        let set: TrieSet = a | b;
+        let v: Vec<uint> = set.iter().collect();
+        assert_eq!(v, vec![1u, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_bit_and() {
+        let a: TrieSet = vec![1, 2, 3].into_iter().collect();
+        let b: TrieSet = vec![2, 3, 4].into_iter().collect();
+
+        let set: TrieSet = a & b;
+        let v: Vec<uint> = set.iter().collect();
+        assert_eq!(v, vec![2u, 3]);
+    }
+
+    #[test]
+    fn test_bit_xor() {
+        let a: TrieSet = vec![1, 2, 3].into_iter().collect();
+        let b: TrieSet = vec![3, 4, 5].into_iter().collect();
+
+        let set: TrieSet = a ^ b;
+        let v: Vec<uint> = set.iter().collect();
+        assert_eq!(v, vec![1u, 2, 4, 5]);
+    }
+
+    #[test]
+    fn test_sub() {
+        let a: TrieSet = vec![1, 2, 3].into_iter().collect();
+        let b: TrieSet = vec![3, 4, 5].into_iter().collect();
+
+        let set: TrieSet = a - b;
+        let v: Vec<uint> = set.iter().collect();
+        assert_eq!(v, vec![1u, 2]);
     }
 }

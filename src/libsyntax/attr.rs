@@ -282,16 +282,18 @@ pub enum InlineAttr {
     InlineNever,
 }
 
+impl Copy for InlineAttr {}
+
 /// Determine what `#[inline]` attribute is present in `attrs`, if any.
 pub fn find_inline_attr(attrs: &[Attribute]) -> InlineAttr {
     // FIXME (#2809)---validate the usage of #[inline] and #[inline]
     attrs.iter().fold(InlineNone, |ia,attr| {
         match attr.node.value.node {
-            MetaWord(ref n) if n.equiv(&("inline")) => {
+            MetaWord(ref n) if *n == "inline" => {
                 mark_used(attr);
                 InlineHint
             }
-            MetaList(ref n, ref items) if n.equiv(&("inline")) => {
+            MetaList(ref n, ref items) if *n == "inline" => {
                 mark_used(attr);
                 if contains_name(items.as_slice(), "always") {
                     InlineAlways
@@ -354,6 +356,8 @@ pub enum StabilityLevel {
     Locked
 }
 
+impl Copy for StabilityLevel {}
+
 pub fn find_stability_generic<'a,
                               AM: AttrMetaMethods,
                               I: Iterator<&'a AM>>
@@ -409,7 +413,7 @@ pub fn require_unique_names(diagnostic: &SpanHandler, metas: &[P<MetaItem>]) {
 pub fn find_repr_attrs(diagnostic: &SpanHandler, attr: &Attribute) -> Vec<ReprAttr> {
     let mut acc = Vec::new();
     match attr.node.value.node {
-        ast::MetaList(ref s, ref items) if s.equiv(&("repr")) => {
+        ast::MetaList(ref s, ref items) if *s == "repr" => {
             mark_used(attr);
             for item in items.iter() {
                 match item.node {
@@ -469,6 +473,8 @@ pub enum ReprAttr {
     ReprPacked,
 }
 
+impl Copy for ReprAttr {}
+
 impl ReprAttr {
     pub fn is_ffi_safe(&self) -> bool {
         match *self {
@@ -485,6 +491,8 @@ pub enum IntType {
     SignedInt(ast::IntTy),
     UnsignedInt(ast::UintTy)
 }
+
+impl Copy for IntType {}
 
 impl IntType {
     #[inline]

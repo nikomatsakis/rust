@@ -11,9 +11,6 @@
 //! A doubly-linked list with owned nodes.
 //!
 //! The `DList` allows pushing and popping elements at either end.
-//!
-//! `DList` implements the trait `Deque`. It should be imported with
-//! `use collections::Deque`.
 
 // DList is constructed like a singly-linked list over the field `next`.
 // including the last link being None; each Node owns its `next` field.
@@ -39,7 +36,12 @@ pub struct DList<T> {
 }
 
 type Link<T> = Option<Box<Node<T>>>;
-struct Rawlink<T> { p: *mut T }
+
+struct Rawlink<T> {
+    p: *mut T,
+}
+
+impl<T> Copy for Rawlink<T> {}
 
 struct Node<T> {
     next: Link<T>,
@@ -58,6 +60,8 @@ pub struct Items<'a, T:'a> {
 impl<'a, T> Clone for Items<'a, T> {
     fn clone(&self) -> Items<'a, T> { *self }
 }
+
+impl<'a,T> Copy for Items<'a,T> {}
 
 /// An iterator over mutable references to the items of a `DList`.
 pub struct MutItems<'a, T:'a> {
@@ -204,7 +208,7 @@ impl<T> DList<T> {
     ///
     /// If the list is empty, does nothing.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::collections::DList;
@@ -231,7 +235,7 @@ impl<T> DList<T> {
     ///
     /// If the list is empty, does nothing.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::collections::DList;
@@ -258,7 +262,7 @@ impl<T> DList<T> {
     ///
     /// This operation should compute in O(1) time.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::collections::DList;
@@ -299,7 +303,7 @@ impl<T> DList<T> {
     ///
     /// This operation should compute in O(1) time.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::collections::DList;
@@ -328,7 +332,7 @@ impl<T> DList<T> {
     ///
     /// This operation should compute in O(N) time.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::collections::DList;
@@ -500,7 +504,7 @@ impl<T> DList<T> {
 
     /// Appends an element to the back of a list
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::collections::DList;
@@ -524,7 +528,7 @@ impl<T> DList<T> {
     /// Removes the last element from a list and returns it, or `None` if
     /// it is empty.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::collections::DList;
@@ -926,7 +930,7 @@ mod tests {
         let mut m = list_from(v.as_slice());
         m.prepend(list_from(u.as_slice()));
         check_links(&m);
-        u.extend(v.as_slice().iter().map(|&b| b));
+        u.extend(v.iter().map(|&b| b));
         assert_eq!(u.len(), m.len());
         for elt in u.into_iter() {
             assert_eq!(m.pop_front(), Some(elt))
@@ -945,7 +949,7 @@ mod tests {
         let mut m = list_from(v.as_slice());
         m.rotate_backward(); check_links(&m);
         m.rotate_forward(); check_links(&m);
-        assert_eq!(v.iter().collect::<Vec<&int>>(), m.iter().collect());
+        assert_eq!(v.iter().collect::<Vec<&int>>(), m.iter().collect::<Vec<_>>());
         m.rotate_forward(); check_links(&m);
         m.rotate_forward(); check_links(&m);
         m.pop_front(); check_links(&m);
@@ -953,7 +957,7 @@ mod tests {
         m.rotate_backward(); check_links(&m);
         m.push_front(9); check_links(&m);
         m.rotate_forward(); check_links(&m);
-        assert_eq!(vec![3i,9,5,1,2], m.into_iter().collect());
+        assert_eq!(vec![3i,9,5,1,2], m.into_iter().collect::<Vec<_>>());
     }
 
     #[test]
@@ -1133,7 +1137,7 @@ mod tests {
         spawn(proc() {
             check_links(&n);
             let a: &[_] = &[&1,&2,&3];
-            assert_eq!(a, n.iter().collect::<Vec<&int>>().as_slice());
+            assert_eq!(a, n.iter().collect::<Vec<&int>>());
         });
     }
 
@@ -1224,12 +1228,12 @@ mod tests {
     #[test]
     fn test_show() {
         let list: DList<int> = range(0i, 10).collect();
-        assert!(list.to_string().as_slice() == "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]");
+        assert!(list.to_string() == "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]");
 
         let list: DList<&str> = vec!["just", "one", "test", "more"].iter()
                                                                    .map(|&s| s)
                                                                    .collect();
-        assert!(list.to_string().as_slice() == "[just, one, test, more]");
+        assert!(list.to_string() == "[just, one, test, more]");
     }
 
     #[cfg(test)]

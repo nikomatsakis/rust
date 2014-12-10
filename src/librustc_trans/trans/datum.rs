@@ -46,6 +46,8 @@ pub struct Datum<'tcx, K> {
     pub kind: K,
 }
 
+impl<'tcx,K:Copy> Copy for Datum<'tcx,K> {}
+
 pub struct DatumBlock<'blk, 'tcx: 'blk, K> {
     pub bcx: Block<'blk, 'tcx>,
     pub datum: Datum<'tcx, K>,
@@ -65,6 +67,8 @@ pub enum Expr {
 
 #[deriving(Clone, Show)]
 pub struct Lvalue;
+
+impl Copy for Lvalue {}
 
 #[deriving(Show)]
 pub struct Rvalue {
@@ -90,6 +94,8 @@ pub enum RvalueMode {
     /// `val` is the actual value (*only used for immediates* like ints, ptrs)
     ByValue,
 }
+
+impl Copy for RvalueMode {}
 
 pub fn immediate_rvalue<'tcx>(val: ValueRef, ty: Ty<'tcx>) -> Datum<'tcx, Rvalue> {
     return Datum::new(val, ty, Rvalue::new(ByValue));
@@ -352,13 +358,6 @@ impl<'tcx> Datum<'tcx, Expr> {
             |_| bcx.sess().bug("assert_lvalue given rvalue"))
     }
 
-    /// Asserts that this datum *is* an lvalue and returns it.
-    pub fn assert_rvalue(self, bcx: Block) -> Datum<'tcx, Rvalue> {
-        self.match_kind(
-            |_| bcx.sess().bug("assert_rvalue given lvalue"),
-            |r| r)
-    }
-
     pub fn store_to_dest<'blk>(self,
                                bcx: Block<'blk, 'tcx>,
                                dest: expr::Dest,
@@ -536,11 +535,19 @@ impl<'tcx, K: KindOps + fmt::Show> Datum<'tcx, K> {
     /// Copies the value into a new location. This function always preserves the existing datum as
     /// a valid value. Therefore, it does not consume `self` and, also, cannot be applied to affine
     /// values (since they must never be duplicated).
-    pub fn shallow_copy<'blk>(&self,
-                              bcx: Block<'blk, 'tcx>,
-                              dst: ValueRef)
-                              -> Block<'blk, 'tcx> {
-        assert!(!ty::type_moves_by_default(bcx.tcx(), self.ty));
+    pub fn shallow_copy<'blk, 'tcx>(&self,
+                                    bcx: Block<'blk, 'tcx>,
+                                    dst: ValueRef)
+                                    -> Block<'blk, 'tcx> {
+        /*!
+         * Copies the value into a new location. This function always
+         * preserves the existing datum as a valid value. Therefore,
+         * it does not consume `self` and, also, cannot be applied to
+         * affine values (since they must never be duplicated).
+         */
+
+        let param_env = ty::empty_parameter_environment();
+        assert!(!ty::type_moves_by_default(bcx.tcx(), self.ty, &param_env));
         self.shallow_copy_raw(bcx, dst)
     }
 

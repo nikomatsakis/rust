@@ -93,7 +93,7 @@ Section: Creating a string
 pub trait StrVector for Sized? {
     /// Concatenates a vector of strings.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// let first = "Restaurant at the End of the".to_string();
@@ -105,7 +105,7 @@ pub trait StrVector for Sized? {
 
     /// Concatenates a vector of strings, placing a given separator between each.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// let first = "Roast".to_string();
@@ -215,7 +215,7 @@ pub struct Decompositions<'a> {
 impl<'a> Iterator<char> for Decompositions<'a> {
     #[inline]
     fn next(&mut self) -> Option<char> {
-        match self.buffer.as_slice().head() {
+        match self.buffer.head() {
             Some(&(c, 0)) => {
                 self.sorted = false;
                 self.buffer.remove(0);
@@ -228,24 +228,32 @@ impl<'a> Iterator<char> for Decompositions<'a> {
             _ => self.sorted = false
         }
 
-        let decomposer = match self.kind {
-            Canonical => unicode::char::decompose_canonical,
-            Compatible => unicode::char::decompose_compatible
-        };
-
         if !self.sorted {
             for ch in self.iter {
                 let buffer = &mut self.buffer;
                 let sorted = &mut self.sorted;
-                decomposer(ch, |d| {
-                    let class = unicode::char::canonical_combining_class(d);
-                    if class == 0 && !*sorted {
-                        canonical_sort(buffer.as_mut_slice());
-                        *sorted = true;
+                {
+                    let callback = |d| {
+                        let class =
+                            unicode::char::canonical_combining_class(d);
+                        if class == 0 && !*sorted {
+                            canonical_sort(buffer.as_mut_slice());
+                            *sorted = true;
+                        }
+                        buffer.push((d, class));
+                    };
+                    match self.kind {
+                        Canonical => {
+                            unicode::char::decompose_canonical(ch, callback)
+                        }
+                        Compatible => {
+                            unicode::char::decompose_compatible(ch, callback)
+                        }
                     }
-                    buffer.push((d, class));
-                });
-                if *sorted { break }
+                }
+                if *sorted {
+                    break
+                }
             }
         }
 
@@ -382,7 +390,7 @@ impl<'a> Iterator<char> for Recompositions<'a> {
 ///
 /// The original string with all occurrences of `from` replaced with `to`.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```rust
 /// use std::str;
@@ -440,7 +448,7 @@ pub type SendStr = CowString<'static>;
 impl<'a> MaybeOwned<'a> {
     /// Returns `true` if this `MaybeOwned` wraps an owned string.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ``` ignore
     /// let string = String::from_str("orange");
@@ -457,7 +465,7 @@ impl<'a> MaybeOwned<'a> {
 
     /// Returns `true` if this `MaybeOwned` wraps a borrowed string.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ``` ignore
     /// let string = "orange";
@@ -492,7 +500,7 @@ pub trait IntoMaybeOwned<'a> {
 #[deprecated = "use std::borrow::IntoCow"]
 #[allow(deprecated)]
 impl<'a> IntoMaybeOwned<'a> for String {
-    /// # Example
+    /// # Examples
     ///
     /// ``` ignore
     /// let owned_string = String::from_str("orange");
@@ -509,7 +517,7 @@ impl<'a> IntoMaybeOwned<'a> for String {
 #[deprecated = "use std::borrow::IntoCow"]
 #[allow(deprecated)]
 impl<'a> IntoMaybeOwned<'a> for &'a str {
-    /// # Example
+    /// # Examples
     ///
     /// ``` ignore
     /// let string = "orange";
@@ -524,7 +532,7 @@ impl<'a> IntoMaybeOwned<'a> for &'a str {
 #[allow(deprecated)]
 #[deprecated = "use std::borrow::IntoCow"]
 impl<'a> IntoMaybeOwned<'a> for MaybeOwned<'a> {
-    /// # Example
+    /// # Examples
     ///
     /// ``` ignore
     /// let str = "orange";
@@ -563,6 +571,7 @@ impl<'a> Ord for MaybeOwned<'a> {
     }
 }
 
+#[allow(deprecated)]
 #[deprecated = "use std::str::CowString"]
 impl<'a, S: Str> Equiv<S> for MaybeOwned<'a> {
     #[inline]
@@ -707,7 +716,7 @@ pub trait StrAllocating: Str {
     ///
     /// The original string with all occurrences of `from` replaced with `to`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// let s = "Do you know the muffin man,
@@ -832,8 +841,10 @@ mod tests {
     use std::default::Default;
     use std::char::Char;
     use std::clone::Clone;
-    use std::cmp::{Equal, Greater, Less, Ord, PartialOrd, Equiv};
-    use std::option::{Some, None};
+    use std::cmp::{Ord, PartialOrd, Equiv};
+    use std::cmp::Ordering::{Equal, Greater, Less};
+    use std::option::Option;
+    use std::option::Option::{Some, None};
     use std::ptr::RawPtr;
     use std::iter::{Iterator, IteratorExt, DoubleEndedIteratorExt};
 
@@ -912,10 +923,10 @@ mod tests {
     #[test]
     fn test_collect() {
         let empty = String::from_str("");
-        let s: String = empty.as_slice().chars().collect();
+        let s: String = empty.chars().collect();
         assert_eq!(empty, s);
         let data = String::from_str("ประเทศไทย中");
-        let s: String = data.as_slice().chars().collect();
+        let s: String = data.chars().collect();
         assert_eq!(data, s);
     }
 
@@ -923,7 +934,7 @@ mod tests {
     fn test_into_bytes() {
         let data = String::from_str("asdf");
         let buf = data.into_bytes();
-        assert_eq!(b"asdf", buf.as_slice());
+        assert_eq!(b"asdf", buf);
     }
 
     #[test]
@@ -940,21 +951,21 @@ mod tests {
         let string = "ประเทศไทย中华Việt Nam";
         let mut data = String::from_str(string);
         data.push_str(string);
-        assert!(data.as_slice().find_str("ไท华").is_none());
-        assert_eq!(data.as_slice().slice(0u, 43u).find_str(""), Some(0u));
-        assert_eq!(data.as_slice().slice(6u, 43u).find_str(""), Some(6u - 6u));
+        assert!(data.find_str("ไท华").is_none());
+        assert_eq!(data.slice(0u, 43u).find_str(""), Some(0u));
+        assert_eq!(data.slice(6u, 43u).find_str(""), Some(6u - 6u));
 
-        assert_eq!(data.as_slice().slice(0u, 43u).find_str("ประ"), Some( 0u));
-        assert_eq!(data.as_slice().slice(0u, 43u).find_str("ทศไ"), Some(12u));
-        assert_eq!(data.as_slice().slice(0u, 43u).find_str("ย中"), Some(24u));
-        assert_eq!(data.as_slice().slice(0u, 43u).find_str("iệt"), Some(34u));
-        assert_eq!(data.as_slice().slice(0u, 43u).find_str("Nam"), Some(40u));
+        assert_eq!(data.slice(0u, 43u).find_str("ประ"), Some( 0u));
+        assert_eq!(data.slice(0u, 43u).find_str("ทศไ"), Some(12u));
+        assert_eq!(data.slice(0u, 43u).find_str("ย中"), Some(24u));
+        assert_eq!(data.slice(0u, 43u).find_str("iệt"), Some(34u));
+        assert_eq!(data.slice(0u, 43u).find_str("Nam"), Some(40u));
 
-        assert_eq!(data.as_slice().slice(43u, 86u).find_str("ประ"), Some(43u - 43u));
-        assert_eq!(data.as_slice().slice(43u, 86u).find_str("ทศไ"), Some(55u - 43u));
-        assert_eq!(data.as_slice().slice(43u, 86u).find_str("ย中"), Some(67u - 43u));
-        assert_eq!(data.as_slice().slice(43u, 86u).find_str("iệt"), Some(77u - 43u));
-        assert_eq!(data.as_slice().slice(43u, 86u).find_str("Nam"), Some(83u - 43u));
+        assert_eq!(data.slice(43u, 86u).find_str("ประ"), Some(43u - 43u));
+        assert_eq!(data.slice(43u, 86u).find_str("ทศไ"), Some(55u - 43u));
+        assert_eq!(data.slice(43u, 86u).find_str("ย中"), Some(67u - 43u));
+        assert_eq!(data.slice(43u, 86u).find_str("iệt"), Some(77u - 43u));
+        assert_eq!(data.slice(43u, 86u).find_str("Nam"), Some(83u - 43u));
     }
 
     #[test]
@@ -986,7 +997,7 @@ mod tests {
         ($expected: expr, $string: expr) => {
             {
                 let s = $string.concat();
-                assert_eq!($expected, s.as_slice());
+                assert_eq!($expected, s);
             }
         }
     }
@@ -1024,7 +1035,7 @@ mod tests {
         ($expected: expr, $string: expr, $delim: expr) => {
             {
                 let s = $string.connect($delim);
-                assert_eq!($expected, s.as_slice());
+                assert_eq!($expected, s);
             }
         }
     }
@@ -1145,7 +1156,7 @@ mod tests {
 
         let a = "ประเ";
         let a2 = "دولة الكويتทศไทย中华";
-        assert_eq!(data.replace(a, repl).as_slice(), a2);
+        assert_eq!(data.replace(a, repl), a2);
     }
 
     #[test]
@@ -1155,7 +1166,7 @@ mod tests {
 
         let b = "ะเ";
         let b2 = "ปรدولة الكويتทศไทย中华";
-        assert_eq!(data.replace(b, repl).as_slice(), b2);
+        assert_eq!(data.replace(b, repl), b2);
     }
 
     #[test]
@@ -1165,7 +1176,7 @@ mod tests {
 
         let c = "中华";
         let c2 = "ประเทศไทยدولة الكويت";
-        assert_eq!(data.replace(c, repl).as_slice(), c2);
+        assert_eq!(data.replace(c, repl), c2);
     }
 
     #[test]
@@ -1174,7 +1185,7 @@ mod tests {
         let repl = "دولة الكويت";
 
         let d = "ไท华";
-        assert_eq!(data.replace(d, repl).as_slice(), data);
+        assert_eq!(data.replace(d, repl), data);
     }
 
     #[test]
@@ -1210,7 +1221,7 @@ mod tests {
         }
         let letters = a_million_letter_x();
         assert!(half_a_million_letter_x() ==
-            String::from_str(letters.as_slice().slice(0u, 3u * 500000u)));
+            String::from_str(letters.slice(0u, 3u * 500000u)));
     }
 
     #[test]
@@ -1449,7 +1460,7 @@ mod tests {
         let b: &[u8] = &[];
         assert_eq!("".as_bytes(), b);
         assert_eq!("abc".as_bytes(), b"abc");
-        assert_eq!("ศไทย中华Việt Nam".as_bytes(), v.as_slice());
+        assert_eq!("ศไทย中华Việt Nam".as_bytes(), v);
     }
 
     #[test]
@@ -1484,7 +1495,6 @@ mod tests {
 
         let string = "a\nb\nc";
         let lines: Vec<&str> = string.lines().collect();
-        let lines = lines.as_slice();
         assert_eq!(string.subslice_offset(lines[0]), 0);
         assert_eq!(string.subslice_offset(lines[1]), 2);
         assert_eq!(string.subslice_offset(lines[2]), 4);
@@ -1831,7 +1841,7 @@ mod tests {
     fn test_nfd_chars() {
         macro_rules! t {
             ($input: expr, $expected: expr) => {
-                assert_eq!($input.nfd_chars().collect::<String>(), $expected.into_string());
+                assert_eq!($input.nfd_chars().collect::<String>(), $expected);
             }
         }
         t!("abc", "abc");
@@ -1850,7 +1860,7 @@ mod tests {
     fn test_nfkd_chars() {
         macro_rules! t {
             ($input: expr, $expected: expr) => {
-                assert_eq!($input.nfkd_chars().collect::<String>(), $expected.into_string());
+                assert_eq!($input.nfkd_chars().collect::<String>(), $expected);
             }
         }
         t!("abc", "abc");
@@ -1869,7 +1879,7 @@ mod tests {
     fn test_nfc_chars() {
         macro_rules! t {
             ($input: expr, $expected: expr) => {
-                assert_eq!($input.nfc_chars().collect::<String>(), $expected.into_string());
+                assert_eq!($input.nfc_chars().collect::<String>(), $expected);
             }
         }
         t!("abc", "abc");
@@ -1889,7 +1899,7 @@ mod tests {
     fn test_nfkc_chars() {
         macro_rules! t {
             ($input: expr, $expected: expr) => {
-                assert_eq!($input.nfkc_chars().collect::<String>(), $expected.into_string());
+                assert_eq!($input.nfkc_chars().collect::<String>(), $expected);
             }
         }
         t!("abc", "abc");
@@ -2180,10 +2190,10 @@ mod tests {
         let s = "a̐éö̲\r\n";
         let gr_inds = s.grapheme_indices(true).collect::<Vec<(uint, &str)>>();
         let b: &[_] = &[(0u, "a̐"), (3, "é"), (6, "ö̲"), (11, "\r\n")];
-        assert_eq!(gr_inds.as_slice(), b);
+        assert_eq!(gr_inds, b);
         let gr_inds = s.grapheme_indices(true).rev().collect::<Vec<(uint, &str)>>();
         let b: &[_] = &[(11, "\r\n"), (6, "ö̲"), (3, "é"), (0u, "a̐")];
-        assert_eq!(gr_inds.as_slice(), b);
+        assert_eq!(gr_inds, b);
         let mut gr_inds_iter = s.grapheme_indices(true);
         {
             let gr_inds = gr_inds_iter.by_ref();
@@ -2199,14 +2209,14 @@ mod tests {
         let s = "\n\r\n\r";
         let gr = s.graphemes(true).rev().collect::<Vec<&str>>();
         let b: &[_] = &["\r", "\r\n", "\n"];
-        assert_eq!(gr.as_slice(), b);
+        assert_eq!(gr, b);
     }
 
     #[test]
     fn test_split_strator() {
         fn t(s: &str, sep: &str, u: &[&str]) {
             let v: Vec<&str> = s.split_str(sep).collect();
-            assert_eq!(v.as_slice(), u.as_slice());
+            assert_eq!(v, u);
         }
         t("--1233345--", "12345", &["--1233345--"]);
         t("abc::hello::there", "::", &["abc", "hello", "there"]);

@@ -36,18 +36,21 @@ use error::{FromError, Error};
 use fmt;
 use io::{IoResult, IoError};
 use iter::{Iterator, IteratorExt};
+use kinds::Copy;
 use libc::{c_void, c_int};
 use libc;
 use boxed::Box;
 use ops::Drop;
-use option::{Some, None, Option};
+use option::Option;
+use option::Option::{Some, None};
 use os;
 use path::{Path, GenericPath, BytesContainer};
 use sys;
 use sys::os as os_imp;
 use ptr::RawPtr;
 use ptr;
-use result::{Err, Ok, Result};
+use result::Result;
+use result::Result::{Err, Ok};
 use slice::{AsSlice, SlicePrelude, PartialEqSlicePrelude};
 use slice::CloneSliceAllocPrelude;
 use str::{Str, StrPrelude, StrAllocating};
@@ -157,10 +160,11 @@ pub fn getcwd() -> IoResult<Path> {
 }
 
 #[cfg(windows)]
-pub mod windows {
+pub mod windoze {
     use libc::types::os::arch::extra::DWORD;
     use libc;
-    use option::{None, Option};
+    use option::Option;
+    use option::Option::None;
     use option;
     use os::TMPBUF_SZ;
     use slice::{SlicePrelude};
@@ -196,7 +200,7 @@ pub mod windows {
                     // set `res` to None and continue.
                     let s = String::from_utf16(sub)
                         .expect("fill_utf16_buf_and_decode: closure created invalid UTF-16");
-                    res = option::Some(s)
+                    res = option::Option::Some(s)
                 }
             }
             return res;
@@ -209,14 +213,12 @@ Accessing environment variables is not generally threadsafe.
 Serialize access through a global lock.
 */
 fn with_env_lock<T>(f: || -> T) -> T {
-    use rustrt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
+    use sync::{StaticMutex, MUTEX_INIT};
 
-    static LOCK: StaticNativeMutex = NATIVE_MUTEX_INIT;
+    static LOCK: StaticMutex = MUTEX_INIT;
 
-    unsafe {
-        let _guard = LOCK.lock();
-        f()
-    }
+    let _guard = LOCK.lock();
+    f()
 }
 
 /// Returns a vector of (variable, value) pairs, for all the environment
@@ -315,7 +317,7 @@ pub fn env_as_bytes() -> Vec<(Vec<u8>,Vec<u8>)> {
         fn env_convert(input: Vec<Vec<u8>>) -> Vec<(Vec<u8>, Vec<u8>)> {
             let mut pairs = Vec::new();
             for p in input.iter() {
-                let mut it = p.as_slice().splitn(1, |b| *b == b'=');
+                let mut it = p.splitn(1, |b| *b == b'=');
                 let key = it.next().unwrap().to_vec();
                 let default: &[u8] = &[];
                 let val = it.next().unwrap_or(default).to_vec();
@@ -384,7 +386,7 @@ pub fn getenv_as_bytes(n: &str) -> Option<Vec<u8>> {
 pub fn getenv(n: &str) -> Option<String> {
     unsafe {
         with_env_lock(|| {
-            use os::windows::{fill_utf16_buf_and_decode};
+            use os::windoze::{fill_utf16_buf_and_decode};
             let mut n: Vec<u16> = n.utf16_units().collect();
             n.push(0);
             fill_utf16_buf_and_decode(|buf, sz| {
@@ -618,6 +620,8 @@ pub struct Pipe {
     pub writer: c_int,
 }
 
+impl Copy for Pipe {}
+
 /// Creates a new low-level OS in-memory pipe.
 ///
 /// This function can fail to succeed if there are no more resources available
@@ -711,7 +715,7 @@ pub fn self_exe_name() -> Option<Path> {
     #[cfg(windows)]
     fn load_self() -> Option<Vec<u8>> {
         unsafe {
-            use os::windows::fill_utf16_buf_and_decode;
+            use os::windoze::fill_utf16_buf_and_decode;
             fill_utf16_buf_and_decode(|buf, sz| {
                 libc::GetModuleFileNameW(0u as libc::DWORD, buf, sz)
             }).map(|s| s.into_string().into_bytes())
@@ -1184,6 +1188,9 @@ pub struct MemoryMap {
     kind: MemoryMapKind,
 }
 
+#[cfg(not(stage0))]
+impl Copy for MemoryMap {}
+
 /// Type of memory map
 pub enum MemoryMapKind {
     /// Virtual memory map. Usually used to change the permissions of a given
@@ -1194,6 +1201,8 @@ pub enum MemoryMapKind {
     /// Windows.
     MapVirtual
 }
+
+impl Copy for MemoryMapKind {}
 
 /// Options the memory map is created with
 pub enum MapOption {
@@ -1206,7 +1215,11 @@ pub enum MapOption {
     /// Create a map for a specific address range. Corresponds to `MAP_FIXED` on
     /// POSIX.
     MapAddr(*const u8),
+    /// Create a memory mapping for a file with a given HANDLE.
+    #[cfg(windows)]
+    MapFd(libc::HANDLE),
     /// Create a memory mapping for a file with a given fd.
+    #[cfg(not(windows))]
     MapFd(c_int),
     /// When using `MapFd`, the start of the map is `uint` bytes from the start
     /// of the file.
@@ -1217,6 +1230,8 @@ pub enum MapOption {
     /// (the exact values used) and ignored on Windows.
     MapNonStandardFlags(c_int),
 }
+
+impl Copy for MapOption {}
 
 /// Possible errors when creating a map.
 pub enum MapError {
@@ -1262,6 +1277,8 @@ pub enum MapError {
     /// value of `GetLastError`.
     ErrMapViewOfFile(uint)
 }
+
+impl Copy for MapError {}
 
 impl fmt::Show for MapError {
     fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
@@ -1400,7 +1417,7 @@ impl MemoryMap {
         let mut readable = false;
         let mut writable = false;
         let mut executable = false;
-        let mut fd: c_int = -1;
+        let mut handle: HANDLE = libc::INVALID_HANDLE_VALUE;
         let mut offset: uint = 0;
         let len = round_up(min_len, page_size());
 
@@ -1410,23 +1427,23 @@ impl MemoryMap {
                 MapWritable => { writable = true; },
                 MapExecutable => { executable = true; }
                 MapAddr(addr_) => { lpAddress = addr_ as LPVOID; },
-                MapFd(fd_) => { fd = fd_; },
+                MapFd(handle_) => { handle = handle_; },
                 MapOffset(offset_) => { offset = offset_; },
                 MapNonStandardFlags(..) => {}
             }
         }
 
         let flProtect = match (executable, readable, writable) {
-            (false, false, false) if fd == -1 => libc::PAGE_NOACCESS,
+            (false, false, false) if handle == libc::INVALID_HANDLE_VALUE => libc::PAGE_NOACCESS,
             (false, true, false) => libc::PAGE_READONLY,
             (false, true, true) => libc::PAGE_READWRITE,
-            (true, false, false) if fd == -1 => libc::PAGE_EXECUTE,
+            (true, false, false) if handle == libc::INVALID_HANDLE_VALUE => libc::PAGE_EXECUTE,
             (true, true, false) => libc::PAGE_EXECUTE_READ,
             (true, true, true) => libc::PAGE_EXECUTE_READWRITE,
             _ => return Err(ErrUnsupProt)
         };
 
-        if fd == -1 {
+        if handle == libc::INVALID_HANDLE_VALUE {
             if offset != 0 {
                 return Err(ErrUnsupOffset);
             }
@@ -1454,7 +1471,7 @@ impl MemoryMap {
                                               // we should never get here.
             };
             unsafe {
-                let hFile = libc::get_osfhandle(fd) as HANDLE;
+                let hFile = handle;
                 let mapping = libc::CreateFileMappingW(hFile,
                                                        ptr::null_mut(),
                                                        flProtect,
@@ -1799,7 +1816,7 @@ mod tests {
     fn test_setenv() {
         let n = make_rand_name();
         setenv(n.as_slice(), "VALUE");
-        assert_eq!(getenv(n.as_slice()), option::Some("VALUE".to_string()));
+        assert_eq!(getenv(n.as_slice()), option::Option::Some("VALUE".to_string()));
     }
 
     #[test]
@@ -1807,7 +1824,7 @@ mod tests {
         let n = make_rand_name();
         setenv(n.as_slice(), "VALUE");
         unsetenv(n.as_slice());
-        assert_eq!(getenv(n.as_slice()), option::None);
+        assert_eq!(getenv(n.as_slice()), option::Option::None);
     }
 
     #[test]
@@ -1816,9 +1833,9 @@ mod tests {
         let n = make_rand_name();
         setenv(n.as_slice(), "1");
         setenv(n.as_slice(), "2");
-        assert_eq!(getenv(n.as_slice()), option::Some("2".to_string()));
+        assert_eq!(getenv(n.as_slice()), option::Option::Some("2".to_string()));
         setenv(n.as_slice(), "");
-        assert_eq!(getenv(n.as_slice()), option::Some("".to_string()));
+        assert_eq!(getenv(n.as_slice()), option::Option::Some("".to_string()));
     }
 
     // Windows GetEnvironmentVariable requires some extra work to make sure
@@ -1835,7 +1852,7 @@ mod tests {
         let n = make_rand_name();
         setenv(n.as_slice(), s.as_slice());
         debug!("{}", s.clone());
-        assert_eq!(getenv(n.as_slice()), option::Some(s));
+        assert_eq!(getenv(n.as_slice()), option::Option::Some(s));
     }
 
     #[test]
@@ -1872,7 +1889,7 @@ mod tests {
             // MingW seems to set some funky environment variables like
             // "=C:=C:\MinGW\msys\1.0\bin" and "!::=::\" that are returned
             // from env() but not visible from getenv().
-            assert!(v2.is_none() || v2 == option::Some(v));
+            assert!(v2.is_none() || v2 == option::Option::Some(v));
         }
     }
 
@@ -1959,7 +1976,7 @@ mod tests {
 
     #[test]
     fn memory_map_rw() {
-        use result::{Ok, Err};
+        use result::Result::{Ok, Err};
 
         let chunk = match os::MemoryMap::new(16, &[
             os::MapReadable,
@@ -1978,55 +1995,47 @@ mod tests {
 
     #[test]
     fn memory_map_file() {
-        use result::{Ok, Err};
+        use libc;
         use os::*;
-        use libc::*;
-        use io::fs;
+        use io::fs::{File, unlink};
+        use io::SeekStyle::SeekSet;
+        use io::FileMode::Open;
+        use io::FileAccess::ReadWrite;
 
-        #[cfg(unix)]
-        fn lseek_(fd: c_int, size: uint) {
-            unsafe {
-                assert!(lseek(fd, size as off_t, SEEK_SET) == size as off_t);
-            }
+        #[cfg(not(windows))]
+        fn get_fd(file: &File) -> libc::c_int {
+            use os::unix::AsRawFd;
+            file.as_raw_fd()
         }
+
         #[cfg(windows)]
-        fn lseek_(fd: c_int, size: uint) {
-           unsafe {
-               assert!(lseek(fd, size as c_long, SEEK_SET) == size as c_long);
-           }
+        fn get_fd(file: &File) -> libc::HANDLE {
+            use os::windows::AsRawHandle;
+            file.as_raw_handle()
         }
 
         let mut path = tmpdir();
         path.push("mmap_file.tmp");
         let size = MemoryMap::granularity() * 2;
+        let mut file = File::open_mode(&path, Open, ReadWrite).unwrap();
+        file.seek(size as i64, SeekSet);
+        file.write_u8(0);
 
-        let fd = unsafe {
-            let fd = path.with_c_str(|path| {
-                open(path, O_CREAT | O_RDWR | O_TRUNC, S_IRUSR | S_IWUSR)
-            });
-            lseek_(fd, size);
-            "x".with_c_str(|x| assert!(write(fd, x as *const c_void, 1) == 1));
-            fd
-        };
-        let chunk = match MemoryMap::new(size / 2, &[
+        let chunk = MemoryMap::new(size / 2, &[
             MapReadable,
             MapWritable,
-            MapFd(fd),
+            MapFd(get_fd(&file)),
             MapOffset(size / 2)
-        ]) {
-            Ok(chunk) => chunk,
-            Err(msg) => panic!("{}", msg)
-        };
+        ]).unwrap();
         assert!(chunk.len > 0);
 
         unsafe {
             *chunk.data = 0xbe;
             assert!(*chunk.data == 0xbe);
-            close(fd);
         }
         drop(chunk);
 
-        fs::unlink(&path).unwrap();
+        unlink(&path).unwrap();
     }
 
     #[test]
@@ -2034,7 +2043,7 @@ mod tests {
     fn split_paths_windows() {
         fn check_parse(unparsed: &str, parsed: &[&str]) -> bool {
             split_paths(unparsed) ==
-                parsed.iter().map(|s| Path::new(*s)).collect()
+                parsed.iter().map(|s| Path::new(*s)).collect::<Vec<_>>()
         }
 
         assert!(check_parse("", &mut [""]));
@@ -2054,7 +2063,7 @@ mod tests {
     fn split_paths_unix() {
         fn check_parse(unparsed: &str, parsed: &[&str]) -> bool {
             split_paths(unparsed) ==
-                parsed.iter().map(|s| Path::new(*s)).collect()
+                parsed.iter().map(|s| Path::new(*s)).collect::<Vec<_>>()
         }
 
         assert!(check_parse("", &mut [""]));
@@ -2068,7 +2077,7 @@ mod tests {
     #[cfg(unix)]
     fn join_paths_unix() {
         fn test_eq(input: &[&str], output: &str) -> bool {
-            join_paths(input).unwrap().as_slice() == output.as_bytes()
+            join_paths(input).unwrap() == output.as_bytes()
         }
 
         assert!(test_eq(&[], ""));
@@ -2083,7 +2092,7 @@ mod tests {
     #[cfg(windows)]
     fn join_paths_windows() {
         fn test_eq(input: &[&str], output: &str) -> bool {
-            join_paths(input).unwrap().as_slice() == output.as_bytes()
+            join_paths(input).unwrap() == output.as_bytes()
         }
 
         assert!(test_eq(&[], ""));

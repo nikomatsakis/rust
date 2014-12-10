@@ -93,6 +93,7 @@ pub trait Sync for Sized? : Covariant {
 /// implemented using unsafe code. In that case, you may want to embed
 /// some of the marker types below into your type.
 pub mod marker {
+    use super::Copy;
     use clone::Clone;
     use cmp;
     use option::{Option, Some};
@@ -189,6 +190,8 @@ pub mod marker {
 
     impls! { CovariantType }
 
+    impl<T> Copy for CovariantType<T> {}
+
     /// A marker type whose type parameter `T` is considered to be
     /// contravariant with respect to the type itself. This is (typically)
     /// used to indicate that an instance of the type `T` will be consumed
@@ -233,6 +236,8 @@ pub mod marker {
 
     impls! { ContravariantType }
 
+    impl<T> Copy for ContravariantType<T> {}
+
     /// A marker type whose type parameter `T` is considered to be
     /// invariant with respect to the type itself. This is (typically)
     /// used to indicate that instances of the type `T` may be read or
@@ -259,6 +264,8 @@ pub mod marker {
 
     impls! { InvariantType }
 
+    impl<T> Copy for InvariantType<T> {}
+
     /// As `CovariantType`, but for lifetime parameters. Using
     /// `CovariantLifetime<'a>` indicates that it is ok to substitute
     /// a *longer* lifetime for `'a` than the one you originally
@@ -279,6 +286,8 @@ pub mod marker {
     #[deriving(PartialEq,Eq,PartialOrd,Ord,Clone)]
     pub struct CovariantLifetime<'a>;
 
+    impl<'a> Copy for CovariantLifetime<'a> {}
+
     /// As `ContravariantType`, but for lifetime parameters. Using
     /// `ContravariantLifetime<'a>` indicates that it is ok to
     /// substitute a *shorter* lifetime for `'a` than the one you
@@ -294,6 +303,8 @@ pub mod marker {
     #[lang="contravariant_lifetime"]
     #[deriving(PartialEq,Eq,PartialOrd,Ord,Clone)]
     pub struct ContravariantLifetime<'a>;
+
+    impl<'a> Copy for ContravariantLifetime<'a> {}
 
     /// As `InvariantType`, but for lifetime parameters. Using
     /// `InvariantLifetime<'a>` indicates that it is not ok to
@@ -311,26 +322,31 @@ pub mod marker {
     /// typically embedded in other types, such as `Gc`, to ensure that
     /// their instances remain thread-local.
     #[lang="no_send_bound"]
-    #[deriving(PartialEq,Eq,PartialOrd,Ord,Clone)]
+    #[deriving(Clone, PartialEq, Eq, PartialOrd, Ord)]
+    #[allow(missing_copy_implementations)]
     pub struct NoSend;
 
     /// A type which is considered "not POD", meaning that it is not
     /// implicitly copyable. This is typically embedded in other types to
     /// ensure that they are never copied, even if they lack a destructor.
     #[lang="no_copy_bound"]
-    #[deriving(PartialEq,Eq,PartialOrd,Ord,Clone)]
+    #[deriving(Clone, PartialEq, Eq, PartialOrd, Ord)]
+    #[allow(missing_copy_implementations)]
     pub struct NoCopy;
 
     /// A type which is considered "not sync", meaning that
     /// its contents are not threadsafe, hence they cannot be
     /// shared between tasks.
     #[lang="no_sync_bound"]
-    #[deriving(PartialEq,Eq,PartialOrd,Ord,Clone)]
+    #[deriving(Clone, PartialEq, Eq, PartialOrd, Ord)]
+    #[allow(missing_copy_implementations)]
     pub struct NoSync;
 
     /// A type which is considered managed by the GC. This is typically
     /// embedded in other types.
     #[lang="managed_bound"]
-    #[deriving(PartialEq,Eq,PartialOrd,Ord,Clone)]
+    #[deriving(Clone, PartialEq, Eq, PartialOrd, Ord)]
+    #[allow(missing_copy_implementations)]
     pub struct Managed;
 }
+

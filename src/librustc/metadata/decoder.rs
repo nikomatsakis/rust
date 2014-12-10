@@ -30,7 +30,6 @@ use middle::resolve::{TraitItemKind, TypeTraitItemKind};
 use middle::subst;
 use middle::ty::{ImplContainer, TraitContainer};
 use middle::ty::{mod, Ty};
-use middle::typeck;
 use middle::astencode::vtable_decoder_helpers;
 
 use std::hash::Hash;
@@ -422,7 +421,7 @@ pub fn get_impl_trait<'tcx>(cdata: Cmd,
 pub fn get_impl_vtables<'tcx>(cdata: Cmd,
                               id: ast::NodeId,
                               tcx: &ty::ctxt<'tcx>)
-                              -> typeck::vtable_res<'tcx>
+                              -> ty::vtable_res<'tcx>
 {
     let item_doc = lookup_item(id, cdata.data());
     let vtables_doc = reader::get_doc(item_doc, tag_item_impl_vtables);
@@ -442,6 +441,8 @@ pub enum DefLike {
     DlImpl(ast::DefId),
     DlField
 }
+
+impl Copy for DefLike {}
 
 /// Iterates over the language items in the given crate.
 pub fn each_lang_item(cdata: Cmd, f: |ast::NodeId, uint| -> bool) -> bool {
@@ -1268,14 +1269,14 @@ pub fn get_trait_of_item(cdata: Cmd, id: ast::NodeId, tcx: &ty::ctxt)
 
 
 pub fn get_native_libraries(cdata: Cmd)
-                            -> Vec<(cstore::NativeLibaryKind, String)> {
+                            -> Vec<(cstore::NativeLibraryKind, String)> {
     let libraries = reader::get_doc(rbml::Doc::new(cdata.data()),
                                     tag_native_libraries);
     let mut result = Vec::new();
     reader::tagged_docs(libraries, tag_native_libraries_lib, |lib_doc| {
         let kind_doc = reader::get_doc(lib_doc, tag_native_libraries_kind);
         let name_doc = reader::get_doc(lib_doc, tag_native_libraries_name);
-        let kind: cstore::NativeLibaryKind =
+        let kind: cstore::NativeLibraryKind =
             FromPrimitive::from_u32(reader::doc_as_u32(kind_doc)).unwrap();
         let name = name_doc.as_str().to_string();
         result.push((kind, name));

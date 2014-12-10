@@ -41,15 +41,23 @@ use middle::def;
 use middle::mem_categorization::Typer;
 use middle::subst::{mod, Subst};
 use trans::{_match, adt, asm, base, callee, closure, consts, controlflow};
-use trans::{debuginfo, glue, machine, meth, inline, tvec, type_of};
 use trans::base::*;
 use trans::build::*;
 use trans::cleanup::{mod, CleanupMethods};
 use trans::common::*;
 use trans::datum::*;
-use middle::ty::{mod, struct_fields, tup_fields};
-use middle::ty::{AdjustDerefRef, AdjustAddEnv, AutoUnsafe, AutoPtr, Ty};
-use middle::typeck::{mod, MethodCall};
+use trans::debuginfo;
+use trans::glue;
+use trans::machine;
+use trans::meth;
+use trans::inline;
+use trans::tvec;
+use trans::type_of;
+use middle::ty::{struct_fields, tup_fields};
+use middle::ty::{AdjustDerefRef, AdjustAddEnv, AutoUnsafe};
+use middle::ty::{AutoPtr};
+use middle::ty::{mod, Ty};
+use middle::ty::MethodCall;
 use util::common::indenter;
 use util::ppaux::Repr;
 use trans::machine::{llsize_of, llsize_of_alloc};
@@ -70,6 +78,8 @@ pub enum Dest {
     SaveIn(ValueRef),
     Ignore,
 }
+
+impl Copy for Dest {}
 
 impl Dest {
     pub fn to_string(&self, ccx: &CrateContext) -> String {
@@ -97,7 +107,8 @@ pub fn trans_into<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 
     debug!("trans_into() expr={}", expr.repr(bcx.tcx()));
 
-    let cleanup_debug_loc = debuginfo::get_cleanup_debug_loc_for_ast_node(expr.id,
+    let cleanup_debug_loc = debuginfo::get_cleanup_debug_loc_for_ast_node(bcx.ccx(),
+                                                                          expr.id,
                                                                           expr.span,
                                                                           false);
     bcx.fcx.push_ast_cleanup_scope(cleanup_debug_loc);
@@ -130,7 +141,8 @@ pub fn trans<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let mut bcx = bcx;
     let fcx = bcx.fcx;
 
-    let cleanup_debug_loc = debuginfo::get_cleanup_debug_loc_for_ast_node(expr.id,
+    let cleanup_debug_loc = debuginfo::get_cleanup_debug_loc_for_ast_node(bcx.ccx(),
+                                                                          expr.id,
                                                                           expr.span,
                                                                           false);
     fcx.push_ast_cleanup_scope(cleanup_debug_loc);
@@ -618,7 +630,10 @@ fn trans_datum_unadjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 ast::ExprRepeat(..) | ast::ExprVec(..) => {
                     // Special case for slices.
                     let cleanup_debug_loc =
-                        debuginfo::get_cleanup_debug_loc_for_ast_node(x.id, x.span, false);
+                        debuginfo::get_cleanup_debug_loc_for_ast_node(bcx.ccx(),
+                                                                      x.id,
+                                                                      x.span,
+                                                                      false);
                     fcx.push_ast_cleanup_scope(cleanup_debug_loc);
                     let datum = unpack_datum!(
                         bcx, tvec::trans_slice_vec(bcx, expr, &**x));
@@ -1869,6 +1884,8 @@ pub enum cast_kind {
     cast_other,
 }
 
+impl Copy for cast_kind {}
+
 pub fn cast_type_kind<'tcx>(tcx: &ty::ctxt<'tcx>, t: Ty<'tcx>) -> cast_kind {
     match t.sty {
         ty::ty_char        => cast_integral,
@@ -2086,7 +2103,7 @@ fn deref_once<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             // path (below) to dereference that `&T`.
             let datum = match method_call.adjustment {
                 // Always perform an AutoPtr when applying an overloaded auto-deref
-                typeck::AutoDeref(_) => unpack_datum!(bcx, auto_ref(bcx, datum, expr)),
+                ty::AutoDeref(_) => unpack_datum!(bcx, auto_ref(bcx, datum, expr)),
                 _ => datum
             };
 

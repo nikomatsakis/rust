@@ -21,14 +21,13 @@ use std::hash::{Writer, Hash};
 use tree_map::{TreeMap, Entries, RevEntries, MoveEntries};
 
 // FIXME(conventions): implement bounded iterators
-// FIXME(conventions): implement BitOr, BitAnd, BitXor, and Sub
 // FIXME(conventions): replace rev_iter(_mut) by making iter(_mut) DoubleEnded
 
 /// An implementation of the `Set` trait on top of the `TreeMap` container. The
 /// only requirement is that the type of the elements contained ascribes to the
 /// `Ord` trait.
 ///
-/// ## Example
+/// ## Examples
 ///
 /// ```{rust}
 /// use std::collections::TreeSet;
@@ -143,7 +142,7 @@ impl<T: Ord> Default for TreeSet<T> {
 impl<T: Ord> TreeSet<T> {
     /// Creates an empty `TreeSet`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -155,7 +154,7 @@ impl<T: Ord> TreeSet<T> {
 
     /// Gets a lazy iterator over the values in the set, in ascending order.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -174,7 +173,7 @@ impl<T: Ord> TreeSet<T> {
 
     /// Gets a lazy iterator over the values in the set, in descending order.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -193,7 +192,7 @@ impl<T: Ord> TreeSet<T> {
     /// Creates a consuming iterator, that is, one that moves each value out of the
     /// set in ascending order. The set cannot be used after calling this.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -212,7 +211,7 @@ impl<T: Ord> TreeSet<T> {
     /// Gets a lazy iterator pointing to the first value not less than `v` (greater or equal).
     /// If all elements in the set are less than `v` empty iterator is returned.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -231,7 +230,7 @@ impl<T: Ord> TreeSet<T> {
     /// If all elements in the set are less than or equal to `v` an
     /// empty iterator is returned.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -248,7 +247,7 @@ impl<T: Ord> TreeSet<T> {
 
     /// Visits the values representing the difference, in ascending order.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -276,7 +275,7 @@ impl<T: Ord> TreeSet<T> {
 
     /// Visits the values representing the symmetric difference, in ascending order.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -303,7 +302,7 @@ impl<T: Ord> TreeSet<T> {
 
     /// Visits the values representing the intersection, in ascending order.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -327,7 +326,7 @@ impl<T: Ord> TreeSet<T> {
 
     /// Visits the values representing the union, in ascending order.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -350,7 +349,7 @@ impl<T: Ord> TreeSet<T> {
 
     /// Return the number of elements in the set
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -366,7 +365,7 @@ impl<T: Ord> TreeSet<T> {
 
     /// Returns true if the set contains no elements
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -381,7 +380,7 @@ impl<T: Ord> TreeSet<T> {
 
     /// Clears the set, removing all values.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -401,7 +400,7 @@ impl<T: Ord> TreeSet<T> {
     /// but the ordering on the borrowed form *must* match the
     /// ordering on the value type.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -421,7 +420,7 @@ impl<T: Ord> TreeSet<T> {
     /// Returns `true` if the set has no elements in common with `other`.
     /// This is equivalent to checking for an empty intersection.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -442,7 +441,7 @@ impl<T: Ord> TreeSet<T> {
 
     /// Returns `true` if the set is a subset of another.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -483,7 +482,7 @@ impl<T: Ord> TreeSet<T> {
 
     /// Returns `true` if the set is a superset of another.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -508,7 +507,7 @@ impl<T: Ord> TreeSet<T> {
     /// Adds a value to the set. Returns `true` if the value was not already
     /// present in the set.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -530,7 +529,7 @@ impl<T: Ord> TreeSet<T> {
     /// but the ordering on the borrowed form *must* match the
     /// ordering on the value type.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::TreeSet;
@@ -666,6 +665,90 @@ impl<'a, T: Ord> Iterator<&'a T> for UnionItems<'a, T> {
     }
 }
 
+#[unstable = "matches collection reform specification, waiting for dust to settle"]
+impl<T: Ord + Clone> BitOr<TreeSet<T>, TreeSet<T>> for TreeSet<T> {
+    /// Returns the union of `self` and `rhs` as a new `TreeSet<T>`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::TreeSet;
+    ///
+    /// let a: TreeSet<int> = vec![1, 2, 3].into_iter().collect();
+    /// let b: TreeSet<int> = vec![3, 4, 5].into_iter().collect();
+    ///
+    /// let set: TreeSet<int> = a | b;
+    /// let v: Vec<int> = set.into_iter().collect();
+    /// assert_eq!(v, vec![1, 2, 3, 4, 5]);
+    /// ```
+    fn bitor(&self, rhs: &TreeSet<T>) -> TreeSet<T> {
+        self.union(rhs).cloned().collect()
+    }
+}
+
+#[unstable = "matches collection reform specification, waiting for dust to settle"]
+impl<T: Ord + Clone> BitAnd<TreeSet<T>, TreeSet<T>> for TreeSet<T> {
+    /// Returns the intersection of `self` and `rhs` as a new `TreeSet<T>`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::TreeSet;
+    ///
+    /// let a: TreeSet<int> = vec![1, 2, 3].into_iter().collect();
+    /// let b: TreeSet<int> = vec![2, 3, 4].into_iter().collect();
+    ///
+    /// let set: TreeSet<int> = a & b;
+    /// let v: Vec<int> = set.into_iter().collect();
+    /// assert_eq!(v, vec![2, 3]);
+    /// ```
+    fn bitand(&self, rhs: &TreeSet<T>) -> TreeSet<T> {
+        self.intersection(rhs).cloned().collect()
+    }
+}
+
+#[unstable = "matches collection reform specification, waiting for dust to settle"]
+impl<T: Ord + Clone> BitXor<TreeSet<T>, TreeSet<T>> for TreeSet<T> {
+    /// Returns the symmetric difference of `self` and `rhs` as a new `TreeSet<T>`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::TreeSet;
+    ///
+    /// let a: TreeSet<int> = vec![1, 2, 3].into_iter().collect();
+    /// let b: TreeSet<int> = vec![3, 4, 5].into_iter().collect();
+    ///
+    /// let set: TreeSet<int> = a ^ b;
+    /// let v: Vec<int> = set.into_iter().collect();
+    /// assert_eq!(v, vec![1, 2, 4, 5]);
+    /// ```
+    fn bitxor(&self, rhs: &TreeSet<T>) -> TreeSet<T> {
+        self.symmetric_difference(rhs).cloned().collect()
+    }
+}
+
+#[unstable = "matches collection reform specification, waiting for dust to settle"]
+impl<T: Ord + Clone> Sub<TreeSet<T>, TreeSet<T>> for TreeSet<T> {
+    /// Returns the difference of `self` and `rhs` as a new `TreeSet<T>`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::TreeSet;
+    ///
+    /// let a: TreeSet<int> = vec![1, 2, 3].into_iter().collect();
+    /// let b: TreeSet<int> = vec![3, 4, 5].into_iter().collect();
+    ///
+    /// let set: TreeSet<int> = a - b;
+    /// let v: Vec<int> = set.into_iter().collect();
+    /// assert_eq!(v, vec![1, 2]);
+    /// ```
+    fn sub(&self, rhs: &TreeSet<T>) -> TreeSet<T> {
+        self.difference(rhs).cloned().collect()
+    }
+}
+
 impl<T: Ord> FromIterator<T> for TreeSet<T> {
     fn from_iter<Iter: Iterator<T>>(iter: Iter) -> TreeSet<T> {
         let mut set = TreeSet::new();
@@ -695,6 +778,7 @@ impl<S: Writer, T: Ord + Hash<S>> Hash<S> for TreeSet<T> {
 mod test {
     use std::prelude::*;
     use std::hash;
+    use vec::Vec;
 
     use super::TreeSet;
 
@@ -933,6 +1017,46 @@ mod test {
     }
 
     #[test]
+    fn test_bit_or() {
+        let a: TreeSet<int> = vec![1, 3, 5, 9, 11, 16, 19, 24].into_iter().collect();
+        let b: TreeSet<int> = vec![-2, 1, 5, 9, 13, 19].into_iter().collect();
+
+        let set: TreeSet<int> = a | b;
+        let v: Vec<int> = set.into_iter().collect();
+        assert_eq!(v, vec![-2, 1, 3, 5, 9, 11, 13, 16, 19, 24]);
+    }
+
+    #[test]
+    fn test_bit_and() {
+        let a: TreeSet<int> = vec![11, 1, 3, 77, 103, 5, -5].into_iter().collect();
+        let b: TreeSet<int> = vec![2, 11, 77, -9, -42, 5, 3].into_iter().collect();
+
+        let set: TreeSet<int> = a & b;
+        let v: Vec<int> = set.into_iter().collect();
+        assert_eq!(v, vec![3, 5, 11, 77]);
+    }
+
+    #[test]
+    fn test_bit_xor() {
+        let a: TreeSet<int> = vec![1, 3, 5, 9, 11].into_iter().collect();
+        let b: TreeSet<int> = vec![-2, 3, 9, 14, 22].into_iter().collect();
+
+        let set: TreeSet<int> = a ^ b;
+        let v: Vec<int> = set.into_iter().collect();
+        assert_eq!(v, vec![-2, 1, 5, 11, 14, 22]);
+    }
+
+    #[test]
+    fn test_sub() {
+        let a: TreeSet<int> = vec![-5, 11, 22, 33, 40, 42].into_iter().collect();
+        let b: TreeSet<int> = vec![-12, -5, 14, 23, 34, 38, 39, 50].into_iter().collect();
+
+        let set: TreeSet<int> = a - b;
+        let v: Vec<int> = set.into_iter().collect();
+        assert_eq!(v, vec![11, 22, 33, 40, 42]);
+    }
+
+    #[test]
     fn test_zip() {
         let mut x = TreeSet::new();
         x.insert(5u);
@@ -979,7 +1103,7 @@ mod test {
 
         let set_str = format!("{}", set);
 
-        assert!(set_str == "{1, 2}".to_string());
-        assert_eq!(format!("{}", empty), "{}".to_string());
+        assert!(set_str == "{1, 2}");
+        assert_eq!(format!("{}", empty), "{}");
     }
 }

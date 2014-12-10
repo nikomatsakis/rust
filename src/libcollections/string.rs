@@ -30,7 +30,7 @@ use str::{CharRange, CowString, FromStr, StrAllocating, Owned};
 use vec::{DerefVec, Vec, as_vec};
 
 /// A growable string stored as a UTF-8 encoded buffer.
-#[deriving(Clone, PartialEq, PartialOrd, Eq, Ord)]
+#[deriving(Clone, PartialOrd, Eq, Ord)]
 #[stable]
 pub struct String {
     vec: Vec<u8>,
@@ -39,7 +39,7 @@ pub struct String {
 impl String {
     /// Creates a new string buffer initialized with the empty string.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut s = String::new();
@@ -56,7 +56,7 @@ impl String {
     /// The string will be able to hold exactly `capacity` bytes without
     /// reallocating. If `capacity` is 0, the string will not allocate.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut s = String::with_capacity(10);
@@ -71,7 +71,7 @@ impl String {
 
     /// Creates a new string buffer from the given string.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let s = String::from_str("hello");
@@ -89,7 +89,7 @@ impl String {
     /// Returns `Err` with the original vector if the vector contains invalid
     /// UTF-8.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// let hello_vec = vec![104, 101, 108, 108, 111];
@@ -113,7 +113,7 @@ impl String {
     /// Converts a vector of bytes to a new UTF-8 string.
     /// Any invalid UTF-8 sequences are replaced with U+FFFD REPLACEMENT CHARACTER.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// let input = b"Hello \xF0\x90\x80World";
@@ -240,7 +240,7 @@ impl String {
     /// Decode a UTF-16 encoded vector `v` into a `String`, returning `None`
     /// if `v` contains any invalid data.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// // 𝄞music
@@ -267,7 +267,8 @@ impl String {
     /// Decode a UTF-16 encoded vector `v` into a string, replacing
     /// invalid data with the replacement character (U+FFFD).
     ///
-    /// # Example
+    /// # Examples
+    ///
     /// ```rust
     /// // 𝄞mus<invalid>ic<invalid>
     /// let v = &[0xD834, 0xDD1E, 0x006d, 0x0075,
@@ -284,7 +285,7 @@ impl String {
 
     /// Convert a vector of `char`s to a `String`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// let chars = &['h', 'e', 'l', 'l', 'o'];
@@ -345,7 +346,7 @@ impl String {
 
     /// Return the underlying byte buffer, encoded as UTF-8.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let s = String::from_str("hello");
@@ -360,7 +361,7 @@ impl String {
 
     /// Creates a string buffer by repeating a character `length` times.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let s = String::from_char(5, 'a');
@@ -386,7 +387,7 @@ impl String {
 
     /// Pushes the given string onto this string buffer.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut s = String::from_str("foo");
@@ -401,7 +402,7 @@ impl String {
 
     /// Pushes `ch` onto the given string `count` times.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut s = String::from_str("foo");
@@ -418,7 +419,7 @@ impl String {
 
     /// Returns the number of bytes that this string buffer can hold without reallocating.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let s = String::with_capacity(10);
@@ -443,7 +444,7 @@ impl String {
     ///
     /// Panics if the new capacity overflows `uint`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut s = String::new();
@@ -467,7 +468,7 @@ impl String {
     ///
     /// Panics if the new capacity overflows `uint`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut s = String::new();
@@ -482,7 +483,7 @@ impl String {
 
     /// Shrinks the capacity of this string buffer to match its length.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut s = String::from_str("foo");
@@ -499,7 +500,7 @@ impl String {
 
     /// Adds the given character to the end of the string.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut s = String::from_str("abc");
@@ -529,7 +530,7 @@ impl String {
 
     /// Works with the underlying buffer as a byte slice.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let s = String::from_str("hello");
@@ -549,7 +550,7 @@ impl String {
     /// Panics if `new_len` > current length,
     /// or if `new_len` is not a character boundary.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut s = String::from_str("hello");
@@ -559,14 +560,14 @@ impl String {
     #[inline]
     #[unstable = "the panic conventions for strings are under development"]
     pub fn truncate(&mut self, new_len: uint) {
-        assert!(self.as_slice().is_char_boundary(new_len));
+        assert!(self.is_char_boundary(new_len));
         self.vec.truncate(new_len)
     }
 
     /// Removes the last character from the string buffer and returns it.
     /// Returns `None` if this string buffer is empty.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut s = String::from_str("foo");
@@ -583,7 +584,7 @@ impl String {
             return None
         }
 
-        let CharRange {ch, next} = self.as_slice().char_range_at_reverse(len);
+        let CharRange {ch, next} = self.char_range_at_reverse(len);
         unsafe {
             self.vec.set_len(next);
         }
@@ -603,7 +604,7 @@ impl String {
     /// If `idx` does not lie on a character boundary, then this function will
     /// panic.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut s = String::from_str("foo");
@@ -618,7 +619,7 @@ impl String {
         let len = self.len();
         if idx >= len { return None }
 
-        let CharRange { ch, next } = self.as_slice().char_range_at(idx);
+        let CharRange { ch, next } = self.char_range_at(idx);
         unsafe {
             ptr::copy_memory(self.vec.as_mut_ptr().offset(idx as int),
                              self.vec.as_ptr().offset(next as int),
@@ -643,7 +644,7 @@ impl String {
     pub fn insert(&mut self, idx: uint, ch: char) {
         let len = self.len();
         assert!(idx <= len);
-        assert!(self.as_slice().is_char_boundary(idx));
+        assert!(self.is_char_boundary(idx));
         self.vec.reserve(4);
         let mut bits = [0, ..4];
         let amt = ch.encode_utf8(&mut bits).unwrap();
@@ -664,7 +665,7 @@ impl String {
     /// This is unsafe because it does not check
     /// to ensure that the resulting string will be valid UTF-8.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut s = String::from_str("hello");
@@ -682,7 +683,7 @@ impl String {
 
     /// Return the number of bytes in this string.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let a = "foo".to_string();
@@ -694,7 +695,7 @@ impl String {
 
     /// Returns true if the string contains no bytes
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut v = String::new();
@@ -706,7 +707,7 @@ impl String {
 
     /// Truncates the string, returning it to 0 length.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// let mut s = "foo".to_string();
@@ -729,13 +730,79 @@ impl FromIterator<char> for String {
     }
 }
 
+#[experimental = "waiting on FromIterator stabilization"]
+impl<'a> FromIterator<&'a str> for String {
+    fn from_iter<I:Iterator<&'a str>>(iterator: I) -> String {
+        let mut buf = String::new();
+        buf.extend(iterator);
+        buf
+    }
+}
+
 #[experimental = "waiting on Extend stabilization"]
 impl Extend<char> for String {
     fn extend<I:Iterator<char>>(&mut self, mut iterator: I) {
+        let (lower_bound, _) = iterator.size_hint();
+        self.reserve(lower_bound);
         for ch in iterator {
             self.push(ch)
         }
     }
+}
+
+#[experimental = "waiting on Extend stabilization"]
+impl<'a> Extend<&'a str> for String {
+    fn extend<I: Iterator<&'a str>>(&mut self, mut iterator: I) {
+        // A guess that at least one byte per iterator element will be needed.
+        let (lower_bound, _) = iterator.size_hint();
+        self.reserve(lower_bound);
+        for s in iterator {
+            self.push_str(s)
+        }
+    }
+}
+
+impl PartialEq for String {
+    #[inline]
+    fn eq(&self, other: &String) -> bool { PartialEq::eq(&**self, &**other) }
+    #[inline]
+    fn ne(&self, other: &String) -> bool { PartialEq::ne(&**self, &**other) }
+}
+
+macro_rules! impl_eq {
+    ($lhs:ty, $rhs: ty) => {
+        impl<'a> PartialEq<$rhs> for $lhs {
+            #[inline]
+            fn eq(&self, other: &$rhs) -> bool { PartialEq::eq(&**self, &**other) }
+            #[inline]
+            fn ne(&self, other: &$rhs) -> bool { PartialEq::ne(&**self, &**other) }
+        }
+
+        impl<'a> PartialEq<$lhs> for $rhs {
+            #[inline]
+            fn eq(&self, other: &$lhs) -> bool { PartialEq::eq(&**self, &**other) }
+            #[inline]
+            fn ne(&self, other: &$lhs) -> bool { PartialEq::ne(&**self, &**other) }
+        }
+
+    }
+}
+
+impl_eq!(String, &'a str)
+impl_eq!(CowString<'a>, String)
+
+impl<'a, 'b> PartialEq<&'b str> for CowString<'a> {
+    #[inline]
+    fn eq(&self, other: &&'b str) -> bool { PartialEq::eq(&**self, &**other) }
+    #[inline]
+    fn ne(&self, other: &&'b str) -> bool { PartialEq::ne(&**self, &**other) }
+}
+
+impl<'a, 'b> PartialEq<CowString<'a>> for &'b str {
+    #[inline]
+    fn eq(&self, other: &CowString<'a>) -> bool { PartialEq::eq(&**self, &**other) }
+    #[inline]
+    fn ne(&self, other: &CowString<'a>) -> bool { PartialEq::ne(&**self, &**other) }
 }
 
 #[experimental = "waiting on Str stabilization"]
@@ -779,7 +846,8 @@ impl<H: hash::Writer> hash::Hash<H> for String {
     }
 }
 
-#[experimental = "waiting on Equiv stabilization"]
+#[allow(deprecated)]
+#[deprecated = "Use overloaded `core::cmp::PartialEq`"]
 impl<'a, S: Str> Equiv<S> for String {
     #[inline]
     fn equiv(&self, other: &S) -> bool {
@@ -836,6 +904,19 @@ impl<'a> Deref<String> for DerefString<'a> {
 }
 
 /// Convert a string slice to a wrapper type providing a `&String` reference.
+///
+/// # Examples
+///
+/// ```
+/// use std::string::as_string;
+///
+/// fn string_consumer(s: String) {
+///     assert_eq!(s, "foo".to_string());
+/// }
+///
+/// let string = as_string("foo").clone();
+/// string_consumer(string);
+/// ```
 #[experimental]
 pub fn as_string<'a>(x: &'a str) -> DerefString<'a> {
     DerefString { x: as_vec(x.as_bytes()) }
@@ -967,10 +1048,12 @@ mod tests {
     #[test]
     fn test_from_utf8_lossy() {
         let xs = b"hello";
-        assert_eq!(String::from_utf8_lossy(xs), "hello".into_cow());
+        let ys: str::CowString = "hello".into_cow();
+        assert_eq!(String::from_utf8_lossy(xs), ys);
 
         let xs = "ศไทย中华Việt Nam".as_bytes();
-        assert_eq!(String::from_utf8_lossy(xs), "ศไทย中华Việt Nam".into_cow());
+        let ys: str::CowString = "ศไทย中华Việt Nam".into_cow();
+        assert_eq!(String::from_utf8_lossy(xs), ys);
 
         let xs = b"Hello\xC2 There\xFF Goodbye";
         assert_eq!(String::from_utf8_lossy(xs),
@@ -1046,7 +1129,7 @@ mod tests {
 
         for p in pairs.iter() {
             let (s, u) = (*p).clone();
-            let s_as_utf16 = s.as_slice().utf16_units().collect::<Vec<u16>>();
+            let s_as_utf16 = s.utf16_units().collect::<Vec<u16>>();
             let u_as_string = String::from_utf16(u.as_slice()).unwrap();
 
             assert!(str::is_utf16(u.as_slice()));
@@ -1056,7 +1139,7 @@ mod tests {
             assert_eq!(String::from_utf16_lossy(u.as_slice()), s);
 
             assert_eq!(String::from_utf16(s_as_utf16.as_slice()).unwrap(), s);
-            assert_eq!(u_as_string.as_slice().utf16_units().collect::<Vec<u16>>(), u);
+            assert_eq!(u_as_string.utf16_units().collect::<Vec<u16>>(), u);
         }
     }
 
@@ -1116,18 +1199,18 @@ mod tests {
             let mv = s.as_mut_vec();
             mv.push_all(&[b'D']);
         }
-        assert_eq!(s.as_slice(), "ABCD");
+        assert_eq!(s, "ABCD");
     }
 
     #[test]
     fn test_push_str() {
         let mut s = String::new();
         s.push_str("");
-        assert_eq!(s.as_slice().slice_from(0), "");
+        assert_eq!(s.slice_from(0), "");
         s.push_str("abc");
-        assert_eq!(s.as_slice().slice_from(0), "abc");
+        assert_eq!(s.slice_from(0), "abc");
         s.push_str("ประเทศไทย中华Việt Nam");
-        assert_eq!(s.as_slice().slice_from(0), "abcประเทศไทย中华Việt Nam");
+        assert_eq!(s.slice_from(0), "abcประเทศไทย中华Việt Nam");
     }
 
     #[test]
@@ -1138,7 +1221,7 @@ mod tests {
         data.push('¢'); // 2 byte
         data.push('€'); // 3 byte
         data.push('𤭢'); // 4 byte
-        assert_eq!(data.as_slice(), "ประเทศไทย中华b¢€𤭢");
+        assert_eq!(data, "ประเทศไทย中华b¢€𤭢");
     }
 
     #[test]
@@ -1149,24 +1232,24 @@ mod tests {
         assert_eq!(data.pop().unwrap(), '¢'); // 2 bytes
         assert_eq!(data.pop().unwrap(), 'b'); // 1 bytes
         assert_eq!(data.pop().unwrap(), '华');
-        assert_eq!(data.as_slice(), "ประเทศไทย中");
+        assert_eq!(data, "ประเทศไทย中");
     }
 
     #[test]
     fn test_str_truncate() {
         let mut s = String::from_str("12345");
         s.truncate(5);
-        assert_eq!(s.as_slice(), "12345");
+        assert_eq!(s, "12345");
         s.truncate(3);
-        assert_eq!(s.as_slice(), "123");
+        assert_eq!(s, "123");
         s.truncate(0);
-        assert_eq!(s.as_slice(), "");
+        assert_eq!(s, "");
 
         let mut s = String::from_str("12345");
-        let p = s.as_slice().as_ptr();
+        let p = s.as_ptr();
         s.truncate(3);
         s.push_str("6");
-        let p_ = s.as_slice().as_ptr();
+        let p_ = s.as_ptr();
         assert_eq!(p_, p);
     }
 
@@ -1189,7 +1272,7 @@ mod tests {
         let mut s = String::from_str("12345");
         s.clear();
         assert_eq!(s.len(), 0);
-        assert_eq!(s.as_slice(), "");
+        assert_eq!(s, "");
     }
 
     #[test]
@@ -1198,7 +1281,7 @@ mod tests {
         let b = a + "2";
         let b = b + String::from_str("2");
         assert_eq!(b.len(), 7);
-        assert_eq!(b.as_slice(), "1234522");
+        assert_eq!(b, "1234522");
     }
 
     #[test]
@@ -1206,11 +1289,11 @@ mod tests {
         let mut s = "ศไทย中华Việt Nam; foobar".to_string();;
         assert_eq!(s.remove(0), Some('ศ'));
         assert_eq!(s.len(), 33);
-        assert_eq!(s.as_slice(), "ไทย中华Việt Nam; foobar");
+        assert_eq!(s, "ไทย中华Việt Nam; foobar");
         assert_eq!(s.remove(33), None);
         assert_eq!(s.remove(300), None);
         assert_eq!(s.remove(17), Some('ệ'));
-        assert_eq!(s.as_slice(), "ไทย中华Vit Nam; foobar");
+        assert_eq!(s, "ไทย中华Vit Nam; foobar");
     }
 
     #[test] #[should_fail]
@@ -1222,9 +1305,9 @@ mod tests {
     fn insert() {
         let mut s = "foobar".to_string();
         s.insert(0, 'ệ');
-        assert_eq!(s.as_slice(), "ệfoobar");
+        assert_eq!(s, "ệfoobar");
         s.insert(6, 'ย');
-        assert_eq!(s.as_slice(), "ệfooยbar");
+        assert_eq!(s, "ệfooยbar");
     }
 
     #[test] #[should_fail] fn insert_bad1() { "".to_string().insert(1, 't'); }
@@ -1241,24 +1324,45 @@ mod tests {
 
     #[test]
     fn test_simple_types() {
-        assert_eq!(1i.to_string(), "1".to_string());
-        assert_eq!((-1i).to_string(), "-1".to_string());
-        assert_eq!(200u.to_string(), "200".to_string());
-        assert_eq!(2u8.to_string(), "2".to_string());
-        assert_eq!(true.to_string(), "true".to_string());
-        assert_eq!(false.to_string(), "false".to_string());
-        assert_eq!(().to_string(), "()".to_string());
-        assert_eq!(("hi".to_string()).to_string(), "hi".to_string());
+        assert_eq!(1i.to_string(), "1");
+        assert_eq!((-1i).to_string(), "-1");
+        assert_eq!(200u.to_string(), "200");
+        assert_eq!(2u8.to_string(), "2");
+        assert_eq!(true.to_string(), "true");
+        assert_eq!(false.to_string(), "false");
+        assert_eq!(().to_string(), "()");
+        assert_eq!(("hi".to_string()).to_string(), "hi");
     }
 
     #[test]
     fn test_vectors() {
         let x: Vec<int> = vec![];
-        assert_eq!(x.to_string(), "[]".to_string());
-        assert_eq!((vec![1i]).to_string(), "[1]".to_string());
-        assert_eq!((vec![1i, 2, 3]).to_string(), "[1, 2, 3]".to_string());
+        assert_eq!(x.to_string(), "[]");
+        assert_eq!((vec![1i]).to_string(), "[1]");
+        assert_eq!((vec![1i, 2, 3]).to_string(), "[1, 2, 3]");
         assert!((vec![vec![], vec![1i], vec![1i, 1]]).to_string() ==
-               "[[], [1], [1, 1]]".to_string());
+               "[[], [1], [1, 1]]");
+    }
+
+    #[test]
+    fn test_from_iterator() {
+        let s = "ศไทย中华Việt Nam".to_string();
+        let t = "ศไทย中华";
+        let u = "Việt Nam";
+
+        let a: String = s.chars().collect();
+        assert_eq!(s, a);
+
+        let mut b = t.to_string();
+        b.extend(u.chars());
+        assert_eq!(s, b);
+
+        let c: String = vec![t, u].into_iter().collect();
+        assert_eq!(s, c);
+
+        let mut d = t.to_string();
+        d.extend(vec![u].into_iter());
+        assert_eq!(s, d);
     }
 
     #[bench]

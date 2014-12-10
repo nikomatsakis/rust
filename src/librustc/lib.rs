@@ -59,6 +59,7 @@ pub mod back {
 }
 
 pub mod middle {
+    pub mod astconv_util;
     pub mod astencode;
     pub mod borrowck;
     pub mod cfg;
@@ -79,6 +80,7 @@ pub mod middle {
     pub mod fast_reject;
     pub mod graph;
     pub mod intrinsicck;
+    pub mod infer;
     pub mod lang_items;
     pub mod liveness;
     pub mod mem_categorization;
@@ -86,6 +88,7 @@ pub mod middle {
     pub mod privacy;
     pub mod reachable;
     pub mod region;
+    pub mod recursion_limit;
     pub mod resolve;
     pub mod resolve_lifetime;
     pub mod stability;
@@ -93,7 +96,6 @@ pub mod middle {
     pub mod traits;
     pub mod ty;
     pub mod ty_fold;
-    pub mod typeck;
     pub mod weak_lang_items;
 }
 

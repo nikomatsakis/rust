@@ -12,6 +12,10 @@
 #![experimental]
 #![crate_type = "dylib"]
 #![crate_type = "rlib"]
+#![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
+       html_favicon_url = "http://www.rust-lang.org/favicon.ico",
+       html_root_url = "http://doc.rust-lang.org/nightly/",
+       html_playground_url = "http://play.rust-lang.org/")]
 
 #![allow(unknown_features)]
 #![feature(globs, if_let, macro_rules, phase, slicing_syntax, tuple_indexing)]
@@ -21,6 +25,7 @@ extern crate getopts;
 extern crate libc;
 extern crate rustc;
 extern crate rustc_trans;
+extern crate rustc_driver;
 extern crate serialize;
 extern crate syntax;
 extern crate "test" as testing;
@@ -163,7 +168,7 @@ pub fn main_args(args: &[String]) -> int {
         usage(args[0].as_slice());
         return 0;
     } else if matches.opt_present("version") {
-        match rustc_trans::driver::version("rustdoc", &matches) {
+        match rustc_driver::version("rustdoc", &matches) {
             Some(err) => {
                 println!("{}", err);
                 return 1
@@ -172,7 +177,7 @@ pub fn main_args(args: &[String]) -> int {
         }
     }
 
-    if matches.opt_strs("passes").as_slice() == &["list".to_string()] {
+    if matches.opt_strs("passes") == ["list"] {
         println!("Available passes for running rustdoc:");
         for &(name, _, description) in PASSES.iter() {
             println!("{:>20} - {}", name, description);
@@ -294,7 +299,7 @@ fn acquire_input(input: &str,
 fn parse_externs(matches: &getopts::Matches) -> Result<core::Externs, String> {
     let mut externs = HashMap::new();
     for arg in matches.opt_strs("extern").iter() {
-        let mut parts = arg.as_slice().splitn(1, '=');
+        let mut parts = arg.splitn(1, '=');
         let name = match parts.next() {
             Some(s) => s,
             None => {
@@ -358,18 +363,18 @@ fn rust_input(cratefile: &str, externs: core::Externs, matches: &getopts::Matche
             for inner in nested.iter() {
                 match *inner {
                     clean::Word(ref x)
-                            if "no_default_passes" == x.as_slice() => {
+                            if "no_default_passes" == *x => {
                         default_passes = false;
                     }
                     clean::NameValue(ref x, ref value)
-                            if "passes" == x.as_slice() => {
-                        for pass in value.as_slice().words() {
+                            if "passes" == *x => {
+                        for pass in value.words() {
                             passes.push(pass.to_string());
                         }
                     }
                     clean::NameValue(ref x, ref value)
-                            if "plugins" == x.as_slice() => {
-                        for p in value.as_slice().words() {
+                            if "plugins" == *x => {
+                        for p in value.words() {
                             plugins.push(p.to_string());
                         }
                     }
@@ -392,7 +397,7 @@ fn rust_input(cratefile: &str, externs: core::Externs, matches: &getopts::Matche
     for pass in passes.iter() {
         let plugin = match PASSES.iter()
                                  .position(|&(p, _, _)| {
-                                     p == pass.as_slice()
+                                     p == *pass
                                  }) {
             Some(i) => PASSES[i].val1(),
             None => {
@@ -429,7 +434,7 @@ fn json_input(input: &str) -> Result<Output, String> {
             // Make sure the schema is what we expect
             match obj.remove(&"schema".to_string()) {
                 Some(Json::String(version)) => {
-                    if version.as_slice() != SCHEMA_VERSION {
+                    if version != SCHEMA_VERSION {
                         return Err(format!(
                                 "sorry, but I only understand version {}",
                                 SCHEMA_VERSION))

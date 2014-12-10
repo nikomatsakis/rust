@@ -83,6 +83,8 @@ impl<R: Buffer> Buffer for LimitReader<R> {
 /// A `Writer` which ignores bytes written to it, like /dev/null.
 pub struct NullWriter;
 
+impl Copy for NullWriter {}
+
 impl Writer for NullWriter {
     #[inline]
     fn write(&mut self, _buf: &[u8]) -> io::IoResult<()> { Ok(()) }
@@ -90,6 +92,8 @@ impl Writer for NullWriter {
 
 /// A `Reader` which returns an infinite stream of 0 bytes, like /dev/zero.
 pub struct ZeroReader;
+
+impl Copy for ZeroReader {}
 
 impl Reader for ZeroReader {
     #[inline]
@@ -110,6 +114,8 @@ impl Buffer for ZeroReader {
 
 /// A `Reader` which is always at EOF, like /dev/null.
 pub struct NullReader;
+
+impl Copy for NullReader {}
 
 impl Reader for NullReader {
     #[inline]
@@ -273,7 +279,7 @@ impl<T: Iterator<u8>> Reader for IterReader<T> {
 
 #[cfg(test)]
 mod test {
-    use io::{MemReader, BufReader, ByRefReader};
+    use io::{MemReader, ByRefReader};
     use io;
     use boxed::Box;
     use super::*;
@@ -395,8 +401,7 @@ mod test {
 
     #[test]
     fn limit_reader_buffer() {
-        let data = "0123456789\n0123456789\n";
-        let mut r = BufReader::new(data.as_bytes());
+        let r = &mut b"0123456789\n0123456789\n";
         {
             let mut r = LimitReader::new(r.by_ref(), 3);
             assert_eq!(r.read_line(), Ok("012".to_string()));

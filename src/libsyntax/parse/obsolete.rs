@@ -34,6 +34,8 @@ pub enum ObsoleteSyntax {
     ObsoleteExternCrateRenaming,
 }
 
+impl Copy for ObsoleteSyntax {}
+
 pub trait ParserObsoleteMethods {
     /// Reports an obsolete syntax non-fatal error.
     fn obsolete(&mut self, sp: Span, kind: ObsoleteSyntax);
@@ -117,7 +119,7 @@ impl<'a> ParserObsoleteMethods for parser::Parser<'a> {
     fn is_obsolete_ident(&mut self, ident: &str) -> bool {
         match self.token {
             token::Ident(sid, _) => {
-                token::get_ident(sid).equiv(&ident)
+                token::get_ident(sid) == ident
             }
             _ => false
         }

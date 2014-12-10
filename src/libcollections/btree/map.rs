@@ -152,7 +152,7 @@ impl<K: Ord, V> BTreeMap<K, V> {
 
     /// Clears the map, removing all values.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeMap;
@@ -188,7 +188,7 @@ impl<K: Ord, V> BTreeMap<K, V> {
     /// The key may be any borrowed form of the map's key type, but the ordering
     /// on the borrowed form *must* match the ordering on the key type.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeMap;
@@ -220,7 +220,7 @@ impl<K: Ord, V> BTreeMap<K, V> {
     /// The key may be any borrowed form of the map's key type, but the ordering
     /// on the borrowed form *must* match the ordering on the key type.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeMap;
@@ -246,7 +246,7 @@ impl<K: Ord, V> BTreeMap<K, V> {
     /// The key may be any borrowed form of the map's key type, but the ordering
     /// on the borrowed form *must* match the ordering on the key type.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeMap;
@@ -314,7 +314,7 @@ impl<K: Ord, V> BTreeMap<K, V> {
     /// Inserts a key-value pair from the map. If the key already had a value
     /// present in the map, that value is returned. Otherwise, `None` is returned.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeMap;
@@ -423,7 +423,7 @@ impl<K: Ord, V> BTreeMap<K, V> {
     /// The key may be any borrowed form of the map's key type, but the ordering
     /// on the borrowed form *must* match the ordering on the key type.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeMap;
@@ -1026,6 +1026,24 @@ impl<'a, K: Ord, V> OccupiedEntry<'a, K, V> {
 
 impl<K, V> BTreeMap<K, V> {
     /// Gets an iterator over the entries of the map.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    ///
+    /// let mut map = BTreeMap::new();
+    /// map.insert(1u, "a");
+    /// map.insert(2u, "b");
+    /// map.insert(3u, "c");
+    ///
+    /// for (key, value) in map.iter() {
+    ///     println!("{}: {}", key, value);
+    /// }
+    ///
+    /// let (first_key, first_value) = map.iter().next().unwrap();
+    /// assert_eq!((*first_key, *first_value), (1u, "a"));
+    /// ```
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn iter<'a>(&'a self) -> Entries<'a, K, V> {
         let len = self.len();
@@ -1068,12 +1086,38 @@ impl<K, V> BTreeMap<K, V> {
     }
 
     /// Gets an iterator over the keys of the map.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    ///
+    /// let mut a = BTreeMap::new();
+    /// a.insert(1u, "a");
+    /// a.insert(2u, "b");
+    ///
+    /// let keys: Vec<uint> = a.keys().cloned().collect();
+    /// assert_eq!(keys, vec![1u,2,]);
+    /// ```
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn keys<'a>(&'a self) -> Keys<'a, K, V> {
         self.iter().map(|(k, _)| k)
     }
 
     /// Gets an iterator over the values of the map.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    ///
+    /// let mut a = BTreeMap::new();
+    /// a.insert(1u, "a");
+    /// a.insert(2u, "b");
+    ///
+    /// let values: Vec<&str> = a.values().cloned().collect();
+    /// assert_eq!(values, vec!["a","b"]);
+    /// ```
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn values<'a>(&'a self) -> Values<'a, K, V> {
         self.iter().map(|(_, v)| v)
@@ -1081,7 +1125,7 @@ impl<K, V> BTreeMap<K, V> {
 
     /// Return the number of elements in the map.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeMap;
@@ -1096,7 +1140,7 @@ impl<K, V> BTreeMap<K, V> {
 
     /// Return true if the map contains no elements.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::collections::BTreeMap;
