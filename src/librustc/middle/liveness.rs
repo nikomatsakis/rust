@@ -1533,6 +1533,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
                     .unwrap()
                     .closure_type
                     .sig
+                    .0
                     .output,
             _ => ty::ty_fn_ret(fn_ty)
         }
