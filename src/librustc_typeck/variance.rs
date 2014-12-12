@@ -1217,7 +1217,7 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                         types.push(info.space, variance);
 
                         if variance == ty::Bivariant {
-                            span_err!(tcx.sess, info.span, E0173,
+                            span_err!(tcx.sess, info.span, E0175,
                                       "type parameter `{}` is never used; \
                                        either remove it, or use a marker such as \
                                        `std::kinds::marker::Invariance`",
@@ -1228,7 +1228,7 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                         regions.push(info.space, variance);
 
                         if variance == ty::Bivariant {
-                            span_err!(tcx.sess, info.span, E0174,
+                            span_err!(tcx.sess, info.span, E0176,
                                       "lifetime parameter `{}` is never used; \
                                       either remove it, or use a marker such as \
                                       `std::kinds::marker::Invariance` applied to a \

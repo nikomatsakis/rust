@@ -25,7 +25,11 @@ trait UseLife02 {
 }
 
 
-pub trait HasType<T> { }
+pub trait HasType<T>
+{
+    fn dummy(&self, t: T) -> T { panic!() }
+}
+
 
 trait UseLife03<T> {
     fn refs<'a, H: HasType<&'a T>>(&'a self) -> H;

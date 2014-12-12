@@ -14,7 +14,8 @@
 
 use std::kinds::marker;
 
-trait X<T> : marker::Covariant {
+trait X<T> {
+    fn dummy(&self) -> T { panic!() }
 }
 
 struct S<T> {f: Box<X<T>+'static>,

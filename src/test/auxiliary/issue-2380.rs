@@ -13,9 +13,10 @@
 
 use std::kinds::marker;
 
-pub trait i<T: marker::Covariant>
-    : marker::Covariant
-{ }
+pub trait i<T>
+{
+    fn dummy(&self, t: T) -> T { panic!() }
+}
 
 pub fn f<T>() -> Box<i<T>+'static> {
     impl<T> i<T> for () { }

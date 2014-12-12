@@ -159,6 +159,20 @@ impl<'a> Arguments<'a> {
     /// `CountIsParam` or `CountIsNextParam` has to point to an argument
     /// created with `argumentuint`. However, failing to do so doesn't cause
     /// unsafety, but will ignore invalid .
+    #[cfg(not(stage0))]
+    #[doc(hidden)] #[inline]
+    #[experimental = "implementation detail of the `format_args!` macro"]
+    pub fn with_placeholders<'a>(pieces: &'a [&'a str],
+                                 fmt: &'a [rt::Argument],
+                                 args: &'a [Argument]) -> Arguments<'a> {
+        Arguments {
+            pieces: pieces,
+            fmt: Some(fmt),
+            args: args
+        }
+    }
+
+    #[cfg(stage0)]
     #[doc(hidden)] #[inline]
     #[experimental = "implementation detail of the `format_args!` macro"]
     pub fn with_placeholders<'a>(pieces: &'a [&'a str],

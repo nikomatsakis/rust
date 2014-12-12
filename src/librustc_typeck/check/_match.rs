@@ -17,6 +17,7 @@ use check::{check_expr, check_expr_has_type, demand, FnCtxt};
 use check::{instantiate_path, structurally_resolved_type, valid_range_bounds};
 use require_same_types;
 use util::nodemap::FnvHashMap;
+use util::ppaux::Repr;
 
 use std::cmp;
 use std::collections::hash_map::{Occupied, Vacant};
@@ -31,6 +32,11 @@ pub fn check_pat<'a, 'tcx>(pcx: &pat_ctxt<'a, 'tcx>,
                            pat: &ast::Pat, expected: Ty<'tcx>) {
     let fcx = pcx.fcx;
     let tcx = pcx.fcx.ccx.tcx;
+
+    debug!("check_pat(pat={}, expected={}, expected={})",
+           pat.repr(tcx),
+           expected.repr(tcx),
+           fcx.infcx().resolve_type_vars_if_possible(expected).repr(tcx));
 
     match pat.node {
         ast::PatWild(_) => {
@@ -154,7 +160,7 @@ pub fn check_pat<'a, 'tcx>(pcx: &pat_ctxt<'a, 'tcx>,
             let rptr_ty = ty::mk_rptr(tcx, region, mt);
 
             if check_dereferencable(pcx, pat.span, expected, &**inner) {
-                demand::suptype(fcx, pat.span, expected, rptr_ty);
+                demand::suptype(fcx, pat.span, rptr_ty, expected);
                 fcx.write_ty(pat.id, rptr_ty);
                 check_pat(pcx, &**inner, inner_ty);
             } else {

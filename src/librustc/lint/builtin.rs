@@ -1789,7 +1789,6 @@ impl Copy for HardwiredLints {}
 impl LintPass for HardwiredLints {
     fn get_lints(&self) -> LintArray {
         lint_array!(
-            BIVARIANCE,
             UNUSED_IMPORTS,
             UNUSED_EXTERN_CRATES,
             UNUSED_QUALIFICATIONS,

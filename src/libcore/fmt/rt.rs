@@ -24,6 +24,7 @@ use kinds::Copy;
 
 #[cfg(stage0)]
 #[doc(hidden)]
+#[deriving(Copy)]
 pub struct Argument<'a> {
     pub position: Position,
     pub format: FormatSpec,
@@ -31,12 +32,11 @@ pub struct Argument<'a> {
 
 #[cfg(not(stage0))]
 #[doc(hidden)]
+#[deriving(Copy)]
 pub struct Argument {
     pub position: Position,
     pub format: FormatSpec,
 }
-
-impl<'a> Copy for Argument<'a> {}
 
 #[doc(hidden)]
 pub struct FormatSpec {

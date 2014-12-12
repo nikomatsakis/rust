@@ -96,7 +96,7 @@ pub mod marker {
     use super::Copy;
     use clone::Clone;
     use cmp;
-    use option::{Option, Some};
+    use option::Option;
     use super::Sized;
 
     /// FIXME Document me.
@@ -130,7 +130,7 @@ pub mod marker {
 
             impl<Sized? T> cmp::PartialOrd for $t<T> {
                 fn partial_cmp(&self, _other: &$t<T>) -> Option<cmp::Ordering> {
-                    Some(cmp::Equal)
+                    Option::Some(cmp::Equal)
                 }
             }
 

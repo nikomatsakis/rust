@@ -149,5 +149,7 @@ register_diagnostics!(
     E0171,
     E0172,
     E0173, // manual implementations of unboxed closure traits are experimental
-    E0174 // explicit use of unboxed closure methods are experimental
+    E0174, // explicit use of unboxed closure methods are experimental
+    E0175, // bivariance type
+    E0176  // bivariance region
 )
