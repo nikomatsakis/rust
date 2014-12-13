@@ -267,7 +267,7 @@ impl<'a> fmt::Show for VarianceTerm<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             ConstantTerm(c1) => write!(f, "{}", c1),
-            TransformTerm(v1, v2) => write!(f, "({} \u00D7 {})", v1, v2),
+            TransformTerm(v1, v2) => write!(f, "({} \u{00D7} {})", v1, v2),
             InferredTerm(id) => write!(f, "[{}]", { let InferredIndex(i) = id; i })
         }
     }
@@ -1226,29 +1226,43 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                 debug!("Index {} Info {} / {} / {} Variance {}",
                        index, info.index, info.kind, info.space, variance);
                 match info.kind {
-                    TypeParam => {
-                        types.push(info.space, variance);
+                    TypeParam => { types.push(info.space, variance); }
+                    RegionParam => { regions.push(info.space, variance); }
+                }
 
-                        if !is_lang_item && variance == ty::Bivariant {
-                            span_err!(tcx.sess, info.span, E0175,
-                                      "type parameter `{}` is never used; \
-                                       either remove it, or use a marker such as \
-                                       `std::kinds::marker::Invariance`",
-                                        info.name.user_string(tcx));
+                if !is_lang_item && variance == ty::Bivariant {
+                    let suggested_marker_id = match tcx.map.get(item_id) {
+                        ast_map::NodeItem(item) => {
+                            match *item {
+                                ast::ItemTrait(..) => tcx.lang_items.phantom_getter(),
+                                _ => tcx.lang_items.phantom_data(),
+                            }
                         }
-                    }
-                    RegionParam => {
-                        regions.push(info.space, variance);
+                        _ => {
+                            tcx.sess.span_bug(
+                                info.span,
+                                format!("item id `{}` is not an item in the ast map",
+                                        item_id));
+                        }
+                    };
 
-                        if variance == ty::Bivariant {
-                            span_err!(tcx.sess, info.span, E0176,
-                                      "lifetime parameter `{}` is never used; \
-                                      either remove it, or use a marker such as \
-                                      `std::kinds::marker::Invariance` applied to a \
-                                      type referencing `{}`, such as `&{} int`",
-                                      info.name.user_string(tcx),
-                                      info.name.user_string(tcx),
-                                      info.name.user_string(tcx));
+                    tcx.sess.span_err(
+                        info.span,
+                        format!("parameter `{}` is never used",
+                                info.name.user_string(tcx)).as_slice());
+
+                    match suggested_marker_id {
+                        Some(def_id) => {
+                            tcx.sess.span_help(
+                                info.span,
+                                format!("consider removing `{}` or using a marker such as `{}`",
+                                        info.name.user_string(tcx),
+                                        ty::item_path_str(tcx, def_id)).as_slice());
+                        }
+                        None => {
+                            tcx.sess.span_help(
+                                info.span,
+                                format!("consider removing it"));
                         }
                     }
                 }

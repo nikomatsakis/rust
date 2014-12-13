@@ -21,7 +21,7 @@ use self::marker::PhantomGetter;
 
 /// Types able to be transferred across task boundaries.
 #[lang="send"]
-pub trait Send for Sized? : PhantomGetter<Self> {
+pub trait Send for Sized? : 'static + PhantomGetter<Self> {
     // empty.
 }
 

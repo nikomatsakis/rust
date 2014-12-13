@@ -366,6 +366,7 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
             infer::MatchExpressionArm(_, _) => "match arms have incompatible types",
             infer::IfExpression(_) => "if and else have incompatible types",
             infer::IfExpressionWithNoElse(_) => "if may be missing an else clause",
+            infer::EquatePredicate(_) => "equality predicate not satisfied",
         };
 
         self.tcx.sess.span_err(
@@ -1405,10 +1406,22 @@ impl<'a, 'tcx> Rebuilder<'a, 'tcx> {
                 let new_types = data.types.map(|t| {
                     self.rebuild_arg_ty_or_output(&**t, lifetime, anon_nums, region_names)
                 });
+                let new_bindings = data.bindings.map(|b| {
+                    P(ast::TypeBinding {
+                        id: b.id,
+                        ident: b.ident,
+                        ty: self.rebuild_arg_ty_or_output(&*b.ty,
+                                                          lifetime,
+                                                          anon_nums,
+                                                          region_names),
+                        span: b.span
+                    })
+                });
                 ast::AngleBracketedParameters(ast::AngleBracketedParameterData {
                     lifetimes: new_lts,
-                    types: new_types
-                })
+                    types: new_types,
+                    bindings: new_bindings,
+               })
             }
         };
         let new_seg = ast::PathSegment {
@@ -1510,6 +1523,9 @@ impl<'a, 'tcx> ErrorReportingHelpers<'tcx> for InferCtxt<'a, 'tcx> {
                     }
                     infer::IfExpressionWithNoElse(_) => {
                         format!("if may be missing an else clause")
+                    }
+                    infer::EquatePredicate(_) => {
+                        format!("equality where clause is satisfied")
                     }
                 };
 

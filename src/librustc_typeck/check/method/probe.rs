@@ -168,7 +168,7 @@ fn create_steps<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         check::autoderef(
             fcx, span, self_ty, None, NoPreference,
             |t, d| {
-                let adjustment = consider_reborrow(t, d);
+                let adjustment = AutoDeref(d);
                 steps.push(CandidateStep { self_ty: t, adjustment: adjustment });
                 None::<()> // keep iterating until we can't anymore
             });
@@ -185,14 +185,6 @@ fn create_steps<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
     }
 
     return steps;
-
-    fn consider_reborrow(ty: Ty, d: uint) -> PickAdjustment {
-        // Insert a `&*` or `&mut *` if this is a reference type:
-        match ty.sty {
-            ty::ty_rptr(_, ref mt) => AutoRef(mt.mutbl, box AutoDeref(d+1)),
-            _ => AutoDeref(d),
-        }
-    }
 }
 
 impl<'a,'tcx> ProbeContext<'a,'tcx> {
@@ -318,7 +310,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
             substs: rcvr_substs.clone()
         });
 
-        self.elaborate_bounds(&[trait_ref.clone()], |this, new_trait_ref, m, method_num| {
+        self.elaborate_bounds(&[trait_ref.clone()], false, |this, new_trait_ref, m, method_num| {
             let vtable_index =
                 get_method_index(tcx, &*new_trait_ref,
                                  trait_ref.clone(), method_num);
@@ -361,11 +353,27 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                                                param_ty: ty::ParamTy) {
         // FIXME -- Do we want to commit to this behavior for param bounds?
 
-        let ty::ParamTy { space, idx: index, .. } = param_ty;
-        let bounds =
-            self.fcx.inh.param_env.bounds.get(space, index).trait_bounds
-            .as_slice();
-        self.elaborate_bounds(bounds, |this, trait_ref, m, method_num| {
+        let bounds: Vec<_> =
+            self.fcx.inh.param_env.caller_bounds.predicates
+            .iter()
+            .filter_map(|predicate| {
+                match *predicate {
+                    ty::Predicate::Trait(ref trait_ref) => {
+                        match trait_ref.self_ty().sty {
+                            ty::ty_param(ref p) if *p == param_ty => Some(trait_ref.clone()),
+                            _ => None
+                        }
+                    }
+                    ty::Predicate::Equate(..) |
+                    ty::Predicate::RegionOutlives(..) |
+                    ty::Predicate::TypeOutlives(..) => {
+                        None
+                    }
+                }
+            })
+            .collect();
+
+        self.elaborate_bounds(bounds.as_slice(), true, |this, trait_ref, m, method_num| {
             let xform_self_ty =
                 this.xform_self_ty(&m, &trait_ref.substs);
 
@@ -402,11 +410,14 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
     fn elaborate_bounds(
         &mut self,
         bounds: &[Rc<ty::TraitRef<'tcx>>],
+        num_includes_types: bool,
         mk_cand: for<'a> |this: &mut ProbeContext<'a, 'tcx>,
                           tr: Rc<ty::TraitRef<'tcx>>,
                           m: Rc<ty::Method<'tcx>>,
                           method_num: uint|)
     {
+        debug!("elaborate_bounds(bounds={})", bounds.repr(self.tcx()));
+
         let tcx = self.tcx();
         let mut cache = HashSet::new();
         for bound_trait_ref in traits::transitive_bounds(tcx, bounds) {
@@ -415,7 +426,10 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                 continue;
             }
 
-            let (pos, method) = match trait_method(tcx, bound_trait_ref.def_id, self.method_name) {
+            let (pos, method) = match trait_method(tcx,
+                                                   bound_trait_ref.def_id,
+                                                   self.method_name,
+                                                   num_includes_types) {
                 Some(v) => v,
                 None => { continue; }
             };
@@ -626,7 +640,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
             return None;
         }
 
-        match self.pick_adjusted_method(step) {
+        match self.pick_by_value_method(step) {
             Some(result) => return Some(result),
             None => {}
         }
@@ -644,11 +658,34 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
         }
     }
 
-    fn pick_adjusted_method(&mut self,
+    fn pick_by_value_method(&mut self,
                             step: &CandidateStep<'tcx>)
                             -> Option<PickResult<'tcx>>
     {
-        self.pick_method(step.self_ty).map(|r| self.adjust(r, step.adjustment.clone()))
+        /*!
+         * For each type `T` in the step list, this attempts to find a
+         * method where the (transformed) self type is exactly `T`. We
+         * do however do one transformation on the adjustment: if we
+         * are passing a region pointer in, we will potentially
+         * *reborrow* it to a shorter lifetime. This allows us to
+         * transparently pass `&mut` pointers, in particular, without
+         * consuming them for their entire lifetime.
+         */
+
+        let adjustment = match step.adjustment {
+            AutoDeref(d) => consider_reborrow(step.self_ty, d),
+            AutoUnsizeLength(..) | AutoRef(..) => step.adjustment.clone(),
+        };
+
+        return self.pick_method(step.self_ty).map(|r| self.adjust(r, adjustment.clone()));
+
+        fn consider_reborrow(ty: Ty, d: uint) -> PickAdjustment {
+            // Insert a `&*` or `&mut *` if this is a reference type:
+            match ty.sty {
+                ty::ty_rptr(_, ref mt) => AutoRef(mt.mutbl, box AutoDeref(d+1)),
+                _ => AutoDeref(d),
+            }
+        }
     }
 
     fn pick_autorefd_method(&mut self,
@@ -783,11 +820,10 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
 
                     // Convert the bounds into obligations.
                     let obligations =
-                        traits::obligations_for_generics(
+                        traits::predicates_for_generics(
                             self.tcx(),
-                            traits::ObligationCause::misc(self.span),
-                            &impl_bounds,
-                            &substs.types);
+                            traits::ObligationCause::misc(self.span, self.fcx.body_id),
+                            &impl_bounds);
                     debug!("impl_obligations={}", obligations.repr(self.tcx()));
 
                     // Evaluate those obligations to see if they might possibly hold.
@@ -988,12 +1024,18 @@ fn impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
 /// index (or `None`, if no such method).
 fn trait_method<'tcx>(tcx: &ty::ctxt<'tcx>,
                       trait_def_id: ast::DefId,
-                      method_name: ast::Name)
+                      method_name: ast::Name,
+                      num_includes_types: bool)
                       -> Option<(uint, Rc<ty::Method<'tcx>>)>
 {
     let trait_items = ty::trait_items(tcx, trait_def_id);
     trait_items
         .iter()
+        .filter(|item|
+            num_includes_types || match *item {
+                &ty::MethodTraitItem(_) => true,
+                &ty::TypeTraitItem(_) => false
+            })
         .enumerate()
         .find(|&(_, ref item)| item.name() == method_name)
         .and_then(|(idx, item)| item.as_opt_method().map(|m| (idx, m)))
@@ -1010,7 +1052,7 @@ fn get_method_index<'tcx>(tcx: &ty::ctxt<'tcx>,
     // iterating down the supertraits of the object's trait until
     // we find the trait the method came from, counting up the
     // methods from them.
-    let mut method_count = 0;
+    let mut method_count = n_method;
     ty::each_bound_trait_and_supertraits(tcx, &[subtrait], |bound_ref| {
         if bound_ref.def_id == trait_ref.def_id {
             false
@@ -1025,7 +1067,7 @@ fn get_method_index<'tcx>(tcx: &ty::ctxt<'tcx>,
             true
         }
     });
-    method_count + n_method
+    method_count
 }
 
 impl<'tcx> Candidate<'tcx> {
