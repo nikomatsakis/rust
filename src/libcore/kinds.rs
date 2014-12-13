@@ -17,23 +17,23 @@
 //! They cannot be implemented by user code, but are instead implemented
 //! by the compiler automatically for the types to which they apply.
 
-use self::marker::Covariant;
+use self::marker::PhantomGetter;
 
 /// Types able to be transferred across task boundaries.
 #[lang="send"]
-pub trait Send for Sized? : Covariant {
+pub trait Send for Sized? : PhantomGetter<Self> {
     // empty.
 }
 
 /// Types with a constant size known at compile-time.
 #[lang="sized"]
-pub trait Sized for Sized? : Covariant {
+pub trait Sized for Sized? : PhantomGetter<Self> {
     // Empty.
 }
 
 /// Types that can be copied by simply copying bits (i.e. `memcpy`).
 #[lang="copy"]
-pub trait Copy for Sized? : Covariant {
+pub trait Copy for Sized? : PhantomGetter<Self> {
     // Empty.
 }
 
@@ -83,7 +83,7 @@ pub trait Copy for Sized? : Covariant {
 /// reference; not doing this is undefined behaviour (for example,
 /// `transmute`-ing from `&T` to `&mut T` is illegal).
 #[lang="sync"]
-pub trait Sync for Sized? : Covariant {
+pub trait Sync for Sized? : PhantomGetter<Self> {
     // Empty
 }
 
@@ -98,24 +98,6 @@ pub mod marker {
     use cmp;
     use option::Option;
     use super::Sized;
-
-    /// FIXME Document me.
-    #[lang="invariant_trait"]
-    pub trait Invariant for Sized? { }
-
-    impl<Sized? T> Invariant for T { }
-
-    /// FIXME Document me.
-    #[lang="covariant_trait"]
-    pub trait Covariant for Sized? { }
-
-    impl<Sized? T> Covariant for T { }
-
-    /// FIXME Document me.
-    #[lang="contravariant_trait"]
-    pub trait Contravariant for Sized? { }
-
-    impl<Sized? T> Contravariant for T { }
 
     macro_rules! impls{
         ($t: ident) => (
@@ -140,6 +122,8 @@ pub mod marker {
                 }
             }
 
+            impl<Sized? T> Copy for $t<T> { }
+
             impl<Sized? T> Clone for $t<T> {
                 fn clone(&self) -> $t<T> {
                     $t
@@ -147,6 +131,33 @@ pub mod marker {
             }
         )
     }
+
+    /// TODO Document me
+    #[lang="phantom_accessor"]
+    pub trait PhantomAccessor<Sized? T> for Sized? { }
+    impl<Sized? T, Sized? U> PhantomAccessor<T> for U { }
+
+    /// TODO Document me
+    #[lang="phantom_getter"]
+    pub trait PhantomGetter<Sized? T> for Sized? { }
+    impl<Sized? T, Sized? U> PhantomGetter<T> for U { }
+
+    /// TODO Document me
+    #[lang="phantom_setter"]
+    pub trait PhantomSetter<Sized? T> for Sized? { }
+    impl<Sized? T, Sized? U> PhantomSetter<T> for U { }
+
+    /// TODO Document me
+    #[lang="phantom_data"]
+    pub struct PhantomData<Sized? T>;
+
+    impls! { PhantomData }
+
+    /// TODO Document me
+    #[lang="phantom_cell"]
+    pub struct PhantomCell<Sized? T>;
+
+    impls! { PhantomCell }
 
     /// A marker type whose type parameter `T` is considered to be
     /// covariant with respect to the type itself. This is (typically)
@@ -186,11 +197,11 @@ pub mod marker {
     /// (for example, `S<&'static int>` is a subtype of `S<&'a int>`
     /// for some lifetime `'a`, but not the other way around).
     #[lang="covariant_type"]
+    // SNAP c9f6d69 -- cannot deprecate until snapshot
+    // #[deprecated = "Replace `CovariantType<T>` with `PhantomData<T>`"]
     pub struct CovariantType<Sized? T>;
 
     impls! { CovariantType }
-
-    impl<T> Copy for CovariantType<T> {}
 
     /// A marker type whose type parameter `T` is considered to be
     /// contravariant with respect to the type itself. This is (typically)
@@ -232,11 +243,11 @@ pub mod marker {
     /// function requires arguments of type `T`, it must also accept
     /// arguments of type `U`, hence such a conversion is safe.
     #[lang="contravariant_type"]
+    // SNAP c9f6d69 -- cannot deprecate until snapshot
+    // #[deprecated = "Replace `ContravariantType<T>` with `PhantomData<fn() -> T>`"]
     pub struct ContravariantType<Sized? T>;
 
     impls! { ContravariantType }
-
-    impl<T> Copy for ContravariantType<T> {}
 
     /// A marker type whose type parameter `T` is considered to be
     /// invariant with respect to the type itself. This is (typically)
@@ -260,11 +271,11 @@ pub mod marker {
     /// never written, but in fact `Cell` uses unsafe code to achieve
     /// interior mutability.
     #[lang="invariant_type"]
+    // SNAP c9f6d69 -- cannot deprecate until snapshot
+    // #[deprecated = "Replace `InvariantType<T>` with `PhantomCell<T>`"]
     pub struct InvariantType<Sized? T>;
 
     impls! { InvariantType }
-
-    impl<T> Copy for InvariantType<T> {}
 
     /// As `CovariantType`, but for lifetime parameters. Using
     /// `CovariantLifetime<'a>` indicates that it is ok to substitute
@@ -283,10 +294,10 @@ pub mod marker {
     /// For more information about variance, refer to this Wikipedia
     /// article <http://en.wikipedia.org/wiki/Variance_%28computer_science%29>.
     #[lang="covariant_lifetime"]
-    #[deriving(PartialEq,Eq,PartialOrd,Ord,Clone)]
+    #[deriving(PartialEq,Eq,PartialOrd,Ord,Copy,Clone)]
+    // SNAP c9f6d69 -- cannot deprecate until snapshot
+    // #[deprecated = "Replace `CovariantLifetime<'a>` with `PhantomData<&'a ()>`"]
     pub struct CovariantLifetime<'a>;
-
-    impl<'a> Copy for CovariantLifetime<'a> {}
 
     /// As `ContravariantType`, but for lifetime parameters. Using
     /// `ContravariantLifetime<'a>` indicates that it is ok to
@@ -301,10 +312,10 @@ pub mod marker {
     /// For more information about variance, refer to this Wikipedia
     /// article <http://en.wikipedia.org/wiki/Variance_%28computer_science%29>.
     #[lang="contravariant_lifetime"]
-    #[deriving(PartialEq,Eq,PartialOrd,Ord,Clone)]
+    #[deriving(PartialEq,Eq,PartialOrd,Ord,Copy,Clone)]
+    // SNAP c9f6d69 -- cannot deprecate until snapshot
+    // #[deprecated = "Replace `ContravariantLifetime<'a>` with `PhantomData<fn() -> &'a ()>`"]
     pub struct ContravariantLifetime<'a>;
-
-    impl<'a> Copy for ContravariantLifetime<'a> {}
 
     /// As `InvariantType`, but for lifetime parameters. Using
     /// `InvariantLifetime<'a>` indicates that it is not ok to
@@ -315,6 +326,8 @@ pub mod marker {
     /// location (such as a `Cell`).
     #[lang="invariant_lifetime"]
     #[deriving(PartialEq,Eq,PartialOrd,Ord,Clone)]
+    // SNAP c9f6d69 -- cannot deprecate until snapshot
+    // #[deprecated = "Replace `InvariantLifetime<'a>` with `PhantomCell<&'a ()>`"]
     pub struct InvariantLifetime<'a>;
 
     /// A type which is considered "not sendable", meaning that it cannot

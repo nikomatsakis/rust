@@ -16,7 +16,7 @@
 use std::kinds::marker;
 
 fn main() {
-    trait T : marker::Invariant {}
+    trait T : marker::PhantomAccessor<Self> {}
 
     fn f<'a, V: T>(v: &'a V) -> &'a T {
         v as &'a T

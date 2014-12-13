@@ -46,7 +46,7 @@ pub fn check_pat<'a, 'tcx>(pcx: &pat_ctxt<'a, 'tcx>,
             check_expr(fcx, &**lt);
             let expr_ty = fcx.expr_ty(&**lt);
             fcx.write_ty(pat.id, expr_ty);
-            demand::suptype(fcx, pat.span, expected, expr_ty);
+            demand::suptype(fcx, pat.span, expr_ty, expected);
         }
         ast::PatRange(ref begin, ref end) => {
             check_expr(fcx, &**begin);

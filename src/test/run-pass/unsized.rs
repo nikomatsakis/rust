@@ -16,15 +16,15 @@ use std::kinds::marker;
 
 // Test syntax checks for `Sized?` syntax.
 
-trait T1 for Sized? : marker::Covariant {}
-pub trait T2 for Sized? : marker::Covariant {}
-trait T3<X: T1> for Sized? : T2 {}
-trait T4<Sized? X : marker::Covariant> {}
-trait T5<Sized? X : marker::Covariant, Y> {}
-trait T6<Y, Sized? X : marker::Covariant> {}
-trait T7<Sized? X : marker::Covariant, Sized? Y : marker::Covariant> {}
-trait T8<Sized? X : T2> {}
-struct S1<Sized? X> { marker: marker::CovariantType<X> }
+trait T1 for Sized? : marker::PhantomGetter<Self> {}
+pub trait T2 for Sized? : marker::PhantomGetter<Self> {}
+trait T3<X: T1> for Sized? : T2 + marker::PhantomGetter<X> {}
+trait T4<Sized? X> : marker::PhantomGetter<(Self,X)> {}
+trait T5<Sized? X, Sized? Y> : marker::PhantomGetter<(Self,X,Y)> {}
+trait T6<Y, Sized? X> : marker::PhantomGetter<(Self,X,Y)> {}
+trait T7<Sized? X, Sized? Y> : marker::PhantomGetter<(Self,X,Y)> {}
+trait T8<Sized? X : T2> : marker::PhantomGetter<(Self,X)> {}
+struct S1<Sized? X> { marker: marker::PhantomData<X> }
 enum E<Sized? X> { Dummy(marker::CovariantType<X>) }
 impl <Sized? X> T1 for S1<X> {}
 fn f<Sized? X>() {}

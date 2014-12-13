@@ -297,14 +297,15 @@ lets_do_this! {
     ExchangeHeapLangItem,            "exchange_heap",           exchange_heap;
     OwnedBoxLangItem,                "owned_box",               owned_box;
 
-    CovariantTraitItem,              "covariant_trait",         covariant_trait;
-    ContravariantTraitItem,          "contravariant_trait",     contravariant_trait;
-    InvariantTraitItem,              "invariant_trait",         invariant_trait;
+    PhantomAccessorItem,             "phantom_accessor",        phantom_accessor;
+    PhantomGetterItem,               "phantom_getter",          phantom_getter;
+    PhantomSetterItem,               "phantom_setter",          phantom_setter;
+    PhantomDataItem,                 "phantom_data",            phantom_data;
+    PhantomCellItem,                 "phantom_cell",            phantom_cell;
 
     CovariantTypeItem,               "covariant_type",          covariant_type;
     ContravariantTypeItem,           "contravariant_type",      contravariant_type;
     InvariantTypeItem,               "invariant_type",          invariant_type;
-
     CovariantLifetimeItem,           "covariant_lifetime",      covariant_lifetime;
     ContravariantLifetimeItem,       "contravariant_lifetime",  contravariant_lifetime;
     InvariantLifetimeItem,           "invariant_lifetime",      invariant_lifetime;

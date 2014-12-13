@@ -345,15 +345,21 @@ fn determine_parameters_to_be_inferred<'a, 'tcx>(tcx: &'a ty::ctxt<'tcx>,
 
 fn lang_items(tcx: &ty::ctxt) -> Vec<(ast::NodeId,ty::Variance)> {
     let all = vec![
-        (tcx.lang_items.covariant_trait(), ty::Covariant),
+        (tcx.lang_items.phantom_accessor(), ty::Invariant),
+        (tcx.lang_items.phantom_getter(), ty::Covariant),
+        (tcx.lang_items.phantom_setter(), ty::Contravariant),
+        (tcx.lang_items.phantom_data(), ty::Covariant),
+        (tcx.lang_items.phantom_cell(), ty::Invariant),
+
+        // deprecated
         (tcx.lang_items.covariant_type(), ty::Covariant),
         (tcx.lang_items.covariant_lifetime(), ty::Covariant),
-        (tcx.lang_items.contravariant_trait(), ty::Contravariant),
         (tcx.lang_items.contravariant_type(), ty::Contravariant),
         (tcx.lang_items.contravariant_lifetime(), ty::Contravariant),
-        (tcx.lang_items.invariant_trait(), ty::Invariant),
         (tcx.lang_items.invariant_type(), ty::Invariant),
         (tcx.lang_items.invariant_lifetime(), ty::Invariant),
+
+        // special
         (tcx.lang_items.unsafe_type(), ty::Invariant)];
 
     all.into_iter()
@@ -450,8 +456,10 @@ impl<'a, 'tcx> TermsContext<'a, 'tcx> {
                 space={}, \
                 index={}, \
                 param_id={}, \
-                inf_index={})",
-                item_id, kind, space, index, param_id, inf_index);
+                inf_index={}, \
+                initial_variance={})",
+               item_id, kind, space, index, param_id, inf_index,
+               initial_variance);
     }
 
     fn pick_initial_variance(&self,
@@ -481,7 +489,11 @@ impl<'a, 'tcx> TermsContext<'a, 'tcx> {
                 ty::Invariant
             }
 
-            TypeSpace | SelfSpace | FnSpace => {
+            SelfSpace | FnSpace => {
+                ty::Bivariant
+            }
+
+            TypeSpace => {
                 match self.lang_items.iter().find(|&&(n, _)| n == item_id) {
                     Some(&(_, v)) => v,
                     None => ty::Bivariant
@@ -1206,8 +1218,9 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
             let mut types = VecPerParamSpace::empty();
             let mut regions = VecPerParamSpace::empty();
 
-            while index < num_inferred &&
-                  inferred_infos[index].item_id == item_id {
+            let is_lang_item = self.terms_cx.lang_items.iter().any(|&(n, _)| n == item_id);
+
+            while index < num_inferred && inferred_infos[index].item_id == item_id {
                 let info = &inferred_infos[index];
                 let variance = solutions[index];
                 debug!("Index {} Info {} / {} / {} Variance {}",
@@ -1216,7 +1229,7 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                     TypeParam => {
                         types.push(info.space, variance);
 
-                        if variance == ty::Bivariant {
+                        if !is_lang_item && variance == ty::Bivariant {
                             span_err!(tcx.sess, info.span, E0175,
                                       "type parameter `{}` is never used; \
                                        either remove it, or use a marker such as \

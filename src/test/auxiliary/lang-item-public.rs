@@ -11,13 +11,12 @@
 #![no_std]
 #![feature(lang_items)]
 
-#[lang="covariant_trait"]
-pub trait Covariant for Sized? { }
-
-impl<Sized? T> Covariant for T { }
+#[lang="phantom_accessor"]
+pub trait PhantomAccessor<Sized? T> for Sized? { }
+impl<Sized? T, Sized? U> PhantomAccessor<T> for U { }
 
 #[lang="sized"]
-pub trait Sized for Sized? : Covariant {}
+pub trait Sized for Sized? : PhantomAccessor<Self> {}
 
 #[lang="panic"]
 fn panic(_: &(&'static str, &'static str, uint)) -> ! { loop {} }
@@ -29,6 +28,8 @@ extern fn stack_exhausted() {}
 extern fn eh_personality() {}
 
 #[lang="copy"]
-pub trait Copy {}
+pub trait Copy for Sized? : PhantomAccessor<Self> {
+    // Empty.
+}
 
 

@@ -24,7 +24,7 @@ fn f2<X>(x: &X) {
 }
 
 // Bounded.
-trait T for Sized? : marker::Covariant {}
+trait T for Sized? : marker::PhantomGetter<Self> {}
 fn f3<Sized? X: T>(x: &X) {
     f3::<X>(x);
 }
