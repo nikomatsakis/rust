@@ -1233,7 +1233,7 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                 if !is_lang_item && variance == ty::Bivariant {
                     let suggested_marker_id = match tcx.map.get(item_id) {
                         ast_map::NodeItem(item) => {
-                            match *item {
+                            match item.node {
                                 ast::ItemTrait(..) => tcx.lang_items.phantom_getter(),
                                 _ => tcx.lang_items.phantom_data(),
                             }
@@ -1242,7 +1242,7 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                             tcx.sess.span_bug(
                                 info.span,
                                 format!("item id `{}` is not an item in the ast map",
-                                        item_id));
+                                        item_id).as_slice());
                         }
                     };
 
@@ -1260,9 +1260,7 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                                         ty::item_path_str(tcx, def_id)).as_slice());
                         }
                         None => {
-                            tcx.sess.span_help(
-                                info.span,
-                                format!("consider removing it"));
+                            // no lang items, no help!
                         }
                     }
                 }
