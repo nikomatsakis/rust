@@ -43,7 +43,7 @@ use middle::resolve_lifetime;
 use middle::subst;
 use middle::subst::{Substs};
 use middle::ty::{AsPredicate, ImplContainer, ImplOrTraitItemContainer, TraitContainer};
-use middle::ty::{mod, Ty, Polytype};
+use middle::ty::{mod, RegionEscape, Ty, Polytype};
 use middle::ty_fold::{mod, TypeFolder};
 use middle::infer;
 use rscope::*;
@@ -226,7 +226,7 @@ pub fn get_enum_variant_types<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
 
             ast::StructVariantKind(ref struct_def) => {
                 let pty = Polytype {
-                    generics: ty_generics_for_type(
+                    generics: ty_generics_for_type_or_impl(
                         ccx,
                         generics,
                         DontCreateTypeParametersForAssociatedTypes),
@@ -239,7 +239,7 @@ pub fn get_enum_variant_types<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         };
 
         let pty = Polytype {
-            generics: ty_generics_for_type(
+            generics: ty_generics_for_type_or_impl(
                           ccx,
                           generics,
                           DontCreateTypeParametersForAssociatedTypes),
@@ -1050,7 +1050,7 @@ pub fn convert(ccx: &CrateCtxt, it: &ast::Item) {
                       ref selfty,
                       ref impl_items) => {
             // Create generics from the generics specified in the impl head.
-            let ty_generics = ty_generics_for_impl(
+            let ty_generics = ty_generics_for_type_or_impl(
                     ccx,
                     generics,
                     CreateTypeParametersForAssociatedTypes);
@@ -1482,7 +1482,7 @@ pub fn ty_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>, it: &ast::Item)
             let pty = {
                 let ty = ccx.to_ty(&ExplicitRscope, &**t);
                 Polytype {
-                    generics: ty_generics_for_type(
+                    generics: ty_generics_for_type_or_impl(
                                   ccx,
                                   generics,
                                   DontCreateTypeParametersForAssociatedTypes),
@@ -1495,7 +1495,7 @@ pub fn ty_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>, it: &ast::Item)
         }
         ast::ItemEnum(_, ref generics) => {
             // Create a new generic polytype.
-            let ty_generics = ty_generics_for_type(
+            let ty_generics = ty_generics_for_type_or_impl(
                 ccx,
                 generics,
                 DontCreateTypeParametersForAssociatedTypes);
@@ -1513,7 +1513,7 @@ pub fn ty_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>, it: &ast::Item)
             tcx.sess.span_bug(it.span, "invoked ty_of_item on trait");
         }
         ast::ItemStruct(_, ref generics) => {
-            let ty_generics = ty_generics_for_type(
+            let ty_generics = ty_generics_for_type_or_impl(
                 ccx,
                 generics,
                 DontCreateTypeParametersForAssociatedTypes);
@@ -1580,11 +1580,11 @@ fn ty_of_trait_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
     }
 }
 
-fn ty_generics_for_type<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
-                                  generics: &ast::Generics,
-                                  create_type_parameters_for_associated_types:
-                                      CreateTypeParametersForAssociatedTypesFlag)
-                                  -> ty::Generics<'tcx> {
+fn ty_generics_for_type_or_impl<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
+                                          generics: &ast::Generics,
+                                          create_type_parameters_for_associated_types:
+                                          CreateTypeParametersForAssociatedTypesFlag)
+                                          -> ty::Generics<'tcx> {
     ty_generics(ccx,
                 subst::TypeSpace,
                 generics.lifetimes.as_slice(),
@@ -1662,24 +1662,6 @@ fn ty_generics_for_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                              ty::Predicate::Trait(self_trait_ref));
 
     generics
-}
-
-fn ty_generics_for_impl<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
-                                  generics: &ast::Generics,
-                                  create_type_parameters_for_associated_types:
-                                      CreateTypeParametersForAssociatedTypesFlag)
-                                  -> ty::Generics<'tcx>
-{
-    let early_lifetimes = resolve_lifetime::early_bound_lifetimes(generics);
-    debug!("ty_generics_for_impl: early_lifetimes={}",
-           early_lifetimes);
-    ty_generics(ccx,
-                subst::TypeSpace,
-                early_lifetimes.as_slice(),
-                generics.ty_params.as_slice(),
-                ty::Generics::empty(),
-                &generics.where_clause,
-                create_type_parameters_for_associated_types)
 }
 
 fn ty_generics_for_fn_or_method<'tcx,AC>(
@@ -2209,19 +2191,17 @@ fn check_method_self_type<'a, 'tcx, RS:RegionScope>(
         // contain late-bound regions from the method, but not the
         // trait (since traits only have early-bound region
         // parameters).
-        assert!(!ty::type_escapes_depth(required_type, 1));
+        assert!(!base_type.has_regions_escaping_depth(1));
         let required_type_free =
             ty::liberate_late_bound_regions(
                 crate_context.tcx, body_scope, &ty::Binder(required_type));
 
-        // The "base type" comes from the impl. It may have late-bound
-        // regions from the impl or the method.
+        // The "base type" comes from the impl. It too may have late-bound
+        // regions from the method.
+        assert!(!base_type.has_regions_escaping_depth(1));
         let base_type_free =
-            ty::liberate_late_bound_regions( // liberate impl regions:
-                crate_context.tcx, body_scope,
-                &ty::liberate_late_bound_regions( // liberate method regions:
-                    crate_context.tcx, body_scope,
-                    &ty::Binder(ty::Binder(base_type))));
+            ty::liberate_late_bound_regions(
+                crate_context.tcx, body_scope, &ty::Binder(base_type));
 
         debug!("required_type={} required_type_free={} \
                 base_type={} base_type_free={}",
