@@ -847,7 +847,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
     fn add_constraints_from_trait_ref(&mut self,
                                       def_id: ast::DefId,
                                       spaces: &[subst::ParamSpace],
-                                      substs: &subst::Substs,
+                                      substs: &subst::Substs<'tcx>,
                                       variance: VarianceTermPtr<'a>) {
         debug!("add_constraints_from_trait_ref: def_id={} substs={} variance={}",
                def_id.repr(self.tcx()),
@@ -1007,7 +1007,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
     }
 
     fn add_constraints_from_generics(&mut self,
-                                     generics: &ty::Generics,
+                                     generics: &ty::Generics<'tcx>,
                                      spaces: &[subst::ParamSpace]) {
         debug!("add_constraints_from_generics({})",
                generics.repr(self.tcx()));
@@ -1028,7 +1028,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
 
     fn add_constraints_from_param_bounds(&mut self,
                                          subject_ty: Ty<'tcx>,
-                                         bounds: &ty::ParamBounds) {
+                                         bounds: &ty::ParamBounds<'tcx>) {
         /*!
          * Adds any variance constraints that occur due to `subject_ty`
          * being bound by the bounds in `bounds`.
