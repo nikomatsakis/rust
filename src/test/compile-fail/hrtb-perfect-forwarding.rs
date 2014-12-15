@@ -53,7 +53,7 @@ fn foo_hrtb_bar_not<'b,T>(mut t: T)
     // be implemented. Thus to satisfy `&mut T : for<'a> Foo<&'a
     // int>`, we require `T : for<'a> Bar<&'a int>`, but the where
     // clause only specifies `T : Bar<&'b int>`.
-    foo_hrtb_bar_not(&mut t); //~ ERROR `for<'a> Bar<&'a int>` not implemented for the type `T`
+    foo_hrtb_bar_not(&mut t); //~ ERROR `for<'a> Bar<&'a int>` is not implemented for the type `T`
 }
 
 fn foo_hrtb_bar_hrtb<T>(mut t: T)
