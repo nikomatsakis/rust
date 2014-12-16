@@ -620,6 +620,8 @@ impl<'a, Sized? T: Show> Show for &'a T {
 impl<'a, Sized? T: Show> Show for &'a mut T {
     fn fmt(&self, f: &mut Formatter) -> Result { (**self).fmt(f) }
 }
+
+#[cfg(stage0)]
 impl<'a> Show for &'a (Show+'a) {
     fn fmt(&self, f: &mut Formatter) -> Result { (*self).fmt(f) }
 }

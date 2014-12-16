@@ -33,11 +33,12 @@ pub use self::select::SelectionCache;
 pub use self::select::{MethodMatchResult, MethodMatched, MethodAmbiguous, MethodDidNotMatch};
 pub use self::select::{MethodMatchedData}; // intentionally don't export variants
 pub use self::util::elaborate_predicates;
+pub use self::util::get_vtable_index_of_object_method;
 pub use self::util::supertraits;
 pub use self::util::Supertraits;
 pub use self::util::search_trait_and_supertraits_from_bound;
 pub use self::util::transitive_bounds;
-pub use self::util::trait_ref_for_builtin_bound;
+pub use self::util::upcast;
 
 mod coherence;
 mod fulfill;
@@ -190,6 +191,9 @@ pub enum Vtable<'tcx, N> {
     /// for some type parameter.
     VtableParam(VtableParamData<'tcx>),
 
+    /// Virtual calls through an object
+    VtableObject(VtableObjectData<'tcx>),
+
     /// Successful resolution for a builtin trait.
     VtableBuiltin(VtableBuiltinData<N>),
 
@@ -232,6 +236,11 @@ pub struct VtableBuiltinData<N> {
 pub struct VtableParamData<'tcx> {
     // In the above example, this would `Eq`
     pub bound: Rc<ty::TraitRef<'tcx>>,
+}
+
+#[deriving(PartialEq,Eq,Clone)]
+pub struct VtableObjectData<'tcx> {
+    pub object_ty: Ty<'tcx>,
 }
 
 /// True if neither the trait nor self type is local. Note that `impl_def_id` must refer to an impl
@@ -313,6 +322,7 @@ impl<'tcx, N> Vtable<'tcx, N> {
             VtableFnPointer(..) => (&[]).iter(),
             VtableUnboxedClosure(..) => (&[]).iter(),
             VtableParam(_) => (&[]).iter(),
+            VtableObject(_) => (&[]).iter(),
             VtableBuiltin(ref i) => i.iter_nested(),
         }
     }
@@ -322,7 +332,8 @@ impl<'tcx, N> Vtable<'tcx, N> {
             VtableImpl(ref i) => VtableImpl(i.map_nested(op)),
             VtableFnPointer(ref sig) => VtableFnPointer((*sig).clone()),
             VtableUnboxedClosure(d, ref s) => VtableUnboxedClosure(d, s.clone()),
-            VtableParam(ref p) => VtableParam((*p).clone()),
+            VtableParam(ref p) => VtableParam(p.clone()),
+            VtableObject(ref p) => VtableObject(p.clone()),
             VtableBuiltin(ref b) => VtableBuiltin(b.map_nested(op)),
         }
     }
@@ -335,6 +346,7 @@ impl<'tcx, N> Vtable<'tcx, N> {
             VtableFnPointer(sig) => VtableFnPointer(sig),
             VtableUnboxedClosure(d, s) => VtableUnboxedClosure(d, s),
             VtableParam(p) => VtableParam(p),
+            VtableObject(p) => VtableObject(p),
             VtableBuiltin(no) => VtableBuiltin(no.map_move_nested(op)),
         }
     }

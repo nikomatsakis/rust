@@ -28,8 +28,8 @@ use super::ObligationCause;
 use super::PredicateObligation;
 use super::Selection;
 use super::select::SelectionContext;
-use super::trait_ref_for_builtin_bound;
 use super::Unimplemented;
+use super::util::trait_ref_for_builtin_bound;
 
 /// The fulfillment context is used to drive trait resolution.  It
 /// consists of a list of obligations that must be (eventually)

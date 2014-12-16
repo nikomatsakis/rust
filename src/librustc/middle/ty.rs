@@ -2368,7 +2368,6 @@ pub fn mk_ctor_fn<'tcx>(cx: &ctxt<'tcx>,
                 })
 }
 
-
 pub fn mk_trait<'tcx>(cx: &ctxt<'tcx>,
                       principal: ty::TraitRef<'tcx>,
                       bounds: ExistentialBounds)
