@@ -781,6 +781,9 @@ pub struct ctxt<'tcx> {
 
     /// Caches whether types move by default.
     pub type_moves_by_default_cache: RefCell<HashMap<Ty<'tcx>,bool>>,
+
+    /// Caches whether types move by default.
+    pub object_safety_cache: RefCell<DefIdMap<bool>>,
 }
 
 // Flags that we track on types. These flags are propagated upwards
@@ -2037,6 +2040,7 @@ pub fn mk_ctxt<'tcx>(s: Session,
         selection_cache: traits::SelectionCache::new(),
         repr_hint_cache: RefCell::new(DefIdMap::new()),
         type_moves_by_default_cache: RefCell::new(HashMap::new()),
+        object_safety_cache: RefCell::new(DefIdMap::new()),
    }
 }
 

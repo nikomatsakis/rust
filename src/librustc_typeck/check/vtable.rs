@@ -20,7 +20,7 @@ use middle::infer;
 use std::rc::Rc;
 use syntax::ast;
 use syntax::codemap::Span;
-use util::ppaux::{UserString, Repr, ty_to_string};
+use util::ppaux::{UserString, Repr};
 
 pub fn check_object_cast<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                                    cast_expr: &ast::Expr,
@@ -132,104 +132,50 @@ pub fn check_object_cast<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
 // self by value, has no type parameters and does not use the `Self` type, except
 // in self position.
 pub fn check_object_safety<'tcx>(tcx: &ty::ctxt<'tcx>,
-                                 object_trait: &ty::TraitRef<'tcx>,
-                                 span: Span) {
+                                 object_trait: &ty::TyTrait<'tcx>,
+                                 span: Span)
+{
+    let object_trait_ref = object_trait.principal_trait_ref_with_self_ty(ty::mk_err());
 
-    let mut object = object_trait.clone();
-    if object.substs.types.len(SelfSpace) == 0 {
-        object.substs.types.push(SelfSpace, ty::mk_err());
+    if traits::is_object_safe(tcx, object_trait_ref.clone()) {
+        return;
     }
 
-    let object = Rc::new(object);
-    for tr in traits::supertraits(tcx, object) {
-        check_object_safety_inner(tcx, &*tr, span);
-    }
-}
+    let violations = traits::object_safety_violations(tcx, object_trait_ref);
+    for violation in violations.iter() {
+        let method_name = violation.method.name.user_string(tcx);
 
-fn check_object_safety_inner<'tcx>(tcx: &ty::ctxt<'tcx>,
-                                 object_trait: &ty::TraitRef<'tcx>,
-                                 span: Span) {
-    let trait_items = ty::trait_items(tcx, object_trait.def_id);
-
-    let mut errors = Vec::new();
-    for item in trait_items.iter() {
-        match *item {
-            ty::MethodTraitItem(ref m) => {
-                errors.push(check_object_safety_of_method(tcx, &**m))
-            }
-            ty::TypeTraitItem(_) => {}
-        }
-    }
-
-    let mut errors = errors.iter().flat_map(|x| x.iter()).peekable();
-    if errors.peek().is_some() {
-        let trait_name = ty::item_path_str(tcx, object_trait.def_id);
-        span_err!(tcx.sess, span, E0038,
-            "cannot convert to a trait object because trait `{}` is not object-safe",
-            trait_name);
-
-        for msg in errors {
-            tcx.sess.note(msg.as_slice());
-        }
-    }
-
-    /// Returns a vec of error messages. If hte vec is empty - no errors!
-    ///
-    /// There are some limitations to calling functions through an object, because (a) the self
-    /// type is not known (that's the whole point of a trait instance, after all, to obscure the
-    /// self type) and (b) the call must go through a vtable and hence cannot be monomorphized.
-    fn check_object_safety_of_method<'tcx>(tcx: &ty::ctxt<'tcx>,
-                                           method: &ty::Method<'tcx>)
-                                           -> Vec<String> {
-        let mut msgs = Vec::new();
-
-        let method_name = method.name.repr(tcx);
-
-        match method.explicit_self {
-            ty::ByValueExplicitSelfCategory => { // reason (a) above
-                msgs.push(format!("cannot call a method (`{}`) with a by-value \
-                                   receiver through a trait object", method_name))
+        match violation.code {
+            traits::ObjectSafetyViolationCode::ByValueSelf => {
+                tcx.sess.span_err(
+                    span,
+                    format!("cannot call a method (`{}`) with a by-value \
+                             receiver through a trait object", method_name).as_slice());
             }
 
-            ty::StaticExplicitSelfCategory => {
-                // Static methods are always object-safe since they
-                // can't be called through a trait object
-                return msgs
+            traits::ObjectSafetyViolationCode::StaticMethod => {
+                tcx.sess.span_err(
+                    span,
+                    format!("cannot call a method (`{}`) with no receiver \
+                             receiver through a trait object", method_name).as_slice());
             }
-            ty::ByReferenceExplicitSelfCategory(..) |
-            ty::ByBoxExplicitSelfCategory => {}
-        }
 
-        // reason (a) above
-        let check_for_self_ty = |ty| {
-            if ty::type_has_self(ty) {
-                Some(format!(
-                    "cannot call a method (`{}`) whose type contains \
-                     a self-type (`{}`) through a trait object",
-                    method_name, ty_to_string(tcx, ty)))
-            } else {
-                None
+            traits::ObjectSafetyViolationCode::ReferencesSelf => {
+                tcx.sess.span_err(
+                    span,
+                    format!(
+                        "cannot call a method (`{}`) whose type contains \
+                         `Self` through a trait object",
+                        method_name).as_slice());
             }
-        };
-        let ref sig = method.fty.sig;
-        for &input_ty in sig.inputs[1..].iter() {
-            if let Some(msg) = check_for_self_ty(input_ty) {
-                msgs.push(msg);
-            }
-        }
-        if let ty::FnConverging(result_type) = sig.output {
-            if let Some(msg) = check_for_self_ty(result_type) {
-                msgs.push(msg);
-            }
-        }
 
-        if method.generics.has_type_params(FnSpace) {
-            // reason (b) above
-            msgs.push(format!("cannot call a generic method (`{}`) through a trait object",
-                              method_name));
+            traits::ObjectSafetyViolationCode::Generic => {
+                tcx.sess.span_err(
+                    span,
+                    format!("cannot call a generic method (`{}`) through a trait object",
+                            method_name).as_slice());
+            }
         }
-
-        msgs
     }
 }
 

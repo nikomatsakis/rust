@@ -24,6 +24,10 @@ use syntax::ast;
 use syntax::codemap::{Span, DUMMY_SP};
 
 pub use self::fulfill::{FulfillmentContext, RegionObligation};
+pub use self::object_safety::is_object_safe;
+pub use self::object_safety::object_safety_violations;
+pub use self::object_safety::ObjectSafetyViolation;
+pub use self::object_safety::ObjectSafetyViolationCode;
 pub use self::select::SelectionContext;
 pub use self::select::SelectionCache;
 pub use self::select::{MethodMatchResult, MethodMatched, MethodAmbiguous, MethodDidNotMatch};
@@ -37,6 +41,7 @@ pub use self::util::trait_ref_for_builtin_bound;
 
 mod coherence;
 mod fulfill;
+mod object_safety;
 mod select;
 mod util;
 

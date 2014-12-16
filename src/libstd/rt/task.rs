@@ -343,7 +343,7 @@ impl Task {
                 }
             }
             // put the task back in TLS, and everything is as it once was.
-            Local::put(mem::transmute(me));
+            Local::put(mem::transmute::<_,Box<Task>>(me));
         }
     }
 
