@@ -44,7 +44,7 @@ use middle::subst;
 use middle::subst::{Substs};
 use middle::ty::{AsPredicate, ImplContainer, ImplOrTraitItemContainer, TraitContainer};
 use middle::ty::{mod, RegionEscape, Ty, Polytype};
-use middle::ty_fold::{mod, TypeFolder};
+use middle::ty_fold::{mod, TypeFolder, TypeFoldable};
 use middle::infer;
 use rscope::*;
 use {CrateCtxt, lookup_def_tcx, no_params, write_ty_to_tcx};
@@ -2168,8 +2168,12 @@ pub fn mk_item_substs<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
     subst::Substs::new(types, regions)
 }
 
-/// Verifies that the explicit self type of a method matches the impl or
-/// trait.
+/// Verifies that the explicit self type of a method matches the impl
+/// or trait. This is a bit weird but basically because right now we
+/// don't handle the general case, but instead map it to one of
+/// several pre-defined options using various heuristics, this method
+/// comes back to check after the fact that explicit type the user
+/// wrote actually matches what the pre-defined option said.
 fn check_method_self_type<'a, 'tcx, RS:RegionScope>(
     crate_context: &CrateCtxt<'a, 'tcx>,
     rs: &RS,
@@ -2193,15 +2197,19 @@ fn check_method_self_type<'a, 'tcx, RS:RegionScope>(
         // parameters).
         assert!(!base_type.has_regions_escaping_depth(1));
         let required_type_free =
-            ty::liberate_late_bound_regions(
-                crate_context.tcx, body_scope, &ty::Binder(required_type));
+            liberate_early_bound_regions(
+                crate_context.tcx, body_scope,
+                &ty::liberate_late_bound_regions(
+                    crate_context.tcx, body_scope, &ty::Binder(required_type)));
 
         // The "base type" comes from the impl. It too may have late-bound
         // regions from the method.
         assert!(!base_type.has_regions_escaping_depth(1));
         let base_type_free =
-            ty::liberate_late_bound_regions(
-                crate_context.tcx, body_scope, &ty::Binder(base_type));
+            liberate_early_bound_regions(
+                crate_context.tcx, body_scope,
+                &ty::liberate_late_bound_regions(
+                    crate_context.tcx, body_scope, &ty::Binder(base_type)));
 
         debug!("required_type={} required_type_free={} \
                 base_type={} base_type_free={}",
@@ -2221,5 +2229,31 @@ fn check_method_self_type<'a, 'tcx, RS:RegionScope>(
                         ppaux::ty_to_string(crate_context.tcx, required_type))
         }));
         infcx.resolve_regions_and_report_errors();
+    }
+
+    fn liberate_early_bound_regions<'tcx,T>(
+        tcx: &ty::ctxt<'tcx>,
+        scope: region::CodeExtent,
+        value: &T)
+        -> T
+        where T : TypeFoldable<'tcx> + Repr<'tcx>
+    {
+        /*!
+         * Convert early-bound regions into free regions; normally this is done by
+         * applying the `free_substs` from the `ParameterEnvironment`, but this particular
+         * method-self-type check is kind of hacky and done very early in the process,
+         * before we really have a `ParameterEnvironment` to check.
+         */
+
+        ty_fold::fold_regions(tcx, value, |region, _| {
+            match region {
+                ty::ReEarlyBound(id, _, _, name) => {
+                    let def_id = local_def(id);
+                    ty::ReFree(ty::FreeRegion { scope: scope,
+                                                bound_region: ty::BrNamed(def_id, name) })
+                }
+                _ => region
+            }
+        })
     }
 }
