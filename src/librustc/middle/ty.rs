@@ -1308,7 +1308,7 @@ pub enum sty<'tcx> {
 #[deriving(Clone, PartialEq, Eq, Hash, Show)]
 pub struct TyTrait<'tcx> {
     // Principal trait reference.
-    pub principal: PolyTraitRef<'tcx>, // would use Rc<TraitRef>, but it runs afoul of some static rules
+    pub principal: PolyTraitRef<'tcx>,
     pub bounds: ExistentialBounds
 }
 
@@ -1317,7 +1317,9 @@ impl<'tcx> TyTrait<'tcx> {
     /// we convert the principal trait-ref into a normal trait-ref,
     /// you must give *some* self-type. A common choice is `mk_err()`
     /// or some skolemized type.
-    pub fn principal_trait_ref_with_self_ty(&self, self_ty: Ty<'tcx>) -> Rc<ty::PolyTraitRef<'tcx>> {
+    pub fn principal_trait_ref_with_self_ty(&self, self_ty: Ty<'tcx>)
+                                            -> Rc<ty::PolyTraitRef<'tcx>>
+    {
         Rc::new(ty::Binder(ty::TraitRef {
             def_id: self.principal.def_id(),
             substs: self.principal.substs().with_self_ty(self_ty),

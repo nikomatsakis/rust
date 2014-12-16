@@ -524,7 +524,8 @@ pub fn instantiate_poly_trait_ref<'tcx,AC,RS>(
     -> Rc<ty::PolyTraitRef<'tcx>>
     where AC: AstConv<'tcx>, RS: RegionScope
 {
-    let trait_ref = instantiate_trait_ref(this, rscope, &ast_trait_ref.trait_ref, self_ty, allow_eq);
+    let trait_ref =
+        instantiate_trait_ref(this, rscope, &ast_trait_ref.trait_ref, self_ty, allow_eq);
     let trait_ref = (*trait_ref).clone();
     Rc::new(ty::Binder(trait_ref)) // Ugh.
 }
