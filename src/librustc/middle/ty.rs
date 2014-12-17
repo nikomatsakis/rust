@@ -1331,7 +1331,10 @@ pub struct TyTrait<'tcx> {
 pub struct TraitRef<'tcx> {
     pub def_id: DefId,
     pub substs: Substs<'tcx>,
+    pub output_types: OutputTypes<'tcx>,
 }
+
+pub type OutputTypes<'tcx> = Vec<(ast::DefId, Ty<'tcx>)>;
 
 /// Binder serves as a synthetic binder for lifetimes. It is used when
 /// we wish to replace the escaping higher-ranked lifetimes in a type

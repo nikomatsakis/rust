@@ -431,6 +431,22 @@ pub fn report_selection_error<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                 note_obligation_cause(fcx, obligation);
             }
         }
+        AssociatedTypeMismatch(def_id, expected_ty, output_ty, ref e) => {
+            let expected_ty =
+                fcx.infcx().resolve_type_vars_if_possible(expected_ty);
+            let output_ty =
+                fcx.infcx().resolve_type_vars_if_possible(output_ty);
+            if !ty::type_is_error(output_ty.self_ty()) {
+                fcx.tcx().sess.span_err(
+                    obligation.cause.span,
+                    format!(
+                        "type mismatch: {} vs {} ({})", // TODO
+                        expected_ty.user_string(fcx.tcx()),
+                        output_ty.user_string(fcx.tcx()),
+                        ty::type_err_to_str(fcx.tcx(), e)).as_slice());
+                note_obligation_cause(fcx, obligation);
+            }
+        }
     }
 }
 

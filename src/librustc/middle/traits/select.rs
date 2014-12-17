@@ -17,6 +17,7 @@ use self::Candidate::*;
 use self::BuiltinBoundConditions::*;
 use self::EvaluationResult::*;
 
+use super::{AssociatedTypeMismatch};
 use super::{PredicateObligation, Obligation, TraitObligation, ObligationCause};
 use super::{SelectionError, Unimplemented, Overflow, OutputTypeParameterMismatch};
 use super::{Selection};
@@ -1369,8 +1370,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             }
 
             ImplCandidate(impl_def_id) => {
-                let vtable_impl =
-                    try!(self.confirm_impl_candidate(obligation, impl_def_id));
+                let vtable_impl = try!(self.confirm_impl_candidate(obligation, impl_def_id));
                 Ok(VtableImpl(vtable_impl))
             }
 
@@ -1475,7 +1475,42 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         // this time not in a probe.
         let substs = self.rematch_impl(impl_def_id, obligation);
         debug!("confirm_impl_candidate substs={}", substs);
+
+        // Second, confirm any output types.
+        let impl_items = self.tcx().impl_items.borrow();
+        let items_from_impl = impl_items[impl_def_id];
+        for &(output_type_def_id, output_ty) in obligation.trait_ref.output_types.iter() {
+            let impl_ty = self.find_type_for_assoc_type_in_impl(items_from_impl.as_slice(),
+                                                                impl_def_id,
+                                                                output_type_def_id);
+            let origin = infer::RelateOutputImplTypes(obligation.cause.span);
+            match infer::mk_eqty(self.infcx, true, origin, impl_ty, output_ty) {
+                Ok(()) => { }
+                Err(e) => {
+                    return EvaluatedToErr(AssociatedTypeMismatch(output_type_def_id,
+                                                                 impl_ty,
+                                                                 output_ty,
+                                                                 e));
+                }
+            }
+        }
+
         Ok(self.vtable_impl(impl_def_id, substs, obligation.cause, obligation.recursion_depth + 1))
+    }
+
+    fn find_type_for_assoc_type_in_impl(&self,
+                                        items_from_impl: &[ty::ImplOrTraitItemId],
+                                        impl_def_id: ast::DefId,
+                                        output_type_def_id: ast::DefId)
+                                        -> Ty<'tcx> {
+        for item_from_impl in items_from_impl.iter() {
+            match *item_from_impl {
+                ty::MethodTraitItem(_) => { }
+                ty::TypeTraitItem(def_id) => {
+                    let associated_type = self.tcx().impl_or_trait_items.borrow()[def_id];
+                }
+            }
+        }
     }
 
     fn vtable_impl(&mut self,

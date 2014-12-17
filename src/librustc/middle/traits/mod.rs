@@ -116,6 +116,7 @@ pub enum SelectionError<'tcx> {
     Unimplemented,
     Overflow,
     OutputTypeParameterMismatch(Rc<ty::TraitRef<'tcx>>, Rc<ty::TraitRef<'tcx>>, ty::type_err<'tcx>),
+    AssociatedTypeMismatch(ast::DefId, Ty<'tcx>, Ty<'tcx>, ty::type_err<'tcx>),
 }
 
 pub struct FulfillmentError<'tcx> {
