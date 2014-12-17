@@ -1700,6 +1700,9 @@ pub enum Predicate<'tcx> {
 
     /// where T : 'a
     TypeOutlives(PolyTypeOutlivesPredicate<'tcx>),
+
+    /// where T : TraitRef<..., Item=Type>
+    Projection(PolyProjectionPredicate<'tcx>),
 }
 
 #[deriving(Clone, PartialEq, Eq, Hash, Show)]
@@ -1711,6 +1714,42 @@ pub struct OutlivesPredicate<A,B>(pub A, pub B); // `A : B`
 pub type PolyOutlivesPredicate<A,B> = ty::Binder<OutlivesPredicate<A,B>>;
 pub type PolyRegionOutlivesPredicate = PolyOutlivesPredicate<ty::Region, ty::Region>;
 pub type PolyTypeOutlivesPredicate<'tcx> = PolyOutlivesPredicate<Ty<'tcx>, ty::Region>;
+
+/// This kind of predicate has no *direct* correspondent in the
+/// syntax, but it roughly corresponds to the syntactic forms:
+///
+/// 1. `T : TraitRef<..., Item=Type>`
+/// 2. `<T as TraitRef<...>>::Item == Type` (NYI)
+///
+/// In particular, form #1 is "desugared" to the combination of a
+/// normal trait predicate (`T : TraitRef<...>`) and one of these
+/// predicates. Form #2 is a broader form in that it also permits
+/// equality between arbitrary types. Processing an instance of Form
+/// #2 eventually yields one of these `ProjectionPredicate`
+/// instances to normalize the LHS.
+#[deriving(Clone, PartialEq, Eq, Hash, Show)]
+pub struct ProjectionPredicate<'tcx> {
+    pub trait_ref: Rc<ty::TraitRef<'tcx>>,
+    pub item_name: ast::Name,
+    pub ty: Ty<'tcx>,
+}
+
+pub type PolyProjectionPredicate<'tcx> = Binder<ProjectionPredicate<'tcx>>;
+
+pub trait PolyProjectionPredicateExt<'tcx> {
+    fn poly_trait_ref(&self) -> Rc<PolyTraitRef<'tcx>>;
+}
+
+impl<'tcx> PolyProjectionPredicateExt<'tcx> for PolyProjectionPredicate<'tcx> {
+    fn poly_trait_ref(&self) -> Rc<PolyTraitRef<'tcx>> {
+        // Note: unlike with TraitRef::to_poly_trait_ref(),
+        // self.0.trait_ref is permitted to have escaping regions.
+        // This is because here `self` has a `Binder` and so does our
+        // return value, so we are preserving the number of binding
+        // levels.
+        Rc::new(ty::Binder((*self.0.trait_ref).clone()))
+    }
+}
 
 pub trait AsPredicate<'tcx> {
     fn as_predicate(&self) -> Predicate<'tcx>;
@@ -1805,6 +1844,11 @@ impl<'tcx> GenericBounds<'tcx> {
 impl<'tcx> TraitRef<'tcx> {
     pub fn new(def_id: ast::DefId, substs: Substs<'tcx>) -> TraitRef<'tcx> {
         TraitRef { def_id: def_id, substs: substs }
+    }
+
+    pub fn to_poly_trait_ref(&self) -> Rc<PolyTraitRef<'tcx>> {
+        assert!(!self.has_escaping_regions());
+        Rc::new(ty::Binder(self.clone()))
     }
 
     pub fn self_ty(&self) -> Ty<'tcx> {
@@ -6625,3 +6669,12 @@ impl<T:RegionEscape,U:RegionEscape> RegionEscape for OutlivesPredicate<T,U> {
     }
 }
 
+impl<'tcx> Repr<'tcx> for ty::ProjectionPredicate<'tcx> {
+    fn repr(&self, tcx: &ctxt<'tcx>) -> String {
+        format!("ProjectionPredicate({}, {}, {})",
+                self.trait_ref.repr(tcx),
+                self.item_name.repr(tcx),
+                self.ty.repr(tcx))
+    }
+
+}

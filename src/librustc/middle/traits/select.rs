@@ -13,7 +13,7 @@
 
 pub use self::MethodMatchResult::*;
 pub use self::MethodMatchedData::*;
-use self::Candidate::*;
+use self::SelectionCandidate::*;
 use self::BuiltinBoundConditions::*;
 use self::EvaluationResult::*;
 
@@ -82,7 +82,7 @@ struct TraitObligationStack<'prev, 'tcx: 'prev> {
 #[deriving(Clone)]
 pub struct SelectionCache<'tcx> {
     hashmap: RefCell<HashMap<Rc<ty::PolyTraitRef<'tcx>>,
-                             SelectionResult<'tcx, Candidate<'tcx>>>>,
+                             SelectionResult<'tcx, SelectionCandidate<'tcx>>>>,
 }
 
 pub enum MethodMatchResult {
@@ -129,7 +129,7 @@ impl Copy for MethodMatchedData {}
 /// clauses can give additional information (like, the types of output
 /// parameters) that would have to be inferred from the impl.
 #[deriving(PartialEq,Eq,Show,Clone)]
-enum Candidate<'tcx> {
+enum SelectionCandidate<'tcx> {
     BuiltinCandidate(ty::BuiltinBound),
     ParamCandidate(VtableParamData<'tcx>),
     ImplCandidate(ast::DefId),
@@ -145,8 +145,8 @@ enum Candidate<'tcx> {
     ErrorCandidate,
 }
 
-struct CandidateSet<'tcx> {
-    vec: Vec<Candidate<'tcx>>,
+struct SelectionCandidateSet<'tcx> {
+    vec: Vec<SelectionCandidate<'tcx>>,
     ambiguous: bool
 }
 
@@ -192,6 +192,10 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     pub fn infcx(&self) -> &'cx InferCtxt<'cx, 'tcx> {
         self.infcx
+    }
+
+    pub fn param_env(&self) -> &'cx ty::ParameterEnvironment<'tcx> {
+        self.param_env
     }
 
     pub fn tcx(&self) -> &'cx ty::ctxt<'tcx> {
@@ -440,7 +444,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     fn candidate_from_obligation<'o>(&mut self,
                                      stack: &TraitObligationStack<'o, 'tcx>)
-                                     -> SelectionResult<'tcx, Candidate<'tcx>>
+                                     -> SelectionResult<'tcx, SelectionCandidate<'tcx>>
     {
         // Watch out for overflow. This intentionally bypasses (and does
         // not update) the cache.
@@ -483,7 +487,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     fn candidate_from_obligation_no_cache<'o>(&mut self,
                                               stack: &TraitObligationStack<'o, 'tcx>)
-                                              -> SelectionResult<'tcx, Candidate<'tcx>>
+                                              -> SelectionResult<'tcx, SelectionCandidate<'tcx>>
     {
         if ty::type_is_error(stack.obligation.self_ty()) {
             return Ok(Some(ErrorCandidate));
@@ -624,7 +628,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     fn check_candidate_cache(&mut self,
                              cache_fresh_trait_ref: Rc<ty::PolyTraitRef<'tcx>>)
-                             -> Option<SelectionResult<'tcx, Candidate<'tcx>>>
+                             -> Option<SelectionResult<'tcx, SelectionCandidate<'tcx>>>
     {
         let cache = self.pick_candidate_cache(&cache_fresh_trait_ref);
         let hashmap = cache.hashmap.borrow();
@@ -633,7 +637,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     fn insert_candidate_cache(&mut self,
                               cache_fresh_trait_ref: Rc<ty::PolyTraitRef<'tcx>>,
-                              candidate: SelectionResult<'tcx, Candidate<'tcx>>)
+                              candidate: SelectionResult<'tcx, SelectionCandidate<'tcx>>)
     {
         let cache = self.pick_candidate_cache(&cache_fresh_trait_ref);
         let mut hashmap = cache.hashmap.borrow_mut();
@@ -642,13 +646,13 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     fn assemble_candidates<'o>(&mut self,
                                stack: &TraitObligationStack<'o, 'tcx>)
-                               -> Result<CandidateSet<'tcx>, SelectionError<'tcx>>
+                               -> Result<SelectionCandidateSet<'tcx>, SelectionError<'tcx>>
     {
         // Check for overflow.
 
         let TraitObligationStack { obligation, .. } = *stack;
 
-        let mut candidates = CandidateSet {
+        let mut candidates = SelectionCandidateSet {
             vec: Vec::new(),
             ambiguous: false
         };
@@ -698,7 +702,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     /// Never affects inference environment.
     fn assemble_candidates_from_caller_bounds(&mut self,
                                               obligation: &TraitObligation<'tcx>,
-                                              candidates: &mut CandidateSet<'tcx>)
+                                              candidates: &mut SelectionCandidateSet<'tcx>)
                                               -> Result<(),SelectionError<'tcx>>
     {
         debug!("assemble_candidates_from_caller_bounds({})",
@@ -735,7 +739,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     /// unified during the confirmation step.
     fn assemble_unboxed_closure_candidates(&mut self,
                                            obligation: &TraitObligation<'tcx>,
-                                           candidates: &mut CandidateSet<'tcx>)
+                                           candidates: &mut SelectionCandidateSet<'tcx>)
                                            -> Result<(),SelectionError<'tcx>>
     {
         let kind = match self.fn_family_trait_kind(obligation.trait_ref.def_id()) {
@@ -780,7 +784,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     /// Implement one of the `Fn()` family for a fn pointer.
     fn assemble_fn_pointer_candidates(&mut self,
                                       obligation: &TraitObligation<'tcx>,
-                                      candidates: &mut CandidateSet<'tcx>)
+                                      candidates: &mut SelectionCandidateSet<'tcx>)
                                       -> Result<(),SelectionError<'tcx>>
     {
         // We provide a `Fn` impl for fn pointers. There is no need to provide
@@ -818,7 +822,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     /// Search for impls that might apply to `obligation`.
     fn assemble_candidates_from_impls(&mut self,
                                       obligation: &TraitObligation<'tcx>,
-                                      candidates: &mut CandidateSet<'tcx>)
+                                      candidates: &mut SelectionCandidateSet<'tcx>)
                                       -> Result<(), SelectionError<'tcx>>
     {
         let all_impls = self.all_impls(obligation.trait_ref.def_id());
@@ -852,7 +856,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     /// scrutiny.
     fn winnow_candidate<'o>(&mut self,
                             stack: &TraitObligationStack<'o, 'tcx>,
-                            candidate: &Candidate<'tcx>)
+                            candidate: &SelectionCandidate<'tcx>)
                             -> EvaluationResult<'tcx>
     {
         debug!("winnow_candidate: candidate={}", candidate.repr(self.tcx()));
@@ -909,8 +913,8 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     /// a case where doing the opposite caused us harm.
     fn candidate_should_be_dropped_in_favor_of<'o>(&mut self,
                                                    stack: &TraitObligationStack<'o, 'tcx>,
-                                                   candidate_i: &Candidate<'tcx>,
-                                                   candidate_j: &Candidate<'tcx>)
+                                                   candidate_i: &SelectionCandidate<'tcx>,
+                                                   candidate_j: &SelectionCandidate<'tcx>)
                                                    -> bool
     {
         match (candidate_i, candidate_j) {
@@ -957,7 +961,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     fn assemble_builtin_bound_candidates<'o>(&mut self,
                                              bound: ty::BuiltinBound,
                                              stack: &TraitObligationStack<'o, 'tcx>,
-                                             candidates: &mut CandidateSet<'tcx>)
+                                             candidates: &mut SelectionCandidateSet<'tcx>)
                                              -> Result<(),SelectionError<'tcx>>
     {
         match self.builtin_bound(bound, stack.obligation) {
@@ -1348,7 +1352,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     fn confirm_candidate(&mut self,
                          obligation: &TraitObligation<'tcx>,
-                         candidate: Candidate<'tcx>)
+                         candidate: SelectionCandidate<'tcx>)
                          -> Result<Selection<'tcx>,SelectionError<'tcx>>
     {
         debug!("confirm_candidate({}, {})",
@@ -1919,7 +1923,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     }
 }
 
-impl<'tcx> Repr<'tcx> for Candidate<'tcx> {
+impl<'tcx> Repr<'tcx> for SelectionCandidate<'tcx> {
     fn repr(&self, tcx: &ty::ctxt<'tcx>) -> String {
         match *self {
             ErrorCandidate => format!("ErrorCandidate"),

@@ -37,6 +37,7 @@ pub use self::util::poly_trait_ref_for_builtin_bound;
 
 mod coherence;
 mod fulfill;
+mod project;
 mod select;
 mod util;
 
@@ -118,6 +119,9 @@ pub enum SelectionError<'tcx> {
     OutputTypeParameterMismatch(Rc<ty::PolyTraitRef<'tcx>>,
                                 Rc<ty::PolyTraitRef<'tcx>>,
                                 ty::type_err<'tcx>),
+    ProjectionMismatch(Ty<'tcx>,                       // type found in impl/where-clause
+                       ty::ProjectionPredicate<'tcx>,  // actual -- user supplied
+                       ty::type_err<'tcx>),
 }
 
 pub struct FulfillmentError<'tcx> {

@@ -419,6 +419,17 @@ impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
     }
 }
 
+impl<'tcx> TypeFoldable<'tcx> for ty::ProjectionPredicate<'tcx> {
+    fn fold_with<F: TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::ProjectionPredicate<'tcx> {
+        ty::ProjectionPredicate {
+            trait_ref: self.trait_ref.fold_with(folder),
+            item_name: self.item_name,
+            ty: self.ty.fold_with(folder),
+        }
+    }
+}
+
+
 impl<'tcx> TypeFoldable<'tcx> for ty::GenericBounds<'tcx> {
     fn fold_with<F: TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::GenericBounds<'tcx> {
         ty::GenericBounds {
