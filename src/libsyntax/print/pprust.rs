@@ -2417,10 +2417,10 @@ impl<'a> State<'a> {
             }
 
             match predicate {
-                &ast::WherePredicate::BoundPredicate(ast::WhereBoundPredicate{ident,
+                &ast::WherePredicate::BoundPredicate(ast::WhereBoundPredicate{ref bounded_ty,
                                                                               ref bounds,
                                                                               ..}) => {
-                    try!(self.print_ident(ident));
+                    try!(self.print_type(&**bounded_ty));
                     try!(self.print_bounds(":", bounds.as_slice()));
                 }
                 &ast::WherePredicate::EqPredicate(ast::WhereEqPredicate{ref path, ref ty, ..}) => {

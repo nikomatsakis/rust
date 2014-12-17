@@ -429,7 +429,7 @@ pub enum WherePredicate {
 pub struct WhereBoundPredicate {
     pub id: NodeId,
     pub span: Span,
-    pub ident: Ident,
+    pub bounded_ty: P<Ty>,
     pub bounds: OwnedSlice<TyParamBound>,
 }
 

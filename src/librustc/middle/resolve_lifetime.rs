@@ -214,11 +214,10 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
         }
         for predicate in generics.where_clause.predicates.iter() {
             match predicate {
-                &ast::WherePredicate::BoundPredicate(ast::WhereBoundPredicate{ ident,
+                &ast::WherePredicate::BoundPredicate(ast::WhereBoundPredicate{ ref bounded_ty,
                                                                                ref bounds,
-                                                                               span,
                                                                                .. }) => {
-                    self.visit_ident(span, ident);
+                    self.visit_ty(&**bounded_ty);
                     visit::walk_ty_param_bounds_helper(self, bounds);
                 }
                 &ast::WherePredicate::EqPredicate(ast::WhereEqPredicate{ id,
