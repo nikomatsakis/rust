@@ -700,6 +700,7 @@ impl Clean<WherePredicate> for ast::WherePredicate {
                     bounds: wbp.bounds.clean(cx)
                 }
             }
+            ast::WherePredicate::RegionPredicate(..) |
             ast::WherePredicate::EqPredicate(_) => {
                 unimplemented!();
             }

@@ -1366,8 +1366,7 @@ pub fn trait_def_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                 self_param_ty,
                                 bounds.as_slice(),
                                 unbound,
-                                it.span,
-                                &generics.where_clause);
+                                it.span);
 
     let substs = mk_item_substs(ccx, &ty_generics);
     let trait_def = Rc::new(ty::TraitDef {
@@ -1621,7 +1620,6 @@ fn ty_generics_for_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                         subst::AssocSpace,
                         &associated_type.ty_param,
                         generics.types.len(subst::AssocSpace),
-                        &ast_generics.where_clause,
                         Some(local_def(trait_id)));
                 ccx.tcx.ty_param_defs.borrow_mut().insert(associated_type.ty_param.id,
                                                           def.clone());
@@ -1794,7 +1792,6 @@ fn ty_generics<'tcx,AC>(this: &AC,
                                                    space,
                                                    param,
                                                    i,
-                                                   where_clause,
                                                    None);
         debug!("ty_generics: def for type param: {}, {}",
                def.repr(this.tcx()),
@@ -1823,12 +1820,6 @@ fn ty_generics<'tcx,AC>(this: &AC,
         match predicate {
             &ast::WherePredicate::BoundPredicate(ref bound_pred) => {
                 let ty = ast_ty_to_ty(this, &ExplicitRscope, &*bound_pred.bounded_ty);
-
-                match &ty.sty {
-                    // The ty_param case was already handled prior.
-                    &ty::sty::ty_param(_) => continue,
-                    _ => {}
-                }
 
                 for bound in bound_pred.bounds.iter() {
                     match bound {
@@ -1976,7 +1967,6 @@ fn get_or_create_type_parameter_def<'tcx,AC>(this: &AC,
                                              space: subst::ParamSpace,
                                              param: &ast::TyParam,
                                              index: uint,
-                                             where_clause: &ast::WhereClause,
                                              associated_with: Option<ast::DefId>)
                                              -> ty::TypeParameterDef<'tcx>
     where AC: AstConv<'tcx>
@@ -1992,8 +1982,7 @@ fn get_or_create_type_parameter_def<'tcx,AC>(this: &AC,
                                 param_ty,
                                 param.bounds.as_slice(),
                                 &param.unbound,
-                                param.span,
-                                where_clause);
+                                param.span);
     let default = match param.default {
         None => None,
         Some(ref path) => {
@@ -2038,15 +2027,13 @@ fn compute_bounds<'tcx,AC>(this: &AC,
                            param_ty: ty::ParamTy,
                            ast_bounds: &[ast::TyParamBound],
                            unbound: &Option<ast::TraitRef>,
-                           span: Span,
-                           where_clause: &ast::WhereClause)
+                           span: Span)
                            -> ty::ParamBounds<'tcx>
                            where AC: AstConv<'tcx> {
     let mut param_bounds = conv_param_bounds(this,
                                              span,
                                              param_ty,
-                                             ast_bounds,
-                                             where_clause);
+                                             ast_bounds);
 
 
     add_unsized_bound(this,
@@ -2092,16 +2079,14 @@ fn check_bounds_compatible<'tcx>(tcx: &ty::ctxt<'tcx>,
 fn conv_param_bounds<'tcx,AC>(this: &AC,
                               span: Span,
                               param_ty: ty::ParamTy,
-                              ast_bounds: &[ast::TyParamBound],
-                              where_clause: &ast::WhereClause)
+                              ast_bounds: &[ast::TyParamBound])
                               -> ty::ParamBounds<'tcx>
-                              where AC: AstConv<'tcx> {
-    let all_bounds =
-        merge_param_bounds(this, param_ty, ast_bounds, where_clause);
+                              where AC: AstConv<'tcx>
+{
     let astconv::PartitionedBounds { builtin_bounds,
                                      trait_bounds,
                                      region_bounds } =
-        astconv::partition_bounds(this.tcx(), span, all_bounds.as_slice());
+        astconv::partition_bounds(this.tcx(), span, ast_bounds);
     let trait_bounds: Vec<Rc<ty::TraitRef>> =
         trait_bounds.into_iter()
         .map(|bound| {
@@ -2121,44 +2106,6 @@ fn conv_param_bounds<'tcx,AC>(this: &AC,
         builtin_bounds: builtin_bounds,
         trait_bounds: trait_bounds,
     }
-}
-
-/// Merges the bounds declared on a type parameter with those found from where clauses into a
-/// single list.
-fn merge_param_bounds<'a, 'tcx, AC>(this: &AC,
-                          param_ty: ty::ParamTy,
-                          ast_bounds: &'a [ast::TyParamBound],
-                          where_clause: &'a ast::WhereClause)
-                          -> Vec<&'a ast::TyParamBound>
-                          where AC: AstConv<'tcx> {
-    let mut result = Vec::new();
-
-    for ast_bound in ast_bounds.iter() {
-        result.push(ast_bound);
-    }
-
-    for predicate in where_clause.predicates.iter() {
-        match predicate {
-            &ast::WherePredicate::BoundPredicate(ref bound_pred) => {
-                let bound_param_ty = match ast_ty_to_ty(this, &ExplicitRscope, &*bound_pred.bounded_ty).sty {
-                    ty::sty::ty_param(param_ty) => param_ty,
-                    _ => continue
-                };
-
-                if param_ty.def_id != bound_param_ty.def_id {
-                    continue
-                }
-
-                for bound in bound_pred.bounds.iter() {
-                    result.push(bound);
-                }
-            }
-            &ast::WherePredicate::RegionPredicate(_) => {},
-            &ast::WherePredicate::EqPredicate(_) => panic!("not implemented")
-        }
-    }
-
-    result
 }
 
 pub fn ty_of_foreign_fn_decl<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
