@@ -18,7 +18,7 @@ use std::rc::Rc;
 use syntax::ast;
 use util::common::ErrorReported;
 use util::ppaux::Repr;
-use util::nodemap::NodeMap;
+use util::nodemap::{FnvHashSet, NodeMap};
 
 use super::CodeAmbiguity;
 use super::CodeSelectionError;
@@ -83,6 +83,8 @@ pub struct FulfillmentContext<'tcx> {
     // obligations (otherwise, it's easy to fail to walk to a
     // particular node-id).
     region_obligations: NodeMap<Vec<RegionObligation<'tcx>>>,
+
+    types_that_must_be_sized: FnvHashSet<Ty<'tcx>>,
 }
 
 pub struct RegionObligation<'tcx> {
@@ -98,6 +100,7 @@ impl<'tcx> FulfillmentContext<'tcx> {
             predicates: Vec::new(),
             attempted_mark: 0,
             region_obligations: NodeMap::new(),
+            types_that_must_be_sized: FnvHashSet::new(),
         }
     }
 
@@ -141,15 +144,31 @@ impl<'tcx> FulfillmentContext<'tcx> {
 
     pub fn register_predicate<'a>(&mut self,
                                   tcx: &ty::ctxt<'tcx>,
-                                  predicate: PredicateObligation<'tcx>)
+                                  obligation: PredicateObligation<'tcx>)
     {
-        if !self.duplicate_set.insert(predicate.trait_ref.clone()) {
-            debug!("register_predicate({}) -- already seen, skip", predicate.repr(tcx));
+        if !self.duplicate_set.insert(obligation.trait_ref.clone()) {
+            debug!("register_predicate({}) -- already seen, skip", obligation.repr(tcx));
             return;
         }
 
-        debug!("register_predicate({})", predicate.repr(tcx));
-        self.predicates.push(predicate);
+        match obligation.trait_ref {
+            ty::Predicate::Trait(ref data) => {
+                match tcx.lang_items.to_builtin_kind(data.def_id) {
+                    Some(ty::BoundSized) => {
+                        self.types_that_must_be_sized.insert(data.self_ty());
+                    }
+                    _ => { }
+                }
+            }
+            _ => { }
+        }
+
+        debug!("register_predicate({})", obligation.repr(tcx));
+        self.predicates.push(obligation);
+    }
+
+    pub fn types_that_must_be_sized(&self) -> &FnvHashSet<Ty<'tcx>> {
+        &self.types_that_must_be_sized
     }
 
     pub fn region_obligations(&self,

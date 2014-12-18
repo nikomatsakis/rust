@@ -130,6 +130,7 @@ pub mod method;
 pub mod wf;
 mod closure;
 mod callee;
+mod stats;
 
 /// Fields that are part of a `FnCtxt` which are inherited by
 /// closures defined within the function.  For example:
@@ -374,6 +375,7 @@ fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                decl, id, body, &inh);
 
             vtable::select_all_fcx_obligations_or_error(&fcx);
+            stats::gather(&fcx, decl, body, id, fn_ty);
             regionck::regionck_fn(&fcx, id, decl, body);
             fcx.default_diverging_type_variables_to_nil();
             writeback::resolve_type_vars_in_fn(&fcx, decl, body);
