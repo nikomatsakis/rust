@@ -4172,18 +4172,18 @@ impl<'a> Parser<'a> {
 
                         parsed_something = true;
                     } else if self.eat(&token::Eq) {
-                        let ty = self.parse_ty();
+                        // let ty = self.parse_ty();
                         let hi = self.span.hi;
                         let span = mk_sp(lo, hi);
-                        generics.where_clause.predicates.push(
-                            ast::WherePredicate::EqPredicate(ast::WhereEqPredicate {
-                                id: ast::DUMMY_NODE_ID,
-                                span: span,
-                                path: panic!("NYI"), //bounded_ty,
-                                ty: ty,
-                        }));
-                        parsed_something = true;
-                        // FIXME(#18433)
+                        // generics.where_clause.predicates.push(
+                        //     ast::WherePredicate::EqPredicate(ast::WhereEqPredicate {
+                        //         id: ast::DUMMY_NODE_ID,
+                        //         span: span,
+                        //         path: panic!("NYI"), //bounded_ty,
+                        //         ty: ty,
+                        // }));
+                        // parsed_something = true;
+                        // // FIXME(#18433)
                         self.span_err(span, "equality constraints are not yet supported in where clauses");
                     } else {
                         let last_span = self.last_span;
