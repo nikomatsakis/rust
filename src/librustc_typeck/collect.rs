@@ -1818,6 +1818,45 @@ fn ty_generics<'tcx,AC>(this: &AC,
     // into the predicates list. This is currently kind of non-DRY.
     create_predicates(this.tcx(), &mut result, space);
 
+    // Add the bounds not associated with a type parameter
+    for predicate in where_clause.predicates.iter() {
+        match predicate {
+            &ast::WherePredicate::BoundPredicate(ref bound_pred) => {
+                let ty = ast_ty_to_ty(this, &ExplicitRscope, &*bound_pred.bounded_ty);
+
+                match &ty.sty {
+                    // The ty_param case was already handled prior.
+                    &ty::sty::ty_param(_) => continue,
+                    _ => {}
+                }
+
+                for bound in bound_pred.bounds.iter() {
+                    match bound {
+                        &ast::TyParamBound::TraitTyParamBound(ref poly_trait_ref) => {
+                            // For Niko: Assume PolyTraitRef is for HRTB do we need to translate that into the ty::Predicate?
+                            let trait_ref = astconv::instantiate_trait_ref(
+                                this,
+                                &ExplicitRscope,
+                                &poly_trait_ref.trait_ref, // for now thread the trait_ref
+                                Some(ty),
+                                AllowEqConstraints::Allow
+                            );
+
+                            result.predicates.push(space, ty::Predicate::Trait(trait_ref));
+                        }
+
+                        &ast::TyParamBound::RegionTyParamBound(ref lifetime) => {
+                            let region = ast_region_to_region(this.tcx(), lifetime);
+                            result.predicates.push(space, ty::Predicate::TypeOutlives(ty, region))
+                        }
+                    }
+                }
+            }
+
+            _ => panic!("NYI")
+        }
+    }
+
     return result;
 
     fn create_type_parameters_for_associated_types<'tcx, AC>(

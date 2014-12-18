@@ -687,7 +687,7 @@ impl Clean<Option<Lifetime>> for ty::Region {
 
 #[deriving(Clone, Encodable, Decodable, PartialEq)]
 pub struct WherePredicate {
-    pub name: String,
+    pub ty: Type,
     pub bounds: Vec<TyParamBound>
 }
 
@@ -696,7 +696,7 @@ impl Clean<WherePredicate> for ast::WherePredicate {
         match *self {
             ast::WherePredicate::BoundPredicate(ref wbp) => {
                 WherePredicate {
-                    name: wbp.ident.clean(cx),
+                    ty: wbp.bounded_ty.clean(cx),
                     bounds: wbp.bounds.clean(cx)
                 }
             }
