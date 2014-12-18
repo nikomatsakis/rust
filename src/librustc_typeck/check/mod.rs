@@ -130,7 +130,7 @@ pub mod method;
 pub mod wf;
 mod closure;
 mod callee;
-mod stats;
+pub mod stats;
 
 /// Fields that are part of a `FnCtxt` which are inherited by
 /// closures defined within the function.  For example:

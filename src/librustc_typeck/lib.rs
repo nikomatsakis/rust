@@ -97,12 +97,14 @@ use middle::subst::VecPerParamSpace;
 use middle::ty::{mod, Ty};
 use session::config;
 use util::common::time;
+use util::nodemap::DefIdMap;
 use util::ppaux::Repr;
 use util::ppaux;
 
 use syntax::codemap::Span;
 use syntax::print::pprust::*;
 use syntax::{ast, ast_map, abi};
+use std::cell::RefCell;
 
 #[cfg(stage0)]
 mod diagnostics;
@@ -122,7 +124,9 @@ struct TypeAndSubsts<'tcx> {
 struct CrateCtxt<'a, 'tcx: 'a> {
     // A mapping from method call sites to traits that have that method.
     trait_map: resolve::TraitMap,
-    tcx: &'a ty::ctxt<'tcx>
+    tcx: &'a ty::ctxt<'tcx>,
+
+    parameter_stats_map: RefCell<DefIdMap<check::stats::ParameterStats>>,
 }
 
 // Functions that write types into the node type table
@@ -320,7 +324,8 @@ pub fn check_crate(tcx: &ty::ctxt, trait_map: resolve::TraitMap) {
     let time_passes = tcx.sess.time_passes();
     let ccx = CrateCtxt {
         trait_map: trait_map,
-        tcx: tcx
+        tcx: tcx,
+        parameter_stats_map: RefCell::new(DefIdMap::new()),
     };
 
     time(time_passes, "type collecting", (), |_|
@@ -338,6 +343,8 @@ pub fn check_crate(tcx: &ty::ctxt, trait_map: resolve::TraitMap) {
 
     time(time_passes, "type checking", (), |_|
         check::check_item_types(&ccx));
+
+    check::stats::global(&ccx);
 
     check_for_entry_fn(&ccx);
     tcx.sess.abort_if_errors();
