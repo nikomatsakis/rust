@@ -1853,6 +1853,12 @@ fn ty_generics<'tcx,AC>(this: &AC,
                 }
             }
 
+            &ast::WherePredicate::RegionPredicate(ref region_pred) => {
+                let r1 = ast_region_to_region(this.tcx(), &region_pred.lifetime);
+                let r2 = ast_region_to_region(this.tcx(), &region_pred.bound);
+                result.predicates.push(space, ty::Predicate::RegionOutlives(r1, r2));
+            }
+
             _ => panic!("NYI")
         }
     }
@@ -2147,6 +2153,7 @@ fn merge_param_bounds<'a, 'tcx, AC>(this: &AC,
                     result.push(bound);
                 }
             }
+            &ast::WherePredicate::RegionPredicate(_) => {},
             &ast::WherePredicate::EqPredicate(_) => panic!("not implemented")
         }
     }

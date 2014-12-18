@@ -4142,11 +4142,26 @@ impl<'a> Parser<'a> {
                 }
 
                 token::Lifetime(..) => {
-                    // let lifetime =
-                    //     self.parse_lifetime();
-                    // let bounds =
-                    //     self.parse_lifetimes(token::BinOp(token::Plus));
-                    panic!("NYI")
+                    let bounded_lifetime =
+                        self.parse_lifetime();
+
+                    self.eat(&token::Colon);
+
+                    let bounding_lifetime =
+                        self.parse_lifetime();
+
+                    let hi = self.span.hi;
+                    let span = mk_sp(lo, hi);
+
+                    generics.where_clause.predicates.push(ast::WherePredicate::RegionPredicate(
+                        ast::WhereRegionPredicate {
+                            span: span,
+                            lifetime: bounded_lifetime,
+                            bound: bounding_lifetime
+                        }
+                    ));
+
+                    parsed_something = true;
                 }
 
                 _ => {

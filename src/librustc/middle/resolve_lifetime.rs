@@ -220,6 +220,13 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
                     self.visit_ty(&**bounded_ty);
                     visit::walk_ty_param_bounds_helper(self, bounds);
                 }
+                &ast::WherePredicate::RegionPredicate(ast::WhereRegionPredicate{ref lifetime,
+                                                                                ref bound,
+                                                                                .. }) => {
+
+                    self.visit_lifetime_ref(lifetime);
+                    self.visit_lifetime_ref(bound);
+                }
                 &ast::WherePredicate::EqPredicate(ast::WhereEqPredicate{ id,
                                                                          ref path,
                                                                          ref ty,
@@ -554,6 +561,10 @@ fn early_bound_lifetime_names(generics: &ast::Generics) -> Vec<ast::Name> {
             match predicate {
                 &ast::WherePredicate::BoundPredicate(ast::WhereBoundPredicate{ref bounds, ..}) => {
                     visit::walk_ty_param_bounds_helper(&mut collector, bounds);
+                }
+                &ast::WherePredicate::RegionPredicate(ast::WhereRegionPredicate{ref lifetime, ref bound, ..}) => {
+                    collector.visit_lifetime_ref(lifetime);
+                    collector.visit_lifetime_ref(bound);
                 }
                 &ast::WherePredicate::EqPredicate(_) => unimplemented!()
             }

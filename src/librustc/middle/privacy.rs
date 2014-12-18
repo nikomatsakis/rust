@@ -1459,6 +1459,8 @@ impl<'a, 'tcx, 'v> Visitor<'v> for VisiblePrivateTypesVisitor<'a, 'tcx> {
                         self.check_ty_param_bound(bound_pred.span, bound)
                     }
                 }
+                // ? for Niko: Anything to do here?
+                &ast::WherePredicate::RegionPredicate(_) => {}
                 &ast::WherePredicate::EqPredicate(ref eq_pred) => {
                     self.visit_ty(&*eq_pred.ty);
                 }

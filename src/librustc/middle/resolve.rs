@@ -4611,6 +4611,7 @@ impl<'a> Resolver<'a> {
                                                           TraitBoundingTypeParameter);
                     }
                 }
+                &ast::WherePredicate::RegionPredicate(_) => {}
                 &ast::WherePredicate::EqPredicate(ref eq_pred) => {
                     match self.resolve_path(eq_pred.id, &eq_pred.path, TypeNS, true) {
                         Some((def @ DefTyParam(..), last_private)) => {
