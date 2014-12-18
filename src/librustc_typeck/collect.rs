@@ -1336,13 +1336,13 @@ pub fn trait_def_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         return def.clone();
     }
 
-    let (unsafety, generics, unbound, bounds, items) = match it.node {
+    let (unsafety, generics, bounds, items) = match it.node {
         ast::ItemTrait(unsafety,
                        ref generics,
-                       ref unbound,
+                       ref _unbound,
                        ref supertraits,
                        ref items) => {
-            (unsafety, generics, unbound, supertraits, items.as_slice())
+            (unsafety, generics, supertraits, items.as_slice())
         }
         ref s => {
             tcx.sess.span_bug(
@@ -1365,7 +1365,7 @@ pub fn trait_def_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                 token::SELF_KEYWORD_NAME,
                                 self_param_ty,
                                 bounds.as_slice(),
-                                unbound,
+                                None, //unbound,
                                 it.span,
                                 &generics.where_clause);
 
@@ -1946,7 +1946,7 @@ fn get_or_create_type_parameter_def<'tcx,AC>(this: &AC,
                                 param.ident.name,
                                 param_ty,
                                 param.bounds.as_slice(),
-                                &param.unbound,
+                                Some(&param.unbound),
                                 param.span,
                                 where_clause);
     let default = match param.default {
@@ -1992,28 +1992,30 @@ fn compute_bounds<'tcx,AC>(this: &AC,
                            name_of_bounded_thing: ast::Name,
                            param_ty: ty::ParamTy,
                            ast_bounds: &[ast::TyParamBound],
-                           unbound: &Option<ast::TraitRef>,
+                           unbound: Option<&Option<ast::TraitRef>>,
                            span: Span,
                            where_clause: &ast::WhereClause)
                            -> ty::ParamBounds<'tcx>
-                           where AC: AstConv<'tcx> {
+                           where AC: AstConv<'tcx>
+{
     let mut param_bounds = conv_param_bounds(this,
                                              span,
                                              param_ty,
                                              ast_bounds,
                                              where_clause);
 
+    if let Some(unbound) = unbound {
+        add_unsized_bound(this,
+                          unbound,
+                          &mut param_bounds.builtin_bounds,
+                          "type parameter",
+                          span);
 
-    add_unsized_bound(this,
-                      unbound,
-                      &mut param_bounds.builtin_bounds,
-                      "type parameter",
-                      span);
-
-    check_bounds_compatible(this.tcx(),
-                            name_of_bounded_thing,
-                            &param_bounds,
-                            span);
+        check_bounds_compatible(this.tcx(),
+                                name_of_bounded_thing,
+                                &param_bounds,
+                                span);
+    }
 
     param_bounds.trait_bounds.sort_by(|a,b| a.def_id.cmp(&b.def_id));
 
