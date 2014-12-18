@@ -249,7 +249,7 @@ impl AsciiCast<Ascii> for char {
 
 /// Trait for copyless casting to an ascii vector.
 #[experimental = "may be replaced by generic conversion traits"]
-pub trait OwnedAsciiCast {
+pub trait OwnedAsciiCast : Sized {
     /// Check if convertible to ascii
     fn is_ascii(&self) -> bool;
 

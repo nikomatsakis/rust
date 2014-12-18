@@ -94,7 +94,7 @@ pub trait Extend<A> {
 /// else.
 #[lang="iterator"]
 #[unstable = "just split up for object safety"]
-pub trait Iterator<A> {
+pub trait Iterator<A> : ::kinds::Sized {
     /// Advance the iterator and return the next value. Return `None` when the end is reached.
     fn next(&mut self) -> Option<A>;
 

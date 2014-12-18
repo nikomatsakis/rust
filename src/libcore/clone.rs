@@ -24,7 +24,7 @@
 use kinds::Sized;
 
 /// A common trait for cloning an object.
-pub trait Clone {
+pub trait Clone : Sized {
     /// Returns a copy of the value.
     fn clone(&self) -> Self;
 
