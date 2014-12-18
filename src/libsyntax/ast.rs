@@ -427,7 +427,6 @@ pub enum WherePredicate {
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct WhereBoundPredicate {
-    pub id: NodeId,
     pub span: Span,
     pub bounded_ty: P<Ty>,
     pub bounds: OwnedSlice<TyParamBound>,

@@ -4124,7 +4124,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses an optional `where` clause and places it in `generics`.
-    /// 
+    ///
     /// ```
     /// where T : Trait<U, V> + 'b, 'a : 'b
     /// ```
@@ -4140,19 +4140,19 @@ impl<'a> Parser<'a> {
                 token::OpenDelim(token::Brace) => {
                     break
                 }
-                
+
                 token::Lifetime(..) => {
-                    let lifetime =
-                        self.parse_lifetime();
-                    let bounds =
-                        self.parse_lifetimes(token::BinOp(token::Plus));
+                    // let lifetime =
+                    //     self.parse_lifetime();
+                    // let bounds =
+                    //     self.parse_lifetimes(token::BinOp(token::Plus));
                     panic!("NYI")
                 }
 
                 _ => {
                     let bounded_ty = self.parse_ty();
-                    
-                    if self.eat(&token::Colon) { 
+
+                    if self.eat(&token::Colon) {
                         let bounds = self.parse_ty_param_bounds();
                         let hi = self.span.hi;
                         let span = mk_sp(lo, hi);
@@ -4165,12 +4165,11 @@ impl<'a> Parser<'a> {
 
                         generics.where_clause.predicates.push(ast::WherePredicate::BoundPredicate(
                                 ast::WhereBoundPredicate {
-                                    id: ast::DUMMY_NODE_ID,
                                     span: span,
                                     bounded_ty: bounded_ty,
                                     bounds: bounds,
                         }));
-                        
+
                         parsed_something = true;
                     } else if self.eat(&token::Eq) {
                         let ty = self.parse_ty();
@@ -4185,7 +4184,7 @@ impl<'a> Parser<'a> {
                         }));
                         parsed_something = true;
                         // FIXME(#18433)
-                        self.span_err(span, "equality constraints are not yet supported in where clauses");                    
+                        self.span_err(span, "equality constraints are not yet supported in where clauses");
                     } else {
                         let last_span = self.last_span;
                         self.span_err(last_span,
@@ -4198,7 +4197,7 @@ impl<'a> Parser<'a> {
                 break
             }
         }
-            
+
         if !parsed_something {
             let last_span = self.last_span;
             self.span_err(last_span,

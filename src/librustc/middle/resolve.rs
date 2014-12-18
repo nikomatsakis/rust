@@ -4604,9 +4604,10 @@ impl<'a> Resolver<'a> {
             match predicate {
                 &ast::WherePredicate::BoundPredicate(ref bound_pred) => {
                     self.resolve_type(&*bound_pred.bounded_ty);
-                    
+
                     for bound in bound_pred.bounds.iter() {
-                        self.resolve_type_parameter_bound(bound_pred.id, bound,
+                        // What id do we pass here?
+                        self.resolve_type_parameter_bound(bound_pred.bounded_ty.id, bound,
                                                           TraitBoundingTypeParameter);
                     }
                 }

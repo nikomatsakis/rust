@@ -2052,7 +2052,7 @@ fn conv_param_bounds<'tcx,AC>(this: &AC,
                               -> ty::ParamBounds<'tcx>
                               where AC: AstConv<'tcx> {
     let all_bounds =
-        merge_param_bounds(this.tcx(), param_ty, ast_bounds, where_clause);
+        merge_param_bounds(this, param_ty, ast_bounds, where_clause);
     let astconv::PartitionedBounds { builtin_bounds,
                                      trait_bounds,
                                      region_bounds } =
@@ -2080,11 +2080,12 @@ fn conv_param_bounds<'tcx,AC>(this: &AC,
 
 /// Merges the bounds declared on a type parameter with those found from where clauses into a
 /// single list.
-fn merge_param_bounds<'a>(tcx: &ty::ctxt,
+fn merge_param_bounds<'a, 'tcx, AC>(this: &AC,
                           param_ty: ty::ParamTy,
                           ast_bounds: &'a [ast::TyParamBound],
                           where_clause: &'a ast::WhereClause)
-                          -> Vec<&'a ast::TyParamBound> {
+                          -> Vec<&'a ast::TyParamBound>
+                          where AC: AstConv<'tcx> {
     let mut result = Vec::new();
 
     for ast_bound in ast_bounds.iter() {
@@ -2094,16 +2095,15 @@ fn merge_param_bounds<'a>(tcx: &ty::ctxt,
     for predicate in where_clause.predicates.iter() {
         match predicate {
             &ast::WherePredicate::BoundPredicate(ref bound_pred) => {
-                let predicate_param_id =
-                    tcx.def_map
-                       .borrow()
-                       .get(&bound_pred.id)
-                       .expect("merge_param_bounds(): resolve didn't resolve the \
-                                type parameter identifier in a `where` clause")
-                       .def_id();
-                if param_ty.def_id != predicate_param_id {
+                let bound_param_ty = match ast_ty_to_ty(this, &ExplicitRscope, &*bound_pred.bounded_ty).sty {
+                    ty::sty::ty_param(param_ty) => param_ty,
+                    _ => continue
+                };
+
+                if param_ty.def_id != bound_param_ty.def_id {
                     continue
                 }
+
                 for bound in bound_pred.bounds.iter() {
                     result.push(bound);
                 }
