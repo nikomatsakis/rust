@@ -10,7 +10,7 @@
 
 // Test that bounds are sized-compatible.
 
-trait T {}
+trait T : Sized {}
 fn f<Sized? Y: T>() {
 //~^ERROR incompatible bounds on type parameter `Y`, bound `T` does not allow unsized type
 }
