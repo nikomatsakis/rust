@@ -436,7 +436,7 @@ trait UpdateIoError {
     fn update_desc(self, desc: &'static str) -> Self;
 }
 
-impl<T> UpdateIoError<T> for IoResult<T> {
+impl<T> UpdateIoError for IoResult<T> {
     fn update_err<D>(self, desc: &'static str, detail: D) -> IoResult<T> where
         D: FnOnce(&IoError) -> String,
     {

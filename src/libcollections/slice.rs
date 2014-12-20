@@ -588,7 +588,7 @@ fn merge_sort<T, F>(v: &mut [T], mut compare: F) where F: FnMut(&T, &T) -> Order
 
 /// Allocating extension methods for slices on Ord values.
 #[experimental = "likely to merge with other traits"]
-pub trait OrdSliceExt for Sized? {
+pub trait OrdSliceExt<T> for Sized? {
     /// Sorts the slice, in place.
     ///
     /// This is equivalent to `self.sort_by(|a, b| a.cmp(b))`.

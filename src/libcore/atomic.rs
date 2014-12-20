@@ -16,6 +16,7 @@ pub use self::Ordering::*;
 
 use intrinsics;
 use cell::UnsafeCell;
+use kinds::marker;
 
 /// A boolean type which can be safely shared between threads.
 #[stable]

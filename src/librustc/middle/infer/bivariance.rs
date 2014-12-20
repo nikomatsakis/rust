@@ -16,7 +16,7 @@ use middle::infer::{cres};
 use middle::infer::type_variable::{BiTo};
 use util::ppaux::{Repr};
 
-use syntax::ast::{Onceness, FnStyle};
+use syntax::ast::{Onceness, Unsafety};
 
 pub struct Bivariance<'f, 'tcx: 'f> {
     fields: CombineFields<'f, 'tcx>
@@ -56,7 +56,7 @@ impl<'f, 'tcx> Combine<'tcx> for Bivariance<'f, 'tcx> {
         Ok(ty::mt { mutbl: a.mutbl, ty: t })
     }
 
-    fn fn_styles(&self, a: FnStyle, _: FnStyle) -> cres<'tcx, FnStyle> {
+    fn unsafeties(&self, a: Unsafety, _: Unsafety) -> cres<'tcx, Unsafety> {
         // unsafe fn <: fn normally, so ignore mismatches for bivariance
         Ok(a)
     }
@@ -105,15 +105,11 @@ impl<'f, 'tcx> Combine<'tcx> for Bivariance<'f, 'tcx> {
         }
     }
 
-    fn fn_sigs(&self, a: &ty::FnSig<'tcx>, b: &ty::FnSig<'tcx>)
-               -> cres<'tcx, ty::FnSig<'tcx>> {
-        try!(self.sub().fn_sigs(a, b));
-        self.sub().fn_sigs(b, a)
-    }
-
-    fn trait_refs(&self, a: &ty::TraitRef<'tcx>, b: &ty::TraitRef<'tcx>)
-                  -> cres<'tcx, ty::TraitRef<'tcx>> {
-        try!(self.sub().trait_refs(a, b));
-        self.sub().trait_refs(b, a)
+    fn binders<T>(&self, a: &ty::Binder<T>, b: &ty::Binder<T>) -> cres<'tcx, ty::Binder<T>>
+        where T : Combineable<'tcx>
+    {
+        // TODO this is equating, which is... way stronger than necessary!
+        try!(self.sub().binders(a, b));
+        self.sub().binders(b, a)
     }
 }
