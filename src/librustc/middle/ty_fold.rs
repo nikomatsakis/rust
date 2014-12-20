@@ -93,8 +93,8 @@ pub trait TypeFolder<'tcx> {
     }
 
     fn fold_fn_sig(&mut self,
-                sig: &ty::FnSig<'tcx>)
-                -> ty::FnSig<'tcx> {
+                   sig: &ty::FnSig<'tcx>)
+                   -> ty::FnSig<'tcx> {
         super_fold_fn_sig(self, sig)
     }
 
@@ -183,7 +183,7 @@ impl<'tcx, T: TypeFoldable<'tcx>> TypeFoldable<'tcx> for Vec<T> {
 impl<'tcx, T:TypeFoldable<'tcx>> TypeFoldable<'tcx> for ty::Binder<T> {
     fn fold_with<F: TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::Binder<T> {
         folder.enter_region_binder();
-        let result = ty::bind(self.value.fold_with(folder));
+        let result = ty::Binder(self.0.fold_with(folder));
         folder.exit_region_binder();
         result
     }
@@ -409,15 +409,12 @@ impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
         match *self {
             ty::Predicate::Trait(ref a) =>
                 ty::Predicate::Trait(a.fold_with(folder)),
-            ty::Predicate::Equate(ref a, ref b) =>
-                ty::Predicate::Equate(a.fold_with(folder),
-                                        b.fold_with(folder)),
-            ty::Predicate::RegionOutlives(ref a, ref b) =>
-                ty::Predicate::RegionOutlives(a.fold_with(folder),
-                                                b.fold_with(folder)),
-            ty::Predicate::TypeOutlives(ref a, ref b) =>
-                ty::Predicate::TypeOutlives(a.fold_with(folder),
-                                              b.fold_with(folder)),
+            ty::Predicate::Equate(ref binder) =>
+                ty::Predicate::Equate(binder.fold_with(folder)),
+            ty::Predicate::RegionOutlives(ref binder) =>
+                ty::Predicate::RegionOutlives(binder.fold_with(folder)),
+            ty::Predicate::TypeOutlives(ref binder) =>
+                ty::Predicate::TypeOutlives(binder.fold_with(folder)),
         }
     }
 }
@@ -501,6 +498,23 @@ impl<'tcx> TypeFoldable<'tcx> for traits::VtableParamData<'tcx> {
     }
 }
 
+impl<'tcx> TypeFoldable<'tcx> for ty::EquatePredicate<'tcx> {
+    fn fold_with<F:TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::EquatePredicate<'tcx> {
+        ty::EquatePredicate(self.0.fold_with(folder),
+                            self.1.fold_with(folder))
+    }
+}
+
+impl<'tcx,T,U> TypeFoldable<'tcx> for ty::OutlivesPredicate<T,U>
+    where T : TypeFoldable<'tcx>,
+          U : TypeFoldable<'tcx>,
+{
+    fn fold_with<F:TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::OutlivesPredicate<T,U> {
+        ty::OutlivesPredicate(self.0.fold_with(folder),
+                              self.1.fold_with(folder))
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////
 // "super" routines: these are the default implementations for TypeFolder.
 //
@@ -533,16 +547,6 @@ pub fn super_fold_fn_sig<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
                                                     sig: &ty::FnSig<'tcx>)
                                                     -> ty::FnSig<'tcx>
 {
-    this.enter_region_binder();
-    let result = super_fold_fn_sig_contents(this, sig);
-    this.exit_region_binder();
-    result
-}
-
-pub fn super_fold_fn_sig_contents<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
-                                                             sig: &ty::FnSig<'tcx>)
-                                                             -> ty::FnSig<'tcx>
-{
     ty::FnSig { inputs: sig.inputs.fold_with(this),
                 output: sig.output.fold_with(this),
                 variadic: sig.variadic }
@@ -563,7 +567,7 @@ pub fn super_fold_bare_fn_ty<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
 {
     ty::BareFnTy { sig: fty.sig.fold_with(this),
                    abi: fty.abi,
-                   fn_style: fty.fn_style }
+                   unsafety: fty.unsafety }
 }
 
 pub fn super_fold_closure_ty<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
@@ -573,7 +577,7 @@ pub fn super_fold_closure_ty<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
     ty::ClosureTy {
         store: fty.store.fold_with(this),
         sig: fty.sig.fold_with(this),
-        fn_style: fty.fn_style,
+        unsafety: fty.unsafety,
         onceness: fty.onceness,
         bounds: fty.bounds.fold_with(this),
         abi: fty.abi,
@@ -583,16 +587,6 @@ pub fn super_fold_closure_ty<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
 pub fn super_fold_trait_ref<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
                                                        t: &ty::TraitRef<'tcx>)
                                                        -> ty::TraitRef<'tcx>
-{
-    this.enter_region_binder();
-    let result = super_fold_trait_ref_contents(this, t);
-    this.exit_region_binder();
-    result
-}
-
-pub fn super_fold_trait_ref_contents<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
-                                                                t: &ty::TraitRef<'tcx>)
-                                                                -> ty::TraitRef<'tcx>
 {
     ty::TraitRef {
         def_id: t.def_id,
@@ -707,49 +701,17 @@ pub fn super_fold_item_substs<'tcx, T: TypeFolder<'tcx>>(this: &mut T,
 }
 
 ///////////////////////////////////////////////////////////////////////////
-// Higher-ranked things
-
-/// Designates a "binder" for late-bound regions.
-pub trait HigherRankedFoldable<'tcx>: Repr<'tcx> {
-    /// Folds the contents of `self`, ignoring the region binder created
-    /// by `self`.
-    fn fold_contents<F: TypeFolder<'tcx>>(&self, folder: &mut F) -> Self;
-}
-
-impl<'tcx> HigherRankedFoldable<'tcx> for ty::FnSig<'tcx> {
-    fn fold_contents<F: TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::FnSig<'tcx> {
-        super_fold_fn_sig_contents(folder, self)
-    }
-}
-
-impl<'tcx> HigherRankedFoldable<'tcx> for ty::TraitRef<'tcx> {
-    fn fold_contents<F: TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::TraitRef<'tcx> {
-        super_fold_trait_ref_contents(folder, self)
-    }
-}
-
-impl<'tcx, T:TypeFoldable<'tcx>+Repr<'tcx>> HigherRankedFoldable<'tcx> for ty::Binder<T> {
-    fn fold_contents<F: TypeFolder<'tcx>>(&self, folder: &mut F) -> ty::Binder<T> {
-        ty::bind(self.value.fold_with(folder))
-    }
-}
-
-impl<'tcx, T:HigherRankedFoldable<'tcx>> HigherRankedFoldable<'tcx> for Rc<T> {
-    fn fold_contents<F: TypeFolder<'tcx>>(&self, folder: &mut F) -> Rc<T> {
-        Rc::new((**self).fold_contents(folder))
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////
 // Some sample folders
 
-pub struct BottomUpFolder<'a, 'tcx: 'a> {
+pub struct BottomUpFolder<'a, 'tcx: 'a, F> where F: FnMut(Ty<'tcx>) -> Ty<'tcx> {
     pub tcx: &'a ty::ctxt<'tcx>,
-    pub fldop: |Ty<'tcx>|: 'a -> Ty<'tcx>,
+    pub fldop: F,
 }
 
-impl<'a, 'tcx> TypeFolder<'tcx> for BottomUpFolder<'a, 'tcx> {
-    fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> { self.tcx }
+impl<'a, 'tcx, F> TypeFolder<'tcx> for BottomUpFolder<'a, 'tcx, F> where
+    F: FnMut(Ty<'tcx>) -> Ty<'tcx>,
+{
+    fn tcx(&self) -> &ty::ctxt<'tcx> { self.tcx }
 
     fn fold_ty(&mut self, ty: Ty<'tcx>) -> Ty<'tcx> {
         let t1 = super_fold_ty(self, ty);
@@ -768,19 +730,17 @@ impl<'a, 'tcx> TypeFolder<'tcx> for BottomUpFolder<'a, 'tcx> {
 /// regions (aka "lifetimes") that are bound within a type are not
 /// visited by this folder; only regions that occur free will be
 /// visited by `fld_r`.
-///
-/// (The distinction between "free" and "bound" is represented by
-/// keeping track of each `FnSig` in the lexical context of the
-/// current position of the fold.)
+
 pub struct RegionFolder<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
     current_depth: uint,
-    fld_r: |ty::Region, uint|: 'a -> ty::Region,
+    fld_r: &'a mut (FnMut(ty::Region, uint) -> ty::Region + 'a),
 }
 
 impl<'a, 'tcx> RegionFolder<'a, 'tcx> {
-    pub fn new(tcx: &'a ty::ctxt<'tcx>, fld_r: |ty::Region, uint|: 'a -> ty::Region)
-               -> RegionFolder<'a, 'tcx> {
+    pub fn new<F>(tcx: &'a ty::ctxt<'tcx>, fld_r: &'a mut F) -> RegionFolder<'a, 'tcx>
+        where F : FnMut(ty::Region, uint) -> ty::Region
+    {
         RegionFolder {
             tcx: tcx,
             current_depth: 1,
@@ -789,8 +749,27 @@ impl<'a, 'tcx> RegionFolder<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> TypeFolder<'tcx> for RegionFolder<'a, 'tcx> {
-    fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> { self.tcx }
+pub fn collect_regions<'tcx,T>(tcx: &ty::ctxt<'tcx>, value: &T) -> Vec<ty::Region>
+    where T : TypeFoldable<'tcx>
+{
+    let mut vec = Vec::new();
+    fold_regions(tcx, value, |r, _| { vec.push(r); r });
+    vec
+}
+
+pub fn fold_regions<'tcx,T,F>(tcx: &ty::ctxt<'tcx>,
+                              value: &T,
+                              mut f: F)
+                              -> T
+    where F : FnMut(ty::Region, uint) -> ty::Region,
+          T : TypeFoldable<'tcx>,
+{
+    value.fold_with(&mut RegionFolder::new(tcx, &mut f))
+}
+
+impl<'a, 'tcx> TypeFolder<'tcx> for RegionFolder<'a, 'tcx>
+{
+    fn tcx(&self) -> &ty::ctxt<'tcx> { self.tcx }
 
     fn enter_region_binder(&mut self) {
         self.current_depth += 1;
@@ -810,7 +789,7 @@ impl<'a, 'tcx> TypeFolder<'tcx> for RegionFolder<'a, 'tcx> {
             _ => {
                 debug!("RegionFolder.fold_region({}) folding free region (current_depth={})",
                        r.repr(self.tcx()), self.current_depth);
-                (self.fld_r)(r, self.current_depth)
+                self.fld_r.call_mut((r, self.current_depth))
             }
         }
     }
@@ -831,7 +810,7 @@ pub fn erase_regions<'tcx, T: TypeFoldable<'tcx>>(tcx: &ty::ctxt<'tcx>, t: T) ->
 }
 
 impl<'a, 'tcx> TypeFolder<'tcx> for RegionEraser<'a, 'tcx> {
-    fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> { self.tcx }
+    fn tcx(&self) -> &ty::ctxt<'tcx> { self.tcx }
 
     fn fold_region(&mut self, r: ty::Region) -> ty::Region {
         match r {
@@ -866,7 +845,7 @@ pub fn shift_regions<'tcx, T:TypeFoldable<'tcx>+Repr<'tcx>>(tcx: &ty::ctxt<'tcx>
     debug!("shift_regions(value={}, amount={})",
            value.repr(tcx), amount);
 
-    value.fold_with(&mut RegionFolder::new(tcx, |region, _current_depth| {
+    value.fold_with(&mut RegionFolder::new(tcx, &mut |region, _current_depth| {
         shift_region(region, amount)
     }))
 }

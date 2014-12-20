@@ -39,7 +39,7 @@ pub struct SCTable {
     rename_memo: RefCell<HashMap<(SyntaxContext,Ident,Name),SyntaxContext>>,
 }
 
-#[deriving(PartialEq, Encodable, Decodable, Hash, Show)]
+#[deriving(Copy, PartialEq, Encodable, Decodable, Hash, Show)]
 pub enum SyntaxContext_ {
     EmptyCtxt,
     Mark (Mrk,SyntaxContext),
@@ -55,8 +55,6 @@ pub enum SyntaxContext_ {
     /// actually, IllegalCtxt may not be necessary.
     IllegalCtxt
 }
-
-impl Copy for SyntaxContext_ {}
 
 /// A list of ident->name renamings
 pub type RenameList = Vec<(Ident, Name)>;
@@ -105,9 +103,11 @@ pub fn apply_renames(renames: &RenameList, ctxt: SyntaxContext) -> SyntaxContext
 }
 
 /// Fetch the SCTable from TLS, create one if it doesn't yet exist.
-pub fn with_sctable<T>(op: |&SCTable| -> T) -> T {
-    thread_local!(static SCTABLE_KEY: SCTable = new_sctable_internal())
-    SCTABLE_KEY.with(|slot| op(slot))
+pub fn with_sctable<T, F>(op: F) -> T where
+    F: FnOnce(&SCTable) -> T,
+{
+    thread_local!(static SCTABLE_KEY: SCTable = new_sctable_internal());
+    SCTABLE_KEY.with(move |slot| op(slot))
 }
 
 // Make a fresh syntax context table with EmptyCtxt in slot zero
@@ -167,12 +167,14 @@ type ResolveTable = HashMap<(Name,SyntaxContext),Name>;
 
 // okay, I admit, putting this in TLS is not so nice:
 // fetch the SCTable from TLS, create one if it doesn't yet exist.
-fn with_resolve_table_mut<T>(op: |&mut ResolveTable| -> T) -> T {
+fn with_resolve_table_mut<T, F>(op: F) -> T where
+    F: FnOnce(&mut ResolveTable) -> T,
+{
     thread_local!(static RESOLVE_TABLE_KEY: RefCell<ResolveTable> = {
         RefCell::new(HashMap::new())
-    })
+    });
 
-    RESOLVE_TABLE_KEY.with(|slot| op(&mut *slot.borrow_mut()))
+    RESOLVE_TABLE_KEY.with(move |slot| op(&mut *slot.borrow_mut()))
 }
 
 /// Resolve a syntax object to a name, per MTWT.

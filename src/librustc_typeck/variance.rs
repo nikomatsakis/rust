@@ -250,18 +250,15 @@ pub fn infer_variance(tcx: &ty::ctxt) {
 
 type VarianceTermPtr<'a> = &'a VarianceTerm<'a>;
 
-#[deriving(Show)]
+#[deriving(Copy, Show)]
 struct InferredIndex(uint);
 
-impl Copy for InferredIndex {}
-
+#[deriving(Copy)]
 enum VarianceTerm<'a> {
     ConstantTerm(ty::Variance),
     TransformTerm(VarianceTermPtr<'a>, VarianceTermPtr<'a>),
     InferredTerm(InferredIndex),
 }
-
-impl<'a> Copy for VarianceTerm<'a> {}
 
 impl<'a> fmt::Show for VarianceTerm<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -294,13 +291,11 @@ struct TermsContext<'a, 'tcx: 'a> {
     inferred_infos: Vec<InferredInfo<'a>> ,
 }
 
-#[deriving(Show, PartialEq)]
+#[deriving(Copy, Show, PartialEq)]
 enum ParamKind {
     TypeParam,
     RegionParam,
 }
-
-impl Copy for ParamKind {}
 
 struct InferredInfo<'a> {
     item_id: ast::NodeId,
@@ -515,7 +510,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TermsContext<'a, 'tcx> {
             ast::ItemStruct(_, ref generics) => {
                 self.add_inferreds_for_item(item.id, item.span, false, generics, &[]);
             }
-            ast::ItemTrait(ref generics, _, _, ref trait_items) => {
+            ast::ItemTrait(_, ref generics, _, _, ref trait_items) => {
                 let assoc_types: Vec<_> =
                     trait_items.iter()
                     .flat_map(|t| match *t { ast::TypeTraitItem(ref d) => Some(d).into_iter(),
@@ -561,12 +556,11 @@ struct ConstraintContext<'a, 'tcx: 'a> {
 
 /// Declares that the variable `decl_id` appears in a location with
 /// variance `variance`.
+#[deriving(Copy)]
 struct Constraint<'a> {
     inferred: InferredIndex,
     variance: &'a VarianceTerm<'a>,
 }
-
-impl<'a> Copy for Constraint<'a> {}
 
 fn add_constraints_from_crate<'a, 'tcx>(terms_cx: TermsContext<'a, 'tcx>,
                                         krate: &ast::Crate)
@@ -1077,13 +1071,13 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
     /// Adds constraints appropriate for a function with signature
     /// `sig` appearing in a context with ambient variance `variance`
     fn add_constraints_from_sig(&mut self,
-                                sig: &ty::FnSig<'tcx>,
+                                sig: &ty::PolyFnSig<'tcx>,
                                 variance: VarianceTermPtr<'a>) {
         let contra = self.contravariant(variance);
-        for &input in sig.inputs.iter() {
+        for &input in sig.0.inputs.iter() {
             self.add_constraints_from_ty(input, contra);
         }
-        if let ty::FnConverging(result_type) = sig.output {
+        if let ty::FnConverging(result_type) = sig.0.output {
             self.add_constraints_from_ty(result_type, variance);
         }
     }

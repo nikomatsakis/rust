@@ -54,18 +54,19 @@
 pub use self::MaybeOwned::*;
 use self::RecompositionState::*;
 use self::DecompositionType::*;
+
 use core::borrow::{BorrowFrom, Cow, ToOwned};
+use core::clone::Clone;
 use core::default::Default;
 use core::fmt;
-use core::cmp;
-use core::iter::AdditiveIterator;
+use core::hash;
+use core::char::Char;
+use core::cmp::{mod, Eq, Equiv, Ord, Ordering, PartialEq, PartialOrd};
+use core::iter::{range, AdditiveIterator, Iterator, IteratorExt};
 use core::kinds::Sized;
-use core::prelude::{Char, Clone, Eq, Equiv};
-use core::prelude::{Iterator, IteratorExt, SlicePrelude, None, Option, Ord, Ordering};
-use core::prelude::{PartialEq, PartialOrd, Result, AsSlice, Some, Tuple2};
-use core::prelude::{range};
+use core::option::Option::{mod, Some, None};
+use core::slice::{AsSlice, SliceExt};
 
-use hash;
 use ring_buf::RingBuf;
 use string::String;
 use unicode;
@@ -185,8 +186,8 @@ fn canonical_sort(comb: &mut [(char, u8)]) {
     for i in range(0, len) {
         let mut swapped = false;
         for j in range(1, len-i) {
-            let class_a = *comb[j-1].ref1();
-            let class_b = *comb[j].ref1();
+            let class_a = comb[j-1].1;
+            let class_b = comb[j].1;
             if class_a != 0 && class_b != 0 && class_a > class_b {
                 comb.swap(j-1, j);
                 swapped = true;
@@ -417,14 +418,14 @@ Section: Misc
 // Return the initial codepoint accumulator for the first byte.
 // The first byte is special, only want bottom 5 bits for width 2, 4 bits
 // for width 3, and 3 bits for width 4
-macro_rules! utf8_first_byte(
+macro_rules! utf8_first_byte {
     ($byte:expr, $width:expr) => (($byte & (0x7F >> $width)) as u32)
-)
+}
 
 // return the value of $ch updated with continuation byte $byte
-macro_rules! utf8_acc_cont_byte(
+macro_rules! utf8_acc_cont_byte {
     ($ch:expr, $byte:expr) => (($ch << 6) | ($byte & 63u8) as u32)
-)
+}
 
 /*
 Section: MaybeOwned
@@ -836,25 +837,12 @@ impl<'a> StrAllocating for &'a str {
 
 #[cfg(test)]
 mod tests {
-    use std::iter::AdditiveIterator;
-    use std::iter::range;
-    use std::default::Default;
-    use std::char::Char;
-    use std::clone::Clone;
-    use std::cmp::{Ord, PartialOrd, Equiv};
-    use std::cmp::Ordering::{Equal, Greater, Less};
-    use std::option::Option;
-    use std::option::Option::{Some, None};
-    use std::ptr::RawPtr;
-    use std::iter::{Iterator, IteratorExt, DoubleEndedIteratorExt};
-
-    use super::*;
-    use std::slice::{AsSlice, SlicePrelude};
-    use string::String;
-    use vec::Vec;
-    use slice::CloneSliceAllocPrelude;
-
-    use unicode::char::UnicodeChar;
+    use prelude::*;
+    use core::default::Default;
+    use core::iter::AdditiveIterator;
+    use super::{eq_slice, from_utf8, is_utf8, is_utf16, raw};
+    use super::truncate_utf16_at_nul;
+    use super::{Owned, Slice};
 
     #[test]
     fn test_eq_slice() {
@@ -903,21 +891,21 @@ mod tests {
     #[test]
     fn test_find() {
         assert_eq!("hello".find('l'), Some(2u));
-        assert_eq!("hello".find(|c:char| c == 'o'), Some(4u));
+        assert_eq!("hello".find(|&: c:char| c == 'o'), Some(4u));
         assert!("hello".find('x').is_none());
-        assert!("hello".find(|c:char| c == 'x').is_none());
+        assert!("hello".find(|&: c:char| c == 'x').is_none());
         assert_eq!("ประเทศไทย中华Việt Nam".find('华'), Some(30u));
-        assert_eq!("ประเทศไทย中华Việt Nam".find(|c: char| c == '华'), Some(30u));
+        assert_eq!("ประเทศไทย中华Việt Nam".find(|&: c: char| c == '华'), Some(30u));
     }
 
     #[test]
     fn test_rfind() {
         assert_eq!("hello".rfind('l'), Some(3u));
-        assert_eq!("hello".rfind(|c:char| c == 'o'), Some(4u));
+        assert_eq!("hello".rfind(|&: c:char| c == 'o'), Some(4u));
         assert!("hello".rfind('x').is_none());
-        assert!("hello".rfind(|c:char| c == 'x').is_none());
+        assert!("hello".rfind(|&: c:char| c == 'x').is_none());
         assert_eq!("ประเทศไทย中华Việt Nam".rfind('华'), Some(30u));
-        assert_eq!("ประเทศไทย中华Việt Nam".rfind(|c: char| c == '华'), Some(30u));
+        assert_eq!("ประเทศไทย中华Việt Nam".rfind(|&: c: char| c == '华'), Some(30u));
     }
 
     #[test]
@@ -1281,7 +1269,7 @@ mod tests {
         assert_eq!("11foo1bar11".trim_left_chars('1'), "foo1bar11");
         let chars: &[char] = &['1', '2'];
         assert_eq!("12foo1bar12".trim_left_chars(chars), "foo1bar12");
-        assert_eq!("123foo1bar123".trim_left_chars(|c: char| c.is_numeric()), "foo1bar123");
+        assert_eq!("123foo1bar123".trim_left_chars(|&: c: char| c.is_numeric()), "foo1bar123");
     }
 
     #[test]
@@ -1296,7 +1284,7 @@ mod tests {
         assert_eq!("11foo1bar11".trim_right_chars('1'), "11foo1bar");
         let chars: &[char] = &['1', '2'];
         assert_eq!("12foo1bar12".trim_right_chars(chars), "12foo1bar");
-        assert_eq!("123foo1bar123".trim_right_chars(|c: char| c.is_numeric()), "123foo1bar");
+        assert_eq!("123foo1bar123".trim_right_chars(|&: c: char| c.is_numeric()), "123foo1bar");
     }
 
     #[test]
@@ -1311,7 +1299,7 @@ mod tests {
         assert_eq!("11foo1bar11".trim_chars('1'), "foo1bar");
         let chars: &[char] = &['1', '2'];
         assert_eq!("12foo1bar12".trim_chars(chars), "foo1bar");
-        assert_eq!("123foo1bar123".trim_chars(|c: char| c.is_numeric()), "foo1bar");
+        assert_eq!("123foo1bar123".trim_chars(|&: c: char| c.is_numeric()), "foo1bar");
     }
 
     #[test]
@@ -1599,17 +1587,24 @@ mod tests {
 
     #[test]
     fn test_escape_unicode() {
-        assert_eq!("abc".escape_unicode(), String::from_str("\\x61\\x62\\x63"));
-        assert_eq!("a c".escape_unicode(), String::from_str("\\x61\\x20\\x63"));
-        assert_eq!("\r\n\t".escape_unicode(), String::from_str("\\x0d\\x0a\\x09"));
-        assert_eq!("'\"\\".escape_unicode(), String::from_str("\\x27\\x22\\x5c"));
+        assert_eq!("abc".escape_unicode(),
+                   String::from_str("\\u{61}\\u{62}\\u{63}"));
+        assert_eq!("a c".escape_unicode(),
+                   String::from_str("\\u{61}\\u{20}\\u{63}"));
+        assert_eq!("\r\n\t".escape_unicode(),
+                   String::from_str("\\u{d}\\u{a}\\u{9}"));
+        assert_eq!("'\"\\".escape_unicode(),
+                   String::from_str("\\u{27}\\u{22}\\u{5c}"));
         assert_eq!("\x00\x01\u{fe}\u{ff}".escape_unicode(),
-                   String::from_str("\\x00\\x01\\u00fe\\u00ff"));
-        assert_eq!("\u{100}\u{ffff}".escape_unicode(), String::from_str("\\u0100\\uffff"));
+                   String::from_str("\\u{0}\\u{1}\\u{fe}\\u{ff}"));
+        assert_eq!("\u{100}\u{ffff}".escape_unicode(),
+                   String::from_str("\\u{100}\\u{ffff}"));
         assert_eq!("\u{10000}\u{10ffff}".escape_unicode(),
-                   String::from_str("\\U00010000\\U0010ffff"));
-        assert_eq!("ab\u{fb00}".escape_unicode(), String::from_str("\\x61\\x62\\ufb00"));
-        assert_eq!("\u{1d4ea}\r".escape_unicode(), String::from_str("\\U0001d4ea\\x0d"));
+                   String::from_str("\\u{10000}\\u{10ffff}"));
+        assert_eq!("ab\u{fb00}".escape_unicode(),
+                   String::from_str("\\u{61}\\u{62}\\u{fb00}"));
+        assert_eq!("\u{1d4ea}\r".escape_unicode(),
+                   String::from_str("\\u{1d4ea}\\u{d}"));
     }
 
     #[test]
@@ -1618,11 +1613,14 @@ mod tests {
         assert_eq!("a c".escape_default(), String::from_str("a c"));
         assert_eq!("\r\n\t".escape_default(), String::from_str("\\r\\n\\t"));
         assert_eq!("'\"\\".escape_default(), String::from_str("\\'\\\"\\\\"));
-        assert_eq!("\u{100}\u{ffff}".escape_default(), String::from_str("\\u0100\\uffff"));
+        assert_eq!("\u{100}\u{ffff}".escape_default(),
+                   String::from_str("\\u{100}\\u{ffff}"));
         assert_eq!("\u{10000}\u{10ffff}".escape_default(),
-                   String::from_str("\\U00010000\\U0010ffff"));
-        assert_eq!("ab\u{fb00}".escape_default(), String::from_str("ab\\ufb00"));
-        assert_eq!("\u{1d4ea}\r".escape_default(), String::from_str("\\U0001d4ea\\r"));
+                   String::from_str("\\u{10000}\\u{10ffff}"));
+        assert_eq!("ab\u{fb00}".escape_default(),
+                   String::from_str("ab\\u{fb00}"));
+        assert_eq!("\u{1d4ea}\r".escape_default(),
+                   String::from_str("\\u{1d4ea}\\r"));
     }
 
     #[test]
@@ -1787,14 +1785,14 @@ mod tests {
         let split: Vec<&str> = data.splitn(3, ' ').collect();
         assert_eq!(split, vec!["\nMäry", "häd", "ä", "little lämb\nLittle lämb\n"]);
 
-        let split: Vec<&str> = data.splitn(3, |c: char| c == ' ').collect();
+        let split: Vec<&str> = data.splitn(3, |&: c: char| c == ' ').collect();
         assert_eq!(split, vec!["\nMäry", "häd", "ä", "little lämb\nLittle lämb\n"]);
 
         // Unicode
         let split: Vec<&str> = data.splitn(3, 'ä').collect();
         assert_eq!(split, vec!["\nM", "ry h", "d ", " little lämb\nLittle lämb\n"]);
 
-        let split: Vec<&str> = data.splitn(3, |c: char| c == 'ä').collect();
+        let split: Vec<&str> = data.splitn(3, |&: c: char| c == 'ä').collect();
         assert_eq!(split, vec!["\nM", "ry h", "d ", " little lämb\nLittle lämb\n"]);
     }
 
@@ -1818,7 +1816,7 @@ mod tests {
 
     #[test]
     fn test_lev_distance() {
-        use std::char::{ from_u32, MAX };
+        use core::char::{ from_u32, MAX };
         // Test bytelength agnosticity
         for c in range(0u32, MAX as u32)
                  .filter_map(|i| from_u32(i))
@@ -1928,7 +1926,7 @@ mod tests {
 
     #[test]
     fn test_graphemes() {
-        use std::iter::order;
+        use core::iter::order;
         // official Unicode test data
         // from http://www.unicode.org/Public/UCD/latest/ucd/auxiliary/GraphemeBreakTest.txt
         let test_same: [(_, &[_]), .. 325] = [
@@ -2359,7 +2357,7 @@ mod tests {
 
     #[test]
     fn test_str_default() {
-        use std::default::Default;
+        use core::default::Default;
         fn t<S: Default + Str>() {
             let s: S = Default::default();
             assert_eq!(s.as_slice(), "");
@@ -2459,12 +2457,10 @@ mod tests {
 
 #[cfg(test)]
 mod bench {
+    use prelude::*;
     use test::Bencher;
     use test::black_box;
     use super::*;
-    use std::iter::{IteratorExt, DoubleEndedIteratorExt};
-    use std::str::StrPrelude;
-    use std::slice::SlicePrelude;
 
     #[bench]
     fn char_iterator(b: &mut Bencher) {
@@ -2588,7 +2584,7 @@ mod bench {
         let s = "Mary had a little lamb, Little lamb, little-lamb.";
         let len = s.split(' ').count();
 
-        b.iter(|| assert_eq!(s.split(|c: char| c == ' ').count(), len));
+        b.iter(|| assert_eq!(s.split(|&: c: char| c == ' ').count(), len));
     }
 
     #[bench]

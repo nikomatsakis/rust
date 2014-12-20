@@ -20,13 +20,13 @@ use rustc_trans::back::link;
 use driver;
 
 use rustc::middle::ty;
-use rustc::middle::borrowck::{mod, FnPartsWithCFG};
-use rustc::middle::borrowck::graphviz as borrowck_dot;
 use rustc::middle::cfg;
 use rustc::middle::cfg::graphviz::LabelledCFG;
 use rustc::session::Session;
 use rustc::session::config::{mod, Input};
 use rustc::util::ppaux;
+use rustc_borrowck as borrowck;
+use rustc_borrowck::graphviz as borrowck_dot;
 
 use syntax::ast;
 use syntax::ast_map::{mod, blocks, NodePrinter};
@@ -39,7 +39,7 @@ use std::option;
 use std::str::FromStr;
 use arena::TypedArena;
 
-#[deriving(PartialEq, Show)]
+#[deriving(Copy, PartialEq, Show)]
 pub enum PpSourceMode {
     PpmNormal,
     PpmExpanded,
@@ -49,15 +49,11 @@ pub enum PpSourceMode {
     PpmExpandedHygiene,
 }
 
-impl Copy for PpSourceMode {}
-
-#[deriving(PartialEq, Show)]
+#[deriving(Copy, PartialEq, Show)]
 pub enum PpMode {
     PpmSource(PpSourceMode),
     PpmFlowGraph,
 }
-
-impl Copy for PpMode {}
 
 pub fn parse_pretty(sess: &Session, name: &str) -> (PpMode, Option<UserIdentifiedItem>) {
     let mut split = name.splitn(1, '=');
@@ -78,7 +74,7 @@ pub fn parse_pretty(sess: &Session, name: &str) -> (PpMode, Option<UserIdentifie
                  or `expanded,identified`; got {}", name).as_slice());
         }
     };
-    let opt_second = opt_second.and_then::<UserIdentifiedItem>(from_str);
+    let opt_second = opt_second.and_then::<UserIdentifiedItem, _>(from_str);
     (first, opt_second)
 }
 
@@ -99,13 +95,15 @@ pub fn parse_pretty(sess: &Session, name: &str) -> (PpMode, Option<UserIdentifie
 
 impl PpSourceMode {
     /// Constructs a `PrinterSupport` object and passes it to `f`.
-    fn call_with_pp_support<'tcx, A, B>(&self,
-                                        sess: Session,
-                                        ast_map: Option<ast_map::Map<'tcx>>,
-                                        type_arena: &'tcx TypedArena<ty::TyS<'tcx>>,
-                                        id: String,
-                                        payload: B,
-                                        f: |&PrinterSupport, B| -> A) -> A {
+    fn call_with_pp_support<'tcx, A, B, F>(&self,
+                                           sess: Session,
+                                           ast_map: Option<ast_map::Map<'tcx>>,
+                                           type_arena: &'tcx TypedArena<ty::TyS<'tcx>>,
+                                           id: String,
+                                           payload: B,
+                                           f: F) -> A where
+        F: FnOnce(&PrinterSupport, B) -> A,
+    {
         match *self {
             PpmNormal | PpmExpanded => {
                 let annotation = NoAnn { sess: sess, ast_map: ast_map };
@@ -313,19 +311,17 @@ pub enum UserIdentifiedItem {
 
 impl FromStr for UserIdentifiedItem {
     fn from_str(s: &str) -> Option<UserIdentifiedItem> {
-        let extract_path_parts = || {
+        from_str(s).map(ItemViaNode).or_else(|| {
             let v : Vec<_> = s.split_str("::")
                 .map(|x|x.to_string())
                 .collect();
             Some(ItemViaPath(v))
-        };
-
-        from_str(s).map(ItemViaNode).or_else(extract_path_parts)
+        })
     }
 }
 
 enum NodesMatchingUII<'a, 'ast: 'a> {
-    NodesMatchingDirect(option::Item<ast::NodeId>),
+    NodesMatchingDirect(option::IntoIter<ast::NodeId>),
     NodesMatchingSuffix(ast_map::NodesMatchingSuffix<'a, 'ast, String>),
 }
 
@@ -565,7 +561,7 @@ fn print_flowgraph<W:io::Writer>(variants: Vec<borrowck_dot::Variant>,
             return Ok(())
         }
         blocks::FnLikeCode(fn_like) => {
-            let fn_parts = FnPartsWithCFG::from_fn_like(&fn_like, &cfg);
+            let fn_parts = borrowck::FnPartsWithCFG::from_fn_like(&fn_like, &cfg);
             let (bccx, analysis_data) =
                 borrowck::build_borrowck_dataflow_data_for_fn(ty_cx, fn_parts);
 

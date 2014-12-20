@@ -225,10 +225,10 @@ fn in_ms_u64(d: Duration) -> u64 {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use time::Duration;
-    use task::spawn;
     use prelude::*;
+
+    use super::Timer;
+    use time::Duration;
 
     #[test]
     fn test_io_timer_sleep_simple() {
@@ -357,7 +357,7 @@ mod test {
         let mut timer = Timer::new().unwrap();
         let timer_rx = timer.periodic(Duration::milliseconds(1000));
 
-        spawn(proc() {
+        spawn(move|| {
             let _ = timer_rx.recv_opt();
         });
 
@@ -371,7 +371,7 @@ mod test {
         let mut timer = Timer::new().unwrap();
         let timer_rx = timer.periodic(Duration::milliseconds(1000));
 
-        spawn(proc() {
+        spawn(move|| {
             let _ = timer_rx.recv_opt();
         });
 
@@ -384,7 +384,7 @@ mod test {
         let mut timer = Timer::new().unwrap();
         let timer_rx = timer.periodic(Duration::milliseconds(1000));
 
-        spawn(proc() {
+        spawn(move|| {
             let _ = timer_rx.recv_opt();
         });
 

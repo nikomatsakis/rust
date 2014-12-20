@@ -22,9 +22,10 @@
       html_favicon_url = "http://www.rust-lang.org/favicon.ico",
       html_root_url = "http://doc.rust-lang.org/nightly/")]
 
-#![feature(default_type_params, globs, import_shadowing, macro_rules, phase, quote)]
+#![feature(default_type_params, globs, macro_rules, phase, quote)]
 #![feature(slicing_syntax, unsafe_destructor)]
 #![feature(rustc_diagnostic_macros)]
+#![feature(unboxed_closures)]
 
 extern crate arena;
 extern crate flate;
@@ -32,9 +33,11 @@ extern crate getopts;
 extern crate graphviz;
 extern crate libc;
 extern crate rustc;
-extern crate rustc_typeck;
 extern crate rustc_back;
+extern crate rustc_borrowck;
+extern crate rustc_resolve;
 extern crate rustc_trans;
+extern crate rustc_typeck;
 #[phase(plugin, link)] extern crate log;
 #[phase(plugin, link)] extern crate syntax;
 extern crate serialize;
@@ -53,7 +56,7 @@ use rustc::DIAGNOSTICS;
 use std::any::AnyRefExt;
 use std::io;
 use std::os;
-use std::task::TaskBuilder;
+use std::thread;
 
 use rustc::session::early_error;
 
@@ -69,7 +72,7 @@ pub mod driver;
 pub mod pretty;
 
 pub fn run(args: Vec<String>) -> int {
-    monitor(proc() run_compiler(args.as_slice()));
+    monitor(move |:| run_compiler(args.as_slice()));
     0
 }
 
@@ -469,22 +472,22 @@ pub fn list_metadata(sess: &Session, path: &Path,
 ///
 /// The diagnostic emitter yielded to the procedure should be used for reporting
 /// errors of the compiler.
-pub fn monitor(f: proc():Send) {
+pub fn monitor<F:FnOnce()+Send>(f: F) {
     static STACK_SIZE: uint = 32000000; // 32MB
 
     let (tx, rx) = channel();
     let w = io::ChanWriter::new(tx);
     let mut r = io::ChanReader::new(rx);
 
-    let mut task = TaskBuilder::new().named("rustc").stderr(box w);
+    let mut cfg = thread::Builder::new().name("rustc".to_string());
 
     // FIXME: Hacks on hacks. If the env is trying to override the stack size
     // then *don't* set it explicitly.
     if os::getenv("RUST_MIN_STACK").is_none() {
-        task = task.stack_size(STACK_SIZE);
+        cfg = cfg.stack_size(STACK_SIZE);
     }
 
-    match task.try(f) {
+    match cfg.spawn(move || { std::io::stdio::set_stderr(box w); f() }).join() {
         Ok(()) => { /* fallthrough */ }
         Err(value) => {
             // Task panicked without emitting a fatal diagnostic
@@ -538,4 +541,3 @@ pub fn main() {
     let result = run(args);
     std::os::set_exit_status(result);
 }
-

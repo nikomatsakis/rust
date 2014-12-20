@@ -11,6 +11,38 @@
 //! A growable list type, written `Vec<T>` but pronounced 'vector.'
 //!
 //! Vectors have `O(1)` indexing, push (to the end) and pop (from the end).
+//!
+//! # Examples
+//!
+//! Explicitly creating a `Vec<T>` with `new()`:
+//!
+//! ```
+//! let xs: Vec<i32> = Vec::new();
+//! ```
+//!
+//! Using the `vec!` macro:
+//!
+//! ```
+//! let ys: Vec<i32> = vec![];
+//!
+//! let zs = vec![1i32, 2, 3, 4, 5];
+//! ```
+//!
+//! Push:
+//!
+//! ```
+//! let mut xs = vec![1i32, 2];
+//!
+//! xs.push(3);
+//! ```
+//!
+//! And pop:
+//!
+//! ```
+//! let mut xs = vec![1i32, 2];
+//!
+//! let two = xs.pop();
+//! ```
 
 use core::prelude::*;
 
@@ -20,8 +52,8 @@ use core::borrow::{Cow, IntoCow};
 use core::cmp::max;
 use core::default::Default;
 use core::fmt;
+use core::hash::{mod, Hash};
 use core::kinds::marker::{ContravariantLifetime, InvariantType};
-use core::kinds::Sized;
 use core::mem;
 use core::num::{Int, UnsignedInt};
 use core::ops;
@@ -29,9 +61,9 @@ use core::ptr;
 use core::raw::Slice as RawSlice;
 use core::uint;
 
-use slice::{CloneSliceAllocPrelude};
+use slice::CloneSliceExt;
 
-/// An owned, growable vector.
+/// A growable list type, written `Vec<T>` but pronounced 'vector.'
 ///
 /// # Examples
 ///
@@ -65,7 +97,7 @@ use slice::{CloneSliceAllocPrelude};
 /// assert_eq!(vec, vec![1, 2, 3, 4]);
 /// ```
 ///
-/// Use a `Vec` as an efficient stack:
+/// Use a `Vec<T>` as an efficient stack:
 ///
 /// ```
 /// let mut stack = Vec::new();
@@ -86,20 +118,17 @@ use slice::{CloneSliceAllocPrelude};
 ///
 /// # Capacity and reallocation
 ///
-/// The capacity of a vector is the amount of space allocated for any future
-/// elements that will be added onto the vector. This is not to be confused
-/// with the *length* of a vector, which specifies the number of actual
-/// elements within the vector. If a vector's length exceeds its capacity,
-/// its capacity will automatically be increased, but its elements will
-/// have to be reallocated.
+/// The capacity of a vector is the amount of space allocated for any future elements that will be
+/// added onto the vector. This is not to be confused with the *length* of a vector, which
+/// specifies the number of actual elements within the vector. If a vector's length exceeds its
+/// capacity, its capacity will automatically be increased, but its elements will have to be
+/// reallocated.
 ///
-/// For example, a vector with capacity 10 and length 0 would be an empty
-/// vector with space for 10 more elements. Pushing 10 or fewer elements onto
-/// the vector will not change its capacity or cause reallocation to occur.
-/// However, if the vector's length is increased to 11, it will have to
-/// reallocate, which can be slow. For this reason, it is recommended
-/// to use `Vec::with_capacity` whenever possible to specify how big the vector
-/// is expected to get.
+/// For example, a vector with capacity 10 and length 0 would be an empty vector with space for 10
+/// more elements. Pushing 10 or fewer elements onto the vector will not change its capacity or
+/// cause reallocation to occur. However, if the vector's length is increased to 11, it will have
+/// to reallocate, which can be slow. For this reason, it is recommended to use
+/// `Vec::with_capacity` whenever possible to specify how big the vector is expected to get.
 #[unsafe_no_drop_flag]
 #[stable]
 pub struct Vec<T> {
@@ -130,7 +159,7 @@ impl<'a, T> IntoCow<'a, Vec<T>, [T]> for &'a [T] where T: Clone {
 }
 
 impl<T> Vec<T> {
-    /// Constructs a new, empty `Vec`.
+    /// Constructs a new, empty `Vec<T>`.
     ///
     /// The vector will not allocate until elements are pushed onto it.
     ///
@@ -149,16 +178,15 @@ impl<T> Vec<T> {
         Vec { ptr: EMPTY as *mut T, len: 0, cap: 0 }
     }
 
-    /// Constructs a new, empty `Vec` with the specified capacity.
+    /// Constructs a new, empty `Vec<T>` with the specified capacity.
     ///
-    /// The vector will be able to hold exactly `capacity` elements without
-    /// reallocating. If `capacity` is 0, the vector will not allocate.
+    /// The vector will be able to hold exactly `capacity` elements without reallocating. If
+    /// `capacity` is 0, the vector will not allocate.
     ///
-    /// It is important to note that this function does not specify the
-    /// *length* of the returned vector, but only the *capacity*. (For an
-    /// explanation of the difference between length and capacity, see
-    /// the main `Vec` docs above, 'Capacity and reallocation'.) To create
-    /// a vector of a given length, use `Vec::from_elem` or `Vec::from_fn`.
+    /// It is important to note that this function does not specify the *length* of the returned
+    /// vector, but only the *capacity*. (For an explanation of the difference between length and
+    /// capacity, see the main `Vec<T>` docs above, 'Capacity and reallocation'.) To create a
+    /// vector of a given length, use `Vec::from_elem` or `Vec::from_fn`.
     ///
     /// # Examples
     ///
@@ -192,10 +220,10 @@ impl<T> Vec<T> {
         }
     }
 
-    /// Creates and initializes a `Vec`.
+    /// Creates and initializes a `Vec<T>`.
     ///
-    /// Creates a `Vec` of size `length` and initializes the elements to the
-    /// value returned by the closure `op`.
+    /// Creates a `Vec<T>` of size `length` and initializes the elements to the value returned by
+    /// the closure `op`.
     ///
     /// # Examples
     ///
@@ -206,7 +234,7 @@ impl<T> Vec<T> {
     #[inline]
     #[unstable = "the naming is uncertain as well as this migrating to unboxed \
                   closures in the future"]
-    pub fn from_fn(length: uint, op: |uint| -> T) -> Vec<T> {
+    pub fn from_fn<F>(length: uint, mut op: F) -> Vec<T> where F: FnMut(uint) -> T {
         unsafe {
             let mut xs = Vec::with_capacity(length);
             while xs.len < length {
@@ -260,10 +288,9 @@ impl<T> Vec<T> {
 
     /// Creates a vector by copying the elements from a raw pointer.
     ///
-    /// This function will copy `elts` contiguous elements starting at `ptr`
-    /// into a new allocation owned by the returned `Vec`. The elements of the
-    /// buffer are copied into the vector without cloning, as if `ptr::read()`
-    /// were called on them.
+    /// This function will copy `elts` contiguous elements starting at `ptr` into a new allocation
+    /// owned by the returned `Vec<T>`. The elements of the buffer are copied into the vector
+    /// without cloning, as if `ptr::read()` were called on them.
     #[inline]
     #[unstable = "just renamed from raw::from_buf"]
     pub unsafe fn from_raw_buf(ptr: *const T, elts: uint) -> Vec<T> {
@@ -273,11 +300,10 @@ impl<T> Vec<T> {
         dst
     }
 
-    /// Consumes the `Vec`, partitioning it based on a predicate.
+    /// Consumes the `Vec<T>`, partitioning it based on a predicate.
     ///
-    /// Partitions the `Vec` into two `Vec`s `(A,B)`, where all elements of `A`
-    /// satisfy `f` and all elements of `B` do not. The order of elements is
-    /// preserved.
+    /// Partitions the `Vec<T>` into two `Vec<T>`s `(A,B)`, where all elements of `A` satisfy `f`
+    /// and all elements of `B` do not. The order of elements is preserved.
     ///
     /// # Examples
     ///
@@ -289,7 +315,7 @@ impl<T> Vec<T> {
     /// ```
     #[inline]
     #[experimental]
-    pub fn partition(self, f: |&T| -> bool) -> (Vec<T>, Vec<T>) {
+    pub fn partition<F>(self, mut f: F) -> (Vec<T>, Vec<T>) where F: FnMut(&T) -> bool {
         let mut lefts  = Vec::new();
         let mut rights = Vec::new();
 
@@ -306,9 +332,9 @@ impl<T> Vec<T> {
 }
 
 impl<T: Clone> Vec<T> {
-    /// Constructs a `Vec` with copies of a value.
+    /// Constructs a `Vec<T>` with copies of a value.
     ///
-    /// Creates a `Vec` with `length` copies of `value`.
+    /// Creates a `Vec<T>` with `length` copies of `value`.
     ///
     /// # Examples
     ///
@@ -331,10 +357,10 @@ impl<T: Clone> Vec<T> {
         }
     }
 
-    /// Appends all elements in a slice to the `Vec`.
+    /// Appends all elements in a slice to the `Vec<T>`.
     ///
     /// Iterates over the slice `other`, clones each element, and then appends
-    /// it to this `Vec`. The `other` vector is traversed in-order.
+    /// it to this `Vec<T>`. The `other` vector is traversed in-order.
     ///
     /// # Examples
     ///
@@ -363,9 +389,9 @@ impl<T: Clone> Vec<T> {
         }
     }
 
-    /// Grows the `Vec` in-place.
+    /// Grows the `Vec<T>` in-place.
     ///
-    /// Adds `n` copies of `value` to the `Vec`.
+    /// Adds `n` copies of `value` to the `Vec<T>`.
     ///
     /// # Examples
     ///
@@ -387,7 +413,7 @@ impl<T: Clone> Vec<T> {
 
     /// Partitions a vector based on a predicate.
     ///
-    /// Clones the elements of the vector, partitioning them into two `Vec`s
+    /// Clones the elements of the vector, partitioning them into two `Vec<T>`s
     /// `(a, b)`, where all elements of `a` satisfy `f` and all elements of `b`
     /// do not. The order of elements is preserved.
     ///
@@ -400,7 +426,7 @@ impl<T: Clone> Vec<T> {
     /// assert_eq!(odd, vec![1i, 3]);
     /// ```
     #[experimental]
-    pub fn partitioned(&self, f: |&T| -> bool) -> (Vec<T>, Vec<T>) {
+    pub fn partitioned<F>(&self, mut f: F) -> (Vec<T>, Vec<T>) where F: FnMut(&T) -> bool {
         let mut lefts = Vec::new();
         let mut rights = Vec::new();
 
@@ -555,8 +581,8 @@ macro_rules! impl_eq {
     }
 }
 
-impl_eq!(Vec<A>, &'b [B])
-impl_eq!(Vec<A>, &'b mut [B])
+impl_eq! { Vec<A>, &'b [B] }
+impl_eq! { Vec<A>, &'b mut [B] }
 
 impl<'a, A, B> PartialEq<Vec<B>> for CowVec<'a, A> where A: PartialEq<B> + Clone {
     #[inline]
@@ -590,8 +616,8 @@ macro_rules! impl_eq_for_cowvec {
     }
 }
 
-impl_eq_for_cowvec!(&'b [B])
-impl_eq_for_cowvec!(&'b mut [B])
+impl_eq_for_cowvec! { &'b [B] }
+impl_eq_for_cowvec! { &'b mut [B] }
 
 #[unstable = "waiting on PartialOrd stability"]
 impl<T: PartialOrd> PartialOrd for Vec<T> {
@@ -619,6 +645,13 @@ impl<T: Ord> Ord for Vec<T> {
     }
 }
 
+impl<S: hash::Writer, T: Hash<S>> Hash<S> for Vec<T> {
+    #[inline]
+    fn hash(&self, state: &mut S) {
+        self.as_slice().hash(state);
+    }
+}
+
 // FIXME: #13996: need a way to mark the return value as `noalias`
 #[inline(never)]
 unsafe fn alloc_or_realloc<T>(ptr: *mut T, old_size: uint, size: uint) -> *mut T {
@@ -639,8 +672,7 @@ unsafe fn dealloc<T>(ptr: *mut T, len: uint) {
 }
 
 impl<T> Vec<T> {
-    /// Returns the number of elements the vector can hold without
-    /// reallocating.
+    /// Returns the number of elements the vector can hold without reallocating.
     ///
     /// # Examples
     ///
@@ -661,7 +693,7 @@ impl<T> Vec<T> {
     }
 
     /// Reserves capacity for at least `additional` more elements to be inserted in the given
-    /// `Vec`. The collection may reserve more space to avoid frequent reallocations.
+    /// `Vec<T>`. The collection may reserve more space to avoid frequent reallocations.
     ///
     /// # Panics
     ///
@@ -677,25 +709,15 @@ impl<T> Vec<T> {
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn reserve(&mut self, additional: uint) {
         if self.cap - self.len < additional {
-            match self.len.checked_add(additional) {
-                None => panic!("Vec::reserve: `uint` overflow"),
-                // if the checked_add
-                Some(new_cap) => {
-                    let amort_cap = new_cap.next_power_of_two();
-                    // next_power_of_two will overflow to exactly 0 for really big capacities
-                    let cap = if amort_cap == 0 {
-                        new_cap
-                    } else {
-                        amort_cap
-                    };
-                    self.grow_capacity(cap)
-                }
-            }
+            let err_msg = "Vec::reserve: `uint` overflow";
+            let new_cap = self.len.checked_add(additional).expect(err_msg)
+                                  .checked_next_power_of_two().expect(err_msg);
+            self.grow_capacity(new_cap);
         }
     }
 
     /// Reserves the minimum capacity for exactly `additional` more elements to be inserted in the
-    /// given `Vec`. Does nothing if the capacity is already sufficient.
+    /// given `Vec<T>`. Does nothing if the capacity is already sufficient.
     ///
     /// Note that the allocator may give the collection more space than it requests. Therefore
     /// capacity can not be relied upon to be precisely minimal. Prefer `reserve` if future
@@ -722,16 +744,19 @@ impl<T> Vec<T> {
         }
     }
 
-    /// Shrinks the capacity of the vector as much as possible. It will drop
-    /// down as close as possible to the length but the allocator may still
-    /// inform the vector that there is space for a few more elements.
+    /// Shrinks the capacity of the vector as much as possible.
+    ///
+    /// It will drop down as close as possible to the length but the allocator may still inform the
+    /// vector that there is space for a few more elements.
     ///
     /// # Examples
     ///
     /// ```
     /// let mut vec: Vec<int> = Vec::with_capacity(10);
+    ///
     /// vec.push_all(&[1, 2, 3]);
     /// assert_eq!(vec.capacity(), 10);
+    ///
     /// vec.shrink_to_fit();
     /// assert!(vec.capacity() >= 3);
     /// ```
@@ -820,14 +845,14 @@ impl<T> Vec<T> {
         }
     }
 
-    /// Creates a consuming iterator, that is, one that moves each
-    /// value out of the vector (from start to end). The vector cannot
-    /// be used after calling this.
+    /// Creates a consuming iterator, that is, one that moves each value out of the vector (from
+    /// start to end). The vector cannot be used after calling this.
     ///
     /// # Examples
     ///
     /// ```
     /// let v = vec!["a".to_string(), "b".to_string()];
+    ///
     /// for s in v.into_iter() {
     ///     // s has type String, not &String
     ///     println!("{}", s);
@@ -852,9 +877,8 @@ impl<T> Vec<T> {
 
     /// Sets the length of a vector.
     ///
-    /// This will explicitly set the size of the vector, without actually
-    /// modifying its buffers, so it is up to the caller to ensure that the
-    /// vector is actually the specified size.
+    /// This will explicitly set the size of the vector, without actually modifying its buffers, so
+    /// it is up to the caller to ensure that the vector is actually the specified size.
     ///
     /// # Examples
     ///
@@ -870,8 +894,10 @@ impl<T> Vec<T> {
         self.len = len;
     }
 
-    /// Removes an element from anywhere in the vector and return it, replacing
-    /// it with the last element. This does not preserve ordering, but is O(1).
+    /// Removes an element from anywhere in the vector and return it, replacing it with the last
+    /// element.
+    ///
+    /// This does not preserve ordering, but is O(1).
     ///
     /// Returns `None` if `index` is out of bounds.
     ///
@@ -900,13 +926,12 @@ impl<T> Vec<T> {
         self.pop()
     }
 
-    /// Inserts an element at position `index` within the vector, shifting all
-    /// elements after position `i` one position to the right.
+    /// Inserts an element at position `index` within the vector, shifting all elements after
+    /// position `i` one position to the right.
     ///
     /// # Panics
     ///
-    /// Panics if `index` is not between `0` and the vector's length (both
-    /// bounds inclusive).
+    /// Panics if `index` is not between `0` and the vector's length (both bounds inclusive).
     ///
     /// # Examples
     ///
@@ -939,9 +964,9 @@ impl<T> Vec<T> {
         }
     }
 
-    /// Removes and returns the element at position `index` within the vector,
-    /// shifting all elements after position `index` one position to the left.
-    /// Returns `None` if `i` is out of bounds.
+    /// Removes and returns the element at position `index` within the vector, shifting all
+    /// elements after position `index` one position to the left. Returns `None` if `i` is out of
+    /// bounds.
     ///
     /// # Examples
     ///
@@ -980,8 +1005,8 @@ impl<T> Vec<T> {
 
     /// Retains only the elements specified by the predicate.
     ///
-    /// In other words, remove all elements `e` such that `f(&e)` returns false.
-    /// This method operates in place and preserves the order of the retained elements.
+    /// In other words, remove all elements `e` such that `f(&e)` returns false. This method
+    /// operates in place and preserves the order of the retained elements.
     ///
     /// # Examples
     ///
@@ -991,7 +1016,7 @@ impl<T> Vec<T> {
     /// assert_eq!(vec, vec![2, 4]);
     /// ```
     #[unstable = "the closure argument may become an unboxed closure"]
-    pub fn retain(&mut self, f: |&T| -> bool) {
+    pub fn retain<F>(&mut self, mut f: F) where F: FnMut(&T) -> bool {
         let len = self.len();
         let mut del = 0u;
         {
@@ -1023,7 +1048,7 @@ impl<T> Vec<T> {
     /// assert_eq!(vec, vec![0, 1, 0, 1, 2]);
     /// ```
     #[unstable = "this function may be renamed or change to unboxed closures"]
-    pub fn grow_fn(&mut self, n: uint, f: |uint| -> T) {
+    pub fn grow_fn<F>(&mut self, n: uint, mut f: F) where F: FnMut(uint) -> T {
         self.reserve(n);
         for i in range(0u, n) {
             self.push(f(i));
@@ -1070,8 +1095,7 @@ impl<T> Vec<T> {
         }
     }
 
-    /// Removes the last element from a vector and returns it, or `None` if
-    /// it is empty.
+    /// Removes the last element from a vector and returns it, or `None` if it is empty.
     ///
     /// # Examples
     ///
@@ -1099,7 +1123,9 @@ impl<T> Vec<T> {
     ///
     /// ```
     /// let mut v = vec![1i, 2, 3];
+    ///
     /// v.clear();
+    ///
     /// assert!(v.is_empty());
     /// ```
     #[inline]
@@ -1108,7 +1134,7 @@ impl<T> Vec<T> {
         self.truncate(0)
     }
 
-    /// Return the number of elements in the vector
+    /// Returns the number of elements in the vector.
     ///
     /// # Examples
     ///
@@ -1120,13 +1146,14 @@ impl<T> Vec<T> {
     #[stable]
     pub fn len(&self) -> uint { self.len }
 
-    /// Returns true if the vector contains no elements
+    /// Returns `true` if the vector contains no elements.
     ///
     /// # Examples
     ///
     /// ```
     /// let mut v = Vec::new();
     /// assert!(v.is_empty());
+    ///
     /// v.push(1i);
     /// assert!(!v.is_empty());
     /// ```
@@ -1161,7 +1188,9 @@ impl<T: PartialEq> Vec<T> {
     ///
     /// ```
     /// let mut vec = vec![1i, 2, 2, 3, 2];
+    ///
     /// vec.dedup();
+    ///
     /// assert_eq!(vec, vec![1i, 2, 3, 2]);
     /// ```
     #[unstable = "this function may be renamed"]
@@ -1273,6 +1302,8 @@ impl<T> AsSlice<T> for Vec<T> {
     }
 }
 
+// NOTE(stage0): Remove impl after a snapshot
+#[cfg(stage0)]
 impl<T: Clone, Sized? V: AsSlice<T>> Add<V, Vec<T>> for Vec<T> {
     #[inline]
     fn add(&self, rhs: &V) -> Vec<T> {
@@ -1280,6 +1311,25 @@ impl<T: Clone, Sized? V: AsSlice<T>> Add<V, Vec<T>> for Vec<T> {
         res.push_all(self.as_slice());
         res.push_all(rhs.as_slice());
         res
+    }
+}
+
+
+#[cfg(not(stage0))]  // NOTE(stage0): Remove impl after a snapshot
+impl<'a, T: Clone> Add<&'a [T], Vec<T>> for Vec<T> {
+    #[inline]
+    fn add(mut self, rhs: &[T]) -> Vec<T> {
+        self.push_all(rhs);
+        self
+    }
+}
+
+#[cfg(not(stage0))]  // NOTE(stage0): Remove impl after a snapshot
+impl<'a, T: Clone> Add<Vec<T>, Vec<T>> for &'a [T] {
+    #[inline]
+    fn add(self, mut rhs: Vec<T>) -> Vec<T> {
+        rhs.push_all(self);
+        rhs
     }
 }
 
@@ -1301,6 +1351,7 @@ impl<T> Drop for Vec<T> {
 
 #[stable]
 impl<T> Default for Vec<T> {
+    #[stable]
     fn default() -> Vec<T> {
         Vec::new()
     }
@@ -1412,10 +1463,9 @@ impl<T> Drop for MoveItems<T> {
 
 /// Converts an iterator of pairs into a pair of vectors.
 ///
-/// Returns a tuple containing two vectors where the i-th element of the first
-/// vector contains the first element of the i-th tuple of the input iterator,
-/// and the i-th element of the second vector contains the second element
-/// of the i-th tuple of the input iterator.
+/// Returns a tuple containing two vectors where the i-th element of the first vector contains the
+/// first element of the i-th tuple of the input iterator, and the i-th element of the second
+/// vector contains the second element of the i-th tuple of the input iterator.
 #[unstable = "this functionality may become more generic over time"]
 pub fn unzip<T, U, V: Iterator<(T, U)>>(mut iter: V) -> (Vec<T>, Vec<U>) {
     let (lo, _) = iter.size_hint();
@@ -1570,7 +1620,7 @@ impl<T> Vec<T> {
     /// let newtyped_bytes = bytes.map_in_place(|x| Newtype(x));
     /// assert_eq!(newtyped_bytes.as_slice(), [Newtype(0x11), Newtype(0x22)].as_slice());
     /// ```
-    pub fn map_in_place<U>(self, f: |T| -> U) -> Vec<U> {
+    pub fn map_in_place<U, F>(self, mut f: F) -> Vec<U> where F: FnMut(T) -> U {
         // FIXME: Assert statically that the types `T` and `U` have the same
         // size.
         assert!(mem::size_of::<T>() == mem::size_of::<U>());
@@ -1755,12 +1805,10 @@ impl<'a> fmt::FormatWriter for Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    extern crate test;
-
-    use std::prelude::*;
-    use std::mem::size_of;
+    use prelude::*;
+    use core::mem::size_of;
     use test::Bencher;
-    use super::{as_vec, unzip, raw, Vec};
+    use super::{as_vec, unzip, raw};
 
     struct DropCounter<'a> {
         count: &'a mut int
@@ -2004,7 +2052,7 @@ mod tests {
 
     #[test]
     fn test_partitioned() {
-        assert_eq!(vec![].partitioned(|x: &int| *x < 3), (vec![], vec![]))
+        assert_eq!(vec![].partitioned(|x: &int| *x < 3), (vec![], vec![]));
         assert_eq!(vec![1i, 2, 3].partitioned(|x: &int| *x < 4), (vec![1, 2, 3], vec![]));
         assert_eq!(vec![1i, 2, 3].partitioned(|x: &int| *x < 2), (vec![1], vec![2, 3]));
         assert_eq!(vec![1i, 2, 3].partitioned(|x: &int| *x < 0), (vec![], vec![1, 2, 3]));

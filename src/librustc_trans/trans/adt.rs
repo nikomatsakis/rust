@@ -147,7 +147,7 @@ pub fn represent_type<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
     }
 
     let repr = Rc::new(represent_type_uncached(cx, t));
-    debug!("Represented as: {}", repr)
+    debug!("Represented as: {}", repr);
     cx.adt_reprs().borrow_mut().insert(t, repr.clone());
     repr
 }
@@ -281,13 +281,11 @@ struct Case<'tcx> {
 }
 
 
-#[deriving(Eq, PartialEq, Show)]
+#[deriving(Copy, Eq, PartialEq, Show)]
 pub enum PointerField {
     ThinPointer(uint),
     FatPointer(uint)
 }
-
-impl Copy for PointerField {}
 
 impl<'tcx> Case<'tcx> {
     fn is_zerolen<'a>(&self, cx: &CrateContext<'a, 'tcx>, scapegoat: Ty<'tcx>)
@@ -858,10 +856,13 @@ pub fn struct_field_ptr<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, st: &Struct<'tcx>, v
     GEPi(bcx, val, &[0, ix])
 }
 
-pub fn fold_variants<'blk, 'tcx>(
-        bcx: Block<'blk, 'tcx>, r: &Repr<'tcx>, value: ValueRef,
-        f: |Block<'blk, 'tcx>, &Struct<'tcx>, ValueRef| -> Block<'blk, 'tcx>)
-        -> Block<'blk, 'tcx> {
+pub fn fold_variants<'blk, 'tcx, F>(bcx: Block<'blk, 'tcx>,
+                                    r: &Repr<'tcx>,
+                                    value: ValueRef,
+                                    mut f: F)
+                                    -> Block<'blk, 'tcx> where
+    F: FnMut(Block<'blk, 'tcx>, &Struct<'tcx>, ValueRef) -> Block<'blk, 'tcx>,
+{
     let fcx = bcx.fcx;
     match *r {
         Univariant(ref st, _) => {

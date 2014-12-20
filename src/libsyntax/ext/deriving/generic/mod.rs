@@ -333,11 +333,13 @@ pub fn combine_substructure<'a>(f: CombineSubstructureFunc<'a>)
 
 
 impl<'a> TraitDef<'a> {
-    pub fn expand(&self,
-                  cx: &mut ExtCtxt,
-                  mitem: &ast::MetaItem,
-                  item: &ast::Item,
-                  push: |P<ast::Item>|) {
+    pub fn expand<F>(&self,
+                     cx: &mut ExtCtxt,
+                     mitem: &ast::MetaItem,
+                     item: &ast::Item,
+                     push: F) where
+        F: FnOnce(P<ast::Item>),
+    {
         let newitem = match item.node {
             ast::ItemStruct(ref struct_def, ref generics) => {
                 self.expand_struct_def(cx,
@@ -386,7 +388,7 @@ impl<'a> TraitDef<'a> {
                            methods: Vec<P<ast::Method>>) -> P<ast::Item> {
         let trait_path = self.path.to_path(cx, self.span, type_ident, generics);
 
-        let Generics { mut lifetimes, ty_params, where_clause: _ } =
+        let Generics { mut lifetimes, ty_params, mut where_clause } =
             self.generics.to_generics(cx, self.span, type_ident, generics);
         let mut ty_params = ty_params.into_vec();
 
@@ -418,13 +420,33 @@ impl<'a> TraitDef<'a> {
                        ty_param.unbound.clone(),
                        None)
         }));
+
+        // and similarly for where clauses
+        where_clause.predicates.extend(generics.where_clause.predicates.iter().map(|clause| {
+            match *clause {
+                ast::WherePredicate::BoundPredicate(ref wb) => {
+                    ast::WherePredicate::BoundPredicate(ast::WhereBoundPredicate {
+                        id: ast::DUMMY_NODE_ID,
+                        span: self.span,
+                        ident: wb.ident,
+                        bounds: OwnedSlice::from_vec(wb.bounds.iter().map(|b| b.clone()).collect())
+                    })
+                }
+                ast::WherePredicate::EqPredicate(ref we) => {
+                    ast::WherePredicate::EqPredicate(ast::WhereEqPredicate {
+                        id: ast::DUMMY_NODE_ID,
+                        span: self.span,
+                        path: we.path.clone(),
+                        ty: we.ty.clone()
+                    })
+                }
+            }
+        }));
+
         let trait_generics = Generics {
             lifetimes: lifetimes,
             ty_params: OwnedSlice::from_vec(ty_params),
-            where_clause: ast::WhereClause {
-                id: ast::DUMMY_NODE_ID,
-                predicates: Vec::new(),
-            },
+            where_clause: where_clause
         };
 
         // Create the reference to the trait.
@@ -460,7 +482,8 @@ impl<'a> TraitDef<'a> {
             self.span,
             ident,
             a,
-            ast::ItemImpl(trait_generics,
+            ast::ItemImpl(ast::Unsafety::Normal,
+                          trait_generics,
                           opt_trait_ref,
                           self_type,
                           methods.into_iter()
@@ -682,7 +705,7 @@ impl<'a> MethodDef<'a> {
                                 fn_generics,
                                 abi,
                                 explicit_self,
-                                ast::NormalFn,
+                                ast::Unsafety::Normal,
                                 fn_decl,
                                 body_block,
                                 ast::Inherited)
@@ -1309,14 +1332,16 @@ impl<'a> TraitDef<'a> {
 
 /// Fold the fields. `use_foldl` controls whether this is done
 /// left-to-right (`true`) or right-to-left (`false`).
-pub fn cs_fold(use_foldl: bool,
-               f: |&mut ExtCtxt, Span, P<Expr>, P<Expr>, &[P<Expr>]| -> P<Expr>,
-               base: P<Expr>,
-               enum_nonmatch_f: EnumNonMatchCollapsedFunc,
-               cx: &mut ExtCtxt,
-               trait_span: Span,
-               substructure: &Substructure)
-               -> P<Expr> {
+pub fn cs_fold<F>(use_foldl: bool,
+                  mut f: F,
+                  base: P<Expr>,
+                  enum_nonmatch_f: EnumNonMatchCollapsedFunc,
+                  cx: &mut ExtCtxt,
+                  trait_span: Span,
+                  substructure: &Substructure)
+                  -> P<Expr> where
+    F: FnMut(&mut ExtCtxt, Span, P<Expr>, P<Expr>, &[P<Expr>]) -> P<Expr>,
+{
     match *substructure.fields {
         EnumMatching(_, _, ref all_fields) | Struct(ref all_fields) => {
             if use_foldl {
@@ -1355,12 +1380,14 @@ pub fn cs_fold(use_foldl: bool,
 ///              self_2.method(__arg_1_2, __arg_2_2)])
 /// ```
 #[inline]
-pub fn cs_same_method(f: |&mut ExtCtxt, Span, Vec<P<Expr>>| -> P<Expr>,
-                      enum_nonmatch_f: EnumNonMatchCollapsedFunc,
-                      cx: &mut ExtCtxt,
-                      trait_span: Span,
-                      substructure: &Substructure)
-                      -> P<Expr> {
+pub fn cs_same_method<F>(f: F,
+                         enum_nonmatch_f: EnumNonMatchCollapsedFunc,
+                         cx: &mut ExtCtxt,
+                         trait_span: Span,
+                         substructure: &Substructure)
+                         -> P<Expr> where
+    F: FnOnce(&mut ExtCtxt, Span, Vec<P<Expr>>) -> P<Expr>,
+{
     match *substructure.fields {
         EnumMatching(_, _, ref all_fields) | Struct(ref all_fields) => {
             // call self_n.method(other_1_n, other_2_n, ...)
@@ -1388,14 +1415,16 @@ pub fn cs_same_method(f: |&mut ExtCtxt, Span, Vec<P<Expr>>| -> P<Expr>,
 /// fields. `use_foldl` controls whether this is done left-to-right
 /// (`true`) or right-to-left (`false`).
 #[inline]
-pub fn cs_same_method_fold(use_foldl: bool,
-                           f: |&mut ExtCtxt, Span, P<Expr>, P<Expr>| -> P<Expr>,
-                           base: P<Expr>,
-                           enum_nonmatch_f: EnumNonMatchCollapsedFunc,
-                           cx: &mut ExtCtxt,
-                           trait_span: Span,
-                           substructure: &Substructure)
-                           -> P<Expr> {
+pub fn cs_same_method_fold<F>(use_foldl: bool,
+                              mut f: F,
+                              base: P<Expr>,
+                              enum_nonmatch_f: EnumNonMatchCollapsedFunc,
+                              cx: &mut ExtCtxt,
+                              trait_span: Span,
+                              substructure: &Substructure)
+                              -> P<Expr> where
+    F: FnMut(&mut ExtCtxt, Span, P<Expr>, P<Expr>) -> P<Expr>,
+{
     cs_same_method(
         |cx, span, vals| {
             if use_foldl {

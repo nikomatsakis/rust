@@ -36,17 +36,18 @@ use time::Duration;
 ///
 /// ```
 /// use std::sync::{Arc, Mutex, Condvar};
+/// use std::thread::Thread;
 ///
 /// let pair = Arc::new((Mutex::new(false), Condvar::new()));
 /// let pair2 = pair.clone();
 ///
 /// // Inside of our lock, spawn a new thread, and then wait for it to start
-/// spawn(proc() {
+/// Thread::spawn(move|| {
 ///     let &(ref lock, ref cvar) = &*pair2;
 ///     let mut started = lock.lock();
 ///     *started = true;
 ///     cvar.notify_one();
-/// });
+/// }).detach();
 ///
 /// // wait for the thread to start up
 /// let &(ref lock, ref cvar) = &*pair;
@@ -282,7 +283,7 @@ mod tests {
         static M: StaticMutex = MUTEX_INIT;
 
         let g = M.lock();
-        spawn(proc() {
+        spawn(move|| {
             let _g = M.lock();
             C.notify_one();
         });
@@ -300,7 +301,7 @@ mod tests {
         for _ in range(0, N) {
             let data = data.clone();
             let tx = tx.clone();
-            spawn(proc() {
+            spawn(move|| {
                 let &(ref lock, ref cond) = &*data;
                 let mut cnt = lock.lock();
                 *cnt += 1;
@@ -334,7 +335,7 @@ mod tests {
 
         let g = M.lock();
         assert!(!C.wait_timeout(&g, Duration::nanoseconds(1000)));
-        spawn(proc() {
+        spawn(move|| {
             let _g = M.lock();
             C.notify_one();
         });
@@ -351,7 +352,7 @@ mod tests {
         static C: StaticCondvar = CONDVAR_INIT;
 
         let g = M1.lock();
-        spawn(proc() {
+        spawn(move|| {
             let _g = M1.lock();
             C.notify_one();
         });
@@ -362,4 +363,3 @@ mod tests {
 
     }
 }
-

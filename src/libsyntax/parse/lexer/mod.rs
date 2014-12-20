@@ -244,7 +244,9 @@ impl<'a> StringReader<'a> {
     /// Calls `f` with a string slice of the source text spanning from `start`
     /// up to but excluding `self.last_pos`, meaning the slice does not include
     /// the character `self.curr`.
-    pub fn with_str_from<T>(&self, start: BytePos, f: |s: &str| -> T) -> T {
+    pub fn with_str_from<T, F>(&self, start: BytePos, f: F) -> T where
+        F: FnOnce(&str) -> T,
+    {
         self.with_str_from_to(start, self.last_pos, f)
     }
 
@@ -264,15 +266,17 @@ impl<'a> StringReader<'a> {
 
     /// Calls `f` with a string slice of the source text spanning from `start`
     /// up to but excluding `end`.
-    fn with_str_from_to<T>(&self, start: BytePos, end: BytePos, f: |s: &str| -> T) -> T {
+    fn with_str_from_to<T, F>(&self, start: BytePos, end: BytePos, f: F) -> T where
+        F: FnOnce(&str) -> T,
+    {
         f(self.filemap.src.slice(
                 self.byte_offset(start).to_uint(),
                 self.byte_offset(end).to_uint()))
     }
 
     /// Converts CRLF to LF in the given string, raising an error on bare CR.
-    fn translate_crlf<'a>(&self, start: BytePos,
-                          s: &'a str, errmsg: &'a str) -> str::CowString<'a> {
+    fn translate_crlf<'b>(&self, start: BytePos,
+                          s: &'b str, errmsg: &'b str) -> str::CowString<'b> {
         let mut i = 0u;
         while i < s.len() {
             let str::CharRange { ch, next } = s.char_range_at(i);

@@ -22,7 +22,7 @@ use parse::token;
 use ptr::P;
 
 /// The specific types of unsupported syntax
-#[deriving(PartialEq, Eq, Hash)]
+#[deriving(Copy, PartialEq, Eq, Hash)]
 pub enum ObsoleteSyntax {
     ObsoleteOwnedType,
     ObsoleteOwnedExpr,
@@ -32,9 +32,9 @@ pub enum ObsoleteSyntax {
     ObsoleteImportRenaming,
     ObsoleteSubsliceMatch,
     ObsoleteExternCrateRenaming,
+    ObsoleteProcType,
+    ObsoleteProcExpr,
 }
-
-impl Copy for ObsoleteSyntax {}
 
 pub trait ParserObsoleteMethods {
     /// Reports an obsolete syntax non-fatal error.
@@ -55,6 +55,14 @@ impl<'a> ParserObsoleteMethods for parser::Parser<'a> {
     /// Reports an obsolete syntax non-fatal error.
     fn obsolete(&mut self, sp: Span, kind: ObsoleteSyntax) {
         let (kind_str, desc) = match kind {
+            ObsoleteProcType => (
+                "the `proc` type",
+                "use unboxed closures instead",
+            ),
+            ObsoleteProcExpr => (
+                "`proc` expression",
+                "use a `move ||` expression instead",
+            ),
             ObsoleteOwnedType => (
                 "`~` notation for owned pointers",
                 "use `Box<T>` in `std::owned` instead"

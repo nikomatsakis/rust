@@ -20,12 +20,16 @@ pub use self::Entry::*;
 use core::prelude::*;
 
 use self::StackOp::*;
-use super::node::*;
+use super::node::{mod, Node, Found, GoDown};
+use super::node::{Traversal, MutTraversal, MoveTraversal};
+use super::node::TraversalItem::{mod, Elem, Edge};
+use super::node::ForceResult::{Leaf, Internal};
 use core::borrow::BorrowFrom;
 use std::hash::{Writer, Hash};
 use core::default::Default;
 use core::{iter, fmt, mem};
 use core::fmt::Show;
+use core::iter::Map;
 
 use ring_buf::RingBuf;
 
@@ -107,10 +111,14 @@ pub struct MoveEntries<K, V> {
 }
 
 /// An iterator over a BTreeMap's keys.
-pub type Keys<'a, K, V> = iter::Map<'static, (&'a K, &'a V), &'a K, Entries<'a, K, V>>;
+pub struct Keys<'a, K: 'a, V: 'a> {
+    inner: Map<(&'a K, &'a V), &'a K, Entries<'a, K, V>, fn((&'a K, &'a V)) -> &'a K>
+}
 
 /// An iterator over a BTreeMap's values.
-pub type Values<'a, K, V> = iter::Map<'static, (&'a K, &'a V), &'a V, Entries<'a, K, V>>;
+pub struct Values<'a, K: 'a, V: 'a> {
+    inner: Map<(&'a K, &'a V), &'a V, Entries<'a, K, V>, fn((&'a K, &'a V)) -> &'a V>
+}
 
 /// A view into a single entry in a map, which may either be vacant or occupied.
 pub enum Entry<'a, K:'a, V:'a> {
@@ -123,12 +131,12 @@ pub enum Entry<'a, K:'a, V:'a> {
 /// A vacant Entry.
 pub struct VacantEntry<'a, K:'a, V:'a> {
     key: K,
-    stack: stack::VacantSearchStack<'a, K, V>,
+    stack: stack::SearchStack<'a, K, V, node::handle::Edge, node::handle::Leaf>,
 }
 
 /// An occupied Entry.
 pub struct OccupiedEntry<'a, K:'a, V:'a> {
-    stack: stack::OccupiedSearchStack<'a, K, V>,
+    stack: stack::SearchStack<'a, K, V, node::handle::KV, node::handle::LeafOrInternal>,
 }
 
 impl<K: Ord, V> BTreeMap<K, V> {
@@ -206,10 +214,10 @@ impl<K: Ord, V> BTreeMap<K, V> {
         loop {
             match Node::search(cur_node, key) {
                 Found(handle) => return Some(handle.into_kv().1),
-                GoDown(handle) => match handle.into_edge() {
-                    None => return None,
-                    Some(next_node) => {
-                        cur_node = next_node;
+                GoDown(handle) => match handle.force() {
+                    Leaf(_) => return None,
+                    Internal(internal_handle) => {
+                        cur_node = internal_handle.into_edge();
                         continue;
                     }
                 }
@@ -270,10 +278,10 @@ impl<K: Ord, V> BTreeMap<K, V> {
             let cur_node = temp_node;
             match Node::search(cur_node, key) {
                 Found(handle) => return Some(handle.into_kv_mut().1),
-                GoDown(handle) => match handle.into_edge_mut() {
-                    None => return None,
-                    Some(next_node) => {
-                        temp_node = next_node;
+                GoDown(handle) => match handle.force() {
+                    Leaf(_) => return None,
+                    Internal(internal_handle) => {
+                        temp_node = internal_handle.into_edge_mut();
                         continue;
                     }
                 }
@@ -352,27 +360,27 @@ impl<K: Ord, V> BTreeMap<K, V> {
             let result = stack.with(move |pusher, node| {
                 // Same basic logic as found in `find`, but with PartialSearchStack mediating the
                 // actual nodes for us
-                match Node::search(node, &key) {
+                return match Node::search(node, &key) {
                     Found(mut handle) => {
                         // Perfect match, swap the values and return the old one
                         mem::swap(handle.val_mut(), &mut value);
-                        return Finished(Some(value));
+                        Finished(Some(value))
                     },
                     GoDown(handle) => {
                         // We need to keep searching, try to get the search stack
                         // to go down further
-                        match pusher.push(handle) {
-                            stack::Done(new_stack) => {
+                        match handle.force() {
+                            Leaf(leaf_handle) => {
                                 // We've reached a leaf, perform the insertion here
-                                new_stack.insert(key, value);
-                                return Finished(None);
+                                pusher.seal(leaf_handle).insert(key, value);
+                                Finished(None)
                             }
-                            stack::Grew(new_stack) => {
+                            Internal(internal_handle) => {
                                 // We've found the subtree to insert this key/value pair in,
                                 // keep searching
-                                return Continue((new_stack, key, value));
+                                Continue((pusher.push(internal_handle), key, value))
                             }
-                        };
+                        }
                     }
                 }
             });
@@ -450,18 +458,18 @@ impl<K: Ord, V> BTreeMap<K, V> {
         let mut stack = stack::PartialSearchStack::new(self);
         loop {
             let result = stack.with(move |pusher, node| {
-                match Node::search(node, key) {
+                return match Node::search(node, key) {
                     Found(handle) => {
                         // Perfect match. Terminate the stack here, and remove the entry
-                        return Finished(Some(pusher.seal(handle).remove()));
+                        Finished(Some(pusher.seal(handle).remove()))
                     },
                     GoDown(handle) => {
                         // We need to keep searching, try to go down the next edge
-                        match pusher.push(handle) {
+                        match handle.force() {
                             // We're at a leaf; the key isn't in here
-                            stack::Done(_) => return Finished(None),
-                            stack::Grew(new_stack) => return Continue(new_stack)
-                        };
+                            Leaf(_) => Finished(None),
+                            Internal(internal_handle) => Continue(pusher.push(internal_handle))
+                        }
                     }
                 }
             });
@@ -484,12 +492,12 @@ enum Continuation<A, B> {
 /// to nodes. By using this module much better safety guarantees can be made, and more search
 /// boilerplate gets cut out.
 mod stack {
-    pub use self::PushResult::*;
     use core::prelude::*;
     use core::kinds::marker;
     use core::mem;
     use super::BTreeMap;
-    use super::super::node::*;
+    use super::super::node::{mod, Node, Fit, Split, Internal, Leaf};
+    use super::super::node::handle;
     use vec::Vec;
 
     /// A generic mutable reference, identical to `&mut` except for the fact that its lifetime
@@ -513,30 +521,23 @@ mod stack {
         }
     }
 
-    type StackItem<K, V> = EdgeNodeHandle<*mut Node<K, V>>;
+    type StackItem<K, V> = node::Handle<*mut Node<K, V>, handle::Edge, handle::Internal>;
     type Stack<K, V> = Vec<StackItem<K, V>>;
 
-    /// A PartialSearchStack handles the construction of a search stack.
+    /// A `PartialSearchStack` handles the construction of a search stack.
     pub struct PartialSearchStack<'a, K:'a, V:'a> {
         map: &'a mut BTreeMap<K, V>,
         stack: Stack<K, V>,
         next: *mut Node<K, V>,
     }
 
-    /// An OccupiedSearchStack represents a full path to an element of interest. It provides methods
-    /// for manipulating the element at the top of its stack.
-    pub struct OccupiedSearchStack<'a, K:'a, V:'a> {
+    /// A `SearchStack` represents a full path to an element or an edge of interest. It provides
+    /// methods depending on the type of what the path points to for removing an element, inserting
+    /// a new element, and manipulating to element at the top of the stack.
+    pub struct SearchStack<'a, K:'a, V:'a, Type, NodeType> {
         map: &'a mut BTreeMap<K, V>,
         stack: Stack<K, V>,
-        top: KVNodeHandle<*mut Node<K, V>>,
-    }
-
-    /// A VacantSearchStack represents a full path to a spot for a new element of interest. It
-    /// provides a method inserting an element at the top of its stack.
-    pub struct VacantSearchStack<'a, K:'a, V:'a> {
-        map: &'a mut BTreeMap<K, V>,
-        stack: Stack<K, V>,
-        top: EdgeNodeHandle<*mut Node<K, V>>,
+        top: node::Handle<*mut Node<K, V>, Type, NodeType>,
     }
 
     /// A `PartialSearchStack` that doesn't hold a a reference to the next node, and is just
@@ -548,18 +549,10 @@ mod stack {
         marker: marker::InvariantLifetime<'id>
     }
 
-    /// The result of asking a PartialSearchStack to push another node onto itself. Either it
-    /// Grew, in which case it's still Partial, or it found its last node was actually a leaf, in
-    /// which case it seals itself and yields a complete SearchStack.
-    pub enum PushResult<'a, K:'a, V:'a> {
-        Grew(PartialSearchStack<'a, K, V>),
-        Done(VacantSearchStack<'a, K, V>),
-    }
-
     impl<'a, K, V> PartialSearchStack<'a, K, V> {
         /// Creates a new PartialSearchStack from a BTreeMap by initializing the stack with the
         /// root of the tree.
-        pub fn new<'a>(map: &'a mut BTreeMap<K, V>) -> PartialSearchStack<'a, K, V> {
+        pub fn new(map: &'a mut BTreeMap<K, V>) -> PartialSearchStack<'a, K, V> {
             let depth = map.depth;
 
             PartialSearchStack {
@@ -603,40 +596,31 @@ mod stack {
         /// Pushes the requested child of the stack's current top on top of the stack. If the child
         /// exists, then a new PartialSearchStack is yielded. Otherwise, a VacantSearchStack is
         /// yielded.
-        pub fn push(mut self, mut edge: EdgeNodeHandle<IdRef<'id, Node<K, V>>>)
-                    -> PushResult<'a, K, V> {
-            let to_insert = edge.as_raw();
-            match edge.edge_mut() {
-                None => {
-                    Done(VacantSearchStack {
-                        map: self.map,
-                        stack: self.stack,
-                        top: to_insert,
-                    })
-                },
-                Some(node) => {
-                    self.stack.push(to_insert);
-                    Grew(PartialSearchStack {
-                        map: self.map,
-                        stack: self.stack,
-                        next: node as *mut _,
-                    })
-                },
+        pub fn push(mut self, mut edge: node::Handle<IdRef<'id, Node<K, V>>,
+                                                     handle::Edge,
+                                                     handle::Internal>)
+                    -> PartialSearchStack<'a, K, V> {
+            self.stack.push(edge.as_raw());
+            PartialSearchStack {
+                map: self.map,
+                stack: self.stack,
+                next: edge.edge_mut() as *mut _,
             }
         }
 
-        /// Converts the PartialSearchStack into an OccupiedSearchStack.
-        pub fn seal(self, mut node: KVNodeHandle<IdRef<'id, Node<K, V>>>)
-                    -> OccupiedSearchStack<'a, K, V> {
-            OccupiedSearchStack {
+        /// Converts the PartialSearchStack into a SearchStack.
+        pub fn seal<Type, NodeType>
+                   (self, mut handle: node::Handle<IdRef<'id, Node<K, V>>, Type, NodeType>)
+                    -> SearchStack<'a, K, V, Type, NodeType> {
+            SearchStack {
                 map: self.map,
                 stack: self.stack,
-                top: node.as_raw(),
+                top: handle.as_raw(),
             }
         }
     }
 
-    impl<'a, K, V> OccupiedSearchStack<'a, K, V> {
+    impl<'a, K, V, NodeType> SearchStack<'a, K, V, handle::KV, NodeType> {
         /// Gets a reference to the value the stack points to.
         pub fn peek(&self) -> &V {
             unsafe { self.top.from_raw().into_kv().1 }
@@ -657,20 +641,13 @@ mod stack {
                 )
             }
         }
+    }
 
+    impl<'a, K, V> SearchStack<'a, K, V, handle::KV, handle::Leaf> {
         /// Removes the key and value in the top element of the stack, then handles underflows as
         /// described in BTree's pop function.
-        pub fn remove(mut self) -> V {
-            // Ensure that the search stack goes to a leaf. This is necessary to perform deletion
-            // in a BTree. Note that this may put the tree in an inconsistent state (further
-            // described in leafify's comments), but this is immediately fixed by the
-            // removing the value we want to remove
-            self.leafify();
-
-            let map = self.map;
-            map.length -= 1;
-
-            let mut stack = self.stack;
+        fn remove_leaf(mut self) -> V {
+            self.map.length -= 1;
 
             // Remove the key-value pair from the leaf that this search stack points to.
             // Then, note if the leaf is underfull, and promptly forget the leaf and its ptr
@@ -682,16 +659,16 @@ mod stack {
             };
 
             loop {
-                match stack.pop() {
+                match self.stack.pop() {
                     None => {
                         // We've reached the root, so no matter what, we're done. We manually
                         // access the root via the tree itself to avoid creating any dangling
                         // pointers.
-                        if map.root.len() == 0 && !map.root.is_leaf() {
+                        if self.map.root.len() == 0 && !self.map.root.is_leaf() {
                             // We've emptied out the root, so make its only child the new root.
                             // If it's a leaf, we just let it become empty.
-                            map.depth -= 1;
-                            map.root.into_edge();
+                            self.map.depth -= 1;
+                            self.map.root.hoist_lone_child();
                         }
                         return value;
                     }
@@ -710,6 +687,18 @@ mod stack {
                 }
             }
         }
+    }
+
+    impl<'a, K, V> SearchStack<'a, K, V, handle::KV, handle::LeafOrInternal> {
+        /// Removes the key and value in the top element of the stack, then handles underflows as
+        /// described in BTree's pop function.
+        pub fn remove(self) -> V {
+            // Ensure that the search stack goes to a leaf. This is necessary to perform deletion
+            // in a BTree. Note that this may put the tree in an inconsistent state (further
+            // described in into_leaf's comments), but this is immediately fixed by the
+            // removing the value we want to remove
+            self.into_leaf().remove_leaf()
+        }
 
         /// Subroutine for removal. Takes a search stack for a key that might terminate at an
         /// internal node, and mutates the tree and search stack to *make* it a search stack
@@ -717,7 +706,7 @@ mod stack {
         /// leaves the tree in an inconsistent state that must be repaired by the caller by
         /// removing the entry in question. Specifically the key-value pair and its successor will
         /// become swapped.
-        fn leafify(&mut self) {
+        fn into_leaf(mut self) -> SearchStack<'a, K, V, handle::KV, handle::Leaf> {
             unsafe {
                 let mut top_raw = self.top;
                 let mut top = top_raw.from_raw_mut();
@@ -726,31 +715,43 @@ mod stack {
                 let val_ptr = top.val_mut() as *mut _;
 
                 // Try to go into the right subtree of the found key to find its successor
-                let mut right_edge = top.right_edge();
-                let right_edge_raw = right_edge.as_raw();
-                match right_edge.edge_mut() {
-                    None => {
+                match top.force() {
+                    Leaf(mut leaf_handle) => {
                         // We're a proper leaf stack, nothing to do
+                        return SearchStack {
+                            map: self.map,
+                            stack: self.stack,
+                            top: leaf_handle.as_raw()
+                        }
                     }
-                    Some(mut temp_node) => {
+                    Internal(mut internal_handle) => {
+                        let mut right_handle = internal_handle.right_edge();
+
                         //We're not a proper leaf stack, let's get to work.
-                        self.stack.push(right_edge_raw);
+                        self.stack.push(right_handle.as_raw());
+
+                        let mut temp_node = right_handle.edge_mut();
                         loop {
                             // Walk into the smallest subtree of this node
                             let node = temp_node;
 
-                            if node.is_leaf() {
-                                // This node is a leaf, do the swap and return
-                                let mut handle = node.kv_handle(0);
-                                self.top = handle.as_raw();
-                                mem::swap(handle.key_mut(), &mut *key_ptr);
-                                mem::swap(handle.val_mut(), &mut *val_ptr);
-                                break;
-                            } else {
-                                // This node is internal, go deeper
-                                let mut handle = node.edge_handle(0);
-                                self.stack.push(handle.as_raw());
-                                temp_node = handle.into_edge_mut().unwrap();
+                            match node.kv_handle(0).force() {
+                                Leaf(mut handle) => {
+                                    // This node is a leaf, do the swap and return
+                                    mem::swap(handle.key_mut(), &mut *key_ptr);
+                                    mem::swap(handle.val_mut(), &mut *val_ptr);
+                                    return SearchStack {
+                                        map: self.map,
+                                        stack: self.stack,
+                                        top: handle.as_raw()
+                                    }
+                                },
+                                Internal(kv_handle) => {
+                                    // This node is internal, go deeper
+                                    let mut handle = kv_handle.into_left_edge();
+                                    self.stack.push(handle.as_raw());
+                                    temp_node = handle.into_edge_mut();
+                                }
                             }
                         }
                     }
@@ -759,7 +760,7 @@ mod stack {
         }
     }
 
-    impl<'a, K, V> VacantSearchStack<'a, K, V> {
+    impl<'a, K, V> SearchStack<'a, K, V, handle::Edge, handle::Leaf> {
         /// Inserts the key and value into the top element in the stack, and if that node has to
         /// split recursively inserts the split contents into the next element stack until
         /// splits stop.
@@ -834,7 +835,9 @@ impl<S: Writer, K: Hash<S>, V: Hash<S>> Hash<S> for BTreeMap<K, V> {
     }
 }
 
+#[stable]
 impl<K: Ord, V> Default for BTreeMap<K, V> {
+    #[stable]
     fn default() -> BTreeMap<K, V> {
         BTreeMap::new()
     }
@@ -1059,6 +1062,25 @@ impl<K, V> DoubleEndedIterator<(K, V)> for MoveEntries<K, V> {
 impl<K, V> ExactSizeIterator<(K, V)> for MoveEntries<K, V> {}
 
 
+impl<'a, K, V> Iterator<&'a K> for Keys<'a, K, V> {
+    fn next(&mut self) -> Option<(&'a K)> { self.inner.next() }
+    fn size_hint(&self) -> (uint, Option<uint>) { self.inner.size_hint() }
+}
+impl<'a, K, V> DoubleEndedIterator<&'a K> for Keys<'a, K, V> {
+    fn next_back(&mut self) -> Option<(&'a K)> { self.inner.next_back() }
+}
+impl<'a, K, V> ExactSizeIterator<&'a K> for Keys<'a, K, V> {}
+
+
+impl<'a, K, V> Iterator<&'a V> for Values<'a, K, V> {
+    fn next(&mut self) -> Option<(&'a V)> { self.inner.next() }
+    fn size_hint(&self) -> (uint, Option<uint>) { self.inner.size_hint() }
+}
+impl<'a, K, V> DoubleEndedIterator<&'a V> for Values<'a, K, V> {
+    fn next_back(&mut self) -> Option<(&'a V)> { self.inner.next_back() }
+}
+impl<'a, K, V> ExactSizeIterator<&'a V> for Values<'a, K, V> {}
+
 
 impl<'a, K: Ord, V> VacantEntry<'a, K, V> {
     /// Sets the value of the entry with the VacantEntry's key,
@@ -1131,6 +1153,24 @@ impl<K, V> BTreeMap<K, V> {
     }
 
     /// Gets a mutable iterator over the entries of the map.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    ///
+    /// let mut map = BTreeMap::new();
+    /// map.insert("a", 1u);
+    /// map.insert("b", 2u);
+    /// map.insert("c", 3u);
+    ///
+    /// // add 10 to the value if the key isn't "a"
+    /// for (key, value) in map.iter_mut() {
+    ///     if key != &"a" {
+    ///         *value += 10;
+    ///     }
+    /// }
+    /// ```
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn iter_mut<'a>(&'a mut self) -> MutEntries<'a, K, V> {
         let len = self.len();
@@ -1145,6 +1185,21 @@ impl<K, V> BTreeMap<K, V> {
     }
 
     /// Gets an owning iterator over the entries of the map.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    ///
+    /// let mut map = BTreeMap::new();
+    /// map.insert(1u, "a");
+    /// map.insert(2u, "b");
+    /// map.insert(3u, "c");
+    ///
+    /// for (key, value) in map.into_iter() {
+    ///     println!("{}: {}", key, value);
+    /// }
+    /// ```
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn into_iter(self) -> MoveEntries<K, V> {
         let len = self.len();
@@ -1174,7 +1229,9 @@ impl<K, V> BTreeMap<K, V> {
     /// ```
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn keys<'a>(&'a self) -> Keys<'a, K, V> {
-        self.iter().map(|(k, _)| k)
+        fn first<A, B>((a, _): (A, B)) -> A { a }
+
+        Keys { inner: self.iter().map(first) }
     }
 
     /// Gets an iterator over the values of the map.
@@ -1193,7 +1250,9 @@ impl<K, V> BTreeMap<K, V> {
     /// ```
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn values<'a>(&'a self) -> Values<'a, K, V> {
-        self.iter().map(|(_, v)| v)
+        fn second<A, B>((_, b): (A, B)) -> B { b }
+
+        Values { inner: self.iter().map(second) }
     }
 
     /// Return the number of elements in the map.
@@ -1234,27 +1293,28 @@ impl<K: Ord, V> BTreeMap<K, V> {
         let mut stack = stack::PartialSearchStack::new(self);
         loop {
             let result = stack.with(move |pusher, node| {
-                match Node::search(node, &key) {
+                return match Node::search(node, &key) {
                     Found(handle) => {
                         // Perfect match
-                        return Finished(Occupied(OccupiedEntry {
+                        Finished(Occupied(OccupiedEntry {
                             stack: pusher.seal(handle)
-                        }));
+                        }))
                     },
                     GoDown(handle) => {
-                        match pusher.push(handle) {
-                            stack::Done(new_stack) => {
-                                // Not in the tree, but we've found where it goes
-                                return Finished(Vacant(VacantEntry {
-                                    stack: new_stack,
+                        match handle.force() {
+                            Leaf(leaf_handle) => {
+                                Finished(Vacant(VacantEntry {
+                                    stack: pusher.seal(leaf_handle),
                                     key: key,
-                                }));
+                                }))
+                            },
+                            Internal(internal_handle) => {
+                                Continue((
+                                    pusher.push(internal_handle),
+                                    key
+                                ))
                             }
-                            stack::Grew(new_stack) => {
-                                // We've found the subtree this key must go in
-                                return Continue((new_stack, key));
-                            }
-                        };
+                        }
                     }
                 }
             });
@@ -1275,7 +1335,7 @@ impl<K: Ord, V> BTreeMap<K, V> {
 
 #[cfg(test)]
 mod test {
-    use std::prelude::*;
+    use prelude::*;
 
     use super::{BTreeMap, Occupied, Vacant};
 
@@ -1477,7 +1537,7 @@ mod test {
 
 #[cfg(test)]
 mod bench {
-    use std::prelude::*;
+    use prelude::*;
     use std::rand::{weak_rng, Rng};
     use test::{Bencher, black_box};
 

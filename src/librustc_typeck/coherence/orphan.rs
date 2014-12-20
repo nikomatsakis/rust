@@ -44,7 +44,7 @@ impl<'cx, 'tcx,'v> visit::Visitor<'v> for OrphanChecker<'cx, 'tcx> {
     fn visit_item(&mut self, item: &'v ast::Item) {
         let def_id = ast_util::local_def(item.id);
         match item.node {
-            ast::ItemImpl(_, None, _, _) => {
+            ast::ItemImpl(_, _, None, _, _) => {
                 // For inherent impls, self type must be a nominal type
                 // defined in this crate.
                 debug!("coherence2::orphan check: inherent impl {}", item.repr(self.tcx));
@@ -55,7 +55,7 @@ impl<'cx, 'tcx,'v> visit::Visitor<'v> for OrphanChecker<'cx, 'tcx> {
                         self.check_def_id(item.span, def_id);
                     }
                     ty::ty_trait(box ty::TyTrait{ ref principal, ..}) => {
-                        self.check_def_id(item.span, principal.def_id);
+                        self.check_def_id(item.span, principal.def_id());
                     }
                     _ => {
                         span_err!(self.tcx.sess, item.span, E0118,
@@ -64,7 +64,7 @@ impl<'cx, 'tcx,'v> visit::Visitor<'v> for OrphanChecker<'cx, 'tcx> {
                     }
                 }
             }
-            ast::ItemImpl(_, Some(_), _, _) => {
+            ast::ItemImpl(_, _, Some(_), _, _) => {
                 // "Trait" impl
                 debug!("coherence2::orphan check: trait impl {}", item.repr(self.tcx));
                 if traits::is_orphan_impl(self.tcx, def_id) {

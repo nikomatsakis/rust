@@ -45,12 +45,10 @@ macro_rules! lets_do_this {
         $( $variant:ident, $name:expr, $method:ident; )*
     ) => {
 
-#[deriving(FromPrimitive, PartialEq, Eq, Hash)]
+#[deriving(Copy, FromPrimitive, PartialEq, Eq, Hash)]
 pub enum LangItem {
     $($variant),*
 }
-
-impl Copy for LangItem {}
 
 pub struct LanguageItems {
     pub items: Vec<Option<ast::DefId>>,
@@ -112,6 +110,22 @@ impl LanguageItems {
         } else {
             None
         }
+    }
+
+    pub fn fn_trait_kind(&self, id: ast::DefId) -> Option<ty::UnboxedClosureKind> {
+        let def_id_kinds = [
+            (self.fn_trait(), ty::FnUnboxedClosureKind),
+            (self.fn_mut_trait(), ty::FnMutUnboxedClosureKind),
+            (self.fn_once_trait(), ty::FnOnceUnboxedClosureKind),
+            ];
+
+        for &(opt_def_id, kind) in def_id_kinds.iter() {
+            if Some(id) == opt_def_id {
+                return Some(kind);
+            }
+        }
+
+        None
     }
 
     $(

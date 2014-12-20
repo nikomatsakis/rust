@@ -30,10 +30,10 @@ use std::ptr;
 use std::str;
 use std::mem;
 use std::sync::{Arc, Mutex};
-use std::task::TaskBuilder;
+use std::thread;
 use libc::{c_uint, c_int, c_void};
 
-#[deriving(Clone, PartialEq, PartialOrd, Ord, Eq)]
+#[deriving(Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
 pub enum OutputType {
     OutputTypeBitcode,
     OutputTypeAssembly,
@@ -41,8 +41,6 @@ pub enum OutputType {
     OutputTypeObject,
     OutputTypeExe,
 }
-
-impl Copy for OutputType {}
 
 pub fn llvm_err(handler: &diagnostic::Handler, msg: String) -> ! {
     unsafe {
@@ -488,8 +486,12 @@ unsafe fn optimize_and_codegen(cgcx: &CodegenContext,
     // pass manager passed to the closure should be ensured to not
     // escape the closure itself, and the manager should only be
     // used once.
-    unsafe fn with_codegen(tm: TargetMachineRef, llmod: ModuleRef,
-                    no_builtins: bool, f: |PassManagerRef|) {
+    unsafe fn with_codegen<F>(tm: TargetMachineRef,
+                              llmod: ModuleRef,
+                              no_builtins: bool,
+                              f: F) where
+        F: FnOnce(PassManagerRef),
+    {
         let cpm = llvm::LLVMCreatePassManager();
         llvm::LLVMRustAddAnalysisPasses(tm, cpm, llmod);
         llvm::LLVMRustAddLibraryInfo(cpm, llmod, no_builtins);
@@ -838,18 +840,31 @@ pub fn run_passes(sess: &Session,
     //if sess.time_llvm_passes() { llvm::LLVMRustPrintPassTimings(); }
 }
 
-type WorkItem = proc(&CodegenContext):Send;
+struct WorkItem {
+    mtrans: ModuleTranslation,
+    config: ModuleConfig,
+    output_names: OutputFilenames,
+    name_extra: String
+}
 
 fn build_work_item(sess: &Session,
                    mtrans: ModuleTranslation,
                    config: ModuleConfig,
                    output_names: OutputFilenames,
-                   name_extra: String) -> WorkItem {
+                   name_extra: String)
+                   -> WorkItem
+{
     let mut config = config;
     config.tm = create_target_machine(sess);
+    WorkItem { mtrans: mtrans, config: config, output_names: output_names,
+               name_extra: name_extra }
+}
 
-    proc(cgcx) unsafe {
-        optimize_and_codegen(cgcx, mtrans, config, name_extra, output_names);
+fn execute_work_item(cgcx: &CodegenContext,
+                     work_item: WorkItem) {
+    unsafe {
+        optimize_and_codegen(cgcx, work_item.mtrans, work_item.config,
+                             work_item.name_extra, work_item.output_names);
     }
 }
 
@@ -862,7 +877,7 @@ fn run_work_singlethreaded(sess: &Session,
     // Since we're running single-threaded, we can pass the session to
     // the proc, allowing `optimize_and_codegen` to perform LTO.
     for work in Unfold::new((), |_| work_items.pop()) {
-        work(&cgcx);
+        execute_work_item(&cgcx, work);
     }
 }
 
@@ -879,7 +894,11 @@ fn run_work_multithreaded(sess: &Session,
         let diag_emitter = diag_emitter.clone();
         let remark = sess.opts.cg.remark.clone();
 
-        let future = TaskBuilder::new().named(format!("codegen-{}", i)).try_future(proc() {
+        let (tx, rx) = channel();
+        let mut tx = Some(tx);
+        futures.push(rx);
+
+        thread::Builder::new().name(format!("codegen-{}", i)).spawn(move |:| {
             let diag_handler = mk_handler(box diag_emitter);
 
             // Must construct cgcx inside the proc because it has non-Send
@@ -895,7 +914,7 @@ fn run_work_multithreaded(sess: &Session,
                 let maybe_work = work_items_arc.lock().pop();
                 match maybe_work {
                     Some(work) => {
-                        work(&cgcx);
+                        execute_work_item(&cgcx, work);
 
                         // Make sure to fail the worker so the main thread can
                         // tell that there were errors.
@@ -904,13 +923,14 @@ fn run_work_multithreaded(sess: &Session,
                     None => break,
                 }
             }
-        });
-        futures.push(future);
+
+            tx.take().unwrap().send(());
+        }).detach();
     }
 
     let mut panicked = false;
-    for future in futures.into_iter() {
-        match future.into_inner() {
+    for rx in futures.into_iter() {
+        match rx.recv_opt() {
             Ok(()) => {},
             Err(_) => {
                 panicked = true;

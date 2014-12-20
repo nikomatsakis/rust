@@ -30,7 +30,7 @@ use middle::ty::{MethodStatic, MethodStaticUnboxedClosure};
 use util::ppaux::Repr;
 
 use std::kinds;
-use syntax::ast;
+use syntax::{ast, ast_util};
 use syntax::ptr::P;
 use syntax::codemap::Span;
 
@@ -95,7 +95,7 @@ pub trait Delegate<'tcx> {
               mode: MutateMode);
 }
 
-#[deriving(PartialEq, Show)]
+#[deriving(Copy, PartialEq, Show)]
 pub enum LoanCause {
     ClosureCapture(Span),
     AddrOf,
@@ -107,26 +107,20 @@ pub enum LoanCause {
     MatchDiscriminant
 }
 
-impl kinds::Copy for LoanCause {}
-
-#[deriving(PartialEq, Show)]
+#[deriving(Copy, PartialEq, Show)]
 pub enum ConsumeMode {
     Copy,                // reference to x where x has a type that copies
     Move(MoveReason),    // reference to x where x has a type that moves
 }
 
-impl kinds::Copy for ConsumeMode {}
-
-#[deriving(PartialEq,Show)]
+#[deriving(Copy, PartialEq, Show)]
 pub enum MoveReason {
     DirectRefMove,
     PatBindingMove,
     CaptureMove,
 }
 
-impl kinds::Copy for MoveReason {}
-
-#[deriving(PartialEq,Show)]
+#[deriving(Copy, PartialEq, Show)]
 pub enum MatchMode {
     NonBindingMatch,
     BorrowingMatch,
@@ -134,11 +128,11 @@ pub enum MatchMode {
     MovingMatch,
 }
 
-impl kinds::Copy for MatchMode {}
-
-#[deriving(Copy,PartialEq,Show)]
+#[deriving(PartialEq,Show)]
 enum TrackMatchMode {
-    Unknown, Definite(MatchMode), Conflicting,
+    Unknown,
+    Definite(MatchMode),
+    Conflicting,
 }
 
 impl TrackMatchMode {
@@ -201,22 +195,19 @@ impl TrackMatchMode {
     }
 }
 
-#[deriving(PartialEq,Show)]
+#[deriving(Copy, PartialEq, Show)]
 pub enum MutateMode {
     Init,
     JustWrite,    // x = y
     WriteAndRead, // x += y
 }
 
-impl kinds::Copy for MutateMode {}
-
+#[deriving(Copy)]
 enum OverloadedCallType {
     FnOverloadedCall,
     FnMutOverloadedCall,
     FnOnceOverloadedCall,
 }
-
-impl kinds::Copy for OverloadedCallType {}
 
 impl OverloadedCallType {
     fn from_trait_id(tcx: &ty::ctxt, trait_id: ast::DefId)
@@ -316,14 +307,20 @@ pub struct ExprUseVisitor<'d,'t,'tcx,TYPER:'t> {
 //
 // Note that this macro appears similar to try!(), but, unlike try!(),
 // it does not propagate the error.
-macro_rules! return_if_err(
+macro_rules! return_if_err {
     ($inp: expr) => (
         match $inp {
             Ok(v) => v,
             Err(()) => return
         }
     )
-)
+}
+
+/// Whether the elements of an overloaded operation are passed by value or by reference
+enum PassArgs {
+    ByValue,
+    ByRef,
+}
 
 impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,'tcx,TYPER> {
     pub fn new(delegate: &'d mut Delegate<'tcx>,
@@ -434,7 +431,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,'tcx,TYPER> {
             ast::ExprPath(..) => { }
 
             ast::ExprUnary(ast::UnDeref, ref base) => {      // *base
-                if !self.walk_overloaded_operator(expr, &**base, Vec::new()) {
+                if !self.walk_overloaded_operator(expr, &**base, Vec::new(), PassArgs::ByRef) {
                     self.select_from_expr(&**base);
                 }
             }
@@ -448,7 +445,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,'tcx,TYPER> {
             }
 
             ast::ExprIndex(ref lhs, ref rhs) => {       // lhs[rhs]
-                if !self.walk_overloaded_operator(expr, &**lhs, vec![&**rhs]) {
+                if !self.walk_overloaded_operator(expr, &**lhs, vec![&**rhs], PassArgs::ByRef) {
                     self.select_from_expr(&**lhs);
                     self.consume_expr(&**rhs);
                 }
@@ -461,7 +458,8 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,'tcx,TYPER> {
                     (&None, &Some(ref e)) => vec![&**e],
                     (&None, &None) => Vec::new()
                 };
-                let overloaded = self.walk_overloaded_operator(expr, &**base, args);
+                let overloaded =
+                    self.walk_overloaded_operator(expr, &**base, args, PassArgs::ByRef);
                 assert!(overloaded);
             }
 
@@ -565,14 +563,26 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,'tcx,TYPER> {
                 self.walk_block(&**blk);
             }
 
-            ast::ExprUnary(_, ref lhs) => {
-                if !self.walk_overloaded_operator(expr, &**lhs, Vec::new()) {
+            ast::ExprUnary(op, ref lhs) => {
+                let pass_args = if ast_util::is_by_value_unop(op) {
+                    PassArgs::ByValue
+                } else {
+                    PassArgs::ByRef
+                };
+
+                if !self.walk_overloaded_operator(expr, &**lhs, Vec::new(), pass_args) {
                     self.consume_expr(&**lhs);
                 }
             }
 
-            ast::ExprBinary(_, ref lhs, ref rhs) => {
-                if !self.walk_overloaded_operator(expr, &**lhs, vec![&**rhs]) {
+            ast::ExprBinary(op, ref lhs, ref rhs) => {
+                let pass_args = if ast_util::is_by_value_binop(op) {
+                    PassArgs::ByValue
+                } else {
+                    PassArgs::ByRef
+                };
+
+                if !self.walk_overloaded_operator(expr, &**lhs, vec![&**rhs], pass_args) {
                     self.consume_expr(&**lhs);
                     self.consume_expr(&**rhs);
                 }
@@ -609,13 +619,15 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,'tcx,TYPER> {
                 self.consume_expr(&**count);
             }
 
-            ast::ExprClosure(..) |
-            ast::ExprProc(..) => {
+            ast::ExprClosure(..) => {
                 self.walk_captures(expr)
             }
 
             ast::ExprBox(ref place, ref base) => {
-                self.consume_expr(&**place);
+                match *place {
+                    Some(ref place) => self.consume_expr(&**place),
+                    None => {}
+                }
                 self.consume_expr(&**base);
             }
 
@@ -907,11 +919,24 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,'tcx,TYPER> {
     fn walk_overloaded_operator(&mut self,
                                 expr: &ast::Expr,
                                 receiver: &ast::Expr,
-                                rhs: Vec<&ast::Expr>)
+                                rhs: Vec<&ast::Expr>,
+                                pass_args: PassArgs)
                                 -> bool
     {
         if !self.typer.is_method_call(expr.id) {
             return false;
+        }
+
+        match pass_args {
+            PassArgs::ByValue => {
+                self.consume_expr(receiver);
+                for &arg in rhs.iter() {
+                    self.consume_expr(arg);
+                }
+
+                return true;
+            },
+            PassArgs::ByRef => {},
         }
 
         self.walk_expr(receiver);

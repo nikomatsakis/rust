@@ -24,7 +24,7 @@
 //! # Example
 //!
 //! ```
-//! scoped_thread_local!(static FOO: uint)
+//! scoped_thread_local!(static FOO: uint);
 //!
 //! // Initially each scoped slot is empty.
 //! assert!(!FOO.is_set());
@@ -60,18 +60,18 @@ pub struct Key<T> { #[doc(hidden)] pub inner: KeyInner<T> }
 /// This macro declares a `static` item on which methods are used to get and
 /// set the value stored within.
 #[macro_export]
-macro_rules! scoped_thread_local(
+macro_rules! scoped_thread_local {
     (static $name:ident: $t:ty) => (
         __scoped_thread_local_inner!(static $name: $t)
     );
     (pub static $name:ident: $t:ty) => (
         __scoped_thread_local_inner!(pub static $name: $t)
     );
-)
+}
 
 #[macro_export]
 #[doc(hidden)]
-macro_rules! __scoped_thread_local_inner(
+macro_rules! __scoped_thread_local_inner {
     (static $name:ident: $t:ty) => (
         #[cfg_attr(not(any(windows, target_os = "android", target_os = "ios")),
                    thread_local)]
@@ -104,7 +104,7 @@ macro_rules! __scoped_thread_local_inner(
 
         INIT
     })
-)
+}
 
 impl<T> Key<T> {
     /// Insert a value into this scoped thread local storage slot for a
@@ -119,7 +119,7 @@ impl<T> Key<T> {
     /// # Example
     ///
     /// ```
-    /// scoped_thread_local!(static FOO: uint)
+    /// scoped_thread_local!(static FOO: uint);
     ///
     /// FOO.set(&100, || {
     ///     let val = FOO.with(|v| *v);
@@ -135,7 +135,9 @@ impl<T> Key<T> {
     ///     assert_eq!(val, 100);
     /// });
     /// ```
-    pub fn set<R>(&'static self, t: &T, cb: || -> R) -> R {
+    pub fn set<R, F>(&'static self, t: &T, cb: F) -> R where
+        F: FnOnce() -> R,
+    {
         struct Reset<'a, T: 'a> {
             key: &'a KeyInner<T>,
             val: *mut T,
@@ -169,13 +171,15 @@ impl<T> Key<T> {
     /// # Example
     ///
     /// ```no_run
-    /// scoped_thread_local!(static FOO: uint)
+    /// scoped_thread_local!(static FOO: uint);
     ///
     /// FOO.with(|slot| {
     ///     // work with `slot`
     /// });
     /// ```
-    pub fn with<R>(&'static self, cb: |&T| -> R) -> R {
+    pub fn with<R, F>(&'static self, cb: F) -> R where
+        F: FnOnce(&T) -> R
+    {
         unsafe {
             let ptr = self.inner.get();
             assert!(!ptr.is_null(), "cannot access a scoped thread local \
@@ -235,7 +239,7 @@ mod tests {
 
     #[test]
     fn smoke() {
-        scoped_thread_local!(static BAR: uint)
+        scoped_thread_local!(static BAR: uint);
 
         assert!(!BAR.is_set());
         BAR.set(&1, || {
@@ -249,7 +253,7 @@ mod tests {
 
     #[test]
     fn cell_allowed() {
-        scoped_thread_local!(static BAR: Cell<uint>)
+        scoped_thread_local!(static BAR: Cell<uint>);
 
         BAR.set(&Cell::new(1), || {
             BAR.with(|slot| {
@@ -258,4 +262,3 @@ mod tests {
         });
     }
 }
-

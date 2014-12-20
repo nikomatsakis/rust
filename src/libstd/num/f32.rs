@@ -349,7 +349,6 @@ pub fn to_str_exp_digits(num: f32, dig: uint, upper: bool) -> String {
 mod tests {
     use f32::*;
     use num::*;
-    use num;
 
     #[test]
     fn test_min_nan() {
@@ -364,8 +363,8 @@ mod tests {
     }
 
     #[test]
-    fn test_num() {
-        num::test_num(10f32, 2f32);
+    fn test_num_f32() {
+        test_num(10f32, 2f32);
     }
 
     #[test]
@@ -671,8 +670,8 @@ mod tests {
         let inf: f32 = Float::infinity();
         let neg_inf: f32 = Float::neg_infinity();
         let nan: f32 = Float::nan();
-        assert_eq!(match inf.frexp() { (x, _) => x }, inf)
-        assert_eq!(match neg_inf.frexp() { (x, _) => x }, neg_inf)
+        assert_eq!(match inf.frexp() { (x, _) => x }, inf);
+        assert_eq!(match neg_inf.frexp() { (x, _) => x }, neg_inf);
         assert!(match nan.frexp() { (x, _) => x.is_nan() })
     }
 

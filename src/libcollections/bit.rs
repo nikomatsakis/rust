@@ -154,7 +154,7 @@ struct MaskWords<'a> {
 impl<'a> Iterator<(uint, u32)> for MaskWords<'a> {
     /// Returns (offset, word)
     #[inline]
-    fn next<'a>(&'a mut self) -> Option<(uint, u32)> {
+    fn next(&mut self) -> Option<(uint, u32)> {
         let ret = self.next_word;
         match ret {
             Some(&w) => {
@@ -174,7 +174,7 @@ impl<'a> Iterator<(uint, u32)> for MaskWords<'a> {
 
 impl Bitv {
     #[inline]
-    fn process(&mut self, other: &Bitv, op: |u32, u32| -> u32) -> bool {
+    fn process<F>(&mut self, other: &Bitv, mut op: F) -> bool where F: FnMut(u32, u32) -> u32 {
         let len = other.storage.len();
         assert_eq!(self.storage.len(), len);
         let mut changed = false;
@@ -816,7 +816,7 @@ pub fn from_bytes(bytes: &[u8]) -> Bitv {
 /// let bv = from_fn(5, |i| { i % 2 == 0 });
 /// assert!(bv.eq_vec(&[true, false, true, false, true]));
 /// ```
-pub fn from_fn(len: uint, f: |index: uint| -> bool) -> Bitv {
+pub fn from_fn<F>(len: uint, mut f: F) -> Bitv where F: FnMut(uint) -> bool {
     let mut bitv = Bitv::with_capacity(len, false);
     for i in range(0u, len) {
         bitv.set(i, f(i));
@@ -824,8 +824,10 @@ pub fn from_fn(len: uint, f: |index: uint| -> bool) -> Bitv {
     bitv
 }
 
+#[stable]
 impl Default for Bitv {
     #[inline]
+    #[stable]
     fn default() -> Bitv { Bitv::new() }
 }
 
@@ -1182,7 +1184,7 @@ impl BitvSet {
     }
 
     #[inline]
-    fn other_op(&mut self, other: &BitvSet, f: |u32, u32| -> u32) {
+    fn other_op<F>(&mut self, other: &BitvSet, mut f: F) where F: FnMut(u32, u32) -> u32 {
         // Expand the vector if necessary
         self.reserve(other.capacity());
 
@@ -1277,10 +1279,12 @@ impl BitvSet {
     #[inline]
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn union<'a>(&'a self, other: &'a BitvSet) -> TwoBitPositions<'a> {
+        fn or(w1: u32, w2: u32) -> u32 { w1 | w2 }
+
         TwoBitPositions {
             set: self,
             other: other,
-            merge: |w1, w2| w1 | w2,
+            merge: or,
             current_word: 0u32,
             next_idx: 0u
         }
@@ -1306,11 +1310,13 @@ impl BitvSet {
     #[inline]
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn intersection<'a>(&'a self, other: &'a BitvSet) -> Take<TwoBitPositions<'a>> {
+        fn bitand(w1: u32, w2: u32) -> u32 { w1 & w2 }
+
         let min = cmp::min(self.capacity(), other.capacity());
         TwoBitPositions {
             set: self,
             other: other,
-            merge: |w1, w2| w1 & w2,
+            merge: bitand,
             current_word: 0u32,
             next_idx: 0
         }.take(min)
@@ -1343,10 +1349,12 @@ impl BitvSet {
     #[inline]
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn difference<'a>(&'a self, other: &'a BitvSet) -> TwoBitPositions<'a> {
+        fn diff(w1: u32, w2: u32) -> u32 { w1 & !w2 }
+
         TwoBitPositions {
             set: self,
             other: other,
-            merge: |w1, w2| w1 & !w2,
+            merge: diff,
             current_word: 0u32,
             next_idx: 0
         }
@@ -1373,10 +1381,12 @@ impl BitvSet {
     #[inline]
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn symmetric_difference<'a>(&'a self, other: &'a BitvSet) -> TwoBitPositions<'a> {
+        fn bitxor(w1: u32, w2: u32) -> u32 { w1 ^ w2 }
+
         TwoBitPositions {
             set: self,
             other: other,
-            merge: |w1, w2| w1 ^ w2,
+            merge: bitxor,
             current_word: 0u32,
             next_idx: 0
         }
@@ -1614,7 +1624,7 @@ pub struct BitPositions<'a> {
 pub struct TwoBitPositions<'a> {
     set: &'a BitvSet,
     other: &'a BitvSet,
-    merge: |u32, u32|: 'a -> u32,
+    merge: fn(u32, u32) -> u32,
     current_word: u32,
     next_idx: uint
 }
@@ -1676,16 +1686,15 @@ impl<'a> Iterator<uint> for TwoBitPositions<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::prelude::*;
-    use std::iter::range_step;
+    use prelude::*;
+    use core::iter::range_step;
+    use core::u32;
     use std::rand;
     use std::rand::Rng;
-    use std::u32;
     use test::{Bencher, black_box};
 
     use super::{Bitv, BitvSet, from_fn, from_bytes};
     use bitv;
-    use vec::Vec;
 
     static BENCH_BITS : uint = 1 << 14;
 
@@ -2028,7 +2037,7 @@ mod tests {
     #[test]
     fn test_from_bytes() {
         let bitv = from_bytes(&[0b10110110, 0b00000000, 0b11111111]);
-        let str = format!("{}{}{}", "10110110", "00000000", "11111111");
+        let str = concat!("10110110", "00000000", "11111111");
         assert_eq!(bitv.to_string(), str);
     }
 
@@ -2073,7 +2082,7 @@ mod tests {
         let bools = vec![true, false, true, true];
         let bitv: Bitv = bools.iter().map(|n| *n).collect();
 
-        assert_eq!(bitv.iter().collect::<Vec<bool>>(), bools)
+        assert_eq!(bitv.iter().collect::<Vec<bool>>(), bools);
 
         let long = Vec::from_fn(10000, |i| i % 2 == 0);
         let bitv: Bitv = long.iter().map(|n| *n).collect();
@@ -2102,8 +2111,8 @@ mod tests {
         for &b in bools.iter() {
             for &l in lengths.iter() {
                 let bitset = BitvSet::from_bitv(Bitv::with_capacity(l, b));
-                assert_eq!(bitset.contains(&1u), b)
-                assert_eq!(bitset.contains(&(l-1u)), b)
+                assert_eq!(bitset.contains(&1u), b);
+                assert_eq!(bitset.contains(&(l-1u)), b);
                 assert!(!bitset.contains(&l))
             }
         }
@@ -2311,12 +2320,12 @@ mod tests {
         assert!(!a.is_disjoint(&d));
         assert!(!d.is_disjoint(&a));
 
-        assert!(a.is_disjoint(&b))
-        assert!(a.is_disjoint(&c))
-        assert!(b.is_disjoint(&a))
-        assert!(b.is_disjoint(&c))
-        assert!(c.is_disjoint(&a))
-        assert!(c.is_disjoint(&b))
+        assert!(a.is_disjoint(&b));
+        assert!(a.is_disjoint(&c));
+        assert!(b.is_disjoint(&a));
+        assert!(b.is_disjoint(&c));
+        assert!(c.is_disjoint(&a));
+        assert!(c.is_disjoint(&b));
     }
 
     #[test]

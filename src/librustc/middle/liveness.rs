@@ -135,15 +135,11 @@ enum LoopKind<'a> {
     ForLoop(&'a ast::Pat),
 }
 
-#[deriving(PartialEq)]
+#[deriving(Copy, PartialEq)]
 struct Variable(uint);
 
-impl Copy for Variable {}
-
-#[deriving(PartialEq)]
+#[deriving(Copy, PartialEq)]
 struct LiveNode(uint);
-
-impl Copy for LiveNode {}
 
 impl Variable {
     fn get(&self) -> uint { let Variable(v) = *self; v }
@@ -159,15 +155,13 @@ impl Clone for LiveNode {
     }
 }
 
-#[deriving(PartialEq, Show)]
+#[deriving(Copy, PartialEq, Show)]
 enum LiveNodeKind {
     FreeVarNode(Span),
     ExprNode(Span),
     VarDefNode(Span),
     ExitNode
 }
-
-impl Copy for LiveNodeKind {}
 
 fn live_node_kind_to_string(lnk: LiveNodeKind, cx: &ty::ctxt) -> String {
     let cm = cx.sess.codemap();
@@ -247,23 +241,19 @@ struct CaptureInfo {
     var_nid: NodeId
 }
 
-#[deriving(Show)]
+#[deriving(Copy, Show)]
 struct LocalInfo {
     id: NodeId,
     ident: ast::Ident
 }
 
-impl Copy for LocalInfo {}
-
-#[deriving(Show)]
+#[deriving(Copy, Show)]
 enum VarKind {
     Arg(NodeId, ast::Ident),
     Local(LocalInfo),
     ImplicitRet,
     CleanExit
 }
-
-impl Copy for VarKind {}
 
 struct IrMaps<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
@@ -461,7 +451,7 @@ fn visit_expr(ir: &mut IrMaps, expr: &Expr) {
         }
         visit::walk_expr(ir, expr);
       }
-      ast::ExprClosure(..) | ast::ExprProc(..) => {
+      ast::ExprClosure(..) => {
         // Interesting control flow (for loops can contain labeled
         // breaks or continues)
         ir.add_live_node_for_node(expr.id, ExprNode(expr.span));
@@ -536,14 +526,12 @@ fn visit_expr(ir: &mut IrMaps, expr: &Expr) {
 // Actually we compute just a bit more than just liveness, but we use
 // the same basic propagation framework in all cases.
 
-#[deriving(Clone)]
+#[deriving(Clone, Copy)]
 struct Users {
     reader: LiveNode,
     writer: LiveNode,
     used: bool
 }
-
-impl Copy for Users {}
 
 fn invalid_users() -> Users {
     Users {
@@ -553,14 +541,13 @@ fn invalid_users() -> Users {
     }
 }
 
+#[deriving(Copy)]
 struct Specials {
     exit_ln: LiveNode,
     fallthrough_ln: LiveNode,
     no_ret_var: Variable,
     clean_exit_var: Variable
 }
-
-impl Copy for Specials {}
 
 static ACC_READ: uint = 1u;
 static ACC_WRITE: uint = 2u;
@@ -616,9 +603,9 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
         self.ir.variable(node_id, span)
     }
 
-    fn pat_bindings(&mut self,
-                    pat: &ast::Pat,
-                    f: |&mut Liveness<'a, 'tcx>, LiveNode, Variable, Span, NodeId|) {
+    fn pat_bindings<F>(&mut self, pat: &ast::Pat, mut f: F) where
+        F: FnMut(&mut Liveness<'a, 'tcx>, LiveNode, Variable, Span, NodeId),
+    {
         pat_util::pat_bindings(&self.ir.tcx.def_map, pat, |_bm, p_id, sp, _n| {
             let ln = self.live_node(p_id, sp);
             let var = self.variable(p_id, sp);
@@ -626,9 +613,9 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
         })
     }
 
-    fn arm_pats_bindings(&mut self,
-                         pat: Option<&ast::Pat>,
-                         f: |&mut Liveness<'a, 'tcx>, LiveNode, Variable, Span, NodeId|) {
+    fn arm_pats_bindings<F>(&mut self, pat: Option<&ast::Pat>, f: F) where
+        F: FnMut(&mut Liveness<'a, 'tcx>, LiveNode, Variable, Span, NodeId),
+    {
         match pat {
             Some(pat) => {
                 self.pat_bindings(pat, f);
@@ -691,10 +678,9 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
         self.assigned_on_entry(successor, var)
     }
 
-    fn indices2(&mut self,
-                ln: LiveNode,
-                succ_ln: LiveNode,
-                op: |&mut Liveness<'a, 'tcx>, uint, uint|) {
+    fn indices2<F>(&mut self, ln: LiveNode, succ_ln: LiveNode, mut op: F) where
+        F: FnMut(&mut Liveness<'a, 'tcx>, uint, uint),
+    {
         let node_base_idx = self.idx(ln, Variable(0u));
         let succ_base_idx = self.idx(succ_ln, Variable(0u));
         for var_idx in range(0u, self.ir.num_vars) {
@@ -702,10 +688,13 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
         }
     }
 
-    fn write_vars(&self,
-                  wr: &mut io::Writer,
-                  ln: LiveNode,
-                  test: |uint| -> LiveNode) -> io::IoResult<()> {
+    fn write_vars<F>(&self,
+                     wr: &mut io::Writer,
+                     ln: LiveNode,
+                     mut test: F)
+                     -> io::IoResult<()> where
+        F: FnMut(uint) -> LiveNode,
+    {
         let node_base_idx = self.idx(ln, Variable(0));
         for var_idx in range(0u, self.ir.num_vars) {
             let idx = node_base_idx + var_idx;
@@ -979,9 +968,8 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
               self.propagate_through_expr(&**e, succ)
           }
 
-          ast::ExprClosure(_, _, _, ref blk) |
-          ast::ExprProc(_, ref blk) => {
-              debug!("{} is an ExprClosure or ExprProc",
+          ast::ExprClosure(_, _, _, ref blk) => {
+              debug!("{} is an ExprClosure",
                      expr_to_string(expr));
 
               /*
@@ -1198,7 +1186,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
 
           ast::ExprIndex(ref l, ref r) |
           ast::ExprBinary(_, ref l, ref r) |
-          ast::ExprBox(ref l, ref r) => {
+          ast::ExprBox(Some(ref l), ref r) => {
             let r_succ = self.propagate_through_expr(&**r, succ);
             self.propagate_through_expr(&**l, r_succ)
           }
@@ -1209,6 +1197,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
             self.propagate_through_expr(&**e1, succ)
           }
 
+          ast::ExprBox(None, ref e) |
           ast::ExprAddrOf(_, ref e) |
           ast::ExprCast(ref e, _) |
           ast::ExprUnary(_, ref e) |
@@ -1408,12 +1397,14 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
         cond_ln
     }
 
-    fn with_loop_nodes<R>(&mut self,
-                          loop_node_id: NodeId,
-                          break_ln: LiveNode,
-                          cont_ln: LiveNode,
-                          f: |&mut Liveness<'a, 'tcx>| -> R)
-                          -> R {
+    fn with_loop_nodes<R, F>(&mut self,
+                             loop_node_id: NodeId,
+                             break_ln: LiveNode,
+                             cont_ln: LiveNode,
+                             f: F)
+                             -> R where
+        F: FnOnce(&mut Liveness<'a, 'tcx>) -> R,
+    {
         debug!("with_loop_nodes: {} {}", loop_node_id, break_ln.get());
         self.loop_scope.push(loop_node_id);
         self.break_ln.insert(loop_node_id, break_ln);
@@ -1498,8 +1489,7 @@ fn check_expr(this: &mut Liveness, expr: &Expr) {
       ast::ExprBreak(..) | ast::ExprAgain(..) | ast::ExprLit(_) |
       ast::ExprBlock(..) | ast::ExprMac(..) | ast::ExprAddrOf(..) |
       ast::ExprStruct(..) | ast::ExprRepeat(..) | ast::ExprParen(..) |
-      ast::ExprClosure(..) | ast::ExprProc(..) |
-      ast::ExprPath(..) | ast::ExprBox(..) | ast::ExprSlice(..) => {
+      ast::ExprClosure(..) | ast::ExprPath(..) | ast::ExprBox(..) | ast::ExprSlice(..) => {
         visit::walk_expr(this, expr);
       }
       ast::ExprIfLet(..) => {
@@ -1531,6 +1521,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
                     .unwrap()
                     .closure_type
                     .sig
+                    .0
                     .output,
             _ => ty::ty_fn_ret(fn_ty)
         }

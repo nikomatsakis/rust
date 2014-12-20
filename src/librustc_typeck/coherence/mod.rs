@@ -19,6 +19,7 @@
 use metadata::csearch::{each_impl, get_impl_trait};
 use metadata::csearch;
 use middle::subst::{mod, Subst};
+use middle::ty::RegionEscape;
 use middle::ty::{ImplContainer, ImplOrTraitItemId, MethodTraitItemId};
 use middle::ty::{ParameterEnvironment, TypeTraitItemId, lookup_item_type};
 use middle::ty::{Ty, ty_bool, ty_char, ty_closure, ty_enum, ty_err};
@@ -26,12 +27,11 @@ use middle::ty::{ty_param, Polytype, ty_ptr};
 use middle::ty::{ty_rptr, ty_struct, ty_trait, ty_tup};
 use middle::ty::{ty_str, ty_vec, ty_float, ty_infer, ty_int, ty_open};
 use middle::ty::{ty_uint, ty_unboxed_closure, ty_uniq, ty_bare_fn};
-use middle::ty::{type_is_ty_var};
 use middle::ty;
 use CrateCtxt;
 use middle::infer::combine::Combine;
 use middle::infer::InferCtxt;
-use middle::infer::{new_infer_ctxt, resolve_ivar, resolve_type};
+use middle::infer::{new_infer_ctxt};
 use std::collections::{HashSet};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -50,81 +50,37 @@ use util::ppaux::Repr;
 
 mod orphan;
 mod overlap;
-
-fn get_base_type<'a, 'tcx>(inference_context: &InferCtxt<'a, 'tcx>,
-                           span: Span,
-                           original_type: Ty<'tcx>)
-                           -> Option<Ty<'tcx>> {
-    let resolved_type = match resolve_type(inference_context,
-                                           Some(span),
-                                           original_type,
-                                           resolve_ivar) {
-        Ok(resulting_type) if !type_is_ty_var(resulting_type) => resulting_type,
-        _ => {
-            inference_context.tcx.sess.span_fatal(span,
-                                                  "the type of this value must be known in order \
-                                                   to determine the base type");
-        }
-    };
-
-    match resolved_type.sty {
-        ty_enum(..) | ty_struct(..) | ty_unboxed_closure(..) => {
-            debug!("(getting base type) found base type");
-            Some(resolved_type)
-        }
-
-        _ if ty::type_is_trait(resolved_type) => {
-            debug!("(getting base type) found base type (trait)");
-            Some(resolved_type)
-        }
-
-        ty_bool | ty_char | ty_int(..) | ty_uint(..) | ty_float(..) |
-        ty_str(..) | ty_vec(..) | ty_bare_fn(..) | ty_closure(..) | ty_tup(..) |
-        ty_infer(..) | ty_param(..) | ty_err | ty_open(..) | ty_uniq(_) |
-        ty_ptr(_) | ty_rptr(_, _) => {
-            debug!("(getting base type) no base type; found {}",
-                   original_type.sty);
-            None
-        }
-        ty_trait(..) => panic!("should have been caught")
-    }
-}
+mod unsafety;
 
 // Returns the def ID of the base type, if there is one.
 fn get_base_type_def_id<'a, 'tcx>(inference_context: &InferCtxt<'a, 'tcx>,
                                   span: Span,
-                                  original_type: Ty<'tcx>)
+                                  ty: Ty<'tcx>)
                                   -> Option<DefId> {
-    match get_base_type(inference_context, span, original_type) {
-        None => None,
-        Some(base_type) => {
-            match base_type.sty {
-                ty_enum(def_id, _) |
-                ty_struct(def_id, _) |
-                ty_unboxed_closure(def_id, _, _) => {
-                    Some(def_id)
-                }
-                ty_ptr(ty::mt {ty, ..}) |
-                ty_rptr(_, ty::mt {ty, ..}) |
-                ty_uniq(ty) => {
-                    match ty.sty {
-                        ty_trait(box ty::TyTrait { ref principal, .. }) => {
-                            Some(principal.def_id)
-                        }
-                        _ => {
-                            panic!("get_base_type() returned a type that wasn't an \
-                                   enum, struct, or trait");
-                        }
-                    }
-                }
-                ty_trait(box ty::TyTrait { ref principal, .. }) => {
-                    Some(principal.def_id)
-                }
-                _ => {
-                    panic!("get_base_type() returned a type that wasn't an \
-                           enum, struct, or trait");
-                }
-            }
+    match ty.sty {
+        ty_enum(def_id, _) |
+        ty_struct(def_id, _) => {
+            Some(def_id)
+        }
+
+        ty_trait(ref t) => {
+            Some(t.principal.def_id())
+        }
+
+        ty_bool | ty_char | ty_int(..) | ty_uint(..) | ty_float(..) |
+        ty_str(..) | ty_vec(..) | ty_bare_fn(..) | ty_closure(..) | ty_tup(..) |
+        ty_param(..) | ty_err | ty_open(..) | ty_uniq(_) |
+        ty_ptr(_) | ty_rptr(_, _) => {
+            None
+        }
+
+        ty_infer(..) | ty_unboxed_closure(..) => {
+            // `ty` comes from a user declaration so we should only expect types
+            // that the user can type
+            inference_context.tcx.sess.span_bug(
+                span,
+                format!("coherence encountered unexpected type searching for base type: {}",
+                        ty.repr(inference_context.tcx))[]);
         }
     }
 }
@@ -145,7 +101,7 @@ impl<'a, 'tcx, 'v> visit::Visitor<'v> for CoherenceCheckVisitor<'a, 'tcx> {
         //debug!("(checking coherence) item '{}'", token::get_ident(item.ident));
 
         match item.node {
-            ItemImpl(_, ref opt_trait, _, _) => {
+            ItemImpl(_, _, ref opt_trait, _, _) => {
                 match opt_trait.clone() {
                     Some(opt_trait) => {
                         self.cc.check_implementation(item, &[opt_trait]);
@@ -325,7 +281,7 @@ impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
     // Converts an implementation in the AST to a vector of items.
     fn create_impl_from_item(&self, item: &Item) -> Vec<ImplOrTraitItemId> {
         match item.node {
-            ItemImpl(_, ref trait_refs, _, ref ast_items) => {
+            ItemImpl(_, _, ref trait_refs, _, ref ast_items) => {
                 let mut items: Vec<ImplOrTraitItemId> =
                         ast_items.iter()
                                  .map(|ast_item| {
@@ -503,6 +459,9 @@ impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
         let trait_impls = trait_impls.borrow().clone();
 
         for &impl_did in trait_impls.iter() {
+            debug!("check_implementations_of_copy: impl_did={}",
+                   impl_did.repr(tcx));
+
             if impl_did.krate != ast::LOCAL_CRATE {
                 debug!("check_implementations_of_copy(): impl not in this \
                         crate");
@@ -510,10 +469,16 @@ impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
             }
 
             let self_type = self.get_self_type_for_implementation(impl_did);
+            debug!("check_implementations_of_copy: self_type={} (bound)",
+                   self_type.repr(tcx));
+
             let span = tcx.map.span(impl_did.node);
-            let param_env = ParameterEnvironment::for_item(tcx,
-                                                           impl_did.node);
+            let param_env = ParameterEnvironment::for_item(tcx, impl_did.node);
             let self_type = self_type.ty.subst(tcx, &param_env.free_substs);
+            assert!(!self_type.has_escaping_regions());
+
+            debug!("check_implementations_of_copy: self_type={} (free)",
+                   self_type.repr(tcx));
 
             match ty::can_type_implement_copy(tcx, self_type, &param_env) {
                 Ok(()) => {}
@@ -620,6 +585,7 @@ pub fn check_coherence(crate_context: &CrateCtxt) {
         inference_context: new_infer_ctxt(crate_context.tcx),
         inherent_impls: RefCell::new(FnvHashMap::new()),
     }.check(crate_context.tcx.map.krate());
+    unsafety::check(crate_context.tcx);
     orphan::check(crate_context.tcx);
     overlap::check(crate_context.tcx);
 }

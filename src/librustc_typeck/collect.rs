@@ -42,10 +42,9 @@ use middle::region;
 use middle::resolve_lifetime;
 use middle::subst;
 use middle::subst::{Substs};
-use middle::ty::{ImplContainer, ImplOrTraitItemContainer, TraitContainer};
-use middle::ty::{Polytype};
-use middle::ty::{mod, Ty};
-use middle::ty_fold::TypeFolder;
+use middle::ty::{AsPredicate, ImplContainer, ImplOrTraitItemContainer, TraitContainer};
+use middle::ty::{mod, RegionEscape, Ty, Polytype};
+use middle::ty_fold::{mod, TypeFolder, TypeFoldable};
 use middle::infer;
 use rscope::*;
 use {CrateCtxt, lookup_def_tcx, no_params, write_ty_to_tcx};
@@ -153,7 +152,7 @@ impl<'a,'tcx> ToTy<'tcx> for CrateCtxt<'a,'tcx> {
 }
 
 impl<'a, 'tcx> AstConv<'tcx> for CrateCtxt<'a, 'tcx> {
-    fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> { self.tcx }
+    fn tcx(&self) -> &ty::ctxt<'tcx> { self.tcx }
 
     fn get_item_ty(&self, id: ast::DefId) -> ty::Polytype<'tcx> {
         if id.krate != ast::LOCAL_CRATE {
@@ -227,7 +226,7 @@ pub fn get_enum_variant_types<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
 
             ast::StructVariantKind(ref struct_def) => {
                 let pty = Polytype {
-                    generics: ty_generics_for_type(
+                    generics: ty_generics_for_type_or_impl(
                         ccx,
                         generics,
                         DontCreateTypeParametersForAssociatedTypes),
@@ -240,7 +239,7 @@ pub fn get_enum_variant_types<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         };
 
         let pty = Polytype {
-            generics: ty_generics_for_type(
+            generics: ty_generics_for_type_or_impl(
                           ccx,
                           generics,
                           DontCreateTypeParametersForAssociatedTypes),
@@ -258,7 +257,7 @@ fn collect_trait_methods<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                    trait_def: &ty::TraitDef<'tcx>) {
     let tcx = ccx.tcx;
     if let ast_map::NodeItem(item) = tcx.map.get(trait_id) {
-        if let ast::ItemTrait(_, _, _, ref trait_items) = item.node {
+        if let ast::ItemTrait(_, _, _, _, ref trait_items) = item.node {
             // For each method, construct a suitable ty::Method and
             // store it into the `tcx.impl_or_trait_items` table:
             for trait_item in trait_items.iter() {
@@ -277,7 +276,7 @@ fn collect_trait_methods<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                     &m.explicit_self,
                                     m.abi,
                                     &m.generics,
-                                    &m.fn_style,
+                                    &m.unsafety,
                                     &*m.decl)
                             }
                             ast::ProvidedMethod(ref m) => {
@@ -291,7 +290,7 @@ fn collect_trait_methods<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                     m.pe_explicit_self(),
                                     m.pe_abi(),
                                     m.pe_generics(),
-                                    &m.pe_fn_style(),
+                                    &m.pe_unsafety(),
                                     &*m.pe_fn_decl())
                             }
                             ast::TypeTraitItem(ref at) => {
@@ -366,7 +365,7 @@ fn collect_trait_methods<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                            m_explicit_self: &ast::ExplicitSelf,
                                            m_abi: abi::Abi,
                                            m_generics: &ast::Generics,
-                                           m_fn_style: &ast::FnStyle,
+                                           m_unsafety: &ast::Unsafety,
                                            m_decl: &ast::FnDecl)
                                            -> ty::Method<'tcx> {
         let ty_generics =
@@ -386,7 +385,7 @@ fn collect_trait_methods<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
             let trait_self_ty = ty::mk_self_type(tmcx.tcx(),
                                                  local_def(trait_id));
             astconv::ty_of_method(&tmcx,
-                                  *m_fn_style,
+                                  *m_unsafety,
                                   trait_self_ty,
                                   m_explicit_self,
                                   m_decl,
@@ -491,6 +490,7 @@ fn convert_associated_type<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
     }
 }
 
+#[deriving(Copy)]
 enum ConvertMethodContext<'a> {
     /// Used when converting implementation methods.
     ImplConvertMethodContext,
@@ -498,8 +498,6 @@ enum ConvertMethodContext<'a> {
     /// the trait we're translating.
     TraitConvertMethodContext(ast::DefId, &'a [ast::TraitItem]),
 }
-
-impl<'a> Copy for ConvertMethodContext<'a> {}
 
 fn convert_methods<'a,'tcx,'i,I>(ccx: &CrateCtxt<'a, 'tcx>,
                                  convert_method_context: ConvertMethodContext,
@@ -572,7 +570,7 @@ fn convert_methods<'a,'tcx,'i,I>(ccx: &CrateCtxt<'a, 'tcx>,
                     method_generics: &m_ty_generics,
                 };
                 astconv::ty_of_method(&imcx,
-                                      m.pe_fn_style(),
+                                      m.pe_unsafety(),
                                       untransformed_rcvr_ty,
                                       m.pe_explicit_self(),
                                       &*m.pe_fn_decl(),
@@ -586,7 +584,7 @@ fn convert_methods<'a,'tcx,'i,I>(ccx: &CrateCtxt<'a, 'tcx>,
                     method_generics: &m_ty_generics,
                 };
                 astconv::ty_of_method(&tmcx,
-                                      m.pe_fn_style(),
+                                      m.pe_unsafety(),
                                       untransformed_rcvr_ty,
                                       m.pe_explicit_self(),
                                       &*m.pe_fn_decl(),
@@ -652,7 +650,7 @@ fn is_associated_type_valid_for_param(ty: Ty,
     if let ty::ty_param(param_ty) = ty.sty {
         let type_parameter = generics.types.get(param_ty.space, param_ty.idx);
         for trait_bound in type_parameter.bounds.trait_bounds.iter() {
-            if trait_bound.def_id == trait_id {
+            if trait_bound.def_id() == trait_id {
                 return true
             }
         }
@@ -719,7 +717,7 @@ struct ImplCtxt<'a,'tcx:'a> {
 }
 
 impl<'a,'tcx> AstConv<'tcx> for ImplCtxt<'a,'tcx> {
-    fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> {
+    fn tcx(&self) -> &ty::ctxt<'tcx> {
         self.ccx.tcx
     }
 
@@ -808,7 +806,7 @@ struct FnCtxt<'a,'tcx:'a> {
 }
 
 impl<'a,'tcx> AstConv<'tcx> for FnCtxt<'a,'tcx> {
-    fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> {
+    fn tcx(&self) -> &ty::ctxt<'tcx> {
         self.ccx.tcx
     }
 
@@ -857,7 +855,7 @@ struct ImplMethodCtxt<'a,'tcx:'a> {
 }
 
 impl<'a,'tcx> AstConv<'tcx> for ImplMethodCtxt<'a,'tcx> {
-    fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> {
+    fn tcx(&self) -> &ty::ctxt<'tcx> {
         self.ccx.tcx
     }
 
@@ -906,7 +904,7 @@ struct TraitMethodCtxt<'a,'tcx:'a> {
 }
 
 impl<'a,'tcx> AstConv<'tcx> for TraitMethodCtxt<'a,'tcx> {
-    fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> {
+    fn tcx(&self) -> &ty::ctxt<'tcx> {
         self.ccx.tcx
     }
 
@@ -986,7 +984,7 @@ struct GenericsCtxt<'a,'tcx:'a,AC:'a> {
 }
 
 impl<'a,'tcx,AC:AstConv<'tcx>> AstConv<'tcx> for GenericsCtxt<'a,'tcx,AC> {
-    fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> {
+    fn tcx(&self) -> &ty::ctxt<'tcx> {
         self.chain.tcx()
     }
 
@@ -1045,12 +1043,13 @@ pub fn convert(ccx: &CrateCtxt, it: &ast::Item) {
                                    enum_definition.variants.as_slice(),
                                    generics);
         },
-        ast::ItemImpl(ref generics,
+        ast::ItemImpl(_,
+                      ref generics,
                       ref opt_trait_ref,
                       ref selfty,
                       ref impl_items) => {
             // Create generics from the generics specified in the impl head.
-            let ty_generics = ty_generics_for_impl(
+            let ty_generics = ty_generics_for_type_or_impl(
                     ccx,
                     generics,
                     CreateTypeParametersForAssociatedTypes);
@@ -1144,7 +1143,7 @@ pub fn convert(ccx: &CrateCtxt, it: &ast::Item) {
                                                AllowEqConstraints::DontAllow);
             }
         },
-        ast::ItemTrait(_, _, _, ref trait_methods) => {
+        ast::ItemTrait(_, _, _, _, ref trait_methods) => {
             let trait_def = trait_def_of_item(ccx, it);
 
             debug!("trait_def: ident={} trait_def={}",
@@ -1335,12 +1334,13 @@ pub fn trait_def_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         return def.clone();
     }
 
-    let (generics, unbound, bounds, items) = match it.node {
-        ast::ItemTrait(ref generics,
+    let (unsafety, generics, unbound, bounds, items) = match it.node {
+        ast::ItemTrait(unsafety,
+                       ref generics,
                        ref unbound,
                        ref supertraits,
                        ref items) => {
-            (generics, unbound, supertraits, items.as_slice())
+            (unsafety, generics, unbound, supertraits, items.as_slice())
         }
         ref s => {
             tcx.sess.span_bug(
@@ -1369,6 +1369,7 @@ pub fn trait_def_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
 
     let substs = mk_item_substs(ccx, &ty_generics);
     let trait_def = Rc::new(ty::TraitDef {
+        unsafety: unsafety,
         generics: ty_generics,
         bounds: bounds,
         trait_ref: Rc::new(ty::TraitRef {
@@ -1446,7 +1447,7 @@ pub fn ty_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>, it: &ast::Item)
             tcx.tcache.borrow_mut().insert(local_def(it.id), pty.clone());
             return pty;
         }
-        ast::ItemFn(ref decl, fn_style, abi, ref generics, _) => {
+        ast::ItemFn(ref decl, unsafety, abi, ref generics, _) => {
             let ty_generics = ty_generics_for_fn_or_method(
                 ccx,
                 generics,
@@ -1457,7 +1458,7 @@ pub fn ty_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>, it: &ast::Item)
                     ccx: ccx,
                     generics: &ty_generics,
                 };
-                astconv::ty_of_bare_fn(&fcx, fn_style, abi, &**decl)
+                astconv::ty_of_bare_fn(&fcx, unsafety, abi, &**decl)
             };
             let pty = Polytype {
                 generics: ty_generics,
@@ -1480,7 +1481,7 @@ pub fn ty_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>, it: &ast::Item)
             let pty = {
                 let ty = ccx.to_ty(&ExplicitRscope, &**t);
                 Polytype {
-                    generics: ty_generics_for_type(
+                    generics: ty_generics_for_type_or_impl(
                                   ccx,
                                   generics,
                                   DontCreateTypeParametersForAssociatedTypes),
@@ -1493,7 +1494,7 @@ pub fn ty_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>, it: &ast::Item)
         }
         ast::ItemEnum(_, ref generics) => {
             // Create a new generic polytype.
-            let ty_generics = ty_generics_for_type(
+            let ty_generics = ty_generics_for_type_or_impl(
                 ccx,
                 generics,
                 DontCreateTypeParametersForAssociatedTypes);
@@ -1511,7 +1512,7 @@ pub fn ty_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>, it: &ast::Item)
             tcx.sess.span_bug(it.span, "invoked ty_of_item on trait");
         }
         ast::ItemStruct(_, ref generics) => {
-            let ty_generics = ty_generics_for_type(
+            let ty_generics = ty_generics_for_type_or_impl(
                 ccx,
                 generics,
                 DontCreateTypeParametersForAssociatedTypes);
@@ -1578,11 +1579,11 @@ fn ty_of_trait_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
     }
 }
 
-fn ty_generics_for_type<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
-                                  generics: &ast::Generics,
-                                  create_type_parameters_for_associated_types:
-                                      CreateTypeParametersForAssociatedTypesFlag)
-                                  -> ty::Generics<'tcx> {
+fn ty_generics_for_type_or_impl<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
+                                          generics: &ast::Generics,
+                                          create_type_parameters_for_associated_types:
+                                          CreateTypeParametersForAssociatedTypesFlag)
+                                          -> ty::Generics<'tcx> {
     ty_generics(ccx,
                 subst::TypeSpace,
                 generics.lifetimes.as_slice(),
@@ -1635,8 +1636,8 @@ fn ty_generics_for_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
     let param_id = trait_id;
 
     let self_trait_ref =
-        Rc::new(ty::TraitRef { def_id: local_def(trait_id),
-                               substs: (*substs).clone() });
+        Rc::new(ty::Binder(ty::TraitRef { def_id: local_def(trait_id),
+                                          substs: (*substs).clone() }));
 
     let def = ty::TypeParameterDef {
         space: subst::SelfSpace,
@@ -1660,24 +1661,6 @@ fn ty_generics_for_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                              ty::Predicate::Trait(self_trait_ref));
 
     generics
-}
-
-fn ty_generics_for_impl<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
-                                  generics: &ast::Generics,
-                                  create_type_parameters_for_associated_types:
-                                      CreateTypeParametersForAssociatedTypesFlag)
-                                  -> ty::Generics<'tcx>
-{
-    let early_lifetimes = resolve_lifetime::early_bound_lifetimes(generics);
-    debug!("ty_generics_for_impl: early_lifetimes={}",
-           early_lifetimes);
-    ty_generics(ccx,
-                subst::TypeSpace,
-                early_lifetimes.as_slice(),
-                generics.ty_params.as_slice(),
-                ty::Generics::empty(),
-                &generics.where_clause,
-                create_type_parameters_for_associated_types)
 }
 
 fn ty_generics_for_fn_or_method<'tcx,AC>(
@@ -1917,8 +1900,12 @@ fn ty_generics<'tcx,AC>(this: &AC,
         for region_param_def in result.regions.get_slice(space).iter() {
             let region = region_param_def.to_early_bound_region();
             for &bound_region in region_param_def.bounds.iter() {
-                result.predicates.push(space, ty::Predicate::RegionOutlives(region,
-                                                                            bound_region));
+                // account for new binder introduced in the predicate below; no need
+                // to shift `region` because it is never a late-bound region
+                let bound_region = ty_fold::shift_region(bound_region, 1);
+                result.predicates.push(
+                    space,
+                    ty::Binder(ty::OutlivesPredicate(region, bound_region)).as_predicate());
             }
         }
     }
@@ -2012,7 +1999,7 @@ fn compute_bounds<'tcx,AC>(this: &AC,
                             &param_bounds,
                             span);
 
-    param_bounds.trait_bounds.sort_by(|a,b| a.def_id.cmp(&b.def_id));
+    param_bounds.trait_bounds.sort_by(|a,b| a.def_id().cmp(&b.def_id()));
 
     param_bounds
 }
@@ -2028,13 +2015,13 @@ fn check_bounds_compatible<'tcx>(tcx: &ty::ctxt<'tcx>,
             tcx,
             param_bounds.trait_bounds.as_slice(),
             |trait_ref| {
-                let trait_def = ty::lookup_trait_def(tcx, trait_ref.def_id);
+                let trait_def = ty::lookup_trait_def(tcx, trait_ref.def_id());
                 if trait_def.bounds.builtin_bounds.contains(&ty::BoundSized) {
                     span_err!(tcx.sess, span, E0129,
                               "incompatible bounds on type parameter `{}`, \
                                bound `{}` does not allow unsized type",
                               name_of_bounded_thing.user_string(tcx),
-                              ppaux::trait_ref_to_string(tcx, &*trait_ref));
+                              trait_ref.user_string(tcx));
                 }
                 true
             });
@@ -2054,14 +2041,14 @@ fn conv_param_bounds<'tcx,AC>(this: &AC,
                                      trait_bounds,
                                      region_bounds } =
         astconv::partition_bounds(this.tcx(), span, all_bounds.as_slice());
-    let trait_bounds: Vec<Rc<ty::TraitRef>> =
+    let trait_bounds: Vec<Rc<ty::PolyTraitRef>> =
         trait_bounds.into_iter()
         .map(|bound| {
-            astconv::instantiate_trait_ref(this,
-                                           &ExplicitRscope,
-                                           &bound.trait_ref,
-                                           Some(param_ty.to_ty(this.tcx())),
-                                           AllowEqConstraints::Allow)
+            astconv::instantiate_poly_trait_ref(this,
+                                                &ExplicitRscope,
+                                                bound,
+                                                Some(param_ty.to_ty(this.tcx())),
+                                                AllowEqConstraints::Allow)
         })
         .collect();
     let region_bounds: Vec<ty::Region> =
@@ -2151,10 +2138,10 @@ pub fn ty_of_foreign_fn_decl<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         ccx.tcx,
         ty::BareFnTy {
             abi: abi,
-            fn_style: ast::UnsafeFn,
-            sig: ty::FnSig {inputs: input_tys,
-                            output: output,
-                            variadic: decl.variadic}
+            unsafety: ast::Unsafety::Unsafe,
+            sig: ty::Binder(ty::FnSig {inputs: input_tys,
+                                       output: output,
+                                       variadic: decl.variadic}),
         });
     let pty = Polytype {
         generics: ty_generics_for_fn_or_method,
@@ -2180,8 +2167,12 @@ pub fn mk_item_substs<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
     subst::Substs::new(types, regions)
 }
 
-/// Verifies that the explicit self type of a method matches the impl or
-/// trait.
+/// Verifies that the explicit self type of a method matches the impl
+/// or trait. This is a bit weird but basically because right now we
+/// don't handle the general case, but instead map it to one of
+/// several pre-defined options using various heuristics, this method
+/// comes back to check after the fact that explicit type the user
+/// wrote actually matches what the pre-defined option said.
 fn check_method_self_type<'a, 'tcx, RS:RegionScope>(
     crate_context: &CrateCtxt<'a, 'tcx>,
     rs: &RS,
@@ -2203,19 +2194,21 @@ fn check_method_self_type<'a, 'tcx, RS:RegionScope>(
         // contain late-bound regions from the method, but not the
         // trait (since traits only have early-bound region
         // parameters).
-        assert!(!ty::type_escapes_depth(required_type, 1));
+        assert!(!base_type.has_regions_escaping_depth(1));
         let required_type_free =
-            ty::liberate_late_bound_regions(
-                crate_context.tcx, body_scope, &ty::bind(required_type)).value;
+            liberate_early_bound_regions(
+                crate_context.tcx, body_scope,
+                &ty::liberate_late_bound_regions(
+                    crate_context.tcx, body_scope, &ty::Binder(required_type)));
 
-        // The "base type" comes from the impl. It may have late-bound
-        // regions from the impl or the method.
-        let base_type_free = // liberate impl regions:
-            ty::liberate_late_bound_regions(
-                crate_context.tcx, body_scope, &ty::bind(ty::bind(base_type))).value.value;
-        let base_type_free = // liberate method regions:
-            ty::liberate_late_bound_regions(
-                crate_context.tcx, body_scope, &ty::bind(base_type_free)).value;
+        // The "base type" comes from the impl. It too may have late-bound
+        // regions from the method.
+        assert!(!base_type.has_regions_escaping_depth(1));
+        let base_type_free =
+            liberate_early_bound_regions(
+                crate_context.tcx, body_scope,
+                &ty::liberate_late_bound_regions(
+                    crate_context.tcx, body_scope, &ty::Binder(base_type)));
 
         debug!("required_type={} required_type_free={} \
                 base_type={} base_type_free={}",
@@ -2234,6 +2227,32 @@ fn check_method_self_type<'a, 'tcx, RS:RegionScope>(
                 format!("mismatched self type: expected `{}`",
                         ppaux::ty_to_string(crate_context.tcx, required_type))
         }));
-        infcx.resolve_regions_and_report_errors();
+        infcx.resolve_regions_and_report_errors(body_id);
+    }
+
+    fn liberate_early_bound_regions<'tcx,T>(
+        tcx: &ty::ctxt<'tcx>,
+        scope: region::CodeExtent,
+        value: &T)
+        -> T
+        where T : TypeFoldable<'tcx> + Repr<'tcx>
+    {
+        /*!
+         * Convert early-bound regions into free regions; normally this is done by
+         * applying the `free_substs` from the `ParameterEnvironment`, but this particular
+         * method-self-type check is kind of hacky and done very early in the process,
+         * before we really have a `ParameterEnvironment` to check.
+         */
+
+        ty_fold::fold_regions(tcx, value, |region, _| {
+            match region {
+                ty::ReEarlyBound(id, _, _, name) => {
+                    let def_id = local_def(id);
+                    ty::ReFree(ty::FreeRegion { scope: scope,
+                                                bound_region: ty::BrNamed(def_id, name) })
+                }
+                _ => region
+            }
+        })
     }
 }

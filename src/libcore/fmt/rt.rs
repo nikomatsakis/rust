@@ -20,7 +20,6 @@ pub use self::Alignment::*;
 pub use self::Count::*;
 pub use self::Position::*;
 pub use self::Flag::*;
-use kinds::Copy;
 
 #[cfg(stage0)]
 #[doc(hidden)]
@@ -39,6 +38,7 @@ pub struct Argument {
 }
 
 #[doc(hidden)]
+#[deriving(Copy)]
 pub struct FormatSpec {
     pub fill: char,
     pub align: Alignment,
@@ -47,10 +47,8 @@ pub struct FormatSpec {
     pub width: Count,
 }
 
-impl Copy for FormatSpec {}
-
 /// Possible alignments that can be requested as part of a formatting directive.
-#[deriving(PartialEq)]
+#[deriving(Copy, PartialEq)]
 pub enum Alignment {
     /// Indication that contents should be left-aligned.
     AlignLeft,
@@ -62,27 +60,24 @@ pub enum Alignment {
     AlignUnknown,
 }
 
-impl Copy for Alignment {}
-
 #[doc(hidden)]
+#[deriving(Copy)]
 pub enum Count {
     CountIs(uint), CountIsParam(uint), CountIsNextParam, CountImplied,
 }
 
-impl Copy for Count {}
-
 #[doc(hidden)]
+#[deriving(Copy)]
 pub enum Position {
     ArgumentNext, ArgumentIs(uint)
 }
-
-impl Copy for Position {}
 
 /// Flags which can be passed to formatting via a directive.
 ///
 /// These flags are discovered through the `flags` field of the `Formatter`
 /// structure. The flag in that structure is a union of these flags into a
 /// `uint` where each flag's discriminant is the corresponding bit.
+#[deriving(Copy)]
 pub enum Flag {
     /// A flag which enables number formatting to always print the sign of a
     /// number.
@@ -97,5 +92,3 @@ pub enum Flag {
     /// being aware of the sign to be printed.
     FlagSignAwareZeroPad,
 }
-
-impl Copy for Flag {}

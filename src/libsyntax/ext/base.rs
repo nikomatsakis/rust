@@ -223,12 +223,11 @@ impl MacResult for MacItems {
 
 /// Fill-in macro expansion result, to allow compilation to continue
 /// after hitting errors.
+#[deriving(Copy)]
 pub struct DummyResult {
     expr_only: bool,
     span: Span
 }
-
-impl Copy for DummyResult {}
 
 impl DummyResult {
     /// Create a default MacResult that can be anything.
@@ -468,8 +467,8 @@ pub struct ExtCtxt<'a> {
 }
 
 impl<'a> ExtCtxt<'a> {
-    pub fn new<'a>(parse_sess: &'a parse::ParseSess, cfg: ast::CrateConfig,
-                   ecfg: expand::ExpansionConfig) -> ExtCtxt<'a> {
+    pub fn new(parse_sess: &'a parse::ParseSess, cfg: ast::CrateConfig,
+               ecfg: expand::ExpansionConfig) -> ExtCtxt<'a> {
         let env = initial_syntax_expander_table(&ecfg);
         ExtCtxt {
             parse_sess: parse_sess,

@@ -16,17 +16,16 @@ pub use self::ExponentFormat::*;
 pub use self::SignificantDigits::*;
 pub use self::SignFormat::*;
 
-use char;
-use char::Char;
-use kinds::Copy;
-use num;
-use num::{Int, Float, FPNaN, FPInfinite, ToPrimitive};
-use slice::{SlicePrelude, CloneSliceAllocPrelude};
+use char::{mod, Char};
+use num::{mod, Int, Float, FPNaN, FPInfinite, ToPrimitive};
+use ops::FnMut;
+use slice::{SliceExt, CloneSliceExt};
 use str::StrPrelude;
 use string::String;
 use vec::Vec;
 
 /// A flag that specifies whether to use exponential (scientific) notation.
+#[deriving(Copy)]
 pub enum ExponentFormat {
     /// Do not use exponential notation.
     ExpNone,
@@ -39,10 +38,9 @@ pub enum ExponentFormat {
     ExpBin,
 }
 
-impl Copy for ExponentFormat {}
-
 /// The number of digits used for emitting the fractional part of a number, if
 /// any.
+#[deriving(Copy)]
 pub enum SignificantDigits {
     /// All calculable digits will be printed.
     ///
@@ -58,9 +56,8 @@ pub enum SignificantDigits {
     DigExact(uint)
 }
 
-impl Copy for SignificantDigits {}
-
 /// How to emit the sign of a number.
+#[deriving(Copy)]
 pub enum SignFormat {
     /// No sign will be printed. The exponent sign will also be emitted.
     SignNone,
@@ -71,8 +68,6 @@ pub enum SignFormat {
     /// negative values.
     SignAll,
 }
-
-impl Copy for SignFormat {}
 
 /// Converts an integral number to its string representation as a byte vector.
 /// This is meant to be a common base implementation for all integral string
@@ -93,7 +88,10 @@ impl Copy for SignFormat {}
 /// # Panics
 ///
 /// - Panics if `radix` < 2 or `radix` > 36.
-fn int_to_str_bytes_common<T: Int>(num: T, radix: uint, sign: SignFormat, f: |u8|) {
+fn int_to_str_bytes_common<T, F>(num: T, radix: uint, sign: SignFormat, mut f: F) where
+    T: Int,
+    F: FnMut(u8),
+{
     assert!(2 <= radix && radix <= 36);
 
     let _0: T = Int::zero();

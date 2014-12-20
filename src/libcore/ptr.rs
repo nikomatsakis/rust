@@ -93,7 +93,7 @@ use intrinsics;
 use option::Option;
 use option::Option::{Some, None};
 
-use cmp::{PartialEq, Eq, PartialOrd, Equiv};
+use cmp::{PartialEq, Eq, Ord, PartialOrd, Equiv};
 use cmp::Ordering;
 use cmp::Ordering::{Less, Equal, Greater};
 
@@ -367,7 +367,7 @@ mod externfnpointers {
             self_ == other_
         }
     }
-    macro_rules! fnptreq(
+    macro_rules! fnptreq {
         ($($p:ident),*) => {
             impl<_R,$($p),*> PartialEq for extern "C" fn($($p),*) -> _R {
                 #[inline]
@@ -379,25 +379,32 @@ mod externfnpointers {
                 }
             }
         }
-    )
-    fnptreq!(A)
-    fnptreq!(A,B)
-    fnptreq!(A,B,C)
-    fnptreq!(A,B,C,D)
-    fnptreq!(A,B,C,D,E)
+    }
+    fnptreq! { A }
+    fnptreq! { A,B }
+    fnptreq! { A,B,C }
+    fnptreq! { A,B,C,D }
+    fnptreq! { A,B,C,D,E }
 }
 
 // Comparison for pointers
+impl<T> Ord for *const T {
+    #[inline]
+    fn cmp(&self, other: &*const T) -> Ordering {
+        if self < other {
+            Less
+        } else if self == other {
+            Equal
+        } else {
+            Greater
+        }
+    }
+}
+
 impl<T> PartialOrd for *const T {
     #[inline]
     fn partial_cmp(&self, other: &*const T) -> Option<Ordering> {
-        if self < other {
-            Some(Less)
-        } else if self == other {
-            Some(Equal)
-        } else {
-            Some(Greater)
-        }
+        Some(self.cmp(other))
     }
 
     #[inline]
@@ -413,16 +420,23 @@ impl<T> PartialOrd for *const T {
     fn ge(&self, other: &*const T) -> bool { *self >= *other }
 }
 
+impl<T> Ord for *mut T {
+    #[inline]
+    fn cmp(&self, other: &*mut T) -> Ordering {
+        if self < other {
+            Less
+        } else if self == other {
+            Equal
+        } else {
+            Greater
+        }
+    }
+}
+
 impl<T> PartialOrd for *mut T {
     #[inline]
     fn partial_cmp(&self, other: &*mut T) -> Option<Ordering> {
-        if self < other {
-            Some(Less)
-        } else if self == other {
-            Some(Equal)
-        } else {
-            Some(Greater)
-        }
+        Some(self.cmp(other))
     }
 
     #[inline]

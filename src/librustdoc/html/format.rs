@@ -29,15 +29,19 @@ use html::render::{cache, CURRENT_LOCATION_KEY};
 
 /// Helper to render an optional visibility with a space after it (if the
 /// visibility is preset)
+#[deriving(Copy)]
 pub struct VisSpace(pub Option<ast::Visibility>);
 /// Similarly to VisSpace, this structure is used to render a function style with a
 /// space after it.
-pub struct FnStyleSpace(pub ast::FnStyle);
+#[deriving(Copy)]
+pub struct UnsafetySpace(pub ast::Unsafety);
 /// Wrapper struct for properly emitting a method declaration.
 pub struct Method<'a>(pub &'a clean::SelfTy, pub &'a clean::FnDecl);
 /// Similar to VisSpace, but used for mutability
+#[deriving(Copy)]
 pub struct MutableSpace(pub clean::Mutability);
 /// Similar to VisSpace, but used for mutability
+#[deriving(Copy)]
 pub struct RawMutableSpace(pub clean::Mutability);
 /// Wrapper struct for properly emitting the stability level.
 pub struct Stability<'a>(pub &'a Option<clean::Stability>);
@@ -48,20 +52,15 @@ pub struct WhereClause<'a>(pub &'a clean::Generics);
 /// Wrapper struct for emitting type parameter bounds.
 pub struct TyParamBounds<'a>(pub &'a [clean::TyParamBound]);
 
-impl Copy for VisSpace {}
-impl Copy for FnStyleSpace {}
-impl Copy for MutableSpace {}
-impl Copy for RawMutableSpace {}
-
 impl VisSpace {
     pub fn get(&self) -> Option<ast::Visibility> {
         let VisSpace(v) = *self; v
     }
 }
 
-impl FnStyleSpace {
-    pub fn get(&self) -> ast::FnStyle {
-        let FnStyleSpace(v) = *self; v
+impl UnsafetySpace {
+    pub fn get(&self) -> ast::Unsafety {
+        let UnsafetySpace(v) = *self; v
     }
 }
 
@@ -218,10 +217,14 @@ fn resolved_path(w: &mut fmt::Formatter, did: ast::DefId, p: &clean::Path,
         })
 }
 
-fn path(w: &mut fmt::Formatter, path: &clean::Path, print_all: bool,
-        root: |&render::Cache, &[String]| -> Option<String>,
-        info: |&render::Cache| -> Option<(Vec<String> , ItemType)>)
-    -> fmt::Result
+fn path<F, G>(w: &mut fmt::Formatter,
+              path: &clean::Path,
+              print_all: bool,
+              root: F,
+              info: G)
+              -> fmt::Result where
+    F: FnOnce(&render::Cache, &[String]) -> Option<String>,
+    G: FnOnce(&render::Cache) -> Option<(Vec<String>, ItemType)>,
 {
     // The generics will get written to both the title and link
     let mut generics = String::new();
@@ -342,7 +345,7 @@ fn primitive_link(f: &mut fmt::Formatter,
                 Some(root) => {
                     try!(write!(f, "<a href='{}{}/primitive.{}.html'>",
                                 root,
-                                path.ref0().head().unwrap(),
+                                path.0.head().unwrap(),
                                 prim.to_url_str()));
                     needs_termination = true;
                 }
@@ -386,11 +389,21 @@ impl fmt::Show for clean::Type {
                 try!(resolved_path(f, did, path, false));
                 tybounds(f, typarams)
             }
+            clean::PolyTraitRef(ref bounds) => {
+                for (i, bound) in bounds.iter().enumerate() {
+                    if i != 0 {
+                        try!(write!(f, " + "));
+                    }
+                    try!(write!(f, "{}", *bound));
+                }
+                Ok(())
+            }
+            clean::Infer => write!(f, "_"),
             clean::Self(..) => f.write("Self".as_bytes()),
             clean::Primitive(prim) => primitive_link(f, prim, prim.to_string()),
             clean::Closure(ref decl) => {
                 write!(f, "{style}{lifetimes}|{args}|{bounds}{arrow}",
-                       style = FnStyleSpace(decl.fn_style),
+                       style = UnsafetySpace(decl.unsafety),
                        lifetimes = if decl.lifetimes.len() == 0 {
                            "".to_string()
                        } else {
@@ -419,7 +432,7 @@ impl fmt::Show for clean::Type {
             }
             clean::Proc(ref decl) => {
                 write!(f, "{style}{lifetimes}proc({args}){bounds}{arrow}",
-                       style = FnStyleSpace(decl.fn_style),
+                       style = UnsafetySpace(decl.unsafety),
                        lifetimes = if decl.lifetimes.len() == 0 {
                            "".to_string()
                        } else {
@@ -440,7 +453,7 @@ impl fmt::Show for clean::Type {
             }
             clean::BareFunction(ref decl) => {
                 write!(f, "{}{}fn{}{}",
-                       FnStyleSpace(decl.fn_style),
+                       UnsafetySpace(decl.unsafety),
                        match decl.abi.as_slice() {
                            "" => " extern ".to_string(),
                            "\"Rust\"" => "".to_string(),
@@ -570,11 +583,11 @@ impl fmt::Show for VisSpace {
     }
 }
 
-impl fmt::Show for FnStyleSpace {
+impl fmt::Show for UnsafetySpace {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.get() {
-            ast::UnsafeFn => write!(f, "unsafe "),
-            ast::NormalFn => Ok(())
+            ast::Unsafety::Unsafe => write!(f, "unsafe "),
+            ast::Unsafety::Normal => Ok(())
         }
     }
 }
@@ -765,7 +778,7 @@ The counts do not include methods or trait
 implementations that are visible only through a re-exported type.",
 stable, unstable, experimental, deprecated, unmarked,
 name=self.name));
-        try!(write!(f, "<table>"))
+        try!(write!(f, "<table>"));
         try!(fmt_inner(f, &mut context, self));
         write!(f, "</table>")
     }

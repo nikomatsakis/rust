@@ -15,21 +15,10 @@
 #![experimental]
 #![allow(missing_docs)]
 
-use clone::Clone;
-use c_str::ToCStr;
-use iter::IteratorExt;
+use prelude::*;
 use mem;
-use ops::*;
-use option::*;
-use option::Option::{None, Some};
 use os;
-use path::{Path,GenericPath};
-use result::*;
-use result::Result::{Err, Ok};
-use slice::{AsSlice,SlicePrelude};
 use str;
-use string::String;
-use vec::Vec;
 
 #[allow(missing_copy_implementations)]
 pub struct DynamicLibrary {
@@ -213,13 +202,10 @@ mod test {
 pub mod dl {
     pub use self::Rtld::*;
 
-    use c_str::{CString, ToCStr};
+    use prelude::*;
+    use c_str::CString;
     use libc;
-    use kinds::Copy;
     use ptr;
-    use result::*;
-    use result::Result::{Err, Ok};
-    use string::String;
 
     pub unsafe fn open_external<T: ToCStr>(filename: T) -> *mut u8 {
         filename.with_c_str(|raw_name| {
@@ -231,7 +217,9 @@ pub mod dl {
         dlopen(ptr::null(), Lazy as libc::c_int) as *mut u8
     }
 
-    pub fn check_for_errors_in<T>(f: || -> T) -> Result<T, String> {
+    pub fn check_for_errors_in<T, F>(f: F) -> Result<T, String> where
+        F: FnOnce() -> T,
+    {
         use sync::{StaticMutex, MUTEX_INIT};
         static LOCK: StaticMutex = MUTEX_INIT;
         unsafe {
@@ -262,14 +250,13 @@ pub mod dl {
         dlclose(handle as *mut libc::c_void); ()
     }
 
+    #[deriving(Copy)]
     pub enum Rtld {
         Lazy = 1,
         Now = 2,
         Global = 256,
         Local = 0,
     }
-
-    impl Copy for Rtld {}
 
     #[link_name = "dl"]
     extern {
@@ -287,11 +274,12 @@ pub mod dl {
     use c_str::ToCStr;
     use iter::IteratorExt;
     use libc;
+    use ops::FnOnce;
     use os;
     use ptr;
     use result::Result;
     use result::Result::{Ok, Err};
-    use slice::SlicePrelude;
+    use slice::SliceExt;
     use str::StrPrelude;
     use str;
     use string::String;
@@ -312,7 +300,9 @@ pub mod dl {
         handle as *mut u8
     }
 
-    pub fn check_for_errors_in<T>(f: || -> T) -> Result<T, String> {
+    pub fn check_for_errors_in<T, F>(f: F) -> Result<T, String> where
+        F: FnOnce() -> T,
+    {
         unsafe {
             SetLastError(0);
 

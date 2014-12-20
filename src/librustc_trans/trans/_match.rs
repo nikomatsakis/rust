@@ -193,12 +193,11 @@ use llvm::{ValueRef, BasicBlockRef};
 use middle::check_match::StaticInliner;
 use middle::check_match;
 use middle::const_eval;
-use middle::def;
+use middle::def::{mod, DefMap};
 use middle::expr_use_visitor as euv;
 use middle::lang_items::StrEqFnLangItem;
 use middle::mem_categorization as mc;
 use middle::pat_util::*;
-use middle::resolve::DefMap;
 use trans::adt;
 use trans::base::*;
 use trans::build::{AddCase, And, BitCast, Br, CondBr, GEPi, InBoundsGEP, Load};
@@ -228,10 +227,8 @@ use syntax::codemap::Span;
 use syntax::fold::Folder;
 use syntax::ptr::P;
 
-#[deriving(Show)]
+#[deriving(Copy, Show)]
 struct ConstantExpr<'a>(&'a ast::Expr);
-
-impl<'a> Copy for ConstantExpr<'a> {}
 
 impl<'a> ConstantExpr<'a> {
     fn eq(self, other: ConstantExpr<'a>, tcx: &ty::ctxt) -> bool {
@@ -301,7 +298,7 @@ impl<'a, 'tcx> Opt<'a, 'tcx> {
     }
 }
 
-#[deriving(PartialEq)]
+#[deriving(Copy, PartialEq)]
 pub enum BranchKind {
     NoBranch,
     Single,
@@ -310,22 +307,18 @@ pub enum BranchKind {
     CompareSliceLength
 }
 
-impl Copy for BranchKind {}
-
 pub enum OptResult<'blk, 'tcx: 'blk> {
     SingleResult(Result<'blk, 'tcx>),
     RangeResult(Result<'blk, 'tcx>, Result<'blk, 'tcx>),
     LowerBound(Result<'blk, 'tcx>)
 }
 
-#[deriving(Clone)]
+#[deriving(Clone, Copy)]
 pub enum TransBindingMode {
     TrByCopy(/* llbinding */ ValueRef),
     TrByMove,
     TrByRef,
 }
-
-impl Copy for TransBindingMode {}
 
 /// Information about a pattern binding:
 /// - `llmatch` is a pointer to a stack slot.  The stack slot contains a
@@ -334,7 +327,7 @@ impl Copy for TransBindingMode {}
 /// - `trmode` is the trans binding mode
 /// - `id` is the node id of the binding
 /// - `ty` is the Rust type of the binding
-#[deriving(Clone)]
+#[deriving(Clone, Copy)]
 pub struct BindingInfo<'tcx> {
     pub llmatch: ValueRef,
     pub trmode: TransBindingMode,
@@ -342,8 +335,6 @@ pub struct BindingInfo<'tcx> {
     pub span: Span,
     pub ty: Ty<'tcx>,
 }
-
-impl<'tcx> Copy for BindingInfo<'tcx> {}
 
 type BindingsMap<'tcx> = FnvHashMap<Ident, BindingInfo<'tcx>>;
 
@@ -676,7 +667,7 @@ fn extract_vec_elems<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 // pattern.  Note that, because the macro is well-typed, either ALL of the
 // matches should fit that sort of pattern or NONE (however, some of the
 // matches may be wildcards like _ or identifiers).
-macro_rules! any_pat (
+macro_rules! any_pat {
     ($m:expr, $col:expr, $pattern:pat) => (
         ($m).iter().any(|br| {
             match br.pats[$col].node {
@@ -685,7 +676,7 @@ macro_rules! any_pat (
             }
         })
     )
-)
+}
 
 fn any_uniq_pat(m: &[Match], col: uint) -> bool {
     any_pat!(m, col, ast::PatBox(_))
@@ -771,7 +762,7 @@ fn pick_column_to_specialize(def_map: &DefMap, m: &[Match]) -> Option<uint> {
         }
     };
 
-    let column_contains_any_nonwild_patterns: |&uint| -> bool = |&col| {
+    let column_contains_any_nonwild_patterns = |&: &col: &uint| -> bool {
         m.iter().any(|row| match row.pats[col].node {
             ast::PatWild(_) => false,
             _ => true
@@ -1578,14 +1569,15 @@ pub fn store_for_loop_binding<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     bind_irrefutable_pat(bcx, pat, llvalue, body_scope)
 }
 
-fn mk_binding_alloca<'blk, 'tcx, A>(bcx: Block<'blk, 'tcx>,
-                                    p_id: ast::NodeId,
-                                    ident: &ast::Ident,
-                                    cleanup_scope: cleanup::ScopeId,
-                                    arg: A,
-                                    populate: |A, Block<'blk, 'tcx>, ValueRef, Ty<'tcx>|
-                                              -> Block<'blk, 'tcx>)
-                                    -> Block<'blk, 'tcx> {
+fn mk_binding_alloca<'blk, 'tcx, A, F>(bcx: Block<'blk, 'tcx>,
+                                       p_id: ast::NodeId,
+                                       ident: &ast::Ident,
+                                       cleanup_scope: cleanup::ScopeId,
+                                       arg: A,
+                                       populate: F)
+                                       -> Block<'blk, 'tcx> where
+    F: FnOnce(A, Block<'blk, 'tcx>, ValueRef, Ty<'tcx>) -> Block<'blk, 'tcx>,
+{
     let var_ty = node_id_type(bcx, p_id);
 
     // Allocate memory on stack for the binding.

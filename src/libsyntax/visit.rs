@@ -32,9 +32,10 @@ use codemap::Span;
 use ptr::P;
 use owned_slice::OwnedSlice;
 
+#[deriving(Copy)]
 pub enum FnKind<'a> {
     /// fn foo() or extern "Abi" fn foo()
-    FkItemFn(Ident, &'a Generics, FnStyle, Abi),
+    FkItemFn(Ident, &'a Generics, Unsafety, Abi),
 
     /// fn foo(&self)
     FkMethod(Ident, &'a Generics, &'a Method),
@@ -43,8 +44,6 @@ pub enum FnKind<'a> {
     /// proc(x, y) ...
     FkFnBlock,
 }
-
-impl<'a> Copy for FnKind<'a> {}
 
 /// Each method of the Visitor trait is a hook to be potentially
 /// overridden.  Each method's default implementation recursively visits
@@ -105,8 +104,11 @@ pub trait Visitor<'v> {
             None => ()
         }
     }
+    fn visit_lifetime_bound(&mut self, lifetime: &'v Lifetime) {
+        walk_lifetime_bound(self, lifetime)
+    }
     fn visit_lifetime_ref(&mut self, lifetime: &'v Lifetime) {
-        self.visit_name(lifetime.span, lifetime.name)
+        walk_lifetime_ref(self, lifetime)
     }
     fn visit_lifetime_def(&mut self, lifetime: &'v LifetimeDef) {
         walk_lifetime_def(self, lifetime)
@@ -214,8 +216,18 @@ pub fn walk_lifetime_def<'v, V: Visitor<'v>>(visitor: &mut V,
                                               lifetime_def: &'v LifetimeDef) {
     visitor.visit_name(lifetime_def.lifetime.span, lifetime_def.lifetime.name);
     for bound in lifetime_def.bounds.iter() {
-        visitor.visit_lifetime_ref(bound);
+        visitor.visit_lifetime_bound(bound);
     }
+}
+
+pub fn walk_lifetime_bound<'v, V: Visitor<'v>>(visitor: &mut V,
+                                               lifetime_ref: &'v Lifetime) {
+    visitor.visit_lifetime_ref(lifetime_ref)
+}
+
+pub fn walk_lifetime_ref<'v, V: Visitor<'v>>(visitor: &mut V,
+                                             lifetime_ref: &'v Lifetime) {
+    visitor.visit_name(lifetime_ref.span, lifetime_ref.name)
 }
 
 pub fn walk_explicit_self<'v, V: Visitor<'v>>(visitor: &mut V,
@@ -282,7 +294,8 @@ pub fn walk_item<'v, V: Visitor<'v>>(visitor: &mut V, item: &'v Item) {
             visitor.visit_generics(type_parameters);
             walk_enum_def(visitor, enum_definition, type_parameters)
         }
-        ItemImpl(ref type_parameters,
+        ItemImpl(_,
+                 ref type_parameters,
                  ref trait_reference,
                  ref typ,
                  ref impl_items) => {
@@ -311,7 +324,7 @@ pub fn walk_item<'v, V: Visitor<'v>>(visitor: &mut V, item: &'v Item) {
                                      generics,
                                      item.id)
         }
-        ItemTrait(ref generics, _, ref bounds, ref methods) => {
+        ItemTrait(_, ref generics, _, ref bounds, ref methods) => {
             visitor.visit_generics(generics);
             walk_ty_param_bounds_helper(visitor, bounds);
             for method in methods.iter() {
@@ -382,14 +395,6 @@ pub fn walk_ty<'v, V: Visitor<'v>>(visitor: &mut V, typ: &'v Ty) {
             }
         }
         TyClosure(ref function_declaration) => {
-            for argument in function_declaration.decl.inputs.iter() {
-                visitor.visit_ty(&*argument.ty)
-            }
-            walk_fn_ret_ty(visitor, &function_declaration.decl.output);
-            walk_ty_param_bounds_helper(visitor, &function_declaration.bounds);
-            walk_lifetime_decls_helper(visitor, &function_declaration.lifetimes);
-        }
-        TyProc(ref function_declaration) => {
             for argument in function_declaration.decl.inputs.iter() {
                 visitor.visit_ty(&*argument.ty)
             }
@@ -557,19 +562,23 @@ pub fn walk_ty_param_bound<'v, V: Visitor<'v>>(visitor: &mut V,
             visitor.visit_poly_trait_ref(typ);
         }
         RegionTyParamBound(ref lifetime) => {
-            visitor.visit_lifetime_ref(lifetime);
+            visitor.visit_lifetime_bound(lifetime);
         }
+    }
+}
+
+pub fn walk_ty_param<'v, V: Visitor<'v>>(visitor: &mut V, param: &'v TyParam) {
+    visitor.visit_ident(param.span, param.ident);
+    walk_ty_param_bounds_helper(visitor, &param.bounds);
+    match param.default {
+        Some(ref ty) => visitor.visit_ty(&**ty),
+        None => {}
     }
 }
 
 pub fn walk_generics<'v, V: Visitor<'v>>(visitor: &mut V, generics: &'v Generics) {
     for type_parameter in generics.ty_params.iter() {
-        visitor.visit_ident(type_parameter.span, type_parameter.ident);
-        walk_ty_param_bounds_helper(visitor, &type_parameter.bounds);
-        match type_parameter.default {
-            Some(ref ty) => visitor.visit_ty(&**ty),
-            None => {}
-        }
+        walk_ty_param(visitor, type_parameter);
     }
     walk_lifetime_decls_helper(visitor, &generics.lifetimes);
     for predicate in generics.where_clause.predicates.iter() {
@@ -672,8 +681,7 @@ pub fn walk_trait_item<'v, V: Visitor<'v>>(visitor: &mut V, trait_method: &'v Tr
         RequiredMethod(ref method_type) => visitor.visit_ty_method(method_type),
         ProvidedMethod(ref method) => walk_method_helper(visitor, &**method),
         TypeTraitItem(ref associated_type) => {
-            visitor.visit_ident(associated_type.ty_param.span,
-                                associated_type.ty_param.ident)
+            walk_ty_param(visitor, &associated_type.ty_param);
         }
     }
 }
@@ -746,7 +754,7 @@ pub fn walk_mac<'v, V: Visitor<'v>>(_: &mut V, _: &'v Mac) {
 pub fn walk_expr<'v, V: Visitor<'v>>(visitor: &mut V, expression: &'v Expr) {
     match expression.node {
         ExprBox(ref place, ref subexpression) => {
-            visitor.visit_expr(&**place);
+            place.as_ref().map(|e|visitor.visit_expr(&**e));
             visitor.visit_expr(&**subexpression)
         }
         ExprVec(ref subexpressions) => {
@@ -825,13 +833,6 @@ pub fn walk_expr<'v, V: Visitor<'v>>(visitor: &mut V, expression: &'v Expr) {
             }
         }
         ExprClosure(_, _, ref function_declaration, ref body) => {
-            visitor.visit_fn(FkFnBlock,
-                             &**function_declaration,
-                             &**body,
-                             expression.span,
-                             expression.id)
-        }
-        ExprProc(ref function_declaration, ref body) => {
             visitor.visit_fn(FkFnBlock,
                              &**function_declaration,
                              &**body,

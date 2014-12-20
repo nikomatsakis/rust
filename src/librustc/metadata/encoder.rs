@@ -21,10 +21,10 @@ use metadata::common::*;
 use metadata::cstore;
 use metadata::decoder;
 use metadata::tyencode;
+use middle::def;
 use middle::ty::{lookup_item_type};
 use middle::ty::{mod, Ty};
 use middle::stability;
-use middle;
 use util::nodemap::{FnvHashMap, NodeMap, NodeSet};
 
 use serialize::Encodable;
@@ -66,7 +66,7 @@ pub type EncodeInlinedItem<'a> = |ecx: &EncodeContext,
 pub struct EncodeParams<'a, 'tcx: 'a> {
     pub diag: &'a SpanHandler,
     pub tcx: &'a ty::ctxt<'tcx>,
-    pub reexports2: &'a middle::resolve::ExportMap2,
+    pub reexports: &'a def::ExportMap,
     pub item_symbols: &'a RefCell<NodeMap<String>>,
     pub link_meta: &'a LinkMeta,
     pub cstore: &'a cstore::CStore,
@@ -77,7 +77,7 @@ pub struct EncodeParams<'a, 'tcx: 'a> {
 pub struct EncodeContext<'a, 'tcx: 'a> {
     pub diag: &'a SpanHandler,
     pub tcx: &'a ty::ctxt<'tcx>,
-    pub reexports2: &'a middle::resolve::ExportMap2,
+    pub reexports: &'a def::ExportMap,
     pub item_symbols: &'a RefCell<NodeMap<String>>,
     pub link_meta: &'a LinkMeta,
     pub cstore: &'a cstore::CStore,
@@ -364,12 +364,12 @@ fn encode_enum_variant_info(ecx: &EncodeContext,
     }
 }
 
-fn encode_path<PI: Iterator<PathElem> + Clone>(rbml_w: &mut Encoder,
-                                               mut path: PI) {
+fn encode_path<PI: Iterator<PathElem>>(rbml_w: &mut Encoder, path: PI) {
+    let path = path.collect::<Vec<_>>();
     rbml_w.start_tag(tag_path);
-    rbml_w.wr_tagged_u32(tag_path_len, path.clone().count() as u32);
-    for pe in path {
-        let tag = match pe {
+    rbml_w.wr_tagged_u32(tag_path_len, path.len() as u32);
+    for pe in path.iter() {
+        let tag = match *pe {
             ast_map::PathMod(_) => tag_path_elem_mod,
             ast_map::PathName(_) => tag_path_elem_name
         };
@@ -379,7 +379,7 @@ fn encode_path<PI: Iterator<PathElem> + Clone>(rbml_w: &mut Encoder,
 }
 
 fn encode_reexported_static_method(rbml_w: &mut Encoder,
-                                   exp: &middle::resolve::Export2,
+                                   exp: &def::Export,
                                    method_def_id: DefId,
                                    method_name: ast::Name) {
     debug!("(encode reexported static method) {}::{}",
@@ -398,7 +398,7 @@ fn encode_reexported_static_method(rbml_w: &mut Encoder,
 
 fn encode_reexported_static_base_methods(ecx: &EncodeContext,
                                          rbml_w: &mut Encoder,
-                                         exp: &middle::resolve::Export2)
+                                         exp: &def::Export)
                                          -> bool {
     let impl_items = ecx.tcx.impl_items.borrow();
     match ecx.tcx.inherent_impls.borrow().get(&exp.def_id) {
@@ -428,7 +428,7 @@ fn encode_reexported_static_base_methods(ecx: &EncodeContext,
 
 fn encode_reexported_static_trait_methods(ecx: &EncodeContext,
                                           rbml_w: &mut Encoder,
-                                          exp: &middle::resolve::Export2)
+                                          exp: &def::Export)
                                           -> bool {
     match ecx.tcx.trait_items_cache.borrow().get(&exp.def_id) {
         Some(trait_items) => {
@@ -449,10 +449,8 @@ fn encode_reexported_static_trait_methods(ecx: &EncodeContext,
 fn encode_reexported_static_methods(ecx: &EncodeContext,
                                     rbml_w: &mut Encoder,
                                     mod_path: PathElems,
-                                    exp: &middle::resolve::Export2) {
+                                    exp: &def::Export) {
     if let Some(ast_map::NodeItem(item)) = ecx.tcx.map.find(exp.def_id.node) {
-        let original_name = token::get_ident(item.ident);
-
         let path_differs = ecx.tcx.map.with_path(exp.def_id.node, |path| {
             let (mut a, mut b) = (path, mod_path.clone());
             loop {
@@ -474,16 +472,16 @@ fn encode_reexported_static_methods(ecx: &EncodeContext,
         // encoded metadata for static methods relative to Bar,
         // but not yet for Foo.
         //
-        if path_differs || original_name.get() != exp.name {
+        if path_differs || item.ident.name != exp.name {
             if !encode_reexported_static_base_methods(ecx, rbml_w, exp) {
                 if encode_reexported_static_trait_methods(ecx, rbml_w, exp) {
                     debug!("(encode reexported static methods) {} [trait]",
-                           original_name);
+                           item.ident.name);
                 }
             }
             else {
                 debug!("(encode reexported static methods) {} [base]",
-                       original_name);
+                       item.ident.name);
             }
         }
     }
@@ -493,7 +491,9 @@ fn encode_reexported_static_methods(ecx: &EncodeContext,
 /// top-level items that are sub-items of the given item. Specifically:
 ///
 /// * For newtype structs, iterates through the node ID of the constructor.
-fn each_auxiliary_node_id(item: &ast::Item, callback: |NodeId| -> bool) -> bool {
+fn each_auxiliary_node_id<F>(item: &ast::Item, callback: F) -> bool where
+    F: FnOnce(NodeId) -> bool,
+{
     let mut continue_ = true;
     match item.node {
         ast::ItemStruct(ref struct_def, _) => {
@@ -517,7 +517,7 @@ fn encode_reexports(ecx: &EncodeContext,
                     id: NodeId,
                     path: PathElems) {
     debug!("(encoding info for module) encoding reexports for {}", id);
-    match ecx.reexports2.get(&id) {
+    match ecx.reexports.get(&id) {
         Some(ref exports) => {
             debug!("(encoding info for module) found reexports for {}", id);
             for exp in exports.iter() {
@@ -532,7 +532,7 @@ fn encode_reexports(ecx: &EncodeContext,
                 rbml_w.wr_str(def_to_string(exp.def_id).as_slice());
                 rbml_w.end_tag();
                 rbml_w.start_tag(tag_items_data_item_reexport_name);
-                rbml_w.wr_str(exp.name.as_slice());
+                rbml_w.wr_str(exp.name.as_str());
                 rbml_w.end_tag();
                 rbml_w.end_tag();
                 encode_reexported_static_methods(ecx, rbml_w, path.clone(), exp);
@@ -1054,6 +1054,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         encode_bounds_and_type(rbml_w, ecx, &lookup_item_type(tcx, def_id));
         encode_name(rbml_w, item.ident.name);
         encode_path(rbml_w, path);
+        encode_attributes(rbml_w, item.attrs.as_slice());
         encode_inlined_item(ecx, rbml_w, IIItemRef(item));
         encode_visibility(rbml_w, vis);
         encode_stability(rbml_w, stab);
@@ -1203,7 +1204,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
             None => {}
         }
       }
-      ast::ItemImpl(_, ref opt_trait, ref ty, ref ast_items) => {
+      ast::ItemImpl(unsafety, _, ref opt_trait, ref ty, ref ast_items) => {
         // We need to encode information about the default methods we
         // have inherited, so we drive this based on the impl structure.
         let impl_items = tcx.impl_items.borrow();
@@ -1216,6 +1217,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         encode_bounds_and_type(rbml_w, ecx, &lookup_item_type(tcx, def_id));
         encode_name(rbml_w, item.ident.name);
         encode_attributes(rbml_w, item.attrs.as_slice());
+        encode_unsafety(rbml_w, unsafety);
         match ty.node {
             ast::TyPath(ref path, _) if path.segments
                                                         .len() == 1 => {
@@ -1306,13 +1308,14 @@ fn encode_info_for_item(ecx: &EncodeContext,
             }
         }
       }
-      ast::ItemTrait(_, _, _, ref ms) => {
+      ast::ItemTrait(_, _, _, _, ref ms) => {
         add_to_index(item, rbml_w, index);
         rbml_w.start_tag(tag_items_data_item);
         encode_def_id(rbml_w, def_id);
         encode_family(rbml_w, 'I');
         encode_item_variances(rbml_w, ecx, item.id);
         let trait_def = ty::lookup_trait_def(tcx, def_id);
+        encode_unsafety(rbml_w, trait_def.unsafety);
         encode_generics(rbml_w, ecx, &trait_def.generics, tag_item_generics);
         encode_trait_ref(rbml_w, ecx, &*trait_def.trait_ref, tag_item_trait_ref);
         encode_name(rbml_w, item.ident.name);
@@ -1579,8 +1582,10 @@ fn encode_info_for_items(ecx: &EncodeContext,
 
 // Path and definition ID indexing
 
-fn encode_index<T: Hash>(rbml_w: &mut Encoder, index: Vec<entry<T>>,
-                         write_fn: |&mut SeekableMemWriter, &T|) {
+fn encode_index<T, F>(rbml_w: &mut Encoder, index: Vec<entry<T>>, mut write_fn: F) where
+    F: FnMut(&mut SeekableMemWriter, &T),
+    T: Hash,
+{
     let mut buckets: Vec<Vec<entry<T>>> = Vec::from_fn(256, |_| Vec::new());
     for elt in index.into_iter() {
         let h = hash::hash(&elt.val) as uint;
@@ -1668,6 +1673,14 @@ fn encode_attributes(rbml_w: &mut Encoder, attrs: &[ast::Attribute]) {
         rbml_w.end_tag();
     }
     rbml_w.end_tag();
+}
+
+fn encode_unsafety(rbml_w: &mut Encoder, unsafety: ast::Unsafety) {
+    let byte: u8 = match unsafety {
+        ast::Unsafety::Normal => 0,
+        ast::Unsafety::Unsafe => 1,
+    };
+    rbml_w.wr_tagged_u8(tag_unsafety, byte);
 }
 
 fn encode_crate_deps(rbml_w: &mut Encoder, cstore: &cstore::CStore) {
@@ -1851,7 +1864,7 @@ struct ImplVisitor<'a, 'b:'a, 'c:'a, 'tcx:'b> {
 
 impl<'a, 'b, 'c, 'tcx, 'v> Visitor<'v> for ImplVisitor<'a, 'b, 'c, 'tcx> {
     fn visit_item(&mut self, item: &ast::Item) {
-        if let ast::ItemImpl(_, Some(ref trait_ref), _, _) = item.node {
+        if let ast::ItemImpl(_, _, Some(ref trait_ref), _, _) = item.node {
             let def_map = &self.ecx.tcx.def_map;
             let trait_def = def_map.borrow()[trait_ref.ref_id].clone();
             let def_id = trait_def.def_id();
@@ -2056,7 +2069,7 @@ fn encode_metadata_inner(wr: &mut SeekableMemWriter,
         item_symbols,
         diag,
         tcx,
-        reexports2,
+        reexports,
         cstore,
         encode_inlined_item,
         link_meta,
@@ -2066,7 +2079,7 @@ fn encode_metadata_inner(wr: &mut SeekableMemWriter,
     let ecx = EncodeContext {
         diag: diag,
         tcx: tcx,
-        reexports2: reexports2,
+        reexports: reexports,
         item_symbols: item_symbols,
         link_meta: link_meta,
         cstore: cstore,

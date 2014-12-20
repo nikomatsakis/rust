@@ -19,6 +19,8 @@ use rustc::plugin::load::Plugins;
 use rustc::plugin::registry::Registry;
 use rustc::plugin;
 use rustc::util::common::time;
+use rustc_borrowck as borrowck;
+use rustc_resolve as resolve;
 use rustc_trans::back::link;
 use rustc_trans::back::write;
 use rustc_trans::save;
@@ -46,12 +48,6 @@ pub fn compile_input(sess: Session,
                      outdir: &Option<Path>,
                      output: &Option<Path>,
                      addl_plugins: Option<Plugins>) {
-    // These may be left in an incoherent state after a previous compile.
-    // `clear_tables` and `get_ident_interner().clear()` can be used to free
-    // memory, but they do not restore the initial state.
-    syntax::ext::mtwt::reset_tables();
-    token::reset_ident_interner();
-
     // We need nested scopes here, because the intermediate results can keep
     // large chunks of memory alive and we want to free them as soon as
     // possible to keep the peak memory usage low
@@ -115,6 +111,12 @@ pub fn source_name(input: &Input) -> String {
 
 pub fn phase_1_parse_input(sess: &Session, cfg: ast::CrateConfig, input: &Input)
     -> ast::Crate {
+    // These may be left in an incoherent state after a previous compile.
+    // `clear_tables` and `get_ident_interner().clear()` can be used to free
+    // memory, but they do not restore the initial state.
+    syntax::ext::mtwt::reset_tables();
+    token::reset_ident_interner();
+
     let krate = time(sess.time_passes(), "parsing", (), |_| {
         match *input {
             Input::File(ref file) => {
@@ -340,17 +342,17 @@ pub fn phase_3_run_analysis_passes<'tcx>(sess: Session,
     let lang_items = time(time_passes, "language item collection", (), |_|
                           middle::lang_items::collect_language_items(krate, &sess));
 
-    let middle::resolve::CrateMap {
+    let resolve::CrateMap {
         def_map,
         freevars,
         capture_mode_map,
-        exp_map2,
+        export_map,
         trait_map,
         external_exports,
         last_private_map
     } =
-        time(time_passes, "resolution", (), |_|
-             middle::resolve::resolve_crate(&sess, &lang_items, krate));
+        time(time_passes, "resolution", (),
+             |_| resolve::resolve_crate(&sess, &lang_items, krate));
 
     // Discard MTWT tables that aren't required past resolution.
     syntax::ext::mtwt::clear_tables();
@@ -405,7 +407,7 @@ pub fn phase_3_run_analysis_passes<'tcx>(sess: Session,
     let maps = (external_exports, last_private_map);
     let (exported_items, public_items) =
             time(time_passes, "privacy checking", maps, |(a, b)|
-                 middle::privacy::check_crate(&ty_cx, &exp_map2, a, b));
+                 middle::privacy::check_crate(&ty_cx, &export_map, a, b));
 
     time(time_passes, "intrinsic checking", (), |_|
          middle::intrinsicck::check_crate(&ty_cx));
@@ -420,7 +422,7 @@ pub fn phase_3_run_analysis_passes<'tcx>(sess: Session,
          middle::liveness::check_crate(&ty_cx));
 
     time(time_passes, "borrow checking", (), |_|
-         middle::borrowck::check_crate(&ty_cx));
+         borrowck::check_crate(&ty_cx));
 
     time(time_passes, "rvalue checking", (), |_|
          middle::check_rvalues::check_crate(&ty_cx, krate));
@@ -446,7 +448,7 @@ pub fn phase_3_run_analysis_passes<'tcx>(sess: Session,
          lint::check_crate(&ty_cx, &exported_items));
 
     ty::CrateAnalysis {
-        exp_map2: exp_map2,
+        export_map: export_map,
         ty_cx: ty_cx,
         exported_items: exported_items,
         public_items: public_items,

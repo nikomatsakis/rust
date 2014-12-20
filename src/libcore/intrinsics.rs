@@ -42,11 +42,10 @@
 #![experimental]
 #![allow(missing_docs)]
 
-use kinds::Copy;
-
 pub type GlueFn = extern "Rust" fn(*const i8);
 
 #[lang="ty_desc"]
+#[deriving(Copy)]
 pub struct TyDesc {
     // sizeof(T)
     pub size: uint,
@@ -60,8 +59,6 @@ pub struct TyDesc {
     // Name corresponding to the type
     pub name: &'static str,
 }
-
-impl Copy for TyDesc {}
 
 extern "rust-intrinsic" {
 
@@ -217,6 +214,7 @@ extern "rust-intrinsic" {
     ///
     /// `forget` is unsafe because the caller is responsible for
     /// ensuring the argument is deallocated already.
+    #[stable]
     pub fn forget<T>(_: T) -> ();
 
     /// Unsafely transforms a value of one type into a value of another type.
@@ -232,6 +230,7 @@ extern "rust-intrinsic" {
     /// let v: &[u8] = unsafe { mem::transmute("L") };
     /// assert!(v == [76u8]);
     /// ```
+    #[stable]
     pub fn transmute<T,U>(e: T) -> U;
 
     /// Gives the address for the return value of the enclosing function.
@@ -538,12 +537,10 @@ extern "rust-intrinsic" {
 /// `TypeId` represents a globally unique identifier for a type
 #[lang="type_id"] // This needs to be kept in lockstep with the code in trans/intrinsic.rs and
                   // middle/lang_items.rs
-#[deriving(Clone, PartialEq, Eq, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Show)]
 pub struct TypeId {
     t: u64,
 }
-
-impl Copy for TypeId {}
 
 impl TypeId {
     /// Returns the `TypeId` of the type this generic function has been instantiated with

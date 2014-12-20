@@ -53,8 +53,7 @@ use middle::def;
 use middle::resolve_lifetime as rl;
 use middle::subst::{FnSpace, TypeSpace, AssocSpace, SelfSpace, Subst, Substs};
 use middle::subst::{VecPerParamSpace};
-use middle::ty::{mod, Ty};
-use middle::ty_fold;
+use middle::ty::{mod, RegionEscape, Ty};
 use rscope::{mod, UnelidableRscope, RegionScope, SpecificRscope,
              ShiftedRscope, BindingRscope};
 use TypeAndSubsts;
@@ -73,6 +72,14 @@ pub trait AstConv<'tcx> {
     fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx>;
     fn get_item_ty(&self, id: ast::DefId) -> ty::Polytype<'tcx>;
     fn get_trait_def(&self, id: ast::DefId) -> Rc<ty::TraitDef<'tcx>>;
+
+    /// Return an (optional) substitution to convert bound type parameters that
+    /// are in scope into free ones. This function should only return Some
+    /// within a fn body.
+    /// See ParameterEnvironment::free_substs for more information.
+    fn get_free_substs(&self) -> Option<&Substs<'tcx>> {
+        None
+    }
 
     /// What type should we use when a type is omitted?
     fn ty_infer(&self, span: Span) -> Ty<'tcx>;
@@ -235,8 +242,9 @@ fn ast_path_substs_for_ty<'tcx,AC,RS>(
             convert_angle_bracketed_parameters(this, rscope, data)
         }
         ast::ParenthesizedParameters(ref data) => {
-            span_err!(tcx.sess, path.span, E0169,
-                      "parenthesized parameters may only be used with a trait");
+            tcx.sess.span_err(
+                path.span,
+                "parenthesized parameters may only be used with a trait");
             (Vec::new(), convert_parenthesized_parameters(this, data), Vec::new())
         }
     };
@@ -515,10 +523,24 @@ fn convert_parenthesized_parameters<'tcx,AC>(this: &AC,
     vec![input_ty, output]
 }
 
+pub fn instantiate_poly_trait_ref<'tcx,AC,RS>(
+    this: &AC,
+    rscope: &RS,
+    ast_trait_ref: &ast::PolyTraitRef,
+    self_ty: Option<Ty<'tcx>>,
+    allow_eq: AllowEqConstraints)
+    -> Rc<ty::PolyTraitRef<'tcx>>
+    where AC: AstConv<'tcx>, RS: RegionScope
+{
+    let trait_ref =
+        instantiate_trait_ref(this, rscope, &ast_trait_ref.trait_ref, self_ty, allow_eq);
+    let trait_ref = (*trait_ref).clone();
+    Rc::new(ty::Binder(trait_ref)) // Ugh.
+}
 
-/// Instantiates the path for the given trait reference, assuming that it's bound to a valid trait
-/// type. Returns the def_id for the defining trait. Fails if the type is a type other than a trait
-/// type.
+/// Instantiates the path for the given trait reference, assuming that it's
+/// bound to a valid trait type. Returns the def_id for the defining trait.
+/// Fails if the type is a type other than a trait type.
 pub fn instantiate_trait_ref<'tcx,AC,RS>(this: &AC,
                                          rscope: &RS,
                                          ast_trait_ref: &ast::TraitRef,
@@ -528,9 +550,7 @@ pub fn instantiate_trait_ref<'tcx,AC,RS>(this: &AC,
                                          where AC: AstConv<'tcx>,
                                                RS: RegionScope
 {
-    match ::lookup_def_tcx(this.tcx(),
-                           ast_trait_ref.path.span,
-                           ast_trait_ref.ref_id) {
+    match ::lookup_def_tcx(this.tcx(), ast_trait_ref.path.span, ast_trait_ref.ref_id) {
         def::DefTrait(trait_def_id) => {
             let trait_ref = Rc::new(ast_path_to_trait_ref(this,
                                                           rscope,
@@ -581,6 +601,19 @@ fn ast_path_to_trait_ref<'tcx,AC,RS>(
             convert_angle_bracketed_parameters(this, &shifted_rscope, data)
         }
         ast::ParenthesizedParameters(ref data) => {
+            // For now, require that parenthetical notation be used
+            // only with `Fn()` etc.
+            if !this.tcx().sess.features.borrow().unboxed_closures &&
+                this.tcx().lang_items.fn_trait_kind(trait_def_id).is_none()
+            {
+                this.tcx().sess.span_err(path.span,
+                                         "parenthetical notation is only stable when \
+                                         used with the `Fn` family of traits");
+                span_help!(this.tcx().sess, path.span,
+                           "add `#![feature(unboxed_closures)]` to \
+                            the crate attributes to enable");
+            }
+
             (Vec::new(), convert_parenthesized_parameters(this, data), Vec::new())
         }
     };
@@ -727,7 +760,7 @@ fn ast_ty_to_trait_ref<'tcx,AC,RS>(this: &AC,
                                    rscope: &RS,
                                    ty: &ast::Ty,
                                    bounds: &[ast::TyParamBound])
-                                   -> Result<ty::TraitRef<'tcx>, ErrorReported>
+                                   -> Result<ty::PolyTraitRef<'tcx>, ErrorReported>
     where AC : AstConv<'tcx>, RS : RegionScope
 {
     /*!
@@ -745,12 +778,12 @@ fn ast_ty_to_trait_ref<'tcx,AC,RS>(this: &AC,
         ast::TyPath(ref path, id) => {
             match this.tcx().def_map.borrow().get(&id) {
                 Some(&def::DefTrait(trait_def_id)) => {
-                    return Ok(ast_path_to_trait_ref(this,
-                                                    rscope,
-                                                    trait_def_id,
-                                                    None,
-                                                    path,
-                                                    AllowEqConstraints::Allow));
+                    return Ok(ty::Binder(ast_path_to_trait_ref(this,
+                                                               rscope,
+                                                               trait_def_id,
+                                                               None,
+                                                               path,
+                                                               AllowEqConstraints::Allow)));
                 }
                 _ => {
                     span_err!(this.tcx().sess, ty.span, E0172, "expected a reference to a trait");
@@ -792,7 +825,7 @@ fn ast_ty_to_trait_ref<'tcx,AC,RS>(this: &AC,
 fn trait_ref_to_object_type<'tcx,AC,RS>(this: &AC,
                                         rscope: &RS,
                                         span: Span,
-                                        trait_ref: ty::TraitRef<'tcx>,
+                                        trait_ref: ty::PolyTraitRef<'tcx>,
                                         bounds: &[ast::TyParamBound])
                                         -> Ty<'tcx>
     where AC : AstConv<'tcx>, RS : RegionScope
@@ -832,18 +865,29 @@ fn qpath_to_ty<'tcx,AC,RS>(this: &AC,
 
     debug!("qpath_to_ty: trait_ref={}", trait_ref.repr(this.tcx()));
 
-    let trait_def = this.get_trait_def(trait_ref.def_id);
-
-    for ty_param_def in trait_def.generics.types.get_slice(AssocSpace).iter() {
-        if ty_param_def.name == qpath.item_name.name {
-            debug!("qpath_to_ty: corresponding ty_param_def={}", ty_param_def);
-            return trait_ref.substs.type_for_def(ty_param_def);
-        }
+    if let Some(ty) = find_assoc_ty(this, &*trait_ref, qpath.item_name) {
+        return ty;
     }
 
     this.tcx().sess.span_bug(ast_ty.span,
                              "this associated type didn't get added \
                               as a parameter for some reason")
+}
+
+fn find_assoc_ty<'tcx, AC>(this: &AC,
+                           trait_ref: &ty::TraitRef<'tcx>,
+                           type_name: ast::Ident)
+                           -> Option<Ty<'tcx>>
+where AC: AstConv<'tcx> {
+    let trait_def = this.get_trait_def(trait_ref.def_id);
+
+    for ty_param_def in trait_def.generics.types.get_slice(AssocSpace).iter() {
+        if ty_param_def.name == type_name.name {
+            return Some(trait_ref.substs.type_for_def(ty_param_def));
+        }
+    }
+
+    None
 }
 
 // Parses the programmer's textual representation of a type into our
@@ -910,7 +954,7 @@ pub fn ast_ty_to_ty<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
                     tcx.sess.span_err(ast_ty.span,
                                       "variadic function must have C calling convention");
                 }
-                ty::mk_bare_fn(tcx, ty_of_bare_fn(this, bf.fn_style, bf.abi, &*bf.decl))
+                ty::mk_bare_fn(tcx, ty_of_bare_fn(this, bf.unsafety, bf.abi, &*bf.decl))
             }
             ast::TyClosure(ref f) => {
                 // Use corresponding trait store to figure out default bounds
@@ -921,7 +965,7 @@ pub fn ast_ty_to_ty<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
                                                      None,
                                                      f.bounds.as_slice());
                 let fn_decl = ty_of_closure(this,
-                                            f.fn_style,
+                                            f.unsafety,
                                             f.onceness,
                                             bounds,
                                             ty::RegionTraitStore(
@@ -930,26 +974,6 @@ pub fn ast_ty_to_ty<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
                                             &*f.decl,
                                             abi::Rust,
                                             None);
-                ty::mk_closure(tcx, fn_decl)
-            }
-            ast::TyProc(ref f) => {
-                // Use corresponding trait store to figure out default bounds
-                // if none were specified.
-                let bounds = conv_existential_bounds(this,
-                                                     rscope,
-                                                     ast_ty.span,
-                                                     None,
-                                                     f.bounds.as_slice());
-
-                let fn_decl = ty_of_closure(this,
-                                            f.fn_style,
-                                            f.onceness,
-                                            bounds,
-                                            ty::UniqTraitStore,
-                                            &*f.decl,
-                                            abi::Rust,
-                                            None);
-
                 ty::mk_closure(tcx, fn_decl)
             }
             ast::TyPolyTraitRef(ref bounds) => {
@@ -969,12 +993,12 @@ pub fn ast_ty_to_ty<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
                     def::DefTrait(trait_def_id) => {
                         // N.B. this case overlaps somewhat with
                         // TyObjectSum, see that fn for details
-                        let result = ast_path_to_trait_ref(this,
-                                                           rscope,
-                                                           trait_def_id,
-                                                           None,
-                                                           path,
-                                                           AllowEqConstraints::Allow);
+                        let result = ty::Binder(ast_path_to_trait_ref(this,
+                                                                      rscope,
+                                                                      trait_def_id,
+                                                                      None,
+                                                                      path,
+                                                                      AllowEqConstraints::Allow));
                         trait_ref_to_object_type(this, rscope, path.span, result, &[])
                     }
                     def::DefTy(did, _) | def::DefStruct(did) => {
@@ -1017,6 +1041,45 @@ pub fn ast_ty_to_ty<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
                                                   .get()).as_slice());
                         ty::mk_err()
                     }
+                    def::DefAssociatedPath(typ, assoc_ident) => {
+                        // FIXME(#19541): in both branches we should consider
+                        // associated types in super-traits.
+                        let (assoc_tys, tp_name): (Vec<_>, _) = match typ {
+                            def::TyParamProvenance::FromParam(did) |
+                            def::TyParamProvenance::FromSelf(did) => {
+                                let ty_param_defs = tcx.ty_param_defs.borrow();
+                                let tp_def = &(*ty_param_defs)[did.node];
+                                let assoc_tys = tp_def.bounds.trait_bounds.iter()
+                                    .filter_map(|b| find_assoc_ty(this, &b.0, assoc_ident))
+                                    .collect();
+                                (assoc_tys, token::get_name(tp_def.name).to_string())
+                            }
+                        };
+
+                        if assoc_tys.len() == 0 {
+                            tcx.sess.span_err(ast_ty.span,
+                                              format!("associated type `{}` not \
+                                                       found for type parameter `{}`",
+                                                      token::get_ident(assoc_ident),
+                                                      tp_name).as_slice());
+                            return ty::mk_err()
+                        }
+
+                        if assoc_tys.len() > 1 {
+                            tcx.sess.span_err(ast_ty.span,
+                                              format!("ambiguous associated type \
+                                                       `{}` in bounds of `{}`",
+                                                      token::get_ident(assoc_ident),
+                                                      tp_name).as_slice());
+                        }
+
+                        let mut result_ty = assoc_tys[0];
+                        if let Some(substs) = this.get_free_substs() {
+                            result_ty = result_ty.subst(tcx, substs);
+                        }
+
+                        result_ty
+                    }
                     _ => {
                         tcx.sess.span_fatal(ast_ty.span,
                                             format!("found value name used \
@@ -1058,7 +1121,7 @@ pub fn ast_ty_to_ty<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
             }
             ast::TyInfer => {
                 // TyInfer also appears as the type of arguments or return
-                // values in a ExprClosure or ExprProc, or as
+                // values in a ExprClosure, or as
                 // the type of local variables. Both of these cases are
                 // handled specially and will not descend into this routine.
                 this.ty_infer(ast_ty.span)
@@ -1088,7 +1151,7 @@ struct SelfInfo<'a, 'tcx> {
 
 pub fn ty_of_method<'tcx, AC: AstConv<'tcx>>(
                     this: &AC,
-                    fn_style: ast::FnStyle,
+                    unsafety: ast::Unsafety,
                     untransformed_self_ty: Ty<'tcx>,
                     explicit_self: &ast::ExplicitSelf,
                     decl: &ast::FnDecl,
@@ -1100,22 +1163,22 @@ pub fn ty_of_method<'tcx, AC: AstConv<'tcx>>(
     });
     let (bare_fn_ty, optional_explicit_self_category) =
         ty_of_method_or_bare_fn(this,
-                                fn_style,
+                                unsafety,
                                 abi,
                                 self_info,
                                 decl);
     (bare_fn_ty, optional_explicit_self_category.unwrap())
 }
 
-pub fn ty_of_bare_fn<'tcx, AC: AstConv<'tcx>>(this: &AC, fn_style: ast::FnStyle, abi: abi::Abi,
+pub fn ty_of_bare_fn<'tcx, AC: AstConv<'tcx>>(this: &AC, unsafety: ast::Unsafety, abi: abi::Abi,
                                               decl: &ast::FnDecl) -> ty::BareFnTy<'tcx> {
-    let (bare_fn_ty, _) = ty_of_method_or_bare_fn(this, fn_style, abi, None, decl);
+    let (bare_fn_ty, _) = ty_of_method_or_bare_fn(this, unsafety, abi, None, decl);
     bare_fn_ty
 }
 
 fn ty_of_method_or_bare_fn<'a, 'tcx, AC: AstConv<'tcx>>(
                            this: &AC,
-                           fn_style: ast::FnStyle,
+                           unsafety: ast::Unsafety,
                            abi: abi::Abi,
                            opt_self_info: Option<SelfInfo<'a, 'tcx>>,
                            decl: &ast::FnDecl)
@@ -1137,10 +1200,9 @@ fn ty_of_method_or_bare_fn<'a, 'tcx, AC: AstConv<'tcx>>(
     let (self_ty, mut implied_output_region) = match opt_self_info {
         None => (None, None),
         Some(self_info) => {
-            // Shift regions in the self type by 1 to account for the binding
-            // level introduced by the function itself.
-            let untransformed_self_ty =
-                ty_fold::shift_regions(this.tcx(), 1, &self_info.untransformed_self_ty);
+            // This type comes from an impl or trait; no late-bound
+            // regions should be present.
+            assert!(!self_info.untransformed_self_ty.has_escaping_regions());
 
             // Figure out and record the explicit self category.
             let explicit_self_category =
@@ -1151,19 +1213,19 @@ fn ty_of_method_or_bare_fn<'a, 'tcx, AC: AstConv<'tcx>>(
                     (None, None)
                 }
                 ty::ByValueExplicitSelfCategory => {
-                    (Some(untransformed_self_ty), None)
+                    (Some(self_info.untransformed_self_ty), None)
                 }
                 ty::ByReferenceExplicitSelfCategory(region, mutability) => {
                     (Some(ty::mk_rptr(this.tcx(),
                                       region,
                                       ty::mt {
-                                        ty: untransformed_self_ty,
+                                        ty: self_info.untransformed_self_ty,
                                         mutbl: mutability
                                       })),
                      Some(region))
                 }
                 ty::ByBoxExplicitSelfCategory => {
-                    (Some(ty::mk_uniq(this.tcx(), untransformed_self_ty)), None)
+                    (Some(ty::mk_uniq(this.tcx(), self_info.untransformed_self_ty)), None)
                 }
             }
         }
@@ -1213,13 +1275,13 @@ fn ty_of_method_or_bare_fn<'a, 'tcx, AC: AstConv<'tcx>>(
     };
 
     (ty::BareFnTy {
-        fn_style: fn_style,
+        unsafety: unsafety,
         abi: abi,
-        sig: ty::FnSig {
+        sig: ty::Binder(ty::FnSig {
             inputs: self_and_input_tys,
             output: output_ty,
             variadic: decl.variadic
-        }
+        }),
     }, explicit_self_category_result)
 }
 
@@ -1307,7 +1369,7 @@ fn determine_explicit_self_category<'a, 'tcx, AC: AstConv<'tcx>,
 
 pub fn ty_of_closure<'tcx, AC: AstConv<'tcx>>(
     this: &AC,
-    fn_style: ast::FnStyle,
+    unsafety: ast::Unsafety,
     onceness: ast::Onceness,
     bounds: ty::ExistentialBounds,
     store: ty::TraitStore,
@@ -1352,14 +1414,14 @@ pub fn ty_of_closure<'tcx, AC: AstConv<'tcx>>(
     debug!("ty_of_closure: output_ty={}", output_ty.repr(this.tcx()));
 
     ty::ClosureTy {
-        fn_style: fn_style,
+        unsafety: unsafety,
         onceness: onceness,
         store: store,
         bounds: bounds,
         abi: abi,
-        sig: ty::FnSig {inputs: input_tys,
-                        output: output_ty,
-                        variadic: decl.variadic}
+        sig: ty::Binder(ty::FnSig {inputs: input_tys,
+                                   output: output_ty,
+                                   variadic: decl.variadic}),
     }
 }
 
@@ -1371,7 +1433,7 @@ pub fn conv_existential_bounds<'tcx, AC: AstConv<'tcx>, RS:RegionScope>(
     this: &AC,
     rscope: &RS,
     span: Span,
-    principal_trait_ref: Option<&ty::TraitRef<'tcx>>, // None for boxed closures
+    principal_trait_ref: Option<&ty::PolyTraitRef<'tcx>>, // None for boxed closures
     ast_bounds: &[ast::TyParamBound])
     -> ty::ExistentialBounds
 {
@@ -1398,11 +1460,11 @@ fn conv_ty_poly_trait_ref<'tcx, AC, RS>(
 
     let main_trait_bound = match partitioned_bounds.trait_bounds.remove(0) {
         Some(trait_bound) => {
-            Some(instantiate_trait_ref(this,
-                                       rscope,
-                                       &trait_bound.trait_ref,
-                                       None,
-                                       AllowEqConstraints::Allow))
+            Some(instantiate_poly_trait_ref(this,
+                                            rscope,
+                                            trait_bound,
+                                            None,
+                                            AllowEqConstraints::Allow))
         }
         None => {
             this.tcx().sess.span_err(
@@ -1429,7 +1491,7 @@ pub fn conv_existential_bounds_from_partitioned_bounds<'tcx, AC, RS>(
     this: &AC,
     rscope: &RS,
     span: Span,
-    principal_trait_ref: Option<&ty::TraitRef<'tcx>>, // None for boxed closures
+    principal_trait_ref: Option<&ty::PolyTraitRef<'tcx>>, // None for boxed closures
     partitioned_bounds: PartitionedBounds)
     -> ty::ExistentialBounds
     where AC: AstConv<'tcx>, RS:RegionScope
@@ -1467,7 +1529,7 @@ pub fn conv_existential_bounds_from_partitioned_bounds<'tcx, AC, RS>(
 fn compute_opt_region_bound<'tcx>(tcx: &ty::ctxt<'tcx>,
                                   span: Span,
                                   explicit_region_bounds: &[&ast::Lifetime],
-                                  principal_trait_ref: Option<&ty::TraitRef<'tcx>>,
+                                  principal_trait_ref: Option<&ty::PolyTraitRef<'tcx>>,
                                   builtin_bounds: ty::BuiltinBounds)
                                   -> Option<ty::Region>
 {
@@ -1527,7 +1589,7 @@ fn compute_region_bound<'tcx, AC: AstConv<'tcx>, RS:RegionScope>(
     rscope: &RS,
     span: Span,
     region_bounds: &[&ast::Lifetime],
-    principal_trait_ref: Option<&ty::TraitRef<'tcx>>, // None for closures
+    principal_trait_ref: Option<&ty::PolyTraitRef<'tcx>>, // None for closures
     builtin_bounds: ty::BuiltinBounds)
     -> ty::Region
 {

@@ -47,7 +47,7 @@ pub struct Config {
     pub uint_type: UintTy,
 }
 
-#[deriving(Clone, PartialEq)]
+#[deriving(Clone, Copy, PartialEq)]
 pub enum OptLevel {
     No, // -O0
     Less, // -O1
@@ -55,18 +55,14 @@ pub enum OptLevel {
     Aggressive // -O3
 }
 
-impl Copy for OptLevel {}
-
-#[deriving(Clone, PartialEq)]
+#[deriving(Clone, Copy, PartialEq)]
 pub enum DebugInfoLevel {
     NoDebugInfo,
     LimitedDebugInfo,
     FullDebugInfo,
 }
 
-impl Copy for DebugInfoLevel {}
-
-#[deriving(Clone, PartialEq, PartialOrd, Ord, Eq)]
+#[deriving(Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
 pub enum OutputType {
     OutputTypeBitcode,
     OutputTypeAssembly,
@@ -74,8 +70,6 @@ pub enum OutputType {
     OutputTypeObject,
     OutputTypeExe,
 }
-
-impl Copy for OutputType {}
 
 #[deriving(Clone)]
 pub struct Options {
@@ -220,16 +214,14 @@ pub fn basic_options() -> Options {
 // users can have their own entry
 // functions that don't start a
 // scheduler
-#[deriving(PartialEq)]
+#[deriving(Copy, PartialEq)]
 pub enum EntryFnType {
     EntryMain,
     EntryStart,
     EntryNone,
 }
 
-impl Copy for EntryFnType {}
-
-#[deriving(PartialEq, PartialOrd, Clone, Ord, Eq, Hash)]
+#[deriving(Copy, PartialEq, PartialOrd, Clone, Ord, Eq, Hash)]
 pub enum CrateType {
     CrateTypeExecutable,
     CrateTypeDylib,
@@ -237,19 +229,17 @@ pub enum CrateType {
     CrateTypeStaticlib,
 }
 
-impl Copy for CrateType {}
-
-macro_rules! debugging_opts(
+macro_rules! debugging_opts {
     ([ $opt:ident ] $cnt:expr ) => (
         pub const $opt: u64 = 1 << $cnt;
     );
     ([ $opt:ident, $($rest:ident),* ] $cnt:expr ) => (
         pub const $opt: u64 = 1 << $cnt;
-        debugging_opts!([ $($rest),* ] $cnt + 1)
+        debugging_opts! { [ $($rest),* ] $cnt + 1 }
     )
-)
+}
 
-debugging_opts!(
+debugging_opts! {
     [
         VERBOSE,
         TIME_PASSES,
@@ -276,10 +266,11 @@ debugging_opts!(
         FLOWGRAPH_PRINT_MOVES,
         FLOWGRAPH_PRINT_ASSIGNS,
         FLOWGRAPH_PRINT_ALL,
-        PRINT_SYSROOT
+        PRINT_SYSROOT,
+        PRINT_REGION_GRAPH
     ]
     0
-)
+}
 
 pub fn debugging_opts_map() -> Vec<(&'static str, &'static str, u64)> {
     vec![("verbose", "in general, enable more debug printouts", VERBOSE),
@@ -322,7 +313,10 @@ pub fn debugging_opts_map() -> Vec<(&'static str, &'static str, u64)> {
      ("flowgraph-print-all", "Include all dataflow analysis data in \
                        --pretty flowgraph output", FLOWGRAPH_PRINT_ALL),
      ("print-sysroot", "Print the sysroot as used by this rustc invocation",
-      PRINT_SYSROOT)]
+      PRINT_SYSROOT),
+     ("print-region-graph", "Prints region inference graph. \
+                             Use with RUST_REGION_GRAPH=help for more info",
+      PRINT_REGION_GRAPH)]
 }
 
 #[deriving(Clone)]
@@ -350,7 +344,7 @@ impl Passes {
 /// cgsetters module which is a bunch of generated code to parse an option into
 /// its respective field in the struct. There are a few hand-written parsers for
 /// parsing specific types of values in this module.
-macro_rules! cgoptions(
+macro_rules! cgoptions {
     ($($opt:ident : $t:ty = ($init:expr, $parse:ident, $desc:expr)),* ,) =>
 (
     #[deriving(Clone)]
@@ -465,9 +459,9 @@ macro_rules! cgoptions(
             }
         }
     }
-) )
+) }
 
-cgoptions!(
+cgoptions! {
     ar: Option<String> = (None, parse_opt_string,
         "tool to assemble archives with"),
     linker: Option<String> = (None, parse_opt_string,
@@ -516,7 +510,7 @@ cgoptions!(
         "print remarks for these optimization passes (space separated, or \"all\")"),
     no_stack_check: bool = (false, parse_bool,
         "disable checks for stack exhaustion (a memory-safety hazard!)"),
-)
+}
 
 pub fn build_codegen_options(matches: &getopts::Matches) -> CodegenOptions
 {

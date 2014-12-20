@@ -34,7 +34,6 @@ use lint::builtin;
 use util::nodemap::FnvHashMap;
 
 use std::cell::RefCell;
-use std::tuple::Tuple2;
 use std::mem;
 use syntax::ast_util::IdVisitingOperation;
 use syntax::attr::AttrMetaMethods;
@@ -87,7 +86,7 @@ impl LintStore {
     }
 
     fn set_level(&mut self, lint: LintId, lvlsrc: LevelSource) {
-        if lvlsrc.val0() == Allow {
+        if lvlsrc.0 == Allow {
             self.levels.remove(&lint);
         } else {
             self.levels.insert(lint, lvlsrc);
@@ -110,8 +109,8 @@ impl LintStore {
 
     pub fn get_lint_groups<'t>(&'t self) -> Vec<(&'static str, Vec<LintId>, bool)> {
         self.lint_groups.iter().map(|(k, v)| (*k,
-                                              v.ref0().clone(),
-                                              *v.ref1())).collect()
+                                              v.0.clone(),
+                                              v.1)).collect()
     }
 
     pub fn register_pass(&mut self, sess: Option<&Session>,
@@ -172,17 +171,17 @@ impl LintStore {
             {$(
                 self.register_pass($sess, false, box builtin::$name as LintPassObject);
             )*}
-        ))
+        ));
 
         macro_rules! add_builtin_with_new ( ( $sess:ident, $($name:ident),*, ) => (
             {$(
                 self.register_pass($sess, false, box builtin::$name::new() as LintPassObject);
             )*}
-        ))
+        ));
 
         macro_rules! add_lint_group ( ( $sess:ident, $name:expr, $($lint:ident),* ) => (
             self.register_group($sess, false, $name, vec![$(LintId::of(builtin::$lint)),*]);
-        ))
+        ));
 
         add_builtin!(sess,
                      HardwiredLints,
@@ -205,21 +204,21 @@ impl LintStore {
                      UnusedAllocation,
                      Stability,
                      MissingCopyImplementations,
-        )
+        );
 
         add_builtin_with_new!(sess,
                               TypeLimits,
                               RawPointerDeriving,
                               MissingDoc,
-        )
+        );
 
         add_lint_group!(sess, "bad_style",
-                        NON_CAMEL_CASE_TYPES, NON_SNAKE_CASE, NON_UPPER_CASE_GLOBALS)
+                        NON_CAMEL_CASE_TYPES, NON_SNAKE_CASE, NON_UPPER_CASE_GLOBALS);
 
         add_lint_group!(sess, "unused",
                         UNUSED_IMPORTS, UNUSED_VARIABLES, UNUSED_ASSIGNMENTS, DEAD_CODE,
                         UNUSED_MUT, UNREACHABLE_CODE, UNUSED_MUST_USE,
-                        UNUSED_UNSAFE, PATH_STATEMENTS)
+                        UNUSED_UNSAFE, PATH_STATEMENTS);
 
         // We have one lint pass defined in this module.
         self.register_pass(sess, false, box GatherNodeLevels as LintPassObject);
@@ -275,7 +274,7 @@ impl LintStore {
             match self.find_lint(lint_name.as_slice(), sess, None) {
                 Some(lint_id) => self.set_level(lint_id, (level, CommandLine)),
                 None => {
-                    match self.lint_groups.iter().map(|(&x, pair)| (x, pair.ref0().clone()))
+                    match self.lint_groups.iter().map(|(&x, pair)| (x, pair.0.clone()))
                                                  .collect::<FnvHashMap<&'static str,
                                                                        Vec<LintId>>>()
                                                  .get(lint_name.as_slice()) {
@@ -319,7 +318,7 @@ pub struct Context<'a, 'tcx: 'a> {
 }
 
 /// Convenience macro for calling a `LintPass` method on every pass in the context.
-macro_rules! run_lints ( ($cx:expr, $f:ident, $($args:expr),*) => ({
+macro_rules! run_lints { ($cx:expr, $f:ident, $($args:expr),*) => ({
     // Move the vector of passes out of `$cx` so that we can
     // iterate over it mutably while passing `$cx` to the methods.
     let mut passes = $cx.lints.passes.take().unwrap();
@@ -327,7 +326,7 @@ macro_rules! run_lints ( ($cx:expr, $f:ident, $($args:expr),*) => ({
         obj.$f($cx, $($args),*);
     }
     $cx.lints.passes = Some(passes);
-}))
+}) }
 
 /// Parse the lint attributes into a vector, with `Err`s for malformed lint
 /// attributes. Writing this as an iterator is an enormous mess.
@@ -443,7 +442,7 @@ impl<'a, 'tcx> Context<'a, 'tcx> {
             None => return,
             Some(&(Warn, src)) => {
                 let lint_id = LintId::of(builtin::WARNINGS);
-                (self.lints.get_level_source(lint_id).val0(), src)
+                (self.lints.get_level_source(lint_id).0, src)
             }
             Some(&pair) => pair,
         };
@@ -464,9 +463,11 @@ impl<'a, 'tcx> Context<'a, 'tcx> {
     /// Merge the lints specified by any lint attributes into the
     /// current lint context, call the provided function, then reset the
     /// lints in effect to their previous state.
-    fn with_lint_attrs(&mut self,
-                       attrs: &[ast::Attribute],
-                       f: |&mut Context|) {
+    fn with_lint_attrs<F>(&mut self,
+                          attrs: &[ast::Attribute],
+                          f: F) where
+        F: FnOnce(&mut Context),
+    {
         // Parse all of the lint attributes, and then add them all to the
         // current dictionary of lint information. Along the way, keep a history
         // of what we changed so we can roll everything back after invoking the
@@ -501,7 +502,7 @@ impl<'a, 'tcx> Context<'a, 'tcx> {
             };
 
             for (lint_id, level, span) in v.into_iter() {
-                let now = self.lints.get_level_source(lint_id).val0();
+                let now = self.lints.get_level_source(lint_id).0;
                 if now == Forbid && level != Forbid {
                     let lint_name = lint_id.as_str();
                     self.tcx.sess.span_err(span,
@@ -509,7 +510,7 @@ impl<'a, 'tcx> Context<'a, 'tcx> {
                                                    level.as_str(), lint_name,
                                                    lint_name).as_slice());
                 } else if now != level {
-                    let src = self.lints.get_level_source(lint_id).val1();
+                    let src = self.lints.get_level_source(lint_id).1;
                     self.level_stack.push((lint_id, (now, src)));
                     pushed += 1;
                     self.lints.set_level(lint_id, (level, Node(span)));
@@ -528,7 +529,9 @@ impl<'a, 'tcx> Context<'a, 'tcx> {
         }
     }
 
-    fn visit_ids(&mut self, f: |&mut ast_util::IdVisitor<Context>|) {
+    fn visit_ids<F>(&mut self, f: F) where
+        F: FnOnce(&mut ast_util::IdVisitor<Context>)
+    {
         let mut v = ast_util::IdVisitor {
             operation: self,
             pass_through_items: false,

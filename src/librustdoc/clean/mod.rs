@@ -459,7 +459,7 @@ impl attr::AttrMetaMethods for Attribute {
 impl<'a> attr::AttrMetaMethods for &'a Attribute {
     fn name(&self) -> InternedString { (**self).name() }
     fn value_str(&self) -> Option<InternedString> { (**self).value_str() }
-    fn meta_item_list<'a>(&'a self) -> Option<&'a [P<ast::MetaItem>]> { None }
+    fn meta_item_list(&self) -> Option<&[P<ast::MetaItem>]> { None }
 }
 
 #[deriving(Clone, Encodable, Decodable, PartialEq)]
@@ -572,6 +572,12 @@ impl Clean<TyParamBound> for ty::BuiltinBound {
             typarams: None,
             did: did,
         })
+    }
+}
+
+impl<'tcx> Clean<TyParamBound> for ty::PolyTraitRef<'tcx> {
+    fn clean(&self, cx: &DocContext) -> TyParamBound {
+        self.0.clean(cx)
     }
 }
 
@@ -740,7 +746,7 @@ impl<'a, 'tcx> Clean<Generics> for (&'a ty::Generics<'tcx>, subst::ParamSpace) {
 pub struct Method {
     pub generics: Generics,
     pub self_: SelfTy,
-    pub fn_style: ast::FnStyle,
+    pub unsafety: ast::Unsafety,
     pub decl: FnDecl,
 }
 
@@ -768,7 +774,7 @@ impl Clean<Item> for ast::Method {
             inner: MethodItem(Method {
                 generics: self.pe_generics().clean(cx),
                 self_: self.pe_explicit_self().node.clean(cx),
-                fn_style: self.pe_fn_style().clone(),
+                unsafety: self.pe_unsafety().clone(),
                 decl: decl,
             }),
         }
@@ -777,7 +783,7 @@ impl Clean<Item> for ast::Method {
 
 #[deriving(Clone, Encodable, Decodable)]
 pub struct TyMethod {
-    pub fn_style: ast::FnStyle,
+    pub unsafety: ast::Unsafety,
     pub decl: FnDecl,
     pub generics: Generics,
     pub self_: SelfTy,
@@ -804,7 +810,7 @@ impl Clean<Item> for ast::TypeMethod {
             visibility: None,
             stability: get_stability(cx, ast_util::local_def(self.id)),
             inner: TyMethodItem(TyMethod {
-                fn_style: self.fn_style.clone(),
+                unsafety: self.unsafety.clone(),
                 decl: decl,
                 self_: self.explicit_self.node.clean(cx),
                 generics: self.generics.clean(cx),
@@ -838,7 +844,7 @@ impl Clean<SelfTy> for ast::ExplicitSelf_ {
 pub struct Function {
     pub decl: FnDecl,
     pub generics: Generics,
-    pub fn_style: ast::FnStyle,
+    pub unsafety: ast::Unsafety,
 }
 
 impl Clean<Item> for doctree::Function {
@@ -853,7 +859,7 @@ impl Clean<Item> for doctree::Function {
             inner: FunctionItem(Function {
                 decl: self.decl.clean(cx),
                 generics: self.generics.clean(cx),
-                fn_style: self.fn_style,
+                unsafety: self.unsafety,
             }),
         }
     }
@@ -864,7 +870,7 @@ pub struct ClosureDecl {
     pub lifetimes: Vec<Lifetime>,
     pub decl: FnDecl,
     pub onceness: ast::Onceness,
-    pub fn_style: ast::FnStyle,
+    pub unsafety: ast::Unsafety,
     pub bounds: Vec<TyParamBound>,
 }
 
@@ -874,7 +880,7 @@ impl Clean<ClosureDecl> for ast::ClosureTy {
             lifetimes: self.lifetimes.clean(cx),
             decl: self.decl.clean(cx),
             onceness: self.onceness,
-            fn_style: self.fn_style,
+            unsafety: self.unsafety,
             bounds: self.bounds.clean(cx)
         }
     }
@@ -913,7 +919,7 @@ impl<'tcx> Clean<Type> for ty::FnOutput<'tcx> {
     }
 }
 
-impl<'a, 'tcx> Clean<FnDecl> for (ast::DefId, &'a ty::FnSig<'tcx>) {
+impl<'a, 'tcx> Clean<FnDecl> for (ast::DefId, &'a ty::PolyFnSig<'tcx>) {
     fn clean(&self, cx: &DocContext) -> FnDecl {
         let (did, sig) = *self;
         let mut names = if did.node != 0 {
@@ -925,10 +931,10 @@ impl<'a, 'tcx> Clean<FnDecl> for (ast::DefId, &'a ty::FnSig<'tcx>) {
             let _ = names.next();
         }
         FnDecl {
-            output: Return(sig.output.clean(cx)),
+            output: Return(sig.0.output.clean(cx)),
             attrs: Vec::new(),
             inputs: Arguments {
-                values: sig.inputs.iter().map(|t| {
+                values: sig.0.inputs.iter().map(|t| {
                     Argument {
                         type_: t.clean(cx),
                         id: 0,
@@ -974,6 +980,7 @@ impl Clean<FunctionRetTy> for ast::FunctionRetTy {
 
 #[deriving(Clone, Encodable, Decodable)]
 pub struct Trait {
+    pub unsafety: ast::Unsafety,
     pub items: Vec<TraitMethod>,
     pub generics: Generics,
     pub bounds: Vec<TyParamBound>,
@@ -991,6 +998,7 @@ impl Clean<Item> for doctree::Trait {
             visibility: self.vis.clean(cx),
             stability: self.stab.clean(cx),
             inner: TraitItem(Trait {
+                unsafety: self.unsafety,
                 items: self.items.clean(cx),
                 generics: self.generics.clean(cx),
                 bounds: self.bounds.clean(cx),
@@ -1080,14 +1088,14 @@ impl<'tcx> Clean<Item> for ty::Method<'tcx> {
             ty::StaticExplicitSelfCategory => (ast::SelfStatic.clean(cx),
                                                self.fty.sig.clone()),
             s => {
-                let sig = ty::FnSig {
-                    inputs: self.fty.sig.inputs[1..].to_vec(),
-                    ..self.fty.sig.clone()
-                };
+                let sig = ty::Binder(ty::FnSig {
+                    inputs: self.fty.sig.0.inputs[1..].to_vec(),
+                    ..self.fty.sig.0.clone()
+                });
                 let s = match s {
                     ty::ByValueExplicitSelfCategory => SelfValue,
                     ty::ByReferenceExplicitSelfCategory(..) => {
-                        match self.fty.sig.inputs[0].sty {
+                        match self.fty.sig.0.inputs[0].sty {
                             ty::ty_rptr(r, mt) => {
                                 SelfBorrowed(r.clean(cx), mt.mutbl.clean(cx))
                             }
@@ -1095,7 +1103,7 @@ impl<'tcx> Clean<Item> for ty::Method<'tcx> {
                         }
                     }
                     ty::ByBoxExplicitSelfCategory => {
-                        SelfExplicit(self.fty.sig.inputs[0].clean(cx))
+                        SelfExplicit(self.fty.sig.0.inputs[0].clean(cx))
                     }
                     ty::StaticExplicitSelfCategory => unreachable!(),
                 };
@@ -1111,7 +1119,7 @@ impl<'tcx> Clean<Item> for ty::Method<'tcx> {
             attrs: inline::load_attrs(cx, cx.tcx(), self.def_id),
             source: Span::empty(),
             inner: TyMethodItem(TyMethod {
-                fn_style: self.fty.fn_style,
+                unsafety: self.fty.unsafety,
                 generics: (&self.generics, subst::FnSpace).clean(cx),
                 self_: self_,
                 decl: (self.def_id, &sig).clean(cx),
@@ -1165,15 +1173,22 @@ pub enum Type {
         mutability: Mutability,
         type_: Box<Type>,
     },
+
+    // <Type as Trait>::Name
     QPath {
         name: String,
         self_type: Box<Type>,
         trait_: Box<Type>
     },
-    // region, raw, other boxes, mutable
+
+    // _
+    Infer,
+
+    // for<'a> Foo(&'a)
+    PolyTraitRef(Vec<TyParamBound>),
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq, Eq, Hash)]
+#[deriving(Clone, Copy, Encodable, Decodable, PartialEq, Eq, Hash)]
 pub enum PrimitiveType {
     Int, I8, I16, I32, I64,
     Uint, U8, U16, U32, U64,
@@ -1185,21 +1200,18 @@ pub enum PrimitiveType {
     PrimitiveTuple,
 }
 
-impl Copy for PrimitiveType {}
-
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, Copy, Encodable, Decodable)]
 pub enum TypeKind {
     TypeEnum,
     TypeFunction,
     TypeModule,
+    TypeConst,
     TypeStatic,
     TypeStruct,
     TypeTrait,
     TypeVariant,
     TypeTypedef,
 }
-
-impl Copy for TypeKind {}
 
 impl PrimitiveType {
     fn from_str(s: &str) -> Option<PrimitiveType> {
@@ -1307,11 +1319,18 @@ impl Clean<Type> for ast::Ty {
                 }
             }
             TyClosure(ref c) => Closure(box c.clean(cx)),
-            TyProc(ref c) => Proc(box c.clean(cx)),
             TyBareFn(ref barefn) => BareFunction(box barefn.clean(cx)),
             TyParen(ref ty) => ty.clean(cx),
             TyQPath(ref qp) => qp.clean(cx),
-            ref x => panic!("Unimplemented type {}", x),
+            TyPolyTraitRef(ref bounds) => {
+                PolyTraitRef(bounds.clean(cx))
+            },
+            TyInfer(..) => {
+                Infer
+            },
+            TyTypeof(..) => {
+                panic!("Unimplemented type {}", self.node)
+            },
         }
     }
 }
@@ -1350,7 +1369,7 @@ impl<'tcx> Clean<Type> for ty::Ty<'tcx> {
                 type_: box mt.ty.clean(cx),
             },
             ty::ty_bare_fn(ref fty) => BareFunction(box BareFunctionDecl {
-                fn_style: fty.fn_style,
+                unsafety: fty.unsafety,
                 generics: Generics {
                     lifetimes: Vec::new(),
                     type_params: Vec::new(),
@@ -1364,7 +1383,7 @@ impl<'tcx> Clean<Type> for ty::Ty<'tcx> {
                     lifetimes: Vec::new(), // FIXME: this looks wrong...
                     decl: (ast_util::local_def(0), &fty.sig).clean(cx),
                     onceness: fty.onceness,
-                    fn_style: fty.fn_style,
+                    unsafety: fty.unsafety,
                     bounds: fty.bounds.clean(cx),
                 };
                 match fty.store {
@@ -1374,8 +1393,10 @@ impl<'tcx> Clean<Type> for ty::Ty<'tcx> {
             }
             ty::ty_struct(did, ref substs) |
             ty::ty_enum(did, ref substs) |
-            ty::ty_trait(box ty::TyTrait { principal: ty::TraitRef { def_id: did, ref substs },
-                                           .. }) => {
+            ty::ty_trait(box ty::TyTrait {
+                principal: ty::Binder(ty::TraitRef { def_id: did, ref substs }),
+                .. }) =>
+            {
                 let fqn = csearch::get_item_path(cx.tcx(), did);
                 let fqn: Vec<String> = fqn.into_iter().map(|i| {
                     i.to_string()
@@ -1775,7 +1796,7 @@ impl Clean<Item> for doctree::Typedef {
 
 #[deriving(Clone, Encodable, Decodable, PartialEq)]
 pub struct BareFunctionDecl {
-    pub fn_style: ast::FnStyle,
+    pub unsafety: ast::Unsafety,
     pub generics: Generics,
     pub decl: FnDecl,
     pub abi: String,
@@ -1784,7 +1805,7 @@ pub struct BareFunctionDecl {
 impl Clean<BareFunctionDecl> for ast::BareFnTy {
     fn clean(&self, cx: &DocContext) -> BareFunctionDecl {
         BareFunctionDecl {
-            fn_style: self.fn_style,
+            unsafety: self.unsafety,
             generics: Generics {
                 lifetimes: self.lifetimes.clean(cx),
                 type_params: Vec::new(),
@@ -1825,7 +1846,7 @@ impl Clean<Item> for doctree::Static {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, Encodable, Decodable, Show)]
 pub struct Constant {
     pub type_: Type,
     pub expr: String,
@@ -1848,13 +1869,11 @@ impl Clean<Item> for doctree::Constant {
     }
 }
 
-#[deriving(Show, Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Copy, Show, Clone, Encodable, Decodable, PartialEq)]
 pub enum Mutability {
     Mutable,
     Immutable,
 }
-
-impl Copy for Mutability {}
 
 impl Clean<Mutability> for ast::Mutability {
     fn clean(&self, _: &DocContext) -> Mutability {
@@ -2057,7 +2076,7 @@ impl Clean<Item> for ast::ForeignItem {
                 ForeignFunctionItem(Function {
                     decl: decl.clean(cx),
                     generics: generics.clean(cx),
-                    fn_style: ast::UnsafeFn,
+                    unsafety: ast::Unsafety::Unsafe,
                 })
             }
             ast::ForeignItemStatic(ref ty, mutbl) => {

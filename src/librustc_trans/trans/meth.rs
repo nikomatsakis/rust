@@ -124,7 +124,7 @@ pub fn trans_method_callee<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 bcx: bcx,
                 data: Fn(callee::trans_fn_ref(bcx,
                                               did,
-                                              MethodCall(method_call))),
+                                              MethodCallKey(method_call))),
             }
         }
 
@@ -133,16 +133,16 @@ pub fn trans_method_callee<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             method_num
         }) => {
             let trait_ref =
-                Rc::new(trait_ref.subst(bcx.tcx(), bcx.fcx.param_substs));
+                Rc::new(ty::Binder((**trait_ref).subst(bcx.tcx(), bcx.fcx.param_substs)));
             let span = bcx.tcx().map.span(method_call.expr_id);
             debug!("method_call={} trait_ref={}",
                    method_call,
                    trait_ref.repr(bcx.tcx()));
             let origin = fulfill_obligation(bcx.ccx(),
                                             span,
-                                            (*trait_ref).clone());
+                                            trait_ref.clone());
             debug!("origin = {}", origin.repr(bcx.tcx()));
-            trans_monomorphized_callee(bcx, method_call, trait_ref.def_id,
+            trans_monomorphized_callee(bcx, method_call, trait_ref.def_id(),
                                        method_num, origin)
         }
 
@@ -239,8 +239,8 @@ pub fn trans_static_method_callee(bcx: Block,
                                              rcvr_assoc,
                                              Vec::new()));
     debug!("trait_substs={}", trait_substs.repr(bcx.tcx()));
-    let trait_ref = Rc::new(ty::TraitRef { def_id: trait_id,
-                                           substs: trait_substs });
+    let trait_ref = Rc::new(ty::Binder(ty::TraitRef { def_id: trait_id,
+                                                      substs: trait_substs }));
     let vtbl = fulfill_obligation(bcx.ccx(),
                                   DUMMY_SP,
                                   trait_ref);
@@ -344,12 +344,12 @@ fn trans_monomorphized_callee<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             // those from the impl and those from the method:
             let callee_substs =
                 combine_impl_and_methods_tps(
-                    bcx, MethodCall(method_call), vtable_impl.substs);
+                    bcx, MethodCallKey(method_call), vtable_impl.substs);
 
             // translate the function
             let llfn = trans_fn_ref_with_substs(bcx,
                                                 mth_id,
-                                                MethodCall(method_call),
+                                                MethodCallKey(method_call),
                                                 callee_substs);
 
             Callee { bcx: bcx, data: Fn(llfn) }
@@ -359,7 +359,7 @@ fn trans_monomorphized_callee<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             // after passing through fulfill_obligation
             let llfn = trans_fn_ref_with_substs(bcx,
                                                 closure_def_id,
-                                                MethodCall(method_call),
+                                                MethodCallKey(method_call),
                                                 substs);
 
             Callee {
@@ -480,8 +480,8 @@ pub fn trans_trait_callee_from_llval<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         ty::ty_bare_fn(ref f) if f.abi == Rust || f.abi == RustCall => {
             type_of_rust_fn(ccx,
                             Some(Type::i8p(ccx)),
-                            f.sig.inputs.slice_from(1),
-                            f.sig.output,
+                            f.sig.0.inputs.slice_from(1),
+                            f.sig.0.output,
                             f.abi)
         }
         _ => {
@@ -515,7 +515,7 @@ pub fn trans_trait_callee_from_llval<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 /// This will hopefully change now that DST is underway.
 pub fn get_vtable<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                               box_ty: Ty<'tcx>,
-                              trait_ref: Rc<ty::TraitRef<'tcx>>)
+                              trait_ref: Rc<ty::PolyTraitRef<'tcx>>)
                               -> ValueRef
 {
     debug!("get_vtable(box_ty={}, trait_ref={})",
@@ -550,67 +550,11 @@ pub fn get_vtable<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 emit_vtable_methods(bcx, id, substs).into_iter()
             }
             traits::VtableUnboxedClosure(closure_def_id, substs) => {
-                // Look up closure type
-                let self_ty = ty::node_id_to_type(bcx.tcx(), closure_def_id.node);
-                // Apply substitutions from closure param environment.
-                // The substitutions should have no type parameters
-                // remaining after passing through fulfill_obligation
-                let self_ty = self_ty.subst(bcx.tcx(), &substs);
-
-                let mut llfn = trans_fn_ref_with_substs(
+                let llfn = trans_fn_ref_with_substs(
                     bcx,
                     closure_def_id,
                     ExprId(0),
                     substs.clone());
-
-                {
-                    let unboxed_closures = bcx.tcx()
-                                              .unboxed_closures
-                                              .borrow();
-                    let closure_info =
-                        unboxed_closures.get(&closure_def_id)
-                                        .expect("get_vtable(): didn't find \
-                                                 unboxed closure");
-                    if closure_info.kind == ty::FnOnceUnboxedClosureKind {
-                        // Untuple the arguments and create an unboxing shim.
-                        let (new_inputs, new_output) = match self_ty.sty {
-                            ty::ty_unboxed_closure(_, _, ref substs) => {
-                                let mut new_inputs = vec![self_ty.clone()];
-                                match closure_info.closure_type.sig.inputs[0].sty {
-                                    ty::ty_tup(ref elements) => {
-                                        for element in elements.iter() {
-                                            new_inputs.push(element.subst(bcx.tcx(), substs));
-                                        }
-                                    }
-                                    _ => {
-                                        bcx.tcx().sess.bug("get_vtable(): closure \
-                                                            type wasn't a tuple")
-                                    }
-                                }
-                                (new_inputs,
-                                 closure_info.closure_type.sig.output.subst(bcx.tcx(), substs))
-                            },
-                            _ => bcx.tcx().sess.bug("get_vtable(): def wasn't an unboxed closure")
-                        };
-
-                        let closure_type = ty::BareFnTy {
-                            fn_style: closure_info.closure_type.fn_style,
-                            abi: Rust,
-                            sig: ty::FnSig {
-                                inputs: new_inputs,
-                                output: new_output,
-                                variadic: false,
-                            },
-                        };
-                        debug!("get_vtable(): closure type is {}",
-                               closure_type.repr(bcx.tcx()));
-                        llfn = trans_unboxing_shim(bcx,
-                                                   llfn,
-                                                   &closure_type,
-                                                   closure_def_id,
-                                                   &substs);
-                    }
-                }
 
                 (vec!(llfn)).into_iter()
             }
@@ -701,18 +645,15 @@ fn emit_vtable_methods<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                            token::get_name(name));
                     Some(C_null(Type::nil(ccx).ptr_to())).into_iter()
                 } else {
-                    let mut fn_ref = trans_fn_ref_with_substs(
+                    let fn_ref = trans_fn_ref_with_substs(
                         bcx,
                         m_id,
                         ExprId(0),
                         substs.clone());
-                    if m.explicit_self == ty::ByValueExplicitSelfCategory {
-                        fn_ref = trans_unboxing_shim(bcx,
-                                                     fn_ref,
-                                                     &m.fty,
-                                                     m_id,
-                                                     &substs);
-                    }
+
+                    // currently, at least, by-value self is not object safe
+                    assert!(m.explicit_self != ty::ByValueExplicitSelfCategory);
+
                     Some(fn_ref).into_iter()
                 }
             }
@@ -729,7 +670,7 @@ fn emit_vtable_methods<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 pub fn trans_trait_cast<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                     datum: Datum<'tcx, Expr>,
                                     id: ast::NodeId,
-                                    trait_ref: Rc<ty::TraitRef<'tcx>>,
+                                    trait_ref: Rc<ty::PolyTraitRef<'tcx>>,
                                     dest: expr::Dest)
                                     -> Block<'blk, 'tcx> {
     let mut bcx = bcx;

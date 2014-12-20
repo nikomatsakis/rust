@@ -20,11 +20,11 @@ use cmp::{max, Eq, Equiv, PartialEq};
 use default::Default;
 use fmt::{mod, Show};
 use hash::{Hash, Hasher, RandomSipHasher};
-use iter::{mod, Iterator, IteratorExt, FromIterator, Extend};
+use iter::{mod, Iterator, IteratorExt, FromIterator, Extend, Map};
 use kinds::Sized;
 use mem::{mod, replace};
 use num::{Int, UnsignedInt};
-use ops::{Deref, Index, IndexMut};
+use ops::{Deref, FnMut, Index, IndexMut};
 use option::Option;
 use option::Option::{Some, None};
 use result::Result;
@@ -296,10 +296,13 @@ pub struct HashMap<K, V, H = RandomSipHasher> {
 }
 
 /// Search for a pre-hashed key.
-fn search_hashed<K, V, M: Deref<RawTable<K, V>>>(table: M,
-                                                 hash: &SafeHash,
-                                                 is_match: |&K| -> bool)
-                                                 -> SearchResult<K, V, M> {
+fn search_hashed<K, V, M, F>(table: M,
+                             hash: SafeHash,
+                             mut is_match: F)
+                             -> SearchResult<K, V, M> where
+    M: Deref<RawTable<K, V>>,
+    F: FnMut(&K) -> bool,
+{
     let size = table.size();
     let mut probe = Bucket::new(table, hash);
     let ib = probe.index();
@@ -317,14 +320,9 @@ fn search_hashed<K, V, M: Deref<RawTable<K, V>>>(table: M,
         }
 
         // If the hash doesn't match, it can't be this one..
-        if *hash == full.hash() {
-            let matched = {
-                let (k, _) = full.read();
-                is_match(k)
-            };
-
+        if hash == full.hash() {
             // If the key doesn't match, it can't be this one..
-            if matched {
+            if is_match(full.read().0) {
                 return FoundExisting(full);
             }
         }
@@ -350,7 +348,7 @@ fn pop_internal<K, V>(starting_bucket: FullBucketMut<K, V>) -> (K, V) {
     }
 
     // Now we've done all our shifting. Return the value we grabbed earlier.
-    return (retkey, retval);
+    (retkey, retval)
 }
 
 /// Perform robin hood bucket stealing at the given `bucket`. You must
@@ -386,10 +384,11 @@ fn robin_hood<'a, K: 'a, V: 'a>(mut bucket: FullBucketMut<'a, K, V>,
                     let b = bucket.put(old_hash, old_key, old_val);
                     // Now that it's stolen, just read the value's pointer
                     // right out of the table!
-                    let (_, v) = Bucket::at_index(b.into_table(), starting_index).peek()
-                                                                                 .expect_full()
-                                                                                 .into_mut_refs();
-                    return v;
+                    return Bucket::at_index(b.into_table(), starting_index)
+                               .peek()
+                               .expect_full()
+                               .into_mut_refs()
+                               .1;
                 },
                 table::Full(bucket) => bucket
             };
@@ -438,14 +437,14 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     fn search_equiv<'a, Sized? Q: Hash<S> + Equiv<K>>(&'a self, q: &Q)
                     -> Option<FullBucketImm<'a, K, V>> {
         let hash = self.make_hash(q);
-        search_hashed(&self.table, &hash, |k| q.equiv(k)).into_option()
+        search_hashed(&self.table, hash, |k| q.equiv(k)).into_option()
     }
 
     #[allow(deprecated)]
     fn search_equiv_mut<'a, Sized? Q: Hash<S> + Equiv<K>>(&'a mut self, q: &Q)
                     -> Option<FullBucketMut<'a, K, V>> {
         let hash = self.make_hash(q);
-        search_hashed(&mut self.table, &hash, |k| q.equiv(k)).into_option()
+        search_hashed(&mut self.table, hash, |k| q.equiv(k)).into_option()
     }
 
     /// Search for a key, yielding the index if it's found in the hashtable.
@@ -455,7 +454,7 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
         where Q: BorrowFrom<K> + Eq + Hash<S>
     {
         let hash = self.make_hash(q);
-        search_hashed(&self.table, &hash, |k| q.eq(BorrowFrom::borrow_from(k)))
+        search_hashed(&self.table, hash, |k| q.eq(BorrowFrom::borrow_from(k)))
             .into_option()
     }
 
@@ -463,14 +462,14 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
         where Q: BorrowFrom<K> + Eq + Hash<S>
     {
         let hash = self.make_hash(q);
-        search_hashed(&mut self.table, &hash, |k| q.eq(BorrowFrom::borrow_from(k)))
+        search_hashed(&mut self.table, hash, |k| q.eq(BorrowFrom::borrow_from(k)))
             .into_option()
     }
 
     // The caller should ensure that invariants by Robin Hood Hashing hold.
     fn insert_hashed_ordered(&mut self, hash: SafeHash, k: K, v: V) {
         let cap = self.table.capacity();
-        let mut buckets = Bucket::new(&mut self.table, &hash);
+        let mut buckets = Bucket::new(&mut self.table, hash);
         let ib = buckets.index();
 
         while buckets.index() != ib + cap {
@@ -624,10 +623,10 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     /// Resizes the internal vectors to a new capacity. It's your responsibility to:
     ///   1) Make sure the new capacity is enough for all the elements, accounting
     ///      for the load factor.
-    ///   2) Ensure new_capacity is a power of two.
+    ///   2) Ensure new_capacity is a power of two or zero.
     fn resize(&mut self, new_capacity: uint) {
         assert!(self.table.size() <= new_capacity);
-        assert!(new_capacity.is_power_of_two());
+        assert!(new_capacity.is_power_of_two() || new_capacity == 0);
 
         let mut old_table = replace(&mut self.table, RawTable::new(new_capacity));
         let old_size = old_table.size();
@@ -749,34 +748,32 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
         self.insert_or_replace_with(hash, k, v, |_, _, _| ())
     }
 
-    fn insert_or_replace_with<'a>(&'a mut self,
-                                  hash: SafeHash,
-                                  k: K,
-                                  v: V,
-                                  found_existing: |&mut K, &mut V, V|)
-                                  -> &'a mut V {
+    fn insert_or_replace_with<'a, F>(&'a mut self,
+                                     hash: SafeHash,
+                                     k: K,
+                                     v: V,
+                                     mut found_existing: F)
+                                     -> &'a mut V where
+        F: FnMut(&mut K, &mut V, V),
+    {
         // Worst case, we'll find one empty bucket among `size + 1` buckets.
         let size = self.table.size();
-        let mut probe = Bucket::new(&mut self.table, &hash);
+        let mut probe = Bucket::new(&mut self.table, hash);
         let ib = probe.index();
 
         loop {
             let mut bucket = match probe.peek() {
                 Empty(bucket) => {
                     // Found a hole!
-                    let bucket = bucket.put(hash, k, v);
-                    let (_, val) = bucket.into_mut_refs();
-                    return val;
-                },
+                    return bucket.put(hash, k, v).into_mut_refs().1;
+                }
                 Full(bucket) => bucket
             };
 
+            // hash matches?
             if bucket.hash() == hash {
-                let found_match = {
-                    let (bucket_k, _) = bucket.read_mut();
-                    k == *bucket_k
-                };
-                if found_match {
+                // key matches?
+                if k == *bucket.read_mut().0 {
                     let (bucket_k, bucket_v) = bucket.into_mut_refs();
                     debug_assert!(k == *bucket_k);
                     // Key already exists. Get its reference.
@@ -806,13 +803,7 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     /// Deprecated: use `get` and `BorrowFrom` instead.
     #[deprecated = "use get and BorrowFrom instead"]
     pub fn find_equiv<'a, Sized? Q: Hash<S> + Equiv<K>>(&'a self, k: &Q) -> Option<&'a V> {
-        match self.search_equiv(k) {
-            None      => None,
-            Some(bucket) => {
-                let (_, v_ref) = bucket.into_refs();
-                Some(v_ref)
-            }
-        }
+        self.search_equiv(k).map(|bucket| bucket.into_refs().1)
     }
 
     /// Deprecated: use `remove` and `BorrowFrom` instead.
@@ -824,13 +815,7 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
 
         self.reserve(1);
 
-        match self.search_equiv_mut(k) {
-            Some(bucket) => {
-                let (_k, val) = pop_internal(bucket);
-                Some(val)
-            }
-            _ => None
-        }
+        self.search_equiv_mut(k).map(|bucket| pop_internal(bucket).1)
     }
 
     /// An iterator visiting all keys in arbitrary order.
@@ -852,7 +837,9 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     /// ```
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn keys(&self) -> Keys<K, V> {
-        self.iter().map(|(k, _v)| k)
+        fn first<A, B>((a, _): (A, B)) -> A { a }
+
+        Keys { inner: self.iter().map(first) }
     }
 
     /// An iterator visiting all values in arbitrary order.
@@ -874,7 +861,9 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     /// ```
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn values(&self) -> Values<K, V> {
-        self.iter().map(|(_k, v)| v)
+        fn second<A, B>((_, b): (A, B)) -> B { b }
+
+        Values { inner: self.iter().map(second) }
     }
 
     /// An iterator visiting all key-value pairs in arbitrary order.
@@ -946,8 +935,10 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     /// ```
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn into_iter(self) -> MoveEntries<K, V> {
+        fn last_two<A, B, C>((_, b, c): (A, B, C)) -> (B, C) { (b, c) }
+
         MoveEntries {
-            inner: self.table.into_iter().map(|(_, k, v)| (k, v))
+            inner: self.table.into_iter().map(last_two)
         }
     }
 
@@ -1011,11 +1002,8 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
 
         while buckets.index() != cap {
             buckets = match buckets.peek() {
-                Empty(b)  => b.next(),
-                Full(full) => {
-                    let (b, _, _) = full.take();
-                    b.next()
-                }
+                Empty(b)   => b.next(),
+                Full(full) => full.take().0.next(),
             };
         }
     }
@@ -1046,10 +1034,7 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     pub fn get<Sized? Q>(&self, k: &Q) -> Option<&V>
         where Q: Hash<S> + Eq + BorrowFrom<K>
     {
-        self.search(k).map(|bucket| {
-            let (_, v) = bucket.into_refs();
-            v
-        })
+        self.search(k).map(|bucket| bucket.into_refs().1)
     }
 
     /// Returns true if the map contains a value for the specified key.
@@ -1104,13 +1089,7 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     pub fn get_mut<Sized? Q>(&mut self, k: &Q) -> Option<&mut V>
         where Q: Hash<S> + Eq + BorrowFrom<K>
     {
-        match self.search_mut(k) {
-            Some(bucket) => {
-                let (_, v) = bucket.into_mut_refs();
-                Some(v)
-            }
-            _ => None
-        }
+        self.search_mut(k).map(|bucket| bucket.into_mut_refs().1)
     }
 
     /// Deprecated: Renamed to `insert`.
@@ -1178,10 +1157,7 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
             return None
         }
 
-        self.search_mut(k).map(|bucket| {
-            let (_k, val) = pop_internal(bucket);
-            val
-        })
+        self.search_mut(k).map(|bucket| pop_internal(bucket).1)
     }
 }
 
@@ -1189,7 +1165,7 @@ fn search_entry_hashed<'a, K: Eq, V>(table: &'a mut RawTable<K,V>, hash: SafeHas
         -> Entry<'a, K, V> {
     // Worst case, we'll find one empty bucket among `size + 1` buckets.
     let size = table.size();
-    let mut probe = Bucket::new(table, &hash);
+    let mut probe = Bucket::new(table, hash);
     let ib = probe.index();
 
     loop {
@@ -1205,13 +1181,10 @@ fn search_entry_hashed<'a, K: Eq, V>(table: &'a mut RawTable<K,V>, hash: SafeHas
             Full(bucket) => bucket
         };
 
+        // hash matches?
         if bucket.hash() == hash {
-            let is_eq = {
-                let (bucket_k, _) = bucket.read();
-                k == *bucket_k
-            };
-
-            if is_eq {
+            // key matches?
+            if k == *bucket.read().0 {
                 return Occupied(OccupiedEntry{
                     elem: bucket,
                 });
@@ -1277,7 +1250,9 @@ impl<K: Eq + Hash<S> + Show, V: Show, S, H: Hasher<S>> Show for HashMap<K, V, H>
     }
 }
 
+#[stable]
 impl<K: Eq + Hash<S>, V, S, H: Hasher<S> + Default> Default for HashMap<K, V, H> {
+    #[stable]
     fn default() -> HashMap<K, V, H> {
         HashMap::with_hasher(Default::default())
     }
@@ -1297,10 +1272,7 @@ impl<K: Hash<S> + Eq, Sized? Q, V, S, H: Hasher<S>> IndexMut<Q, V> for HashMap<K
 {
     #[inline]
     fn index_mut<'a>(&'a mut self, index: &Q) -> &'a mut V {
-        match self.get_mut(index) {
-            Some(v) => v,
-            None => panic!("no entry found for key")
-        }
+        self.get_mut(index).expect("no entry found for key")
     }
 }
 
@@ -1316,7 +1288,22 @@ pub struct MutEntries<'a, K: 'a, V: 'a> {
 
 /// HashMap move iterator
 pub struct MoveEntries<K, V> {
-    inner: iter::Map<'static, (SafeHash, K, V), (K, V), table::MoveEntries<K, V>>
+    inner: iter::Map<
+        (SafeHash, K, V),
+        (K, V),
+        table::MoveEntries<K, V>,
+        fn((SafeHash, K, V)) -> (K, V),
+    >
+}
+
+/// HashMap keys iterator
+pub struct Keys<'a, K: 'a, V: 'a> {
+    inner: Map<(&'a K, &'a V), &'a K, Entries<'a, K, V>, fn((&'a K, &'a V)) -> &'a K>
+}
+
+/// HashMap values iterator
+pub struct Values<'a, K: 'a, V: 'a> {
+    inner: Map<(&'a K, &'a V), &'a V, Entries<'a, K, V>, fn((&'a K, &'a V)) -> &'a V>
 }
 
 /// A view into a single occupied location in a HashMap
@@ -1349,56 +1336,45 @@ enum VacantEntryState<K, V, M> {
 }
 
 impl<'a, K, V> Iterator<(&'a K, &'a V)> for Entries<'a, K, V> {
-    #[inline]
-    fn next(&mut self) -> Option<(&'a K, &'a V)> {
-        self.inner.next()
-    }
-    #[inline]
-    fn size_hint(&self) -> (uint, Option<uint>) {
-        self.inner.size_hint()
-    }
+    #[inline] fn next(&mut self) -> Option<(&'a K, &'a V)> { self.inner.next() }
+    #[inline] fn size_hint(&self) -> (uint, Option<uint>) { self.inner.size_hint() }
 }
 
 impl<'a, K, V> Iterator<(&'a K, &'a mut V)> for MutEntries<'a, K, V> {
-    #[inline]
-    fn next(&mut self) -> Option<(&'a K, &'a mut V)> {
-        self.inner.next()
-    }
-    #[inline]
-    fn size_hint(&self) -> (uint, Option<uint>) {
-        self.inner.size_hint()
-    }
+    #[inline] fn next(&mut self) -> Option<(&'a K, &'a mut V)> { self.inner.next() }
+    #[inline] fn size_hint(&self) -> (uint, Option<uint>) { self.inner.size_hint() }
 }
 
 impl<K, V> Iterator<(K, V)> for MoveEntries<K, V> {
-    #[inline]
-    fn next(&mut self) -> Option<(K, V)> {
-        self.inner.next()
-    }
-    #[inline]
-    fn size_hint(&self) -> (uint, Option<uint>) {
-        self.inner.size_hint()
-    }
+    #[inline] fn next(&mut self) -> Option<(K, V)> { self.inner.next() }
+    #[inline] fn size_hint(&self) -> (uint, Option<uint>) { self.inner.size_hint() }
+}
+
+impl<'a, K, V> Iterator<&'a K> for Keys<'a, K, V> {
+    #[inline] fn next(&mut self) -> Option<(&'a K)> { self.inner.next() }
+    #[inline] fn size_hint(&self) -> (uint, Option<uint>) { self.inner.size_hint() }
+}
+
+impl<'a, K, V> Iterator<&'a V> for Values<'a, K, V> {
+    #[inline] fn next(&mut self) -> Option<(&'a V)> { self.inner.next() }
+    #[inline] fn size_hint(&self) -> (uint, Option<uint>) { self.inner.size_hint() }
 }
 
 impl<'a, K, V> OccupiedEntry<'a, K, V> {
     /// Gets a reference to the value in the entry
     pub fn get(&self) -> &V {
-        let (_, v) = self.elem.read();
-        v
+        self.elem.read().1
     }
 
     /// Gets a mutable reference to the value in the entry
     pub fn get_mut(&mut self) -> &mut V {
-        let (_, v) = self.elem.read_mut();
-        v
+        self.elem.read_mut().1
     }
 
     /// Converts the OccupiedEntry into a mutable reference to the value in the entry
     /// with a lifetime bound to the map itself
     pub fn into_mut(self) -> &'a mut V {
-        let (_, v) = self.elem.into_mut_refs();
-        v
+        self.elem.into_mut_refs().1
     }
 
     /// Sets the value of the entry, and returns the entry's old value
@@ -1410,8 +1386,7 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
 
     /// Takes the value out of the entry, and returns it
     pub fn take(self) -> V {
-        let (_, v) = pop_internal(self.elem);
-        v
+        pop_internal(self.elem).1
     }
 }
 
@@ -1424,25 +1399,15 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
                 robin_hood(bucket, ib, self.hash, self.key, value)
             }
             NoElem(bucket) => {
-                let full = bucket.put(self.hash, self.key, value);
-                let (_, v) = full.into_mut_refs();
-                v
+                bucket.put(self.hash, self.key, value).into_mut_refs().1
             }
         }
     }
 }
 
-/// HashMap keys iterator
-pub type Keys<'a, K, V> =
-    iter::Map<'static, (&'a K, &'a V), &'a K, Entries<'a, K, V>>;
-
-/// HashMap values iterator
-pub type Values<'a, K, V> =
-    iter::Map<'static, (&'a K, &'a V), &'a V, Entries<'a, K, V>>;
-
 impl<K: Eq + Hash<S>, V, S, H: Hasher<S> + Default> FromIterator<(K, V)> for HashMap<K, V, H> {
     fn from_iter<T: Iterator<(K, V)>>(iter: T) -> HashMap<K, V, H> {
-        let (lower, _) = iter.size_hint();
+        let lower = iter.size_hint().0;
         let mut map = HashMap::with_capacity_and_hasher(lower, Default::default());
         map.extend(iter);
         map
@@ -1463,9 +1428,8 @@ mod test_map {
 
     use super::HashMap;
     use super::{Occupied, Vacant};
-    use cmp::Equiv;
     use hash;
-    use iter::{Iterator,range_inclusive,range_step_inclusive};
+    use iter::{range_inclusive, range_step_inclusive};
     use cell::RefCell;
     use rand::{weak_rng, Rng};
 
@@ -1506,7 +1470,7 @@ mod test_map {
         assert_eq!(*m.get(&2).unwrap(), 4);
     }
 
-    thread_local!(static DROP_VECTOR: RefCell<Vec<int>> = RefCell::new(Vec::new()))
+    thread_local! { static DROP_VECTOR: RefCell<Vec<int>> = RefCell::new(Vec::new()) }
 
     #[deriving(Hash, PartialEq, Eq)]
     struct Dropable {

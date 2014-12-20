@@ -36,12 +36,10 @@ use syntax::visit::{Visitor, FnKind};
 /// placate the same deriving in `ty::FreeRegion`, but we may want to
 /// actually attach a more meaningful ordering to scopes than the one
 /// generated via deriving here.
-#[deriving(Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Encodable, Decodable, Show)]
+#[deriving(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash, Encodable, Decodable, Show)]
 pub enum CodeExtent {
     Misc(ast::NodeId)
 }
-
-impl Copy for CodeExtent {}
 
 impl CodeExtent {
     /// Creates a scope that represents the dynamic extent associated
@@ -62,7 +60,9 @@ impl CodeExtent {
 
     /// Maps this scope to a potentially new one according to the
     /// NodeId transformer `f_id`.
-    pub fn map_id(&self, f_id: |ast::NodeId| -> ast::NodeId) -> CodeExtent {
+    pub fn map_id<F>(&self, f_id: F) -> CodeExtent where
+        F: FnOnce(ast::NodeId) -> ast::NodeId,
+    {
         match *self {
             CodeExtent::Misc(node_id) => CodeExtent::Misc(f_id(node_id)),
         }
@@ -115,14 +115,13 @@ pub struct RegionMaps {
     terminating_scopes: RefCell<FnvHashSet<CodeExtent>>,
 }
 
+#[deriving(Copy)]
 pub struct Context {
     var_parent: Option<ast::NodeId>,
 
     // Innermost enclosing expression
     parent: Option<ast::NodeId>,
 }
-
-impl Copy for Context {}
 
 struct RegionResolutionVisitor<'a> {
     sess: &'a Session,

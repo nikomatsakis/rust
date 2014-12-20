@@ -13,7 +13,7 @@ use llvm::{ContextRef, ModuleRef, ValueRef, BuilderRef};
 use llvm::{TargetData};
 use llvm::mk_target_data;
 use metadata::common::LinkMeta;
-use middle::resolve;
+use middle::def::ExportMap;
 use middle::traits;
 use trans::adt;
 use trans::base;
@@ -61,7 +61,7 @@ pub struct SharedCrateContext<'tcx> {
     metadata_llmod: ModuleRef,
     metadata_llcx: ContextRef,
 
-    exp_map2: resolve::ExportMap2,
+    export_map: ExportMap,
     reachable: NodeSet,
     item_symbols: RefCell<NodeMap<String>>,
     link_meta: LinkMeta,
@@ -99,7 +99,7 @@ pub struct LocalCrateContext<'tcx> {
     monomorphized: RefCell<FnvHashMap<MonoId<'tcx>, ValueRef>>,
     monomorphizing: RefCell<DefIdMap<uint>>,
     /// Cache generated vtables
-    vtables: RefCell<FnvHashMap<(Ty<'tcx>, Rc<ty::TraitRef<'tcx>>), ValueRef>>,
+    vtables: RefCell<FnvHashMap<(Ty<'tcx>, Rc<ty::PolyTraitRef<'tcx>>), ValueRef>>,
     /// Cache of constant strings,
     const_cstr_cache: RefCell<FnvHashMap<InternedString, ValueRef>>,
 
@@ -150,7 +150,7 @@ pub struct LocalCrateContext<'tcx> {
     /// contexts around the same size.
     n_llvm_insns: Cell<uint>,
 
-    trait_cache: RefCell<FnvHashMap<Rc<ty::TraitRef<'tcx>>,
+    trait_cache: RefCell<FnvHashMap<Rc<ty::PolyTraitRef<'tcx>>,
                                     traits::Vtable<'tcx, ()>>>,
 }
 
@@ -238,7 +238,7 @@ impl<'tcx> SharedCrateContext<'tcx> {
     pub fn new(crate_name: &str,
                local_count: uint,
                tcx: ty::ctxt<'tcx>,
-               emap2: resolve::ExportMap2,
+               export_map: ExportMap,
                symbol_hasher: Sha256,
                link_meta: LinkMeta,
                reachable: NodeSet)
@@ -251,7 +251,7 @@ impl<'tcx> SharedCrateContext<'tcx> {
             local_ccxs: Vec::with_capacity(local_count),
             metadata_llmod: metadata_llmod,
             metadata_llcx: metadata_llcx,
-            exp_map2: emap2,
+            export_map: export_map,
             reachable: reachable,
             item_symbols: RefCell::new(NodeMap::new()),
             link_meta: link_meta,
@@ -329,8 +329,8 @@ impl<'tcx> SharedCrateContext<'tcx> {
         self.metadata_llcx
     }
 
-    pub fn exp_map2<'a>(&'a self) -> &'a resolve::ExportMap2 {
-        &self.exp_map2
+    pub fn export_map<'a>(&'a self) -> &'a ExportMap {
+        &self.export_map
     }
 
     pub fn reachable<'a>(&'a self) -> &'a NodeSet {
@@ -553,8 +553,8 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
         &self.local.item_vals
     }
 
-    pub fn exp_map2<'a>(&'a self) -> &'a resolve::ExportMap2 {
-        &self.shared.exp_map2
+    pub fn export_map<'a>(&'a self) -> &'a ExportMap {
+        &self.shared.export_map
     }
 
     pub fn reachable<'a>(&'a self) -> &'a NodeSet {
@@ -601,7 +601,7 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
         &self.local.monomorphizing
     }
 
-    pub fn vtables<'a>(&'a self) -> &'a RefCell<FnvHashMap<(Ty<'tcx>, Rc<ty::TraitRef<'tcx>>),
+    pub fn vtables<'a>(&'a self) -> &'a RefCell<FnvHashMap<(Ty<'tcx>, Rc<ty::PolyTraitRef<'tcx>>),
                                                             ValueRef>> {
         &self.local.vtables
     }
@@ -699,7 +699,7 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
         self.local.n_llvm_insns.set(self.local.n_llvm_insns.get() + 1);
     }
 
-    pub fn trait_cache(&self) -> &RefCell<FnvHashMap<Rc<ty::TraitRef<'tcx>>,
+    pub fn trait_cache(&self) -> &RefCell<FnvHashMap<Rc<ty::PolyTraitRef<'tcx>>,
                                                      traits::Vtable<'tcx, ()>>> {
         &self.local.trait_cache
     }
@@ -749,10 +749,10 @@ fn declare_intrinsic(ccx: &CrateContext, key: & &'static str) -> Option<ValueRef
                 return Some(f);
             }
         )
-    )
+    );
     macro_rules! mk_struct (
         ($($field_ty:expr),*) => (Type::struct_(ccx, &[$($field_ty),*], false))
-    )
+    );
 
     let i8p = Type::i8p(ccx);
     let void = Type::void(ccx);
@@ -886,7 +886,7 @@ fn declare_intrinsic(ccx: &CrateContext, key: & &'static str) -> Option<ValueRef
                 return Some(f);
             }
         )
-    )
+    );
 
     compatible_ifn!("llvm.copysign.f32", copysignf(t_f32, t_f32) -> t_f32);
     compatible_ifn!("llvm.copysign.f64", copysign(t_f64, t_f64) -> t_f64);

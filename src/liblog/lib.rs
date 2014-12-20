@@ -10,7 +10,7 @@
 
 //! Utilities for program-wide and customizable logging
 //!
-//! ## Example
+//! # Examples
 //!
 //! ```
 //! #![feature(phase)]
@@ -64,8 +64,7 @@
 //! INFO:main: the answer was: 12
 //! ```
 //!
-//!
-//! ## Logging Macros
+//! # Logging Macros
 //!
 //! There are five macros that the logging subsystem uses:
 //!
@@ -86,7 +85,7 @@
 //!
 //! * `log_enabled!(level)` - returns true if logging of the given level is enabled
 //!
-//! ## Enabling logging
+//! # Enabling logging
 //!
 //! Log levels are controlled on a per-module basis, and by default all logging is
 //! disabled except for `error!` (a log level of 1). Logging is controlled via the
@@ -123,7 +122,7 @@
 //! * `hello,std::option` turns on hello, and std's option logging
 //! * `error,hello=warn` turn on global error logging and also warn for hello
 //!
-//! ## Filtering results
+//! # Filtering results
 //!
 //! A RUST_LOG directive may include a regex filter. The syntax is to append `/`
 //! followed by a regex. Each message is checked against the regex, and is only
@@ -143,7 +142,7 @@
 //!  hello. In both cases the log message must include a single digit number
 //!  followed by 'scopes'
 //!
-//! ## Performance and Side Effects
+//! # Performance and Side Effects
 //!
 //! Each of these macros will expand to code similar to:
 //!
@@ -158,14 +157,14 @@
 //! if logging is disabled, none of the components of the log will be executed.
 
 #![crate_name = "log"]
-#![experimental]
+#![experimental = "use the crates.io `log` library instead"]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/nightly/",
        html_playground_url = "http://play.rust-lang.org/")]
-#![feature(macro_rules)]
+#![feature(macro_rules, unboxed_closures)]
 #![deny(missing_docs)]
 
 extern crate regex;
@@ -214,9 +213,11 @@ pub const WARN: u32 = 2;
 /// Error log level
 pub const ERROR: u32 = 1;
 
-thread_local!(static LOCAL_LOGGER: RefCell<Option<Box<Logger + Send>>> = {
-    RefCell::new(None)
-})
+thread_local! {
+    static LOCAL_LOGGER: RefCell<Option<Box<Logger + Send>>> = {
+        RefCell::new(None)
+    }
+}
 
 /// A trait used to represent an interface to a task-local logger. Each task
 /// can have its own custom logger which can respond to logging messages
@@ -231,10 +232,8 @@ struct DefaultLogger {
 }
 
 /// Wraps the log level with fmt implementations.
-#[deriving(PartialEq, PartialOrd)]
+#[deriving(Copy, PartialEq, PartialOrd)]
 pub struct LogLevel(pub u32);
-
-impl Copy for LogLevel {}
 
 impl fmt::Show for LogLevel {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
@@ -340,13 +339,12 @@ pub struct LogRecord<'a> {
 }
 
 #[doc(hidden)]
+#[deriving(Copy)]
 pub struct LogLocation {
     pub module_path: &'static str,
     pub file: &'static str,
     pub line: uint,
 }
-
-impl Copy for LogLocation {}
 
 /// Tests whether a given module's name is enabled for a particular level of
 /// logging. This is the second layer of defense about determining whether a
@@ -422,7 +420,7 @@ fn init() {
         DIRECTIVES = mem::transmute(box directives);
 
         // Schedule the cleanup for the globals for when the runtime exits.
-        rt::at_exit(proc() {
+        rt::at_exit(move |:| {
             assert!(!DIRECTIVES.is_null());
             let _directives: Box<Vec<directive::LogDirective>> =
                 mem::transmute(DIRECTIVES);

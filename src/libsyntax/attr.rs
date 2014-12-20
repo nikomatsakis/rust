@@ -29,7 +29,7 @@ use std::cell::{RefCell, Cell};
 use std::collections::BitvSet;
 use std::collections::HashSet;
 
-thread_local!(static USED_ATTRS: RefCell<BitvSet> = RefCell::new(BitvSet::new()))
+thread_local! { static USED_ATTRS: RefCell<BitvSet> = RefCell::new(BitvSet::new()) }
 
 pub fn mark_used(attr: &Attribute) {
     let AttrId(id) = attr.node.id;
@@ -115,7 +115,8 @@ impl AttrMetaMethods for P<MetaItem> {
 
 pub trait AttributeMethods {
     fn meta<'a>(&'a self) -> &'a MetaItem;
-    fn with_desugared_doc<T>(&self, f: |&Attribute| -> T) -> T;
+    fn with_desugared_doc<T, F>(&self, f: F) -> T where
+        F: FnOnce(&Attribute) -> T;
 }
 
 impl AttributeMethods for Attribute {
@@ -127,7 +128,9 @@ impl AttributeMethods for Attribute {
     /// Convert self to a normal #[doc="foo"] comment, if it is a
     /// comment like `///` or `/** */`. (Returns self unchanged for
     /// non-sugared doc attributes.)
-    fn with_desugared_doc<T>(&self, f: |&Attribute| -> T) -> T {
+    fn with_desugared_doc<T, F>(&self, f: F) -> T where
+        F: FnOnce(&Attribute) -> T,
+    {
         if self.node.is_sugared_doc {
             let comment = self.value_str().unwrap();
             let meta = mk_name_value_item_str(
@@ -166,7 +169,7 @@ pub fn mk_word_item(name: InternedString) -> P<MetaItem> {
     P(dummy_spanned(MetaWord(name)))
 }
 
-thread_local!(static NEXT_ATTR_ID: Cell<uint> = Cell::new(0))
+thread_local! { static NEXT_ATTR_ID: Cell<uint> = Cell::new(0) }
 
 pub fn mk_attr_id() -> AttrId {
     let id = NEXT_ATTR_ID.with(|slot| {
@@ -274,15 +277,13 @@ pub fn find_crate_name(attrs: &[Attribute]) -> Option<InternedString> {
     first_attr_value_str_by_name(attrs, "crate_name")
 }
 
-#[deriving(PartialEq)]
+#[deriving(Copy, PartialEq)]
 pub enum InlineAttr {
     InlineNone,
     InlineHint,
     InlineAlways,
     InlineNever,
 }
-
-impl Copy for InlineAttr {}
 
 /// Determine what `#[inline]` attribute is present in `attrs`, if any.
 pub fn find_inline_attr(attrs: &[Attribute]) -> InlineAttr {
@@ -346,7 +347,7 @@ pub struct Stability {
 }
 
 /// The available stability levels.
-#[deriving(Encodable,Decodable,PartialEq,PartialOrd,Clone,Show)]
+#[deriving(Copy,Encodable,Decodable,PartialEq,PartialOrd,Clone,Show)]
 pub enum StabilityLevel {
     Deprecated,
     Experimental,
@@ -355,8 +356,6 @@ pub enum StabilityLevel {
     Frozen,
     Locked
 }
-
-impl Copy for StabilityLevel {}
 
 pub fn find_stability_generic<'a,
                               AM: AttrMetaMethods,
@@ -465,15 +464,13 @@ fn int_type_of_word(s: &str) -> Option<IntType> {
     }
 }
 
-#[deriving(PartialEq, Show, Encodable, Decodable)]
+#[deriving(Copy, PartialEq, Show, Encodable, Decodable)]
 pub enum ReprAttr {
     ReprAny,
     ReprInt(Span, IntType),
     ReprExtern,
     ReprPacked,
 }
-
-impl Copy for ReprAttr {}
 
 impl ReprAttr {
     pub fn is_ffi_safe(&self) -> bool {
@@ -486,13 +483,11 @@ impl ReprAttr {
     }
 }
 
-#[deriving(Eq, Hash, PartialEq, Show, Encodable, Decodable)]
+#[deriving(Copy, Eq, Hash, PartialEq, Show, Encodable, Decodable)]
 pub enum IntType {
     SignedInt(ast::IntTy),
     UnsignedInt(ast::UintTy)
 }
-
-impl Copy for IntType {}
 
 impl IntType {
     #[inline]

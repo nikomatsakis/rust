@@ -119,6 +119,7 @@ pub fn gensym_name(name: &str) -> PathElem {
     PathName(token::gensym(format!("{}:{}", name, num).as_slice()))
 }
 
+#[deriving(Copy)]
 pub struct tydesc_info<'tcx> {
     pub ty: Ty<'tcx>,
     pub tydesc: ValueRef,
@@ -126,8 +127,6 @@ pub struct tydesc_info<'tcx> {
     pub align: ValueRef,
     pub name: ValueRef,
 }
-
-impl<'tcx> Copy for tydesc_info<'tcx> {}
 
 /*
  * A note on nomenclature of linking: "extern", "foreign", and "upcall".
@@ -155,12 +154,11 @@ impl<'tcx> Copy for tydesc_info<'tcx> {}
  *
  */
 
+#[deriving(Copy)]
 pub struct NodeInfo {
     pub id: ast::NodeId,
     pub span: Span,
 }
-
-impl Copy for NodeInfo {}
 
 pub fn expr_info(expr: &ast::Expr) -> NodeInfo {
     NodeInfo { id: expr.id, span: expr.span }
@@ -764,7 +762,7 @@ pub fn expr_ty_adjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, ex: &ast::Expr) -> T
 /// guarantee to us that all nested obligations *could be* resolved if we wanted to.
 pub fn fulfill_obligation<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                     span: Span,
-                                    trait_ref: Rc<ty::TraitRef<'tcx>>)
+                                    trait_ref: Rc<ty::PolyTraitRef<'tcx>>)
                                     -> traits::Vtable<'tcx, ()>
 {
     let tcx = ccx.tcx();
@@ -783,7 +781,7 @@ pub fn fulfill_obligation<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 
     debug!("trans fulfill_obligation: trait_ref={}", trait_ref.repr(ccx.tcx()));
 
-    ty::populate_implementations_for_trait_if_necessary(tcx, trait_ref.def_id);
+    ty::populate_implementations_for_trait_if_necessary(tcx, trait_ref.def_id());
     let infcx = infer::new_infer_ctxt(tcx);
 
     // Parameter environment is used to give details about type parameters,
@@ -848,12 +846,12 @@ pub fn fulfill_obligation<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
         }
     }
 
-    // Use skolemize to simultaneously replace all type variables with
+    // Use freshen to simultaneously replace all type variables with
     // their bindings and replace all regions with 'static.  This is
     // sort of overkill because we do not expect there to be any
-    // unbound type variables, hence no skolemized types should ever
-    // be inserted.
-    let vtable = vtable.fold_with(&mut infcx.skolemizer());
+    // unbound type variables, hence no `TyFresh` types should ever be
+    // inserted.
+    let vtable = vtable.fold_with(&mut infcx.freshener());
 
     info!("Cache miss: {}", trait_ref.repr(ccx.tcx()));
     ccx.trait_cache().borrow_mut().insert(trait_ref,
@@ -863,16 +861,14 @@ pub fn fulfill_obligation<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 }
 
 // Key used to lookup values supplied for type parameters in an expr.
-#[deriving(PartialEq, Show)]
+#[deriving(Copy, PartialEq, Show)]
 pub enum ExprOrMethodCall {
     // Type parameters for a path like `None::<int>`
     ExprId(ast::NodeId),
 
     // Type parameters for a method call like `a.foo::<int>()`
-    MethodCall(ty::MethodCall)
+    MethodCallKey(ty::MethodCall)
 }
-
-impl Copy for ExprOrMethodCall {}
 
 pub fn node_id_substs<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                   node: ExprOrMethodCall)
@@ -883,7 +879,7 @@ pub fn node_id_substs<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         ExprId(id) => {
             ty::node_id_item_substs(tcx, id).substs
         }
-        MethodCall(method_call) => {
+        MethodCallKey(method_call) => {
             (*tcx.method_map.borrow())[method_call].substs.clone()
         }
     };

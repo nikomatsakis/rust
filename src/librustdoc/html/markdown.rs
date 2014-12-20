@@ -149,12 +149,12 @@ fn stripped_filtered_line<'a>(s: &'a str) -> Option<&'a str> {
 
 thread_local!(static USED_HEADER_MAP: RefCell<HashMap<String, uint>> = {
     RefCell::new(HashMap::new())
-})
-thread_local!(static TEST_IDX: Cell<uint> = Cell::new(0))
+});
+thread_local!(static TEST_IDX: Cell<uint> = Cell::new(0));
 
 thread_local!(pub static PLAYGROUND_KRATE: RefCell<Option<Option<String>>> = {
     RefCell::new(None)
-})
+});
 
 pub fn render(w: &mut fmt::Formatter, s: &str, print_toc: bool) -> fmt::Result {
     extern fn block(ob: *mut hoedown_buffer, orig_text: *const hoedown_buffer,
@@ -393,7 +393,7 @@ impl LangString {
         let mut seen_other_tags = false;
         let mut data = LangString::all_false();
 
-        let mut tokens = string.split(|c: char|
+        let mut tokens = string.split(|&: c: char|
             !(c == '_' || c == '-' || c.is_alphanumeric())
         );
 

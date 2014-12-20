@@ -71,9 +71,10 @@ This API is completely unstable and subject to change.
       html_favicon_url = "http://www.rust-lang.org/favicon.ico",
       html_root_url = "http://doc.rust-lang.org/nightly/")]
 
-#![feature(default_type_params, globs, import_shadowing, macro_rules, phase, quote)]
+#![feature(default_type_params, globs, macro_rules, phase, quote)]
 #![feature(slicing_syntax, unsafe_destructor)]
 #![feature(rustc_diagnostic_macros)]
+#![feature(unboxed_closures)]
 #![allow(non_camel_case_types)]
 
 #[phase(plugin, link)] extern crate log;
@@ -89,7 +90,6 @@ pub use rustc::session;
 pub use rustc::util;
 
 use middle::def;
-use middle::resolve;
 use middle::infer;
 use middle::subst;
 use middle::subst::VecPerParamSpace;
@@ -120,7 +120,7 @@ struct TypeAndSubsts<'tcx> {
 
 struct CrateCtxt<'a, 'tcx: 'a> {
     // A mapping from method call sites to traits that have that method.
-    trait_map: resolve::TraitMap,
+    trait_map: ty::TraitMap,
     tcx: &'a ty::ctxt<'tcx>
 }
 
@@ -169,14 +169,16 @@ fn no_params<'tcx>(t: Ty<'tcx>) -> ty::Polytype<'tcx> {
     }
 }
 
-fn require_same_types<'a, 'tcx>(tcx: &ty::ctxt<'tcx>,
-                                    maybe_infcx: Option<&infer::InferCtxt<'a, 'tcx>>,
-                                    t1_is_expected: bool,
-                                    span: Span,
-                                    t1: Ty<'tcx>,
-                                    t2: Ty<'tcx>,
-                                    msg: || -> String)
-                                    -> bool {
+fn require_same_types<'a, 'tcx, M>(tcx: &ty::ctxt<'tcx>,
+                                   maybe_infcx: Option<&infer::InferCtxt<'a, 'tcx>>,
+                                   t1_is_expected: bool,
+                                   span: Span,
+                                   t1: Ty<'tcx>,
+                                   t2: Ty<'tcx>,
+                                   msg: M)
+                                   -> bool where
+    M: FnOnce() -> String,
+{
     let result = match maybe_infcx {
         None => {
             let infcx = infer::new_infer_ctxt(tcx);
@@ -223,13 +225,13 @@ fn check_main_fn_ty(ccx: &CrateCtxt,
                 _ => ()
             }
             let se_ty = ty::mk_bare_fn(tcx, ty::BareFnTy {
-                fn_style: ast::NormalFn,
+                unsafety: ast::Unsafety::Normal,
                 abi: abi::Rust,
-                sig: ty::FnSig {
+                sig: ty::Binder(ty::FnSig {
                     inputs: Vec::new(),
                     output: ty::FnConverging(ty::mk_nil(tcx)),
                     variadic: false
-                }
+                })
             });
 
             require_same_types(tcx, None, false, main_span, main_t, se_ty,
@@ -271,16 +273,16 @@ fn check_start_fn_ty(ccx: &CrateCtxt,
             }
 
             let se_ty = ty::mk_bare_fn(tcx, ty::BareFnTy {
-                fn_style: ast::NormalFn,
+                unsafety: ast::Unsafety::Normal,
                 abi: abi::Rust,
-                sig: ty::FnSig {
+                sig: ty::Binder(ty::FnSig {
                     inputs: vec!(
                         ty::mk_int(),
                         ty::mk_imm_ptr(tcx, ty::mk_imm_ptr(tcx, ty::mk_u8()))
                     ),
                     output: ty::FnConverging(ty::mk_int()),
                     variadic: false
-                }
+                }),
             });
 
             require_same_types(tcx, None, false, start_span, start_t, se_ty,
@@ -313,7 +315,7 @@ fn check_for_entry_fn(ccx: &CrateCtxt) {
     }
 }
 
-pub fn check_crate(tcx: &ty::ctxt, trait_map: resolve::TraitMap) {
+pub fn check_crate(tcx: &ty::ctxt, trait_map: ty::TraitMap) {
     let time_passes = tcx.sess.time_passes();
     let ccx = CrateCtxt {
         trait_map: trait_map,

@@ -33,7 +33,7 @@ pub use self::util::supertraits;
 pub use self::util::Supertraits;
 pub use self::util::search_trait_and_supertraits_from_bound;
 pub use self::util::transitive_bounds;
-pub use self::util::trait_ref_for_builtin_bound;
+pub use self::util::poly_trait_ref_for_builtin_bound;
 
 mod coherence;
 mod fulfill;
@@ -54,7 +54,7 @@ pub struct Obligation<'tcx, T> {
 }
 
 pub type PredicateObligation<'tcx> = Obligation<'tcx, ty::Predicate<'tcx>>;
-pub type TraitObligation<'tcx> = Obligation<'tcx, Rc<ty::TraitRef<'tcx>>>;
+pub type TraitObligation<'tcx> = Obligation<'tcx, Rc<ty::PolyTraitRef<'tcx>>>;
 
 /// Why did we incur this obligation? Used for error reporting.
 #[deriving(Copy, Clone)]
@@ -115,7 +115,9 @@ pub type Selection<'tcx> = Vtable<'tcx, PredicateObligation<'tcx>>;
 pub enum SelectionError<'tcx> {
     Unimplemented,
     Overflow,
-    OutputTypeParameterMismatch(Rc<ty::TraitRef<'tcx>>, Rc<ty::TraitRef<'tcx>>, ty::type_err<'tcx>),
+    OutputTypeParameterMismatch(Rc<ty::PolyTraitRef<'tcx>>,
+                                Rc<ty::PolyTraitRef<'tcx>>,
+                                ty::type_err<'tcx>),
 }
 
 pub struct FulfillmentError<'tcx> {
@@ -226,7 +228,7 @@ pub struct VtableBuiltinData<N> {
 #[deriving(PartialEq,Eq,Clone)]
 pub struct VtableParamData<'tcx> {
     // In the above example, this would `Eq`
-    pub bound: Rc<ty::TraitRef<'tcx>>,
+    pub bound: Rc<ty::PolyTraitRef<'tcx>>,
 }
 
 /// True if neither the trait nor self type is local. Note that `impl_def_id` must refer to an impl
@@ -278,7 +280,7 @@ impl<'tcx,O> Obligation<'tcx,O> {
     }
 }
 
-impl<'tcx> Obligation<'tcx,Rc<ty::TraitRef<'tcx>>> {
+impl<'tcx> TraitObligation<'tcx> {
     pub fn self_ty(&self) -> Ty<'tcx> {
         self.trait_ref.self_ty()
     }
@@ -312,7 +314,7 @@ impl<'tcx, N> Vtable<'tcx, N> {
         }
     }
 
-    pub fn map_nested<M>(&self, op: |&N| -> M) -> Vtable<'tcx, M> {
+    pub fn map_nested<M, F>(&self, op: F) -> Vtable<'tcx, M> where F: FnMut(&N) -> M {
         match *self {
             VtableImpl(ref i) => VtableImpl(i.map_nested(op)),
             VtableFnPointer(ref sig) => VtableFnPointer((*sig).clone()),
@@ -322,7 +324,9 @@ impl<'tcx, N> Vtable<'tcx, N> {
         }
     }
 
-    pub fn map_move_nested<M>(self, op: |N| -> M) -> Vtable<'tcx, M> {
+    pub fn map_move_nested<M, F>(self, op: F) -> Vtable<'tcx, M> where
+        F: FnMut(N) -> M,
+    {
         match self {
             VtableImpl(i) => VtableImpl(i.map_move_nested(op)),
             VtableFnPointer(sig) => VtableFnPointer(sig),
@@ -338,9 +342,8 @@ impl<'tcx, N> VtableImplData<'tcx, N> {
         self.nested.iter()
     }
 
-    pub fn map_nested<M>(&self,
-                         op: |&N| -> M)
-                         -> VtableImplData<'tcx, M>
+    pub fn map_nested<M, F>(&self, op: F) -> VtableImplData<'tcx, M> where
+        F: FnMut(&N) -> M,
     {
         VtableImplData {
             impl_def_id: self.impl_def_id,
@@ -349,8 +352,9 @@ impl<'tcx, N> VtableImplData<'tcx, N> {
         }
     }
 
-    pub fn map_move_nested<M>(self, op: |N| -> M)
-                              -> VtableImplData<'tcx, M> {
+    pub fn map_move_nested<M, F>(self, op: F) -> VtableImplData<'tcx, M> where
+        F: FnMut(N) -> M,
+    {
         let VtableImplData { impl_def_id, substs, nested } = self;
         VtableImplData {
             impl_def_id: impl_def_id,
@@ -365,16 +369,15 @@ impl<N> VtableBuiltinData<N> {
         self.nested.iter()
     }
 
-    pub fn map_nested<M>(&self,
-                         op: |&N| -> M)
-                         -> VtableBuiltinData<M>
-    {
+    pub fn map_nested<M, F>(&self, op: F) -> VtableBuiltinData<M> where F: FnMut(&N) -> M {
         VtableBuiltinData {
             nested: self.nested.map(op)
         }
     }
 
-    pub fn map_move_nested<M>(self, op: |N| -> M) -> VtableBuiltinData<M> {
+    pub fn map_move_nested<M, F>(self, op: F) -> VtableBuiltinData<M> where
+        F: FnMut(N) -> M,
+    {
         VtableBuiltinData {
             nested: self.nested.map_move(op)
         }

@@ -17,8 +17,7 @@ use super::Subtype;
 use middle::ty::{BuiltinBounds};
 use middle::ty::{mod, Ty};
 use syntax::ast::{Many, Once, MutImmutable, MutMutable};
-use syntax::ast::{NormalFn, UnsafeFn};
-use syntax::ast::{Onceness, FnStyle};
+use syntax::ast::{Onceness, Unsafety};
 use util::ppaux::mt_to_string;
 use util::ppaux::Repr;
 
@@ -71,10 +70,10 @@ impl<'f, 'tcx> Combine<'tcx> for Glb<'f, 'tcx> {
         self.lub().tys(a, b)
     }
 
-    fn fn_styles(&self, a: FnStyle, b: FnStyle) -> cres<'tcx, FnStyle> {
+    fn unsafeties(&self, a: Unsafety, b: Unsafety) -> cres<'tcx, Unsafety> {
         match (a, b) {
-          (NormalFn, _) | (_, NormalFn) => Ok(NormalFn),
-          (UnsafeFn, UnsafeFn) => Ok(UnsafeFn)
+          (Unsafety::Normal, _) | (_, Unsafety::Normal) => Ok(Unsafety::Normal),
+          (Unsafety::Unsafe, Unsafety::Unsafe) => Ok(Unsafety::Unsafe)
         }
     }
 
@@ -112,13 +111,9 @@ impl<'f, 'tcx> Combine<'tcx> for Glb<'f, 'tcx> {
         super_lattice_tys(self, a, b)
     }
 
-    fn fn_sigs(&self, a: &ty::FnSig<'tcx>, b: &ty::FnSig<'tcx>)
-               -> cres<'tcx, ty::FnSig<'tcx>> {
-        self.higher_ranked_glb(a, b)
-    }
-
-    fn trait_refs(&self, a: &ty::TraitRef<'tcx>, b: &ty::TraitRef<'tcx>)
-                  -> cres<'tcx, ty::TraitRef<'tcx>> {
+    fn binders<T>(&self, a: &ty::Binder<T>, b: &ty::Binder<T>) -> cres<'tcx, ty::Binder<T>>
+        where T : Combineable<'tcx>
+    {
         self.higher_ranked_glb(a, b)
     }
 }

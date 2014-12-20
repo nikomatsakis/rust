@@ -97,6 +97,7 @@ enum Status {
 }
 
 /// A set of features to be used by later passes.
+#[deriving(Copy)]
 pub struct Features {
     pub default_type_params: bool,
     pub unboxed_closures: bool,
@@ -106,8 +107,6 @@ pub struct Features {
     pub quote: bool,
     pub opt_out_copy: bool,
 }
-
-impl Copy for Features {}
 
 impl Features {
     pub fn new() -> Features {
@@ -215,7 +214,7 @@ impl<'a, 'v> Visitor<'v> for Context<'a> {
                 }
             }
 
-            ast::ItemImpl(_, _, _, ref items) => {
+            ast::ItemImpl(_, _, _, _, ref items) => {
                 if attr::contains_name(i.attrs.as_slice(),
                                        "unsafe_destructor") {
                     self.gate_feature("unsafe_destructor",
@@ -306,12 +305,6 @@ impl<'a, 'v> Visitor<'v> for Context<'a> {
 
     fn visit_expr(&mut self, e: &ast::Expr) {
         match e.node {
-            ast::ExprClosure(_, Some(_), _, _) => {
-                self.gate_feature("unboxed_closures",
-                                  e.span,
-                                  "unboxed closures are a work-in-progress \
-                                   feature with known bugs");
-            }
             ast::ExprSlice(..) => {
                 self.gate_feature("slicing_syntax",
                                   e.span,
@@ -373,19 +366,6 @@ impl<'a, 'v> Visitor<'v> for Context<'a> {
             _ => {}
         }
         visit::walk_fn(self, fn_kind, fn_decl, block, span);
-    }
-
-    fn visit_path_parameters(&mut self, path_span: Span, parameters: &'v ast::PathParameters) {
-        match *parameters {
-            ast::ParenthesizedParameters(..) => {
-                self.gate_feature("unboxed_closures",
-                                  path_span,
-                                  "parenthetical parameter notation is subject to change");
-            }
-            ast::AngleBracketedParameters(..) => { }
-        }
-
-        visit::walk_path_parameters(self, path_span, parameters)
     }
 }
 

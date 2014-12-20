@@ -167,10 +167,9 @@ impl<'tcx> Substs<'tcx> {
 }
 
 impl RegionSubsts {
-    fn map<A>(self,
-              a: A,
-              op: |VecPerParamSpace<ty::Region>, A| -> VecPerParamSpace<ty::Region>)
-              -> RegionSubsts {
+    fn map<A, F>(self, a: A, op: F) -> RegionSubsts where
+        F: FnOnce(VecPerParamSpace<ty::Region>, A) -> VecPerParamSpace<ty::Region>,
+    {
         match self {
             ErasedRegions => ErasedRegions,
             NonerasedRegions(r) => NonerasedRegions(op(r, a))
@@ -188,7 +187,7 @@ impl RegionSubsts {
 ///////////////////////////////////////////////////////////////////////////
 // ParamSpace
 
-#[deriving(PartialOrd, Ord, PartialEq, Eq,
+#[deriving(Copy, PartialOrd, Ord, PartialEq, Eq,
            Clone, Hash, Encodable, Decodable, Show)]
 pub enum ParamSpace {
     TypeSpace,  // Type parameters attached to a type definition, trait, or impl
@@ -196,8 +195,6 @@ pub enum ParamSpace {
     AssocSpace, // Assoc types defined in a trait/impl
     FnSpace,    // Type parameters attached to a method or fn
 }
-
-impl Copy for ParamSpace {}
 
 impl ParamSpace {
     pub fn all() -> [ParamSpace, ..4] {
@@ -415,16 +412,18 @@ impl<T> VecPerParamSpace<T> {
         self.content.as_slice()
     }
 
-    pub fn all_vecs(&self, pred: |&[T]| -> bool) -> bool {
+    pub fn all_vecs<P>(&self, mut pred: P) -> bool where
+        P: FnMut(&[T]) -> bool,
+    {
         let spaces = [TypeSpace, SelfSpace, FnSpace];
         spaces.iter().all(|&space| { pred(self.get_slice(space)) })
     }
 
-    pub fn all(&self, pred: |&T| -> bool) -> bool {
+    pub fn all<P>(&self, pred: P) -> bool where P: FnMut(&T) -> bool {
         self.iter().all(pred)
     }
 
-    pub fn any(&self, pred: |&T| -> bool) -> bool {
+    pub fn any<P>(&self, pred: P) -> bool where P: FnMut(&T) -> bool {
         self.iter().any(pred)
     }
 
@@ -432,7 +431,7 @@ impl<T> VecPerParamSpace<T> {
         self.all_vecs(|v| v.is_empty())
     }
 
-    pub fn map<U>(&self, pred: |&T| -> U) -> VecPerParamSpace<U> {
+    pub fn map<U, P>(&self, pred: P) -> VecPerParamSpace<U> where P: FnMut(&T) -> U {
         let result = self.iter().map(pred).collect();
         VecPerParamSpace::new_internal(result,
                                        self.type_limit,
@@ -440,7 +439,9 @@ impl<T> VecPerParamSpace<T> {
                                        self.assoc_limit)
     }
 
-    pub fn map_enumerated<U>(&self, pred: |(ParamSpace, uint, &T)| -> U) -> VecPerParamSpace<U> {
+    pub fn map_enumerated<U, P>(&self, pred: P) -> VecPerParamSpace<U> where
+        P: FnMut((ParamSpace, uint, &T)) -> U,
+    {
         let result = self.iter_enumerated().map(pred).collect();
         VecPerParamSpace::new_internal(result,
                                        self.type_limit,
@@ -448,7 +449,9 @@ impl<T> VecPerParamSpace<T> {
                                        self.assoc_limit)
     }
 
-    pub fn map_move<U>(self, pred: |T| -> U) -> VecPerParamSpace<U> {
+    pub fn map_move<U, F>(self, mut pred: F) -> VecPerParamSpace<U> where
+        F: FnMut(T) -> U,
+    {
         let SeparateVecsPerParamSpace {
             types: t,
             selfs: s,
@@ -583,7 +586,7 @@ struct SubstFolder<'a, 'tcx: 'a> {
 }
 
 impl<'a, 'tcx> TypeFolder<'tcx> for SubstFolder<'a, 'tcx> {
-    fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> { self.tcx }
+    fn tcx(&self) -> &ty::ctxt<'tcx> { self.tcx }
 
     fn enter_region_binder(&mut self) {
         self.region_binders_passed += 1;

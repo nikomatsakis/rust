@@ -13,12 +13,13 @@
 
 #![crate_name = "regex_macros"]
 #![crate_type = "dylib"]
-#![experimental]
+#![experimental = "use the crates.io `regex_macros` library instead"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/nightly/")]
 
 #![feature(plugin_registrar, quote)]
+#![feature(unboxed_closures)]
 
 extern crate regex;
 extern crate syntax;
@@ -601,9 +602,10 @@ fn exec<'t>(which: ::regex::native::MatchKind, input: &'t str,
 
     // Converts `xs` to a `[x1, x2, .., xN]` expression by calling `to_expr`
     // on each element in `xs`.
-    fn vec_expr<T, It: Iterator<T>>(&self, xs: It,
-                                    to_expr: |&ExtCtxt, T| -> P<ast::Expr>)
-                  -> P<ast::Expr> {
+    fn vec_expr<T, It, F>(&self, xs: It, mut to_expr: F) -> P<ast::Expr> where
+        It: Iterator<T>,
+        F: FnMut(&ExtCtxt, T) -> P<ast::Expr>,
+    {
         let exprs = xs.map(|x| to_expr(self.cx, x)).collect();
         self.cx.expr_vec(self.sp, exprs)
     }

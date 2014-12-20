@@ -22,7 +22,7 @@ use middle::expr_use_visitor as euv;
 use middle::mem_categorization::cmt;
 use middle::pat_util::*;
 use middle::ty::*;
-use middle::ty::{mod, Ty};
+use middle::ty;
 use std::fmt;
 use std::iter::AdditiveIterator;
 use std::iter::range_inclusive;
@@ -127,12 +127,11 @@ enum Usefulness {
     NotUseful
 }
 
+#[deriving(Copy)]
 enum WitnessPreference {
     ConstructWitness,
     LeaveOutWitness
 }
-
-impl Copy for WitnessPreference {}
 
 impl<'a, 'tcx, 'v> Visitor<'v> for MatchCheckCtxt<'a, 'tcx> {
     fn visit_expr(&mut self, ex: &ast::Expr) {
@@ -220,7 +219,7 @@ fn check_expr(cx: &mut MatchCheckCtxt, ex: &ast::Expr) {
             let matrix: Matrix = inlined_arms
                 .iter()
                 .filter(|&&(_, guard)| guard.is_none())
-                .flat_map(|arm| arm.ref0().iter())
+                .flat_map(|arm| arm.0.iter())
                 .map(|pat| vec![&**pat])
                 .collect();
             check_exhaustive(cx, ex.span, &matrix);
@@ -392,7 +391,7 @@ pub struct StaticInliner<'a, 'tcx: 'a> {
 }
 
 impl<'a, 'tcx> StaticInliner<'a, 'tcx> {
-    pub fn new<'a>(tcx: &'a ty::ctxt<'tcx>) -> StaticInliner<'a, 'tcx> {
+    pub fn new<'b>(tcx: &'b ty::ctxt<'tcx>) -> StaticInliner<'b, 'tcx> {
         StaticInliner {
             tcx: tcx,
             failed: false
@@ -980,7 +979,9 @@ fn check_fn(cx: &mut MatchCheckCtxt,
     }
 }
 
-fn is_refutable<A>(cx: &MatchCheckCtxt, pat: &Pat, refutable: |&Pat| -> A) -> Option<A> {
+fn is_refutable<A, F>(cx: &MatchCheckCtxt, pat: &Pat, refutable: F) -> Option<A> where
+    F: FnOnce(&Pat) -> A,
+{
     let pats = Matrix(vec!(vec!(pat)));
     match is_useful(cx, &pats, &[DUMMY_WILD_PAT], ConstructWitness) {
         UsefulWithWitness(pats) => {

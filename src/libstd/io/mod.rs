@@ -105,6 +105,7 @@
 //!     # #![allow(dead_code)]
 //!     use std::io::{TcpListener, TcpStream};
 //!     use std::io::{Acceptor, Listener};
+//!     use std::thread::Thread;
 //!
 //!     let listener = TcpListener::bind("127.0.0.1:80");
 //!
@@ -119,10 +120,10 @@
 //!     for stream in acceptor.incoming() {
 //!         match stream {
 //!             Err(e) => { /* connection failed */ }
-//!             Ok(stream) => spawn(proc() {
+//!             Ok(stream) => Thread::spawn(move|| {
 //!                 // connection succeeded
 //!                 handle_client(stream)
-//!             })
+//!             }).detach()
 //!         }
 //!     }
 //!
@@ -231,9 +232,9 @@ use error::{FromError, Error};
 use fmt;
 use int;
 use iter::{Iterator, IteratorExt};
-use kinds::{Copy, marker};
+use kinds::marker;
 use mem::transmute;
-use ops::{BitOr, BitXor, BitAnd, Sub, Not};
+use ops::{BitOr, BitXor, BitAnd, Sub, Not, FnOnce};
 use option::Option;
 use option::Option::{Some, None};
 use os;
@@ -241,7 +242,7 @@ use boxed::Box;
 use result::Result;
 use result::Result::{Ok, Err};
 use sys;
-use slice::SlicePrelude;
+use slice::SliceExt;
 use str::StrPrelude;
 use str;
 use string::String;
@@ -366,7 +367,7 @@ impl FromError<IoError> for Box<Error> {
 }
 
 /// A list specifying general categories of I/O error.
-#[deriving(PartialEq, Eq, Clone, Show)]
+#[deriving(Copy, PartialEq, Eq, Clone, Show)]
 pub enum IoErrorKind {
     /// Any I/O error not part of this list.
     OtherIoError,
@@ -421,23 +422,25 @@ pub enum IoErrorKind {
     NoProgress,
 }
 
-impl Copy for IoErrorKind {}
-
 /// A trait that lets you add a `detail` to an IoError easily
 trait UpdateIoError {
     /// Returns an IoError with updated description and detail
-    fn update_err(self, desc: &'static str, detail: |&IoError| -> String) -> Self;
+    fn update_err<D>(self, desc: &'static str, detail: D) -> Self where
+        D: FnOnce(&IoError) -> String;
 
     /// Returns an IoError with updated detail
-    fn update_detail(self, detail: |&IoError| -> String) -> Self;
+    fn update_detail<D>(self, detail: D) -> Self where
+        D: FnOnce(&IoError) -> String;
 
     /// Returns an IoError with update description
     fn update_desc(self, desc: &'static str) -> Self;
 }
 
-impl<T> UpdateIoError for IoResult<T> {
-    fn update_err(self, desc: &'static str, detail: |&IoError| -> String) -> IoResult<T> {
-        self.map_err(|mut e| {
+impl<T> UpdateIoError<T> for IoResult<T> {
+    fn update_err<D>(self, desc: &'static str, detail: D) -> IoResult<T> where
+        D: FnOnce(&IoError) -> String,
+    {
+        self.map_err(move |mut e| {
             let detail = detail(&e);
             e.desc = desc;
             e.detail = Some(detail);
@@ -445,8 +448,10 @@ impl<T> UpdateIoError for IoResult<T> {
         })
     }
 
-    fn update_detail(self, detail: |&IoError| -> String) -> IoResult<T> {
-        self.map_err(|mut e| { e.detail = Some(detail(&e)); e })
+    fn update_detail<D>(self, detail: D) -> IoResult<T> where
+        D: FnOnce(&IoError) -> String,
+    {
+        self.map_err(move |mut e| { e.detail = Some(detail(&e)); e })
     }
 
     fn update_desc(self, desc: &'static str) -> IoResult<T> {
@@ -975,7 +980,7 @@ impl<'a, R: Reader> Reader for RefReader<'a, R> {
 }
 
 impl<'a, R: Buffer> Buffer for RefReader<'a, R> {
-    fn fill_buf<'a>(&'a mut self) -> IoResult<&'a [u8]> { self.inner.fill_buf() }
+    fn fill_buf(&mut self) -> IoResult<&[u8]> { self.inner.fill_buf() }
     fn consume(&mut self, amt: uint) { self.inner.consume(amt) }
 }
 
@@ -1554,6 +1559,7 @@ impl<T: Buffer> BufferPrelude for T {
 
 /// When seeking, the resulting cursor is offset from a base by the offset given
 /// to the `seek` function. The base used is specified by this enumeration.
+#[deriving(Copy)]
 pub enum SeekStyle {
     /// Seek from the beginning of the stream
     SeekSet,
@@ -1562,8 +1568,6 @@ pub enum SeekStyle {
     /// Seek from the current position
     SeekCur,
 }
-
-impl Copy for SeekStyle {}
 
 /// An object implementing `Seek` internally has some form of cursor which can
 /// be moved within a stream of bytes. The stream typically has a fixed size,
@@ -1680,6 +1684,7 @@ pub fn standard_error(kind: IoErrorKind) -> IoError {
 /// A mode specifies how a file should be opened or created. These modes are
 /// passed to `File::open_mode` and are used to control where the file is
 /// positioned when it is initially opened.
+#[deriving(Copy)]
 pub enum FileMode {
     /// Opens a file positioned at the beginning.
     Open,
@@ -1689,10 +1694,9 @@ pub enum FileMode {
     Truncate,
 }
 
-impl Copy for FileMode {}
-
 /// Access permissions with which the file should be opened. `File`s
 /// opened with `Read` will return an error if written to.
+#[deriving(Copy)]
 pub enum FileAccess {
     /// Read-only access, requests to write will result in an error
     Read,
@@ -1702,10 +1706,8 @@ pub enum FileAccess {
     ReadWrite,
 }
 
-impl Copy for FileAccess {}
-
 /// Different kinds of files which can be identified by a call to stat
-#[deriving(PartialEq, Show, Hash, Clone)]
+#[deriving(Copy, PartialEq, Show, Hash, Clone)]
 pub enum FileType {
     /// This is a normal file, corresponding to `S_IFREG`
     RegularFile,
@@ -1726,8 +1728,6 @@ pub enum FileType {
     Unknown,
 }
 
-impl Copy for FileType {}
-
 /// A structure used to describe metadata information about a file. This
 /// structure is created through the `stat` method on a `Path`.
 ///
@@ -1745,7 +1745,7 @@ impl Copy for FileType {}
 /// println!("byte size: {}", info.size);
 /// # }
 /// ```
-#[deriving(Hash)]
+#[deriving(Copy, Hash)]
 pub struct FileStat {
     /// The size of the file, in bytes
     pub size: u64,
@@ -1779,14 +1779,12 @@ pub struct FileStat {
     pub unstable: UnstableFileStat,
 }
 
-impl Copy for FileStat {}
-
 /// This structure represents all of the possible information which can be
 /// returned from a `stat` syscall which is not contained in the `FileStat`
 /// structure. This information is not necessarily platform independent, and may
 /// have different meanings or no meaning at all on some platforms.
 #[unstable]
-#[deriving(Hash)]
+#[deriving(Copy, Hash)]
 pub struct UnstableFileStat {
     /// The ID of the device containing the file.
     pub device: u64,
@@ -1809,8 +1807,6 @@ pub struct UnstableFileStat {
     /// The file generation number.
     pub gen: u64,
 }
-
-impl Copy for UnstableFileStat {}
 
 bitflags! {
     #[doc = "A set of permissions for a file or directory is represented"]
@@ -1906,9 +1902,10 @@ bitflags! {
     }
 }
 
-impl Copy for FilePermission {}
 
+#[stable]
 impl Default for FilePermission {
+    #[stable]
     #[inline]
     fn default() -> FilePermission { FilePermission::empty() }
 }

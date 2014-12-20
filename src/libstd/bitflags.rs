@@ -33,8 +33,6 @@
 ///     }
 /// }
 ///
-/// impl Copy for Flags {}
-///
 /// fn main() {
 ///     let e1 = FLAG_A | FLAG_C;
 ///     let e2 = FLAG_B | FLAG_C;
@@ -56,8 +54,6 @@
 ///         const FLAG_B   = 0x00000010,
 ///     }
 /// }
-///
-/// impl Copy for Flags {}
 ///
 /// impl Flags {
 ///     pub fn clear(&mut self) {
@@ -121,7 +117,7 @@ macro_rules! bitflags {
     ($(#[$attr:meta])* flags $BitFlags:ident: $T:ty {
         $($(#[$Flag_attr:meta])* const $Flag:ident = $value:expr),+
     }) => {
-        #[deriving(PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
+        #[deriving(Copy, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
         $(#[$attr])*
         pub struct $BitFlags {
             bits: $T,
@@ -209,6 +205,8 @@ macro_rules! bitflags {
             }
         }
 
+        // NOTE(stage0): Remove impl after a snapshot
+        #[cfg(stage0)]
         impl BitOr<$BitFlags, $BitFlags> for $BitFlags {
             /// Returns the union of the two sets of flags.
             #[inline]
@@ -217,6 +215,17 @@ macro_rules! bitflags {
             }
         }
 
+        #[cfg(not(stage0))]  // NOTE(stage0): Remove cfg after a snapshot
+        impl BitOr<$BitFlags, $BitFlags> for $BitFlags {
+            /// Returns the union of the two sets of flags.
+            #[inline]
+            fn bitor(self, other: $BitFlags) -> $BitFlags {
+                $BitFlags { bits: self.bits | other.bits }
+            }
+        }
+
+        // NOTE(stage0): Remove impl after a snapshot
+        #[cfg(stage0)]
         impl BitXor<$BitFlags, $BitFlags> for $BitFlags {
             /// Returns the left flags, but with all the right flags toggled.
             #[inline]
@@ -225,6 +234,17 @@ macro_rules! bitflags {
             }
         }
 
+        #[cfg(not(stage0))]  // NOTE(stage0): Remove cfg after a snapshot
+        impl BitXor<$BitFlags, $BitFlags> for $BitFlags {
+            /// Returns the left flags, but with all the right flags toggled.
+            #[inline]
+            fn bitxor(self, other: $BitFlags) -> $BitFlags {
+                $BitFlags { bits: self.bits ^ other.bits }
+            }
+        }
+
+        // NOTE(stage0): Remove impl after a snapshot
+        #[cfg(stage0)]
         impl BitAnd<$BitFlags, $BitFlags> for $BitFlags {
             /// Returns the intersection between the two sets of flags.
             #[inline]
@@ -233,6 +253,17 @@ macro_rules! bitflags {
             }
         }
 
+        #[cfg(not(stage0))]  // NOTE(stage0): Remove cfg after a snapshot
+        impl BitAnd<$BitFlags, $BitFlags> for $BitFlags {
+            /// Returns the intersection between the two sets of flags.
+            #[inline]
+            fn bitand(self, other: $BitFlags) -> $BitFlags {
+                $BitFlags { bits: self.bits & other.bits }
+            }
+        }
+
+        // NOTE(stage0): Remove impl after a snapshot
+        #[cfg(stage0)]
         impl Sub<$BitFlags, $BitFlags> for $BitFlags {
             /// Returns the set difference of the two sets of flags.
             #[inline]
@@ -241,10 +272,30 @@ macro_rules! bitflags {
             }
         }
 
+        #[cfg(not(stage0))]  // NOTE(stage0): Remove cfg after a snapshot
+        impl Sub<$BitFlags, $BitFlags> for $BitFlags {
+            /// Returns the set difference of the two sets of flags.
+            #[inline]
+            fn sub(self, other: $BitFlags) -> $BitFlags {
+                $BitFlags { bits: self.bits & !other.bits }
+            }
+        }
+
+        // NOTE(stage0): Remove impl after a snapshot
+        #[cfg(stage0)]
         impl Not<$BitFlags> for $BitFlags {
             /// Returns the complement of this set of flags.
             #[inline]
             fn not(&self) -> $BitFlags {
+                $BitFlags { bits: !self.bits } & $BitFlags::all()
+            }
+        }
+
+        #[cfg(not(stage0))]  // NOTE(stage0): Remove cfg after a snapshot
+        impl Not<$BitFlags> for $BitFlags {
+            /// Returns the complement of this set of flags.
+            #[inline]
+            fn not(self) -> $BitFlags {
                 $BitFlags { bits: !self.bits } & $BitFlags::all()
             }
         }
@@ -264,7 +315,6 @@ macro_rules! bitflags {
 #[cfg(test)]
 #[allow(non_upper_case_globals)]
 mod tests {
-    use kinds::Copy;
     use hash;
     use option::Option::{Some, None};
     use ops::{BitOr, BitAnd, BitXor, Sub, Not};
@@ -288,15 +338,11 @@ mod tests {
         }
     }
 
-    impl Copy for Flags {}
-
     bitflags! {
         flags AnotherSetOfFlags: i8 {
             const AnotherFlag = -1_i8,
         }
     }
-
-    impl Copy for AnotherSetOfFlags {}
 
     #[test]
     fn test_bits(){

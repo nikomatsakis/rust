@@ -19,7 +19,7 @@ use middle::ty::{mod, Ty};
 use middle::ty::TyVar;
 use util::ppaux::{Repr};
 
-use syntax::ast::{Onceness, FnStyle, MutImmutable, MutMutable};
+use syntax::ast::{Onceness, MutImmutable, MutMutable, Unsafety};
 
 
 /// "Greatest lower bound" (common subtype)
@@ -82,9 +82,9 @@ impl<'f, 'tcx> Combine<'tcx> for Sub<'f, 'tcx> {
         Ok(*a) // return is meaningless in sub, just return *a
     }
 
-    fn fn_styles(&self, a: FnStyle, b: FnStyle) -> cres<'tcx, FnStyle> {
-        self.lub().fn_styles(a, b).compare(b, || {
-            ty::terr_fn_style_mismatch(expected_found(self, a, b))
+    fn unsafeties(&self, a: Unsafety, b: Unsafety) -> cres<'tcx, Unsafety> {
+        self.lub().unsafeties(a, b).compare(b, || {
+            ty::terr_unsafety_mismatch(expected_found(self, a, b))
         })
     }
 
@@ -144,13 +144,9 @@ impl<'f, 'tcx> Combine<'tcx> for Sub<'f, 'tcx> {
         }
     }
 
-    fn fn_sigs(&self, a: &ty::FnSig<'tcx>, b: &ty::FnSig<'tcx>)
-               -> cres<'tcx, ty::FnSig<'tcx>> {
-        self.higher_ranked_sub(a, b)
-    }
-
-    fn trait_refs(&self, a: &ty::TraitRef<'tcx>, b: &ty::TraitRef<'tcx>)
-                  -> cres<'tcx, ty::TraitRef<'tcx>> {
+    fn binders<T>(&self, a: &ty::Binder<T>, b: &ty::Binder<T>) -> cres<'tcx, ty::Binder<T>>
+        where T : Combineable<'tcx>
+    {
         self.higher_ranked_sub(a, b)
     }
 }

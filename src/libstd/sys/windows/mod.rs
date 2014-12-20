@@ -24,7 +24,7 @@ use prelude::*;
 use io::{mod, IoResult, IoError};
 use sync::{Once, ONCE_INIT};
 
-macro_rules! helper_init( (static $name:ident: Helper<$m:ty>) => (
+macro_rules! helper_init { (static $name:ident: Helper<$m:ty>) => (
     static $name: Helper<$m> = Helper {
         lock: ::sync::MUTEX_INIT,
         cond: ::sync::CONDVAR_INIT,
@@ -33,8 +33,9 @@ macro_rules! helper_init( (static $name:ident: Helper<$m:ty>) => (
         initialized: ::cell::UnsafeCell { value: false },
         shutdown: ::cell::UnsafeCell { value: false },
     };
-) )
+) }
 
+pub mod backtrace;
 pub mod c;
 pub mod ext;
 pub mod condvar;
@@ -46,7 +47,9 @@ pub mod pipe;
 pub mod process;
 pub mod rwlock;
 pub mod sync;
+pub mod stack_overflow;
 pub mod tcp;
+pub mod thread;
 pub mod thread_local;
 pub mod timer;
 pub mod tty;
@@ -138,7 +141,7 @@ pub fn decode_error_detailed(errno: i32) -> IoError {
 }
 
 #[inline]
-pub fn retry<I> (f: || -> I) -> I { f() } // PR rust-lang/rust/#17020
+pub fn retry<I, F>(f: F) -> I where F: FnOnce() -> I { f() } // PR rust-lang/rust/#17020
 
 pub fn ms_to_timeval(ms: u64) -> libc::timeval {
     libc::timeval {

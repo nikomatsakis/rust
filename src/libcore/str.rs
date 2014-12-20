@@ -21,19 +21,21 @@ pub use self::Searcher::{Naive, TwoWay, TwoWayLong};
 
 use char::Char;
 use char;
+use clone::Clone;
 use cmp::{Eq, mod};
 use default::Default;
 use iter::{Map, Iterator, IteratorExt, DoubleEndedIterator};
 use iter::{DoubleEndedIteratorExt, ExactSizeIterator};
 use iter::range;
-use kinds::{Copy, Sized};
+use kinds::Sized;
 use mem;
 use num::Int;
 use option::Option;
 use option::Option::{None, Some};
+use ops::{Fn, FnMut};
 use ptr::RawPtr;
 use raw::{Repr, Slice};
-use slice::{mod, SlicePrelude};
+use slice::{mod, SliceExt};
 use uint;
 
 /// A trait to abstract the idea of creating a new instance of a type from a
@@ -136,15 +138,7 @@ impl CharEq for char {
     fn only_ascii(&self) -> bool { (*self as uint) < 128 }
 }
 
-impl<'a> CharEq for |char|: 'a -> bool {
-    #[inline]
-    fn matches(&mut self, c: char) -> bool { (*self)(c) }
-
-    #[inline]
-    fn only_ascii(&self) -> bool { false }
-}
-
-impl CharEq for extern "Rust" fn(char) -> bool {
+impl<F> CharEq for F where F: FnMut(char) -> bool {
     #[inline]
     fn matches(&mut self, c: char) -> bool { (*self)(c) }
 
@@ -171,28 +165,26 @@ Section: Iterators
 /// Iterator for the char (representing *Unicode Scalar Values*) of a string
 ///
 /// Created with the method `.chars()`.
-#[deriving(Clone)]
+#[deriving(Clone, Copy)]
 pub struct Chars<'a> {
     iter: slice::Items<'a, u8>
 }
 
-impl<'a> Copy for Chars<'a> {}
-
 // Return the initial codepoint accumulator for the first byte.
 // The first byte is special, only want bottom 5 bits for width 2, 4 bits
 // for width 3, and 3 bits for width 4
-macro_rules! utf8_first_byte(
+macro_rules! utf8_first_byte {
     ($byte:expr, $width:expr) => (($byte & (0x7F >> $width)) as u32)
-)
+}
 
 // return the value of $ch updated with continuation byte $byte
-macro_rules! utf8_acc_cont_byte(
+macro_rules! utf8_acc_cont_byte {
     ($ch:expr, $byte:expr) => (($ch << 6) | ($byte & CONT_MASK) as u32)
-)
+}
 
-macro_rules! utf8_is_cont_byte(
+macro_rules! utf8_is_cont_byte {
     ($byte:expr) => (($byte & !CONT_MASK) == TAG_CONT_U8)
-)
+}
 
 #[inline]
 fn unwrap_or_0(opt: Option<&u8>) -> u8 {
@@ -323,8 +315,23 @@ impl<'a> DoubleEndedIterator<(uint, char)> for CharOffsets<'a> {
 
 /// External iterator for a string's bytes.
 /// Use with the `std::iter` module.
-pub type Bytes<'a> =
-    Map<'a, &'a u8, u8, slice::Items<'a, u8>>;
+pub type Bytes<'a> = Map<&'a u8, u8, slice::Items<'a, u8>, BytesFn>;
+
+/// A temporary new type wrapper that ensures that the `Bytes` iterator
+/// is cloneable.
+#[deriving(Copy)]
+#[experimental = "iterator type instability"]
+pub struct BytesFn(fn(&u8) -> u8);
+
+impl<'a> Fn(&'a u8) -> u8 for BytesFn {
+    extern "rust-call" fn call(&self, (ptr,): (&'a u8,)) -> u8 {
+        (self.0)(ptr)
+    }
+}
+
+impl Clone for BytesFn {
+    fn clone(&self) -> BytesFn { *self }
+}
 
 /// An iterator over the substrings of a string, separated by `sep`.
 #[deriving(Clone)]
@@ -349,8 +356,7 @@ pub struct CharSplitsN<'a, Sep> {
 }
 
 /// An iterator over the lines of a string, separated by either `\n` or (`\r\n`).
-pub type AnyLines<'a> =
-    Map<'a, &'a str, &'a str, CharSplits<'a, char>>;
+pub type AnyLines<'a> = Map<&'a str, &'a str, CharSplits<'a, char>, fn(&str) -> &str>;
 
 impl<'a, Sep> CharSplits<'a, Sep> {
     #[inline]
@@ -968,7 +974,7 @@ pub fn is_utf16(v: &[u16]) -> bool {
     macro_rules! next ( ($ret:expr) => {
             match it.next() { Some(u) => *u, None => return $ret }
         }
-    )
+    );
     loop {
         let u = next!(true);
 
@@ -990,15 +996,13 @@ pub struct Utf16Items<'a> {
     iter: slice::Items<'a, u16>
 }
 /// The possibilities for values decoded from a `u16` stream.
-#[deriving(PartialEq, Eq, Clone, Show)]
+#[deriving(Copy, PartialEq, Eq, Clone, Show)]
 pub enum Utf16Item {
     /// A valid codepoint.
     ScalarValue(char),
     /// An invalid surrogate without its pair.
     LoneSurrogate(u16)
 }
-
-impl Copy for Utf16Item {}
 
 impl Utf16Item {
     /// Convert `self` to a `char`, taking `LoneSurrogate`s to the
@@ -1136,14 +1140,13 @@ pub fn utf8_char_width(b: u8) -> uint {
 /// Struct that contains a `char` and the index of the first byte of
 /// the next `char` in a string.  This can be used as a data structure
 /// for iterating over the UTF-8 bytes of a string.
+#[deriving(Copy)]
 pub struct CharRange {
     /// Current `char`
     pub ch: char,
     /// Index of the first byte of the next `char`
     pub next: uint,
 }
-
-impl Copy for CharRange {}
 
 /// Mask of the value bits of a continuation byte
 const CONT_MASK: u8 = 0b0011_1111u8;
@@ -1155,7 +1158,7 @@ const TAG_CONT_U8: u8 = 0b1000_0000u8;
 pub mod raw {
     use ptr::RawPtr;
     use raw::Slice;
-    use slice::SlicePrelude;
+    use slice::SliceExt;
     use str::{is_utf8, StrPrelude};
 
     /// Converts a slice of bytes to a string slice without checking
@@ -1361,10 +1364,13 @@ pub trait StrPrelude for Sized? {
     /// # Example
     ///
     /// ```rust
+    /// # #![feature(unboxed_closures)]
+    ///
+    /// # fn main() {
     /// let v: Vec<&str> = "Mary had a little lamb".split(' ').collect();
     /// assert_eq!(v, vec!["Mary", "had", "a", "little", "lamb"]);
     ///
-    /// let v: Vec<&str> = "abc1def2ghi".split(|c: char| c.is_numeric()).collect();
+    /// let v: Vec<&str> = "abc1def2ghi".split(|&: c: char| c.is_numeric()).collect();
     /// assert_eq!(v, vec!["abc", "def", "ghi"]);
     ///
     /// let v: Vec<&str> = "lionXXtigerXleopard".split('X').collect();
@@ -1372,6 +1378,7 @@ pub trait StrPrelude for Sized? {
     ///
     /// let v: Vec<&str> = "".split('X').collect();
     /// assert_eq!(v, vec![""]);
+    /// # }
     /// ```
     fn split<'a, Sep: CharEq>(&'a self, sep: Sep) -> CharSplits<'a, Sep>;
 
@@ -1382,10 +1389,13 @@ pub trait StrPrelude for Sized? {
     /// # Example
     ///
     /// ```rust
+    /// # #![feature(unboxed_closures)]
+    ///
+    /// # fn main() {
     /// let v: Vec<&str> = "Mary had a little lambda".splitn(2, ' ').collect();
     /// assert_eq!(v, vec!["Mary", "had", "a little lambda"]);
     ///
-    /// let v: Vec<&str> = "abc1def2ghi".splitn(1, |c: char| c.is_numeric()).collect();
+    /// let v: Vec<&str> = "abc1def2ghi".splitn(1, |&: c: char| c.is_numeric()).collect();
     /// assert_eq!(v, vec!["abc", "def2ghi"]);
     ///
     /// let v: Vec<&str> = "lionXXtigerXleopard".splitn(2, 'X').collect();
@@ -1396,6 +1406,7 @@ pub trait StrPrelude for Sized? {
     ///
     /// let v: Vec<&str> = "".splitn(1, 'X').collect();
     /// assert_eq!(v, vec![""]);
+    /// # }
     /// ```
     fn splitn<'a, Sep: CharEq>(&'a self, count: uint, sep: Sep) -> CharSplitsN<'a, Sep>;
 
@@ -1408,6 +1419,9 @@ pub trait StrPrelude for Sized? {
     /// # Example
     ///
     /// ```rust
+    /// # #![feature(unboxed_closures)]
+    ///
+    /// # fn main() {
     /// let v: Vec<&str> = "A.B.".split_terminator('.').collect();
     /// assert_eq!(v, vec!["A", "B"]);
     ///
@@ -1417,11 +1431,12 @@ pub trait StrPrelude for Sized? {
     /// let v: Vec<&str> = "Mary had a little lamb".split(' ').rev().collect();
     /// assert_eq!(v, vec!["lamb", "little", "a", "had", "Mary"]);
     ///
-    /// let v: Vec<&str> = "abc1def2ghi".split(|c: char| c.is_numeric()).rev().collect();
+    /// let v: Vec<&str> = "abc1def2ghi".split(|&: c: char| c.is_numeric()).rev().collect();
     /// assert_eq!(v, vec!["ghi", "def", "abc"]);
     ///
     /// let v: Vec<&str> = "lionXXtigerXleopard".split('X').rev().collect();
     /// assert_eq!(v, vec!["leopard", "tiger", "", "lion"]);
+    /// # }
     /// ```
     fn split_terminator<'a, Sep: CharEq>(&'a self, sep: Sep) -> CharSplits<'a, Sep>;
 
@@ -1432,14 +1447,18 @@ pub trait StrPrelude for Sized? {
     /// # Example
     ///
     /// ```rust
+    /// # #![feature(unboxed_closures)]
+    ///
+    /// # fn main() {
     /// let v: Vec<&str> = "Mary had a little lamb".rsplitn(2, ' ').collect();
     /// assert_eq!(v, vec!["lamb", "little", "Mary had a"]);
     ///
-    /// let v: Vec<&str> = "abc1def2ghi".rsplitn(1, |c: char| c.is_numeric()).collect();
+    /// let v: Vec<&str> = "abc1def2ghi".rsplitn(1, |&: c: char| c.is_numeric()).collect();
     /// assert_eq!(v, vec!["ghi", "abc1def"]);
     ///
     /// let v: Vec<&str> = "lionXXtigerXleopard".rsplitn(2, 'X').collect();
     /// assert_eq!(v, vec!["leopard", "tiger", "lionX"]);
+    /// # }
     /// ```
     fn rsplitn<'a, Sep: CharEq>(&'a self, count: uint, sep: Sep) -> CharSplitsN<'a, Sep>;
 
@@ -1650,10 +1669,14 @@ pub trait StrPrelude for Sized? {
     /// # Example
     ///
     /// ```rust
-    /// assert_eq!("11foo1bar11".trim_chars('1'), "foo1bar")
+    /// # #![feature(unboxed_closures)]
+    ///
+    /// # fn main() {
+    /// assert_eq!("11foo1bar11".trim_chars('1'), "foo1bar");
     /// let x: &[_] = &['1', '2'];
-    /// assert_eq!("12foo1bar12".trim_chars(x), "foo1bar")
-    /// assert_eq!("123foo1bar123".trim_chars(|c: char| c.is_numeric()), "foo1bar")
+    /// assert_eq!("12foo1bar12".trim_chars(x), "foo1bar");
+    /// assert_eq!("123foo1bar123".trim_chars(|&: c: char| c.is_numeric()), "foo1bar");
+    /// # }
     /// ```
     fn trim_chars<'a, C: CharEq>(&'a self, to_trim: C) -> &'a str;
 
@@ -1666,10 +1689,14 @@ pub trait StrPrelude for Sized? {
     /// # Example
     ///
     /// ```rust
-    /// assert_eq!("11foo1bar11".trim_left_chars('1'), "foo1bar11")
+    /// # #![feature(unboxed_closures)]
+    ///
+    /// # fn main() {
+    /// assert_eq!("11foo1bar11".trim_left_chars('1'), "foo1bar11");
     /// let x: &[_] = &['1', '2'];
-    /// assert_eq!("12foo1bar12".trim_left_chars(x), "foo1bar12")
-    /// assert_eq!("123foo1bar123".trim_left_chars(|c: char| c.is_numeric()), "foo1bar123")
+    /// assert_eq!("12foo1bar12".trim_left_chars(x), "foo1bar12");
+    /// assert_eq!("123foo1bar123".trim_left_chars(|&: c: char| c.is_numeric()), "foo1bar123");
+    /// # }
     /// ```
     fn trim_left_chars<'a, C: CharEq>(&'a self, to_trim: C) -> &'a str;
 
@@ -1682,10 +1709,14 @@ pub trait StrPrelude for Sized? {
     /// # Example
     ///
     /// ```rust
-    /// assert_eq!("11foo1bar11".trim_right_chars('1'), "11foo1bar")
+    /// # #![feature(unboxed_closures)]
+    ///
+    /// # fn main() {
+    /// assert_eq!("11foo1bar11".trim_right_chars('1'), "11foo1bar");
     /// let x: &[_] = &['1', '2'];
-    /// assert_eq!("12foo1bar12".trim_right_chars(x), "12foo1bar")
-    /// assert_eq!("123foo1bar123".trim_right_chars(|c: char| c.is_numeric()), "123foo1bar")
+    /// assert_eq!("12foo1bar12".trim_right_chars(x), "12foo1bar");
+    /// assert_eq!("123foo1bar123".trim_right_chars(|&: c: char| c.is_numeric()), "123foo1bar");
+    /// # }
     /// ```
     fn trim_right_chars<'a, C: CharEq>(&'a self, to_trim: C) -> &'a str;
 
@@ -1738,9 +1769,9 @@ pub trait StrPrelude for Sized? {
     /// }
     /// ```
     ///
-    /// ## Output
+    /// This outputs:
     ///
-    /// ```ignore
+    /// ```text
     /// 0: 中
     /// 3: 华
     /// 6: V
@@ -1826,17 +1857,21 @@ pub trait StrPrelude for Sized? {
     /// # Example
     ///
     /// ```rust
+    /// # #![feature(unboxed_closures)]
+    ///
+    /// # fn main() {
     /// let s = "Löwe 老虎 Léopard";
     ///
     /// assert_eq!(s.find('L'), Some(0));
     /// assert_eq!(s.find('é'), Some(14));
     ///
     /// // the first space
-    /// assert_eq!(s.find(|c: char| c.is_whitespace()), Some(5));
+    /// assert_eq!(s.find(|&: c: char| c.is_whitespace()), Some(5));
     ///
     /// // neither are found
     /// let x: &[_] = &['1', '2'];
     /// assert_eq!(s.find(x), None);
+    /// # }
     /// ```
     fn find<C: CharEq>(&self, search: C) -> Option<uint>;
 
@@ -1851,17 +1886,21 @@ pub trait StrPrelude for Sized? {
     /// # Example
     ///
     /// ```rust
+    /// # #![feature(unboxed_closures)]
+    ///
+    /// # fn main() {
     /// let s = "Löwe 老虎 Léopard";
     ///
     /// assert_eq!(s.rfind('L'), Some(13));
     /// assert_eq!(s.rfind('é'), Some(14));
     ///
     /// // the second space
-    /// assert_eq!(s.rfind(|c: char| c.is_whitespace()), Some(12));
+    /// assert_eq!(s.rfind(|&: c: char| c.is_whitespace()), Some(12));
     ///
     /// // searches for an occurrence of either `1` or `2`, but neither are found
     /// let x: &[_] = &['1', '2'];
     /// assert_eq!(s.rfind(x), None);
+    /// # }
     /// ```
     fn rfind<C: CharEq>(&self, search: C) -> Option<uint>;
 
@@ -1980,7 +2019,9 @@ impl StrPrelude for str {
 
     #[inline]
     fn bytes(&self) -> Bytes {
-        self.as_bytes().iter().map(|&b| b)
+        fn deref(&x: &u8) -> u8 { x }
+
+        self.as_bytes().iter().map(BytesFn(deref))
     }
 
     #[inline]
@@ -2030,7 +2071,7 @@ impl StrPrelude for str {
 
     #[inline]
     fn match_indices<'a>(&'a self, sep: &'a str) -> MatchIndices<'a> {
-        assert!(!sep.is_empty())
+        assert!(!sep.is_empty());
         MatchIndices {
             haystack: self,
             needle: sep,
@@ -2053,11 +2094,13 @@ impl StrPrelude for str {
     }
 
     fn lines_any(&self) -> AnyLines {
-        self.lines().map(|line| {
+        fn f(line: &str) -> &str {
             let l = line.len();
             if l > 0 && line.as_bytes()[l - 1] == b'\r' { line.slice(0, l - 1) }
             else { line }
-        })
+        }
+
+        self.lines().map(f)
     }
 
     #[inline]
@@ -2140,11 +2183,11 @@ impl StrPrelude for str {
 
     #[inline]
     fn trim_chars<C: CharEq>(&self, mut to_trim: C) -> &str {
-        let cur = match self.find(|c: char| !to_trim.matches(c)) {
+        let cur = match self.find(|&mut: c: char| !to_trim.matches(c)) {
             None => "",
             Some(i) => unsafe { self.slice_unchecked(i, self.len()) }
         };
-        match cur.rfind(|c: char| !to_trim.matches(c)) {
+        match cur.rfind(|&mut: c: char| !to_trim.matches(c)) {
             None => "",
             Some(i) => {
                 let right = cur.char_range_at(i).next;
@@ -2155,7 +2198,7 @@ impl StrPrelude for str {
 
     #[inline]
     fn trim_left_chars<C: CharEq>(&self, mut to_trim: C) -> &str {
-        match self.find(|c: char| !to_trim.matches(c)) {
+        match self.find(|&mut: c: char| !to_trim.matches(c)) {
             None => "",
             Some(first) => unsafe { self.slice_unchecked(first, self.len()) }
         }
@@ -2163,7 +2206,7 @@ impl StrPrelude for str {
 
     #[inline]
     fn trim_right_chars<C: CharEq>(&self, mut to_trim: C) -> &str {
-        match self.rfind(|c: char| !to_trim.matches(c)) {
+        match self.rfind(|&mut: c: char| !to_trim.matches(c)) {
             None => "",
             Some(last) => {
                 let next = self.char_range_at(last).next;
@@ -2318,7 +2361,9 @@ impl StrPrelude for str {
     fn len(&self) -> uint { self.repr().len }
 }
 
+#[stable]
 impl<'a> Default for &'a str {
+    #[stable]
     fn default() -> &'a str { "" }
 }
 

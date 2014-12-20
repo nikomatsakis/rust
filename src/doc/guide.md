@@ -22,7 +22,7 @@ install Rust, but the easiest is to use the `rustup` script. If you're on
 Linux or a Mac, all you need to do is this (note that you don't need to type
 in the `$`s, they just indicate the start of each command):
 
-```{ignore}
+```bash
 $ curl -s https://static.rust-lang.org/rustup.sh | sudo sh
 ```
 
@@ -30,16 +30,17 @@ $ curl -s https://static.rust-lang.org/rustup.sh | sudo sh
 below.)
 
 If you're on Windows, please download either the [32-bit
-installer](https://static.rust-lang.org/dist/rust-nightly-i686-w64-mingw32.exe)
+installer](https://static.rust-lang.org/dist/rust-nightly-i686-pc-windows-gnu.exe)
+
 or the [64-bit
-installer](https://static.rust-lang.org/dist/rust-nightly-x86_64-w64-mingw32.exe)
+installer](https://static.rust-lang.org/dist/rust-nightly-x86_64-pc-windows-gnu.exe)
 and run it.
 
 If you decide you don't want Rust anymore, we'll be a bit sad, but that's okay.
 Not every programming language is great for everyone. Just pass an argument to
 the script:
 
-```{ignore}
+```bash
 $ curl -s https://static.rust-lang.org/rustup.sh | sudo sh -s -- --uninstall
 ```
 
@@ -78,13 +79,13 @@ commit is tested against Windows just like any other platform.
 
 If you've got Rust installed, you can open up a shell, and type this:
 
-```{ignore}
+```bash
 $ rustc --version
 ```
 
 You should see some output that looks something like this:
 
-```{ignore}
+```bash
 rustc 0.12.0-nightly (b7aa03a3c 2014-09-28 11:38:01 +0000)
 ```
 
@@ -310,7 +311,7 @@ Make sure to get this name right: you need the capital `C`!
 
 Put this inside:
 
-```{ignore}
+```toml
 [package]
 
 name = "hello_world"
@@ -355,7 +356,7 @@ just `cargo build` and it'll work the right way.
 
 You'll also notice that Cargo has created a new file: `Cargo.lock`.
 
-```{ignore}
+```toml
 [root]
 name = "hello_world"
 version = "0.0.1"
@@ -417,6 +418,19 @@ let x: int = 5;
 If I asked you to read this out loud to the rest of the class, you'd say "`x`
 is a binding with the type `int` and the value `five`."
 
+In future examples, we may annotate the type in a comment. The examples will
+look like this:
+
+```{rust}
+fn main() {
+    let x = 5i; // x: int
+}
+```
+
+Note the similarities between this annotation and the syntax you use with `let`.
+Including these kinds of comments is not idiomatic Rust, but we'll occasionally
+include them to help you understand what the types that Rust infers are.
+
 By default, bindings are **immutable**. This code will not compile:
 
 ```{ignore}
@@ -426,7 +440,7 @@ x = 10i;
 
 It will give you this error:
 
-```{notrust}
+```text
 error: re-assignment of immutable variable `x`
      x = 10i;
      ^~~~~~~
@@ -435,7 +449,7 @@ error: re-assignment of immutable variable `x`
 If you want a binding to be mutable, you can use `mut`:
 
 ```{rust}
-let mut x = 5i;
+let mut x = 5i; // mut x: int
 x = 10i;
 ```
 
@@ -461,7 +475,7 @@ let x;
 
 ...we'll get an error:
 
-```{ignore}
+```text
 src/main.rs:2:9: 2:10 error: cannot determine a type for this local variable: unconstrained type
 src/main.rs:2     let x;
                       ^
@@ -486,7 +500,7 @@ fn main() {
 You can use `cargo build` on the command line to build it. You'll get a warning,
 but it will still print "Hello, world!":
 
-```{notrust}
+```text
    Compiling hello_world v0.0.1 (file:///home/you/projects/hello_world)
 src/main.rs:2:9: 2:10 warning: unused variable: `x`, #[warn(unused_variable)] on by default
 src/main.rs:2     let x: int;
@@ -537,7 +551,7 @@ format in a more detailed manner, there are a [wide number of options
 available](std/fmt/index.html). For now, we'll just stick to the default:
 integers aren't very complicated to print.
 
-# If
+# `if`
 
 Rust's take on `if` is not particularly complex, but it's much more like the
 `if` you'll find in a dynamically typed language than in a more traditional
@@ -583,7 +597,7 @@ let y = if x == 5i {
     10i
 } else {
     15i
-};
+}; // y: int
 ```
 
 Which we can (and probably should) write like this:
@@ -591,7 +605,7 @@ Which we can (and probably should) write like this:
 ```{rust}
 let x = 5i;
 
-let y = if x == 5i { 10i } else { 15i };
+let y = if x == 5i { 10i } else { 15i }; // y: int
 ```
 
 This reveals two interesting things about Rust: it is an expression-based
@@ -664,7 +678,7 @@ let y: int = if x == 5i { 10i; } else { 15i; };
 
 Note the semicolons after the 10 and 15. Rust will give us the following error:
 
-```{notrust}
+```text
 error: mismatched types: expected `int` but found `()` (expected int but found ())
 ```
 
@@ -747,7 +761,7 @@ fn print_number(x, y) {
 
 You get this error:
 
-```{notrust}
+```text
 hello.rs:5:18: 5:19 error: expected `:` but found `,`
 hello.rs:5 fn print_number(x, y) {
 ```
@@ -779,7 +793,7 @@ fn add_one(x: int) -> int {
 
 We would get an error:
 
-```{ignore}
+```text
 error: not all control paths return a value
 fn add_one(x: int) -> int {
      x + 1;
@@ -927,8 +941,8 @@ destructuring. You can assign one tuple into another, if they have the same
 arity and contained types.
 
 ```rust
-let mut x = (1i, 2i);
-let y = (2i, 3i);
+let mut x = (1i, 2i); // x: (int, int)
+let y = (2i, 3i);     // y: (int, int)
 
 x = y;
 ```
@@ -980,7 +994,7 @@ struct Point {
 }
 
 fn main() {
-    let origin = Point { x: 0i, y: 0i };
+    let origin = Point { x: 0i, y: 0i }; // origin: Point
 
     println!("The origin is at ({}, {})", origin.x, origin.y);
 }
@@ -1100,7 +1114,7 @@ fn main() {
     let x = 5i;
     let y = 10i;
 
-    let ordering = cmp(x, y);
+    let ordering = cmp(x, y); // ordering: Ordering
 
     if ordering == Less {
         println!("less");
@@ -1246,7 +1260,7 @@ So what's the big advantage here? Well, there are a few. First of all, `match`
 enforces 'exhaustiveness checking.' Do you see that last arm, the one with the
 underscore (`_`)? If we remove that arm, Rust will give us an error:
 
-```{notrust}
+```text
 error: non-exhaustive patterns: `_` not covered
 ```
 
@@ -1387,7 +1401,7 @@ Instead, it looks like this:
 
 ```{rust}
 for x in range(0i, 10i) {
-    println!("{}", x);
+    println!("{}", x); // x: int
 }
 ```
 
@@ -1422,8 +1436,8 @@ The other kind of looping construct in Rust is the `while` loop. It looks like
 this:
 
 ```{rust}
-let mut x = 5u;
-let mut done = false;
+let mut x = 5u;       // mut x: uint
+let mut done = false; // mut done: bool
 
 while !done {
     x += x - 3;
@@ -1519,7 +1533,7 @@ The first kind is a `&str`. This is pronounced a 'string slice.' String literals
 are of the type `&str`:
 
 ```{rust}
-let string = "Hello there.";
+let string = "Hello there."; // string: &str
 ```
 
 This string is statically allocated, meaning that it's saved inside our
@@ -1531,7 +1545,7 @@ A `String`, on the other hand, is an in-memory string.  This string is
 growable, and is also guaranteed to be UTF-8.
 
 ```{rust}
-let mut s = "Hello".to_string();
+let mut s = "Hello".to_string(); // mut s: String
 println!("{}", s);
 
 s.push_str(", world.");
@@ -1587,16 +1601,19 @@ things. The most basic is the **array**, a fixed-size list of elements of the
 same type. By default, arrays are immutable.
 
 ```{rust}
-let a = [1i, 2i, 3i];
-let mut m = [1i, 2i, 3i];
+let a = [1i, 2i, 3i];     // a: [int, ..3]
+let mut m = [1i, 2i, 3i]; // mut m: [int, ..3]
 ```
 
 You can create an array with a given number of elements, all initialized to the
 same value, with `[val, ..N]` syntax. The compiler ensures that arrays are
 always initialized.
 
+There's a shorthand for initializing each element of an array to the same
+value. In this example, each element of `a` will be initialized to `0i`:
+
 ```{rust}
-let a = [0i, ..20];  // Shorthand for array of 20 elements all initialized to 0
+let a = [0i, ..20]; // a: [int, ..20]
 ```
 
 Arrays have type `[T,..N]`. We'll talk about this `T` notation later, when we
@@ -1607,7 +1624,7 @@ You can get the number of elements in an array `a` with `a.len()`, and use
 number in order:
 
 ```{rust}
-let a = [1i, 2, 3];     // Only the first item needs a type suffix
+let a = [1i, 2, 3]; // Only the first item needs a type suffix
 
 println!("a has {} elements", a.len());
 for e in a.iter() {
@@ -1618,7 +1635,7 @@ for e in a.iter() {
 You can access a particular element of an array with **subscript notation**:
 
 ```{rust}
-let names = ["Graydon", "Brian", "Niko"];
+let names = ["Graydon", "Brian", "Niko"]; // names: [&str, 3]
 
 println!("The second name is: {}", names[1]);
 ```
@@ -1636,7 +1653,7 @@ later). Vectors are to arrays what `String` is to `&str`. You can create them
 with the `vec!` macro:
 
 ```{rust}
-let v = vec![1i, 2, 3];
+let v = vec![1i, 2, 3]; // v: Vec<int>
 ```
 
 (Notice that unlike the `println!` macro we've used in the past, we use square
@@ -1647,8 +1664,10 @@ You can get the length of, iterate over, and subscript vectors just like
 arrays. In addition, (mutable) vectors can grow automatically:
 
 ```{rust}
-let mut nums = vec![1i, 2, 3];
+let mut nums = vec![1i, 2, 3]; // mut nums: Vec<int>
+
 nums.push(4);
+
 println!("The length of nums is now {}", nums.len());   // Prints 4
 ```
 
@@ -1822,10 +1841,12 @@ use std::io;
 fn main() {
     println!("Type something!");
 
-    let input = io::stdin()
-                  .read_line()
-                  .ok()
-                  .expect("Failed to read line");
+                                                  // here, we'll show the types at each step
+
+    let input = io::stdin()                       // std::io::stdio::StdinReader
+                  .read_line()                    // IoResult<String>
+                  .ok()                           // Option<String>
+                  .expect("Failed to read line"); // String
 
     println!("{}", input);
 }
@@ -1864,7 +1885,7 @@ since we're making a binary, rather than a library.
 
 Check out the generated `Cargo.toml`:
 
-```{ignore}
+```toml
 [package]
 
 name = "guessing_game"
@@ -1898,7 +1919,7 @@ Before we move on, let me show you one more Cargo command: `run`. `cargo run`
 is kind of like `cargo build`, but it also then runs the produced executable.
 Try it out:
 
-```{notrust}
+```bash
 $ cargo run
    Compiling guessing_game v0.0.1 (file:///home/you/projects/guessing_game)
      Running `target/guessing_game`
@@ -1968,7 +1989,7 @@ use std::rand;
 fn main() {
     println!("Guess the number!");
 
-    let secret_number = (rand::random() % 100i) + 1i;
+    let secret_number = (rand::random() % 100i) + 1i; // secret_number: int
 
     println!("The secret number is: {}", secret_number);
 
@@ -1996,7 +2017,7 @@ for this example, it is not important.
 
 Let's try to compile this using `cargo build`:
 
-```{notrust}
+```bash
 $ cargo build
    Compiling guessing_game v0.0.1 (file:///home/you/projects/guessing_game)
 src/main.rs:7:26: 7:34 error: the type of this value must be known in this context
@@ -2044,7 +2065,7 @@ fn main() {
 
 Try running our new program a few times:
 
-```{notrust}
+```bash
 $ cargo run
    Compiling guessing_game v0.0.1 (file:///home/you/projects/guessing_game)
      Running `target/guessing_game`
@@ -2097,7 +2118,7 @@ fn main() {
 
 And trying it out:
 
-```{notrust}
+```bash
 $ cargo run
    Compiling guessing_game v0.0.1 (file:///home/you/projects/guessing_game)
      Running `target/guessing_game`
@@ -2152,7 +2173,7 @@ fn cmp(a: int, b: int) -> Ordering {
 
 If we try to compile, we'll get some errors:
 
-```{notrust}
+```bash
 $ cargo build
    Compiling guessing_game v0.0.1 (file:///home/you/projects/guessing_game)
 src/main.rs:20:15: 20:20 error: mismatched types: expected `int` but found `collections::string::String` (expected int but found struct collections::string::String)
@@ -2206,7 +2227,7 @@ fn cmp(a: uint, b: uint) -> Ordering {
 
 And try compiling again:
 
-```{notrust}
+```bash
 $ cargo build
    Compiling guessing_game v0.0.1 (file:///home/you/projects/guessing_game)
 src/main.rs:20:15: 20:20 error: mismatched types: expected `uint` but found `collections::string::String` (expected uint but found struct collections::string::String)
@@ -2219,7 +2240,7 @@ This error is similar to the last one: we expected to get a `uint`, but we got
 a `String` instead! That's because our `input` variable is coming from the
 standard input, and you can guess anything. Try it:
 
-```{notrust}
+```bash
 $ ./target/guessing_game
 Guess the number!
 The secret number is: 73
@@ -2261,8 +2282,8 @@ In this case, we say `x` is a `uint` explicitly, so Rust is able to properly
 tell `random()` what to generate. In a similar fashion, both of these work:
 
 ```{rust,ignore}
-let input_num = from_str::<uint>("5");
-let input_num: Option<uint> = from_str("5");
+let input_num = from_str::<uint>("5");       // input_num: Option<uint>
+let input_num: Option<uint> = from_str("5"); // input_num: Option<uint>
 ```
 
 Anyway, with us now converting our input to a number, our code looks like this:
@@ -2303,7 +2324,7 @@ fn cmp(a: uint, b: uint) -> Ordering {
 
 Let's try it out!
 
-```{notrust}
+```bash
 $ cargo build
    Compiling guessing_game v0.0.1 (file:///home/you/projects/guessing_game)
 src/main.rs:22:15: 22:24 error: mismatched types: expected `uint` but found `core::option::Option<uint>` (expected uint but found enum core::option::Option)
@@ -2362,7 +2383,7 @@ fn cmp(a: uint, b: uint) -> Ordering {
 We use a `match` to either give us the `uint` inside of the `Option`, or we
 print an error message and return. Let's give this a shot:
 
-```{notrust}
+```bash
 $ cargo run
    Compiling guessing_game v0.0.1 (file:///home/you/projects/guessing_game)
      Running `target/guessing_game`
@@ -2427,7 +2448,7 @@ fn cmp(a: uint, b: uint) -> Ordering {
 
 Let's try it!
 
-```{notrust}
+```bash
 $ cargo run
    Compiling guessing_game v0.0.1 (file:///home/you/projects/guessing_game)
      Running `target/guessing_game`
@@ -2504,7 +2525,7 @@ fn cmp(a: uint, b: uint) -> Ordering {
 And try it out. But wait, didn't we just add an infinite loop? Yup. Remember
 that `return`? If we give a non-number answer, we'll `return` and quit. Observe:
 
-```{notrust}
+```bash
 $ cargo run
    Compiling guessing_game v0.0.1 (file:///home/you/projects/guessing_game)
      Running `target/guessing_game`
@@ -2636,7 +2657,7 @@ fn cmp(a: uint, b: uint) -> Ordering {
 
 Now we should be good! Let's try:
 
-```{notrust}
+```bash
 $ cargo run
    Compiling guessing_game v0.0.1 (file:///home/you/projects/guessing_game)
      Running `target/guessing_game`
@@ -2814,7 +2835,7 @@ mod hello {
 
 It gives an error:
 
-```{notrust}
+```bash
    Compiling modules v0.0.1 (file:///home/you/projects/modules)
 src/main.rs:2:5: 2:23 error: function `print_hello` is private
 src/main.rs:2     hello::print_hello();
@@ -2838,7 +2859,7 @@ mod hello {
 Usage of the `pub` keyword is sometimes called 'exporting', because
 we're making the function available for other modules. This will work:
 
-```{notrust}
+```bash
 $ cargo run
    Compiling modules v0.0.1 (file:///home/you/projects/modules)
      Running `target/modules`
@@ -2972,7 +2993,7 @@ $ cd testing
 
 And try it out:
 
-```{notrust}
+```bash
 $ cargo run
    Compiling testing v0.0.1 (file:///home/you/projects/testing)
      Running `target/testing`
@@ -3004,7 +3025,7 @@ you give them descriptive names. You'll see why in a moment. We then use a
 macro, `assert!`, to assert that something is true. In this case, we're giving
 it `false`, so this test should fail. Let's try it!
 
-```{notrust}
+```bash
 $ cargo test
    Compiling testing v0.0.1 (file:///home/you/projects/testing)
 /home/you/projects/testing/src/main.rs:1:1: 3:2 warning: function is never used: `main`, #[warn(dead_code)] on by default
@@ -3033,7 +3054,7 @@ task '<main>' failed at 'Some tests failed', /home/you/src/rust/src/libtest/lib.
 
 Lots of output! Let's break this down:
 
-```{ignore}
+```bash
 $ cargo test
    Compiling testing v0.0.1 (file:///home/you/projects/testing)
 ```
@@ -3041,7 +3062,7 @@ $ cargo test
 You can run all of your tests with `cargo test`. This runs both your tests in
 `tests`, as well as the tests you put inside of your crate.
 
-```{notrust}
+```text
 /home/you/projects/testing/src/main.rs:1:1: 3:2 warning: function is never used: `main`, #[warn(dead_code)] on by default
 /home/you/projects/testing/src/main.rs:1 fn main() {
 /home/you/projects/testing/src/main.rs:2     println!("Hello, world!")
@@ -3055,7 +3076,7 @@ case, Rust is warning us that we've written some code that's never used: our
 We'll turn this lint off for just this function soon. For now, just ignore this
 output.
 
-```{ignore}
+```text
      Running target/lib-654ce120f310a3a5
 
 running 1 test
@@ -3067,7 +3088,7 @@ with good names? This is why. Here, it says 'test foo' because we called our
 test 'foo.' If we had given it a good name, it'd be more clear which test
 failed, especially as we accumulate more tests.
 
-```{notrust}
+```text
 failures:
 
 ---- foo stdout ----
@@ -3098,7 +3119,7 @@ fn foo() {
 
 And then try to run our tests again:
 
-```{ignore}
+```bash
 $ cargo test
    Compiling testing v0.0.1 (file:///home/you/projects/testing)
      Running target/lib-654ce120f310a3a5
@@ -3138,7 +3159,7 @@ include `main` when it's _not_ true. So we use `not` to negate things:
 With this attribute we won't get the warning (even
 though `src/main.rs` gets recompiled this time):
 
-```{ignore}
+```bash
 $ cargo test
    Compiling testing v0.0.1 (file:///home/you/projects/testing)
      Running target/lib-654ce120f310a3a5
@@ -3169,7 +3190,7 @@ fn math_checks_out() {
 
 And try to run the test:
 
-```{notrust}
+```bash
 $ cargo test
    Compiling testing v0.0.1 (file:///home/you/projects/testing)
 /home/you/projects/testing/tests/lib.rs:3:18: 3:38 error: unresolved name `add_three_times_four`.
@@ -3229,7 +3250,7 @@ fn math_checks_out() {
 
 Let's give it a run:
 
-```{ignore}
+```bash
 $ cargo test
    Compiling testing v0.0.1 (file:///home/you/projects/testing)
      Running target/lib-654ce120f310a3a5
@@ -3278,7 +3299,7 @@ fn times_four(x: int) -> int { x * 4 }
 
 If you run `cargo test`, you should get the same output:
 
-```{ignore}
+```bash
 $ cargo test
    Compiling testing v0.0.1 (file:///home/you/projects/testing)
      Running target/lib-654ce120f310a3a5
@@ -3332,7 +3353,7 @@ fn test_add_three() {
 
 We'd get this error:
 
-```{notrust}
+```text
    Compiling testing v0.0.1 (file:///home/you/projects/testing)
 /home/you/projects/testing/tests/lib.rs:3:5: 3:24 error: function `add_three` is private
 /home/you/projects/testing/tests/lib.rs:3 use testing::add_three;
@@ -3374,7 +3395,7 @@ mod test {
 
 Let's give it a shot:
 
-```{ignore}
+```bash
 $ cargo test
    Compiling testing v0.0.1 (file:///home/you/projects/testing)
      Running target/lib-654ce120f310a3a5
@@ -3504,7 +3525,7 @@ let y = &mut x;
 
 Rust will complain:
 
-```{notrust}
+```text
 error: cannot borrow immutable local variable `x` as mutable
  let y = &mut x;
               ^
@@ -3531,7 +3552,7 @@ let z = &mut x;
 
 It gives us this error:
 
-```{notrust}
+```text
 error: cannot borrow `x` as mutable more than once at a time
      let z = &mut x;
                   ^
@@ -3677,7 +3698,7 @@ let z = &mut x;
 
 The error:
 
-```{notrust}
+```text
 error: cannot borrow `x` as mutable more than once at a time
      let z = &mut x;
                   ^
@@ -3695,7 +3716,7 @@ note: previous borrow ends here
 
 This error comes in three parts. Let's go over each in turn.
 
-```{notrust}
+```text
 error: cannot borrow `x` as mutable more than once at a time
      let z = &mut x;
                   ^
@@ -3704,7 +3725,7 @@ error: cannot borrow `x` as mutable more than once at a time
 This error states the restriction: you cannot lend out something mutable more
 than once at the same time. The borrow checker knows the rules!
 
-```{notrust}
+```text
 note: previous borrow of `x` occurs here; the mutable borrow prevents subsequent moves, borrows, or modification of `x` until the borrow ends
      let y = &mut x;
                   ^
@@ -3716,7 +3737,7 @@ the first mutable borrow occurred. The error showed us the second. So now we
 see both parts of the problem. It also alludes to rule #3, by reminding us that
 we can't change `x` until the borrow is over.
 
-```{ignore}
+```text
 note: previous borrow ends here
  fn main() {
      let mut x = 5i;
@@ -3819,7 +3840,7 @@ let y = &mut x;
 
 This gives us this error:
 
-```{notrust}
+```text
 error: cannot use `*x` because it was mutably borrowed
  *x;
  ^~
@@ -4235,36 +4256,16 @@ fn main() {
 }
 ```
 
-## Procs
+## Moving closures
 
-Rust has a second type of closure, called a **proc**. Procs are created
-with the `proc` keyword:
-
-```{rust}
-let x = 5i;
-
-let p = proc() { x * x };
-println!("{}", p()); // prints 25
-```
-
-There is a big difference between procs and closures: procs may only be called once. This
-will error when we try to compile:
-
-```{rust,ignore}
-let x = 5i;
-
-let p = proc() { x * x };
-println!("{}", p());
-println!("{}", p()); // error: use of moved value `p`
-```
-
-This restriction is important. Procs are allowed to consume values that they
-capture, and thus have to be restricted to being called once for soundness
-reasons: any value consumed would be invalid on a second call.
-
-Procs are most useful with Rust's concurrency features, and so we'll just leave
-it at this for now. We'll talk about them more in the "Tasks" section of the
-guide.
+Rust has a second type of closure, called a **moving closure**. Moving
+closures are indicated using the `move` keyword (e.g., `move || x *
+x`). The difference between a moving closure and an ordinary closure
+is that a moving closure always takes ownership of all variables that
+it uses. Ordinary closures, in contrast, just create a reference into
+the enclosing stack frame. Moving closures are most useful with Rust's
+concurrency features, and so we'll just leave it at this for
+now. We'll talk about them more in the "Tasks" section of the guide.
 
 ## Accepting closures as arguments
 
@@ -4438,7 +4439,7 @@ for i in range(0u, nums.len()) {
 ```
 
 This is strictly worse than using an actual iterator. The `.iter()` method on
-vectors returns an iterator which iterates through a reference to each element
+vectors returns an iterator that iterates through a reference to each element
 of the vector in turn. So write this:
 
 ```{rust}
@@ -4644,7 +4645,7 @@ element reference has the closure it's been given as an argument called on it.
 So this would give us the numbers from `2-100`. Well, almost! If you
 compile the example, you'll get a warning:
 
-```{ignore}
+```text
 warning: unused result which must be used: iterator adaptors are lazy and
          do nothing unless consumed, #[warn(unused_must_use)] on by default
  range(1i, 100i).map(|x| x + 1i);
@@ -4674,7 +4675,7 @@ for i in std::iter::count(1i, 5i).take(5) {
 
 This will print
 
-```{ignore}
+```text
 1
 6
 11
@@ -4887,7 +4888,7 @@ We can then use `T` inside the rest of the signature: `x` has type `T`, and half
 of the `Result` has type `T`. However, if we try to compile that example, we'll get
 an error:
 
-```{notrust}
+```text
 error: binary operation `==` cannot be applied to type `T`
 ```
 
@@ -4943,7 +4944,7 @@ we use `impl Trait for Item`, rather than just `impl Item`.
 So what's the big deal? Remember the error we were getting with our generic
 `inverse` function?
 
-```{notrust}
+```text
 error: binary operation `==` cannot be applied to type `T`
 ```
 
@@ -4958,7 +4959,7 @@ fn print_area<T>(shape: T) {
 
 Rust complains:
 
-```{notrust}
+```text
 error: type `T` does not implement any method in scope named `area`
 ```
 
@@ -5034,7 +5035,7 @@ fn main() {
 
 This program outputs:
 
-```{ignore}
+```text
 This shape has an area of 3.141593
 This shape has an area of 1
 ```
@@ -5048,7 +5049,7 @@ print_area(5i);
 
 We get a compile-time error:
 
-```{ignore}
+```text
 error: failed to find an implementation of trait main::HasArea for int
 ```
 
@@ -5115,7 +5116,7 @@ fn main() {
 Now that we've moved the structs and traits into their own module, we get an
 error:
 
-```{notrust}
+```text
 error: type `shapes::Circle` does not implement any method in scope named `area`
 ```
 
@@ -5216,6 +5217,8 @@ the same function, so our binary is a little bit larger.
 
 # Tasks
 
+**NOTE**: this section is currently out of date and will be rewritten soon.
+
 Concurrency and parallelism are topics that are of increasing interest to a
 broad subsection of software developers. Modern computers are often multi-core,
 to the point that even embedded devices like cell phones have more than one
@@ -5230,38 +5233,40 @@ library, and not part of the language. This means that in the future, other
 concurrency libraries can be written for Rust to help in specific scenarios.
 Here's an example of creating a task:
 
-```{rust}
-spawn(proc() {
+```{rust,ignore}
+spawn(move || {
     println!("Hello from a task!");
 });
 ```
 
-The `spawn` function takes a proc as an argument, and runs that proc in a new
-task. A proc takes ownership of its entire environment, and so any variables
-that you use inside the proc will not be usable afterward:
+The `spawn` function takes a closure as an argument, and runs that
+closure in a new task. Typically, you will want to use a moving
+closure, so that the closure takes ownership of any variables that it
+touches.  This implies that those variables are not usable from the
+parent task after the child task is spawned:
 
 ```{rust,ignore}
 let mut x = vec![1i, 2i, 3i];
 
-spawn(proc() {
+spawn(move || {
     println!("The value of x[0] is: {}", x[0]);
 });
 
 println!("The value of x[0] is: {}", x[0]); // error: use of moved value: `x`
 ```
 
-`x` is now owned by the proc, and so we can't use it anymore. Many other
-languages would let us do this, but it's not safe to do so. Rust's borrow
-checker catches the error.
+`x` is now owned by the closure, and so we can't use it anymore. Many
+other languages would let us do this, but it's not safe to do
+so. Rust's borrow checker catches the error.
 
 If tasks were only able to capture these values, they wouldn't be very useful.
 Luckily, tasks can communicate with each other through **channel**s. Channels
 work like this:
 
-```{rust}
+```{rust,ignore}
 let (tx, rx) = channel();
 
-spawn(proc() {
+spawn(move || {
     tx.send("Hello from a task!".to_string());
 });
 
@@ -5277,11 +5282,11 @@ which returns an `Result<T, TryRecvError>` and does not block.
 
 If you want to send messages to the task as well, create two channels!
 
-```{rust}
+```{rust,ignore}
 let (tx1, rx1) = channel();
 let (tx2, rx2) = channel();
 
-spawn(proc() {
+spawn(move || {
     tx1.send("Hello from a task!".to_string());
     let message = rx2.recv();
     println!("{}", message);
@@ -5293,8 +5298,9 @@ println!("{}", message);
 tx2.send("Goodbye from main!".to_string());
 ```
 
-The proc has one sending end and one receiving end, and the main task has one
-of each as well. Now they can talk back and forth in whatever way they wish.
+The closure has one sending end and one receiving end, and the main
+task has one of each as well. Now they can talk back and forth in
+whatever way they wish.
 
 Notice as well that because `Sender` and `Receiver` are generic, while you can
 pass any kind of information through the channel, the ends are strongly typed.
@@ -5310,7 +5316,7 @@ a useful thing to use:
 ```{rust}
 use std::sync::Future;
 
-let mut delayed_value = Future::spawn(proc() {
+let mut delayed_value = Future::spawn(move || {
     // just return anything for examples' sake
 
     12345i
@@ -5318,26 +5324,26 @@ let mut delayed_value = Future::spawn(proc() {
 println!("value = {}", delayed_value.get());
 ```
 
-Calling `Future::spawn` works just like `spawn()`: it takes a proc. In this
-case, though, you don't need to mess with the channel: just have the proc
-return the value.
+Calling `Future::spawn` works just like `spawn()`: it takes a
+closure. In this case, though, you don't need to mess with the
+channel: just have the closure return the value.
 
 `Future::spawn` will return a value which we can bind with `let`. It needs
 to be mutable, because once the value is computed, it saves a copy of the
 value, and if it were immutable, it couldn't update itself.
 
-The proc will go on processing in the background, and when we need the final
-value, we can call `get()` on it. This will block until the result is done,
-but if it's finished computing in the background, we'll just get the value
-immediately.
+The future will go on processing in the background, and when we need
+the final value, we can call `get()` on it. This will block until the
+result is done, but if it's finished computing in the background,
+we'll just get the value immediately.
 
 ## Success and failure
 
 Tasks don't always succeed, they can also panic. A task that wishes to panic
 can call the `panic!` macro, passing a message:
 
-```{rust}
-spawn(proc() {
+```{rust,ignore}
+spawn(move || {
     panic!("Nope.");
 });
 ```
@@ -5345,11 +5351,11 @@ spawn(proc() {
 If a task panics, it is not possible for it to recover. However, it can
 notify other tasks that it has panicked. We can do this with `task::try`:
 
-```{rust}
+```{rust,ignore}
 use std::task;
 use std::rand;
 
-let result = task::try(proc() {
+let result = task::try(move || {
     if rand::random() {
         println!("OK");
     } else {

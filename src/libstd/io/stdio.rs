@@ -39,12 +39,10 @@ use libc;
 use mem;
 use option::Option;
 use option::Option::{Some, None};
-use ops::{Deref, DerefMut};
+use ops::{Deref, DerefMut, FnOnce};
 use result::Result::{Ok, Err};
-use rustrt;
-use rustrt::local::Local;
-use rustrt::task::Task;
-use slice::SlicePrelude;
+use rt;
+use slice::SliceExt;
 use str::StrPrelude;
 use string::String;
 use sys::{fs, tty};
@@ -85,16 +83,20 @@ enum StdSource {
     File(fs::FileDesc),
 }
 
-fn src<T>(fd: libc::c_int, _readable: bool, f: |StdSource| -> T) -> T {
+fn src<T, F>(fd: libc::c_int, _readable: bool, f: F) -> T where
+    F: FnOnce(StdSource) -> T,
+{
     match tty::TTY::new(fd) {
         Ok(tty) => f(TTY(tty)),
         Err(_) => f(File(fs::FileDesc::new(fd, false))),
     }
 }
 
-thread_local!(static LOCAL_STDOUT: RefCell<Option<Box<Writer + Send>>> = {
-    RefCell::new(None)
-})
+thread_local! {
+    static LOCAL_STDOUT: RefCell<Option<Box<Writer + Send>>> = {
+        RefCell::new(None)
+    }
+}
 
 /// A synchronized wrapper around a buffered reader from stdin
 #[deriving(Clone)]
@@ -125,7 +127,7 @@ impl StdinReader {
     ///
     /// This provides access to methods like `chars` and `lines`.
     ///
-    /// ## Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::io;
@@ -222,6 +224,12 @@ pub fn stdin() -> StdinReader {
                 inner: Arc::new(Mutex::new(stdin))
             };
             STDIN = mem::transmute(box stdin);
+
+            // Make sure to free it at exit
+            rt::at_exit(|| {
+                mem::transmute::<_, Box<StdinReader>>(STDIN);
+                STDIN = 0 as *const _;
+            });
         });
 
         (*STDIN).clone()
@@ -319,22 +327,16 @@ pub fn set_stderr(stderr: Box<Writer + Send>) -> Option<Box<Writer + Send>> {
 //      })
 //  })
 fn with_task_stdout(f: |&mut Writer| -> IoResult<()>) {
-    let result = if Local::exists(None::<Task>) {
-        let mut my_stdout = LOCAL_STDOUT.with(|slot| {
-            slot.borrow_mut().take()
-        }).unwrap_or_else(|| {
-            box stdout() as Box<Writer + Send>
-        });
-        let result = f(&mut *my_stdout);
-        let mut var = Some(my_stdout);
-        LOCAL_STDOUT.with(|slot| {
-            *slot.borrow_mut() = var.take();
-        });
-        result
-    } else {
-        let mut io = rustrt::Stdout;
-        f(&mut io as &mut Writer)
-    };
+    let mut my_stdout = LOCAL_STDOUT.with(|slot| {
+        slot.borrow_mut().take()
+    }).unwrap_or_else(|| {
+        box stdout() as Box<Writer + Send>
+    });
+    let result = f(&mut *my_stdout);
+    let mut var = Some(my_stdout);
+    LOCAL_STDOUT.with(|slot| {
+        *slot.borrow_mut() = var.take();
+    });
     match result {
         Ok(()) => {}
         Err(e) => panic!("failed printing to stdout: {}", e),
@@ -524,7 +526,7 @@ mod tests {
 
         let (tx, rx) = channel();
         let (mut r, w) = (ChanReader::new(rx), ChanWriter::new(tx));
-        spawn(proc() {
+        spawn(move|| {
             set_stdout(box w);
             println!("hello!");
         });
@@ -533,13 +535,12 @@ mod tests {
 
     #[test]
     fn capture_stderr() {
-        use realstd::comm::channel;
-        use realstd::io::{ChanReader, ChanWriter, Reader};
+        use io::{ChanReader, ChanWriter, Reader};
 
         let (tx, rx) = channel();
         let (mut r, w) = (ChanReader::new(rx), ChanWriter::new(tx));
-        spawn(proc() {
-            ::realstd::io::stdio::set_stderr(box w);
+        spawn(move|| {
+            set_stderr(box w);
             panic!("my special message");
         });
         let s = r.read_to_string().unwrap();

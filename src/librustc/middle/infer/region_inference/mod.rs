@@ -37,9 +37,10 @@ use std::uint;
 use syntax::ast;
 
 mod doc;
+mod graphviz;
 
 // A constraint that influences the inference process.
-#[deriving(PartialEq, Eq, Hash)]
+#[deriving(Clone, Copy, PartialEq, Eq, Hash, Show)]
 pub enum Constraint {
     // One region variable is subregion of another
     ConstrainVarSubVar(RegionVid, RegionVid),
@@ -50,8 +51,6 @@ pub enum Constraint {
     // Region variable is subregion of concrete region
     ConstrainVarSubReg(RegionVid, Region),
 }
-
-impl Copy for Constraint {}
 
 // Something we have to verify after region inference is done, but
 // which does not directly influence the inference process
@@ -68,19 +67,16 @@ pub enum Verify<'tcx> {
     VerifyParamBound(ty::ParamTy, SubregionOrigin<'tcx>, Region, Vec<Region>),
 }
 
-#[deriving(PartialEq, Eq, Hash)]
+#[deriving(Copy, PartialEq, Eq, Hash)]
 pub struct TwoRegions {
     a: Region,
     b: Region,
 }
 
-impl Copy for TwoRegions {}
-
-#[deriving(PartialEq)]
+#[deriving(Copy, PartialEq)]
 pub enum UndoLogEntry {
     OpenSnapshot,
     CommitedSnapshot,
-    Mark,
     AddVar(RegionVid),
     AddConstraint(Constraint),
     AddVerify(uint),
@@ -88,14 +84,10 @@ pub enum UndoLogEntry {
     AddCombination(CombineMapType, TwoRegions)
 }
 
-impl Copy for UndoLogEntry {}
-
-#[deriving(PartialEq)]
+#[deriving(Copy, PartialEq)]
 pub enum CombineMapType {
     Lub, Glb
 }
-
-impl Copy for CombineMapType {}
 
 #[deriving(Clone, Show)]
 pub enum RegionResolutionError<'tcx> {
@@ -224,18 +216,11 @@ pub struct RegionVarBindings<'a, 'tcx: 'a> {
 }
 
 #[deriving(Show)]
+#[allow(missing_copy_implementations)]
 pub struct RegionSnapshot {
-    length: uint
+    length: uint,
+    skolemization_count: uint,
 }
-
-impl Copy for RegionSnapshot {}
-
-#[deriving(Show)]
-pub struct RegionMark {
-    length: uint
-}
-
-impl Copy for RegionMark {}
 
 impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
     pub fn new(tcx: &'a ty::ctxt<'tcx>) -> RegionVarBindings<'a, 'tcx> {
@@ -262,14 +247,7 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
         let length = self.undo_log.borrow().len();
         debug!("RegionVarBindings: start_snapshot({})", length);
         self.undo_log.borrow_mut().push(OpenSnapshot);
-        RegionSnapshot { length: length }
-    }
-
-    pub fn mark(&self) -> RegionMark {
-        let length = self.undo_log.borrow().len();
-        debug!("RegionVarBindings: mark({})", length);
-        self.undo_log.borrow_mut().push(Mark);
-        RegionMark { length: length }
+        RegionSnapshot { length: length, skolemization_count: self.skolemization_count.get() }
     }
 
     pub fn commit(&self, snapshot: RegionSnapshot) {
@@ -283,6 +261,7 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
         } else {
             (*undo_log)[snapshot.length] = CommitedSnapshot;
         }
+        self.skolemization_count.set(snapshot.skolemization_count);
     }
 
     pub fn rollback_to(&self, snapshot: RegionSnapshot) {
@@ -295,7 +274,7 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
                 OpenSnapshot => {
                     panic!("Failure to observe stack discipline");
                 }
-                Mark | CommitedSnapshot => { }
+                CommitedSnapshot => { }
                 AddVar(vid) => {
                     let mut var_origins = self.var_origins.borrow_mut();
                     var_origins.pop().unwrap();
@@ -321,6 +300,7 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
         }
         let c = undo_log.pop().unwrap();
         assert!(c == OpenSnapshot);
+        self.skolemization_count.set(snapshot.skolemization_count);
     }
 
     pub fn num_vars(&self) -> uint {
@@ -339,7 +319,25 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
         return vid;
     }
 
-    pub fn new_skolemized(&self, br: ty::BoundRegion) -> Region {
+    /// Creates a new skolemized region. Skolemized regions are fresh
+    /// regions used when performing higher-ranked computations. They
+    /// must be used in a very particular way and are never supposed
+    /// to "escape" out into error messages or the code at large.
+    ///
+    /// The idea is to always create a snapshot. Skolemized regions
+    /// can be created in the context of this snapshot, but once the
+    /// snapshot is commited or rolled back, their numbers will be
+    /// recycled, so you must be finished with them. See the extensive
+    /// comments in `higher_ranked.rs` to see how it works (in
+    /// particular, the subtyping comparison).
+    ///
+    /// The `snapshot` argument to this function is not really used;
+    /// it's just there to make it explicit which snapshot bounds the
+    /// skolemized region that results.
+    pub fn new_skolemized(&self, br: ty::BoundRegion, snapshot: &RegionSnapshot) -> Region {
+        assert!(self.in_snapshot());
+        assert!(self.undo_log.borrow()[snapshot.length] == OpenSnapshot);
+
         let sc = self.skolemization_count.get();
         self.skolemization_count.set(sc + 1);
         ReInfer(ReSkolemized(sc, br))
@@ -561,23 +559,23 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
         }
     }
 
-    fn combine_map<'a>(&'a self, t: CombineMapType)
-                   -> &'a RefCell<CombineMap> {
+    fn combine_map(&self, t: CombineMapType)
+                   -> &RefCell<CombineMap> {
         match t {
             Glb => &self.glbs,
             Lub => &self.lubs,
         }
     }
 
-    pub fn combine_vars(&self,
-                        t: CombineMapType,
-                        a: Region,
-                        b: Region,
-                        origin: SubregionOrigin<'tcx>,
-                        relate: |this: &RegionVarBindings<'a, 'tcx>,
-                                 old_r: Region,
-                                 new_r: Region|)
-                        -> Region {
+    pub fn combine_vars<F>(&self,
+                           t: CombineMapType,
+                           a: Region,
+                           b: Region,
+                           origin: SubregionOrigin<'tcx>,
+                           mut relate: F)
+                           -> Region where
+        F: FnMut(&RegionVarBindings<'a, 'tcx>, Region, Region),
+    {
         let vars = TwoRegions { a: a, b: b };
         match self.combine_map(t).borrow().get(&vars) {
             Some(&c) => {
@@ -596,8 +594,8 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
         ReInfer(ReVar(c))
     }
 
-    pub fn vars_created_since_mark(&self, mark: RegionMark)
-                                   -> Vec<RegionVid>
+    pub fn vars_created_since_snapshot(&self, mark: &RegionSnapshot)
+                                       -> Vec<RegionVid>
     {
         self.undo_log.borrow()
             .slice_from(mark.length)
@@ -612,7 +610,7 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
     /// Computes all regions that have been related to `r0` in any way since the mark `mark` was
     /// made---`r0` itself will be the first entry. This is used when checking whether skolemized
     /// regions are being improperly related to other regions.
-    pub fn tainted(&self, mark: RegionMark, r0: Region) -> Vec<Region> {
+    pub fn tainted(&self, mark: &RegionSnapshot, r0: Region) -> Vec<Region> {
         debug!("tainted(mark={}, r0={})", mark, r0.repr(self.tcx));
         let _indenter = indenter();
 
@@ -667,7 +665,6 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
                         }
                     }
                     &AddCombination(..) |
-                    &Mark |
                     &AddVar(..) |
                     &OpenSnapshot |
                     &CommitedSnapshot => {
@@ -706,10 +703,10 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
     /// fixed-point iteration to find region values which satisfy all
     /// constraints, assuming such values can be found; if they cannot,
     /// errors are reported.
-    pub fn resolve_regions(&self) -> Vec<RegionResolutionError<'tcx>> {
+    pub fn resolve_regions(&self, subject_node: ast::NodeId) -> Vec<RegionResolutionError<'tcx>> {
         debug!("RegionVarBindings: resolve_regions()");
         let mut errors = vec!();
-        let v = self.infer_variable_values(&mut errors);
+        let v = self.infer_variable_values(&mut errors, subject_node);
         *self.values.borrow_mut() = Some(v);
         errors
     }
@@ -935,14 +932,11 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
 
 // ______________________________________________________________________
 
-#[deriving(PartialEq, Show)]
+#[deriving(Copy, PartialEq, Show)]
 enum Classification { Expanding, Contracting }
 
-impl Copy for Classification {}
-
+#[deriving(Copy)]
 pub enum VarValue { NoValue, Value(Region), ErrorValue }
-
-impl Copy for VarValue {}
 
 struct VarData {
     classification: Classification,
@@ -958,14 +952,15 @@ type RegionGraph = graph::Graph<(), Constraint>;
 
 impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
     fn infer_variable_values(&self,
-                             errors: &mut Vec<RegionResolutionError<'tcx>>)
-                             -> Vec<VarValue>
+                             errors: &mut Vec<RegionResolutionError<'tcx>>,
+                             subject: ast::NodeId) -> Vec<VarValue>
     {
         let mut var_data = self.construct_var_data();
 
         // Dorky hack to cause `dump_constraints` to only get called
         // if debug mode is enabled:
         debug!("----() End constraint listing {}---", self.dump_constraints());
+        graphviz::maybe_print_constraints_for(self, subject);
 
         self.expansion(var_data.as_mut_slice());
         self.contraction(var_data.as_mut_slice());
@@ -1539,9 +1534,9 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
         }
     }
 
-    fn iterate_until_fixed_point(&self,
-                                 tag: &str,
-                                 body: |constraint: &Constraint| -> bool) {
+    fn iterate_until_fixed_point<F>(&self, tag: &str, mut body: F) where
+        F: FnMut(&Constraint) -> bool,
+    {
         let mut iteration = 0u;
         let mut changed = true;
         while changed {
