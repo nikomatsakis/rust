@@ -14,11 +14,15 @@
 #![feature(default_type_params, unboxed_closures)]
 #![allow(dead_code)]
 
+use std::kinds::marker;
 trait Foo<T,U,V=T> {
     fn dummy(&self, t: T, u: U, v: V);
 }
 
-trait Eq<Sized? X> for Sized? { fn dummy(&self, x: X) { } }
+trait Eq<Sized? X> for Sized?
+    : marker::PhantomGetter<(Self,X)>
+{ }
+
 impl<Sized? X> Eq<X> for X { }
 fn eq<Sized? A,Sized? B>() where A : Eq<B> { }
 

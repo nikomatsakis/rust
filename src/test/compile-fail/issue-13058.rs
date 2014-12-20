@@ -10,7 +10,9 @@
 
 use std::iter::{Range,range};
 
-trait Itble<'r, T, I: Iterator<T>> { fn iter(&'r self) -> I; }
+trait Itble<'r, T, I: Iterator<T>>
+    : ::std::kinds::marker::PhantomGetter<T>
+{ fn iter(&'r self) -> I; }
 
 impl<'r> Itble<'r, uint, Range<uint>> for (uint, uint) {
     fn iter(&'r self) -> Range<uint> {

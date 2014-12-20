@@ -58,7 +58,7 @@ struct Test6<'a, 'b> { //~ ERROR regions=[[-, o];[];[];[]]
 
 #[rustc_variance]
 struct Test7<'a> { //~ ERROR regions=[[*];[];[];[]]
-    //~^ ERROR lifetime parameter `'a` is never used
+    //~^ ERROR parameter `'a` is never used
     x: int
 }
 

@@ -51,7 +51,9 @@ enum MoreBadness<T> {
     EvenMoreBadness(Bar<T>),
 }
 
-trait PolyTrait<T> {
+trait PolyTrait<T>
+    : ::std::kinds::marker::PhantomGetter<T>
+{
     fn whatever() {}
 }
 

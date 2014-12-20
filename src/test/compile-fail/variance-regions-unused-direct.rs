@@ -10,15 +10,15 @@
 
 // Test that disallow lifetime parameters that are unused.
 
-enum Enum<'a, 'd> { //~ ERROR lifetime parameter `'d` is never used
+enum Enum<'a, 'd> { //~ ERROR parameter `'d` is never used
     Test8B(&'a [int]),
 }
 
-struct Struct<'a, 'd> { //~ ERROR lifetime parameter `'d` is never used
+struct Struct<'a, 'd> { //~ ERROR parameter `'d` is never used
     field: &'a [int]
 }
 
-trait Trait<'a, 'd> { //~ ERROR lifetime parameter `'d` is never used
+trait Trait<'a, 'd> { //~ ERROR parameter `'d` is never used
     fn method(&'a self);
 }
 

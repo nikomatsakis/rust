@@ -32,6 +32,7 @@
 // is also useful to track which value is the "expected" value in
 // terms of error reporting.
 
+use super::bivariance::Bivariance;
 use super::equate::Equate;
 use super::glb::Glb;
 use super::lub::Lub;
@@ -39,7 +40,7 @@ use super::sub::Sub;
 use super::unify::InferCtxtMethodsForSimplyUnifiableTypes;
 use super::{InferCtxt, cres};
 use super::{MiscVariable, TypeTrace};
-use super::type_variable::{RelationDir, EqTo, SubtypeOf, SupertypeOf};
+use super::type_variable::{RelationDir, BiTo, EqTo, SubtypeOf, SupertypeOf};
 
 use middle::subst;
 use middle::subst::{ErasedRegions, NonerasedRegions, Substs};
@@ -57,16 +58,19 @@ use syntax::abi;
 use syntax::codemap::Span;
 
 pub trait Combine<'tcx> {
-    fn infcx<'a>(&'a self) -> &'a InferCtxt<'a, 'tcx>;
     fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> { self.infcx().tcx }
     fn tag(&self) -> String;
-    fn a_is_expected(&self) -> bool;
-    fn trace(&self) -> TypeTrace<'tcx>;
 
-    fn equate<'a>(&'a self) -> Equate<'a, 'tcx>;
-    fn sub<'a>(&'a self) -> Sub<'a, 'tcx>;
-    fn lub<'a>(&'a self) -> Lub<'a, 'tcx>;
-    fn glb<'a>(&'a self) -> Glb<'a, 'tcx>;
+    fn fields<'a>(&'a self) -> &'a CombineFields<'a, 'tcx>;
+
+    fn infcx<'a>(&'a self) -> &'a InferCtxt<'a, 'tcx> { self.fields().infcx }
+    fn a_is_expected(&self) -> bool { self.fields().a_is_expected }
+    fn trace(&self) -> TypeTrace<'tcx> { self.fields().trace.clone() }
+    fn bivariance<'a>(&'a self) -> Bivariance<'a, 'tcx> { self.fields().bivariance() }
+    fn equate<'a>(&'a self) -> Equate<'a, 'tcx> { self.fields().equate() }
+    fn sub<'a>(&'a self) -> Sub<'a, 'tcx> { self.fields().sub() }
+    fn lub<'a>(&'a self) -> Lub<'a, 'tcx> { Lub(self.fields().clone()) }
+    fn glb<'a>(&'a self) -> Glb<'a, 'tcx> { Glb(self.fields().clone()) }
 
     fn mts(&self, a: &ty::mt<'tcx>, b: &ty::mt<'tcx>) -> cres<'tcx, ty::mt<'tcx>>;
     fn contratys(&self, a: Ty<'tcx>, b: Ty<'tcx>) -> cres<'tcx, Ty<'tcx>>;
@@ -149,7 +153,7 @@ pub trait Combine<'tcx> {
                     ty::Invariant => this.equate().tys(a_ty, b_ty),
                     ty::Covariant => this.tys(a_ty, b_ty),
                     ty::Contravariant => this.contratys(a_ty, b_ty),
-                    ty::Bivariant => Ok(a_ty),
+                    ty::Bivariant => this.bivariance().tys(a_ty, b_ty),
                 }
             }).collect()
         }
@@ -185,7 +189,7 @@ pub trait Combine<'tcx> {
                     ty::Invariant => this.equate().regions(a_r, b_r),
                     ty::Covariant => this.regions(a_r, b_r),
                     ty::Contravariant => this.contraregions(a_r, b_r),
-                    ty::Bivariant => Ok(a_r),
+                    ty::Bivariant => this.bivariance().regions(a_r, b_r),
                 }
             }).collect()
         }
@@ -543,6 +547,10 @@ impl<'f, 'tcx> CombineFields<'f, 'tcx> {
         }
     }
 
+    fn bivariance(&self) -> Bivariance<'f, 'tcx> {
+        Bivariance((*self).clone())
+    }
+
     fn equate(&self) -> Equate<'f, 'tcx> {
         Equate((*self).clone())
     }
@@ -600,7 +608,7 @@ impl<'f, 'tcx> CombineFields<'f, 'tcx> {
                         EqTo => {
                             self.generalize(a_ty, b_vid, false)
                         }
-                        SupertypeOf | SubtypeOf => {
+                        BiTo | SupertypeOf | SubtypeOf => {
                             self.generalize(a_ty, b_vid, true)
                         }
                     });
@@ -624,6 +632,10 @@ impl<'f, 'tcx> CombineFields<'f, 'tcx> {
             // to associate causes/spans with each of the relations in
             // the stack to get this right.
             match dir {
+                BiTo => {
+                    try!(self.bivariance().tys(a_ty, b_ty));
+                }
+
                 EqTo => {
                     try!(self.equate().tys(a_ty, b_ty));
                 }

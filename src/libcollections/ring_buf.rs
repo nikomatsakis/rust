@@ -1334,9 +1334,9 @@ mod tests {
 
     #[deriving(Clone, PartialEq, Show)]
     enum Taggypar<T> {
-        Onepar(int),
-        Twopar(int, int),
-        Threepar(int, int, int),
+        Onepar(T),
+        Twopar(T, T),
+        Threepar(T, T, T),
     }
 
     #[deriving(Clone, PartialEq, Show)]

@@ -13,10 +13,13 @@
 // know not to stop at the blanket, we have to recursively evaluate
 // the `T:Foo` bound.
 
+use std::kinds::marker;
 use std::kinds::Sized;
 
 // Note: this must be generic for the problem to show up
-trait Foo<A> for Sized? {
+trait Foo<A> for Sized?
+    : marker::PhantomGetter<A>
+{
     fn foo(&self);
 }
 

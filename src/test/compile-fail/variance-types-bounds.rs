@@ -12,56 +12,61 @@
 // various types and traits.
 
 #[rustc_variance]
-struct TestImm<A, B> { //~ ERROR types=[[+, +];[];[]]
+struct TestImm<A, B> { //~ ERROR types=[[+, +];[];[];[]]
     x: A,
     y: B,
 }
 
 #[rustc_variance]
-struct TestMut<A, B:'static> { //~ ERROR types=[[+, o];[];[]]
+struct TestMut<A, B:'static> { //~ ERROR types=[[+, o];[];[];[]]
     x: A,
     y: &'static mut B,
 }
 
 #[rustc_variance]
-struct TestIndirect<A:'static, B:'static> { //~ ERROR types=[[+, o];[];[]]
+struct TestIndirect<A:'static, B:'static> { //~ ERROR types=[[+, o];[];[];[]]
     m: TestMut<A, B>
 }
 
 #[rustc_variance]
-struct TestIndirect2<A:'static, B:'static> { //~ ERROR types=[[o, o];[];[]]
+struct TestIndirect2<A:'static, B:'static> { //~ ERROR types=[[o, o];[];[];[]]
     n: TestMut<A, B>,
     m: TestMut<B, A>
 }
 
 #[rustc_variance]
-trait Getter<A> { //~ ERROR types=[[+];[o];[]]
+trait Getter<A> { //~ ERROR types=[[+];[o];[];[]]
     fn get(&self) -> A;
 }
 
 #[rustc_variance]
-trait Setter<A> { //~ ERROR types=[[-];[o];[]]
+trait Setter<A> { //~ ERROR types=[[-];[o];[];[]]
     fn set(&mut self, a: A);
 }
 
 #[rustc_variance]
-trait GetterSetter<A> { //~ ERROR types=[[o];[o];[]]
+trait GetterSetter<A> { //~ ERROR types=[[o];[o];[];[]]
     fn get(&self) -> A;
     fn set(&mut self, a: A);
 }
 
 #[rustc_variance]
-trait GetterInTypeBound<A> { //~ ERROR types=[[+];[o];[]]
+trait GetterInTypeBound<A> { //~ ERROR types=[[-];[o];[];[]]
+    // Here, the use of `A` in the method bound *does* affect
+    // variance.  Think of it as if the method requested a dictionary
+    // for `T:Getter<A>`.  Since this dictionary is an input, it is
+    // contravariant, and the Getter is covariant w/r/t A, yielding an
+    // overall contravariant result.
     fn do_it<T:Getter<A>>(&self);
 }
 
 #[rustc_variance]
-trait SetterInTypeBound<A> { //~ ERROR types=[[-];[o];[]]
+trait SetterInTypeBound<A> { //~ ERROR types=[[+];[o];[];[]]
     fn do_it<T:Setter<A>>(&self);
 }
 
 #[rustc_variance]
-struct TestObject<A, R> { //~ ERROR types=[[-, +];[];[]]
+struct TestObject<A, R> { //~ ERROR types=[[-, +];[];[];[]]
     n: Box<Setter<A>+Send>,
     m: Box<Getter<R>+Send>,
 }

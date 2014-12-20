@@ -10,8 +10,8 @@
 
 // Test that we report an error for unused type parameters in types.
 
-struct SomeStruct<'a> { x: uint } //~ ERROR E0162
-enum SomeEnum<'a> { Nothing } //~ ERROR E0162
-trait SomeTrait<'a> { fn foo(&self); } //~ ERROR E0162
+struct SomeStruct<'a> { x: uint } //~ ERROR parameter `'a` is never used
+enum SomeEnum<'a> { Nothing } //~ ERROR parameter `'a` is never used
+trait SomeTrait<'a> { fn foo(&self); } //~ ERROR parameter `'a` is never used
 
 fn main() {}

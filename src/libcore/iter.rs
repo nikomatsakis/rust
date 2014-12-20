@@ -1094,14 +1094,14 @@ impl<T: Clone> MinMaxResult<T> {
 
 /// A trait for iterators that contain cloneable elements
 #[unstable = "recently renamed for extension trait conventions"]
-pub trait IteratorCloneExt<A> {
+pub trait IteratorCloneExt {
     /// Creates an iterator that clones the elements it yields. Useful for converting an
     /// Iterator<&T> to an Iterator<T>.
     fn cloned(self) -> Cloned<Self>;
 }
 
 #[unstable = "trait is unstable"]
-impl<A: Clone, D: Deref<A>, I: Iterator<D>> IteratorCloneExt<A> for I {
+impl<A: Clone, D: Deref<A>, I: Iterator<D>> IteratorCloneExt for I {
     fn cloned(self) -> Cloned<I> {
         Cloned { it: self }
     }

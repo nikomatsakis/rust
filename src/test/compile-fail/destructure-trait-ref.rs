@@ -35,7 +35,7 @@ fn main() {
     let box x = box 1i as Box<T>; //~ ERROR type `Box<T>` cannot be dereferenced
 
     // n > m
-    let &&x = &1i as &T;     //~ ERROR found trait T
+    let &&x = &1i as &T;     //~ ERROR expected trait T
     let &&&x = &(&1i as &T); //~ ERROR found &-ptr
     let box box x = box 1i as Box<T>;    //~ ERROR found box
 }

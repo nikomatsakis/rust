@@ -12,29 +12,40 @@
 
 use std::kinds::marker;
 
-trait T for Sized? : marker::Invariant {}
+trait T for Sized? : marker::PhantomGetter<Self> {}
 
 // I would like these to fail eventually.
 // impl - bounded
 trait T1<Z: T> {
+    fn dummy(&self) -> Z;
 }
-struct S3<Sized? Y>;
+
+struct S3<Sized? Y> {
+    f: Box<Y>
+}
+
 impl<Sized? X: T> T1<X> for S3<X> {
     //~^ ERROR `core::kinds::Sized` is not implemented for the type `X`
 }
 
 // impl - unbounded
 trait T2<Z> {
+    fn dummy(&self) -> Z;
 }
-struct S4<Sized? Y>;
+struct S4<Sized? Y> {
+    f: Box<Y>
+}
 impl<Sized? X> T2<X> for S4<X> {
     //~^ ERROR `core::kinds::Sized` is not implemented for the type `X`
 }
 
 // impl - struct
 trait T3<Sized? Z> {
+    fn dummy(&self) -> Z;
 }
-struct S5<Y>;
+struct S5<Y> {
+    f: Box<Y>
+}
 impl<Sized? X> T3<X> for S5<X> { //~ ERROR not implemented
 }
 

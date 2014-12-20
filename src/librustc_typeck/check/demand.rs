@@ -20,12 +20,25 @@ use syntax::ast;
 use syntax::codemap::Span;
 use util::ppaux::Repr;
 
-// Requires that the two types unify, and prints an error message if they
-// don't.
+/// Requires that `actual <: expected` and prints an error if this is not true.
 pub fn suptype<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>, sp: Span,
                          expected: Ty<'tcx>, actual: Ty<'tcx>) {
     suptype_with_fn(fcx, sp, false, expected, actual,
         |sp, e, a, s| { fcx.report_mismatched_types(sp, e, a, s) })
+}
+
+/// Requires that `expected <: actual` and prints an error if this is
+/// not true. This is the same as `suptype` with the order of parameters
+/// reversed, except for the fact that the type which is considered
+/// the "expected" type is switched.
+pub fn subtype<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>, sp: Span,
+                         expected: Ty<'tcx>, actual: Ty<'tcx>) {
+    match infer::mk_subty(fcx.infcx(), true, infer::Misc(sp), expected, actual) {
+        Ok(()) => { }
+        Err(ref err) => {
+            fcx.report_mismatched_types(sp, expected, actual, err);
+        }
+    }
 }
 
 pub fn suptype_with_fn<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,

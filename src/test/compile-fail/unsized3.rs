@@ -21,7 +21,7 @@ fn f2<X>(x: &X) {
 }
 
 // Bounded.
-trait T for Sized? : marker::Invariant {}
+trait T for Sized? : marker::PhantomGetter<Self> {}
 fn f3<Sized? X: T>(x: &X) {
     f4::<X>(x);
     //~^ ERROR the trait `core::kinds::Sized` is not implemented

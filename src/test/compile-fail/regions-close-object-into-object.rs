@@ -8,8 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::kinds::marker;
 
-trait A<T> {}
+trait A<T>
+{
+    fn get(&self) -> T { panic!() }
+}
 struct B<'a, T>(&'a (A<T>+'a));
 
 trait X {}

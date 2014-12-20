@@ -20,7 +20,10 @@ trait Foo<T,U> {
     fn dummy(&self, t: T, u: U);
 }
 
-trait Eq<Sized? X> for Sized? { }
+trait Eq<Sized? X> for Sized?
+    : ::std::kinds::marker::PhantomGetter<(Self,X)>
+{ }
+
 impl<Sized? X> Eq<X> for X { }
 fn eq<Sized? A,Sized? B:Eq<A>>() { }
 

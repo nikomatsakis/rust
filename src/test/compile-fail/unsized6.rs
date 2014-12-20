@@ -12,7 +12,7 @@
 
 use std::kinds::marker;
 
-trait T for Sized? : marker::Invariant {}
+trait T for Sized? : marker::PhantomGetter<Self> {}
 
 fn f1<Sized? X>(x: &X) {
     let _: X; // <-- this is OK, no bindings created, no initializer.

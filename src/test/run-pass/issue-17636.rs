@@ -8,12 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub trait MyItem<T> {}
+pub trait MyItem<T> :
+    ::std::kinds::marker::PhantomGetter<T>
+{}
 impl<T> MyItem<T> for T {}
 
 pub fn build_archive<'a, I: MyItem<&'a (|&uint|:'a)>>(files: I) {}
 
 fn main() {
     build_archive(&(|_| { }));
-//~^ ERROR not implemented
 }

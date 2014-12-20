@@ -10,7 +10,11 @@
 
 #![feature(associated_types)]
 
-trait Foo<T> {
+use std::kinds::marker;
+
+trait Foo<T>
+    : marker::PhantomGetter<T>
+{
     type Bar;
     fn get_bar() -> <Self as Foo<T>>::Bar;
 }

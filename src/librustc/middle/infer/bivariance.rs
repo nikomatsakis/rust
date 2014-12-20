@@ -13,23 +13,22 @@ use middle::ty::{mod, Ty};
 use middle::ty::TyVar;
 use middle::infer::combine::*;
 use middle::infer::{cres};
-use middle::infer::{Subtype};
-use middle::infer::type_variable::{EqTo};
+use middle::infer::type_variable::{BiTo};
 use util::ppaux::{Repr};
 
 use syntax::ast::{Onceness, FnStyle};
 
-pub struct Equate<'f, 'tcx: 'f> {
+pub struct Bivariance<'f, 'tcx: 'f> {
     fields: CombineFields<'f, 'tcx>
 }
 
 #[allow(non_snake_case)]
-pub fn Equate<'f, 'tcx>(cf: CombineFields<'f, 'tcx>) -> Equate<'f, 'tcx> {
-    Equate { fields: cf }
+pub fn Bivariance<'f, 'tcx>(cf: CombineFields<'f, 'tcx>) -> Bivariance<'f, 'tcx> {
+    Bivariance { fields: cf }
 }
 
-impl<'f, 'tcx> Combine<'tcx> for Equate<'f, 'tcx> {
-    fn tag(&self) -> String { "Equate".to_string() }
+impl<'f, 'tcx> Combine<'tcx> for Bivariance<'f, 'tcx> {
+    fn tag(&self) -> String { "Bivariance".to_string() }
     fn fields<'a>(&'a self) -> &'a CombineFields<'a, 'tcx> { &self.fields }
 
     fn contratys(&self, a: Ty<'tcx>, b: Ty<'tcx>) -> cres<'tcx, Ty<'tcx>> {
@@ -40,12 +39,10 @@ impl<'f, 'tcx> Combine<'tcx> for Equate<'f, 'tcx> {
         self.regions(a, b)
     }
 
-    fn regions(&self, a: ty::Region, b: ty::Region) -> cres<'tcx, ty::Region> {
-        debug!("{}.regions({}, {})",
-               self.tag(),
-               a.repr(self.fields.infcx.tcx),
-               b.repr(self.fields.infcx.tcx));
-        self.infcx().region_vars.make_eqregion(Subtype(self.trace()), a, b);
+    fn regions(&self, a: ty::Region, _: ty::Region) -> cres<'tcx, ty::Region> {
+        // Subtyping in our system is tied to regions. Bivariance
+        // basically just ignores region relationships for this
+        // reason.
         Ok(a)
     }
 
@@ -59,37 +56,23 @@ impl<'f, 'tcx> Combine<'tcx> for Equate<'f, 'tcx> {
         Ok(ty::mt { mutbl: a.mutbl, ty: t })
     }
 
-    fn fn_styles(&self, a: FnStyle, b: FnStyle) -> cres<'tcx, FnStyle> {
-        if a != b {
-            Err(ty::terr_fn_style_mismatch(expected_found(self, a, b)))
-        } else {
-            Ok(a)
-        }
+    fn fn_styles(&self, a: FnStyle, _: FnStyle) -> cres<'tcx, FnStyle> {
+        // unsafe fn <: fn normally, so ignore mismatches for bivariance
+        Ok(a)
     }
 
-    fn oncenesses(&self, a: Onceness, b: Onceness) -> cres<'tcx, Onceness> {
-        if a != b {
-            Err(ty::terr_onceness_mismatch(expected_found(self, a, b)))
-        } else {
-            Ok(a)
-        }
+    fn oncenesses(&self, a: Onceness, _: Onceness) -> cres<'tcx, Onceness> {
+        // once fn <: many fn, ignore mismatches
+        Ok(a)
     }
 
     fn builtin_bounds(&self,
                       a: BuiltinBounds,
-                      b: BuiltinBounds)
+                      _: BuiltinBounds)
                       -> cres<'tcx, BuiltinBounds>
     {
-        // More bounds is a subtype of fewer bounds.
-        //
-        // e.g., fn:Copy() <: fn(), because the former is a function
-        // that only closes over copyable things, but the latter is
-        // any function at all.
-        if a != b {
-            Err(ty::terr_builtin_bounds(expected_found(self, a, b)))
-        } else {
-            Ok(a)
-        }
+        // More bounds is a subtype of fewer bounds. Ignore for bivariance.
+        Ok(a)
     }
 
     fn tys(&self, a: Ty<'tcx>, b: Ty<'tcx>) -> cres<'tcx, Ty<'tcx>> {
@@ -102,17 +85,17 @@ impl<'f, 'tcx> Combine<'tcx> for Equate<'f, 'tcx> {
         let b = infcx.type_variables.borrow().replace_if_possible(b);
         match (&a.sty, &b.sty) {
             (&ty::ty_infer(TyVar(a_id)), &ty::ty_infer(TyVar(b_id))) => {
-                infcx.type_variables.borrow_mut().relate_vars(a_id, EqTo, b_id);
+                infcx.type_variables.borrow_mut().relate_vars(a_id, BiTo, b_id);
                 Ok(a)
             }
 
             (&ty::ty_infer(TyVar(a_id)), _) => {
-                try!(self.fields.instantiate(b, EqTo, a_id));
+                try!(self.fields.instantiate(b, BiTo, a_id));
                 Ok(a)
             }
 
             (_, &ty::ty_infer(TyVar(b_id))) => {
-                try!(self.fields.instantiate(a, EqTo, b_id));
+                try!(self.fields.instantiate(a, BiTo, b_id));
                 Ok(a)
             }
 

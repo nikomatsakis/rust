@@ -11,9 +11,8 @@
 #![deny(bivariance)]
 #![allow(dead_code)]
 
-// Check that bounds on type parameters (at least in types)
-// do not which is only used in a trait bound is
-// not considered bivariant.
+// Check that bounds on type parameters (other than `Self`) do not
+// influence variance.
 
 #[rustc_variance]
 trait Getter<T> { //~ ERROR types=[[+];[o];[];[]]
@@ -26,36 +25,39 @@ trait Setter<T> { //~ ERROR types=[[-];[o];[];[]]
 }
 
 #[rustc_variance]
-struct TestStruct<U,T:Getter<U>> { //~ ERROR types=[[+, +];[];[];[]]
+struct TestStruct<U,T:Setter<U>> { //~ ERROR types=[[+, +];[];[];[]]
     t: T, u: U
 }
 
 #[rustc_variance]
-enum TestEnum<U,T:Getter<U>> {//~ ERROR types=[[+, +];[o];[]]
+enum TestEnum<U,T:Setter<U>> {//~ ERROR types=[[*, +];[];[];[]]
+    //~^ ERROR parameter `U` is never used
     Foo(T)
 }
 
 #[rustc_variance]
-trait TestTrait<U,T:Getter<U>> { //~ ERROR types=[[+, +];[o];[]]
-    fn getter(&self) -> T;
+trait TestTrait<U,T:Setter<U>> { //~ ERROR types=[[-, +];[o];[];[]]
+    fn getter(&self, u: U) -> T;
 }
 
 #[rustc_variance]
-trait TestTrait2<U> : Getter<U> { //~ ERROR types=[[+];[o];[]]
+trait TestTrait2<U> : Getter<U> { //~ ERROR types=[[+];[o];[];[]]
 }
 
 #[rustc_variance]
-trait TestTrait3<U> { //~ ERROR types=[[+];[o];[]]
+trait TestTrait3<U> { //~ ERROR types=[[-];[o];[];[]]
     fn getter<T:Getter<U>>(&self);
 }
 
 #[rustc_variance]
-struct TestContraStruct<U,T:Setter<U>> { //~ ERROR types=[[-, +];[o];[]]
+struct TestContraStruct<U,T:Setter<U>> { //~ ERROR types=[[*, +];[];[];[]]
+    //~^ ERROR parameter `U` is never used
     t: T
 }
 
 #[rustc_variance]
-struct TestBox<U,T:Getter<U>+Setter<U>> { //~ ERROR types=[[o, +];[o];[]]
+struct TestBox<U,T:Getter<U>+Setter<U>> { //~ ERROR types=[[*, +];[];[];[]]
+    //~^ ERROR parameter `U` is never used
     t: T
 }
 

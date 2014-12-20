@@ -10,14 +10,25 @@
 
 #![allow(dead_code)]
 
-// Test that we report an error for unused type parameters in types.
+// Test that we report an error for unused type parameters in types and traits,
+// and that we offer a helpful suggestion.
 
-struct SomeStruct<A> { x: uint } //~ ERROR bivariance
-enum SomeEnum<A> { Nothing } //~ ERROR bivariance
-trait SomeTrait<A> { fn foo(&self); } //~ ERROR bivariance
+struct SomeStruct<A> { x: uint }
+//~^ ERROR parameter `A` is never used
+//~| HELP PhantomData
+
+enum SomeEnum<A> { Nothing }
+//~^ ERROR parameter `A` is never used
+//~| HELP PhantomData
+
+trait SomeTrait<A> { fn foo(&self); }
+//~^ ERROR parameter `A` is never used
+//~| HELP PhantomGetter
 
 // Here T might *appear* used, but in fact it isn't.
-enum ListCell<T> { //~ ERROR bivariance
+enum ListCell<T> {
+//~^ ERROR parameter `T` is never used
+//~| HELP PhantomData
     Cons(Box<ListCell<T>>),
     Nil
 }

@@ -599,7 +599,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for ConstraintContext<'a, 'tcx> {
 
         match item.node {
             ast::ItemEnum(ref enum_definition, _) => {
-                // Not entirely obvious: constriants on structs/enums do not
+                // Not entirely obvious: constraints on structs/enums do not
                 // affect the variance of their type parameters. See discussion
                 // in comment at top of module.
                 //
@@ -628,7 +628,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for ConstraintContext<'a, 'tcx> {
             }
 
             ast::ItemStruct(..) => {
-                // Not entirely obvious: constriants on structs/enums do not
+                // Not entirely obvious: constraints on structs/enums do not
                 // affect the variance of their type parameters. See discussion
                 // in comment at top of module.
                 //
@@ -645,16 +645,20 @@ impl<'a, 'tcx, 'v> Visitor<'v> for ConstraintContext<'a, 'tcx> {
 
             ast::ItemTrait(..) => {
                 let trait_def = ty::lookup_trait_def(tcx, did);
-                self.add_constraints_from_generics(&trait_def.generics, &[SelfSpace]);
+                self.add_constraints_from_generics(&trait_def.generics,
+                                                   &[SelfSpace],
+                                                   self.covariant);
                 self.add_constraints_from_param_bounds(ty::mk_self_type(tcx, did),
-                                                       &trait_def.bounds);
+                                                       &trait_def.bounds,
+                                                       self.covariant);
 
                 let trait_items = ty::trait_items(tcx, did);
                 for trait_item in trait_items.iter() {
                     match *trait_item {
                         ty::MethodTraitItem(ref method) => {
                             self.add_constraints_from_generics(&method.generics,
-                                                               &ParamSpace::all());
+                                                               &[FnSpace],
+                                                               self.contravariant);
                             self.add_constraints_from_sig(&method.fty.sig,
                                                           self.covariant);
                         }
@@ -1008,19 +1012,21 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
 
     fn add_constraints_from_generics(&mut self,
                                      generics: &ty::Generics<'tcx>,
-                                     spaces: &[subst::ParamSpace]) {
+                                     spaces: &[subst::ParamSpace],
+                                     variance: VarianceTermPtr<'a>) {
         debug!("add_constraints_from_generics({})",
                generics.repr(self.tcx()));
 
         for &space in spaces.iter() {
             for type_def in generics.types.get_slice(space).iter() {
                 let param_ty = ty::mk_param_from_def(self.tcx(), type_def);
-                self.add_constraints_from_param_bounds(param_ty, &type_def.bounds);
+                self.add_constraints_from_param_bounds(param_ty, &type_def.bounds, variance);
             }
 
             for region_def in generics.regions.get_slice(space).iter() {
                 for bound in region_def.bounds.iter() {
-                    self.add_constraints_from_region(*bound, self.contravariant);
+                    let variance_r = self.xform(variance, self.contravariant); // TODO
+                    self.add_constraints_from_region(*bound, variance_r);
                 }
             }
         }
@@ -1028,7 +1034,8 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
 
     fn add_constraints_from_param_bounds(&mut self,
                                          subject_ty: Ty<'tcx>,
-                                         bounds: &ty::ParamBounds<'tcx>) {
+                                         bounds: &ty::ParamBounds<'tcx>,
+                                         variance: VarianceTermPtr<'a>) {
         /*!
          * Adds any variance constraints that occur due to `subject_ty`
          * being bound by the bounds in `bounds`.
@@ -1047,15 +1054,16 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                     self.add_constraints_from_trait_ref(trait_ref.def_id,
                                                         &subst::ParamSpace::all(),
                                                         &trait_ref.substs,
-                                                        self.covariant);
+                                                        variance);
                 }
                 Err(ErrorReported) => { }
             }
         }
 
         for bound in bounds.region_bounds.iter() {
+            let variance_r = self.xform(variance, self.contravariant); // TODO
             self.add_constraints_from_region(*bound,
-                                             self.contravariant);
+                                             variance_r);
         }
 
         for bound in bounds.trait_bounds.iter() {
@@ -1063,7 +1071,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
             self.add_constraints_from_trait_ref(bound.def_id,
                                                 &subst::ParamSpace::all(),
                                                 &bound.substs,
-                                                self.covariant);
+                                                variance);
         }
     }
 

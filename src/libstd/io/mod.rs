@@ -231,7 +231,7 @@ use error::{FromError, Error};
 use fmt;
 use int;
 use iter::{Iterator, IteratorExt};
-use kinds::Copy;
+use kinds::{Copy, marker};
 use mem::transmute;
 use ops::{BitOr, BitXor, BitAnd, Sub, Not};
 use option::Option;
@@ -1590,7 +1590,9 @@ pub trait Seek {
 /// connections.
 ///
 /// Doing so produces some sort of Acceptor.
-pub trait Listener<T, A: Acceptor<T>> {
+pub trait Listener<T, A: Acceptor<T>>
+    : marker::PhantomGetter<T> // FIXME should be an assoc type anyhow
+{
     /// Spin up the listener and start queuing incoming connections
     ///
     /// # Error

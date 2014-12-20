@@ -17,23 +17,23 @@
 //! They cannot be implemented by user code, but are instead implemented
 //! by the compiler automatically for the types to which they apply.
 
-use self::marker::PhantomGetter;
+use self::marker::MarkerTrait;
 
 /// Types able to be transferred across task boundaries.
 #[lang="send"]
-pub trait Send for Sized? : 'static + PhantomGetter<Self> {
+pub trait Send for Sized? : 'static + MarkerTrait {
     // empty.
 }
 
 /// Types with a constant size known at compile-time.
 #[lang="sized"]
-pub trait Sized for Sized? : PhantomGetter<Self> {
+pub trait Sized for Sized? : MarkerTrait {
     // Empty.
 }
 
 /// Types that can be copied by simply copying bits (i.e. `memcpy`).
 #[lang="copy"]
-pub trait Copy for Sized? : PhantomGetter<Self> {
+pub trait Copy for Sized? : MarkerTrait {
     // Empty.
 }
 
@@ -83,7 +83,7 @@ pub trait Copy for Sized? : PhantomGetter<Self> {
 /// reference; not doing this is undefined behaviour (for example,
 /// `transmute`-ing from `&T` to `&mut T` is illegal).
 #[lang="sync"]
-pub trait Sync for Sized? : PhantomGetter<Self> {
+pub trait Sync for Sized? : MarkerTrait {
     // Empty
 }
 

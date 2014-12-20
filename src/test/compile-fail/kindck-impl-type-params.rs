@@ -15,7 +15,9 @@ use std::kinds::marker;
 
 struct S<T>(marker::CovariantType<T>);
 
-trait Gettable<T> {}
+trait Gettable<T> {
+    fn get(&self) -> T { panic!() }
+}
 
 impl<T: Send + Copy> Gettable<T> for S<T> {}
 
@@ -27,7 +29,7 @@ fn f<T>(val: T) {
 }
 
 fn g<T>(val: T) {
-    let t: S<T> = S;
+    let t: S<T> = S(marker::CovariantType);
     let a: &Gettable<T> = &t;
     //~^ ERROR the trait `core::kinds::Send` is not implemented
     //~^^ ERROR the trait `core::kinds::Copy` is not implemented
@@ -36,7 +38,7 @@ fn g<T>(val: T) {
 fn foo<'a>() {
     let t: S<&'a int> = S(marker::CovariantType);
     let a = &t as &Gettable<&'a int>;
-    //~^ ERROR declared lifetime bound not satisfied
+    //~^ ERROR cannot infer
 }
 
 fn foo2<'a>() {

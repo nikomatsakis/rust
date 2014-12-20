@@ -11,8 +11,14 @@
 #![feature(lang_items)]
 #![no_std]
 
-#[lang="sized"] pub trait Sized for Sized? {
-    fn dummy(&self) { }
+#[lang="phantom_getter"]
+pub trait PhantomGetter<Sized? T> for Sized? { }
+impl<Sized? T, Sized? U> PhantomGetter<T> for U { }
+
+#[lang="sized"]
+pub trait Sized for Sized?
+    : PhantomGetter<Self>
+{
 }
 
 // error-pattern:requires `start` lang_item

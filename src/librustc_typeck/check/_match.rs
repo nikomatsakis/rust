@@ -160,7 +160,7 @@ pub fn check_pat<'a, 'tcx>(pcx: &pat_ctxt<'a, 'tcx>,
             let rptr_ty = ty::mk_rptr(tcx, region, mt);
 
             if check_dereferencable(pcx, pat.span, expected, &**inner) {
-                demand::suptype(fcx, pat.span, rptr_ty, expected);
+                demand::subtype(fcx, pat.span, expected, rptr_ty);
                 fcx.write_ty(pat.id, rptr_ty);
                 check_pat(pcx, &**inner, inner_ty);
             } else {
