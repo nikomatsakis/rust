@@ -297,7 +297,6 @@ lets_do_this! {
     ExchangeHeapLangItem,            "exchange_heap",           exchange_heap;
     OwnedBoxLangItem,                "owned_box",               owned_box;
 
-    PhantomAccessorItem,             "phantom_accessor",        phantom_accessor;
     PhantomGetterItem,               "phantom_getter",          phantom_getter;
     PhantomSetterItem,               "phantom_setter",          phantom_setter;
     PhantomDataItem,                 "phantom_data",            phantom_data;

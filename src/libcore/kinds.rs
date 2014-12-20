@@ -133,9 +133,8 @@ pub mod marker {
     }
 
     /// TODO Document me
-    #[lang="phantom_accessor"]
-    pub trait PhantomAccessor<Sized? T> for Sized? { }
-    impl<Sized? T, Sized? U> PhantomAccessor<T> for U { }
+    pub trait MarkerTrait for Sized? : PhantomSetter<Self> { }
+    impl<Sized? T> MarkerTrait for T { }
 
     /// TODO Document me
     #[lang="phantom_getter"]

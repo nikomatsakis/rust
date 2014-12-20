@@ -345,7 +345,6 @@ fn determine_parameters_to_be_inferred<'a, 'tcx>(tcx: &'a ty::ctxt<'tcx>,
 
 fn lang_items(tcx: &ty::ctxt) -> Vec<(ast::NodeId,ty::Variance)> {
     let all = vec![
-        (tcx.lang_items.phantom_accessor(), ty::Invariant),
         (tcx.lang_items.phantom_getter(), ty::Covariant),
         (tcx.lang_items.phantom_setter(), ty::Contravariant),
         (tcx.lang_items.phantom_data(), ty::Covariant),

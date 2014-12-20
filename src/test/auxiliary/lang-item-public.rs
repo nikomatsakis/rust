@@ -11,12 +11,12 @@
 #![no_std]
 #![feature(lang_items)]
 
-#[lang="phantom_accessor"]
-pub trait PhantomAccessor<Sized? T> for Sized? { }
-impl<Sized? T, Sized? U> PhantomAccessor<T> for U { }
+#[lang="phantom_setter"]
+pub trait PhantomSetter<Sized? T> for Sized? { }
+impl<Sized? T, Sized? U> PhantomSetter<T> for U { }
 
 #[lang="sized"]
-pub trait Sized for Sized? : PhantomAccessor<Self> {}
+pub trait Sized for Sized? : PhantomSetter<Self> {}
 
 #[lang="panic"]
 fn panic(_: &(&'static str, &'static str, uint)) -> ! { loop {} }
@@ -28,7 +28,7 @@ extern fn stack_exhausted() {}
 extern fn eh_personality() {}
 
 #[lang="copy"]
-pub trait Copy for Sized? : PhantomAccessor<Self> {
+pub trait Copy for Sized? : PhantomSetter<Self> {
     // Empty.
 }
 
