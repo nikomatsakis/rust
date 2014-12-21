@@ -924,15 +924,17 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                     variance);
             }
 
-            ty::ty_trait(box ty::TyTrait { ref principal, bounds }) => {
+            ty::ty_trait(ref data) => {
+                let poly_trait_ref = data.principal_trait_ref_with_self_ty(ty::mk_err());
+
                 // The type `Foo<T+'a>` is contravariant w/r/t `'a`:
                 let contra = self.contravariant(variance);
-                self.add_constraints_from_region(bounds.region_bound, contra);
+                self.add_constraints_from_region(data.bounds.region_bound, contra);
 
                 // Ignore the SelfSpace, it is erased.
                 self.add_constraints_from_trait_ref(
-                    principal.def_id, &[subst::TypeSpace],
-                    &principal.substs, variance);
+                    poly_trait_ref.def_id(), &[subst::TypeSpace],
+                    poly_trait_ref.substs(), variance);
             }
 
             ty::ty_param(ty::ParamTy { ref def_id, .. }) => {
@@ -1039,14 +1041,14 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                bounds.repr(self.tcx()));
 
         for bound in bounds.builtin_bounds.iter() {
-            let trait_ref = traits::trait_ref_for_builtin_bound(self.tcx(),
-                                                                bound,
-                                                                subject_ty);
+            let trait_ref = traits::poly_trait_ref_for_builtin_bound(self.tcx(),
+                                                                     bound,
+                                                                     subject_ty);
             match trait_ref {
                 Ok(trait_ref) => {
-                    self.add_constraints_from_trait_ref(trait_ref.def_id,
+                    self.add_constraints_from_trait_ref(trait_ref.def_id(),
                                                         &subst::ParamSpace::all(),
-                                                        &trait_ref.substs,
+                                                        trait_ref.substs(),
                                                         variance);
                 }
                 Err(ErrorReported) => { }
@@ -1060,10 +1062,10 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
         }
 
         for bound in bounds.trait_bounds.iter() {
-            assert_eq!(bound.substs.self_ty(), Some(subject_ty));
-            self.add_constraints_from_trait_ref(bound.def_id,
+            assert_eq!(bound.substs().self_ty(), Some(subject_ty));
+            self.add_constraints_from_trait_ref(bound.def_id(),
                                                 &subst::ParamSpace::all(),
-                                                &bound.substs,
+                                                bound.substs(),
                                                 variance);
         }
     }

@@ -128,7 +128,7 @@ pub enum MatchMode {
     MovingMatch,
 }
 
-#[deriving(PartialEq,Show)]
+#[deriving(Copy, PartialEq,Show)]
 enum TrackMatchMode {
     Unknown,
     Definite(MatchMode),

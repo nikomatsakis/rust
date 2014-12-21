@@ -32,13 +32,12 @@
 // is also useful to track which value is the "expected" value in
 // terms of error reporting.
 
-use super::bivariance::Bivariance;
 use super::equate::Equate;
 use super::glb::Glb;
 use super::lub::Lub;
 use super::sub::Sub;
 use super::unify::InferCtxtMethodsForSimplyUnifiableTypes;
-use super::{InferCtxt, cres};
+use super::{InferCtxt, cres, ures};
 use super::{MiscVariable, TypeTrace};
 use super::type_variable::{RelationDir, BiTo, EqTo, SubtypeOf, SupertypeOf};
 
@@ -49,7 +48,7 @@ use middle::ty::{IntType, UintType};
 use middle::ty::{BuiltinBounds};
 use middle::ty::{mod, Ty};
 use middle::ty_fold;
-use middle::ty_fold::{TypeFoldable};
+use middle::ty_fold::{TypeFolder, TypeFoldable};
 use util::ppaux::Repr;
 
 use syntax::ast::{Onceness, Unsafety};
@@ -66,7 +65,6 @@ pub trait Combine<'tcx> {
     fn infcx<'a>(&'a self) -> &'a InferCtxt<'a, 'tcx> { self.fields().infcx }
     fn a_is_expected(&self) -> bool { self.fields().a_is_expected }
     fn trace(&self) -> TypeTrace<'tcx> { self.fields().trace.clone() }
-    fn bivariance<'a>(&'a self) -> Bivariance<'a, 'tcx> { self.fields().bivariance() }
     fn equate<'a>(&'a self) -> Equate<'a, 'tcx> { self.fields().equate() }
     fn sub<'a>(&'a self) -> Sub<'a, 'tcx> { self.fields().sub() }
     fn lub<'a>(&'a self) -> Lub<'a, 'tcx> { Lub(self.fields().clone()) }
@@ -153,7 +151,7 @@ pub trait Combine<'tcx> {
                     ty::Invariant => this.equate().tys(a_ty, b_ty),
                     ty::Covariant => this.tys(a_ty, b_ty),
                     ty::Contravariant => this.contratys(a_ty, b_ty),
-                    ty::Bivariant => this.bivariance().tys(a_ty, b_ty),
+                    ty::Bivariant => this.fields().bivariant_tys(a_ty, b_ty),
                 }
             }).collect()
         }
@@ -189,7 +187,7 @@ pub trait Combine<'tcx> {
                     ty::Invariant => this.equate().regions(a_r, b_r),
                     ty::Covariant => this.regions(a_r, b_r),
                     ty::Contravariant => this.contraregions(a_r, b_r),
-                    ty::Bivariant => this.bivariance().regions(a_r, b_r),
+                    ty::Bivariant => this.fields().bivariant_regions(a_r, b_r),
                 }
             }).collect()
         }
@@ -619,8 +617,21 @@ impl<'f, 'tcx> CombineFields<'f, 'tcx> {
         }
     }
 
-    fn bivariance(&self) -> Bivariance<'f, 'tcx> {
-        Bivariance((*self).clone())
+    fn bivariant_tys(&self, a: Ty<'tcx>, b: Ty<'tcx>) -> cres<'tcx, Ty<'tcx>> {
+        // "Bivariance" for us is the normal type equality relation,
+        // but ignoring all region relationships.
+        assert!(!ty::type_has_escaping_regions(a));
+        assert!(!ty::type_has_escaping_regions(b));
+        let a1 = wipe_regions(self.infcx.tcx, &a);
+        let b1 = wipe_regions(self.infcx.tcx, &b);
+        try!(self.equate().tys(a, b1));
+        Ok(a)
+    }
+
+    fn bivariant_regions(&self, a: ty::Region, _: ty::Region) -> cres<'tcx, ty::Region> {
+        // "Bivariance" for us is the normal type equality relation,
+        // but ignoring all region relationships.
+        Ok(a)
     }
 
     fn equate(&self) -> Equate<'f, 'tcx> {
@@ -705,7 +716,7 @@ impl<'f, 'tcx> CombineFields<'f, 'tcx> {
             // the stack to get this right.
             match dir {
                 BiTo => {
-                    try!(self.bivariance().tys(a_ty, b_ty));
+                    try!(self.bivariant_tys(a_ty, b_ty));
                 }
 
                 EqTo => {
@@ -825,4 +836,19 @@ impl<'cx, 'tcx> ty_fold::TypeFolder<'tcx> for Generalizer<'cx, 'tcx> {
     }
 }
 
+fn wipe_regions<'tcx,T:TypeFoldable<'tcx>>(tcx: &ty::ctxt<'tcx>, value: &T) -> T {
+    /// Replaces *all* regions, bound or free, with 'static. This is
+    /// useful for relating bivariant types.
+    struct RegionWiper<'a,'tcx:'a>(&'a ty::ctxt<'tcx>);
+
+    impl<'a,'tcx> TypeFolder<'tcx> for RegionWiper<'a,'tcx> {
+        fn tcx(&self) -> &ty::ctxt<'tcx> { self.0 }
+
+        fn fold_region(&mut self, _: ty::Region) -> ty::Region {
+            ty::ReStatic
+        }
+    }
+
+    value.fold_with(&mut RegionWiper(tcx))
+}
 
