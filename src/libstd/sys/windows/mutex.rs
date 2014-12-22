@@ -10,6 +10,7 @@
 
 use prelude::*;
 
+use kinds::Sync;
 use sync::atomic;
 use alloc::{mod, heap};
 
@@ -21,6 +22,8 @@ const SPIN_COUNT: DWORD = 4000;
 pub struct Mutex { inner: atomic::AtomicUint }
 
 pub const MUTEX_INIT: Mutex = Mutex { inner: atomic::INIT_ATOMIC_UINT };
+
+unsafe impl Sync for Mutex {}
 
 #[inline]
 pub unsafe fn raw(m: &Mutex) -> ffi::LPCRITICAL_SECTION {

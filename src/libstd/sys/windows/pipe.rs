@@ -559,6 +559,8 @@ pub struct UnixListener {
     name: CString,
 }
 
+unsafe impl Sync for Mutex {}
+
 impl UnixListener {
     pub fn bind(addr: &CString) -> IoResult<UnixListener> {
         // Although we technically don't need the pipe until much later, we
@@ -602,6 +604,8 @@ pub struct UnixAcceptor {
     event: Event,
     deadline: u64,
 }
+
+unsafe impl Sync for AcceptorInner {}
 
 struct AcceptorState {
     abort: Event,
