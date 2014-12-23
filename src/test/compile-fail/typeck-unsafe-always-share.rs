@@ -40,4 +40,7 @@ fn main() {
     let ns = NoSync{m: marker::NoSync};
     test(ns);
     //~^ ERROR `core::kinds::Sync` is not implemented
+    //~^^ ERROR `core::kinds::Sync` is not implemented
+    //~^^^ ERROR `core::kinds::Sync` is not implemented
+    //~^^^^ ERROR `core::kinds::Sync` is not implemented
 }
