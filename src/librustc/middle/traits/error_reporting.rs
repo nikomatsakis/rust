@@ -118,13 +118,12 @@ pub fn report_selection_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
 
                 ty::Predicate::TypeOutlives(..) |
                 ty::Predicate::RegionOutlives(..) => {
-                    // these kinds of predicates turn into
-                    // constraints, and hence errors show up in region
-                    // inference.
-                    infcx.tcx.sess.span_bug(
+                    let predicate = infcx.resolve_type_vars_if_possible(&obligation.trait_ref);
+                    infcx.tcx.sess.span_err(
                         obligation.cause.span,
-                        format!("region predicate error {}",
-                                obligation.repr(infcx.tcx)).as_slice());
+                        format!(
+                            "the requirement `{}` is not satisfied",
+                            predicate.user_string(infcx.tcx)).as_slice());
                 }
             }
         }
