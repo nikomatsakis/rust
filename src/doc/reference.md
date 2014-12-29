@@ -518,7 +518,7 @@ This last example is different because it is not possible to use the suffix
 syntax with a floating point literal ending in a period. `2.f64` would attempt
 to call a method named `f64` on `2`.
 
-##### Boolean literals
+#### Boolean literals
 
 The two values of the boolean type are written `true` and `false`.
 
@@ -934,7 +934,7 @@ kinds of view items:
 
 ```{.ebnf .gram}
 extern_crate_decl : "extern" "crate" crate_name
-crate_name: ident | ( string_lit as ident )
+crate_name: ident | ( string_lit "as" ident )
 ```
 
 An _`extern crate` declaration_ specifies a dependency on an external crate.
@@ -3177,7 +3177,7 @@ Some examples of call expressions:
 # fn add(x: int, y: int) -> int { 0 }
 
 let x: int = add(1, 2);
-let pi: Option<f32> = from_str("3.14");
+let pi: Option<f32> = "3.14".parse();
 ```
 
 ### Lambda expressions

@@ -615,10 +615,10 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
         match result {
             None => true,
             Some((span, msg, note)) => {
-                self.tcx.sess.span_err(span, msg.as_slice());
+                self.tcx.sess.span_err(span, msg[]);
                 match note {
                     Some((span, msg)) => {
-                        self.tcx.sess.span_note(span, msg.as_slice())
+                        self.tcx.sess.span_note(span, msg[])
                     }
                     None => {},
                 }
@@ -720,7 +720,7 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
             UnnamedField(idx) => format!("field #{} of {} is private",
                                          idx + 1, struct_desc),
         };
-        self.tcx.sess.span_err(span, msg.as_slice());
+        self.tcx.sess.span_err(span, msg[]);
     }
 
     // Given the ID of a method, checks to ensure it's in scope.
@@ -742,7 +742,7 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
                                              method_id,
                                              None,
                                              format!("method `{}`",
-                                                     string).as_slice()));
+                                                     string)[]));
     }
 
     // Checks that a path is in scope.
@@ -759,9 +759,7 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
                 self.ensure_public(span,
                                    def,
                                    Some(origdid),
-                                   format!("{} `{}`",
-                                           tyname,
-                                           name).as_slice())
+                                   format!("{} `{}`", tyname, name)[])
             };
 
             match self.last_private_map[path_id] {
@@ -1307,13 +1305,13 @@ impl<'a, 'tcx> VisiblePrivateTypesVisitor<'a, 'tcx> {
     }
 
     fn check_ty_param_bound(&self,
-                            span: Span,
                             ty_param_bound: &ast::TyParamBound) {
         if let ast::TraitTyParamBound(ref trait_ref) = *ty_param_bound {
             if !self.tcx.sess.features.borrow().visible_private_types &&
                 self.path_is_private_type(trait_ref.trait_ref.ref_id) {
+                    let span = trait_ref.trait_ref.path.span;
                     self.tcx.sess.span_err(span,
-                                           "private type in exported type \
+                                           "private trait in exported type \
                                             parameter bound");
             }
         }
@@ -1357,7 +1355,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for VisiblePrivateTypesVisitor<'a, 'tcx> {
                 }
 
                 for bound in bounds.iter() {
-                    self.check_ty_param_bound(item.span, bound)
+                    self.check_ty_param_bound(bound)
                 }
             }
 
@@ -1495,16 +1493,17 @@ impl<'a, 'tcx, 'v> Visitor<'v> for VisiblePrivateTypesVisitor<'a, 'tcx> {
     fn visit_generics(&mut self, generics: &ast::Generics) {
         for ty_param in generics.ty_params.iter() {
             for bound in ty_param.bounds.iter() {
-                self.check_ty_param_bound(ty_param.span, bound)
+                self.check_ty_param_bound(bound)
             }
         }
         for predicate in generics.where_clause.predicates.iter() {
             match predicate {
                 &ast::WherePredicate::BoundPredicate(ref bound_pred) => {
                     for bound in bound_pred.bounds.iter() {
-                        self.check_ty_param_bound(bound_pred.span, bound)
+                        self.check_ty_param_bound(bound)
                     }
                 }
+                &ast::WherePredicate::RegionPredicate(_) => {}
                 &ast::WherePredicate::EqPredicate(ref eq_pred) => {
                     self.visit_ty(&*eq_pred.ty);
                 }

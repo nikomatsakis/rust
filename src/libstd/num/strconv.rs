@@ -12,15 +12,15 @@
 
 #![allow(missing_docs)]
 
-pub use self::ExponentFormat::*;
-pub use self::SignificantDigits::*;
-pub use self::SignFormat::*;
+use self::ExponentFormat::*;
+use self::SignificantDigits::*;
+use self::SignFormat::*;
 
 use char::{mod, Char};
 use num::{mod, Int, Float, FPNaN, FPInfinite, ToPrimitive};
 use ops::FnMut;
 use slice::{SliceExt, CloneSliceExt};
-use str::StrPrelude;
+use str::StrExt;
 use string::String;
 use vec::Vec;
 

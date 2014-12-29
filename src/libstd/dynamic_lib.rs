@@ -200,7 +200,7 @@ mod test {
           target_os = "freebsd",
           target_os = "dragonfly"))]
 pub mod dl {
-    pub use self::Rtld::*;
+    use self::Rtld::*;
 
     use prelude::*;
     use c_str::CString;
@@ -280,7 +280,7 @@ pub mod dl {
     use result::Result;
     use result::Result::{Ok, Err};
     use slice::SliceExt;
-    use str::StrPrelude;
+    use str::StrExt;
     use str;
     use string::String;
     use vec::Vec;

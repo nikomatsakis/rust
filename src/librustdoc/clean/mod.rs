@@ -113,7 +113,7 @@ impl<T: Clean<U>, U> Clean<Vec<U>> for syntax::owned_slice::OwnedSlice<T> {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct Crate {
     pub name: String,
     pub src: FsPath,
@@ -163,33 +163,24 @@ impl<'a, 'tcx> Clean<Crate> for visit_ast::RustdocVisitor<'a, 'tcx> {
             };
             let mut tmp = Vec::new();
             for child in m.items.iter_mut() {
-                let inner = match child.inner {
-                    ModuleItem(ref mut m) => m,
+                match child.inner {
+                    ModuleItem(..) => {}
                     _ => continue,
-                };
+                }
                 let prim = match PrimitiveType::find(child.attrs.as_slice()) {
                     Some(prim) => prim,
                     None => continue,
                 };
                 primitives.push(prim);
-                let mut i = Item {
+                tmp.push(Item {
                     source: Span::empty(),
                     name: Some(prim.to_url_str().to_string()),
-                    attrs: Vec::new(),
-                    visibility: None,
+                    attrs: child.attrs.clone(),
+                    visibility: Some(ast::Public),
                     stability: None,
                     def_id: ast_util::local_def(prim.to_node_id()),
                     inner: PrimitiveItem(prim),
-                };
-                // Push one copy to get indexed for the whole crate, and push a
-                // another copy in the proper location which will actually get
-                // documented. The first copy will also serve as a redirect to
-                // the other copy.
-                tmp.push(i.clone());
-                i.visibility = Some(ast::Public);
-                i.attrs = child.attrs.clone();
-                inner.items.push(i);
-
+                });
             }
             m.items.extend(tmp.into_iter());
         }
@@ -204,7 +195,7 @@ impl<'a, 'tcx> Clean<Crate> for visit_ast::RustdocVisitor<'a, 'tcx> {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct ExternalCrate {
     pub name: String,
     pub attrs: Vec<Attribute>,
@@ -237,7 +228,7 @@ impl Clean<ExternalCrate> for cstore::crate_metadata {
 /// Anything with a source location and set of attributes and, optionally, a
 /// name. That is, anything that can be documented. This doesn't correspond
 /// directly to the AST's concept of an item; it's a strict superset.
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct Item {
     /// Stringified span
     pub source: Span,
@@ -313,7 +304,7 @@ impl Item {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub enum ItemEnum {
     StructItem(Struct),
     EnumItem(Enum),
@@ -342,7 +333,7 @@ pub enum ItemEnum {
     AssociatedTypeItem(TyParam),
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct Module {
     pub items: Vec<Item>,
     pub is_crate: bool,
@@ -409,7 +400,7 @@ impl Clean<Item> for doctree::Module {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq)]
 pub enum Attribute {
     Word(String),
     List(String, Vec<Attribute> ),
@@ -462,7 +453,7 @@ impl<'a> attr::AttrMetaMethods for &'a Attribute {
     fn meta_item_list(&self) -> Option<&[P<ast::MetaItem>]> { None }
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq)]
 pub struct TyParam {
     pub name: String,
     pub did: ast::DefId,
@@ -499,7 +490,7 @@ impl<'tcx> Clean<TyParam> for ty::TypeParameterDef<'tcx> {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq)]
 pub enum TyParamBound {
     RegionBound(Lifetime),
     TraitBound(Type)
@@ -641,7 +632,7 @@ impl<'tcx> Clean<Option<Vec<TyParamBound>>> for subst::Substs<'tcx> {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq)]
 pub struct Lifetime(String);
 
 impl Lifetime {
@@ -691,9 +682,9 @@ impl Clean<Option<Lifetime>> for ty::Region {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq)]
 pub struct WherePredicate {
-    pub name: String,
+    pub ty: Type,
     pub bounds: Vec<TyParamBound>
 }
 
@@ -702,11 +693,12 @@ impl Clean<WherePredicate> for ast::WherePredicate {
         match *self {
             ast::WherePredicate::BoundPredicate(ref wbp) => {
                 WherePredicate {
-                    name: wbp.ident.clean(cx),
+                    ty: wbp.bounded_ty.clean(cx),
                     bounds: wbp.bounds.clean(cx)
                 }
             }
-            ast::WherePredicate::EqPredicate(_) => {
+            // FIXME(#20048)
+            _ => {
                 unimplemented!();
             }
         }
@@ -714,7 +706,7 @@ impl Clean<WherePredicate> for ast::WherePredicate {
 }
 
 // maybe use a Generic enum and use ~[Generic]?
-#[deriving(Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq)]
 pub struct Generics {
     pub lifetimes: Vec<Lifetime>,
     pub type_params: Vec<TyParam>,
@@ -742,7 +734,7 @@ impl<'a, 'tcx> Clean<Generics> for (&'a ty::Generics<'tcx>, subst::ParamSpace) {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct Method {
     pub generics: Generics,
     pub self_: SelfTy,
@@ -781,7 +773,7 @@ impl Clean<Item> for ast::Method {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct TyMethod {
     pub unsafety: ast::Unsafety,
     pub decl: FnDecl,
@@ -819,7 +811,7 @@ impl Clean<Item> for ast::TypeMethod {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq)]
 pub enum SelfTy {
     SelfStatic,
     SelfValue,
@@ -840,7 +832,7 @@ impl Clean<SelfTy> for ast::ExplicitSelf_ {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct Function {
     pub decl: FnDecl,
     pub generics: Generics,
@@ -865,7 +857,7 @@ impl Clean<Item> for doctree::Function {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq)]
 pub struct ClosureDecl {
     pub lifetimes: Vec<Lifetime>,
     pub decl: FnDecl,
@@ -886,14 +878,14 @@ impl Clean<ClosureDecl> for ast::ClosureTy {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq)]
 pub struct FnDecl {
     pub inputs: Arguments,
     pub output: FunctionRetTy,
     pub attrs: Vec<Attribute>,
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq)]
 pub struct Arguments {
     pub values: Vec<Argument>,
 }
@@ -946,7 +938,7 @@ impl<'a, 'tcx> Clean<FnDecl> for (ast::DefId, &'a ty::PolyFnSig<'tcx>) {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq)]
 pub struct Argument {
     pub type_: Type,
     pub name: String,
@@ -963,7 +955,7 @@ impl Clean<Argument> for ast::Arg {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq)]
 pub enum FunctionRetTy {
     Return(Type),
     NoReturn
@@ -978,7 +970,7 @@ impl Clean<FunctionRetTy> for ast::FunctionRetTy {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct Trait {
     pub unsafety: ast::Unsafety,
     pub items: Vec<TraitMethod>,
@@ -1022,7 +1014,7 @@ impl Clean<Type> for ast::PolyTraitRef {
 
 /// An item belonging to a trait, whether a method or associated. Could be named
 /// TraitItem except that's already taken by an exported enum variant.
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub enum TraitMethod {
     RequiredMethod(Item),
     ProvidedMethod(Item),
@@ -1067,7 +1059,7 @@ impl Clean<TraitMethod> for ast::TraitItem {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub enum ImplMethod {
     MethodImplItem(Item),
     TypeImplItem(Item),
@@ -1140,7 +1132,7 @@ impl<'tcx> Clean<Item> for ty::ImplOrTraitItem<'tcx> {
 /// A representation of a Type suitable for hyperlinking purposes. Ideally one can get the original
 /// type out of the AST/ty::ctxt given one of these, if more information is needed. Most importantly
 /// it does not preserve mutability or boxes.
-#[deriving(Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq)]
 pub enum Type {
     /// structs/enums/traits (anything that'd be an ast::TyPath)
     ResolvedPath {
@@ -1188,7 +1180,7 @@ pub enum Type {
     PolyTraitRef(Vec<TyParamBound>),
 }
 
-#[deriving(Clone, Copy, Encodable, Decodable, PartialEq, Eq, Hash)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, Hash, Copy)]
 pub enum PrimitiveType {
     Int, I8, I16, I32, I64,
     Uint, U8, U16, U32, U64,
@@ -1200,7 +1192,7 @@ pub enum PrimitiveType {
     PrimitiveTuple,
 }
 
-#[deriving(Clone, Copy, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, Copy)]
 pub enum TypeKind {
     TypeEnum,
     TypeFunction,
@@ -1368,7 +1360,7 @@ impl<'tcx> Clean<Type> for ty::Ty<'tcx> {
                 mutability: mt.mutbl.clean(cx),
                 type_: box mt.ty.clean(cx),
             },
-            ty::ty_bare_fn(ref fty) => BareFunction(box BareFunctionDecl {
+            ty::ty_bare_fn(_, ref fty) => BareFunction(box BareFunctionDecl {
                 unsafety: fty.unsafety,
                 generics: Generics {
                     lifetimes: Vec::new(),
@@ -1444,7 +1436,7 @@ impl Clean<Type> for ast::QPath {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub enum StructField {
     HiddenStructField, // inserted later by strip passes
     TypedStructField(Type),
@@ -1503,7 +1495,7 @@ impl Clean<Option<Visibility>> for ast::Visibility {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct Struct {
     pub struct_type: doctree::StructType,
     pub generics: Generics,
@@ -1533,7 +1525,7 @@ impl Clean<Item> for doctree::Struct {
 /// This is a more limited form of the standard Struct, different in that
 /// it lacks the things most items have (name, id, parameterization). Found
 /// only as a variant in an enum.
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct VariantStruct {
     pub struct_type: doctree::StructType,
     pub fields: Vec<Item>,
@@ -1550,7 +1542,7 @@ impl Clean<VariantStruct> for syntax::ast::StructDef {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct Enum {
     pub variants: Vec<Item>,
     pub generics: Generics,
@@ -1575,7 +1567,7 @@ impl Clean<Item> for doctree::Enum {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct Variant {
     pub kind: VariantKind,
 }
@@ -1643,7 +1635,7 @@ impl<'tcx> Clean<Item> for ty::VariantInfo<'tcx> {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub enum VariantKind {
     CLikeVariant,
     TupleVariant(Vec<Type>),
@@ -1665,7 +1657,7 @@ impl Clean<VariantKind> for ast::VariantKind {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable, Show)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, Show)]
 pub struct Span {
     pub filename: String,
     pub loline: uint,
@@ -1700,7 +1692,7 @@ impl Clean<Span> for syntax::codemap::Span {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq)]
 pub struct Path {
     pub global: bool,
     pub segments: Vec<PathSegment>,
@@ -1715,7 +1707,7 @@ impl Clean<Path> for ast::Path {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq)]
 pub struct PathSegment {
     pub name: String,
     pub lifetimes: Vec<Lifetime>,
@@ -1771,7 +1763,7 @@ impl Clean<String> for ast::Name {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct Typedef {
     pub type_: Type,
     pub generics: Generics,
@@ -1794,7 +1786,7 @@ impl Clean<Item> for doctree::Typedef {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, PartialEq)]
 pub struct BareFunctionDecl {
     pub unsafety: ast::Unsafety,
     pub generics: Generics,
@@ -1817,7 +1809,7 @@ impl Clean<BareFunctionDecl> for ast::BareFnTy {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable, Show)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, Show)]
 pub struct Static {
     pub type_: Type,
     pub mutability: Mutability,
@@ -1846,7 +1838,7 @@ impl Clean<Item> for doctree::Static {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable, Show)]
+#[deriving(Clone, RustcEncodable, RustcDecodable, Show)]
 pub struct Constant {
     pub type_: Type,
     pub expr: String,
@@ -1869,7 +1861,7 @@ impl Clean<Item> for doctree::Constant {
     }
 }
 
-#[deriving(Copy, Show, Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Show, Clone, RustcEncodable, RustcDecodable, PartialEq, Copy)]
 pub enum Mutability {
     Mutable,
     Immutable,
@@ -1884,7 +1876,7 @@ impl Clean<Mutability> for ast::Mutability {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct Impl {
     pub generics: Generics,
     pub trait_: Option<Type>,
@@ -1922,7 +1914,7 @@ impl Clean<Item> for doctree::Impl {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct ViewItem {
     pub inner: ViewItemInner,
 }
@@ -1988,7 +1980,7 @@ impl Clean<Vec<Item>> for ast::ViewItem {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub enum ViewItemInner {
     ExternCrate(String, Option<String>, ast::NodeId),
     Import(ViewPath)
@@ -2011,7 +2003,7 @@ impl Clean<ViewItemInner> for ast::ViewItem_ {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub enum ViewPath {
     // use source as str;
     SimpleImport(String, ImportSource),
@@ -2021,7 +2013,7 @@ pub enum ViewPath {
     ImportList(ImportSource, Vec<ViewListIdent>),
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct ImportSource {
     pub path: Path,
     pub did: Option<ast::DefId>,
@@ -2042,7 +2034,7 @@ impl Clean<ViewPath> for ast::ViewPath {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct ViewListIdent {
     pub name: String,
     pub source: Option<ast::DefId>,
@@ -2255,7 +2247,7 @@ fn resolve_def(cx: &DocContext, id: ast::NodeId) -> Option<ast::DefId> {
     })
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct Macro {
     pub source: String,
 }
@@ -2276,7 +2268,7 @@ impl Clean<Item> for doctree::Macro {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, RustcEncodable, RustcDecodable)]
 pub struct Stability {
     pub level: attr::StabilityLevel,
     pub text: String
