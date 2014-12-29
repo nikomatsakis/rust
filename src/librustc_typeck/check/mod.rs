@@ -78,6 +78,7 @@ type parameter).
 
 pub use self::LvaluePreference::*;
 pub use self::Expectation::*;
+pub use self::compare_method::compare_impl_method;
 use self::IsBinopAssignment::*;
 use self::TupleArgumentsFlag::*;
 
@@ -105,7 +106,7 @@ use TypeAndSubsts;
 use middle::lang_items::TypeIdLangItem;
 use lint;
 use util::common::{block_query, indenter, loop_query};
-use util::ppaux::{self, UserString, Repr};
+use util::ppaux::{mod, Repr};
 use util::nodemap::{DefIdMap, FnvHashMap, NodeMap};
 
 use std::cell::{Cell, Ref, RefCell};
@@ -134,8 +135,8 @@ mod upvar;
 pub mod wf;
 mod closure;
 mod callee;
+mod compare_method;
 
-/// Fields that are part of a `FnCtxt` which are inherited by
 /// closures defined within the function.  For example:
 ///
 ///     fn foo() {
