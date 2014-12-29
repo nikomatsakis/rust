@@ -444,7 +444,9 @@ enum EscapeUnicodeState {
     Done,
 }
 
-impl Iterator<char> for EscapeUnicode {
+impl Iterator for EscapeUnicode {
+    type Item = char;
+
     fn next(&mut self) -> Option<char> {
         match self.state {
             EscapeUnicodeState::Backslash => {
@@ -497,7 +499,9 @@ enum EscapeDefaultState {
     Unicode(EscapeUnicode),
 }
 
-impl Iterator<char> for EscapeDefault {
+impl Iterator for EscapeDefault {
+    type Item = char;
+
     fn next(&mut self) -> Option<char> {
         match self.state {
             EscapeDefaultState::Backslash(c) => {

@@ -755,7 +755,9 @@ pub struct Range<Idx> {
 
 // FIXME(#19391) needs a snapshot
 //impl<Idx: Clone + Step<T=uint>> Iterator<Idx> for Range<Idx> {
-impl<Idx: Clone + Step> Iterator<Idx> for Range<Idx> {
+impl<Idx: Clone + Step> Iterator for Range<Idx> {
+    type Item = Idx;
+
     #[inline]
     fn next(&mut self) -> Option<Idx> {
         if self.start < self.end {
@@ -777,7 +779,7 @@ impl<Idx: Clone + Step> Iterator<Idx> for Range<Idx> {
     }
 }
 
-impl<Idx: Clone + Step> DoubleEndedIterator<Idx> for Range<Idx> {
+impl<Idx: Clone + Step> DoubleEndedIterator for Range<Idx> {
     #[inline]
     fn next_back(&mut self) -> Option<Idx> {
         if self.start < self.end {
@@ -789,7 +791,7 @@ impl<Idx: Clone + Step> DoubleEndedIterator<Idx> for Range<Idx> {
     }
 }
 
-impl<Idx: Clone + Step> ExactSizeIterator<Idx> for Range<Idx> {}
+impl<Idx: Clone + Step> ExactSizeIterator for Range<Idx> {}
 
 /// A range which is only bounded below.
 #[deriving(Copy)]
@@ -799,7 +801,9 @@ pub struct RangeFrom<Idx> {
     pub start: Idx,
 }
 
-impl<Idx: Clone + Step> Iterator<Idx> for RangeFrom<Idx> {
+impl<Idx: Clone + Step> Iterator for RangeFrom<Idx> {
+    type Item = Idx;
+
     #[inline]
     fn next(&mut self) -> Option<Idx> {
         // Deliberately overflow so we loop forever.
