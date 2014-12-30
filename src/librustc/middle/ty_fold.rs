@@ -551,6 +551,7 @@ impl<'tcx> TypeFoldable<'tcx> for ty::UnboxedClosureUpvar<'tcx> {
             def: self.def,
             span: self.span,
             ty: self.ty.fold_with(folder),
+            selection_cache: traits::SelectionCache::new(),
         }
     }
 }

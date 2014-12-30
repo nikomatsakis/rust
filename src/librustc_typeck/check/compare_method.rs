@@ -177,37 +177,61 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
     let impl_env = ty::ParameterEnvironment::for_item(tcx, impl_m.def_id.node);
 
     // Create mapping from impl to skolemized.
-    let impl_to_skol_substs = impl_env.free_substs.clone();
+    let impl_to_skol_substs = &impl_env.free_substs;
 
     // Create mapping from trait to skolemized.
     let trait_to_skol_substs =
         trait_to_impl_substs
-        .subst(tcx, &impl_to_skol_substs)
+        .subst(tcx, impl_to_skol_substs)
         .with_method(impl_to_skol_substs.types.get_slice(subst::FnSpace).to_vec(),
                      impl_to_skol_substs.regions().get_slice(subst::FnSpace).to_vec());
+    debug!("compare_impl_method: trait_to_skol_substs={}",
+           trait_to_skol_substs.repr(tcx));
+
+    // Construct trait parameter environment and then shift it into the skolemized viewpoint.
+    let trait_param_env =
+        ty::construct_parameter_environment(tcx,
+                                            &trait_m.generics,
+                                            impl_m_body_id);
+    let trait_param_env =
+        trait_param_env.subst(tcx, &trait_to_skol_substs);
+    debug!("compare_impl_method: trait_param_env={}",
+           trait_param_env.repr(tcx));
 
     // Create a fresh fulfillment context.
     let mut fulfill_cx = traits::FulfillmentContext::new();
 
-    // Create obligations for each predicate declared by the trait definition.
-    for predicate in trait_m.generics.predicates.iter()
-                            .map(|p| p.subst(tcx, &trait_to_skol_substs)) {
+    // Create obligations for each predicate declared by the impl
+    // definition in the context of the trait's parameter
+    // environment. We can't just use `impl_env.caller_bounds`,
+    // however, because we want to replace all late-bound regions with
+    // region variables.
+    let impl_bounds =
+        impl_m.generics.to_bounds(tcx, impl_to_skol_substs);
+    let (impl_bounds, _) =
+        infcx.replace_late_bound_regions_with_fresh_var(
+            impl_m_span,
+            infer::HigherRankedType,
+            &ty::Binder(impl_bounds)); // TODO I think this is right?
+    debug!("compare_impl_method: impl_bounds={}",
+           impl_bounds.repr(tcx));
+    for predicate in impl_bounds.predicates.into_iter() {
         fulfill_cx.register_predicate(
             tcx,
-            traits::Obligation::new(traits::ObligationCause::dummy(), predicate)
-        )
+            traits::Obligation::new(traits::ObligationCause::dummy(),
+                                    predicate));
     }
 
     // Check that all obligations are satisfied by the implementation's
     // version.
-    match fulfill_cx.select_all_or_error(&infcx, &impl_env, tcx) {
+    match fulfill_cx.select_all_or_error(&infcx, &trait_param_env, tcx) {
         Err(ref errors) => { traits::report_fulfillment_errors(&infcx, errors) }
         Ok(_) => {}
     }
 
     // Compute skolemized form of impl and trait method tys.
     let impl_fty = ty::mk_bare_fn(tcx, None, impl_m.fty.clone());
-    let impl_fty = impl_fty.subst(tcx, &impl_to_skol_substs);
+    let impl_fty = impl_fty.subst(tcx, impl_to_skol_substs);
     let trait_fty = ty::mk_bare_fn(tcx, None, trait_m.fty.clone());
     let trait_fty = trait_fty.subst(tcx, &trait_to_skol_substs);
 
