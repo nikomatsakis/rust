@@ -112,13 +112,13 @@ pub mod marker {
 
             impl<Sized? T> cmp::PartialOrd for $t<T> {
                 fn partial_cmp(&self, _other: &$t<T>) -> Option<cmp::Ordering> {
-                    Option::Some(cmp::Equal)
+                    Option::Some(cmp::Ordering::Equal)
                 }
             }
 
             impl<Sized? T> cmp::Ord for $t<T> {
                 fn cmp(&self, _other: &$t<T>) -> cmp::Ordering {
-                    cmp::Equal
+                    cmp::Ordering::Equal
                 }
             }
 

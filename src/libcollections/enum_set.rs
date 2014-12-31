@@ -189,25 +189,25 @@ impl<E:CLike> EnumSet<E> {
 
 impl<E:CLike> Sub<EnumSet<E>, EnumSet<E>> for EnumSet<E> {
     fn sub(self, e: EnumSet<E>) -> EnumSet<E> {
-        EnumSet {bits: self.bits & !e.bits}
+        EnumSet {bits: self.bits & !e.bits, marker: marker::CovariantType}
     }
 }
 
 impl<E:CLike> BitOr<EnumSet<E>, EnumSet<E>> for EnumSet<E> {
     fn bitor(self, e: EnumSet<E>) -> EnumSet<E> {
-        EnumSet {bits: self.bits | e.bits}
+        EnumSet {bits: self.bits | e.bits, marker: marker::CovariantType}
     }
 }
 
 impl<E:CLike> BitAnd<EnumSet<E>, EnumSet<E>> for EnumSet<E> {
     fn bitand(self, e: EnumSet<E>) -> EnumSet<E> {
-        EnumSet {bits: self.bits & e.bits}
+        EnumSet {bits: self.bits & e.bits, marker: marker::CovariantType}
     }
 }
 
 impl<E:CLike> BitXor<EnumSet<E>, EnumSet<E>> for EnumSet<E> {
     fn bitxor(self, e: EnumSet<E>) -> EnumSet<E> {
-        EnumSet {bits: self.bits ^ e.bits}
+        EnumSet {bits: self.bits ^ e.bits, marker: marker::CovariantType}
     }
 }
 
