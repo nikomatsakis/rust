@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// FIXME(japaric) this errors
+
 // aux-build:overloaded_autoderef_xc.rs
 
 extern crate overloaded_autoderef_xc;
