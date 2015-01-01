@@ -1303,12 +1303,14 @@ impl<T> ops::SliceMut<uint, [T]> for Vec<T> {
 }
 
 #[experimental = "waiting on Deref stability"]
-impl<T> ops::Deref<[T]> for Vec<T> {
+impl<T> ops::Deref for Vec<T> {
+    type Output = [T];
+
     fn deref<'a>(&'a self) -> &'a [T] { self.as_slice() }
 }
 
 #[experimental = "waiting on DerefMut stability"]
-impl<T> ops::DerefMut<[T]> for Vec<T> {
+impl<T> ops::DerefMut for Vec<T> {
     fn deref_mut<'a>(&'a mut self) -> &'a mut [T] { self.as_mut_slice() }
 }
 
@@ -1718,7 +1720,9 @@ pub struct DerefVec<'a, T> {
 }
 
 #[experimental]
-impl<'a, T> Deref<Vec<T>> for DerefVec<'a, T> {
+impl<'a, T> Deref for DerefVec<'a, T> {
+    type Output = Vec<T>;
+
     fn deref<'b>(&'b self) -> &'b Vec<T> {
         &self.x
     }
