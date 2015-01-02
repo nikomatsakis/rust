@@ -25,6 +25,7 @@
 
 #![feature(macro_rules, phase, globs)]
 #![feature(unboxed_closures)]
+#![feature(associated_types)]
 #![no_std]
 #![experimental]
 
@@ -313,7 +314,8 @@ pub struct Generator<'a, T, R:'a> {
     rng: &'a mut R,
 }
 
-impl<'a, T: Rand, R: Rng> Iterator<T> for Generator<'a, T, R> {
+impl<'a, T: Rand, R: Rng> Iterator for Generator<'a, T, R> {
+    type Item = T;
     fn next(&mut self) -> Option<T> {
         Some(self.rng.gen())
     }
@@ -326,7 +328,8 @@ pub struct AsciiGenerator<'a, R:'a> {
     rng: &'a mut R,
 }
 
-impl<'a, R: Rng> Iterator<char> for AsciiGenerator<'a, R> {
+impl<'a, R: Rng> Iterator for AsciiGenerator<'a, R> {
+    type Item = char;
     fn next(&mut self) -> Option<char> {
         static GEN_ASCII_STR_CHARSET: &'static [u8] =
             b"ABCDEFGHIJKLMNOPQRSTUVWXYZ\

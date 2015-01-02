@@ -811,7 +811,7 @@ mod stack {
 }
 
 impl<K: Ord, V> FromIterator<(K, V)> for BTreeMap<K, V> {
-    fn from_iter<T: Iterator<(K, V)>>(iter: T) -> BTreeMap<K, V> {
+    fn from_iter<T: Iterator<Item=(K, V)>>(iter: T) -> BTreeMap<K, V> {
         let mut map = BTreeMap::new();
         map.extend(iter);
         map

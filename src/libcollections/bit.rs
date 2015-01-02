@@ -933,7 +933,7 @@ impl Default for Bitv {
 }
 
 impl FromIterator<bool> for Bitv {
-    fn from_iter<I:Iterator<bool>>(iterator: I) -> Bitv {
+    fn from_iter<I:Iterator<Item=bool>>(iterator: I) -> Bitv {
         let mut ret = Bitv::new();
         ret.extend(iterator);
         ret
@@ -942,7 +942,7 @@ impl FromIterator<bool> for Bitv {
 
 impl Extend<bool> for Bitv {
     #[inline]
-    fn extend<I: Iterator<bool>>(&mut self, mut iterator: I) {
+    fn extend<I: Iterator<Item=bool>>(&mut self, mut iterator: I) {
         let (min, _) = iterator.size_hint();
         self.reserve(min);
         for element in iterator {
@@ -1016,7 +1016,9 @@ pub struct Bits<'a> {
     end_idx: uint,
 }
 
-impl<'a> Iterator<bool> for Bits<'a> {
+impl<'a> Iterator for Bits<'a> {
+    type Item = bool;
+
     #[inline]
     fn next(&mut self) -> Option<bool> {
         if self.next_idx != self.end_idx {
@@ -1034,7 +1036,7 @@ impl<'a> Iterator<bool> for Bits<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator<bool> for Bits<'a> {
+impl<'a> DoubleEndedIterator for Bits<'a> {
     #[inline]
     fn next_back(&mut self) -> Option<bool> {
         if self.next_idx != self.end_idx {
@@ -1046,9 +1048,9 @@ impl<'a> DoubleEndedIterator<bool> for Bits<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator<bool> for Bits<'a> {}
+impl<'a> ExactSizeIterator for Bits<'a> {}
 
-impl<'a> RandomAccessIterator<bool> for Bits<'a> {
+impl<'a> RandomAccessIterator for Bits<'a> {
     #[inline]
     fn indexable(&self) -> uint {
         self.end_idx - self.next_idx
@@ -1113,7 +1115,7 @@ impl Default for BitvSet {
 }
 
 impl FromIterator<uint> for BitvSet {
-    fn from_iter<I:Iterator<uint>>(iterator: I) -> BitvSet {
+    fn from_iter<I:Iterator<Item=uint>>(iterator: I) -> BitvSet {
         let mut ret = BitvSet::new();
         ret.extend(iterator);
         ret
@@ -1122,7 +1124,7 @@ impl FromIterator<uint> for BitvSet {
 
 impl Extend<uint> for BitvSet {
     #[inline]
-    fn extend<I: Iterator<uint>>(&mut self, mut iterator: I) {
+    fn extend<I: Iterator<Item=uint>>(&mut self, mut iterator: I) {
         for i in iterator {
             self.insert(i);
         }
@@ -1753,7 +1755,9 @@ pub struct TwoBitPositions<'a> {
     next_idx: uint
 }
 
-impl<'a> Iterator<uint> for BitPositions<'a> {
+impl<'a> Iterator for BitPositions<'a> {
+    type Item = uint;
+
     fn next(&mut self) -> Option<uint> {
         while self.next_idx < self.set.bitv.len() {
             let idx = self.next_idx;
@@ -1773,7 +1777,9 @@ impl<'a> Iterator<uint> for BitPositions<'a> {
     }
 }
 
-impl<'a> Iterator<uint> for TwoBitPositions<'a> {
+impl<'a> Iterator for TwoBitPositions<'a> {
+    type Item = uint;
+
     fn next(&mut self) -> Option<uint> {
         while self.next_idx < self.set.bitv.len() ||
               self.next_idx < self.other.bitv.len() {

@@ -135,10 +135,18 @@ pub fn normalize<'a,'b,'tcx,T>(selcx: &'a mut SelectionContext<'b,'tcx>,
                                cause: ObligationCause<'tcx>,
                                value: &T)
                                -> Normalized<'tcx, T>
-    where T : TypeFoldable<'tcx> + HasProjectionTypes + Clone
+    where T : TypeFoldable<'tcx> + HasProjectionTypes + Clone + Repr<'tcx>
 {
+    debug!("normalize(value={})",
+           value.repr(selcx.tcx()));
+
     let mut normalizer = AssociatedTypeNormalizer::new(selcx, cause, 0);
     let result = normalizer.fold(value);
+
+    debug!("normalize: result={} obligations={}",
+           result.repr(selcx.tcx()),
+           normalizer.obligations.repr(selcx.tcx()));
+
     Normalized {
         value: result,
         obligations: normalizer.obligations,
@@ -166,12 +174,19 @@ impl<'a,'b,'tcx> AssociatedTypeNormalizer<'a,'b,'tcx> {
         }
     }
 
-    fn fold<T:TypeFoldable<'tcx> + HasProjectionTypes + Clone>(&mut self, value: &T) -> T {
+    fn fold<T>(&mut self, value: &T) -> T
+        where T : TypeFoldable<'tcx> + HasProjectionTypes + Clone + Repr<'tcx>
+    {
         let value = self.selcx.infcx().resolve_type_vars_if_possible(value);
 
+        debug!("AssociatedTypeNormalizer::fold(value={})",
+               value.repr(selcx.tcx()));
+
         if !value.has_projection_types() {
+            debug!("AssociatedTypeNormalizer::fold: no projection types, cloning");
             value.clone()
         } else {
+            debug!("AssociatedTypeNormalizer::fold: projection types, folding");
             value.fold_with(self)
         }
     }
@@ -209,13 +224,23 @@ impl<'a,'b,'tcx> TypeFolder<'tcx> for AssociatedTypeNormalizer<'a,'b,'tcx> {
                 // binder). It would be better to normalize in a
                 // binding-aware fashion.
 
-                let Normalized { value: ty, obligations } =
+                let normalized_ty =
                     normalize_projection_type(self.selcx,
                                               data.clone(),
                                               self.cause.clone(),
                                               self.depth);
-                self.obligations.extend(obligations.into_iter());
-                ty
+                debug!("AssociatedTypeNormalizer::fold_ty({}) = {}",
+                       ty.repr(self.tcx()),
+                       normalized_ty.repr(self.tcx()));
+                self.obligations.extend(
+                    normalized_ty.obligations.into_iter());
+                normalized_ty.value
+            }
+            ty::ty_projection(..) => {
+                debug!("AssociatedTypeNormalizer::fold_ty({}) has escaping regions",
+                       ty.repr(self.tcx()));
+
+                ty_fold::super_fold_ty(self, ty)
             }
             _ => {
                 ty_fold::super_fold_ty(self, ty)
@@ -278,9 +303,10 @@ fn opt_normalize_projection_type<'a,'b,'tcx>(
             // an impl, where-clause etc) and hence we must
             // re-normalize it
 
-            debug!("normalize_projection_type: projected_ty={} depth={}",
+            debug!("normalize_projection_type: projected_ty={} depth={} obligations={}",
                    projected_ty.repr(selcx.tcx()),
-                   depth);
+                   depth,
+                   obligations.repr(selcx.tcx()));
 
             if ty::type_has_projection(projected_ty) {
                 let tcx = selcx.tcx();
