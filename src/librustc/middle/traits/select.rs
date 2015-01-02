@@ -338,21 +338,21 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             }
 
             ty::Predicate::Projection(ref data) => {
-                let result = self.infcx.probe(|_| {
+                self.infcx.probe(|_| {
                     let project_obligation = obligation.with(data.clone());
-                    project::poly_project_and_unify_type(self, &project_obligation)
-                });
-                match result {
-                    Ok(Some(subobligations)) => {
-                        self.evaluate_predicates_recursively(previous_stack, subobligations.iter())
+                    match project::poly_project_and_unify_type(self, &project_obligation) {
+                        Ok(Some(subobligations)) => {
+                            self.evaluate_predicates_recursively(previous_stack,
+                                                                 subobligations.iter())
+                        }
+                        Ok(None) => {
+                            EvaluatedToAmbig
+                        }
+                        Err(_) => {
+                            EvaluatedToErr(Unimplemented)
+                        }
                     }
-                    Ok(None) => {
-                        EvaluatedToAmbig
-                    }
-                    Err(_) => {
-                        EvaluatedToErr(Unimplemented)
-                    }
-                }
+                })
             }
         }
     }
