@@ -210,14 +210,17 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
 
     let mut selcx = traits::SelectionContext::new(&infcx, &impl_param_env, tcx);
 
+    let normalize_cause =
+        traits::ObligationCause::misc(impl_m_span, impl_m_body_id);
+
     // Normalize the associated types in the impl_bounds.
     let traits::Normalized { value: impl_bounds, .. } =
-        traits::normalize(&mut selcx, traits::ObligationCause::dummy(), &impl_bounds);
+        traits::normalize(&mut selcx, normalize_cause.clone(), &impl_bounds);
 
     // Normalize the associated types in the trait_boubnds.
     let trait_bounds = trait_m.generics.to_bounds(tcx, &trait_to_skol_substs);
     let traits::Normalized { value: trait_bounds, .. } =
-        traits::normalize(&mut selcx, traits::ObligationCause::dummy(), &trait_bounds);
+        traits::normalize(&mut selcx, normalize_cause, &trait_bounds);
 
     // Obtain the predicate split predicate sets for each.
     let trait_pred = trait_bounds.predicates.split();
@@ -246,9 +249,15 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
         trait_param_env.caller_bounds.repr(tcx));
 
     for predicate in impl_pred.fns.into_iter() {
+        let cause = traits::ObligationCause {
+            span: impl_m_span,
+            body_id: impl_m_body_id,
+            code: traits::ObligationCauseCode::CompareImplMethodObligation
+        };
+
         fulfillment_cx.register_predicate_obligation(
             &infcx,
-            traits::Obligation::new(traits::ObligationCause::dummy(), predicate));
+            traits::Obligation::new(cause, predicate));
     }
 
     // Compute skolemized form of impl and trait method tys.

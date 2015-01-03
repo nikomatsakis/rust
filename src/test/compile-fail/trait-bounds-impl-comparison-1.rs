@@ -32,15 +32,15 @@ trait Foo {
 impl Foo for int {
     // invalid bound for T, was defined as Eq in trait
     fn test_error1_fn<T: Ord>(&self) {}
-    //~^ ERROR in method `test_error1_fn`, type parameter 0 requires bound `core::cmp::Ord`
+    //~^ ERROR the requirement `T : core::cmp::Ord` appears on the impl method but not on the corresponding trait method
 
     // invalid bound for T, was defined as Eq + Ord in trait
     fn test_error2_fn<T: Eq + B>(&self) {}
-    //~^ ERROR in method `test_error2_fn`, type parameter 0 requires bound `B`
+    //~^ ERROR the requirement `T : B` appears on the impl method but not on the corresponding trait method
 
     // invalid bound for T, was defined as Eq + Ord in trait
     fn test_error3_fn<T: B + Eq>(&self) {}
-    //~^ ERROR in method `test_error3_fn`, type parameter 0 requires bound `B`
+    //~^ ERROR the requirement `T : B` appears on the impl method but not on the corresponding trait method
 
     // multiple bounds, same order as in trait
     fn test3_fn<T: Ord + Eq>(&self) {}
@@ -50,16 +50,16 @@ impl Foo for int {
 
     // parameters in impls must be equal or more general than in the defining trait
     fn test_error5_fn<T: B>(&self) {}
-    //~^ ERROR in method `test_error5_fn`, type parameter 0 requires bound `B`
+    //~^ ERROR the requirement `T : B` appears on the impl method but not on the corresponding trait method
 
     // bound `std::cmp::Eq` not enforced by this implementation, but this is OK
     fn test6_fn<T: A>(&self) {}
 
     fn test_error7_fn<T: A + Eq>(&self) {}
-    //~^ ERROR in method `test_error7_fn`, type parameter 0 requires bound `core::cmp::Eq`
+    //~^ ERROR the requirement `T : core::cmp::Eq` appears on the impl method but not on the corresponding trait method
 
     fn test_error8_fn<T: C>(&self) {}
-    //~^ ERROR in method `test_error8_fn`, type parameter 0 requires bound `C`
+    //~^ ERROR the requirement `T : C` appears on the impl method but not on the corresponding trait method
 }
 
 
@@ -71,8 +71,7 @@ trait Trait {
 
 impl Trait for uint {
     fn method<G: Getter<uint>>() {}
-    //~^ ERROR in method `method`, type parameter 0 requires bound `Getter<uint>`
+    //~^ ERROR the requirement `G : Getter<uint>` appears on the impl method but not on the corresponding trait method
 }
 
 fn main() {}
-
