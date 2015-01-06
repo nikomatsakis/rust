@@ -142,7 +142,7 @@ fn encode_item_variances(rbml_w: &mut Encoder,
 fn encode_bounds_and_type<'a, 'tcx>(rbml_w: &mut Encoder,
                                     ecx: &EncodeContext<'a, 'tcx>,
                                     pty: &ty::TypeScheme<'tcx>) {
-    encode_generics(rbml_w, ecx, &pty.generics, tag_item_generics);
+    encode_generics(rbml_w, ecx, &pty.generics, &pty.predicates, tag_item_generics);
     encode_type(ecx, rbml_w, pty.ty);
 }
 
@@ -761,6 +761,7 @@ fn encode_info_for_struct_ctor(ecx: &EncodeContext,
 fn encode_generics<'a, 'tcx>(rbml_w: &mut Encoder,
                              ecx: &EncodeContext<'a, 'tcx>,
                              generics: &ty::Generics<'tcx>,
+                             predicates: &ty::GenericPredicates<'tcx>,
                              tag: uint)
 {
     rbml_w.start_tag(tag);
@@ -802,7 +803,7 @@ fn encode_generics<'a, 'tcx>(rbml_w: &mut Encoder,
         rbml_w.end_tag();
     }
 
-    for (space, _, predicate) in generics.predicates.iter_enumerated() {
+    for (space, _, predicate) in predicates.predicates.iter_enumerated() {
         rbml_w.start_tag(tag_predicate);
 
         rbml_w.wr_tagged_u8(tag_predicate_space, space as u8);
@@ -822,7 +823,7 @@ fn encode_method_ty_fields<'a, 'tcx>(ecx: &EncodeContext<'a, 'tcx>,
                                      method_ty: &ty::Method<'tcx>) {
     encode_def_id(rbml_w, method_ty.def_id);
     encode_name(rbml_w, method_ty.name);
-    encode_generics(rbml_w, ecx, &method_ty.generics,
+    encode_generics(rbml_w, ecx, &method_ty.generics, &method_ty.bounds,
                     tag_method_ty_generics);
     encode_method_fty(ecx, rbml_w, &method_ty.fty);
     encode_visibility(rbml_w, method_ty.vis);
@@ -1319,7 +1320,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         let trait_def = ty::lookup_trait_def(tcx, def_id);
         encode_unsafety(rbml_w, trait_def.unsafety);
         encode_associated_type_names(rbml_w, trait_def.associated_type_names.as_slice());
-        encode_generics(rbml_w, ecx, &trait_def.generics, tag_item_generics);
+        encode_generics(rbml_w, ecx, &trait_def.generics, &trait_def.predicates, tag_item_generics);
         encode_trait_ref(rbml_w, ecx, &*trait_def.trait_ref, tag_item_trait_ref);
         encode_name(rbml_w, item.ident.name);
         encode_attributes(rbml_w, &item.attrs[]);

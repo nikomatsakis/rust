@@ -387,7 +387,7 @@ pub fn get_trait_def<'tcx>(cdata: Cmd,
                            tcx: &ty::ctxt<'tcx>) -> ty::TraitDef<'tcx>
 {
     let item_doc = lookup_item(item_id, cdata.data());
-    let generics = doc_generics(item_doc, tcx, cdata, tag_item_generics);
+    let (generics, predicates) = doc_generics(item_doc, tcx, cdata, tag_item_generics);
     let bounds = trait_def_bounds(item_doc, tcx, cdata);
     let unsafety = parse_unsafety(item_doc);
     let associated_type_names = parse_associated_type_names(item_doc);
@@ -395,6 +395,7 @@ pub fn get_trait_def<'tcx>(cdata: Cmd,
     ty::TraitDef {
         unsafety: unsafety,
         generics: generics,
+        predicates: predicates,
         bounds: bounds,
         trait_ref: item_trait_ref(item_doc, tcx, cdata),
         associated_type_names: associated_type_names,
@@ -409,10 +410,11 @@ pub fn get_type<'tcx>(cdata: Cmd, id: ast::NodeId, tcx: &ty::ctxt<'tcx>)
     let t = item_type(ast::DefId { krate: cdata.cnum, node: id }, item, tcx,
                       cdata);
 
-    let generics = doc_generics(item, tcx, cdata, tag_item_generics);
+    let (generics, predicates) = doc_generics(item, tcx, cdata, tag_item_generics);
 
     ty::TypeScheme {
         generics: generics,
+        predicates: predicates,
         ty: t
     }
 }
@@ -852,14 +854,15 @@ pub fn get_impl_or_trait_item<'tcx>(intr: Rc<IdentInterner>,
 
     match item_sort(method_doc) {
         'r' | 'p' => {
-            let generics = doc_generics(method_doc, tcx, cdata,
-                                        tag_method_ty_generics);
+            let (generics, predicates) = doc_generics(method_doc, tcx, cdata,
+                                                      tag_method_ty_generics);
             let fty = doc_method_fty(method_doc, tcx, cdata);
             let explicit_self = get_explicit_self(method_doc);
             let provided_source = get_provided_source(method_doc, cdata);
 
             ty::MethodTraitItem(Rc::new(ty::Method::new(name,
                                                         generics,
+                                                        predicates,
                                                         fty,
                                                         explicit_self,
                                                         vis,
@@ -1441,11 +1444,13 @@ pub fn is_typedef(cdata: Cmd, id: ast::NodeId) -> bool {
     }
 }
 
+// FIXME it would be better to treat generics and predicates separately in
+// metadata.
 fn doc_generics<'tcx>(base_doc: rbml::Doc,
                       tcx: &ty::ctxt<'tcx>,
                       cdata: Cmd,
                       tag: uint)
-                      -> ty::Generics<'tcx>
+                      -> (ty::Generics<'tcx>, ty::GenericPredicates<'tcx>)
 {
     let doc = reader::get_doc(base_doc, tag);
 
@@ -1505,7 +1510,8 @@ fn doc_generics<'tcx>(base_doc: rbml::Doc,
         true
     });
 
-    ty::Generics { types: types, regions: regions, predicates: predicates }
+    (ty::Generics { types: types, regions: regions },
+     ty::GenericPredicates { predicates: predicates })
 }
 
 pub fn is_associated_type(cdata: Cmd, id: ast::NodeId) -> bool {

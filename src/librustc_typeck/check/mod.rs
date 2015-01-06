@@ -1086,7 +1086,10 @@ fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
     // this kind of equivalency just fine.
 
     // Create mapping from impl to skolemized.
-    let impl_param_env = ty::construct_parameter_environment(tcx, &impl_m.generics, impl_m_body_id);
+    let impl_param_env = ty::construct_parameter_environment(tcx,
+                                                             &impl_m.generics,
+                                                             &impl_m.bounds,
+                                                             impl_m_body_id);
     let impl_to_skol_substs = &impl_param_env.free_substs;
 
     // Create mapping from trait to skolemized.
@@ -1811,11 +1814,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     fn instantiate_bounds(&self,
                           span: Span,
                           substs: &Substs<'tcx>,
-                          generics: &ty::Generics<'tcx>)
-                          -> ty::GenericBounds<'tcx>
+                          bounds: &ty::GenericPredicates<'tcx>)
+                          -> ty::InstantiatedBounds<'tcx>
     {
-        ty::GenericBounds {
-            predicates: self.instantiate_type_scheme(span, substs, &generics.predicates)
+        ty::InstantiatedBounds {
+            predicates: self.instantiate_type_scheme(span, substs, &bounds.predicates)
         }
     }
 
@@ -1931,7 +1934,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 span,
                 &type_scheme.generics);
         let bounds =
-            self.instantiate_bounds(span, &substs, &type_scheme.generics);
+            self.instantiate_bounds(span, &substs, &type_scheme.predicates);
         self.add_obligations_for_parameters(
             traits::ObligationCause::new(
                 span,
@@ -2226,7 +2229,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// and `T`. This routine will add a region obligation `$1:'$0` and register it locally.
     pub fn add_obligations_for_parameters(&self,
                                           cause: traits::ObligationCause<'tcx>,
-                                          generic_bounds: &ty::GenericBounds<'tcx>)
+                                          generic_bounds: &ty::InstantiatedBounds<'tcx>)
     {
         assert!(!generic_bounds.has_escaping_regions());
 
@@ -4352,7 +4355,7 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
                 if let Some(did) = did {
                     let polytype = ty::lookup_item_type(tcx, did);
                     let substs = Substs::new_type(vec![idx_type], vec![]);
-                    let bounds = fcx.instantiate_bounds(expr.span, &substs, &polytype.generics);
+                    let bounds = fcx.instantiate_bounds(expr.span, &substs, &polytype.predicates);
                     fcx.add_obligations_for_parameters(
                         traits::ObligationCause::new(expr.span,
                                                      fcx.body_id,
@@ -5173,7 +5176,7 @@ pub fn instantiate_path<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
 
     // Add all the obligations that are required, substituting and
     // normalized appropriately.
-    let bounds = fcx.instantiate_bounds(span, &substs, &type_scheme.generics);
+    let bounds = fcx.instantiate_bounds(span, &substs, &type_scheme.predicates);
     fcx.add_obligations_for_parameters(
         traits::ObligationCause::new(span, fcx.body_id, traits::ItemObligation(def.def_id())),
         &bounds);

@@ -879,8 +879,8 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                     let cause = traits::ObligationCause::misc(self.span, self.fcx.body_id);
 
                     // Check whether the impl imposes obligations we have to worry about.
-                    let impl_generics = ty::lookup_item_type(self.tcx(), impl_def_id).generics;
-                    let impl_bounds = impl_generics.to_bounds(self.tcx(), substs);
+                    let impl_bounds = ty::lookup_item_type(self.tcx(), impl_def_id).predicates;
+                    let impl_bounds = impl_bounds.to_bounds(self.tcx(), substs);
                     let traits::Normalized { value: impl_bounds,
                                              obligations: norm_obligations } =
                         traits::normalize(selcx, cause.clone(), &impl_bounds);
