@@ -197,9 +197,9 @@ impl<'a, 'tcx> AstConv<'tcx> for CollectCtxt<'a, 'tcx> {
 }
 
 fn get_enum_variant_types<'a, 'tcx>(ccx: &CollectCtxt<'a, 'tcx>,
-                                        enum_ty: Ty<'tcx>,
-                                        variants: &[P<ast::Variant>],
-                                        generics: &ast::Generics) {
+                                    enum_ty: Ty<'tcx>,
+                                    variants: &[P<ast::Variant>],
+                                    generics: &ast::Generics) {
     let tcx = ccx.tcx;
 
     // Create a set of parameter types shared among all the variants.
@@ -1220,10 +1220,10 @@ fn ty_generic_bounds_for_fn_or_method<'a,'tcx>(ccx: &CollectCtxt<'a,'tcx>,
 }
 
 // Add the Sized bound, unless the type parameter is marked as `?Sized`.
-fn add_unsized_bound<'a,'tcx>(ccx: &CollectCtxt<'a,'tcx>,
-                              bounds: &mut ty::BuiltinBounds,
-                              ast_bounds: &[ast::TyParamBound],
-                              span: Span)
+fn add_sized_bound<'a,'tcx>(ccx: &CollectCtxt<'a,'tcx>,
+                            bounds: &mut ty::BuiltinBounds,
+                            ast_bounds: &[ast::TyParamBound],
+                            span: Span)
 {
     // Try to find an unbound in bounds.
     let mut unbound = None;
@@ -1469,10 +1469,10 @@ fn compute_bounds<'a,'tcx>(ccx: &CollectCtxt<'a,'tcx>,
                                              ast_bounds);
 
     if let SizedByDefault::Yes = sized_by_default {
-        add_unsized_bound(ccx,
-                          &mut param_bounds.builtin_bounds,
-                          ast_bounds,
-                          span);
+        add_sized_bound(ccx,
+                        &mut param_bounds.builtin_bounds,
+                        ast_bounds,
+                        span);
 
         check_bounds_compatible(ccx.tcx,
                                 param_ty,
