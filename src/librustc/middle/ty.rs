@@ -7300,7 +7300,7 @@ impl<'tcx> Repr<'tcx> for UnboxedClosureUpvar<'tcx> {
     }
 }
 
-impl<'tcx> Repr<'tcx> for ParameterEnvironment<'tcx> {
+impl<'a, 'tcx> Repr<'tcx> for ParameterEnvironment<'a, 'tcx> {
     fn repr(&self, tcx: &ctxt<'tcx>) -> String {
         format!("ParameterEnvironment(\
             free_substs={}, \

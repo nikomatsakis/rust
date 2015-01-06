@@ -10,9 +10,9 @@
 
 use middle::infer;
 use middle::traits;
-use middle::ty::{mod};
-use middle::subst::{mod, Subst, VecPerParamSpace};
-use util::ppaux::{mod, Repr};
+use middle::ty::{self};
+use middle::subst::{self, Subst, Substs, VecPerParamSpace};
+use util::ppaux::{self, Repr, UserString};
 
 use syntax::ast;
 use syntax::codemap::{Span};
@@ -171,9 +171,6 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
     //
     // Finally we register each of these predicates as an obligation in
     // a fresh FulfillmentCtxt, and invoke select_all_or_error.
-    //
-    // FIXME(jroesch): Currently the error reporting is not correctly attached
-    // to a span and results in terrible error reporting.
 
     // Create a parameter environment that represents the implementation's
     // method.
@@ -192,6 +189,18 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
     debug!("compare_impl_method: trait_to_skol_substs={}",
            trait_to_skol_substs.repr(tcx));
 
+    // Check region bounds. FIXME(@jroesch) refactor this away when removing
+    // ParamBounds.
+    if !check_region_bounds_on_impl_method(tcx,
+                                           impl_m_span,
+                                           impl_m,
+                                           &trait_m.generics,
+                                           &impl_m.generics,
+                                           &trait_to_skol_substs,
+                                           impl_to_skol_substs) {
+        return;
+    }
+
     // Create obligations for each predicate declared by the impl
     // definition in the context of the trait's parameter
     // environment. We can't just use `impl_env.caller_bounds`,
@@ -208,7 +217,7 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
     debug!("compare_impl_method: impl_bounds={}",
            impl_bounds.repr(tcx));
 
-    let mut selcx = traits::SelectionContext::new(&infcx, &impl_param_env, tcx);
+    let mut selcx = traits::SelectionContext::new(&infcx, &impl_param_env);
 
     let normalize_cause =
         traits::ObligationCause::misc(impl_m_span, impl_m_body_id);
@@ -260,6 +269,19 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
             traits::Obligation::new(cause, predicate));
     }
 
+    // We now need to check that the signature of the impl method is
+    // compatible with that of the trait method. We do this by
+    // checking that `impl_fty <: trait_fty`.
+    //
+    // FIXME. Unfortunately, this doesn't quite work right now because
+    // associated type normalization is not integrated into subtype
+    // checks. For the comparison to be valid, we need to
+    // normalize the associated types in the impl/trait methods
+    // first. However, because function types bind regions, just
+    // calling `normalize_associated_types_in` would have no effect on
+    // any associated types appearing in the fn arguments or return
+    // type.
+
     // Compute skolemized form of impl and trait method tys.
     let impl_fty = ty::mk_bare_fn(tcx, None, tcx.mk_bare_fn(impl_m.fty.clone()));
     let impl_fty = impl_fty.subst(tcx, impl_to_skol_substs);
@@ -271,15 +293,13 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
 
         let (impl_sig, _) =
             infcx.replace_late_bound_regions_with_fresh_var(impl_m_span,
-                infer::HigherRankedType,
-                &impl_m.fty.sig);
-
+                                                            infer::HigherRankedType,
+                                                            &impl_m.fty.sig);
         let impl_sig =
             impl_sig.subst(tcx, impl_to_skol_substs);
         let impl_sig =
             assoc::normalize_associated_types_in(&infcx,
                                                  &impl_param_env,
-                                                 infcx.tcx,
                                                  &mut fulfillment_cx,
                                                  impl_m_span,
                                                  impl_m_body_id,
@@ -287,12 +307,11 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
         let impl_fty =
             ty::mk_bare_fn(tcx,
                            None,
-                        tcx.mk_bare_fn(ty::BareFnTy {
-                            unsafety: impl_m.fty.unsafety,
-                            abi: impl_m.fty.abi,
-                            sig: ty::Binder(impl_sig) }));
-                            debug!("compare_impl_method: impl_fty={}",
-                        impl_fty.repr(tcx));
+                           tcx.mk_bare_fn(ty::BareFnTy { unsafety: impl_m.fty.unsafety,
+                                                         abi: impl_m.fty.abi,
+                                                         sig: ty::Binder(impl_sig) }));
+        debug!("compare_impl_method: impl_fty={}",
+               impl_fty.repr(tcx));
 
         let (trait_sig, skol_map) =
             infcx.skolemize_late_bound_regions(&trait_m.fty.sig, snapshot);
@@ -301,7 +320,6 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
         let trait_sig =
             assoc::normalize_associated_types_in(&infcx,
                                                  &impl_param_env,
-                                                 infcx.tcx,
                                                  &mut fulfillment_cx,
                                                  impl_m_span,
                                                  impl_m_body_id,
@@ -309,13 +327,15 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
         let trait_fty =
             ty::mk_bare_fn(tcx,
                            None,
-                           tcx.mk_bare_fn(ty::BareFnTy {
-                               unsafety: trait_m.fty.unsafety,
-                               abi: trait_m.fty.abi,
-                               sig: ty::Binder(trait_sig) }));
+                           tcx.mk_bare_fn(ty::BareFnTy { unsafety: trait_m.fty.unsafety,
+                                                         abi: trait_m.fty.abi,
+                                                         sig: ty::Binder(trait_sig) }));
 
-        debug!("compare_impl_method: trait_fty={}", trait_fty.repr(tcx));
+        debug!("compare_impl_method: trait_fty={}",
+               trait_fty.repr(tcx));
+
         try!(infer::mk_subty(&infcx, false, origin, impl_fty, trait_fty));
+
         infcx.leak_check(&skol_map, snapshot)
     });
 
@@ -323,19 +343,19 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
         Ok(()) => { }
         Err(terr) => {
             debug!("checking trait method for compatibility: impl ty {}, trait ty {}",
-                impl_fty.repr(tcx),
-                trait_fty.repr(tcx));
-                span_err!(tcx.sess, impl_m_span, E0053,
-                    "method `{}` has an incompatible type for trait: {}",
-                    token::get_name(trait_m.name),
-                    ty::type_err_to_str(tcx, &terr));
-                return;
+                   impl_fty.repr(tcx),
+                   trait_fty.repr(tcx));
+            span_err!(tcx.sess, impl_m_span, E0053,
+                      "method `{}` has an incompatible type for trait: {}",
+                      token::get_name(trait_m.name),
+                      ty::type_err_to_str(tcx, &terr));
+            return;
         }
     }
 
     // Check that all obligations are satisfied by the implementation's
     // version.
-    match fulfillment_cx.select_all_or_error(&infcx, &trait_param_env, tcx) {
+    match fulfillment_cx.select_all_or_error(&infcx, &trait_param_env) {
         Err(ref errors) => { traits::report_fulfillment_errors(&infcx, errors) }
         Ok(_) => {}
     }
@@ -343,4 +363,121 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
     // Finally, resolve all regions. This catches wily misuses of lifetime
     // parameters.
     infcx.resolve_regions_and_report_errors(impl_m_body_id);
+
+    fn check_region_bounds_on_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
+                                                span: Span,
+                                                impl_m: &ty::Method<'tcx>,
+                                                trait_generics: &ty::Generics<'tcx>,
+                                                impl_generics: &ty::Generics<'tcx>,
+                                                trait_to_skol_substs: &Substs<'tcx>,
+                                                impl_to_skol_substs: &Substs<'tcx>)
+                                                -> bool
+    {
+
+        let trait_params = trait_generics.regions.get_slice(subst::FnSpace);
+        let impl_params = impl_generics.regions.get_slice(subst::FnSpace);
+
+        debug!("check_region_bounds_on_impl_method: \
+               trait_generics={} \
+               impl_generics={} \
+               trait_to_skol_substs={} \
+               impl_to_skol_substs={}",
+               trait_generics.repr(tcx),
+               impl_generics.repr(tcx),
+               trait_to_skol_substs.repr(tcx),
+               impl_to_skol_substs.repr(tcx));
+
+        // Must have same number of early-bound lifetime parameters.
+        // Unfortunately, if the user screws up the bounds, then this
+        // will change classification between early and late.  E.g.,
+        // if in trait we have `<'a,'b:'a>`, and in impl we just have
+        // `<'a,'b>`, then we have 2 early-bound lifetime parameters
+        // in trait but 0 in the impl. But if we report "expected 2
+        // but found 0" it's confusing, because it looks like there
+        // are zero. Since I don't quite know how to phrase things at
+        // the moment, give a kind of vague error message.
+        if trait_params.len() != impl_params.len() {
+            tcx.sess.span_err(
+                span,
+                format!("lifetime parameters or bounds on method `{}` do \
+                         not match the trait declaration",
+                        token::get_name(impl_m.name))[]);
+            return false;
+        }
+
+        // Each parameter `'a:'b+'c+'d` in trait should have the same
+        // set of bounds in the impl, after subst.
+        for (trait_param, impl_param) in
+            trait_params.iter().zip(
+                impl_params.iter())
+        {
+            let trait_bounds =
+                trait_param.bounds.subst(tcx, trait_to_skol_substs);
+            let impl_bounds =
+                impl_param.bounds.subst(tcx, impl_to_skol_substs);
+
+            debug!("check_region_bounds_on_impl_method: \
+                   trait_param={} \
+                   impl_param={} \
+                   trait_bounds={} \
+                   impl_bounds={}",
+                   trait_param.repr(tcx),
+                   impl_param.repr(tcx),
+                   trait_bounds.repr(tcx),
+                   impl_bounds.repr(tcx));
+
+            // Collect the set of bounds present in trait but not in
+            // impl.
+            let missing: Vec<ty::Region> =
+                trait_bounds.iter()
+                .filter(|&b| !impl_bounds.contains(b))
+                .map(|&b| b)
+                .collect();
+
+            // Collect set present in impl but not in trait.
+            let extra: Vec<ty::Region> =
+                impl_bounds.iter()
+                .filter(|&b| !trait_bounds.contains(b))
+                .map(|&b| b)
+                .collect();
+
+            debug!("missing={} extra={}",
+                   missing.repr(tcx), extra.repr(tcx));
+
+            let err = if missing.len() != 0 || extra.len() != 0 {
+                tcx.sess.span_err(
+                    span,
+                    format!(
+                        "the lifetime parameter `{}` declared in the impl \
+                         has a distinct set of bounds \
+                         from its counterpart `{}` \
+                         declared in the trait",
+                        impl_param.name.user_string(tcx),
+                        trait_param.name.user_string(tcx))[]);
+                true
+            } else {
+                false
+            };
+
+            if missing.len() != 0 {
+                tcx.sess.span_note(
+                    span,
+                    format!("the impl is missing the following bounds: `{}`",
+                            missing.user_string(tcx))[]);
+            }
+
+            if extra.len() != 0 {
+                tcx.sess.span_note(
+                    span,
+                    format!("the impl has the following extra bounds: `{}`",
+                            extra.user_string(tcx))[]);
+            }
+
+            if err {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }
