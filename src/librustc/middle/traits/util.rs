@@ -252,7 +252,7 @@ impl<'tcx> fmt::Show for super::VtableObjectData<'tcx> {
 pub fn predicates_for_generics<'tcx>(tcx: &ty::ctxt<'tcx>,
                                      cause: ObligationCause<'tcx>,
                                      recursion_depth: uint,
-                                     generic_bounds: &ty::GenericBounds<'tcx>)
+                                     generic_bounds: &ty::InstantiatedBounds<'tcx>)
                                      -> VecPerParamSpace<PredicateObligation<'tcx>>
 {
     debug!("predicates_for_generics(generic_bounds={})",

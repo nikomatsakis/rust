@@ -825,7 +825,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                projection_trait_ref.repr(self.tcx()));
 
         let trait_def = ty::lookup_trait_def(self.tcx(), projection_trait_ref.def_id);
-        let bounds = trait_def.generics.to_bounds(self.tcx(), projection_trait_ref.substs);
+        let bounds = trait_def.predicates.to_bounds(self.tcx(), projection_trait_ref.substs);
         debug!("match_projection_obligation_against_bounds_from_trait: \
                 bounds={}",
                bounds.repr(self.tcx()));
@@ -2231,8 +2231,8 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                         snapshot: &infer::CombinedSnapshot)
                         -> VecPerParamSpace<PredicateObligation<'tcx>>
     {
-        let impl_generics = ty::lookup_item_type(self.tcx(), impl_def_id).generics;
-        let bounds = impl_generics.to_bounds(self.tcx(), impl_substs);
+        let impl_bounds = ty::lookup_item_type(self.tcx(), impl_def_id).predicates;
+        let bounds = impl_bounds.to_bounds(self.tcx(), impl_substs);
         let normalized_bounds =
             project::normalize_with_depth(self, cause.clone(), recursion_depth, &bounds);
         let normalized_bounds =

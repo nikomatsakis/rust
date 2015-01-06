@@ -258,6 +258,7 @@ pub fn get_field_type<'tcx>(tcx: &ty::ctxt<'tcx>, class_id: ast::DefId,
     let ty = decoder::item_type(def, the_field, tcx, &*cdata);
     ty::TypeScheme {
         generics: ty::Generics::empty(),
+        predicates: ty::GenericPredicates::empty(),
         ty: ty,
     }
 }

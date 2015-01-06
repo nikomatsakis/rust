@@ -165,6 +165,8 @@ fn no_params<'tcx>(t: Ty<'tcx>) -> ty::TypeScheme<'tcx> {
         generics: ty::Generics {
             types: VecPerParamSpace::empty(),
             regions: VecPerParamSpace::empty(),
+        },
+        predicates: ty::GenericPredicates {
             predicates: VecPerParamSpace::empty(),
         },
         ty: t

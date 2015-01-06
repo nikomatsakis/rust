@@ -100,6 +100,7 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
         let param_env =
             ty::construct_parameter_environment(ccx.tcx,
                                                 &type_scheme.generics,
+                                                &type_scheme.predicates,
                                                 item.id);
         let inh = Inherited::new(ccx.tcx, param_env);
         let fcx = blank_fn_ctxt(ccx, &inh, ty::FnConverging(type_scheme.ty), item.id);
@@ -383,7 +384,7 @@ impl<'cx,'tcx> BoundsChecker<'cx,'tcx> {
     pub fn check_trait_ref(&mut self, trait_ref: &ty::TraitRef<'tcx>) {
         let trait_def = ty::lookup_trait_def(self.fcx.tcx(), trait_ref.def_id);
 
-        let bounds = self.fcx.instantiate_bounds(self.span, trait_ref.substs, &trait_def.generics);
+        let bounds = self.fcx.instantiate_bounds(self.span, trait_ref.substs, &trait_def.predicates);
 
         self.fcx.add_obligations_for_parameters(
             traits::ObligationCause::new(
@@ -446,7 +447,7 @@ impl<'cx,'tcx> TypeFolder<'tcx> for BoundsChecker<'cx,'tcx> {
             ty::ty_struct(type_id, substs) |
             ty::ty_enum(type_id, substs) => {
                 let type_scheme = ty::lookup_item_type(self.fcx.tcx(), type_id);
-                let bounds = self.fcx.instantiate_bounds(self.span, substs, &type_scheme.generics);
+                let bounds = self.fcx.instantiate_bounds(self.span, substs, &type_scheme.predicates);
 
                 if self.binding_count == 0 {
                     self.fcx.add_obligations_for_parameters(
@@ -566,10 +567,10 @@ fn enum_variants<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         .collect()
 }
 
-fn filter_to_trait_obligations<'tcx>(bounds: ty::GenericBounds<'tcx>)
-                                     -> ty::GenericBounds<'tcx>
+fn filter_to_trait_obligations<'tcx>(bounds: ty::InstantiatedBounds<'tcx>)
+                                     -> ty::InstantiatedBounds<'tcx>
 {
-    let mut result = ty::GenericBounds::empty();
+    let mut result = ty::InstantiatedBounds::empty();
     for (space, _, predicate) in bounds.predicates.iter_enumerated() {
         match *predicate {
             ty::Predicate::Trait(..) |
