@@ -971,7 +971,7 @@ impl<'a, 'tcx> rbml_writer_helpers<'tcx> for Encoder<'a> {
                     });
                     this.emit_struct_field("predicates", 2, |this| {
                         Ok(encode_vec_per_param_space(
-                            this, &type_scheme.generics.predicates,
+                            this, &type_scheme.predicates.predicates,
                             |this, def| this.emit_predicate(ecx, def)))
                     })
                 })
@@ -1587,7 +1587,7 @@ impl<'a, 'tcx> rbml_decoder_decoder_helpers<'tcx> for reader::Decoder<'a> {
 
     fn read_type_scheme<'b, 'c>(&mut self, dcx: &DecodeContext<'b, 'c, 'tcx>)
                                 -> ty::TypeScheme<'tcx> {
-        self.read_struct("TypeScheme", 2, |this| {
+        self.read_struct("TypeScheme", 3, |this| {
             Ok(ty::TypeScheme {
                 generics: this.read_struct_field("generics", 0, |this| {
                     this.read_struct("Generics", 2, |this| {
@@ -1603,9 +1603,14 @@ impl<'a, 'tcx> rbml_decoder_decoder_helpers<'tcx> for reader::Decoder<'a> {
                                 Ok(this.read_vec_per_param_space(
                                     |this| Decodable::decode(this).unwrap()))
                             }).unwrap(),
-
+                        })
+                    })
+                }).unwrap(),
+                predicates: this.read_struct_field("predicates", 0, |this| {
+                    this.read_struct("GenericPredicates", 1, |this| {
+                        Ok(ty::GenericPredicates {
                             predicates:
-                            this.read_struct_field("predicates", 2, |this| {
+                            this.read_struct_field("predicates", 0, |this| {
                                 Ok(this.read_vec_per_param_space(
                                     |this| this.read_predicate(dcx)))
                             }).unwrap(),

@@ -191,7 +191,8 @@ impl ImplOrTraitItemId {
 #[derive(Clone, Show)]
 pub struct Method<'tcx> {
     pub name: ast::Name,
-    pub generics: ty::Generics<'tcx>,
+    pub generics: Generics<'tcx>,
+    pub bounds: GenericPredicates<'tcx>,
     pub fty: BareFnTy<'tcx>,
     pub explicit_self: ExplicitSelfCategory,
     pub vis: ast::Visibility,
@@ -205,6 +206,7 @@ pub struct Method<'tcx> {
 impl<'tcx> Method<'tcx> {
     pub fn new(name: ast::Name,
                generics: ty::Generics<'tcx>,
+               bounds: GenericPredicates<'tcx>,
                fty: BareFnTy<'tcx>,
                explicit_self: ExplicitSelfCategory,
                vis: ast::Visibility,
@@ -215,6 +217,7 @@ impl<'tcx> Method<'tcx> {
        Method {
             name: name,
             generics: generics,
+            bounds: bounds,
             fty: fty,
             explicit_self: explicit_self,
             vis: vis,
@@ -1782,7 +1785,6 @@ impl RegionParameterDef {
 pub struct Generics<'tcx> {
     pub types: VecPerParamSpace<TypeParameterDef<'tcx>>,
     pub regions: VecPerParamSpace<RegionParameterDef>,
-    pub predicates: VecPerParamSpace<Predicate<'tcx>>,
 }
 
 impl<'tcx> Generics<'tcx> {
@@ -1790,7 +1792,6 @@ impl<'tcx> Generics<'tcx> {
         Generics {
             types: VecPerParamSpace::empty(),
             regions: VecPerParamSpace::empty(),
-            predicates: VecPerParamSpace::empty(),
         }
     }
 
@@ -1801,14 +1802,28 @@ impl<'tcx> Generics<'tcx> {
     pub fn has_region_params(&self, space: subst::ParamSpace) -> bool {
         !self.regions.is_empty_in(space)
     }
+}
+
+/// Bounds on generics.
+#[derive(Clone, Show)]
+pub struct GenericPredicates<'tcx> {
+    pub predicates: VecPerParamSpace<Predicate<'tcx>>,
+}
+
+impl<'tcx> GenericPredicates<'tcx> {
+    pub fn empty() -> GenericPredicates<'tcx> {
+        GenericPredicates {
+            predicates: VecPerParamSpace::empty(),
+        }
+    }
 
     pub fn is_empty(&self) -> bool {
         self.types.is_empty() && self.regions.is_empty()
     }
 
     pub fn to_bounds(&self, tcx: &ty::ctxt<'tcx>, substs: &Substs<'tcx>)
-                     -> GenericBounds<'tcx> {
-        GenericBounds {
+                     -> InstantiatedBounds<'tcx> {
+        InstantiatedBounds {
             predicates: self.predicates.subst(tcx, substs),
         }
     }
@@ -2018,11 +2033,11 @@ impl<'tcx> Predicate<'tcx> {
 
 /// Represents the bounds declared on a particular set of type
 /// parameters.  Should eventually be generalized into a flag list of
-/// where clauses.  You can obtain a `GenericBounds` list from a
-/// `Generics` by using the `to_bounds` method. Note that this method
-/// reflects an important semantic invariant of `GenericBounds`: while
-/// the bounds in a `Generics` are expressed in terms of the bound type
-/// parameters of the impl/trait/whatever, a `GenericBounds` instance
+/// where clauses.  You can obtain a `InstantiatedBounds` list from a
+/// `GenericPredicates` by using the `to_bounds` method. Note that this method
+/// reflects an important semantic invariant of `InstantiatedBounds`: while
+/// the `GenericPredicates` are expressed in terms of the bound type
+/// parameters of the impl/trait/whatever, an `InstantiatedBounds` instance
 /// represented a set of bounds for some particular instantiation,
 /// meaning that the generic parameters have been substituted with
 /// their values.
@@ -2031,18 +2046,18 @@ impl<'tcx> Predicate<'tcx> {
 ///
 ///     struct Foo<T,U:Bar<T>> { ... }
 ///
-/// Here, the `Generics` for `Foo` would contain a list of bounds like
-/// `[.index(&FullRange), [U:Bar<T>]]`.  Now if there were some particular reference
-/// like `Foo<int,uint>`, then the `GenericBounds` would be `[.index(&FullRange),
+/// Here, the `GenericPredicates` for `Foo` would contain a list of bounds like
+/// `[[], [U:Bar<T>]]`.  Now if there were some particular reference
+/// like `Foo<int,uint>`, then the `InstantiatedBounds` would be `[[],
 /// [uint:Bar<int>]]`.
 #[derive(Clone, Show)]
-pub struct GenericBounds<'tcx> {
+pub struct InstantiatedBounds<'tcx> {
     pub predicates: VecPerParamSpace<Predicate<'tcx>>,
 }
 
-impl<'tcx> GenericBounds<'tcx> {
-    pub fn empty() -> GenericBounds<'tcx> {
-        GenericBounds { predicates: VecPerParamSpace::empty() }
+impl<'tcx> InstantiatedBounds<'tcx> {
+    pub fn empty() -> InstantiatedBounds<'tcx> {
+        InstantiatedBounds { predicates: VecPerParamSpace::empty() }
     }
 
     pub fn has_escaping_regions(&self) -> bool {
@@ -2104,7 +2119,7 @@ pub struct ParameterEnvironment<'a, 'tcx:'a> {
     /// Obligations that the caller must satisfy. This is basically
     /// the set of bounds on the in-scope type parameters, translated
     /// into Obligations.
-    pub caller_bounds: ty::GenericBounds<'tcx>,
+    pub caller_bounds: ty::InstantiatedBounds<'tcx>,
 
     /// Caches the results of trait selection. This cache is used
     /// for things that have to do with the parameters in scope.
@@ -2121,9 +2136,11 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                         match ty::impl_or_trait_item(cx, method_def_id) {
                             MethodTraitItem(ref method_ty) => {
                                 let method_generics = &method_ty.generics;
+                                let method_bounds = &method_ty.bounds;
                                 construct_parameter_environment(
                                     cx,
                                     method_generics,
+                                    method_bounds,
                                     method.pe_body().id)
                             }
                             TypeTraitItem(_) => {
@@ -2155,9 +2172,11 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                         match ty::impl_or_trait_item(cx, method_def_id) {
                             MethodTraitItem(ref method_ty) => {
                                 let method_generics = &method_ty.generics;
+                                let method_bounds = &method_ty.bounds;
                                 construct_parameter_environment(
                                     cx,
                                     method_generics,
+                                    method_bounds,
                                     method.pe_body().id)
                             }
                             TypeTraitItem(_) => {
@@ -2180,10 +2199,11 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                     ast::ItemFn(_, _, _, _, ref body) => {
                         // We assume this is a function.
                         let fn_def_id = ast_util::local_def(id);
-                        let fn_pty = ty::lookup_item_type(cx, fn_def_id);
+                        let fn_pty = lookup_item_type(cx, fn_def_id);
 
                         construct_parameter_environment(cx,
                                                         &fn_pty.generics,
+                                                        &fn_pty.predicates,
                                                         body.id)
                     }
                     ast::ItemEnum(..) |
@@ -2192,8 +2212,11 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                     ast::ItemConst(..) |
                     ast::ItemStatic(..) => {
                         let def_id = ast_util::local_def(id);
-                        let pty = ty::lookup_item_type(cx, def_id);
-                        construct_parameter_environment(cx, &pty.generics, id)
+                        let pty = lookup_item_type(cx, def_id);
+                        construct_parameter_environment(cx,
+                                                        &pty.generics,
+                                                        &pty.predicates,
+                                                        id)
                     }
                     _ => {
                         cx.sess.span_bug(item.span,
@@ -2235,7 +2258,8 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
 #[derive(Clone, Show)]
 pub struct TypeScheme<'tcx> {
     pub generics: Generics<'tcx>,
-    pub ty: Ty<'tcx>
+    pub predicates: GenericPredicates<'tcx>,
+    pub ty: Ty<'tcx>,
 }
 
 /// As `TypeScheme` but for a trait ref.
@@ -2248,6 +2272,9 @@ pub struct TraitDef<'tcx> {
     /// default methods get to assume that the `Self` parameters
     /// implements the trait.
     pub generics: Generics<'tcx>,
+
+    /// Bounds on the generics.
+    pub predicates: GenericPredicates<'tcx>,
 
     /// The "supertrait" bounds.
     pub bounds: ParamBounds<'tcx>,
@@ -6319,7 +6346,7 @@ impl Variance {
 pub fn empty_parameter_environment<'a,'tcx>(cx: &'a ctxt<'tcx>) -> ParameterEnvironment<'a,'tcx> {
     ty::ParameterEnvironment { tcx: cx,
                                free_substs: Substs::empty(),
-                               caller_bounds: GenericBounds::empty(),
+                               caller_bounds: InstantiatedBounds::empty(),
                                implicit_region_bound: ty::ReEmpty,
                                selection_cache: traits::SelectionCache::new(), }
 }
@@ -6327,7 +6354,8 @@ pub fn empty_parameter_environment<'a,'tcx>(cx: &'a ctxt<'tcx>) -> ParameterEnvi
 /// See `ParameterEnvironment` struct def'n for details
 pub fn construct_parameter_environment<'a,'tcx>(
     tcx: &'a ctxt<'tcx>,
-    generics: &ty::Generics<'tcx>,
+    generics: &Generics<'tcx>,
+    generic_predicates: &GenericPredicates<'tcx>,
     free_id: ast::NodeId)
     -> ParameterEnvironment<'a, 'tcx>
 {
@@ -6355,7 +6383,7 @@ pub fn construct_parameter_environment<'a,'tcx>(
     // Compute the bounds on Self and the type parameters.
     //
 
-    let bounds = generics.to_bounds(tcx, &free_substs);
+    let bounds = generic_predicates.to_bounds(tcx, &free_substs);
     let bounds = liberate_late_bound_regions(tcx, free_id_scope, &ty::Binder(bounds));
 
     //
@@ -6399,7 +6427,7 @@ pub fn construct_parameter_environment<'a,'tcx>(
        }
     }
 
-    fn record_region_bounds<'tcx>(tcx: &ty::ctxt<'tcx>, bounds: &GenericBounds<'tcx>) {
+    fn record_region_bounds<'tcx>(tcx: &ty::ctxt<'tcx>, bounds: &InstantiatedBounds<'tcx>) {
         debug!("record_region_bounds(bounds={:?})", bounds.repr(tcx));
 
         for predicate in bounds.predicates.iter() {
@@ -6973,7 +7001,7 @@ impl<'tcx,T:RegionEscape> RegionEscape for VecPerParamSpace<T> {
 impl<'tcx> RegionEscape for TypeScheme<'tcx> {
     fn has_regions_escaping_depth(&self, depth: u32) -> bool {
         self.ty.has_regions_escaping_depth(depth) ||
-            self.generics.has_regions_escaping_depth(depth)
+            self.predicates.has_regions_escaping_depth(depth)
     }
 }
 
@@ -6983,7 +7011,7 @@ impl RegionEscape for Region {
     }
 }
 
-impl<'tcx> RegionEscape for Generics<'tcx> {
+impl<'tcx> RegionEscape for GenericPredicates<'tcx> {
     fn has_regions_escaping_depth(&self, depth: u32) -> bool {
         self.predicates.has_regions_escaping_depth(depth)
     }
@@ -7092,7 +7120,7 @@ impl<'tcx> HasProjectionTypes for UnboxedClosureUpvar<'tcx> {
     }
 }
 
-impl<'tcx> HasProjectionTypes for ty::GenericBounds<'tcx> {
+impl<'tcx> HasProjectionTypes for ty::InstantiatedBounds<'tcx> {
     fn has_projection_types(&self) -> bool {
         self.predicates.has_projection_types()
     }

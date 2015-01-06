@@ -236,6 +236,7 @@ impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
             // impl, plus its own.
             let new_polytype = ty::TypeScheme {
                 generics: new_method_ty.generics.clone(),
+                predicates: new_method_ty.bounds.clone(),
                 ty: ty::mk_bare_fn(tcx, Some(new_did),
                                    tcx.mk_bare_fn(new_method_ty.fty.clone()))
             };
@@ -548,6 +549,7 @@ fn subst_receiver_types_in_method_ty<'tcx>(tcx: &ty::ctxt<'tcx>,
     debug!("subst_receiver_types_in_method_ty: combined_substs={}",
            combined_substs.repr(tcx));
 
+    let method_bounds = method.bounds.subst(tcx, &combined_substs);
     let mut method_generics = method.generics.subst(tcx, &combined_substs);
 
     // replace the type parameters declared on the trait with those
@@ -572,6 +574,7 @@ fn subst_receiver_types_in_method_ty<'tcx>(tcx: &ty::ctxt<'tcx>,
     ty::Method::new(
         method.name,
         method_generics,
+        method_bounds,
         method_fty,
         method.explicit_self,
         method.vis,

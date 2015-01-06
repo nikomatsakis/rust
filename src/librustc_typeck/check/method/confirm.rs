@@ -45,7 +45,7 @@ struct InstantiatedMethodSig<'tcx> {
 
     /// Generic bounds on the method's parameters which must be added
     /// as pending obligations.
-    method_bounds: ty::GenericBounds<'tcx>,
+    method_bounds: ty::InstantiatedBounds<'tcx>,
 }
 
 pub fn confirm<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
@@ -400,7 +400,7 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
         // that obligation is not necessarily satisfied. (In the
         // future, it would be.) But we know that the true `Self` DOES implement
         // the trait. So we just delete this requirement. Hack hack hack.
-        let mut method_bounds = pick.method_ty.generics.to_bounds(self.tcx(), &all_substs);
+        let mut method_bounds = pick.method_ty.bounds.to_bounds(self.tcx(), &all_substs);
         match pick.kind {
             probe::ObjectPick(..) => {
                 assert_eq!(method_bounds.predicates.get_slice(subst::SelfSpace).len(), 1);
@@ -437,7 +437,7 @@ impl<'a,'tcx> ConfirmContext<'a,'tcx> {
     fn add_obligations(&mut self,
                        pick: &probe::Pick<'tcx>,
                        all_substs: &subst::Substs<'tcx>,
-                       method_bounds: &ty::GenericBounds<'tcx>) {
+                       method_bounds: &ty::InstantiatedBounds<'tcx>) {
         debug!("add_obligations: pick={} all_substs={} method_bounds={}",
                pick.repr(self.tcx()),
                all_substs.repr(self.tcx()),

@@ -941,16 +941,22 @@ impl<'tcx> Repr<'tcx> for ty::TypeScheme<'tcx> {
 
 impl<'tcx> Repr<'tcx> for ty::Generics<'tcx> {
     fn repr(&self, tcx: &ctxt<'tcx>) -> String {
-        format!("Generics(types: {}, regions: {}, predicates: {})",
+        format!("Generics(types: {}, regions: {})",
                 self.types.repr(tcx),
-                self.regions.repr(tcx),
+                self.regions.repr(tcx))
+    }
+}
+
+impl<'tcx> Repr<'tcx> for ty::GenericPredicates<'tcx> {
+    fn repr(&self, tcx: &ctxt<'tcx>) -> String {
+        format!("GenericPredicates(predicates: {})",
                 self.predicates.repr(tcx))
     }
 }
 
-impl<'tcx> Repr<'tcx> for ty::GenericBounds<'tcx> {
+impl<'tcx> Repr<'tcx> for ty::InstantiatedBounds<'tcx> {
     fn repr(&self, tcx: &ctxt<'tcx>) -> String {
-        format!("GenericBounds({})",
+        format!("InstantiatedBounds({})",
                 self.predicates.repr(tcx))
     }
 }

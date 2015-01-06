@@ -751,7 +751,8 @@ pub fn ast_path_to_ty<'tcx>(
     let tcx = this.tcx();
     let ty::TypeScheme {
         generics,
-        ty: decl_ty
+        ty: decl_ty,
+        ..
     } = this.get_item_type_scheme(did);
 
     let substs = ast_path_substs_for_ty(this,
@@ -777,7 +778,8 @@ pub fn ast_path_to_ty_relaxed<'tcx>(
     let tcx = this.tcx();
     let ty::TypeScheme {
         generics,
-        ty: decl_ty
+        ty: decl_ty,
+        ..
     } = this.get_item_type_scheme(did);
 
     let wants_params =
