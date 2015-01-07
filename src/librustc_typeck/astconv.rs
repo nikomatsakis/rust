@@ -16,11 +16,13 @@
 //! somewhat differently during the collect and check phases,
 //! particularly with respect to looking up the types of top-level
 //! items.  In the collect phase, the crate context is used as the
-//! `AstConv` instance; in this phase, the `get_item_type_scheme()` function
-//! triggers a recursive call to `ty_of_item()`  (note that
-//! `ast_ty_to_ty()` will detect recursive types and report an error).
-//! In the check phase, when the FnCtxt is used as the `AstConv`,
-//! `get_item_type_scheme()` just looks up the item type in `tcx.tcache`.
+//! `AstConv` instance; in this phase, the
+//! `get_item_type_and_generics()` function triggers a recursive call
+//! to `type_and_generics_of_item()` (note that `ast_ty_to_ty()` will
+//! detect recursive types and report an error).  In the check phase,
+//! when the FnCtxt is used as the `AstConv`,
+//! `get_item_type_and_generics()` just looks up the item type in
+//! `tcx.tcache` (using `ty::lookup_item_type`).
 //!
 //! The `RegionScope` trait controls what happens when the user does
 //! not specify a region in some location where a region is required
@@ -56,7 +58,7 @@ use middle::traits;
 use middle::ty::{self, RegionEscape, ToPolyTraitRef, Ty};
 use rscope::{self, UnelidableRscope, RegionScope, SpecificRscope,
              ShiftedRscope, BindingRscope};
-use TypeAndSubsts;
+use {TypeAndGenerics, TypeAndSubsts};
 use util::common::ErrorReported;
 use util::nodemap::DefIdMap;
 use util::ppaux::{self, Repr, UserString};
@@ -71,7 +73,7 @@ use syntax::print::pprust;
 pub trait AstConv<'tcx> {
     fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx>;
 
-    fn get_item_type_scheme(&self, id: ast::DefId) -> ty::TypeScheme<'tcx>;
+    fn get_item_type_and_generics(&self, id: ast::DefId) -> TypeAndGenerics<'tcx>;
 
     fn get_trait_def(&self, id: ast::DefId) -> Rc<ty::TraitDef<'tcx>>;
 
@@ -761,11 +763,8 @@ pub fn ast_path_to_ty<'tcx>(
     -> TypeAndSubsts<'tcx>
 {
     let tcx = this.tcx();
-    let ty::TypeScheme {
-        generics,
-        ty: decl_ty,
-        ..
-    } = this.get_item_type_scheme(did);
+    let TypeAndGenerics { generics, ty: decl_ty } =
+        this.get_item_type_and_generics(did);
 
     let substs = ast_path_substs_for_ty(this,
                                         rscope,
