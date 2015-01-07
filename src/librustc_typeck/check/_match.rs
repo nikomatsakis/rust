@@ -501,6 +501,7 @@ pub fn check_pat_enum<'a, 'tcx>(pcx: &pat_ctxt<'a, 'tcx>, pat: &ast::Pat,
         ty::TypeScheme {
             ty: fn_ret.unwrap(),
             generics: ctor_scheme.generics,
+            predicates: ctor_scheme.predicates,
         }
     } else {
         ctor_scheme

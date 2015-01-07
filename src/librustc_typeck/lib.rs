@@ -114,6 +114,12 @@ mod collect;
 mod coherence;
 mod variance;
 
+#[derive(Clone)]
+struct TypeAndGenerics<'tcx> {
+    pub generics: ty::Generics<'tcx>,
+    pub ty: Ty<'tcx>,
+}
+
 struct TypeAndSubsts<'tcx> {
     pub substs: subst::Substs<'tcx>,
     pub ty: Ty<'tcx>,
