@@ -30,6 +30,8 @@ use option::Option::{self, Some, None};
 use result::Result::{self, Ok, Err};
 use str::{FromStr, StrExt};
 
+pub mod wrapping;
+
 /// A built-in signed or unsigned integer.
 #[stable(feature = "rust1", since = "1.0.0")]
 pub trait Int
