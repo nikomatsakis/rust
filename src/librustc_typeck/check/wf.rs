@@ -87,7 +87,7 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
         let ccx = self.ccx;
         let item_def_id = local_def(item.id);
         let type_scheme = ty::lookup_item_type(ccx.tcx, item_def_id);
-        reject_non_type_param_bounds(ccx.tcx, item.span, &type_scheme.generics);
+        reject_non_type_param_bounds(ccx.tcx, item.span, &type_scheme.predicates);
         let param_env =
             ty::construct_parameter_environment(ccx.tcx,
                                                 &type_scheme.generics,
@@ -237,8 +237,8 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
 // Reject any predicates that do not involve a type parameter.
 fn reject_non_type_param_bounds<'tcx>(tcx: &ty::ctxt<'tcx>,
                                       span: Span,
-                                      generics: &ty::Generics<'tcx>) {
-    for predicate in generics.predicates.iter() {
+                                      predicates: &ty::GenericPredicates<'tcx>) {
+    for predicate in predicates.predicates.iter() {
         match predicate {
             &ty::Predicate::Trait(ty::Binder(ref tr)) => {
                 let self_ty = tr.self_ty();
@@ -300,7 +300,8 @@ impl<'cx,'tcx> BoundsChecker<'cx,'tcx> {
     pub fn check_trait_ref(&mut self, trait_ref: &ty::TraitRef<'tcx>) {
         let trait_def = ty::lookup_trait_def(self.fcx.tcx(), trait_ref.def_id);
 
-        let bounds = self.fcx.instantiate_bounds(self.span, trait_ref.substs, &trait_def.predicates);
+        let bounds = self.fcx.instantiate_bounds(self.span, trait_ref.substs,
+                                                 &trait_def.predicates);
 
         self.fcx.add_obligations_for_parameters(
             traits::ObligationCause::new(
@@ -363,7 +364,8 @@ impl<'cx,'tcx> TypeFolder<'tcx> for BoundsChecker<'cx,'tcx> {
             ty::ty_struct(type_id, substs) |
             ty::ty_enum(type_id, substs) => {
                 let type_scheme = ty::lookup_item_type(self.fcx.tcx(), type_id);
-                let bounds = self.fcx.instantiate_bounds(self.span, substs, &type_scheme.predicates);
+                let bounds = self.fcx.instantiate_bounds(self.span, substs,
+                                                         &type_scheme.predicates);
 
                 if self.binding_count == 0 {
                     self.fcx.add_obligations_for_parameters(

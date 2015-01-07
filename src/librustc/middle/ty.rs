@@ -1795,6 +1795,10 @@ impl<'tcx> Generics<'tcx> {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.types.is_empty() && self.regions.is_empty()
+    }
+
     pub fn has_type_params(&self, space: subst::ParamSpace) -> bool {
         !self.types.is_empty_in(space)
     }
@@ -1815,10 +1819,6 @@ impl<'tcx> GenericPredicates<'tcx> {
         GenericPredicates {
             predicates: VecPerParamSpace::empty(),
         }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.types.is_empty() && self.regions.is_empty()
     }
 
     pub fn to_bounds(&self, tcx: &ty::ctxt<'tcx>, substs: &Substs<'tcx>)
