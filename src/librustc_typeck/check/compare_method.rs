@@ -402,9 +402,9 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
         if trait_params.len() != impl_params.len() {
             tcx.sess.span_err(
                 span,
-                format!("lifetime parameters or bounds on method `{}` do \
+                &format!("lifetime parameters or bounds on method `{}` do \
                          not match the trait declaration",
-                        token::get_name(impl_m.name))[]);
+                         token::get_name(impl_m.name))[]);
             return false;
         }
 
@@ -450,7 +450,7 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
             let err = if missing.len() != 0 || extra.len() != 0 {
                 tcx.sess.span_err(
                     span,
-                    format!(
+                    &format!(
                         "the lifetime parameter `{}` declared in the impl \
                          has a distinct set of bounds \
                          from its counterpart `{}` \
@@ -465,15 +465,15 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
             if missing.len() != 0 {
                 tcx.sess.span_note(
                     span,
-                    format!("the impl is missing the following bounds: `{}`",
-                            missing.user_string(tcx))[]);
+                    &format!("the impl is missing the following bounds: `{}`",
+                             missing.user_string(tcx))[]);
             }
 
             if extra.len() != 0 {
                 tcx.sess.span_note(
                     span,
-                    format!("the impl has the following extra bounds: `{}`",
-                            extra.user_string(tcx))[]);
+                    &format!("the impl has the following extra bounds: `{}`",
+                             extra.user_string(tcx))[]);
             }
 
             if err {
