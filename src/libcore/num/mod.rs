@@ -30,6 +30,7 @@ use option::Option::{self, Some, None};
 use result::Result::{self, Ok, Err};
 use str::{FromStr, StrExt};
 
+#[experimental = "may be removed or relocated"]
 pub mod wrapping;
 
 /// A built-in signed or unsigned integer.

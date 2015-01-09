@@ -63,7 +63,7 @@ impl Writer for FnvHasher {
         let FnvHasher(mut hash) = *self;
         for byte in bytes {
             hash = hash ^ (*byte as u64);
-            hash = hash * 0x100000001b3;
+            hash = hash.wrapping_mul(0x100000001b3);
         }
         *self = FnvHasher(hash);
     }
