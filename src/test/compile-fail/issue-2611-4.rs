@@ -20,7 +20,8 @@ struct E {
 }
 
 impl A for E {
-  fn b<F: Sync, G>(_x: F) -> F { panic!() } //~ ERROR the requirement `F : core::kinds::Sync` appears on the impl method but not on the corresponding trait method
+    fn b<F: Sync, G>(_x: F) -> F { panic!() }
+    //~^ ERROR `F : core::marker::Sync` appears on the impl method
 }
 
 fn main() {}
