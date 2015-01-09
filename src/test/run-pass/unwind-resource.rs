@@ -8,8 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-
-use std::task;
+use std::sync::mpsc::{channel, Sender};
+use std::thread::Thread;
 
 struct complainer {
     tx: Sender<bool>,
@@ -18,7 +18,7 @@ struct complainer {
 impl Drop for complainer {
     fn drop(&mut self) {
         println!("About to send!");
-        self.tx.send(true);
+        self.tx.send(true).unwrap();
         println!("Sent!");
     }
 }
@@ -37,7 +37,7 @@ fn f(tx: Sender<bool>) {
 
 pub fn main() {
     let (tx, rx) = channel();
-    task::spawn(move|| f(tx.clone()));
+    let _t = Thread::scoped(move|| f(tx.clone()));
     println!("hiiiiiiiii");
-    assert!(rx.recv());
+    assert!(rx.recv().unwrap());
 }

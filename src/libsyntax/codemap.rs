@@ -10,19 +10,24 @@
 //
 // ignore-lexer-test FIXME #15679
 
-//! The CodeMap tracks all the source code used within a single crate, mapping from integer byte
-//! positions to the original source code location. Each bit of source parsed during crate parsing
-//! (typically files, in-memory strings, or various bits of macro expansion) cover a continuous
-//! range of bytes in the CodeMap and are represented by FileMaps. Byte positions are stored in
-//! `spans` and used pervasively in the compiler. They are absolute positions within the CodeMap,
-//! which upon request can be converted to line and column information, source code snippets, etc.
+//! The CodeMap tracks all the source code used within a single crate, mapping
+//! from integer byte positions to the original source code location. Each bit
+//! of source parsed during crate parsing (typically files, in-memory strings,
+//! or various bits of macro expansion) cover a continuous range of bytes in the
+//! CodeMap and are represented by FileMaps. Byte positions are stored in
+//! `spans` and used pervasively in the compiler. They are absolute positions
+//! within the CodeMap, which upon request can be converted to line and column
+//! information, source code snippets, etc.
 
 pub use self::MacroFormat::*;
 
-use serialize::{Encodable, Decodable, Encoder, Decoder};
 use std::cell::RefCell;
+use std::num::ToPrimitive;
+use std::ops::{Add, Sub};
 use std::rc::Rc;
+
 use libc::c_uint;
+use serialize::{Encodable, Decodable, Encoder, Decoder};
 
 pub trait Pos {
     fn from_uint(n: uint) -> Self;
@@ -31,13 +36,13 @@ pub trait Pos {
 
 /// A byte offset. Keep this small (currently 32-bits), as AST contains
 /// a lot of them.
-#[deriving(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Show)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Show)]
 pub struct BytePos(pub u32);
 
 /// A character offset. Because of multibyte utf8 characters, a byte offset
 /// is not equivalent to a character offset. The CodeMap will convert BytePos
 /// values to CharPos values as necessary.
-#[deriving(Copy, PartialEq, Hash, PartialOrd, Show)]
+#[derive(Copy, PartialEq, Hash, PartialOrd, Show)]
 pub struct CharPos(pub uint);
 
 // FIXME: Lots of boilerplate in these impls, but so far my attempts to fix
@@ -48,13 +53,17 @@ impl Pos for BytePos {
     fn to_uint(&self) -> uint { let BytePos(n) = *self; n as uint }
 }
 
-impl Add<BytePos, BytePos> for BytePos {
+impl Add for BytePos {
+    type Output = BytePos;
+
     fn add(self, rhs: BytePos) -> BytePos {
         BytePos((self.to_uint() + rhs.to_uint()) as u32)
     }
 }
 
-impl Sub<BytePos, BytePos> for BytePos {
+impl Sub for BytePos {
+    type Output = BytePos;
+
     fn sub(self, rhs: BytePos) -> BytePos {
         BytePos((self.to_uint() - rhs.to_uint()) as u32)
     }
@@ -65,13 +74,17 @@ impl Pos for CharPos {
     fn to_uint(&self) -> uint { let CharPos(n) = *self; n }
 }
 
-impl Add<CharPos, CharPos> for CharPos {
+impl Add for CharPos {
+    type Output = CharPos;
+
     fn add(self, rhs: CharPos) -> CharPos {
         CharPos(self.to_uint() + rhs.to_uint())
     }
 }
 
-impl Sub<CharPos, CharPos> for CharPos {
+impl Sub for CharPos {
+    type Output = CharPos;
+
     fn sub(self, rhs: CharPos) -> CharPos {
         CharPos(self.to_uint() - rhs.to_uint())
     }
@@ -81,7 +94,7 @@ impl Sub<CharPos, CharPos> for CharPos {
 /// are *absolute* positions from the beginning of the codemap, not positions
 /// relative to FileMaps. Methods on the CodeMap can be used to relate spans back
 /// to the original source.
-#[deriving(Clone, Copy, Show, Hash)]
+#[derive(Clone, Copy, Show, Hash)]
 pub struct Span {
     pub lo: BytePos,
     pub hi: BytePos,
@@ -92,7 +105,12 @@ pub struct Span {
 
 pub const DUMMY_SP: Span = Span { lo: BytePos(0), hi: BytePos(0), expn_id: NO_EXPANSION };
 
-#[deriving(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Show, Copy)]
+// Generic span to be used for code originating from the command line
+pub const COMMAND_LINE_SP: Span = Span { lo: BytePos(0),
+                                         hi: BytePos(0),
+                                         expn_id: COMMAND_LINE_EXPN };
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Show, Copy)]
 pub struct Spanned<T> {
     pub node: T,
     pub span: Span,
@@ -107,15 +125,15 @@ impl PartialEq for Span {
 
 impl Eq for Span {}
 
-impl<S:Encoder<E>, E> Encodable<S, E> for Span {
+impl Encodable for Span {
     /* Note #1972 -- spans are encoded but not decoded */
-    fn encode(&self, s: &mut S) -> Result<(), E> {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
         s.emit_nil()
     }
 }
 
-impl<D:Decoder<E>, E> Decodable<D, E> for Span {
-    fn decode(_d: &mut D) -> Result<Span, E> {
+impl Decodable for Span {
+    fn decode<D: Decoder>(_d: &mut D) -> Result<Span, D::Error> {
         Ok(DUMMY_SP)
     }
 }
@@ -175,15 +193,15 @@ pub struct FileMapAndLine { pub fm: Rc<FileMap>, pub line: uint }
 pub struct FileMapAndBytePos { pub fm: Rc<FileMap>, pub pos: BytePos }
 
 /// The syntax with which a macro was invoked.
-#[deriving(Clone, Copy, Hash, Show)]
+#[derive(Clone, Copy, Hash, Show)]
 pub enum MacroFormat {
-    /// e.g. #[deriving(...)] <item>
+    /// e.g. #[derive(...)] <item>
     MacroAttribute,
     /// e.g. `format!()`
     MacroBang
 }
 
-#[deriving(Clone, Hash, Show)]
+#[derive(Clone, Hash, Show)]
 pub struct NameAndSpan {
     /// The name of the macro that was invoked to create the thing
     /// with this Span.
@@ -197,7 +215,7 @@ pub struct NameAndSpan {
 }
 
 /// Extra information for tracking macro expansion of spans
-#[deriving(Hash, Show)]
+#[derive(Hash, Show)]
 pub struct ExpnInfo {
     /// The location of the actual macro invocation, e.g. `let x =
     /// foo!();`
@@ -218,10 +236,12 @@ pub struct ExpnInfo {
     pub callee: NameAndSpan
 }
 
-#[deriving(PartialEq, Eq, Clone, Show, Hash, RustcEncodable, RustcDecodable, Copy)]
+#[derive(PartialEq, Eq, Clone, Show, Hash, RustcEncodable, RustcDecodable, Copy)]
 pub struct ExpnId(u32);
 
 pub const NO_EXPANSION: ExpnId = ExpnId(-1);
+// For code appearing from the command line
+pub const COMMAND_LINE_EXPN: ExpnId = ExpnId(-2);
 
 impl ExpnId {
     pub fn from_llvm_cookie(cookie: c_uint) -> ExpnId {
@@ -242,7 +262,7 @@ pub struct FileLines {
 }
 
 /// Identifies an offset of a multi-byte character in a FileMap
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct MultiByteChar {
     /// The absolute offset of the character in the CodeMap
     pub pos: BytePos,
@@ -291,9 +311,9 @@ impl FileMap {
         lines.get(line_number).map(|&line| {
             let begin: BytePos = line - self.start_pos;
             let begin = begin.to_uint();
-            let slice = self.src[begin..];
+            let slice = &self.src[begin..];
             match slice.find('\n') {
-                Some(e) => slice[0..e],
+                Some(e) => &slice[0..e],
                 None => slice
             }.to_string()
         })
@@ -338,9 +358,9 @@ impl CodeMap {
         // FIXME #12884: no efficient/safe way to remove from the start of a string
         // and reuse the allocation.
         let mut src = if src.starts_with("\u{feff}") {
-            String::from_str(src[3..])
+            String::from_str(&src[3..])
         } else {
-            String::from_str(src[])
+            String::from_str(&src[])
         };
 
         // Append '\n' in case it's not already there.
@@ -427,8 +447,7 @@ impl CodeMap {
         if begin.fm.start_pos != end.fm.start_pos {
             None
         } else {
-            Some(begin.fm.src[begin.pos.to_uint()..
-                              end.pos.to_uint()].to_string())
+            Some((&begin.fm.src[begin.pos.to_uint()..end.pos.to_uint()]).to_string())
         }
     }
 
@@ -458,7 +477,7 @@ impl CodeMap {
         let mut total_extra_bytes = 0;
 
         for mbc in map.multibyte_chars.borrow().iter() {
-            debug!("{}-byte char at {}", mbc.bytes, mbc.pos);
+            debug!("{}-byte char at {:?}", mbc.bytes, mbc.pos);
             if mbc.pos < bpos {
                 // every character is at least one byte, so we only
                 // count the actual extra bytes.
@@ -536,9 +555,9 @@ impl CodeMap {
         let chpos = self.bytepos_to_file_charpos(pos);
         let linebpos = (*f.lines.borrow())[a];
         let linechpos = self.bytepos_to_file_charpos(linebpos);
-        debug!("byte pos {} is on the line at byte pos {}",
+        debug!("byte pos {:?} is on the line at byte pos {:?}",
                pos, linebpos);
-        debug!("char pos {} is on the line at char pos {}",
+        debug!("char pos {:?} is on the line at char pos {:?}",
                chpos, linechpos);
         debug!("byte is on line: {}", line);
         assert!(chpos >= linechpos);
@@ -562,6 +581,43 @@ impl CodeMap {
             NO_EXPANSION => f(None),
             ExpnId(i) => f(Some(&(*self.expansions.borrow())[i as uint]))
         }
+    }
+
+    /// Check if a span is "internal" to a macro. This means that it is entirely generated by a
+    /// macro expansion and contains no code that was passed in as an argument.
+    pub fn span_is_internal(&self, span: Span) -> bool {
+        // first, check if the given expression was generated by a macro or not
+        // we need to go back the expn_info tree to check only the arguments
+        // of the initial macro call, not the nested ones.
+        let mut is_internal = false;
+        let mut expnid = span.expn_id;
+        while self.with_expn_info(expnid, |expninfo| {
+            match expninfo {
+                Some(ref info) => {
+                    // save the parent expn_id for next loop iteration
+                    expnid = info.call_site.expn_id;
+                    if info.callee.name == "format_args" {
+                        // This is a hack because the format_args builtin calls unstable APIs.
+                        // I spent like 6 hours trying to solve this more generally but am stupid.
+                        is_internal = true;
+                        false
+                    } else if info.callee.span.is_none() {
+                        // it's a compiler built-in, we *really* don't want to mess with it
+                        // so we skip it, unless it was called by a regular macro, in which case
+                        // we will handle the caller macro next turn
+                        is_internal = true;
+                        true // continue looping
+                    } else {
+                        // was this expression from the current macro arguments ?
+                        is_internal = !( span.lo > info.call_site.lo &&
+                                         span.hi < info.call_site.hi );
+                        true // continue looping
+                    }
+                },
+                _ => false // stop looping
+            }
+        }) { /* empty while loop body */ }
+        return is_internal;
     }
 }
 

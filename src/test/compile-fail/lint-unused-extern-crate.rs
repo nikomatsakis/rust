@@ -10,7 +10,6 @@
 
 // aux-build:lint-unused-extern-crate.rs
 
-#![feature(globs)]
 #![deny(unused_extern_crates)]
 #![allow(unused_variables)]
 
@@ -29,6 +28,6 @@ use rand::isaac::IsaacRng;
 use other::*;
 
 fn main() {
-    let x: collecs::vec::Vec<uint> = Vec::new();
+    let x: collecs::vec::Vec<usize> = Vec::new();
     let y = foo();
 }

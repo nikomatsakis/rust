@@ -10,6 +10,9 @@
 
 #![crate_type = "lib"]
 
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+
 static mut COUNT: u64 = 1;
 
 pub fn get_count() -> u64 { unsafe { COUNT } }
@@ -32,7 +35,7 @@ impl Foo {
     }
 }
 
-pub trait Bar {
+pub trait Bar : Sized {
     fn foo1(&self);
     fn foo2(self);
     fn foo3(self: Box<Self>);

@@ -70,6 +70,8 @@
 // lldb-check:[...]$5 = false
 // lldb-command:continue
 
+#![omit_gdb_pretty_printer_section]
+
 fn main() {
 
     let x = false;
@@ -77,7 +79,7 @@ fn main() {
     zzz(); // #break
     sentinel();
 
-    let stack_closure: |int| = |x| {
+    let closure = |&: x: int| {
         zzz(); // #break
         sentinel();
 
@@ -95,7 +97,7 @@ fn main() {
     zzz(); // #break
     sentinel();
 
-    stack_closure(1000);
+    closure(1000);
 
     zzz(); // #break
     sentinel();

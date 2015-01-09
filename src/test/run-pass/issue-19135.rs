@@ -10,11 +10,11 @@
 
 #![feature(unboxed_closures)]
 
-#[deriving(Show)]
+#[derive(Show)]
 struct LifetimeStruct<'a>;
 
 fn main() {
-    takes_hrtb_closure(|&mut: lts| println!("{}", lts));
+    takes_hrtb_closure(|&mut: lts| println!("{:?}", lts));
 }
 
 fn takes_hrtb_closure<F: for<'a>FnMut(LifetimeStruct<'a>)>(mut f: F) {

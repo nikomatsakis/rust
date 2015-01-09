@@ -14,7 +14,7 @@ pub fn main() {
     // sometimes we have had trouble finding
     // the right type for f, as we unified
     // bot and u32 here
-    let f = match from_str::<uint>("1234") {
+    let f = match "1234".parse::<uint>() {
         None => return (),
         Some(num) => num as u32
     };

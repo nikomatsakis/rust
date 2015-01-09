@@ -8,11 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::string::String;
+use std::num::ToPrimitive;
 
-#[deriving(PartialEq, Show)]
+#[derive(PartialEq, Show)]
 struct Point {
     x: int,
     y: int
@@ -31,7 +34,6 @@ pub fn main() {
     assert_eq!((i_value, *i.borrow()), (2, 5));
 
     let s = Rc::new("foo".to_string());
-    assert!(s.equiv(&("foo")));
     assert_eq!(s.as_slice(), "foo");
 
     let mut_s = Rc::new(RefCell::new(String::from_str("foo")));

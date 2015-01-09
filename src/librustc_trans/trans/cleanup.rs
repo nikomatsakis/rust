@@ -26,7 +26,7 @@ use trans::debuginfo;
 use trans::glue;
 use middle::region;
 use trans::type_::Type;
-use middle::ty::{mod, Ty};
+use middle::ty::{self, Ty};
 use std::fmt;
 use syntax::ast;
 use util::ppaux::Repr;
@@ -50,7 +50,7 @@ pub struct CleanupScope<'blk, 'tcx: 'blk> {
     cached_landing_pad: Option<BasicBlockRef>,
 }
 
-#[deriving(Copy, Show)]
+#[derive(Copy, Show)]
 pub struct CustomScopeIndex {
     index: uint
 }
@@ -62,7 +62,7 @@ pub const EXIT_MAX: uint = 2;
 pub enum CleanupScopeKind<'blk, 'tcx: 'blk> {
     CustomScopeKind,
     AstScopeKind(ast::NodeId),
-    LoopScopeKind(ast::NodeId, [Block<'blk, 'tcx>, ..EXIT_MAX])
+    LoopScopeKind(ast::NodeId, [Block<'blk, 'tcx>; EXIT_MAX])
 }
 
 impl<'blk, 'tcx: 'blk> fmt::Show for CleanupScopeKind<'blk, 'tcx> {
@@ -81,14 +81,14 @@ impl<'blk, 'tcx: 'blk> fmt::Show for CleanupScopeKind<'blk, 'tcx> {
     }
 }
 
-#[deriving(Copy, PartialEq, Show)]
+#[derive(Copy, PartialEq, Show)]
 pub enum EarlyExitLabel {
     UnwindExit,
     ReturnExit,
     LoopExit(ast::NodeId, uint)
 }
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct CachedEarlyExit {
     label: EarlyExitLabel,
     cleanup_block: BasicBlockRef,
@@ -106,7 +106,7 @@ pub trait Cleanup<'tcx> {
 
 pub type CleanupObj<'tcx> = Box<Cleanup<'tcx>+'tcx>;
 
-#[deriving(Copy, Show)]
+#[derive(Copy, Show)]
 pub enum ScopeId {
     AstScope(ast::NodeId),
     CustomScope(CustomScopeIndex)
@@ -144,7 +144,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
 
     fn push_loop_cleanup_scope(&self,
                                id: ast::NodeId,
-                               exits: [Block<'blk, 'tcx>, ..EXIT_MAX]) {
+                               exits: [Block<'blk, 'tcx>; EXIT_MAX]) {
         debug!("push_loop_cleanup_scope({})",
                self.ccx.tcx().map.node_to_string(id));
         assert_eq!(Some(id), self.top_ast_scope());
@@ -227,7 +227,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                                           bcx: Block<'blk, 'tcx>,
                                           custom_scope: CustomScopeIndex)
                                           -> Block<'blk, 'tcx> {
-        debug!("pop_and_trans_custom_cleanup_scope({})", custom_scope);
+        debug!("pop_and_trans_custom_cleanup_scope({:?})", custom_scope);
         assert!(self.is_valid_to_pop_custom_scope(custom_scope));
 
         let scope = self.pop_scope();
@@ -265,7 +265,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
             ptr: val,
         };
 
-        debug!("schedule_lifetime_end({}, val={})",
+        debug!("schedule_lifetime_end({:?}, val={})",
                cleanup_scope,
                self.ccx.tn().val_to_string(val));
 
@@ -277,16 +277,16 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                          cleanup_scope: ScopeId,
                          val: ValueRef,
                          ty: Ty<'tcx>) {
-        if !ty::type_needs_drop(self.ccx.tcx(), ty) { return; }
+        if !common::type_needs_drop(self.ccx.tcx(), ty) { return; }
         let drop = box DropValue {
             is_immediate: false,
-            must_unwind: ty::type_needs_unwind_cleanup(self.ccx.tcx(), ty),
+            must_unwind: common::type_needs_unwind_cleanup(self.ccx, ty),
             val: val,
             ty: ty,
             zero: false
         };
 
-        debug!("schedule_drop_mem({}, val={}, ty={})",
+        debug!("schedule_drop_mem({:?}, val={}, ty={})",
                cleanup_scope,
                self.ccx.tn().val_to_string(val),
                ty.repr(self.ccx.tcx()));
@@ -299,16 +299,16 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                                   cleanup_scope: ScopeId,
                                   val: ValueRef,
                                   ty: Ty<'tcx>) {
-        if !ty::type_needs_drop(self.ccx.tcx(), ty) { return; }
+        if !common::type_needs_drop(self.ccx.tcx(), ty) { return; }
         let drop = box DropValue {
             is_immediate: false,
-            must_unwind: ty::type_needs_unwind_cleanup(self.ccx.tcx(), ty),
+            must_unwind: common::type_needs_unwind_cleanup(self.ccx, ty),
             val: val,
             ty: ty,
             zero: true
         };
 
-        debug!("schedule_drop_and_zero_mem({}, val={}, ty={}, zero={})",
+        debug!("schedule_drop_and_zero_mem({:?}, val={}, ty={}, zero={})",
                cleanup_scope,
                self.ccx.tn().val_to_string(val),
                ty.repr(self.ccx.tcx()),
@@ -323,16 +323,16 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                                val: ValueRef,
                                ty: Ty<'tcx>) {
 
-        if !ty::type_needs_drop(self.ccx.tcx(), ty) { return; }
+        if !common::type_needs_drop(self.ccx.tcx(), ty) { return; }
         let drop = box DropValue {
             is_immediate: true,
-            must_unwind: ty::type_needs_unwind_cleanup(self.ccx.tcx(), ty),
+            must_unwind: common::type_needs_unwind_cleanup(self.ccx, ty),
             val: val,
             ty: ty,
             zero: false
         };
 
-        debug!("schedule_drop_immediate({}, val={}, ty={})",
+        debug!("schedule_drop_immediate({:?}, val={}, ty={:?})",
                cleanup_scope,
                self.ccx.tn().val_to_string(val),
                ty.repr(self.ccx.tcx()));
@@ -348,7 +348,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                            content_ty: Ty<'tcx>) {
         let drop = box FreeValue { ptr: val, heap: heap, content_ty: content_ty };
 
-        debug!("schedule_free_value({}, val={}, heap={})",
+        debug!("schedule_free_value({:?}, val={}, heap={:?})",
                cleanup_scope,
                self.ccx.tn().val_to_string(val),
                heap);
@@ -365,7 +365,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                            heap: Heap) {
         let drop = box FreeSlice { ptr: val, size: size, align: align, heap: heap };
 
-        debug!("schedule_free_slice({}, val={}, heap={})",
+        debug!("schedule_free_slice({:?}, val={}, heap={:?})",
                cleanup_scope,
                self.ccx.tn().val_to_string(val),
                heap);
@@ -403,7 +403,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
         }
 
         self.ccx.sess().bug(
-            format!("no cleanup scope {} found",
+            &format!("no cleanup scope {} found",
                     self.ccx.tcx().map.node_to_string(cleanup_scope))[]);
     }
 
@@ -549,7 +549,7 @@ impl<'blk, 'tcx> CleanupHelperMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx
     fn trans_cleanups_to_exit_scope(&'blk self,
                                     label: EarlyExitLabel)
                                     -> BasicBlockRef {
-        debug!("trans_cleanups_to_exit_scope label={} scopes={}",
+        debug!("trans_cleanups_to_exit_scope label={:?} scopes={}",
                label, self.scopes_len());
 
         let orig_scopes_len = self.scopes_len();
@@ -584,7 +584,7 @@ impl<'blk, 'tcx> CleanupHelperMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx
                     }
 
                     LoopExit(id, _) => {
-                        self.ccx.sess().bug(format!(
+                        self.ccx.sess().bug(&format!(
                                 "cannot exit from scope {}, \
                                 not in scope", id)[]);
                     }
@@ -655,7 +655,7 @@ impl<'blk, 'tcx> CleanupHelperMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx
                 let name = scope.block_name("clean");
                 debug!("generating cleanups for {}", name);
                 let bcx_in = self.new_block(label.is_unwind(),
-                                            name[],
+                                            &name[],
                                             None);
                 let mut bcx_out = bcx_in;
                 for cleanup in scope.cleanups.iter().rev() {
@@ -675,7 +675,7 @@ impl<'blk, 'tcx> CleanupHelperMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx
             self.push_scope(scope);
         }
 
-        debug!("trans_cleanups_to_exit_scope: prev_llbb={}", prev_llbb);
+        debug!("trans_cleanups_to_exit_scope: prev_llbb={:?}", prev_llbb);
 
         assert_eq!(self.scopes_len(), orig_scopes_len);
         prev_llbb
@@ -702,7 +702,7 @@ impl<'blk, 'tcx> CleanupHelperMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx
                 Some(llbb) => { return llbb; }
                 None => {
                     let name = last_scope.block_name("unwind");
-                    pad_bcx = self.new_block(true, name[], None);
+                    pad_bcx = self.new_block(true, &name[], None);
                     last_scope.cached_landing_pad = Some(pad_bcx.llbb);
                 }
             }
@@ -724,7 +724,10 @@ impl<'blk, 'tcx> CleanupHelperMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx
         // specify any of the types for the function, we just make it a symbol
         // that LLVM can later use.
         let llpersonality = match pad_bcx.tcx().lang_items.eh_personality() {
-            Some(def_id) => callee::trans_fn_ref(pad_bcx, def_id, ExprId(0)),
+            Some(def_id) => {
+                callee::trans_fn_ref(pad_bcx.ccx(), def_id, ExprId(0),
+                                     pad_bcx.fcx.param_substs).val
+            }
             None => {
                 let mut personality = self.ccx.eh_personality().borrow_mut();
                 match *personality {
@@ -734,7 +737,7 @@ impl<'blk, 'tcx> CleanupHelperMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx
                         let f = base::decl_cdecl_fn(self.ccx,
                                                     "rust_eh_personality",
                                                     fty,
-                                                    ty::mk_i32());
+                                                    self.ccx.tcx().types.i32);
                         *personality = Some(f);
                         f
                     }
@@ -869,7 +872,7 @@ impl EarlyExitLabel {
 ///////////////////////////////////////////////////////////////////////////
 // Cleanup types
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct DropValue<'tcx> {
     is_immediate: bool,
     must_unwind: bool,
@@ -907,12 +910,12 @@ impl<'tcx> Cleanup<'tcx> for DropValue<'tcx> {
     }
 }
 
-#[deriving(Copy, Show)]
+#[derive(Copy, Show)]
 pub enum Heap {
     HeapExchange
 }
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct FreeValue<'tcx> {
     ptr: ValueRef,
     heap: Heap,
@@ -946,7 +949,7 @@ impl<'tcx> Cleanup<'tcx> for FreeValue<'tcx> {
     }
 }
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct FreeSlice {
     ptr: ValueRef,
     size: ValueRef,
@@ -981,7 +984,7 @@ impl<'tcx> Cleanup<'tcx> for FreeSlice {
     }
 }
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct LifetimeEnd {
     ptr: ValueRef,
 }
@@ -1015,11 +1018,11 @@ pub fn temporary_scope(tcx: &ty::ctxt,
     match tcx.region_maps.temporary_scope(id) {
         Some(scope) => {
             let r = AstScope(scope.node_id());
-            debug!("temporary_scope({}) = {}", id, r);
+            debug!("temporary_scope({}) = {:?}", id, r);
             r
         }
         None => {
-            tcx.sess.bug(format!("no temporary scope available for expr {}",
+            tcx.sess.bug(&format!("no temporary scope available for expr {}",
                                  id)[])
         }
     }
@@ -1029,7 +1032,7 @@ pub fn var_scope(tcx: &ty::ctxt,
                  id: ast::NodeId)
                  -> ScopeId {
     let r = AstScope(tcx.region_maps.var_scope(id).node_id());
-    debug!("var_scope({}) = {}", id, r);
+    debug!("var_scope({}) = {:?}", id, r);
     r
 }
 
@@ -1056,7 +1059,7 @@ pub trait CleanupMethods<'blk, 'tcx> {
     fn push_ast_cleanup_scope(&self, id: NodeInfo);
     fn push_loop_cleanup_scope(&self,
                                id: ast::NodeId,
-                               exits: [Block<'blk, 'tcx>, ..EXIT_MAX]);
+                               exits: [Block<'blk, 'tcx>; EXIT_MAX]);
     fn push_custom_cleanup_scope(&self) -> CustomScopeIndex;
     fn push_custom_cleanup_scope_with_debug_loc(&self,
                                                 debug_loc: NodeInfo)

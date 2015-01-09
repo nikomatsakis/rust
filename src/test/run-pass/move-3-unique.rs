@@ -8,8 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![allow(unknown_features)]
+#![feature(box_syntax)]
 
-#[deriving(Clone)]
+#[derive(Clone)]
 struct Triple {
     x: int,
     y: int,

@@ -16,7 +16,7 @@ use std::ops::Index;
 struct AssociationList<K,V> {
     pairs: Vec<AssociationPair<K,V>> }
 
-#[deriving(Clone)]
+#[derive(Clone)]
 struct AssociationPair<K,V> {
     key: K,
     value: V
@@ -28,14 +28,16 @@ impl<K,V> AssociationList<K,V> {
     }
 }
 
-impl<K: PartialEq + std::fmt::Show, V:Clone> Index<K,V> for AssociationList<K,V> {
+impl<K: PartialEq + std::fmt::Show, V:Clone> Index<K> for AssociationList<K,V> {
+    type Output = V;
+
     fn index<'a>(&'a self, index: &K) -> &'a V {
         for pair in self.pairs.iter() {
             if pair.key == *index {
                 return &pair.value
             }
         }
-        panic!("No value found for key: {}", index);
+        panic!("No value found for key: {:?}", index);
     }
 }
 

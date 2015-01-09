@@ -11,7 +11,9 @@
 /// This module provides linkage between rustc::middle::graph and
 /// libgraphviz traits.
 
-/// For clarity, rename the graphviz crate locally to dot.
+use std::borrow::IntoCow;
+
+// For clarity, rename the graphviz crate locally to dot.
 use graphviz as dot;
 
 use syntax::ast;
@@ -50,7 +52,7 @@ fn replace_newline_with_backslash_l(s: String) -> String {
 }
 
 impl<'a, 'ast> dot::Labeller<'a, Node<'a>, Edge<'a>> for LabelledCFG<'a, 'ast> {
-    fn graph_id(&'a self) -> dot::Id<'a> { dot::Id::new(self.name[]).unwrap() }
+    fn graph_id(&'a self) -> dot::Id<'a> { dot::Id::new(&self.name[]).unwrap() }
 
     fn node_id(&'a self, &(i,_): &Node<'a>) -> dot::Id<'a> {
         dot::Id::new(format!("N{}", i.node_id())).unwrap()
@@ -58,16 +60,16 @@ impl<'a, 'ast> dot::Labeller<'a, Node<'a>, Edge<'a>> for LabelledCFG<'a, 'ast> {
 
     fn node_label(&'a self, &(i, n): &Node<'a>) -> dot::LabelText<'a> {
         if i == self.cfg.entry {
-            dot::LabelStr("entry".into_cow())
+            dot::LabelText::LabelStr("entry".into_cow())
         } else if i == self.cfg.exit {
-            dot::LabelStr("exit".into_cow())
+            dot::LabelText::LabelStr("exit".into_cow())
         } else if n.data.id == ast::DUMMY_NODE_ID {
-            dot::LabelStr("(dummy_node)".into_cow())
+            dot::LabelText::LabelStr("(dummy_node)".into_cow())
         } else {
             let s = self.ast_map.node_to_string(n.data.id);
             // left-aligns the lines
             let s = replace_newline_with_backslash_l(s);
-            dot::EscStr(s.into_cow())
+            dot::LabelText::EscStr(s.into_cow())
         }
     }
 
@@ -83,9 +85,11 @@ impl<'a, 'ast> dot::Labeller<'a, Node<'a>, Edge<'a>> for LabelledCFG<'a, 'ast> {
             let s = self.ast_map.node_to_string(node_id);
             // left-aligns the lines
             let s = replace_newline_with_backslash_l(s);
-            label.push_str(format!("exiting scope_{} {}", i, s[])[]);
+            label.push_str(&format!("exiting scope_{} {}",
+                                   i,
+                                   &s[])[]);
         }
-        dot::EscStr(label.into_cow())
+        dot::LabelText::EscStr(label.into_cow())
     }
 }
 

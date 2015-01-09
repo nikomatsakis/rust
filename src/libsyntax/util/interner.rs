@@ -15,10 +15,13 @@
 use ast::Name;
 
 use std::borrow::BorrowFrom;
-use std::collections::HashMap;
 use std::cell::RefCell;
+use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
+use std::collections::hash_map::Hasher;
+use std::ops::Deref;
 use std::rc::Rc;
 
 pub struct Interner<T> {
@@ -27,7 +30,7 @@ pub struct Interner<T> {
 }
 
 // when traits can extend traits, we should extend index<Name,T> to get []
-impl<T: Eq + Hash + Clone + 'static> Interner<T> {
+impl<T: Eq + Hash<Hasher> + Clone + 'static> Interner<T> {
     pub fn new() -> Interner<T> {
         Interner {
             map: RefCell::new(HashMap::new()),
@@ -75,8 +78,8 @@ impl<T: Eq + Hash + Clone + 'static> Interner<T> {
         (*vect).len()
     }
 
-    pub fn find<Sized? Q>(&self, val: &Q) -> Option<Name>
-    where Q: BorrowFrom<T> + Eq + Hash {
+    pub fn find<Q: ?Sized>(&self, val: &Q) -> Option<Name>
+    where Q: BorrowFrom<T> + Eq + Hash<Hasher> {
         let map = self.map.borrow();
         match (*map).get(val) {
             Some(v) => Some(*v),
@@ -90,7 +93,7 @@ impl<T: Eq + Hash + Clone + 'static> Interner<T> {
     }
 }
 
-#[deriving(Clone, PartialEq, Hash, PartialOrd)]
+#[derive(Clone, PartialEq, Hash, PartialOrd)]
 pub struct RcStr {
     string: Rc<String>,
 }
@@ -107,7 +110,7 @@ impl Eq for RcStr {}
 
 impl Ord for RcStr {
     fn cmp(&self, other: &RcStr) -> Ordering {
-        self[].cmp(other[])
+        self[].cmp(&other[])
     }
 }
 
@@ -120,12 +123,14 @@ impl fmt::Show for RcStr {
 
 impl BorrowFrom<RcStr> for str {
     fn borrow_from(owned: &RcStr) -> &str {
-        owned.string[]
+        &owned.string[]
     }
 }
 
-impl Deref<str> for RcStr {
-    fn deref(&self) -> &str { self.string[] }
+impl Deref for RcStr {
+    type Target = str;
+
+    fn deref(&self) -> &str { &self.string[] }
 }
 
 /// A StrInterner differs from Interner<String> in that it accepts
@@ -198,8 +203,8 @@ impl StrInterner {
         self.vect.borrow().len()
     }
 
-    pub fn find<Sized? Q>(&self, val: &Q) -> Option<Name>
-    where Q: BorrowFrom<RcStr> + Eq + Hash {
+    pub fn find<Q: ?Sized>(&self, val: &Q) -> Option<Name>
+    where Q: BorrowFrom<RcStr> + Eq + Hash<Hasher> {
         match (*self.map.borrow()).get(val) {
             Some(v) => Some(*v),
             None => None,

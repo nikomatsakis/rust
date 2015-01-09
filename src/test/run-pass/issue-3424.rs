@@ -11,6 +11,8 @@
 
 // rustc --test ignores2.rs && ./ignores2
 
+#![allow(unknown_features)]
+#![feature(box_syntax)]
 #![feature(unboxed_closures)]
 
 use std::path::{Path};
@@ -27,7 +29,7 @@ fn tester()
     };
 
     let path = path::Path::new("blah");
-    assert!(loader.call_mut((&path,)).is_ok());
+    assert!(loader(&path).is_ok());
 }
 
 pub fn main() {}

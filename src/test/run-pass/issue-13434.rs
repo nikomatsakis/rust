@@ -8,14 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[deriving(Show)]
+#[derive(Show)]
 struct MyStruct;
 
 trait Repro {
   fn repro(self, s: MyStruct) -> String;
 }
 
-impl Repro for |MyStruct|:'static -> String {
+impl<F> Repro for F where F: FnOnce(MyStruct) -> String {
   fn repro(self, s: MyStruct) -> String {
     self(s)
   }
@@ -26,5 +26,5 @@ fn do_stuff<R: Repro>(r: R) -> String {
 }
 
 pub fn main() {
-  assert_eq!("MyStruct".to_string(), do_stuff(|s: MyStruct| format!("{}", s)));
+  assert_eq!("MyStruct".to_string(), do_stuff(|: s: MyStruct| format!("{:?}", s)));
 }

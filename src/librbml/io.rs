@@ -11,6 +11,7 @@
 use std::io::{IoError, IoResult, SeekStyle};
 use std::io;
 use std::slice;
+use std::iter::repeat;
 
 static BUF_CAPACITY: uint = 128;
 
@@ -87,14 +88,14 @@ impl Writer for SeekableMemWriter {
             // currently are
             let difference = self.pos as i64 - self.buf.len() as i64;
             if difference > 0 {
-                self.buf.grow(difference as uint, 0);
+                self.buf.extend(repeat(0).take(difference as uint));
             }
 
             // Figure out what bytes will be used to overwrite what's currently
             // there (left), and what will be appended on the end (right)
             let cap = self.buf.len() - self.pos;
             let (left, right) = if cap <= buf.len() {
-                (buf[..cap], buf[cap..])
+                (&buf[0..cap], &buf[cap..])
             } else {
                 let result: (_, &[_]) = (buf, &[]);
                 result
@@ -102,7 +103,7 @@ impl Writer for SeekableMemWriter {
 
             // Do the necessary writes
             if left.len() > 0 {
-                slice::bytes::copy_memory(self.buf[mut self.pos..], left);
+                slice::bytes::copy_memory(self.buf.slice_from_mut(self.pos), left);
             }
             if right.len() > 0 {
                 self.buf.push_all(right);
@@ -132,6 +133,7 @@ mod tests {
     extern crate test;
     use super::SeekableMemWriter;
     use std::io;
+    use std::iter::repeat;
     use test::Bencher;
 
     #[test]
@@ -182,7 +184,7 @@ mod tests {
     }
 
     fn do_bench_seekable_mem_writer(b: &mut Bencher, times: uint, len: uint) {
-        let src: Vec<u8> = Vec::from_elem(len, 5);
+        let src: Vec<u8> = repeat(5).take(len).collect();
 
         b.bytes = (times * len) as u64;
         b.iter(|| {

@@ -9,17 +9,17 @@
 // except according to those terms.
 
 struct direct<'a> {
-    f: &'a int
+    f: &'a isize
 }
 
 struct indirect1 {
     // Here the lifetime parameter of direct is bound by the fn()
-    g: |direct|: 'static
+    g: Box<FnOnce(direct) + 'static>
 }
 
 struct indirect2<'a> {
     // But here it is set to 'a
-    g: |direct<'a>|: 'static
+    g: Box<FnOnce(direct<'a>) + 'static>
 }
 
 fn take_direct<'a,'b>(p: direct<'a>) -> direct<'b> { p } //~ ERROR mismatched types

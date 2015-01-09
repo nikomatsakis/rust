@@ -15,17 +15,20 @@
 //! This API is completely unstable and subject to change.
 
 #![crate_name = "rustc_driver"]
-#![experimental]
+#![unstable]
+#![staged_api]
 #![crate_type = "dylib"]
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
       html_favicon_url = "http://www.rust-lang.org/favicon.ico",
       html_root_url = "http://doc.rust-lang.org/nightly/")]
 
-#![feature(default_type_params, globs, macro_rules, phase, quote)]
+#![allow(unknown_features)]
+#![feature(quote)]
 #![feature(slicing_syntax, unsafe_destructor)]
+#![feature(box_syntax)]
 #![feature(rustc_diagnostic_macros)]
-#![feature(unboxed_closures)]
+#![allow(unknown_features)] #![feature(int_uint)]
 
 extern crate arena;
 extern crate flate;
@@ -38,25 +41,27 @@ extern crate rustc_borrowck;
 extern crate rustc_resolve;
 extern crate rustc_trans;
 extern crate rustc_typeck;
-#[phase(plugin, link)] extern crate log;
-#[phase(plugin, link)] extern crate syntax;
 extern crate serialize;
 extern crate "rustc_llvm" as llvm;
+#[macro_use] extern crate log;
+#[macro_use] extern crate syntax;
 
 pub use syntax::diagnostic;
 
 use rustc_trans::back::link;
 use rustc::session::{config, Session, build_session};
-use rustc::session::config::{Input, PrintRequest};
+use rustc::session::config::{Input, PrintRequest, UnstableFeatures};
 use rustc::lint::Lint;
 use rustc::lint;
 use rustc::metadata;
+use rustc::metadata::creader::CrateOrString::Str;
 use rustc::DIAGNOSTICS;
 
-use std::any::AnyRefExt;
+use std::cmp::Ordering::Equal;
 use std::io;
 use std::iter::repeat;
 use std::os;
+use std::sync::mpsc::channel;
 use std::thread;
 
 use rustc::session::early_error;
@@ -89,12 +94,12 @@ fn run_compiler(args: &[String]) {
     let descriptions = diagnostics::registry::Registry::new(&DIAGNOSTICS);
     match matches.opt_str("explain") {
         Some(ref code) => {
-            match descriptions.find_description(code[]) {
+            match descriptions.find_description(&code[]) {
                 Some(ref description) => {
                     println!("{}", description);
                 }
                 None => {
-                    early_error(format!("no extended information for {}", code)[]);
+                    early_error(&format!("no extended information for {}", code)[]);
                 }
             }
             return;
@@ -120,7 +125,7 @@ fn run_compiler(args: &[String]) {
             early_error("no input filename given");
         }
         1u => {
-            let ifile = matches.free[0][];
+            let ifile = &matches.free[0][];
             if ifile == "-" {
                 let contents = io::stdin().read_to_end().unwrap();
                 let src = String::from_utf8(contents).unwrap();
@@ -132,7 +137,11 @@ fn run_compiler(args: &[String]) {
         _ => early_error("multiple input filenames provided")
     };
 
-    let sess = build_session(sopts, input_file_path, descriptions);
+    let mut sopts = sopts;
+    sopts.unstable_features = get_unstable_features_setting();
+
+    let mut sess = build_session(sopts, input_file_path, descriptions);
+
     let cfg = config::build_configuration(&sess);
     if print_crate_info(&sess, Some(&input), &odir, &ofile) {
         return
@@ -143,7 +152,7 @@ fn run_compiler(args: &[String]) {
         pretty::parse_pretty(&sess, a.as_slice(), false)
     });
     let pretty = if pretty.is_none() &&
-        sess.debugging_opt(config::UNSTABLE_OPTIONS) {
+        sess.unstable_options() {
             matches.opt_str("xpretty").map(|a| {
                 // extended with unstable pretty-print variants
                 pretty::parse_pretty(&sess, a.as_slice(), true)
@@ -160,6 +169,10 @@ fn run_compiler(args: &[String]) {
         None => {/* continue */ }
     }
 
+    if sess.unstable_options() {
+        sess.opts.show_span = matches.opt_str("show-span");
+    }
+
     let r = matches.opt_strs("Z");
     if r.contains(&("ls".to_string())) {
         match input {
@@ -174,7 +187,23 @@ fn run_compiler(args: &[String]) {
         return;
     }
 
-    driver::compile_input(sess, cfg, &input, &odir, &ofile, None);
+    let plugins = sess.opts.debugging_opts.extra_plugins.clone();
+    driver::compile_input(sess, cfg, &input, &odir, &ofile, Some(plugins));
+}
+
+pub fn get_unstable_features_setting() -> UnstableFeatures {
+    // Whether this is a feature-staged build, i.e. on the beta or stable channel
+    let disable_unstable_features = option_env!("CFG_DISABLE_UNSTABLE_FEATURES").is_some();
+    // The secret key needed to get through the rustc build itself by
+    // subverting the unstable features lints
+    let bootstrap_secret_key = option_env!("CFG_BOOTSTRAP_KEY");
+    // The matching key to the above, only known by the build system
+    let bootstrap_provided_key = os::getenv("RUSTC_BOOTSTRAP_KEY");
+    match (disable_unstable_features, bootstrap_secret_key, bootstrap_provided_key) {
+        (_, Some(ref s), Some(ref p)) if s == p => UnstableFeatures::Cheat,
+        (true, _, _) => UnstableFeatures::Disallow,
+        (false, _, _) => UnstableFeatures::Default
+    }
 }
 
 /// Returns a version string such as "0.12.0-dev".
@@ -265,18 +294,20 @@ Available lint options:
         lints
     }
 
-    let (plugin, builtin) = lint_store.get_lints().partitioned(|&(_, p)| p);
+    let (plugin, builtin): (Vec<_>, _) = lint_store.get_lints()
+        .iter().cloned().partition(|&(_, p)| p);
     let plugin = sort_lints(plugin);
     let builtin = sort_lints(builtin);
 
-    let (plugin_groups, builtin_groups) = lint_store.get_lint_groups().partitioned(|&(_, _, p)| p);
+    let (plugin_groups, builtin_groups): (Vec<_>, _) = lint_store.get_lint_groups()
+        .iter().cloned().partition(|&(_, _, p)| p);
     let plugin_groups = sort_lint_groups(plugin_groups);
     let builtin_groups = sort_lint_groups(builtin_groups);
 
     let max_name_len = plugin.iter().chain(builtin.iter())
         .map(|&s| s.name.width(true))
         .max().unwrap_or(0);
-    let padded = |x: &str| {
+    let padded = |&: x: &str| {
         let mut s = repeat(" ").take(max_name_len - x.chars().count())
                                .collect::<String>();
         s.push_str(x);
@@ -287,11 +318,11 @@ Available lint options:
     println!("    {}  {:7.7}  {}", padded("name"), "default", "meaning");
     println!("    {}  {:7.7}  {}", padded("----"), "-------", "-------");
 
-    let print_lints = |lints: Vec<&Lint>| {
+    let print_lints = |&: lints: Vec<&Lint>| {
         for lint in lints.into_iter() {
             let name = lint.name_lower().replace("_", "-");
             println!("    {}  {:7.7}  {}",
-                     padded(name[]), lint.default_level.as_str(), lint.desc);
+                     padded(&name[]), lint.default_level.as_str(), lint.desc);
         }
         println!("\n");
     };
@@ -303,7 +334,7 @@ Available lint options:
     let max_name_len = plugin_groups.iter().chain(builtin_groups.iter())
         .map(|&(s, _)| s.width(true))
         .max().unwrap_or(0);
-    let padded = |x: &str| {
+    let padded = |&: x: &str| {
         let mut s = repeat(" ").take(max_name_len - x.chars().count())
                                .collect::<String>();
         s.push_str(x);
@@ -314,14 +345,14 @@ Available lint options:
     println!("    {}  {}", padded("name"), "sub-lints");
     println!("    {}  {}", padded("----"), "---------");
 
-    let print_lint_groups = |lints: Vec<(&'static str, Vec<lint::LintId>)>| {
+    let print_lint_groups = |&: lints: Vec<(&'static str, Vec<lint::LintId>)>| {
         for (name, to) in lints.into_iter() {
             let name = name.chars().map(|x| x.to_lowercase())
                            .collect::<String>().replace("_", "-");
             let desc = to.into_iter().map(|x| x.as_str().replace("_", "-"))
                          .collect::<Vec<String>>().connect(", ");
             println!("    {}  {}",
-                     padded(name[]), desc);
+                     padded(&name[]), desc);
         }
         println!("\n");
     };
@@ -350,13 +381,13 @@ Available lint options:
 
 fn describe_debug_flags() {
     println!("\nAvailable debug options:\n");
-    let r = config::debugging_opts_map();
-    for tuple in r.iter() {
-        match *tuple {
-            (ref name, ref desc, _) => {
-                println!("    -Z {:>20} -- {}", *name, *desc);
-            }
-        }
+    for &(name, _, opt_type_desc, desc) in config::DB_OPTIONS.iter() {
+        let (width, extra) = match opt_type_desc {
+            Some(..) => (21, "=val"),
+            None => (25, "")
+        };
+        println!("    -Z {:>width$}{} -- {}", name.replace("_", "-"),
+                 extra, desc, width=width);
     }
 }
 
@@ -377,7 +408,7 @@ fn describe_codegen_flags() {
 /// returns None.
 pub fn handle_options(mut args: Vec<String>) -> Option<getopts::Matches> {
     // Throw away the first argument, the name of the binary
-    let _binary = args.remove(0).unwrap();
+    let _binary = args.remove(0);
 
     if args.is_empty() {
         // user did not write `-v` nor `-Z unstable-options`, so do not
@@ -387,7 +418,7 @@ pub fn handle_options(mut args: Vec<String>) -> Option<getopts::Matches> {
     }
 
     let matches =
-        match getopts::getopts(args[], config::optgroups()[]) {
+        match getopts::getopts(&args[], &config::optgroups()[]) {
             Ok(m) => m,
             Err(f_stable_attempt) => {
                 // redo option parsing, including unstable options this time,
@@ -537,10 +568,10 @@ pub fn monitor<F:FnOnce()+Send>(f: F) {
         cfg = cfg.stack_size(STACK_SIZE);
     }
 
-    match cfg.spawn(move || { std::io::stdio::set_stderr(box w); f() }).join() {
+    match cfg.scoped(move || { std::io::stdio::set_stderr(box w); f() }).join() {
         Ok(()) => { /* fallthrough */ }
         Err(value) => {
-            // Task panicked without emitting a fatal diagnostic
+            // Thread panicked without emitting a fatal diagnostic
             if !value.is::<diagnostic::FatalError>() {
                 let mut emitter = diagnostic::EmitterWriter::stderr(diagnostic::Auto, None);
 
@@ -561,14 +592,14 @@ pub fn monitor<F:FnOnce()+Send>(f: F) {
                     "run with `RUST_BACKTRACE=1` for a backtrace".to_string(),
                 ];
                 for note in xs.iter() {
-                    emitter.emit(None, note[], None, diagnostic::Note)
+                    emitter.emit(None, &note[], None, diagnostic::Note)
                 }
 
                 match r.read_to_string() {
                     Ok(s) => println!("{}", s),
                     Err(e) => {
                         emitter.emit(None,
-                                     format!("failed to read internal \
+                                     &format!("failed to read internal \
                                               stderr: {}", e)[],
                                      None,
                                      diagnostic::Error)

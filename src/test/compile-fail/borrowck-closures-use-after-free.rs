@@ -12,9 +12,10 @@
 // cannot also be supplied a borrowed version of that
 // variable's contents. Issue #11192.
 
+#![feature(box_syntax)]
 
 struct Foo {
-  x: int
+  x: isize
 }
 
 impl Drop for Foo {
@@ -25,7 +26,7 @@ impl Drop for Foo {
 
 fn main() {
   let mut ptr = box Foo { x: 0 };
-  let test = |foo: &Foo| {
+  let mut test = |&mut: foo: &Foo| {
     ptr = box Foo { x: ptr.x + 1 };
   };
   test(&*ptr); //~ ERROR cannot borrow `*ptr`

@@ -53,7 +53,7 @@ impl<T> MoveMap<T> for OwnedSlice<T> {
     }
 }
 
-pub trait Folder {
+pub trait Folder : Sized {
     // Any additions to this trait should happen in form
     // of a call to a public `noop_*` function that only calls
     // out to the folder again, not other `noop_*` functions.
@@ -194,13 +194,13 @@ pub trait Folder {
         noop_fold_local(l, self)
     }
 
-    fn fold_mac(&mut self, _macro: Mac) -> Mac {
+    fn fold_mac(&mut self, _mac: Mac) -> Mac {
         panic!("fold_mac disabled by default");
         // NB: see note about macros above.
         // if you really want a folder that
         // works on macros, use this
         // definition in your trait impl:
-        // fold::noop_fold_mac(_macro, self)
+        // fold::noop_fold_mac(_mac, self)
     }
 
     fn fold_explicit_self(&mut self, es: ExplicitSelf) -> ExplicitSelf {
@@ -414,17 +414,6 @@ pub fn noop_fold_ty<T: Folder>(t: P<Ty>, fld: &mut T) -> P<Ty> {
             TyRptr(region, mt) => {
                 TyRptr(fld.fold_opt_lifetime(region), fld.fold_mt(mt))
             }
-            TyClosure(f) => {
-                TyClosure(f.map(|ClosureTy {unsafety, onceness, bounds, decl, lifetimes}| {
-                    ClosureTy {
-                        unsafety: unsafety,
-                        onceness: onceness,
-                        bounds: fld.fold_bounds(bounds),
-                        decl: fld.fold_fn_decl(decl),
-                        lifetimes: fld.fold_lifetime_defs(lifetimes)
-                    }
-                }))
-            }
             TyBareFn(f) => {
                 TyBareFn(f.map(|BareFnTy {lifetimes, unsafety, abi, decl}| BareFnTy {
                     lifetimes: fld.fold_lifetime_defs(lifetimes),
@@ -553,7 +542,7 @@ pub fn noop_fold_parenthesized_parameter_data<T: Folder>(data: ParenthesizedPara
 pub fn noop_fold_local<T: Folder>(l: P<Local>, fld: &mut T) -> P<Local> {
     l.map(|Local {id, pat, ty, init, source, span}| Local {
         id: fld.new_id(id),
-        ty: fld.fold_ty(ty),
+        ty: ty.map(|t| fld.fold_ty(t)),
         pat: fld.fold_pat(pat),
         init: init.map(|e| fld.fold_expr(e)),
         source: source,
@@ -736,18 +725,17 @@ pub fn noop_fold_ty_param_bound<T>(tpb: TyParamBound, fld: &mut T)
                                    -> TyParamBound
                                    where T: Folder {
     match tpb {
-        TraitTyParamBound(ty) => TraitTyParamBound(fld.fold_poly_trait_ref(ty)),
+        TraitTyParamBound(ty, modifier) => TraitTyParamBound(fld.fold_poly_trait_ref(ty), modifier),
         RegionTyParamBound(lifetime) => RegionTyParamBound(fld.fold_lifetime(lifetime)),
     }
 }
 
 pub fn noop_fold_ty_param<T: Folder>(tp: TyParam, fld: &mut T) -> TyParam {
-    let TyParam {id, ident, bounds, unbound, default, span} = tp;
+    let TyParam {id, ident, bounds, default, span} = tp;
     TyParam {
         id: fld.new_id(id),
         ident: ident,
         bounds: fld.fold_bounds(bounds),
-        unbound: unbound.map(|x| fld.fold_trait_ref(x)),
         default: default.map(|x| fld.fold_ty(x)),
         span: span
     }
@@ -1015,7 +1003,7 @@ pub fn noop_fold_item_underscore<T: Folder>(i: Item_, folder: &mut T) -> Item_ {
             let struct_def = folder.fold_struct_def(struct_def);
             ItemStruct(struct_def, folder.fold_generics(generics))
         }
-        ItemImpl(unsafety, generics, ifce, ty, impl_items) => {
+        ItemImpl(unsafety, polarity, generics, ifce, ty, impl_items) => {
             let mut new_impl_items = Vec::new();
             for impl_item in impl_items.iter() {
                 match *impl_item {
@@ -1038,12 +1026,13 @@ pub fn noop_fold_item_underscore<T: Folder>(i: Item_, folder: &mut T) -> Item_ {
                 }
             };
             ItemImpl(unsafety,
+                     polarity,
                      folder.fold_generics(generics),
                      ifce,
                      folder.fold_ty(ty),
                      new_impl_items)
         }
-        ItemTrait(unsafety, generics, unbound, bounds, methods) => {
+        ItemTrait(unsafety, generics, bounds, methods) => {
             let bounds = folder.fold_bounds(bounds);
             let methods = methods.into_iter().flat_map(|method| {
                 let r = match method {
@@ -1073,7 +1062,6 @@ pub fn noop_fold_item_underscore<T: Folder>(i: Item_, folder: &mut T) -> Item_ {
             }).collect();
             ItemTrait(unsafety,
                       folder.fold_generics(generics),
-                      unbound,
                       bounds,
                       methods)
         }
@@ -1116,7 +1104,7 @@ pub fn noop_fold_mod<T: Folder>(Mod {inner, view_items, items}: Mod, folder: &mu
     }
 }
 
-pub fn noop_fold_crate<T: Folder>(Crate {module, attrs, config, exported_macros, span}: Crate,
+pub fn noop_fold_crate<T: Folder>(Crate {module, attrs, config, mut exported_macros, span}: Crate,
                                   folder: &mut T) -> Crate {
     let config = folder.fold_meta_items(config);
 
@@ -1147,6 +1135,10 @@ pub fn noop_fold_crate<T: Folder>(Crate {module, attrs, config, exported_macros,
         }, Vec::new(), span)
     };
 
+    for def in exported_macros.iter_mut() {
+        def.id = folder.new_id(def.id);
+    }
+
     Crate {
         module: module,
         attrs: attrs,
@@ -1168,7 +1160,7 @@ pub fn noop_fold_item_simple<T: Folder>(Item {id, ident, attrs, node, vis, span}
     let node = folder.fold_item_underscore(node);
     let ident = match node {
         // The node may have changed, recompute the "pretty" impl name.
-        ItemImpl(_, _, ref maybe_trait, ref ty, _) => {
+        ItemImpl(_, _, _, ref maybe_trait, ref ty, _) => {
             ast_util::impl_pretty_name(maybe_trait, &**ty)
         }
         _ => ident
@@ -1269,7 +1261,7 @@ pub fn noop_fold_pat<T: Folder>(p: P<Pat>, folder: &mut T) -> P<Pat> {
             }
             PatTup(elts) => PatTup(elts.move_map(|x| folder.fold_pat(x))),
             PatBox(inner) => PatBox(folder.fold_pat(inner)),
-            PatRegion(inner) => PatRegion(folder.fold_pat(inner)),
+            PatRegion(inner, mutbl) => PatRegion(folder.fold_pat(inner), mutbl),
             PatRange(e1, e2) => {
                 PatRange(folder.fold_expr(e1), folder.fold_expr(e2))
             },
@@ -1384,11 +1376,9 @@ pub fn noop_fold_expr<T: Folder>(Expr {id, node, span}: Expr, folder: &mut T) ->
             ExprIndex(el, er) => {
                 ExprIndex(folder.fold_expr(el), folder.fold_expr(er))
             }
-            ExprSlice(e, e1, e2, m) => {
-                ExprSlice(folder.fold_expr(e),
-                          e1.map(|x| folder.fold_expr(x)),
-                          e2.map(|x| folder.fold_expr(x)),
-                          m)
+            ExprRange(e1, e2) => {
+                ExprRange(e1.map(|x| folder.fold_expr(x)),
+                          e2.map(|x| folder.fold_expr(x)))
             }
             ExprPath(pth) => ExprPath(folder.fold_path(pth)),
             ExprBreak(opt_ident) => ExprBreak(opt_ident.map(|x| folder.fold_ident(x))),
@@ -1457,7 +1447,7 @@ pub fn noop_fold_stmt<T: Folder>(Spanned {node, span}: Stmt, folder: &mut T)
             }))
         }
         StmtMac(mac, semi) => SmallVector::one(P(Spanned {
-            node: StmtMac(folder.fold_mac(mac), semi),
+            node: StmtMac(mac.map(|m| folder.fold_mac(m)), semi),
             span: span
         }))
     }
@@ -1486,8 +1476,8 @@ mod test {
         fn fold_ident(&mut self, _: ast::Ident) -> ast::Ident {
             token::str_to_ident("zz")
         }
-        fn fold_mac(&mut self, macro: ast::Mac) -> ast::Mac {
-            fold::noop_fold_mac(macro, self)
+        fn fold_mac(&mut self, mac: ast::Mac) -> ast::Mac {
+            fold::noop_fold_mac(mac, self)
         }
     }
 

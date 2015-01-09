@@ -16,17 +16,17 @@
 // one test task to ensure that errors are timeouts, not file descriptor
 // exhaustion.
 
-#![feature(macro_rules, globs)]
-#![allow(experimental)]
+#![allow(unstable)]
 #![reexport_test_harness_main = "test_main"]
 
 #![allow(unused_imports)]
 
 use std::io::*;
-use std::io::net::tcp::*;
 use std::io::test::*;
 use std::io;
 use std::time::Duration;
+use std::sync::mpsc::channel;
+use std::thread::Thread;
 
 #[cfg_attr(target_os = "freebsd", ignore)]
 fn eventual_timeout() {
@@ -34,12 +34,12 @@ fn eventual_timeout() {
 
     let (tx1, rx1) = channel();
     let (_tx2, rx2) = channel::<()>();
-    std::task::spawn(move|| {
+    let _t = Thread::spawn(move|| {
         let _l = TcpListener::bind(addr).unwrap().listen();
-        tx1.send(());
-        let _ = rx2.recv_opt();
+        tx1.send(()).unwrap();
+        let _ = rx2.recv();
     });
-    rx1.recv();
+    rx1.recv().unwrap();
 
     let mut v = Vec::new();
     for _ in range(0u, 10000) {

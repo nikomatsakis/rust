@@ -19,32 +19,37 @@
 // processing.
 
 use {Module, NameBindings, Resolver};
-use Namespace::{mod, TypeNS, ValueNS};
+use Namespace::{self, TypeNS, ValueNS};
+
+use build_reduced_graph;
 
 use rustc::middle::def::Export;
 use syntax::ast;
 use syntax::parse::token;
 
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
-struct ExportRecorder<'a, 'b:'a> {
-    resolver: &'a mut Resolver<'b>
+struct ExportRecorder<'a, 'b:'a, 'tcx:'b> {
+    resolver: &'a mut Resolver<'b, 'tcx>
 }
 
 // Deref and DerefMut impls allow treating ExportRecorder as Resolver.
-impl<'a, 'b> Deref<Resolver<'b>> for ExportRecorder<'a, 'b> {
-    fn deref<'c>(&'c self) -> &'c Resolver<'b> {
+impl<'a, 'b, 'tcx:'b> Deref for ExportRecorder<'a, 'b, 'tcx> {
+    type Target = Resolver<'b, 'tcx>;
+
+    fn deref<'c>(&'c self) -> &'c Resolver<'b, 'tcx> {
         &*self.resolver
     }
 }
 
-impl<'a, 'b> DerefMut<Resolver<'b>> for ExportRecorder<'a, 'b> {
-    fn deref_mut<'c>(&'c mut self) -> &'c mut Resolver<'b> {
+impl<'a, 'b, 'tcx:'b> DerefMut for ExportRecorder<'a, 'b, 'tcx> {
+    fn deref_mut<'c>(&'c mut self) -> &'c mut Resolver<'b, 'tcx> {
         &mut *self.resolver
     }
 }
 
-impl<'a, 'b> ExportRecorder<'a, 'b> {
+impl<'a, 'b, 'tcx> ExportRecorder<'a, 'b, 'tcx> {
     fn record_exports_for_module_subtree(&mut self,
                                          module_: Rc<Module>) {
         // If this isn't a local krate, then bail out. We don't need to record
@@ -73,7 +78,7 @@ impl<'a, 'b> ExportRecorder<'a, 'b> {
         }
 
         self.record_exports_for_module(&*module_);
-        self.populate_module_if_necessary(&module_);
+        build_reduced_graph::populate_module_if_necessary(self.resolver, &module_);
 
         for (_, child_name_bindings) in module_.children.borrow().iter() {
             match child_name_bindings.get_module_if_available() {
@@ -112,7 +117,7 @@ impl<'a, 'b> ExportRecorder<'a, 'b> {
                                    ns: Namespace) {
         match namebindings.def_for_namespace(ns) {
             Some(d) => {
-                debug!("(computing exports) YES: export '{}' => {}",
+                debug!("(computing exports) YES: export '{}' => {:?}",
                        name, d.def_id());
                 exports.push(Export {
                     name: name,
@@ -120,7 +125,7 @@ impl<'a, 'b> ExportRecorder<'a, 'b> {
                 });
             }
             d_opt => {
-                debug!("(computing exports) NO: {}", d_opt);
+                debug!("(computing exports) NO: {:?}", d_opt);
             }
         }
     }

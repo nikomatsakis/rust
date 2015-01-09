@@ -9,17 +9,17 @@
 // except according to those terms.
 
 use std::sync::Arc;
-use std::task;
+use std::thread::Thread;
 
 fn main() {
-    let v = vec!(1i, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+    let v = vec!(1is, 2, 3, 4, 5, 6, 7, 8, 9, 10);
     let arc_v = Arc::new(v);
 
-    task::spawn(move|| {
+    Thread::spawn(move|| {
         assert_eq!((*arc_v)[3], 4);
     });
 
     assert_eq!((*arc_v)[2], 3); //~ ERROR use of moved value: `arc_v`
 
-    println!("{}", *arc_v); //~ ERROR use of moved value: `arc_v`
+    println!("{:?}", *arc_v); //~ ERROR use of moved value: `arc_v`
 }

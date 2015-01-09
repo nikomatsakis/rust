@@ -74,14 +74,6 @@ endif
 TEST_LOG_FILE=tmp/check-stage$(1)-T-$(2)-H-$(3)-$(4).log
 TEST_OK_FILE=tmp/check-stage$(1)-T-$(2)-H-$(3)-$(4).ok
 
-# If we're sharding the testsuite between parallel testers,
-# pass this argument along to the compiletest and crate test
-# invocations.
-ifdef TEST_SHARD
-  CTEST_TESTARGS += --test-shard=$(TEST_SHARD)
-  CRATE_TEST_EXTRA_ARGS += --test-shard=$(TEST_SHARD)
-endif
-
 define DEF_TARGET_COMMANDS
 
 ifdef CFG_UNIXY_$(1)
@@ -155,6 +147,17 @@ else
 CFG_ADB_TEST_DIR=
 endif
 
+# $(1) - name of doc test
+# $(2) - file of the test
+define DOCTEST
+DOC_NAMES := $$(DOC_NAMES) $(1)
+DOCFILE_$(1) := $(2)
+endef
+
+$(foreach doc,$(DOCS), \
+  $(eval $(call DOCTEST,md-$(doc),$(S)src/doc/$(doc).md)))
+$(foreach file,$(wildcard $(S)src/doc/trpl/*.md), \
+  $(eval $(call DOCTEST,$(file:$(S)src/doc/trpl/%.md=trpl-%),$(file))))
 
 ######################################################################
 # Main test targets
@@ -297,7 +300,9 @@ tidy:
 		| grep '^$(S)src/doc' -v \
 		| grep '^$(S)src/compiler-rt' -v \
 		| grep '^$(S)src/libbacktrace' -v \
+		| grep '^$(S)src/rust-installer' -v \
 		| xargs $(CFG_PYTHON) $(S)src/etc/check-binaries.py
+
 
 endif
 
@@ -346,8 +351,8 @@ check-stage$(1)-T-$(2)-H-$(3)-doc-crates-exec: \
            check-stage$(1)-T-$(2)-H-$(3)-doc-crate-$$(crate)-exec)
 
 check-stage$(1)-T-$(2)-H-$(3)-doc-exec: \
-        $$(foreach docname,$$(DOCS), \
-           check-stage$(1)-T-$(2)-H-$(3)-doc-$$(docname)-exec)
+        $$(foreach docname,$$(DOC_NAMES), \
+           check-stage$(1)-T-$(2)-H-$(3)-doc-$$(docname)-exec) \
 
 check-stage$(1)-T-$(2)-H-$(3)-pretty-exec: \
 	check-stage$(1)-T-$(2)-H-$(3)-pretty-rpass-exec \
@@ -379,15 +384,6 @@ TESTDEP_$(1)_$(2)_$(3)_$(4) = $$(SREQ$(1)_T_$(2)_H_$(3)) \
 			    $$(foreach crate,$$(TARGET_CRATES), \
 				$$(TLIB$(1)_T_$(2)_H_$(3))/stamp.$$(crate)) \
 				$$(CRATE_FULLDEPS_$(1)_T_$(2)_H_$(3)_$(4))
-
-# The regex crate depends on the regex_macros crate during testing, but it
-# notably depend on the *host* regex_macros crate, not the target version.
-# Additionally, this is not a dependency in stage1, only in stage2.
-ifeq ($(4),regex)
-ifneq ($(1),1)
-TESTDEP_$(1)_$(2)_$(3)_$(4) += $$(TLIB$(1)_T_$(3)_H_$(3))/stamp.regex_macros
-endif
-endif
 
 else
 TESTDEP_$(1)_$(2)_$(3)_$(4) = $$(RSINPUTS_$(4))
@@ -811,17 +807,18 @@ check-stage$(1)-T-$(2)-H-$(3)-doc-$(4)-exec: $$(call TEST_OK_FILE,$(1),$(2),$(3)
 # rustdoc etc.
 ifeq ($(NO_REBUILD),)
 DOCTESTDEP_$(1)_$(2)_$(3)_$(4) = \
-	$$(D)/$(4).md \
+	$$(DOCFILE_$(4)) \
 	$$(TEST_SREQ$(1)_T_$(2)_H_$(3)) \
 	$$(RUSTDOC_EXE_$(1)_T_$(2)_H_$(3))
 else
-DOCTESTDEP_$(1)_$(2)_$(3)_$(4) = $$(D)/$(4).md
+DOCTESTDEP_$(1)_$(2)_$(3)_$(4) = $$(DOCFILE_$(4))
 endif
 
 ifeq ($(2),$$(CFG_BUILD))
 $$(call TEST_OK_FILE,$(1),$(2),$(3),doc-$(4)): $$(DOCTESTDEP_$(1)_$(2)_$(3)_$(4))
 	@$$(call E, run doc-$(4) [$(2)])
-	$$(Q)$$(RUSTDOC_$(1)_T_$(2)_H_$(3)) --cfg dox --test $$< --test-args "$$(TESTARGS)" && touch $$@
+	$$(Q)$$(RUSTDOC_$(1)_T_$(2)_H_$(3)) --cfg dox --test $$< \
+		--test-args "$$(TESTARGS)" && touch $$@
 else
 $$(call TEST_OK_FILE,$(1),$(2),$(3),doc-$(4)):
 	touch $$@
@@ -831,7 +828,7 @@ endef
 $(foreach host,$(CFG_HOST), \
  $(foreach target,$(CFG_TARGET), \
   $(foreach stage,$(STAGES), \
-   $(foreach docname,$(DOCS), \
+   $(foreach docname,$(DOC_NAMES), \
     $(eval $(call DEF_DOC_TEST,$(stage),$(target),$(host),$(docname)))))))
 
 # Crates
@@ -850,27 +847,8 @@ else
 CRATEDOCTESTDEP_$(1)_$(2)_$(3)_$(4) = $$(RSINPUTS_$(4))
 endif
 
-# (Issues #13732, #13983, #14000) The doc for the regex crate includes
-# uses of the `regex!` macro from the regex_macros crate.  There is
-# normally a dependence injected that makes the target's regex depend
-# upon the host's regex_macros (see #13845), but that dependency
-# injection is currently skipped for stage1 as a special case.
-#
-# Therefore, as a further special case, this conditional skips
-# attempting to run the doc tests for the regex crate atop stage1,
-# (since there is no regex_macros crate for the stage1 rustc to load).
-#
-# (Another approach for solving this would be to inject the desired
-# dependence for stage1 as well, by setting things up to generate a
-# regex_macros crate that was compatible with the stage1 rustc and
-# thus re-enable our ability to run this test.)
-ifeq (stage$(1)-crate-$(4),stage1-crate-regex)
-check-stage$(1)-T-$(2)-H-$(3)-doc-crate-$(4)-exec:
-	@$$(call E, skipping doc-crate-$(4) as it uses macros and cannot run at stage$(1))
-else
 check-stage$(1)-T-$(2)-H-$(3)-doc-crate-$(4)-exec: \
 	$$(call TEST_OK_FILE,$(1),$(2),$(3),doc-crate-$(4))
-endif
 
 ifeq ($(2),$$(CFG_BUILD))
 $$(call TEST_OK_FILE,$(1),$(2),$(3),doc-crate-$(4)): $$(CRATEDOCTESTDEP_$(1)_$(2)_$(3)_$(4))
@@ -912,7 +890,7 @@ TEST_GROUPS = \
 	debuginfo-lldb \
 	codegen \
 	doc \
-	$(foreach docname,$(DOCS),doc-$(docname)) \
+	$(foreach docname,$(DOC_NAMES),doc-$(docname)) \
 	pretty \
 	pretty-rpass \
     pretty-rpass-valgrind \
@@ -981,7 +959,7 @@ $(foreach stage,$(STAGES), \
    $(eval $(call DEF_CHECK_FOR_STAGE_AND_HOSTS_AND_GROUP,$(stage),$(host),$(group))))))
 
 define DEF_CHECK_DOC_FOR_STAGE
-check-stage$(1)-docs: $$(foreach docname,$$(DOCS), \
+check-stage$(1)-docs: $$(foreach docname,$$(DOC_NAMES), \
                        check-stage$(1)-T-$$(CFG_BUILD)-H-$$(CFG_BUILD)-doc-$$(docname)) \
                      $$(foreach crate,$$(TEST_DOC_CRATES), \
                        check-stage$(1)-T-$$(CFG_BUILD)-H-$$(CFG_BUILD)-doc-crate-$$(crate))

@@ -41,14 +41,15 @@
 // no-pretty-expanded
 
 use self::Color::{Red, Yellow, Blue};
-use std::string::String;
+use std::sync::mpsc::{channel, Sender, Receiver};
 use std::fmt;
+use std::thread::Thread;
 
 fn print_complements() {
     let all = [Blue, Red, Yellow];
     for aa in all.iter() {
         for bb in all.iter() {
-            println!("{} + {} -> {}", *aa, *bb, transform(*aa, *bb));
+            println!("{:?} + {:?} -> {:?}", *aa, *bb, transform(*aa, *bb));
         }
     }
 }
@@ -83,7 +84,7 @@ fn show_color_list(set: Vec<Color>) -> String {
     let mut out = String::new();
     for col in set.iter() {
         out.push(' ');
-        out.push_str(col.to_string().as_slice());
+        out.push_str(format!("{:?}", col).as_slice());
     }
     out
 }
@@ -152,7 +153,7 @@ fn creature(
 
     loop {
         // ask for a pairing
-        to_rendezvous.send(CreatureInfo {name: name, color: color});
+        to_rendezvous.send(CreatureInfo {name: name, color: color}).unwrap();
 
         // log and change, or quit
         match rendezvous.next() {
@@ -169,8 +170,8 @@ fn creature(
         }
     }
     // log creatures met and evil clones of self
-    let report = format!("{}{}", creatures_met, Number(evil_clones_met));
-    to_rendezvous_log.send(report);
+    let report = format!("{}{:?}", creatures_met, Number(evil_clones_met));
+    to_rendezvous_log.send(report).unwrap();
 }
 
 fn rendezvous(nn: uint, set: Vec<Color>) {
@@ -181,14 +182,14 @@ fn rendezvous(nn: uint, set: Vec<Color>) {
     let (to_rendezvous_log, from_creatures_log) = channel::<String>();
 
     // these channels will allow us to talk to each creature by 'name'/index
-    let mut to_creature: Vec<Sender<CreatureInfo>> =
+    let to_creature: Vec<Sender<CreatureInfo>> =
         set.iter().enumerate().map(|(ii, &col)| {
             // create each creature as a listener with a port, and
             // give us a channel to talk to each
             let to_rendezvous = to_rendezvous.clone();
             let to_rendezvous_log = to_rendezvous_log.clone();
             let (to_creature, from_rendezvous) = channel();
-            spawn(move|| {
+            Thread::spawn(move|| {
                 creature(ii,
                          col,
                          from_rendezvous,
@@ -202,13 +203,13 @@ fn rendezvous(nn: uint, set: Vec<Color>) {
 
     // set up meetings...
     for _ in range(0, nn) {
-        let fst_creature = from_creatures.recv();
-        let snd_creature = from_creatures.recv();
+        let fst_creature = from_creatures.recv().unwrap();
+        let snd_creature = from_creatures.recv().unwrap();
 
         creatures_met += 2;
 
-        to_creature[fst_creature.name].send(snd_creature);
-        to_creature[snd_creature.name].send(fst_creature);
+        to_creature[fst_creature.name].send(snd_creature).unwrap();
+        to_creature[snd_creature.name].send(fst_creature).unwrap();
     }
 
     // tell each creature to stop
@@ -224,7 +225,7 @@ fn rendezvous(nn: uint, set: Vec<Color>) {
     }
 
     // print the total number of creatures met
-    println!("{}\n", Number(creatures_met));
+    println!("{:?}\n", Number(creatures_met));
 }
 
 fn main() {
@@ -233,8 +234,8 @@ fn main() {
     } else {
         std::os::args().as_slice()
                        .get(1)
-                       .and_then(|arg| from_str(arg.as_slice()))
-                       .unwrap_or(600)
+                       .and_then(|arg| arg.parse())
+                       .unwrap_or(600u)
     };
 
     print_complements();

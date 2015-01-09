@@ -14,15 +14,17 @@
 #![allow(missing_docs)]
 #![doc(primitive = "f64")]
 
-use prelude::*;
+use prelude::v1::*;
 
 use intrinsics;
 use libc::c_int;
-use num::{Float, FloatMath};
+use num::{Float, FpCategory};
 use num::strconv;
 use num::strconv::ExponentFormat::{ExpNone, ExpDec};
 use num::strconv::SignificantDigits::{DigAll, DigMax, DigExact};
 use num::strconv::SignFormat::SignNeg;
+
+use core::num;
 
 pub use core::f64::{RADIX, MANTISSA_DIGITS, DIGITS, EPSILON, MIN_VALUE};
 pub use core::f64::{MIN_POS_VALUE, MAX_VALUE, MIN_EXP, MAX_EXP, MIN_10_EXP};
@@ -79,10 +81,123 @@ mod cmath {
     }
 }
 
-#[unstable = "trait is unstable"]
-impl FloatMath for f64 {
-    /// Constructs a floating point number by multiplying `x` by 2 raised to the
-    /// power of `exp`
+#[stable]
+impl Float for f64 {
+    // inlined methods from `num::Float`
+    #[inline]
+    fn nan() -> f64 { num::Float::nan() }
+    #[inline]
+    fn infinity() -> f64 { num::Float::infinity() }
+    #[inline]
+    fn neg_infinity() -> f64 { num::Float::neg_infinity() }
+    #[inline]
+    fn zero() -> f64 { num::Float::zero() }
+    #[inline]
+    fn neg_zero() -> f64 { num::Float::neg_zero() }
+    #[inline]
+    fn one() -> f64 { num::Float::one() }
+
+
+    #[allow(deprecated)]
+    #[inline]
+    fn mantissa_digits(unused_self: Option<f64>) -> uint {
+        num::Float::mantissa_digits(unused_self)
+    }
+    #[allow(deprecated)]
+    #[inline]
+    fn digits(unused_self: Option<f64>) -> uint { num::Float::digits(unused_self) }
+    #[allow(deprecated)]
+    #[inline]
+    fn epsilon() -> f64 { num::Float::epsilon() }
+    #[allow(deprecated)]
+    #[inline]
+    fn min_exp(unused_self: Option<f64>) -> int { num::Float::min_exp(unused_self) }
+    #[allow(deprecated)]
+    #[inline]
+    fn max_exp(unused_self: Option<f64>) -> int { num::Float::max_exp(unused_self) }
+    #[allow(deprecated)]
+    #[inline]
+    fn min_10_exp(unused_self: Option<f64>) -> int { num::Float::min_10_exp(unused_self) }
+    #[allow(deprecated)]
+    #[inline]
+    fn max_10_exp(unused_self: Option<f64>) -> int { num::Float::max_10_exp(unused_self) }
+    #[allow(deprecated)]
+    #[inline]
+    fn min_value() -> f64 { num::Float::min_value() }
+    #[allow(deprecated)]
+    #[inline]
+    fn min_pos_value(unused_self: Option<f64>) -> f64 { num::Float::min_pos_value(unused_self) }
+    #[allow(deprecated)]
+    #[inline]
+    fn max_value() -> f64 { num::Float::max_value() }
+
+    #[inline]
+    fn is_nan(self) -> bool { num::Float::is_nan(self) }
+    #[inline]
+    fn is_infinite(self) -> bool { num::Float::is_infinite(self) }
+    #[inline]
+    fn is_finite(self) -> bool { num::Float::is_finite(self) }
+    #[inline]
+    fn is_normal(self) -> bool { num::Float::is_normal(self) }
+    #[inline]
+    fn classify(self) -> FpCategory { num::Float::classify(self) }
+
+    #[inline]
+    fn integer_decode(self) -> (u64, i16, i8) { num::Float::integer_decode(self) }
+
+    #[inline]
+    fn floor(self) -> f64 { num::Float::floor(self) }
+    #[inline]
+    fn ceil(self) -> f64 { num::Float::ceil(self) }
+    #[inline]
+    fn round(self) -> f64 { num::Float::round(self) }
+    #[inline]
+    fn trunc(self) -> f64 { num::Float::trunc(self) }
+    #[inline]
+    fn fract(self) -> f64 { num::Float::fract(self) }
+
+    #[inline]
+    fn abs(self) -> f64 { num::Float::abs(self) }
+    #[inline]
+    fn signum(self) -> f64 { num::Float::signum(self) }
+    #[inline]
+    fn is_positive(self) -> bool { num::Float::is_positive(self) }
+    #[inline]
+    fn is_negative(self) -> bool { num::Float::is_negative(self) }
+
+    #[inline]
+    fn mul_add(self, a: f64, b: f64) -> f64 { num::Float::mul_add(self, a, b) }
+    #[inline]
+    fn recip(self) -> f64 { num::Float::recip(self) }
+
+    #[inline]
+    fn powi(self, n: i32) -> f64 { num::Float::powi(self, n) }
+    #[inline]
+    fn powf(self, n: f64) -> f64 { num::Float::powf(self, n) }
+
+    #[inline]
+    fn sqrt(self) -> f64 { num::Float::sqrt(self) }
+    #[inline]
+    fn rsqrt(self) -> f64 { num::Float::rsqrt(self) }
+
+    #[inline]
+    fn exp(self) -> f64 { num::Float::exp(self) }
+    #[inline]
+    fn exp2(self) -> f64 { num::Float::exp(self) }
+    #[inline]
+    fn ln(self) -> f64 { num::Float::ln(self) }
+    #[inline]
+    fn log(self, base: f64) -> f64 { num::Float::log(self, base) }
+    #[inline]
+    fn log2(self) -> f64 { num::Float::log2(self) }
+    #[inline]
+    fn log10(self) -> f64 { num::Float::log10(self) }
+
+    #[inline]
+    fn to_degrees(self) -> f64 { num::Float::to_degrees(self) }
+    #[inline]
+    fn to_radians(self) -> f64 { num::Float::to_radians(self) }
+
     #[inline]
     fn ldexp(x: f64, exp: int) -> f64 {
         unsafe { cmath::ldexp(x, exp as c_int) }
@@ -260,7 +375,7 @@ impl FloatMath for f64 {
 ///
 /// * num - The float value
 #[inline]
-#[experimental = "may be removed or relocated"]
+#[unstable = "may be removed or relocated"]
 pub fn to_string(num: f64) -> String {
     let (r, _) = strconv::float_to_str_common(
         num, 10u, true, SignNeg, DigAll, ExpNone, false);
@@ -273,7 +388,7 @@ pub fn to_string(num: f64) -> String {
 ///
 /// * num - The float value
 #[inline]
-#[experimental = "may be removed or relocated"]
+#[unstable = "may be removed or relocated"]
 pub fn to_str_hex(num: f64) -> String {
     let (r, _) = strconv::float_to_str_common(
         num, 16u, true, SignNeg, DigAll, ExpNone, false);
@@ -288,7 +403,7 @@ pub fn to_str_hex(num: f64) -> String {
 /// * num - The float value
 /// * radix - The base to use
 #[inline]
-#[experimental = "may be removed or relocated"]
+#[unstable = "may be removed or relocated"]
 pub fn to_str_radix_special(num: f64, rdx: uint) -> (String, bool) {
     strconv::float_to_str_common(num, rdx, true, SignNeg, DigAll, ExpNone, false)
 }
@@ -301,7 +416,7 @@ pub fn to_str_radix_special(num: f64, rdx: uint) -> (String, bool) {
 /// * num - The float value
 /// * digits - The number of significant digits
 #[inline]
-#[experimental = "may be removed or relocated"]
+#[unstable = "may be removed or relocated"]
 pub fn to_str_exact(num: f64, dig: uint) -> String {
     let (r, _) = strconv::float_to_str_common(
         num, 10u, true, SignNeg, DigExact(dig), ExpNone, false);
@@ -316,7 +431,7 @@ pub fn to_str_exact(num: f64, dig: uint) -> String {
 /// * num - The float value
 /// * digits - The number of significant digits
 #[inline]
-#[experimental = "may be removed or relocated"]
+#[unstable = "may be removed or relocated"]
 pub fn to_str_digits(num: f64, dig: uint) -> String {
     let (r, _) = strconv::float_to_str_common(
         num, 10u, true, SignNeg, DigMax(dig), ExpNone, false);
@@ -332,7 +447,7 @@ pub fn to_str_digits(num: f64, dig: uint) -> String {
 /// * digits - The number of digits after the decimal point
 /// * upper - Use `E` instead of `e` for the exponent sign
 #[inline]
-#[experimental = "may be removed or relocated"]
+#[unstable = "may be removed or relocated"]
 pub fn to_str_exp_exact(num: f64, dig: uint, upper: bool) -> String {
     let (r, _) = strconv::float_to_str_common(
         num, 10u, true, SignNeg, DigExact(dig), ExpDec, upper);
@@ -348,7 +463,7 @@ pub fn to_str_exp_exact(num: f64, dig: uint, upper: bool) -> String {
 /// * digits - The number of digits after the decimal point
 /// * upper - Use `E` instead of `e` for the exponent sign
 #[inline]
-#[experimental = "may be removed or relocated"]
+#[unstable = "may be removed or relocated"]
 pub fn to_str_exp_digits(num: f64, dig: uint, upper: bool) -> String {
     let (r, _) = strconv::float_to_str_common(
         num, 10u, true, SignNeg, DigMax(dig), ExpDec, upper);
@@ -359,6 +474,7 @@ pub fn to_str_exp_digits(num: f64, dig: uint, upper: bool) -> String {
 mod tests {
     use f64::*;
     use num::*;
+    use num::FpCategory as Fp;
 
     #[test]
     fn test_min_nan() {
@@ -498,23 +614,24 @@ mod tests {
 
     #[test]
     fn test_real_consts() {
-        let pi: f64 = Float::pi();
-        let two_pi: f64 = Float::two_pi();
-        let frac_pi_2: f64 = Float::frac_pi_2();
-        let frac_pi_3: f64 = Float::frac_pi_3();
-        let frac_pi_4: f64 = Float::frac_pi_4();
-        let frac_pi_6: f64 = Float::frac_pi_6();
-        let frac_pi_8: f64 = Float::frac_pi_8();
-        let frac_1_pi: f64 = Float::frac_1_pi();
-        let frac_2_pi: f64 = Float::frac_2_pi();
-        let frac_2_sqrtpi: f64 = Float::frac_2_sqrtpi();
-        let sqrt2: f64 = Float::sqrt2();
-        let frac_1_sqrt2: f64 = Float::frac_1_sqrt2();
-        let e: f64 = Float::e();
-        let log2_e: f64 = Float::log2_e();
-        let log10_e: f64 = Float::log10_e();
-        let ln_2: f64 = Float::ln_2();
-        let ln_10: f64 = Float::ln_10();
+        use super::consts;
+        let pi: f64 = consts::PI;
+        let two_pi: f64 = consts::PI_2;
+        let frac_pi_2: f64 = consts::FRAC_PI_2;
+        let frac_pi_3: f64 = consts::FRAC_PI_3;
+        let frac_pi_4: f64 = consts::FRAC_PI_4;
+        let frac_pi_6: f64 = consts::FRAC_PI_6;
+        let frac_pi_8: f64 = consts::FRAC_PI_8;
+        let frac_1_pi: f64 = consts::FRAC_1_PI;
+        let frac_2_pi: f64 = consts::FRAC_2_PI;
+        let frac_2_sqrtpi: f64 = consts::FRAC_2_SQRTPI;
+        let sqrt2: f64 = consts::SQRT2;
+        let frac_1_sqrt2: f64 = consts::FRAC_1_SQRT2;
+        let e: f64 = consts::E;
+        let log2_e: f64 = consts::LOG2_E;
+        let log10_e: f64 = consts::LOG10_E;
+        let ln_2: f64 = consts::LN_2;
+        let ln_10: f64 = consts::LN_10;
 
         assert_approx_eq!(two_pi, 2.0 * pi);
         assert_approx_eq!(frac_pi_2, pi / 2f64);
@@ -623,13 +740,13 @@ mod tests {
         let neg_inf: f64 = Float::neg_infinity();
         let zero: f64 = Float::zero();
         let neg_zero: f64 = Float::neg_zero();
-        assert_eq!(nan.classify(), FPNaN);
-        assert_eq!(inf.classify(), FPInfinite);
-        assert_eq!(neg_inf.classify(), FPInfinite);
-        assert_eq!(zero.classify(), FPZero);
-        assert_eq!(neg_zero.classify(), FPZero);
-        assert_eq!(1e-307f64.classify(), FPNormal);
-        assert_eq!(1e-308f64.classify(), FPSubnormal);
+        assert_eq!(nan.classify(), Fp::Nan);
+        assert_eq!(inf.classify(), Fp::Infinite);
+        assert_eq!(neg_inf.classify(), Fp::Infinite);
+        assert_eq!(zero.classify(), Fp::Zero);
+        assert_eq!(neg_zero.classify(), Fp::Zero);
+        assert_eq!(1e-307f64.classify(), Fp::Normal);
+        assert_eq!(1e-308f64.classify(), Fp::Subnormal);
     }
 
     #[test]
@@ -638,18 +755,18 @@ mod tests {
         // are supported in floating-point literals
         let f1: f64 = FromStrRadix::from_str_radix("1p-123", 16).unwrap();
         let f2: f64 = FromStrRadix::from_str_radix("1p-111", 16).unwrap();
-        assert_eq!(FloatMath::ldexp(1f64, -123), f1);
-        assert_eq!(FloatMath::ldexp(1f64, -111), f2);
+        assert_eq!(Float::ldexp(1f64, -123), f1);
+        assert_eq!(Float::ldexp(1f64, -111), f2);
 
-        assert_eq!(FloatMath::ldexp(0f64, -123), 0f64);
-        assert_eq!(FloatMath::ldexp(-0f64, -123), -0f64);
+        assert_eq!(Float::ldexp(0f64, -123), 0f64);
+        assert_eq!(Float::ldexp(-0f64, -123), -0f64);
 
         let inf: f64 = Float::infinity();
         let neg_inf: f64 = Float::neg_infinity();
         let nan: f64 = Float::nan();
-        assert_eq!(FloatMath::ldexp(inf, -123), inf);
-        assert_eq!(FloatMath::ldexp(neg_inf, -123), neg_inf);
-        assert!(FloatMath::ldexp(nan, -123).is_nan());
+        assert_eq!(Float::ldexp(inf, -123), inf);
+        assert_eq!(Float::ldexp(neg_inf, -123), neg_inf);
+        assert!(Float::ldexp(nan, -123).is_nan());
     }
 
     #[test]
@@ -662,8 +779,8 @@ mod tests {
         let (x2, exp2) = f2.frexp();
         assert_eq!((x1, exp1), (0.5f64, -122));
         assert_eq!((x2, exp2), (0.5f64, -110));
-        assert_eq!(FloatMath::ldexp(x1, exp1), f1);
-        assert_eq!(FloatMath::ldexp(x2, exp2), f2);
+        assert_eq!(Float::ldexp(x1, exp1), f1);
+        assert_eq!(Float::ldexp(x2, exp2), f2);
 
         assert_eq!(0f64.frexp(), (0f64, 0));
         assert_eq!((-0f64).frexp(), (-0f64, 0));

@@ -10,8 +10,6 @@
 
 // Make sure that globs only bring in public things.
 
-#![feature(globs)]
-
 use bar::*;
 
 mod bar {
@@ -25,7 +23,7 @@ mod bar {
 
     struct C;
 
-    type D = int;
+    type D = isize;
 }
 
 fn foo<T>() {}

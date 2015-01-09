@@ -33,7 +33,7 @@ impl<'tcx> MoveErrorCollector<'tcx> {
     }
 
     pub fn report_potential_errors<'a>(&self, bccx: &BorrowckCtxt<'a, 'tcx>) {
-        report_move_errors(bccx, self.errors.borrow().deref())
+        report_move_errors(bccx, &*self.errors.borrow())
     }
 }
 
@@ -53,7 +53,7 @@ impl<'tcx> MoveError<'tcx> {
     }
 }
 
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct MoveSpanAndPath {
     pub span: codemap::Span,
     pub ident: ast::Ident
@@ -115,29 +115,31 @@ fn report_cannot_move_out_of<'a, 'tcx>(bccx: &BorrowckCtxt<'a, 'tcx>,
     match move_from.cat {
         mc::cat_deref(_, _, mc::BorrowedPtr(..)) |
         mc::cat_deref(_, _, mc::Implicit(..)) |
-        mc::cat_deref(_, _, mc::UnsafePtr(..)) |
         mc::cat_static_item => {
-            bccx.span_err(
-                move_from.span,
-                format!("cannot move out of {}",
-                        bccx.cmt_to_string(&*move_from))[]);
+            bccx.span_err(move_from.span,
+                          &format!("cannot move out of {}",
+                                  move_from.descriptive_string(bccx.tcx))[]);
         }
 
         mc::cat_downcast(ref b, _) |
         mc::cat_interior(ref b, _) => {
             match b.ty.sty {
-                ty::ty_struct(did, _)
-                | ty::ty_enum(did, _) if ty::has_dtor(bccx.tcx, did) => {
+                ty::ty_struct(did, _) |
+                ty::ty_enum(did, _) if ty::has_dtor(bccx.tcx, did) => {
                     bccx.span_err(
                         move_from.span,
-                        format!("cannot move out of type `{}`, \
+                        &format!("cannot move out of type `{}`, \
                                  which defines the `Drop` trait",
                                 b.ty.user_string(bccx.tcx))[]);
                 },
-                _ => panic!("this path should not cause illegal move")
+                _ => {
+                    bccx.span_bug(move_from.span, "this path should not cause illegal move")
+                }
             }
         }
-        _ => panic!("this path should not cause illegal move")
+        _ => {
+            bccx.span_bug(move_from.span, "this path should not cause illegal move")
+        }
     }
 }
 
@@ -152,13 +154,13 @@ fn note_move_destination(bccx: &BorrowckCtxt,
             "attempting to move value to here");
         bccx.span_help(
             move_to_span,
-            format!("to prevent the move, \
+            &format!("to prevent the move, \
                      use `ref {0}` or `ref mut {0}` to capture value by \
                      reference",
                     pat_name)[]);
     } else {
         bccx.span_note(move_to_span,
-                       format!("and here (use `ref {0}` or `ref mut {0}`)",
+                       &format!("and here (use `ref {0}` or `ref mut {0}`)",
                                pat_name)[]);
     }
 }

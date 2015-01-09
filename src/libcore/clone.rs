@@ -21,11 +21,11 @@
 
 #![stable]
 
-use kinds::Sized;
+use marker::Sized;
 
 /// A common trait for cloning an object.
 #[stable]
-pub trait Clone {
+pub trait Clone : Sized {
     /// Returns a copy of the value.
     #[stable]
     fn clone(&self) -> Self;
@@ -36,14 +36,14 @@ pub trait Clone {
     /// but can be overridden to reuse the resources of `a` to avoid unnecessary
     /// allocations.
     #[inline(always)]
-    #[unstable = "this function rarely unused"]
+    #[unstable = "this function is rarely used"]
     fn clone_from(&mut self, source: &Self) {
         *self = source.clone()
     }
 }
 
 #[stable]
-impl<'a, Sized? T> Clone for &'a T {
+impl<'a, T: ?Sized> Clone for &'a T {
     /// Return a shallow copy of the reference.
     #[inline]
     fn clone(&self) -> &'a T { *self }
@@ -81,7 +81,7 @@ clone_impl! { char }
 
 macro_rules! extern_fn_clone {
     ($($A:ident),*) => (
-        #[experimental = "this may not be sufficient for fns with region parameters"]
+        #[unstable = "this may not be sufficient for fns with region parameters"]
         impl<$($A,)* ReturnType> Clone for extern "Rust" fn($($A),*) -> ReturnType {
             /// Return a copy of a function pointer
             #[inline]

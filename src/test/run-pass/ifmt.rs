@@ -11,12 +11,12 @@
 // no-pretty-expanded unnecessary unsafe block generated
 // ignore-lexer-test FIXME #15679
 
-#![feature(macro_rules)]
 #![deny(warnings)]
 #![allow(unused_must_use)]
+#![allow(unknown_features)]
+#![feature(box_syntax)]
 
 use std::fmt;
-use std::io;
 
 struct A;
 struct B;
@@ -24,21 +24,23 @@ struct C;
 
 impl fmt::LowerHex for A {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write("aloha".as_bytes())
+        f.write_str("aloha")
     }
 }
 impl fmt::UpperHex for B {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write("adios".as_bytes())
+        f.write_str("adios")
     }
 }
-impl fmt::Show for C {
+impl fmt::String for C {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.pad_integral(true, "☃", "123".as_bytes())
+        f.pad_integral(true, "☃", "123")
     }
 }
 
-macro_rules! t(($a:expr, $b:expr) => { assert_eq!($a.as_slice(), $b) });
+macro_rules! t {
+    ($a:expr, $b:expr) => { assert_eq!($a.as_slice(), $b) }
+}
 
 pub fn main() {
     // Various edge cases without formats
@@ -58,9 +60,12 @@ pub fn main() {
     t!(format!("{}", true), "true");
     t!(format!("{}", '☃'), "☃");
     t!(format!("{}", 10i), "10");
-    t!(format!("{}", 10i), "10");
     t!(format!("{}", 10u), "10");
-    t!(format!("{:?}", true), "true");
+    t!(format!("{:?}", '☃'), "'\\u{2603}'");
+    t!(format!("{:?}", 10i), "10i");
+    t!(format!("{:?}", 10u), "10u");
+    t!(format!("{:?}", "true"), "\"true\"");
+    t!(format!("{:?}", "foo\nbar"), "\"foo\\nbar\"");
     t!(format!("{:o}", 10u), "12");
     t!(format!("{:x}", 10u), "a");
     t!(format!("{:X}", 10u), "A");
@@ -79,8 +84,10 @@ pub fn main() {
     t!(format!("{}", 5i + 5i), "10");
     t!(format!("{:#4}", C), "☃123");
 
-    let a: &fmt::Show = &1i;
-    t!(format!("{}", a), "1");
+    // FIXME(#20676)
+    // let a: &fmt::Show = &1i;
+    // t!(format!("{:?}", a), "1i");
+
 
     // Formatting strings and their arguments
     t!(format!("{}", "a"), "a");
@@ -160,25 +167,25 @@ pub fn main() {
 // Basic test to make sure that we can invoke the `write!` macro with an
 // io::Writer instance.
 fn test_write() {
-    let mut buf = Vec::new();
-    write!(&mut buf as &mut io::Writer, "{}", 3i);
+    use std::fmt::Writer;
+    let mut buf = String::new();
+    write!(&mut buf, "{}", 3i);
     {
-        let w = &mut buf as &mut io::Writer;
+        let w = &mut buf;
         write!(w, "{foo}", foo=4i);
         write!(w, "{}", "hello");
         writeln!(w, "{}", "line");
         writeln!(w, "{foo}", foo="bar");
     }
 
-    let s = String::from_utf8(buf).unwrap();
-    t!(s, "34helloline\nbar\n");
+    t!(buf, "34helloline\nbar\n");
 }
 
 // Just make sure that the macros are defined, there's not really a lot that we
 // can do with them just yet (to test the output)
 fn test_print() {
     print!("hi");
-    print!("{}", vec!(0u8));
+    print!("{:?}", vec!(0u8));
     println!("hello");
     println!("this is a {}", "test");
     println!("{foo}", foo="bar");
@@ -187,21 +194,20 @@ fn test_print() {
 // Just make sure that the macros are defined, there's not really a lot that we
 // can do with them just yet (to test the output)
 fn test_format_args() {
-    let mut buf = Vec::new();
+    use std::fmt::Writer;
+    let mut buf = String::new();
     {
-        let w = &mut buf as &mut io::Writer;
-        format_args!(|args| { write!(w, "{}", args); }, "{}", 1i);
-        format_args!(|args| { write!(w, "{}", args); }, "test");
-        format_args!(|args| { write!(w, "{}", args); }, "{test}", test=3i);
+        let w = &mut buf;
+        write!(w, "{}", format_args!("{}", 1i));
+        write!(w, "{}", format_args!("test"));
+        write!(w, "{}", format_args!("{test}", test=3i));
     }
-    let s = String::from_utf8(buf).unwrap();
+    let s = buf;
     t!(s, "1test3");
 
-    let s = format_args!(fmt::format, "hello {}", "world");
+    let s = fmt::format(format_args!("hello {}", "world"));
     t!(s, "hello world");
-    let s = format_args!(|args| {
-        format!("{}: {}", "args were", args)
-    }, "hello {}", "world");
+    let s = format!("{}: {}", "args were", format_args!("hello {}", "world"));
     t!(s, "args were: hello world");
 }
 

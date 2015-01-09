@@ -9,18 +9,16 @@
 // except according to those terms.
 #![crate_name="lint_stability"]
 #![crate_type = "lib"]
-
-#![feature(macro_rules)]
-#![macro_escape]
+#![staged_api]
 
 #[deprecated]
 pub fn deprecated() {}
 #[deprecated="text"]
 pub fn deprecated_text() {}
 
-#[experimental]
+#[unstable]
 pub fn experimental() {}
-#[experimental="text"]
+#[unstable="text"]
 pub fn experimental_text() {}
 
 #[unstable]
@@ -54,9 +52,9 @@ impl MethodTester {
     #[deprecated="text"]
     pub fn method_deprecated_text(&self) {}
 
-    #[experimental]
+    #[unstable]
     pub fn method_experimental(&self) {}
-    #[experimental="text"]
+    #[unstable="text"]
     pub fn method_experimental_text(&self) {}
 
     #[unstable]
@@ -88,9 +86,9 @@ pub trait Trait {
     #[deprecated="text"]
     fn trait_deprecated_text(&self) {}
 
-    #[experimental]
+    #[unstable]
     fn trait_experimental(&self) {}
-    #[experimental="text"]
+    #[unstable="text"]
     fn trait_experimental_text(&self) {}
 
     #[unstable]
@@ -118,12 +116,12 @@ pub trait Trait {
 
 impl Trait for MethodTester {}
 
-#[experimental]
+#[unstable]
 pub trait ExperimentalTrait {}
 
 #[deprecated]
 pub struct DeprecatedStruct { pub i: int }
-#[experimental]
+#[unstable]
 pub struct ExperimentalStruct { pub i: int }
 #[unstable]
 pub struct UnstableStruct { pub i: int }
@@ -137,7 +135,7 @@ pub struct LockedStruct { pub i: int }
 
 #[deprecated]
 pub struct DeprecatedUnitStruct;
-#[experimental]
+#[unstable]
 pub struct ExperimentalUnitStruct;
 #[unstable]
 pub struct UnstableUnitStruct;
@@ -152,7 +150,7 @@ pub struct LockedUnitStruct;
 pub enum Enum {
     #[deprecated]
     DeprecatedVariant,
-    #[experimental]
+    #[unstable]
     ExperimentalVariant,
     #[unstable]
     UnstableVariant,
@@ -168,7 +166,7 @@ pub enum Enum {
 
 #[deprecated]
 pub struct DeprecatedTupleStruct(pub int);
-#[experimental]
+#[unstable]
 pub struct ExperimentalTupleStruct(pub int);
 #[unstable]
 pub struct UnstableTupleStruct(pub int);
@@ -181,16 +179,16 @@ pub struct FrozenTupleStruct(pub int);
 pub struct LockedTupleStruct(pub int);
 
 #[macro_export]
-macro_rules! macro_test(
+macro_rules! macro_test {
     () => (deprecated());
-);
+}
 
 #[macro_export]
-macro_rules! macro_test_arg(
+macro_rules! macro_test_arg {
     ($func:expr) => ($func);
-);
+}
 
 #[macro_export]
-macro_rules! macro_test_arg_nested(
+macro_rules! macro_test_arg_nested {
     ($func:ident) => (macro_test_arg!($func()));
-);
+}

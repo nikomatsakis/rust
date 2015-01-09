@@ -8,7 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::task;
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+
+use std::thread::Thread;
 
 pub fn main() { test05(); }
 
@@ -22,7 +25,7 @@ fn test05() {
         println!("{}", *three + n); // will copy x into the closure
         assert_eq!(*three, 3);
     };
-    task::spawn(move|| {
+    Thread::scoped(move|| {
         test05_start(fn_to_send);
-    });
+    }).join().ok().unwrap();
 }

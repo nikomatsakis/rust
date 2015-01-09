@@ -17,8 +17,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::sync::mpsc::channel;
 use std::os;
-use std::uint;
+use std::thread::Thread;
 
 // This is a simple bench that creates M pairs of tasks. These
 // tasks ping-pong back and forth over a pair of streams. This is a
@@ -29,26 +30,29 @@ fn ping_pong_bench(n: uint, m: uint) {
 
     // Create pairs of tasks that pingpong back and forth.
     fn run_pair(n: uint) {
-        // Create a stream A->B
-        let (atx, arx) = channel::<()>();
-        // Create a stream B->A
-        let (btx, brx) = channel::<()>();
+        // Create a channel: A->B
+        let (atx, arx) = channel();
+        // Create a channel: B->A
+        let (btx, brx) = channel();
 
-        spawn(move|| {
+        let guard_a = Thread::scoped(move|| {
             let (tx, rx) = (atx, brx);
             for _ in range(0, n) {
-                tx.send(());
-                rx.recv();
+                tx.send(()).unwrap();
+                rx.recv().unwrap();
             }
         });
 
-        spawn(move|| {
+        let guard_b = Thread::scoped(move|| {
             let (tx, rx) = (btx, arx);
             for _ in range(0, n) {
-                rx.recv();
-                tx.send(());
+                rx.recv().unwrap();
+                tx.send(()).unwrap();
             }
         });
+
+        guard_a.join().ok();
+        guard_b.join().ok();
     }
 
     for _ in range(0, m) {
@@ -63,13 +67,13 @@ fn main() {
     let args = os::args();
     let args = args.as_slice();
     let n = if args.len() == 3 {
-        from_str::<uint>(args[1].as_slice()).unwrap()
+        args[1].parse::<uint>().unwrap()
     } else {
         10000
     };
 
     let m = if args.len() == 3 {
-        from_str::<uint>(args[2].as_slice()).unwrap()
+        args[2].parse::<uint>().unwrap()
     } else {
         4
     };

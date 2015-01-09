@@ -8,8 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(default_type_params)]
-
 use std::kinds::marker;
 
 struct Foo<A, B, C = (A, B)>(
@@ -20,6 +18,6 @@ impl<A, B, C = (A, B)> Foo<A, B, C> {
 }
 
 fn main() {
-    Foo::<int>::new();
+    Foo::<isize>::new();
     //~^ ERROR too few type parameters provided
 }

@@ -9,17 +9,17 @@
 // except according to those terms.
 
 #![crate_name = "rustdoc"]
-#![experimental]
+#![unstable]
+#![staged_api]
 #![crate_type = "dylib"]
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/nightly/",
        html_playground_url = "http://play.rust-lang.org/")]
-
-#![allow(unknown_features)]
-#![feature(globs, macro_rules, phase, slicing_syntax)]
-#![feature(unboxed_closures)]
+#![feature(slicing_syntax)]
+#![feature(box_syntax)]
+#![allow(unknown_features)] #![feature(int_uint)]
 
 extern crate arena;
 extern crate getopts;
@@ -30,28 +30,29 @@ extern crate rustc_driver;
 extern crate serialize;
 extern crate syntax;
 extern crate "test" as testing;
-#[phase(plugin, link)] extern crate log;
+#[macro_use] extern crate log;
 
 extern crate "serialize" as rustc_serialize; // used by deriving
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::io::File;
 use std::io;
 use std::rc::Rc;
 use externalfiles::ExternalHtml;
-use serialize::{Decodable, Encodable};
-use serialize::json::{mod, Json};
+use serialize::Decodable;
+use serialize::json::{self, Json};
+use rustc::session::search_paths::SearchPaths;
 
 // reexported from `clean` so it can be easily updated with the mod itself
 pub use clean::SCHEMA_VERSION;
 
+#[macro_use]
+pub mod externalfiles;
+
 pub mod clean;
 pub mod core;
 pub mod doctree;
-#[macro_escape]
-pub mod externalfiles;
 pub mod fold;
 pub mod html {
     pub mod highlight;
@@ -105,7 +106,7 @@ struct Output {
 
 pub fn main() {
     static STACK_SIZE: uint = 32000000; // 32MB
-    let res = std::thread::Builder::new().stack_size(STACK_SIZE).spawn(move || {
+    let res = std::thread::Builder::new().stack_size(STACK_SIZE).scoped(move || {
         main_args(std::os::args().as_slice())
     }).join();
     std::os::set_exit_status(res.map_err(|_| ()).unwrap());
@@ -115,7 +116,8 @@ pub fn opts() -> Vec<getopts::OptGroup> {
     use getopts::*;
     vec!(
         optflag("h", "help", "show this help message"),
-        optflagopt("", "version", "print rustdoc's version", "verbose"),
+        optflag("V", "version", "print rustdoc's version"),
+        optflag("v", "verbose", "use verbose output"),
         optopt("r", "input-format", "the input type of the specified file",
                "[rust|json]"),
         optopt("w", "output-format", "the output type to write",
@@ -200,7 +202,10 @@ pub fn main_args(args: &[String]) -> int {
     }
     let input = matches.free[0].as_slice();
 
-    let libs = matches.opt_strs("L").iter().map(|s| Path::new(s.as_slice())).collect();
+    let mut libs = SearchPaths::new();
+    for s in matches.opt_strs("L").iter() {
+        libs.add_path(s.as_slice());
+    }
     let externs = match parse_externs(&matches) {
         Ok(ex) => ex,
         Err(err) => {
@@ -314,10 +319,9 @@ fn parse_externs(matches: &getopts::Matches) -> Result<core::Externs, String> {
                 return Err("--extern value must be of the format `foo=bar`".to_string());
             }
         };
-        let locs = match externs.entry(name.to_string()) {
-            Vacant(entry) => entry.set(Vec::with_capacity(1)),
-            Occupied(entry) => entry.into_mut(),
-        };
+        let name = name.to_string();
+        let locs = externs.entry(name).get().unwrap_or_else(
+            |vacant_entry| vacant_entry.insert(Vec::with_capacity(1)));
         locs.push(location.to_string());
     }
     Ok(externs)
@@ -334,19 +338,19 @@ fn rust_input(cratefile: &str, externs: core::Externs, matches: &getopts::Matche
     let mut plugins = matches.opt_strs("plugins");
 
     // First, parse the crate and extract all relevant information.
-    let libs: Vec<Path> = matches.opt_strs("L")
-                                 .iter()
-                                 .map(|s| Path::new(s.as_slice()))
-                                 .collect();
+    let mut paths = SearchPaths::new();
+    for s in matches.opt_strs("L").iter() {
+        paths.add_path(s.as_slice());
+    }
     let cfgs = matches.opt_strs("cfg");
     let triple = matches.opt_str("target");
 
     let cr = Path::new(cratefile);
     info!("starting to run rustc");
 
-    let (mut krate, analysis) = std::thread::Thread::spawn(move |:| {
+    let (mut krate, analysis) = std::thread::Thread::scoped(move |:| {
         let cr = cr;
-        core::run_core(libs, cfgs, externs, &cr, triple)
+        core::run_core(paths, cfgs, externs, &cr, triple)
     }).join().map_err(|_| "rustc failed").unwrap();
     info!("finished with rustc");
     let mut analysis = Some(analysis);
@@ -431,7 +435,7 @@ fn json_input(input: &str) -> Result<Output, String> {
         }
     };
     match json::from_reader(&mut input) {
-        Err(s) => Err(s.to_string()),
+        Err(s) => Err(format!("{:?}", s)),
         Ok(Json::Object(obj)) => {
             let mut obj = obj;
             // Make sure the schema is what we expect
@@ -488,22 +492,15 @@ fn json_output(krate: clean::Crate, res: Vec<plugins::PluginJson> ,
 
     // FIXME #8335: yuck, Rust -> str -> JSON round trip! No way to .encode
     // straight to the Rust JSON representation.
-    let crate_json_str = {
-        let mut w = Vec::new();
-        {
-            let mut encoder = json::Encoder::new(&mut w as &mut io::Writer);
-            krate.encode(&mut encoder).unwrap();
-        }
-        String::from_utf8(w).unwrap()
-    };
+    let crate_json_str = format!("{}", json::as_json(&krate));
     let crate_json = match json::from_str(crate_json_str.as_slice()) {
         Ok(j) => j,
-        Err(e) => panic!("Rust generated JSON is invalid: {}", e)
+        Err(e) => panic!("Rust generated JSON is invalid: {:?}", e)
     };
 
     json.insert("crate".to_string(), crate_json);
     json.insert("plugins".to_string(), Json::Object(plugins_json));
 
     let mut file = try!(File::create(&dst));
-    Json::Object(json).to_writer(&mut file)
+    write!(&mut file, "{}", Json::Object(json))
 }

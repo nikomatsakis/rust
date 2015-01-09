@@ -10,14 +10,12 @@
 
 //! Code for type-checking closure expressions.
 
-use super::check_fn;
-use super::{Expectation, ExpectCastableToType, ExpectHasType, NoExpectation};
-use super::FnCtxt;
+use super::{check_fn, Expectation, FnCtxt};
 
 use astconv;
-use middle::infer;
+use middle::region::CodeExtent;
 use middle::subst;
-use middle::ty::{mod, Ty};
+use middle::ty::{self, ToPolyTraitRef, Ty};
 use rscope::RegionScope;
 use syntax::abi;
 use syntax::ast;
@@ -26,6 +24,7 @@ use util::ppaux::Repr;
 
 pub fn check_expr_closure<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
                                    expr: &ast::Expr,
+                                   _capture: ast::CaptureClause,
                                    opt_kind: Option<ast::UnboxedClosureKind>,
                                    decl: &ast::FnDecl,
                                    body: &ast::Block,
@@ -34,25 +33,28 @@ pub fn check_expr_closure<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
            expr.repr(fcx.tcx()),
            expected.repr(fcx.tcx()));
 
+    let expected_sig_and_kind = expected.map_to_option(fcx, |ty| {
+        deduce_unboxed_closure_expectations_from_expected_type(fcx, ty)
+    });
+
     match opt_kind {
         None => {
             // If users didn't specify what sort of closure they want,
             // examine the expected type. For now, if we see explicit
             // evidence than an unboxed closure is desired, we'll use
             // that, otherwise we'll fall back to boxed closures.
-            match deduce_unboxed_closure_expectations_from_expectation(fcx, expected) {
-                None => { // doesn't look like an unboxed closure
-                    let region = astconv::opt_ast_region_to_region(fcx,
-                                                                   fcx.infcx(),
-                                                                   expr.span,
-                                                                   &None);
-                    check_boxed_closure(fcx,
-                                        expr,
-                                        ty::RegionTraitStore(region, ast::MutMutable),
-                                        decl,
-                                        body,
-                                        expected);
-                }
+            match expected_sig_and_kind {
+                None => { // don't have information about the kind, request explicit annotation
+                    // NB We still need to typeck the body, so assume `FnMut` kind just for that
+                    let kind = ty::FnMutUnboxedClosureKind;
+
+                    check_unboxed_closure(fcx, expr, kind, decl, body, None);
+
+                    fcx.ccx.tcx.sess.span_err(
+                        expr.span,
+                        "can't infer the \"kind\" of the closure, explicitly annotate it. e.g. \
+                        `|&:| {}`");
+                },
                 Some((sig, kind)) => {
                     check_unboxed_closure(fcx, expr, kind, decl, body, Some(sig));
                 }
@@ -66,10 +68,7 @@ pub fn check_expr_closure<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
                 ast::FnOnceUnboxedClosureKind => ty::FnOnceUnboxedClosureKind,
             };
 
-            let expected_sig =
-                deduce_unboxed_closure_expectations_from_expectation(fcx, expected)
-                .map(|t| t.0);
-
+            let expected_sig = expected_sig_and_kind.map(|t| t.0);
             check_unboxed_closure(fcx, expr, kind, decl, body, expected_sig);
         }
     }
@@ -83,7 +82,7 @@ fn check_unboxed_closure<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
                                   expected_sig: Option<ty::FnSig<'tcx>>) {
     let expr_def_id = ast_util::local_def(expr.id);
 
-    debug!("check_unboxed_closure kind={} expected_sig={}",
+    debug!("check_unboxed_closure kind={:?} expected_sig={}",
            kind,
            expected_sig.repr(fcx.tcx()));
 
@@ -103,7 +102,7 @@ fn check_unboxed_closure<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
         abi::RustCall,
         expected_sig);
 
-    let region = match fcx.infcx().anon_regions(expr.span, 1) {
+    let region = match fcx.anon_regions(expr.span, 1) {
         Err(_) => {
             fcx.ccx.tcx.sess.span_bug(expr.span,
                                       "can't make anon regions here?!")
@@ -113,15 +112,19 @@ fn check_unboxed_closure<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
 
     let closure_type = ty::mk_unboxed_closure(fcx.ccx.tcx,
                                               expr_def_id,
-                                              region,
-                                              fcx.inh.param_env.free_substs.clone());
+                                              fcx.ccx.tcx.mk_region(region),
+                                              fcx.ccx.tcx.mk_substs(
+                                                  fcx.inh.param_env.free_substs.clone()));
 
     fcx.write_ty(expr.id, closure_type);
+
+    let fn_sig =
+        ty::liberate_late_bound_regions(fcx.tcx(), CodeExtent::from_node_id(body.id), &fn_ty.sig);
 
     check_fn(fcx.ccx,
              ast::Unsafety::Normal,
              expr.id,
-             &fn_ty.sig,
+             &fn_sig,
              decl,
              expr.id,
              &*body,
@@ -131,7 +134,7 @@ fn check_unboxed_closure<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
     // the `unboxed_closures` table.
     fn_ty.sig.0.inputs = vec![ty::mk_tup(fcx.tcx(), fn_ty.sig.0.inputs)];
 
-    debug!("unboxed_closure for {} --> sig={} kind={}",
+    debug!("unboxed_closure for {} --> sig={} kind={:?}",
            expr_def_id.repr(fcx.tcx()),
            fn_ty.sig.repr(fcx.tcx()),
            kind);
@@ -147,19 +150,6 @@ fn check_unboxed_closure<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
         .insert(expr_def_id, unboxed_closure);
 }
 
-fn deduce_unboxed_closure_expectations_from_expectation<'a,'tcx>(
-    fcx: &FnCtxt<'a,'tcx>,
-    expected: Expectation<'tcx>)
-    -> Option<(ty::FnSig<'tcx>,ty::UnboxedClosureKind)>
-{
-    match expected.resolve(fcx) {
-        NoExpectation => None,
-        ExpectCastableToType(t) | ExpectHasType(t) => {
-            deduce_unboxed_closure_expectations_from_expected_type(fcx, t)
-        }
-    }
-}
-
 fn deduce_unboxed_closure_expectations_from_expected_type<'a,'tcx>(
     fcx: &FnCtxt<'a,'tcx>,
     expected_ty: Ty<'tcx>)
@@ -167,7 +157,10 @@ fn deduce_unboxed_closure_expectations_from_expected_type<'a,'tcx>(
 {
     match expected_ty.sty {
         ty::ty_trait(ref object_type) => {
-            deduce_unboxed_closure_expectations_from_trait_ref(fcx, &object_type.principal)
+            let trait_ref =
+                object_type.principal_trait_ref_with_self_ty(fcx.tcx(),
+                                                             fcx.tcx().types.err);
+            deduce_unboxed_closure_expectations_from_trait_ref(fcx, &trait_ref)
         }
         ty::ty_infer(ty::TyVar(vid)) => {
             deduce_unboxed_closure_expectations_from_obligations(fcx, vid)
@@ -193,7 +186,7 @@ fn deduce_unboxed_closure_expectations_from_trait_ref<'a,'tcx>(
         None => { return None; }
     };
 
-    debug!("found object type {}", kind);
+    debug!("found object type {:?}", kind);
 
     let arg_param_ty = *trait_ref.substs().types.get(subst::TypeSpace, 0);
     let arg_param_ty = fcx.infcx().resolve_type_vars_if_possible(&arg_param_ty);
@@ -226,111 +219,23 @@ fn deduce_unboxed_closure_expectations_from_obligations<'a,'tcx>(
 {
     // Here `expected_ty` is known to be a type inference variable.
     for obligation in fcx.inh.fulfillment_cx.borrow().pending_obligations().iter() {
-        match obligation.trait_ref {
-            ty::Predicate::Trait(ref trait_ref) => {
+        match obligation.predicate {
+            ty::Predicate::Trait(ref trait_predicate) => {
+                let trait_ref = trait_predicate.to_poly_trait_ref();
                 let self_ty = fcx.infcx().shallow_resolve(trait_ref.self_ty());
                 match self_ty.sty {
                     ty::ty_infer(ty::TyVar(v)) if expected_vid == v => { }
                     _ => { continue; }
                 }
 
-                match deduce_unboxed_closure_expectations_from_trait_ref(fcx, &**trait_ref) {
+                match deduce_unboxed_closure_expectations_from_trait_ref(fcx, &trait_ref) {
                     Some(e) => { return Some(e); }
                     None => { }
                 }
             }
-            ty::Predicate::Equate(..) |
-            ty::Predicate::RegionOutlives(..) |
-            ty::Predicate::TypeOutlives(..) => {
-            }
+            _ => { }
         }
     }
 
     None
-}
-
-
-fn check_boxed_closure<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
-                                expr: &ast::Expr,
-                                store: ty::TraitStore,
-                                decl: &ast::FnDecl,
-                                body: &ast::Block,
-                                expected: Expectation<'tcx>) {
-    let tcx = fcx.ccx.tcx;
-
-    // Find the expected input/output types (if any). Substitute
-    // fresh bound regions for any bound regions we find in the
-    // expected types so as to avoid capture.
-    let expected_cenv = expected.map_to_option(fcx, |ty| match ty.sty {
-        ty::ty_closure(ref cenv) => Some(cenv),
-        _ => None
-    });
-    let (expected_sig, expected_onceness, expected_bounds) = match expected_cenv {
-        Some(cenv) => {
-            let (sig, _) =
-                ty::replace_late_bound_regions(
-                    tcx,
-                    &cenv.sig,
-                    |_, debruijn| fcx.inh.infcx.fresh_bound_region(debruijn));
-            let onceness = match (&store, &cenv.store) {
-                // As the closure type and onceness go, only three
-                // combinations are legit:
-                //      once closure
-                //      many closure
-                //      once proc
-                // If the actual and expected closure type disagree with
-                // each other, set expected onceness to be always Once or
-                // Many according to the actual type. Otherwise, it will
-                // yield either an illegal "many proc" or a less known
-                // "once closure" in the error message.
-                (&ty::UniqTraitStore, &ty::UniqTraitStore) |
-                (&ty::RegionTraitStore(..), &ty::RegionTraitStore(..)) =>
-                    cenv.onceness,
-                (&ty::UniqTraitStore, _) => ast::Once,
-                (&ty::RegionTraitStore(..), _) => ast::Many,
-            };
-            (Some(sig), onceness, cenv.bounds)
-        }
-        _ => {
-            // Not an error! Means we're inferring the closure type
-            let region = fcx.infcx().next_region_var(
-                infer::AddrOfRegion(expr.span));
-            let bounds = ty::region_existential_bound(region);
-            let onceness = ast::Many;
-            (None, onceness, bounds)
-        }
-    };
-
-    // construct the function type
-    let fn_ty = astconv::ty_of_closure(fcx,
-                                       ast::Unsafety::Normal,
-                                       expected_onceness,
-                                       expected_bounds,
-                                       store,
-                                       decl,
-                                       abi::Rust,
-                                       expected_sig);
-    let fty_sig = fn_ty.sig.clone();
-    let fty = ty::mk_closure(tcx, fn_ty);
-    debug!("check_expr_fn fty={}", fcx.infcx().ty_to_string(fty));
-
-    fcx.write_ty(expr.id, fty);
-
-    // If the closure is a stack closure and hasn't had some non-standard
-    // style inferred for it, then check it under its parent's style.
-    // Otherwise, use its own
-    let (inherited_style, inherited_style_id) = match store {
-        ty::RegionTraitStore(..) => (fcx.ps.borrow().unsafety,
-                                     fcx.ps.borrow().def),
-        ty::UniqTraitStore => (ast::Unsafety::Normal, expr.id)
-    };
-
-    check_fn(fcx.ccx,
-             inherited_style,
-             inherited_style_id,
-             &fty_sig,
-             &*decl,
-             expr.id,
-             &*body,
-             fcx.inh);
 }

@@ -7,22 +7,24 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
+
+use prelude::v1::*;
 use self::Req::*;
 
-use libc::{mod, pid_t, c_void, c_int};
-use c_str::CString;
-use io::{mod, IoResult, IoError, EndOfFile};
+use collections::HashMap;
+use collections::hash_map::Hasher;
+use ffi::CString;
+use hash::Hash;
+use io::process::{ProcessExit, ExitStatus, ExitSignal};
+use io::{self, IoResult, IoError, EndOfFile};
+use libc::{self, pid_t, c_void, c_int};
 use mem;
 use os;
-use ptr;
-use prelude::*;
-use io::process::{ProcessExit, ExitStatus, ExitSignal};
-use collections;
 use path::BytesContainer;
-use hash::Hash;
-
-use sys::{mod, retry, c, wouldblock, set_nonblocking, ms_to_timeval};
+use ptr;
+use sync::mpsc::{channel, Sender, Receiver};
 use sys::fs::FileDesc;
+use sys::{self, retry, c, wouldblock, set_nonblocking, ms_to_timeval};
 use sys_common::helper_thread::Helper;
 use sys_common::{AsInner, mkerr_libc, timeout};
 
@@ -59,7 +61,7 @@ impl Process {
                               out_fd: Option<P>, err_fd: Option<P>)
                               -> IoResult<Process>
         where C: ProcessConfig<K, V>, P: AsInner<FileDesc>,
-              K: BytesContainer + Eq + Hash, V: BytesContainer
+              K: BytesContainer + Eq + Hash<Hasher>, V: BytesContainer
     {
         use libc::funcs::posix88::unistd::{fork, dup2, close, chdir, execvp};
         use libc::funcs::bsd44::getdtablesize;
@@ -100,7 +102,7 @@ impl Process {
 
                 // We may use this in the child, so perform allocations before the
                 // fork
-                let devnull = "/dev/null".to_c_str();
+                let devnull = b"/dev/null\0";
 
                 set_cloexec(output.fd());
 
@@ -120,11 +122,11 @@ impl Process {
 
                     let p = Process{ pid: pid };
                     drop(output);
-                    let mut bytes = [0, ..8];
+                    let mut bytes = [0; 8];
                     return match input.read(&mut bytes) {
                         Ok(8) => {
                             assert!(combine(CLOEXEC_MSG_FOOTER) == combine(bytes.slice(4, 8)),
-                                "Validation on the CLOEXEC pipe failed: {}", bytes);
+                                "Validation on the CLOEXEC pipe failed: {:?}", bytes);
                             let errno = combine(bytes.slice(0, 4));
                             assert!(p.wait(0).is_ok(), "wait(0) should either return Ok or panic");
                             Err(super::decode_error(errno))
@@ -132,7 +134,7 @@ impl Process {
                         Err(ref e) if e.kind == EndOfFile => Ok(p),
                         Err(e) => {
                             assert!(p.wait(0).is_ok(), "wait(0) should either return Ok or panic");
-                            panic!("the CLOEXEC pipe failed: {}", e)
+                            panic!("the CLOEXEC pipe failed: {:?}", e)
                         },
                         Ok(..) => { // pipe I/O up to PIPE_BUF bytes should be atomic
                             assert!(p.wait(0).is_ok(), "wait(0) should either return Ok or panic");
@@ -195,7 +197,7 @@ impl Process {
                 // up /dev/null into that file descriptor. Otherwise, the first file
                 // descriptor opened up in the child would be numbered as one of the
                 // stdio file descriptors, which is likely to wreak havoc.
-                let setup = |src: Option<P>, dst: c_int| {
+                let setup = |&: src: Option<P>, dst: c_int| {
                     let src = match src {
                         None => {
                             let flags = if dst == libc::STDIN_FILENO {
@@ -203,7 +205,7 @@ impl Process {
                             } else {
                                 libc::O_RDWR
                             };
-                            libc::open(devnull.as_ptr(), flags, 0)
+                            libc::open(devnull.as_ptr() as *const _, flags, 0)
                         }
                         Some(obj) => {
                             let fd = obj.as_inner().fd();
@@ -276,15 +278,15 @@ impl Process {
     }
 
     pub fn wait(&self, deadline: u64) -> IoResult<ProcessExit> {
-        use std::cmp;
-        use std::comm;
+        use cmp;
+        use sync::mpsc::TryRecvError;
 
         static mut WRITE_FD: libc::c_int = 0;
 
         let mut status = 0 as c_int;
         if deadline == 0 {
             return match retry(|| unsafe { c::waitpid(self.pid, &mut status, 0) }) {
-                -1 => panic!("unknown waitpid error: {}", super::last_error()),
+                -1 => panic!("unknown waitpid error: {:?}", super::last_error()),
                 _ => Ok(translate_status(status)),
             }
         }
@@ -336,9 +338,9 @@ impl Process {
 
         let (tx, rx) = channel();
         unsafe { HELPER.send(NewChild(self.pid, tx, deadline)); }
-        return match rx.recv_opt() {
+        return match rx.recv() {
             Ok(e) => Ok(e),
-            Err(()) => Err(timeout("wait timed out")),
+            Err(..) => Err(timeout("wait timed out")),
         };
 
         // Register a new SIGCHLD handler, returning the reading half of the
@@ -348,7 +350,7 @@ impl Process {
         // handler we're going to start receiving signals.
         fn register_sigchld() -> (libc::c_int, c::sigaction) {
             unsafe {
-                let mut pipes = [0, ..2];
+                let mut pipes = [0; 2];
                 assert_eq!(libc::pipe(pipes.as_mut_ptr()), 0);
                 set_nonblocking(pipes[0], true).ok().unwrap();
                 set_nonblocking(pipes[1], true).ok().unwrap();
@@ -409,7 +411,7 @@ impl Process {
                         continue
                     }
 
-                    n => panic!("error in select {} ({})", os::errno(), n),
+                    n => panic!("error in select {:?} ({:?})", os::errno(), n),
                 }
 
                 // Process any pending messages
@@ -419,11 +421,11 @@ impl Process {
                             Ok(NewChild(pid, tx, deadline)) => {
                                 active.push((pid, tx, deadline));
                             }
-                            Err(comm::Disconnected) => {
+                            Err(TryRecvError::Disconnected) => {
                                 assert!(active.len() == 0);
                                 break 'outer;
                             }
-                            Err(comm::Empty) => break,
+                            Err(TryRecvError::Empty) => break,
                         }
                     }
                 }
@@ -459,7 +461,7 @@ impl Process {
                     active.retain(|&(pid, ref tx, _)| {
                         let pr = Process { pid: pid };
                         match pr.try_wait() {
-                            Some(msg) => { tx.send(msg); false }
+                            Some(msg) => { tx.send(msg).unwrap(); false }
                             None => true,
                         }
                     });
@@ -482,7 +484,7 @@ impl Process {
         fn drain(fd: libc::c_int) -> bool {
             let mut ret = false;
             loop {
-                let mut buf = [0u8, ..1];
+                let mut buf = [0u8; 1];
                 match unsafe {
                     libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void,
                                buf.len() as libc::size_t)
@@ -490,7 +492,7 @@ impl Process {
                     n if n > 0 => { ret = true; }
                     0 => return true,
                     -1 if wouldblock() => return ret,
-                    n => panic!("bad read {} ({})", os::last_os_error(), n),
+                    n => panic!("bad read {:?} ({:?})", os::last_os_error(), n),
                 }
             }
         }
@@ -513,7 +515,7 @@ impl Process {
             } {
                 1 => {}
                 -1 if wouldblock() => {} // see above comments
-                n => panic!("bad error on write fd: {} {}", n, os::errno()),
+                n => panic!("bad error on write fd: {:?} {:?}", n, os::errno()),
             }
         }
     }
@@ -525,7 +527,7 @@ impl Process {
         }) {
             n if n == self.pid => Some(translate_status(status)),
             0 => None,
-            n => panic!("unknown waitpid error `{}`: {}", n,
+            n => panic!("unknown waitpid error `{:?}`: {:?}", n,
                        super::last_error()),
         }
     }
@@ -552,11 +554,11 @@ fn with_argv<T,F>(prog: &CString, args: &[CString],
     cb(ptrs.as_ptr())
 }
 
-fn with_envp<K,V,T,F>(env: Option<&collections::HashMap<K, V>>,
+fn with_envp<K,V,T,F>(env: Option<&HashMap<K, V>>,
                       cb: F)
                       -> T
     where F : FnOnce(*const c_void) -> T,
-          K : BytesContainer + Eq + Hash,
+          K : BytesContainer + Eq + Hash<Hasher>,
           V : BytesContainer
 {
     // On posixy systems we can pass a char** for envp, which is a

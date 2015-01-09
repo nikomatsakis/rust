@@ -10,9 +10,9 @@
 
 // Test that disallow lifetime parameters that are unused.
 
-enum Enum<'a, 'd> { //~ ERROR parameter `'d` is never used
-    Test8B(&'a [int]),
-}
+use std::marker;
+
+struct Bivariant<'a>;
 
 struct Struct<'a, 'd> { //~ ERROR parameter `'d` is never used
     field: &'a [int]

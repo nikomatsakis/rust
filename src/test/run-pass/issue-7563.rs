@@ -12,9 +12,9 @@ trait IDummy {
     fn do_nothing(&self);
 }
 
-#[deriving(Show)]
+#[derive(Show)]
 struct A { a: int }
-#[deriving(Show)]
+#[derive(Show)]
 struct B<'a> { b: int, pa: &'a A }
 
     impl IDummy for A {
@@ -31,6 +31,6 @@ pub fn main() {
     let sa = A { a: 100 };
     let sb = B { b: 200, pa: &sa };
 
-    println!("sa is {}", sa);
-    println!("sb is {}", sb);
+    println!("sa is {:?}", sa);
+    println!("sb is {:?}", sb);
 }

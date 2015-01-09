@@ -12,53 +12,56 @@
 // in this file all test region bound and lifetime violations that are
 // detected during type check.
 
+extern crate core;
+use core::ptr::Unique;
+
 fn assert_send<T:Send>() { }
-trait Dummy { }
+trait Dummy:Send { }
 
 // lifetime pointers with 'static lifetime are ok
 
-fn static_lifime_ok<'a,T,U:Send>(_: &'a int) {
-    assert_send::<&'static int>();
+fn static_lifime_ok<'a,T,U:Send>(_: &'a isize) {
+    assert_send::<&'static isize>();
     assert_send::<&'static str>();
-    assert_send::<&'static [int]>();
+    assert_send::<&'static [isize]>();
 
     // whether or not they are mutable
-    assert_send::<&'static mut int>();
+    assert_send::<&'static mut isize>();
 }
 
 // otherwise lifetime pointers are not ok
 
-fn param_not_ok<'a>(x: &'a int) {
-    assert_send::<&'a int>(); //~ ERROR declared lifetime bound not satisfied
+fn param_not_ok<'a>(x: &'a isize) {
+    assert_send::<&'a isize>(); //~ ERROR declared lifetime bound not satisfied
 }
 
-fn param_not_ok1<'a>(_: &'a int) {
+fn param_not_ok1<'a>(_: &'a isize) {
     assert_send::<&'a str>(); //~ ERROR declared lifetime bound not satisfied
 }
 
-fn param_not_ok2<'a>(_: &'a int) {
-    assert_send::<&'a [int]>(); //~ ERROR declared lifetime bound not satisfied
+fn param_not_ok2<'a>(_: &'a isize) {
+    assert_send::<&'a [isize]>(); //~ ERROR declared lifetime bound not satisfied
 }
 
 // boxes are ok
 
 fn box_ok() {
-    assert_send::<Box<int>>();
+    assert_send::<Box<isize>>();
     assert_send::<String>();
-    assert_send::<Vec<int>>();
+    assert_send::<Vec<isize>>();
 }
 
 // but not if they own a bad thing
 
 fn box_with_region_not_ok<'a>() {
-    assert_send::<Box<&'a int>>(); //~ ERROR declared lifetime bound not satisfied
+    assert_send::<Box<&'a isize>>(); //~ ERROR declared lifetime bound not satisfied
 }
 
 // objects with insufficient bounds no ok
 
 fn object_with_random_bound_not_ok<'a>() {
     assert_send::<&'a (Dummy+'a)>();
-    //~^ ERROR not implemented
+    //~^ ERROR reference has a longer lifetime
 }
 
 fn object_with_send_bound_not_ok<'a>() {
@@ -66,24 +69,14 @@ fn object_with_send_bound_not_ok<'a>() {
     //~^ ERROR declared lifetime bound not satisfied
 }
 
-fn closure_with_lifetime_not_ok<'a>() {
-    assert_send::<||:'a>();
-    //~^ ERROR not implemented
-}
-
 // unsafe pointers are ok unless they point at unsendable things
 
-fn unsafe_ok1<'a>(_: &'a int) {
-    assert_send::<*const int>();
-    assert_send::<*mut int>();
-}
+struct UniqueUnsafePtr(Unique<*const isize>);
 
-fn unsafe_ok2<'a>(_: &'a int) {
-    assert_send::<*const &'a int>(); //~ ERROR declared lifetime bound not satisfied
-}
+unsafe impl Send for UniqueUnsafePtr {}
 
-fn unsafe_ok3<'a>(_: &'a int) {
-    assert_send::<*mut &'a int>(); //~ ERROR declared lifetime bound not satisfied
+fn unsafe_ok1<'a>(_: &'a isize) {
+    assert_send::<UniqueUnsafePtr>();
 }
 
 fn main() {

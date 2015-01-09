@@ -156,7 +156,7 @@ impl File {
                 })
             }
         }).update_err("couldn't open path as file", |e| {
-            format!("{}; path={}; mode={}; access={}", e, path.display(),
+            format!("{}; path={:?}; mode={}; access={}", e, path.display(),
                 mode_string(mode), access_string(access))
         })
     }
@@ -211,7 +211,7 @@ impl File {
     pub fn fsync(&mut self) -> IoResult<()> {
         self.fd.fsync()
             .update_err("couldn't fsync file",
-                        |e| format!("{}; path={}", e, self.path.display()))
+                        |e| format!("{}; path={:?}", e, self.path.display()))
     }
 
     /// This function is similar to `fsync`, except that it may not synchronize
@@ -221,7 +221,7 @@ impl File {
     pub fn datasync(&mut self) -> IoResult<()> {
         self.fd.datasync()
             .update_err("couldn't datasync file",
-                        |e| format!("{}; path={}", e, self.path.display()))
+                        |e| format!("{}; path={:?}", e, self.path.display()))
     }
 
     /// Either truncates or extends the underlying file, updating the size of
@@ -235,7 +235,7 @@ impl File {
     pub fn truncate(&mut self, size: i64) -> IoResult<()> {
         self.fd.truncate(size)
             .update_err("couldn't truncate file", |e|
-                format!("{}; path={}; size={}", e, self.path.display(), size))
+                format!("{}; path={:?}; size={:?}", e, self.path.display(), size))
     }
 
     /// Returns true if the stream has reached the end of the file.
@@ -255,7 +255,7 @@ impl File {
     pub fn stat(&self) -> IoResult<FileStat> {
         self.fd.fstat()
             .update_err("couldn't fstat file", |e|
-                format!("{}; path={}", e, self.path.display()))
+                format!("{}; path={:?}", e, self.path.display()))
     }
 }
 
@@ -283,7 +283,7 @@ impl File {
 pub fn unlink(path: &Path) -> IoResult<()> {
     fs_imp::unlink(path)
            .update_err("couldn't unlink path", |e|
-               format!("{}; path={}", e, path.display()))
+               format!("{}; path={:?}", e, path.display()))
 }
 
 /// Given a path, query the file system to get information about a file,
@@ -310,7 +310,7 @@ pub fn unlink(path: &Path) -> IoResult<()> {
 pub fn stat(path: &Path) -> IoResult<FileStat> {
     fs_imp::stat(path)
            .update_err("couldn't stat path", |e|
-               format!("{}; path={}", e, path.display()))
+               format!("{}; path={:?}", e, path.display()))
 }
 
 /// Perform the same operation as the `stat` function, except that this
@@ -324,7 +324,7 @@ pub fn stat(path: &Path) -> IoResult<FileStat> {
 pub fn lstat(path: &Path) -> IoResult<FileStat> {
     fs_imp::lstat(path)
            .update_err("couldn't lstat path", |e|
-               format!("{}; path={}", e, path.display()))
+               format!("{}; path={:?}", e, path.display()))
 }
 
 /// Rename a file or directory to a new name.
@@ -346,7 +346,7 @@ pub fn lstat(path: &Path) -> IoResult<FileStat> {
 pub fn rename(from: &Path, to: &Path) -> IoResult<()> {
     fs_imp::rename(from, to)
            .update_err("couldn't rename path", |e|
-               format!("{}; from={}; to={}", e, from.display(), to.display()))
+               format!("{}; from={:?}; to={:?}", e, from.display(), to.display()))
 }
 
 /// Copies the contents of one file to another. This function will also
@@ -380,7 +380,7 @@ pub fn rename(from: &Path, to: &Path) -> IoResult<()> {
 pub fn copy(from: &Path, to: &Path) -> IoResult<()> {
     fn update_err<T>(result: IoResult<T>, from: &Path, to: &Path) -> IoResult<T> {
         result.update_err("couldn't copy path", |e| {
-            format!("{}; from={}; to={}", e, from.display(), to.display())
+            format!("{}; from={:?}; to={:?}", e, from.display(), to.display())
         })
     }
 
@@ -424,14 +424,14 @@ pub fn copy(from: &Path, to: &Path) -> IoResult<()> {
 pub fn chmod(path: &Path, mode: io::FilePermission) -> IoResult<()> {
     fs_imp::chmod(path, mode.bits() as uint)
            .update_err("couldn't chmod path", |e|
-               format!("{}; path={}; mode={}", e, path.display(), mode))
+               format!("{}; path={:?}; mode={:?}", e, path.display(), mode))
 }
 
 /// Change the user and group owners of a file at the specified path.
 pub fn chown(path: &Path, uid: int, gid: int) -> IoResult<()> {
     fs_imp::chown(path, uid, gid)
            .update_err("couldn't chown path", |e|
-               format!("{}; path={}; uid={}; gid={}", e, path.display(), uid, gid))
+               format!("{}; path={:?}; uid={}; gid={}", e, path.display(), uid, gid))
 }
 
 /// Creates a new hard link on the filesystem. The `dst` path will be a
@@ -440,7 +440,7 @@ pub fn chown(path: &Path, uid: int, gid: int) -> IoResult<()> {
 pub fn link(src: &Path, dst: &Path) -> IoResult<()> {
     fs_imp::link(src, dst)
            .update_err("couldn't link path", |e|
-               format!("{}; src={}; dest={}", e, src.display(), dst.display()))
+               format!("{}; src={:?}; dest={:?}", e, src.display(), dst.display()))
 }
 
 /// Creates a new symbolic link on the filesystem. The `dst` path will be a
@@ -448,7 +448,7 @@ pub fn link(src: &Path, dst: &Path) -> IoResult<()> {
 pub fn symlink(src: &Path, dst: &Path) -> IoResult<()> {
     fs_imp::symlink(src, dst)
            .update_err("couldn't symlink path", |e|
-               format!("{}; src={}; dest={}", e, src.display(), dst.display()))
+               format!("{}; src={:?}; dest={:?}", e, src.display(), dst.display()))
 }
 
 /// Reads a symlink, returning the file that the symlink points to.
@@ -460,7 +460,7 @@ pub fn symlink(src: &Path, dst: &Path) -> IoResult<()> {
 pub fn readlink(path: &Path) -> IoResult<Path> {
     fs_imp::readlink(path)
            .update_err("couldn't resolve symlink for path", |e|
-               format!("{}; path={}", e, path.display()))
+               format!("{}; path={:?}", e, path.display()))
 }
 
 /// Create a new, empty directory at the provided path
@@ -483,7 +483,7 @@ pub fn readlink(path: &Path) -> IoResult<Path> {
 pub fn mkdir(path: &Path, mode: FilePermission) -> IoResult<()> {
     fs_imp::mkdir(path, mode.bits() as uint)
            .update_err("couldn't create directory", |e|
-               format!("{}; path={}; mode={}", e, path.display(), mode))
+               format!("{}; path={:?}; mode={:?}", e, path.display(), mode))
 }
 
 /// Remove an existing, empty directory
@@ -505,7 +505,7 @@ pub fn mkdir(path: &Path, mode: FilePermission) -> IoResult<()> {
 pub fn rmdir(path: &Path) -> IoResult<()> {
     fs_imp::rmdir(path)
            .update_err("couldn't remove directory", |e|
-               format!("{}; path={}", e, path.display()))
+               format!("{}; path={:?}", e, path.display()))
 }
 
 /// Retrieve a vector containing all entries within a provided directory
@@ -518,14 +518,16 @@ pub fn rmdir(path: &Path) -> IoResult<()> {
 /// use std::io;
 ///
 /// // one possible implementation of fs::walk_dir only visiting files
-/// fn visit_dirs(dir: &Path, cb: |&Path|) -> io::IoResult<()> {
+/// fn visit_dirs<F>(dir: &Path, cb: &mut F) -> io::IoResult<()> where
+///     F: FnMut(&Path),
+/// {
 ///     if dir.is_dir() {
 ///         let contents = try!(fs::readdir(dir));
 ///         for entry in contents.iter() {
 ///             if entry.is_dir() {
-///                 try!(visit_dirs(entry, |p| cb(p)));
+///                 try!(visit_dirs(entry, cb));
 ///             } else {
-///                 cb(entry);
+///                 (*cb)(entry);
 ///             }
 ///         }
 ///         Ok(())
@@ -543,7 +545,7 @@ pub fn rmdir(path: &Path) -> IoResult<()> {
 pub fn readdir(path: &Path) -> IoResult<Vec<Path>> {
     fs_imp::readdir(path)
            .update_err("couldn't read directory",
-                       |e| format!("{}; path={}", e, path.display()))
+                       |e| format!("{}; path={:?}", e, path.display()))
 }
 
 /// Returns an iterator that will recursively walk the directory structure
@@ -553,16 +555,19 @@ pub fn readdir(path: &Path) -> IoResult<Vec<Path>> {
 pub fn walk_dir(path: &Path) -> IoResult<Directories> {
     Ok(Directories {
         stack: try!(readdir(path).update_err("couldn't walk directory",
-                                             |e| format!("{}; path={}", e, path.display())))
+                                             |e| format!("{}; path={:?}", e, path.display())))
     })
 }
 
 /// An iterator that walks over a directory
+#[derive(Clone)]
 pub struct Directories {
     stack: Vec<Path>,
 }
 
-impl Iterator<Path> for Directories {
+impl Iterator for Directories {
+    type Item = Path;
+
     fn next(&mut self) -> Option<Path> {
         match self.stack.pop() {
             Some(path) => {
@@ -600,7 +605,7 @@ pub fn mkdir_recursive(path: &Path, mode: FilePermission) -> IoResult<()> {
 
         let result = mkdir(&curpath, mode)
             .update_err("couldn't recursively mkdir",
-                        |e| format!("{}; path={}", e, path.display()));
+                        |e| format!("{}; path={:?}", e, path.display()));
 
         match result {
             Err(mkdir_err) => {
@@ -627,7 +632,7 @@ pub fn rmdir_recursive(path: &Path) -> IoResult<()> {
     rm_stack.push(path.clone());
 
     fn rmdir_failed(err: &IoError, path: &Path) -> String {
-        format!("rmdir_recursive failed; path={}; cause={}",
+        format!("rmdir_recursive failed; path={:?}; cause={}",
                 path.display(), err)
     }
 
@@ -687,14 +692,14 @@ pub fn rmdir_recursive(path: &Path) -> IoResult<()> {
 pub fn change_file_times(path: &Path, atime: u64, mtime: u64) -> IoResult<()> {
     fs_imp::utime(path, atime, mtime)
            .update_err("couldn't change_file_times", |e|
-               format!("{}; path={}", e, path.display()))
+               format!("{}; path={:?}", e, path.display()))
 }
 
 impl Reader for File {
     fn read(&mut self, buf: &mut [u8]) -> IoResult<uint> {
         fn update_err<T>(result: IoResult<T>, file: &File) -> IoResult<T> {
             result.update_err("couldn't read file",
-                              |e| format!("{}; path={}",
+                              |e| format!("{}; path={:?}",
                                           e, file.path.display()))
         }
 
@@ -717,7 +722,7 @@ impl Writer for File {
     fn write(&mut self, buf: &[u8]) -> IoResult<()> {
         self.fd.write(buf)
             .update_err("couldn't write to file",
-                        |e| format!("{}; path={}", e, self.path.display()))
+                        |e| format!("{}; path={:?}", e, self.path.display()))
     }
 }
 
@@ -725,7 +730,7 @@ impl Seek for File {
     fn tell(&self) -> IoResult<u64> {
         self.fd.tell()
             .update_err("couldn't retrieve file cursor (`tell`)",
-                        |e| format!("{}; path={}", e, self.path.display()))
+                        |e| format!("{}; path={:?}", e, self.path.display()))
     }
 
     fn seek(&mut self, pos: i64, style: SeekStyle) -> IoResult<()> {
@@ -738,7 +743,7 @@ impl Seek for File {
             Err(e) => Err(e),
         };
         err.update_err("couldn't seek in file",
-                       |e| format!("{}; path={}", e, self.path.display()))
+                       |e| format!("{}; path={:?}", e, self.path.display()))
     }
 }
 
@@ -818,7 +823,7 @@ fn access_string(access: FileAccess) -> &'static str {
 #[allow(unused_variables)]
 #[allow(unused_mut)]
 mod test {
-    use prelude::*;
+    use prelude::v1::*;
     use io::{SeekSet, SeekCur, SeekEnd, Read, Open, ReadWrite, FileType};
     use io;
     use str;
@@ -827,13 +832,13 @@ mod test {
     macro_rules! check { ($e:expr) => (
         match $e {
             Ok(t) => t,
-            Err(e) => panic!("{} failed with: {}", stringify!($e), e),
+            Err(e) => panic!("{} failed with: {:?}", stringify!($e), e),
         }
     ) }
 
     macro_rules! error { ($e:expr, $s:expr) => (
         match $e {
-            Ok(_) => panic!("Unexpected success. Should've been: {}", $s),
+            Ok(_) => panic!("Unexpected success. Should've been: {:?}", $s),
             Err(ref err) => assert!(err.to_string().contains($s.as_slice()),
                                     format!("`{}` did not contain `{}`", err, $s))
         }
@@ -881,10 +886,10 @@ mod test {
         }
         {
             let mut read_stream = File::open_mode(filename, Open, Read);
-            let mut read_buf = [0, .. 1028];
+            let mut read_buf = [0; 1028];
             let read_str = match check!(read_stream.read(&mut read_buf)) {
                 -1|0 => panic!("shouldn't happen"),
-                n => str::from_utf8(read_buf[..n]).unwrap().to_string()
+                n => str::from_utf8(&read_buf[0..n]).unwrap().to_string()
             };
             assert_eq!(read_str.as_slice(), message);
         }
@@ -901,7 +906,7 @@ mod test {
         if cfg!(unix) {
             error!(result, "no such file or directory");
         }
-        error!(result, format!("path={}; mode=open; access=read", filename.display()));
+        error!(result, format!("path={:?}; mode=open; access=read", filename.display()));
     }
 
     #[test]
@@ -915,13 +920,13 @@ mod test {
         if cfg!(unix) {
             error!(result, "no such file or directory");
         }
-        error!(result, format!("path={}", filename.display()));
+        error!(result, format!("path={:?}", filename.display()));
     }
 
     #[test]
     fn file_test_io_non_positional_read() {
         let message: &str = "ten-four";
-        let mut read_mem = [0, .. 8];
+        let mut read_mem = [0; 8];
         let tmpdir = tmpdir();
         let filename = &tmpdir.join("file_rt_io_file_test_positional.txt");
         {
@@ -931,11 +936,11 @@ mod test {
         {
             let mut read_stream = File::open_mode(filename, Open, Read);
             {
-                let read_buf = read_mem[mut 0..4];
+                let read_buf = read_mem.slice_mut(0, 4);
                 check!(read_stream.read(read_buf));
             }
             {
-                let read_buf = read_mem[mut 4..8];
+                let read_buf = read_mem.slice_mut(4, 8);
                 check!(read_stream.read(read_buf));
             }
         }
@@ -947,7 +952,7 @@ mod test {
     #[test]
     fn file_test_io_seek_and_tell_smoke_test() {
         let message = "ten-four";
-        let mut read_mem = [0, .. 4];
+        let mut read_mem = [0; 4];
         let set_cursor = 4 as u64;
         let mut tell_pos_pre_read;
         let mut tell_pos_post_read;
@@ -977,7 +982,7 @@ mod test {
         let overwrite_msg =    "-the-bar!!";
         let final_msg =     "foo-the-bar!!";
         let seek_idx = 3i;
-        let mut read_mem = [0, .. 13];
+        let mut read_mem = [0; 13];
         let tmpdir = tmpdir();
         let filename = &tmpdir.join("file_rt_io_file_test_seek_and_write.txt");
         {
@@ -1002,7 +1007,7 @@ mod test {
         let chunk_one: &str = "qwer";
         let chunk_two: &str = "asdf";
         let chunk_three: &str = "zxcv";
-        let mut read_mem = [0, .. 4];
+        let mut read_mem = [0; 4];
         let tmpdir = tmpdir();
         let filename = &tmpdir.join("file_rt_io_file_test_seek_shakedown.txt");
         {
@@ -1104,7 +1109,7 @@ mod test {
             check!(w.write(msg));
         }
         let files = check!(readdir(dir));
-        let mut mem = [0u8, .. 4];
+        let mut mem = [0u8; 4];
         for f in files.iter() {
             {
                 let n = f.filestem_str();
@@ -1136,7 +1141,7 @@ mod test {
         check!(File::create(&dir2.join("14")));
 
         let mut files = check!(walk_dir(dir));
-        let mut cur = [0u8, .. 2];
+        let mut cur = [0u8; 2];
         for f in files {
             let stem = f.filestem_str().unwrap();
             let root = stem.as_bytes()[0] - b'0';
@@ -1146,6 +1151,19 @@ mod test {
         }
 
         check!(rmdir_recursive(dir));
+    }
+
+    #[test]
+    fn mkdir_path_already_exists_error() {
+        use io::{IoError, PathAlreadyExists};
+
+        let tmpdir = tmpdir();
+        let dir = &tmpdir.join("mkdir_error_twice");
+        check!(mkdir(dir, io::USER_RWX));
+        match mkdir(dir, io::USER_RWX) {
+            Err(IoError{kind:PathAlreadyExists,..}) => (),
+            _ => assert!(false)
+        };
     }
 
     #[test]
@@ -1170,7 +1188,7 @@ mod test {
         error!(result, "couldn't recursively mkdir");
         error!(result, "couldn't create directory");
         error!(result, "mode=0700");
-        error!(result, format!("path={}", file.display()));
+        error!(result, format!("path={:?}", file.display()));
     }
 
     #[test]
@@ -1237,7 +1255,7 @@ mod test {
 
         error!(copy(&from, &to),
             format!("couldn't copy path (the source path is not an \
-                    existing file; from={}; to={})",
+                    existing file; from={:?}; to={:?})",
                     from.display(), to.display()));
 
         match copy(&from, &to) {
@@ -1532,7 +1550,7 @@ mod test {
     fn binary_file() {
         use rand::{StdRng, Rng};
 
-        let mut bytes = [0, ..1024];
+        let mut bytes = [0; 1024];
         StdRng::new().ok().unwrap().fill_bytes(&mut bytes);
 
         let tmpdir = tmpdir();

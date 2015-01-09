@@ -8,19 +8,19 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn with(f: |&String|) {}
+fn with<F>(f: F) where F: FnOnce(&String) {}
 
 fn arg_item(&_x: &String) {}
-    //~^ ERROR cannot move out of dereference of `&`-pointer
+    //~^ ERROR cannot move out of borrowed content
 
 fn arg_closure() {
     with(|&_x| ())
-    //~^ ERROR cannot move out of dereference of `&`-pointer
+    //~^ ERROR cannot move out of borrowed content
 }
 
 fn let_pat() {
     let &_x = &"hi".to_string();
-    //~^ ERROR cannot move out of dereference of `&`-pointer
+    //~^ ERROR cannot move out of borrowed content
 }
 
 pub fn main() {}

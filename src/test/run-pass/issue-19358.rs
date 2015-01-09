@@ -10,12 +10,12 @@
 
 trait Trait {}
 
-#[deriving(Show)]
+#[derive(Show)]
 struct Foo<T: Trait> {
     foo: T,
 }
 
-#[deriving(Show)]
+#[derive(Show)]
 struct Bar<T> where T: Trait {
     bar: T,
 }
@@ -25,5 +25,5 @@ impl Trait for int {}
 fn main() {
     let a = Foo { foo: 12i };
     let b = Bar { bar: 12i };
-    println!("{} {}", a, b);
+    println!("{:?} {:?}", a, b);
 }

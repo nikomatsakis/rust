@@ -11,8 +11,10 @@
 // Testing creating two vtables with the same self type, but different
 // traits.
 
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+
 use std::any::Any;
-use std::any::AnyRefExt;
 
 trait Wrap {
     fn get(&self) -> int;

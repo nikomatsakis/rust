@@ -111,7 +111,7 @@
 // lldb-command:continue
 
 
-#![feature(macro_rules)]
+#![omit_gdb_pretty_printer_section]
 
 macro_rules! trivial {
     ($e1:expr) => ($e1)

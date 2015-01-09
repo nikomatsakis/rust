@@ -1,4 +1,4 @@
-# Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+# Copyright 2014-2015 The Rust Project Developers. See the COPYRIGHT
 # file at the top-level directory of this distribution and at
 # http://rust-lang.org/COPYRIGHT.
 #
@@ -13,7 +13,12 @@
 ######################################################################
 
 # The version number
-CFG_RELEASE_NUM=0.13.0
+CFG_RELEASE_NUM=1.0.0
+
+# An optional number to put after the label, e.g. '.2' -> '-beta.2'
+# NB Make sure it starts with a dot to conform to semver pre-release
+# versions (section 9)
+CFG_PRERELEASE_VERSION=
 
 CFG_FILENAME_EXTRA=4e7c5e5c
 
@@ -22,17 +27,20 @@ ifeq ($(CFG_RELEASE_CHANNEL),stable)
 CFG_RELEASE=$(CFG_RELEASE_NUM)
 # This is the string used in dist artifact file names, e.g. "0.12.0", "nightly"
 CFG_PACKAGE_VERS=$(CFG_RELEASE_NUM)
+CFG_DISABLE_UNSTABLE_FEATURES=1
 endif
 ifeq ($(CFG_RELEASE_CHANNEL),beta)
-CFG_RELEASE=$(CFG_RELEASE_NUM)-beta
-# When building beta/nightly distributables just reuse the same "beta"
-# name so when we upload we'll always override the previous
-# nighly. This doesn't actually impact the version reported by rustc -
-# it's just for file naming.
-CFG_PACKAGE_VERS=beta
+# The beta channel is temporarily called 'alpha'
+CFG_RELEASE=$(CFG_RELEASE_NUM)-alpha$(CFG_PRERELEASE_VERSION)
+CFG_PACKAGE_VERS=$(CFG_RELEASE_NUM)-alpha$(CFG_PRERELEASE_VERSION)
+CFG_DISABLE_UNSTABLE_FEATURES=1
 endif
 ifeq ($(CFG_RELEASE_CHANNEL),nightly)
 CFG_RELEASE=$(CFG_RELEASE_NUM)-nightly
+# When building nightly distributables just reuse the same "nightly" name
+# so when we upload we'll always override the previous nighly. This
+# doesn't actually impact the version reported by rustc - it's just
+# for file naming.
 CFG_PACKAGE_VERS=nightly
 endif
 ifeq ($(CFG_RELEASE_CHANNEL),dev)
@@ -41,7 +49,7 @@ CFG_PACKAGE_VERS=$(CFG_RELEASE_NUM)-dev
 endif
 
 # The name of the package to use for creating tarballs, installers etc.
-CFG_PACKAGE_NAME=rust-$(CFG_PACKAGE_VERS)
+CFG_PACKAGE_NAME=rustc-$(CFG_PACKAGE_VERS)
 
 # The version string plus commit information - this is what rustc reports
 CFG_VERSION = $(CFG_RELEASE)
@@ -117,11 +125,9 @@ CFG_JEMALLOC_FLAGS += $(JEMALLOC_FLAGS)
 
 ifdef CFG_DISABLE_DEBUG
   CFG_RUSTC_FLAGS += --cfg ndebug
-  CFG_GCCISH_CFLAGS += -DRUST_NDEBUG
 else
   $(info cfg: enabling more debugging (CFG_ENABLE_DEBUG))
   CFG_RUSTC_FLAGS += --cfg debug
-  CFG_GCCISH_CFLAGS += -DRUST_DEBUG
 endif
 
 ifdef SAVE_TEMPS
@@ -257,7 +263,7 @@ endif
 ######################################################################
 
 # FIXME: x86-ism
-LLVM_COMPONENTS=x86 arm mips ipo bitreader bitwriter linker asmparser mcjit \
+LLVM_COMPONENTS=x86 arm aarch64 mips ipo bitreader bitwriter linker asmparser mcjit \
                 interpreter instrumentation
 
 # Only build these LLVM tools
@@ -315,15 +321,30 @@ export CFG_VERSION_WIN
 export CFG_RELEASE
 export CFG_PACKAGE_NAME
 export CFG_BUILD
+export CFG_RELEASE_CHANNEL
 export CFG_LLVM_ROOT
 export CFG_PREFIX
 export CFG_LIBDIR
 export CFG_LIBDIR_RELATIVE
 export CFG_DISABLE_INJECT_STD_VERSION
+ifdef CFG_DISABLE_UNSTABLE_FEATURES
+CFG_INFO := $(info cfg: disabling unstable features (CFG_DISABLE_UNSTABLE_FEATURES))
+# Turn on feature-staging
+export CFG_DISABLE_UNSTABLE_FEATURES
+endif
+# Subvert unstable feature lints to do the self-build
+export CFG_BOOTSTRAP_KEY
+export RUSTC_BOOTSTRAP_KEY:=$(CFG_BOOTSTRAP_KEY)
 
 ######################################################################
 # Per-stage targets and runner
 ######################################################################
+
+# Valid setting-strings are 'all', 'none', 'gdb', 'lldb'
+# This 'function' will determine which debugger scripts to copy based on a
+# target triple. See debuggers.mk for more information.
+TRIPLE_TO_DEBUGGER_SCRIPT_SETTING=\
+ $(if $(findstring windows,$(1)),none,$(if $(findstring darwin,$(1)),lldb,gdb))
 
 STAGES = 0 1 2 3
 
@@ -357,7 +378,7 @@ else
 HSREQ$(1)_H_$(3) = \
 	$$(HBIN$(1)_H_$(3))/rustc$$(X_$(3)) \
 	$$(MKFILE_DEPS) \
-	tmp/install-debugger-scripts$(1)_H_$(3).done
+	tmp/install-debugger-scripts$(1)_H_$(3)-$$(call TRIPLE_TO_DEBUGGER_SCRIPT_SETTING,$(3)).done
 endif
 
 # Prerequisites for using the stageN compiler to build target artifacts
@@ -372,7 +393,7 @@ SREQ$(1)_T_$(2)_H_$(3) = \
 	$$(TSREQ$(1)_T_$(2)_H_$(3)) \
 	$$(foreach dep,$$(TARGET_CRATES), \
 	    $$(TLIB$(1)_T_$(2)_H_$(3))/stamp.$$(dep)) \
-	tmp/install-debugger-scripts$(1)_T_$(2)_H_$(3).done
+	tmp/install-debugger-scripts$(1)_T_$(2)_H_$(3)-$$(call TRIPLE_TO_DEBUGGER_SCRIPT_SETTING,$(2)).done
 
 # Prerequisites for a working stageN compiler and complete set of target
 # libraries

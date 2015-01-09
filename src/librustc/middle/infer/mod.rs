@@ -20,12 +20,13 @@ pub use self::ValuePairs::*;
 pub use self::fixup_err::*;
 pub use middle::ty::IntVarValue;
 pub use self::freshen::TypeFreshener;
+pub use self::region_inference::GenericKind;
 
 use middle::subst;
 use middle::subst::Substs;
-use middle::ty::{TyVid, IntVid, FloatVid, RegionVid};
+use middle::ty::{TyVid, IntVid, FloatVid, RegionVid, UnconstrainedNumeric};
 use middle::ty::replace_late_bound_regions;
-use middle::ty::{mod, Ty};
+use middle::ty::{self, Ty};
 use middle::ty_fold::{TypeFolder, TypeFoldable};
 use std::cell::{RefCell};
 use std::rc::Rc;
@@ -38,7 +39,7 @@ use util::ppaux::{ty_to_string};
 use util::ppaux::{Repr, UserString};
 
 use self::coercion::Coerce;
-use self::combine::{Combine, CombineFields};
+use self::combine::{Combine, Combineable, CombineFields};
 use self::region_inference::{RegionVarBindings, RegionSnapshot};
 use self::equate::Equate;
 use self::sub::Sub;
@@ -97,7 +98,7 @@ pub type SkolemizationMap = FnvHashMap<ty::BoundRegion,ty::Region>;
 /// Why did we require that the two types be related?
 ///
 /// See `error_reporting.rs` for more details
-#[deriving(Clone, Copy, Show)]
+#[derive(Clone, Copy, Show)]
 pub enum TypeOrigin {
     // Not yet categorized in a better way
     Misc(Span),
@@ -127,23 +128,26 @@ pub enum TypeOrigin {
     // Computing common supertype of an if expression with no else counter-part
     IfExpressionWithNoElse(Span),
 
+    // Computing common supertype in a range expression
+    RangeExpression(Span),
+
     // `where a == b`
     EquatePredicate(Span),
 }
 
 /// See `error_reporting.rs` for more details
-#[deriving(Clone, Show)]
+#[derive(Clone, Show)]
 pub enum ValuePairs<'tcx> {
     Types(ty::expected_found<Ty<'tcx>>),
     TraitRefs(ty::expected_found<Rc<ty::TraitRef<'tcx>>>),
-    PolyTraitRefs(ty::expected_found<Rc<ty::PolyTraitRef<'tcx>>>),
+    PolyTraitRefs(ty::expected_found<ty::PolyTraitRef<'tcx>>),
 }
 
 /// The trace designates the path through inference that we took to
 /// encounter an error or subtyping constraint.
 ///
 /// See `error_reporting.rs` for more details.
-#[deriving(Clone, Show)]
+#[derive(Clone, Show)]
 pub struct TypeTrace<'tcx> {
     origin: TypeOrigin,
     values: ValuePairs<'tcx>,
@@ -152,7 +156,7 @@ pub struct TypeTrace<'tcx> {
 /// The origin of a `r1 <= r2` constraint.
 ///
 /// See `error_reporting.rs` for more details
-#[deriving(Clone, Show)]
+#[derive(Clone, Show)]
 pub enum SubregionOrigin<'tcx> {
     // Arose from a subtyping relation
     Subtype(TypeTrace<'tcx>),
@@ -221,19 +225,22 @@ pub enum SubregionOrigin<'tcx> {
 }
 
 /// Times when we replace late-bound regions with variables:
-#[deriving(Clone, Copy, Show)]
+#[derive(Clone, Copy, Show)]
 pub enum LateBoundRegionConversionTime {
     /// when a fn is called
     FnCall,
 
     /// when two higher-ranked types are compared
     HigherRankedType,
+
+    /// when projecting an associated type
+    AssocTypeProjection(ast::Name),
 }
 
 /// Reasons to create a region inference variable
 ///
 /// See `error_reporting.rs` for more details
-#[deriving(Clone, Show)]
+#[derive(Clone, Show)]
 pub enum RegionVariableOrigin<'tcx> {
     // Region variables created for ill-categorized reasons,
     // mostly indicates places in need of refactoring
@@ -266,7 +273,7 @@ pub enum RegionVariableOrigin<'tcx> {
     BoundRegionInCoherence(ast::Name),
 }
 
-#[deriving(Copy, Show)]
+#[derive(Copy, Show)]
 pub enum fixup_err {
     unresolved_int_ty(IntVid),
     unresolved_float_ty(FloatVid),
@@ -321,7 +328,7 @@ pub fn common_supertype<'a, 'tcx>(cx: &InferCtxt<'a, 'tcx>,
         Ok(t) => t,
         Err(ref err) => {
             cx.report_and_explain_type_error(trace, err);
-            ty::mk_err()
+            cx.tcx.types.err
         }
     }
 }
@@ -353,17 +360,9 @@ pub fn can_mk_subty<'a, 'tcx>(cx: &InferCtxt<'a, 'tcx>,
     })
 }
 
-pub fn can_mk_eqty<'a, 'tcx>(cx: &InferCtxt<'a, 'tcx>,
-                             a: Ty<'tcx>, b: Ty<'tcx>)
-                             -> ures<'tcx> {
-    debug!("can_mk_subty({} <: {})", a.repr(cx.tcx), b.repr(cx.tcx));
-    cx.probe(|_| {
-        let trace = TypeTrace {
-            origin: Misc(codemap::DUMMY_SP),
-            values: Types(expected_found(true, a, b))
-        };
-        cx.equate(true, trace).tys(a, b)
-    }).to_ures()
+pub fn can_mk_eqty<'a, 'tcx>(cx: &InferCtxt<'a, 'tcx>, a: Ty<'tcx>, b: Ty<'tcx>) -> ures<'tcx>
+{
+    cx.can_equate(&a, &b)
 }
 
 pub fn mk_subr<'a, 'tcx>(cx: &InferCtxt<'a, 'tcx>,
@@ -374,19 +373,6 @@ pub fn mk_subr<'a, 'tcx>(cx: &InferCtxt<'a, 'tcx>,
     let snapshot = cx.region_vars.start_snapshot();
     cx.region_vars.make_subregion(origin, a, b);
     cx.region_vars.commit(snapshot);
-}
-
-pub fn verify_param_bound<'a, 'tcx>(cx: &InferCtxt<'a, 'tcx>,
-                                    origin: SubregionOrigin<'tcx>,
-                                    param_ty: ty::ParamTy,
-                                    a: ty::Region,
-                                    bs: Vec<ty::Region>) {
-    debug!("verify_param_bound({}, {} <: {})",
-           param_ty.repr(cx.tcx),
-           a.repr(cx.tcx),
-           bs.repr(cx.tcx));
-
-    cx.region_vars.verify_param_bound(origin, param_ty, a, bs);
 }
 
 pub fn mk_eqty<'a, 'tcx>(cx: &InferCtxt<'a, 'tcx>,
@@ -404,8 +390,8 @@ pub fn mk_eqty<'a, 'tcx>(cx: &InferCtxt<'a, 'tcx>,
 pub fn mk_sub_poly_trait_refs<'a, 'tcx>(cx: &InferCtxt<'a, 'tcx>,
                                    a_is_expected: bool,
                                    origin: TypeOrigin,
-                                   a: Rc<ty::PolyTraitRef<'tcx>>,
-                                   b: Rc<ty::PolyTraitRef<'tcx>>)
+                                   a: ty::PolyTraitRef<'tcx>,
+                                   b: ty::PolyTraitRef<'tcx>)
                                    -> ures<'tcx>
 {
     debug!("mk_sub_trait_refs({} <: {})",
@@ -517,6 +503,25 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
 
     pub fn freshener<'b>(&'b self) -> TypeFreshener<'b, 'tcx> {
         freshen::TypeFreshener::new(self)
+    }
+
+    pub fn type_is_unconstrained_numeric(&'a self, ty: Ty) -> UnconstrainedNumeric {
+        use middle::ty::UnconstrainedNumeric::{Neither, UnconstrainedInt, UnconstrainedFloat};
+        match ty.sty {
+            ty::ty_infer(ty::IntVar(vid)) => {
+                match self.int_unification_table.borrow_mut().get(self.tcx, vid).value {
+                    None => UnconstrainedInt,
+                    _ => Neither,
+                }
+            },
+            ty::ty_infer(ty::FloatVar(vid)) => {
+                match self.float_unification_table.borrow_mut().get(self.tcx, vid).value {
+                    None => return UnconstrainedFloat,
+                    _ => Neither,
+                }
+            },
+            _ => Neither,
+        }
     }
 
     pub fn combine_fields<'b>(&'b self, a_is_expected: bool, trace: TypeTrace<'tcx>)
@@ -700,8 +705,8 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
     pub fn sub_poly_trait_refs(&self,
                                a_is_expected: bool,
                                origin: TypeOrigin,
-                               a: Rc<ty::PolyTraitRef<'tcx>>,
-                               b: Rc<ty::PolyTraitRef<'tcx>>)
+                               a: ty::PolyTraitRef<'tcx>,
+                               b: ty::PolyTraitRef<'tcx>)
                                -> ures<'tcx>
     {
         debug!("sub_poly_trait_refs({} <: {})",
@@ -712,7 +717,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 origin: origin,
                 values: PolyTraitRefs(expected_found(a_is_expected, a.clone(), b.clone()))
             };
-            self.sub(a_is_expected, trace).binders(&*a, &*b).to_ures()
+            self.sub(a_is_expected, trace).binders(&a, &b).to_ures()
         })
     }
 
@@ -747,7 +752,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                          -> T
         where T : TypeFoldable<'tcx> + Repr<'tcx>
     {
-        /*! See `higher_ranked::leak_check` */
+        /*! See `higher_ranked::plug_leaks` */
 
         higher_ranked::plug_leaks(self, skol_map, snapshot, value)
     }
@@ -793,7 +798,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
     }
 
     pub fn next_ty_vars(&self, n: uint) -> Vec<Ty<'tcx>> {
-        Vec::from_fn(n, |_i| self.next_ty_var())
+        range(0, n).map(|_i| self.next_ty_var()).collect()
     }
 
     pub fn next_int_var_id(&self) -> IntVid {
@@ -858,10 +863,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         let region_param_defs = generics.regions.get_slice(subst::TypeSpace);
         let regions = self.region_vars_for_defs(span, region_param_defs);
 
-        let assoc_type_parameter_count = generics.types.len(subst::AssocSpace);
-        let assoc_type_parameters = self.next_ty_vars(assoc_type_parameter_count);
-
-        subst::Substs::new_trait(type_parameters, regions, assoc_type_parameters, self_ty)
+        subst::Substs::new_trait(type_parameters, regions, self_ty)
     }
 
     pub fn fresh_bound_region(&self, debruijn: ty::DebruijnIndex) -> ty::Region {
@@ -979,7 +981,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                                                    err: Option<&ty::type_err<'tcx>>) where
         M: FnOnce(Option<String>, String) -> String,
     {
-        debug!("hi! expected_ty = {}, actual_ty = {}", expected_ty, actual_ty);
+        debug!("hi! expected_ty = {:?}, actual_ty = {}", expected_ty, actual_ty);
 
         let resolved_expected = expected_ty.map(|e_ty| self.resolve_type_vars_if_possible(&e_ty));
 
@@ -990,7 +992,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                     format!(" ({})", ty::type_err_to_str(self.tcx, t_err))
                 });
 
-                self.tcx.sess.span_err(sp, format!("{}{}",
+                self.tcx.sess.span_err(sp, &format!("{}{}",
                     mk_msg(resolved_expected.map(|t| self.ty_to_string(t)), actual_ty),
                     error_str)[]);
 
@@ -1046,7 +1048,38 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         ty::replace_late_bound_regions(
             self.tcx,
             value,
-            |br, _| self.next_region_var(LateBoundRegion(span, br, lbrct)))
+            |br| self.next_region_var(LateBoundRegion(span, br, lbrct)))
+    }
+
+    /// See `verify_generic_bound` method in `region_inference`
+    pub fn verify_generic_bound(&self,
+                                origin: SubregionOrigin<'tcx>,
+                                kind: GenericKind<'tcx>,
+                                a: ty::Region,
+                                bs: Vec<ty::Region>) {
+        debug!("verify_generic_bound({}, {} <: {})",
+               kind.repr(self.tcx),
+               a.repr(self.tcx),
+               bs.repr(self.tcx));
+
+        self.region_vars.verify_generic_bound(origin, kind, a, bs);
+    }
+
+    pub fn can_equate<T>(&self, a: &T, b: &T) -> ures<'tcx>
+        where T : Combineable<'tcx> + Repr<'tcx>
+    {
+        debug!("can_equate({}, {})", a.repr(self.tcx), b.repr(self.tcx));
+        self.probe(|_| {
+            // Gin up a dummy trace, since this won't be committed
+            // anyhow. We should make this typetrace stuff more
+            // generic so we don't have to do anything quite this
+            // terrible.
+            let e = self.tcx.types.err;
+            let trace = TypeTrace { origin: Misc(codemap::DUMMY_SP),
+                                    values: Types(expected_found(true, e, e)) };
+            let eq = self.equate(true, trace);
+            Combineable::combine(&eq, a, b)
+        }).to_ures()
     }
 }
 
@@ -1055,12 +1088,12 @@ impl<'tcx> TypeTrace<'tcx> {
         self.origin.span()
     }
 
-    pub fn dummy() -> TypeTrace<'tcx> {
+    pub fn dummy(tcx: &ty::ctxt<'tcx>) -> TypeTrace<'tcx> {
         TypeTrace {
             origin: Misc(codemap::DUMMY_SP),
             values: Types(ty::expected_found {
-                expected: ty::mk_err(),
-                found: ty::mk_err(),
+                expected: tcx.types.err,
+                found: tcx.types.err,
             })
         }
     }
@@ -1084,6 +1117,7 @@ impl TypeOrigin {
             MatchExpressionArm(match_span, _) => match_span,
             IfExpression(span) => span,
             IfExpressionWithNoElse(span) => span,
+            RangeExpression(span) => span,
             EquatePredicate(span) => span,
         }
     }
@@ -1116,6 +1150,9 @@ impl<'tcx> Repr<'tcx> for TypeOrigin {
             }
             IfExpressionWithNoElse(a) => {
                 format!("IfExpressionWithNoElse({})", a.repr(tcx))
+            }
+            RangeExpression(a) => {
+                format!("RangeExpression({})", a.repr(tcx))
             }
             EquatePredicate(a) => {
                 format!("EquatePredicate({})", a.repr(tcx))
@@ -1191,7 +1228,7 @@ impl<'tcx> Repr<'tcx> for SubregionOrigin<'tcx> {
             }
             Reborrow(a) => format!("Reborrow({})", a.repr(tcx)),
             ReborrowUpvar(a, b) => {
-                format!("ReborrowUpvar({},{})", a.repr(tcx), b)
+                format!("ReborrowUpvar({},{:?})", a.repr(tcx), b)
             }
             ReferenceOutlivesReferent(_, a) => {
                 format!("ReferenceOutlivesReferent({})", a.repr(tcx))
@@ -1249,7 +1286,7 @@ impl<'tcx> Repr<'tcx> for RegionVariableOrigin<'tcx> {
                 format!("EarlyBoundRegion({},{})", a.repr(tcx), b.repr(tcx))
             }
             LateBoundRegion(a, b, c) => {
-                format!("LateBoundRegion({},{},{})", a.repr(tcx), b.repr(tcx), c)
+                format!("LateBoundRegion({},{},{:?})", a.repr(tcx), b.repr(tcx), c)
             }
             BoundRegionInCoherence(a) => {
                 format!("bound_regionInCoherence({})", a.repr(tcx))

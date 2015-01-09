@@ -50,8 +50,7 @@ pub mod rt {
 
     impl<T: ToTokens> ToTokens for Vec<T> {
         fn to_tokens(&self, cx: &ExtCtxt) -> Vec<TokenTree> {
-            let a = self.iter().flat_map(|t| t.to_tokens(cx).into_iter());
-            FromIterator::from_iter(a)
+            self.iter().flat_map(|t| t.to_tokens(cx).into_iter()).collect()
         }
     }
 
@@ -86,14 +85,14 @@ pub mod rt {
     */
 
     // FIXME: Move this trait to pprust and get rid of *_to_str?
-    pub trait ToSource for Sized? {
+    pub trait ToSource {
         // Takes a thing and generates a string containing rust code for it.
         fn to_source(&self) -> String;
     }
 
     // FIXME (Issue #16472): This should go away after ToToken impls
     // are revised to go directly to token-trees.
-    trait ToSourceWithHygiene for Sized? : ToSource {
+    trait ToSourceWithHygiene : ToSource {
         // Takes a thing and generates a string containing rust code
         // for it, encoding Idents as special byte sequences to
         // maintain hygiene across serialization and deserialization.
@@ -245,10 +244,10 @@ pub mod rt {
     }
 
     macro_rules! impl_to_source_int {
-        (signed, $t:ty, $tag:ident) => (
+        (signed, $t:ty, $tag:expr) => (
             impl ToSource for $t {
                 fn to_source(&self) -> String {
-                    let lit = ast::LitInt(*self as u64, ast::SignedIntLit(ast::$tag,
+                    let lit = ast::LitInt(*self as u64, ast::SignedIntLit($tag,
                                                                           ast::Sign::new(*self)));
                     pprust::lit_to_string(&dummy_spanned(lit))
                 }
@@ -259,10 +258,10 @@ pub mod rt {
                 }
             }
         );
-        (unsigned, $t:ty, $tag:ident) => (
+        (unsigned, $t:ty, $tag:expr) => (
             impl ToSource for $t {
                 fn to_source(&self) -> String {
-                    let lit = ast::LitInt(*self as u64, ast::UnsignedIntLit(ast::$tag));
+                    let lit = ast::LitInt(*self as u64, ast::UnsignedIntLit($tag));
                     pprust::lit_to_string(&dummy_spanned(lit))
                 }
             }
@@ -274,17 +273,17 @@ pub mod rt {
         );
     }
 
-    impl_to_source_int! { signed, int, TyI }
-    impl_to_source_int! { signed, i8,  TyI8 }
-    impl_to_source_int! { signed, i16, TyI16 }
-    impl_to_source_int! { signed, i32, TyI32 }
-    impl_to_source_int! { signed, i64, TyI64 }
+    impl_to_source_int! { signed, int, ast::TyIs(false) }
+    impl_to_source_int! { signed, i8,  ast::TyI8 }
+    impl_to_source_int! { signed, i16, ast::TyI16 }
+    impl_to_source_int! { signed, i32, ast::TyI32 }
+    impl_to_source_int! { signed, i64, ast::TyI64 }
 
-    impl_to_source_int! { unsigned, uint, TyU }
-    impl_to_source_int! { unsigned, u8,   TyU8 }
-    impl_to_source_int! { unsigned, u16,  TyU16 }
-    impl_to_source_int! { unsigned, u32,  TyU32 }
-    impl_to_source_int! { unsigned, u64,  TyU64 }
+    impl_to_source_int! { unsigned, uint, ast::TyUs(false) }
+    impl_to_source_int! { unsigned, u8,   ast::TyU8 }
+    impl_to_source_int! { unsigned, u16,  ast::TyU16 }
+    impl_to_source_int! { unsigned, u32,  ast::TyU32 }
+    impl_to_source_int! { unsigned, u64,  ast::TyU64 }
 
     // Alas ... we write these out instead. All redundant.
 
@@ -474,7 +473,7 @@ pub fn expand_quote_stmt(cx: &mut ExtCtxt,
 }
 
 fn ids_ext(strs: Vec<String> ) -> Vec<ast::Ident> {
-    strs.iter().map(|str| str_to_ident((*str)[])).collect()
+    strs.iter().map(|str| str_to_ident(&(*str)[])).collect()
 }
 
 fn id_ext(str: &str) -> ast::Ident {
@@ -676,7 +675,7 @@ fn mk_tt(cx: &ExtCtxt, tt: &ast::TokenTree) -> Vec<P<ast::Stmt>> {
             for i in range(0, tt.len()) {
                 seq.push(tt.get_tt(i));
             }
-            mk_tts(cx, seq[])
+            mk_tts(cx, &seq[])
         }
         ast::TtToken(sp, ref tok) => {
             let e_sp = cx.expr_ident(sp, id_ext("_sp"));
@@ -765,7 +764,7 @@ fn expand_tts(cx: &ExtCtxt, sp: Span, tts: &[ast::TokenTree])
     let stmt_let_tt = cx.stmt_let(sp, true, id_ext("tt"), cx.expr_vec_ng(sp));
 
     let mut vector = vec!(stmt_let_sp, stmt_let_tt);
-    vector.extend(mk_tts(cx, tts[]).into_iter());
+    vector.extend(mk_tts(cx, &tts[]).into_iter());
     let block = cx.expr_block(
         cx.block_all(sp,
                      Vec::new(),
@@ -800,11 +799,11 @@ fn expand_parse_call(cx: &ExtCtxt,
                      tts: &[ast::TokenTree]) -> P<ast::Expr> {
     let (cx_expr, tts_expr) = expand_tts(cx, sp, tts);
 
-    let cfg_call = || cx.expr_method_call(
+    let cfg_call = |&:| cx.expr_method_call(
         sp, cx.expr_ident(sp, id_ext("ext_cx")),
         id_ext("cfg"), Vec::new());
 
-    let parse_sess_call = || cx.expr_method_call(
+    let parse_sess_call = |&:| cx.expr_method_call(
         sp, cx.expr_ident(sp, id_ext("ext_cx")),
         id_ext("parse_sess"), Vec::new());
 

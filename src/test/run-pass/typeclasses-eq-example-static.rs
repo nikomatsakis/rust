@@ -9,6 +9,9 @@
 // except according to those terms.
 
 
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+
 // Example from lkuper's intern talk, August 2012 -- now with static
 // methods!
 use Color::{cyan, magenta, yellow, black};
@@ -18,7 +21,7 @@ trait Equal {
     fn isEq(a: &Self, b: &Self) -> bool;
 }
 
-#[deriving(Clone)]
+#[derive(Clone)]
 enum Color { cyan, magenta, yellow, black }
 
 impl Copy for Color {}
@@ -35,7 +38,7 @@ impl Equal for Color {
     }
 }
 
-#[deriving(Clone)]
+#[derive(Clone)]
 enum ColorTree {
     leaf(Color),
     branch(Box<ColorTree>, Box<ColorTree>)

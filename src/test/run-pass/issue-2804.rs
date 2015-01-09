@@ -13,7 +13,7 @@ extern crate collections;
 extern crate serialize;
 
 use std::collections::HashMap;
-use serialize::json::{mod, Json};
+use serialize::json::{self, Json};
 use std::option;
 
 enum object {
@@ -23,7 +23,7 @@ enum object {
 
 fn lookup(table: json::Object, key: String, default: String) -> String
 {
-    match table.find(&key.to_string()) {
+    match table.get(&key) {
         option::Option::Some(&Json::String(ref s)) => {
             s.to_string()
         }

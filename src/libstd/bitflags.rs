@@ -8,8 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![experimental]
-#![macro_escape]
+#![unstable]
 
 //! A typesafe bitmask flag generator.
 
@@ -72,7 +71,7 @@
 ///     let mut flags = FLAG_A | FLAG_B;
 ///     flags.clear();
 ///     assert!(flags.is_empty());
-///     assert_eq!(format!("{}", flags).as_slice(), "hi!");
+///     assert_eq!(format!("{:?}", flags).as_slice(), "hi!");
 /// }
 /// ```
 ///
@@ -104,6 +103,10 @@
 /// - `empty`: an empty set of flags
 /// - `all`: the set of all flags
 /// - `bits`: the raw value of the flags currently stored
+/// - `from_bits`: convert from underlying bit representation, unless that
+///                representation contains bits that do not correspond to a flag
+/// - `from_bits_truncate`: convert from underlying bit representation, dropping
+///                         any bits that do not correspond to flags
 /// - `is_empty`: `true` if no flags are currently stored
 /// - `is_all`: `true` if all flags are currently set
 /// - `intersects`: `true` if there are flags common to both `self` and `other`
@@ -117,7 +120,7 @@ macro_rules! bitflags {
     ($(#[$attr:meta])* flags $BitFlags:ident: $T:ty {
         $($(#[$Flag_attr:meta])* const $Flag:ident = $value:expr),+
     }) => {
-        #[deriving(Copy, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
+        #[derive(Copy, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
         $(#[$attr])*
         pub struct $BitFlags {
             bits: $T,
@@ -205,7 +208,9 @@ macro_rules! bitflags {
             }
         }
 
-        impl BitOr<$BitFlags, $BitFlags> for $BitFlags {
+        impl ::std::ops::BitOr for $BitFlags {
+            type Output = $BitFlags;
+
             /// Returns the union of the two sets of flags.
             #[inline]
             fn bitor(self, other: $BitFlags) -> $BitFlags {
@@ -213,7 +218,9 @@ macro_rules! bitflags {
             }
         }
 
-        impl BitXor<$BitFlags, $BitFlags> for $BitFlags {
+        impl ::std::ops::BitXor for $BitFlags {
+            type Output = $BitFlags;
+
             /// Returns the left flags, but with all the right flags toggled.
             #[inline]
             fn bitxor(self, other: $BitFlags) -> $BitFlags {
@@ -221,7 +228,9 @@ macro_rules! bitflags {
             }
         }
 
-        impl BitAnd<$BitFlags, $BitFlags> for $BitFlags {
+        impl ::std::ops::BitAnd for $BitFlags {
+            type Output = $BitFlags;
+
             /// Returns the intersection between the two sets of flags.
             #[inline]
             fn bitand(self, other: $BitFlags) -> $BitFlags {
@@ -229,7 +238,9 @@ macro_rules! bitflags {
             }
         }
 
-        impl Sub<$BitFlags, $BitFlags> for $BitFlags {
+        impl ::std::ops::Sub for $BitFlags {
+            type Output = $BitFlags;
+
             /// Returns the set difference of the two sets of flags.
             #[inline]
             fn sub(self, other: $BitFlags) -> $BitFlags {
@@ -237,18 +248,9 @@ macro_rules! bitflags {
             }
         }
 
-        // NOTE(stage0): Remove impl after a snapshot
-        #[cfg(stage0)]
-        impl Not<$BitFlags> for $BitFlags {
-            /// Returns the complement of this set of flags.
-            #[inline]
-            fn not(&self) -> $BitFlags {
-                $BitFlags { bits: !self.bits } & $BitFlags::all()
-            }
-        }
+        impl ::std::ops::Not for $BitFlags {
+            type Output = $BitFlags;
 
-        #[cfg(not(stage0))]  // NOTE(stage0): Remove cfg after a snapshot
-        impl Not<$BitFlags> for $BitFlags {
             /// Returns the complement of this set of flags.
             #[inline]
             fn not(self) -> $BitFlags {
@@ -271,9 +273,8 @@ macro_rules! bitflags {
 #[cfg(test)]
 #[allow(non_upper_case_globals)]
 mod tests {
-    use hash;
+    use hash::{self, SipHasher};
     use option::Option::{Some, None};
-    use ops::{BitOr, BitAnd, BitXor, Sub, Not};
 
     bitflags! {
         #[doc = "> The first principle is that you must not fool yourself — and"]
@@ -466,9 +467,9 @@ mod tests {
     fn test_hash() {
       let mut x = Flags::empty();
       let mut y = Flags::empty();
-      assert!(hash::hash(&x) == hash::hash(&y));
+      assert!(hash::hash::<Flags, SipHasher>(&x) == hash::hash::<Flags, SipHasher>(&y));
       x = Flags::all();
       y = FlagABC;
-      assert!(hash::hash(&x) == hash::hash(&y));
+      assert!(hash::hash::<Flags, SipHasher>(&x) == hash::hash::<Flags, SipHasher>(&y));
     }
 }

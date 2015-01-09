@@ -17,22 +17,22 @@ use std::io::File;
 use std::io::IoError;
 
 struct Something {
-    X: uint //~ ERROR structure field `X` should have a snake case name such as `x`
+    X: usize //~ ERROR structure field `X` should have a snake case name such as `x`
 }
 
-fn test(Xx: uint) { //~ ERROR variable `Xx` should have a snake case name such as `xx`
+fn test(Xx: usize) { //~ ERROR variable `Xx` should have a snake case name such as `xx`
     println!("{}", Xx);
 }
 
 fn main() {
-    let Test: uint = 0; //~ ERROR variable `Test` should have a snake case name such as `test`
+    let Test: usize = 0; //~ ERROR variable `Test` should have a snake case name such as `test`
     println!("{}", Test);
 
     let mut f = File::open(&Path::new("something.txt"));
     let mut buff = [0u8; 16];
     match f.read(&mut buff) {
         Ok(cnt) => println!("read this many bytes: {}", cnt),
-        Err(IoError{ kind: EndOfFile, .. }) => println!("Got end of file: {}", EndOfFile.to_string()),
+        Err(IoError{ kind: EndOfFile, .. }) => println!("Got end of file: {:?}", EndOfFile),
 //~^ ERROR variable `EndOfFile` should have a snake case name such as `end_of_file`
 //~^^ WARN `EndOfFile` is named the same as one of the variants of the type `std::io::IoErrorKind`
     }

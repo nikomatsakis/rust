@@ -163,13 +163,12 @@ pub fn build_external_trait(cx: &DocContext, tcx: &ty::ctxt,
         }
     });
     let trait_def = ty::lookup_trait_def(tcx, did);
-    let (bounds, default_unbound) = trait_def.bounds.clean(cx);
+    let bounds = trait_def.bounds.clean(cx);
     clean::Trait {
         unsafety: def.unsafety,
         generics: (&def.generics, subst::TypeSpace).clean(cx),
         items: items.collect(),
         bounds: bounds,
-        default_unbound: default_unbound
     }
 }
 
@@ -328,7 +327,7 @@ fn build_impl(cx: &DocContext, tcx: &ty::ctxt,
             derived: clean::detect_derived(attrs.as_slice()),
             trait_: associated_trait.clean(cx).map(|bound| {
                 match bound {
-                    clean::TraitBound(ty) => ty,
+                    clean::TraitBound(polyt, _) => polyt.trait_,
                     clean::RegionBound(..) => unreachable!(),
                 }
             }),
@@ -398,9 +397,9 @@ fn build_const(cx: &DocContext, tcx: &ty::ctxt,
     use syntax::print::pprust;
 
     let expr = const_eval::lookup_const_by_id(tcx, did).unwrap_or_else(|| {
-        panic!("expected lookup_const_by_id to succeed for {}", did);
+        panic!("expected lookup_const_by_id to succeed for {:?}", did);
     });
-    debug!("converting constant expr {} to snippet", expr);
+    debug!("converting constant expr {:?} to snippet", expr);
     let sn = pprust::expr_to_string(expr);
     debug!("got snippet {}", sn);
 

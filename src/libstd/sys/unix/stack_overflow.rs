@@ -1,4 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014-2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -147,6 +147,7 @@ mod imp {
     #[cfg(any(all(target_os = "linux", target_arch = "x86"), // may not match
               all(target_os = "linux", target_arch = "x86_64"),
               all(target_os = "linux", target_arch = "arm"), // may not match
+              all(target_os = "linux", target_arch = "aarch64"),
               all(target_os = "linux", target_arch = "mips"), // may not match
               all(target_os = "linux", target_arch = "mipsel"), // may not match
               target_os = "android"))] // may not match
@@ -160,7 +161,7 @@ mod imp {
 
         pub static SIGSTKSZ: libc::size_t = 8192;
 
-        pub static SIG_DFL: sighandler_t = 0i as sighandler_t;
+        pub const SIG_DFL: sighandler_t = 0i as sighandler_t;
 
         // This definition is not as accurate as it could be, {si_addr} is
         // actually a giant union. Currently we're only interested in that field,
@@ -181,15 +182,17 @@ mod imp {
             sa_restorer: *mut libc::c_void,
         }
 
-        #[cfg(target_word_size = "32")]
+        #[cfg(any(all(stage0, target_word_size = "32"),
+                  all(not(stage0), target_pointer_width = "32")))]
         #[repr(C)]
         pub struct sigset_t {
-            __val: [libc::c_ulong, ..32],
+            __val: [libc::c_ulong; 32],
         }
-        #[cfg(target_word_size = "64")]
+        #[cfg(any(all(stage0, target_word_size = "64"),
+                  all(not(stage0), target_pointer_width = "64")))]
         #[repr(C)]
         pub struct sigset_t {
-            __val: [libc::c_ulong, ..16],
+            __val: [libc::c_ulong; 16],
         }
 
         #[repr(C)]

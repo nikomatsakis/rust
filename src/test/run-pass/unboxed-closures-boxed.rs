@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![allow(unknown_features)]
+#![feature(box_syntax)]
 #![feature(unboxed_closures)]
 
 use std::ops::FnMut;
@@ -19,7 +21,7 @@ use std::ops::FnMut;
 
 pub fn main() {
     let mut adder = make_adder(3);
-    let z = adder.call_mut((2,));
+    let z = adder(2);
     println!("{}", z);
     assert_eq!(z, 5);
 }

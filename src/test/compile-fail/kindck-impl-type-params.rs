@@ -11,9 +11,9 @@
 // Issue #14061: tests the interaction between generic implementation
 // parameter bounds and trait objects.
 
-use std::kinds::marker;
+#![feature(box_syntax)]
 
-struct S<T>(marker::CovariantType<T>);
+struct S<T>(marker::PhantomData<T>);
 
 trait Gettable<T> {
     fn get(&self) -> T { panic!() }
@@ -24,33 +24,33 @@ impl<T: Send + Copy> Gettable<T> for S<T> {}
 fn f<T>(val: T) {
     let t: S<T> = S(marker::CovariantType);
     let a = &t as &Gettable<T>;
-    //~^ ERROR the trait `core::kinds::Send` is not implemented
-    //~^^ ERROR the trait `core::kinds::Copy` is not implemented
+    //~^ ERROR the trait `core::marker::Send` is not implemented
+    //~^^ ERROR the trait `core::marker::Copy` is not implemented
 }
 
 fn g<T>(val: T) {
     let t: S<T> = S(marker::CovariantType);
     let a: &Gettable<T> = &t;
-    //~^ ERROR the trait `core::kinds::Send` is not implemented
-    //~^^ ERROR the trait `core::kinds::Copy` is not implemented
+    //~^ ERROR the trait `core::marker::Send` is not implemented
+    //~^^ ERROR the trait `core::marker::Copy` is not implemented
 }
 
 fn foo<'a>() {
-    let t: S<&'a int> = S(marker::CovariantType);
-    let a = &t as &Gettable<&'a int>;
-    //~^ ERROR cannot infer
+    let t: S<&'a isize> = S(marker::PhantomData);
+    let a = &t as &Gettable<&'a isize>;
+    //~^ ERROR declared lifetime bound not satisfied
 }
 
 fn foo2<'a>() {
     let t: Box<S<String>> = box S(marker::CovariantType);
     let a = t as Box<Gettable<String>>;
-    //~^ ERROR the trait `core::kinds::Copy` is not implemented
+    //~^ ERROR the trait `core::marker::Copy` is not implemented
 }
 
 fn foo3<'a>() {
     let t: Box<S<String>> = box S(marker::CovariantType);
     let a: Box<Gettable<String>> = t;
-    //~^ ERROR the trait `core::kinds::Copy` is not implemented
+    //~^ ERROR the trait `core::marker::Copy` is not implemented
 }
 
 fn main() { }

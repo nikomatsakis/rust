@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use foo::bar::{
-    mod //~ ERROR module `bar` is private
+    self //~ ERROR module `bar` is private
 };
 use foo::bar::{
     Bar //~ ERROR type `Bar` is inaccessible
@@ -17,7 +17,7 @@ use foo::bar::{
 };
 
 mod foo {
-    mod bar { pub type Bar = int; }
+    mod bar { pub type Bar = isize; }
 }
 
 fn main() {}

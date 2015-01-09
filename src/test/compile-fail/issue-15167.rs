@@ -15,12 +15,10 @@
 
 // ignore-test
 
-#![feature(macro_rules)]
-
-macro_rules! f(() => (n))
+macro_rules! f { () => (n) }
 
 fn main() -> (){
-    for n in range(0i, 1) {
+    for n in range(0is, 1) {
         println!("{}", f!()); //~ ERROR unresolved name `n`
     }
 }

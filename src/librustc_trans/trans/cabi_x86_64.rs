@@ -23,8 +23,9 @@ use trans::context::CrateContext;
 use trans::type_::Type;
 
 use std::cmp;
+use std::iter::repeat;
 
-#[deriving(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 enum RegClass {
     NoClass,
     Int,
@@ -62,7 +63,7 @@ impl RegClass {
     }
 }
 
-trait ClassList for Sized? {
+trait ClassList {
     fn is_pass_byval(&self) -> bool;
     fn is_ret_bysret(&self) -> bool;
 }
@@ -286,7 +287,7 @@ fn classify_ty(ty: Type) -> Vec<RegClass> {
     }
 
     let words = (ty_size(ty) + 7) / 8;
-    let mut cls = Vec::from_elem(words, NoClass);
+    let mut cls: Vec<_> = repeat(NoClass).take(words).collect();
     if words > 4 {
         all_mem(cls.as_mut_slice());
         return cls;
@@ -317,7 +318,7 @@ fn llreg_ty(ccx: &CrateContext, cls: &[RegClass]) -> Type {
                 tys.push(Type::i64(ccx));
             }
             SSEFv => {
-                let vec_len = llvec_len(cls[i + 1u..]);
+                let vec_len = llvec_len(&cls[(i + 1u)..]);
                 let vec_ty = Type::vector(&Type::f32(ccx), (vec_len * 2u) as u64);
                 tys.push(vec_ty);
                 i += vec_len;

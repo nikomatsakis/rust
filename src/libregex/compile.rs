@@ -14,6 +14,7 @@
 pub use self::Inst::*;
 
 use std::cmp;
+use std::iter::repeat;
 use parse;
 use parse::{
     Flags, FLAG_EMPTY,
@@ -24,7 +25,7 @@ use parse::{
 
 type InstIdx = uint;
 
-#[deriving(Show, Clone)]
+#[derive(Show, Clone)]
 pub enum Inst {
     // When a Match instruction is executed, the current thread is successful.
     Match,
@@ -77,7 +78,7 @@ pub enum Inst {
 /// All of the data in a compiled expression is wrapped in "MaybeStatic" or
 /// "MaybeOwned" types so that a `Program` can be represented as static data.
 /// (This makes it convenient and efficient for use with the `regex!` macro.)
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct Program {
     /// A sequence of instructions.
     pub insts: Vec<Inst>,
@@ -157,7 +158,7 @@ impl Compiler {
             Capture(cap, name, x) => {
                 let len = self.names.len();
                 if cap >= len {
-                    self.names.grow(10 + cap - len, None)
+                    self.names.extend(repeat(None).take(10 + cap - len))
                 }
                 self.names[cap] = name;
 

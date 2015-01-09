@@ -17,7 +17,7 @@
 //! internally. The `IndependentSample` trait is for generating values
 //! that do not need to record state.
 
-#![experimental]
+#![unstable]
 
 use core::prelude::*;
 use core::num::{Float, Int};
@@ -103,7 +103,7 @@ pub struct Weighted<T> {
 ///                      Weighted { weight: 4, item: 'b' },
 ///                      Weighted { weight: 1, item: 'c' });
 /// let wc = WeightedChoice::new(items.as_mut_slice());
-/// let mut rng = rand::task_rng();
+/// let mut rng = rand::thread_rng();
 /// for _ in range(0u, 16) {
 ///      // on average prints 'a' 4 times, 'b' 8 and 'c' twice.
 ///      println!("{}", wc.ind_sample(&mut rng));
@@ -265,12 +265,12 @@ fn ziggurat<R: Rng, P, Z>(
 
 #[cfg(test)]
 mod tests {
-    use std::prelude::*;
+    use std::prelude::v1::*;
 
     use {Rng, Rand};
     use super::{RandSample, WeightedChoice, Weighted, Sample, IndependentSample};
 
-    #[deriving(PartialEq, Show)]
+    #[derive(PartialEq, Show)]
     struct ConstRand(uint);
     impl Rand for ConstRand {
         fn rand<R: Rng>(_: &mut R) -> ConstRand {
@@ -304,7 +304,7 @@ mod tests {
         // it doesn't do weird things to the RNG (so 0 maps to 0, 1 to
         // 1, internally; modulo a modulo operation).
 
-        macro_rules! t (
+        macro_rules! t {
             ($items:expr, $expected:expr) => {{
                 let mut items = $items;
                 let wc = WeightedChoice::new(items.as_mut_slice());
@@ -316,7 +316,7 @@ mod tests {
                     assert_eq!(wc.ind_sample(&mut rng), val)
                 }
             }}
-        );
+        }
 
         t!(vec!(Weighted { weight: 1, item: 10i}), [10]);
 

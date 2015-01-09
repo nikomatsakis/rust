@@ -10,7 +10,7 @@
 
 // Test that we do not permit moves from &[] matched by a vec pattern.
 
-#[deriving(Clone, Show)]
+#[derive(Clone, Show)]
 struct Foo {
     string: String
 }
@@ -25,7 +25,7 @@ pub fn main() {
     match x {
         [_, tail..] => {
             match tail {
-                [Foo { string: a }, //~ ERROR cannot move out of dereference of `&`-pointer
+                [Foo { string: a }, //~ ERROR cannot move out of borrowed content
                  Foo { string: b }] => {
                     //~^^ NOTE attempting to move value to here
                     //~^^ NOTE and here
@@ -35,7 +35,7 @@ pub fn main() {
                 }
             }
             let z = tail[0].clone();
-            println!("{}", z);
+            println!("{:?}", z);
         }
         _ => {
             unreachable!();

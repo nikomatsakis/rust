@@ -15,7 +15,7 @@ use super::{cres};
 use super::Subtype;
 
 use middle::ty::{BuiltinBounds};
-use middle::ty::{mod, Ty};
+use middle::ty::{self, Ty};
 use syntax::ast::{Many, Once, MutImmutable, MutMutable};
 use syntax::ast::{Onceness, Unsafety};
 use util::ppaux::mt_to_string;

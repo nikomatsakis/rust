@@ -20,7 +20,7 @@ use syntax::ast_util::local_def;
 
 use std::cell::RefCell;
 
-#[deriving(Clone, Copy, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Show)]
+#[derive(Clone, Copy, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Show)]
 pub enum Def {
     DefFn(ast::DefId, bool /* is_ctor */),
     DefStaticMethod(/* method */ ast::DefId, MethodProvenance),
@@ -36,10 +36,11 @@ pub enum Def {
     // A partially resolved path to an associated type `T::U` where `T` is a concrete
     // type (indicated by the DefId) which implements a trait which has an associated
     // type `U` (indicated by the Ident).
+    // FIXME(#20301) -- should use Name
     DefAssociatedPath(TyParamProvenance, ast::Ident),
     DefTrait(ast::DefId),
     DefPrimTy(ast::PrimTy),
-    DefTyParam(ParamSpace, ast::DefId, uint),
+    DefTyParam(ParamSpace, u32, ast::DefId, ast::Name),
     DefUse(ast::DefId),
     DefUpvar(ast::NodeId,  // id of closed over local
              ast::NodeId,  // expr node that creates the closure
@@ -67,19 +68,19 @@ pub type DefMap = RefCell<NodeMap<Def>>;
 // within.
 pub type ExportMap = NodeMap<Vec<Export>>;
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct Export {
     pub name: ast::Name,    // The name of the target.
     pub def_id: ast::DefId, // The definition of the target.
 }
 
-#[deriving(Clone, Copy, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Show)]
+#[derive(Clone, Copy, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Show)]
 pub enum MethodProvenance {
     FromTrait(ast::DefId),
     FromImpl(ast::DefId),
 }
 
-#[deriving(Clone, Copy, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Show)]
+#[derive(Clone, Copy, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Show)]
 pub enum TyParamProvenance {
     FromSelf(ast::DefId),
     FromParam(ast::DefId),
@@ -105,7 +106,7 @@ impl TyParamProvenance {
     }
 }
 
-#[deriving(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub enum TraitItemKind {
     NonstaticMethodTraitItemKind,
     StaticMethodTraitItemKind,
@@ -125,12 +126,18 @@ impl TraitItemKind {
 }
 
 impl Def {
+    pub fn local_node_id(&self) -> ast::NodeId {
+        let def_id = self.def_id();
+        assert_eq!(def_id.krate, ast::LOCAL_CRATE);
+        def_id.node
+    }
+
     pub fn def_id(&self) -> ast::DefId {
         match *self {
             DefFn(id, _) | DefStaticMethod(id, _) | DefMod(id) |
             DefForeignMod(id) | DefStatic(id, _) |
             DefVariant(_, id, _) | DefTy(id, _) | DefAssociatedTy(id) |
-            DefTyParam(_, id, _) | DefUse(id) | DefStruct(id) | DefTrait(id) |
+            DefTyParam(_, _, id, _) | DefUse(id) | DefStruct(id) | DefTrait(id) |
             DefMethod(id, _, _) | DefConst(id) |
             DefAssociatedPath(TyParamProvenance::FromSelf(id), _) |
             DefAssociatedPath(TyParamProvenance::FromParam(id), _) => {

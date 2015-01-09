@@ -8,9 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// ignore-test FIXME(japari) remove test
+
 struct Foo {
-    f: for <'b> |&'b int|:
-      'b -> &'b int //~ ERROR use of undeclared lifetime name `'b`
+    f: for <'b> |&'b isize|:
+      'b -> &'b isize //~ ERROR use of undeclared lifetime name `'b`
 }
 
 fn main() {

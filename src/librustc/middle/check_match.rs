@@ -24,18 +24,17 @@ use middle::pat_util::*;
 use middle::ty::*;
 use middle::ty;
 use std::fmt;
-use std::iter::AdditiveIterator;
-use std::iter::range_inclusive;
+use std::iter::{range_inclusive, AdditiveIterator, FromIterator, repeat};
 use std::num::Float;
 use std::slice;
-use syntax::ast::{mod, DUMMY_NODE_ID, NodeId, Pat};
+use syntax::ast::{self, DUMMY_NODE_ID, NodeId, Pat};
 use syntax::ast_util::walk_pat;
 use syntax::codemap::{Span, Spanned, DUMMY_SP};
 use syntax::fold::{Folder, noop_fold_pat};
 use syntax::print::pprust::pat_to_string;
 use syntax::parse::token;
 use syntax::ptr::P;
-use syntax::visit::{mod, Visitor, FnKind};
+use syntax::visit::{self, Visitor, FnKind};
 use util::ppaux::ty_to_string;
 
 pub const DUMMY_WILD_PAT: &'static Pat = &Pat {
@@ -76,7 +75,7 @@ impl<'a> fmt::Show for Matrix<'a> {
         }).collect();
 
         let total_width = column_widths.iter().map(|n| *n).sum() + column_count * 3 + 1;
-        let br = String::from_char(total_width, '+');
+        let br = repeat('+').take(total_width).collect::<String>();
         try!(write!(f, "{}\n", br));
         for row in pretty_printed_matrix.into_iter() {
             try!(write!(f, "+"));
@@ -93,17 +92,17 @@ impl<'a> fmt::Show for Matrix<'a> {
 }
 
 impl<'a> FromIterator<Vec<&'a Pat>> for Matrix<'a> {
-    fn from_iter<T: Iterator<Vec<&'a Pat>>>(iterator: T) -> Matrix<'a> {
+    fn from_iter<T: Iterator<Item=Vec<&'a Pat>>>(iterator: T) -> Matrix<'a> {
         Matrix(iterator.collect())
     }
 }
 
 pub struct MatchCheckCtxt<'a, 'tcx: 'a> {
     pub tcx: &'a ty::ctxt<'tcx>,
-    pub param_env: ParameterEnvironment<'tcx>,
+    pub param_env: ParameterEnvironment<'a, 'tcx>,
 }
 
-#[deriving(Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Constructor {
     /// The constructor of all patterns that don't vary by constructor,
     /// e.g. struct patterns and fixed-length arrays.
@@ -120,14 +119,14 @@ pub enum Constructor {
     SliceWithSubslice(uint, uint)
 }
 
-#[deriving(Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 enum Usefulness {
     Useful,
     UsefulWithWitness(Vec<P<Pat>>),
     NotUseful
 }
 
-#[deriving(Copy)]
+#[derive(Copy)]
 enum WitnessPreference {
     ConstructWitness,
     LeaveOutWitness
@@ -149,7 +148,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for MatchCheckCtxt<'a, 'tcx> {
 pub fn check_crate(tcx: &ty::ctxt) {
     visit::walk_crate(&mut MatchCheckCtxt {
         tcx: tcx,
-        param_env: ty::empty_parameter_environment(),
+        param_env: ty::empty_parameter_environment(tcx),
     }, tcx.map.krate());
     tcx.sess.abort_if_errors();
 }
@@ -162,7 +161,7 @@ fn check_expr(cx: &mut MatchCheckCtxt, ex: &ast::Expr) {
                 // First, check legality of move bindings.
                 check_legality_of_move_bindings(cx,
                                                 arm.guard.is_some(),
-                                                arm.pats[]);
+                                                &arm.pats[]);
 
                 // Second, if there is a guard on each arm, make sure it isn't
                 // assigning or borrowing anything mutably.
@@ -199,7 +198,7 @@ fn check_expr(cx: &mut MatchCheckCtxt, ex: &ast::Expr) {
             }
 
             // Fourth, check for unreachable arms.
-            check_arms(cx, inlined_arms[], source);
+            check_arms(cx, &inlined_arms[], source);
 
             // Finally, check if the whole match expression is exhaustive.
             // Check for empty enum, because is_useful only works on inhabited types.
@@ -229,7 +228,7 @@ fn check_expr(cx: &mut MatchCheckCtxt, ex: &ast::Expr) {
             is_refutable(cx, &*static_inliner.fold_pat((*pat).clone()), |uncovered_pat| {
                 cx.tcx.sess.span_err(
                     pat.span,
-                    format!("refutable pattern in `for` loop binding: \
+                    &format!("refutable pattern in `for` loop binding: \
                             `{}` not covered",
                             pat_to_string(uncovered_pat))[]);
             });
@@ -304,7 +303,7 @@ fn check_arms(cx: &MatchCheckCtxt,
         for pat in pats.iter() {
             let v = vec![&**pat];
 
-            match is_useful(cx, &seen, v[], LeaveOutWitness) {
+            match is_useful(cx, &seen, &v[], LeaveOutWitness) {
                 NotUseful => {
                     match source {
                         ast::MatchSource::IfLetDesugar { .. } => {
@@ -356,7 +355,7 @@ fn raw_pat<'a>(p: &'a Pat) -> &'a Pat {
 fn check_exhaustive(cx: &MatchCheckCtxt, sp: Span, matrix: &Matrix) {
     match is_useful(cx, matrix, &[DUMMY_WILD_PAT], ConstructWitness) {
         UsefulWithWitness(pats) => {
-            let witness = match pats[] {
+            let witness = match &pats[] {
                 [ref witness] => &**witness,
                 [] => DUMMY_WILD_PAT,
                 _ => unreachable!()
@@ -474,7 +473,7 @@ fn construct_witness(cx: &MatchCheckCtxt, ctor: &Constructor,
             }
         }
 
-        ty::ty_rptr(_, ty::mt { ty, .. }) => {
+        ty::ty_rptr(_, ty::mt { ty, mutbl }) => {
             match ty.sty {
                ty::ty_vec(_, Some(n)) => match ctor {
                     &Single => {
@@ -494,7 +493,7 @@ fn construct_witness(cx: &MatchCheckCtxt, ctor: &Constructor,
 
                 _ => {
                     assert_eq!(pats_len, 1);
-                    ast::PatRegion(pats.nth(0).unwrap())
+                    ast::PatRegion(pats.nth(0).unwrap(), mutbl)
                 }
             }
         }
@@ -575,7 +574,7 @@ fn is_useful(cx: &MatchCheckCtxt,
              witness: WitnessPreference)
              -> Usefulness {
     let &Matrix(ref rows) = matrix;
-    debug!("{:}", matrix);
+    debug!("{:?}", matrix);
     if rows.len() == 0u {
         return match witness {
             ConstructWitness => UsefulWithWitness(vec!()),
@@ -610,10 +609,10 @@ fn is_useful(cx: &MatchCheckCtxt,
                         UsefulWithWitness(pats) => UsefulWithWitness({
                             let arity = constructor_arity(cx, &c, left_ty);
                             let mut result = {
-                                let pat_slice = pats[];
-                                let subpats = Vec::from_fn(arity, |i| {
+                                let pat_slice = &pats[];
+                                let subpats: Vec<_> = range(0, arity).map(|i| {
                                     pat_slice.get(i).map_or(DUMMY_WILD_PAT, |p| &**p)
-                                });
+                                }).collect();
                                 vec![construct_witness(cx, &c, subpats, left_ty)]
                             };
                             result.extend(pats.into_iter().skip(arity));
@@ -635,7 +634,7 @@ fn is_useful(cx: &MatchCheckCtxt,
                 match is_useful(cx, &matrix, v.tail(), witness) {
                     UsefulWithWitness(pats) => {
                         let arity = constructor_arity(cx, &constructor, left_ty);
-                        let wild_pats = Vec::from_elem(arity, DUMMY_WILD_PAT);
+                        let wild_pats: Vec<_> = repeat(DUMMY_WILD_PAT).take(arity).collect();
                         let enum_pat = construct_witness(cx, &constructor, wild_pats, left_ty);
                         let mut new_pats = vec![enum_pat];
                         new_pats.extend(pats.into_iter());
@@ -657,10 +656,10 @@ fn is_useful_specialized(cx: &MatchCheckCtxt, &Matrix(ref m): &Matrix,
                          witness: WitnessPreference) -> Usefulness {
     let arity = constructor_arity(cx, &ctor, lty);
     let matrix = Matrix(m.iter().filter_map(|r| {
-        specialize(cx, r[], &ctor, 0u, arity)
+        specialize(cx, &r[], &ctor, 0u, arity)
     }).collect());
     match specialize(cx, v, &ctor, 0u, arity) {
-        Some(v) => is_useful(cx, &matrix, v[], witness),
+        Some(v) => is_useful(cx, &matrix, &v[], witness),
         None => NotUseful
     }
 }
@@ -788,7 +787,7 @@ pub fn specialize<'a>(cx: &MatchCheckCtxt, r: &[&'a Pat],
     } = raw_pat(r[col]);
     let head: Option<Vec<&Pat>> = match *node {
         ast::PatWild(_) =>
-            Some(Vec::from_elem(arity, DUMMY_WILD_PAT)),
+            Some(repeat(DUMMY_WILD_PAT).take(arity).collect()),
 
         ast::PatIdent(_, _, _) => {
             let opt_def = cx.tcx.def_map.borrow().get(&pat_id).cloned();
@@ -801,7 +800,7 @@ pub fn specialize<'a>(cx: &MatchCheckCtxt, r: &[&'a Pat],
                 } else {
                     None
                 },
-                _ => Some(Vec::from_elem(arity, DUMMY_WILD_PAT))
+                _ => Some(repeat(DUMMY_WILD_PAT).take(arity).collect())
             }
         }
 
@@ -815,7 +814,7 @@ pub fn specialize<'a>(cx: &MatchCheckCtxt, r: &[&'a Pat],
                 DefVariant(..) | DefStruct(..) => {
                     Some(match args {
                         &Some(ref args) => args.iter().map(|p| &**p).collect(),
-                        &None => Vec::from_elem(arity, DUMMY_WILD_PAT)
+                        &None => repeat(DUMMY_WILD_PAT).take(arity).collect(),
                     })
                 }
                 _ => None
@@ -861,7 +860,7 @@ pub fn specialize<'a>(cx: &MatchCheckCtxt, r: &[&'a Pat],
         ast::PatTup(ref args) =>
             Some(args.iter().map(|p| &**p).collect()),
 
-        ast::PatBox(ref inner) | ast::PatRegion(ref inner) =>
+        ast::PatBox(ref inner) | ast::PatRegion(ref inner, _) =>
             Some(vec![&**inner]),
 
         ast::PatLit(ref expr) => {
@@ -894,13 +893,13 @@ pub fn specialize<'a>(cx: &MatchCheckCtxt, r: &[&'a Pat],
                 // Fixed-length vectors.
                 Single => {
                     let mut pats: Vec<&Pat> = before.iter().map(|p| &**p).collect();
-                    pats.grow_fn(arity - before.len() - after.len(), |_| DUMMY_WILD_PAT);
+                    pats.extend(repeat(DUMMY_WILD_PAT).take(arity - before.len() - after.len()));
                     pats.extend(after.iter().map(|p| &**p));
                     Some(pats)
                 },
                 Slice(length) if before.len() + after.len() <= length && slice.is_some() => {
                     let mut pats: Vec<&Pat> = before.iter().map(|p| &**p).collect();
-                    pats.grow_fn(arity - before.len() - after.len(), |_| DUMMY_WILD_PAT);
+                    pats.extend(repeat(DUMMY_WILD_PAT).take(arity - before.len() - after.len()));
                     pats.extend(after.iter().map(|p| &**p));
                     Some(pats)
                 },
@@ -927,8 +926,8 @@ pub fn specialize<'a>(cx: &MatchCheckCtxt, r: &[&'a Pat],
         }
     };
     head.map(|mut head| {
-        head.push_all(r[..col]);
-        head.push_all(r[col + 1..]);
+        head.push_all(&r[0..col]);
+        head.push_all(&r[(col + 1)..]);
         head
     })
 }
@@ -1012,7 +1011,7 @@ fn check_legality_of_move_bindings(cx: &MatchCheckCtxt,
         })
     }
 
-    let check_move: |&Pat, Option<&Pat>| = |p, sub| {
+    let check_move = |&: p: &Pat, sub: Option<&Pat>| {
         // check legality of moving out of the enum
 
         // x @ Foo(..) is legal, but x @ Foo(y) isn't.
@@ -1033,9 +1032,7 @@ fn check_legality_of_move_bindings(cx: &MatchCheckCtxt,
                 match p.node {
                     ast::PatIdent(ast::BindByValue(_), _, ref sub) => {
                         let pat_ty = ty::node_id_to_type(tcx, p.id);
-                        if ty::type_moves_by_default(tcx,
-                                                      pat_ty,
-                                                      &cx.param_env) {
+                        if ty::type_moves_by_default(&cx.param_env, pat.span, pat_ty) {
                             check_move(p, sub.as_ref().map(|p| &**p));
                         }
                     }
@@ -1044,8 +1041,8 @@ fn check_legality_of_move_bindings(cx: &MatchCheckCtxt,
                     _ => {
                         cx.tcx.sess.span_bug(
                             p.span,
-                            format!("binding pattern {} is not an \
-                                     identifier: {}",
+                            &format!("binding pattern {} is not an \
+                                     identifier: {:?}",
                                     p.id,
                                     p.node)[]);
                     }
@@ -1064,8 +1061,7 @@ fn check_for_mutation_in_guard<'a, 'tcx>(cx: &'a MatchCheckCtxt<'a, 'tcx>,
         cx: cx,
     };
     let mut visitor = ExprUseVisitor::new(&mut checker,
-                                          checker.cx.tcx,
-                                          cx.param_env.clone());
+                                          &checker.cx.param_env);
     visitor.walk_expr(guard);
 }
 

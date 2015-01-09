@@ -8,12 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(globs)]
-
 // error-pattern:declaration of `None` shadows
 use std::option::*;
 
 fn main() {
-  let None: int = 42;
+  let None: isize = 42;
   log(debug, None);
 }

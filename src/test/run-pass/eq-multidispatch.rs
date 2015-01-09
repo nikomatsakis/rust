@@ -8,9 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(default_type_params)]
-
-#[deriving(PartialEq)]
+#[derive(PartialEq)]
 struct Bar;
 struct Baz;
 struct Foo;

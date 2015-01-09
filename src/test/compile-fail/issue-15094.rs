@@ -19,7 +19,7 @@ struct Shower<T> {
 impl<T: fmt::Show> ops::Fn<(), ()> for Shower<T> {
     fn call(&self, _args: ()) {
 //~^ ERROR `call` has an incompatible type for trait: expected "rust-call" fn, found "Rust" fn
-        println!("{}", self.x);
+        println!("{:?}", self.x);
     }
 }
 
@@ -28,6 +28,6 @@ fn make_shower<T>(x: T) -> Shower<T> {
 }
 
 pub fn main() {
-    let show3 = make_shower(3i);
+    let show3 = make_shower(3is);
     show3();
 }

@@ -11,69 +11,70 @@
 // Tests that two closures cannot simultaneously have mutable
 // and immutable access to the variable. Issue #6801.
 
+#![feature(box_syntax)]
 
-fn get(x: &int) -> int {
+fn get(x: &isize) -> isize {
     *x
 }
 
-fn set(x: &mut int) {
+fn set(x: &mut isize) {
     *x = 4;
 }
 
 fn a() {
-    let mut x = 3i;
-    let c1 = || x = 4;
-    let c2 = || x * 5; //~ ERROR cannot borrow `x`
+    let mut x = 3is;
+    let c1 = |&mut:| x = 4;
+    let c2 = |&mut:| x * 5; //~ ERROR cannot borrow `x`
 }
 
 fn b() {
-    let mut x = 3i;
-    let c1 = || set(&mut x);
-    let c2 = || get(&x); //~ ERROR cannot borrow `x`
+    let mut x = 3is;
+    let c1 = |&mut:| set(&mut x);
+    let c2 = |&mut:| get(&x); //~ ERROR cannot borrow `x`
 }
 
 fn c() {
-    let mut x = 3i;
-    let c1 = || set(&mut x);
-    let c2 = || x * 5; //~ ERROR cannot borrow `x`
+    let mut x = 3is;
+    let c1 = |&mut:| set(&mut x);
+    let c2 = |&mut:| x * 5; //~ ERROR cannot borrow `x`
 }
 
 fn d() {
-    let mut x = 3i;
-    let c2 = || x * 5;
+    let mut x = 3is;
+    let c2 = |&mut:| x * 5;
     x = 5; //~ ERROR cannot assign
 }
 
 fn e() {
-    let mut x = 3i;
-    let c1 = || get(&x);
+    let mut x = 3is;
+    let c1 = |&mut:| get(&x);
     x = 5; //~ ERROR cannot assign
 }
 
 fn f() {
-    let mut x = box 3i;
-    let c1 = || get(&*x);
+    let mut x = box 3is;
+    let c1 = |&mut:| get(&*x);
     *x = 5; //~ ERROR cannot assign
 }
 
 fn g() {
     struct Foo {
-        f: Box<int>
+        f: Box<isize>
     }
 
     let mut x = box Foo { f: box 3 };
-    let c1 = || get(&*x.f);
+    let c1 = |&mut:| get(&*x.f);
     *x.f = 5; //~ ERROR cannot assign to `*x.f`
 }
 
 fn h() {
     struct Foo {
-        f: Box<int>
+        f: Box<isize>
     }
 
     let mut x = box Foo { f: box 3 };
-    let c1 = || get(&*x.f);
-    let c2 = || *x.f = 5; //~ ERROR cannot borrow `x` as mutable
+    let c1 = |&mut:| get(&*x.f);
+    let c2 = |&mut:| *x.f = 5; //~ ERROR cannot borrow `x` as mutable
 }
 
 fn main() {

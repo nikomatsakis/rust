@@ -18,16 +18,16 @@
 
 use intrinsics;
 use mem;
-use num::{Float, FPNormal, FPCategory, FPZero, FPSubnormal, FPInfinite, FPNaN};
-use num::from_str_radix;
+use num::Float;
+use num::FpCategory as Fp;
 use option::Option;
 
-#[stable]
+#[unstable = "pending integer conventions"]
 pub const RADIX: uint = 2u;
 
-#[stable]
+#[unstable = "pending integer conventions"]
 pub const MANTISSA_DIGITS: uint = 24u;
-#[stable]
+#[unstable = "pending integer conventions"]
 pub const DIGITS: uint = 6u;
 
 #[stable]
@@ -43,14 +43,14 @@ pub const MIN_POS_VALUE: f32 = 1.17549435e-38_f32;
 #[stable]
 pub const MAX_VALUE: f32 = 3.40282347e+38_f32;
 
-#[stable]
+#[unstable = "pending integer conventions"]
 pub const MIN_EXP: int = -125;
-#[stable]
+#[unstable = "pending integer conventions"]
 pub const MAX_EXP: int = 128;
 
-#[stable]
+#[unstable = "pending integer conventions"]
 pub const MIN_10_EXP: int = -37;
-#[stable]
+#[unstable = "pending integer conventions"]
 pub const MAX_10_EXP: int = 38;
 
 #[stable]
@@ -156,54 +156,64 @@ impl Float for f32 {
     /// Returns `true` if the number is neither zero, infinite, subnormal or NaN.
     #[inline]
     fn is_normal(self) -> bool {
-        self.classify() == FPNormal
+        self.classify() == Fp::Normal
     }
 
     /// Returns the floating point category of the number. If only one property
     /// is going to be tested, it is generally faster to use the specific
     /// predicate instead.
-    fn classify(self) -> FPCategory {
+    fn classify(self) -> Fp {
         const EXP_MASK: u32 = 0x7f800000;
         const MAN_MASK: u32 = 0x007fffff;
 
         let bits: u32 = unsafe { mem::transmute(self) };
         match (bits & MAN_MASK, bits & EXP_MASK) {
-            (0, 0)        => FPZero,
-            (_, 0)        => FPSubnormal,
-            (0, EXP_MASK) => FPInfinite,
-            (_, EXP_MASK) => FPNaN,
-            _             => FPNormal,
+            (0, 0)        => Fp::Zero,
+            (_, 0)        => Fp::Subnormal,
+            (0, EXP_MASK) => Fp::Infinite,
+            (_, EXP_MASK) => Fp::Nan,
+            _             => Fp::Normal,
         }
     }
 
     #[inline]
+    #[deprecated]
     fn mantissa_digits(_: Option<f32>) -> uint { MANTISSA_DIGITS }
 
     #[inline]
+    #[deprecated]
     fn digits(_: Option<f32>) -> uint { DIGITS }
 
     #[inline]
+    #[deprecated]
     fn epsilon() -> f32 { EPSILON }
 
     #[inline]
+    #[deprecated]
     fn min_exp(_: Option<f32>) -> int { MIN_EXP }
 
     #[inline]
+    #[deprecated]
     fn max_exp(_: Option<f32>) -> int { MAX_EXP }
 
     #[inline]
+    #[deprecated]
     fn min_10_exp(_: Option<f32>) -> int { MIN_10_EXP }
 
     #[inline]
+    #[deprecated]
     fn max_10_exp(_: Option<f32>) -> int { MAX_10_EXP }
 
     #[inline]
+    #[deprecated]
     fn min_value() -> f32 { MIN_VALUE }
 
     #[inline]
+    #[deprecated]
     fn min_pos_value(_: Option<f32>) -> f32 { MIN_POS_VALUE }
 
     #[inline]
+    #[deprecated]
     fn max_value() -> f32 { MAX_VALUE }
 
     /// Returns the mantissa, exponent and sign as integers.
@@ -313,14 +323,6 @@ impl Float for f32 {
         unsafe { intrinsics::powf32(self, n) }
     }
 
-    /// sqrt(2.0)
-    #[inline]
-    fn sqrt2() -> f32 { consts::SQRT2 }
-
-    /// 1.0 / sqrt(2.0)
-    #[inline]
-    fn frac_1_sqrt2() -> f32 { consts::FRAC_1_SQRT2 }
-
     #[inline]
     fn sqrt(self) -> f32 {
         if self < 0.0 {
@@ -332,66 +334,6 @@ impl Float for f32 {
 
     #[inline]
     fn rsqrt(self) -> f32 { self.sqrt().recip() }
-
-    /// Archimedes' constant
-    #[inline]
-    fn pi() -> f32 { consts::PI }
-
-    /// 2.0 * pi
-    #[inline]
-    fn two_pi() -> f32 { consts::PI_2 }
-
-    /// pi / 2.0
-    #[inline]
-    fn frac_pi_2() -> f32 { consts::FRAC_PI_2 }
-
-    /// pi / 3.0
-    #[inline]
-    fn frac_pi_3() -> f32 { consts::FRAC_PI_3 }
-
-    /// pi / 4.0
-    #[inline]
-    fn frac_pi_4() -> f32 { consts::FRAC_PI_4 }
-
-    /// pi / 6.0
-    #[inline]
-    fn frac_pi_6() -> f32 { consts::FRAC_PI_6 }
-
-    /// pi / 8.0
-    #[inline]
-    fn frac_pi_8() -> f32 { consts::FRAC_PI_8 }
-
-    /// 1.0 / pi
-    #[inline]
-    fn frac_1_pi() -> f32 { consts::FRAC_1_PI }
-
-    /// 2.0 / pi
-    #[inline]
-    fn frac_2_pi() -> f32 { consts::FRAC_2_PI }
-
-    /// 2.0 / sqrt(pi)
-    #[inline]
-    fn frac_2_sqrtpi() -> f32 { consts::FRAC_2_SQRTPI }
-
-    /// Euler's number
-    #[inline]
-    fn e() -> f32 { consts::E }
-
-    /// log2(e)
-    #[inline]
-    fn log2_e() -> f32 { consts::LOG2_E }
-
-    /// log10(e)
-    #[inline]
-    fn log10_e() -> f32 { consts::LOG10_E }
-
-    /// ln(2.0)
-    #[inline]
-    fn ln_2() -> f32 { consts::LN_2 }
-
-    /// ln(10.0)
-    #[inline]
-    fn ln_10() -> f32 { consts::LN_10 }
 
     /// Returns the exponential of the number.
     #[inline]
@@ -437,11 +379,4 @@ impl Float for f32 {
         let value: f32 = consts::PI;
         self * (value / 180.0f32)
     }
-}
-
-#[inline]
-#[allow(missing_docs)]
-#[deprecated="Use `FromStrRadix::from_str_radix(src, 16)`"]
-pub fn from_str_hex(src: &str) -> Option<f32> {
-    from_str_radix(src, 16)
 }

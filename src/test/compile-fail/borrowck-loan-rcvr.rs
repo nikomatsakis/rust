@@ -9,18 +9,18 @@
 // except according to those terms.
 
 
-struct point { x: int, y: int }
+struct point { x: isize, y: isize }
 
 trait methods {
     fn impurem(&self);
-    fn blockm(&self, f: ||);
+    fn blockm<F>(&self, f: F) where F: FnOnce();
 }
 
 impl methods for point {
     fn impurem(&self) {
     }
 
-    fn blockm(&self, f: ||) { f() }
+    fn blockm<F>(&self, f: F) where F: FnOnce() { f() }
 }
 
 fn a() {

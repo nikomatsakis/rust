@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(box_syntax)]
+
 static mut DROP_RAN: int = 0;
 
 struct Foo;
@@ -17,7 +19,7 @@ impl Drop for Foo {
     }
 }
 
-struct Fat<Sized? T> {
+struct Fat<T: ?Sized> {
     f: T
 }
 

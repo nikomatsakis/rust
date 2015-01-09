@@ -20,15 +20,19 @@
 //! more complex, slower arena which can hold objects of any type.
 
 #![crate_name = "arena"]
-#![experimental]
+#![unstable]
+#![staged_api]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/nightly/")]
 
+#![allow(unknown_features)]
 #![feature(unsafe_destructor)]
 #![feature(unboxed_closures)]
+#![feature(box_syntax)]
+#![allow(unknown_features)] #![feature(int_uint)]
 #![allow(missing_docs)]
 
 extern crate alloc;
@@ -47,7 +51,7 @@ use std::kinds::marker;
 // The way arena uses arrays is really deeply awful. The arrays are
 // allocated, and have capacities reserved, but the fill for the array
 // will always stay at 0.
-#[deriving(Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 struct Chunk {
     data: Rc<RefCell<Vec<u8>>>,
     fill: Cell<uint>,
@@ -415,7 +419,7 @@ impl<T> TypedArenaChunk<T> {
         let size = calculate_size::<T>(self.capacity);
         deallocate(self as *mut TypedArenaChunk<T> as *mut u8, size,
                    mem::min_align_of::<TypedArenaChunk<T>>());
-        if next.is_not_null() {
+        if !next.is_null() {
             let capacity = (*next).capacity;
             (*next).destroy(capacity);
         }

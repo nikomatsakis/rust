@@ -8,17 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[deriving(PartialEq, Show)]
+#[derive(PartialEq, Show)]
 pub struct Partial<T> { x: T, y: T }
 
-#[deriving(PartialEq, Show)]
+#[derive(PartialEq, Show)]
 struct S { val: int }
 impl S { fn new(v: int) -> S { S { val: v } } }
 impl Drop for S { fn drop(&mut self) { } }
 
 pub type Two<T> = (Partial<T>, Partial<T>);
 
-pub fn f<T>((b1, b2): (T, T), (b3, b4): (T, T), f: |T| -> T) -> Two<T> {
+pub fn f<T, F>((b1, b2): (T, T), (b3, b4): (T, T), mut f: F) -> Two<T> where F: FnMut(T) -> T {
     let p = Partial { x: b1, y: b2 };
     let q = Partial { x: b3, y: b4 };
 

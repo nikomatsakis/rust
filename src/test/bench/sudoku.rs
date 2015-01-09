@@ -10,11 +10,13 @@
 
 // ignore-pretty very bad with line comments
 
+#![feature(box_syntax)]
 #![allow(non_snake_case)]
 
-use std::io;
-use std::io::stdio::StdReader;
 use std::io::BufferedReader;
+use std::io::stdio::StdReader;
+use std::io;
+use std::iter::repeat;
 use std::num::Int;
 use std::os;
 
@@ -47,29 +49,18 @@ impl Sudoku {
     }
 
     pub fn from_vec(vec: &[[u8;9];9]) -> Sudoku {
-        let g = Vec::from_fn(9u, |i| {
-            Vec::from_fn(9u, |j| { vec[i][j] })
-        });
+        let g = range(0, 9u).map(|i| {
+            range(0, 9u).map(|j| { vec[i][j] }).collect()
+        }).collect();
         return Sudoku::new(g)
-    }
-
-    pub fn equal(&self, other: &Sudoku) -> bool {
-        for row in range(0u8, 9u8) {
-            for col in range(0u8, 9u8) {
-                if self.grid[row as uint][col as uint] !=
-                        other.grid[row as uint][col as uint] {
-                    return false;
-                }
-            }
-        }
-        return true;
     }
 
     pub fn read(mut reader: &mut BufferedReader<StdReader>) -> Sudoku {
         /* assert first line is exactly "9,9" */
         assert!(reader.read_line().unwrap() == "9,9".to_string());
 
-        let mut g = Vec::from_fn(10u, { |_i| vec!(0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8) });
+        let mut g = repeat(vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])
+                          .take(10).collect::<Vec<_>>();
         for line in reader.lines() {
             let line = line.unwrap();
             let comps: Vec<&str> = line.as_slice()
@@ -78,10 +69,9 @@ impl Sudoku {
                                        .collect();
 
             if comps.len() == 3u {
-                let row     = from_str::<uint>(comps[0]).unwrap() as u8;
-                let col     = from_str::<uint>(comps[1]).unwrap() as u8;
-                g[row as uint][col as uint] =
-                    from_str::<uint>(comps[2]).unwrap() as u8;
+                let row = comps[0].parse::<u8>().unwrap();
+                let col = comps[1].parse::<u8>().unwrap();
+                g[row as uint][col as uint] = comps[2].parse().unwrap();
             }
             else {
                 panic!("Invalid sudoku file");
@@ -182,7 +172,7 @@ impl Colors {
     fn next(&self) -> u8 {
         let Colors(c) = *self;
         let val = c & HEADS;
-        if (0u16 == val) {
+        if 0u16 == val {
             return 0u8;
         } else {
             return val.trailing_zeros() as u8

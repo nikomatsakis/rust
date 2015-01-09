@@ -8,14 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![macro_escape]
-
-macro_rules! uint_module (($T:ty, $T_i:ident) => (
+macro_rules! uint_module { ($T:ty, $T_i:ident) => (
 #[cfg(test)]
 mod tests {
     use core::$T_i::*;
     use core::num::Int;
     use num;
+    use core::ops::{BitOr, BitAnd, BitXor, Shl, Shr, Not};
 
     #[test]
     fn test_overflows() {
@@ -124,4 +123,5 @@ mod tests {
         assert!(5u.checked_div(0) == None);
     }
 }
-));
+
+)}

@@ -10,10 +10,10 @@
 
 pub use self::VarValue::*;
 
-use std::kinds::marker;
+use std::marker;
 
 use middle::ty::{expected_found, IntVarValue};
-use middle::ty::{mod, Ty};
+use middle::ty::{self, Ty};
 use middle::infer::{uok, ures};
 use middle::infer::InferCtxt;
 use std::cell::RefCell;
@@ -62,7 +62,7 @@ pub trait UnifyValue<'tcx> : Clone + Repr<'tcx> + PartialEq {
 /// to keep the DAG relatively balanced, which helps keep the running
 /// time of the algorithm under control. For more information, see
 /// <http://en.wikipedia.org/wiki/Disjoint-set_data_structure>.
-#[deriving(PartialEq,Clone)]
+#[derive(PartialEq,Clone)]
 pub enum VarValue<K,V> {
     Redirect(K),
     Root(V, uint),
@@ -90,7 +90,7 @@ pub struct Node<K,V> {
     pub rank: uint,
 }
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct Delegate;
 
 // We can't use V:LatticeValue, much as I would like to,
@@ -129,7 +129,7 @@ impl<'tcx, V:PartialEq+Clone+Repr<'tcx>, K:UnifyKey<'tcx, V>> UnificationTable<K
     pub fn new_key(&mut self, value: V) -> K {
         let index = self.values.push(Root(value, 0));
         let k = UnifyKey::from_index(index);
-        debug!("{}: created new key: {}",
+        debug!("{}: created new key: {:?}",
                UnifyKey::tag(None::<K>),
                k);
         k
@@ -225,7 +225,7 @@ impl<K,V> sv::SnapshotVecDelegate<VarValue<K,V>,()> for Delegate {
 /// Indicates a type that does not have any kind of subtyping
 /// relationship.
 pub trait SimplyUnifiable<'tcx> : Clone + PartialEq + Repr<'tcx> {
-    fn to_type(&self) -> Ty<'tcx>;
+    fn to_type(&self, tcx: &ty::ctxt<'tcx>) -> Ty<'tcx>;
     fn to_type_err(expected_found<Self>) -> ty::type_err<'tcx>;
 }
 
@@ -337,7 +337,7 @@ impl<'a,'tcx,V:SimplyUnifiable<'tcx>,K:UnifyKey<'tcx, Option<V>>>
         let node_a = table.borrow_mut().get(tcx, a_id);
         match node_a.value {
             None => None,
-            Some(ref a_t) => Some(a_t.to_type())
+            Some(ref a_t) => Some(a_t.to_type(tcx))
         }
     }
 }
@@ -347,9 +347,9 @@ impl<'a,'tcx,V:SimplyUnifiable<'tcx>,K:UnifyKey<'tcx, Option<V>>>
 // Integral type keys
 
 impl<'tcx> UnifyKey<'tcx, Option<IntVarValue>> for ty::IntVid {
-    fn index(&self) -> uint { self.index }
+    fn index(&self) -> uint { self.index as uint }
 
-    fn from_index(i: uint) -> ty::IntVid { ty::IntVid { index: i } }
+    fn from_index(i: uint) -> ty::IntVid { ty::IntVid { index: i as u32 } }
 
     fn unification_table<'v>(infcx: &'v InferCtxt)
         -> &'v RefCell<UnificationTable<ty::IntVid, Option<IntVarValue>>>
@@ -363,10 +363,10 @@ impl<'tcx> UnifyKey<'tcx, Option<IntVarValue>> for ty::IntVid {
 }
 
 impl<'tcx> SimplyUnifiable<'tcx> for IntVarValue {
-    fn to_type(&self) -> Ty<'tcx> {
+    fn to_type(&self, tcx: &ty::ctxt<'tcx>) -> Ty<'tcx> {
         match *self {
-            ty::IntType(i) => ty::mk_mach_int(i),
-            ty::UintType(i) => ty::mk_mach_uint(i),
+            ty::IntType(i) => ty::mk_mach_int(tcx, i),
+            ty::UintType(i) => ty::mk_mach_uint(tcx, i),
         }
     }
 
@@ -380,9 +380,9 @@ impl<'tcx> UnifyValue<'tcx> for Option<IntVarValue> { }
 // Floating point type keys
 
 impl<'tcx> UnifyKey<'tcx, Option<ast::FloatTy>> for ty::FloatVid {
-    fn index(&self) -> uint { self.index }
+    fn index(&self) -> uint { self.index as uint }
 
-    fn from_index(i: uint) -> ty::FloatVid { ty::FloatVid { index: i } }
+    fn from_index(i: uint) -> ty::FloatVid { ty::FloatVid { index: i as u32 } }
 
     fn unification_table<'v>(infcx: &'v InferCtxt)
         -> &'v RefCell<UnificationTable<ty::FloatVid, Option<ast::FloatTy>>>
@@ -399,8 +399,8 @@ impl<'tcx> UnifyValue<'tcx> for Option<ast::FloatTy> {
 }
 
 impl<'tcx> SimplyUnifiable<'tcx> for ast::FloatTy {
-    fn to_type(&self) -> Ty<'tcx> {
-        ty::mk_mach_float(*self)
+    fn to_type(&self, tcx: &ty::ctxt<'tcx>) -> Ty<'tcx> {
+        ty::mk_mach_float(tcx, *self)
     }
 
     fn to_type_err(err: expected_found<ast::FloatTy>) -> ty::type_err<'tcx> {

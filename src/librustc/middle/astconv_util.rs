@@ -15,7 +15,7 @@
  */
 
 use middle::def;
-use middle::ty::{mod, Ty};
+use middle::ty::{self, Ty};
 use syntax::ast;
 use util::ppaux::Repr;
 
@@ -47,7 +47,7 @@ pub fn ast_ty_to_prim_ty<'tcx>(tcx: &ty::ctxt<'tcx>, ast_ty: &ast::Ty)
             let a_def = match tcx.def_map.borrow().get(&id) {
                 None => {
                     tcx.sess.span_bug(ast_ty.span,
-                                      format!("unbound path {}",
+                                      &format!("unbound path {}",
                                               path.repr(tcx))[])
                 }
                 Some(&d) => d
@@ -57,23 +57,23 @@ pub fn ast_ty_to_prim_ty<'tcx>(tcx: &ty::ctxt<'tcx>, ast_ty: &ast::Ty)
                     match nty {
                         ast::TyBool => {
                             check_path_args(tcx, path, NO_TPS | NO_REGIONS);
-                            Some(ty::mk_bool())
+                            Some(tcx.types.bool)
                         }
                         ast::TyChar => {
                             check_path_args(tcx, path, NO_TPS | NO_REGIONS);
-                            Some(ty::mk_char())
+                            Some(tcx.types.char)
                         }
                         ast::TyInt(it) => {
                             check_path_args(tcx, path, NO_TPS | NO_REGIONS);
-                            Some(ty::mk_mach_int(it))
+                            Some(ty::mk_mach_int(tcx, it))
                         }
                         ast::TyUint(uit) => {
                             check_path_args(tcx, path, NO_TPS | NO_REGIONS);
-                            Some(ty::mk_mach_uint(uit))
+                            Some(ty::mk_mach_uint(tcx, uit))
                         }
                         ast::TyFloat(ft) => {
                             check_path_args(tcx, path, NO_TPS | NO_REGIONS);
-                            Some(ty::mk_mach_float(ft))
+                            Some(ty::mk_mach_float(tcx, ft))
                         }
                         ast::TyStr => {
                             Some(ty::mk_str(tcx))

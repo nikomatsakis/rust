@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! The compiler code necessary to implement the `#[deriving]` extensions.
+//! The compiler code necessary to implement the `#[derive]` extensions.
 //!
 //! FIXME (#2810): hygiene. Search for "__" strings (in other files too). We also assume "extra" is
 //! the standard library, and "std" is the core library.
@@ -25,7 +25,6 @@ pub mod decodable;
 pub mod hash;
 pub mod rand;
 pub mod show;
-pub mod zero;
 pub mod default;
 pub mod primitive;
 
@@ -41,20 +40,20 @@ pub mod totalord;
 
 pub mod generic;
 
-pub fn expand_meta_deriving(cx: &mut ExtCtxt,
-                            _span: Span,
-                            mitem: &MetaItem,
-                            item: &Item,
-                            push: |P<Item>|) {
+pub fn expand_meta_derive(cx: &mut ExtCtxt,
+                          _span: Span,
+                          mitem: &MetaItem,
+                          item: &Item,
+                          mut push: Box<FnMut(P<Item>)>) {
     match mitem.node {
         MetaNameValue(_, ref l) => {
-            cx.span_err(l.span, "unexpected value in `deriving`");
+            cx.span_err(l.span, "unexpected value in `derive`");
         }
         MetaWord(_) => {
-            cx.span_warn(mitem.span, "empty trait list in `deriving`");
+            cx.span_warn(mitem.span, "empty trait list in `derive`");
         }
         MetaList(_, ref titems) if titems.len() == 0 => {
-            cx.span_warn(mitem.span, "empty trait list in `deriving`");
+            cx.span_warn(mitem.span, "empty trait list in `derive`");
         }
         MetaList(_, ref titems) => {
             for titem in titems.iter().rev() {
@@ -62,9 +61,11 @@ pub fn expand_meta_deriving(cx: &mut ExtCtxt,
                     MetaNameValue(ref tname, _) |
                     MetaList(ref tname, _) |
                     MetaWord(ref tname) => {
-                        macro_rules! expand(($func:path) => ($func(cx, titem.span,
-                                                                   &**titem, item,
-                                                                   |i| push(i))));
+                        macro_rules! expand {
+                            ($func:path) => ($func(cx, titem.span, &**titem, item,
+                                                   |i| push(i)))
+                        }
+
                         match tname.get() {
                             "Clone" => expand!(clone::expand_deriving_clone),
 
@@ -78,15 +79,15 @@ pub fn expand_meta_deriving(cx: &mut ExtCtxt,
                             }
                             "Encodable" => {
                                 cx.span_warn(titem.span,
-                                             "deriving(Encodable) is deprecated \
-                                              in favor of deriving(RustcEncodable)");
+                                             "derive(Encodable) is deprecated \
+                                              in favor of derive(RustcEncodable)");
 
                                 expand!(encodable::expand_deriving_encodable)
                             }
                             "Decodable" => {
                                 cx.span_warn(titem.span,
-                                             "deriving(Decodable) is deprecated \
-                                              in favor of deriving(RustcDecodable)");
+                                             "derive(Decodable) is deprecated \
+                                              in favor of derive(RustcDecodable)");
 
                                 expand!(decodable::expand_deriving_decodable)
                             }
@@ -100,7 +101,6 @@ pub fn expand_meta_deriving(cx: &mut ExtCtxt,
 
                             "Show" => expand!(show::expand_deriving_show),
 
-                            "Zero" => expand!(zero::expand_deriving_zero),
                             "Default" => expand!(default::expand_deriving_default),
 
                             "FromPrimitive" => expand!(primitive::expand_deriving_from_primitive),
@@ -111,7 +111,7 @@ pub fn expand_meta_deriving(cx: &mut ExtCtxt,
 
                             ref tname => {
                                 cx.span_err(titem.span,
-                                            format!("unknown `deriving` \
+                                            &format!("unknown `derive` \
                                                      trait: `{}`",
                                                     *tname)[]);
                             }

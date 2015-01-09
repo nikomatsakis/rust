@@ -22,7 +22,7 @@ use num::Int;
 use ops::FnOnce;
 use option::Option;
 use option::Option::{Some, None};
-use ptr::RawPtr;
+use ptr::PtrExt;
 use result::Result::{Ok, Err};
 use slice::{SliceExt, AsSlice};
 
@@ -52,7 +52,9 @@ impl<'r, R: Reader> Bytes<'r, R> {
     }
 }
 
-impl<'r, R: Reader> Iterator<IoResult<u8>> for Bytes<'r, R> {
+impl<'r, R: Reader> Iterator for Bytes<'r, R> {
+    type Item = IoResult<u8>;
+
     #[inline]
     fn next(&mut self) -> Option<IoResult<u8>> {
         match self.reader.read_byte() {
@@ -86,9 +88,9 @@ pub fn u64_to_le_bytes<T, F>(n: u64, size: uint, f: F) -> T where
     assert!(size <= 8u);
     match size {
       1u => f(&[n as u8]),
-      2u => f(unsafe { & transmute::<_, [u8, ..2]>((n as u16).to_le()) }),
-      4u => f(unsafe { & transmute::<_, [u8, ..4]>((n as u32).to_le()) }),
-      8u => f(unsafe { & transmute::<_, [u8, ..8]>(n.to_le()) }),
+      2u => f(unsafe { & transmute::<_, [u8; 2]>((n as u16).to_le()) }),
+      4u => f(unsafe { & transmute::<_, [u8; 4]>((n as u32).to_le()) }),
+      8u => f(unsafe { & transmute::<_, [u8; 8]>(n.to_le()) }),
       _ => {
 
         let mut bytes = vec!();
@@ -127,9 +129,9 @@ pub fn u64_to_be_bytes<T, F>(n: u64, size: uint, f: F) -> T where
     assert!(size <= 8u);
     match size {
       1u => f(&[n as u8]),
-      2u => f(unsafe { & transmute::<_, [u8, ..2]>((n as u16).to_be()) }),
-      4u => f(unsafe { & transmute::<_, [u8, ..4]>((n as u32).to_be()) }),
-      8u => f(unsafe { & transmute::<_, [u8, ..8]>(n.to_be()) }),
+      2u => f(unsafe { & transmute::<_, [u8; 2]>((n as u16).to_be()) }),
+      4u => f(unsafe { & transmute::<_, [u8; 4]>((n as u32).to_be()) }),
+      8u => f(unsafe { & transmute::<_, [u8; 8]>(n.to_be()) }),
       _ => {
         let mut bytes = vec!();
         let mut i = size;
@@ -164,7 +166,7 @@ pub fn u64_from_be_bytes(data: &[u8], start: uint, size: uint) -> u64 {
         panic!("index out of bounds");
     }
 
-    let mut buf = [0u8, ..8];
+    let mut buf = [0u8; 8];
     unsafe {
         let ptr = data.as_ptr().offset(start as int);
         let out = buf.as_mut_ptr();
@@ -175,7 +177,7 @@ pub fn u64_from_be_bytes(data: &[u8], start: uint, size: uint) -> u64 {
 
 #[cfg(test)]
 mod test {
-    use prelude::*;
+    use prelude::v1::*;
     use io;
     use io::{MemReader, BytesReader};
 
@@ -507,7 +509,7 @@ mod test {
 mod bench {
     extern crate test;
 
-    use prelude::*;
+    use prelude::v1::*;
     use self::test::Bencher;
 
     // why is this a macro? wouldn't an inlined function work just as well?
@@ -516,7 +518,7 @@ mod bench {
         ({
             use super::u64_from_be_bytes;
 
-            let data = Vec::from_fn($stride*100+$start_index, |i| i as u8);
+            let data = range(0u8, $stride*100+$start_index).collect::<Vec<_>>();
             let mut sum = 0u64;
             $b.iter(|| {
                 let mut i = $start_index;

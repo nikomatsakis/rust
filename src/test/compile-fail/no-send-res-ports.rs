@@ -10,14 +10,14 @@
 
 #![feature(unsafe_destructor)]
 
-use std::task;
+use std::thread::Thread;
 use std::rc::Rc;
 
-#[deriving(Show)]
+#[derive(Show)]
 struct Port<T>(Rc<T>);
 
 fn main() {
-    #[deriving(Show)]
+    #[derive(Show)]
     struct foo {
       _x: Port<()>,
     }
@@ -35,9 +35,10 @@ fn main() {
 
     let x = foo(Port(Rc::new(())));
 
-    task::spawn(move|| {
-        //~^ ERROR `core::kinds::Send` is not implemented
+    Thread::spawn(move|| {
+        //~^ ERROR `core::marker::Send` is not implemented
+        //~^^ ERROR `core::marker::Send` is not implemented
         let y = x;
-        println!("{}", y);
+        println!("{:?}", y);
     });
 }

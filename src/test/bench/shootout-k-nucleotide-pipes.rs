@@ -13,16 +13,17 @@
 
 // multi tasking k-nucleotide
 
-#![feature(slicing_syntax)]
+#![feature(box_syntax)]
 
-extern crate collections;
-
+use std::ascii::{AsciiExt, OwnedAsciiExt};
+use std::cmp::Ordering::{self, Less, Greater, Equal};
 use std::collections::HashMap;
 use std::mem::replace;
 use std::num::Float;
 use std::option;
 use std::os;
-use std::string::String;
+use std::sync::mpsc::{channel, Sender, Receiver};
+use std::thread::Thread;
 
 fn f64_cmp(x: f64, y: f64) -> Ordering {
     // arbitrarily decide that NaNs are larger than everything.
@@ -63,11 +64,9 @@ fn sort_and_fmt(mm: &HashMap<Vec<u8> , uint>, total: uint) -> String {
 
    let mut buffer = String::new();
    for &(ref k, v) in pairs_sorted.iter() {
-       buffer.push_str(format!("{} {:0.3}\n",
-                               k.as_slice()
-                               .to_ascii()
-                               .to_uppercase()
-                               .into_string(), v).as_slice());
+       buffer.push_str(format!("{:?} {:0.3}\n",
+                               k.to_ascii_uppercase(),
+                               v).as_slice());
    }
 
    return buffer
@@ -75,7 +74,7 @@ fn sort_and_fmt(mm: &HashMap<Vec<u8> , uint>, total: uint) -> String {
 
 // given a map, search for the frequency of a pattern
 fn find(mm: &HashMap<Vec<u8> , uint>, key: String) -> uint {
-   let key = key.into_ascii().as_slice().to_lowercase().into_string();
+   let key = key.into_ascii_lowercase();
    match mm.get(key.as_bytes()) {
       option::Option::None      => { return 0u; }
       option::Option::Some(&num) => { return num; }
@@ -85,7 +84,7 @@ fn find(mm: &HashMap<Vec<u8> , uint>, key: String) -> uint {
 // given a map, increment the counter for a key
 fn update_freq(mm: &mut HashMap<Vec<u8> , uint>, key: &[u8]) {
     let key = key.to_vec();
-    let newval = match mm.pop(&key) {
+    let newval = match mm.remove(&key) {
         Some(v) => v + 1,
         None => 1
     };
@@ -95,16 +94,18 @@ fn update_freq(mm: &mut HashMap<Vec<u8> , uint>, key: &[u8]) {
 // given a Vec<u8>, for each window call a function
 // i.e., for "hello" and windows of size four,
 // run it("hell") and it("ello"), then return "llo"
-fn windows_with_carry(bb: &[u8], nn: uint, it: |window: &[u8]|) -> Vec<u8> {
+fn windows_with_carry<F>(bb: &[u8], nn: uint, mut it: F) -> Vec<u8> where
+    F: FnMut(&[u8]),
+{
    let mut ii = 0u;
 
    let len = bb.len();
    while ii < len - (nn - 1u) {
-      it(bb[ii..ii+nn]);
+      it(&bb[ii..(ii+nn)]);
       ii += 1u;
    }
 
-   return bb[len - (nn - 1u)..len].to_vec();
+   return bb[(len - (nn - 1u))..len].to_vec();
 }
 
 fn make_sequence_processor(sz: uint,
@@ -118,7 +119,7 @@ fn make_sequence_processor(sz: uint,
 
    loop {
 
-       line = from_parent.recv();
+       line = from_parent.recv().unwrap();
        if line == Vec::new() { break; }
 
        carry.push_all(line.as_slice());
@@ -140,7 +141,7 @@ fn make_sequence_processor(sz: uint,
         _ => { "".to_string() }
    };
 
-    to_parent.send(buffer);
+    to_parent.send(buffer).unwrap();
 }
 
 // given a FASTA file on stdin, process sequence THREE
@@ -148,7 +149,7 @@ fn main() {
     use std::io::{stdio, MemReader, BufferedReader};
 
     let rdr = if os::getenv("RUST_BENCH").is_some() {
-        let foo = include_bin!("shootout-k-nucleotide.data");
+        let foo = include_bytes!("shootout-k-nucleotide.data");
         box MemReader::new(foo.to_vec()) as Box<Reader>
     } else {
         box stdio::stdin() as Box<Reader>
@@ -157,7 +158,9 @@ fn main() {
 
     // initialize each sequence sorter
     let sizes = vec!(1u,2,3,4,6,12,18);
-    let mut streams = Vec::from_fn(sizes.len(), |_| Some(channel::<String>()));
+    let mut streams = range(0, sizes.len()).map(|_| {
+        Some(channel::<String>())
+    }).collect::<Vec<_>>();
     let mut from_child = Vec::new();
     let to_child  = sizes.iter().zip(streams.iter_mut()).map(|(sz, stream_ref)| {
         let sz = *sz;
@@ -168,7 +171,7 @@ fn main() {
 
         let (to_child, from_parent) = channel();
 
-        spawn(move|| {
+        Thread::spawn(move|| {
             make_sequence_processor(sz, &from_parent, &to_parent_);
         });
 
@@ -190,8 +193,8 @@ fn main() {
            // start processing if this is the one
            ('>', false) => {
                match line.as_slice().slice_from(1).find_str("THREE") {
-                   option::Option::Some(_) => { proc_mode = true; }
-                   option::Option::None    => { }
+                   Some(_) => { proc_mode = true; }
+                   None    => { }
                }
            }
 
@@ -204,7 +207,7 @@ fn main() {
 
                for (ii, _sz) in sizes.iter().enumerate() {
                    let lb = line_bytes.to_vec();
-                   to_child[ii].send(lb);
+                   to_child[ii].send(lb).unwrap();
                }
            }
 
@@ -215,11 +218,11 @@ fn main() {
 
    // finish...
    for (ii, _sz) in sizes.iter().enumerate() {
-       to_child[ii].send(Vec::new());
+       to_child[ii].send(Vec::new()).unwrap();
    }
 
    // now fetch and print result messages
    for (ii, _sz) in sizes.iter().enumerate() {
-       println!("{}", from_child[ii].recv());
+       println!("{:?}", from_child[ii].recv().unwrap());
    }
 }

@@ -9,6 +9,7 @@
 // except according to those terms.
 
 use cell::UnsafeCell;
+use marker::Sync;
 use sys::sync as ffi;
 use sys_common::mutex;
 
@@ -22,6 +23,8 @@ pub unsafe fn raw(m: &Mutex) -> *mut ffi::pthread_mutex_t {
 pub const MUTEX_INIT: Mutex = Mutex {
     inner: UnsafeCell { value: ffi::PTHREAD_MUTEX_INITIALIZER },
 };
+
+unsafe impl Sync for Mutex {}
 
 impl Mutex {
     #[inline]
@@ -45,8 +48,20 @@ impl Mutex {
         ffi::pthread_mutex_trylock(self.inner.get()) == 0
     }
     #[inline]
+    #[cfg(not(target_os = "dragonfly"))]
     pub unsafe fn destroy(&self) {
         let r = ffi::pthread_mutex_destroy(self.inner.get());
         debug_assert_eq!(r, 0);
+    }
+    #[inline]
+    #[cfg(target_os = "dragonfly")]
+    pub unsafe fn destroy(&self) {
+        use libc;
+        let r = ffi::pthread_mutex_destroy(self.inner.get());
+        // On DragonFly pthread_mutex_destroy() returns EINVAL if called on a
+        // mutex that was just initialized with ffi::PTHREAD_MUTEX_INITIALIZER.
+        // Once it is used (locked/unlocked) or pthread_mutex_init() is called,
+        // this behaviour no longer occurs.
+        debug_assert!(r == 0 || r == libc::EINVAL);
     }
 }

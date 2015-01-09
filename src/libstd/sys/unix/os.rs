@@ -10,19 +10,19 @@
 
 //! Implementation of `std::os` functionality for unix systems
 
-use prelude::*;
+use prelude::v1::*;
 
 use error::{FromError, Error};
+use ffi::{self, CString};
 use fmt;
 use io::{IoError, IoResult};
-use libc::{mod, c_int, c_char, c_void};
-use path::BytesContainer;
-use ptr;
-use sync::atomic::{AtomicInt, INIT_ATOMIC_INT, SeqCst};
-use sys::fs::FileDesc;
-use os;
-
+use libc::{self, c_int, c_char, c_void};
 use os::TMPBUF_SZ;
+use os;
+use path::{BytesContainer};
+use ptr;
+use str;
+use sys::fs::FileDesc;
 
 const BUF_BYTES : uint = 2048u;
 
@@ -100,7 +100,7 @@ pub fn error_string(errno: i32) -> String {
         }
     }
 
-    let mut buf = [0 as c_char, ..TMPBUF_SZ];
+    let mut buf = [0 as c_char; TMPBUF_SZ];
 
     let p = buf.as_mut_ptr();
     unsafe {
@@ -108,12 +108,13 @@ pub fn error_string(errno: i32) -> String {
             panic!("strerror_r failure");
         }
 
-        String::from_raw_buf(p as *const u8)
+        let p = p as *const _;
+        str::from_utf8(ffi::c_str_to_bytes(&p)).unwrap().to_string()
     }
 }
 
 pub unsafe fn pipe() -> IoResult<(FileDesc, FileDesc)> {
-    let mut fds = [0, ..2];
+    let mut fds = [0; 2];
     if libc::pipe(fds.as_mut_ptr()) == 0 {
         Ok((FileDesc::new(fds[0], true), FileDesc::new(fds[1], true)))
     } else {
@@ -122,21 +123,17 @@ pub unsafe fn pipe() -> IoResult<(FileDesc, FileDesc)> {
 }
 
 pub fn getcwd() -> IoResult<Path> {
-    use c_str::CString;
-
-    let mut buf = [0 as c_char, ..BUF_BYTES];
+    let mut buf = [0 as c_char; BUF_BYTES];
     unsafe {
         if libc::getcwd(buf.as_mut_ptr(), buf.len() as libc::size_t).is_null() {
             Err(IoError::last_error())
         } else {
-            Ok(Path::new(CString::new(buf.as_ptr(), false)))
+            Ok(Path::new(ffi::c_str_to_bytes(&buf.as_ptr())))
         }
     }
 }
 
 pub unsafe fn get_env_pairs() -> Vec<Vec<u8>> {
-    use c_str::CString;
-
     extern {
         fn rust_env_pairs() -> *const *const c_char;
     }
@@ -147,8 +144,7 @@ pub unsafe fn get_env_pairs() -> Vec<Vec<u8>> {
     }
     let mut result = Vec::new();
     while *environ != 0 as *const _ {
-        let env_pair =
-            CString::new(*environ, false).as_bytes_no_nul().to_vec();
+        let env_pair = ffi::c_str_to_bytes(&*environ).to_vec();
         result.push(env_pair);
         environ = environ.offset(1);
     }
@@ -172,7 +168,7 @@ pub fn join_paths<T: BytesContainer>(paths: &[T]) -> Result<Vec<u8>, &'static st
     Ok(joined)
 }
 
-#[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
+#[cfg(target_os = "freebsd")]
 pub fn load_self() -> Option<Vec<u8>> {
     unsafe {
         use libc::funcs::bsd44::*;
@@ -195,6 +191,16 @@ pub fn load_self() -> Option<Vec<u8>> {
         if sz == 0 { return None; }
         v.set_len(sz as uint - 1); // chop off trailing NUL
         Some(v)
+    }
+}
+
+#[cfg(target_os = "dragonfly")]
+pub fn load_self() -> Option<Vec<u8>> {
+    use std::io;
+
+    match io::fs::readlink(&Path::new("/proc/curproc/file")) {
+        Ok(path) => Some(path.into_vec()),
+        Err(..) => None
     }
 }
 
@@ -224,14 +230,13 @@ pub fn load_self() -> Option<Vec<u8>> {
 }
 
 pub fn chdir(p: &Path) -> IoResult<()> {
-    p.with_c_str(|buf| {
-        unsafe {
-            match libc::chdir(buf) == (0 as c_int) {
-                true => Ok(()),
-                false => Err(IoError::last_error()),
-            }
+    let p = CString::from_slice(p.as_vec());
+    unsafe {
+        match libc::chdir(p.as_ptr()) == (0 as c_int) {
+            true => Ok(()),
+            false => Err(IoError::last_error()),
         }
-    })
+    }
 }
 
 pub fn page_size() -> uint {

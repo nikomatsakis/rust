@@ -9,9 +9,10 @@
 // except according to those terms.
 
 use rustc::session::Session;
-use rustc::session::config::{mod, Input, OutputFilenames};
+use rustc::session::config::{self, Input, OutputFilenames};
+use rustc::session::search_paths::PathKind;
 use rustc::lint;
-use rustc::metadata::creader;
+use rustc::metadata::creader::CrateReader;
 use rustc::middle::{stability, ty, reachable};
 use rustc::middle::dependency_format;
 use rustc::middle;
@@ -27,12 +28,11 @@ use rustc_trans::save;
 use rustc_trans::trans;
 use rustc_typeck as typeck;
 
-use serialize::{json, Encodable};
+use serialize::json;
 
 use std::io;
 use std::io::fs;
 use std::os;
-use arena::TypedArena;
 use syntax::ast;
 use syntax::ast_map;
 use syntax::attr;
@@ -47,7 +47,7 @@ pub fn compile_input(sess: Session,
                      input: &Input,
                      outdir: &Option<Path>,
                      output: &Option<Path>,
-                     addl_plugins: Option<Plugins>) {
+                     addl_plugins: Option<Vec<String>>) {
     // We need nested scopes here, because the intermediate results can keep
     // large chunks of memory alive and we want to free them as soon as
     // possible to keep the peak memory usage low
@@ -58,12 +58,12 @@ pub fn compile_input(sess: Session,
             let outputs = build_output_filenames(input,
                                                  outdir,
                                                  output,
-                                                 krate.attrs[],
+                                                 &krate.attrs[],
                                                  &sess);
-            let id = link::find_crate_name(Some(&sess), krate.attrs[],
+            let id = link::find_crate_name(Some(&sess), &krate.attrs[],
                                            input);
             let expanded_crate
-                = match phase_2_configure_and_expand(&sess, krate, id[],
+                = match phase_2_configure_and_expand(&sess, krate, &id[],
                                                      addl_plugins) {
                     None => return,
                     Some(k) => k
@@ -75,15 +75,26 @@ pub fn compile_input(sess: Session,
         let mut forest = ast_map::Forest::new(expanded_crate);
         let ast_map = assign_node_ids_and_map(&sess, &mut forest);
 
-        write_out_deps(&sess, input, &outputs, id[]);
+        write_out_deps(&sess, input, &outputs, &id[]);
 
         if stop_after_phase_2(&sess) { return; }
 
-        let type_arena = TypedArena::new();
-        let analysis = phase_3_run_analysis_passes(sess, ast_map, &type_arena, id);
+        let arenas = ty::CtxtArenas::new();
+        let analysis = phase_3_run_analysis_passes(sess, ast_map, &arenas, id);
         phase_save_analysis(&analysis.ty_cx.sess, analysis.ty_cx.map.krate(), &analysis, outdir);
+
+        if log_enabled!(::log::INFO) {
+            println!("Pre-trans");
+            analysis.ty_cx.print_debug_stats();
+        }
+
         if stop_after_phase_3(&analysis.ty_cx.sess) { return; }
         let (tcx, trans) = phase_4_translate_to_llvm(analysis);
+
+        if log_enabled!(::log::INFO) {
+            println!("Post-trans");
+            tcx.print_debug_stats();
+        }
 
         // Discard interned strings as they are no longer required.
         token::get_ident_interner().clear();
@@ -131,15 +142,12 @@ pub fn phase_1_parse_input(sess: &Session, cfg: ast::CrateConfig, input: &Input)
         }
     });
 
-    if sess.opts.debugging_opts & config::AST_JSON_NOEXPAND != 0 {
-        let mut stdout = io::BufferedWriter::new(io::stdout());
-        let mut json = json::PrettyEncoder::new(&mut stdout);
-        // unwrapping so IoError isn't ignored
-        krate.encode(&mut json).unwrap();
+    if sess.opts.debugging_opts.ast_json_noexpand {
+        println!("{}", json::as_json(&krate));
     }
 
-    if sess.show_span() {
-        syntax::show_span::run(sess.diagnostic(), &krate);
+    if let Some(ref s) = sess.opts.show_span {
+        syntax::show_span::run(sess.diagnostic(), s.as_slice(), &krate);
     }
 
     krate
@@ -158,29 +166,14 @@ pub fn phase_1_parse_input(sess: &Session, cfg: ast::CrateConfig, input: &Input)
 pub fn phase_2_configure_and_expand(sess: &Session,
                                     mut krate: ast::Crate,
                                     crate_name: &str,
-                                    addl_plugins: Option<Plugins>)
+                                    addl_plugins: Option<Vec<String>>)
                                     -> Option<ast::Crate> {
     let time_passes = sess.time_passes();
 
     *sess.crate_types.borrow_mut() =
-        collect_crate_types(sess, krate.attrs[]);
+        collect_crate_types(sess, &krate.attrs[]);
     *sess.crate_metadata.borrow_mut() =
-        collect_crate_metadata(sess, krate.attrs[]);
-
-    time(time_passes, "gated feature checking", (), |_| {
-        let (features, unknown_features) =
-            syntax::feature_gate::check_crate(&sess.parse_sess.span_diagnostic, &krate);
-
-        for uf in unknown_features.iter() {
-            sess.add_lint(lint::builtin::UNKNOWN_FEATURES,
-                          ast::CRATE_NODE_ID,
-                          *uf,
-                          "unknown feature".to_string());
-        }
-
-        sess.abort_if_errors();
-        *sess.features.borrow_mut() = features;
-    });
+        collect_crate_metadata(sess, &krate.attrs[]);
 
     time(time_passes, "recursion limit", (), |_| {
         middle::recursion_limit::update_recursion_limit(sess, &krate);
@@ -189,10 +182,27 @@ pub fn phase_2_configure_and_expand(sess: &Session,
     // strip before expansion to allow macros to depend on
     // configuration variables e.g/ in
     //
-    //   #[macro_escape] #[cfg(foo)]
+    //   #[macro_use] #[cfg(foo)]
     //   mod bar { macro_rules! baz!(() => {{}}) }
     //
     // baz! should not use this definition unless foo is enabled.
+
+    time(time_passes, "gated macro checking", (), |_| {
+        let (features, unknown_features) =
+            syntax::feature_gate::check_crate_macros(sess.codemap(),
+                                                     &sess.parse_sess.span_diagnostic,
+                                                     &krate);
+        for uf in unknown_features.iter() {
+            sess.add_lint(lint::builtin::UNKNOWN_FEATURES,
+                          ast::CRATE_NODE_ID,
+                          *uf,
+                          "unknown feature".to_string());
+        }
+
+        // these need to be set "early" so that expansion sees `quote` if enabled.
+        *sess.features.borrow_mut() = features;
+        sess.abort_if_errors();
+    });
 
     krate = time(time_passes, "configuration 1", krate, |krate|
                  syntax::config::strip_unconfigured_items(sess.diagnostic(), krate));
@@ -206,9 +216,9 @@ pub fn phase_2_configure_and_expand(sess: &Session,
         = time(time_passes, "plugin loading", (), |_|
                plugin::load::load_plugins(sess, &krate, addl_plugins.take().unwrap()));
 
-    let mut registry = Registry::new(&krate);
+    let mut registry = Registry::new(sess, &krate);
 
-    time(time_passes, "plugin registration", (), |_| {
+    time(time_passes, "plugin registration", registrars, |registrars| {
         if sess.features.borrow().rustc_diagnostic_macros {
             registry.register_macro("__diagnostic_used",
                 diagnostics::plugin::expand_diagnostic_used);
@@ -218,8 +228,9 @@ pub fn phase_2_configure_and_expand(sess: &Session,
                 diagnostics::plugin::expand_build_diagnostic_array);
         }
 
-        for &registrar in registrars.iter() {
-            registrar(&mut registry);
+        for registrar in registrars.into_iter() {
+            registry.args_hidden = Some(registrar.args);
+            (registrar.fun)(&mut registry);
         }
     });
 
@@ -256,13 +267,12 @@ pub fn phase_2_configure_and_expand(sess: &Session,
             let mut _old_path = String::new();
             if cfg!(windows) {
                 _old_path = os::getenv("PATH").unwrap_or(_old_path);
-                let mut new_path = sess.host_filesearch().get_dylib_search_paths();
-                new_path.extend(os::split_paths(_old_path[]).into_iter());
-                os::setenv("PATH", os::join_paths(new_path[]).unwrap());
+                let mut new_path = sess.host_filesearch(PathKind::All).get_dylib_search_paths();
+                new_path.extend(os::split_paths(&_old_path[]).into_iter());
+                os::setenv("PATH", os::join_paths(&new_path[]).unwrap());
             }
             let cfg = syntax::ext::expand::ExpansionConfig {
                 crate_name: crate_name.to_string(),
-                deriving_hash_type_parameter: sess.features.borrow().default_type_params,
                 enable_quotes: sess.features.borrow().quote,
                 recursion_limit: sess.recursion_limit.get(),
             };
@@ -277,6 +287,14 @@ pub fn phase_2_configure_and_expand(sess: &Session,
             ret
         }
     );
+
+    // Needs to go *after* expansion to be able to check the results of macro expansion.
+    time(time_passes, "complete gated feature checking", (), |_| {
+        syntax::feature_gate::check_crate(sess.codemap(),
+                                          &sess.parse_sess.span_diagnostic,
+                                          &krate);
+        sess.abort_if_errors();
+    });
 
     // JBC: make CFG processing part of expansion to avoid this problem:
 
@@ -316,11 +334,8 @@ pub fn assign_node_ids_and_map<'ast>(sess: &Session,
     let map = time(sess.time_passes(), "assigning node ids and indexing ast", forest, |forest|
                    ast_map::map_crate(forest, NodeIdAssigner { sess: sess }));
 
-    if sess.opts.debugging_opts & config::AST_JSON != 0 {
-        let mut stdout = io::BufferedWriter::new(io::stdout());
-        let mut json = json::PrettyEncoder::new(&mut stdout);
-        // unwrapping so IoError isn't ignored
-        map.krate().encode(&mut json).unwrap();
+    if sess.opts.debugging_opts.ast_json {
+        println!("{}", json::as_json(map.krate()));
     }
 
     map
@@ -331,17 +346,22 @@ pub fn assign_node_ids_and_map<'ast>(sess: &Session,
 /// structures carrying the results of the analysis.
 pub fn phase_3_run_analysis_passes<'tcx>(sess: Session,
                                          ast_map: ast_map::Map<'tcx>,
-                                         type_arena: &'tcx TypedArena<ty::TyS<'tcx>>,
+                                         arenas: &'tcx ty::CtxtArenas<'tcx>,
                                          name: String) -> ty::CrateAnalysis<'tcx> {
     let time_passes = sess.time_passes();
     let krate = ast_map.krate();
 
     time(time_passes, "external crate/lib resolution", (), |_|
-         creader::read_crates(&sess, krate));
+         CrateReader::new(&sess).read_crates(krate));
 
     let lang_items = time(time_passes, "language item collection", (), |_|
                           middle::lang_items::collect_language_items(krate, &sess));
 
+    let make_glob_map = if save_analysis(&sess) {
+        resolve::MakeGlobMap::Yes
+    } else {
+        resolve::MakeGlobMap::No
+    };
     let resolve::CrateMap {
         def_map,
         freevars,
@@ -349,10 +369,15 @@ pub fn phase_3_run_analysis_passes<'tcx>(sess: Session,
         export_map,
         trait_map,
         external_exports,
-        last_private_map
+        last_private_map,
+        glob_map,
     } =
         time(time_passes, "resolution", (),
-             |_| resolve::resolve_crate(&sess, &lang_items, krate));
+             |_| resolve::resolve_crate(&sess,
+                                        &ast_map,
+                                        &lang_items,
+                                        krate,
+                                        make_glob_map));
 
     // Discard MTWT tables that aren't required past resolution.
     syntax::ext::mtwt::clear_tables();
@@ -381,7 +406,7 @@ pub fn phase_3_run_analysis_passes<'tcx>(sess: Session,
          middle::check_static_recursion::check_crate(&sess, krate, &def_map, &ast_map));
 
     let ty_cx = ty::mk_ctxt(sess,
-                            type_arena,
+                            arenas,
                             def_map,
                             named_region_map,
                             ast_map,
@@ -454,14 +479,19 @@ pub fn phase_3_run_analysis_passes<'tcx>(sess: Session,
         public_items: public_items,
         reachable: reachable_map,
         name: name,
+        glob_map: glob_map,
     }
+}
+
+fn save_analysis(sess: &Session) -> bool {
+    sess.opts.debugging_opts.save_analysis
 }
 
 pub fn phase_save_analysis(sess: &Session,
                            krate: &ast::Crate,
                            analysis: &ty::CrateAnalysis,
                            odir: &Option<Path>) {
-    if (sess.opts.debugging_opts & config::SAVE_ANALYSIS) == 0 {
+    if !save_analysis(sess) {
         return;
     }
     time(sess.time_passes(), "save analysis", krate, |krate|
@@ -503,7 +533,7 @@ pub fn phase_5_run_llvm_passes(sess: &Session,
         time(sess.time_passes(), "LLVM passes", (), |_|
             write::run_passes(sess,
                               trans,
-                              sess.opts.output_types[],
+                              &sess.opts.output_types[],
                               outputs));
     }
 
@@ -516,15 +546,15 @@ pub fn phase_6_link_output(sess: &Session,
                            trans: &trans::CrateTranslation,
                            outputs: &OutputFilenames) {
     let old_path = os::getenv("PATH").unwrap_or_else(||String::new());
-    let mut new_path = sess.host_filesearch().get_tools_search_paths();
-    new_path.extend(os::split_paths(old_path[]).into_iter());
-    os::setenv("PATH", os::join_paths(new_path[]).unwrap());
+    let mut new_path = sess.host_filesearch(PathKind::All).get_tools_search_paths();
+    new_path.extend(os::split_paths(&old_path[]).into_iter());
+    os::setenv("PATH", os::join_paths(&new_path[]).unwrap());
 
     time(sess.time_passes(), "linking", (), |_|
          link::link_binary(sess,
                            trans,
                            outputs,
-                           trans.link.crate_name[]));
+                           &trans.link.crate_name[]));
 
     os::setenv("PATH", old_path);
 }
@@ -542,10 +572,10 @@ pub fn stop_after_phase_1(sess: &Session) -> bool {
         debug!("invoked with --parse-only, returning early from compile_input");
         return true;
     }
-    if sess.show_span() {
+    if sess.opts.show_span.is_some() {
         return true;
     }
-    return sess.opts.debugging_opts & config::AST_JSON_NOEXPAND != 0;
+    return sess.opts.debugging_opts.ast_json_noexpand;
 }
 
 pub fn stop_after_phase_2(sess: &Session) -> bool {
@@ -553,7 +583,7 @@ pub fn stop_after_phase_2(sess: &Session) -> bool {
         debug!("invoked with --no-analysis, returning early from compile_input");
         return true;
     }
-    return sess.opts.debugging_opts & config::AST_JSON != 0;
+    return sess.opts.debugging_opts.ast_json;
 }
 
 pub fn stop_after_phase_5(sess: &Session) -> bool {
@@ -608,12 +638,12 @@ fn write_out_deps(sess: &Session,
         _ => return,
     };
 
-    let result = (|| -> io::IoResult<()> {
+    let result = (|&:| -> io::IoResult<()> {
         // Build a list of files used to compile the output and
         // write Makefile-compatible dependency rules
         let files: Vec<String> = sess.codemap().files.borrow()
                                    .iter().filter(|fmap| fmap.is_real_file())
-                                   .map(|fmap| escape_dep_filename(fmap.name[]))
+                                   .map(|fmap| escape_dep_filename(&fmap.name[]))
                                    .collect();
         let mut file = try!(io::File::create(&deps_filename));
         for path in out_filenames.iter() {
@@ -626,7 +656,7 @@ fn write_out_deps(sess: &Session,
     match result {
         Ok(()) => {}
         Err(e) => {
-            sess.fatal(format!("error writing dependencies to `{}`: {}",
+            sess.fatal(&format!("error writing dependencies to `{}`: {}",
                                deps_filename.display(), e)[]);
         }
     }
@@ -696,7 +726,7 @@ pub fn collect_crate_types(session: &Session,
         let res = !link::invalid_output_for_target(session, *crate_type);
 
         if !res {
-            session.warn(format!("dropping unsupported crate type `{}` \
+            session.warn(&format!("dropping unsupported crate type `{:?}` \
                                    for target `{}`",
                                  *crate_type, session.opts.target_triple)[]);
         }

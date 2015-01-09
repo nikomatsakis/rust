@@ -8,19 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(unsafe_destructor)]
+#![feature(unsafe_destructor, box_syntax)]
 
 use std::os;
-use std::task;
+use std::thread::Thread;
 use std::time::Duration;
 
-#[deriving(Clone)]
+#[derive(Clone)]
 enum List<T> {
     Nil, Cons(T, Box<List<T>>)
-}
-
-enum UniqueList {
-    ULNil, ULCons(Box<UniqueList>)
 }
 
 fn main() {
@@ -36,9 +32,9 @@ fn main() {
 fn run(repeat: int, depth: int) {
     for _ in range(0, repeat) {
         let dur = Duration::span(|| {
-            task::try(move|| {
+            let _ = Thread::scoped(move|| {
                 recurse_or_panic(depth, None)
-            });
+            }).join();
         });
         println!("iter: {}", dur);
     }

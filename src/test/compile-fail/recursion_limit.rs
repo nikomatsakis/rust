@@ -12,7 +12,6 @@
 // deeply nested types that will fail the `Send` check by overflow
 // when the recursion limit is set very low.
 
-#![feature(macro_rules)]
 #![allow(dead_code)]
 #![recursion_limit="10"]
 
@@ -36,7 +35,7 @@ link! { K, L }
 link! { L, M }
 link! { M, N }
 
-enum N { N(uint) }
+enum N { N(usize) }
 
 fn is_send<T:Send>() { }
 

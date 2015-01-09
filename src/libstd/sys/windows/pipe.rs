@@ -84,18 +84,24 @@
 //! the test suite passing (the suite is in libstd), and that's good enough for
 //! me!
 
-use alloc::arc::Arc;
+use prelude::v1::*;
+
 use libc;
-use c_str::CString;
+use ffi::CString;
+use io::{self, IoError, IoResult};
 use mem;
 use ptr;
-use sync::{atomic, Mutex};
-use io::{mod, IoError, IoResult};
-use prelude::*;
+use str;
+use sync::atomic::{AtomicBool, Ordering};
+use sync::{Arc, Mutex};
 
-use sys_common::{mod, eof};
+use sys_common::{self, eof};
 
-use super::{c, os, timer, to_utf16, decode_error_detailed};
+use super::{c, os, timer, decode_error_detailed};
+
+fn to_utf16(c: &CString) -> IoResult<Vec<u16>> {
+    super::to_utf16(str::from_utf8(c.as_bytes()).ok())
+}
 
 struct Event(libc::HANDLE);
 
@@ -126,8 +132,8 @@ impl Drop for Event {
 struct Inner {
     handle: libc::HANDLE,
     lock: Mutex<()>,
-    read_closed: atomic::AtomicBool,
-    write_closed: atomic::AtomicBool,
+    read_closed: AtomicBool,
+    write_closed: AtomicBool,
 }
 
 impl Inner {
@@ -135,8 +141,8 @@ impl Inner {
         Inner {
             handle: handle,
             lock: Mutex::new(()),
-            read_closed: atomic::AtomicBool::new(false),
-            write_closed: atomic::AtomicBool::new(false),
+            read_closed: AtomicBool::new(false),
+            write_closed: AtomicBool::new(false),
         }
     }
 }
@@ -214,6 +220,9 @@ pub struct UnixStream {
     write_deadline: u64,
 }
 
+unsafe impl Send for UnixStream {}
+unsafe impl Sync for UnixStream {}
+
 impl UnixStream {
     fn try_connect(p: *const u16) -> Option<libc::HANDLE> {
         // Note that most of this is lifted from the libuv implementation.
@@ -266,7 +275,7 @@ impl UnixStream {
     }
 
     pub fn connect(addr: &CString, timeout: Option<u64>) -> IoResult<UnixStream> {
-        let addr = try!(to_utf16(addr.as_str()));
+        let addr = try!(to_utf16(addr));
         let start = timer::now();
         loop {
             match UnixStream::try_connect(addr.as_ptr()) {
@@ -331,11 +340,11 @@ impl UnixStream {
     pub fn handle(&self) -> libc::HANDLE { self.inner.handle }
 
     fn read_closed(&self) -> bool {
-        self.inner.read_closed.load(atomic::SeqCst)
+        self.inner.read_closed.load(Ordering::SeqCst)
     }
 
     fn write_closed(&self) -> bool {
-        self.inner.write_closed.load(atomic::SeqCst)
+        self.inner.write_closed.load(Ordering::SeqCst)
     }
 
     fn cancel_io(&self) -> IoResult<()> {
@@ -514,14 +523,14 @@ impl UnixStream {
         // and 2 with a lock with respect to close_read(), we're guaranteed that
         // no thread will erroneously sit in a read forever.
         let _guard = unsafe { self.inner.lock.lock() };
-        self.inner.read_closed.store(true, atomic::SeqCst);
+        self.inner.read_closed.store(true, Ordering::SeqCst);
         self.cancel_io()
     }
 
     pub fn close_write(&mut self) -> IoResult<()> {
         // see comments in close_read() for why this lock is necessary
         let _guard = unsafe { self.inner.lock.lock() };
-        self.inner.write_closed.store(true, atomic::SeqCst);
+        self.inner.write_closed.store(true, Ordering::SeqCst);
         self.cancel_io()
     }
 
@@ -559,12 +568,15 @@ pub struct UnixListener {
     name: CString,
 }
 
+unsafe impl Send for UnixListener {}
+unsafe impl Sync for UnixListener {}
+
 impl UnixListener {
     pub fn bind(addr: &CString) -> IoResult<UnixListener> {
         // Although we technically don't need the pipe until much later, we
         // create the initial handle up front to test the validity of the name
         // and such.
-        let addr_v = try!(to_utf16(addr.as_str()));
+        let addr_v = try!(to_utf16(addr));
         let ret = unsafe { pipe(addr_v.as_ptr(), true) };
         if ret == libc::INVALID_HANDLE_VALUE {
             Err(super::last_error())
@@ -580,7 +592,7 @@ impl UnixListener {
             deadline: 0,
             inner: Arc::new(AcceptorState {
                 abort: try!(Event::new(true, false)),
-                closed: atomic::AtomicBool::new(false),
+                closed: AtomicBool::new(false),
             }),
         })
     }
@@ -603,10 +615,16 @@ pub struct UnixAcceptor {
     deadline: u64,
 }
 
+unsafe impl Send for UnixAcceptor {}
+unsafe impl Sync for UnixAcceptor {}
+
 struct AcceptorState {
     abort: Event,
-    closed: atomic::AtomicBool,
+    closed: AtomicBool,
 }
+
+unsafe impl Send for AcceptorState {}
+unsafe impl Sync for AcceptorState {}
 
 impl UnixAcceptor {
     pub fn accept(&mut self) -> IoResult<UnixStream> {
@@ -646,9 +664,9 @@ impl UnixAcceptor {
 
         // If we've had an artificial call to close_accept, be sure to never
         // proceed in accepting new clients in the future
-        if self.inner.closed.load(atomic::SeqCst) { return Err(eof()) }
+        if self.inner.closed.load(Ordering::SeqCst) { return Err(eof()) }
 
-        let name = try!(to_utf16(self.listener.name.as_str()));
+        let name = try!(to_utf16(&self.listener.name));
 
         // Once we've got a "server handle", we need to wait for a client to
         // connect. The ConnectNamedPipe function will block this thread until
@@ -722,7 +740,7 @@ impl UnixAcceptor {
     }
 
     pub fn close_accept(&mut self) -> IoResult<()> {
-        self.inner.closed.store(true, atomic::SeqCst);
+        self.inner.closed.store(true, Ordering::SeqCst);
         let ret = unsafe {
             c::SetEvent(self.inner.abort.handle())
         };
@@ -740,7 +758,7 @@ impl UnixAcceptor {
 
 impl Clone for UnixAcceptor {
     fn clone(&self) -> UnixAcceptor {
-        let name = to_utf16(self.listener.name.as_str()).ok().unwrap();
+        let name = to_utf16(&self.listener.name).ok().unwrap();
         UnixAcceptor {
             inner: self.inner.clone(),
             event: Event::new(true, false).ok().unwrap(),

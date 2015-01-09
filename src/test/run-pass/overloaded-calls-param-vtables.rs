@@ -13,10 +13,11 @@
 #![feature(unboxed_closures)]
 
 use std::ops::Fn;
+use std::ops::Add;
 
-struct G;
+struct G<A>;
 
-impl<'a, A: Add<int, int>> Fn<(A,), int> for G {
+impl<'a, A: Add<int, Output=int>> Fn<(A,), int> for G<A> {
     extern "rust-call" fn call(&self, (arg,): (A,)) -> int {
         arg.add(1)
     }
@@ -26,4 +27,3 @@ fn main() {
     // ICE trigger
     G(1i);
 }
-

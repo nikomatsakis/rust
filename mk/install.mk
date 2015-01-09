@@ -21,11 +21,14 @@ ifeq (root user, $(USER) $(patsubst %,user,$(SUDO_USER)))
 else
 	$(Q)$(MAKE) prepare_install
 endif
+ifeq ($(CFG_DISABLE_DOCS),)
+	$(Q)cd tmp/empty_dir && sh ../../tmp/dist/$(DOC_PKG_NAME)-$(CFG_BUILD)/install.sh --prefix="$(DESTDIR)$(CFG_PREFIX)" --libdir="$(DESTDIR)$(CFG_LIBDIR)" --mandir="$(DESTDIR)$(CFG_MANDIR)" "$(MAYBE_DISABLE_VERIFY)"
+endif
 	$(Q)cd tmp/empty_dir && sh ../../tmp/dist/$(PKG_NAME)-$(CFG_BUILD)/install.sh --prefix="$(DESTDIR)$(CFG_PREFIX)" --libdir="$(DESTDIR)$(CFG_LIBDIR)" --mandir="$(DESTDIR)$(CFG_MANDIR)" "$(MAYBE_DISABLE_VERIFY)"
 # Remove tmp files because it's a decent amount of disk space
 	$(Q)rm -R tmp/dist
 
-prepare_install: dist/$(PKG_NAME)-$(CFG_BUILD).tar.gz | tmp/empty_dir
+prepare_install: dist-tar-bins | tmp/empty_dir
 
 uninstall:
 ifeq (root user, $(USER) $(patsubst %,user,$(SUDO_USER)))
@@ -34,11 +37,14 @@ ifeq (root user, $(USER) $(patsubst %,user,$(SUDO_USER)))
 else
 	$(Q)$(MAKE) prepare_uninstall
 endif
+ifeq ($(CFG_DISABLE_DOCS),)
+	$(Q)cd tmp/empty_dir && sh ../../tmp/dist/$(DOC_PKG_NAME)-$(CFG_BUILD)/install.sh --uninstall --prefix="$(DESTDIR)$(CFG_PREFIX)" --libdir="$(DESTDIR)$(CFG_LIBDIR)" --mandir="$(DESTDIR)$(CFG_MANDIR)"
+endif
 	$(Q)cd tmp/empty_dir && sh ../../tmp/dist/$(PKG_NAME)-$(CFG_BUILD)/install.sh --uninstall --prefix="$(DESTDIR)$(CFG_PREFIX)" --libdir="$(DESTDIR)$(CFG_LIBDIR)" --mandir="$(DESTDIR)$(CFG_MANDIR)"
 # Remove tmp files because it's a decent amount of disk space
 	$(Q)rm -R tmp/dist
 
-prepare_uninstall: dist/$(PKG_NAME)-$(CFG_BUILD).tar.gz | tmp/empty_dir
+prepare_uninstall: dist-tar-bins | tmp/empty_dir
 
 .PHONY: install prepare_install uninstall prepare_uninstall
 

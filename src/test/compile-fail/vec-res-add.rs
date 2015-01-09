@@ -8,12 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[deriving(Show)]
+#[derive(Show)]
 struct r {
-  i:int
+  i:isize
 }
 
-fn r(i:int) -> r { r { i: i } }
+fn r(i:isize) -> r { r { i: i } }
 
 impl Drop for r {
     fn drop(&mut self) {}
@@ -25,5 +25,5 @@ fn main() {
     let j = vec!(r(1));
     let k = i + j;
     //~^ ERROR binary operation `+` cannot be applied to type
-    println!("{}", j);
+    println!("{:?}", j);
 }

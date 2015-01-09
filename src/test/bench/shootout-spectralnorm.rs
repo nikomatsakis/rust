@@ -43,7 +43,8 @@
 #![allow(non_snake_case)]
 #![feature(unboxed_closures)]
 
-use std::iter::AdditiveIterator;
+use std::iter::{repeat, AdditiveIterator};
+use std::thread::Thread;
 use std::mem;
 use std::num::Float;
 use std::os;
@@ -57,16 +58,16 @@ fn main() {
     } else if args.len() < 2 {
         2000
     } else {
-        from_str(args[1].as_slice()).unwrap()
+        args[1].parse().unwrap()
     });
     println!("{:.9}", answer);
 }
 
 fn spectralnorm(n: uint) -> f64 {
     assert!(n % 2 == 0, "only even lengths are accepted");
-    let mut u = Vec::from_elem(n, 1.0);
-    let mut v = Vec::from_elem(n, 1.0);
-    let mut tmp = Vec::from_elem(n, 1.0);
+    let mut u = repeat(1.0).take(n).collect::<Vec<_>>();
+    let mut v = u.clone();
+    let mut tmp = v.clone();
     for _ in range(0u, 10) {
         mult_AtAv(u.as_slice(), v.as_mut_slice(), tmp.as_mut_slice());
         mult_AtAv(v.as_slice(), u.as_mut_slice(), tmp.as_mut_slice());
@@ -80,14 +81,15 @@ fn mult_AtAv(v: &[f64], out: &mut [f64], tmp: &mut [f64]) {
 }
 
 fn mult_Av(v: &[f64], out: &mut [f64]) {
-    parallel(out, |&: start, out| mult(v, out, start, |i, j| A(i, j)));
+    parallel(out, |start, out| mult(v, out, start, |i, j| A(i, j)));
 }
 
 fn mult_Atv(v: &[f64], out: &mut [f64]) {
-    parallel(out, |&: start, out| mult(v, out, start, |i, j| A(j, i)));
+    parallel(out, |start, out| mult(v, out, start, |i, j| A(j, i)));
 }
 
-fn mult(v: &[f64], out: &mut [f64], start: uint, a: |uint, uint| -> f64) {
+fn mult<F>(v: &[f64], out: &mut [f64], start: uint, a: F)
+           where F: Fn(uint, uint) -> f64 {
     for (i, slot) in out.iter_mut().enumerate().map(|(i, s)| (i + start, s)) {
         let mut sum = f64x2(0.0, 0.0);
         for (j, chunk) in v.chunks(2).enumerate().map(|(j, s)| (2 * j, s)) {
@@ -108,28 +110,27 @@ fn dot(v: &[f64], u: &[f64]) -> f64 {
     v.iter().zip(u.iter()).map(|(a, b)| *a * *b).sum()
 }
 
+
+struct Racy<T>(T);
+
+unsafe impl<T: 'static> Send for Racy<T> {}
+
 // Executes a closure in parallel over the given mutable slice. The closure `f`
 // is run in parallel and yielded the starting index within `v` as well as a
 // sub-slice of `v`.
-fn parallel<'a, T, F>(v: &'a mut [T], f: F)
-                      where T: Send + Sync,
-                            F: Fn(uint, &'a mut [T]) + Sync {
-    let (tx, rx) = channel();
+fn parallel<T, F>(v: &mut [T], f: F)
+                  where T: Send + Sync,
+                        F: Fn(uint, &mut [T]) + Sync {
     let size = v.len() / os::num_cpus() + 1;
 
-    for (i, chunk) in v.chunks_mut(size).enumerate() {
-        let tx = tx.clone();
-
+    v.chunks_mut(size).enumerate().map(|(i, chunk)| {
         // Need to convert `f` and `chunk` to something that can cross the task
         // boundary.
-        let f = &f as *const _ as *const uint;
-        let raw = chunk.repr();
-        spawn(move|| {
-            let f = f as *const F;
-            unsafe { (*f)(i * size, mem::transmute(raw)) }
-            drop(tx)
-        });
-    }
-    drop(tx);
-    for () in rx.iter() {}
+        let f = Racy(&f as *const _ as *const uint);
+        let raw = Racy(chunk.repr());
+        Thread::scoped(move|| {
+            let f = f.0 as *const F;
+            unsafe { (*f)(i * size, mem::transmute(raw.0)) }
+        })
+    }).collect::<Vec<_>>();
 }

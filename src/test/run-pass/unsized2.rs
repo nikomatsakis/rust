@@ -10,12 +10,15 @@
 //
 // ignore-lexer-test FIXME #15879
 
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+
 // Test sized-ness checking in substitution.
 
 use std::kinds::marker;
 
 // Unbounded.
-fn f1<Sized? X>(x: &X) {
+fn f1<X: ?Sized>(x: &X) {
     f1::<X>(x);
 }
 fn f2<X>(x: &X) {
@@ -24,8 +27,8 @@ fn f2<X>(x: &X) {
 }
 
 // Bounded.
-trait T for Sized? : marker::PhantomGetter<Self> {}
-fn f3<Sized? X: T>(x: &X) {
+trait T {}
+fn f3<X: T+?Sized>(x: &X) {
     f3::<X>(x);
 }
 fn f4<X: T>(x: &X) {
@@ -34,7 +37,7 @@ fn f4<X: T>(x: &X) {
 }
 
 // Self type.
-trait T2 for Sized? {
+trait T2 {
     fn f() -> Box<Self>;
 }
 struct S;
@@ -43,14 +46,14 @@ impl T2 for S {
         box S
     }
 }
-fn f5<Sized? X: T2>(x: &X) {
+fn f5<X: ?Sized+T2>(x: &X) {
     let _: Box<X> = T2::f();
 }
 fn f6<X: T2>(x: &X) {
     let _: Box<X> = T2::f();
 }
 
-trait T3 for Sized? {
+trait T3 {
     fn f() -> Box<Self>;
 }
 impl T3 for S {
@@ -58,7 +61,7 @@ impl T3 for S {
         box S
     }
 }
-fn f7<Sized? X: T3>(x: &X) {
+fn f7<X: ?Sized+T3>(x: &X) {
     // This is valid, but the unsized bound on X is irrelevant because any type
     // which implements T3 must have statically known size.
     let _: Box<X> = T3::f();
@@ -68,7 +71,7 @@ trait T4<X> {
     fn m1(x: &T4<X>, y: X);
     fn m2(x: &T5<X>, y: X);
 }
-trait T5<Sized? X> {
+trait T5<X: ?Sized> {
     // not an error (for now)
     fn m1(x: &T4<X>);
     fn m2(x: &T5<X>);
@@ -78,21 +81,21 @@ trait T6<X: T> {
     fn m1(x: &T4<X>);
     fn m2(x: &T5<X>);
 }
-trait T7<Sized? X: T> {
+trait T7<X: ?Sized+T> {
     // not an error (for now)
     fn m1(x: &T4<X>);
     fn m2(x: &T5<X>);
 }
 
 // The last field in a struct or variant may be unsized
-struct S2<Sized? X> {
+struct S2<X: ?Sized> {
     f: X,
 }
-struct S3<Sized? X> {
+struct S3<X: ?Sized> {
     f1: int,
     f2: X,
 }
-enum E<Sized? X> {
+enum E<X: ?Sized> {
     V1(X),
     V2{x: X},
     V3(int, X),

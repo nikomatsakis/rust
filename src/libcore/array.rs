@@ -12,13 +12,13 @@
 //! up to a certain length. Eventually we should able to generalize
 //! to all lengths.
 
-#![experimental] // not yet reviewed
+#![unstable] // not yet reviewed
 
 use clone::Clone;
 use cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering};
 use fmt;
-use kinds::Copy;
-use ops::Deref;
+use marker::Copy;
+use ops::{Deref, FullRange};
 use option::Option;
 
 // macro for implementing n-ary tuple functions and operations
@@ -26,83 +26,93 @@ macro_rules! array_impls {
     ($($N:expr)+) => {
         $(
             #[stable]
-            impl<T:Copy> Clone for [T, ..$N] {
-                fn clone(&self) -> [T, ..$N] {
+            impl<T:Copy> Clone for [T; $N] {
+                fn clone(&self) -> [T; $N] {
                     *self
                 }
             }
 
             #[unstable = "waiting for Show to stabilize"]
-            impl<T:fmt::Show> fmt::Show for [T, ..$N] {
+            impl<T:fmt::Show> fmt::Show for [T; $N] {
                 fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                    fmt::Show::fmt(&self[], f)
+                    fmt::Show::fmt(&&self[], f)
                 }
             }
 
-            #[unstable = "waiting for PartialEq to stabilize"]
-            impl<A, B> PartialEq<[B, ..$N]> for [A, ..$N] where A: PartialEq<B> {
+            #[stable]
+            impl<A, B> PartialEq<[B; $N]> for [A; $N] where A: PartialEq<B> {
                 #[inline]
-                fn eq(&self, other: &[B, ..$N]) -> bool {
-                    self[] == other[]
+                fn eq(&self, other: &[B; $N]) -> bool {
+                    &self[] == &other[]
                 }
                 #[inline]
-                fn ne(&self, other: &[B, ..$N]) -> bool {
-                    self[] != other[]
+                fn ne(&self, other: &[B; $N]) -> bool {
+                    &self[] != &other[]
                 }
             }
 
-            impl<'a, A, B, Rhs> PartialEq<Rhs> for [A, ..$N] where
+            #[stable]
+            impl<'a, A, B, Rhs> PartialEq<Rhs> for [A; $N] where
                 A: PartialEq<B>,
-                Rhs: Deref<[B]>,
+                Rhs: Deref<Target=[B]>,
             {
                 #[inline(always)]
-                fn eq(&self, other: &Rhs) -> bool { PartialEq::eq(self[], &**other) }
+                fn eq(&self, other: &Rhs) -> bool {
+                    PartialEq::eq(&self[], &**other)
+                }
                 #[inline(always)]
-                fn ne(&self, other: &Rhs) -> bool { PartialEq::ne(self[], &**other) }
+                fn ne(&self, other: &Rhs) -> bool {
+                    PartialEq::ne(&self[], &**other)
+                }
             }
 
-            impl<'a, A, B, Lhs> PartialEq<[B, ..$N]> for Lhs where
+            #[stable]
+            impl<'a, A, B, Lhs> PartialEq<[B; $N]> for Lhs where
                 A: PartialEq<B>,
-                Lhs: Deref<[A]>
+                Lhs: Deref<Target=[A]>
             {
                 #[inline(always)]
-                fn eq(&self, other: &[B, ..$N]) -> bool { PartialEq::eq(&**self, other[]) }
+                fn eq(&self, other: &[B; $N]) -> bool {
+                    PartialEq::eq(&**self, &other[])
+                }
                 #[inline(always)]
-                fn ne(&self, other: &[B, ..$N]) -> bool { PartialEq::ne(&**self, other[]) }
-            }
-
-            #[unstable = "waiting for Eq to stabilize"]
-            impl<T:Eq> Eq for [T, ..$N] { }
-
-            #[unstable = "waiting for PartialOrd to stabilize"]
-            impl<T:PartialOrd> PartialOrd for [T, ..$N] {
-                #[inline]
-                fn partial_cmp(&self, other: &[T, ..$N]) -> Option<Ordering> {
-                    PartialOrd::partial_cmp(&self[], &other[])
-                }
-                #[inline]
-                fn lt(&self, other: &[T, ..$N]) -> bool {
-                    PartialOrd::lt(&self[], &other[])
-                }
-                #[inline]
-                fn le(&self, other: &[T, ..$N]) -> bool {
-                    PartialOrd::le(&self[], &other[])
-                }
-                #[inline]
-                fn ge(&self, other: &[T, ..$N]) -> bool {
-                    PartialOrd::ge(&self[], &other[])
-                }
-                #[inline]
-                fn gt(&self, other: &[T, ..$N]) -> bool {
-                    PartialOrd::gt(&self[], &other[])
+                fn ne(&self, other: &[B; $N]) -> bool {
+                    PartialEq::ne(&**self, &other[])
                 }
             }
 
-            #[unstable = "waiting for Ord to stabilize"]
-            impl<T:Ord> Ord for [T, ..$N] {
+            #[stable]
+            impl<T:Eq> Eq for [T; $N] { }
+
+            #[stable]
+            impl<T:PartialOrd> PartialOrd for [T; $N] {
                 #[inline]
-                fn cmp(&self, other: &[T, ..$N]) -> Ordering {
-                    Ord::cmp(&self[], &other[])
+                fn partial_cmp(&self, other: &[T; $N]) -> Option<Ordering> {
+                    PartialOrd::partial_cmp(&&self[], &&other[])
+                }
+                #[inline]
+                fn lt(&self, other: &[T; $N]) -> bool {
+                    PartialOrd::lt(&&self[], &&other[])
+                }
+                #[inline]
+                fn le(&self, other: &[T; $N]) -> bool {
+                    PartialOrd::le(&&self[], &&other[])
+                }
+                #[inline]
+                fn ge(&self, other: &[T; $N]) -> bool {
+                    PartialOrd::ge(&&self[], &&other[])
+                }
+                #[inline]
+                fn gt(&self, other: &[T; $N]) -> bool {
+                    PartialOrd::gt(&&self[], &&other[])
+                }
+            }
+
+            #[stable]
+            impl<T:Ord> Ord for [T; $N] {
+                #[inline]
+                fn cmp(&self, other: &[T; $N]) -> Ordering {
+                    Ord::cmp(&&self[], &&other[])
                 }
             }
         )+

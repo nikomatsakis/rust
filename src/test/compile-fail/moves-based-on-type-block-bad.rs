@@ -10,17 +10,19 @@
 
 // ignore-tidy-linelength
 
+#![feature(box_syntax)]
+
 struct S {
     x: Box<E>
 }
 
 enum E {
     Foo(Box<S>),
-    Bar(Box<int>),
+    Bar(Box<isize>),
     Baz
 }
 
-fn f(s: &S, g: |&S|) {
+fn f<G>(s: &S, g: G) where G: FnOnce(&S) {
     g(s)
 }
 

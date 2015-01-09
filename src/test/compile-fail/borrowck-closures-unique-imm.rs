@@ -9,14 +9,14 @@
 // except according to those terms.
 
 struct Foo {
-    x: int,
+    x: isize,
 }
 
 pub fn main() {
     let mut this = &mut Foo {
         x: 1,
     };
-    let r = || {
+    let mut r = |&mut:| {
         let p = &this.x;
         &mut this.x; //~ ERROR cannot borrow
     };

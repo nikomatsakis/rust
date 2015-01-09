@@ -18,9 +18,9 @@
 
 #![allow(dead_code)]
 
-use std::kinds::marker;
+use std::marker;
 
-#[deriving(Copy)]
+#[derive(Copy)]
 struct Foo<T> { x: T }
 
 type Ty<'tcx> = &'tcx TyS<'tcx>;

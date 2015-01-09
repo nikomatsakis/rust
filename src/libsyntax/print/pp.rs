@@ -65,26 +65,27 @@ pub use self::Token::*;
 
 use std::io;
 use std::string;
+use std::iter::repeat;
 
-#[deriving(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum Breaks {
     Consistent,
     Inconsistent,
 }
 
-#[deriving(Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct BreakToken {
     offset: int,
     blank_space: int
 }
 
-#[deriving(Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct BeginToken {
     offset: int,
     breaks: Breaks
 }
 
-#[deriving(Clone)]
+#[derive(Clone)]
 pub enum Token {
     String(string::String, int),
     Break(BreakToken),
@@ -137,7 +138,7 @@ pub fn buf_str(toks: Vec<Token>,
         if i != left {
             s.push_str(", ");
         }
-        s.push_str(format!("{}={}",
+        s.push_str(&format!("{}={}",
                            szs[i],
                            tok_str(toks[i].clone()))[]);
         i += 1u;
@@ -147,13 +148,13 @@ pub fn buf_str(toks: Vec<Token>,
     s
 }
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub enum PrintStackBreak {
     Fits,
     Broken(Breaks),
 }
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct PrintStackElem {
     offset: int,
     pbreak: PrintStackBreak
@@ -166,9 +167,9 @@ pub fn mk_printer(out: Box<io::Writer+'static>, linewidth: uint) -> Printer {
     // fall behind.
     let n: uint = 3 * linewidth;
     debug!("mk_printer {}", linewidth);
-    let token: Vec<Token> = Vec::from_elem(n, Eof);
-    let size: Vec<int> = Vec::from_elem(n, 0i);
-    let scan_stack: Vec<uint> = Vec::from_elem(n, 0u);
+    let token: Vec<Token> = repeat(Eof).take(n).collect();
+    let size: Vec<int> = repeat(0i).take(n).collect();
+    let scan_stack: Vec<uint> = repeat(0u).take(n).collect();
     Printer {
         out: out,
         buf_len: n,
@@ -601,7 +602,7 @@ impl Printer {
             assert_eq!(l, len);
             // assert!(l <= space);
             self.space -= len;
-            self.print_str(s[])
+            self.print_str(&s[])
           }
           Eof => {
             // Eof should never get here.

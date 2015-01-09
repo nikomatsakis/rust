@@ -57,29 +57,29 @@
 //! default global allocator. It is not compatible with the libc allocator API.
 
 #![crate_name = "alloc"]
-#![experimental]
+#![unstable]
+#![staged_api]
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/nightly/")]
 
 #![no_std]
-#![feature(lang_items, phase, unsafe_destructor, default_type_params)]
+#![allow(unknown_features)]
+#![feature(lang_items, unsafe_destructor)]
+#![feature(box_syntax)]
+#![allow(unknown_features)] #![feature(int_uint)]
 
-#[phase(plugin, link)]
+#[macro_use]
 extern crate core;
+
+#[cfg(all(not(feature = "external_funcs"), not(feature = "external_crate")))]
 extern crate libc;
 
 // Allow testing this library
 
-#[cfg(test)] #[phase(plugin, link)] extern crate std;
-#[cfg(test)] #[phase(plugin, link)] extern crate log;
-
-// The deprecated name of the boxed module
-
-#[deprecated = "use boxed instead"]
-#[cfg(not(test))]
-pub use boxed as owned;
+#[cfg(test)] #[macro_use] extern crate std;
+#[cfg(test)] #[macro_use] extern crate log;
 
 // Heaps provided for low-level allocation strategies
 

@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(globs)]
 #![allow(unused_imports, dead_code)]
 
 mod test1 {
@@ -17,8 +16,7 @@ mod test1 {
     mod bar { pub fn p() -> int { 2 } }
 
     pub mod baz {
-        use test1::foo::*;
-        use test1::bar::*;
+        use test1::bar::p;
 
         pub fn my_main() { assert!(p() == 2); }
     }
@@ -36,20 +34,7 @@ mod test2 {
     }
 }
 
-mod test3 {
-
-    mod foo { pub fn p() -> int { 1 } }
-    mod bar { pub fn p() -> int { 2 } }
-
-    pub mod baz {
-        use test3::bar::p;
-
-        pub fn my_main() { assert!(p() == 2); }
-    }
-}
-
 fn main() {
     test1::baz::my_main();
     test2::baz::my_main();
-    test3::baz::my_main();
 }

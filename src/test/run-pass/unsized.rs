@@ -10,25 +10,22 @@
 //
 // ignore-lexer-test FIXME #15879
 
-#![allow(bivariance)]
+// Test syntax checks for `?Sized` syntax.
 
-use std::kinds::marker;
-
-// Test syntax checks for `Sized?` syntax.
-
-trait T1 for Sized? : marker::PhantomGetter<Self> {}
-pub trait T2 for Sized? : marker::PhantomGetter<Self> {}
-trait T3<X: T1> for Sized? : T2 + marker::PhantomGetter<X> {}
-trait T4<Sized? X> : marker::PhantomGetter<(Self,X)> {}
-trait T5<Sized? X, Sized? Y> : marker::PhantomGetter<(Self,X,Y)> {}
-trait T6<Y, Sized? X> : marker::PhantomGetter<(Self,X,Y)> {}
-trait T7<Sized? X, Sized? Y> : marker::PhantomGetter<(Self,X,Y)> {}
-trait T8<Sized? X : T2> : marker::PhantomGetter<(Self,X)> {}
-struct S1<Sized? X> { marker: marker::PhantomData<X> }
-enum E<Sized? X> { Dummy(marker::CovariantType<X>) }
-impl <Sized? X> T1 for S1<X> {}
-fn f<Sized? X>() {}
-type TT<T> = T;
+trait T1 {}
+pub trait T2 {}
+trait T3<X: T1> : T2 {}
+trait T4<X: ?Sized> {}
+trait T5<X: ?Sized, Y> {}
+trait T6<Y, X: ?Sized> {}
+trait T7<X: ?Sized, Y: ?Sized> {}
+trait T8<X: ?Sized+T2> {}
+trait T9<X: T2 + ?Sized> {}
+struct S1<X: ?Sized>;
+enum E<X: ?Sized> {}
+impl <X: ?Sized> T1 for S1<X> {}
+fn f<X: ?Sized>() {}
+type TT<T: ?Sized> = T;
 
 pub fn main() {
 }

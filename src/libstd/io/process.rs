@@ -10,31 +10,32 @@
 
 //! Bindings for executing child processes
 
-#![allow(experimental)]
+#![allow(unstable)]
 #![allow(non_upper_case_globals)]
 
 pub use self::StdioContainer::*;
 pub use self::ProcessExit::*;
 
-use prelude::*;
+use prelude::v1::*;
 
+use collections::HashMap;
+use ffi::CString;
 use fmt;
-use os;
+use hash::Hash;
+use io::pipe::{PipeStream, PipePair};
 use io::{IoResult, IoError};
 use io;
 use libc;
-use c_str::CString;
-use collections::HashMap;
-use hash::Hash;
-#[cfg(windows)]
-use std::hash::sip::SipState;
-use io::pipe::{PipeStream, PipePair};
+use os;
 use path::BytesContainer;
-use thread::Thread;
-
-use sys;
+use sync::mpsc::{channel, Receiver};
 use sys::fs::FileDesc;
 use sys::process::Process as ProcessImp;
+use sys;
+use thread::Thread;
+
+#[cfg(windows)] use hash;
+#[cfg(windows)] use str;
 
 /// Signal a process to exit, without forcibly killing it. Corresponds to
 /// SIGTERM on unix platforms.
@@ -97,23 +98,23 @@ pub struct Process {
 /// A representation of environment variable name
 /// It compares case-insensitive on Windows and case-sensitive everywhere else.
 #[cfg(not(windows))]
-#[deriving(PartialEq, Eq, Hash, Clone, Show)]
+#[derive(Hash, PartialEq, Eq, Clone, Show)]
 struct EnvKey(CString);
 
 #[doc(hidden)]
 #[cfg(windows)]
-#[deriving(Eq, Clone, Show)]
+#[derive(Eq, Clone, Show)]
 struct EnvKey(CString);
 
 #[cfg(windows)]
-impl Hash for EnvKey {
-    fn hash(&self, state: &mut SipState) {
+impl<H: hash::Writer + hash::Hasher> hash::Hash<H> for EnvKey {
+    fn hash(&self, state: &mut H) {
         let &EnvKey(ref x) = self;
-        match x.as_str() {
-            Some(s) => for ch in s.chars() {
+        match str::from_utf8(x.as_bytes()) {
+            Ok(s) => for ch in s.chars() {
                 (ch as u8 as char).to_lowercase().hash(state);
             },
-            None => x.hash(state)
+            Err(..) => x.hash(state)
         }
     }
 }
@@ -123,8 +124,8 @@ impl PartialEq for EnvKey {
     fn eq(&self, other: &EnvKey) -> bool {
         let &EnvKey(ref x) = self;
         let &EnvKey(ref y) = other;
-        match (x.as_str(), y.as_str()) {
-            (Some(xs), Some(ys)) => {
+        match (str::from_utf8(x.as_bytes()), str::from_utf8(y.as_bytes())) {
+            (Ok(xs), Ok(ys)) => {
                 if xs.len() != ys.len() {
                     return false
                 } else {
@@ -168,7 +169,7 @@ pub type EnvMap = HashMap<EnvKey, CString>;
 ///
 /// let output = process.stdout.as_mut().unwrap().read_to_end();
 /// ```
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct Command {
     // The internal data for the builder. Documented by the builder
     // methods below, and serialized into rt::rtio::ProcessConfig.
@@ -185,10 +186,10 @@ pub struct Command {
 }
 
 // FIXME (#12938): Until DST lands, we cannot decompose &str into & and str, so
-// we cannot usefully take ToCStr arguments by reference (without forcing an
+// we cannot usefully take BytesContainer arguments by reference (without forcing an
 // additional & around &str). So we are instead temporarily adding an instance
-// for &Path, so that we can take ToCStr as owned. When DST lands, the &Path
-// instance should be removed, and arguments bound by ToCStr should be passed by
+// for &Path, so that we can take BytesContainer as owned. When DST lands, the &Path
+// instance should be removed, and arguments bound by BytesContainer should be passed by
 // reference. (Here: {new, arg, args, env}.)
 
 impl Command {
@@ -203,9 +204,9 @@ impl Command {
     ///
     /// Builder methods are provided to change these defaults and
     /// otherwise configure the process.
-    pub fn new<T:ToCStr>(program: T) -> Command {
+    pub fn new<T: BytesContainer>(program: T) -> Command {
         Command {
-            program: program.to_c_str(),
+            program: CString::from_slice(program.container_as_bytes()),
             args: Vec::new(),
             env: None,
             cwd: None,
@@ -219,27 +220,29 @@ impl Command {
     }
 
     /// Add an argument to pass to the program.
-    pub fn arg<'a, T: ToCStr>(&'a mut self, arg: T) -> &'a mut Command {
-        self.args.push(arg.to_c_str());
+    pub fn arg<'a, T: BytesContainer>(&'a mut self, arg: T) -> &'a mut Command {
+        self.args.push(CString::from_slice(arg.container_as_bytes()));
         self
     }
 
     /// Add multiple arguments to pass to the program.
-    pub fn args<'a, T: ToCStr>(&'a mut self, args: &[T]) -> &'a mut Command {
-        self.args.extend(args.iter().map(|arg| arg.to_c_str()));;
+    pub fn args<'a, T: BytesContainer>(&'a mut self, args: &[T]) -> &'a mut Command {
+        self.args.extend(args.iter().map(|arg| {
+            CString::from_slice(arg.container_as_bytes())
+        }));
         self
     }
     // Get a mutable borrow of the environment variable map for this `Command`.
-    fn get_env_map<'a>(&'a mut self) -> &'a mut  EnvMap {
+    fn get_env_map<'a>(&'a mut self) -> &'a mut EnvMap {
         match self.env {
             Some(ref mut map) => map,
             None => {
                 // if the env is currently just inheriting from the parent's,
                 // materialize the parent's env into a hashtable.
-                self.env = Some(os::env_as_bytes().into_iter()
-                                   .map(|(k, v)| (EnvKey(k.to_c_str()),
-                                                  v.to_c_str()))
-                                   .collect());
+                self.env = Some(os::env_as_bytes().into_iter().map(|(k, v)| {
+                    (EnvKey(CString::from_slice(k.as_slice())),
+                     CString::from_slice(v.as_slice()))
+                }).collect());
                 self.env.as_mut().unwrap()
             }
         }
@@ -249,15 +252,20 @@ impl Command {
     ///
     /// Note that environment variable names are case-insensitive (but case-preserving) on Windows,
     /// and case-sensitive on all other platforms.
-    pub fn env<'a, T: ToCStr, U: ToCStr>(&'a mut self, key: T, val: U)
-                                         -> &'a mut Command {
-        self.get_env_map().insert(EnvKey(key.to_c_str()), val.to_c_str());
+    pub fn env<'a, T, U>(&'a mut self, key: T, val: U)
+                         -> &'a mut Command
+                         where T: BytesContainer, U: BytesContainer {
+        let key = EnvKey(CString::from_slice(key.container_as_bytes()));
+        let val = CString::from_slice(val.container_as_bytes());
+        self.get_env_map().insert(key, val);
         self
     }
 
     /// Removes an environment variable mapping.
-    pub fn env_remove<'a, T: ToCStr>(&'a mut self, key: T) -> &'a mut Command {
-        self.get_env_map().remove(&EnvKey(key.to_c_str()));
+    pub fn env_remove<'a, T>(&'a mut self, key: T) -> &'a mut Command
+                             where T: BytesContainer {
+        let key = EnvKey(CString::from_slice(key.container_as_bytes()));
+        self.get_env_map().remove(&key);
         self
     }
 
@@ -265,16 +273,19 @@ impl Command {
     ///
     /// If the given slice contains multiple instances of an environment
     /// variable, the *rightmost* instance will determine the value.
-    pub fn env_set_all<'a, T: ToCStr, U: ToCStr>(&'a mut self, env: &[(T,U)])
-                                                 -> &'a mut Command {
-        self.env = Some(env.iter().map(|&(ref k, ref v)| (EnvKey(k.to_c_str()), v.to_c_str()))
-                                  .collect());
+    pub fn env_set_all<'a, T, U>(&'a mut self, env: &[(T,U)])
+                                 -> &'a mut Command
+                                 where T: BytesContainer, U: BytesContainer {
+        self.env = Some(env.iter().map(|&(ref k, ref v)| {
+            (EnvKey(CString::from_slice(k.container_as_bytes())),
+             CString::from_slice(v.container_as_bytes()))
+        }).collect());
         self
     }
 
     /// Set the working directory for the child process.
     pub fn cwd<'a>(&'a mut self, dir: &Path) -> &'a mut Command {
-        self.cwd = Some(dir.to_c_str());
+        self.cwd = Some(CString::from_slice(dir.as_vec()));
         self
     }
 
@@ -384,14 +395,14 @@ impl Command {
     }
 }
 
-impl fmt::Show for Command {
+impl fmt::String for Command {
     /// Format the program and arguments of a Command for display. Any
     /// non-utf8 data is lossily converted using the utf8 replacement
     /// character.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "{}", String::from_utf8_lossy(self.program.as_bytes_no_nul())));
+        try!(write!(f, "{}", String::from_utf8_lossy(self.program.as_bytes())));
         for arg in self.args.iter() {
-            try!(write!(f, " '{}'", String::from_utf8_lossy(arg.as_bytes_no_nul())));
+            try!(write!(f, " '{}'", String::from_utf8_lossy(arg.as_bytes())));
         }
         Ok(())
     }
@@ -450,7 +461,7 @@ impl sys::process::ProcessConfig<EnvKey, CString> for Command {
 }
 
 /// The output of a finished process.
-#[deriving(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct ProcessOutput {
     /// The status (exit code) of the process.
     pub status: ProcessExit,
@@ -461,7 +472,7 @@ pub struct ProcessOutput {
 }
 
 /// Describes what to do with a standard io stream for a child process.
-#[deriving(Clone, Copy)]
+#[derive(Clone, Copy)]
 pub enum StdioContainer {
     /// This stream will be ignored. This is the equivalent of attaching the
     /// stream to `/dev/null`
@@ -483,7 +494,7 @@ pub enum StdioContainer {
 
 /// Describes the result of a process after it has terminated.
 /// Note that Windows have no signals, so the result is usually ExitStatus.
-#[deriving(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum ProcessExit {
     /// Normal termination with an exit status.
     ExitStatus(int),
@@ -493,6 +504,14 @@ pub enum ProcessExit {
 }
 
 impl fmt::Show for ProcessExit {
+    /// Format a ProcessExit enum, to nicely present the information.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::String::fmt(self, f)
+    }
+}
+
+
+impl fmt::String for ProcessExit {
     /// Format a ProcessExit enum, to nicely present the information.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -642,7 +661,7 @@ impl Process {
     /// # Example
     ///
     /// ```no_run
-    /// # #![allow(experimental)]
+    /// # #![allow(unstable)]
     /// use std::io::{Command, IoResult};
     /// use std::io::process::ProcessExit;
     ///
@@ -670,7 +689,7 @@ impl Process {
     ///     p.wait()
     /// }
     /// ```
-    #[experimental = "the type of the timeout is likely to change"]
+    #[unstable = "the type of the timeout is likely to change"]
     pub fn set_timeout(&mut self, timeout_ms: Option<u64>) {
         self.deadline = timeout_ms.map(|i| i + sys::timer::now()).unwrap_or(0);
     }
@@ -693,10 +712,10 @@ impl Process {
                 Some(stream) => {
                     Thread::spawn(move |:| {
                         let mut stream = stream;
-                        tx.send(stream.read_to_end())
-                    }).detach();
+                        tx.send(stream.read_to_end()).unwrap();
+                    });
                 }
-                None => tx.send(Ok(Vec::new()))
+                None => tx.send(Ok(Vec::new())).unwrap()
             }
             rx
         }
@@ -707,8 +726,8 @@ impl Process {
 
         Ok(ProcessOutput {
             status: status,
-            output: stdout.recv().ok().unwrap_or(Vec::new()),
-            error:  stderr.recv().ok().unwrap_or(Vec::new()),
+            output: stdout.recv().unwrap().unwrap_or(Vec::new()),
+            error:  stderr.recv().unwrap().unwrap_or(Vec::new()),
         })
     }
 
@@ -741,16 +760,19 @@ impl Drop for Process {
 
 #[cfg(test)]
 mod tests {
-    #![allow(unused_imports)]
-
-    use super::*;
-    use prelude::*;
-    use io::timer::*;
-    use io::*;
+    use io::{Truncate, Write, TimedOut, timer, process, FileNotFound};
+    use prelude::v1::{Ok, Err, range, drop, Some, None, Vec};
+    use prelude::v1::{Path, String, Reader, Writer, Clone};
+    use prelude::v1::{SliceExt, Str, StrExt, AsSlice, ToString, GenericPath};
     use io::fs::PathExtensions;
-    use time::Duration;
-    use str;
+    use io::timer::*;
     use rt::running_on_valgrind;
+    use str;
+    use super::{CreatePipe};
+    use super::{InheritFd, Process, PleaseExitSignal, Command, ProcessOutput};
+    use sync::mpsc::channel;
+    use thread::Thread;
+    use time::Duration;
 
     // FIXME(#10380) these tests should not all be ignored on android.
 
@@ -1154,22 +1176,22 @@ mod tests {
     fn wait_timeout2() {
         let (tx, rx) = channel();
         let tx2 = tx.clone();
-        spawn(move|| {
+        let _t = Thread::spawn(move|| {
             let mut p = sleeper();
             p.set_timeout(Some(10));
             assert_eq!(p.wait().err().unwrap().kind, TimedOut);
             p.signal_kill().unwrap();
-            tx.send(());
+            tx.send(()).unwrap();
         });
-        spawn(move|| {
+        let _t = Thread::spawn(move|| {
             let mut p = sleeper();
             p.set_timeout(Some(10));
             assert_eq!(p.wait().err().unwrap().kind, TimedOut);
             p.signal_kill().unwrap();
-            tx2.send(());
+            tx2.send(()).unwrap();
         });
-        rx.recv();
-        rx.recv();
+        rx.recv().unwrap();
+        rx.recv().unwrap();
     }
 
     #[test]
@@ -1205,12 +1227,13 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn env_map_keys_ci() {
+        use ffi::CString;
         use super::EnvKey;
         let mut cmd = Command::new("");
         cmd.env("path", "foo");
         cmd.env("Path", "bar");
         let env = &cmd.env.unwrap();
-        let val = env.get(&EnvKey("PATH".to_c_str()));
-        assert!(val.unwrap() == &"bar".to_c_str());
+        let val = env.get(&EnvKey(CString::from_slice(b"PATH")));
+        assert!(val.unwrap() == &CString::from_slice(b"bar"));
     }
 }

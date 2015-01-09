@@ -15,17 +15,20 @@
 //! This API is completely unstable and subject to change.
 
 #![crate_name = "rustc"]
-#![experimental]
+#![unstable]
+#![staged_api]
 #![crate_type = "dylib"]
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
       html_favicon_url = "http://www.rust-lang.org/favicon.ico",
       html_root_url = "http://doc.rust-lang.org/nightly/")]
 
-#![feature(default_type_params, globs, macro_rules, phase, quote)]
+#![allow(unknown_features)]
+#![feature(quote)]
 #![feature(slicing_syntax, unsafe_destructor)]
+#![feature(box_syntax)]
+#![allow(unknown_features)] #![feature(int_uint)]
 #![feature(rustc_diagnostic_macros)]
-#![feature(unboxed_closures)]
 
 extern crate arena;
 extern crate flate;
@@ -37,8 +40,8 @@ extern crate rustc_back;
 extern crate serialize;
 extern crate rbml;
 extern crate collections;
-#[phase(plugin, link)] extern crate log;
-#[phase(plugin, link)] extern crate syntax;
+#[macro_use] extern crate log;
+#[macro_use] extern crate syntax;
 
 extern crate "serialize" as rustc_serialize; // used by deriving
 
@@ -98,6 +101,7 @@ pub mod middle {
     pub mod traits;
     pub mod ty;
     pub mod ty_fold;
+    pub mod ty_walk;
     pub mod weak_lang_items;
 }
 

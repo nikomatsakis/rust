@@ -10,13 +10,16 @@
 
 // Test method calls with self as an argument
 
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+
 static mut COUNT: u64 = 1;
 
 struct Foo;
 
 impl Copy for Foo {}
 
-trait Bar {
+trait Bar : Sized {
     fn foo1(&self);
     fn foo2(self);
     fn foo3(self: Box<Self>);

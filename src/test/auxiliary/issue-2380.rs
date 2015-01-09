@@ -11,7 +11,8 @@
 #![crate_name="a"]
 #![crate_type = "lib"]
 
-use std::kinds::marker;
+#![allow(unknown_features)]
+#![feature(box_syntax)]
 
 pub trait i<T>
 {

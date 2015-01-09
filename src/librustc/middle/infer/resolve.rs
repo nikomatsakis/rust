@@ -9,8 +9,8 @@
 // except according to those terms.
 
 use super::{InferCtxt, fixup_err, fres, unresolved_ty, unresolved_int_ty, unresolved_float_ty};
-use middle::ty::{mod, Ty};
-use middle::ty_fold::{mod, TypeFoldable};
+use middle::ty::{self, Ty};
+use middle::ty_fold::{self, TypeFoldable};
 use util::ppaux::Repr;
 
 ///////////////////////////////////////////////////////////////////////////
@@ -83,19 +83,19 @@ impl<'a, 'tcx> ty_fold::TypeFolder<'tcx> for FullTypeResolver<'a, 'tcx> {
             match t.sty {
                 ty::ty_infer(ty::TyVar(vid)) => {
                     self.err = Some(unresolved_ty(vid));
-                    ty::mk_err()
+                    self.tcx().types.err
                 }
                 ty::ty_infer(ty::IntVar(vid)) => {
                     self.err = Some(unresolved_int_ty(vid));
-                    ty::mk_err()
+                    self.tcx().types.err
                 }
                 ty::ty_infer(ty::FloatVar(vid)) => {
                     self.err = Some(unresolved_float_ty(vid));
-                    ty::mk_err()
+                    self.tcx().types.err
                 }
                 ty::ty_infer(_) => {
                     self.infcx.tcx.sess.bug(
-                        format!("Unexpected type in full type resolver: {}",
+                        &format!("Unexpected type in full type resolver: {}",
                                 t.repr(self.infcx.tcx))[]);
                 }
                 _ => {

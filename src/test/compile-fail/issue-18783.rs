@@ -8,30 +8,32 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(box_syntax)]
+
 use std::cell::RefCell;
 
 fn main() {
     let c = RefCell::new(vec![]);
-    let mut y = 1u;
-    c.push(|| y = 0);
-    c.push(|| y = 0);
+    let mut y = 1us;
+    c.push(box || y = 0);
+    c.push(box || y = 0);
 //~^ ERROR cannot borrow `y` as mutable more than once at a time
 }
 
 fn ufcs() {
     let c = RefCell::new(vec![]);
-    let mut y = 1u;
+    let mut y = 1us;
 
-    Push::push(&c, || y = 0);
-    Push::push(&c, || y = 0);
+    Push::push(&c, box || y = 0);
+    Push::push(&c, box || y = 0);
 }
 
 trait Push<'c> {
-    fn push<'f: 'c>(&self, push: ||:'f -> ());
+    fn push<'f: 'c>(&self, push: Box<FnMut() + 'f>);
 }
 
-impl<'c> Push<'c> for RefCell<Vec<||:'c>> {
-    fn push<'f: 'c>(&self, fun: ||:'f -> ()) {
+impl<'c> Push<'c> for RefCell<Vec<Box<FnMut() + 'c>>> {
+    fn push<'f: 'c>(&self, fun: Box<FnMut() + 'f>) {
         self.borrow_mut().push(fun)
     }
 }

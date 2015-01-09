@@ -11,7 +11,8 @@
 //! A pass that annotates every item and method with its stability level,
 //! propagating default levels lexically from parent to children ast nodes.
 
-use util::nodemap::{NodeMap, DefIdMap};
+use middle::ty;
+use metadata::csearch;
 use syntax::codemap::Span;
 use syntax::{attr, visit};
 use syntax::ast;
@@ -21,8 +22,8 @@ use syntax::ast::{TypeMethod, Method, Generics, StructField, TypeTraitItem};
 use syntax::ast_util::is_local;
 use syntax::attr::Stability;
 use syntax::visit::{FnKind, FkMethod, Visitor};
-use middle::ty;
-use metadata::csearch;
+use util::nodemap::{NodeMap, DefIdMap};
+use util::ppaux::Repr;
 
 use std::mem::replace;
 
@@ -81,7 +82,7 @@ impl<'v> Visitor<'v> for Annotator {
         // stability of the trait. This is WRONG, but expedient to get
         // libstd stabilized for the 1.0 release.
         let use_parent = match i.node {
-            ast::ItemImpl(_, _, Some(_), _, _) => false,
+            ast::ItemImpl(_, _, _, Some(_), _, _) => false,
             _ => true,
         };
 
@@ -154,10 +155,13 @@ impl Index {
 /// Lookup the stability for a node, loading external crate
 /// metadata as necessary.
 pub fn lookup(tcx: &ty::ctxt, id: DefId) -> Option<Stability> {
+    debug!("lookup(id={})",
+           id.repr(tcx));
+
     // is this definition the implementation of a trait method?
     match ty::trait_item_of_item(tcx, id) {
-        Some(ty::MethodTraitItemId(trait_method_id))
-                if trait_method_id != id => {
+        Some(ty::MethodTraitItemId(trait_method_id)) if trait_method_id != id => {
+            debug!("lookup: trait_method_id={:?}", trait_method_id);
             return lookup(tcx, trait_method_id)
         }
         _ => {}
@@ -178,9 +182,26 @@ pub fn lookup(tcx: &ty::ctxt, id: DefId) -> Option<Stability> {
             // stability of the trait to determine the stability of any
             // unmarked impls for it. See FIXME above for more details.
 
+            debug!("lookup: trait_id={:?}", trait_id);
             lookup(tcx, trait_id)
         } else {
             None
         }
     })
+}
+
+pub fn is_staged_api(tcx: &ty::ctxt, id: DefId) -> bool {
+    match ty::trait_item_of_item(tcx, id) {
+        Some(ty::MethodTraitItemId(trait_method_id))
+            if trait_method_id != id => {
+                is_staged_api(tcx, trait_method_id)
+            }
+        _ if is_local(id) => {
+            // Unused case
+            unreachable!()
+        }
+        _ => {
+            csearch::is_staged_api(&tcx.sess.cstore, id)
+        }
+    }
 }

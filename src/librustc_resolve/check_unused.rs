@@ -17,6 +17,8 @@
 // `use` directives.
 //
 
+use std::ops::{Deref, DerefMut};
+
 use Resolver;
 use Namespace::{TypeNS, ValueNS};
 
@@ -26,26 +28,28 @@ use syntax::ast;
 use syntax::ast::{ViewItem, ViewItemExternCrate, ViewItemUse};
 use syntax::ast::{ViewPathGlob, ViewPathList, ViewPathSimple};
 use syntax::codemap::{Span, DUMMY_SP};
-use syntax::visit::{mod, Visitor};
+use syntax::visit::{self, Visitor};
 
-struct UnusedImportCheckVisitor<'a, 'b:'a> {
-    resolver: &'a mut Resolver<'b>
+struct UnusedImportCheckVisitor<'a, 'b:'a, 'tcx:'b> {
+    resolver: &'a mut Resolver<'b, 'tcx>
 }
 
 // Deref and DerefMut impls allow treating UnusedImportCheckVisitor as Resolver.
-impl<'a, 'b> Deref<Resolver<'b>> for UnusedImportCheckVisitor<'a, 'b> {
-    fn deref<'c>(&'c self) -> &'c Resolver<'b> {
+impl<'a, 'b, 'tcx:'b> Deref for UnusedImportCheckVisitor<'a, 'b, 'tcx> {
+    type Target = Resolver<'b, 'tcx>;
+
+    fn deref<'c>(&'c self) -> &'c Resolver<'b, 'tcx> {
         &*self.resolver
     }
 }
 
-impl<'a, 'b> DerefMut<Resolver<'b>> for UnusedImportCheckVisitor<'a, 'b> {
-    fn deref_mut<'c>(&'c mut self) -> &'c mut Resolver<'b> {
+impl<'a, 'b, 'tcx:'b> DerefMut for UnusedImportCheckVisitor<'a, 'b, 'tcx> {
+    fn deref_mut<'c>(&'c mut self) -> &'c mut Resolver<'b, 'tcx> {
         &mut *self.resolver
     }
 }
 
-impl<'a, 'b> UnusedImportCheckVisitor<'a, 'b> {
+impl<'a, 'b, 'tcx> UnusedImportCheckVisitor<'a, 'b, 'tcx> {
     // We have information about whether `use` (import) directives are actually used now.
     // If an import is not used at all, we signal a lint error. If an import is only used
     // for a single namespace, we remove the other namespace from the recorded privacy
@@ -54,7 +58,7 @@ impl<'a, 'b> UnusedImportCheckVisitor<'a, 'b> {
     // public or private item, we will check the correct thing, dependent on how the import
     // is used.
     fn finalize_import(&mut self, id: ast::NodeId, span: Span) {
-        debug!("finalizing import uses for {}",
+        debug!("finalizing import uses for {:?}",
                 self.session.codemap().span_to_snippet(span));
 
         if !self.used_imports.contains(&(id, TypeNS)) &&
@@ -104,7 +108,7 @@ impl<'a, 'b> UnusedImportCheckVisitor<'a, 'b> {
     }
 }
 
-impl<'a, 'b, 'v> Visitor<'v> for UnusedImportCheckVisitor<'a, 'b> {
+impl<'a, 'b, 'v, 'tcx> Visitor<'v> for UnusedImportCheckVisitor<'a, 'b, 'tcx> {
     fn visit_view_item(&mut self, vi: &ViewItem) {
         // Ignore is_public import statements because there's no way to be sure
         // whether they're used or not. Also ignore imports with a dummy span

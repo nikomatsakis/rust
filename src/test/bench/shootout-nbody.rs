@@ -175,7 +175,7 @@ fn main() {
         5000000
     } else {
         std::os::args().as_slice().get(1)
-            .and_then(|arg| from_str(arg.as_slice()))
+            .and_then(|arg| arg.parse())
             .unwrap_or(1000)
     };
     let mut bodies = BODIES;
@@ -202,6 +202,6 @@ fn shift_mut_ref<'a, T>(r: &mut &'a mut [T]) -> Option<&'a mut T> {
         raw.data = raw.data.offset(1);
         raw.len -= 1;
         *r = mem::transmute(raw);
-        Some(unsafe { &mut *ret })
+        Some({ &mut *ret })
     }
 }

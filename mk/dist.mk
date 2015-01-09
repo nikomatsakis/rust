@@ -17,12 +17,12 @@
 # * dist - make all distribution artifacts
 # * distcheck - sanity check dist artifacts
 # * dist-tar-src - source tarballs
-# * dist-win - Windows exe installers
-# * dist-osx - OS X .pkg installers
 # * dist-tar-bins - Ad-hoc Unix binary installers
 # * dist-docs - Stage docs for upload
 
 PKG_NAME := $(CFG_PACKAGE_NAME)
+DOC_PKG_NAME := rust-docs-$(CFG_PACKAGE_VERS)
+MINGW_PKG_NAME := rust-mingw-$(CFG_PACKAGE_VERS)
 
 # License suitable for displaying in a popup
 LICENSE.txt: $(S)COPYRIGHT $(S)LICENSE-APACHE $(S)LICENSE-MIT
@@ -33,7 +33,7 @@ LICENSE.txt: $(S)COPYRIGHT $(S)LICENSE-APACHE $(S)LICENSE-MIT
 # Source tarball
 ######################################################################
 
-PKG_TAR = dist/$(PKG_NAME).tar.gz
+PKG_TAR = dist/$(PKG_NAME)-src.tar.gz
 
 PKG_GITMODULES := $(S)src/llvm $(S)src/compiler-rt \
 		  $(S)src/rt/hoedown $(S)src/jemalloc
@@ -59,6 +59,7 @@ PKG_FILES := \
       rustllvm                                 \
       snapshots.txt                            \
       rust-installer                           \
+      rustbook                                 \
       test)                                    \
     $(PKG_GITMODULES)                          \
     $(filter-out config.stamp, \
@@ -105,112 +106,10 @@ distcheck-tar-src: dist-tar-src
 
 
 ######################################################################
-# Windows .exe installer
-######################################################################
-
-# FIXME Needs to support all hosts, but making rust.iss compatible looks like a chore
-
-ifdef CFG_ISCC
-
-PKG_EXE = dist/$(PKG_NAME)-$(CFG_BUILD).exe
-
-%.iss: $(S)src/etc/pkg/%.iss
-	cp $< $@
-
-%.ico: $(S)src/etc/pkg/%.ico
-	cp $< $@
-
-$(PKG_EXE): rust.iss modpath.iss upgrade.iss LICENSE.txt rust-logo.ico \
-            $(CSREQ3_T_$(CFG_BUILD)_H_$(CFG_BUILD)) \
-            dist-prepare-win
-	$(Q)rm -rf tmp/dist/win/gcc
-	$(CFG_PYTHON) $(S)src/etc/make-win-dist.py tmp/dist/win/rust tmp/dist/win/gcc $(CFG_BUILD)
-	@$(call E, ISCC: $@)
-	$(Q)$(CFG_ISCC) $<
-
-$(eval $(call DEF_PREPARE,win))
-
-dist-prepare-win: PREPARE_HOST=$(CFG_BUILD)
-dist-prepare-win: PREPARE_TARGETS=$(CFG_BUILD)
-dist-prepare-win: PREPARE_DEST_DIR=tmp/dist/win/rust
-dist-prepare-win: PREPARE_DIR_CMD=$(DEFAULT_PREPARE_DIR_CMD)
-dist-prepare-win: PREPARE_BIN_CMD=$(DEFAULT_PREPARE_BIN_CMD)
-dist-prepare-win: PREPARE_LIB_CMD=$(DEFAULT_PREPARE_LIB_CMD)
-dist-prepare-win: PREPARE_MAN_CMD=$(DEFAULT_PREPARE_MAN_CMD)
-dist-prepare-win: PREPARE_CLEAN=true
-dist-prepare-win: prepare-base-win
-
-endif
-
-dist-win: $(PKG_EXE)
-
-distcheck-win: dist-win
-
-######################################################################
-# OS X .pkg installer
-######################################################################
-
-ifeq ($(CFG_OSTYPE), apple-darwin)
-
-define DEF_OSX_PKG
-
-$$(eval $$(call DEF_PREPARE,osx-$(1)))
-
-dist-prepare-osx-$(1): PREPARE_HOST=$(1)
-dist-prepare-osx-$(1): PREPARE_TARGETS=$(2)
-dist-prepare-osx-$(1): PREPARE_DEST_DIR=tmp/dist/pkgroot-$(1)
-dist-prepare-osx-$(1): PREPARE_DIR_CMD=$(DEFAULT_PREPARE_DIR_CMD)
-dist-prepare-osx-$(1): PREPARE_BIN_CMD=$(DEFAULT_PREPARE_BIN_CMD)
-dist-prepare-osx-$(1): PREPARE_LIB_CMD=$(DEFAULT_PREPARE_LIB_CMD)
-dist-prepare-osx-$(1): PREPARE_MAN_CMD=$(DEFAULT_PREPARE_MAN_CMD)
-dist-prepare-osx-$(1): prepare-base-osx-$(1)
-
-dist/$(PKG_NAME)-$(1).pkg: $(S)src/etc/pkg/Distribution.xml LICENSE.txt \
-		dist-prepare-osx-$(1) \
-		tmp/dist/pkgres-$(1)/LICENSE.txt \
-		tmp/dist/pkgres-$(1)/welcome.rtf \
-		tmp/dist/pkgres-$(1)/rust-logo.png
-	@$$(call E, making OS X pkg)
-	$(Q)pkgbuild --identifier org.rust-lang.rust --root tmp/dist/pkgroot-$(1) rust.pkg
-	$(Q)productbuild --distribution $(S)src/etc/pkg/Distribution.xml \
-	      --resources tmp/dist/pkgres-$(1) dist/$(PKG_NAME)-$(1).pkg
-	$(Q)rm -rf tmp rust.pkg
-
-tmp/dist/pkgres-$(1)/LICENSE.txt: LICENSE.txt
-	@$$(call E,pkg resource LICENSE.txt)
-	$(Q)mkdir -p $$(@D)
-	$(Q)cp $$< $$@
-
-tmp/dist/pkgres-$(1)/%: $(S)src/etc/pkg/%
-	@$$(call E,pkg resource $$*)
-	$(Q)mkdir -p $$(@D)
-	$(Q)cp -r $$< $$@
-
-endef
-
-ifneq ($(CFG_ENABLE_DIST_HOST_ONLY),)
-$(foreach host,$(CFG_HOST),$(eval $(call DEF_OSX_PKG,$(host),$(host))))
-else
-$(foreach host,$(CFG_HOST),$(eval $(call DEF_OSX_PKG,$(host),$(TARGET))))
-endif
-
-dist-osx: $(foreach host,$(CFG_HOST),dist/$(PKG_NAME)-$(host).pkg)
-
-else
-
-dist-osx:
-
-endif
-
-# FIXME should do something
-distcheck-osx: dist-osx
-
-
-######################################################################
 # Unix binary installer tarballs
 ######################################################################
 
-NON_INSTALLED_PREFIXES=COPYRIGHT,LICENSE-APACHE,LICENSE-MIT,README.md,doc
+NON_INSTALLED_PREFIXES=COPYRIGHT,LICENSE-APACHE,LICENSE-MIT,README.md,version
 
 define DEF_INSTALLER
 
@@ -229,10 +128,22 @@ dist-install-dir-$(1): prepare-base-dir-$(1) docs compiler-docs
 	$$(Q)$$(PREPARE_MAN_CMD) $$(S)LICENSE-APACHE $$(PREPARE_DEST_DIR)
 	$$(Q)$$(PREPARE_MAN_CMD) $$(S)LICENSE-MIT $$(PREPARE_DEST_DIR)
 	$$(Q)$$(PREPARE_MAN_CMD) $$(S)README.md $$(PREPARE_DEST_DIR)
-	$$(Q)[ ! -d doc ] || cp -r doc $$(PREPARE_DEST_DIR)
+	$$(Q)mkdir -p $$(PREPARE_DEST_DIR)/share/doc/rust
+	$$(Q)$$(PREPARE_MAN_CMD) $$(S)COPYRIGHT $$(PREPARE_DEST_DIR)/share/doc/rust
+	$$(Q)$$(PREPARE_MAN_CMD) $$(S)LICENSE-APACHE $$(PREPARE_DEST_DIR)/share/doc/rust
+	$$(Q)$$(PREPARE_MAN_CMD) $$(S)LICENSE-MIT $$(PREPARE_DEST_DIR)/share/doc/rust
+	$$(Q)$$(PREPARE_MAN_CMD) $$(S)README.md $$(PREPARE_DEST_DIR)/share/doc/rust
+# This tiny morsel of metadata is used by rust-packaging
+	$$(Q)echo "$(CFG_VERSION)" > $$(PREPARE_DEST_DIR)/version
 
 dist/$$(PKG_NAME)-$(1).tar.gz: dist-install-dir-$(1)
 	@$(call E, build: $$@)
+# Copy essential gcc components into installer
+ifdef CFG_WINDOWSY_$(1)
+	$$(Q)rm -Rf tmp/dist/win-rust-gcc-$(1)
+	$$(Q)$$(CFG_PYTHON) $$(S)src/etc/make-win-dist.py tmp/dist/$$(PKG_NAME)-$(1)-image tmp/dist/win-rust-gcc-$(1) $(1)
+	$$(Q)cp -r $$(S)src/etc/third-party tmp/dist/$$(PKG_NAME)-$(1)-image/share/doc/
+endif
 	$$(Q)$$(S)src/rust-installer/gen-installer.sh \
 		--product-name=Rust \
 		--verify-bin=rustc \
@@ -242,8 +153,49 @@ dist/$$(PKG_NAME)-$(1).tar.gz: dist-install-dir-$(1)
 		--work-dir=tmp/dist \
 		--output-dir=dist \
 		--non-installed-prefixes=$$(NON_INSTALLED_PREFIXES) \
-		--package-name=$$(PKG_NAME)-$(1)
+		--package-name=$$(PKG_NAME)-$(1) \
+		--component-name=rustc \
+		--legacy-manifest-dirs=rustlib,cargo
 	$$(Q)rm -R tmp/dist/$$(PKG_NAME)-$(1)-image
+
+dist-doc-install-dir-$(1): docs compiler-docs
+	$$(Q)mkdir -p tmp/dist/$$(DOC_PKG_NAME)-$(1)-image/share/doc/rust
+	$$(Q)cp -r doc tmp/dist/$$(DOC_PKG_NAME)-$(1)-image/share/doc/rust/html
+
+dist/$$(DOC_PKG_NAME)-$(1).tar.gz: dist-doc-install-dir-$(1)
+	@$(call E, build: $$@)
+	$$(Q)$$(S)src/rust-installer/gen-installer.sh \
+		--product-name=Rust-Documentation \
+		--rel-manifest-dir=rustlib \
+		--success-message=Rust-documentation-is-installed. \
+		--image-dir=tmp/dist/$$(DOC_PKG_NAME)-$(1)-image \
+		--work-dir=tmp/dist \
+		--output-dir=dist \
+		--package-name=$$(DOC_PKG_NAME)-$(1) \
+		--component-name=rust-docs \
+		--legacy-manifest-dirs=rustlib,cargo \
+		--bulk-dirs=share/doc/rust/html
+	$$(Q)rm -R tmp/dist/$$(DOC_PKG_NAME)-$(1)-image
+
+dist-mingw-install-dir-$(1):
+	$$(Q)mkdir -p tmp/dist/rust-mingw-tmp-$(1)-image
+	$$(Q)rm -Rf tmp/dist/$$(MINGW_PKG_NAME)-$(1)-image
+	$$(Q)$$(CFG_PYTHON) $$(S)src/etc/make-win-dist.py \
+		tmp/dist/rust-mingw-tmp-$(1)-image tmp/dist/$$(MINGW_PKG_NAME)-$(1)-image $(1)
+
+dist/$$(MINGW_PKG_NAME)-$(1).tar.gz: dist-mingw-install-dir-$(1)
+	@$(call E, build: $$@)
+	$$(Q)$$(S)src/rust-installer/gen-installer.sh \
+		--product-name=Rust-MinGW \
+		--rel-manifest-dir=rustlib \
+		--success-message=Rust-MinGW-is-installed. \
+		--image-dir=tmp/dist/$$(MINGW_PKG_NAME)-$(1)-image \
+		--work-dir=tmp/dist \
+		--output-dir=dist \
+		--package-name=$$(MINGW_PKG_NAME)-$(1) \
+		--component-name=rust-mingw \
+		--legacy-manifest-dirs=rustlib,cargo
+	$$(Q)rm -R tmp/dist/$$(MINGW_PKG_NAME)-$(1)-image
 
 endef
 
@@ -257,7 +209,16 @@ endif
 
 dist-install-dirs: $(foreach host,$(CFG_HOST),dist-install-dir-$(host))
 
-dist-tar-bins: $(foreach host,$(CFG_HOST),dist/$(PKG_NAME)-$(host).tar.gz)
+ifdef CFG_WINDOWSY_$(CFG_BUILD)
+MAYBE_MINGW_TARBALLS=$(foreach host,$(CFG_HOST),dist/$(MINGW_PKG_NAME)-$(host).tar.gz)
+endif
+
+ifeq ($(CFG_DISABLE_DOCS),)
+MAYBE_DOC_TARBALLS=$(foreach host,$(CFG_HOST),dist/$(DOC_PKG_NAME)-$(host).tar.gz)
+endif
+
+dist-tar-bins: $(foreach host,$(CFG_HOST),dist/$(PKG_NAME)-$(host).tar.gz) \
+	$(MAYBE_DOC_TARBALLS) $(MAYBE_MINGW_TARBALLS)
 
 # Just try to run the compiler for the build host
 distcheck-tar-bins: dist-tar-bins
@@ -289,27 +250,20 @@ distcheck-docs: dist-docs
 # Primary targets (dist, distcheck)
 ######################################################################
 
-ifdef CFG_WINDOWSY_$(CFG_BUILD)
-
-dist: dist-win dist-tar-bins
-
-distcheck: distcheck-win
-	$(Q)rm -Rf tmp/distcheck
-	@echo
-	@echo -----------------------------------------------
-	@echo "Rust ready for distribution (see ./dist)"
-	@echo -----------------------------------------------
-
-else
+MAYBE_DIST_TAR_SRC=dist-tar-src
+MAYBE_DISTCHECK_TAR_SRC=distcheck-tar-src
 
 # FIXME #13224: On OS X don't produce tarballs simply because --exclude-vcs don't work.
 # This is a huge hack because I just don't have time to figure out another solution.
 ifeq ($(CFG_OSTYPE), apple-darwin)
 MAYBE_DIST_TAR_SRC=
 MAYBE_DISTCHECK_TAR_SRC=
-else
-MAYBE_DIST_TAR_SRC=dist-tar-src
-MAYBE_DISTCHECK_TAR_SRC=distcheck-tar-src
+endif
+
+# Don't bother with source tarballs on windows just because we historically haven't.
+ifeq ($(CFG_OSTYPE), pc-windows-gnu)
+MAYBE_DIST_TAR_SRC=
+MAYBE_DISTCHECK_TAR_SRC=
 endif
 
 ifneq ($(CFG_DISABLE_DOCS),)
@@ -320,15 +274,13 @@ MAYBE_DIST_DOCS=dist-docs
 MAYBE_DISTCHECK_DOCS=distcheck-docs
 endif
 
-dist: $(MAYBE_DIST_TAR_SRC) dist-osx dist-tar-bins $(MAYBE_DIST_DOCS)
+dist: $(MAYBE_DIST_TAR_SRC) dist-tar-bins $(MAYBE_DIST_DOCS)
 
-distcheck: $(MAYBE_DISTCHECK_TAR_SRC) distcheck-osx distcheck-tar-bins $(MAYBE_DISTCHECK_DOCS)
+distcheck: $(MAYBE_DISTCHECK_TAR_SRC) distcheck-tar-bins $(MAYBE_DISTCHECK_DOCS)
 	$(Q)rm -Rf tmp/distcheck
 	@echo
 	@echo -----------------------------------------------
 	@echo "Rust ready for distribution (see ./dist)"
 	@echo -----------------------------------------------
-
-endif
 
 .PHONY: dist distcheck

@@ -14,12 +14,10 @@
 //
 // I *think* it's the same, more or less.
 
+use std::sync::mpsc::{channel, Sender, Receiver};
 use std::os;
 use std::thread::Thread;
 use std::time::Duration;
-use std::uint;
-
-fn move_out<T>(_x: T) {}
 
 enum request {
     get_count,
@@ -31,7 +29,7 @@ fn server(requests: &Receiver<request>, responses: &Sender<uint>) {
     let mut count: uint = 0;
     let mut done = false;
     while !done {
-        match requests.recv_opt() {
+        match requests.recv() {
           Ok(request::get_count) => { responses.send(count.clone()); }
           Ok(request::bytes(b)) => {
             //println!("server: received {} bytes", b);
@@ -41,15 +39,15 @@ fn server(requests: &Receiver<request>, responses: &Sender<uint>) {
           _ => { }
         }
     }
-    responses.send(count);
+    responses.send(count).unwrap();
     //println!("server exiting");
 }
 
 fn run(args: &[String]) {
     let (to_parent, from_child) = channel();
 
-    let size = from_str::<uint>(args[1].as_slice()).unwrap();
-    let workers = from_str::<uint>(args[2].as_slice()).unwrap();
+    let size = args[1].parse::<uint>().unwrap();
+    let workers = args[2].parse::<uint>().unwrap();
     let num_bytes = 100;
     let mut result = None;
     let mut to_parent = Some(to_parent);
@@ -58,7 +56,7 @@ fn run(args: &[String]) {
         let mut worker_results = Vec::new();
         let from_parent = if workers == 1 {
             let (to_child, from_parent) = channel();
-            worker_results.push(Thread::spawn(move|| {
+            worker_results.push(Thread::scoped(move|| {
                 for _ in range(0u, size / workers) {
                     //println!("worker {}: sending {} bytes", i, num_bytes);
                     to_child.send(request::bytes(num_bytes));
@@ -70,7 +68,7 @@ fn run(args: &[String]) {
             let (to_child, from_parent) = channel();
             for _ in range(0u, workers) {
                 let to_child = to_child.clone();
-                worker_results.push(Thread::spawn(move|| {
+                worker_results.push(Thread::scoped(move|| {
                     for _ in range(0u, size / workers) {
                         //println!("worker {}: sending {} bytes", i, num_bytes);
                         to_child.send(request::bytes(num_bytes));
@@ -82,7 +80,7 @@ fn run(args: &[String]) {
         };
         Thread::spawn(move|| {
             server(&from_parent, &to_parent);
-        }).detach();
+        });
 
         for r in worker_results.into_iter() {
             let _ = r.join();
@@ -91,7 +89,7 @@ fn run(args: &[String]) {
         //println!("sending stop message");
         //to_child.send(stop);
         //move_out(to_child);
-        result = Some(from_child.recv());
+        result = Some(from_child.recv().unwrap());
     });
     let result = result.unwrap();
     print!("Count is {}\n", result);
@@ -111,6 +109,6 @@ fn main() {
         args.clone().into_iter().map(|x| x.to_string()).collect()
     };
 
-    println!("{}", args);
+    println!("{:?}", args);
     run(args.as_slice());
 }

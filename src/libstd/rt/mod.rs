@@ -16,21 +16,17 @@
 //! and should be considered as private implementation details for the
 //! time being.
 
-#![experimental]
+#![unstable]
 
 // FIXME: this should not be here.
 #![allow(missing_docs)]
 
 #![allow(dead_code)]
 
-use os;
-use thunk::Thunk;
-use kinds::Send;
-use thread::Thread;
+use marker::Send;
 use ops::FnOnce;
 use sys;
-use sys_common;
-use sys_common::thread_info::{mod, NewThread};
+use thunk::Thunk;
 
 // Reexport some of our utilities which are expected by other crates.
 pub use self::util::{default_sched_threads, min_stack, running_on_valgrind};
@@ -43,6 +39,7 @@ pub use alloc::heap;
 pub mod backtrace;
 
 // Internals
+#[macro_use]
 mod macros;
 
 // These should be refactored/moved/made private over time
@@ -53,7 +50,7 @@ pub mod args;
 mod at_exit_imp;
 mod libunwind;
 
-/// The default error code of the rust runtime if the main task panics instead
+/// The default error code of the rust runtime if the main thread panics instead
 /// of exiting cleanly.
 pub const DEFAULT_ERROR_CODE: int = 101;
 
@@ -65,9 +62,14 @@ const OS_DEFAULT_STACK_ESTIMATE: uint = 2 * (1 << 20);
 #[cfg(not(test))]
 #[lang = "start"]
 fn lang_start(main: *const u8, argc: int, argv: *const *const u8) -> int {
+    use prelude::v1::*;
+
     use mem;
-    use prelude::*;
+    use os;
     use rt;
+    use sys_common::thread_info::{self, NewThread};
+    use sys_common;
+    use thread::Thread;
 
     let something_around_the_top_of_the_stack = 1;
     let addr = &something_around_the_top_of_the_stack as *const int;
@@ -137,9 +139,9 @@ fn lang_start(main: *const u8, argc: int, argv: *const *const u8) -> int {
 ///
 /// The procedure passed to this function will be executed as part of the
 /// runtime cleanup phase. For normal rust programs, this means that it will run
-/// after all other tasks have exited.
+/// after all other threads have exited.
 ///
-/// The procedure is *not* executed with a local `Task` available to it, so
+/// The procedure is *not* executed with a local `Thread` available to it, so
 /// primitives like logging, I/O, channels, spawning, etc, are *not* available.
 /// This is meant for "bare bones" usage to clean up runtime details, this is
 /// not meant as a general-purpose "let's clean everything up" function.

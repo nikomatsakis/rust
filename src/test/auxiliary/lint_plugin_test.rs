@@ -10,12 +10,13 @@
 
 // force-host
 
-#![feature(phase, plugin_registrar)]
+#![feature(plugin_registrar)]
+#![feature(box_syntax)]
 
 extern crate syntax;
 
 // Load rustc as a plugin to get macros
-#[phase(plugin, link)]
+#[macro_use]
 extern crate rustc;
 
 use syntax::ast;

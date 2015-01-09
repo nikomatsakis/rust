@@ -85,6 +85,13 @@ pub fn is_shift_binop(b: BinOp) -> bool {
     }
 }
 
+pub fn is_comparison_binop(b: BinOp) -> bool {
+    match b {
+        BiEq | BiLt | BiLe | BiNe | BiGt | BiGe => true,
+        _ => false
+    }
+}
+
 /// Returns `true` if the binary operator takes its arguments by value
 pub fn is_by_value_binop(b: BinOp) -> bool {
     match b {
@@ -120,8 +127,10 @@ pub fn is_path(e: P<Expr>) -> bool {
 /// We want to avoid "45int" and "-3int" in favor of "45" and "-3"
 pub fn int_ty_to_string(t: IntTy, val: Option<i64>) -> String {
     let s = match t {
-        TyI if val.is_some() => "i",
-        TyI => "int",
+        TyIs(true) if val.is_some() => "i",
+        TyIs(true) => "int",
+        TyIs(false) if val.is_some() => "is",
+        TyIs(false) => "isize",
         TyI8 => "i8",
         TyI16 => "i16",
         TyI32 => "i32",
@@ -141,7 +150,7 @@ pub fn int_ty_max(t: IntTy) -> u64 {
     match t {
         TyI8 => 0x80u64,
         TyI16 => 0x8000u64,
-        TyI | TyI32 => 0x80000000u64, // actually ni about TyI
+        TyIs(_) | TyI32 => 0x80000000u64, // actually ni about TyIs
         TyI64 => 0x8000000000000000u64
     }
 }
@@ -150,8 +159,10 @@ pub fn int_ty_max(t: IntTy) -> u64 {
 /// We want to avoid "42uint" in favor of "42u"
 pub fn uint_ty_to_string(t: UintTy, val: Option<u64>) -> String {
     let s = match t {
-        TyU if val.is_some() => "u",
-        TyU => "uint",
+        TyUs(true) if val.is_some() => "u",
+        TyUs(true) => "uint",
+        TyUs(false) if val.is_some() => "us",
+        TyUs(false) => "usize",
         TyU8 => "u8",
         TyU16 => "u16",
         TyU32 => "u32",
@@ -168,7 +179,7 @@ pub fn uint_ty_max(t: UintTy) -> u64 {
     match t {
         TyU8 => 0xffu64,
         TyU16 => 0xffffu64,
-        TyU | TyU32 => 0xffffffffu64, // actually ni about TyU
+        TyUs(_) | TyU32 => 0xffffffffu64, // actually ni about TyUs
         TyU64 => 0xffffffffffffffffu64
     }
 }
@@ -238,11 +249,11 @@ pub fn impl_pretty_name(trait_ref: &Option<TraitRef>, ty: &Ty) -> Ident {
     match *trait_ref {
         Some(ref trait_ref) => {
             pretty.push('.');
-            pretty.push_str(pprust::path_to_string(&trait_ref.path)[]);
+            pretty.push_str(&pprust::path_to_string(&trait_ref.path)[]);
         }
         None => {}
     }
-    token::gensym_ident(pretty[])
+    token::gensym_ident(&pretty[])
 }
 
 pub fn trait_method_to_ty_method(method: &Method) -> TypeMethod {
@@ -317,8 +328,7 @@ pub fn operator_prec(op: ast::BinOp) -> uint {
       BiBitAnd                  =>  8u,
       BiBitXor                  =>  7u,
       BiBitOr                   =>  6u,
-      BiLt | BiLe | BiGe | BiGt =>  4u,
-      BiEq | BiNe               =>  3u,
+      BiLt | BiLe | BiGe | BiGt | BiEq | BiNe => 3u,
       BiAnd                     =>  2u,
       BiOr                      =>  1u
   }
@@ -343,7 +353,7 @@ pub fn empty_generics() -> Generics {
 // ______________________________________________________________________
 // Enumerating the IDs which appear in an AST
 
-#[deriving(RustcEncodable, RustcDecodable, Show, Copy)]
+#[derive(RustcEncodable, RustcDecodable, Show, Copy)]
 pub struct IdRange {
     pub min: NodeId,
     pub max: NodeId,
@@ -618,34 +628,38 @@ pub fn compute_id_range_for_fn_body(fk: visit::FnKind,
     id_visitor.operation.result
 }
 
-// FIXME(#19596) unbox `it`
-pub fn walk_pat(pat: &Pat, it: |&Pat| -> bool) -> bool {
-    if !it(pat) {
-        return false;
+pub fn walk_pat<F>(pat: &Pat, mut it: F) -> bool where F: FnMut(&Pat) -> bool {
+    // FIXME(#19596) this is a workaround, but there should be a better way
+    fn walk_pat_<G>(pat: &Pat, it: &mut G) -> bool where G: FnMut(&Pat) -> bool {
+        if !(*it)(pat) {
+            return false;
+        }
+
+        match pat.node {
+            PatIdent(_, _, Some(ref p)) => walk_pat_(&**p, it),
+            PatStruct(_, ref fields, _) => {
+                fields.iter().all(|field| walk_pat_(&*field.node.pat, it))
+            }
+            PatEnum(_, Some(ref s)) | PatTup(ref s) => {
+                s.iter().all(|p| walk_pat_(&**p, it))
+            }
+            PatBox(ref s) | PatRegion(ref s, _) => {
+                walk_pat_(&**s, it)
+            }
+            PatVec(ref before, ref slice, ref after) => {
+                before.iter().all(|p| walk_pat_(&**p, it)) &&
+                slice.iter().all(|p| walk_pat_(&**p, it)) &&
+                after.iter().all(|p| walk_pat_(&**p, it))
+            }
+            PatMac(_) => panic!("attempted to analyze unexpanded pattern"),
+            PatWild(_) | PatLit(_) | PatRange(_, _) | PatIdent(_, _, _) |
+            PatEnum(_, _) => {
+                true
+            }
+        }
     }
 
-    match pat.node {
-        PatIdent(_, _, Some(ref p)) => walk_pat(&**p, it),
-        PatStruct(_, ref fields, _) => {
-            fields.iter().all(|field| walk_pat(&*field.node.pat, |p| it(p)))
-        }
-        PatEnum(_, Some(ref s)) | PatTup(ref s) => {
-            s.iter().all(|p| walk_pat(&**p, |p| it(p)))
-        }
-        PatBox(ref s) | PatRegion(ref s) => {
-            walk_pat(&**s, it)
-        }
-        PatVec(ref before, ref slice, ref after) => {
-            before.iter().all(|p| walk_pat(&**p, |p| it(p))) &&
-            slice.iter().all(|p| walk_pat(&**p, |p| it(p))) &&
-            after.iter().all(|p| walk_pat(&**p, |p| it(p)))
-        }
-        PatMac(_) => panic!("attempted to analyze unexpanded pattern"),
-        PatWild(_) | PatLit(_) | PatRange(_, _) | PatIdent(_, _, _) |
-        PatEnum(_, _) => {
-            true
-        }
-    }
+    walk_pat_(pat, &mut it)
 }
 
 pub trait EachViewItem {
@@ -700,7 +714,7 @@ pub fn pat_is_ident(pat: P<ast::Pat>) -> bool {
 pub fn path_name_eq(a : &ast::Path, b : &ast::Path) -> bool {
     (a.span == b.span)
     && (a.global == b.global)
-    && (segments_name_eq(a.segments[], b.segments[]))
+    && (segments_name_eq(&a.segments[], &b.segments[]))
 }
 
 // are two arrays of segments equal when compared unhygienically?
@@ -787,14 +801,14 @@ mod test {
 
     #[test] fn idents_name_eq_test() {
         assert!(segments_name_eq(
-            [Ident{name:Name(3),ctxt:4}, Ident{name:Name(78),ctxt:82}]
+            &[Ident{name:Name(3),ctxt:4}, Ident{name:Name(78),ctxt:82}]
                 .iter().map(ident_to_segment).collect::<Vec<PathSegment>>()[],
-            [Ident{name:Name(3),ctxt:104}, Ident{name:Name(78),ctxt:182}]
+            &[Ident{name:Name(3),ctxt:104}, Ident{name:Name(78),ctxt:182}]
                 .iter().map(ident_to_segment).collect::<Vec<PathSegment>>()[]));
         assert!(!segments_name_eq(
-            [Ident{name:Name(3),ctxt:4}, Ident{name:Name(78),ctxt:82}]
+            &[Ident{name:Name(3),ctxt:4}, Ident{name:Name(78),ctxt:82}]
                 .iter().map(ident_to_segment).collect::<Vec<PathSegment>>()[],
-            [Ident{name:Name(3),ctxt:104}, Ident{name:Name(77),ctxt:182}]
+            &[Ident{name:Name(3),ctxt:104}, Ident{name:Name(77),ctxt:182}]
                 .iter().map(ident_to_segment).collect::<Vec<PathSegment>>()[]));
     }
 }

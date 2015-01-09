@@ -23,26 +23,25 @@ use rustc::middle::ty;
 use rustc::middle::cfg;
 use rustc::middle::cfg::graphviz::LabelledCFG;
 use rustc::session::Session;
-use rustc::session::config::{mod, Input};
+use rustc::session::config::Input;
 use rustc::util::ppaux;
 use rustc_borrowck as borrowck;
 use rustc_borrowck::graphviz as borrowck_dot;
 
 use syntax::ast;
-use syntax::ast_map::{mod, blocks, NodePrinter};
+use syntax::ast_map::{self, blocks, NodePrinter};
 use syntax::codemap;
-use syntax::fold::{mod, Folder};
+use syntax::fold::{self, Folder};
 use syntax::print::{pp, pprust};
 use syntax::ptr::P;
 
 use graphviz as dot;
 
-use std::io::{mod, MemReader};
+use std::io::{self, MemReader};
 use std::option;
 use std::str::FromStr;
-use arena::TypedArena;
 
-#[deriving(Copy, PartialEq, Show)]
+#[derive(Copy, PartialEq, Show)]
 pub enum PpSourceMode {
     PpmNormal,
     PpmEveryBodyLoops,
@@ -53,7 +52,7 @@ pub enum PpSourceMode {
     PpmExpandedHygiene,
 }
 
-#[deriving(Copy, PartialEq, Show)]
+#[derive(Copy, PartialEq, Show)]
 pub enum PpMode {
     PpmSource(PpSourceMode),
     PpmFlowGraph,
@@ -112,7 +111,7 @@ impl PpSourceMode {
     fn call_with_pp_support<'tcx, A, B, F>(&self,
                                            sess: Session,
                                            ast_map: Option<ast_map::Map<'tcx>>,
-                                           type_arena: &'tcx TypedArena<ty::TyS<'tcx>>,
+                                           arenas: &'tcx ty::CtxtArenas<'tcx>,
                                            id: String,
                                            payload: B,
                                            f: F) -> A where
@@ -134,8 +133,7 @@ impl PpSourceMode {
             }
             PpmTyped => {
                 let ast_map = ast_map.expect("--pretty=typed missing ast_map");
-                let analysis = driver::phase_3_run_analysis_passes(sess, ast_map,
-                                                                   type_arena, id);
+                let analysis = driver::phase_3_run_analysis_passes(sess, ast_map, arenas, id);
                 let annotation = TypedAnnotation { analysis: analysis };
                 f(&annotation, payload)
             }
@@ -156,7 +154,7 @@ trait PrinterSupport<'ast>: pprust::PpAnn {
     ///
     /// (Rust does not yet support upcasting from a trait object to
     /// an object for one of its super-traits.)
-    fn pp_ann<'a>(&'a self) -> &'a pprust::PpAnn { self as &pprust::PpAnn }
+    fn pp_ann<'a>(&'a self) -> &'a pprust::PpAnn;
 }
 
 struct NoAnn<'ast> {
@@ -170,6 +168,8 @@ impl<'ast> PrinterSupport<'ast> for NoAnn<'ast> {
     fn ast_map<'a>(&'a self) -> Option<&'a ast_map::Map<'ast>> {
         self.ast_map.as_ref()
     }
+
+    fn pp_ann<'a>(&'a self) -> &'a pprust::PpAnn { self }
 }
 
 impl<'ast> pprust::PpAnn for NoAnn<'ast> {}
@@ -185,6 +185,8 @@ impl<'ast> PrinterSupport<'ast> for IdentifiedAnnotation<'ast> {
     fn ast_map<'a>(&'a self) -> Option<&'a ast_map::Map<'ast>> {
         self.ast_map.as_ref()
     }
+
+    fn pp_ann<'a>(&'a self) -> &'a pprust::PpAnn { self }
 }
 
 impl<'ast> pprust::PpAnn for IdentifiedAnnotation<'ast> {
@@ -234,6 +236,8 @@ impl<'ast> PrinterSupport<'ast> for HygieneAnnotation<'ast> {
     fn ast_map<'a>(&'a self) -> Option<&'a ast_map::Map<'ast>> {
         self.ast_map.as_ref()
     }
+
+    fn pp_ann<'a>(&'a self) -> &'a pprust::PpAnn { self }
 }
 
 impl<'ast> pprust::PpAnn for HygieneAnnotation<'ast> {
@@ -267,6 +271,8 @@ impl<'tcx> PrinterSupport<'tcx> for TypedAnnotation<'tcx> {
     fn ast_map<'a>(&'a self) -> Option<&'a ast_map::Map<'tcx>> {
         Some(&self.analysis.ty_cx.map)
     }
+
+    fn pp_ann<'a>(&'a self) -> &'a pprust::PpAnn { self }
 }
 
 impl<'tcx> pprust::PpAnn for TypedAnnotation<'tcx> {
@@ -288,7 +294,7 @@ impl<'tcx> pprust::PpAnn for TypedAnnotation<'tcx> {
                 try!(pp::word(&mut s.s, "as"));
                 try!(pp::space(&mut s.s));
                 try!(pp::word(&mut s.s,
-                              ppaux::ty_to_string(
+                              &ppaux::ty_to_string(
                                   tcx,
                                   ty::expr_ty(tcx, expr))[]));
                 s.pclose()
@@ -299,25 +305,24 @@ impl<'tcx> pprust::PpAnn for TypedAnnotation<'tcx> {
 }
 
 fn gather_flowgraph_variants(sess: &Session) -> Vec<borrowck_dot::Variant> {
-    let print_loans   = config::FLOWGRAPH_PRINT_LOANS;
-    let print_moves   = config::FLOWGRAPH_PRINT_MOVES;
-    let print_assigns = config::FLOWGRAPH_PRINT_ASSIGNS;
-    let print_all     = config::FLOWGRAPH_PRINT_ALL;
-    let opt = |print_which| sess.debugging_opt(print_which);
+    let print_loans = sess.opts.debugging_opts.flowgraph_print_loans;
+    let print_moves = sess.opts.debugging_opts.flowgraph_print_moves;
+    let print_assigns = sess.opts.debugging_opts.flowgraph_print_assigns;
+    let print_all = sess.opts.debugging_opts.flowgraph_print_all;
     let mut variants = Vec::new();
-    if opt(print_all) || opt(print_loans) {
+    if print_all || print_loans {
         variants.push(borrowck_dot::Loans);
     }
-    if opt(print_all) || opt(print_moves) {
+    if print_all || print_moves {
         variants.push(borrowck_dot::Moves);
     }
-    if opt(print_all) || opt(print_assigns) {
+    if print_all || print_assigns {
         variants.push(borrowck_dot::Assigns);
     }
     variants
 }
 
-#[deriving(Clone, Show)]
+#[derive(Clone, Show)]
 pub enum UserIdentifiedItem {
     ItemViaNode(ast::NodeId),
     ItemViaPath(Vec<String>),
@@ -339,11 +344,13 @@ enum NodesMatchingUII<'a, 'ast: 'a> {
     NodesMatchingSuffix(ast_map::NodesMatchingSuffix<'a, 'ast>),
 }
 
-impl<'a, 'ast> Iterator<ast::NodeId> for NodesMatchingUII<'a, 'ast> {
+impl<'a, 'ast> Iterator for NodesMatchingUII<'a, 'ast> {
+    type Item = ast::NodeId;
+
     fn next(&mut self) -> Option<ast::NodeId> {
         match self {
-            &NodesMatchingDirect(ref mut iter) => iter.next(),
-            &NodesMatchingSuffix(ref mut iter) => iter.next(),
+            &mut NodesMatchingDirect(ref mut iter) => iter.next(),
+            &mut NodesMatchingSuffix(ref mut iter) => iter.next(),
         }
     }
 }
@@ -362,19 +369,19 @@ impl UserIdentifiedItem {
             ItemViaNode(node_id) =>
                 NodesMatchingDirect(Some(node_id).into_iter()),
             ItemViaPath(ref parts) =>
-                NodesMatchingSuffix(map.nodes_matching_suffix(parts[])),
+                NodesMatchingSuffix(map.nodes_matching_suffix(&parts[])),
         }
     }
 
     fn to_one_node_id(self, user_option: &str, sess: &Session, map: &ast_map::Map) -> ast::NodeId {
-        let fail_because = |is_wrong_because| -> ast::NodeId {
+        let fail_because = |&: is_wrong_because| -> ast::NodeId {
             let message =
                 format!("{} needs NodeId (int) or unique \
                          path suffix (b::c::d); got {}, which {}",
                         user_option,
                         self.reconstructed_input(),
                         is_wrong_because);
-            sess.fatal(message[])
+            sess.fatal(&message[])
         };
 
         let mut saw_node = ast::DUMMY_NODE_ID;
@@ -476,8 +483,8 @@ impl fold::Folder for ReplaceBodyWithLoop {
 
     // in general the pretty printer processes unexpanded code, so
     // we override the default `fold_mac` method which panics.
-    fn fold_mac(&mut self, _macro: ast::Mac) -> ast::Mac {
-        fold::noop_fold_mac(_macro, self)
+    fn fold_mac(&mut self, mac: ast::Mac) -> ast::Mac {
+        fold::noop_fold_mac(mac, self)
     }
 }
 
@@ -501,7 +508,7 @@ pub fn pretty_print_input(sess: Session,
     let is_expanded = needs_expansion(&ppm);
     let compute_ast_map = needs_ast_map(&ppm, &opt_uii);
     let krate = if compute_ast_map {
-        match driver::phase_2_configure_and_expand(&sess, krate, id[], None) {
+        match driver::phase_2_configure_and_expand(&sess, krate, &id[], None) {
             None => return,
             Some(k) => k
         }
@@ -510,7 +517,7 @@ pub fn pretty_print_input(sess: Session,
     };
 
     let mut forest = ast_map::Forest::new(krate);
-    let type_arena = TypedArena::new();
+    let arenas = ty::CtxtArenas::new();
 
     let (krate, ast_map) = if compute_ast_map {
         let map = driver::assign_node_ids_and_map(&sess, &mut forest);
@@ -520,7 +527,7 @@ pub fn pretty_print_input(sess: Session,
     };
 
     let src_name = driver::source_name(input);
-    let src = sess.codemap().get_filemap(src_name[])
+    let src = sess.codemap().get_filemap(&src_name[])
                             .src.as_bytes().to_vec();
     let mut rdr = MemReader::new(src);
 
@@ -539,8 +546,8 @@ pub fn pretty_print_input(sess: Session,
     match (ppm, opt_uii) {
         (PpmSource(s), None) =>
             s.call_with_pp_support(
-                sess, ast_map, &type_arena, id, out, |annotation, out| {
-                    debug!("pretty printing source code {}", s);
+                sess, ast_map, &arenas, id, out, |annotation, out| {
+                    debug!("pretty printing source code {:?}", s);
                     let sess = annotation.sess();
                     pprust::print_crate(sess.codemap(),
                                         sess.diagnostic(),
@@ -554,8 +561,8 @@ pub fn pretty_print_input(sess: Session,
 
         (PpmSource(s), Some(uii)) =>
             s.call_with_pp_support(
-                sess, ast_map, &type_arena, id, (out,uii), |annotation, (out,uii)| {
-                    debug!("pretty printing source code {}", s);
+                sess, ast_map, &arenas, id, (out,uii), |annotation, (out,uii)| {
+                    debug!("pretty printing source code {:?}", s);
                     let sess = annotation.sess();
                     let ast_map = annotation.ast_map()
                         .expect("--pretty missing ast_map");
@@ -578,9 +585,9 @@ pub fn pretty_print_input(sess: Session,
                 }),
 
         (PpmFlowGraph, opt_uii) => {
-            debug!("pretty printing flow graph for {}", opt_uii);
+            debug!("pretty printing flow graph for {:?}", opt_uii);
             let uii = opt_uii.unwrap_or_else(|| {
-                sess.fatal(format!("`pretty flowgraph=..` needs NodeId (int) or
+                sess.fatal(&format!("`pretty flowgraph=..` needs NodeId (int) or
                                      unique path suffix (b::c::d)")[])
 
             });
@@ -588,7 +595,7 @@ pub fn pretty_print_input(sess: Session,
             let nodeid = uii.to_one_node_id("--pretty", &sess, &ast_map);
 
             let node = ast_map.find(nodeid).unwrap_or_else(|| {
-                sess.fatal(format!("--pretty flowgraph couldn't find id: {}",
+                sess.fatal(&format!("--pretty flowgraph couldn't find id: {}",
                                    nodeid)[])
             });
 
@@ -596,20 +603,19 @@ pub fn pretty_print_input(sess: Session,
             match code {
                 Some(code) => {
                     let variants = gather_flowgraph_variants(&sess);
-                    let analysis = driver::phase_3_run_analysis_passes(sess, ast_map,
-                                                                       &type_arena, id);
+                    let analysis = driver::phase_3_run_analysis_passes(sess, ast_map, &arenas, id);
                     print_flowgraph(variants, analysis, code, out)
                 }
                 None => {
                     let message = format!("--pretty=flowgraph needs \
-                                           block, fn, or method; got {}",
+                                           block, fn, or method; got {:?}",
                                           node);
 
                     // point to what was found, if there's an
                     // accessible span.
                     match ast_map.opt_span(nodeid) {
-                        Some(sp) => sess.span_fatal(sp, message[]),
-                        None => sess.fatal(message[])
+                        Some(sp) => sess.span_fatal(sp, &message[]),
+                        None => sess.fatal(&message[])
                     }
                 }
             }

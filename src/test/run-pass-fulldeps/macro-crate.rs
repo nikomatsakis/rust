@@ -11,13 +11,13 @@
 // aux-build:macro_crate_test.rs
 // ignore-stage1
 
-#![feature(phase)]
+#![feature(plugin)]
 
-#[phase(plugin)]
+#[macro_use] #[plugin] #[no_link]
 extern crate macro_crate_test;
 
 #[into_foo]
-#[deriving(PartialEq, Clone, Show)]
+#[derive(PartialEq, Clone, Show)]
 fn foo() -> AFakeTypeThatHadBetterGoAway {}
 
 pub fn main() {

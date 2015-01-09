@@ -70,8 +70,9 @@
 // lldb-command:print *owned
 // lldb-check:[...]$9 = 6
 
-#![feature(unboxed_closures)]
+#![feature(unboxed_closures, box_syntax)]
 #![allow(unused_variables)]
+#![omit_gdb_pretty_printer_section]
 
 struct Struct {
     a: int,
@@ -93,20 +94,20 @@ fn main() {
     let owned = box 6;
 
     {
-        let closure = || {
+        let mut first_closure = |&mut:| {
             zzz(); // #break
             variable = constant + a_struct.a + struct_ref.a + *owned;
         };
 
-        closure();
+        first_closure();
     }
 
     {
-        let mut unboxed_closure = |&mut:| {
+        let mut second_closure = |&mut:| {
             zzz(); // #break
             variable = constant + a_struct.a + struct_ref.a + *owned;
         };
-        unboxed_closure();
+        second_closure();
     }
 }
 

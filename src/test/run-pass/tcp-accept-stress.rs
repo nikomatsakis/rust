@@ -14,7 +14,10 @@
 //              recycled.
 
 use std::io::{TcpListener, Listener, Acceptor, EndOfFile, TcpStream};
-use std::sync::{atomic, Arc};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUint, Ordering};
+use std::sync::mpsc::channel;
+use std::thread::Thread;
 
 static N: uint = 8;
 static M: uint = 20;
@@ -27,20 +30,20 @@ fn test() {
     let mut l = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = l.socket_name().unwrap();
     let mut a = l.listen().unwrap();
-    let cnt = Arc::new(atomic::AtomicUint::new(0));
+    let cnt = Arc::new(AtomicUint::new(0));
 
     let (srv_tx, srv_rx) = channel();
     let (cli_tx, cli_rx) = channel();
-    for _ in range(0, N) {
+    let _t = range(0, N).map(|_| {
         let a = a.clone();
         let cnt = cnt.clone();
         let srv_tx = srv_tx.clone();
-        spawn(move|| {
+        Thread::scoped(move|| {
             let mut a = a;
             loop {
                 match a.accept() {
                     Ok(..) => {
-                        if cnt.fetch_add(1, atomic::SeqCst) == N * M - 1 {
+                        if cnt.fetch_add(1, Ordering::SeqCst) == N * M - 1 {
                             break
                         }
                     }
@@ -49,18 +52,18 @@ fn test() {
                 }
             }
             srv_tx.send(());
-        });
-    }
+        })
+    }).collect::<Vec<_>>();
 
-    for _ in range(0, N) {
+    let _t = range(0, N).map(|_| {
         let cli_tx = cli_tx.clone();
-        spawn(move|| {
+        Thread::scoped(move|| {
             for _ in range(0, M) {
                 let _s = TcpStream::connect(addr).unwrap();
             }
             cli_tx.send(());
-        });
-    }
+        })
+    }).collect::<Vec<_>>();
     drop((cli_tx, srv_tx));
 
     // wait for senders
@@ -79,5 +82,5 @@ fn test() {
     assert_eq!(srv_rx.iter().take(N - 1).count(), N - 1);
 
     // Everything should have been accepted.
-    assert_eq!(cnt.load(atomic::SeqCst), N * M);
+    assert_eq!(cnt.load(Ordering::SeqCst), N * M);
 }

@@ -16,13 +16,6 @@
 //! This macro is implemented in the compiler to emit calls to this module in
 //! order to format arguments at runtime into strings and streams.
 //!
-//! The functions contained in this module should not normally be used in
-//! everyday use cases of `format!`. The assumptions made by these functions are
-//! unsafe for all inputs, and the compiler performs a large amount of
-//! validation on the arguments to `format!` in order to ensure safety at
-//! runtime. While it is possible to call these functions directly, it is not
-//! recommended to do so in the general case.
-//!
 //! ## Usage
 //!
 //! The `format!` macro is intended to be familiar to those coming from C's
@@ -38,7 +31,7 @@
 //! format!("Hello");                  // => "Hello"
 //! format!("Hello, {}!", "world");    // => "Hello, world!"
 //! format!("The number is {}", 1i);   // => "The number is 1"
-//! format!("{}", (3i, 4i));           // => "(3, 4)"
+//! format!("{:?}", (3i, 4i));         // => "(3i, 4i)"
 //! format!("{value}", value=4i);      // => "4"
 //! format!("{} {}", 1i, 2u);          // => "1 2"
 //! # }
@@ -94,7 +87,7 @@
 //! # fn main() {
 //! format!("{argument}", argument = "test");   // => "test"
 //! format!("{name} {}", 1i, name = 2i);        // => "2 1"
-//! format!("{a} {c} {b}", a="a", b=(), c=3i);  // => "a 3 ()"
+//! format!("{a} {c} {b}", a="a", b='b', c=3i);  // => "a 3 b"
 //! # }
 //! ```
 //!
@@ -113,7 +106,7 @@
 //! ```
 //!
 //! This is invalid because the first argument is both referred to as a
-//! hexidecimal as well as an
+//! hexadecimal as well as an
 //! octal.
 //!
 //! There are various parameters which do require a particular type, however.
@@ -134,7 +127,8 @@
 //! This allows multiple actual types to be formatted via `{:x}` (like `i8` as
 //! well as `int`).  The current mapping of types to traits is:
 //!
-//! * *nothing* ⇒ `Show`
+//! * *nothing* ⇒ `String`
+//! * `?` ⇒ `Show`
 //! * `o` ⇒ `Octal`
 //! * `x` ⇒ `LowerHex`
 //! * `X` ⇒ `UpperHex`
@@ -147,8 +141,7 @@
 //! `std::fmt::Binary` trait can then be formatted with `{:b}`. Implementations
 //! are provided for these traits for a number of primitive types by the
 //! standard library as well. If no format is specified (as in `{}` or `{:6}`),
-//! then the format trait used is the `Show` trait. This is one of the more
-//! commonly implemented traits when formatting a custom type.
+//! then the format trait used is the `String` trait.
 //!
 //! When implementing a format trait for your own type, you will have to
 //! implement a method of the signature:
@@ -182,12 +175,13 @@
 //! use std::f64;
 //! use std::num::Float;
 //!
+//! #[derive(Show)]
 //! struct Vector2D {
 //!     x: int,
 //!     y: int,
 //! }
 //!
-//! impl fmt::Show for Vector2D {
+//! impl fmt::String for Vector2D {
 //!     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 //!         // The `f` value implements the `Writer` trait, which is what the
 //!         // write! macro is expecting. Note that this formatting ignores the
@@ -208,7 +202,7 @@
 //!         // for details, and the function `pad` can be used to pad strings.
 //!         let decimals = f.precision().unwrap_or(3);
 //!         let string = f64::to_str_exact(magnitude, decimals);
-//!         f.pad_integral(true, "", string.as_bytes())
+//!         f.pad_integral(true, "", string.as_slice())
 //!     }
 //! }
 //!
@@ -216,8 +210,29 @@
 //!     let myvector = Vector2D { x: 3, y: 4 };
 //!
 //!     println!("{}", myvector);       // => "(3, 4)"
+//!     println!("{:?}", myvector);     // => "Vector2D {x: 3i, y:4i}"
 //!     println!("{:10.3b}", myvector); // => "     5.000"
 //! }
+//! ```
+//!
+//! #### fmt::String vs fmt::Show
+//!
+//! These two formatting traits have distinct purposes:
+//!
+//! - `fmt::String` implementations assert that the type can be faithfully
+//!   represented as a UTF-8 string at all times. It is **not** expected that
+//!   all types implement the `String` trait.
+//! - `fmt::Show` implementations should be implemented for **all** public types.
+//!   Output will typically represent the internal state as faithfully as possible.
+//!   The purpose of the `Show` trait is to facilitate debugging Rust code. In
+//!   most cases, using `#[deriving(Show)]` is sufficient and recommended.
+//!
+//! Some examples of the output from both traits:
+//!
+//! ```
+//! assert_eq!(format!("{} {:?}", 3i32, 4i32), "3 4i32");
+//! assert_eq!(format!("{} {:?}", 'a', 'b'), "a 'b'");
+//! assert_eq!(format!("{} {:?}", "foo\n", "bar\n"), "foo\n \"bar\\n\"");
 //! ```
 //!
 //! ### Related macros
@@ -275,34 +290,27 @@
 //!
 //! # #[allow(unused_must_use)]
 //! # fn main() {
-//! format_args!(fmt::format, "this returns {}", "String");
+//! fmt::format(format_args!("this returns {}", "String"));
 //!
 //! let some_writer: &mut io::Writer = &mut io::stdout();
-//! format_args!(|args| { write!(some_writer, "{}", args) },
-//!              "print with a {}", "closure");
+//! write!(some_writer, "{}", format_args!("print with a {}", "macro"));
 //!
-//! fn my_fmt_fn(args: &fmt::Arguments) {
+//! fn my_fmt_fn(args: fmt::Arguments) {
 //!     write!(&mut io::stdout(), "{}", args);
 //! }
-//! format_args!(my_fmt_fn, "or a {} too", "function");
+//! my_fmt_fn(format_args!("or a {} too", "function"));
 //! # }
 //! ```
 //!
-//! The first argument of the `format_args!` macro is a function (or closure)
-//! which takes one argument of type `&fmt::Arguments`. This structure can then
-//! be passed to the `write` and `format` functions inside this module in order
-//! to process the format string. The goal of this macro is to even further
-//! prevent intermediate allocations when dealing formatting strings.
+//! The result of the `format_args!` macro is a value of type `fmt::Arguments`.
+//! This structure can then be passed to the `write` and `format` functions
+//! inside this module in order to process the format string.
+//! The goal of this macro is to even further prevent intermediate allocations
+//! when dealing formatting strings.
 //!
 //! For example, a logging library could use the standard formatting syntax, but
 //! it would internally pass around this structure until it has been determined
 //! where output should go to.
-//!
-//! It is unsafe to programmatically create an instance of `fmt::Arguments`
-//! because the operations performed when executing a format string require the
-//! compile-time checks provided by the compiler. The `format_args!` macro is
-//! the only method of safely creating these structures, but they can be
-//! unsafely created with the constructor provided.
 //!
 //! ## Syntax
 //!
@@ -402,16 +410,12 @@
 //! them with the same character. For example, the `{` character is escaped with
 //! `{{` and the `}` character is escaped with `}}`.
 
-#![experimental]
+#![unstable]
 
-use io::Writer;
-use io;
-use result::Result::{Ok, Err};
 use string;
-use vec::Vec;
 
-pub use core::fmt::{Formatter, Result, FormatWriter, rt};
-pub use core::fmt::{Show, Octal, Binary};
+pub use core::fmt::{Formatter, Result, Writer, rt};
+pub use core::fmt::{Show, String, Octal, Binary};
 pub use core::fmt::{LowerHex, UpperHex, Pointer};
 pub use core::fmt::{LowerExp, UpperExp};
 pub use core::fmt::Error;
@@ -426,30 +430,19 @@ pub use core::fmt::{argument, argumentuint};
 /// # Arguments
 ///
 ///   * args - a structure of arguments generated via the `format_args!` macro.
-///            Because this structure can only be safely generated at
-///            compile-time, this function is safe.
 ///
 /// # Example
 ///
 /// ```rust
 /// use std::fmt;
 ///
-/// let s = format_args!(fmt::format, "Hello, {}!", "world");
+/// let s = fmt::format(format_args!("Hello, {}!", "world"));
 /// assert_eq!(s, "Hello, world!".to_string());
 /// ```
-#[experimental = "this is an implementation detail of format! and should not \
+#[unstable = "this is an implementation detail of format! and should not \
                   be called directly"]
-pub fn format(args: &Arguments) -> string::String {
-    let mut output = Vec::new();
-    let _ = write!(&mut output as &mut Writer, "{}", args);
-    string::String::from_utf8(output).unwrap()
-}
-
-impl<'a> Writer for Formatter<'a> {
-    fn write(&mut self, b: &[u8]) -> io::IoResult<()> {
-        match (*self).write(b) {
-            Ok(()) => Ok(()),
-            Err(Error) => Err(io::standard_error(io::OtherIoError))
-        }
-    }
+pub fn format(args: Arguments) -> string::String {
+    let mut output = string::String::new();
+    let _ = write!(&mut output, "{}", args);
+    output
 }

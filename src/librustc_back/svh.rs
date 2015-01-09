@@ -47,13 +47,12 @@
 //! Original issue: https://github.com/rust-lang/rust/issues/10207
 
 use std::fmt;
-use std::hash::Hash;
-use std::hash::sip::SipState;
+use std::hash::{Hash, SipHasher, Hasher};
 use std::iter::range_step;
 use syntax::ast;
 use syntax::visit;
 
-#[deriving(Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Svh {
     hash: String,
 }
@@ -65,7 +64,7 @@ impl Svh {
     }
 
     pub fn as_str<'a>(&'a self) -> &'a str {
-        self.hash[]
+        &self.hash[]
     }
 
     pub fn calculate(metadata: &Vec<String>, krate: &ast::Crate) -> Svh {
@@ -78,7 +77,7 @@ impl Svh {
 
         // FIXME: this should use SHA1, not SipHash. SipHash is not built to
         //        avoid collisions.
-        let mut state = SipState::new();
+        let mut state = SipHasher::new();
 
         for data in metadata.iter() {
             data.hash(&mut state);
@@ -102,7 +101,7 @@ impl Svh {
             attr.node.value.hash(&mut state);
         }
 
-        let hash = state.result();
+        let hash = state.finish();
         return Svh {
             hash: range_step(0u, 64u, 4u).map(|i| hex(hash >> i)).collect()
         };
@@ -119,6 +118,12 @@ impl Svh {
 }
 
 impl fmt::Show for Svh {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Svh {{ {} }}", self.as_str())
+    }
+}
+
+impl fmt::String for Svh {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.pad(self.as_str())
     }
@@ -141,14 +146,13 @@ mod svh_visitor {
     use syntax::visit;
     use syntax::visit::{Visitor, FnKind};
 
-    use std::hash::Hash;
-    use std::hash::sip::SipState;
+    use std::hash::{Hash, SipHasher};
 
     pub struct StrictVersionHashVisitor<'a> {
-        pub st: &'a mut SipState,
+        pub st: &'a mut SipHasher,
     }
 
-    pub fn make<'a>(st: &'a mut SipState) -> StrictVersionHashVisitor<'a> {
+    pub fn make<'a>(st: &'a mut SipHasher) -> StrictVersionHashVisitor<'a> {
         StrictVersionHashVisitor { st: st }
     }
 
@@ -172,7 +176,7 @@ mod svh_visitor {
     // This enum represents the different potential bits of code the
     // visitor could encounter that could affect the ABI for the crate,
     // and assigns each a distinct tag to feed into the hash computation.
-    #[deriving(Hash)]
+    #[derive(Hash)]
     enum SawAbiComponent<'a> {
 
         // FIXME (#14132): should we include (some function of)
@@ -220,7 +224,7 @@ mod svh_visitor {
     /// because the SVH is just a developer convenience; there is no
     /// guarantee of collision-freedom, hash collisions are just
     /// (hopefully) unlikely.)
-    #[deriving(Hash)]
+    #[derive(Hash)]
     pub enum SawExprComponent<'a> {
 
         SawExprLoop(Option<token::InternedString>),
@@ -246,7 +250,7 @@ mod svh_visitor {
         SawExprAssign,
         SawExprAssignOp(ast::BinOp),
         SawExprIndex,
-        SawExprSlice,
+        SawExprRange,
         SawExprPath,
         SawExprAddrOf(ast::Mutability),
         SawExprRet,
@@ -279,7 +283,7 @@ mod svh_visitor {
             ExprField(_, id)         => SawExprField(content(id.node)),
             ExprTupField(_, id)      => SawExprTupField(id.node),
             ExprIndex(..)            => SawExprIndex,
-            ExprSlice(..)            => SawExprSlice,
+            ExprRange(..)            => SawExprRange,
             ExprPath(..)             => SawExprPath,
             ExprAddrOf(m, _)         => SawExprAddrOf(m),
             ExprBreak(id)            => SawExprBreak(id.map(content)),
@@ -299,7 +303,7 @@ mod svh_visitor {
     }
 
     /// SawStmtComponent is analogous to SawExprComponent, but for statements.
-    #[deriving(Hash)]
+    #[derive(Hash)]
     pub enum SawStmtComponent {
         SawStmtDecl,
         SawStmtExpr,
@@ -327,11 +331,11 @@ mod svh_visitor {
 
     impl<'a, 'v> Visitor<'v> for StrictVersionHashVisitor<'a> {
 
-        fn visit_mac(&mut self, macro: &Mac) {
+        fn visit_mac(&mut self, mac: &Mac) {
             // macro invocations, namely macro_rules definitions,
             // *can* appear as items, even in the expanded crate AST.
 
-            if macro_name(macro).get() == "macro_rules" {
+            if macro_name(mac).get() == "macro_rules" {
                 // Pretty-printing definition to a string strips out
                 // surface artifacts (currently), such as the span
                 // information, yielding a content-based hash.
@@ -341,7 +345,7 @@ mod svh_visitor {
                 // trees might be faster. Implementing this is far
                 // easier in short term.
                 let macro_defn_as_string = pprust::to_string(|pp_state| {
-                    pp_state.print_mac(macro, token::Paren)
+                    pp_state.print_mac(mac, token::Paren)
                 });
                 macro_defn_as_string.hash(self.st);
             } else {
@@ -349,16 +353,16 @@ mod svh_visitor {
                 // invocation at this stage except `macro_rules!`.
                 panic!("reached macro somehow: {}",
                       pprust::to_string(|pp_state| {
-                          pp_state.print_mac(macro, token::Paren)
+                          pp_state.print_mac(mac, token::Paren)
                       }));
             }
 
-            visit::walk_mac(self, macro);
+            visit::walk_mac(self, mac);
 
-            fn macro_name(macro: &Mac) -> token::InternedString {
-                match &macro.node {
+            fn macro_name(mac: &Mac) -> token::InternedString {
+                match &mac.node {
                     &MacInvocTT(ref path, ref _tts, ref _stx_ctxt) => {
-                        let s = path.segments[];
+                        let s = &path.segments[];
                         assert_eq!(s.len(), 1);
                         content(s[0].identifier)
                     }
@@ -392,7 +396,7 @@ mod svh_visitor {
         }
 
         // All of the remaining methods just record (in the hash
-        // SipState) that the visitor saw that particular variant
+        // SipHasher) that the visitor saw that particular variant
         // (with its payload), and continue walking as the default
         // visitor would.
         //

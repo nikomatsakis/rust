@@ -38,10 +38,8 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 // OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#![feature(slicing_syntax)]
-
 use std::{cmp, iter, mem};
-use std::sync::Future;
+use std::thread::Thread;
 
 fn rotate(x: &mut [i32]) {
     let mut prev = x[0];
@@ -52,7 +50,7 @@ fn rotate(x: &mut [i32]) {
 
 fn next_permutation(perm: &mut [i32], count: &mut [i32]) {
     for i in range(1, perm.len()) {
-        rotate(perm[mut ..i + 1]);
+        rotate(perm.slice_to_mut(i + 1));
         let count_i = &mut count[i];
         if *count_i >= i as i32 {
             *count_i = 0;
@@ -105,7 +103,7 @@ impl Perm {
             let d = idx / self.fact[i] as i32;
             self.cnt[i] = d;
             idx %= self.fact[i] as i32;
-            for (place, val) in pp.iter_mut().zip(self.perm.p[..i+1].iter()) {
+            for (place, val) in pp.iter_mut().zip(self.perm.p[..(i+1)].iter()) {
                 *place = (*val) as u8
             }
 
@@ -130,8 +128,8 @@ impl Perm {
 }
 
 
-fn reverse(tperm: &mut [i32], mut k: uint) {
-    tperm[mut ..k].reverse()
+fn reverse(tperm: &mut [i32], k: uint) {
+    tperm.slice_to_mut(k).reverse()
 }
 
 fn work(mut perm: Perm, n: uint, max: uint) -> (i32, i32) {
@@ -165,18 +163,18 @@ fn fannkuch(n: i32) -> (i32, i32) {
     let mut futures = vec![];
     let k = perm.max() / N;
 
-    for (i, j) in range(0, N).zip(iter::count(0, k)) {
+    for (_, j) in range(0, N).zip(iter::count(0, k)) {
         let max = cmp::min(j+k, perm.max());
 
-        futures.push(Future::spawn(move|| {
+        futures.push(Thread::scoped(move|| {
             work(perm, j as uint, max as uint)
         }))
     }
 
     let mut checksum = 0;
     let mut maxflips = 0;
-    for fut in futures.iter_mut() {
-        let (cs, mf) = fut.get();
+    for fut in futures.into_iter() {
+        let (cs, mf) = fut.join().ok().unwrap();
         checksum += cs;
         maxflips = cmp::max(maxflips, mf);
     }
@@ -186,7 +184,7 @@ fn fannkuch(n: i32) -> (i32, i32) {
 fn main() {
     let n = std::os::args().as_slice()
         .get(1)
-        .and_then(|arg| from_str(arg.as_slice()))
+        .and_then(|arg| arg.parse())
         .unwrap_or(2i32);
 
     let (checksum, maxflips) = fannkuch(n);

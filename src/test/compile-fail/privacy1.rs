@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(globs, lang_items)]
+#![feature(lang_items)]
 #![no_std] // makes debugging this test *a lot* easier (during resolve)
 
 #[lang="phantom_getter"]
@@ -16,6 +16,9 @@ pub trait PhantomGetter<Sized? T> for Sized? { }
 
 #[lang="sized"]
 pub trait Sized : PhantomGetter<Self> {}
+
+#[lang="copy"]
+pub trait Copy {}
 
 mod bar {
     // shouldn't bring in too much
@@ -41,7 +44,7 @@ mod bar {
         fn foo() -> Self;
     }
 
-    impl B for int { fn foo() -> int { 3 } }
+    impl B for isize { fn foo() -> isize { 3 } }
 
     pub enum Enum {
         Pub
@@ -119,7 +122,7 @@ mod foo {
                                 //~^ ERROR: method `bar2` is private
                                 //~^^ NOTE: module `baz` is private
 
-        let _: int =
+        let _: isize =
         ::bar::B::foo();        //~ ERROR: method `foo` is inaccessible
                                 //~^ NOTE: trait `B` is private
         ::lol();
@@ -186,4 +189,4 @@ pub mod mytest {
     }
 }
 
-#[start] fn main(_: int, _: *const *const u8) -> int { 3 }
+#[start] fn main(_: isize, _: *const *const u8) -> isize { 3 }

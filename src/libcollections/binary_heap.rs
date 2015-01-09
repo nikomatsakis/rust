@@ -11,28 +11,29 @@
 //! A priority queue implemented with a binary heap.
 //!
 //! Insertion and popping the largest element have `O(log n)` time complexity. Checking the largest
-//! element is `O(1)`. Converting a vector to a priority queue can be done in-place, and has `O(n)`
-//! complexity. A priority queue can also be converted to a sorted vector in-place, allowing it to
+//! element is `O(1)`. Converting a vector to a binary heap can be done in-place, and has `O(n)`
+//! complexity. A binary heap can also be converted to a sorted vector in-place, allowing it to
 //! be used for an `O(n log n)` in-place heapsort.
 //!
 //! # Examples
 //!
-//! This is a larger example which implements [Dijkstra's algorithm][dijkstra]
+//! This is a larger example that implements [Dijkstra's algorithm][dijkstra]
 //! to solve the [shortest path problem][sssp] on a [directed graph][dir_graph].
-//! It showcases how to use the `BinaryHeap` with custom types.
+//! It shows how to use `BinaryHeap` with custom types.
 //!
 //! [dijkstra]: http://en.wikipedia.org/wiki/Dijkstra%27s_algorithm
 //! [sssp]: http://en.wikipedia.org/wiki/Shortest_path_problem
 //! [dir_graph]: http://en.wikipedia.org/wiki/Directed_graph
 //!
 //! ```
+//! use std::cmp::Ordering;
 //! use std::collections::BinaryHeap;
 //! use std::uint;
 //!
-//! #[deriving(Copy, Eq, PartialEq)]
+//! #[derive(Copy, Eq, PartialEq)]
 //! struct State {
 //!     cost: uint,
-//!     position: uint
+//!     position: uint,
 //! }
 //!
 //! // The priority queue depends on `Ord`.
@@ -55,37 +56,32 @@
 //! // Each node is represented as an `uint`, for a shorter implementation.
 //! struct Edge {
 //!     node: uint,
-//!     cost: uint
+//!     cost: uint,
 //! }
 //!
 //! // Dijkstra's shortest path algorithm.
 //!
 //! // Start at `start` and use `dist` to track the current shortest distance
-//! // to each node. This implementation isn't memory efficient as it may leave duplicate
+//! // to each node. This implementation isn't memory-efficient as it may leave duplicate
 //! // nodes in the queue. It also uses `uint::MAX` as a sentinel value,
 //! // for a simpler implementation.
 //! fn shortest_path(adj_list: &Vec<Vec<Edge>>, start: uint, goal: uint) -> uint {
 //!     // dist[node] = current shortest distance from `start` to `node`
-//!     let mut dist = Vec::from_elem(adj_list.len(), uint::MAX);
+//!     let mut dist: Vec<_> = range(0, adj_list.len()).map(|_| uint::MAX).collect();
 //!
 //!     let mut heap = BinaryHeap::new();
 //!
 //!     // We're at `start`, with a zero cost
-//!     dist[start] = 0u;
-//!     heap.push(State { cost: 0u, position: start });
+//!     dist[start] = 0;
+//!     heap.push(State { cost: 0, position: start });
 //!
 //!     // Examine the frontier with lower cost nodes first (min-heap)
-//!     loop {
-//!         let State { cost, position } = match heap.pop() {
-//!             None => break, // empty
-//!             Some(s) => s
-//!         };
-//!
+//!     while let Some(State { cost, position }) = heap.pop() {
 //!         // Alternatively we could have continued to find all shortest paths
-//!         if position == goal { return cost }
+//!         if position == goal { return cost; }
 //!
 //!         // Important as we may have already found a better way
-//!         if cost > dist[position] { continue }
+//!         if cost > dist[position] { continue; }
 //!
 //!         // For each node we can reach, see if we can find a way with
 //!         // a lower cost going through this node
@@ -108,7 +104,7 @@
 //! fn main() {
 //!     // This is the directed graph we're going to use.
 //!     // The node numbers correspond to the different states,
-//!     // and the edge weights symbolises the cost of moving
+//!     // and the edge weights symbolize the cost of moving
 //!     // from one node to another.
 //!     // Note that the edges are one-way.
 //!     //
@@ -126,7 +122,7 @@
 //!     //
 //!     // The graph is represented as an adjacency list where each index,
 //!     // corresponding to a node value, has a list of outgoing edges.
-//!     // Chosen for it's efficiency.
+//!     // Chosen for its efficiency.
 //!     let graph = vec![
 //!         // Node 0
 //!         vec![Edge { node: 2, cost: 10 },
@@ -152,20 +148,23 @@
 //! ```
 
 #![allow(missing_docs)]
+#![stable]
 
 use core::prelude::*;
 
 use core::default::Default;
+use core::iter::FromIterator;
 use core::mem::{zeroed, replace, swap};
 use core::ptr;
 
 use slice;
-use vec::{mod, Vec};
+use vec::{self, Vec};
 
 /// A priority queue implemented with a binary heap.
 ///
 /// This will be a max-heap.
-#[deriving(Clone)]
+#[derive(Clone)]
+#[stable]
 pub struct BinaryHeap<T> {
     data: Vec<T>,
 }
@@ -173,7 +172,6 @@ pub struct BinaryHeap<T> {
 #[stable]
 impl<T: Ord> Default for BinaryHeap<T> {
     #[inline]
-    #[stable]
     fn default() -> BinaryHeap<T> { BinaryHeap::new() }
 }
 
@@ -184,10 +182,11 @@ impl<T: Ord> BinaryHeap<T> {
     ///
     /// ```
     /// use std::collections::BinaryHeap;
-    /// let heap: BinaryHeap<uint> = BinaryHeap::new();
+    /// let mut heap = BinaryHeap::new();
+    /// heap.push(4u);
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
-    pub fn new() -> BinaryHeap<T> { BinaryHeap{data: vec!(),} }
+    #[stable]
+    pub fn new() -> BinaryHeap<T> { BinaryHeap { data: vec![] } }
 
     /// Creates an empty `BinaryHeap` with a specific capacity.
     /// This preallocates enough memory for `capacity` elements,
@@ -198,9 +197,10 @@ impl<T: Ord> BinaryHeap<T> {
     ///
     /// ```
     /// use std::collections::BinaryHeap;
-    /// let heap: BinaryHeap<uint> = BinaryHeap::with_capacity(10u);
+    /// let mut heap = BinaryHeap::with_capacity(10);
+    /// heap.push(4u);
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn with_capacity(capacity: uint) -> BinaryHeap<T> {
         BinaryHeap { data: Vec::with_capacity(capacity) }
     }
@@ -214,17 +214,17 @@ impl<T: Ord> BinaryHeap<T> {
     /// use std::collections::BinaryHeap;
     /// let heap = BinaryHeap::from_vec(vec![9i, 1, 2, 7, 3, 2]);
     /// ```
-    pub fn from_vec(xs: Vec<T>) -> BinaryHeap<T> {
-        let mut q = BinaryHeap{data: xs,};
-        let mut n = q.len() / 2;
+    pub fn from_vec(vec: Vec<T>) -> BinaryHeap<T> {
+        let mut heap = BinaryHeap { data: vec };
+        let mut n = heap.len() / 2;
         while n > 0 {
             n -= 1;
-            q.siftdown(n)
+            heap.sift_down(n);
         }
-        q
+        heap
     }
 
-    /// An iterator visiting all values in underlying vector, in
+    /// Returns an iterator visiting all values in the underlying vector, in
     /// arbitrary order.
     ///
     /// # Examples
@@ -238,46 +238,45 @@ impl<T: Ord> BinaryHeap<T> {
     ///     println!("{}", x);
     /// }
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn iter(&self) -> Iter<T> {
         Iter { iter: self.data.iter() }
     }
 
     /// Creates a consuming iterator, that is, one that moves each value out of
-    /// the binary heap in arbitrary order.  The binary heap cannot be used
+    /// the binary heap in arbitrary order. The binary heap cannot be used
     /// after calling this.
     ///
     /// # Examples
     ///
     /// ```
     /// use std::collections::BinaryHeap;
-    /// let pq = BinaryHeap::from_vec(vec![1i, 2, 3, 4]);
+    /// let heap = BinaryHeap::from_vec(vec![1i, 2, 3, 4]);
     ///
     /// // Print 1, 2, 3, 4 in arbitrary order
-    /// for x in pq.into_iter() {
+    /// for x in heap.into_iter() {
     ///     // x has type int, not &int
     ///     println!("{}", x);
     /// }
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn into_iter(self) -> IntoIter<T> {
         IntoIter { iter: self.data.into_iter() }
     }
 
-    /// Returns the greatest item in a queue, or `None` if it is empty.
+    /// Returns the greatest item in the binary heap, or `None` if it is empty.
     ///
     /// # Examples
     ///
     /// ```
     /// use std::collections::BinaryHeap;
-    ///
     /// let mut heap = BinaryHeap::new();
     /// assert_eq!(heap.peek(), None);
     ///
     /// heap.push(1i);
-    /// heap.push(5i);
-    /// heap.push(2i);
-    /// assert_eq!(heap.peek(), Some(&5i));
+    /// heap.push(5);
+    /// heap.push(2);
+    /// assert_eq!(heap.peek(), Some(&5));
     ///
     /// ```
     #[stable]
@@ -285,17 +284,17 @@ impl<T: Ord> BinaryHeap<T> {
         self.data.get(0)
     }
 
-    /// Returns the number of elements the queue can hold without reallocating.
+    /// Returns the number of elements the binary heap can hold without reallocating.
     ///
     /// # Examples
     ///
     /// ```
     /// use std::collections::BinaryHeap;
-    ///
-    /// let heap: BinaryHeap<uint> = BinaryHeap::with_capacity(100u);
-    /// assert!(heap.capacity() >= 100u);
+    /// let mut heap = BinaryHeap::with_capacity(100);
+    /// assert!(heap.capacity() >= 100);
+    /// heap.push(4u);
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn capacity(&self) -> uint { self.data.capacity() }
 
     /// Reserves the minimum capacity for exactly `additional` more elements to be inserted in the
@@ -313,13 +312,15 @@ impl<T: Ord> BinaryHeap<T> {
     ///
     /// ```
     /// use std::collections::BinaryHeap;
-    ///
-    /// let mut heap: BinaryHeap<uint> = BinaryHeap::new();
-    /// heap.reserve_exact(100u);
-    /// assert!(heap.capacity() >= 100u);
+    /// let mut heap = BinaryHeap::new();
+    /// heap.reserve_exact(100);
+    /// assert!(heap.capacity() >= 100);
+    /// heap.push(4u);
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
-    pub fn reserve_exact(&mut self, additional: uint) { self.data.reserve_exact(additional) }
+    #[stable]
+    pub fn reserve_exact(&mut self, additional: uint) {
+        self.data.reserve_exact(additional);
+    }
 
     /// Reserves capacity for at least `additional` more elements to be inserted in the
     /// `BinaryHeap`. The collection may reserve more space to avoid frequent reallocations.
@@ -332,88 +333,82 @@ impl<T: Ord> BinaryHeap<T> {
     ///
     /// ```
     /// use std::collections::BinaryHeap;
-    ///
-    /// let mut heap: BinaryHeap<uint> = BinaryHeap::new();
-    /// heap.reserve(100u);
-    /// assert!(heap.capacity() >= 100u);
+    /// let mut heap = BinaryHeap::new();
+    /// heap.reserve(100);
+    /// assert!(heap.capacity() >= 100);
+    /// heap.push(4u);
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn reserve(&mut self, additional: uint) {
-        self.data.reserve(additional)
+        self.data.reserve(additional);
     }
 
     /// Discards as much additional capacity as possible.
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn shrink_to_fit(&mut self) {
-        self.data.shrink_to_fit()
+        self.data.shrink_to_fit();
     }
 
-    /// Removes the greatest item from a queue and returns it, or `None` if it
+    /// Removes the greatest item from the binary heap and returns it, or `None` if it
     /// is empty.
     ///
     /// # Examples
     ///
     /// ```
     /// use std::collections::BinaryHeap;
-    ///
     /// let mut heap = BinaryHeap::from_vec(vec![1i, 3]);
     ///
-    /// assert_eq!(heap.pop(), Some(3i));
-    /// assert_eq!(heap.pop(), Some(1i));
+    /// assert_eq!(heap.pop(), Some(3));
+    /// assert_eq!(heap.pop(), Some(1));
     /// assert_eq!(heap.pop(), None);
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn pop(&mut self) -> Option<T> {
-        match self.data.pop() {
-            None           => { None }
-            Some(mut item) => {
-                if !self.is_empty() {
-                    swap(&mut item, &mut self.data[0]);
-                    self.siftdown(0);
-                }
-                Some(item)
+        self.data.pop().map(|mut item| {
+            if !self.is_empty() {
+                swap(&mut item, &mut self.data[0]);
+                self.sift_down(0);
             }
-        }
+            item
+        })
     }
 
-    /// Pushes an item onto the queue.
+    /// Pushes an item onto the binary heap.
     ///
     /// # Examples
     ///
     /// ```
     /// use std::collections::BinaryHeap;
-    ///
     /// let mut heap = BinaryHeap::new();
     /// heap.push(3i);
-    /// heap.push(5i);
-    /// heap.push(1i);
+    /// heap.push(5);
+    /// heap.push(1);
     ///
     /// assert_eq!(heap.len(), 3);
-    /// assert_eq!(heap.peek(), Some(&5i));
+    /// assert_eq!(heap.peek(), Some(&5));
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn push(&mut self, item: T) {
         let old_len = self.len();
         self.data.push(item);
-        self.siftup(0, old_len);
+        self.sift_up(0, old_len);
     }
 
-    /// Pushes an item onto a queue then pops the greatest item off the queue in
+    /// Pushes an item onto the binary heap, then pops the greatest item off the queue in
     /// an optimized fashion.
     ///
     /// # Examples
     ///
     /// ```
     /// use std::collections::BinaryHeap;
-    ///
     /// let mut heap = BinaryHeap::new();
     /// heap.push(1i);
-    /// heap.push(5i);
+    /// heap.push(5);
     ///
-    /// assert_eq!(heap.push_pop(3i), 5);
-    /// assert_eq!(heap.push_pop(9i), 9);
+    /// assert_eq!(heap.push_pop(3), 5);
+    /// assert_eq!(heap.push_pop(9), 9);
     /// assert_eq!(heap.len(), 2);
-    /// assert_eq!(heap.peek(), Some(&3i));
+    /// assert_eq!(heap.peek(), Some(&3));
     /// ```
     pub fn push_pop(&mut self, mut item: T) -> T {
         match self.data.get_mut(0) {
@@ -425,30 +420,29 @@ impl<T: Ord> BinaryHeap<T> {
             },
         }
 
-        self.siftdown(0);
+        self.sift_down(0);
         item
     }
 
-    /// Pops the greatest item off a queue then pushes an item onto the queue in
-    /// an optimized fashion. The push is done regardless of whether the queue
+    /// Pops the greatest item off the binary heap, then pushes an item onto the queue in
+    /// an optimized fashion. The push is done regardless of whether the binary heap
     /// was empty.
     ///
     /// # Examples
     ///
     /// ```
     /// use std::collections::BinaryHeap;
-    ///
     /// let mut heap = BinaryHeap::new();
     ///
     /// assert_eq!(heap.replace(1i), None);
-    /// assert_eq!(heap.replace(3i), Some(1i));
+    /// assert_eq!(heap.replace(3), Some(1));
     /// assert_eq!(heap.len(), 1);
-    /// assert_eq!(heap.peek(), Some(&3i));
+    /// assert_eq!(heap.peek(), Some(&3));
     /// ```
     pub fn replace(&mut self, mut item: T) -> Option<T> {
         if !self.is_empty() {
             swap(&mut item, &mut self.data[0]);
-            self.siftdown(0);
+            self.sift_down(0);
             Some(item)
         } else {
             self.push(item);
@@ -463,7 +457,6 @@ impl<T: Ord> BinaryHeap<T> {
     ///
     /// ```
     /// use std::collections::BinaryHeap;
-    ///
     /// let heap = BinaryHeap::from_vec(vec![1i, 2, 3, 4, 5, 6, 7]);
     /// let vec = heap.into_vec();
     ///
@@ -494,35 +487,34 @@ impl<T: Ord> BinaryHeap<T> {
         while end > 1 {
             end -= 1;
             self.data.swap(0, end);
-            self.siftdown_range(0, end)
+            self.sift_down_range(0, end);
         }
         self.into_vec()
     }
 
-    // The implementations of siftup and siftdown use unsafe blocks in
+    // The implementations of sift_up and sift_down use unsafe blocks in
     // order to move an element out of the vector (leaving behind a
     // zeroed element), shift along the others and move it back into the
-    // vector over the junk element.  This reduces the constant factor
+    // vector over the junk element. This reduces the constant factor
     // compared to using swaps, which involves twice as many moves.
-    fn siftup(&mut self, start: uint, mut pos: uint) {
+    fn sift_up(&mut self, start: uint, mut pos: uint) {
         unsafe {
             let new = replace(&mut self.data[pos], zeroed());
 
             while pos > start {
                 let parent = (pos - 1) >> 1;
-                if new > self.data[parent] {
-                    let x = replace(&mut self.data[parent], zeroed());
-                    ptr::write(&mut self.data[pos], x);
-                    pos = parent;
-                    continue
-                }
-                break
+
+                if new <= self.data[parent] { break; }
+
+                let x = replace(&mut self.data[parent], zeroed());
+                ptr::write(&mut self.data[pos], x);
+                pos = parent;
             }
             ptr::write(&mut self.data[pos], new);
         }
     }
 
-    fn siftdown_range(&mut self, mut pos: uint, end: uint) {
+    fn sift_down_range(&mut self, mut pos: uint, end: uint) {
         unsafe {
             let start = pos;
             let new = replace(&mut self.data[pos], zeroed());
@@ -540,43 +532,53 @@ impl<T: Ord> BinaryHeap<T> {
             }
 
             ptr::write(&mut self.data[pos], new);
-            self.siftup(start, pos);
+            self.sift_up(start, pos);
         }
     }
 
-    fn siftdown(&mut self, pos: uint) {
+    fn sift_down(&mut self, pos: uint) {
         let len = self.len();
-        self.siftdown_range(pos, len);
+        self.sift_down_range(pos, len);
     }
 
-    /// Returns the length of the queue.
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    /// Returns the length of the binary heap.
+    #[stable]
     pub fn len(&self) -> uint { self.data.len() }
 
-    /// Returns true if the queue contains no elements
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    /// Checks if the binary heap is empty.
+    #[stable]
     pub fn is_empty(&self) -> bool { self.len() == 0 }
 
-    /// Clears the queue, returning an iterator over the removed elements.
+    /// Clears the binary heap, returning an iterator over the removed elements.
     #[inline]
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
-    pub fn drain<'a>(&'a mut self) -> Drain<'a, T> {
-        Drain {
-            iter: self.data.drain(),
-        }
+    pub fn drain(&mut self) -> Drain<T> {
+        Drain { iter: self.data.drain() }
     }
 
-    /// Drops all items from the queue.
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    /// Drops all items from the binary heap.
+    #[stable]
     pub fn clear(&mut self) { self.drain(); }
 }
 
 /// `BinaryHeap` iterator.
+#[stable]
 pub struct Iter <'a, T: 'a> {
     iter: slice::Iter<'a, T>,
 }
 
-impl<'a, T> Iterator<&'a T> for Iter<'a, T> {
+// FIXME(#19839) Remove in favor of `#[derive(Clone)]`
+#[stable]
+impl<'a, T> Clone for Iter<'a, T> {
+    fn clone(&self) -> Iter<'a, T> {
+        Iter { iter: self.iter.clone() }
+    }
+}
+
+#[stable]
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
+
     #[inline]
     fn next(&mut self) -> Option<&'a T> { self.iter.next() }
 
@@ -584,19 +586,25 @@ impl<'a, T> Iterator<&'a T> for Iter<'a, T> {
     fn size_hint(&self) -> (uint, Option<uint>) { self.iter.size_hint() }
 }
 
-impl<'a, T> DoubleEndedIterator<&'a T> for Iter<'a, T> {
+#[stable]
+impl<'a, T> DoubleEndedIterator for Iter<'a, T> {
     #[inline]
     fn next_back(&mut self) -> Option<&'a T> { self.iter.next_back() }
 }
 
-impl<'a, T> ExactSizeIterator<&'a T> for Iter<'a, T> {}
+#[stable]
+impl<'a, T> ExactSizeIterator for Iter<'a, T> {}
 
 /// An iterator that moves out of a `BinaryHeap`.
+#[stable]
 pub struct IntoIter<T> {
     iter: vec::IntoIter<T>,
 }
 
-impl<T> Iterator<T> for IntoIter<T> {
+#[stable]
+impl<T> Iterator for IntoIter<T> {
+    type Item = T;
+
     #[inline]
     fn next(&mut self) -> Option<T> { self.iter.next() }
 
@@ -604,19 +612,25 @@ impl<T> Iterator<T> for IntoIter<T> {
     fn size_hint(&self) -> (uint, Option<uint>) { self.iter.size_hint() }
 }
 
-impl<T> DoubleEndedIterator<T> for IntoIter<T> {
+#[stable]
+impl<T> DoubleEndedIterator for IntoIter<T> {
     #[inline]
     fn next_back(&mut self) -> Option<T> { self.iter.next_back() }
 }
 
-impl<T> ExactSizeIterator<T> for IntoIter<T> {}
+#[stable]
+impl<T> ExactSizeIterator for IntoIter<T> {}
 
 /// An iterator that drains a `BinaryHeap`.
+#[unstable = "recent addition"]
 pub struct Drain<'a, T: 'a> {
     iter: vec::Drain<'a, T>,
 }
 
-impl<'a, T: 'a> Iterator<T> for Drain<'a, T> {
+#[stable]
+impl<'a, T: 'a> Iterator for Drain<'a, T> {
+    type Item = T;
+
     #[inline]
     fn next(&mut self) -> Option<T> { self.iter.next() }
 
@@ -624,21 +638,25 @@ impl<'a, T: 'a> Iterator<T> for Drain<'a, T> {
     fn size_hint(&self) -> (uint, Option<uint>) { self.iter.size_hint() }
 }
 
-impl<'a, T: 'a> DoubleEndedIterator<T> for Drain<'a, T> {
+#[stable]
+impl<'a, T: 'a> DoubleEndedIterator for Drain<'a, T> {
     #[inline]
     fn next_back(&mut self) -> Option<T> { self.iter.next_back() }
 }
 
-impl<'a, T: 'a> ExactSizeIterator<T> for Drain<'a, T> {}
+#[stable]
+impl<'a, T: 'a> ExactSizeIterator for Drain<'a, T> {}
 
+#[stable]
 impl<T: Ord> FromIterator<T> for BinaryHeap<T> {
-    fn from_iter<Iter: Iterator<T>>(iter: Iter) -> BinaryHeap<T> {
+    fn from_iter<Iter: Iterator<Item=T>>(iter: Iter) -> BinaryHeap<T> {
         BinaryHeap::from_vec(iter.collect())
     }
 }
 
+#[stable]
 impl<T: Ord> Extend<T> for BinaryHeap<T> {
-    fn extend<Iter: Iterator<T>>(&mut self, mut iter: Iter) {
+    fn extend<Iter: Iterator<Item=T>>(&mut self, mut iter: Iter) {
         let (lower, _) = iter.size_hint();
 
         self.reserve(lower);

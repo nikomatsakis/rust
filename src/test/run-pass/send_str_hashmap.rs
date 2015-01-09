@@ -11,8 +11,9 @@
 extern crate collections;
 
 use std::collections::HashMap;
-use std::option::Option::Some;
-use std::str::SendStr;
+use std::borrow::{Cow, IntoCow};
+
+type SendStr = Cow<'static, String, str>;
 
 pub fn main() {
     let mut map: HashMap<SendStr, uint> = HashMap::new();

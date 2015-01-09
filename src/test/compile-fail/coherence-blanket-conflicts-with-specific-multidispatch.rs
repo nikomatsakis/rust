@@ -24,13 +24,13 @@ impl<T> MyTrait<T> for T { //~ ERROR E0119
     }
 }
 
-#[deriving(Clone)]
+#[derive(Clone)]
 struct MyType {
-    dummy: uint
+    dummy: usize
 }
 
 impl MyTrait<MyType> for MyType {
-    fn get(&self) -> uint { (*self).clone() }
+    fn get(&self) -> usize { (*self).clone() }
 }
 
 fn main() { }

@@ -79,6 +79,8 @@
 // lldb-command:continue
 
 #![allow(unused_variables)]
+#![feature(box_syntax)]
+#![omit_gdb_pretty_printer_section]
 
 struct Struct {
     a: int,
@@ -99,10 +101,10 @@ fn main() {
     let struct_ref = &a_struct;
     let owned = box 6;
 
-    let closure = || {
+    let mut closure = |&mut:| {
         let closure_local = 8;
 
-        let nested_closure = || {
+        let mut nested_closure = |&mut:| {
             zzz(); // #break
             variable = constant + a_struct.a + struct_ref.a + *owned + closure_local;
         };

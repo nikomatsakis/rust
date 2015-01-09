@@ -40,14 +40,14 @@
 
 // ignore-android see #10393 #13206
 
-#![feature(slicing_syntax, unboxed_closures)]
+#![feature(unboxed_closures)]
 
 extern crate libc;
 
 use std::io::stdio::{stdin_raw, stdout_raw};
-use std::num::{div_rem};
-use std::ptr::{copy_memory};
 use std::io::{IoResult, EndOfFile};
+use std::ptr::{copy_memory, Unique};
+use std::thread::Thread;
 
 struct Tables {
     table8: [u8;1 << 8],
@@ -62,7 +62,7 @@ impl Tables {
         }
         let mut table16 = [0;1 << 16];
         for (i, v) in table16.iter_mut().enumerate() {
-            *v = table8[i & 255] as u16 << 8 |
+            *v = (table8[i & 255] as u16) << 8 |
                  table8[i >> 8]  as u16;
         }
         Tables { table8: table8, table16: table16 }
@@ -149,7 +149,9 @@ struct MutDnaSeqs<'a> { s: &'a mut [u8] }
 fn mut_dna_seqs<'a>(s: &'a mut [u8]) -> MutDnaSeqs<'a> {
     MutDnaSeqs { s: s }
 }
-impl<'a> Iterator<&'a mut [u8]> for MutDnaSeqs<'a> {
+impl<'a> Iterator for MutDnaSeqs<'a> {
+    type Item = &'a mut [u8];
+
     fn next(&mut self) -> Option<&'a mut [u8]> {
         let tmp = std::mem::replace(&mut self.s, &mut []);
         let tmp = match memchr(tmp, b'\n') {
@@ -181,12 +183,13 @@ fn reverse_complement(seq: &mut [u8], tables: &Tables) {
         unsafe {
             copy_memory(seq.as_mut_ptr().offset((i - off + 1) as int),
                         seq.as_ptr().offset((i - off) as int), off);
-            *seq.unsafe_mut(i - off) = b'\n';
+            *seq.get_unchecked_mut(i - off) = b'\n';
         }
         i += LINE_LEN + 1;
     }
 
-    let (div, rem) = div_rem(len, 4);
+    let div = len / 4;
+    let rem = len % 4;
     unsafe {
         let mut left = seq.as_mut_ptr() as *mut u16;
         // This is slow if len % 2 != 0 but still faster than bytewise operations.
@@ -219,36 +222,35 @@ fn reverse_complement(seq: &mut [u8], tables: &Tables) {
     }
 }
 
+
+struct Racy<T>(T);
+
+unsafe impl<T: 'static> Send for Racy<T> {}
+
 /// Executes a closure in parallel over the given iterator over mutable slice.
 /// The closure `f` is run in parallel with an element of `iter`.
-fn parallel<'a, I, T, F>(mut iter: I, f: F)
-        where T: Send + Sync,
-              I: Iterator<&'a mut [T]>,
-              F: Fn(&'a mut [T]) + Sync {
+fn parallel<'a, I, T, F>(iter: I, f: F)
+        where T: 'a+Send + Sync,
+              I: Iterator<Item=&'a mut [T]>,
+              F: Fn(&mut [T]) + Sync {
     use std::mem;
     use std::raw::Repr;
 
-    let (tx, rx) = channel();
-    for chunk in iter {
-        let tx = tx.clone();
-
+    iter.map(|chunk| {
         // Need to convert `f` and `chunk` to something that can cross the task
         // boundary.
-        let f = &f as *const F as *const uint;
-        let raw = chunk.repr();
-        spawn(move|| {
-            let f = f as *const F;
-            unsafe { (*f)(mem::transmute(raw)) }
-            drop(tx)
-        });
-    }
-    drop(tx);
-    for () in rx.iter() {}
+        let f = Racy(&f as *const F as *const uint);
+        let raw = Racy(chunk.repr());
+        Thread::scoped(move|| {
+            let f = f.0 as *const F;
+            unsafe { (*f)(mem::transmute(raw.0)) }
+        })
+    }).collect::<Vec<_>>();
 }
 
 fn main() {
     let mut data = read_to_end(&mut stdin_raw()).unwrap();
     let tables = &Tables::new();
-    parallel(mut_dna_seqs(data[mut]), |&: seq| reverse_complement(seq, tables));
+    parallel(mut_dna_seqs(data.as_mut_slice()), |&: seq| reverse_complement(seq, tables));
     stdout_raw().write(data.as_mut_slice()).unwrap();
 }

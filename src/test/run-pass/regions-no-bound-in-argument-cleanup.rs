@@ -14,7 +14,9 @@ use std::kinds::marker;
 
 pub struct Foo<T>(marker::CovariantType<T>);
 
-impl<T> Iterator<T> for Foo<T> {
+impl<T> Iterator for Foo<T> {
+    type Item = T;
+
     fn next(&mut self) -> Option<T> {
         None
     }

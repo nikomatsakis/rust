@@ -13,7 +13,7 @@
 //! Unicode-intensive string manipulations.
 //!
 //! This module provides functionality to `str` that requires the Unicode methods provided by the
-//! UnicodeChar trait.
+//! unicode parts of the CharExt trait.
 
 use self::GraphemeState::*;
 use core::prelude::*;
@@ -24,21 +24,20 @@ use core::iter::{Filter, AdditiveIterator};
 use core::mem;
 use core::num::Int;
 use core::slice;
-use core::str::CharSplits;
+use core::str::Split;
 
-use u_char::UnicodeChar;
+use u_char::CharExt as UCharExt; // conflicts with core::prelude::CharExt
 use tables::grapheme::GraphemeCat;
 
 /// An iterator over the words of a string, separated by a sequence of whitespace
-/// FIXME: This should be opaque
 #[stable]
 pub struct Words<'a> {
-    inner: Filter<&'a str, CharSplits<'a, fn(char) -> bool>, fn(&&str) -> bool>,
+    inner: Filter<&'a str, Split<'a, fn(char) -> bool>, fn(&&str) -> bool>,
 }
 
 /// Methods for Unicode string slices
 #[allow(missing_docs)] // docs in libcollections
-pub trait UnicodeStr for Sized? {
+pub trait UnicodeStr {
     fn graphemes<'a>(&'a self, is_extended: bool) -> Graphemes<'a>;
     fn grapheme_indices<'a>(&'a self, is_extended: bool) -> GraphemeIndices<'a>;
     fn words<'a>(&'a self) -> Words<'a>;
@@ -90,23 +89,25 @@ impl UnicodeStr for str {
 
     #[inline]
     fn trim_left(&self) -> &str {
-        self.trim_left_chars(|&: c: char| c.is_whitespace())
+        self.trim_left_matches(|&: c: char| c.is_whitespace())
     }
 
     #[inline]
     fn trim_right(&self) -> &str {
-        self.trim_right_chars(|&: c: char| c.is_whitespace())
+        self.trim_right_matches(|&: c: char| c.is_whitespace())
     }
 }
 
 /// External iterator for grapheme clusters and byte offsets.
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct GraphemeIndices<'a> {
     start_offset: uint,
     iter: Graphemes<'a>,
 }
 
-impl<'a> Iterator<(uint, &'a str)> for GraphemeIndices<'a> {
+impl<'a> Iterator for GraphemeIndices<'a> {
+    type Item = (uint, &'a str);
+
     #[inline]
     fn next(&mut self) -> Option<(uint, &'a str)> {
         self.iter.next().map(|s| (s.as_ptr() as uint - self.start_offset, s))
@@ -118,7 +119,7 @@ impl<'a> Iterator<(uint, &'a str)> for GraphemeIndices<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator<(uint, &'a str)> for GraphemeIndices<'a> {
+impl<'a> DoubleEndedIterator for GraphemeIndices<'a> {
     #[inline]
     fn next_back(&mut self) -> Option<(uint, &'a str)> {
         self.iter.next_back().map(|s| (s.as_ptr() as uint - self.start_offset, s))
@@ -127,7 +128,7 @@ impl<'a> DoubleEndedIterator<(uint, &'a str)> for GraphemeIndices<'a> {
 
 /// External iterator for a string's
 /// [grapheme clusters](http://www.unicode.org/reports/tr29/#Grapheme_Cluster_Boundaries).
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct Graphemes<'a> {
     string: &'a str,
     extended: bool,
@@ -136,7 +137,7 @@ pub struct Graphemes<'a> {
 }
 
 // state machine for cluster boundary rules
-#[deriving(PartialEq,Eq)]
+#[derive(PartialEq,Eq)]
 enum GraphemeState {
     Start,
     FindExtend,
@@ -146,7 +147,9 @@ enum GraphemeState {
     Regional,
 }
 
-impl<'a> Iterator<&'a str> for Graphemes<'a> {
+impl<'a> Iterator for Graphemes<'a> {
+    type Item = &'a str;
+
     #[inline]
     fn size_hint(&self) -> (uint, Option<uint>) {
         let slen = self.string.len();
@@ -252,7 +255,7 @@ impl<'a> Iterator<&'a str> for Graphemes<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator<&'a str> for Graphemes<'a> {
+impl<'a> DoubleEndedIterator for Graphemes<'a> {
     #[inline]
     fn next_back(&mut self) -> Option<&'a str> {
         use tables::grapheme as gr;
@@ -354,7 +357,7 @@ impl<'a> DoubleEndedIterator<&'a str> for Graphemes<'a> {
 }
 
 // https://tools.ietf.org/html/rfc3629
-static UTF8_CHAR_WIDTH: [u8, ..256] = [
+static UTF8_CHAR_WIDTH: [u8; 256] = [
 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, // 0x1F
 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
@@ -402,12 +405,12 @@ pub fn is_utf16(v: &[u16]) -> bool {
 
 /// An iterator that decodes UTF-16 encoded codepoints from a vector
 /// of `u16`s.
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct Utf16Items<'a> {
     iter: slice::Iter<'a, u16>
 }
 /// The possibilities for values decoded from a `u16` stream.
-#[deriving(PartialEq, Eq, Clone, Show)]
+#[derive(PartialEq, Eq, Clone, Show)]
 pub enum Utf16Item {
     /// A valid codepoint.
     ScalarValue(char),
@@ -429,7 +432,9 @@ impl Utf16Item {
     }
 }
 
-impl<'a> Iterator<Utf16Item> for Utf16Items<'a> {
+impl<'a> Iterator for Utf16Items<'a> {
+    type Item = Utf16Item;
+
     fn next(&mut self) -> Option<Utf16Item> {
         let u = match self.iter.next() {
             Some(u) => *u,
@@ -459,7 +464,7 @@ impl<'a> Iterator<Utf16Item> for Utf16Items<'a> {
             }
 
             // all ok, so lets decode it.
-            let c = ((u - 0xD800) as u32 << 10 | (u2 - 0xDC00) as u32) + 0x1_0000;
+            let c = (((u - 0xD800) as u32) << 10 | (u2 - 0xDC00) as u32) + 0x1_0000;
             Some(Utf16Item::ScalarValue(unsafe {mem::transmute(c)}))
         }
     }
@@ -498,7 +503,7 @@ pub fn utf16_items<'a>(v: &'a [u16]) -> Utf16Items<'a> {
 }
 
 /// Iterator adaptor for encoding `char`s to UTF-16.
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct Utf16Encoder<I> {
     chars: I,
     extra: u16
@@ -506,12 +511,14 @@ pub struct Utf16Encoder<I> {
 
 impl<I> Utf16Encoder<I> {
     /// Create an UTF-16 encoder from any `char` iterator.
-    pub fn new(chars: I) -> Utf16Encoder<I> where I: Iterator<char> {
+    pub fn new(chars: I) -> Utf16Encoder<I> where I: Iterator<Item=char> {
         Utf16Encoder { chars: chars, extra: 0 }
     }
 }
 
-impl<I> Iterator<u16> for Utf16Encoder<I> where I: Iterator<char> {
+impl<I> Iterator for Utf16Encoder<I> where I: Iterator<Item=char> {
+    type Item = u16;
+
     #[inline]
     fn next(&mut self) -> Option<u16> {
         if self.extra != 0 {
@@ -520,9 +527,9 @@ impl<I> Iterator<u16> for Utf16Encoder<I> where I: Iterator<char> {
             return Some(tmp);
         }
 
-        let mut buf = [0u16, ..2];
+        let mut buf = [0u16; 2];
         self.chars.next().map(|ch| {
-            let n = ch.encode_utf16(buf[mut]).unwrap_or(0);
+            let n = CharExt::encode_utf16(ch, buf.as_mut_slice()).unwrap_or(0);
             if n == 2 { self.extra = buf[1]; }
             buf[0]
         })
@@ -538,9 +545,11 @@ impl<I> Iterator<u16> for Utf16Encoder<I> where I: Iterator<char> {
     }
 }
 
-impl<'a> Iterator<&'a str> for Words<'a> {
+impl<'a> Iterator for Words<'a> {
+    type Item = &'a str;
+
     fn next(&mut self) -> Option<&'a str> { self.inner.next() }
 }
-impl<'a> DoubleEndedIterator<&'a str> for Words<'a> {
+impl<'a> DoubleEndedIterator for Words<'a> {
     fn next_back(&mut self) -> Option<&'a str> { self.inner.next_back() }
 }

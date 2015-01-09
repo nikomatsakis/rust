@@ -8,6 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![unstable = "the interaction between semaphores and the acquisition/release \
+               of resources is currently unclear"]
+
 use ops::Drop;
 use sync::{Mutex, Condvar};
 
@@ -68,9 +71,9 @@ impl Semaphore {
     /// This method will block until the internal count of the semaphore is at
     /// least 1.
     pub fn acquire(&self) {
-        let mut count = self.lock.lock();
+        let mut count = self.lock.lock().unwrap();
         while *count <= 0 {
-            self.cvar.wait(&count);
+            count = self.cvar.wait(count).unwrap();
         }
         *count -= 1;
     }
@@ -80,7 +83,7 @@ impl Semaphore {
     /// This will increment the number of resources in this semaphore by 1 and
     /// will notify any pending waiters in `acquire` or `access` if necessary.
     pub fn release(&self) {
-        *self.lock.lock() += 1;
+        *self.lock.lock().unwrap() += 1;
         self.cvar.notify_one();
     }
 
@@ -96,6 +99,7 @@ impl Semaphore {
 }
 
 #[unsafe_destructor]
+#[stable]
 impl<'a> Drop for SemaphoreGuard<'a> {
     fn drop(&mut self) {
         self.sem.release();
@@ -104,10 +108,12 @@ impl<'a> Drop for SemaphoreGuard<'a> {
 
 #[cfg(test)]
 mod tests {
-    use prelude::*;
+    use prelude::v1::*;
 
     use sync::Arc;
     use super::Semaphore;
+    use sync::mpsc::channel;
+    use thread::Thread;
 
     #[test]
     fn test_sem_acquire_release() {
@@ -127,7 +133,7 @@ mod tests {
     fn test_sem_as_mutex() {
         let s = Arc::new(Semaphore::new(1));
         let s2 = s.clone();
-        spawn(move|| {
+        let _t = Thread::spawn(move|| {
             let _g = s2.access();
         });
         let _g = s.access();
@@ -139,9 +145,9 @@ mod tests {
         let (tx, rx) = channel();
         let s = Arc::new(Semaphore::new(0));
         let s2 = s.clone();
-        spawn(move|| {
+        let _t = Thread::spawn(move|| {
             s2.acquire();
-            tx.send(());
+            tx.send(()).unwrap();
         });
         s.release();
         let _ = rx.recv();
@@ -150,12 +156,12 @@ mod tests {
         let (tx, rx) = channel();
         let s = Arc::new(Semaphore::new(0));
         let s2 = s.clone();
-        spawn(move|| {
+        let _t = Thread::spawn(move|| {
             s2.release();
             let _ = rx.recv();
         });
         s.acquire();
-        tx.send(());
+        tx.send(()).unwrap();
     }
 
     #[test]
@@ -166,14 +172,14 @@ mod tests {
         let s2 = s.clone();
         let (tx1, rx1) = channel();
         let (tx2, rx2) = channel();
-        spawn(move|| {
+        let _t = Thread::spawn(move|| {
             let _g = s2.access();
             let _ = rx2.recv();
-            tx1.send(());
+            tx1.send(()).unwrap();
         });
         let _g = s.access();
-        tx2.send(());
-        let _ = rx1.recv();
+        tx2.send(()).unwrap();
+        rx1.recv().unwrap();
     }
 
     #[test]
@@ -183,13 +189,13 @@ mod tests {
         let (tx, rx) = channel();
         {
             let _g = s.access();
-            spawn(move|| {
-                tx.send(());
+            Thread::spawn(move|| {
+                tx.send(()).unwrap();
                 drop(s2.access());
-                tx.send(());
+                tx.send(()).unwrap();
             });
-            rx.recv(); // wait for child to come alive
+            rx.recv().unwrap(); // wait for child to come alive
         }
-        rx.recv(); // wait for child to be done
+        rx.recv().unwrap(); // wait for child to be done
     }
 }

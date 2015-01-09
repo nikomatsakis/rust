@@ -8,12 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::ops::{Index, IndexMut};
+
 struct Foo {
     x: int,
     y: int,
 }
 
-impl Index<int,int> for Foo {
+impl Index<int> for Foo {
+    type Output = int;
+
     fn index(&self, z: &int) -> &int {
         if *z == 0 {
             &self.x
@@ -23,7 +27,9 @@ impl Index<int,int> for Foo {
     }
 }
 
-impl IndexMut<int,int> for Foo {
+impl IndexMut<int> for Foo {
+    type Output = int;
+
     fn index_mut(&mut self, z: &int) -> &mut int {
         if *z == 0 {
             &mut self.x
@@ -67,4 +73,3 @@ fn main() {
     assert_eq!(f[1].get(), 5);
     assert_eq!(f[1].get_from_ref(), 5);
 }
-

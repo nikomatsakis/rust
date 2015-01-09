@@ -15,7 +15,7 @@ use super::{Subtype};
 use super::type_variable::{SubtypeOf, SupertypeOf};
 
 use middle::ty::{BuiltinBounds};
-use middle::ty::{mod, Ty};
+use middle::ty::{self, Ty};
 use middle::ty::TyVar;
 use util::ppaux::{Repr};
 
@@ -135,7 +135,7 @@ impl<'f, 'tcx> Combine<'tcx> for Sub<'f, 'tcx> {
             }
 
             (&ty::ty_err, _) | (_, &ty::ty_err) => {
-                Ok(ty::mk_err())
+                Ok(self.tcx().types.err)
             }
 
             _ => {

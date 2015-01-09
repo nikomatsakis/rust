@@ -25,7 +25,9 @@ impl<T> Helper<T> for Option<T> {
     }
 }
 
-impl<T, H: Helper<T>> Deref<T> for DerefWithHelper<H, T> {
+impl<T, H: Helper<T>> Deref for DerefWithHelper<H, T> {
+    type Target = T;
+
     fn deref(&self) -> &T {
         self.helper.helper_borrow()
     }

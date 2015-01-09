@@ -9,21 +9,8 @@
 // except according to those terms.
 
 
-use std::rc::Rc;
-
-struct Foo {
-    f: Rc<int>,
-}
-
-impl Drop for Foo {
-//~^ ERROR the trait `core::kinds::Send` is not implemented
-//~^^ NOTE cannot implement a destructor on a structure or enumeration that does not satisfy Send
-    fn drop(&mut self) {
-    }
-}
-
 struct Bar<'a> {
-    f: &'a int,
+    f: &'a isize,
 }
 
 impl<'a> Drop for Bar<'a> {
@@ -33,7 +20,7 @@ impl<'a> Drop for Bar<'a> {
 }
 
 struct Baz {
-    f: &'static int,
+    f: &'static isize,
 }
 
 impl Drop for Baz {

@@ -21,22 +21,21 @@
 use std::os;
 use std::sync::{Arc, Future, Mutex, Condvar};
 use std::time::Duration;
-use std::uint;
 
 // A poor man's pipe.
 type pipe = Arc<(Mutex<Vec<uint>>, Condvar)>;
 
 fn send(p: &pipe, msg: uint) {
     let &(ref lock, ref cond) = &**p;
-    let mut arr = lock.lock();
+    let mut arr = lock.lock().unwrap();
     arr.push(msg);
     cond.notify_one();
 }
 fn recv(p: &pipe) -> uint {
     let &(ref lock, ref cond) = &**p;
-    let mut arr = lock.lock();
+    let mut arr = lock.lock().unwrap();
     while arr.is_empty() {
-        cond.wait(&arr);
+        arr = cond.wait(arr).unwrap();
     }
     arr.pop().unwrap()
 }
@@ -73,10 +72,10 @@ fn main() {
         args.clone().into_iter().collect()
     };
 
-    let num_tasks = from_str::<uint>(args[1].as_slice()).unwrap();
-    let msg_per_task = from_str::<uint>(args[2].as_slice()).unwrap();
+    let num_tasks = args[1].parse::<uint>().unwrap();
+    let msg_per_task = args[2].parse::<uint>().unwrap();
 
-    let (mut num_chan, num_port) = init();
+    let (num_chan, num_port) = init();
 
     let mut p = Some((num_chan, num_port));
     let dur = Duration::span(|| {

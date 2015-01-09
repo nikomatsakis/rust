@@ -13,16 +13,20 @@ use io::IoResult;
 use libc;
 use mem;
 use ptr;
-use prelude::*;
+use prelude::v1::*;
 use super::{last_error, last_net_error, retry, sock_t};
-use sync::{Arc, atomic};
+use sync::Arc;
+use sync::atomic::{AtomicBool, Ordering};
 use sys::fs::FileDesc;
-use sys::{mod, c, set_nonblocking, wouldblock, timer};
-use sys_common::{mod, timeout, eof, net};
+use sys::{self, c, set_nonblocking, wouldblock, timer};
+use sys_common::{self, timeout, eof, net};
 
 pub use sys_common::net::TcpStream;
 
 pub struct Event(c::WSAEVENT);
+
+unsafe impl Send for Event {}
+unsafe impl Sync for Event {}
 
 impl Event {
     pub fn new() -> IoResult<Event> {
@@ -48,6 +52,9 @@ impl Drop for Event {
 ////////////////////////////////////////////////////////////////////////////////
 
 pub struct TcpListener { sock: sock_t }
+
+unsafe impl Send for TcpListener {}
+unsafe impl Sync for TcpListener {}
 
 impl TcpListener {
     pub fn bind(addr: ip::SocketAddr) -> IoResult<TcpListener> {
@@ -85,7 +92,7 @@ impl TcpListener {
                         listener: self,
                         abort: try!(Event::new()),
                         accept: accept,
-                        closed: atomic::AtomicBool::new(false),
+                        closed: AtomicBool::new(false),
                     }),
                     deadline: 0,
                 })
@@ -109,12 +116,18 @@ pub struct TcpAcceptor {
     deadline: u64,
 }
 
+unsafe impl Send for TcpAcceptor {}
+unsafe impl Sync for TcpAcceptor {}
+
 struct AcceptorInner {
     listener: TcpListener,
     abort: Event,
     accept: Event,
-    closed: atomic::AtomicBool,
+    closed: AtomicBool,
 }
+
+unsafe impl Send for AcceptorInner {}
+unsafe impl Sync for AcceptorInner {}
 
 impl TcpAcceptor {
     pub fn socket(&self) -> sock_t { self.inner.listener.socket() }
@@ -142,7 +155,7 @@ impl TcpAcceptor {
         // stolen, so we do all of this in a loop as well.
         let events = [self.inner.abort.handle(), self.inner.accept.handle()];
 
-        while !self.inner.closed.load(atomic::SeqCst) {
+        while !self.inner.closed.load(Ordering::SeqCst) {
             let ms = if self.deadline == 0 {
                 c::WSA_INFINITE as u64
             } else {
@@ -202,7 +215,7 @@ impl TcpAcceptor {
     }
 
     pub fn close_accept(&mut self) -> IoResult<()> {
-        self.inner.closed.store(true, atomic::SeqCst);
+        self.inner.closed.store(true, Ordering::SeqCst);
         let ret = unsafe { c::WSASetEvent(self.inner.abort.handle()) };
         if ret == libc::TRUE {
             Ok(())

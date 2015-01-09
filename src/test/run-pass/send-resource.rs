@@ -8,7 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::task;
+use std::thread::Thread;
+use std::sync::mpsc::channel;
 
 struct test {
   f: int,
@@ -27,12 +28,12 @@ fn test(f: int) -> test {
 pub fn main() {
     let (tx, rx) = channel();
 
-    task::spawn(move|| {
+    let _t = Thread::spawn(move|| {
         let (tx2, rx2) = channel();
-        tx.send(tx2);
+        tx.send(tx2).unwrap();
 
-        let _r = rx2.recv();
+        let _r = rx2.recv().unwrap();
     });
 
-    rx.recv().send(test(42));
+    rx.recv().unwrap().send(test(42)).unwrap();
 }

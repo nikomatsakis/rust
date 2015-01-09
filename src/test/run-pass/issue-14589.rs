@@ -11,7 +11,8 @@
 // All 3 expressions should work in that the argument gets
 // coerced to a trait object
 
-use std::kinds::marker;
+#![allow(unknown_features)]
+#![feature(box_syntax)]
 
 fn main() {
     send::<Box<Foo>>(box Output(0));

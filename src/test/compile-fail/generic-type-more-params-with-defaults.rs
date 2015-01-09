@@ -8,8 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(default_type_params)]
-
 use std::kinds::marker;
 
 struct Heap;
@@ -18,6 +16,6 @@ struct Vec<T, A = Heap>(
     marker::InvariantType<(T,A)>);
 
 fn main() {
-    let _: Vec<int, Heap, bool>;
+    let _: Vec<isize, Heap, bool>;
     //~^ ERROR wrong number of type arguments: expected at most 2, found 3
 }

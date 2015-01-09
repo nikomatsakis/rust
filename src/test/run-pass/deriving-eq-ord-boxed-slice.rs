@@ -8,7 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[deriving(PartialEq, PartialOrd, Eq, Ord)]
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+
+#[derive(PartialEq, PartialOrd, Eq, Ord)]
 struct Foo(Box<[u8]>);
 
 pub fn main() {

@@ -13,7 +13,6 @@
 // ignore-lldb
 // ignore-android: FIXME(#10381)
 // compile-flags:-g
-// gdb-use-pretty-printer
 
 // This test uses some GDB Python API features (e.g. accessing anonymous fields)
 // which are only available in newer GDB version. The following directive will
@@ -69,6 +68,12 @@
 
 // gdb-command: print nested_variant2
 // gdb-check:$16 = NestedVariant2 = {abc = NestedStruct = {regular_struct = RegularStruct = {the_first_field = 117, the_second_field = 118.5, the_third_field = false, the_fourth_field = "NestedStructString10"}, tuple_struct = TupleStruct = {119.5, 120}, empty_struct = EmptyStruct, c_style_enum = CStyleEnumVar3, mixed_enum = MixedEnumStructVar = {field1 = 121.5, field2 = -122}}}
+
+// gdb-command: print none_check1
+// gdb-check:$17 = None
+
+// gdb-command: print none_check2
+// gdb-check:$18 = None
 
 use self::CStyleEnum::{CStyleEnumVar1, CStyleEnumVar2, CStyleEnumVar3};
 use self::MixedEnum::{MixedEnumCStyleVar, MixedEnumTupleVar, MixedEnumStructVar};
@@ -170,6 +175,9 @@ fn main() {
             }
         }
     };
+
+    let none_check1: Option<(uint, Vec<uint>)> = None;
+    let none_check2: Option<String> = None;
 
     zzz(); // #break
 }

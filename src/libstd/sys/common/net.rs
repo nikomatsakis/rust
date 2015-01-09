@@ -8,29 +8,31 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use prelude::v1::*;
 use self::SocketStatus::*;
 use self::InAddr::*;
 
-use alloc::arc::Arc;
-use libc::{mod, c_char, c_int};
+use ffi::CString;
+use ffi;
+use io::net::addrinfo;
+use io::net::ip::{SocketAddr, IpAddr, Ipv4Addr, Ipv6Addr};
+use io::{IoResult, IoError};
+use libc::{self, c_char, c_int};
 use mem;
 use num::Int;
-use ptr::{mod, null, null_mut};
-use io::net::ip::{SocketAddr, IpAddr, Ipv4Addr, Ipv6Addr};
-use io::net::addrinfo;
-use io::{IoResult, IoError};
-use sys::{mod, retry, c, sock_t, last_error, last_net_error, last_gai_error, close_sock,
+use ptr::{self, null, null_mut};
+use str;
+use sys::{self, retry, c, sock_t, last_error, last_net_error, last_gai_error, close_sock,
           wrlen, msglen_t, os, wouldblock, set_nonblocking, timer, ms_to_timeval,
           decode_error_detailed};
-use sync::{Mutex, MutexGuard};
-use sys_common::{mod, keep_going, short_write, timeout};
-use prelude::*;
+use sync::{Arc, Mutex, MutexGuard};
+use sys_common::{self, keep_going, short_write, timeout};
 use cmp;
 use io;
 
 // FIXME: move uses of Arc and deadline tracking to std::io
 
-#[deriving(Show)]
+#[derive(Show)]
 pub enum SocketStatus {
     Readable,
     Writable,
@@ -55,10 +57,10 @@ pub enum InAddr {
 pub fn ip_to_inaddr(ip: IpAddr) -> InAddr {
     match ip {
         Ipv4Addr(a, b, c, d) => {
-            let ip = (a as u32 << 24) |
-                     (b as u32 << 16) |
-                     (c as u32 <<  8) |
-                     (d as u32 <<  0);
+            let ip = ((a as u32) << 24) |
+                     ((b as u32) << 16) |
+                     ((c as u32) <<  8) |
+                     ((d as u32) <<  0);
             In4Addr(libc::in_addr {
                 s_addr: Int::from_be(ip)
             })
@@ -233,9 +235,9 @@ pub fn get_host_addresses(host: Option<&str>, servname: Option<&str>,
 
     assert!(host.is_some() || servname.is_some());
 
-    let c_host = host.map(|x| x.to_c_str());
+    let c_host = host.map(|x| CString::from_slice(x.as_bytes()));
     let c_host = c_host.as_ref().map(|x| x.as_ptr()).unwrap_or(null());
-    let c_serv = servname.map(|x| x.to_c_str());
+    let c_serv = servname.map(|x| CString::from_slice(x.as_bytes()));
     let c_serv = c_serv.as_ref().map(|x| x.as_ptr()).unwrap_or(null());
 
     let hint = hint.map(|hint| {
@@ -269,7 +271,7 @@ pub fn get_host_addresses(host: Option<&str>, servname: Option<&str>,
     // Collect all the results we found
     let mut addrs = Vec::new();
     let mut rp = res;
-    while rp.is_not_null() {
+    while !rp.is_null() {
         unsafe {
             let addr = try!(sockaddr_to_addr(mem::transmute((*rp).ai_addr),
                                              (*rp).ai_addrlen as uint));
@@ -288,6 +290,44 @@ pub fn get_host_addresses(host: Option<&str>, servname: Option<&str>,
     unsafe { freeaddrinfo(res); }
 
     Ok(addrs)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// get_address_name
+////////////////////////////////////////////////////////////////////////////////
+
+extern "system" {
+    fn getnameinfo(sa: *const libc::sockaddr, salen: libc::socklen_t,
+        host: *mut c_char, hostlen: libc::size_t,
+        serv: *mut c_char, servlen: libc::size_t,
+        flags: c_int) -> c_int;
+}
+
+const NI_MAXHOST: uint = 1025;
+
+pub fn get_address_name(addr: IpAddr) -> Result<String, IoError> {
+    let addr = SocketAddr{ip: addr, port: 0};
+
+    let mut storage: libc::sockaddr_storage = unsafe { mem::zeroed() };
+    let len = addr_to_sockaddr(addr, &mut storage);
+
+    let mut hostbuf = [0 as c_char; NI_MAXHOST];
+
+    let res = unsafe {
+        getnameinfo(&storage as *const _ as *const libc::sockaddr, len,
+            hostbuf.as_mut_ptr(), NI_MAXHOST as libc::size_t,
+            ptr::null_mut(), 0,
+            0)
+    };
+
+    if res != 0 {
+        return Err(last_gai_error(res));
+    }
+
+    unsafe {
+        Ok(str::from_utf8(ffi::c_str_to_bytes(&hostbuf.as_ptr()))
+               .unwrap().to_string())
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -669,7 +709,7 @@ impl TcpStream {
     fn lock_nonblocking<'a>(&'a self) -> Guard<'a> {
         let ret = Guard {
             fd: self.fd(),
-            guard: self.inner.lock.lock(),
+            guard: self.inner.lock.lock().unwrap(),
         };
         assert!(set_nonblocking(self.fd(), true).is_ok());
         ret
@@ -808,7 +848,7 @@ impl UdpSocket {
     fn lock_nonblocking<'a>(&'a self) -> Guard<'a> {
         let ret = Guard {
             fd: self.fd(),
-            guard: self.inner.lock.lock(),
+            guard: self.inner.lock.lock().unwrap(),
         };
         assert!(set_nonblocking(self.fd(), true).is_ok());
         ret

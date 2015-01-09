@@ -82,20 +82,24 @@
 
 use core::prelude::*;
 
+use core::cmp::Ordering;
 use core::cmp;
 use core::default::Default;
 use core::fmt;
-use core::iter::{Cloned, Chain, Enumerate, Repeat, Skip, Take};
-use core::iter;
-use core::num::Int;
-use core::slice::{Iter, IterMut};
-use core::{u8, u32, uint};
-
 use core::hash;
+use core::iter::RandomAccessIterator;
+use core::iter::{Chain, Enumerate, Repeat, Skip, Take, repeat, Cloned};
+use core::iter::{self, FromIterator};
+use core::num::Int;
+use core::ops::Index;
+use core::slice;
+use core::{u8, u32, uint};
+use bitv_set; //so meta
+
 use Vec;
 
-type Blocks<'a> = Cloned<Iter<'a, u32>>;
-type MutBlocks<'a> = IterMut<'a, u32>;
+type Blocks<'a> = Cloned<slice::Iter<'a, u32>>;
+type MutBlocks<'a> = slice::IterMut<'a, u32>;
 type MatchWords<'a> = Chain<Enumerate<Blocks<'a>>, Skip<Take<Enumerate<Repeat<u32>>>>>;
 
 fn reverse_bits(byte: u8) -> u8 {
@@ -130,7 +134,7 @@ static FALSE: bool = false;
 /// # Examples
 ///
 /// ```rust
-/// use collections::Bitv;
+/// use std::collections::Bitv;
 ///
 /// let mut bv = Bitv::from_elem(10, false);
 ///
@@ -139,19 +143,20 @@ static FALSE: bool = false;
 /// bv.set(3, true);
 /// bv.set(5, true);
 /// bv.set(7, true);
-/// println!("{}", bv.to_string());
+/// println!("{:?}", bv);
 /// println!("total bits set to true: {}", bv.iter().filter(|x| *x).count());
 ///
 /// // flip all values in bitvector, producing non-primes less than 10
 /// bv.negate();
-/// println!("{}", bv.to_string());
+/// println!("{:?}", bv);
 /// println!("total bits set to true: {}", bv.iter().filter(|x| *x).count());
 ///
 /// // reset bitvector to empty
 /// bv.clear();
-/// println!("{}", bv.to_string());
+/// println!("{:?}", bv);
 /// println!("total bits set to true: {}", bv.iter().filter(|x| *x).count());
 /// ```
+#[stable]
 pub struct Bitv {
     /// Internal representation of the bit vector
     storage: Vec<u32>,
@@ -160,9 +165,11 @@ pub struct Bitv {
 }
 
 // FIXME(Gankro): NopeNopeNopeNopeNope (wait for IndexGet to be a thing)
-impl Index<uint,bool> for Bitv {
+impl Index<uint> for Bitv {
+    type Output = bool;
+
     #[inline]
-    fn index<'a>(&'a self, i: &uint) -> &'a bool {
+    fn index(&self, i: &uint) -> &bool {
         if self.get(*i).expect("index out of bounds") {
             &TRUE
         } else {
@@ -245,7 +252,7 @@ impl Bitv {
     /// use std::collections::Bitv;
     /// let mut bv = Bitv::new();
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn new() -> Bitv {
         Bitv { storage: Vec::new(), nbits: 0 }
     }
@@ -267,7 +274,7 @@ impl Bitv {
     pub fn from_elem(nbits: uint, bit: bool) -> Bitv {
         let nblocks = blocks_for_bits(nbits);
         let mut bitv = Bitv {
-            storage: Vec::from_elem(nblocks, if bit { !0u32 } else { 0u32 }),
+            storage: repeat(if bit { !0u32 } else { 0u32 }).take(nblocks).collect(),
             nbits: nbits
         };
         bitv.fix_last_block();
@@ -281,7 +288,7 @@ impl Bitv {
     ///
     /// It is important to note that this function does not specify the
     /// *length* of the returned bitvector, but only the *capacity*.
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn with_capacity(nbits: uint) -> Bitv {
         Bitv {
             storage: Vec::with_capacity(blocks_for_bits(nbits)),
@@ -314,17 +321,17 @@ impl Bitv {
 
         for i in range(0, complete_words) {
             bitv.storage.push(
-                (reverse_bits(bytes[i * 4 + 0]) as u32 << 0) |
-                (reverse_bits(bytes[i * 4 + 1]) as u32 << 8) |
-                (reverse_bits(bytes[i * 4 + 2]) as u32 << 16) |
-                (reverse_bits(bytes[i * 4 + 3]) as u32 << 24)
+                ((reverse_bits(bytes[i * 4 + 0]) as u32) << 0) |
+                ((reverse_bits(bytes[i * 4 + 1]) as u32) << 8) |
+                ((reverse_bits(bytes[i * 4 + 2]) as u32) << 16) |
+                ((reverse_bits(bytes[i * 4 + 3]) as u32) << 24)
             );
         }
 
         if extra_bytes > 0 {
             let mut last_word = 0u32;
-            for (i, &byte) in bytes[complete_words*4..].iter().enumerate() {
-                last_word |= reverse_bits(byte) as u32 << (i * 8);
+            for (i, &byte) in bytes[(complete_words*4)..].iter().enumerate() {
+                last_word |= (reverse_bits(byte) as u32) << (i * 8);
             }
             bitv.storage.push(last_word);
         }
@@ -367,7 +374,7 @@ impl Bitv {
     /// assert_eq!(bv[1], true);
     /// ```
     #[inline]
-    #[unstable = "panic semantics are likely to change in the future"]
+    #[stable]
     pub fn get(&self, i: uint) -> Option<bool> {
         if i >= self.nbits {
             return None;
@@ -578,9 +585,9 @@ impl Bitv {
     /// assert_eq!(bv.iter().filter(|x| *x).count(), 7);
     /// ```
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
-    pub fn iter<'a>(&'a self) -> Bits<'a> {
-        Bits { bitv: self, next_idx: 0, end_idx: self.nbits }
+    #[stable]
+    pub fn iter(&self) -> Iter {
+        Iter { bitv: self, next_idx: 0, end_idx: self.nbits }
     }
 
     /// Returns `true` if all bits are 0.
@@ -645,13 +652,13 @@ impl Bitv {
             if offset >= bitv.nbits {
                 0
             } else {
-                bitv[offset] as u8 << (7 - bit)
+                (bitv[offset] as u8) << (7 - bit)
             }
         }
 
         let len = self.nbits/8 +
                   if self.nbits % 8 == 0 { 0 } else { 1 };
-        Vec::from_fn(len, |i|
+        range(0, len).map(|i|
             bit(self, i, 0) |
             bit(self, i, 1) |
             bit(self, i, 2) |
@@ -660,13 +667,7 @@ impl Bitv {
             bit(self, i, 5) |
             bit(self, i, 6) |
             bit(self, i, 7)
-        )
-    }
-
-    /// Deprecated: Use `iter().collect()`.
-    #[deprecated = "Use `iter().collect()`"]
-    pub fn to_bools(&self) -> Vec<bool> {
-        self.iter().collect()
+        ).collect()
     }
 
     /// Compares a `Bitv` to a slice of `bool`s.
@@ -705,7 +706,7 @@ impl Bitv {
     /// bv.truncate(2);
     /// assert!(bv.eq_vec(&[false, true]));
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn truncate(&mut self, len: uint) {
         if len < self.len() {
             self.nbits = len;
@@ -732,7 +733,7 @@ impl Bitv {
     /// assert_eq!(bv.len(), 3);
     /// assert!(bv.capacity() >= 13);
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn reserve(&mut self, additional: uint) {
         let desired_cap = self.len().checked_add(additional).expect("capacity overflow");
         let storage_len = self.storage.len();
@@ -762,7 +763,7 @@ impl Bitv {
     /// assert_eq!(bv.len(), 3);
     /// assert!(bv.capacity() >= 13);
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn reserve_exact(&mut self, additional: uint) {
         let desired_cap = self.len().checked_add(additional).expect("capacity overflow");
         let storage_len = self.storage.len();
@@ -784,7 +785,7 @@ impl Bitv {
     /// assert!(bv.capacity() >= 10);
     /// ```
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn capacity(&self) -> uint {
         self.storage.capacity().checked_mul(u32::BITS).unwrap_or(uint::MAX)
     }
@@ -834,7 +835,7 @@ impl Bitv {
         // Allocate new words, if needed
         if new_nblocks > self.storage.len() {
             let to_add = new_nblocks - self.storage.len();
-            self.storage.grow(to_add, full_value);
+            self.storage.extend(repeat(full_value).take(to_add));
         }
 
         // Adjust internal bit count
@@ -855,7 +856,7 @@ impl Bitv {
     /// assert_eq!(bv.pop(), Some(false));
     /// assert_eq!(bv.len(), 6);
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn pop(&mut self) -> Option<bool> {
         if self.is_empty() {
             None
@@ -885,7 +886,7 @@ impl Bitv {
     /// bv.push(false);
     /// assert!(bv.eq_vec(&[true, false]));
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn push(&mut self, elem: bool) {
         if self.nbits % u32::BITS == 0 {
             self.storage.push(0);
@@ -897,52 +898,41 @@ impl Bitv {
 
     /// Return the total number of bits in this vector
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn len(&self) -> uint { self.nbits }
 
     /// Returns true if there are no bits in this vector
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn is_empty(&self) -> bool { self.len() == 0 }
 
     /// Clears all bits in this vector.
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn clear(&mut self) {
         for w in self.storage.iter_mut() { *w = 0u32; }
     }
 }
 
-/// Deprecated: Now a static method on Bitv.
-#[deprecated = "Now a static method on Bitv"]
-pub fn from_bytes(bytes: &[u8]) -> Bitv {
-    Bitv::from_bytes(bytes)
-}
-
-/// Deprecated: Now a static method on Bitv.
-#[deprecated = "Now a static method on Bitv"]
-pub fn from_fn<F>(len: uint, f: F) -> Bitv where F: FnMut(uint) -> bool {
-    Bitv::from_fn(len, f)
-}
-
 #[stable]
 impl Default for Bitv {
     #[inline]
-    #[stable]
     fn default() -> Bitv { Bitv::new() }
 }
 
+#[stable]
 impl FromIterator<bool> for Bitv {
-    fn from_iter<I:Iterator<bool>>(iterator: I) -> Bitv {
+    fn from_iter<I:Iterator<Item=bool>>(iterator: I) -> Bitv {
         let mut ret = Bitv::new();
         ret.extend(iterator);
         ret
     }
 }
 
+#[stable]
 impl Extend<bool> for Bitv {
     #[inline]
-    fn extend<I: Iterator<bool>>(&mut self, mut iterator: I) {
+    fn extend<I: Iterator<Item=bool>>(&mut self, mut iterator: I) {
         let (min, _) = iterator.size_hint();
         self.reserve(min);
         for element in iterator {
@@ -965,6 +955,7 @@ impl Clone for Bitv {
     }
 }
 
+#[stable]
 impl PartialOrd for Bitv {
     #[inline]
     fn partial_cmp(&self, other: &Bitv) -> Option<Ordering> {
@@ -972,6 +963,7 @@ impl PartialOrd for Bitv {
     }
 }
 
+#[stable]
 impl Ord for Bitv {
     #[inline]
     fn cmp(&self, other: &Bitv) -> Ordering {
@@ -979,6 +971,7 @@ impl Ord for Bitv {
     }
 }
 
+#[stable]
 impl fmt::Show for Bitv {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         for bit in self.iter() {
@@ -988,7 +981,8 @@ impl fmt::Show for Bitv {
     }
 }
 
-impl<S: hash::Writer> hash::Hash<S> for Bitv {
+#[stable]
+impl<S: hash::Writer + hash::Hasher> hash::Hash<S> for Bitv {
     fn hash(&self, state: &mut S) {
         self.nbits.hash(state);
         for elem in self.blocks() {
@@ -997,6 +991,7 @@ impl<S: hash::Writer> hash::Hash<S> for Bitv {
     }
 }
 
+#[stable]
 impl cmp::PartialEq for Bitv {
     #[inline]
     fn eq(&self, other: &Bitv) -> bool {
@@ -1007,16 +1002,22 @@ impl cmp::PartialEq for Bitv {
     }
 }
 
+#[stable]
 impl cmp::Eq for Bitv {}
 
 /// An iterator for `Bitv`.
-pub struct Bits<'a> {
+#[stable]
+#[derive(Clone)]
+pub struct Iter<'a> {
     bitv: &'a Bitv,
     next_idx: uint,
     end_idx: uint,
 }
 
-impl<'a> Iterator<bool> for Bits<'a> {
+#[stable]
+impl<'a> Iterator for Iter<'a> {
+    type Item = bool;
+
     #[inline]
     fn next(&mut self) -> Option<bool> {
         if self.next_idx != self.end_idx {
@@ -1034,7 +1035,8 @@ impl<'a> Iterator<bool> for Bits<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator<bool> for Bits<'a> {
+#[stable]
+impl<'a> DoubleEndedIterator for Iter<'a> {
     #[inline]
     fn next_back(&mut self) -> Option<bool> {
         if self.next_idx != self.end_idx {
@@ -1046,9 +1048,11 @@ impl<'a> DoubleEndedIterator<bool> for Bits<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator<bool> for Bits<'a> {}
+#[stable]
+impl<'a> ExactSizeIterator for Iter<'a> {}
 
-impl<'a> RandomAccessIterator<bool> for Bits<'a> {
+#[stable]
+impl<'a> RandomAccessIterator for Iter<'a> {
     #[inline]
     fn indexable(&self) -> uint {
         self.end_idx - self.next_idx
@@ -1102,33 +1106,38 @@ impl<'a> RandomAccessIterator<bool> for Bits<'a> {
 /// let bv: Bitv = s.into_bitv();
 /// assert!(bv[3]);
 /// ```
-#[deriving(Clone)]
+#[derive(Clone)]
+#[stable]
 pub struct BitvSet {
     bitv: Bitv,
 }
 
+#[stable]
 impl Default for BitvSet {
     #[inline]
     fn default() -> BitvSet { BitvSet::new() }
 }
 
+#[stable]
 impl FromIterator<uint> for BitvSet {
-    fn from_iter<I:Iterator<uint>>(iterator: I) -> BitvSet {
+    fn from_iter<I:Iterator<Item=uint>>(iterator: I) -> BitvSet {
         let mut ret = BitvSet::new();
         ret.extend(iterator);
         ret
     }
 }
 
+#[stable]
 impl Extend<uint> for BitvSet {
     #[inline]
-    fn extend<I: Iterator<uint>>(&mut self, mut iterator: I) {
+    fn extend<I: Iterator<Item=uint>>(&mut self, mut iterator: I) {
         for i in iterator {
             self.insert(i);
         }
     }
 }
 
+#[stable]
 impl PartialOrd for BitvSet {
     #[inline]
     fn partial_cmp(&self, other: &BitvSet) -> Option<Ordering> {
@@ -1137,6 +1146,7 @@ impl PartialOrd for BitvSet {
     }
 }
 
+#[stable]
 impl Ord for BitvSet {
     #[inline]
     fn cmp(&self, other: &BitvSet) -> Ordering {
@@ -1145,6 +1155,7 @@ impl Ord for BitvSet {
     }
 }
 
+#[stable]
 impl cmp::PartialEq for BitvSet {
     #[inline]
     fn eq(&self, other: &BitvSet) -> bool {
@@ -1153,6 +1164,7 @@ impl cmp::PartialEq for BitvSet {
     }
 }
 
+#[stable]
 impl cmp::Eq for BitvSet {}
 
 impl BitvSet {
@@ -1166,7 +1178,7 @@ impl BitvSet {
     /// let mut s = BitvSet::new();
     /// ```
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn new() -> BitvSet {
         BitvSet { bitv: Bitv::new() }
     }
@@ -1183,7 +1195,7 @@ impl BitvSet {
     /// assert!(s.capacity() >= 100);
     /// ```
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn with_capacity(nbits: uint) -> BitvSet {
         let bitv = Bitv::from_elem(nbits, false);
         BitvSet::from_bitv(bitv)
@@ -1221,7 +1233,7 @@ impl BitvSet {
     /// assert!(s.capacity() >= 100);
     /// ```
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn capacity(&self) -> uint {
         self.bitv.capacity()
     }
@@ -1242,7 +1254,7 @@ impl BitvSet {
     /// s.reserve_len(10);
     /// assert!(s.capacity() >= 10);
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn reserve_len(&mut self, len: uint) {
         let cur_len = self.bitv.len();
         if len >= cur_len {
@@ -1268,7 +1280,7 @@ impl BitvSet {
     /// s.reserve_len_exact(10);
     /// assert!(s.capacity() >= 10);
     /// ```
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn reserve_len_exact(&mut self, len: uint) {
         let cur_len = self.bitv.len();
         if len >= cur_len {
@@ -1311,7 +1323,7 @@ impl BitvSet {
     /// assert_eq!(bv[0], true);
     /// ```
     #[inline]
-    pub fn get_ref<'a>(&'a self) -> &'a Bitv {
+    pub fn get_ref(&self) -> &Bitv {
         &self.bitv
     }
 
@@ -1362,7 +1374,7 @@ impl BitvSet {
     /// println!("new capacity: {}", s.capacity());
     /// ```
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn shrink_to_fit(&mut self) {
         let bitv = &mut self.bitv;
         // Obtain original length
@@ -1390,9 +1402,9 @@ impl BitvSet {
     /// }
     /// ```
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
-    pub fn iter<'a>(&'a self) -> BitPositions<'a> {
-        BitPositions {set: self, next_idx: 0u}
+    #[stable]
+    pub fn iter(&self) -> bitv_set::Iter {
+        SetIter {set: self, next_idx: 0u}
     }
 
     /// Iterator over each u32 stored in `self` union `other`.
@@ -1412,17 +1424,17 @@ impl BitvSet {
     /// }
     /// ```
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
-    pub fn union<'a>(&'a self, other: &'a BitvSet) -> TwoBitPositions<'a> {
+    #[stable]
+    pub fn union<'a>(&'a self, other: &'a BitvSet) -> Union<'a> {
         fn or(w1: u32, w2: u32) -> u32 { w1 | w2 }
 
-        TwoBitPositions {
+        Union(TwoBitPositions {
             set: self,
             other: other,
             merge: or,
             current_word: 0u32,
             next_idx: 0u
-        }
+        })
     }
 
     /// Iterator over each uint stored in `self` intersect `other`.
@@ -1442,17 +1454,17 @@ impl BitvSet {
     /// }
     /// ```
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
-    pub fn intersection<'a>(&'a self, other: &'a BitvSet) -> Take<TwoBitPositions<'a>> {
+    #[stable]
+    pub fn intersection<'a>(&'a self, other: &'a BitvSet) -> Intersection<'a> {
         fn bitand(w1: u32, w2: u32) -> u32 { w1 & w2 }
         let min = cmp::min(self.bitv.len(), other.bitv.len());
-        TwoBitPositions {
+        Intersection(TwoBitPositions {
             set: self,
             other: other,
             merge: bitand,
             current_word: 0u32,
             next_idx: 0
-        }.take(min)
+        }.take(min))
     }
 
     /// Iterator over each uint stored in the `self` setminus `other`.
@@ -1479,17 +1491,17 @@ impl BitvSet {
     /// }
     /// ```
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
-    pub fn difference<'a>(&'a self, other: &'a BitvSet) -> TwoBitPositions<'a> {
+    #[stable]
+    pub fn difference<'a>(&'a self, other: &'a BitvSet) -> Difference<'a> {
         fn diff(w1: u32, w2: u32) -> u32 { w1 & !w2 }
 
-        TwoBitPositions {
+        Difference(TwoBitPositions {
             set: self,
             other: other,
             merge: diff,
             current_word: 0u32,
             next_idx: 0
-        }
+        })
     }
 
     /// Iterator over each u32 stored in the symmetric difference of `self` and `other`.
@@ -1510,17 +1522,17 @@ impl BitvSet {
     /// }
     /// ```
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
-    pub fn symmetric_difference<'a>(&'a self, other: &'a BitvSet) -> TwoBitPositions<'a> {
+    #[stable]
+    pub fn symmetric_difference<'a>(&'a self, other: &'a BitvSet) -> SymmetricDifference<'a> {
         fn bitxor(w1: u32, w2: u32) -> u32 { w1 ^ w2 }
 
-        TwoBitPositions {
+        SymmetricDifference(TwoBitPositions {
             set: self,
             other: other,
             merge: bitxor,
             current_word: 0u32,
             next_idx: 0
-        }
+        })
     }
 
     /// Unions in-place with the specified other bit vector.
@@ -1627,28 +1639,28 @@ impl BitvSet {
 
     /// Return the number of set bits in this set.
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn len(&self) -> uint  {
         self.bitv.blocks().fold(0, |acc, n| acc + n.count_ones())
     }
 
     /// Returns whether there are no bits set in this set
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn is_empty(&self) -> bool {
         self.bitv.none()
     }
 
     /// Clears all bits in this set
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn clear(&mut self) {
         self.bitv.clear();
     }
 
     /// Returns `true` if this set contains the specified integer.
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn contains(&self, value: &uint) -> bool {
         let bitv = &self.bitv;
         *value < bitv.nbits && bitv[*value]
@@ -1657,14 +1669,14 @@ impl BitvSet {
     /// Returns `true` if the set has no elements in common with `other`.
     /// This is equivalent to checking for an empty intersection.
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn is_disjoint(&self, other: &BitvSet) -> bool {
         self.intersection(other).next().is_none()
     }
 
     /// Returns `true` if the set is a subset of another.
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn is_subset(&self, other: &BitvSet) -> bool {
         let self_bitv = &self.bitv;
         let other_bitv = &other.bitv;
@@ -1678,14 +1690,14 @@ impl BitvSet {
 
     /// Returns `true` if the set is a superset of another.
     #[inline]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn is_superset(&self, other: &BitvSet) -> bool {
         other.is_subset(self)
     }
 
     /// Adds a value to the set. Returns `true` if the value was not already
     /// present in the set.
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn insert(&mut self, value: uint) -> bool {
         if self.contains(&value) {
             return false;
@@ -1703,7 +1715,7 @@ impl BitvSet {
 
     /// Removes a value from the set. Returns `true` if the value was
     /// present in the set.
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[stable]
     pub fn remove(&mut self, value: &uint) -> bool {
         if !self.contains(value) {
             return false;
@@ -1717,20 +1729,20 @@ impl BitvSet {
 
 impl fmt::Show for BitvSet {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(fmt, "{{"));
+        try!(write!(fmt, "BitvSet {{"));
         let mut first = true;
         for n in self.iter() {
             if !first {
                 try!(write!(fmt, ", "));
             }
-            try!(write!(fmt, "{}", n));
+            try!(write!(fmt, "{:?}", n));
             first = false;
         }
         write!(fmt, "}}")
     }
 }
 
-impl<S: hash::Writer> hash::Hash<S> for BitvSet {
+impl<S: hash::Writer + hash::Hasher> hash::Hash<S> for BitvSet {
     fn hash(&self, state: &mut S) {
         for pos in self.iter() {
             pos.hash(state);
@@ -1739,13 +1751,16 @@ impl<S: hash::Writer> hash::Hash<S> for BitvSet {
 }
 
 /// An iterator for `BitvSet`.
-pub struct BitPositions<'a> {
+#[derive(Clone)]
+#[stable]
+pub struct SetIter<'a> {
     set: &'a BitvSet,
     next_idx: uint
 }
 
 /// An iterator combining two `BitvSet` iterators.
-pub struct TwoBitPositions<'a> {
+#[derive(Clone)]
+struct TwoBitPositions<'a> {
     set: &'a BitvSet,
     other: &'a BitvSet,
     merge: fn(u32, u32) -> u32,
@@ -1753,7 +1768,19 @@ pub struct TwoBitPositions<'a> {
     next_idx: uint
 }
 
-impl<'a> Iterator<uint> for BitPositions<'a> {
+#[stable]
+pub struct Union<'a>(TwoBitPositions<'a>);
+#[stable]
+pub struct Intersection<'a>(Take<TwoBitPositions<'a>>);
+#[stable]
+pub struct Difference<'a>(TwoBitPositions<'a>);
+#[stable]
+pub struct SymmetricDifference<'a>(TwoBitPositions<'a>);
+
+#[stable]
+impl<'a> Iterator for SetIter<'a> {
+    type Item = uint;
+
     fn next(&mut self) -> Option<uint> {
         while self.next_idx < self.set.bitv.len() {
             let idx = self.next_idx;
@@ -1773,7 +1800,10 @@ impl<'a> Iterator<uint> for BitPositions<'a> {
     }
 }
 
-impl<'a> Iterator<uint> for TwoBitPositions<'a> {
+#[stable]
+impl<'a> Iterator for TwoBitPositions<'a> {
+    type Item = uint;
+
     fn next(&mut self) -> Option<uint> {
         while self.next_idx < self.set.bitv.len() ||
               self.next_idx < self.other.bitv.len() {
@@ -1808,35 +1838,59 @@ impl<'a> Iterator<uint> for TwoBitPositions<'a> {
     }
 }
 
+#[stable]
+impl<'a> Iterator for Union<'a> {
+    type Item = uint;
 
+    #[inline] fn next(&mut self) -> Option<uint> { self.0.next() }
+    #[inline] fn size_hint(&self) -> (uint, Option<uint>) { self.0.size_hint() }
+}
 
+#[stable]
+impl<'a> Iterator for Intersection<'a> {
+    type Item = uint;
+
+    #[inline] fn next(&mut self) -> Option<uint> { self.0.next() }
+    #[inline] fn size_hint(&self) -> (uint, Option<uint>) { self.0.size_hint() }
+}
+
+#[stable]
+impl<'a> Iterator for Difference<'a> {
+    type Item = uint;
+
+    #[inline] fn next(&mut self) -> Option<uint> { self.0.next() }
+    #[inline] fn size_hint(&self) -> (uint, Option<uint>) { self.0.size_hint() }
+}
+
+#[stable]
+impl<'a> Iterator for SymmetricDifference<'a> {
+    type Item = uint;
+
+    #[inline] fn next(&mut self) -> Option<uint> { self.0.next() }
+    #[inline] fn size_hint(&self) -> (uint, Option<uint>) { self.0.size_hint() }
+}
 
 
 #[cfg(test)]
 mod tests {
     use prelude::*;
-    use core::iter::range_step;
     use core::u32;
-    use std::rand;
-    use std::rand::Rng;
-    use test::{Bencher, black_box};
 
-    use super::{Bitv, BitvSet, from_fn, from_bytes};
-    use bitv;
+    use super::Bitv;
 
     #[test]
     fn test_to_str() {
         let zerolen = Bitv::new();
-        assert_eq!(zerolen.to_string(), "");
+        assert_eq!(format!("{:?}", zerolen), "");
 
         let eightbits = Bitv::from_elem(8u, false);
-        assert_eq!(eightbits.to_string(), "00000000")
+        assert_eq!(format!("{:?}", eightbits), "00000000")
     }
 
     #[test]
     fn test_0_elements() {
         let act = Bitv::new();
-        let exp = Vec::from_elem(0u, false);
+        let exp = Vec::new();
         assert!(act.eq_vec(exp.as_slice()));
         assert!(act.none() && act.all());
     }
@@ -1856,7 +1910,7 @@ mod tests {
         let mut b = Bitv::from_elem(2, false);
         b.set(0, true);
         b.set(1, false);
-        assert_eq!(b.to_string(), "10");
+        assert_eq!(format!("{:?}", b), "10");
         assert!(!b.none() && !b.all());
     }
 
@@ -2191,7 +2245,7 @@ mod tests {
     fn test_from_bytes() {
         let bitv = Bitv::from_bytes(&[0b10110110, 0b00000000, 0b11111111]);
         let str = concat!("10110110", "00000000", "11111111");
-        assert_eq!(bitv.to_string(), str);
+        assert_eq!(format!("{:?}", bitv), str);
     }
 
     #[test]
@@ -2210,7 +2264,7 @@ mod tests {
     fn test_from_bools() {
         let bools = vec![true, false, true, true];
         let bitv: Bitv = bools.iter().map(|n| *n).collect();
-        assert_eq!(bitv.to_string(), "1011");
+        assert_eq!(format!("{:?}", bitv), "1011");
     }
 
     #[test]
@@ -2226,7 +2280,7 @@ mod tests {
 
         assert_eq!(bitv.iter().collect::<Vec<bool>>(), bools);
 
-        let long = Vec::from_fn(10000, |i| i % 2 == 0);
+        let long = range(0, 10000).map(|i| i % 2 == 0).collect::<Vec<_>>();
         let bitv: Bitv = long.iter().map(|n| *n).collect();
         assert_eq!(bitv.iter().collect::<Vec<bool>>(), long)
     }
@@ -2449,7 +2503,7 @@ mod tests {
 
 #[cfg(test)]
 mod bitv_bench {
-    use std::prelude::*;
+    use std::prelude::v1::*;
     use std::rand;
     use std::rand::Rng;
     use std::u32;
@@ -2568,7 +2622,7 @@ mod bitv_set_test {
         s.insert(10);
         s.insert(50);
         s.insert(2);
-        assert_eq!("{1, 2, 10, 50}", s.to_string());
+        assert_eq!("BitvSet {1u, 2u, 10u, 50u}", format!("{:?}", s));
     }
 
     #[test]
@@ -2944,7 +2998,7 @@ mod bitv_set_test {
 
 #[cfg(test)]
 mod bitv_set_bench {
-    use std::prelude::*;
+    use std::prelude::v1::*;
     use std::rand;
     use std::rand::Rng;
     use std::u32;

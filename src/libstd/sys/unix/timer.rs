@@ -46,19 +46,19 @@
 //!
 //! Note that all time units in this file are in *milliseconds*.
 
+use prelude::v1::*;
 use self::Req::*;
 
+use io::IoResult;
 use libc;
 use mem;
 use os;
 use ptr;
-use sync::atomic;
-use comm;
+use sync::atomic::{self, Ordering};
+use sync::mpsc::{channel, Sender, Receiver, TryRecvError};
 use sys::c;
 use sys::fs::FileDesc;
 use sys_common::helper_thread::Helper;
-use prelude::*;
-use io::IoResult;
 
 helper_init! { static HELPER: Helper<Req> }
 
@@ -120,9 +120,9 @@ fn helper(input: libc::c_int, messages: Receiver<Req>, _: ()) {
     // signals the first requests in the queue, possible re-enqueueing it.
     fn signal(active: &mut Vec<Box<Inner>>,
               dead: &mut Vec<(uint, Box<Inner>)>) {
-        let mut timer = match active.remove(0) {
-            Some(timer) => timer, None => return
-        };
+        if active.is_empty() { return }
+
+        let mut timer = active.remove(0);
         let mut cb = timer.cb.take().unwrap();
         cb.call();
         if timer.repeat {
@@ -168,7 +168,7 @@ fn helper(input: libc::c_int, messages: Receiver<Req>, _: ()) {
             1 => {
                 loop {
                     match messages.try_recv() {
-                        Err(comm::Disconnected) => {
+                        Err(TryRecvError::Disconnected) => {
                             assert!(active.len() == 0);
                             break 'outer;
                         }
@@ -178,16 +178,16 @@ fn helper(input: libc::c_int, messages: Receiver<Req>, _: ()) {
                         Ok(RemoveTimer(id, ack)) => {
                             match dead.iter().position(|&(i, _)| id == i) {
                                 Some(i) => {
-                                    let (_, i) = dead.remove(i).unwrap();
-                                    ack.send(i);
+                                    let (_, i) = dead.remove(i);
+                                    ack.send(i).unwrap();
                                     continue
                                 }
                                 None => {}
                             }
                             let i = active.iter().position(|i| i.id == id);
                             let i = i.expect("no timer found");
-                            let t = active.remove(i).unwrap();
-                            ack.send(t);
+                            let t = active.remove(i);
+                            ack.send(t).unwrap();
                         }
                         Err(..) => break
                     }
@@ -211,8 +211,8 @@ impl Timer {
         // instead of ()
         HELPER.boot(|| {}, helper);
 
-        static ID: atomic::AtomicUint = atomic::INIT_ATOMIC_UINT;
-        let id = ID.fetch_add(1, atomic::Relaxed);
+        static ID: atomic::AtomicUint = atomic::ATOMIC_UINT_INIT;
+        let id = ID.fetch_add(1, Ordering::Relaxed);
         Ok(Timer {
             id: id,
             inner: Some(box Inner {
@@ -271,7 +271,7 @@ impl Timer {
             None => {
                 let (tx, rx) = channel();
                 HELPER.send(RemoveTimer(self.id, tx));
-                rx.recv()
+                rx.recv().unwrap()
             }
         }
     }

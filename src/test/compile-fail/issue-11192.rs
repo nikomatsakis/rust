@@ -8,8 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(box_syntax)]
+
 struct Foo {
-    x: int
+    x: isize
 }
 
 impl Drop for Foo {
@@ -20,7 +22,7 @@ impl Drop for Foo {
 
 fn main() {
     let mut ptr = box Foo { x: 0 };
-    let test = |foo: &Foo| {
+    let mut test = |&mut: foo: &Foo| {
         println!("access {}", foo.x);
         ptr = box Foo { x: ptr.x + 1 };
         println!("access {}", foo.x);

@@ -18,7 +18,6 @@ use std::cmp;
 use std::fmt;
 use std::iter;
 use std::num;
-use std::slice::BinarySearchResult;
 
 /// Static data containing Unicode ranges for general categories and scripts.
 use unicode::regex::{UNICODE_CLASSES, PERLD, PERLS, PERLW};
@@ -40,7 +39,7 @@ pub struct Error {
 
 impl fmt::Show for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Regex syntax error near position {}: {}",
+        write!(f, "Regex syntax error near position {}: {:?}",
                self.pos, self.msg)
     }
 }
@@ -53,7 +52,7 @@ impl fmt::Show for Error {
 ///
 /// Note that this representation prevents one from reproducing the regex as
 /// it was typed. (But it could be used to reproduce an equivalent regex.)
-#[deriving(Show, Clone)]
+#[derive(Show, Clone)]
 pub enum Ast {
     Nothing,
     Literal(char, Flags),
@@ -70,14 +69,14 @@ pub enum Ast {
     Rep(Box<Ast>, Repeater, Greed),
 }
 
-#[deriving(Show, PartialEq, Clone)]
+#[derive(Show, PartialEq, Clone)]
 pub enum Repeater {
     ZeroOne,
     ZeroMore,
     OneMore,
 }
 
-#[deriving(Copy, Show, Clone)]
+#[derive(Copy, Show, Clone)]
 pub enum Greed {
     Greedy,
     Ungreedy,
@@ -104,7 +103,7 @@ impl Greed {
 /// constructing an abstract syntax tree. Its central purpose is to facilitate
 /// parsing groups and alternations while also maintaining a stack of flag
 /// state.
-#[deriving(Show)]
+#[derive(Show)]
 enum BuildAst {
     Expr(Ast),
     Paren(Flags, uint, String), // '('
@@ -122,7 +121,7 @@ impl BuildAst {
     fn flags(&self) -> Flags {
         match *self {
             Paren(flags, _, _) => flags,
-            _ => panic!("Cannot get flags from {}", self),
+            _ => panic!("Cannot get flags from {:?}", self),
         }
     }
 
@@ -130,7 +129,7 @@ impl BuildAst {
         match *self {
             Paren(_, 0, _) => None,
             Paren(_, c, _) => Some(c),
-            _ => panic!("Cannot get capture group from {}", self),
+            _ => panic!("Cannot get capture group from {:?}", self),
         }
     }
 
@@ -144,7 +143,7 @@ impl BuildAst {
                     Some(name.clone())
                 }
             }
-            _ => panic!("Cannot get capture name from {}", self),
+            _ => panic!("Cannot get capture name from {:?}", self),
         }
     }
 
@@ -158,7 +157,7 @@ impl BuildAst {
     fn unwrap(self) -> Result<Ast, Error> {
         match self {
             Expr(x) => Ok(x),
-            _ => panic!("Tried to unwrap non-AST item: {}", self),
+            _ => panic!("Tried to unwrap non-AST item: {:?}", self),
         }
     }
 }
@@ -285,8 +284,8 @@ impl Parser {
         match self.next_char() {
             true => Ok(()),
             false => {
-                self.err(format!("Expected {} but got EOF.",
-                                 expected)[])
+                self.err(&format!("Expected {:?} but got EOF.",
+                                  expected)[])
             }
         }
     }
@@ -294,11 +293,11 @@ impl Parser {
     fn expect(&mut self, expected: char) -> Result<(), Error> {
         match self.next_char() {
             true if self.cur() == expected => Ok(()),
-            true => self.err(format!("Expected '{}' but got '{}'.",
-                                     expected, self.cur())[]),
+            true => self.err(&format!("Expected '{:?}' but got '{:?}'.",
+                                      expected, self.cur())[]),
             false => {
-                self.err(format!("Expected '{}' but got EOF.",
-                                 expected)[])
+                self.err(&format!("Expected '{:?}' but got EOF.",
+                                  expected)[])
             }
         }
     }
@@ -320,9 +319,10 @@ impl Parser {
     }
 
     fn push_repeater(&mut self, c: char) -> Result<(), Error> {
-        if self.stack.len() == 0 {
-            return self.err(
-                "A repeat operator must be preceded by a valid expression.")
+        match self.stack.last() {
+            Some(&Expr(..)) => (),
+            // self.stack is empty, or the top item is not an Expr
+            _ => return self.err("A repeat operator must be preceded by a valid expression."),
         }
         let rep: Repeater = match c {
             '?' => ZeroOne, '*' => ZeroMore, '+' => OneMore,
@@ -394,7 +394,7 @@ impl Parser {
                             continue
                         }
                         Some(ast) =>
-                            panic!("Expected Class AST but got '{}'", ast),
+                            panic!("Expected Class AST but got '{:?}'", ast),
                         // Just drop down and try to add as a regular character.
                         None => {},
                     },
@@ -409,7 +409,7 @@ impl Parser {
                             return self.err(
                                 "\\A, \\z, \\b and \\B are not valid escape \
                                  sequences inside a character class."),
-                        ast => panic!("Unexpected AST item '{}'", ast),
+                        ast => panic!("Unexpected AST item '{:?}'", ast),
                     }
                 }
                 ']' if ranges.len() > 0 || alts.len() > 0 => {
@@ -442,15 +442,15 @@ impl Parser {
                     match try!(self.parse_escape()) {
                         Literal(c3, _) => c2 = c3, // allow literal escapes below
                         ast =>
-                            return self.err(format!("Expected a literal, but got {}.",
-                                                    ast)[]),
+                            return self.err(&format!("Expected a literal, but got {:?}.",
+                                                     ast)[]),
                     }
                 }
                 if c2 < c {
-                    return self.err(format!("Invalid character class \
-                                             range '{}-{}'",
-                                            c,
-                                            c2)[])
+                    return self.err(&format!("Invalid character class \
+                                              range '{}-{}'",
+                                             c,
+                                             c2)[])
                 }
                 ranges.push((c, self.cur()))
             } else {
@@ -488,7 +488,7 @@ impl Parser {
                 FLAG_EMPTY
             };
         let name = self.slice(name_start, closer - 1);
-        match find_class(ASCII_CLASSES, name[]) {
+        match find_class(ASCII_CLASSES, &name[]) {
             None => None,
             Some(ranges) => {
                 self.chari = closer;
@@ -510,21 +510,21 @@ impl Parser {
             match self.pos('}') {
                 Some(i) => i,
                 None => {
-                    return self.err(format!("No closing brace for counted \
-                                             repetition starting at position \
-                                             {}.",
-                                            start)[])
+                    return self.err(&format!("No closing brace for counted \
+                                              repetition starting at position \
+                                              {:?}.",
+                                             start)[])
                 }
             };
         self.chari = closer;
         let greed = try!(self.get_next_greedy());
-        let inner = String::from_chars(
-            self.chars[start+1..closer]);
+        let inner = self.chars[(start+1)..closer].iter().cloned()
+                                               .collect::<String>();
 
         // Parse the min and max values from the regex.
         let (mut min, mut max): (uint, Option<uint>);
         if !inner.contains(",") {
-            min = try!(self.parse_uint(inner[]));
+            min = try!(self.parse_uint(&inner[]));
             max = Some(min);
         } else {
             let pieces: Vec<&str> = inner.splitn(1, ',').collect();
@@ -544,19 +544,19 @@ impl Parser {
 
         // Do some bounds checking and make sure max >= min.
         if min > MAX_REPEAT {
-            return self.err(format!(
+            return self.err(&format!(
                 "{} exceeds maximum allowed repetitions ({})",
                 min, MAX_REPEAT)[]);
         }
         if max.is_some() {
             let m = max.unwrap();
             if m > MAX_REPEAT {
-                return self.err(format!(
+                return self.err(&format!(
                     "{} exceeds maximum allowed repetitions ({})",
                     m, MAX_REPEAT)[]);
             }
             if m < min {
-                return self.err(format!(
+                return self.err(&format!(
                     "Max repetitions ({}) cannot be smaller than min \
                      repetitions ({}).", m, min)[]);
             }
@@ -622,7 +622,7 @@ impl Parser {
                 Ok(AstClass(ranges, flags))
             }
             _ => {
-                self.err(format!("Invalid escape sequence '\\\\{}'", c)[])
+                self.err(&format!("Invalid escape sequence '\\\\{}'", c)[])
             }
         }
     }
@@ -640,7 +640,7 @@ impl Parser {
             let closer =
                 match self.pos('}') {
                     Some(i) => i,
-                    None => return self.err(format!(
+                    None => return self.err(&format!(
                         "Missing '}}' for unclosed '{{' at position {}",
                         self.chari)[]),
                 };
@@ -656,9 +656,9 @@ impl Parser {
             name = self.slice(self.chari + 1, self.chari + 2);
             self.chari += 1;
         }
-        match find_class(UNICODE_CLASSES, name[]) {
+        match find_class(UNICODE_CLASSES, &name[]) {
             None => {
-                return self.err(format!("Could not find Unicode class '{}'",
+                return self.err(&format!("Could not find Unicode class '{}'",
                                         name)[])
             }
             Some(ranges) => {
@@ -682,10 +682,10 @@ impl Parser {
             }
         }
         let s = self.slice(start, end);
-        match num::from_str_radix::<u32>(s[], 8) {
+        match num::from_str_radix::<u32>(&s[], 8) {
             Some(n) => Ok(Literal(try!(self.char_from_u32(n)), FLAG_EMPTY)),
             None => {
-                self.err(format!("Could not parse '{}' as octal number.",
+                self.err(&format!("Could not parse '{:?}' as octal number.",
                                  s)[])
             }
         }
@@ -702,14 +702,14 @@ impl Parser {
         let closer =
             match self.pos('}') {
                 None => {
-                    return self.err(format!("Missing '}}' for unclosed \
+                    return self.err(&format!("Missing '}}' for unclosed \
                                              '{{' at position {}",
                                             start)[])
                 }
                 Some(i) => i,
             };
         self.chari = closer;
-        self.parse_hex_digits(self.slice(start, closer)[])
+        self.parse_hex_digits(&self.slice(start, closer)[])
     }
 
     // Parses a two-digit hex number.
@@ -729,7 +729,7 @@ impl Parser {
         match num::from_str_radix::<u32>(s, 16) {
             Some(n) => Ok(Literal(try!(self.char_from_u32(n)), FLAG_EMPTY)),
             None => {
-                self.err(format!("Could not parse '{}' as hex number.", s)[])
+                self.err(&format!("Could not parse '{}' as hex number.", s)[])
             }
         }
     }
@@ -754,7 +754,7 @@ impl Parser {
                 "Capture names can only have underscores, letters and digits.")
         }
         if self.names.contains(&name) {
-            return self.err(format!("Duplicate capture group name '{}'.",
+            return self.err(&format!("Duplicate capture group name '{}'.",
                                     name)[])
         }
         self.names.push(name.clone());
@@ -787,7 +787,7 @@ impl Parser {
                 'U' => { flags = flags | FLAG_SWAP_GREED; saw_flag = true},
                 '-' => {
                     if sign < 0 {
-                        return self.err(format!(
+                        return self.err(&format!(
                             "Cannot negate flags twice in '{}'.",
                             self.slice(start, self.chari + 1))[])
                     }
@@ -798,7 +798,7 @@ impl Parser {
                 ':' | ')' => {
                     if sign < 0 {
                         if !saw_flag {
-                            return self.err(format!(
+                            return self.err(&format!(
                                 "A valid flag does not follow negation in '{}'",
                                 self.slice(start, self.chari + 1))[])
                         }
@@ -811,7 +811,7 @@ impl Parser {
                     self.flags = flags;
                     return Ok(())
                 }
-                _ => return self.err(format!(
+                _ => return self.err(&format!(
                     "Unrecognized flag '{}'.", self.cur())[]),
             }
         }
@@ -909,7 +909,7 @@ impl Parser {
         match s.parse::<uint>() {
             Some(i) => Ok(i),
             None => {
-                self.err(format!("Expected an unsigned integer but got '{}'.",
+                self.err(&format!("Expected an unsigned integer but got '{}'.",
                                  s)[])
             }
         }
@@ -919,7 +919,7 @@ impl Parser {
         match char::from_u32(n) {
             Some(c) => Ok(c),
             None => {
-                self.err(format!("Could not decode '{}' to unicode \
+                self.err(&format!("Could not decode '{}' to unicode \
                                   character.", n)[])
             }
         }
@@ -953,7 +953,7 @@ impl Parser {
     }
 
     fn slice(&self, start: uint, end: uint) -> String {
-        String::from_chars(self.chars[start..end])
+        self.chars[start..end].iter().cloned().collect()
     }
 }
 
@@ -1027,9 +1027,9 @@ fn is_valid_cap(c: char) -> bool {
 }
 
 fn find_class(classes: NamedClasses, name: &str) -> Option<Vec<(char, char)>> {
-    match classes.binary_search(|&(s, _)| s.cmp(name)) {
-        BinarySearchResult::Found(i) => Some(classes[i].1.to_vec()),
-        BinarySearchResult::NotFound(_) => None,
+    match classes.binary_search_by(|&(s, _)| s.cmp(name)) {
+        Ok(i) => Some(classes[i].1.to_vec()),
+        Err(_) => None,
     }
 }
 

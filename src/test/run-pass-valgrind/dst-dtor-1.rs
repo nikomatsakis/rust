@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(box_syntax)]
+
 static mut DROP_RAN: bool = false;
 
 struct Foo;
@@ -20,7 +22,7 @@ impl Drop for Foo {
 trait Trait {}
 impl Trait for Foo {}
 
-struct Fat<Sized? T> {
+struct Fat<T: ?Sized> {
     f: T
 }
 

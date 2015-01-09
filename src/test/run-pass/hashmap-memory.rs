@@ -1,4 +1,3 @@
-
 // Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
@@ -9,8 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-
-extern crate collections;
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+#![feature(unboxed_closures)]
 
 /**
    A somewhat reduced test case to expose some Valgrind issues.
@@ -18,16 +18,17 @@ extern crate collections;
    This originally came from the word-count benchmark.
 */
 
-pub fn map(filename: String, emit: map_reduce::putter) {
+pub fn map(filename: String, mut emit: map_reduce::putter) {
     emit(filename, "1".to_string());
 }
 
 mod map_reduce {
     use std::collections::HashMap;
+    use std::sync::mpsc::{channel, Sender};
     use std::str;
-    use std::task;
+    use std::thread::Thread;
 
-    pub type putter<'a> = |String, String|: 'a;
+    pub type putter<'a> = Box<FnMut(String, String) + 'a>;
 
     pub type mapper = extern fn(String, putter);
 
@@ -37,7 +38,7 @@ mod map_reduce {
         for i in inputs.iter() {
             let ctrl = ctrl.clone();
             let i = i.clone();
-            task::spawn(move|| map_task(ctrl.clone(), i.clone()) );
+            Thread::spawn(move|| map_task(ctrl.clone(), i.clone()) );
         }
     }
 
@@ -52,16 +53,16 @@ mod map_reduce {
             }
             let (tx, rx) = channel();
             println!("sending find_reducer");
-            ctrl.send(ctrl_proto::find_reducer(key.as_bytes().to_vec(), tx));
+            ctrl.send(ctrl_proto::find_reducer(key.as_bytes().to_vec(), tx)).unwrap();
             println!("receiving");
-            let c = rx.recv();
+            let c = rx.recv().unwrap();
             println!("{}", c);
             im.insert(key, c);
         }
 
         let ctrl_clone = ctrl.clone();
-        ::map(input, |a,b| emit(&mut intermediates, ctrl.clone(), a, b) );
-        ctrl_clone.send(ctrl_proto::mapper_done);
+        ::map(input, box |a,b| emit(&mut intermediates, ctrl.clone(), a, b) );
+        ctrl_clone.send(ctrl_proto::mapper_done).unwrap();
     }
 
     pub fn map_reduce(inputs: Vec<String>) {
@@ -79,7 +80,7 @@ mod map_reduce {
         let mut num_mappers = inputs.len() as int;
 
         while num_mappers > 0 {
-            match rx.recv() {
+            match rx.recv().unwrap() {
               ctrl_proto::mapper_done => { num_mappers -= 1; }
               ctrl_proto::find_reducer(k, cc) => {
                 let mut c;
@@ -88,7 +89,7 @@ mod map_reduce {
                   Some(&_c) => { c = _c; }
                   None => { c = 0; }
                 }
-                cc.send(c);
+                cc.send(c).unwrap();
               }
             }
         }

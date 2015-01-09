@@ -9,9 +9,9 @@
 // except according to those terms.
 
 
-struct sty(Vec<int> );
+struct sty(Vec<isize> );
 
-fn unpack(_unpack: |v: &sty| -> Vec<int> ) {}
+fn unpack<F>(_unpack: F) where F: FnOnce(&sty) -> Vec<isize> {}
 
 fn main() {
     let _foo = unpack(|s| {

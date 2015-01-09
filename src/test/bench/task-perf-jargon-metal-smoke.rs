@@ -17,23 +17,22 @@
 
 // ignore-pretty very bad with line comments
 
-use std::comm;
+use std::sync::mpsc::{channel, Sender};
 use std::os;
-use std::task;
-use std::uint;
+use std::thread::Thread;
 
-fn child_generation(gens_left: uint, tx: comm::Sender<()>) {
+fn child_generation(gens_left: uint, tx: Sender<()>) {
     // This used to be O(n^2) in the number of generations that ever existed.
     // With this code, only as many generations are alive at a time as tasks
     // alive at a time,
-    spawn(move|| {
+    Thread::spawn(move|| {
         if gens_left & 1 == 1 {
-            task::deschedule(); // shake things up a bit
+            Thread::yield_now(); // shake things up a bit
         }
         if gens_left > 0 {
             child_generation(gens_left - 1, tx); // recurse
         } else {
-            tx.send(())
+            tx.send(()).unwrap()
         }
     });
 }
@@ -49,8 +48,8 @@ fn main() {
     };
 
     let (tx, rx) = channel();
-    child_generation(from_str::<uint>(args[1].as_slice()).unwrap(), tx);
-    if rx.recv_opt().is_err() {
+    child_generation(args[1].parse().unwrap(), tx);
+    if rx.recv().is_err() {
         panic!("it happened when we slumbered");
     }
 }

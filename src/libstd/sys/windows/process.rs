@@ -8,29 +8,36 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use prelude::v1::*;
+
+use collections;
+use ffi::CString;
+use hash::Hash;
+use collections::hash_map::Hasher;
+use io::fs::PathExtensions;
+use io::process::{ProcessExit, ExitStatus, ExitSignal};
+use io::{IoResult, IoError};
+use io;
 use libc::{pid_t, c_void, c_int};
 use libc;
-use c_str::CString;
-use io;
 use mem;
 use os;
-use ptr;
-use prelude::*;
-use io::process::{ProcessExit, ExitStatus, ExitSignal};
-use collections;
 use path::BytesContainer;
-use hash::Hash;
-use io::{IoResult, IoError};
+use ptr;
+use str;
+use sys::fs::FileDesc;
+use sync::{StaticMutex, MUTEX_INIT};
 
 use sys::fs;
-use sys::{mod, retry, c, wouldblock, set_nonblocking, ms_to_timeval, timer};
-use sys::fs::FileDesc;
+use sys::{self, retry, c, wouldblock, set_nonblocking, ms_to_timeval, timer};
 use sys_common::helper_thread::Helper;
 use sys_common::{AsInner, mkerr_libc, timeout};
 
-use io::fs::PathExtensions;
-
 pub use sys_common::ProcessConfig;
+
+// `CreateProcess` is racy!
+// http://support.microsoft.com/kb/315939
+static CREATE_PROCESS_LOCK: StaticMutex = MUTEX_INIT;
 
 /// A value representing a child process.
 ///
@@ -103,7 +110,7 @@ impl Process {
                               out_fd: Option<P>, err_fd: Option<P>)
                               -> IoResult<Process>
         where C: ProcessConfig<K, V>, P: AsInner<FileDesc>,
-              K: BytesContainer + Eq + Hash, V: BytesContainer
+              K: BytesContainer + Eq + Hash<Hasher>, V: BytesContainer
     {
         use libc::types::os::arch::extra::{DWORD, HANDLE, STARTUPINFO};
         use libc::consts::os::extra::{
@@ -141,10 +148,10 @@ impl Process {
                 // Split the value and test each path to see if the
                 // program exists.
                 for path in os::split_paths(v.container_as_bytes()).into_iter() {
-                    let path = path.join(cfg.program().as_bytes_no_nul())
+                    let path = path.join(cfg.program().as_bytes())
                                    .with_extension(os::consts::EXE_EXTENSION);
                     if path.exists() {
-                        return Some(path.to_c_str())
+                        return Some(CString::from_slice(path.as_vec()))
                     }
                 }
                 break
@@ -162,7 +169,7 @@ impl Process {
             // Similarly to unix, we don't actually leave holes for the stdio file
             // descriptors, but rather open up /dev/null equivalents. These
             // equivalents are drawn from libuv's windows process spawning.
-            let set_fd = |fd: &Option<P>, slot: &mut HANDLE,
+            let set_fd = |&: fd: &Option<P>, slot: &mut HANDLE,
                           is_stdin: bool| {
                 match *fd {
                     None => {
@@ -224,6 +231,7 @@ impl Process {
                 with_dirp(cfg.cwd(), |dirp| {
                     let mut cmd_str: Vec<u16> = cmd_str.utf16_units().collect();
                     cmd_str.push(0);
+                    let _lock = CREATE_PROCESS_LOCK.lock().unwrap();
                     let created = CreateProcessW(ptr::null(),
                                                  cmd_str.as_mut_ptr(),
                                                  ptr::null_mut(),
@@ -362,11 +370,11 @@ fn zeroed_process_information() -> libc::types::os::arch::extra::PROCESS_INFORMA
 
 fn make_command_line(prog: &CString, args: &[CString]) -> String {
     let mut cmd = String::new();
-    append_arg(&mut cmd, prog.as_str()
+    append_arg(&mut cmd, str::from_utf8(prog.as_bytes()).ok()
                              .expect("expected program name to be utf-8 encoded"));
     for arg in args.iter() {
         cmd.push(' ');
-        append_arg(&mut cmd, arg.as_str()
+        append_arg(&mut cmd, str::from_utf8(arg.as_bytes()).ok()
                                 .expect("expected argument to be utf-8 encoded"));
     }
     return cmd;
@@ -417,8 +425,10 @@ fn make_command_line(prog: &CString, args: &[CString]) -> String {
     }
 }
 
-fn with_envp<K, V, T, F>(env: Option<&collections::HashMap<K, V>>, cb: F) -> T where
-    K: BytesContainer + Eq + Hash, V: BytesContainer, F: FnOnce(*mut c_void) -> T,
+fn with_envp<K, V, T, F>(env: Option<&collections::HashMap<K, V>>, cb: F) -> T
+    where K: BytesContainer + Eq + Hash<Hasher>,
+          V: BytesContainer,
+          F: FnOnce(*mut c_void) -> T,
 {
     // On Windows we pass an "environment block" which is not a char**, but
     // rather a concatenation of null-terminated k=v\0 sequences, with a final
@@ -448,7 +458,7 @@ fn with_dirp<T, F>(d: Option<&CString>, cb: F) -> T where
 {
     match d {
       Some(dir) => {
-          let dir_str = dir.as_str()
+          let dir_str = str::from_utf8(dir.as_bytes()).ok()
                            .expect("expected workingdirectory to be utf-8 encoded");
           let mut dir_str: Vec<u16> = dir_str.utf16_units().collect();
           dir_str.push(0);
@@ -466,18 +476,17 @@ fn free_handle(handle: *mut ()) {
 
 #[cfg(test)]
 mod tests {
+    use prelude::v1::*;
+    use str;
+    use ffi::CString;
+    use super::make_command_line;
 
     #[test]
     fn test_make_command_line() {
-        use prelude::*;
-        use str;
-        use c_str::CString;
-        use super::make_command_line;
-
         fn test_wrapper(prog: &str, args: &[&str]) -> String {
-            make_command_line(&prog.to_c_str(),
+            make_command_line(&CString::from_slice(prog.as_bytes()),
                               args.iter()
-                                  .map(|a| a.to_c_str())
+                                  .map(|a| CString::from_slice(a.as_bytes()))
                                   .collect::<Vec<CString>>()
                                   .as_slice())
         }

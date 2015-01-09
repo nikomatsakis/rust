@@ -8,13 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(associated_types)]
-
-use std::kinds::marker;
-
-trait Foo<T>
-    : marker::PhantomGetter<T>
-{
+trait Foo<T> {
     type Bar;
     fn get_bar() -> <Self as Foo<T>>::Bar;
 }

@@ -16,6 +16,8 @@
 // lldb-command:run
 
 #![allow(unused_variables)]
+#![feature(box_syntax)]
+#![omit_gdb_pretty_printer_section]
 
 trait Trait {
     fn method(&self) -> int { 0 }

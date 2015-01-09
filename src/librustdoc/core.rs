@@ -10,7 +10,9 @@
 pub use self::MaybeTyped::*;
 
 use rustc_driver::driver;
-use rustc::session::{mod, config};
+use rustc::session::{self, config};
+use rustc::session::config::UnstableFeatures;
+use rustc::session::search_paths::SearchPaths;
 use rustc::middle::{privacy, ty};
 use rustc::lint;
 use rustc_trans::back::link;
@@ -19,7 +21,6 @@ use syntax::{ast, ast_map, codemap, diagnostic};
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use arena::TypedArena;
 
 use visit_ast::RustdocVisitor;
 use clean;
@@ -77,7 +78,7 @@ pub struct CrateAnalysis {
 
 pub type Externs = HashMap<String, Vec<String>>;
 
-pub fn run_core(libs: Vec<Path>, cfgs: Vec<String>, externs: Externs,
+pub fn run_core(search_paths: SearchPaths, cfgs: Vec<String>, externs: Externs,
                 cpath: &Path, triple: Option<String>)
                 -> (clean::Crate, CrateAnalysis) {
 
@@ -89,15 +90,16 @@ pub fn run_core(libs: Vec<Path>, cfgs: Vec<String>, externs: Externs,
 
     let sessopts = config::Options {
         maybe_sysroot: None,
-        addl_lib_search_paths: RefCell::new(libs),
+        search_paths: search_paths,
         crate_types: vec!(config::CrateTypeRlib),
         lint_opts: vec!((warning_lint, lint::Allow)),
         externs: externs,
         target_triple: triple.unwrap_or(config::host_triple().to_string()),
         cfg: config::parse_cfgspecs(cfgs),
+        // Ensure that rustdoc works even if rustc is feature-staged
+        unstable_features: UnstableFeatures::Default,
         ..config::basic_options().clone()
     };
-
 
     let codemap = codemap::CodeMap::new();
     let diagnostic_handler = diagnostic::default_handler(diagnostic::Auto, None);
@@ -121,10 +123,10 @@ pub fn run_core(libs: Vec<Path>, cfgs: Vec<String>, externs: Externs,
     let mut forest = ast_map::Forest::new(krate);
     let ast_map = driver::assign_node_ids_and_map(&sess, &mut forest);
 
-    let type_arena = TypedArena::new();
+    let arenas = ty::CtxtArenas::new();
     let ty::CrateAnalysis {
         exported_items, public_items, ty_cx, ..
-    } = driver::phase_3_run_analysis_passes(sess, ast_map, &type_arena, name);
+    } = driver::phase_3_run_analysis_passes(sess, ast_map, &arenas, name);
 
     let ctxt = DocContext {
         krate: ty_cx.map.krate(),
@@ -136,7 +138,7 @@ pub fn run_core(libs: Vec<Path>, cfgs: Vec<String>, externs: Externs,
         inlined: RefCell::new(Some(HashSet::new())),
         populated_crate_impls: RefCell::new(HashSet::new()),
     };
-    debug!("crate: {}", ctxt.krate);
+    debug!("crate: {:?}", ctxt.krate);
 
     let analysis = CrateAnalysis {
         exported_items: exported_items,

@@ -9,7 +9,7 @@
 // except according to those terms.
 
 
-#[deriving(Show)]
+#[derive(Show)]
 enum Token {
     Text(String),
     ETag(Vec<String>, String),
@@ -43,6 +43,6 @@ pub fn main()
                     "foo".to_string(),
                     "foo".to_string(), "foo".to_string(), "foo".to_string(),
                     "foo".to_string());
-    let v = format!("{}", u);    // this is the line that causes the seg fault
+    let v = format!("{:?}", u);    // this is the line that causes the seg fault
     assert!(v.len() > 0);
 }

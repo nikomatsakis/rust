@@ -39,7 +39,7 @@
 //!   distribution.
 //!
 //! * `rust_begin_unwind` - This function takes three arguments, a
-//!   `&fmt::Arguments`, a `&str`, and a `uint`. These three arguments dictate
+//!   `fmt::Arguments`, a `&str`, and a `uint`. These three arguments dictate
 //!   the panic message, the file at which panic was invoked, and the line.
 //!   It is up to consumers of this core library to define this panic
 //!   function; it is only required to never return.
@@ -48,7 +48,8 @@
 // separate crate, libcoretest, to avoid bizarre issues.
 
 #![crate_name = "core"]
-#![experimental]
+#![unstable]
+#![staged_api]
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
@@ -56,25 +57,38 @@
        html_playground_url = "http://play.rust-lang.org/")]
 
 #![no_std]
-#![allow(unknown_features, raw_pointer_deriving)]
-#![feature(globs, intrinsics, lang_items, macro_rules, phase)]
+#![allow(unknown_features, raw_pointer_derive)]
+#![cfg_attr(stage0, allow(unused_attributes))]
+#![allow(unknown_features)] #![feature(intrinsics, lang_items)]
 #![feature(simd, unsafe_destructor, slicing_syntax)]
-#![feature(default_type_params, unboxed_closures)]
+#![feature(unboxed_closures)]
+#![allow(unknown_features)] #![feature(int_uint)]
 #![deny(missing_docs)]
 
+#[macro_use]
 mod macros;
 
-#[path = "num/float_macros.rs"] mod float_macros;
-#[path = "num/int_macros.rs"]   mod int_macros;
-#[path = "num/uint_macros.rs"]  mod uint_macros;
+#[path = "num/float_macros.rs"]
+#[macro_use]
+mod float_macros;
+
+#[path = "num/int_macros.rs"]
+#[macro_use]
+mod int_macros;
+
+#[path = "num/uint_macros.rs"]
+#[macro_use]
+mod uint_macros;
 
 #[path = "num/int.rs"]  pub mod int;
+#[path = "num/isize.rs"]  pub mod isize;
 #[path = "num/i8.rs"]   pub mod i8;
 #[path = "num/i16.rs"]  pub mod i16;
 #[path = "num/i32.rs"]  pub mod i32;
 #[path = "num/i64.rs"]  pub mod i64;
 
 #[path = "num/uint.rs"] pub mod uint;
+#[path = "num/usize.rs"] pub mod usize;
 #[path = "num/u8.rs"]   pub mod u8;
 #[path = "num/u16.rs"]  pub mod u16;
 #[path = "num/u32.rs"]  pub mod u32;
@@ -93,11 +107,12 @@ pub mod prelude;
 
 pub mod intrinsics;
 pub mod mem;
+pub mod nonzero;
 pub mod ptr;
 
 /* Core language traits */
 
-pub mod kinds;
+pub mod marker;
 pub mod ops;
 pub mod cmp;
 pub mod clone;
@@ -129,13 +144,14 @@ mod array;
 #[doc(hidden)]
 mod core {
     pub use panicking;
+    pub use fmt;
 }
 
 #[doc(hidden)]
 mod std {
     pub use clone;
     pub use cmp;
-    pub use kinds;
+    pub use marker;
     pub use option;
     pub use fmt;
     pub use hash;

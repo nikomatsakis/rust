@@ -46,17 +46,19 @@ use middle::subst::{ErasedRegions, NonerasedRegions, Substs};
 use middle::ty::{FloatVar, FnSig, IntVar, TyVar};
 use middle::ty::{IntType, UintType};
 use middle::ty::{BuiltinBounds};
-use middle::ty::{mod, Ty};
+use middle::ty::{self, Ty};
 use middle::ty_fold;
 use middle::ty_fold::{TypeFolder, TypeFoldable};
 use util::ppaux::Repr;
 
+use std::rc::Rc;
 use syntax::ast::{Onceness, Unsafety};
 use syntax::ast;
 use syntax::abi;
 use syntax::codemap::Span;
 
-pub trait Combine<'tcx> {
+pub trait Combine<'tcx> : Sized {
+    fn infcx<'a>(&'a self) -> &'a InferCtxt<'a, 'tcx>;
     fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> { self.infcx().tcx }
     fn tag(&self) -> String;
 
@@ -223,7 +225,7 @@ pub trait Combine<'tcx> {
         };
         let unsafety = try!(self.unsafeties(a.unsafety, b.unsafety));
         let onceness = try!(self.oncenesses(a.onceness, b.onceness));
-        let bounds = try!(self.existential_bounds(a.bounds, b.bounds));
+        let bounds = try!(self.existential_bounds(&a.bounds, &b.bounds));
         let sig = try!(self.binders(&a.sig, &b.sig));
         let abi = try!(self.abi(a.abi, b.abi));
         Ok(ty::ClosureTy {
@@ -290,15 +292,61 @@ pub trait Combine<'tcx> {
 
     fn oncenesses(&self, a: Onceness, b: Onceness) -> cres<'tcx, Onceness>;
 
+    fn projection_tys(&self,
+                      a: &ty::ProjectionTy<'tcx>,
+                      b: &ty::ProjectionTy<'tcx>)
+                      -> cres<'tcx, ty::ProjectionTy<'tcx>>
+    {
+        if a.item_name != b.item_name {
+            Err(ty::terr_projection_name_mismatched(
+                expected_found(self, a.item_name, b.item_name)))
+        } else {
+            let trait_ref = try!(self.trait_refs(&*a.trait_ref, &*b.trait_ref));
+            Ok(ty::ProjectionTy { trait_ref: Rc::new(trait_ref), item_name: a.item_name })
+        }
+    }
+
+    fn projection_predicates(&self,
+                             a: &ty::ProjectionPredicate<'tcx>,
+                             b: &ty::ProjectionPredicate<'tcx>)
+                             -> cres<'tcx, ty::ProjectionPredicate<'tcx>>
+    {
+        let projection_ty = try!(self.projection_tys(&a.projection_ty, &b.projection_ty));
+        let ty = try!(self.tys(a.ty, b.ty));
+        Ok(ty::ProjectionPredicate { projection_ty: projection_ty, ty: ty })
+    }
+
+    fn projection_bounds(&self,
+                         a: &Vec<ty::PolyProjectionPredicate<'tcx>>,
+                         b: &Vec<ty::PolyProjectionPredicate<'tcx>>)
+                         -> cres<'tcx, Vec<ty::PolyProjectionPredicate<'tcx>>>
+    {
+        // To be compatible, `a` and `b` must be for precisely the
+        // same set of traits and item names. We always require that
+        // projection bounds lists are sorted by trait-def-id and item-name,
+        // so we can just iterate through the lists pairwise, so long as they are the
+        // same length.
+        if a.len() != b.len() {
+            Err(ty::terr_projection_bounds_length(expected_found(self, a.len(), b.len())))
+        } else {
+            a.iter()
+                .zip(b.iter())
+                .map(|(a, b)| self.binders(a, b))
+                .collect()
+        }
+    }
+
     fn existential_bounds(&self,
-                          a: ty::ExistentialBounds,
-                          b: ty::ExistentialBounds)
-                          -> cres<'tcx, ty::ExistentialBounds>
+                          a: &ty::ExistentialBounds<'tcx>,
+                          b: &ty::ExistentialBounds<'tcx>)
+                          -> cres<'tcx, ty::ExistentialBounds<'tcx>>
     {
         let r = try!(self.contraregions(a.region_bound, b.region_bound));
         let nb = try!(self.builtin_bounds(a.builtin_bounds, b.builtin_bounds));
+        let pb = try!(self.projection_bounds(&a.projection_bounds, &b.projection_bounds));
         Ok(ty::ExistentialBounds { region_bound: r,
-                                   builtin_bounds: nb })
+                                   builtin_bounds: nb,
+                                   projection_bounds: pb })
     }
 
     fn builtin_bounds(&self,
@@ -316,7 +364,7 @@ pub trait Combine<'tcx> {
                     a: ty::TraitStore,
                     b: ty::TraitStore)
                     -> cres<'tcx, ty::TraitStore> {
-        debug!("{}.trait_stores(a={}, b={})", self.tag(), a, b);
+        debug!("{}.trait_stores(a={:?}, b={:?})", self.tag(), a, b);
 
         match (a, b) {
             (ty::RegionTraitStore(a_r, a_m),
@@ -345,8 +393,8 @@ pub trait Combine<'tcx> {
         if a.def_id != b.def_id {
             Err(ty::terr_traits(expected_found(self, a.def_id, b.def_id)))
         } else {
-            let substs = try!(self.substs(a.def_id, &a.substs, &b.substs));
-            Ok(ty::TraitRef { def_id: a.def_id, substs: substs })
+            let substs = try!(self.substs(a.def_id, a.substs, b.substs));
+            Ok(ty::TraitRef { def_id: a.def_id, substs: self.tcx().mk_substs(substs) })
         }
     }
 
@@ -360,6 +408,18 @@ pub trait Combineable<'tcx> : Repr<'tcx> + TypeFoldable<'tcx> {
     fn combine<C:Combine<'tcx>>(combiner: &C, a: &Self, b: &Self) -> cres<'tcx, Self>;
 }
 
+impl<'tcx,T> Combineable<'tcx> for Rc<T>
+    where T : Combineable<'tcx>
+{
+    fn combine<C:Combine<'tcx>>(combiner: &C,
+                                a: &Rc<T>,
+                                b: &Rc<T>)
+                                -> cres<'tcx, Rc<T>>
+    {
+        Ok(Rc::new(try!(Combineable::combine(combiner, &**a, &**b))))
+    }
+}
+
 impl<'tcx> Combineable<'tcx> for ty::TraitRef<'tcx> {
     fn combine<C:Combine<'tcx>>(combiner: &C,
                                 a: &ty::TraitRef<'tcx>,
@@ -367,6 +427,26 @@ impl<'tcx> Combineable<'tcx> for ty::TraitRef<'tcx> {
                                 -> cres<'tcx, ty::TraitRef<'tcx>>
     {
         combiner.trait_refs(a, b)
+    }
+}
+
+impl<'tcx> Combineable<'tcx> for Ty<'tcx> {
+    fn combine<C:Combine<'tcx>>(combiner: &C,
+                                a: &Ty<'tcx>,
+                                b: &Ty<'tcx>)
+                                -> cres<'tcx, Ty<'tcx>>
+    {
+        combiner.tys(*a, *b)
+    }
+}
+
+impl<'tcx> Combineable<'tcx> for ty::ProjectionPredicate<'tcx> {
+    fn combine<C:Combine<'tcx>>(combiner: &C,
+                                a: &ty::ProjectionPredicate<'tcx>,
+                                b: &ty::ProjectionPredicate<'tcx>)
+                                -> cres<'tcx, ty::ProjectionPredicate<'tcx>>
+    {
+        combiner.projection_predicates(a, b)
     }
 }
 
@@ -380,7 +460,7 @@ impl<'tcx> Combineable<'tcx> for ty::FnSig<'tcx> {
     }
 }
 
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct CombineFields<'a, 'tcx: 'a> {
     pub infcx: &'a InferCtxt<'a, 'tcx>,
     pub a_is_expected: bool,
@@ -399,25 +479,25 @@ pub fn expected_found<'tcx, C: Combine<'tcx>, T>(
 pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C,
                                          a: Ty<'tcx>,
                                          b: Ty<'tcx>)
-                                         -> cres<'tcx, Ty<'tcx>> {
-
+                                         -> cres<'tcx, Ty<'tcx>>
+{
     let tcx = this.infcx().tcx;
     let a_sty = &a.sty;
     let b_sty = &b.sty;
-    debug!("super_tys: a_sty={} b_sty={}", a_sty, b_sty);
+    debug!("super_tys: a_sty={:?} b_sty={:?}", a_sty, b_sty);
     return match (a_sty, b_sty) {
       // The "subtype" ought to be handling cases involving var:
       (&ty::ty_infer(TyVar(_)), _) |
       (_, &ty::ty_infer(TyVar(_))) => {
         tcx.sess.bug(
-            format!("{}: bot and var types should have been handled ({},{})",
+            &format!("{}: bot and var types should have been handled ({},{})",
                     this.tag(),
                     a.repr(this.infcx().tcx),
                     b.repr(this.infcx().tcx))[]);
       }
 
       (&ty::ty_err, _) | (_, &ty::ty_err) => {
-          Ok(ty::mk_err())
+          Ok(tcx.types.err)
       }
 
         // Relate integral variables to other types
@@ -472,38 +552,38 @@ pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C,
         Ok(a)
       }
 
-      (&ty::ty_enum(a_id, ref a_substs),
-       &ty::ty_enum(b_id, ref b_substs))
+      (&ty::ty_enum(a_id, a_substs),
+       &ty::ty_enum(b_id, b_substs))
       if a_id == b_id => {
           let substs = try!(this.substs(a_id,
                                           a_substs,
                                           b_substs));
-          Ok(ty::mk_enum(tcx, a_id, substs))
+          Ok(ty::mk_enum(tcx, a_id, tcx.mk_substs(substs)))
       }
 
       (&ty::ty_trait(ref a_),
        &ty::ty_trait(ref b_)) => {
-          debug!("Trying to match traits {} and {}", a, b);
+          debug!("Trying to match traits {:?} and {:?}", a, b);
           let principal = try!(this.binders(&a_.principal, &b_.principal));
-          let bounds = try!(this.existential_bounds(a_.bounds, b_.bounds));
+          let bounds = try!(this.existential_bounds(&a_.bounds, &b_.bounds));
           Ok(ty::mk_trait(tcx, principal, bounds))
       }
 
-      (&ty::ty_struct(a_id, ref a_substs), &ty::ty_struct(b_id, ref b_substs))
+      (&ty::ty_struct(a_id, a_substs), &ty::ty_struct(b_id, b_substs))
       if a_id == b_id => {
             let substs = try!(this.substs(a_id, a_substs, b_substs));
-            Ok(ty::mk_struct(tcx, a_id, substs))
+            Ok(ty::mk_struct(tcx, a_id, tcx.mk_substs(substs)))
       }
 
-      (&ty::ty_unboxed_closure(a_id, a_region, ref a_substs),
-       &ty::ty_unboxed_closure(b_id, b_region, ref b_substs))
+      (&ty::ty_unboxed_closure(a_id, a_region, a_substs),
+       &ty::ty_unboxed_closure(b_id, b_region, b_substs))
       if a_id == b_id => {
           // All ty_unboxed_closure types with the same id represent
           // the (anonymous) type of the same closure expression. So
           // all of their regions should be equated.
-          let region = try!(this.equate().regions(a_region, b_region));
+          let region = try!(this.equate().regions(*a_region, *b_region));
           let substs = try!(this.substs_variances(None, a_substs, b_substs));
-          Ok(ty::mk_unboxed_closure(tcx, a_id, region, substs))
+          Ok(ty::mk_unboxed_closure(tcx, a_id, tcx.mk_region(region), tcx.mk_substs(substs)))
       }
 
       (&ty::ty_uniq(a_inner), &ty::ty_uniq(b_inner)) => {
@@ -517,7 +597,7 @@ pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C,
       }
 
       (&ty::ty_rptr(a_r, ref a_mt), &ty::ty_rptr(b_r, ref b_mt)) => {
-            let r = try!(this.contraregions(a_r, b_r));
+            let r = try!(this.contraregions(*a_r, *b_r));
             // FIXME(14985)  If we have mutable references to trait objects, we
             // used to use covariant subtyping. I have preserved this behaviour,
             // even though it is probably incorrect. So don't go down the usual
@@ -529,7 +609,7 @@ pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C,
                 }
                 _ => try!(this.mts(a_mt, b_mt))
             };
-            Ok(ty::mk_rptr(tcx, r, mt))
+            Ok(ty::mk_rptr(tcx, tcx.mk_region(r), mt))
       }
 
       (&ty::ty_vec(a_t, Some(sz_a)), &ty::ty_vec(b_t, Some(sz_b))) => {
@@ -570,17 +650,16 @@ pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C,
         }
       }
 
-        (&ty::ty_bare_fn(a_opt_def_id, ref a_fty), &ty::ty_bare_fn(b_opt_def_id, ref b_fty))
+        (&ty::ty_bare_fn(a_opt_def_id, a_fty), &ty::ty_bare_fn(b_opt_def_id, b_fty))
             if a_opt_def_id == b_opt_def_id =>
         {
             let fty = try!(this.bare_fn_tys(a_fty, b_fty));
-            Ok(ty::mk_bare_fn(tcx, a_opt_def_id, fty))
+            Ok(ty::mk_bare_fn(tcx, a_opt_def_id, tcx.mk_bare_fn(fty)))
         }
 
-      (&ty::ty_closure(ref a_fty), &ty::ty_closure(ref b_fty)) => {
-        this.closure_tys(&**a_fty, &**b_fty).and_then(|fty| {
-            Ok(ty::mk_closure(tcx, fty))
-        })
+      (&ty::ty_projection(ref a_data), &ty::ty_projection(ref b_data)) => {
+          let projection_ty = try!(this.projection_tys(a_data, b_data));
+          Ok(ty::mk_projection(tcx, projection_ty.trait_ref, projection_ty.item_name))
       }
 
       _ => Err(ty::terr_sorts(expected_found(this, a, b)))
@@ -594,8 +673,8 @@ pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C,
     {
         try!(this.infcx().simple_var_t(vid_is_expected, vid, val));
         match val {
-            IntType(v) => Ok(ty::mk_mach_int(v)),
-            UintType(v) => Ok(ty::mk_mach_uint(v))
+            IntType(v) => Ok(ty::mk_mach_int(this.tcx(), v)),
+            UintType(v) => Ok(ty::mk_mach_uint(this.tcx(), v))
         }
     }
 
@@ -606,7 +685,7 @@ pub fn super_tys<'tcx, C: Combine<'tcx>>(this: &C,
         val: ast::FloatTy) -> cres<'tcx, Ty<'tcx>>
     {
         try!(this.infcx().simple_var_t(vid_is_expected, vid, val));
-        Ok(ty::mk_mach_float(val))
+        Ok(ty::mk_mach_float(this.tcx(), val))
     }
 }
 
@@ -675,7 +754,7 @@ impl<'f, 'tcx> CombineFields<'f, 'tcx> {
                 Some(e) => e,
             };
 
-            debug!("instantiate(a_ty={} dir={} b_vid={})",
+            debug!("instantiate(a_ty={} dir={:?} b_vid={})",
                    a_ty.repr(tcx),
                    dir,
                    b_vid.repr(tcx));
@@ -696,7 +775,7 @@ impl<'f, 'tcx> CombineFields<'f, 'tcx> {
                             self.generalize(a_ty, b_vid, true)
                         }
                     });
-                    debug!("instantiate(a_ty={}, dir={}, \
+                    debug!("instantiate(a_ty={}, dir={:?}, \
                                         b_vid={}, generalized_ty={})",
                            a_ty.repr(tcx), dir, b_vid.repr(tcx),
                            generalized_ty.repr(tcx));
@@ -786,7 +865,7 @@ impl<'cx, 'tcx> ty_fold::TypeFolder<'tcx> for Generalizer<'cx, 'tcx> {
             ty::ty_infer(ty::TyVar(vid)) => {
                 if vid == self.for_vid {
                     self.cycle_detected = true;
-                    ty::mk_err()
+                    self.tcx().types.err
                 } else {
                     match self.infcx.type_variables.borrow().probe(vid) {
                         Some(u) => self.fold_ty(u),
@@ -810,7 +889,7 @@ impl<'cx, 'tcx> ty_fold::TypeFolder<'tcx> for Generalizer<'cx, 'tcx> {
             ty::ReEarlyBound(..) => {
                 self.tcx().sess.span_bug(
                     self.span,
-                    format!("Encountered early bound region when generalizing: {}",
+                    &format!("Encountered early bound region when generalizing: {}",
                             r.repr(self.tcx()))[]);
             }
 

@@ -8,11 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(box_syntax)]
 
-#[deriving(Clone)]
-struct foo(Box<uint>);
+use std::ops::Add;
 
-impl Add<foo, foo> for foo {
+#[derive(Clone)]
+struct foo(Box<usize>);
+
+impl Add for foo {
+    type Output = foo;
+
     fn add(self, f: foo) -> foo {
         let foo(box i) = self;
         let foo(box j) = f;

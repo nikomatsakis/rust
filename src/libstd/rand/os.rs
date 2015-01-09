@@ -1,4 +1,4 @@
-// Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2013-2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -23,13 +23,16 @@ mod imp {
     use path::Path;
     use rand::Rng;
     use rand::reader::ReaderRng;
-    use result::Result::{Ok, Err};
+    use result::Result::Ok;
     use slice::SliceExt;
     use mem;
     use os::errno;
 
     #[cfg(all(target_os = "linux",
-              any(target_arch = "x86_64", target_arch = "x86", target_arch = "arm")))]
+              any(target_arch = "x86_64",
+                  target_arch = "x86",
+                  target_arch = "arm",
+                  target_arch = "aarch64")))]
     fn getrandom(buf: &mut [u8]) -> libc::c_long {
         extern "C" {
             fn syscall(number: libc::c_long, ...) -> libc::c_long;
@@ -39,7 +42,7 @@ mod imp {
         const NR_GETRANDOM: libc::c_long = 318;
         #[cfg(target_arch = "x86")]
         const NR_GETRANDOM: libc::c_long = 355;
-        #[cfg(target_arch = "arm")]
+        #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
         const NR_GETRANDOM: libc::c_long = 384;
 
         unsafe {
@@ -48,14 +51,17 @@ mod imp {
     }
 
     #[cfg(not(all(target_os = "linux",
-                  any(target_arch = "x86_64", target_arch = "x86", target_arch = "arm"))))]
+                  any(target_arch = "x86_64",
+                      target_arch = "x86",
+                      target_arch = "arm",
+                      target_arch = "aarch64"))))]
     fn getrandom(_buf: &mut [u8]) -> libc::c_long { -1 }
 
     fn getrandom_fill_bytes(v: &mut [u8]) {
         let mut read = 0;
         let len = v.len();
         while read < len {
-            let result = getrandom(v[mut read..]);
+            let result = getrandom(v.slice_from_mut(read));
             if result == -1 {
                 let err = errno() as libc::c_int;
                 if err == libc::EINTR {
@@ -70,27 +76,30 @@ mod imp {
     }
 
     fn getrandom_next_u32() -> u32 {
-        let mut buf: [u8, ..4] = [0u8, ..4];
+        let mut buf: [u8; 4] = [0u8; 4];
         getrandom_fill_bytes(&mut buf);
-        unsafe { mem::transmute::<[u8, ..4], u32>(buf) }
+        unsafe { mem::transmute::<[u8; 4], u32>(buf) }
     }
 
     fn getrandom_next_u64() -> u64 {
-        let mut buf: [u8, ..8] = [0u8, ..8];
+        let mut buf: [u8; 8] = [0u8; 8];
         getrandom_fill_bytes(&mut buf);
-        unsafe { mem::transmute::<[u8, ..8], u64>(buf) }
+        unsafe { mem::transmute::<[u8; 8], u64>(buf) }
     }
 
     #[cfg(all(target_os = "linux",
-              any(target_arch = "x86_64", target_arch = "x86", target_arch = "arm")))]
+              any(target_arch = "x86_64",
+                  target_arch = "x86",
+                  target_arch = "arm",
+                  target_arch = "aarch64")))]
     fn is_getrandom_available() -> bool {
-        use sync::atomic::{AtomicBool, INIT_ATOMIC_BOOL, Relaxed};
+        use sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, Ordering};
 
-        static GETRANDOM_CHECKED: AtomicBool = INIT_ATOMIC_BOOL;
-        static GETRANDOM_AVAILABLE: AtomicBool = INIT_ATOMIC_BOOL;
+        static GETRANDOM_CHECKED: AtomicBool = ATOMIC_BOOL_INIT;
+        static GETRANDOM_AVAILABLE: AtomicBool = ATOMIC_BOOL_INIT;
 
-        if !GETRANDOM_CHECKED.load(Relaxed) {
-            let mut buf: [u8, ..0] = [];
+        if !GETRANDOM_CHECKED.load(Ordering::Relaxed) {
+            let mut buf: [u8; 0] = [];
             let result = getrandom(&mut buf);
             let available = if result == -1 {
                 let err = errno() as libc::c_int;
@@ -98,16 +107,19 @@ mod imp {
             } else {
                 true
             };
-            GETRANDOM_AVAILABLE.store(available, Relaxed);
-            GETRANDOM_CHECKED.store(true, Relaxed);
+            GETRANDOM_AVAILABLE.store(available, Ordering::Relaxed);
+            GETRANDOM_CHECKED.store(true, Ordering::Relaxed);
             available
         } else {
-            GETRANDOM_AVAILABLE.load(Relaxed)
+            GETRANDOM_AVAILABLE.load(Ordering::Relaxed)
         }
     }
 
     #[cfg(not(all(target_os = "linux",
-                  any(target_arch = "x86_64", target_arch = "x86", target_arch = "arm"))))]
+                  any(target_arch = "x86_64",
+                      target_arch = "x86",
+                      target_arch = "arm",
+                      target_arch = "aarch64"))))]
     fn is_getrandom_available() -> bool { false }
 
     /// A random number generator that retrieves randomness straight from
@@ -170,6 +182,7 @@ mod imp {
     extern crate libc;
 
     use io::{IoResult};
+    use marker::Sync;
     use mem;
     use os;
     use rand::Rng;
@@ -196,6 +209,8 @@ mod imp {
     #[repr(C)]
     struct SecRandom;
 
+    unsafe impl Sync for *const SecRandom {}
+
     #[allow(non_upper_case_globals)]
     static kSecRandomDefault: *const SecRandom = 0 as *const SecRandom;
 
@@ -214,12 +229,12 @@ mod imp {
 
     impl Rng for OsRng {
         fn next_u32(&mut self) -> u32 {
-            let mut v = [0u8, .. 4];
+            let mut v = [0u8; 4];
             self.fill_bytes(&mut v);
             unsafe { mem::transmute(v) }
         }
         fn next_u64(&mut self) -> u64 {
-            let mut v = [0u8, .. 8];
+            let mut v = [0u8; 8];
             self.fill_bytes(&mut v);
             unsafe { mem::transmute(v) }
         }
@@ -301,12 +316,12 @@ mod imp {
 
     impl Rng for OsRng {
         fn next_u32(&mut self) -> u32 {
-            let mut v = [0u8, .. 4];
+            let mut v = [0u8; 4];
             self.fill_bytes(&mut v);
             unsafe { mem::transmute(v) }
         }
         fn next_u64(&mut self) -> u64 {
-            let mut v = [0u8, .. 8];
+            let mut v = [0u8; 8];
             self.fill_bytes(&mut v);
             unsafe { mem::transmute(v) }
         }
@@ -335,10 +350,11 @@ mod imp {
 
 #[cfg(test)]
 mod test {
-    use prelude::*;
+    use prelude::v1::*;
 
-    use super::OsRng;
+    use sync::mpsc::channel;
     use rand::Rng;
+    use super::OsRng;
     use thread::Thread;
 
     #[test]
@@ -348,7 +364,7 @@ mod test {
         r.next_u32();
         r.next_u64();
 
-        let mut v = [0u8, .. 1000];
+        let mut v = [0u8; 1000];
         r.fill_bytes(&mut v);
     }
 
@@ -362,13 +378,13 @@ mod test {
 
             Thread::spawn(move|| {
                 // wait until all the tasks are ready to go.
-                rx.recv();
+                rx.recv().unwrap();
 
                 // deschedule to attempt to interleave things as much
                 // as possible (XXX: is this a good test?)
                 let mut r = OsRng::new().unwrap();
                 Thread::yield_now();
-                let mut v = [0u8, .. 1000];
+                let mut v = [0u8; 1000];
 
                 for _ in range(0u, 100) {
                     r.next_u32();
@@ -378,12 +394,12 @@ mod test {
                     r.fill_bytes(&mut v);
                     Thread::yield_now();
                 }
-            }).detach();
+            });
         }
 
         // start all the tasks
         for tx in txs.iter() {
-            tx.send(())
+            tx.send(()).unwrap();
         }
     }
 }

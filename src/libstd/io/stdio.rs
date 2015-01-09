@@ -34,7 +34,7 @@ use failure::LOCAL_STDERR;
 use fmt;
 use io::{Reader, Writer, IoResult, IoError, OtherIoError, Buffer,
          standard_error, EndOfFile, LineBufferedWriter, BufferedReader};
-use kinds::Send;
+use marker::{Sync, Send};
 use libc;
 use mem;
 use option::Option;
@@ -98,26 +98,36 @@ thread_local! {
     }
 }
 
+struct RaceBox(BufferedReader<StdReader>);
+
+unsafe impl Send for RaceBox {}
+unsafe impl Sync for RaceBox {}
+
 /// A synchronized wrapper around a buffered reader from stdin
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct StdinReader {
-    inner: Arc<Mutex<BufferedReader<StdReader>>>,
+    inner: Arc<Mutex<RaceBox>>,
 }
+
+unsafe impl Send for StdinReader {}
+unsafe impl Sync for StdinReader {}
 
 /// A guard for exclusive access to `StdinReader`'s internal `BufferedReader`.
 pub struct StdinReaderGuard<'a> {
-    inner: MutexGuard<'a, BufferedReader<StdReader>>,
+    inner: MutexGuard<'a, RaceBox>,
 }
 
-impl<'a> Deref<BufferedReader<StdReader>> for StdinReaderGuard<'a> {
+impl<'a> Deref for StdinReaderGuard<'a> {
+    type Target = BufferedReader<StdReader>;
+
     fn deref(&self) -> &BufferedReader<StdReader> {
-        &*self.inner
+        &self.inner.0
     }
 }
 
-impl<'a> DerefMut<BufferedReader<StdReader>> for StdinReaderGuard<'a> {
+impl<'a> DerefMut for StdinReaderGuard<'a> {
     fn deref_mut(&mut self) -> &mut BufferedReader<StdReader> {
-        &mut *self.inner
+        &mut self.inner.0
     }
 }
 
@@ -138,7 +148,7 @@ impl StdinReader {
     /// ```
     pub fn lock<'a>(&'a mut self) -> StdinReaderGuard<'a> {
         StdinReaderGuard {
-            inner: self.inner.lock()
+            inner: self.inner.lock().unwrap()
         }
     }
 
@@ -147,7 +157,7 @@ impl StdinReader {
     /// The read is performed atomically - concurrent read calls in other
     /// threads will not interleave with this one.
     pub fn read_line(&mut self) -> IoResult<String> {
-        self.inner.lock().read_line()
+        self.inner.lock().unwrap().0.read_line()
     }
 
     /// Like `Buffer::read_until`.
@@ -155,7 +165,7 @@ impl StdinReader {
     /// The read is performed atomically - concurrent read calls in other
     /// threads will not interleave with this one.
     pub fn read_until(&mut self, byte: u8) -> IoResult<Vec<u8>> {
-        self.inner.lock().read_until(byte)
+        self.inner.lock().unwrap().0.read_until(byte)
     }
 
     /// Like `Buffer::read_char`.
@@ -163,13 +173,13 @@ impl StdinReader {
     /// The read is performed atomically - concurrent read calls in other
     /// threads will not interleave with this one.
     pub fn read_char(&mut self) -> IoResult<char> {
-        self.inner.lock().read_char()
+        self.inner.lock().unwrap().0.read_char()
     }
 }
 
 impl Reader for StdinReader {
     fn read(&mut self, buf: &mut [u8]) -> IoResult<uint> {
-        self.inner.lock().read(buf)
+        self.inner.lock().unwrap().0.read(buf)
     }
 
     // We have to manually delegate all of these because the default impls call
@@ -177,23 +187,23 @@ impl Reader for StdinReader {
     // incur the costs of repeated locking).
 
     fn read_at_least(&mut self, min: uint, buf: &mut [u8]) -> IoResult<uint> {
-        self.inner.lock().read_at_least(min, buf)
+        self.inner.lock().unwrap().0.read_at_least(min, buf)
     }
 
     fn push_at_least(&mut self, min: uint, len: uint, buf: &mut Vec<u8>) -> IoResult<uint> {
-        self.inner.lock().push_at_least(min, len, buf)
+        self.inner.lock().unwrap().0.push_at_least(min, len, buf)
     }
 
     fn read_to_end(&mut self) -> IoResult<Vec<u8>> {
-        self.inner.lock().read_to_end()
+        self.inner.lock().unwrap().0.read_to_end()
     }
 
     fn read_le_uint_n(&mut self, nbytes: uint) -> IoResult<u64> {
-        self.inner.lock().read_le_uint_n(nbytes)
+        self.inner.lock().unwrap().0.read_le_uint_n(nbytes)
     }
 
     fn read_be_uint_n(&mut self, nbytes: uint) -> IoResult<u64> {
-        self.inner.lock().read_be_uint_n(nbytes)
+        self.inner.lock().unwrap().0.read_be_uint_n(nbytes)
     }
 }
 
@@ -210,7 +220,7 @@ pub fn stdin() -> StdinReader {
     static ONCE: Once = ONCE_INIT;
 
     unsafe {
-        ONCE.doit(|| {
+        ONCE.call_once(|| {
             // The default buffer capacity is 64k, but apparently windows doesn't like
             // 64k reads on stdin. See #13304 for details, but the idea is that on
             // windows we use a slightly smaller buffer that's been seen to be
@@ -221,7 +231,7 @@ pub fn stdin() -> StdinReader {
                 BufferedReader::new(stdin_raw())
             };
             let stdin = StdinReader {
-                inner: Arc::new(Mutex::new(stdin))
+                inner: Arc::new(Mutex::new(RaceBox(stdin)))
             };
             STDIN = mem::transmute(box stdin);
 
@@ -326,7 +336,7 @@ pub fn set_stderr(stderr: Box<Writer + Send>) -> Option<Box<Writer + Send>> {
 //          // io1 aliases io2
 //      })
 //  })
-fn with_task_stdout(f: |&mut Writer| -> IoResult<()>) {
+fn with_task_stdout<F>(f: F) where F: FnOnce(&mut Writer) -> IoResult<()> {
     let mut my_stdout = LOCAL_STDOUT.with(|slot| {
         slot.borrow_mut().take()
     }).unwrap_or_else(|| {
@@ -339,7 +349,7 @@ fn with_task_stdout(f: |&mut Writer| -> IoResult<()>) {
     });
     match result {
         Ok(()) => {}
-        Err(e) => panic!("failed printing to stdout: {}", e),
+        Err(e) => panic!("failed printing to stdout: {:?}", e),
     }
 }
 
@@ -372,13 +382,13 @@ pub fn println(s: &str) {
 
 /// Similar to `print`, but takes a `fmt::Arguments` structure to be compatible
 /// with the `format_args!` macro.
-pub fn print_args(fmt: &fmt::Arguments) {
+pub fn print_args(fmt: fmt::Arguments) {
     with_task_stdout(|io| write!(io, "{}", fmt))
 }
 
 /// Similar to `println`, but takes a `fmt::Arguments` structure to be
 /// compatible with the `format_args!` macro.
-pub fn println_args(fmt: &fmt::Arguments) {
+pub fn println_args(fmt: fmt::Arguments) {
     with_task_stdout(|io| writeln!(io, "{}", fmt))
 }
 
@@ -425,6 +435,9 @@ impl Reader for StdReader {
 pub struct StdWriter {
     inner: StdSource
 }
+
+unsafe impl Send for StdWriter {}
+unsafe impl Sync for StdWriter {}
 
 impl StdWriter {
     /// Gets the size of this output window, if possible. This is typically used
@@ -509,8 +522,11 @@ impl Writer for StdWriter {
 
 #[cfg(test)]
 mod tests {
+    use prelude::v1::*;
+
     use super::*;
-    use prelude::*;
+    use sync::mpsc::channel;
+    use thread::Thread;
 
     #[test]
     fn smoke() {
@@ -526,7 +542,7 @@ mod tests {
 
         let (tx, rx) = channel();
         let (mut r, w) = (ChanReader::new(rx), ChanWriter::new(tx));
-        spawn(move|| {
+        let _t = Thread::spawn(move|| {
             set_stdout(box w);
             println!("hello!");
         });
@@ -539,7 +555,7 @@ mod tests {
 
         let (tx, rx) = channel();
         let (mut r, w) = (ChanReader::new(rx), ChanWriter::new(tx));
-        spawn(move|| {
+        let _t = Thread::spawn(move || -> () {
             set_stderr(box w);
             panic!("my special message");
         });

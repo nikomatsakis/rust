@@ -10,20 +10,17 @@
 
 // Issue #8380
 
-#![feature(globs)]
 
 use std::sync::atomic::*;
 use std::ptr;
 
 fn main() {
-    let x = INIT_ATOMIC_BOOL;
-    let x = *&x; //~ ERROR: cannot move out of dereference
-    let x = INIT_ATOMIC_INT;
-    let x = *&x; //~ ERROR: cannot move out of dereference
-    let x = INIT_ATOMIC_UINT;
-    let x = *&x; //~ ERROR: cannot move out of dereference
-    let x: AtomicPtr<uint> = AtomicPtr::new(ptr::null_mut());
-    let x = *&x; //~ ERROR: cannot move out of dereference
-    let x: AtomicOption<uint> = AtomicOption::empty();
-    let x = *&x; //~ ERROR: cannot move out of dereference
+    let x = ATOMIC_BOOL_INIT;
+    let x = *&x; //~ ERROR: cannot move out of borrowed content
+    let x = ATOMIC_INT_INIT;
+    let x = *&x; //~ ERROR: cannot move out of borrowed content
+    let x = ATOMIC_UINT_INIT;
+    let x = *&x; //~ ERROR: cannot move out of borrowed content
+    let x: AtomicPtr<usize> = AtomicPtr::new(ptr::null_mut());
+    let x = *&x; //~ ERROR: cannot move out of borrowed content
 }

@@ -8,25 +8,28 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Task-local reference-counted boxes (the `Rc<T>` type).
+//! Thread-local reference-counted boxes (the `Rc<T>` type).
 //!
-//! The `Rc<T>` type provides shared ownership of an immutable value. Destruction is deterministic,
-//! and will occur as soon as the last owner is gone. It is marked as non-sendable because it
-//! avoids the overhead of atomic reference counting.
+//! The `Rc<T>` type provides shared ownership of an immutable value.
+//! Destruction is deterministic, and will occur as soon as the last owner is
+//! gone. It is marked as non-sendable because it avoids the overhead of atomic
+//! reference counting.
 //!
-//! The `downgrade` method can be used to create a non-owning `Weak<T>` pointer to the box. A
-//! `Weak<T>` pointer can be upgraded to an `Rc<T>` pointer, but will return `None` if the value
-//! has already been dropped.
+//! The `downgrade` method can be used to create a non-owning `Weak<T>` pointer
+//! to the box. A `Weak<T>` pointer can be upgraded to an `Rc<T>` pointer, but
+//! will return `None` if the value has already been dropped.
 //!
-//! For example, a tree with parent pointers can be represented by putting the nodes behind strong
-//! `Rc<T>` pointers, and then storing the parent pointers as `Weak<T>` pointers.
+//! For example, a tree with parent pointers can be represented by putting the
+//! nodes behind strong `Rc<T>` pointers, and then storing the parent pointers
+//! as `Weak<T>` pointers.
 //!
 //! # Examples
 //!
-//! Consider a scenario where a set of `Gadget`s are owned by a given `Owner`.  We want to have our
-//! `Gadget`s point to their `Owner`. We can't do this with unique ownership, because more than one
-//! gadget may belong to the same `Owner`. `Rc<T>` allows us to share an `Owner` between multiple
-//! `Gadget`s, and have the `Owner` remain allocated as long as any `Gadget` points at it.
+//! Consider a scenario where a set of `Gadget`s are owned by a given `Owner`.
+//! We want to have our `Gadget`s point to their `Owner`. We can't do this with
+//! unique ownership, because more than one gadget may belong to the same
+//! `Owner`. `Rc<T>` allows us to share an `Owner` between multiple `Gadget`s,
+//! and have the `Owner` remain allocated as long as any `Gadget` points at it.
 //!
 //! ```rust
 //! use std::rc::Rc;
@@ -147,14 +150,14 @@ use core::clone::Clone;
 use core::cmp::{PartialEq, PartialOrd, Eq, Ord, Ordering};
 use core::default::Default;
 use core::fmt;
-use core::hash::{mod, Hash};
-use core::kinds::marker;
+use core::hash::{self, Hash};
+use core::marker;
 use core::mem::{transmute, min_align_of, size_of, forget};
+use core::nonzero::NonZero;
 use core::ops::{Deref, Drop};
 use core::option::Option;
 use core::option::Option::{Some, None};
-use core::ptr;
-use core::ptr::RawPtr;
+use core::ptr::{self, PtrExt};
 use core::result::Result;
 use core::result::Result::{Ok, Err};
 
@@ -174,7 +177,7 @@ struct RcBox<T> {
 pub struct Rc<T> {
     // FIXME #12808: strange names to try to avoid interfering with field accesses of the contained
     // type via Deref
-    _ptr: *mut RcBox<T>,
+    _ptr: NonZero<*mut RcBox<T>>,
     _nosend: marker::NoSend,
     _noshare: marker::NoSync
 }
@@ -196,11 +199,11 @@ impl<T> Rc<T> {
                 // there is an implicit weak pointer owned by all the strong pointers, which
                 // ensures that the weak destructor never frees the allocation while the strong
                 // destructor is running, even if the weak pointer is stored inside the strong one.
-                _ptr: transmute(box RcBox {
+                _ptr: NonZero::new(transmute(box RcBox {
                     value: value,
                     strong: Cell::new(1),
                     weak: Cell::new(1)
-                }),
+                })),
                 _nosend: marker::NoSend,
                 _noshare: marker::NoSync
             }
@@ -218,7 +221,7 @@ impl<T> Rc<T> {
     ///
     /// let weak_five = five.downgrade();
     /// ```
-    #[experimental = "Weak pointers may not belong in this module"]
+    #[unstable = "Weak pointers may not belong in this module"]
     pub fn downgrade(&self) -> Weak<T> {
         self.inc_weak();
         Weak {
@@ -231,12 +234,12 @@ impl<T> Rc<T> {
 
 /// Get the number of weak references to this value.
 #[inline]
-#[experimental]
+#[unstable]
 pub fn weak_count<T>(this: &Rc<T>) -> uint { this.weak() - 1 }
 
 /// Get the number of strong references to this value.
 #[inline]
-#[experimental]
+#[unstable]
 pub fn strong_count<T>(this: &Rc<T>) -> uint { this.strong() }
 
 /// Returns true if there are no other `Rc` or `Weak<T>` values that share the same inner value.
@@ -252,7 +255,7 @@ pub fn strong_count<T>(this: &Rc<T>) -> uint { this.strong() }
 /// rc::is_unique(&five);
 /// ```
 #[inline]
-#[experimental]
+#[unstable]
 pub fn is_unique<T>(rc: &Rc<T>) -> bool {
     weak_count(rc) == 0 && strong_count(rc) == 1
 }
@@ -264,7 +267,7 @@ pub fn is_unique<T>(rc: &Rc<T>) -> bool {
 /// # Example
 ///
 /// ```
-/// use std::rc::{mod, Rc};
+/// use std::rc::{self, Rc};
 ///
 /// let x = Rc::new(3u);
 /// assert_eq!(rc::try_unwrap(x), Ok(3u));
@@ -274,14 +277,14 @@ pub fn is_unique<T>(rc: &Rc<T>) -> bool {
 /// assert_eq!(rc::try_unwrap(x), Err(Rc::new(4u)));
 /// ```
 #[inline]
-#[experimental]
+#[unstable]
 pub fn try_unwrap<T>(rc: Rc<T>) -> Result<T, Rc<T>> {
     if is_unique(&rc) {
         unsafe {
             let val = ptr::read(&*rc); // copy the contained object
             // destruct the box and skip our Drop
             // we can ignore the refcounts because we know we're unique
-            deallocate(rc._ptr as *mut u8, size_of::<RcBox<T>>(),
+            deallocate(*rc._ptr as *mut u8, size_of::<RcBox<T>>(),
                         min_align_of::<RcBox<T>>());
             forget(rc);
             Ok(val)
@@ -298,7 +301,7 @@ pub fn try_unwrap<T>(rc: Rc<T>) -> Result<T, Rc<T>> {
 /// # Example
 ///
 /// ```
-/// use std::rc::{mod, Rc};
+/// use std::rc::{self, Rc};
 ///
 /// let mut x = Rc::new(3u);
 /// *rc::get_mut(&mut x).unwrap() = 4u;
@@ -308,10 +311,10 @@ pub fn try_unwrap<T>(rc: Rc<T>) -> Result<T, Rc<T>> {
 /// assert!(rc::get_mut(&mut x).is_none());
 /// ```
 #[inline]
-#[experimental]
+#[unstable]
 pub fn get_mut<'a, T>(rc: &'a mut Rc<T>) -> Option<&'a mut T> {
     if is_unique(rc) {
-        let inner = unsafe { &mut *rc._ptr };
+        let inner = unsafe { &mut **rc._ptr };
         Some(&mut inner.value)
     } else {
         None
@@ -334,7 +337,7 @@ impl<T: Clone> Rc<T> {
     /// let mut_five = five.make_unique();
     /// ```
     #[inline]
-    #[experimental]
+    #[unstable]
     pub fn make_unique(&mut self) -> &mut T {
         if !is_unique(self) {
             *self = Rc::new((**self).clone())
@@ -343,7 +346,7 @@ impl<T: Clone> Rc<T> {
         // pointer that will ever be returned to T. Our reference count is guaranteed to be 1 at
         // this point, and we required the `Rc<T>` itself to be `mut`, so we're returning the only
         // possible reference to the inner value.
-        let inner = unsafe { &mut *self._ptr };
+        let inner = unsafe { &mut **self._ptr };
         &mut inner.value
     }
 }
@@ -354,8 +357,10 @@ impl<T> BorrowFrom<Rc<T>> for T {
     }
 }
 
-#[experimental = "Deref is experimental."]
-impl<T> Deref<T> for Rc<T> {
+#[stable]
+impl<T> Deref for Rc<T> {
+    type Target = T;
+
     #[inline(always)]
     fn deref(&self) -> &T {
         &self.inner().value
@@ -363,7 +368,7 @@ impl<T> Deref<T> for Rc<T> {
 }
 
 #[unsafe_destructor]
-#[experimental = "Drop is experimental."]
+#[stable]
 impl<T> Drop for Rc<T> {
     /// Drops the `Rc<T>`.
     ///
@@ -391,7 +396,8 @@ impl<T> Drop for Rc<T> {
     /// ```
     fn drop(&mut self) {
         unsafe {
-            if !self._ptr.is_null() {
+            let ptr = *self._ptr;
+            if !ptr.is_null() {
                 self.dec_strong();
                 if self.strong() == 0 {
                     ptr::read(&**self); // destroy the contained object
@@ -401,7 +407,7 @@ impl<T> Drop for Rc<T> {
                     self.dec_weak();
 
                     if self.weak() == 0 {
-                        deallocate(self._ptr as *mut u8, size_of::<RcBox<T>>(),
+                        deallocate(ptr as *mut u8, size_of::<RcBox<T>>(),
                                    min_align_of::<RcBox<T>>())
                     }
                 }
@@ -451,7 +457,7 @@ impl<T: Default> Default for Rc<T> {
     }
 }
 
-#[unstable = "PartialEq is unstable."]
+#[stable]
 impl<T: PartialEq> PartialEq for Rc<T> {
     /// Equality for two `Rc<T>`s.
     ///
@@ -486,10 +492,10 @@ impl<T: PartialEq> PartialEq for Rc<T> {
     fn ne(&self, other: &Rc<T>) -> bool { **self != **other }
 }
 
-#[unstable = "Eq is unstable."]
+#[stable]
 impl<T: Eq> Eq for Rc<T> {}
 
-#[unstable = "PartialOrd is unstable."]
+#[stable]
 impl<T: PartialOrd> PartialOrd for Rc<T> {
     /// Partial comparison for two `Rc<T>`s.
     ///
@@ -574,7 +580,7 @@ impl<T: PartialOrd> PartialOrd for Rc<T> {
     fn ge(&self, other: &Rc<T>) -> bool { **self >= **other }
 }
 
-#[unstable = "Ord is unstable."]
+#[stable]
 impl<T: Ord> Ord for Rc<T> {
     /// Comparison for two `Rc<T>`s.
     ///
@@ -594,17 +600,32 @@ impl<T: Ord> Ord for Rc<T> {
 }
 
 // FIXME (#18248) Make `T` `Sized?`
+#[cfg(stage0)]
 impl<S: hash::Writer, T: Hash<S>> Hash<S> for Rc<T> {
     #[inline]
     fn hash(&self, state: &mut S) {
         (**self).hash(state);
     }
 }
+#[cfg(not(stage0))]
+impl<S: hash::Hasher, T: Hash<S>> Hash<S> for Rc<T> {
+    #[inline]
+    fn hash(&self, state: &mut S) {
+        (**self).hash(state);
+    }
+}
 
-#[experimental = "Show is experimental."]
+#[unstable = "Show is experimental."]
 impl<T: fmt::Show> fmt::Show for Rc<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (**self).fmt(f)
+        write!(f, "Rc({:?})", **self)
+    }
+}
+
+#[stable]
+impl<T: fmt::String> fmt::String for Rc<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::String::fmt(&**self, f)
     }
 }
 
@@ -614,16 +635,16 @@ impl<T: fmt::Show> fmt::Show for Rc<T> {
 ///
 /// See the [module level documentation](../index.html) for more.
 #[unsafe_no_drop_flag]
-#[experimental = "Weak pointers may not belong in this module."]
+#[unstable = "Weak pointers may not belong in this module."]
 pub struct Weak<T> {
     // FIXME #12808: strange names to try to avoid interfering with
     // field accesses of the contained type via Deref
-    _ptr: *mut RcBox<T>,
+    _ptr: NonZero<*mut RcBox<T>>,
     _nosend: marker::NoSend,
     _noshare: marker::NoSync
 }
 
-#[experimental = "Weak pointers may not belong in this module."]
+#[unstable = "Weak pointers may not belong in this module."]
 impl<T> Weak<T> {
     /// Upgrades a weak reference to a strong reference.
     ///
@@ -653,7 +674,7 @@ impl<T> Weak<T> {
 }
 
 #[unsafe_destructor]
-#[experimental = "Weak pointers may not belong in this module."]
+#[stable]
 impl<T> Drop for Weak<T> {
     /// Drops the `Weak<T>`.
     ///
@@ -682,12 +703,13 @@ impl<T> Drop for Weak<T> {
     /// ```
     fn drop(&mut self) {
         unsafe {
-            if !self._ptr.is_null() {
+            let ptr = *self._ptr;
+            if !ptr.is_null() {
                 self.dec_weak();
                 // the weak count starts at 1, and will only go to zero if all the strong pointers
                 // have disappeared.
                 if self.weak() == 0 {
-                    deallocate(self._ptr as *mut u8, size_of::<RcBox<T>>(),
+                    deallocate(ptr as *mut u8, size_of::<RcBox<T>>(),
                                min_align_of::<RcBox<T>>())
                 }
             }
@@ -695,7 +717,7 @@ impl<T> Drop for Weak<T> {
     }
 }
 
-#[experimental = "Weak pointers may not belong in this module."]
+#[unstable = "Weak pointers may not belong in this module."]
 impl<T> Clone for Weak<T> {
     /// Makes a clone of the `Weak<T>`.
     ///
@@ -714,6 +736,13 @@ impl<T> Clone for Weak<T> {
     fn clone(&self) -> Weak<T> {
         self.inc_weak();
         Weak { _ptr: self._ptr, _nosend: marker::NoSend, _noshare: marker::NoSync }
+    }
+}
+
+#[unstable = "Show is experimental."]
+impl<T: fmt::Show> fmt::Show for Weak<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "(Weak)")
     }
 }
 
@@ -742,16 +771,16 @@ trait RcBoxPtr<T> {
 
 impl<T> RcBoxPtr<T> for Rc<T> {
     #[inline(always)]
-    fn inner(&self) -> &RcBox<T> { unsafe { &(*self._ptr) } }
+    fn inner(&self) -> &RcBox<T> { unsafe { &(**self._ptr) } }
 }
 
 impl<T> RcBoxPtr<T> for Weak<T> {
     #[inline(always)]
-    fn inner(&self) -> &RcBox<T> { unsafe { &(*self._ptr) } }
+    fn inner(&self) -> &RcBox<T> { unsafe { &(**self._ptr) } }
 }
 
 #[cfg(test)]
-#[allow(experimental)]
+#[allow(unstable)]
 mod tests {
     use super::{Rc, Weak, weak_count, strong_count};
     use std::cell::RefCell;
@@ -949,6 +978,12 @@ mod tests {
 
         assert!(76 == *cow0);
         assert!(cow1_weak.upgrade().is_none());
+    }
+
+    #[test]
+    fn test_show() {
+        let foo = Rc::new(75u);
+        assert!(format!("{:?}", foo) == "Rc(75u)")
     }
 
 }

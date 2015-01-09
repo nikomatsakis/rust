@@ -12,9 +12,9 @@
 
 use std::kinds::marker;
 
-struct B<T>(marker::CovariantType<T>);
+struct B<T>(marker::PhantomData<T>);
 
 fn main() {
-    let foo = B(marker::CovariantType); //~ ERROR unable to infer enough type information
-    let closure = |:| foo;
+    let foo = B(marker::PhantomData);
+    let closure = |:| foo; //~ ERROR unable to infer enough type information
 }

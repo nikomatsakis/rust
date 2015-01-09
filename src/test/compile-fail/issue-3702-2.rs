@@ -8,14 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::num::ToPrimitive;
+
 trait Add {
-    fn to_int(&self) -> int;
-    fn add_dynamic(&self, other: &Add) -> int;
+    fn to_int(&self) -> isize;
+    fn add_dynamic(&self, other: &Add) -> isize;
 }
 
-impl Add for int {
-    fn to_int(&self) -> int { *self }
-    fn add_dynamic(&self, other: &Add) -> int {
+impl Add for isize {
+    fn to_int(&self) -> isize { *self }
+    fn add_dynamic(&self, other: &Add) -> isize {
         self.to_int() + other.to_int() //~ ERROR multiple applicable methods in scope
     }
 }

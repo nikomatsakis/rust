@@ -11,6 +11,8 @@
 //
 // ignore-lexer-test FIXME #15883
 
+#![allow(unknown_features)]
+#![feature(box_syntax)]
 #![feature(unsafe_destructor)]
 
 pub type Task = int;
@@ -22,7 +24,8 @@ pub mod pipes {
     use std::mem::{forget, transmute};
     use std::mem::{replace, swap};
     use std::mem;
-    use std::task;
+    use std::thread::Thread;
+    use std::marker::Send;
 
     pub struct Stuff<T> {
         state: state,
@@ -30,7 +33,7 @@ pub mod pipes {
         payload: Option<T>
     }
 
-    #[deriving(PartialEq, Show)]
+    #[derive(PartialEq, Show)]
     #[repr(int)]
     pub enum state {
         empty,
@@ -44,6 +47,8 @@ pub mod pipes {
         blocked_task: Option<Task>,
         payload: Option<T>
     }
+
+    unsafe impl<T:Send> Send for packet<T> {}
 
     pub fn packet<T:Send>() -> *const packet<T> {
         unsafe {
@@ -113,7 +118,7 @@ pub mod pipes {
             let old_state = swap_state_acq(&mut (*p).state,
                                            blocked);
             match old_state {
-              empty | blocked => { task::deschedule(); }
+              empty | blocked => { Thread::yield_now(); }
               full => {
                 let payload = replace(&mut p.payload, None);
                 return Some(payload.unwrap())
@@ -230,7 +235,12 @@ pub mod pingpong {
     use std::mem;
 
     pub struct ping(::pipes::send_packet<pong>);
+
+    unsafe impl Send for ping {}
+
     pub struct pong(::pipes::send_packet<ping>);
+
+    unsafe impl Send for pong {}
 
     pub fn liberate_ping(p: ping) -> ::pipes::send_packet<pong> {
         unsafe {

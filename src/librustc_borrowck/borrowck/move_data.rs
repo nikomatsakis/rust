@@ -76,7 +76,7 @@ pub struct FlowedMoveData<'a, 'tcx: 'a> {
 }
 
 /// Index into `MoveData.paths`, used like a pointer
-#[deriving(Copy, PartialEq, Eq, PartialOrd, Ord, Show)]
+#[derive(Copy, PartialEq, Eq, PartialOrd, Ord, Show)]
 pub struct MovePathIndex(uint);
 
 impl MovePathIndex {
@@ -96,7 +96,7 @@ static InvalidMovePathIndex: MovePathIndex =
     MovePathIndex(uint::MAX);
 
 /// Index into `MoveData.moves`, used like a pointer
-#[deriving(Copy, PartialEq)]
+#[derive(Copy, PartialEq)]
 pub struct MoveIndex(uint);
 
 impl MoveIndex {
@@ -128,7 +128,7 @@ pub struct MovePath<'tcx> {
     pub next_sibling: MovePathIndex,
 }
 
-#[deriving(Copy, PartialEq, Show)]
+#[derive(Copy, PartialEq, Show)]
 pub enum MoveKind {
     Declared,   // When declared, variables start out "moved".
     MoveExpr,   // Expression or binding that moves a variable
@@ -136,7 +136,7 @@ pub enum MoveKind {
     Captured    // Closure creation that moves a value
 }
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct Move {
     /// Path being moved.
     pub path: MovePathIndex,
@@ -151,7 +151,7 @@ pub struct Move {
     pub next_move: MoveIndex
 }
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct Assignment {
     /// Path being assigned.
     pub path: MovePathIndex,
@@ -163,7 +163,7 @@ pub struct Assignment {
     pub span: Span,
 }
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct VariantMatch {
     /// downcast to the variant.
     pub path: MovePathIndex,
@@ -178,12 +178,12 @@ pub struct VariantMatch {
     pub mode: euv::MatchMode
 }
 
-#[deriving(Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct MoveDataFlowOperator;
 
 pub type MoveDataFlow<'a, 'tcx> = DataFlowContext<'a, 'tcx, MoveDataFlowOperator>;
 
-#[deriving(Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct AssignDataFlowOperator;
 
 pub type AssignDataFlow<'a, 'tcx> = DataFlowContext<'a, 'tcx, AssignDataFlowOperator>;
@@ -311,7 +311,7 @@ impl<'tcx> MoveData<'tcx> {
             }
         };
 
-        debug!("move_path(lp={}, index={})",
+        debug!("move_path(lp={}, index={:?})",
                lp.repr(tcx),
                index);
 
@@ -362,7 +362,7 @@ impl<'tcx> MoveData<'tcx> {
                     lp: Rc<LoanPath<'tcx>>,
                     id: ast::NodeId,
                     kind: MoveKind) {
-        debug!("add_move(lp={}, id={}, kind={})",
+        debug!("add_move(lp={}, id={}, kind={:?})",
                lp.repr(tcx),
                id,
                kind);
@@ -413,12 +413,12 @@ impl<'tcx> MoveData<'tcx> {
         };
 
         if self.is_var_path(path_index) {
-            debug!("add_assignment[var](lp={}, assignment={}, path_index={})",
+            debug!("add_assignment[var](lp={}, assignment={}, path_index={:?})",
                    lp.repr(tcx), self.var_assignments.borrow().len(), path_index);
 
             self.var_assignments.borrow_mut().push(assignment);
         } else {
-            debug!("add_assignment[path](lp={}, path_index={})",
+            debug!("add_assignment[path](lp={}, path_index={:?})",
                    lp.repr(tcx), path_index);
 
             self.path_assignments.borrow_mut().push(assignment);
@@ -521,21 +521,29 @@ impl<'tcx> MoveData<'tcx> {
         return true;
     }
 
-    // FIXME(#19596) unbox `f`
-    fn each_extending_path(&self, index: MovePathIndex, f: |MovePathIndex| -> bool) -> bool {
-        if !f(index) {
+    // FIXME(#19596) This is a workaround, but there should be better way to do this
+    fn each_extending_path_<F>(&self, index: MovePathIndex, f: &mut F) -> bool where
+        F: FnMut(MovePathIndex) -> bool,
+    {
+        if !(*f)(index) {
             return false;
         }
 
         let mut p = self.path_first_child(index);
         while p != InvalidMovePathIndex {
-            if !self.each_extending_path(p, |x| f(x)) {
+            if !self.each_extending_path_(p, f) {
                 return false;
             }
             p = self.path_next_sibling(p);
         }
 
         return true;
+    }
+
+    fn each_extending_path<F>(&self, index: MovePathIndex, mut f: F) -> bool where
+        F: FnMut(MovePathIndex) -> bool,
+    {
+        self.each_extending_path_(index, &mut f)
     }
 
     fn each_applicable_move<F>(&self, index0: MovePathIndex, mut f: F) -> bool where

@@ -8,13 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![experimental]
+#![unstable]
 
-use prelude::*;
+use prelude::v1::*;
 
-use any::{Any, AnyRefExt};
+use any::Any;
 use cell::RefCell;
-use fmt;
 use io::IoResult;
 use rt::{backtrace, unwind};
 use rt::util::{Stderr, Stdio};
@@ -29,10 +28,7 @@ thread_local! {
 
 impl Writer for Stdio {
     fn write(&mut self, bytes: &[u8]) -> IoResult<()> {
-        fn fmt_write<F: fmt::FormatWriter>(f: &mut F, bytes: &[u8]) {
-            let _ = f.write(bytes);
-        }
-        fmt_write(self, bytes);
+        let _ = self.write_bytes(bytes);
         Ok(())
     }
 }
@@ -41,7 +37,7 @@ pub fn on_fail(obj: &(Any+Send), file: &'static str, line: uint) {
     let msg = match obj.downcast_ref::<&'static str>() {
         Some(s) => *s,
         None => match obj.downcast_ref::<String>() {
-            Some(s) => s[],
+            Some(s) => &s[],
             None => "Box<Any>",
         }
     };

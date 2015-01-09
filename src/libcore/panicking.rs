@@ -16,7 +16,7 @@
 //! interface for panicking is:
 //!
 //! ```ignore
-//! fn panic_impl(fmt: &fmt::Arguments, &(&'static str, uint)) -> !;
+//! fn panic_impl(fmt: fmt::Arguments, &(&'static str, uint)) -> !;
 //! ```
 //!
 //! This definition allows for panicking with any general message, but it does not
@@ -31,38 +31,28 @@
 #![allow(dead_code, missing_docs)]
 
 use fmt;
-use intrinsics;
 
 #[cold] #[inline(never)] // this is the slow path, always
 #[lang="panic"]
 pub fn panic(expr_file_line: &(&'static str, &'static str, uint)) -> ! {
     let (expr, file, line) = *expr_file_line;
-    let ref file_line = (file, line);
-    format_args!(|args| -> () {
-        panic_fmt(args, file_line);
-    }, "{}", expr);
-
-    unsafe { intrinsics::abort() }
+    panic_fmt(format_args!("{}", expr), &(file, line))
 }
 
 #[cold] #[inline(never)]
 #[lang="panic_bounds_check"]
 fn panic_bounds_check(file_line: &(&'static str, uint),
                      index: uint, len: uint) -> ! {
-    format_args!(|args| -> () {
-        panic_fmt(args, file_line);
-    }, "index out of bounds: the len is {} but the index is {}", len, index);
-    unsafe { intrinsics::abort() }
+    panic_fmt(format_args!("index out of bounds: the len is {} but the index is {}",
+                           len, index), file_line)
 }
 
 #[cold] #[inline(never)]
-pub fn panic_fmt(fmt: &fmt::Arguments, file_line: &(&'static str, uint)) -> ! {
+pub fn panic_fmt(fmt: fmt::Arguments, file_line: &(&'static str, uint)) -> ! {
     #[allow(improper_ctypes)]
     extern {
         #[lang = "panic_fmt"]
-        fn panic_impl(fmt: &fmt::Arguments, file: &'static str,
-                        line: uint) -> !;
-
+        fn panic_impl(fmt: fmt::Arguments, file: &'static str, line: uint) -> !;
     }
     let (file, line) = *file_line;
     unsafe { panic_impl(fmt, file, line) }

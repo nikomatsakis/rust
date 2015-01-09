@@ -11,14 +11,17 @@
 // ignore-android (FIXME #11419)
 // exec-env:RUST_LOG=info
 
-#![feature(phase)]
+#![allow(unknown_features)]
+#![feature(box_syntax)]
 
-#[phase(plugin, link)]
+#[macro_use]
 extern crate log;
 
 use log::{set_logger, Logger, LogRecord};
+use std::sync::mpsc::channel;
 use std::fmt;
 use std::io::{ChanReader, ChanWriter};
+use std::thread::Thread;
 
 struct MyWriter(ChanWriter);
 
@@ -32,7 +35,7 @@ impl Logger for MyWriter {
 fn main() {
     let (tx, rx) = channel();
     let (mut r, w) = (ChanReader::new(rx), ChanWriter::new(tx));
-    spawn(move|| {
+    let _t = Thread::spawn(move|| {
         set_logger(box MyWriter(w) as Box<Logger+Send>);
         debug!("debug");
         info!("info");

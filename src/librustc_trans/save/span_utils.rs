@@ -21,7 +21,7 @@ use syntax::parse::lexer::{Reader,StringReader};
 use syntax::parse::token;
 use syntax::parse::token::{keywords, Token};
 
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct SpanUtils<'a> {
     pub sess: &'a Session,
     pub err_count: Cell<int>,
@@ -217,7 +217,7 @@ impl<'a> SpanUtils<'a> {
         if bracket_count != 0 {
             let loc = self.sess.codemap().lookup_char_pos(span.lo);
             self.sess.span_bug(span,
-                format!("Mis-counted brackets when breaking path? Parsing '{}' in {}, line {}",
+                &format!("Mis-counted brackets when breaking path? Parsing '{}' in {}, line {}",
                         self.snippet(span), loc.file.name, loc.line)[]);
         }
         if result.is_none() && prev.tok.is_ident() && bracket_count == 0 {
@@ -242,7 +242,7 @@ impl<'a> SpanUtils<'a> {
             if ts.tok == token::Eof {
                 if bracket_count != 0 {
                     let loc = self.sess.codemap().lookup_char_pos(span.lo);
-                    self.sess.span_bug(span, format!(
+                    self.sess.span_bug(span, &format!(
                         "Mis-counted brackets when breaking path? Parsing '{}' in {}, line {}",
                          self.snippet(span), loc.file.name, loc.line)[]);
                 }
@@ -280,9 +280,22 @@ impl<'a> SpanUtils<'a> {
         }
     }
 
+    pub fn sub_span_of_token(&self, span: Span, tok: Token) -> Option<Span> {
+        let mut toks = self.retokenise_span(span);
+        loop {
+            let next = toks.real_token();
+            if next.tok == token::Eof {
+                return None;
+            }
+            if next.tok == tok {
+                return self.make_sub_span(span, Some(next.sp));
+            }
+        }
+    }
+
     pub fn sub_span_after_keyword(&self,
-                              span: Span,
-                              keyword: keywords::Keyword) -> Option<Span> {
+                                  span: Span,
+                                  keyword: keywords::Keyword) -> Option<Span> {
         let mut toks = self.retokenise_span(span);
         loop {
             let ts = toks.real_token();

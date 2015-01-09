@@ -20,19 +20,19 @@ use std::mem;
 #[repr(packed)]
 struct Foo {
     bar: u8,
-    baz: uint
+    baz: usize
 }
 
-#[deriving(Show)]
+#[derive(Show)]
 struct Oof {
     rab: u8,
-    zab: uint
+    zab: usize
 }
 
 fn main() {
     let foo = Foo { bar: 1, baz: 10 };
     unsafe {
         let oof: Oof = mem::transmute(foo);
-        println!("{}", oof);
+        println!("{:?}", oof);
     }
 }

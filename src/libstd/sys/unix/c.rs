@@ -1,4 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014-2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -28,7 +28,8 @@ pub const FIONBIO: libc::c_ulong = 0x8004667e;
 #[cfg(any(all(target_os = "linux",
               any(target_arch = "x86",
                   target_arch = "x86_64",
-                  target_arch = "arm")),
+                  target_arch = "arm",
+                  target_arch = "aarch64")),
           target_os = "android"))]
 pub const FIONBIO: libc::c_ulong = 0x5421;
 #[cfg(all(target_os = "linux",
@@ -43,7 +44,8 @@ pub const FIOCLEX: libc::c_ulong = 0x20006601;
 #[cfg(any(all(target_os = "linux",
               any(target_arch = "x86",
                   target_arch = "x86_64",
-                  target_arch = "arm")),
+                  target_arch = "arm",
+                  target_arch = "aarch64")),
           target_os = "android"))]
 pub const FIOCLEX: libc::c_ulong = 0x5451;
 #[cfg(all(target_os = "linux",
@@ -94,7 +96,7 @@ mod select {
 
     #[repr(C)]
     pub struct fd_set {
-        fds_bits: [i32, ..(FD_SETSIZE / 32)]
+        fds_bits: [i32; (FD_SETSIZE / 32)]
     }
 
     pub fn fd_set(set: &mut fd_set, fd: i32) {
@@ -115,7 +117,7 @@ mod select {
     #[repr(C)]
     pub struct fd_set {
         // FIXME: shouldn't this be a c_ulong?
-        fds_bits: [libc::uintptr_t, ..(FD_SETSIZE / uint::BITS)]
+        fds_bits: [libc::uintptr_t; (FD_SETSIZE / uint::BITS)]
     }
 
     pub fn fd_set(set: &mut fd_set, fd: i32) {
@@ -127,7 +129,8 @@ mod select {
 #[cfg(any(all(target_os = "linux",
               any(target_arch = "x86",
                   target_arch = "x86_64",
-                  target_arch = "arm")),
+                  target_arch = "arm",
+                  target_arch = "aarch64")),
           target_os = "android"))]
 mod signal {
     use libc;
@@ -162,16 +165,19 @@ mod signal {
         sa_restorer: *mut libc::c_void,
     }
 
+    unsafe impl ::marker::Send for sigaction { }
+    unsafe impl ::marker::Sync for sigaction { }
+
     #[repr(C)]
-    #[cfg(target_word_size = "32")]
+    #[cfg(any(all(stage0, target_word_size = "32"), all(not(stage0), target_pointer_width = "32")))]
     pub struct sigset_t {
-        __val: [libc::c_ulong, ..32],
+        __val: [libc::c_ulong; 32],
     }
 
     #[repr(C)]
-    #[cfg(target_word_size = "64")]
+    #[cfg(any(all(stage0, target_word_size = "64"), all(not(stage0), target_pointer_width = "64")))]
     pub struct sigset_t {
-        __val: [libc::c_ulong, ..16],
+        __val: [libc::c_ulong; 16],
     }
 }
 
@@ -208,12 +214,15 @@ mod signal {
         pub sa_handler: extern fn(libc::c_int),
         pub sa_mask: sigset_t,
         sa_restorer: *mut libc::c_void,
-        sa_resv: [libc::c_int, ..1],
+        sa_resv: [libc::c_int; 1],
     }
+
+    unsafe impl ::marker::Send for sigaction { }
+    unsafe impl ::marker::Sync for sigaction { }
 
     #[repr(C)]
     pub struct sigset_t {
-        __val: [libc::c_ulong, ..32],
+        __val: [libc::c_ulong; 32],
     }
 }
 
@@ -238,7 +247,7 @@ mod signal {
     #[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
     #[repr(C)]
     pub struct sigset_t {
-        bits: [u32, ..4],
+        bits: [u32; 4],
     }
 
     // This structure has more fields, but we're not all that interested in

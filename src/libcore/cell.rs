@@ -155,10 +155,12 @@
 // FIXME: Can't be shared between threads. Dynamic borrows
 // FIXME: Relationship to Atomic types and RWLock
 
+#![stable]
+
 use clone::Clone;
 use cmp::PartialEq;
 use default::Default;
-use kinds::{marker, Copy};
+use marker::{Copy, Send};
 use ops::{Deref, DerefMut, Drop};
 use option::Option;
 use option::Option::{None, Some};
@@ -167,7 +169,6 @@ use option::Option::{None, Some};
 #[stable]
 pub struct Cell<T> {
     value: UnsafeCell<T>,
-    noshare: marker::NoSync,
 }
 
 impl<T:Copy> Cell<T> {
@@ -176,7 +177,6 @@ impl<T:Copy> Cell<T> {
     pub fn new(value: T) -> Cell<T> {
         Cell {
             value: UnsafeCell::new(value),
-            noshare: marker::NoSync,
         }
     }
 
@@ -202,11 +202,14 @@ impl<T:Copy> Cell<T> {
     ///
     /// This function is `unsafe` because `UnsafeCell`'s field is public.
     #[inline]
-    #[experimental]
+    #[unstable]
     pub unsafe fn as_unsafe_cell<'a>(&'a self) -> &'a UnsafeCell<T> {
         &self.value
     }
 }
+
+#[stable]
+unsafe impl<T> Send for Cell<T> where T: Send {}
 
 #[stable]
 impl<T:Copy> Clone for Cell<T> {
@@ -223,7 +226,7 @@ impl<T:Default + Copy> Default for Cell<T> {
     }
 }
 
-#[unstable = "waiting for `PartialEq` trait to become stable"]
+#[stable]
 impl<T:PartialEq + Copy> PartialEq for Cell<T> {
     fn eq(&self, other: &Cell<T>) -> bool {
         self.get() == other.get()
@@ -235,7 +238,6 @@ impl<T:PartialEq + Copy> PartialEq for Cell<T> {
 pub struct RefCell<T> {
     value: UnsafeCell<T>,
     borrow: Cell<BorrowFlag>,
-    noshare: marker::NoSync,
 }
 
 // Values [1, MAX-1] represent the number of `Ref` active
@@ -251,7 +253,6 @@ impl<T> RefCell<T> {
         RefCell {
             value: UnsafeCell::new(value),
             borrow: Cell::new(UNUSED),
-            noshare: marker::NoSync,
         }
     }
 
@@ -264,10 +265,6 @@ impl<T> RefCell<T> {
         debug_assert!(self.borrow.get() == UNUSED);
         unsafe { self.value.into_inner() }
     }
-
-    /// Deprecated, use into_inner() instead
-    #[deprecated = "renamed to into_inner()"]
-    pub fn unwrap(self) -> T { self.into_inner() }
 
     /// Attempts to immutably borrow the wrapped value.
     ///
@@ -335,11 +332,14 @@ impl<T> RefCell<T> {
     ///
     /// This function is `unsafe` because `UnsafeCell`'s field is public.
     #[inline]
-    #[experimental]
+    #[unstable]
     pub unsafe fn as_unsafe_cell<'a>(&'a self) -> &'a UnsafeCell<T> {
         &self.value
     }
 }
+
+#[stable]
+unsafe impl<T> Send for RefCell<T> where T: Send {}
 
 #[stable]
 impl<T: Clone> Clone for RefCell<T> {
@@ -356,7 +356,7 @@ impl<T:Default> Default for RefCell<T> {
     }
 }
 
-#[unstable = "waiting for `PartialEq` to become stable"]
+#[stable]
 impl<T: PartialEq> PartialEq for RefCell<T> {
     fn eq(&self, other: &RefCell<T>) -> bool {
         *self.borrow() == *other.borrow()
@@ -408,8 +408,10 @@ pub struct Ref<'b, T:'b> {
     _borrow: BorrowRef<'b>,
 }
 
-#[unstable = "waiting for `Deref` to become stable"]
-impl<'b, T> Deref<T> for Ref<'b, T> {
+#[stable]
+impl<'b, T> Deref for Ref<'b, T> {
+    type Target = T;
+
     #[inline]
     fn deref<'a>(&'a self) -> &'a T {
         self._value
@@ -422,7 +424,7 @@ impl<'b, T> Deref<T> for Ref<'b, T> {
 ///
 /// A `Clone` implementation would interfere with the widespread
 /// use of `r.borrow().clone()` to clone the contents of a `RefCell`.
-#[experimental = "likely to be moved to a method, pending language changes"]
+#[unstable = "likely to be moved to a method, pending language changes"]
 pub fn clone_ref<'b, T:Clone>(orig: &Ref<'b, T>) -> Ref<'b, T> {
     Ref {
         _value: orig._value,
@@ -464,16 +466,18 @@ pub struct RefMut<'b, T:'b> {
     _borrow: BorrowRefMut<'b>,
 }
 
-#[unstable = "waiting for `Deref` to become stable"]
-impl<'b, T> Deref<T> for RefMut<'b, T> {
+#[stable]
+impl<'b, T> Deref for RefMut<'b, T> {
+    type Target = T;
+
     #[inline]
     fn deref<'a>(&'a self) -> &'a T {
         self._value
     }
 }
 
-#[unstable = "waiting for `DerefMut` to become stable"]
-impl<'b, T> DerefMut<T> for RefMut<'b, T> {
+#[stable]
+impl<'b, T> DerefMut for RefMut<'b, T> {
     #[inline]
     fn deref_mut<'a>(&'a mut self) -> &'a mut T {
         self._value
@@ -505,7 +509,7 @@ impl<'b, T> DerefMut<T> for RefMut<'b, T> {
 ///
 /// ```rust
 /// use std::cell::UnsafeCell;
-/// use std::kinds::marker;
+/// use std::marker;
 ///
 /// struct NotThreadSafe<T> {
 ///     value: UnsafeCell<T>,
@@ -550,8 +554,4 @@ impl<T> UnsafeCell<T> {
     #[inline]
     #[stable]
     pub unsafe fn into_inner(self) -> T { self.value }
-
-    /// Deprecated, use into_inner() instead
-    #[deprecated = "renamed to into_inner()"]
-    pub unsafe fn unwrap(self) -> T { self.into_inner() }
 }

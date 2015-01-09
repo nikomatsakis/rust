@@ -38,10 +38,9 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 // OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#![feature(slicing_syntax)]
-
 use std::cmp::min;
 use std::io::{stdout, IoResult};
+use std::iter::repeat;
 use std::os;
 use std::slice::bytes::copy_memory;
 
@@ -123,13 +122,13 @@ impl<'a, W: Writer> RepeatFasta<'a, W> {
 
     fn make(&mut self, n: uint) -> IoResult<()> {
         let alu_len = self.alu.len();
-        let mut buf = Vec::from_elem(alu_len + LINE_LEN, 0u8);
+        let mut buf = repeat(0u8).take(alu_len + LINE_LEN).collect::<Vec<_>>();
         let alu: &[u8] = self.alu.as_bytes();
 
         copy_memory(buf.as_mut_slice(), alu);
         let buf_len = buf.len();
-        copy_memory(buf[mut alu_len..buf_len],
-                    alu[..LINE_LEN]);
+        copy_memory(buf.slice_mut(alu_len, buf_len),
+                    &alu[0..LINE_LEN]);
 
         let mut pos = 0;
         let mut bytes;
@@ -205,7 +204,7 @@ impl<'a, W: Writer> RandomFasta<'a, W> {
         for i in range(0u, chars_left) {
             buf[i] = self.nextc();
         }
-        self.out.write(buf[..chars_left])
+        self.out.write(&buf[0..chars_left])
     }
 }
 
@@ -213,7 +212,7 @@ fn main() {
     let args = os::args();
     let args = args.as_slice();
     let n = if args.len() > 1 {
-        from_str::<uint>(args[1].as_slice()).unwrap()
+        args[1].parse::<uint>().unwrap()
     } else {
         5
     };

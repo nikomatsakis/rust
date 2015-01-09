@@ -10,7 +10,7 @@
 
 // Attempt to change the mutability as well as unsizing.
 
-struct Fat<Sized? T> {
+struct Fat<T: ?Sized> {
     ptr: T
 }
 
@@ -21,8 +21,8 @@ impl Bar for Foo {}
 pub fn main() {
     // With a vec of ints.
     let f1 = Fat { ptr: [1, 2, 3] };
-    let f2: &Fat<[int; 3]> = &f1;
-    let f3: &mut Fat<[int]> = f2; //~ ERROR mismatched types
+    let f2: &Fat<[isize; 3]> = &f1;
+    let f3: &mut Fat<[isize]> = f2; //~ ERROR mismatched types
 
     // With a trait.
     let f1 = Fat { ptr: Foo };

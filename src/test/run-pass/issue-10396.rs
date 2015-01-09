@@ -8,14 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[deriving(Show)]
+#[derive(Show)]
 enum Foo<'s> {
     V(&'s str)
 }
 
 fn f(arr: &[&Foo]) {
     for &f in arr.iter() {
-        println!("{}", f);
+        println!("{:?}", f);
     }
 }
 

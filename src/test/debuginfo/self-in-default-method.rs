@@ -112,12 +112,14 @@
 // lldb-check:[...]$14 = -10
 // lldb-command:continue
 
+#![feature(box_syntax)]
+#![omit_gdb_pretty_printer_section]
 
 struct Struct {
     x: int
 }
 
-trait Trait {
+trait Trait : Sized {
     fn self_by_ref(&self, arg1: int, arg2: int) -> int {
         zzz(); // #break
         arg1 + arg2

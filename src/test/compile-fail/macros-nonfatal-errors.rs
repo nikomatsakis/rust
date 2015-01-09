@@ -14,16 +14,13 @@
 #![feature(asm)]
 #![feature(trace_macros, concat_idents)]
 
-#[deriving(Default, //~ ERROR
+#[derive(Default, //~ ERROR
            Rand, //~ ERROR
            Zero)] //~ ERROR
 enum CantDeriveThose {}
 
 fn main() {
     doesnt_exist!(); //~ ERROR
-
-    bytes!(invalid); //~ ERROR non-literal in bytes!
-    //~^ WARN `bytes!` is deprecated
 
     asm!(invalid); //~ ERROR
 
@@ -43,8 +40,8 @@ fn main() {
 
     include_str!(invalid); //~ ERROR
     include_str!("i'd be quite surprised if a file with this name existed"); //~ ERROR
-    include_bin!(invalid); //~ ERROR
-    include_bin!("i'd be quite surprised if a file with this name existed"); //~ ERROR
+    include_bytes!(invalid); //~ ERROR
+    include_bytes!("i'd be quite surprised if a file with this name existed"); //~ ERROR
 
     trace_macros!(invalid); //~ ERROR
 }

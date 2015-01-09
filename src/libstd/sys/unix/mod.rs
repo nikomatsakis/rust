@@ -15,12 +15,14 @@
 #![allow(unused_unsafe)]
 #![allow(unused_mut)]
 
-extern crate libc;
+use prelude::v1::*;
 
-use num;
+use ffi;
+use io::{self, IoResult, IoError};
+use libc;
 use num::{Int, SignedInt};
-use prelude::*;
-use io::{mod, IoResult, IoError};
+use num;
+use str;
 use sys_common::mkerr_libc;
 
 macro_rules! helper_init { (static $name:ident: Helper<$m:ty>) => (
@@ -56,6 +58,7 @@ pub mod udp;
 
 pub mod addrinfo {
     pub use sys_common::net::get_host_addresses;
+    pub use sys_common::net::get_address_name;
 }
 
 // FIXME: move these to c module
@@ -77,11 +80,10 @@ extern "system" {
 }
 
 pub fn last_gai_error(s: libc::c_int) -> IoError {
-    use c_str::CString;
 
     let mut err = decode_error(s);
     err.detail = Some(unsafe {
-        CString::new(gai_strerror(s), false).as_str().unwrap().to_string()
+        str::from_utf8(ffi::c_str_to_bytes(&gai_strerror(s))).unwrap().to_string()
     });
     err
 }
@@ -109,6 +111,8 @@ pub fn decode_error(errno: i32) -> IoError {
              "file descriptor is not a TTY"),
         libc::ETIMEDOUT => (io::TimedOut, "operation timed out"),
         libc::ECANCELED => (io::TimedOut, "operation aborted"),
+        libc::consts::os::posix88::EEXIST =>
+            (io::PathAlreadyExists, "path already exists"),
 
         // These two constants can have the same value on some systems,
         // but different values on others, so we can't use a match

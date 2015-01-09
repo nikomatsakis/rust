@@ -12,7 +12,7 @@
 
 use std::cell::Cell;
 
-#[deriving(Show)]
+#[derive(Show)]
 struct r<'a> {
     i: &'a Cell<int>,
 }
@@ -37,7 +37,7 @@ pub fn main() {
         let a = r(i);
         let b = (a, 10i);
         let (c, _d) = b;
-        println!("{}", c);
+        println!("{:?}", c);
     }
     assert_eq!(i.get(), 1);
 }

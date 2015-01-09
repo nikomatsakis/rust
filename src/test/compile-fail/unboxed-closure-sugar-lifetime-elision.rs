@@ -20,18 +20,15 @@ trait Foo<T,U> {
     fn dummy(&self, t: T, u: U);
 }
 
-trait Eq<Sized? X> for Sized?
-    : ::std::kinds::marker::PhantomGetter<(Self,X)>
-{ }
-
-impl<Sized? X> Eq<X> for X { }
-fn eq<Sized? A,Sized? B:Eq<A>>() { }
+trait Eq<X: ?Sized> : marker::PhantomSetter<(Self, X)> { }
+impl<X: ?Sized> Eq<X> for X { }
+fn eq<A: ?Sized,B: ?Sized +Eq<A>>() { }
 
 fn main() {
-    eq::< for<'a> Foo<(&'a int,), &'a int>,
-          Foo(&int) -> &int                                   >();
-    eq::< for<'a> Foo<(&'a int,), (&'a int, &'a int)>,
-          Foo(&int) -> (&int, &int)                           >();
+    eq::< for<'a> Foo<(&'a isize,), &'a isize>,
+          Foo(&isize) -> &isize                                   >();
+    eq::< for<'a> Foo<(&'a isize,), (&'a isize, &'a isize)>,
+          Foo(&isize) -> (&isize, &isize)                           >();
 
-    let _: Foo(&int, &uint) -> &uint; //~ ERROR missing lifetime specifier
+    let _: Foo(&isize, &usize) -> &usize; //~ ERROR missing lifetime specifier
 }

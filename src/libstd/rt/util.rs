@@ -10,17 +10,16 @@
 //
 // ignore-lexer-test FIXME #15677
 
-use prelude::*;
+use prelude::v1::*;
 
 use cmp;
 use fmt;
 use intrinsics;
-use libc::uintptr_t;
-use libc;
+use libc::{self, uintptr_t};
 use os;
 use slice;
 use str;
-use sync::atomic;
+use sync::atomic::{self, Ordering};
 
 /// Dynamically inquire about whether we're running under V.
 /// You should usually not use this unless your test definitely
@@ -47,8 +46,8 @@ pub fn limit_thread_creation_due_to_osx_and_valgrind() -> bool {
 }
 
 pub fn min_stack() -> uint {
-    static MIN: atomic::AtomicUint = atomic::INIT_ATOMIC_UINT;
-    match MIN.load(atomic::SeqCst) {
+    static MIN: atomic::AtomicUint = atomic::ATOMIC_UINT_INIT;
+    match MIN.load(Ordering::SeqCst) {
         0 => {}
         n => return n - 1,
     }
@@ -56,7 +55,7 @@ pub fn min_stack() -> uint {
     let amt = amt.unwrap_or(2 * 1024 * 1024);
     // 0 is our sentinel value, so ensure that we'll never see 0 after
     // initialization has run
-    MIN.store(amt + 1, atomic::SeqCst);
+    MIN.store(amt + 1, Ordering::SeqCst);
     return amt;
 }
 
@@ -96,8 +95,8 @@ pub const Stdout: Stdio = Stdio(libc::STDOUT_FILENO);
 #[allow(non_upper_case_globals)]
 pub const Stderr: Stdio = Stdio(libc::STDERR_FILENO);
 
-impl fmt::FormatWriter for Stdio {
-    fn write(&mut self, data: &[u8]) -> fmt::Result {
+impl Stdio {
+    pub fn write_bytes(&mut self, data: &[u8]) {
         #[cfg(unix)]
         type WriteLen = libc::size_t;
         #[cfg(windows)]
@@ -108,26 +107,31 @@ impl fmt::FormatWriter for Stdio {
                         data.as_ptr() as *const libc::c_void,
                         data.len() as WriteLen);
         }
+    }
+}
+
+impl fmt::Writer for Stdio {
+    fn write_str(&mut self, data: &str) -> fmt::Result {
+        self.write_bytes(data.as_bytes());
         Ok(()) // yes, we're lying
     }
 }
 
-pub fn dumb_print(args: &fmt::Arguments) {
-    let mut w = Stderr;
-    let _ = write!(&mut w, "{}", args);
+pub fn dumb_print(args: fmt::Arguments) {
+    let _ = Stderr.write_fmt(args);
 }
 
-pub fn abort(args: &fmt::Arguments) -> ! {
-    use fmt::FormatWriter;
+pub fn abort(args: fmt::Arguments) -> ! {
+    use fmt::Writer;
 
     struct BufWriter<'a> {
         buf: &'a mut [u8],
         pos: uint,
     }
-    impl<'a> FormatWriter for BufWriter<'a> {
-        fn write(&mut self, bytes: &[u8]) -> fmt::Result {
-            let left = self.buf[mut self.pos..];
-            let to_write = bytes[..cmp::min(bytes.len(), left.len())];
+    impl<'a> fmt::Writer for BufWriter<'a> {
+        fn write_str(&mut self, bytes: &str) -> fmt::Result {
+            let left = self.buf.slice_from_mut(self.pos);
+            let to_write = &bytes.as_bytes()[0..cmp::min(bytes.len(), left.len())];
             slice::bytes::copy_memory(left, to_write);
             self.pos += to_write.len();
             Ok(())
@@ -135,10 +139,10 @@ pub fn abort(args: &fmt::Arguments) -> ! {
     }
 
     // Convert the arguments into a stack-allocated string
-    let mut msg = [0u8, ..512];
+    let mut msg = [0u8; 512];
     let mut w = BufWriter { buf: &mut msg, pos: 0 };
     let _ = write!(&mut w, "{}", args);
-    let msg = str::from_utf8(w.buf[mut ..w.pos]).unwrap_or("aborted");
+    let msg = str::from_utf8(&w.buf[0..w.pos]).unwrap_or("aborted");
     let msg = if msg.is_empty() {"aborted"} else {msg};
 
     // Give some context to the message

@@ -15,7 +15,7 @@
 #![allow(non_camel_case_types)]
 
 use libc;
-use prelude::*;
+use prelude::v1::*;
 
 pub const WSADESCRIPTION_LEN: uint = 256;
 pub const WSASYS_STATUS_LEN: uint = 128;
@@ -43,8 +43,8 @@ pub const WSA_WAIT_FAILED: libc::DWORD = libc::consts::os::extra::WAIT_FAILED;
 pub struct WSADATA {
     pub wVersion: libc::WORD,
     pub wHighVersion: libc::WORD,
-    pub szDescription: [u8, ..WSADESCRIPTION_LEN + 1],
-    pub szSystemStatus: [u8, ..WSASYS_STATUS_LEN + 1],
+    pub szDescription: [u8; WSADESCRIPTION_LEN + 1],
+    pub szSystemStatus: [u8; WSASYS_STATUS_LEN + 1],
     pub iMaxSockets: u16,
     pub iMaxUdpDg: u16,
     pub lpVendorInfo: *mut u8,
@@ -57,8 +57,8 @@ pub struct WSADATA {
     pub iMaxSockets: u16,
     pub iMaxUdpDg: u16,
     pub lpVendorInfo: *mut u8,
-    pub szDescription: [u8, ..WSADESCRIPTION_LEN + 1],
-    pub szSystemStatus: [u8, ..WSASYS_STATUS_LEN + 1],
+    pub szDescription: [u8; WSADESCRIPTION_LEN + 1],
+    pub szSystemStatus: [u8; WSASYS_STATUS_LEN + 1],
 }
 
 pub type LPWSADATA = *mut WSADATA;
@@ -66,7 +66,7 @@ pub type LPWSADATA = *mut WSADATA;
 #[repr(C)]
 pub struct WSANETWORKEVENTS {
     pub lNetworkEvents: libc::c_long,
-    pub iErrorCode: [libc::c_int, ..FD_MAX_EVENTS],
+    pub iErrorCode: [libc::c_int; FD_MAX_EVENTS],
 }
 
 pub type LPWSANETWORKEVENTS = *mut WSANETWORKEVENTS;
@@ -76,13 +76,39 @@ pub type WSAEVENT = libc::HANDLE;
 #[repr(C)]
 pub struct fd_set {
     fd_count: libc::c_uint,
-    fd_array: [libc::SOCKET, ..FD_SETSIZE],
+    fd_array: [libc::SOCKET; FD_SETSIZE],
 }
 
 pub fn fd_set(set: &mut fd_set, s: libc::SOCKET) {
     set.fd_array[set.fd_count as uint] = s;
     set.fd_count += 1;
 }
+
+pub type SHORT = libc::c_short;
+
+#[repr(C)]
+pub struct COORD {
+    pub X: SHORT,
+    pub Y: SHORT,
+}
+
+#[repr(C)]
+pub struct SMALL_RECT {
+    pub Left: SHORT,
+    pub Top: SHORT,
+    pub Right: SHORT,
+    pub Bottom: SHORT,
+}
+
+#[repr(C)]
+pub struct CONSOLE_SCREEN_BUFFER_INFO {
+    pub dwSize: COORD,
+    pub dwCursorPosition: COORD,
+    pub wAttributes: libc::WORD,
+    pub srWindow: SMALL_RECT,
+    pub dwMaximumWindowSize: COORD,
+}
+pub type PCONSOLE_SCREEN_BUFFER_INFO = *mut CONSOLE_SCREEN_BUFFER_INFO;
 
 #[link(name = "ws2_32")]
 extern "system" {
@@ -131,9 +157,9 @@ extern "system" {
 
 pub mod compat {
     use intrinsics::{atomic_store_relaxed, transmute};
-    use iter::IteratorExt;
     use libc::types::os::arch::extra::{LPCWSTR, HMODULE, LPCSTR, LPVOID};
-    use prelude::*;
+    use prelude::v1::*;
+    use ffi::CString;
 
     extern "system" {
         fn GetModuleHandleW(lpModuleName: LPCWSTR) -> HMODULE;
@@ -147,14 +173,13 @@ pub mod compat {
     unsafe fn store_func(ptr: *mut uint, module: &str, symbol: &str, fallback: uint) {
         let mut module: Vec<u16> = module.utf16_units().collect();
         module.push(0);
-        symbol.with_c_str(|symbol| {
-            let handle = GetModuleHandleW(module.as_ptr());
-            let func: uint = transmute(GetProcAddress(handle, symbol));
-            atomic_store_relaxed(ptr, if func == 0 {
-                fallback
-            } else {
-                func
-            })
+        let symbol = CString::from_slice(symbol.as_bytes());
+        let handle = GetModuleHandleW(module.as_ptr());
+        let func: uint = transmute(GetProcAddress(handle, symbol.as_ptr()));
+        atomic_store_relaxed(ptr, if func == 0 {
+            fallback
+        } else {
+            func
         })
     }
 
@@ -171,7 +196,7 @@ pub mod compat {
     /// they are used to be passed to the real function if available.
     macro_rules! compat_fn {
         ($module:ident::$symbol:ident($($argname:ident: $argtype:ty),*)
-                                      -> $rettype:ty $fallback:block) => (
+                                      -> $rettype:ty { $fallback:expr }) => (
             #[inline(always)]
             pub unsafe fn $symbol($($argname: $argtype),*) -> $rettype {
                 static mut ptr: extern "system" fn($($argname: $argtype),*) -> $rettype = thunk;
@@ -186,14 +211,11 @@ pub mod compat {
                     }
                 }
 
-                extern "system" fn fallback($($argname: $argtype),*) -> $rettype $fallback
+                extern "system" fn fallback($($argname: $argtype),*)
+                                            -> $rettype { $fallback }
 
                 ::intrinsics::atomic_load_relaxed(&ptr)($($argname),*)
             }
-        );
-
-        ($module:ident::$symbol:ident($($argname:ident: $argtype:ty),*) $fallback:block) => (
-            compat_fn!($module::$symbol($($argname: $argtype),*) -> () $fallback)
         )
     }
 
@@ -211,20 +233,22 @@ pub mod compat {
             fn SetLastError(dwErrCode: DWORD);
         }
 
-        compat_fn! { kernel32::CreateSymbolicLinkW(_lpSymlinkFileName: LPCWSTR,
-                                                 _lpTargetFileName: LPCWSTR,
-                                                 _dwFlags: DWORD) -> BOOLEAN {
-            unsafe { SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD); }
-            0
-        } }
+        compat_fn! {
+            kernel32::CreateSymbolicLinkW(_lpSymlinkFileName: LPCWSTR,
+                                          _lpTargetFileName: LPCWSTR,
+                                          _dwFlags: DWORD) -> BOOLEAN {
+                unsafe { SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD); 0 }
+            }
+        }
 
-        compat_fn! { kernel32::GetFinalPathNameByHandleW(_hFile: HANDLE,
-                                                       _lpszFilePath: LPCWSTR,
-                                                       _cchFilePath: DWORD,
-                                                       _dwFlags: DWORD) -> DWORD {
-            unsafe { SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD); }
-            0
-        } }
+        compat_fn! {
+            kernel32::GetFinalPathNameByHandleW(_hFile: HANDLE,
+                                                _lpszFilePath: LPCWSTR,
+                                                _cchFilePath: DWORD,
+                                                _dwFlags: DWORD) -> DWORD {
+                unsafe { SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD); 0 }
+            }
+        }
     }
 }
 
@@ -247,4 +271,8 @@ extern "system" {
 
     pub fn SetConsoleMode(hConsoleHandle: libc::HANDLE,
                           lpMode: libc::DWORD) -> libc::BOOL;
+    pub fn GetConsoleScreenBufferInfo(
+        hConsoleOutput: libc::HANDLE,
+        lpConsoleScreenBufferInfo: PCONSOLE_SCREEN_BUFFER_INFO,
+    ) -> libc::BOOL;
 }

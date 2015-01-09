@@ -20,36 +20,33 @@ trait Foo<T,U> {
     fn dummy(&self, t: T, u: U);
 }
 
-trait Eq<Sized? X> for Sized?
-    : ::std::kinds::marker::PhantomGetter<(Self,X)>
-{ }
-
-impl<Sized? X> Eq<X> for X { }
-fn eq<Sized? A,Sized? B:Eq<A>>() { }
+trait Eq<X: ?Sized> : marker::PhantomSetter<(Self,X)> { }
+impl<X: ?Sized> Eq<X> for X { }
+fn eq<A: ?Sized,B: ?Sized +Eq<A>>() { }
 
 fn test<'a,'b>() {
     // No errors expected:
     eq::< Foo<(),()>,                   Foo()                         >();
-    eq::< Foo<(int,),()>,               Foo(int)                      >();
-    eq::< Foo<(int,uint),()>,           Foo(int,uint)                 >();
-    eq::< Foo<(int,uint),uint>,         Foo(int,uint) -> uint         >();
-    eq::< Foo<(&'a int,&'b uint),uint>, Foo(&'a int,&'b uint) -> uint >();
+    eq::< Foo<(isize,),()>,               Foo(isize)                      >();
+    eq::< Foo<(isize,usize),()>,           Foo(isize,usize)                 >();
+    eq::< Foo<(isize,usize),usize>,         Foo(isize,usize) -> usize         >();
+    eq::< Foo<(&'a isize,&'b usize),usize>, Foo(&'a isize,&'b usize) -> usize >();
 
     // Test that anonymous regions in `()` form are equivalent
     // to fresh bound regions, and that we can intermingle
     // named and anonymous as we choose:
-    eq::< for<'x,'y> Foo<(&'x int,&'y uint),uint>,
-          for<'x,'y> Foo(&'x int,&'y uint) -> uint            >();
-    eq::< for<'x,'y> Foo<(&'x int,&'y uint),uint>,
-          for<'x> Foo(&'x int,&uint) -> uint                  >();
-    eq::< for<'x,'y> Foo<(&'x int,&'y uint),uint>,
-          for<'y> Foo(&int,&'y uint) -> uint                  >();
-    eq::< for<'x,'y> Foo<(&'x int,&'y uint),uint>,
-          Foo(&int,&uint) -> uint                             >();
+    eq::< for<'x,'y> Foo<(&'x isize,&'y usize),usize>,
+          for<'x,'y> Foo(&'x isize,&'y usize) -> usize            >();
+    eq::< for<'x,'y> Foo<(&'x isize,&'y usize),usize>,
+          for<'x> Foo(&'x isize,&usize) -> usize                  >();
+    eq::< for<'x,'y> Foo<(&'x isize,&'y usize),usize>,
+          for<'y> Foo(&isize,&'y usize) -> usize                  >();
+    eq::< for<'x,'y> Foo<(&'x isize,&'y usize),usize>,
+          Foo(&isize,&usize) -> usize                             >();
 
     // lifetime elision
-    eq::< for<'x> Foo<(&'x int,), &'x int>,
-          Foo(&int) -> &int                                   >();
+    eq::< for<'x> Foo<(&'x isize,), &'x isize>,
+          Foo(&isize) -> &isize                                   >();
 
     // Errors expected:
     eq::< Foo<(),()>,                   Foo(char)                     >();

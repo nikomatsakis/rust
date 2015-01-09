@@ -11,7 +11,7 @@ use core::any::*;
 use test::Bencher;
 use test;
 
-#[deriving(PartialEq, Show)]
+#[derive(PartialEq, Show)]
 struct Test;
 
 static TEST: &'static str = "Test";
@@ -56,12 +56,12 @@ fn any_downcast_ref() {
 
     match a.downcast_ref::<uint>() {
         Some(&5) => {}
-        x => panic!("Unexpected value {}", x)
+        x => panic!("Unexpected value {:?}", x)
     }
 
     match a.downcast_ref::<Test>() {
         None => {}
-        x => panic!("Unexpected value {}", x)
+        x => panic!("Unexpected value {:?}", x)
     }
 }
 
@@ -79,7 +79,7 @@ fn any_downcast_mut() {
             assert_eq!(*x, 5u);
             *x = 612;
         }
-        x => panic!("Unexpected value {}", x)
+        x => panic!("Unexpected value {:?}", x)
     }
 
     match b_r.downcast_mut::<uint>() {
@@ -87,36 +87,36 @@ fn any_downcast_mut() {
             assert_eq!(*x, 7u);
             *x = 413;
         }
-        x => panic!("Unexpected value {}", x)
+        x => panic!("Unexpected value {:?}", x)
     }
 
     match a_r.downcast_mut::<Test>() {
         None => (),
-        x => panic!("Unexpected value {}", x)
+        x => panic!("Unexpected value {:?}", x)
     }
 
     match b_r.downcast_mut::<Test>() {
         None => (),
-        x => panic!("Unexpected value {}", x)
+        x => panic!("Unexpected value {:?}", x)
     }
 
     match a_r.downcast_mut::<uint>() {
-        Some(&612) => {}
-        x => panic!("Unexpected value {}", x)
+        Some(&mut 612) => {}
+        x => panic!("Unexpected value {:?}", x)
     }
 
     match b_r.downcast_mut::<uint>() {
-        Some(&413) => {}
-        x => panic!("Unexpected value {}", x)
+        Some(&mut 413) => {}
+        x => panic!("Unexpected value {:?}", x)
     }
 }
 
 #[test]
 fn any_fixed_vec() {
-    let test = [0u, ..8];
+    let test = [0u; 8];
     let test = &test as &Any;
-    assert!(test.is::<[uint, ..8]>());
-    assert!(!test.is::<[uint, ..10]>());
+    assert!(test.is::<[uint; 8]>());
+    assert!(!test.is::<[uint; 10]>());
 }
 
 

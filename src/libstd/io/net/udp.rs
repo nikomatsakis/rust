@@ -17,10 +17,8 @@
 
 use clone::Clone;
 use io::net::ip::{SocketAddr, IpAddr, ToSocketAddr};
-use io::{Reader, Writer, IoResult};
-use ops::FnOnce;
+use io::IoResult;
 use option::Option;
-use result::Result::{Ok, Err};
 use sys::udp::UdpSocket as UdpSocketImp;
 use sys_common;
 
@@ -45,11 +43,11 @@ use sys_common;
 ///         Err(e) => panic!("couldn't bind socket: {}", e),
 ///     };
 ///
-///     let mut buf = [0, ..10];
+///     let mut buf = [0; 10];
 ///     match socket.recv_from(&mut buf) {
 ///         Ok((amt, src)) => {
 ///             // Send a reply to the socket we received data from
-///             let buf = buf[mut ..amt];
+///             let buf = buf.slice_to_mut(amt);
 ///             buf.reverse();
 ///             socket.send_to(buf, src);
 ///         }
@@ -82,25 +80,10 @@ impl UdpSocket {
     /// Sends data on the socket to the given address. Returns nothing on
     /// success.
     ///
-    /// Address type can be any implementor of `ToSocketAddr` trait. See its
+    /// Address type can be any implementer of `ToSocketAddr` trait. See its
     /// documentation for concrete examples.
     pub fn send_to<A: ToSocketAddr>(&mut self, buf: &[u8], addr: A) -> IoResult<()> {
         super::with_addresses(addr, |addr| self.inner.send_to(buf, addr))
-    }
-
-    /// Creates a `UdpStream`, which allows use of the `Reader` and `Writer`
-    /// traits to receive and send data from the same address. This transfers
-    /// ownership of the socket to the stream.
-    ///
-    /// Note that this call does not perform any actual network communication,
-    /// because UDP is a datagram protocol.
-    #[deprecated = "`UdpStream` has been deprecated"]
-    #[allow(deprecated)]
-    pub fn connect(self, other: SocketAddr) -> UdpStream {
-        UdpStream {
-            socket: self,
-            connected_to: other,
-        }
     }
 
     /// Returns the socket address that this socket was created from.
@@ -109,13 +92,13 @@ impl UdpSocket {
     }
 
     /// Joins a multicast IP address (becomes a member of it)
-    #[experimental]
+    #[unstable]
     pub fn join_multicast(&mut self, multi: IpAddr) -> IoResult<()> {
         self.inner.join_multicast(multi)
     }
 
     /// Leaves a multicast IP address (drops membership from it)
-    #[experimental]
+    #[unstable]
     pub fn leave_multicast(&mut self, multi: IpAddr) -> IoResult<()> {
         self.inner.leave_multicast(multi)
     }
@@ -123,25 +106,25 @@ impl UdpSocket {
     /// Set the multicast loop flag to the specified value
     ///
     /// This lets multicast packets loop back to local sockets (if enabled)
-    #[experimental]
+    #[unstable]
     pub fn set_multicast_loop(&mut self, on: bool) -> IoResult<()> {
         self.inner.set_multicast_loop(on)
     }
 
     /// Sets the multicast TTL
-    #[experimental]
+    #[unstable]
     pub fn set_multicast_ttl(&mut self, ttl: int) -> IoResult<()> {
         self.inner.multicast_time_to_live(ttl)
     }
 
     /// Sets this socket's TTL
-    #[experimental]
+    #[unstable]
     pub fn set_ttl(&mut self, ttl: int) -> IoResult<()> {
         self.inner.time_to_live(ttl)
     }
 
     /// Sets the broadcast flag on or off
-    #[experimental]
+    #[unstable]
     pub fn set_broadcast(&mut self, broadcast: bool) -> IoResult<()> {
         self.inner.set_broadcast(broadcast)
     }
@@ -149,7 +132,7 @@ impl UdpSocket {
     /// Sets the read/write timeout for this socket.
     ///
     /// For more information, see `TcpStream::set_timeout`
-    #[experimental = "the timeout argument may change in type and value"]
+    #[unstable = "the timeout argument may change in type and value"]
     pub fn set_timeout(&mut self, timeout_ms: Option<u64>) {
         self.inner.set_timeout(timeout_ms)
     }
@@ -157,7 +140,7 @@ impl UdpSocket {
     /// Sets the read timeout for this socket.
     ///
     /// For more information, see `TcpStream::set_timeout`
-    #[experimental = "the timeout argument may change in type and value"]
+    #[unstable = "the timeout argument may change in type and value"]
     pub fn set_read_timeout(&mut self, timeout_ms: Option<u64>) {
         self.inner.set_read_timeout(timeout_ms)
     }
@@ -165,7 +148,7 @@ impl UdpSocket {
     /// Sets the write timeout for this socket.
     ///
     /// For more information, see `TcpStream::set_timeout`
-    #[experimental = "the timeout argument may change in type and value"]
+    #[unstable = "the timeout argument may change in type and value"]
     pub fn set_write_timeout(&mut self, timeout_ms: Option<u64>) {
         self.inner.set_write_timeout(timeout_ms)
     }
@@ -192,67 +175,17 @@ impl sys_common::AsInner<UdpSocketImp> for UdpSocket {
     }
 }
 
-/// A type that allows convenient usage of a UDP stream connected to one
-/// address via the `Reader` and `Writer` traits.
-///
-/// # Note
-///
-/// This structure has been deprecated because `Reader` is a stream-oriented API but UDP
-/// is a packet-oriented protocol. Every `Reader` method will read a whole packet and
-/// throw all superfluous bytes away so that they are no longer available for further
-/// method calls.
-#[deprecated]
-pub struct UdpStream {
-    socket: UdpSocket,
-    connected_to: SocketAddr
-}
-
-impl UdpStream {
-    /// Allows access to the underlying UDP socket owned by this stream. This
-    /// is useful to, for example, use the socket to send data to hosts other
-    /// than the one that this stream is connected to.
-    pub fn as_socket<T, F>(&mut self, f: F) -> T where
-        F: FnOnce(&mut UdpSocket) -> T,
-    {
-        f(&mut self.socket)
-    }
-
-    /// Consumes this UDP stream and returns out the underlying socket.
-    pub fn disconnect(self) -> UdpSocket {
-        self.socket
-    }
-}
-
-impl Reader for UdpStream {
-    /// Returns the next non-empty message from the specified address.
-    fn read(&mut self, buf: &mut [u8]) -> IoResult<uint> {
-        let peer = self.connected_to;
-        self.as_socket(|sock| {
-            loop {
-                let (nread, src) = try!(sock.recv_from(buf));
-                if nread > 0 && src == peer {
-                    return Ok(nread);
-                }
-            }
-        })
-    }
-}
-
-impl Writer for UdpStream {
-    fn write(&mut self, buf: &[u8]) -> IoResult<()> {
-        let connected_to = self.connected_to;
-        self.as_socket(|sock| sock.send_to(buf, connected_to))
-    }
-}
-
 #[cfg(test)]
-#[allow(experimental)]
+#[allow(unstable)]
 mod test {
-    use super::*;
-    use prelude::*;
-    use io::*;
+    use prelude::v1::*;
+
+    use sync::mpsc::channel;
     use io::net::ip::*;
     use io::test::*;
+    use io::{IoError, TimedOut, PermissionDenied, ShortWrite};
+    use super::*;
+    use thread::Thread;
 
     // FIXME #11530 this fails on android because tests are run as root
     #[cfg_attr(any(windows, target_os = "android"), ignore)]
@@ -272,20 +205,20 @@ mod test {
         let (tx1, rx1) = channel();
         let (tx2, rx2) = channel();
 
-        spawn(move|| {
+        let _t = Thread::spawn(move|| {
             match UdpSocket::bind(client_ip) {
                 Ok(ref mut client) => {
-                    rx1.recv();
+                    rx1.recv().unwrap();
                     client.send_to(&[99], server_ip).unwrap()
                 }
                 Err(..) => panic!()
             }
-            tx2.send(());
+            tx2.send(()).unwrap();
         });
 
         match UdpSocket::bind(server_ip) {
             Ok(ref mut server) => {
-                tx1.send(());
+                tx1.send(()).unwrap();
                 let mut buf = [0];
                 match server.recv_from(&mut buf) {
                     Ok((nread, src)) => {
@@ -298,7 +231,7 @@ mod test {
             }
             Err(..) => panic!()
         }
-        rx2.recv();
+        rx2.recv().unwrap();
     }
 
     #[test]
@@ -307,10 +240,10 @@ mod test {
         let client_ip = next_test_ip6();
         let (tx, rx) = channel::<()>();
 
-        spawn(move|| {
+        let _t = Thread::spawn(move|| {
             match UdpSocket::bind(client_ip) {
                 Ok(ref mut client) => {
-                    rx.recv();
+                    rx.recv().unwrap();
                     client.send_to(&[99], server_ip).unwrap()
                 }
                 Err(..) => panic!()
@@ -319,7 +252,7 @@ mod test {
 
         match UdpSocket::bind(server_ip) {
             Ok(ref mut server) => {
-                tx.send(());
+                tx.send(()).unwrap();
                 let mut buf = [0];
                 match server.recv_from(&mut buf) {
                     Ok((nread, src)) => {
@@ -332,91 +265,6 @@ mod test {
             }
             Err(..) => panic!()
         }
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn stream_smoke_test_ip4() {
-        let server_ip = next_test_ip4();
-        let client_ip = next_test_ip4();
-        let dummy_ip = next_test_ip4();
-        let (tx1, rx1) = channel();
-        let (tx2, rx2) = channel();
-
-        spawn(move|| {
-            let send_as = |ip, val: &[u8]| {
-                match UdpSocket::bind(ip) {
-                    Ok(client) => {
-                        let client = box client;
-                        let mut stream = client.connect(server_ip);
-                        stream.write(val).unwrap();
-                    }
-                    Err(..) => panic!()
-                }
-            };
-            rx1.recv();
-            send_as(dummy_ip, &[98]);
-            send_as(client_ip, &[99]);
-            tx2.send(());
-        });
-
-        match UdpSocket::bind(server_ip) {
-            Ok(server) => {
-                let server = box server;
-                let mut stream = server.connect(client_ip);
-                tx1.send(());
-                let mut buf = [0];
-                match stream.read(&mut buf) {
-                    Ok(nread) => {
-                        assert_eq!(nread, 1);
-                        assert_eq!(buf[0], 99);
-                    }
-                    Err(..) => panic!(),
-                }
-            }
-            Err(..) => panic!()
-        }
-        rx2.recv();
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn stream_smoke_test_ip6() {
-        let server_ip = next_test_ip6();
-        let client_ip = next_test_ip6();
-        let (tx1, rx1) = channel();
-        let (tx2, rx2) = channel();
-
-        spawn(move|| {
-            match UdpSocket::bind(client_ip) {
-                Ok(client) => {
-                    let client = box client;
-                    let mut stream = client.connect(server_ip);
-                    rx1.recv();
-                    stream.write(&[99]).unwrap();
-                }
-                Err(..) => panic!()
-            }
-            tx2.send(());
-        });
-
-        match UdpSocket::bind(server_ip) {
-            Ok(server) => {
-                let server = box server;
-                let mut stream = server.connect(client_ip);
-                tx1.send(());
-                let mut buf = [0];
-                match stream.read(&mut buf) {
-                    Ok(nread) => {
-                        assert_eq!(nread, 1);
-                        assert_eq!(buf[0], 99);
-                    }
-                    Err(..) => panic!()
-                }
-            }
-            Err(..) => panic!()
-        }
-        rx2.recv();
     }
 
     pub fn socket_name(addr: SocketAddr) {
@@ -449,7 +297,7 @@ mod test {
         let mut sock1 = UdpSocket::bind(addr1).unwrap();
         let sock2 = UdpSocket::bind(addr2).unwrap();
 
-        spawn(move|| {
+        let _t = Thread::spawn(move|| {
             let mut sock2 = sock2;
             let mut buf = [0, 0];
             assert_eq!(sock2.recv_from(&mut buf), Ok((1, addr1)));
@@ -461,16 +309,16 @@ mod test {
 
         let (tx1, rx1) = channel();
         let (tx2, rx2) = channel();
-        spawn(move|| {
+        let _t = Thread::spawn(move|| {
             let mut sock3 = sock3;
-            rx1.recv();
+            rx1.recv().unwrap();
             sock3.send_to(&[1], addr2).unwrap();
-            tx2.send(());
+            tx2.send(()).unwrap();
         });
-        tx1.send(());
+        tx1.send(()).unwrap();
         let mut buf = [0, 0];
         assert_eq!(sock1.recv_from(&mut buf), Ok((1, addr2)));
-        rx2.recv();
+        rx2.recv().unwrap();
     }
 
     #[test]
@@ -482,29 +330,29 @@ mod test {
         let (tx1, rx) = channel();
         let tx2 = tx1.clone();
 
-        spawn(move|| {
+        let _t = Thread::spawn(move|| {
             let mut sock2 = sock2;
             sock2.send_to(&[1], addr1).unwrap();
-            rx.recv();
+            rx.recv().unwrap();
             sock2.send_to(&[2], addr1).unwrap();
-            rx.recv();
+            rx.recv().unwrap();
         });
 
         let sock3 = sock1.clone();
 
         let (done, rx) = channel();
-        spawn(move|| {
+        let _t = Thread::spawn(move|| {
             let mut sock3 = sock3;
             let mut buf = [0, 0];
             sock3.recv_from(&mut buf).unwrap();
-            tx2.send(());
-            done.send(());
+            tx2.send(()).unwrap();
+            done.send(()).unwrap();
         });
         let mut buf = [0, 0];
         sock1.recv_from(&mut buf).unwrap();
-        tx1.send(());
+        tx1.send(()).unwrap();
 
-        rx.recv();
+        rx.recv().unwrap();
     }
 
     #[test]
@@ -517,38 +365,38 @@ mod test {
         let (tx, rx) = channel();
         let (serv_tx, serv_rx) = channel();
 
-        spawn(move|| {
+        let _t = Thread::spawn(move|| {
             let mut sock2 = sock2;
             let mut buf = [0, 1];
 
-            rx.recv();
+            rx.recv().unwrap();
             match sock2.recv_from(&mut buf) {
                 Ok(..) => {}
                 Err(e) => panic!("failed receive: {}", e),
             }
-            serv_tx.send(());
+            serv_tx.send(()).unwrap();
         });
 
         let sock3 = sock1.clone();
 
         let (done, rx) = channel();
         let tx2 = tx.clone();
-        spawn(move|| {
+        let _t = Thread::spawn(move|| {
             let mut sock3 = sock3;
             match sock3.send_to(&[1], addr2) {
-                Ok(..) => { let _ = tx2.send_opt(()); }
+                Ok(..) => { let _ = tx2.send(()); }
                 Err(..) => {}
             }
-            done.send(());
+            done.send(()).unwrap();
         });
         match sock1.send_to(&[2], addr2) {
-            Ok(..) => { let _ = tx.send_opt(()); }
+            Ok(..) => { let _ = tx.send(()); }
             Err(..) => {}
         }
         drop(tx);
 
-        rx.recv();
-        serv_rx.recv();
+        rx.recv().unwrap();
+        serv_rx.recv().unwrap();
     }
 
     #[cfg(not(windows))] // FIXME #17553
@@ -561,14 +409,14 @@ mod test {
 
         let (tx, rx) = channel();
         let (tx2, rx2) = channel();
-        spawn(move|| {
+        let _t = Thread::spawn(move|| {
             let mut a = a2;
             assert_eq!(a.recv_from(&mut [0]), Ok((1, addr1)));
             assert_eq!(a.send_to(&[0], addr1), Ok(()));
-            rx.recv();
+            rx.recv().unwrap();
             assert_eq!(a.send_to(&[0], addr1), Ok(()));
 
-            tx2.send(());
+            tx2.send(()).unwrap();
         });
 
         // Make sure that reads time out, but writes can continue
@@ -583,11 +431,11 @@ mod test {
 
         // Clearing the timeout should allow for receiving
         a.set_timeout(None);
-        tx.send(());
+        tx.send(()).unwrap();
         assert_eq!(a2.recv_from(&mut [0]), Ok((1, addr2)));
 
         // Make sure the child didn't die
-        rx2.recv();
+        rx2.recv().unwrap();
     }
 
     #[test]
@@ -599,7 +447,7 @@ mod test {
 
         a.set_write_timeout(Some(1000));
         for _ in range(0u, 100) {
-            match a.send_to(&[0, ..4*1024], addr2) {
+            match a.send_to(&[0;4*1024], addr2) {
                 Ok(()) | Err(IoError { kind: ShortWrite(..), .. }) => {},
                 Err(IoError { kind: TimedOut, .. }) => break,
                 Err(e) => panic!("other error: {}", e),

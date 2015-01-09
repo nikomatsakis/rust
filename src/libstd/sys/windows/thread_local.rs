@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use prelude::*;
+use prelude::v1::*;
 
 use libc::types::os::arch::extra::{DWORD, LPVOID, BOOL};
 
@@ -191,7 +191,7 @@ unsafe fn unregister_dtor(key: Key) -> bool {
 //
 // The callback specified receives a number of parameters from... someone!
 // (the kernel? the runtime? I'm not qute sure!) There are a few events that
-// this gets invoked for, but we're currentl only interested on when a
+// this gets invoked for, but we're currently only interested on when a
 // thread or a process "detaches" (exits). The process part happens for the
 // last thread and the thread part happens for any normal thread.
 //

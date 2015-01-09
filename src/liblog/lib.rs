@@ -13,16 +13,15 @@
 //! # Examples
 //!
 //! ```
-//! #![feature(phase)]
-//! #[phase(plugin, link)] extern crate log;
+//! #[macro_use] extern crate log;
 //!
 //! fn main() {
-//!     debug!("this is a debug {}", "message");
+//!     debug!("this is a debug {:?}", "message");
 //!     error!("this is printed by default");
 //!
 //!     if log_enabled!(log::INFO) {
 //!         let x = 3i * 4i; // expensive computation
-//!         info!("the answer was: {}", x);
+//!         info!("the answer was: {:?}", x);
 //!     }
 //! }
 //! ```
@@ -157,14 +156,19 @@
 //! if logging is disabled, none of the components of the log will be executed.
 
 #![crate_name = "log"]
-#![experimental = "use the crates.io `log` library instead"]
+#![unstable = "use the crates.io `log` library instead"]
+#![staged_api]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/nightly/",
        html_playground_url = "http://play.rust-lang.org/")]
-#![feature(macro_rules, unboxed_closures, slicing_syntax)]
+
+#![allow(unknown_features)]
+#![feature(slicing_syntax)]
+#![feature(box_syntax)]
+#![allow(unknown_features)] #![feature(int_uint)]
 #![deny(missing_docs)]
 
 extern crate regex;
@@ -183,7 +187,9 @@ use regex::Regex;
 
 use directive::LOG_LEVEL_NAMES;
 
+#[macro_use]
 pub mod macros;
+
 mod directive;
 
 /// Maximum logging level of a module that can be specified. Common logging
@@ -232,15 +238,21 @@ struct DefaultLogger {
 }
 
 /// Wraps the log level with fmt implementations.
-#[deriving(Copy, PartialEq, PartialOrd)]
+#[derive(Copy, PartialEq, PartialOrd)]
 pub struct LogLevel(pub u32);
 
 impl fmt::Show for LogLevel {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt::String::fmt(self, fmt)
+    }
+}
+
+impl fmt::String for LogLevel {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         let LogLevel(level) = *self;
         match LOG_LEVEL_NAMES.get(level as uint - 1) {
-            Some(name) => name.fmt(fmt),
-            None => level.fmt(fmt)
+            Some(ref name) => fmt::String::fmt(name, fmt),
+            None => fmt::String::fmt(&level, fmt)
         }
     }
 }
@@ -252,7 +264,7 @@ impl Logger for DefaultLogger {
                        record.level,
                        record.module_path,
                        record.args) {
-            Err(e) => panic!("failed to log: {}", e),
+            Err(e) => panic!("failed to log: {:?}", e),
             Ok(()) => {}
         }
     }
@@ -262,7 +274,7 @@ impl Drop for DefaultLogger {
     fn drop(&mut self) {
         // FIXME(#12628): is panicking the right thing to do?
         match self.handle.flush() {
-            Err(e) => panic!("failed to flush a logger: {}", e),
+            Err(e) => panic!("failed to flush a logger: {:?}", e),
             Ok(()) => {}
         }
     }
@@ -276,11 +288,11 @@ impl Drop for DefaultLogger {
 /// It is not recommended to call this function directly, rather it should be
 /// invoked through the logging family of macros.
 #[doc(hidden)]
-pub fn log(level: u32, loc: &'static LogLocation, args: &fmt::Arguments) {
+pub fn log(level: u32, loc: &'static LogLocation, args: fmt::Arguments) {
     // Test the literal string from args against the current filter, if there
     // is one.
     match unsafe { FILTER.as_ref() } {
-        Some(filter) if !filter.is_match(args.to_string()[]) => return,
+        Some(filter) if !filter.is_match(&args.to_string()[]) => return,
         _ => {}
     }
 
@@ -319,7 +331,7 @@ pub fn set_logger(logger: Box<Logger + Send>) -> Option<Box<Logger + Send>> {
 
 /// A LogRecord is created by the logging macros, and passed as the only
 /// argument to Loggers.
-#[deriving(Show)]
+#[derive(Show)]
 pub struct LogRecord<'a> {
 
     /// The module path of where the LogRecord originated.
@@ -329,7 +341,7 @@ pub struct LogRecord<'a> {
     pub level: LogLevel,
 
     /// The arguments from the log line.
-    pub args: &'a fmt::Arguments<'a>,
+    pub args: fmt::Arguments<'a>,
 
     /// The file of where the LogRecord originated.
     pub file: &'a str,
@@ -339,7 +351,7 @@ pub struct LogRecord<'a> {
 }
 
 #[doc(hidden)]
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct LogLocation {
     pub module_path: &'static str,
     pub file: &'static str,
@@ -352,7 +364,7 @@ pub struct LogLocation {
 #[doc(hidden)]
 pub fn mod_enabled(level: u32, module: &str) -> bool {
     static INIT: Once = ONCE_INIT;
-    INIT.doit(init);
+    INIT.call_once(init);
 
     // It's possible for many threads are in this function, only one of them
     // will perform the global initialization, but all of them will need to check
@@ -375,7 +387,7 @@ fn enabled(level: u32,
     // Search for the longest match, the vector is assumed to be pre-sorted.
     for directive in iter.rev() {
         match directive.name {
-            Some(ref name) if !module.starts_with(name[]) => {},
+            Some(ref name) if !module.starts_with(&name[]) => {},
             Some(..) | None => {
                 return level <= directive.level
             }
@@ -390,7 +402,7 @@ fn enabled(level: u32,
 /// `Once` primitive (and this function is called from that primitive).
 fn init() {
     let (mut directives, filter) = match os::getenv("RUST_LOG") {
-        Some(spec) => directive::parse_logging_spec(spec[]),
+        Some(spec) => directive::parse_logging_spec(&spec[]),
         None => (Vec::new(), None),
     };
 

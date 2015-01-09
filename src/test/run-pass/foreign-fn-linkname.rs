@@ -11,10 +11,10 @@
 // ignore-fast doesn't like extern crate
 
 extern crate libc;
+use std::ffi::CString;
 
 mod mlibc {
-    extern crate libc;
-    use self::libc::{c_char, size_t};
+    use libc::{c_char, size_t};
 
     extern {
         #[link_name = "strlen"]
@@ -24,11 +24,10 @@ mod mlibc {
 
 fn strlen(str: String) -> uint {
     // C string is terminated with a zero
-    str.as_slice().with_c_str(|buf| {
-        unsafe {
-            mlibc::my_strlen(buf) as uint
-        }
-    })
+    let s = CString::from_slice(str.as_bytes());
+    unsafe {
+        mlibc::my_strlen(s.as_ptr()) as uint
+    }
 }
 
 pub fn main() {

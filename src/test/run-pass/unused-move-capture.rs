@@ -8,8 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+
 pub fn main() {
     let _x = box 1i;
-    let lam_move: || = || {};
+    let lam_move = |&:| {};
     lam_move();
 }

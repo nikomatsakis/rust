@@ -8,28 +8,27 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use middle::infer::InferCtxt;
+use middle::infer::{InferCtxt};
 use middle::mem_categorization::Typer;
-use middle::ty::{mod, Ty};
+use middle::ty::{self, RegionEscape, Ty};
 use std::collections::HashSet;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::default::Default;
-use std::rc::Rc;
 use syntax::ast;
 use util::common::ErrorReported;
 use util::ppaux::Repr;
 use util::nodemap::NodeMap;
 
 use super::CodeAmbiguity;
+use super::CodeProjectionError;
 use super::CodeSelectionError;
 use super::FulfillmentError;
-use super::Obligation;
 use super::ObligationCause;
 use super::PredicateObligation;
-use super::Selection;
+use super::project;
 use super::select::SelectionContext;
-use super::poly_trait_ref_for_builtin_bound;
 use super::Unimplemented;
+use super::util::predicate_for_builtin_bound;
 
 /// The fulfillment context is used to drive trait resolution.  It
 /// consists of a list of obligations that must be (eventually)
@@ -101,55 +100,77 @@ impl<'tcx> FulfillmentContext<'tcx> {
         }
     }
 
-    pub fn register_builtin_bound(&mut self,
-                                  tcx: &ty::ctxt<'tcx>,
-                                  ty: Ty<'tcx>,
-                                  builtin_bound: ty::BuiltinBound,
-                                  cause: ObligationCause<'tcx>)
+    /// "Normalize" a projection type `<SomeType as SomeTrait>::X` by
+    /// creating a fresh type variable `$0` as well as a projection
+    /// predicate `<SomeType as SomeTrait>::X == $0`. When the
+    /// inference engine runs, it will attempt to find an impl of
+    /// `SomeTrait` or a where clause that lets us unify `$0` with
+    /// something concrete. If this fails, we'll unify `$0` with
+    /// `projection_ty` again.
+    pub fn normalize_projection_type<'a>(&mut self,
+                                         infcx: &InferCtxt<'a,'tcx>,
+                                         typer: &ty::UnboxedClosureTyper<'tcx>,
+                                         projection_ty: ty::ProjectionTy<'tcx>,
+                                         cause: ObligationCause<'tcx>)
+                                         -> Ty<'tcx>
     {
-        match poly_trait_ref_for_builtin_bound(tcx, builtin_bound, ty) {
-            Ok(trait_ref) => {
-                self.register_trait_ref(tcx, trait_ref, cause);
+        debug!("normalize_associated_type(projection_ty={})",
+               projection_ty.repr(infcx.tcx));
+
+        assert!(!projection_ty.has_escaping_regions());
+
+        // FIXME(#20304) -- cache
+
+        let mut selcx = SelectionContext::new(infcx, typer);
+        let normalized = project::normalize_projection_type(&mut selcx, projection_ty, cause, 0);
+
+        for obligation in normalized.obligations.into_iter() {
+            self.register_predicate_obligation(infcx, obligation);
+        }
+
+        debug!("normalize_associated_type: result={}", normalized.value.repr(infcx.tcx));
+
+        normalized.value
+    }
+
+    pub fn register_builtin_bound<'a>(&mut self,
+                                      infcx: &InferCtxt<'a,'tcx>,
+                                      ty: Ty<'tcx>,
+                                      builtin_bound: ty::BuiltinBound,
+                                      cause: ObligationCause<'tcx>)
+    {
+        match predicate_for_builtin_bound(infcx.tcx, cause, builtin_bound, 0, ty) {
+            Ok(predicate) => {
+                self.register_predicate_obligation(infcx, predicate);
             }
             Err(ErrorReported) => { }
         }
     }
 
-    pub fn register_trait_ref<'a>(&mut self,
-                                  tcx: &ty::ctxt<'tcx>,
-                                  trait_ref: Rc<ty::PolyTraitRef<'tcx>>,
-                                  cause: ObligationCause<'tcx>)
+    pub fn register_region_obligation<'a>(&mut self,
+                                          infcx: &InferCtxt<'a,'tcx>,
+                                          t_a: Ty<'tcx>,
+                                          r_b: ty::Region,
+                                          cause: ObligationCause<'tcx>)
     {
-        /*!
-         * A convenience function for registering trait obligations.
-         */
-
-        let trait_obligation = Obligation { cause: cause,
-                                            recursion_depth: 0,
-                                            trait_ref: ty::Predicate::Trait(trait_ref) };
-        self.register_predicate(tcx, trait_obligation)
+        register_region_obligation(infcx.tcx, t_a, r_b, cause, &mut self.region_obligations);
     }
 
-    pub fn register_region_obligation(&mut self,
-                                      tcx: &ty::ctxt<'tcx>,
-                                      t_a: Ty<'tcx>,
-                                      r_b: ty::Region,
-                                      cause: ObligationCause<'tcx>)
+    pub fn register_predicate_obligation<'a>(&mut self,
+                                             infcx: &InferCtxt<'a,'tcx>,
+                                             obligation: PredicateObligation<'tcx>)
     {
-        register_region_obligation(tcx, t_a, r_b, cause, &mut self.region_obligations);
-    }
+        // this helps to reduce duplicate errors, as well as making
+        // debug output much nicer to read and so on.
+        let obligation = infcx.resolve_type_vars_if_possible(&obligation);
 
-    pub fn register_predicate<'a>(&mut self,
-                                  tcx: &ty::ctxt<'tcx>,
-                                  predicate: PredicateObligation<'tcx>)
-    {
-        if !self.duplicate_set.insert(predicate.trait_ref.clone()) {
-            debug!("register_predicate({}) -- already seen, skip", predicate.repr(tcx));
+        if !self.duplicate_set.insert(obligation.predicate.clone()) {
+            debug!("register_predicate({}) -- already seen, skip", obligation.repr(infcx.tcx));
             return;
         }
 
-        debug!("register_predicate({})", predicate.repr(tcx));
-        self.predicates.push(predicate);
+        debug!("register_predicate({})", obligation.repr(infcx.tcx));
+        self.predicates.push(obligation);
     }
 
     pub fn region_obligations(&self,
@@ -164,11 +185,10 @@ impl<'tcx> FulfillmentContext<'tcx> {
 
     pub fn select_all_or_error<'a>(&mut self,
                                    infcx: &InferCtxt<'a,'tcx>,
-                                   param_env: &ty::ParameterEnvironment<'tcx>,
-                                   typer: &Typer<'tcx>)
+                                   typer: &ty::UnboxedClosureTyper<'tcx>)
                                    -> Result<(),Vec<FulfillmentError<'tcx>>>
     {
-        try!(self.select_where_possible(infcx, param_env, typer));
+        try!(self.select_where_possible(infcx, typer));
 
         // Anything left is ambiguous.
         let errors: Vec<FulfillmentError> =
@@ -190,26 +210,24 @@ impl<'tcx> FulfillmentContext<'tcx> {
     /// results in `O(n^2)` performance (#18208).
     pub fn select_new_obligations<'a>(&mut self,
                                       infcx: &InferCtxt<'a,'tcx>,
-                                      param_env: &ty::ParameterEnvironment<'tcx>,
-                                      typer: &Typer<'tcx>)
+                                      typer: &ty::UnboxedClosureTyper<'tcx>)
                                       -> Result<(),Vec<FulfillmentError<'tcx>>>
     {
-        let mut selcx = SelectionContext::new(infcx, param_env, typer);
+        let mut selcx = SelectionContext::new(infcx, typer);
         self.select(&mut selcx, true)
     }
 
     pub fn select_where_possible<'a>(&mut self,
                                      infcx: &InferCtxt<'a,'tcx>,
-                                     param_env: &ty::ParameterEnvironment<'tcx>,
-                                     typer: &Typer<'tcx>)
+                                     typer: &ty::UnboxedClosureTyper<'tcx>)
                                      -> Result<(),Vec<FulfillmentError<'tcx>>>
     {
-        let mut selcx = SelectionContext::new(infcx, param_env, typer);
+        let mut selcx = SelectionContext::new(infcx, typer);
         self.select(&mut selcx, false)
     }
 
     pub fn pending_obligations(&self) -> &[PredicateObligation<'tcx>] {
-        self.predicates[]
+        &self.predicates[]
     }
 
     /// Attempts to select obligations using `selcx`. If `only_new_obligations` is true, then it
@@ -223,7 +241,6 @@ impl<'tcx> FulfillmentContext<'tcx> {
                self.predicates.len(),
                only_new_obligations);
 
-        let tcx = selcx.tcx();
         let mut errors = Vec::new();
 
         loop {
@@ -232,7 +249,7 @@ impl<'tcx> FulfillmentContext<'tcx> {
             debug!("select_where_possible({} obligations) iteration",
                    count);
 
-            let mut selections = Vec::new();
+            let mut new_obligations = Vec::new();
 
             // If we are only attempting obligations we haven't seen yet,
             // then set `skip` to the number of obligations we've already
@@ -253,7 +270,7 @@ impl<'tcx> FulfillmentContext<'tcx> {
                     let processed =
                         if skip == 0 {
                             process_predicate(selcx, predicate,
-                                              &mut selections, &mut errors, region_obligations)
+                                              &mut new_obligations, &mut errors, region_obligations)
                         } else {
                             skip -= 1;
                             false
@@ -271,8 +288,8 @@ impl<'tcx> FulfillmentContext<'tcx> {
 
             // Now go through all the successful ones,
             // registering any nested obligations for the future.
-            for selection in selections.into_iter() {
-                selection.map_move_nested(|p| self.register_predicate(tcx, p));
+            for new_obligation in new_obligations.into_iter() {
+                self.register_predicate_obligation(selcx.infcx(), new_obligation);
             }
         }
 
@@ -289,8 +306,8 @@ impl<'tcx> FulfillmentContext<'tcx> {
 }
 
 fn process_predicate<'a,'tcx>(selcx: &mut SelectionContext<'a,'tcx>,
-                              predicate: &PredicateObligation<'tcx>,
-                              selections: &mut Vec<Selection<'tcx>>,
+                              obligation: &PredicateObligation<'tcx>,
+                              new_obligations: &mut Vec<PredicateObligation<'tcx>>,
                               errors: &mut Vec<FulfillmentError<'tcx>>,
                               region_obligations: &mut NodeMap<Vec<RegionObligation<'tcx>>>)
                               -> bool
@@ -303,26 +320,24 @@ fn process_predicate<'a,'tcx>(selcx: &mut SelectionContext<'a,'tcx>,
      */
 
     let tcx = selcx.tcx();
-    match predicate.trait_ref {
-        ty::Predicate::Trait(ref trait_ref) => {
-            let trait_obligation = Obligation { cause: predicate.cause,
-                                                recursion_depth: predicate.recursion_depth,
-                                                trait_ref: trait_ref.clone() };
+    match obligation.predicate {
+        ty::Predicate::Trait(ref data) => {
+            let trait_obligation = obligation.with(data.clone());
             match selcx.select(&trait_obligation) {
                 Ok(None) => {
                     false
                 }
                 Ok(Some(s)) => {
-                    selections.push(s);
+                    s.map_move_nested(|p| new_obligations.push(p));
                     true
                 }
                 Err(selection_err) => {
                     debug!("predicate: {} error: {}",
-                           predicate.repr(tcx),
+                           obligation.repr(tcx),
                            selection_err.repr(tcx));
                     errors.push(
                         FulfillmentError::new(
-                            predicate.clone(),
+                            obligation.clone(),
                             CodeSelectionError(selection_err)));
                     true
                 }
@@ -330,12 +345,12 @@ fn process_predicate<'a,'tcx>(selcx: &mut SelectionContext<'a,'tcx>,
         }
 
         ty::Predicate::Equate(ref binder) => {
-            match selcx.infcx().equality_predicate(predicate.cause.span, binder) {
+            match selcx.infcx().equality_predicate(obligation.cause.span, binder) {
                 Ok(()) => { }
                 Err(_) => {
                     errors.push(
                         FulfillmentError::new(
-                            predicate.clone(),
+                            obligation.clone(),
                             CodeSelectionError(Unimplemented)));
                 }
             }
@@ -343,12 +358,12 @@ fn process_predicate<'a,'tcx>(selcx: &mut SelectionContext<'a,'tcx>,
         }
 
         ty::Predicate::RegionOutlives(ref binder) => {
-            match selcx.infcx().region_outlives_predicate(predicate.cause.span, binder) {
+            match selcx.infcx().region_outlives_predicate(obligation.cause.span, binder) {
                 Ok(()) => { }
                 Err(_) => {
                     errors.push(
                         FulfillmentError::new(
-                            predicate.clone(),
+                            obligation.clone(),
                             CodeSelectionError(Unimplemented)));
                 }
             }
@@ -364,13 +379,39 @@ fn process_predicate<'a,'tcx>(selcx: &mut SelectionContext<'a,'tcx>,
             if ty::count_late_bound_regions(selcx.tcx(), binder) != 0 {
                 errors.push(
                     FulfillmentError::new(
-                        predicate.clone(),
+                        obligation.clone(),
                         CodeSelectionError(Unimplemented)));
             } else {
                 let ty::OutlivesPredicate(t_a, r_b) = binder.0;
-                register_region_obligation(tcx, t_a, r_b, predicate.cause, region_obligations);
+                register_region_obligation(tcx, t_a, r_b,
+                                           obligation.cause.clone(),
+                                           region_obligations);
             }
             true
+        }
+
+        ty::Predicate::Projection(ref data) => {
+            let project_obligation = obligation.with(data.clone());
+            let result = project::poly_project_and_unify_type(selcx, &project_obligation);
+            debug!("poly_project_and_unify_type({}) = {}",
+                   project_obligation.repr(tcx),
+                   result.repr(tcx));
+            match result {
+                Ok(Some(obligations)) => {
+                    new_obligations.extend(obligations.into_iter());
+                    true
+                }
+                Ok(None) => {
+                    false
+                }
+                Err(err) => {
+                    errors.push(
+                        FulfillmentError::new(
+                            obligation.clone(),
+                            CodeProjectionError(err)));
+                    true
+                }
+            }
         }
     }
 }
@@ -397,9 +438,8 @@ fn register_region_obligation<'tcx>(tcx: &ty::ctxt<'tcx>,
            region_obligation.repr(tcx));
 
     match region_obligations.entry(region_obligation.cause.body_id) {
-        Vacant(entry) => { entry.set(vec![region_obligation]); },
+        Vacant(entry) => { entry.insert(vec![region_obligation]); },
         Occupied(mut entry) => { entry.get_mut().push(region_obligation); },
     }
 
 }
-

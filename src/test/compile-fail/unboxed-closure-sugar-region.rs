@@ -12,34 +12,31 @@
 // parameters (should be exactly as if angle brackets were used
 // and regions omitted).
 
-#![feature(default_type_params, unboxed_closures)]
+#![feature(unboxed_closures)]
 #![allow(dead_code)]
 
-use std::kinds::marker;
+use std::marker;
 
 trait Foo<'a,T,U> {
     fn dummy(&'a self) -> &'a (T,U);
 }
 
-trait Eq<Sized? X> for Sized?
-    : marker::PhantomGetter<(Self,X)>
-{ }
-
-impl<Sized? X> Eq<X> for X { }
-fn eq<Sized? A,Sized? B:Eq<A>>() { }
+trait Eq<X: ?Sized> { fn is_of_eq_type(&self, x: &X) -> bool { true } }
+impl<X: ?Sized> Eq<X> for X { }
+fn eq<A: ?Sized,B: ?Sized +Eq<A>>() { }
 
 fn same_type<A,B:Eq<A>>(a: A, b: B) { }
 
 fn test<'a,'b>() {
     // Parens are equivalent to omitting default in angle.
-    eq::< Foo<(int,),()>,               Foo(int)                      >();
+    eq::< Foo<(isize,),()>,               Foo(isize)                      >();
 
     // Here we specify 'static explicitly in angle-bracket version.
     // Parenthesized winds up getting inferred.
-    eq::< Foo<'static, (int,),()>,      Foo(int)                      >();
+    eq::< Foo<'static, (isize,),()>,      Foo(isize)                      >();
 }
 
-fn test2(x: &Foo<(int,),()>, y: &Foo(int)) {
+fn test2(x: &Foo<(isize,),()>, y: &Foo(isize)) {
     // Here, the omitted lifetimes are expanded to distinct things.
     same_type(x, y) //~ ERROR cannot infer
 }

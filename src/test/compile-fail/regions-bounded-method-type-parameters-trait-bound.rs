@@ -13,7 +13,7 @@
 // checked.
 
 struct Inv<'a> { // invariant w/r/t 'a
-    x: &'a mut &'a int
+    x: &'a mut &'a isize
 }
 
 trait Foo<'x> {

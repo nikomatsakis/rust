@@ -8,7 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-struct Fat<Sized? T> {
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+
+struct Fat<T: ?Sized> {
     f1: int,
     f2: &'static str,
     ptr: T
@@ -46,7 +49,7 @@ fn foo3(x: &Fat<Fat<[int]>>) {
 }
 
 
-#[deriving(PartialEq,Eq)]
+#[derive(PartialEq,Eq)]
 struct Bar;
 
 impl Copy for Bar {}

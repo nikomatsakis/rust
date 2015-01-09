@@ -8,13 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::ops::{Index, IndexMut};
+
 struct Foo {
-    x: int,
-    y: int,
+    x: isize,
+    y: isize,
 }
 
-impl Index<String,int> for Foo {
-    fn index<'a>(&'a self, z: &String) -> &'a int {
+impl Index<String> for Foo {
+    type Output = isize;
+
+    fn index<'a>(&'a self, z: &String) -> &'a isize {
         if z.as_slice() == "x" {
             &self.x
         } else {
@@ -23,8 +27,10 @@ impl Index<String,int> for Foo {
     }
 }
 
-impl IndexMut<String,int> for Foo {
-    fn index_mut<'a>(&'a mut self, z: &String) -> &'a mut int {
+impl IndexMut<String> for Foo {
+    type Output = isize;
+
+    fn index_mut<'a>(&'a mut self, z: &String) -> &'a mut isize {
         if z.as_slice() == "x" {
             &mut self.x
         } else {
@@ -34,11 +40,13 @@ impl IndexMut<String,int> for Foo {
 }
 
 struct Bar {
-    x: int,
+    x: isize,
 }
 
-impl Index<int,int> for Bar {
-    fn index<'a>(&'a self, z: &int) -> &'a int {
+impl Index<isize> for Bar {
+    type Output = isize;
+
+    fn index<'a>(&'a self, z: &isize) -> &'a isize {
         &self.x
     }
 }
@@ -58,7 +66,5 @@ fn main() {
         x: 1,
     };
     s[2] = 20;
-    //~^ ERROR cannot assign to immutable dereference (dereference is implicit, due to indexing)
+    //~^ ERROR cannot assign to immutable indexed content
 }
-
-

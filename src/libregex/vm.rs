@@ -37,7 +37,9 @@ pub use self::MatchKind::*;
 pub use self::StepState::*;
 
 use std::cmp;
+use std::cmp::Ordering::{self, Less, Equal, Greater};
 use std::mem;
+use std::iter::repeat;
 use std::slice::SliceExt;
 use compile::{
     Program,
@@ -50,7 +52,7 @@ use unicode::regex::PERLW;
 pub type CaptureLocs = Vec<Option<uint>>;
 
 /// Indicates the type of match to be performed by the VM.
-#[deriving(Copy)]
+#[derive(Copy)]
 pub enum MatchKind {
     /// Only checks if a match exists or not. Does not return location.
     Exists,
@@ -95,7 +97,7 @@ struct Nfa<'r, 't> {
 
 /// Indicates the next action to take after a single non-empty instruction
 /// is processed.
-#[deriving(Copy)]
+#[derive(Copy)]
 pub enum StepState {
     /// This is returned if and only if a Match instruction is reached and
     /// we only care about the existence of a match. It instructs the VM to
@@ -121,7 +123,7 @@ impl<'r, 't> Nfa<'r, 't> {
         let mut clist = &mut Threads::new(self.which, ninsts, ncaps);
         let mut nlist = &mut Threads::new(self.which, ninsts, ncaps);
 
-        let mut groups = Vec::from_elem(ncaps * 2, None);
+        let mut groups: Vec<_> = repeat(None).take(ncaps * 2).collect();
 
         // Determine if the expression starts with a '^' so we can avoid
         // simulating .*?
@@ -150,7 +152,7 @@ impl<'r, 't> Nfa<'r, 't> {
                 // out early.
                 if self.prog.prefix.len() > 0 && clist.size == 0 {
                     let needle = self.prog.prefix.as_bytes();
-                    let haystack = self.input.as_bytes()[self.ic..];
+                    let haystack = &self.input.as_bytes()[self.ic..];
                     match find_prefix(needle, haystack) {
                         None => break,
                         Some(i) => {
@@ -227,8 +229,7 @@ impl<'r, 't> Nfa<'r, 't> {
                     let negate = flags & FLAG_NEGATED > 0;
                     let casei = flags & FLAG_NOCASE > 0;
                     let found = ranges.as_slice();
-                    let found = found.binary_search(|&rc| class_cmp(casei, c, rc))
-                        .found().is_some();
+                    let found = found.binary_search_by(|&rc| class_cmp(casei, c, rc)).is_ok();
                     if found ^ negate {
                         self.add(nlist, pc+1, caps);
                     }
@@ -457,10 +458,10 @@ impl Threads {
     fn new(which: MatchKind, num_insts: uint, ncaps: uint) -> Threads {
         Threads {
             which: which,
-            queue: Vec::from_fn(num_insts, |_| {
-                Thread { pc: 0, groups: Vec::from_elem(ncaps * 2, None) }
-            }),
-            sparse: Vec::from_elem(num_insts, 0u),
+            queue: range(0, num_insts).map(|_| {
+                Thread { pc: 0, groups: repeat(None).take(ncaps * 2).collect() }
+            }).collect(),
+            sparse: repeat(0u).take(num_insts).collect(),
             size: 0,
         }
     }
@@ -502,7 +503,8 @@ impl Threads {
 
     #[inline]
     fn groups<'r>(&'r mut self, i: uint) -> &'r mut [Option<uint>] {
-        self.queue[i].groups.as_mut_slice()
+        let q = &mut self.queue[i];
+        q.groups.as_mut_slice()
     }
 }
 
@@ -518,7 +520,7 @@ pub fn is_word(c: Option<char>) -> bool {
     // Try the common ASCII case before invoking binary search.
     match c {
         '_' | '0' ... '9' | 'a' ... 'z' | 'A' ... 'Z' => true,
-        _ => PERLW.binary_search(|&(start, end)| {
+        _ => PERLW.binary_search_by(|&(start, end)| {
             if c >= start && c <= end {
                 Equal
             } else if start > c {
@@ -526,7 +528,7 @@ pub fn is_word(c: Option<char>) -> bool {
             } else {
                 Less
             }
-        }).found().is_some()
+        }).is_ok()
     }
 }
 

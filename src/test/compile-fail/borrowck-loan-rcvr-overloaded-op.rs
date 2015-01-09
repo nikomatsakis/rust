@@ -8,20 +8,24 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[deriving(Copy)]
+use std::ops::Add;
+
+#[derive(Copy)]
 struct Point {
-    x: int,
-    y: int,
+    x: isize,
+    y: isize,
 }
 
-impl Add<int, int> for Point {
-    fn add(self, z: int) -> int {
+impl Add<isize> for Point {
+    type Output = isize;
+
+    fn add(self, z: isize) -> isize {
         self.x + self.y + z
     }
 }
 
 impl Point {
-    pub fn times(&self, z: int) -> int {
+    pub fn times(&self, z: isize) -> isize {
         self.x * self.y * z
     }
 }

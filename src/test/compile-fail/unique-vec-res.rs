@@ -10,11 +10,13 @@
 
 #![feature(unsafe_destructor)]
 
+#![feature(box_syntax)]
+
 use std::cell::Cell;
 
-#[deriving(Show)]
+#[derive(Show)]
 struct r<'a> {
-  i: &'a Cell<int>,
+  i: &'a Cell<isize>,
 }
 
 #[unsafe_destructor]
@@ -39,6 +41,6 @@ fn main() {
     f(clone(&r1), clone(&r2));
     //~^ ERROR the trait `core::clone::Clone` is not implemented for the type
     //~^^ ERROR the trait `core::clone::Clone` is not implemented for the type
-    println!("{}", (r2, i1.get()));
-    println!("{}", (r1, i2.get()));
+    println!("{:?}", (r2, i1.get()));
+    println!("{:?}", (r1, i2.get()));
 }

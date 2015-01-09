@@ -8,14 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use prelude::v1::*;
+
 use io::net::ip;
 use io::IoResult;
 use libc;
 use mem;
 use ptr;
-use prelude::*;
 use super::{last_error, last_net_error, retry, sock_t};
-use sync::{Arc, atomic};
+use sync::Arc;
+use sync::atomic::{AtomicBool, Ordering};
 use sys::fs::FileDesc;
 use sys::{set_nonblocking, wouldblock};
 use sys;
@@ -32,6 +34,8 @@ pub use sys_common::net::TcpStream;
 pub struct TcpListener {
     pub inner: FileDesc,
 }
+
+unsafe impl Sync for TcpListener {}
 
 impl TcpListener {
     pub fn bind(addr: ip::SocketAddr) -> IoResult<TcpListener> {
@@ -71,7 +75,7 @@ impl TcpListener {
                         listener: self,
                         reader: reader,
                         writer: writer,
-                        closed: atomic::AtomicBool::new(false),
+                        closed: AtomicBool::new(false),
                     }),
                     deadline: 0,
                 })
@@ -93,8 +97,10 @@ struct AcceptorInner {
     listener: TcpListener,
     reader: FileDesc,
     writer: FileDesc,
-    closed: atomic::AtomicBool,
+    closed: AtomicBool,
 }
+
+unsafe impl Sync for AcceptorInner {}
 
 impl TcpAcceptor {
     pub fn fd(&self) -> sock_t { self.inner.listener.fd() }
@@ -116,7 +122,7 @@ impl TcpAcceptor {
         // self-pipe is never written to unless close_accept() is called.
         let deadline = if self.deadline == 0 {None} else {Some(self.deadline)};
 
-        while !self.inner.closed.load(atomic::SeqCst) {
+        while !self.inner.closed.load(Ordering::SeqCst) {
             match retry(|| unsafe {
                 libc::accept(self.fd(), ptr::null_mut(), ptr::null_mut())
             }) {
@@ -140,7 +146,7 @@ impl TcpAcceptor {
     }
 
     pub fn close_accept(&mut self) -> IoResult<()> {
-        self.inner.closed.store(true, atomic::SeqCst);
+        self.inner.closed.store(true, Ordering::SeqCst);
         let fd = FileDesc::new(self.inner.writer.fd(), false);
         match fd.write(&[0]) {
             Ok(..) => Ok(()),

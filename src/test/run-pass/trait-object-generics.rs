@@ -10,7 +10,8 @@
 
 // test for #8664
 
-use std::kinds::marker;
+#![allow(unknown_features)]
+#![feature(box_syntax)]
 
 pub trait Trait2<A> {
     fn doit(&self) -> A;

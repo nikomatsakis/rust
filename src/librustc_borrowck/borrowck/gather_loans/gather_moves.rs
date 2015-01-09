@@ -11,7 +11,6 @@
 //! Computes moves.
 
 use borrowck::*;
-use borrowck::LoanPathKind::*;
 use borrowck::gather_loans::move_error::MoveSpanAndPath;
 use borrowck::gather_loans::move_error::{MoveError, MoveErrorCollector};
 use borrowck::move_data::*;
@@ -66,7 +65,7 @@ pub fn gather_match_variant<'a, 'tcx>(bccx: &BorrowckCtxt<'a, 'tcx>,
                                       cmt: mc::cmt<'tcx>,
                                       mode: euv::MatchMode) {
     let tcx = bccx.tcx;
-    debug!("gather_match_variant(move_pat={}, cmt={}, mode={})",
+    debug!("gather_match_variant(move_pat={}, cmt={}, mode={:?})",
            move_pat.id, cmt.repr(tcx), mode);
 
     let opt_lp = opt_loan_path(&cmt);
@@ -190,7 +189,7 @@ fn check_and_get_illegal_move_origin<'a, 'tcx>(bccx: &BorrowckCtxt<'a, 'tcx>,
             }
         }
 
-        mc::cat_deref(ref b, _, mc::OwnedPtr) => {
+        mc::cat_deref(ref b, _, mc::Unique) => {
             check_and_get_illegal_move_origin(bccx, b)
         }
     }

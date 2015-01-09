@@ -15,15 +15,15 @@ pub use self::SignificantDigits::*;
 pub use self::SignFormat::*;
 
 use char;
-use char::Char;
+use char::CharExt;
 use fmt;
-use iter::{range, DoubleEndedIteratorExt};
-use num::{Float, FPNaN, FPInfinite, ToPrimitive};
-use num::cast;
+use iter::{IteratorExt, range};
+use num::{cast, Float, ToPrimitive};
+use num::FpCategory as Fp;
 use ops::FnOnce;
 use result::Result::Ok;
-use slice::{mod, SliceExt};
-use str::StrExt;
+use slice::{self, SliceExt};
+use str::{self, StrExt};
 
 /// A flag that specifies whether to use exponential (scientific) notation.
 pub enum ExponentFormat {
@@ -95,7 +95,7 @@ pub fn float_to_str_bytes_common<T: Float, U, F>(
     exp_upper: bool,
     f: F
 ) -> U where
-    F: FnOnce(&[u8]) -> U,
+    F: FnOnce(&str) -> U,
 {
     assert!(2 <= radix && radix <= 36);
     match exp_format {
@@ -109,12 +109,12 @@ pub fn float_to_str_bytes_common<T: Float, U, F>(
     let _1: T = Float::one();
 
     match num.classify() {
-        FPNaN => return f("NaN".as_bytes()),
-        FPInfinite if num > _0 => {
-            return f("inf".as_bytes());
+        Fp::Nan => return f("NaN"),
+        Fp::Infinite if num > _0 => {
+            return f("inf");
         }
-        FPInfinite if num < _0 => {
-            return f("-inf".as_bytes());
+        Fp::Infinite if num < _0 => {
+            return f("-inf");
         }
         _ => {}
     }
@@ -123,7 +123,7 @@ pub fn float_to_str_bytes_common<T: Float, U, F>(
     // For an f64 the exponent is in the range of [-1022, 1023] for base 2, so
     // we may have up to that many digits. Give ourselves some extra wiggle room
     // otherwise as well.
-    let mut buf = [0u8, ..1536];
+    let mut buf = [0u8; 1536];
     let mut end = 0;
     let radix_gen: T = cast(radix as int).unwrap();
 
@@ -179,7 +179,7 @@ pub fn float_to_str_bytes_common<T: Float, U, F>(
         _ => ()
     }
 
-    buf[mut ..end].reverse();
+    buf.slice_to_mut(end).reverse();
 
     // Remember start of the fractional digits.
     // Points one beyond end of buf if none get generated,
@@ -225,10 +225,10 @@ pub fn float_to_str_bytes_common<T: Float, U, F>(
         // cut off the one extra digit, and depending on its value
         // round the remaining ones.
         if limit_digits && dig == digit_count {
-            let ascii2value = |chr: u8| {
+            let ascii2value = |&: chr: u8| {
                 (chr as char).to_digit(radix).unwrap()
             };
-            let value2ascii = |val: uint| {
+            let value2ascii = |&: val: uint| {
                 char::from_digit(val, radix).unwrap() as u8
             };
 
@@ -314,11 +314,11 @@ pub fn float_to_str_bytes_common<T: Float, U, F>(
                 end: &'a mut uint,
             }
 
-            impl<'a> fmt::FormatWriter for Filler<'a> {
-                fn write(&mut self, bytes: &[u8]) -> fmt::Result {
-                    slice::bytes::copy_memory(self.buf[mut *self.end..],
-                                              bytes);
-                    *self.end += bytes.len();
+            impl<'a> fmt::Writer for Filler<'a> {
+                fn write_str(&mut self, s: &str) -> fmt::Result {
+                    slice::bytes::copy_memory(self.buf.slice_from_mut(*self.end),
+                                              s.as_bytes());
+                    *self.end += s.len();
                     Ok(())
                 }
             }
@@ -326,13 +326,11 @@ pub fn float_to_str_bytes_common<T: Float, U, F>(
             let mut filler = Filler { buf: &mut buf, end: &mut end };
             match sign {
                 SignNeg => {
-                    let _ = format_args!(|args| {
-                        fmt::write(&mut filler, args)
-                    }, "{:-}", exp);
+                    let _ = fmt::write(&mut filler, format_args!("{:-}", exp));
                 }
             }
         }
     }
 
-    f(buf[..end])
+    f(unsafe { str::from_utf8_unchecked(&buf[0..end]) })
 }

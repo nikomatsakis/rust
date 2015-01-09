@@ -16,7 +16,7 @@ pub trait PhantomSetter<Sized? T> for Sized? { }
 impl<Sized? T, Sized? U> PhantomSetter<T> for U { }
 
 #[lang="sized"]
-pub trait Sized for Sized? : PhantomSetter<Self> {}
+pub trait Sized {}
 
 #[lang="panic"]
 fn panic(_: &(&'static str, &'static str, uint)) -> ! { loop {} }

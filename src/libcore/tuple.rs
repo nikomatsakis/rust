@@ -32,35 +32,6 @@
 //! * `PartialOrd`
 //! * `Ord`
 //! * `Default`
-//!
-//! # Examples
-//!
-//! Using methods:
-//!
-//! ```
-//! #[allow(deprecated)]
-//! # fn main() {
-//! let pair = ("pi", 3.14f64);
-//! assert_eq!(pair.val0(), "pi");
-//! assert_eq!(pair.val1(), 3.14f64);
-//! # }
-//! ```
-//!
-//! Using traits implemented for tuples:
-//!
-//! ```
-//! use std::default::Default;
-//!
-//! let a = (1i, 2i);
-//! let b = (3i, 4i);
-//! assert!(a != b);
-//!
-//! let c = b.clone();
-//! assert!(b == c);
-//!
-//! let d : (u32, f32) = Default::default();
-//! assert_eq!(d, (0u32, 0.0f32));
-//! ```
 
 #![stable]
 
@@ -87,44 +58,6 @@ macro_rules! tuple_impls {
         }
     )+) => {
         $(
-            #[allow(missing_docs)]
-            #[deprecated]
-            pub trait $Tuple<$($T),+> {
-                $(
-                    #[deprecated = "use tuple indexing: `tuple.N`"]
-                    fn $valN(self) -> $T;
-                    #[deprecated = "use tuple indexing: `&tuple.N`"]
-                    fn $refN<'a>(&'a self) -> &'a $T;
-                    #[deprecated = "use tuple indexing: `&mut tuple.N`"]
-                    fn $mutN<'a>(&'a mut self) -> &'a mut $T;
-                 )+
-            }
-
-            impl<$($T),+> $Tuple<$($T),+> for ($($T,)+) {
-                $(
-                    #[inline]
-                    #[allow(unused_variables)]
-                    #[deprecated = "use tuple indexing: `tuple.N`"]
-                    fn $valN(self) -> $T {
-                        e!(self.$idx)
-                    }
-
-                    #[inline]
-                    #[allow(unused_variables)]
-                    #[deprecated = "use tuple indexing: `&tuple.N`"]
-                    fn $refN<'a>(&'a self) -> &'a $T {
-                        e!(&self.$idx)
-                    }
-
-                    #[inline]
-                    #[allow(unused_variables)]
-                    #[deprecated = "use tuple indexing: &mut tuple.N"]
-                    fn $mutN<'a>(&'a mut self) -> &'a mut $T {
-                        e!(&mut self.$idx)
-                    }
-                )+
-            }
-
             #[stable]
             impl<$($T:Clone),+> Clone for ($($T,)+) {
                 fn clone(&self) -> ($($T,)+) {
@@ -132,7 +65,7 @@ macro_rules! tuple_impls {
                 }
             }
 
-            #[unstable = "waiting for PartialEq to stabilize"]
+            #[stable]
             impl<$($T:PartialEq),+> PartialEq for ($($T,)+) {
                 #[inline]
                 fn eq(&self, other: &($($T,)+)) -> bool {
@@ -144,10 +77,10 @@ macro_rules! tuple_impls {
                 }
             }
 
-            #[unstable = "waiting for Eq to stabilize"]
+            #[stable]
             impl<$($T:Eq),+> Eq for ($($T,)+) {}
 
-            #[unstable = "waiting for PartialOrd to stabilize"]
+            #[stable]
             impl<$($T:PartialOrd + PartialEq),+> PartialOrd for ($($T,)+) {
                 #[inline]
                 fn partial_cmp(&self, other: &($($T,)+)) -> Option<Ordering> {
@@ -171,7 +104,7 @@ macro_rules! tuple_impls {
                 }
             }
 
-            #[unstable = "waiting for Ord to stabilize"]
+            #[stable]
             impl<$($T:Ord),+> Ord for ($($T,)+) {
                 #[inline]
                 fn cmp(&self, other: &($($T,)+)) -> Ordering {

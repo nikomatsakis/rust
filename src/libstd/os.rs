@@ -1,4 +1,4 @@
-// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -22,7 +22,7 @@
 //! so we will not _hide_ the facts of which OS the user is on -- they should be given the
 //! opportunity to write OS-ignorant code by default.
 
-#![experimental]
+#![unstable]
 
 #![allow(missing_docs)]
 #![allow(non_snake_case)]
@@ -37,7 +37,7 @@ use error::{FromError, Error};
 use fmt;
 use io::{IoResult, IoError};
 use iter::{Iterator, IteratorExt};
-use kinds::Copy;
+use marker::Copy;
 use libc::{c_void, c_int, c_char};
 use libc;
 use boxed::Box;
@@ -46,23 +46,21 @@ use option::Option;
 use option::Option::{Some, None};
 use path::{Path, GenericPath, BytesContainer};
 use sys;
-use ptr::RawPtr;
+use sys::os as os_imp;
+use ptr::PtrExt;
 use ptr;
 use result::Result;
 use result::Result::{Err, Ok};
 use slice::{AsSlice, SliceExt};
-use slice::CloneSliceExt;
 use str::{Str, StrExt};
 use string::{String, ToString};
-use sync::atomic::{AtomicInt, INIT_ATOMIC_INT, SeqCst};
+use sync::atomic::{AtomicInt, ATOMIC_INT_INIT, Ordering};
 use vec::Vec;
 
-#[cfg(unix)] use c_str::ToCStr;
+#[cfg(unix)] use ffi::{self, CString};
 
-#[cfg(unix)]
-pub use sys::ext as unix;
-#[cfg(windows)]
-pub use sys::ext as windows;
+#[cfg(unix)] pub use sys::ext as unix;
+#[cfg(windows)] pub use sys::ext as windows;
 
 /// Get the number of cores available
 pub fn num_cpus() -> uint {
@@ -95,7 +93,7 @@ pub const TMPBUF_SZ : uint = 1000u;
 ///
 /// // We assume that we are in a valid directory.
 /// let current_working_directory = os::getcwd().unwrap();
-/// println!("The current directory is {}", current_working_directory.display());
+/// println!("The current directory is {:?}", current_working_directory.display());
 /// ```
 pub fn getcwd() -> IoResult<Path> {
     sys::os::getcwd()
@@ -196,15 +194,14 @@ pub fn getenv(n: &str) -> Option<String> {
 ///
 /// Panics if `n` has any interior NULs.
 pub fn getenv_as_bytes(n: &str) -> Option<Vec<u8>> {
-    use c_str::CString;
-
     unsafe {
         with_env_lock(|| {
-            let s = n.with_c_str(|buf| libc::getenv(buf));
+            let s = CString::from_slice(n.as_bytes());
+            let s = libc::getenv(s.as_ptr()) as *const _;
             if s.is_null() {
                 None
             } else {
-                Some(CString::new(s as *const libc::c_char, false).as_bytes_no_nul().to_vec())
+                Some(ffi::c_str_to_bytes(&s).to_vec())
             }
         })
     }
@@ -253,13 +250,12 @@ pub fn setenv<T: BytesContainer>(n: &str, v: T) {
     fn _setenv(n: &str, v: &[u8]) {
         unsafe {
             with_env_lock(|| {
-                n.with_c_str(|nbuf| {
-                    v.with_c_str(|vbuf| {
-                        if libc::funcs::posix01::unistd::setenv(nbuf, vbuf, 1) != 0 {
-                            panic!(IoError::last_error());
-                        }
-                    })
-                })
+                let k = CString::from_slice(n.as_bytes());
+                let v = CString::from_slice(v);
+                if libc::funcs::posix01::unistd::setenv(k.as_ptr(),
+                                                        v.as_ptr(), 1) != 0 {
+                    panic!(IoError::last_error());
+                }
             })
         }
     }
@@ -289,11 +285,10 @@ pub fn unsetenv(n: &str) {
     fn _unsetenv(n: &str) {
         unsafe {
             with_env_lock(|| {
-                n.with_c_str(|nbuf| {
-                    if libc::funcs::posix01::unistd::unsetenv(nbuf) != 0 {
-                        panic!(IoError::last_error());
-                    }
-                })
+                let nbuf = CString::from_slice(n.as_bytes());
+                if libc::funcs::posix01::unistd::unsetenv(nbuf.as_ptr()) != 0 {
+                    panic!(IoError::last_error());
+                }
             })
         }
     }
@@ -361,7 +356,7 @@ pub fn join_paths<T: BytesContainer>(paths: &[T]) -> Result<Vec<u8>, &'static st
 }
 
 /// A low-level OS in-memory pipe.
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct Pipe {
     /// A file descriptor representing the reading end of the pipe. Data written
     /// on the `out` file descriptor can be read from this file descriptor.
@@ -595,7 +590,7 @@ pub fn last_os_error() -> String {
     error_string(errno() as uint)
 }
 
-static EXIT_STATUS: AtomicInt = INIT_ATOMIC_INT;
+static EXIT_STATUS: AtomicInt = ATOMIC_INT_INIT;
 
 /// Sets the process exit code
 ///
@@ -606,23 +601,23 @@ static EXIT_STATUS: AtomicInt = INIT_ATOMIC_INT;
 ///
 /// Note that this is not synchronized against modifications of other threads.
 pub fn set_exit_status(code: int) {
-    EXIT_STATUS.store(code, SeqCst)
+    EXIT_STATUS.store(code, Ordering::SeqCst)
 }
 
 /// Fetches the process's current exit code. This defaults to 0 and can change
 /// by calling `set_exit_status`.
 pub fn get_exit_status() -> int {
-    EXIT_STATUS.load(SeqCst)
+    EXIT_STATUS.load(Ordering::SeqCst)
 }
 
 #[cfg(target_os = "macos")]
 unsafe fn load_argc_and_argv(argc: int,
                              argv: *const *const c_char) -> Vec<Vec<u8>> {
-    use c_str::CString;
+    use iter::range;
 
-    Vec::from_fn(argc as uint, |i| {
-        CString::new(*argv.offset(i as int), false).as_bytes_no_nul().to_vec()
-    })
+    range(0, argc as uint).map(|i| {
+        ffi::c_str_to_bytes(&*argv.offset(i as int)).to_vec()
+    }).collect()
 }
 
 /// Returns the command line arguments
@@ -651,7 +646,7 @@ fn real_args_as_bytes() -> Vec<Vec<u8>> {
 // res
 #[cfg(target_os = "ios")]
 fn real_args_as_bytes() -> Vec<Vec<u8>> {
-    use c_str::CString;
+    use ffi::c_str_to_bytes;
     use iter::range;
     use mem;
 
@@ -686,8 +681,7 @@ fn real_args_as_bytes() -> Vec<Vec<u8>> {
             let tmp = objc_msgSend(args, objectAtSel, i);
             let utf_c_str: *const libc::c_char =
                 mem::transmute(objc_msgSend(tmp, utf8Sel));
-            let s = CString::new(utf_c_str, false);
-            res.push(s.as_bytes_no_nul().to_vec())
+            res.push(c_str_to_bytes(&utf_c_str).to_vec());
         }
     }
 
@@ -714,13 +708,14 @@ fn real_args() -> Vec<String> {
 #[cfg(windows)]
 fn real_args() -> Vec<String> {
     use slice;
+    use iter::range;
 
     let mut nArgs: c_int = 0;
     let lpArgCount: *mut c_int = &mut nArgs;
     let lpCmdLine = unsafe { GetCommandLineW() };
     let szArgList = unsafe { CommandLineToArgvW(lpCmdLine, lpArgCount) };
 
-    let args = Vec::from_fn(nArgs as uint, |i| unsafe {
+    let args: Vec<_> = range(0, nArgs as uint).map(|i| unsafe {
         // Determine the length of this argument.
         let ptr = *szArgList.offset(i as int);
         let mut len = 0;
@@ -730,8 +725,8 @@ fn real_args() -> Vec<String> {
         let ptr = ptr as *const u16;
         let buf = slice::from_raw_buf(&ptr, len);
         let opt_s = String::from_utf16(sys::os::truncate_utf16_at_nul(buf));
-        opt_s.expect("CommandLineToArgvW returned invalid UTF-16")
-    });
+        opt_s.ok().expect("CommandLineToArgvW returned invalid UTF-16")
+    }).collect();
 
     unsafe {
         LocalFree(szArgList as *mut c_void);
@@ -860,7 +855,7 @@ pub enum MapOption {
 impl Copy for MapOption {}
 
 /// Possible errors when creating a map.
-#[deriving(Copy)]
+#[derive(Copy)]
 pub enum MapError {
     /// # The following are POSIX-specific
     ///
@@ -939,7 +934,7 @@ impl fmt::Show for MapError {
 
 impl Error for MapError {
     fn description(&self) -> &str { "memory map error" }
-    fn detail(&self) -> Option<String> { Some(self.to_string()) }
+    fn detail(&self) -> Option<String> { Some(format!("{:?}", self)) }
 }
 
 impl FromError<MapError> for Box<Error> {
@@ -1412,6 +1407,11 @@ mod arch_consts {
     pub const ARCH: &'static str = "arm";
 }
 
+#[cfg(target_arch = "aarch64")]
+mod arch_consts {
+    pub const ARCH: &'static str = "aarch64";
+}
+
 #[cfg(target_arch = "mips")]
 mod arch_consts {
     pub const ARCH: &'static str = "mips";
@@ -1424,8 +1424,9 @@ mod arch_consts {
 
 #[cfg(test)]
 mod tests {
-    use prelude::*;
-    use option;
+    use prelude::v1::*;
+
+    use iter::repeat;
     use os::{env, getcwd, getenv, make_absolute};
     use os::{split_paths, join_paths, setenv, unsetenv};
     use os;
@@ -1438,7 +1439,7 @@ mod tests {
     }
 
     fn make_rand_name() -> String {
-        let mut rng = rand::task_rng();
+        let mut rng = rand::thread_rng();
         let n = format!("TEST{}", rng.gen_ascii_chars().take(10u)
                                      .collect::<String>());
         assert!(getenv(n.as_slice()).is_none());
@@ -1454,7 +1455,7 @@ mod tests {
     fn test_setenv() {
         let n = make_rand_name();
         setenv(n.as_slice(), "VALUE");
-        assert_eq!(getenv(n.as_slice()), option::Option::Some("VALUE".to_string()));
+        assert_eq!(getenv(n.as_slice()), Some("VALUE".to_string()));
     }
 
     #[test]
@@ -1462,7 +1463,7 @@ mod tests {
         let n = make_rand_name();
         setenv(n.as_slice(), "VALUE");
         unsetenv(n.as_slice());
-        assert_eq!(getenv(n.as_slice()), option::Option::None);
+        assert_eq!(getenv(n.as_slice()), None);
     }
 
     #[test]
@@ -1471,9 +1472,9 @@ mod tests {
         let n = make_rand_name();
         setenv(n.as_slice(), "1");
         setenv(n.as_slice(), "2");
-        assert_eq!(getenv(n.as_slice()), option::Option::Some("2".to_string()));
+        assert_eq!(getenv(n.as_slice()), Some("2".to_string()));
         setenv(n.as_slice(), "");
-        assert_eq!(getenv(n.as_slice()), option::Option::Some("".to_string()));
+        assert_eq!(getenv(n.as_slice()), Some("".to_string()));
     }
 
     // Windows GetEnvironmentVariable requires some extra work to make sure
@@ -1490,7 +1491,7 @@ mod tests {
         let n = make_rand_name();
         setenv(n.as_slice(), s.as_slice());
         debug!("{}", s.clone());
-        assert_eq!(getenv(n.as_slice()), option::Option::Some(s));
+        assert_eq!(getenv(n.as_slice()), Some(s));
     }
 
     #[test]
@@ -1527,14 +1528,14 @@ mod tests {
             // MingW seems to set some funky environment variables like
             // "=C:=C:\MinGW\msys\1.0\bin" and "!::=::\" that are returned
             // from env() but not visible from getenv().
-            assert!(v2.is_none() || v2 == option::Option::Some(v));
+            assert!(v2.is_none() || v2 == Some(v));
         }
     }
 
     #[test]
     fn test_env_set_get_huge() {
         let n = make_rand_name();
-        let s = "x".repeat(10000).to_string();
+        let s = repeat("x").take(10000).collect::<String>();
         setenv(n.as_slice(), s.as_slice());
         assert_eq!(getenv(n.as_slice()), Some(s));
         unsetenv(n.as_slice());
@@ -1621,7 +1622,7 @@ mod tests {
             os::MapOption::MapWritable
         ]) {
             Ok(chunk) => chunk,
-            Err(msg) => panic!("{}", msg)
+            Err(msg) => panic!("{:?}", msg)
         };
         assert!(chunk.len >= 16);
 
@@ -1656,8 +1657,8 @@ mod tests {
         path.push("mmap_file.tmp");
         let size = MemoryMap::granularity() * 2;
         let mut file = File::open_mode(&path, Open, ReadWrite).unwrap();
-        file.seek(size as i64, SeekSet);
-        file.write_u8(0);
+        file.seek(size as i64, SeekSet).unwrap();
+        file.write_u8(0).unwrap();
 
         let chunk = MemoryMap::new(size / 2, &[
             MapOption::MapReadable,

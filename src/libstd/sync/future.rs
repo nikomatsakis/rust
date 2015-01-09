@@ -8,8 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! A type representing values that may be computed concurrently and operations for working with
-//! them.
+//! A type representing values that may be computed concurrently and operations
+//! for working with them.
 //!
 //! # Example
 //!
@@ -23,12 +23,15 @@
 //! ```
 
 #![allow(missing_docs)]
+#![unstable = "futures as-is have yet to be deeply reevaluated with recent \
+               core changes to Rust's synchronization story, and will likely \
+               become stable in the future but are unstable until that time"]
 
 use core::prelude::*;
 use core::mem::replace;
 
 use self::FutureState::*;
-use comm::{Receiver, channel};
+use sync::mpsc::{Receiver, channel};
 use thunk::{Thunk};
 use thread::Thread;
 
@@ -61,10 +64,6 @@ impl<A> Future<A> {
             _ => panic!( "Logic error." ),
         }
     }
-
-    /// Deprecated, use into_inner() instead
-    #[deprecated = "renamed to into_inner()"]
-    pub fn unwrap(self) -> A { self.into_inner() }
 
     pub fn get_ref<'a>(&'a mut self) -> &'a A {
         /*!
@@ -122,8 +121,8 @@ impl<A:Send> Future<A> {
          * waiting for the result to be received on the port.
          */
 
-        Future::from_fn(move|:| {
-            rx.recv()
+        Future::from_fn(move |:| {
+            rx.recv().unwrap()
         })
     }
 
@@ -141,8 +140,8 @@ impl<A:Send> Future<A> {
 
         Thread::spawn(move |:| {
             // Don't panic if the other end has hung up
-            let _ = tx.send_opt(blk());
-        }).detach();
+            let _ = tx.send(blk());
+        });
 
         Future::from_receiver(rx)
     }
@@ -150,9 +149,10 @@ impl<A:Send> Future<A> {
 
 #[cfg(test)]
 mod test {
-    use prelude::*;
+    use prelude::v1::*;
+    use sync::mpsc::channel;
     use sync::Future;
-    use task;
+    use thread::Thread;
 
     #[test]
     fn test_from_value() {
@@ -163,7 +163,7 @@ mod test {
     #[test]
     fn test_from_receiver() {
         let (tx, rx) = channel();
-        tx.send("whale".to_string());
+        tx.send("whale".to_string()).unwrap();
         let mut f = Future::from_receiver(rx);
         assert_eq!(f.get(), "whale");
     }
@@ -183,7 +183,7 @@ mod test {
     #[test]
     fn test_interface_unwrap() {
         let f = Future::from_value("fail".to_string());
-        assert_eq!(f.unwrap(), "fail");
+        assert_eq!(f.into_inner(), "fail");
     }
 
     #[test]
@@ -210,10 +210,10 @@ mod test {
         let expected = "schlorf";
         let (tx, rx) = channel();
         let f = Future::spawn(move|| { expected });
-        task::spawn(move|| {
+        let _t = Thread::spawn(move|| {
             let mut f = f;
-            tx.send(f.get());
+            tx.send(f.get()).unwrap();
         });
-        assert_eq!(rx.recv(), expected);
+        assert_eq!(rx.recv().unwrap(), expected);
     }
 }

@@ -13,8 +13,6 @@
 pub use self::RestrictionResult::*;
 
 use borrowck::*;
-use borrowck::LoanPathElem::*;
-use borrowck::LoanPathKind::*;
 use rustc::middle::expr_use_visitor as euv;
 use rustc::middle::mem_categorization as mc;
 use rustc::middle::ty;
@@ -23,7 +21,7 @@ use syntax::codemap::Span;
 
 use std::rc::Rc;
 
-#[deriving(Show)]
+#[derive(Show)]
 pub enum RestrictionResult<'tcx> {
     Safe,
     SafeIf(Rc<LoanPath<'tcx>>, Vec<Rc<LoanPath<'tcx>>>)
@@ -60,7 +58,7 @@ impl<'a, 'tcx> RestrictionsContext<'a, 'tcx> {
                 cmt: mc::cmt<'tcx>) -> RestrictionResult<'tcx> {
         debug!("restrict(cmt={})", cmt.repr(self.bccx.tcx));
 
-        let new_lp = |v: LoanPathKind<'tcx>| Rc::new(LoanPath::new(v, cmt.ty));
+        let new_lp = |&: v: LoanPathKind<'tcx>| Rc::new(LoanPath::new(v, cmt.ty));
 
         match cmt.cat.clone() {
             mc::cat_rvalue(..) => {
@@ -107,7 +105,7 @@ impl<'a, 'tcx> RestrictionsContext<'a, 'tcx> {
 
             mc::cat_deref(cmt_base, _, pk) => {
                 match pk {
-                    mc::OwnedPtr => {
+                    mc::Unique => {
                         // R-Deref-Send-Pointer
                         //
                         // When we borrow the interior of an owned pointer, we

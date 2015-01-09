@@ -19,13 +19,13 @@
 //! provided beyond this module.
 //!
 //! ```rust
-//! #[allow(experimental)];
+//! #[allow(unstable)];
 //!
 //! fn main() {
 //!     use std::simd::f32x4;
 //!     let a = f32x4(40.0, 41.0, 42.0, 43.0);
 //!     let b = f32x4(1.0, 1.1, 3.4, 9.8);
-//!     println!("{}", a + b);
+//!     println!("{:?}", a + b);
 //! }
 //! ```
 //!
@@ -37,70 +37,70 @@
 #![allow(non_camel_case_types)]
 #![allow(missing_docs)]
 
-#[experimental]
+#[unstable]
 #[simd]
-#[deriving(Copy, Show)]
+#[derive(Copy, Show)]
 #[repr(C)]
 pub struct i8x16(pub i8, pub i8, pub i8, pub i8,
                  pub i8, pub i8, pub i8, pub i8,
                  pub i8, pub i8, pub i8, pub i8,
                  pub i8, pub i8, pub i8, pub i8);
 
-#[experimental]
+#[unstable]
 #[simd]
-#[deriving(Copy, Show)]
+#[derive(Copy, Show)]
 #[repr(C)]
 pub struct i16x8(pub i16, pub i16, pub i16, pub i16,
                  pub i16, pub i16, pub i16, pub i16);
 
-#[experimental]
+#[unstable]
 #[simd]
-#[deriving(Copy, Show)]
+#[derive(Copy, Show)]
 #[repr(C)]
 pub struct i32x4(pub i32, pub i32, pub i32, pub i32);
 
-#[experimental]
+#[unstable]
 #[simd]
-#[deriving(Copy, Show)]
+#[derive(Copy, Show)]
 #[repr(C)]
 pub struct i64x2(pub i64, pub i64);
 
-#[experimental]
+#[unstable]
 #[simd]
-#[deriving(Copy, Show)]
+#[derive(Copy, Show)]
 #[repr(C)]
 pub struct u8x16(pub u8, pub u8, pub u8, pub u8,
                  pub u8, pub u8, pub u8, pub u8,
                  pub u8, pub u8, pub u8, pub u8,
                  pub u8, pub u8, pub u8, pub u8);
 
-#[experimental]
+#[unstable]
 #[simd]
-#[deriving(Copy, Show)]
+#[derive(Copy, Show)]
 #[repr(C)]
 pub struct u16x8(pub u16, pub u16, pub u16, pub u16,
                  pub u16, pub u16, pub u16, pub u16);
 
-#[experimental]
+#[unstable]
 #[simd]
-#[deriving(Copy, Show)]
+#[derive(Copy, Show)]
 #[repr(C)]
 pub struct u32x4(pub u32, pub u32, pub u32, pub u32);
 
-#[experimental]
+#[unstable]
 #[simd]
-#[deriving(Copy, Show)]
+#[derive(Copy, Show)]
 #[repr(C)]
 pub struct u64x2(pub u64, pub u64);
 
-#[experimental]
+#[unstable]
 #[simd]
-#[deriving(Copy, Show)]
+#[derive(Copy, Show)]
 #[repr(C)]
 pub struct f32x4(pub f32, pub f32, pub f32, pub f32);
 
-#[experimental]
+#[unstable]
 #[simd]
-#[deriving(Copy, Show)]
+#[derive(Copy, Show)]
 #[repr(C)]
 pub struct f64x2(pub f64, pub f64);

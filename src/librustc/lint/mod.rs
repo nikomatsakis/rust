@@ -28,8 +28,6 @@
 //! example) requires more effort. See `emit_lint` and `GatherNodeLevels`
 //! in `context.rs`.
 
-#![macro_escape]
-
 pub use self::Level::*;
 pub use self::LintSource::*;
 
@@ -42,7 +40,7 @@ use syntax::ast;
 pub use lint::context::{Context, LintStore, raw_emit_lint, check_crate, gather_attrs};
 
 /// Specification of a single lint.
-#[deriving(Copy)]
+#[derive(Copy, Show)]
 pub struct Lint {
     /// A string identifier for the lint.
     ///
@@ -68,7 +66,7 @@ pub struct Lint {
 impl Lint {
     /// Get the lint's name, with ASCII letters converted to lowercase.
     pub fn name_lower(&self) -> String {
-        self.name.to_ascii_lower()
+        self.name.to_ascii_lowercase()
     }
 }
 
@@ -174,7 +172,7 @@ pub trait LintPass {
 pub type LintPassObject = Box<LintPass + 'static>;
 
 /// Identifies a lint known to the compiler.
-#[deriving(Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct LintId {
     // Identity is based on pointer equality of this field.
     lint: &'static Lint,
@@ -188,7 +186,7 @@ impl PartialEq for LintId {
 
 impl Eq for LintId { }
 
-impl<S: hash::Writer> hash::Hash<S> for LintId {
+impl<S: hash::Writer + hash::Hasher> hash::Hash<S> for LintId {
     fn hash(&self, state: &mut S) {
         let ptr = self.lint as *const Lint;
         ptr.hash(state);
@@ -210,7 +208,7 @@ impl LintId {
 }
 
 /// Setting for how to handle a lint.
-#[deriving(Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Show)]
 pub enum Level {
     Allow, Warn, Deny, Forbid
 }
@@ -239,7 +237,7 @@ impl Level {
 }
 
 /// How a lint level was set.
-#[deriving(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LintSource {
     /// Lint is at the default level as declared
     /// in rustc or a plugin.
@@ -250,6 +248,9 @@ pub enum LintSource {
 
     /// Lint level was set by a command-line flag.
     CommandLine,
+
+    /// Lint level was set by the release channel.
+    ReleaseChannel
 }
 
 pub type LevelSource = (Level, LintSource);

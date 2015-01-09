@@ -41,7 +41,7 @@ impl Recorder {
         assert!(self.dump_spans);
         let result = format!("span,kind,{},{},text,\"{}\"\n",
                              kind, su.extent_str(span), escape(su.snippet(span)));
-        self.record(result[]);
+        self.record(&result[]);
     }
 }
 
@@ -61,7 +61,7 @@ macro_rules! svec {
     })
 }
 
-#[deriving(Copy)]
+#[derive(Copy,Show)]
 pub enum Row {
     Variable,
     Enum,
@@ -74,6 +74,7 @@ pub enum Row {
     Impl,
     Module,
     UseAlias,
+    UseGlob,
     ExternCrate,
     Inheritance,
     MethodCall,
@@ -125,6 +126,7 @@ impl<'a> FmtStrs<'a> {
             UseAlias => ("use_alias",
                          vec!("id","refid","refidcrate","name","scopeid"),
                          true, true),
+            UseGlob => ("use_glob", vec!("id","value","scopeid"), true, true),
             ExternCrate => ("extern_crate",
                             vec!("id","name","location","crate","scopeid"),
                             true, true),
@@ -156,7 +158,7 @@ impl<'a> FmtStrs<'a> {
                            values: Vec<String>,
                            span: Span) -> Option<String> {
         if values.len() != fields.len() {
-            self.span.sess.span_bug(span, format!(
+            self.span.sess.span_bug(span, &format!(
                 "Mismatch between length of fields for '{}', expected '{}', found '{}'",
                 kind, fields.len(), values.len())[]);
         }
@@ -164,9 +166,9 @@ impl<'a> FmtStrs<'a> {
         let values = values.iter().map(|s| {
             // Never take more than 1020 chars
             if s.len() > 1020 {
-                s[..1020]
+                &s[0..1020]
             } else {
-                s[]
+                &s[]
             }
         });
 
@@ -182,7 +184,7 @@ impl<'a> FmtStrs<'a> {
             }
         )));
         Some(strs.fold(String::new(), |mut s, ss| {
-            s.push_str(ss[]);
+            s.push_str(&ss[]);
             s
         }))
     }
@@ -194,7 +196,7 @@ impl<'a> FmtStrs<'a> {
         let (label, ref fields, needs_span, dump_spans) = FmtStrs::lookup_row(kind);
 
         if needs_span {
-            self.span.sess.span_bug(span, format!(
+            self.span.sess.span_bug(span, &format!(
                 "Called record_without_span for '{}' which does requires a span",
                 label)[]);
         }
@@ -210,9 +212,9 @@ impl<'a> FmtStrs<'a> {
         };
 
         let mut result = String::from_str(label);
-        result.push_str(values_str[]);
+        result.push_str(&values_str[]);
         result.push_str("\n");
-        self.recorder.record(result[]);
+        self.recorder.record(&result[]);
     }
 
     pub fn record_with_span(&mut self,
@@ -235,7 +237,7 @@ impl<'a> FmtStrs<'a> {
         if !needs_span {
             self.span.sess.span_bug(span,
                                     format!("Called record_with_span for '{}' \
-                                             which does not require a span", label)[]);
+                                             which does not require a span", label).as_slice());
         }
 
         let values_str = match self.make_values_str(label, fields, values, span) {
@@ -243,7 +245,7 @@ impl<'a> FmtStrs<'a> {
             None => return,
         };
         let result = format!("{},{}{}\n", label, self.span.extent_str(sub_span), values_str);
-        self.recorder.record(result[]);
+        self.recorder.record(&result[]);
     }
 
     pub fn check_and_record(&mut self,
@@ -273,7 +275,7 @@ impl<'a> FmtStrs<'a> {
         // variable def's node id
         let mut qualname = String::from_str(name);
         qualname.push_str("$");
-        qualname.push_str(id.to_string()[]);
+        qualname.push_str(&id.to_string()[]);
         self.check_and_record(Variable,
                               span,
                               sub_span,
@@ -478,6 +480,18 @@ impl<'a> FmtStrs<'a> {
                               span,
                               sub_span,
                               svec!(id, mod_node, mod_crate, name, parent));
+    }
+
+    pub fn use_glob_str(&mut self,
+                        span: Span,
+                        sub_span: Option<Span>,
+                        id: NodeId,
+                        values: &str,
+                        parent: NodeId) {
+        self.check_and_record(UseGlob,
+                              span,
+                              sub_span,
+                              svec!(id, values, parent));
     }
 
     pub fn extern_crate_str(&mut self,

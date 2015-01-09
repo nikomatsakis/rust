@@ -14,15 +14,15 @@
 // Note: see variance-regions-*.rs for the tests that check that the
 // variance inference works in the first place.
 
-use std::kinds::marker;
+use std::marker;
 
 struct Covariant<'a> {
     marker: marker::CovariantLifetime<'a>
 }
 
 fn use_<'short,'long>(c: Covariant<'long>,
-                      s: &'short int,
-                      l: &'long int,
+                      s: &'short isize,
+                      l: &'long isize,
                       _where:Option<&'short &'long ()>) {
 
     // Test whether Covariant<'long> <: Covariant<'short>.  Since

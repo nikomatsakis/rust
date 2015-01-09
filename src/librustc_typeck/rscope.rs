@@ -13,6 +13,7 @@ use middle::ty;
 use middle::ty_fold;
 
 use std::cell::Cell;
+use std::iter::repeat;
 use syntax::codemap::Span;
 
 /// Defines strategies for handling regions that are omitted.  For
@@ -36,7 +37,7 @@ pub trait RegionScope {
 
 // A scope in which all regions must be explicitly named. This is used
 // for types that appear in structs and so on.
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct ExplicitRscope;
 
 impl RegionScope for ExplicitRscope {
@@ -99,14 +100,14 @@ impl RegionScope for SpecificRscope {
                     count: uint)
                     -> Result<Vec<ty::Region>, Option<Vec<(String, uint)>>>
     {
-        Ok(Vec::from_elem(count, self.default))
+        Ok(repeat(self.default).take(count).collect())
     }
 }
 
 /// A scope in which we generate anonymous, late-bound regions for
 /// omitted regions. This occurs in function signatures.
 pub struct BindingRscope {
-    anon_bindings: Cell<uint>,
+    anon_bindings: Cell<u32>,
 }
 
 impl BindingRscope {
@@ -134,7 +135,7 @@ impl RegionScope for BindingRscope {
                     count: uint)
                     -> Result<Vec<ty::Region>, Option<Vec<(String, uint)>>>
     {
-        Ok(Vec::from_fn(count, |_| self.next_region()))
+        Ok(range(0, count).map(|_| self.next_region()).collect())
     }
 }
 

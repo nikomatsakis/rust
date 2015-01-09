@@ -8,8 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(associated_types)]
-
 trait Get {
     type Value;
     fn get(&self) -> <Self as Get>::Value;
@@ -17,16 +15,6 @@ trait Get {
 
 fn get<T:Get,U:Get>(x: T, y: U) -> Get::Value {}
 //~^ ERROR ambiguous associated type
-
-trait Other {
-    fn uhoh<U:Get>(&self, foo: U, bar: <Self as Get>::Value) {}
-    //~^ ERROR no suitable bound on `Self`
-}
-
-impl<T:Get> Other for T {
-    fn uhoh<U:Get>(&self, foo: U, bar: <(T, U) as Get>::Value) {}
-    //~^ ERROR currently unsupported
-}
 
 trait Grab {
     type Value;
@@ -36,4 +24,3 @@ trait Grab {
 
 fn main() {
 }
-

@@ -30,18 +30,18 @@
 //! variable only once, and it does so as soon as it can, so it is reasonable to ask what the type
 //! inferencer knows "so far".
 
-use middle::ty::{mod, Ty};
+use middle::ty::{self, Ty};
 use middle::ty_fold;
 use middle::ty_fold::TypeFoldable;
 use middle::ty_fold::TypeFolder;
-use std::collections::hash_map::{mod, Entry};
+use std::collections::hash_map::{self, Entry};
 
 use super::InferCtxt;
 use super::unify::InferCtxtMethodsForSimplyUnifiableTypes;
 
 pub struct TypeFreshener<'a, 'tcx:'a> {
     infcx: &'a InferCtxt<'a, 'tcx>,
-    freshen_count: uint,
+    freshen_count: u32,
     freshen_map: hash_map::HashMap<ty::InferTy, Ty<'tcx>>,
 }
 
@@ -59,7 +59,7 @@ impl<'a, 'tcx> TypeFreshener<'a, 'tcx> {
                   key: ty::InferTy,
                   freshener: F)
                   -> Ty<'tcx> where
-        F: FnOnce(uint) -> ty::InferTy,
+        F: FnOnce(u32) -> ty::InferTy,
     {
         match opt_ty {
             Some(ty) => { return ty.fold_with(self); }
@@ -72,7 +72,7 @@ impl<'a, 'tcx> TypeFreshener<'a, 'tcx> {
                 let index = self.freshen_count;
                 self.freshen_count += 1;
                 let t = ty::mk_infer(self.infcx.tcx, freshener(index));
-                entry.set(t);
+                entry.insert(t);
                 t
             }
         }
@@ -135,10 +135,7 @@ impl<'a, 'tcx> TypeFolder<'tcx> for TypeFreshener<'a, 'tcx> {
                 t
             }
 
-            ty::ty_open(..) => {
-                self.tcx().sess.bug("Cannot freshen an open existential type");
-            }
-
+            ty::ty_open(..) |
             ty::ty_bool |
             ty::ty_char |
             ty::ty_int(..) |
@@ -152,11 +149,11 @@ impl<'a, 'tcx> TypeFolder<'tcx> for TypeFreshener<'a, 'tcx> {
             ty::ty_ptr(..) |
             ty::ty_rptr(..) |
             ty::ty_bare_fn(..) |
-            ty::ty_closure(..) |
             ty::ty_trait(..) |
             ty::ty_struct(..) |
             ty::ty_unboxed_closure(..) |
             ty::ty_tup(..) |
+            ty::ty_projection(..) |
             ty::ty_param(..) => {
                 ty_fold::super_fold_ty(self, t)
             }

@@ -12,7 +12,7 @@
 
 // this is surprisingly complicated to be both generic & correct
 
-use core::prelude::*;
+use core::prelude::{PartialOrd};
 use core::num::Int;
 
 use Rng;
@@ -39,7 +39,7 @@ use distributions::{Sample, IndependentSample};
 ///
 /// fn main() {
 ///     let between = Range::new(10u, 10000u);
-///     let mut rng = std::rand::task_rng();
+///     let mut rng = std::rand::thread_rng();
 ///     let mut sum = 0;
 ///     for _ in range(0u, 1000) {
 ///         sum += between.ind_sample(&mut rng);
@@ -164,9 +164,9 @@ float_impl! { f64 }
 #[cfg(test)]
 mod tests {
     use std::num::Int;
-    use std::prelude::*;
+    use std::prelude::v1::*;
     use distributions::{Sample, IndependentSample};
-    use super::Range;
+    use super::Range as Range;
 
     #[should_fail]
     #[test]
@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn test_integers() {
         let mut rng = ::test::rng();
-        macro_rules! t (
+        macro_rules! t {
             ($($ty:ty),*) => {{
                 $(
                    let v: &[($ty, $ty)] = &[(0, 10),
@@ -199,7 +199,7 @@ mod tests {
                     }
                  )*
             }}
-        );
+        }
         t!(i8, i16, i32, i64, int,
            u8, u16, u32, u64, uint)
     }
@@ -207,7 +207,7 @@ mod tests {
     #[test]
     fn test_floats() {
         let mut rng = ::test::rng();
-        macro_rules! t (
+        macro_rules! t {
             ($($ty:ty),*) => {{
                 $(
                    let v: &[($ty, $ty)] = &[(0.0, 100.0),
@@ -225,7 +225,7 @@ mod tests {
                     }
                  )*
             }}
-        );
+        }
 
         t!(f32, f64)
     }
