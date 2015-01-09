@@ -40,7 +40,7 @@ pub fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
     debug!("compare_impl_method(impl_trait_ref={})",
            impl_trait_ref.repr(tcx));
 
-    debug!("impl_trait_ref (liberated) = {}",
+    debug!("compare_impl_method: impl_trait_ref (liberated) = {}",
            impl_trait_ref.repr(tcx));
 
     let infcx = infer::new_infer_ctxt(tcx);
