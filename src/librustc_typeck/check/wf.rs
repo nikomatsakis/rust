@@ -84,7 +84,7 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
                 reject_non_type_param_bounds(
                     ccx.tcx,
                     item.span,
-                    &trait_def.generics);
+                    &trait_def.predicates);
             }
             _ => {}
         }
@@ -338,7 +338,7 @@ impl<'ccx, 'tcx, 'v> Visitor<'v> for CheckTypeWellFormedVisitor<'ccx, 'tcx> {
                         reject_non_type_param_bounds(
                             self.ccx.tcx,
                             method.span,
-                            &ty_method.generics);
+                            &ty_method.bounds);
                         reject_shadowing_type_parameters(
                             self.ccx.tcx,
                             method.span,

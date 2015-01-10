@@ -639,7 +639,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                    projection_trait_ref.repr(self.tcx()));
 
             let trait_def = ty::lookup_trait_def(self.tcx(), projection_trait_ref.def_id);
-            let bounds = trait_def.generics.to_bounds(self.tcx(), projection_trait_ref.substs);
+            let bounds = trait_def.predicates.to_bounds(self.tcx(), projection_trait_ref.substs);
             let predicates = bounds.predicates.into_vec();
             debug!("assemble_projection_candidates: predicates={}",
                    predicates.repr(self.tcx()));

@@ -1936,7 +1936,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     {
         let tcx = self.tcx();
 
-        let ty::TypeScheme { generics, ty: decl_ty } = ty::lookup_item_type(tcx, did);
+        // TODO -- shouldn't we register some obligations somewhere, actually?
+        let ty::TypeScheme { generics, ty: decl_ty, predicates: _ } =
+            ty::lookup_item_type(tcx, did);
 
         let wants_params =
             generics.has_type_params(TypeSpace) || generics.has_region_params(TypeSpace);
