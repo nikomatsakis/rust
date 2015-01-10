@@ -1190,8 +1190,8 @@ fn ty_generics_for_trait<'a, 'tcx>(ccx: &CollectCtxt<'a, 'tcx>,
     let mut generics =
         ty_generics(ccx,
                     subst::TypeSpace,
-                    ast_generics.lifetimes.index(&FullRange),
-                    ast_generics.ty_params.index(&FullRange),
+                    &ast_generics.lifetimes[],
+                    &ast_generics.ty_params[],
                     ty::Generics::empty());
 
     let mut bounds =
