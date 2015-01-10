@@ -969,7 +969,7 @@ fn associated_path_def_to_ty<'tcx>(this: &AstConv<'tcx>,
 
         // FIXME(#20300) -- search where clauses, not bounds
         suitable_bounds =
-            traits::transitive_bounds(tcx, ty_param_def.bounds.trait_bounds.as_slice())
+            traits::transitive_bounds(tcx, &[])
             .filter(|b| trait_defines_associated_type_named(this, b.def_id(), assoc_name))
             .collect();
     }

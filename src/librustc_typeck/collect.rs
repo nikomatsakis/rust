@@ -1211,12 +1211,12 @@ fn ty_generics_for_trait<'a, 'tcx>(ccx: &CollectCtxt<'a, 'tcx>,
         index: 0,
         name: special_idents::type_self.name,
         def_id: local_def(param_id),
-        bounds: ty::ParamBounds {
-            region_bounds: vec!(),
-            builtin_bounds: ty::empty_builtin_bounds(),
-            trait_bounds: vec!(ty::Binder(self_trait_ref.clone())),
-            projection_bounds: vec!(),
-        },
+//        bounds: ty::ParamBounds {
+//            region_bounds: vec!(),
+//            builtin_bounds: ty::empty_builtin_bounds(),
+//            trait_bounds: vec!(ty::Binder(self_trait_ref.clone())),
+//            projection_bounds: vec!(),
+//        },
         default: None
     };
 
@@ -1415,12 +1415,12 @@ fn ty_generic_bounds<'a,'tcx>(ccx: &CollectCtxt<'a,'tcx>,
         result: &mut ty::GenericPredicates<'tcx>,
         space: subst::ParamSpace)
     {
-        for type_param_def in generics.types.get_slice(space).iter() {
-            let param_ty = ty::mk_param_from_def(tcx, type_param_def);
-            for predicate in ty::predicates(tcx, param_ty, &type_param_def.bounds).into_iter() {
-                result.predicates.push(space, predicate);
-            }
-        }
+//        for type_param_def in generics.types.get_slice(space).iter() {
+//            let param_ty = ty::mk_param_from_def(tcx, type_param_def);
+//            for predicate in ty::predicates(tcx, param_ty, &type_param_def.bounds).into_iter() {
+//                result.predicates.push(space, predicate);
+//            }
+//        }
 
         for region_param_def in generics.regions.get_slice(space).iter() {
             let region = region_param_def.to_early_bound_region();
@@ -1519,7 +1519,7 @@ fn get_or_create_type_parameter_def<'a,'tcx>(ccx: &CollectCtxt<'a,'tcx>,
         index: index,
         name: param.ident.name,
         def_id: local_def(param.id),
-        bounds: bounds,
+//        bounds: bounds,
         default: default
     };
 

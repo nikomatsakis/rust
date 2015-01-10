@@ -1760,7 +1760,7 @@ pub struct TypeParameterDef<'tcx> {
     pub def_id: ast::DefId,
     pub space: subst::ParamSpace,
     pub index: u32,
-    pub bounds: ParamBounds<'tcx>,
+    //pub bounds: ParamBounds<'tcx>,
     pub default: Option<Ty<'tcx>>,
 }
 
