@@ -56,6 +56,7 @@ mod project;
 mod object_safety;
 mod select;
 mod util;
+mod implicate;
 
 /// An `Obligation` represents some trait reference (e.g. `int:Eq`) for
 /// which the vtable must be found.  The process of finding a vtable is
