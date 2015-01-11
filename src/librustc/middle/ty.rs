@@ -1876,9 +1876,10 @@ pub type PolyEquatePredicate<'tcx> = ty::Binder<EquatePredicate<'tcx>>;
 
 #[derive(Clone, PartialEq, Eq, Hash, Show)]
 pub struct OutlivesPredicate<A,B>(pub A, pub B); // `A : B`
-pub type PolyOutlivesPredicate<A,B> = ty::Binder<OutlivesPredicate<A,B>>;
-pub type PolyRegionOutlivesPredicate = PolyOutlivesPredicate<ty::Region, ty::Region>;
-pub type PolyTypeOutlivesPredicate<'tcx> = PolyOutlivesPredicate<Ty<'tcx>, ty::Region>;
+pub type RegionOutlivesPredicate = OutlivesPredicate<ty::Region, ty::Region>;
+pub type TypeOutlivesPredicate<'tcx> = OutlivesPredicate<Ty<'tcx>,ty::Region>;
+pub type PolyRegionOutlivesPredicate = ty::Binder<RegionOutlivesPredicate>;
+pub type PolyTypeOutlivesPredicate<'tcx> = ty::Binder<TypeOutlivesPredicate<'tcx>>;
 
 /// This kind of predicate has no *direct* correspondent in the
 /// syntax, but it roughly corresponds to the syntactic forms:
@@ -1988,6 +1989,20 @@ impl<'tcx> AsPredicate<'tcx> for PolyEquatePredicate<'tcx> {
 impl<'tcx> AsPredicate<'tcx> for PolyRegionOutlivesPredicate {
     fn as_predicate(&self) -> Predicate<'tcx> {
         Predicate::RegionOutlives(self.clone())
+    }
+}
+
+impl<'tcx> AsPredicate<'tcx> for RegionOutlivesPredicate {
+    fn as_predicate(&self) -> Predicate<'tcx> {
+        assert!(!self.has_escaping_regions());
+        ty::Binder(self.clone()).as_predicate()
+    }
+}
+
+impl<'tcx> AsPredicate<'tcx> for TypeOutlivesPredicate<'tcx> {
+    fn as_predicate(&self) -> Predicate<'tcx> {
+        assert!(!self.has_escaping_regions());
+        ty::Binder(self.clone()).as_predicate()
     }
 }
 

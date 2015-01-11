@@ -318,6 +318,7 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
     ///
     /// Tests: `src/test/compile-fail/regions-free-region-ordering-*.rs`
     fn relate_free_regions(&mut self,
+                           span: Span,
                            fn_sig_tys: &[Ty<'tcx>],
                            body_id: ast::NodeId) {
         debug!("relate_free_regions >>");
@@ -328,25 +329,27 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
             debug!("relate_free_regions(t={})", ty.repr(tcx));
             let body_scope = CodeExtent::from_node_id(body_id);
             let body_scope = ty::ReScope(body_scope);
-            let constraints =
-                regionmanip::region_wf_constraints(
-                    tcx,
-                    ty,
-                    body_scope);
-            for constraint in constraints.iter() {
-                debug!("constraint: {}", constraint.repr(tcx));
-                match *constraint {
-                    regionmanip::RegionSubRegionConstraint(_,
-                                              ty::ReFree(free_a),
-                                              ty::ReFree(free_b)) => {
+            let obligations = regionmanip::wf_obligations(tcx,
+                                                          span,
+                                                          body_id,
+                                                          ty,
+                                                          body_scope);
+            for obligation in obligations.into_iter() {
+                debug!("constraint: {}", obligation.repr(tcx));
+                match obligation.predicate {
+                    ty::Predicate::RegionOutlives(
+                        ty::Binder(
+                            ty::OutlivesPredicate(ty::ReFree(free_a),
+                                                  ty::ReFree(free_b)))) => {
                         tcx.region_maps.relate_free_regions(free_a, free_b);
                     }
-                    regionmanip::RegionSubRegionConstraint(_,
-                                              ty::ReFree(free_a),
-                                              ty::ReInfer(ty::ReVar(vid_b))) => {
+                    ty::Predicate::RegionOutlives(
+                        ty::Binder(
+                            ty::OutlivesPredicate(ty::ReFree(free_a),
+                                                  ty::ReInfer(ty::ReVar(vid_b))))) => {
                         self.fcx.inh.infcx.add_given(free_a, vid_b);
                     }
-                    regionmanip::RegionSubRegionConstraint(..) => {
+                    ty::Predicate::RegionOutlives(..) => {
                         // In principle, we could record (and take
                         // advantage of) every relationship here, but
                         // we are also free not to -- it simply means
@@ -357,11 +360,20 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
                         // relationship that arises here, but
                         // presently we do not.)
                     }
-                    regionmanip::RegionSubGenericConstraint(_, r_a, ref generic_b) => {
-                        debug!("RegionSubGenericConstraint: {} <= {}",
-                               r_a.repr(tcx), generic_b.repr(tcx));
-
-                        self.region_bound_pairs.push((r_a, generic_b.clone()));
+                    ty::Predicate::TypeOutlives(ty::Binder(ty::OutlivesPredicate(r_a, ty))) => {
+                        if !ty.has_escaping_regions() {
+                            match ty.sty {
+                                ty::ty_param(ref param_ty) => {
+                                    self.region_bound_pairs.push(
+                                        (r_a, GenericKind::Param(param_ty.clone())));
+                                }
+                                ty::ty_projection(ref data) => {
+                                    self.region_bound_pairs.push(
+                                        (r_a, GenericKind::Projection(data.clone())));
+                                }
+                                _ => { }
+                            }
+                        }
                     }
                 }
             }

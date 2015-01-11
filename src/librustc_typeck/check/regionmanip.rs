@@ -10,43 +10,40 @@
 
 // #![warn(deprecated_mode)]
 
-pub use self::WfConstraint::*;
-
 use middle::infer::GenericKind;
 use middle::subst::{ParamSpace, Subst, Substs};
+use middle::traits;
 use middle::ty::{self, Ty};
 use middle::ty_fold::{TypeFolder};
 
 use syntax::ast;
+use syntax::codemap::Span;
 
 use util::ppaux::Repr;
 
 // Helper functions related to manipulating region types.
 
-pub enum WfConstraint<'tcx> {
-    RegionSubRegionConstraint(Option<Ty<'tcx>>, ty::Region, ty::Region),
-    RegionSubGenericConstraint(Option<Ty<'tcx>>, ty::Region, GenericKind<'tcx>),
-}
-
 struct Wf<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
-    stack: Vec<(ty::Region, Option<Ty<'tcx>>)>,
-    out: Vec<WfConstraint<'tcx>>,
+    span: Span,
+    body_id: ast::NodeId,
+    stack: Vec<(ty::Region, traits::ObligationCauseCode)>,
+    out: Vec<traits::PredicateObligation<'tcx>>,
 }
 
 /// This routine computes the well-formedness constraints that must hold for the type `ty` to
 /// appear in a context with lifetime `outer_region`
-pub fn region_wf_constraints<'tcx>(
+pub fn wf_obligations<'tcx>(
     tcx: &ty::ctxt<'tcx>,
+    span: Span,
+    body_id: ast::NodeId,
     ty: Ty<'tcx>,
     outer_region: ty::Region)
-    -> Vec<WfConstraint<'tcx>>
+    -> Vec<traits::PredicateObligation<'tcx>>
 {
     let mut stack = Vec::new();
-    stack.push((outer_region, None));
-    let mut wf = Wf { tcx: tcx,
-                      stack: stack,
-                      out: Vec::new() };
+    stack.push((outer_region, None, traits::MiscObligation));
+    let mut wf = Wf { tcx: tcx, span: span, body_id: body_id, stack: stack, out: Vec::new() };
     wf.accumulate_from_ty(ty);
     wf.out
 }
@@ -90,7 +87,7 @@ impl<'a, 'tcx> Wf<'a, 'tcx> {
                 // captured by reference it must also outlive the
                 // region bound on the closure, but this is explicitly
                 // handled by logic in regionck.
-                self.push_region_constraint_from_top(*region);
+                self.push_region_outlives_top(*region);
             }
 
             ty::ty_trait(ref t) => {
@@ -115,14 +112,14 @@ impl<'a, 'tcx> Wf<'a, 'tcx> {
                 self.accumulate_from_rptr(ty, *r_b, mt.ty);
             }
 
-            ty::ty_param(p) => {
-                self.push_param_constraint_from_top(p);
+            ty::ty_param(..) => {
+                self.push_ty_outlives_top(ty);
             }
 
             ty::ty_projection(ref data) => {
                 // `<T as TraitRef<..>>::Name`
 
-                self.push_projection_constraint_from_top(data);
+                self.push_ty_outlives_top(ty);
 
                 // this seems like a minimal requirement:
                 let trait_def = ty::lookup_trait_def(self.tcx, data.trait_ref.def_id);
@@ -162,23 +159,22 @@ impl<'a, 'tcx> Wf<'a, 'tcx> {
         //     &'a &'b ty_b
         //         ^
         //
-        // At this point, top of stack will be `'a`. We must
-        // require that `'a <= 'b`.
+        // At this point, top of stack will be `'a`. We must require
+        // that `'a <= 'b` (`'b : 'a`).
 
-        self.push_region_constraint_from_top(r_b);
+        self.push_region_outlives_top(r_b);
 
         // Now we push `'b` onto the stack, because it must
         // constrain any borrowed content we find within `T`.
 
-        self.stack.push((r_b, Some(ty)));
+        self.stack.push((r_b, traits::MiscObligation)); // TODO cause
         self.accumulate_from_ty(ty_b);
         self.stack.pop().unwrap();
     }
 
     /// Pushes a constraint that `r_b` must outlive the top region on the stack.
-    fn push_region_constraint_from_top(&mut self,
-                                       r_b: ty::Region) {
-
+    fn push_region_outlives_top(&mut self,
+                                r_b: ty::Region) {
         // Indicates that we have found borrowed content with a lifetime
         // of at least `r_b`. This adds a constraint that `r_b` must
         // outlive the region `r_a` on top of the stack.
@@ -188,141 +184,83 @@ impl<'a, 'tcx> Wf<'a, 'tcx> {
         //     &'a &'b T
         //         ^
         //
-        // when we hit the inner pointer (indicated by caret), `'a` will
-        // be on top of stack and `'b` will be the lifetime of the content
-        // we just found. So we add constraint that `'a <= 'b`.
+        // when we hit the inner pointer (indicated by caret), `'a`
+        // will be on top of stack and `'b` will be the lifetime of
+        // the content we just found. So we add the obligation that
+        // `'b : 'a`.
 
-        let &(r_a, opt_ty) = self.stack.last().unwrap();
-        self.push_sub_region_constraint(opt_ty, r_a, r_b);
-    }
-
-    /// Pushes a constraint that `r_a <= r_b`, due to `opt_ty`
-    fn push_sub_region_constraint(&mut self,
-                                  opt_ty: Option<Ty<'tcx>>,
-                                  r_a: ty::Region,
-                                  r_b: ty::Region) {
-        self.out.push(RegionSubRegionConstraint(opt_ty, r_a, r_b));
+        let &(r_a, ref code) = self.stack.last().unwrap();
+        self.out.push(
+            traits::Obligation::new(
+                traits::ObligationCause::new(self.span, self.body_id, code),
+                ty::OutlivesPredicate(r_b, r_a).as_predicate()));
     }
 
     /// Pushes a constraint that `param_ty` must outlive the top region on the stack.
-    fn push_param_constraint_from_top(&mut self,
-                                      param_ty: ty::ParamTy) {
-        let &(region, opt_ty) = self.stack.last().unwrap();
-        self.push_param_constraint(region, opt_ty, param_ty);
-    }
-
-    /// Pushes a constraint that `projection_ty` must outlive the top region on the stack.
-    fn push_projection_constraint_from_top(&mut self,
-                                           projection_ty: &ty::ProjectionTy<'tcx>) {
-        let &(region, opt_ty) = self.stack.last().unwrap();
-        self.out.push(RegionSubGenericConstraint(
-            opt_ty, region, GenericKind::Projection(projection_ty.clone())));
-    }
-
-    /// Pushes a constraint that `region <= param_ty`, due to `opt_ty`
-    fn push_param_constraint(&mut self,
-                             region: ty::Region,
-                             opt_ty: Option<Ty<'tcx>>,
-                             param_ty: ty::ParamTy) {
-        self.out.push(RegionSubGenericConstraint(
-            opt_ty, region, GenericKind::Param(param_ty)));
+    fn push_ty_outlives_top(&mut self, ty: Ty<'tcx>) {
+        let &(r_a, ref code) = self.stack.last().unwrap();
+        self.out.push(
+            traits::Obligation::new(
+                traits::ObligationCause::new(self.span, self.body_id, code),
+                ty::OutlivesPredicate(ty, r_a).as_predicate()));
     }
 
     fn accumulate_from_adt(&mut self,
-                           ty: Ty<'tcx>,
+                           _ty: Ty<'tcx>,
                            def_id: ast::DefId,
-                           generics: &ty::Generics<'tcx>,
                            substs: &Substs<'tcx>)
     {
-        // The generic declarations from the type, appropriately
-        // substituted for the actual substitutions.
-        let generics = generics.subst(self.tcx, substs);
+        let bounds =
+            ty::lookup_item_type(self.tcx, def_id)
+            .generics
+            .to_bounds(self.tcx, substs);
+        self.out.extend(bounds.predicates.iter().cloned());
 
         // Variance of each type/region parameter.
         let variances = ty::item_variances(self.tcx, def_id);
 
-        for &space in ParamSpace::all().iter() {
-            let region_params = substs.regions().get_slice(space);
-            let region_variances = variances.regions.get_slice(space);
-            let region_param_defs = generics.regions.get_slice(space);
-            assert_eq!(region_params.len(), region_variances.len());
-            for (&region_param, (&region_variance, region_param_def)) in
-                region_params.iter().zip(
-                    region_variances.iter().zip(
-                        region_param_defs.iter()))
-            {
-                match region_variance {
-                    ty::Covariant | ty::Bivariant => {
-                        // Ignore covariant or bivariant region
-                        // parameters.  To understand why, consider a
-                        // struct `Foo<'a>`. If `Foo` contains any
-                        // references with lifetime `'a`, then `'a` must
-                        // be at least contravariant (and possibly
-                        // invariant). The only way to have a covariant
-                        // result is if `Foo` contains only a field with a
-                        // type like `fn() -> &'a T`; i.e., a bare
-                        // function that can produce a reference of
-                        // lifetime `'a`. In this case, there is no
-                        // *actual data* with lifetime `'a` that is
-                        // reachable. (Presumably this bare function is
-                        // really returning static data.)
-                    }
+        for (space, index, &region) in substs.regions().iter_enumerated() {
+            let &variance = variances.regions.get(space, index);
 
-                    ty::Contravariant | ty::Invariant => {
-                        // If the parameter is contravariant or
-                        // invariant, there may indeed be reachable
-                        // data with this lifetime. See other case for
-                        // more details.
-                        self.push_region_constraint_from_top(region_param);
-                    }
+            match variance {
+                ty::Covariant | ty::Bivariant => {
+                    // Ignore covariant or bivariant region
+                    // parameters.  To understand why, consider a
+                    // struct `Foo<'a>`. If `Foo` contains any
+                    // references with lifetime `'a`, then `'a` must
+                    // be at least contravariant (and possibly
+                    // invariant). The only way to have a covariant
+                    // result is if `Foo` contains only a field with a
+                    // type like `fn() -> &'a T`; i.e., a bare
+                    // function that can produce a reference of
+                    // lifetime `'a`. In this case, there is no
+                    // *actual data* with lifetime `'a` that is
+                    // reachable. (Presumably this bare function is
+                    // really returning static data.)
                 }
 
-                for &region_bound in region_param_def.bounds.iter() {
-                    // The type declared a constraint like
-                    //
-                    //     'b : 'a
-                    //
-                    // which means that `'a <= 'b` (after
-                    // substitution).  So take the region we
-                    // substituted for `'a` (`region_bound`) and make
-                    // it a subregion of the region we substituted
-                    // `'b` (`region_param`).
-                    self.push_sub_region_constraint(
-                        Some(ty), region_bound, region_param);
+                ty::Contravariant | ty::Invariant => {
+                    // If the parameter is contravariant or
+                    // invariant, there may indeed be reachable
+                    // data with this lifetime. See other case for
+                    // more details.
+                    self.push_region_outlives_top(region);
                 }
             }
+        }
 
-            let types = substs.types.get_slice(space);
-            let type_variances = variances.types.get_slice(space);
-            let type_param_defs = generics.types.get_slice(space);
-            assert_eq!(types.len(), type_variances.len());
-            for (&type_param_ty, (&variance, type_param_def)) in
-                types.iter().zip(
-                    type_variances.iter().zip(
-                        type_param_defs.iter()))
-            {
-                debug!("type_param_ty={} variance={}",
-                       type_param_ty.repr(self.tcx),
-                       variance.repr(self.tcx));
+        for (space, index, &ty) in substs.types.iter_enumerated() {
+            let &variance = variances.types.get(space, index);
 
-                match variance {
-                    ty::Contravariant | ty::Bivariant => {
-                        // As above, except that in this it is a
-                        // *contravariant* reference that indices that no
-                        // actual data of type T is reachable.
-                    }
-
-                    ty::Covariant | ty::Invariant => {
-                        self.accumulate_from_ty(type_param_ty);
-                    }
+            match variance {
+                ty::Contravariant | ty::Bivariant => {
+                    // As above, except that in this it is a
+                    // *contravariant* reference that indices that no
+                    // actual data of type T is reachable.
                 }
 
-                // Inspect bounds on this type parameter for any
-                // region bounds.
-                for &r in type_param_def.bounds.region_bounds.iter() {
-                    self.stack.push((r, Some(ty)));
-                    self.accumulate_from_ty(type_param_ty);
-                    self.stack.pop().unwrap();
+                ty::Covariant | ty::Invariant => {
+                    self.accumulate_from_ty(ty);
                 }
             }
         }
@@ -343,15 +281,15 @@ impl<'a, 'tcx> Wf<'a, 'tcx> {
         //
         // In this case, the following relationships must hold:
         //
-        //     'b <= 'c
-        //     'd <= 'c
+        //     'c : 'b
+        //     'c : 'd
         //
         // The first conditions is due to the normal region pointer
         // rules, which say that a reference cannot outlive its
         // referent.
         //
         // The final condition may be a bit surprising. In particular,
-        // you may expect that it would have been `'c <= 'd`, since
+        // you may expect that it would have been `'d : 'c`, since
         // usually lifetimes of outer things are conservative
         // approximations for inner things. However, it works somewhat
         // differently with trait objects: here the idea is that if the
@@ -374,27 +312,13 @@ impl<'a, 'tcx> Wf<'a, 'tcx> {
         // `region_bound` that user specified must imply the
         // region bounds required from all of the trait types:
         for &r_d in required_region_bounds.iter() {
-            // Each of these is an instance of the `'c <= 'b`
+            // Each of these is an instance of the `'c : 'd`
             // constraint above
-            self.out.push(RegionSubRegionConstraint(Some(ty), r_d, r_c));
-        }
-    }
-}
-
-impl<'tcx> Repr<'tcx> for WfConstraint<'tcx> {
-    fn repr(&self, tcx: &ty::ctxt<'tcx>) -> String {
-        match *self {
-            RegionSubRegionConstraint(_, ref r_a, ref r_b) => {
-                format!("RegionSubRegionConstraint({}, {})",
-                        r_a.repr(tcx),
-                        r_b.repr(tcx))
-            }
-
-            RegionSubGenericConstraint(_, ref r, ref p) => {
-                format!("RegionSubGenericConstraint({}, {})",
-                        r.repr(tcx),
-                        p.repr(tcx))
-            }
+            let code = traits::MiscObligation; // TODO use a better code
+            self.out.push(
+                traits::Obligation::new(
+                    traits::ObligationCause::new(self.span, self.body_id, code),
+                    ty::OutlivesPredicate(r_c, r_d).as_predicate()));
         }
     }
 }
