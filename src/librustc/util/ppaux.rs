@@ -1085,7 +1085,7 @@ impl<'tcx> Repr<'tcx> for ty::MethodObject<'tcx> {
         format!("MethodObject({},{},{})",
                 self.trait_ref.repr(tcx),
                 self.method_num,
-                self.real_index)
+                self.vtable_index)
     }
 }
 
