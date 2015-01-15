@@ -11,6 +11,10 @@
 #![no_std]
 #![feature(lang_items)]
 
+#[lang="phantom_setter"]
+pub trait PhantomSetter<Sized? T> for Sized? { }
+impl<Sized? T, Sized? U> PhantomSetter<T> for U { }
+
 #[lang="sized"]
 pub trait Sized {}
 
@@ -24,6 +28,8 @@ extern fn stack_exhausted() {}
 extern fn eh_personality() {}
 
 #[lang="copy"]
-pub trait Copy {}
+pub trait Copy for Sized? : PhantomSetter<Self> {
+    // Empty.
+}
 
 

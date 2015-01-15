@@ -76,6 +76,7 @@ use marker::Sync;
 
 use intrinsics;
 use cell::UnsafeCell;
+use marker;
 
 /// A boolean type which can be safely shared between threads.
 #[stable(feature = "rust1", since = "1.0.0")]
@@ -105,6 +106,7 @@ unsafe impl Sync for AtomicUsize {}
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct AtomicPtr<T> {
     p: UnsafeCell<usize>,
+    _marker: marker::PhantomData<*mut T>,
 }
 
 unsafe impl<T> Sync for AtomicPtr<T> {}
@@ -771,7 +773,8 @@ impl<T> AtomicPtr<T> {
     #[inline]
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn new(p: *mut T) -> AtomicPtr<T> {
-        AtomicPtr { p: UnsafeCell::new(p as usize) }
+        AtomicPtr { p: UnsafeCell::new(p as usize),
+                    _marker: marker::PhantomData }
     }
 
     /// Loads a value from the pointer.

@@ -21,7 +21,7 @@ trait Ingot<R, S> {
 #[allow(dead_code)]
 struct HelloWorld;
 
-struct SendFile<'a>;
+struct SendFile;
 struct Alloy;
 enum Status {
     Continue

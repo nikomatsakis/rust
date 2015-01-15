@@ -251,7 +251,7 @@ use error::Error;
 use fmt;
 use int;
 use iter::{Iterator, IteratorExt};
-use marker::Sized;
+use marker::{PhantomGetter, Sized};
 use mem::transmute;
 use ops::FnOnce;
 use option::Option;
@@ -432,7 +432,7 @@ pub enum IoErrorKind {
 }
 
 /// A trait that lets you add a `detail` to an IoError easily
-trait UpdateIoError<T> {
+trait UpdateIoError {
     /// Returns an IoError with updated description and detail
     fn update_err<D>(self, desc: &'static str, detail: D) -> Self where
         D: FnOnce(&IoError) -> String;
@@ -445,7 +445,7 @@ trait UpdateIoError<T> {
     fn update_desc(self, desc: &'static str) -> Self;
 }
 
-impl<T> UpdateIoError<T> for IoResult<T> {
+impl<T> UpdateIoError for IoResult<T> {
     fn update_err<D>(self, desc: &'static str, detail: D) -> IoResult<T> where
         D: FnOnce(&IoError) -> String,
     {
@@ -1571,7 +1571,9 @@ pub trait Seek {
 /// connections.
 ///
 /// Doing so produces some sort of Acceptor.
-pub trait Listener<T, A: Acceptor<T>> {
+pub trait Listener<T, A: Acceptor<T>>
+    : PhantomGetter<T> // FIXME should be an assoc type anyhow
+{
     /// Spin up the listener and start queuing incoming connections
     ///
     /// # Error

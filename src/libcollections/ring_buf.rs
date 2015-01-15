@@ -535,7 +535,7 @@ impl<T> RingBuf<T> {
             head: self.head,
             cap: self.cap,
             ptr: self.ptr,
-            marker: marker::ContravariantLifetime::<'a>,
+            marker: marker::PhantomData,
         }
     }
 
@@ -1421,7 +1421,7 @@ pub struct IterMut<'a, T:'a> {
     tail: uint,
     head: uint,
     cap: uint,
-    marker: marker::ContravariantLifetime<'a>,
+    marker: marker::PhantomData<&'a mut T>,
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
@@ -1861,9 +1861,9 @@ mod tests {
 
     #[derive(Clone, PartialEq, Show)]
     enum Taggypar<T> {
-        Onepar(int),
-        Twopar(int, int),
-        Threepar(int, int, int),
+        Onepar(T),
+        Twopar(T, T),
+        Threepar(T, T, T),
     }
 
     #[derive(Clone, PartialEq, Show)]

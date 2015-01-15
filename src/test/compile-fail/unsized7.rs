@@ -15,6 +15,11 @@ trait T {}
 // I would like these to fail eventually.
 // impl - bounded
 trait T1<Z: T> {
+    fn dummy(&self) -> Z;
+}
+
+struct S3<Sized? Y> {
+    f: Box<Y>
 }
 struct S3<Y: ?Sized>;
 impl<X: ?Sized + T> T1<X> for S3<X> {

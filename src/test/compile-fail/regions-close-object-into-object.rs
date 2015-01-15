@@ -10,21 +10,24 @@
 
 #![feature(box_syntax)]
 
-trait A<T> {}
+trait A<T>
+{
+    fn get(&self) -> T { panic!() }
+}
 struct B<'a, T>(&'a (A<T>+'a));
 
 trait X {}
 impl<'a, T> X for B<'a, T> {}
 
-fn f<'a, T, U>(v: Box<A<T>+'static>) -> Box<X+'static> {
+fn f<'a, T:'static, U>(v: Box<A<T>+'static>) -> Box<X+'static> {
     box B(&*v) as Box<X>
 }
 
-fn g<'a, T: 'static>(v: Box<A<T>>) -> Box<X+'static> {
+fn g<'a, T:'static>(v: Box<A<T>>) -> Box<X+'static> {
     box B(&*v) as Box<X> //~ ERROR cannot infer
 }
 
-fn h<'a, T, U>(v: Box<A<U>+'static>) -> Box<X+'static> {
+fn h<'a, T, U:'static>(v: Box<A<U>+'static>) -> Box<X+'static> {
     box B(&*v) as Box<X>
 }
 

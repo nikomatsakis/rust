@@ -29,6 +29,14 @@ pub struct Argument {
     pub format: FormatSpec,
 }
 
+#[cfg(not(stage0))]
+#[doc(hidden)]
+#[derive(Copy)]
+pub struct Argument {
+    pub position: Position,
+    pub format: FormatSpec,
+}
+
 #[doc(hidden)]
 #[derive(Copy)]
 pub struct FormatSpec {

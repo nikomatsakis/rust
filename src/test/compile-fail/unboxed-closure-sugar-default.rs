@@ -19,7 +19,7 @@ trait Foo<T,V=T> {
     fn dummy(&self, t: T, v: V);
 }
 
-trait Eq<X: ?Sized> { }
+trait Eq<X: ?Sized> : marker::PhantomSetter<(Self,X)> { }
 impl<X: ?Sized> Eq<X> for X { }
 fn eq<A: ?Sized,B: ?Sized>() where A : Eq<B> { }
 

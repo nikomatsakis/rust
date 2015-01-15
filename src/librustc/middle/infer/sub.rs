@@ -10,12 +10,8 @@
 
 use super::combine::*;
 use super::{cres, CresCompare};
-use super::equate::Equate;
-use super::glb::Glb;
 use super::higher_ranked::HigherRankedRelations;
-use super::InferCtxt;
-use super::lub::Lub;
-use super::{TypeTrace, Subtype};
+use super::{Subtype};
 use super::type_variable::{SubtypeOf, SupertypeOf};
 
 use middle::ty::{BuiltinBounds};
@@ -37,15 +33,8 @@ pub fn Sub<'f, 'tcx>(cf: CombineFields<'f, 'tcx>) -> Sub<'f, 'tcx> {
 }
 
 impl<'f, 'tcx> Combine<'tcx> for Sub<'f, 'tcx> {
-    fn infcx<'a>(&'a self) -> &'a InferCtxt<'a, 'tcx> { self.fields.infcx }
-    fn tag(&self) -> String { "sub".to_string() }
-    fn a_is_expected(&self) -> bool { self.fields.a_is_expected }
-    fn trace(&self) -> TypeTrace<'tcx> { self.fields.trace.clone() }
-
-    fn equate<'a>(&'a self) -> Equate<'a, 'tcx> { Equate(self.fields.clone()) }
-    fn sub<'a>(&'a self) -> Sub<'a, 'tcx> { Sub(self.fields.clone()) }
-    fn lub<'a>(&'a self) -> Lub<'a, 'tcx> { Lub(self.fields.clone()) }
-    fn glb<'a>(&'a self) -> Glb<'a, 'tcx> { Glb(self.fields.clone()) }
+    fn tag(&self) -> String { "Sub".to_string() }
+    fn fields<'a>(&'a self) -> &'a CombineFields<'a, 'tcx> { &self.fields }
 
     fn contratys(&self, a: Ty<'tcx>, b: Ty<'tcx>) -> cres<'tcx, Ty<'tcx>> {
         Sub(self.fields.switch_expected()).tys(b, a)

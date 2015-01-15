@@ -8,13 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::marker;
+
 struct A;
 struct B;
 struct C;
-struct Foo<T = A, U = B, V = C>;
+struct Foo<T = A, U = B, V = C>(marker::CovariantType<(T,U,V)>);
 
-struct Hash<T>;
-struct HashMap<K, V, H = Hash<K>>;
+struct Hash<T>(marker::CovariantType<T>);
+struct HashMap<K, V, H = Hash<K>>(marker::CovariantType<(K,V,H)>);
 
 fn main() {
     // Ensure that the printed type doesn't include the default type params...

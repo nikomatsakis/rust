@@ -79,7 +79,7 @@ pub struct UnificationTable<K:UnifyKey> {
 /// made during the snapshot may either be *committed* or *rolled back*.
 pub struct Snapshot<K:UnifyKey> {
     // Link snapshot to the key type `K` of the table.
-    marker: marker::CovariantType<K>,
+    marker: marker::PhantomData<K>,
     snapshot: sv::Snapshot,
 }
 
@@ -109,7 +109,7 @@ impl<K:UnifyKey> UnificationTable<K> {
     /// Starts a new snapshot. Each snapshot must be either
     /// rolled back or committed in a "LIFO" (stack) order.
     pub fn snapshot(&mut self) -> Snapshot<K> {
-        Snapshot { marker: marker::CovariantType::<K>,
+        Snapshot { marker: marker::PhantomData::<K>,
                    snapshot: self.values.start_snapshot() }
     }
 

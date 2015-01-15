@@ -11,8 +11,11 @@
 #![feature(lang_items, start)]
 #![no_std] // makes debugging this test *a lot* easier (during resolve)
 
+#[lang="phantom_getter"]
+pub trait PhantomGetter<Sized? T> for Sized? { }
+
 #[lang="sized"]
-pub trait Sized {}
+pub trait Sized : PhantomGetter<Self> {}
 
 #[lang="copy"]
 pub trait Copy {}

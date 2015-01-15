@@ -8,7 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// Test that disallow lifetime parameters that are unused.
 
-enum list_cell<T> { cons(Box<list_cell<T>>), nil }
+enum Foo<'a> { //~ ERROR parameter `'a` is never used
+    Foo1(Bar<'a>)
+}
 
-pub fn main() { }
+enum Bar<'a> { //~ ERROR parameter `'a` is never used
+    Bar1(Foo<'a>)
+}
+
+fn main() {}

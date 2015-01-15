@@ -45,11 +45,11 @@ fn no_prelude(attrs: &[ast::Attribute]) -> bool {
     attr::contains_name(attrs, "no_implicit_prelude")
 }
 
-struct StandardLibraryInjector<'a> {
-    alt_std_name: Option<String>
+struct StandardLibraryInjector {
+    alt_std_name: Option<String>,
 }
 
-impl<'a> fold::Folder for StandardLibraryInjector<'a> {
+impl fold::Folder for StandardLibraryInjector {
     fn fold_crate(&mut self, mut krate: ast::Crate) -> ast::Crate {
 
         // The name to use in `extern crate "name" as std;`
@@ -83,9 +83,10 @@ fn inject_crates_ref(krate: ast::Crate, alt_std_name: Option<String>) -> ast::Cr
     fold.fold_crate(krate)
 }
 
-struct PreludeInjector<'a>;
+struct PreludeInjector;
 
-impl<'a> fold::Folder for PreludeInjector<'a> {
+
+impl fold::Folder for PreludeInjector {
     fn fold_crate(&mut self, mut krate: ast::Crate) -> ast::Crate {
         // Add #![no_std] here, so we don't re-inject when compiling pretty-printed source.
         // This must happen here and not in StandardLibraryInjector because this
