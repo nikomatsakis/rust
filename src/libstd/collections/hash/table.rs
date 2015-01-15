@@ -71,9 +71,10 @@ pub struct RawTable<K, V> {
     capacity: uint,
     size:     uint,
     hashes:   Unique<u64>,
+
     // Because K/V do not appear directly in any of the types in the struct,
     // inform rustc that in fact instances of K and V are reachable from here.
-    marker:   marker::CovariantType<(K,V)>,
+    marker:   marker::PhantomData<(K,V)>,
 }
 
 struct RawBucket<K, V> {
@@ -569,7 +570,7 @@ impl<K, V> RawTable<K, V> {
                 size: 0,
                 capacity: 0,
                 hashes: Unique::null(),
-                marker: marker::CovariantType,
+                marker: marker::PhantomData,
             };
         }
         // No need for `checked_mul` before a more restrictive check performed
@@ -608,7 +609,7 @@ impl<K, V> RawTable<K, V> {
             capacity: capacity,
             size:     0,
             hashes:   Unique(hashes),
-            marker:   marker::CovariantType,
+            marker:   marker::PhantomData,
         }
     }
 
@@ -658,7 +659,7 @@ impl<K, V> RawTable<K, V> {
             hashes_end: unsafe {
                 self.hashes.0.offset(self.capacity as int)
             },
-            marker: marker::ContravariantLifetime,
+            marker: marker::PhantomData,
         }
     }
 
@@ -683,7 +684,7 @@ impl<K, V> RawTable<K, V> {
             iter: RawBuckets {
                 raw: raw,
                 hashes_end: hashes_end,
-                marker: marker::ContravariantLifetime,
+                marker: marker::PhantomData,
             },
             table: self,
         }
@@ -696,7 +697,7 @@ impl<K, V> RawTable<K, V> {
             iter: RawBuckets {
                 raw: raw,
                 hashes_end: hashes_end,
-                marker: marker::ContravariantLifetime::<'static>,
+                marker: marker::PhantomData,
             },
             table: self,
         }
@@ -710,7 +711,7 @@ impl<K, V> RawTable<K, V> {
             raw: raw_bucket.offset(self.capacity as int),
             hashes_end: raw_bucket.hash,
             elems_left: self.size,
-            marker:     marker::ContravariantLifetime,
+            marker:     marker::PhantomData,
         }
     }
 }
@@ -720,7 +721,13 @@ impl<K, V> RawTable<K, V> {
 struct RawBuckets<'a, K, V> {
     raw: RawBucket<K, V>,
     hashes_end: *mut u64,
-    marker: marker::ContravariantLifetime<'a>,
+
+    // Strictly speaking, this should be &'a (K,V), but that would
+    // require that K:'a, and we often use RawBuckets<'static...> for
+    // move iterations, so that messes up a lot of other things. So
+    // just use `&'a (K,V)` as this is not a publicly exposed type
+    // anyway.
+    marker: marker::PhantomData<&'a ()>,
 }
 
 // FIXME(#19839) Remove in favor of `#[derive(Clone)]`
@@ -729,7 +736,7 @@ impl<'a, K, V> Clone for RawBuckets<'a, K, V> {
         RawBuckets {
             raw: self.raw,
             hashes_end: self.hashes_end,
-            marker: marker::ContravariantLifetime,
+            marker: marker::PhantomData,
         }
     }
 }
@@ -761,7 +768,11 @@ struct RevMoveBuckets<'a, K, V> {
     raw: RawBucket<K, V>,
     hashes_end: *mut u64,
     elems_left: uint,
-    marker: marker::ContravariantLifetime<'a>,
+
+    // As above, `&'a (K,V)` would seem better, but we often use
+    // 'static for the lifetime, and this is not a publicly exposed
+    // type.
+    marker: marker::PhantomData<&'a ()>,
 }
 
 impl<'a, K, V> Iterator for RevMoveBuckets<'a, K, V> {

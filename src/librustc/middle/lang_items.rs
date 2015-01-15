@@ -314,10 +314,14 @@ lets_do_this! {
     ExchangeHeapLangItem,            "exchange_heap",           exchange_heap;
     OwnedBoxLangItem,                "owned_box",               owned_box;
 
+    PhantomGetterItem,               "phantom_getter",          phantom_getter;
+    PhantomSetterItem,               "phantom_setter",          phantom_setter;
+    PhantomDataItem,                 "phantom_data",            phantom_data;
+    PhantomCellItem,                 "phantom_cell",            phantom_cell;
+
     CovariantTypeItem,               "covariant_type",          covariant_type;
     ContravariantTypeItem,           "contravariant_type",      contravariant_type;
     InvariantTypeItem,               "invariant_type",          invariant_type;
-
     CovariantLifetimeItem,           "covariant_lifetime",      covariant_lifetime;
     ContravariantLifetimeItem,       "contravariant_lifetime",  contravariant_lifetime;
     InvariantLifetimeItem,           "invariant_lifetime",      invariant_lifetime;

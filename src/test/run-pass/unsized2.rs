@@ -15,6 +15,8 @@
 
 // Test sized-ness checking in substitution.
 
+use std::marker;
+
 // Unbounded.
 fn f1<X: ?Sized>(x: &X) {
     f1::<X>(x);
@@ -66,8 +68,8 @@ fn f7<X: ?Sized+T3>(x: &X) {
 }
 
 trait T4<X> {
-    fn m1(x: &T4<X>);
-    fn m2(x: &T5<X>);
+    fn m1(x: &T4<X>, y: X);
+    fn m2(x: &T5<X>, y: X);
 }
 trait T5<X: ?Sized> {
     // not an error (for now)

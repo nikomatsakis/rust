@@ -17,13 +17,14 @@
 fn main() {
     send::<Box<Foo>>(box Output(0));
     Test::<Box<Foo>>::foo(box Output(0));
-    Test::<Box<Foo>>.send(box Output(0));
+    Test::<Box<Foo>>::new().send(box Output(0));
 }
 
 fn send<T>(_: T) {}
 
-struct Test<T>;
+struct Test<T> { marker: marker::CovariantType<T> }
 impl<T> Test<T> {
+    fn new() -> Test<T> { Test { marker: marker::CovariantType } }
     fn foo(_: T) {}
     fn send(&self, _: T) {}
 }

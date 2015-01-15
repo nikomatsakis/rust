@@ -37,7 +37,7 @@
 //!   Moreover, a switch to, e.g. `P<'a, T>` would be easy and mostly automated.
 
 use std::fmt::{self, Show};
-use std::hash::{Hash, Hasher};
+use std::hash::{Hash};
 #[cfg(stage0)] use std::hash::Writer;
 use std::ops::Deref;
 use std::ptr;

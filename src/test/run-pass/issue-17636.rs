@@ -8,21 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![allow(dead_code)]
+pub trait MyItem<T> :
+    ::std::marker::PhantomGetter<T>
+{}
+impl<T> MyItem<T> for T {}
 
+pub fn build_archive<'a, I: MyItem<&'a (|&uint|:'a)>>(files: I) {}
 
-trait A<T> { fn get(self) -> T; }
-trait B<T, U> { fn get(self) -> (T,U); }
-trait C<'a, U> { fn get(self) -> &'a U; }
-
-mod foo {
-    pub trait D<'a, T> { fn get(self) -> &'a T; }
+fn main() {
+    build_archive(&(|_| { }));
 }
-
-fn foo1<T>(_: &(A<T> + Send)) {}
-fn foo2<T>(_: Box<A<T> + Send + Sync>) {}
-fn foo3<T>(_: Box<B<int, uint> + 'static>) {}
-fn foo4<'a, T>(_: Box<C<'a, T> + 'static + Send>) {}
-fn foo5<'a, T>(_: Box<foo::D<'a, T> + 'static + Send>) {}
-
-pub fn main() {}

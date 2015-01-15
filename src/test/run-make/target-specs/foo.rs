@@ -11,11 +11,15 @@
 #![feature(lang_items)]
 #![no_std]
 
+#[lang="phantom_setter"]
+pub trait PhantomSetter<Sized? T> for Sized? { }
+impl<Sized? T, Sized? U> PhantomSetter<T> for U { }
+
 #[lang="copy"]
-trait Copy { }
+trait Copy : PhantomSetter<Self> { }
 
 #[lang="sized"]
-trait Sized { }
+trait Sized : PhantomSetter<Self>  { }
 
 #[lang="start"]
 fn start(_main: *const u8, _argc: int, _argv: *const *const u8) -> int { 0 }

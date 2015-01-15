@@ -13,40 +13,42 @@
 
 #![feature(box_syntax)]
 
-struct S<T>;
+struct S<T>(marker::PhantomData<T>);
 
-trait Gettable<T> {}
+trait Gettable<T> {
+    fn get(&self) -> T { panic!() }
+}
 
 impl<T: Send + Copy> Gettable<T> for S<T> {}
 
 fn f<T>(val: T) {
-    let t: S<T> = S;
+    let t: S<T> = S(marker::CovariantType);
     let a = &t as &Gettable<T>;
     //~^ ERROR the trait `core::marker::Send` is not implemented
     //~^^ ERROR the trait `core::marker::Copy` is not implemented
 }
 
 fn g<T>(val: T) {
-    let t: S<T> = S;
+    let t: S<T> = S(marker::CovariantType);
     let a: &Gettable<T> = &t;
     //~^ ERROR the trait `core::marker::Send` is not implemented
     //~^^ ERROR the trait `core::marker::Copy` is not implemented
 }
 
 fn foo<'a>() {
-    let t: S<&'a isize> = S;
+    let t: S<&'a isize> = S(marker::PhantomData);
     let a = &t as &Gettable<&'a isize>;
     //~^ ERROR declared lifetime bound not satisfied
 }
 
 fn foo2<'a>() {
-    let t: Box<S<String>> = box S;
+    let t: Box<S<String>> = box S(marker::CovariantType);
     let a = t as Box<Gettable<String>>;
     //~^ ERROR the trait `core::marker::Copy` is not implemented
 }
 
 fn foo3<'a>() {
-    let t: Box<S<String>> = box S;
+    let t: Box<S<String>> = box S(marker::CovariantType);
     let a: Box<Gettable<String>> = t;
     //~^ ERROR the trait `core::marker::Copy` is not implemented
 }

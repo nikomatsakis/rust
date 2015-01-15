@@ -11,8 +11,10 @@
 // This test checks that genuine type errors with partial
 // type hints are understandable.
 
-struct Foo<T>;
-struct Bar<U>;
+use std::kinds::marker;
+
+struct Foo<T>(T);
+struct Bar<U>(U);
 
 pub fn main() {
 }

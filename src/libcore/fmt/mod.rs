@@ -17,7 +17,7 @@ use any;
 use cell::{Cell, RefCell, Ref, RefMut};
 use char::CharExt;
 use iter::{Iterator, IteratorExt, range};
-use marker::{Copy, Sized};
+use marker::{self, Copy, Sized};
 use mem;
 use option::Option;
 use option::Option::{Some, None};
@@ -178,6 +178,20 @@ impl<'a> Arguments<'a> {
     /// `CountIsParam` or `CountIsNextParam` has to point to an argument
     /// created with `argumentuint`. However, failing to do so doesn't cause
     /// unsafety, but will ignore invalid .
+    #[cfg(not(stage0))]
+    #[doc(hidden)] #[inline]
+    #[experimental = "implementation detail of the `format_args!` macro"]
+    pub fn with_placeholders(pieces: &'a [&'a str],
+                             fmt: &'a [rt::Argument],
+                             args: &'a [Argument]) -> Arguments<'a> {
+        Arguments {
+            pieces: pieces,
+            fmt: Some(fmt),
+            args: args
+        }
+    }
+
+    #[cfg(stage0)]
     #[doc(hidden)] #[inline]
     #[unstable = "implementation detail of the `format_args!` macro"]
     #[cfg(stage0)] // SNAP 9e4e524
@@ -219,6 +233,7 @@ impl<'a> Arguments<'a> {
 /// and pass it to a function or closure, passed as the first argument. The
 /// macro validates the format string at compile-time so usage of the `write`
 /// and `format` functions can be safely performed.
+#[cfg(not(stage0))]
 #[stable]
 #[derive(Copy)]
 pub struct Arguments<'a> {
@@ -234,6 +249,15 @@ pub struct Arguments<'a> {
 
     // Dynamic arguments for interpolation, to be interleaved with string
     // pieces. (Every argument is preceded by a string piece.)
+    args: &'a [Argument<'a>],
+}
+
+/// STAGE0 SPECIFIC, DO NOT EDIT.
+#[cfg(stage0)]
+#[derive(Copy)]
+pub struct Arguments<'a> {
+    pieces: &'a [&'a str],
+    fmt: Option<&'a [rt::Argument<'a>]>,
     args: &'a [Argument<'a>],
 }
 
@@ -869,6 +893,11 @@ impl<T: Show> Show for [T] {
 impl Show for () {
     fn fmt(&self, f: &mut Formatter) -> Result {
         f.pad("()")
+    }
+}
+impl<T> Show for marker::PhantomData<T> {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        f.pad("PhantomData")
     }
 }
 

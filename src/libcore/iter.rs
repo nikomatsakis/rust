@@ -62,6 +62,7 @@ use clone::Clone;
 use cmp;
 use cmp::Ord;
 use default::Default;
+use marker;
 use mem;
 use num::{ToPrimitive, Int};
 use ops::{Add, Deref, FnMut};
@@ -890,7 +891,7 @@ pub trait IteratorExt: Iterator + Sized {
         FromB: Default + Extend<B>,
         Self: Iterator<Item=(A, B)>,
     {
-        struct SizeHint<A>(uint, Option<uint>);
+        struct SizeHint<A>(uint, Option<uint>, marker::PhantomData<A>);
         impl<A> Iterator for SizeHint<A> {
             type Item = A;
 
@@ -904,8 +905,8 @@ pub trait IteratorExt: Iterator + Sized {
         let mut ts: FromA = Default::default();
         let mut us: FromB = Default::default();
 
-        ts.extend(SizeHint(lo, hi));
-        us.extend(SizeHint(lo, hi));
+        ts.extend(SizeHint(lo, hi, marker::PhantomData));
+        us.extend(SizeHint(lo, hi, marker::PhantomData));
 
         for (t, u) in self {
             ts.extend(Some(t).into_iter());

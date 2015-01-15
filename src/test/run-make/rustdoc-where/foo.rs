@@ -10,17 +10,17 @@
 
 pub trait MyTrait {}
 
-pub struct Alpha<A> where A: MyTrait;
-pub trait Bravo<B> where B: MyTrait {}
+pub struct Alpha<A> where A: MyTrait { a: A }
+pub trait Bravo<B> where B: MyTrait { fn dummy(&self, b: B); }
 pub fn charlie<C>() where C: MyTrait {}
 
-pub struct Delta<D>;
+pub struct Delta<D> { d: D }
 impl<D> Delta<D> where D: MyTrait {
     pub fn delta() {}
 }
 
-pub struct Echo<E>;
+pub struct Echo<E> { e: E }
 impl<E> MyTrait for Echo<E> where E: MyTrait {}
 
-pub enum Foxtrot<F> {}
+pub enum Foxtrot<F> { Variant(F) }
 impl<F> MyTrait for Foxtrot<F> where F: MyTrait {}

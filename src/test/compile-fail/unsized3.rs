@@ -10,6 +10,7 @@
 
 // Test sized-ness checking in substitution within fn bodies..
 
+use std::marker;
 
 // Unbounded.
 fn f1<X: ?Sized>(x: &X) {

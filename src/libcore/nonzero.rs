@@ -10,10 +10,13 @@
 
 //! Exposes the NonZero lang item which provides optimization hints.
 
+use marker;
 use ops::Deref;
 
 /// Unsafe trait to indicate what types are usable with the NonZero struct
-pub unsafe trait Zeroable {}
+pub unsafe trait Zeroable
+    : marker::MarkerTrait
+{}
 
 unsafe impl<T> Zeroable for *const T {}
 unsafe impl<T> Zeroable for *mut T {}
