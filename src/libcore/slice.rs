@@ -169,11 +169,11 @@ impl<T> SliceExt for [T] {
             if mem::size_of::<T>() == 0 {
                 Iter {ptr: p,
                       end: (p as uint + self.len()) as *const T,
-                      marker: marker::ContravariantLifetime::<'a>}
+                      _marker: marker::PhantomData}
             } else {
                 Iter {ptr: p,
                       end: p.offset(self.len() as int),
-                      marker: marker::ContravariantLifetime::<'a>}
+                      _marker: marker::PhantomData}
             }
         }
     }
@@ -322,11 +322,11 @@ impl<T> SliceExt for [T] {
             if mem::size_of::<T>() == 0 {
                 IterMut {ptr: p,
                          end: (p as uint + self.len()) as *mut T,
-                         marker: marker::ContravariantLifetime::<'a>}
+                         _marker: marker::PhantomData}
             } else {
                 IterMut {ptr: p,
                          end: p.offset(self.len() as int),
-                         marker: marker::ContravariantLifetime::<'a>}
+                         _marker: marker::PhantomData}
             }
         }
     }
@@ -751,7 +751,7 @@ macro_rules! make_slice {
 pub struct Iter<'a, T: 'a> {
     ptr: *const T,
     end: *const T,
-    marker: marker::ContravariantLifetime<'a>
+    _marker: marker::PhantomData<&'a T>,
 }
 
 #[unstable]
@@ -843,7 +843,7 @@ impl<'a, T> RandomAccessIterator for Iter<'a, T> {
 pub struct IterMut<'a, T: 'a> {
     ptr: *mut T,
     end: *mut T,
-    marker: marker::ContravariantLifetime<'a>,
+    _marker: marker::PhantomData<&'a mut T>,
 }
 
 

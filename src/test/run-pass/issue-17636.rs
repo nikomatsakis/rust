@@ -9,7 +9,7 @@
 // except according to those terms.
 
 pub trait MyItem<T> :
-    ::std::kinds::marker::PhantomGetter<T>
+    ::std::marker::PhantomGetter<T>
 {}
 impl<T> MyItem<T> for T {}
 

@@ -10,7 +10,7 @@
 
 #![feature(unboxed_closures)]
 
-use std::kinds::marker;
+use std::marker;
 
 struct B<T>(marker::PhantomData<T>);
 

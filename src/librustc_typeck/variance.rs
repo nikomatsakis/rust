@@ -212,22 +212,16 @@ use arena::Arena;
 use middle::resolve_lifetime as rl;
 use middle::subst;
 use middle::subst::{ParamSpace, FnSpace, TypeSpace, SelfSpace, VecPerParamSpace};
-use middle::traits;
 use middle::ty::{self, Ty};
 use std::fmt;
 use std::rc::Rc;
-use std::iter::repeat;
 use syntax::ast;
 use syntax::ast_map;
 use syntax::ast_util;
-use syntax::codemap::Span;
-use syntax::parse::token::special_names;
-use syntax::ptr::P;
 use syntax::visit;
 use syntax::visit::Visitor;
-use util::common::ErrorReported;
 use util::nodemap::NodeMap;
-use util::ppaux::{Repr, UserString};
+use util::ppaux::Repr;
 
 pub fn infer_variance(tcx: &ty::ctxt) {
     let krate = tcx.map.krate();
@@ -305,8 +299,6 @@ struct InferredInfo<'a> {
     index: uint,
     param_id: ast::NodeId,
     term: VarianceTermPtr<'a>,
-    span: Span,
-    name: ast::Name,
 
     // Initial value to use for this parameter when inferring
     // variance. For most parameters, this is Bivariant. But for lang
@@ -367,10 +359,8 @@ fn lang_items(tcx: &ty::ctxt) -> Vec<(ast::NodeId,ty::Variance)> {
 impl<'a, 'tcx> TermsContext<'a, 'tcx> {
     fn add_inferreds_for_item(&mut self,
                               item_id: ast::NodeId,
-                              item_span: Span,
                               has_self: bool,
-                              generics: &ast::Generics,
-                              associated_types: &[&P<ast::AssociatedType>])
+                              generics: &ast::Generics)
     {
         /*!
          * Add "inferreds" for the generic parameters declared on this
@@ -387,24 +377,16 @@ impl<'a, 'tcx> TermsContext<'a, 'tcx> {
         let inferreds_on_entry = self.num_inferred();
 
         if has_self {
-            self.add_inferred(item_id, TypeParam, SelfSpace, 0, item_id,
-                              item_span, special_names::type_self);
+            self.add_inferred(item_id, TypeParam, SelfSpace, 0, item_id);
         }
 
         for (i, p) in generics.lifetimes.iter().enumerate() {
             let id = p.lifetime.id;
-            self.add_inferred(item_id, RegionParam, TypeSpace, i, id,
-                              p.lifetime.span, p.lifetime.name);
+            self.add_inferred(item_id, RegionParam, TypeSpace, i, id);
         }
 
         for (i, p) in generics.ty_params.iter().enumerate() {
-            self.add_inferred(item_id, TypeParam, TypeSpace, i, p.id,
-                              p.span, p.ident.name);
-        }
-
-        for (i, p) in associated_types.iter().enumerate() {
-            self.add_inferred(item_id, TypeParam, AssocSpace, i, p.ty_param.id,
-                              p.ty_param.span, p.ty_param.ident.name);
+            self.add_inferred(item_id, TypeParam, TypeSpace, i, p.id);
         }
 
         // If this item has no type or lifetime parameters,
@@ -428,9 +410,7 @@ impl<'a, 'tcx> TermsContext<'a, 'tcx> {
                     kind: ParamKind,
                     space: ParamSpace,
                     index: uint,
-                    param_id: ast::NodeId,
-                    span: Span,
-                    name: ast::Name) {
+                    param_id: ast::NodeId) {
         let inf_index = InferredIndex(self.inferred_infos.len());
         let term = self.arena.alloc(|| InferredTerm(inf_index));
         let initial_variance = self.pick_initial_variance(item_id, space);
@@ -440,8 +420,6 @@ impl<'a, 'tcx> TermsContext<'a, 'tcx> {
                                                 index: index,
                                                 param_id: param_id,
                                                 term: term,
-                                                span: span,
-                                                name: name,
                                                 initial_variance: initial_variance });
         let newly_added = self.inferred_map.insert(param_id, inf_index).is_none();
         assert!(newly_added);
@@ -452,7 +430,7 @@ impl<'a, 'tcx> TermsContext<'a, 'tcx> {
                 index={}, \
                 param_id={}, \
                 inf_index={:?}, \
-                initial_variance={})",
+                initial_variance={:?})",
                item_id, kind, space, index, param_id, inf_index,
                initial_variance);
     }
@@ -463,27 +441,6 @@ impl<'a, 'tcx> TermsContext<'a, 'tcx> {
                              -> ty::Variance
     {
         match space {
-            AssocSpace => {
-                // Associated types must always be invariant because
-                // they can be projected out, so we can't easily
-                // enumerate the uses to which they may be put.
-                //
-                // Consider the associated type `Foo::T`:
-                //
-                //     trait Foo { type T; fn get(&self) -> T; }
-                //     fn foo<F:Foo>(x: &mut F::T) { ... }
-                //
-                // Within the trait itself, `T` only has covariant
-                // uses, but *outside of the trait*, it appears in an
-                // invariant position. So if we had an impl that was
-                // supplying a vtable targeting some particular type
-                // for `T`, and we allowed that vtable to be reused
-                // with a subtype for `T`, it seems clear we'd get
-                // into trouble.
-
-                ty::Invariant
-            }
-
             SelfSpace | FnSpace => {
                 ty::Bivariant
             }
@@ -509,18 +466,10 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TermsContext<'a, 'tcx> {
         match item.node {
             ast::ItemEnum(_, ref generics) |
             ast::ItemStruct(_, ref generics) => {
-                self.add_inferreds_for_item(item.id, item.span, false, generics, &[]);
+                self.add_inferreds_for_item(item.id, false, generics);
             }
-            ast::ItemTrait(_, ref generics, _, _, ref trait_items) => {
-                let assoc_types: Vec<_> =
-                    trait_items.iter()
-                    .flat_map(|t| match *t { ast::TypeTraitItem(ref d) => Some(d).into_iter(),
-                                             ast::RequiredMethod(..) => None.into_iter(),
-                                             ast::ProvidedMethod(..) => None.into_iter() })
-                    .collect();
-
-                self.add_inferreds_for_item(item.id, item.span, true, generics, &*assoc_types);
-
+            ast::ItemTrait(_, ref generics, _, _) => {
+                self.add_inferreds_for_item(item.id, true, generics);
                 visit::walk_item(self, item);
             }
 
@@ -593,12 +542,13 @@ impl<'a, 'tcx, 'v> Visitor<'v> for ConstraintContext<'a, 'tcx> {
 
         match item.node {
             ast::ItemEnum(ref enum_definition, _) => {
+                let scheme = ty::lookup_item_type(tcx, did);
+
                 // Not entirely obvious: constraints on structs/enums do not
                 // affect the variance of their type parameters. See discussion
                 // in comment at top of module.
                 //
-                //  let polytype = ty::lookup_item_type(tcx, did);
-                // self.add_constraints_from_generics(&polytype.generics);
+                // self.add_constraints_from_generics(&scheme.generics);
 
                 // Hack: If we directly call `ty::enum_variants`, it
                 // annoyingly takes it upon itself to run off and
@@ -616,45 +566,48 @@ impl<'a, 'tcx, 'v> Visitor<'v> for ConstraintContext<'a, 'tcx> {
                                                           &**ast_variant,
                                                           /*discriminant*/ 0);
                     for arg_ty in variant.args.iter() {
-                        self.add_constraints_from_ty(generics, *arg_ty, self.covariant);
+                        self.add_constraints_from_ty(&scheme.generics, *arg_ty, self.covariant);
                     }
                 }
             }
 
             ast::ItemStruct(..) => {
+                let scheme = ty::lookup_item_type(tcx, did);
+
                 // Not entirely obvious: constraints on structs/enums do not
                 // affect the variance of their type parameters. See discussion
                 // in comment at top of module.
                 //
-                // let polytype = ty::lookup_item_type(tcx, did);
-                // self.add_constraints_from_generics(&polytype.generics);
+                // self.add_constraints_from_generics(&scheme.generics);
 
                 let struct_fields = ty::lookup_struct_fields(tcx, did);
                 for field_info in struct_fields.iter() {
                     assert_eq!(field_info.id.krate, ast::LOCAL_CRATE);
                     let field_ty = ty::node_id_to_type(tcx, field_info.id.node);
-                    self.add_constraints_from_ty(generics, field_ty, self.covariant);
+                    self.add_constraints_from_ty(&scheme.generics, field_ty, self.covariant);
                 }
             }
 
             ast::ItemTrait(..) => {
                 let trait_def = ty::lookup_trait_def(tcx, did);
-                self.add_constraints_from_generics(&trait_def.generics,
-                                                   &[SelfSpace],
-                                                   self.covariant);
-                self.add_constraints_from_param_bounds(ty::mk_self_type(tcx, did),
-                                                       &trait_def.bounds,
-                                                       self.covariant);
+                let predicates = ty::predicates(tcx, ty::mk_self_type(tcx), &trait_def.bounds);
+                self.add_constraints_from_predicates(&trait_def.generics,
+                                                     &predicates[],
+                                                     self.covariant);
 
                 let trait_items = ty::trait_items(tcx, did);
                 for trait_item in trait_items.iter() {
                     match *trait_item {
                         ty::MethodTraitItem(ref method) => {
-                            self.add_constraints_from_generics(&method.generics,
-                                                               &[FnSpace],
-                                                               self.contravariant);
-                            self.add_constraints_from_sig(&method.fty.sig,
-                                                          self.covariant);
+                            self.add_constraints_from_predicates(
+                                &method.generics,
+                                method.generics.predicates.get_slice(FnSpace),
+                                self.contravariant);
+
+                            self.add_constraints_from_sig(
+                                &method.generics,
+                                &method.fty.sig,
+                                self.covariant);
                         }
                         ty::TypeTraitItem(_) => {}
                     }
@@ -843,26 +796,22 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
     }
 
     fn add_constraints_from_trait_ref(&mut self,
-                                      def_id: ast::DefId,
-                                      spaces: &[subst::ParamSpace],
-                                      substs: &subst::Substs<'tcx>,
+                                      generics: &ty::Generics<'tcx>,
+                                      trait_ref: &ty::TraitRef<'tcx>,
                                       variance: VarianceTermPtr<'a>) {
-        debug!("add_constraints_from_trait_ref: def_id={} substs={} variance={}",
-               def_id.repr(self.tcx()),
-               substs.repr(self.tcx()),
+        debug!("add_constraints_from_trait_ref: trait_ref={} variance={:?}",
+               trait_ref.repr(self.tcx()),
                variance);
 
-        let trait_def = ty::lookup_trait_def(self.tcx(), def_id);
-        let generics = &trait_def.generics;
+        let trait_def = ty::lookup_trait_def(self.tcx(), trait_ref.def_id);
 
-        for &space in spaces.iter() {
-            self.add_constraints_from_substs(
-                def_id,
-                generics.types.get_slice(space),
-                generics.regions.get_slice(space),
-                substs,
-                variance);
-        }
+        self.add_constraints_from_substs(
+            generics,
+            trait_ref.def_id,
+            trait_def.generics.types.as_slice(),
+            trait_def.generics.regions.as_slice(),
+            trait_ref.substs,
+            variance);
     }
 
     /// Adds constraints appropriate for an instance of `ty` appearing
@@ -872,7 +821,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                                generics: &ty::Generics<'tcx>,
                                ty: Ty<'tcx>,
                                variance: VarianceTermPtr<'a>) {
-        debug!("add_constraints_from_ty(ty={}, variance={})",
+        debug!("add_constraints_from_ty(ty={}, variance={:?})",
                ty.repr(self.tcx()),
                variance);
 
@@ -940,33 +889,16 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
             }
 
             ty::ty_trait(ref data) => {
-                let poly_trait_ref = data.principal_trait_ref_with_self_ty(ty::mk_err());
+                let poly_trait_ref =
+                    data.principal_trait_ref_with_self_ty(self.tcx(),
+                                                          self.tcx().types.err);
 
                 // The type `Foo<T+'a>` is contravariant w/r/t `'a`:
                 let contra = self.contravariant(variance);
                 self.add_constraints_from_region(generics, data.bounds.region_bound, contra);
 
-<<<<<<< variant A
                 // Ignore the SelfSpace, it is erased.
-                self.add_constraints_from_trait_ref(
-                    poly_trait_ref.def_id(), &[subst::TypeSpace],
-                    poly_trait_ref.substs(), variance);
->>>>>>> variant B
-                self.add_constraints_from_substs(
-                    generics,
-                    trait_ref.def_id(),
-                    trait_def.generics.types.get_slice(subst::TypeSpace),
-                    trait_def.generics.regions.get_slice(subst::TypeSpace),
-                    trait_ref.substs(),
-                    variance);
-####### Ancestor
-                self.add_constraints_from_substs(
-                    principal.def_id(),
-                    generics.types.get_slice(subst::TypeSpace),
-                    generics.regions.get_slice(subst::TypeSpace),
-                    principal.substs(),
-                    variance);
-======= end
+                self.add_constraints_from_trait_ref(generics, &*poly_trait_ref.0, variance);
             }
 
             ty::ty_param(ref data) => {
@@ -988,7 +920,12 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                 self.add_constraints_from_sig(generics, sig, variance);
             }
 
-            ty::ty_infer(..) | ty::ty_err => {
+            ty::ty_err => {
+                // we encounter this when walking the trait references for object
+                // types, where we use ty_err as the Self type
+            }
+
+            ty::ty_infer(..) => {
                 self.tcx().sess.bug(
                     &format!("unexpected type encountered in \
                             variance inference: {}",
@@ -1031,68 +968,48 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
         }
     }
 
-    fn add_constraints_from_generics(&mut self,
-                                     generics: &ty::Generics<'tcx>,
-                                     spaces: &[subst::ParamSpace],
-                                     variance: VarianceTermPtr<'a>) {
+    fn add_constraints_from_predicates(&mut self,
+                                       generics: &ty::Generics<'tcx>,
+                                       predicates: &[ty::Predicate<'tcx>],
+                                       variance: VarianceTermPtr<'a>) {
         debug!("add_constraints_from_generics({})",
                generics.repr(self.tcx()));
 
-        for &space in spaces.iter() {
-            for type_def in generics.types.get_slice(space).iter() {
-                let param_ty = ty::mk_param_from_def(self.tcx(), type_def);
-                self.add_constraints_from_param_bounds(param_ty, &type_def.bounds, variance);
-            }
-
-            for region_def in generics.regions.get_slice(space).iter() {
-                for bound in region_def.bounds.iter() {
-                    let variance_r = self.xform(variance, self.contravariant); // TODO
-                    self.add_constraints_from_region(*bound, variance_r);
+        for predicate in predicates.iter() {
+            match *predicate {
+                ty::Predicate::Trait(ty::Binder(ref data)) => {
+                    self.add_constraints_from_trait_ref(generics, &*data.trait_ref, variance);
                 }
-            }
-        }
-    }
 
-    fn add_constraints_from_param_bounds(&mut self,
-                                         subject_ty: Ty<'tcx>,
-                                         bounds: &ty::ParamBounds<'tcx>,
-                                         variance: VarianceTermPtr<'a>) {
-        /*!
-         * Adds any variance constraints that occur due to `subject_ty`
-         * being bound by the bounds in `bounds`.
-         */
+                ty::Predicate::Equate(ty::Binder(ref data)) => {
+                    self.add_constraints_from_ty(generics, data.0, variance);
+                    self.add_constraints_from_ty(generics, data.1, variance);
+                }
 
-        debug!("add_constraints_from_param_bounds(subject_ty={}, bounds={})",
-               subject_ty.repr(self.tcx()),
-               bounds.repr(self.tcx()));
+                ty::Predicate::TypeOutlives(ty::Binder(ref data)) => {
+                    self.add_constraints_from_ty(generics, data.0, variance);
 
-        for bound in bounds.builtin_bounds.iter() {
-            let trait_ref = traits::poly_trait_ref_for_builtin_bound(self.tcx(),
-                                                                     bound,
-                                                                     subject_ty);
-            match trait_ref {
-                Ok(trait_ref) => {
-                    self.add_constraints_from_trait_ref(trait_ref.def_id(),
-                                                        &subst::ParamSpace::all(),
-                                                        trait_ref.substs(),
+                    let variance_r = self.xform(variance, self.contravariant);
+                    self.add_constraints_from_region(generics, data.1, variance_r);
+                }
+
+                ty::Predicate::RegionOutlives(ty::Binder(ref data)) => {
+                    // `'a : 'b` is still true if 'a gets bigger
+                    self.add_constraints_from_region(generics, data.0, variance);
+
+                    // `'a : 'b` is still true if 'b gets smaller
+                    let variance_r = self.xform(variance, self.contravariant);
+                    self.add_constraints_from_region(generics, data.1, variance_r);
+                }
+
+                ty::Predicate::Projection(ty::Binder(ref data)) => {
+                    self.add_constraints_from_trait_ref(generics,
+                                                        &*data.projection_ty.trait_ref,
                                                         variance);
+
+                    self.add_constraints_from_ty(generics, data.ty, self.invariant);
                 }
-                Err(ErrorReported) => { }
             }
-        }
-
-        for bound in bounds.region_bounds.iter() {
-            let variance_r = self.xform(variance, self.contravariant); // TODO
-            self.add_constraints_from_region(*bound,
-                                             variance_r);
-        }
-
-        for bound in bounds.trait_bounds.iter() {
-            assert_eq!(bound.substs().self_ty(), Some(subject_ty));
-            self.add_constraints_from_trait_ref(bound.def_id(),
-                                                &subst::ParamSpace::all(),
-                                                bound.substs(),
-                                                variance);
         }
     }
 
@@ -1250,8 +1167,6 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
             let mut types = VecPerParamSpace::empty();
             let mut regions = VecPerParamSpace::empty();
 
-            let is_lang_item = self.terms_cx.lang_items.iter().any(|&(n, _)| n == item_id);
-
             while index < num_inferred && inferred_infos[index].item_id == item_id {
                 let info = &inferred_infos[index];
                 let variance = solutions[index];
@@ -1260,41 +1175,6 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                 match info.kind {
                     TypeParam => { types.push(info.space, variance); }
                     RegionParam => { regions.push(info.space, variance); }
-                }
-
-                if !is_lang_item && variance == ty::Bivariant {
-                    let suggested_marker_id = match tcx.map.get(item_id) {
-                        ast_map::NodeItem(item) => {
-                            match item.node {
-                                ast::ItemTrait(..) => tcx.lang_items.phantom_getter(),
-                                _ => tcx.lang_items.phantom_data(),
-                            }
-                        }
-                        _ => {
-                            tcx.sess.span_bug(
-                                info.span,
-                                format!("item id `{}` is not an item in the ast map",
-                                        item_id).as_slice());
-                        }
-                    };
-
-                    tcx.sess.span_err(
-                        info.span,
-                        format!("parameter `{}` is never used",
-                                info.name.user_string(tcx)).as_slice());
-
-                    match suggested_marker_id {
-                        Some(def_id) => {
-                            tcx.sess.span_help(
-                                info.span,
-                                format!("consider removing `{}` or using a marker such as `{}`",
-                                        info.name.user_string(tcx),
-                                        ty::item_path_str(tcx, def_id)).as_slice());
-                        }
-                        None => {
-                            // no lang items, no help!
-                        }
-                    }
                 }
 
                 index += 1;

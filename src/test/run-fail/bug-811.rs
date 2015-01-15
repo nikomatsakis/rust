@@ -10,7 +10,7 @@
 
 // error-pattern:quux
 
-use std::kinds::marker;
+use std::marker;
 
 fn test00_start(ch: chan_t<int>, message: int) { send(ch, message); }
 

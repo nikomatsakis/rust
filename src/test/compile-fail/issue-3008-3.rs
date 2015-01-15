@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::kinds::marker;
+use std::marker;
 
 enum E1 { V1(E2<E1>), }
 enum E2<T> { V2(E2<E1>, marker::CovariantType<T>), }

@@ -13,7 +13,7 @@
 
 #![allow(dead_code)]
 
-use std::kinds::marker;
+use std::marker;
 
 struct Cursor<'a> {
     m: marker::CovariantType<&'a ()>

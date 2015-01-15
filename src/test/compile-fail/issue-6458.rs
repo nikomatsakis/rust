@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::kinds::marker;
+use std::marker;
 
 pub struct TypeWithState<State>(marker::CovariantType<State>);
 pub struct MyState;

@@ -76,7 +76,7 @@ use marker::Sync;
 
 use intrinsics;
 use cell::UnsafeCell;
-use kinds::marker;
+use marker;
 
 /// A boolean type which can be safely shared between threads.
 #[stable]
@@ -106,7 +106,7 @@ unsafe impl Sync for AtomicUint {}
 #[stable]
 pub struct AtomicPtr<T> {
     p: UnsafeCell<uint>,
-    invariant: marker::InvariantType<*mut T>,
+    _marker: marker::PhantomData<*mut T>,
 }
 
 unsafe impl<T> Sync for AtomicPtr<T> {}
@@ -775,7 +775,7 @@ impl<T> AtomicPtr<T> {
     pub fn new(p: *mut T) -> AtomicPtr<T> {
         AtomicPtr {
             p: UnsafeCell::new(p as uint),
-            invariant: marker::InvariantType
+            _marker: marker::PhantomData
         }
     }
 

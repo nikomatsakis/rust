@@ -14,7 +14,7 @@
 // lifetime parameters must be early bound in the type of the
 // associated item.
 
-use std::kinds::marker;
+use std::marker;
 
 pub enum Value<'v> {
     A(&'v str),

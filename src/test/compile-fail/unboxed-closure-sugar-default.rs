@@ -14,7 +14,7 @@
 #![feature(unboxed_closures)]
 #![allow(dead_code)]
 
-use std::kinds::marker;
+use std::marker;
 trait Foo<T,U,V=T> {
     fn dummy(&self, t: T, u: U, v: V);
 }

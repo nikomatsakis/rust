@@ -10,7 +10,7 @@
 
 #![feature(unsafe_destructor)]
 
-use std::kinds::marker;
+use std::marker;
 
 pub struct Foo<T>(marker::CovariantType<T>);
 

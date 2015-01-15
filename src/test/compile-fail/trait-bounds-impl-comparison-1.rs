@@ -11,7 +11,7 @@
 // Make sure rustc checks the type parameter bounds in implementations of traits,
 // see #2687
 
-use std::kinds::marker;
+use std::marker;
 
 trait A : marker::PhantomGetter<Self> {
 }
@@ -67,7 +67,7 @@ impl Foo for isize {
 
 
 trait Getter<T>
-    : ::std::kinds::marker::PhantomGetter<T>
+    : ::std::marker::PhantomGetter<T>
 { }
 
 trait Trait {

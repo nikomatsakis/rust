@@ -37,7 +37,7 @@ use super::glb::Glb;
 use super::lub::Lub;
 use super::sub::Sub;
 use super::unify::InferCtxtMethodsForSimplyUnifiableTypes;
-use super::{InferCtxt, cres, ures};
+use super::{InferCtxt, cres};
 use super::{MiscVariable, TypeTrace};
 use super::type_variable::{RelationDir, BiTo, EqTo, SubtypeOf, SupertypeOf};
 
@@ -58,7 +58,6 @@ use syntax::abi;
 use syntax::codemap::Span;
 
 pub trait Combine<'tcx> : Sized {
-    fn infcx<'a>(&'a self) -> &'a InferCtxt<'a, 'tcx>;
     fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> { self.infcx().tcx }
     fn tag(&self) -> String;
 
@@ -704,7 +703,7 @@ impl<'f, 'tcx> CombineFields<'f, 'tcx> {
         assert!(!ty::type_has_escaping_regions(b));
         let a1 = wipe_regions(self.infcx.tcx, &a);
         let b1 = wipe_regions(self.infcx.tcx, &b);
-        try!(self.equate().tys(a, b1));
+        try!(self.equate().tys(a1, b1));
         Ok(a)
     }
 

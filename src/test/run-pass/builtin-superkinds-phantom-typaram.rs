@@ -12,7 +12,7 @@
 // super-builtin-kind of a trait, if the type parameter is never used,
 // the type can implement the trait anyway.
 
-use std::kinds::marker;
+use std::marker;
 
 trait Foo : Send { }
 

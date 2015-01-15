@@ -534,7 +534,7 @@ impl<T> RingBuf<T> {
             head: self.head,
             cap: self.cap,
             ptr: self.ptr,
-            marker: marker::ContravariantLifetime::<'a>,
+            marker: marker::PhantomData,
         }
     }
 
@@ -1414,7 +1414,7 @@ pub struct IterMut<'a, T:'a> {
     tail: uint,
     head: uint,
     cap: uint,
-    marker: marker::ContravariantLifetime<'a>,
+    marker: marker::PhantomData<&'a mut T>,
 }
 
 #[stable]

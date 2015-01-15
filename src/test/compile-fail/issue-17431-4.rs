@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::kinds::marker;
+use std::marker;
 
 struct Foo<T> { foo: Option<Option<Foo<T>>>, marker: marker::CovariantType<T> }
 //~^ ERROR illegal recursive struct type; wrap the inner value in a box to make it representable

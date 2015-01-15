@@ -17,7 +17,7 @@ use any;
 use cell::{Cell, RefCell, Ref, RefMut};
 use char::CharExt;
 use iter::{Iterator, IteratorExt, range};
-use marker::{Copy, Sized};
+use marker::{self, Copy, Sized};
 use mem;
 use option::Option;
 use option::Option::{Some, None};
@@ -181,9 +181,9 @@ impl<'a> Arguments<'a> {
     #[cfg(not(stage0))]
     #[doc(hidden)] #[inline]
     #[experimental = "implementation detail of the `format_args!` macro"]
-    pub fn with_placeholders<'a>(pieces: &'a [&'a str],
-                                 fmt: &'a [rt::Argument],
-                                 args: &'a [Argument]) -> Arguments<'a> {
+    pub fn with_placeholders(pieces: &'a [&'a str],
+                             fmt: &'a [rt::Argument],
+                             args: &'a [Argument]) -> Arguments<'a> {
         Arguments {
             pieces: pieces,
             fmt: Some(fmt),
@@ -214,6 +214,7 @@ impl<'a> Arguments<'a> {
 /// and pass it to a function or closure, passed as the first argument. The
 /// macro validates the format string at compile-time so usage of the `write`
 /// and `format` functions can be safely performed.
+#[cfg(not(stage0))]
 #[stable]
 #[derive(Copy)]
 pub struct Arguments<'a> {
@@ -230,6 +231,7 @@ pub struct Arguments<'a> {
 
 /// STAGE0 SPECIFIC, DO NOT EDIT.
 #[cfg(stage0)]
+#[derive(Copy)]
 pub struct Arguments<'a> {
     pieces: &'a [&'a str],
     fmt: Option<&'a [rt::Argument<'a>]>,
@@ -870,22 +872,9 @@ impl Show for () {
         f.pad("()")
     }
 }
-
-impl<T> Show for marker::CovariantType<T> {
+impl<T> Show for marker::PhantomData<T> {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        f.pad("CovariantType")
-    }
-}
-
-impl<T> Show for marker::ContravariantType<T> {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        f.pad("ContravariantType")
-    }
-}
-
-impl<T> Show for marker::InvariantType<T> {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        f.pad("InvariantType")
+        f.pad("PhantomData")
     }
 }
 

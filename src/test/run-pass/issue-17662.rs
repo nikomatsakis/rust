@@ -12,7 +12,7 @@
 
 extern crate "issue-17662" as i;
 
-use std::kinds::marker;
+use std::marker;
 
 struct Bar<'a> { m: marker::CovariantType<&'a ()> }
 

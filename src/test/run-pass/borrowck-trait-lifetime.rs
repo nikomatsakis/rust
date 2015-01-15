@@ -13,7 +13,7 @@
 
 #![allow(dead_code)]
 
-use std::kinds::marker;
+use std::marker;
 
 fn main() {
     trait T : marker::MarkerTrait {}

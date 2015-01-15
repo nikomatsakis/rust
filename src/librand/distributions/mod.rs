@@ -21,7 +21,7 @@
 
 use core::prelude::*;
 use core::num::{Float, Int};
-use core::kinds::marker;
+use core::marker;
 
 use {Rng, Rand};
 
@@ -57,11 +57,11 @@ pub trait IndependentSample<Support>: Sample<Support> {
 
 /// A wrapper for generating types that implement `Rand` via the
 /// `Sample` & `IndependentSample` traits.
-pub struct RandSample<Sup> { marker: marker::CovariantType<Sup> }
+pub struct RandSample<Sup> { _marker: marker::PhantomData<Sup> }
 
 impl<Sup> RandSample<Sup> {
     pub fn new() -> RandSample<Sup> {
-        RandSample { marker: marker::CovariantType }
+        RandSample { _marker: marker::PhantomData }
     }
 }
 

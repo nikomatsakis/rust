@@ -234,7 +234,7 @@ use error::{FromError, Error};
 use fmt;
 use int;
 use iter::{Iterator, IteratorExt};
-use marker::Sized;
+use marker::{PhantomGetter, Sized};
 use mem::transmute;
 use ops::FnOnce;
 use option::Option;
@@ -1568,7 +1568,7 @@ pub trait Seek {
 ///
 /// Doing so produces some sort of Acceptor.
 pub trait Listener<T, A: Acceptor<T>>
-    : marker::PhantomGetter<T> // FIXME should be an assoc type anyhow
+    : PhantomGetter<T> // FIXME should be an assoc type anyhow
 {
     /// Spin up the listener and start queuing incoming connections
     ///

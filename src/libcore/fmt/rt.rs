@@ -31,7 +31,7 @@ pub struct Argument<'a> {
 
 #[cfg(not(stage0))]
 #[doc(hidden)]
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct Argument {
     pub position: Position,
     pub format: FormatSpec,

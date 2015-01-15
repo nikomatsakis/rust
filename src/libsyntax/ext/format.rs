@@ -582,7 +582,7 @@ impl<'a, 'b> Context<'a, 'b> {
             let piece_ty = self.ecx.ty_path(self.ecx.path_all(
                     self.fmtsp,
                     true, Context::rtpath(self.ecx, "Argument"),
-                    vec![static_lifetime],
+                    vec![],
                     vec![],
                     vec![]
                 ));

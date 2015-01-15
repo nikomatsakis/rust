@@ -13,7 +13,7 @@
 
 #![feature(unsafe_destructor)]
 
-use std::kinds::marker;
+use std::marker;
 
 struct arc_destruct<T> {
     _data: int,

@@ -57,7 +57,7 @@ use core::default::Default;
 use core::fmt;
 use core::hash::{self, Hash};
 use core::iter::{repeat, FromIterator};
-use core::marker::{ContravariantLifetime, InvariantType};
+use core::marker::PhantomData;
 use core::mem;
 use core::nonzero::NonZero;
 use core::num::{Int, UnsignedInt};
@@ -708,7 +708,7 @@ impl<T> Vec<T> {
             Drain {
                 ptr: begin,
                 end: end,
-                marker: ContravariantLifetime,
+                marker: PhantomData,
             }
         }
     }
@@ -918,8 +918,7 @@ impl<T> Vec<T> {
             let mut pv = PartialVecZeroSized::<T,U> {
                 num_t: vec.len(),
                 num_u: 0,
-                marker_t: InvariantType,
-                marker_u: InvariantType,
+                marker: PhantomData,
             };
             unsafe { mem::forget(vec); }
 
@@ -1609,7 +1608,7 @@ impl<T> Drop for IntoIter<T> {
 pub struct Drain<'a, T> {
     ptr: *const T,
     end: *const T,
-    marker: ContravariantLifetime<'a>,
+    marker: PhantomData<&'a T>,
 }
 
 #[stable]
@@ -1694,9 +1693,9 @@ impl<'a, T> Drop for Drain<'a, T> {
 
 /// Wrapper type providing a `&Vec<T>` reference via `Deref`.
 #[unstable]
-pub struct DerefVec<'a, T> {
+pub struct DerefVec<'a, T:'a> {
     x: Vec<T>,
-    l: ContravariantLifetime<'a>
+    l: PhantomData<&'a T>,
 }
 
 #[unstable]
@@ -1724,7 +1723,7 @@ pub fn as_vec<'a, T>(x: &'a [T]) -> DerefVec<'a, T> {
     unsafe {
         DerefVec {
             x: Vec::from_raw_parts(x.as_ptr() as *mut T, x.len(), x.len()),
-            l: ContravariantLifetime::<'a>
+            l: PhantomData,
         }
     }
 }
@@ -1757,8 +1756,7 @@ struct PartialVecNonZeroSized<T,U> {
 struct PartialVecZeroSized<T,U> {
     num_t: uint,
     num_u: uint,
-    marker_t: InvariantType<T>,
-    marker_u: InvariantType<U>,
+    marker: PhantomData<::core::cell::Cell<(T,U)>>,
 }
 
 #[unsafe_destructor]

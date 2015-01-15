@@ -15,7 +15,7 @@
 
 // Test sized-ness checking in substitution.
 
-use std::kinds::marker;
+use std::marker;
 
 // Unbounded.
 fn f1<X: ?Sized>(x: &X) {

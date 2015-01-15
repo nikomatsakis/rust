@@ -16,7 +16,7 @@
 extern crate trait_superkinds_in_metadata;
 use trait_superkinds_in_metadata::{RequiresRequiresShareAndSend, RequiresShare};
 use trait_superkinds_in_metadata::{RequiresCopy};
-use std::kinds::marker;
+use std::marker;
 
 struct X<T>(T);
 

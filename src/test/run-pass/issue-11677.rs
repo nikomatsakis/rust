@@ -14,7 +14,7 @@
 
 // this code used to cause an ICE
 
-use std::kinds::marker;
+use std::marker;
 
 trait X<T> {
     fn dummy(&self) -> T { panic!() }

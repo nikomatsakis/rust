@@ -12,7 +12,7 @@
 #![allow(dead_code)]
 #![crate_type="lib"]
 
-use std::kinds::marker;
+use std::marker;
 
 struct Private<T>(marker::CovariantType<T>);
 pub struct Public<T>(marker::CovariantType<T>);

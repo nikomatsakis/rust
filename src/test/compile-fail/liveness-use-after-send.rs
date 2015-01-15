@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::kinds::marker;
+use std::marker;
 
 fn send<T:Send + std::fmt::Show>(ch: _chan<T>, data: T) {
     println!("{:?}", ch);

@@ -10,7 +10,7 @@
 
 // Test `?Sized` local variables.
 
-use std::kinds::marker;
+use std::marker;
 
 trait T {}
 
