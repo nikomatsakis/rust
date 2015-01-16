@@ -1655,7 +1655,7 @@ impl<T> Drop for IntoIter<T> {
 #[unsafe_no_drop_flag]
 #[unstable(feature = "collections",
            reason = "recently added as part of collections reform 2")]
-pub struct Drain<'a, T> {
+pub struct Drain<'a, T:'a> {
     ptr: *const T,
     end: *const T,
     marker: PhantomData<&'a T>,

@@ -2105,7 +2105,7 @@ impl<I> ExactSizeIterator for Take<I> where I: ExactSizeIterator {}
 /// An iterator to maintain state while iterating another iterator
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
 #[stable(feature = "rust1", since = "1.0.0")]
-pub struct Scan<A, B, I, St, F> where I: Iterator, F: FnMut(&mut St, A) -> Option<B> {
+pub struct Scan<A, B, I, St, F> where I: Iterator<Item=A>, F: FnMut(&mut St, A) -> Option<B> {
     iter: I,
     f: F,
 

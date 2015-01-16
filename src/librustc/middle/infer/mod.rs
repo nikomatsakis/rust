@@ -47,6 +47,7 @@ use self::lub::Lub;
 use self::unify::{UnificationTable, InferCtxtMethodsForSimplyUnifiableTypes};
 use self::error_reporting::ErrorReporting;
 
+pub mod bivariate;
 pub mod coercion;
 pub mod combine;
 pub mod doc;

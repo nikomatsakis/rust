@@ -424,13 +424,15 @@ impl<'a, 'tcx> TermsContext<'a, 'tcx> {
         let newly_added = self.inferred_map.insert(param_id, inf_index).is_none();
         assert!(newly_added);
 
-        debug!("add_inferred(item_id={}, \
+        debug!("add_inferred(item_path={}, \
+                item_id={}, \
                 kind={:?}, \
                 space={:?}, \
                 index={}, \
                 param_id={}, \
                 inf_index={:?}, \
                 initial_variance={:?})",
+               ty::item_path_str(self.tcx, ast_util::local_def(item_id)),
                item_id, kind, space, index, param_id, inf_index,
                initial_variance);
     }
@@ -965,6 +967,8 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                                        p.space, p.index as uint);
             let variance_i = self.xform(variance, variance_decl);
             let substs_ty = *substs.types.get(p.space, p.index as uint);
+            debug!("add_constraints_from_substs: variance_decl={:?} variance_i={:?}",
+                   variance_decl, variance_i);
             self.add_constraints_from_ty(generics, substs_ty, variance_i);
         }
 

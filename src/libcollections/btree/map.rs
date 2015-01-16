@@ -513,7 +513,7 @@ mod stack {
     /// where `&'static` can be used in any function expecting any lifetime reference.
     pub struct IdRef<'id, T: 'id> {
         inner: &'id mut T,
-        marker: InvariantLifetime<'id>,
+        _marker: InvariantLifetime<'id>,
     }
 
     impl<'id, T> Deref for IdRef<'id, T> {
@@ -555,7 +555,7 @@ mod stack {
     pub struct Pusher<'id, 'a, K:'a, V:'a> {
         map: &'a mut BTreeMap<K, V>,
         stack: Stack<K, V>,
-        marker: InvariantLifetime<'id>,
+        _marker: InvariantLifetime<'id>,
     }
 
     impl<'a, K, V> PartialSearchStack<'a, K, V> {
@@ -590,11 +590,11 @@ mod stack {
             let pusher = Pusher {
                 map: self.map,
                 stack: self.stack,
-                marker: InvariantLifetime::new(),
+                _marker: InvariantLifetime::new(),
             };
             let node = IdRef {
                 inner: unsafe { &mut *self.next },
-                marker: InvariantLifetime::new(),
+                _marker: InvariantLifetime::new(),
             };
 
             closure(pusher, node)

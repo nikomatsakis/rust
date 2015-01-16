@@ -36,18 +36,29 @@ impl<'f, 'tcx> Combine<'tcx> for Sub<'f, 'tcx> {
     fn tag(&self) -> String { "Sub".to_string() }
     fn fields<'a>(&'a self) -> &'a CombineFields<'a, 'tcx> { &self.fields }
 
-    fn contratys(&self, a: Ty<'tcx>, b: Ty<'tcx>) -> cres<'tcx, Ty<'tcx>> {
-        Sub(self.fields.switch_expected()).tys(b, a)
+    fn tys_with_variance(&self, v: ty::Variance, a: Ty<'tcx>, b: Ty<'tcx>)
+                         -> cres<'tcx, Ty<'tcx>>
+    {
+        // Once we're equating, it doesn't matter what the variance is.
+        match v {
+            ty::Invariant => self.equate().tys(a, b),
+            ty::Covariant => self.tys(a, b),
+            ty::Bivariant => self.bivariate().tys(a, b),
+            ty::Contravariant => Sub(self.fields.switch_expected()).tys(b, a),
+        }
     }
 
-    fn contraregions(&self, a: ty::Region, b: ty::Region)
-                     -> cres<'tcx, ty::Region> {
-                         let opp = CombineFields {
-                             a_is_expected: !self.fields.a_is_expected,
-                             ..self.fields.clone()
-                         };
-                         Sub(opp).regions(b, a)
-                     }
+    fn regions_with_variance(&self, v: ty::Variance, a: ty::Region, b: ty::Region)
+                             -> cres<'tcx, ty::Region>
+    {
+        // Once we're equating, it doesn't matter what the variance is.
+        match v {
+            ty::Invariant => self.equate().regions(a, b),
+            ty::Covariant => self.regions(a, b),
+            ty::Bivariant => self.bivariate().regions(a, b),
+            ty::Contravariant => Sub(self.fields.switch_expected()).regions(b, a),
+        }
+    }
 
     fn regions(&self, a: ty::Region, b: ty::Region) -> cres<'tcx, ty::Region> {
         debug!("{}.regions({}, {})",
