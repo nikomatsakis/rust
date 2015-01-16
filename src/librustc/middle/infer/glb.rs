@@ -35,6 +35,30 @@ impl<'f, 'tcx> Combine<'tcx> for Glb<'f, 'tcx> {
     fn tag(&self) -> String { "Glb".to_string() }
     fn fields<'a>(&'a self) -> &'a CombineFields<'a, 'tcx> { &self.fields }
 
+    fn tys_with_variance(&self, v: ty::Variance, a: Ty<'tcx>, b: Ty<'tcx>)
+                         -> cres<'tcx, Ty<'tcx>>
+    {
+        // Once we're equating, it doesn't matter what the variance is.
+        match v {
+            ty::Invariant => self.equate().tys(a, b),
+            ty::Covariant => self.tys(a, b),
+            ty::Bivariant => self.bivariate().tys(a, b), // TODO
+            ty::Contravariant => self.lub().tys(a, b),
+        }
+    }
+
+    fn regions_with_variance(&self, v: ty::Variance, a: ty::Region, b: ty::Region)
+                             -> cres<'tcx, ty::Region>
+    {
+        // Once we're equating, it doesn't matter what the variance is.
+        match v {
+            ty::Invariant => self.equate().regions(a, b),
+            ty::Covariant => self.regions(a, b),
+            ty::Bivariant => self.bivariate().regions(a, b), // TODO
+            ty::Contravariant => self.lub().regions(a, b),
+        }
+    }
+
     fn mts(&self, a: &ty::mt<'tcx>, b: &ty::mt<'tcx>) -> cres<'tcx, ty::mt<'tcx>> {
         let tcx = self.fields.infcx.tcx;
 
@@ -64,10 +88,6 @@ impl<'f, 'tcx> Combine<'tcx> for Glb<'f, 'tcx> {
                 Err(ty::terr_mutability)
             }
         }
-    }
-
-    fn contratys(&self, a: Ty<'tcx>, b: Ty<'tcx>) -> cres<'tcx, Ty<'tcx>> {
-        self.lub().tys(a, b)
     }
 
     fn unsafeties(&self, a: Unsafety, b: Unsafety) -> cres<'tcx, Unsafety> {
@@ -100,11 +120,6 @@ impl<'f, 'tcx> Combine<'tcx> for Glb<'f, 'tcx> {
                b.repr(self.fields.infcx.tcx));
 
         Ok(self.fields.infcx.region_vars.glb_regions(Subtype(self.trace()), a, b))
-    }
-
-    fn contraregions(&self, a: ty::Region, b: ty::Region)
-                    -> cres<'tcx, ty::Region> {
-        self.lub().regions(a, b)
     }
 
     fn tys(&self, a: Ty<'tcx>, b: Ty<'tcx>) -> cres<'tcx, Ty<'tcx>> {

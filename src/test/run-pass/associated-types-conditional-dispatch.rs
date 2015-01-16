@@ -41,7 +41,8 @@ impl<'a, A, B, Lhs> MyEq<[B; 0]> for Lhs
 }
 
 struct DerefWithHelper<H, T> {
-    pub helper: H
+    pub helper: H,
+    pub marker: marker::PhantomData<T>,
 }
 
 trait Helper<T> {
@@ -63,7 +64,8 @@ impl<T, H: Helper<T>> Deref for DerefWithHelper<H, T> {
 }
 
 pub fn check<T: MyEq>(x: T, y: T) -> bool {
-    let d: DerefWithHelper<Option<T>, T> = DerefWithHelper { helper: Some(x) };
+    let d: DerefWithHelper<Option<T>, T> = DerefWithHelper { helper: Some(x),
+                                                             marker: marker::PhantomData };
     d.eq(&y)
 }
 

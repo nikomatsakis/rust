@@ -1364,6 +1364,7 @@ pub enum BoundRegion {
 // NB: If you change this, you'll probably want to change the corresponding
 // AST structure in libsyntax/ast.rs as well.
 #[derive(Clone, PartialEq, Eq, Hash, Show)]
+#[rustc_variance]
 pub enum sty<'tcx> {
     ty_bool,
     ty_char,

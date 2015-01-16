@@ -2042,7 +2042,7 @@ impl<I> RandomAccessIterator for Take<I> where I: RandomAccessIterator{
 /// An iterator to maintain state while iterating another iterator
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
 #[stable]
-pub struct Scan<A, B, I, St, F> where I: Iterator, F: FnMut(&mut St, A) -> Option<B> {
+pub struct Scan<A, B, I, St, F> where I: Iterator<Item=A>, F: FnMut(&mut St, A) -> Option<B> {
     iter: I,
     f: F,
 

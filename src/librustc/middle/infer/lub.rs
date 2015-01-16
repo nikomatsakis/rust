@@ -36,6 +36,30 @@ impl<'f, 'tcx> Combine<'tcx> for Lub<'f, 'tcx> {
     fn tag(&self) -> String { "Lub".to_string() }
     fn fields<'a>(&'a self) -> &'a CombineFields<'a, 'tcx> { &self.fields }
 
+    fn tys_with_variance(&self, v: ty::Variance, a: Ty<'tcx>, b: Ty<'tcx>)
+                         -> cres<'tcx, Ty<'tcx>>
+    {
+        // Once we're equating, it doesn't matter what the variance is.
+        match v {
+            ty::Invariant => self.equate().tys(a, b),
+            ty::Covariant => self.tys(a, b),
+            ty::Bivariant => self.bivariate().tys(a, b), // TODO
+            ty::Contravariant => self.glb().tys(a, b),
+        }
+    }
+
+    fn regions_with_variance(&self, v: ty::Variance, a: ty::Region, b: ty::Region)
+                             -> cres<'tcx, ty::Region>
+    {
+        // Once we're equating, it doesn't matter what the variance is.
+        match v {
+            ty::Invariant => self.equate().regions(a, b),
+            ty::Covariant => self.regions(a, b),
+            ty::Bivariant => self.bivariate().regions(a, b), // TODO
+            ty::Contravariant => self.glb().regions(a, b),
+        }
+    }
+
     fn mts(&self, a: &ty::mt<'tcx>, b: &ty::mt<'tcx>) -> cres<'tcx, ty::mt<'tcx>> {
         let tcx = self.tcx();
 
@@ -62,10 +86,6 @@ impl<'f, 'tcx> Combine<'tcx> for Lub<'f, 'tcx> {
         }
     }
 
-    fn contratys(&self, a: Ty<'tcx>, b: Ty<'tcx>) -> cres<'tcx, Ty<'tcx>> {
-        self.glb().tys(a, b)
-    }
-
     fn unsafeties(&self, a: Unsafety, b: Unsafety) -> cres<'tcx, Unsafety> {
         match (a, b) {
           (Unsafety::Unsafe, _) | (_, Unsafety::Unsafe) => Ok(Unsafety::Unsafe),
@@ -87,11 +107,6 @@ impl<'f, 'tcx> Combine<'tcx> for Lub<'f, 'tcx> {
         // More bounds is a subtype of fewer bounds, so
         // the LUB (mutual supertype) is the intersection.
         Ok(a.intersection(b))
-    }
-
-    fn contraregions(&self, a: ty::Region, b: ty::Region)
-                    -> cres<'tcx, ty::Region> {
-        self.glb().regions(a, b)
     }
 
     fn regions(&self, a: ty::Region, b: ty::Region) -> cres<'tcx, ty::Region> {

@@ -21,6 +21,7 @@ use core::prelude::*;
 use core::borrow::BorrowFrom;
 use core::cmp::Ordering::{Greater, Less, Equal};
 use core::iter::Zip;
+use core::marker;
 use core::ops::{Deref, DerefMut};
 use core::ptr::Unique;
 use core::{slice, mem, ptr, cmp, num, raw};
@@ -499,7 +500,8 @@ impl<K: Clone, V: Clone> Clone for Node<K, V> {
 #[derive(Copy)]
 pub struct Handle<NodeRef, Type, NodeType> {
     node: NodeRef,
-    index: uint
+    index: uint,
+    marker: marker::PhantomData<(Type, NodeType)>,
 }
 
 pub mod handle {
@@ -526,12 +528,14 @@ impl<K: Ord, V> Node<K, V> {
         if found {
             Found(Handle {
                 node: node,
-                index: index
+                index: index,
+                marker: marker::PhantomData,
             })
         } else {
             GoDown(Handle {
                 node: node,
-                index: index
+                index: index,
+                marker: marker::PhantomData,
             })
         }
     }
@@ -612,7 +616,8 @@ impl<K, V, NodeRef, Type, NodeType> Handle<NodeRef, Type, NodeType> where
     pub fn as_raw(&mut self) -> Handle<*mut Node<K, V>, Type, NodeType> {
         Handle {
             node: &mut *self.node as *mut _,
-            index: self.index
+            index: self.index,
+            marker: marker::PhantomData,
         }
     }
 }
@@ -624,7 +629,8 @@ impl<K, V, Type, NodeType> Handle<*mut Node<K, V>, Type, NodeType> {
     pub unsafe fn from_raw<'a>(&'a self) -> Handle<&'a Node<K, V>, Type, NodeType> {
         Handle {
             node: &*self.node,
-            index: self.index
+            index: self.index,
+            marker: marker::PhantomData,
         }
     }
 
@@ -634,7 +640,8 @@ impl<K, V, Type, NodeType> Handle<*mut Node<K, V>, Type, NodeType> {
     pub unsafe fn from_raw_mut<'a>(&'a mut self) -> Handle<&'a mut Node<K, V>, Type, NodeType> {
         Handle {
             node: &mut *self.node,
-            index: self.index
+            index: self.index,
+            marker: marker::PhantomData,
         }
     }
 }
@@ -682,12 +689,14 @@ impl<K, V, NodeRef: Deref<Target=Node<K, V>>, Type> Handle<NodeRef, Type, handle
         if self.node.is_leaf() {
             Leaf(Handle {
                 node: self.node,
-                index: self.index
+                index: self.index,
+                marker: marker::PhantomData,
             })
         } else {
             Internal(Handle {
                 node: self.node,
-                index: self.index
+                index: self.index,
+                marker: marker::PhantomData,
             })
         }
     }
@@ -820,7 +829,8 @@ impl<K, V, NodeRef, NodeType> Handle<NodeRef, handle::Edge, NodeType> where
     unsafe fn left_kv<'a>(&'a mut self) -> Handle<&'a mut Node<K, V>, handle::KV, NodeType> {
         Handle {
             node: &mut *self.node,
-            index: self.index - 1
+            index: self.index - 1,
+            marker: marker::PhantomData,
         }
     }
 
@@ -830,7 +840,8 @@ impl<K, V, NodeRef, NodeType> Handle<NodeRef, handle::Edge, NodeType> where
     unsafe fn right_kv<'a>(&'a mut self) -> Handle<&'a mut Node<K, V>, handle::KV, NodeType> {
         Handle {
             node: &mut *self.node,
-            index: self.index
+            index: self.index,
+            marker: marker::PhantomData,
         }
     }
 }
@@ -870,7 +881,8 @@ impl<'a, K: 'a, V: 'a, NodeType> Handle<&'a mut Node<K, V>, handle::KV, NodeType
     pub fn into_left_edge(self) -> Handle<&'a mut Node<K, V>, handle::Edge, NodeType> {
         Handle {
             node: &mut *self.node,
-            index: self.index
+            index: self.index,
+            marker: marker::PhantomData,
         }
     }
 }
@@ -920,7 +932,8 @@ impl<K, V, NodeRef, NodeType> Handle<NodeRef, handle::KV, NodeType> where
     pub fn left_edge<'a>(&'a mut self) -> Handle<&'a mut Node<K, V>, handle::Edge, NodeType> {
         Handle {
             node: &mut *self.node,
-            index: self.index
+            index: self.index,
+            marker: marker::PhantomData,
         }
     }
 
@@ -929,7 +942,8 @@ impl<K, V, NodeRef, NodeType> Handle<NodeRef, handle::KV, NodeType> where
     pub fn right_edge<'a>(&'a mut self) -> Handle<&'a mut Node<K, V>, handle::Edge, NodeType> {
         Handle {
             node: &mut *self.node,
-            index: self.index + 1
+            index: self.index + 1,
+            marker: marker::PhantomData,
         }
     }
 }
@@ -1038,7 +1052,8 @@ impl<K, V> Node<K, V> {
         debug_assert!(index < self.len(), "kv_handle index out of bounds");
         Handle {
             node: self,
-            index: index
+            index: index,
+            marker: marker::PhantomData,
         }
     }
 

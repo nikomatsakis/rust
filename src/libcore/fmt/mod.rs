@@ -204,24 +204,6 @@ impl<'a> Arguments<'a> {
             args: args
         }
     }
-    /// This function is used to specify nonstandard formatting parameters.
-    /// The `pieces` array must be at least as long as `fmt` to construct
-    /// a valid Arguments structure. Also, any `Count` within `fmt` that is
-    /// `CountIsParam` or `CountIsNextParam` has to point to an argument
-    /// created with `argumentuint`. However, failing to do so doesn't cause
-    /// unsafety, but will ignore invalid .
-    #[doc(hidden)] #[inline]
-    #[unstable = "implementation detail of the `format_args!` macro"]
-    #[cfg(not(stage0))]
-    pub fn with_placeholders(pieces: &'a [&'a str],
-                             fmt: &'a [rt::Argument],
-                             args: &'a [Argument<'a>]) -> Arguments<'a> {
-        Arguments {
-            pieces: pieces,
-            fmt: Some(fmt),
-            args: args
-        }
-    }
 }
 
 /// This structure represents a safely precompiled version of a format string

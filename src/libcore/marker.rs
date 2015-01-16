@@ -28,7 +28,7 @@
 use clone::Clone;
 use cmp;
 use option::Option;
-use hash::{Hash, Writer};
+use hash::{Hash, Hasher};
 
 /// Types able to be transferred across task boundaries.
 #[unstable = "will be overhauled with new lifetime rules; see RFC 458"]
@@ -138,7 +138,15 @@ pub struct Managed;
 
 macro_rules! impls{
     ($t: ident) => (
-        impl<T:?Sized, S: Writer> Hash<S> for $t<T> {
+        #[cfg(stage0)]
+        impl<T:?Sized, S> Hash<S> for $t<T> {
+            #[inline]
+            fn hash(&self, _: &mut S) {
+            }
+        }
+
+        #[cfg(not(stage0))]
+        impl<T:?Sized, S: Hasher> Hash<S> for $t<T> {
             #[inline]
             fn hash(&self, _: &mut S) {
             }
