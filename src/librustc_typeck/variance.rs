@@ -852,8 +852,18 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                 self.add_constraints_from_ty(generics, typ, variance);
             }
 
-            ty::ty_ptr(ref mt) => {
-                self.add_constraints_from_mt(generics, mt, variance);
+            ty::ty_ptr(ty::mt { ty: _referent_ty, mutbl: _ }) => {
+                // Treat *const T or *mut T as covariant with respect
+                // to T.
+                //
+                // It may be surprising that we treat *mut T as
+                // covariant; this is because in most contexts
+                // (e.g. `Vec<T>`) it is used to model an owned
+                // pointer. Note that the wf.rs pass does a second
+                // check to ensure that anyone using a raw unsafe
+                // pointer also has some markers.
+                //
+                // self.add_constraints_from_ty(generics, referent_ty, variance);
             }
 
             ty::ty_tup(ref subtys) => {

@@ -91,8 +91,10 @@
 use mem;
 use clone::Clone;
 use intrinsics;
+use ops::Deref;
 use option::Option::{self, Some, None};
-use marker::{Send, Sized, Sync};
+use marker::{PhantomData, Send, Sized, Sync};
+use nonzero::NonZero;
 
 use cmp::{PartialEq, Eq, Ord, PartialOrd};
 use cmp::Ordering::{self, Less, Equal, Greater};
@@ -517,12 +519,17 @@ impl<T> PartialOrd for *mut T {
 
 /// A wrapper around a raw `*mut T` that indicates that the possessor
 /// of this wrapper owns the referent. This in turn implies that the
-/// `Unique<T>` is `Send`/`Sync` if `T` is `Send`/`Sync`, unlike a
-/// raw `*mut T` (which conveys no particular ownership semantics).
-/// Useful for building abstractions like `Vec<T>` or `Box<T>`, which
+/// `Unique<T>` is `Send`/`Sync` if `T` is `Send`/`Sync`, unlike a raw
+/// `*mut T` (which conveys no particular ownership semantics).  It
+/// also implies that the referent of the pointer should not be
+/// modified without a unique path to the `Unique` reference. Useful
+/// for building abstractions like `Vec<T>` or `Box<T>`, which
 /// internally use raw pointers to manage the memory that they own.
 #[unstable(feature = "core", reason = "recently added to this module")]
-pub struct Unique<T>(pub *mut T);
+pub struct Unique<T> {
+    pointer: NonZero<*mut T>,
+    _marker: PhantomData<T>,
+}
 
 /// `Unique` pointers are `Send` if `T` is `Send` because the data they
 /// reference is unaliased. Note that this aliasing invariant is
@@ -539,17 +546,33 @@ unsafe impl<T:Send> Send for Unique<T> { }
 unsafe impl<T:Sync> Sync for Unique<T> { }
 
 impl<T> Unique<T> {
-    /// Returns a null Unique.
+    /// Create a new `Unique`.
     #[unstable(feature = "core",
                reason = "recently added to this module")]
-    pub fn null() -> Unique<T> {
-        Unique(null_mut())
+    pub unsafe fn new(ptr: *mut T) -> Unique<T> {
+        Unique { pointer: NonZero::new(ptr), _marker: PhantomData }
     }
 
-    /// Return an (unsafe) pointer into the memory owned by `self`.
+    /// Dereference the content.
     #[unstable(feature = "core",
                reason = "recently added to this module")]
-    pub unsafe fn offset(self, offset: int) -> *mut T {
-        self.0.offset(offset)
+    pub unsafe fn get(&self) -> &T {
+        &**self.pointer
+    }
+
+    /// Mutably dereference the content.
+    #[unstable(feature = "core",
+               reason = "recently added to this module")]
+    pub unsafe fn get_mut(&mut self) -> &mut T {
+        &mut **self.pointer
+    }
+}
+
+impl<T> Deref for Unique<T> {
+    type Target = *mut T;
+
+    #[inline]
+    fn deref<'a>(&'a self) -> &'a *mut T {
+        &*self.pointer
     }
 }

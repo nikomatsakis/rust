@@ -25,7 +25,7 @@ use option::Option;
 use option::Option::{Some, None};
 use ptr::{Unique, PtrExt, copy_nonoverlapping_memory, zero_memory};
 use ptr;
-use rt::heap::{allocate, deallocate};
+use rt::heap::{allocate, deallocate, EMPTY};
 use collections::hash_state::HashState;
 
 const EMPTY_BUCKET: u64 = 0u64;
@@ -566,10 +566,11 @@ impl<K, V> RawTable<K, V> {
             return RawTable {
                 size: 0,
                 capacity: 0,
-                hashes: Unique::null(),
+                hashes: Unique::new(EMPTY as *mut u64),
                 marker: marker::PhantomData,
             };
         }
+
         // No need for `checked_mul` before a more restrictive check performed
         // later in this method.
         let hashes_size = capacity * size_of::<u64>();
@@ -605,7 +606,7 @@ impl<K, V> RawTable<K, V> {
         RawTable {
             capacity: capacity,
             size:     0,
-            hashes:   Unique(hashes),
+            hashes:   Unique::new(hashes),
             marker:   marker::PhantomData,
         }
     }
@@ -614,14 +615,14 @@ impl<K, V> RawTable<K, V> {
         let hashes_size = self.capacity * size_of::<u64>();
         let keys_size = self.capacity * size_of::<K>();
 
-        let buffer = self.hashes.0 as *mut u8;
+        let buffer = *self.hashes as *mut u8;
         let (keys_offset, vals_offset) = calculate_offsets(hashes_size,
                                                            keys_size, min_align_of::<K>(),
                                                            min_align_of::<V>());
 
         unsafe {
             RawBucket {
-                hash: self.hashes.0,
+                hash: *self.hashes,
                 key:  buffer.offset(keys_offset as int) as *mut K,
                 val:  buffer.offset(vals_offset as int) as *mut V
             }
@@ -633,7 +634,7 @@ impl<K, V> RawTable<K, V> {
     pub fn new(capacity: uint) -> RawTable<K, V> {
         unsafe {
             let ret = RawTable::new_uninitialized(capacity);
-            zero_memory(ret.hashes.0, capacity);
+            zero_memory(*ret.hashes, capacity);
             ret
         }
     }
@@ -653,7 +654,7 @@ impl<K, V> RawTable<K, V> {
         RawBuckets {
             raw: self.first_bucket_raw(),
             hashes_end: unsafe {
-                self.hashes.0.offset(self.capacity as int)
+                self.hashes.offset(self.capacity as int)
             },
             marker: marker::PhantomData,
         }
@@ -975,9 +976,10 @@ impl<K: Clone, V: Clone> Clone for RawTable<K, V> {
 #[unsafe_destructor]
 impl<K, V> Drop for RawTable<K, V> {
     fn drop(&mut self) {
-        if self.hashes.0.is_null() {
+        if *self.hashes == (EMPTY as *mut u64) {
             return;
         }
+
         // This is done in reverse because we've likely partially taken
         // some elements out with `.into_iter()` from the front.
         // Check if the size is 0, so we don't do a useless scan when
@@ -995,7 +997,7 @@ impl<K, V> Drop for RawTable<K, V> {
                                                     vals_size, min_align_of::<V>());
 
         unsafe {
-            deallocate(self.hashes.0 as *mut u8, size, align);
+            deallocate(*self.hashes as *mut u8, size, align);
             // Remember how everything was allocated out of one buffer
             // during initialization? We only need one call to free here.
         }

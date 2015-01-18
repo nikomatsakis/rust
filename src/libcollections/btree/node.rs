@@ -25,7 +25,7 @@ use core::marker;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
 use core::ptr::Unique;
 use core::{slice, mem, ptr, cmp, num, raw};
-use alloc::heap;
+use alloc::heap::{self, EMPTY};
 
 /// Represents the result of an Insertion: either the item fit, or the node had to split
 pub enum InsertionResult<K, V> {
@@ -58,8 +58,8 @@ pub struct Node<K, V> {
     keys: Unique<K>,
     vals: Unique<V>,
 
-    // In leaf nodes, this will be null, and no space will be allocated for edges.
-    edges: Unique<Node<K, V>>,
+    // In leaf nodes, this will be None, and no space will be allocated for edges.
+    edges: Option<Unique<Node<K, V>>>,
 
     // At any given time, there will be `_len` keys, `_len` values, and (in an internal node)
     // `_len + 1` edges. In a leaf node, there will never be any edges.
@@ -261,7 +261,7 @@ impl<T> Drop for RawItems<T> {
 #[unsafe_destructor]
 impl<K, V> Drop for Node<K, V> {
     fn drop(&mut self) {
-        if self.keys.0.is_null() {
+        if *self.keys == (EMPTY as *mut K) {
             // We have already cleaned up this node.
             return;
         }
@@ -275,7 +275,7 @@ impl<K, V> Drop for Node<K, V> {
             self.destroy();
         }
 
-        self.keys.0 = ptr::null_mut();
+        self.keys = unsafe { Unique::new(EMPTY as *mut K) };
     }
 }
 
@@ -291,9 +291,9 @@ impl<K, V> Node<K, V> {
         let (vals_offset, edges_offset) = calculate_offsets_generic::<K, V>(capacity, false);
 
         Node {
-            keys: Unique(buffer as *mut K),
-            vals: Unique(buffer.offset(vals_offset as int) as *mut V),
-            edges: Unique(buffer.offset(edges_offset as int) as *mut Node<K, V>),
+            keys: Unique::new(buffer as *mut K),
+            vals: Unique::new(buffer.offset(vals_offset as int) as *mut V),
+            edges: Some(Unique::new(buffer.offset(edges_offset as int) as *mut Node<K, V>)),
             _len: 0,
             _capacity: capacity,
         }
@@ -309,9 +309,9 @@ impl<K, V> Node<K, V> {
         let (vals_offset, _) = calculate_offsets_generic::<K, V>(capacity, true);
 
         Node {
-            keys: Unique(buffer as *mut K),
-            vals: Unique(unsafe { buffer.offset(vals_offset as int) as *mut V }),
-            edges: Unique(ptr::null_mut()),
+            keys: unsafe { Unique::new(buffer as *mut K) },
+            vals: unsafe { Unique::new(buffer.offset(vals_offset as int) as *mut V) },
+            edges: None,
             _len: 0,
             _capacity: capacity,
         }
@@ -320,18 +320,18 @@ impl<K, V> Node<K, V> {
     unsafe fn destroy(&mut self) {
         let (alignment, size) =
                 calculate_allocation_generic::<K, V>(self.capacity(), self.is_leaf());
-        heap::deallocate(self.keys.0 as *mut u8, size, alignment);
+        heap::deallocate(*self.keys as *mut u8, size, alignment);
     }
 
     #[inline]
     pub fn as_slices<'a>(&'a self) -> (&'a [K], &'a [V]) {
         unsafe {(
             mem::transmute(raw::Slice {
-                data: self.keys.0 as *const K,
+                data: *self.keys as *const K,
                 len: self.len()
             }),
             mem::transmute(raw::Slice {
-                data: self.vals.0 as *const V,
+                data: *self.vals as *const V,
                 len: self.len()
             })
         )}
@@ -350,6 +350,10 @@ impl<K, V> Node<K, V> {
             &[]
         } else {
             unsafe {
+                let data = match self.edges {
+                    None => heap::EMPTY as *const Node<K,V>,
+                    Some(ref p) => **p as *const Node<K,V>,
+                };
                 mem::transmute(raw::Slice {
                     data: self.edges.0,
                     len: self.len() + 1
@@ -570,7 +574,7 @@ impl <K, V> Node<K, V> {
 
     /// If the node has any children
     pub fn is_leaf(&self) -> bool {
-        self.edges.0.is_null()
+        self.edges.is_none()
     }
 
     /// if the node has too few elements
@@ -1059,7 +1063,7 @@ impl<K, V> Node<K, V> {
                     vals: RawItems::from_slice(self.vals()),
                     edges: RawItems::from_slice(self.edges()),
 
-                    ptr: self.keys.0 as *mut u8,
+                    ptr: *self.keys as *mut u8,
                     capacity: self.capacity(),
                     is_leaf: self.is_leaf()
                 },
