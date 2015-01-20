@@ -425,7 +425,7 @@ pub fn enc_type_param_def<'a, 'tcx>(w: &mut SeekableMemWriter, cx: &ctxt<'a, 'tc
     mywrite!(w, "{}:{}|{}|{}|",
              token::get_name(v.name), (cx.ds)(v.def_id),
              v.space.to_uint(), v.index);
-    enc_bounds(w, cx, &v.bounds);
+    // enc_bounds(w, cx, &v.bounds);
     enc_opt(w, v.default, |w, t| enc_ty(w, cx, t));
 }
 

@@ -660,9 +660,9 @@ impl<'tcx> Repr<'tcx> for def::Def {
 
 impl<'tcx> Repr<'tcx> for ty::TypeParameterDef<'tcx> {
     fn repr(&self, tcx: &ctxt<'tcx>) -> String {
-        format!("TypeParameterDef({:?}, {}, {:?}/{})",
+        format!("TypeParameterDef({:?}, {:?}/{})",
                 self.def_id,
-                self.bounds.repr(tcx),
+                // self.bounds.repr(tcx),
                 self.space,
                 self.index)
     }

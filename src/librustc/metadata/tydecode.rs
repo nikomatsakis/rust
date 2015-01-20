@@ -828,7 +828,7 @@ fn parse_type_param_def_<'a, 'tcx, F>(st: &mut PState<'a, 'tcx>, conv: &mut F)
     assert_eq!(next(st), '|');
     let index = parse_u32(st);
     assert_eq!(next(st), '|');
-    let bounds = parse_bounds_(st, conv);
+    // let bounds = parse_bounds_(st, conv);
     let default = parse_opt(st, |st| parse_ty_(st, conv));
 
     ty::TypeParameterDef {
@@ -836,7 +836,7 @@ fn parse_type_param_def_<'a, 'tcx, F>(st: &mut PState<'a, 'tcx>, conv: &mut F)
         def_id: def_id,
         space: space,
         index: index,
-        bounds: bounds,
+        // bounds: bounds,
         default: default
     }
 }

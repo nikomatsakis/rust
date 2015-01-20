@@ -1770,7 +1770,6 @@ pub struct TypeParameterDef<'tcx> {
     pub def_id: ast::DefId,
     pub space: subst::ParamSpace,
     pub index: u32,
-    pub bounds: ParamBounds<'tcx>,
     pub default: Option<Ty<'tcx>>,
 }
 
@@ -2041,6 +2040,18 @@ impl<'tcx> Predicate<'tcx> {
             Predicate::TypeOutlives(..) => {
                 None
             }
+        }
+    }
+
+    pub fn is_bound_for_ty(&self, ty: Ty<'tcx>) -> bool {
+        debug!("is_bound_for_ty: {:?}", ty);
+
+        match self {
+            &Predicate::Trait(Binder(ref trait_ref)) => {
+                debug!("is_bound_for_ty (trait_ref): {:?}", trait_ref.self_ty());
+                trait_ref.self_ty() == ty
+            }
+            _ => panic!("TODO")
         }
     }
 }

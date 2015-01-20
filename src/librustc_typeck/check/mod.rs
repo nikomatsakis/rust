@@ -1189,6 +1189,10 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
         self.infcx().next_ty_var()
     }
 
+    fn in_scope_predicates(&self) -> &ty::GenericPredicates<'tcx> {
+        panic!("FnCtxt predicates aren't impl")
+    }
+
     fn projected_ty_from_poly_trait_ref(&self,
                                         span: Span,
                                         poly_trait_ref: ty::PolyTraitRef<'tcx>,

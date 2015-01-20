@@ -85,6 +85,8 @@ pub trait AstConv<'tcx> {
         None
     }
 
+    fn in_scope_predicates(&self) -> &ty::GenericPredicates<'tcx>;
+
     /// What type should we use when a type is omitted?
     fn ty_infer(&self, span: Span) -> Ty<'tcx>;
 
@@ -922,6 +924,7 @@ fn trait_ref_to_object_type<'tcx>(this: &AstConv<'tcx>,
 }
 
 fn associated_path_def_to_ty<'tcx>(this: &AstConv<'tcx>,
+                                   rscope: &RegionScope,
                                    ast_ty: &ast::Ty,
                                    provenance: def::TyParamProvenance,
                                    assoc_name: ast::Name)
@@ -938,9 +941,14 @@ fn associated_path_def_to_ty<'tcx>(this: &AstConv<'tcx>,
         ty_param_name = ty_param_def.name;
 
         // FIXME(#20300) -- search where clauses, not bounds
+        debug!("associated_path_def_to_ty: current_predidcates={:?}", this.in_scope_predicates());
+        
         suitable_bounds =
-            traits::transitive_bounds(tcx, ty_param_def.bounds.trait_bounds.as_slice())
-            .filter(|b| trait_defines_associated_type_named(this, b.def_id(), assoc_name))
+            this.in_scope_predicates().predicates.iter()
+            .filter_map(|p| p.to_opt_poly_trait_ref())
+            .filter(|trait_ref| {
+                trait_defines_associated_type_named(this, trait_ref.def_id(), assoc_name)
+            })
             .collect();
     }
 
@@ -1148,7 +1156,7 @@ pub fn ast_ty_to_ty<'tcx>(
                         this.tcx().types.err
                     }
                     def::DefAssociatedPath(provenance, assoc_ident) => {
-                        associated_path_def_to_ty(this, ast_ty, provenance, assoc_ident.name)
+                        associated_path_def_to_ty(this, rscope, ast_ty, provenance, assoc_ident.name)
                     }
                     _ => {
                         tcx.sess.span_fatal(ast_ty.span,
