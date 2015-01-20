@@ -2302,7 +2302,7 @@ pub struct TraitDef<'tcx> {
     pub predicates: GenericPredicates<'tcx>,
 
     /// The "supertrait" bounds.
-    pub bounds: ParamBounds<'tcx>,
+    // pub bounds: ParamBounds<'tcx>,
 
     pub trait_ref: Rc<ty::TraitRef<'tcx>>,
 
@@ -5528,39 +5528,24 @@ pub fn predicates_for_trait_ref<'tcx>(tcx: &ctxt<'tcx>,
     // substituting over the substs, not the trait-refs themselves,
     // thus achieving the "collapse" described in the big comment
     // above.
-    let trait_bounds: Vec<_> =
-        trait_def.bounds.trait_bounds
-        .iter()
-        .map(|poly_trait_ref| ty::Binder(poly_trait_ref.0.subst(tcx, trait_ref.substs())))
-        .collect();
 
-    let projection_bounds: Vec<_> =
-        trait_def.bounds.projection_bounds
-        .iter()
-        .map(|poly_proj| ty::Binder(poly_proj.0.subst(tcx, trait_ref.substs())))
-        .collect();
+    let self_predicates = trait_def
+        .predicates
+        .predicates
+        .get_slice(subst::ParamSpace::SelfSpace).clone();
 
-    debug!("bounds_for_trait_ref: trait_bounds={} projection_bounds={}",
-           trait_bounds.repr(tcx),
-           projection_bounds.repr(tcx));
-
-    // The region bounds and builtin bounds do not currently introduce
-    // binders so we can just substitute in a straightforward way here.
-    let region_bounds =
-        trait_def.bounds.region_bounds.subst(tcx, trait_ref.substs());
-    let builtin_bounds =
-        trait_def.bounds.builtin_bounds.subst(tcx, trait_ref.substs());
-
-    let bounds = ty::ParamBounds {
-        trait_bounds: trait_bounds,
-        region_bounds: region_bounds,
-        builtin_bounds: builtin_bounds,
-        projection_bounds: projection_bounds,
-    };
-
-    predicates(tcx, trait_ref.self_ty(), &bounds)
+    self_predicates.iter().map(|predicate| {
+        match predicate {
+            &Predicate::Trait(Binder(ref poly_trait_ref)) =>
+                Predicate::Trait(Binder(poly_trait_ref.subst(tcx, trait_ref.substs()))),
+            &Predicate::Projection(Binder(ref poly_project)) =>
+                Predicate::Projection(Binder(poly_project.subst(tcx, trait_ref.substs()))),
+            p => p.subst(tcx, trait_ref.substs())
+        }
+    }).collect()
 }
 
+// TODO: JROESCH: Make sure this code isn't dropped anywhere.
 pub fn predicates<'tcx>(
     tcx: &ctxt<'tcx>,
     param_ty: Ty<'tcx>,

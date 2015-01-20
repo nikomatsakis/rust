@@ -38,6 +38,7 @@ use middle::ty::{self, AsPredicate, RegionEscape, ToPolyTraitRef, Ty};
 use middle::infer;
 use middle::infer::{InferCtxt, TypeFreshener};
 use middle::ty_fold::TypeFoldable;
+use middle::traits;
 use std::cell::RefCell;
 use std::collections::hash_map::HashMap;
 use std::rc::Rc;
@@ -1322,7 +1323,13 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                         Err(Unimplemented)
                     }
                     ty::BoundCopy | ty::BoundSync | ty::BoundSend => {
-                        if data.bounds.builtin_bounds.contains(&bound) {
+                        let trait_bound =
+                            traits::trait_ref_for_builtin_bound(
+                                self.tcx(),
+                                bound,
+                                self_ty);
+
+                        if data.predicates.filter_map(|p| p.to_poly_trait_ref()).any(|p| p == trait_bound) {
                             Ok(If(Vec::new()))
                         } else {
                             // Recursively check all supertraits to find out if any further

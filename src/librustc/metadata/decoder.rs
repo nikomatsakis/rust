@@ -388,7 +388,6 @@ pub fn get_trait_def<'tcx>(cdata: Cmd,
 {
     let item_doc = lookup_item(item_id, cdata.data());
     let (generics, predicates) = doc_generics(item_doc, tcx, cdata, tag_item_generics);
-    let bounds = trait_def_bounds(item_doc, tcx, cdata);
     let unsafety = parse_unsafety(item_doc);
     let associated_type_names = parse_associated_type_names(item_doc);
 
@@ -396,7 +395,6 @@ pub fn get_trait_def<'tcx>(cdata: Cmd,
         unsafety: unsafety,
         generics: generics,
         predicates: predicates,
-        bounds: bounds,
         trait_ref: item_trait_ref(item_doc, tcx, cdata),
         associated_type_names: associated_type_names,
     }

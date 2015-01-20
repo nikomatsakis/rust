@@ -1346,8 +1346,6 @@ fn encode_info_for_item(ecx: &EncodeContext,
         }
         encode_path(rbml_w, path.clone());
 
-        encode_bounds(rbml_w, ecx, &trait_def.bounds, tag_trait_def_bounds);
-
         // Encode the implementations of this trait.
         encode_extension_implementations(ecx, rbml_w, def_id);
 

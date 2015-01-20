@@ -768,9 +768,9 @@ impl<'tcx> Repr<'tcx> for ty::TraitRef<'tcx> {
 
 impl<'tcx> Repr<'tcx> for ty::TraitDef<'tcx> {
     fn repr(&self, tcx: &ctxt<'tcx>) -> String {
-        format!("TraitDef(generics={}, bounds={}, trait_ref={})",
+        format!("TraitDef(generics={}, predicates={}, trait_ref={})",
                 self.generics.repr(tcx),
-                self.bounds.repr(tcx),
+                self.predicates.repr(tcx),
                 self.trait_ref.repr(tcx))
     }
 }
