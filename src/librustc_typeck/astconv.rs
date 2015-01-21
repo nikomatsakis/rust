@@ -924,7 +924,6 @@ fn trait_ref_to_object_type<'tcx>(this: &AstConv<'tcx>,
 }
 
 fn associated_path_def_to_ty<'tcx>(this: &AstConv<'tcx>,
-                                   rscope: &RegionScope,
                                    ast_ty: &ast::Ty,
                                    provenance: def::TyParamProvenance,
                                    assoc_name: ast::Name)
@@ -942,7 +941,7 @@ fn associated_path_def_to_ty<'tcx>(this: &AstConv<'tcx>,
 
         // FIXME(#20300) -- search where clauses, not bounds
         debug!("associated_path_def_to_ty: current_predidcates={:?}", this.in_scope_predicates());
-        
+
         suitable_bounds =
             this.in_scope_predicates().predicates.iter()
             .filter_map(|p| p.to_opt_poly_trait_ref())
@@ -1156,7 +1155,7 @@ pub fn ast_ty_to_ty<'tcx>(
                         this.tcx().types.err
                     }
                     def::DefAssociatedPath(provenance, assoc_ident) => {
-                        associated_path_def_to_ty(this, rscope, ast_ty, provenance, assoc_ident.name)
+                        associated_path_def_to_ty(this, ast_ty, provenance, assoc_ident.name)
                     }
                     _ => {
                         tcx.sess.span_fatal(ast_ty.span,
