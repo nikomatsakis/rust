@@ -1327,9 +1327,9 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                             traits::trait_ref_for_builtin_bound(
                                 self.tcx(),
                                 bound,
-                                self_ty);
+                                self_ty).unwrap();
 
-                        if data.predicates.filter_map(|p| p.to_poly_trait_ref()).any(|p| p == trait_bound) {
+                        if data.bounds.builtin_bounds.contains(&bound) {
                             Ok(If(Vec::new()))
                         } else {
                             // Recursively check all supertraits to find out if any further
@@ -1339,7 +1339,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                                                                       self.tcx().types.err);
                             for tr in util::supertraits(self.tcx(), principal) {
                                 let td = ty::lookup_trait_def(self.tcx(), tr.def_id());
-                                if td.bounds.builtin_bounds.contains(&bound) {
+                                if td.supertrait_bounds().iter().any(|p| p.0 == trait_bound) {
                                     return Ok(If(Vec::new()))
                                 }
                             }

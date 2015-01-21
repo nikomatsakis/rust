@@ -2311,6 +2311,17 @@ pub struct TraitDef<'tcx> {
     pub associated_type_names: Vec<ast::Name>,
 }
 
+impl<'tcx> TraitDef<'tcx> {
+    pub fn supertrait_bounds(&self) -> Vec<ty::PolyTraitRef<'tcx>> {
+        self.predicates
+            .predicates
+            .get_slice(subst::ParamSpace::SelfSpace)
+            .iter()
+            .filter_map(|p| p.to_opt_poly_trait_ref())
+            .collect()
+    }
+}
+
 /// Records the substitutions used to translate the polytype for an
 /// item into the monotype of an item reference.
 #[derive(Clone)]
@@ -5545,7 +5556,7 @@ pub fn predicates_for_trait_ref<'tcx>(tcx: &ctxt<'tcx>,
     }).collect()
 }
 
-// TODO: JROESCH: Make sure this code isn't dropped anywhere.
+// TODO: JROESCH: Make sure this code isn't dropped anywhere, pretty sure it can just be deleted
 pub fn predicates<'tcx>(
     tcx: &ctxt<'tcx>,
     param_ty: Ty<'tcx>,

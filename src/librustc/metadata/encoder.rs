@@ -205,21 +205,6 @@ pub fn write_region(ecx: &EncodeContext,
     tyencode::enc_region(rbml_w.writer, ty_str_ctxt, r);
 }
 
-fn encode_bounds<'a, 'tcx>(rbml_w: &mut Encoder,
-                           ecx: &EncodeContext<'a, 'tcx>,
-                           bounds: &ty::ParamBounds<'tcx>,
-                           tag: uint) {
-    rbml_w.start_tag(tag);
-
-    let ty_str_ctxt = &tyencode::ctxt { diag: ecx.diag,
-                                        ds: def_to_string,
-                                        tcx: ecx.tcx,
-                                        abbrevs: &ecx.type_abbrevs };
-    tyencode::enc_bounds(rbml_w.writer, ty_str_ctxt, bounds);
-
-    rbml_w.end_tag();
-}
-
 fn encode_type<'a, 'tcx>(ecx: &EncodeContext<'a, 'tcx>,
                          rbml_w: &mut Encoder,
                          typ: Ty<'tcx>) {

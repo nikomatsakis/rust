@@ -22,7 +22,7 @@ use metadata::csearch::MethodInfo;
 use metadata::csearch;
 use metadata::cstore;
 use metadata::tydecode::{parse_ty_data, parse_region_data, parse_def_id,
-                         parse_type_param_def_data, parse_bounds_data,
+                         parse_type_param_def_data,
                          parse_bare_fn_ty_data, parse_trait_ref_data,
                          parse_predicate_data};
 use middle::def;
@@ -256,18 +256,6 @@ fn item_trait_ref<'tcx>(doc: rbml::Doc, tcx: &ty::ctxt<'tcx>, cdata: Cmd)
                         -> Rc<ty::TraitRef<'tcx>> {
     let tp = reader::get_doc(doc, tag_item_trait_ref);
     doc_trait_ref(tp, tcx, cdata)
-}
-
-fn doc_bounds<'tcx>(doc: rbml::Doc, tcx: &ty::ctxt<'tcx>, cdata: Cmd)
-                    -> ty::ParamBounds<'tcx> {
-    parse_bounds_data(doc.data, cdata.cnum, doc.start, tcx,
-                      |_, did| translate_def_id(cdata, did))
-}
-
-fn trait_def_bounds<'tcx>(doc: rbml::Doc, tcx: &ty::ctxt<'tcx>, cdata: Cmd)
-                          -> ty::ParamBounds<'tcx> {
-    let d = reader::get_doc(doc, tag_trait_def_bounds);
-    doc_bounds(d, tcx, cdata)
 }
 
 fn enum_variant_ids(item: rbml::Doc, cdata: Cmd) -> Vec<ast::DefId> {

@@ -1309,11 +1309,11 @@ fn ty_generics_for_trait<'a, 'tcx>(ccx: &LocalCollectCtxt<'a, 'tcx>,
                                                  self_trait_ref.clone(),
                                                  assoc_type_def.ident.name);
 
-                let bounds = compute_bounds(ccx,
-                                            assoc_ty,
-                                            assoc_type_def.bounds.as_slice(),
-                                            SizedByDefault::Yes,
-                                            assoc_type_def.span);
+                let bounds = bounds_for_param_ty(ccx,
+                                                 assoc_ty,
+                                                 assoc_type_def.bounds.as_slice(),
+                                                 SizedByDefault::Yes,
+                                                 assoc_type_def.span);
 
                 ty::predicates(ccx.tcx(), assoc_ty, &bounds).into_iter()
             })
@@ -1516,7 +1516,6 @@ fn get_or_create_type_parameter_def<'a,'tcx>(ccx: &LocalCollectCtxt<'a,'tcx>,
     }
 
     let param_ty = ty::ParamTy::new(space, index, param.ident.name);
-    let bounds = compute_bounds(ccx, param_ty.to_ty(tcx), &param.bounds[], SizedByDefault::Yes, param.span);
 
     let predicates = bounds_for_param_ty(ccx,
                                          param_ty.to_ty(tcx),
@@ -1550,7 +1549,6 @@ fn get_or_create_type_parameter_def<'a,'tcx>(ccx: &LocalCollectCtxt<'a,'tcx>,
         index: index,
         name: param.ident.name,
         def_id: local_def(param.id),
-        //bounds: bounds,
         default: default
     };
 
@@ -1564,38 +1562,6 @@ enum SizedByDefault { Yes, No }
 /// Translate the AST's notion of ty param bounds (which are an enum consisting of a newtyped Ty or
 /// a region) to ty's notion of ty param bounds, which can either be user-defined traits, or the
 /// built-in trait (formerly known as kind): Send.
-//fn compute_bounds<'a,'tcx>(ccx: &LocalCollectCtxt<'a,'tcx>,
-                           //param_ty: ty::Ty<'tcx>,
-                           //ast_bounds: &[ast::TyParamBound],
-                           //sized_by_default: SizedByDefault,
-                           //span: Span)
-                           //-> ty::ParamBounds<'tcx>
-//{
-    //let mut param_bounds = conv_param_bounds(ccx,
-                                             //span,
-                                             //param_ty,
-                                             //ast_bounds);
-
-    //if let SizedByDefault::Yes = sized_by_default {
-        //add_sized_bound(ccx.collect_cx,
-                        //&mut param_bounds.builtin_bounds,
-                        //ast_bounds,
-                        //span);
-
-        //check_bounds_compatible(ccx.tcx(),
-                                //param_ty,
-                                //&param_bounds,
-                                //span);
-    //}
-
-    //param_bounds.trait_bounds.sort_by(|a,b| a.def_id().cmp(&b.def_id()));
-
-    //param_bounds
-//}
-
-/// Translate the AST's notion of ty param bounds (which are an enum consisting of a newtyped Ty or
-/// a region) to ty's notion of ty param bounds, which can either be user-defined traits, or the
-/// built-in trait (formerly known as kind): Send.
 fn bounds_for_param_ty<'a,'tcx>(ccx: &LocalCollectCtxt<'a,'tcx>,
     param_ty: ty::Ty<'tcx>,
     ast_bounds: &[ast::TyParamBound],
@@ -1603,10 +1569,10 @@ fn bounds_for_param_ty<'a,'tcx>(ccx: &LocalCollectCtxt<'a,'tcx>,
     span: Span)
     -> Vec<ty::Predicate<'tcx>>
 {
-    let mut predicates = param_bounds_to_predicates(ccx,
-                                                    span,
-                                                    param_ty,
-                                                    ast_bounds);
+    let mut predicates = param_predicates(ccx,
+                                          span,
+                                          param_ty,
+                                          ast_bounds);
 
     if let SizedByDefault::Yes = sized_by_default {
         // add_sized_bound(ccx,
@@ -1636,7 +1602,8 @@ fn check_bounds_compatible<'tcx>(tcx: &ty::ctxt<'tcx>,
             &param_bounds.trait_bounds[],
             |trait_ref| {
                 let trait_def = ty::lookup_trait_def(tcx, trait_ref.def_id());
-                if trait_def.bounds.builtin_bounds.contains(&ty::BoundSized) {
+                let bound_trait_ref = traits::trait_ref_for_builtin_bound(tcx, ty::BoundSized, param_ty).unwrap();
+                if trait_def.supertrait_bounds().iter().any(|poly_tr| poly_tr.0 == bound_trait_ref) {
                     span_err!(tcx.sess, span, E0129,
                               "incompatible bounds on `{}`, \
                                bound `{}` does not allow unsized type",
@@ -1685,7 +1652,7 @@ fn conv_param_bounds<'a,'tcx>(ccx: &LocalCollectCtxt<'a,'tcx>,
     }
 }
 
-fn param_bounds_to_predicates<'a,'tcx>(
+fn param_predicates<'a,'tcx>(
     ccx: &LocalCollectCtxt<'a,'tcx>,
     span: Span,
     param_ty: ty::Ty<'tcx>,
