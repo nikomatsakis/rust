@@ -29,6 +29,8 @@ use syntax::abi;
 use syntax::ast;
 use syntax::parse::token;
 
+use collections::enum_set::EnumSet;
+
 // Compact string representation for Ty values. API ty_str &
 // parse_from_str. Extra parameters are for converting to/from def_ids in the
 // data buffer. Whatever format you choose should not contain pipe characters.
@@ -201,15 +203,6 @@ pub fn parse_substs_data<'tcx, F>(data: &[u8], crate_num: ast::CrateNum, pos: ui
     debug!("parse_substs_data {}", data_log_string(data, pos));
     let mut st = parse_state_from_data(data, crate_num, pos, tcx);
     parse_substs(&mut st, conv)
-}
-
-pub fn parse_bounds_data<'tcx, F>(data: &[u8], crate_num: ast::CrateNum,
-                                  pos: uint, tcx: &ty::ctxt<'tcx>, conv: F)
-                                  -> ty::ParamBounds<'tcx> where
-    F: FnMut(DefIdSource, ast::DefId) -> ast::DefId,
-{
-    let mut st = parse_state_from_data(data, crate_num, pos, tcx);
-    parse_bounds(&mut st, conv)
 }
 
 pub fn parse_existential_bounds_data<'tcx, F>(data: &[u8], crate_num: ast::CrateNum,
@@ -854,14 +847,7 @@ fn parse_existential_bounds_<'a,'tcx, F>(st: &mut PState<'a,'tcx>,
                                         -> ty::ExistentialBounds<'tcx> where
     F: FnMut(DefIdSource, ast::DefId) -> ast::DefId,
 {
-    let ty::ParamBounds { trait_bounds, mut region_bounds, builtin_bounds, projection_bounds } =
-         parse_bounds_(st, conv);
-    assert_eq!(region_bounds.len(), 1);
-    assert_eq!(trait_bounds.len(), 0);
-    let region_bound = region_bounds.pop().unwrap();
-    return ty::ExistentialBounds { region_bound: region_bound,
-                                   builtin_bounds: builtin_bounds,
-                                   projection_bounds: projection_bounds };
+    parse_bounds_(st, conv)
 }
 
 fn parse_builtin_bounds<F>(st: &mut PState, mut _conv: F) -> ty::BuiltinBounds where
@@ -899,41 +885,32 @@ fn parse_builtin_bounds_<F>(st: &mut PState, _conv: &mut F) -> ty::BuiltinBounds
     }
 }
 
-fn parse_bounds<'a, 'tcx, F>(st: &mut PState<'a, 'tcx>, mut conv: F)
-                             -> ty::ParamBounds<'tcx> where
-    F: FnMut(DefIdSource, ast::DefId) -> ast::DefId,
-{
-    parse_bounds_(st, &mut conv)
-}
-
 fn parse_bounds_<'a, 'tcx, F>(st: &mut PState<'a, 'tcx>, conv: &mut F)
-                              -> ty::ParamBounds<'tcx> where
+                              -> ty::ExistentialBounds<'tcx> where
     F: FnMut(DefIdSource, ast::DefId) -> ast::DefId,
 {
     let builtin_bounds = parse_builtin_bounds_(st, conv);
 
-    let mut param_bounds = ty::ParamBounds {
-        region_bounds: Vec::new(),
-        builtin_bounds: builtin_bounds,
-        trait_bounds: Vec::new(),
-        projection_bounds: Vec::new(),
+    let mut projection_bounds = Vec::new();
+
+    let region = match next(st) {
+        'R' => parse_region_(st, conv),
+        c => panic!("parse_bounds: bad bounds ('{}')", c)
     };
+
     loop {
         match next(st) {
-            'R' => {
-                param_bounds.region_bounds.push(
-                    parse_region_(st, conv));
-            }
-            'I' => {
-                param_bounds.trait_bounds.push(
-                    ty::Binder(parse_trait_ref_(st, conv)));
-            }
             'P' => {
-                param_bounds.projection_bounds.push(
+                projection_bounds.push(
                     ty::Binder(parse_projection_predicate_(st, conv)));
             }
             '.' => {
-                return param_bounds;
+                return ty::ExistentialBounds {
+                    region_bound: region,
+                    builtin_bounds: builtin_bounds,
+                    projection_bounds: projection_bounds
+                }
+
             }
             c => {
                 panic!("parse_bounds: bad bounds ('{}')", c)

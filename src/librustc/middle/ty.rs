@@ -1583,16 +1583,6 @@ pub enum type_err<'tcx> {
     terr_projection_bounds_length(expected_found<uint>),
 }
 
-/// Bounds suitable for a named type parameter like `A` in `fn foo<A>`
-/// as well as the existential type parameter in an object type.
-#[derive(PartialEq, Eq, Hash, Clone, Show)]
-pub struct ParamBounds<'tcx> {
-    pub region_bounds: Vec<ty::Region>,
-    pub builtin_bounds: BuiltinBounds,
-    pub trait_bounds: Vec<PolyTraitRef<'tcx>>,
-    pub projection_bounds: Vec<PolyProjectionPredicate<'tcx>>,
-}
-
 /// Bounds suitable for an existentially quantified type parameter
 /// such as those that appear in object types or closure types. The
 /// major difference between this case and `ParamBounds` is that
@@ -3032,17 +3022,6 @@ impl<'tcx> ItemSubsts<'tcx> {
 
     pub fn is_noop(&self) -> bool {
         self.substs.is_noop()
-    }
-}
-
-impl<'tcx> ParamBounds<'tcx> {
-    pub fn empty() -> ParamBounds<'tcx> {
-        ParamBounds {
-            builtin_bounds: empty_builtin_bounds(),
-            trait_bounds: Vec::new(),
-            region_bounds: Vec::new(),
-            projection_bounds: Vec::new(),
-        }
     }
 }
 
@@ -5557,38 +5536,38 @@ pub fn predicates_for_trait_ref<'tcx>(tcx: &ctxt<'tcx>,
 }
 
 // TODO: JROESCH: Make sure this code isn't dropped anywhere, pretty sure it can just be deleted
-pub fn predicates<'tcx>(
-    tcx: &ctxt<'tcx>,
-    param_ty: Ty<'tcx>,
-    bounds: &ParamBounds<'tcx>)
-    -> Vec<Predicate<'tcx>>
-{
-    let mut vec = Vec::new();
+//pub fn predicates<'tcx>(
+    //tcx: &ctxt<'tcx>,
+    //param_ty: Ty<'tcx>,
+    //bounds: &ParamBounds<'tcx>)
+    //-> Vec<Predicate<'tcx>>
+//{
+    //let mut vec = Vec::new();
 
-    for builtin_bound in bounds.builtin_bounds.iter() {
-        match traits::trait_ref_for_builtin_bound(tcx, builtin_bound, param_ty) {
-            Ok(trait_ref) => { vec.push(trait_ref.as_predicate()); }
-            Err(ErrorReported) => { }
-        }
-    }
+    //for builtin_bound in bounds.builtin_bounds.iter() {
+        //match traits::trait_ref_for_builtin_bound(tcx, builtin_bound, param_ty) {
+            //Ok(trait_ref) => { vec.push(trait_ref.as_predicate()); }
+            //Err(ErrorReported) => { }
+        //}
+    //}
 
-    for &region_bound in bounds.region_bounds.iter() {
-        // account for the binder being introduced below; no need to shift `param_ty`
-        // because, at present at least, it can only refer to early-bound regions
-        let region_bound = ty_fold::shift_region(region_bound, 1);
-        vec.push(ty::Binder(ty::OutlivesPredicate(param_ty, region_bound)).as_predicate());
-    }
+    //for &region_bound in bounds.region_bounds.iter() {
+        //// account for the binder being introduced below; no need to shift `param_ty`
+        //// because, at present at least, it can only refer to early-bound regions
+        //let region_bound = ty_fold::shift_region(region_bound, 1);
+        //vec.push(ty::Binder(ty::OutlivesPredicate(param_ty, region_bound)).as_predicate());
+    //}
 
-    for bound_trait_ref in bounds.trait_bounds.iter() {
-        vec.push(bound_trait_ref.as_predicate());
-    }
+    //for bound_trait_ref in bounds.trait_bounds.iter() {
+        //vec.push(bound_trait_ref.as_predicate());
+    //}
 
-    for projection in bounds.projection_bounds.iter() {
-        vec.push(projection.as_predicate());
-    }
+    //for projection in bounds.projection_bounds.iter() {
+        //vec.push(projection.as_predicate());
+    //}
 
-    vec
-}
+    //vec
+//}
 
 /// Get the attributes of a definition.
 pub fn get_attrs<'tcx>(tcx: &'tcx ctxt, did: DefId)
@@ -5925,14 +5904,14 @@ pub fn object_region_bounds<'tcx>(
         vec!(ty::Binder(Rc::new(ty::TraitRef::new(principal.0.def_id, substs))))
     });
 
-    let param_bounds = ty::ParamBounds {
-        region_bounds: Vec::new(),
-        builtin_bounds: others,
-        trait_bounds: opt_trait_ref,
-        projection_bounds: Vec::new(), // not relevant to computing region bounds
-    };
+    let mut predicates: Vec<_> = others.iter().map(|b|
+        traits::trait_ref_for_builtin_bound(tcx, b, open_ty).unwrap().as_predicate()
+    ).collect();
 
-    let predicates = ty::predicates(tcx, open_ty, &param_bounds);
+    for tr in opt_trait_ref.iter() {
+        predicates.push(tr.as_predicate())
+    }
+
     ty::required_region_bounds(tcx, open_ty, predicates)
 }
 

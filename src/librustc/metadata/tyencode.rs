@@ -391,26 +391,10 @@ pub fn enc_builtin_bounds(w: &mut SeekableMemWriter, _cx: &ctxt, bs: &ty::Builti
 pub fn enc_existential_bounds<'a,'tcx>(w: &mut SeekableMemWriter,
                                        cx: &ctxt<'a,'tcx>,
                                        bs: &ty::ExistentialBounds<'tcx>) {
-    let param_bounds = ty::ParamBounds { trait_bounds: vec!(),
-                                         region_bounds: vec!(bs.region_bound),
-                                         builtin_bounds: bs.builtin_bounds,
-                                         projection_bounds: bs.projection_bounds.clone() };
-    enc_bounds(w, cx, &param_bounds);
-}
-
-pub fn enc_bounds<'a, 'tcx>(w: &mut SeekableMemWriter, cx: &ctxt<'a, 'tcx>,
-                            bs: &ty::ParamBounds<'tcx>) {
     enc_builtin_bounds(w, cx, &bs.builtin_bounds);
 
-    for &r in bs.region_bounds.iter() {
-        mywrite!(w, "R");
-        enc_region(w, cx, r);
-    }
-
-    for tp in bs.trait_bounds.iter() {
-        mywrite!(w, "I");
-        enc_trait_ref(w, cx, &*tp.0);
-    }
+    mywrite!(w, "R");
+    enc_region(w, cx, bs.region_bound);
 
     for tp in bs.projection_bounds.iter() {
         mywrite!(w, "P");
@@ -425,7 +409,6 @@ pub fn enc_type_param_def<'a, 'tcx>(w: &mut SeekableMemWriter, cx: &ctxt<'a, 'tc
     mywrite!(w, "{}:{}|{}|{}|",
              token::get_name(v.name), (cx.ds)(v.def_id),
              v.space.to_uint(), v.index);
-    // enc_bounds(w, cx, &v.bounds);
     enc_opt(w, v.default, |w, t| enc_ty(w, cx, t));
 }
 

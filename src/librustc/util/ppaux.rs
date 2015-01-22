@@ -741,17 +741,6 @@ impl<'tcx> Repr<'tcx> for ty::ExistentialBounds<'tcx> {
     }
 }
 
-impl<'tcx> Repr<'tcx> for ty::ParamBounds<'tcx> {
-    fn repr(&self, tcx: &ctxt<'tcx>) -> String {
-        let mut res = Vec::new();
-        res.push(self.builtin_bounds.repr(tcx));
-        for t in self.trait_bounds.iter() {
-            res.push(t.repr(tcx));
-        }
-        res.connect("+")
-    }
-}
-
 impl<'tcx> Repr<'tcx> for ty::TraitRef<'tcx> {
     fn repr(&self, tcx: &ctxt<'tcx>) -> String {
         // when printing out the debug representation, we don't need
@@ -1128,20 +1117,6 @@ impl<'tcx, A:UserString<'tcx>> UserString<'tcx> for Rc<A> {
     fn user_string(&self, tcx: &ctxt<'tcx>) -> String {
         let this: &A = &**self;
         this.user_string(tcx)
-    }
-}
-
-impl<'tcx> UserString<'tcx> for ty::ParamBounds<'tcx> {
-    fn user_string(&self, tcx: &ctxt<'tcx>) -> String {
-        let mut result = Vec::new();
-        let s = self.builtin_bounds.user_string(tcx);
-        if !s.is_empty() {
-            result.push(s);
-        }
-        for n in self.trait_bounds.iter() {
-            result.push(n.user_string(tcx));
-        }
-        result.connect(" + ")
     }
 }
 

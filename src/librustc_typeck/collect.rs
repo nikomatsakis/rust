@@ -347,10 +347,10 @@ fn collect_trait_methods<'a, 'tcx>(ccx: &LocalCollectCtxt<'a, 'tcx>,
                             }
                         });
 
-                        debug!("ty_method_of_trait_method yielded {} for method {} of trait {}",
-                               ty_method.repr(ccx.tcx()),
-                               trait_item.repr(ccx.tcx()),
-                               local_def(trait_id).repr(ccx.tcx()));
+                        //debug!("ty_method_of_trait_method yielded {} for method {} of trait {}",
+                               //ty_method.repr(ccx.tcx()),
+                               //trait_item.repr(ccx.tcx()),
+                               //local_def(trait_id).repr(ccx.tcx()));
 
                         make_method_ty(ccx, &*ty_method);
 
@@ -515,9 +515,9 @@ fn convert_methods<'a,'tcx,'i,I>(ccx: &LocalCollectCtxt<'a, 'tcx>,
                                  rcvr_ty_predicates: &ty::GenericPredicates<'tcx>,
                                  rcvr_visibility: ast::Visibility)
                                  where I: Iterator<Item=&'i ast::Method> {
-    debug!("convert_methods(untransformed_rcvr_ty={}, rcvr_ty_generics={})",
-           untransformed_rcvr_ty.repr(ccx.tcx()),
-           rcvr_ty_generics.repr(ccx.tcx()));
+    //debug!("convert_methods(untransformed_rcvr_ty={}, rcvr_ty_generics={})",
+           //untransformed_rcvr_ty.repr(ccx.tcx()),
+           //rcvr_ty_generics.repr(ccx.tcx()));
 
     let tcx = ccx.tcx();
     let mut seen_methods = FnvHashSet::new();
@@ -535,10 +535,10 @@ fn convert_methods<'a,'tcx,'i,I>(ccx: &LocalCollectCtxt<'a, 'tcx>,
                                        rcvr_ty_predicates,
                                        rcvr_visibility));
         let fty = ty::mk_bare_fn(tcx, Some(m_def_id), tcx.mk_bare_fn(mty.fty.clone()));
-        debug!("method {} (id {}) has type {}",
-                m.pe_ident().repr(tcx),
-                m.id,
-                fty.repr(tcx));
+        //debug!("method {} (id {}) has type {}",
+                //m.pe_ident().repr(tcx),
+                //m.id,
+                //fty.repr(tcx));
         tcx.tcache.borrow_mut().insert(
             m_def_id,
             TypeScheme {
@@ -549,8 +549,8 @@ fn convert_methods<'a,'tcx,'i,I>(ccx: &LocalCollectCtxt<'a, 'tcx>,
 
         write_ty_to_tcx(tcx, m.id, fty);
 
-        debug!("writing method type: def_id={:?} mty={}",
-               mty.def_id, mty.repr(tcx));
+        //debug!("writing method type: def_id={:?} mty={}",
+               //mty.def_id, mty.repr(tcx));
 
         tcx.impl_or_trait_items
            .borrow_mut()
@@ -653,7 +653,7 @@ fn convert(ccx: &LocalCollectCtxt, it: &ast::Item) {
             let (ty_generics, bounds) = ty_generics_for_type_or_impl(ccx, generics);
             let ty_predicates = ty_generic_bounds_for_type_or_impl(ccx, &ty_generics, bounds, generics);
 
-            debug!("convert: adding bounds={:?}", ty_predicates);
+            // debug!("convert: adding bounds={:?}", ty_predicates);
 
             // Bring the declared predicates into scope for checking the nested items.
             let ref ccx = ccx.with_bounds(ty_predicates.clone());
@@ -1143,9 +1143,9 @@ fn compute_type_scheme_of_item<'a, 'tcx>(ccx: &LocalCollectCtxt<'a, 'tcx>,
         }
     };
 
-    debug!("compute_type_scheme_of_item: type of {} is {}",
-           it.repr(tcx),
-           scheme.repr(tcx));
+    // debug!("compute_type_scheme_of_item: type of {} is {}",
+      //     it.repr(tcx),
+       //    scheme.repr(tcx));
 
     let prev_scheme = tcx.tcache.borrow_mut().insert(local_def(it.id), scheme.clone());
     assert!(prev_scheme.is_none());
@@ -1245,8 +1245,8 @@ fn ty_generics_for_trait<'a, 'tcx>(ccx: &LocalCollectCtxt<'a, 'tcx>,
                                    trait_items: &[ast::TraitItem])
                                    -> (ty::Generics<'tcx>, ty::GenericPredicates<'tcx>)
 {
-    debug!("ty_generics_for_trait(trait_id={}, substs={})",
-           local_def(trait_id).repr(ccx.tcx()), substs.repr(ccx.tcx()));
+    // debug!("ty_generics_for_trait(trait_id={}, substs={})",
+    //       local_def(trait_id).repr(ccx.tcx()), substs.repr(ccx.tcx()));
 
     let (mut generics, generic_predicates) =
         ty_generics(ccx,
@@ -1290,7 +1290,7 @@ fn ty_generics_for_trait<'a, 'tcx>(ccx: &LocalCollectCtxt<'a, 'tcx>,
                                                            &self_trait_ref,
                                                            trait_items);
 
-    debug!("ty_generics_for_trait: assoc_predicates={}", assoc_predicates.repr(ccx.tcx()));
+    // debug!("ty_generics_for_trait: assoc_predicates={}", assoc_predicates.repr(ccx.tcx()));
 
     for assoc_predicate in assoc_predicates.into_iter() {
         bounds.predicates.push(subst::TypeSpace, assoc_predicate);
@@ -1485,8 +1485,8 @@ fn ty_generics<'a,'tcx>(ccx: &LocalCollectCtxt<'a,'tcx>,
                                            index: i as u32,
                                            def_id: local_def(l.lifetime.id),
                                            bounds: bounds };
-        debug!("ty_generics: def for region param: {:?}",
-               def.repr(tcx));
+        // debug!("ty_generics: def for region param: {:?}",
+        //        def.repr(tcx));
         result.regions.push(space, def);
     }
 
@@ -1500,9 +1500,9 @@ fn ty_generics<'a,'tcx>(ccx: &LocalCollectCtxt<'a,'tcx>,
                                                    space,
                                                    param,
                                                    i as u32);
-        debug!("ty_generics: def for type param: {}, {:?}",
-               def.repr(tcx),
-               space);
+        // debug!("ty_generics: def for type param: {}, {:?}",
+        //       def.repr(tcx),
+        //       space);
         result.types.push(space, def);
         generic_predicates.predicates.extend(space, predicates.into_iter());
     }
@@ -1801,12 +1801,13 @@ fn check_method_self_type<'a, 'tcx, RS:RegionScope>(
                 &ty::liberate_late_bound_regions(
                     tcx, body_scope, &ty::Binder(base_type)));
 
-        debug!("required_type={} required_type_free={} \
-                base_type={} base_type_free={}",
-               required_type.repr(tcx),
-               required_type_free.repr(tcx),
-               base_type.repr(tcx),
-               base_type_free.repr(tcx));
+        //debug!("required_type={} required_type_free={} \
+                //base_type={} base_type_free={}",
+               //required_type.repr(tcx),
+               //required_type_free.repr(tcx),
+               //base_type.repr(tcx),
+               //base_type_free.repr(tcx));
+
         let infcx = infer::new_infer_ctxt(tcx);
         drop(::require_same_types(tcx,
                                   Some(&infcx),
