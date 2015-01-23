@@ -29,6 +29,7 @@ use core::default::Default;
 use core::fmt;
 use core::hash::{Writer, Hasher, Hash};
 use core::iter::{self, FromIterator};
+use core::marker;
 use core::mem;
 use core::ptr;
 
@@ -44,6 +45,7 @@ type Link<T> = Option<Box<Node<T>>>;
 
 struct Rawlink<T> {
     p: *mut T,
+    m: marker::PhantomData<T>,
 }
 
 impl<T> Copy for Rawlink<T> {}
@@ -96,12 +98,12 @@ pub struct IntoIter<T> {
 impl<T> Rawlink<T> {
     /// Like Option::None for Rawlink
     fn none() -> Rawlink<T> {
-        Rawlink{p: ptr::null_mut()}
+        Rawlink{p: ptr::null_mut(), m: marker::PhantomData}
     }
 
     /// Like Option::Some for Rawlink
     fn some(n: &mut T) -> Rawlink<T> {
-        Rawlink{p: n}
+        Rawlink{p: n, m: marker::PhantomData}
     }
 
     /// Convert the `Rawlink` into an Option value
@@ -129,7 +131,7 @@ impl<T> Rawlink<T> {
 impl<T> Clone for Rawlink<T> {
     #[inline]
     fn clone(&self) -> Rawlink<T> {
-        Rawlink{p: self.p}
+        Rawlink{p: self.p, m: marker::PhantomData}
     }
 }
 

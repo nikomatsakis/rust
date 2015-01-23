@@ -106,7 +106,7 @@ unsafe impl Sync for AtomicUsize {}
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct AtomicPtr<T> {
     p: UnsafeCell<usize>,
-    _marker: marker::PhantomData<*mut T>,
+    _marker: marker::PhantomData<UnsafeCell<T>>,
 }
 
 unsafe impl<T> Sync for AtomicPtr<T> {}

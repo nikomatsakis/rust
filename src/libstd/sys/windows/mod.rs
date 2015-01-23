@@ -30,6 +30,7 @@ macro_rules! helper_init { (static $name:ident: Helper<$m:ty>) => (
         lock: ::sync::MUTEX_INIT,
         cond: ::sync::CONDVAR_INIT,
         chan: ::cell::UnsafeCell { value: 0 as *mut ::sync::mpsc::Sender<$m> },
+        chan_marker: ::marker::PhantomData,
         signal: ::cell::UnsafeCell { value: 0 },
         initialized: ::cell::UnsafeCell { value: false },
         shutdown: ::cell::UnsafeCell { value: false },

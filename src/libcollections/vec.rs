@@ -863,6 +863,8 @@ impl<T> Vec<T> {
                 end_t: unsafe { start.offset(offset) },
                 start_u: start as *mut U,
                 end_u: start as *mut U,
+
+                _marker: PhantomData,
             };
             //  start_t
             //  start_u
@@ -1797,6 +1799,8 @@ struct PartialVecNonZeroSized<T,U> {
     end_u: *mut U,
     start_t: *mut T,
     end_t: *mut T,
+
+    _marker: PhantomData<U>,
 }
 
 /// An owned, partially type-converted vector of zero-sized elements.

@@ -80,7 +80,8 @@ pub struct RawTable<K, V> {
 struct RawBucket<K, V> {
     hash: *mut u64,
     key:  *mut K,
-    val:  *mut V
+    val:  *mut V,
+    _marker: marker::PhantomData<(K,V)>,
 }
 
 impl<K,V> Copy for RawBucket<K,V> {}
@@ -174,6 +175,7 @@ impl<K, V> RawBucket<K, V> {
             hash: self.hash.offset(count),
             key:  self.key.offset(count),
             val:  self.val.offset(count),
+            _marker: marker::PhantomData,
         }
     }
 }
@@ -624,7 +626,8 @@ impl<K, V> RawTable<K, V> {
             RawBucket {
                 hash: *self.hashes,
                 key:  buffer.offset(keys_offset as int) as *mut K,
-                val:  buffer.offset(vals_offset as int) as *mut V
+                val:  buffer.offset(vals_offset as int) as *mut V,
+                _marker: marker::PhantomData,
             }
         }
     }
@@ -976,7 +979,7 @@ impl<K: Clone, V: Clone> Clone for RawTable<K, V> {
 #[unsafe_destructor]
 impl<K, V> Drop for RawTable<K, V> {
     fn drop(&mut self) {
-        if *self.hashes == (EMPTY as *mut u64) {
+        if self.capacity == 0 {
             return;
         }
 

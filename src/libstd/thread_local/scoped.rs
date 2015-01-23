@@ -208,9 +208,13 @@ impl<T> Key<T> {
 #[cfg(not(any(windows, target_os = "android", target_os = "ios", target_arch = "aarch64")))]
 mod imp {
     use std::cell::UnsafeCell;
+    use std::marker::PhantomData;
 
     #[doc(hidden)]
-    pub struct KeyInner<T> { pub inner: UnsafeCell<*mut T> }
+    pub struct KeyInner<T> {
+        pub inner: UnsafeCell<*mut T>,
+        _marker: PhantomData<UnsafeCell<*const T>>,
+    }
 
     unsafe impl<T> ::marker::Sync for KeyInner<T> { }
 
