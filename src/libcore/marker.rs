@@ -29,7 +29,6 @@ use clone::Clone;
 use cmp;
 use option::Option;
 use hash::Hash;
-#[cfg(not(stage0))]
 use hash::Hasher;
 
 /// Types able to be transferred across thread boundaries.
@@ -228,14 +227,6 @@ pub struct Managed;
 
 macro_rules! impls{
     ($t: ident) => (
-        #[cfg(stage0)]
-        impl<T:?Sized, S> Hash<S> for $t<T> {
-            #[inline]
-            fn hash(&self, _: &mut S) {
-            }
-        }
-
-        #[cfg(not(stage0))]
         impl<T:?Sized, S: Hasher> Hash<S> for $t<T> {
             #[inline]
             fn hash(&self, _: &mut S) {
