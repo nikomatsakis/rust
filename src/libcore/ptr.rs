@@ -527,7 +527,7 @@ impl<T> PartialOrd for *mut T {
 /// internally use raw pointers to manage the memory that they own.
 #[unstable(feature = "core", reason = "recently added to this module")]
 pub struct Unique<T> {
-    pointer: NonZero<*mut T>,
+    pointer: NonZero<*const T>,
     _marker: PhantomData<T>,
 }
 
@@ -550,7 +550,7 @@ impl<T> Unique<T> {
     #[unstable(feature = "core",
                reason = "recently added to this module")]
     pub unsafe fn new(ptr: *mut T) -> Unique<T> {
-        Unique { pointer: NonZero::new(ptr), _marker: PhantomData }
+        Unique { pointer: NonZero::new(ptr as *const T), _marker: PhantomData }
     }
 
     /// Dereference the content.
@@ -564,7 +564,7 @@ impl<T> Unique<T> {
     #[unstable(feature = "core",
                reason = "recently added to this module")]
     pub unsafe fn get_mut(&mut self) -> &mut T {
-        &mut **self.pointer
+        &mut ***self
     }
 }
 
@@ -573,6 +573,6 @@ impl<T> Deref for Unique<T> {
 
     #[inline]
     fn deref<'a>(&'a self) -> &'a *mut T {
-        &*self.pointer
+        unsafe { mem::transmute(&*self.pointer) }
     }
 }

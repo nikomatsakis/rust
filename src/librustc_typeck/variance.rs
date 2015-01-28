@@ -853,16 +853,8 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
             }
 
 
-            ty::ty_ptr(ty::mt { ty: referent_ty, mutbl: ast::MutImmutable }) => {
-                // Treat *const T as covariant with respect to T.
-
-                self.add_constraints_from_ty(generics, referent_ty, variance);
-            }
-
-            ty::ty_ptr(ty::mt { ty: _referent_ty, mutbl: ast::MutMutable }) => {
-                // Ignore *mut T. This is because its use varies so greatly.
-                //
-                // self.add_constraints_from_ty(generics, referent_ty, variance);
+            ty::ty_ptr(ref mt) => {
+                self.add_constraints_from_mt(generics, mt, variance);
             }
 
             ty::ty_tup(ref subtys) => {

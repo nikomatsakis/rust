@@ -28,7 +28,9 @@
 use clone::Clone;
 use cmp;
 use option::Option;
-use hash::{Hash, Hasher};
+use hash::Hash;
+#[cfg(not(stage0))]
+use hash::Hasher;
 
 /// Types able to be transferred across thread boundaries.
 #[unstable(feature = "core",
