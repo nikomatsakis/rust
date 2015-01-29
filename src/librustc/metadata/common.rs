@@ -142,6 +142,7 @@ pub enum astencode_tag { // Reserves 0x40 -- 0x5f
     tag_table_upvar_borrow_map = 0x55,
     tag_table_capture_modes = 0x56,
     tag_table_object_cast_map = 0x57,
+    tag_table_const_qualif = 0x58,
 }
 
 pub const tag_item_trait_item_sort: uint = 0x60;
