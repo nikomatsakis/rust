@@ -22,6 +22,7 @@ use trans::common::{ExternMap,tydesc_info,BuilderRef_res};
 use trans::debuginfo;
 use trans::monomorphize::MonoId;
 use trans::type_::{Type, TypeNames};
+use middle::subst::Substs;
 use middle::ty::{self, Ty};
 use session::config::NoDebugInfo;
 use session::Session;
@@ -115,7 +116,7 @@ pub struct LocalCrateContext<'tcx> {
     const_globals: RefCell<FnvHashMap<int, ValueRef>>,
 
     /// Cache of emitted const values
-    const_values: RefCell<NodeMap<ValueRef>>,
+    const_values: RefCell<FnvHashMap<(ast::NodeId, &'tcx Substs<'tcx>), ValueRef>>,
 
     /// Cache of emitted static values
     static_values: RefCell<NodeMap<ValueRef>>,
@@ -401,7 +402,7 @@ impl<'tcx> LocalCrateContext<'tcx> {
                 vtables: RefCell::new(FnvHashMap()),
                 const_cstr_cache: RefCell::new(FnvHashMap()),
                 const_globals: RefCell::new(FnvHashMap()),
-                const_values: RefCell::new(NodeMap()),
+                const_values: RefCell::new(FnvHashMap()),
                 static_values: RefCell::new(NodeMap()),
                 extern_const_values: RefCell::new(DefIdMap()),
                 impl_method_cache: RefCell::new(FnvHashMap()),
@@ -619,7 +620,8 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
         &self.local.const_globals
     }
 
-    pub fn const_values<'a>(&'a self) -> &'a RefCell<NodeMap<ValueRef>> {
+    pub fn const_values<'a>(&'a self) -> &'a RefCell<FnvHashMap<(ast::NodeId, &'tcx Substs<'tcx>),
+                                                                ValueRef>> {
         &self.local.const_values
     }
 
