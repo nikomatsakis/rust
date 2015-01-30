@@ -647,7 +647,9 @@ fn convert(ccx: &CollectCtxt, it: &ast::Item) {
             if let Some(ref trait_ref) = *opt_trait_ref {
                 astconv::instantiate_trait_ref(ccx,
                                                &ExplicitRscope,
-                                               trait_ref,
+                                               &trait_ref.path,
+                                               trait_ref.ref_id,
+                                               Some(it.id),
                                                Some(selfty),
                                                None);
             }

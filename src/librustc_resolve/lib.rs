@@ -2860,8 +2860,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                     this.resolve_type_parameters(&generics.ty_params);
                     this.resolve_where_clause(&generics.where_clause);
 
-                    this.resolve_type_parameter_bounds(item.id, bounds,
-                                                       TraitDerivation);
+                    this.resolve_type_parameter_bounds(bounds, TraitDerivation);
 
                     for trait_item in &(*trait_items) {
                         // Create a new rib for the trait_item-specific type
@@ -3111,8 +3110,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
     fn resolve_type_parameter(&mut self,
                               type_parameter: &TyParam) {
         for bound in &*type_parameter.bounds {
-            self.resolve_type_parameter_bound(type_parameter.id, bound,
-                                              TraitBoundingTypeParameter);
+            self.resolve_type_parameter_bound(bound, TraitBoundingTypeParameter);
         }
         match type_parameter.default {
             Some(ref ty) => self.resolve_type(&**ty),
@@ -3121,41 +3119,33 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
     }
 
     fn resolve_type_parameter_bounds(&mut self,
-                                     id: NodeId,
                                      type_parameter_bounds: &OwnedSlice<TyParamBound>,
                                      reference_type: TraitReferenceType) {
         for type_parameter_bound in &**type_parameter_bounds {
-            self.resolve_type_parameter_bound(id, type_parameter_bound,
-                                              reference_type);
+            self.resolve_type_parameter_bound(type_parameter_bound, reference_type);
         }
     }
 
     fn resolve_type_parameter_bound(&mut self,
-                                    id: NodeId,
                                     type_parameter_bound: &TyParamBound,
                                     reference_type: TraitReferenceType) {
         match *type_parameter_bound {
             TraitTyParamBound(ref tref, _) => {
-                self.resolve_poly_trait_reference(id, tref, reference_type)
+                self.resolve_trait_reference(tref.trait_ref.ref_id,
+                                             &tref.trait_ref.path,
+                                             reference_type)
             }
             RegionTyParamBound(..) => {}
         }
     }
 
-    fn resolve_poly_trait_reference(&mut self,
-                                    id: NodeId,
-                                    poly_trait_reference: &PolyTraitRef,
-                                    reference_type: TraitReferenceType) {
-        self.resolve_trait_reference(id, &poly_trait_reference.trait_ref, reference_type)
-    }
-
     fn resolve_trait_reference(&mut self,
                                id: NodeId,
-                               trait_reference: &TraitRef,
+                               trait_path: &Path,
                                reference_type: TraitReferenceType) {
-        match self.resolve_path(id, &trait_reference.path, TypeNS, true) {
+        match self.resolve_path(id, trait_path, TypeNS, true) {
             None => {
-                let path_str = self.path_names_to_string(&trait_reference.path);
+                let path_str = self.path_names_to_string(trait_path);
                 let usage_str = match reference_type {
                     TraitBoundingTypeParameter => "bound type parameter with",
                     TraitImplementation        => "implement",
@@ -3165,26 +3155,23 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                 };
 
                 let msg = format!("attempt to {} a nonexistent trait `{}`", usage_str, path_str);
-                self.resolve_error(trait_reference.path.span, &msg[]);
+                self.resolve_error(trait_path.span, &msg[]);
             }
             Some(def) => {
                 match def {
                     (DefTrait(_), _) => {
                         debug!("(resolving trait) found trait def: {:?}", def);
-                        self.record_def(trait_reference.ref_id, def);
+                        self.record_def(id, def);
                     }
                     (def, _) => {
-                        self.resolve_error(trait_reference.path.span,
-                                           &format!("`{}` is not a trait",
-                                                   self.path_names_to_string(
-                                                       &trait_reference.path))[]);
+                        self.resolve_error(trait_path.span,
+                            &format!("`{}` is not a trait",
+                                     self.path_names_to_string(trait_path))[]);
 
                         // If it's a typedef, give a note
                         if let DefTy(..) = def {
-                            self.session.span_note(
-                                trait_reference.path.span,
-                                &format!("`type` aliases cannot be used for traits")
-                                []);
+                            self.session.span_note(trait_path.span,
+                                &format!("`type` aliases cannot be used for traits")[]);
                         }
                     }
                 }
@@ -3199,8 +3186,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                     self.resolve_type(&*bound_pred.bounded_ty);
 
                     for bound in &*bound_pred.bounds {
-                        self.resolve_type_parameter_bound(bound_pred.bounded_ty.id, bound,
-                                                          TraitBoundingTypeParameter);
+                        self.resolve_type_parameter_bound(bound, TraitBoundingTypeParameter);
                     }
                 }
                 &ast::WherePredicate::RegionPredicate(_) => {}
@@ -3273,14 +3259,16 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         result
     }
 
-    fn with_optional_trait_ref<T, F>(&mut self, id: NodeId,
+    fn with_optional_trait_ref<T, F>(&mut self,
                                      opt_trait_ref: &Option<TraitRef>,
                                      f: F) -> T where
         F: FnOnce(&mut Resolver) -> T,
     {
         let new_val = match *opt_trait_ref {
             Some(ref trait_ref) => {
-                self.resolve_trait_reference(id, trait_ref, TraitImplementation);
+                self.resolve_trait_reference(trait_ref.ref_id,
+                                             &trait_ref.path,
+                                             TraitImplementation);
 
                 match self.def_map.borrow().get(&trait_ref.ref_id) {
                     Some(def) => {
@@ -3315,7 +3303,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
             this.resolve_where_clause(&generics.where_clause);
 
             // Resolve the trait reference, if necessary.
-            this.with_optional_trait_ref(id, opt_trait_reference, |this| {
+            this.with_optional_trait_ref(opt_trait_reference, |this| {
                 // Resolve the self type.
                 this.resolve_type(self_type);
 
@@ -3600,13 +3588,12 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
 
             TyObjectSum(ref ty, ref bound_vec) => {
                 self.resolve_type(&**ty);
-                self.resolve_type_parameter_bounds(ty.id, bound_vec,
-                                                       TraitBoundingTypeParameter);
+                self.resolve_type_parameter_bounds(bound_vec, TraitBoundingTypeParameter);
             }
 
             TyQPath(ref qpath) => {
                 self.resolve_type(&*qpath.self_type);
-                self.resolve_trait_reference(ty.id, &*qpath.trait_ref, TraitQPath);
+                self.resolve_trait_reference(ty.id, &qpath.trait_path, TraitQPath);
                 for ty in qpath.item_path.parameters.types() {
                     self.resolve_type(&**ty);
                 }
@@ -3616,10 +3603,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
             }
 
             TyPolyTraitRef(ref bounds) => {
-                self.resolve_type_parameter_bounds(
-                    ty.id,
-                    bounds,
-                    TraitObject);
+                self.resolve_type_parameter_bounds(bounds, TraitObject);
                 visit::walk_ty(self, ty);
             }
             _ => {
@@ -4409,8 +4393,12 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                     ExprPath(ref path) => path,
                     ExprQPath(ref qpath) => {
                         self.resolve_type(&*qpath.self_type);
-                        self.resolve_trait_reference(expr.id, &*qpath.trait_ref, TraitQPath);
-                        path_from_qpath = qpath.trait_ref.path.clone();
+
+                        // Just make sure the trait is valid, don't record a def.
+                        self.resolve_trait_reference(expr.id, &qpath.trait_path, TraitQPath);
+                        self.def_map.borrow_mut().remove(&expr.id);
+
+                        path_from_qpath = qpath.trait_path.clone();
                         path_from_qpath.segments.push(qpath.item_path.clone());
                         &path_from_qpath
                     }
