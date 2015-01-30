@@ -81,6 +81,9 @@ enum Mode {
     Const,
     Static,
     StaticMut,
+
+    // NDM a better name or at least a comment. I kind of like something like "Code", but mainly I think
+    // we need a comment saying: "An expression that occurs outside of any const or static declaration."
     Var,
 }
 
@@ -131,6 +134,7 @@ impl<'a, 'tcx> CheckCrateVisitor<'a, 'tcx> {
         })
     }
 
+    // NDM Nit: can we rename this to "add_qualif" or something?
     fn qualif(&mut self, qualif: ConstQualif) {
         self.qualif = self.qualif | qualif;
     }
@@ -407,6 +411,7 @@ fn check_expr<'a, 'tcx>(v: &mut CheckCrateVisitor<'a, 'tcx>,
                 ty::ty_ptr(_) => {
                     // This shouldn't be allowed in constants at all.
                     v.qualif(NOT_CONST);
+                    // NDM how come we don't check and report an error here?
                 }
                 _ => {}
             }
@@ -453,8 +458,14 @@ fn check_expr<'a, 'tcx>(v: &mut CheckCrateVisitor<'a, 'tcx>,
                     v.qualif(NON_ZERO_SIZED);
                 }
 
+                // NDM can we rewrite this to match on v.mode? It's
+                // not clear to me e.g. what should happen if v.mode
+                // == Mode::Var, and if new modes are added, these
+                // `if` checks will hide cases.
+
                 Some(def::DefStatic(..)) if v.mode == Mode::Static ||
                                             v.mode == Mode::StaticMut => {}
+                // NDM do we ... not want NOT_CONST here? Not matter?
 
                 Some(def::DefStatic(..)) if v.mode == Mode::Const => {
                     span_err!(v.tcx.sess, e.span, E0013,
@@ -467,6 +478,7 @@ fn check_expr<'a, 'tcx>(v: &mut CheckCrateVisitor<'a, 'tcx>,
                         if let ast::ItemConst(_, ref expr) = const_item.node {
                             Some(&**expr)
                         } else {
+                            // NDM when would this ever be None here? isn't this a case for "bug()"?
                             None
                         }
                     } else {
@@ -565,6 +577,7 @@ fn check_expr<'a, 'tcx>(v: &mut CheckCrateVisitor<'a, 'tcx>,
 
         ast::ExprClosure(..) => {
             if ty::with_freevars(v.tcx, e.id, |fv| !fv.is_empty()) {
+                // NDM where is this enforced? can we add a comment specifying that?
                 assert!(v.mode == Mode::Var,
                         "global closures can't capture anything");
                 v.qualif(NOT_CONST);
