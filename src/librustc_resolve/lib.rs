@@ -1098,8 +1098,8 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         result
     }
 
-    fn path_names_to_string(&self, path: &Path) -> String {
-        let names: Vec<ast::Name> = path.segments
+    fn path_names_to_string(&self, path: &Path, depth: usize) -> String {
+        let names: Vec<ast::Name> = path.segments[..path.segments.len()-depth]
                                         .iter()
                                         .map(|seg| seg.identifier.name)
                                         .collect();
@@ -3132,7 +3132,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         match *type_parameter_bound {
             TraitTyParamBound(ref tref, _) => {
                 self.resolve_trait_reference(tref.trait_ref.ref_id,
-                                             &tref.trait_ref.path,
+                                             &tref.trait_ref.path, 0,
                                              reference_type)
             }
             RegionTyParamBound(..) => {}
@@ -3142,10 +3142,11 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
     fn resolve_trait_reference(&mut self,
                                id: NodeId,
                                trait_path: &Path,
+                               path_depth: usize,
                                reference_type: TraitReferenceType) {
-        match self.resolve_path(id, trait_path, TypeNS, true) {
+        match self.resolve_path(id, trait_path, path_depth, TypeNS, true) {
             None => {
-                let path_str = self.path_names_to_string(trait_path);
+                let path_str = self.path_names_to_string(trait_path, path_depth);
                 let usage_str = match reference_type {
                     TraitBoundingTypeParameter => "bound type parameter with",
                     TraitImplementation        => "implement",
@@ -3166,7 +3167,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                     (def, _) => {
                         self.resolve_error(trait_path.span,
                             &format!("`{}` is not a trait",
-                                     self.path_names_to_string(trait_path))[]);
+                                     self.path_names_to_string(trait_path, path_depth))[]);
 
                         // If it's a typedef, give a note
                         if let DefTy(..) = def {
@@ -3191,7 +3192,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                 }
                 &ast::WherePredicate::RegionPredicate(_) => {}
                 &ast::WherePredicate::EqPredicate(ref eq_pred) => {
-                    match self.resolve_path(eq_pred.id, &eq_pred.path, TypeNS, true) {
+                    match self.resolve_path(eq_pred.id, &eq_pred.path, 0, TypeNS, true) {
                         Some((def @ DefTyParam(..), last_private)) => {
                             self.record_def(eq_pred.id, (def, last_private));
                         }
@@ -3267,7 +3268,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         let new_val = match *opt_trait_ref {
             Some(ref trait_ref) => {
                 self.resolve_trait_reference(trait_ref.ref_id,
-                                             &trait_ref.path,
+                                             &trait_ref.path, 0,
                                              TraitImplementation);
 
                 match self.def_map.borrow().get(&trait_ref.ref_id) {
@@ -3365,7 +3366,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         // If there is a TraitRef in scope for an impl, then the method must be in the trait.
         if let Some((did, ref trait_ref)) = self.current_trait_ref {
             if self.trait_item_map.get(&(name, did)).is_none() {
-                let path_str = self.path_names_to_string(&trait_ref.path);
+                let path_str = self.path_names_to_string(&trait_ref.path, 0);
                 self.resolve_error(span,
                                     &format!("method `{}` is not a member of trait `{}`",
                                             token::get_name(name),
@@ -3533,23 +3534,15 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         match ty.node {
             // Like path expressions, the interpretation of path types depends
             // on whether the path has multiple elements in it or not.
-            TyPath(_) | TyQPath(_) => {
-                let mut path_from_qpath;
-                let path = match ty.node {
-                    TyPath(ref path) => path,
-                    TyQPath(ref qpath) => {
-                        self.resolve_type(&*qpath.self_type);
 
-                        // Just make sure the trait is valid, don't record a def.
-                        self.resolve_trait_reference(ty.id, &qpath.trait_path, TraitQPath);
-                        self.def_map.borrow_mut().remove(&ty.id);
+            TyPath(ref path) | TyQPath(ast::QPath { ref path, .. }) => {
+                if let TyQPath(ref qpath) = ty.node {
+                    self.resolve_type(&*qpath.self_type);
 
-                        path_from_qpath = qpath.trait_path.clone();
-                        path_from_qpath.segments.push(qpath.item_path.clone());
-                        &path_from_qpath
-                    }
-                    _ => unreachable!()
-                };
+                    // Just make sure the trait is valid, don't record a def.
+                    self.resolve_trait_reference(ty.id, path, 1, TraitQPath);
+                    self.def_map.borrow_mut().remove(&ty.id);
+                }
 
                 // This is a path in the type namespace. Walk through scopes
                 // looking for it.
@@ -3582,7 +3575,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                 }
 
                 if let None = result_def {
-                    result_def = self.resolve_path(ty.id, path, TypeNS, true);
+                    result_def = self.resolve_path(ty.id, path, 0, TypeNS, true);
                 }
 
                 match result_def {
@@ -3590,7 +3583,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                         // Write the result into the def map.
                         debug!("(resolving type) writing resolution for `{}` \
                                 (id {}) = {:?}",
-                               self.path_names_to_string(path),
+                               self.path_names_to_string(path, 0),
                                ty.id, def);
                         self.record_def(ty.id, def);
                     }
@@ -3600,7 +3593,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                             _ => "type name"
                         };
                         let msg = format!("use of undeclared {} `{}`", kind,
-                                          self.path_names_to_string(path));
+                                          self.path_names_to_string(path, 0));
                         self.resolve_error(ty.span, &msg[]);
                     }
                 }
@@ -3735,7 +3728,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
 
                 PatEnum(ref path, _) => {
                     // This must be an enum variant, struct or const.
-                    match self.resolve_path(pat_id, path, ValueNS, false) {
+                    match self.resolve_path(pat_id, path, 0, ValueNS, false) {
                         Some(def @ (DefVariant(..), _)) |
                         Some(def @ (DefStruct(..), _))  |
                         Some(def @ (DefConst(..), _)) => {
@@ -3778,7 +3771,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                 }
 
                 PatStruct(ref path, _, _) => {
-                    match self.resolve_path(pat_id, path, TypeNS, false) {
+                    match self.resolve_path(pat_id, path, 0, TypeNS, false) {
                         Some(definition) => {
                             self.record_def(pattern.id, definition);
                         }
@@ -3786,7 +3779,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                             debug!("(resolving pattern) didn't find struct \
                                     def: {:?}", result);
                             let msg = format!("`{}` does not name a structure",
-                                              self.path_names_to_string(path));
+                                              self.path_names_to_string(path, 0));
                             self.resolve_error(path.span, &msg[]);
                         }
                     }
@@ -3866,34 +3859,38 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
     fn resolve_path(&mut self,
                     id: NodeId,
                     path: &Path,
+                    path_depth: usize,
                     namespace: Namespace,
                     check_ribs: bool) -> Option<(Def, LastPrivate)> {
+        let span = path.span;
+        let segments = &path.segments[..path.segments.len()-path_depth];
+
         // First, resolve the types and associated type bindings.
-        for ty in path.segments.iter().flat_map(|s| s.parameters.types().into_iter()) {
+        for ty in segments.iter().flat_map(|s| s.parameters.types().into_iter()) {
             self.resolve_type(&**ty);
         }
-        for binding in path.segments.iter().flat_map(|s| s.parameters.bindings().into_iter()) {
+        for binding in segments.iter().flat_map(|s| s.parameters.bindings().into_iter()) {
             self.resolve_type(&*binding.ty);
         }
 
         // A special case for sugared associated type paths `T::A` where `T` is
         // a type parameter and `A` is an associated type on some bound of `T`.
-        if namespace == TypeNS && path.segments.len() == 2 {
-            match self.resolve_identifier(path.segments[0].identifier,
+        if namespace == TypeNS && segments.len() == 2 {
+            match self.resolve_identifier(segments[0].identifier,
                                           TypeNS,
                                           true,
-                                          path.span) {
+                                          span) {
                 Some((def, last_private)) => {
                     match def {
                         DefTyParam(_, _, did, _) => {
                             let def = DefAssociatedPath(TyParamProvenance::FromParam(did),
-                                                        path.segments.last()
+                                                        segments.last()
                                                             .unwrap().identifier);
                             return Some((def, last_private));
                         }
                         DefSelfTy(nid) => {
                             let def = DefAssociatedPath(TyParamProvenance::FromSelf(local_def(nid)),
-                                                        path.segments.last()
+                                                        segments.last()
                                                             .unwrap().identifier);
                             return Some((def, last_private));
                         }
@@ -3905,24 +3902,23 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         }
 
         if path.global {
-            return self.resolve_crate_relative_path(path, namespace);
+            return self.resolve_crate_relative_path(span, segments, namespace);
         }
 
         // Try to find a path to an item in a module.
         let unqualified_def =
-                self.resolve_identifier(path.segments.last().unwrap().identifier,
+                self.resolve_identifier(segments.last().unwrap().identifier,
                                         namespace,
                                         check_ribs,
-                                        path.span);
+                                        span);
 
-        if path.segments.len() > 1 {
-            let def = self.resolve_module_relative_path(path, namespace);
+        if segments.len() > 1 {
+            let def = self.resolve_module_relative_path(span, segments, namespace);
             match (def, unqualified_def) {
                 (Some((ref d, _)), Some((ref ud, _))) if *d == *ud => {
                     self.session
                         .add_lint(lint::builtin::UNUSED_QUALIFICATIONS,
-                                  id,
-                                  path.span,
+                                  id, span,
                                   "unnecessary qualification".to_string());
                 }
                 _ => ()
@@ -4033,12 +4029,13 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
 
     // resolve a "module-relative" path, e.g. a::b::c
     fn resolve_module_relative_path(&mut self,
-                                    path: &Path,
+                                    span: Span,
+                                    segments: &[ast::PathSegment],
                                     namespace: Namespace)
                                     -> Option<(Def, LastPrivate)> {
-        let module_path = path.segments.init().iter()
-                                              .map(|ps| ps.identifier.name)
-                                              .collect::<Vec<_>>();
+        let module_path = segments.init().iter()
+                                         .map(|ps| ps.identifier.name)
+                                         .collect::<Vec<_>>();
 
         let containing_module;
         let last_private;
@@ -4046,7 +4043,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         match self.resolve_module_path(module,
                                        &module_path[],
                                        UseLexicalScope,
-                                       path.span,
+                                       span,
                                        PathSearch) {
             Failed(err) => {
                 let (span, msg) = match err {
@@ -4054,7 +4051,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                     None => {
                         let msg = format!("Use of undeclared type or module `{}`",
                                           self.names_to_string(&module_path));
-                        (path.span, msg)
+                        (span, msg)
                     }
                 };
 
@@ -4069,7 +4066,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
             }
         }
 
-        let name = path.segments.last().unwrap().identifier.name;
+        let name = segments.last().unwrap().identifier.name;
         let def = match self.resolve_definition_of_name_in_module(containing_module.clone(),
                                                                   name,
                                                                   namespace) {
@@ -4090,12 +4087,13 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
     /// Invariant: This must be called only during main resolution, not during
     /// import resolution.
     fn resolve_crate_relative_path(&mut self,
-                                   path: &Path,
+                                   span: Span,
+                                   segments: &[ast::PathSegment],
                                    namespace: Namespace)
                                        -> Option<(Def, LastPrivate)> {
-        let module_path = path.segments.init().iter()
-                                              .map(|ps| ps.identifier.name)
-                                              .collect::<Vec<_>>();
+        let module_path = segments.init().iter()
+                                         .map(|ps| ps.identifier.name)
+                                         .collect::<Vec<_>>();
 
         let root_module = self.graph_root.get_module();
 
@@ -4104,7 +4102,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         match self.resolve_module_path_from_root(root_module,
                                                  &module_path[],
                                                  0,
-                                                 path.span,
+                                                 span,
                                                  PathSearch,
                                                  LastMod(AllPublic)) {
             Failed(err) => {
@@ -4113,7 +4111,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                     None => {
                         let msg = format!("Use of undeclared module `::{}`",
                                           self.names_to_string(&module_path[]));
-                        (path.span, msg)
+                        (span, msg)
                     }
                 };
 
@@ -4132,7 +4130,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
             }
         }
 
-        let name = path.segments.last().unwrap().identifier.name;
+        let name = segments.last().unwrap().identifier.name;
         match self.resolve_definition_of_name_in_module(containing_module,
                                                         name,
                                                         namespace) {
@@ -4312,7 +4310,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         match get_module(self, path.span, &name_path[]) {
             Some(module) => match module.children.borrow().get(&name) {
                 Some(binding) => {
-                    let p_str = self.path_names_to_string(&path);
+                    let p_str = self.path_names_to_string(&path, 0);
                     match binding.def_for_namespace(ValueNS) {
                         Some(DefStaticMethod(_, provenance)) => {
                             match provenance {
@@ -4333,7 +4331,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         // Look for a method in the current trait.
         match self.current_trait_ref {
             Some((did, ref trait_ref)) => {
-                let path_str = self.path_names_to_string(&trait_ref.path);
+                let path_str = self.path_names_to_string(&trait_ref.path, 0);
 
                 match self.trait_item_map.get(&(name, did)) {
                     Some(&StaticMethodTraitItemKind) => {
@@ -4396,29 +4394,21 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
             // The interpretation of paths depends on whether the path has
             // multiple elements in it or not.
 
-            ExprPath(_) | ExprQPath(_) => {
-                let mut path_from_qpath;
-                let path = match expr.node {
-                    ExprPath(ref path) => path,
-                    ExprQPath(ref qpath) => {
-                        self.resolve_type(&*qpath.self_type);
+            ExprPath(ref path) | ExprQPath(ast::QPath { ref path, .. }) => {
+                if let ExprQPath(ref qpath) = expr.node {
+                    self.resolve_type(&*qpath.self_type);
 
-                        // Just make sure the trait is valid, don't record a def.
-                        self.resolve_trait_reference(expr.id, &qpath.trait_path, TraitQPath);
-                        self.def_map.borrow_mut().remove(&expr.id);
+                    // Just make sure the trait is valid, don't record a def.
+                    self.resolve_trait_reference(expr.id, path, 1, TraitQPath);
+                    self.def_map.borrow_mut().remove(&expr.id);
+                }
 
-                        path_from_qpath = qpath.trait_path.clone();
-                        path_from_qpath.segments.push(qpath.item_path.clone());
-                        &path_from_qpath
-                    }
-                    _ => unreachable!()
-                };
                 // This is a local path in the value namespace. Walk through
                 // scopes looking for it.
-                match self.resolve_path(expr.id, path, ValueNS, true) {
+                match self.resolve_path(expr.id, path, 0, ValueNS, true) {
                     // Check if struct variant
                     Some((DefVariant(_, _, true), _)) => {
-                        let path_name = self.path_names_to_string(path);
+                        let path_name = self.path_names_to_string(path, 0);
                         self.resolve_error(expr.span,
                                 &format!("`{}` is a struct variant name, but \
                                           this expression \
@@ -4433,7 +4423,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                     Some(def) => {
                         // Write the result into the def map.
                         debug!("(resolving expr) resolved `{}`",
-                               self.path_names_to_string(path));
+                               self.path_names_to_string(path, 0));
 
                         self.record_def(expr.id, def);
                     }
@@ -4442,9 +4432,9 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                         // (The pattern matching def_tys where the id is in self.structs
                         // matches on regular structs while excluding tuple- and enum-like
                         // structs, which wouldn't result in this error.)
-                        let path_name = self.path_names_to_string(path);
+                        let path_name = self.path_names_to_string(path, 0);
                         match self.with_no_errors(|this|
-                            this.resolve_path(expr.id, path, TypeNS, false)) {
+                            this.resolve_path(expr.id, path, 0, TypeNS, false)) {
                             Some((DefTy(struct_id, _), _))
                               if self.structs.contains_key(&struct_id) => {
                                 self.resolve_error(expr.span,
@@ -4527,13 +4517,13 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                 // Resolve the path to the structure it goes to. We don't
                 // check to ensure that the path is actually a structure; that
                 // is checked later during typeck.
-                match self.resolve_path(expr.id, path, TypeNS, false) {
+                match self.resolve_path(expr.id, path, 0, TypeNS, false) {
                     Some(definition) => self.record_def(expr.id, definition),
                     result => {
                         debug!("(resolving expression) didn't find struct \
                                 def: {:?}", result);
                         let msg = format!("`{}` does not name a structure",
-                                          self.path_names_to_string(path));
+                                          self.path_names_to_string(path, 0));
                         self.resolve_error(path.span, &msg[]);
                     }
                 }
