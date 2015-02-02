@@ -65,6 +65,8 @@ use util::ppaux::{self, Repr, UserString};
 
 use std::rc::Rc;
 use std::iter::{repeat, AdditiveIterator};
+use std::collections::HashSet;
+
 use syntax::{abi, ast, ast_util};
 use syntax::codemap::Span;
 use syntax::parse::token;
@@ -923,6 +925,8 @@ fn trait_ref_to_object_type<'tcx>(this: &AstConv<'tcx>,
     result
 }
 
+// FIXME: (@jroesch) this code is not robust and requires some more surgery,
+// the current changes are too land this large patch
 fn associated_path_def_to_ty<'tcx>(this: &AstConv<'tcx>,
                                    ast_ty: &ast::Ty,
                                    provenance: def::TyParamProvenance,
@@ -932,7 +936,7 @@ fn associated_path_def_to_ty<'tcx>(this: &AstConv<'tcx>,
     let tcx = this.tcx();
     let ty_param_def_id = provenance.def_id();
 
-    let mut suitable_bounds: Vec<_>;
+    let mut suitable_bounds: HashSet<_>;
     let ty_param_name: ast::Name;
     { // contain scope of refcell:
         let ty_param_defs = tcx.ty_param_defs.borrow();
@@ -940,7 +944,7 @@ fn associated_path_def_to_ty<'tcx>(this: &AstConv<'tcx>,
         ty_param_name = ty_param_def.name;
 
         // FIXME(#20300) -- search where clauses, not bounds
-        debug!("associated_path_def_to_ty: current_predidcates={:?}", this.in_scope_predicates());
+        debug!("associated_path_def_to_ty: current_predidcates={:?}", this.in_scope_predicates().repr(tcx));
 
         suitable_bounds =
             this.in_scope_predicates().predicates.iter()
@@ -973,7 +977,7 @@ fn associated_path_def_to_ty<'tcx>(this: &AstConv<'tcx>,
         }
     }
 
-    let suitable_bound = suitable_bounds.pop().unwrap().clone();
+    let suitable_bound = suitable_bounds.iter().next().unwrap().clone();
     return this.projected_ty_from_poly_trait_ref(ast_ty.span, suitable_bound, assoc_name);
 }
 

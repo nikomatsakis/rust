@@ -419,7 +419,7 @@ fn collect_trait_methods<'a, 'tcx>(ccx: &LocalCollectCtxt<'a, 'tcx>,
                                            m_unsafety: &ast::Unsafety,
                                            m_decl: &ast::FnDecl)
                                            -> ty::Method<'tcx> {
-        let (ty_generics, predicates) =
+        let (ty_generics, method_bounds) =
             ty_generics_for_fn_or_method(ccx,
                                          m_generics,
                                          trait_generics.clone());
@@ -428,7 +428,7 @@ fn collect_trait_methods<'a, 'tcx>(ccx: &LocalCollectCtxt<'a, 'tcx>,
             ty_generic_bounds_for_fn_or_method(ccx,
                                                m_generics,
                                                &ty_generics,
-                                               trait_bounds.clone());
+                                               trait_bounds.clone().merge(method_bounds));
 
         let (fty, explicit_self_category) = {
             let trait_self_ty = ty::mk_self_type(ccx.tcx());
@@ -527,6 +527,7 @@ fn convert_methods<'a,'tcx,'i,I>(ccx: &LocalCollectCtxt<'a, 'tcx>,
         }
 
         let m_def_id = local_def(m.id);
+
         let mty = Rc::new(ty_of_method(ccx,
                                        container,
                                        m,
@@ -574,7 +575,9 @@ fn convert_methods<'a,'tcx,'i,I>(ccx: &LocalCollectCtxt<'a, 'tcx>,
             ty_generic_bounds_for_fn_or_method(ccx,
                                                m.pe_generics(),
                                                &m_ty_generics,
-                                               rcvr_ty_predicates.clone());
+                                               rcvr_ty_predicates.clone().merge(ty_predicates));
+
+        let ref ccx = ccx.with_bounds(m_ty_bounds.clone());
 
         let (fty, explicit_self_category) = astconv::ty_of_method(ccx,
                                                                   m.pe_unsafety(),
@@ -650,10 +653,12 @@ fn convert(ccx: &LocalCollectCtxt, it: &ast::Item) {
                       ref selfty,
                       ref impl_items) => {
             // Create generics from the generics specified in the impl head.
+
+            debug!("convert: ast_generics={:?}", generics);
             let (ty_generics, bounds) = ty_generics_for_type_or_impl(ccx, generics);
             let ty_predicates = ty_generic_bounds_for_type_or_impl(ccx, &ty_generics, bounds, generics);
 
-            debug!("convert: impl_bounds={:?}", ty_predicates.repr(ccx.tcx()));
+            debug!("convert: impl_bounds={:?}", ty_predicates);
 
             // Bring the declared predicates into scope for checking the nested items.
             let ref ccx = ccx.with_bounds(ty_predicates.clone());
@@ -1361,48 +1366,52 @@ fn add_sized_bound<'a,'tcx>(ccx: &LocalCollectCtxt<'a,'tcx>,
                             ast_bounds: &[ast::TyParamBound],
                             span: Span)
 {
-    //let tcx = ccx.tcx();
+    let tcx = ccx.tcx();
 
-    //// Try to find an unbound in bounds.
-    //let mut unbound = None;
-    //for ab in ast_bounds.iter() {
-        //if let &ast::TraitTyParamBound(ref ptr, ast::TraitBoundModifier::Maybe) = ab  {
-            //if unbound.is_none() {
-                //assert!(ptr.bound_lifetimes.is_empty());
-                //unbound = Some(ptr.clone());
-            //} else {
-                //tcx.sess.span_err(span, "type parameter has more than one relaxed default \
-                                                ////bound, only one is supported");
-            //}
-        //}
-    //}
+    // Try to find an unbound in bounds.
+    let mut unbound = None;
+    for ab in ast_bounds.iter() {
+        if let &ast::TraitTyParamBound(ref ptr, ast::TraitBoundModifier::Maybe) = ab  {
+            if unbound.is_none() {
+                assert!(ptr.bound_lifetimes.is_empty());
+                unbound = Some(ptr.clone());
+            } else {
+                tcx.sess.span_err(span, "type parameter has more than one relaxed default \
+                                                //bound, only one is supported");
+            }
+        }
+    }
 
-    //let kind_id = tcx.lang_items.require(SizedTraitLangItem);
+    let kind_id = tcx.lang_items.require(SizedTraitLangItem);
 
-    //match unbound {
-        //Some(ref tpb) => {
-            //// FIXME(#8559) currently requires the unbound to be built-in.
-            //let trait_def_id = ty::trait_ref_to_def_id(tcx, &tpb.trait_ref);
-            //match kind_id {
-                //Ok(kind_id) if trait_def_id != kind_id => {
-                    //tcx.sess.span_warn(span,
-                                       //"default bound relaxed for a type parameter, but \
-                                        //this does nothing because the given bound is not \
-                                        //a default. Only `?Sized` is supported");
-                    //let ty_trait_ref = astconv::instantiate_poly_trait_ref(ccx, &ExplicitRscope, tpb, Some(self_ty), &Vec::new());
-                    //bounds.push(ty_trait_ref.as_predicate())
-                //}
-                //_ => {}
-            //}
-        //}
-        //_ if kind_id.is_ok() => {
-            //panic!("NYI") //bounds.push(traits::builtin_bound_to_trait_ref(tcx,
-        //}
-        //// No lang item for Sized, so we can't add it as a bound.
-        //None => {}
+    match unbound {
+        Some(ref tpb) => {
+            // FIXME(#8559) currently requires the unbound to be built-in.
+            let trait_def_id = ty::trait_ref_to_def_id(tcx, &tpb.trait_ref);
+            match kind_id {
+                Ok(kind_id) if trait_def_id != kind_id => {
+                    tcx.sess.span_warn(span,
+                                       "default bound relaxed for a type parameter, but \
+                                        this does nothing because the given bound is not \
+                                        a default. Only `?Sized` is supported");
+                    let mut at_bounds = Vec::new();
+                    let ty_trait_ref = astconv::instantiate_poly_trait_ref(ccx, &ExplicitRscope, tpb, Some(self_ty), &mut at_bounds);
+                    bounds.push(ty_trait_ref.as_predicate())
+                }
+                _ => {}
+            }
+        }
+        _ if kind_id.is_ok() => {
+            let trait_ref =
+                traits::trait_ref_for_builtin_bound(tcx, ty::BoundSized, self_ty).unwrap();
 
-        //// fn add_builtin_bound(ccx: LocalCrateCtxt<'a, 'tcx>, self_ty: ty::Ty<'tcx>
-    //}
+            bounds.push(trait_ref.as_predicate());
+        }
+        // No lang item for Sized, so we can't add it as a bound.
+        None => {}
+
+        // fn add_builtin_bound(ccx: LocalCrateCtxt<'a, 'tcx>, self_ty: ty::Ty<'tcx>
+    }
 }
 
 fn ty_generic_bounds<'a,'tcx>(ccx: &LocalCollectCtxt<'a,'tcx>,
@@ -1505,9 +1514,7 @@ fn ty_generics<'a,'tcx>(ccx: &LocalCollectCtxt<'a,'tcx>,
                                                    space,
                                                    param,
                                                    i as u32);
-        // debug!("ty_generics: def for type param: {}, {:?}",
-        //       def.repr(tcx),
-        //       space);
+        debug!("ty_generics: def for type param: {:?}, {:?}", def, space);
         result.types.push(space, def);
         generic_predicates.predicates.extend(space, predicates.into_iter());
     }
@@ -1610,7 +1617,11 @@ fn check_bounds_compatible<'tcx>(tcx: &ty::ctxt<'tcx>,
                                  span: Span) {
     // Currently the only bound which is incompatible with other bounds is
     // Sized/Unsized.
-    //if !param_bounds.builtin_bounds.contains(&ty::BoundSized) {
+    let sized_bound =
+        traits::trait_ref_for_builtin_bound(tcx, ty::BoundSized, param_ty).unwrap();
+
+    if bounds.contains(&sized_bound.as_predicate()) {
+        // Come back not important right now
         //ty::each_bound_trait_and_supertraits(
             //tcx,
             //&param_bounds.trait_bounds[],
@@ -1621,13 +1632,12 @@ fn check_bounds_compatible<'tcx>(tcx: &ty::ctxt<'tcx>,
                     //span_err!(tcx.sess, span, E0129,
                               //"incompatible bounds on `{}`, \
                                //bound `{}` does not allow unsized type",
-                              //param_ty.user_string(tcx),
-                              //trait_ref.user_string(tcx));
+                               //param_ty.user_string(tcx),
+                               //trait_ref.user_string(tcx));
                 //}
                 //true
             //});
-    //}
-    // TODO come back to this - Jared
+    }
 }
 
 fn param_predicates<'a,'tcx>(
@@ -1635,12 +1645,12 @@ fn param_predicates<'a,'tcx>(
     span: Span,
     param_ty: ty::Ty<'tcx>,
     ast_bounds: &[ast::TyParamBound])
-    -> Vec<ty::Predicate<'tcx>>
-    {
-        let tcx = ccx.tcx();
-        let astconv::PartitionedBounds {
-            builtin_bounds,
-            trait_bounds,
+-> Vec<ty::Predicate<'tcx>>
+{
+    let tcx = ccx.tcx();
+    let astconv::PartitionedBounds {
+        builtin_bounds,
+        trait_bounds,
             region_bounds
         } = astconv::partition_bounds(
             tcx,
@@ -1714,9 +1724,9 @@ fn compute_type_and_generics_of_foreign_fn_decl<'a, 'tcx>(
         }
     }
 
-    let (ty_generics_for_fn_or_method, predicates) = ty_generics_for_fn_or_method(ccx,
-                                                                    ast_generics,
-                                                                    ty::Generics::empty());
+    let (ty_generics_for_fn_or_method, _) = ty_generics_for_fn_or_method(ccx,
+                                                                         ast_generics,
+                                                                         ty::Generics::empty());
 
     let rb = BindingRscope::new();
     let input_tys = decl.inputs
@@ -1873,6 +1883,21 @@ fn enforce_impl_ty_params_are_constrained<'tcx>(tcx: &ty::ctxt<'tcx>,
                       .flat_map(|t| t.walk())
                       .filter_map(to_opt_param_ty)
                       .collect();
+
+    // Types can now be constrainted via where-clauses we should also retrieve any constraints
+    // placed there. All this code should probably be refactored.
+    for predicate in impl_scheme.predicates.predicates.iter() {
+        match *predicate {
+            ty::Predicate::Trait(ty::Binder(ref trait_predicate)) => {
+                let bound_ty = trait_predicate.trait_ref.self_ty();
+                match to_opt_param_ty(bound_ty) {
+                    Some(ty) => { input_parameters.insert(ty); },
+                    None     => {}
+                }
+            },
+            _ => {}
+        }
+    }
 
     loop {
         let num_inputs = input_parameters.len();

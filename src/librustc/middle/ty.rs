@@ -1826,6 +1826,20 @@ impl<'tcx> GenericPredicates<'tcx> {
             predicates: self.predicates.subst(tcx, substs),
         }
     }
+
+    pub fn merge(&self, predicates: ty::GenericPredicates<'tcx>) -> ty::GenericPredicates<'tcx> {
+        let mut merged_predicates = self.predicates.clone();
+
+        for space in subst::ParamSpace::all().iter() {
+            merged_predicates.extend(
+                space.clone(),
+                predicates.predicates.get_slice(space.clone()).to_vec().into_iter())
+        }
+
+        GenericPredicates {
+            predicates: merged_predicates
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Show)]
