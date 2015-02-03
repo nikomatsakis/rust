@@ -208,8 +208,7 @@ impl<'a, 'tcx> AstConv<'tcx> for LocalCollectCtxt<'a, 'tcx> {
 
         match self.collect_cx.tcx.map.find(id.node) {
             Some(ast_map::NodeItem(item)) => {
-                let ty::TypeScheme { generics, ty, .. } = ty::lookup_item_type(self.collect_cx.tcx, id);
-                return TypeAndGenerics { generics: generics, ty: ty };
+                type_and_generics_of_item(self, &*item)
             }
             Some(ast_map::NodeForeignItem(foreign_item)) => {
                 let abi = self.collect_cx.tcx.map.get_foreign_abi(id.node);
