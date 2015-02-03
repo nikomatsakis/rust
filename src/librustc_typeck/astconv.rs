@@ -75,7 +75,7 @@ use syntax::print::pprust;
 pub trait AstConv<'tcx> {
     fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx>;
 
-    fn get_item_type_and_generics(&self, id: ast::DefId) -> TypeAndGenerics<'tcx>;
+    fn get_item_type_and_generics(&self, id: ast::DefId) -> ty::TypeScheme<'tcx>;
 
     fn get_trait_def(&self, id: ast::DefId) -> Rc<ty::TraitDef<'tcx>>;
 
@@ -720,7 +720,7 @@ fn ast_type_binding_to_projection_predicate<'tcx>(
         }
     }
 
-    if candidates.len() > 1 {
+    if candidates.len() > 1 && !associated_type_is_distinct(this, binding.item_name, candidates.clone()) {
         tcx.sess.span_err(
             binding.span,
             format!("ambiguous associated type: `{}` defined in multiple supertraits `{}`",
@@ -767,7 +767,7 @@ pub fn ast_path_to_ty<'tcx>(
     -> TypeAndSubsts<'tcx>
 {
     let tcx = this.tcx();
-    let TypeAndGenerics { generics, ty: decl_ty } =
+    let ty::TypeScheme { generics, ty: decl_ty, .. } =
         this.get_item_type_and_generics(did);
 
     let substs = ast_path_substs_for_ty(this,
@@ -936,7 +936,7 @@ fn associated_path_def_to_ty<'tcx>(this: &AstConv<'tcx>,
     let tcx = this.tcx();
     let ty_param_def_id = provenance.def_id();
 
-    let mut suitable_bounds: HashSet<_>;
+    let mut suitable_bounds: Vec<_>;
     let ty_param_name: ast::Name;
     { // contain scope of refcell:
         let ty_param_defs = tcx.ty_param_defs.borrow();
@@ -963,7 +963,7 @@ fn associated_path_def_to_ty<'tcx>(this: &AstConv<'tcx>,
         return this.tcx().types.err;
     }
 
-    if suitable_bounds.len() > 1 {
+    if suitable_bounds.len() > 1 && !associated_type_is_distinct(this, assoc_name, suitable_bounds.clone()) {
         tcx.sess.span_err(ast_ty.span,
                           format!("ambiguous associated type `{}` in bounds of `{}`",
                                   token::get_name(assoc_name),
@@ -977,8 +977,47 @@ fn associated_path_def_to_ty<'tcx>(this: &AstConv<'tcx>,
         }
     }
 
-    let suitable_bound = suitable_bounds.iter().next().unwrap().clone();
+    let suitable_bound = suitable_bounds.pop().unwrap().clone();
     return this.projected_ty_from_poly_trait_ref(ast_ty.span, suitable_bound, assoc_name);
+}
+
+// This is part of a hack around resolution of associated types likes broken. Right now we report
+// amibiguities when we see it is possible. This handles duplicates and super trait bounds
+// we should be able find multiple sources but disambiguate whether they occur from the same
+// source trait. Niko and I both want to do this better but for the time being we are trying
+// to land this patch ASAP to unblock further work.
+fn associated_type_is_distinct<'tcx>(this: &AstConv, assoc_name: ast::Name, bounds: Vec<ty::PolyTraitRef<'tcx>>) -> bool {
+    let tcx = this.tcx();
+
+    let traits: Vec<_> = bounds.iter().map(|bound| {
+        let ref trait_ref = bound.0;
+        let trait_def = ty::lookup_trait_def(tcx, trait_ref.def_id);
+
+        let mut defining_traits: Vec<_> = trait_def.supertrait_bounds().iter().filter_map(|st| {
+            let ref super_trait_ref = st.0;
+            let super_trait_def = ty::lookup_trait_def(tcx, super_trait_ref.def_id);
+            if super_trait_def.associated_type_names.contains(&assoc_name) {
+                Some(super_trait_def)
+            } else {
+                None
+            }
+        }).collect();
+
+        if defining_traits.len() > 1 {
+            panic!("ambig!")
+        }
+
+        defining_traits.pop().unwrap()
+    }).collect();
+
+    match traits.len() {
+        0 => false,
+        1 => true,
+        _ => {
+            let ref first = traits[0];
+            traits.iter().all(|t| t.trait_ref.def_id == first.trait_ref.def_id)
+        }
+    }
 }
 
 fn trait_defines_associated_type_named(this: &AstConv,
@@ -988,7 +1027,15 @@ fn trait_defines_associated_type_named(this: &AstConv,
 {
     let tcx = this.tcx();
     let trait_def = ty::lookup_trait_def(tcx, trait_def_id);
-    trait_def.associated_type_names.contains(&assoc_name)
+    // FIXME @joesch this is also kind of hack, looking inside
+    // just a single trait isn't sufficent because of how
+    // super traits have changed.
+    trait_def.associated_type_names.contains(&assoc_name) ||
+    trait_def.supertrait_bounds().iter().any(|st| {
+        let ref trait_ref = st.0;
+        let trait_def = ty::lookup_trait_def(tcx, trait_ref.def_id);
+        trait_def.associated_type_names.contains(&assoc_name)
+    })
 }
 
 fn qpath_to_ty<'tcx>(this: &AstConv<'tcx>,

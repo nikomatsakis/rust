@@ -2305,9 +2305,6 @@ pub struct TraitDef<'tcx> {
     /// Bounds on the generics.
     pub predicates: GenericPredicates<'tcx>,
 
-    /// The "supertrait" bounds.
-    // pub bounds: ParamBounds<'tcx>,
-
     pub trait_ref: Rc<ty::TraitRef<'tcx>>,
 
     /// A list of the associated types defined in this trait. Useful

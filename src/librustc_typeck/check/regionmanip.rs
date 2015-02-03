@@ -102,7 +102,7 @@ impl<'a, 'tcx> Wf<'a, 'tcx> {
             ty::ty_enum(def_id, substs) |
             ty::ty_struct(def_id, substs) => {
                 let item_scheme = ty::lookup_item_type(self.tcx, def_id);
-                self.accumulate_from_adt(ty, def_id, &item_scheme.generics, substs)
+                self.accumulate_from_adt(ty, def_id, &item_scheme.generics, &item_scheme.predicates, substs)
             }
 
             ty::ty_vec(t, _) |
@@ -127,7 +127,7 @@ impl<'a, 'tcx> Wf<'a, 'tcx> {
                 // this seems like a minimal requirement:
                 let trait_def = ty::lookup_trait_def(self.tcx, data.trait_ref.def_id);
                 self.accumulate_from_adt(ty, data.trait_ref.def_id,
-                                         &trait_def.generics, data.trait_ref.substs)
+                                         &trait_def.generics, &trait_def.predicates, data.trait_ref.substs)
             }
 
             ty::ty_tup(ref tuptys) => {
@@ -232,6 +232,7 @@ impl<'a, 'tcx> Wf<'a, 'tcx> {
                            ty: Ty<'tcx>,
                            def_id: ast::DefId,
                            generics: &ty::Generics<'tcx>,
+                           predicates: &ty::GenericPredicates<'tcx>,
                            substs: &Substs<'tcx>)
     {
         // The generic declarations from the type, appropriately
@@ -317,13 +318,18 @@ impl<'a, 'tcx> Wf<'a, 'tcx> {
                     }
                 }
 
-                // // Inspect bounds on this type parameter for any
-                // // region bounds.
-                // for &r in type_param_def.bounds.region_bounds.iter() {
-                //     self.stack.push((r, Some(ty)));
-                //     self.accumulate_from_ty(type_param_ty);
-                //     self.stack.pop().unwrap();
-                // }
+                // Inspect bounds on this type parameter for any
+                // region bounds.
+                for predicate in predicates.predicates.iter() {
+                    match predicate {
+                        &ty::Predicate::TypeOutlives(ty::Binder(ty::OutlivesPredicate(ty, r))) if type_param_ty == ty => {
+                            self.stack.push((r, Some(ty)));
+                            self.accumulate_from_ty(type_param_ty);
+                            self.stack.pop().unwrap();
+                         }
+                        _ => {}
+                    }
+                }
             }
         }
     }
