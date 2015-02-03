@@ -1172,8 +1172,9 @@ fn check_cast(fcx: &FnCtxt,
 impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
     fn tcx(&self) -> &ty::ctxt<'tcx> { self.ccx.tcx }
 
-    fn get_item_type_and_generics(&self, id: ast::DefId) -> TypeScheme<'tcx> {
-        ty::lookup_item_type(self.tcx(), id)
+    fn get_item_type_and_generics(&self, id: ast::DefId) -> TypeAndGenerics<'tcx> {
+        let ty::TypeScheme { generics, ty, .. } = ty::lookup_item_type(self.tcx(), id);
+        TypeAndGenerics { generics: generics, ty: ty }
     }
 
     fn get_trait_def(&self, id: ast::DefId) -> Rc<ty::TraitDef<'tcx>> {

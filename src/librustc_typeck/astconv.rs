@@ -75,7 +75,7 @@ use syntax::print::pprust;
 pub trait AstConv<'tcx> {
     fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx>;
 
-    fn get_item_type_and_generics(&self, id: ast::DefId) -> ty::TypeScheme<'tcx>;
+    fn get_item_type_and_generics(&self, id: ast::DefId) -> TypeAndGenerics<'tcx>;
 
     fn get_trait_def(&self, id: ast::DefId) -> Rc<ty::TraitDef<'tcx>>;
 
@@ -767,7 +767,7 @@ pub fn ast_path_to_ty<'tcx>(
     -> TypeAndSubsts<'tcx>
 {
     let tcx = this.tcx();
-    let ty::TypeScheme { generics, ty: decl_ty, .. } =
+    let TypeAndGenerics { generics, ty: decl_ty } =
         this.get_item_type_and_generics(did);
 
     let substs = ast_path_substs_for_ty(this,
