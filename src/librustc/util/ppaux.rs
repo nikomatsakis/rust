@@ -432,8 +432,8 @@ pub fn ty_to_string<'tcx>(cx: &ctxt<'tcx>, typ: &ty::TyS<'tcx>) -> String {
         }
         ty_enum(did, substs) | ty_struct(did, substs) => {
             let base = ty::item_path_str(cx, did);
-            let generics = ty::lookup_item_type(cx, did).generics;
-            parameterized(cx, base.as_slice(), substs, &generics, did)
+            parameterized(cx, base.as_slice(), substs, did,
+                          || ty::lookup_item_type(cx, did).generics)
         }
         ty_trait(box ty::TyTrait {
             ref principal, ref bounds
@@ -489,21 +489,34 @@ pub fn explicit_self_category_to_str(category: &ty::ExplicitSelfCategory)
     }
 }
 
-pub fn parameterized<'tcx>(cx: &ctxt<'tcx>,
-                           base: &str,
-                           substs: &subst::Substs<'tcx>,
-                           generics: &ty::Generics<'tcx>,
-                           did: ast::DefId)
-                           -> String
+pub fn parameterized<'tcx,GF>(
+    cx: &ctxt<'tcx>,
+    base: &str,
+    substs: &subst::Substs<'tcx>,
+    did: ast::DefId,
+    get_generics: GF)
+    -> String
+    where GF : FnOnce() -> ty::Generics<'tcx>
 {
     if cx.sess.verbose() {
-        if substs.is_noop() {
-            return format!("{}", base);
+        let mut strings = vec![];
+        match substs.regions {
+            subst::ErasedRegions => {
+                strings.push(format!(".."));
+            }
+            subst::NonerasedRegions(ref regions) => {
+                for region in regions.iter() {
+                    strings.push(region.repr(cx));
+                }
+            }
+        }
+        for ty in substs.types.iter() {
+            strings.push(ty.repr(cx));
+        }
+        return if strings.is_empty() {
+            format!("{}", base)
         } else {
-            return format!("{}<{},{}>",
-                           base,
-                           substs.regions.repr(cx),
-                           substs.types.repr(cx));
+            format!("{}<{}>", base, strings.connect(","))
         }
     }
 
@@ -527,6 +540,13 @@ pub fn parameterized<'tcx>(cx: &ctxt<'tcx>,
             }
         }
     }
+
+    // It is important to execute this conditionally, only if -Z
+    // verbose is false. Otherwise, debug logs can sometimes cause
+    // ICEs trying to fetch the generics early in the pipeline. This
+    // is kind of a hacky workaround in that -Z verbose is required to
+    // avoid those ICEs.
+    let generics = get_generics();
 
     let tps = substs.types.get_slice(subst::TypeSpace);
     let ty_params = generics.types.get_slice(subst::TypeSpace);
@@ -747,10 +767,10 @@ impl<'tcx> Repr<'tcx> for ty::TraitRef<'tcx> {
         // to enumerate the `for<...>` etc because the debruijn index
         // tells you everything you need to know.
         let base = ty::item_path_str(tcx, self.def_id);
-        let trait_def = ty::lookup_trait_def(tcx, self.def_id);
         format!("TraitRef({}, {})",
                 self.substs.self_ty().repr(tcx),
-                parameterized(tcx, base.as_slice(), self.substs, &trait_def.generics, self.def_id))
+                parameterized(tcx, base.as_slice(), self.substs, self.def_id,
+                              || ty::lookup_trait_def(tcx, self.def_id).generics.clone()))
     }
 }
 
@@ -1192,9 +1212,8 @@ impl<'tcx, T> UserString<'tcx> for ty::Binder<T>
 impl<'tcx> UserString<'tcx> for ty::TraitRef<'tcx> {
     fn user_string(&self, tcx: &ctxt<'tcx>) -> String {
         let path_str = ty::item_path_str(tcx, self.def_id);
-        let trait_def = ty::lookup_trait_def(tcx, self.def_id);
-        parameterized(tcx, path_str.as_slice(), self.substs,
-                      &trait_def.generics, self.def_id)
+        parameterized(tcx, path_str.as_slice(), self.substs, self.def_id,
+                      || ty::lookup_trait_def(tcx, self.def_id).generics.clone())
     }
 }
 
