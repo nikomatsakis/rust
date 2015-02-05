@@ -1608,7 +1608,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                                   generics.regions.get_slice(TypeSpace));
             Substs::new_type(tps, rps)
         } else {
-            astconv::ast_path_substs_for_ty(self, self, &generics, path)
+            astconv::ast_path_substs_for_ty(self, self,
+                                            path.span,
+                                            &generics,
+                                            path.segments.last().unwrap())
         };
 
         let ty = self.instantiate_type_scheme(path.span, &substs, &decl_ty);
@@ -4641,7 +4644,6 @@ pub fn type_scheme_for_def<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
       def::DefTrait(_) |
       def::DefTy(..) |
       def::DefAssociatedTy(..) |
-      def::DefAssociatedPath(..) |
       def::DefPrimTy(_) |
       def::DefTyParam(..) => {
         fcx.ccx.tcx.sess.span_bug(sp, "expected value, found type");
@@ -4747,7 +4749,6 @@ pub fn instantiate_path<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         def::DefVariant(..) |
         def::DefTy(..) |
         def::DefAssociatedTy(..) |
-        def::DefAssociatedPath(..) |
         def::DefTrait(..) |
         def::DefPrimTy(..) |
         def::DefTyParam(..) => {
