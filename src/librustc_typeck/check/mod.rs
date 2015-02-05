@@ -4655,9 +4655,6 @@ pub fn type_scheme_for_def<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
       def::DefRegion(..) => {
         fcx.ccx.tcx.sess.span_bug(sp, "expected value, found region");
       }
-      def::DefTyParamBinder(..) => {
-        fcx.ccx.tcx.sess.span_bug(sp, "expected value, found type parameter");
-      }
       def::DefLabel(..) => {
         fcx.ccx.tcx.sess.span_bug(sp, "expected value, found label");
       }
@@ -4748,7 +4745,6 @@ pub fn instantiate_path<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         def::DefSelfTy(..) |
         def::DefStruct(..) |
         def::DefVariant(..) |
-        def::DefTyParamBinder(..) |
         def::DefTy(..) |
         def::DefAssociatedTy(..) |
         def::DefAssociatedPath(..) |
