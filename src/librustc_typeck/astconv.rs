@@ -944,7 +944,8 @@ fn associated_path_def_to_ty<'tcx>(this: &AstConv<'tcx>,
         ty_param_name = ty_param_def.name;
 
         // FIXME(#20300) -- search where clauses, not bounds
-        debug!("associated_path_def_to_ty: current_predidcates={:?}", this.in_scope_predicates().repr(tcx));
+        debug!("associated_path_def_to_ty: current_predicates=={:?}",
+               this.in_scope_predicates().repr(tcx));
 
         suitable_bounds =
             this.in_scope_predicates().predicates.iter()
@@ -956,7 +957,7 @@ fn associated_path_def_to_ty<'tcx>(this: &AstConv<'tcx>,
     }
 
     if suitable_bounds.len() == 0 {
-        tcx.sess.span_err(ast_ty.span,
+        tcx.sess.span_bug(ast_ty.span, // TODO change back to span_err
                           format!("associated type `{}` not found for type parameter `{}`",
                                   token::get_name(assoc_name),
                                   token::get_name(ty_param_name)).as_slice());

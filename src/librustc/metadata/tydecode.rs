@@ -29,8 +29,6 @@ use syntax::abi;
 use syntax::ast;
 use syntax::parse::token;
 
-use collections::enum_set::EnumSet;
-
 // Compact string representation for Ty values. API ty_str &
 // parse_from_str. Extra parameters are for converting to/from def_ids in the
 // data buffer. Whatever format you choose should not contain pipe characters.

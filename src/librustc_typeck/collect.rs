@@ -1055,9 +1055,13 @@ fn compute_type_and_generics_of_item<'a,'tcx>(ccx: &LocalCollectCtxt<'a,'tcx>,
             TypeAndGenerics { ty: ty, generics: ty::Generics::empty() }
         }
         ast::ItemFn(ref decl, unsafety, abi, ref generics, _) => {
-            let (ty_generics, _) = ty_generics_for_fn_or_method(ccx,
-                                                           generics,
-                                                           ty::Generics::empty());
+            let (ty_generics, ty_predicates) = ty_generics_for_fn_or_method(ccx,
+                                                                            generics,
+                                                                            ty::Generics::empty());
+
+            // FIXME(#20300) this only uses the bounds not all where-clauses for resolving AT
+            let ccx = &ccx.with_bounds(ty_predicates);
+
             let tofd = astconv::ty_of_bare_fn(ccx, unsafety, abi, &**decl);
             let ty = ty::mk_bare_fn(tcx, Some(local_def(it.id)), tcx.mk_bare_fn(tofd));
             TypeAndGenerics { ty: ty, generics: ty_generics }
