@@ -114,7 +114,7 @@ fn check_expr(v: &mut CheckCrateVisitor, e: &ast::Expr) {
         ast::ExprPath(_) | ast::ExprQPath(_) => {
             match v.tcx.def_map.borrow()[e.id] {
                 DefStatic(..) | DefConst(..) |
-                DefFn(..) | DefStaticMethod(..) | DefMethod(..) |
+                DefFn(..) | DefMethod(..) |
                 DefStruct(_) | DefVariant(_, _, _) => {}
 
                 def => {
