@@ -941,13 +941,15 @@ pub struct TyS<'tcx> {
 }
 
 #[cfg(stage0)]
-struct ShowInvariantLifetime<'a>(marker::InvariantLifetime<'a>);
+struct ShowInvariantLifetime<'a>(marker::PhantomData<*mut&'a()>);
+
 #[cfg(stage0)]
 impl<'a> ShowInvariantLifetime<'a> {
     fn new() -> ShowInvariantLifetime<'a> {
-        ShowInvariantLifetime(marker::InvariantLifetime)
+        ShowInvariantLifetime(marker::PhantomData)
     }
 }
+
 #[cfg(stage0)]
 impl<'a> fmt::Debug for ShowInvariantLifetime<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
