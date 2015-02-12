@@ -141,6 +141,7 @@ use self::platform::{is_sep, is_verbatim_sep, MAIN_SEP_STR, parse_prefix, Prefix
 mod platform {
     use core::prelude::*;
     use ffi::OsStr;
+    use std::marker::PhantomData;
 
     #[inline]
     pub fn is_sep(b: u8) -> bool {
@@ -157,7 +158,7 @@ mod platform {
     }
 
     #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
-    pub struct Prefix<'a>;
+    pub struct Prefix<'a>(PhantomData<&'a ()>);
 
     impl<'a> Prefix<'a> {
         #[inline]
