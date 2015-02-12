@@ -102,6 +102,7 @@ macro_rules! __scoped_thread_local_inner {
         const _INIT: __Key<$t> = __Key {
             inner: ::std::thread_local::scoped::__impl::KeyInner {
                 inner: ::std::cell::UnsafeCell { value: 0 as *mut _ },
+                marker: ::std::marker::PhantomData,
             }
         };
 
@@ -109,7 +110,7 @@ macro_rules! __scoped_thread_local_inner {
         const _INIT: __Key<$t> = __Key {
             inner: ::std::thread_local::scoped::__impl::KeyInner {
                 inner: ::std::thread_local::scoped::__impl::OS_INIT,
-                marker: ::std::marker::InvariantType,
+                marker: ::std::marker::PhantomData,
             }
         };
 
@@ -208,9 +209,13 @@ impl<T> Key<T> {
 #[cfg(not(any(windows, target_os = "android", target_os = "ios", target_arch = "aarch64")))]
 mod imp {
     use std::cell::UnsafeCell;
+    use std::marker::PhantomData;
 
     #[doc(hidden)]
-    pub struct KeyInner<T> { pub inner: UnsafeCell<*mut T> }
+    pub struct KeyInner<T> {
+        pub inner: UnsafeCell<*mut T>,
+        pub marker: PhantomData<UnsafeCell<*const T>>,
+    }
 
     unsafe impl<T> ::marker::Sync for KeyInner<T> { }
 
