@@ -51,9 +51,9 @@ struct Foo {
 #[foo] //~ ERROR unused attribute
 trait Baz {
     #[foo] //~ ERROR unused attribute
-    fn blah();
+    fn blah(&self);
     #[foo] //~ ERROR unused attribute
-    fn blah2() {}
+    fn blah2(&self) {}
 }
 
 fn main() {}

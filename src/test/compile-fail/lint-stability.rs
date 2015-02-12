@@ -338,7 +338,9 @@ mod this_crate {
 
     #[unstable(feature = "test_feature")]
     #[deprecated(since = "1.0.0")]
-    pub trait DeprecatedTrait {}
+    pub trait DeprecatedTrait {
+        fn dummy(&self) { }
+    }
 
     struct S;
 
