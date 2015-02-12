@@ -62,6 +62,7 @@ use clone::Clone;
 use cmp;
 use cmp::Ord;
 use default::Default;
+use marker;
 use mem;
 use num::{ToPrimitive, Int};
 use ops::{Add, Deref, FnMut};
@@ -443,7 +444,7 @@ pub trait IteratorExt: Iterator + Sized {
     /// ```
     #[inline]
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn scan<St, B, F>(self, initial_state: St, f: F) -> Scan<Self, St, F>
+    fn scan<St, B, F>(self, initial_state: St, f: F) -> Scan<Self::Item, B, Self, St, F>
         where F: FnMut(&mut St, Self::Item) -> Option<B>,
     {
         Scan{iter: self, f: f, state: initial_state}
@@ -940,7 +941,7 @@ pub trait IteratorExt: Iterator + Sized {
         FromB: Default + Extend<B>,
         Self: Iterator<Item=(A, B)>,
     {
-        struct SizeHint<A>(usize, Option<usize>);
+        struct SizeHint<A>(usize, Option<usize>, marker::PhantomData<A>);
         impl<A> Iterator for SizeHint<A> {
             type Item = A;
 
@@ -954,8 +955,8 @@ pub trait IteratorExt: Iterator + Sized {
         let mut ts: FromA = Default::default();
         let mut us: FromB = Default::default();
 
-        ts.extend(SizeHint(lo, hi));
-        us.extend(SizeHint(lo, hi));
+        ts.extend(SizeHint(lo, hi, marker::PhantomData));
+        us.extend(SizeHint(lo, hi, marker::PhantomData));
 
         for (t, u) in self {
             ts.extend(Some(t).into_iter());
@@ -2030,7 +2031,7 @@ impl<I> ExactSizeIterator for Take<I> where I: ExactSizeIterator {}
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
 #[stable(feature = "rust1", since = "1.0.0")]
 #[derive(Clone)]
-pub struct Scan<I, St, F> {
+pub struct Scan<A, B, I, St, F> where I: Iterator<Item=A>, F: FnMut(&mut St, A) -> Option<B> {
     iter: I,
     f: F,
 
@@ -2039,8 +2040,8 @@ pub struct Scan<I, St, F> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<B, I: Iterator, St, F> Iterator for Scan<I, St, F> where
-    F: FnMut(&mut St, I::Item) -> Option<B>,
+impl<A, B, I: Iterator<Item=A>, St, F> Iterator for Scan<A, B, I, St, F> where
+    F: FnMut(&mut St, A) -> Option<B>,
 {
     type Item = B;
 
