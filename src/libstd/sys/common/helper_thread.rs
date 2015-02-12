@@ -23,6 +23,7 @@
 use prelude::v1::*;
 
 use cell::UnsafeCell;
+use marker::PhantomData;
 use mem;
 use ptr;
 use rt;
@@ -50,6 +51,8 @@ pub struct Helper<M> {
 
     /// Lazily allocated channel to send messages to the helper thread.
     pub chan: UnsafeCell<*mut Sender<M>>,
+
+    pub chan_marker: PhantomData<Box<Sender<M>>>,
 
     /// OS handle used to wake up a blocked helper thread
     pub signal: UnsafeCell<uint>,
