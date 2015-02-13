@@ -678,8 +678,14 @@ pub struct ctxt<'tcx> {
     pub types: CommonTypes<'tcx>,
 
     pub sess: Session,
+
+    // NDM -- can we add a comment explaining the relationship of
+    // these two maps?  Or maybe make partialdefs be a variant of def?
+    // These two maps store the result of path resolution. For any
+    // given path, there will be an entry in one map or the other.
     pub def_map: DefMap,
     pub partial_def_map: PartialDefMap,
+
     pub last_private_map: RefCell<LastPrivateMap>,
 
     pub named_region_map: resolve_lifetime::NamedRegionMap,

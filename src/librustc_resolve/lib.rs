@@ -3513,6 +3513,9 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                     path_depth: usize,
                     namespace: Namespace,
                     check_ribs: bool) -> Option<(Def, LastPrivate, usize)> {
+        // NDM                                  ^~~~~~~~~~~~~~~~~~~~~~~~~
+        // NDM this seems like a case for a named struct
+
         let span = path.span;
         let segments = &path.segments[..path.segments.len()-path_depth];
 

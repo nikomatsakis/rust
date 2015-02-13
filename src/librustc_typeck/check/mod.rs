@@ -1593,6 +1593,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     {
         let tcx = self.tcx();
 
+        // Nit: call it scheme
         let pty = ty::lookup_item_type(tcx, did);
 
         let substs = astconv::ast_path_substs_for_ty(self, self,
@@ -3609,8 +3610,8 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
           };
 
           // Helpers to avoid keeping the RefCell borrow for too long.
-          let get_def = |&:| tcx.def_map.borrow().get(&id).cloned();
-          let get_partial_def = |&:| tcx.partial_def_map.borrow().get(&id).cloned();
+          let get_def = || tcx.def_map.borrow().get(&id).cloned();
+          let get_partial_def = || tcx.partial_def_map.borrow().get(&id).cloned();
 
           if let Some(def) = get_def() {
               let pty = type_scheme_for_def(fcx, expr.span, def);
