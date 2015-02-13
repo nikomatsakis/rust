@@ -50,6 +50,7 @@ use middle::dependency_format;
 use middle::lang_items::{FnTraitLangItem, FnMutTraitLangItem};
 use middle::lang_items::{FnOnceTraitLangItem, TyDescStructLangItem};
 use middle::mem_categorization as mc;
+use middle::privacy::LastPrivateMap;
 use middle::region;
 use middle::resolve_lifetime;
 use middle::infer;
@@ -679,6 +680,7 @@ pub struct ctxt<'tcx> {
     pub sess: Session,
     pub def_map: DefMap,
     pub partial_def_map: PartialDefMap,
+    pub last_private_map: RefCell<LastPrivateMap>,
 
     pub named_region_map: resolve_lifetime::NamedRegionMap,
 
@@ -2335,6 +2337,7 @@ pub fn mk_ctxt<'tcx>(s: Session,
                      arenas: &'tcx CtxtArenas<'tcx>,
                      def_map: DefMap,
                      partial_def_map: PartialDefMap,
+                     last_private_map: LastPrivateMap,
                      named_region_map: resolve_lifetime::NamedRegionMap,
                      map: ast_map::Map<'tcx>,
                      freevars: RefCell<FreevarMap>,
@@ -2358,6 +2361,7 @@ pub fn mk_ctxt<'tcx>(s: Session,
         sess: s,
         def_map: def_map,
         partial_def_map: partial_def_map,
+        last_private_map: RefCell::new(last_private_map),
         region_maps: region_maps,
         node_types: RefCell::new(FnvHashMap()),
         item_substs: RefCell::new(NodeMap()),

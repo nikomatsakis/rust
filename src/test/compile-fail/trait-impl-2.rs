@@ -16,7 +16,8 @@ mod Foo {
 }
 
 mod Bar {
-    impl<'a> ::Foo::T+'a { //~ERROR: inherent implementations may only be implemented in the same
+    impl<'a> ::Foo::T+'a {
+//~^ ERROR inherent implementations are only allowed on types defined in the current module
         fn foo(&self) {}
     }
 }

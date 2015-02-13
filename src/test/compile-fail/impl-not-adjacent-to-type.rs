@@ -16,7 +16,7 @@ mod foo {
 }
 
 impl foo::Foo {
-//~^ ERROR implementations may only be implemented in the same module
+//~^ ERROR inherent implementations are only allowed on types defined in the current module
     fn bar() {}
 }
 

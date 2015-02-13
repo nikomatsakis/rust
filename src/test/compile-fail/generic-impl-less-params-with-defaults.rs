@@ -16,5 +16,5 @@ impl<A, B, C = (A, B)> Foo<A, B, C> {
 
 fn main() {
     Foo::<isize>::new();
-    //~^ ERROR too few type parameters provided
+    //~^ ERROR wrong number of type arguments
 }
