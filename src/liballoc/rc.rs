@@ -179,6 +179,7 @@ pub struct Rc<T> {
     // FIXME #12808: strange names to try to avoid interfering with field accesses of the contained
     // type via Deref
     _ptr: NonZero<*mut RcBox<T>>,
+    _marker: marker::PhantomData<T>,
 }
 
 impl<T> !marker::Send for Rc<T> {}
@@ -207,6 +208,7 @@ impl<T> Rc<T> {
                     strong: Cell::new(1),
                     weak: Cell::new(1)
                 })),
+                _marker: marker::PhantomData,
             }
         }
     }
@@ -226,7 +228,10 @@ impl<T> Rc<T> {
                reason = "Weak pointers may not belong in this module")]
     pub fn downgrade(&self) -> Weak<T> {
         self.inc_weak();
-        Weak { _ptr: self._ptr }
+        Weak {
+            _ptr: self._ptr,
+            _marker: marker::PhantomData,
+        }
     }
 }
 
@@ -433,7 +438,8 @@ impl<T> Clone for Rc<T> {
     #[inline]
     fn clone(&self) -> Rc<T> {
         self.inc_strong();
-        Rc { _ptr: self._ptr }
+        Rc { _ptr: self._ptr,
+             _marker: marker::PhantomData }
     }
 }
 
@@ -632,6 +638,7 @@ pub struct Weak<T> {
     // FIXME #12808: strange names to try to avoid interfering with
     // field accesses of the contained type via Deref
     _ptr: NonZero<*mut RcBox<T>>,
+    _marker: marker::PhantomData<T>,
 }
 
 impl<T> !marker::Send for Weak<T> {}
@@ -665,7 +672,8 @@ impl<T> Weak<T> {
             None
         } else {
             self.inc_strong();
-            Some(Rc { _ptr: self._ptr })
+            Some(Rc { _ptr: self._ptr,
+                      _marker: marker::PhantomData })
         }
     }
 }
@@ -734,7 +742,8 @@ impl<T> Clone for Weak<T> {
     #[inline]
     fn clone(&self) -> Weak<T> {
         self.inc_weak();
-        Weak { _ptr: self._ptr }
+        Weak { _ptr: self._ptr,
+               _marker: marker::PhantomData }
     }
 }
 

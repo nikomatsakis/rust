@@ -77,6 +77,7 @@ use core::borrow::BorrowFrom;
 use core::fmt;
 use core::cmp::{Ordering};
 use core::default::Default;
+use core::marker;
 use core::mem::{min_align_of, size_of};
 use core::mem;
 use core::nonzero::NonZero;
@@ -118,6 +119,7 @@ pub struct Arc<T> {
     // FIXME #12808: strange name to try to avoid interfering with
     // field accesses of the contained type via Deref
     _ptr: NonZero<*mut ArcInner<T>>,
+    _marker: marker::PhantomData<T>,
 }
 
 unsafe impl<T: Sync + Send> Send for Arc<T> { }
@@ -135,6 +137,7 @@ pub struct Weak<T> {
     // FIXME #12808: strange name to try to avoid interfering with
     // field accesses of the contained type via Deref
     _ptr: NonZero<*mut ArcInner<T>>,
+    _marker: marker::PhantomData<T>,
 }
 
 unsafe impl<T: Sync + Send> Send for Weak<T> { }
@@ -169,7 +172,8 @@ impl<T> Arc<T> {
             weak: atomic::AtomicUsize::new(1),
             data: data,
         };
-        Arc { _ptr: unsafe { NonZero::new(mem::transmute(x)) } }
+        Arc { _ptr: unsafe { NonZero::new(mem::transmute(x)) },
+              _marker: marker::PhantomData }
     }
 
     /// Downgrades the `Arc<T>` to a `Weak<T>` reference.
@@ -188,7 +192,7 @@ impl<T> Arc<T> {
     pub fn downgrade(&self) -> Weak<T> {
         // See the clone() impl for why this is relaxed
         self.inner().weak.fetch_add(1, Relaxed);
-        Weak { _ptr: self._ptr }
+        Weak { _ptr: self._ptr, _marker: marker::PhantomData }
     }
 }
 
@@ -240,7 +244,7 @@ impl<T> Clone for Arc<T> {
         //
         // [1]: (www.boost.org/doc/libs/1_55_0/doc/html/atomic/usage_examples.html)
         self.inner().strong.fetch_add(1, Relaxed);
-        Arc { _ptr: self._ptr }
+        Arc { _ptr: self._ptr, _marker: marker::PhantomData }
     }
 }
 
@@ -388,7 +392,7 @@ impl<T: Sync + Send> Weak<T> {
             let n = inner.strong.load(SeqCst);
             if n == 0 { return None }
             let old = inner.strong.compare_and_swap(n, n + 1, SeqCst);
-            if old == n { return Some(Arc { _ptr: self._ptr }) }
+            if old == n { return Some(Arc { _ptr: self._ptr, _marker: marker::PhantomData }) }
         }
     }
 
@@ -419,7 +423,8 @@ impl<T: Sync + Send> Clone for Weak<T> {
     fn clone(&self) -> Weak<T> {
         // See comments in Arc::clone() for why this is relaxed
         self.inner().weak.fetch_add(1, Relaxed);
-        Weak { _ptr: self._ptr }
+        Weak { _ptr: self._ptr,
+               _marker: marker::PhantomData }
     }
 }
 
