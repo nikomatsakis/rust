@@ -97,6 +97,7 @@ use middle::infer::{self, GenericKind};
 use middle::pat_util;
 use util::ppaux::{ty_to_string, Repr};
 
+use std::mem;
 use syntax::{ast, ast_util};
 use syntax::codemap::Span;
 use syntax::visit;
@@ -167,6 +168,9 @@ pub struct Rcx<'a, 'tcx: 'a> {
 
     region_bound_pairs: Vec<(ty::Region, GenericKind<'tcx>)>,
 
+    // id of innermost fn body id
+    body_id: ast::NodeId,
+
     // id of innermost fn or loop
     repeating_scope: ast::NodeId,
 
@@ -195,10 +199,12 @@ pub enum SubjectNode { Subject(ast::NodeId), None }
 impl<'a, 'tcx> Rcx<'a, 'tcx> {
     pub fn new(fcx: &'a FnCtxt<'a, 'tcx>,
                initial_repeating_scope: RepeatingScope,
+               initial_body_id: ast::NodeId,
                subject: SubjectNode) -> Rcx<'a, 'tcx> {
         let RepeatingScope(initial_repeating_scope) = initial_repeating_scope;
         Rcx { fcx: fcx,
               repeating_scope: initial_repeating_scope,
+              body_id: initial_body_id,
               subject: subject,
               region_bound_pairs: Vec::new()
         }
@@ -206,6 +212,10 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
 
     pub fn tcx(&self) -> &'a ty::ctxt<'tcx> {
         self.fcx.ccx.tcx
+    }
+
+    fn set_body_id(&mut self, body_id: ast::NodeId) -> ast::NodeId {
+        mem::replace(&mut self.body_id, body_id)
     }
 
     fn set_repeating_scope(&mut self, scope: ast::NodeId) -> ast::NodeId {
@@ -267,9 +277,11 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
     fn visit_fn_body(&mut self,
                      id: ast::NodeId,
                      fn_decl: &ast::FnDecl,
-                     body: &ast::Block)
+                     body: &ast::Block,
+                     span: Span)
     {
         // When we enter a function, we can derive
+        debug!("visit_fn_body(id={})", id);
 
         let fn_sig_map = self.fcx.inh.fn_sig_map.borrow();
         let fn_sig = match fn_sig_map.get(&id) {
@@ -281,11 +293,13 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
         };
 
         let len = self.region_bound_pairs.len();
-        self.relate_free_regions(&fn_sig[], body.id);
+        let old_body_id = self.set_body_id(body.id);
+        self.relate_free_regions(&fn_sig[], body.id, span);
         link_fn_args(self, CodeExtent::from_node_id(body.id), &fn_decl.inputs[]);
         self.visit_block(body);
         self.visit_region_obligations(body.id);
         self.region_bound_pairs.truncate(len);
+        self.set_body_id(old_body_id);
     }
 
     fn visit_region_obligations(&mut self, node_id: ast::NodeId)
@@ -324,7 +338,8 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
     /// Tests: `src/test/compile-fail/regions-free-region-ordering-*.rs`
     fn relate_free_regions(&mut self,
                            fn_sig_tys: &[Ty<'tcx>],
-                           body_id: ast::NodeId) {
+                           body_id: ast::NodeId,
+                           span: Span) {
         debug!("relate_free_regions >>");
         let tcx = self.tcx();
 
@@ -333,18 +348,19 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
             debug!("relate_free_regions(t={})", ty.repr(tcx));
             let body_scope = CodeExtent::from_node_id(body_id);
             let body_scope = ty::ReScope(body_scope);
-            let implications = implicator::implications(tcx, ty, body_scope);
+            let implications = implicator::implications(self.fcx.infcx(), self.fcx, body_id,
+                                                        ty, body_scope, span);
             for implication in implications {
                 debug!("implication: {}", implication.repr(tcx));
                 match implication {
                     implicator::Implication::RegionSubRegion(_,
-                                              ty::ReFree(free_a),
-                                              ty::ReFree(free_b)) => {
+                                                             ty::ReFree(free_a),
+                                                             ty::ReFree(free_b)) => {
                         tcx.region_maps.relate_free_regions(free_a, free_b);
                     }
                     implicator::Implication::RegionSubRegion(_,
-                                              ty::ReFree(free_a),
-                                              ty::ReInfer(ty::ReVar(vid_b))) => {
+                                                             ty::ReFree(free_a),
+                                                             ty::ReInfer(ty::ReVar(vid_b))) => {
                         self.fcx.inh.infcx.add_given(free_a, vid_b);
                     }
                     implicator::Implication::RegionSubRegion(..) => {
@@ -364,6 +380,7 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
 
                         self.region_bound_pairs.push((r_a, generic_b.clone()));
                     }
+                    implicator::Implication::Predicate(..) => { }
                 }
             }
         }
@@ -394,8 +411,8 @@ impl<'a, 'tcx, 'v> Visitor<'v> for Rcx<'a, 'tcx> {
     // regions, until regionck, as described in #3238.
 
     fn visit_fn(&mut self, _fk: visit::FnKind<'v>, fd: &'v ast::FnDecl,
-                b: &'v ast::Block, _s: Span, id: ast::NodeId) {
-        self.visit_fn_body(id, fd, b)
+                b: &'v ast::Block, span: Span, id: ast::NodeId) {
+        self.visit_fn_body(id, fd, b, span)
     }
 
     fn visit_item(&mut self, i: &ast::Item) { visit_item(self, i); }
@@ -1475,7 +1492,8 @@ pub fn type_must_outlive<'a, 'tcx>(rcx: &mut Rcx<'a, 'tcx>,
            ty.repr(rcx.tcx()),
            region.repr(rcx.tcx()));
 
-    let implications = implicator::implications(rcx.tcx(), ty, region);
+    let implications = implicator::implications(rcx.fcx.infcx(), rcx.fcx, rcx.body_id,
+                                                ty, region, origin.span());
     for implication in implications {
         debug!("implication: {}", implication.repr(rcx.tcx()));
         match implication {
@@ -1492,6 +1510,15 @@ pub fn type_must_outlive<'a, 'tcx>(rcx: &mut Rcx<'a, 'tcx>,
             implicator::Implication::RegionSubGeneric(Some(ty), r_a, ref generic_b) => {
                 let o1 = infer::ReferenceOutlivesReferent(ty, origin.span());
                 generic_must_outlive(rcx, o1, r_a, generic_b);
+            }
+            implicator::Implication::Predicate(def_id, predicate) => {
+                // TODO seems like some region-obligations may leak
+                // out and should be checked in a separate pass
+                let cause = traits::ObligationCause::new(origin.span(),
+                                                         rcx.body_id,
+                                                         traits::ItemObligation(def_id));
+                let obligation = traits::Obligation::new(cause, predicate);
+                rcx.fcx.register_predicate(obligation);
             }
         }
     }
