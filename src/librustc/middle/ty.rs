@@ -1093,6 +1093,13 @@ impl<'tcx> FnOutput<'tcx> {
         *self == FnDiverging
     }
 
+    pub fn converging(&self) -> Option<Ty<'tcx>> {
+        match *self {
+            ty::FnDiverging => None,
+            ty::FnConverging(t) => Some(t),
+        }
+    }
+
     pub fn unwrap(self) -> Ty<'tcx> {
         match self {
             ty::FnConverging(t) => t,

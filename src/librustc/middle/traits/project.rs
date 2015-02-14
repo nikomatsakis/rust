@@ -469,11 +469,13 @@ fn project_type<'cx,'tcx>(
                                        &obligation_trait_ref,
                                        &mut candidates);
 
-    if let Err(e) = assemble_candidates_from_impls(selcx,
-                                                   obligation,
-                                                   &obligation_trait_ref,
-                                                   &mut candidates) {
-        return Err(ProjectionTyError::TraitSelectionError(e));
+    if candidates.vec.len() == 0 {
+        if let Err(e) = assemble_candidates_from_impls(selcx,
+                                                       obligation,
+                                                       &obligation_trait_ref,
+                                                       &mut candidates) {
+            return Err(ProjectionTyError::TraitSelectionError(e));
+        }
     }
 
     debug!("{} candidates, ambiguous={}",
