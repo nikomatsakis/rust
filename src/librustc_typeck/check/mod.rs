@@ -81,6 +81,7 @@ pub use self::Expectation::*;
 pub use self::compare_method::compare_impl_method;
 use self::IsBinopAssignment::*;
 use self::TupleArgumentsFlag::*;
+//use self::implicator::Implication;
 
 use astconv::{self, ast_region_to_region, ast_ty_to_ty, AstConv};
 use check::_match::pat_ctxt;
@@ -479,6 +480,7 @@ pub fn check_item_types(ccx: &CrateCtxt) {
 }
 
 fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
+                           _span: Span,
                            decl: &'tcx ast::FnDecl,
                            body: &'tcx ast::Block,
                            id: ast::NodeId,
@@ -499,6 +501,9 @@ fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
             let fn_sig =
                 inh.normalize_associated_types_in(&inh.param_env, body.span, body.id, &fn_sig);
 
+            // TODO for now just disable implied bounds
+            // add_implied_bounds(&mut inh, span, &fn_sig, body.id);
+
             let fcx = check_fn(ccx, fn_ty.unsafety, id, &fn_sig,
                                decl, id, body, &inh);
 
@@ -511,6 +516,60 @@ fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         _ => ccx.tcx.sess.impossible_case(body.span,
                                  "check_bare_fn: function type expected")
     }
+
+//    fn add_implied_bounds<'a,'tcx>(inh: &mut Inherited<'a,'tcx>,
+//                                   span: Span,
+//                                   fn_sig: &FnSig<'tcx>,
+//                                   body_id: ast::NodeId)
+//    {
+//        let tcx = inh.infcx.tcx;
+//
+//        debug!("add_implied_bounds(fn_sig={}, body_id={})",
+//               fn_sig.repr(tcx),
+//               body_id);
+//
+//        let mut predicates: Vec<_> =
+//            fn_sig.inputs
+//                  .iter()
+//                  .chain(fn_sig.output.converging().iter())
+//                  .flat_map(|ty| implicator::implications(&inh.infcx, &inh.param_env, body_id,
+//                                                          ty, ty::ReEmpty, span).into_iter())
+//                  .filter_map(|implication| {
+//                      match implication {
+//                          Implication::Predicate(_, predicate) => Some(predicate),
+//
+//                          // these are handled in regionck
+//                          Implication::RegionSubRegion(..) |
+//                          Implication::RegionSubGeneric(..) => None,
+//                      }
+//                  })
+//                  .collect();
+//
+//        debug!("add_implied_bounds: predicates={}",
+//               predicates.repr(tcx));
+//
+//        // To workaround #21974, we strip out some builtin predicates
+//        // for now. This is insufficient and not great given that part
+//        // of the point here is just to infer Sized. We'll revisit
+//        // this!
+//        predicates.retain(|predicate| {
+//            match *predicate {
+//                ty::Predicate::Trait(ref data) => {
+//                    match tcx.lang_items.to_builtin_kind(data.def_id()) {
+//                        Some(_) => { return false; }
+//                        None => { }
+//                    }
+//
+//                    data.0.trait_ref.input_types()
+//                                    .iter()
+//                                    .any(|t| ty::type_has_params(t) || ty::type_has_self(t))
+//                }
+//                _ => true,
+//            }
+//        });
+//
+//        inh.param_env.caller_bounds.extend(predicates.into_iter());
+//    }
 }
 
 struct GatherLocalsVisitor<'a, 'tcx: 'a> {
@@ -718,7 +777,7 @@ pub fn check_item<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>, it: &'tcx ast::Item) {
       ast::ItemFn(ref decl, _, _, _, ref body) => {
         let fn_pty = ty::lookup_item_type(ccx.tcx, ast_util::local_def(it.id));
         let param_env = ParameterEnvironment::for_item(ccx.tcx, it.id);
-        check_bare_fn(ccx, &**decl, &**body, it.id, fn_pty.ty, param_env);
+        check_bare_fn(ccx, it.span, &**decl, &**body, it.id, fn_pty.ty, param_env);
       }
       ast::ItemImpl(_, _, _, _, _, ref impl_items) => {
         debug!("ItemImpl {} with id {}", token::get_ident(it.ident), it.id);
@@ -862,6 +921,7 @@ fn check_method_body<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
     debug!("check_method_body: fty={}", fty.repr(ccx.tcx));
 
     check_bare_fn(ccx,
+                  method.span,
                   &*method.pe_fn_decl(),
                   &*method.pe_body(),
                   method.id,
@@ -1450,7 +1510,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             predicates: self.instantiate_type_scheme(span, substs, &bounds.predicates)
         }
     }
-
 
     fn normalize_associated_types_in<T>(&self, span: Span, value: &T) -> T
         where T : TypeFoldable<'tcx> + Clone + HasProjectionTypes + Repr<'tcx>
