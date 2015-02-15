@@ -87,6 +87,7 @@ use check::_match::pat_ctxt;
 use fmt_macros::{Parser, Piece, Position};
 use middle::astconv_util::{check_path_args, NO_TPS, NO_REGIONS};
 use middle::{const_eval, def};
+use middle::implicator::{self, Implication};
 use middle::infer;
 use middle::mem_categorization as mc;
 use middle::mem_categorization::McResult;
@@ -489,7 +490,7 @@ fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
 {
     match raw_fty.sty {
         ty::ty_bare_fn(_, ref fn_ty) => {
-            let inh = Inherited::new(ccx.tcx, param_env);
+            let mut inh = Inherited::new(ccx.tcx, param_env);
 
             // Compute the fty from point of view of inside fn.
             let fn_sig =
@@ -500,6 +501,8 @@ fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                             &fn_sig);
             let fn_sig =
                 inh.normalize_associated_types_in(&inh.param_env, body.span, body.id, &fn_sig);
+
+            add_implied_bounds(&mut inh, fn_span, &fn_sig, body.id);
 
             let fcx = check_fn(ccx, fn_ty.unsafety, fn_id, &fn_sig,
                                decl, fn_id, body, &inh);
@@ -512,6 +515,61 @@ fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         }
         _ => ccx.tcx.sess.impossible_case(body.span,
                                  "check_bare_fn: function type expected")
+    }
+
+    fn add_implied_bounds<'a,'tcx>(inh: &mut Inherited<'a,'tcx>,
+                                   span: Span,
+                                   fn_sig: &FnSig<'tcx>,
+                                   body_id: ast::NodeId)
+    {
+        let tcx = inh.infcx.tcx;
+
+        debug!("add_implied_bounds(fn_sig={}, body_id={})",
+               fn_sig.repr(tcx),
+               body_id);
+
+        let mut predicates: Vec<_> =
+            fn_sig.inputs
+                  .iter()
+                  .chain(fn_sig.output.converging().iter())
+                  .flat_map(|ty| implicator::implications(&inh.infcx, &inh.param_env, body_id,
+                                                          ty, ty::ReEmpty, span).into_iter())
+                  .filter_map(|implication| {
+                      match implication {
+                          Implication::Predicate(_, predicate) => Some(predicate),
+
+                          // these are handled in regionck
+                          Implication::RegionSubRegion(..) |
+                          Implication::RegionSubGeneric(..) => None,
+                      }
+                  })
+                  .collect();
+
+        // To workaround #21974, we strip out some builtin predicates
+        // for now. This is insufficient and not great given that part
+        // of the point here is just to infer Sized. We'll revisit
+        // this!
+        predicates.retain(|predicate| {
+            match *predicate {
+                ty::Predicate::Trait(ref data) => {
+                    match tcx.lang_items.to_builtin_kind(data.def_id()) {
+                        Some(ty::BoundSized) => { }
+                        _ => { return false; }
+                    }
+
+                    match data.unbound().self_ty().sty {
+                        ty::ty_param(..) => true,
+                        _ => false,
+                    }
+                }
+                _ => false,
+            }
+        });
+
+        debug!("add_implied_bounds: predicates={}",
+               predicates.repr(tcx));
+
+        inh.param_env.caller_bounds.extend(predicates.into_iter());
     }
 }
 
@@ -1497,7 +1555,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             predicates: self.instantiate_type_scheme(span, substs, &bounds.predicates)
         }
     }
-
 
     fn normalize_associated_types_in<T>(&self, span: Span, value: &T) -> T
         where T : TypeFoldable<'tcx> + Clone + HasProjectionTypes + Repr<'tcx>
