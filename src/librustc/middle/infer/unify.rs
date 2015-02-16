@@ -219,6 +219,26 @@ impl<K> sv::SnapshotVecDelegate for Delegate<K> {
 }
 
 ///////////////////////////////////////////////////////////////////////////
+
+impl<'tcx,K> UnificationTable<K>
+    where K : UnifyKey<Value=()>,
+{
+    pub fn union(&mut self, a_id: K, b_id: K) {
+        let node_a = self.get(a_id);
+        let node_b = self.get(b_id);
+        let a_id = node_a.key.clone();
+        let b_id = node_b.key.clone();
+        if a_id != b_id {
+            self.unify(&node_a, &node_b, ());
+        }
+    }
+
+    pub fn find(&mut self, id: K) -> K {
+        self.get(id).key.clone()
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////
 // Code to handle keys which carry a value, like ints,
 // floats---anything that doesn't have a subtyping relationship we
 // need to worry about.
@@ -322,6 +342,16 @@ impl<'tcx,K,V> UnificationTable<K>
 }
 
 ///////////////////////////////////////////////////////////////////////////
+
+impl UnifyKey for ty::TyVid {
+    type Value = ();
+    fn index(&self) -> u32 { self.index }
+    fn from_index(n: u32) -> ty::TyVid { ty::TyVid { index: n } }
+    fn tag(_: Option<ty::TyVid>) -> &'static str { "TyVid" }
+}
+
+impl UnifyValue for () {
+}
 
 // Integral type keys
 

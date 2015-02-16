@@ -12,6 +12,8 @@ pub use self::RelationDir::*;
 use self::TypeVariableValue::*;
 use self::UndoEntry::*;
 
+use super::unify::{self, UnificationTable};
+
 use middle::ty::{self, Ty};
 use std::cmp::min;
 use std::mem;
@@ -20,11 +22,12 @@ use util::snapshot_vec as sv;
 
 pub struct TypeVariableTable<'tcx> {
     values: sv::SnapshotVec<Delegate<'tcx>>,
+    unification_table: UnificationTable<ty::TyVid>,
 }
 
 struct TypeVariableData<'tcx> {
     value: TypeVariableValue<'tcx>,
-    diverging: bool
+    diverging: bool,
 }
 
 enum TypeVariableValue<'tcx> {
@@ -33,7 +36,8 @@ enum TypeVariableValue<'tcx> {
 }
 
 pub struct Snapshot {
-    snapshot: sv::Snapshot
+    values_snapshot: sv::Snapshot,
+    unify_snapshot: unify::Snapshot<ty::TyVid>,
 }
 
 enum UndoEntry {
@@ -63,7 +67,8 @@ impl RelationDir {
 
 impl<'tcx> TypeVariableTable<'tcx> {
     pub fn new() -> TypeVariableTable<'tcx> {
-        TypeVariableTable { values: sv::SnapshotVec::new(Delegate) }
+        TypeVariableTable { values: sv::SnapshotVec::new(Delegate),
+                            unification_table: UnificationTable::new() }
     }
 
     fn relations<'a>(&'a mut self, a: ty::TyVid) -> &'a mut Vec<Relation> {
@@ -82,6 +87,7 @@ impl<'tcx> TypeVariableTable<'tcx> {
             self.relations(a).push((dir, b));
             self.relations(b).push((dir.opposite(), a));
             self.values.record(Relate(a, b));
+            self.unification_table.union(a, b);
         }
     }
 
@@ -117,7 +123,12 @@ impl<'tcx> TypeVariableTable<'tcx> {
             value: Bounded(vec![]),
             diverging: diverging
         });
-        ty::TyVid { index: index as u32 }
+        assert!(index < u32::MAX as usize);
+
+        let vid = self.unification_table.new_key(());
+        assert_eq!(vid.index, index as u32);
+
+        vid
     }
 
     pub fn probe(&self, vid: ty::TyVid) -> Option<Ty<'tcx>> {
@@ -140,15 +151,20 @@ impl<'tcx> TypeVariableTable<'tcx> {
     }
 
     pub fn snapshot(&mut self) -> Snapshot {
-        Snapshot { snapshot: self.values.start_snapshot() }
+        Snapshot {
+            values_snapshot: self.values.start_snapshot(),
+            unify_snapshot: self.unification_table.snapshot(),
+        }
     }
 
     pub fn rollback_to(&mut self, s: Snapshot) {
-        self.values.rollback_to(s.snapshot);
+        self.values.rollback_to(s.values_snapshot);
+        self.unification_table.rollback_to(s.unify_snapshot);
     }
 
     pub fn commit(&mut self, s: Snapshot) {
-        self.values.commit(s.snapshot);
+        self.values.commit(s.values_snapshot);
+        self.unification_table.commit(s.unify_snapshot);
     }
 
     pub fn types_escaping_snapshot(&self, s: &Snapshot) -> Vec<Ty<'tcx>> {
@@ -163,7 +179,7 @@ impl<'tcx> TypeVariableTable<'tcx> {
 
         let mut new_elem_threshold = u32::MAX;
         let mut escaping_types = Vec::new();
-        let actions_since_snapshot = self.values.actions_since_snapshot(&s.snapshot);
+        let actions_since_snapshot = self.values.actions_since_snapshot(&s.values_snapshot);
         debug!("actions_since_snapshot.len() = {}", actions_since_snapshot.len());
         for action in actions_since_snapshot {
             match *action {
