@@ -1722,68 +1722,41 @@ fn trans_eager_binop<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let is_float = ty::type_is_fp(intype);
     let is_signed = ty::type_is_signed(intype);
     let rhs = base::cast_shift_expr_rhs(bcx, op, lhs, rhs);
-    let sp = binop_expr.span;
+    let info = expr_info(binop_expr);
 
     let binop_debug_loc = binop_expr.debug_loc();
 
     let mut bcx = bcx;
     let val = match op.node {
       ast::BiAdd => {
-<<<<<<< HEAD
         if is_float {
             FAdd(bcx, lhs, rhs, binop_debug_loc)
         } else {
-            Add(bcx, lhs, rhs, binop_debug_loc)
-        }
-||||||| merged common ancestors
-        if is_float { FAdd(bcx, lhs, rhs) }
-        else { Add(bcx, lhs, rhs) }
-=======
-        if is_float { FAdd(bcx, lhs, rhs) }
-        else {
-            let (newbcx, res) = with_overflow_check(bcx, OverflowOp::Add, sp, lhs_t, lhs, rhs);
+            let (newbcx, res) = with_overflow_check(
+                bcx, OverflowOp::Add, info, lhs_t, lhs, rhs, binop_debug_loc);
             bcx = newbcx;
             res
         }
->>>>>>> rustc: implement arithmatic overflow checking
       }
       ast::BiSub => {
-<<<<<<< HEAD
         if is_float {
             FSub(bcx, lhs, rhs, binop_debug_loc)
         } else {
-            Sub(bcx, lhs, rhs, binop_debug_loc)
-        }
-||||||| merged common ancestors
-        if is_float { FSub(bcx, lhs, rhs) }
-        else { Sub(bcx, lhs, rhs) }
-=======
-        if is_float { FSub(bcx, lhs, rhs) }
-        else {
-            let (newbcx, res) = with_overflow_check(bcx, OverflowOp::Sub, sp, lhs_t, lhs, rhs);
+            let (newbcx, res) = with_overflow_check(
+                bcx, OverflowOp::Sub, info, lhs_t, lhs, rhs, binop_debug_loc);
             bcx = newbcx;
             res
         }
->>>>>>> rustc: implement arithmatic overflow checking
       }
       ast::BiMul => {
-<<<<<<< HEAD
         if is_float {
             FMul(bcx, lhs, rhs, binop_debug_loc)
         } else {
-            Mul(bcx, lhs, rhs, binop_debug_loc)
-        }
-||||||| merged common ancestors
-        if is_float { FMul(bcx, lhs, rhs) }
-        else { Mul(bcx, lhs, rhs) }
-=======
-        if is_float { FMul(bcx, lhs, rhs) }
-        else {
-            let (newbcx, res) = with_overflow_check(bcx, OverflowOp::Mul, sp, lhs_t, lhs, rhs);
+            let (newbcx, res) = with_overflow_check(
+                bcx, OverflowOp::Mul, info, lhs_t, lhs, rhs, binop_debug_loc);
             bcx = newbcx;
             res
         }
->>>>>>> rustc: implement arithmatic overflow checking
       }
       ast::BiDiv => {
         if is_float {
@@ -2438,33 +2411,36 @@ impl OverflowOp {
 }
 
 
-fn with_overflow_check<'a, 'b>(bcx: Block<'a, 'b>, oop: OverflowOp, sp: codemap::Span,
-                       lhs_t: Ty, lhs: ValueRef, rhs: ValueRef) -> (Block<'a, 'b>, ValueRef) {
+fn with_overflow_check<'a, 'b>(bcx: Block<'a, 'b>, oop: OverflowOp, info: NodeIdAndSpan,
+                               lhs_t: Ty, lhs: ValueRef, rhs: ValueRef, binop_debug_loc: DebugLoc)
+                               -> (Block<'a, 'b>, ValueRef) {
     if bcx.unreachable.get() { return (bcx, _Undef(lhs)); }
     if bcx.ccx().check_overflow() {
         let name = oop.to_intrinsic_name(bcx.tcx(), lhs_t);
         let llfn = bcx.ccx().get_intrinsic(&name);
 
-        let val = Call(bcx, llfn, &[lhs, rhs], None);
+        let val = Call(bcx, llfn, &[lhs, rhs], None, binop_debug_loc);
         let result = ExtractValue(bcx, val, 0); // iN operation result
         let overflow = ExtractValue(bcx, val, 1); // i1 "did it overflow?"
 
-        let cond = ICmp(bcx, llvm::IntEQ, overflow, C_integral(Type::i1(bcx.ccx()), 1, false));
+        let cond = ICmp(bcx, llvm::IntEQ, overflow, C_integral(Type::i1(bcx.ccx()), 1, false),
+                        binop_debug_loc);
 
         let expect = bcx.ccx().get_intrinsic(&"llvm.expect.i1");
-        Call(bcx, expect, &[cond, C_integral(Type::i1(bcx.ccx()), 0, false)], None);
+        Call(bcx, expect, &[cond, C_integral(Type::i1(bcx.ccx()), 0, false)],
+             None, binop_debug_loc);
 
         let bcx =
             base::with_cond(bcx, cond, |bcx|
-                controlflow::trans_fail(bcx, sp,
+                controlflow::trans_fail(bcx, info,
                     InternedString::new("arithmetic operation overflowed")));
 
         (bcx, result)
     } else {
         let res = match oop {
-            OverflowOp::Add => Add(bcx, lhs, rhs),
-            OverflowOp::Sub => Sub(bcx, lhs, rhs),
-            OverflowOp::Mul => Mul(bcx, lhs, rhs),
+            OverflowOp::Add => Add(bcx, lhs, rhs, binop_debug_loc),
+            OverflowOp::Sub => Sub(bcx, lhs, rhs, binop_debug_loc),
+            OverflowOp::Mul => Mul(bcx, lhs, rhs, binop_debug_loc),
         };
         (bcx, res)
     }
