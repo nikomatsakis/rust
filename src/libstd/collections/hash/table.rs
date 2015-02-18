@@ -369,24 +369,12 @@ impl<K, V, M: Deref<Target=RawTable<K, V>>> FullBucket<K, V, M> {
     ///
     /// In the cited blog posts above, this is called the "distance to
     /// initial bucket", or DIB. Also known as "probe count".
-<<<<<<< HEAD
     pub fn distance(&self) -> usize {
-||||||| merged common ancestors
-    pub fn distance(&self) -> uint {
-=======
-    pub fn distance(&self) -> uint {
         use core::num::wrapping::WrappingOps;
->>>>>>> Fix overflow errors
         // Calculates the distance one has to travel when going from
         // `hash mod capacity` onwards to `idx mod capacity`, wrapping around
         // if the destination is not reached before the end of the table.
-<<<<<<< HEAD
-        (self.idx - self.hash().inspect() as usize) & (self.table.capacity() - 1)
-||||||| merged common ancestors
-        (self.idx - self.hash().inspect() as uint) & (self.table.capacity() - 1)
-=======
-        (self.idx.wrapping_sub(self.hash().inspect() as uint)) & (self.table.capacity() - 1)
->>>>>>> Fix overflow errors
+        (self.idx.wrapping_sub(self.hash().inspect() as usize)) & (self.table.capacity() - 1)
     }
 
     #[inline]
