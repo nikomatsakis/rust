@@ -218,10 +218,10 @@ impl<'tcx> FulfillmentContext<'tcx> {
         self.select(&mut selcx, true)
     }
 
-    pub fn select_where_possible<'a>(&mut self,
-                                     infcx: &InferCtxt<'a,'tcx>,
-                                     typer: &ty::ClosureTyper<'tcx>)
-                                     -> Result<(),Vec<FulfillmentError<'tcx>>>
+    pub fn select_predicates_affecting<'a>(&mut self,
+                                           infcx: &InferCtxt<'a,'tcx>,
+                                           vid: ty::TyVid)
+                                           -> Result<(),Vec<FulfillmentError<'tcx>>>
     {
         let mut selcx = SelectionContext::new(infcx, typer);
         self.select(&mut selcx, false)
