@@ -1059,7 +1059,7 @@ fn associated_path_def_to_ty<'tcx>(this: &AstConv<'tcx>,
     }
 
     let mut suitable_bounds: Vec<_> =
-        traits::transitive_bounds(tcx, &bounds)
+        traits::supertraits_many(tcx, &bounds)
         .filter(|b| this.trait_defines_associated_type_named(b.def_id(), assoc_name))
         .collect();
 

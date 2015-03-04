@@ -65,27 +65,32 @@ impl<'a,'tcx> PredicateSet<'a,'tcx> {
 
 ///////////////////////////////////////////////////////////////////////////
 // `Elaboration` iterator
-///////////////////////////////////////////////////////////////////////////
+//
+// "Elaboration" is the process of identifying all the predicates that
+// are implied by a source predicate. This is done by expanding out
+// where clauses declared on a trait. Example:
+//
+// ```
+// trait Foo<T> : Bar<T> where T : Baz { .. }
+// trait Bar<T> { .. }
+// trait Baz { .. }
+// ```
+//
+// Elaborating `X:Foo<Y>` would yield `[X:Foo<Y>, X:Bar<Y>, Y:Baz,
+// Y:Sized]`. If you only want the supertraits (`X:Bar<Y>`, here),
+// see the supertrait iterator below.
 
-/// "Elaboration" is the process of identifying all the predicates that
-/// are implied by a source predicate. Currently this basically means
-/// walking the "supertraits" and other similar assumptions. For
-/// example, if we know that `T : Ord`, the elaborator would deduce
-/// that `T : PartialOrd` holds as well. Similarly, if we have `trait
-/// Foo : 'static`, and we know that `T : Foo`, then we know that `T :
-/// 'static`.
+/// Elaborates a set of predicates into other predicates that are
+/// implied by the initial set.
 pub struct Elaborator<'cx, 'tcx:'cx> {
     tcx: &'cx ty::ctxt<'tcx>,
     stack: Vec<ty::Predicate<'tcx>>,
     visited: PredicateSet<'cx,'tcx>,
-}
 
-pub fn elaborate_trait_ref<'cx, 'tcx>(
-    tcx: &'cx ty::ctxt<'tcx>,
-    trait_ref: ty::PolyTraitRef<'tcx>)
-    -> Elaborator<'cx, 'tcx>
-{
-    elaborate_predicates(tcx, vec![trait_ref.as_predicate()])
+    /// If true, we only elaborate `A:Foo` to `A:Bar` where `Bar` is a
+    /// supertrait of `Foo`. Otherwise, we consider all where-clauses
+    /// declared on `Foo`.
+    supertraits_only: bool,
 }
 
 pub fn elaborate_trait_refs<'cx, 'tcx>(
@@ -101,15 +106,24 @@ pub fn elaborate_trait_refs<'cx, 'tcx>(
 
 pub fn elaborate_predicates<'cx, 'tcx>(
     tcx: &'cx ty::ctxt<'tcx>,
-    mut predicates: Vec<ty::Predicate<'tcx>>)
+    predicates: Vec<ty::Predicate<'tcx>>)
     -> Elaborator<'cx, 'tcx>
 {
-    let mut visited = PredicateSet::new(tcx);
-    predicates.retain(|pred| visited.insert(pred));
-    Elaborator { tcx: tcx, stack: predicates, visited: visited }
+    Elaborator::new(tcx, predicates, false)
 }
 
 impl<'cx, 'tcx> Elaborator<'cx, 'tcx> {
+    fn new(tcx: &'cx ty::ctxt<'tcx>,
+           mut predicates: Vec<ty::Predicate<'tcx>>,
+           supertraits_only: bool)
+           -> Elaborator<'cx, 'tcx>
+    {
+        let mut visited = PredicateSet::new(tcx);
+        predicates.retain(|pred| visited.insert(pred));
+        Elaborator { tcx: tcx, stack: predicates,
+                     visited: visited, supertraits_only: supertraits_only }
+    }
+
     pub fn filter_to_traits(self) -> FilterToTraits<Elaborator<'cx, 'tcx>> {
         FilterToTraits::new(self)
     }
@@ -118,7 +132,11 @@ impl<'cx, 'tcx> Elaborator<'cx, 'tcx> {
         match *predicate {
             ty::Predicate::Trait(ref data) => {
                 // Predicates declared on the trait.
-                let predicates = ty::lookup_super_predicates(self.tcx, data.def_id());
+                let predicates = if self.supertraits_only {
+                    ty::lookup_super_predicates(self.tcx, data.def_id())
+                } else {
+                    ty::lookup_predicates(self.tcx, data.def_id())
+                };
 
                 let mut predicates: Vec<_> =
                     predicates.predicates
@@ -191,7 +209,26 @@ impl<'cx, 'tcx> Iterator for Elaborator<'cx, 'tcx> {
 
 ///////////////////////////////////////////////////////////////////////////
 // Supertrait iterator
-///////////////////////////////////////////////////////////////////////////
+//
+// Expanding out the set of supertraits is a subset of the full elaboration
+// described above. The difference can be illustrated easily with this
+// example:
+//
+// ```
+// trait Foo<T> : Bar<T> where T : Baz { .. }
+// trait Bar<T> { .. }
+// trait Baz { .. }
+// ```
+//
+// Given the predicate `X:Foo<Y>`, supertrait expansion would yield
+// `[X:Foo<Y>, X:Bar<Y>]`, but the full elaboration would yield
+// `[X:Foo<Y>, X:Bar<Y>, Y:Baz, Y:Sized]`.
+//
+// Supertraits are the correct choice for vtables and objects (which
+// only contain supertraits). Another time when you want supertraits
+// is when elaborating the set of associated items contained by a
+// trait, which includes only those items defined in supertraits, not
+// arbitrary random traits.
 
 pub type Supertraits<'cx, 'tcx> = FilterToTraits<Elaborator<'cx, 'tcx>>;
 
@@ -199,19 +236,28 @@ pub fn supertraits<'cx, 'tcx>(tcx: &'cx ty::ctxt<'tcx>,
                               trait_ref: ty::PolyTraitRef<'tcx>)
                               -> Supertraits<'cx, 'tcx>
 {
-    elaborate_trait_ref(tcx, trait_ref).filter_to_traits()
+    Elaborator::new(tcx, vec![trait_ref.as_predicate()], true).filter_to_traits()
 }
 
-pub fn transitive_bounds<'cx, 'tcx>(tcx: &'cx ty::ctxt<'tcx>,
-                                    bounds: &[ty::PolyTraitRef<'tcx>])
-                                    -> Supertraits<'cx, 'tcx>
+pub fn superpredicates<'cx, 'tcx>(tcx: &'cx ty::ctxt<'tcx>,
+                                  trait_refs: Vec<ty::Predicate<'tcx>>)
+                                  -> Elaborator<'cx, 'tcx>
 {
-    elaborate_trait_refs(tcx, bounds).filter_to_traits()
+    Elaborator::new(tcx, trait_refs, true)
+}
+
+pub fn supertraits_many<'cx, 'tcx>(tcx: &'cx ty::ctxt<'tcx>,
+                                   trait_refs: &[ty::PolyTraitRef<'tcx>])
+                                   -> Supertraits<'cx, 'tcx>
+{
+    let predicates = trait_refs.iter()
+                               .map(|trait_ref| trait_ref.as_predicate())
+                               .collect();
+    Elaborator::new(tcx, predicates, true).filter_to_traits()
 }
 
 ///////////////////////////////////////////////////////////////////////////
 // Other
-///////////////////////////////////////////////////////////////////////////
 
 /// A filter around an iterator of predicates that makes it yield up
 /// just trait references.
@@ -377,7 +423,9 @@ pub fn upcast<'tcx>(tcx: &ty::ctxt<'tcx>,
 pub fn get_vtable_index_of_object_method<'tcx>(tcx: &ty::ctxt<'tcx>,
                                                object_trait_ref: ty::PolyTraitRef<'tcx>,
                                                trait_def_id: ast::DefId,
-                                               method_offset_in_trait: uint) -> uint {
+                                               method_offset_in_trait: uint)
+                                               -> uint
+{
     // We need to figure the "real index" of the method in a
     // listing of all the methods of an object. We do this by
     // iterating down the supertraits of the object's trait until
@@ -385,7 +433,7 @@ pub fn get_vtable_index_of_object_method<'tcx>(tcx: &ty::ctxt<'tcx>,
     // methods from them.
     let mut method_count = 0;
 
-    for bound_ref in transitive_bounds(tcx, &[object_trait_ref]) {
+    for bound_ref in supertraits(tcx, object_trait_ref) {
         if bound_ref.def_id() == trait_def_id {
             break;
         }

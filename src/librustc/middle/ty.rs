@@ -5899,7 +5899,7 @@ pub fn each_bound_trait_and_supertraits<'tcx, F>(tcx: &ctxt<'tcx>,
                                                  -> bool where
     F: FnMut(PolyTraitRef<'tcx>) -> bool,
 {
-    for bound_trait_ref in traits::transitive_bounds(tcx, bounds) {
+    for bound_trait_ref in traits::supertraits_many(tcx, bounds) {
         if !f(bound_trait_ref) {
             return false;
         }
@@ -5928,7 +5928,7 @@ pub fn required_region_bounds<'tcx>(tcx: &ctxt<'tcx>,
 
     assert!(!erased_self_ty.has_escaping_regions());
 
-    traits::elaborate_predicates(tcx, predicates)
+    traits::superpredicates(tcx, predicates)
         .filter_map(|predicate| {
             match predicate {
                 ty::Predicate::Projection(..) |

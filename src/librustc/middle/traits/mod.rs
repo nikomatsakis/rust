@@ -43,11 +43,13 @@ pub use self::select::SelectionCache;
 pub use self::select::{MethodMatchResult, MethodMatched, MethodAmbiguous, MethodDidNotMatch};
 pub use self::select::{MethodMatchedData}; // intentionally don't export variants
 pub use self::util::elaborate_predicates;
+pub use self::util::elaborate_trait_refs;
 pub use self::util::get_vtable_index_of_object_method;
 pub use self::util::trait_ref_for_builtin_bound;
+pub use self::util::superpredicates;
 pub use self::util::supertraits;
 pub use self::util::Supertraits;
-pub use self::util::transitive_bounds;
+pub use self::util::supertraits_many;
 pub use self::util::upcast;
 
 mod coherence;

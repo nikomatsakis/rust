@@ -319,6 +319,7 @@ fn process_predicate<'a,'tcx>(selcx: &mut SelectionContext<'a,'tcx>,
      * type inference.
      */
 
+    debug!("process_predicate(obligation={})", obligation.repr(selcx.tcx()));
     let tcx = selcx.tcx();
     match obligation.predicate {
         ty::Predicate::Trait(ref data) => {
@@ -328,6 +329,7 @@ fn process_predicate<'a,'tcx>(selcx: &mut SelectionContext<'a,'tcx>,
                     false
                 }
                 Ok(Some(s)) => {
+                    debug!("process_predicate: new_obligations={}", s.repr(selcx.tcx()));
                     s.map_move_nested(|p| new_obligations.push(p));
                     true
                 }
@@ -398,6 +400,7 @@ fn process_predicate<'a,'tcx>(selcx: &mut SelectionContext<'a,'tcx>,
                    result.repr(tcx));
             match result {
                 Ok(Some(obligations)) => {
+                    debug!("process_predicate: new_obligations={}", obligations.repr(selcx.tcx()));
                     new_obligations.extend(obligations.into_iter());
                     true
                 }

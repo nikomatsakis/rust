@@ -456,7 +456,9 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
         debug!("elaborate_bounds(bounds={})", bounds.repr(self.tcx()));
 
         let tcx = self.tcx();
-        for bound_trait_ref in traits::transitive_bounds(tcx, bounds) {
+        for bound_trait_ref in
+            traits::elaborate_trait_refs(tcx, bounds).filter_map(|tr| tr.to_opt_poly_trait_ref())
+        {
             let (pos, method) = match trait_method(tcx,
                                                    bound_trait_ref.def_id(),
                                                    self.method_name) {

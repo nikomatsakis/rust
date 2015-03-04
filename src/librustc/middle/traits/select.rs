@@ -1000,12 +1000,12 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
         let caller_trait_refs: Vec<_> =
             self.param_env().caller_bounds.iter()
-            .filter_map(|o| o.to_opt_poly_trait_ref())
-            .collect();
+                                          .filter_map(|o| o.to_opt_poly_trait_ref())
+                                          .collect();
 
         let all_bounds =
-            util::transitive_bounds(
-                self.tcx(), &caller_trait_refs[..]);
+            util::elaborate_trait_refs(self.tcx(), &caller_trait_refs)
+            .filter_to_traits();
 
         let matching_bounds =
             all_bounds.filter(
@@ -1323,14 +1323,28 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             (&ImplCandidate(..), &ParamCandidate(..)) |
             (&ClosureCandidate(..), &ParamCandidate(..)) |
             (&FnPointerCandidate(..), &ParamCandidate(..)) |
-            (&BuiltinObjectCandidate(..), &ParamCandidate(_)) |
-            (&BuiltinCandidate(..), &ParamCandidate(..)) => {
+            (&BuiltinObjectCandidate(..), &ParamCandidate(_)) => {
                 // We basically prefer always prefer to use a
                 // where-clause over another option. Where clauses
                 // impose the burden of finding the exact match onto
                 // the caller. Using an impl in preference of a where
                 // clause can also lead us to "overspecialize", as in
                 // #18453.
+                true
+            }
+            (&ParamCandidate(..), &BuiltinCandidate(..)) => {
+                // Builtin candidates only trigger for things like
+                // `Sized` and `Copy` applied to structural types; in
+                // that case, the param candidate cannot be any
+                // different from the builtin rules, so prefer the
+                // builtin rules. It is important to do this because
+                // otherwise if you have
+                //
+                //     where (A, B) : Sized
+                //
+                // in your environment, for example, it will unduly
+                // influence matches of other tuples, forcing their
+                // argument types to be A and B.
                 true
             }
             (&DefaultImplCandidate(_), _) => {
