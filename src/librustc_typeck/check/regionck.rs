@@ -85,8 +85,8 @@
 use astconv::AstConv;
 use check::dropck;
 use check::FnCtxt;
-use check::implicator;
 use check::vtable;
+use middle::implicator::{self, Implication};
 use middle::mem_categorization as mc;
 use middle::region::CodeExtent;
 use middle::subst::Substs;
@@ -343,14 +343,14 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
             for implication in implications {
                 debug!("implication: {}", implication.repr(tcx));
                 match implication {
-                    implicator::Implication::RegionSubRegion(_,
-                                                             ty::ReFree(free_a),
-                                                             ty::ReFree(free_b)) => {
+                    Implication::RegionSubRegion(_,
+                                                 ty::ReFree(free_a),
+                                                 ty::ReFree(free_b)) => {
                         tcx.region_maps.relate_free_regions(free_a, free_b);
                     }
-                    implicator::Implication::RegionSubRegion(_,
-                                                             ty::ReFree(free_a),
-                                                             ty::ReInfer(ty::ReVar(vid_b))) => {
+                    Implication::RegionSubRegion(_,
+                                                 ty::ReFree(free_a),
+                                                 ty::ReInfer(ty::ReVar(vid_b))) => {
                         self.fcx.inh.infcx.add_given(free_a, vid_b);
                     }
                     implicator::Implication::RegionSubGeneric(_, r_a, ref generic_b) => {
@@ -372,6 +372,24 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
                         // relationship that arises here, but
                         // presently we do not.)
                     }
+<<<<<<< variant A
+>>>>>>> variant B
+                    Implication::RegionSubGeneric(_, r_a, ref generic_b) => {
+                        debug!("RegionSubGeneric: {} <= {}",
+                               r_a.repr(tcx), generic_b.repr(tcx));
+
+                        self.region_bound_pairs.push((r_a, generic_b.clone()));
+                    }
+                    Implication::Predicate(..) => { }
+####### Ancestor
+                    implicator::Implication::RegionSubGeneric(_, r_a, ref generic_b) => {
+                        debug!("RegionSubGeneric: {} <= {}",
+                               r_a.repr(tcx), generic_b.repr(tcx));
+
+                        self.region_bound_pairs.push((r_a, generic_b.clone()));
+                    }
+                    implicator::Implication::Predicate(..) => { }
+======= end
                 }
             }
         }
@@ -1395,24 +1413,30 @@ pub fn type_must_outlive<'a, 'tcx>(rcx: &mut Rcx<'a, 'tcx>,
     for implication in implications {
         debug!("implication: {}", implication.repr(rcx.tcx()));
         match implication {
-            implicator::Implication::RegionSubRegion(None, r_a, r_b) => {
+            Implication::RegionSubRegion(None, r_a, r_b) => {
                 rcx.fcx.mk_subr(origin.clone(), r_a, r_b);
             }
-            implicator::Implication::RegionSubRegion(Some(ty), r_a, r_b) => {
+            Implication::RegionSubRegion(Some(ty), r_a, r_b) => {
                 let o1 = infer::ReferenceOutlivesReferent(ty, origin.span());
                 rcx.fcx.mk_subr(o1, r_a, r_b);
             }
-            implicator::Implication::RegionSubGeneric(None, r_a, ref generic_b) => {
+            Implication::RegionSubGeneric(None, r_a, ref generic_b) => {
                 generic_must_outlive(rcx, origin.clone(), r_a, generic_b);
             }
-            implicator::Implication::RegionSubGeneric(Some(ty), r_a, ref generic_b) => {
+            Implication::RegionSubGeneric(Some(ty), r_a, ref generic_b) => {
                 let o1 = infer::ReferenceOutlivesReferent(ty, origin.span());
                 generic_must_outlive(rcx, o1, r_a, generic_b);
             }
+<<<<<<< variant A
             implicator::Implication::RegionSubClosure(_, r_a, def_id, substs) => {
                 closure_must_outlive(rcx, origin.clone(), r_a, def_id, substs);
             }
             implicator::Implication::Predicate(def_id, predicate) => {
+>>>>>>> variant B
+            Implication::Predicate(def_id, predicate) => {
+####### Ancestor
+            implicator::Implication::Predicate(def_id, predicate) => {
+======= end
                 let cause = traits::ObligationCause::new(origin.span(),
                                                          rcx.body_id,
                                                          traits::ItemObligation(def_id));
