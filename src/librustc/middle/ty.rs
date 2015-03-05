@@ -2981,6 +2981,10 @@ pub fn mk_nil<'tcx>(cx: &ctxt<'tcx>) -> Ty<'tcx> {
     mk_tup(cx, Vec::new())
 }
 
+pub fn mk_bool<'tcx>(cx: &ctxt<'tcx>) -> Ty<'tcx> {
+    mk_t(cx, ty_bool)
+}
+
 pub fn mk_bare_fn<'tcx>(cx: &ctxt<'tcx>,
                         opt_def_id: Option<ast::DefId>,
                         fty: &'tcx BareFnTy<'tcx>) -> Ty<'tcx> {
