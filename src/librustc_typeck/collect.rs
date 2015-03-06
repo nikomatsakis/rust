@@ -1466,7 +1466,7 @@ fn convert_trait_predicates<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>, it: &ast::Item)
 
     // add in the explicit where-clauses
     let mut trait_predicates =
-        ty_generic_predicates(ccx, TypeSpace, generics, &base_predicates);
+        ty_generic_predicates(ccx, TypeSpace, SizedByDefault::Yes, generics, &base_predicates);
 
     let assoc_predicates = predicates_for_associated_types(ccx,
                                                            generics,
@@ -1724,7 +1724,8 @@ fn ty_generic_predicates_for_type_or_impl<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>,
                                                    generics: &ast::Generics)
                                                    -> ty::GenericPredicates<'tcx>
 {
-    ty_generic_predicates(ccx, TypeSpace, generics, &ty::GenericPredicates::empty())
+    ty_generic_predicates(ccx, TypeSpace, SizedByDefault::Yes,
+                          generics, &ty::GenericPredicates::empty())
 }
 
 fn ty_generics_for_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
@@ -1773,7 +1774,7 @@ fn ty_generic_predicates_for_fn<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>,
                                          base_predicates: &ty::GenericPredicates<'tcx>)
                                          -> ty::GenericPredicates<'tcx>
 {
-    ty_generic_predicates(ccx, FnSpace, generics, base_predicates)
+    ty_generic_predicates(ccx, FnSpace, SizedByDefault::No, generics, base_predicates)
 }
 
 // Add the Sized bound, unless the type parameter is marked as `?Sized`.
@@ -1840,6 +1841,7 @@ fn early_bound_lifetimes_from_generics(space: ParamSpace,
 
 fn ty_generic_predicates<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>,
                                   space: ParamSpace,
+                                  sized_by_default: SizedByDefault,
                                   ast_generics: &ast::Generics,
                                   base_predicates: &ty::GenericPredicates<'tcx>)
                                   -> ty::GenericPredicates<'tcx>
@@ -1855,7 +1857,7 @@ fn ty_generic_predicates<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>,
         let bounds = compute_bounds(&ccx.icx(&(base_predicates, ast_generics)),
                                     param_ty,
                                     &param.bounds,
-                                    SizedByDefault::Yes,
+                                    sized_by_default,
                                     param.span);
         let predicates = ty::predicates(ccx.tcx, param_ty, &bounds);
         result.predicates.extend(space, predicates.into_iter());
@@ -2087,7 +2089,8 @@ fn compute_object_lifetime_default<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>,
     }
 }
 
-enum SizedByDefault { Yes, No, }
+#[derive(Copy)]
+enum SizedByDefault { Yes, No }
 
 /// Translate the AST's notion of ty param bounds (which are an enum consisting of a newtyped Ty or
 /// a region) to ty's notion of ty param bounds, which can either be user-defined traits, or the
