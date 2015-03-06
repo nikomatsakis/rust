@@ -23,6 +23,7 @@ use std::slice::Iter;
 use std::rc::Rc;
 use syntax::ast;
 use syntax::codemap::{Span, DUMMY_SP};
+use util::common::ErrorReported;
 use util::ppaux::{Repr, UserString};
 
 pub use self::error_reporting::report_fulfillment_errors;
@@ -459,6 +460,22 @@ pub fn normalize_param_env_or_error<'a,'tcx>(unnormalized_env: ty::ParameterEnvi
            predicates.repr(tcx));
 
     unnormalized_env.with_caller_bounds(predicates)
+}
+
+pub fn fully_normalize_or_error<'a,'tcx,T>(infcx: &InferCtxt<'a,'tcx>,
+                                           closure_typer: &ty::ClosureTyper<'tcx>,
+                                           cause: ObligationCause<'tcx>,
+                                           value: &T)
+                                           -> Result<T,ErrorReported>
+    where T : TypeFoldable<'tcx> + ty::HasProjectionTypes + Clone + Repr<'tcx>
+{
+    match fully_normalize(infcx, closure_typer, cause, value) {
+        Ok(result) => Ok(result),
+        Err(errors) => {
+            report_fulfillment_errors(infcx, &errors);
+            Err(ErrorReported)
+        }
+    }
 }
 
 pub fn fully_normalize<'a,'tcx,T>(infcx: &InferCtxt<'a,'tcx>,

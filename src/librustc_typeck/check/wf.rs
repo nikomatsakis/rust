@@ -137,15 +137,10 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
     {
         let ccx = self.ccx;
         let item_def_id = local_def(item.id);
+        let param_env = ty::ParameterEnvironment::for_item(ccx.tcx, item.id);
         let type_scheme = ty::lookup_item_type(ccx.tcx, item_def_id);
         let type_predicates = ty::lookup_predicates(ccx.tcx, item_def_id);
         reject_non_type_param_bounds(ccx.tcx, item.span, &type_predicates);
-        let param_env =
-            ty::construct_parameter_environment(ccx.tcx,
-                                                item.span,
-                                                &type_scheme.generics,
-                                                &type_predicates,
-                                                item.id);
         let inh = Inherited::new(ccx.tcx, param_env);
         let fcx = blank_fn_ctxt(ccx, &inh, ty::FnConverging(type_scheme.ty), item.id);
         f(self, &fcx);

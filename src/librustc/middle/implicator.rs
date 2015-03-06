@@ -11,7 +11,8 @@
 // #![warn(deprecated_mode)]
 
 use middle::infer::{InferCtxt, GenericKind};
-use middle::subst::{Substs};
+use middle::region;
+use middle::subst::{Subst, Substs};
 use middle::traits;
 use middle::ty::{self, RegionEscape, ToPolyTraitRef, Ty};
 use middle::ty_fold::{TypeFoldable, TypeFolder};
@@ -402,23 +403,15 @@ impl<'a, 'tcx> Implicator<'a, 'tcx> {
     fn fully_normalize<T>(&self, value: &T) -> Result<T,ErrorReported>
         where T : TypeFoldable<'tcx> + ty::HasProjectionTypes + Clone + Repr<'tcx>
     {
-        let value =
-            traits::fully_normalize(self.infcx,
-                                    self.closure_typer,
-                                    traits::ObligationCause::misc(self.span, self.body_id),
-                                    value);
-        match value {
-            Ok(value) => Ok(value),
-            Err(errors) => {
-                // I don't like reporting these errors here, but I
-                // don't know where else to report them just now. And
-                // I don't really expect errors to arise here
-                // frequently. I guess the best option would be to
-                // propagate them out.
-                traits::report_fulfillment_errors(self.infcx, &errors);
-                Err(ErrorReported)
-            }
-        }
+        // I don't like reporting these errors here, but I
+        // don't know where else to report them just now. And
+        // I don't really expect errors to arise here
+        // frequently. I guess the best option would be to
+        // propagate them out.
+        traits::fully_normalize_or_error(self.infcx,
+                                         self.closure_typer,
+                                         traits::ObligationCause::misc(self.span, self.body_id),
+                                         value)
     }
 }
 
@@ -484,4 +477,87 @@ pub fn object_region_bounds<'tcx>(
 
     let predicates = ty::predicates(tcx, open_ty, &param_bounds);
     ty::required_region_bounds(tcx, open_ty, predicates)
+}
+
+pub fn implied_bounds<'a,'tcx>(infcx: &'a InferCtxt<'a,'tcx>,
+                               closure_typer: &ty::ClosureTyper<'tcx>,
+                               body_id: ast::NodeId,
+
+                               // this fn sig should be straight from the fn def'n, so
+                               // not normalized or liberated or anything.
+                               fn_sig: &ty::PolyFnSig<'tcx>,
+                               span: Span)
+                               -> Result<Vec<ty::Predicate<'tcx>>, ErrorReported>
+{
+    let tcx = closure_typer.tcx();
+
+    debug!("implied_bounds(fn_sig={}, body_id={})",
+           fn_sig.repr(tcx),
+           body_id);
+
+    // Fully normalize and liberate.
+    // TODO not very DRY
+    let param_env =
+        closure_typer.param_env();
+    let fn_sig =
+        fn_sig.subst(tcx, &param_env.free_substs);
+    let fn_sig =
+        ty::liberate_late_bound_regions(tcx,
+                                        region::DestructionScopeData::new(body_id),
+                                        &fn_sig);
+    let fn_sig =
+        try!(traits::fully_normalize_or_error(infcx,
+                                              closure_typer,
+                                              traits::ObligationCause::misc(span, body_id),
+                                              &fn_sig));
+
+    debug!("implied_bounds: fn_sig={}", fn_sig.repr(tcx));
+
+    // Derive what predicates we can from the inputs and return type.
+    let mut predicates: Vec<_> =
+        fn_sig.inputs
+              .iter()
+              .chain(fn_sig.output.converging().iter())
+              .flat_map(|ty| implications(&infcx, closure_typer, body_id,
+                                          ty, ty::ReEmpty, span).into_iter())
+              .filter_map(|implication| {
+                  match implication {
+                      Implication::Predicate(_, predicate) =>
+                          Some(predicate),
+
+                      Implication::RegionSubRegion(..) |
+                      Implication::RegionSubGeneric(..) =>
+                          None, // these are handled in regionck
+                  }
+              })
+              .collect();
+
+    debug!("implied_bounds: predicates (all) = {}",
+           predicates.repr(tcx));
+
+    // To workaround #21974, we strip out some builtin predicates
+    // for now. This is insufficient and not great given that part
+    // of the point here is just to infer Sized. We'll revisit
+    // this!
+    predicates.retain(|predicate| {
+        match *predicate {
+            ty::Predicate::Trait(ref data) => {
+                match tcx.lang_items.to_builtin_kind(data.def_id()) {
+                    Some(ty::BoundSized) => { }
+                    _ => { return false; }
+                }
+
+                match data.unbound().self_ty().sty {
+                    ty::ty_param(..) => true,
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    });
+
+    debug!("implied_bounds: predicates (retained) = {}",
+           predicates.repr(tcx));
+
+    Ok(predicates)
 }

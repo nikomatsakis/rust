@@ -52,6 +52,7 @@ use middle::lang_items::{FnOnceTraitLangItem, TyDescStructLangItem};
 use middle::mem_categorization as mc;
 use middle::region;
 use middle::resolve_lifetime;
+use middle::implicator;
 use middle::infer;
 use middle::stability;
 use middle::subst::{self, ParamSpace, Subst, Substs, VecPerParamSpace};
@@ -2295,13 +2296,12 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                         let method_def_id = ast_util::local_def(id);
                         match ty::impl_or_trait_item(cx, method_def_id) {
                             MethodTraitItem(ref method_ty) => {
-                                let method_generics = &method_ty.generics;
-                                let method_bounds = &method_ty.predicates;
-                                construct_parameter_environment(
+                                construct_parameter_environment_with_implied_bounds(
                                     cx,
                                     method.span,
-                                    method_generics,
-                                    method_bounds,
+                                    &method_ty.generics,
+                                    &method_ty.predicates,
+                                    &method_ty.fty.sig,
                                     method.pe_body().id)
                             }
                             TypeTraitItem(_) => {
@@ -2332,13 +2332,12 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                         let method_def_id = ast_util::local_def(id);
                         match ty::impl_or_trait_item(cx, method_def_id) {
                             MethodTraitItem(ref method_ty) => {
-                                let method_generics = &method_ty.generics;
-                                let method_bounds = &method_ty.predicates;
-                                construct_parameter_environment(
+                                construct_parameter_environment_with_implied_bounds(
                                     cx,
                                     method.span,
-                                    method_generics,
-                                    method_bounds,
+                                    &method_ty.generics,
+                                    &method_ty.predicates,
+                                    &method_ty.fty.sig,
                                     method.pe_body().id)
                             }
                             TypeTraitItem(_) => {
@@ -2359,16 +2358,15 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
             Some(ast_map::NodeItem(item)) => {
                 match item.node {
                     ast::ItemFn(_, _, _, _, ref body) => {
-                        // We assume this is a function.
                         let fn_def_id = ast_util::local_def(id);
                         let fn_scheme = lookup_item_type(cx, fn_def_id);
-                        let fn_predicates = lookup_predicates(cx, fn_def_id);
-
-                        construct_parameter_environment(cx,
-                                                        item.span,
-                                                        &fn_scheme.generics,
-                                                        &fn_predicates,
-                                                        body.id)
+                        construct_parameter_environment_with_implied_bounds(
+                            cx,
+                            item.span,
+                            &fn_scheme.generics,
+                            &lookup_predicates(cx, fn_def_id),
+                            ty_fn_sig(fn_scheme.ty),
+                            body.id)
                     }
                     ast::ItemEnum(..) |
                     ast::ItemStruct(..) |
@@ -6406,6 +6404,30 @@ pub fn construct_free_substs<'a,'tcx>(
             types.push(def.space, ty);
        }
     }
+}
+
+/// See `ParameterEnvironment` struct def'n for details
+pub fn construct_parameter_environment_with_implied_bounds<'a,'tcx>(
+    tcx: &'a ctxt<'tcx>,
+    span: Span,
+    generics: &ty::Generics<'tcx>,
+    generic_predicates: &ty::GenericPredicates<'tcx>,
+    fn_sig: &ty::PolyFnSig<'tcx>,
+    free_id: ast::NodeId)
+    -> ParameterEnvironment<'a, 'tcx>
+{
+    let mut param_env =
+        construct_parameter_environment(tcx, span, generics, generic_predicates, free_id);
+    let infcx = infer::new_infer_ctxt(tcx);
+    let addl_bounds = match implicator::implied_bounds(&infcx, &param_env, free_id, fn_sig, span) {
+        Ok(b) => b,
+        Err(ErrorReported) => {
+            // if we encounter errors trying to compute implied bounds, just ignore them
+            return param_env;
+        }
+    };
+    param_env.caller_bounds.extend(addl_bounds);
+    param_env
 }
 
 /// See `ParameterEnvironment` struct def'n for details
