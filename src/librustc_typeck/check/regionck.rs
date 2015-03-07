@@ -372,24 +372,6 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
                         // relationship that arises here, but
                         // presently we do not.)
                     }
-<<<<<<< variant A
->>>>>>> variant B
-                    Implication::RegionSubGeneric(_, r_a, ref generic_b) => {
-                        debug!("RegionSubGeneric: {} <= {}",
-                               r_a.repr(tcx), generic_b.repr(tcx));
-
-                        self.region_bound_pairs.push((r_a, generic_b.clone()));
-                    }
-                    Implication::Predicate(..) => { }
-####### Ancestor
-                    implicator::Implication::RegionSubGeneric(_, r_a, ref generic_b) => {
-                        debug!("RegionSubGeneric: {} <= {}",
-                               r_a.repr(tcx), generic_b.repr(tcx));
-
-                        self.region_bound_pairs.push((r_a, generic_b.clone()));
-                    }
-                    implicator::Implication::Predicate(..) => { }
-======= end
                 }
             }
         }
@@ -1427,16 +1409,10 @@ pub fn type_must_outlive<'a, 'tcx>(rcx: &mut Rcx<'a, 'tcx>,
                 let o1 = infer::ReferenceOutlivesReferent(ty, origin.span());
                 generic_must_outlive(rcx, o1, r_a, generic_b);
             }
-<<<<<<< variant A
-            implicator::Implication::RegionSubClosure(_, r_a, def_id, substs) => {
+            Implication::RegionSubClosure(_, r_a, def_id, substs) => {
                 closure_must_outlive(rcx, origin.clone(), r_a, def_id, substs);
             }
-            implicator::Implication::Predicate(def_id, predicate) => {
->>>>>>> variant B
             Implication::Predicate(def_id, predicate) => {
-####### Ancestor
-            implicator::Implication::Predicate(def_id, predicate) => {
-======= end
                 let cause = traits::ObligationCause::new(origin.span(),
                                                          rcx.body_id,
                                                          traits::ItemObligation(def_id));

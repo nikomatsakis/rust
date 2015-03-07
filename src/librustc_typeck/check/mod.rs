@@ -540,6 +540,7 @@ fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
 
                           // these are handled in regionck
                           Implication::RegionSubRegion(..) |
+                          Implication::RegionSubClosure(..) |
                           Implication::RegionSubGeneric(..) => None,
                       }
                   })
@@ -557,7 +558,7 @@ fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                         _ => { return false; }
                     }
 
-                    match data.unbound().self_ty().sty {
+                    match data.skip_binder().self_ty().sty {
                         ty::ty_param(..) => true,
                         _ => false,
                     }

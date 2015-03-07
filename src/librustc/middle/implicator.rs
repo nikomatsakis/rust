@@ -526,6 +526,7 @@ pub fn implied_bounds<'a,'tcx>(infcx: &'a InferCtxt<'a,'tcx>,
                           Some(predicate),
 
                       Implication::RegionSubRegion(..) |
+                      Implication::RegionSubClosure(..) |
                       Implication::RegionSubGeneric(..) =>
                           None, // these are handled in regionck
                   }
