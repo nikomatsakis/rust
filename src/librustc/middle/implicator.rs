@@ -14,7 +14,7 @@ use middle::infer::{InferCtxt, GenericKind};
 use middle::region;
 use middle::subst::{Subst, Substs};
 use middle::traits;
-use middle::ty::{self, RegionEscape, ToPolyTraitRef, Ty};
+use middle::ty::{self, AsPredicate, RegionEscape, ToPolyTraitRef, Ty};
 use middle::ty_fold::{TypeFoldable, TypeFolder};
 
 use std::rc::Rc;
@@ -536,6 +536,20 @@ pub fn implied_bounds<'a,'tcx>(infcx: &'a InferCtxt<'a,'tcx>,
     debug!("implied_bounds: predicates (all) = {}",
            predicates.repr(tcx));
 
+    // Additionally add the predicate that the return type must be
+    // `Sized`, if it just a single parameter type.
+    match fn_sig.output.converging() {
+        Some(ret_ty) if is_param(ret_ty) => {
+            if let Some(sized_def_id) = tcx.lang_items.sized_trait() {
+                let substs = Substs::new_trait(vec![], vec![], ret_ty);
+                let substs = tcx.mk_substs(substs);
+                let trait_ref = Rc::new(ty::TraitRef::new(sized_def_id, substs));
+                predicates.push(trait_ref.as_predicate());
+            }
+        }
+        _ => { }
+    }
+
     // To workaround #21974, we strip out some builtin predicates
     // for now. This is insufficient and not great given that part
     // of the point here is just to infer Sized. We'll revisit
@@ -548,10 +562,7 @@ pub fn implied_bounds<'a,'tcx>(infcx: &'a InferCtxt<'a,'tcx>,
                     _ => { return false; }
                 }
 
-                match data.unbound().self_ty().sty {
-                    ty::ty_param(..) => true,
-                    _ => false,
-                }
+                is_param(data.skip_binder().self_ty())
             }
             _ => false,
         }
@@ -560,5 +571,12 @@ pub fn implied_bounds<'a,'tcx>(infcx: &'a InferCtxt<'a,'tcx>,
     debug!("implied_bounds: predicates (retained) = {}",
            predicates.repr(tcx));
 
-    Ok(predicates)
+    return Ok(predicates);
+
+    fn is_param<'tcx>(ty: Ty<'tcx>) -> bool {
+        match ty.sty {
+            ty::ty_param(..) => true,
+            _ => false,
+        }
+    }
 }
