@@ -2926,39 +2926,78 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
                                   lhs_expr: &'tcx ast::Expr,
                                   lhs_resolved_t: Ty<'tcx>,
                                   op: ast::BinOp,
-                                  rhs: &'tcx P<ast::Expr>) -> Ty<'tcx> {
+                                  rhs: &'tcx P<ast::Expr>)
+                                  -> Ty<'tcx>
+    {
         let tcx = fcx.ccx.tcx;
         let lang = &tcx.lang_items;
-        let (name, trait_did) = match op.node {
-            ast::BiAdd => ("add", lang.add_trait()),
-            ast::BiSub => ("sub", lang.sub_trait()),
-            ast::BiMul => ("mul", lang.mul_trait()),
-            ast::BiDiv => ("div", lang.div_trait()),
-            ast::BiRem => ("rem", lang.rem_trait()),
-            ast::BiBitXor => ("bitxor", lang.bitxor_trait()),
-            ast::BiBitAnd => ("bitand", lang.bitand_trait()),
-            ast::BiBitOr => ("bitor", lang.bitor_trait()),
-            ast::BiShl => ("shl", lang.shl_trait()),
-            ast::BiShr => ("shr", lang.shr_trait()),
-            ast::BiLt => ("lt", lang.ord_trait()),
-            ast::BiLe => ("le", lang.ord_trait()),
-            ast::BiGe => ("ge", lang.ord_trait()),
-            ast::BiGt => ("gt", lang.ord_trait()),
-            ast::BiEq => ("eq", lang.eq_trait()),
-            ast::BiNe => ("ne", lang.eq_trait()),
+        let (name, trait_did, is_comparison) = match op.node {
+            ast::BiAdd => ("add", lang.add_trait(), false),
+            ast::BiSub => ("sub", lang.sub_trait(), false),
+            ast::BiMul => ("mul", lang.mul_trait(), false),
+            ast::BiDiv => ("div", lang.div_trait(), false),
+            ast::BiRem => ("rem", lang.rem_trait(), false),
+            ast::BiBitXor => ("bitxor", lang.bitxor_trait(), false),
+            ast::BiBitAnd => ("bitand", lang.bitand_trait(), false),
+            ast::BiBitOr => ("bitor", lang.bitor_trait(), false),
+            ast::BiShl => ("shl", lang.shl_trait(), false),
+            ast::BiShr => ("shr", lang.shr_trait(), false),
+            ast::BiLt => ("lt", lang.ord_trait(), true),
+            ast::BiLe => ("le", lang.ord_trait(), true),
+            ast::BiGe => ("ge", lang.ord_trait(), true),
+            ast::BiGt => ("gt", lang.ord_trait(), true),
+            ast::BiEq => ("eq", lang.eq_trait(), true),
+            ast::BiNe => ("ne", lang.eq_trait(), true),
             ast::BiAnd | ast::BiOr => {
                 // TODO(japaric) use span_bug
                 unreachable!();
             }
         };
-        lookup_op_method(fcx, ex, lhs_resolved_t, token::intern(name),
-                         trait_did, lhs_expr, Some(rhs), || {
+
+        let autoref_args =
+            if ast_util::is_by_value_binop(op.node) {
+                AutorefArgs::No
+            } else {
+                AutorefArgs::Yes
+            };
+
+        let report_error = || {
             fcx.type_error_message(ex.span, |actual| {
                 format!("binary operation `{}` cannot be applied to type `{}`",
                         ast_util::binop_to_string(op.node),
                         actual)
             }, lhs_resolved_t, None)
-        }, if ast_util::is_by_value_binop(op.node) { AutorefArgs::No } else { AutorefArgs::Yes })
+        };
+
+        let output_ty =
+            lookup_op_method(fcx,
+                             ex,
+                             lhs_resolved_t,
+                             token::intern(name),
+                             trait_did,
+                             lhs_expr,
+                             Some(rhs),
+                             report_error,
+                             autoref_args);
+
+        // Special case rule to aid type inference: operational
+        // operators always yield boolean; for non-operational
+        // operators, if both left and right hand side types are
+        // integral, then the result type also be the same as the LHS.
+        if
+            is_comparison
+        {
+            demand::eqtype(fcx, ex.span, ty::mk_bool(fcx.tcx()), output_ty);
+        } else if
+            ty::type_is_integral(lhs_resolved_t) && {
+                let rhs_resolved_t = fcx.resolve_type_vars_if_possible(fcx.expr_ty(rhs));
+                ty::type_is_integral(rhs_resolved_t)
+            }
+        {
+            demand::eqtype(fcx, ex.span, lhs_resolved_t, output_ty);
+        }
+
+        output_ty
     }
 
     fn check_user_unop<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
