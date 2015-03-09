@@ -38,6 +38,7 @@
                         functionality.")]
 #![allow(deprecated)]
 
+use marker::Sized;
 use ops::{Drop, FnMut, FnOnce};
 
 /// A trait for executing a destructor unconditionally after a block of code,
@@ -86,7 +87,7 @@ impl<T, F> Finally<T> for F where F: FnMut() -> T {
 /// ```
 pub fn try_finally<T, U, R, F, G>(mutate: &mut T, drop: U, try_fn: F, finally_fn: G) -> R where
     F: FnOnce(&mut T, U) -> R,
-    G: FnMut(&mut T),
+    G: FnMut(&mut T) + Sized,
 {
     let f = Finallyalizer {
         mutate: mutate,
@@ -95,7 +96,7 @@ pub fn try_finally<T, U, R, F, G>(mutate: &mut T, drop: U, try_fn: F, finally_fn
     try_fn(&mut *f.mutate, drop)
 }
 
-struct Finallyalizer<'a, A:'a, F> where F: FnMut(&mut A) {
+struct Finallyalizer<'a, A:'a+?Sized, F> where F: FnMut(&mut A) {
     mutate: &'a mut A,
     dtor: F,
 }

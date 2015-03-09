@@ -2802,7 +2802,9 @@ impl<A: Clone> RandomAccessIterator for Repeat<A> {
     fn idx(&mut self, _: usize) -> Option<A> { Some(self.element.clone()) }
 }
 
-type IterateState<T, F> = (F, Option<T>, bool);
+/// Internal state for the `Unfold` iterator.
+#[unstable(feature = "core")]
+pub struct IterateState<T, F>(F, Option<T>, bool);
 
 /// An iterator that repeatedly applies a given function, starting
 /// from a given seed value.
@@ -2820,7 +2822,7 @@ pub fn iterate<T, F>(seed: T, f: F) -> Iterate<T, F> where
         T: Clone,
         F: FnMut(T) -> T,
     {
-        let &mut (ref mut f, ref mut val, ref mut first) = st;
+        let &mut IterateState(ref mut f, ref mut val, ref mut first) = st;
         if *first {
             *first = false;
         } else {
@@ -2837,7 +2839,7 @@ pub fn iterate<T, F>(seed: T, f: F) -> Iterate<T, F> where
     // coerce to a fn pointer
     let next: fn(&mut IterateState<T,F>) -> Option<T> = next;
 
-    Unfold::new((f, Some(seed), true), next)
+    Unfold::new(IterateState(f, Some(seed), true), next)
 }
 
 /// Create a new iterator that endlessly repeats the element `elt`.

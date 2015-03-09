@@ -98,7 +98,7 @@
 /// }
 /// ```
 #[stable(feature = "rust1", since = "1.0.0")]
-pub trait Default {
+pub trait Default : ::marker::Sized {
     /// Returns the "default value" for a type.
     ///
     /// Default values are often some kind of initial value, identity value, or anything else that

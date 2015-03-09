@@ -176,7 +176,7 @@ pub unsafe fn zero_memory<T>(dst: *mut T, count: usize) {
 /// This is only unsafe because it accepts a raw pointer.
 #[inline]
 #[stable(feature = "rust1", since = "1.0.0")]
-pub unsafe fn swap<T>(x: *mut T, y: *mut T) {
+pub unsafe fn swap<T:Sized>(x: *mut T, y: *mut T) {
     // Give ourselves some scratch space to work with
     let mut tmp: T = mem::uninitialized();
     let t: *mut T = &mut tmp;

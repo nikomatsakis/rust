@@ -722,9 +722,9 @@ fn check_fn<'a, 'tcx>(ccx: &'a CrateCtxt<'a, 'tcx>,
                 &tcx.def_map,
                 &*input.pat,
                 |_bm, pat_id, sp, _path| {
-                    let var_ty = visit.assign(sp, pat_id, None);
-                    fcx.require_type_is_sized(var_ty, sp,
-                                              traits::VariableType(pat_id));
+                    /* let var_ty = */ visit.assign(sp, pat_id, None);
+                    // TODO fcx.require_type_is_sized(var_ty, sp,
+                    // TODO traits::VariableType(pat_id));
                 });
 
             // Check the pattern.

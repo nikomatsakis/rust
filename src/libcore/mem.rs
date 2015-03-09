@@ -197,7 +197,7 @@ pub unsafe fn uninitialized<T>() -> T {
 /// ```
 #[inline]
 #[stable(feature = "rust1", since = "1.0.0")]
-pub fn swap<T>(x: &mut T, y: &mut T) {
+pub fn swap<T:Sized>(x: &mut T, y: &mut T) {
     unsafe {
         // Give ourselves some scratch space to work with
         let mut t: T = uninitialized();
