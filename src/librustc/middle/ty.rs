@@ -5763,26 +5763,33 @@ pub fn closure_upvars<'tcx>(typer: &mc::Typer<'tcx>,
     }
 }
 
-pub fn is_binopable<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>, op: ast::BinOp) -> bool {
+// TODO(japaric) this will likely be used to tell builtin binops apart from overloaded binops
+// *after* type cheking, therefore it should use the concrete type information (`sty`) instead of
+// type categorization
+pub fn is_builtin_binop<'tcx>(cx: &ctxt<'tcx>,
+                              lhs: Ty<'tcx>,
+                              rhs: Ty<'tcx>,
+                              op: ast::BinOp,
+                              ) -> bool {
     #![allow(non_upper_case_globals)]
-    const tycat_other: int = 0;
-    const tycat_bool: int = 1;
-    const tycat_char: int = 2;
-    const tycat_int: int = 3;
-    const tycat_float: int = 4;
-    const tycat_raw_ptr: int = 6;
+    const tycat_other: usize = 0;
+    const tycat_bool: usize = 1;
+    const tycat_char: usize = 2;
+    const tycat_int: usize = 3;
+    const tycat_float: usize = 4;
+    const tycat_raw_ptr: usize = 6;
 
-    const opcat_add: int = 0;
-    const opcat_sub: int = 1;
-    const opcat_mult: int = 2;
-    const opcat_shift: int = 3;
-    const opcat_rel: int = 4;
-    const opcat_eq: int = 5;
-    const opcat_bit: int = 6;
-    const opcat_logic: int = 7;
-    const opcat_mod: int = 8;
+    const opcat_add: usize = 0;
+    const opcat_sub: usize = 1;
+    const opcat_mult: usize = 2;
+    const opcat_shift: usize = 3;
+    const opcat_rel: usize = 4;
+    const opcat_eq: usize = 5;
+    const opcat_bit: usize = 6;
+    const opcat_logic: usize = 7;
+    const opcat_mod: usize = 8;
 
-    fn opcat(op: ast::BinOp) -> int {
+    fn opcat(op: ast::BinOp) -> usize {
         match op.node {
           ast::BiAdd => opcat_add,
           ast::BiSub => opcat_sub,
@@ -5805,7 +5812,7 @@ pub fn is_binopable<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>, op: ast::BinOp) -> bool
         }
     }
 
-    fn tycat<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> int {
+    fn tycat<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> usize {
         if type_is_simd(cx, ty) {
             return tycat(cx, simd_type(cx, ty))
         }
@@ -5832,7 +5839,10 @@ pub fn is_binopable<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>, op: ast::BinOp) -> bool
     /*bot*/     [t, t, t, t,     t,   t,  t,   t,     t],
     /*raw ptr*/ [f, f, f, f,     t,   t,  f,   f,     f]];
 
-    return tbl[tycat(cx, ty) as uint ][opcat(op) as uint];
+    let lhs_cat = tycat(cx, lhs);
+    let rhs_cat = tycat(cx, rhs);
+
+    lhs_cat == rhs_cat && tbl[lhs_cat][opcat(op)]
 }
 
 // Returns the repeat count for a repeating vector expression.
