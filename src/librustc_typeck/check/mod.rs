@@ -2997,6 +2997,39 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
             }
         {
             demand::eqtype(fcx, ex.span, lhs_resolved_t, output_ty);
+
+            match op.node {
+                ast::BiShl | ast::BiShr => {
+                    // RHS can have a different type than LHS in this case
+                },
+                ast::BiAnd | ast::BiOr => {
+                    // TODO(japaric) use span_bug
+                    unreachable!();
+                },
+                _ => {
+                    demand::eqtype(fcx, ex.span, lhs_resolved_t, fcx.expr_ty(rhs));
+                }
+            }
+        } else if
+            ty::type_is_floating_point(lhs_resolved_t) && {
+                let rhs_resolved_t = fcx.resolve_type_vars_if_possible(fcx.expr_ty(rhs));
+                ty::type_is_floating_point(rhs_resolved_t)
+            }
+        {
+            demand::eqtype(fcx, ex.span, lhs_resolved_t, output_ty);
+
+            match op.node {
+                ast::BiShl | ast::BiShr => {
+                    // RHS can have a different type than LHS in this case
+                },
+                ast::BiAnd | ast::BiOr => {
+                    // TODO(japaric) use span_bug
+                    unreachable!();
+                },
+                _ => {
+                    demand::eqtype(fcx, ex.span, lhs_resolved_t, fcx.expr_ty(rhs));
+                }
+            }
         }
 
         output_ty
