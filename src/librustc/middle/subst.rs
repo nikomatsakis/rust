@@ -539,6 +539,7 @@ impl<T> IntoIterator for VecPerParamSpace<T> {
     }
 }
 
+#[wtf]
 impl<'a,T> IntoIterator for &'a VecPerParamSpace<T> {
     type Item = &'a T;
     type IntoIter = Iter<'a, T>;

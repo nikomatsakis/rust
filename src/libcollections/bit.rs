@@ -1072,6 +1072,7 @@ impl<'a> RandomAccessIterator for Iter<'a> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
+#[wtf]
 impl<'a> IntoIterator for &'a BitVec {
     type Item = bool;
     type IntoIter = Iter<'a>;
@@ -1895,6 +1896,7 @@ impl<'a> Iterator for SymmetricDifference<'a> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
+#[wtf]
 impl<'a> IntoIterator for &'a BitSet {
     type Item = usize;
     type IntoIter = SetIter<'a>;

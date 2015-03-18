@@ -279,6 +279,7 @@ impl<T: fmt::Debug + ?Sized> fmt::Debug for Box<T> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
+#[wtf]
 impl fmt::Debug for Box<Any> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.pad("Box<Any>")
@@ -311,6 +312,7 @@ impl<I: DoubleEndedIterator + ?Sized> DoubleEndedIterator for Box<I> {
 impl<I: ExactSizeIterator + ?Sized> ExactSizeIterator for Box<I> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
+#[wtf] // TODO
 impl<'a, E: Error + 'a> FromError<E> for Box<Error + 'a> {
     fn from_error(err: E) -> Box<Error + 'a> {
         Box::new(err)
