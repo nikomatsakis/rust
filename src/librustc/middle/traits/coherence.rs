@@ -23,6 +23,7 @@ use middle::infer::{self, InferCtxt};
 use std::collections::HashSet;
 use std::rc::Rc;
 use syntax::ast;
+use syntax::ast_util::is_local;
 use syntax::codemap::DUMMY_SP;
 use util::ppaux::Repr;
 
@@ -56,6 +57,11 @@ fn overlap(selcx: &mut SelectionContext,
            a_def_id.repr(selcx.tcx()),
            b_def_id.repr(selcx.tcx()));
 
+    // TODO
+    let wtf =
+        (is_local(a_def_id) && ty::has_attr(selcx.tcx(), a_def_id, "wtf")) ||
+        (is_local(b_def_id) && ty::has_attr(selcx.tcx(), b_def_id, "wtf"));
+
     let (a_trait_ref, a_obligations) = impl_trait_ref_and_oblig(selcx, a_def_id);
     let (b_trait_ref, b_obligations) = impl_trait_ref_and_oblig(selcx, b_def_id);
 
@@ -74,17 +80,55 @@ fn overlap(selcx: &mut SelectionContext,
     debug!("overlap: subtraitref check succeeded");
 
     // Are any of the obligations unsatisfiable? If so, no overlap.
+    let tcx = selcx.tcx();
+    let infcx = selcx.infcx();
     let opt_failing_obligation =
         a_obligations.iter()
                      .chain(b_obligations.iter())
+                     .map(|o| infcx.resolve_type_vars_if_possible(o))
+                     .filter(|o| wtf || local_obligation(tcx, o))
                      .find(|o| !selcx.evaluate_obligation(o));
 
     if let Some(failing_obligation) = opt_failing_obligation {
-        debug!("overlap: obligation unsatisfiable {}", failing_obligation.repr(selcx.tcx()));
-        return false;
+        debug!("overlap: obligation unsatisfiable {}", failing_obligation.repr(tcx));
+        return false
     }
 
     true
+}
+
+fn local_obligation<'tcx>(tcx: &ty::ctxt<'tcx>, obligation: &PredicateObligation<'tcx>) -> bool {
+    debug!("local_obligation(obligation={})", obligation.repr(tcx));
+    match obligation.predicate {
+        ty::Predicate::Trait(ref data) => {
+            // TODO special-case sized trait in a very crude way for now
+            let is_sized_trait = Some(data.def_id()) == tcx.lang_items.sized_trait();
+
+            debug!("local_obligation: data={:?} is_sized_trait={}",
+                   data, is_sized_trait);
+
+            is_sized_trait ||
+                data.def_id().krate == ast::LOCAL_CRATE ||
+                local_type(data.skip_binder().self_ty())
+        }
+        _ => false,
+    }
+}
+
+fn local_type<'tcx>(ty: Ty<'tcx>) -> bool {
+    debug!("local_type: data={:?}", ty.sty);
+    match ty.sty {
+        ty::ty_enum(def_id, _) |
+        ty::ty_struct(def_id, _) => {
+            def_id.krate == ast::LOCAL_CRATE
+        }
+        ty::ty_trait(ref data) => {
+            data.principal_def_id().krate == ast::LOCAL_CRATE
+        }
+        _ => {
+            false
+        }
+    }
 }
 
 /// Instantiate fresh variables for all bound parameters of the impl
