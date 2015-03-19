@@ -465,7 +465,9 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         // terms of `Fn` etc, but we could probably make this more
         // precise still.
         let input_types = stack.fresh_trait_ref.0.input_types();
-        let unbound_input_types = input_types.iter().any(|&t| ty::type_is_fresh(t));
+        let unbound_input_types = input_types.iter()
+                                             .flat_map(|t| t.walk())
+                                             .any(|t| ty::type_is_fresh(t));
         if
             unbound_input_types &&
              (self.intercrate ||
