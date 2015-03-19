@@ -2218,9 +2218,9 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             return Err(());
         }
 
-        let impl_substs = util::fresh_substs_for_impl(self.infcx,
-                                                      obligation.cause.span,
-                                                      impl_def_id);
+        let impl_substs = util::fresh_type_vars_for_impl(self.infcx,
+                                                         obligation.cause.span,
+                                                         impl_def_id);
 
         let impl_trait_ref = impl_trait_ref.subst(self.tcx(),
                                                   &impl_substs);
@@ -2338,9 +2338,9 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     {
         // Create fresh type variables for each type parameter declared
         // on the impl etc.
-        let impl_substs = util::fresh_substs_for_impl(self.infcx,
-                                                      obligation_cause.span,
-                                                      impl_def_id);
+        let impl_substs = util::fresh_type_vars_for_impl(self.infcx,
+                                                         obligation_cause.span,
+                                                         impl_def_id);
 
         // Find the self type for the impl.
         let impl_self_ty = ty::lookup_item_type(self.tcx(), impl_def_id).ty;
