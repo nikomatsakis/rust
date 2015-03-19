@@ -95,7 +95,7 @@ fn impl_trait_ref_and_oblig<'a,'tcx>(selcx: &mut SelectionContext<'a,'tcx>,
                                          Vec<PredicateObligation<'tcx>>)
 {
     let impl_substs =
-        &util::fresh_substs_for_impl(selcx.infcx(), DUMMY_SP, impl_def_id);
+        &util::fresh_type_vars_for_impl(selcx.infcx(), DUMMY_SP, impl_def_id);
     let impl_trait_ref =
         ty::impl_trait_ref(selcx.tcx(), impl_def_id).unwrap();
     let impl_trait_ref =
