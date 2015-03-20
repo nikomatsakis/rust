@@ -241,7 +241,7 @@ impl BitVec {
         if extra_bits > 0 {
             let mask = (1 << extra_bits) - 1;
             let storage_len = self.storage.len();
-            self.storage[storage_len - 1] &= mask;
+            self.storage[storage_len - 1] = self.storage[storage_len - 1] & mask;
         }
     }
 
