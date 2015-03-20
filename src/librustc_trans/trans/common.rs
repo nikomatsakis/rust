@@ -1078,7 +1078,7 @@ pub fn fulfill_obligation<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 }
 
 pub struct NormalizingClosureTyper<'a,'tcx:'a> {
-    param_env: ty::ParameterEnvironment<'a, 'tcx>5C
+    param_env: ty::ParameterEnvironment<'a, 'tcx>
 }
 
 impl<'a,'tcx> NormalizingClosureTyper<'a,'tcx> {

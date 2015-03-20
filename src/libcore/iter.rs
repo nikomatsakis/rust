@@ -103,6 +103,16 @@ pub trait Iterator {
     fn size_hint(&self) -> (usize, Option<usize>) { (0, None) }
 }
 
+#[cfg(not(stage0))]
+impl<'a,T:?Sized> !Iterator for &'a T {
+    // References cannot be iterators.
+}
+
+#[cfg(not(stage0))]
+impl<'a,T:?Sized> !Iterator for &'a mut T {
+    // References cannot be iterators.
+}
+
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<'a, I: Iterator + ?Sized> Iterator for &'a mut I {
     type Item = I::Item;

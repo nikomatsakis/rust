@@ -243,9 +243,6 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType)] = &[
     ("allow_internal_unstable", Gated("allow_internal_unstable",
                                       EXPLAIN_ALLOW_INTERNAL_UNSTABLE)),
 
-    // TODO
-    ("wtf", Whitelisted),
-
     // FIXME: #14408 whitelist docs since rustdoc looks at them
     ("doc", Whitelisted),
 

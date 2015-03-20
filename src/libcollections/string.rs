@@ -755,23 +755,23 @@ impl<'a> Extend<&'a str> for String {
 }
 
 // Convenience method so that you can pass in a `&String` as a pattern.
-impl<'a, 'b> Pattern<'a> for &'b String {
-    type Searcher = <&'b str as Pattern<'a>>::Searcher;
-
-    fn into_searcher(self, haystack: &'a str) -> <&'b str as Pattern<'a>>::Searcher {
-        self[..].into_searcher(haystack)
-    }
-
-    #[inline]
-    fn is_contained_in(self, haystack: &'a str) -> bool {
-        self[..].is_contained_in(haystack)
-    }
-
-    #[inline]
-    fn is_prefix_of(self, haystack: &'a str) -> bool {
-        self[..].is_prefix_of(haystack)
-    }
-}
+// TODO impl<'a, 'b> Pattern<'a> for &'b String {
+// TODO     type Searcher = <&'b str as Pattern<'a>>::Searcher;
+// TODO
+// TODO     fn into_searcher(self, haystack: &'a str) -> <&'b str as Pattern<'a>>::Searcher {
+// TODO         self[..].into_searcher(haystack)
+// TODO     }
+// TODO
+// TODO     #[inline]
+// TODO     fn is_contained_in(self, haystack: &'a str) -> bool {
+// TODO         self[..].is_contained_in(haystack)
+// TODO     }
+// TODO
+// TODO     #[inline]
+// TODO     fn is_prefix_of(self, haystack: &'a str) -> bool {
+// TODO         self[..].is_prefix_of(haystack)
+// TODO     }
+// TODO }
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl PartialEq for String {
