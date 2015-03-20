@@ -3352,8 +3352,12 @@ pub fn type_is_scalar(ty: Ty) -> bool {
 /// Returns true if this type is a floating point type and false otherwise.
 pub fn type_is_floating_point(ty: Ty) -> bool {
     match ty.sty {
-        ty_float(_) => true,
-        _ => false,
+        ty_float(_) |
+        ty_infer(FloatVar(_)) =>
+            true,
+
+        _ =>
+            false,
     }
 }
 
