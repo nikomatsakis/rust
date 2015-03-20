@@ -2808,6 +2808,14 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
                                      autoref_args: AutorefArgs) -> Ty<'tcx> where
         F: FnOnce(),
     {
+        debug!("lookup_op_method(op_ex={}, lhs_ty={}, opname={:?}, trait_did={}, lhs={}, rhs={})",
+               op_ex.repr(fcx.tcx()),
+               lhs_ty.repr(fcx.tcx()),
+               opname,
+               trait_did.repr(fcx.tcx()),
+               lhs.repr(fcx.tcx()),
+               rhs.repr(fcx.tcx()));
+
         let method = match trait_did {
             Some(trait_did) => {
                 // We do eager coercions to make using operators
@@ -4022,9 +4030,8 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
 
                   match result {
                       Some((index_ty, element_ty)) => {
-                          // FIXME: we've already checked idx above, we should
-                          // probably just demand subtype or something here.
-                          check_expr_has_type(fcx, &**idx, index_ty);
+                          let idx_expr_ty = fcx.expr_ty(idx);
+                          demand::eqtype(fcx, expr.span, index_ty, idx_expr_ty);
                           fcx.write_ty(id, element_ty);
                       }
                       _ => {
