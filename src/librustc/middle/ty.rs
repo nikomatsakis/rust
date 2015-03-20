@@ -4682,6 +4682,17 @@ pub fn expr_kind(tcx: &ctxt, expr: &ast::Expr) -> ExprKind {
             // the index method invoked for `a[i]` always yields an `&T`
             ast::ExprIndex(..) => LvalueExpr,
 
+            // the `lhs OP rhs`
+            ast::ExprBinary(op, ref lhs, ref rhs) => {
+                let lhs_ty = ty::expr_ty_adjusted(tcx, lhs);
+                let rhs_ty = ty::expr_ty_adjusted(tcx, rhs);
+                if is_builtin_binop(tcx, lhs_ty, rhs_ty, op) {
+                    RvalueDatumExpr
+                } else {
+                    RvalueDpsExpr
+                }
+            }
+
             // in the general case, result could be any type, use DPS
             _ => RvalueDpsExpr
         };
