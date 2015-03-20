@@ -1887,7 +1887,11 @@ fn trans_binary<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let ccx = bcx.ccx();
 
     // if overloaded, would be RvalueDpsExpr
-    assert!(!ccx.tcx().method_map.borrow().contains_key(&MethodCall::expr(expr.id)));
+    assert!({
+        let lhs_ty = expr_ty_adjusted(bcx, lhs);
+        let rhs_ty = expr_ty_adjusted(bcx, rhs);
+        ty::is_builtin_binop(bcx.tcx(), lhs_ty, rhs_ty, op)
+    });
 
     match op.node {
         ast::BiAnd => {
