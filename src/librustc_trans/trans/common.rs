@@ -1006,9 +1006,9 @@ pub fn expr_ty_adjusted<'blk, 'tcx>(bcx: &BlockS<'blk, 'tcx>, ex: &ast::Expr) ->
 /// do not (necessarily) resolve all nested obligations on the impl. Note that type check should
 /// guarantee to us that all nested obligations *could be* resolved if we wanted to.
 pub fn fulfill_obligation<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
-                                span: Span,
-                                trait_ref: ty::PolyTraitRef<'tcx>)
-                                -> traits::Vtable<'tcx, ()>
+                                    span: Span,
+                                    trait_ref: ty::PolyTraitRef<'tcx>)
+                                    -> traits::Vtable<'tcx, ()>
 {
     let tcx = ccx.tcx();
 
@@ -1033,8 +1033,9 @@ pub fn fulfill_obligation<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
     // shallow result we are looking for -- that is, what specific impl.
     let typer = NormalizingClosureTyper::new(tcx);
     let mut selcx = traits::SelectionContext::new(&infcx, &typer);
-    let obligation = traits::Obligation::new(traits::ObligationCause::dummy(),
-                                             trait_ref.to_poly_trait_predicate());
+    let obligation =
+        traits::Obligation::new(traits::ObligationCause::misc(span, ast::DUMMY_NODE_ID),
+                                trait_ref.to_poly_trait_predicate());
     let selection = match selcx.select(&obligation) {
         Ok(Some(selection)) => selection,
         Ok(None) => {
@@ -1077,7 +1078,7 @@ pub fn fulfill_obligation<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 }
 
 pub struct NormalizingClosureTyper<'a,'tcx:'a> {
-    param_env: ty::ParameterEnvironment<'a, 'tcx>
+    param_env: ty::ParameterEnvironment<'a, 'tcx>5C
 }
 
 impl<'a,'tcx> NormalizingClosureTyper<'a,'tcx> {
@@ -1124,10 +1125,10 @@ impl<'a,'tcx> ty::ClosureTyper<'tcx> for NormalizingClosureTyper<'a,'tcx> {
 }
 
 pub fn drain_fulfillment_cx<'a,'tcx,T>(span: Span,
-                                   infcx: &infer::InferCtxt<'a,'tcx>,
-                                   fulfill_cx: &mut traits::FulfillmentContext<'tcx>,
-                                   result: &T)
-                                   -> T
+                                       infcx: &infer::InferCtxt<'a,'tcx>,
+                                       fulfill_cx: &mut traits::FulfillmentContext<'tcx>,
+                                       result: &T)
+                                       -> T
     where T : TypeFoldable<'tcx> + Repr<'tcx>
 {
     debug!("drain_fulfillment_cx(result={})",
@@ -1140,17 +1141,10 @@ pub fn drain_fulfillment_cx<'a,'tcx,T>(span: Span,
     match fulfill_cx.select_all_or_error(infcx, &typer) {
         Ok(()) => { }
         Err(errors) => {
-            if errors.iter().all(|e| e.is_overflow()) {
-                // See Ok(None) case above.
-                infcx.tcx.sess.span_fatal(
-                    span,
-                    "reached the recursion limit during monomorphization");
-            } else {
-                infcx.tcx.sess.span_bug(
-                    span,
-                    &format!("Encountered errors `{}` fulfilling during trans",
-                            errors.repr(infcx.tcx)));
-            }
+            infcx.tcx.sess.span_bug(
+                span,
+                &format!("Encountered errors `{}` fulfilling during trans",
+                         errors.repr(infcx.tcx)));
         }
     }
 
