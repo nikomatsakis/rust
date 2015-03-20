@@ -25,6 +25,7 @@ use core::mem;
 use core::ops::{self, Deref, Add, Index};
 use core::ptr;
 use core::raw::Slice as RawSlice;
+use core::str::Pattern;
 use unicode::str as unicode_str;
 use unicode::str::Utf16Item;
 
@@ -750,6 +751,25 @@ impl<'a> Extend<&'a str> for String {
         for s in iterator {
             self.push_str(s)
         }
+    }
+}
+
+// Convenience method so that you can pass in a `&String` as a pattern.
+impl<'a, 'b> Pattern<'a> for &'b String {
+    type Searcher = <&'b str as Pattern<'a>>::Searcher;
+
+    fn into_searcher(self, haystack: &'a str) -> <&'b str as Pattern<'a>>::Searcher {
+        self[..].into_searcher(haystack)
+    }
+
+    #[inline]
+    fn is_contained_in(self, haystack: &'a str) -> bool {
+        self[..].is_contained_in(haystack)
+    }
+
+    #[inline]
+    fn is_prefix_of(self, haystack: &'a str) -> bool {
+        self[..].is_prefix_of(haystack)
     }
 }
 

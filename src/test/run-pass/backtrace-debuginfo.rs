@@ -114,7 +114,7 @@ fn check_trace(output: &str, error: &str) {
 
     assert!(error.contains("stack backtrace"), "no backtrace in the error: {}", error);
     for line in error.lines() {
-        if !remaining.is_empty() && line.contains(remaining.last().unwrap()) {
+        if !remaining.is_empty() && line.contains(*remaining.last().unwrap()) {
             remaining.pop();
         }
     }
