@@ -1366,6 +1366,7 @@ enum VacantEntryState<K, V, M> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
+#[hack]
 impl<'a, K, V, S> IntoIterator for &'a HashMap<K, V, S>
     where K: Eq + Hash, S: HashState
 {
@@ -1378,6 +1379,7 @@ impl<'a, K, V, S> IntoIterator for &'a HashMap<K, V, S>
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
+#[hack]
 impl<'a, K, V, S> IntoIterator for &'a mut HashMap<K, V, S>
     where K: Eq + Hash, S: HashState
 {

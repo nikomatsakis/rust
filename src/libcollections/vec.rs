@@ -1464,6 +1464,7 @@ impl<T> IntoIterator for Vec<T> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
+#[hack]
 impl<'a, T> IntoIterator for &'a Vec<T> {
     type Item = &'a T;
     type IntoIter = slice::Iter<'a, T>;
@@ -1474,6 +1475,7 @@ impl<'a, T> IntoIterator for &'a Vec<T> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
+#[hack]
 impl<'a, T> IntoIterator for &'a mut Vec<T> {
     type Item = &'a mut T;
     type IntoIter = slice::IterMut<'a, T>;

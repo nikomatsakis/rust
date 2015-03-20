@@ -852,6 +852,7 @@ impl<T> IntoIterator for LinkedList<T> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
+#[hack]
 impl<'a, T> IntoIterator for &'a LinkedList<T> {
     type Item = &'a T;
     type IntoIter = Iter<'a, T>;
@@ -861,6 +862,7 @@ impl<'a, T> IntoIterator for &'a LinkedList<T> {
     }
 }
 
+#[hack]
 impl<'a, T> IntoIterator for &'a mut LinkedList<T> {
     type Item = &'a mut T;
     type IntoIter = IterMut<'a, T>;
