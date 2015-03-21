@@ -1316,14 +1316,18 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// version, this version will also select obligations if it seems
     /// useful, in an effort to get more type information.
     fn resolve_type_vars_if_possible(&self, mut ty: Ty<'tcx>) -> Ty<'tcx> {
+        debug!("resolve_type_vars_if_possible(ty={})", ty.repr(self.tcx()));
+
         // No ty::infer()? Nothing needs doing.
         if !ty::type_has_ty_infer(ty) {
+            debug!("resolve_type_vars_if_possible: ty={}", ty.repr(self.tcx()));
             return ty;
         }
 
         // If `ty` is a type variable, see whether we already know what it is.
         ty = self.infcx().resolve_type_vars_if_possible(&ty);
         if !ty::type_has_ty_infer(ty) {
+            debug!("resolve_type_vars_if_possible: ty={}", ty.repr(self.tcx()));
             return ty;
         }
 
@@ -1331,6 +1335,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         vtable::select_new_fcx_obligations(self);
         ty = self.infcx().resolve_type_vars_if_possible(&ty);
         if !ty::type_has_ty_infer(ty) {
+            debug!("resolve_type_vars_if_possible: ty={}", ty.repr(self.tcx()));
             return ty;
         }
 
@@ -1339,7 +1344,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // indirect dependencies that don't seem worth tracking
         // precisely.
         vtable::select_fcx_obligations_where_possible(self);
-        self.infcx().resolve_type_vars_if_possible(&ty)
+        ty = self.infcx().resolve_type_vars_if_possible(&ty);
+
+        debug!("resolve_type_vars_if_possible: ty={}", ty.repr(self.tcx()));
+        ty
     }
 
     /// Resolves all type variables in `t` and then, if any were left
@@ -2940,6 +2948,15 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
                                   -> Ty<'tcx>
     {
         let tcx = fcx.ccx.tcx;
+
+        debug!("check_user_binop(ex.id={}, ex={}, lhs_expr={}, lhs_resolved_t={}, op={:?}, rhs={})",
+               ex.id,
+               ex.repr(tcx),
+               lhs_expr.repr(tcx),
+               lhs_resolved_t.repr(tcx),
+               op,
+               rhs.repr(tcx));
+
         let lang = &tcx.lang_items;
         let (name, trait_did, is_comparison) = match op.node {
             ast::BiAdd => ("add", lang.add_trait(), false),
@@ -2990,19 +3007,23 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
                              report_error,
                              autoref_args);
 
+        debug!("check_user_binop: ex.id={} output_ty={}",
+               ex.id,
+               output_ty.repr(tcx));
+
         // Special case rule to aid type inference: operational
         // operators always yield boolean; for non-operational
         // operators, if both left and right hand side types are
         // integral, then the result type also be the same as the LHS.
+        let lhs_resolved_t = fcx.resolve_type_vars_if_possible(lhs_resolved_t);
+        let rhs_resolved_t = fcx.resolve_type_vars_if_possible(fcx.expr_ty(rhs));
         if
             is_comparison
         {
             demand::eqtype(fcx, ex.span, ty::mk_bool(fcx.tcx()), output_ty);
         } else if
-            ty::type_is_integral(lhs_resolved_t) && {
-                let rhs_resolved_t = fcx.resolve_type_vars_if_possible(fcx.expr_ty(rhs));
-                ty::type_is_integral(rhs_resolved_t)
-            }
+            ty::type_is_integral(lhs_resolved_t) &&
+            ty::type_is_integral(rhs_resolved_t)
         {
             demand::eqtype(fcx, ex.span, lhs_resolved_t, output_ty);
 
@@ -3019,10 +3040,8 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
                 }
             }
         } else if
-            ty::type_is_floating_point(lhs_resolved_t) && {
-                let rhs_resolved_t = fcx.resolve_type_vars_if_possible(fcx.expr_ty(rhs));
-                ty::type_is_floating_point(rhs_resolved_t)
-            }
+            ty::type_is_floating_point(lhs_resolved_t) &&
+            ty::type_is_floating_point(rhs_resolved_t)
         {
             demand::eqtype(fcx, ex.span, lhs_resolved_t, output_ty);
 
