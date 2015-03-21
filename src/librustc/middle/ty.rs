@@ -4683,10 +4683,14 @@ pub fn expr_kind(tcx: &ctxt, expr: &ast::Expr) -> ExprKind {
             ast::ExprIndex(..) => LvalueExpr,
 
             // the `lhs OP rhs`
-            ast::ExprBinary(op, ref lhs, ref rhs) => {
+            ast::ExprBinary(_, ref lhs, ref rhs) => {
+                // during type checking, we always treat binary
+                // operators as overloaded, but if the types resolve
+                // to scalars, then in trans we emit the native
+                // machine ops instead
                 let lhs_ty = ty::expr_ty_adjusted(tcx, lhs);
                 let rhs_ty = ty::expr_ty_adjusted(tcx, rhs);
-                if is_builtin_binop(tcx, lhs_ty, rhs_ty, op) {
+                if ty::type_is_scalar(lhs_ty) && ty::type_is_scalar(rhs_ty) {
                     RvalueDatumExpr
                 } else {
                     RvalueDpsExpr
