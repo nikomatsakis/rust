@@ -3067,16 +3067,22 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
                                  mname: &str,
                                  trait_did: Option<ast::DefId>,
                                  ex: &'tcx ast::Expr,
-                                 rhs_expr: &'tcx ast::Expr,
-                                 rhs_t: Ty<'tcx>,
-                                 op: ast::UnOp) -> Ty<'tcx> {
-       lookup_op_method(fcx, ex, rhs_t, token::intern(mname),
-                        trait_did, rhs_expr, None, || {
-            fcx.type_error_message(ex.span, |actual| {
-                format!("cannot apply unary operator `{}` to type `{}`",
-                        op_str, actual)
-            }, rhs_t, None);
-        }, if ast_util::is_by_value_unop(op) { AutorefArgs::No } else { AutorefArgs::Yes })
+                                 operand_expr: &'tcx ast::Expr,
+                                 operand_ty: Ty<'tcx>,
+                                 op: ast::UnOp)
+                                 -> Ty<'tcx>
+    {
+        assert!(ast_util::is_by_value_unop(op));
+        lookup_op_method(
+            fcx, ex, operand_ty, token::intern(mname),
+            trait_did, operand_expr, None,
+            || {
+                fcx.type_error_message(ex.span, |actual| {
+                    format!("cannot apply unary operator `{}` to type `{}`",
+                            op_str, actual)
+                }, rhs_t, None);
+            },
+            AutorefArgs::No)
     }
 
     // Check field access expressions

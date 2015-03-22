@@ -69,7 +69,6 @@
 
 use marker::Sized;
 use fmt;
-use simd::{i8x16, i16x8, i32x4, i64x2, u8x16, u16x8, u32x4, u64x2, f32x4, f64x2};
 
 /// The `Drop` trait is used to run some code when a value goes out of scope. This
 /// is sometimes called a 'destructor'.
@@ -209,7 +208,6 @@ macro_rules! add_impl {
 }
 
 add_impl! { usize u8 u16 u32 u64 isize i8 i16 i32 i64 f32 f64 }
-add_impl! { i8x16 i16x8 i32x4 i64x2 u8x16 u16x8 u32x4 u64x2 f32x4 f64x2 }
 
 /// The `Sub` trait is used to specify the functionality of `-`.
 ///
@@ -264,7 +262,6 @@ macro_rules! sub_impl {
 }
 
 sub_impl! { usize u8 u16 u32 u64 isize i8 i16 i32 i64 f32 f64 }
-sub_impl! { i8x16 i16x8 i32x4 i64x2 u8x16 u16x8 u32x4 u64x2 f32x4 f64x2 }
 
 /// The `Mul` trait is used to specify the functionality of `*`.
 ///
@@ -319,7 +316,6 @@ macro_rules! mul_impl {
 }
 
 mul_impl! { usize u8 u16 u32 u64 isize i8 i16 i32 i64 f32 f64 }
-mul_impl! { i8x16 i16x8 i32x4 i64x2 u8x16 u16x8 u32x4 u64x2 f32x4 f64x2 }
 
 /// The `Div` trait is used to specify the functionality of `/`.
 ///
@@ -374,7 +370,6 @@ macro_rules! div_impl {
 }
 
 div_impl! { usize u8 u16 u32 u64 isize i8 i16 i32 i64 f32 f64 }
-div_impl! { i8x16 i16x8 i32x4 i64x2 u8x16 u16x8 u32x4 u64x2 f32x4 f64x2 }
 
 /// The `Rem` trait is used to specify the functionality of `%`.
 ///
@@ -613,7 +608,6 @@ macro_rules! bitand_impl {
 }
 
 bitand_impl! { bool usize u8 u16 u32 u64 isize i8 i16 i32 i64 }
-bitand_impl! { i8x16 i16x8 i32x4 i64x2 u8x16 u16x8 u32x4 u64x2 f32x4 f64x2 }
 
 /// The `BitOr` trait is used to specify the functionality of `|`.
 ///
@@ -668,7 +662,6 @@ macro_rules! bitor_impl {
 }
 
 bitor_impl! { bool usize u8 u16 u32 u64 isize i8 i16 i32 i64 }
-bitor_impl! { i8x16 i16x8 i32x4 i64x2 u8x16 u16x8 u32x4 u64x2 f32x4 f64x2 }
 
 /// The `BitXor` trait is used to specify the functionality of `^`.
 ///
@@ -723,7 +716,6 @@ macro_rules! bitxor_impl {
 }
 
 bitxor_impl! { bool usize u8 u16 u32 u64 isize i8 i16 i32 i64 }
-bitxor_impl! { i8x16 i16x8 i32x4 i64x2 u8x16 u16x8 u32x4 u64x2 f32x4 f64x2 }
 
 /// The `Shl` trait is used to specify the functionality of `<<`.
 ///
@@ -802,7 +794,6 @@ macro_rules! shl_impl_all {
 }
 
 shl_impl_all! { u8 u16 u32 u64 usize i8 i16 i32 i64 isize }
-shl_impl_pair! { i8x16 i16x8 i32x4 i64x2 u8x16 u16x8 u32x4 u64x2 f32x4 f64x2 }
 
 /// The `Shr` trait is used to specify the functionality of `>>`.
 ///
@@ -880,7 +871,6 @@ macro_rules! shr_impl_all {
 }
 
 shr_impl_all! { u8 u16 u32 u64 usize i8 i16 i32 i64 isize }
-shr_impl_pair! { i8x16 i16x8 i32x4 i64x2 u8x16 u16x8 u32x4 u64x2 f32x4 f64x2 }
 
 /// The `Index` trait is used to specify the functionality of indexing operations
 /// like `arr[idx]` when used in an immutable context.
