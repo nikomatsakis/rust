@@ -2958,23 +2958,23 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
                rhs.repr(tcx));
 
         let lang = &tcx.lang_items;
-        let (name, trait_did, is_comparison) = match op.node {
-            ast::BiAdd => ("add", lang.add_trait(), false),
-            ast::BiSub => ("sub", lang.sub_trait(), false),
-            ast::BiMul => ("mul", lang.mul_trait(), false),
-            ast::BiDiv => ("div", lang.div_trait(), false),
-            ast::BiRem => ("rem", lang.rem_trait(), false),
-            ast::BiBitXor => ("bitxor", lang.bitxor_trait(), false),
-            ast::BiBitAnd => ("bitand", lang.bitand_trait(), false),
-            ast::BiBitOr => ("bitor", lang.bitor_trait(), false),
-            ast::BiShl => ("shl", lang.shl_trait(), false),
-            ast::BiShr => ("shr", lang.shr_trait(), false),
-            ast::BiLt => ("lt", lang.ord_trait(), true),
-            ast::BiLe => ("le", lang.ord_trait(), true),
-            ast::BiGe => ("ge", lang.ord_trait(), true),
-            ast::BiGt => ("gt", lang.ord_trait(), true),
-            ast::BiEq => ("eq", lang.eq_trait(), true),
-            ast::BiNe => ("ne", lang.eq_trait(), true),
+        let (name, trait_did) = match op.node {
+            ast::BiAdd => ("add", lang.add_trait()),
+            ast::BiSub => ("sub", lang.sub_trait()),
+            ast::BiMul => ("mul", lang.mul_trait()),
+            ast::BiDiv => ("div", lang.div_trait()),
+            ast::BiRem => ("rem", lang.rem_trait()),
+            ast::BiBitXor => ("bitxor", lang.bitxor_trait()),
+            ast::BiBitAnd => ("bitand", lang.bitand_trait()),
+            ast::BiBitOr => ("bitor", lang.bitor_trait()),
+            ast::BiShl => ("shl", lang.shl_trait()),
+            ast::BiShr => ("shr", lang.shr_trait()),
+            ast::BiLt => ("lt", lang.ord_trait()),
+            ast::BiLe => ("le", lang.ord_trait()),
+            ast::BiGe => ("ge", lang.ord_trait()),
+            ast::BiGt => ("gt", lang.ord_trait()),
+            ast::BiEq => ("eq", lang.eq_trait()),
+            ast::BiNe => ("ne", lang.eq_trait()),
             ast::BiAnd | ast::BiOr => {
                 // TODO(japaric) use span_bug
                 unreachable!();
@@ -3018,7 +3018,7 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
         let lhs_resolved_t = fcx.resolve_type_vars_if_possible(lhs_resolved_t);
         let rhs_resolved_t = fcx.resolve_type_vars_if_possible(fcx.expr_ty(rhs));
         if
-            is_comparison
+            ast_util::is_comparison_binop(op.node)
         {
             demand::eqtype(fcx, ex.span, ty::mk_bool(fcx.tcx()), output_ty);
         } else if

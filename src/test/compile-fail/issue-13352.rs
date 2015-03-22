@@ -19,4 +19,6 @@ fn main() {
         unsafe { libc::exit(0 as libc::c_int); }
     });
     2_usize + (loop {});
+    //~^ ERROR E0277
+    //~| ERROR E0277
 }

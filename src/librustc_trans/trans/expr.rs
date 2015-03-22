@@ -1887,11 +1887,7 @@ fn trans_binary<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let ccx = bcx.ccx();
 
     // if overloaded, would be RvalueDpsExpr
-    assert!({
-        let lhs_ty = expr_ty_adjusted(bcx, lhs);
-        let rhs_ty = expr_ty_adjusted(bcx, rhs);
-        ty::is_builtin_binop(bcx.tcx(), lhs_ty, rhs_ty, op)
-    });
+    assert!(!ccx.tcx().method_map.borrow().contains_key(&MethodCall::expr(expr.id)));
 
     match op.node {
         ast::BiAnd => {
@@ -2379,7 +2375,8 @@ impl OverflowOp {
                 _ => panic!("unsupported target word size")
             },
             ref t @ ty_uint(_) | ref t @ ty_int(_) => t.clone(),
-            _ => panic!("tried to get overflow intrinsic for non-int type")
+            _ => panic!("tried to get overflow intrinsic for {:?} applied to non-int type",
+                        *self)
         };
 
         match *self {

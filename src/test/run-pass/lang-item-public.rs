@@ -46,5 +46,5 @@ extern {}
 
 #[start]
 fn main(_: int, _: *const *const u8) -> int {
-    1 % 1
+    1
 }
