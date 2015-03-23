@@ -64,7 +64,7 @@ impl ToBits for u64 {
 fn add_bytes_to_bits<T: Int + ToBits>(bits: T, bytes: T) -> T {
     let (new_high_bits, new_low_bits) = bytes.to_bits();
 
-    if new_high_bits > Int::zero() {
+    if new_high_bits > T::zero() {
         panic!("numeric overflow occurred.")
     }
 

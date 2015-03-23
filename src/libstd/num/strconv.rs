@@ -216,7 +216,7 @@ pub fn float_to_str_bytes_common<T: Float>(
         _ => {}
     }
 
-    let neg = num < _0 || (negative_zero && _1 / num == Float::neg_infinity());
+    let neg = num < _0 || (negative_zero && _1 / num == T::neg_infinity());
     let mut buf = Vec::new();
     let radix_gen: T = num::cast(radix as int).unwrap();
 

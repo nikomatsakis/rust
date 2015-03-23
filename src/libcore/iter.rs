@@ -2615,7 +2615,7 @@ pub struct RangeStep<A> {
 #[unstable(feature = "core",
            reason = "likely to be replaced by range notation and adapters")]
 pub fn range_step<A: Int>(start: A, stop: A, step: A) -> RangeStep<A> {
-    let rev = step < Int::zero();
+    let rev = step < A::zero();
     RangeStep{state: start, stop: stop, step: step, rev: rev}
 }
 
@@ -2679,7 +2679,7 @@ pub struct RangeStepInclusive<A> {
 #[unstable(feature = "core",
            reason = "likely to be replaced by range notation and adapters")]
 pub fn range_step_inclusive<A: Int>(start: A, stop: A, step: A) -> RangeStepInclusive<A> {
-    let rev = step < Int::zero();
+    let rev = step < A::zero();
     RangeStepInclusive {
         state: start,
         stop: stop,
@@ -2725,7 +2725,7 @@ impl<A: Int> Iterator for ::ops::Range<A> {
     fn next(&mut self) -> Option<A> {
         if self.start < self.end {
             let result = self.start;
-            self.start = self.start + Int::one();
+            self.start = self.start + A::one();
             Some(result)
         } else {
             None
@@ -2752,7 +2752,7 @@ impl<A: Int> DoubleEndedIterator for ::ops::Range<A> {
     #[inline]
     fn next_back(&mut self) -> Option<A> {
         if self.start < self.end {
-            self.end = self.end - Int::one();
+            self.end = self.end - A::one();
             Some(self.end)
         } else {
             None
@@ -2767,7 +2767,7 @@ impl<A: Int> Iterator for ::ops::RangeFrom<A> {
     #[inline]
     fn next(&mut self) -> Option<A> {
         let result = self.start;
-        self.start = self.start + Int::one();
+        self.start = self.start + A::one();
         debug_assert!(result < self.start);
         Some(result)
     }

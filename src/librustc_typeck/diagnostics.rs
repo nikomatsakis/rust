@@ -177,7 +177,9 @@ register_diagnostics! {
     E0319, // trait impls for defaulted traits allowed just for structs/enums
     E0320, // recursive overflow during dropck
     E0321, // extended coherence rules for defaulted traits violated
-    E0322  // cannot implement Sized explicitly
+    E0322, // cannot implement Sized explicitly,
+    E0323, // binary operation `<op>=` cannot be applied to types
+    E0324  // binary operation `<op>` cannot be applied to types
 }
 
 __build_diagnostic_array! { DIAGNOSTICS }
