@@ -15,5 +15,5 @@ use cci_const::bar;
 static foo: extern "C" fn() = bar;
 
 pub fn main() {
-    assert!(foo == bar);
+    assert!(foo == (bar as extern "C" fn()));
 }

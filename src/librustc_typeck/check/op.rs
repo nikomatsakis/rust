@@ -89,7 +89,7 @@ pub fn check_binop<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
     let return_ty = if is_builtin_binop(fcx.tcx(), lhs_ty, rhs_ty, op) {
         enforce_builtin_binop_types(fcx, lhs_expr, lhs_ty, rhs_expr, rhs_ty, op)
     } else {
-        check_overloaded_binop(fcx, expr, lhs_expr, lhs_ty, rhs_ty, op)
+        check_overloaded_binop(fcx, expr, lhs_expr, lhs_ty, rhs_expr, rhs_ty, op)
     };
 
     fcx.write_ty(expr.id, return_ty);
@@ -148,6 +148,7 @@ fn check_overloaded_binop<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                                     expr: &'tcx ast::Expr,
                                     lhs_expr: &'tcx ast::Expr,
                                     lhs_ty: Ty<'tcx>,
+                                    rhs_expr: &'tcx ast::Expr,
                                     rhs_ty: Ty<'tcx>,
                                     op: ast::BinOp)
                                     -> Ty<'tcx>
@@ -159,9 +160,22 @@ fn check_overloaded_binop<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
 
     let (name, trait_def_id) = name_and_trait_def_id(fcx, op);
 
-    match lookup_op_method(fcx, expr, lhs_ty, vec![rhs_ty],
-                           token::intern(name), trait_def_id,
-                           lhs_expr) {
+    // NB: Although we have the type of the RHS at hand, we choose
+    // instead to do the trait lookup using a type variable for the
+    // type of the RHS. Then below we do a cercion from the actual
+    // type to the type that comes out. The reason for this is that it
+    // permits things like `String + &String` to compile because the
+    // RHS is coercible (via deref coercion) to `&str`.
+    let is_by_value = ast_util::is_by_value_binop(op.node);
+    let rhs_ty_var = if is_by_value {
+        fcx.infcx().next_ty_var()
+    } else {
+        rhs_ty
+    };
+
+    let return_ty = match lookup_op_method(fcx, expr, lhs_ty, vec![rhs_ty_var],
+                                           token::intern(name), trait_def_id,
+                                           lhs_expr) {
         Ok(return_ty) => return_ty,
         Err(()) => {
             // error types are considered "builtin"
@@ -171,9 +185,16 @@ fn check_overloaded_binop<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                       ast_util::binop_to_string(op.node),
                       lhs_ty.user_string(fcx.tcx()),
                       rhs_ty.user_string(fcx.tcx()));
-            fcx.tcx().types.err
+            return fcx.tcx().types.err;
         }
+    };
+
+    // see `NB` above
+    if is_by_value {
+        demand::coerce(fcx, rhs_expr.span, rhs_ty_var, rhs_expr);
     }
+
+    return_ty
 }
 
 pub fn check_user_unop<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
