@@ -179,7 +179,8 @@ register_diagnostics! {
     E0321, // extended coherence rules for defaulted traits violated
     E0322, // cannot implement Sized explicitly,
     E0323, // binary operation `<op>=` cannot be applied to types
-    E0324  // binary operation `<op>` cannot be applied to types
+    E0324, // binary operation `<op>` cannot be applied to types
+    E0325  // at least one operand type must be known
 }
 
 __build_diagnostic_array! { DIAGNOSTICS }
