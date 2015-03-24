@@ -78,8 +78,8 @@ pub fn main() {
     check_type!(box 18, Box<int>);
     check_type!("foo".to_string(), String);
     check_type!(vec!(20, 22), Vec<int> );
-    let mint: uint = unsafe { mem::transmute(main) };
+    let mint: usize = unsafe { mem::transmute(main) };
     check_type!(main, fn(), |pthing| {
-        assert!(mint == unsafe { mem::transmute(*pthing) })
+        assert!(mint == unsafe { mem::transmute::<usize>(*pthing) })
     });
 }
