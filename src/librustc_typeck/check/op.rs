@@ -83,16 +83,67 @@ pub fn check_binop<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
     check_expr(fcx, lhs_expr);
     check_expr(fcx, rhs_expr);
 
-    let lhs_ty = structurally_resolved_type(fcx, lhs_expr.span, fcx.expr_ty(lhs_expr));
-    let rhs_ty = structurally_resolved_type(fcx, rhs_expr.span, fcx.expr_ty(rhs_expr));
+    let lhs_ty = fcx.resolve_type_vars_if_possible(fcx.expr_ty(lhs_expr));
+    let rhs_ty = fcx.resolve_type_vars_if_possible(fcx.expr_ty(rhs_expr));
 
-    let return_ty = if is_builtin_binop(fcx.tcx(), lhs_ty, rhs_ty, op) {
-        enforce_builtin_binop_types(fcx, lhs_expr, lhs_ty, rhs_expr, rhs_ty, op)
-    } else {
-        check_overloaded_binop(fcx, expr, lhs_expr, lhs_ty, rhs_expr, rhs_ty, op)
-    };
+    // Annoyingly, SIMD ops don't fit into the PartialEq trait,
+    // because their return type is not bool. Perhaps this should
+    // change, but for now we will error out if *neither* left- nor
+    // right-hand-side has a known type, since then we can't reliably
+    // know whether simd types are involved. Otherwise, we use the
+    // rule that when an operator is applied to a SIMD type on either
+    // side, we force a SIMD operation. This is probably not great but
+    // SIMD is not stable so...
+    if
+        ast_util::is_comparison_binop(op.node) &&
+        ty::type_is_ty_var(lhs_ty) &&
+        ty::type_is_ty_var(rhs_ty)
+    {
+        span_err!(fcx.tcx().sess, lhs_expr.span, E0325,
+                  "`{}` cannot be used if both operand types are unknown",
+                  ast_util::binop_to_string(op.node));
+    }
+    if
+        ty::type_is_simd(fcx.tcx(), lhs_ty) ||
+        ty::type_is_simd(fcx.tcx(), rhs_ty)
+    {
+        demand::suptype(fcx, rhs_expr.span, lhs_ty, rhs_ty);
+        fcx.write_ty(expr.id, lhs_ty);
+        return;
+    }
 
-    fcx.write_ty(expr.id, return_ty);
+    match BinOpCategory::from(op) {
+        BinOpCategory::Shortcircuit => {
+            let return_ty =
+                enforce_builtin_binop_types(fcx, lhs_expr, lhs_ty,
+                                            rhs_expr, rhs_ty, op);
+            fcx.write_ty(expr.id, return_ty);
+        }
+        _ => {
+            // Otherwise, we always treat operators as if they are
+            // overloaded. This is the way to be most flexible w/r/t
+            // types that get inferred.
+            let return_ty = check_overloaded_binop(fcx, expr,
+                                                   lhs_expr, lhs_ty,
+                                                   rhs_expr, rhs_ty,
+                                                   op);
+
+            // Supply type inference hints if relevant. Really these
+            // hints should be enforced during select as part of the
+            // `consider_unification_despite_ambiguity` routine.
+            if
+                !ty::type_is_ty_var(lhs_ty) &&
+                !ty::type_is_ty_var(rhs_ty) &&
+                is_builtin_binop(fcx.tcx(), lhs_ty, rhs_ty, op)
+            {
+                let builtin_return_ty =
+                    enforce_builtin_binop_types(fcx, lhs_expr, lhs_ty, rhs_expr, rhs_ty, op);
+                demand::suptype(fcx, expr.span, builtin_return_ty, return_ty);
+            }
+
+            fcx.write_ty(expr.id, return_ty);
+        }
+    }
 }
 
 fn enforce_builtin_binop_types<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
