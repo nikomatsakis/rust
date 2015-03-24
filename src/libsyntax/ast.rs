@@ -1005,7 +1005,7 @@ pub enum Sign {
 
 impl Sign {
     pub fn new<T:Int>(n: T) -> Sign {
-        if n < Int::zero() {
+        if n < T::zero() {
             Minus
         } else {
             Plus

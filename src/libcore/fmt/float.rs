@@ -105,8 +105,8 @@ pub fn float_to_str_bytes_common<T: Float, U, F>(
         _ => ()
     }
 
-    let _0: T = Float::zero();
-    let _1: T = Float::one();
+    let _0 = T::zero();
+    let _1 = T::one();
 
     match num.classify() {
         Fp::Nan => return f("NaN"),
@@ -119,7 +119,7 @@ pub fn float_to_str_bytes_common<T: Float, U, F>(
         _ => {}
     }
 
-    let neg = num < _0 || (negative_zero && _1 / num == Float::neg_infinity());
+    let neg = num < _0 || (negative_zero && _1 / num == T::neg_infinity());
     // For an f64 the exponent is in the range of [-1022, 1023] for base 2, so
     // we may have up to that many digits. Give ourselves some extra wiggle room
     // otherwise as well.

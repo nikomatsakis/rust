@@ -337,7 +337,7 @@ impl<'a> StringReader<'a> {
             let last_char = self.curr.unwrap();
             let next = self.source_text.char_range_at(current_byte_offset);
             let byte_offset_diff = next.next - current_byte_offset;
-            self.pos = self.pos + Pos::from_usize(byte_offset_diff);
+            self.pos = self.pos + BytePos::from_usize(byte_offset_diff);
             self.curr = Some(next.ch);
             self.col = self.col + CharPos(1);
             if last_char == '\n' {

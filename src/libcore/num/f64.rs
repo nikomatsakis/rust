@@ -165,7 +165,7 @@ impl Float for f64 {
     /// Returns `true` if the number is infinite.
     #[inline]
     fn is_infinite(self) -> bool {
-        self == Float::infinity() || self == Float::neg_infinity()
+        self == f64::infinity() || self == f64::neg_infinity()
     }
 
     /// Returns `true` if the number is neither infinite or NaN.
@@ -297,8 +297,8 @@ impl Float for f64 {
     #[inline]
     fn fract(self) -> f64 { self - self.trunc() }
 
-    /// Computes the absolute value of `self`. Returns `Float::nan()` if the
-    /// number is `Float::nan()`.
+    /// Computes the absolute value of `self`. Returns `f64::nan()` if the
+    /// number is `f64::nan()`.
     #[inline]
     fn abs(self) -> f64 {
         unsafe { intrinsics::fabsf64(self) }
@@ -306,30 +306,30 @@ impl Float for f64 {
 
     /// Returns a number that represents the sign of `self`.
     ///
-    /// - `1.0` if the number is positive, `+0.0` or `Float::infinity()`
-    /// - `-1.0` if the number is negative, `-0.0` or `Float::neg_infinity()`
-    /// - `Float::nan()` if the number is `Float::nan()`
+    /// - `1.0` if the number is positive, `+0.0` or `f64::infinity()`
+    /// - `-1.0` if the number is negative, `-0.0` or `f64::neg_infinity()`
+    /// - `f64::nan()` if the number is `f64::nan()`
     #[inline]
     fn signum(self) -> f64 {
         if self.is_nan() {
-            Float::nan()
+            f64::nan()
         } else {
             unsafe { intrinsics::copysignf64(1.0, self) }
         }
     }
 
     /// Returns `true` if `self` is positive, including `+0.0` and
-    /// `Float::infinity()`.
+    /// `f64::infinity()`.
     #[inline]
     fn is_positive(self) -> bool {
-        self > 0.0 || (1.0 / self) == Float::infinity()
+        self > 0.0 || (1.0 / self) == f64::infinity()
     }
 
     /// Returns `true` if `self` is negative, including `-0.0` and
-    /// `Float::neg_infinity()`.
+    /// `f64::neg_infinity()`.
     #[inline]
     fn is_negative(self) -> bool {
-        self < 0.0 || (1.0 / self) == Float::neg_infinity()
+        self < 0.0 || (1.0 / self) == f64::neg_infinity()
     }
 
     /// Fused multiply-add. Computes `(self * a) + b` with only one rounding

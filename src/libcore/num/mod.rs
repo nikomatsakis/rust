@@ -349,9 +349,9 @@ pub trait Int
     #[inline]
     fn saturating_add(self, other: Self) -> Self {
         match self.checked_add(other) {
-            Some(x)                      => x,
-            None if other >= Int::zero() => Int::max_value(),
-            None                         => Int::min_value(),
+            Some(x)                       => x,
+            None if other >= Self::zero() => Self::max_value(),
+            None                          => Self::min_value(),
         }
     }
 
@@ -361,9 +361,9 @@ pub trait Int
     #[inline]
     fn saturating_sub(self, other: Self) -> Self {
         match self.checked_sub(other) {
-            Some(x)                      => x,
-            None if other >= Int::zero() => Int::min_value(),
-            None                         => Int::max_value(),
+            Some(x)                       => x,
+            None if other >= Self::zero() => Self::min_value(),
+            None                          => Self::max_value(),
         }
     }
 
@@ -381,7 +381,7 @@ pub trait Int
     #[inline]
     fn pow(self, mut exp: u32) -> Self {
         let mut base = self;
-        let mut acc: Self = Int::one();
+        let mut acc: Self = Self::one();
 
         let mut prev_base = self;
         let mut base_oflo = false;
@@ -565,7 +565,7 @@ macro_rules! int_impl {
             fn min_value() -> $T { (-1 as $T) << ($BITS - 1) }
 
             #[inline]
-            fn max_value() -> $T { let min: $T = Int::min_value(); !min }
+            fn max_value() -> $T { let min = <$T>::min_value(); !min }
 
             #[inline]
             fn count_ones(self) -> u32 { (self as $UnsignedT).count_ones() }
@@ -604,7 +604,7 @@ macro_rules! int_impl {
             fn checked_div(self, v: $T) -> Option<$T> {
                 match v {
                     0   => None,
-                   -1 if self == Int::min_value()
+                   -1 if self == <$T>::min_value()
                         => None,
                     v   => Some(self / v),
                 }
@@ -715,7 +715,7 @@ pub trait UnsignedInt: Int + WrappingOps {
     #[stable(feature = "rust1", since = "1.0.0")]
     #[inline]
     fn is_power_of_two(self) -> bool {
-        (self.wrapping_sub(Int::one())) & self == Int::zero() && !(self == Int::zero())
+        (self.wrapping_sub(Int::one())) & self == Self::zero() && !(self == Self::zero())
     }
 
     /// Returns the smallest power of two greater than or equal to `self`.
@@ -866,8 +866,8 @@ macro_rules! impl_to_primitive_int_to_int {
 macro_rules! impl_to_primitive_int_to_uint {
     ($SrcT:ty, $DstT:ty, $slf:expr) => (
         {
-            let zero: $SrcT = Int::zero();
-            let max_value: $DstT = Int::max_value();
+            let zero= <$SrcT>::zero();
+            let max_value = <$DstT>::max_value();
             if zero <= $slf && $slf as u64 <= max_value as u64 {
                 Some($slf as $DstT)
             } else {
@@ -939,8 +939,8 @@ macro_rules! impl_to_primitive_uint_to_uint {
             if size_of::<$SrcT>() <= size_of::<$DstT>() {
                 Some($slf as $DstT)
             } else {
-                let zero: $SrcT = Int::zero();
-                let max_value: $DstT = Int::max_value();
+                let zero = <$SrcT>::zero();
+                let max_value = <$DstT>::max_value();
                 if zero <= $slf && $slf as u64 <= max_value as u64 {
                     Some($slf as $DstT)
                 } else {
@@ -1751,7 +1751,7 @@ macro_rules! from_str_radix_int_impl {
                        "from_str_radix_int: must lie in the range `[2, 36]` - found {}",
                        radix);
 
-                let is_signed_ty = (0 as $T) > Int::min_value();
+                let is_signed_ty = (0 as $T) > <$T>::min_value();
 
                 match src.slice_shift_char() {
                     Some(('-', "")) => Err(PIE { kind: Empty }),
