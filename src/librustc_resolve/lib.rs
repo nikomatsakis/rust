@@ -87,7 +87,7 @@ use syntax::attr::AttrMetaMethods;
 use syntax::ext::mtwt;
 use syntax::parse::token::{self, special_names, special_idents};
 use syntax::ptr::P;
-use syntax::codemap::{self, Span, Pos};
+use syntax::codemap::{self, BytePos, Span, Pos};
 use syntax::visit::{self, Visitor};
 
 use std::collections::{HashMap, HashSet};
@@ -1967,7 +1967,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                     let module_name = self.module_to_string(&*search_module);
                     let mut span = span;
                     let msg = if "???" == &module_name[..] {
-                        span.hi = span.lo + Pos::from_usize(segment_name.len());
+                        span.hi = span.lo + BytePos::from_usize(segment_name.len());
 
                         match search_parent_externals(name,
                                                      &self.current_module) {

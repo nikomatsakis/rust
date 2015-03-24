@@ -582,8 +582,8 @@ impl CodeMap {
             Some(last) => last.end_pos.to_usize(),
         };
 
-        let end_pos = Pos::from_usize(start_pos + source_len);
-        let start_pos = Pos::from_usize(start_pos);
+        let end_pos = BytePos::from_usize(start_pos + source_len);
+        let start_pos = BytePos::from_usize(start_pos);
 
         let lines = file_local_lines.map_in_place(|pos| pos + start_pos);
         let multibyte_chars = file_local_multibyte_chars.map_in_place(|mbc| MultiByteChar {

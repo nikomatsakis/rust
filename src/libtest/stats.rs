@@ -181,7 +181,7 @@ impl<T: Float + FromPrimitive> Stats<T> for [T] {
                 // `lo`. Together `hi+lo` are exactly equal to `x+y`.
                 let hi = x + y;
                 let lo = y - (hi - x);
-                if lo != Float::zero() {
+                if lo != T::zero() {
                     partials[j] = lo;
                     j += 1;
                 }
@@ -210,7 +210,7 @@ impl<T: Float + FromPrimitive> Stats<T> for [T] {
 
     fn mean(&self) -> T {
         assert!(self.len() != 0);
-        self.sum() / FromPrimitive::from_usize(self.len()).unwrap()
+        self.sum() / T::from_usize(self.len()).unwrap()
     }
 
     fn median(&self) -> T {
@@ -230,7 +230,7 @@ impl<T: Float + FromPrimitive> Stats<T> for [T] {
             // NB: this is _supposed to be_ len-1, not len. If you
             // change it back to len, you will be calculating a
             // population variance, not a sample variance.
-            let denom = FromPrimitive::from_usize(self.len()-1).unwrap();
+            let denom = T::from_usize(self.len()-1).unwrap();
             v/denom
         }
     }
@@ -240,7 +240,7 @@ impl<T: Float + FromPrimitive> Stats<T> for [T] {
     }
 
     fn std_dev_pct(&self) -> T {
-        let hundred = FromPrimitive::from_usize(100).unwrap();
+        let hundred = T::from_usize(100).unwrap();
         (self.std_dev() / self.mean()) * hundred
     }
 
@@ -249,12 +249,12 @@ impl<T: Float + FromPrimitive> Stats<T> for [T] {
         let abs_devs: Vec<T> = self.iter().map(|&v| (med - v).abs()).collect();
         // This constant is derived by smarter statistics brains than me, but it is
         // consistent with how R and other packages treat the MAD.
-        let number = FromPrimitive::from_f64(1.4826).unwrap();
+        let number = T::from_f64(1.4826).unwrap();
         abs_devs.median() * number
     }
 
     fn median_abs_dev_pct(&self) -> T {
-        let hundred = FromPrimitive::from_usize(100).unwrap();
+        let hundred = T::from_usize(100).unwrap();
         (self.median_abs_dev() / self.median()) * hundred
     }
 
@@ -293,12 +293,12 @@ fn percentile_of_sorted<T: Float + FromPrimitive>(sorted_samples: &[T],
     }
     let zero: T = Float::zero();
     assert!(zero <= pct);
-    let hundred = FromPrimitive::from_usize(100).unwrap();
+    let hundred = T::from_usize(100).unwrap();
     assert!(pct <= hundred);
     if pct == hundred {
         return sorted_samples[sorted_samples.len() - 1];
     }
-    let length = FromPrimitive::from_usize(sorted_samples.len() - 1).unwrap();
+    let length = T::from_usize(sorted_samples.len() - 1).unwrap();
     let rank = (pct / hundred) * length;
     let lrank = rank.floor();
     let d = rank - lrank;

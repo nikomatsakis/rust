@@ -13,7 +13,7 @@ use ast::{Ident, Generics, Expr};
 use ast;
 use ast_util;
 use attr;
-use codemap::{Span, respan, Spanned, DUMMY_SP, Pos};
+use codemap::{BytePos, Span, respan, Spanned, DUMMY_SP, Pos};
 use ext::base::ExtCtxt;
 use owned_slice::OwnedSlice;
 use parse::token::special_idents;
@@ -633,7 +633,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
     fn expr_field_access(&self, sp: Span, expr: P<ast::Expr>, ident: ast::Ident) -> P<ast::Expr> {
         let field_name = token::get_ident(ident);
         let field_span = Span {
-            lo: sp.lo - Pos::from_usize(field_name.len()),
+            lo: sp.lo - BytePos::from_usize(field_name.len()),
             hi: sp.hi,
             expn_id: sp.expn_id,
         };
@@ -643,7 +643,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
     }
     fn expr_tup_field_access(&self, sp: Span, expr: P<ast::Expr>, idx: usize) -> P<ast::Expr> {
         let field_span = Span {
-            lo: sp.lo - Pos::from_usize(idx.to_string().len()),
+            lo: sp.lo - BytePos::from_usize(idx.to_string().len()),
             hi: sp.hi,
             expn_id: sp.expn_id,
         };

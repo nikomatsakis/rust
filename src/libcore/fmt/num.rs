@@ -36,11 +36,11 @@ trait GenericRadix {
     fn fmt_int<T: Int>(&self, mut x: T, f: &mut fmt::Formatter) -> fmt::Result {
         // The radix can be as low as 2, so we need a buffer of at least 64
         // characters for a base 2 number.
-        let zero = Int::zero();
+        let zero = T::zero();
         let is_positive = x >= zero;
         let mut buf = [0; 64];
         let mut curr = buf.len();
-        let base = cast(self.base()).unwrap();
+        let base: T = cast(self.base()).unwrap();
         if is_positive {
             // Accumulate each digit of the number from the least significant
             // to the most significant figure.

@@ -68,7 +68,7 @@ pub fn unimpl() -> IoError {
 
 // unix has nonzero values as errors
 pub fn mkerr_libc<T: Int>(ret: T) -> IoResult<()> {
-    if ret != Int::zero() {
+    if ret != T::zero() {
         Err(last_error())
     } else {
         Ok(())
