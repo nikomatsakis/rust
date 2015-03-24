@@ -2351,6 +2351,7 @@ fn deref_once<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     }
 }
 
+#[derive(Debug)]
 enum OverflowOp {
     Add,
     Sub,
