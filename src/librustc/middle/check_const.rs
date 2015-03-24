@@ -392,16 +392,8 @@ fn check_expr<'a, 'tcx>(v: &mut CheckCrateVisitor<'a, 'tcx>,
     let method_call = ty::MethodCall::expr(e.id);
     match e.node {
         ast::ExprUnary(..) |
+        ast::ExprBinary(..) |
         ast::ExprIndex(..) if v.tcx.method_map.borrow().contains_key(&method_call) => {
-            v.add_qualif(NOT_CONST);
-            if v.mode != Mode::Var {
-                span_err!(v.tcx.sess, e.span, E0011,
-                            "user-defined operators are not allowed in {}s", v.msg());
-            }
-        }
-        ast::ExprBinary(op, ref lhs, ref rhs)
-            if !ty::is_builtin_binop(v.tcx, ty::expr_ty(v.tcx, lhs), ty::expr_ty(v.tcx, rhs), op) =>
-        {
             v.add_qualif(NOT_CONST);
             if v.mode != Mode::Var {
                 span_err!(v.tcx.sess, e.span, E0011,
