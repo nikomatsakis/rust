@@ -606,6 +606,7 @@ impl Named for Variant_ { fn name(&self) -> Name { self.name.name } }
 impl Named for TraitItem { fn name(&self) -> Name { self.ident.name } }
 impl Named for ImplItem { fn name(&self) -> Name { self.ident.name } }
 
+#[inextensible]
 pub trait FoldOps {
     fn new_id(&self, id: NodeId) -> NodeId {
         id

@@ -448,6 +448,7 @@ impl attr::AttrMetaMethods for Attribute {
     fn meta_item_list<'a>(&'a self) -> Option<&'a [P<ast::MetaItem>]> { None }
     fn span(&self) -> codemap::Span { unimplemented!() }
 }
+
 impl<'a> attr::AttrMetaMethods for &'a Attribute {
     fn name(&self) -> InternedString { (**self).name() }
     fn value_str(&self) -> Option<InternedString> { (**self).value_str() }

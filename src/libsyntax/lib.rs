@@ -29,6 +29,7 @@
 #![feature(box_syntax)]
 #![feature(collections)]
 #![feature(core)]
+#![feature(custom_attribute)]
 #![feature(int_uint)]
 #![feature(libc)]
 #![feature(old_path)]
@@ -39,6 +40,7 @@
 #![feature(path_ext)]
 #![feature(str_char)]
 #![feature(convert)]
+#![feature(inextensible)]
 #![feature(into_cow)]
 
 extern crate arena;

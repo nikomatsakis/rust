@@ -282,6 +282,7 @@
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/nightly/")]
 #![feature(int_uint)]
+#![feature(inextensible)]
 #![feature(collections)]
 #![feature(into_cow)]
 
@@ -514,6 +515,7 @@ pub type Edges<'a,E> = Cow<'a,[E]>;
 /// `Cow<[T]>` to leave implementers the freedom to create
 /// entirely new vectors or to pass back slices into internally owned
 /// vectors.
+#[inextensible]
 pub trait GraphWalk<'a, N, E> {
     /// Returns all the nodes in this graph.
     fn nodes(&'a self) -> Nodes<'a, N>;

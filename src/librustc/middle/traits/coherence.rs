@@ -74,17 +74,39 @@ fn overlap(selcx: &mut SelectionContext,
     debug!("overlap: subtraitref check succeeded");
 
     // Are any of the obligations unsatisfiable? If so, no overlap.
+    let tcx = selcx.tcx();
+    let infcx = selcx.infcx();
     let opt_failing_obligation =
         a_obligations.iter()
                      .chain(b_obligations.iter())
+                     .map(|o| infcx.resolve_type_vars_if_possible(o))
+                     .filter(|o| local_obligation(tcx, o))
                      .find(|o| !selcx.evaluate_obligation(o));
 
     if let Some(failing_obligation) = opt_failing_obligation {
-        debug!("overlap: obligation unsatisfiable {}", failing_obligation.repr(selcx.tcx()));
-        return false;
+        debug!("overlap: obligation unsatisfiable {}", failing_obligation.repr(tcx));
+        return false
     }
 
     true
+}
+
+fn local_obligation<'tcx>(tcx: &ty::ctxt<'tcx>, obligation: &PredicateObligation<'tcx>) -> bool {
+    debug!("local_obligation(obligation={})", obligation.repr(tcx));
+    match obligation.predicate {
+        ty::Predicate::Trait(ref data) => {
+            // TODO special-case sized trait in a very crude way for now
+            let is_sized_trait = Some(data.def_id()) == tcx.lang_items.sized_trait();
+
+            debug!("local_obligation: data={:?} is_sized_trait={}",
+                   data, is_sized_trait);
+
+            is_sized_trait
+                || data.def_id().krate == ast::LOCAL_CRATE
+                || ty_is_local(tcx, data.def_id(), data.skip_binder().self_ty())
+        }
+        _ => false,
+    }
 }
 
 /// Instantiate fresh variables for all bound parameters of the impl
@@ -156,7 +178,11 @@ pub fn orphan_check<'tcx>(tcx: &ty::ctxt<'tcx>,
 
     // Find the first input type that either references a type parameter OR
     // some local type.
-    match input_tys.find(|&&input_ty| references_local_or_type_parameter(tcx, input_ty)) {
+    match
+        input_tys.find(|&&input_ty| local_or_references_type_parameter(tcx,
+                                                                       trait_ref.def_id,
+                                                                       input_ty))
+    {
         Some(&input_ty) => {
             // Within this first type, check that all type parameters are covered by a local
             // type constructor. Note that if there is no local type constructor, then any
@@ -175,6 +201,48 @@ pub fn orphan_check<'tcx>(tcx: &ty::ctxt<'tcx>,
     return Ok(());
 }
 
+fn type_parameters_covered_by_ty<'tcx>(tcx: &ty::ctxt<'tcx>,
+                                       ty: Ty<'tcx>)
+                                       -> HashSet<Ty<'tcx>>
+{
+    if ty_is_local_constructor(tcx, ty) {
+        type_parameters_reachable_from_ty(ty)
+    } else {
+        ty.walk_children().flat_map(|t| type_parameters_covered_by_ty(tcx, t).into_iter()).collect()
+    }
+}
+
+/// All type parameters reachable from `ty`
+fn type_parameters_reachable_from_ty<'tcx>(ty: Ty<'tcx>) -> HashSet<Ty<'tcx>> {
+    ty.walk().filter(|&t| is_type_parameter(t)).collect()
+}
+
+fn local_or_references_type_parameter<'tcx>(tcx: &ty::ctxt<'tcx>,
+                                            trait_def_id: ast::DefId,
+                                            ty: Ty<'tcx>)
+                                            -> bool {
+    ty_is_local(tcx, trait_def_id, ty) || ty.walk().any(|ty| is_type_parameter(ty))
+}
+
+fn is_type_parameter<'tcx>(ty: Ty<'tcx>) -> bool {
+    match ty.sty {
+        // FIXME(#20590) straighten story about projection types
+        ty::ty_projection(..) | ty::ty_param(..) => true,
+        _ => false,
+    }
+}
+
+fn ty_is_local<'tcx>(tcx: &ty::ctxt<'tcx>,
+                     trait_def_id: ast::DefId,
+                     ty: Ty<'tcx>)
+                     -> bool
+{
+    ty_is_local_constructor(tcx, ty) || {
+        ty::has_attr(tcx, trait_def_id, "inextensible") &&
+        ty.walk().any(|t| ty_is_local_constructor(tcx, t))
+    }
+}
+
 fn ty_is_local_constructor<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>) -> bool {
     debug!("ty_is_local_constructor({})", ty.repr(tcx));
 
@@ -191,6 +259,7 @@ fn ty_is_local_constructor<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>) -> bool {
         ty::ty_rptr(..) |
         ty::ty_tup(..) |
         ty::ty_param(..) |
+        ty::ty_infer(..) |
         ty::ty_projection(..) => {
             false
         }
@@ -210,7 +279,6 @@ fn ty_is_local_constructor<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>) -> bool {
         }
 
         ty::ty_closure(..) |
-        ty::ty_infer(..) |
         ty::ty_err => {
             tcx.sess.bug(
                 &format!("ty_is_local invoked on unexpected type: {}",
@@ -219,30 +287,3 @@ fn ty_is_local_constructor<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>) -> bool {
     }
 }
 
-fn type_parameters_covered_by_ty<'tcx>(tcx: &ty::ctxt<'tcx>,
-                                       ty: Ty<'tcx>)
-                                       -> HashSet<Ty<'tcx>>
-{
-    if ty_is_local_constructor(tcx, ty) {
-        type_parameters_reachable_from_ty(ty)
-    } else {
-        ty.walk_children().flat_map(|t| type_parameters_covered_by_ty(tcx, t).into_iter()).collect()
-    }
-}
-
-/// All type parameters reachable from `ty`
-fn type_parameters_reachable_from_ty<'tcx>(ty: Ty<'tcx>) -> HashSet<Ty<'tcx>> {
-    ty.walk().filter(|&t| is_type_parameter(t)).collect()
-}
-
-fn references_local_or_type_parameter<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>) -> bool {
-    ty.walk().any(|ty| is_type_parameter(ty) || ty_is_local_constructor(tcx, ty))
-}
-
-fn is_type_parameter<'tcx>(ty: Ty<'tcx>) -> bool {
-    match ty.sty {
-        // FIXME(#20590) straighten story about projection types
-        ty::ty_projection(..) | ty::ty_param(..) => true,
-        _ => false,
-    }
-}

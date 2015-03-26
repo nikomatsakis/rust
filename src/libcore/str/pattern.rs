@@ -26,7 +26,10 @@ use super::CharEq;
 /// The trait itself acts as a builder for an associated
 /// `Searcher` type, which does the actual work of finding
 /// occurrences of the pattern in a string.
+#[inextensible] // (*)
 pub trait Pattern<'a>: Sized {
+    // so people can do `impl Pattern for &String`
+
     /// Associated searcher for this pattern
     type Searcher: Searcher<'a>;
 

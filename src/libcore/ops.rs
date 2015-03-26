@@ -183,7 +183,10 @@ macro_rules! forward_ref_binop {
 /// ```
 #[lang="add"]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[inextensible] // (*)
 pub trait Add<RHS=Self> {
+    // (*) so we can impl on &Foo
+
     /// The resulting type after applying the `+` operator
     #[stable(feature = "rust1", since = "1.0.0")]
     type Output;
@@ -237,6 +240,7 @@ add_impl! { usize u8 u16 u32 u64 isize i8 i16 i32 i64 f32 f64 }
 /// ```
 #[lang="sub"]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[inextensible] // (*) see Add
 pub trait Sub<RHS=Self> {
     /// The resulting type after applying the `-` operator
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -291,6 +295,7 @@ sub_impl! { usize u8 u16 u32 u64 isize i8 i16 i32 i64 f32 f64 }
 /// ```
 #[lang="mul"]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[inextensible] // (*) see Add
 pub trait Mul<RHS=Self> {
     /// The resulting type after applying the `*` operator
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -345,6 +350,7 @@ mul_impl! { usize u8 u16 u32 u64 isize i8 i16 i32 i64 f32 f64 }
 /// ```
 #[lang="div"]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[inextensible] // (*) see Add
 pub trait Div<RHS=Self> {
     /// The resulting type after applying the `/` operator
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -399,6 +405,7 @@ div_impl! { usize u8 u16 u32 u64 isize i8 i16 i32 i64 f32 f64 }
 /// ```
 #[lang="rem"]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[inextensible] // (*) see Add
 pub trait Rem<RHS=Self> {
     /// The resulting type after applying the `%` operator
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -472,6 +479,7 @@ rem_float_impl! { f64, fmod }
 /// ```
 #[lang="neg"]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[inextensible] // (*) see Add
 pub trait Neg {
     /// The resulting type after applying the `-` operator
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -549,6 +557,7 @@ neg_uint_impl! { u64, i64 }
 /// ```
 #[lang="not"]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[inextensible] // (*) see Add
 pub trait Not {
     /// The resulting type after applying the `!` operator
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -603,6 +612,7 @@ not_impl! { bool usize u8 u16 u32 u64 isize i8 i16 i32 i64 }
 /// ```
 #[lang="bitand"]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[inextensible] // (*) see Add
 pub trait BitAnd<RHS=Self> {
     /// The resulting type after applying the `&` operator
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -657,6 +667,7 @@ bitand_impl! { bool usize u8 u16 u32 u64 isize i8 i16 i32 i64 }
 /// ```
 #[lang="bitor"]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[inextensible] // (*) see Add
 pub trait BitOr<RHS=Self> {
     /// The resulting type after applying the `|` operator
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -711,6 +722,7 @@ bitor_impl! { bool usize u8 u16 u32 u64 isize i8 i16 i32 i64 }
 /// ```
 #[lang="bitxor"]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[inextensible] // (*) see Add
 pub trait BitXor<RHS=Self> {
     /// The resulting type after applying the `^` operator
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -765,6 +777,7 @@ bitxor_impl! { bool usize u8 u16 u32 u64 isize i8 i16 i32 i64 }
 /// ```
 #[lang="shl"]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[inextensible] // (*) see Add
 pub trait Shl<RHS> {
     /// The resulting type after applying the `<<` operator
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -837,6 +850,7 @@ shl_impl_all! { u8 u16 u32 u64 usize i8 i16 i32 i64 isize }
 /// ```
 #[lang="shr"]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[inextensible] // (*) see Add
 pub trait Shr<RHS> {
     /// The resulting type after applying the `>>` operator
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -911,6 +925,7 @@ shr_impl_all! { u8 u16 u32 u64 usize i8 i16 i32 i64 isize }
 #[lang="index"]
 #[rustc_on_unimplemented = "the type `{Self}` cannot be indexed by `{Idx}`"]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[inextensible] // (*) see Add
 pub trait Index<Idx: ?Sized> {
     /// The returned type after indexing
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -964,6 +979,7 @@ pub trait Index<Idx: ?Sized> {
 #[lang="index_mut"]
 #[rustc_on_unimplemented = "the type `{Self}` cannot be mutably indexed by `{Idx}`"]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[inextensible] // (*) see Add
 pub trait IndexMut<Idx: ?Sized>: Index<Idx> {
     /// The method for the indexing (`Foo[Bar]`) operation
     #[cfg(stage0)]
@@ -1073,6 +1089,7 @@ impl<Idx: fmt::Debug> fmt::Debug for RangeTo<Idx> {
 /// ```
 #[lang="deref"]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[inextensible] // already have blankets
 pub trait Deref {
     /// The resulting type after dereferencing
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -1134,6 +1151,7 @@ impl<'a, T: ?Sized> Deref for &'a mut T {
 /// ```
 #[lang="deref_mut"]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[inextensible] // already have blankets
 pub trait DerefMut: Deref {
     /// The method called to mutably dereference a value
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -1162,8 +1180,12 @@ pub trait Fn<Args> {
 #[lang="fn"]
 #[stable(feature = "rust1", since = "1.0.0")]
 #[rustc_paren_sugar]
+#[inextensible] // (*)
 #[cfg(not(stage0))]
 pub trait Fn<Args> : FnMut<Args> {
+    // (*) so that people can declare `&String: Pattern`, which in
+    // turn requires that `&String: !FnMut`
+
     /// This is called when the call operator is used.
     extern "rust-call" fn call(&self, args: Args) -> Self::Output;
 }
@@ -1186,6 +1208,7 @@ pub trait FnMut<Args> {
 #[stable(feature = "rust1", since = "1.0.0")]
 #[rustc_paren_sugar]
 #[cfg(not(stage0))]
+#[inextensible] // (*) see Fn
 pub trait FnMut<Args> : FnOnce<Args> {
     /// This is called when the call operator is used.
     extern "rust-call" fn call_mut(&mut self, args: Args) -> Self::Output;
@@ -1195,6 +1218,7 @@ pub trait FnMut<Args> : FnOnce<Args> {
 #[lang="fn_once"]
 #[stable(feature = "rust1", since = "1.0.0")]
 #[rustc_paren_sugar]
+#[inextensible] // (*) see Fn
 pub trait FnOnce<Args> {
     /// The returned type after the call operator is used.
     type Output;
