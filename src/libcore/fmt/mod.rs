@@ -255,7 +255,6 @@ impl<'a> Display for Arguments<'a> {
                             defined in your crate, add `#[derive(Debug)]` or \
                             manually implement it"]
 #[lang = "debug_trait"]
-#[inextensible]
 pub trait Debug {
     /// Formats the value using the given formatter.
     #[stable(feature = "rust1", since = "1.0.0")]

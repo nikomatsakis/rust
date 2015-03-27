@@ -67,7 +67,6 @@ use option::Option::{self, Some, None};
 #[lang="eq"]
 #[stable(feature = "rust1", since = "1.0.0")]
 #[old_orphan_check]
-#[inextensible] // already have blankets
 pub trait PartialEq<Rhs: ?Sized = Self> {
     /// This method tests for `self` and `other` values to be equal, and is used by `==`.
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -92,7 +91,6 @@ pub trait PartialEq<Rhs: ?Sized = Self> {
 /// This property cannot be checked by the compiler, and therefore `Eq` implies
 /// `PartialEq`, and has no extra methods.
 #[stable(feature = "rust1", since = "1.0.0")]
-#[inextensible] // already have blankets
 pub trait Eq: PartialEq<Self> {
     // FIXME #13101: this method is used solely by #[deriving] to
     // assert that every component of a type implements #[deriving]
@@ -191,7 +189,6 @@ impl Ordering {
 /// - total and antisymmetric: exactly one of `a < b`, `a == b` or `a > b` is true; and
 /// - transitive, `a < b` and `b < c` implies `a < c`. The same must hold for both `==` and `>`.
 #[stable(feature = "rust1", since = "1.0.0")]
-#[inextensible] // already have blankets
 pub trait Ord: Eq + PartialOrd<Self> {
     /// This method returns an `Ordering` between `self` and `other`.
     ///
@@ -251,7 +248,6 @@ impl PartialOrd for Ordering {
 /// false` (cf. IEEE 754-2008 section 5.11).
 #[lang="ord"]
 #[stable(feature = "rust1", since = "1.0.0")]
-#[inextensible] // already have blankets
 pub trait PartialOrd<Rhs: ?Sized = Self>: PartialEq<Rhs> {
     /// This method returns an ordering between `self` and `other` values if one exists.
     ///

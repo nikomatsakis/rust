@@ -85,7 +85,6 @@ use usize;
 #[stable(feature = "rust1", since = "1.0.0")]
 #[rustc_on_unimplemented = "`{Self}` is not an iterator; maybe try calling `.iter()` or a similar \
                             method"]
-#[inextensible]
 pub trait Iterator {
     /// The type of the elements being iterated
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -123,11 +122,7 @@ pub trait FromIterator<A> {
 
 /// Conversion into an `Iterator`
 #[stable(feature = "rust1", since = "1.0.0")]
-#[inextensible] // (*)
 pub trait IntoIterator {
-
-    // (*) so that people can `impl IntoIterator for &Vec`
-
     /// The type of the elements being iterated
     #[stable(feature = "rust1", since = "1.0.0")]
     type Item;
