@@ -86,7 +86,8 @@ use syntax::ast_util::{self, is_local, lit_is_str, local_def};
 use syntax::attr::{self, AttrMetaMethods};
 use syntax::codemap::Span;
 use syntax::parse::token::{self, InternedString, special_idents};
-use syntax::{ast, ast_map};
+use syntax::ast;
+use syntax::ast_map::{self, LinkedPath};
 
 pub type Disr = u64;
 
@@ -5451,7 +5452,7 @@ pub fn with_path<T, F>(cx: &ctxt, id: ast::DefId, f: F) -> T where
     if id.krate == ast::LOCAL_CRATE {
         cx.map.with_path(id.node, f)
     } else {
-        f(csearch::get_item_path(cx, id).iter().cloned().chain(None))
+        f(csearch::get_item_path(cx, id).iter().cloned().chain(LinkedPath::empty()))
     }
 }
 

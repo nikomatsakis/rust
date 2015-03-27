@@ -41,7 +41,6 @@ pub fn is_used(attr: &Attribute) -> bool {
     USED_ATTRS.with(|slot| slot.borrow().contains(&id))
 }
 
-#[inextensible] // so rustdoc can impl for &Attribute
 pub trait AttrMetaMethods {
     fn check_name(&self, name: &str) -> bool {
         name == &self.name()[..]
