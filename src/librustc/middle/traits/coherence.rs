@@ -237,10 +237,30 @@ fn ty_is_local<'tcx>(tcx: &ty::ctxt<'tcx>,
                      ty: Ty<'tcx>)
                      -> bool
 {
-    ty_is_local_constructor(tcx, ty) || {
-        ty::has_attr(tcx, trait_def_id, "inextensible") &&
-        ty.walk().any(|t| ty_is_local_constructor(tcx, t))
+    // An extensible trait retains the freedom to add blanket impls
+    // (except for trivial ones like `impl<T:..> Trait for T`) and
+    // hence we can only say a type is local if the root is a local
+    // type constructor.
+    let trait_is_extensible = !ty::has_attr(tcx, trait_def_id, "inextensible");
+    if trait_is_extensible {
+        return ty_is_local_constructor(tcx, ty) || {
+            match ty.sty {
+                ty::ty_uniq(ty) => ty_is_local(tcx, trait_def_id, ty), // TODO BAD BAD
+                ty::ty_rptr(_, mt) => ty_is_local(tcx, trait_def_id, mt.ty),
+
+                ty::ty_enum(def_id, substs) |
+                ty::ty_struct(def_id, substs) => { // TODO trait
+                    ty::has_attr(tcx, def_id, "inextensible") &&
+                        substs.types.iter()
+                                    .any(|t| ty_is_local(tcx, trait_def_id, t))
+                }
+
+                _ => false,
+            }
+        };
     }
+
+    ty.walk().any(|t| ty_is_local_constructor(tcx, t))
 }
 
 fn ty_is_local_constructor<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>) -> bool {
