@@ -25,7 +25,10 @@ trait Foo {
     fn foo(&self) -> int;
 }
 
-impl<T:Copy> Foo for Vec<T> {
+trait MyCopy { fn foo(&self) { } }
+impl MyCopy for i32 { }
+
+impl<T:MyCopy> Foo for Vec<T> {
     fn foo(&self) -> int {1}
 }
 
