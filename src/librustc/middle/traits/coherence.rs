@@ -17,14 +17,16 @@ use super::PredicateObligation;
 use super::project;
 use super::util;
 
-use middle::subst::{Subst, TypeSpace};
+use middle::subst::{Subst, Substs, TypeSpace};
 use middle::ty::{self, ToPolyTraitRef, Ty};
 use middle::infer::{self, InferCtxt};
-use std::collections::HashSet;
 use std::rc::Rc;
 use syntax::ast;
-use syntax::codemap::DUMMY_SP;
+use syntax::codemap::{DUMMY_SP, Span};
 use util::ppaux::Repr;
+
+#[derive(Copy)]
+struct ParamIsLocal(bool);
 
 /// True if there exist types that satisfy both of the two given impls.
 pub fn overlapping_impls(infcx: &InferCtxt,
@@ -56,10 +58,16 @@ fn overlap(selcx: &mut SelectionContext,
            a_def_id.repr(selcx.tcx()),
            b_def_id.repr(selcx.tcx()));
 
-    let (a_trait_ref, a_obligations) = impl_trait_ref_and_oblig(selcx, a_def_id);
-    let (b_trait_ref, b_obligations) = impl_trait_ref_and_oblig(selcx, b_def_id);
+    let (a_trait_ref, a_obligations) = impl_trait_ref_and_oblig(selcx,
+                                                                a_def_id,
+                                                                util::free_substs_for_impl);
+
+    let (b_trait_ref, b_obligations) = impl_trait_ref_and_oblig(selcx,
+                                                                b_def_id,
+                                                                util::fresh_type_vars_for_impl);
 
     debug!("overlap: a_trait_ref={}", a_trait_ref.repr(selcx.tcx()));
+
     debug!("overlap: b_trait_ref={}", b_trait_ref.repr(selcx.tcx()));
 
     // Does `a <: b` hold? If not, no overlap.
@@ -80,7 +88,7 @@ fn overlap(selcx: &mut SelectionContext,
         a_obligations.iter()
                      .chain(b_obligations.iter())
                      .map(|o| infcx.resolve_type_vars_if_possible(o))
-                     .filter(|o| local_obligation(tcx, o))
+                     .filter(|o| obligation_is_knowable(tcx, o))
                      .find(|o| !selcx.evaluate_obligation(o));
 
     if let Some(failing_obligation) = opt_failing_obligation {
@@ -91,32 +99,64 @@ fn overlap(selcx: &mut SelectionContext,
     true
 }
 
-fn local_obligation<'tcx>(tcx: &ty::ctxt<'tcx>, obligation: &PredicateObligation<'tcx>) -> bool {
-    debug!("local_obligation(obligation={})", obligation.repr(tcx));
+fn obligation_is_knowable<'tcx>(tcx: &ty::ctxt<'tcx>,
+                                obligation: &PredicateObligation<'tcx>)
+                                -> bool {
+    debug!("obligation_is_knowable(obligation={})", obligation.repr(tcx));
     match obligation.predicate {
-        ty::Predicate::Trait(ref data) => {
-            let is_inextensible = ty::has_attr(tcx, data.def_id(), "inextensible");
-
-            debug!("local_obligation: data={:?} is_inextensible={}",
-                   data, is_inextensible);
-
-            is_inextensible
-                || data.def_id().krate == ast::LOCAL_CRATE
-                || ty_is_local(tcx, data.def_id(), data.skip_binder().self_ty())
-        }
-        _ => false,
+        ty::Predicate::Trait(ref data) =>
+            trait_ref_is_knowable(tcx, &data.skip_binder().trait_ref),
+        _ =>
+            false,
     }
 }
+
+pub fn trait_ref_is_knowable<'tcx>(tcx: &ty::ctxt<'tcx>, trait_ref: &ty::TraitRef<'tcx>) -> bool
+{
+    debug!("trait_ref_is_knowable(trait_ref={})", trait_ref.repr(tcx));
+
+    // if the orphan rules pass, that means that no ancestor crate can
+    // impl this, so it's up to us.
+    if orphan_check_trait_ref(tcx, trait_ref, ParamIsLocal(false)).is_ok() {
+        debug!("trait_ref_is_knowable: orphan check passed");
+        return true;
+    }
+
+    // if the trait is not extensible, then it's always possible that
+    // an ancestor crate will impl this in the future, if they haven't
+    // already
+    if
+        trait_ref.def_id.krate != ast::LOCAL_CRATE &&
+        !ty::has_attr(tcx, trait_ref.def_id, "inextensible")
+    {
+        debug!("trait_ref_is_knowable: extensible trait");
+        return false;
+    }
+
+    // find out when some downstream (or cousin) crate could impl this
+    // trait-ref, presuming that all the parameters were instantiated
+    // with downstream types. If not, then it could only be
+    // implemented by an upstream crate, which means that the impl
+    // must be visible to us, and -- since the trait is inextensible
+    // -- we can test.
+    orphan_check_trait_ref(tcx, trait_ref, ParamIsLocal(true)).is_err()
+}
+
+type SubstsFn = for<'a,'tcx> fn(infcx: &InferCtxt<'a, 'tcx>,
+                                span: Span,
+                                impl_def_id: ast::DefId)
+                                -> Substs<'tcx>;
 
 /// Instantiate fresh variables for all bound parameters of the impl
 /// and return the impl trait ref with those variables substituted.
 fn impl_trait_ref_and_oblig<'a,'tcx>(selcx: &mut SelectionContext<'a,'tcx>,
-                                     impl_def_id: ast::DefId)
+                                     impl_def_id: ast::DefId,
+                                     substs_fn: SubstsFn)
                                      -> (Rc<ty::TraitRef<'tcx>>,
                                          Vec<PredicateObligation<'tcx>>)
 {
     let impl_substs =
-        &util::fresh_type_vars_for_impl(selcx.infcx(), DUMMY_SP, impl_def_id);
+        &substs_fn(selcx.infcx(), DUMMY_SP, impl_def_id);
     let impl_trait_ref =
         ty::impl_trait_ref(selcx.tcx(), impl_def_id).unwrap();
     let impl_trait_ref =
@@ -155,12 +195,12 @@ pub fn orphan_check<'tcx>(tcx: &ty::ctxt<'tcx>,
                           impl_def_id: ast::DefId)
                           -> Result<(), OrphanCheckErr<'tcx>>
 {
-    debug!("impl_is_local({})", impl_def_id.repr(tcx));
+    debug!("orphan_check({})", impl_def_id.repr(tcx));
 
     // We only except this routine to be invoked on implementations
     // of a trait, not inherent implementations.
     let trait_ref = ty::impl_trait_ref(tcx, impl_def_id).unwrap();
-    debug!("trait_ref={}", trait_ref.repr(tcx));
+    debug!("orphan_check: trait_ref={}", trait_ref.repr(tcx));
 
     // If the *trait* is local to the crate, ok.
     if trait_ref.def_id.krate == ast::LOCAL_CRATE {
@@ -169,58 +209,71 @@ pub fn orphan_check<'tcx>(tcx: &ty::ctxt<'tcx>,
         return Ok(());
     }
 
+    orphan_check_trait_ref(tcx, &trait_ref, ParamIsLocal(false))
+}
+
+fn orphan_check_trait_ref<'tcx>(tcx: &ty::ctxt<'tcx>,
+                                trait_ref: &ty::TraitRef<'tcx>,
+                                param_is_local: ParamIsLocal)
+                                -> Result<(), OrphanCheckErr<'tcx>>
+{
+    debug!("orphan_check_trait_ref(trait_ref={}, param_is_local={})",
+           trait_ref.repr(tcx), param_is_local.0);
+
     // First, create an ordered iterator over all the type parameters to the trait, with the self
     // type appearing first.
     let input_tys = Some(trait_ref.self_ty());
     let input_tys = input_tys.iter().chain(trait_ref.substs.types.get_slice(TypeSpace).iter());
-    let mut input_tys = input_tys;
 
     // Find the first input type that either references a type parameter OR
     // some local type.
-    match
-        input_tys.find(|&&input_ty| local_or_references_type_parameter(tcx,
-                                                                       trait_ref.def_id,
-                                                                       input_ty))
-    {
-        Some(&input_ty) => {
-            // Within this first type, check that all type parameters are covered by a local
-            // type constructor. Note that if there is no local type constructor, then any
-            // type parameter at all will be an error.
-            let covered_params = type_parameters_covered_by_ty(tcx, input_ty);
-            let all_params = type_parameters_reachable_from_ty(input_ty);
-            for &param in all_params.difference(&covered_params) {
+    for input_ty in input_tys {
+        if ty_is_local(tcx, input_ty, param_is_local) {
+            debug!("orphan_check_trait_ref: ty_is_local `{}`", input_ty.repr(tcx));
+
+            // First local input type. Check that there are no
+            // uncovered type parameters.
+            let uncovered_tys = uncovered_tys(tcx, input_ty, param_is_local);
+            for uncovered_ty in uncovered_tys {
+                if let Some(param) = uncovered_ty.walk().find(|t| is_type_parameter(t)) {
+                    debug!("orphan_check_trait_ref: uncovered type `{}`", param.repr(tcx));
+                    return Err(OrphanCheckErr::UncoveredTy(param));
+                }
+            }
+
+            // OK, found local type, all prior types upheld invariant.
+            return Ok(());
+        }
+
+        // Otherwise, enforce invariant that there are no type
+        // parameters reachable.
+        if !param_is_local.0 {
+            if let Some(param) = input_ty.walk().find(|t| is_type_parameter(t)) {
+                debug!("orphan_check_trait_ref: uncovered type `{}`", param.repr(tcx));
                 return Err(OrphanCheckErr::UncoveredTy(param));
             }
         }
-        None => {
-            return Err(OrphanCheckErr::NoLocalInputType);
-        }
     }
 
-    return Ok(());
+    // If we exit above loop, never found a local type.
+    debug!("orphan_check_trait_ref: no local type");
+    return Err(OrphanCheckErr::NoLocalInputType);
 }
 
-fn type_parameters_covered_by_ty<'tcx>(tcx: &ty::ctxt<'tcx>,
-                                       ty: Ty<'tcx>)
-                                       -> HashSet<Ty<'tcx>>
+fn uncovered_tys<'tcx>(tcx: &ty::ctxt<'tcx>,
+                       ty: Ty<'tcx>,
+                       param_is_local: ParamIsLocal)
+                       -> Vec<Ty<'tcx>>
 {
-    if ty_is_local_constructor(tcx, ty) {
-        type_parameters_reachable_from_ty(ty)
+    if ty_is_local_constructor(tcx, ty, param_is_local) {
+        vec![]
+    } else if inextensible_ty(tcx, ty) {
+        ty.walk_shallow()
+          .flat_map(|t| uncovered_tys(tcx, t, param_is_local).into_iter())
+          .collect()
     } else {
-        ty.walk_children().flat_map(|t| type_parameters_covered_by_ty(tcx, t).into_iter()).collect()
+        vec![ty]
     }
-}
-
-/// All type parameters reachable from `ty`
-fn type_parameters_reachable_from_ty<'tcx>(ty: Ty<'tcx>) -> HashSet<Ty<'tcx>> {
-    ty.walk().filter(|&t| is_type_parameter(t)).collect()
-}
-
-fn local_or_references_type_parameter<'tcx>(tcx: &ty::ctxt<'tcx>,
-                                            trait_def_id: ast::DefId,
-                                            ty: Ty<'tcx>)
-                                            -> bool {
-    ty_is_local(tcx, trait_def_id, ty) || ty.walk().any(|ty| is_type_parameter(ty))
 }
 
 fn is_type_parameter<'tcx>(ty: Ty<'tcx>) -> bool {
@@ -231,38 +284,31 @@ fn is_type_parameter<'tcx>(ty: Ty<'tcx>) -> bool {
     }
 }
 
-fn ty_is_local<'tcx>(tcx: &ty::ctxt<'tcx>,
-                     trait_def_id: ast::DefId,
-                     ty: Ty<'tcx>)
-                     -> bool
+fn ty_is_local<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>, param_is_local: ParamIsLocal) -> bool
 {
-    // An extensible trait retains the freedom to add blanket impls
-    // (except for trivial ones like `impl<T:..> Trait for T`) and
-    // hence we can only say a type is local if the root is a local
-    // type constructor.
-    let trait_is_extensible = !ty::has_attr(tcx, trait_def_id, "inextensible");
-    if trait_is_extensible {
-        return ty_is_local_constructor(tcx, ty) || {
-            match ty.sty {
-                ty::ty_uniq(ty) => ty_is_local(tcx, trait_def_id, ty),
-                ty::ty_rptr(_, mt) => ty_is_local(tcx, trait_def_id, mt.ty),
-
-                ty::ty_enum(def_id, substs) |
-                ty::ty_struct(def_id, substs) => { // TODO trait
-                    ty::has_attr(tcx, def_id, "inextensible") &&
-                        substs.types.iter()
-                                    .any(|t| ty_is_local(tcx, trait_def_id, t))
-                }
-
-                _ => false,
-            }
-        };
-    }
-
-    ty.walk().any(|t| ty_is_local_constructor(tcx, t))
+    ty_is_local_constructor(tcx, ty, param_is_local) ||
+        inextensible_ty(tcx, ty) && ty.walk_shallow().any(|t| ty_is_local(tcx, t, param_is_local))
 }
 
-fn ty_is_local_constructor<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>) -> bool {
+fn inextensible_ty<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>) -> bool
+{
+    match ty.sty {
+        ty::ty_uniq(..) | ty::ty_rptr(..) =>
+            true,
+        ty::ty_enum(def_id, _) | ty::ty_struct(def_id, _) =>
+            ty::has_attr(tcx, def_id, "inextensible"),
+        ty::ty_trait(ref data) =>
+            ty::has_attr(tcx, data.principal_def_id(), "inextensible"),
+        _ =>
+            false
+    }
+}
+
+fn ty_is_local_constructor<'tcx>(tcx: &ty::ctxt<'tcx>,
+                                 ty: Ty<'tcx>,
+                                 param_is_local: ParamIsLocal)
+                                 -> bool
+{
     debug!("ty_is_local_constructor({})", ty.repr(tcx));
 
     match ty.sty {
@@ -277,10 +323,13 @@ fn ty_is_local_constructor<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>) -> bool {
         ty::ty_ptr(..) |
         ty::ty_rptr(..) |
         ty::ty_tup(..) |
-        ty::ty_param(..) |
         ty::ty_infer(..) |
         ty::ty_projection(..) => {
             false
+        }
+
+        ty::ty_param(..) => {
+            param_is_local.0
         }
 
         ty::ty_enum(def_id, _) |
@@ -305,4 +354,5 @@ fn ty_is_local_constructor<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>) -> bool {
         }
     }
 }
+
 

@@ -58,7 +58,7 @@ use middle::subst::{self, ParamSpace, Subst, Substs, VecPerParamSpace};
 use middle::traits;
 use middle::ty;
 use middle::ty_fold::{self, TypeFoldable, TypeFolder};
-use middle::ty_walk::TypeWalker;
+use middle::ty_walk::{self, TypeWalker};
 use util::ppaux::{note_and_explain_region, bound_region_ptr_to_string};
 use util::ppaux::ty_to_string;
 use util::ppaux::{Repr, UserString};
@@ -3139,21 +3139,11 @@ impl<'tcx> TyS<'tcx> {
         TypeWalker::new(self)
     }
 
-    /// Iterator that walks types reachable from `self`, in
-    /// depth-first order. Note that this is a shallow walk. For
-    /// example:
-    ///
-    /// ```notrust
-    /// int => { }
-    /// Foo<Bar<int>> => { Bar<int>, int }
-    /// [int] => { int }
-    /// ```
-    pub fn walk_children(&'tcx self) -> TypeWalker<'tcx> {
-        // Walks type reachable from `self` but not `self
-        let mut walker = self.walk();
-        let r = walker.next();
-        assert_eq!(r, Some(self));
-        walker
+    /// Iterator that walks the immediate children of `self`.  Hence
+    /// `Foo<Bar<i32>, u32>` yields the sequence `[Bar<i32>, u32]`
+    /// (but not `i32`, like `walk`).
+    pub fn walk_shallow(&'tcx self) -> IntoIter<Ty<'tcx>> {
+        ty_walk::walk_shallow(self)
     }
 
     pub fn as_opt_param_ty(&self) -> Option<ty::ParamTy> {

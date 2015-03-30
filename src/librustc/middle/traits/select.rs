@@ -17,6 +17,7 @@ use self::SelectionCandidate::*;
 use self::BuiltinBoundConditions::*;
 use self::EvaluationResult::*;
 
+use super::coherence;
 use super::DerivedObligationCause;
 use super::project;
 use super::project::{normalize_with_depth, Normalized};
@@ -608,6 +609,11 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             return Ok(Some(ErrorCandidate));
         }
 
+        if !self.is_knowable(stack) {
+            debug!("intercrate not knowable");
+            return Ok(None);
+        }
+
         let candidate_set = try!(self.assemble_candidates(stack));
 
         if candidate_set.ambiguous {
@@ -706,6 +712,27 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         }
 
         Ok(Some(candidate))
+    }
+
+    fn is_knowable<'o>(&mut self,
+                       stack: &TraitObligationStack<'o, 'tcx>)
+                       -> bool
+    {
+        debug!("is_knowable(intercrate={})", self.intercrate);
+
+        if !self.intercrate {
+            return true;
+        }
+
+        let obligation = &stack.obligation;
+        let predicate = self.infcx().resolve_type_vars_if_possible(&obligation.predicate);
+
+        // ok to skip binder because of the nature of the
+        // trait-ref-is-knowable check, which does not care about
+        // bound regions
+        let trait_ref = &predicate.skip_binder().trait_ref;
+
+        coherence::trait_ref_is_knowable(self.tcx(), trait_ref)
     }
 
     fn pick_candidate_cache(&self) -> &SelectionCache<'tcx> {
@@ -1400,14 +1427,14 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
         let self_ty = self.infcx.shallow_resolve(obligation.predicate.0.self_ty());
         return match self_ty.sty {
-            ty::ty_infer(ty::IntVar(_))
-            | ty::ty_infer(ty::FloatVar(_))
-            | ty::ty_uint(_)
-            | ty::ty_int(_)
-            | ty::ty_bool
-            | ty::ty_float(_)
-            | ty::ty_bare_fn(..)
-            | ty::ty_char => {
+            ty::ty_infer(ty::IntVar(_)) |
+            ty::ty_infer(ty::FloatVar(_)) |
+            ty::ty_uint(_) |
+            ty::ty_int(_) |
+            ty::ty_bool |
+            ty::ty_float(_) |
+            ty::ty_bare_fn(..) |
+            ty::ty_char => {
                 // safe for everything
                 Ok(If(Vec::new()))
             }
