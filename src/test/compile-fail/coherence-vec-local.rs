@@ -17,6 +17,6 @@ use lib::Remote;
 
 struct Local;
 
-impl Remote for Vec<Local> { }
+impl Remote for Vec<Local> { } //~ ERROR E0117
 
 fn main() { }

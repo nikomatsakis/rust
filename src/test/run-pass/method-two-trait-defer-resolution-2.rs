@@ -29,21 +29,22 @@ impl<T:Copy> Foo for Vec<T> {
     fn foo(&self) -> int {1}
 }
 
-impl<T> Foo for Vec<Box<T>> {
+impl Foo for Vec<Box<i32>> {
     fn foo(&self) -> int {2}
 }
 
 fn call_foo_copy() -> int {
     let mut x = Vec::new();
     let y = x.foo();
-    x.push(0_usize);
+    x.push(0_i32);
     y
 }
 
 fn call_foo_other() -> int {
-    let mut x: Vec<Box<_>> = Vec::new();
+    let mut x: Vec<_> = Vec::new();
     let y = x.foo();
-    x.push(box 0);
+    let z: Box<i32> = box 0;
+    x.push(z);
     y
 }
 
