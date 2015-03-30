@@ -49,11 +49,11 @@ pub trait From<T> {
 ////////////////////////////////////////////////////////////////////////////////
 
 // As implies Into
-impl<'a, T: ?Sized, U: ?Sized> Into<&'a U> for &'a T where T: AsRef<U> {
-    fn into(self) -> &'a U {
-        self.as_ref()
-    }
-}
+// TODO impl<'a, T: ?Sized, U: ?Sized> Into<&'a U> for &'a T where T: AsRef<U> {
+// TODO     fn into(self) -> &'a U {
+// TODO         self.as_ref()
+// TODO     }
+// TODO }
 
 // As lifts over &
 impl<'a, T: ?Sized, U: ?Sized> AsRef<U> for &'a T where T: AsRef<U> {
@@ -70,11 +70,11 @@ impl<'a, T: ?Sized, U: ?Sized> AsRef<U> for &'a mut T where T: AsRef<U> {
 }
 
 // AsMut implies Into
-impl<'a, T: ?Sized, U: ?Sized> Into<&'a mut U> for &'a mut T where T: AsMut<U> {
-    fn into(self) -> &'a mut U {
-        (*self).as_mut()
-    }
-}
+// TODO impl<'a, T: ?Sized, U: ?Sized> Into<&'a mut U> for &'a mut T where T: AsMut<U> {
+// TODO     fn into(self) -> &'a mut U {
+// TODO         (*self).as_mut()
+// TODO     }
+// TODO }
 
 // AsMut lifts over &mut
 impl<'a, T: ?Sized, U: ?Sized> AsMut<U> for &'a mut T where T: AsMut<U> {
