@@ -21,7 +21,6 @@ use middle::subst::{Subst, TypeSpace};
 use middle::ty::{self, ToPolyTraitRef, Ty};
 use middle::infer::{self, InferCtxt};
 use std::collections::HashSet;
-use std::env;
 use std::rc::Rc;
 use syntax::ast;
 use syntax::codemap::DUMMY_SP;
@@ -96,13 +95,12 @@ fn local_obligation<'tcx>(tcx: &ty::ctxt<'tcx>, obligation: &PredicateObligation
     debug!("local_obligation(obligation={})", obligation.repr(tcx));
     match obligation.predicate {
         ty::Predicate::Trait(ref data) => {
-            // TODO special-case sized trait in a very crude way for now
-            let is_sized_trait = Some(data.def_id()) == tcx.lang_items.sized_trait();
+            let is_inextensible = ty::has_attr(tcx, data.def_id(), "inextensible");
 
-            debug!("local_obligation: data={:?} is_sized_trait={}",
-                   data, is_sized_trait);
+            debug!("local_obligation: data={:?} is_inextensible={}",
+                   data, is_inextensible);
 
-            is_sized_trait
+            is_inextensible
                 || data.def_id().krate == ast::LOCAL_CRATE
                 || ty_is_local(tcx, data.def_id(), data.skip_binder().self_ty())
         }
@@ -244,10 +242,9 @@ fn ty_is_local<'tcx>(tcx: &ty::ctxt<'tcx>,
     // type constructor.
     let trait_is_extensible = !ty::has_attr(tcx, trait_def_id, "inextensible");
     if trait_is_extensible {
-        let uniq = env::var("RUST_UNIQ_INEXTENSIBLE").is_ok(); // TODO BAD BAD
         return ty_is_local_constructor(tcx, ty) || {
             match ty.sty {
-                ty::ty_uniq(ty) if uniq => ty_is_local(tcx, trait_def_id, ty),
+                ty::ty_uniq(ty) => ty_is_local(tcx, trait_def_id, ty),
                 ty::ty_rptr(_, mt) => ty_is_local(tcx, trait_def_id, mt.ty),
 
                 ty::ty_enum(def_id, substs) |

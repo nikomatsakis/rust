@@ -49,6 +49,7 @@ impl !Send for Managed { }
 #[stable(feature = "rust1", since = "1.0.0")]
 #[lang="sized"]
 #[rustc_on_unimplemented = "`{Self}` does not have a constant size known at compile-time"]
+#[inextensible] // going from Sized to Unsized is DEFINITELY a breaking change
 pub trait Sized : MarkerTrait {
     // Empty.
 }
