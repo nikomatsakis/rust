@@ -71,7 +71,7 @@
 #![feature(unboxed_closures)]
 #![feature(rustc_attrs)]
 #![feature(optin_builtin_traits)]
-#![feature(inextensible)]
+#![feature(fundamental)]
 #![feature(concat_idents)]
 #![feature(custom_attribute)]
 

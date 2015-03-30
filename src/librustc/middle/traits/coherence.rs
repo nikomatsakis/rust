@@ -127,9 +127,9 @@ pub fn trait_ref_is_knowable<'tcx>(tcx: &ty::ctxt<'tcx>, trait_ref: &ty::TraitRe
     // already
     if
         trait_ref.def_id.krate != ast::LOCAL_CRATE &&
-        !ty::has_attr(tcx, trait_ref.def_id, "inextensible")
+        !ty::has_attr(tcx, trait_ref.def_id, "fundamental")
     {
-        debug!("trait_ref_is_knowable: extensible trait");
+        debug!("trait_ref_is_knowable: trait is neither local nor fundamental");
         return false;
     }
 
@@ -137,7 +137,7 @@ pub fn trait_ref_is_knowable<'tcx>(tcx: &ty::ctxt<'tcx>, trait_ref: &ty::TraitRe
     // trait-ref, presuming that all the parameters were instantiated
     // with downstream types. If not, then it could only be
     // implemented by an upstream crate, which means that the impl
-    // must be visible to us, and -- since the trait is inextensible
+    // must be visible to us, and -- since the trait is fundamental
     // -- we can test.
     orphan_check_trait_ref(tcx, trait_ref, ParamIsLocal(true)).is_err()
 }
@@ -267,7 +267,7 @@ fn uncovered_tys<'tcx>(tcx: &ty::ctxt<'tcx>,
 {
     if ty_is_local_constructor(tcx, ty, param_is_local) {
         vec![]
-    } else if inextensible_ty(tcx, ty) {
+    } else if fundamental_ty(tcx, ty) {
         ty.walk_shallow()
           .flat_map(|t| uncovered_tys(tcx, t, param_is_local).into_iter())
           .collect()
@@ -287,18 +287,18 @@ fn is_type_parameter<'tcx>(ty: Ty<'tcx>) -> bool {
 fn ty_is_local<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>, param_is_local: ParamIsLocal) -> bool
 {
     ty_is_local_constructor(tcx, ty, param_is_local) ||
-        inextensible_ty(tcx, ty) && ty.walk_shallow().any(|t| ty_is_local(tcx, t, param_is_local))
+        fundamental_ty(tcx, ty) && ty.walk_shallow().any(|t| ty_is_local(tcx, t, param_is_local))
 }
 
-fn inextensible_ty<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>) -> bool
+fn fundamental_ty<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>) -> bool
 {
     match ty.sty {
         ty::ty_uniq(..) | ty::ty_rptr(..) =>
             true,
         ty::ty_enum(def_id, _) | ty::ty_struct(def_id, _) =>
-            ty::has_attr(tcx, def_id, "inextensible"),
+            ty::has_attr(tcx, def_id, "fundamental"),
         ty::ty_trait(ref data) =>
-            ty::has_attr(tcx, data.principal_def_id(), "inextensible"),
+            ty::has_attr(tcx, data.principal_def_id(), "fundamental"),
         _ =>
             false
     }

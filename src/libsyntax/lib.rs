@@ -40,7 +40,7 @@
 #![feature(path_ext)]
 #![feature(str_char)]
 #![feature(convert)]
-#![feature(inextensible)]
+#![feature(fundamental)]
 #![feature(into_cow)]
 
 extern crate arena;

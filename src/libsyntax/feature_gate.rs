@@ -92,7 +92,7 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Status)] = &[
     ("start", "1.0.0", Active),
     ("main", "1.0.0", Active),
 
-    ("inextensible", "1.0.0", Active),
+    ("fundamental", "1.0.0", Active),
 
     // A temporary feature gate used to enable parser extensions needed
     // to bootstrap fix for #5723.
@@ -247,9 +247,9 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType)] = &[
     ("allow_internal_unstable", Gated("allow_internal_unstable",
                                       EXPLAIN_ALLOW_INTERNAL_UNSTABLE)),
 
-    ("inextensible", Gated("inextensible",
-                           "the `#[inextensible]` attribute \
-                            is an experimental feature")),
+    ("fundamental", Gated("fundamental",
+                          "the `#[fundamental]` attribute \
+                           is an experimental feature")),
 
     // FIXME: #14408 whitelist docs since rustdoc looks at them
     ("doc", Whitelisted),
