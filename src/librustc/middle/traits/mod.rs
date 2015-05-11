@@ -414,9 +414,18 @@ pub fn normalize_param_env_or_error<'a,'tcx>(unnormalized_env: ty::ParameterEnvi
     debug!("normalize_param_env_or_error(unnormalized_env={})",
            unnormalized_env.repr(tcx));
 
+    let predicates: Vec<_> =
+        util::elaborate_predicates(tcx, unnormalized_env.caller_bounds.clone())
+        .collect();
+
+    debug!("normalize_param_env_or_error: elaborated-predicates={}",
+           predicates.repr(tcx));
+
+    let elaborated_env = unnormalized_env.with_caller_bounds(predicates);
+
     let infcx = infer::new_infer_ctxt(tcx);
-    let predicates = match fully_normalize(&infcx, &unnormalized_env, cause,
-                                           &unnormalized_env.caller_bounds) {
+    let predicates = match fully_normalize(&infcx, &elaborated_env, cause,
+                                           &elaborated_env.caller_bounds) {
         Ok(predicates) => predicates,
         Err(errors) => {
             report_fulfillment_errors(&infcx, &errors);
@@ -438,14 +447,11 @@ pub fn normalize_param_env_or_error<'a,'tcx>(unnormalized_env: ty::ParameterEnvi
             // all things considered.
             let err_msg = fixup_err_to_string(fixup_err);
             tcx.sess.span_err(span, &err_msg);
-            return unnormalized_env; // an unnormalized env is better than nothing
+            return elaborated_env; // an unnormalized env is better than nothing
         }
     };
 
-    debug!("normalize_param_env_or_error: predicates={}",
-           predicates.repr(tcx));
-
-    unnormalized_env.with_caller_bounds(predicates)
+    elaborated_env.with_caller_bounds(predicates)
 }
 
 pub fn fully_normalize<'a,'tcx,T>(infcx: &InferCtxt<'a,'tcx>,
