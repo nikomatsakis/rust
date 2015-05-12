@@ -8,9 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test a "pass-through" object-lifetime-default that produces errors.
+// Test that the `SomeTrait` in `&'a MyBox<SomeTrait>` expands the
+// same way as `MyBox<SomeTrait>`
 
 #![allow(dead_code)]
+#![allow(unused_variables)]
+#![feature(rustc_attrs)]
 
 trait SomeTrait {
     fn dummy(&self) { }
@@ -27,17 +30,16 @@ fn deref<T>(ss: &T) -> T {
 }
 
 fn load0(ss: &MyBox<SomeTrait>) -> MyBox<SomeTrait> {
-    deref(ss) //~ ERROR cannot infer
+    deref(ss)
 }
 
 fn load1<'a,'b>(a: &'a MyBox<SomeTrait>,
                 b: &'b MyBox<SomeTrait>)
-                -> &'b MyBox<SomeTrait>
+                -> MyBox<SomeTrait>
 {
-    a
-      //~^ ERROR cannot infer
-      //~| ERROR mismatched types
+    deref(a)
 }
 
-fn main() {
+#[rustc_error]
+fn main() { //~ ERROR compilation successful
 }

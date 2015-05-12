@@ -36,6 +36,8 @@ pub trait RegionScope {
     /// be derived from the object traits, what should we use? If
     /// `None` is returned, an explicit annotation is required.
     fn object_lifetime_default(&self, span: Span) -> Option<ty::Region>;
+
+    fn base_object_lifetime_default(&self, span: Span) -> ty::Region;
 }
 
 // A scope in which all regions must be explicitly named. This is used
@@ -44,15 +46,19 @@ pub trait RegionScope {
 pub struct ExplicitRscope;
 
 impl RegionScope for ExplicitRscope {
-    fn object_lifetime_default(&self, _span: Span) -> Option<ty::Region> {
-        Some(ty::ReStatic)
-    }
-
     fn anon_regions(&self,
                     _span: Span,
                     _count: usize)
                     -> Result<Vec<ty::Region>, Option<Vec<(String, usize)>>> {
         Err(None)
+    }
+
+    fn object_lifetime_default(&self, span: Span) -> Option<ty::Region> {
+        Some(self.base_object_lifetime_default(span))
+    }
+
+    fn base_object_lifetime_default(&self, _span: Span) -> ty::Region {
+        ty::ReStatic
     }
 }
 
@@ -66,16 +72,20 @@ impl UnelidableRscope {
 }
 
 impl RegionScope for UnelidableRscope {
-    fn object_lifetime_default(&self, _span: Span) -> Option<ty::Region> {
-        Some(ty::ReStatic)
-    }
-
     fn anon_regions(&self,
                     _span: Span,
                     _count: usize)
                     -> Result<Vec<ty::Region>, Option<Vec<(String, usize)>>> {
         let UnelidableRscope(ref v) = *self;
         Err(Some(v.clone()))
+    }
+
+    fn object_lifetime_default(&self, span: Span) -> Option<ty::Region> {
+        Some(self.base_object_lifetime_default(span))
+    }
+
+    fn base_object_lifetime_default(&self, _span: Span) -> ty::Region {
+        ty::ReStatic
     }
 }
 
@@ -94,11 +104,15 @@ impl ElidableRscope {
 }
 
 impl RegionScope for ElidableRscope {
-    fn object_lifetime_default(&self, _span: Span) -> Option<ty::Region> {
+    fn object_lifetime_default(&self, span: Span) -> Option<ty::Region> {
         // Per RFC #599, object-lifetimes default to 'static unless
         // overridden by context, and this takes precedence over
         // lifetime elision.
-        Some(ty::ReStatic)
+        Some(self.base_object_lifetime_default(span))
+    }
+
+    fn base_object_lifetime_default(&self, _span: Span) -> ty::Region {
+        ty::ReStatic
     }
 
     fn anon_regions(&self,
@@ -131,11 +145,15 @@ impl BindingRscope {
 }
 
 impl RegionScope for BindingRscope {
-    fn object_lifetime_default(&self, _span: Span) -> Option<ty::Region> {
+    fn object_lifetime_default(&self, span: Span) -> Option<ty::Region> {
         // Per RFC #599, object-lifetimes default to 'static unless
         // overridden by context, and this takes precedence over the
-        // binding defaults.
-        Some(ty::ReStatic)
+        // binding defaults in a fn signature.
+        Some(self.base_object_lifetime_default(span))
+    }
+
+    fn base_object_lifetime_default(&self, _span: Span) -> ty::Region {
+        ty::ReStatic
     }
 
     fn anon_regions(&self,
@@ -150,12 +168,12 @@ impl RegionScope for BindingRscope {
 /// A scope which overrides the default object lifetime but has no other effect.
 pub struct ObjectLifetimeDefaultRscope<'r> {
     base_scope: &'r (RegionScope+'r),
-    default: Option<ty::ObjectLifetimeDefault>,
+    default: ty::ObjectLifetimeDefault,
 }
 
 impl<'r> ObjectLifetimeDefaultRscope<'r> {
     pub fn new(base_scope: &'r (RegionScope+'r),
-               default: Option<ty::ObjectLifetimeDefault>)
+               default: ty::ObjectLifetimeDefault)
                -> ObjectLifetimeDefaultRscope<'r>
     {
         ObjectLifetimeDefaultRscope {
@@ -168,10 +186,19 @@ impl<'r> ObjectLifetimeDefaultRscope<'r> {
 impl<'r> RegionScope for ObjectLifetimeDefaultRscope<'r> {
     fn object_lifetime_default(&self, span: Span) -> Option<ty::Region> {
         match self.default {
-            None => self.base_scope.object_lifetime_default(span),
-            Some(ty::ObjectLifetimeDefault::Ambiguous) => None,
-            Some(ty::ObjectLifetimeDefault::Specific(r)) => Some(r),
+            ty::ObjectLifetimeDefault::Ambiguous =>
+                None,
+
+            ty::ObjectLifetimeDefault::BaseDefault =>
+                Some(self.base_object_lifetime_default(span)),
+
+            ty::ObjectLifetimeDefault::Specific(r) =>
+                Some(r),
         }
+    }
+
+    fn base_object_lifetime_default(&self, span: Span) -> ty::Region {
+        self.base_scope.base_object_lifetime_default(span)
     }
 
     fn anon_regions(&self,
@@ -199,6 +226,10 @@ impl<'r> RegionScope for ShiftedRscope<'r> {
     fn object_lifetime_default(&self, span: Span) -> Option<ty::Region> {
         self.base_scope.object_lifetime_default(span)
             .map(|r| ty_fold::shift_region(r, 1))
+    }
+
+    fn base_object_lifetime_default(&self, span: Span) -> ty::Region {
+        ty_fold::shift_region(self.base_scope.base_object_lifetime_default(span), 1)
     }
 
     fn anon_regions(&self,

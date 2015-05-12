@@ -1769,6 +1769,9 @@ pub enum ObjectLifetimeDefault {
     /// `T:'a` constraints are found.
     Ambiguous,
 
+    /// Use the base default, typically 'static, but in a fn body it is a fresh variable
+    BaseDefault,
+
     /// Use the given region as the default.
     Specific(Region),
 }
@@ -1780,7 +1783,7 @@ pub struct TypeParameterDef<'tcx> {
     pub space: subst::ParamSpace,
     pub index: u32,
     pub default: Option<Ty<'tcx>>,
-    pub object_lifetime_default: Option<ObjectLifetimeDefault>,
+    pub object_lifetime_default: ObjectLifetimeDefault,
 }
 
 #[derive(RustcEncodable, RustcDecodable, Clone, Debug)]
@@ -7640,6 +7643,7 @@ impl<'tcx> Repr<'tcx> for ObjectLifetimeDefault {
     fn repr(&self, tcx: &ctxt<'tcx>) -> String {
         match *self {
             ObjectLifetimeDefault::Ambiguous => format!("Ambiguous"),
+            ObjectLifetimeDefault::BaseDefault => format!("BaseDefault"),
             ObjectLifetimeDefault::Specific(ref r) => r.repr(tcx),
         }
     }

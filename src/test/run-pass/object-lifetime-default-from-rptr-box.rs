@@ -8,8 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test that the lifetime from the enclosing `&` is "inherited"
-// through the `Box` struct.
+// Test that the lifetime from the enclosing `&` is overridden by
+// 'static when passing through the `Box` struct.
 
 // pretty-expanded FIXME #23616
 
@@ -21,7 +21,7 @@ trait Test {
 
 struct SomeStruct<'a> {
     t: &'a Box<Test>,
-    u: &'a Box<Test+'a>,
+    u: &'a Box<Test+'static>,
 }
 
 fn a<'a>(t: &'a Box<Test>, mut ss: SomeStruct<'a>) {
@@ -32,11 +32,11 @@ fn b<'a>(t: &'a Box<Test>, mut ss: SomeStruct<'a>) {
     ss.u = t;
 }
 
-fn c<'a>(t: &'a Box<Test+'a>, mut ss: SomeStruct<'a>) {
+fn c<'a>(t: &'a Box<Test+'static>, mut ss: SomeStruct<'a>) {
     ss.t = t;
 }
 
-fn d<'a>(t: &'a Box<Test+'a>, mut ss: SomeStruct<'a>) {
+fn d<'a>(t: &'a Box<Test+'static>, mut ss: SomeStruct<'a>) {
     ss.u = t;
 }
 
