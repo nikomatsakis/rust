@@ -415,6 +415,8 @@ impl<'a, 'tcx> Env<'a, 'tcx> {
                 panic!("unexpected error computing LUB: {:?}", e)
             }
             Ok(t) => {
+                debug!("glb yielded: y={}", t);
+
                 self.assert_eq(t, t_glb);
 
                 // sanity check for good measure:

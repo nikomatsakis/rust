@@ -24,8 +24,9 @@ struct Covariant<'a> {
 }
 
 fn use_<'a>(c: Covariant<'a>) {
-    // OK Because Covariant<'a> <: Covariant<'static> iff 'a <= 'static
+    // fn arguments are invariant now
     let _: Covariant<'static> = c;
+    //~^ ERROR mismatched types
 }
 
 pub fn main() {}

@@ -8,8 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test various uses of structs with distint variances to make sure
-// they permit lifetimes to be approximated as expected.
+// Test that fn arguments are invariant.
 
 #![allow(dead_code)]
 #![feature(rustc_attrs)]
@@ -20,8 +19,7 @@ fn bar<'min,'max>(v: SomeStruct<&'min ()>)
                   -> SomeStruct<&'max ()>
     where 'max : 'min
 {
-    v
+    v //~ ERROR mismatched types
 }
 
-#[rustc_error]
-fn main() { } //~ ERROR compilation successful
+fn main() { }

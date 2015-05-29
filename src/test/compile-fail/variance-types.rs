@@ -38,12 +38,12 @@ struct Covariant<A> { //~ ERROR types=[[+];[];[]]
 }
 
 #[rustc_variance]
-struct Contravariant<A> { //~ ERROR types=[[-];[];[]]
+struct Contravariant<A> { //~ ERROR types=[[o];[];[]]
     t: fn(A)
 }
 
 #[rustc_variance]
-enum Enum<A,B,C> { //~ ERROR types=[[+, -, o];[];[]]
+enum Enum<A,B,C> { //~ ERROR types=[[+, o, o];[];[]]
     Foo(Covariant<A>),
     Bar(Contravariant<B>),
     Zed(Covariant<C>,Contravariant<C>)

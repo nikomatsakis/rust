@@ -317,14 +317,13 @@ in computing the replacements for the various variables. For each
 region `R` that appears in the type `F`, we again compute `Tainted(R)`
 and examine the results:
 
-1. If `R` is not in `V`, it is not replaced.
-2. Else, if `Tainted(R)` contains only variables in `V`, and it
+1. If `Tainted(R)` contains only variables in `V`, and it
    contains exactly one variable from the LHS and one variable from
    the RHS, then `R` can be mapped to the bound version of the
    variable from the LHS.
-3. Else, if `Tainted(R)` contains no variable from the LHS and no
+2. Else, if `Tainted(R)` contains no variable from the LHS and no
    variable from the RHS, then `R` can be mapped to itself.
-4. Else, `R` is mapped to a fresh bound variable.
+3. Else, `R` is mapped to a fresh bound variable.
 
 These rules are pretty complex.  Let's look at some examples to see
 how they play out.

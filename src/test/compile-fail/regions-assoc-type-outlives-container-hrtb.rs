@@ -8,8 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test that structs with higher-ranked where clauses don't generate
-// "outlives" requirements. Issue #22246.
+// Test structs with higher-ranked where clauses and "outlives"
+// requirements. Issue #22246.
 
 #![allow(dead_code)]
 #![feature(rustc_attrs)]
@@ -37,10 +37,9 @@ pub struct WithHrAssoc<T>
 }
 
 fn with_assoc<'a,'b>() {
-    // We get no error here because the where clause has a higher-ranked assoc type,
-    // which could not be projected from.
-
+    // We now get an error here because `&'a` can reach the `'b`:
     let _: &'a WithHrAssoc<TheType<'b>> = loop { };
+    //~^ ERROR cannot infer
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -61,8 +60,7 @@ fn with_assoc_sub<'a,'b>() {
     // extends a trait in a HR way.
 
     let _: &'a WithHrAssocSub<TheType<'b>> = loop { };
+    //~^ ERROR cannot infer
 }
 
-#[rustc_error]
-fn main() { //~ ERROR compilation successful
-}
+fn main() {}

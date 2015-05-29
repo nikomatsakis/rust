@@ -15,7 +15,7 @@
 #![feature(rustc_attrs)]
 
 #[rustc_variance]
-enum Base<'a, 'b, 'c:'b, 'd> { //~ ERROR regions=[[+, -, o, *];[];[]]
+enum Base<'a, 'b, 'c:'b, 'd> { //~ ERROR regions=[[o, -, o, *];[];[]]
     //~^ ERROR parameter `'d` is never used
     Test8A(extern "Rust" fn(&'a isize)),
     Test8B(&'b [isize]),
@@ -23,7 +23,7 @@ enum Base<'a, 'b, 'c:'b, 'd> { //~ ERROR regions=[[+, -, o, *];[];[]]
 }
 
 #[rustc_variance]
-struct Derived1<'w, 'x:'y, 'y, 'z> { //~ ERROR regions=[[*, o, -, +];[];[]]
+struct Derived1<'w, 'x:'y, 'y, 'z> { //~ ERROR regions=[[*, o, -, o];[];[]]
     //~^ ERROR parameter `'w` is never used
     f: Base<'z, 'y, 'x, 'w>
 }
@@ -38,11 +38,6 @@ struct Derived2<'a, 'b:'a, 'c> { //~ ERROR regions=[[o, o, *];[];[]]
 struct Derived3<'a:'b, 'b, 'c> { //~ ERROR regions=[[o, -, *];[];[]]
     //~^ ERROR parameter `'c` is never used
     f: Base<'a, 'b, 'a, 'c>
-}
-
-#[rustc_variance] // Combine + and * to yield + (just pay attention to 'a here)
-struct Derived4<'a, 'b, 'c:'b> { //~ ERROR regions=[[+, -, o];[];[]]
-    f: Base<'a, 'b, 'c, 'a>
 }
 
 fn main() {}

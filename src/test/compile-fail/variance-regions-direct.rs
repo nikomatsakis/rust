@@ -25,7 +25,7 @@ struct Test2<'a, 'b, 'c> { //~ ERROR regions=[[-, -, -];[];[]]
 // Those same annotations in function arguments become covariant:
 
 #[rustc_variance]
-struct Test3<'a, 'b, 'c> { //~ ERROR regions=[[+, +, +];[];[]]
+struct Test3<'a, 'b, 'c> { //~ ERROR regions=[[o, o, o];[];[]]
     x: extern "Rust" fn(&'a isize),
     y: extern "Rust" fn(&'b [isize]),
     c: extern "Rust" fn(&'c str),
@@ -42,7 +42,7 @@ struct Test4<'a, 'b:'a> { //~ ERROR regions=[[-, o];[];[]]
 // contravariant context:
 
 #[rustc_variance]
-struct Test5<'a, 'b> { //~ ERROR regions=[[+, o];[];[]]
+struct Test5<'a, 'b> { //~ ERROR regions=[[o, o];[];[]]
     x: extern "Rust" fn(&'a mut &'b isize),
 }
 
@@ -67,7 +67,7 @@ struct Test7<'a> { //~ ERROR regions=[[*];[];[]]
 // Try enums too.
 
 #[rustc_variance]
-enum Test8<'a, 'b, 'c:'b> { //~ ERROR regions=[[+, -, o];[];[]]
+enum Test8<'a, 'b, 'c:'b> { //~ ERROR regions=[[o, -, o];[];[]]
     Test8A(extern "Rust" fn(&'a isize)),
     Test8B(&'b [isize]),
     Test8C(&'b mut &'c str),

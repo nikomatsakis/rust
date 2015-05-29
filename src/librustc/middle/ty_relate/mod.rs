@@ -290,8 +290,9 @@ fn relate_arg_vecs<'a,'tcx:'a,R>(relation: &mut R,
         return Err(ty::terr_arg_count);
     }
 
-    a_args.iter().zip(b_args)
-          .map(|(a, b)| relation.relate_with_variance(ty::Contravariant, a, b))
+    a_args.iter()
+          .zip(b_args)
+          .map(|(a, b)| relation.relate_with_variance(ty::Invariant, a, b))
           .collect()
 }
 

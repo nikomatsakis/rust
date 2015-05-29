@@ -1027,9 +1027,9 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                                 generics: &ty::Generics<'tcx>,
                                 sig: &ty::PolyFnSig<'tcx>,
                                 variance: VarianceTermPtr<'a>) {
-        let contra = self.contravariant(variance);
+        let invariant = self.invariant(variance);
         for &input in &sig.0.inputs {
-            self.add_constraints_from_ty(generics, input, contra);
+            self.add_constraints_from_ty(generics, input, invariant);
         }
         if let ty::FnConverging(result_type) = sig.0.output {
             self.add_constraints_from_ty(generics, result_type, variance);

@@ -247,11 +247,6 @@ impl<'a,'tcx> HigherRankedRelations<'a,'tcx> for CombineFields<'a,'tcx> {
                              a_vars: &[ty::RegionVid],
                              b_vars: &[ty::RegionVid],
                              r0: ty::Region) -> ty::Region {
-            if !is_var_in_set(new_vars, r0) {
-                assert!(!r0.is_bound());
-                return r0;
-            }
-
             let tainted = infcx.tainted_regions(snapshot, r0);
 
             let mut a_r = None;
