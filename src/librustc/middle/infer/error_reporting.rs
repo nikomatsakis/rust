@@ -239,8 +239,7 @@ pub trait ErrorReporting<'tcx> {
     fn report_generic_bound_failure(&self,
                                     origin: SubregionOrigin<'tcx>,
                                     kind: GenericKind<'tcx>,
-                                    sub: Region,
-                                    sups: Vec<Region>);
+                                    sub: Region);
 
     fn report_sub_sup_conflict(&self,
                                var_origin: RegionVariableOrigin,
@@ -292,8 +291,8 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
                     self.report_concrete_failure(origin, sub, sup);
                 }
 
-                GenericBoundFailure(kind, param_ty, sub, sups) => {
-                    self.report_generic_bound_failure(kind, param_ty, sub, sups);
+                GenericBoundFailure(kind, param_ty, sub) => {
+                    self.report_generic_bound_failure(kind, param_ty, sub);
                 }
 
                 SubSupConflict(var_origin,
@@ -527,8 +526,7 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
     fn report_generic_bound_failure(&self,
                                     origin: SubregionOrigin<'tcx>,
                                     bound_kind: GenericKind<'tcx>,
-                                    sub: Region,
-                                    _sups: Vec<Region>)
+                                    sub: Region)
     {
         // FIXME: it would be better to report the first error message
         // with the span of the parameter itself, rather than the span

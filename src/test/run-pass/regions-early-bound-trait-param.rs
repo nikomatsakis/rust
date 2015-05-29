@@ -42,7 +42,7 @@ fn field_invoke1<'f, 'g>(x: &'g Struct1<'f>) -> (isize,isize) {
     (l,s)
 }
 
-struct Struct2<'h, 'i> {
+struct Struct2<'h, 'i:'h> {
     f: &'h (Trait<'i>+'h)
 }
 

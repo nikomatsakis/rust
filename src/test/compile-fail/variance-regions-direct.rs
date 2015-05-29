@@ -52,7 +52,7 @@ struct Test5<'a, 'b> { //~ ERROR regions=[[+, o];[];[]]
 // argument list occurs in an invariant context.
 
 #[rustc_variance]
-struct Test6<'a, 'b> { //~ ERROR regions=[[-, o];[];[]]
+struct Test6<'a, 'b:'a> { //~ ERROR regions=[[-, o];[];[]]
     x: &'a mut extern "Rust" fn(&'b isize),
 }
 
