@@ -1647,6 +1647,13 @@ impl Region {
         }
     }
 
+    pub fn needs_infer(&self) -> bool {
+        match *self {
+            ty::ReInfer(..) => true,
+            _ => false
+        }
+    }
+
     pub fn escapes_depth(&self, depth: u32) -> bool {
         match *self {
             ty::ReLateBound(debruijn, _) => debruijn.depth > depth,
@@ -2460,7 +2467,7 @@ impl<'tcx> PolyProjectionPredicate<'tcx> {
 
 /// Represents the projection of an associated type. In explicit UFCS
 /// form this would be written `<T as Trait<..>>::N`.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ProjectionTy<'tcx> {
     /// The trait reference `T as Trait<..>`.
     pub trait_ref: ty::TraitRef<'tcx>,
@@ -3739,10 +3746,58 @@ impl<'tcx> TyS<'tcx> {
         }
     }
 
+    pub fn is_any_param(&self) -> bool {
+        match self.sty {
+            ty::TyParam(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn is_param(&self, space: ParamSpace, index: u32) -> bool {
         match self.sty {
             ty::TyParam(ref data) => data.space == space && data.idx == index,
             _ => false,
+        }
+    }
+
+    /// Returns the regions directly referenced from this type (but
+    /// not types reachable from this type via `walk_tys`). This
+    /// ignores late-bound regions binders.
+    pub fn regions(&self) -> Vec<ty::Region> {
+        match self.sty {
+            TyRef(region, _) => {
+                vec![*region]
+            }
+            TyTrait(ref obj) => {
+                let mut v = vec![obj.bounds.region_bound];
+                v.push_all(obj.principal.skip_binder().substs.regions().as_slice());
+                v
+            }
+            TyEnum(_, substs) |
+            TyStruct(_, substs) => {
+                substs.regions().as_slice().to_vec()
+            }
+            TyClosure(_, substs) => {
+                substs.regions().as_slice().to_vec()
+            }
+            TyBareFn(..) |
+            TyBool |
+            TyChar |
+            TyInt(_) |
+            TyUint(_) |
+            TyFloat(_) |
+            TyBox(_) |
+            TyStr |
+            TyArray(_, _) |
+            TySlice(_) |
+            TyRawPtr(_) |
+            TyTuple(_) |
+            TyProjection(_) |
+            TyParam(_) |
+            TyInfer(_) |
+            TyError => {
+                vec![]
+            }
         }
     }
 

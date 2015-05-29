@@ -253,9 +253,9 @@ fn ensure_drop_predicates_are_implied_by_item_defn<'tcx>(
 /// This function is meant to by applied to the type for every
 /// expression in the program.
 pub fn check_safety_of_destructor_if_necessary<'a, 'tcx>(rcx: &mut Rcx<'a, 'tcx>,
-                                                     typ: ty::Ty<'tcx>,
-                                                     span: Span,
-                                                     scope: region::CodeExtent) {
+                                                         typ: ty::Ty<'tcx>,
+                                                         span: Span,
+                                                         scope: region::CodeExtent) {
     debug!("check_safety_of_destructor_if_necessary typ: {:?} scope: {:?}",
            typ, scope);
 
@@ -448,16 +448,7 @@ fn iterate_over_potentially_unsafe_regions_in_type<'a, 'tcx>(
             // borrowed data is torn down in between the end of
             // `scope` and when the destructor itself actually runs.)
 
-            let parent_region =
-                match rcx.tcx().region_maps.opt_encl_scope(scope) {
-                    Some(parent_scope) => ty::ReScope(parent_scope),
-                    None => rcx.tcx().sess.span_bug(
-                        span, &format!("no enclosing scope found for scope: {:?}",
-                                       scope)),
-                };
-
-            regionck::type_must_outlive(rcx, origin(), typ, parent_region);
-
+            regionck::type_strictly_outlives(rcx, origin(), typ, scope);
         } else {
             // Okay, `typ` itself is itself not reachable by a
             // destructor; but it may contain substructure that has a
