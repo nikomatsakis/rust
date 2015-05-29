@@ -59,9 +59,8 @@ fn with_assoc1<'a,'b>() where 'b : 'a {
 }
 
 fn without_assoc<'a,'b>() {
-    // Here there are no associated types and the `'b` appearing in
-    // `TheType<'b>` is purely covariant, so there is no requirement
-    // that `'b:'a` holds.
+    // Here there are no associated types but there is a requirement
+    // that `'b:'a` holds because the `'b` appears in `TheType<'b>`.
 
     let _: &'a WithoutAssoc<TheType<'b>> = loop { };
     //~^ ERROR cannot infer

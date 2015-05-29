@@ -56,8 +56,8 @@ pub struct WithHrAssocSub<T>
 }
 
 fn with_assoc_sub<'a,'b>() {
-    // Same here, because although the where clause is not HR, it
-    // extends a trait in a HR way.
+    // The error here is just because `'a:'b` must hold for the type
+    // below to be well-formed, it is not related to the HR relation.
 
     let _: &'a WithHrAssocSub<TheType<'b>> = loop { };
     //~^ ERROR cannot infer

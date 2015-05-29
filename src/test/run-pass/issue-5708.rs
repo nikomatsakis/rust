@@ -33,7 +33,7 @@ struct Outer<'a> {
 }
 
 impl<'a> Outer<'a> {
-    fn new(inner: &Inner) -> Outer {
+    fn new<'b>(inner: &'b Inner) -> Outer<'b> {
         Outer {
             inner: inner
         }
@@ -52,7 +52,7 @@ pub trait MyTrait<T> {
     fn dummy(&self, t: T) -> T { panic!() }
 }
 
-pub struct MyContainer<'a, T> {
+pub struct MyContainer<'a, T:'a> {
     foos: Vec<&'a (MyTrait<T>+'a)> ,
 }
 
