@@ -252,7 +252,7 @@ impl<'a, 'tcx> CombineFields<'a, 'tcx> {
                 BiTo => self.bivariate().relate(&a_ty, &b_ty),
                 EqTo => self.equate().relate(&a_ty, &b_ty),
                 SubtypeOf => self.sub().relate(&a_ty, &b_ty),
-                SupertypeOf => self.sub().relate_with_variance(ty::Contravariant, &a_ty, &b_ty),
+                SupertypeOf => self.sub().contra(&a_ty, &b_ty),
             });
         }
 

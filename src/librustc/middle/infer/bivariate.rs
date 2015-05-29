@@ -54,26 +54,16 @@ impl<'a, 'tcx> TypeRelation<'a, 'tcx> for Bivariate<'a, 'tcx> {
         false
     }
 
-    fn relate_with_variance<T:Relate<'a,'tcx>>(&mut self,
-                                               variance: ty::Variance,
-                                               a: &T,
-                                               b: &T)
-                                               -> RelateResult<'tcx, T>
-    {
-        match variance {
-            // If we have Foo<A> and Foo is invariant w/r/t A,
-            // and we want to assert that
-            //
-            //     Foo<A> <: Foo<B> ||
-            //     Foo<B> <: Foo<A>
-            //
-            // then still A must equal B.
-            ty::Invariant => self.relate(a, b),
+    fn contra<T:Relate<'a,'tcx>>(&mut self, a: &T, b: &T) -> RelateResult<'tcx, T> {
+        self.relate(a, b)
+    }
 
-            ty::Covariant => self.relate(a, b),
-            ty::Bivariant => self.relate(a, b),
-            ty::Contravariant => self.relate(a, b),
-        }
+    fn equate<T:Relate<'a,'tcx>>(&mut self, a: &T, b: &T) -> RelateResult<'tcx, T> {
+        self.relate(a, b)
+    }
+
+    fn bivar<T:Relate<'a,'tcx>>(&mut self, a: &T, b: &T) -> RelateResult<'tcx, T> {
+        self.relate(a, b)
     }
 
     fn tys(&mut self, a: Ty<'tcx>, b: Ty<'tcx>) -> RelateResult<'tcx, Ty<'tcx>> {

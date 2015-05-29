@@ -47,12 +47,15 @@ impl<'a, 'tcx> TypeRelation<'a, 'tcx> for Match<'a, 'tcx> {
         false
     }
 
-    fn relate_with_variance<T:Relate<'a,'tcx>>(&mut self,
-                                               _: ty::Variance,
-                                               a: &T,
-                                               b: &T)
-                                               -> RelateResult<'tcx, T>
-    {
+    fn contra<T:Relate<'a,'tcx>>(&mut self, a: &T, b: &T) -> RelateResult<'tcx, T> {
+        self.relate(a, b)
+    }
+
+    fn equate<T:Relate<'a,'tcx>>(&mut self, a: &T, b: &T) -> RelateResult<'tcx, T> {
+        self.relate(a, b)
+    }
+
+    fn bivar<T:Relate<'a,'tcx>>(&mut self, a: &T, b: &T) -> RelateResult<'tcx, T> {
         self.relate(a, b)
     }
 

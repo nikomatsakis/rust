@@ -45,18 +45,16 @@ impl<'a, 'tcx> TypeRelation<'a, 'tcx> for Glb<'a, 'tcx> {
         a || b
     }
 
-    fn relate_with_variance<T:Relate<'a,'tcx>>(&mut self,
-                                               variance: ty::Variance,
-                                               a: &T,
-                                               b: &T)
-                                               -> RelateResult<'tcx, T>
-    {
-        match variance {
-            ty::Invariant => self.fields.equate().relate(a, b),
-            ty::Covariant => self.relate(a, b),
-            ty::Bivariant => self.fields.bivariate().relate(a, b),
-            ty::Contravariant => self.fields.lub().relate(a, b),
-        }
+    fn contra<T:Relate<'a,'tcx>>(&mut self, a: &T, b: &T) -> RelateResult<'tcx, T> {
+        self.fields.lub().relate(a, b)
+    }
+
+    fn equate<T:Relate<'a,'tcx>>(&mut self, a: &T, b: &T) -> RelateResult<'tcx, T> {
+        self.fields.equate().relate(a, b)
+    }
+
+    fn bivar<T:Relate<'a,'tcx>>(&mut self, a: &T, b: &T) -> RelateResult<'tcx, T> {
+        self.fields.bivariate().relate(a, b)
     }
 
     fn tys(&mut self, a: Ty<'tcx>, b: Ty<'tcx>) -> RelateResult<'tcx, Ty<'tcx>> {

@@ -55,12 +55,9 @@ pub trait TypeRelation<'a,'tcx> : Sized {
         Relate::relate(self, a, b)
     }
 
-    /// Switch variance for the purpose of relating `a` and `b`.
-    fn relate_with_variance<T:Relate<'a,'tcx>>(&mut self,
-                                               variance: ty::Variance,
-                                               a: &T,
-                                               b: &T)
-                                               -> RelateResult<'tcx, T>;
+    fn contra<T:Relate<'a,'tcx>>(&mut self, a: &T, b: &T) -> RelateResult<'tcx, T>;
+    fn equate<T:Relate<'a,'tcx>>(&mut self, a: &T, b: &T) -> RelateResult<'tcx, T>;
+    fn bivar<T:Relate<'a,'tcx>>(&mut self, a: &T, b: &T) -> RelateResult<'tcx, T>;
 
     // Overrideable relations. You shouldn't typically call these
     // directly, instead call `relate()`, which in turn calls
@@ -104,11 +101,10 @@ impl<'a,'tcx:'a> Relate<'a,'tcx> for ty::mt<'tcx> {
             Err(ty::terr_mutability)
         } else {
             let mutbl = a.mutbl;
-            let variance = match mutbl {
-                ast::MutImmutable => ty::Covariant,
-                ast::MutMutable => ty::Invariant,
+            let ty = match mutbl {
+                ast::MutImmutable => try!(relation.relate(&a.ty, &b.ty)),
+                ast::MutMutable => try!(relation.equate(&a.ty, &b.ty)),
             };
-            let ty = try!(relation.relate_with_variance(variance, &a.ty, &b.ty));
             Ok(ty::mt {ty: ty, mutbl: mutbl})
         }
     }
@@ -196,7 +192,12 @@ fn relate_type_params<'a,'tcx:'a,R>(relation: &mut R,
             let a_ty = a_tys[i];
             let b_ty = b_tys[i];
             let v = variances.map_or(ty::Invariant, |v| v[i]);
-            relation.relate_with_variance(v, &a_ty, &b_ty)
+            match v {
+                ty::Bivariant => relation.bivar(&a_ty, &b_ty),
+                ty::Covariant => relation.relate(&a_ty, &b_ty),
+                ty::Contravariant => relation.contra(&a_ty, &b_ty),
+                ty::Invariant => relation.equate(&a_ty, &b_ty),
+            }
         })
         .collect()
 }
@@ -227,7 +228,12 @@ fn relate_region_params<'a,'tcx:'a,R>(relation: &mut R,
             let a_r = a_rs[i];
             let b_r = b_rs[i];
             let variance = variances.map_or(ty::Invariant, |v| v[i]);
-            relation.relate_with_variance(variance, &a_r, &b_r)
+            match variance {
+                ty::Bivariant => relation.bivar(&a_r, &b_r),
+                ty::Covariant => relation.relate(&a_r, &b_r),
+                ty::Contravariant => relation.contra(&a_r, &b_r),
+                ty::Invariant => relation.equate(&a_r, &b_r),
+            }
         })
         .collect()
 }
@@ -292,7 +298,7 @@ fn relate_arg_vecs<'a,'tcx:'a,R>(relation: &mut R,
 
     a_args.iter()
           .zip(b_args)
-          .map(|(a, b)| relation.relate_with_variance(ty::Invariant, a, b))
+          .map(|(a, b)| relation.equate(a, b))
           .collect()
 }
 
@@ -391,9 +397,7 @@ impl<'a,'tcx:'a> Relate<'a,'tcx> for ty::ExistentialBounds<'tcx> {
         let r =
             try!(relation.with_cause(
                 Cause::ExistentialRegionBound(will_change),
-                |relation| relation.relate_with_variance(ty::Contravariant,
-                                                         &a.region_bound,
-                                                         &b.region_bound)));
+                |relation| relation.contra(&a.region_bound, &b.region_bound)));
         let nb = try!(relation.relate(&a.builtin_bounds, &b.builtin_bounds));
         let pb = try!(relation.relate(&a.projection_bounds, &b.projection_bounds));
         Ok(ty::ExistentialBounds { region_bound: r,
@@ -537,7 +541,7 @@ pub fn super_relate_tys<'a,'tcx:'a,R>(relation: &mut R,
 
         (&ty::TyRef(a_r, ref a_mt), &ty::TyRef(b_r, ref b_mt)) =>
         {
-            let r = try!(relation.relate_with_variance(ty::Contravariant, a_r, b_r));
+            let r = try!(relation.contra(a_r, b_r));
             let mt = try!(relation.relate(a_mt, b_mt));
             Ok(tcx.mk_ref(tcx.mk_region(r), mt))
         }
