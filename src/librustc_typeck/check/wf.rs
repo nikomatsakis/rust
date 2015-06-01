@@ -291,7 +291,7 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
         let mut constrained_parameters: HashSet<_> =
             variances.types
                      .iter_enumerated()
-                     .filter(|&(_, _, &variance)| variance != ty::Bivariant)
+                     .filter(|&(_, _, &variance)| variance != ty::Variance::B)
                      .map(|(space, index, _)| self.param_ty(ast_generics, space, index))
                      .map(|p| Parameter::Type(p))
                      .collect();
@@ -311,7 +311,7 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
         }
 
         for (space, index, &variance) in variances.regions.iter_enumerated() {
-            if variance != ty::Bivariant {
+            if variance != ty::Variance::B {
                 continue;
             }
 

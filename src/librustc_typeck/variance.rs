@@ -389,17 +389,8 @@ fn determine_parameters_to_be_inferred<'a, 'tcx>(tcx: &'a ty::ctxt<'tcx>,
 
 fn lang_items(tcx: &ty::ctxt) -> Vec<(ast::NodeId,Vec<ty::Variance>)> {
     let all = vec![
-        (tcx.lang_items.phantom_data(), vec![ty::Covariant]),
-        (tcx.lang_items.unsafe_cell_type(), vec![ty::Invariant]),
-
-        // Deprecated:
-        (tcx.lang_items.covariant_type(), vec![ty::Covariant]),
-        (tcx.lang_items.contravariant_type(), vec![ty::Contravariant]),
-        (tcx.lang_items.invariant_type(), vec![ty::Invariant]),
-        (tcx.lang_items.covariant_lifetime(), vec![ty::Covariant]),
-        (tcx.lang_items.contravariant_lifetime(), vec![ty::Contravariant]),
-        (tcx.lang_items.invariant_lifetime(), vec![ty::Invariant]),
-
+        (tcx.lang_items.phantom_data(), vec![ty::Variance::V]),
+        (tcx.lang_items.unsafe_cell_type(), vec![ty::Variance::I]),
         ];
 
     all.into_iter()
@@ -498,13 +489,13 @@ impl<'a, 'tcx> TermsContext<'a, 'tcx> {
     {
         match space {
             SelfSpace | FnSpace => {
-                ty::Bivariant
+                ty::Variance::B
             }
 
             TypeSpace => {
                 match self.lang_items.iter().find(|&&(n, _)| n == item_id) {
                     Some(&(_, ref variances)) => variances[index],
-                    None => ty::Bivariant
+                    None => ty::Variance::B
                 }
             }
         }
@@ -558,8 +549,7 @@ struct ConstraintContext<'a, 'tcx: 'a> {
     terms_cx: TermsContext<'a, 'tcx>,
 
     // These are pointers to common `ConstantTerm` instances
-    covariant: VarianceTermPtr<'a>,
-    contravariant: VarianceTermPtr<'a>,
+    variant: VarianceTermPtr<'a>,
     invariant: VarianceTermPtr<'a>,
     bivariant: VarianceTermPtr<'a>,
 
@@ -578,14 +568,12 @@ fn add_constraints_from_crate<'a, 'tcx>(terms_cx: TermsContext<'a, 'tcx>,
                                         krate: &ast::Crate)
                                         -> ConstraintContext<'a, 'tcx>
 {
-    let covariant = terms_cx.arena.alloc(ConstantTerm(ty::Covariant));
-    let contravariant = terms_cx.arena.alloc(ConstantTerm(ty::Contravariant));
-    let invariant = terms_cx.arena.alloc(ConstantTerm(ty::Invariant));
-    let bivariant = terms_cx.arena.alloc(ConstantTerm(ty::Bivariant));
+    let variant = terms_cx.arena.alloc(ConstantTerm(ty::Variance::V));
+    let invariant = terms_cx.arena.alloc(ConstantTerm(ty::Variance::I));
+    let bivariant = terms_cx.arena.alloc(ConstantTerm(ty::Variance::B));
     let mut constraint_cx = ConstraintContext {
         terms_cx: terms_cx,
-        covariant: covariant,
-        contravariant: contravariant,
+        variant: variant,
         invariant: invariant,
         bivariant: bivariant,
         constraints: Vec::new(),
@@ -627,7 +615,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for ConstraintContext<'a, 'tcx> {
                                                           &**ast_variant,
                                                           /*discriminant*/ 0);
                     for arg_ty in &variant.args {
-                        self.add_constraints_from_ty(&scheme.generics, *arg_ty, self.covariant);
+                        self.add_constraints_from_ty(&scheme.generics, *arg_ty, self.variant);
                     }
                 }
             }
@@ -645,7 +633,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for ConstraintContext<'a, 'tcx> {
                 for field_info in &struct_fields {
                     assert_eq!(field_info.id.krate, ast::LOCAL_CRATE);
                     let field_ty = tcx.node_id_to_type(field_info.id.node);
-                    self.add_constraints_from_ty(&scheme.generics, field_ty, self.covariant);
+                    self.add_constraints_from_ty(&scheme.generics, field_ty, self.variant);
                 }
             }
 
@@ -799,12 +787,6 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                                            variance: variance });
     }
 
-    fn contravariant(&mut self,
-                     variance: VarianceTermPtr<'a>)
-                     -> VarianceTermPtr<'a> {
-        self.xform(variance, self.contravariant)
-    }
-
     fn invariant(&mut self,
                  variance: VarianceTermPtr<'a>)
                  -> VarianceTermPtr<'a> {
@@ -813,10 +795,9 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
 
     fn constant_term(&self, v: ty::Variance) -> VarianceTermPtr<'a> {
         match v {
-            ty::Covariant => self.covariant,
-            ty::Invariant => self.invariant,
-            ty::Contravariant => self.contravariant,
-            ty::Bivariant => self.bivariant,
+            ty::Variance::V => self.variant,
+            ty::Variance::I => self.invariant,
+            ty::Variance::B => self.bivariant,
         }
     }
 
@@ -825,8 +806,8 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
              v2: VarianceTermPtr<'a>)
              -> VarianceTermPtr<'a> {
         match (*v1, *v2) {
-            (_, ConstantTerm(ty::Covariant)) => {
-                // Applying a "covariant" transform is always a no-op
+            (_, ConstantTerm(ty::Variance::V)) => {
+                // Applying a "variant" transform is always a no-op
                 v1
             }
 
@@ -882,8 +863,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
             }
 
             ty::TyRef(region, ref mt) => {
-                let contra = self.contravariant(variance);
-                self.add_constraints_from_region(generics, *region, contra);
+                self.add_constraints_from_region(generics, *region, variance);
                 self.add_constraints_from_mt(generics, mt, variance);
             }
 
@@ -939,9 +919,8 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                     data.principal_trait_ref_with_self_ty(self.tcx(),
                                                           self.tcx().types.err);
 
-                // The type `Foo<T+'a>` is contravariant w/r/t `'a`:
-                let contra = self.contravariant(variance);
-                self.add_constraints_from_region(generics, data.bounds.region_bound, contra);
+                // The type `Foo<T+'a>` is variant w/r/t `'a`:
+                self.add_constraints_from_region(generics, data.bounds.region_bound, variance);
 
                 // Ignore the SelfSpace, it is erased.
                 self.add_constraints_from_trait_ref(generics, poly_trait_ref.0, variance);
@@ -1240,22 +1219,13 @@ impl Xform for ty::Variance {
         // "Variance transformation", Figure 1 of The Paper
         match (self, v) {
             // Figure 1, column 1.
-            (ty::Covariant, ty::Covariant) => ty::Covariant,
-            (ty::Covariant, ty::Contravariant) => ty::Contravariant,
-            (ty::Covariant, ty::Invariant) => ty::Invariant,
-            (ty::Covariant, ty::Bivariant) => ty::Bivariant,
-
-            // Figure 1, column 2.
-            (ty::Contravariant, ty::Covariant) => ty::Contravariant,
-            (ty::Contravariant, ty::Contravariant) => ty::Covariant,
-            (ty::Contravariant, ty::Invariant) => ty::Invariant,
-            (ty::Contravariant, ty::Bivariant) => ty::Bivariant,
+            (ty::Variance::V, v) => v,
 
             // Figure 1, column 3.
-            (ty::Invariant, _) => ty::Invariant,
+            (ty::Variance::I, _) => ty::Variance::I,
 
             // Figure 1, column 4.
-            (ty::Bivariant, _) => ty::Bivariant,
+            (ty::Variance::B, _) => ty::Variance::B,
         }
     }
 }
@@ -1265,18 +1235,11 @@ fn glb(v1: ty::Variance, v2: ty::Variance) -> ty::Variance {
     // defined in The Paper:
     //
     //       *
-    //    -     +
-    //       o
+    //       v
+    //       i
     match (v1, v2) {
-        (ty::Invariant, _) | (_, ty::Invariant) => ty::Invariant,
-
-        (ty::Covariant, ty::Contravariant) => ty::Invariant,
-        (ty::Contravariant, ty::Covariant) => ty::Invariant,
-
-        (ty::Covariant, ty::Covariant) => ty::Covariant,
-
-        (ty::Contravariant, ty::Contravariant) => ty::Contravariant,
-
-        (x, ty::Bivariant) | (ty::Bivariant, x) => x,
+        (ty::Variance::I, _) | (_, ty::Variance::I) => ty::Variance::I,
+        (ty::Variance::V, _) | (_, ty::Variance::V) => ty::Variance::V,
+        (ty::Variance::B, _) => ty::Variance::B,
     }
 }

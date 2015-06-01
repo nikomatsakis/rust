@@ -191,12 +191,11 @@ fn relate_type_params<'a,'tcx:'a,R>(relation: &mut R,
         .map(|i| {
             let a_ty = a_tys[i];
             let b_ty = b_tys[i];
-            let v = variances.map_or(ty::Invariant, |v| v[i]);
+            let v = variances.map_or(ty::Variance::I, |v| v[i]);
             match v {
-                ty::Bivariant => relation.bivar(&a_ty, &b_ty),
-                ty::Covariant => relation.relate(&a_ty, &b_ty),
-                ty::Contravariant => relation.contra(&a_ty, &b_ty),
-                ty::Invariant => relation.equate(&a_ty, &b_ty),
+                ty::Variance::B => relation.bivar(&a_ty, &b_ty),
+                ty::Variance::V => relation.relate(&a_ty, &b_ty),
+                ty::Variance::I => relation.equate(&a_ty, &b_ty),
             }
         })
         .collect()
@@ -227,12 +226,11 @@ fn relate_region_params<'a,'tcx:'a,R>(relation: &mut R,
         .map(|i| {
             let a_r = a_rs[i];
             let b_r = b_rs[i];
-            let variance = variances.map_or(ty::Invariant, |v| v[i]);
+            let variance = variances.map_or(ty::Variance::I, |v| v[i]);
             match variance {
-                ty::Bivariant => relation.bivar(&a_r, &b_r),
-                ty::Covariant => relation.relate(&a_r, &b_r),
-                ty::Contravariant => relation.contra(&a_r, &b_r),
-                ty::Invariant => relation.equate(&a_r, &b_r),
+                ty::Variance::B => relation.bivar(&a_r, &b_r),
+                ty::Variance::V => relation.contra(&a_r, &b_r),
+                ty::Variance::I => relation.equate(&a_r, &b_r),
             }
         })
         .collect()

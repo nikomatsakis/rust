@@ -16,48 +16,48 @@
 // influence variance.
 
 #[rustc_variance]
-trait Getter<T> { //~ ERROR types=[[o];[o];[]]
+trait Getter<T> { //~ ERROR types=[[I];[I];[]]
     fn get(&self) -> T;
 }
 
 #[rustc_variance]
-trait Setter<T> { //~ ERROR types=[[o];[o];[]]
+trait Setter<T> { //~ ERROR types=[[I];[I];[]]
     fn get(&self, T);
 }
 
 #[rustc_variance]
-struct TestStruct<U,T:Setter<U>> { //~ ERROR types=[[+, +];[];[]]
+struct TestStruct<U,T:Setter<U>> { //~ ERROR types=[[V, V];[];[]]
     t: T, u: U
 }
 
 #[rustc_variance]
-enum TestEnum<U,T:Setter<U>> {//~ ERROR types=[[*, +];[];[]]
+enum TestEnum<U,T:Setter<U>> {//~ ERROR types=[[B, V];[];[]]
     //~^ ERROR parameter `U` is never used
     Foo(T)
 }
 
 #[rustc_variance]
-trait TestTrait<U,T:Setter<U>> { //~ ERROR types=[[o, o];[o];[]]
+trait TestTrait<U,T:Setter<U>> { //~ ERROR types=[[I, I];[I];[]]
     fn getter(&self, u: U) -> T;
 }
 
 #[rustc_variance]
-trait TestTrait2<U> : Getter<U> { //~ ERROR types=[[o];[o];[]]
+trait TestTrait2<U> : Getter<U> { //~ ERROR types=[[I];[I];[]]
 }
 
 #[rustc_variance]
-trait TestTrait3<U> { //~ ERROR types=[[o];[o];[]]
+trait TestTrait3<U> { //~ ERROR types=[[I];[I];[]]
     fn getter<T:Getter<U>>(&self);
 }
 
 #[rustc_variance]
-struct TestContraStruct<U,T:Setter<U>> { //~ ERROR types=[[*, +];[];[]]
+struct TestContraStruct<U,T:Setter<U>> { //~ ERROR types=[[B, V];[];[]]
     //~^ ERROR parameter `U` is never used
     t: T
 }
 
 #[rustc_variance]
-struct TestBox<U,T:Getter<U>+Setter<U>> { //~ ERROR types=[[*, +];[];[]]
+struct TestBox<U,T:Getter<U>+Setter<U>> { //~ ERROR types=[[B, V];[];[]]
     //~^ ERROR parameter `U` is never used
     t: T
 }

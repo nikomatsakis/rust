@@ -16,7 +16,6 @@ pub use self::InferTy::*;
 pub use self::InferRegion::*;
 pub use self::ImplOrTraitItemId::*;
 pub use self::ClosureKind::*;
-pub use self::Variance::*;
 pub use self::AutoAdjustment::*;
 pub use self::Representability::*;
 pub use self::AutoRef::*;
@@ -507,23 +506,11 @@ pub struct ItemVariances {
     pub regions: VecPerParamSpace<Variance>,
 }
 
-#[derive(Clone, PartialEq, RustcDecodable, RustcEncodable, Copy)]
+#[derive(Clone, Debug, PartialEq, RustcDecodable, RustcEncodable, Copy)]
 pub enum Variance {
-    Covariant,      // T<A> <: T<B> iff A <: B -- e.g., function return type
-    Invariant,      // T<A> <: T<B> iff B == A -- e.g., type of mutable cell
-    Contravariant,  // T<A> <: T<B> iff B <: A -- e.g., function param type
-    Bivariant,      // T<A> <: T<B>            -- e.g., unused type parameter
-}
-
-impl fmt::Debug for Variance {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(match *self {
-            Covariant => "+",
-            Contravariant => "-",
-            Invariant => "o",
-            Bivariant => "*",
-        })
-    }
+    B, // Bivariant
+    V, // Variant (co- for types, contra- for lifetimes)
+    I, // Invariant
 }
 
 #[derive(Copy, Clone)]

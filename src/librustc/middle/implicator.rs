@@ -272,28 +272,16 @@ impl<'a, 'tcx> Implicator<'a, 'tcx> {
                                     .map(|pred| Implication::Predicate(def_id, pred));
         self.out.extend(obligations);
 
-        let variances = self.tcx().item_variances(def_id);
-
-        for (&region, &variance) in substs.regions().iter().zip(&variances.regions) {
-            match variance {
-                ty::Contravariant | ty::Invariant => {
-                    // If any data with this lifetime is reachable
-                    // within, it must be at least contravariant.
-                    self.push_region_constraint_from_top(region)
-                }
-                ty::Covariant | ty::Bivariant => { }
-            }
+        for &region in substs.regions().iter() {
+            // If any data with this lifetime is reachable
+            // within, it must be at least contravariant.
+            self.push_region_constraint_from_top(region)
         }
 
-        for (&ty, &variance) in substs.types.iter().zip(&variances.types) {
-            match variance {
-                ty::Covariant | ty::Invariant => {
-                    // If any data of this type is reachable within,
-                    // it must be at least covariant.
-                    self.accumulate_from_ty(ty);
-                }
-                ty::Contravariant | ty::Bivariant => { }
-            }
+        for &ty in substs.types.iter() {
+            // If any data of this type is reachable within,
+            // it must be at least covariant.
+            self.accumulate_from_ty(ty);
         }
     }
 
