@@ -100,8 +100,7 @@ pub fn check_call<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         }
 
         Some(CallStep::Overloaded(method_callee)) => {
-            confirm_overloaded_call(fcx, call_expr, callee_expr,
-                                    arg_exprs, expected, method_callee);
+            confirm_overloaded_call(fcx, call_expr, arg_exprs, expected, method_callee);
         }
     }
 }
@@ -262,6 +261,7 @@ fn confirm_builtin_call<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
                                                       &fn_sig.inputs);
     check_argument_types(fcx,
                          call_expr.span,
+                         ty::Region::from_node_id(call_expr.id),
                          &fn_sig.inputs,
                          &expected_arg_tys[..],
                          arg_exprs,
@@ -291,6 +291,7 @@ fn confirm_deferred_closure_call<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
 
     check_argument_types(fcx,
                          call_expr.span,
+                         ty::Region::from_node_id(call_expr.id),
                          &*fn_sig.inputs,
                          &*expected_arg_tys,
                          arg_exprs,
@@ -301,8 +302,7 @@ fn confirm_deferred_closure_call<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
 }
 
 fn confirm_overloaded_call<'a,'tcx>(fcx: &FnCtxt<'a, 'tcx>,
-                                    call_expr: &ast::Expr,
-                                    callee_expr: &'tcx ast::Expr,
+                                    call_expr: &'tcx ast::Expr,
                                     arg_exprs: &'tcx [P<ast::Expr>],
                                     expected: Expectation<'tcx>,
                                     method_callee: ty::MethodCallee<'tcx>)
@@ -310,8 +310,8 @@ fn confirm_overloaded_call<'a,'tcx>(fcx: &FnCtxt<'a, 'tcx>,
     let output_type =
         check_method_argument_types(fcx,
                                     call_expr.span,
+                                    call_expr,
                                     method_callee.ty,
-                                    callee_expr,
                                     arg_exprs,
                                     TupleArgumentsFlag::TupleArguments,
                                     expected);

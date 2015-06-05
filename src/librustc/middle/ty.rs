@@ -1627,6 +1627,10 @@ pub struct ClosureUpvar<'tcx> {
 }
 
 impl Region {
+    pub fn from_node_id(node_id: ast::NodeId) -> Region {
+        ReScope(region::CodeExtent::from_node_id(node_id))
+    }
+
     pub fn is_bound(&self) -> bool {
         match *self {
             ty::ReEarlyBound(..) => true,

@@ -2066,9 +2066,9 @@ fn try_index_step<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
 }
 
 fn check_method_argument_types<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
-                                         sp: Span,
+                                         span: Span,
+                                         call_expr: &'tcx ast::Expr,
                                          method_fn_ty: Ty<'tcx>,
-                                         callee_expr: &'tcx ast::Expr,
                                          args_no_rcvr: &'tcx [P<ast::Expr>],
                                          tuple_arguments: TupleArgumentsFlag,
                                          expected: Expectation<'tcx>)
@@ -2082,7 +2082,8 @@ fn check_method_argument_types<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         };
 
         check_argument_types(fcx,
-                             sp,
+                             span,
+                             ty::Region::from_node_id(call_expr.id),
                              &err_inputs[..],
                              &[],
                              args_no_rcvr,
@@ -2094,12 +2095,13 @@ fn check_method_argument_types<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
             ty::TyBareFn(_, ref fty) => {
                 // HACK(eddyb) ignore self in the definition (see above).
                 let expected_arg_tys = expected_types_for_fn_args(fcx,
-                                                                  sp,
+                                                                  span,
                                                                   expected,
                                                                   fty.sig.0.output,
                                                                   &fty.sig.0.inputs[1..]);
                 check_argument_types(fcx,
-                                     sp,
+                                     span,
+                                     ty::Region::from_node_id(call_expr.id),
                                      &fty.sig.0.inputs[1..],
                                      &expected_arg_tys[..],
                                      args_no_rcvr,
@@ -2108,8 +2110,7 @@ fn check_method_argument_types<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                 fty.sig.0.output
             }
             _ => {
-                fcx.tcx().sess.span_bug(callee_expr.span,
-                                        "method without bare fn type");
+                fcx.tcx().sess.span_bug(span, "method without bare fn type");
             }
         }
     }
@@ -2119,12 +2120,20 @@ fn check_method_argument_types<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
 /// operators.
 fn check_argument_types<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                                   sp: Span,
+                                  call_scope: ty::Region,
                                   fn_inputs: &[Ty<'tcx>],
                                   expected_arg_tys: &[Ty<'tcx>],
                                   args: &'tcx [P<ast::Expr>],
                                   variadic: bool,
                                   tuple_arguments: TupleArgumentsFlag) {
     let tcx = fcx.ccx.tcx;
+
+    // All the input types from the fn signature must outlive the call
+    // so as to validate implied bounds.
+    for &fn_input_ty in fn_inputs {
+        let cause = traits::ObligationCause::misc(sp, fcx.body_id);
+        fcx.register_region_obligation(fn_input_ty, call_scope, cause);
+    }
 
     // Grab the argument types, supplying fresh type variables
     // if the wrong number of arguments were supplied
@@ -2551,8 +2560,8 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
         // Call the generic checker.
         let ret_ty = check_method_argument_types(fcx,
                                                  method_name.span,
-                                                 fn_ty,
                                                  expr,
+                                                 fn_ty,
                                                  &args[1..],
                                                  DontTupleArguments,
                                                  expected);
