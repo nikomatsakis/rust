@@ -753,6 +753,11 @@ pub struct ctxt<'tcx> {
     /// for things that do not have to do with the parameters in scope.
     pub selection_cache: traits::SelectionCache<'tcx>,
 
+    /// A set of predicates that have been fulfilled *somewhere*.
+    /// This is used to avoid duplicate work. Predicates are only
+    /// added to this set when they
+    pub fulfilled_predicates: RefCell<traits::FulfilledPredicates<'tcx>>,
+
     /// Caches the representation hints for struct definitions.
     pub repr_hint_cache: RefCell<DefIdMap<Rc<Vec<attr::ReprAttr>>>>,
 
@@ -815,6 +820,11 @@ bitflags! {
         const HAS_TY_ERR        = 1 << 6,
         const HAS_PROJECTION    = 1 << 7,
         const HAS_TY_CLOSURE    = 1 << 8,
+
+        // true if there are "names" of types and regions and so forth
+        // that are local to a particular fn
+        const HAS_LOCAL_NAMES   = 1 << 9,
+
         const NEEDS_SUBST       = TypeFlags::HAS_PARAMS.bits |
                                   TypeFlags::HAS_SELF.bits |
                                   TypeFlags::HAS_REGIONS.bits,
@@ -828,7 +838,8 @@ bitflags! {
                                   TypeFlags::HAS_RE_LATE_BOUND.bits |
                                   TypeFlags::HAS_REGIONS.bits |
                                   TypeFlags::HAS_TY_ERR.bits |
-                                  TypeFlags::HAS_PROJECTION.bits,
+                                  TypeFlags::HAS_PROJECTION.bits |
+                                  TypeFlags::HAS_LOCAL_NAMES.bits,
 
         // Caches for type_is_sized, type_moves_by_default
         const SIZEDNESS_CACHED  = 1 << 16,
@@ -982,6 +993,9 @@ pub fn type_has_ty_infer(ty: Ty) -> bool {
 }
 pub fn type_needs_infer(ty: Ty) -> bool {
     ty.flags.get().intersects(TypeFlags::HAS_TY_INFER | TypeFlags::HAS_RE_INFER)
+}
+pub fn type_is_global(ty: Ty) -> bool {
+    !ty.flags.get().intersects(TypeFlags::HAS_LOCAL_NAMES)
 }
 pub fn type_has_projection(ty: Ty) -> bool {
     ty.flags.get().intersects(TypeFlags::HAS_PROJECTION)
@@ -1283,6 +1297,15 @@ pub struct UpvarBorrow {
 pub type UpvarCaptureMap = FnvHashMap<UpvarId, UpvarCapture>;
 
 impl Region {
+    pub fn is_global(&self) -> bool {
+        // does this represent a region that can be named in a global
+        // way? used in fulfillment caching.
+        match *self {
+            ty::ReStatic | ty::ReEmpty => true,
+            _ => false,
+        }
+    }
+
     pub fn is_bound(&self) -> bool {
         match *self {
             ty::ReEarlyBound(..) => true,
@@ -2744,6 +2767,7 @@ pub fn mk_ctxt<'tcx>(s: Session,
         trait_defs: RefCell::new(DefIdMap()),
         predicates: RefCell::new(DefIdMap()),
         super_predicates: RefCell::new(DefIdMap()),
+        fulfilled_predicates: RefCell::new(traits::FulfilledPredicates::new()),
         map: map,
         freevars: freevars,
         tcache: RefCell::new(DefIdMap()),
@@ -2956,6 +2980,7 @@ impl FlagComputation {
             }
 
             &ty_param(ref p) => {
+                self.add_flags(TypeFlags::HAS_LOCAL_NAMES);
                 if p.space == subst::SelfSpace {
                     self.add_flags(TypeFlags::HAS_SELF);
                 } else {
@@ -2964,11 +2989,13 @@ impl FlagComputation {
             }
 
             &ty_closure(_, substs) => {
+                self.add_flags(TypeFlags::HAS_LOCAL_NAMES);
                 self.add_flags(TypeFlags::HAS_TY_CLOSURE);
                 self.add_substs(substs);
             }
 
             &ty_infer(_) => {
+                self.add_flags(TypeFlags::HAS_LOCAL_NAMES); // it might, right?
                 self.add_flags(TypeFlags::HAS_TY_INFER)
             }
 
@@ -3049,6 +3076,10 @@ impl FlagComputation {
                 self.add_depth(debruijn.depth);
             }
             _ => { }
+        }
+
+        if !r.is_global() {
+            self.add_flags(TypeFlags::HAS_LOCAL_NAMES);
         }
     }
 

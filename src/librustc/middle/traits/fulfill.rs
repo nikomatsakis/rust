@@ -28,6 +28,10 @@ use super::select::SelectionContext;
 use super::Unimplemented;
 use super::util::predicate_for_builtin_bound;
 
+pub struct FulfilledPredicates<'tcx> {
+    set: HashSet<ty::Predicate<'tcx>>
+}
+
 /// The fulfillment context is used to drive trait resolution.  It
 /// consists of a list of obligations that must be (eventually)
 /// satisfied. The job is to track which are satisfied, which yielded
@@ -44,7 +48,7 @@ pub struct FulfillmentContext<'tcx> {
     // than the `SelectionCache`: it avoids duplicate errors and
     // permits recursive obligations, which are often generated from
     // traits like `Send` et al.
-    duplicate_set: HashSet<ty::Predicate<'tcx>>,
+    duplicate_set: FulfilledPredicates<'tcx>,
 
     // A list of all obligations that have been registered with this
     // fulfillment context.
@@ -80,6 +84,8 @@ pub struct FulfillmentContext<'tcx> {
     // obligations (otherwise, it's easy to fail to walk to a
     // particular node-id).
     region_obligations: NodeMap<Vec<RegionObligation<'tcx>>>,
+
+    errors_will_be_reported: bool,
 }
 
 #[derive(Clone)]
@@ -90,12 +96,13 @@ pub struct RegionObligation<'tcx> {
 }
 
 impl<'tcx> FulfillmentContext<'tcx> {
-    pub fn new() -> FulfillmentContext<'tcx> {
+    pub fn new(errors_will_be_reported: bool) -> FulfillmentContext<'tcx> {
         FulfillmentContext {
-            duplicate_set: HashSet::new(),
+            duplicate_set: FulfilledPredicates::new(),
             predicates: Vec::new(),
             attempted_mark: 0,
             region_obligations: NodeMap(),
+            errors_will_be_reported: errors_will_be_reported,
         }
     }
 
@@ -165,7 +172,7 @@ impl<'tcx> FulfillmentContext<'tcx> {
 
         assert!(!obligation.has_escaping_regions());
 
-        if !self.duplicate_set.insert(obligation.predicate.clone()) {
+        if self.is_duplicate(infcx.tcx, &obligation.predicate) {
             debug!("register_predicate({}) -- already seen, skip", obligation.repr(infcx.tcx));
             return;
         }
@@ -229,6 +236,44 @@ impl<'tcx> FulfillmentContext<'tcx> {
 
     pub fn pending_obligations(&self) -> &[PredicateObligation<'tcx>] {
         &self.predicates
+    }
+
+    fn is_duplicate(&mut self, tcx: &ty::ctxt<'tcx>, predicate: &ty::Predicate<'tcx>) -> bool {
+        // This is a kind of dirty hack to allow us to avoid "rederiving"
+        // things that we have already proven in other methods.
+        //
+        // The idea is that any predicate that doesn't involve type
+        // parameters and which only involves the 'static region (and
+        // no other regions) is universally solvable, since impls are global.
+        //
+        // This is particularly important since even if we have a
+        // cache hit in the selection context, we still wind up
+        // evaluating the 'nested obligations'.  This cache lets us
+        // skip those.
+
+        let mut borrow;
+        let duplicate_set = match *predicate {
+            ty::Predicate::Trait(ref data) => {
+                let substs = data.skip_binder().trait_ref.substs;
+                let all_global_names =
+                    substs.types.iter().all(|t| ty::type_is_global(t)) &&
+                    substs.regions().iter().all(|r| r.is_global());
+                if all_global_names && self.errors_will_be_reported {
+                    debug!("is_duplicate all_global_names: predicate={} substs={:?}",
+                           predicate.repr(tcx), substs);
+
+                    borrow = tcx.fulfilled_predicates.borrow_mut();
+                    &mut *borrow
+                } else {
+                    &mut self.duplicate_set
+                }
+            }
+
+            _ => {
+                &mut self.duplicate_set
+            }
+        };
+        duplicate_set.is_duplicate(predicate)
     }
 
     /// Attempts to select obligations using `selcx`. If `only_new_obligations` is true, then it
@@ -442,3 +487,17 @@ fn register_region_obligation<'tcx>(tcx: &ty::ctxt<'tcx>,
         .push(region_obligation);
 
 }
+
+impl<'tcx> FulfilledPredicates<'tcx> {
+    pub fn new() -> FulfilledPredicates<'tcx> {
+        FulfilledPredicates {
+            set: HashSet::new()
+        }
+    }
+
+    fn is_duplicate(&mut self, p: &ty::Predicate<'tcx>) -> bool {
+        !self.set.insert(p.clone())
+    }
+}
+
+
