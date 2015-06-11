@@ -118,6 +118,7 @@ pub mod middle {
     pub mod infer;
     pub mod implicator;
     pub mod lang_items;
+    pub mod legacy;
     pub mod liveness;
     pub mod mem_categorization;
     pub mod pat_util;

@@ -675,6 +675,10 @@ pub struct ctxt<'tcx> {
     pub provided_method_sources: RefCell<DefIdMap<ast::DefId>>,
     pub struct_fields: RefCell<DefIdMap<Rc<Vec<field_ty>>>>,
 
+    /// indicates whether a `#![legacy(object_bound_defaults)]` attribute
+    /// was found on the trait
+    pub legacy_default_object_bounds: Cell<bool>,
+
     /// Maps from def-id of a type or region parameter to its
     /// (inferred) variance.
     pub item_variance_map: RefCell<DefIdMap<Rc<ItemVariances>>>,
@@ -2791,6 +2795,7 @@ pub fn mk_ctxt<'tcx>(s: Session,
         const_qualif_map: RefCell::new(NodeMap()),
         custom_coerce_unsized_kinds: RefCell::new(DefIdMap()),
         cast_kinds: RefCell::new(NodeMap()),
+        legacy_default_object_bounds: Cell::new(false),
    }
 }
 

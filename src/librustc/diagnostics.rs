@@ -992,5 +992,7 @@ register_diagnostics! {
     E0316, // nested quantification of lifetimes
     E0370, // discriminant overflow
     E0395, // pointer comparison in const-expr
-    E0396  // pointer dereference in const-expr
+    E0396, // pointer dereference in const-expr
+    E0398, // misuse of legacy attr
+    E0399  // misuse of default_object_bounds
 }

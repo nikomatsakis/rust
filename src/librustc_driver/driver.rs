@@ -641,6 +641,9 @@ pub fn phase_3_run_analysis_passes<'tcx>(sess: Session,
                             lang_items,
                             stability::Index::new(krate));
 
+    time(time_passes, "legacy", (), |_|
+         middle::legacy::update_legacy(&ty_cx, krate));
+
     // passes are timed inside typeck
     typeck::check_crate(&ty_cx, trait_map);
 

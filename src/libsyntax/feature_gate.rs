@@ -179,6 +179,8 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType)] = &[
     ("forbid", Normal),
     ("deny", Normal),
 
+    ("legacy", Normal),
+
     ("macro_reexport", Normal),
     ("macro_use", Normal),
     ("macro_export", Normal),
