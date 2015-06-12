@@ -37,6 +37,11 @@ pub trait RegionScope {
     /// `None` is returned, an explicit annotation is required.
     fn object_lifetime_default(&self, span: Span) -> Option<ty::Region>;
 
+    /// The "base" default is the initial default for a scope. This is
+    /// 'static except for in fn bodies, where it is a fresh inference
+    /// variable. You shouldn't call this except for as part of
+    /// computing `object_lifetime_default` (in particular, in legacy
+    /// modes, it may not be relevant).
     fn base_object_lifetime_default(&self, span: Span) -> ty::Region;
 }
 
@@ -167,18 +172,21 @@ impl RegionScope for BindingRscope {
 
 /// A scope which overrides the default object lifetime but has no other effect.
 pub struct ObjectLifetimeDefaultRscope<'r> {
-    base_scope: &'r (RegionScope+'r),
+    base_scope: &'r RegionScope,
     default: ty::ObjectLifetimeDefault,
+    legacy_default_object_bounds: bool,
 }
 
 impl<'r> ObjectLifetimeDefaultRscope<'r> {
-    pub fn new(base_scope: &'r (RegionScope+'r),
+    pub fn new(tcx: &ty::ctxt,
+               base_scope: &'r RegionScope,
                default: ty::ObjectLifetimeDefault)
                -> ObjectLifetimeDefaultRscope<'r>
     {
         ObjectLifetimeDefaultRscope {
             base_scope: base_scope,
             default: default,
+            legacy_default_object_bounds: tcx.legacy_default_object_bounds.get(),
         }
     }
 }
@@ -190,7 +198,11 @@ impl<'r> RegionScope for ObjectLifetimeDefaultRscope<'r> {
                 None,
 
             ty::ObjectLifetimeDefault::BaseDefault =>
-                Some(self.base_object_lifetime_default(span)),
+                if !self.legacy_default_object_bounds {
+                    Some(self.base_object_lifetime_default(span))
+                } else {
+                    self.base_scope.object_lifetime_default(span)
+                },
 
             ty::ObjectLifetimeDefault::Specific(r) =>
                 Some(r),
@@ -198,6 +210,7 @@ impl<'r> RegionScope for ObjectLifetimeDefaultRscope<'r> {
     }
 
     fn base_object_lifetime_default(&self, span: Span) -> ty::Region {
+        assert!(!self.legacy_default_object_bounds);
         self.base_scope.base_object_lifetime_default(span)
     }
 

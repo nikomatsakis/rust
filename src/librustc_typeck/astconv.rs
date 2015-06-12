@@ -1335,7 +1335,7 @@ pub fn ast_ty_arg_to_ty<'tcx>(this: &AstConv<'tcx>,
 
     if let Some(def) = decl_generics.types.opt_get(TypeSpace, index) {
         let object_lifetime_default = def.object_lifetime_default.subst(tcx, region_substs);
-        let rscope1 = &ObjectLifetimeDefaultRscope::new(rscope, object_lifetime_default);
+        let rscope1 = &ObjectLifetimeDefaultRscope::new(tcx, rscope, object_lifetime_default);
         ast_ty_to_ty(this, rscope1, ast_ty)
     } else {
         ast_ty_to_ty(this, rscope, ast_ty)
@@ -1532,6 +1532,7 @@ pub fn ast_ty_to_ty<'tcx>(this: &AstConv<'tcx>,
             debug!("ty_rptr r={}", r.repr(this.tcx()));
             let rscope1 =
                 &ObjectLifetimeDefaultRscope::new(
+                    tcx,
                     rscope,
                     ty::ObjectLifetimeDefault::Specific(r));
             let t = ast_ty_to_ty(this, rscope1, &*mt.ty);
