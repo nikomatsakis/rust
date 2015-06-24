@@ -72,8 +72,7 @@ fn call_with_assoc<'a,'b>() {
     // no data.
 
     call::<&'a WithAssoc<TheType<'b>>>();
-    //~^ ERROR cannot infer
-    //~| ERROR reference has a longer lifetime
+    //~^ ERROR reference has a longer lifetime
 }
 
 fn call_without_assoc<'a,'b>() {
