@@ -63,7 +63,7 @@ fn without_assoc<'a,'b>() {
     // that `'b:'a` holds because the `'b` appears in `TheType<'b>`.
 
     let _: &'a WithoutAssoc<TheType<'b>> = loop { };
-}
+n}
 
 fn call_with_assoc<'a,'b>() {
     // As `with_assoc`, but just checking that we impose the same rule
@@ -71,7 +71,7 @@ fn call_with_assoc<'a,'b>() {
     // no data.
 
     call::<&'a WithAssoc<TheType<'b>>>();
-    //~^ ERROR cannot infer
+    //~^ ERROR reference has a longer lifetime
 }
 
 fn call_without_assoc<'a,'b>() {
