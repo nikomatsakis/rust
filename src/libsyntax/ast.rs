@@ -376,11 +376,15 @@ pub type CrateNum = u32;
 
 pub type NodeId = u32;
 
+#[derive(Clone, Debug, Eq, Ord, PartialOrd, PartialEq, RustcEncodable,
+         RustcDecodable, Hash, Copy)]
+pub struct ItemId(pub NodeId);
+
 #[derive(Clone, Eq, Ord, PartialOrd, PartialEq, RustcEncodable,
-           RustcDecodable, Hash, Copy)]
+         RustcDecodable, Hash, Copy)]
 pub struct DefId {
     pub krate: CrateNum,
-    pub node: NodeId,
+    pub item: ItemId,
 }
 
 fn default_def_id_debug(_: DefId, _: &mut fmt::Formatter) -> fmt::Result { Ok(()) }
@@ -390,17 +394,17 @@ thread_local!(pub static DEF_ID_DEBUG: Cell<fn(DefId, &mut fmt::Formatter) -> fm
 
 impl fmt::Debug for DefId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "DefId {{ krate: {}, node: {} }}",
-                    self.krate, self.node));
+        try!(write!(f, "DefId {{ krate: {:?}, item: {:?} }}",
+                    self.krate, self.item));
         DEF_ID_DEBUG.with(|def_id_debug| def_id_debug.get()(*self, f))
     }
 }
 
 impl DefId {
-    /// Read the node id, asserting that this def-id is krate-local.
-    pub fn local_id(&self) -> NodeId {
+    /// Read the item id, asserting that this def-id is krate-local.
+    pub fn local_id(&self) -> ItemId {
         assert_eq!(self.krate, LOCAL_CRATE);
-        self.node
+        self.item
     }
 }
 

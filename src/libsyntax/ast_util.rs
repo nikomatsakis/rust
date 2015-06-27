@@ -30,8 +30,8 @@ pub fn path_name_i(idents: &[Ident]) -> String {
     }).collect::<Vec<String>>().connect("::")
 }
 
-pub fn local_def(id: NodeId) -> DefId {
-    ast::DefId { krate: LOCAL_CRATE, node: id }
+pub fn local_def(id: ItemId) -> DefId {
+    ast::DefId { krate: LOCAL_CRATE, item: id }
 }
 
 pub fn is_local(did: ast::DefId) -> bool { did.krate == LOCAL_CRATE }
