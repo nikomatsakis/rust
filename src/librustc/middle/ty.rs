@@ -2310,6 +2310,9 @@ pub enum Predicate<'tcx> {
     /// where <T as TraitRef>::Name == X, approximately.
     /// See `ProjectionPredicate` struct for details.
     Projection(PolyProjectionPredicate<'tcx>),
+
+    /// no syntax: T WF
+    WellFormed(Ty<'tcx>),
 }
 
 impl<'tcx> Predicate<'tcx> {
@@ -2395,6 +2398,8 @@ impl<'tcx> Predicate<'tcx> {
                 Predicate::TypeOutlives(ty::Binder(data.subst(tcx, substs))),
             Predicate::Projection(ty::Binder(ref data)) =>
                 Predicate::Projection(ty::Binder(data.subst(tcx, substs))),
+            Predicate::WellFormed(data) =>
+                Predicate::WellFormed(data.subst(tcx, substs)),
         }
     }
 }
@@ -2582,6 +2587,9 @@ impl<'tcx> Predicate<'tcx> {
                             .chain(Some(data.0.ty))
                             .collect()
             }
+            ty::Predicate::WellFormed(data) => {
+                vec![data]
+            }
         };
 
         // The only reason to collect into a vector here is that I was
@@ -2599,6 +2607,7 @@ impl<'tcx> Predicate<'tcx> {
             Predicate::RegionOutlives(ref p) => p.has_escaping_regions(),
             Predicate::TypeOutlives(ref p) => p.has_escaping_regions(),
             Predicate::Projection(ref p) => p.has_escaping_regions(),
+            Predicate::WellFormed(p) => p.has_escaping_regions(),
         }
     }
 
@@ -2610,6 +2619,7 @@ impl<'tcx> Predicate<'tcx> {
             Predicate::Projection(..) |
             Predicate::Equate(..) |
             Predicate::RegionOutlives(..) |
+            Predicate::WellFormed(..) |
             Predicate::TypeOutlives(..) => {
                 None
             }
@@ -3780,6 +3790,9 @@ impl<'tcx> TyS<'tcx> {
             TyClosure(_, substs) => {
                 substs.regions().as_slice().to_vec()
             }
+            TyProjection(ref data) => {
+                data.trait_ref.substs.regions().as_slice().to_vec()
+            }
             TyBareFn(..) |
             TyBool |
             TyChar |
@@ -3792,7 +3805,6 @@ impl<'tcx> TyS<'tcx> {
             TySlice(_) |
             TyRawPtr(_) |
             TyTuple(_) |
-            TyProjection(_) |
             TyParam(_) |
             TyInfer(_) |
             TyError => {
@@ -6229,6 +6241,7 @@ impl<'tcx> ctxt<'tcx> {
                     ty::Predicate::Projection(..) |
                     ty::Predicate::Trait(..) |
                     ty::Predicate::Equate(..) |
+                    ty::Predicate::WellFormed(..) |
                     ty::Predicate::RegionOutlives(..) => {
                         None
                     }
@@ -6895,6 +6908,7 @@ impl<'tcx> fmt::Debug for ty::Predicate<'tcx> {
             Predicate::RegionOutlives(ref pair) => write!(f, "{:?}", pair),
             Predicate::TypeOutlives(ref pair) => write!(f, "{:?}", pair),
             Predicate::Projection(ref pair) => write!(f, "{:?}", pair),
+            Predicate::WellFormed(ty) => write!(f, "WF({:?})", ty),
         }
     }
 }
@@ -6998,6 +7012,7 @@ impl<'tcx> RegionEscape for Predicate<'tcx> {
             Predicate::RegionOutlives(ref data) => data.has_regions_escaping_depth(depth),
             Predicate::TypeOutlives(ref data) => data.has_regions_escaping_depth(depth),
             Predicate::Projection(ref data) => data.has_regions_escaping_depth(depth),
+            Predicate::WellFormed(ty) => ty.has_regions_escaping_depth(depth),
         }
     }
 }
@@ -7156,6 +7171,7 @@ impl<'tcx> HasTypeFlags for Predicate<'tcx> {
             Predicate::RegionOutlives(ref data) => data.has_type_flags(flags),
             Predicate::TypeOutlives(ref data) => data.has_type_flags(flags),
             Predicate::Projection(ref data) => data.has_type_flags(flags),
+            Predicate::WellFormed(data) => data.has_type_flags(flags),
         }
     }
 }

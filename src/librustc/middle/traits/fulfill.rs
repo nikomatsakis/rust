@@ -10,6 +10,7 @@
 
 use middle::infer::InferCtxt;
 use middle::ty::{self, RegionEscape, Ty, HasTypeFlags};
+use middle::wf;
 
 use std::collections::HashSet;
 use std::fmt;
@@ -456,6 +457,19 @@ fn process_predicate<'a,'tcx>(selcx: &mut SelectionContext<'a,'tcx>,
                 }
             }
         }
+
+        ty::Predicate::WellFormed(ty) => {
+            match wf::obligations(selcx.infcx(), obligation.cause.body_id,
+                                  ty, obligation.cause.span) {
+                Some(obligations) => {
+                    new_obligations.extend(obligations);
+                    true
+                }
+                None => {
+                    false
+                }
+            }
+        }
     }
 }
 
@@ -476,11 +490,12 @@ fn register_region_obligation<'tcx>(t_a: Ty<'tcx>,
                                                sub_region: r_b,
                                                cause: cause };
 
-    debug!("register_region_obligation({:?})",
-           region_obligation);
+    debug!("register_region_obligation({:?}, cause={:?})",
+           region_obligation, region_obligation.cause);
 
-    region_obligations.entry(region_obligation.cause.body_id).or_insert(vec![])
-        .push(region_obligation);
+    region_obligations.entry(region_obligation.cause.body_id)
+                      .or_insert(vec![])
+                      .push(region_obligation);
 
 }
 

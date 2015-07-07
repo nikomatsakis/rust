@@ -25,7 +25,7 @@ use super::{
 
 use fmt_macros::{Parser, Piece, Position};
 use middle::infer::InferCtxt;
-use middle::ty::{self, ToPredicate, HasTypeFlags, ToPolyTraitRef, TraitRef};
+use middle::ty::{self, ToPredicate, HasTypeFlags, ToPolyTraitRef, TraitRef, Ty};
 use middle::ty_fold::TypeFoldable;
 use std::collections::HashMap;
 use std::fmt;
@@ -231,11 +231,22 @@ pub fn report_selection_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
                         }
 
                         ty::Predicate::Projection(..) | ty::Predicate::TypeOutlives(..) => {
-                                let predicate =
-                                    infcx.resolve_type_vars_if_possible(&obligation.predicate);
-                                span_err!(infcx.tcx.sess, obligation.cause.span, E0280,
-                                        "the requirement `{}` is not satisfied",
-                                        predicate);
+                            let predicate =
+                                infcx.resolve_type_vars_if_possible(&obligation.predicate);
+                            span_err!(infcx.tcx.sess, obligation.cause.span, E0280,
+                                      "the requirement `{}` is not satisfied",
+                                      predicate);
+                        }
+
+                        ty::Predicate::WellFormed(ty) => {
+                            // WF predicates cannot themselves make
+                            // errors. They can only block due to
+                            // ambiguity; otherwise, they always
+                            // degenerate into other obligations
+                            // (which may fail).
+                            infcx.tcx.sess.span_bug(
+                                obligation.cause.span,
+                                &format!("WF predicate not satisfied for {:?}", ty));
                         }
                     }
                 }
@@ -346,10 +357,7 @@ pub fn maybe_report_ambiguity<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
                         infcx.tcx.lang_items.sized_trait()
                         .map_or(false, |sized_id| sized_id == trait_ref.def_id())
                     {
-                        span_err!(infcx.tcx.sess, obligation.cause.span, E0282,
-                                "unable to infer enough type information about `{}`; \
-                                 type annotations or generic parameter binding required",
-                                self_ty);
+                        need_type_info(infcx, obligation.cause.span, self_ty);
                     } else {
                         span_err!(infcx.tcx.sess, obligation.cause.span, E0283,
                                 "type annotations required: cannot resolve `{}`",
@@ -370,6 +378,14 @@ pub fn maybe_report_ambiguity<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
             }
         }
 
+        ty::Predicate::WellFormed(ty) => {
+            // Same hacky approach as above to avoid deluging user
+            // with error messages.
+            if !ty.references_error() && !infcx.tcx.sess.has_errors() {
+                need_type_info(infcx, obligation.cause.span, ty);
+            }
+        }
+
         _ => {
             if !infcx.tcx.sess.has_errors() {
                 span_err!(infcx.tcx.sess, obligation.cause.span, E0284,
@@ -379,6 +395,16 @@ pub fn maybe_report_ambiguity<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
             }
         }
     }
+}
+
+fn need_type_info<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
+                            span: Span,
+                            ty: Ty<'tcx>)
+{
+    span_err!(infcx.tcx.sess, span, E0282,
+              "unable to infer enough type information about `{}`; \
+               type annotations or generic parameter binding required",
+              ty);
 }
 
 fn note_obligation_cause<'a, 'tcx, T>(infcx: &InferCtxt<'a, 'tcx>,
@@ -400,6 +426,12 @@ fn note_obligation_cause_code<'a, 'tcx, T>(infcx: &InferCtxt<'a, 'tcx>,
     let tcx = infcx.tcx;
     match *cause_code {
         ObligationCauseCode::MiscObligation => { }
+        ObligationCauseCode::ReferenceOutlivesReferent(ref_ty) => {
+            tcx.sess.span_note(
+                cause_span,
+                &format!("required so that reference `{}` does not outlive its referent",
+                         ref_ty));
+        }
         ObligationCauseCode::ItemObligation(item_def_id) => {
             let item_name = tcx.item_path_str(item_def_id);
             tcx.sess.span_note(

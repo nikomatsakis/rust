@@ -602,6 +602,7 @@ fn has_dtor_of_interest<'tcx>(tcx: &ty::ctxt<'tcx>,
                         ty::Predicate::Equate(..) |
                         ty::Predicate::RegionOutlives(..) |
                         ty::Predicate::TypeOutlives(..) |
+                        ty::Predicate::WellFormed(..) |
                         ty::Predicate::Projection(..) => {
                             // For now, assume all these where-clauses
                             // may give drop implementation capabilty

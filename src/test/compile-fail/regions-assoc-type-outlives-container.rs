@@ -45,7 +45,7 @@ fn with_assoc<'a,'b>() {
     // outlive 'a. In this case, that means TheType<'b>::TheAssocType,
     // which is &'b (), must outlive 'a.
 
-    let _: &'a WithAssoc<TheType<'b>> = loop { }; //~ ERROR cannot infer
+    let _: &'a WithAssoc<TheType<'b>> = loop { }; //~ ERROR reference has a longer lifetime
 }
 
 fn with_assoc1<'a,'b>() where 'b : 'a {
@@ -62,8 +62,8 @@ fn without_assoc<'a,'b>() {
     // Here there are no associated types but there is a requirement
     // that `'b:'a` holds because the `'b` appears in `TheType<'b>`.
 
-    let _: &'a WithoutAssoc<TheType<'b>> = loop { };
-n}
+    let _: &'a WithoutAssoc<TheType<'b>> = loop { }; //~ ERROR reference has a longer lifetime
+}
 
 fn call_with_assoc<'a,'b>() {
     // As `with_assoc`, but just checking that we impose the same rule
@@ -77,7 +77,7 @@ fn call_with_assoc<'a,'b>() {
 fn call_without_assoc<'a,'b>() {
     // As `without_assoc`, but in a distinct scenario.
 
-    call::<&'a WithoutAssoc<TheType<'b>>>();
+    call::<&'a WithoutAssoc<TheType<'b>>>(); //~ ERROR reference has a longer lifetime
 }
 
 fn call<T>() { }

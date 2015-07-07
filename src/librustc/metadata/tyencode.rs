@@ -456,6 +456,10 @@ pub fn enc_predicate<'a, 'tcx>(w: &mut Encoder,
             mywrite!(w, "p");
             enc_projection_predicate(w, cx, data)
         }
+        ty::Predicate::WellFormed(data) => {
+            mywrite!(w, "w");
+            enc_ty(w, cx, data);
+        }
     }
 }
 

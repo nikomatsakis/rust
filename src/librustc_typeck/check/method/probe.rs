@@ -481,6 +481,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
                     ty::Predicate::Equate(..) |
                     ty::Predicate::Projection(..) |
                     ty::Predicate::RegionOutlives(..) |
+                    ty::Predicate::WellFormed(..) |
                     ty::Predicate::TypeOutlives(..) => {
                         None
                     }
