@@ -817,6 +817,16 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
                     sup,
                     "");
             }
+            infer::ParameterInScope(_, span) => {
+                self.tcx.sess.span_err(
+                    span,
+                    &format!("type/lifetime parameter not in scope here"));
+                self.tcx.note_and_explain_region(
+                    "the parameter is only valid for ",
+                    sub,
+                    "");
+            }
+            infer::DataBorrowed(ty, span) | // TODO
             infer::ReferenceOutlivesReferent(ty, span) => {
                 self.tcx.sess.span_err(
                     span,
@@ -1712,6 +1722,12 @@ impl<'a, 'tcx> ErrorReportingHelpers<'tcx> for InferCtxt<'a, 'tcx> {
                     span,
                     "...so that variable is valid at time of its declaration");
             }
+            infer::ParameterInScope(_, span) => {
+                self.tcx.sess.span_note(
+                    span,
+                    &format!("...so that a type/lifetime parameter is in scope here"));
+            }
+            infer::DataBorrowed(ty, span) | // TODO
             infer::ReferenceOutlivesReferent(ty, span) => {
                 self.tcx.sess.span_note(
                     span,

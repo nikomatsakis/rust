@@ -56,6 +56,9 @@ impl<'a,'tcx> PredicateSet<'a,'tcx> {
 
             ty::Predicate::Projection(ref data) =>
                 ty::Predicate::Projection(self.tcx.anonymize_late_bound_regions(data)),
+
+            ty::Predicate::WellFormed(data) =>
+                ty::Predicate::WellFormed(data),
         };
         self.set.insert(normalized_pred)
     }
@@ -135,6 +138,10 @@ impl<'cx, 'tcx> Elaborator<'cx, 'tcx> {
                 predicates.retain(|r| self.visited.insert(r));
 
                 self.stack.extend(predicates);
+            }
+            ty::Predicate::WellFormed(..) => {
+                // Currently, we do not elaborate WF predicates,
+                // although we easily could.
             }
             ty::Predicate::Equate(..) => {
                 // Currently, we do not "elaborate" predicates like

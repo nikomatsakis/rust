@@ -403,6 +403,8 @@ impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
                 ty::Predicate::TypeOutlives(binder.fold_with(folder)),
             ty::Predicate::Projection(ref binder) =>
                 ty::Predicate::Projection(binder.fold_with(folder)),
+            ty::Predicate::WellFormed(data) =>
+                ty::Predicate::WellFormed(data.fold_with(folder)),
         }
     }
 }

@@ -1290,9 +1290,9 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
                         continue;
                     }
 
-                    debug!("ConcreteFailure: !(sub <= sup): sub={:?}, sup={:?}",
-                           sub,
-                           sup);
+                    debug!("region inference error at {:?}: {:?} <= {:?} is not true",
+                           origin, sub, sup);
+
                     errors.push(ConcreteFailure((*origin).clone(), sub, sup));
                 }
 
@@ -1301,6 +1301,9 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
                     if bound.is_met(self.tcx, free_regions, values, sub) {
                         continue;
                     }
+
+                    debug!("region inference error at {:?}: verifying {:?} <= {:?}",
+                           origin, sub, bound);
 
                     errors.push(GenericBoundFailure((*origin).clone(), kind.clone(), sub));
                 }
@@ -1463,10 +1466,11 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
                 if !free_regions.is_subregion_of(self.tcx,
                                                  lower_bound.region,
                                                  upper_bound.region) {
-                    debug!("pushing SubSupConflict sub: {:?} sup: {:?}",
-                           lower_bound.region, upper_bound.region);
+                    let origin = (*self.var_origins.borrow())[node_idx.index as usize].clone();
+                    debug!("region inference error at {:?} for {:?}: SubSupConflict sub: {:?} sup: {:?}",
+                           origin, node_idx, lower_bound.region, upper_bound.region);
                     errors.push(SubSupConflict(
-                        (*self.var_origins.borrow())[node_idx.index as usize].clone(),
+                        origin,
                         lower_bound.origin.clone(),
                         lower_bound.region,
                         upper_bound.origin.clone(),
@@ -1509,16 +1513,19 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
                 match self.glb_concrete_regions(free_regions,
                                                 upper_bound_1.region,
                                                 upper_bound_2.region) {
-                  Ok(_) => {}
-                  Err(_) => {
-                    errors.push(SupSupConflict(
-                        (*self.var_origins.borrow())[node_idx.index as usize].clone(),
-                        upper_bound_1.origin.clone(),
-                        upper_bound_1.region,
-                        upper_bound_2.origin.clone(),
-                        upper_bound_2.region));
-                    return;
-                  }
+                    Ok(_) => {}
+                    Err(_) => {
+                        let origin = (*self.var_origins.borrow())[node_idx.index as usize].clone();
+                        debug!("region inference error at {:?} for {:?}: SupSupConflict sub: {:?} sup: {:?}",
+                               origin, node_idx, upper_bound_1.region, upper_bound_2.region);
+                        errors.push(SupSupConflict(
+                            origin,
+                            upper_bound_1.origin.clone(),
+                            upper_bound_1.region,
+                            upper_bound_2.origin.clone(),
+                            upper_bound_2.region));
+                        return;
+                    }
                 }
             }
         }

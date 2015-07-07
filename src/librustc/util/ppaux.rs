@@ -823,6 +823,7 @@ impl<'tcx> fmt::Display for ty::Predicate<'tcx> {
             ty::Predicate::RegionOutlives(ref predicate) => write!(f, "{}", predicate),
             ty::Predicate::TypeOutlives(ref predicate) => write!(f, "{}", predicate),
             ty::Predicate::Projection(ref predicate) => write!(f, "{}", predicate),
+            ty::Predicate::WellFormed(ty) => write!(f, "{} well-formed", ty),
         }
     }
 }

@@ -44,6 +44,7 @@ use middle::infer::{InferCtxt, TypeFreshener};
 use middle::ty_fold::TypeFoldable;
 use middle::ty_match;
 use middle::ty_relate::TypeRelation;
+use middle::wf;
 
 use std::cell::RefCell;
 use std::fmt;
@@ -462,6 +463,16 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                 match result {
                     Ok(()) => EvaluatedToOk,
                     Err(_) => EvaluatedToErr(Unimplemented),
+                }
+            }
+
+            ty::Predicate::WellFormed(ty) => {
+                match wf::obligations(self.infcx, obligation.cause.body_id,
+                                      ty, obligation.cause.span) {
+                    Some(obligations) =>
+                        self.evaluate_predicates_recursively(previous_stack, obligations.iter()),
+                    None =>
+                        EvaluatedToAmbig,
                 }
             }
 

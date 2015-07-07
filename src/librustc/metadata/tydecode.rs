@@ -788,6 +788,7 @@ fn parse_predicate_<'a,'tcx, F>(st: &mut PState<'a, 'tcx>,
         'o' => ty::Binder(ty::OutlivesPredicate(parse_ty_(st, conv),
                                                 parse_region_(st, conv))).to_predicate(),
         'p' => ty::Binder(parse_projection_predicate_(st, conv)).to_predicate(),
+        'w' => ty::Predicate::WellFormed(parse_ty_(st, conv)),
         c => panic!("Encountered invalid character in metadata: {}", c)
     }
 }

@@ -156,19 +156,10 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
     fn check_type_defn<F>(&mut self, item: &ast::Item, mut lookup_fields: F) where
         F: for<'fcx> FnMut(&FnCtxt<'fcx, 'tcx>) -> Vec<AdtVariant<'tcx>>,
     {
-        self.with_fcx(item, |this, fcx| {
+        self.with_fcx(item, |_this, fcx| {
             let variants = lookup_fields(fcx);
-            let mut bounds_checker = BoundsChecker::new(fcx,
-                                                        item.id,
-                                                        Some(&mut this.cache));
-            debug!("check_type_defn at bounds_checker.scope: {:?}", bounds_checker.scope);
 
             for variant in &variants {
-                for field in &variant.fields {
-                    // Regions are checked below.
-                    bounds_checker.check_traits_in_ty(field.ty, field.span);
-                }
-
                 // For DST, all intermediate types must be sized.
                 if let Some((_, fields)) = variant.fields.split_last() {
                     for field in fields {
@@ -180,13 +171,18 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
                                                          traits::FieldSized));
                     }
                 }
+
+                // All field types must be well-formed.
+                for field in &variant.fields {
+                    let cause =
+                        traits::ObligationCause::new(field.span,
+                                                     fcx.body_id,
+                                                     traits::MiscObligation);
+                    fcx.register_predicate(
+                        traits::Obligation::new(cause,
+                                                ty::Predicate::WellFormed(field.ty)));
+                }
             }
-
-            let field_tys: Vec<Ty> =
-                variants.iter().flat_map(|v| v.fields.iter().map(|f| f.ty)).collect();
-
-            regionck::regionck_ensure_component_tys_wf(
-                fcx, item.span, &field_tys);
         });
     }
 
@@ -710,6 +706,7 @@ fn filter_to_trait_obligations<'tcx>(bounds: ty::InstantiatedPredicates<'tcx>)
                 result.predicates.push(space, predicate.clone())
             }
             ty::Predicate::Equate(..) |
+            ty::Predicate::WellFormed(..) |
             ty::Predicate::TypeOutlives(..) |
             ty::Predicate::RegionOutlives(..) => {
             }

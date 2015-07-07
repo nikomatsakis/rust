@@ -229,8 +229,14 @@ pub enum SubregionOrigin<'tcx> {
     // Creating a pointer `b` to contents of an upvar
     ReborrowUpvar(Span, ty::UpvarId),
 
+    // Data with type `Ty<'tcx>` was borrowed
+    DataBorrowed(Ty<'tcx>, Span),
+
     // (&'a &'b T) where a >= b
     ReferenceOutlivesReferent(Ty<'tcx>, Span),
+
+    // Type or region parameters must be in scope.
+    ParameterInScope(ParameterOrigin, Span),
 
     // The type T of an expression E must outlive the lifetime for E.
     ExprTypeIsNotInScope(Ty<'tcx>, Span),
@@ -258,6 +264,15 @@ pub enum SubregionOrigin<'tcx> {
 
     // Region constraint arriving from destructor safety
     SafeDestructor(Span),
+}
+
+/// Places that type/region parameters can appear.
+#[derive(Clone, Copy, Debug)]
+pub enum ParameterOrigin {
+    Path, // foo::bar
+    MethodCall, // foo.bar() <-- parameters on impl providing bar()
+    OverloadedOperator, // a + b when overloaded
+    OverloadedDeref, // *a when overloaded
 }
 
 /// Times when we replace late-bound regions with variables:
@@ -1577,7 +1592,9 @@ impl<'tcx> SubregionOrigin<'tcx> {
             RelateDefaultParamBound(a, _) => a,
             Reborrow(a) => a,
             ReborrowUpvar(a, _) => a,
+            DataBorrowed(_, a) => a,
             ReferenceOutlivesReferent(_, a) => a,
+            ParameterInScope(_, a) => a,
             ExprTypeIsNotInScope(_, a) => a,
             BindingTypeIsNotValidAtDecl(a) => a,
             CallRcvr(a) => a,

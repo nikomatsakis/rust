@@ -90,7 +90,7 @@ use middle::infer;
 use middle::infer::type_variable;
 use middle::pat_util::{self, pat_id_map};
 use middle::privacy::{AllPublic, LastMod};
-use middle::region::{self, CodeExtent};
+use middle::region::{self};
 use middle::subst::{self, Subst, Substs, VecPerParamSpace, ParamSpace, TypeSpace};
 use middle::traits::{self, report_fulfillment_errors};
 use middle::ty::{FnSig, GenericPredicates, TypeScheme};
@@ -463,7 +463,7 @@ struct GatherLocalsVisitor<'a, 'tcx: 'a> {
 }
 
 impl<'a, 'tcx> GatherLocalsVisitor<'a, 'tcx> {
-    fn assign(&mut self, _span: Span, nid: ast::NodeId, ty_opt: Option<Ty<'tcx>>) -> Ty<'tcx> {
+    fn assign(&mut self, span: Span, nid: ast::NodeId, ty_opt: Option<Ty<'tcx>>) -> Ty<'tcx> {
         match ty_opt {
             None => {
                 // infer the variable's type
@@ -474,6 +474,10 @@ impl<'a, 'tcx> GatherLocalsVisitor<'a, 'tcx> {
             Some(typ) => {
                 // take type that the user specified
                 self.fcx.inh.locals.borrow_mut().insert(nid, typ);
+
+                // we have to check this for WF'd ness, since the user typed it
+                self.fcx.register_wf_obligation(typ, span);
+
                 typ
             }
         }
@@ -601,6 +605,9 @@ fn check_fn<'a, 'tcx>(ccx: &'a CrateCtxt<'a, 'tcx>,
 
         // Add formal parameters.
         for (arg_ty, input) in arg_tys.iter().zip(&decl.inputs) {
+            // The type of the argument must be well-formed.
+            fcx.register_wf_obligation(arg_ty, input.ty.span);
+
             // Create type variables for each argument.
             pat_util::pat_bindings(
                 &tcx.def_map,
@@ -1630,15 +1637,28 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         fulfillment_cx.register_region_obligation(ty, region, cause);
     }
 
+    /// Registers an obligation for checking later, during regionck, that the type `ty` must
+    /// outlive the region `r`.
+    pub fn register_wf_obligation(&self, ty: Ty<'tcx>, span: Span)
+    {
+        // WF obligations never themselves fail, so no real need to give a detailed cause:
+        let cause = traits::ObligationCause::new(span,
+                                                 self.body_id,
+                                                 traits::ObligationCauseCode::MiscObligation);
+        self.register_predicate(traits::Obligation::new(cause, ty::Predicate::WellFormed(ty)));
+    }
+
     pub fn add_default_region_param_bounds(&self,
                                            substs: &Substs<'tcx>,
                                            expr: &ast::Expr)
     {
+//TODO        for &r in substs.regions() {
+//TODO            let origin = infer::ParameterInScope(expr_span);
+//TODO            self.mk_subr(origin, default_bound, r);
+//TODO        }
+
         for &ty in &substs.types {
-            let default_bound = ty::ReScope(CodeExtent::from_node_id(expr.id));
-            let cause = traits::ObligationCause::new(expr.span, self.body_id,
-                                                     traits::MiscObligation);
-            self.register_region_obligation(ty, default_bound, cause);
+            self.register_wf_obligation(ty, expr.span);
         }
     }
 
