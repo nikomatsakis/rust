@@ -63,7 +63,7 @@ fn method_might_be_inlined(tcx: &ty::ctxt, sig: &ast::MethodSig,
     if is_local(impl_src) {
         {
             match tcx.map.find(impl_src.node) {
-                Some(ast_map::NodeItem(item)) => {
+                Some(ast_map::ItemNode::Item(item)) => {
                     item_might_be_inlined(&*item)
                 }
                 Some(..) | None => {
@@ -176,20 +176,20 @@ impl<'a, 'tcx> ReachableContext<'a, 'tcx> {
 
         let node_id = def_id.node;
         match self.tcx.map.find(node_id) {
-            Some(ast_map::NodeItem(item)) => {
+            Some(ast_map::ItemNode::Item(item)) => {
                 match item.node {
                     ast::ItemFn(..) => item_might_be_inlined(&*item),
                     _ => false,
                 }
             }
-            Some(ast_map::NodeTraitItem(trait_method)) => {
+            Some(ast_map::ItemNode::TraitItem(trait_method)) => {
                 match trait_method.node {
                     ast::ConstTraitItem(_, ref default) => default.is_some(),
                     ast::MethodTraitItem(_, ref body) => body.is_some(),
                     ast::TypeTraitItem(..) => false,
                 }
             }
-            Some(ast_map::NodeImplItem(impl_item)) => {
+            Some(ast_map::ItemNode::ImplItem(impl_item)) => {
                 match impl_item.node {
                     ast::ConstImplItem(..) => true,
                     ast::MethodImplItem(ref sig, _) => {
@@ -236,9 +236,9 @@ impl<'a, 'tcx> ReachableContext<'a, 'tcx> {
                 continue
             }
 
-            match self.tcx.map.find(search_item) {
+            match self.tcx.map.find_item(search_item) {
                 Some(ref item) => self.propagate_node(item, search_item),
-                None if search_item == ast::CRATE_NODE_ID => {}
+                None if search_item == ast::CRATE_ITEM_ID => {}
                 None => {
                     self.tcx.sess.bug(&format!("found unmapped ID in worklist: \
                                                {}",
@@ -248,15 +248,16 @@ impl<'a, 'tcx> ReachableContext<'a, 'tcx> {
         }
     }
 
-    fn propagate_node(&mut self, node: &ast_map::Node,
-                      search_item: ast::NodeId) {
+    fn propagate_node(&mut self,
+                      node: &ast_map::ItemNode,
+                      search_item: ast::ItemId) {
         if !self.any_library {
             // If we are building an executable, then there's no need to flag
             // anything as external except for `extern fn` types. These
             // functions may still participate in some form of native interface,
             // but all other rust-only interfaces can be private (they will not
             // participate in linkage after this product is produced)
-            if let ast_map::NodeItem(item) = *node {
+            if let ast_map::ItemNode::Item(item) = *node {
                 if let ast::ItemFn(_, _, _, abi, _, _) = item.node {
                     if abi != abi::Rust {
                         self.reachable_symbols.insert(search_item);
@@ -272,7 +273,7 @@ impl<'a, 'tcx> ReachableContext<'a, 'tcx> {
         }
 
         match *node {
-            ast_map::NodeItem(item) => {
+            ast_map::ItemNode::Item(item) => {
                 match item.node {
                     ast::ItemFn(_, _, _, _, _, ref search_block) => {
                         if item_might_be_inlined(&*item) {
@@ -304,7 +305,7 @@ impl<'a, 'tcx> ReachableContext<'a, 'tcx> {
                     }
                 }
             }
-            ast_map::NodeTraitItem(trait_method) => {
+            ast_map::ItemNode::TraitItem(trait_method) => {
                 match trait_method.node {
                     ast::ConstTraitItem(_, None) |
                     ast::MethodTraitItem(_, None) => {
@@ -319,7 +320,7 @@ impl<'a, 'tcx> ReachableContext<'a, 'tcx> {
                     ast::TypeTraitItem(..) => {}
                 }
             }
-            ast_map::NodeImplItem(impl_item) => {
+            ast_map::ItemNode::ImplItem(impl_item) => {
                 match impl_item.node {
                     ast::ConstImplItem(_, ref expr) => {
                         self.visit_expr(&*expr);
@@ -335,9 +336,9 @@ impl<'a, 'tcx> ReachableContext<'a, 'tcx> {
                 }
             }
             // Nothing to recurse on for these
-            ast_map::NodeForeignItem(_) |
-            ast_map::NodeVariant(_) |
-            ast_map::NodeStructCtor(_) => {}
+            ast_map::ItemNode::ForeignItem(_) |
+            ast_map::ItemNode::Variant(_) |
+            ast_map::ItemNode::StructCtor(_) => {}
             _ => {
                 self.tcx
                     .sess

@@ -947,14 +947,14 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
 
     fn lambda_fn_decl(&self, span: Span,
                       fn_decl: P<ast::FnDecl>, blk: P<ast::Block>) -> P<ast::Expr> {
-        self.expr(span, ast::ExprClosure(ast::CaptureByRef, fn_decl, blk))
+        self.expr(span, ast::ExprClosure(ast::DUMMY_ITEM_ID, ast::CaptureByRef, fn_decl, blk))
     }
     fn lambda(&self, span: Span, ids: Vec<ast::Ident>, blk: P<ast::Block>) -> P<ast::Expr> {
         let fn_decl = self.fn_decl(
             ids.iter().map(|id| self.arg(span, *id, self.ty_infer(span))).collect(),
             self.ty_infer(span));
 
-        self.expr(span, ast::ExprClosure(ast::CaptureByRef, fn_decl, blk))
+        self.expr(span, ast::ExprClosure(ast::DUMMY_ITEM_ID, ast::CaptureByRef, fn_decl, blk))
     }
     fn lambda0(&self, span: Span, blk: P<ast::Block>) -> P<ast::Expr> {
         self.lambda(span, Vec::new(), blk)
@@ -1015,7 +1015,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
         P(ast::Item {
             ident: name,
             attrs: attrs,
-            id: ast::DUMMY_NODE_ID,
+            id: ast::DUMMY_ITEM_ID,
             node: node,
             vis: ast::Inherited,
             span: span
@@ -1066,7 +1066,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
                    name: name,
                    attrs: Vec::new(),
                    kind: ast::TupleVariantKind(args),
-                   id: ast::DUMMY_NODE_ID,
+                   id: ast::DUMMY_ITEM_ID,
                    disr_expr: None,
                    vis: ast::Public
                })
@@ -1171,7 +1171,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
     fn item_use(&self, sp: Span,
                 vis: ast::Visibility, vp: P<ast::ViewPath>) -> P<ast::Item> {
         P(ast::Item {
-            id: ast::DUMMY_NODE_ID,
+            id: ast::DUMMY_ITEM_ID,
             ident: special_idents::invalid,
             attrs: vec![],
             node: ast::ItemUse(vp),
@@ -1196,7 +1196,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
     fn item_use_list(&self, sp: Span, vis: ast::Visibility,
                      path: Vec<ast::Ident>, imports: &[ast::Ident]) -> P<ast::Item> {
         let imports = imports.iter().map(|id| {
-            respan(sp, ast::PathListIdent { name: *id, id: ast::DUMMY_NODE_ID })
+            respan(sp, ast::PathListIdent { name: *id, id: ast::DUMMY_ITEM_ID })
         }).collect();
 
         self.item_use(sp, vis,

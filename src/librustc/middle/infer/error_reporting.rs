@@ -137,7 +137,7 @@ impl<'tcx> ty::ctxt<'tcx> {
                         _ => "expression",
                     },
                     Some(ast_map::NodeStmt(_)) => "statement",
-                    Some(ast_map::NodeItem(it)) => item_scope_tag(&*it),
+                    Some(ast_map::ItemNode::Item(it)) => item_scope_tag(&*it),
                     Some(_) | None => {
                         return self.sess.span_note(span, &unknown_scope());
                     }
@@ -177,7 +177,7 @@ impl<'tcx> ty::ctxt<'tcx> {
                         let (msg, opt_span) = explain_span(self, "block", blk.span);
                         (format!("{} {}", prefix, msg), opt_span)
                     }
-                    Some(ast_map::NodeItem(it)) => {
+                    Some(ast_map::ItemNode::Item(it)) => {
                         let tag = item_scope_tag(&*it);
                         let (msg, opt_span) = explain_span(self, tag, it.span);
                         (format!("{} {}", prefix, msg), opt_span)
@@ -430,14 +430,14 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
             let parent_node = tcx.map.find(parent);
             match parent_node {
                 Some(node) => match node {
-                    ast_map::NodeItem(item) => match item.node {
+                    ast_map::ItemNode::Item(item) => match item.node {
                         ast::ItemFn(..) => {
                             Some(FreeRegionsFromSameFn::new(fr1, fr2, scope_id))
                         },
                         _ => None
                     },
-                    ast_map::NodeImplItem(..) |
-                    ast_map::NodeTraitItem(..) => {
+                    ast_map::ItemNode::ImplItem(..) |
+                    ast_map::ItemNode::TraitItem(..) => {
                         Some(FreeRegionsFromSameFn::new(fr1, fr2, scope_id))
                     },
                     _ => None
@@ -907,7 +907,7 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
         let life_giver = LifeGiver::with_taken(&taken[..]);
         let node_inner = match parent_node {
             Some(ref node) => match *node {
-                ast_map::NodeItem(ref item) => {
+                ast_map::ItemNode::Item(ref item) => {
                     match item.node {
                         ast::ItemFn(ref fn_decl, unsafety, constness, _, ref gen, _) => {
                             Some((fn_decl, gen, unsafety, constness,
@@ -916,7 +916,7 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
                         _ => None
                     }
                 }
-                ast_map::NodeImplItem(item) => {
+                ast_map::ItemNode::ImplItem(item) => {
                     match item.node {
                         ast::MethodImplItem(ref sig, _) => {
                             Some((&sig.decl,
@@ -931,7 +931,7 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
                         _ => None,
                     }
                 },
-                ast_map::NodeTraitItem(item) => {
+                ast_map::ItemNode::TraitItem(item) => {
                     match item.node {
                         ast::MethodTraitItem(ref sig, Some(_)) => {
                             Some((&sig.decl,
@@ -1789,14 +1789,14 @@ fn lifetimes_in_scope(tcx: &ty::ctxt,
     let parent = tcx.map.get_parent(scope_id);
     let method_id_opt = match tcx.map.find(parent) {
         Some(node) => match node {
-            ast_map::NodeItem(item) => match item.node {
+            ast_map::ItemNode::Item(item) => match item.node {
                 ast::ItemFn(_, _, _, _, ref gen, _) => {
                     taken.push_all(&gen.lifetimes);
                     None
                 },
                 _ => None
             },
-            ast_map::NodeImplItem(ii) => {
+            ast_map::ItemNode::ImplItem(ii) => {
                 match ii.node {
                     ast::MethodImplItem(ref sig, _) => {
                         taken.push_all(&sig.generics.lifetimes);
@@ -1815,7 +1815,7 @@ fn lifetimes_in_scope(tcx: &ty::ctxt,
         let parent = tcx.map.get_parent(method_id);
         match tcx.map.find(parent) {
             Some(node) => match node {
-                ast_map::NodeItem(item) => match item.node {
+                ast_map::ItemNode::Item(item) => match item.node {
                     ast::ItemImpl(_, _, ref gen, _, _, _) => {
                         taken.push_all(&gen.lifetimes);
                     }

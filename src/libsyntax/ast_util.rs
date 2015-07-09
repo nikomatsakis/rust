@@ -317,6 +317,7 @@ impl IdRange {
 
 pub trait IdVisitingOperation {
     fn visit_id(&mut self, node_id: NodeId);
+    fn visit_item_id(&mut self, item_id: ItemId);
 }
 
 /// A visitor that applies its operation to all of the node IDs
@@ -343,13 +344,13 @@ impl<'a, 'v, O: IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> {
     fn visit_mod(&mut self,
                  module: &Mod,
                  _: Span,
-                 node_id: NodeId) {
-        self.operation.visit_id(node_id);
+                 item_id: ItemId) {
+        self.operation.visit_item_id(item_id);
         visit::walk_mod(self, module)
     }
 
     fn visit_foreign_item(&mut self, foreign_item: &ForeignItem) {
-        self.operation.visit_id(foreign_item.id);
+        self.operation.visit_item_id(foreign_item.id);
         visit::walk_foreign_item(self, foreign_item)
     }
 
@@ -362,7 +363,7 @@ impl<'a, 'v, O: IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> {
             }
         }
 
-        self.operation.visit_id(item.id);
+        self.operation.visit_item_id(item.id);
         match item.node {
             ItemUse(ref view_path) => {
                 match view_path.node {
@@ -370,14 +371,14 @@ impl<'a, 'v, O: IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> {
                     ViewPathGlob(_) => {}
                     ViewPathList(_, ref paths) => {
                         for path in paths {
-                            self.operation.visit_id(path.node.id())
+                            self.operation.visit_item_id(path.node.id())
                         }
                     }
                 }
             }
             ItemEnum(ref enum_definition, _) => {
                 for variant in &enum_definition.variants {
-                    self.operation.visit_id(variant.node.id)
+                    self.operation.visit_item_id(variant.node.id)
                 }
             }
             _ => {}
@@ -428,7 +429,7 @@ impl<'a, 'v, O: IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> {
                 function_declaration: &'v FnDecl,
                 block: &'v Block,
                 span: Span,
-                node_id: NodeId) {
+                node_id: ItemId) {
         if !self.pass_through_items {
             match function_kind {
                 visit::FkMethod(..) if self.visited_outermost => return,
@@ -437,7 +438,7 @@ impl<'a, 'v, O: IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> {
             }
         }
 
-        self.operation.visit_id(node_id);
+        self.operation.visit_item_id(node_id);
 
         match function_kind {
             visit::FkItemFn(_, generics, _, _, _, _) => {
@@ -446,7 +447,7 @@ impl<'a, 'v, O: IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> {
             visit::FkMethod(_, sig, _) => {
                 self.visit_generics_helper(&sig.generics)
             }
-            visit::FkFnBlock => {}
+            visit::FkFnBlock(_) => {}
         }
 
         for argument in &function_declaration.inputs {
@@ -475,19 +476,19 @@ impl<'a, 'v, O: IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> {
                         struct_def: &StructDef,
                         _: ast::Ident,
                         _: &ast::Generics,
-                        id: NodeId) {
-        self.operation.visit_id(id);
-        struct_def.ctor_id.map(|ctor_id| self.operation.visit_id(ctor_id));
+                        id: ItemId) {
+        self.operation.visit_item_id(id);
+        struct_def.ctor_id.map(|ctor_id| self.operation.visit_item_id(ctor_id));
         visit::walk_struct_def(self, struct_def);
     }
 
     fn visit_trait_item(&mut self, ti: &ast::TraitItem) {
-        self.operation.visit_id(ti.id);
+        self.operation.visit_item_id(ti.id);
         visit::walk_trait_item(self, ti);
     }
 
     fn visit_impl_item(&mut self, ii: &ast::ImplItem) {
-        self.operation.visit_id(ii.id);
+        self.operation.visit_item_id(ii.id);
         visit::walk_impl_item(self, ii);
     }
 
@@ -524,6 +525,9 @@ impl IdVisitingOperation for IdRangeComputingVisitor {
     fn visit_id(&mut self, id: NodeId) {
         self.result.add(id);
     }
+
+    fn visit_item_id(&mut self, _: ItemId) {
+    }
 }
 
 pub fn compute_id_range_for_inlined_item(item: &InlinedItem) -> IdRange {
@@ -539,7 +543,7 @@ pub fn compute_id_range_for_fn_body(fk: visit::FnKind,
                                     decl: &FnDecl,
                                     body: &Block,
                                     sp: Span,
-                                    id: NodeId)
+                                    id: ItemId)
                                     -> IdRange
 {
     let mut visitor = IdRangeComputingVisitor {

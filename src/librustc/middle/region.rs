@@ -213,7 +213,7 @@ impl CodeExtent {
             }
             Some(ast_map::NodeExpr(ref expr)) => Some(expr.span),
             Some(ast_map::NodeStmt(ref stmt)) => Some(stmt.span),
-            Some(ast_map::NodeItem(ref item)) => Some(item.span),
+            Some(ast_map::ItemNode::Item(ref item)) => Some(item.span),
             Some(_) | None => None,
          }
     }

@@ -418,7 +418,7 @@ fn encode_reexported_static_methods(ecx: &EncodeContext,
                                     rbml_w: &mut Encoder,
                                     mod_path: PathElems,
                                     exp: &def::Export) {
-    if let Some(ast_map::NodeItem(item)) = ecx.tcx.map.find(exp.def_id.node) {
+    if let Some(ast_map::ItemNode::Item(item)) = ecx.tcx.map.find(exp.def_id.node) {
         let path_differs = ecx.tcx.map.with_path(exp.def_id.node, |path| {
             let (mut a, mut b) = (path, mod_path.clone());
             loop {
@@ -1606,14 +1606,14 @@ fn encode_info_for_items(ecx: &EncodeContext,
     let mut index = Vec::new();
     rbml_w.start_tag(tag_items_data);
     index.push(entry {
-        val: ast::CRATE_NODE_ID as i64,
+        val: ast::CRATE_ITEM_ID as i64,
         pos: rbml_w.mark_stable_position(),
     });
     encode_info_for_mod(ecx,
                         rbml_w,
                         &krate.module,
                         &[],
-                        ast::CRATE_NODE_ID,
+                        ast::CRATE_ITEM_ID,
                         [].iter().cloned().chain(LinkedPath::empty()),
                         syntax::parse::token::special_idents::invalid.name,
                         ast::Public);
@@ -1986,7 +1986,7 @@ fn encode_reachable_extern_fns(ecx: &EncodeContext, rbml_w: &mut Encoder) {
     rbml_w.start_tag(tag_reachable_extern_fns);
 
     for id in ecx.reachable {
-        if let Some(ast_map::NodeItem(i)) = ecx.tcx.map.find(*id) {
+        if let Some(ast_map::ItemNode::Item(i)) = ecx.tcx.map.find(*id) {
             if let ast::ItemFn(_, _, _, abi, ref generics, _) = i.node {
                 if abi != abi::Rust && !generics.is_type_parameterized() {
                     rbml_w.wr_tagged_u32(tag_reachable_extern_fn_id, *id);

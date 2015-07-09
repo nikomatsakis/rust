@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use ast_map::NodeForeignItem;
+use ast_map::ItemNode;
 use metadata::csearch;
 use middle::def::DefFn;
 use middle::subst::{Subst, Substs, EnumeratedItems};
@@ -59,8 +59,8 @@ impl<'a, 'tcx> IntrinsicCheckingVisitor<'a, 'tcx> {
             _ => return false
         };
         if def_id.krate == ast::LOCAL_CRATE {
-            match self.tcx.map.get(def_id.node) {
-                NodeForeignItem(ref item) if intrinsic => {
+            match self.tcx.map.get_item(def_id.node) {
+                ItemNode::ForeignItem(ref item) if intrinsic => {
                     token::get_ident(item.ident) ==
                         token::intern_and_get_ident("transmute")
                 }

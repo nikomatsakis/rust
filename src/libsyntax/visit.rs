@@ -42,7 +42,7 @@ pub enum FnKind<'a> {
 
     /// |x, y| ...
     /// proc(x, y) ...
-    FkFnBlock,
+    FkFnBlock(ItemId),
 }
 
 /// Each method of the Visitor trait is a hook to be potentially
@@ -61,7 +61,7 @@ pub trait Visitor<'v> : Sized {
     fn visit_ident(&mut self, span: Span, ident: Ident) {
         self.visit_name(span, ident.name);
     }
-    fn visit_mod(&mut self, m: &'v Mod, _s: Span, _n: NodeId) { walk_mod(self, m) }
+    fn visit_mod(&mut self, m: &'v Mod, _s: Span, _n: ItemId) { walk_mod(self, m) }
     fn visit_foreign_item(&mut self, i: &'v ForeignItem) { walk_foreign_item(self, i) }
     fn visit_item(&mut self, i: &'v Item) { walk_item(self, i) }
     fn visit_local(&mut self, l: &'v Local) { walk_local(self, l) }
@@ -74,7 +74,7 @@ pub trait Visitor<'v> : Sized {
     fn visit_expr_post(&mut self, _ex: &'v Expr) { }
     fn visit_ty(&mut self, t: &'v Ty) { walk_ty(self, t) }
     fn visit_generics(&mut self, g: &'v Generics) { walk_generics(self, g) }
-    fn visit_fn(&mut self, fk: FnKind<'v>, fd: &'v FnDecl, b: &'v Block, s: Span, _: NodeId) {
+    fn visit_fn(&mut self, fk: FnKind<'v>, fd: &'v FnDecl, b: &'v Block, s: Span, _: ItemId) {
         walk_fn(self, fk, fd, b, s)
     }
     fn visit_trait_item(&mut self, ti: &'v TraitItem) { walk_trait_item(self, ti) }
@@ -86,7 +86,7 @@ pub trait Visitor<'v> : Sized {
     fn visit_poly_trait_ref(&mut self, t: &'v PolyTraitRef, m: &'v TraitBoundModifier) {
         walk_poly_trait_ref(self, t, m)
     }
-    fn visit_struct_def(&mut self, s: &'v StructDef, _: Ident, _: &'v Generics, _: NodeId) {
+    fn visit_struct_def(&mut self, s: &'v StructDef, _: Ident, _: &'v Generics, _: ItemId) {
         walk_struct_def(self, s)
     }
     fn visit_struct_field(&mut self, s: &'v StructField) { walk_struct_field(self, s) }
@@ -154,7 +154,7 @@ pub fn walk_inlined_item<'v,V>(visitor: &mut V, item: &'v InlinedItem)
 
 
 pub fn walk_crate<'v, V: Visitor<'v>>(visitor: &mut V, krate: &'v Crate) {
-    visitor.visit_mod(&krate.module, krate.span, CRATE_NODE_ID);
+    visitor.visit_mod(&krate.module, krate.span, CRATE_ITEM_ID);
     for attr in &krate.attrs {
         visitor.visit_attribute(attr);
     }
@@ -225,10 +225,10 @@ pub fn walk_item<'v, V: Visitor<'v>>(visitor: &mut V, item: &'v Item) {
             match vp.node {
                 ViewPathSimple(ident, ref path) => {
                     visitor.visit_ident(vp.span, ident);
-                    visitor.visit_path(path, item.id);
+                    visitor.visit_path(path, item.id.as_node_id());
                 }
                 ViewPathGlob(ref path) => {
-                    visitor.visit_path(path, item.id);
+                    visitor.visit_path(path, item.id.as_node_id());
                 }
                 ViewPathList(ref prefix, ref list) => {
                     for id in list {
@@ -817,12 +817,12 @@ pub fn walk_expr<'v, V: Visitor<'v>>(visitor: &mut V, expression: &'v Expr) {
                 visitor.visit_arm(arm)
             }
         }
-        ExprClosure(_, ref function_declaration, ref body) => {
-            visitor.visit_fn(FkFnBlock,
+        ExprClosure(item_id, _, ref function_declaration, ref body) => {
+            visitor.visit_fn(FkFnBlock(item_id),
                              &**function_declaration,
                              &**body,
                              expression.span,
-                             expression.id)
+                             item_id);
         }
         ExprBlock(ref block) => visitor.visit_block(&**block),
         ExprAssign(ref left_hand_expression, ref right_hand_expression) => {

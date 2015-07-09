@@ -81,7 +81,7 @@ impl fold::Folder for StandardLibraryInjector {
         };
 
         krate.module.items.insert(0, P(ast::Item {
-            id: ast::DUMMY_NODE_ID,
+            id: ast::DUMMY_ITEM_ID,
             ident: token::str_to_ident("std"),
             attrs: vec!(
                 attr::mk_attr_outer(attr::mk_attr_id(), attr::mk_word_item(
@@ -150,7 +150,7 @@ impl fold::Folder for PreludeInjector {
 
         let vp = P(codemap::dummy_spanned(ast::ViewPathGlob(prelude_path)));
         mod_.items.insert(0, P(ast::Item {
-            id: ast::DUMMY_NODE_ID,
+            id: ast::DUMMY_ITEM_ID,
             ident: special_idents::invalid,
             node: ast::ItemUse(vp),
             attrs: vec![ast::Attribute {

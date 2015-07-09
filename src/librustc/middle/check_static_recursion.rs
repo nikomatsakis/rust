@@ -219,22 +219,21 @@ impl<'a, 'ast: 'a> Visitor<'ast> for CheckItemRecursionVisitor<'a, 'ast> {
                 match self.def_map.borrow().get(&e.id).map(|d| d.base_def) {
                     Some(DefStatic(def_id, _)) |
                     Some(DefAssociatedConst(def_id, _)) |
-                    Some(DefConst(def_id))
-                           if ast_util::is_local(def_id) => {
-                        match self.ast_map.get(def_id.node) {
-                          ast_map::NodeItem(item) =>
-                            self.visit_item(item),
-                          ast_map::NodeTraitItem(item) =>
-                            self.visit_trait_item(item),
-                          ast_map::NodeImplItem(item) =>
-                            self.visit_impl_item(item),
-                          ast_map::NodeForeignItem(_) => {},
-                          _ => {
-                              self.sess.span_bug(
-                                  e.span,
-                                  &format!("expected item, found {}",
-                                           self.ast_map.node_to_string(def_id.node)));
-                          }
+                    Some(DefConst(def_id)) if ast_util::is_local(def_id) => {
+                        match self.ast_map.get_item(def_id.node) {
+                            ast_map::ItemNode::Item(item) =>
+                                self.visit_item(item),
+                            ast_map::ItemNode::TraitItem(item) =>
+                                self.visit_trait_item(item),
+                            ast_map::ItemNode::ImplItem(item) =>
+                                self.visit_impl_item(item),
+                            ast_map::ItemNode::ForeignItem(_) => {},
+                            _ => {
+                                self.sess.span_bug(
+                                    e.span,
+                                    &format!("expected item, found {}",
+                                             self.ast_map.node_to_string(def_id.node)));
+                            }
                         }
                     }
                     // For variants, we only want to check expressions that

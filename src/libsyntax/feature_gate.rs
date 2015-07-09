@@ -26,7 +26,6 @@ use self::Status::*;
 use self::AttributeType::*;
 
 use abi::Abi;
-use ast::NodeId;
 use ast;
 use attr;
 use attr::AttrMetaMethods;
@@ -647,7 +646,7 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
                 fn_decl: &'v ast::FnDecl,
                 block: &'v ast::Block,
                 span: Span,
-                _node_id: NodeId) {
+                _: ast::ItemId) {
         // check for const fn declarations
         match fn_kind {
             visit::FkItemFn(_, _, _, ast::Constness::Const, _, _) => {

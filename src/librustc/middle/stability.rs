@@ -227,7 +227,7 @@ impl<'tcx> Index<'tcx> {
             parent: None,
             export_map: export_map,
         };
-        annotator.annotate(ast::CRATE_NODE_ID, true, &krate.attrs, krate.span,
+        annotator.annotate(ast::CRATE_ITEM_ID, true, &krate.attrs, krate.span,
                            |v| visit::walk_crate(v, krate), true);
     }
 
@@ -377,7 +377,7 @@ pub fn check_item(tcx: &ty::ctxt, item: &ast::Item, warn_about_defns: bool,
                 Some(cnum) => cnum,
                 None => return,
             };
-            let id = ast::DefId { krate: cnum, node: ast::CRATE_NODE_ID };
+            let id = ast::DefId { krate: cnum, node: ast::CRATE_ITEM_ID };
             maybe_do_stability_check(tcx, id, item.span, cb);
         }
 
@@ -625,7 +625,7 @@ pub fn check_unused_or_stable_features(sess: &Session,
 
     for &span in &sess.features.borrow().declared_stable_lang_features {
         sess.add_lint(lint::builtin::STABLE_FEATURES,
-                      ast::CRATE_NODE_ID,
+                      ast::CRATE_ITEM_ID,
                       span,
                       stable_msg.to_string());
     }
@@ -635,7 +635,7 @@ pub fn check_unused_or_stable_features(sess: &Session,
             Some(span) => {
                 if *level == attr::Stable {
                     sess.add_lint(lint::builtin::STABLE_FEATURES,
-                                  ast::CRATE_NODE_ID,
+                                  ast::CRATE_ITEM_ID,
                                   span,
                                   stable_msg.to_string());
                 }
@@ -646,7 +646,7 @@ pub fn check_unused_or_stable_features(sess: &Session,
 
     for &span in remaining_lib_features.values() {
         sess.add_lint(lint::builtin::UNUSED_FEATURES,
-                      ast::CRATE_NODE_ID,
+                      ast::CRATE_ITEM_ID,
                       span,
                       "unused or unknown feature".to_string());
     }

@@ -362,7 +362,7 @@ mod svh_visitor {
         }
 
         fn visit_struct_def(&mut self, s: &StructDef, ident: Ident,
-                            g: &Generics, _: NodeId) {
+                            g: &Generics, _: ItemId) {
             SawStructDef(content(ident)).hash(self.st);
             visit::walk_generics(self, g);
             visit::walk_struct_def(self, s)
@@ -441,7 +441,7 @@ mod svh_visitor {
             SawItem.hash(self.st); visit::walk_item(self, i)
         }
 
-        fn visit_mod(&mut self, m: &Mod, _s: Span, _n: NodeId) {
+        fn visit_mod(&mut self, m: &Mod, _s: Span, _n: ItemId) {
             SawMod.hash(self.st); visit::walk_mod(self, m)
         }
 
@@ -458,7 +458,7 @@ mod svh_visitor {
         }
 
         fn visit_fn(&mut self, fk: FnKind<'v>, fd: &'v FnDecl,
-                    b: &'v Block, s: Span, _: NodeId) {
+                    b: &'v Block, s: Span, _: ItemId) {
             SawFn.hash(self.st); visit::walk_fn(self, fk, fd, b, s)
         }
 

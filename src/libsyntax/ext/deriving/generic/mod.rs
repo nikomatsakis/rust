@@ -470,7 +470,7 @@ impl<'a> TraitDef<'a> {
         // Transform associated types from `deriving::ty::Ty` into `ast::ImplItem`
         let associated_types = self.associated_types.iter().map(|&(ident, ref type_def)| {
             P(ast::ImplItem {
-                id: ast::DUMMY_NODE_ID,
+                id: ast::DUMMY_ITEM_ID,
                 span: self.span,
                 ident: ident,
                 vis: ast::Inherited,
@@ -870,7 +870,7 @@ impl<'a> MethodDef<'a> {
 
         // Create the method.
         P(ast::ImplItem {
-            id: ast::DUMMY_NODE_ID,
+            id: ast::DUMMY_ITEM_ID,
             attrs: self.attributes.clone(),
             span: trait_.span,
             vis: ast::Inherited,

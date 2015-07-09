@@ -80,7 +80,7 @@ use std::vec::IntoIter;
 use collections::enum_set::{self, EnumSet, CLike};
 use std::collections::{HashMap, HashSet};
 use syntax::abi;
-use syntax::ast::{CrateNum, DefId, ItemImpl, ItemTrait, LOCAL_CRATE};
+use syntax::ast::{CrateNum, DefId, ItemId, ItemImpl, ItemTrait, LOCAL_CRATE};
 use syntax::ast::{MutImmutable, MutMutable, Name, NamedField, NodeId};
 use syntax::ast::{StructField, UnnamedField, Visibility};
 use syntax::ast_util::{self, is_local, local_def};
@@ -1150,16 +1150,16 @@ pub mod tls {
         // and otherwise fallback to just printing the crate/node pair
         with(|tcx| {
             if def_id.krate == ast::LOCAL_CRATE {
-                match tcx.map.find(def_id.node) {
-                    Some(ast_map::NodeItem(..)) |
-                    Some(ast_map::NodeForeignItem(..)) |
-                    Some(ast_map::NodeImplItem(..)) |
-                    Some(ast_map::NodeTraitItem(..)) |
-                    Some(ast_map::NodeVariant(..)) |
-                    Some(ast_map::NodeStructCtor(..)) => {
+                match tcx.map.find_item(def_id.node) {
+                    Some(ast_map::ItemNode::Item(..)) |
+                    Some(ast_map::ItemNode::ForeignItem(..)) |
+                    Some(ast_map::ItemNode::ImplItem(..)) |
+                    Some(ast_map::ItemNode::TraitItem(..)) |
+                    Some(ast_map::ItemNode::Variant(..)) |
+                    Some(ast_map::ItemNode::StructCtor(..)) => {
                         return write!(f, "{}", tcx.item_path_str(def_id));
                     }
-                    _ => {}
+                    None => {}
                 }
             }
             Ok(())
@@ -2724,9 +2724,9 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
         }
     }
 
-    pub fn for_item(cx: &'a ctxt<'tcx>, id: NodeId) -> ParameterEnvironment<'a, 'tcx> {
+    pub fn for_item(cx: &'a ctxt<'tcx>, id: ItemId) -> ParameterEnvironment<'a, 'tcx> {
         match cx.map.find(id) {
-            Some(ast_map::NodeImplItem(ref impl_item)) => {
+            Some(ast_map::ItemNode::ImplItem(ref impl_item)) => {
                 match impl_item.node {
                     ast::ConstImplItem(_, _) => {
                         let def_id = ast_util::local_def(id);
@@ -2764,7 +2764,7 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                     ast::MacImplItem(_) => cx.sess.bug("unexpanded macro")
                 }
             }
-            Some(ast_map::NodeTraitItem(trait_item)) => {
+            Some(ast_map::ItemNode::TraitItem(trait_item)) => {
                 match trait_item.node {
                     ast::ConstTraitItem(_, ref default) => {
                         match *default {
@@ -2818,7 +2818,7 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                     }
                 }
             }
-            Some(ast_map::NodeItem(item)) => {
+            Some(ast_map::ItemNode::Item(item)) => {
                 match item.node {
                     ast::ItemFn(_, _, _, _, _, ref body) => {
                         // We assume this is a function.
@@ -2852,9 +2852,9 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                     }
                 }
             }
-            Some(ast_map::NodeExpr(..)) => {
+            Some(ast_map::ItemNode::ClosureExpr(..)) => {
                 // This is a convenience to allow closures to work.
-                ParameterEnvironment::for_item(cx, cx.map.get_parent(id))
+                ParameterEnvironment::for_item(cx, cx.map.get_item_parent(id).unwrap())
             }
             _ => {
                 cx.sess.bug(&format!("ParameterEnvironment::from_item(): \
@@ -5557,7 +5557,7 @@ impl<'tcx> ctxt<'tcx> {
     pub fn trait_impl_polarity(&self, id: ast::DefId) -> Option<ast::ImplPolarity> {
         if id.krate == ast::LOCAL_CRATE {
             match self.map.find(id.node) {
-                Some(ast_map::NodeItem(item)) => {
+                Some(ast_map::ItemNode::Item(item)) => {
                     match item.node {
                         ast::ItemImpl(_, polarity, _, _, _, _) => Some(polarity),
                         _ => None
@@ -5612,7 +5612,7 @@ impl<'tcx> ctxt<'tcx> {
     /// Returns whether this DefId refers to an impl
     pub fn is_impl(&self, id: ast::DefId) -> bool {
         if id.krate == ast::LOCAL_CRATE {
-            if let Some(ast_map::NodeItem(
+            if let Some(ast_map::ItemNode::Item(
                 &ast::Item { node: ast::ItemImpl(..), .. })) = self.map.find(id.node) {
                 true
             } else {
@@ -5833,7 +5833,7 @@ impl<'tcx> ctxt<'tcx> {
                 Rc::new(csearch::get_enum_variants(self, id))
             } else {
                 match self.map.get(id.node) {
-                    ast_map::NodeItem(ref item) => {
+                    ast_map::ItemNode::Item(ref item) => {
                         match item.node {
                             ast::ItemEnum(ref enum_definition, _) => {
                                 Rc::new(self.compute_enum_variants(

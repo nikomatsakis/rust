@@ -378,7 +378,12 @@ pub type NodeId = u32;
 
 #[derive(Clone, Debug, Eq, Ord, PartialOrd, PartialEq, RustcEncodable,
          RustcDecodable, Hash, Copy)]
-pub struct ItemId(pub NodeId);
+pub struct ItemId(NodeId);
+
+impl ItemId {
+    // coercing to a NodeId via foo.0 is a temporary hack
+    pub fn as_node_id(self) -> NodeId { self.0 }
+}
 
 #[derive(Clone, Eq, Ord, PartialOrd, PartialEq, RustcEncodable,
          RustcDecodable, Hash, Copy)]
@@ -411,12 +416,15 @@ impl DefId {
 /// Item definitions in the currently-compiled crate would have the CrateNum
 /// LOCAL_CRATE in their DefId.
 pub const LOCAL_CRATE: CrateNum = 0;
-pub const CRATE_NODE_ID: NodeId = 0;
+pub const CRATE_ITEM_ID: ItemId = ItemId(0);
 
-/// When parsing and doing expansions, we initially give all AST nodes this AST
-/// node value. Then later, in the renumber pass, we renumber them to have
-/// small, positive ids.
+/// When parsing and doing expansions, we initially give all AST nodes
+/// this AST node and item nod values. Then later, in the renumber
+/// pass, we renumber them to have small, positive ids.
 pub const DUMMY_NODE_ID: NodeId = !0;
+
+/// see DUMMY_NODE_ID
+pub const DUMMY_ITEM_ID: ItemId = ItemId(!0);
 
 /// The AST represents all type param bounds as types.
 /// typeck::collect::compute_bounds matches these against
@@ -907,7 +915,7 @@ pub enum Expr_ {
     /// the result of a desugaring, and if so, which kind.
     ExprMatch(P<Expr>, Vec<Arm>, MatchSource),
     /// A closure (for example, `move |a, b, c| {a + b + c}`)
-    ExprClosure(CaptureClause, P<FnDecl>, P<Block>),
+    ExprClosure(ItemId, CaptureClause, P<FnDecl>, P<Block>),
     /// A block (`{ ... }`)
     ExprBlock(P<Block>),
 
@@ -1284,7 +1292,7 @@ pub struct MethodSig {
 /// has a default implementation).
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub struct TraitItem {
-    pub id: NodeId,
+    pub id: ItemId,
     pub ident: Ident,
     pub attrs: Vec<Attribute>,
     pub node: TraitItem_,
@@ -1300,7 +1308,7 @@ pub enum TraitItem_ {
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub struct ImplItem {
-    pub id: NodeId,
+    pub id: ItemId,
     pub ident: Ident,
     pub vis: Visibility,
     pub attrs: Vec<Attribute>,
@@ -1650,7 +1658,7 @@ pub struct Variant_ {
     pub name: Ident,
     pub attrs: Vec<Attribute>,
     pub kind: VariantKind,
-    pub id: NodeId,
+    pub id: ItemId,
     /// Explicit discriminant, eg `Foo = 1`
     pub disr_expr: Option<P<Expr>>,
     pub vis: Visibility,
@@ -1660,12 +1668,12 @@ pub type Variant = Spanned<Variant_>;
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
 pub enum PathListItem_ {
-    PathListIdent { name: Ident, id: NodeId },
-    PathListMod { id: NodeId }
+    PathListIdent { name: Ident, id: ItemId },
+    PathListMod { id: ItemId }
 }
 
 impl PathListItem_ {
-    pub fn id(&self) -> NodeId {
+    pub fn id(&self) -> ItemId {
         match *self {
             PathListIdent { id, .. } | PathListMod { id } => id
         }
@@ -1796,7 +1804,7 @@ pub struct StructDef {
     pub fields: Vec<StructField>,
     /// ID of the constructor. This is only used for tuple- or enum-like
     /// structs.
-    pub ctor_id: Option<NodeId>,
+    pub ctor_id: Option<ItemId>,
 }
 
 /*
@@ -1810,7 +1818,7 @@ pub struct StructDef {
 pub struct Item {
     pub ident: Ident,
     pub attrs: Vec<Attribute>,
-    pub id: NodeId,
+    pub id: ItemId,
     pub node: Item_,
     pub vis: Visibility,
     pub span: Span,
@@ -1888,7 +1896,7 @@ pub struct ForeignItem {
     pub ident: Ident,
     pub attrs: Vec<Attribute>,
     pub node: ForeignItem_,
-    pub id: NodeId,
+    pub id: ItemId,
     pub span: Span,
     pub vis: Visibility,
 }

@@ -32,17 +32,17 @@ fn should_explore(tcx: &ty::ctxt, def_id: ast::DefId) -> bool {
         return false;
     }
 
-    match tcx.map.find(def_id.node) {
-        Some(ast_map::NodeItem(..))
-        | Some(ast_map::NodeImplItem(..))
-        | Some(ast_map::NodeForeignItem(..))
-        | Some(ast_map::NodeTraitItem(..)) => true,
+    match tcx.map.find_item(def_id.node) {
+        Some(ast_map::ItemNode::Item(..))
+        | Some(ast_map::ItemNode::ImplItem(..))
+        | Some(ast_map::ItemNode::ForeignItem(..))
+        | Some(ast_map::ItemNode::TraitItem(..)) => true,
         _ => false
     }
 }
 
 struct MarkSymbolVisitor<'a, 'tcx: 'a> {
-    worklist: Vec<ast::NodeId>,
+    worklist: Vec<ast::ItemId>,
     tcx: &'a ty::ctxt<'tcx>,
     live_symbols: Box<HashSet<ast::NodeId>>,
     struct_has_extern_repr: bool,
@@ -53,7 +53,7 @@ struct MarkSymbolVisitor<'a, 'tcx: 'a> {
 
 impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
     fn new(tcx: &'a ty::ctxt<'tcx>,
-           worklist: Vec<ast::NodeId>) -> MarkSymbolVisitor<'a, 'tcx> {
+           worklist: Vec<ast::ItemId>) -> MarkSymbolVisitor<'a, 'tcx> {
         MarkSymbolVisitor {
             worklist: worklist,
             tcx: tcx,
@@ -157,23 +157,23 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
             }
             scanned.insert(id);
 
-            match self.tcx.map.find(id) {
+            match self.tcx.map.find_item(id) {
                 Some(ref node) => {
                     self.live_symbols.insert(id);
-                    self.visit_node(node);
+                    self.visit_item_node(node);
                 }
                 None => (),
             }
         }
     }
 
-    fn visit_node(&mut self, node: &ast_map::Node) {
+    fn visit_item_node(&mut self, node: &ast_map::ItemNode) {
         let had_extern_repr = self.struct_has_extern_repr;
         self.struct_has_extern_repr = false;
         let had_inherited_pub_visibility = self.inherited_pub_visibility;
         self.inherited_pub_visibility = false;
         match *node {
-            ast_map::NodeItem(item) => {
+            ast_map::ItemNode::Item(item) => {
                 match item.node {
                     ast::ItemStruct(..) => {
                         self.struct_has_extern_repr = item.attrs.iter().any(|attr| {
@@ -196,13 +196,13 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
                     _ => ()
                 }
             }
-            ast_map::NodeTraitItem(trait_item) => {
+            ast_map::ItemNode::TraitItem(trait_item) => {
                 visit::walk_trait_item(self, trait_item);
             }
-            ast_map::NodeImplItem(impl_item) => {
+            ast_map::ItemNode::ImplItem(impl_item) => {
                 visit::walk_impl_item(self, impl_item);
             }
-            ast_map::NodeForeignItem(foreign_item) => {
+            ast_map::ItemNode::ForeignItem(foreign_item) => {
                 visit::walk_foreign_item(self, &*foreign_item);
             }
             _ => ()
@@ -322,7 +322,7 @@ fn has_allow_dead_code_or_lang_attr(attrs: &[ast::Attribute]) -> bool {
 //   2) We are not sure to be live or not
 //     * Implementation of a trait method
 struct LifeSeeder {
-    worklist: Vec<ast::NodeId>
+    worklist: Vec<ast::ItemId>
 }
 
 impl<'v> Visitor<'v> for LifeSeeder {
@@ -372,7 +372,7 @@ impl<'v> Visitor<'v> for LifeSeeder {
 fn create_and_seed_worklist(tcx: &ty::ctxt,
                             exported_items: &privacy::ExportedItems,
                             reachable_symbols: &NodeSet,
-                            krate: &ast::Crate) -> Vec<ast::NodeId> {
+                            krate: &ast::Crate) -> Vec<ast::ItemId> {
     let mut worklist = Vec::new();
 
     // Preferably, we would only need to seed the worklist with reachable
@@ -386,7 +386,7 @@ fn create_and_seed_worklist(tcx: &ty::ctxt,
     for id in reachable_symbols {
         // Reachable variants can be dead, because we warn about
         // variants never constructed, not variants never used.
-        if let Some(ast_map::NodeVariant(..)) = tcx.map.find(*id) {
+        if let Some(ast_map::ItemNode::Variant(..)) = tcx.map.find_item(*id) {
             continue;
         }
         worklist.push(*id);

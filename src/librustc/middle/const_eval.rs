@@ -16,7 +16,7 @@ use self::ConstVal::*;
 use self::ErrKind::*;
 
 use ast_map;
-use ast_map::blocks::FnLikeNode;
+use ast_map::blocks::FnLikeItemNode;
 use metadata::csearch;
 use middle::{astencode, def, infer, subst, traits};
 use middle::pat_util::def_to_path;
@@ -68,9 +68,9 @@ fn lookup_variant_by_id<'a>(tcx: &'a ty::ctxt,
     }
 
     if ast_util::is_local(enum_def) {
-        match tcx.map.find(enum_def.node) {
+        match tcx.map.find_item(enum_def.node) {
             None => None,
-            Some(ast_map::NodeItem(it)) => match it.node {
+            Some(ast_map::ItemNode::Item(it)) => match it.node {
                 ast::ItemEnum(ast::EnumDef { ref variants }, _) => {
                     variant_expr(&variants[..], variant_def.node)
                 }
@@ -110,15 +110,15 @@ pub fn lookup_const_by_id<'a, 'tcx: 'a>(tcx: &'a ty::ctxt<'tcx>,
                                         maybe_ref_id: Option<ast::NodeId>)
                                         -> Option<&'tcx Expr> {
     if ast_util::is_local(def_id) {
-        match tcx.map.find(def_id.node) {
+        match tcx.map.find_item(def_id.node) {
             None => None,
-            Some(ast_map::NodeItem(it)) => match it.node {
+            Some(ast_map::ItemNode::Item(it)) => match it.node {
                 ast::ItemConst(_, ref const_expr) => {
                     Some(&*const_expr)
                 }
                 _ => None
             },
-            Some(ast_map::NodeTraitItem(ti)) => match ti.node {
+            Some(ast_map::ItemNode::TraitItem(ti)) => match ti.node {
                 ast::ConstTraitItem(_, _) => {
                     match maybe_ref_id {
                         // If we have a trait item, and we know the expression
@@ -144,7 +144,7 @@ pub fn lookup_const_by_id<'a, 'tcx: 'a>(tcx: &'a ty::ctxt<'tcx>,
                 }
                 _ => None
             },
-            Some(ast_map::NodeImplItem(ii)) => match ii.node {
+            Some(ast_map::ItemNode::ImplItem(ii)) => match ii.node {
                 ast::ConstImplItem(_, ref expr) => {
                     Some(&*expr)
                 }
@@ -229,7 +229,7 @@ fn inline_const_fn_from_external_crate(tcx: &ty::ctxt, def_id: ast::DefId)
 }
 
 pub fn lookup_const_fn_by_id<'tcx>(tcx: &ty::ctxt<'tcx>, def_id: ast::DefId)
-                                   -> Option<FnLikeNode<'tcx>>
+                                   -> Option<FnLikeItemNode<'tcx>>
 {
     let fn_id = if !ast_util::is_local(def_id) {
         if let Some(fn_id) = inline_const_fn_from_external_crate(tcx, def_id) {
@@ -241,7 +241,7 @@ pub fn lookup_const_fn_by_id<'tcx>(tcx: &ty::ctxt<'tcx>, def_id: ast::DefId)
         def_id.node
     };
 
-    let fn_like = match FnLikeNode::from_node(tcx.map.get(fn_id)) {
+    let fn_like = match FnLikeItemNode::from_node(tcx.map.get(fn_id)) {
         Some(fn_like) => fn_like,
         None => return None
     };
@@ -895,7 +895,7 @@ pub fn eval_const_expr_with_substs<'tcx, S>(tcx: &ty::ctxt<'tcx>,
               Some(def::DefConst(def_id)) => {
                   if ast_util::is_local(def_id) {
                       match tcx.map.find(def_id.node) {
-                          Some(ast_map::NodeItem(it)) => match it.node {
+                          Some(ast_map::ItemNode::Item(it)) => match it.node {
                               ast::ItemConst(ref ty, ref expr) => {
                                   (Some(&**expr), Some(&**ty))
                               }
@@ -910,8 +910,8 @@ pub fn eval_const_expr_with_substs<'tcx, S>(tcx: &ty::ctxt<'tcx>,
               Some(def::DefAssociatedConst(def_id, provenance)) => {
                   if ast_util::is_local(def_id) {
                       match provenance {
-                          def::FromTrait(trait_id) => match tcx.map.find(def_id.node) {
-                              Some(ast_map::NodeTraitItem(ti)) => match ti.node {
+                          def::FromTrait(trait_id) => match tcx.map.find_item(def_id.node) {
+                              Some(ast_map::ItemNode::TraitItem(ti)) => match ti.node {
                                   ast::ConstTraitItem(ref ty, _) => {
                                       let substs = get_substs(e.id);
                                       (resolve_trait_associated_const(tcx,
@@ -924,8 +924,8 @@ pub fn eval_const_expr_with_substs<'tcx, S>(tcx: &ty::ctxt<'tcx>,
                               },
                               _ => (None, None)
                           },
-                          def::FromImpl(_) => match tcx.map.find(def_id.node) {
-                              Some(ast_map::NodeImplItem(ii)) => match ii.node {
+                          def::FromImpl(_) => match tcx.map.find_item(def_id.node) {
+                              Some(ast_map::ItemNode::ImplItem(ii)) => match ii.node {
                                   ast::ConstImplItem(ref ty, ref expr) => {
                                       (Some(&**expr), Some(&**ty))
                                   }

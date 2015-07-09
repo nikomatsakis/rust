@@ -232,7 +232,7 @@ fn mk_reexport_mod(cx: &mut TestCtxt, tests: Vec<ast::Ident>,
     let it = P(ast::Item {
         ident: sym.clone(),
         attrs: Vec::new(),
-        id: ast::DUMMY_NODE_ID,
+        id: ast::DUMMY_ITEM_ID,
         node: ast::ItemMod(reexport_mod),
         vis: ast::Public,
         span: DUMMY_SP,
@@ -426,7 +426,7 @@ fn mk_std(cx: &TestCtxt) -> P<ast::Item> {
         (ast::ItemExternCrate(None), ast::Inherited, id_test)
     };
     P(ast::Item {
-        id: ast::DUMMY_NODE_ID,
+        id: ast::DUMMY_ITEM_ID,
         ident: ident,
         node: vi,
         attrs: vec![],
@@ -475,7 +475,7 @@ fn mk_main(cx: &mut TestCtxt) -> P<ast::Item> {
     let main = P(ast::Item {
         ident: token::str_to_ident("main"),
         attrs: vec![main_attr],
-        id: ast::DUMMY_NODE_ID,
+        id: ast::DUMMY_ITEM_ID,
         node: main,
         vis: ast::Public,
         span: sp
@@ -503,7 +503,7 @@ fn mk_test_module(cx: &mut TestCtxt) -> (P<ast::Item>, Option<P<ast::Item>>) {
 
     let mod_ident = token::gensym_ident("__test");
     let item = P(ast::Item {
-        id: ast::DUMMY_NODE_ID,
+        id: ast::DUMMY_ITEM_ID,
         ident: mod_ident,
         attrs: vec![],
         node: item_,
@@ -519,7 +519,7 @@ fn mk_test_module(cx: &mut TestCtxt) -> (P<ast::Item>, Option<P<ast::Item>>) {
                                        path_node(vec![mod_ident, token::str_to_ident("main")])));
 
         P(ast::Item {
-            id: ast::DUMMY_NODE_ID,
+            id: ast::DUMMY_ITEM_ID,
             ident: token::special_idents::invalid,
             attrs: vec![],
             node: ast::ItemUse(P(use_path)),

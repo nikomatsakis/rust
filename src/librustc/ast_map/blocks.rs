@@ -19,19 +19,19 @@
 //! With the above abstraction in place, one can treat the program
 //! text as a collection of blocks of code (and most such blocks are
 //! nested within a uniquely determined `FnLike`), and users can ask
-//! for the `Code` associated with a particular NodeId.
+//! for the `Code` associated with a particular ItemId.
 
 pub use self::Code::*;
 
-use ast_map::{self, Node};
+use ast_map::{self, ItemNode};
 use syntax::abi;
-use syntax::ast::{Block, FnDecl, NodeId};
+use syntax::ast::{Block, FnDecl, ItemId};
 use syntax::ast;
 use syntax::codemap::Span;
 use syntax::visit;
 
-/// An FnLikeNode is a Node that is like a fn, in that it has a decl
-/// and a body (as well as a NodeId, a span, etc).
+/// An FnLikeItemNode is a Item that is like a fn, in that it has a decl
+/// and a body (as well as a ItemId, a span, etc).
 ///
 /// More specifically, it is one of either:
 ///   - A function item,
@@ -40,10 +40,10 @@ use syntax::visit;
 ///
 /// To construct one, use the `Code::from_node` function.
 #[derive(Copy, Clone)]
-pub struct FnLikeNode<'a> { node: ast_map::Node<'a> }
+pub struct FnLikeItemNode<'a> { node: ast_map::ItemNode<'a> }
 
 /// MaybeFnLike wraps a method that indicates if an object
-/// corresponds to some FnLikeNode.
+/// corresponds to some FnLikeItemNode.
 pub trait MaybeFnLike { fn is_fn_like(&self) -> bool; }
 
 /// Components shared by fn-like things (fn items, methods, closures).
@@ -52,7 +52,7 @@ pub struct FnParts<'a> {
     pub body: &'a Block,
     pub kind: visit::FnKind<'a>,
     pub span: Span,
-    pub id:   NodeId,
+    pub id:   ItemId,
 }
 
 impl MaybeFnLike for ast::Item {
@@ -76,17 +76,17 @@ impl MaybeFnLike for ast::Expr {
     }
 }
 
-/// Carries either an FnLikeNode or a Block, as these are the two
+/// Carries either an FnLikeItemNode or a Block, as these are the two
 /// constructs that correspond to "code" (as in, something from which
 /// we can construct a control-flow graph).
 #[derive(Copy, Clone)]
 pub enum Code<'a> {
-    FnLikeCode(FnLikeNode<'a>),
+    FnLikeCode(FnLikeItemNode<'a>),
     BlockCode(&'a Block),
 }
 
 impl<'a> Code<'a> {
-    pub fn id(&self) -> ast::NodeId {
+    pub fn id(&self) -> ast::ItemId {
         match *self {
             FnLikeCode(node) => node.id(),
             BlockCode(block) => block.id,
@@ -94,17 +94,17 @@ impl<'a> Code<'a> {
     }
 
     /// Attempts to construct a Code from presumed FnLike or Block node input.
-    pub fn from_node(node: Node) -> Option<Code> {
-        if let ast_map::NodeBlock(block) = node {
+    pub fn from_node(node: ItemNode) -> Option<Code> {
+        if let ast_map::ItemNode::Block(block) = node {
             Some(BlockCode(block))
         } else {
-            FnLikeNode::from_node(node).map(|fn_like| FnLikeCode(fn_like))
+            FnLikeItemNode::from_node(node).map(|fn_like| FnLikeCode(fn_like))
         }
     }
 }
 
 /// These are all the components one can extract from a fn item for
-/// use when implementing FnLikeNode operations.
+/// use when implementing FnLikeItemNode operations.
 struct ItemFnParts<'a> {
     ident:    ast::Ident,
     decl:     &'a ast::FnDecl,
@@ -114,37 +114,37 @@ struct ItemFnParts<'a> {
     vis:      ast::Visibility,
     generics: &'a ast::Generics,
     body:     &'a Block,
-    id:       ast::NodeId,
+    id:       ast::ItemId,
     span:     Span
 }
 
 /// These are all the components one can extract from a closure expr
-/// for use when implementing FnLikeNode operations.
+/// for use when implementing FnLikeItemNode operations.
 struct ClosureParts<'a> {
     decl: &'a FnDecl,
     body: &'a Block,
-    id: NodeId,
+    id: ItemId,
     span: Span
 }
 
 impl<'a> ClosureParts<'a> {
-    fn new(d: &'a FnDecl, b: &'a Block, id: NodeId, s: Span) -> ClosureParts<'a> {
+    fn new(d: &'a FnDecl, b: &'a Block, id: ItemId, s: Span) -> ClosureParts<'a> {
         ClosureParts { decl: d, body: b, id: id, span: s }
     }
 }
 
-impl<'a> FnLikeNode<'a> {
-    /// Attempts to construct a FnLikeNode from presumed FnLike node input.
-    pub fn from_node(node: Node) -> Option<FnLikeNode> {
+impl<'a> FnLikeItemNode<'a> {
+    /// Attempts to construct a FnLikeItemNode from presumed FnLike node input.
+    pub fn from_node(node: ItemNode) -> Option<FnLikeItemNode> {
         let fn_like = match node {
-            ast_map::NodeItem(item) => item.is_fn_like(),
-            ast_map::NodeTraitItem(tm) => tm.is_fn_like(),
-            ast_map::NodeImplItem(_) => true,
-            ast_map::NodeExpr(e) => e.is_fn_like(),
+            ItemNode::Item(item) => item.is_fn_like(),
+            ItemNode::TraitItem(tm) => tm.is_fn_like(),
+            ItemNode::ImplItem(_) => true,
+            ItemNode::ClosureItem(e) => e.is_fn_like(),
             _ => false
         };
         if fn_like {
-            Some(FnLikeNode {
+            Some(FnLikeItemNode {
                 node: node
             })
         } else {
@@ -180,7 +180,7 @@ impl<'a> FnLikeNode<'a> {
                     |c: ClosureParts|    c.span)
     }
 
-    pub fn id(self) -> NodeId {
+    pub fn id(self) -> ItemId {
         self.handle(|i: ItemFnParts|     i.id,
                     |id, _, _: &'a ast::MethodSig, _, _, _| id,
                     |c: ClosureParts|    c.id)
@@ -201,7 +201,7 @@ impl<'a> FnLikeNode<'a> {
 
     fn handle<A, I, M, C>(self, item_fn: I, method: M, closure: C) -> A where
         I: FnOnce(ItemFnParts<'a>) -> A,
-        M: FnOnce(NodeId,
+        M: FnOnce(ItemId,
                   ast::Ident,
                   &'a ast::MethodSig,
                   Option<ast::Visibility>,
@@ -211,7 +211,7 @@ impl<'a> FnLikeNode<'a> {
         C: FnOnce(ClosureParts<'a>) -> A,
     {
         match self.node {
-            ast_map::NodeItem(i) => match i.node {
+            ItemNode::Item(i) => match i.node {
                 ast::ItemFn(ref decl, unsafety, constness, abi, ref generics, ref block) =>
                     item_fn(ItemFnParts {
                         id: i.id,
@@ -225,30 +225,30 @@ impl<'a> FnLikeNode<'a> {
                         constness: constness,
                         span: i.span
                     }),
-                _ => panic!("item FnLikeNode that is not fn-like"),
+                _ => panic!("item FnLikeItemNode that is not fn-like"),
             },
-            ast_map::NodeTraitItem(ti) => match ti.node {
+            ItemNode::TraitItem(ti) => match ti.node {
                 ast::MethodTraitItem(ref sig, Some(ref body)) => {
                     method(ti.id, ti.ident, sig, None, body, ti.span)
                 }
-                _ => panic!("trait method FnLikeNode that is not fn-like"),
+                _ => panic!("trait method FnLikeItemNode that is not fn-like"),
             },
-            ast_map::NodeImplItem(ii) => {
+            ItemNode::ImplItem(ii) => {
                 match ii.node {
                     ast::MethodImplItem(ref sig, ref body) => {
                         method(ii.id, ii.ident, sig, Some(ii.vis), body, ii.span)
                     }
                     _ => {
-                        panic!("impl method FnLikeNode that is not fn-like")
+                        panic!("impl method FnLikeItemNode that is not fn-like")
                     }
                 }
             }
-            ast_map::NodeExpr(e) => match e.node {
+            ItemNode::ClosureExpr(e) => match e.node {
                 ast::ExprClosure(_, ref decl, ref block) =>
                     closure(ClosureParts::new(&**decl, &**block, e.id, e.span)),
-                _ => panic!("expr FnLikeNode that is not fn-like"),
+                _ => panic!("expr FnLikeItemNode that is not fn-like"),
             },
-            _ => panic!("other FnLikeNode that is not fn-like"),
+            _ => panic!("other FnLikeItemNode that is not fn-like"),
         }
     }
 }

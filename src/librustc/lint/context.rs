@@ -665,7 +665,7 @@ pub fn check_crate(tcx: &ty::ctxt,
 
     // Visit the whole crate.
     cx.with_lint_attrs(&krate.attrs, |cx| {
-        cx.visit_id(ast::CRATE_NODE_ID);
+        cx.visit_id(ast::CRATE_ITEM_ID.as_node_id());
         cx.visit_ids(|v| {
             v.visited_outermost = true;
             visit::walk_crate(v, krate);

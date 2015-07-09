@@ -555,10 +555,10 @@ impl<'a> Parser<'a> {
     pub fn parse_path_list_item(&mut self) -> PResult<ast::PathListItem> {
         let lo = self.span.lo;
         let node = if try!(self.eat_keyword(keywords::SelfValue)) {
-            ast::PathListMod { id: ast::DUMMY_NODE_ID }
+            ast::PathListMod { id: ast::DUMMY_ITEM_ID }
         } else {
             let ident = try!(self.parse_ident());
-            ast::PathListIdent { name: ident, id: ast::DUMMY_NODE_ID }
+            ast::PathListIdent { name: ident, id: ast::DUMMY_ITEM_ID }
         };
         let hi = self.last_span.hi;
         Ok(spanned(lo, hi, node))
@@ -1222,7 +1222,7 @@ impl<'a> Parser<'a> {
             };
 
             Ok(P(TraitItem {
-                id: ast::DUMMY_NODE_ID,
+                id: ast::DUMMY_ITEM_ID,
                 ident: name,
                 attrs: attrs,
                 node: node,
@@ -2863,7 +2863,7 @@ impl<'a> Parser<'a> {
         Ok(self.mk_expr(
             lo,
             body.span.hi,
-            ExprClosure(capture_clause, decl, body)))
+            ExprClosure(ast::DUMMY_ITEM_ID, capture_clause, decl, body)))
     }
 
     pub fn parse_else_expr(&mut self) -> PResult<P<Expr>> {
@@ -4349,7 +4349,7 @@ impl<'a> Parser<'a> {
         P(Item {
             ident: ident,
             attrs: attrs,
-            id: ast::DUMMY_NODE_ID,
+            id: ast::DUMMY_ITEM_ID,
             node: node,
             vis: vis,
             span: mk_sp(lo, hi)
@@ -4428,7 +4428,7 @@ impl<'a> Parser<'a> {
         };
 
         Ok(P(ImplItem {
-            id: ast::DUMMY_NODE_ID,
+            id: ast::DUMMY_ITEM_ID,
             span: mk_sp(lo, self.last_span.hi),
             ident: name,
             vis: vis,
@@ -4652,14 +4652,14 @@ impl<'a> Parser<'a> {
             generics.where_clause = try!(self.parse_where_clause());
             if try!(self.eat(&token::Semi)) {
                 // If we see a: `struct Foo<T> where T: Copy;` style decl.
-                (Vec::new(), Some(ast::DUMMY_NODE_ID))
+                (Vec::new(), Some(ast::DUMMY_ITEM_ID))
             } else {
                 // If we see: `struct Foo<T> where T: Copy { ... }`
                 (try!(self.parse_record_struct_body(&class_name)), None)
             }
         // No `where` so: `struct Foo<T>;`
         } else if try!(self.eat(&token::Semi) ){
-            (Vec::new(), Some(ast::DUMMY_NODE_ID))
+            (Vec::new(), Some(ast::DUMMY_ITEM_ID))
         // Record-style struct definition
         } else if self.token == token::OpenDelim(token::Brace) {
             let fields = try!(self.parse_record_struct_body(&class_name));
@@ -4667,7 +4667,7 @@ impl<'a> Parser<'a> {
         // Tuple-style struct definition with optional where-clause.
         } else {
             let fields = try!(self.parse_tuple_struct_body(&class_name, &mut generics));
-            (fields, Some(ast::DUMMY_NODE_ID))
+            (fields, Some(ast::DUMMY_ITEM_ID))
         };
 
         Ok((class_name,
@@ -4990,7 +4990,7 @@ impl<'a> Parser<'a> {
             ident: ident,
             attrs: attrs,
             node: ForeignItemFn(decl, generics),
-            id: ast::DUMMY_NODE_ID,
+            id: ast::DUMMY_ITEM_ID,
             span: mk_sp(lo, hi),
             vis: vis
         }))
@@ -5013,7 +5013,7 @@ impl<'a> Parser<'a> {
             ident: ident,
             attrs: attrs,
             node: ForeignItemStatic(ty, mutbl),
-            id: ast::DUMMY_NODE_ID,
+            id: ast::DUMMY_ITEM_ID,
             span: mk_sp(lo, hi),
             vis: vis
         }))
@@ -5170,7 +5170,7 @@ impl<'a> Parser<'a> {
                 name: ident,
                 attrs: variant_attrs,
                 kind: kind,
-                id: ast::DUMMY_NODE_ID,
+                id: ast::DUMMY_ITEM_ID,
                 disr_expr: disr_expr,
                 vis: vis,
             };

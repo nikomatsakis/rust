@@ -37,7 +37,7 @@ pub enum AnnNode<'a> {
     NodeName(&'a ast::Name),
     NodeBlock(&'a ast::Block),
     NodeItem(&'a ast::Item),
-    NodeSubItem(ast::NodeId),
+    NodeSubItem(ast::ItemId),
     NodeExpr(&'a ast::Expr),
     NodePat(&'a ast::Pat),
 }
@@ -1795,7 +1795,7 @@ impl<'a> State<'a> {
                 }
                 try!(self.bclose_(expr.span, indent_unit));
             }
-            ast::ExprClosure(capture_clause, ref decl, ref body) => {
+            ast::ExprClosure(_, capture_clause, ref decl, ref body) => {
                 try!(self.print_capture_clause(capture_clause));
 
                 try!(self.print_fn_block_args(&**decl));
