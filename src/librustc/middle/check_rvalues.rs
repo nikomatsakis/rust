@@ -37,7 +37,7 @@ impl<'a, 'tcx, 'v> visit::Visitor<'v> for RvalueContext<'a, 'tcx> {
                 fd: &'v ast::FnDecl,
                 b: &'v ast::Block,
                 s: Span,
-                fn_id: ast::NodeId) {
+                fn_id: ast::ItemId) {
         {
             // FIXME (@jroesch) change this to be an inference context
             let param_env = ParameterEnvironment::for_item(self.tcx, fn_id);

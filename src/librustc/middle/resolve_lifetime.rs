@@ -152,7 +152,7 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
     }
 
     fn visit_fn(&mut self, fk: visit::FnKind<'v>, fd: &'v ast::FnDecl,
-                b: &'v ast::Block, s: Span, _: ast::NodeId) {
+                b: &'v ast::Block, s: Span, _: ast::ItemId) {
         match fk {
             visit::FkItemFn(_, generics, _, _, _, _) => {
                 self.visit_early_late(subst::FnSpace, generics, |this| {

@@ -223,7 +223,7 @@ impl<'a, 'b, 'tcx> DecodeContext<'a, 'b, 'tcx> {
     /// refer to the current crate and to the new, inlined node-id.
     pub fn tr_intern_def_id(&self, did: ast::DefId) -> ast::DefId {
         assert_eq!(did.krate, ast::LOCAL_CRATE);
-        ast::DefId { krate: ast::LOCAL_CRATE, node: self.tr_id(did.node) }
+        ast::DefId { krate: ast::LOCAL_CRATE, item: self.tr_id(did.node) }
     }
 
     /// Translates a `Span` from an extern crate to the corresponding `Span`
@@ -921,6 +921,8 @@ impl<'a, 'b, 'c, 'tcx> ast_util::IdVisitingOperation for
     fn visit_id(&mut self, id: ast::NodeId) {
         encode_side_tables_for_id(self.ecx, self.rbml_w, id)
     }
+    fn visit_item_id(&mut self, id: ast::ItemId) {
+    }
 }
 
 fn encode_side_tables_for_ii(ecx: &e::EncodeContext,
@@ -974,7 +976,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
             rbml_w.tag(c::tag_table_upvar_capture_map, |rbml_w| {
                 rbml_w.id(id);
 
-                let var_id = freevar.def.def_id().node;
+                let var_id = freevar.def.def_id().item;
                 let upvar_id = ty::UpvarId {
                     var_id: var_id,
                     closure_expr_id: id
@@ -991,7 +993,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
         }
     }
 
-    let lid = ast::DefId { krate: ast::LOCAL_CRATE, node: id };
+    let lid = ast::DefId { krate: ast::LOCAL_CRATE, item: id };
     if let Some(type_scheme) = tcx.tcache.borrow().get(&lid) {
         rbml_w.tag(c::tag_table_tcache, |rbml_w| {
             rbml_w.id(id);

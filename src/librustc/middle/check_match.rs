@@ -143,7 +143,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for MatchCheckCtxt<'a, 'tcx> {
         check_local(self, l);
     }
     fn visit_fn(&mut self, fk: FnKind<'v>, fd: &'v ast::FnDecl,
-                b: &'v ast::Block, s: Span, n: NodeId) {
+                b: &'v ast::Block, s: Span, n: ast::ItemId) {
         check_fn(self, fk, fd, b, s, n);
     }
 }
@@ -434,6 +434,7 @@ impl<'map> ast_util::IdVisitingOperation for RenamingRecorder<'map> {
         let key = (node_id, self.origin_span);
         self.renaming_map.insert(key, self.substituted_node_id);
     }
+    fn visit_item_id(&mut self, node_id: ast::ItemId) { }
 }
 
 impl<'a, 'tcx> Folder for StaticInliner<'a, 'tcx> {
@@ -1038,9 +1039,9 @@ fn check_fn(cx: &mut MatchCheckCtxt,
             decl: &ast::FnDecl,
             body: &ast::Block,
             sp: Span,
-            fn_id: NodeId) {
+            fn_id: ast::ItemId) {
     match kind {
-        visit::FkFnBlock => {}
+        visit::FkFnBlock(..) => {}
         _ => cx.param_env = ParameterEnvironment::for_item(cx.tcx, fn_id),
     }
 

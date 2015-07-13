@@ -32,6 +32,7 @@ use self::parent::ParentNodeWalker;
 
 pub mod blocks;
 mod parent;
+mod collect;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum ItemOrBlockId {
@@ -123,6 +124,49 @@ pub enum ItemNode<'ast> {
     StructCtor(&'ast StructDef),
 }
 
+/// Represents an entry and its parent ItemId.
+/// The odd layout is to bring down the total size.
+#[derive(Copy, Clone, Debug)]
+enum ItemMapEntry<'ast> {
+    Item(ItemId, &'ast Item),
+    ForeignItem(ItemId, &'ast ForeignItem),
+    TraitItem(ItemId, &'ast TraitItem),
+    ImplItem(ItemId, &'ast ImplItem),
+    Variant(ItemId, &'ast Variant),
+    ClosureItem(ItemId, &'ast Expr),
+    StructCtor(ItemId, &'ast StructDef),
+
+    /// Roots for node trees.
+    RootCrate,
+    RootInlinedParent(&'ast InlinedParent)
+}
+
+impl<'ast> ItemMapEntry<'ast> {
+    fn from_item_node(parent: ItemId, n: ItemNode<'ast>) -> ItemMapEntry<'ast> {
+        match n {
+            ItemNode::Item(n) => ItemMapEntry::Item(parent, n),
+            ItemNode::ForeignItem(n) => ItemMapEntry::ForeignItem(parent, n),
+            ItemNode::TraitItem(n) => ItemMapEntry::TraitItem(parent, n),
+            ItemNode::ImplItem(n) => ItemMapEntry::ImplItem(parent, n),
+            ItemNode::Variant(n) => ItemMapEntry::Variant(parent, n),
+            ItemNode::StructCtor(n) => ItemMapEntry::StructCtor(parent, n),
+        }
+    }
+
+    fn to_item_node(&self) -> Option<ItemNode<'ast>> {
+        match *self {
+            ItemMapEntry::Item(parent, n) => Some(ItemNode::Item(n)),
+            ItemMapEntry::ForeignItem(parent, n) => Some(ItemNode::ForeignItem(n)),
+            ItemMapEntry::TraitItem(parent, n) => Some(ItemNode::TraitItem(n)),
+            ItemMapEntry::ImplItem(parent, n) => Some(ItemNode::ImplItem(n)),
+            ItemMapEntry::Variant(parent, n) => Some(ItemNode::Variant(n)),
+            ItemMapEntry::StructCtor(parent, n) => Some(ItemNode::StructCtor(n)),
+            ItemMapEntry::RootCrate => None,
+            ItemMapEntry::RootInlinedParent(..) => None,
+        }
+    }
+}
+
 // Nodes for things that do not have ItemIds.
 #[derive(Copy, Clone, Debug)]
 pub enum Node<'ast> {
@@ -133,21 +177,6 @@ pub enum Node<'ast> {
     NodePat(&'ast Pat),
     NodeBlock(&'ast Block),
     NodeLifetime(&'ast Lifetime),
-}
-
-/// Represents an entry and its parent ItemId.
-/// The odd layout is to bring down the total size.
-#[derive(Copy, Clone, Debug)]
-enum ItemMapEntry<'ast> {
-    Item(ItemId, &'ast Item),
-    ForeignItem(ItemId, &'ast ForeignItem),
-    TraitItem(ItemId, &'ast TraitItem),
-    ImplItem(ItemId, &'ast ImplItem),
-    Variant(ItemId, &'ast Variant),
-
-    /// Roots for node trees.
-    RootCrate,
-    RootInlinedParent(&'ast InlinedParent)
 }
 
 /// Represents an entry and its parent NodeID.
@@ -183,40 +212,30 @@ struct InlinedParent {
 }
 
 impl<'ast> MapEntry<'ast> {
-    fn from_node(p: ItemId, node: Node<'ast>) -> MapEntry<'ast> {
-        match node {
-            NodeExpr(n) => MapEntryKind::Expr(p, n),
-            NodeStmt(n) => MapEntryKind::Stmt(p, n),
-            NodeArg(n) => MapEntryKind::Arg(p, n),
-            NodeLocal(n) => MapEntryKind::Local(p, n),
-            NodePat(n) => MapEntryKind::Pat(p, n),
-            NodeBlock(n) => MapEntryKind::Block(p, n),
-            NodeLifetime(n) => MapEntryKind::Lifetime(p, n)
+    fn from_node(p: NodeId, node: Node<'ast>) -> MapEntry<'ast> {
+        MapEntry {
+            parent_node: p,
+            kind: match node {
+                NodeExpr(n) => MapEntryKind::Expr(n),
+                NodeStmt(n) => MapEntryKind::Stmt(n),
+                NodeArg(n) => MapEntryKind::Arg(n),
+                NodeLocal(n) => MapEntryKind::Local(n),
+                NodePat(n) => MapEntryKind::Pat(n),
+                NodeBlock(n) => MapEntryKind::Block(n),
+                NodeLifetime(n) => MapEntryKind::Lifetime(n)
+            }
         }
     }
 
-    fn parent_node(self) -> Option<NodeId> {
-        Some(match self {
-            MapEntryKind::Expr(id, _) => id,
-            MapEntryKind::Stmt(id, _) => id,
-            MapEntryKind::Arg(id, _) => id,
-            MapEntryKind::Local(id, _) => id,
-            MapEntryKind::Pat(id, _) => id,
-            MapEntryKind::Block(id, _) => id,
-            MapEntryKind::Lifetime(id, _) => id,
-            NotPresent => return None
-        })
-    }
-
     fn to_node(self) -> Option<Node<'ast>> {
-        Some(match self {
-            MapEntryKind::Expr(_, n) => NodeExpr(n),
-            MapEntryKind::Stmt(_, n) => NodeStmt(n),
-            MapEntryKind::Arg(_, n) => NodeArg(n),
-            MapEntryKind::Local(_, n) => NodeLocal(n),
-            MapEntryKind::Pat(_, n) => NodePat(n),
-            MapEntryKind::Block(_, n) => NodeBlock(n),
-            MapEntryKind::Lifetime(_, n) => NodeLifetime(n),
+        Some(match self.kind {
+            MapEntryKind::Expr(n) => NodeExpr(n),
+            MapEntryKind::Stmt(n) => NodeStmt(n),
+            MapEntryKind::Arg(n) => NodeArg(n),
+            MapEntryKind::Local(n) => NodeLocal(n),
+            MapEntryKind::Pat(n) => NodePat(n),
+            MapEntryKind::Block(n) => NodeBlock(n),
+            MapEntryKind::Lifetime(n) => NodeLifetime(n),
             _ => return None
         })
     }
@@ -299,7 +318,7 @@ impl<'ast> Map<'ast> {
     pub fn get_item(&self, id: ItemId) -> ItemNode<'ast> {
         match self.find_item(id) {
             Some(node) => node,
-            None => panic!("couldn't find item id {} in the AST map", id)
+            None => panic!("couldn't find item id {:?} in the AST map", id)
         }
     }
 
@@ -312,12 +331,12 @@ impl<'ast> Map<'ast> {
     /// Retrieve the ItemNode corresponding to `id`, returning None if
     /// cannot be found.
     pub fn find_item(&self, id: ItemId) -> Option<ItemNode<'ast>> {
-        self.item_map.borrow().get(&id).cloned()
+        self.item_map.borrow().get(&id).and_then(|me| me.to_item_node())
     }
 
     /// Yields an iterator that walks up the parents of a given node-id.
     fn walk_parents<'map>(&'map self, id: NodeId) -> ParentNodeWalker<'map, 'ast> {
-        ParentNodeWalker::new(self)
+        ParentNodeWalker::new(self, id)
     }
 
     /// Retrieve the NodeId for `id`'s parent item, or `id` itself if no
@@ -338,8 +357,8 @@ impl<'ast> Map<'ast> {
         let mut walker = self.walk_parents(id0);
         let map = self.map.borrow();
         while let Some(id) = walker.next() {
-            match map[0].kind {
-                NodeBlock(_) => { return Some(ItemOrBlockId::Block(id)); }
+            match map[id as usize].kind {
+                MapEntryKind::Block(_) => { return Some(ItemOrBlockId::Block(id)); }
                 _ => { }
             }
         }
@@ -347,13 +366,15 @@ impl<'ast> Map<'ast> {
     }
 
     /// Returns the immediate parent of an item, not considering inlined/cross-crate items.
-    fn get_item_parent(&self, id: ItemId) -> Option<ItemId> {
-        match self.find_item(id).unwrap() {
-            ItemNode::Item(parent, _) => Some(parent),
-            ItemNode::ForeignItem(parent, _) => Some(parent),
-            ItemNode::TraitItem(parent, _) => Some(parent),
-            ItemNode::ImplItem(parent, _) => Some(parent),
-            ItemNode::Variant(parent, _) => Some(parent),
+    fn get_item_parent(&self, id: ItemId) -> ItemId {
+        match self.find_item_entry(id).unwrap() {
+            ItemMapEntry::Item(parent, _) => parent,
+            ItemMapEntry::ForeignItem(parent, _) => parent,
+            ItemMapEntry::TraitItem(parent, _) => parent,
+            ItemMapEntry::ImplItem(parent, _) => parent,
+            ItemMapEntry::Variant(parent, _) => parent,
+            ItemMapEntry::RootCrate | ItemMapEntry::RootInlinedParent(..) =>
+                panic!("get_parent called on item without parent")
         }
     }
 
@@ -370,8 +391,8 @@ impl<'ast> Map<'ast> {
     }
 
     pub fn get_foreign_abi(&self, id: NodeId) -> abi::Abi {
-        let parent = self.get_parent(id);
-        let abi = match self.find_item(parent) {
+        let parent = self.get_enclosing_item(id);
+        let abi = match self.find_item_entry(parent) {
             Some(ItemMapEntry::Item(_, i)) => {
                 match i.node {
                     ItemForeignMod(ref nm) => Some(nm.abi),
@@ -385,54 +406,54 @@ impl<'ast> Map<'ast> {
         match abi {
             Some(abi) => abi,
             None => panic!("expected foreign mod or inlined parent, found {}",
-                          self.node_to_string(parent))
+                          self.item_id_to_string(parent))
         }
     }
 
     pub fn get_foreign_vis(&self, id: ItemId) -> Visibility {
         let vis = self.expect_foreign_item(id).vis;
-        match self.find(self.get_parent(id)) {
-            Some(ItemMapEntry::Item(i)) => vis.inherit_from(i.vis),
+        match self.find_item(self.get_item_parent(id)) {
+            Some(ItemNode::Item(i)) => vis.inherit_from(i.vis),
             _ => vis
         }
     }
 
     pub fn expect_item(&self, id: ItemId) -> &'ast Item {
-        match self.find(id) {
-            Some(ItemMapEntry::Item(item)) => item,
-            _ => panic!("expected item, found {}", self.node_to_string(id))
+        match self.find_item(id) {
+            Some(ItemNode::Item(item)) => item,
+            _ => panic!("expected item, found {}", self.item_id_to_string(id))
         }
     }
 
     pub fn expect_struct(&self, id: ItemId) -> &'ast StructDef {
-        match self.find(id) {
-            Some(ItemMapEntry::Item(i)) => {
+        match self.find_item(id) {
+            Some(ItemNode::Item(i)) => {
                 match i.node {
                     ItemStruct(ref struct_def, _) => &**struct_def,
                     _ => panic!("struct ID bound to non-struct")
                 }
             }
-            Some(ItemMapEntry::Variant(variant)) => {
+            Some(ItemNode::Variant(variant)) => {
                 match variant.node.kind {
                     StructVariantKind(ref struct_def) => &**struct_def,
                     _ => panic!("struct ID bound to enum variant that isn't struct-like"),
                 }
             }
-            _ => panic!(format!("expected struct, found {}", self.node_to_string(id))),
+            _ => panic!(format!("expected struct, found {}", self.item_id_to_string(id))),
         }
     }
 
     pub fn expect_variant(&self, id: ItemId) -> &'ast Variant {
-        match self.find(id) {
-            Some(ItemMapEntry::Variant(variant)) => variant,
-            _ => panic!(format!("expected variant, found {}", self.node_to_string(id))),
+        match self.find_item(id) {
+            Some(ItemNode::Variant(variant)) => variant,
+            _ => panic!(format!("expected variant, found {}", self.item_id_to_string(id))),
         }
     }
 
     pub fn expect_foreign_item(&self, id: ItemId) -> &'ast ForeignItem {
-        match self.find(id) {
-            Some(ItemMapEntry::ForeignItem(item)) => item,
-            _ => panic!("expected foreign item, found {}", self.node_to_string(id))
+        match self.find_item(id) {
+            Some(ItemNode::ForeignItem(item)) => item,
+            _ => panic!("expected foreign item, found {}", self.item_id_to_string(id))
         }
     }
 
@@ -445,9 +466,9 @@ impl<'ast> Map<'ast> {
 
     /// returns the name associated with the given NodeId's AST
     pub fn get_path_elem(&self, id: ItemId) -> PathElem {
-        let node = self.get(id);
+        let node = self.find_item_entry(id).unwrap();
         match node {
-            ItemMapEntry::Item(item) => {
+            ItemMapEntry::Item(_, item) => {
                 match item.node {
                     ItemMod(_) | ItemForeignMod(_) => {
                         PathMod(item.ident.name)
@@ -455,10 +476,10 @@ impl<'ast> Map<'ast> {
                     _ => PathName(item.ident.name)
                 }
             }
-            ItemMapEntry::ForeignItem(i) => PathName(i.ident.name),
-            ItemMapEntry::ImplItem(ii) => PathName(ii.ident.name),
-            ItemMapEntry::TraitItem(ti) => PathName(ti.ident.name),
-            ItemMapEntry::Variant(v) => PathName(v.node.name.name),
+            ItemMapEntry::ForeignItem(_, i) => PathName(i.ident.name),
+            ItemMapEntry::ImplItem(_, ii) => PathName(ii.ident.name),
+            ItemMapEntry::TraitItem(_, ti) => PathName(ti.ident.name),
+            ItemMapEntry::Variant(_, v) => PathName(v.node.name.name),
 
             ItemMapEntry::RootCrate | ItemMapEntry::RootInlinedParent(..) =>
                 panic!("no path elem for {:?}", node)
@@ -471,11 +492,11 @@ impl<'ast> Map<'ast> {
         self.with_path_next(id, LinkedPath::empty(), f)
     }
 
-    pub fn path_to_string(&self, id: NodeId) -> String {
+    pub fn path_to_string(&self, id: ItemId) -> String {
         self.with_path(id, |path| path_to_string(path))
     }
 
-    fn path_to_str_with_ident(&self, id: NodeId, i: Ident) -> String {
+    fn path_to_str_with_ident(&self, id: ItemId, i: Ident) -> String {
         self.with_path(id, |path| {
             path_to_string(path.chain(Some(PathName(i.name))))
         })
@@ -485,11 +506,11 @@ impl<'ast> Map<'ast> {
         F: FnOnce(PathElems) -> T,
     {
         let parent = self.get_item_parent(id);
-        let parent = match self.find_entry(id) {
+        let parent = match self.find_item_entry(id) {
             Some(ItemMapEntry::ForeignItem(..)) | Some(ItemMapEntry::Variant(..)) => {
                 // Anonymous extern items, enum variants and struct ctors
                 // go in the parent scope.
-                self.get_parent(parent)
+                self.get_item_parent(parent)
             }
             // But tuple struct ctors don't have names, so use the path of its
             // parent, the struct item. Similarly with closure expressions.
@@ -499,7 +520,7 @@ impl<'ast> Map<'ast> {
             _ => parent
         };
         if parent == id {
-            match self.find_entry(id) {
+            match self.find_item_entry(id) {
                 Some(ItemMapEntry::RootInlinedParent(data)) => {
                     f(data.path.iter().cloned().chain(next))
                 }
@@ -517,17 +538,19 @@ impl<'ast> Map<'ast> {
     /// corresponding to the Node ID
     pub fn attrs(&self, id: ItemId) -> &'ast [Attribute] {
         let attrs = match self.find_item(id) {
-            Some(ItemMapEntry::Item(i)) => Some(&i.attrs[..]),
-            Some(ItemMapEntry::ForeignItem(fi)) => Some(&fi.attrs[..]),
-            Some(ItemMapEntry::TraitItem(ref ti)) => Some(&ti.attrs[..]),
-            Some(ItemMapEntry::ImplItem(ref ii)) => Some(&ii.attrs[..]),
-            Some(ItemMapEntry::Variant(ref v)) => Some(&v.node.attrs[..]),
+            Some(ItemNode::Item(i)) => Some(&i.attrs[..]),
+            Some(ItemNode::ForeignItem(fi)) => Some(&fi.attrs[..]),
+            Some(ItemNode::TraitItem(ref ti)) => Some(&ti.attrs[..]),
+            Some(ItemNode::ImplItem(ref ii)) => Some(&ii.attrs[..]),
+            Some(ItemNode::Variant(ref v)) => Some(&v.node.attrs[..]),
             // unit/tuple structs take the attributes straight from
             // the struct definition.
-            Some(ItemMapEntry::StructCtor(_)) => {
-                return self.attrs(self.get_parent(id));
+            Some(ItemNode::StructCtor(_)) => {
+                return self.attrs(self.get_item_parent(id));
             }
-            _ => None
+            Some(ItemNode::ClosureItem(..)) |
+            None =>
+                None,
         };
         attrs.unwrap_or(&[])
     }
@@ -540,24 +563,25 @@ impl<'ast> Map<'ast> {
     /// such as `foo::bar::quux`, `bar::quux`, `other::bar::quux`, and
     /// any other such items it can find in the map.
     pub fn nodes_matching_suffix<'a>(&'a self, parts: &'a [String])
-                                 -> NodesMatchingSuffix<'a, 'ast> {
-        NodesMatchingSuffix {
+                                 -> ItemsMatchingSuffix<'a, 'ast> {
+        ItemsMatchingSuffix {
             map: self,
             item_name: parts.last().unwrap(),
             in_which: &parts[..parts.len() - 1],
-            idx: 0,
+            keys: self.item_map.borrow().keys().into_iter().cloned().collect(),
         }
     }
 
     pub fn opt_item_span(&self, id: ItemId) -> Option<Span> {
         let sp = match self.find_item(id) {
-            Some(ItemMapEntry::Item(item)) => item.span,
-            Some(ItemMapEntry::ForeignItem(foreign_item)) => foreign_item.span,
-            Some(ItemMapEntry::TraitItem(trait_method)) => trait_method.span,
-            Some(ItemMapEntry::ImplItem(ref impl_item)) => impl_item.span,
-            Some(ItemMapEntry::Variant(variant)) => variant.span,
-            Some(ItemMapEntry::StructCtor(_)) => self.expect_item(self.get_parent(id)).span,
-            _ => return None,
+            Some(ItemNode::Item(item)) => item.span,
+            Some(ItemNode::ForeignItem(foreign_item)) => foreign_item.span,
+            Some(ItemNode::TraitItem(trait_method)) => trait_method.span,
+            Some(ItemNode::ImplItem(ref impl_item)) => impl_item.span,
+            Some(ItemNode::Variant(variant)) => variant.span,
+            Some(ItemNode::StructCtor(_)) => self.expect_item(self.get_item_parent(id)).span,
+            Some(ItemNode::ClosureItem(expr)) => expr.span,
+            None => return None,
         };
         Some(sp)
     }
@@ -581,7 +605,7 @@ impl<'ast> Map<'ast> {
 
     pub fn def_id_span(&self, def_id: DefId, fallback: Span) -> Span {
         if def_id.krate == LOCAL_CRATE {
-            self.opt_span(def_id.node).unwrap_or(fallback)
+            self.opt_item_span(def_id.item).unwrap_or(fallback)
         } else {
             fallback
         }
@@ -591,26 +615,30 @@ impl<'ast> Map<'ast> {
         node_id_to_string(self, id, true)
     }
 
+    pub fn item_id_to_string(&self, id: ItemId) -> String {
+        item_id_to_string(self, id, true)
+    }
+
     pub fn node_to_user_string(&self, id: NodeId) -> String {
         node_id_to_string(self, id, false)
     }
 }
 
-pub struct NodesMatchingSuffix<'a, 'ast:'a> {
+pub struct ItemsMatchingSuffix<'a, 'ast:'a> {
     map: &'a Map<'ast>,
     item_name: &'a String,
     in_which: &'a [String],
-    idx: NodeId,
+    keys: Vec<ItemId>,
 }
 
-impl<'a, 'ast> NodesMatchingSuffix<'a, 'ast> {
+impl<'a, 'ast> ItemsMatchingSuffix<'a, 'ast> {
     /// Returns true only if some suffix of the module path for parent
     /// matches `self.in_which`.
     ///
     /// In other words: let `[x_0,x_1,...,x_k]` be `self.in_which`;
     /// returns true if parent's path ends with the suffix
     /// `x_0::x_1::...::x_k`.
-    fn suffix_matches(&self, parent: NodeId) -> bool {
+    fn suffix_matches(&self, parent: ItemId) -> bool {
         let mut cursor = parent;
         for part in self.in_which.iter().rev() {
             let (mod_id, mod_name) = match find_first_mod_parent(self.map, cursor) {
@@ -620,7 +648,7 @@ impl<'a, 'ast> NodesMatchingSuffix<'a, 'ast> {
             if &part[..] != mod_name.as_str() {
                 return false;
             }
-            cursor = self.map.get_parent(mod_id);
+            cursor = self.map.get_item_parent(mod_id);
         }
         return true;
 
@@ -630,7 +658,7 @@ impl<'a, 'ast> NodesMatchingSuffix<'a, 'ast> {
         // If `id` itself is a mod named `m` with parent `p`, then
         // returns `Some(id, m, p)`.  If `id` has no mod in its parent
         // chain, then returns `None`.
-        fn find_first_mod_parent<'a>(map: &'a Map, mut id: NodeId) -> Option<(NodeId, Name)> {
+        fn find_first_mod_parent<'a>(map: &'a Map, mut id: ItemId) -> Option<(ItemId, Name)> {
             loop {
                 match map.find_item(id) {
                     None => return None,
@@ -638,7 +666,7 @@ impl<'a, 'ast> NodesMatchingSuffix<'a, 'ast> {
                         return Some((id, item.ident.name)),
                     _ => {}
                 }
-                let parent = map.get_parent(id);
+                let parent = map.get_item_parent(id);
                 if parent == id { return None }
                 id = parent;
             }
@@ -654,23 +682,22 @@ impl<'a, 'ast> NodesMatchingSuffix<'a, 'ast> {
 
     // We are looking at some node `n` with a given name and parent
     // id; do their names match what I am seeking?
-    fn matches_names(&self, parent_of_n: NodeId, name: Name) -> bool {
+    fn matches_names(&self, parent_of_n: ItemId, name: Name) -> bool {
         name.as_str() == &self.item_name[..] &&
             self.suffix_matches(parent_of_n)
     }
 }
 
-impl<'a, 'ast> Iterator for NodesMatchingSuffix<'a, 'ast> {
-    type Item = NodeId;
+impl<'a, 'ast> Iterator for ItemsMatchingSuffix<'a, 'ast> {
+    type Item = ItemId;
 
-    fn next(&mut self) -> Option<NodeId> {
+    fn next(&mut self) -> Option<ItemId> {
         loop {
-            let idx = self.idx;
-            if idx as usize >= self.map.entry_count() {
-                return None;
-            }
-            self.idx += 1;
-            let name = match self.map.find_item_entry(idx) {
+            let id = match self.keys.pop() {
+                Some(id) => id,
+                None => { return None; }
+            };
+            let name = match self.map.find_item_entry(id) {
                 Some(ItemMapEntry::Item(_, n))       => n.name(),
                 Some(ItemMapEntry::ForeignItem(_, n))=> n.name(),
                 Some(ItemMapEntry::TraitItem(_, n))  => n.name(),
@@ -678,8 +705,8 @@ impl<'a, 'ast> Iterator for NodesMatchingSuffix<'a, 'ast> {
                 Some(ItemMapEntry::Variant(_, n))    => n.name(),
                 _ => continue,
             };
-            if self.matches_names(self.map.get_parent(idx), name) {
-                return Some(idx)
+            if self.matches_names(self.map.get_item_parent(id), name) {
+                return Some(id)
             }
         }
     }
@@ -724,187 +751,6 @@ impl<F: FoldOps> Folder for IdAndSpanUpdater<F> {
     }
 }
 
-/// A Visitor that walks over an AST and collects Node's into an AST Map.
-struct NodeCollector<'ast> {
-    map: Vec<MapEntry<'ast>>,
-    parent_node: NodeId,
-}
-
-impl<'ast> NodeCollector<'ast> {
-    fn insert_entry(&mut self, id: NodeId, entry: MapEntry<'ast>) {
-        debug!("ast_map: {:?} => {:?}", id, entry);
-        let len = self.map.len();
-        if id as usize >= len {
-            let empty = MapEntry { parent_node: DUMMY_NODE_ID, kind: MapEntryKind::NotPresent };
-            self.map.extend(repeat(empty).take(id as usize - len + 1));
-        }
-        self.map[id as usize] = entry;
-    }
-
-    fn insert(&mut self, id: NodeId, node: Node<'ast>) {
-        let entry = MapEntry::from_node(self.parent_node, node);
-        self.insert_entry(id, entry);
-    }
-
-    fn visit_fn_decl(&mut self, decl: &'ast FnDecl) {
-        for a in &decl.inputs {
-            self.insert(a.id, NodeArg(&*a.pat));
-        }
-    }
-}
-
-impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
-    fn visit_item(&mut self, i: &'ast Item) {
-        self.insert_item(i.id, ItemNode::Item(i));
-
-        let parent_node = self.parent_node;
-        self.parent_node = i.id;
-
-        match i.node {
-            ItemImpl(_, _, _, _, _, ref impl_items) => {
-                for ii in impl_items {
-                    self.insert_item(ii.id, ItemNode::ImplItem(ii));
-                }
-            }
-            ItemEnum(ref enum_definition, _) => {
-                for v in &enum_definition.variants {
-                    self.insert(v.node.id, ItemNode::Variant(&**v));
-                }
-            }
-            ItemForeignMod(ref nm) => {
-                for nitem in &nm.items {
-                    self.insert(nitem.id, ItemNode::ForeignItem(&**nitem));
-                }
-            }
-            ItemStruct(ref struct_def, _) => {
-                // If this is a tuple-like struct, register the constructor.
-                match struct_def.ctor_id {
-                    Some(ctor_id) => {
-                        self.insert(ctor_id, ItemNode::StructCtor(&**struct_def));
-                    }
-                    None => {}
-                }
-            }
-            ItemTrait(_, _, ref bounds, ref trait_items) => {
-                for b in bounds.iter() {
-                    if let TraitTyParamBound(ref t, TraitBoundModifier::None) = *b {
-                        self.insert(t.trait_ref.ref_id, ItemNode::Item(i));
-                    }
-                }
-
-                for ti in trait_items {
-                    self.insert(ti.id, ItemNode::TraitItem(ti));
-                }
-            }
-            ItemUse(ref view_path) => {
-                match view_path.node {
-                    ViewPathList(_, ref paths) => {
-                        for path in paths {
-                            self.insert(path.node.id(), ItemNode::Item(i));
-                        }
-                    }
-                    _ => ()
-                }
-            }
-            _ => {}
-        }
-        visit::walk_item(self, i);
-        self.parent_node = parent_node;
-    }
-
-    fn visit_trait_item(&mut self, ti: &'ast TraitItem) {
-        let parent_node = self.parent_node;
-        self.parent_node = ti.id;
-        visit::walk_trait_item(self, ti);
-        self.parent_node = parent_node;
-    }
-
-    fn visit_impl_item(&mut self, ii: &'ast ImplItem) {
-        let parent_node = self.parent_node;
-        self.parent_node = ii.id;
-
-        visit::walk_impl_item(self, ii);
-
-        self.parent_node = parent_node;
-    }
-
-    fn visit_pat(&mut self, pat: &'ast Pat) {
-        self.insert(pat.id, match pat.node {
-            // Note: this is at least *potentially* a pattern...
-            PatIdent(..) => NodeLocal(pat),
-            _ => NodePat(pat)
-        });
-
-        let parent_node = self.parent_node;
-        self.parent_node = pat.id;
-        visit::walk_pat(self, pat);
-        self.parent_node = parent_node;
-    }
-
-    fn visit_expr(&mut self, expr: &'ast Expr) {
-        self.insert(expr.id, NodeExpr(expr));
-        let parent_node = self.parent_node;
-        self.parent_node = expr.id;
-
-        match expr.node {
-            ExprClosure(item_id, _, _, _) => {
-                self.insert_item(item_id, Item::ClosureItem(expr));
-            }
-            _ => { }
-        }
-
-        visit::walk_expr(self, expr);
-        self.parent_node = parent_node;
-    }
-
-    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
-        let id = ast_util::stmt_id(stmt);
-        self.insert(id, NodeStmt(stmt));
-        let parent_node = self.parent_node;
-        self.parent_node = id;
-        visit::walk_stmt(self, stmt);
-        self.parent_node = parent_node;
-    }
-
-    fn visit_fn(&mut self, fk: visit::FnKind<'ast>, fd: &'ast FnDecl,
-                b: &'ast Block, s: Span, id: ItemId) {
-        let parent_node = self.parent_node;
-        self.parent_node = id;
-        self.visit_fn_decl(fd);
-        visit::walk_fn(self, fk, fd, b, s);
-        self.parent_node = parent_node;
-    }
-
-    fn visit_ty(&mut self, ty: &'ast Ty) {
-        let parent_node = self.parent_node;
-        self.parent_node = ty.id;
-        match ty.node {
-            TyBareFn(ref fd) => {
-                self.visit_fn_decl(&*fd.decl);
-            }
-            _ => {}
-        }
-        visit::walk_ty(self, ty);
-        self.parent_node = parent_node;
-    }
-
-    fn visit_block(&mut self, block: &'ast Block) {
-        self.insert(block.id, NodeBlock(block));
-        let parent_node = self.parent_node;
-        self.parent_node = block.id;
-        visit::walk_block(self, block);
-        self.parent_node = parent_node;
-    }
-
-    fn visit_lifetime_ref(&mut self, lifetime: &'ast Lifetime) {
-        self.insert(lifetime.id, NodeLifetime(lifetime));
-    }
-
-    fn visit_lifetime_def(&mut self, def: &'ast LifetimeDef) {
-        self.visit_lifetime_ref(&def.lifetime);
-    }
-}
-
 pub fn map_crate<'ast, F: FoldOps>(forest: &'ast mut Forest, fold_ops: F) -> Map<'ast> {
     // Replace the crate with an empty one to take it out.
     let krate = mem::replace(&mut forest.krate, Crate {
@@ -919,14 +765,9 @@ pub fn map_crate<'ast, F: FoldOps>(forest: &'ast mut Forest, fold_ops: F) -> Map
     });
     forest.krate = IdAndSpanUpdater { fold_ops: fold_ops }.fold_crate(krate);
 
-    let mut collector = NodeCollector {
-        map: vec![],
-        parent_node: DUMMY_NODE_ID,
-        parent_item: CRATE_ITEM_ID,
-    };
-    collector.insert_item_entry(CRATE_ITEM_ID, ItemMapEntry::RootCrate);
+    let mut collector = collect::NodeCollector::for_krate();
     visit::walk_crate(&mut collector, &forest.krate);
-    let map = collector.map;
+    let (map, item_parent_map, item_map) = collector.take();
 
     if log_enabled!(::log::DEBUG) {
         // This only makes sense for ordered stores; note the
@@ -946,7 +787,9 @@ pub fn map_crate<'ast, F: FoldOps>(forest: &'ast mut Forest, fold_ops: F) -> Map
 
     Map {
         forest: forest,
-        map: RefCell::new(map)
+        map: RefCell::new(map),
+        item_parent_map: RefCell::new(item_parent_map),
+        item_map: RefCell::new(item_map),
     }
 }
 
@@ -977,31 +820,24 @@ pub fn map_decoded_item<'ast, F: FoldOps>(map: &Map<'ast>,
         ii: ii
     });
 
-    let ii_parent_id = fld.new_item_id(DUMMY_NODE_ID);
-    let mut collector = NodeCollector {
-        map: mem::replace(&mut *map.map.borrow_mut(), vec![]),
-        parent_node: DUMMY_NODE_ID,
-        parent_item: ii_parent_id,
-    };
-    collector.insert_item_entry(ii_parent_id, ItemMapEntry::RootInlinedParent(ii_parent));
-    visit::walk_inlined_item(&mut collector, &ii_parent.ii);
+    let the_map = map.map.borrow_mut();
+    let the_item_map = map.item_map.borrow_mut();
+    let the_item_parent_map = map.item_parent_map.borrow_mut();
 
-    // Methods get added to the AST map when their impl is visited.  Since we
-    // don't decode and instantiate the impl, but just the method, we have to
-    // add it to the table now. Likewise with foreign items.
-    match ii_parent.ii {
-        IIItem(_) => {}
-        IITraitItem(_, ref ti) => {
-            collector.insert_item(ti.id, ItemNode::TraitItem(ti));
-        }
-        IIImplItem(_, ref ii) => {
-            collector.insert_item(ii.id, ItemNode::ImplItem(ii));
-        }
-        IIForeign(ref i) => {
-            collector.insert_item(i.id, ItemNode::ForeignItem(i));
-        }
-    }
-    *map.map.borrow_mut() = collector.map;
+    let ii_parent_id = fld.new_item_id(DUMMY_ITEM_ID);
+    let mut collector =
+        collect::NodeCollector::for_inlined_item(
+            ii_parent_id,
+            ii_parent,
+            mem::replace(&mut *the_map, vec![]),
+            mem::replace(&mut *the_item_parent_map, NodeMap()),
+            mem::replace(&mut *the_item_map, FnvHashMap()));
+    visit::walk_inlined_item(&mut collector, &ii_parent.ii);
+    let (map, item_parent_map, item_map) = collector.take();
+    *the_map = map;
+    *the_item_parent_map = item_parent_map;
+    *the_item_map = item_map;
+
     &ii_parent.ii
 }
 
@@ -1018,6 +854,7 @@ impl<'a> NodePrinter for pprust::State<'a> {
             ItemNode::TraitItem(a)   => self.print_trait_item(a),
             ItemNode::ImplItem(a)    => self.print_impl_item(a),
             ItemNode::Variant(a)     => self.print_variant(&*a),
+            ItemNode::ClosureItem(a) => self.print_expr(&*a),
             ItemNode::StructCtor(_)  => panic!("cannot print isolated StructCtor"),
         }
     }
@@ -1039,7 +876,7 @@ impl<'a> NodePrinter for pprust::State<'a> {
 }
 
 fn item_id_to_string(map: &Map, id: ItemId, include_id: bool) -> String {
-    let id_str = format!(" (id={})", id);
+    let id_str = format!(" (id={:?})", id);
     let id_str = if include_id { &id_str[..] } else { "" };
     match map.find_item(id) {
         Some(ItemNode::Item(item)) => {

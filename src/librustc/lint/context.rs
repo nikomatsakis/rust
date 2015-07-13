@@ -489,7 +489,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for Context<'a, 'tcx> {
     }
 
     fn visit_fn(&mut self, fk: FnKind<'v>, decl: &'v ast::FnDecl,
-                body: &'v ast::Block, span: Span, id: ast::NodeId) {
+                body: &'v ast::Block, span: Span, id: ast::ItemId) {
         run_lints!(self, check_fn, fk, decl, body, span, id);
         visit::walk_fn(self, fk, decl, body, span);
     }
@@ -498,7 +498,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for Context<'a, 'tcx> {
                         s: &ast::StructDef,
                         ident: ast::Ident,
                         g: &ast::Generics,
-                        id: ast::NodeId) {
+                        id: ast::ItemId) {
         run_lints!(self, check_struct_def, s, ident, g, id);
         visit::walk_struct_def(self, s);
         run_lints!(self, check_struct_def_post, s, ident, g, id);
@@ -528,7 +528,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for Context<'a, 'tcx> {
         run_lints!(self, check_ident, sp, id);
     }
 
-    fn visit_mod(&mut self, m: &ast::Mod, s: Span, n: ast::NodeId) {
+    fn visit_mod(&mut self, m: &ast::Mod, s: Span, n: ast::ItemId) {
         run_lints!(self, check_mod, m, s, n);
         visit::walk_mod(self, m);
     }
@@ -622,6 +622,8 @@ impl<'a, 'tcx> IdVisitingOperation for Context<'a, 'tcx> {
             }
         }
     }
+
+    fn visit_item_id(&mut self, item_id: ast::ItemId) { }
 }
 
 // This lint pass is defined here because it touches parts of the `Context`

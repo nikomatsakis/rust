@@ -1186,7 +1186,7 @@ impl<'a, 'v> Visitor<'v> for RegionResolutionVisitor<'a> {
     }
 
     fn visit_fn(&mut self, fk: FnKind<'v>, fd: &'v FnDecl,
-                b: &'v Block, s: Span, n: NodeId) {
+                b: &'v Block, s: Span, n: ast::ItemId) {
         resolve_fn(self, fk, fd, b, s, n);
     }
     fn visit_arm(&mut self, a: &Arm) {

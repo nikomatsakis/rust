@@ -213,9 +213,8 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
 }
 
 impl<'a, 'tcx, 'v> Visitor<'v> for MarkSymbolVisitor<'a, 'tcx> {
-
     fn visit_struct_def(&mut self, def: &ast::StructDef, _: ast::Ident,
-                        _: &ast::Generics, _: ast::NodeId) {
+                        _: &ast::Generics, _: ast::ItemId) {
         let has_extern_repr = self.struct_has_extern_repr;
         let inherited_pub_visibility = self.inherited_pub_visibility;
         let live_fields = def.fields.iter().filter(|f| {

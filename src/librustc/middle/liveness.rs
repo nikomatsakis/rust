@@ -182,7 +182,7 @@ fn live_node_kind_to_string(lnk: LiveNodeKind, cx: &ty::ctxt) -> String {
 
 impl<'a, 'tcx, 'v> Visitor<'v> for IrMaps<'a, 'tcx> {
     fn visit_fn(&mut self, fk: FnKind<'v>, fd: &'v ast::FnDecl,
-                b: &'v ast::Block, s: Span, id: NodeId) {
+                b: &'v ast::Block, s: Span, id: ast::ItemId) {
         visit_fn(self, fk, fd, b, s, id);
     }
     fn visit_local(&mut self, l: &ast::Local) { visit_local(self, l); }
@@ -350,7 +350,7 @@ impl<'a, 'tcx> IrMaps<'a, 'tcx> {
 
 impl<'a, 'tcx, 'v> Visitor<'v> for Liveness<'a, 'tcx> {
     fn visit_fn(&mut self, fk: FnKind<'v>, fd: &'v ast::FnDecl,
-                b: &'v ast::Block, s: Span, n: NodeId) {
+                b: &'v ast::Block, s: Span, n: ast::ItemId) {
         check_fn(self, fk, fd, b, s, n);
     }
     fn visit_local(&mut self, l: &ast::Local) {

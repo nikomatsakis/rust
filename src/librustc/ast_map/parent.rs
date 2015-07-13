@@ -20,7 +20,7 @@ pub struct ParentNodeWalker<'map, 'ast:'map> {
 }
 
 impl<'map, 'ast> ParentNodeWalker<'map, 'ast> {
-    fn new(map: &'map Map<'ast>, id: ast::NodeId) {
+    fn new(map: &'map Map<'ast>, id: ast::NodeId) -> ParentNodeWalker<'map, 'ast> {
         ParentNodeWalker {
             map: map,
             id: id,
@@ -42,10 +42,13 @@ impl<'map, 'ast> Iterator for ParentNodeWalker<'map, 'ast> {
         } else {
             let id = self.id;
             let map = self.map.map.borrow();
-            self.id = map[id].parent_node;
-            debug_assert!(match map[id].kind { MapEntryKind::NotPresent => false, _ => true });
+            self.id = map[id as usize].parent_node;
+            debug_assert!(match map[id as usize].kind {
+                MapEntryKind::NotPresent => false,
+                _ => true
+            });
             if self.id == ast::DUMMY_NODE_ID {
-                self.item_id = self.map.get(&id).cloned();
+                self.item_id = self.map.item_parent_map.borrow().get(&id).cloned();
             }
             Some(id)
         }

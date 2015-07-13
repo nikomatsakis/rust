@@ -109,7 +109,7 @@ impl<'a, 'tcx> CheckCrateVisitor<'a, 'tcx> {
         r
     }
 
-    fn with_euv<'b, F, R>(&'b mut self, item_id: Option<ast::NodeId>, f: F) -> R where
+    fn with_euv<'b, F, R>(&'b mut self, item_id: Option<ast::ItemId>, f: F) -> R where
         F: for<'t> FnOnce(&mut euv::ExprUseVisitor<'b, 't, 'b, 'tcx>) -> R,
     {
         let param_env = match item_id {
@@ -143,7 +143,7 @@ impl<'a, 'tcx> CheckCrateVisitor<'a, 'tcx> {
                fd: &ast::FnDecl,
                b: &ast::Block,
                s: Span,
-               fn_id: ast::NodeId)
+               fn_id: ast::ItemId)
                -> ConstQualif {
         match self.tcx.const_qualif_map.borrow_mut().entry(fn_id) {
             Entry::Occupied(entry) => return *entry.get(),
@@ -353,7 +353,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for CheckCrateVisitor<'a, 'tcx> {
                 fd: &'v ast::FnDecl,
                 b: &'v ast::Block,
                 s: Span,
-                fn_id: ast::NodeId) {
+                fn_id: ast::ItemId) {
         self.fn_like(fk, fd, b, s, fn_id);
     }
 

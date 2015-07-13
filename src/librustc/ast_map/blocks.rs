@@ -86,20 +86,16 @@ pub enum Code<'a> {
 }
 
 impl<'a> Code<'a> {
-    pub fn id(&self) -> ast::ItemId {
+    pub fn id(&self) -> ast_map::ItemOrBlockId {
         match *self {
-            FnLikeCode(node) => node.id(),
-            BlockCode(block) => block.id,
+            FnLikeCode(node) => ast_map::ItemOrBlockId::Item(node.id()),
+            BlockCode(block) => ast_map::ItemOrBlockId::Block(block.id),
         }
     }
 
     /// Attempts to construct a Code from presumed FnLike or Block node input.
-    pub fn from_node(node: ItemNode) -> Option<Code> {
-        if let ast_map::ItemNode::Block(block) = node {
-            Some(BlockCode(block))
-        } else {
-            FnLikeItemNode::from_node(node).map(|fn_like| FnLikeCode(fn_like))
-        }
+    pub fn from_item_node(node: ItemNode) -> Option<Code> {
+        FnLikeItemNode::from_node(node).map(|fn_like| FnLikeCode(fn_like))
     }
 }
 
@@ -190,8 +186,8 @@ impl<'a> FnLikeItemNode<'a> {
         let item = |p: ItemFnParts<'a>| -> visit::FnKind<'a> {
             visit::FkItemFn(p.ident, p.generics, p.unsafety, p.constness, p.abi, p.vis)
         };
-        let closure = |_: ClosureParts| {
-            visit::FkFnBlock
+        let closure = |cp: ClosureParts| {
+            visit::FkFnBlock(cp.id)
         };
         let method = |_, ident, sig: &'a ast::MethodSig, vis, _, _| {
             visit::FkMethod(ident, sig, vis)
@@ -243,9 +239,9 @@ impl<'a> FnLikeItemNode<'a> {
                     }
                 }
             }
-            ItemNode::ClosureExpr(e) => match e.node {
-                ast::ExprClosure(_, ref decl, ref block) =>
-                    closure(ClosureParts::new(&**decl, &**block, e.id, e.span)),
+            ItemNode::ClosureItem(e) => match e.node {
+                ast::ExprClosure(item_id, _, ref decl, ref block) =>
+                    closure(ClosureParts::new(&**decl, &**block, item_id, e.span)),
                 _ => panic!("expr FnLikeItemNode that is not fn-like"),
             },
             _ => panic!("other FnLikeItemNode that is not fn-like"),

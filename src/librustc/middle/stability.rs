@@ -188,7 +188,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for Annotator<'a, 'tcx> {
     }
 
     fn visit_fn(&mut self, _: FnKind<'v>, _: &'v FnDecl,
-                _: &'v Block, _: Span, _: NodeId) {
+                _: &'v Block, _: Span, _: ast::ItemId) {
         // Items defined in a function body have no reason to have
         // a stability attribute, so we don't recurse.
     }

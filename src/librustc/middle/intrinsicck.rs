@@ -236,7 +236,7 @@ impl<'a, 'tcx> IntrinsicCheckingVisitor<'a, 'tcx> {
 
 impl<'a, 'tcx, 'v> Visitor<'v> for IntrinsicCheckingVisitor<'a, 'tcx> {
     fn visit_fn(&mut self, fk: visit::FnKind<'v>, fd: &'v ast::FnDecl,
-                b: &'v ast::Block, s: Span, id: ast::NodeId) {
+                b: &'v ast::Block, s: Span, id: ast::ItemId) {
         match fk {
             visit::FkItemFn(..) | visit::FkMethod(..) => {
                 let param_env = ty::ParameterEnvironment::for_item(self.tcx, id);
