@@ -1647,11 +1647,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                            substs: &Substs<'tcx>,
                                            expr: &ast::Expr)
     {
-//TODO        for &r in substs.regions() {
-//TODO            let origin = infer::ParameterInScope(expr_span);
-//TODO            self.mk_subr(origin, default_bound, r);
-//TODO        }
-
         for &ty in &substs.types {
             self.register_wf_obligation(ty, expr.span);
         }

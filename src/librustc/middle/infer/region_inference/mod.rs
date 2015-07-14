@@ -1513,7 +1513,8 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
                                                  lower_bound.region,
                                                  upper_bound.region) {
                     let origin = (*self.var_origins.borrow())[node_idx.index as usize].clone();
-                    debug!("region inference error at {:?} for {:?}: SubSupConflict sub: {:?} sup: {:?}",
+                    debug!("region inference error at {:?} for {:?}: \
+                            SubSupConflict sub: {:?} sup: {:?}",
                            origin, node_idx, lower_bound.region, upper_bound.region);
                     errors.push(SubSupConflict(
                         origin,
@@ -1562,7 +1563,8 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
                     Ok(_) => {}
                     Err(_) => {
                         let origin = (*self.var_origins.borrow())[node_idx.index as usize].clone();
-                        debug!("region inference error at {:?} for {:?}: SupSupConflict sub: {:?} sup: {:?}",
+                        debug!("region inference error at {:?} for {:?}: \
+                                SupSupConflict sub: {:?} sup: {:?}",
                                origin, node_idx, upper_bound_1.region, upper_bound_2.region);
                         errors.push(SupSupConflict(
                             origin,

@@ -829,7 +829,20 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
                     sub,
                     "");
             }
-            infer::DataBorrowed(ty, span) | // TODO
+            infer::DataBorrowed(ty, span) => {
+                self.tcx.sess.span_err(
+                    span,
+                    &format!("data of type `{}` borrowed for too long",
+                             self.ty_to_string(ty)));
+                self.tcx.note_and_explain_region(
+                    "the data is borrowed for ",
+                    sub,
+                    "");
+                self.tcx.note_and_explain_region(
+                    "but its type is only valid for ",
+                    sup,
+                    "");
+            }
             infer::ReferenceOutlivesReferent(ty, span) => {
                 self.tcx.sess.span_err(
                     span,
