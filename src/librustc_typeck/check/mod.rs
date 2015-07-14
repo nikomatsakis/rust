@@ -130,7 +130,7 @@ pub mod coercion;
 pub mod demand;
 pub mod method;
 mod upvar;
-pub mod wf;
+mod wfcheck;
 mod cast;
 mod closure;
 mod callee;
@@ -373,7 +373,7 @@ impl<'a, 'tcx> Visitor<'tcx> for CheckItemBodiesVisitor<'a, 'tcx> {
 
 pub fn check_item_types(ccx: &CrateCtxt) {
     let krate = ccx.tcx.map.krate();
-    let mut visit = wf::CheckTypeWellFormedVisitor::new(ccx);
+    let mut visit = wfcheck::CheckTypeWellFormedVisitor::new(ccx);
     visit::walk_crate(&mut visit, krate);
 
     // If types are not well-formed, it leads to all manner of errors
@@ -1510,9 +1510,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     pub fn to_ty(&self, ast_t: &ast::Ty) -> Ty<'tcx> {
         let t = ast_ty_to_ty(self, self, ast_t);
 
-        let mut bounds_checker = wf::BoundsChecker::new(self,
-                                                        self.body_id,
-                                                        None);
+        let mut bounds_checker = wfcheck::BoundsChecker::new(self, self.body_id, None);
         bounds_checker.check_ty(t, ast_t.span);
 
         t
