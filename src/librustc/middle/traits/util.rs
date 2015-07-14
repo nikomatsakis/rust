@@ -59,6 +59,9 @@ impl<'a,'tcx> PredicateSet<'a,'tcx> {
 
             ty::Predicate::WellFormed(data) =>
                 ty::Predicate::WellFormed(data),
+
+            ty::Predicate::ObjectSafe(data) =>
+                ty::Predicate::ObjectSafe(data),
         };
         self.set.insert(normalized_pred)
     }
@@ -142,6 +145,10 @@ impl<'cx, 'tcx> Elaborator<'cx, 'tcx> {
             ty::Predicate::WellFormed(..) => {
                 // Currently, we do not elaborate WF predicates,
                 // although we easily could.
+            }
+            ty::Predicate::ObjectSafe(..) => {
+                // Currently, we do not elaborate object-safe
+                // predicates.
             }
             ty::Predicate::Equate(..) => {
                 // Currently, we do not "elaborate" predicates like

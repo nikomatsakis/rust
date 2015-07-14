@@ -21,6 +21,7 @@ use util::nodemap::NodeMap;
 use super::CodeAmbiguity;
 use super::CodeProjectionError;
 use super::CodeSelectionError;
+use super::is_object_safe;
 use super::FulfillmentError;
 use super::ObligationCause;
 use super::PredicateObligation;
@@ -472,6 +473,15 @@ fn process_predicate<'a,'tcx>(selcx: &mut SelectionContext<'a,'tcx>,
                     true
                 }
             }
+        }
+
+        ty::Predicate::ObjectSafe(trait_def_id) => {
+            if !is_object_safe(selcx.tcx(), trait_def_id) {
+                errors.push(FulfillmentError::new(
+                    obligation.clone(),
+                    CodeSelectionError(Unimplemented)));
+            }
+            true
         }
 
         ty::Predicate::WellFormed(ty) => {

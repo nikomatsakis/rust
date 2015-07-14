@@ -10,6 +10,7 @@
 
 use middle::infer::InferCtxt;
 use middle::outlives::{self, Component};
+use middle::subst::Substs;
 use middle::traits;
 use middle::ty::{self, RegionEscape, ToPredicate, Ty};
 use middle::ty_fold::TypeFoldable;
@@ -35,6 +36,19 @@ pub fn obligations<'a,'tcx>(infcx: &InferCtxt<'a, 'tcx>,
         Some(wf.out)
     } else {
         None // no progress made, return None
+    }
+}
+
+pub fn trait_where_clause_obligations<'a,'tcx>(infcx: &InferCtxt<'a, 'tcx>,
+                                               body_id: ast::NodeId,
+                                               trait_ref: ty::TraitRef<'tcx>,
+                                               span: Span)
+                                               -> Vec<traits::PredicateObligation<'tcx>>
+{
+    let mut wf = WfPredicates { infcx: infcx, body_id: body_id, span: span, out: vec![] };
+    match wf.nominal_obligations(trait_ref.def_id, trait_ref.substs) {
+        Ok(obligations) => obligations,
+        Err(ErrorReported) => vec![],
     }
 }
 
@@ -85,7 +99,8 @@ pub fn implied_bounds<'a,'tcx>(
                 ty::Predicate::Trait(..) |
                 ty::Predicate::Equate(..) |
                 ty::Predicate::Projection(..) |
-                ty::Predicate::WellFormed(..) =>
+                ty::Predicate::WellFormed(..) |
+                ty::Predicate::ObjectSafe(..) =>
                     vec![],
 
                 ty::Predicate::RegionOutlives(ref data) => {
@@ -174,34 +189,46 @@ impl<'a,'tcx> WfPredicates<'a,'tcx> {
                     // WfScalar, WfParameter, etc
                 }
 
-                ty::TyArray(..) |
-                ty::TySlice(..) |
+                ty::TySlice(subty) |
+                ty::TyArray(subty, _) => {
+                    let cause =
+                        traits::ObligationCause::new(self.span,
+                                                     self.body_id,
+                                                     traits::SliceOrArrayElem);
+                    match traits::trait_ref_for_builtin_bound(self.infcx.tcx,
+                                                              ty::BoundSized,
+                                                              subty) {
+                        Ok(trait_ref) => {
+                            self.out.push(traits::Obligation::new(cause, trait_ref.to_predicate()));
+                        }
+                        Err(ErrorReported) => { }
+                    }
+                }
+
                 ty::TyBox(_) |
                 ty::TyTuple(_) |
-                ty::TyRawPtr(_) |
-                ty::TyProjection(_) => {
+                ty::TyRawPtr(_) => {
                     // simple cases that are WF if their type args are WF
+                }
+
+                ty::TyProjection(data) => {
+                    // a projection is well-formed if (a) its
+                    // components are WF and (b) the trait-ref holds.
+                    let predicate = data.trait_ref.to_predicate();
+                    let cause =
+                        traits::ObligationCause::new(self.span,
+                                                     self.body_id,
+                                                     traits::ProjectionWf(data));
+                    self.out.push(traits::Obligation::new(cause, predicate));
                 }
 
                 ty::TyEnum(def_id, substs) |
                 ty::TyStruct(def_id, substs) => {
                     // WfNominalType
-                    let predicates =
-                        self.infcx.tcx.lookup_predicates(def_id)
-                                      .instantiate(self.infcx.tcx, substs);
-                    let predicates = match self.fully_normalize(&predicates) {
-                        Ok(predicates) => predicates,
+                    match self.nominal_obligations(def_id, substs) {
+                        Ok(obligations) => { self.out.extend(obligations); }
                         Err(ErrorReported) => { return true; }
-                    };
-                    let cause = traits::ObligationCause::new(self.span,
-                                                             self.body_id,
-                                                             traits::ItemObligation(def_id));
-                    let obligations =
-                        predicates.predicates
-                                  .into_iter()
-                                  .map(|pred| traits::Obligation::new(cause.clone(),
-                                                                      pred));
-                    self.out.extend(obligations);
+                    }
                 }
 
                 ty::TyRef(r, mt) => {
@@ -230,6 +257,9 @@ impl<'a,'tcx> WfPredicates<'a,'tcx> {
                     //
                     // Here, we defer WF checking due to higher-ranked
                     // regions. This is perhaps not ideal.
+
+                    // TODO the RFC says we should recurse and just ignore trait
+                    // bounds that involve HR stuff
                     subtys.skip_current_subtree();
                 }
 
@@ -239,6 +269,19 @@ impl<'a,'tcx> WfPredicates<'a,'tcx> {
                     // Here, we defer WF checking due to higher-ranked
                     // regions. This is perhaps not ideal.
                     self.from_object_ty(ty, data);
+
+                    // TODO the RFC says we should recurse and just ignore trait
+                    // bounds that involve HR stuff
+
+                    // TODO RFC also considers adding trait obligations that don't
+                    // refer to Self and checking those
+
+                    self.out.push(
+                        traits::Obligation::misc(
+                            self.span,
+                            self.body_id,
+                            ty::Predicate::ObjectSafe(data.principal_def_id())));
+
                     subtys.skip_current_subtree();
                 }
 
@@ -277,6 +320,24 @@ impl<'a,'tcx> WfPredicates<'a,'tcx> {
 
         // if we made it through that loop above, we made progress!
         return true;
+    }
+
+    fn nominal_obligations(&mut self,
+                           def_id: ast::DefId,
+                           substs: &Substs<'tcx>)
+                           -> Result<Vec<traits::PredicateObligation<'tcx>>, ErrorReported>
+    {
+        let predicates =
+            self.infcx.tcx.lookup_predicates(def_id)
+                          .instantiate(self.infcx.tcx, substs);
+        let predicates = try!(self.fully_normalize(&predicates));
+        let cause = traits::ObligationCause::new(self.span,
+                                                 self.body_id,
+                                                 traits::ItemObligation(def_id));
+        Ok(predicates.predicates
+                     .into_iter()
+                     .map(|pred| traits::Obligation::new(cause.clone(), pred))
+                     .collect())
     }
 
     fn from_object_ty(&mut self, ty: Ty<'tcx>, data: &ty::TraitTy<'tcx>) {

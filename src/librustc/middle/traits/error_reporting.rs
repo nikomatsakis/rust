@@ -30,6 +30,7 @@ use middle::ty_fold::TypeFoldable;
 use std::collections::HashMap;
 use std::fmt;
 use syntax::codemap::{DUMMY_SP, Span};
+use syntax::ast;
 use syntax::attr::{AttributeMethods, AttrMetaMethods};
 
 pub fn report_fulfillment_errors<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
@@ -180,6 +181,9 @@ pub fn report_selection_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
     match *error {
         SelectionError::Unimplemented => {
             match &obligation.cause.code {
+                &ObligationCauseCode::RFC1214 => {
+                    report_rfc1214_error(infcx, obligation, error);
+                }
                 &ObligationCauseCode::CompareImplMethodObligation => {
                     span_err!(infcx.tcx.sess, obligation.cause.span, E0276,
                             "the requirement `{}` appears on the impl \
@@ -238,6 +242,12 @@ pub fn report_selection_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
                                       predicate);
                         }
 
+                        ty::Predicate::ObjectSafe(trait_def_id) => {
+                            report_object_safety_error(infcx.tcx,
+                                                       obligation.cause.span,
+                                                       trait_def_id)
+                        }
+
                         ty::Predicate::WellFormed(ty) => {
                             // WF predicates cannot themselves make
                             // errors. They can only block due to
@@ -264,55 +274,161 @@ pub fn report_selection_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
                         expected_trait_ref,
                         actual_trait_ref,
                         e);
-                    note_obligation_cause(infcx, obligation);
+                note_obligation_cause(infcx, obligation);
             }
         }
 
         TraitNotObjectSafe(did) => {
-            span_err!(infcx.tcx.sess, obligation.cause.span, E0038,
-                "cannot convert to a trait object because trait `{}` is not object-safe",
-                infcx.tcx.item_path_str(did));
+            report_object_safety_error(infcx.tcx, obligation.cause.span, did);
+        }
+    }
+}
 
-            for violation in object_safety_violations(infcx.tcx, did) {
-                match violation {
-                    ObjectSafetyViolation::SizedSelf => {
-                        infcx.tcx.sess.span_note(
-                            obligation.cause.span,
-                            "the trait cannot require that `Self : Sized`");
-                    }
+fn report_rfc1214_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
+                                  obligation: &PredicateObligation<'tcx>,
+                                  error: &SelectionError<'tcx>)
+{
+    match obligation.predicate {
+        ty::Predicate::Trait(ref trait_predicate) => {
+            let trait_predicate =
+                infcx.resolve_type_vars_if_possible(trait_predicate);
 
-                    ObjectSafetyViolation::SupertraitSelf => {
-                        infcx.tcx.sess.span_note(
-                            obligation.cause.span,
-                            "the trait cannot use `Self` as a type parameter \
-                            in the supertrait listing");
-                    }
+            if !infcx.tcx.sess.has_errors() ||
+                !trait_predicate.references_error() {
+                    let trait_ref = trait_predicate.to_poly_trait_ref();
 
-                    ObjectSafetyViolation::Method(method,
-                            MethodViolationCode::StaticMethod) => {
-                        infcx.tcx.sess.span_note(
-                            obligation.cause.span,
-                            &format!("method `{}` has no receiver",
-                                    method.name));
-                    }
+                    infcx.tcx.sess.span_warn(
+                        obliation.cause.span,
+                        &format!("the trait `{}` is not implemented for the type `{}`",
+                                 trait_ref,
+                                 trait_ref.self_ty()));
 
-                    ObjectSafetyViolation::Method(method,
-                            MethodViolationCode::ReferencesSelf) => {
-                        infcx.tcx.sess.span_note(
-                            obligation.cause.span,
-                            &format!("method `{}` references the `Self` type \
-                                    in its arguments or return type",
-                                    method.name));
-                    }
-
-                    ObjectSafetyViolation::Method(method,
-                            MethodViolationCode::Generic) => {
-                        infcx.tcx.sess.span_note(
-                            obligation.cause.span,
-                            &format!("method `{}` has generic type parameters",
-                                    method.name));
+                    // Check if it has a custom "#[rustc_on_unimplemented]"
+                    // error message, report with that message if it does
+                    let custom_note = report_on_unimplemented(infcx, &trait_ref.0,
+                                                              obligation.cause.span);
+                    if let Some(s) = custom_note {
+                        infcx.tcx.sess.span_note(obligation.cause.span, &s);
                     }
                 }
+        }
+
+        ty::Predicate::Equate(ref predicate) => {
+            let predicate = infcx.resolve_type_vars_if_possible(predicate);
+            let err = infcx.equality_predicate(obligation.cause.span,
+                                               &predicate).err().unwrap();
+            infcx.tcx.sess.span_warn(
+                obligation.cause.span,
+                &format!("the requirement `{}` is not satisfied (`{}`)",
+                         predicate, err));
+        }
+
+        ty::Predicate::RegionOutlives(ref predicate) => {
+            let predicate = infcx.resolve_type_vars_if_possible(predicate);
+            let err = infcx.region_outlives_predicate(obligation.cause.span,
+                                                      &predicate).err().unwrap();
+            infcx.tcx.sess.span_warn(
+                obligation.cause.span,
+                &format!("the requirement `{}` is not satisfied (`{}`)",
+                         predicate, err));
+        }
+
+        ty::Predicate::Projection(..) | ty::Predicate::TypeOutlives(..) => {
+            let predicate =
+                infcx.resolve_type_vars_if_possible(&obligation.predicate);
+            infcx.tcx.sess.span_warn(
+                obligation.cause.span,
+                &format!("the requirement `{}` is not satisfied",
+                         predicate));
+        }
+
+        ty::Predicate::ObjectSafe(trait_def_id) => {
+            report_object_safety_warning(infcx.tcx,
+                                         obligation.cause.span,
+                                         trait_def_id)
+        }
+
+        ty::Predicate::WellFormed(ty) => {
+            // WF predicates cannot themselves make
+            // errors. They can only block due to
+            // ambiguity; otherwise, they always
+            // degenerate into other obligations
+            // (which may fail).
+            infcx.tcx.sess.span_bug(
+                obligation.cause.span,
+                &format!("WF predicate not satisfied for {:?}", ty));
+        }
+    }
+}
+
+pub fn report_object_safety_error<'tcx>(tcx: &ty::ctxt<'tcx>,
+                                        span: Span,
+                                        trait_def_id: ast::DefId,
+{
+    report_object_safety_error_helper(tcx, span, trait_def_id, false);
+}
+
+fn report_object_safety_warning<'tcx>(tcx: &ty::ctxt<'tcx>,
+                                      span: Span,
+                                      trait_def_id: ast::DefId,
+{
+    report_object_safety_error_helper(tcx, span, trait_def_id, true);
+}
+
+fn report_object_safety_error_helper<'tcx>(tcx: &ty::ctxt<'tcx>,
+                                           span: Span,
+                                           trait_def_id: ast::DefId,
+                                           warning: bool)
+{
+    if !warning {
+        span_err!(tcx.sess, span, E0038,
+                  "the trait `{}` cannot be made into an object",
+                  tcx.item_path_str(trait_def_id));
+    } else {
+        tcx.sess.span_warn(
+            span,
+            &format!("the trait `{}` cannot be made into an object",
+                     tcx.item_path_str(trait_def_id)));
+    }
+
+    for violation in object_safety_violations(tcx, trait_def_id) {
+        match violation {
+            ObjectSafetyViolation::SizedSelf => {
+                tcx.sess.span_note(
+                    span,
+                    "the trait cannot require that `Self : Sized`");
+            }
+
+            ObjectSafetyViolation::SupertraitSelf => {
+                tcx.sess.span_note(
+                    span,
+                    "the trait cannot use `Self` as a type parameter \
+                     in the supertrait listing");
+            }
+
+            ObjectSafetyViolation::Method(method,
+                                          MethodViolationCode::StaticMethod) => {
+                tcx.sess.span_note(
+                    span,
+                    &format!("method `{}` has no receiver",
+                             method.name));
+            }
+
+            ObjectSafetyViolation::Method(method,
+                                          MethodViolationCode::ReferencesSelf) => {
+                tcx.sess.span_note(
+                    span,
+                    &format!("method `{}` references the `Self` type \
+                              in its arguments or return type",
+                             method.name));
+            }
+
+            ObjectSafetyViolation::Method(method,
+                                          MethodViolationCode::Generic) => {
+                tcx.sess.span_note(
+                    span,
+                    &format!("method `{}` has generic type parameters",
+                             method.name));
             }
         }
     }
@@ -426,6 +542,24 @@ fn note_obligation_cause_code<'a, 'tcx, T>(infcx: &InferCtxt<'a, 'tcx>,
     let tcx = infcx.tcx;
     match *cause_code {
         ObligationCauseCode::MiscObligation => { }
+        ObligationCauseCode::RFC1214 => {
+            tcx.sess.span_note(
+                cause_span,
+                &format!("this warning results from recent bug fixes and clarifications; \
+                          it will become a HARD ERROR in the next release. \
+                          See RFC 1214 for details."));
+        }
+        ObligationCauseCode::SliceOrArrayElem => {
+            tcx.sess.span_note(
+                cause_span,
+                &format!("slice and array elements must have `Sized` type"));
+        }
+        ObligationCauseCode::ProjectionWf(data) => {
+            tcx.sess.span_note(
+                cause_span,
+                &format!("required so that the projection `{}` is well-formed",
+                         data));
+        }
         ObligationCauseCode::ReferenceOutlivesReferent(ref_ty) => {
             tcx.sess.span_note(
                 cause_span,

@@ -40,7 +40,7 @@ pub enum ObjectSafetyViolation<'tcx> {
 }
 
 /// Reasons a method might not be object-safe.
-#[derive(Copy,Clone,Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum MethodViolationCode {
     /// e.g., `fn foo()`
     StaticMethod,
@@ -141,6 +141,7 @@ fn supertraits_reference_self<'tcx>(tcx: &ty::ctxt<'tcx>,
                 }
                 ty::Predicate::Projection(..) |
                 ty::Predicate::WellFormed(..) |
+                ty::Predicate::ObjectSafe(..) |
                 ty::Predicate::TypeOutlives(..) |
                 ty::Predicate::RegionOutlives(..) |
                 ty::Predicate::Equate(..) => {
@@ -183,6 +184,7 @@ fn generics_require_sized_self<'tcx>(tcx: &ty::ctxt<'tcx>,
                 ty::Predicate::Equate(..) |
                 ty::Predicate::RegionOutlives(..) |
                 ty::Predicate::WellFormed(..) |
+                ty::Predicate::ObjectSafe(..) |
                 ty::Predicate::TypeOutlives(..) => {
                     false
                 }

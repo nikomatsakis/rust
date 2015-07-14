@@ -405,6 +405,8 @@ impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
                 ty::Predicate::Projection(binder.fold_with(folder)),
             ty::Predicate::WellFormed(data) =>
                 ty::Predicate::WellFormed(data.fold_with(folder)),
+            ty::Predicate::ObjectSafe(trait_def_id) =>
+                ty::Predicate::ObjectSafe(trait_def_id),
         }
     }
 }

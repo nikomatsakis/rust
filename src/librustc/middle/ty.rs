@@ -2435,6 +2435,9 @@ pub enum Predicate<'tcx> {
 
     /// no syntax: T WF
     WellFormed(Ty<'tcx>),
+
+    /// trait must be object-safe
+    ObjectSafe(ast::DefId),
 }
 
 impl<'tcx> Predicate<'tcx> {
@@ -2522,6 +2525,8 @@ impl<'tcx> Predicate<'tcx> {
                 Predicate::Projection(ty::Binder(data.subst(tcx, substs))),
             Predicate::WellFormed(data) =>
                 Predicate::WellFormed(data.subst(tcx, substs)),
+            Predicate::ObjectSafe(trait_def_id) =>
+                Predicate::ObjectSafe(trait_def_id),
         }
     }
 }
@@ -2712,6 +2717,9 @@ impl<'tcx> Predicate<'tcx> {
             ty::Predicate::WellFormed(data) => {
                 vec![data]
             }
+            ty::Predicate::ObjectSafe(_trait_def_id) => {
+                vec![]
+            }
         };
 
         // The only reason to collect into a vector here is that I was
@@ -2730,6 +2738,7 @@ impl<'tcx> Predicate<'tcx> {
             Predicate::TypeOutlives(ref p) => p.has_escaping_regions(),
             Predicate::Projection(ref p) => p.has_escaping_regions(),
             Predicate::WellFormed(p) => p.has_escaping_regions(),
+            Predicate::ObjectSafe(_trait_def_id) => false,
         }
     }
 
@@ -2742,6 +2751,7 @@ impl<'tcx> Predicate<'tcx> {
             Predicate::Equate(..) |
             Predicate::RegionOutlives(..) |
             Predicate::WellFormed(..) |
+            Predicate::ObjectSafe(..) |
             Predicate::TypeOutlives(..) => {
                 None
             }
@@ -6240,6 +6250,7 @@ impl<'tcx> ctxt<'tcx> {
                     ty::Predicate::Trait(..) |
                     ty::Predicate::Equate(..) |
                     ty::Predicate::WellFormed(..) |
+                    ty::Predicate::ObjectSafe(..) |
                     ty::Predicate::RegionOutlives(..) => {
                         None
                     }
@@ -6907,6 +6918,7 @@ impl<'tcx> fmt::Debug for ty::Predicate<'tcx> {
             Predicate::TypeOutlives(ref pair) => write!(f, "{:?}", pair),
             Predicate::Projection(ref pair) => write!(f, "{:?}", pair),
             Predicate::WellFormed(ty) => write!(f, "WF({:?})", ty),
+            Predicate::ObjectSafe(trait_def_id) => write!(f, "ObjectSafe({:?})", trait_def_id),
         }
     }
 }
@@ -7018,6 +7030,7 @@ impl<'tcx> RegionEscape for Predicate<'tcx> {
             Predicate::TypeOutlives(ref data) => data.has_regions_escaping_depth(depth),
             Predicate::Projection(ref data) => data.has_regions_escaping_depth(depth),
             Predicate::WellFormed(ty) => ty.has_regions_escaping_depth(depth),
+            Predicate::ObjectSafe(_trait_def_id) => false,
         }
     }
 }
@@ -7177,6 +7190,7 @@ impl<'tcx> HasTypeFlags for Predicate<'tcx> {
             Predicate::TypeOutlives(ref data) => data.has_type_flags(flags),
             Predicate::Projection(ref data) => data.has_type_flags(flags),
             Predicate::WellFormed(data) => data.has_type_flags(flags),
+            Predicate::ObjectSafe(_trait_def_id) => false,
         }
     }
 }

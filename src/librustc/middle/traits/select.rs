@@ -482,6 +482,14 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                 EvaluatedToOk
             }
 
+            ty::Predicate::ObjectSafe(trait_def_id) => {
+                if object_safety::is_object_safe(self.tcx(), trait_def_id) {
+                    EvaluatedToOk
+                } else {
+                    EvaluatedToErr(Unimplemented)
+                }
+            }
+
             ty::Predicate::Projection(ref data) => {
                 self.infcx.probe(|_| {
                     let project_obligation = obligation.with(data.clone());

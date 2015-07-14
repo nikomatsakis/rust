@@ -1,4 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,11 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-trait FromStructReader<'a> { }
-trait ResponseHook {
-     fn get<'a, T: FromStructReader<'a>>(&'a self);
+// Check that object-safe traits are not WF when used as object types.
+// Issue #21953.
+
+trait A {
+    fn foo(&self, _x: &Self);
 }
-fn foo(res : Box<ResponseHook>) { res.get }
-//~^ ERROR attempted to take value of method
-//~| ERROR E0038
-fn main() {}
+
+fn main() {
+    let _x: &A; //~ ERROR E0038
+}

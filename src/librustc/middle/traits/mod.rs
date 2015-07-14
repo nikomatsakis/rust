@@ -27,6 +27,7 @@ use syntax::codemap::{Span, DUMMY_SP};
 pub use self::error_reporting::report_fulfillment_errors;
 pub use self::error_reporting::report_overflow_error;
 pub use self::error_reporting::report_selection_error;
+pub use self::error_reporting::report_object_safety_error;
 pub use self::error_reporting::suggest_new_overflow_limit;
 pub use self::coherence::orphan_check;
 pub use self::coherence::overlapping_impls;
@@ -99,6 +100,15 @@ pub struct ObligationCause<'tcx> {
 pub enum ObligationCauseCode<'tcx> {
     /// Not well classified or should be obvious from span.
     MiscObligation,
+
+    /// Obligation that triggers warning until RFC 1214 is fully in place.
+    RFC1214,
+
+    /// This is the trait reference from the given projection
+    SliceOrArrayElem,
+
+    /// This is the trait reference from the given projection
+    ProjectionWf(ty::ProjectionTy<'tcx>),
 
     /// In an impl of trait X for type Y, type Y must
     /// also implement all supertraits of X.

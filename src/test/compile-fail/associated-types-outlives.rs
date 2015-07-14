@@ -16,7 +16,9 @@ pub trait Foo<'a> {
     type Bar;
 }
 
-impl<'a, T> Foo<'a> for T { type Bar = &'a T; }
+impl<'a, T:'a> Foo<'a> for T {
+    type Bar = &'a T;
+}
 
 fn denormalise<'a, T>(t: &'a T) -> <T as Foo<'a>>::Bar {
     t

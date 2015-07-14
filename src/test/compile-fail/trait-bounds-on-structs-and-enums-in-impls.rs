@@ -8,32 +8,28 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test that Copy bounds inherited by trait are checked.
+trait Trait {}
 
-#![feature(box_syntax)]
-
-use std::any::Any;
-
-trait Foo : Copy {
-    fn foo(&self) {}
+struct Foo<T:Trait> {
+    x: T,
 }
 
-impl<T:Copy> Foo for T {
+enum Bar<T:Trait> {
+    ABar(isize),
+    BBar(T),
+    CBar(usize),
 }
 
-fn take_param<T:Foo>(foo: &T) { }
-
-fn a() {
-    let x: Box<_> = box 3;
-    take_param(&x); //~ ERROR E0277
+trait PolyTrait<T>
+{
+    fn whatever(&self, t: T) {}
 }
 
-fn b() {
-    let x: Box<_> = box 3;
-    let y = &x;
-    let z = &x as &Foo;
-    //~^ ERROR E0038
-    //~| ERROR E0038
+struct Struct;
+
+impl PolyTrait<Foo<u16>> for Struct {
+//~^ ERROR not implemented
 }
 
-fn main() { }
+fn main() {
+}

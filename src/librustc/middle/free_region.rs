@@ -58,6 +58,7 @@ impl FreeRegionMap {
                 ty::Predicate::Trait(..) |
                 ty::Predicate::Equate(..) |
                 ty::Predicate::WellFormed(..) |
+                ty::Predicate::ObjectSafe(..) |
                 ty::Predicate::TypeOutlives(..) => {
                     // No region bounds here
                 }
