@@ -122,11 +122,14 @@ pub fn regionck_expr(fcx: &FnCtxt, e: &ast::Expr) {
     rcx.resolve_regions_and_report_errors();
 }
 
-pub fn regionck_item(fcx: &FnCtxt, item: &ast::Item) {
+/// Region checking during the WF phase for items. `wf_tys` are the
+/// types from which we should derive implied bounds, if any.
+pub fn regionck_item<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>, item: &ast::Item, wf_tys: &[Ty<'tcx>]) {
     let mut rcx = Rcx::new(fcx, RepeatingScope(item.id), item.id, Subject(item.id));
     let tcx = fcx.tcx();
     rcx.free_region_map
        .relate_free_regions_from_predicates(tcx, &fcx.infcx().parameter_environment.caller_bounds);
+    rcx.relate_free_regions(wf_tys, item.id, item.span);
     rcx.visit_region_obligations(item.id);
     rcx.resolve_regions_and_report_errors();
 }
