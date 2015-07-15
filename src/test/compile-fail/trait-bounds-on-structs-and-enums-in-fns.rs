@@ -26,5 +26,5 @@ fn explode(x: Foo<u32>) {}
 fn kaboom(y: Bar<f32>) {}
 //~^ ERROR not implemented
 
-sfn main() {
+fn main() {
 }
