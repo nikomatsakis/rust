@@ -458,7 +458,7 @@ struct GatherLocalsVisitor<'a, 'tcx: 'a> {
 }
 
 impl<'a, 'tcx> GatherLocalsVisitor<'a, 'tcx> {
-    fn assign(&mut self, span: Span, nid: ast::NodeId, ty_opt: Option<Ty<'tcx>>) -> Ty<'tcx> {
+    fn assign(&mut self, _span: Span, nid: ast::NodeId, ty_opt: Option<Ty<'tcx>>) -> Ty<'tcx> {
         match ty_opt {
             None => {
                 // infer the variable's type
