@@ -595,7 +595,7 @@ fn check_fn<'a, 'tcx>(ccx: &'a CrateCtxt<'a, 'tcx>,
         // Add formal parameters.
         for (arg_ty, input) in arg_tys.iter().zip(&decl.inputs) {
             // The type of the argument must be well-formed.
-            fcx.register_wf_obligation(arg_ty, input.ty.span);
+            // TODO fcx.register_wf_obligation(arg_ty, input.ty.span);
 
             // Create type variables for each argument.
             pat_util::pat_bindings(
