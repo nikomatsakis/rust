@@ -125,6 +125,7 @@ pub fn regionck_expr(fcx: &FnCtxt, e: &ast::Expr) {
 /// Region checking during the WF phase for items. `wf_tys` are the
 /// types from which we should derive implied bounds, if any.
 pub fn regionck_item<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>, item: &ast::Item, wf_tys: &[Ty<'tcx>]) {
+    debug!("regionck_item(item.id={:?}, wf_tys={:?}", item.id, wf_tys);
     let mut rcx = Rcx::new(fcx, RepeatingScope(item.id), item.id, Subject(item.id));
     let tcx = fcx.tcx();
     rcx.free_region_map

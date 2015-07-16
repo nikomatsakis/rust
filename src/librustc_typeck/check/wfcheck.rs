@@ -24,6 +24,7 @@ use syntax::ast;
 use syntax::ast_util::local_def;
 use syntax::codemap::{Span};
 use syntax::parse::token::{self, special_idents};
+use syntax::ptr::P;
 use syntax::visit;
 use syntax::visit::Visitor;
 
@@ -75,8 +76,9 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
             ///
             /// won't be allowed unless there's an *explicit* implementation of `Send`
             /// for `T`
-            ast::ItemImpl(_, ast::ImplPolarity::Positive, _, ref trait_ref, ref self_ty, _) => {
-                self.check_impl(item, self_ty, trait_ref);
+            ast::ItemImpl(_, ast::ImplPolarity::Positive, _,
+                          ref trait_ref, ref self_ty, ref impl_items) => {
+                self.check_impl(item, self_ty, trait_ref, impl_items);
             }
             ast::ItemImpl(_, ast::ImplPolarity::Negative, _, Some(_), _, _) => {
                 let trait_ref = ccx.tcx.impl_trait_ref(local_def(item.id)).unwrap();
@@ -210,23 +212,21 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
     fn check_impl(&mut self,
                   item: &ast::Item,
                   ast_self_ty: &ast::Ty,
-                  ast_trait_ref: &Option<ast::TraitRef>)
+                  ast_trait_ref: &Option<ast::TraitRef>,
+                  impl_items: &[P<ast::ImplItem>])
     {
         debug!("check_impl: {:?}", item);
 
         self.with_fcx(item, |fcx| {
             let mut implied_bounds = vec![];
 
+            let free_substs = &fcx.inh.infcx.parameter_environment.free_substs;
+
             // Find the impl self type as seen from the "inside" --
             // that is, with all type parameters converted from bound
             // to free.
             let self_ty = fcx.tcx().node_id_to_type(item.id);
-            let self_ty = fcx.instantiate_type_scheme(item.span,
-                                                      &fcx.inh
-                                                          .infcx
-                                                          .parameter_environment
-                                                          .free_substs,
-                                                      &self_ty);
+            let self_ty = fcx.instantiate_type_scheme(item.span, free_substs, &self_ty);
             fcx.register_wf_obligation(self_ty, ast_self_ty.span);
 
             implied_bounds.push(self_ty);
@@ -236,9 +236,7 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
                     let trait_ref = fcx.tcx().impl_trait_ref(local_def(item.id)).unwrap();
                     let trait_ref =
                         fcx.instantiate_type_scheme(
-                            ast_trait_ref.path.span,
-                            &fcx.inh.infcx.parameter_environment.free_substs,
-                            &trait_ref);
+                            ast_trait_ref.path.span, free_substs, &trait_ref);
                     let obligations =
                         wf::trait_where_clause_obligations(fcx.infcx(), fcx.body_id,
                                                            trait_ref, ast_trait_ref.path.span);
@@ -251,6 +249,26 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
                     }
                 }
                 None => { }
+            }
+
+            // go over the items defined in the impl and check that they, too, are well-formed
+            for impl_item in impl_items {
+                match fcx.tcx().impl_or_trait_item(local_def(impl_item.id)) {
+                    ty::ConstTraitItem(assoc_const) => {
+                        let ty = fcx.instantiate_type_scheme(impl_item.span,
+                                                             free_substs,
+                                                             &assoc_const.ty);
+                        fcx.register_wf_obligation(ty, impl_item.span);
+                    }
+                    ty::MethodTraitItem(_) =>
+                        (), // TODO
+                    ty::TypeTraitItem(assoc_type) => {
+                        let ty = fcx.instantiate_type_scheme(impl_item.span,
+                                                             free_substs,
+                                                             &assoc_type.ty);
+                        fcx.register_wf_obligation(ty.unwrap(), impl_item.span);
+                    }
+                }
             }
 
             // impls can assume that self + types appearing in a trait
