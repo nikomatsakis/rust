@@ -371,7 +371,7 @@ impl<'a, 'tcx> Visitor<'tcx> for CheckItemBodiesVisitor<'a, 'tcx> {
     }
 }
 
-pub fn check_item_types(ccx: &CrateCtxt) {
+pub fn check_wf(ccx: &CrateCtxt) {
     let krate = ccx.tcx.map.krate();
     let mut visit = wfcheck::CheckTypeWellFormedVisitor::new(ccx);
     visit::walk_crate(&mut visit, krate);
@@ -379,17 +379,24 @@ pub fn check_item_types(ccx: &CrateCtxt) {
     // If types are not well-formed, it leads to all manner of errors
     // downstream, so stop reporting errors at this point.
     ccx.tcx.sess.abort_if_errors();
+}
 
+pub fn check_item_types(ccx: &CrateCtxt) {
+    let krate = ccx.tcx.map.krate();
     let mut visit = CheckItemTypesVisitor { ccx: ccx };
     visit::walk_crate(&mut visit, krate);
-
     ccx.tcx.sess.abort_if_errors();
+}
 
+pub fn check_item_bodies(ccx: &CrateCtxt) {
+    let krate = ccx.tcx.map.krate();
     let mut visit = CheckItemBodiesVisitor { ccx: ccx };
     visit::walk_crate(&mut visit, krate);
 
     ccx.tcx.sess.abort_if_errors();
+}
 
+pub fn check_drop_impls(ccx: &CrateCtxt) {
     for drop_method_did in ccx.tcx.destructors.borrow().iter() {
         if drop_method_did.krate == ast::LOCAL_CRATE {
             let drop_impl_did = ccx.tcx.map.get_parent_did(drop_method_did.node);
@@ -462,9 +469,6 @@ impl<'a, 'tcx> GatherLocalsVisitor<'a, 'tcx> {
             Some(typ) => {
                 // take type that the user specified
                 self.fcx.inh.locals.borrow_mut().insert(nid, typ);
-
-                // we have to check this for WF'd ness, since the user typed it
-                self.fcx.register_wf_obligation(typ, span);
 
                 typ
             }
