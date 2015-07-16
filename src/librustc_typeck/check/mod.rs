@@ -441,7 +441,7 @@ fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
 
             fcx.select_all_obligations_and_apply_defaults();
             upvar::closure_analyze_fn(&fcx, fn_id, decl, body);
-            fcx.select_all_obligations_or_error();
+            fcx.select_obligations_where_possible();
             fcx.check_casts();
 
             fcx.select_all_obligations_or_error(); // Casts can introduce new obligations.
@@ -459,7 +459,7 @@ struct GatherLocalsVisitor<'a, 'tcx: 'a> {
 }
 
 impl<'a, 'tcx> GatherLocalsVisitor<'a, 'tcx> {
-    fn assign(&mut self, span: Span, nid: ast::NodeId, ty_opt: Option<Ty<'tcx>>) -> Ty<'tcx> {
+    fn assign(&mut self, _span: Span, nid: ast::NodeId, ty_opt: Option<Ty<'tcx>>) -> Ty<'tcx> {
         match ty_opt {
             None => {
                 // infer the variable's type
