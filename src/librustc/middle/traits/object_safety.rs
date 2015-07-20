@@ -20,6 +20,7 @@
 use super::supertraits;
 use super::elaborate_predicates;
 
+use middle::region::FreeRegionExtent;
 use middle::subst::{self, SelfSpace, TypeSpace};
 use middle::traits;
 use middle::ty::{self, ToPolyTraitRef, Ty};
@@ -169,7 +170,8 @@ fn generics_require_sized_self<'tcx>(tcx: &ty::ctxt<'tcx>,
     };
 
     // Search for a predicate like `Self : Sized` amongst the trait bounds.
-    let free_substs = tcx.construct_free_substs(generics, ast::DUMMY_NODE_ID);
+    let extent = FreeRegionExtent::DestructionScope(ast::DUMMY_NODE_ID);
+    let free_substs = tcx.construct_free_substs(generics, extent);
     let predicates = predicates.instantiate(tcx, &free_substs).predicates.into_vec();
     elaborate_predicates(tcx, predicates)
         .any(|predicate| {

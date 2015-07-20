@@ -75,7 +75,7 @@ use std::collections::HashSet;
 use ast_map;
 use middle::def;
 use middle::infer;
-use middle::region;
+use middle::region::{self, CodeExtent};
 use middle::subst;
 use middle::ty::{self, Ty, HasTypeFlags};
 use middle::ty::{Region, ReFree};
@@ -96,14 +96,35 @@ impl<'tcx> ty::ctxt<'tcx> {
                                    prefix: &str,
                                    region: ty::Region,
                                    suffix: &str) {
-        fn item_scope_tag(item: &ast::Item) -> &'static str {
-            match item.node {
-                ast::ItemImpl(..) => "impl",
-                ast::ItemStruct(..) => "struct",
-                ast::ItemEnum(..) => "enum",
-                ast::ItemTrait(..) => "trait",
-                ast::ItemFn(..) => "function body",
+        fn item_scope_tag(item: Option<ast_map::ItemNode>) -> &'static str {
+            match item {
+                Some(ast_map::ItemNode::Item(item)) =>
+                    match item.node {
+                        ast::ItemImpl(..) => "impl",
+                        ast::ItemStruct(..) => "struct",
+                        ast::ItemEnum(..) => "enum",
+                        ast::ItemTrait(..) => "trait",
+                        ast::ItemFn(..) => "function body",
+                        _ => "item"
+                    },
                 _ => "item"
+            }
+        }
+
+        fn node_scope_tag(node: Option<ast_map::Node>) -> String {
+            match node {
+                Some(ast_map::NodeBlock(_)) => format!("block"),
+                Some(ast_map::NodeExpr(expr)) => match expr.node {
+                    ast::ExprCall(..) => format!("call"),
+                    ast::ExprMethodCall(..) => format!("method call"),
+                    ast::ExprMatch(_, _, ast::MatchSource::IfLetDesugar { .. }) => format!("if let"),
+                    ast::ExprMatch(_, _, ast::MatchSource::WhileLetDesugar) => format!("while let"),
+                    ast::ExprMatch(_, _, ast::MatchSource::ForLoopDesugar) => format!("for"),
+                    ast::ExprMatch(..) => format!("match"),
+                    _ => format!("expression"),
+                },
+                Some(ast_map::NodeStmt(_)) => format!("statement"),
+                r => format!("<unknown scope {:?} --- please report a bug>", r)
             }
         }
 
@@ -114,53 +135,48 @@ impl<'tcx> ty::ctxt<'tcx> {
              Some(span))
         }
 
-        let (description, span) = match region {
-            ty::ReScope(scope) => {
-                let new_string;
-                let unknown_scope = || {
-                    format!("{}unknown scope: {:?}{}.  Please report a bug.",
-                            prefix, scope, suffix)
-                };
-                let span = match scope.span(&self.map) {
-                    Some(s) => s,
-                    None => return self.sess.note(&unknown_scope())
-                };
-                let tag = match self.map.find(scope.node_id()) {
-                    Some(ast_map::NodeBlock(_)) => "block",
-                    Some(ast_map::NodeExpr(expr)) => match expr.node {
-                        ast::ExprCall(..) => "call",
-                        ast::ExprMethodCall(..) => "method call",
-                        ast::ExprMatch(_, _, ast::MatchSource::IfLetDesugar { .. }) => "if let",
-                        ast::ExprMatch(_, _, ast::MatchSource::WhileLetDesugar) =>  "while let",
-                        ast::ExprMatch(_, _, ast::MatchSource::ForLoopDesugar) =>  "for",
-                        ast::ExprMatch(..) => "match",
-                        _ => "expression",
-                    },
-                    Some(ast_map::NodeStmt(_)) => "statement",
-                    Some(ast_map::ItemNode::Item(it)) => item_scope_tag(&*it),
-                    Some(_) | None => {
-                        return self.sess.span_note(span, &unknown_scope());
-                    }
-                };
-                let scope_decorated_tag = match scope {
-                    region::CodeExtent::Misc(_) => tag,
-                    region::CodeExtent::ParameterScope { .. } => {
-                        "scope of parameters for function"
-                    }
-                    region::CodeExtent::DestructionScope(_) => {
-                        new_string = format!("destruction scope surrounding {}", tag);
-                        &new_string[..]
-                    }
-                    region::CodeExtent::Remainder(r) => {
-                        new_string = format!("block suffix following statement {}",
+        fn explain_extent(tcx: &ty::ctxt, extent: region::CodeExtent)
+                          -> (String, Option<Span>) {
+            match extent {
+                CodeExtent::Misc(node_id) => {
+                    explain_span(tcx,
+                                 &node_scope_tag(tcx.map.find(node_id)),
+                                 tcx.map.span(node_id))
+                }
+
+                CodeExtent::Item(item_id) => {
+                    explain_span(tcx,
+                                 item_scope_tag(tcx.map.find_item(item_id)),
+                                 tcx.map.item_span(item_id))
+                }
+
+                CodeExtent::ParameterScope { fn_id: fn_id, body_id: _ } => {
+                    explain_span(tcx,
+                                 "scope of parameters for function",
+                                 tcx.map.item_span(fn_id))
+                }
+
+                CodeExtent::DestructionScope(node_id) => {
+                    let new_string = format!("destruction scope surrounding {}",
+                                             node_scope_tag(tcx.map.find(node_id)));
+                    explain_span(tcx, &new_string, tcx.map.span(node_id))
+                }
+
+                CodeExtent::Remainder(r) => {
+                    let new_string = format!("block suffix following statement {}",
                                              r.first_statement_index);
-                        &new_string[..]
-                    }
-                };
-                explain_span(self, scope_decorated_tag, span)
+                    let span = CodeExtent::Remainder(r).span(&tcx.map);
+                    explain_span(tcx, &new_string, span)
+                }
             }
+        }
+
+        let (description, span) = match region {
+            ty::ReScope(extent) => explain_extent(self, extent),
 
             ty::ReFree(ref fr) => {
+                let extent = fr.scope.to_code_extent();
+                let (msg, opt_span) = explain_extent(self, extent);
                 let prefix = match fr.bound_region {
                     ty::BrAnon(idx) => {
                         format!("the anonymous lifetime #{} defined on", idx + 1)
@@ -171,23 +187,7 @@ impl<'tcx> ty::ctxt<'tcx> {
                                 fr.bound_region)
                     }
                 };
-
-                match self.map.find(fr.scope.node_id) {
-                    Some(ast_map::NodeBlock(ref blk)) => {
-                        let (msg, opt_span) = explain_span(self, "block", blk.span);
-                        (format!("{} {}", prefix, msg), opt_span)
-                    }
-                    Some(ast_map::ItemNode::Item(it)) => {
-                        let tag = item_scope_tag(&*it);
-                        let (msg, opt_span) = explain_span(self, tag, it.span);
-                        (format!("{} {}", prefix, msg), opt_span)
-                    }
-                    Some(_) | None => {
-                        // this really should not happen
-                        (format!("{} unknown free region bounded by scope {:?}",
-                                 prefix, fr.scope), None)
-                    }
-                }
+                (format!("{} {}", prefix, msg), opt_span)
             }
 
             ty::ReStatic => ("the static lifetime".to_owned(), None),
@@ -374,14 +374,14 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
             }
         }
         if !same_regions.is_empty() {
-            let common_scope_id = same_regions[0].scope_id;
+            let common_scope = same_regions[0].scope;
             for sr in &same_regions {
                 // Since ProcessedErrors is used to reconstruct the function
                 // declaration, we want to make sure that they are, in fact,
                 // from the same scope
-                if sr.scope_id != common_scope_id {
+                if sr.scope != common_scope {
                     debug!("returning empty result from process_errors because
-                            {} != {}", sr.scope_id, common_scope_id);
+                            {:?} != {:?}", sr.scope, common_scope);
                     return vec!();
                 }
             }
@@ -395,18 +395,18 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
         struct FreeRegionsFromSameFn {
             sub_fr: ty::FreeRegion,
             sup_fr: ty::FreeRegion,
-            scope_id: ast::NodeId
+            scope: region::FreeRegionExtent,
         }
 
         impl FreeRegionsFromSameFn {
             fn new(sub_fr: ty::FreeRegion,
                    sup_fr: ty::FreeRegion,
-                   scope_id: ast::NodeId)
+                   scope: region::FreeRegionExtent)
                    -> FreeRegionsFromSameFn {
                 FreeRegionsFromSameFn {
                     sub_fr: sub_fr,
                     sup_fr: sup_fr,
-                    scope_id: scope_id
+                    scope: scope,
                 }
             }
         }
@@ -416,34 +416,34 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
                                      sup: Region)
                                      -> Option<FreeRegionsFromSameFn> {
             debug!("free_regions_from_same_fn(sub={:?}, sup={:?})", sub, sup);
-            let (scope_id, fr1, fr2) = match (sub, sup) {
+            let (scope, fr1, fr2) = match (sub, sup) {
                 (ReFree(fr1), ReFree(fr2)) => {
                     if fr1.scope != fr2.scope {
                         return None
                     }
                     assert!(fr1.scope == fr2.scope);
-                    (fr1.scope.node_id, fr1, fr2)
+                    (fr1.scope, fr1, fr2)
                 },
                 _ => return None
             };
-            let parent = tcx.map.get_parent(scope_id);
-            let parent_node = tcx.map.find(parent);
+            let parent = scope.get_enclosing_item(&tcx.map);
+            let parent_node = tcx.map.find_item(parent);
             match parent_node {
                 Some(node) => match node {
                     ast_map::ItemNode::Item(item) => match item.node {
                         ast::ItemFn(..) => {
-                            Some(FreeRegionsFromSameFn::new(fr1, fr2, scope_id))
+                            Some(FreeRegionsFromSameFn::new(fr1, fr2, scope))
                         },
                         _ => None
                     },
                     ast_map::ItemNode::ImplItem(..) |
                     ast_map::ItemNode::TraitItem(..) => {
-                        Some(FreeRegionsFromSameFn::new(fr1, fr2, scope_id))
+                        Some(FreeRegionsFromSameFn::new(fr1, fr2, scope))
                     },
                     _ => None
                 },
                 None => {
-                    debug!("no parent node of scope_id {}", scope_id);
+                    debug!("no parent node of scope {:?}", scope);
                     None
                 }
             }
@@ -451,17 +451,17 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
 
         fn append_to_same_regions(same_regions: &mut Vec<SameRegions>,
                                   same_frs: &FreeRegionsFromSameFn) {
-            let scope_id = same_frs.scope_id;
+            let scope = same_frs.scope;
             let (sub_fr, sup_fr) = (same_frs.sub_fr, same_frs.sup_fr);
             for sr in &mut *same_regions {
                 if sr.contains(&sup_fr.bound_region)
-                   && scope_id == sr.scope_id {
+                   && scope == sr.scope {
                     sr.push(sub_fr.bound_region);
                     return
                 }
             }
             same_regions.push(SameRegions {
-                scope_id: scope_id,
+                scope: scope,
                 regions: vec!(sub_fr.bound_region, sup_fr.bound_region)
             })
         }
@@ -900,12 +900,12 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
     }
 
     fn give_suggestion(&self, same_regions: &[SameRegions]) {
-        let scope_id = same_regions[0].scope_id;
-        let parent = self.tcx.map.get_parent(scope_id);
-        let parent_node = self.tcx.map.find(parent);
-        let taken = lifetimes_in_scope(self.tcx, scope_id);
+        let scope = same_regions[0].scope;
+        let parent = scope.get_enclosing_item(&self.tcx.map);
+        let parent_item = self.tcx.map.find_item(parent);
+        let taken = lifetimes_in_scope(self.tcx, parent);
         let life_giver = LifeGiver::with_taken(&taken[..]);
-        let node_inner = match parent_node {
+        let node_inner = match parent_item {
             Some(ref node) => match *node {
                 ast_map::ItemNode::Item(ref item) => {
                     match item.node {
@@ -1782,12 +1782,10 @@ impl<'tcx> Resolvable<'tcx> for ty::PolyTraitRef<'tcx> {
     }
 }
 
-fn lifetimes_in_scope(tcx: &ty::ctxt,
-                      scope_id: ast::NodeId)
+fn lifetimes_in_scope(tcx: &ty::ctxt, item_id: ast::ItemId)
                       -> Vec<ast::LifetimeDef> {
     let mut taken = Vec::new();
-    let parent = tcx.map.get_parent(scope_id);
-    let method_id_opt = match tcx.map.find(parent) {
+    let method_id_opt = match tcx.map.find_item(item_id) {
         Some(node) => match node {
             ast_map::ItemNode::Item(item) => match item.node {
                 ast::ItemFn(_, _, _, _, ref gen, _) => {
@@ -1812,8 +1810,8 @@ fn lifetimes_in_scope(tcx: &ty::ctxt,
     };
     if method_id_opt.is_some() {
         let method_id = method_id_opt.unwrap();
-        let parent = tcx.map.get_parent(method_id);
-        match tcx.map.find(parent) {
+        let parent = tcx.map.get_item_parent(method_id);
+        match tcx.map.find_item(parent) {
             Some(node) => match node {
                 ast_map::ItemNode::Item(item) => match item.node {
                     ast::ItemImpl(_, _, ref gen, _, _, _) => {

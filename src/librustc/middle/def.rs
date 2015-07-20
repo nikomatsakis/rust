@@ -130,10 +130,10 @@ impl MethodProvenance {
 }
 
 impl Def {
-    pub fn local_node_id(&self) -> ast::NodeId {
+    pub fn local_node_id(&self) -> ast::ItemId {
         let def_id = self.def_id();
         assert_eq!(def_id.krate, ast::LOCAL_CRATE);
-        def_id.node
+        def_id.item
     }
 
     pub fn def_id(&self) -> ast::DefId {
@@ -145,16 +145,22 @@ impl Def {
             DefSelfTy(Some(id), None)=> {
                 id
             }
+
+            _ => panic!("attempted def_id on {:?}", self)
+        }
+    }
+
+    pub fn node_id(&self) -> ast::NodeId {
+        match *self {
             DefLocal(id) |
             DefUpvar(id, _) |
             DefRegion(id) |
             DefLabel(id)  |
             DefSelfTy(_, Some((_, id))) => {
-                local_def(id)
+                id
             }
 
-            DefPrimTy(_) => panic!("attempted .def_id() on DefPrimTy"),
-            DefSelfTy(..) => panic!("attempted .def_id() on invalid DefSelfTy"),
+            _ => panic!("attempted node_id on {:?}", self)
         }
     }
 

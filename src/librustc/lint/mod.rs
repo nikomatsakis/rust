@@ -127,7 +127,7 @@ pub trait LintPass {
 
     fn check_crate(&mut self, _: &Context, _: &ast::Crate) { }
     fn check_ident(&mut self, _: &Context, _: Span, _: ast::Ident) { }
-    fn check_mod(&mut self, _: &Context, _: &ast::Mod, _: Span, _: ast::NodeId) { }
+    fn check_mod(&mut self, _: &Context, _: &ast::Mod, _: Span, _: ast::ItemId) { }
     fn check_foreign_item(&mut self, _: &Context, _: &ast::ForeignItem) { }
     fn check_item(&mut self, _: &Context, _: &ast::Item) { }
     fn check_local(&mut self, _: &Context, _: &ast::Local) { }
@@ -141,13 +141,13 @@ pub trait LintPass {
     fn check_ty(&mut self, _: &Context, _: &ast::Ty) { }
     fn check_generics(&mut self, _: &Context, _: &ast::Generics) { }
     fn check_fn(&mut self, _: &Context,
-        _: FnKind, _: &ast::FnDecl, _: &ast::Block, _: Span, _: ast::NodeId) { }
+        _: FnKind, _: &ast::FnDecl, _: &ast::Block, _: Span, _: ast::ItemId) { }
     fn check_trait_item(&mut self, _: &Context, _: &ast::TraitItem) { }
     fn check_impl_item(&mut self, _: &Context, _: &ast::ImplItem) { }
     fn check_struct_def(&mut self, _: &Context,
-        _: &ast::StructDef, _: ast::Ident, _: &ast::Generics, _: ast::NodeId) { }
+        _: &ast::StructDef, _: ast::Ident, _: &ast::Generics, _: ast::ItemId) { }
     fn check_struct_def_post(&mut self, _: &Context,
-        _: &ast::StructDef, _: ast::Ident, _: &ast::Generics, _: ast::NodeId) { }
+        _: &ast::StructDef, _: ast::Ident, _: &ast::Generics, _: ast::ItemId) { }
     fn check_struct_field(&mut self, _: &Context, _: &ast::StructField) { }
     fn check_variant(&mut self, _: &Context, _: &ast::Variant, _: &ast::Generics) { }
     fn check_variant_post(&mut self, _: &Context, _: &ast::Variant, _: &ast::Generics) { }

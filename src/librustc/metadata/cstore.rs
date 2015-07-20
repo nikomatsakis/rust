@@ -224,12 +224,12 @@ impl CStore {
     }
 
     pub fn add_extern_mod_stmt_cnum(&self,
-                                    emod_id: ast::NodeId,
+                                    emod_id: ast::ItemId,
                                     cnum: ast::CrateNum) {
         self.extern_mod_crate_map.borrow_mut().insert(emod_id, cnum);
     }
 
-    pub fn find_extern_mod_stmt_cnum(&self, emod_id: ast::NodeId)
+    pub fn find_extern_mod_stmt_cnum(&self, emod_id: ast::ItemId)
                                      -> Option<ast::CrateNum> {
         self.extern_mod_crate_map.borrow().get(&emod_id).cloned()
     }

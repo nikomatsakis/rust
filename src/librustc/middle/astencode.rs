@@ -223,7 +223,8 @@ impl<'a, 'b, 'tcx> DecodeContext<'a, 'b, 'tcx> {
     /// refer to the current crate and to the new, inlined node-id.
     pub fn tr_intern_def_id(&self, did: ast::DefId) -> ast::DefId {
         assert_eq!(did.krate, ast::LOCAL_CRATE);
-        ast::DefId { krate: ast::LOCAL_CRATE, item: self.tr_id(did.node) }
+        ast::DefId { krate: ast::LOCAL_CRATE,
+                     item: ast::ItemId(self.tr_id(did.item.as_node_id())) }
     }
 
     /// Translates a `Span` from an extern crate to the corresponding `Span`
@@ -520,13 +521,19 @@ impl tr for ty::FreeRegion {
 
 impl tr for region::CodeExtent {
     fn tr(&self, dcx: &DecodeContext) -> region::CodeExtent {
-        self.map_id(|id| dcx.tr_id(id))
+        self.map_id(|id| dcx.tr_id(id),
+                    |id| loop { }) // TODO
     }
 }
 
-impl tr for region::DestructionScopeData {
-    fn tr(&self, dcx: &DecodeContext) -> region::DestructionScopeData {
-        region::DestructionScopeData { node_id: dcx.tr_id(self.node_id) }
+impl tr for region::FreeRegionExtent {
+    fn tr(&self, dcx: &DecodeContext) -> region::FreeRegionExtent {
+        match *self {
+            region::FreeRegionExtent::Item(_) =>
+                panic!("don't expect to encounter FreeRegionExtent::Item in inlined data"),
+            region::FreeRegionExtent::DestructionScope(n) =>
+                region::FreeRegionExtent::DestructionScope(dcx.tr_id(n)),
+        }
     }
 }
 
@@ -978,7 +985,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
                 let var_id = freevar.def.def_id().item;
                 let upvar_id = ty::UpvarId {
-                    var_id: var_id,
+                    var_id: var_id.as_node_id(),
                     closure_expr_id: id
                 };
                 let upvar_capture = tcx.tables
@@ -993,7 +1000,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
         }
     }
 
-    let lid = ast::DefId { krate: ast::LOCAL_CRATE, item: id };
+    let lid = ast::DefId { krate: ast::LOCAL_CRATE, item: ast::ItemId(id) };
     if let Some(type_scheme) = tcx.tcache.borrow().get(&lid) {
         rbml_w.tag(c::tag_table_tcache, |rbml_w| {
             rbml_w.id(id);
@@ -1039,14 +1046,14 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
         })
     }
 
-    if let Some(closure_type) = tcx.tables.borrow().closure_tys.get(&ast_util::local_def(id)) {
+    if let Some(closure_type) = tcx.tables.borrow().closure_tys.get(&lid) {
         rbml_w.tag(c::tag_table_closure_tys, |rbml_w| {
             rbml_w.id(id);
             rbml_w.emit_closure_type(ecx, closure_type);
         })
     }
 
-    if let Some(closure_kind) = tcx.tables.borrow().closure_kinds.get(&ast_util::local_def(id)) {
+    if let Some(closure_kind) = tcx.tables.borrow().closure_kinds.get(&lid) {
         rbml_w.tag(c::tag_table_closure_kinds, |rbml_w| {
             rbml_w.id(id);
             encode_closure_kind(rbml_w, *closure_kind)
@@ -1501,7 +1508,7 @@ fn decode_side_tables(dcx: &DecodeContext,
                     }
                     c::tag_table_tcache => {
                         let type_scheme = val_dsr.read_type_scheme(dcx);
-                        let lid = ast::DefId { krate: ast::LOCAL_CRATE, node: id };
+                        let lid = ast::DefId { krate: ast::LOCAL_CRATE, item: ast::ItemId(id) };
                         dcx.tcx.register_item_type(lid, type_scheme);
                     }
                     c::tag_table_param_defs => {
@@ -1521,20 +1528,17 @@ fn decode_side_tables(dcx: &DecodeContext,
                         dcx.tcx.tables.borrow_mut().adjustments.insert(id, adj);
                     }
                     c::tag_table_closure_tys => {
-                        let closure_ty =
-                            val_dsr.read_closure_ty(dcx);
-                        dcx.tcx.tables.borrow_mut().closure_tys.insert(ast_util::local_def(id),
-                                                                closure_ty);
+                        let closure_ty = val_dsr.read_closure_ty(dcx);
+                        let lid = ast::DefId { krate: ast::LOCAL_CRATE, item: ast::ItemId(id) };
+                        dcx.tcx.tables.borrow_mut().closure_tys.insert(lid, closure_ty);
                     }
                     c::tag_table_closure_kinds => {
-                        let closure_kind =
-                            val_dsr.read_closure_kind(dcx);
-                        dcx.tcx.tables.borrow_mut().closure_kinds.insert(ast_util::local_def(id),
-                                                                  closure_kind);
+                        let closure_kind = val_dsr.read_closure_kind(dcx);
+                        let lid = ast::DefId { krate: ast::LOCAL_CRATE, item: ast::ItemId(id) };
+                        dcx.tcx.tables.borrow_mut().closure_kinds.insert(lid, closure_kind);
                     }
                     c::tag_table_cast_kinds => {
-                        let cast_kind =
-                            val_dsr.read_cast_kind(dcx);
+                        let cast_kind = val_dsr.read_cast_kind(dcx);
                         dcx.tcx.cast_kinds.borrow_mut().insert(id, cast_kind);
                     }
                     c::tag_table_const_qualif => {

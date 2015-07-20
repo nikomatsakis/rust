@@ -11,7 +11,7 @@
 
 use ast_map;
 use session::{config, Session};
-use syntax::ast::{Name, NodeId, Item, ItemFn};
+use syntax::ast::{Name, ItemId, Item, ItemFn};
 use syntax::attr;
 use syntax::codemap::Span;
 use syntax::parse::token;
@@ -27,17 +27,17 @@ struct EntryContext<'a, 'ast: 'a> {
     main_name: Name,
 
     // The top-level function called 'main'
-    main_fn: Option<(NodeId, Span)>,
+    main_fn: Option<(ItemId, Span)>,
 
     // The function that has attribute named 'main'
-    attr_main_fn: Option<(NodeId, Span)>,
+    attr_main_fn: Option<(ItemId, Span)>,
 
     // The function that has the attribute 'start' on it
-    start_fn: Option<(NodeId, Span)>,
+    start_fn: Option<(ItemId, Span)>,
 
     // The functions that one might think are 'main' but aren't, e.g.
     // main functions not defined at the top level. For diagnostics.
-    non_main_fns: Vec<(NodeId, Span)> ,
+    non_main_fns: Vec<(ItemId, Span)> ,
 }
 
 impl<'a, 'ast, 'v> Visitor<'v> for EntryContext<'a, 'ast> {

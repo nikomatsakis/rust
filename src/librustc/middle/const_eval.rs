@@ -57,8 +57,7 @@ fn lookup_variant_by_id<'a>(tcx: &'a ty::ctxt,
                             enum_def: ast::DefId,
                             variant_def: ast::DefId)
                             -> Option<&'a Expr> {
-    fn variant_expr<'a>(variants: &'a [P<ast::Variant>], id: ast::NodeId)
-                        -> Option<&'a Expr> {
+    fn variant_expr<'a>(variants: &'a [P<ast::Variant>], id: ast::ItemId) -> Option<&'a Expr> {
         for variant in variants {
             if variant.node.id == id {
                 return variant.node.disr_expr.as_ref().map(|e| &**e);
@@ -68,11 +67,11 @@ fn lookup_variant_by_id<'a>(tcx: &'a ty::ctxt,
     }
 
     if ast_util::is_local(enum_def) {
-        match tcx.map.find_item(enum_def.node) {
+        match tcx.map.find_item(enum_def.item) {
             None => None,
             Some(ast_map::ItemNode::Item(it)) => match it.node {
                 ast::ItemEnum(ast::EnumDef { ref variants }, _) => {
-                    variant_expr(&variants[..], variant_def.node)
+                    variant_expr(&variants[..], variant_def.item)
                 }
                 _ => None
             },
@@ -93,7 +92,7 @@ fn lookup_variant_by_id<'a>(tcx: &'a ty::ctxt,
                     // NOTE this doesn't do the right thing, it compares inlined
                     // NodeId's to the original variant_def's NodeId, but they
                     // come from different crates, so they will likely never match.
-                    variant_expr(&variants[..], variant_def.node).map(|e| e.id)
+                    variant_expr(&variants[..], variant_def.item).map(|e| e.id)
                 }
                 _ => None
             },
@@ -110,7 +109,7 @@ pub fn lookup_const_by_id<'a, 'tcx: 'a>(tcx: &'a ty::ctxt<'tcx>,
                                         maybe_ref_id: Option<ast::NodeId>)
                                         -> Option<&'tcx Expr> {
     if ast_util::is_local(def_id) {
-        match tcx.map.find_item(def_id.node) {
+        match tcx.map.find_item(def_id.item) {
             None => None,
             Some(ast_map::ItemNode::Item(it)) => match it.node {
                 ast::ItemConst(_, ref const_expr) => {
@@ -205,15 +204,15 @@ pub fn lookup_const_by_id<'a, 'tcx: 'a>(tcx: &'a ty::ctxt<'tcx>,
 }
 
 fn inline_const_fn_from_external_crate(tcx: &ty::ctxt, def_id: ast::DefId)
-                                       -> Option<ast::NodeId> {
+                                       -> Option<ast::ItemId> {
     match tcx.extern_const_fns.borrow().get(&def_id) {
-        Some(&ast::DUMMY_NODE_ID) => return None,
+        Some(&ast::DUMMY_ITEM_ID) => return None,
         Some(&fn_id) => return Some(fn_id),
         None => {}
     }
 
     if !csearch::is_const_fn(&tcx.sess.cstore, def_id) {
-        tcx.extern_const_fns.borrow_mut().insert(def_id, ast::DUMMY_NODE_ID);
+        tcx.extern_const_fns.borrow_mut().insert(def_id, ast::DUMMY_ITEM_ID);
         return None;
     }
 
@@ -224,7 +223,7 @@ fn inline_const_fn_from_external_crate(tcx: &ty::ctxt, def_id: ast::DefId)
         _ => None
     };
     tcx.extern_const_fns.borrow_mut().insert(def_id,
-                                             fn_id.unwrap_or(ast::DUMMY_NODE_ID));
+                                             fn_id.unwrap_or(ast::DUMMY_ITEM_ID));
     fn_id
 }
 
@@ -238,10 +237,10 @@ pub fn lookup_const_fn_by_id<'tcx>(tcx: &ty::ctxt<'tcx>, def_id: ast::DefId)
             return None;
         }
     } else {
-        def_id.node
+        def_id.item
     };
 
-    let fn_like = match FnLikeItemNode::from_node(tcx.map.get(fn_id)) {
+    let fn_like = match FnLikeItemNode::from_node(tcx.map.get_item(fn_id)) {
         Some(fn_like) => fn_like,
         None => return None
     };
@@ -894,7 +893,7 @@ pub fn eval_const_expr_with_substs<'tcx, S>(tcx: &ty::ctxt<'tcx>,
           let (const_expr, const_ty) = match opt_def {
               Some(def::DefConst(def_id)) => {
                   if ast_util::is_local(def_id) {
-                      match tcx.map.find(def_id.node) {
+                      match tcx.map.find_item(def_id.item) {
                           Some(ast_map::ItemNode::Item(it)) => match it.node {
                               ast::ItemConst(ref ty, ref expr) => {
                                   (Some(&**expr), Some(&**ty))
@@ -910,7 +909,7 @@ pub fn eval_const_expr_with_substs<'tcx, S>(tcx: &ty::ctxt<'tcx>,
               Some(def::DefAssociatedConst(def_id, provenance)) => {
                   if ast_util::is_local(def_id) {
                       match provenance {
-                          def::FromTrait(trait_id) => match tcx.map.find_item(def_id.node) {
+                          def::FromTrait(trait_id) => match tcx.map.find_item(def_id.item) {
                               Some(ast_map::ItemNode::TraitItem(ti)) => match ti.node {
                                   ast::ConstTraitItem(ref ty, _) => {
                                       let substs = get_substs(e.id);
@@ -924,7 +923,7 @@ pub fn eval_const_expr_with_substs<'tcx, S>(tcx: &ty::ctxt<'tcx>,
                               },
                               _ => (None, None)
                           },
-                          def::FromImpl(_) => match tcx.map.find_item(def_id.node) {
+                          def::FromImpl(_) => match tcx.map.find_item(def_id.item) {
                               Some(ast_map::ItemNode::ImplItem(ii)) => match ii.node {
                                   ast::ConstImplItem(ref ty, ref expr) => {
                                       (Some(&**expr), Some(&**ty))

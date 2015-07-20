@@ -22,7 +22,7 @@ use syntax::codemap::{Span, DUMMY_SP};
 use syntax::{attr, visit};
 use syntax::ast;
 use syntax::ast::{Attribute, Block, Crate, DefId, FnDecl, NodeId, Variant};
-use syntax::ast::{Item, Generics, StructField};
+use syntax::ast::{Item, ItemId, Generics, StructField};
 use syntax::ast_util::{is_local, local_def};
 use syntax::attr::{Stability, AttrMetaMethods};
 use syntax::visit::{FnKind, Visitor};
@@ -53,7 +53,7 @@ struct Annotator<'a, 'tcx: 'a> {
 impl<'a, 'tcx: 'a> Annotator<'a, 'tcx> {
     // Determine the stability for a node based on its attributes and inherited
     // stability. The stability is recorded in the index and used as the parent.
-    fn annotate<F>(&mut self, id: NodeId, use_parent: bool,
+    fn annotate<F>(&mut self, id: ast::ItemId, use_parent: bool,
                    attrs: &Vec<Attribute>, item_sp: Span, f: F, required: bool) where
         F: FnOnce(&mut Annotator),
     {
@@ -377,7 +377,7 @@ pub fn check_item(tcx: &ty::ctxt, item: &ast::Item, warn_about_defns: bool,
                 Some(cnum) => cnum,
                 None => return,
             };
-            let id = ast::DefId { krate: cnum, node: ast::CRATE_ITEM_ID };
+            let id = ast::DefId { krate: cnum, item: ast::CRATE_ITEM_ID };
             maybe_do_stability_check(tcx, id, item.span, cb);
         }
 
@@ -625,7 +625,7 @@ pub fn check_unused_or_stable_features(sess: &Session,
 
     for &span in &sess.features.borrow().declared_stable_lang_features {
         sess.add_lint(lint::builtin::STABLE_FEATURES,
-                      ast::CRATE_ITEM_ID,
+                      ast::CRATE_ITEM_ID.as_node_id(),
                       span,
                       stable_msg.to_string());
     }
@@ -635,7 +635,7 @@ pub fn check_unused_or_stable_features(sess: &Session,
             Some(span) => {
                 if *level == attr::Stable {
                     sess.add_lint(lint::builtin::STABLE_FEATURES,
-                                  ast::CRATE_ITEM_ID,
+                                  ast::CRATE_ITEM_ID.as_node_id(),
                                   span,
                                   stable_msg.to_string());
                 }
@@ -646,7 +646,7 @@ pub fn check_unused_or_stable_features(sess: &Session,
 
     for &span in remaining_lib_features.values() {
         sess.add_lint(lint::builtin::UNUSED_FEATURES,
-                      ast::CRATE_ITEM_ID,
+                      ast::CRATE_ITEM_ID.as_node_id(),
                       span,
                       "unused or unknown feature".to_string());
     }

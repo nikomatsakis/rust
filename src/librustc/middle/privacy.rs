@@ -16,12 +16,12 @@ pub use self::PrivateDep::*;
 pub use self::ImportUse::*;
 pub use self::LastPrivate::*;
 
-use util::nodemap::{DefIdSet, NodeSet};
+use util::nodemap::{DefIdSet, ItemIdSet};
 
 use syntax::ast;
 
 /// A set of AST nodes exported by the crate.
-pub type ExportedItems = NodeSet;
+pub type ExportedItems = ItemIdSet;
 
 /// A set containing all exported definitions from external crates.
 /// The set does not contain any entries from local crates.
@@ -30,7 +30,7 @@ pub type ExternalExports = DefIdSet;
 /// A set of AST nodes that are fully public in the crate. This map is used for
 /// documentation purposes (reexporting a private struct inlines the doc,
 /// reexporting a public struct doesn't inline the doc).
-pub type PublicItems = NodeSet;
+pub type PublicItems = ItemIdSet;
 
 #[derive(Copy, Clone, Debug)]
 pub enum LastPrivate {

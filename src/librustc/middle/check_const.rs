@@ -145,7 +145,7 @@ impl<'a, 'tcx> CheckCrateVisitor<'a, 'tcx> {
                s: Span,
                fn_id: ast::ItemId)
                -> ConstQualif {
-        match self.tcx.const_qualif_map.borrow_mut().entry(fn_id) {
+        match self.tcx.const_qualif_map.borrow_mut().entry(fn_id.as_node_id()) {
             Entry::Occupied(entry) => return *entry.get(),
             Entry::Vacant(entry) => {
                 // Prevent infinite recursion on re-entry.
@@ -191,7 +191,7 @@ impl<'a, 'tcx> CheckCrateVisitor<'a, 'tcx> {
         // and bits that don't change semantics, just optimizations (PREFER_IN_PLACE).
         let qualif = qualif & (ConstQualif::NON_ZERO_SIZED | ConstQualif::PREFER_IN_PLACE);
 
-        self.tcx.const_qualif_map.borrow_mut().insert(fn_id, qualif);
+        self.tcx.const_qualif_map.borrow_mut().insert(fn_id.as_node_id(), qualif);
         qualif
     }
 
@@ -300,7 +300,7 @@ impl<'a, 'tcx> CheckCrateVisitor<'a, 'tcx> {
 
 impl<'a, 'tcx, 'v> Visitor<'v> for CheckCrateVisitor<'a, 'tcx> {
     fn visit_item(&mut self, i: &ast::Item) {
-        debug!("visit_item(item={})", self.tcx.map.node_to_string(i.id));
+        debug!("visit_item(item={})", self.tcx.map.item_id_to_string(i.id));
         match i.node {
             ast::ItemStatic(_, ast::MutImmutable, ref expr) => {
                 self.check_static_type(&**expr);

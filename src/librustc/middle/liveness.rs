@@ -120,7 +120,7 @@ use std::{fmt, usize};
 use std::io::prelude::*;
 use std::io;
 use std::rc::Rc;
-use syntax::ast::{self, NodeId, Expr};
+use syntax::ast::{self, Expr, ItemId, NodeId};
 use syntax::codemap::{BytePos, original_sp, Span};
 use syntax::parse::token::{self, special_idents};
 use syntax::print::pprust::{expr_to_string, block_to_string};
@@ -369,7 +369,7 @@ fn visit_fn(ir: &mut IrMaps,
             decl: &ast::FnDecl,
             body: &ast::Block,
             sp: Span,
-            id: ast::NodeId) {
+            id: ast::ItemId) {
     debug!("visit_fn");
 
     // swap in a new set of IR maps for this function body:
@@ -958,7 +958,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
               self.propagate_through_expr(&**e, succ)
           }
 
-          ast::ExprClosure(_, _, ref blk) => {
+          ast::ExprClosure(_, _, _, ref blk) => {
               debug!("{} is an ExprClosure",
                      expr_to_string(expr));
 
@@ -1485,22 +1485,23 @@ fn check_fn(_v: &Liveness,
             _decl: &ast::FnDecl,
             _body: &ast::Block,
             _sp: Span,
-            _id: NodeId) {
+            _id: ItemId) {
     // do not check contents of nested fns
 }
 
 impl<'a, 'tcx> Liveness<'a, 'tcx> {
-    fn fn_ret(&self, id: NodeId) -> ty::PolyFnOutput<'tcx> {
-        let fn_ty = self.ir.tcx.node_id_to_type(id);
+    fn fn_ret(&self, id: ItemId) -> ty::PolyFnOutput<'tcx> {
+        let fn_ty = self.ir.tcx.lookup_local_item_type(id).ty;
         match fn_ty.sty {
             ty::TyClosure(closure_def_id, substs) =>
                 self.ir.tcx.closure_type(closure_def_id, substs).sig.output(),
-            _ => fn_ty.fn_ret()
+            _ =>
+                fn_ty.fn_ret(),
         }
     }
 
     fn check_ret(&self,
-                 id: NodeId,
+                 id: ItemId,
                  sp: Span,
                  _fk: FnKind,
                  entry_ln: LiveNode,
@@ -1509,7 +1510,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
         // within the fn body, late-bound regions are liberated:
         let fn_ret =
             self.ir.tcx.liberate_late_bound_regions(
-                region::DestructionScopeData::new(body.id),
+                region::FreeRegionExtent::DestructionScope(body.id),
                 &self.fn_ret(id));
 
         match fn_ret {

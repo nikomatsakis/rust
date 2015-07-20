@@ -136,7 +136,7 @@ impl<'tcx> VariantInfo<'tcx> {
     pub fn from_ast_variant(cx: &ctxt<'tcx>,
                             ast_variant: &ast::Variant,
                             discriminant: Disr) -> VariantInfo<'tcx> {
-        let ctor_ty = cx.node_id_to_type(ast_variant.node.id);
+        let ctor_ty = cx.lookup_local_item_type(ast_variant.node.id).ty;
 
         match ast_variant.node.kind {
             ast::TupleVariantKind(ref args) => {
@@ -163,8 +163,11 @@ impl<'tcx> VariantInfo<'tcx> {
 
                 assert!(!fields.is_empty());
 
-                let arg_tys = struct_def.fields.iter()
-                    .map(|field| cx.node_id_to_type(field.node.id)).collect();
+                let arg_tys =
+                    struct_def.fields
+                              .iter()
+                              .map(|field| cx.lookup_local_item_type(field.node.id).ty)
+                              .collect();
                 let arg_names = fields.iter().map(|field| {
                     match field.node.kind {
                         NamedField(ident, _) => ident.name,
@@ -921,7 +924,7 @@ pub struct ctxt<'tcx> {
     /// These caches are used by const_eval when decoding external constants.
     pub extern_const_statics: RefCell<DefIdMap<ast::NodeId>>,
     pub extern_const_variants: RefCell<DefIdMap<ast::NodeId>>,
-    pub extern_const_fns: RefCell<DefIdMap<ast::NodeId>>,
+    pub extern_const_fns: RefCell<DefIdMap<ast::ItemId>>,
 
     pub dependency_formats: RefCell<dependency_format::Dependencies>,
 
@@ -1150,7 +1153,7 @@ pub mod tls {
         // and otherwise fallback to just printing the crate/node pair
         with(|tcx| {
             if def_id.krate == ast::LOCAL_CRATE {
-                match tcx.map.find_item(def_id.node) {
+                match tcx.map.find_item(def_id.item) {
                     Some(ast_map::ItemNode::Item(..)) |
                     Some(ast_map::ItemNode::ForeignItem(..)) |
                     Some(ast_map::ItemNode::ImplItem(..)) |
@@ -1671,7 +1674,7 @@ impl Region {
 /// A "free" region `fr` can be interpreted as "some region
 /// at least as big as the scope `fr.scope`".
 pub struct FreeRegion {
-    pub scope: region::DestructionScopeData,
+    pub scope: region::FreeRegionExtent,
     pub bound_region: BoundRegion
 }
 
@@ -2222,7 +2225,7 @@ pub struct RegionParameterDef {
 impl RegionParameterDef {
     pub fn to_early_bound_region(&self) -> ty::Region {
         ty::ReEarlyBound(ty::EarlyBoundRegion {
-            param_id: self.def_id.node,
+            param_id: self.def_id.item,
             space: self.space,
             index: self.index,
             name: self.name,
@@ -2725,7 +2728,7 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
     }
 
     pub fn for_item(cx: &'a ctxt<'tcx>, id: ItemId) -> ParameterEnvironment<'a, 'tcx> {
-        match cx.map.find(id) {
+        match cx.map.find_item(id) {
             Some(ast_map::ItemNode::ImplItem(ref impl_item)) => {
                 match impl_item.node {
                     ast::ConstImplItem(_, _) => {
@@ -2852,7 +2855,7 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                     }
                 }
             }
-            Some(ast_map::ItemNode::ClosureExpr(..)) => {
+            Some(ast_map::ItemNode::ClosureItem(..)) => {
                 // This is a convenience to allow closures to work.
                 ParameterEnvironment::for_item(cx, cx.map.get_item_parent(id).unwrap())
             }
@@ -5869,6 +5872,12 @@ impl<'tcx> ctxt<'tcx> {
 
     // If the given item is in an external crate, looks up its type and adds it to
     // the type cache. Returns the type parameters and type.
+    pub fn lookup_local_item_type(&self, id: ast::ItemId) -> TypeScheme<'tcx> {
+        self.lookup_item_type(local_def(id))
+    }
+
+    // If the given item is in an external crate, looks up its type and adds it to
+    // the type cache. Returns the type parameters and type.
     pub fn lookup_item_type(&self, did: ast::DefId) -> TypeScheme<'tcx> {
         lookup_locally_or_in_crate_store(
             "tcache", did, &self.tcache,
@@ -6545,8 +6554,10 @@ impl<'tcx> ctxt<'tcx> {
     /// In general, this means converting from bound parameters to
     /// free parameters. Since we currently represent bound/free type
     /// parameters in the same way, this only has an effect on regions.
-    pub fn construct_free_substs(&self, generics: &Generics<'tcx>,
-                                 free_id: ast::NodeId) -> Substs<'tcx> {
+    pub fn construct_free_substs(&self,
+                                 generics: &Generics<'tcx>,
+                                 free_extent: region::FreeRegionExtent)
+                                 -> Substs<'tcx> {
         // map T => T
         let mut types = VecPerParamSpace::empty();
         for def in generics.types.as_slice() {
@@ -6555,13 +6566,11 @@ impl<'tcx> ctxt<'tcx> {
             types.push(def.space, self.mk_param_from_def(def));
         }
 
-        let free_id_outlive = region::DestructionScopeData::new(free_id);
-
         // map bound 'a => free 'a
         let mut regions = VecPerParamSpace::empty();
         for def in generics.regions.as_slice() {
             let region =
-                ReFree(FreeRegion { scope: free_id_outlive,
+                ReFree(FreeRegion { scope: free_extent,
                                     bound_region: BrNamed(def.def_id, def.name) });
             debug!("push_region_params {:?}", region);
             regions.push(def.space, region);
@@ -6578,26 +6587,26 @@ impl<'tcx> ctxt<'tcx> {
                                                span: Span,
                                                generics: &ty::Generics<'tcx>,
                                                generic_predicates: &ty::GenericPredicates<'tcx>,
-                                               free_id: ast::NodeId)
+                                               free_extent: region::FreeRegionExtent,
+                                               body_id: ast::NodeId) // for normalization
                                                -> ParameterEnvironment<'a, 'tcx>
     {
         //
         // Construct the free substs.
         //
 
-        let free_substs = self.construct_free_substs(generics, free_id);
-        let free_id_outlive = region::DestructionScopeData::new(free_id);
+        let free_substs = self.construct_free_substs(generics, free_extent);
 
         //
         // Compute the bounds on Self and the type parameters.
         //
 
         let bounds = generic_predicates.instantiate(self, &free_substs);
-        let bounds = self.liberate_late_bound_regions(free_id_outlive, &ty::Binder(bounds));
+        let bounds = self.liberate_late_bound_regions(free_extent, &ty::Binder(bounds));
         let predicates = bounds.predicates.into_vec();
 
-        debug!("construct_parameter_environment: free_id={:?} free_subst={:?} predicates={:?}",
-               free_id,
+        debug!("construct_parameter_environment: free_extent={:?} free_subst={:?} predicates={:?}",
+               free_extent,
                free_substs,
                predicates);
 
@@ -6618,12 +6627,12 @@ impl<'tcx> ctxt<'tcx> {
         let unnormalized_env = ty::ParameterEnvironment {
             tcx: self,
             free_substs: free_substs,
-            implicit_region_bound: ty::ReScope(free_id_outlive.to_code_extent()),
+            implicit_region_bound: ty::ReScope(free_extent.to_code_extent()),
             caller_bounds: predicates,
             selection_cache: traits::SelectionCache::new(),
         };
 
-        let cause = traits::ObligationCause::misc(span, free_id);
+        let cause = traits::ObligationCause::misc(span, body_id);
         traits::normalize_param_env_or_error(unnormalized_env, cause)
     }
 
@@ -6700,7 +6709,7 @@ impl<'tcx> ctxt<'tcx> {
     /// Replace any late-bound regions bound in `value` with free variants attached to scope-id
     /// `scope_id`.
     pub fn liberate_late_bound_regions<T>(&self,
-        all_outlive_scope: region::DestructionScopeData,
+        all_outlive_scope: region::FreeRegionExtent,
         value: &Binder<T>)
         -> T
         where T : TypeFoldable<'tcx>

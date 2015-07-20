@@ -15,7 +15,7 @@
 use ast_map;
 use middle::{def, pat_util, privacy, ty};
 use lint;
-use util::nodemap::NodeSet;
+use util::nodemap::ItemIdSet;
 
 use std::collections::HashSet;
 use syntax::{ast, codemap};
@@ -32,7 +32,7 @@ fn should_explore(tcx: &ty::ctxt, def_id: ast::DefId) -> bool {
         return false;
     }
 
-    match tcx.map.find_item(def_id.node) {
+    match tcx.map.find_item(def_id.item) {
         Some(ast_map::ItemNode::Item(..))
         | Some(ast_map::ItemNode::ImplItem(..))
         | Some(ast_map::ItemNode::ForeignItem(..))
@@ -44,11 +44,11 @@ fn should_explore(tcx: &ty::ctxt, def_id: ast::DefId) -> bool {
 struct MarkSymbolVisitor<'a, 'tcx: 'a> {
     worklist: Vec<ast::ItemId>,
     tcx: &'a ty::ctxt<'tcx>,
-    live_symbols: Box<HashSet<ast::NodeId>>,
+    live_symbols: Box<HashSet<ast::ItemId>>,
     struct_has_extern_repr: bool,
     ignore_non_const_paths: bool,
     inherited_pub_visibility: bool,
-    ignore_variant_stack: Vec<ast::NodeId>,
+    ignore_variant_stack: Vec<ast::ItemId>,
 }
 
 impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
@@ -67,9 +67,9 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
 
     fn check_def_id(&mut self, def_id: ast::DefId) {
         if should_explore(self.tcx, def_id) {
-            self.worklist.push(def_id.node);
+            self.worklist.push(def_id.item);
         }
-        self.live_symbols.insert(def_id.node);
+        self.live_symbols.insert(def_id.item);
     }
 
     fn lookup_and_handle_definition(&mut self, id: &ast::NodeId) {
@@ -82,7 +82,7 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
                 def::DefPrimTy(_) => (),
                 def::DefVariant(enum_id, variant_id, _) => {
                     self.check_def_id(enum_id);
-                    if !self.ignore_variant_stack.contains(&variant_id.node) {
+                    if !self.ignore_variant_stack.contains(&variant_id.item) {
                         self.check_def_id(variant_id);
                     }
                 }
@@ -105,7 +105,7 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
                 let fields = self.tcx.lookup_struct_fields(id);
                 let field_id = fields.iter()
                     .find(|field| field.name == name).unwrap().id;
-                self.live_symbols.insert(field_id.node);
+                self.live_symbols.insert(field_id.item);
             },
             _ => ()
         }
@@ -116,7 +116,7 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
             ty::TyStruct(id, _) => {
                 let fields = self.tcx.lookup_struct_fields(id);
                 let field_id = fields[idx].id;
-                self.live_symbols.insert(field_id.node);
+                self.live_symbols.insert(field_id.item);
             },
             _ => ()
         }
@@ -144,7 +144,7 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
             }
             let field_id = fields.iter()
                 .find(|field| field.name == pat.node.ident.name).unwrap().id;
-            self.live_symbols.insert(field_id.node);
+            self.live_symbols.insert(field_id.item);
         }
     }
 
@@ -370,7 +370,7 @@ impl<'v> Visitor<'v> for LifeSeeder {
 
 fn create_and_seed_worklist(tcx: &ty::ctxt,
                             exported_items: &privacy::ExportedItems,
-                            reachable_symbols: &NodeSet,
+                            reachable_symbols: &ItemIdSet,
                             krate: &ast::Crate) -> Vec<ast::ItemId> {
     let mut worklist = Vec::new();
 
@@ -408,9 +408,9 @@ fn create_and_seed_worklist(tcx: &ty::ctxt,
 
 fn find_live(tcx: &ty::ctxt,
              exported_items: &privacy::ExportedItems,
-             reachable_symbols: &NodeSet,
+             reachable_symbols: &ItemIdSet,
              krate: &ast::Crate)
-             -> Box<HashSet<ast::NodeId>> {
+             -> Box<HashSet<ast::ItemId>> {
     let worklist = create_and_seed_worklist(tcx, exported_items,
                                             reachable_symbols, krate);
     let mut symbol_visitor = MarkSymbolVisitor::new(tcx, worklist);
@@ -418,7 +418,7 @@ fn find_live(tcx: &ty::ctxt,
     symbol_visitor.live_symbols
 }
 
-fn get_struct_ctor_id(item: &ast::Item) -> Option<ast::NodeId> {
+fn get_struct_ctor_id(item: &ast::Item) -> Option<ast::ItemId> {
     match item.node {
         ast::ItemStruct(ref struct_def, _) => struct_def.ctor_id,
         _ => None
@@ -427,7 +427,7 @@ fn get_struct_ctor_id(item: &ast::Item) -> Option<ast::NodeId> {
 
 struct DeadVisitor<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
-    live_symbols: Box<HashSet<ast::NodeId>>,
+    live_symbols: Box<HashSet<ast::ItemId>>,
 }
 
 impl<'a, 'tcx> DeadVisitor<'a, 'tcx> {
@@ -446,7 +446,7 @@ impl<'a, 'tcx> DeadVisitor<'a, 'tcx> {
 
     fn should_warn_about_field(&mut self, node: &ast::StructField_) -> bool {
         let is_named = node.ident().is_some();
-        let field_type = self.tcx.node_id_to_type(node.id);
+        let field_type = self.tcx.lookup_local_item_type(node.id).ty;
         let is_marker_field = match field_type.ty_to_def_id() {
             Some(def_id) => self.tcx.lang_items.items().any(|(_, item)| *item == Some(def_id)),
             _ => false
@@ -471,8 +471,8 @@ impl<'a, 'tcx> DeadVisitor<'a, 'tcx> {
     // `ctor_id`. On the other hand, in a statement like
     // `type <ident> <generics> = <ty>;` where <ty> refers to a struct_ctor,
     // DefMap maps <ty> to `id` instead.
-    fn symbol_is_live(&mut self, id: ast::NodeId,
-                      ctor_id: Option<ast::NodeId>) -> bool {
+    fn symbol_is_live(&mut self, id: ast::ItemId,
+                      ctor_id: Option<ast::ItemId>) -> bool {
         if self.live_symbols.contains(&id)
            || ctor_id.map_or(false,
                              |ctor| self.live_symbols.contains(&ctor)) {
@@ -488,8 +488,7 @@ impl<'a, 'tcx> DeadVisitor<'a, 'tcx> {
             Some(impl_list) => {
                 for impl_did in impl_list.iter() {
                     for item_did in impl_items.get(impl_did).unwrap().iter() {
-                        if self.live_symbols.contains(&item_did.def_id()
-                                                               .node) {
+                        if self.live_symbols.contains(&item_did.def_id().item) {
                             return true;
                         }
                     }
@@ -500,7 +499,7 @@ impl<'a, 'tcx> DeadVisitor<'a, 'tcx> {
     }
 
     fn warn_dead_code(&mut self,
-                      id: ast::NodeId,
+                      id: ast::ItemId,
                       span: codemap::Span,
                       name: ast::Name,
                       node_type: &str) {
@@ -509,7 +508,7 @@ impl<'a, 'tcx> DeadVisitor<'a, 'tcx> {
             self.tcx
                 .sess
                 .add_lint(lint::builtin::DEAD_CODE,
-                          id,
+                          id.as_node_id(),
                           span,
                           format!("{} is never used: `{}`", node_type, name));
         }
@@ -596,7 +595,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for DeadVisitor<'a, 'tcx> {
 
 pub fn check_crate(tcx: &ty::ctxt,
                    exported_items: &privacy::ExportedItems,
-                   reachable_symbols: &NodeSet) {
+                   reachable_symbols: &ItemIdSet) {
     let krate = tcx.map.krate();
     let live_symbols = find_live(tcx, exported_items,
                                  reachable_symbols, krate);

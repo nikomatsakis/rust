@@ -95,9 +95,12 @@ use syntax::visit::{Visitor, FnKind};
 pub enum CodeExtent {
     Misc(ast::NodeId),
 
+    // sometimes we make synthetic scopes tied to items, like when doing wf checking
+    Item(ast::ItemId),
+
     // extent of parameters passed to a function or closure (they
     // outlive its body)
-    ParameterScope { fn_id: ast::NodeId, body_id: ast::NodeId },
+    ParameterScope { fn_id: ast::ItemId, body_id: ast::NodeId },
 
     // extent of destructors for temporaries of node-id
     DestructionScope(ast::NodeId),
@@ -106,19 +109,28 @@ pub enum CodeExtent {
     Remainder(BlockRemainder)
 }
 
-/// extent of destructors for temporaries of node-id
+/// Subset of CodeExtent representing the extents during which a free
+/// region is known to be valid.
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Hash, RustcEncodable,
            RustcDecodable, Debug, Copy)]
-pub struct DestructionScopeData {
-    pub node_id: ast::NodeId
+pub enum FreeRegionExtent {
+    Item(ast::ItemId),
+    DestructionScope(ast::NodeId),
 }
 
-impl DestructionScopeData {
-    pub fn new(node_id: ast::NodeId) -> DestructionScopeData {
-        DestructionScopeData { node_id: node_id }
-    }
+impl FreeRegionExtent {
     pub fn to_code_extent(&self) -> CodeExtent {
-        CodeExtent::DestructionScope(self.node_id)
+        match *self {
+            FreeRegionExtent::Item(item_id) => CodeExtent::Item(item_id),
+            FreeRegionExtent::DestructionScope(node_id) => CodeExtent::DestructionScope(node_id),
+        }
+    }
+
+    pub fn get_enclosing_item(&self, map: &ast_map::Map) -> ast::ItemId {
+        match *self {
+            FreeRegionExtent::Item(item_id) => item_id,
+            FreeRegionExtent::DestructionScope(node_id) => map.get_enclosing_item(node_id),
+        }
     }
 }
 
@@ -171,34 +183,45 @@ impl CodeExtent {
 
     /// Maps this scope to a potentially new one according to the
     /// NodeId transformer `f_id`.
-    pub fn map_id<F>(&self, mut f_id: F) -> CodeExtent where
-        F: FnMut(ast::NodeId) -> ast::NodeId,
+    pub fn map_id<F,I>(&self, mut f_id: F, mut f_item_id: I) -> CodeExtent where
+        F: FnMut(ast::NodeId) -> ast::NodeId, I: FnMut(ast::ItemId) -> ast::ItemId,
     {
         match *self {
-            CodeExtent::Misc(node_id) => CodeExtent::Misc(f_id(node_id)),
+            CodeExtent::Misc(node_id) =>
+                CodeExtent::Misc(f_id(node_id)),
+            CodeExtent::Item(item_id) =>
+                CodeExtent::Item(f_item_id(item_id)),
             CodeExtent::Remainder(br) =>
                 CodeExtent::Remainder(BlockRemainder {
-                    block: f_id(br.block), first_statement_index: br.first_statement_index }),
+                    block: f_id(br.block),
+                    first_statement_index: br.first_statement_index
+                }),
             CodeExtent::DestructionScope(node_id) =>
                 CodeExtent::DestructionScope(f_id(node_id)),
             CodeExtent::ParameterScope { fn_id, body_id } =>
-                CodeExtent::ParameterScope { fn_id: f_id(fn_id), body_id: f_id(body_id) },
+                CodeExtent::ParameterScope {
+                    fn_id: f_item_id(fn_id),
+                    body_id: f_id(body_id)
+                },
         }
     }
 
     /// Returns the span of this CodeExtent.  Note that in general the
     /// returned span may not correspond to the span of any node id in
     /// the AST.
-    pub fn span(&self, ast_map: &ast_map::Map) -> Option<Span> {
-        match ast_map.find(self.node_id()) {
-            Some(ast_map::NodeBlock(ref blk)) => {
-                match *self {
-                    CodeExtent::ParameterScope { .. } |
-                    CodeExtent::Misc(_) |
-                    CodeExtent::DestructionScope(_) => Some(blk.span),
+    pub fn span(&self, ast_map: &ast_map::Map) -> Span {
+        match *self {
+            CodeExtent::Item(item_id) =>
+                ast_map.item_span(item_id),
 
-                    CodeExtent::Remainder(r) => {
-                        assert_eq!(r.block, blk.id);
+            CodeExtent::Misc(node_id) |
+            CodeExtent::ParameterScope { fn_id: _, body_id: node_id } |
+            CodeExtent::DestructionScope(node_id) =>
+                ast_map.span(node_id),
+
+            CodeExtent::Remainder(r) =>
+                match ast_map.find(r.block) {
+                    Some(ast_map::NodeBlock(ref blk)) => {
                         // Want span for extent starting after the
                         // indexed statement and ending at end of
                         // `blk`; reuse span of `blk` and shift `lo`
@@ -207,15 +230,14 @@ impl CodeExtent {
                         // (This is the special case aluded to in the
                         // doc-comment for this method)
                         let stmt_span = blk.stmts[r.first_statement_index].span;
-                        Some(Span { lo: stmt_span.hi, ..blk.span })
+                        Span { lo: stmt_span.hi, ..blk.span }
                     }
-                }
-            }
-            Some(ast_map::NodeExpr(ref expr)) => Some(expr.span),
-            Some(ast_map::NodeStmt(ref stmt)) => Some(stmt.span),
-            Some(ast_map::ItemNode::Item(ref item)) => Some(item.span),
-            Some(_) | None => None,
-         }
+                    n => {
+                        panic!("remainder {:?} maps to {:?}, which is not a block",
+                               r, n)
+                    }
+                },
+        }
     }
 }
 
@@ -283,7 +305,7 @@ enum InnermostDeclaringBlock {
     Block(ast::NodeId),
     Statement(DeclaringStatementContext),
     Match(ast::NodeId),
-    FnDecl { fn_id: ast::NodeId, body_id: ast::NodeId },
+    FnDecl { fn_id: ast::ItemId, body_id: ast::NodeId },
 }
 
 impl InnermostDeclaringBlock {
@@ -1122,7 +1144,7 @@ fn resolve_fn(visitor: &mut RegionResolutionVisitor,
               decl: &ast::FnDecl,
               body: &ast::Block,
               sp: Span,
-              id: ast::NodeId) {
+              id: ast::ItemId) {
     debug!("region::resolve_fn(id={:?}, \
                                span={:?}, \
                                body.id={:?}, \

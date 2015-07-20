@@ -251,7 +251,7 @@ pub fn enc_region(w: &mut Encoder, cx: &ctxt, r: ty::Region) {
         }
         ty::ReFree(ref fr) => {
             mywrite!(w, "f[");
-            enc_destruction_scope_data(w, fr.scope);
+            enc_free_region_extent(w, fr.scope);
             mywrite!(w, "|");
             enc_bound_region(w, cx, fr.bound_region);
             mywrite!(w, "]");
@@ -285,9 +285,14 @@ fn enc_scope(w: &mut Encoder, _cx: &ctxt, scope: region::CodeExtent) {
     }
 }
 
-fn enc_destruction_scope_data(w: &mut Encoder,
-                              d: region::DestructionScopeData) {
-    mywrite!(w, "{}", d.node_id);
+fn enc_free_region_extent(w: &mut Encoder,
+                          d: region::FreeRegionExtent) {
+    match d {
+        region::FreeRegionExtent::Item(_) =>
+            panic!("we don't expect to encounter FreeRegionExtent::Item in metadata"),
+        region::FreeRegionExtent::DestructionScope(n) =>
+            mywrite!(w, "{}", n),
+    }
 }
 
 fn enc_bound_region(w: &mut Encoder, cx: &ctxt, br: ty::BoundRegion) {

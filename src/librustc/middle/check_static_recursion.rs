@@ -14,7 +14,7 @@
 use ast_map;
 use session::Session;
 use middle::def::{DefStatic, DefConst, DefAssociatedConst, DefVariant, DefMap};
-use util::nodemap::NodeMap;
+use util::nodemap::ItemIdMap;
 
 use syntax::{ast, ast_util};
 use syntax::codemap::Span;
@@ -31,7 +31,7 @@ struct CheckCrateVisitor<'a, 'ast: 'a> {
     // variant definitions with the discriminant expression that applies to
     // each one. If the variant uses the default values (starting from `0`),
     // then `None` is stored.
-    discriminant_map: RefCell<NodeMap<Option<&'ast ast::Expr>>>,
+    discriminant_map: RefCell<ItemIdMap<Option<&'ast ast::Expr>>>,
 }
 
 impl<'a, 'ast: 'a> Visitor<'ast> for CheckCrateVisitor<'a, 'ast> {
@@ -96,7 +96,7 @@ pub fn check_crate<'ast>(sess: &Session,
         sess: sess,
         def_map: def_map,
         ast_map: ast_map,
-        discriminant_map: RefCell::new(NodeMap()),
+        discriminant_map: RefCell::new(ItemIdMap()),
     };
     visit::walk_crate(&mut visitor, krate);
     sess.abort_if_errors();
@@ -107,7 +107,7 @@ struct CheckItemRecursionVisitor<'a, 'ast: 'a> {
     sess: &'a Session,
     ast_map: &'a ast_map::Map<'ast>,
     def_map: &'a DefMap,
-    discriminant_map: &'a RefCell<NodeMap<Option<&'ast ast::Expr>>>,
+    discriminant_map: &'a RefCell<ItemIdMap<Option<&'ast ast::Expr>>>,
     idstack: Vec<ast::NodeId>,
 }
 
@@ -123,8 +123,14 @@ impl<'a, 'ast: 'a> CheckItemRecursionVisitor<'a, 'ast> {
             idstack: Vec::new(),
         }
     }
-    fn with_item_id_pushed<F>(&mut self, id: ast::NodeId, f: F)
-          where F: Fn(&mut Self) {
+    fn with_item_id_pushed<F>(&mut self, id: ast::ItemId, f: F)
+        where F: Fn(&mut Self)
+    {
+        self.with_node_id_pushed(id.as_node_id(), f)
+    }
+    fn with_node_id_pushed<F>(&mut self, id: ast::NodeId, f: F)
+        where F: Fn(&mut Self)
+    {
         if self.idstack.iter().any(|x| *x == id) {
             span_err!(self.sess, *self.root_span, E0265, "recursive constant");
             return;
@@ -154,9 +160,10 @@ impl<'a, 'ast: 'a> CheckItemRecursionVisitor<'a, 'ast> {
         }
 
         // Go through all the variants.
-        let mut variant_stack: Vec<ast::NodeId> = Vec::new();
+        let mut variant_stack: Vec<ast::ItemId> = Vec::new();
         for variant in enum_definition.variants.iter().rev() {
             variant_stack.push(variant.node.id);
+
             // When we find an expression, every variant currently on the stack
             // is affected by that expression.
             if let Some(ref expr) = variant.node.disr_expr {
@@ -201,7 +208,7 @@ impl<'a, 'ast: 'a> Visitor<'ast> for CheckItemRecursionVisitor<'a, 'ast> {
         // If `maybe_expr` is `None`, that's because no discriminant is
         // specified that affects this variant. Thus, no risk of recursion.
         if let Some(expr) = maybe_expr {
-            self.with_item_id_pushed(expr.id, |v| visit::walk_expr(v, expr));
+            self.with_node_id_pushed(expr.id, |v| visit::walk_expr(v, expr));
         }
     }
 
@@ -220,7 +227,7 @@ impl<'a, 'ast: 'a> Visitor<'ast> for CheckItemRecursionVisitor<'a, 'ast> {
                     Some(DefStatic(def_id, _)) |
                     Some(DefAssociatedConst(def_id, _)) |
                     Some(DefConst(def_id)) if ast_util::is_local(def_id) => {
-                        match self.ast_map.get_item(def_id.node) {
+                        match self.ast_map.get_item(def_id.item) {
                             ast_map::ItemNode::Item(item) =>
                                 self.visit_item(item),
                             ast_map::ItemNode::TraitItem(item) =>
@@ -232,7 +239,7 @@ impl<'a, 'ast: 'a> Visitor<'ast> for CheckItemRecursionVisitor<'a, 'ast> {
                                 self.sess.span_bug(
                                     e.span,
                                     &format!("expected item, found {}",
-                                             self.ast_map.node_to_string(def_id.node)));
+                                             self.ast_map.item_id_to_string(def_id.item)));
                             }
                         }
                     }

@@ -1766,7 +1766,7 @@ impl Visibility {
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub struct StructField_ {
     pub kind: StructFieldKind,
-    pub id: NodeId,
+    pub id: ItemId,
     pub ty: P<Ty>,
     pub attrs: Vec<Attribute>,
 }

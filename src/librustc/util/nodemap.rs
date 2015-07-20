@@ -22,9 +22,11 @@ pub type FnvHashMap<K, V> = HashMap<K, V, DefaultState<FnvHasher>>;
 pub type FnvHashSet<V> = HashSet<V, DefaultState<FnvHasher>>;
 
 pub type NodeMap<T> = FnvHashMap<ast::NodeId, T>;
+pub type ItemIdMap<T> = FnvHashMap<ast::ItemId, T>;
 pub type DefIdMap<T> = FnvHashMap<ast::DefId, T>;
 
 pub type NodeSet = FnvHashSet<ast::NodeId>;
+pub type ItemIdSet = FnvHashSet<ast::ItemId>;
 pub type DefIdSet = FnvHashSet<ast::DefId>;
 
 pub fn FnvHashMap<K: Hash + Eq, V>() -> FnvHashMap<K, V> {
@@ -35,8 +37,10 @@ pub fn FnvHashSet<V: Hash + Eq>() -> FnvHashSet<V> {
 }
 
 pub fn NodeMap<T>() -> NodeMap<T> { FnvHashMap() }
+pub fn ItemIdMap<T>() -> ItemIdMap<T> { FnvHashMap() }
 pub fn DefIdMap<T>() -> DefIdMap<T> { FnvHashMap() }
 pub fn NodeSet() -> NodeSet { FnvHashSet() }
+pub fn ItemIdSet() -> ItemIdSet { FnvHashSet() }
 pub fn DefIdSet() -> DefIdSet { FnvHashSet() }
 
 /// A speedy hash algorithm for node ids and def ids. The hashmap in

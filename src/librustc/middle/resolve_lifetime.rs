@@ -42,7 +42,7 @@ pub enum DefRegion {
                         /* lifetime decl */ ast::NodeId),
     DefLateBoundRegion(ty::DebruijnIndex,
                        /* lifetime decl */ ast::NodeId),
-    DefFreeRegion(/* block scope */ region::DestructionScopeData,
+    DefFreeRegion(/* block scope */ region::FreeRegionExtent,
                   /* lifetime decl */ ast::NodeId),
 }
 
@@ -85,7 +85,7 @@ enum ScopeChain<'a> {
     LateScope(&'a Vec<ast::LifetimeDef>, Scope<'a>),
     /// lifetimes introduced by items within a code block are scoped
     /// to that block.
-    BlockScope(region::DestructionScopeData, Scope<'a>),
+    BlockScope(region::FreeRegionExtent, Scope<'a>),
     RootScope
 }
 
@@ -218,7 +218,7 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
     }
 
     fn visit_block(&mut self, b: &ast::Block) {
-        self.with(BlockScope(region::DestructionScopeData::new(b.id),
+        self.with(BlockScope(region::FreeRegionExtent::DestructionScope(b.id),
                              self.scope),
                   |_, this| visit::walk_block(this, b));
     }
@@ -581,7 +581,7 @@ impl<'a> LifetimeContext<'a> {
     }
 
     fn resolve_free_lifetime_ref(&mut self,
-                                 scope_data: region::DestructionScopeData,
+                                 scope_data: region::FreeRegionExtent,
                                  lifetime_ref: &ast::Lifetime,
                                  scope: Scope) {
         debug!("resolve_free_lifetime_ref \

@@ -732,7 +732,7 @@ impl<'t, 'a,'tcx> MemCategorizationContext<'t, 'a, 'tcx> {
             };
 
             match fn_expr.node {
-                ast::ExprClosure(_, _, ref body) => body.id,
+                ast::ExprClosure(_, _, _, ref body) => body.id,
                 _ => unreachable!()
             }
         };
@@ -742,7 +742,7 @@ impl<'t, 'a,'tcx> MemCategorizationContext<'t, 'a, 'tcx> {
             // The environment of a closure is guaranteed to
             // outlive any bindings introduced in the body of the
             // closure itself.
-            scope: region::DestructionScopeData::new(fn_body_id),
+            scope: region::FreeRegionExtent::DestructionScope(fn_body_id),
             bound_region: ty::BrEnv
         });
 

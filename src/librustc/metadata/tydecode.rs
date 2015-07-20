@@ -337,7 +337,7 @@ fn parse_region_<F>(st: &mut PState, conv: &mut F) -> ty::Region where
       }
       'f' => {
         assert_eq!(next(st), '[');
-        let scope = parse_destruction_scope_data(st);
+        let scope = parse_free_region_extent(st);
         assert_eq!(next(st), '|');
         let br = parse_bound_region_(st, conv);
         assert_eq!(next(st), ']');
@@ -394,9 +394,8 @@ fn parse_scope(st: &mut PState) -> region::CodeExtent {
     }
 }
 
-fn parse_destruction_scope_data(st: &mut PState) -> region::DestructionScopeData {
-    let node_id = parse_uint(st) as ast::NodeId;
-    region::DestructionScopeData::new(node_id)
+fn parse_free_region_extent(st: &mut PState) -> region::FreeRegionExtent {
+    region::FreeRegionExtent::DestructionScope(parse_uint(st) as ast::NodeId)
 }
 
 fn parse_opt<'a, 'tcx, T, F>(st: &mut PState<'a, 'tcx>, f: F) -> Option<T> where

@@ -149,7 +149,7 @@ pub enum RegionResolutionError<'tcx> {
 /// 'a and 'b together inside a SameRegions struct
 #[derive(Clone, Debug)]
 pub struct SameRegions {
-    pub scope_id: ast::NodeId,
+    pub scope: region::FreeRegionExtent,
     pub regions: Vec<BoundRegion>
 }
 

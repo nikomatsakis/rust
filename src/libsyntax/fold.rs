@@ -857,7 +857,7 @@ pub fn noop_fold_struct_field<T: Folder>(f: StructField, fld: &mut T) -> StructF
     let StructField {node: StructField_ {id, kind, ty, attrs}, span} = f;
     Spanned {
         node: StructField_ {
-            id: fld.new_id(id),
+            id: fld.new_item_id(id),
             kind: kind,
             ty: fld.fold_ty(ty),
             attrs: fold_attrs(attrs, fld),

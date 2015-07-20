@@ -366,7 +366,7 @@ impl<'ast> Map<'ast> {
     }
 
     /// Returns the immediate parent of an item, not considering inlined/cross-crate items.
-    fn get_item_parent(&self, id: ItemId) -> ItemId {
+    pub fn get_item_parent(&self, id: ItemId) -> ItemId {
         match self.find_item_entry(id).unwrap() {
             ItemMapEntry::Item(parent, _) => parent,
             ItemMapEntry::ForeignItem(parent, _) => parent,
@@ -378,15 +378,23 @@ impl<'ast> Map<'ast> {
         }
     }
 
+    pub fn get_item_parent_did(&self, id: ItemId) -> DefId {
+        self.get_item_did(self.get_item_parent(id))
+    }
+
     pub fn get_parent_did(&self, id: NodeId) -> DefId {
         let parent = self.get_enclosing_item(id);
-        match self.find_item_entry(parent) {
+        self.get_item_did(parent)
+    }
+
+    pub fn get_item_did(&self, id: ItemId) -> DefId {
+        match self.find_item_entry(id) {
             Some(ItemMapEntry::RootInlinedParent(&InlinedParent {ii: IITraitItem(did, _), ..})) =>
                 did,
             Some(ItemMapEntry::RootInlinedParent(&InlinedParent {ii: IIImplItem(did, _), ..})) =>
                 did,
             _ =>
-                ast_util::local_def(parent)
+                ast_util::local_def(id)
         }
     }
 
@@ -596,6 +604,11 @@ impl<'ast> Map<'ast> {
             _ => return None,
         };
         Some(sp)
+    }
+
+    pub fn item_span(&self, id: ItemId) -> Span {
+        self.opt_item_span(id)
+            .unwrap_or_else(|| panic!("AstMap.span: could not find span for id {:?}", id))
     }
 
     pub fn span(&self, id: NodeId) -> Span {

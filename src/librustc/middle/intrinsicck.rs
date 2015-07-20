@@ -59,7 +59,7 @@ impl<'a, 'tcx> IntrinsicCheckingVisitor<'a, 'tcx> {
             _ => return false
         };
         if def_id.krate == ast::LOCAL_CRATE {
-            match self.tcx.map.get_item(def_id.node) {
+            match self.tcx.map.get_item(def_id.item) {
                 ItemNode::ForeignItem(ref item) if intrinsic => {
                     token::get_ident(item.ident) ==
                         token::intern_and_get_ident("transmute")

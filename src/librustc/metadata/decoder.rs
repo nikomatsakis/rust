@@ -231,6 +231,10 @@ fn variant_disr_val(d: rbml::Doc) -> Option<ty::Disr> {
     })
 }
 
+fn doc_as_item_id(doc: rbml::Doc) -> ast::ItemId {
+    ast::ItemId(reader::doc_as_u32(doc) as ast::NodeId)
+}
+
 fn doc_type<'tcx>(doc: rbml::Doc, tcx: &ty::ctxt<'tcx>, cdata: Cmd) -> Ty<'tcx> {
     let tp = reader::get_doc(doc, tag_items_data_item_type);
     parse_ty_data(tp.data, cdata.cnum, tp.start, tcx,
@@ -514,13 +518,13 @@ pub enum DefLike {
 
 /// Iterates over the language items in the given crate.
 pub fn each_lang_item<F>(cdata: Cmd, mut f: F) -> bool where
-    F: FnMut(ast::NodeId, usize) -> bool,
+    F: FnMut(ast::ItemId, usize) -> bool,
 {
     let root = rbml::Doc::new(cdata.data());
     let lang_items = reader::get_doc(root, tag_lang_items);
     reader::tagged_docs(lang_items, tag_lang_items_item).all(|item_doc| {
         let id_doc = reader::get_doc(item_doc, tag_lang_items_item_id);
-        let id = reader::doc_as_u32(id_doc) as usize;
+        let id = doc_as_item_id(id_doc);
         let node_id_doc = reader::get_doc(item_doc,
                                           tag_lang_items_item_node_id);
         let node_id = reader::doc_as_u32(node_id_doc) as ast::NodeId;

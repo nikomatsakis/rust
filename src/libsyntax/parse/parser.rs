@@ -3406,7 +3406,7 @@ impl<'a> Parser<'a> {
         let ty = try!(self.parse_ty_sum());
         Ok(spanned(lo, self.last_span.hi, ast::StructField_ {
             kind: NamedField(name, pr),
-            id: ast::DUMMY_NODE_ID,
+            id: ast::DUMMY_ITEM_ID,
             ty: ty,
             attrs: attrs,
         }))
@@ -4718,7 +4718,7 @@ impl<'a> Parser<'a> {
                     let lo = p.span.lo;
                     let struct_field_ = ast::StructField_ {
                         kind: UnnamedField(try!(p.parse_visibility())),
-                        id: ast::DUMMY_NODE_ID,
+                        id: ast::DUMMY_ITEM_ID,
                         ty: try!(p.parse_ty_sum()),
                         attrs: attrs,
                     };
