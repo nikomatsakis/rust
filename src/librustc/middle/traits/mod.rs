@@ -102,7 +102,7 @@ pub enum ObligationCauseCode<'tcx> {
     MiscObligation,
 
     /// Obligation that triggers warning until RFC 1214 is fully in place.
-    RFC1214,
+    RFC1214(Rc<ObligationCauseCode<'tcx>>),
 
     /// This is the trait reference from the given projection
     SliceOrArrayElem,
@@ -525,6 +525,15 @@ impl<'tcx> ObligationCause<'tcx> {
 
     pub fn dummy() -> ObligationCause<'tcx> {
         ObligationCause { span: DUMMY_SP, body_id: 0, code: MiscObligation }
+    }
+}
+
+impl<'tcx> ObligationCauseCode<'tcx> {
+    pub fn is_rfc1214(&self) -> bool {
+        match *self {
+            ObligationCauseCode::RFC1214(..) => true,
+            _ => false,
+        }
     }
 }
 

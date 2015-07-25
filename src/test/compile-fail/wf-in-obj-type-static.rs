@@ -8,21 +8,21 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-trait From<Src> {
-    type Result;
+// Check that we enforce WF conditions also for types in fns.
 
-    fn from(src: Src) -> Self::Result;
+#![feature(rustc_attrs)]
+#![allow(dead_code)]
+
+trait Object<T> { }
+
+struct MustBeCopy<T:Copy> {
+    t: T
 }
 
-trait To {
-    fn to<Dst>(
-        self //~ error: the trait `core::marker::Sized` is not implemented
-    ) -> <Dst as From<Self>>::Result where Dst: From<Self> {
-        From::from( //~ error: the trait `core::marker::Sized` is not implemented
-            //~^ ERROR E0277
-            self
-        )
-    }
+struct Foo<T> { //~ WARN E0310
+    // needs T: 'static
+    x: Object<&'static T> //~ WARN E0310
 }
 
-fn main() {}
+#[rustc_error]
+fn main() { } //~ ERROR compilation successful

@@ -324,8 +324,6 @@ pub fn normalize_projection_type<'a,'b,'tcx>(
     depth: usize)
     -> NormalizedTy<'tcx>
 {
-    // TODO we must check that components are WF when we normalize
-
     opt_normalize_projection_type(selcx, projection_ty.clone(), cause.clone(), depth)
         .unwrap_or_else(move || {
             // if we bottom out in ambiguity, create a type variable

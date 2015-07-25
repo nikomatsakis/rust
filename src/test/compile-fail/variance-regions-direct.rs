@@ -42,7 +42,7 @@ struct Test4<'a, 'b:'a> { //~ ERROR regions=[[-, o];[];[]]
 // contravariant context:
 
 #[rustc_variance]
-struct Test5<'a, 'b> { //~ ERROR regions=[[+, o];[];[]]
+struct Test5<'a, 'b:'a> { //~ ERROR regions=[[+, o];[];[]]
     x: extern "Rust" fn(&'a mut &'b isize),
 }
 

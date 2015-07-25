@@ -10,8 +10,12 @@
 
 // Check that array elemen types must be Sized. Issue #25692.
 
-struct Foo {
-    foo: [[u8]], //~ ERROR E0277
+#![feature(rustc_attrs)]
+#![allow(dead_code)]
+
+struct Foo { //~ WARN E0277
+    foo: [[u8]],
 }
 
-fn main() { }
+#[rustc_error]
+fn main() { } //~ ERROR compilation successful

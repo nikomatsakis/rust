@@ -2502,6 +2502,7 @@ register_diagnostics! {
     E0366, // dropck forbid specialization to concrete type or region
     E0367, // dropck forbid specialization to predicate not in struct/enum
     E0369, // binary operation `<op>` cannot be applied to types
+    E0372, // trait cannot be made into an object (deprecated)
     E0374, // the trait `CoerceUnsized` may only be implemented for a coercion
            // between structures with one field being coerced, none found
     E0375, // the trait `CoerceUnsized` may only be implemented for a coercion

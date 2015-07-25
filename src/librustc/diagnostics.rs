@@ -1777,14 +1777,6 @@ struct Foo<T: 'static> {
 ```
 "##,
 
-E0038: r##"
-Trying to implement a trait for a trait object (as in `impl Trait1 for
-Trait2 { ... }`) does not work if the trait is not object-safe. Please see the
-[RFC 255] for more details on object safety rules.
-
-[RFC 255]: https://github.com/rust-lang/rfcs/pull/255
-"##,
-
 E0378: r##"
 Method calls that aren't calls to inherent `const` methods are disallowed
 in statics, constants, and constant functions.

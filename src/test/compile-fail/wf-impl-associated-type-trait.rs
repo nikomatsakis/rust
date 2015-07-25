@@ -10,6 +10,9 @@
 
 // Check that we require that associated types in an impl are well-formed.
 
+#![feature(rustc_attrs)]
+#![allow(dead_code)]
+
 pub trait MyHash { }
 
 pub struct MySet<T:MyHash> {
@@ -22,8 +25,9 @@ pub trait Foo {
 
 impl<T> Foo for T {
     type Bar = MySet<T>;
-    //~^ ERROR the trait `MyHash` is not implemented for the type `T`
+    //~^ WARN the trait `MyHash` is not implemented for the type `T`
 }
 
-fn main() { }
+#[rustc_error]
+fn main() { } //~ ERROR compilation successful
 

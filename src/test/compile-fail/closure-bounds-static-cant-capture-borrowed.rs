@@ -12,7 +12,9 @@ fn bar<F>(blk: F) where F: FnOnce() + 'static {
 }
 
 fn foo(x: &()) {
-    bar(|| { //~ ERROR captured variable `x` does not outlive
+    bar(|| {
+        //~^ ERROR cannot infer
+        //~| ERROR does not fulfill
         let _ = x;
     })
 }

@@ -10,10 +10,8 @@
 
 // The outlines relation `T: 'a` or `'a: 'b`.
 
-use middle::subst::Substs;
 use middle::infer::InferCtxt;
 use middle::ty::{self, RegionEscape, Ty};
-use syntax::ast;
 
 #[derive(Debug)]
 pub enum Component<'tcx> {
@@ -58,8 +56,8 @@ pub enum Component<'tcx> {
 /// Returns all the things that must outlive `'a` for the condition
 /// `ty0: 'a` to hold.
 pub fn components<'a,'tcx>(infcx: &InferCtxt<'a,'tcx>,
-                        ty0: Ty<'tcx>)
-                        -> Vec<Component<'tcx>> {
+                           ty0: Ty<'tcx>)
+                           -> Vec<Component<'tcx>> {
     let mut components = vec![];
     compute_components(infcx, ty0, &mut components);
     debug!("outlives({:?}) = {:?}", ty0, components);
@@ -77,7 +75,7 @@ fn compute_components<'a,'tcx>(infcx: &InferCtxt<'a,'tcx>,
     let mut subtys = ty0.walk();
     while let Some(ty) = subtys.next() {
         match ty.sty {
-            ty::TyClosure(def_id, substs) => {
+            ty::TyClosure(_, ref substs) => {
                 // FIXME(#27086). We do not accumulate from substs, since they
                 // don't represent reachable data. This means that, in
                 // practice, some of the lifetime parameters might not

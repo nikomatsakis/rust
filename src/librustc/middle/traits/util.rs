@@ -10,7 +10,7 @@
 
 use middle::subst::Substs;
 use middle::infer::InferCtxt;
-use middle::ty::{self, Ty, ToPredicate, ToPolyTraitRef};
+use middle::ty::{self, HasTypeFlags, Ty, ToPredicate, ToPolyTraitRef};
 use std::fmt;
 use syntax::ast;
 use syntax::codemap::Span;
@@ -574,5 +574,11 @@ impl<'tcx> fmt::Debug for super::FulfillmentErrorCode<'tcx> {
 impl<'tcx> fmt::Debug for super::MismatchedProjectionTypes<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "MismatchedProjectionTypes({:?})", self.err)
+    }
+}
+
+impl<'tcx, T: HasTypeFlags> HasTypeFlags for Obligation<'tcx, T> {
+    fn has_type_flags(&self, flags: ty::TypeFlags) -> bool {
+        self.predicate.has_type_flags(flags)
     }
 }

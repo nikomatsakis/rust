@@ -190,7 +190,7 @@ impl<'cx, 'tcx,'v> visit::Visitor<'v> for OverlapChecker<'cx, 'tcx> {
                     None => { }
                 }
             }
-            ast::ItemImpl(_, _, _, Some(_), _, _) => {
+            ast::ItemImpl(_, _, _, Some(_), ref self_ty, _) => {
                 let impl_def_id = ast_util::local_def(item.id);
                 let trait_ref = self.tcx.impl_trait_ref(impl_def_id).unwrap();
                 let trait_def_id = trait_ref.def_id;
@@ -199,7 +199,18 @@ impl<'cx, 'tcx,'v> visit::Visitor<'v> for OverlapChecker<'cx, 'tcx> {
                         // This is something like impl Trait1 for Trait2. Illegal
                         // if Trait1 is a supertrait of Trait2 or Trait2 is not object safe.
 
-                        if traits::is_object_safe(self.tcx, data.principal_def_id()) {
+                        if !traits::is_object_safe(self.tcx, data.principal_def_id()) {
+                            // FIXME. This just means the self-ty is
+                            // illegal; WF will report this error. But
+                            // it will do so as a warning for a
+                            // release or two.  For backwards compat
+                            // reasons, then, we continue to report it
+                            // here so that things which were errors
+                            // remain errors.
+                            span_err!(self.tcx.sess, self_ty.span, E0372,
+                                      "the trait `{}` cannot be made into an object",
+                                      self.tcx.item_path_str(data.principal_def_id()));
+                        } else {
                             let mut supertrait_def_ids =
                                 traits::supertrait_def_ids(self.tcx, data.principal_def_id());
                             if supertrait_def_ids.any(|d| d == trait_def_id) {
@@ -209,9 +220,6 @@ impl<'cx, 'tcx,'v> visit::Visitor<'v> for OverlapChecker<'cx, 'tcx> {
                                           trait_ref.self_ty(),
                                           self.tcx.item_path_str(trait_def_id));
                             }
-                        } else {
-                            // self-type is just plain malformed. This will be reported
-                            // by the wfcheck phase.
                         }
                     }
                     _ => { }

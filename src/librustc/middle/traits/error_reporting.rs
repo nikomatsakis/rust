@@ -55,22 +55,28 @@ fn report_fulfillment_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
     }
 }
 
+fn is_warning<T>(obligation: &Obligation<T>) -> bool {
+    obligation.cause.code.is_rfc1214()
+}
+
 pub fn report_projection_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
                                          obligation: &PredicateObligation<'tcx>,
                                          error: &MismatchedProjectionTypes<'tcx>)
 {
     let predicate =
         infcx.resolve_type_vars_if_possible(&obligation.predicate);
+
     // The TyError created by normalize_to_error can end up being unified
     // into all obligations: for example, if our obligation is something
     // like `$X = <() as Foo<$X>>::Out` and () does not implement Foo<_>,
     // then $X will be unified with TyError, but the error still needs to be
     // reported.
     if !infcx.tcx.sess.has_errors() || !predicate.references_error() {
-        span_err!(infcx.tcx.sess, obligation.cause.span, E0271,
-                "type mismatch resolving `{}`: {}",
-                predicate,
-                error.err);
+        span_err_or_warn!(
+            is_warning(obligation), infcx.tcx.sess, obligation.cause.span, E0271,
+            "type mismatch resolving `{}`: {}",
+            predicate,
+            error.err);
         note_obligation_cause(infcx, obligation);
     }
 }
@@ -178,86 +184,93 @@ pub fn report_selection_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
                                         obligation: &PredicateObligation<'tcx>,
                                         error: &SelectionError<'tcx>)
 {
+    let is_warning = is_warning(obligation);
     match *error {
         SelectionError::Unimplemented => {
-            match &obligation.cause.code {
-                &ObligationCauseCode::RFC1214 => {
-                    report_rfc1214_error(infcx, obligation, error);
-                }
-                &ObligationCauseCode::CompareImplMethodObligation => {
-                    span_err!(infcx.tcx.sess, obligation.cause.span, E0276,
-                            "the requirement `{}` appears on the impl \
-                            method but not on the corresponding trait method",
-                            obligation.predicate);;
-                }
-                _ => {
-                    match obligation.predicate {
-                        ty::Predicate::Trait(ref trait_predicate) => {
-                            let trait_predicate =
-                                infcx.resolve_type_vars_if_possible(trait_predicate);
+            if let ObligationCauseCode::CompareImplMethodObligation = obligation.cause.code {
+                span_err_or_warn!(
+                    is_warning, infcx.tcx.sess, obligation.cause.span, E0276,
+                    "the requirement `{}` appears on the impl \
+                     method but not on the corresponding trait method",
+                    obligation.predicate);;
+            } else {
+                match obligation.predicate {
+                    ty::Predicate::Trait(ref trait_predicate) => {
+                        let trait_predicate =
+                            infcx.resolve_type_vars_if_possible(trait_predicate);
 
-                            if !infcx.tcx.sess.has_errors() ||
-                               !trait_predicate.references_error() {
-                                let trait_ref = trait_predicate.to_poly_trait_ref();
-                                span_err!(infcx.tcx.sess, obligation.cause.span, E0277,
-                                        "the trait `{}` is not implemented for the type `{}`",
-                                        trait_ref,
-                                        trait_ref.self_ty());
-                                // Check if it has a custom "#[rustc_on_unimplemented]"
-                                // error message, report with that message if it does
-                                let custom_note = report_on_unimplemented(infcx, &trait_ref.0,
-                                                                          obligation.cause.span);
-                                if let Some(s) = custom_note {
-                                    infcx.tcx.sess.span_note(obligation.cause.span,
-                                                             &s);
-                                }
+                        if !infcx.tcx.sess.has_errors() || !trait_predicate.references_error() {
+                            let trait_ref = trait_predicate.to_poly_trait_ref();
+                            span_err_or_warn!(
+                                is_warning, infcx.tcx.sess, obligation.cause.span, E0277,
+                                "the trait `{}` is not implemented for the type `{}`",
+                                trait_ref, trait_ref.self_ty());
+
+                            // Check if it has a custom "#[rustc_on_unimplemented]"
+                            // error message, report with that message if it does
+                            let custom_note = report_on_unimplemented(infcx, &trait_ref.0,
+                                                                      obligation.cause.span);
+                            if is_warning {
+                                note_obligation_cause(infcx, obligation);
+                            } else if let Some(s) = custom_note {
+                                infcx.tcx.sess.span_note(obligation.cause.span, &s);
+                            } else {
+                                note_obligation_cause(infcx, obligation);
                             }
                         }
+                    }
 
-                        ty::Predicate::Equate(ref predicate) => {
-                            let predicate = infcx.resolve_type_vars_if_possible(predicate);
-                            let err = infcx.equality_predicate(obligation.cause.span,
-                                                               &predicate).err().unwrap();
-                            span_err!(infcx.tcx.sess, obligation.cause.span, E0278,
-                                    "the requirement `{}` is not satisfied (`{}`)",
-                                    predicate,
-                                    err);
-                        }
+                    ty::Predicate::Equate(ref predicate) => {
+                        let predicate = infcx.resolve_type_vars_if_possible(predicate);
+                        let err = infcx.equality_predicate(obligation.cause.span,
+                                                           &predicate).err().unwrap();
+                        span_err_or_warn!(
+                            is_warning, infcx.tcx.sess, obligation.cause.span, E0278,
+                            "the requirement `{}` is not satisfied (`{}`)",
+                            predicate,
+                            err);
+                        note_obligation_cause(infcx, obligation);
+                    }
 
-                        ty::Predicate::RegionOutlives(ref predicate) => {
-                            let predicate = infcx.resolve_type_vars_if_possible(predicate);
-                            let err = infcx.region_outlives_predicate(obligation.cause.span,
-                                                                      &predicate).err().unwrap();
-                            span_err!(infcx.tcx.sess, obligation.cause.span, E0279,
-                                    "the requirement `{}` is not satisfied (`{}`)",
-                                    predicate,
-                                    err);
-                        }
+                    ty::Predicate::RegionOutlives(ref predicate) => {
+                        let predicate = infcx.resolve_type_vars_if_possible(predicate);
+                        let err = infcx.region_outlives_predicate(obligation.cause.span,
+                                                                  &predicate).err().unwrap();
+                        span_err_or_warn!(
+                            is_warning, infcx.tcx.sess, obligation.cause.span, E0279,
+                            "the requirement `{}` is not satisfied (`{}`)",
+                            predicate,
+                            err);
+                        note_obligation_cause(infcx, obligation);
+                    }
 
-                        ty::Predicate::Projection(..) | ty::Predicate::TypeOutlives(..) => {
-                            let predicate =
-                                infcx.resolve_type_vars_if_possible(&obligation.predicate);
-                            span_err!(infcx.tcx.sess, obligation.cause.span, E0280,
-                                      "the requirement `{}` is not satisfied",
-                                      predicate);
-                        }
+                    ty::Predicate::Projection(..) | ty::Predicate::TypeOutlives(..) => {
+                        let predicate =
+                            infcx.resolve_type_vars_if_possible(&obligation.predicate);
+                        span_err_or_warn!(
+                            is_warning, infcx.tcx.sess, obligation.cause.span, E0280,
+                            "the requirement `{}` is not satisfied",
+                            predicate);
+                        note_obligation_cause(infcx, obligation);
+                    }
 
-                        ty::Predicate::ObjectSafe(trait_def_id) => {
-                            report_object_safety_error(infcx.tcx,
-                                                       obligation.cause.span,
-                                                       trait_def_id)
-                        }
+                    ty::Predicate::ObjectSafe(trait_def_id) => {
+                        report_object_safety_error(infcx.tcx,
+                                                   obligation.cause.span,
+                                                   trait_def_id,
+                                                   is_warning);
+                        note_obligation_cause(infcx, obligation);
+                    }
 
-                        ty::Predicate::WellFormed(ty) => {
-                            // WF predicates cannot themselves make
-                            // errors. They can only block due to
-                            // ambiguity; otherwise, they always
-                            // degenerate into other obligations
-                            // (which may fail).
-                            infcx.tcx.sess.span_bug(
-                                obligation.cause.span,
-                                &format!("WF predicate not satisfied for {:?}", ty));
-                        }
+                    ty::Predicate::WellFormed(ty) => {
+                        // WF predicates cannot themselves make
+                        // errors. They can only block due to
+                        // ambiguity; otherwise, they always
+                        // degenerate into other obligations
+                        // (which may fail).
+                        infcx.tcx.sess.span_bug(
+                            obligation.cause.span,
+                            &format!("WF predicate not satisfied for {:?}", ty));
                     }
                 }
             }
@@ -267,96 +280,21 @@ pub fn report_selection_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
             let expected_trait_ref = infcx.resolve_type_vars_if_possible(&*expected_trait_ref);
             let actual_trait_ref = infcx.resolve_type_vars_if_possible(&*actual_trait_ref);
             if !actual_trait_ref.self_ty().references_error() {
-                span_err!(infcx.tcx.sess, obligation.cause.span, E0281,
-                        "type mismatch: the type `{}` implements the trait `{}`, \
-                        but the trait `{}` is required ({})",
-                        expected_trait_ref.self_ty(),
-                        expected_trait_ref,
-                        actual_trait_ref,
-                        e);
+                span_err_or_warn!(
+                    is_warning, infcx.tcx.sess, obligation.cause.span, E0281,
+                    "type mismatch: the type `{}` implements the trait `{}`, \
+                     but the trait `{}` is required ({})",
+                    expected_trait_ref.self_ty(),
+                    expected_trait_ref,
+                    actual_trait_ref,
+                    e);
                 note_obligation_cause(infcx, obligation);
             }
         }
 
         TraitNotObjectSafe(did) => {
-            report_object_safety_error(infcx.tcx, obligation.cause.span, did);
-        }
-    }
-}
-
-fn report_rfc1214_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
-                                  obligation: &PredicateObligation<'tcx>,
-                                  error: &SelectionError<'tcx>)
-{
-    match obligation.predicate {
-        ty::Predicate::Trait(ref trait_predicate) => {
-            let trait_predicate =
-                infcx.resolve_type_vars_if_possible(trait_predicate);
-
-            if !infcx.tcx.sess.has_errors() ||
-                !trait_predicate.references_error() {
-                    let trait_ref = trait_predicate.to_poly_trait_ref();
-
-                    infcx.tcx.sess.span_warn(
-                        obliation.cause.span,
-                        &format!("the trait `{}` is not implemented for the type `{}`",
-                                 trait_ref,
-                                 trait_ref.self_ty()));
-
-                    // Check if it has a custom "#[rustc_on_unimplemented]"
-                    // error message, report with that message if it does
-                    let custom_note = report_on_unimplemented(infcx, &trait_ref.0,
-                                                              obligation.cause.span);
-                    if let Some(s) = custom_note {
-                        infcx.tcx.sess.span_note(obligation.cause.span, &s);
-                    }
-                }
-        }
-
-        ty::Predicate::Equate(ref predicate) => {
-            let predicate = infcx.resolve_type_vars_if_possible(predicate);
-            let err = infcx.equality_predicate(obligation.cause.span,
-                                               &predicate).err().unwrap();
-            infcx.tcx.sess.span_warn(
-                obligation.cause.span,
-                &format!("the requirement `{}` is not satisfied (`{}`)",
-                         predicate, err));
-        }
-
-        ty::Predicate::RegionOutlives(ref predicate) => {
-            let predicate = infcx.resolve_type_vars_if_possible(predicate);
-            let err = infcx.region_outlives_predicate(obligation.cause.span,
-                                                      &predicate).err().unwrap();
-            infcx.tcx.sess.span_warn(
-                obligation.cause.span,
-                &format!("the requirement `{}` is not satisfied (`{}`)",
-                         predicate, err));
-        }
-
-        ty::Predicate::Projection(..) | ty::Predicate::TypeOutlives(..) => {
-            let predicate =
-                infcx.resolve_type_vars_if_possible(&obligation.predicate);
-            infcx.tcx.sess.span_warn(
-                obligation.cause.span,
-                &format!("the requirement `{}` is not satisfied",
-                         predicate));
-        }
-
-        ty::Predicate::ObjectSafe(trait_def_id) => {
-            report_object_safety_warning(infcx.tcx,
-                                         obligation.cause.span,
-                                         trait_def_id)
-        }
-
-        ty::Predicate::WellFormed(ty) => {
-            // WF predicates cannot themselves make
-            // errors. They can only block due to
-            // ambiguity; otherwise, they always
-            // degenerate into other obligations
-            // (which may fail).
-            infcx.tcx.sess.span_bug(
-                obligation.cause.span,
-                &format!("WF predicate not satisfied for {:?}", ty));
+            report_object_safety_error(infcx.tcx, obligation.cause.span, did, is_warning);
+            note_obligation_cause(infcx, obligation);
         }
     }
 }
@@ -364,32 +302,12 @@ fn report_rfc1214_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
 pub fn report_object_safety_error<'tcx>(tcx: &ty::ctxt<'tcx>,
                                         span: Span,
                                         trait_def_id: ast::DefId,
+                                        is_warning: bool)
 {
-    report_object_safety_error_helper(tcx, span, trait_def_id, false);
-}
-
-fn report_object_safety_warning<'tcx>(tcx: &ty::ctxt<'tcx>,
-                                      span: Span,
-                                      trait_def_id: ast::DefId,
-{
-    report_object_safety_error_helper(tcx, span, trait_def_id, true);
-}
-
-fn report_object_safety_error_helper<'tcx>(tcx: &ty::ctxt<'tcx>,
-                                           span: Span,
-                                           trait_def_id: ast::DefId,
-                                           warning: bool)
-{
-    if !warning {
-        span_err!(tcx.sess, span, E0038,
-                  "the trait `{}` cannot be made into an object",
-                  tcx.item_path_str(trait_def_id));
-    } else {
-        tcx.sess.span_warn(
-            span,
-            &format!("the trait `{}` cannot be made into an object",
-                     tcx.item_path_str(trait_def_id)));
-    }
+    span_err_or_warn!(
+        is_warning, tcx.sess, span, E0038,
+        "the trait `{}` cannot be made into an object",
+        tcx.item_path_str(trait_def_id));
 
     for violation in object_safety_violations(tcx, trait_def_id) {
         match violation {
@@ -542,12 +460,9 @@ fn note_obligation_cause_code<'a, 'tcx, T>(infcx: &InferCtxt<'a, 'tcx>,
     let tcx = infcx.tcx;
     match *cause_code {
         ObligationCauseCode::MiscObligation => { }
-        ObligationCauseCode::RFC1214 => {
-            tcx.sess.span_note(
-                cause_span,
-                &format!("this warning results from recent bug fixes and clarifications; \
-                          it will become a HARD ERROR in the next release. \
-                          See RFC 1214 for details."));
+        ObligationCauseCode::RFC1214(ref subcode) => {
+            tcx.sess.note_rfc_1214(cause_span);
+            note_obligation_cause_code(infcx, predicate, cause_span, subcode);
         }
         ObligationCauseCode::SliceOrArrayElem => {
             tcx.sess.span_note(

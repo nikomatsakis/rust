@@ -468,7 +468,8 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
             ty::Predicate::WellFormed(ty) => {
                 match wf::obligations(self.infcx, obligation.cause.body_id,
-                                      ty, obligation.cause.span) {
+                                      ty, obligation.cause.span,
+                                      obligation.cause.code.is_rfc1214()) {
                     Some(obligations) =>
                         self.evaluate_predicates_recursively(previous_stack, obligations.iter()),
                     None =>
@@ -2940,13 +2941,23 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         // chain. Ideally, we should have a way to configure this either
         // by using -Z verbose or just a CLI argument.
         if obligation.recursion_depth >= 0 {
-            let derived_cause = DerivedObligationCause {
-                parent_trait_ref: obligation.predicate.to_poly_trait_ref(),
-                parent_code: Rc::new(obligation.cause.code.clone()),
+            let derived_code = match obligation.cause.code {
+                ObligationCauseCode::RFC1214(ref base_code) => {
+                    let derived_cause = DerivedObligationCause {
+                        parent_trait_ref: obligation.predicate.to_poly_trait_ref(),
+                        parent_code: base_code.clone(),
+                    };
+                    ObligationCauseCode::RFC1214(Rc::new(variant(derived_cause)))
+                }
+                _ => {
+                    let derived_cause = DerivedObligationCause {
+                        parent_trait_ref: obligation.predicate.to_poly_trait_ref(),
+                        parent_code: Rc::new(obligation.cause.code.clone())
+                    };
+                    variant(derived_cause)
+                }
             };
-            ObligationCause::new(obligation.cause.span,
-                                 obligation.cause.body_id,
-                                 variant(derived_cause))
+            ObligationCause::new(obligation.cause.span, obligation.cause.body_id, derived_code)
         } else {
             obligation.cause.clone()
         }

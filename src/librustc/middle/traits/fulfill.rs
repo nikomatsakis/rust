@@ -24,6 +24,7 @@ use super::CodeSelectionError;
 use super::is_object_safe;
 use super::FulfillmentError;
 use super::ObligationCause;
+use super::ObligationCauseCode;
 use super::PredicateObligation;
 use super::project;
 use super::select::SelectionContext;
@@ -485,8 +486,12 @@ fn process_predicate<'a,'tcx>(selcx: &mut SelectionContext<'a,'tcx>,
         }
 
         ty::Predicate::WellFormed(ty) => {
+            let rfc1214 = match obligation.cause.code {
+                ObligationCauseCode::RFC1214(_) => true,
+                _ => false,
+            };
             match wf::obligations(selcx.infcx(), obligation.cause.body_id,
-                                  ty, obligation.cause.span) {
+                                  ty, obligation.cause.span, rfc1214) {
                 Some(obligations) => {
                     new_obligations.extend(obligations);
                     true

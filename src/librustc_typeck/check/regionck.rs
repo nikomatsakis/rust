@@ -89,13 +89,15 @@ use middle::free_region::FreeRegionMap;
 use middle::mem_categorization as mc;
 use middle::outlives;
 use middle::region::CodeExtent;
+use middle::subst::Substs;
 use middle::traits;
 use middle::ty::{self, RegionEscape, ReScope, Ty, MethodCall, HasTypeFlags};
-use middle::infer::{self, GenericKind, InferCtxt, VerifyBound};
+use middle::infer::{self, GenericKind, InferCtxt, SubregionOrigin, VerifyBound};
 use middle::pat_util;
 use middle::wf::{self, ImpliedBound};
 
 use std::mem;
+use std::rc::Rc;
 use syntax::{ast, ast_util};
 use syntax::codemap::Span;
 use syntax::visit;
@@ -123,14 +125,17 @@ pub fn regionck_expr(fcx: &FnCtxt, e: &ast::Expr) {
 
 /// Region checking during the WF phase for items. `wf_tys` are the
 /// types from which we should derive implied bounds, if any.
-pub fn regionck_item<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>, item: &ast::Item, wf_tys: &[Ty<'tcx>]) {
-    debug!("regionck_item(item.id={:?}, wf_tys={:?}", item.id, wf_tys);
-    let mut rcx = Rcx::new(fcx, RepeatingScope(item.id), item.id, Subject(item.id));
+pub fn regionck_item<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
+                              item_id: ast::NodeId,
+                              span: Span,
+                              wf_tys: &[Ty<'tcx>]) {
+    debug!("regionck_item(item.id={:?}, wf_tys={:?}", item_id, wf_tys);
+    let mut rcx = Rcx::new(fcx, RepeatingScope(item_id), item_id, Subject(item_id));
     let tcx = fcx.tcx();
     rcx.free_region_map
        .relate_free_regions_from_predicates(tcx, &fcx.infcx().parameter_environment.caller_bounds);
-    rcx.relate_free_regions(wf_tys, item.id, item.span);
-    rcx.visit_region_obligations(item.id);
+    rcx.relate_free_regions(wf_tys, item_id, span);
+    rcx.visit_region_obligations(item_id);
     rcx.resolve_regions_and_report_errors();
 }
 
@@ -321,18 +326,28 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
             debug!("visit_region_obligations: r_o={:?} cause={:?}",
                    r_o, r_o.cause);
             let sup_type = self.resolve_type(r_o.sup_type);
-            let origin = match r_o.cause.code {
-                traits::ObligationCauseCode::ReferenceOutlivesReferent(ref_type) =>
-                    infer::ReferenceOutlivesReferent(ref_type, r_o.cause.span),
-                _ =>
-                    infer::RelateParamBound(r_o.cause.span, sup_type),
-            };
+            let origin = self.code_to_origin(r_o.cause.span, sup_type, &r_o.cause.code);
             type_must_outlive(self, origin, sup_type, r_o.sub_region);
         }
 
         // Processing the region obligations should not cause the list to grow further:
         assert_eq!(region_obligations.len(),
                    self.fcx.inh.infcx.fulfillment_cx.borrow().region_obligations(node_id).len());
+    }
+
+    fn code_to_origin(&self,
+                      span: Span,
+                      sup_type: Ty<'tcx>,
+                      code: &traits::ObligationCauseCode<'tcx>)
+                      -> SubregionOrigin<'tcx> {
+        match *code {
+            traits::ObligationCauseCode::RFC1214(ref code) =>
+                infer::RFC1214Subregion(Rc::new(self.code_to_origin(span, sup_type, code))),
+            traits::ObligationCauseCode::ReferenceOutlivesReferent(ref_type) =>
+                infer::ReferenceOutlivesReferent(ref_type, span),
+            _ =>
+                infer::RelateParamBound(span, sup_type),
+        }
     }
 
     /// This method populates the region map's `free_region_map`. It walks over the transformed

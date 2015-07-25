@@ -14,8 +14,8 @@
 trait TheTrait<'t>: 't { }
 
 struct Foo<'a,'b> {
-    x: Box<TheTrait<'a>+'b>
         //~^ ERROR lifetime bound not satisfied
+    x: Box<TheTrait<'a>+'b>
 }
 
 fn main() { }

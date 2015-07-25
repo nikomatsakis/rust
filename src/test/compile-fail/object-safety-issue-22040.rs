@@ -18,8 +18,8 @@ trait Expr: Debug + PartialEq {
 
 //#[derive(PartialEq)]
 #[derive(Debug)]
-struct SExpr<'x> {
-    elements: Vec<Box<Expr+ 'x>>, //~ ERROR E0038
+struct SExpr<'x> { //~ ERROR E0038
+    elements: Vec<Box<Expr+ 'x>>,
 }
 
 impl<'x> PartialEq for SExpr<'x> {

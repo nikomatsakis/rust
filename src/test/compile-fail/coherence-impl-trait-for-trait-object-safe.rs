@@ -8,21 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-trait From<Src> {
-    type Result;
+// Test that we give suitable error messages when the user attempts to
+// impl a trait `Trait` for its own object type.
 
-    fn from(src: Src) -> Self::Result;
-}
+// If the trait is not object-safe, we give a more tailored message
+// because we're such schnuckels:
+trait NotObjectSafe { fn eq(&self, other: Self); }
+impl NotObjectSafe for NotObjectSafe { } //~ ERROR E0372
 
-trait To {
-    fn to<Dst>(
-        self //~ error: the trait `core::marker::Sized` is not implemented
-    ) -> <Dst as From<Self>>::Result where Dst: From<Self> {
-        From::from( //~ error: the trait `core::marker::Sized` is not implemented
-            //~^ ERROR E0277
-            self
-        )
-    }
-}
-
-fn main() {}
+fn main() { }

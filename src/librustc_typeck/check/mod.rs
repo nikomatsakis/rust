@@ -133,6 +133,7 @@ pub mod coercion;
 pub mod demand;
 pub mod method;
 mod upvar;
+mod wf;
 mod wfcheck;
 mod cast;
 mod closure;
@@ -382,7 +383,22 @@ impl<'a, 'tcx> Visitor<'tcx> for CheckItemBodiesVisitor<'a, 'tcx> {
     }
 }
 
-pub fn check_wf(ccx: &CrateCtxt) {
+pub fn check_wf_old(ccx: &CrateCtxt) {
+    // EGADS. The new code below is much more reliable but (for now)
+    // only generates warnings. So as to ensure that we continue
+    // getting errors where we used to get errors, we run the old wf
+    // code first and abort if it encounters any errors. If no abort
+    // comes, we run the new code and issue warnings.
+    let krate = ccx.tcx.map.krate();
+    let mut visit = wf::CheckTypeWellFormedVisitor::new(ccx);
+    visit::walk_crate(&mut visit, krate);
+
+    // If types are not well-formed, it leads to all manner of errors
+    // downstream, so stop reporting errors at this point.
+    ccx.tcx.sess.abort_if_errors();
+}
+
+pub fn check_wf_new(ccx: &CrateCtxt) {
     let krate = ccx.tcx.map.krate();
     let mut visit = wfcheck::CheckTypeWellFormedVisitor::new(ccx);
     visit::walk_crate(&mut visit, krate);
@@ -587,7 +603,6 @@ fn check_fn<'a, 'tcx>(ccx: &'a CrateCtxt<'a, 'tcx>,
     };
 
     // Remember return type so that regionck can access it later.
-    // TODO just take implied bounds from the arguments
     let mut fn_sig_tys: Vec<Ty> =
         arg_tys.iter()
         .cloned()
@@ -595,7 +610,7 @@ fn check_fn<'a, 'tcx>(ccx: &'a CrateCtxt<'a, 'tcx>,
 
     if let ty::FnConverging(ret_ty) = ret_ty {
         fcx.require_type_is_sized(ret_ty, decl.output.span(), traits::ReturnType);
-        fn_sig_tys.push(ret_ty); // TODO
+        fn_sig_tys.push(ret_ty); // TODO just take implied bounds from the arguments
     }
 
     debug!("fn-sig-map: fn_id={} fn_sig_tys={:?}",
@@ -610,7 +625,7 @@ fn check_fn<'a, 'tcx>(ccx: &'a CrateCtxt<'a, 'tcx>,
         // Add formal parameters.
         for (arg_ty, input) in arg_tys.iter().zip(&decl.inputs) {
             // The type of the argument must be well-formed.
-            fcx.register_wf_obligation(arg_ty, input.ty.span);
+            fcx.register_wf_obligation(arg_ty, input.ty.span, traits::MiscObligation);
 
             // Create type variables for each argument.
             pat_util::pat_bindings(
@@ -1483,8 +1498,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                         expr: &ast::Expr,
                                         code: traits::ObligationCauseCode<'tcx>)
     {
-        // TODO move this Sized checking to a later pass for efficiency
-
         self.require_type_is_sized(self.expr_ty(expr), expr.span, code);
     }
 
@@ -1532,7 +1545,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // defaults. Argh!
         match ast_t.node {
             ast::TyInfer => { }
-            _ => { self.register_wf_obligation(t, ast_t.span); }
+            _ => { self.register_wf_obligation(t, ast_t.span, traits::MiscObligation); }
         }
 
         t
@@ -1654,12 +1667,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     /// Registers an obligation for checking later, during regionck, that the type `ty` must
     /// outlive the region `r`.
-    pub fn register_wf_obligation(&self, ty: Ty<'tcx>, span: Span)
+    pub fn register_wf_obligation(&self,
+                                  ty: Ty<'tcx>,
+                                  span: Span,
+                                  code: traits::ObligationCauseCode<'tcx>)
     {
         // WF obligations never themselves fail, so no real need to give a detailed cause:
-        let cause = traits::ObligationCause::new(span,
-                                                 self.body_id,
-                                                 traits::ObligationCauseCode::MiscObligation);
+        let cause = traits::ObligationCause::new(span, self.body_id, code);
         self.register_predicate(traits::Obligation::new(cause, ty::Predicate::WellFormed(ty)));
     }
 
@@ -1667,7 +1681,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     pub fn add_wf_bounds(&self, substs: &Substs<'tcx>, expr: &ast::Expr)
     {
         for &ty in &substs.types {
-            self.register_wf_obligation(ty, expr.span);
+            self.register_wf_obligation(ty, expr.span, traits::MiscObligation);
         }
     }
 
@@ -2417,7 +2431,7 @@ fn check_argument_types<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
     // All the input types from the fn signature must outlive the call
     // so as to validate implied bounds.
     for &fn_input_ty in fn_inputs {
-        fcx.register_wf_obligation(fn_input_ty, sp);
+        fcx.register_wf_obligation(fn_input_ty, sp, traits::MiscObligation);
     }
 
     let mut expected_arg_tys = expected_arg_tys;
@@ -3569,7 +3583,7 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
 
           // we must check that return type of called functions is WF:
           let ret_ty = fcx.expr_ty(expr);
-          fcx.register_wf_obligation(ret_ty, expr.span);
+          fcx.register_wf_obligation(ret_ty, expr.span, traits::MiscObligation);
       }
       ast::ExprMethodCall(ident, ref tps, ref args) => {
           check_method_call(fcx, expr, ident, &args[..], &tps[..], expected, lvalue_pref);

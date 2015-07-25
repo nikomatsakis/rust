@@ -10,13 +10,15 @@
 
 // Check that we require that associated types in an impl are well-formed.
 
+#![feature(rustc_attrs)]
+
 pub trait Foo<'a> {
     type Bar;
 }
 
 impl<'a, T> Foo<'a> for T {
-    type Bar = &'a T;
-    //~^ ERROR may not live long enough
+    type Bar = &'a T; //~ WARN E0309
 }
 
-fn main() { }
+#[rustc_error]
+fn main() { } //~ ERROR compilation

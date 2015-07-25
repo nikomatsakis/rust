@@ -533,6 +533,11 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
         // where the error was detected. But that span is not readily
         // accessible.
 
+        let is_warning = match origin {
+            infer::RFC1214Subregion(_) => true,
+            _ => false,
+        };
+
         let labeled_user_string = match bound_kind {
             GenericKind::Param(ref p) =>
                 format!("the parameter type `{}`", p),
@@ -543,7 +548,8 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
         match sub {
             ty::ReFree(ty::FreeRegion {bound_region: ty::BrNamed(..), ..}) => {
                 // Does the required lifetime have a nice name we can print?
-                span_err!(self.tcx.sess, origin.span(), E0309,
+                span_err_or_warn!(
+                    is_warning, self.tcx.sess, origin.span(), E0309,
                     "{} may not live long enough", labeled_user_string);
                 self.tcx.sess.fileline_help(
                     origin.span(),
@@ -555,7 +561,8 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
 
             ty::ReStatic => {
                 // Does the required lifetime have a nice name we can print?
-                span_err!(self.tcx.sess, origin.span(), E0310,
+                span_err_or_warn!(
+                    is_warning, self.tcx.sess, origin.span(), E0310,
                     "{} may not live long enough", labeled_user_string);
                 self.tcx.sess.fileline_help(
                     origin.span(),
@@ -566,9 +573,10 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
 
             _ => {
                 // If not, be less specific.
-                span_err!(self.tcx.sess, origin.span(), E0311,
-                        "{} may not live long enough",
-                        labeled_user_string);
+                span_err_or_warn!(
+                    is_warning, self.tcx.sess, origin.span(), E0311,
+                    "{} may not live long enough",
+                    labeled_user_string);
                 self.tcx.sess.fileline_help(
                     origin.span(),
                     &format!(
@@ -581,6 +589,10 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
             }
         }
 
+        if is_warning {
+            self.tcx.sess.note_rfc_1214(origin.span());
+        }
+
         self.note_region_origin(&origin);
     }
 
@@ -589,6 +601,15 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
                                sub: Region,
                                sup: Region) {
         match origin {
+            infer::RFC1214Subregion(ref suborigin) => {
+                // Ideally, this would be a warning, but it doesn't
+                // seem to come up in practice, since the changes from
+                // RFC1214 mostly trigger errors in type definitions
+                // that don't wind up coming down this path.
+                //
+                // /me hopes that this is true -- nmatsakis
+                self.report_concrete_failure((**suborigin).clone(), sub, sup);
+            }
             infer::Subtype(trace) => {
                 let terr = TypeError::RegionsDoesNotOutlive(sup, sub);
                 self.report_and_explain_type_error(trace, &terr);
@@ -826,7 +847,14 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
                     sub,
                     "");
             }
-            infer::DataBorrowed(ty, span) | // TODO
+            infer::DataBorrowed(ty, span) => {
+                self.tcx.sess.span_err(
+                    span,
+                    &format!("a value of type `{}` is borrowed for too long",
+                             self.ty_to_string(ty)));
+                self.tcx.note_and_explain_region("the type is valid for ", sub, "");
+                self.tcx.note_and_explain_region("but the borrow lasts for ", sup, "");
+            }
             infer::ReferenceOutlivesReferent(ty, span) => {
                 self.tcx.sess.span_err(
                     span,
@@ -1575,6 +1603,9 @@ impl<'a, 'tcx> ErrorReportingHelpers<'tcx> for InferCtxt<'a, 'tcx> {
 
     fn note_region_origin(&self, origin: &SubregionOrigin<'tcx>) {
         match *origin {
+            infer::RFC1214Subregion(ref suborigin) => {
+                self.note_region_origin(suborigin);
+            }
             infer::Subtype(ref trace) => {
                 let desc = match trace.origin {
                     infer::Misc(_) => {
@@ -1727,7 +1758,12 @@ impl<'a, 'tcx> ErrorReportingHelpers<'tcx> for InferCtxt<'a, 'tcx> {
                     span,
                     &format!("...so that a type/lifetime parameter is in scope here"));
             }
-            infer::DataBorrowed(ty, span) | // TODO
+            infer::DataBorrowed(ty, span) => {
+                self.tcx.sess.span_note(
+                    span,
+                    &format!("...so that the type `{}` is not borrowed for too long",
+                             self.ty_to_string(ty)));
+            }
             infer::ReferenceOutlivesReferent(ty, span) => {
                 self.tcx.sess.span_note(
                     span,
