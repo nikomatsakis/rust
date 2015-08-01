@@ -990,8 +990,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
         }
     }
 
-    let lid = ast::DefId { krate: ast::LOCAL_CRATE, node: id };
-    if let Some(type_scheme) = tcx.tcache.borrow().get(&lid) {
+    if let Some(type_scheme) = tcx.query_local_item_type(id) {
         rbml_w.tag(c::tag_table_tcache, |rbml_w| {
             rbml_w.id(id);
             rbml_w.emit_type_scheme(ecx, type_scheme.clone());

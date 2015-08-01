@@ -862,7 +862,7 @@ pub struct ctxt<'tcx> {
 
     pub map: ast_map::Map<'tcx>,
     pub freevars: RefCell<FreevarMap>,
-    pub tcache: RefCell<DefIdMap<TypeScheme<'tcx>>>,
+    tcache: RefCell<DefIdMap<TypeScheme<'tcx>>>,
     pub rcache: RefCell<FnvHashMap<CReaderCacheKey, Ty<'tcx>>>,
     pub tc_cache: RefCell<FnvHashMap<Ty<'tcx>, TypeContents>>,
     pub ast_ty_to_ty_cache: RefCell<NodeMap<Ty<'tcx>>>,
@@ -5928,6 +5928,11 @@ impl<'tcx> ctxt<'tcx> {
         lookup_locally_or_in_crate_store(
             "tcache", did, &self.tcache,
             || csearch::get_type(self, did))
+    }
+
+    pub fn query_local_item_type(&self, id: ast::NodeId) -> Option<TypeScheme<'tcx>> {
+        let did = ast::DefId { krate: ast::LOCAL_CRATE, node: id };
+        self.tcache.borrow().get(&did).cloned()
     }
 
     /// Given the did of a trait, returns its canonical trait ref.
