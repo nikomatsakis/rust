@@ -60,6 +60,7 @@ use middle::region::RegionMaps;
 use middle::stability;
 use middle::subst::{self, ParamSpace, Subst, Substs, VecPerParamSpace};
 use middle::traits;
+use middle::tcx;
 use middle::ty;
 use middle::ty_fold::{self, TypeFoldable, TypeFolder};
 use middle::ty_walk::{self, TypeWalker};
@@ -862,7 +863,6 @@ pub struct ctxt<'tcx> {
 
     pub map: ast_map::Map<'tcx>,
     pub freevars: RefCell<FreevarMap>,
-    tcache: RefCell<DefIdMap<TypeScheme<'tcx>>>,
     pub rcache: RefCell<FnvHashMap<CReaderCacheKey, Ty<'tcx>>>,
     pub tc_cache: RefCell<FnvHashMap<Ty<'tcx>, TypeContents>>,
     pub ast_ty_to_ty_cache: RefCell<NodeMap<Ty<'tcx>>>,
@@ -3503,7 +3503,7 @@ impl<'tcx> ctxt<'tcx> {
             fulfilled_predicates: RefCell::new(traits::FulfilledPredicates::new()),
             map: map,
             freevars: freevars,
-            tcache: RefCell::new(DefIdMap()),
+            item_types: tcx::ItemTypes::new(),
             rcache: RefCell::new(FnvHashMap()),
             tc_cache: RefCell::new(FnvHashMap()),
             ast_ty_to_ty_cache: RefCell::new(NodeMap()),
@@ -5919,20 +5919,17 @@ impl<'tcx> ctxt<'tcx> {
 
     // Register a given item type
     pub fn register_item_type(&self, did: ast::DefId, ty: TypeScheme<'tcx>) {
-        self.tcache.borrow_mut().insert(did, ty);
+        self.item_types.set(did, ty);
     }
 
     // If the given item is in an external crate, looks up its type and adds it to
     // the type cache. Returns the type parameters and type.
     pub fn lookup_item_type(&self, did: ast::DefId) -> TypeScheme<'tcx> {
-        lookup_locally_or_in_crate_store(
-            "tcache", did, &self.tcache,
-            || csearch::get_type(self, did))
+        self.item_types.get_or_create(did)
     }
 
     pub fn query_local_item_type(&self, id: ast::NodeId) -> Option<TypeScheme<'tcx>> {
-        let did = ast::DefId { krate: ast::LOCAL_CRATE, node: id };
-        self.tcache.borrow().get(&did).cloned()
+        self.item_types.get(did)
     }
 
     /// Given the did of a trait, returns its canonical trait ref.
