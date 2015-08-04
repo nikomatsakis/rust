@@ -1,4 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,27 +8,22 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test that an appearance of `T` in fn args or in a trait object must
-// still meet the outlives bounds. Since this is a new requirement,
-// this is currently only a warning, not a hard error.
+// Check that we test WF conditions for fn arguments. Because the
+// current code is so goofy, this is only a warning for now.
 
 #![feature(rustc_attrs)]
 #![allow(dead_code)]
+#![allow(unused_variables)]
 
-trait Trait<T> { }
+struct Bar<T:Eq+?Sized> { value: Box<T> }
 
-struct Foo<'a,T> {
-    //~^ WARN E0309
-    f: &'a fn(T),
-    //~^ WARN E0309
-}
-
-struct Bar<'a,T> {
-    //~^ WARN E0309
-    f: &'a Trait<T>,
-    //~^ WARN E0309
+trait Foo {
+    fn bar(&self, x: &Bar<Self>) {
+        //~^ WARN E0277
+        //
+        // Here, Eq ought to be implemented.
+    }
 }
 
 #[rustc_error]
 fn main() { } //~ ERROR compilation successful
-

@@ -31,9 +31,9 @@ fn wf<T>() { }
 // we would need to know that `'y: 'x`, but we do not infer that.
 fn callee<'x, 'y, T>(
     t: &'x for<'z> Trait1< <T as Trait2<'y, 'z>>::Foo >)
-    //~^ ERROR reference has a longer lifetime than the data it references
 {
     wf::<&'x &'y i32>();
+    //~^ ERROR reference has a longer lifetime than the data it references
 }
 
 fn main() { }

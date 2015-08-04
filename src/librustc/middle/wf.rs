@@ -13,7 +13,7 @@ use middle::outlives::{self, Component};
 use middle::subst::Substs;
 use middle::traits;
 use middle::ty::{self, RegionEscape, ToPredicate, Ty};
-use middle::ty_fold::TypeFoldable;
+use std::iter::once;
 use std::mem;
 use std::rc::Rc;
 use syntax::ast;
@@ -255,11 +255,14 @@ impl<'a,'tcx> WfPredicates<'a,'tcx> {
     }
 
     fn normalize(&mut self) -> Vec<traits::PredicateObligation<'tcx>> {
+        let cause = self.cause(traits::MiscObligation);
+        let infcx = &mut self.infcx;
         self.out.iter()
                 .inspect(|pred| assert!(!pred.has_escaping_regions()))
-                .filter_map(|pred| match self.fully_normalize(pred) {
-                    Ok(v) => Some(v),
-                    Err(ErrorReported) => None,
+                .flat_map(|pred| {
+                    let mut selcx = traits::SelectionContext::new(infcx);
+                    let pred = traits::normalize(&mut selcx, cause.clone(), pred);
+                    once(pred.value).chain(pred.obligations)
                 })
                 .collect()
     }
@@ -507,27 +510,6 @@ impl<'a,'tcx> WfPredicates<'a,'tcx> {
                 let cause = self.cause(traits::ReferenceOutlivesReferent(ty));
                 let outlives = ty::Binder(ty::OutlivesPredicate(explicit_bound, implicit_bound));
                 self.out.push(traits::Obligation::new(cause, outlives.to_predicate()));
-            }
-        }
-    }
-
-    fn fully_normalize<T>(&self, value: &T) -> Result<T,ErrorReported>
-        where T : TypeFoldable<'tcx> + ty::HasTypeFlags
-    {
-        let value =
-            traits::fully_normalize(self.infcx,
-                                    traits::ObligationCause::misc(self.span, self.body_id),
-                                    value);
-        match value {
-            Ok(value) => Ok(value),
-            Err(errors) => {
-                // I don't like reporting these errors here, but I
-                // don't know where else to report them just now. And
-                // I don't really expect errors to arise here
-                // frequently. I guess the best option would be to
-                // propagate them out.
-                traits::report_fulfillment_errors(self.infcx, &errors);
-                Err(ErrorReported)
             }
         }
     }

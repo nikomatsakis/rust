@@ -19,10 +19,9 @@ impl Foo for Thing {
 
 #[inline(never)]
 fn foo(b: &Bar) {
-    //~^ ERROR E0038
-
     b.foo(&0)
     //~^ ERROR the trait `Foo` is not implemented for the type `Bar`
+    //~| ERROR E0038
 }
 
 fn main() {

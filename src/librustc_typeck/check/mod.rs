@@ -625,7 +625,12 @@ fn check_fn<'a, 'tcx>(ccx: &'a CrateCtxt<'a, 'tcx>,
         // Add formal parameters.
         for (arg_ty, input) in arg_tys.iter().zip(&decl.inputs) {
             // The type of the argument must be well-formed.
-            fcx.register_wf_obligation(arg_ty, input.ty.span, traits::MiscObligation);
+            //
+            // NB -- this is now checked in wfcheck, but that
+            // currently only results in warnings, so we issue an
+            // old-style WF obligation here so that we still get the
+            // errors that we used to get.
+            fcx.register_old_wf_obligation(arg_ty, input.ty.span, traits::MiscObligation);
 
             // Create type variables for each argument.
             pat_util::pat_bindings(
@@ -1675,6 +1680,21 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // WF obligations never themselves fail, so no real need to give a detailed cause:
         let cause = traits::ObligationCause::new(span, self.body_id, code);
         self.register_predicate(traits::Obligation::new(cause, ty::Predicate::WellFormed(ty)));
+    }
+
+    pub fn register_old_wf_obligation(&self,
+                                      ty: Ty<'tcx>,
+                                      span: Span,
+                                      code: traits::ObligationCauseCode<'tcx>)
+    {
+        // Registers an "old-style" WF obligation that uses the
+        // implicator code.  This is basically a buggy version of
+        // `register_wf_obligation` that is being kept around
+        // temporarily just to help with phasing in the newer rules.
+        //
+        // TODO all uses of this should be migrated to register_wf_obligation eventually
+        let cause = traits::ObligationCause::new(span, self.body_id, code);
+        self.register_region_obligation(ty, ty::ReEmpty, cause);
     }
 
     /// Registers obligations that all types appearing in `substs` are well-formed.

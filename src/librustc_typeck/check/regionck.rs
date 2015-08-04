@@ -86,6 +86,7 @@ use astconv::AstConv;
 use check::dropck;
 use check::FnCtxt;
 use middle::free_region::FreeRegionMap;
+use middle::implicator::{self, Implication};
 use middle::mem_categorization as mc;
 use middle::outlives;
 use middle::region::CodeExtent;
@@ -327,12 +328,58 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
                    r_o, r_o.cause);
             let sup_type = self.resolve_type(r_o.sup_type);
             let origin = self.code_to_origin(r_o.cause.span, sup_type, &r_o.cause.code);
-            type_must_outlive(self, origin, sup_type, r_o.sub_region);
+
+            if r_o.sub_region != ty::ReEmpty {
+                type_must_outlive(self, origin, sup_type, r_o.sub_region);
+            } else {
+                self.visit_old_school_wf(node_id, sup_type, origin);
+            }
         }
 
         // Processing the region obligations should not cause the list to grow further:
         assert_eq!(region_obligations.len(),
                    self.fcx.inh.infcx.fulfillment_cx.borrow().region_obligations(node_id).len());
+    }
+
+    fn visit_old_school_wf(&mut self,
+                           body_id: ast::NodeId,
+                           ty: Ty<'tcx>,
+                           origin: infer::SubregionOrigin<'tcx>) {
+        // As a weird kind of hack, we use a region of empty as a signal
+        // to mean "old-school WF rules". The only reason the old-school
+        // WF rules are not encoded using WF is that this leads to errors,
+        // and we want to phase those in gradually.
+
+        // TODO remove this weird special case once we phase in new WF rules completely
+        let implications = implicator::implications(self.infcx(),
+                                                    body_id,
+                                                    ty,
+                                                    ty::ReEmpty,
+                                                    origin.span());
+        let origin_for_ty = |ty: Option<Ty<'tcx>>| match ty {
+            None => origin.clone(),
+            Some(ty) => infer::ReferenceOutlivesReferent(ty, origin.span()),
+        };
+        for implication in implications {
+            match implication {
+                Implication::RegionSubRegion(ty, r1, r2) => {
+                    self.fcx.mk_subr(origin_for_ty(ty), r1, r2);
+                }
+                Implication::RegionSubGeneric(ty, r1, GenericKind::Param(param_ty)) => {
+                    param_ty_must_outlive(self, origin_for_ty(ty), r1, param_ty);
+                }
+                Implication::RegionSubGeneric(ty, r1, GenericKind::Projection(proj_ty)) => {
+                    projection_must_outlive(self, origin_for_ty(ty), r1, proj_ty);
+                }
+                Implication::Predicate(def_id, predicate) => {
+                    let cause = traits::ObligationCause::new(origin.span(),
+                                                             body_id,
+                                                             traits::ItemObligation(def_id));
+                    let obligation = traits::Obligation::new(cause, predicate);
+                    self.fcx.register_predicate(obligation);
+                }
+            }
+        }
     }
 
     fn code_to_origin(&self,
@@ -861,8 +908,6 @@ fn constrain_call<'a, I: Iterator<Item=&'a ast::Expr>>(rcx: &mut Rcx,
     //! and overloaded operators). Constrains the regions which appear
     //! in the type of the function. Also constrains the regions that
     //! appear in the arguments appropriately.
-
-    // TODO we need to check that fully instantiated callee type is WF
 
     debug!("constrain_call(call_expr={:?}, \
             receiver={:?}, \
@@ -1480,6 +1525,7 @@ pub fn type_must_outlive<'a, 'tcx>(rcx: &Rcx<'a, 'tcx>,
            region);
 
     assert!(!ty.has_escaping_regions());
+
     let components = outlives::components(rcx.infcx(), ty);
     components_must_outlive(rcx, origin, components, region);
 }

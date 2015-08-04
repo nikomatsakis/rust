@@ -14,5 +14,4 @@ trait ResponseHook {
 }
 fn foo(res : Box<ResponseHook>) { res.get }
 //~^ ERROR attempted to take value of method
-//~| ERROR E0038
 fn main() {}
