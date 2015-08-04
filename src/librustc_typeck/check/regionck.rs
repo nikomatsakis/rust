@@ -1509,6 +1509,10 @@ fn components_must_outlive<'a, 'tcx>(rcx: &Rcx<'a, 'tcx>,
                 // later, since if a type variable is not resolved by
                 // this point it never will be
             }
+            outlives::Component::RFC1214(subcomponents) => {
+                let suborigin = infer::RFC1214Subregion(Rc::new(origin));
+                components_must_outlive(rcx, suborigin, subcomponents, region);
+            }
         }
     }
 }

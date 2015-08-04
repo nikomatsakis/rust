@@ -51,6 +51,8 @@ pub enum Component<'tcx> {
     // them. This gives us room to improve the regionck reasoning in
     // the future without breaking backwards compat.
     EscapingProjection(Vec<Component<'tcx>>),
+
+    RFC1214(Vec<Component<'tcx>>),
 }
 
 /// Returns all the things that must outlive `'a` for the condition
@@ -118,6 +120,11 @@ fn compute_components<'a,'tcx>(infcx: &InferCtxt<'a,'tcx>,
                 }
                 subtys.skip_current_subtree();
             }
+            ty::TyBareFn(..) | ty::TyTrait(..) => {
+                subtys.skip_current_subtree();
+                let temp = capture_components(infcx, ty);
+                out.push(Component::RFC1214(temp));
+            }
             ty::TyParam(p) => {
                 out.push(Component::Param(p));
                 subtys.skip_current_subtree();
@@ -141,11 +148,7 @@ fn compute_components<'a,'tcx>(infcx: &InferCtxt<'a,'tcx>,
                 } else {
                     // fallback case: continue walking through and
                     // constrain Pi.
-                    let mut temp = vec![];
-                    push_region_constraints(&mut temp, ty.regions());
-                    for subty in ty.walk_shallow() {
-                        compute_components(infcx, subty, &mut temp);
-                    }
+                    let temp = capture_components(infcx, ty);
                     out.push(Component::EscapingProjection(temp));
                 }
                 subtys.skip_current_subtree();
@@ -165,6 +168,17 @@ fn compute_components<'a,'tcx>(infcx: &InferCtxt<'a,'tcx>,
             }
         }
     }
+}
+
+fn capture_components<'a,'tcx>(infcx: &InferCtxt<'a,'tcx>,
+                               ty: Ty<'tcx>)
+                               -> Vec<Component<'tcx>> {
+    let mut temp = vec![];
+    push_region_constraints(&mut temp, ty.regions());
+    for subty in ty.walk_shallow() {
+        compute_components(infcx, subty, &mut temp);
+    }
+    temp
 }
 
 fn push_region_constraints<'tcx>(out: &mut Vec<Component<'tcx>>, regions: Vec<ty::Region>) {
