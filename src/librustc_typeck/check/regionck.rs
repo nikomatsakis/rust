@@ -542,6 +542,7 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
             _ =>
                 infer::ParameterOrigin::OverloadedOperator
         };
+
         substs_wf_in_scope(rcx, origin, &callee.substs, expr.span, expr_region);
     }
 
@@ -860,6 +861,8 @@ fn constrain_call<'a, I: Iterator<Item=&'a ast::Expr>>(rcx: &mut Rcx,
     //! and overloaded operators). Constrains the regions which appear
     //! in the type of the function. Also constrains the regions that
     //! appear in the arguments appropriately.
+
+    // TODO we need to check that fully instantiated callee type is WF
 
     debug!("constrain_call(call_expr={:?}, \
             receiver={:?}, \
@@ -1596,7 +1599,7 @@ fn projection_must_outlive<'a, 'tcx>(rcx: &Rcx<'a, 'tcx>,
     // if the parameters `P0..Pn` do not involve any region variables,
     // that's the same situation.
     //
-    // Where things get throny is when region variables are involved,
+    // Where things get thorny is when region variables are involved,
     // because in that case relating `Pi: 'r` may influence the
     // inference process, since it could cause `'r` to be inferred to
     // a larger value. But the problem is that if we add that as a
@@ -1622,11 +1625,58 @@ fn projection_must_outlive<'a, 'tcx>(rcx: &Rcx<'a, 'tcx>,
         return;
     }
 
-    // Otherwise, as explained above, if inference variables are
-    // involved, fallback to rule #1.
+    // Determine whether any of regions that appear in the projection
+    // were declared as bounds by the user. This is typically a situation
+    // like this:
+    //
+    //     trait Foo<'a> {
+    //         type Bar: 'a;
+    //     }
+    //
+    // where we are checking `<T as Foo<'_#0r>>: '_#1r`. In such a
+    // case, if we use the conservative rule, we will check that
+    // BOTH of the following hold:
+    //
+    //     T: _#1r
+    //     _#0r: _#1r
+    //
+    // This is overkill, since the declared bounds tell us that the
+    // the latter is sufficient.
+    let intersection_bounds: Vec<_> =
+        projection_ty.trait_ref.substs.regions()
+                                      .iter()
+                                      .filter(|r| declared_bounds.contains(r))
+                                      .collect();
+    let intersection_bounds_needs_infer =
+        intersection_bounds.iter()
+                           .any(|r| r.needs_infer());
+    if intersection_bounds_needs_infer {
+        // If the upper bound(s) (`_#0r` in the above example) are
+        // region variables, then introduce edges into the inference
+        // graph, because we need to ensure that `_#0r` is inferred to
+        // something big enough. But if the upper bound has no
+        // inference, then fallback (below) to the verify path, where
+        // we just check after the fact that it was big enough. This
+        // is more flexible, because it only requires that there
+        // exists SOME intersection bound that is big enough, whereas
+        // this path requires that ALL intersection bounds be big
+        // enough.
+        debug!("projection_must_outlive: intersection_bounds={:?}",
+               intersection_bounds);
+        for &r in intersection_bounds {
+            rcx.fcx.mk_subr(origin.clone(), region, r);
+        }
+        return;
+    }
+
+    // If there are no intersection bounds, but there are still
+    // inference variables involves, then fallback to the most
+    // conservative rule, where we require all components of the
+    // projection outlive the bound.
     if
-        projection_ty.trait_ref.substs.types.iter().any(|t| t.needs_infer()) ||
-        projection_ty.trait_ref.substs.regions().iter().any(|r| r.needs_infer())
+        intersection_bounds.is_empty() && (
+            projection_ty.trait_ref.substs.types.iter().any(|t| t.needs_infer()) ||
+                projection_ty.trait_ref.substs.regions().iter().any(|r| r.needs_infer()))
     {
         debug!("projection_must_outlive: fallback to rule #1");
 
