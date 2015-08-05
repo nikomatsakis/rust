@@ -533,10 +533,11 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
         // where the error was detected. But that span is not readily
         // accessible.
 
-        let is_warning = match origin {
-            infer::RFC1214Subregion(_) => true,
-            _ => false,
-        };
+        let is_warning = false;
+        // TODO match origin {
+        // TODO     infer::RFC1214Subregion(_) => true,
+        // TODO     _ => false,
+        // TODO };
 
         let labeled_user_string = match bound_kind {
             GenericKind::Param(ref p) =>

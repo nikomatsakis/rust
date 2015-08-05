@@ -56,7 +56,7 @@ fn report_fulfillment_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
 }
 
 fn is_warning<T>(obligation: &Obligation<T>) -> bool {
-    obligation.cause.code.is_rfc1214()
+    false // TODO obligation.cause.code.is_rfc1214()
 }
 
 pub fn report_projection_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
