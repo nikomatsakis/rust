@@ -14,6 +14,7 @@
 
 #[cfg(stage0)]
 use core::prelude::v1::PartialOrd;
+use core::marker::Sized;
 
 use Rng;
 use distributions::{Sample, IndependentSample};
