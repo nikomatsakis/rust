@@ -12,11 +12,12 @@ use middle::ty::{self, Ty};
 use middle::ty::error::TypeError;
 use middle::ty::relate::{self, Relate, TypeRelation, RelateResult};
 
-/// A type "A" *matches* "B" if the fresh types in B could be
-/// substituted with values so as to make it equal to A. Matching is
-/// intended to be used only on freshened types, and it basically
-/// indicates if the non-freshened versions of A and B could have been
-/// unified.
+/// A type "B" is a "recurrence" of "A" if the fresh types in B could
+/// be substituted with values so as to make it equal to A. Recurrence
+/// checking is intended to be used only on freshened types, and it
+/// basically indicates if the non-freshened versions of A and B could
+/// have been unified. We use it as part of trait match evaluation to
+/// detect and sidestep infinite recursion.
 ///
 /// It is only an approximation. If it yields false, unification would
 /// definitely fail, but a true result doesn't mean unification would
@@ -25,21 +26,28 @@ use middle::ty::relate::{self, Relate, TypeRelation, RelateResult};
 /// more than once. To some extent these approximations could be
 /// fixed, given effort.
 ///
-/// Like subtyping, matching is really a binary relation, so the only
-/// important thing about the result is Ok/Err. Also, matching never
-/// affects any type variables or unification state.
-pub struct Match<'a, 'tcx: 'a> {
+/// Like subtyping, recurrence is really a binary relation, so the
+/// only important thing about the result is Ok/Err. Also, recurrence
+/// never affects any type variables or unification state.
+pub fn is_recurrence<'a,'tcx,T>(tcx: &'a ty::ctxt<'tcx>, a: &T, b: &T) -> bool
+    where T: Relate<'a, 'tcx>
+{
+    let mut recur = Recurrence::new(tcx);
+    T::relate(&mut recur, a, b).is_ok()
+}
+
+struct Recurrence<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>
 }
 
-impl<'a, 'tcx> Match<'a, 'tcx> {
-    pub fn new(tcx: &'a ty::ctxt<'tcx>) -> Match<'a, 'tcx> {
-        Match { tcx: tcx }
+impl<'a, 'tcx> Recurrence<'a, 'tcx> {
+    pub fn new(tcx: &'a ty::ctxt<'tcx>) -> Recurrence<'a, 'tcx> {
+        Recurrence { tcx: tcx }
     }
 }
 
-impl<'a, 'tcx> TypeRelation<'a, 'tcx> for Match<'a, 'tcx> {
-    fn tag(&self) -> &'static str { "Match" }
+impl<'a, 'tcx> TypeRelation<'a, 'tcx> for Recurrence<'a, 'tcx> {
+    fn tag(&self) -> &'static str { "Recurrence" }
     fn tcx(&self) -> &'a ty::ctxt<'tcx> { self.tcx }
     fn a_is_expected(&self) -> bool { true } // irrelevant
 

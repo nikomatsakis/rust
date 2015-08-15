@@ -81,7 +81,6 @@ pub mod cast;
 pub mod error;
 pub mod fast_reject;
 pub mod fold;
-pub mod _match;
 pub mod outlives;
 pub mod relate;
 pub mod walk;
