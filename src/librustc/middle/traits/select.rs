@@ -30,6 +30,7 @@ use super::TraitNotObjectSafe;
 use super::RFC1214Warning;
 use super::Selection;
 use super::SelectionResult;
+use super::ty_recur;
 use super::{VtableBuiltin, VtableImpl, VtableParam, VtableClosure,
             VtableFnPointer, VtableObject, VtableDefaultImpl};
 use super::{VtableImplData, VtableObjectData, VtableBuiltinData,
@@ -43,7 +44,6 @@ use middle::ty::{self, ToPredicate, RegionEscape, ToPolyTraitRef, Ty, HasTypeFla
 use middle::infer;
 use middle::infer::{InferCtxt, TypeFreshener};
 use middle::ty_fold::TypeFoldable;
-use middle::ty_match;
 use middle::ty_relate::TypeRelation;
 use middle::wf;
 
@@ -2817,8 +2817,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                               current: &ty::PolyTraitRef<'tcx>)
                               -> bool
     {
-        let mut matcher = ty_match::Match::new(self.tcx());
-        matcher.relate(previous, current).is_ok()
+        ty_recur::is_recurrence(self.tcx(), previous, current)
     }
 
     fn push_stack<'o,'s:'o>(&mut self,
