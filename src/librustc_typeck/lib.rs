@@ -104,6 +104,7 @@ pub use rustc::session;
 pub use rustc::util;
 
 use middle::def;
+use middle::def_id::DefId;
 use middle::infer;
 use middle::subst;
 use middle::ty::{self, Ty, HasTypeFlags};
@@ -114,7 +115,6 @@ use util::common::time;
 use syntax::codemap::Span;
 use syntax::print::pprust::*;
 use syntax::{ast, abi};
-use syntax::ast_util::local_def;
 
 use std::cell::RefCell;
 
@@ -237,7 +237,7 @@ fn check_main_fn_ty(ccx: &CrateCtxt,
                 }
                 _ => ()
             }
-            let se_ty = tcx.mk_fn(Some(local_def(main_id)), tcx.mk_bare_fn(ty::BareFnTy {
+            let se_ty = tcx.mk_fn(Some(DefId::local(main_id)), tcx.mk_bare_fn(ty::BareFnTy {
                 unsafety: ast::Unsafety::Normal,
                 abi: abi::Rust,
                 sig: ty::Binder(ty::FnSig {
@@ -283,7 +283,7 @@ fn check_start_fn_ty(ccx: &CrateCtxt,
                 _ => ()
             }
 
-            let se_ty = tcx.mk_fn(Some(local_def(start_id)), tcx.mk_bare_fn(ty::BareFnTy {
+            let se_ty = tcx.mk_fn(Some(DefId::local(start_id)), tcx.mk_bare_fn(ty::BareFnTy {
                 unsafety: ast::Unsafety::Normal,
                 abi: abi::Rust,
                 sig: ty::Binder(ty::FnSig {

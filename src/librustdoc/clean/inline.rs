@@ -13,12 +13,12 @@
 use std::collections::HashSet;
 
 use syntax::ast;
-use syntax::ast_util;
 use syntax::attr::AttrMetaMethods;
 
 use rustc::metadata::csearch;
 use rustc::metadata::decoder;
 use rustc::middle::def;
+use rustc::middle::def_id::DefId;
 use rustc::middle::ty;
 use rustc::middle::subst;
 use rustc::middle::stability;
@@ -53,7 +53,7 @@ pub fn try_inline(cx: &DocContext, id: ast::NodeId, into: Option<ast::Ident>)
         None => return None,
     };
     let did = def.def_id();
-    if ast_util::is_local(did) { return None }
+    if did.is_local() { return None }
     try_inline_def(cx, tcx, def).map(|vec| {
         vec.into_iter().map(|mut item| {
             match into {
@@ -128,7 +128,7 @@ fn try_inline_def(cx: &DocContext, tcx: &ty::ctxt,
 }
 
 pub fn load_attrs(cx: &DocContext, tcx: &ty::ctxt,
-                  did: ast::DefId) -> Vec<clean::Attribute> {
+                  did: DefId) -> Vec<clean::Attribute> {
     let attrs = csearch::get_item_attrs(&tcx.sess.cstore, did);
     attrs.into_iter().map(|a| a.clean(cx)).collect()
 }
@@ -137,7 +137,7 @@ pub fn load_attrs(cx: &DocContext, tcx: &ty::ctxt,
 ///
 /// These names are used later on by HTML rendering to generate things like
 /// source links back to the original item.
-pub fn record_extern_fqn(cx: &DocContext, did: ast::DefId, kind: clean::TypeKind) {
+pub fn record_extern_fqn(cx: &DocContext, did: DefId, kind: clean::TypeKind) {
     match cx.tcx_opt() {
         Some(tcx) => {
             let fqn = csearch::get_item_path(tcx, did);
@@ -149,7 +149,7 @@ pub fn record_extern_fqn(cx: &DocContext, did: ast::DefId, kind: clean::TypeKind
 }
 
 pub fn build_external_trait(cx: &DocContext, tcx: &ty::ctxt,
-                            did: ast::DefId) -> clean::Trait {
+                            did: DefId) -> clean::Trait {
     let def = tcx.lookup_trait_def(did);
     let trait_items = tcx.trait_items(did).clean(cx);
     let predicates = tcx.lookup_predicates(did);
@@ -164,7 +164,7 @@ pub fn build_external_trait(cx: &DocContext, tcx: &ty::ctxt,
     }
 }
 
-fn build_external_function(cx: &DocContext, tcx: &ty::ctxt, did: ast::DefId) -> clean::Function {
+fn build_external_function(cx: &DocContext, tcx: &ty::ctxt, did: DefId) -> clean::Function {
     let t = tcx.lookup_item_type(did);
     let (decl, style, abi) = match t.ty.sty {
         ty::TyBareFn(_, ref f) => ((did, &f.sig).clean(cx), f.unsafety, f.abi),
@@ -180,7 +180,7 @@ fn build_external_function(cx: &DocContext, tcx: &ty::ctxt, did: ast::DefId) -> 
     }
 }
 
-fn build_struct(cx: &DocContext, tcx: &ty::ctxt, did: ast::DefId) -> clean::Struct {
+fn build_struct(cx: &DocContext, tcx: &ty::ctxt, did: DefId) -> clean::Struct {
     use syntax::parse::token::special_idents::unnamed_field;
 
     let t = tcx.lookup_item_type(did);
@@ -200,7 +200,7 @@ fn build_struct(cx: &DocContext, tcx: &ty::ctxt, did: ast::DefId) -> clean::Stru
     }
 }
 
-fn build_type(cx: &DocContext, tcx: &ty::ctxt, did: ast::DefId) -> clean::ItemEnum {
+fn build_type(cx: &DocContext, tcx: &ty::ctxt, did: DefId) -> clean::ItemEnum {
     let t = tcx.lookup_item_type(did);
     let predicates = tcx.lookup_predicates(did);
     match t.ty.sty {
@@ -221,7 +221,7 @@ fn build_type(cx: &DocContext, tcx: &ty::ctxt, did: ast::DefId) -> clean::ItemEn
 }
 
 pub fn build_impls(cx: &DocContext, tcx: &ty::ctxt,
-                   did: ast::DefId) -> Vec<clean::Item> {
+                   did: DefId) -> Vec<clean::Item> {
     tcx.populate_inherent_implementations_for_type_if_necessary(did);
     let mut impls = Vec::new();
 
@@ -271,7 +271,7 @@ pub fn build_impls(cx: &DocContext, tcx: &ty::ctxt,
 
 pub fn build_impl(cx: &DocContext,
                   tcx: &ty::ctxt,
-                  did: ast::DefId,
+                  did: DefId,
                   ret: &mut Vec<clean::Item>) {
     if !cx.inlined.borrow_mut().as_mut().unwrap().insert(did) {
         return
@@ -429,7 +429,7 @@ pub fn build_impl(cx: &DocContext,
 }
 
 fn build_module(cx: &DocContext, tcx: &ty::ctxt,
-                did: ast::DefId) -> clean::Module {
+                did: DefId) -> clean::Module {
     let mut items = Vec::new();
     fill_in(cx, tcx, did, &mut items);
     return clean::Module {
@@ -437,7 +437,7 @@ fn build_module(cx: &DocContext, tcx: &ty::ctxt,
         is_crate: false,
     };
 
-    fn fill_in(cx: &DocContext, tcx: &ty::ctxt, did: ast::DefId,
+    fn fill_in(cx: &DocContext, tcx: &ty::ctxt, did: DefId,
                items: &mut Vec<clean::Item>) {
         // If we're reexporting a reexport it may actually reexport something in
         // two namespaces, so the target may be listed twice. Make sure we only
@@ -465,7 +465,7 @@ fn build_module(cx: &DocContext, tcx: &ty::ctxt,
 }
 
 fn build_const(cx: &DocContext, tcx: &ty::ctxt,
-               did: ast::DefId) -> clean::Constant {
+               did: DefId) -> clean::Constant {
     use rustc::middle::const_eval;
     use syntax::print::pprust;
 
@@ -483,7 +483,7 @@ fn build_const(cx: &DocContext, tcx: &ty::ctxt,
 }
 
 fn build_static(cx: &DocContext, tcx: &ty::ctxt,
-                did: ast::DefId,
+                did: DefId,
                 mutable: bool) -> clean::Static {
     clean::Static {
         type_: tcx.lookup_item_type(did).ty.clean(cx),
@@ -499,7 +499,7 @@ fn build_static(cx: &DocContext, tcx: &ty::ctxt,
 ///
 /// The inverse of this filtering logic can be found in the `Clean`
 /// implementation for `AssociatedType`
-fn filter_non_trait_generics(trait_did: ast::DefId, mut g: clean::Generics)
+fn filter_non_trait_generics(trait_did: DefId, mut g: clean::Generics)
                              -> clean::Generics {
     g.where_predicates.retain(|pred| {
         match *pred {

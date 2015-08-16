@@ -11,6 +11,7 @@
 use ast_map::NodeForeignItem;
 use metadata::csearch;
 use middle::def::DefFn;
+use middle::def_id::{DefId, LOCAL_CRATE};
 use middle::subst::{Subst, Substs, EnumeratedItems};
 use middle::ty::{TransmuteRestriction, ctxt, TyBareFn};
 use middle::ty::{self, Ty, HasTypeFlags};
@@ -18,7 +19,6 @@ use middle::ty::{self, Ty, HasTypeFlags};
 use std::fmt;
 
 use syntax::abi::RustIntrinsic;
-use syntax::ast::DefId;
 use syntax::ast;
 use syntax::codemap::Span;
 use syntax::visit::Visitor;
@@ -57,7 +57,7 @@ impl<'a, 'tcx> IntrinsicCheckingVisitor<'a, 'tcx> {
             ty::TyBareFn(_, ref bfty) => bfty.abi == RustIntrinsic,
             _ => return false
         };
-        if def_id.krate == ast::LOCAL_CRATE {
+        if def_id.krate == LOCAL_CRATE {
             match self.tcx.map.get(def_id.node) {
                 NodeForeignItem(ref item) if intrinsic => {
                     item.ident.name == "transmute"

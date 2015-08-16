@@ -47,6 +47,7 @@ use middle::check_const;
 use middle::const_eval::{self, ConstVal, ErrKind};
 use middle::const_eval::EvalHint::UncheckedExprHint;
 use middle::def::{self, DefMap, ExportMap};
+use middle::def_id::{DefId, LOCAL_CRATE};
 use middle::dependency_format;
 use middle::fast_reject;
 use middle::free_region::FreeRegionMap;
@@ -86,9 +87,8 @@ use core::nonzero::NonZero;
 use std::collections::{HashMap, HashSet};
 use rustc_data_structures::ivar;
 use syntax::abi;
-use syntax::ast::{CrateNum, DefId, ItemImpl, ItemTrait, LOCAL_CRATE};
+use syntax::ast::{CrateNum, ItemImpl, ItemTrait};
 use syntax::ast::{MutImmutable, MutMutable, Name, NodeId, Visibility};
-use syntax::ast_util::{self, is_local, local_def};
 use syntax::attr::{self, AttrMetaMethods, SignedInt, UnsignedInt};
 use syntax::codemap::Span;
 use syntax::parse::token::{InternedString, special_idents};
@@ -255,12 +255,12 @@ impl IntTypeExt for attr::IntType {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ImplOrTraitItemContainer {
-    TraitContainer(ast::DefId),
-    ImplContainer(ast::DefId),
+    TraitContainer(DefId),
+    ImplContainer(DefId),
 }
 
 impl ImplOrTraitItemContainer {
-    pub fn id(&self) -> ast::DefId {
+    pub fn id(&self) -> DefId {
         match *self {
             TraitContainer(id) => id,
             ImplContainer(id) => id,
@@ -288,7 +288,7 @@ impl<'tcx> ImplOrTraitItem<'tcx> {
         }
     }
 
-    pub fn def_id(&self) -> ast::DefId {
+    pub fn def_id(&self) -> DefId {
         match *self {
             ConstTraitItem(ref associated_const) => associated_const.def_id,
             MethodTraitItem(ref method) => method.def_id,
@@ -330,13 +330,13 @@ impl<'tcx> ImplOrTraitItem<'tcx> {
 
 #[derive(Clone, Copy, Debug)]
 pub enum ImplOrTraitItemId {
-    ConstTraitItemId(ast::DefId),
-    MethodTraitItemId(ast::DefId),
-    TypeTraitItemId(ast::DefId),
+    ConstTraitItemId(DefId),
+    MethodTraitItemId(DefId),
+    TypeTraitItemId(DefId),
 }
 
 impl ImplOrTraitItemId {
-    pub fn def_id(&self) -> ast::DefId {
+    pub fn def_id(&self) -> DefId {
         match *self {
             ConstTraitItemId(def_id) => def_id,
             MethodTraitItemId(def_id) => def_id,
@@ -353,11 +353,11 @@ pub struct Method<'tcx> {
     pub fty: BareFnTy<'tcx>,
     pub explicit_self: ExplicitSelfCategory,
     pub vis: ast::Visibility,
-    pub def_id: ast::DefId,
+    pub def_id: DefId,
     pub container: ImplOrTraitItemContainer,
 
     // If this method is provided, we need to know where it came from
-    pub provided_source: Option<ast::DefId>
+    pub provided_source: Option<DefId>
 }
 
 impl<'tcx> Method<'tcx> {
@@ -367,9 +367,9 @@ impl<'tcx> Method<'tcx> {
                fty: BareFnTy<'tcx>,
                explicit_self: ExplicitSelfCategory,
                vis: ast::Visibility,
-               def_id: ast::DefId,
+               def_id: DefId,
                container: ImplOrTraitItemContainer,
-               provided_source: Option<ast::DefId>)
+               provided_source: Option<DefId>)
                -> Method<'tcx> {
        Method {
             name: name,
@@ -384,7 +384,7 @@ impl<'tcx> Method<'tcx> {
         }
     }
 
-    pub fn container_id(&self) -> ast::DefId {
+    pub fn container_id(&self) -> DefId {
         match self.container {
             TraitContainer(id) => id,
             ImplContainer(id) => id,
@@ -397,9 +397,9 @@ pub struct AssociatedConst<'tcx> {
     pub name: ast::Name,
     pub ty: Ty<'tcx>,
     pub vis: ast::Visibility,
-    pub def_id: ast::DefId,
+    pub def_id: DefId,
     pub container: ImplOrTraitItemContainer,
-    pub default: Option<ast::DefId>,
+    pub default: Option<DefId>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -407,7 +407,7 @@ pub struct AssociatedType<'tcx> {
     pub name: ast::Name,
     pub ty: Option<Ty<'tcx>>,
     pub vis: ast::Visibility,
-    pub def_id: ast::DefId,
+    pub def_id: DefId,
     pub container: ImplOrTraitItemContainer,
 }
 
@@ -544,7 +544,7 @@ pub enum CustomCoerceUnsized {
 #[derive(Clone, Copy, Debug)]
 pub struct MethodCallee<'tcx> {
     /// Impl method ID, for inherent methods, or trait method ID, otherwise.
-    pub def_id: ast::DefId,
+    pub def_id: DefId,
     pub ty: Ty<'tcx>,
     pub substs: &'tcx subst::Substs<'tcx>
 }
@@ -790,7 +790,7 @@ pub struct ctxt<'tcx> {
     pub normalized_cache: RefCell<FnvHashMap<Ty<'tcx>, Ty<'tcx>>>,
     pub lang_items: middle::lang_items::LanguageItems,
     /// A mapping of fake provided method def_ids to the default implementation
-    pub provided_method_sources: RefCell<DefIdMap<ast::DefId>>,
+    pub provided_method_sources: RefCell<DefIdMap<DefId>>,
 
     /// Maps from def-id of a type or region parameter to its
     /// (inferred) variance.
@@ -803,7 +803,7 @@ pub struct ctxt<'tcx> {
     /// of the method that implements its destructor. If the type is not
     /// present in this map, it does not have a destructor. This map is
     /// populated during the coherence phase of typechecking.
-    pub destructor_for_type: RefCell<DefIdMap<ast::DefId>>,
+    pub destructor_for_type: RefCell<DefIdMap<DefId>>,
 
     /// A method will be in this list if and only if it is a destructor.
     pub destructors: RefCell<DefIdSet>,
@@ -811,7 +811,7 @@ pub struct ctxt<'tcx> {
     /// Maps a DefId of a type to a list of its inherent impls.
     /// Contains implementations of methods that are inherent to a type.
     /// Methods in these implementations don't need to be exported.
-    pub inherent_impls: RefCell<DefIdMap<Rc<Vec<ast::DefId>>>>,
+    pub inherent_impls: RefCell<DefIdMap<Rc<Vec<DefId>>>>,
 
     /// Maps a DefId of an impl to a list of its items.
     /// Note that this contains all of the impls that we know about,
@@ -1097,11 +1097,11 @@ impl<'tcx, T: Lift<'tcx>> Lift<'tcx> for Binder<T> {
 
 pub mod tls {
     use ast_map;
+    use middle::def_id::{DefId, DEF_ID_DEBUG, LOCAL_CRATE};
     use middle::ty;
     use session::Session;
 
     use std::fmt;
-    use syntax::ast;
     use syntax::codemap;
 
     /// Marker type used for the scoped TLS slot.
@@ -1111,12 +1111,12 @@ pub mod tls {
 
     scoped_thread_local!(static TLS_TCX: ThreadLocalTyCx);
 
-    fn def_id_debug(def_id: ast::DefId, f: &mut fmt::Formatter) -> fmt::Result {
+    fn def_id_debug(def_id: DefId, f: &mut fmt::Formatter) -> fmt::Result {
         // Unfortunately, there seems to be no way to attempt to print
         // a path for a def-id, so I'll just make a best effort for now
         // and otherwise fallback to just printing the crate/node pair
         with(|tcx| {
-            if def_id.krate == ast::LOCAL_CRATE {
+            if def_id.krate == LOCAL_CRATE {
                 match tcx.map.find(def_id.node) {
                     Some(ast_map::NodeItem(..)) |
                     Some(ast_map::NodeForeignItem(..)) |
@@ -1141,7 +1141,7 @@ pub mod tls {
 
     pub fn enter<'tcx, F: FnOnce(&ty::ctxt<'tcx>) -> R, R>(tcx: ty::ctxt<'tcx>, f: F)
                                                            -> (Session, R) {
-        let result = ast::DEF_ID_DEBUG.with(|def_id_dbg| {
+        let result = DEF_ID_DEBUG.with(|def_id_dbg| {
             codemap::SPAN_DEBUG.with(|span_dbg| {
                 let original_def_id_debug = def_id_dbg.get();
                 def_id_dbg.set(def_id_debug);
@@ -1714,7 +1714,7 @@ pub enum BoundRegion {
     ///
     /// The def-id is needed to distinguish free regions in
     /// the event of shadowing.
-    BrNamed(ast::DefId, ast::Name),
+    BrNamed(DefId, ast::Name),
 
     /// Fresh bound identifiers created during GLB computations.
     BrFresh(u32),
@@ -1910,7 +1910,7 @@ pub struct TraitTy<'tcx> {
 }
 
 impl<'tcx> TraitTy<'tcx> {
-    pub fn principal_def_id(&self) -> ast::DefId {
+    pub fn principal_def_id(&self) -> DefId {
         self.principal.0.def_id
     }
 
@@ -1987,7 +1987,7 @@ impl<'tcx> PolyTraitRef<'tcx> {
         self.0.self_ty()
     }
 
-    pub fn def_id(&self) -> ast::DefId {
+    pub fn def_id(&self) -> DefId {
         self.0.def_id
     }
 
@@ -2090,7 +2090,7 @@ pub enum TypeError<'tcx> {
     IntegerAsChar,
     IntMismatch(ExpectedFound<IntVarValue>),
     FloatMismatch(ExpectedFound<ast::FloatTy>),
-    Traits(ExpectedFound<ast::DefId>),
+    Traits(ExpectedFound<DefId>),
     BuiltinBoundsMismatch(ExpectedFound<BuiltinBounds>),
     VariadicMismatch(ExpectedFound<bool>),
     CyclicTy,
@@ -2307,7 +2307,7 @@ pub enum ObjectLifetimeDefault {
 #[derive(Clone)]
 pub struct TypeParameterDef<'tcx> {
     pub name: ast::Name,
-    pub def_id: ast::DefId,
+    pub def_id: DefId,
     pub space: subst::ParamSpace,
     pub index: u32,
     pub default_def_id: DefId, // for use in error reporing about defaults
@@ -2318,7 +2318,7 @@ pub struct TypeParameterDef<'tcx> {
 #[derive(RustcEncodable, RustcDecodable, Clone, Debug)]
 pub struct RegionParameterDef {
     pub name: ast::Name,
-    pub def_id: ast::DefId,
+    pub def_id: DefId,
     pub space: subst::ParamSpace,
     pub index: u32,
     pub bounds: Vec<ty::Region>,
@@ -2422,7 +2422,7 @@ pub enum Predicate<'tcx> {
     WellFormed(Ty<'tcx>),
 
     /// trait must be object-safe
-    ObjectSafe(ast::DefId),
+    ObjectSafe(DefId),
 }
 
 impl<'tcx> Predicate<'tcx> {
@@ -2523,7 +2523,7 @@ pub struct TraitPredicate<'tcx> {
 pub type PolyTraitPredicate<'tcx> = ty::Binder<TraitPredicate<'tcx>>;
 
 impl<'tcx> TraitPredicate<'tcx> {
-    pub fn def_id(&self) -> ast::DefId {
+    pub fn def_id(&self) -> DefId {
         self.trait_ref.def_id
     }
 
@@ -2537,7 +2537,7 @@ impl<'tcx> TraitPredicate<'tcx> {
 }
 
 impl<'tcx> PolyTraitPredicate<'tcx> {
-    pub fn def_id(&self) -> ast::DefId {
+    pub fn def_id(&self) -> DefId {
         self.0.def_id()
     }
 }
@@ -2577,7 +2577,7 @@ impl<'tcx> PolyProjectionPredicate<'tcx> {
         self.0.projection_ty.item_name // safe to skip the binder to access a name
     }
 
-    pub fn sort_key(&self) -> (ast::DefId, ast::Name) {
+    pub fn sort_key(&self) -> (DefId, ast::Name) {
         self.0.projection_ty.sort_key()
     }
 }
@@ -2594,7 +2594,7 @@ pub struct ProjectionTy<'tcx> {
 }
 
 impl<'tcx> ProjectionTy<'tcx> {
-    pub fn sort_key(&self) -> (ast::DefId, ast::Name) {
+    pub fn sort_key(&self) -> (DefId, ast::Name) {
         (self.trait_ref.def_id, self.item_name)
     }
 }
@@ -2783,7 +2783,7 @@ impl<'tcx> InstantiatedPredicates<'tcx> {
 }
 
 impl<'tcx> TraitRef<'tcx> {
-    pub fn new(def_id: ast::DefId, substs: &'tcx Substs<'tcx>) -> TraitRef<'tcx> {
+    pub fn new(def_id: DefId, substs: &'tcx Substs<'tcx>) -> TraitRef<'tcx> {
         TraitRef { def_id: def_id, substs: substs }
     }
 
@@ -2867,7 +2867,7 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                         // associated types don't have their own entry (for some reason),
                         // so for now just grab environment for the impl
                         let impl_id = cx.map.get_parent(id);
-                        let impl_def_id = ast_util::local_def(impl_id);
+                        let impl_def_id = DefId::local(impl_id);
                         let scheme = cx.lookup_item_type(impl_def_id);
                         let predicates = cx.lookup_predicates(impl_def_id);
                         cx.construct_parameter_environment(impl_item.span,
@@ -2876,7 +2876,7 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                                                            id)
                     }
                     ast::ConstImplItem(_, _) => {
-                        let def_id = ast_util::local_def(id);
+                        let def_id = DefId::local(id);
                         let scheme = cx.lookup_item_type(def_id);
                         let predicates = cx.lookup_predicates(def_id);
                         cx.construct_parameter_environment(impl_item.span,
@@ -2885,7 +2885,7 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                                                            id)
                     }
                     ast::MethodImplItem(_, ref body) => {
-                        let method_def_id = ast_util::local_def(id);
+                        let method_def_id = DefId::local(id);
                         match cx.impl_or_trait_item(method_def_id) {
                             MethodTraitItem(ref method_ty) => {
                                 let method_generics = &method_ty.generics;
@@ -2912,7 +2912,7 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                         // associated types don't have their own entry (for some reason),
                         // so for now just grab environment for the trait
                         let trait_id = cx.map.get_parent(id);
-                        let trait_def_id = ast_util::local_def(trait_id);
+                        let trait_def_id = DefId::local(trait_id);
                         let trait_def = cx.lookup_trait_def(trait_def_id);
                         let predicates = cx.lookup_predicates(trait_def_id);
                         cx.construct_parameter_environment(trait_item.span,
@@ -2921,7 +2921,7 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                                                            id)
                     }
                     ast::ConstTraitItem(..) => {
-                        let def_id = ast_util::local_def(id);
+                        let def_id = DefId::local(id);
                         let scheme = cx.lookup_item_type(def_id);
                         let predicates = cx.lookup_predicates(def_id);
                         cx.construct_parameter_environment(trait_item.span,
@@ -2934,7 +2934,7 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                         // block, unless this is a trait method with
                         // no default, then fallback to the method id.
                         let body_id = body.as_ref().map(|b| b.id).unwrap_or(id);
-                        let method_def_id = ast_util::local_def(id);
+                        let method_def_id = DefId::local(id);
                         match cx.impl_or_trait_item(method_def_id) {
                             MethodTraitItem(ref method_ty) => {
                                 let method_generics = &method_ty.generics;
@@ -2959,7 +2959,7 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                 match item.node {
                     ast::ItemFn(_, _, _, _, _, ref body) => {
                         // We assume this is a function.
-                        let fn_def_id = ast_util::local_def(id);
+                        let fn_def_id = DefId::local(id);
                         let fn_scheme = cx.lookup_item_type(fn_def_id);
                         let fn_predicates = cx.lookup_predicates(fn_def_id);
 
@@ -2973,7 +2973,7 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                     ast::ItemImpl(..) |
                     ast::ItemConst(..) |
                     ast::ItemStatic(..) => {
-                        let def_id = ast_util::local_def(id);
+                        let def_id = DefId::local(id);
                         let scheme = cx.lookup_item_type(def_id);
                         let predicates = cx.lookup_predicates(def_id);
                         cx.construct_parameter_environment(item.span,
@@ -2982,7 +2982,7 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
                                                            id)
                     }
                     ast::ItemTrait(..) => {
-                        let def_id = ast_util::local_def(id);
+                        let def_id = DefId::local(id);
                         let trait_def = cx.lookup_trait_def(def_id);
                         let predicates = cx.lookup_predicates(def_id);
                         cx.construct_parameter_environment(item.span,
@@ -3522,7 +3522,7 @@ pub enum ClosureKind {
 }
 
 impl ClosureKind {
-    pub fn trait_did(&self, cx: &ctxt) -> ast::DefId {
+    pub fn trait_did(&self, cx: &ctxt) -> DefId {
         let result = match *self {
             FnClosureKind => cx.lang_items.require(FnTraitLangItem),
             FnMutClosureKind => {
@@ -3893,12 +3893,12 @@ impl<'tcx> ctxt<'tcx> {
         region
     }
 
-    pub fn closure_kind(&self, def_id: ast::DefId) -> ty::ClosureKind {
+    pub fn closure_kind(&self, def_id: DefId) -> ty::ClosureKind {
         *self.tables.borrow().closure_kinds.get(&def_id).unwrap()
     }
 
     pub fn closure_type(&self,
-                        def_id: ast::DefId,
+                        def_id: DefId,
                         substs: &ClosureSubsts<'tcx>)
                         -> ty::ClosureTy<'tcx>
     {
@@ -4047,13 +4047,13 @@ impl<'tcx> ctxt<'tcx> {
     }
 
     pub fn mk_fn(&self,
-                 opt_def_id: Option<ast::DefId>,
+                 opt_def_id: Option<DefId>,
                  fty: &'tcx BareFnTy<'tcx>) -> Ty<'tcx> {
         self.mk_ty(TyBareFn(opt_def_id, fty))
     }
 
     pub fn mk_ctor_fn(&self,
-                      def_id: ast::DefId,
+                      def_id: DefId,
                       input_tys: &[Ty<'tcx>],
                       output: Ty<'tcx>) -> Ty<'tcx> {
         let input_args = input_tys.iter().cloned().collect();
@@ -4097,7 +4097,7 @@ impl<'tcx> ctxt<'tcx> {
     }
 
     pub fn mk_closure(&self,
-                      closure_id: ast::DefId,
+                      closure_id: DefId,
                       substs: &'tcx Substs<'tcx>,
                       tys: Vec<Ty<'tcx>>)
                       -> Ty<'tcx> {
@@ -4108,7 +4108,7 @@ impl<'tcx> ctxt<'tcx> {
     }
 
     pub fn mk_closure_from_closure_substs(&self,
-                                          closure_id: ast::DefId,
+                                          closure_id: DefId,
                                           closure_substs: Box<ClosureSubsts<'tcx>>)
                                           -> Ty<'tcx> {
         self.mk_ty(TyClosure(closure_id, closure_substs))
@@ -4415,7 +4415,7 @@ impl<'tcx> TyS<'tcx> {
         }
     }
 
-    pub fn ty_to_def_id(&self) -> Option<ast::DefId> {
+    pub fn ty_to_def_id(&self) -> Option<DefId> {
         match self.sty {
             TyTrait(ref tt) => Some(tt.principal_def_id()),
             TyStruct(def, _) |
@@ -4672,7 +4672,7 @@ impl<'tcx> TyS<'tcx> {
             result
         }
 
-        fn apply_lang_items(cx: &ctxt, did: ast::DefId, tc: TypeContents)
+        fn apply_lang_items(cx: &ctxt, did: DefId, tc: TypeContents)
                             -> TypeContents {
             if Some(did) == cx.lang_items.unsafe_cell_type() {
                 tc | TC::InteriorUnsafe
@@ -5448,7 +5448,7 @@ impl<'tcx> fmt::Display for TypeError<'tcx> {
 /// then we have to go consult the crate loading code (and cache the result for
 /// the future).
 fn lookup_locally_or_in_crate_store<V, F>(descr: &str,
-                                          def_id: ast::DefId,
+                                          def_id: DefId,
                                           map: &RefCell<DefIdMap<V>>,
                                           load_external: F) -> V where
     V: Clone,
@@ -5459,7 +5459,7 @@ fn lookup_locally_or_in_crate_store<V, F>(descr: &str,
         None => { }
     }
 
-    if def_id.krate == ast::LOCAL_CRATE {
+    if def_id.krate == LOCAL_CRATE {
         panic!("No def'n found for {:?} in tcx.{}", def_id, descr);
     }
     let v = load_external();
@@ -5506,7 +5506,7 @@ impl<'tcx> ctxt<'tcx> {
     pub fn positional_element_ty(&self,
                                  ty: Ty<'tcx>,
                                  i: usize,
-                                 variant: Option<ast::DefId>) -> Option<Ty<'tcx>> {
+                                 variant: Option<DefId>) -> Option<Ty<'tcx>> {
         match (&ty.sty, variant) {
             (&TyStruct(def, substs), None) => {
                 def.struct_variant().fields.get(i).map(|f| f.ty(self, substs))
@@ -5528,7 +5528,7 @@ impl<'tcx> ctxt<'tcx> {
     pub fn named_element_ty(&self,
                             ty: Ty<'tcx>,
                             n: ast::Name,
-                            variant: Option<ast::DefId>) -> Option<Ty<'tcx>> {
+                            variant: Option<DefId>) -> Option<Ty<'tcx>> {
         match (&ty.sty, variant) {
             (&TyStruct(def, substs), None) => {
                 def.struct_variant().find_field_named(n).map(|f| f.ty(self, substs))
@@ -5767,7 +5767,7 @@ impl<'tcx> ctxt<'tcx> {
                                              expected.ty,
                                              found.ty));
 
-                match (expected.def_id.krate == ast::LOCAL_CRATE,
+                match (expected.def_id.krate == LOCAL_CRATE,
                        self.map.opt_span(expected.def_id.node)) {
                     (true, Some(span)) => {
                         self.sess.span_note(span,
@@ -5788,7 +5788,7 @@ impl<'tcx> ctxt<'tcx> {
                     expected.origin_span,
                     &format!("...that was applied to an unconstrained type variable here"));
 
-                match (found.def_id.krate == ast::LOCAL_CRATE,
+                match (found.def_id.krate == LOCAL_CRATE,
                        self.map.opt_span(found.def_id.node)) {
                     (true, Some(span)) => {
                         self.sess.span_note(span,
@@ -5813,16 +5813,16 @@ impl<'tcx> ctxt<'tcx> {
         }
     }
 
-    pub fn provided_source(&self, id: ast::DefId) -> Option<ast::DefId> {
+    pub fn provided_source(&self, id: DefId) -> Option<DefId> {
         self.provided_method_sources.borrow().get(&id).cloned()
     }
 
-    pub fn provided_trait_methods(&self, id: ast::DefId) -> Vec<Rc<Method<'tcx>>> {
-        if is_local(id) {
+    pub fn provided_trait_methods(&self, id: DefId) -> Vec<Rc<Method<'tcx>>> {
+        if id.is_local() {
             if let ItemTrait(_, _, _, ref ms) = self.map.expect_item(id.node).node {
                 ms.iter().filter_map(|ti| {
                     if let ast::MethodTraitItem(_, Some(_)) = ti.node {
-                        match self.impl_or_trait_item(ast_util::local_def(ti.id)) {
+                        match self.impl_or_trait_item(DefId::local(ti.id)) {
                             MethodTraitItem(m) => Some(m),
                             _ => {
                                 self.sess.bug("provided_trait_methods(): \
@@ -5842,13 +5842,13 @@ impl<'tcx> ctxt<'tcx> {
         }
     }
 
-    pub fn associated_consts(&self, id: ast::DefId) -> Vec<Rc<AssociatedConst<'tcx>>> {
-        if is_local(id) {
+    pub fn associated_consts(&self, id: DefId) -> Vec<Rc<AssociatedConst<'tcx>>> {
+        if id.is_local() {
             match self.map.expect_item(id.node).node {
                 ItemTrait(_, _, _, ref tis) => {
                     tis.iter().filter_map(|ti| {
                         if let ast::ConstTraitItem(_, _) = ti.node {
-                            match self.impl_or_trait_item(ast_util::local_def(ti.id)) {
+                            match self.impl_or_trait_item(DefId::local(ti.id)) {
                                 ConstTraitItem(ac) => Some(ac),
                                 _ => {
                                     self.sess.bug("associated_consts(): \
@@ -5864,7 +5864,7 @@ impl<'tcx> ctxt<'tcx> {
                 ItemImpl(_, _, _, _, _, ref iis) => {
                     iis.iter().filter_map(|ii| {
                         if let ast::ConstImplItem(_, _) = ii.node {
-                            match self.impl_or_trait_item(ast_util::local_def(ii.id)) {
+                            match self.impl_or_trait_item(DefId::local(ii.id)) {
                                 ConstTraitItem(ac) => Some(ac),
                                 _ => {
                                     self.sess.bug("associated_consts(): \
@@ -5887,7 +5887,7 @@ impl<'tcx> ctxt<'tcx> {
         }
     }
 
-    pub fn trait_items(&self, trait_did: ast::DefId) -> Rc<Vec<ImplOrTraitItem<'tcx>>> {
+    pub fn trait_items(&self, trait_did: DefId) -> Rc<Vec<ImplOrTraitItem<'tcx>>> {
         let mut trait_items = self.trait_items_cache.borrow_mut();
         match trait_items.get(&trait_did).cloned() {
             Some(trait_items) => trait_items,
@@ -5903,8 +5903,8 @@ impl<'tcx> ctxt<'tcx> {
         }
     }
 
-    pub fn trait_impl_polarity(&self, id: ast::DefId) -> Option<ast::ImplPolarity> {
-        if id.krate == ast::LOCAL_CRATE {
+    pub fn trait_impl_polarity(&self, id: DefId) -> Option<ast::ImplPolarity> {
+        if id.krate == LOCAL_CRATE {
             match self.map.find(id.node) {
                 Some(ast_map::NodeItem(item)) => {
                     match item.node {
@@ -5919,9 +5919,9 @@ impl<'tcx> ctxt<'tcx> {
         }
     }
 
-    pub fn custom_coerce_unsized_kind(&self, did: ast::DefId) -> CustomCoerceUnsized {
+    pub fn custom_coerce_unsized_kind(&self, did: DefId) -> CustomCoerceUnsized {
         memoized(&self.custom_coerce_unsized_kinds, did, |did: DefId| {
-            let (kind, src) = if did.krate != ast::LOCAL_CRATE {
+            let (kind, src) = if did.krate != LOCAL_CRATE {
                 (csearch::get_custom_coerce_unsized_kind(self, did), "external")
             } else {
                 (None, "local")
@@ -5938,13 +5938,13 @@ impl<'tcx> ctxt<'tcx> {
         })
     }
 
-    pub fn impl_or_trait_item(&self, id: ast::DefId) -> ImplOrTraitItem<'tcx> {
+    pub fn impl_or_trait_item(&self, id: DefId) -> ImplOrTraitItem<'tcx> {
         lookup_locally_or_in_crate_store(
             "impl_or_trait_items", id, &self.impl_or_trait_items,
             || csearch::get_impl_or_trait_item(self, id))
     }
 
-    pub fn trait_item_def_ids(&self, id: ast::DefId) -> Rc<Vec<ImplOrTraitItemId>> {
+    pub fn trait_item_def_ids(&self, id: DefId) -> Rc<Vec<ImplOrTraitItemId>> {
         lookup_locally_or_in_crate_store(
             "trait_item_def_ids", id, &self.trait_item_def_ids,
             || Rc::new(csearch::get_trait_item_def_ids(&self.sess.cstore, id)))
@@ -5952,15 +5952,15 @@ impl<'tcx> ctxt<'tcx> {
 
     /// Returns the trait-ref corresponding to a given impl, or None if it is
     /// an inherent impl.
-    pub fn impl_trait_ref(&self, id: ast::DefId) -> Option<TraitRef<'tcx>> {
+    pub fn impl_trait_ref(&self, id: DefId) -> Option<TraitRef<'tcx>> {
         lookup_locally_or_in_crate_store(
             "impl_trait_refs", id, &self.impl_trait_refs,
             || csearch::get_impl_trait(self, id))
     }
 
     /// Returns whether this DefId refers to an impl
-    pub fn is_impl(&self, id: ast::DefId) -> bool {
-        if id.krate == ast::LOCAL_CRATE {
+    pub fn is_impl(&self, id: DefId) -> bool {
+        if id.krate == LOCAL_CRATE {
             if let Some(ast_map::NodeItem(
                 &ast::Item { node: ast::ItemImpl(..), .. })) = self.map.find(id.node) {
                 true
@@ -5972,12 +5972,12 @@ impl<'tcx> ctxt<'tcx> {
         }
     }
 
-    pub fn trait_ref_to_def_id(&self, tr: &ast::TraitRef) -> ast::DefId {
+    pub fn trait_ref_to_def_id(&self, tr: &ast::TraitRef) -> DefId {
         self.def_map.borrow().get(&tr.ref_id).expect("no def-map entry for trait").def_id()
     }
 
     pub fn try_add_builtin_trait(&self,
-                                 trait_def_id: ast::DefId,
+                                 trait_def_id: DefId,
                                  builtin_bounds: &mut EnumSet<BuiltinBound>)
                                  -> bool
     {
@@ -5992,7 +5992,7 @@ impl<'tcx> ctxt<'tcx> {
         }
     }
 
-    pub fn item_path_str(&self, id: ast::DefId) -> String {
+    pub fn item_path_str(&self, id: DefId) -> String {
         self.with_path(id, |path| ast_map::path_to_string(path))
     }
 
@@ -6008,10 +6008,10 @@ impl<'tcx> ctxt<'tcx> {
         }
     }
 
-    pub fn with_path<T, F>(&self, id: ast::DefId, f: F) -> T where
+    pub fn with_path<T, F>(&self, id: DefId, f: F) -> T where
         F: FnOnce(ast_map::PathElems) -> T,
     {
-        if id.krate == ast::LOCAL_CRATE {
+        if id.krate == LOCAL_CRATE {
             self.map.with_path(id.node, f)
         } else {
             f(csearch::get_item_path(self, id).iter().cloned().chain(LinkedPath::empty()))
@@ -6047,20 +6047,20 @@ impl<'tcx> ctxt<'tcx> {
     }
 
     // Register a given item type
-    pub fn register_item_type(&self, did: ast::DefId, ty: TypeScheme<'tcx>) {
+    pub fn register_item_type(&self, did: DefId, ty: TypeScheme<'tcx>) {
         self.tcache.borrow_mut().insert(did, ty);
     }
 
     // If the given item is in an external crate, looks up its type and adds it to
     // the type cache. Returns the type parameters and type.
-    pub fn lookup_item_type(&self, did: ast::DefId) -> TypeScheme<'tcx> {
+    pub fn lookup_item_type(&self, did: DefId) -> TypeScheme<'tcx> {
         lookup_locally_or_in_crate_store(
             "tcache", did, &self.tcache,
             || csearch::get_type(self, did))
     }
 
     /// Given the did of a trait, returns its canonical trait ref.
-    pub fn lookup_trait_def(&self, did: ast::DefId) -> &'tcx TraitDef<'tcx> {
+    pub fn lookup_trait_def(&self, did: DefId) -> &'tcx TraitDef<'tcx> {
         lookup_locally_or_in_crate_store(
             "trait_defs", did, &self.trait_defs,
             || self.arenas.trait_defs.alloc(csearch::get_trait_def(self, did))
@@ -6070,7 +6070,7 @@ impl<'tcx> ctxt<'tcx> {
     /// Given the did of an ADT, return a master reference to its
     /// definition. Unless you are planning on fulfilling the ADT's fields,
     /// use lookup_adt_def instead.
-    pub fn lookup_adt_def_master(&self, did: ast::DefId) -> AdtDefMaster<'tcx> {
+    pub fn lookup_adt_def_master(&self, did: DefId) -> AdtDefMaster<'tcx> {
         lookup_locally_or_in_crate_store(
             "adt_defs", did, &self.adt_defs,
             || csearch::get_adt_def(self, did)
@@ -6078,21 +6078,21 @@ impl<'tcx> ctxt<'tcx> {
     }
 
     /// Given the did of an ADT, return a reference to its definition.
-    pub fn lookup_adt_def(&self, did: ast::DefId) -> AdtDef<'tcx> {
+    pub fn lookup_adt_def(&self, did: DefId) -> AdtDef<'tcx> {
         // when reverse-variance goes away, a transmute::<AdtDefMaster,AdtDef>
         // woud be needed here.
         self.lookup_adt_def_master(did)
     }
 
     /// Given the did of an item, returns its full set of predicates.
-    pub fn lookup_predicates(&self, did: ast::DefId) -> GenericPredicates<'tcx> {
+    pub fn lookup_predicates(&self, did: DefId) -> GenericPredicates<'tcx> {
         lookup_locally_or_in_crate_store(
             "predicates", did, &self.predicates,
             || csearch::get_predicates(self, did))
     }
 
     /// Given the did of a trait, returns its superpredicates.
-    pub fn lookup_super_predicates(&self, did: ast::DefId) -> GenericPredicates<'tcx> {
+    pub fn lookup_super_predicates(&self, did: DefId) -> GenericPredicates<'tcx> {
         lookup_locally_or_in_crate_store(
             "super_predicates", did, &self.super_predicates,
             || csearch::get_super_predicates(self, did))
@@ -6100,7 +6100,7 @@ impl<'tcx> ctxt<'tcx> {
 
     /// Get the attributes of a definition.
     pub fn get_attrs(&self, did: DefId) -> Cow<'tcx, [ast::Attribute]> {
-        if is_local(did) {
+        if did.is_local() {
             Cow::Borrowed(self.map.attrs(did.node))
         } else {
             Cow::Owned(csearch::get_item_attrs(&self.sess.cstore, did))
@@ -6283,7 +6283,7 @@ impl<'tcx> ctxt<'tcx> {
             .collect()
     }
 
-    pub fn item_variances(&self, item_id: ast::DefId) -> Rc<ItemVariances> {
+    pub fn item_variances(&self, item_id: DefId) -> Rc<ItemVariances> {
         lookup_locally_or_in_crate_store(
             "item_variance_map", item_id, &self.item_variance_map,
             || Rc::new(csearch::get_item_variances(&self.sess.cstore, item_id)))
@@ -6304,7 +6304,7 @@ impl<'tcx> ctxt<'tcx> {
 
     /// Load primitive inherent implementations if necessary
     pub fn populate_implementations_for_primitive_if_necessary(&self,
-                                                               primitive_def_id: ast::DefId) {
+                                                               primitive_def_id: DefId) {
         if primitive_def_id.krate == LOCAL_CRATE {
             return
         }
@@ -6326,7 +6326,7 @@ impl<'tcx> ctxt<'tcx> {
     /// Populates the type context with all the inherent implementations for
     /// the given type if necessary.
     pub fn populate_inherent_implementations_for_type_if_necessary(&self,
-                                                                   type_id: ast::DefId) {
+                                                                   type_id: DefId) {
         if type_id.krate == LOCAL_CRATE {
             return
         }
@@ -6354,7 +6354,7 @@ impl<'tcx> ctxt<'tcx> {
 
     /// Populates the type context with all the implementations for the given
     /// trait if necessary.
-    pub fn populate_implementations_for_trait_if_necessary(&self, trait_id: ast::DefId) {
+    pub fn populate_implementations_for_trait_if_necessary(&self, trait_id: DefId) {
         if trait_id.krate == LOCAL_CRATE {
             return
         }
@@ -6401,13 +6401,13 @@ impl<'tcx> ctxt<'tcx> {
 
     /// Given the def_id of an impl, return the def_id of the trait it implements.
     /// If it implements no trait, return `None`.
-    pub fn trait_id_of_impl(&self, def_id: ast::DefId) -> Option<ast::DefId> {
+    pub fn trait_id_of_impl(&self, def_id: DefId) -> Option<DefId> {
         self.impl_trait_ref(def_id).map(|tr| tr.def_id)
     }
 
     /// If the given def ID describes a method belonging to an impl, return the
     /// ID of the impl that the method belongs to. Otherwise, return `None`.
-    pub fn impl_of_method(&self, def_id: ast::DefId) -> Option<ast::DefId> {
+    pub fn impl_of_method(&self, def_id: DefId) -> Option<DefId> {
         if def_id.krate != LOCAL_CRATE {
             return match csearch::get_impl_or_trait_item(self,
                                                          def_id).container() {
@@ -6429,7 +6429,7 @@ impl<'tcx> ctxt<'tcx> {
     /// If the given def ID describes an item belonging to a trait (either a
     /// default method or an implementation of a trait method), return the ID of
     /// the trait that the method belongs to. Otherwise, return `None`.
-    pub fn trait_of_item(&self, def_id: ast::DefId) -> Option<ast::DefId> {
+    pub fn trait_of_item(&self, def_id: DefId) -> Option<DefId> {
         if def_id.krate != LOCAL_CRATE {
             return csearch::get_trait_of_item(&self.sess.cstore, def_id, self);
         }
@@ -6450,7 +6450,7 @@ impl<'tcx> ctxt<'tcx> {
     /// is already that of the original trait method, then the return value is
     /// the same).
     /// Otherwise, return `None`.
-    pub fn trait_item_of_item(&self, def_id: ast::DefId) -> Option<ImplOrTraitItemId> {
+    pub fn trait_item_of_item(&self, def_id: DefId) -> Option<ImplOrTraitItemId> {
         let impl_item = match self.impl_or_trait_items.borrow().get(&def_id) {
             Some(m) => m.clone(),
             None => return None,
@@ -6496,7 +6496,7 @@ impl<'tcx> ctxt<'tcx> {
                 }
             };
             let did = |state: &mut SipHasher, did: DefId| {
-                let h = if ast_util::is_local(did) {
+                let h = if did.is_local() {
                     svh.clone()
                 } else {
                     tcx.sess.cstore.get_crate_hash(did.krate)

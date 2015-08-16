@@ -13,6 +13,7 @@ use back::abi;
 use back::link;
 use llvm::{ValueRef, get_params};
 use metadata::csearch;
+use middle::def_id::{DefId, LOCAL_CRATE};
 use middle::subst::{Subst, Substs};
 use middle::subst::VecPerParamSpace;
 use middle::subst;
@@ -150,8 +151,8 @@ pub fn trans_method_callee<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 }
 
 pub fn trans_static_method_callee<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
-                                            method_id: ast::DefId,
-                                            trait_id: ast::DefId,
+                                            method_id: DefId,
+                                            trait_id: DefId,
                                             expr_id: ast::NodeId,
                                             param_substs: &'tcx subst::Substs<'tcx>)
                                             -> Datum<'tcx, Rvalue>
@@ -165,7 +166,7 @@ pub fn trans_static_method_callee<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
            tcx.item_path_str(trait_id),
            expr_id);
 
-    let mname = if method_id.krate == ast::LOCAL_CRATE {
+    let mname = if method_id.krate == LOCAL_CRATE {
         match tcx.map.get(method_id.node) {
             ast_map::NodeTraitItem(trait_item) => trait_item.ident.name,
             _ => panic!("callee is not a trait method")
@@ -273,8 +274,8 @@ pub fn trans_static_method_callee<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
     }
 }
 
-fn method_with_name(ccx: &CrateContext, impl_id: ast::DefId, name: ast::Name)
-                    -> ast::DefId {
+fn method_with_name(ccx: &CrateContext, impl_id: DefId, name: ast::Name)
+                    -> DefId {
     match ccx.impl_method_cache().borrow().get(&(impl_id, name)).cloned() {
         Some(m) => return m,
         None => {}
@@ -298,8 +299,8 @@ fn method_with_name(ccx: &CrateContext, impl_id: ast::DefId, name: ast::Name)
 fn trans_monomorphized_callee<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                           method_call: MethodCall,
                                           self_expr: Option<&ast::Expr>,
-                                          trait_id: ast::DefId,
-                                          method_id: ast::DefId,
+                                          trait_id: DefId,
+                                          method_id: DefId,
                                           method_ty: Ty<'tcx>,
                                           vtable: traits::Vtable<'tcx, ()>,
                                           arg_cleanup_scope: cleanup::ScopeId)
@@ -515,7 +516,7 @@ fn trans_trait_callee_from_llval<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 fn trans_object_shim<'a, 'tcx>(
     ccx: &'a CrateContext<'a, 'tcx>,
     upcast_trait_ref: ty::PolyTraitRef<'tcx>,
-    method_id: ast::DefId,
+    method_id: DefId,
     vtable_index: usize)
     -> Datum<'tcx, Rvalue>
 {
@@ -685,7 +686,7 @@ pub fn get_vtable<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 }
 
 fn emit_vtable_methods<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
-                                 impl_id: ast::DefId,
+                                 impl_id: DefId,
                                  substs: subst::Substs<'tcx>,
                                  param_substs: &'tcx subst::Substs<'tcx>)
                                  -> Vec<ValueRef>
