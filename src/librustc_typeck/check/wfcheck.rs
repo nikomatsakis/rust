@@ -110,19 +110,19 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
             hir::ItemConst(..) => {
                 self.check_item_type(item);
             }
-            hir::ItemStruct(ref struct_def, ref ast_generics) => {
+            hir::ItemStruct(ref struct_def, ref hir_generics) => {
                 self.check_type_defn(item, |fcx| {
                     vec![struct_variant(fcx, &**struct_def)]
                 });
 
-                self.check_variances_for_type_defn(item, ast_generics);
+                self.check_variances_for_type_defn(item, hir_generics);
             }
-            hir::ItemEnum(ref enum_def, ref ast_generics) => {
+            hir::ItemEnum(ref enum_def, ref hir_generics) => {
                 self.check_type_defn(item, |fcx| {
                     enum_variants(fcx, enum_def)
                 });
 
-                self.check_variances_for_type_defn(item, ast_generics);
+                self.check_variances_for_type_defn(item, hir_generics);
             }
             hir::ItemTrait(_, _, _, ref items) => {
                 self.check_trait(item, items);
@@ -292,8 +292,8 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
 
     fn check_impl(&mut self,
                   item: &hir::Item,
-                  ast_self_ty: &hir::Ty,
-                  ast_trait_ref: &Option<hir::TraitRef>)
+                  hir_self_ty: &hir::Ty,
+                  hir_trait_ref: &Option<hir::TraitRef>)
     {
         debug!("check_impl: {:?}", item);
 
@@ -301,17 +301,17 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
             let free_substs = &fcx.inh.infcx.parameter_environment.free_substs;
             let item_def_id = fcx.tcx().map.local_def_id(item.id);
 
-            match *ast_trait_ref {
-                Some(ref ast_trait_ref) => {
+            match *hir_trait_ref {
+                Some(ref hir_trait_ref) => {
                     let trait_ref = fcx.tcx().impl_trait_ref(item_def_id).unwrap();
                     let trait_ref =
                         fcx.instantiate_type_scheme(
-                            ast_trait_ref.path.span, free_substs, &trait_ref);
+                            hir_trait_ref.path.span, free_substs, &trait_ref);
                     let obligations =
                         ty::wf::trait_obligations(fcx.infcx(),
                                                   fcx.body_id,
                                                   &trait_ref,
-                                                  ast_trait_ref.path.span,
+                                                  hir_trait_ref.path.span,
                                                   true);
                     for obligation in obligations {
                         fcx.register_predicate(obligation);
@@ -320,7 +320,7 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
                 None => {
                     let self_ty = fcx.tcx().node_id_to_type(item.id);
                     let self_ty = fcx.instantiate_type_scheme(item.span, free_substs, &self_ty);
-                    fcx.register_wf_obligation(self_ty, ast_self_ty.span, this.code.clone());
+                    fcx.register_wf_obligation(self_ty, hir_self_ty.span, this.code.clone());
                 }
             }
 
@@ -384,7 +384,7 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
 
     fn check_variances_for_type_defn(&self,
                                      item: &hir::Item,
-                                     ast_generics: &hir::Generics)
+                                     hir_generics: &hir::Generics)
     {
         let item_def_id = self.tcx().map.local_def_id(item.id);
         let ty_predicates = self.tcx().lookup_predicates(item_def_id);
@@ -394,7 +394,7 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
             variances.types
                      .iter_enumerated()
                      .filter(|&(_, _, &variance)| variance != ty::Bivariant)
-                     .map(|(space, index, _)| self.param_ty(ast_generics, space, index))
+                     .map(|(space, index, _)| self.param_ty(hir_generics, space, index))
                      .map(|p| Parameter::Type(p))
                      .collect();
 
@@ -404,11 +404,11 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
                                          &mut constrained_parameters);
 
         for (space, index, _) in variances.types.iter_enumerated() {
-            let param_ty = self.param_ty(ast_generics, space, index);
+            let param_ty = self.param_ty(hir_generics, space, index);
             if constrained_parameters.contains(&Parameter::Type(param_ty)) {
                 continue;
             }
-            let span = self.ty_param_span(ast_generics, item, space, index);
+            let span = self.ty_param_span(hir_generics, item, space, index);
             self.report_bivariance(span, param_ty.name);
         }
 
@@ -418,20 +418,20 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
             }
 
             assert_eq!(space, TypeSpace);
-            let span = ast_generics.lifetimes[index].lifetime.span;
-            let name = ast_generics.lifetimes[index].lifetime.name;
+            let span = hir_generics.lifetimes[index].lifetime.span;
+            let name = hir_generics.lifetimes[index].lifetime.name;
             self.report_bivariance(span, name);
         }
     }
 
     fn param_ty(&self,
-                ast_generics: &hir::Generics,
+                hir_generics: &hir::Generics,
                 space: ParamSpace,
                 index: usize)
                 -> ty::ParamTy
     {
         let name = match space {
-            TypeSpace => ast_generics.ty_params[index].name,
+            TypeSpace => hir_generics.ty_params[index].name,
             SelfSpace => special_idents::type_self.name,
             FnSpace => self.tcx().sess.bug("Fn space occupied?"),
         };
@@ -440,14 +440,14 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
     }
 
     fn ty_param_span(&self,
-                     ast_generics: &hir::Generics,
+                     hir_generics: &hir::Generics,
                      item: &hir::Item,
                      space: ParamSpace,
                      index: usize)
                      -> Span
     {
         match space {
-            TypeSpace => ast_generics.ty_params[index].span,
+            TypeSpace => hir_generics.ty_params[index].span,
             SelfSpace => item.span,
             FnSpace => self.tcx().sess.span_bug(item.span, "Fn space occupied?"),
         }
