@@ -101,8 +101,8 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
                     }
                 }
             }
-            hir::ItemFn(_, _, _, _, _, ref body) => {
-                self.check_item_fn(item, body);
+            hir::ItemFn(_, _, _, _, ref hir_generics, ref body) => {
+                self.check_item_fn(item, hir_generics, body);
             }
             hir::ItemStatic(..) => {
                 self.check_item_type(item);
@@ -111,21 +111,21 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
                 self.check_item_type(item);
             }
             hir::ItemStruct(ref struct_def, ref hir_generics) => {
-                self.check_type_defn(item, |fcx| {
+                self.check_type_defn(item, hir_generics, |fcx| {
                     vec![struct_variant(fcx, &**struct_def)]
                 });
 
                 self.check_variances_for_type_defn(item, hir_generics);
             }
             hir::ItemEnum(ref enum_def, ref hir_generics) => {
-                self.check_type_defn(item, |fcx| {
+                self.check_type_defn(item, hir_generics, |fcx| {
                     enum_variants(fcx, enum_def)
                 });
 
                 self.check_variances_for_type_defn(item, hir_generics);
             }
-            hir::ItemTrait(_, _, _, ref items) => {
-                self.check_trait(item, items);
+            hir::ItemTrait(_, ref hir_generics, _, ref items) => {
+                self.check_trait(item, hir_generics, items);
             }
             _ => {}
         }
@@ -190,7 +190,10 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
     }
 
     /// In a type definition, we check that to ensure that the types of the fields are well-formed.
-    fn check_type_defn<F>(&mut self, item: &hir::Item, mut lookup_fields: F) where
+    fn check_type_defn<F>(&mut self,
+                          item: &hir::Item,
+                          hir_generics: &hir::Generics,
+                          mut lookup_fields: F) where
         F: for<'fcx> FnMut(&FnCtxt<'fcx, 'tcx>) -> Vec<AdtVariant<'tcx>>,
     {
         self.with_item_fcx(item, |fcx, this| {
