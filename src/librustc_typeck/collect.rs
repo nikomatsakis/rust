@@ -107,9 +107,6 @@ use rustc_front::print::pprust;
 pub fn collect_item_types(tcx: &ty::ctxt) {
     let ccx = &CrateCtxt { tcx: tcx, stack: RefCell::new(Vec::new()) };
 
-    let mut visitor = CollectTraitDefVisitor{ ccx: ccx };
-    visit::walk_crate(&mut visitor, ccx.tcx.map.krate());
-
     let mut visitor = CollectItemTypesVisitor{ ccx: ccx };
     visit::walk_crate(&mut visitor, ccx.tcx.map.krate());
 }
@@ -146,29 +143,6 @@ enum AstConvRequest {
     GetTraitDef(DefId),
     EnsureSuperPredicates(DefId),
     GetTypeParameterBounds(ast::NodeId),
-}
-
-///////////////////////////////////////////////////////////////////////////
-// First phase: just collect *trait definitions* -- basically, the set
-// of type parameters and supertraits. This is information we need to
-// know later when parsing field defs.
-
-struct CollectTraitDefVisitor<'a, 'tcx: 'a> {
-    ccx: &'a CrateCtxt<'a, 'tcx>
-}
-
-impl<'a, 'tcx, 'v> visit::Visitor<'v> for CollectTraitDefVisitor<'a, 'tcx> {
-    fn visit_item(&mut self, i: &hir::Item) {
-        match i.node {
-            hir::ItemTrait(..) => {
-                // computing the trait def also fills in the table
-                let _ = trait_def_of_item(self.ccx, i);
-            }
-            _ => { }
-        }
-
-        visit::walk_item(self, i);
-    }
 }
 
 ///////////////////////////////////////////////////////////////////////////
