@@ -1587,16 +1587,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     }
 
     pub fn node_ty(&self, id: ast::NodeId) -> Ty<'tcx> {
-        match self.inh.tables.borrow().node_types.get(&id) {
-            Some(&t) => t,
-            None if self.err_count_since_creation() != 0 => self.tcx().types.err,
-            None => {
-                self.tcx().sess.bug(
-                    &format!("no type for node {}: {} in fcx {}",
-                            id, self.tcx().map.node_to_string(id),
-                            self.tag()));
-            }
-        }
+        self.infcx().node_type(id)
     }
 
     pub fn item_substs(&self) -> Ref<NodeMap<ty::ItemSubsts<'tcx>>> {

@@ -454,10 +454,7 @@ pub fn mk_subr<'a, 'tcx>(cx: &InferCtxt<'a, 'tcx>,
                          origin: SubregionOrigin<'tcx>,
                          a: ty::Region,
                          b: ty::Region) {
-    debug!("mk_subr({:?} <: {:?})", a, b);
-    let snapshot = cx.region_vars.start_snapshot();
-    cx.region_vars.make_subregion(origin, a, b);
-    cx.region_vars.commit(snapshot);
+    cx.sub_regions(origin, a, b);
 }
 
 pub fn mk_eqty<'a, 'tcx>(cx: &InferCtxt<'a, 'tcx>,
@@ -825,6 +822,16 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                      sup: ty::RegionVid)
     {
         self.region_vars.add_given(sub, sup);
+    }
+
+    pub fn sub_regions(&self,
+                       origin: SubregionOrigin<'tcx>,
+                       a: ty::Region,
+                       b: ty::Region) {
+        debug!("sub_regions({:?} <: {:?})", a, b);
+        let snapshot = self.region_vars.start_snapshot();
+        self.region_vars.make_subregion(origin, a, b);
+        self.region_vars.commit(snapshot);
     }
 
     pub fn sub_types(&self,

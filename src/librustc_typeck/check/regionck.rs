@@ -97,6 +97,7 @@ use middle::pat_util;
 use middle::ty::adjustment;
 use middle::ty::wf::ImpliedBound;
 
+use std::cell::RefCell;
 use std::mem;
 use std::rc::Rc;
 use syntax::ast;
@@ -207,11 +208,15 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
     }
 
     pub fn tcx(&self) -> &'a ty::ctxt<'tcx> {
-        self.fcx.ccx.tcx
+        self.fcx.tcx()
     }
 
     pub fn infcx(&self) -> &InferCtxt<'a,'tcx> {
         self.fcx.infcx()
+    }
+
+    pub fn tables(&self) -> &'a RefCell<ty::Tables<'tcx>> {
+        self.infcx().tables
     }
 
     fn set_body_id(&mut self, body_id: ast::NodeId) -> ast::NodeId {
@@ -246,17 +251,17 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
     /// of b will be `&<R0>.int` and then `*b` will require that `<R0>` be bigger than the let and
     /// the `*b` expression, so we will effectively resolve `<R0>` to be the block B.
     pub fn resolve_type(&self, unresolved_ty: Ty<'tcx>) -> Ty<'tcx> {
-        self.fcx.infcx().resolve_type_vars_if_possible(&unresolved_ty)
+        self.infcx().resolve_type_vars_if_possible(&unresolved_ty)
     }
 
     /// Try to resolve the type for the given node.
     fn resolve_node_type(&self, id: ast::NodeId) -> Ty<'tcx> {
-        let t = self.fcx.node_ty(id);
+        let t = self.infcx().node_type(id);
         self.resolve_type(t)
     }
 
     fn resolve_method_type(&self, method_call: MethodCall) -> Option<Ty<'tcx>> {
-        let method_ty = self.fcx.inh.tables.borrow().method_map
+        let method_ty = self.tables().borrow().method_map
                             .get(&method_call).map(|method| method.ty);
         method_ty.map(|method_ty| self.resolve_type(method_ty))
     }
@@ -268,8 +273,8 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
             ty_unadjusted
         } else {
             ty_unadjusted.adjust(
-                self.fcx.tcx(), expr.span, expr.id,
-                self.fcx.inh.tables.borrow().adjustments.get(&expr.id),
+                self.tcx(), expr.span, expr.id,
+                self.tables().borrow().adjustments.get(&expr.id),
                 |method_call| self.resolve_method_type(method_call))
         }
     }
@@ -319,9 +324,7 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
         // Make a copy of the region obligations vec because we'll need
         // to be able to borrow the fulfillment-cx below when projecting.
         let region_obligations =
-            self.fcx
-                .inh
-                .infcx
+            self.infcx()
                 .fulfillment_cx
                 .borrow()
                 .region_obligations(node_id)
@@ -342,7 +345,7 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
 
         // Processing the region obligations should not cause the list to grow further:
         assert_eq!(region_obligations.len(),
-                   self.fcx.inh.infcx.fulfillment_cx.borrow().region_obligations(node_id).len());
+                   self.infcx().fulfillment_cx.borrow().region_obligations(node_id).len());
     }
 
     fn visit_old_school_wf(&mut self,
@@ -367,7 +370,7 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
         for implication in implications {
             match implication {
                 Implication::RegionSubRegion(ty, r1, r2) => {
-                    self.fcx.mk_subr(origin_for_ty(ty), r1, r2);
+                    self.infcx().sub_regions(origin_for_ty(ty), r1, r2);
                 }
                 Implication::RegionSubGeneric(ty, r1, GenericKind::Param(param_ty)) => {
                     param_ty_must_outlive(self, origin_for_ty(ty), r1, param_ty);
@@ -380,7 +383,10 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
                                                              body_id,
                                                              traits::ItemObligation(def_id));
                     let obligation = traits::Obligation::new(cause, predicate);
-                    self.fcx.register_predicate(obligation);
+                    self.infcx()
+                        .fulfillment_cx
+                        .borrow_mut()
+                        .register_predicate_obligation(self.infcx(), obligation);
                 }
             }
         }
@@ -420,7 +426,7 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
         for &ty in fn_sig_tys {
             let ty = self.resolve_type(ty);
             debug!("relate_free_regions(t={:?})", ty);
-            let implied_bounds = ty::wf::implied_bounds(self.fcx.infcx(), body_id, ty, span);
+            let implied_bounds = ty::wf::implied_bounds(self.infcx(), body_id, ty, span);
 
             // Record any relations between free regions that we observe into the free-region-map.
             self.free_region_map.relate_free_regions_from_implied_bounds(&implied_bounds);
@@ -433,7 +439,7 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
                 match implication {
                     ImpliedBound::RegionSubRegion(ty::ReFree(free_a),
                                                   ty::ReVar(vid_b)) => {
-                        self.fcx.inh.infcx.add_given(free_a, vid_b);
+                        self.infcx().add_given(free_a, vid_b);
                     }
                     ImpliedBound::RegionSubParam(r_a, param_b) => {
                         self.region_bound_pairs.push((r_a, GenericKind::Param(param_b)));
@@ -468,7 +474,7 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
             }
         };
 
-        self.fcx.infcx().resolve_regions_and_report_errors(&self.free_region_map,
+        self.infcx().resolve_regions_and_report_errors(&self.free_region_map,
                                                            subject_node_id);
     }
 }
