@@ -2290,19 +2290,6 @@ impl<'tcx> ctxt<'tcx> {
         }
     }
 
-    // Register a given item type
-    pub fn register_item_type(&self, did: DefId, ty: TypeScheme<'tcx>) {
-        self.tcache.borrow_mut().insert(did, ty);
-    }
-
-    // If the given item is in an external crate, looks up its type and adds it to
-    // the type cache. Returns the type parameters and type.
-    pub fn lookup_item_type(&self, did: DefId) -> TypeScheme<'tcx> {
-        lookup_locally_or_in_crate_store(
-            "tcache", did, &self.tcache,
-            || csearch::get_type(self, did))
-    }
-
     /// Given the did of a trait, returns its canonical trait ref.
     pub fn lookup_trait_def(&self, did: DefId) -> &'tcx TraitDef<'tcx> {
         lookup_locally_or_in_crate_store(

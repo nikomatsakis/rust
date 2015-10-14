@@ -876,8 +876,7 @@ impl<'tcx> fmt::Display for ty::TypeVariants<'tcx> {
             TyParam(ref param_ty) => write!(f, "{}", param_ty),
             TyEnum(def, substs) | TyStruct(def, substs) => {
                 ty::tls::with(|tcx| {
-                    if def.did.is_local() &&
-                          !tcx.tcache.borrow().contains_key(&def.did) {
+                    if !tcx.item_type_available(def.did) {
                         write!(f, "{}<..>", tcx.item_path_str(def.did))
                     } else {
                         parameterized(f, substs, def.did, &[],

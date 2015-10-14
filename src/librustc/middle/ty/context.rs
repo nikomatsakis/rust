@@ -27,7 +27,7 @@ use middle::stability;
 use middle::subst::{self, Subst, Substs};
 use middle::traits;
 use middle::ty::{self, TraitRef, Ty, TypeAndMut};
-use middle::ty::{TyS, TypeVariants};
+use middle::ty::{TyS, TypeScheme, TypeVariants};
 use middle::ty::{AdtDef, ClosureSubsts, ExistentialBounds, Region};
 use middle::ty::{FreevarMap, GenericPredicates};
 use middle::ty::{BareFnTy, InferTy, ParamTy, ProjectionTy, TraitTy};
@@ -263,7 +263,7 @@ pub struct ctxt<'tcx> {
 
     pub map: ast_map::Map<'tcx>,
     pub freevars: RefCell<FreevarMap>,
-    pub tcache: RefCell<DefIdMap<ty::TypeScheme<'tcx>>>,
+    tcache: RefCell<DefIdMap<ty::TypeScheme<'tcx>>>,
     pub rcache: RefCell<FnvHashMap<ty::CReaderCacheKey, Ty<'tcx>>>,
     pub tc_cache: RefCell<FnvHashMap<Ty<'tcx>, ty::contents::TypeContents>>,
     pub ast_ty_to_ty_cache: RefCell<NodeMap<Ty<'tcx>>>,
@@ -372,6 +372,28 @@ pub struct ctxt<'tcx> {
 }
 
 impl<'tcx> ctxt<'tcx> {
+    // Register a given item type
+    pub fn register_item_type(&self, did: DefId, ty: TypeScheme<'tcx>) {
+        self.tcache.borrow_mut().insert(did, ty);
+    }
+
+    // If the given item is in an external crate, looks up its type and adds it to
+    // the type cache. Returns the type parameters and type.
+    pub fn lookup_item_type(&self, did: DefId) -> TypeScheme<'tcx> {
+        ty::lookup_locally_or_in_crate_store(
+            "tcache", did, &self.tcache,
+            || csearch::get_type(self, did))
+    }
+
+    // Returns true if the type for the given item is available in the
+    // tables. This is used for prety printing and other inessential
+    // things that may run before the item types are fully loaded, in
+    // which case they should degrade to less useful behavior.
+    pub fn item_type_available(&self, did: DefId) -> bool {
+        !did.is_local() || // <-- if not local, we can always load it
+            self.tcache.borrow().contains_key(&did) // <-- if local, it may not yet have been stored
+    }
+
     pub fn type_parameter_def(&self,
                               node_id: NodeId)
                               -> ty::TypeParameterDef<'tcx>

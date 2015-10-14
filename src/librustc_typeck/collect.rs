@@ -83,7 +83,7 @@ use middle::ty::util::IntTypeExt;
 use middle::infer;
 use rscope::*;
 use rustc::front::map as hir_map;
-use util::common::{ErrorReported, memoized};
+use util::common::ErrorReported;
 use util::nodemap::{FnvHashMap, FnvHashSet};
 use write_ty_to_tcx;
 
@@ -1509,9 +1509,9 @@ fn type_scheme_of_item<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>,
                                 it: &hir::Item)
                                 -> ty::TypeScheme<'tcx>
 {
-    memoized(&ccx.tcx.tcache,
-             ccx.tcx.map.local_def_id(it.id),
-             |_| compute_type_scheme_of_item(ccx, it))
+    memoized_type_scheme(ccx.tcx,
+                         it.id,
+                         || compute_type_scheme_of_item(ccx, it))
 }
 
 fn compute_type_scheme_of_item<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>,
@@ -1629,9 +1629,25 @@ fn type_scheme_of_foreign_item<'a, 'tcx>(
     abi: abi::Abi)
     -> ty::TypeScheme<'tcx>
 {
-    memoized(&ccx.tcx.tcache,
-             ccx.tcx.map.local_def_id(it.id),
-             |_| compute_type_scheme_of_foreign_item(ccx, it, abi))
+    memoized_type_scheme(ccx.tcx,
+                         it.id,
+                         || compute_type_scheme_of_foreign_item(ccx, it, abi))
+}
+
+fn memoized_type_scheme<'tcx, F>(tcx: &ty::ctxt<'tcx>,
+                                 node_id: ast::NodeId,
+                                 compute: F)
+                                 -> ty::TypeScheme<'tcx>
+    where F: FnOnce() -> ty::TypeScheme<'tcx>
+{
+    let def_id = tcx.map.local_def_id(node_id);
+    if tcx.item_type_available(def_id) {
+        tcx.lookup_item_type(def_id)
+    } else {
+        let scheme = compute();
+        tcx.register_item_type(def_id, scheme.clone());
+        scheme
+    }
 }
 
 fn compute_type_scheme_of_foreign_item<'a, 'tcx>(
