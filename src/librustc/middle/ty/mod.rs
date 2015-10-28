@@ -2315,13 +2315,6 @@ impl<'tcx> ctxt<'tcx> {
         self.lookup_adt_def_master(did)
     }
 
-    /// Given the did of a trait, returns its superpredicates.
-    pub fn lookup_super_predicates(&self, did: DefId) -> GenericPredicates<'tcx> {
-        lookup_locally_or_in_crate_store(
-            "super_predicates", did, &self.super_predicates,
-            || csearch::get_super_predicates(self, did))
-    }
-
     /// Get the attributes of a definition.
     pub fn get_attrs(&self, did: DefId) -> Cow<'tcx, [ast::Attribute]> {
         if let Some(id) = self.map.as_local_node_id(did) {

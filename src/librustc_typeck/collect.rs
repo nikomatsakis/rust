@@ -1229,8 +1229,7 @@ fn ensure_super_predicates_step(ccx: &CrateCtxt,
         return Vec::new();
     };
 
-    let superpredicates = tcx.super_predicates.borrow().get(&trait_def_id).cloned();
-    let superpredicates = superpredicates.unwrap_or_else(|| {
+    if !tcx.super_predicates_available(trait_def_id) {
         let item = match ccx.tcx.map.get(trait_node_id) {
             hir_map::NodeItem(item) => item,
             _ => ccx.tcx.sess.bug(&format!("trait_node_id {} is not an item", trait_node_id))
@@ -1276,11 +1275,10 @@ fn ensure_super_predicates_step(ccx: &CrateCtxt,
                tcx.map.local_def_id(item.id),
                superpredicates);
 
-        tcx.super_predicates.borrow_mut().insert(trait_def_id, superpredicates.clone());
+        tcx.register_super_predicates(trait_def_id, superpredicates);
+    }
 
-        superpredicates
-    });
-
+    let superpredicates = tcx.lookup_super_predicates(trait_def_id);
     let def_ids: Vec<_> = superpredicates.predicates
                                          .iter()
                                          .filter_map(|p| p.to_opt_poly_trait_ref())

@@ -259,7 +259,7 @@ pub struct ctxt<'tcx> {
     /// evaluate them even during type conversion, often before the
     /// full predicates are available (note that supertraits have
     /// additional acyclicity requirements).
-    pub super_predicates: RefCell<DefIdMap<GenericPredicates<'tcx>>>,
+    super_predicates: RefCell<DefIdMap<GenericPredicates<'tcx>>>,
 
     pub map: ast_map::Map<'tcx>,
     pub freevars: RefCell<FreevarMap>,
@@ -385,8 +385,10 @@ impl<'tcx> ctxt<'tcx> {
             || csearch::get_type(self, did))
     }
 
-    /// Given the did of an item, returns its full set of predicates.
+    /// Given the did of a local item, store its predicates, which
+    /// must not have been stored already.
     pub fn register_predicates(&self, did: DefId, p: GenericPredicates<'tcx>) {
+        assert!(did.is_local());
         let q = self.predicates.borrow_mut().insert(did, p);
         assert!(q.is_none());
     }
@@ -396,6 +398,25 @@ impl<'tcx> ctxt<'tcx> {
         ty::lookup_locally_or_in_crate_store(
             "predicates", did, &self.predicates,
             || csearch::get_predicates(self, did))
+    }
+
+    /// Given the did of a local item, store its super-predicates,
+    /// which must not have been computed already.
+    pub fn register_super_predicates(&self, did: DefId, p: GenericPredicates<'tcx>) {
+        assert!(did.is_local());
+        let q = self.super_predicates.borrow_mut().insert(did, p);
+        assert!(q.is_none());
+    }
+
+    /// Given the did of a trait, returns its superpredicates.
+    pub fn lookup_super_predicates(&self, did: DefId) -> GenericPredicates<'tcx> {
+        ty::lookup_locally_or_in_crate_store(
+            "super_predicates", did, &self.super_predicates,
+            || csearch::get_super_predicates(self, did))
+    }
+
+    pub fn super_predicates_available(&self, did: DefId) -> bool {
+        !did.is_local() || self.super_predicates.borrow().contains_key(&did)
     }
 
     // Returns true if the type for the given item is available in the
