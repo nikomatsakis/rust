@@ -2315,13 +2315,6 @@ impl<'tcx> ctxt<'tcx> {
         self.lookup_adt_def_master(did)
     }
 
-    /// Given the did of an item, returns its full set of predicates.
-    pub fn lookup_predicates(&self, did: DefId) -> GenericPredicates<'tcx> {
-        lookup_locally_or_in_crate_store(
-            "predicates", did, &self.predicates,
-            || csearch::get_predicates(self, did))
-    }
-
     /// Given the did of a trait, returns its superpredicates.
     pub fn lookup_super_predicates(&self, did: DefId) -> GenericPredicates<'tcx> {
         lookup_locally_or_in_crate_store(

@@ -583,7 +583,7 @@ fn convert_method<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         generics: ty_method.generics.clone(),
         ty: fty
     });
-    ccx.tcx.predicates.borrow_mut().insert(def_id, ty_method.predicates.clone());
+    ccx.tcx.register_predicates(def_id, ty_method.predicates.clone());
 
     write_ty_to_tcx(ccx.tcx, id, fty);
 
@@ -610,8 +610,8 @@ fn convert_field<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                    generics: struct_generics.clone(),
                                    ty: tt
                                });
-    ccx.tcx.predicates.borrow_mut().insert(ccx.tcx.map.local_def_id(v.node.id),
-                                           struct_predicates.clone());
+    ccx.tcx.register_predicates(ccx.tcx.map.local_def_id(v.node.id),
+                                struct_predicates.clone());
 }
 
 fn convert_associated_const<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
@@ -622,8 +622,8 @@ fn convert_associated_const<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                       ty: ty::Ty<'tcx>,
                                       has_value: bool)
 {
-    ccx.tcx.predicates.borrow_mut().insert(ccx.tcx.map.local_def_id(id),
-                                           ty::GenericPredicates::empty());
+    ccx.tcx.register_predicates(ccx.tcx.map.local_def_id(id),
+                                ty::GenericPredicates::empty());
 
     write_ty_to_tcx(ccx.tcx, id, ty);
 
@@ -760,8 +760,7 @@ fn convert_item(ccx: &CrateCtxt, it: &hir::Item) {
             tcx.register_item_type(ccx.tcx.map.local_def_id(it.id),
                                    TypeScheme { generics: ty_generics.clone(),
                                                 ty: selfty });
-            tcx.predicates.borrow_mut().insert(ccx.tcx.map.local_def_id(it.id),
-                                               ty_predicates.clone());
+            tcx.register_predicates(ccx.tcx.map.local_def_id(it.id), ty_predicates.clone());
             if let &Some(ref ast_trait_ref) = opt_trait_ref {
                 tcx.impl_trait_refs.borrow_mut().insert(
                     ccx.tcx.map.local_def_id(it.id),
@@ -1026,7 +1025,7 @@ fn convert_variant_ctor<'a, 'tcx>(tcx: &ty::ctxt<'tcx>,
         }
     };
     write_ty_to_tcx(tcx, ctor_id, ctor_ty);
-    tcx.predicates.borrow_mut().insert(tcx.map.local_def_id(ctor_id), predicates);
+    tcx.register_predicates(tcx.map.local_def_id(ctor_id), predicates);
     tcx.register_item_type(tcx.map.local_def_id(ctor_id),
                            TypeScheme {
                                generics: scheme.generics,
@@ -1447,8 +1446,7 @@ fn convert_trait_predicates<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>, it: &hir::Item)
                                                            items);
     trait_predicates.predicates.extend(TypeSpace, assoc_predicates.into_iter());
 
-    let prev_predicates = tcx.predicates.borrow_mut().insert(def_id, trait_predicates);
-    assert!(prev_predicates.is_none());
+    tcx.register_predicates(def_id, trait_predicates);
 
     return;
 
@@ -1602,9 +1600,7 @@ fn convert_typed_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         }
     };
 
-    let prev_predicates = tcx.predicates.borrow_mut().insert(ccx.tcx.map.local_def_id(it.id),
-                                                             predicates.clone());
-    assert!(prev_predicates.is_none());
+    tcx.register_predicates(ccx.tcx.map.local_def_id(it.id), predicates.clone());
 
     // Debugging aid.
     if tcx.has_attr(ccx.tcx.map.local_def_id(it.id), "rustc_object_lifetime_default") {
@@ -1691,9 +1687,7 @@ fn convert_foreign_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         }
     };
 
-    let prev_predicates = tcx.predicates.borrow_mut().insert(ccx.tcx.map.local_def_id(it.id),
-                                                             predicates);
-    assert!(prev_predicates.is_none());
+    tcx.register_predicates(ccx.tcx.map.local_def_id(it.id), predicates);
 }
 
 fn ty_generics_for_type_or_impl<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,

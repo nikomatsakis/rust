@@ -251,7 +251,7 @@ pub struct ctxt<'tcx> {
 
     /// Maps from the def-id of an item (trait/struct/enum/fn) to its
     /// associated predicates.
-    pub predicates: RefCell<DefIdMap<GenericPredicates<'tcx>>>,
+    predicates: RefCell<DefIdMap<GenericPredicates<'tcx>>>,
 
     /// Maps from the def-id of a trait to the list of
     /// super-predicates. This is a subset of the full list of
@@ -383,6 +383,19 @@ impl<'tcx> ctxt<'tcx> {
         ty::lookup_locally_or_in_crate_store(
             "tcache", did, &self.tcache,
             || csearch::get_type(self, did))
+    }
+
+    /// Given the did of an item, returns its full set of predicates.
+    pub fn register_predicates(&self, did: DefId, p: GenericPredicates<'tcx>) {
+        let q = self.predicates.borrow_mut().insert(did, p);
+        assert!(q.is_none());
+    }
+
+    /// Given the did of an item, returns its full set of predicates.
+    pub fn lookup_predicates(&self, did: DefId) -> GenericPredicates<'tcx> {
+        ty::lookup_locally_or_in_crate_store(
+            "predicates", did, &self.predicates,
+            || csearch::get_predicates(self, did))
     }
 
     // Returns true if the type for the given item is available in the
