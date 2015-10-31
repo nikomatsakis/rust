@@ -125,6 +125,7 @@ pub mod middle {
     pub mod lang_items;
     pub mod liveness;
     pub mod mem_categorization;
+    pub mod pass;
     pub mod pat_util;
     pub mod privacy;
     pub mod reachable;
