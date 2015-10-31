@@ -115,6 +115,7 @@ pub mod middle {
     pub mod dead;
     pub mod def;
     pub mod def_id;
+    pub mod def_visitor;
     pub mod dependency_format;
     pub mod effect;
     pub mod entry;
