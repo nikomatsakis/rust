@@ -15,16 +15,28 @@ use rustc_front::visit;
 
 #[allow(unused_variables)]
 pub trait DefVisitor<'tcx> {
-    fn visit_item(&mut self, def_id: DefId, item: &'tcx hir::Item) {
+    fn visit_item(&mut self,
+                  def_id: DefId,
+                  item: &'tcx hir::Item) {
     }
 
-    fn visit_foreign_item(&mut self, def_id: DefId, foreign_item: &'tcx hir::ForeignItem) {
+    fn visit_foreign_item(&mut self,
+                          def_id: DefId,
+                          foreign_item: &'tcx hir::ForeignItem) {
     }
 
-    fn visit_trait_item(&mut self, def_id: DefId, trait_item: &'tcx hir::TraitItem) {
+    fn visit_trait_item(&mut self,
+                        trait_def_id: DefId,
+                        item: &'tcx hir::Item,
+                        trait_item_def_id: DefId,
+                        trait_item: &'tcx hir::TraitItem) {
     }
 
-    fn visit_impl_item(&mut self, def_id: DefId, impl_item: &'tcx hir::ImplItem) {
+    fn visit_impl_item(&mut self,
+                        impl_def_id: DefId,
+                        item: &'tcx hir::Item,
+                        impl_item_def_id: DefId,
+                        impl_item: &'tcx hir::ImplItem) {
     }
 
     fn visit_closure(&mut self,
@@ -59,6 +71,25 @@ impl<'a, 'tcx, D> visit::Visitor<'tcx> for HirVisitor<'a, 'tcx, D>
     fn visit_item(&mut self, item: &'tcx hir::Item) {
         let def_id = self.tcx.map.local_def_id(item.id);
         self.delegate.visit_item(def_id, item);
+
+        match item.node {
+            hir::ItemTrait(_, _, _, ref trait_items) => {
+                for trait_item in trait_items {
+                    let trait_item_def_id = self.tcx.map.local_def_id(trait_item.id);
+                    self.delegate.visit_trait_item(def_id, item, trait_item_def_id, trait_item);
+                }
+            }
+
+            hir::ItemImpl(_, _, _, _, _, ref impl_items) => {
+                for impl_item in impl_items {
+                    let impl_item_def_id = self.tcx.map.local_def_id(impl_item.id);
+                    self.delegate.visit_impl_item(def_id, item, impl_item_def_id, impl_item);
+                }
+            }
+
+            _ => { }
+        }
+
         visit::walk_item(self, item);
     }
 
@@ -69,14 +100,14 @@ impl<'a, 'tcx, D> visit::Visitor<'tcx> for HirVisitor<'a, 'tcx, D>
     }
 
     fn visit_trait_item(&mut self, item: &'tcx hir::TraitItem) {
-        let def_id = self.tcx.map.local_def_id(item.id);
-        self.delegate.visit_trait_item(def_id, item);
+        // NB: We visit trait-items in the `visit_item` fn above, so
+        // that we have access to the trait item
         visit::walk_trait_item(self, item);
     }
 
     fn visit_impl_item(&mut self, item: &'tcx hir::ImplItem) {
-        let def_id = self.tcx.map.local_def_id(item.id);
-        self.delegate.visit_impl_item(def_id, item);
+        // NB: We visit impl-items in the `visit_item` fn above, so
+        // that we have access to the impl item
         visit::walk_impl_item(self, item);
     }
 
