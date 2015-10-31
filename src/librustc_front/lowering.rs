@@ -72,21 +72,19 @@ use syntax::owned_slice::OwnedSlice;
 use syntax::parse::token::{self, str_to_ident};
 use syntax::std_inject;
 
-use std::cell::{Cell, RefCell};
-
 pub struct LoweringContext<'a> {
     crate_root: Option<&'static str>,
     // Map AST ids to ids used for expanded nodes.
-    id_cache: RefCell<HashMap<NodeId, NodeId>>,
+    id_cache: HashMap<NodeId, NodeId>,
     // Use if there are no cached ids for the current node.
     id_assigner: &'a NodeIdAssigner,
     // 0 == no cached id. Must be incremented to align with previous id
     // incrementing.
-    cached_id: Cell<u32>,
+    cached_id: u32,
     // Keep track of gensym'ed idents.
-    gensym_cache: RefCell<HashMap<(NodeId, &'static str), Ident>>,
+    gensym_cache: HashMap<(NodeId, &'static str), Ident>,
     // A copy of cached_id, but is also set to an id while it is being cached.
-    gensym_key: Cell<u32>,
+    gensym_key: u32,
 }
 
 impl<'a, 'hir> LoweringContext<'a> {
@@ -103,36 +101,36 @@ impl<'a, 'hir> LoweringContext<'a> {
 
         LoweringContext {
             crate_root: crate_root,
-            id_cache: RefCell::new(HashMap::new()),
+            id_cache: HashMap::new(),
             id_assigner: id_assigner,
-            cached_id: Cell::new(0),
-            gensym_cache: RefCell::new(HashMap::new()),
-            gensym_key: Cell::new(0),
+            cached_id: 0,
+            gensym_cache: HashMap::new(),
+            gensym_key: 0,
         }
     }
 
-    fn next_id(&self) -> NodeId {
-        let cached = self.cached_id.get();
+    fn next_id(&mut self) -> NodeId {
+        let cached = self.cached_id;
         if cached == 0 {
             return self.id_assigner.next_node_id()
         }
 
-        self.cached_id.set(cached + 1);
+        self.cached_id += 1;
         cached
     }
 
-    fn str_to_ident(&self, s: &'static str) -> Ident {
-        let cached_id = self.gensym_key.get();
+    fn str_to_ident(&mut self, s: &'static str) -> Ident {
+        let cached_id = self.gensym_key;
         if cached_id == 0 {
             return token::gensym_ident(s);
         }
 
-        let cached = self.gensym_cache.borrow().contains_key(&(cached_id, s));
+        let cached = self.gensym_cache.contains_key(&(cached_id, s));
         if cached {
-            self.gensym_cache.borrow()[&(cached_id, s)]
+            self.gensym_cache[&(cached_id, s)]
         } else {
             let result = token::gensym_ident(s);
-            self.gensym_cache.borrow_mut().insert((cached_id, s), result);
+            self.gensym_cache.insert((cached_id, s), result);
             result
         }
     }
@@ -878,18 +876,18 @@ fn cache_ids<'a, OP, R>(lctx: &mut LoweringContext, expr_id: NodeId, op: OP) -> 
     // Only reset the id if it was previously 0, i.e., was not cached.
     // If it was cached, we are in a nested node, but our id count will
     // still count towards the parent's count.
-    let reset_cached_id = lctx.cached_id.get() == 0;
+    let reset_cached_id = lctx.cached_id == 0;
 
     {
-        let id_cache: &mut HashMap<_, _> = &mut lctx.id_cache.borrow_mut();
+        let id_cache: &mut HashMap<_, _> = &mut lctx.id_cache;
 
         if id_cache.contains_key(&expr_id) {
-            let cached_id = lctx.cached_id.get();
+            let cached_id = lctx.cached_id;
             if cached_id == 0 {
                 // We're entering a node where we need to track ids, but are not
                 // yet tracking.
-                lctx.cached_id.set(id_cache[&expr_id]);
-                lctx.gensym_key.set(id_cache[&expr_id]);
+                lctx.cached_id = id_cache[&expr_id];
+                lctx.gensym_key = id_cache[&expr_id];
             } else {
                 // We're already tracking - check that the tracked id is the same
                 // as the expected id.
@@ -898,15 +896,15 @@ fn cache_ids<'a, OP, R>(lctx: &mut LoweringContext, expr_id: NodeId, op: OP) -> 
         } else {
             let next_id = lctx.id_assigner.peek_node_id();
             id_cache.insert(expr_id, next_id);
-            lctx.gensym_key.set(next_id);
+            lctx.gensym_key = next_id;
         }
     }
 
     let result = op(lctx);
 
     if reset_cached_id {
-        lctx.cached_id.set(0);
-        lctx.gensym_key.set(0);
+        lctx.cached_id = 0;
+        lctx.gensym_key = 0;
     }
 
     result
