@@ -271,20 +271,32 @@ impl<'ast> Map<'ast> {
         self.definitions.borrow().len()
     }
 
+    /// Given a local def-id, returns the corresponding def-key.
     pub fn def_key(&self, def_id: DefId) -> DefKey {
         assert!(def_id.is_local());
         self.definitions.borrow().def_key(def_id.index)
+    }
+
+    /// Given a local def-id, returns the corresponding node-id.
+    pub fn node_id(&self, def_id: DefId) -> NodeId {
+        assert!(def_id.is_local());
+        self.definitions.borrow().node_id(def_id.index)
+    }
+
+    /// Given a local-def-id, constructs the definition path. (This
+    /// can be done manually by iterating over the def-keys.)
+    pub fn def_path(&self, def_id: DefId) -> DefPath {
+        assert!(def_id.is_local());
+        self.definitions.borrow().def_path(def_id.index)
     }
 
     pub fn def_path_from_id(&self, id: NodeId) -> DefPath {
         self.def_path(self.local_def_id(id))
     }
 
-    pub fn def_path(&self, def_id: DefId) -> DefPath {
-        assert!(def_id.is_local());
-        self.definitions.borrow().def_path(def_id.index)
-    }
-
+    /// Gets the `DefId` corresponding to `node`. Note that not all
+    /// nodes have a `DefId`. See `opt_local_def_id` if you do not
+    /// know what kind of node `node` is the id for.
     pub fn local_def_id(&self, node: NodeId) -> DefId {
         self.opt_local_def_id(node).unwrap_or_else(|| {
             panic!("local_def_id: no entry for `{}`, which has a map of `{:?}`",
@@ -292,10 +304,14 @@ impl<'ast> Map<'ast> {
         })
     }
 
+    /// If `node` is the id of a suitable definition with a `DefId`,
+    /// return it. Otherwise, return `None`.
     pub fn opt_local_def_id(&self, node: NodeId) -> Option<DefId> {
         self.definitions.borrow().opt_local_def_id(node)
     }
 
+    /// If `def_id` is local to the current crate, returns the
+    /// corresponding node-id; otherwise, returns `None`.
     pub fn as_local_node_id(&self, def_id: DefId) -> Option<NodeId> {
         self.definitions.borrow().as_local_node_id(def_id)
     }
@@ -476,14 +492,28 @@ impl<'ast> Map<'ast> {
     pub fn expect_item(&self, id: NodeId) -> &'ast Item {
         match self.find(id) {
             Some(NodeItem(item)) => item,
-            _ => panic!("expected item, found {}", self.node_to_string(id))
+            r => panic!("expected item, found {:?}", r),
+        }
+    }
+
+    pub fn expect_foreign_item(&self, id: NodeId) -> &'ast ForeignItem {
+        match self.find(id) {
+            Some(NodeForeignItem(item)) => item,
+            r => panic!("expected foreign item, found {:?}", r)
         }
     }
 
     pub fn expect_trait_item(&self, id: NodeId) -> &'ast TraitItem {
         match self.find(id) {
             Some(NodeTraitItem(item)) => item,
-            _ => panic!("expected trait item, found {}", self.node_to_string(id))
+            r => panic!("expected trait item, found {:?}", r)
+        }
+    }
+
+    pub fn expect_impl_item(&self, id: NodeId) -> &'ast ImplItem {
+        match self.find(id) {
+            Some(NodeImplItem(item)) => item,
+            r => panic!("expected impl item, found {:?}", r)
         }
     }
 
@@ -510,13 +540,6 @@ impl<'ast> Map<'ast> {
         match self.find(id) {
             Some(NodeVariant(variant)) => variant,
             _ => panic!(format!("expected variant, found {}", self.node_to_string(id))),
-        }
-    }
-
-    pub fn expect_foreign_item(&self, id: NodeId) -> &'ast ForeignItem {
-        match self.find(id) {
-            Some(NodeForeignItem(item)) => item,
-            _ => panic!("expected foreign item, found {}", self.node_to_string(id))
         }
     }
 

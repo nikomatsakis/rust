@@ -112,6 +112,10 @@ impl Definitions {
         self.data[index.as_usize()].key.clone()
     }
 
+    pub fn node_id(&self, index: DefIndex) -> ast::NodeId {
+        self.data[index.as_usize()].node_id
+    }
+
     /// Returns the path from the crate root to `index`. The root
     /// nodes are not included in the path (i.e., this will be an
     /// empty vector for the crate root). For an inlined item, this
@@ -131,8 +135,7 @@ impl Definitions {
 
     pub fn as_local_node_id(&self, def_id: DefId) -> Option<ast::NodeId> {
         if def_id.krate == LOCAL_CRATE {
-            assert!(def_id.index.as_usize() < self.data.len());
-            Some(self.data[def_id.index.as_usize()].node_id)
+            Some(self.node_id(def_id.index))
         } else {
             None
         }
