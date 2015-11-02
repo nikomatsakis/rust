@@ -47,7 +47,7 @@ use syntax::visit::{self, Visitor};
 use syntax::print::pprust::{path_to_string, ty_to_string};
 use syntax::ptr::P;
 
-use rustc_front::lowering::{lower_expr, LoweringContext};
+use rustc_front::lowering::LoweringContext;
 
 use super::span_utils::SpanUtils;
 use super::recorder::{Recorder, FmtStrs};
@@ -62,8 +62,8 @@ macro_rules! down_cast_data {
     };
 }
 
-pub struct DumpCsvVisitor<'l, 'tcx: 'l> {
-    save_ctxt: SaveContext<'l, 'tcx>,
+pub struct DumpCsvVisitor<'l, 'm: 'l, 'tcx: 'l> {
+    save_ctxt: SaveContext<'l, 'm, 'tcx>,
     sess: &'l Session,
     tcx: &'l ty::ctxt<'tcx>,
     analysis: &'l ty::CrateAnalysis<'l>,
@@ -74,12 +74,12 @@ pub struct DumpCsvVisitor<'l, 'tcx: 'l> {
     cur_scope: NodeId,
 }
 
-impl <'l, 'tcx> DumpCsvVisitor<'l, 'tcx> {
+impl <'l, 'm, 'tcx> DumpCsvVisitor<'l, 'm, 'tcx> {
     pub fn new(tcx: &'l ty::ctxt<'tcx>,
-               lcx: &'l LoweringContext<'l>,
+               lcx: &'l mut LoweringContext<'m>,
                analysis: &'l ty::CrateAnalysis<'l>,
                output_file: Box<File>)
-               -> DumpCsvVisitor<'l, 'tcx> {
+               -> DumpCsvVisitor<'l, 'm, 'tcx> {
         let span_utils = SpanUtils::new(&tcx.sess);
         DumpCsvVisitor {
             sess: &tcx.sess,
@@ -98,7 +98,7 @@ impl <'l, 'tcx> DumpCsvVisitor<'l, 'tcx> {
     }
 
     fn nest<F>(&mut self, scope_id: NodeId, f: F)
-        where F: FnOnce(&mut DumpCsvVisitor<'l, 'tcx>)
+        where F: FnOnce(&mut DumpCsvVisitor<'l, 'm, 'tcx>)
     {
         let parent_scope = self.cur_scope;
         self.cur_scope = scope_id;
@@ -803,7 +803,7 @@ impl <'l, 'tcx> DumpCsvVisitor<'l, 'tcx> {
     }
 }
 
-impl<'l, 'tcx, 'v> Visitor<'v> for DumpCsvVisitor<'l, 'tcx> {
+impl<'l, 'm, 'tcx, 'v> Visitor<'v> for DumpCsvVisitor<'l, 'm, 'tcx> {
     fn visit_item(&mut self, item: &ast::Item) {
         if generated_code(item.span) {
             return
@@ -1041,7 +1041,7 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DumpCsvVisitor<'l, 'tcx> {
                 visit::walk_expr(self, ex);
             }
             ast::ExprStruct(ref path, ref fields, ref base) => {
-                let hir_expr = lower_expr(self.save_ctxt.lcx, ex);
+                let hir_expr = self.save_ctxt.lower_expr(ex);
                 let adt = self.tcx.expr_ty(&hir_expr).ty_adt_def().unwrap();
                 let def = self.tcx.resolve_expr(&hir_expr);
                 self.process_struct_lit(ex, path, fields, adt.variant_of_def(def), base)
@@ -1070,7 +1070,7 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DumpCsvVisitor<'l, 'tcx> {
 
                 self.visit_expr(&**sub_ex);
 
-                let hir_node = lower_expr(self.save_ctxt.lcx, sub_ex);
+                let hir_node = self.save_ctxt.lower_expr(sub_ex);
                 let ty = &self.tcx.expr_ty_adjusted(&hir_node).sty;
                 match *ty {
                     ty::TyStruct(def, _) => {

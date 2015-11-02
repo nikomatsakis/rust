@@ -113,7 +113,7 @@ pub fn compile_input(sess: Session,
 
         let expanded_crate = assign_node_ids(&sess, expanded_crate);
         // Lower ast -> hir.
-        let lcx = LoweringContext::new(&sess, Some(&expanded_crate));
+        let mut lcx = LoweringContext::new(&sess, Some(&expanded_crate));
         let mut hir_forest = time(sess.time_passes(),
                                   "lowering ast -> hir",
                                   || hir_map::Forest::new(lower_crate(&lcx, &expanded_crate)));
@@ -156,7 +156,7 @@ pub fn compile_input(sess: Session,
                                                                tcx.map.krate(),
                                                                &analysis,
                                                                tcx,
-                                                               &lcx,
+                                                               &mut lcx,
                                                                &id);
                 (control.after_analysis.callback)(state);
 

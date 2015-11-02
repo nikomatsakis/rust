@@ -12,6 +12,7 @@ use middle::ty;
 use middle::def;
 use middle::def_id::DefId;
 
+use std::cell::RefCell;
 use std::env;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
@@ -26,6 +27,7 @@ use syntax::codemap::*;
 use syntax::parse::token::{self, keywords};
 use syntax::visit::{self, Visitor};
 use syntax::print::pprust::ty_to_string;
+use syntax::ptr::P;
 
 use self::span_utils::SpanUtils;
 
@@ -35,9 +37,9 @@ pub mod recorder;
 
 mod dump_csv;
 
-pub struct SaveContext<'l, 'tcx: 'l> {
+pub struct SaveContext<'l, 'm:'l, 'tcx: 'l> {
     tcx: &'l ty::ctxt<'tcx>,
-    lcx: &'l lowering::LoweringContext<'l>,
+    lcx: RefCell<&'l mut lowering::LoweringContext<'m>>,
     span_utils: SpanUtils<'l>,
 }
 
@@ -175,21 +177,21 @@ pub struct MethodCallData {
 
 
 
-impl<'l, 'tcx: 'l> SaveContext<'l, 'tcx> {
+impl<'l, 'm, 'tcx: 'l> SaveContext<'l, 'm, 'tcx> {
     pub fn new(tcx: &'l ty::ctxt<'tcx>,
-               lcx: &'l lowering::LoweringContext<'l>)
-               -> SaveContext<'l, 'tcx> {
+               lcx: &'l mut lowering::LoweringContext<'m>)
+               -> SaveContext<'l, 'm, 'tcx> {
         let span_utils = SpanUtils::new(&tcx.sess);
         SaveContext::from_span_utils(tcx, lcx, span_utils)
     }
 
     pub fn from_span_utils(tcx: &'l ty::ctxt<'tcx>,
-                           lcx: &'l lowering::LoweringContext<'l>,
+                           lcx: &'l mut lowering::LoweringContext<'m>,
                            span_utils: SpanUtils<'l>)
-                           -> SaveContext<'l, 'tcx> {
+                           -> SaveContext<'l, 'm, 'tcx> {
         SaveContext {
             tcx: tcx,
-            lcx: lcx,
+            lcx: RefCell::new(lcx),
             span_utils: span_utils,
         }
     }
@@ -458,7 +460,7 @@ impl<'l, 'tcx: 'l> SaveContext<'l, 'tcx> {
     pub fn get_expr_data(&self, expr: &ast::Expr) -> Option<Data> {
         match expr.node {
             ast::ExprField(ref sub_ex, ident) => {
-                let hir_node = lowering::lower_expr(self.lcx, sub_ex);
+                let hir_node = self.lower_expr(sub_ex);
                 let ty = &self.tcx.expr_ty_adjusted(&hir_node).sty;
                 match *ty {
                     ty::TyStruct(def, _) => {
@@ -478,7 +480,7 @@ impl<'l, 'tcx: 'l> SaveContext<'l, 'tcx> {
                 }
             }
             ast::ExprStruct(ref path, _, _) => {
-                let hir_node = lowering::lower_expr(self.lcx, expr);
+                let hir_node = self.lower_expr(expr);
                 let ty = &self.tcx.expr_ty_adjusted(&hir_node).sty;
                 match *ty {
                     ty::TyStruct(def, _) => {
@@ -659,6 +661,11 @@ impl<'l, 'tcx: 'l> SaveContext<'l, 'tcx> {
     pub fn enclosing_scope(&self, id: NodeId) -> NodeId {
         self.tcx.map.get_enclosing_scope(id).unwrap_or(0)
     }
+
+    fn lower_expr(&self, expr: &ast::Expr) -> P<hir::Expr> {
+        let mut lcx = self.lcx.borrow_mut();
+        lowering::lower_expr(&mut lcx, expr)
+    }
 }
 
 // An AST visitor for collecting paths from patterns.
@@ -710,7 +717,7 @@ impl<'v> Visitor<'v> for PathCollector {
 }
 
 pub fn process_crate<'l, 'tcx>(tcx: &'l ty::ctxt<'tcx>,
-                               lcx: &'l lowering::LoweringContext<'l>,
+                               lcx: &'l mut lowering::LoweringContext<'l>,
                                krate: &ast::Crate,
                                analysis: &ty::CrateAnalysis,
                                cratename: &str,
