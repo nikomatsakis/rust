@@ -444,6 +444,54 @@ impl<'map> ast_util::IdVisitingOperation for RenamingRecorder<'map> {
     }
 }
 
+fn check_pat_const_ty<'tcx>(tcx: &ty::ctxt<'tcx>,
+                            pat: &Pat,
+                            ty: Ty<'tcx>)
+{
+    if !suitable_pat_const_ty(ty) {
+        tcx.sess.span_err(
+            pat.span,
+            &format!("cannot match constant of type `{}`: \
+                      only constants of builtin-types like ints and floats \
+                      may appear in patterns", ty));
+    }
+}
+
+fn suitable_pat_const_ty<'tcx>(ty: Ty<'tcx>) -> bool {
+    match ty.sty {
+        ty::TyBool |
+        ty::TyChar |
+        ty::TyInt(..) |
+        ty::TyUint(..) |
+        ty::TyStr(..) |
+        ty::TyRawPtr(..) |
+        ty::TyBareFn(..) |
+        ty::TyError |
+        ty::TyFloat(..) =>
+            true,
+
+        ty::TyArray(elem_ty, _) |
+        ty::TySlice(elem_ty) =>
+            suitable_pat_const_ty(elem_ty),
+
+        ty::TyRef(_, mt) =>
+            suitable_pat_const_ty(mt.ty),
+
+        ty::TyTuple(ref tys) =>
+            tys.iter().all(|&ty| suitable_pat_const_ty(ty)),
+
+        ty::TyEnum(..) |
+        ty::TyStruct(..) |
+        ty::TyBox(..) |
+        ty::TyTrait(..) |
+        ty::TyClosure(..) |
+        ty::TyProjection(..) |
+        ty::TyParam(..) |
+        ty::TyInfer(..) =>
+            false,
+    }
+}
+
 impl<'a, 'tcx> Folder for StaticInliner<'a, 'tcx> {
     fn fold_pat(&mut self, pat: P<Pat>) -> P<Pat> {
         return match pat.node {
@@ -453,6 +501,9 @@ impl<'a, 'tcx> Folder for StaticInliner<'a, 'tcx> {
                     Some(DefAssociatedConst(did)) |
                     Some(DefConst(did)) => match lookup_const_by_id(self.tcx, did, Some(pat.id)) {
                         Some(const_expr) => {
+                            let ty = self.tcx.expr_ty_adjusted(const_expr);
+                            check_pat_const_ty(self.tcx, &pat, ty);
+
                             const_expr_to_pat(self.tcx, const_expr, pat.span).map(|new_pat| {
 
                                 if let Some(ref mut renaming_map) = self.renaming_map {

@@ -973,9 +973,11 @@ impl CodeMap {
     pub fn with_expn_info<T, F>(&self, id: ExpnId, f: F) -> T where
         F: FnOnce(Option<&ExpnInfo>) -> T,
     {
-        match id {
-            NO_EXPANSION | COMMAND_LINE_EXPN => f(None),
-            ExpnId(i) => f(Some(&(*self.expansions.borrow())[i as usize]))
+        if id == NO_EXPANSION || id == COMMAND_LINE_EXPN {
+            f(None)
+        } else {
+            let ExpnId(i) = id;
+            f(Some(&(*self.expansions.borrow())[i as usize]))
         }
     }
 

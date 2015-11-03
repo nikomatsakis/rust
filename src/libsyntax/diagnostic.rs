@@ -804,10 +804,12 @@ impl Emitter for EmitterWriter {
             cmsp: Option<(&codemap::CodeMap, Span)>,
             msg: &str, code: Option<&str>, lvl: Level) {
         let error = match cmsp {
-            Some((cm, COMMAND_LINE_SP)) => self.emit_(cm,
-                                                FileLine(COMMAND_LINE_SP),
-                                                msg, code, lvl),
-            Some((cm, sp)) => self.emit_(cm, FullSpan(sp), msg, code, lvl),
+            Some((cm, sp)) =>
+                if sp == COMMAND_LINE_SP {
+                    self.emit_(cm, FileLine(COMMAND_LINE_SP), msg, code, lvl)
+                } else {
+                    self.emit_(cm, FullSpan(sp), msg, code, lvl)
+                },
             None => self.print_diagnostic("", lvl, msg, code),
         };
 

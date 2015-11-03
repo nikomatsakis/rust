@@ -646,14 +646,13 @@ impl RegionMaps {
 fn record_var_lifetime(visitor: &mut RegionResolutionVisitor,
                        var_id: ast::NodeId,
                        _sp: Span) {
-    match visitor.cx.var_parent {
-        ROOT_CODE_EXTENT => {
-            // this can happen in extern fn declarations like
-            //
-            // extern fn isalnum(c: c_int) -> c_int
-        }
-        parent_scope =>
-            visitor.region_maps.record_var_scope(var_id, parent_scope),
+    let parent_scope = visitor.cx.var_parent;
+    if parent_scope == ROOT_CODE_EXTENT {
+        // this can happen in extern fn declarations like
+        //
+        // extern fn isalnum(c: c_int) -> c_int
+    } else {
+        visitor.region_maps.record_var_scope(var_id, parent_scope);
     }
 }
 

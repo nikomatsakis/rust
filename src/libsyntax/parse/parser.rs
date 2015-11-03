@@ -2071,10 +2071,11 @@ impl<'a> Parser<'a> {
                 let lo = self.span.lo;
                 return self.parse_lambda_expr(lo, CaptureByRef);
             },
-            token::Ident(id @ ast::Ident {
-                            name: token::SELF_KEYWORD_NAME,
-                            ctxt: _
-                         }, token::Plain) => {
+            token::Ident(ast::Ident {
+                            name: self_name,
+                            ctxt
+                         }, token::Plain) if self_name == token::SELF_KEYWORD_NAME => {
+                let id = ast::Ident { name: token::SELF_KEYWORD_NAME, ctxt: ctxt};
                 try!(self.bump());
                 let path = ast_util::ident_to_path(mk_sp(lo, hi), id);
                 ex = ExprPath(None, path);

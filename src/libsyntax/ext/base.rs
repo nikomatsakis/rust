@@ -679,14 +679,14 @@ impl<'a> ExtCtxt<'a> {
         });
     }
     pub fn bt_pop(&mut self) {
-        match self.backtrace {
-            NO_EXPANSION => self.bug("tried to pop without a push"),
-            expn_id => {
-                self.recursion_count -= 1;
-                self.backtrace = self.codemap().with_expn_info(expn_id, |expn_info| {
-                    expn_info.map_or(NO_EXPANSION, |ei| ei.call_site.expn_id)
-                });
-            }
+        let expn_id = self.backtrace;
+        if expn_id == NO_EXPANSION {
+            self.bug("tried to pop without a push")
+        } else {
+            self.recursion_count -= 1;
+            self.backtrace = self.codemap().with_expn_info(expn_id, |expn_info| {
+                expn_info.map_or(NO_EXPANSION, |ei| ei.call_site.expn_id)
+            });
         }
     }
 
