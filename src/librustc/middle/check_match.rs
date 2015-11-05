@@ -449,11 +449,19 @@ fn check_pat_const_ty<'tcx>(tcx: &ty::ctxt<'tcx>,
                             ty: Ty<'tcx>)
 {
     if !suitable_pat_const_ty(ty) {
-        tcx.sess.span_err(
-            pat.span,
-            &format!("cannot match constant of type `{}`: \
-                      only constants of builtin-types like ints and floats \
-                      may appear in patterns", ty));
+        if tcx.sess.opts.lint_cap.is_some() {
+            tcx.sess.span_warn(
+                pat.span,
+                &format!("cannot match constant of type `{}`: \
+                          only constants of builtin-types like ints and floats \
+                          may appear in patterns", ty));
+        } else {
+            tcx.sess.span_err(
+                pat.span,
+                &format!("cannot match constant of type `{}`: \
+                          only constants of builtin-types like ints and floats \
+                          may appear in patterns", ty));
+        }
     }
 }
 
