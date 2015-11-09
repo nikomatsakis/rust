@@ -9,6 +9,7 @@
 // except according to those terms.
 
 use middle::def_id::DefId;
+use middle::pass::contents::ContentsVisitor;
 use rustc_front::hir;
 use rustc_front::util::IdVisitor;
 use syntax::ast_util::{IdRange, IdRangeComputingVisitor, IdVisitingOperation};
@@ -38,6 +39,17 @@ pub enum InlinedItemRef<'a> {
 impl InlinedItem {
     pub fn visit<'ast,V>(&'ast self, visitor: &mut V)
         where V: Visitor<'ast>
+    {
+        match *self {
+            Item(ref i) => visitor.visit_item(&**i),
+            Foreign(ref i) => visitor.visit_foreign_item(&**i),
+            TraitItem(_, ref ti) => visitor.visit_trait_item(ti),
+            ImplItem(_, ref ii) => visitor.visit_impl_item(ii),
+        }
+    }
+
+    pub fn visit_contents<'ast,V>(&'ast self, visitor: &mut V)
+        where V: ContentsVisitor<'ast>
     {
         match *self {
             Item(ref i) => visitor.visit_item(&**i),

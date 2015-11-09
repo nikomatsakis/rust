@@ -714,7 +714,7 @@ pub fn phase_3_run_analysis_passes<'tcx, F, R>(sess: &'tcx Session,
 
     let region_map = time(time_passes,
                           "region resolution",
-                          || middle::region::resolve_crate(sess, krate));
+                          || middle::region::resolve_crate(sess, &ast_map));
 
     time(time_passes,
          "loop checking",

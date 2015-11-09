@@ -17,6 +17,7 @@
 //! `middle/typeck/infer/region_inference.rs`
 
 use metadata::inline::InlinedItem;
+use middle::pass::contents::{self, ContentsVisitor};
 use front::map as ast_map;
 use session::Session;
 use util::nodemap::{FnvHashMap, NodeMap, NodeSet};
@@ -30,7 +31,7 @@ use syntax::codemap::{self, Span};
 use syntax::ast::{self, NodeId};
 
 use rustc_front::hir;
-use rustc_front::visit::{self, Visitor, FnKind};
+use rustc_front::intravisit::{self, Visitor, FnKind};
 use rustc_front::hir::{Block, Item, FnDecl, Arm, Pat, Stmt, Expr, Local};
 use rustc_front::util::stmt_id;
 
@@ -325,7 +326,6 @@ struct RegionResolutionVisitor<'a> {
     /// destructor's execution.
     terminating_scopes: NodeSet
 }
-
 
 impl RegionMaps {
     /// create a bogus code extent for the regions in astencode types. Nobody
@@ -735,7 +735,7 @@ fn resolve_arm(visitor: &mut RegionResolutionVisitor, arm: &hir::Arm) {
         visitor.terminating_scopes.insert(expr.id);
     }
 
-    visit::walk_arm(visitor, arm);
+    intravisit::walk_arm(visitor, arm);
 }
 
 fn resolve_pat(visitor: &mut RegionResolutionVisitor, pat: &hir::Pat) {
@@ -750,7 +750,7 @@ fn resolve_pat(visitor: &mut RegionResolutionVisitor, pat: &hir::Pat) {
         _ => { }
     }
 
-    visit::walk_pat(visitor, pat);
+    intravisit::walk_pat(visitor, pat);
 }
 
 fn resolve_stmt(visitor: &mut RegionResolutionVisitor, stmt: &hir::Stmt) {
@@ -767,7 +767,7 @@ fn resolve_stmt(visitor: &mut RegionResolutionVisitor, stmt: &hir::Stmt) {
 
     let prev_parent = visitor.cx.parent;
     visitor.cx.parent = stmt_extent;
-    visit::walk_stmt(visitor, stmt);
+    intravisit::walk_stmt(visitor, stmt);
     visitor.cx.parent = prev_parent;
 }
 
@@ -844,7 +844,7 @@ fn resolve_expr(visitor: &mut RegionResolutionVisitor, expr: &hir::Expr) {
         }
     }
 
-    visit::walk_expr(visitor, expr);
+    intravisit::walk_expr(visitor, expr);
     visitor.cx = prev_cx;
 }
 
@@ -935,7 +935,7 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor, local: &hir::Local) {
         None => { }
     }
 
-    visit::walk_local(visitor, local);
+    intravisit::walk_local(visitor, local);
 
     /// True if `pat` match the `P&` nonterminal:
     ///
@@ -1080,7 +1080,7 @@ fn resolve_item(visitor: &mut RegionResolutionVisitor, item: &hir::Item) {
         var_parent: ROOT_CODE_EXTENT,
         parent: ROOT_CODE_EXTENT
     };
-    visit::walk_item(visitor, item);
+    intravisit::walk_item(visitor, item);
     visitor.create_item_scope_if_needed(item.id);
     visitor.cx = prev_cx;
     visitor.terminating_scopes = prev_ts;
@@ -1119,8 +1119,8 @@ fn resolve_fn(visitor: &mut RegionResolutionVisitor,
         var_parent: fn_decl_scope,
     };
 
-    visit::walk_fn_decl(visitor, decl);
-    visit::walk_fn_kind(visitor, kind);
+    intravisit::walk_fn_decl(visitor, decl);
+    intravisit::walk_fn_kind(visitor, kind);
 
     // The body of the every fn is a root scope.
     visitor.cx = Context {
@@ -1171,25 +1171,26 @@ impl<'a> RegionResolutionVisitor<'a> {
     }
 }
 
-impl<'a, 'v> Visitor<'v> for RegionResolutionVisitor<'a> {
-    fn visit_block(&mut self, b: &Block) {
-        resolve_block(self, b);
-    }
-
+impl<'a, 'v> ContentsVisitor<'v> for RegionResolutionVisitor<'a> {
     fn visit_item(&mut self, i: &Item) {
         resolve_item(self, i);
     }
 
     fn visit_impl_item(&mut self, ii: &hir::ImplItem) {
-        visit::walk_impl_item(self, ii);
+        intravisit::walk_impl_item(self, ii);
         self.create_item_scope_if_needed(ii.id);
     }
 
     fn visit_trait_item(&mut self, ti: &hir::TraitItem) {
-        visit::walk_trait_item(self, ti);
+        intravisit::walk_trait_item(self, ti);
         self.create_item_scope_if_needed(ti.id);
     }
+}
 
+impl<'a, 'v> Visitor<'v> for RegionResolutionVisitor<'a> {
+    fn visit_block(&mut self, b: &Block) {
+        resolve_block(self, b);
+    }
     fn visit_fn(&mut self, fk: FnKind<'v>, fd: &'v FnDecl,
                 b: &'v Block, s: Span, n: NodeId) {
         resolve_fn(self, fk, fd, b, s, n);
@@ -1211,7 +1212,7 @@ impl<'a, 'v> Visitor<'v> for RegionResolutionVisitor<'a> {
     }
 }
 
-pub fn resolve_crate(sess: &Session, krate: &hir::Crate) -> RegionMaps {
+pub fn resolve_crate<'tcx>(sess: &Session, map: &ast_map::Map<'tcx>) -> RegionMaps {
     let maps = RegionMaps {
         code_extents: RefCell::new(vec![]),
         code_extent_interner: RefCell::new(FnvHashMap()),
@@ -1237,7 +1238,7 @@ pub fn resolve_crate(sess: &Session, krate: &hir::Crate) -> RegionMaps {
             },
             terminating_scopes: NodeSet()
         };
-        visit::walk_crate(&mut visitor, krate);
+        contents::execute(map, &mut visitor);
     }
     return maps;
 }
@@ -1255,5 +1256,5 @@ pub fn resolve_inlined_item(sess: &Session,
         },
         terminating_scopes: NodeSet()
     };
-    item.visit(&mut visitor);
+    item.visit_contents(&mut visitor);
 }
