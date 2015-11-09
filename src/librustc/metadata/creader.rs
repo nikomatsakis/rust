@@ -21,6 +21,7 @@ use metadata::cstore::{CStore, CrateSource, MetadataBlob};
 use metadata::decoder;
 use metadata::loader;
 use metadata::loader::CratePaths;
+use middle::pass::defs::{self, DefsVisitor};
 use util::nodemap::FnvHashMap;
 use front::map as hir_map;
 
@@ -37,7 +38,6 @@ use syntax::attr;
 use syntax::attr::AttrMetaMethods;
 use syntax::parse::token::InternedString;
 use syntax::util::small_vector::SmallVector;
-use rustc_front::visit;
 use rustc_front::hir;
 use log;
 
@@ -53,10 +53,9 @@ pub struct CrateReader<'a> {
     foreign_item_map: FnvHashMap<String, Vec<ast::NodeId>>,
 }
 
-impl<'a, 'b, 'v> visit::Visitor<'v> for LocalCrateReader<'a, 'b> {
-    fn visit_item(&mut self, a: &hir::Item) {
-        self.process_item(a);
-        visit::walk_item(self, a);
+impl<'a, 'b, 'v> DefsVisitor<'v> for LocalCrateReader<'a, 'b> {
+    fn visit_item(&mut self, item: &'v hir::Item) {
+        self.process_item(item);
     }
 }
 
@@ -716,7 +715,7 @@ impl<'a, 'b> LocalCrateReader<'a, 'b> {
     // etc.
     pub fn read_crates(&mut self, krate: &hir::Crate) {
         self.process_crate(krate);
-        visit::walk_crate(self, krate);
+        defs::execute(self.ast_map, self);
         self.creader.inject_allocator_crate();
 
         if log_enabled!(log::INFO) {
