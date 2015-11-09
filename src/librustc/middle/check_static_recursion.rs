@@ -14,13 +14,14 @@
 use front::map as ast_map;
 use session::Session;
 use middle::def::{DefStatic, DefConst, DefAssociatedConst, DefVariant, DefMap};
+use middle::pass::defs::{self, DefsVisitor};
 use util::nodemap::NodeMap;
 
 use syntax::{ast};
 use syntax::codemap::Span;
 use syntax::feature_gate::{GateIssue, emit_feature_err};
-use rustc_front::visit::Visitor;
-use rustc_front::visit;
+use rustc_front::intravisit::Visitor;
+use rustc_front::intravisit as visit;
 use rustc_front::hir;
 
 use std::cell::RefCell;
@@ -36,7 +37,7 @@ struct CheckCrateVisitor<'a, 'ast: 'a> {
     discriminant_map: RefCell<NodeMap<Option<&'ast hir::Expr>>>,
 }
 
-impl<'a, 'ast: 'a> Visitor<'ast> for CheckCrateVisitor<'a, 'ast> {
+impl<'a, 'ast: 'a> DefsVisitor<'ast> for CheckCrateVisitor<'a, 'ast> {
     fn visit_item(&mut self, it: &'ast hir::Item) {
         match it.node {
             hir::ItemStatic(..) |
@@ -60,7 +61,6 @@ impl<'a, 'ast: 'a> Visitor<'ast> for CheckCrateVisitor<'a, 'ast> {
             }
             _ => {}
         }
-        visit::walk_item(self, it)
     }
 
     fn visit_trait_item(&mut self, ti: &'ast hir::TraitItem) {
@@ -74,7 +74,6 @@ impl<'a, 'ast: 'a> Visitor<'ast> for CheckCrateVisitor<'a, 'ast> {
             }
             _ => {}
         }
-        visit::walk_trait_item(self, ti)
     }
 
     fn visit_impl_item(&mut self, ii: &'ast hir::ImplItem) {
@@ -86,12 +85,10 @@ impl<'a, 'ast: 'a> Visitor<'ast> for CheckCrateVisitor<'a, 'ast> {
             }
             _ => {}
         }
-        visit::walk_impl_item(self, ii)
     }
 }
 
 pub fn check_crate<'ast>(sess: &Session,
-                         krate: &'ast hir::Crate,
                          def_map: &DefMap,
                          ast_map: &ast_map::Map<'ast>) {
     let mut visitor = CheckCrateVisitor {
@@ -100,7 +97,7 @@ pub fn check_crate<'ast>(sess: &Session,
         ast_map: ast_map,
         discriminant_map: RefCell::new(NodeMap()),
     };
-    visit::walk_crate(&mut visitor, krate);
+    defs::execute(ast_map, &mut visitor);
     sess.abort_if_errors();
 }
 
@@ -193,13 +190,21 @@ impl<'a, 'ast: 'a> CheckItemRecursionVisitor<'a, 'ast> {
             discriminant_map.insert(*id, None);
         }
     }
-}
 
-impl<'a, 'ast: 'a> Visitor<'ast> for CheckItemRecursionVisitor<'a, 'ast> {
     fn visit_item(&mut self, it: &'ast hir::Item) {
         self.with_item_id_pushed(it.id, |v| visit::walk_item(v, it));
     }
 
+    fn visit_trait_item(&mut self, ti: &'ast hir::TraitItem) {
+        self.with_item_id_pushed(ti.id, |v| visit::walk_trait_item(v, ti));
+    }
+
+    fn visit_impl_item(&mut self, ii: &'ast hir::ImplItem) {
+        self.with_item_id_pushed(ii.id, |v| visit::walk_impl_item(v, ii));
+    }
+}
+
+impl<'a, 'ast: 'a> Visitor<'ast> for CheckItemRecursionVisitor<'a, 'ast> {
     fn visit_enum_def(&mut self, enum_definition: &'ast hir::EnumDef,
                       generics: &'ast hir::Generics, item_id: ast::NodeId, _: Span) {
         self.populate_enum_discriminants(enum_definition);
@@ -224,14 +229,6 @@ impl<'a, 'ast: 'a> Visitor<'ast> for CheckItemRecursionVisitor<'a, 'ast> {
         if let Some(expr) = maybe_expr {
             self.with_item_id_pushed(expr.id, |v| visit::walk_expr(v, expr));
         }
-    }
-
-    fn visit_trait_item(&mut self, ti: &'ast hir::TraitItem) {
-        self.with_item_id_pushed(ti.id, |v| visit::walk_trait_item(v, ti));
-    }
-
-    fn visit_impl_item(&mut self, ii: &'ast hir::ImplItem) {
-        self.with_item_id_pushed(ii.id, |v| visit::walk_impl_item(v, ii));
     }
 
     fn visit_expr(&mut self, e: &'ast hir::Expr) {
