@@ -709,7 +709,7 @@ pub fn phase_3_run_analysis_passes<'tcx, F, R>(sess: &'tcx Session,
          || middle::entry::find_entry_point(sess, &ast_map));
 
     sess.plugin_registrar_fn.set(time(time_passes, "looking for plugin registrar", || {
-        plugin::build::find_plugin_registrar(sess.diagnostic(), krate)
+        plugin::build::find_plugin_registrar(sess.diagnostic(), &ast_map)
     }));
 
     let region_map = time(time_passes,
