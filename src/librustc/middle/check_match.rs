@@ -487,7 +487,6 @@ impl<'a, 'tcx> Folder for StaticInliner<'a, 'tcx> {
 
             let mut id_visitor = front_util::IdVisitor {
                 operation: &mut renaming_recorder,
-                pass_through_items: true,
                 visited_outermost: false,
             };
 
