@@ -722,7 +722,7 @@ pub fn phase_3_run_analysis_passes<'tcx, F, R>(sess: &'tcx Session,
 
     time(time_passes,
          "static item recursion checking",
-         || middle::check_static_recursion::check_crate(sess, krate, &def_map.borrow(), &ast_map));
+         || middle::check_static_recursion::check_crate(sess, &def_map.borrow(), &ast_map));
 
     ty::ctxt::create_and_enter(sess,
                                arenas,
