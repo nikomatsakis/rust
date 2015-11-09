@@ -555,7 +555,6 @@ impl<'a> EarlyContext<'a> {
     {
         let mut v = ast_util::IdVisitor {
             operation: self,
-            pass_through_items: false,
             visited_outermost: false,
         };
         f(&mut v);
@@ -585,7 +584,6 @@ impl<'a, 'tcx> LateContext<'a, 'tcx> {
     {
         let mut v = util::IdVisitor {
             operation: self,
-            pass_through_items: false,
             visited_outermost: false,
         };
         f(&mut v);

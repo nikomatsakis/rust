@@ -146,7 +146,6 @@ pub fn unop_to_string(op: UnOp) -> &'static str {
 
 pub struct IdVisitor<'a, O: 'a> {
     pub operation: &'a mut O,
-    pub pass_through_items: bool,
     pub visited_outermost: bool,
 }
 
@@ -173,12 +172,10 @@ impl<'a, 'v, O: ast_util::IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> 
     }
 
     fn visit_item(&mut self, item: &Item) {
-        if !self.pass_through_items {
-            if self.visited_outermost {
-                return;
-            } else {
-                self.visited_outermost = true
-            }
+        if self.visited_outermost {
+            return;
+        } else {
+            self.visited_outermost = true
         }
 
         self.operation.visit_id(item.id);
@@ -243,12 +240,10 @@ impl<'a, 'v, O: ast_util::IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> 
                 block: &'v Block,
                 span: Span,
                 node_id: NodeId) {
-        if !self.pass_through_items {
-            match function_kind {
-                FnKind::Method(..) if self.visited_outermost => return,
-                FnKind::Method(..) => self.visited_outermost = true,
-                _ => {}
-            }
+        match function_kind {
+            FnKind::Method(..) if self.visited_outermost => return,
+            FnKind::Method(..) => self.visited_outermost = true,
+            _ => {}
         }
 
         self.operation.visit_id(node_id);
@@ -269,10 +264,8 @@ impl<'a, 'v, O: ast_util::IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> 
 
         visit::walk_fn(self, function_kind, function_declaration, block, span);
 
-        if !self.pass_through_items {
-            if let FnKind::Method(..) = function_kind {
-                self.visited_outermost = false;
-            }
+        if let FnKind::Method(..) = function_kind {
+            self.visited_outermost = false;
         }
     }
 
@@ -325,7 +318,6 @@ pub fn compute_id_range_for_fn_body(fk: FnKind,
     let mut visitor = ast_util::IdRangeComputingVisitor { result: ast_util::IdRange::max() };
     let mut id_visitor = IdVisitor {
         operation: &mut visitor,
-        pass_through_items: false,
         visited_outermost: false,
     };
     id_visitor.visit_fn(fk, decl, body, sp, id);
