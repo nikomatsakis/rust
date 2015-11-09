@@ -46,7 +46,8 @@ use syntax::attr::{self, AttrMetaMethods};
 use syntax::codemap::{self, Span};
 
 use rustc_front::hir;
-use rustc_front::visit::{self, FnKind, Visitor};
+use rustc_front::intravisit::{self, Visitor};
+use rustc_front::visit::FnKind;
 
 use bad_style::{MethodLateContext, method_context};
 
@@ -148,13 +149,13 @@ struct RawPtrDeriveVisitor<'a, 'tcx: 'a> {
     cx: &'a LateContext<'a, 'tcx>
 }
 
-impl<'a, 'tcx, 'v> Visitor<'v> for RawPtrDeriveVisitor<'a, 'tcx> {
-    fn visit_ty(&mut self, ty: &hir::Ty) {
+impl<'a, 'tcx> Visitor<'tcx> for RawPtrDeriveVisitor<'a, 'tcx> {
+    fn visit_ty(&mut self, ty: &'tcx hir::Ty) {
         const MSG: &'static str = "use of `#[derive]` with a raw pointer";
         if let hir::TyPtr(..) = ty.node {
             self.cx.span_lint(RAW_POINTER_DERIVE, ty.span, MSG);
         }
-        visit::walk_ty(self, ty);
+        intravisit::walk_ty(self, ty);
     }
     // explicit override to a no-op to reduce code bloat
     fn visit_expr(&mut self, _: &hir::Expr) {}
@@ -217,7 +218,7 @@ impl LateLintPass for RawPointerDerive {
         match item.node {
             hir::ItemStruct(..) | hir::ItemEnum(..) => {
                 let mut visitor = RawPtrDeriveVisitor { cx: cx };
-                visit::walk_item(&mut visitor, &item);
+                intravisit::walk_item(&mut visitor, &item);
             }
             _ => {}
         }
