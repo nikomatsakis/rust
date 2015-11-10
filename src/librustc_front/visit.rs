@@ -23,22 +23,11 @@
 //! instance, a walker looking for item names in a module will miss all of
 //! those that are created by the expansion of a macro.
 
-use syntax::abi::Abi;
 use syntax::ast::{Ident, NodeId, CRATE_NODE_ID, Name, Attribute};
 use syntax::codemap::Span;
 use hir::*;
 
-#[derive(Copy, Clone, PartialEq, Eq)]
-pub enum FnKind<'a> {
-    /// fn foo() or extern "Abi" fn foo()
-    ItemFn(Name, &'a Generics, Unsafety, Constness, Abi, Visibility),
-
-    /// fn foo(&self)
-    Method(Name, &'a MethodSig, Option<Visibility>),
-
-    /// |x, y| {}
-    Closure,
-}
+pub use intravisit::FnKind;
 
 /// Each method of the Visitor trait is a hook to be potentially
 /// overridden.  Each method's default implementation recursively visits

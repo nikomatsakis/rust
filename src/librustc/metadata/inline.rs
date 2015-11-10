@@ -8,10 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use front::ids::IdVisitor;
 use middle::def_id::DefId;
 use middle::pass::contents::ContentsVisitor;
 use rustc_front::hir;
-use rustc_front::util::IdVisitor;
 use syntax::ast_util::{IdRange, IdRangeComputingVisitor, IdVisitingOperation};
 use syntax::ptr::P;
 use rustc_front::visit::Visitor;
@@ -62,9 +62,8 @@ impl InlinedItem {
     pub fn visit_ids<O: IdVisitingOperation>(&self, operation: &mut O) {
         let mut id_visitor = IdVisitor {
             operation: operation,
-            visited_outermost: false,
         };
-        self.visit(&mut id_visitor);
+        self.visit_contents(&mut id_visitor);
     }
 
     pub fn compute_id_range(&self) -> IdRange {

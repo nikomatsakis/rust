@@ -12,6 +12,7 @@ pub use self::Constructor::*;
 use self::Usefulness::*;
 use self::WitnessPreference::*;
 
+use front::ids::IdVisitor;
 use middle::const_eval::{compare_const_vals, ConstVal};
 use middle::const_eval::{eval_const_expr, eval_const_expr_partial};
 use middle::const_eval::{const_expr_to_pat, lookup_const_by_id};
@@ -479,15 +480,16 @@ impl<'a, 'tcx> Folder for StaticInliner<'a, 'tcx> {
         fn record_renamings(const_expr: &hir::Expr,
                             substituted_pat: &hir::Pat,
                             renaming_map: &mut FnvHashMap<(NodeId, Span), NodeId>) {
+            use rustc_front::intravisit::Visitor;
+
             let mut renaming_recorder = RenamingRecorder {
                 substituted_node_id: substituted_pat.id,
                 origin_span: substituted_pat.span,
                 renaming_map: renaming_map,
             };
 
-            let mut id_visitor = front_util::IdVisitor {
+            let mut id_visitor = IdVisitor {
                 operation: &mut renaming_recorder,
-                visited_outermost: false,
             };
 
             id_visitor.visit_expr(const_expr);

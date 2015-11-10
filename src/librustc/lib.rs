@@ -96,6 +96,7 @@ pub mod back {
 
 pub mod front {
     pub mod check_attr;
+    pub mod ids;
     pub mod map;
 }
 

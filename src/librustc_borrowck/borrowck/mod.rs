@@ -20,6 +20,7 @@ pub use self::MovedValueUseKind::*;
 
 use self::InteriorKind::*;
 
+use rustc::front::ids;
 use rustc::front::map as hir_map;
 use rustc::front::map::blocks::{FnLikeNode, FnParts};
 use rustc::middle::cfg;
@@ -45,7 +46,6 @@ use rustc_front::hir;
 use rustc_front::hir::{FnDecl, Block};
 use rustc_front::visit;
 use rustc_front::visit::{Visitor, FnKind};
-use rustc_front::util as hir_util;
 
 pub mod check_loans;
 
@@ -195,7 +195,7 @@ fn build_borrowck_dataflow_data<'a, 'tcx>(this: &mut BorrowckCtxt<'a, 'tcx>,
 {
     // Check the body of fn items.
     let tcx = this.tcx;
-    let id_range = hir_util::compute_id_range_for_fn_body(fk, decl, body, sp, id);
+    let id_range = ids::compute_id_range_for_fn_body(fk, decl, body, sp, id);
     let (all_loans, move_data) =
         gather_loans::gather_loans_in_fn(this, id, decl, body);
 
