@@ -18,8 +18,8 @@
 use front::map as ast_map;
 use middle::def;
 use middle::def_id::DefId;
-use middle::ty;
 use middle::privacy;
+use middle::ty;
 use session::config;
 use util::nodemap::NodeSet;
 
@@ -28,8 +28,8 @@ use syntax::abi;
 use syntax::ast;
 use syntax::attr;
 use rustc_front::hir;
-use rustc_front::visit::Visitor;
-use rustc_front::visit;
+use rustc_front::intravisit::Visitor;
+use rustc_front::intravisit;
 
 // Returns true if the given set of generics implies that the item it's
 // associated with must be inlined.
@@ -86,10 +86,8 @@ struct ReachableContext<'a, 'tcx: 'a> {
     any_library: bool,
 }
 
-impl<'a, 'tcx, 'v> Visitor<'v> for ReachableContext<'a, 'tcx> {
-
+impl<'a, 'tcx, 'v> intravisit::Visitor<'v> for ReachableContext<'a, 'tcx> {
     fn visit_expr(&mut self, expr: &hir::Expr) {
-
         match expr.node {
             hir::ExprPath(..) => {
                 let def = match self.tcx.def_map.borrow().get(&expr.id) {
@@ -138,12 +136,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for ReachableContext<'a, 'tcx> {
             _ => {}
         }
 
-        visit::walk_expr(self, expr)
-    }
-
-    fn visit_item(&mut self, _item: &hir::Item) {
-        // Do not recurse into items. These items will be added to the worklist
-        // and recursed into manually if necessary.
+        intravisit::walk_expr(self, expr)
     }
 }
 
@@ -260,7 +253,7 @@ impl<'a, 'tcx> ReachableContext<'a, 'tcx> {
                 match item.node {
                     hir::ItemFn(_, _, _, _, _, ref search_block) => {
                         if item_might_be_inlined(&*item) {
-                            visit::walk_block(self, &**search_block)
+                            intravisit::walk_block(self, &**search_block)
                         }
                     }
 
@@ -292,7 +285,7 @@ impl<'a, 'tcx> ReachableContext<'a, 'tcx> {
                         self.visit_expr(&*expr);
                     }
                     hir::MethodTraitItem(_, Some(ref body)) => {
-                        visit::walk_block(self, body);
+                        intravisit::walk_block(self, body);
                     }
                     hir::TypeTraitItem(..) => {}
                 }
@@ -305,7 +298,7 @@ impl<'a, 'tcx> ReachableContext<'a, 'tcx> {
                     hir::MethodImplItem(ref sig, ref body) => {
                         let did = self.tcx.map.get_parent_did(search_item);
                         if method_might_be_inlined(self.tcx, sig, impl_item, did) {
-                            visit::walk_block(self, body)
+                            intravisit::walk_block(self, body)
                         }
                     }
                     hir::TypeImplItem(_) => {}
