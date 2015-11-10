@@ -25,6 +25,8 @@ use metadata::inline::InlinedItemRef;
 use middle::def;
 use middle::def_id::{CRATE_DEF_INDEX, DefId};
 use middle::dependency_format::Linkage;
+use middle::pass::contents::{self, ContentsVisitor};
+use middle::pass::defs::{self, DefsVisitor};
 use middle::stability;
 use middle::subst;
 use middle::ty::{self, Ty};
@@ -46,8 +48,8 @@ use syntax;
 use rbml::writer::Encoder;
 
 use rustc_front::hir;
-use rustc_front::visit::Visitor;
-use rustc_front::visit;
+use rustc_front::intravisit::Visitor;
+use rustc_front::intravisit;
 use front::map::{LinkedPath, PathElem, PathElems};
 use front::map as ast_map;
 
@@ -1468,18 +1470,21 @@ struct EncodeVisitor<'a, 'b:'a, 'c:'a, 'tcx:'c> {
     index: &'a mut CrateIndex<'tcx>,
 }
 
-impl<'a, 'b, 'c, 'tcx, 'v> Visitor<'v> for EncodeVisitor<'a, 'b, 'c, 'tcx> {
-    fn visit_expr(&mut self, ex: &hir::Expr) {
-        visit::walk_expr(self, ex);
-        my_visit_expr(ex, self.rbml_w_for_visit_item, self.ecx, self.index);
-    }
-    fn visit_item(&mut self, i: &hir::Item) {
-        visit::walk_item(self, i);
+impl<'a, 'b, 'c, 'tcx> ContentsVisitor<'tcx> for EncodeVisitor<'a, 'b, 'c, 'tcx> {
+    fn visit_item(&mut self, i: &'tcx hir::Item) {
+        intravisit::walk_item(self, i);
         my_visit_item(i, self.rbml_w_for_visit_item, self.ecx, self.index);
     }
-    fn visit_foreign_item(&mut self, ni: &hir::ForeignItem) {
-        visit::walk_foreign_item(self, ni);
+    fn visit_foreign_item(&mut self, ni: &'tcx hir::ForeignItem) {
+        intravisit::walk_foreign_item(self, ni);
         my_visit_foreign_item(ni, self.rbml_w_for_visit_item, self.ecx, self.index);
+    }
+}
+
+impl<'a, 'b, 'c, 'tcx> Visitor<'tcx> for EncodeVisitor<'a, 'b, 'c, 'tcx> {
+    fn visit_expr(&mut self, ex: &'tcx hir::Expr) {
+        intravisit::walk_expr(self, ex);
+        my_visit_expr(ex, self.rbml_w_for_visit_item, self.ecx, self.index);
     }
 }
 
@@ -1503,11 +1508,11 @@ fn encode_info_for_items<'a, 'tcx>(ecx: &EncodeContext<'a, 'tcx>,
                         syntax::parse::token::special_idents::invalid.name,
                         hir::Public);
 
-    visit::walk_crate(&mut EncodeVisitor {
+    contents::execute(&ecx.tcx.map, &mut EncodeVisitor {
         index: &mut index,
         ecx: ecx,
         rbml_w_for_visit_item: &mut *rbml_w,
-    }, krate);
+    });
 
     rbml_w.end_tag();
     index
@@ -1717,15 +1722,17 @@ fn encode_macro_defs(rbml_w: &mut Encoder,
 }
 
 fn encode_struct_field_attrs(ecx: &EncodeContext,
-                             rbml_w: &mut Encoder,
-                             krate: &hir::Crate) {
+                             rbml_w: &mut Encoder) {
     struct StructFieldVisitor<'a, 'b:'a, 'c:'a, 'tcx:'b> {
         ecx: &'a EncodeContext<'b, 'tcx>,
         rbml_w: &'a mut Encoder<'c>,
     }
 
-    impl<'a, 'b, 'c, 'tcx, 'v> Visitor<'v> for StructFieldVisitor<'a, 'b, 'c, 'tcx> {
-        fn visit_struct_field(&mut self, field: &hir::StructField) {
+    impl<'a, 'b, 'c, 'tcx> ContentsVisitor<'tcx> for StructFieldVisitor<'a, 'b, 'c, 'tcx> {
+    }
+
+    impl<'a, 'b, 'c, 'tcx> Visitor<'tcx> for StructFieldVisitor<'a, 'b, 'c, 'tcx> {
+        fn visit_struct_field(&mut self, field: &'tcx hir::StructField) {
             self.rbml_w.start_tag(tag_struct_field);
             let def_id = self.ecx.tcx.map.local_def_id(field.node.id);
             encode_def_id(self.rbml_w, def_id);
@@ -1735,19 +1742,17 @@ fn encode_struct_field_attrs(ecx: &EncodeContext,
     }
 
     rbml_w.start_tag(tag_struct_fields);
-    visit::walk_crate(&mut StructFieldVisitor { ecx: ecx, rbml_w: rbml_w }, krate);
+    contents::execute(&ecx.tcx.map, &mut StructFieldVisitor { ecx: ecx, rbml_w: rbml_w });
     rbml_w.end_tag();
 }
-
-
 
 struct ImplVisitor<'a, 'tcx:'a> {
     tcx: &'a ty::ctxt<'tcx>,
     impls: FnvHashMap<DefId, Vec<DefId>>
 }
 
-impl<'a, 'tcx, 'v> Visitor<'v> for ImplVisitor<'a, 'tcx> {
-    fn visit_item(&mut self, item: &hir::Item) {
+impl<'a, 'tcx, 'v> DefsVisitor<'v> for ImplVisitor<'a, 'tcx> {
+    fn visit_item(&mut self, item: &'v hir::Item) {
         if let hir::ItemImpl(..) = item.node {
             let impl_id = self.tcx.map.local_def_id(item.id);
             if let Some(trait_ref) = self.tcx.impl_trait_ref(impl_id) {
@@ -1756,19 +1761,16 @@ impl<'a, 'tcx, 'v> Visitor<'v> for ImplVisitor<'a, 'tcx> {
                     .push(impl_id);
             }
         }
-        visit::walk_item(self, item);
     }
 }
 
 /// Encodes an index, mapping each trait to its (local) implementations.
-fn encode_impls<'a>(ecx: &'a EncodeContext,
-                    krate: &hir::Crate,
-                    rbml_w: &'a mut Encoder) {
+fn encode_impls<'a>(ecx: &'a EncodeContext, rbml_w: &'a mut Encoder) {
     let mut visitor = ImplVisitor {
         tcx: ecx.tcx,
         impls: FnvHashMap()
     };
-    visit::walk_crate(&mut visitor, krate);
+    defs::execute(&ecx.tcx.map, &mut visitor);
 
     rbml_w.start_tag(tag_impls);
     for (trait_, trait_impls) in visitor.impls {
@@ -2010,7 +2012,7 @@ fn encode_metadata_inner(wr: &mut Cursor<Vec<u8>>,
 
     // Encode the def IDs of impls, for coherence checking.
     i = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap();
-    encode_impls(&ecx, krate, &mut rbml_w);
+    encode_impls(&ecx, &mut rbml_w);
     stats.impl_bytes = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap() - i;
 
     // Encode miscellaneous info.
@@ -2034,7 +2036,7 @@ fn encode_metadata_inner(wr: &mut Cursor<Vec<u8>>,
     encode_xrefs(&ecx, &mut rbml_w, index.xrefs);
     stats.xref_bytes = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap() - i;
 
-    encode_struct_field_attrs(&ecx, &mut rbml_w, krate);
+    encode_struct_field_attrs(&ecx, &mut rbml_w);
 
     stats.total_bytes = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap();
 
