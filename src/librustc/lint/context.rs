@@ -25,6 +25,8 @@
 //! for all lint attributes.
 use self::TargetLint::*;
 
+use front::ids::IdVisitor;
+use middle::pass::contents::ContentsVisitor;
 use middle::privacy::ExportedItems;
 use middle::ty::{self, Ty};
 use session::{early_error, Session};
@@ -43,8 +45,8 @@ use syntax::codemap::Span;
 use syntax::parse::token::InternedString;
 use syntax::ast;
 use rustc_front::hir;
-use rustc_front::util;
 use rustc_front::visit as hir_visit;
+use rustc_front::intravisit;
 use syntax::visit as ast_visit;
 use syntax::diagnostic;
 
@@ -580,11 +582,10 @@ impl<'a, 'tcx> LateContext<'a, 'tcx> {
     }
 
     fn visit_ids<F>(&mut self, f: F)
-        where F: FnOnce(&mut util::IdVisitor<LateContext>)
+        where F: FnOnce(&mut IdVisitor<LateContext>)
     {
-        let mut v = util::IdVisitor {
+        let mut v = IdVisitor {
             operation: self,
-            visited_outermost: false,
         };
         f(&mut v);
     }
@@ -656,6 +657,7 @@ impl<'a, 'tcx, 'v> hir_visit::Visitor<'v> for LateContext<'a, 'tcx> {
     fn visit_foreign_item(&mut self, it: &hir::ForeignItem) {
         self.with_lint_attrs(&it.attrs, |cx| {
             run_lints!(cx, check_foreign_item, late_passes, it);
+            cx.visit_ids(|v| v.visit_foreign_item(it));
             hir_visit::walk_foreign_item(cx, it);
         })
     }
@@ -806,6 +808,7 @@ impl<'a, 'v> ast_visit::Visitor<'v> for EarlyContext<'a> {
     fn visit_foreign_item(&mut self, it: &ast::ForeignItem) {
         self.with_lint_attrs(&it.attrs, |cx| {
             run_lints!(cx, check_foreign_item, early_passes, it);
+            cx.visit_ids(|v| v.visit_foreign_item(it));
             ast_visit::walk_foreign_item(cx, it);
         })
     }
@@ -1014,10 +1017,7 @@ pub fn check_crate(tcx: &ty::ctxt,
     // Visit the whole crate.
     cx.with_lint_attrs(&krate.attrs, |cx| {
         cx.visit_id(ast::CRATE_NODE_ID);
-        cx.visit_ids(|v| {
-            v.visited_outermost = true;
-            hir_visit::walk_crate(v, krate);
-        });
+        cx.visit_ids(|v| intravisit::walk_crate(v, krate));
 
         // since the root module isn't visited as an item (because it isn't an
         // item), warn for it here.
