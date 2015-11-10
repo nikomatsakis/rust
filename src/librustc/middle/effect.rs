@@ -13,14 +13,15 @@
 use self::RootUnsafeContext::*;
 
 use middle::def;
+use middle::pass::contents::{self, ContentsVisitor};
 use middle::ty::{self, Ty};
 use middle::ty::MethodCall;
 
 use syntax::ast;
 use syntax::codemap::Span;
 use rustc_front::hir;
-use rustc_front::visit;
-use rustc_front::visit::{FnKind, Visitor};
+use rustc_front::intravisit;
+use rustc_front::intravisit::{FnKind, Visitor};
 
 #[derive(Copy, Clone)]
 struct UnsafeContext {
@@ -75,10 +76,12 @@ impl<'a, 'tcx> EffectCheckVisitor<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx, 'v> Visitor<'v> for EffectCheckVisitor<'a, 'tcx> {
+impl<'a, 'tcx, 'v> ContentsVisitor<'v> for EffectCheckVisitor<'a, 'tcx> {
+}
+
+impl<'a, 'tcx, 'v> intravisit::Visitor<'v> for EffectCheckVisitor<'a, 'tcx> {
     fn visit_fn(&mut self, fn_kind: FnKind<'v>, fn_decl: &'v hir::FnDecl,
                 block: &'v hir::Block, span: Span, _: ast::NodeId) {
-
         let (is_item_fn, is_unsafe_fn) = match fn_kind {
             FnKind::ItemFn(_, _, unsafety, _, _, _) =>
                 (true, unsafety == hir::Unsafety::Unsafe),
@@ -94,7 +97,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for EffectCheckVisitor<'a, 'tcx> {
             self.unsafe_context = UnsafeContext::new(SafeContext)
         }
 
-        visit::walk_fn(self, fn_kind, fn_decl, block, span);
+        intravisit::walk_fn(self, fn_kind, fn_decl, block, span);
 
         self.unsafe_context = old_unsafe_context
     }
@@ -133,7 +136,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for EffectCheckVisitor<'a, 'tcx> {
             hir::DefaultBlock | hir::PushUnstableBlock | hir:: PopUnstableBlock => {}
         }
 
-        visit::walk_block(self, block);
+        intravisit::walk_block(self, block);
 
         self.unsafe_context = old_unsafe_context
     }
@@ -177,7 +180,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for EffectCheckVisitor<'a, 'tcx> {
             _ => {}
         }
 
-        visit::walk_expr(self, expr);
+        intravisit::walk_expr(self, expr);
     }
 }
 
@@ -187,5 +190,5 @@ pub fn check_crate(tcx: &ty::ctxt) {
         unsafe_context: UnsafeContext::new(SafeContext),
     };
 
-    visit::walk_crate(&mut visitor, tcx.map.krate());
+    contents::execute(&tcx.map, &mut visitor);
 }
