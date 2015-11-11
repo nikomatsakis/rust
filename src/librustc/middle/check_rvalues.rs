@@ -14,25 +14,28 @@
 use middle::expr_use_visitor as euv;
 use middle::infer;
 use middle::mem_categorization as mc;
+use middle::pass::contents::{self, ContentsVisitor};
 use middle::ty::ParameterEnvironment;
 use middle::ty;
 
 use syntax::ast;
 use rustc_front::hir;
 use syntax::codemap::Span;
-use rustc_front::visit;
+use rustc_front::intravisit::{self, Visitor};
 
-pub fn check_crate(tcx: &ty::ctxt,
-                   krate: &hir::Crate) {
+pub fn check_crate(tcx: &ty::ctxt) {
     let mut rvcx = RvalueContext { tcx: tcx };
-    visit::walk_crate(&mut rvcx, krate);
+    contents::execute(&tcx.map, &mut rvcx);
 }
 
 struct RvalueContext<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
 }
 
-impl<'a, 'tcx, 'v> visit::Visitor<'v> for RvalueContext<'a, 'tcx> {
+impl<'a, 'tcx, 'v> ContentsVisitor<'v> for RvalueContext<'a, 'tcx> {
+}
+
+impl<'a, 'tcx, 'v> Visitor<'v> for RvalueContext<'a, 'tcx> {
     fn visit_fn(&mut self,
                 fk: visit::FnKind<'v>,
                 fd: &'v hir::FnDecl,
