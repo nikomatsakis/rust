@@ -10,6 +10,7 @@
 
 use middle::def::DefFn;
 use middle::def_id::DefId;
+use middle::pass::contents::{self, ContentsVisitor};
 use middle::subst::{Subst, Substs, EnumeratedItems};
 use middle::ty::{TransmuteRestriction, ctxt, TyBareFn};
 use middle::ty::{self, Ty, HasTypeFlags};
@@ -19,7 +20,7 @@ use std::fmt;
 use syntax::abi::RustIntrinsic;
 use syntax::ast;
 use syntax::codemap::Span;
-use rustc_front::visit::{self, Visitor, FnKind};
+use rustc_front::intravisit::{self, Visitor, FnKind};
 use rustc_front::hir;
 
 pub fn check_crate(tcx: &ctxt) {
@@ -29,7 +30,7 @@ pub fn check_crate(tcx: &ctxt) {
         dummy_sized_ty: tcx.types.isize,
         dummy_unsized_ty: tcx.mk_slice(tcx.types.isize),
     };
-    visit::walk_crate(&mut visitor, tcx.map.krate());
+    contents::execute(&tcx.map, &mut visitor);
 }
 
 struct IntrinsicCheckingVisitor<'a, 'tcx: 'a> {
@@ -215,6 +216,9 @@ impl<'a, 'tcx> IntrinsicCheckingVisitor<'a, 'tcx> {
     }
 }
 
+impl<'a, 'tcx, 'v> ContentsVisitor<'v> for IntrinsicCheckingVisitor<'a, 'tcx> {
+}
+
 impl<'a, 'tcx, 'v> Visitor<'v> for IntrinsicCheckingVisitor<'a, 'tcx> {
     fn visit_fn(&mut self, fk: FnKind<'v>, fd: &'v hir::FnDecl,
                 b: &'v hir::Block, s: Span, id: ast::NodeId) {
@@ -222,11 +226,11 @@ impl<'a, 'tcx, 'v> Visitor<'v> for IntrinsicCheckingVisitor<'a, 'tcx> {
             FnKind::ItemFn(..) | FnKind::Method(..) => {
                 let param_env = ty::ParameterEnvironment::for_item(self.tcx, id);
                 self.param_envs.push(param_env);
-                visit::walk_fn(self, fk, fd, b, s);
+                intravisit::walk_fn(self, fk, fd, b, s);
                 self.param_envs.pop();
             }
             FnKind::Closure(..) => {
-                visit::walk_fn(self, fk, fd, b, s);
+                intravisit::walk_fn(self, fk, fd, b, s);
             }
         }
 
@@ -255,7 +259,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for IntrinsicCheckingVisitor<'a, 'tcx> {
             }
         }
 
-        visit::walk_expr(self, expr);
+        intravisit::walk_expr(self, expr);
     }
 }
 
