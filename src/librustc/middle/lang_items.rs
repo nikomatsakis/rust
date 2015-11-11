@@ -25,17 +25,16 @@ use front::map as hir_map;
 use session::Session;
 use metadata::csearch::each_lang_item;
 use middle::def_id::DefId;
+use middle::pass::defs::{self, DefsVisitor};
 use middle::ty;
 use middle::weak_lang_items;
+use rustc_front::hir;
 use util::nodemap::FnvHashMap;
 
 use syntax::ast;
 use syntax::attr::AttrMetaMethods;
 use syntax::codemap::{DUMMY_SP, Span};
 use syntax::parse::token::InternedString;
-use rustc_front::visit::Visitor;
-use rustc_front::visit;
-use rustc_front::hir;
 
 use std::iter::Enumerate;
 use std::slice;
@@ -155,8 +154,8 @@ struct LanguageItemCollector<'a, 'tcx: 'a> {
     item_refs: FnvHashMap<&'static str, usize>,
 }
 
-impl<'a, 'v, 'tcx> Visitor<'v> for LanguageItemCollector<'a, 'tcx> {
-    fn visit_item(&mut self, item: &hir::Item) {
+impl<'a, 'tcx> DefsVisitor<'tcx> for LanguageItemCollector<'a, 'tcx> {
+    fn visit_item(&mut self, item: &'tcx hir::Item) {
         if let Some(value) = extract(&item.attrs) {
             let item_index = self.item_refs.get(&value[..]).cloned();
 
@@ -164,8 +163,6 @@ impl<'a, 'v, 'tcx> Visitor<'v> for LanguageItemCollector<'a, 'tcx> {
                 self.collect_item(item_index, self.ast_map.local_def_id(item.id), item.span)
             }
         }
-
-        visit::walk_item(self, item);
     }
 }
 
@@ -201,8 +198,8 @@ impl<'a, 'tcx> LanguageItemCollector<'a, 'tcx> {
         self.items.items[item_index] = Some(item_def_id);
     }
 
-    pub fn collect_local_language_items(&mut self, krate: &hir::Crate) {
-        visit::walk_crate(self, krate);
+    pub fn collect_local_language_items(&mut self) {
+        defs::execute(self.ast_map, self);
     }
 
     pub fn collect_external_language_items(&mut self) {
@@ -216,8 +213,8 @@ impl<'a, 'tcx> LanguageItemCollector<'a, 'tcx> {
         })
     }
 
-    pub fn collect(&mut self, krate: &hir::Crate) {
-        self.collect_local_language_items(krate);
+    pub fn collect(&mut self) {
+        self.collect_local_language_items();
         self.collect_external_language_items();
     }
 }
@@ -238,11 +235,10 @@ pub fn extract(attrs: &[ast::Attribute]) -> Option<InternedString> {
 pub fn collect_language_items(session: &Session,
                               map: &hir_map::Map)
                               -> LanguageItems {
-    let krate: &hir::Crate = map.krate();
     let mut collector = LanguageItemCollector::new(session, map);
-    collector.collect(krate);
+    collector.collect();
     let LanguageItemCollector { mut items, .. } = collector;
-    weak_lang_items::check_crate(krate, session, &mut items);
+    weak_lang_items::check_crate(map, session, &mut items);
     session.abort_if_errors();
     items
 }
