@@ -34,7 +34,7 @@ pub use self::LintSource::*;
 use std::hash;
 use std::ascii::AsciiExt;
 use syntax::codemap::Span;
-use rustc_front::visit::FnKind;
+use rustc_front::intravisit::FnKind;
 use syntax::visit as ast_visit;
 use syntax::ast;
 use rustc_front::hir;
