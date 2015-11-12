@@ -23,13 +23,13 @@ use Resolver;
 use Namespace::{TypeNS, ValueNS};
 
 use rustc::lint;
+use rustc::middle::defs::{self, DefsVisitor};
 use rustc::middle::privacy::{DependsOn, LastImport, Used, Unused};
 use syntax::ast;
 use syntax::codemap::{Span, DUMMY_SP};
 
 use rustc_front::hir;
 use rustc_front::hir::{ViewPathGlob, ViewPathList, ViewPathSimple};
-use rustc_front::visit::{self, Visitor};
 
 struct UnusedImportCheckVisitor<'a, 'b:'a, 'tcx:'b> {
     resolver: &'a mut Resolver<'b, 'tcx>
@@ -111,14 +111,13 @@ impl<'a, 'b, 'tcx> UnusedImportCheckVisitor<'a, 'b, 'tcx> {
     }
 }
 
-impl<'a, 'b, 'v, 'tcx> Visitor<'v> for UnusedImportCheckVisitor<'a, 'b, 'tcx> {
+impl<'a, 'b, 'v, 'tcx> DefsVisitor<'v> for UnusedImportCheckVisitor<'a, 'b, 'tcx> {
     fn visit_item(&mut self, item: &hir::Item) {
         // Ignore is_public import statements because there's no way to be sure
         // whether they're used or not. Also ignore imports with a dummy span
         // because this means that they were generated in some fashion by the
         // compiler and we don't need to consider them.
         if item.vis == hir::Public || item.span == DUMMY_SP {
-            visit::walk_item(self, item);
             return;
         }
 
@@ -158,12 +157,10 @@ impl<'a, 'b, 'v, 'tcx> Visitor<'v> for UnusedImportCheckVisitor<'a, 'b, 'tcx> {
             }
             _ => {}
         }
-
-        visit::walk_item(self, item);
     }
 }
 
-pub fn check_crate(resolver: &mut Resolver, krate: &hir::Crate) {
+pub fn check_crate(resolver: &mut Resolver) {
     let mut visitor = UnusedImportCheckVisitor { resolver: resolver };
-    visit::walk_crate(&mut visitor, krate);
+    defs::execute(resolver.ast_map, &mut visitor);
 }
