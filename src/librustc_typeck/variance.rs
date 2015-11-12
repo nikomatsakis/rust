@@ -268,6 +268,7 @@ use arena;
 use arena::TypedArena;
 use middle::def_id::DefId;
 use middle::resolve_lifetime as rl;
+use middle::pass::defs::{self, DefsVisitor};
 use middle::subst;
 use middle::subst::{ParamSpace, FnSpace, TypeSpace, SelfSpace, VecPerParamSpace};
 use middle::ty::{self, Ty};
@@ -276,15 +277,12 @@ use std::fmt;
 use std::rc::Rc;
 use syntax::ast;
 use rustc_front::hir;
-use rustc_front::visit;
-use rustc_front::visit::Visitor;
 use util::nodemap::NodeMap;
 
 pub fn infer_variance(tcx: &ty::ctxt) {
-    let krate = tcx.map.krate();
     let mut arena = arena::TypedArena::new();
-    let terms_cx = determine_parameters_to_be_inferred(tcx, &mut arena, krate);
-    let constraints_cx = add_constraints_from_crate(terms_cx, krate);
+    let terms_cx = determine_parameters_to_be_inferred(tcx, &mut arena);
+    let constraints_cx = add_constraints_from_crate(terms_cx);
     solve_constraints(constraints_cx);
     tcx.variance_computed.set(true);
 }
@@ -364,8 +362,7 @@ struct InferredInfo<'a> {
 }
 
 fn determine_parameters_to_be_inferred<'a, 'tcx>(tcx: &'a ty::ctxt<'tcx>,
-                                                 arena: &'a mut TypedArena<VarianceTerm<'a>>,
-                                                 krate: &hir::Crate)
+                                                 arena: &'a mut TypedArena<VarianceTerm<'a>>)
                                                  -> TermsContext<'a, 'tcx> {
     let mut terms_cx = TermsContext {
         tcx: tcx,
@@ -383,7 +380,7 @@ fn determine_parameters_to_be_inferred<'a, 'tcx>(tcx: &'a ty::ctxt<'tcx>,
         })
     };
 
-    visit::walk_crate(&mut terms_cx, krate);
+    defs::execute(&tcx.map, &mut terms_cx);
 
     terms_cx
 }
@@ -517,8 +514,8 @@ impl<'a, 'tcx> TermsContext<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx, 'v> Visitor<'v> for TermsContext<'a, 'tcx> {
-    fn visit_item(&mut self, item: &hir::Item) {
+impl<'a, 'tcx> DefsVisitor<'tcx> for TermsContext<'a, 'tcx> {
+    fn visit_item(&mut self, item: &'tcx hir::Item) {
         debug!("add_inferreds for item {}", self.tcx.map.node_to_string(item.id));
 
         match item.node {
@@ -531,7 +528,6 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TermsContext<'a, 'tcx> {
                 // constrained to be invariant. See `visit_item` in
                 // the impl for `ConstraintContext` below.
                 self.add_inferreds_for_item(item.id, true, generics);
-                visit::walk_item(self, item);
             }
 
             hir::ItemExternCrate(_) |
@@ -544,7 +540,6 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TermsContext<'a, 'tcx> {
             hir::ItemMod(..) |
             hir::ItemForeignMod(..) |
             hir::ItemTy(..) => {
-                visit::walk_item(self, item);
             }
         }
     }
@@ -575,10 +570,10 @@ struct Constraint<'a> {
     variance: &'a VarianceTerm<'a>,
 }
 
-fn add_constraints_from_crate<'a, 'tcx>(terms_cx: TermsContext<'a, 'tcx>,
-                                        krate: &hir::Crate)
+fn add_constraints_from_crate<'a, 'tcx>(terms_cx: TermsContext<'a, 'tcx>)
                                         -> ConstraintContext<'a, 'tcx>
 {
+    let tcx = terms_cx.tcx;
     let covariant = terms_cx.arena.alloc(ConstantTerm(ty::Covariant));
     let contravariant = terms_cx.arena.alloc(ConstantTerm(ty::Contravariant));
     let invariant = terms_cx.arena.alloc(ConstantTerm(ty::Invariant));
@@ -591,12 +586,12 @@ fn add_constraints_from_crate<'a, 'tcx>(terms_cx: TermsContext<'a, 'tcx>,
         bivariant: bivariant,
         constraints: Vec::new(),
     };
-    visit::walk_crate(&mut constraint_cx, krate);
+    defs::execute(&tcx.map, &mut constraint_cx);
     constraint_cx
 }
 
-impl<'a, 'tcx, 'v> Visitor<'v> for ConstraintContext<'a, 'tcx> {
-    fn visit_item(&mut self, item: &hir::Item) {
+impl<'a, 'tcx> DefsVisitor<'tcx> for ConstraintContext<'a, 'tcx> {
+    fn visit_item(&mut self, item: &'tcx hir::Item) {
         let tcx = self.terms_cx.tcx;
         let did = tcx.map.local_def_id(item.id);
 
@@ -637,8 +632,6 @@ impl<'a, 'tcx, 'v> Visitor<'v> for ConstraintContext<'a, 'tcx> {
             hir::ItemDefaultImpl(..) => {
             }
         }
-
-        visit::walk_item(self, item);
     }
 }
 
