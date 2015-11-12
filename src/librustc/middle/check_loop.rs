@@ -9,12 +9,13 @@
 // except according to those terms.
 use self::Context::*;
 
-use session::Session;
-
-use syntax::codemap::Span;
-use rustc_front::visit::Visitor;
-use rustc_front::visit;
+use front::map::Map;
+use middle::pass::contents::{self, ContentsVisitor};
+use rustc_front::intravisit::Visitor;
+use rustc_front::intravisit as visit;
 use rustc_front::hir;
+use session::Session;
+use syntax::codemap::Span;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Context {
@@ -27,15 +28,17 @@ struct CheckLoopVisitor<'a> {
     cx: Context
 }
 
-pub fn check_crate(sess: &Session, krate: &hir::Crate) {
-    visit::walk_crate(&mut CheckLoopVisitor { sess: sess, cx: Normal }, krate)
+pub fn check_crate(map: &Map, sess: &Session) {
+    contents::execute(map, &mut CheckLoopVisitor { sess: sess, cx: Normal })
 }
 
-impl<'a, 'v> Visitor<'v> for CheckLoopVisitor<'a> {
+impl<'a, 'v> ContentsVisitor<'v> for CheckLoopVisitor<'a> {
     fn visit_item(&mut self, i: &hir::Item) {
         self.with_context(Normal, |v| visit::walk_item(v, i));
     }
+}
 
+impl<'a, 'v> Visitor<'v> for CheckLoopVisitor<'a> {
     fn visit_expr(&mut self, e: &hir::Expr) {
         match e.node {
             hir::ExprWhile(ref e, ref b, _) => {

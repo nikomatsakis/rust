@@ -718,7 +718,7 @@ pub fn phase_3_run_analysis_passes<'tcx, F, R>(sess: &'tcx Session,
 
     time(time_passes,
          "loop checking",
-         || middle::check_loop::check_crate(sess, krate));
+         || middle::check_loop::check_crate(&ast_map, sess));
 
     time(time_passes,
          "static item recursion checking",
