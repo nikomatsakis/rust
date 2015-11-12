@@ -45,7 +45,6 @@ use syntax::codemap::Span;
 use syntax::parse::token::InternedString;
 use syntax::ast;
 use rustc_front::hir;
-use rustc_front::visit as hir_visit;
 use rustc_front::intravisit;
 use syntax::visit as ast_visit;
 use syntax::diagnostic;
@@ -645,42 +644,65 @@ impl<'a> LintContext for EarlyContext<'a> {
     }
 }
 
-impl<'a, 'tcx, 'v> hir_visit::Visitor<'v> for LateContext<'a, 'tcx> {
-    fn visit_item(&mut self, it: &hir::Item) {
-        self.with_lint_attrs(&it.attrs, |cx| {
-            run_lints!(cx, check_item, late_passes, it);
-            cx.visit_ids(|v| v.visit_item(it));
-            hir_visit::walk_item(cx, it);
-        })
-    }
+impl<'a, 'tcx, 'v> intravisit::Visitor<'v> for LateContext<'a, 'tcx> {
+    // Because lint scope follows the lexical structure of the tree,
+    // for now we just visit fns and so forth in situ.
 
-    fn visit_foreign_item(&mut self, it: &hir::ForeignItem) {
+    fn visit_foreign_item_def(&mut self, id: ast::NodeId) {
+        let it = self.tcx.map.expect_foreign_item(id);
         self.with_lint_attrs(&it.attrs, |cx| {
             run_lints!(cx, check_foreign_item, late_passes, it);
             cx.visit_ids(|v| v.visit_foreign_item(it));
-            hir_visit::walk_foreign_item(cx, it);
+            intravisit::walk_foreign_item(cx, it);
         })
+    }
+
+    fn visit_item_def(&mut self, id: ast::NodeId) {
+        let it = self.tcx.map.expect_item(id);
+        self.with_lint_attrs(&it.attrs, |cx| {
+            run_lints!(cx, check_item, late_passes, it);
+            cx.visit_ids(|v| v.visit_item(it));
+            intravisit::walk_item(cx, it);
+        })
+    }
+
+    fn visit_trait_item_def(&mut self, id: ast::NodeId) {
+        let trait_item = self.tcx.map.expect_trait_item(id);
+        self.with_lint_attrs(&trait_item.attrs, |cx| {
+            run_lints!(cx, check_trait_item, late_passes, trait_item);
+            cx.visit_ids(|v| v.visit_trait_item(trait_item));
+            intravisit::walk_trait_item(cx, trait_item);
+        });
+    }
+
+    fn visit_impl_item_def(&mut self, id: ast::NodeId) {
+        let impl_item = self.tcx.map.expect_impl_item(id);
+        self.with_lint_attrs(&impl_item.attrs, |cx| {
+            run_lints!(cx, check_impl_item, late_passes, impl_item);
+            cx.visit_ids(|v| v.visit_impl_item(impl_item));
+            intravisit::walk_impl_item(cx, impl_item);
+        });
     }
 
     fn visit_pat(&mut self, p: &hir::Pat) {
         run_lints!(self, check_pat, late_passes, p);
-        hir_visit::walk_pat(self, p);
+        intravisit::walk_pat(self, p);
     }
 
     fn visit_expr(&mut self, e: &hir::Expr) {
         run_lints!(self, check_expr, late_passes, e);
-        hir_visit::walk_expr(self, e);
+        intravisit::walk_expr(self, e);
     }
 
     fn visit_stmt(&mut self, s: &hir::Stmt) {
         run_lints!(self, check_stmt, late_passes, s);
-        hir_visit::walk_stmt(self, s);
+        intravisit::walk_stmt(self, s);
     }
 
-    fn visit_fn(&mut self, fk: hir_visit::FnKind<'v>, decl: &'v hir::FnDecl,
+    fn visit_fn(&mut self, fk: intravisit::FnKind<'v>, decl: &'v hir::FnDecl,
                 body: &'v hir::Block, span: Span, id: ast::NodeId) {
         run_lints!(self, check_fn, late_passes, fk, decl, body, span, id);
-        hir_visit::walk_fn(self, fk, decl, body, span);
+        intravisit::walk_fn(self, fk, decl, body, span);
     }
 
     fn visit_variant_data(&mut self,
@@ -690,28 +712,28 @@ impl<'a, 'tcx, 'v> hir_visit::Visitor<'v> for LateContext<'a, 'tcx> {
                         item_id: ast::NodeId,
                         _: Span) {
         run_lints!(self, check_struct_def, late_passes, s, name, g, item_id);
-        hir_visit::walk_struct_def(self, s);
+        intravisit::walk_struct_def(self, s);
         run_lints!(self, check_struct_def_post, late_passes, s, name, g, item_id);
     }
 
     fn visit_struct_field(&mut self, s: &hir::StructField) {
         self.with_lint_attrs(&s.node.attrs, |cx| {
             run_lints!(cx, check_struct_field, late_passes, s);
-            hir_visit::walk_struct_field(cx, s);
+            intravisit::walk_struct_field(cx, s);
         })
     }
 
     fn visit_variant(&mut self, v: &hir::Variant, g: &hir::Generics, item_id: ast::NodeId) {
         self.with_lint_attrs(&v.node.attrs, |cx| {
             run_lints!(cx, check_variant, late_passes, v, g);
-            hir_visit::walk_variant(cx, v, g, item_id);
+            intravisit::walk_variant(cx, v, g, item_id);
             run_lints!(cx, check_variant_post, late_passes, v, g);
         })
     }
 
     fn visit_ty(&mut self, t: &hir::Ty) {
         run_lints!(self, check_ty, late_passes, t);
-        hir_visit::walk_ty(self, t);
+        intravisit::walk_ty(self, t);
     }
 
     fn visit_name(&mut self, sp: Span, name: ast::Name) {
@@ -720,27 +742,27 @@ impl<'a, 'tcx, 'v> hir_visit::Visitor<'v> for LateContext<'a, 'tcx> {
 
     fn visit_mod(&mut self, m: &hir::Mod, s: Span, n: ast::NodeId) {
         run_lints!(self, check_mod, late_passes, m, s, n);
-        hir_visit::walk_mod(self, m);
+        intravisit::walk_mod(self, m);
     }
 
     fn visit_local(&mut self, l: &hir::Local) {
         run_lints!(self, check_local, late_passes, l);
-        hir_visit::walk_local(self, l);
+        intravisit::walk_local(self, l);
     }
 
     fn visit_block(&mut self, b: &hir::Block) {
         run_lints!(self, check_block, late_passes, b);
-        hir_visit::walk_block(self, b);
+        intravisit::walk_block(self, b);
     }
 
     fn visit_arm(&mut self, a: &hir::Arm) {
         run_lints!(self, check_arm, late_passes, a);
-        hir_visit::walk_arm(self, a);
+        intravisit::walk_arm(self, a);
     }
 
     fn visit_decl(&mut self, d: &hir::Decl) {
         run_lints!(self, check_decl, late_passes, d);
-        hir_visit::walk_decl(self, d);
+        intravisit::walk_decl(self, d);
     }
 
     fn visit_expr_post(&mut self, e: &hir::Expr) {
@@ -749,23 +771,7 @@ impl<'a, 'tcx, 'v> hir_visit::Visitor<'v> for LateContext<'a, 'tcx> {
 
     fn visit_generics(&mut self, g: &hir::Generics) {
         run_lints!(self, check_generics, late_passes, g);
-        hir_visit::walk_generics(self, g);
-    }
-
-    fn visit_trait_item(&mut self, trait_item: &hir::TraitItem) {
-        self.with_lint_attrs(&trait_item.attrs, |cx| {
-            run_lints!(cx, check_trait_item, late_passes, trait_item);
-            cx.visit_ids(|v| v.visit_trait_item(trait_item));
-            hir_visit::walk_trait_item(cx, trait_item);
-        });
-    }
-
-    fn visit_impl_item(&mut self, impl_item: &hir::ImplItem) {
-        self.with_lint_attrs(&impl_item.attrs, |cx| {
-            run_lints!(cx, check_impl_item, late_passes, impl_item);
-            cx.visit_ids(|v| v.visit_impl_item(impl_item));
-            hir_visit::walk_impl_item(cx, impl_item);
-        });
+        intravisit::walk_generics(self, g);
     }
 
     fn visit_lifetime(&mut self, lt: &hir::Lifetime) {
@@ -778,17 +784,17 @@ impl<'a, 'tcx, 'v> hir_visit::Visitor<'v> for LateContext<'a, 'tcx> {
 
     fn visit_explicit_self(&mut self, es: &hir::ExplicitSelf) {
         run_lints!(self, check_explicit_self, late_passes, es);
-        hir_visit::walk_explicit_self(self, es);
+        intravisit::walk_explicit_self(self, es);
     }
 
     fn visit_path(&mut self, p: &hir::Path, id: ast::NodeId) {
         run_lints!(self, check_path, late_passes, p, id);
-        hir_visit::walk_path(self, p);
+        intravisit::walk_path(self, p);
     }
 
     fn visit_path_list_item(&mut self, prefix: &hir::Path, item: &hir::PathListItem) {
         run_lints!(self, check_path_list_item, late_passes, item);
-        hir_visit::walk_path_list_item(self, prefix, item);
+        intravisit::walk_path_list_item(self, prefix, item);
     }
 
     fn visit_attribute(&mut self, attr: &ast::Attribute) {
@@ -1023,7 +1029,7 @@ pub fn check_crate(tcx: &ty::ctxt,
         // item), warn for it here.
         run_lints!(cx, check_crate, late_passes, krate);
 
-        hir_visit::walk_crate(cx, krate);
+        intravisit::walk_crate(cx, krate);
     });
 
     // If we missed any lints added to the session, then there's a bug somewhere
