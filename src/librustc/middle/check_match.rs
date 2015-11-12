@@ -474,8 +474,7 @@ fn suitable_pat_const_ty<'tcx>(ty: Ty<'tcx>) -> bool {
         ty::TyStr(..) |
         ty::TyRawPtr(..) |
         ty::TyBareFn(..) |
-        ty::TyError |
-        ty::TyFloat(..) =>
+        ty::TyError =>
             true,
 
         ty::TyArray(elem_ty, _) |
@@ -495,6 +494,7 @@ fn suitable_pat_const_ty<'tcx>(ty: Ty<'tcx>) -> bool {
         ty::TyClosure(..) |
         ty::TyProjection(..) |
         ty::TyParam(..) |
+        ty::TyFloat(..) |
         ty::TyInfer(..) =>
             false,
     }
