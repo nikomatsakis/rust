@@ -4063,7 +4063,7 @@ pub fn resolve_crate<'a, 'tcx>(session: &'a Session,
     resolver.resolve_crate(krate);
     session.abort_if_errors();
 
-    check_unused::check_crate(&mut resolver, krate);
+    check_unused::check_crate(&mut resolver);
 
     CrateMap {
         def_map: resolver.def_map,

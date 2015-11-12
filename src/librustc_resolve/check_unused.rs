@@ -23,7 +23,7 @@ use Resolver;
 use Namespace::{TypeNS, ValueNS};
 
 use rustc::lint;
-use rustc::middle::defs::{self, DefsVisitor};
+use rustc::middle::pass::defs::{self, DefsVisitor};
 use rustc::middle::privacy::{DependsOn, LastImport, Used, Unused};
 use syntax::ast;
 use syntax::codemap::{Span, DUMMY_SP};
