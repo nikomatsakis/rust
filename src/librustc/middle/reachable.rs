@@ -18,6 +18,7 @@
 use front::map as ast_map;
 use middle::def;
 use middle::def_id::DefId;
+use middle::pass::defs::{self, DefsVisitor};
 use middle::privacy;
 use middle::ty;
 use session::config;
@@ -333,7 +334,7 @@ struct CollectPrivateImplItemsVisitor<'a> {
     worklist: &'a mut Vec<ast::NodeId>,
 }
 
-impl<'a, 'v> Visitor<'v> for CollectPrivateImplItemsVisitor<'a> {
+impl<'a, 'v> DefsVisitor<'v> for CollectPrivateImplItemsVisitor<'a> {
     fn visit_item(&mut self, item: &hir::Item) {
         // We need only trait impls here, not inherent impls, and only non-exported ones
         if let hir::ItemImpl(_, _, _, Some(_), _, ref impl_items) = item.node {
@@ -343,8 +344,6 @@ impl<'a, 'v> Visitor<'v> for CollectPrivateImplItemsVisitor<'a> {
                 }
             }
         }
-
-        visit::walk_item(self, item);
     }
 }
 
@@ -374,8 +373,7 @@ pub fn find_reachable(tcx: &ty::ctxt,
             exported_items: exported_items,
             worklist: &mut reachable_context.worklist,
         };
-
-        visit::walk_crate(&mut collect_private_impl_items, tcx.map.krate());
+        defs::execute(&tcx.map, &mut collect_private_impl_items);
     }
 
     // Step 2: Mark all symbols that the symbols on the worklist touch.
