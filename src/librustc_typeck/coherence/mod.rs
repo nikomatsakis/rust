@@ -18,6 +18,7 @@
 
 use middle::def_id::DefId;
 use middle::lang_items::UnsizeTraitLangItem;
+use middle::pass::defs::{self, DefsVisitor};
 use middle::subst::{self, Subst};
 use middle::traits;
 use middle::ty;
@@ -41,8 +42,7 @@ use syntax::parse::token;
 use util::nodemap::{DefIdMap, FnvHashMap};
 use rustc::front::map as hir_map;
 use rustc::front::map::NodeItem;
-use rustc_front::visit;
-use rustc_front::hir::{Item, ItemImpl,Crate};
+use rustc_front::hir::{Item, ItemImpl};
 use rustc_front::hir;
 
 mod orphan;
@@ -96,23 +96,23 @@ struct CoherenceCheckVisitor<'a, 'tcx: 'a> {
     cc: &'a CoherenceChecker<'a, 'tcx>
 }
 
-impl<'a, 'tcx, 'v> visit::Visitor<'v> for CoherenceCheckVisitor<'a, 'tcx> {
-    fn visit_item(&mut self, item: &Item) {
+impl<'a, 'tcx> DefsVisitor<'tcx> for CoherenceCheckVisitor<'a, 'tcx> {
+    fn visit_item(&mut self, item: &'tcx hir::Item) {
         if let ItemImpl(..) = item.node {
             self.cc.check_implementation(item)
         }
-
-        visit::walk_item(self, item);
     }
 }
 
 impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
-    fn check(&self, krate: &Crate) {
+    fn check(&self) {
+        let tcx = self.crate_context.tcx;
+
         // Check implementations and traits. This populates the tables
         // containing the inherent methods and extension methods. It also
         // builds up the trait inheritance table.
         let mut visitor = CoherenceCheckVisitor { cc: self };
-        visit::walk_crate(&mut visitor, krate);
+        defs::execute(&tcx.map, &mut visitor);
 
         // Copy over the inherent impls we gathered up during the walk into
         // the tcx.
@@ -516,7 +516,7 @@ pub fn check_coherence(crate_context: &CrateCtxt) {
         crate_context: crate_context,
         inference_context: new_infer_ctxt(crate_context.tcx, &crate_context.tcx.tables, None, true),
         inherent_impls: RefCell::new(FnvHashMap()),
-    }.check(crate_context.tcx.map.krate());
+    }.check();
     unsafety::check(crate_context.tcx);
     orphan::check(crate_context.tcx);
     overlap::check(crate_context.tcx);

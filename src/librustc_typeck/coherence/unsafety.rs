@@ -11,14 +11,14 @@
 //! Unsafety checker: every impl either implements a trait defined in this
 //! crate or pertains to a type defined in this crate.
 
+use middle::pass::defs::{self, DefsVisitor};
 use middle::ty;
-use rustc_front::visit;
 use rustc_front::hir;
 use rustc_front::hir::{Item, ItemImpl};
 
 pub fn check(tcx: &ty::ctxt) {
     let mut orphan = UnsafetyChecker { tcx: tcx };
-    visit::walk_crate(&mut orphan, tcx.map.krate());
+    defs::execute(&tcx.map, &mut orphan);
 }
 
 struct UnsafetyChecker<'cx, 'tcx:'cx> {
@@ -76,8 +76,8 @@ impl<'cx, 'tcx, 'v> UnsafetyChecker<'cx, 'tcx> {
     }
 }
 
-impl<'cx, 'tcx,'v> visit::Visitor<'v> for UnsafetyChecker<'cx, 'tcx> {
-    fn visit_item(&mut self, item: &'v hir::Item) {
+impl<'cx, 'tcx> DefsVisitor<'tcx> for UnsafetyChecker<'cx, 'tcx> {
+    fn visit_item(&mut self, item: &'tcx hir::Item) {
         match item.node {
             hir::ItemDefaultImpl(unsafety, _) => {
                 self.check_unsafety_coherence(item, unsafety, hir::ImplPolarity::Positive);
@@ -87,7 +87,5 @@ impl<'cx, 'tcx,'v> visit::Visitor<'v> for UnsafetyChecker<'cx, 'tcx> {
             }
             _ => { }
         }
-
-        visit::walk_item(self, item);
     }
 }
