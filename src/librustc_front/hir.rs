@@ -36,6 +36,7 @@ pub use self::ViewPath_::*;
 pub use self::Visibility::*;
 pub use self::PathParameters::*;
 
+use rustc_data_structures::fnv::FnvHashMap;
 use syntax::codemap::{self, Span, Spanned, DUMMY_SP, ExpnId};
 use syntax::abi::Abi;
 use syntax::ast::{Name, Ident, NodeId, DUMMY_NODE_ID, TokenTree, AsmDialect};
@@ -321,13 +322,20 @@ pub struct WhereEqPredicate {
     pub ty: P<Ty>,
 }
 
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Debug)]
 pub struct Crate {
     pub module: Mod,
     pub attrs: Vec<Attribute>,
     pub config: CrateConfig,
     pub span: Span,
     pub exported_macros: Vec<MacroDef>,
+    pub items: FnvHashMap<NodeId, Item>,
+}
+
+impl Crate {
+    pub fn item(&self, id: NodeId) -> &Item {
+        &self.items[&id]
+    }
 }
 
 /// A macro definition, in this crate or imported from another.
@@ -538,7 +546,7 @@ pub enum Decl_ {
     /// A local (let) binding:
     DeclLocal(P<Local>),
     /// An item binding:
-    DeclItem(P<Item>),
+    DeclItem(ItemDef),
 }
 
 /// represents one arm of a 'match'
@@ -995,7 +1003,7 @@ pub struct Mod {
     /// For `mod foo;`, the inner span ranges from the first token
     /// to the last token in the external file.
     pub inner: Span,
-    pub items: Vec<P<Item>>,
+    pub items: Vec<ItemDef>,
 }
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
@@ -1208,7 +1216,13 @@ impl VariantData {
     }
 }
 
-
+// The bodies for items are stored "out of line", in a separate
+// hashmap in the `Crate`. Here we just record the node-id of the item
+// so it can fetched later.
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
+pub struct ItemDef {
+    pub id: NodeId,
+}
 
 //  FIXME (#3300): Should allow items to be anonymous. Right now
 //  we just use dummy names for anon items.

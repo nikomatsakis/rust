@@ -68,7 +68,12 @@ pub trait Visitor<'v> : Sized {
     // Instead, you want to be using one of the visitors in
     // `librustc::pass` which will manage this for you.
 
-    fn visit_item_def(&mut self, _id: NodeId) {
+    fn crate_for_deep_walk(&mut self) -> Option<&'v Crate> {
+        None
+    }
+
+    fn visit_item_def(&mut self, id: &'v ItemDef) {
+        walk_item_def(self, id)
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -243,7 +248,7 @@ pub fn walk_macro_def<'v, V: Visitor<'v>>(visitor: &mut V, macro_def: &'v MacroD
 
 pub fn walk_mod<'v, V: Visitor<'v>>(visitor: &mut V, module: &'v Mod) {
     for item in &module.items {
-        visitor.visit_item_def(item.id);
+        visitor.visit_item_def(item);
     }
 }
 
@@ -294,6 +299,12 @@ pub fn walk_trait_ref<'v, V>(visitor: &mut V, trait_ref: &'v TraitRef)
     where V: Visitor<'v>
 {
     visitor.visit_path(&trait_ref.path, trait_ref.ref_id)
+}
+
+pub fn walk_item_def<'v, V: Visitor<'v>>(visitor: &mut V, item_def: &'v ItemDef) {
+    if let Some(krate) = visitor.crate_for_deep_walk() {
+        walk_item(visitor, krate.item(item_def.id))
+    }
 }
 
 pub fn walk_item<'v, V: Visitor<'v>>(visitor: &mut V, item: &'v Item) {
@@ -717,7 +728,7 @@ pub fn walk_stmt<'v, V: Visitor<'v>>(visitor: &mut V, statement: &'v Stmt) {
 pub fn walk_decl<'v, V: Visitor<'v>>(visitor: &mut V, declaration: &'v Decl) {
     match declaration.node {
         DeclLocal(ref local) => visitor.visit_local(local),
-        DeclItem(ref item) => visitor.visit_item_def(item.id),
+        DeclItem(ref item) => visitor.visit_item_def(item),
     }
 }
 
