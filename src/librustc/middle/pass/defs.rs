@@ -23,20 +23,11 @@ use rustc_front::intravisit;
 /// are always local to the current crate.
 #[allow(unused_variables)]
 pub trait DefsVisitor<'tcx> {
-    fn should_visit_def_id(&mut self, def_id: DefId) -> bool {
+    fn should_visit_item(&mut self, def_id: DefId) -> bool {
         true
     }
 
     fn visit_item(&mut self, i: &'tcx hir::Item) {
-    }
-
-    fn visit_foreign_item(&mut self, i: &'tcx hir::ForeignItem) {
-    }
-
-    fn visit_trait_item(&mut self, ti: &'tcx hir::TraitItem) {
-    }
-
-    fn visit_impl_item(&mut self, ii: &'tcx hir::ImplItem) {
     }
 }
 
@@ -65,36 +56,9 @@ impl<'a, 'tcx, D> intravisit::Visitor<'tcx> for HirVisitor<'a, 'tcx, D>
     fn visit_item_def(&mut self, id: ast::NodeId) {
         let def_id = self.map.local_def_id(id);
         let hir = self.map.expect_item(id);
-        if self.delegate.should_visit_def_id(def_id) {
+        if self.delegate.should_visit_item(def_id) {
             self.delegate.visit_item(hir);
         }
         intravisit::walk_item(self, hir);
-    }
-
-    fn visit_foreign_item_def(&mut self, id: ast::NodeId) {
-        let def_id = self.map.local_def_id(id);
-        let hir = self.map.expect_foreign_item(id);
-        if self.delegate.should_visit_def_id(def_id) {
-            self.delegate.visit_foreign_item(hir);
-        }
-        intravisit::walk_foreign_item(self, hir);
-    }
-
-    fn visit_trait_item_def(&mut self, id: ast::NodeId) {
-        let trait_item_def_id = self.map.local_def_id(id);
-        let hir = self.map.expect_trait_item(id);
-        if self.delegate.should_visit_def_id(trait_item_def_id) {
-            self.delegate.visit_trait_item(hir);
-        }
-        intravisit::walk_trait_item(self, hir);
-    }
-
-    fn visit_impl_item_def(&mut self, id: ast::NodeId) {
-        let impl_item_def_id = self.map.local_def_id(id);
-        let hir = self.map.expect_impl_item(id);
-        if self.delegate.should_visit_def_id(impl_item_def_id) {
-            self.delegate.visit_impl_item(hir);
-        }
-        intravisit::walk_impl_item(self, hir);
     }
 }
