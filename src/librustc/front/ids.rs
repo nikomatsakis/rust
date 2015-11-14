@@ -33,21 +33,6 @@ impl<'a, O: ast_util::IdVisitingOperation> IdVisitor<'a, O> {
 }
 
 impl<'a, 'v, O: ast_util::IdVisitingOperation> ContentsVisitor<'v> for IdVisitor<'a, O> {
-    fn visit_trait_item(&mut self, ti: &hir::TraitItem) {
-        self.operation.visit_id(ti.id);
-        intravisit::walk_trait_item(self, ti);
-    }
-
-    fn visit_impl_item(&mut self, ii: &hir::ImplItem) {
-        self.operation.visit_id(ii.id);
-        intravisit::walk_impl_item(self, ii);
-    }
-
-    fn visit_foreign_item(&mut self, foreign_item: &ForeignItem) {
-        self.operation.visit_id(foreign_item.id);
-        intravisit::walk_foreign_item(self, foreign_item)
-    }
-
     fn visit_item(&mut self, item: &Item) {
         self.operation.visit_id(item.id);
         match item.node {
@@ -70,6 +55,21 @@ impl<'a, 'v, O: ast_util::IdVisitingOperation> ContentsVisitor<'v> for IdVisitor
 }
 
 impl<'a, 'v, O: ast_util::IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> {
+    fn visit_trait_item(&mut self, ti: &hir::TraitItem) {
+        self.operation.visit_id(ti.id);
+        intravisit::walk_trait_item(self, ti);
+    }
+
+    fn visit_impl_item(&mut self, ii: &hir::ImplItem) {
+        self.operation.visit_id(ii.id);
+        intravisit::walk_impl_item(self, ii);
+    }
+
+    fn visit_foreign_item(&mut self, foreign_item: &ForeignItem) {
+        self.operation.visit_id(foreign_item.id);
+        intravisit::walk_foreign_item(self, foreign_item)
+    }
+
     fn visit_mod(&mut self, module: &Mod, _: Span, node_id: NodeId) {
         self.operation.visit_id(node_id);
         intravisit::walk_mod(self, module)
