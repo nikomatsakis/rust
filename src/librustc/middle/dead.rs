@@ -537,7 +537,9 @@ impl<'a, 'tcx, 'v> ContentsVisitor<'v> for DeadVisitor<'a, 'tcx> {
             intravisit::walk_item(self, item);
         }
     }
+}
 
+impl<'a, 'tcx, 'v> Visitor<'v> for DeadVisitor<'a, 'tcx> {
     fn visit_foreign_item(&mut self, fi: &hir::ForeignItem) {
         if !self.symbol_is_live(fi.id, None) {
             self.warn_dead_code(fi.id, fi.span, fi.name, fi.node.descriptive_variant());
@@ -579,9 +581,7 @@ impl<'a, 'tcx, 'v> ContentsVisitor<'v> for DeadVisitor<'a, 'tcx> {
             hir::TypeTraitItem(..) => {}
         }
     }
-}
 
-impl<'a, 'tcx, 'v> Visitor<'v> for DeadVisitor<'a, 'tcx> {
     fn visit_variant(&mut self, variant: &hir::Variant, g: &hir::Generics, id: ast::NodeId) {
         if self.should_warn_about_variant(&variant.node) {
             self.warn_dead_code(variant.node.data.id(), variant.span,
