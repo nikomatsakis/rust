@@ -59,29 +59,31 @@ impl<'a, 'ast: 'a> DefsVisitor<'ast> for CheckCrateVisitor<'a, 'ast> {
                     }
                 }
             }
-            _ => {}
-        }
-    }
-
-    fn visit_trait_item(&mut self, ti: &'ast hir::TraitItem) {
-        match ti.node {
-            hir::ConstTraitItem(_, ref default) => {
-                if let Some(_) = *default {
-                    let mut recursion_visitor =
-                        CheckItemRecursionVisitor::new(self, &ti.span);
-                    recursion_visitor.visit_trait_item(ti);
+            hir::ItemTrait(_, _, _, ref trait_items) => {
+                for trait_item in trait_items {
+                    match trait_item.node {
+                        hir::ConstTraitItem(_, ref default) => {
+                            if let Some(_) = *default {
+                                let mut recursion_visitor =
+                                    CheckItemRecursionVisitor::new(self, &trait_item.span);
+                                recursion_visitor.visit_trait_item(trait_item);
+                            }
+                        }
+                        _ => {}
+                    }
                 }
             }
-            _ => {}
-        }
-    }
-
-    fn visit_impl_item(&mut self, ii: &'ast hir::ImplItem) {
-        match ii.node {
-            hir::ConstImplItem(..) => {
-                let mut recursion_visitor =
-                    CheckItemRecursionVisitor::new(self, &ii.span);
-                recursion_visitor.visit_impl_item(ii);
+            hir::ItemImpl(_, _, _, _, _, ref impl_items) => {
+                for impl_item in impl_items {
+                    match impl_item.node {
+                        hir::ConstImplItem(..) => {
+                            let mut recursion_visitor =
+                                CheckItemRecursionVisitor::new(self, &impl_item.span);
+                            recursion_visitor.visit_impl_item(impl_item);
+                        }
+                        _ => {}
+                    }
+                }
             }
             _ => {}
         }
