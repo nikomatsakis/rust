@@ -13,8 +13,9 @@
 use front::map::Map;
 use metadata::csearch;
 use middle::lang_items;
-use middle::pass::defs::{self, DefsVisitor};
+use middle::pass::contents::{self, ContentsVisitor};
 use rustc_front::hir;
+use rustc_front::intravisit::{self, Visitor};
 use session::config;
 use session::Session;
 
@@ -50,7 +51,7 @@ pub fn check_crate(map: &Map,
 
     {
         let mut cx = Context { sess: sess, items: items };
-        defs::execute(map, &mut cx);
+        contents::execute(map, &mut cx);
     }
 
     verify(sess, items);
@@ -109,12 +110,16 @@ impl<'a> Context<'a>{
     }
 }
 
-impl<'a, 'tcx> DefsVisitor<'tcx> for Context<'a> {
+impl<'a, 'tcx> ContentsVisitor<'tcx> for Context<'a> {
+}
+
+impl<'a, 'tcx> Visitor<'tcx> for Context<'a> {
     fn visit_foreign_item(&mut self, i: &'tcx hir::ForeignItem) {
         match lang_items::extract(&i.attrs) {
             None => {}
             Some(lang_item) => self.register(&lang_item, i.span),
         }
+        intravisit::walk_foreign_item(self, i);
     }
 }
 
