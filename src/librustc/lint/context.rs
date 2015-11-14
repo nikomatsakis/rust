@@ -648,15 +648,6 @@ impl<'a, 'tcx, 'v> intravisit::Visitor<'v> for LateContext<'a, 'tcx> {
     // Because lint scope follows the lexical structure of the tree,
     // for now we just visit fns and so forth in situ.
 
-    fn visit_foreign_item_def(&mut self, id: ast::NodeId) {
-        let it = self.tcx.map.expect_foreign_item(id);
-        self.with_lint_attrs(&it.attrs, |cx| {
-            run_lints!(cx, check_foreign_item, late_passes, it);
-            cx.visit_ids(|v| v.visit_foreign_item(it));
-            intravisit::walk_foreign_item(cx, it);
-        })
-    }
-
     fn visit_item_def(&mut self, id: ast::NodeId) {
         let it = self.tcx.map.expect_item(id);
         self.with_lint_attrs(&it.attrs, |cx| {
@@ -666,8 +657,15 @@ impl<'a, 'tcx, 'v> intravisit::Visitor<'v> for LateContext<'a, 'tcx> {
         })
     }
 
-    fn visit_trait_item_def(&mut self, id: ast::NodeId) {
-        let trait_item = self.tcx.map.expect_trait_item(id);
+    fn visit_foreign_item(&mut self, it: &'v hir::ForeignItem) {
+        self.with_lint_attrs(&it.attrs, |cx| {
+            run_lints!(cx, check_foreign_item, late_passes, it);
+            cx.visit_ids(|v| v.visit_foreign_item(it));
+            intravisit::walk_foreign_item(cx, it);
+        })
+    }
+
+    fn visit_trait_item(&mut self, trait_item: &'v hir::TraitItem) {
         self.with_lint_attrs(&trait_item.attrs, |cx| {
             run_lints!(cx, check_trait_item, late_passes, trait_item);
             cx.visit_ids(|v| v.visit_trait_item(trait_item));
@@ -675,8 +673,7 @@ impl<'a, 'tcx, 'v> intravisit::Visitor<'v> for LateContext<'a, 'tcx> {
         });
     }
 
-    fn visit_impl_item_def(&mut self, id: ast::NodeId) {
-        let impl_item = self.tcx.map.expect_impl_item(id);
+    fn visit_impl_item(&mut self, impl_item: &'v hir::ImplItem) {
         self.with_lint_attrs(&impl_item.attrs, |cx| {
             run_lints!(cx, check_impl_item, late_passes, impl_item);
             cx.visit_ids(|v| v.visit_impl_item(impl_item));
