@@ -1175,19 +1175,17 @@ impl<'a, 'v> ContentsVisitor<'v> for RegionResolutionVisitor<'a> {
     fn visit_item(&mut self, i: &Item) {
         resolve_item(self, i);
     }
+}
 
+impl<'a, 'v> Visitor<'v> for RegionResolutionVisitor<'a> {
     fn visit_impl_item(&mut self, ii: &hir::ImplItem) {
         intravisit::walk_impl_item(self, ii);
         self.create_item_scope_if_needed(ii.id);
     }
-
     fn visit_trait_item(&mut self, ti: &hir::TraitItem) {
         intravisit::walk_trait_item(self, ti);
         self.create_item_scope_if_needed(ti.id);
     }
-}
-
-impl<'a, 'v> Visitor<'v> for RegionResolutionVisitor<'a> {
     fn visit_block(&mut self, b: &Block) {
         resolve_block(self, b);
     }
