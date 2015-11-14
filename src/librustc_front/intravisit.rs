@@ -68,16 +68,7 @@ pub trait Visitor<'v> : Sized {
     // Instead, you want to be using one of the visitors in
     // `librustc::pass` which will manage this for you.
 
-    fn visit_foreign_item_def(&mut self, _id: NodeId) {
-    }
-
     fn visit_item_def(&mut self, _id: NodeId) {
-    }
-
-    fn visit_trait_item_def(&mut self, _id: NodeId) {
-    }
-
-    fn visit_impl_item_def(&mut self, _id: NodeId) {
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -95,6 +86,10 @@ pub trait Visitor<'v> : Sized {
 
     fn visit_mod(&mut self, m: &'v Mod, _s: Span, _n: NodeId) {
         walk_mod(self, m)
+    }
+
+    fn visit_foreign_item(&mut self, i: &'v ForeignItem) {
+        walk_foreign_item(self, i)
     }
 
     fn visit_local(&mut self, l: &'v Local) {
@@ -138,6 +133,14 @@ pub trait Visitor<'v> : Sized {
 
     fn visit_fn(&mut self, fk: FnKind<'v>, fd: &'v FnDecl, b: &'v Block, s: Span, _: NodeId) {
         walk_fn(self, fk, fd, b, s)
+    }
+
+    fn visit_trait_item(&mut self, ti: &'v TraitItem) {
+        walk_trait_item(self, ti)
+    }
+
+    fn visit_impl_item(&mut self, ii: &'v ImplItem) {
+        walk_impl_item(self, ii)
     }
 
     fn visit_trait_ref(&mut self, t: &'v TraitRef) {
@@ -341,7 +344,7 @@ pub fn walk_item<'v, V: Visitor<'v>>(visitor: &mut V, item: &'v Item) {
         }
         ItemForeignMod(ref foreign_module) => {
             for item in &foreign_module.items {
-                visitor.visit_foreign_item_def(item.id);
+                visitor.visit_foreign_item(item);
             }
         }
         ItemTy(ref typ, ref type_parameters) => {
@@ -364,7 +367,7 @@ pub fn walk_item<'v, V: Visitor<'v>>(visitor: &mut V, item: &'v Item) {
             walk_list!(visitor, visit_trait_ref, opt_trait_reference);
             visitor.visit_ty(typ);
             for item in impl_items {
-                visitor.visit_impl_item_def(item.id);
+                visitor.visit_impl_item(item);
             }
         }
         ItemStruct(ref struct_definition, ref generics) => {
@@ -376,7 +379,7 @@ pub fn walk_item<'v, V: Visitor<'v>>(visitor: &mut V, item: &'v Item) {
             visitor.visit_generics(generics);
             walk_list!(visitor, visit_ty_param_bound, bounds);
             for item in items {
-                visitor.visit_trait_item_def(item.id);
+                visitor.visit_trait_item(item);
             }
         }
     }
