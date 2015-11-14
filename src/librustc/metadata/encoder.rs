@@ -1475,13 +1475,13 @@ impl<'a, 'b, 'c, 'tcx> ContentsVisitor<'tcx> for EncodeVisitor<'a, 'b, 'c, 'tcx>
         intravisit::walk_item(self, i);
         my_visit_item(i, self.rbml_w_for_visit_item, self.ecx, self.index);
     }
+}
+
+impl<'a, 'b, 'c, 'tcx> Visitor<'tcx> for EncodeVisitor<'a, 'b, 'c, 'tcx> {
     fn visit_foreign_item(&mut self, ni: &'tcx hir::ForeignItem) {
         intravisit::walk_foreign_item(self, ni);
         my_visit_foreign_item(ni, self.rbml_w_for_visit_item, self.ecx, self.index);
     }
-}
-
-impl<'a, 'b, 'c, 'tcx> Visitor<'tcx> for EncodeVisitor<'a, 'b, 'c, 'tcx> {
     fn visit_expr(&mut self, ex: &'tcx hir::Expr) {
         intravisit::walk_expr(self, ex);
         my_visit_expr(ex, self.rbml_w_for_visit_item, self.ecx, self.index);
