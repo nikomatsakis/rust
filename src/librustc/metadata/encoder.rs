@@ -437,7 +437,8 @@ fn encode_info_for_mod(ecx: &EncodeContext,
         rbml_w.wr_tagged_u64(tag_mod_child,
                              def_to_u64(ecx.tcx.map.local_def_id(item.id)));
 
-        each_auxiliary_node_id(&**item, |auxiliary_node_id| {
+        let item = ecx.tcx.map.expect_item(item.id);
+        each_auxiliary_node_id(item, |auxiliary_node_id| {
             rbml_w.wr_tagged_u64(tag_mod_child,
                                  def_to_u64(ecx.tcx.map.local_def_id(auxiliary_node_id)));
             true
@@ -1793,7 +1794,8 @@ fn encode_misc_info(ecx: &EncodeContext,
         rbml_w.wr_tagged_u64(tag_mod_child,
                              def_to_u64(ecx.tcx.map.local_def_id(item.id)));
 
-        each_auxiliary_node_id(&**item, |auxiliary_node_id| {
+        let item = ecx.tcx.map.expect_item(item.id);
+        each_auxiliary_node_id(item, |auxiliary_node_id| {
             rbml_w.wr_tagged_u64(tag_mod_child,
                                  def_to_u64(ecx.tcx.map.local_def_id(auxiliary_node_id)));
             true
