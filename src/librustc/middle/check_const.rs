@@ -334,7 +334,9 @@ impl<'a, 'tcx, 'v> ContentsVisitor<'v> for CheckCrateVisitor<'a, 'tcx> {
             }
         }
     }
+}
 
+impl<'a, 'tcx, 'v> Visitor<'v> for CheckCrateVisitor<'a, 'tcx> {
     fn visit_trait_item(&mut self, t: &'v hir::TraitItem) {
         match t.node {
             hir::ConstTraitItem(_, ref default) => {
@@ -362,9 +364,7 @@ impl<'a, 'tcx, 'v> ContentsVisitor<'v> for CheckCrateVisitor<'a, 'tcx> {
             }
         }
     }
-}
 
-impl<'a, 'tcx, 'v> Visitor<'v> for CheckCrateVisitor<'a, 'tcx> {
     fn visit_fn(&mut self,
                 fk: FnKind<'v>,
                 fd: &'v hir::FnDecl,
