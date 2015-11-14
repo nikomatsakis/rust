@@ -83,7 +83,7 @@ impl Svh {
         }
 
         {
-            let mut visit = svh_visitor::make(&mut state);
+            let mut visit = svh_visitor::make(&mut state, krate);
             visit::walk_crate(&mut visit, krate);
         }
 
@@ -302,8 +302,8 @@ mod svh_visitor {
     }
 
     impl<'a> Visitor<'a> for StrictVersionHashVisitor<'a> {
-        fn crate_for_deep_walk(&mut self) -> &'a Crate {
-            self.krate
+        fn crate_for_deep_walk(&mut self) -> Option<&'a Crate> {
+            Some(self.krate)
         }
 
         fn visit_variant_data(&mut self, s: &'a VariantData, name: Name,

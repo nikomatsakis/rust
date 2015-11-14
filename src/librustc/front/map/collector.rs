@@ -13,7 +13,7 @@ use super::MapEntry::*;
 
 use rustc_front::hir::*;
 use rustc_front::util;
-use rustc_front::visit::{self, Visitor};
+use rustc_front::intravisit::{self, Visitor};
 use middle::def_id::{CRATE_DEF_INDEX, DefIndex};
 use std::iter::repeat;
 use syntax::ast::{NodeId, CRATE_NODE_ID, DUMMY_NODE_ID};
@@ -22,6 +22,7 @@ use syntax::codemap::Span;
 /// A Visitor that walks over an AST and collects Node's into an AST
 /// Map.
 pub struct NodeCollector<'ast> {
+    pub krate: &'ast Crate,
     pub map: Vec<MapEntry<'ast>>,
     pub definitions: Definitions,
     pub parent_node: NodeId,
@@ -107,6 +108,10 @@ impl<'ast> NodeCollector<'ast> {
 }
 
 impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
+    fn crate_for_deep_walk(&mut self) -> Option<&'ast Crate> {
+        Some(self.krate)
+    }
+
     fn visit_item(&mut self, i: &'ast Item) {
         // Pick the def data. This need not be unique, but the more
         // information we encapsulate into

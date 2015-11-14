@@ -14,7 +14,6 @@ use middle::pass::contents::ContentsVisitor;
 use rustc_front::hir;
 use syntax::ast_util::{IdRange, IdRangeComputingVisitor, IdVisitingOperation};
 use syntax::ptr::P;
-use rustc_front::visit::Visitor;
 use self::InlinedItem::*;
 
 /// The data we save and restore about an inlined item or method.  This is not
@@ -38,17 +37,6 @@ pub enum InlinedItemRef<'a> {
 
 impl InlinedItem {
     pub fn visit<'ast,V>(&'ast self, visitor: &mut V)
-        where V: Visitor<'ast>
-    {
-        match *self {
-            Item(ref i) => visitor.visit_item(&**i),
-            Foreign(ref i) => visitor.visit_foreign_item(&**i),
-            TraitItem(_, ref ti) => visitor.visit_trait_item(ti),
-            ImplItem(_, ref ii) => visitor.visit_impl_item(ii),
-        }
-    }
-
-    pub fn visit_contents<'ast,V>(&'ast self, visitor: &mut V)
         where V: ContentsVisitor<'ast>
     {
         match *self {
@@ -63,7 +51,7 @@ impl InlinedItem {
         let mut id_visitor = IdVisitor {
             operation: operation,
         };
-        self.visit_contents(&mut id_visitor);
+        self.visit(&mut id_visitor);
     }
 
     pub fn compute_id_range(&self) -> IdRange {

@@ -25,7 +25,7 @@ use syntax::parse::token;
 
 use rustc_front::hir::*;
 use rustc_front::fold::Folder;
-use rustc_front::visit;
+use rustc_front::intravisit as visit;
 use rustc_front::print::pprust;
 
 use arena::TypedArena;

@@ -936,13 +936,9 @@ pub fn noop_fold_crate<T: Folder>(Crate { module, attrs, config, span,
 }
 
 // fold one item def into possibly many item defs
-pub fn noop_fold_item_def<T: Folder>(i: ItemDef, folder: &mut T) -> SmallVector<ItemDef> {
-    SmallVector::one(folder.fold_item_def_simple(i))
-}
-
-pub fn noop_fold_item_def_simple<T: Folder>(ItemDef { id }: ItemDef,
-                                            folder: &mut T)
-                                            -> ItemDef {
+pub fn noop_fold_item_def<T: Folder>(ItemDef { id }: ItemDef,
+                                     folder: &mut T)
+                                     -> ItemDef {
     let id = folder.map_id(id);
     ItemDef { id: id }
 }

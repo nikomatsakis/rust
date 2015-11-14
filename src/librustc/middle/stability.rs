@@ -31,7 +31,7 @@ use util::nodemap::{DefIdMap, FnvHashSet, FnvHashMap};
 
 use rustc_front::hir;
 use rustc_front::hir::{FnDecl, Block, Crate, Item, Generics, StructField, Variant};
-use rustc_front::visit::{self, FnKind, Visitor};
+use rustc_front::intravisit::{self, FnKind, Visitor};
 
 use std::mem::replace;
 use std::cmp::Ordering;
@@ -172,8 +172,12 @@ impl<'a, 'tcx: 'a> Annotator<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx, 'v> Visitor<'v> for Annotator<'a, 'tcx> {
-    fn visit_item(&mut self, i: &Item) {
+impl<'a, 'tcx> Visitor<'tcx> for Annotator<'a, 'tcx> {
+    fn crate_for_deep_walk(&mut self) -> Option<&'tcx Crate> {
+        Some(self.tcx.map.krate())
+    }
+
+    fn visit_item(&mut self, i: &'tcx Item) {
         // FIXME (#18969): the following is a hack around the fact
         // that we cannot currently annotate the stability of
         // `deriving`.  Basically, we do *not* allow stability
@@ -204,33 +208,33 @@ impl<'a, 'tcx, 'v> Visitor<'v> for Annotator<'a, 'tcx> {
         }
     }
 
-    fn visit_fn(&mut self, _: FnKind<'v>, _: &'v FnDecl,
-                _: &'v Block, _: Span, _: NodeId) {
+    fn visit_fn(&mut self, _: FnKind<'v>, _: &'tcx FnDecl,
+                _: &'tcx Block, _: Span, _: NodeId) {
         // Items defined in a function body have no reason to have
         // a stability attribute, so we don't recurse.
     }
 
-    fn visit_trait_item(&mut self, ti: &hir::TraitItem) {
+    fn visit_trait_item(&mut self, ti: &'tcx hir::TraitItem) {
         self.annotate(ti.id, true, &ti.attrs, ti.span,
                       |v| visit::walk_trait_item(v, ti), true);
     }
 
-    fn visit_impl_item(&mut self, ii: &hir::ImplItem) {
+    fn visit_impl_item(&mut self, ii: &'tcx hir::ImplItem) {
         self.annotate(ii.id, true, &ii.attrs, ii.span,
                       |v| visit::walk_impl_item(v, ii), false);
     }
 
-    fn visit_variant(&mut self, var: &Variant, g: &'v Generics, item_id: NodeId) {
+    fn visit_variant(&mut self, var: &'tcx Variant, g: &'tcx Generics, item_id: NodeId) {
         self.annotate(var.node.data.id(), true, &var.node.attrs, var.span,
                       |v| visit::walk_variant(v, var, g, item_id), true)
     }
 
-    fn visit_struct_field(&mut self, s: &StructField) {
+    fn visit_struct_field(&mut self, s: &'tcx StructField) {
         self.annotate(s.node.id, true, &s.node.attrs, s.span,
                       |v| visit::walk_struct_field(v, s), !s.node.kind.is_unnamed());
     }
 
-    fn visit_foreign_item(&mut self, i: &hir::ForeignItem) {
+    fn visit_foreign_item(&mut self, i: &'tcx hir::ForeignItem) {
         self.annotate(i.id, true, &i.attrs, i.span, |_| {}, true);
     }
 }
