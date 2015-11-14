@@ -172,12 +172,10 @@ impl<'a, 'tcx: 'a> Annotator<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> Visitor<'tcx> for Annotator<'a, 'tcx> {
-    fn crate_for_deep_walk(&mut self) -> Option<&'tcx Crate> {
-        Some(self.tcx.map.krate())
-    }
+impl<'a, 'tcx, 'v> Visitor<'v> for Annotator<'a, 'tcx> {
+    fn visit_item_def(&mut self, id: &hir::ItemDef) {
+        let i = self.tcx.map.expect_item(id.id);
 
-    fn visit_item(&mut self, i: &'tcx Item) {
         // FIXME (#18969): the following is a hack around the fact
         // that we cannot currently annotate the stability of
         // `deriving`.  Basically, we do *not* allow stability
@@ -199,7 +197,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Annotator<'a, 'tcx> {
         };
 
         self.annotate(i.id, use_parent, &i.attrs, i.span,
-                      |v| visit::walk_item(v, i), required);
+                      |v| intravisit::walk_item(v, i), required);
 
         if let hir::ItemStruct(ref sd, _) = i.node {
             if !sd.is_struct() {
@@ -208,33 +206,33 @@ impl<'a, 'tcx> Visitor<'tcx> for Annotator<'a, 'tcx> {
         }
     }
 
-    fn visit_fn(&mut self, _: FnKind<'v>, _: &'tcx FnDecl,
-                _: &'tcx Block, _: Span, _: NodeId) {
+    fn visit_fn(&mut self, _: FnKind<'v>, _: &'v FnDecl,
+                _: &'v Block, _: Span, _: NodeId) {
         // Items defined in a function body have no reason to have
         // a stability attribute, so we don't recurse.
     }
 
-    fn visit_trait_item(&mut self, ti: &'tcx hir::TraitItem) {
+    fn visit_trait_item(&mut self, ti: &'v hir::TraitItem) {
         self.annotate(ti.id, true, &ti.attrs, ti.span,
-                      |v| visit::walk_trait_item(v, ti), true);
+                      |v| intravisit::walk_trait_item(v, ti), true);
     }
 
-    fn visit_impl_item(&mut self, ii: &'tcx hir::ImplItem) {
+    fn visit_impl_item(&mut self, ii: &'v hir::ImplItem) {
         self.annotate(ii.id, true, &ii.attrs, ii.span,
-                      |v| visit::walk_impl_item(v, ii), false);
+                      |v| intravisit::walk_impl_item(v, ii), false);
     }
 
-    fn visit_variant(&mut self, var: &'tcx Variant, g: &'tcx Generics, item_id: NodeId) {
+    fn visit_variant(&mut self, var: &'v Variant, g: &'v Generics, item_id: NodeId) {
         self.annotate(var.node.data.id(), true, &var.node.attrs, var.span,
-                      |v| visit::walk_variant(v, var, g, item_id), true)
+                      |v| intravisit::walk_variant(v, var, g, item_id), true)
     }
 
-    fn visit_struct_field(&mut self, s: &'tcx StructField) {
+    fn visit_struct_field(&mut self, s: &'v StructField) {
         self.annotate(s.node.id, true, &s.node.attrs, s.span,
-                      |v| visit::walk_struct_field(v, s), !s.node.kind.is_unnamed());
+                      |v| intravisit::walk_struct_field(v, s), !s.node.kind.is_unnamed());
     }
 
-    fn visit_foreign_item(&mut self, i: &'tcx hir::ForeignItem) {
+    fn visit_foreign_item(&mut self, i: &'v hir::ForeignItem) {
         self.annotate(i.id, true, &i.attrs, i.span, |_| {}, true);
     }
 }
@@ -249,7 +247,7 @@ impl<'tcx> Index<'tcx> {
             export_map: export_map,
         };
         annotator.annotate(ast::CRATE_NODE_ID, true, &krate.attrs, krate.span,
-                           |v| visit::walk_crate(v, krate), true);
+                           |v| intravisit::walk_crate(v, krate), true);
     }
 
     pub fn new(krate: &Crate) -> Index {
@@ -292,7 +290,7 @@ pub fn check_unstable_api_usage(tcx: &ty::ctxt)
     };
 
     let krate = tcx.map.krate();
-    visit::walk_crate(&mut checker, krate);
+    intravisit::walk_crate(&mut checker, krate);
 
     let used_features = checker.used_features;
     return used_features;
@@ -361,7 +359,9 @@ impl<'a, 'tcx> Checker<'a, 'tcx> {
 }
 
 impl<'a, 'v, 'tcx> Visitor<'v> for Checker<'a, 'tcx> {
-    fn visit_item(&mut self, item: &hir::Item) {
+    fn visit_item_def(&mut self, id: &hir::ItemDef) {
+        let item = self.tcx.map.expect_item(id.id);
+
         // When compiling with --test we don't enforce stability on the
         // compiler-generated test module, demarcated with `DUMMY_SP` plus the
         // name `__test`
@@ -369,31 +369,31 @@ impl<'a, 'v, 'tcx> Visitor<'v> for Checker<'a, 'tcx> {
 
         check_item(self.tcx, item, true,
                    &mut |id, sp, stab| self.check(id, sp, stab));
-        visit::walk_item(self, item);
+        intravisit::walk_item(self, item);
     }
 
     fn visit_expr(&mut self, ex: &hir::Expr) {
         check_expr(self.tcx, ex,
                    &mut |id, sp, stab| self.check(id, sp, stab));
-        visit::walk_expr(self, ex);
+        intravisit::walk_expr(self, ex);
     }
 
     fn visit_path(&mut self, path: &hir::Path, id: ast::NodeId) {
         check_path(self.tcx, path, id,
                    &mut |id, sp, stab| self.check(id, sp, stab));
-        visit::walk_path(self, path)
+        intravisit::walk_path(self, path)
     }
 
     fn visit_path_list_item(&mut self, prefix: &hir::Path, item: &hir::PathListItem) {
         check_path_list_item(self.tcx, item,
                    &mut |id, sp, stab| self.check(id, sp, stab));
-        visit::walk_path_list_item(self, prefix, item)
+        intravisit::walk_path_list_item(self, prefix, item)
     }
 
     fn visit_pat(&mut self, pat: &hir::Pat) {
         check_pat(self.tcx, pat,
                   &mut |id, sp, stab| self.check(id, sp, stab));
-        visit::walk_pat(self, pat)
+        intravisit::walk_pat(self, pat)
     }
 
     fn visit_block(&mut self, b: &hir::Block) {
@@ -407,7 +407,7 @@ impl<'a, 'v, 'tcx> Visitor<'v> for Checker<'a, 'tcx> {
             }
             _ => {}
         }
-        visit::walk_block(self, b);
+        intravisit::walk_block(self, b);
         self.in_skip_block = old_skip_count;
     }
 }

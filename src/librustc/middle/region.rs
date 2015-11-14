@@ -1254,5 +1254,5 @@ pub fn resolve_inlined_item(sess: &Session,
         },
         terminating_scopes: NodeSet()
     };
-    item.visit_contents(&mut visitor);
+    item.visit(&mut visitor);
 }

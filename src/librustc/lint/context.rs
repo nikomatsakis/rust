@@ -648,8 +648,8 @@ impl<'a, 'tcx, 'v> intravisit::Visitor<'v> for LateContext<'a, 'tcx> {
     // Because lint scope follows the lexical structure of the tree,
     // for now we just visit fns and so forth in situ.
 
-    fn visit_item_def(&mut self, id: ast::NodeId) {
-        let it = self.tcx.map.expect_item(id);
+    fn visit_item_def(&mut self, id: &'v hir::ItemDef) {
+        let it = self.tcx.map.expect_item(id.id);
         self.with_lint_attrs(&it.attrs, |cx| {
             run_lints!(cx, check_item, late_passes, it);
             cx.visit_ids(|v| v.visit_item(it));

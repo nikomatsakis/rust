@@ -10,7 +10,6 @@
 
 use front::map::Map;
 use middle::def_id::DefId;
-use syntax::ast;
 use rustc_front::hir;
 use rustc_front::intravisit;
 
@@ -53,9 +52,9 @@ struct HirVisitor<'a, 'tcx:'a, D: DefsVisitor<'tcx> + 'a> {
 impl<'a, 'tcx, D> intravisit::Visitor<'tcx> for HirVisitor<'a, 'tcx, D>
     where D: DefsVisitor<'tcx> + 'a
 {
-    fn visit_item_def(&mut self, id: ast::NodeId) {
-        let def_id = self.map.local_def_id(id);
-        let hir = self.map.expect_item(id);
+    fn visit_item_def(&mut self, id: &'tcx hir::ItemDef) {
+        let def_id = self.map.local_def_id(id.id);
+        let hir = self.map.expect_item(id.id);
         if self.delegate.should_visit_item(def_id) {
             self.delegate.visit_item(hir);
         }

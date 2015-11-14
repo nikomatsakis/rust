@@ -15,6 +15,7 @@ use rustc_front::hir::*;
 use rustc_front::util;
 use rustc_front::intravisit::{self, Visitor};
 use middle::def_id::{CRATE_DEF_INDEX, DefIndex};
+use middle::pass::contents::{ContentsVisitor};
 use std::iter::repeat;
 use syntax::ast::{NodeId, CRATE_NODE_ID, DUMMY_NODE_ID};
 use syntax::codemap::Span;
@@ -29,8 +30,9 @@ pub struct NodeCollector<'ast> {
 }
 
 impl<'ast> NodeCollector<'ast> {
-    pub fn root() -> NodeCollector<'ast> {
+    pub fn root(krate: &'ast Crate) -> NodeCollector<'ast> {
         let mut collector = NodeCollector {
+            krate: krate,
             map: vec![],
             definitions: Definitions::new(),
             parent_node: CRATE_NODE_ID,
@@ -45,13 +47,15 @@ impl<'ast> NodeCollector<'ast> {
         collector
     }
 
-    pub fn extend(parent: &'ast InlinedParent,
+    pub fn extend(krate: &'ast Crate,
+                  parent: &'ast InlinedParent,
                   parent_node: NodeId,
                   parent_def_path: DefPath,
                   map: Vec<MapEntry<'ast>>,
                   definitions: Definitions)
                   -> NodeCollector<'ast> {
         let mut collector = NodeCollector {
+            krate: krate,
             map: map,
             parent_node: parent_node,
             definitions: definitions,
@@ -107,11 +111,15 @@ impl<'ast> NodeCollector<'ast> {
     }
 }
 
-impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
-    fn crate_for_deep_walk(&mut self) -> Option<&'ast Crate> {
-        Some(self.krate)
-    }
-
+// NB: We are somewhat abusing the ContentsVisitor trait here, because
+// we never call ContentsVisitor::invoke. Instead, we visit the crate
+// using `walk_crate` and then, for each nested item, calling
+// `visit_item`. So we visit nested items in situ, in effect. The only
+// reason to use `ContentsVisitor` here is that it happens to provide
+// the `visit_item` method that `InlinedItem` wants.
+//
+// TODO this is kind of hacky
+impl<'ast> ContentsVisitor<'ast> for NodeCollector<'ast> {
     fn visit_item(&mut self, i: &'ast Item) {
         // Pick the def data. This need not be unique, but the more
         // information we encapsulate into
@@ -178,8 +186,15 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
             }
             _ => {}
         }
-        visit::walk_item(self, i);
+        intravisit::walk_item(self, i);
         self.parent_node = parent_node;
+    }
+}
+
+impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
+    fn visit_item_def(&mut self, id: &'ast ItemDef) {
+        let i = self.krate.item(id.id);
+        self.visit_item(i);
     }
 
     fn visit_foreign_item(&mut self, foreign_item: &'ast ForeignItem) {
@@ -189,7 +204,7 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
 
         let parent_node = self.parent_node;
         self.parent_node = foreign_item.id;
-        visit::walk_foreign_item(self, foreign_item);
+        intravisit::walk_foreign_item(self, foreign_item);
         self.parent_node = parent_node;
     }
 
@@ -200,7 +215,7 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
                             DefPathData::TypeParam(ty_param.name));
         }
 
-        visit::walk_generics(self, generics);
+        intravisit::walk_generics(self, generics);
     }
 
     fn visit_trait_item(&mut self, ti: &'ast TraitItem) {
@@ -222,7 +237,7 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
             _ => { }
         }
 
-        visit::walk_trait_item(self, ti);
+        intravisit::walk_trait_item(self, ti);
 
         self.parent_node = parent_node;
     }
@@ -245,7 +260,7 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
             _ => { }
         }
 
-        visit::walk_impl_item(self, ii);
+        intravisit::walk_impl_item(self, ii);
 
         self.parent_node = parent_node;
     }
@@ -264,7 +279,7 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
 
         let parent_node = self.parent_node;
         self.parent_node = pat.id;
-        visit::walk_pat(self, pat);
+        intravisit::walk_pat(self, pat);
         self.parent_node = parent_node;
     }
 
@@ -278,7 +293,7 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
 
         let parent_node = self.parent_node;
         self.parent_node = expr.id;
-        visit::walk_expr(self, expr);
+        intravisit::walk_expr(self, expr);
         self.parent_node = parent_node;
     }
 
@@ -287,21 +302,21 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
         self.insert(id, NodeStmt(stmt));
         let parent_node = self.parent_node;
         self.parent_node = id;
-        visit::walk_stmt(self, stmt);
+        intravisit::walk_stmt(self, stmt);
         self.parent_node = parent_node;
     }
 
-    fn visit_fn(&mut self, fk: visit::FnKind<'ast>, fd: &'ast FnDecl,
+    fn visit_fn(&mut self, fk: intravisit::FnKind<'ast>, fd: &'ast FnDecl,
                 b: &'ast Block, s: Span, id: NodeId) {
         assert_eq!(self.parent_node, id);
-        visit::walk_fn(self, fk, fd, b, s);
+        intravisit::walk_fn(self, fk, fd, b, s);
     }
 
     fn visit_block(&mut self, block: &'ast Block) {
         self.insert(block.id, NodeBlock(block));
         let parent_node = self.parent_node;
         self.parent_node = block.id;
-        visit::walk_block(self, block);
+        intravisit::walk_block(self, block);
         self.parent_node = parent_node;
     }
 
