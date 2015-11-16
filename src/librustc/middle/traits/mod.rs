@@ -67,6 +67,7 @@ mod project;
 mod object_safety;
 mod select;
 mod structural_impls;
+mod ty_match;
 mod ty_recur;
 mod util;
 

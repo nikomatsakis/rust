@@ -1190,13 +1190,24 @@ impl<'tcx> TyS<'tcx> {
             }
             TyEnum(_, substs) |
             TyStruct(_, substs) => {
-                substs.regions().as_slice().to_vec()
+                match substs.regions {
+                    subst::ErasedRegions => vec![],
+                    subst::NonerasedRegions(ref regions) => regions.as_slice().to_vec(),
+                }
             }
             TyClosure(_, ref substs) => {
-                substs.func_substs.regions().as_slice().to_vec()
+                let func_regions = match substs.func_substs.regions {
+                    subst::ErasedRegions => &[][..],
+                    subst::NonerasedRegions(ref regions) => regions.as_slice(),
+                };
+                // TODO incomplete!
+                func_regions.to_vec()
             }
             TyProjection(ref data) => {
-                data.trait_ref.substs.regions().as_slice().to_vec()
+                match data.trait_ref.substs.regions {
+                    subst::ErasedRegions => vec![],
+                    subst::NonerasedRegions(ref regions) => regions.as_slice().to_vec(),
+                }
             }
             TyBareFn(..) |
             TyBool |

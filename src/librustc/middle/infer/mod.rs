@@ -125,11 +125,8 @@ pub enum TypeOrigin {
     // FIXME(eddyb) #11161 is the original Expr required?
     ExprAssignable(Span),
 
-    // Relating trait refs when resolving vtables
-    RelateTraitRefs(Span),
-
-    // Relating self types when resolving vtables
-    RelateSelfType(Span),
+    // Relating types in an impl
+    TraitMatchTypes(Span),
 
     // Relating trait type parameters to those found in impl etc
     RelateOutputImplTypes(Span),
@@ -154,10 +151,9 @@ impl TypeOrigin {
     fn as_str(&self) -> &'static str {
         match self {
             &TypeOrigin::Misc(_) |
-            &TypeOrigin::RelateSelfType(_) |
+            &TypeOrigin::TraitMatchTypes(_) |
             &TypeOrigin::RelateOutputImplTypes(_) |
             &TypeOrigin::ExprAssignable(_) => "mismatched types",
-            &TypeOrigin::RelateTraitRefs(_) => "mismatched traits",
             &TypeOrigin::MethodCompatCheck(_) => "method not compatible with trait",
             &TypeOrigin::MatchExpressionArm(_, _, source) => match source {
                 hir::MatchSource::IfLetDesugar{..} => "`if let` arms have incompatible types",
@@ -204,6 +200,9 @@ pub enum SubregionOrigin<'tcx> {
     // provisions from RFC 1214. This will result in a warning, not an
     // error.
     RFC1214Subregion(Rc<SubregionOrigin<'tcx>>),
+
+    // Arose as part of trait matching
+    TraitMatch(Span),
 
     // Arose from a subtyping relation
     Subtype(TypeTrace<'tcx>),
@@ -840,6 +839,14 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                      sup: ty::RegionVid)
     {
         self.region_vars.add_given(sub, sup);
+    }
+
+    pub fn equate_regions(&self,
+                          origin: SubregionOrigin<'tcx>,
+                          a: ty::Region,
+                          b: ty::Region)
+    {
+        self.region_vars.make_eqregion(origin, a, b)
     }
 
     pub fn sub_types(&self,
@@ -1546,8 +1553,7 @@ impl TypeOrigin {
             MethodCompatCheck(span) => span,
             ExprAssignable(span) => span,
             Misc(span) => span,
-            RelateTraitRefs(span) => span,
-            RelateSelfType(span) => span,
+            TraitMatchTypes(span) => span,
             RelateOutputImplTypes(span) => span,
             MatchExpressionArm(match_span, _, _) => match_span,
             IfExpression(span) => span,
@@ -1563,6 +1569,7 @@ impl<'tcx> SubregionOrigin<'tcx> {
         match *self {
             RFC1214Subregion(ref a) => a.span(),
             Subtype(ref a) => a.span(),
+            TraitMatch(a) => a,
             InfStackClosure(a) => a,
             InvokeClosure(a) => a,
             DerefPointer(a) => a,

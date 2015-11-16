@@ -29,6 +29,7 @@ use super::TraitNotObjectSafe;
 use super::RFC1214Warning;
 use super::Selection;
 use super::SelectionResult;
+use super::ty_match;
 use super::ty_recur;
 use super::{VtableBuiltin, VtableImpl, VtableParam, VtableClosure,
             VtableFnPointer, VtableObject, VtableDefaultImpl};
@@ -2675,12 +2676,29 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             snapshot);
         let skol_obligation_trait_ref = skol_obligation.trait_ref;
 
-        let impl_substs = util::fresh_type_vars_for_impl(self.infcx,
-                                                         obligation.cause.span,
-                                                         impl_def_id);
+        let impl_generics = self.tcx().lookup_item_type(impl_def_id).generics;
+        let impl_substs =
+            match ty_match::perform_match(self.infcx,
+                                          &impl_generics,
+                                          obligation.cause.span,
+                                          &impl_trait_ref,
+                                          &skol_obligation_trait_ref) {
+                Ok(substs) => substs,
+                Err(e) => {
+                    debug!("match_impl: perform_match failed due to `{}`", e);
+                    return Err(());
+                }
+            };
 
-        let impl_trait_ref = impl_trait_ref.subst(self.tcx(),
-                                                  &impl_substs);
+        // TODO Match computation creates a set of substitions, but
+        // doesn't guarantee that all necessary relations are
+        // established, particularly with regard to
+        // projections. Therefore, we also do the subtyping check here
+        // a second time. Obviously inefficient and suboptimal.
+        //
+        // TODO question: is the leak check sufficient now?
+
+        let impl_trait_ref = impl_trait_ref.subst(self.tcx(), &impl_substs);
 
         let impl_trait_ref =
             project::normalize_with_depth(self,

@@ -385,6 +385,10 @@ impl<T> VecPerParamSpace<T> {
         &self.get_slice(space)[index]
     }
 
+    pub fn get_mut(&mut self, space: ParamSpace, index: usize) -> &mut T {
+        &mut self.get_mut_slice(space)[index]
+    }
+
     pub fn iter<'a>(&'a self) -> Iter<'a,T> {
         self.content.iter()
     }
