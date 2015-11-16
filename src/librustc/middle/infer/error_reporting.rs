@@ -612,6 +612,18 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
                 let terr = TypeError::RegionsDoesNotOutlive(sup, sub);
                 self.report_and_explain_type_error(trace, &terr);
             }
+            infer::TraitMatch(span) => {
+                // TODO oh dear god the terribleness
+                self.tcx.sess.span_err(span, "lifetime mismatch during trait processing");
+                self.tcx.note_and_explain_region(
+                    "...the impl or where clause references the lifetime",
+                    sub,
+                    "...");
+                self.tcx.note_and_explain_region(
+                    "...but the lifetime is required",
+                    sup,
+                    "");
+            }
             infer::Reborrow(span) => {
                 span_err!(self.tcx.sess, span, E0312,
                     "lifetime of reference outlines \
@@ -1615,11 +1627,8 @@ impl<'a, 'tcx> ErrorReportingHelpers<'tcx> for InferCtxt<'a, 'tcx> {
                     infer::ExprAssignable(_) => {
                         "expression is assignable"
                     }
-                    infer::RelateTraitRefs(_) => {
+                    infer::TraitMatchTypes(_) => {
                         "traits are compatible"
-                    }
-                    infer::RelateSelfType(_) => {
-                        "self type matches impl self type"
                     }
                     infer::RelateOutputImplTypes(_) => {
                         "trait type parameters matches those \
@@ -1659,6 +1668,11 @@ impl<'a, 'tcx> ErrorReportingHelpers<'tcx> for InferCtxt<'a, 'tcx> {
                             &format!("...so that {}", desc));
                     }
                 }
+            }
+            infer::TraitMatch(span) => {
+                self.tcx.sess.span_note(
+                    span,
+                    "...so that the required trait is satisfied");
             }
             infer::Reborrow(span) => {
                 self.tcx.sess.span_note(

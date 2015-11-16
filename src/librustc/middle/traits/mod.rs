@@ -62,6 +62,7 @@ mod fulfill;
 mod project;
 mod object_safety;
 mod select;
+mod ty_match;
 mod ty_recur;
 mod util;
 
