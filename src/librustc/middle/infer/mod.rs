@@ -1012,8 +1012,6 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                               substs: &mut Substs<'tcx>,
                               defs: &[ty::TypeParameterDef<'tcx>]) {
 
-        let mut vars = Vec::with_capacity(defs.len());
-
         for def in defs.iter() {
             let default = def.default.map(|default| {
                 type_variable::Default {
@@ -1025,7 +1023,6 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
 
             let ty_var = self.next_ty_var_with_default(default);
             substs.types.push(space, ty_var);
-            vars.push(ty_var)
         }
     }
 
