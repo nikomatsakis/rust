@@ -118,19 +118,23 @@ impl<'tcx> Substs<'tcx> {
 
     /// Since ErasedRegions are only to be used in trans, most of the compiler can use this method
     /// to easily access the set of region substitutions.
-    pub fn regions<'a>(&'a self) -> &'a VecPerParamSpace<ty::Region> {
+    pub fn regions<'a>(&'a self) -> Option<&'a VecPerParamSpace<ty::Region>> {
         match self.regions {
-            ErasedRegions => panic!("Erased regions only expected in trans"),
-            NonerasedRegions(ref r) => r
+            ErasedRegions => None,
+            NonerasedRegions(ref r) => Some(r),
         }
+    }
+
+    pub fn regions_slice<'a>(&'a self) -> Option<&'a [ty::Region]> {
+        self.regions().map(|v| v.as_slice())
     }
 
     /// Since ErasedRegions are only to be used in trans, most of the compiler can use this method
     /// to easily access the set of region substitutions.
-    pub fn mut_regions<'a>(&'a mut self) -> &'a mut VecPerParamSpace<ty::Region> {
+    pub fn mut_regions<'a>(&'a mut self) -> Option<&'a mut VecPerParamSpace<ty::Region>> {
         match self.regions {
-            ErasedRegions => panic!("Erased regions only expected in trans"),
-            NonerasedRegions(ref mut r) => r
+            ErasedRegions => None,
+            NonerasedRegions(ref mut r) => Some(r),
         }
     }
 

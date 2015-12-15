@@ -634,13 +634,13 @@ pub struct DebruijnIndex {
 /// [2] http://smallcultfollowing.com/babysteps/blog/2013/11/04/intermingled-parameter-lists/
 #[derive(Clone, PartialEq, Eq, Hash, Copy)]
 pub enum Region {
-    // Region bound in a type or fn declaration which will be
-    // substituted 'early' -- that is, at the same time when type
-    // parameters are substituted.
+    /// Region bound in a type or fn declaration which will be
+    /// substituted 'early' -- that is, at the same time when type
+    /// parameters are substituted.
     ReEarlyBound(EarlyBoundRegion),
 
-    // Region bound in a function scope, which will be substituted when the
-    // function is called.
+    /// Region bound in a function scope, which will be substituted when the
+    /// function is called.
     ReLateBound(DebruijnIndex, BoundRegion),
 
     /// When checking a function body, the types of all arguments and so forth
@@ -1184,30 +1184,29 @@ impl<'tcx> TyS<'tcx> {
                 vec![*region]
             }
             TyTrait(ref obj) => {
-                let mut v = vec![obj.bounds.region_bound];
-                v.push_all(obj.principal.skip_binder().substs.regions().as_slice());
-                v
+                obj.principal.skip_binder().substs.regions_slice()
+                                                  .unwrap_or_default()
+                                                  .iter()
+                                                  .cloned()
+                                                  .chain(Some(obj.bounds.region_bound))
+                                                  .collect()
             }
             TyEnum(_, substs) |
             TyStruct(_, substs) => {
-                match substs.regions {
-                    subst::ErasedRegions => vec![],
-                    subst::NonerasedRegions(ref regions) => regions.as_slice().to_vec(),
-                }
+                substs.regions_slice()
+                      .unwrap_or_default()
+                      .to_vec()
             }
             TyClosure(_, ref substs) => {
-                let func_regions = match substs.func_substs.regions {
-                    subst::ErasedRegions => &[][..],
-                    subst::NonerasedRegions(ref regions) => regions.as_slice(),
-                };
-                // TODO incomplete!
-                func_regions.to_vec()
+                // TODO excludes regions from the upvars
+                substs.func_substs.regions_slice()
+                                  .unwrap_or_default()
+                                  .to_vec()
             }
             TyProjection(ref data) => {
-                match data.trait_ref.substs.regions {
-                    subst::ErasedRegions => vec![],
-                    subst::NonerasedRegions(ref regions) => regions.as_slice().to_vec(),
-                }
+                data.trait_ref.substs.regions_slice()
+                                     .unwrap_or_default()
+                                     .to_vec()
             }
             TyBareFn(..) |
             TyBool |

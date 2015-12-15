@@ -323,12 +323,12 @@ impl<'a, 'tcx> Implicator<'a, 'tcx> {
         let variances = variances.unwrap_or_else(|| {
             tmp_variances = Some(ty::ItemVariances {
                 types: substs.types.map(|_| ty::Variance::Invariant),
-                regions: substs.regions().map(|_| ty::Variance::Invariant),
+                regions: substs.regions().unwrap().map(|_| ty::Variance::Invariant),
             });
             tmp_variances.as_ref().unwrap()
         });
 
-        for (&region, &variance) in substs.regions().iter().zip(&variances.regions) {
+        for (&region, &variance) in substs.regions().unwrap().iter().zip(&variances.regions) {
             match variance {
                 ty::Contravariant | ty::Invariant => {
                     // If any data with this lifetime is reachable

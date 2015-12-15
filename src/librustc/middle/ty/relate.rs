@@ -171,7 +171,7 @@ fn relate_substs<'a,'tcx:'a,R>(relation: &mut R,
                                                         r_variances,
                                                         a_regions,
                                                         b_regions));
-                substs.mut_regions().replace(space, regions);
+                substs.mut_regions().unwrap().replace(space, regions);
             }
         }
     }

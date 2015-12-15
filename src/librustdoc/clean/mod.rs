@@ -581,10 +581,12 @@ impl<'tcx> Clean<(Vec<TyParamBound>, Vec<TypeBinding>)> for ty::ExistentialBound
 
 fn external_path_params(cx: &DocContext, trait_did: Option<DefId>,
                         bindings: Vec<TypeBinding>, substs: &subst::Substs) -> PathParameters {
-    let lifetimes = substs.regions().get_slice(subst::TypeSpace)
-                    .iter()
-                    .filter_map(|v| v.clean(cx))
-                    .collect();
+    let lifetimes = substs.regions()
+                          .unwrap()
+                          .get_slice(subst::TypeSpace)
+                          .iter()
+                          .filter_map(|v| v.clean(cx))
+                          .collect();
     let types = substs.types.get_slice(subst::TypeSpace).to_vec();
 
     match (trait_did, cx.tcx_opt()) {

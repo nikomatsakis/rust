@@ -397,7 +397,8 @@ fn create_substs_for_ast_path<'tcx>(
            decl_generics, self_ty, types_provided,
            region_substs);
 
-    assert_eq!(region_substs.regions().len(TypeSpace), decl_generics.regions.len(TypeSpace));
+    assert_eq!(region_substs.regions().unwrap().len(TypeSpace),
+               decl_generics.regions.len(TypeSpace));
     assert!(region_substs.types.is_empty());
 
     // Convert the type parameters supplied by the user.

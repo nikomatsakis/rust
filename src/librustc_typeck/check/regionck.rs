@@ -1515,7 +1515,7 @@ pub fn substs_wf_in_scope<'a,'tcx>(rcx: &mut Rcx<'a,'tcx>,
 
     let origin = infer::ParameterInScope(origin, expr_span);
 
-    for &region in substs.regions() {
+    for &region in substs.regions().unwrap() {
         rcx.fcx.mk_subr(origin.clone(), expr_region, region);
     }
 
@@ -1656,7 +1656,7 @@ fn projection_must_outlive<'a, 'tcx>(rcx: &Rcx<'a, 'tcx>,
             type_must_outlive(rcx, origin.clone(), component_ty, region);
         }
 
-        for &r in projection_ty.trait_ref.substs.regions() {
+        for &r in projection_ty.trait_ref.substs.regions().unwrap() {
             rcx.fcx.mk_subr(origin.clone(), region, r);
         }
 
@@ -1674,6 +1674,7 @@ fn projection_must_outlive<'a, 'tcx>(rcx: &Rcx<'a, 'tcx>,
         let unique_bound = env_bounds[0];
         debug!("projection_must_outlive: unique declared bound = {:?}", unique_bound);
         if projection_ty.trait_ref.substs.regions()
+                                         .unwrap()
                                          .iter()
                                          .any(|r| env_bounds.contains(r))
         {
