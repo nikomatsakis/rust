@@ -33,7 +33,7 @@ use middle::def_id::{DefId, DefIndex};
 use middle::lang_items;
 use middle::subst;
 use middle::ty::{ImplContainer, TraitContainer};
-use middle::ty::{self, Ty, TypeFoldable, VariantKind};
+use middle::traits;
 
 use rustc::mir;
 use rustc::mir::visit::MutVisitor;
@@ -554,6 +554,13 @@ pub fn get_deprecation(cdata: Cmd, id: DefIndex) -> Option<attr::Deprecation> {
     reader::maybe_get_doc(item, tag_items_data_item_deprecation).map(|doc| {
         let mut decoder = reader::Decoder::new(doc);
         Decodable::decode(&mut decoder).unwrap()
+    })
+}
+
+pub fn get_parent_impl(cdata: Cmd, id: DefIndex) -> Option<DefId> {
+    let item = cdata.lookup_item(id);
+    reader::maybe_get_doc(item, tag_items_data_parent_impl).map(|doc| {
+        translated_def_id(cdata, doc)
     })
 }
 
