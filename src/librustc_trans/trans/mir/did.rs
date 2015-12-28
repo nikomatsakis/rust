@@ -128,7 +128,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                 let mname = tcx.item_name(method_id);
 
                 let callee_substs = impl_substs.with_method_from(substs);
-                let mth = tcx.get_impl_method(impl_def_id, callee_substs, mname);
+                let mth = meth::get_impl_method(tcx, impl_def_id, callee_substs, mname);
                 let mth_substs = tcx.mk_substs(mth.substs);
                 self.trans_fn_ref(bcx, ty, mth_substs, mth.method.def_id)
             },

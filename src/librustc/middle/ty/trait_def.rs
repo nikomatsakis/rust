@@ -190,6 +190,12 @@ impl<'tcx> TraitDef<'tcx> {
             .insert(tcx, impl_def_id, impl_trait_ref)
     }
 
+    /// Returns the immediately less specialized impl, if any.
+    pub fn parent_of_impl(&self, impl_def_id: DefId) -> Option<DefId> {
+        let parent = self.specialization_graph.borrow().parent(impl_def_id);
+        if parent == self.trait_ref.def_id { None } else { Some(parent) }
+    }
+
     pub fn for_each_impl<F: FnMut(DefId)>(&self, tcx: &ctxt<'tcx>, mut f: F)  {
         tcx.populate_implementations_for_trait_if_necessary(self.trait_ref.def_id);
 

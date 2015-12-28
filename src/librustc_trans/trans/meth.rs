@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::rc::Rc;
+
 use arena::TypedArena;
 use back::link;
 use llvm::{ValueRef, get_params};
@@ -36,7 +38,7 @@ use trans::type_of::*;
 use middle::ty::{self, Ty};
 use middle::ty::MethodCall;
 
-use syntax::ast;
+use syntax::ast::{self, Name};
 use syntax::attr;
 use syntax::codemap::DUMMY_SP;
 
@@ -176,7 +178,7 @@ pub fn trans_static_method_callee<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
             nested: _ }) =>
         {
             let callee_substs = impl_substs.with_method_from(&rcvr_substs);
-            let mth = tcx.get_impl_method(impl_did, callee_substs, mname);
+            let mth = get_impl_method(tcx, impl_did, callee_substs, mname);
             trans_fn_ref_with_substs(ccx, mth.method.def_id, ExprId(expr_id),
                                      param_substs,
                                      mth.substs)
@@ -223,7 +225,7 @@ fn trans_monomorphized_callee<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                              MethodCallKey(method_call),
                                              bcx.fcx.param_substs);
             let impl_substs = vtable_impl.substs.with_method_from(&meth_substs);
-            let mth = bcx.tcx().get_impl_method(impl_did, impl_substs, mname);
+        let mth = get_impl_method(bcx.tcx(), impl_did, impl_substs, mname);
             // translate the function
             let datum = trans_fn_ref_with_substs(bcx.ccx(),
                                                  mth.method.def_id,
@@ -618,7 +620,7 @@ pub fn get_vtable_methods<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 
             // The substitutions we have are on the impl, so we grab
             // the method type from the impl to substitute into.
-            let mth = tcx.get_impl_method(impl_id, substs.clone(), name);
+            let mth = get_impl_method(tcx, impl_id, substs.clone(), name);
 
             debug!("get_vtable_methods: mth={:?}", mth);
 
@@ -654,5 +656,40 @@ fn opaque_method_ty<'tcx>(tcx: &ty::ctxt<'tcx>, method_ty: &ty::BareFnTy<'tcx>)
             output: method_ty.sig.0.output,
             variadic: method_ty.sig.0.variadic,
         }),
+    })
+}
+
+#[derive(Debug)]
+pub struct ImplMethod<'tcx> {
+    pub method: Rc<ty::Method<'tcx>>,
+    pub substs: Substs<'tcx>,
+    pub is_provided: bool
+}
+
+/// Locates the applicable definition of a method, given its name.
+pub fn get_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
+                             impl_def_id: DefId,
+                             substs: Substs<'tcx>,
+                             name: Name)
+                             -> ImplMethod<'tcx>
+{
+    assert!(!substs.types.needs_infer());
+
+    traits::get_impl_item_or_default(tcx, impl_def_id, |cand| {
+        if let &ty::MethodTraitItem(ref meth) = cand {
+            if meth.name == name {
+                return Some(meth.clone())
+            }
+        }
+        None
+    }).map(|(meth, source)| {
+        ImplMethod {
+            method: meth,
+            substs: source.translate_substs(tcx, substs),
+            is_provided: source.is_from_trait(),
+        }
+    }).unwrap_or_else(|| {
+        tcx.sess.bug(&format!("method {:?} not found in {:?}",
+                              name, impl_def_id))
     })
 }
