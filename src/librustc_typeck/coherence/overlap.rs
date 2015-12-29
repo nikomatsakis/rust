@@ -12,11 +12,9 @@
 //! same type.
 
 use middle::cstore::CrateStore;
-use middle::def_id::DefId;
 use middle::traits;
 use middle::ty;
 use syntax::ast;
-use syntax::codemap::Span;
 use rustc::dep_graph::DepNode;
 use rustc_front::hir;
 use rustc_front::intravisit;
@@ -45,13 +43,6 @@ struct OverlapChecker<'cx, 'tcx:'cx> {
 
     // maps from a trait def-id to an impl id
     default_impls: DefIdMap<ast::NodeId>,
-}
-
-impl<'cx, 'tcx> OverlapChecker<'cx, 'tcx> {
-    fn span_of_impl(&self, impl_did: DefId) -> Span {
-        let node_id = self.tcx.map.as_local_node_id(impl_did).unwrap();
-        self.tcx.map.span(node_id)
-    }
 }
 
 impl<'cx, 'tcx,'v> intravisit::Visitor<'v> for OverlapChecker<'cx, 'tcx> {
@@ -111,13 +102,14 @@ impl<'cx, 'tcx,'v> intravisit::Visitor<'v> for OverlapChecker<'cx, 'tcx> {
                               overlap.on_trait_ref,
                               self_type);
 
-                    if overlap.with_impl.is_local() {
-                        span_note!(self.tcx.sess, self.span_of_impl(overlap.with_impl),
-                                   "conflicting implementation is here:");
-                    } else {
-                        let cname = self.tcx.sess.cstore.crate_name(overlap.with_impl.krate);
-                        self.tcx.sess.note(&format!("conflicting implementation in crate `{}`",
-                                                    cname));
+                    match self.tcx.span_of_impl(overlap.with_impl) {
+                        Ok(span) => {
+                            span_note!(self.tcx.sess, span, "conflicting implementation is here:");
+                        }
+                        Err(cname) => {
+                            self.tcx.sess.note(&format!("conflicting implementation in crate `{}`",
+                                                        cname));
+                        }
                     }
                 }
 
