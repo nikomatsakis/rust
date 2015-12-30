@@ -241,7 +241,10 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
     ("cfg_target_thread_local", "1.7.0", Some(29594), Active),
 
     // rustc internal
-    ("abi_vectorcall", "1.7.0", None, Active)
+    ("abi_vectorcall", "1.7.0", None, Active),
+
+    // impl specialization (RFC 1210)
+    ("specialization", "1.7.0", None, Active),
 ];
 // (changing above list without updating src/doc/reference.md makes @cmr sad)
 
@@ -568,6 +571,7 @@ pub struct Features {
     pub staged_api: bool,
     pub stmt_expr_attributes: bool,
     pub deprecated: bool,
+    pub specialization: bool,
 }
 
 impl Features {
@@ -602,6 +606,7 @@ impl Features {
             staged_api: false,
             stmt_expr_attributes: false,
             deprecated: false,
+            specialization: false,
         }
     }
 }
@@ -1091,6 +1096,12 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
     }
 
     fn visit_impl_item(&mut self, ii: &'v ast::ImplItem) {
+        if ii.defaultness == ast::Defaultness::Default {
+            self.gate_feature("specialization",
+                              ii.span,
+                              "specialization is unstable");
+        }
+
         match ii.node {
             ast::ImplItemKind::Const(..) => {
                 self.gate_feature("associated_consts",
@@ -1201,6 +1212,7 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &Handler,
         staged_api: cx.has_feature("staged_api"),
         stmt_expr_attributes: cx.has_feature("stmt_expr_attributes"),
         deprecated: cx.has_feature("deprecated"),
+        specialization: cx.has_feature("specialization"),
     }
 }
 
