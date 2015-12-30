@@ -10,19 +10,15 @@
 
 //! See `README.md` for high-level documentation
 
-use super::Normalized;
 use super::SelectionContext;
-use super::ObligationCause;
-use super::PredicateObligation;
-use super::project;
 use super::util;
 
 use middle::cstore::LOCAL_CRATE;
 use middle::def_id::DefId;
-use middle::subst::{Subst, Substs, TypeSpace};
+use middle::subst::{TypeSpace};
 use middle::ty::{self, Ty};
 use middle::infer::{self, InferCtxt, TypeOrigin};
-use syntax::codemap::{DUMMY_SP, Span};
+use syntax::codemap::DUMMY_SP;
 
 #[derive(Copy, Clone)]
 struct InferIsLocal(bool);
@@ -55,13 +51,11 @@ fn overlap<'cx, 'tcx>(selcx: &mut SelectionContext<'cx, 'tcx>,
            a_def_id,
            b_def_id);
 
-    let (a_trait_ref, a_obligations) = impl_trait_ref_and_oblig(selcx,
-                                                                a_def_id,
-                                                                util::fresh_type_vars_for_impl);
+    let a_substs = util::fresh_type_vars_for_impl(selcx.infcx(), DUMMY_SP, a_def_id);
+    let b_substs = util::fresh_type_vars_for_impl(selcx.infcx(), DUMMY_SP, b_def_id);
 
-    let (b_trait_ref, b_obligations) = impl_trait_ref_and_oblig(selcx,
-                                                                b_def_id,
-                                                                util::fresh_type_vars_for_impl);
+    let (a_trait_ref, a_obligations) = util::impl_trait_ref_and_oblig(selcx, a_def_id, &a_substs);
+    let (b_trait_ref, b_obligations) = util::impl_trait_ref_and_oblig(selcx, b_def_id, &b_substs);
 
     debug!("overlap: a_trait_ref={:?} a_obligations={:?}", a_trait_ref, a_obligations);
 
@@ -123,44 +117,6 @@ pub fn trait_ref_is_knowable<'tcx>(tcx: &ty::ctxt<'tcx>, trait_ref: &ty::TraitRe
     // must be visible to us, and -- since the trait is fundamental
     // -- we can test.
     orphan_check_trait_ref(tcx, trait_ref, InferIsLocal(true)).is_err()
-}
-
-type SubstsFn = for<'a,'tcx> fn(infcx: &InferCtxt<'a, 'tcx>,
-                                span: Span,
-                                impl_def_id: DefId)
-                                -> Substs<'tcx>;
-
-/// Instantiate fresh variables for all bound parameters of the impl
-/// and return the impl trait ref with those variables substituted.
-fn impl_trait_ref_and_oblig<'a,'tcx>(selcx: &mut SelectionContext<'a,'tcx>,
-                                     impl_def_id: DefId,
-                                     substs_fn: SubstsFn)
-                                     -> (ty::TraitRef<'tcx>,
-                                         Vec<PredicateObligation<'tcx>>)
-{
-    let impl_substs =
-        &substs_fn(selcx.infcx(), DUMMY_SP, impl_def_id);
-    let impl_trait_ref =
-        selcx.tcx().impl_trait_ref(impl_def_id).unwrap();
-    let impl_trait_ref =
-        impl_trait_ref.subst(selcx.tcx(), impl_substs);
-    let Normalized { value: impl_trait_ref, obligations: normalization_obligations1 } =
-        project::normalize(selcx, ObligationCause::dummy(), &impl_trait_ref);
-
-    let predicates = selcx.tcx().lookup_predicates(impl_def_id);
-    let predicates = predicates.instantiate(selcx.tcx(), impl_substs);
-    let Normalized { value: predicates, obligations: normalization_obligations2 } =
-        project::normalize(selcx, ObligationCause::dummy(), &predicates);
-    let impl_obligations =
-        util::predicates_for_generics(ObligationCause::dummy(), 0, &predicates);
-
-    let impl_obligations: Vec<_> =
-        impl_obligations.into_iter()
-        .chain(normalization_obligations1)
-        .chain(normalization_obligations2)
-        .collect();
-
-    (impl_trait_ref, impl_obligations)
 }
 
 pub enum OrphanCheckErr<'tcx> {
