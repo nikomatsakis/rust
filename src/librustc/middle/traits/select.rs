@@ -1613,7 +1613,6 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                     true
                 },
                 ParamCandidate(..) => false,
-                ErrorCandidate => false // propagate errors
             },
             ImplCandidate(other_def) => {
                 // See if we can toss out `victim` based on specialization.

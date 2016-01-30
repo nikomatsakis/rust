@@ -32,7 +32,7 @@ use middle::def::Def;
 use middle::def_id::{DefId, DefIndex};
 use middle::lang_items;
 use middle::subst;
-use middle::ty::{ImplContainer, TraitContainer};
+use middle::ty::{self, Ty, TypeFoldable, VariantKind, ImplContainer, TraitContainer};
 use middle::traits;
 
 use rustc::mir;

@@ -25,7 +25,7 @@ use super::util;
 use middle::infer::{self, TypeOrigin};
 use middle::subst::Subst;
 use middle::ty::fold::{TypeFoldable, TypeFolder};
-use middle::ty::{self, ToPredicate, RegionEscape, HasTypeFlags, ToPolyTraitRef, Ty};
+use middle::ty::{self, ToPredicate, ToPolyTraitRef, Ty};
 use rustc_front::hir;
 use syntax::parse::token;
 use util::common::FN_OUTPUT_NAME;
