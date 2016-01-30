@@ -244,6 +244,7 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
     ("abi_vectorcall", "1.7.0", None, Active),
 
     // impl specialization (RFC 1210)
+    // TODO: update with issue number (once it exists), before landing
     ("specialization", "1.7.0", None, Active),
 ];
 // (changing above list without updating src/doc/reference.md makes @cmr sad)

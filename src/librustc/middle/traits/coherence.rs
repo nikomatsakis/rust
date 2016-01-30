@@ -24,7 +24,7 @@ use syntax::codemap::DUMMY_SP;
 struct InferIsLocal(bool);
 
 /// If there are types that satisfy both impls, returns a
-/// suitibly-freshened `TraitRef` with those types substituted
+/// suitably-freshened `TraitRef` with those types substituted
 pub fn overlapping_impls<'cx, 'tcx>(infcx: &InferCtxt<'cx, 'tcx>,
                                     impl1_def_id: DefId,
                                     impl2_def_id: DefId)
