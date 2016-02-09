@@ -10,6 +10,7 @@
 
 use middle::cstore::LOCAL_CRATE;
 use middle::ty;
+use serialize::{Encodable, Decodable, Encoder, Decoder};
 use syntax::ast::CrateNum;
 use std::fmt;
 use std::u32;
@@ -46,8 +47,7 @@ pub const CRATE_DEF_INDEX: DefIndex = DefIndex(0);
 
 /// A DefId identifies a particular *definition*, by combining a crate
 /// index and a def index.
-#[derive(Clone, Eq, Ord, PartialOrd, PartialEq, RustcEncodable,
-           RustcDecodable, Hash, Copy)]
+#[derive(Clone, Eq, Ord, PartialOrd, PartialEq, Hash, Copy)]
 pub struct DefId {
     pub krate: CrateNum,
     pub index: DefIndex,
@@ -84,5 +84,18 @@ impl DefId {
 
     pub fn is_local(&self) -> bool {
         self.krate == LOCAL_CRATE
+    }
+}
+
+impl Encodable for DefId {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        (self.krate, self.index).encode(s)
+    }
+}
+
+impl Decodable for DefId {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
+        let (krate, index) = try!(<(CrateNum, DefIndex)>::decode(d));
+        Ok(DefId { krate: krate, index: index })
     }
 }
