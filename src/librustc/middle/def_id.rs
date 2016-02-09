@@ -87,15 +87,55 @@ impl DefId {
     }
 }
 
+///////////////////////////////////////////////////////////////////////////
+// Encoding and decoding DefIds
+//
+// Whenever we encode a DefId, the user can optionally install a
+// dynamically scoped listener which is notified. Similarly, when
+// decoding, the user can optionally install a dynamically scoped
+// mapped that gets called to do a translation step.
+
+pub fn with_encodable_listener<L,O,R>(listener: L, op: O) -> R
+    where L: Fn(DefId) + 'static, O: FnOnce() -> R
+{
+    let listener: Box<Fn(DefId)> = Box::new(listener);
+    LISTENER.set(&listener, op)
+}
+
+scoped_thread_local! {
+    static LISTENER: Box<Fn(DefId)>
+}
+
 impl Encodable for DefId {
     fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        if LISTENER.is_set() {
+            LISTENER.with(|listener| listener(*self));
+        }
+
         (self.krate, self.index).encode(s)
     }
+}
+
+pub fn with_decodable_mapper<L,O,R>(mapper: L, op: O) -> R
+    where L: Fn(DefId) -> DefId + 'static, O: FnOnce() -> R
+{
+    let mapper: Box<Fn(DefId) -> DefId> = Box::new(mapper);
+    MAPPER.set(&mapper, op)
+}
+
+scoped_thread_local! {
+    static MAPPER: Box<Fn(DefId) -> DefId>
 }
 
 impl Decodable for DefId {
     fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
         let (krate, index) = try!(<(CrateNum, DefIndex)>::decode(d));
-        Ok(DefId { krate: krate, index: index })
+        let mut def_id = DefId { krate: krate, index: index };
+
+        if MAPPER.is_set() {
+            def_id = MAPPER.with(|decoder| decoder(def_id));
+        }
+
+        Ok(def_id)
     }
 }
