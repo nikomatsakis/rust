@@ -25,6 +25,7 @@ use middle::def_id::{CRATE_DEF_INDEX, DefId};
 use middle::dependency_format::Linkage;
 use middle::stability;
 use middle::subst;
+use middle::traits::specialization_graph;
 use middle::ty::{self, Ty};
 
 use rustc::back::svh::Svh;
@@ -1169,7 +1170,14 @@ fn encode_info_for_item<'a, 'tcx>(ecx: &EncodeContext<'a, 'tcx>,
         if let Some(trait_ref) = tcx.impl_trait_ref(did) {
             encode_trait_ref(rbml_w, ecx, trait_ref, tag_item_trait_ref);
 
-            let parent = tcx.lookup_trait_def(trait_ref.def_id).parent_of_impl(did);
+            let trait_def = tcx.lookup_trait_def(trait_ref.def_id);
+            let parent = trait_def.ancestors(did)
+                .skip(1)
+                .next()
+                .and_then(|node| match node {
+                    specialization_graph::Node::Impl(parent) => Some(parent),
+                    _ => None,
+                });
             encode_parent_impl(rbml_w, parent);
         }
         encode_path(rbml_w, path.clone());
