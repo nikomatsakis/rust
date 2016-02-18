@@ -371,7 +371,7 @@ fn opt_normalize_projection_type<'a,'b,'tcx>(
     depth: usize)
     -> Option<NormalizedTy<'tcx>>
 {
-    debug!("normalize_projection_type(\
+    debug!("opt_normalize_projection_type(\
            projection_ty={:?}, \
            depth={})",
            projection_ty,
