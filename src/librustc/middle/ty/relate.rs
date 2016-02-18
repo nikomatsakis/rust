@@ -51,6 +51,9 @@ pub trait RelateResultTrait<'tcx, T> {
     fn map_value<U, F: FnOnce(T) -> U>(self, mapper: F) -> RelateResult<'tcx, U>;
     fn and_then_with<U, F: FnOnce(T) -> RelateResult<'tcx, U>>(self, mapper: F)
         -> RelateResult<'tcx, U>;
+    fn with_obligations<I: IntoIterator<Item=traits::PredicateObligation<'tcx>>>(self,
+                                                                                 obligations: I)
+        -> RelateResult<'tcx, T>;
 }
 impl<'tcx, T> RelateResultTrait<'tcx, T> for RelateResult<'tcx, T> {
     fn map_value<U, F: FnOnce(T) -> U>(self, mapper: F) -> RelateResult<'tcx, U> {
@@ -70,6 +73,18 @@ impl<'tcx, T> RelateResultTrait<'tcx, T> for RelateResult<'tcx, T> {
                     Ok(RelateOk { value: next_value, obligations: obligations })
                 },
                 Err(x) => Err(x),
+            },
+            Err(x) => Err(x),
+        }
+    }
+    fn with_obligations<I: IntoIterator<Item=traits::PredicateObligation<'tcx>>>(self,
+                                                                                 new_obligations: I)
+        -> RelateResult<'tcx, T>
+    {
+        match self {
+            Ok(RelateOk { value, mut obligations }) => {
+                obligations.extend(new_obligations);
+                Ok(RelateOk{ value: value, obligations: obligations })
             },
             Err(x) => Err(x),
         }

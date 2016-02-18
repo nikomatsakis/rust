@@ -13,6 +13,7 @@ use super::higher_ranked::HigherRankedRelations;
 use super::{Subtype};
 use super::type_variable::{EqTo};
 
+use middle::traits::Normalized;
 use middle::ty::{self, Ty};
 use middle::ty::TyVar;
 use middle::ty::relate::{Relate, RelateOk, RelateResult, RelateResultTrait, TypeRelation};
@@ -52,22 +53,35 @@ impl<'a, 'tcx> TypeRelation<'a,'tcx> for Equate<'a, 'tcx> {
         let infcx = self.fields.infcx;
         let a = infcx.type_variables.borrow().replace_if_possible(a);
         let b = infcx.type_variables.borrow().replace_if_possible(b);
+        // Normalize the types
+        let Normalized { value: a, obligations: a_norm_obligations } =
+            infcx.normalize_if_possible(a);
+        let Normalized { value: b, obligations: b_norm_obligations } =
+            infcx.normalize_if_possible(b);
         match (&a.sty, &b.sty) {
             (&ty::TyInfer(TyVar(a_id)), &ty::TyInfer(TyVar(b_id))) => {
                 infcx.type_variables.borrow_mut().relate_vars(a_id, EqTo, b_id);
                 Ok(RelateOk::from(a))
+                    .with_obligations(a_norm_obligations)
+                    .with_obligations(b_norm_obligations)
             }
 
             (&ty::TyInfer(TyVar(a_id)), _) => {
                 self.fields.instantiate(b, EqTo, a_id).map_value(|_| a)
+                    .with_obligations(a_norm_obligations)
+                    .with_obligations(b_norm_obligations)
             }
 
             (_, &ty::TyInfer(TyVar(b_id))) => {
                 self.fields.instantiate(a, EqTo, b_id).map_value(|_| a)
+                    .with_obligations(a_norm_obligations)
+                    .with_obligations(b_norm_obligations)
             }
 
             _ => {
                 combine::super_combine_tys(self.fields.infcx, self, a, b).map_value(|_| a)
+                    .with_obligations(a_norm_obligations)
+                    .with_obligations(b_norm_obligations)
             }
         }
     }

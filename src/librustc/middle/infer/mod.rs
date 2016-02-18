@@ -1535,6 +1535,22 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
             closure_ty
         }
     }
+
+    pub fn normalize_if_possible(&self, a: ty::Ty<'tcx>)
+        -> traits::Normalized<'tcx, ty::Ty<'tcx>>
+    {
+        match a.sty {
+            ty::TyProjection(ref a) => {
+                let traits::Normalized { value, obligations } =
+                    traits::normalize(&mut traits::SelectionContext::new(self),
+                                      traits::ObligationCause::dummy(),
+                                      a);
+                let value = self.tcx.mk_ty(ty::TyProjection(value));
+                traits::Normalized { value: value, obligations: obligations }
+            }
+            _ => traits::Normalized { value: a, obligations: Vec::new() },
+        }
+    }
 }
 
 impl<'tcx> TypeTrace<'tcx> {

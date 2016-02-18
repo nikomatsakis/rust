@@ -32,6 +32,7 @@
 use super::combine;
 use super::InferCtxt;
 
+use middle::traits::Normalized;
 use middle::ty::TyVar;
 use middle::ty::{self, Ty};
 use middle::ty::relate::{RelateOk, RelateResult, RelateResultTrait, TypeRelation};
@@ -62,21 +63,34 @@ pub fn super_lattice_tys<'a,'tcx,L:LatticeDir<'a,'tcx>>(this: &mut L,
     let infcx = this.infcx();
     let a = infcx.type_variables.borrow().replace_if_possible(a);
     let b = infcx.type_variables.borrow().replace_if_possible(b);
+    // Normalize the types
+    let Normalized { value: a, obligations: a_norm_obligations } =
+        infcx.normalize_if_possible(a);
+    let Normalized { value: b, obligations: b_norm_obligations } =
+        infcx.normalize_if_possible(b);
     match (&a.sty, &b.sty) {
         (&ty::TyInfer(TyVar(..)), &ty::TyInfer(TyVar(..)))
             if infcx.type_var_diverges(a) && infcx.type_var_diverges(b) => {
             let v = infcx.next_diverging_ty_var();
-            this.relate_bound(v, a, b).map_value(|_| v)
+            this.relate_bound(v, a, b)
+                .map_value(|_| v)
+                .with_obligations(a_norm_obligations)
+                .with_obligations(b_norm_obligations)
         }
 
         (&ty::TyInfer(TyVar(..)), _) |
         (_, &ty::TyInfer(TyVar(..))) => {
             let v = infcx.next_ty_var();
-            this.relate_bound(v, a, b).map_value(|_| v)
+            this.relate_bound(v, a, b)
+                .map_value(|_| v)
+                .with_obligations(a_norm_obligations)
+                .with_obligations(b_norm_obligations)
         }
 
         _ => {
             combine::super_combine_tys(this.infcx(), this, a, b)
+                .with_obligations(a_norm_obligations)
+                .with_obligations(b_norm_obligations)
         }
     }
 }
