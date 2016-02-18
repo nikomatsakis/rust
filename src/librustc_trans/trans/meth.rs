@@ -31,6 +31,7 @@ use trans::glue;
 use trans::machine;
 use trans::type_::Type;
 use trans::type_of::*;
+use trans::value::Value;
 use middle::ty::{self, Ty, TyCtxt};
 
 use syntax::ast;
@@ -169,10 +170,8 @@ pub fn get_virtual_method<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let ccx = bcx.ccx();
 
     // Load the data pointer from the object.
-    debug!("get_virtual_method(callee_ty={}, vtable_index={}, llvtable={})",
-           method_ty,
-           vtable_index,
-           bcx.val_to_string(llvtable));
+    debug!("get_virtual_method(callee_ty={}, vtable_index={}, llvtable={:?})",
+           method_ty, vtable_index, Value(llvtable));
 
     let mptr = Load(bcx, GEPi(bcx, llvtable, &[vtable_index + VTABLE_OFFSET]));
 
@@ -248,8 +247,8 @@ pub fn trans_object_shim<'a, 'tcx>(ccx: &'a CrateContext<'a, 'tcx>,
     let llself = llargs[self_idx];
     let llvtable = llargs[self_idx + 1];
 
-    debug!("trans_object_shim: llself={}, llvtable={}",
-           bcx.val_to_string(llself), bcx.val_to_string(llvtable));
+    debug!("trans_object_shim: llself={:?}, llvtable={:?}",
+           Value(llself), Value(llvtable));
 
     assert!(!fcx.needs_ret_allocas);
 
