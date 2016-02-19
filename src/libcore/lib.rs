@@ -56,7 +56,6 @@
 
 #![no_core]
 #![deny(missing_docs)]
-#![cfg_attr(not(stage0), deny(warnings))]
 
 #![feature(allow_internal_unstable)]
 #![feature(associated_type_defaults)]

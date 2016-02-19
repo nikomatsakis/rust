@@ -13,7 +13,6 @@
 #![crate_type = "dylib"]
 #![crate_type = "rlib"]
 #![feature(staged_api, rustc_private)]
-#![cfg_attr(not(stage0), deny(warnings))]
 
 extern crate rustc_llvm as llvm;
 extern crate rustc;
