@@ -16,6 +16,7 @@ use middle::infer::normalize_associated_type;
 use middle::subst;
 use middle::subst::{Subst, Substs};
 use middle::ty::fold::{TypeFolder, TypeFoldable};
+use trans::abi::Abi;
 use trans::attributes;
 use trans::base::{push_ctxt};
 use trans::base::trans_fn;
@@ -29,7 +30,6 @@ use rustc::front::map as hir_map;
 
 use rustc_front::hir;
 
-use syntax::abi::Abi;
 use syntax::attr;
 use syntax::errors;
 use std::hash::{Hasher, Hash, SipHasher};

@@ -1283,7 +1283,7 @@ pub fn push_unique_type_name<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
                 output.push_str("unsafe ");
             }
 
-            if abi != ::syntax::abi::Abi::Rust {
+            if abi != ::trans::abi::Abi::Rust {
                 output.push_str("extern \"");
                 output.push_str(abi.name());
                 output.push_str("\" ");

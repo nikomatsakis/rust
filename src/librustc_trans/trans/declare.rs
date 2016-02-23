@@ -22,10 +22,9 @@
 use llvm::{self, ValueRef};
 use middle::ty;
 use middle::infer;
-use syntax::abi::Abi;
+use trans::abi::{Abi, FnType};
 use trans::attributes;
 use trans::base;
-use trans::cabi::FnType;
 use trans::context::CrateContext;
 use trans::type_::Type;
 use trans::type_of;
