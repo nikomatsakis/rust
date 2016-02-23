@@ -108,10 +108,9 @@ pub fn declare_rust_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, name: &str,
             let infcx = infer::normalizing_infer_ctxt(ccx.tcx(), &ccx.tcx().tables);
             function_type = infcx.closure_type(closure_did, substs);
             let self_type = base::self_type_for_closure(ccx, closure_did, fn_type);
-            let llenvironment_type = type_of::type_of_explicit_arg(ccx, self_type);
             debug!("declare_rust_fn function_type={:?} self_type={:?}",
                    function_type, self_type);
-            (&function_type.sig, Abi::RustCall, Some(llenvironment_type))
+            (&function_type.sig, Abi::RustCall, Some(self_type))
         }
         _ => ccx.sess().bug("expected closure or fn")
     };
