@@ -48,7 +48,7 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 
     let _icx = push_ctxt("monomorphic_fn");
 
-    let hash_id = MonoId {
+    let instance = Instance {
         def: fn_id,
         params: &psubsts.types
     };
@@ -59,22 +59,15 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
     let mono_ty = apply_param_substs(ccx.tcx(), psubsts, &item_ty);
     debug!("mono_ty = {:?} (post-substitution)", mono_ty);
 
-    match ccx.monomorphized().borrow().get(&hash_id) {
+    match ccx.instances().borrow().get(&instance) {
         Some(&val) => {
-            debug!("leaving monomorphic fn {}",
-            ccx.tcx().item_path_str(fn_id));
-            return (val, mono_ty, false);
+            debug!("leaving monomorphic fn {:?}", instance);
+            return (val, mono_ty);
         }
         None => ()
     }
 
-    debug!("monomorphic_fn(\
-            fn_id={:?}, \
-            psubsts={:?}, \
-            hash_id={:?})",
-           fn_id,
-           psubsts,
-           hash_id);
+    debug!("monomorphic_fn({:?})", instance);
 
 
     let map_node = errors::expect(
@@ -110,8 +103,13 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
         // recursively more than thirty times can probably safely be assumed
         // to be causing an infinite expansion.
         if depth > ccx.sess().recursion_limit.get() {
-            ccx.sess().span_fatal(ccx.tcx().map.span(fn_node_id),
-                "reached the recursion limit during monomorphization");
+            let msg = format!("reached the recursion limit while instantiating {:?}",
+                              instance);
+            if let Some(id) = ccx.tcx().map.as_local_node_id(fn_id) {
+                ccx.sess().span_fatal(ccx.tcx().map.span(id), &msg);
+            } else {
+                ccx.sess().fatal(&msg);
+            }
         }
 
         monomorphizing.insert(fn_id, depth + 1);
@@ -120,15 +118,16 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
     let hash;
     let s = {
         let mut state = SipHasher::new();
-        hash_id.hash(&mut state);
+        instance.hash(&mut state);
         mono_ty.hash(&mut state);
 
         hash = format!("h{}", state.finish());
-        let path = ccx.tcx().map.def_path_from_id(fn_node_id);
+        let path = ccx.tcx().map.def_path(fn_id);
         exported_name(path, &hash[..])
     };
 
     debug!("monomorphize_fn mangled to {}", s);
+    assert!(declare::get_defined_value(ccx, &s).is_none());
 
     // This shouldn't need to option dance.
     let mut hash_id = Some(hash_id);
@@ -282,9 +281,18 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 }
 
 #[derive(PartialEq, Eq, Hash, Debug)]
-pub struct MonoId<'tcx> {
+pub struct Instance<'tcx> {
     pub def: DefId,
     pub params: &'tcx subst::VecPerParamSpace<Ty<'tcx>>
+}
+
+impl<'tcx> Instance<'tcx> {
+    pub fn mono(tcx: &TyCtxt<'tcx>, def_id: DefId) -> Instance<'tcx> {
+        Instance {
+            def: def_id,
+            params: &tcx.mk_substs(Substs::trans_empty()).types
+        }
+    }
 }
 
 /// Monomorphizes a type from the AST by first applying the in-scope
