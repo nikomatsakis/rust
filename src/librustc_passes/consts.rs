@@ -35,7 +35,7 @@ use rustc::middle::expr_use_visitor as euv;
 use rustc::middle::infer;
 use rustc::middle::mem_categorization as mc;
 use rustc::middle::mem_categorization::Categorization;
-use rustc::middle::traits;
+use rustc::middle::traits::{self, ProjectionMode};
 use rustc::middle::ty::{self, Ty};
 use rustc::util::nodemap::NodeMap;
 use rustc::middle::const_qualif::ConstQualif;
@@ -92,7 +92,10 @@ impl<'a, 'tcx> CheckCrateVisitor<'a, 'tcx> {
             None => self.tcx.empty_parameter_environment()
         };
 
-        let infcx = infer::new_infer_ctxt(self.tcx, &self.tcx.tables, Some(param_env));
+        let infcx = infer::new_infer_ctxt(self.tcx,
+                                          &self.tcx.tables,
+                                          Some(param_env),
+                                          ProjectionMode::AnyFinal);
 
         f(&mut euv::ExprUseVisitor::new(self, &infcx))
     }
@@ -247,7 +250,10 @@ impl<'a, 'tcx> CheckCrateVisitor<'a, 'tcx> {
 
     fn check_static_type(&self, e: &hir::Expr) {
         let ty = self.tcx.node_id_to_type(e.id);
-        let infcx = infer::new_infer_ctxt(self.tcx, &self.tcx.tables, None);
+        let infcx = infer::new_infer_ctxt(self.tcx,
+                                          &self.tcx.tables,
+                                          None,
+                                          ProjectionMode::AnyFinal);
         let cause = traits::ObligationCause::new(e.span, e.id, traits::SharedStatic);
         let mut fulfillment_cx = traits::FulfillmentContext::new();
         fulfillment_cx.register_builtin_bound(&infcx, ty, ty::BoundSync, cause);

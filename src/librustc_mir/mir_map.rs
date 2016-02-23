@@ -33,6 +33,7 @@ use rustc::mir::transform::MirPass;
 use rustc::mir::mir_map::MirMap;
 use rustc::middle::infer;
 use rustc::middle::region::CodeExtentData;
+use rustc::middle::traits::ProjectionMode;
 use rustc::middle::ty::{self, Ty};
 use rustc::util::common::ErrorReported;
 use rustc::util::nodemap::NodeMap;
@@ -145,7 +146,10 @@ impl<'a, 'm, 'tcx> Visitor<'tcx> for InnerDump<'a,'m,'tcx> {
 
         let param_env = ty::ParameterEnvironment::for_item(self.tcx, id);
 
-        let infcx = infer::new_infer_ctxt(self.tcx, &self.tcx.tables, Some(param_env));
+        let infcx = infer::new_infer_ctxt(self.tcx,
+                                          &self.tcx.tables,
+                                          Some(param_env),
+                                          ProjectionMode::AnyFinal);
 
         match build_mir(Cx::new(&infcx), implicit_arg_tys, id, span, decl, body) {
             Ok(mut mir) => {

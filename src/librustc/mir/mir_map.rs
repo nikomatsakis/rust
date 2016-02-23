@@ -12,6 +12,7 @@ use dep_graph::DepNode;
 use util::nodemap::NodeMap;
 use mir::repr::Mir;
 use mir::transform::MirPass;
+use middle::traits::ProjectionMode;
 use middle::ty;
 use middle::infer;
 
@@ -28,7 +29,10 @@ impl<'tcx> MirMap<'tcx> {
             let _task = tcx.dep_graph.in_task(DepNode::MirMapConstruction(did));
 
             let param_env = ty::ParameterEnvironment::for_item(tcx, id);
-            let infcx = infer::new_infer_ctxt(tcx, &tcx.tables, Some(param_env));
+            let infcx = infer::new_infer_ctxt(tcx,
+                                              &tcx.tables,
+                                              Some(param_env),
+                                              ProjectionMode::AnyFinal);
 
             for pass in &mut *passes {
                 pass.run_on_mir(mir, &infcx)
