@@ -61,6 +61,9 @@ pub enum ArgKind {
 pub struct ArgType {
     pub kind: ArgKind,
     /// Original LLVM type
+    pub original_ty: Type,
+    /// Sizing LLVM type (pointers are opaque).
+    /// Unlike original_ty, this is guaranteed to be complete.
     pub ty: Type,
     /// Coerced LLVM Type
     pub cast: Option<Type>,
@@ -71,9 +74,10 @@ pub struct ArgType {
 }
 
 impl ArgType {
-    fn new(ty: Type) -> ArgType {
+    fn new(original_ty: Type, ty: Type) -> ArgType {
         ArgType {
             kind: Direct,
+            original_ty: original_ty,
             ty: ty,
             cast: None,
             pad: None,
@@ -87,14 +91,6 @@ impl ArgType {
 
     pub fn is_ignore(&self) -> bool {
         self.kind == Ignore
-    }
-}
-
-fn c_type_of<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>, ty: Ty<'tcx>) -> Type {
-    if ty.is_bool() {
-        Type::i1(cx)
-    } else {
-        type_of::type_of(cx, ty)
     }
 }
 
@@ -147,13 +143,6 @@ impl FnType {
             Aapcs => llvm::CCallConv,
         };
 
-        let rty = match sig.output {
-            ty::FnConverging(ret_ty) if !return_type_is_void(ccx, ret_ty) => {
-                c_type_of(ccx, ret_ty)
-            }
-            _ => Type::void(ccx)
-        };
-
         let mut inputs = &sig.inputs[..];
         let extra_args = if abi == RustCall {
             assert!(!sig.variadic && extra_args.is_empty());
@@ -173,29 +162,44 @@ impl FnType {
             extra_args
         };
 
+        let arg_of = |ty: Ty<'tcx>| {
+            if ty.is_bool() {
+                let llty = Type::i1(ccx);
+                let mut arg = ArgType::new(llty, llty);
+                arg.attr = Some(llvm::Attribute::ZExt);
+                arg
+            } else {
+                ArgType::new(type_of::type_of(ccx, ty),
+                             type_of::sizing_type_of(ccx, ty))
+            }
+        };
+
+        let ret = match sig.output {
+            ty::FnConverging(ret_ty) if !return_type_is_void(ccx, ret_ty) => {
+                arg_of(ret_ty)
+            }
+            _ => ArgType::new(Type::void(ccx), Type::void(ccx))
+        };
+
         let mut args = Vec::with_capacity(inputs.len() + extra_args.len());
         for ty in inputs.iter().chain(extra_args.iter()) {
-            let llty = c_type_of(ccx, ty);
+            let arg = arg_of(ty);
             if type_is_fat_ptr(ccx.tcx(), ty) {
-                args.extend(llty.field_types().into_iter().map(ArgType::new));
+                let original = arg.original_ty.field_types();
+                let sizing = arg.ty.field_types();
+                args.extend(original.into_iter().zip(sizing)
+                                    .map(|(o, s)| ArgType::new(o, s)));
             } else {
-                args.push(ArgType::new(llty));
+                args.push(arg);
             }
         }
 
         let mut fty = FnType {
             args: args,
-            ret: ArgType::new(rty),
+            ret: ret,
             variadic: sig.variadic,
             cconv: cconv
         };
-
-        // Add ZExt attributes to i1 arguments and returns.
-        for arg in Some(&mut fty.ret).into_iter().chain(&mut fty.args) {
-            if arg.ty == Type::i1(ccx) {
-                arg.attr = Some(llvm::Attribute::ZExt);
-            }
-        }
 
         if abi == Rust || abi == RustCall {
             let fixup = |arg: &mut ArgType| {
@@ -213,13 +217,12 @@ impl FnType {
                     arg.cast = Some(Type::ix(ccx, size * 8));
                 }
             };
-            if let ty::FnConverging(ret_ty) = sig.output {
+            if fty.ret.ty != Type::void(ccx) {
                 // Fat pointers are returned by-value.
-                if !type_is_fat_ptr(ccx.tcx(), ret_ty) &&
-                   fty.ret.ty != Type::void(ccx) {
+                if !type_is_fat_ptr(ccx.tcx(), sig.output.unwrap()) {
                     fixup(&mut fty.ret);
                 }
-            };
+            }
             for arg in &mut fty.args {
                 fixup(arg);
             }
@@ -256,10 +259,10 @@ impl FnType {
         let mut llargument_tys = Vec::new();
 
         let llreturn_ty = if self.ret.is_indirect() {
-            llargument_tys.push(self.ret.ty.ptr_to());
+            llargument_tys.push(self.ret.original_ty.ptr_to());
             Type::void(ccx)
         } else {
-            self.ret.cast.unwrap_or(self.ret.ty)
+            self.ret.cast.unwrap_or(self.ret.original_ty)
         };
 
         for arg in &self.args {
@@ -272,9 +275,9 @@ impl FnType {
             }
 
             let llarg_ty = if arg.is_indirect() {
-                arg.ty.ptr_to()
+                arg.original_ty.ptr_to()
             } else {
-                arg.cast.unwrap_or(arg.ty)
+                arg.cast.unwrap_or(arg.original_ty)
             };
 
             llargument_tys.push(llarg_ty);
