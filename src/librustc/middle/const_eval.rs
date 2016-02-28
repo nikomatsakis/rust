@@ -20,6 +20,7 @@ use middle::cstore::{self, CrateStore, InlinedItem};
 use middle::{infer, subst, traits};
 use middle::def::Def;
 use middle::subst::Subst;
+use middle::traits::SelectionOk;
 use middle::def_id::DefId;
 use middle::pat_util::def_to_path;
 use middle::ty::{self, Ty, TyCtxt};
@@ -1258,15 +1259,22 @@ fn resolve_trait_associated_const<'a, 'tcx: 'a>(tcx: &'a TyCtxt<'tcx>,
     let obligation = traits::Obligation::new(traits::ObligationCause::dummy(),
                                              trait_ref.to_poly_trait_predicate());
     let selection = match selcx.select(&obligation) {
-        Ok(Some(vtable)) => vtable,
+        Ok(SelectionOk { selection: Some(vtable), obligations }) => {
+            // FIXME these obligations should be propagated or selected on
+            assert!(obligations.is_empty());
+            vtable
+        },
         // Still ambiguous, so give up and let the caller decide whether this
         // expression is really needed yet. Some associated constant values
         // can't be evaluated until monomorphization is done in trans.
-        Ok(None) => {
-            return None
+        Ok(SelectionOk { selection: None, obligations }) => {
+            // FIXME these obligations should be propagated or selected on or... maybe they don't
+            // need to be?
+            assert!(obligations.is_empty());
+            return None;
         }
         Err(_) => {
-            return None
+            return None;
         }
     };
 

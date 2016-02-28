@@ -1143,9 +1143,11 @@ pub fn fulfill_obligation<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
     let obligation =
         traits::Obligation::new(traits::ObligationCause::misc(span, ast::DUMMY_NODE_ID),
                                 trait_ref.to_poly_trait_predicate());
-    let selection = match selcx.select(&obligation) {
-        Ok(Some(selection)) => selection,
-        Ok(None) => {
+    let (selection, inferred_obligations) = match selcx.select(&obligation) {
+        Ok(traits::SelectionOk { selection: Some(selection), obligations }) => {
+            (selection, obligations)
+        },
+        Ok(traits::SelectionOk { selection: None, .. }) => {
             // Ambiguity can happen when monomorphizing during trans
             // expands to some humongo type that never occurred
             // statically -- this humongo type can then overflow,
@@ -1172,6 +1174,9 @@ pub fn fulfill_obligation<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
     // all nested obligations. This is because they can inform the
     // inference of the impl's type parameters.
     let mut fulfill_cx = traits::FulfillmentContext::new();
+    for obligation in inferred_obligations {
+        fulfill_cx.register_predicate_obligation(&infcx, obligation);
+    }
     let vtable = selection.map(|predicate| {
         fulfill_cx.register_predicate_obligation(&infcx, predicate);
     });

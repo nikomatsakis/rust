@@ -63,7 +63,7 @@
 use check::{autoderef, FnCtxt, UnresolvedTypeAction};
 
 use middle::infer::{self, Coercion, TypeOrigin, InferOk};
-use middle::traits::{self, ObligationCause};
+use middle::traits::{self, ObligationCause, SelectionOk};
 use middle::traits::{predicate_for_trait_def, report_selection_error};
 use middle::ty::adjustment::{AutoAdjustment, AutoDerefRef, AdjustDerefRef};
 use middle::ty::adjustment::{AutoPtr, AutoUnsafe, AdjustReifyFnPointer};
@@ -315,7 +315,17 @@ impl<'f, 'tcx> Coerce<'f, 'tcx> {
             };
             match selcx.select(&obligation.with(trait_ref)) {
                 // Uncertain or unimplemented.
-                Ok(None) | Err(traits::Unimplemented) => {
+                Ok(SelectionOk { selection: None, obligations }) => {
+                    debug!("coerce_unsized: early return - can't prove obligation");
+                    // Have the obligations generated from affecting the inference environment go
+                    // all the way back up to the FnCtxt via self; note that we must do this here
+                    // otherwise they might be dropped on the floor if the self.coerce() invocation
+                    // that called us succeeds down some other codepath.
+                    self.unsizing_obligations.borrow_mut().extend(obligations);
+                    return Err(TypeError::Mismatch);
+                }
+
+                Err(traits::Unimplemented) => {
                     debug!("coerce_unsized: early return - can't prove obligation");
                     return Err(TypeError::Mismatch);
                 }
@@ -328,7 +338,10 @@ impl<'f, 'tcx> Coerce<'f, 'tcx> {
                     // be silent, as it causes a type mismatch later.
                 }
 
-                Ok(Some(vtable)) => {
+                Ok(SelectionOk { selection: Some(vtable), obligations }) => {
+                    // Have the obligations generated from affecting the inference environment go
+                    // all the way back up to the FnCtxt.
+                    self.unsizing_obligations.borrow_mut().extend(obligations);
                     for obligation in vtable.nested_obligations() {
                         queue.push_back(obligation);
                     }

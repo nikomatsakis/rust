@@ -18,7 +18,7 @@ use super::Obligation;
 use super::ObligationCause;
 use super::PredicateObligation;
 use super::SelectionContext;
-use super::SelectionError;
+use super::{SelectionError, SelectionOk};
 use super::VtableClosureData;
 use super::VtableImplData;
 use super::util;
@@ -90,8 +90,8 @@ pub fn poly_project_and_unify_type<'cx,'tcx>(
     debug!("poly_project_and_unify_type(obligation={:?})",
            obligation);
 
-    let infcx = selcx.infcx();
-    infcx.commit_if_ok(|snapshot| {
+    selcx.commit_if_ok(|selcx, snapshot| {
+        let infcx = selcx.infcx();
         let (skol_predicate, skol_map) =
             infcx.skolemize_late_bound_regions(&obligation.predicate, snapshot);
 
@@ -657,7 +657,6 @@ fn assemble_candidates_from_predicates<'cx,'tcx,I>(
 {
     debug!("assemble_candidates_from_predicates(obligation={:?})",
            obligation);
-    let infcx = selcx.infcx();
     for predicate in env_predicates {
         debug!("assemble_candidates_from_predicates: predicate={:?}",
                predicate);
@@ -665,16 +664,23 @@ fn assemble_candidates_from_predicates<'cx,'tcx,I>(
             ty::Predicate::Projection(ref data) => {
                 let same_name = data.item_name() == obligation.predicate.item_name;
 
-                let is_match = same_name && infcx.probe(|_| {
+                let is_match = same_name && selcx.probe(|selcx, _| {
                     let origin = TypeOrigin::Misc(obligation.cause.span);
                     let data_poly_trait_ref =
                         data.to_poly_trait_ref();
                     let obligation_poly_trait_ref =
                         obligation_trait_ref.to_poly_trait_ref();
-                    infcx.sub_poly_trait_refs(false,
-                                              origin,
-                                              data_poly_trait_ref,
-                                              obligation_poly_trait_ref).is_ok()
+                    match selcx.infcx().sub_poly_trait_refs(false,
+                                                            origin,
+                                                            data_poly_trait_ref,
+                                                            obligation_poly_trait_ref)
+                    {
+                        Ok(InferOk { obligations, .. }) => {
+                            selcx.extend_inferred_obligations(obligations);
+                            true
+                        },
+                        Err(_) => false,
+                    }
                 });
 
                 debug!("assemble_candidates_from_predicates: candidate={:?} \
@@ -734,8 +740,12 @@ fn assemble_candidates_from_impls<'cx,'tcx>(
     let poly_trait_ref = obligation_trait_ref.to_poly_trait_ref();
     let trait_obligation = obligation.with(poly_trait_ref.to_poly_trait_predicate());
     let vtable = match selcx.select(&trait_obligation) {
-        Ok(Some(vtable)) => vtable,
-        Ok(None) => {
+        Ok(SelectionOk { selection: Some(vtable), obligations }) => {
+            selcx.extend_inferred_obligations(obligations);
+            vtable
+        },
+        Ok(SelectionOk { selection: None, obligations }) => {
+            selcx.extend_inferred_obligations(obligations);
             candidate_set.ambiguous = true;
             return Ok(());
         }
