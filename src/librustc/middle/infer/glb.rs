@@ -79,6 +79,10 @@ impl<'a, 'o, 'tcx> LatticeDir<'a,'tcx> for Glb<'a, 'o, 'tcx> {
         self.fields.infcx
     }
 
+    fn obligations_mut(&mut self) -> &mut Vec<PredicateObligation<'tcx>> {
+        self.fields.obligations
+    }
+
     fn relate_bound(&mut self, v: Ty<'tcx>, a: Ty<'tcx>, b: Ty<'tcx>) -> RelateResult<'tcx, ()> {
         let mut sub = self.fields.sub();
         try!(sub.relate(&v, &a));

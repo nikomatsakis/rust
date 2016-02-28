@@ -735,6 +735,7 @@ fn assemble_candidates_from_impls<'cx,'tcx>(
     candidate_set: &mut ProjectionTyCandidateSet<'tcx>)
     -> Result<(), SelectionError<'tcx>>
 {
+    debug!("assemble_candidates_from_impls(..)");
     // If we are resolving `<T as TraitRef<...>>::Item == Type`,
     // start out by selecting the predicate `T as TraitRef<...>`:
     let poly_trait_ref = obligation_trait_ref.to_poly_trait_ref();

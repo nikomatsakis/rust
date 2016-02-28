@@ -13,7 +13,7 @@ use super::higher_ranked::HigherRankedRelations;
 use super::SubregionOrigin;
 use super::type_variable::{SubtypeOf, SupertypeOf};
 
-use middle::traits::PredicateObligation;
+use middle::traits::{Normalized, PredicateObligation};
 use middle::ty::{self, Ty, TyCtxt};
 use middle::ty::TyVar;
 use middle::ty::relate::{Cause, Relate, RelateResult, TypeRelation};
@@ -69,6 +69,12 @@ impl<'a, 'o, 'tcx> TypeRelation<'a, 'tcx> for Sub<'a, 'o, 'tcx> {
         let infcx = self.fields.infcx;
         let a = infcx.type_variables.borrow().replace_if_possible(a);
         let b = infcx.type_variables.borrow().replace_if_possible(b);
+        let Normalized { value: a, obligations: a_norm_obligations } =
+            infcx.normalize_if_possible(a);
+        self.fields.obligations.extend(a_norm_obligations);
+        let Normalized { value: b, obligations: b_norm_obligations } =
+            infcx.normalize_if_possible(b);
+        self.fields.obligations.extend(b_norm_obligations);
         match (&a.sty, &b.sty) {
             (&ty::TyInfer(TyVar(a_id)), &ty::TyInfer(TyVar(b_id))) => {
                 infcx.type_variables

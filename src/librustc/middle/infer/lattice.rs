@@ -32,12 +32,16 @@
 use super::combine;
 use super::InferCtxt;
 
+use middle::traits::{Normalized, PredicateObligation};
 use middle::ty::TyVar;
 use middle::ty::{self, Ty};
 use middle::ty::relate::{RelateResult, TypeRelation};
 
 pub trait LatticeDir<'f,'tcx> : TypeRelation<'f,'tcx> {
     fn infcx(&self) -> &'f InferCtxt<'f, 'tcx>;
+
+    /// Where to collect obligations during inference.
+    fn obligations_mut(&mut self) -> &mut Vec<PredicateObligation<'tcx>>;
 
     // Relates the type `v` to `a` and `b` such that `v` represents
     // the LUB/GLB of `a` and `b` as appropriate.
@@ -62,6 +66,12 @@ pub fn super_lattice_tys<'a,'tcx,L:LatticeDir<'a,'tcx>>(this: &mut L,
     let infcx = this.infcx();
     let a = infcx.type_variables.borrow().replace_if_possible(a);
     let b = infcx.type_variables.borrow().replace_if_possible(b);
+    let Normalized { value: a, obligations: a_norm_obligations } =
+        infcx.normalize_if_possible(a);
+    this.obligations_mut().extend(a_norm_obligations);
+    let Normalized { value: b, obligations: b_norm_obligations } =
+        infcx.normalize_if_possible(b);
+    this.obligations_mut().extend(b_norm_obligations);
     match (&a.sty, &b.sty) {
         (&ty::TyInfer(TyVar(..)), &ty::TyInfer(TyVar(..)))
             if infcx.type_var_diverges(a) && infcx.type_var_diverges(b) => {
