@@ -498,29 +498,28 @@ fn process_predicate1<'a,'tcx>(selcx: &mut SelectionContext<'a,'tcx>,
                     info!("selecting trait `{:?}` at depth {} yielded Ok(None)",
                           data, obligation.recursion_depth);
 
-                    if inferred_obligations.is_empty() {
-                        // This is a bit subtle: for the most part, the
-                        // only reason we can fail to make progress on
-                        // trait selection is because we don't have enough
-                        // information about the types in the trait. One
-                        // exception is that we sometimes haven't decided
-                        // what kind of closure a closure is. *But*, in
-                        // that case, it turns out, the type of the
-                        // closure will also change, because the closure
-                        // also includes references to its upvars as part
-                        // of its type, and those types are resolved at
-                        // the same time.
-                        pending_obligation.stalled_on =
-                            trait_ref_type_vars(selcx, data.to_poly_trait_ref());
+                    // TODO -- the OF interface can't handle the alternative!
+                    assert!(inferred_obligations.is_empty());
 
-                        debug!("process_predicate: pending obligation {:?} now stalled on {:?}",
-                               selcx.infcx().resolve_type_vars_if_possible(obligation),
-                               pending_obligation.stalled_on);
+                    // This is a bit subtle: for the most part, the
+                    // only reason we can fail to make progress on
+                    // trait selection is because we don't have enough
+                    // information about the types in the trait. One
+                    // exception is that we sometimes haven't decided
+                    // what kind of closure a closure is. *But*, in
+                    // that case, it turns out, the type of the
+                    // closure will also change, because the closure
+                    // also includes references to its upvars as part
+                    // of its type, and those types are resolved at
+                    // the same time.
+                    pending_obligation.stalled_on =
+                        trait_ref_type_vars(selcx, data.to_poly_trait_ref());
 
-                        Ok(None)
-                    } else {
-                        Ok(Some(inferred_obligations))
-                    }
+                    debug!("process_predicate: pending obligation {:?} now stalled on {:?}",
+                           selcx.infcx().resolve_type_vars_if_possible(obligation),
+                           pending_obligation.stalled_on);
+
+                    Ok(None)
                 }
                 Err(selection_err) => {
                     info!("selecting trait `{:?}` at depth {} yielded Err",
