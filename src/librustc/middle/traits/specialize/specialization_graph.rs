@@ -65,14 +65,15 @@ impl Graph {
         let trait_ref = tcx.impl_trait_ref(impl_def_id).unwrap();
         let trait_def_id = trait_ref.def_id;
 
-        debug!("inserting TraitRef {:?} into specialization graph", trait_ref);
+        debug!("insert({:?}): inserting TraitRef {:?} into specialization graph",
+               impl_def_id, trait_ref);
 
         // if the reference itself contains an earlier error (e.g., due to a
         // resolution failure), then we just insert the impl at the top level of
         // the graph and claim that there's no overlap (in order to supress
         // bogus errors).
         if trait_ref.references_error() {
-            debug!("Inserting dummy node for erroneous TraitRef {:?}, \
+            debug!("insert: inserting dummy node for erroneous TraitRef {:?}, \
                     impl_def_id={:?}, trait_def_id={:?}",
                    trait_ref, impl_def_id, trait_def_id);
 
@@ -93,6 +94,9 @@ impl Graph {
             for slot in possible_siblings.iter_mut() {
                 let possible_sibling = *slot;
 
+                // Nit: I think it'd be nice to factor the body of
+                // this loop out into its own method, personally.
+
                 let infcx = infer::new_infer_ctxt(tcx, &tcx.tables, None, ProjectionMode::Topmost);
                 let overlap = traits::overlapping_impls(&infcx, possible_sibling, impl_def_id);
 
@@ -101,15 +105,15 @@ impl Graph {
                     let ge = specializes(tcx, possible_sibling, impl_def_id);
 
                     if le && !ge {
-                        let parent_trait_ref = tcx.impl_trait_ref(possible_sibling).unwrap();
-                        debug!("descending as child of TraitRef {:?}", parent_trait_ref);
+                        debug!("descending as child of TraitRef {:?}",
+                               tcx.impl_trait_ref(possible_sibling).unwrap());
 
                         // the impl specializes possible_sibling
                         parent = possible_sibling;
                         continue 'descend;
                     } else if ge && !le {
-                        let child_trait_ref = tcx.impl_trait_ref(possible_sibling).unwrap();
-                        debug!("placing as parent of TraitRef {:?}", child_trait_ref);
+                        debug!("placing as parent of TraitRef {:?}",
+                               tcx.impl_trait_ref(possible_sibling).unwrap());
 
                         // possible_sibling specializes the impl
                         *slot = impl_def_id;
@@ -158,10 +162,10 @@ impl Graph {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
 /// A node in the specialization graph is either an impl or a trait
 /// definition; either can serve as a source of item definitions.
 /// There is always exactly one trait definition node: the root.
+#[derive(Debug, Copy, Clone)]
 pub enum Node {
     Impl(DefId),
     Trait(DefId),
@@ -316,8 +320,10 @@ impl<'a, 'tcx> Iterator for ConstDefs<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> Ancestors<'a, 'tcx> {
-    /// Seach the items from the given ancestors, returning each type definition
-    /// with the given name.
+    // This is very beautiful.
+
+    /// Search the items from the given ancestors, returning each type definition
+    /// with the given name. More specific results are given first.
     pub fn type_defs(self, tcx: &'a ty::ctxt<'tcx>, name: Name) -> TypeDefs<'a, 'tcx> {
         let iter = self.flat_map(move |node| {
             node.items(tcx)
@@ -337,8 +343,8 @@ impl<'a, 'tcx> Ancestors<'a, 'tcx> {
         TypeDefs { iter: Box::new(iter) }
     }
 
-    /// Seach the items from the given ancestors, returning each fn definition
-    /// with the given name.
+    /// Search the items from the given ancestors, returning each fn definition
+    /// with the given name. More specific results are given first.
     pub fn fn_defs(self, tcx: &'a ty::ctxt<'tcx>, name: Name) -> FnDefs<'a, 'tcx> {
         let iter = self.flat_map(move |node| {
             node.items(tcx)

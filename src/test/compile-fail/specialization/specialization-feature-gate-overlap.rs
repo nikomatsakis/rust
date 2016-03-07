@@ -8,27 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(specialization)]
-
-// Make sure we can't project defaulted associated types
+// Add a comment explaining what this test is trying to show.
 
 trait Foo {
-    type Assoc;
+    fn foo(&self);
 }
 
 impl<T> Foo for T {
-    default type Assoc = ();
+    fn foo(&self) {}
 }
 
-impl Foo for u8 {
-    type Assoc = String;
+impl Foo for u8 { //~ ERROR need message here and elsewhere
+    fn foo(&self) {}
 }
 
-fn generic<T>() -> <T as Foo>::Assoc {
-    () //~ ERROR
-}
-
-fn main() {
-    let s: String = generic::<u8>();
-    println!("{}", s); // bad news
-}
+fn main() {}

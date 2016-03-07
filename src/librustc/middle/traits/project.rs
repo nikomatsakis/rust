@@ -99,6 +99,7 @@ pub enum ProjectionMode {
 }
 
 impl ProjectionMode {
+    // Nit: I prefer `is_topmost` (also for methods below)
     pub fn topmost(&self) -> bool {
         match *self {
             ProjectionMode::Topmost => true,

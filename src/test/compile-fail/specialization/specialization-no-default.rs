@@ -14,6 +14,8 @@
 // Test 1: one layer of specialization, multiple methods, missing `default`
 ////////////////////////////////////////////////////////////////////////////////
 
+// Nit: Break these tests into distinct files if they are totally independent.
+
 trait Foo {
     fn foo(&self);
     fn bar(&self);

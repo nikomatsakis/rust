@@ -13,11 +13,7 @@ trait Foo {
 }
 
 impl<T> Foo for T {
-    fn foo(&self) {}
-}
-
-impl Foo for u8 { //~ ERROR
-    fn foo(&self) {}
+    default fn foo(&self) {} //~ ERROR specialization is unstable
 }
 
 fn main() {}

@@ -41,39 +41,39 @@ pub struct Overlap<'a, 'tcx: 'a> {
 /// Given a subst for the requested impl, translate it to a subst
 /// appropriate for the actual item definition (whether it be in that impl,
 /// a parent impl, or the trait).
-//
-// When we have selected one impl, but are actually using item definitions from
-// a parent impl providing a default, we need a way to translate between the
-// type parameters of the two impls. Here the `source_impl` is the one we've
-// selected, and `source_substs` is a substitution of its generics (and
-// possibly some relevant `FnSpace` variables as well). And `target_node` is
-// the impl/trait we're actually going to get the definition from. The resulting
-// substitution will map from `target_node`'s generics to `source_impl`'s
-// generics as instantiated by `source_subst`.
-//
-// For example, consider the following scenario:
-//
-// ```rust
-// trait Foo { ... }
-// impl<T, U> Foo for (T, U) { ... }  // target impl
-// impl<V> Foo for (V, V) { ... }     // source impl
-// ```
-//
-// Suppose we have selected "source impl" with `V` instantiated with `u32`.
-// This function will produce a substitution with `T` and `U` both mapping to `u32`.
-//
-// Where clauses add some trickiness here, because they can be used to "define"
-// an argument indirectly:
-//
-// ```rust
-// impl<'a, I, T: 'a> Iterator for Cloned<I>
-//    where I: Iterator<Item=&'a T>, T: Clone
-// ```
-//
-// In a case like this, the substitution for `T` is determined indirectly,
-// through associated type projection. We deal with such cases by using
-// *fulfillment* to relate the two impls, requiring that all projections are
-// resolved.
+///
+/// When we have selected one impl, but are actually using item definitions from
+/// a parent impl providing a default, we need a way to translate between the
+/// type parameters of the two impls. Here the `source_impl` is the one we've
+/// selected, and `source_substs` is a substitution of its generics (and
+/// possibly some relevant `FnSpace` variables as well). And `target_node` is
+/// the impl/trait we're actually going to get the definition from. The resulting
+/// substitution will map from `target_node`'s generics to `source_impl`'s
+/// generics as instantiated by `source_subst`.
+///
+/// For example, consider the following scenario:
+///
+/// ```rust
+/// trait Foo { ... }
+/// impl<T, U> Foo for (T, U) { ... }  // target impl
+/// impl<V> Foo for (V, V) { ... }     // source impl
+/// ```
+///
+/// Suppose we have selected "source impl" with `V` instantiated with `u32`.
+/// This function will produce a substitution with `T` and `U` both mapping to `u32`.
+///
+/// Where clauses add some trickiness here, because they can be used to "define"
+/// an argument indirectly:
+///
+/// ```rust
+/// impl<'a, I, T: 'a> Iterator for Cloned<I>
+///    where I: Iterator<Item=&'a T>, T: Clone
+/// ```
+///
+/// In a case like this, the substitution for `T` is determined indirectly,
+/// through associated type projection. We deal with such cases by using
+/// *fulfillment* to relate the two impls, requiring that all projections are
+/// resolved.
 pub fn translate_substs<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
                                   source_impl: DefId,
                                   source_substs: Substs<'tcx>,
@@ -139,6 +139,14 @@ fn skolemizing_subst_for_impl<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
 /// to.
 pub fn specializes(tcx: &ty::ctxt, impl1_def_id: DefId, impl2_def_id: DefId) -> bool {
     if !tcx.sess.features.borrow().specialization {
+        // ^^ This is probably ok, certainly ok for now, but I think
+        // that this means that we will fail to recognize specialized
+        // impls in select, even when those specializations appear in
+        // another crate. e.g., if we wanted to add specializations to
+        // libstd before this feature was fully stable, I think we'd
+        // encounter problems here. To fix, we'd presumably have to
+        // return true in the case where `!impl1_def_id.is_local() &&
+        // !impl2_def_id.is_local()`.
         return false;
     }
 
@@ -161,7 +169,7 @@ pub fn specializes(tcx: &ty::ctxt, impl1_def_id: DefId, impl2_def_id: DefId) -> 
 
     let mut infcx = infer::normalizing_infer_ctxt(tcx, &tcx.tables, ProjectionMode::Topmost);
 
-    // Skiolemize impl1: we want to prove that "for all types matched by impl1,
+    // Skolemize impl1: we want to prove that "for all types matched by impl1,
     // those types are also matched by impl2".
     let impl1_substs = skolemizing_subst_for_impl(&infcx, impl1_def_id);
     let (impl1_trait_ref, impl1_obligations) = {
@@ -170,8 +178,7 @@ pub fn specializes(tcx: &ty::ctxt, impl1_def_id: DefId, impl2_def_id: DefId) -> 
     };
 
     // Add impl1's obligations as assumptions to the environment.
-    let impl1_predicates: Vec<_> = impl1_obligations.iter()
-                                                    .cloned()
+    let impl1_predicates: Vec<_> = impl1_obligations.into_iter()
                                                     .map(|oblig| oblig.predicate)
                                                     .collect();
     infcx.parameter_environment = ty::ParameterEnvironment {
@@ -199,6 +206,10 @@ fn fulfill_implication<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
                                  -> Result<Substs<'tcx>, ()>
 {
     infcx.probe(|_| {
+        // ^^ this still gives me the heebie jeebies. Why don't we want
+        // `commit_if_ok` here? Or maybe `commit_regions_if_ok`, since we
+        // believe that all type variables will be instantiated.
+
         let selcx = &mut SelectionContext::new(&infcx);
         let target_substs = fresh_type_vars_for_impl(&infcx, DUMMY_SP, target_impl);
         let (target_trait_ref, obligations) = impl_trait_ref_and_oblig(selcx,
@@ -244,6 +255,8 @@ fn fulfill_implication<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
             // the inference variables inside with whatever we got from fulfillment.
 
             // TODO: should this use `fully_resolve` instead?
+            // ^^ Probably not, since I think that `fully_resolve` requires
+            //    region inference to have completed.
             Ok(infcx.resolve_type_vars_if_possible(&target_substs))
         }
     })
