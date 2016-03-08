@@ -217,6 +217,7 @@ use trans::monomorphize;
 use util::nodemap::{FnvHashSet, FnvHashMap, DefIdMap};
 
 use std::hash::{Hash, Hasher};
+use std::ops::Deref;
 use std::rc::Rc;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
@@ -282,14 +283,13 @@ pub fn collect_crate_translation_items<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
         debug!("Building translation item graph, beginning at roots");
         let mut visited = FnvHashSet();
         let mut recursion_depths = DefIdMap();
-        let mut mir_cache = DefIdMap();
 
         for root in roots {
             collect_items_rec(ccx,
                               root,
                               &mut visited,
                               &mut recursion_depths,
-                              &mut mir_cache);
+                              &mut ccx.mir_cache().borrow_mut());
         }
 
         visited
@@ -320,13 +320,14 @@ fn collect_roots<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 }
 
 #[derive(Clone)]
-enum CachedMir<'mir, 'tcx: 'mir> {
+pub enum CachedMir<'mir, 'tcx: 'mir> {
     Ref(&'mir mir::Mir<'tcx>),
     Owned(Rc<mir::Mir<'tcx>>)
 }
 
-impl<'mir, 'tcx: 'mir> CachedMir<'mir, 'tcx> {
-    fn get_ref<'a>(&'a self) -> &'a mir::Mir<'tcx> {
+impl<'mir, 'tcx: 'mir> Deref for CachedMir<'mir, 'tcx> {
+    type Target = mir::Mir<'tcx>;
+    fn deref<'a>(&'a self) -> &'a mir::Mir<'tcx> {
         match *self {
             CachedMir::Ref(r) => r,
             CachedMir::Owned(ref rc) => &rc,
@@ -339,7 +340,7 @@ fn collect_items_rec<'a, 'tcx: 'a>(ccx: &CrateContext<'a, 'tcx>,
                                    starting_point: TransItem<'tcx>,
                                    visited: &mut FnvHashSet<TransItem<'tcx>>,
                                    recursion_depths: &mut DefIdMap<usize>,
-                                   mir_cache: &mut DefIdMap<CachedMir<'a, 'tcx>>) {
+                                   mir_cache: &mut DefIdMap<Rc<mir::Mir<'tcx>>>) {
     if !visited.insert(starting_point.clone()) {
         // We've been here already, no need to search again.
         return;
@@ -369,12 +370,12 @@ fn collect_items_rec<'a, 'tcx: 'a>(ccx: &CrateContext<'a, 'tcx>,
 
             let mut visitor = MirNeighborCollector {
                 ccx: ccx,
-                mir: mir.get_ref(),
+                mir: &mir,
                 output: &mut neighbors,
                 param_substs: param_substs
             };
 
-            visitor.visit_mir(mir.get_ref());
+            visitor.visit_mir(&mir);
         }
     }
 
@@ -391,7 +392,7 @@ fn collect_items_rec<'a, 'tcx: 'a>(ccx: &CrateContext<'a, 'tcx>,
 
 fn load_mir<'a, 'tcx: 'a>(ccx: &CrateContext<'a, 'tcx>,
                           def_id: DefId,
-                          mir_cache: &mut DefIdMap<CachedMir<'a, 'tcx>>)
+                          mir_cache: &mut DefIdMap<Rc<mir::Mir<'tcx>>>)
                           -> CachedMir<'a, 'tcx> {
     let mir_not_found_error_message = || {
         format!("Could not find MIR for function: {}",
@@ -407,16 +408,16 @@ fn load_mir<'a, 'tcx: 'a>(ccx: &CrateContext<'a, 'tcx>,
         CachedMir::Ref(mir)
     } else {
         if let Some(mir) = mir_cache.get(&def_id) {
-            return mir.clone();
+            return CachedMir::Owned(mir.clone());
         }
 
         let mir_opt = ccx.sess().cstore.maybe_get_item_mir(ccx.tcx(), def_id);
         let mir = errors::expect(ccx.sess().diagnostic(),
                                  mir_opt,
                                  mir_not_found_error_message);
-        let cached = CachedMir::Owned(Rc::new(mir));
+        let cached = Rc::new(mir);
         mir_cache.insert(def_id, cached.clone());
-        cached
+        CachedMir::Owned(cached)
     }
 }
 

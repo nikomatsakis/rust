@@ -16,6 +16,7 @@ use middle::def::ExportMap;
 use middle::def_id::DefId;
 use middle::traits;
 use rustc::mir::mir_map::MirMap;
+use rustc::mir::repr as mir;
 use trans::adt;
 use trans::base;
 use trans::builder::Builder;
@@ -75,6 +76,7 @@ pub struct SharedCrateContext<'a, 'tcx: 'a> {
     check_overflow: bool,
     check_drop_flag_for_sanity: bool,
     mir_map: &'a MirMap<'tcx>,
+    mir_cache: RefCell<DefIdMap<Rc<mir::Mir<'tcx>>>>,
 
     available_drop_glues: RefCell<FnvHashMap<DropGlueKind<'tcx>, String>>,
     use_dll_storage_attrs: bool,
@@ -338,6 +340,7 @@ impl<'b, 'tcx> SharedCrateContext<'b, 'tcx> {
             symbol_hasher: RefCell::new(symbol_hasher),
             tcx: tcx,
             mir_map: mir_map,
+            mir_cache: RefCell::new(DefIdMap()),
             stats: Stats {
                 n_glues_created: Cell::new(0),
                 n_null_glues: Cell::new(0),
@@ -819,6 +822,10 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
 
     pub fn mir_map(&self) -> &'b MirMap<'tcx> {
         self.shared.mir_map
+    }
+
+    pub fn mir_cache(&self) -> &RefCell<DefIdMap<Rc<mir::Mir<'tcx>>>> {
+        &self.shared.mir_cache
     }
 
     pub fn translation_items(&self) -> &RefCell<FnvHashMap<TransItem<'tcx>, TransItemState>> {
