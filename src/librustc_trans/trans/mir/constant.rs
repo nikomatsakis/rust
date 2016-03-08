@@ -14,7 +14,7 @@ use rustc::middle::const_eval::{self, ConstVal};
 use rustc::mir::repr as mir;
 use trans::abi;
 use trans::common::{self, BlockAndBuilder, C_bool, C_bytes, C_floating_f64, C_integral,
-                    C_str_slice, C_nil, C_undef};
+                    C_str_slice, C_undef};
 use trans::consts;
 use trans::expr;
 use trans::inline;
@@ -67,14 +67,11 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
             ConstVal::Uint(v) => C_integral(llty, v, false),
             ConstVal::Str(ref v) => C_str_slice(ccx, v.clone()),
             ConstVal::ByteStr(ref v) => consts::addr_of(ccx, C_bytes(ccx, v), 1, "byte_str"),
-            ConstVal::Struct(id) | ConstVal::Tuple(id) |
-            ConstVal::Array(id, _) | ConstVal::Repeat(id, _) => {
-                let expr = bcx.tcx().map.expect_expr(id);
-                bcx.with_block(|bcx| {
-                    expr::trans(bcx, expr).datum.val
-                })
-            },
-            ConstVal::Function(_) => C_nil(ccx)
+            ConstVal::Struct(_) | ConstVal::Tuple(_) |
+            ConstVal::Array(..) | ConstVal::Repeat(..) |
+            ConstVal::Function(_) => {
+                unreachable!("MIR must not use {:?} (which refers to a local ID)", cv)
+            }
         }
     }
 
