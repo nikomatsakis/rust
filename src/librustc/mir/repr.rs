@@ -176,6 +176,10 @@ pub struct TempDecl<'tcx> {
 #[derive(Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ArgDecl<'tcx> {
     pub ty: Ty<'tcx>,
+
+    /// If true, this argument is a tuple after monomorphization,
+    /// and has to be collected from multiple actual arguments.
+    pub spread: bool
 }
 
 ///////////////////////////////////////////////////////////////////////////
