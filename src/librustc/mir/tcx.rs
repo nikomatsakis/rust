@@ -223,7 +223,7 @@ impl<'tcx> Mir<'tcx> {
                 }
             }
             Rvalue::Slice { .. } => None,
-            Rvalue::InlineAsm(..) => None
+            Rvalue::InlineAsm { .. } => None
         }
     }
 }
