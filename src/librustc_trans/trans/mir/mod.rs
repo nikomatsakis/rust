@@ -14,12 +14,10 @@ use middle::ty;
 use rustc::mir::repr as mir;
 use rustc::mir::tcx::LvalueTy;
 use trans::base;
-use trans::build;
 use trans::collector::CachedMir;
 use trans::common::{self, Block, BlockAndBuilder, FunctionContext};
-use trans::expr;
 
-use self::lvalue::LvalueRef;
+use self::lvalue::{LvalueRef, get_dataptr, get_meta};
 use self::operand::OperandRef;
 
 // FIXME DebugLoc is always None right now
@@ -162,23 +160,22 @@ fn arg_value_refs<'bcx, 'tcx>(bcx: &BlockAndBuilder<'bcx, 'tcx>,
                 _ => unreachable!("spread argument isn't a tuple?!")
             };
 
-            let llval = bcx.with_block(|bcx| {
-                let lltemp = base::alloc_ty(bcx, arg_ty, &format!("arg{}", arg_index));
-                for (i, &tupled_arg_ty) in tupled_arg_tys.iter().enumerate() {
-                    let dst = build::StructGEP(bcx, lltemp, i);
-                    let arg = &fcx.fn_ty.args[idx];
-                    if common::type_is_fat_ptr(tcx, tupled_arg_ty) {
-                        let meta = &fcx.fn_ty.args[idx];
-                        idx += 1;
-                        arg.store_fn_arg(bcx, &mut llarg_idx, expr::get_dataptr(bcx, dst));
-                        meta.store_fn_arg(bcx, &mut llarg_idx, expr::get_meta(bcx, dst));
-                    } else {
-                        arg.store_fn_arg(bcx, &mut llarg_idx, dst);
-                    }
-                }
-                lltemp
+            let lltemp = bcx.with_block(|bcx| {
+                base::alloc_ty(bcx, arg_ty, &format!("arg{}", arg_index))
             });
-            return LvalueRef::new_sized(llval, LvalueTy::from_ty(arg_ty));
+            for (i, &tupled_arg_ty) in tupled_arg_tys.iter().enumerate() {
+                let dst = bcx.struct_gep(lltemp, i);
+                let arg = &fcx.fn_ty.args[idx];
+                if common::type_is_fat_ptr(tcx, tupled_arg_ty) {
+                    let meta = &fcx.fn_ty.args[idx];
+                    idx += 1;
+                    arg.store_fn_arg(bcx, &mut llarg_idx, get_dataptr(bcx, dst));
+                    meta.store_fn_arg(bcx, &mut llarg_idx, get_meta(bcx, dst));
+                } else {
+                    arg.store_fn_arg(bcx, &mut llarg_idx, dst);
+                }
+            }
+            return LvalueRef::new_sized(lltemp, LvalueTy::from_ty(arg_ty));
         }
 
         let arg = &fcx.fn_ty.args[idx];
@@ -192,23 +189,23 @@ fn arg_value_refs<'bcx, 'tcx>(bcx: &BlockAndBuilder<'bcx, 'tcx>,
             llarg_idx += 1;
             llarg
         } else {
-            bcx.with_block(|bcx| {
-                let lltemp = base::alloc_ty(bcx, arg_ty, &format!("arg{}", arg_index));
-                if common::type_is_fat_ptr(tcx, arg_ty) {
-                    // we pass fat pointers as two words, but we want to
-                    // represent them internally as a pointer to two words,
-                    // so make an alloca to store them in.
-                    let meta = &fcx.fn_ty.args[idx];
-                    idx += 1;
-                    arg.store_fn_arg(bcx, &mut llarg_idx, expr::get_dataptr(bcx, lltemp));
-                    meta.store_fn_arg(bcx, &mut llarg_idx, expr::get_meta(bcx, lltemp));
-                } else  {
-                    // otherwise, arg is passed by value, so make a
-                    // temporary and store it there
-                    arg.store_fn_arg(bcx, &mut llarg_idx, lltemp);
-                }
-                lltemp
-            })
+            let lltemp = bcx.with_block(|bcx| {
+                base::alloc_ty(bcx, arg_ty, &format!("arg{}", arg_index))
+            });
+            if common::type_is_fat_ptr(tcx, arg_ty) {
+                // we pass fat pointers as two words, but we want to
+                // represent them internally as a pointer to two words,
+                // so make an alloca to store them in.
+                let meta = &fcx.fn_ty.args[idx];
+                idx += 1;
+                arg.store_fn_arg(bcx, &mut llarg_idx, get_dataptr(bcx, lltemp));
+                meta.store_fn_arg(bcx, &mut llarg_idx, get_meta(bcx, lltemp));
+            } else  {
+                // otherwise, arg is passed by value, so make a
+                // temporary and store it there
+                arg.store_fn_arg(bcx, &mut llarg_idx, lltemp);
+            }
+            lltemp
         };
         LvalueRef::new_sized(llval, LvalueTy::from_ty(arg_ty))
     }).collect()

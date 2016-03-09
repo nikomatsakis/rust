@@ -19,7 +19,6 @@ use trans::callee::Callee;
 use trans::common::{self, BlockAndBuilder, Result};
 use trans::debuginfo::DebugLoc;
 use trans::declare;
-use trans::expr;
 use trans::adt;
 use trans::machine;
 use trans::type_::Type;
@@ -30,7 +29,7 @@ use trans::Disr;
 
 use super::MirContext;
 use super::operand::{OperandRef, OperandValue};
-use super::lvalue::LvalueRef;
+use super::lvalue::{LvalueRef, get_dataptr, get_meta};
 
 impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
     pub fn trans_rvalue(&mut self,
@@ -97,8 +96,8 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
             mir::Rvalue::Repeat(ref elem, ref count) => {
                 let tr_elem = self.trans_operand(&bcx, elem);
                 let size = self.trans_constval(&bcx, &count.value, count.ty).immediate();
+                let base = get_dataptr(&bcx, dest.llval);
                 let bcx = bcx.map_block(|block| {
-                    let base = expr::get_dataptr(block, dest.llval);
                     tvec::iter_vec_raw(block, base, tr_elem.ty, size, |block, llslot, _| {
                         self.store_operand_direct(block, llslot, tr_elem);
                         block
@@ -121,9 +120,8 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                             // Do not generate stores and GEPis for zero-sized fields.
                             if !common::type_is_zero_size(bcx.ccx(), op.ty) {
                                 let val = adt::MaybeSizedValue::sized(dest.llval);
-                                let lldest_i = bcx.with_block(|bcx| {
-                                    adt::trans_field_ptr(bcx, &repr, val, disr, i)
-                                });
+                                let lldest_i = adt::trans_field_ptr_builder(&bcx, &repr,
+                                                                            val, disr, i);
                                 self.store_operand(&bcx, lldest_i, op);
                             }
                             self.set_operand_dropped(&bcx, operand);
@@ -183,11 +181,8 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                 let llbase1 = bcx.gepi(llbase, &[from_start]);
                 let adj = common::C_uint(ccx, from_start + from_end);
                 let lllen1 = bcx.sub(lllen, adj);
-                let (lladdrdest, llmetadest) = bcx.with_block(|bcx| {
-                    (expr::get_dataptr(bcx, dest.llval), expr::get_meta(bcx, dest.llval))
-                });
-                bcx.store(llbase1, lladdrdest);
-                bcx.store(lllen1, llmetadest);
+                bcx.store(llbase1, get_dataptr(&bcx, dest.llval));
+                bcx.store(lllen1, get_meta(&bcx, dest.llval));
                 bcx
             }
 
