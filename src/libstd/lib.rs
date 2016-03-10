@@ -250,6 +250,7 @@
 #![feature(raw)]
 #![feature(repr_simd)]
 #![feature(reflect_marker)]
+#![feature(rustc_attrs)]
 #![feature(shared)]
 #![feature(slice_bytes)]
 #![feature(slice_concat_ext)]

@@ -11,7 +11,7 @@
 // no-prefer-dynamic
 
 #![allow(dead_code)]
-#![feature(const_fn)]
+#![feature(const_fn, rustc_attrs)]
 
 // check dtor calling order when casting enums.
 
@@ -36,6 +36,7 @@ impl Drop for E {
     }
 }
 
+#[rustc_no_mir] // FIXME #27840 MIR miscompiles this.
 fn main() {
     assert_eq!(FLAG.load(Ordering::SeqCst), 0);
     {
