@@ -13,16 +13,8 @@ use super::higher_ranked::HigherRankedRelations;
 use super::{Subtype};
 use super::type_variable::{EqTo};
 
-<<<<<<< HEAD
-use middle::traits::PredicateObligation;
-use middle::ty::{self, Ty, TyCtxt};
-||||||| merged common ancestors
-use middle::traits::PredicateObligation;
-use middle::ty::{self, Ty};
-=======
 use middle::traits::{Normalized, PredicateObligation};
-use middle::ty::{self, Ty};
->>>>>>> Normalize lazily
+use middle::ty::{self, Ty, TyCtxt};
 use middle::ty::TyVar;
 use middle::ty::relate::{Relate, RelateResult, TypeRelation};
 
