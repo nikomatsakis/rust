@@ -90,7 +90,7 @@ pub fn poly_project_and_unify_type<'cx,'tcx>(
     debug!("poly_project_and_unify_type(obligation={:?})",
            obligation);
 
-    selcx.commit_if_ok(|selcx, snapshot| {
+    selcx.infcx().commit_if_ok(|snapshot| {
         let infcx = selcx.infcx();
         let (skol_predicate, skol_map) =
             infcx.skolemize_late_bound_regions(&obligation.predicate, snapshot);
@@ -664,7 +664,7 @@ fn assemble_candidates_from_predicates<'cx,'tcx,I>(
             ty::Predicate::Projection(ref data) => {
                 let same_name = data.item_name() == obligation.predicate.item_name;
 
-                let is_match = same_name && selcx.probe(|selcx, _| {
+                let is_match = same_name && selcx.infcx().probe(|_| {
                     let origin = TypeOrigin::Misc(obligation.cause.span);
                     let data_poly_trait_ref =
                         data.to_poly_trait_ref();

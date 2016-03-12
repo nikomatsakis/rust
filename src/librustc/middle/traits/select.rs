@@ -105,10 +105,6 @@ pub struct SelectionContext<'cx, 'tcx:'cx> {
     /// there is no type that the user could *actually name* that
     /// would satisfy it. This avoids crippling inference, basically.
     intercrate: bool,
-
-    /// Obligations generated during inference; if None, no
-    /// obligations are to be collected.
-    inferred_obligations: Option<Vec<PredicateObligation<'tcx>>>,
 }
 
 // A stack that walks back up the stack frame.
@@ -317,42 +313,6 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     pub fn closure_typer(&self) -> &'cx InferCtxt<'cx, 'tcx> {
         self.infcx
-    }
-
-    /// Public so that `middle::traits::project` may have access to it.
-    pub fn extend_inferred_obligations<I>(&mut self, obligations: I)
-        where I: IntoIterator<Item=PredicateObligation<'tcx>>
-    {
-        self.inferred_obligations.as_mut().map(|x| {
-            x.extend(obligations);
-        });
-    }
-
-    /// Public so that `middle::traits::project` may have access to it.
-    pub fn probe<R, F>(&mut self, f: F) -> R
-        where F: FnOnce(&mut SelectionContext<'cx, 'tcx>, &infer::CombinedSnapshot) -> R,
-    {
-        let mut old_obligations = None;
-        mem::swap(&mut self.inferred_obligations, &mut old_obligations);
-        let result = self.infcx.probe(|snapshot| f(self, snapshot));
-        mem::swap(&mut self.inferred_obligations, &mut old_obligations);
-        result
-    }
-
-    /// Public so that `middle::traits::project` may have access to it.
-    pub fn commit_if_ok<T, E, F>(&mut self, f: F) -> Result<T, E>
-        where F: FnOnce(&mut SelectionContext<'cx, 'tcx>, &infer::CombinedSnapshot) -> Result<T, E>
-    {
-        let old_length = self.inferred_obligations.as_ref().map(|x| x.len());
-        match self.infcx.commit_if_ok(|snapshot| f(self, snapshot)) {
-            Ok(val) => Ok(val),
-            Err(val) => {
-                self.inferred_obligations.as_mut().map(|x| {
-                    x.truncate(old_length.unwrap());
-                });
-                Err(val)
-            }
-        }
     }
 
     ///////////////////////////////////////////////////////////////////////////
