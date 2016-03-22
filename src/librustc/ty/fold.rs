@@ -387,7 +387,8 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         where T : TypeFoldable<'tcx>
     {
         let mut collector = LateBoundRegionsCollector::new();
-        value.skip_binder().visit_with(&mut collector);
+        let result = value.skip_binder().visit_with(&mut collector);
+        assert!(!result); // should never have stopped early
         collector.regions
     }
 
@@ -651,12 +652,11 @@ impl LateBoundRegionsCollector {
 }
 
 impl<'tcx> TypeVisitor<'tcx> for LateBoundRegionsCollector {
-    fn enter_region_binder(&mut self) {
+    fn visit_binder<T: TypeFoldable<'tcx>>(&mut self, t: &Binder<T>) -> bool {
         self.current_depth += 1;
-    }
-
-    fn exit_region_binder(&mut self) {
+        let result = t.super_visit_with(self);
         self.current_depth -= 1;
+        result
     }
 
     fn visit_region(&mut self, r: ty::Region) -> bool {
@@ -666,7 +666,7 @@ impl<'tcx> TypeVisitor<'tcx> for LateBoundRegionsCollector {
             }
             _ => { }
         }
-        true
+        false
     }
 }
 

@@ -939,6 +939,34 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
                                                       &binding.item_name.as_str(),
                                                       binding.span)?;
 
+        // Find any late-bound regions declared in `ty` that are not
+        // declared in the trait-ref. These are not wellformed.
+        //
+        // Example:
+        //
+        //     for<'a> <T as Iterator>::Item = &'a str // <-- 'a is bad
+        //     for<'a> <T as FnMut<(&'a u32,)>>::Output = &'a str // <-- 'a is ok
+        let late_bound_in_trait_ref = tcx.collect_late_bound_regions(&trait_ref);
+        let late_bound_in_ty = tcx.collect_late_bound_regions(&ty::Binder(binding.ty));
+        debug!("late_bound_in_trait_ref = {:?}", late_bound_in_trait_ref);
+        debug!("late_bound_in_ty = {:?}", late_bound_in_ty);
+        for br in late_bound_in_ty.difference(&late_bound_in_trait_ref) {
+            let br_name = match *br {
+                ty::BrNamed(_, name) => name,
+                _ => {
+                    span_bug!(
+                        binding.span,
+                        "anonymous bound region {:?} in binding but not trait ref",
+                        br);
+                }
+            };
+            tcx.sess.span_err(
+                binding.span,
+                &format!("binding for associated type `{}` references lifetime `{}`, \
+                          which does not appear in the trait input types",
+                         binding.item_name, br_name));
+        }
+
         Ok(ty::Binder(ty::ProjectionPredicate {             // <-------------------------+
             projection_ty: ty::ProjectionTy {               //                           |
                 trait_ref: candidate.skip_binder().clone(), // binder is moved up here --+
