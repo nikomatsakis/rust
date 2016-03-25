@@ -901,8 +901,8 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
         //
         //     for<'a> <T as Iterator>::Item = &'a str // <-- 'a is bad
         //     for<'a> <T as FnMut<(&'a u32,)>>::Output = &'a str // <-- 'a is ok
-        let late_bound_in_trait_ref = tcx.collect_late_bound_regions(&trait_ref);
-        let late_bound_in_ty = tcx.collect_late_bound_regions(&ty::Binder(binding.ty));
+        let late_bound_in_trait_ref = tcx.collect_constrained_late_bound_regions(&trait_ref);
+        let late_bound_in_ty = tcx.collect_referenced_late_bound_regions(&ty::Binder(binding.ty));
         debug!("late_bound_in_trait_ref = {:?}", late_bound_in_trait_ref);
         debug!("late_bound_in_ty = {:?}", late_bound_in_ty);
         for br in late_bound_in_ty.difference(&late_bound_in_trait_ref) {
@@ -975,34 +975,6 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
                                                       &trait_ref.to_string(),
                                                       &binding.item_name.as_str(),
                                                       binding.span)?;
-
-        // Find any late-bound regions declared in `ty` that are not
-        // declared in the trait-ref. These are not wellformed.
-        //
-        // Example:
-        //
-        //     for<'a> <T as Iterator>::Item = &'a str // <-- 'a is bad
-        //     for<'a> <T as FnMut<(&'a u32,)>>::Output = &'a str // <-- 'a is ok
-        let late_bound_in_trait_ref = tcx.collect_late_bound_regions(&trait_ref);
-        let late_bound_in_ty = tcx.collect_late_bound_regions(&ty::Binder(binding.ty));
-        debug!("late_bound_in_trait_ref = {:?}", late_bound_in_trait_ref);
-        debug!("late_bound_in_ty = {:?}", late_bound_in_ty);
-        for br in late_bound_in_ty.difference(&late_bound_in_trait_ref) {
-            let br_name = match *br {
-                ty::BrNamed(_, name) => name,
-                _ => {
-                    span_bug!(
-                        binding.span,
-                        "anonymous bound region {:?} in binding but not trait ref",
-                        br);
-                }
-            };
-            tcx.sess.span_err(
-                binding.span,
-                &format!("binding for associated type `{}` references lifetime `{}`, \
-                          which does not appear in the trait input types",
-                         binding.item_name, br_name));
-        }
 
         Ok(ty::Binder(ty::ProjectionPredicate {             // <-------------------------+
             projection_ty: ty::ProjectionTy {               //                           |
@@ -1677,7 +1649,45 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
             }
             hir::TyBareFn(ref bf) => {
                 require_c_abi_if_variadic(tcx, &bf.decl, bf.abi, ast_ty.span);
-                tcx.mk_fn_ptr(self.ty_of_bare_fn(bf.unsafety, bf.abi, &bf.decl))
+                let bare_fn_ty = self.ty_of_bare_fn(bf.unsafety, bf.abi, &bf.decl);
+
+                // Find any late-bound regions declared in return type that do
+                // not appear in the arguments. These are not wellformed.
+                //
+                // Example:
+                //
+                //     for<'a> fn() -> &'a str <-- 'a is bad
+                //     for<'a> fn(&'a String) -> &'a str <-- 'a is ok
+                //
+                // Note that we do this check **here** and not in
+                // `ty_of_bare_fn` because the latter is also used to make
+                // the types for fn items, and we do not want to issue a
+                // warning then. (Once we fix #32330, the regions we are
+                // checking for here would be considered early bound
+                // anyway.)
+                let inputs = bare_fn_ty.sig.inputs();
+                let late_bound_in_args = tcx.collect_constrained_late_bound_regions(&inputs);
+                let output = bare_fn_ty.sig.output();
+                let late_bound_in_ret = tcx.collect_referenced_late_bound_regions(&output);
+                for br in late_bound_in_ret.difference(&late_bound_in_args) {
+                    let br_name = match *br {
+                        ty::BrNamed(_, name) => name,
+                        _ => {
+                            span_bug!(
+                                bf.decl.output.span(),
+                                "anonymous bound region {:?} in return but not args",
+                                br);
+                        }
+                    };
+                    tcx.sess.add_lint(
+                        lint::builtin::HR_LIFETIME_IN_ASSOC_TYPE,
+                        ast_ty.id,
+                        ast_ty.span,
+                        format!("fn type references lifetime `{}`, \
+                                 which does not appear in the trait input types",
+                                br_name));
+                }
+                tcx.mk_fn_ptr(bare_fn_ty)
             }
             hir::TyPolyTraitRef(ref bounds) => {
                 self.conv_ty_poly_trait_ref(rscope, ast_ty.span, bounds)
