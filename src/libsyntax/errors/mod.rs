@@ -25,6 +25,7 @@ use term;
 
 pub mod emitter;
 pub mod json;
+pub mod snippet;
 
 #[derive(Clone)]
 pub enum RenderSpan {

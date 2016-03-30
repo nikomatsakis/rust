@@ -51,7 +51,7 @@ pub struct BytePos(pub u32);
 /// A character offset. Because of multibyte utf8 characters, a byte offset
 /// is not equivalent to a character offset. The CodeMap will convert BytePos
 /// values to CharPos values as necessary.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub struct CharPos(pub usize);
 
 // FIXME: Lots of boilerplate in these impls, but so far my attempts to fix
@@ -1099,12 +1099,16 @@ impl CodeMap {
     }
 
     pub fn span_to_lines(&self, sp: Span) -> FileLinesResult {
+        debug!("span_to_lines(sp={:?})", sp);
+
         if sp.lo > sp.hi {
             return Err(SpanLinesError::IllFormedSpan(sp));
         }
 
         let lo = self.lookup_char_pos(sp.lo);
+        debug!("span_to_lines: lo={:?}", lo);
         let hi = self.lookup_char_pos(sp.hi);
+        debug!("span_to_lines: hi={:?}", hi);
 
         if lo.file.start_pos != hi.file.start_pos {
             return Err(SpanLinesError::DistinctSources(DistinctSources {
