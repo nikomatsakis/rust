@@ -212,11 +212,58 @@ fn foo() {
         kind: Highlights
     },
     RenderedLine {
-        text: "    B",
+        text: "    A",
         kind: Highlights
     },
     RenderedLine {
-        text: "    A",
+        text: "    B",
+        kind: Highlights
+    }
+]"#);
+}
+
+#[test]
+fn one_line_out_of_order() {
+    let file_text = r#"
+fn foo() {
+    vec.push(vec.pop().unwrap());
+}
+"#;
+
+    let cm = Rc::new(CodeMap::new());
+    cm.new_filemap_and_lines("foo.rs", file_text);
+    let span_vec0 = cm.span_substr(file_text, "vec", 0);
+    let span_vec1 = cm.span_substr(file_text, "vec", 1);
+    let span_semi = cm.span_substr(file_text, ";", 0);
+
+    // intentionally don't push the snippets left to right
+    let mut snippet = SnippetData::new(cm);
+    snippet.push(span_vec1, Some(format!("error occurs here")));
+    snippet.push(span_vec0, Some(format!("previous borrow of `vec` occurs here")));
+    snippet.push(span_semi, Some(format!("previous borrow ends here")));
+
+    let lines = snippet.render_lines();
+    println!("{:#?}", lines);
+    assert_eq!(format!("\n{:#?}", lines), r#"
+[
+    RenderedLine {
+        text: "    vec.push(vec.pop().unwrap());",
+        kind: SourceText
+    },
+    RenderedLine {
+        text: "    ~~~      ~~~                ~ previous borrow ends here",
+        kind: Highlights
+    },
+    RenderedLine {
+        text: "    |        |",
+        kind: Highlights
+    },
+    RenderedLine {
+        text: "    |        error occurs here",
+        kind: Highlights
+    },
+    RenderedLine {
+        text: "    previous borrow of `vec` occurs here",
         kind: Highlights
     }
 ]"#);

@@ -143,8 +143,8 @@ impl SnippetData {
 
         // Now add the text labels. The last annotation is different
         // because that goes at the end of the highlight line.
-        let (last_annotation, previous_annotations) = line.annotations.split_last()
-                                                                      .unwrap();
+        let (last_annotation, previous_annotations) = annotations.split_last()
+                                                                 .unwrap();
         if let Some(ref label) = last_annotation.label {
             Self::write_label(&mut highlight_line,
                               last_annotation.end_col + 1,
