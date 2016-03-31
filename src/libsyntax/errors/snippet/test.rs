@@ -89,7 +89,6 @@ fn foo() {
 ]"#);
 }
 
-
 #[test]
 fn multi_line() {
     let file_text = r#"
@@ -170,3 +169,56 @@ fn foo() {
     }
 ]"#);
 }
+
+#[test]
+fn overlapping() {
+    let file_text = r#"
+fn foo() {
+    vec.push(vec.pop().unwrap());
+}
+"#;
+
+    let cm = Rc::new(CodeMap::new());
+    cm.new_filemap_and_lines("foo.rs", file_text);
+    let span0 = cm.span_substr(file_text, "vec.push", 0);
+    let span1 = cm.span_substr(file_text, "vec", 0);
+    let span2 = cm.span_substr(file_text, "ec.push", 0);
+    let span3 = cm.span_substr(file_text, "unwrap", 0);
+
+    let mut snippet = SnippetData::new(cm);
+    snippet.push(span0, Some(format!("A")));
+    snippet.push(span1, Some(format!("B")));
+    snippet.push(span2, Some(format!("C")));
+    snippet.push(span3, Some(format!("D")));
+
+    let lines = snippet.render_lines();
+    println!("{:#?}", lines);
+    assert_eq!(format!("\n{:#?}", lines), r#"
+[
+    RenderedLine {
+        text: "    vec.push(vec.pop().unwrap());",
+        kind: SourceText
+    },
+    RenderedLine {
+        text: "    ~~~~~~~~           ~~~~~~ D",
+        kind: Highlights
+    },
+    RenderedLine {
+        text: "    ||",
+        kind: Highlights
+    },
+    RenderedLine {
+        text: "    |C",
+        kind: Highlights
+    },
+    RenderedLine {
+        text: "    B",
+        kind: Highlights
+    },
+    RenderedLine {
+        text: "    A",
+        kind: Highlights
+    }
+]"#);
+}
+
