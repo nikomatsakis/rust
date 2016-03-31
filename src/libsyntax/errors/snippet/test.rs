@@ -44,7 +44,7 @@ impl CodeMapExtension for CodeMap {
 }
 
 #[test]
-fn test() {
+fn one_line() {
     let file_text = r#"
 fn foo() {
     vec.push(vec.pop().unwrap());
@@ -84,6 +84,88 @@ fn foo() {
     },
     RenderedLine {
         text: "    previous borrow of `vec` occurs here",
+        kind: Highlights
+    }
+]"#);
+}
+
+
+#[test]
+fn multi_line() {
+    let file_text = r#"
+fn foo() {
+    let name = find_id(&data, 22).unwrap();
+
+    // Add one more item we forgot to the vector. Silly us.
+    data.push(Data { name: format!("Hera"), id: 66 });
+
+    // Print everything out.
+    println!("Name: {:?}", name);
+    println!("Data: {:?}", data);
+}
+"#;
+
+    let cm = Rc::new(CodeMap::new());
+    cm.new_filemap_and_lines("foo.rs", file_text);
+    let span_data0 = cm.span_substr(file_text, "data", 0);
+    let span_data1 = cm.span_substr(file_text, "data", 1);
+    let span_rbrace = cm.span_substr(file_text, "}", 3);
+
+    let mut snippet = SnippetData::new(cm);
+    snippet.push(span_data0, Some(format!("immutable borrow begins here")));
+    snippet.push(span_data1, Some(format!("mutable borrow occurs here")));
+    snippet.push(span_rbrace, Some(format!("immutable borrow ends here")));
+
+    let lines = snippet.render_lines();
+    println!("{:#?}", lines);
+    assert_eq!(format!("\n{:#?}", lines), r#"
+[
+    RenderedLine {
+        text: "    let name = find_id(&data, 22).unwrap();",
+        kind: SourceText
+    },
+    RenderedLine {
+        text: "                        ~~~~ immutable borrow begins here",
+        kind: Highlights
+    },
+    RenderedLine {
+        text: "",
+        kind: SourceText
+    },
+    RenderedLine {
+        text: "    // Add one more item we forgot to the vector. Silly us.",
+        kind: SourceText
+    },
+    RenderedLine {
+        text: "    data.push(Data { name: format!(\"Hera\"), id: 66 });",
+        kind: SourceText
+    },
+    RenderedLine {
+        text: "    ~~~~ mutable borrow occurs here",
+        kind: Highlights
+    },
+    RenderedLine {
+        text: "",
+        kind: SourceText
+    },
+    RenderedLine {
+        text: "    // Print everything out.",
+        kind: SourceText
+    },
+    RenderedLine {
+        text: "    println!(\"Name: {:?}\", name);",
+        kind: SourceText
+    },
+    RenderedLine {
+        text: "    println!(\"Data: {:?}\", data);",
+        kind: SourceText
+    },
+    RenderedLine {
+        text: "}",
+        kind: SourceText
+    },
+    RenderedLine {
+        text: "~ immutable borrow ends here",
         kind: Highlights
     }
 ]"#);
