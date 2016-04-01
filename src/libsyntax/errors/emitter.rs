@@ -606,7 +606,7 @@ dummy.txt:12         tolv
             diag.highlight_lines(&msp, Level::Error).unwrap();
         });
         test(expect_start, &mut || {
-            let msg = MultiSpan::from_spans(spans.clone());
+            let msp = MultiSpan::from_spans(spans.clone());
             diag.highlight_lines(&msp, Level::Error).unwrap();
         });
     }
@@ -667,22 +667,11 @@ dummy.txt:11 __f_gg
                       dummy.txt:6 xxxxx\n\
                    \x20            ...\n";
 
-        let expect_g1 = "dummy.txt:1 aaaaa\n\
-                         dummy.txt:2 aaaaa\n\
-                         dummy.txt:3 aaaaa\n\
-                         dummy.txt:4 bbbbb\n\
-                         dummy.txt:5 ccccc\n\
-                         dummy.txt:6 xxxxx\n\
-                      \x20           ...\n";
-
         let expect2 = "dummy.txt:9  ddd__eee_\n\
                     \x20            ~~~  ~~~\n\
                     \x20            ...\n\
                        dummy.txt:11 __f_gg\n\
                     \x20              ~ ~~\n";
-
-
-        let spans = vec![sp3, sp1, sp4, sp2, sp5];
 
         macro_rules! test {
             ($expected: expr, $highlight: expr) => ({
