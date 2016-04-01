@@ -55,6 +55,7 @@ pub struct RenderedLine {
 pub enum RenderedLineKind {
     SourceText,
     Highlights,
+    Elision,
 }
 use self::RenderedLineKind::*;
 
@@ -98,9 +99,77 @@ impl SnippetData {
     }
 
     pub fn render_lines(&self) -> Vec<RenderedLine> {
-        self.lines.iter()
-                  .flat_map(|line| self.render_line(line))
-                  .collect()
+        let mut line_groups = vec![];
+
+        //Group our lines by those with annotations and those without        
+        let mut lines_iter = self.lines.iter().peekable();
+
+        loop {
+            match lines_iter.next() {
+                None => break,
+                Some(line) if line.annotations.is_empty() => {
+                    // Collect unannotated group
+                    let mut unannotated_group : Vec<&Line> = vec![];
+                    
+                    unannotated_group.push(line);
+
+                    loop {
+                        let next_line = 
+                            match lines_iter.peek() {
+                                None => break,
+                                Some(x) if !x.annotations.is_empty() => break,
+                                Some(x) => x.clone()
+                            };
+
+                        unannotated_group.push(next_line);
+                        lines_iter.next();
+                    }
+
+                    line_groups.push((false, unannotated_group));
+                }
+                Some(line) => {
+                    // Collect annotated group
+                    let mut annotated_group : Vec<&Line> = vec![];
+
+                    annotated_group.push(line);
+
+                    loop {
+                        let next_line = 
+                            match lines_iter.peek() {
+                                None => break,
+                                Some(x) if x.annotations.is_empty() => break,
+                                Some(x) => x.clone()
+                            };
+
+                        annotated_group.push(next_line);
+                        lines_iter.next();
+                    }
+
+                    line_groups.push((true, annotated_group));
+                }
+            }
+        }
+
+        let mut output = vec![];
+        for &(is_annotated, ref group) in line_groups.iter() {
+            if is_annotated {
+                let mut v: Vec<RenderedLine> = 
+                    group.iter().flat_map(|line| self.render_line(line)).collect();
+                output.append(&mut v);
+            }
+            else {
+                if group.len() > 1 {
+                    output.push(RenderedLine::from((String::from("..."), Elision)));
+                }
+                else {
+                    let mut v: Vec<RenderedLine> = 
+                        group.iter().flat_map(|line| self.render_line(line)).collect();
+                    output.append(&mut v);
+                }
+            }
+        }
+
+        output
     }
 
     fn render_line(&self, line: &Line) -> Vec<RenderedLine> {
