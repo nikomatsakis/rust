@@ -380,12 +380,11 @@ impl Destination {
                    -> io::Result<()> {
         match style {
             Style::FileNameLine => {
-                self.start_attr(term::Attr::ForegroundColor(term::color::BLUE))?;
+                self.start_attr(term::Attr::ForegroundColor(term::color::BRIGHT_BLUE))?;
             }
             Style::Quotation => {
             }
             Style::Label => {
-                self.start_attr(term::Attr::Bold)?;
                 self.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
             }
             Style::NoStyle => {
