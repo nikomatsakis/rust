@@ -20,7 +20,7 @@
 // FIXME spec the JSON output properly.
 
 
-use codemap::{Span, MultiSpan, CodeMap};
+use codemap::{Span, SpanString, MultiSpan, CodeMap};
 use diagnostics::registry::Registry;
 use errors::{Level, DiagnosticBuilder, SubDiagnostic, RenderSpan, CodeSuggestion};
 use errors::emitter::Emitter;
@@ -179,7 +179,7 @@ impl<'a> Diagnostic<'a> {
 
 impl DiagnosticSpan {
     fn from_multispan(msp: &MultiSpan, je: &JsonEmitter) -> Vec<DiagnosticSpan> {
-        msp.spans.iter().map(|span| {
+        msp.spans.iter().map(|&SpanString { span, .. }| {
             let start = je.cm.lookup_char_pos(span.lo);
             let end = je.cm.lookup_char_pos(span.hi);
             DiagnosticSpan {
@@ -190,7 +190,7 @@ impl DiagnosticSpan {
                 line_end: end.line,
                 column_start: start.col.0 + 1,
                 column_end: end.col.0 + 1,
-                text: DiagnosticSpanLine::from_span(span, je),
+                text: DiagnosticSpanLine::from_span(&span, je),
             }
         }).collect()
     }
@@ -203,7 +203,7 @@ impl DiagnosticSpan {
                 DiagnosticSpan::from_multispan(msp, je)
             }
             RenderSpan::FileLine(ref msp) => {
-                msp.spans.iter().map(|span| {
+                msp.spans.iter().map(|&SpanString { span, .. }| {
                     let start = je.cm.lookup_char_pos(span.lo);
                     let end = je.cm.lookup_char_pos(span.hi);
                     DiagnosticSpan {
@@ -214,7 +214,7 @@ impl DiagnosticSpan {
                         line_end: end.line,
                         column_start: 0,
                         column_end: 0,
-                        text: DiagnosticSpanLine::from_span(span, je),
+                        text: DiagnosticSpanLine::from_span(&span, je),
                     }
                 }).collect()
             }

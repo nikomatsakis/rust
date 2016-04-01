@@ -106,6 +106,7 @@ impl CodeSuggestion {
         let mut buf = String::new();
 
         for (sp, substitute) in self.msp.spans.iter().zip(self.substitutes.iter()) {
+            let sp = sp.span;
             let cur_lo = cm.lookup_char_pos(sp.lo);
             if prev_hi.line == cur_lo.line {
                 push_trailing(&mut buf, prev_line, &prev_hi, Some(&cur_lo));

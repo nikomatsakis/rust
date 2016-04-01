@@ -243,8 +243,8 @@ impl EmitterWriter {
                        -> io::Result<()>
     {
         let mut snippet_data = SnippetData::new(self.cm.clone());
-        for &span in &msp.spans {
-            snippet_data.push(span, None);
+        for span_str in &msp.spans {
+            snippet_data.push(span_str.span, span_str.label.clone());
         }
         let rendered_lines = snippet_data.render_lines();
         for rendered_line in &rendered_lines {
@@ -380,6 +380,7 @@ impl Destination {
                    -> io::Result<()> {
         match style {
             Style::FileNameLine => {
+                self.start_attr(term::Attr::Bold)?;
                 self.start_attr(term::Attr::ForegroundColor(term::color::BRIGHT_BLUE))?;
             }
             Style::Quotation => {
@@ -560,54 +561,6 @@ dummy.txt:12         tolv
             substitutes: vec![substitute],
         };
         assert_eq!(suggest.splice_lines(&cm), expected);
-    }
-
-    #[test]
-    fn test_multiple_span_splice() {
-        // Test that a `MultiSpan` containing multiple spans splices substitions on
-        // several lines correctly
-        let cm = CodeMap::new();
-        let inp = "aaaaabbbbBB\nZZ\nZZ\nCCCDDDDDdddddeee";
-        let sp1 = "     ~~~~~~\n  \n  \n                ";
-        let sp2 = "           \n  \n  \n~~~~~~          ";
-        let sp3 = "           \n  \n  \n        ~~~     ";
-        let sp4 = "           \n  \n  \n           ~~~~ ";
-
-        let span_eq = |sp, eq| assert_eq!(&cm.span_to_snippet(sp).unwrap(), eq);
-
-        cm.new_filemap_and_lines("blork.rs", inp);
-        let sp1 = span_from_selection(inp, sp1);
-        let sp2 = span_from_selection(inp, sp2);
-        let sp3 = span_from_selection(inp, sp3);
-        let sp4 = span_from_selection(inp, sp4);
-        span_eq(sp1, "bbbbBB");
-        span_eq(sp2, "CCCDDD");
-        span_eq(sp3, "ddd");
-        span_eq(sp4, "ddee");
-
-        let substitutes: Vec<String> = ["1", "2", "3", "4"].iter().map(|x|x.to_string()).collect();
-        let expected = "aaaaa1\nZZ\nZZ\n2DD34e";
-
-        let test = |msp| {
-            let suggest = CodeSuggestion {
-                msp: msp,
-                substitutes: substitutes.clone(),
-            };
-            let actual = suggest.splice_lines(&cm);
-            assert_eq!(actual, expected);
-        };
-        test(MultiSpan { spans: vec![sp1, sp2, sp3, sp4] });
-
-        // Test ordering and merging by `MultiSpan::push`
-        let mut msp = MultiSpan::new();
-        msp.push_merge(sp2);
-        msp.push_merge(sp1);
-        assert_eq!(&msp.spans, &[sp1, sp2]);
-        msp.push_merge(sp4);
-        assert_eq!(&msp.spans, &[sp1, sp2, sp4]);
-        msp.push_merge(sp3);
-        assert_eq!(&msp.spans, &[sp1, sp2, sp3, sp4]);
-        test(msp);
     }
 
     #[test]
