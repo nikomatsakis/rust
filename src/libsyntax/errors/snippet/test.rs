@@ -662,5 +662,9 @@ fn foo() {
     let text: String = make_string(&lines);
     println!("{}", text);
     assert_eq!(text, r#"
+foo.rs:3     let mut vec = vec![0, 1, 2];
+                     ~~~   ~~~
+foo.rs:4     let mut vec2 = vec;
+                     ~~~    ~~~
 "#.trim_left());
 }

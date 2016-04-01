@@ -278,6 +278,12 @@ impl SnippetData {
         // the annotations with no labels.
         annotations.retain(|a| a.label.is_some());
 
+        // If there are no annotations that need text, we're done.
+        if annotations.is_empty() {
+            return vec![RenderedLine::from((source_string, Quotation, source_kind)),
+                        RenderedLine::from((highlight_line, Label, Highlights))];
+        }
+
         // Now add the text labels. The last annotation is different
         // because that goes at the end of the highlight line.
         let (last_annotation, previous_annotations) = annotations.split_last()
@@ -288,13 +294,10 @@ impl SnippetData {
                               label);
         }
 
-        let highlight_string: String =
-            highlight_line.into_iter().collect();
-
         // If that's the last annotation, we're done
         if previous_annotations.is_empty() {
             return vec![RenderedLine::from((source_string, Quotation, source_kind)),
-                        RenderedLine::from((highlight_string, Label, Highlights))];
+                        RenderedLine::from((highlight_line, Label, Highlights))];
         }
 
         // Otherwise, total lines will be 1 + number of remaining.
@@ -331,7 +334,7 @@ impl SnippetData {
                        .map(|v| RenderedLine::from((v, Label, Highlights)));
 
         iter::once(RenderedLine::from((source_string, Quotation, source_kind)))
-            .chain(Some(RenderedLine::from((highlight_string, Label, Highlights))))
+            .chain(Some(RenderedLine::from((highlight_line, Label, Highlights))))
             .chain(extra_strings)
             .collect()
     }
