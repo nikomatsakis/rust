@@ -1,6 +1,6 @@
 use codemap::{BytePos, CodeMap, NO_EXPANSION, Span};
 use std::rc::Rc;
-use super::SnippetData;
+use super::{RenderedLine, SnippetData};
 
 /// Returns the span corresponding to the `n`th occurrence of
 /// `substring` in `source_text`.
@@ -43,6 +43,16 @@ impl CodeMapExtension for CodeMap {
     }
 }
 
+fn make_string(lines: &[RenderedLine]) -> String {
+    lines.iter()
+         .flat_map(|rl| {
+             rl.text.iter()
+                    .map(|s| &s.text[..])
+                    .chain(Some("\n"))
+         })
+         .collect()
+}
+
 #[test]
 fn one_line() {
     let file_text = r#"
@@ -67,23 +77,71 @@ fn foo() {
     assert_eq!(format!("\n{:#?}", lines), r#"
 [
     RenderedLine {
-        text: "    vec.push(vec.pop().unwrap());",
-        kind: SourceText
+        text: [
+            StyledString {
+                text: "foo.rs:3 ",
+                style: FileNameLine
+            },
+            StyledString {
+                text: "    vec.push(vec.pop().unwrap());",
+                style: Quotation
+            }
+        ],
+        kind: SourceText {
+            file: FileMap(foo.rs),
+            line_index: 2
+        }
     },
     RenderedLine {
-        text: "    ~~~      ~~~                ~ previous borrow ends here",
+        text: [
+            StyledString {
+                text: "         ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "    ~~~      ~~~                ~ previous borrow ends here",
+                style: Label
+            }
+        ],
         kind: Highlights
     },
     RenderedLine {
-        text: "    |        |",
+        text: [
+            StyledString {
+                text: "         ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "    |        |",
+                style: Label
+            }
+        ],
         kind: Highlights
     },
     RenderedLine {
-        text: "    |        error occurs here",
+        text: [
+            StyledString {
+                text: "         ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "    |        error occurs here",
+                style: Label
+            }
+        ],
         kind: Highlights
     },
     RenderedLine {
-        text: "    previous borrow of `vec` occurs here",
+        text: [
+            StyledString {
+                text: "         ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "    previous borrow of `vec` occurs here",
+                style: Label
+            }
+        ],
         kind: Highlights
     }
 ]"#);
@@ -120,54 +178,207 @@ fn foo() {
     assert_eq!(format!("\n{:#?}", lines), r#"
 [
     RenderedLine {
-        text: "    let name = find_id(&data, 22).unwrap();",
-        kind: SourceText
+        text: [
+            StyledString {
+                text: "foo.rs:3  ",
+                style: FileNameLine
+            },
+            StyledString {
+                text: "    let name = find_id(&data, 22).unwrap();",
+                style: Quotation
+            }
+        ],
+        kind: SourceText {
+            file: FileMap(foo.rs),
+            line_index: 2
+        }
     },
     RenderedLine {
-        text: "                        ~~~~ immutable borrow begins here",
+        text: [
+            StyledString {
+                text: "          ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "                        ~~~~ immutable borrow begins here",
+                style: Label
+            }
+        ],
         kind: Highlights
     },
     RenderedLine {
-        text: "",
-        kind: SourceText
+        text: [
+            StyledString {
+                text: "foo.rs:4  ",
+                style: FileNameLine
+            },
+            StyledString {
+                text: "",
+                style: Quotation
+            }
+        ],
+        kind: SourceText {
+            file: FileMap(foo.rs),
+            line_index: 3
+        }
     },
     RenderedLine {
-        text: "    // Add one more item we forgot to the vector. Silly us.",
-        kind: SourceText
+        text: [
+            StyledString {
+                text: "foo.rs:5  ",
+                style: FileNameLine
+            },
+            StyledString {
+                text: "    // Add one more item we forgot to the vector. Silly us.",
+                style: Quotation
+            }
+        ],
+        kind: SourceText {
+            file: FileMap(foo.rs),
+            line_index: 4
+        }
     },
     RenderedLine {
-        text: "    data.push(Data { name: format!(\"Hera\"), id: 66 });",
-        kind: SourceText
+        text: [
+            StyledString {
+                text: "foo.rs:6  ",
+                style: FileNameLine
+            },
+            StyledString {
+                text: "    data.push(Data { name: format!(\"Hera\"), id: 66 });",
+                style: Quotation
+            }
+        ],
+        kind: SourceText {
+            file: FileMap(foo.rs),
+            line_index: 5
+        }
     },
     RenderedLine {
-        text: "    ~~~~ mutable borrow occurs here",
+        text: [
+            StyledString {
+                text: "          ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "    ~~~~ mutable borrow occurs here",
+                style: Label
+            }
+        ],
         kind: Highlights
     },
     RenderedLine {
-        text: "",
-        kind: SourceText
+        text: [
+            StyledString {
+                text: "foo.rs:7  ",
+                style: FileNameLine
+            },
+            StyledString {
+                text: "",
+                style: Quotation
+            }
+        ],
+        kind: SourceText {
+            file: FileMap(foo.rs),
+            line_index: 6
+        }
     },
     RenderedLine {
-        text: "    // Print everything out.",
-        kind: SourceText
+        text: [
+            StyledString {
+                text: "foo.rs:8  ",
+                style: FileNameLine
+            },
+            StyledString {
+                text: "    // Print everything out.",
+                style: Quotation
+            }
+        ],
+        kind: SourceText {
+            file: FileMap(foo.rs),
+            line_index: 7
+        }
     },
     RenderedLine {
-        text: "    println!(\"Name: {:?}\", name);",
-        kind: SourceText
+        text: [
+            StyledString {
+                text: "foo.rs:9  ",
+                style: FileNameLine
+            },
+            StyledString {
+                text: "    println!(\"Name: {:?}\", name);",
+                style: Quotation
+            }
+        ],
+        kind: SourceText {
+            file: FileMap(foo.rs),
+            line_index: 8
+        }
     },
     RenderedLine {
-        text: "    println!(\"Data: {:?}\", data);",
-        kind: SourceText
+        text: [
+            StyledString {
+                text: "foo.rs:10 ",
+                style: FileNameLine
+            },
+            StyledString {
+                text: "    println!(\"Data: {:?}\", data);",
+                style: Quotation
+            }
+        ],
+        kind: SourceText {
+            file: FileMap(foo.rs),
+            line_index: 9
+        }
     },
     RenderedLine {
-        text: "}",
-        kind: SourceText
+        text: [
+            StyledString {
+                text: "foo.rs:11 ",
+                style: FileNameLine
+            },
+            StyledString {
+                text: "}",
+                style: Quotation
+            }
+        ],
+        kind: SourceText {
+            file: FileMap(foo.rs),
+            line_index: 10
+        }
     },
     RenderedLine {
-        text: "~ immutable borrow ends here",
+        text: [
+            StyledString {
+                text: "          ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "~ immutable borrow ends here",
+                style: Label
+            }
+        ],
         kind: Highlights
     }
 ]"#);
+
+    let text: String = make_string(&lines);
+
+    println!("text=\n{}", text);
+    assert_eq!(&text[..], r#"
+foo.rs:3      let name = find_id(&data, 22).unwrap();
+                                  ~~~~ immutable borrow begins here
+foo.rs:4  
+foo.rs:5      // Add one more item we forgot to the vector. Silly us.
+foo.rs:6      data.push(Data { name: format!("Hera"), id: 66 });
+              ~~~~ mutable borrow occurs here
+foo.rs:7  
+foo.rs:8      // Print everything out.
+foo.rs:9      println!("Name: {:?}", name);
+foo.rs:10     println!("Data: {:?}", data);
+foo.rs:11 }
+          ~ immutable borrow ends here
+"#.trim_left());
 }
 
 #[test]
@@ -196,30 +407,99 @@ fn foo() {
     assert_eq!(format!("\n{:#?}", lines), r#"
 [
     RenderedLine {
-        text: "    vec.push(vec.pop().unwrap());",
-        kind: SourceText
+        text: [
+            StyledString {
+                text: "foo.rs:3 ",
+                style: FileNameLine
+            },
+            StyledString {
+                text: "    vec.push(vec.pop().unwrap());",
+                style: Quotation
+            }
+        ],
+        kind: SourceText {
+            file: FileMap(foo.rs),
+            line_index: 2
+        }
     },
     RenderedLine {
-        text: "    ~~~~~~~~           ~~~~~~ D",
+        text: [
+            StyledString {
+                text: "         ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "    ~~~~~~~~           ~~~~~~ D",
+                style: Label
+            }
+        ],
         kind: Highlights
     },
     RenderedLine {
-        text: "    ||",
+        text: [
+            StyledString {
+                text: "         ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "    ||",
+                style: Label
+            }
+        ],
         kind: Highlights
     },
     RenderedLine {
-        text: "    |C",
+        text: [
+            StyledString {
+                text: "         ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "    |C",
+                style: Label
+            }
+        ],
         kind: Highlights
     },
     RenderedLine {
-        text: "    A",
+        text: [
+            StyledString {
+                text: "         ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "    A",
+                style: Label
+            }
+        ],
         kind: Highlights
     },
     RenderedLine {
-        text: "    B",
+        text: [
+            StyledString {
+                text: "         ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "    B",
+                style: Label
+            }
+        ],
         kind: Highlights
     }
 ]"#);
+
+    let text: String = make_string(&lines);
+
+    println!("text=r#\"\n{}\".trim_left()", text);
+    assert_eq!(&text[..], r#"
+foo.rs:3     vec.push(vec.pop().unwrap());
+             ~~~~~~~~           ~~~~~~ D
+             ||
+             |C
+             A
+             B
+"#.trim_left());
 }
 
 #[test]
@@ -247,25 +527,84 @@ fn foo() {
     assert_eq!(format!("\n{:#?}", lines), r#"
 [
     RenderedLine {
-        text: "    vec.push(vec.pop().unwrap());",
-        kind: SourceText
+        text: [
+            StyledString {
+                text: "foo.rs:3 ",
+                style: FileNameLine
+            },
+            StyledString {
+                text: "    vec.push(vec.pop().unwrap());",
+                style: Quotation
+            }
+        ],
+        kind: SourceText {
+            file: FileMap(foo.rs),
+            line_index: 2
+        }
     },
     RenderedLine {
-        text: "    ~~~      ~~~                ~ previous borrow ends here",
+        text: [
+            StyledString {
+                text: "         ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "    ~~~      ~~~                ~ previous borrow ends here",
+                style: Label
+            }
+        ],
         kind: Highlights
     },
     RenderedLine {
-        text: "    |        |",
+        text: [
+            StyledString {
+                text: "         ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "    |        |",
+                style: Label
+            }
+        ],
         kind: Highlights
     },
     RenderedLine {
-        text: "    |        error occurs here",
+        text: [
+            StyledString {
+                text: "         ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "    |        error occurs here",
+                style: Label
+            }
+        ],
         kind: Highlights
     },
     RenderedLine {
-        text: "    previous borrow of `vec` occurs here",
+        text: [
+            StyledString {
+                text: "         ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "    previous borrow of `vec` occurs here",
+                style: Label
+            }
+        ],
         kind: Highlights
     }
 ]"#);
+
+    let text: String = make_string(&lines);
+
+    println!("text=r#\"\n{}\".trim_left()", text);
+    assert_eq!(&text[..], r#"
+foo.rs:3     vec.push(vec.pop().unwrap());
+             ~~~      ~~~                ~ previous borrow ends here
+             |        |
+             |        error occurs here
+             previous borrow of `vec` occurs here
+"#.trim_left());
 }
 

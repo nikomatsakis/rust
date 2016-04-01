@@ -47,13 +47,31 @@ struct Annotation {
 
 #[derive(Debug)]
 pub struct RenderedLine {
-    text: String,
+    text: Vec<StyledString>,
     kind: RenderedLineKind,
 }
 
 #[derive(Debug)]
+pub struct StyledString {
+    pub text: String,
+    pub style: Style,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum Style {
+    FileNameLine,
+    Quotation,
+    Label,
+    NoStyle,
+}
+use self::Style::*;
+
+#[derive(Debug)]
 pub enum RenderedLineKind {
-    SourceText,
+    SourceText {
+        file: Rc<FileMap>,
+        line_index: usize,
+    },
     Highlights,
 }
 use self::RenderedLineKind::*;
@@ -98,15 +116,39 @@ impl SnippetData {
     }
 
     pub fn render_lines(&self) -> Vec<RenderedLine> {
-        self.lines.iter()
-                  .flat_map(|line| self.render_line(line))
-                  .collect()
+        let mut rendered_lines: Vec<_> =
+            self.lines.iter()
+                      .flat_map(|line| self.render_line(line))
+                      .collect();
+
+        let prefixes: Vec<_> =
+            rendered_lines.iter()
+                          .map(|rl| rl.kind.prefix())
+                          .collect();
+
+        let padding_len =
+            prefixes.iter()
+                    .map(|p| p.text.len())
+                    .max()
+                    .unwrap_or(0);
+
+        for (mut prefix, line) in prefixes.into_iter().zip(&mut rendered_lines) {
+            let extra_spaces = (prefix.text.len() .. padding_len).map(|_| ' ');
+            prefix.text.extend(extra_spaces);
+            line.text.insert(0, prefix);
+        }
+
+        rendered_lines
     }
 
     fn render_line(&self, line: &Line) -> Vec<RenderedLine> {
         let source_string = line.file.get_line(line.line_index).unwrap().to_string();
+        let source_kind = SourceText {
+            file: line.file.clone(),
+            line_index: line.line_index,
+        };
         if line.annotations.is_empty() {
-            return vec![RenderedLine::from((source_string, SourceText))];
+            return vec![RenderedLine::from((source_string, Quotation, source_kind))];
         }
 
         // We want to display like this:
@@ -156,8 +198,8 @@ impl SnippetData {
 
         // If that's the last annotation, we're done
         if previous_annotations.is_empty() {
-            return vec![RenderedLine::from((source_string, SourceText)),
-                        RenderedLine::from((highlight_string, Highlights))];
+            return vec![RenderedLine::from((source_string, Quotation, source_kind)),
+                        RenderedLine::from((highlight_string, Label, Highlights))];
         }
 
         // Otherwise, total lines will be 1 + number of remaining.
@@ -191,11 +233,11 @@ impl SnippetData {
         // Convert the Vec<char> into String
         let extra_strings =
             extra_lines.into_iter()
-                       .map(|v| RenderedLine::from((v, Highlights)));
+                       .map(|v| RenderedLine::from((v, Label, Highlights)));
 
         let mut lines: Vec<RenderedLine> =
-            iter::once(RenderedLine::from((source_string, SourceText)))
-            .chain(Some(RenderedLine::from((highlight_string, Highlights))))
+            iter::once(RenderedLine::from((source_string, Quotation, source_kind)))
+            .chain(Some(RenderedLine::from((highlight_string, Label, Highlights))))
             .chain(extra_strings)
             .collect();
 
@@ -294,19 +336,25 @@ impl SnippetData {
     }
 }
 
-impl From<(String, RenderedLineKind)> for RenderedLine {
-    fn from((text, kind): (String, RenderedLineKind)) -> Self {
+impl From<(String, Style, RenderedLineKind)> for RenderedLine {
+    fn from((text, style, kind): (String, Style, RenderedLineKind)) -> Self {
         RenderedLine {
-            text: text,
+            text: vec![StyledString {
+                text: text,
+                style: style,
+            }],
             kind: kind,
         }
     }
 }
 
-impl From<(Vec<char>, RenderedLineKind)> for RenderedLine {
-    fn from((text, kind): (Vec<char>, RenderedLineKind)) -> Self {
+impl From<(Vec<char>, Style, RenderedLineKind)> for RenderedLine {
+    fn from((text, style, kind): (Vec<char>, Style, RenderedLineKind)) -> Self {
         RenderedLine {
-            text: text.into_iter().collect(),
+            text: vec![StyledString {
+                text: text.into_iter().collect(),
+                style: style,
+            }],
             kind: kind,
         }
     }
@@ -314,7 +362,25 @@ impl From<(Vec<char>, RenderedLineKind)> for RenderedLine {
 
 impl RenderedLine {
     fn trim(&mut self) {
-        let len = self.text.trim_right().len();
-        self.text.truncate(len);
+        let last_text = &mut self.text.last_mut().unwrap().text;
+        let len = last_text.trim_right().len();
+        last_text.truncate(len);
+    }
+}
+
+impl RenderedLineKind {
+    fn prefix(&self) -> StyledString {
+        match *self {
+            SourceText { ref file, line_index } =>
+                StyledString {
+                    text: format!("{}:{} ", file.name, line_index + 1),
+                    style: FileNameLine,
+                },
+            Highlights =>
+                StyledString {
+                    text: String::new(),
+                    style: NoStyle,
+                },
+        }
     }
 }
