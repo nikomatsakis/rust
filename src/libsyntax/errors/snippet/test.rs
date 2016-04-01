@@ -128,12 +128,8 @@ fn foo() {
         kind: Highlights
     },
     RenderedLine {
-        text: "",
-        kind: SourceText
-    },
-    RenderedLine {
-        text: "    // Add one more item we forgot to the vector. Silly us.",
-        kind: SourceText
+        text: "...",
+        kind: Elision
     },
     RenderedLine {
         text: "    data.push(Data { name: format!(\"Hera\"), id: 66 });",
@@ -144,20 +140,8 @@ fn foo() {
         kind: Highlights
     },
     RenderedLine {
-        text: "",
-        kind: SourceText
-    },
-    RenderedLine {
-        text: "    // Print everything out.",
-        kind: SourceText
-    },
-    RenderedLine {
-        text: "    println!(\"Name: {:?}\", name);",
-        kind: SourceText
-    },
-    RenderedLine {
-        text: "    println!(\"Data: {:?}\", data);",
-        kind: SourceText
+        text: "...",
+        kind: Elision
     },
     RenderedLine {
         text: "}",
@@ -269,3 +253,52 @@ fn foo() {
 ]"#);
 }
 
+#[test]
+fn elide_unnecessary_lines() {
+    let file_text = r#"
+fn foo() {
+    let mut vec = vec![0, 1, 2];
+    let mut vec2 = vec;
+    vec2.push(3);
+    vec2.push(4);
+    vec2.push(5);
+    vec2.push(6);
+    vec.push(7);
+}
+"#;
+
+    let cm = Rc::new(CodeMap::new());
+    cm.new_filemap_and_lines("foo.rs", file_text);
+    let span_vec0 = cm.span_substr(file_text, "vec", 3);
+    let span_vec1 = cm.span_substr(file_text, "vec", 8);
+
+    let mut snippet = SnippetData::new(cm);
+    snippet.push(span_vec0, Some(format!("`vec` moved here because it has type `collections::vec::Vec<i32>`, which is moved by default")));
+    snippet.push(span_vec1, Some(format!("use of moved value: `vec`")));
+
+    let lines = snippet.render_lines();
+    println!("{:#?}", lines);
+    assert_eq!(format!("\n{:#?}", lines), r#"
+[
+    RenderedLine {
+        text: "    let mut vec2 = vec;",
+        kind: SourceText
+    },
+    RenderedLine {
+        text: "                   ~~~ `vec` moved here because it has type `collections::vec::Vec<i32>`, which is moved by default",
+        kind: Highlights
+    },
+    RenderedLine {
+        text: "...",
+        kind: Elision
+    },
+    RenderedLine {
+        text: "    vec.push(7);",
+        kind: SourceText
+    },
+    RenderedLine {
+        text: "    ~~~ use of moved value: `vec`",
+        kind: Highlights
+    }
+]"#);
+}
