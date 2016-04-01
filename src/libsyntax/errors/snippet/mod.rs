@@ -73,6 +73,7 @@ pub enum RenderedLineKind {
         line_index: usize,
     },
     Highlights,
+    Elision,
 }
 use self::RenderedLineKind::*;
 
@@ -116,13 +117,84 @@ impl SnippetData {
     }
 
     pub fn render_lines(&self) -> Vec<RenderedLine> {
-        let mut rendered_lines: Vec<_> =
-            self.lines.iter()
-                      .flat_map(|line| self.render_line(line))
-                      .collect();
+        let mut rendered_lines = self.render_all_lines();
         self.prepend_prefixes(&mut rendered_lines);
         self.trim_lines(&mut rendered_lines);
         rendered_lines
+    }
+
+    pub fn render_all_lines(&self) -> Vec<RenderedLine> {
+        // Group our lines by those with annotations and those without
+        let mut lines_iter = self.lines.iter().peekable();
+
+        let mut line_groups = vec![];
+
+        loop {
+            match lines_iter.next() {
+                None => break,
+                Some(line) if line.annotations.is_empty() => {
+                    // Collect unannotated group
+                    let mut unannotated_group : Vec<&Line> = vec![];
+
+                    unannotated_group.push(line);
+
+                    loop {
+                        let next_line =
+                            match lines_iter.peek() {
+                                None => break,
+                                Some(x) if !x.annotations.is_empty() => break,
+                                Some(x) => x.clone()
+                            };
+
+                        unannotated_group.push(next_line);
+                        lines_iter.next();
+                    }
+
+                    line_groups.push((false, unannotated_group));
+                }
+                Some(line) => {
+                    // Collect annotated group
+                    let mut annotated_group : Vec<&Line> = vec![];
+
+                    annotated_group.push(line);
+
+                    loop {
+                        let next_line =
+                            match lines_iter.peek() {
+                                None => break,
+                                Some(x) if x.annotations.is_empty() => break,
+                                Some(x) => x.clone()
+                            };
+
+                        annotated_group.push(next_line);
+                        lines_iter.next();
+                    }
+
+                    line_groups.push((true, annotated_group));
+                }
+            }
+        }
+
+        let mut output = vec![];
+        for &(is_annotated, ref group) in line_groups.iter() {
+            if is_annotated {
+                let mut v: Vec<RenderedLine> =
+                    group.iter().flat_map(|line| self.render_line(line)).collect();
+                output.append(&mut v);
+            }
+            else {
+                if group.len() > 1 {
+                    output.push(RenderedLine::from((String::from("..."), NoStyle, Elision)));
+                }
+                else {
+                    let mut v: Vec<RenderedLine> =
+                        group.iter().flat_map(|line| self.render_line(line)).collect();
+                    output.append(&mut v);
+                }
+            }
+        }
+
+        output
     }
 
     pub fn prepend_prefixes(&self, rendered_lines: &mut [RenderedLine]) {
@@ -388,7 +460,7 @@ impl RenderedLineKind {
                     text: format!("{}:{}", file.name, line_index + 1),
                     style: FileNameLine,
                 },
-            Highlights =>
+            Elision | Highlights =>
                 StyledString {
                     text: String::new(),
                     style: NoStyle,

@@ -209,30 +209,15 @@ fn foo() {
     RenderedLine {
         text: [
             StyledString {
-                text: "foo.rs:4",
-                style: FileNameLine
-            }
-        ],
-        kind: SourceText {
-            file: FileMap(foo.rs),
-            line_index: 3
-        }
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "foo.rs:5  ",
-                style: FileNameLine
+                text: "          ",
+                style: NoStyle
             },
             StyledString {
-                text: "    // Add one more item we forgot to the vector. Silly us.",
-                style: Quotation
+                text: "...",
+                style: NoStyle
             }
         ],
-        kind: SourceText {
-            file: FileMap(foo.rs),
-            line_index: 4
-        }
+        kind: Elision
     },
     RenderedLine {
         text: [
@@ -266,62 +251,15 @@ fn foo() {
     RenderedLine {
         text: [
             StyledString {
-                text: "foo.rs:7",
-                style: FileNameLine
-            }
-        ],
-        kind: SourceText {
-            file: FileMap(foo.rs),
-            line_index: 6
-        }
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "foo.rs:8  ",
-                style: FileNameLine
+                text: "          ",
+                style: NoStyle
             },
             StyledString {
-                text: "    // Print everything out.",
-                style: Quotation
+                text: "...",
+                style: NoStyle
             }
         ],
-        kind: SourceText {
-            file: FileMap(foo.rs),
-            line_index: 7
-        }
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "foo.rs:9  ",
-                style: FileNameLine
-            },
-            StyledString {
-                text: "    println!(\"Name: {:?}\", name);",
-                style: Quotation
-            }
-        ],
-        kind: SourceText {
-            file: FileMap(foo.rs),
-            line_index: 8
-        }
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "foo.rs:10 ",
-                style: FileNameLine
-            },
-            StyledString {
-                text: "    println!(\"Data: {:?}\", data);",
-                style: Quotation
-            }
-        ],
-        kind: SourceText {
-            file: FileMap(foo.rs),
-            line_index: 9
-        }
+        kind: Elision
     },
     RenderedLine {
         text: [
@@ -360,14 +298,10 @@ fn foo() {
     assert_eq!(&text[..], r#"
 foo.rs:3      let name = find_id(&data, 22).unwrap();
                                   ~~~~ immutable borrow begins here
-foo.rs:4
-foo.rs:5      // Add one more item we forgot to the vector. Silly us.
+          ...
 foo.rs:6      data.push(Data { name: format!("Hera"), id: 66 });
               ~~~~ mutable borrow occurs here
-foo.rs:7
-foo.rs:8      // Print everything out.
-foo.rs:9      println!("Name: {:?}", name);
-foo.rs:10     println!("Data: {:?}", data);
+          ...
 foo.rs:11 }
           ~ immutable borrow ends here
 "#.trim_left());
@@ -600,3 +534,103 @@ foo.rs:3     vec.push(vec.pop().unwrap());
 "#.trim_left());
 }
 
+#[test]
+fn elide_unnecessary_lines() {
+    let file_text = r#"
+fn foo() {
+    let mut vec = vec![0, 1, 2];
+    let mut vec2 = vec;
+    vec2.push(3);
+    vec2.push(4);
+    vec2.push(5);
+    vec2.push(6);
+    vec.push(7);
+}
+"#;
+
+    let cm = Rc::new(CodeMap::new());
+    cm.new_filemap_and_lines("foo.rs", file_text);
+    let span_vec0 = cm.span_substr(file_text, "vec", 3);
+    let span_vec1 = cm.span_substr(file_text, "vec", 8);
+
+    let mut snippet = SnippetData::new(cm);
+    snippet.push(span_vec0, Some(format!("`vec` moved here because it has type `collections::vec::Vec<i32>`, which is moved by default")));
+    snippet.push(span_vec1, Some(format!("use of moved value: `vec`")));
+
+    let lines = snippet.render_lines();
+    println!("{:#?}", lines);
+    assert_eq!(format!("\n{:#?}", lines), r#"
+[
+    RenderedLine {
+        text: [
+            StyledString {
+                text: "foo.rs:4 ",
+                style: FileNameLine
+            },
+            StyledString {
+                text: "    let mut vec2 = vec;",
+                style: Quotation
+            }
+        ],
+        kind: SourceText {
+            file: FileMap(foo.rs),
+            line_index: 3
+        }
+    },
+    RenderedLine {
+        text: [
+            StyledString {
+                text: "         ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "                   ~~~ `vec` moved here because it has type `collections::vec::Vec<i32>`, which is moved by default",
+                style: Label
+            }
+        ],
+        kind: Highlights
+    },
+    RenderedLine {
+        text: [
+            StyledString {
+                text: "         ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "...",
+                style: NoStyle
+            }
+        ],
+        kind: Elision
+    },
+    RenderedLine {
+        text: [
+            StyledString {
+                text: "foo.rs:9 ",
+                style: FileNameLine
+            },
+            StyledString {
+                text: "    vec.push(7);",
+                style: Quotation
+            }
+        ],
+        kind: SourceText {
+            file: FileMap(foo.rs),
+            line_index: 8
+        }
+    },
+    RenderedLine {
+        text: [
+            StyledString {
+                text: "         ",
+                style: NoStyle
+            },
+            StyledString {
+                text: "    ~~~ use of moved value: `vec`",
+                style: Label
+            }
+        ],
+        kind: Highlights
+    }
+]"#);
+}
