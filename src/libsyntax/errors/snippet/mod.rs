@@ -175,9 +175,51 @@ impl SnippetData {
         let mut output = vec![];
         for &(is_annotated, ref group) in line_groups.iter() {
             if is_annotated {
-                let mut v: Vec<RenderedLine> =
-                    group.iter().flat_map(|line| self.render_line(line)).collect();
-                output.append(&mut v);
+                let mut annotation_ends_at_eol = false;
+                let mut prev_ends_at_eol = false;
+                let mut elide_unlabeled_region = false;
+
+                for group_line in group.iter() {
+                    let source_string = 
+                        group_line.file.get_line(group_line.line_index).unwrap().to_string();
+
+                    for annotation in &group_line.annotations {                        
+                        if annotation.end_col == source_string.len() {
+                            annotation_ends_at_eol = true;
+                        }
+                    }
+
+                    let is_single_unlabeled_annotated_line = 
+                        if group_line.annotations.len() == 1 {
+                            if let Some(annotation) = group_line.annotations.first() {
+                                match annotation.label {
+                                    Some(_) => false,
+                                    None => annotation.start_col == 0 && 
+                                            annotation.end_col == source_string.len()
+                                }
+                            }
+                            else {
+                                false
+                            }
+                        }
+                        else {
+                            false
+                        };
+
+                    if prev_ends_at_eol && is_single_unlabeled_annotated_line {
+                        if !elide_unlabeled_region {
+                            output.push(RenderedLine::from((String::from("..."), NoStyle, Elision)));
+                            elide_unlabeled_region = true;
+                            prev_ends_at_eol = true;
+                        }
+                        continue;
+                    }
+
+                    let mut v = self.render_line(group_line);
+                    output.append(&mut v);
+
+                    prev_ends_at_eol = annotation_ends_at_eol;
+                }
             }
             else {
                 if group.len() > 1 {
