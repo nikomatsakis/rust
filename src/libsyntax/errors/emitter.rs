@@ -16,6 +16,7 @@ use diagnostics;
 use errors::{Level, RenderSpan, CodeSuggestion, DiagnosticBuilder};
 use errors::RenderSpan::*;
 use errors::Level::*;
+use errors::snippet::{RenderedLineKind, SnippetData, Style};
 
 use std::{cmp, fmt};
 use std::io::prelude::*;
@@ -251,202 +252,17 @@ impl EmitterWriter {
                        lvl: Level)
                        -> io::Result<()>
     {
-        let lines = match self.cm.span_to_lines(msp.to_span_bounds()) {
-            Ok(lines) => lines,
-            Err(_) => {
-                write!(&mut self.dst, "(internal compiler error: unprintable span)\n")?;
-                return Ok(());
-            }
-        };
-
-        let fm = &*lines.file;
-        if let None = fm.src {
-            return Ok(());
+        let mut snippet_data = SnippetData::new(self.cm.clone());
+        for &span in &msp.spans {
+            snippet_data.push(span, None);
         }
-
-        let display_line_infos = &lines.lines[..];
-        assert!(display_line_infos.len() > 0);
-
-        // Calculate the widest number to format evenly and fix #11715
-        let digits = line_num_max_digits(display_line_infos.last().unwrap());
-        let first_line_index = display_line_infos.first().unwrap().line_index;
-
-        let skip = fm.name.chars().count() + digits + 2;
-
-        let mut spans = msp.spans.iter().peekable();
-        let mut lines = display_line_infos.iter();
-        let mut prev_line_index = first_line_index.wrapping_sub(1);
-
-        // Display at most MAX_HIGHLIGHT_LINES lines.
-        let mut remaining_err_lines = MAX_HIGHLIGHT_LINES;
-
-        // To emit a overflowed spans code-lines *AFTER* the rendered spans
-        let mut overflowed_buf = String::new();
-        let mut overflowed = false;
-
-        // FIXME (#8706)
-        'l: loop {
-            if remaining_err_lines <= 0 {
-                break;
+        let rendered_lines = snippet_data.render_lines();
+        for rendered_line in &rendered_lines {
+            for styled_string in &rendered_line.text {
+                self.dst.apply_style(lvl, &rendered_line.kind, styled_string.style)?;
+                write!(&mut self.dst, "{}", styled_string.text)?;
+                self.dst.reset_attrs()?;
             }
-            let line = match lines.next() {
-                Some(l) => l,
-                None => break,
-            };
-
-            // Skip is the number of characters we need to skip because they are
-            // part of the 'filename:line ' part of the code line.
-            let mut s: String = ::std::iter::repeat(' ').take(skip).collect();
-            let mut col = skip;
-            let mut lastc = ' ';
-
-            let cur_line_str = fm.get_line(line.line_index).unwrap();
-            let mut line_chars = cur_line_str.chars().enumerate().peekable();
-            let mut line_spans = 0;
-
-            // Assemble spans for this line
-            loop {
-                // Peek here to preserve the span if it doesn't belong to this line
-                let sp = match spans.peek() {
-                    Some(sp) => **sp,
-                    None => break,
-                };
-                let lo = self.cm.lookup_char_pos(sp.lo);
-                let hi = self.cm.lookup_char_pos(sp.hi);
-                let line_num = line.line_index + 1;
-
-                if !(lo.line <= line_num && hi.line >= line_num) {
-                    // This line is not contained in the span
-                    if overflowed {
-                        // Never elide the final line of an overflowed span
-                        prev_line_index = line.line_index - 1;
-                        overflowed = false;
-                        break;
-                    }
-
-                    if line_spans == 0 {
-                        continue 'l;
-                    } else {
-                        // This line is finished, now render the spans we've assembled
-                        break;
-                    }
-                }
-                spans.next();
-                line_spans += 1;
-
-                if lo.line != hi.line {
-                    // Assemble extra code lines to be emitted after this lines spans
-                    // (substract `2` because the first and last line are rendered normally)
-                    let max_lines = cmp::min(remaining_err_lines, MAX_SP_LINES) - 2;
-                    prev_line_index = line.line_index;
-                    let count = cmp::min((hi.line - lo.line - 1), max_lines);
-                    for _ in 0..count {
-                        let line = match lines.next() {
-                            Some(l) => l,
-                            None => break,
-                        };
-                        let line_str = fm.get_line(line.line_index).unwrap();
-                        overflowed_buf.push_str(&format!("{}:{:>width$} {}\n",
-                                                       fm.name,
-                                                       line.line_index + 1,
-                                                       line_str,
-                                                       width=digits));
-                        remaining_err_lines -= 1;
-                        prev_line_index += 1
-                    }
-                    // Remember that the span overflowed to ensure
-                    // that we emit its last line exactly once
-                    // (other spans may, or may not, start on it)
-                    overflowed = true;
-                    break;
-                }
-
-                for (pos, ch) in line_chars.by_ref() {
-                    lastc = ch;
-                    if pos >= lo.col.to_usize() { break; }
-                    // Whenever a tab occurs on the code line, we insert one on
-                    // the error-point-squiggly-line as well (instead of a space).
-                    // That way the squiggly line will usually appear in the correct
-                    // position.
-                    match ch {
-                        '\t' => {
-                            col += 8 - col%8;
-                            s.push('\t');
-                        },
-                        _ => {
-                            col += 1;
-                            s.push(' ');
-                        },
-                    }
-                }
-
-                s.push('^');
-                let col_ptr = col;
-                let count = match lastc {
-                    // Most terminals have a tab stop every eight columns by default
-                    '\t' => 8 - col%8,
-                    _ => 1,
-                };
-                col += count;
-                s.extend(::std::iter::repeat('~').take(count));
-
-                let hi = self.cm.lookup_char_pos(sp.hi);
-                if hi.col != lo.col {
-                    let mut chars = line_chars.by_ref();
-                    loop {
-                        // We peek here to preserve the value for the next span
-                        let (pos, ch) = match chars.peek() {
-                            Some(elem) => *elem,
-                            None => break,
-                        };
-                        if pos >= hi.col.to_usize() { break; }
-                        let count = match ch {
-                            '\t' => 8 - col%8,
-                            _ => 1,
-                        };
-                        col += count;
-                        s.extend(::std::iter::repeat('~').take(count));
-
-                        chars.next();
-                    }
-                }
-                if (col - col_ptr) > 0 {
-                    // One extra squiggly is replaced by a "^"
-                    s.pop();
-                }
-            }
-
-            // If we elided something put an ellipsis.
-            if prev_line_index != line.line_index.wrapping_sub(1) && !overflowed {
-                write!(&mut self.dst, "{0:1$}...\n", "", skip)?;
-            }
-
-            // Print offending code-line
-            remaining_err_lines -= 1;
-            write!(&mut self.dst, "{}:{:>width$} {}\n",
-                   fm.name,
-                   line.line_index + 1,
-                   cur_line_str,
-                   width=digits)?;
-
-            if s.len() > skip {
-                // Render the spans we assembled previously (if any).
-                println_maybe_styled!(&mut self.dst, term::Attr::ForegroundColor(lvl.color()),
-                                      "{}", s)?;
-            }
-
-            if !overflowed_buf.is_empty() {
-                // Print code-lines trailing the rendered spans (when a span overflows)
-                write!(&mut self.dst, "{}", &overflowed_buf)?;
-                overflowed_buf.clear();
-            } else {
-                prev_line_index = line.line_index;
-            }
-        }
-
-        // If we elided something, put an ellipsis.
-        if lines.next().is_some() {
-            write!(&mut self.dst, "{0:1$}...\n", "", skip)?;
         }
         Ok(())
     }
@@ -687,6 +503,43 @@ impl Destination {
             Some(t) => Terminal(t),
             None    => Raw(Box::new(io::stderr())),
         }
+    }
+
+    fn apply_style(&mut self,
+                   lvl: Level,
+                   _kind: &RenderedLineKind,
+                   style: Style)
+                   -> io::Result<()> {
+        match style {
+            Style::FileNameLine => {
+                self.start_attr(term::Attr::ForegroundColor(term::color::BLUE))?;
+            }
+            Style::Quotation => {
+            }
+            Style::Label => {
+                self.start_attr(term::Attr::Bold)?;
+                self.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
+            }
+            Style::NoStyle => {
+            }
+        }
+        Ok(())
+    }
+
+    fn start_attr(&mut self, attr: term::Attr) -> io::Result<()> {
+        match *self {
+            Terminal(ref mut t) => { t.attr(attr)?; }
+            Raw(_) => { }
+        }
+        Ok(())
+    }
+
+    fn reset_attrs(&mut self) -> io::Result<()> {
+        match *self {
+            Terminal(ref mut t) => { t.reset()?; }
+            Raw(_) => { }
+        }
+        Ok(())
     }
 
     fn print_maybe_styled(&mut self,

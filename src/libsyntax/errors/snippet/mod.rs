@@ -47,8 +47,8 @@ struct Annotation {
 
 #[derive(Debug)]
 pub struct RenderedLine {
-    text: Vec<StyledString>,
-    kind: RenderedLineKind,
+    pub text: Vec<StyledString>,
+    pub kind: RenderedLineKind,
 }
 
 #[derive(Debug)]
