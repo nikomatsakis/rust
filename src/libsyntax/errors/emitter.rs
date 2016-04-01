@@ -527,11 +527,17 @@ mod test {
         let vec: &[u8] = &vec;
         let str = from_utf8(vec).unwrap();
         println!("{}", str);
-        assert_eq!(str, "dummy.txt: 8         line8\n\
-                         dummy.txt: 9         line9\n\
-                         dummy.txt:10         line10\n\
-                         dummy.txt:11         e-lä-vän\n\
-                         dummy.txt:12         tolv\n");
+        assert_eq!(str, r#"
+dummy.txt:8          line8
+             ~~~~~~~~~~~~~
+dummy.txt:9          line9
+             ~~~~~~~~~~~~~
+dummy.txt:10         line10
+             ~~~~~~~~~~~~~~
+dummy.txt:11         e-lä-vän
+             ~~~~~~~~~~~~~~~~
+dummy.txt:12         tolv
+"#.trim_left());
     }
 
     #[test]
@@ -539,7 +545,7 @@ mod test {
         // Test that a `MultiSpan` containing a single span splices a substition correctly
         let cm = CodeMap::new();
         let inputtext = "aaaaa\nbbbbBB\nCCC\nDDDDDddddd\neee\n";
-        let selection = "     \n    ^~\n~~~\n~~~~~     \n   \n";
+        let selection = "     \n    ~~\n~~~\n~~~~~     \n   \n";
         cm.new_filemap_and_lines("blork.rs", inputtext);
         let sp = span_from_selection(inputtext, selection);
         let msp: MultiSpan = sp.into();
@@ -562,10 +568,10 @@ mod test {
         // several lines correctly
         let cm = CodeMap::new();
         let inp = "aaaaabbbbBB\nZZ\nZZ\nCCCDDDDDdddddeee";
-        let sp1 = "     ^~~~~~\n  \n  \n                ";
-        let sp2 = "           \n  \n  \n^~~~~~          ";
-        let sp3 = "           \n  \n  \n        ^~~     ";
-        let sp4 = "           \n  \n  \n           ^~~~ ";
+        let sp1 = "     ~~~~~~\n  \n  \n                ";
+        let sp2 = "           \n  \n  \n~~~~~~          ";
+        let sp3 = "           \n  \n  \n        ~~~     ";
+        let sp4 = "           \n  \n  \n           ~~~~ ";
 
         let span_eq = |sp, eq| assert_eq!(&cm.span_to_snippet(sp).unwrap(), eq);
 
@@ -686,15 +692,43 @@ mod test {
         let sp4 = span(10, 10, (2, 3));
         let sp5 = span(10, 10, (4, 6));
 
-        let expect0 = "dummy.txt:5  ccccc\n\
-                       dummy.txt:6  xxxxx\n\
-                       dummy.txt:7  yyyyy\n\
-                    \x20            ...\n\
-                       dummy.txt:9  ddd__eee_\n\
-                    \x20            ~~~  ~~~\n\
-                    \x20            ...\n\
-                       dummy.txt:11 __f_gg\n\
-                    \x20              ~ ~~\n";
+        let expect0 = r#"
+dummy.txt:5  ccccc
+             ~~~~~
+dummy.txt:6  xxxxx
+             ~~~~~
+dummy.txt:7  yyyyy
+             ~~~~~
+dummy.txt:8  _____
+dummy.txt:9  ddd__eee_
+             ~~~  ~~~
+dummy.txt:10 elided
+dummy.txt:11 __f_gg
+               ~ ~~
+"#.trim_left();
+
+        let expect = r#"
+dummy.txt:1  aaaaa
+             ~~~~~
+dummy.txt:2  aaaaa
+             ~~~~~
+dummy.txt:3  aaaaa
+             ~~~~~
+dummy.txt:4  bbbbb
+             ~~~~~
+dummy.txt:5  ccccc
+             ~~~~~
+dummy.txt:6  xxxxx
+             ~~~~~
+dummy.txt:7  yyyyy
+             ~~~~~
+dummy.txt:8  _____
+dummy.txt:9  ddd__eee_
+             ~~~  ~~~
+dummy.txt:10 elided
+dummy.txt:11 __f_gg
+               ~ ~~
+"#.trim_left();
 
         let expect = "dummy.txt:1 aaaaa\n\
                       dummy.txt:2 aaaaa\n\

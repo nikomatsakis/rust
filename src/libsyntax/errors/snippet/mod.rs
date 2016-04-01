@@ -13,7 +13,6 @@
 #![allow(dead_code)] // TODO
 
 use codemap::{CharPos, CodeMap, FileMap, Span};
-use std::collections::HashMap;
 use std::iter;
 use std::rc::Rc;
 use std::mem;
@@ -29,10 +28,6 @@ pub struct SnippetData {
 struct Line {
     file: Rc<FileMap>,
     line_index: usize,
-
-    // mapping from utf8 offsets to character offsets
-    utf8_to_char: HashMap<CharPos, usize>,
-
     annotations: Vec<Annotation>,
 }
 
@@ -464,31 +459,17 @@ impl RenderedLineKind {
 
 impl Line {
     fn new(file: &Rc<FileMap>, line_index: usize) -> Line {
-        // We store our column offsets in characters, not utf-8
-        // offsets, so we have to prepare a map for this line.
-        let line_str = file.get_line(line_index).unwrap();
-        let mut utf8_to_char: HashMap<CharPos, usize> =
-            line_str.char_indices()
-                    .enumerate()
-                    .map(|(index, (offset, _char))| (CharPos(offset), index))
-                    .collect();
-        let len_in_chars = utf8_to_char.len();
-        utf8_to_char.insert(line_str.len(), len_in_chars);
-
         Line {
             file: file.clone(),
             line_index: line_index,
-            utf8_to_char: utf8_to_char,
             annotations: vec![]
         }
     }
 
     fn push_annotation(&mut self, start: CharPos, end: CharPos, label: Option<String>) {
-        let start = self.utf8_to_char[&start];
-        let end = self.utf8_to_char[&end];
         self.annotations.push(Annotation {
-            start_col: start,
-            end_col: end,
+            start_col: start.0,
+            end_col: end.0,
             label: label
         });
     }

@@ -1095,7 +1095,9 @@ impl CodeMap {
         // numbers in Loc are 1-based, so we subtract 1 to get 0-based
         // lines.
         for line_index in lo.line-1 .. hi.line-1 {
-            let line_len = lo.file.get_line(line_index).map(|s| s.len()).unwrap_or(0);
+            let line_len = lo.file.get_line(line_index)
+                                  .map(|s| s.chars().count())
+                                  .unwrap_or(0);
             lines.push(LineInfo { line_index: line_index,
                                   start_col: start_col,
                                   end_col: CharPos::from_usize(line_len) });
