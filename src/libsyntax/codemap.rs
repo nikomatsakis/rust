@@ -290,6 +290,14 @@ impl MultiSpan {
         MultiSpan { spans: Vec::new() }
     }
 
+    pub fn from_spans(vec: Vec<Span>) -> MultiSpan {
+        MultiSpan {
+            spans: vec.into_iter()
+                      .map(|span| SpanString { span: span, label: None })
+                      .collect()
+        }
+    }
+
     pub fn from_labels(vec: Vec<(Span, String)>) -> MultiSpan {
         MultiSpan {
             spans: vec.into_iter()

@@ -601,14 +601,13 @@ dummy.txt:12         tolv
             assert_eq!(actual, expected);
         };
 
-        let msp = MultiSpan { spans: vec![sp1, sp2, sp34] };
+        let msp = MultiSpan::from_spans(vec![sp1, sp2, sp34]);
         test(expect_start, &mut || {
             diag.highlight_lines(&msp, Level::Error).unwrap();
         });
         test(expect_start, &mut || {
-            for msp in cm.group_spans(spans.clone()) {
-                diag.highlight_lines(&msp, Level::Error).unwrap();
-            }
+            let msg = MultiSpan::from_spans(spans.clone());
+            diag.highlight_lines(&msp, Level::Error).unwrap();
         });
     }
 
@@ -660,29 +659,6 @@ dummy.txt:11 __f_gg
                ~ ~~
 "#.trim_left();
 
-        let expect = r#"
-dummy.txt:1  aaaaa
-             ~~~~~
-dummy.txt:2  aaaaa
-             ~~~~~
-dummy.txt:3  aaaaa
-             ~~~~~
-dummy.txt:4  bbbbb
-             ~~~~~
-dummy.txt:5  ccccc
-             ~~~~~
-dummy.txt:6  xxxxx
-             ~~~~~
-dummy.txt:7  yyyyy
-             ~~~~~
-dummy.txt:8  _____
-dummy.txt:9  ddd__eee_
-             ~~~  ~~~
-dummy.txt:10 elided
-dummy.txt:11 __f_gg
-               ~ ~~
-"#.trim_left();
-
         let expect = "dummy.txt:1 aaaaa\n\
                       dummy.txt:2 aaaaa\n\
                       dummy.txt:3 aaaaa\n\
@@ -706,7 +682,6 @@ dummy.txt:11 __f_gg
                     \x20              ~ ~~\n";
 
 
-        let expect_groups = [expect2, expect_g1];
         let spans = vec![sp3, sp1, sp4, sp2, sp5];
 
         macro_rules! test {
@@ -723,9 +698,9 @@ dummy.txt:11 __f_gg
             });
         }
 
-        let msp0 = MultiSpan { spans: vec![sp0, sp2, sp3, sp4, sp5] };
-        let msp = MultiSpan { spans: vec![sp1, sp2, sp3, sp4, sp5] };
-        let msp2 = MultiSpan { spans: vec![sp2, sp3, sp4, sp5] };
+        let msp0 = MultiSpan::from_spans(vec![sp0, sp2, sp3, sp4, sp5]);
+        let msp = MultiSpan::from_spans(vec![sp1, sp2, sp3, sp4, sp5]);
+        let msp2 = MultiSpan::from_spans(vec![sp2, sp3, sp4, sp5]);
 
         test!(expect0, || {
             diag.highlight_lines(&msp0, Level::Error).unwrap();
@@ -736,10 +711,5 @@ dummy.txt:11 __f_gg
         test!(expect2, || {
             diag.highlight_lines(&msp2, Level::Error).unwrap();
         });
-        for (msp, expect) in cm.group_spans(spans.clone()).iter().zip(expect_groups.iter()) {
-            test!(expect, || {
-                diag.highlight_lines(&msp, Level::Error).unwrap();
-            });
-        }
     }
 }
