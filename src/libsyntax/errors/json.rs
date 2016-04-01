@@ -202,21 +202,6 @@ impl DiagnosticSpan {
             RenderSpan::Suggestion(CodeSuggestion { ref msp, .. }) => {
                 DiagnosticSpan::from_multispan(msp, je)
             }
-            RenderSpan::EndSpan(ref msp) => {
-                msp.spans.iter().map(|span| {
-                    let end = je.cm.lookup_char_pos(span.hi);
-                    DiagnosticSpan {
-                        file_name: end.file.name.clone(),
-                        byte_start: span.lo.0,
-                        byte_end: span.hi.0,
-                        line_start: 0,
-                        line_end: end.line,
-                        column_start: 0,
-                        column_end: end.col.0 + 1,
-                        text: DiagnosticSpanLine::from_span(span, je),
-                    }
-                }).collect()
-            }
             RenderSpan::FileLine(ref msp) => {
                 msp.spans.iter().map(|span| {
                     let start = je.cm.lookup_char_pos(span.lo);

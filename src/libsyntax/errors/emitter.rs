@@ -43,9 +43,6 @@ pub trait Emitter {
 /// maximum number of lines we will print for each error; arbitrary.
 pub const MAX_HIGHLIGHT_LINES: usize = 6;
 
-/// maximum number of lines we will print for each span; arbitrary.
-const MAX_SP_LINES: usize = 6;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ColorConfig {
     Auto,
@@ -178,9 +175,6 @@ impl EmitterWriter {
 
         let ss = if bounds == COMMAND_LINE_SP {
             "<command line option>".to_string()
-        } else if let EndSpan(_) = *rsp {
-            let span_end = Span { lo: bounds.hi, hi: bounds.hi, expn_id: bounds.expn_id};
-            self.cm.span_to_string(span_end)
         } else {
             self.cm.span_to_string(bounds)
         };
@@ -190,10 +184,6 @@ impl EmitterWriter {
         match *rsp {
             FullSpan(_) => {
                 self.highlight_lines(msp, lvl)?;
-                self.print_macro_backtrace(bounds)?;
-            }
-            EndSpan(_) => {
-                self.end_highlight_lines(msp, lvl)?;
                 self.print_macro_backtrace(bounds)?;
             }
             Suggestion(ref suggestion) => {
@@ -263,129 +253,7 @@ impl EmitterWriter {
                 write!(&mut self.dst, "{}", styled_string.text)?;
                 self.dst.reset_attrs()?;
             }
-        }
-        Ok(())
-    }
-
-    /// Here are the differences between this and the normal `highlight_lines`:
-    /// `end_highlight_lines` will always put arrow on the last byte of each
-    /// span (instead of the first byte). Also, when a span is too long (more
-    /// than 6 lines), `end_highlight_lines` will print the first line, then
-    /// dot dot dot, then last line, whereas `highlight_lines` prints the first
-    /// six lines.
-    #[allow(deprecated)]
-    fn end_highlight_lines(&mut self,
-                           msp: &MultiSpan,
-                           lvl: Level)
-                          -> io::Result<()> {
-        let lines = match self.cm.span_to_lines(msp.to_span_bounds()) {
-            Ok(lines) => lines,
-            Err(_) => {
-                write!(&mut self.dst, "(internal compiler error: unprintable span)\n")?;
-                return Ok(());
-            }
-        };
-
-        let fm = &*lines.file;
-        if let None = fm.src {
-            return Ok(());
-        }
-
-        let lines = &lines.lines[..];
-
-        // Calculate the widest number to format evenly
-        let first_line = lines.first().unwrap();
-        let last_line = lines.last().unwrap();
-        let digits = line_num_max_digits(last_line);
-
-        let skip = fm.name.chars().count() + digits + 2;
-
-        let mut spans = msp.spans.iter().peekable();
-        let mut lines = lines.iter();
-        let mut prev_line_index = first_line.line_index.wrapping_sub(1);
-
-        // Display at most MAX_HIGHLIGHT_LINES lines.
-        let mut remaining_err_lines = MAX_HIGHLIGHT_LINES;
-
-        'l: loop {
-            if remaining_err_lines <= 0 {
-                break;
-            }
-            let line = match lines.next() {
-                Some(line) => line,
-                None => break,
-            };
-
-            // Skip is the number of characters we need to skip because they are
-            // part of the 'filename:line ' part of the previous line.
-            let mut s: String = ::std::iter::repeat(' ').take(skip).collect();
-
-            let line_str = fm.get_line(line.line_index).unwrap();
-            let mut line_chars = line_str.chars().enumerate();
-            let mut line_spans = 0;
-
-            loop {
-                // Peek here to preserve the span if it doesn't belong to this line
-                let sp = match spans.peek() {
-                    Some(sp) => **sp,
-                    None => break,
-                };
-                let lo = self.cm.lookup_char_pos(sp.lo);
-                let hi = self.cm.lookup_char_pos(sp.hi);
-                let elide_sp = (hi.line - lo.line) >= MAX_SP_LINES;
-
-                let line_num = line.line_index + 1;
-                if !(lo.line <= line_num && hi.line >= line_num) {
-                    // This line is not contained in the span
-                    if line_spans == 0 {
-                        continue 'l;
-                    } else {
-                        // This line is finished, now render the spans we've assembled
-                        break
-                    }
-                } else if hi.line > line_num {
-                    if elide_sp && lo.line < line_num {
-                        // This line is inbetween the first and last line of the span,
-                        // so we may want to elide it.
-                        continue 'l;
-                    } else {
-                        break
-                    }
-                }
-                line_spans += 1;
-                spans.next();
-
-                for (pos, ch) in line_chars.by_ref() {
-                    // Span seems to use half-opened interval, so subtract 1
-                    if pos >= hi.col.to_usize() - 1 { break; }
-                    // Whenever a tab occurs on the previous line, we insert one on
-                    // the error-point-squiggly-line as well (instead of a space).
-                    // That way the squiggly line will usually appear in the correct
-                    // position.
-                    match ch {
-                        '\t' => s.push('\t'),
-                        _ => s.push(' '),
-                    }
-                }
-                s.push('^');
-            }
-
-            if prev_line_index != line.line_index.wrapping_sub(1) {
-                // If we elided something, put an ellipsis.
-                write!(&mut self.dst, "{0:1$}...\n", "", skip)?;
-            }
-
-            // Print offending code-lines
-            write!(&mut self.dst, "{}:{:>width$} {}\n", fm.name,
-                   line.line_index + 1, line_str, width=digits)?;
-            remaining_err_lines -= 1;
-
-            if s.len() > skip {
-                // Render the spans we assembled previously (if any)
-                println_maybe_styled!(&mut self.dst, term::Attr::ForegroundColor(lvl.color()),
-                                      "{}", s)?;
-            }
-            prev_line_index = line.line_index;
+            write!(&mut self.dst, "\n")?;
         }
         Ok(())
     }
@@ -744,17 +612,14 @@ mod test {
         let mut diag = EmitterWriter::new(Box::new(Sink(data.clone())), None, cm.clone());
 
         let inp =       "_____aaaaaa____bbbbbb__cccccdd_";
-        let sp1 =       "     ^~~~~~                    ";
-        let sp2 =       "               ^~~~~~          ";
-        let sp3 =       "                       ^~~~~   ";
-        let sp4 =       "                          ^~~~ ";
-        let sp34 =      "                       ^~~~~~~ ";
-        let sp4_end =   "                            ^~ ";
+        let sp1 =       "     ~~~~~~                    ";
+        let sp2 =       "               ~~~~~~          ";
+        let sp3 =       "                       ~~~~~   ";
+        let sp4 =       "                          ~~~~ ";
+        let sp34 =      "                       ~~~~~~~ ";
 
         let expect_start = "dummy.txt:1 _____aaaaaa____bbbbbb__cccccdd_\n\
-                         \x20                ^~~~~~    ^~~~~~  ^~~~~~~\n";
-        let expect_end =   "dummy.txt:1 _____aaaaaa____bbbbbb__cccccdd_\n\
-                         \x20                     ^         ^      ^ ^\n";
+                         \x20                ~~~~~~    ~~~~~~  ~~~~~~~\n";
 
         let span = |sp, expected| {
             let sp = span_from_selection(inp, sp);
@@ -767,7 +632,6 @@ mod test {
         let sp3 = span(sp3, "ccccc");
         let sp4 = span(sp4, "ccdd");
         let sp34 = span(sp34, "cccccdd");
-        let sp4_end = span(sp4_end, "dd");
 
         let spans = vec![sp1, sp2, sp3, sp4];
 
@@ -780,21 +644,12 @@ mod test {
         };
 
         let msp = MultiSpan { spans: vec![sp1, sp2, sp34] };
-        let msp_end = MultiSpan { spans: vec![sp1, sp2, sp3, sp4_end] };
         test(expect_start, &mut || {
             diag.highlight_lines(&msp, Level::Error).unwrap();
-        });
-        test(expect_end, &mut || {
-            diag.end_highlight_lines(&msp_end, Level::Error).unwrap();
         });
         test(expect_start, &mut || {
             for msp in cm.group_spans(spans.clone()) {
                 diag.highlight_lines(&msp, Level::Error).unwrap();
-            }
-        });
-        test(expect_end, &mut || {
-            for msp in cm.end_group_spans(spans.clone()) {
-                diag.end_highlight_lines(&msp, Level::Error).unwrap();
             }
         });
     }
@@ -832,22 +687,22 @@ mod test {
         let sp4 = span(10, 10, (2, 3));
         let sp5 = span(10, 10, (4, 6));
 
-        let expect0 = "dummy.txt: 5 ccccc\n\
-                       dummy.txt: 6 xxxxx\n\
-                       dummy.txt: 7 yyyyy\n\
+        let expect0 = "dummy.txt:5  ccccc\n\
+                       dummy.txt:6  xxxxx\n\
+                       dummy.txt:7  yyyyy\n\
                     \x20            ...\n\
-                       dummy.txt: 9 ddd__eee_\n\
-                    \x20            ^~~  ^~~\n\
+                       dummy.txt:9  ddd__eee_\n\
+                    \x20            ~~~  ~~~\n\
                     \x20            ...\n\
                        dummy.txt:11 __f_gg\n\
-                    \x20              ^ ^~\n";
+                    \x20              ~ ~~\n";
 
-        let expect = "dummy.txt: 1 aaaaa\n\
-                      dummy.txt: 2 aaaaa\n\
-                      dummy.txt: 3 aaaaa\n\
-                      dummy.txt: 4 bbbbb\n\
-                      dummy.txt: 5 ccccc\n\
-                      dummy.txt: 6 xxxxx\n\
+        let expect = "dummy.txt:1 aaaaa\n\
+                      dummy.txt:2 aaaaa\n\
+                      dummy.txt:3 aaaaa\n\
+                      dummy.txt:4 bbbbb\n\
+                      dummy.txt:5 ccccc\n\
+                      dummy.txt:6 xxxxx\n\
                    \x20            ...\n";
 
         let expect_g1 = "dummy.txt:1 aaaaa\n\
@@ -858,48 +713,14 @@ mod test {
                          dummy.txt:6 xxxxx\n\
                       \x20           ...\n";
 
-        let expect2 = "dummy.txt: 9 ddd__eee_\n\
-                    \x20            ^~~  ^~~\n\
+        let expect2 = "dummy.txt:9  ddd__eee_\n\
+                    \x20            ~~~  ~~~\n\
                     \x20            ...\n\
                        dummy.txt:11 __f_gg\n\
-                    \x20              ^ ^~\n";
+                    \x20              ~ ~~\n";
 
-
-        let expect_end = "dummy.txt: 1 aaaaa\n\
-                       \x20            ...\n\
-                          dummy.txt: 7 yyyyy\n\
-                       \x20                ^\n\
-                       \x20            ...\n\
-                          dummy.txt: 9 ddd__eee_\n\
-                       \x20              ^    ^\n\
-                       \x20            ...\n\
-                          dummy.txt:11 __f_gg\n\
-                       \x20              ^  ^\n";
-
-        let expect0_end = "dummy.txt: 5 ccccc\n\
-                           dummy.txt: 6 xxxxx\n\
-                           dummy.txt: 7 yyyyy\n\
-                        \x20                ^\n\
-                        \x20            ...\n\
-                           dummy.txt: 9 ddd__eee_\n\
-                        \x20              ^    ^\n\
-                        \x20            ...\n\
-                           dummy.txt:11 __f_gg\n\
-                        \x20              ^  ^\n";
-
-        let expect_end_g1 = "dummy.txt:1 aaaaa\n\
-                          \x20           ...\n\
-                             dummy.txt:7 yyyyy\n\
-                          \x20               ^\n";
-
-        let expect2_end = "dummy.txt: 9 ddd__eee_\n\
-                        \x20              ^    ^\n\
-                        \x20            ...\n\
-                           dummy.txt:11 __f_gg\n\
-                        \x20              ^  ^\n";
 
         let expect_groups = [expect2, expect_g1];
-        let expect_end_groups = [expect2_end, expect_end_g1];
         let spans = vec![sp3, sp1, sp4, sp2, sp5];
 
         macro_rules! test {
@@ -923,29 +744,15 @@ mod test {
         test!(expect0, || {
             diag.highlight_lines(&msp0, Level::Error).unwrap();
         });
-        test!(expect0_end, || {
-            diag.end_highlight_lines(&msp0, Level::Error).unwrap();
-        });
         test!(expect, || {
             diag.highlight_lines(&msp, Level::Error).unwrap();
-        });
-        test!(expect_end, || {
-            diag.end_highlight_lines(&msp, Level::Error).unwrap();
         });
         test!(expect2, || {
             diag.highlight_lines(&msp2, Level::Error).unwrap();
         });
-        test!(expect2_end, || {
-            diag.end_highlight_lines(&msp2, Level::Error).unwrap();
-        });
         for (msp, expect) in cm.group_spans(spans.clone()).iter().zip(expect_groups.iter()) {
             test!(expect, || {
                 diag.highlight_lines(&msp, Level::Error).unwrap();
-            });
-        }
-        for (msp, expect) in cm.group_spans(spans.clone()).iter().zip(expect_end_groups.iter()) {
-            test!(expect, || {
-                diag.end_highlight_lines(&msp, Level::Error).unwrap();
             });
         }
     }

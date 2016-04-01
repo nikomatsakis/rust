@@ -634,3 +634,33 @@ fn foo() {
     }
 ]"#);
 }
+
+#[test]
+fn spans_without_labels() {
+    let file_text = r#"
+fn foo() {
+    let mut vec = vec![0, 1, 2];
+    let mut vec2 = vec;
+    vec2.push(3);
+    vec2.push(4);
+    vec2.push(5);
+    vec2.push(6);
+    vec.push(7);
+}
+"#;
+
+    let cm = Rc::new(CodeMap::new());
+    cm.new_filemap_and_lines("foo.rs", file_text);
+
+    let mut snippet = SnippetData::new(cm.clone());
+    for i in 0..4 {
+        let span_veci = cm.span_substr(file_text, "vec", i);
+        snippet.push(span_veci, None);
+    }
+
+    let lines = snippet.render_lines();
+    let text: String = make_string(&lines);
+    println!("{}", text);
+    assert_eq!(text, r#"
+"#.trim_left());
+}

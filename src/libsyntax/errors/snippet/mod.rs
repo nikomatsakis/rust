@@ -274,6 +274,10 @@ impl SnippetData {
             }
         }
 
+        // Now we are going to write labels in. To start, we'll exclude
+        // the annotations with no labels.
+        annotations.retain(|a| a.label.is_some());
+
         // Now add the text labels. The last annotation is different
         // because that goes at the end of the highlight line.
         let (last_annotation, previous_annotations) = annotations.split_last()

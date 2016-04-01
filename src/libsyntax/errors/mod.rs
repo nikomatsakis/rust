@@ -34,13 +34,6 @@ pub enum RenderSpan {
     /// the source code covered by the span.
     FullSpan(MultiSpan),
 
-    /// Similar to a FullSpan, but the cited position is the end of
-    /// the span, instead of the start. Used, at least, for telling
-    /// compiletest/runtest to look at the last line of the span
-    /// (since `end_highlight_lines` displays an arrow to the end
-    /// of the span).
-    EndSpan(MultiSpan),
-
     /// A suggestion renders with both with an initial line for the
     /// message, prefixed by file:linenum, followed by a summary
     /// of hypothetical source code, where each `String` is spliced
@@ -63,7 +56,6 @@ impl RenderSpan {
         match *self {
             FullSpan(ref msp) |
             Suggestion(CodeSuggestion { ref msp, .. }) |
-            EndSpan(ref msp) |
             FileLine(ref msp) =>
                 msp
         }
@@ -273,13 +265,6 @@ impl<'a> DiagnosticBuilder<'a> {
             msp: sp.into(),
             substitutes: vec![suggestion],
         })));
-        self
-    }
-    pub fn span_end_note<S: Into<MultiSpan>>(&mut self,
-                                             sp: S,
-                                             msg: &str)
-                                             -> &mut DiagnosticBuilder<'a> {
-        self.sub(Level::Note, msg, None, Some(EndSpan(sp.into())));
         self
     }
     pub fn fileline_warn<S: Into<MultiSpan>>(&mut self,

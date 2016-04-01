@@ -564,8 +564,8 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
 
             let old_loan_span = self.tcx().map.span(
                 old_loan.kill_scope.node_id(&self.tcx().region_maps));
-            err.span_end_note(old_loan_span,
-                              "previous borrow ends here");
+            err.span_note(old_loan_span.end_point(),
+                          "previous borrow ends here");
             err.emit();
             return false;
         }

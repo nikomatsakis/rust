@@ -149,6 +149,11 @@ pub const COMMAND_LINE_SP: Span = Span { lo: BytePos(0),
                                          expn_id: COMMAND_LINE_EXPN };
 
 impl Span {
+    /// Returns a new span representing just the end-point of this span
+    pub fn end_point(self) -> Span {
+        Span { lo: self.hi, hi: self.hi, expn_id: self.expn_id}
+    }
+
     /// Returns `self` if `self` is not the dummy span, and `other` otherwise.
     pub fn substitute_dummy(self, other: Span) -> Span {
         if self.source_equal(&DUMMY_SP) { other } else { self }
@@ -322,45 +327,6 @@ impl MultiSpan {
         } else {
             self.spans.push(sp);
         }
-    }
-
-    /// Inserts the given span into itself, for use with `end_highlight_lines`.
-    pub fn push_trim(&mut self, mut sp: Span) {
-        let mut prev = mk_sp(BytePos(0), BytePos(0));
-
-        if let Some(first) = self.spans.get_mut(0) {
-            if first.lo > sp.lo {
-                // Prevent us here from spanning fewer lines
-                // because of trimming the start of the span
-                // (this should not be visible, because this method ought
-                // to not be used in conjunction with `highlight_lines`)
-                first.lo = sp.lo;
-            }
-        }
-
-        for idx in 0.. {
-            if let Some(sp_trim) = sp.trim_start(prev) {
-                // Implies `sp.hi > prev.hi`
-                let cur = match self.spans.get(idx) {
-                    Some(s) => *s,
-                    None => {
-                        sp = sp_trim;
-                        break;
-                    }
-                };
-                // `cur` may overlap with `sp_trim`
-                if let Some(cur_trim) = cur.trim_start(sp_trim) {
-                    // Implies `sp.hi < cur.hi`
-                    self.spans.insert(idx, sp_trim);
-                    self.spans[idx + 1] = cur_trim;
-                    return;
-                } else if sp.hi == cur.hi {
-                    return;
-                }
-                prev = cur;
-            }
-        }
-        self.spans.push(sp);
     }
 }
 
@@ -1235,12 +1201,6 @@ impl CodeMap {
         self.custom_group_spans(spans, |msp, sp| msp.push_merge(sp))
     }
 
-    /// Like `group_spans`, but trims overlapping spans instead of
-    /// merging them (for use with `end_highlight_lines`)
-    pub fn end_group_spans(&self, spans: Vec<Span>) -> Vec<MultiSpan> {
-        self.custom_group_spans(spans, |msp, sp| msp.push_trim(sp))
-    }
-
     pub fn get_filemap(&self, filename: &str) -> Rc<FileMap> {
         for fm in self.files.borrow().iter() {
             if filename == fm.name {
@@ -1590,13 +1550,13 @@ mod tests {
         assert_eq!(file_lines.lines[0].line_index, 1);
     }
 
-    /// Given a string like " ^~~~~~~~~~~~ ", produces a span
+    /// Given a string like " ~~~~~~~~~~~~ ", produces a span
     /// coverting that range. The idea is that the string has the same
     /// length as the input, and we uncover the byte positions.  Note
     /// that this can span lines and so on.
     fn span_from_selection(input: &str, selection: &str) -> Span {
         assert_eq!(input.len(), selection.len());
-        let left_index = selection.find('^').unwrap() as u32;
+        let left_index = selection.find('~').unwrap() as u32;
         let right_index = selection.rfind('~').map(|x|x as u32).unwrap_or(left_index);
         Span { lo: BytePos(left_index), hi: BytePos(right_index + 1), expn_id: NO_EXPANSION }
     }
@@ -1607,7 +1567,7 @@ mod tests {
     fn span_to_snippet_and_lines_spanning_multiple_lines() {
         let cm = CodeMap::new();
         let inputtext = "aaaaa\nbbbbBB\nCCC\nDDDDDddddd\neee\n";
-        let selection = "     \n    ^~\n~~~\n~~~~~     \n   \n";
+        let selection = "     \n    ~~\n~~~\n~~~~~     \n   \n";
         cm.new_filemap_and_lines("blork.rs", inputtext);
         let span = span_from_selection(inputtext, selection);
 
@@ -1763,18 +1723,17 @@ r"blork2.rs:2:1: 2:12
         // Test that collecting multiple spans into line-groups works correctly
         let cm = CodeMap::new();
         let inp  =      "_aaaaa__bbb\nvv\nw\nx\ny\nz\ncccccc__ddddee__";
-        let sp1  =      " ^~~~~     \n  \n \n \n \n \n                ";
-        let sp2  =      "           \n  \n \n \n \n^\n                ";
-        let sp3  =      "        ^~~\n~~\n \n \n \n \n                ";
-        let sp4  =      "           \n  \n \n \n \n \n^~~~~~          ";
-        let sp5  =      "           \n  \n \n \n \n \n        ^~~~    ";
-        let sp6  =      "           \n  \n \n \n \n \n          ^~~~  ";
-        let sp_trim =   "           \n  \n \n \n \n \n            ^~  ";
-        let sp_merge =  "           \n  \n \n \n \n \n        ^~~~~~  ";
-        let sp7  =      "           \n ^\n \n \n \n \n                ";
-        let sp8  =      "           \n  \n^\n \n \n \n                ";
-        let sp9  =      "           \n  \n \n^\n \n \n                ";
-        let sp10 =      "           \n  \n \n \n^\n \n                ";
+        let sp1  =      " ~~~~~     \n  \n \n \n \n \n                ";
+        let sp2  =      "           \n  \n \n \n \n~\n                ";
+        let sp3  =      "        ~~~\n~~\n \n \n \n \n                ";
+        let sp4  =      "           \n  \n \n \n \n \n~~~~~~          ";
+        let sp5  =      "           \n  \n \n \n \n \n        ~~~~    ";
+        let sp6  =      "           \n  \n \n \n \n \n          ~~~~  ";
+        let sp_merge =  "           \n  \n \n \n \n \n        ~~~~~~  ";
+        let sp7  =      "           \n ~\n \n \n \n \n                ";
+        let sp8  =      "           \n  \n~\n \n \n \n                ";
+        let sp9  =      "           \n  \n \n~\n \n \n                ";
+        let sp10 =      "           \n  \n \n \n~\n \n                ";
 
         let span = |sp, expected| {
             let sp = span_from_selection(inp, sp);
@@ -1793,7 +1752,6 @@ r"blork2.rs:2:1: 2:12
         let sp8 = span(sp8, "w");
         let sp9 = span(sp9, "x");
         let sp10 = span(sp10, "y");
-        let sp_trim = span(sp_trim, "ee");
         let sp_merge = span(sp_merge, "ddddee");
 
         let spans = vec![sp5, sp2, sp4, sp9, sp10, sp7, sp3, sp8, sp1, sp6];
@@ -1814,15 +1772,6 @@ r"blork2.rs:2:1: 2:12
         check_next!(it, Some([sp1, sp7, sp8, sp9, sp10, sp2]));
         // New group because we're exceeding MAX_HIGHLIGHT_LINES
         check_next!(it, Some([sp4, sp_merge]));
-        check_next!(it, Some([sp3]));
-        check_next!(it, None::<[Span; 0]>);
-
-        let _groups = cm.end_group_spans(spans);
-        let it = &mut _groups.iter();
-
-        check_next!(it, Some([sp1, sp7, sp8, sp9, sp10, sp2]));
-        // New group because we're exceeding MAX_HIGHLIGHT_LINES
-        check_next!(it, Some([sp4, sp5, sp_trim]));
         check_next!(it, Some([sp3]));
         check_next!(it, None::<[Span; 0]>);
     }
