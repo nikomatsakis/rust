@@ -12,7 +12,8 @@
 
 #![allow(dead_code)] // TODO
 
-use codemap::{CodeMap, FileMap, Span};
+use codemap::{CharPos, CodeMap, FileMap, Span};
+use std::collections::HashMap;
 use std::iter;
 use std::rc::Rc;
 use std::mem;
@@ -28,14 +29,19 @@ pub struct SnippetData {
 struct Line {
     file: Rc<FileMap>,
     line_index: usize,
+
+    // mapping from utf8 offsets to character offsets
+    utf8_to_char: HashMap<CharPos, usize>,
+
     annotations: Vec<Annotation>,
 }
 
 #[derive(Clone, PartialOrd, Ord, PartialEq, Eq)]
 struct Annotation {
-    /// Start column, 0-based indexing. Note that it is important that
-    /// this field goes first, so that when we sort, we sort orderings
-    /// by start column.
+    /// Start column, 0-based indexing -- counting *characters*, not
+    /// utf-8 bytes. Note that it is important that this field goes
+    /// first, so that when we sort, we sort orderings by start
+    /// column.
     start_col: usize,
 
     /// End column within the line.
@@ -101,18 +107,14 @@ impl SnippetData {
         // obviously correct.
         let (line0, remaining_lines) = file_lines.lines.split_first().unwrap();
         let index = self.ensure_source_line(&file_lines.file, line0.line_index);
-        self.lines[index].annotations.push(Annotation {
-            start_col: line0.start_col.0,
-            end_col: line0.end_col.0,
-            label: label,
-        });
+        self.lines[index].push_annotation(line0.start_col,
+                                          line0.end_col,
+                                          label);
         for line in remaining_lines {
             let index = self.ensure_source_line(&file_lines.file, line.line_index);
-            self.lines[index].annotations.push(Annotation {
-                start_col: line0.start_col.0,
-                end_col: line0.end_col.0,
-                label: None,
-            });
+            self.lines[index].push_annotation(line.start_col,
+                                              line.end_col,
+                                              None);
         }
     }
 
@@ -370,11 +372,7 @@ impl SnippetData {
     /// some of those lines may be elided.)
     fn ensure_source_line(&mut self, file: &Rc<FileMap>, line_index: usize) -> usize {
         if self.lines.is_empty() {
-            self.lines.push(Line {
-                file: file.clone(),
-                line_index: line_index,
-                annotations: vec![]
-            });
+            self.lines.push(Line::new(file, line_index));
             return 0;
         }
 
@@ -396,13 +394,7 @@ impl SnippetData {
             let lines = mem::replace(&mut self.lines, vec![]);
             self.lines.extend(
                 (line_index .. first_line_index)
-                    .map(|line| {
-                        Line {
-                            file: file.clone(),
-                            line_index: line,
-                            annotations: vec![]
-                        }
-                    })
+                    .map(|line| Line::new(&file, line))
                     .chain(lines));
             return 0;
         }
@@ -412,13 +404,7 @@ impl SnippetData {
         if line_index > last_line_index {
             self.lines.extend(
                 (last_line_index+1 .. line_index+1)
-                    .map(|line| {
-                        Line {
-                            file: file.clone(),
-                            line_index: line,
-                            annotations: vec![]
-                        }
-                    }));
+                    .map(|line| Line::new(&file, line)));
             return self.lines.len() - 1;
         }
 
@@ -473,5 +459,37 @@ impl RenderedLineKind {
                     style: NoStyle,
                 },
         }
+    }
+}
+
+impl Line {
+    fn new(file: &Rc<FileMap>, line_index: usize) -> Line {
+        // We store our column offsets in characters, not utf-8
+        // offsets, so we have to prepare a map for this line.
+        let line_str = file.get_line(line_index).unwrap();
+        let mut utf8_to_char: HashMap<CharPos, usize> =
+            line_str.char_indices()
+                    .enumerate()
+                    .map(|(index, (offset, _char))| (CharPos(offset), index))
+                    .collect();
+        let len_in_chars = utf8_to_char.len();
+        utf8_to_char.insert(line_str.len(), len_in_chars);
+
+        Line {
+            file: file.clone(),
+            line_index: line_index,
+            utf8_to_char: utf8_to_char,
+            annotations: vec![]
+        }
+    }
+
+    fn push_annotation(&mut self, start: CharPos, end: CharPos, label: Option<String>) {
+        let start = self.utf8_to_char[&start];
+        let end = self.utf8_to_char[&end];
+        self.annotations.push(Annotation {
+            start_col: start,
+            end_col: end,
+            label: label
+        });
     }
 }
