@@ -121,9 +121,8 @@ impl SnippetData {
                                 Some(x) => x.clone()
                             };
 
-                        lines_iter.next();
-
                         unannotated_group.push(next_line);
+                        lines_iter.next();
                     }
 
                     line_groups.push((false, unannotated_group));
@@ -142,9 +141,8 @@ impl SnippetData {
                                 Some(x) => x.clone()
                             };
 
-                        lines_iter.next();
-
                         annotated_group.push(next_line);
+                        lines_iter.next();
                     }
 
                     line_groups.push((true, annotated_group));
@@ -172,11 +170,6 @@ impl SnippetData {
         }
 
         output
-        /*
-        self.lines.iter()
-                  .flat_map(|line| self.render_line(line))
-                  .collect()
-        */
     }
 
     fn render_line(&self, line: &Line) -> Vec<RenderedLine> {
