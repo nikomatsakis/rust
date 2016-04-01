@@ -120,25 +120,44 @@ impl SnippetData {
             self.lines.iter()
                       .flat_map(|line| self.render_line(line))
                       .collect();
+        self.prepend_prefixes(&mut rendered_lines);
+        self.trim_lines(&mut rendered_lines);
+        rendered_lines
+    }
 
+    pub fn prepend_prefixes(&self, rendered_lines: &mut [RenderedLine]) {
         let prefixes: Vec<_> =
             rendered_lines.iter()
                           .map(|rl| rl.kind.prefix())
                           .collect();
 
+        // find the max amount of spacing we need; add 1 to
+        // p.text.len() to leave space between the prefix and the
+        // source text
         let padding_len =
             prefixes.iter()
-                    .map(|p| p.text.len())
+                    .map(|p| if p.text.len() == 0 { 0 } else { p.text.len() + 1 })
                     .max()
                     .unwrap_or(0);
 
-        for (mut prefix, line) in prefixes.into_iter().zip(&mut rendered_lines) {
+        for (mut prefix, line) in prefixes.into_iter().zip(rendered_lines) {
             let extra_spaces = (prefix.text.len() .. padding_len).map(|_| ' ');
             prefix.text.extend(extra_spaces);
             line.text.insert(0, prefix);
         }
+    }
 
-        rendered_lines
+    fn trim_lines(&self, rendered_lines: &mut [RenderedLine]) {
+        for line in rendered_lines {
+            while !line.text.is_empty() {
+                line.trim_last();
+                if line.text.last().unwrap().text.is_empty() {
+                    line.text.pop();
+                } else {
+                    break;
+                }
+            }
+        }
     }
 
     fn render_line(&self, line: &Line) -> Vec<RenderedLine> {
@@ -235,17 +254,10 @@ impl SnippetData {
             extra_lines.into_iter()
                        .map(|v| RenderedLine::from((v, Label, Highlights)));
 
-        let mut lines: Vec<RenderedLine> =
-            iter::once(RenderedLine::from((source_string, Quotation, source_kind)))
+        iter::once(RenderedLine::from((source_string, Quotation, source_kind)))
             .chain(Some(RenderedLine::from((highlight_string, Label, Highlights))))
             .chain(extra_strings)
-            .collect();
-
-        for line in &mut lines {
-            line.trim();
-        }
-
-        lines
+            .collect()
     }
 
     fn write_label(text: &mut Vec<char>,
@@ -361,7 +373,7 @@ impl From<(Vec<char>, Style, RenderedLineKind)> for RenderedLine {
 }
 
 impl RenderedLine {
-    fn trim(&mut self) {
+    fn trim_last(&mut self) {
         let last_text = &mut self.text.last_mut().unwrap().text;
         let len = last_text.trim_right().len();
         last_text.truncate(len);
@@ -373,7 +385,7 @@ impl RenderedLineKind {
         match *self {
             SourceText { ref file, line_index } =>
                 StyledString {
-                    text: format!("{}:{} ", file.name, line_index + 1),
+                    text: format!("{}:{}", file.name, line_index + 1),
                     style: FileNameLine,
                 },
             Highlights =>

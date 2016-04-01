@@ -209,12 +209,8 @@ fn foo() {
     RenderedLine {
         text: [
             StyledString {
-                text: "foo.rs:4  ",
+                text: "foo.rs:4",
                 style: FileNameLine
-            },
-            StyledString {
-                text: "",
-                style: Quotation
             }
         ],
         kind: SourceText {
@@ -270,12 +266,8 @@ fn foo() {
     RenderedLine {
         text: [
             StyledString {
-                text: "foo.rs:7  ",
+                text: "foo.rs:7",
                 style: FileNameLine
-            },
-            StyledString {
-                text: "",
-                style: Quotation
             }
         ],
         kind: SourceText {
@@ -368,11 +360,11 @@ fn foo() {
     assert_eq!(&text[..], r#"
 foo.rs:3      let name = find_id(&data, 22).unwrap();
                                   ~~~~ immutable borrow begins here
-foo.rs:4  
+foo.rs:4
 foo.rs:5      // Add one more item we forgot to the vector. Silly us.
 foo.rs:6      data.push(Data { name: format!("Hera"), id: 66 });
               ~~~~ mutable borrow occurs here
-foo.rs:7  
+foo.rs:7
 foo.rs:8      // Print everything out.
 foo.rs:9      println!("Name: {:?}", name);
 foo.rs:10     println!("Data: {:?}", data);
