@@ -117,11 +117,8 @@ impl SnippetData {
 
     pub fn render_lines(&self) -> Vec<RenderedLine> {
         let mut rendered_lines = self.render_all_lines();
-        println!("rendered_lines={:#?}", rendered_lines);
         self.prepend_prefixes(&mut rendered_lines);
-        println!("rendered_lines={:#?}", rendered_lines);
         self.trim_lines(&mut rendered_lines);
-        println!("rendered_lines={:#?}", rendered_lines);
         rendered_lines
     }
 
