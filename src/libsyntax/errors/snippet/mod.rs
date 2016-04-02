@@ -106,17 +106,22 @@ impl SnippetData {
                                           line0.end_col,
                                           label);
         for line in remaining_lines {
-            let index = self.ensure_source_line(&file_lines.file, line.line_index);
-            self.lines[index].push_annotation(line.start_col,
-                                              line.end_col,
-                                              None);
+            if line.end_col > line.start_col {
+                let index = self.ensure_source_line(&file_lines.file, line.line_index);
+                self.lines[index].push_annotation(line.start_col,
+                                                  line.end_col,
+                                                  None);
+            }
         }
     }
 
     pub fn render_lines(&self) -> Vec<RenderedLine> {
         let mut rendered_lines = self.render_all_lines();
+        println!("rendered_lines={:#?}", rendered_lines);
         self.prepend_prefixes(&mut rendered_lines);
+        println!("rendered_lines={:#?}", rendered_lines);
         self.trim_lines(&mut rendered_lines);
+        println!("rendered_lines={:#?}", rendered_lines);
         rendered_lines
     }
 
