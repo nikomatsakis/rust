@@ -527,17 +527,13 @@ mod test {
         let vec = data.lock().unwrap().clone();
         let vec: &[u8] = &vec;
         let str = from_utf8(vec).unwrap();
-        println!("{}", str);
+        println!("r#\"\n{}\"#", str);
         assert_eq!(str, r#"
 dummy.txt:8          line8
              ~~~~~~~~~~~~~
-dummy.txt:9          line9
-             ~~~~~~~~~~~~~
-dummy.txt:10         line10
-             ~~~~~~~~~~~~~~
+             ...
 dummy.txt:11         e-lä-vän
              ~~~~~~~~~~~~~~~~
-dummy.txt:12         tolv
 "#.trim_left());
     }
 
@@ -647,10 +643,7 @@ dummy.txt:12         tolv
         let expect0 = r#"
 dummy.txt:5  ccccc
              ~~~~~
-dummy.txt:6  xxxxx
-             ~~~~~
-dummy.txt:7  yyyyy
-             ~~~~~
+             ...
 dummy.txt:8  _____
 dummy.txt:9  ddd__eee_
              ~~~  ~~~
@@ -659,19 +652,17 @@ dummy.txt:11 __f_gg
                ~ ~~
 "#.trim_left();
 
-        let expect = "dummy.txt:1 aaaaa\n\
-                      dummy.txt:2 aaaaa\n\
-                      dummy.txt:3 aaaaa\n\
-                      dummy.txt:4 bbbbb\n\
-                      dummy.txt:5 ccccc\n\
-                      dummy.txt:6 xxxxx\n\
-                   \x20            ...\n";
-
-        let expect2 = "dummy.txt:9  ddd__eee_\n\
-                    \x20            ~~~  ~~~\n\
-                    \x20            ...\n\
-                       dummy.txt:11 __f_gg\n\
-                    \x20              ~ ~~\n";
+        let expect = r#"
+dummy.txt:1  aaaaa
+             ~~~~~
+             ...
+dummy.txt:8  _____
+dummy.txt:9  ddd__eee_
+             ~~~  ~~~
+dummy.txt:10 elided
+dummy.txt:11 __f_gg
+               ~ ~~
+"#.trim_left();
 
         macro_rules! test {
             ($expected: expr, $highlight: expr) => ({
@@ -689,16 +680,12 @@ dummy.txt:11 __f_gg
 
         let msp0 = MultiSpan::from_spans(vec![sp0, sp2, sp3, sp4, sp5]);
         let msp = MultiSpan::from_spans(vec![sp1, sp2, sp3, sp4, sp5]);
-        let msp2 = MultiSpan::from_spans(vec![sp2, sp3, sp4, sp5]);
 
         test!(expect0, || {
             diag.highlight_lines(&msp0, Level::Error).unwrap();
         });
         test!(expect, || {
             diag.highlight_lines(&msp, Level::Error).unwrap();
-        });
-        test!(expect2, || {
-            diag.highlight_lines(&msp2, Level::Error).unwrap();
         });
     }
 }

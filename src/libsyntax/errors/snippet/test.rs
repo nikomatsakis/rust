@@ -668,3 +668,36 @@ foo.rs:4     let mut vec2 = vec;
                      ~~~    ~~~
 "#.trim_left());
 }
+
+#[test]
+fn span_long_selection() {
+    let file_text = r#"
+impl SomeTrait for () {
+    fn foo(x: u32) {
+        // impl 1
+        // impl 2
+        // impl 3
+    }
+}
+"#;
+
+    let cm = Rc::new(CodeMap::new());
+    cm.new_filemap_and_lines("foo.rs", file_text);
+
+    let mut snippet = SnippetData::new(cm.clone());
+    let fn_span = cm.span_substr(file_text, "fn", 0);
+    let rbrace_span = cm.span_substr(file_text, "}", 0);
+    snippet.push(Span {
+        lo: fn_span.lo,
+        hi: rbrace_span.hi,
+        expn_id: NO_EXPANSION
+    }, None);
+    let lines = snippet.render_lines();
+    let text: String = make_string(&lines);
+    println!("r#\"\n{}\"", text);
+    assert_eq!(text, r#"
+foo.rs:3     fn foo(x: u32) {
+             ~~~~~~~~~~~~~~~~
+         ...
+"#.trim_left());
+}
