@@ -322,12 +322,16 @@ fn print_diagnostic(dst: &mut Destination,
                     code: Option<&str>)
                     -> io::Result<()> {
     if !topic.is_empty() {
-        write!(dst, "{} ", topic)?;
+        dst.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
+        write!(dst, "{}: ", topic)?;
+        dst.reset_attrs()?;
     }
 
-    print_maybe_styled!(dst, term::Attr::ForegroundColor(lvl.color()),
-                        "{}: ", lvl.to_string())?;
-    print_maybe_styled!(dst, term::Attr::Bold, "{}", msg)?;
+    dst.start_attr(term::Attr::Bold)?;
+    write!(dst, "{}: ", lvl.to_string())?;
+    dst.reset_attrs()?;
+
+    write!(dst, "{}", msg)?;
 
     if let Some(code) = code {
         let style = term::Attr::ForegroundColor(term::color::BRIGHT_MAGENTA);
