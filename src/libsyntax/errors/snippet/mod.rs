@@ -180,21 +180,21 @@ impl SnippetData {
                 let mut elide_unlabeled_region = false;
 
                 for group_line in group.iter() {
-                    let source_string = 
+                    let source_string =
                         group_line.file.get_line(group_line.line_index).unwrap().to_string();
 
-                    for annotation in &group_line.annotations {                        
+                    for annotation in &group_line.annotations {
                         if annotation.end_col == source_string.len() {
                             annotation_ends_at_eol = true;
                         }
                     }
 
-                    let is_single_unlabeled_annotated_line = 
+                    let is_single_unlabeled_annotated_line =
                         if group_line.annotations.len() == 1 {
                             if let Some(annotation) = group_line.annotations.first() {
                                 match annotation.label {
                                     Some(_) => false,
-                                    None => annotation.start_col == 0 && 
+                                    None => annotation.start_col == 0 &&
                                             annotation.end_col == source_string.len()
                                 }
                             }
