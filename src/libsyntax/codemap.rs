@@ -158,7 +158,7 @@ pub const COMMAND_LINE_SP: Span = Span { lo: BytePos(0),
 impl Span {
     /// Returns a new span representing just the end-point of this span
     pub fn end_point(self) -> Span {
-        let lo = cmp::max(self.hi.0, self.lo.0);
+        let lo = cmp::max(self.hi.0 - 1, self.lo.0);
         Span { lo: BytePos(lo), hi: self.hi, expn_id: self.expn_id}
     }
 
