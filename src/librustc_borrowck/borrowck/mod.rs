@@ -41,7 +41,7 @@ use std::mem;
 use std::rc::Rc;
 use syntax::ast;
 use syntax::attr::AttrMetaMethods;
-use syntax::codemap::Span;
+use syntax::codemap::{MultiSpan, Span};
 use syntax::errors::DiagnosticBuilder;
 
 use rustc_front::hir;
@@ -836,19 +836,20 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
         self.tcx.sess.span_err(s, m);
     }
 
-    pub fn struct_span_err(&self, s: Span, m: &str) -> DiagnosticBuilder<'a> {
+    pub fn struct_span_err<S: Into<MultiSpan>>(&self, s: S, m: &str)
+                                              -> DiagnosticBuilder<'a> {
         self.tcx.sess.struct_span_err(s, m)
     }
 
-    pub fn struct_span_err_with_code(&self,
-                                     s: Span,
-                                     msg: &str,
-                                     code: &str)
-                                     -> DiagnosticBuilder<'a> {
+    pub fn struct_span_err_with_code<S: Into<MultiSpan>>(&self,
+                                                         s: S,
+                                                         msg: &str,
+                                                         code: &str)
+                                                         -> DiagnosticBuilder<'a> {
         self.tcx.sess.struct_span_err_with_code(s, msg, code)
     }
 
-    pub fn span_err_with_code(&self, s: Span, msg: &str, code: &str) {
+    pub fn span_err_with_code<S: Into<MultiSpan>>(&self, s: S, msg: &str, code: &str) {
         self.tcx.sess.span_err_with_code(s, msg, code);
     }
 

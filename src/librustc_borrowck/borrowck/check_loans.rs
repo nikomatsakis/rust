@@ -447,22 +447,24 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
             //     borrow ends
 
             let common = new_loan.loan_path.common(&old_loan.loan_path);
-            let (nl, ol, new_loan_msg, old_loan_msg) =
+            let (nl, ol, new_loan_msg, old_loan_msg) = {
                 if new_loan.loan_path.has_fork(&old_loan.loan_path) && common.is_some() {
                     let nl = self.bccx.loan_path_to_string(&common.unwrap());
                     let ol = nl.clone();
-                    let new_loan_msg = format!(" (here through borrowing `{}`)",
+                    let new_loan_msg = format!(" (via `{}`)",
                                                self.bccx.loan_path_to_string(
                                                    &new_loan.loan_path));
-                    let old_loan_msg = format!(" (through borrowing `{}`)",
+                    let old_loan_msg = format!(" (via `{}`)",
                                                self.bccx.loan_path_to_string(
                                                    &old_loan.loan_path));
                     (nl, ol, new_loan_msg, old_loan_msg)
                 } else {
                     (self.bccx.loan_path_to_string(&new_loan.loan_path),
                      self.bccx.loan_path_to_string(&old_loan.loan_path),
-                     String::new(), String::new())
-                };
+                     String::new(),
+                     String::new())
+                }
+            };
 
             let ol_pronoun = if new_loan.loan_path == old_loan.loan_path {
                 "it".to_string()
@@ -470,12 +472,25 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                 format!("`{}`", ol)
             };
 
+            // We want to assemble all the relevant locations for the error.
+            //
+            // 1. Where did the new loan occur.
+            //    - if due to closure creation, where was the variable used in closure?
+            // 2. Where did old loan occur.
+            // 3. Where does old loan expire.
+
             let mut err = match (new_loan.kind, old_loan.kind) {
                 (ty::MutBorrow, ty::MutBorrow) => {
                     struct_span_err!(self.bccx, new_loan.span, E0499,
                                      "cannot borrow `{}`{} as mutable \
                                       more than once at a time",
                                      nl, new_loan_msg)
+                        .span_label(
+                            new_loan.span,
+                            format!("mutable borrow occurs here{}", new_loan_msg))
+                        .span_label(
+                            old_loan.span,
+                            format!("other mutable borrow occurs here{}", old_loan_msg))
                 }
 
                 (ty::UniqueImmBorrow, _) => {
@@ -483,6 +498,9 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                                      "closure requires unique access to `{}` \
                                       but {} is already borrowed{}",
                                      nl, ol_pronoun, old_loan_msg)
+                        .span_label(
+                            new_loan.span,
+                            format!("closure construction occurs here{}", new_loan_msg))
                 }
 
                 (_, ty::UniqueImmBorrow) => {
@@ -490,6 +508,9 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                                      "cannot borrow `{}`{} as {} because \
                                       previous closure requires unique access",
                                      nl, new_loan_msg, new_loan.kind.to_user_str())
+                        .span_label(
+                            old_loan.span,
+                            format!("closure construction occurs here{}", old_loan_msg))
                 }
 
                 (_, _) => {
@@ -502,70 +523,45 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                                      ol_pronoun,
                                      old_loan.kind.to_user_str(),
                                      old_loan_msg)
+                        .span_label(
+                            new_loan.span,
+                            format!("{} borrow occurs here{}",
+                                    new_loan.kind.to_user_str(),
+                                    new_loan_msg))
+                        .span_label(
+                            old_loan.span,
+                            format!("{} borrow occurs here{}",
+                                    old_loan.kind.to_user_str(),
+                                    old_loan_msg))
                 }
             };
 
             match new_loan.cause {
                 euv::ClosureCapture(span) => {
-                    err.span_note(
+                    err = err.span_label(
                         span,
-                        &format!("borrow occurs due to use of `{}` in closure",
-                                nl));
+                        format!("borrow occurs due to use of `{}` in closure", nl));
                 }
                 _ => { }
             }
 
-            let rule_summary = match old_loan.kind {
-                ty::MutBorrow => {
-                    format!("the mutable borrow prevents subsequent \
-                            moves, borrows, or modification of `{0}` \
-                            until the borrow ends",
-                            ol)
+            match old_loan.cause {
+                euv::ClosureCapture(span) => {
+                    err = err.span_label(
+                        span,
+                        format!("previous borrow occurs due to use of `{}` in closure",
+                                ol));
                 }
+                _ => { }
+            }
 
-                ty::ImmBorrow => {
-                    format!("the immutable borrow prevents subsequent \
-                            moves or mutable borrows of `{0}` \
-                            until the borrow ends",
-                            ol)
-                }
+            let old_loan_span =
+                self.tcx().map.span(
+                    old_loan.kill_scope.node_id(&self.tcx().region_maps));
+            err = err.span_label(
+                old_loan_span.end_point(),
+                format!("previous borrow ends here"));
 
-                ty::UniqueImmBorrow => {
-                    format!("the unique capture prevents subsequent \
-                            moves or borrows of `{0}` \
-                            until the borrow ends",
-                            ol)
-                }
-            };
-
-            let borrow_summary = match old_loan.cause {
-                euv::ClosureCapture(_) => {
-                    format!("previous borrow of `{}` occurs here{} due to \
-                            use in closure",
-                            ol, old_loan_msg)
-                }
-
-                euv::OverloadedOperator |
-                euv::AddrOf |
-                euv::AutoRef |
-                euv::AutoUnsafe |
-                euv::ClosureInvocation |
-                euv::ForLoop |
-                euv::RefBinding |
-                euv::MatchDiscriminant => {
-                    format!("previous borrow of `{}` occurs here{}",
-                            ol, old_loan_msg)
-                }
-            };
-
-            err.span_note(
-                old_loan.span,
-                &format!("{}; {}", borrow_summary, rule_summary));
-
-            let old_loan_span = self.tcx().map.span(
-                old_loan.kill_scope.node_id(&self.tcx().region_maps));
-            err.span_note(old_loan_span.end_point(),
-                          "previous borrow ends here");
             err.emit();
             return false;
         }

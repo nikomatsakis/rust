@@ -107,7 +107,7 @@ impl Emitter for EmitterWriter {
             msg: &str,
             code: Option<&str>,
             lvl: Level) {
-        let error = match msp.map(|s|(s.to_span_bounds(), s)) {
+        let error = match msp.map(|s|(s.primary_span(), s)) {
             Some((COMMAND_LINE_SP, msp)) => {
                 self.emit_(&FileLine(msp.clone()), msg, code, lvl)
             },
@@ -171,7 +171,7 @@ impl EmitterWriter {
              lvl: Level)
              -> io::Result<()> {
         let msp = rsp.span();
-        let bounds = msp.to_span_bounds();
+        let bounds = msp.primary_span();
 
         let ss = if bounds == COMMAND_LINE_SP {
             "<command line option>".to_string()
@@ -208,7 +208,7 @@ impl EmitterWriter {
 
     fn highlight_suggestion(&mut self, suggestion: &CodeSuggestion) -> io::Result<()>
     {
-        let lines = self.cm.span_to_lines(suggestion.msp.to_span_bounds()).unwrap();
+        let lines = self.cm.span_to_lines(suggestion.msp.primary_span()).unwrap();
         assert!(!lines.lines.is_empty());
 
         let complete = suggestion.splice_lines(&self.cm);
@@ -243,8 +243,8 @@ impl EmitterWriter {
                        -> io::Result<()>
     {
         let mut snippet_data = SnippetData::new(self.cm.clone());
-        for span_str in &msp.spans {
-            snippet_data.push(span_str.span, span_str.label.clone());
+        for span_str in msp.span_strings() {
+            snippet_data.push(span_str.span, span_str.label);
         }
         let rendered_lines = snippet_data.render_lines();
         for rendered_line in &rendered_lines {

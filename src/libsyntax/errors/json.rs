@@ -179,7 +179,7 @@ impl<'a> Diagnostic<'a> {
 
 impl DiagnosticSpan {
     fn from_multispan(msp: &MultiSpan, je: &JsonEmitter) -> Vec<DiagnosticSpan> {
-        msp.spans.iter().map(|&SpanString { span, .. }| {
+        msp.span_strings().into_iter().map(|SpanString { span, .. }| {
             let start = je.cm.lookup_char_pos(span.lo);
             let end = je.cm.lookup_char_pos(span.hi);
             DiagnosticSpan {
@@ -203,7 +203,7 @@ impl DiagnosticSpan {
                 DiagnosticSpan::from_multispan(msp, je)
             }
             RenderSpan::FileLine(ref msp) => {
-                msp.spans.iter().map(|&SpanString { span, .. }| {
+                msp.span_strings().into_iter().map(|SpanString { span, .. }| {
                     let start = je.cm.lookup_char_pos(span.lo);
                     let end = je.cm.lookup_char_pos(span.hi);
                     DiagnosticSpan {

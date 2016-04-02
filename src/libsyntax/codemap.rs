@@ -138,7 +138,8 @@ pub struct Span {
 /// appropriate places.
 #[derive(Clone)]
 pub struct MultiSpan {
-    pub spans: Vec<SpanString>
+    primary_span: Span,
+    span_strings: Vec<SpanString>
 }
 
 #[derive(Clone, Debug)]
@@ -157,7 +158,8 @@ pub const COMMAND_LINE_SP: Span = Span { lo: BytePos(0),
 impl Span {
     /// Returns a new span representing just the end-point of this span
     pub fn end_point(self) -> Span {
-        Span { lo: self.hi, hi: self.hi, expn_id: self.expn_id}
+        let lo = cmp::max(self.hi.0, self.lo.0);
+        Span { lo: BytePos(lo), hi: self.hi, expn_id: self.expn_id}
     }
 
     /// Returns `self` if `self` is not the dummy span, and `other` otherwise.
@@ -286,40 +288,78 @@ pub fn original_sp(cm: &CodeMap, sp: Span, enclosing_sp: Span) -> Span {
 }
 
 impl MultiSpan {
-    pub fn new() -> MultiSpan {
-        MultiSpan { spans: Vec::new() }
+    pub fn new(primary_span: Span) -> MultiSpan {
+        MultiSpan { primary_span: primary_span, span_strings: Vec::new() }
     }
 
     pub fn from_spans(vec: Vec<Span>) -> MultiSpan {
-        MultiSpan {
-            spans: vec.into_iter()
-                      .map(|span| SpanString { span: span, label: None })
-                      .collect()
+        let mut msp = MultiSpan {
+            primary_span: vec[0],
+            span_strings: vec.into_iter()
+                             .map(|span| SpanString { span: span, label: None })
+                             .collect()
+        };
+        msp.recompute_primary_span();
+        msp
+    }
+
+    pub fn push_unlabeled_span(&mut self,
+                               span: Span) {
+        self.span_strings.push(SpanString {
+            span: span,
+            label: None,
+        });
+    }
+
+    pub fn push_span_label(&mut self,
+                           span: Span,
+                           label: String) {
+        self.span_strings.push(SpanString {
+            span: span,
+            label: Some(label),
+        });
+    }
+
+    pub fn primary_span(&self) -> Span {
+        self.primary_span
+    }
+
+    /// Returns the strings to highlight. If we have an explicit set,
+    /// return those, otherwise just give back an (unlabeled) version
+    /// of the primary span.
+    pub fn span_strings(&self) -> Vec<SpanString> {
+        if self.span_strings.is_empty() {
+            vec![SpanString { span: self.primary_span, label: None }]
+        } else {
+            self.span_strings.clone()
         }
     }
 
-    pub fn from_labels(vec: Vec<(Span, String)>) -> MultiSpan {
-        MultiSpan {
-            spans: vec.into_iter()
-                      .map(|(span, string)| SpanString {
-                          span: span,
-                          label: Some(string)
-                      })
-                      .collect()
-        }
-    }
-
-    pub fn to_span_bounds(&self) -> Span {
-        assert!(!self.spans.is_empty());
-        let Span { lo, expn_id, .. } = self.spans.first().unwrap().span;
-        let Span { hi, .. } = self.spans.last().unwrap().span;
-        Span { lo: lo, hi: hi, expn_id: expn_id }
+    /// Recomputes the primary span to be something that encompasses
+    /// all the `span_strings`.
+    pub fn recompute_primary_span(&mut self) {
+        assert!(!self.span_strings.is_empty());
+        let lo = self.span_strings.iter()
+                                  .map(|s| s.span.lo)
+                                  .min()
+                                  .unwrap();
+        let hi = self.span_strings.iter()
+                                  .map(|s| s.span.hi)
+                                  .max()
+                                  .unwrap();
+        let expn_id = self.span_strings.iter()
+                                       .filter(|s| s.span.lo == lo)
+                                       .next()
+                                       .unwrap()
+                                       .span
+                                       .expn_id;
+        self.primary_span = Span { lo: lo, hi: hi, expn_id: expn_id };
     }
 }
 
 impl From<Span> for MultiSpan {
     fn from(span: Span) -> MultiSpan {
-        MultiSpan { spans: vec![SpanString { span: span, label: None }] }
+        MultiSpan::new(span)
     }
 }
 
