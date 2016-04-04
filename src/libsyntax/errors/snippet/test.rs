@@ -43,6 +43,14 @@ impl CodeMapExtension for CodeMap {
     }
 }
 
+fn splice(start: Span, end: Span) -> Span {
+    Span {
+        lo: start.lo,
+        hi: end.hi,
+        expn_id: NO_EXPANSION,
+    }
+}
+
 fn make_string(lines: &[RenderedLine]) -> String {
     lines.iter()
          .flat_map(|rl| {
@@ -687,11 +695,7 @@ impl SomeTrait for () {
     let mut snippet = SnippetData::new(cm.clone());
     let fn_span = cm.span_substr(file_text, "fn", 0);
     let rbrace_span = cm.span_substr(file_text, "}", 0);
-    snippet.push(Span {
-        lo: fn_span.lo,
-        hi: rbrace_span.hi,
-        expn_id: NO_EXPANSION
-    }, None);
+    snippet.push(splice(fn_span, rbrace_span), None);
     let lines = snippet.render_lines();
     let text: String = make_string(&lines);
     println!("r#\"\n{}\"", text);
@@ -763,5 +767,52 @@ foo.rs:2     fn foo(x: u32) {
              |      |
              |      x_span
              fn_span
+"#.trim_left());
+}
+
+#[test]
+fn span_overlap_label3() {
+    // Test that we don't put `x_span` to the right of its highlight,
+    // since there is another highlight that overlaps it. In this
+    // case, the overlap is only at the beginning, but it's still
+    // better to show the beginning more clearly.
+
+    let file_text = r#"
+    fn foo() {
+       let closure = || {
+           inner
+       };
+    }
+}
+"#;
+
+    let cm = Rc::new(CodeMap::new());
+    cm.new_filemap_and_lines("foo.rs", file_text);
+
+    let mut snippet = SnippetData::new(cm.clone());
+
+    let closure_span = {
+        let closure_start_span = cm.span_substr(file_text, "||", 0);
+        let closure_end_span = cm.span_substr(file_text, "}", 0);
+        splice(closure_start_span, closure_end_span)
+    };
+
+    let inner_span = cm.span_substr(file_text, "inner", 0);
+
+    snippet.push(closure_span, Some(format!("foo")));
+    snippet.push(inner_span, Some(format!("bar")));
+
+    let lines = snippet.render_lines();
+    let text: String = make_string(&lines);
+    println!("r#\"\n{}\"", text);
+    assert_eq!(text, r#"
+foo.rs:3        let closure = || {
+                              ~~~~ foo
+foo.rs:4            inner
+         ~~~~~~~~~~~~~~~~
+                    |
+                    bar
+foo.rs:5        };
+         ~~~~~~~~
 "#.trim_left());
 }

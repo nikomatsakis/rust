@@ -318,10 +318,12 @@ impl SnippetData {
 
         // Now we are going to write labels in. To start, we'll exclude
         // the annotations with no labels.
-        annotations.retain(|a| a.label.is_some());
+        let (labeled_annotations, unlabeled_annotations): (Vec<_>, _) =
+            annotations.into_iter()
+                       .partition(|a| a.label.is_some());
 
         // If there are no annotations that need text, we're done.
-        if annotations.is_empty() {
+        if labeled_annotations.is_empty() {
             return vec![RenderedLine::from((source_string, Quotation, source_kind)),
                         RenderedLine::from((highlight_line, Label, Highlights))];
         }
@@ -361,36 +363,38 @@ impl SnippetData {
         // the rightmost span overlaps with any other span, we should
         // use the "hang below" version, so we can at least make it
         // clear where the span *starts*.
-        let mut annotations = &annotations[..];
-        match annotations.split_last().unwrap() {
+        let mut labeled_annotations = &labeled_annotations[..];
+        match labeled_annotations.split_last().unwrap() {
             (last, previous) => {
-                if previous.iter().all(|a| !overlaps(a, last)) {
+                if previous.iter()
+                           .chain(&unlabeled_annotations)
+                           .all(|a| !overlaps(a, last)) {
                     Self::write_label(&mut highlight_line,
                                       last.end_col + 1,
                                       last.label.as_ref().unwrap());
-                    annotations = previous;
+                    labeled_annotations = previous;
                 }
             }
         }
 
         // If that's the last annotation, we're done
-        if annotations.is_empty() {
+        if labeled_annotations.is_empty() {
             return vec![RenderedLine::from((source_string, Quotation, source_kind)),
                         RenderedLine::from((highlight_line, Label, Highlights))];
         }
 
         // Otherwise, total lines will be 1 + number of remaining.
-        let total_lines = 1 + annotations.len();
+        let total_lines = 1 + labeled_annotations.len();
 
         // Make one string per line.
         let mut extra_lines: Vec<_> =
             (0..total_lines).map(|_| Self::whitespace(&source_string)).collect();
 
-        for (index, annotation) in annotations.iter().enumerate() {
+        for (index, annotation) in labeled_annotations.iter().enumerate() {
             // Leave:
             // - 1 extra line
             // - One line for each thing that comes after
-            let comes_after = annotations.len() - index - 1;
+            let comes_after = labeled_annotations.len() - index - 1;
             let blank_lines = 1 + comes_after;
 
             // For each blank line, draw a `|` at our column. The
@@ -559,6 +563,10 @@ fn overlaps(a1: &Annotation,
             a2: &Annotation)
             -> bool
 {
+    println!("overlaps(a1={}..{}, a2={}..{})",
+             a1.start_col, a1.end_col,
+             a2.start_col, a2.end_col);
+
     between(a1.start_col, a2.start_col .. a2.end_col) ||
         between(a2.start_col, a1.start_col .. a1.end_col)
 }
