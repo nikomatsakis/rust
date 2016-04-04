@@ -378,7 +378,7 @@ impl Destination {
     }
 
     fn apply_style(&mut self,
-                   lvl: Level,
+                   _lvl: Level,
                    _kind: &RenderedLineKind,
                    style: Style)
                    -> io::Result<()> {
@@ -390,7 +390,7 @@ impl Destination {
             Style::Quotation => {
             }
             Style::Label => {
-                self.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
+                self.start_attr(term::Attr::ForegroundColor(term::color::BRIGHT_GREEN))?;
             }
             Style::NoStyle => {
             }
