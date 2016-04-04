@@ -16,6 +16,7 @@ use codemap::{CharPos, CodeMap, FileMap, Span};
 use std::iter;
 use std::rc::Rc;
 use std::mem;
+use std::ops::Range;
 
 #[cfg(test)]
 mod test;
@@ -325,48 +326,83 @@ impl SnippetData {
                         RenderedLine::from((highlight_line, Label, Highlights))];
         }
 
-        // Now add the text labels. The last annotation is different
-        // because that goes at the end of the highlight line.
-        let (last_annotation, previous_annotations) = annotations.split_last()
-                                                                 .unwrap();
-        if let Some(ref label) = last_annotation.label {
-            Self::write_label(&mut highlight_line,
-                              last_annotation.end_col + 1,
-                              label);
+        // Now add the text labels. We try, when possible, to stick the rightmost
+        // annotation at the end of the highlight line:
+        //
+        //      vec.push(vec.pop().unwrap());
+        //      ~~~      ~~~               ~ previous borrow ends here
+        //
+        // But sometimes that's not possible because one of the other
+        // annotations overlaps it. For example, from the test
+        // `span_overlap_label`, we have the following annotations
+        // (written on distinct lines for clarity):
+        //
+        //      fn foo(x: u32) {
+        //      ~~~~~~~~~~~~~~
+        //             ~
+        //
+        // In this case, we can't stick the rightmost-most label on
+        // the highlight line, or we would get:
+        //
+        //      fn foo(x: u32) {
+        //      ~~~~~~~~ x_span
+        //      |
+        //      fn_span
+        //
+        // which is totally weird. Instead we want:
+        //
+        //      fn foo(x: u32) {
+        //      ~~~~~~~~~~~~~~
+        //      |      |
+        //      |      x_span
+        //      fn_span
+        //
+        // which is...less weird, at least. In fact, in general, if
+        // the rightmost span overlaps with any other span, we should
+        // use the "hang below" version, so we can at least make it
+        // clear where the span *starts*.
+        let mut annotations = &annotations[..];
+        match annotations.split_last().unwrap() {
+            (last, previous) => {
+                if previous.iter().all(|a| !overlaps(a, last)) {
+                    Self::write_label(&mut highlight_line,
+                                      last.end_col + 1,
+                                      last.label.as_ref().unwrap());
+                    annotations = previous;
+                }
+            }
         }
 
         // If that's the last annotation, we're done
-        if previous_annotations.is_empty() {
+        if annotations.is_empty() {
             return vec![RenderedLine::from((source_string, Quotation, source_kind)),
                         RenderedLine::from((highlight_line, Label, Highlights))];
         }
 
         // Otherwise, total lines will be 1 + number of remaining.
-        let total_lines = 1 + previous_annotations.len();
+        let total_lines = 1 + annotations.len();
 
         // Make one string per line.
         let mut extra_lines: Vec<_> =
             (0..total_lines).map(|_| Self::whitespace(&source_string)).collect();
 
-        for (index, annotation) in previous_annotations.iter().enumerate() {
-            if let Some(ref label) = annotation.label {
-                // Leave:
-                // - 1 extra line
-                // - One line for each thing that comes after
-                let comes_after = previous_annotations.len() - index - 1;
-                let blank_lines = 1 + comes_after;
+        for (index, annotation) in annotations.iter().enumerate() {
+            // Leave:
+            // - 1 extra line
+            // - One line for each thing that comes after
+            let comes_after = annotations.len() - index - 1;
+            let blank_lines = 1 + comes_after;
 
-                // For each blank line, draw a `|` at our column. The
-                // text ought to be long enough for this.
-                for index in 0..blank_lines {
-                    extra_lines[index][annotation.start_col] = '|';
-                }
-
-                // After we write the `|`, write the label.
-                Self::write_label(&mut extra_lines[blank_lines],
-                                  annotation.start_col,
-                                  label);
+            // For each blank line, draw a `|` at our column. The
+            // text ought to be long enough for this.
+            for index in 0..blank_lines {
+                extra_lines[index][annotation.start_col] = '|';
             }
+
+            // After we write the `|`, write the label.
+            Self::write_label(&mut extra_lines[blank_lines],
+                              annotation.start_col,
+                              annotation.label.as_ref().unwrap());
         }
 
         // Convert the Vec<char> into String
@@ -517,4 +553,16 @@ impl Line {
             label: label
         });
     }
+}
+
+fn overlaps(a1: &Annotation,
+            a2: &Annotation)
+            -> bool
+{
+    between(a1.start_col, a2.start_col .. a2.end_col) ||
+        between(a2.start_col, a1.start_col .. a1.end_col)
+}
+
+fn between(v: usize, range: Range<usize>) -> bool {
+    v >= range.start && v < range.end
 }

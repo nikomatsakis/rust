@@ -701,3 +701,67 @@ foo.rs:3     fn foo(x: u32) {
          ...
 "#.trim_left());
 }
+
+#[test]
+fn span_overlap_label() {
+    // Test that we don't put `x_span` to the right of its highlight,
+    // since there is another highlight that overlaps it.
+
+    let file_text = r#"
+    fn foo(x: u32) {
+    }
+}
+"#;
+
+    let cm = Rc::new(CodeMap::new());
+    cm.new_filemap_and_lines("foo.rs", file_text);
+
+    let mut snippet = SnippetData::new(cm.clone());
+    let fn_span = cm.span_substr(file_text, "fn foo(x: u32)", 0);
+    let x_span = cm.span_substr(file_text, "x", 0);
+    snippet.push(fn_span, Some(format!("fn_span")));
+    snippet.push(x_span, Some(format!("x_span")));
+    let lines = snippet.render_lines();
+    let text: String = make_string(&lines);
+    println!("r#\"\n{}\"", text);
+    assert_eq!(text, r#"
+foo.rs:2     fn foo(x: u32) {
+             ~~~~~~~~~~~~~~
+             |      |
+             |      x_span
+             fn_span
+"#.trim_left());
+}
+
+#[test]
+fn span_overlap_label2() {
+    // Test that we don't put `x_span` to the right of its highlight,
+    // since there is another highlight that overlaps it. In this
+    // case, the overlap is only at the beginning, but it's still
+    // better to show the beginning more clearly.
+
+    let file_text = r#"
+    fn foo(x: u32) {
+    }
+}
+"#;
+
+    let cm = Rc::new(CodeMap::new());
+    cm.new_filemap_and_lines("foo.rs", file_text);
+
+    let mut snippet = SnippetData::new(cm.clone());
+    let fn_span = cm.span_substr(file_text, "fn foo(x", 0);
+    let x_span = cm.span_substr(file_text, "x: u32)", 0);
+    snippet.push(fn_span, Some(format!("fn_span")));
+    snippet.push(x_span, Some(format!("x_span")));
+    let lines = snippet.render_lines();
+    let text: String = make_string(&lines);
+    println!("r#\"\n{}\"", text);
+    assert_eq!(text, r#"
+foo.rs:2     fn foo(x: u32) {
+             ~~~~~~~~~~~~~~
+             |      |
+             |      x_span
+             fn_span
+"#.trim_left());
+}
