@@ -563,10 +563,6 @@ fn overlaps(a1: &Annotation,
             a2: &Annotation)
             -> bool
 {
-    println!("overlaps(a1={}..{}, a2={}..{})",
-             a1.start_col, a1.end_col,
-             a2.start_col, a2.end_col);
-
     between(a1.start_col, a2.start_col .. a2.end_col) ||
         between(a2.start_col, a1.start_col .. a1.end_col)
 }
