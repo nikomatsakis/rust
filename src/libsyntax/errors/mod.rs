@@ -13,7 +13,7 @@ pub use errors::emitter::ColorConfig;
 use self::Level::*;
 use self::RenderSpan::*;
 
-use codemap::{self, CodeMap, MultiSpan};
+use codemap::{self, CodeMap, MultiSpan, Span};
 use diagnostics;
 use errors::emitter::{Emitter, EmitterWriter};
 
@@ -82,12 +82,14 @@ impl CodeSuggestion {
                 }
             }
         }
-        let bounds = self.msp.to_span_bounds();
+        let bounds = self.msp.primary_span();
         let lines = cm.span_to_lines(bounds).unwrap();
         assert!(!lines.lines.is_empty());
 
+        let span_strings = self.msp.span_strings();
+
         // This isn't strictly necessary, but would in all likelyhood be an error
-        assert_eq!(self.msp.spans.len(), self.substitutes.len());
+        assert_eq!(span_strings.len(), self.substitutes.len());
 
         // To build up the result, we do this for each span:
         // - push the line segment trailing the previous span
@@ -105,7 +107,8 @@ impl CodeSuggestion {
         let mut prev_line = fm.get_line(lines.lines[0].line_index);
         let mut buf = String::new();
 
-        for (sp, substitute) in self.msp.spans.iter().zip(self.substitutes.iter()) {
+        for (sp, substitute) in span_strings.iter().zip(self.substitutes.iter()) {
+            let sp = sp.span;
             let cur_lo = cm.lookup_char_pos(sp.lo);
             if prev_hi.line == cur_lo.line {
                 push_trailing(&mut buf, prev_line, &prev_hi, Some(&cur_lo));
@@ -220,7 +223,21 @@ impl<'a> DiagnosticBuilder<'a> {
         self.level == Level::Fatal
     }
 
-    pub fn note(&mut self , msg: &str) -> &mut DiagnosticBuilder<'a> {
+    /// Add a span/label to be included in the resulting snippet.
+    /// This is pushed onto the `MultiSpan` that was created when the
+    /// diagnostic was first built. If you don't call this function at
+    /// all, and you just supplied a `Span` to create the diagnostic,
+    /// then the snippet will just include that `Span`, which is
+    /// called the primary span.
+    pub fn span_label(mut self, span: Span, label: String)
+                      -> DiagnosticBuilder<'a> {
+        self.span.as_mut()
+                 .unwrap()
+                 .push_span_label(span, label);
+        self
+    }
+
+    pub fn note(&mut self, msg: &str) -> &mut DiagnosticBuilder<'a> {
         self.sub(Level::Note, msg, None, None);
         self
     }
