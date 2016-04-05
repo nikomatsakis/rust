@@ -32,8 +32,6 @@ use serialize::{Encodable, Decodable, Encoder, Decoder};
 
 use ast::Name;
 
-use errors::emitter::MAX_HIGHLIGHT_LINES;
-
 // _____________________________________________________________________________
 // Pos, BytePos, CharPos
 //
@@ -51,7 +49,7 @@ pub struct BytePos(pub u32);
 /// A character offset. Because of multibyte utf8 characters, a byte offset
 /// is not equivalent to a character offset. The CodeMap will convert BytePos
 /// values to CharPos values as necessary.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub struct CharPos(pub usize);
 
 // FIXME: Lots of boilerplate in these impls, but so far my attempts to fix
@@ -1094,12 +1092,16 @@ impl CodeMap {
     }
 
     pub fn span_to_lines(&self, sp: Span) -> FileLinesResult {
+        debug!("span_to_lines(sp={:?})", sp);
+
         if sp.lo > sp.hi {
             return Err(SpanLinesError::IllFormedSpan(sp));
         }
 
         let lo = self.lookup_char_pos(sp.lo);
+        debug!("span_to_lines: lo={:?}", lo);
         let hi = self.lookup_char_pos(sp.hi);
+        debug!("span_to_lines: hi={:?}", hi);
 
         if lo.file.start_pos != hi.file.start_pos {
             return Err(SpanLinesError::DistinctSources(DistinctSources {
@@ -1120,7 +1122,9 @@ impl CodeMap {
         // numbers in Loc are 1-based, so we subtract 1 to get 0-based
         // lines.
         for line_index in lo.line-1 .. hi.line-1 {
-            let line_len = lo.file.get_line(line_index).map(|s| s.len()).unwrap_or(0);
+            let line_len = lo.file.get_line(line_index)
+                                  .map(|s| s.chars().count())
+                                  .unwrap_or(0);
             lines.push(LineInfo { line_index: line_index,
                                   start_col: start_col,
                                   end_col: CharPos::from_usize(line_len) });
