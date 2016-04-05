@@ -20,7 +20,7 @@
 // FIXME spec the JSON output properly.
 
 
-use codemap::{self, Span, MultiSpan, CodeMap};
+use codemap::{self, Span, SpanString, MultiSpan, CodeMap};
 use diagnostics::registry::Registry;
 use errors::{Level, DiagnosticBuilder, SubDiagnostic, RenderSpan, CodeSuggestion};
 use errors::emitter::Emitter;
@@ -101,6 +101,8 @@ struct DiagnosticSpan {
     column_end: usize,
     /// Source text from the start of line_start to the end of line_end.
     text: Vec<DiagnosticSpanLine>,
+    /// Label that should be placed at this location (if any)
+    label: Option<String>,
 }
 
 #[derive(RustcEncodable)]
@@ -179,7 +181,7 @@ impl<'a> Diagnostic<'a> {
 
 impl DiagnosticSpan {
     fn from_multispan(msp: &MultiSpan, je: &JsonEmitter) -> Vec<DiagnosticSpan> {
-        msp.spans.iter().map(|span| {
+        msp.span_strings().into_iter().map(|SpanString { span, label }| {
             let start = je.cm.lookup_char_pos(span.lo);
             let end = je.cm.lookup_char_pos(span.hi);
             DiagnosticSpan {
@@ -190,7 +192,8 @@ impl DiagnosticSpan {
                 line_end: end.line,
                 column_start: start.col.0 + 1,
                 column_end: end.col.0 + 1,
-                text: DiagnosticSpanLine::from_span(span, je),
+                text: DiagnosticSpanLine::from_span(&span, je),
+                label: label,
             }
         }).collect()
     }
@@ -202,23 +205,8 @@ impl DiagnosticSpan {
             RenderSpan::Suggestion(CodeSuggestion { ref msp, .. }) => {
                 DiagnosticSpan::from_multispan(msp, je)
             }
-            RenderSpan::EndSpan(ref msp) => {
-                msp.spans.iter().map(|span| {
-                    let end = je.cm.lookup_char_pos(span.hi);
-                    DiagnosticSpan {
-                        file_name: end.file.name.clone(),
-                        byte_start: span.hi.0,
-                        byte_end: span.hi.0,
-                        line_start: end.line,
-                        line_end: end.line,
-                        column_start: end.col.0 + 1,
-                        column_end: end.col.0 + 1,
-                        text: DiagnosticSpanLine::from_span_end(span, je),
-                    }
-                }).collect()
-            }
             RenderSpan::FileLine(ref msp) => {
-                msp.spans.iter().map(|span| {
+                msp.span_strings().into_iter().map(|SpanString { span, label }| {
                     let start = je.cm.lookup_char_pos(span.lo);
                     let end = je.cm.lookup_char_pos(span.hi);
                     DiagnosticSpan {
@@ -229,7 +217,8 @@ impl DiagnosticSpan {
                         line_end: end.line,
                         column_start: 0,
                         column_end: 0,
-                        text: DiagnosticSpanLine::from_span(span, je),
+                        text: DiagnosticSpanLine::from_span(&span, je),
+                        label: label,
                     }
                 }).collect()
             }
@@ -276,31 +265,6 @@ impl DiagnosticSpanLine {
                                                               line.line_index,
                                                               line.start_col.0 + 1,
                                                               line.end_col.0 + 1));
-        }
-
-        result
-    }
-
-    /// Create a list of DiagnosticSpanLines from span - the result covers all
-    /// of `span`, but the highlight is zero-length and at the end of `span`.
-    fn from_span_end(span: &Span, je: &JsonEmitter) -> Vec<DiagnosticSpanLine> {
-        let lines = get_lines_for_span!(span, je);
-
-        let mut result = Vec::new();
-        let fm = &*lines.file;
-
-        for (i, line) in lines.lines.iter().enumerate() {
-            // Invariant - CodeMap::span_to_lines will not return extra context
-            // lines - the last line returned is the last line of `span`.
-            let highlight = if i == lines.lines.len() - 1 {
-                (line.end_col.0 + 1, line.end_col.0 + 1)
-            } else {
-                (0, 0)
-            };
-            result.push(DiagnosticSpanLine::line_from_filemap(fm,
-                                                              line.line_index,
-                                                              highlight.0,
-                                                              highlight.1));
         }
 
         result
