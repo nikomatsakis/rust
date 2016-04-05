@@ -29,15 +29,7 @@ pub trait Emitter {
     fn custom_emit(&mut self, sp: &RenderSpan, msg: &str, lvl: Level);
 
     /// Emit a structured diagnostic.
-    fn emit_struct(&mut self, db: &DiagnosticBuilder) {
-        self.emit(db.span.as_ref(), &db.message, db.code.as_ref().map(|s| &**s), db.level);
-        for child in &db.children {
-            match child.render_span {
-                Some(ref sp) => self.custom_emit(sp, &child.message, child.level),
-                None => self.emit(child.span.as_ref(), &child.message, None, child.level),
-            }
-        }
-    }
+    fn emit_struct(&mut self, db: &DiagnosticBuilder);
 }
 
 /// maximum number of lines we will print for each error; arbitrary.
@@ -82,6 +74,16 @@ impl Emitter for BasicEmitter {
     fn custom_emit(&mut self, _: &RenderSpan, _: &str, _: Level) {
         panic!("BasicEmitter can't handle custom_emit");
     }
+
+    fn emit_struct(&mut self, db: &DiagnosticBuilder) {
+        self.emit(db.span.as_ref(), &db.message, db.code.as_ref().map(|s| &**s), db.level);
+        for child in &db.children {
+            match child.render_span {
+                Some(ref sp) => self.custom_emit(sp, &child.message, child.level),
+                None => self.emit(child.span.as_ref(), &child.message, None, child.level),
+            }
+        }
+    }
 }
 
 impl BasicEmitter {
@@ -99,6 +101,7 @@ pub struct EmitterWriter {
     dst: Destination,
     registry: Option<diagnostics::registry::Registry>,
     cm: Rc<codemap::CodeMap>,
+    first: bool,
 }
 
 impl Emitter for EmitterWriter {
@@ -107,27 +110,31 @@ impl Emitter for EmitterWriter {
             msg: &str,
             code: Option<&str>,
             lvl: Level) {
-        let error = match msp.map(|s|(s.primary_span(), s)) {
-            Some((COMMAND_LINE_SP, msp)) => {
-                self.emit_(&FileLine(msp.clone()), msg, code, lvl)
-            },
-            Some((DUMMY_SP, _)) | None => print_diagnostic(&mut self.dst, "", lvl, msg, code),
-            Some((_, msp)) => self.emit_(&FullSpan(msp.clone()), msg, code, lvl),
-        };
-
-        if let Err(e) = error {
-            panic!("failed to print diagnostics: {:?}", e);
-        }
+        self.maybe_emit_newline();
+        self.emit_multispan(msp, msg, code, lvl);
     }
 
     fn custom_emit(&mut self,
                    rsp: &RenderSpan,
                    msg: &str,
                    lvl: Level) {
-        if let Err(e) = self.emit_(rsp, msg, None, lvl) {
-            panic!("failed to print diagnostics: {:?}", e);
+        self.maybe_emit_newline();
+        self.emit_renderspan(rsp, msg, lvl);
+    }
+
+    fn emit_struct(&mut self, db: &DiagnosticBuilder) {
+        self.maybe_emit_newline();
+        self.emit_multispan(db.span.as_ref(), &db.message, db.code.as_ref().map(|s| &**s), db.level);
+        for child in &db.children {
+            match child.render_span {
+                Some(ref sp) =>
+                    self.emit_renderspan(sp, &child.message, child.level),
+                None =>
+                    self.emit_multispan(child.span.as_ref(), &child.message, None, child.level),
+            }
         }
     }
+
 }
 
 /// Do not use this for messages that end in `\n` – use `println_maybe_styled` instead. See
@@ -151,9 +158,9 @@ impl EmitterWriter {
                   -> EmitterWriter {
         if color_config.use_color() {
             let dst = Destination::from_stderr();
-            EmitterWriter { dst: dst, registry: registry, cm: code_map }
+            EmitterWriter { dst: dst, registry: registry, cm: code_map, first: true }
         } else {
-            EmitterWriter { dst: Raw(Box::new(io::stderr())), registry: registry, cm: code_map }
+            EmitterWriter { dst: Raw(Box::new(io::stderr())), registry: registry, cm: code_map, first: true }
         }
     }
 
@@ -161,7 +168,40 @@ impl EmitterWriter {
                registry: Option<diagnostics::registry::Registry>,
                code_map: Rc<codemap::CodeMap>)
                -> EmitterWriter {
-        EmitterWriter { dst: Raw(dst), registry: registry, cm: code_map }
+        EmitterWriter { dst: Raw(dst), registry: registry, cm: code_map, first: true }
+    }
+
+    fn maybe_emit_newline(&mut self) {
+        if self.first {
+            self.first = false;
+        } else {
+            match write!(self.dst, "\n") {
+                Ok(_) => { }
+                Err(e) => {
+                    panic!("failed to print diagnostics: {:?}", e)
+                }
+            }
+        }
+    }
+
+    fn emit_multispan(&mut self, span: Option<&MultiSpan>, msg: &str, code: Option<&str>, lvl: Level) {
+        let error = match span.map(|s|(s.primary_span(), s)) {
+            Some((COMMAND_LINE_SP, msp)) => {
+                self.emit_(&FileLine(msp.clone()), msg, code, lvl)
+            },
+            Some((DUMMY_SP, _)) | None => print_diagnostic(&mut self.dst, "", lvl, msg, code),
+            Some((_, msp)) => self.emit_(&FullSpan(msp.clone()), msg, code, lvl),
+        };
+
+        if let Err(e) = error {
+            panic!("failed to print diagnostics: {:?}", e);
+        }
+    }
+
+    fn emit_renderspan(&mut self, sp: &RenderSpan, msg: &str, lvl: Level) {
+        if let Err(e) = self.emit_(sp, msg, None, lvl) {
+            panic!("failed to print diagnostics: {:?}", e);
+        }
     }
 
     fn emit_(&mut self,
