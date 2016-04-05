@@ -286,7 +286,7 @@ pub fn const_expr_to_pat(tcx: &ty::TyCtxt, expr: &Expr, pat_id: ast::NodeId, spa
                     node: PatKind::Lit(P(expr.clone())),
                     span: span,
                 })),
-                _ => unreachable!()
+                _ => bug!()
             };
             let pats = try!(args.iter()
                                 .map(|expr| const_expr_to_pat(tcx, &**expr,
@@ -330,7 +330,7 @@ pub fn const_expr_to_pat(tcx: &ty::TyCtxt, expr: &Expr, pat_id: ast::NodeId, spa
                     let (expr, _ty) = lookup_const_by_id(tcx, def_id, substs).unwrap();
                     return const_expr_to_pat(tcx, expr, pat_id, span);
                 },
-                _ => unreachable!(),
+                _ => bug!(),
             }
         }
 
@@ -343,10 +343,15 @@ pub fn eval_const_expr(tcx: &TyCtxt, e: &Expr) -> ConstVal {
     match eval_const_expr_partial(tcx, e, ExprTypeChecked, None) {
         Ok(r) => r,
         // non-const path still needs to be a fatal error, because enums are funky
-        Err(ref s) if s.kind == NonConstPath => tcx.sess.span_fatal(s.span, &s.description()),
         Err(s) => {
-            tcx.sess.span_err(s.span, &s.description());
-            Dummy
+            match s.kind {
+                NonConstPath |
+                UnimplementedConstVal(_) => tcx.sess.span_fatal(s.span, &s.description()),
+                _ => {
+                    tcx.sess.span_err(s.span, &s.description());
+                    Dummy
+                }
+            }
         },
     }
 }
@@ -588,7 +593,7 @@ pub fn eval_const_expr_partial<'tcx>(tcx: &TyCtxt<'tcx>,
                         IntTy::I64 => if n == I64_OVERFLOW {
                             return Ok(Integral(Isize(Is64(::std::i64::MIN))));
                         },
-                        _ => unreachable!(),
+                        _ => bug!(),
                     }
                 },
                 _ => {},
@@ -607,6 +612,7 @@ pub fn eval_const_expr_partial<'tcx>(tcx: &TyCtxt<'tcx>,
           const_val => signal!(e, NotOn(const_val)),
         }
       }
+      hir::ExprUnary(hir::UnDeref, _) => signal!(e, UnimplementedConstVal("deref operation")),
       hir::ExprBinary(op, ref a, ref b) => {
         let b_ty = match op.node {
             hir::BiShl | hir::BiShr => ty_hint.erase_hint(),
@@ -697,7 +703,7 @@ pub fn eval_const_expr_partial<'tcx>(tcx: &TyCtxt<'tcx>,
                     Some(IntType::UnsignedInt(ty)) => ty_hint.checked_or(tcx.mk_mach_uint(ty)),
                     Some(IntType::SignedInt(ty)) => ty_hint.checked_or(tcx.mk_mach_int(ty)),
                     // we had a type hint, so we can't have an unknown type
-                    None => unreachable!(),
+                    None => bug!(),
                 };
                 eval_const_expr_partial(tcx, &base, hint, fn_args)?
             },
@@ -745,7 +751,7 @@ pub fn eval_const_expr_partial<'tcx>(tcx: &TyCtxt<'tcx>,
                   if let Some(const_expr) = lookup_variant_by_id(tcx, enum_def, variant_def) {
                       eval_const_expr_partial(tcx, const_expr, ty_hint, None)?
                   } else {
-                      signal!(e, NonConstPath);
+                      signal!(e, UnimplementedConstVal("enum variants"));
                   }
               }
               Def::Struct(..) => {
@@ -768,6 +774,7 @@ pub fn eval_const_expr_partial<'tcx>(tcx: &TyCtxt<'tcx>,
           let callee_val = eval_const_expr_partial(tcx, callee, sub_ty_hint, fn_args)?;
           let did = match callee_val {
               Function(did) => did,
+              Struct(_) => signal!(e, UnimplementedConstVal("tuple struct constructors")),
               callee => signal!(e, CallOn(callee)),
           };
           let (decl, result) = if let Some(fn_like) = lookup_const_fn_by_id(tcx, did) {
@@ -798,7 +805,7 @@ pub fn eval_const_expr_partial<'tcx>(tcx: &TyCtxt<'tcx>,
       hir::ExprBlock(ref block) => {
         match block.expr {
             Some(ref expr) => eval_const_expr_partial(tcx, &expr, ty_hint, fn_args)?,
-            None => unreachable!(),
+            None => signal!(e, UnimplementedConstVal("empty block")),
         }
       }
       hir::ExprType(ref e, _) => eval_const_expr_partial(tcx, &e, ty_hint, fn_args)?,
@@ -813,7 +820,7 @@ pub fn eval_const_expr_partial<'tcx>(tcx: &TyCtxt<'tcx>,
         let idx_hint = ty_hint.checked_or(tcx.types.usize);
         let idx = match eval_const_expr_partial(tcx, idx, idx_hint, fn_args)? {
             Integral(Usize(i)) => i.as_u64(tcx.sess.target.uint_type),
-            Integral(_) => unreachable!(),
+            Integral(_) => bug!(),
             _ => signal!(idx, IndexNotInt),
         };
         assert_eq!(idx as usize as u64, idx);
@@ -823,7 +830,7 @@ pub fn eval_const_expr_partial<'tcx>(tcx: &TyCtxt<'tcx>,
                 assert_eq!(n as usize as u64, n);
                 eval_const_expr_partial(tcx, &v[idx as usize], ty_hint, fn_args)?
             } else {
-                unreachable!()
+                bug!()
             },
 
             Repeat(_, n) if idx >= n => signal!(e, IndexOutOfBounds),
@@ -840,7 +847,8 @@ pub fn eval_const_expr_partial<'tcx>(tcx: &TyCtxt<'tcx>,
             },
 
             Str(ref s) if idx as usize >= s.len() => signal!(e, IndexOutOfBounds),
-            Str(_) => unimplemented!(), // FIXME: return a const char
+            // FIXME: return a const char
+            Str(_) => signal!(e, UnimplementedConstVal("indexing into str")),
             _ => signal!(e, IndexedNonVec),
         }
       }
@@ -867,7 +875,7 @@ pub fn eval_const_expr_partial<'tcx>(tcx: &TyCtxt<'tcx>,
                     signal!(e, TupleIndexOutOfBounds);
                 }
             } else {
-                unreachable!()
+                bug!()
             }
         } else {
             signal!(base, ExpectedConstTuple);
@@ -888,12 +896,13 @@ pub fn eval_const_expr_partial<'tcx>(tcx: &TyCtxt<'tcx>,
                     signal!(e, MissingStructField);
                 }
             } else {
-                unreachable!()
+                bug!()
             }
         } else {
             signal!(base, ExpectedConstStruct);
         }
       }
+      hir::ExprAddrOf(..) => signal!(e, UnimplementedConstVal("address operator")),
       _ => signal!(e, MiscCatchAll)
     };
 
@@ -1025,7 +1034,7 @@ fn resolve_trait_associated_const<'a, 'tcx: 'a>(tcx: &'a TyCtxt<'tcx>,
             }
         }
         _ => {
-            tcx.sess.span_bug(
+            span_bug!(
                 ti.span,
                 "resolve_trait_associated_const: unexpected vtable type")
         }
@@ -1073,6 +1082,7 @@ fn cast_const_int<'tcx>(tcx: &TyCtxt<'tcx>, val: ConstInt, ty: ty::Ty) -> CastRe
             Ok(Float(val as f64))
         },
         ty::TyFloat(ast::FloatTy::F32) => Ok(Float(val.to_u64().unwrap() as f32 as f64)),
+        ty::TyRawPtr(_) => Err(ErrKind::UnimplementedConstVal("casting an address to a raw ptr")),
         _ => Err(CannotCast),
     }
 }
@@ -1094,6 +1104,7 @@ fn cast_const<'tcx>(tcx: &TyCtxt<'tcx>, val: ConstVal, ty: ty::Ty) -> CastResult
         Bool(b) => cast_const_int(tcx, Infer(b as u64), ty),
         Float(f) => cast_const_float(tcx, f, ty),
         Char(c) => cast_const_int(tcx, Infer(c as u64), ty),
+        Function(_) => Err(UnimplementedConstVal("casting fn pointers")),
         _ => Err(CannotCast),
     }
 }
@@ -1127,7 +1138,7 @@ fn lit_to_const<'tcx>(lit: &ast::LitKind,
                     let int_ty = tcx.enum_repr_type(hints.iter().next());
                     infer(Infer(n), tcx, &int_ty.to_ty(tcx).sty, span).map(Integral)
                 },
-                Some(ty_hint) => panic!("bad ty_hint: {:?}, {:?}", ty_hint, lit),
+                Some(ty_hint) => bug!("bad ty_hint: {:?}, {:?}", ty_hint, lit),
             }
         },
         LitKind::Int(n, Unsigned(ity)) => {
@@ -1140,7 +1151,7 @@ fn lit_to_const<'tcx>(lit: &ast::LitKind,
                 Ok(Float(x))
             } else {
                 // FIXME(#31407) this is only necessary because float parsing is buggy
-                tcx.sess.span_bug(span, "could not evaluate float literal (see issue #31407)");
+                span_bug!(span, "could not evaluate float literal (see issue #31407)");
             }
         }
         LitKind::Bool(b) => Ok(Bool(b)),

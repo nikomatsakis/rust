@@ -193,7 +193,7 @@ impl ParamSpace {
             0 => TypeSpace,
             1 => SelfSpace,
             2 => FnSpace,
-            _ => panic!("Invalid ParamSpace: {}", u)
+            _ => bug!("Invalid ParamSpace: {}", u)
         }
     }
 }
@@ -582,12 +582,11 @@ struct SubstFolder<'a, 'tcx: 'a> {
 impl<'a, 'tcx> TypeFolder<'tcx> for SubstFolder<'a, 'tcx> {
     fn tcx(&self) -> &TyCtxt<'tcx> { self.tcx }
 
-    fn enter_region_binder(&mut self) {
+    fn fold_binder<T: TypeFoldable<'tcx>>(&mut self, t: &ty::Binder<T>) -> ty::Binder<T> {
         self.region_binders_passed += 1;
-    }
-
-    fn exit_region_binder(&mut self) {
+        let t = t.super_fold_with(self);
         self.region_binders_passed -= 1;
+        t
     }
 
     fn fold_region(&mut self, r: ty::Region) -> ty::Region {
@@ -604,15 +603,15 @@ impl<'a, 'tcx> TypeFolder<'tcx> for SubstFolder<'a, 'tcx> {
                     }
                     None => {
                         let span = self.span.unwrap_or(DUMMY_SP);
-                        self.tcx().sess.span_bug(
+                        span_bug!(
                             span,
-                            &format!("Region parameter out of range \
-                                      when substituting in region {} (root type={:?}) \
-                                      (space={:?}, index={})",
-                                     data.name,
-                                     self.root_ty,
-                                     data.space,
-                                     data.index));
+                            "Region parameter out of range \
+                             when substituting in region {} (root type={:?}) \
+                             (space={:?}, index={})",
+                            data.name,
+                            self.root_ty,
+                            data.space,
+                            data.index);
                     }
                 }
             }
@@ -659,16 +658,16 @@ impl<'a,'tcx> SubstFolder<'a,'tcx> {
             Some(t) => *t,
             None => {
                 let span = self.span.unwrap_or(DUMMY_SP);
-                self.tcx().sess.span_bug(
+                span_bug!(
                     span,
-                    &format!("Type parameter `{:?}` ({:?}/{:?}/{}) out of range \
-                                 when substituting (root type={:?}) substs={:?}",
-                            p,
-                            source_ty,
-                            p.space,
-                            p.idx,
-                            self.root_ty,
-                            self.substs));
+                    "Type parameter `{:?}` ({:?}/{:?}/{}) out of range \
+                         when substituting (root type={:?}) substs={:?}",
+                    p,
+                    source_ty,
+                    p.space,
+                    p.idx,
+                    self.root_ty,
+                    self.substs);
             }
         };
 

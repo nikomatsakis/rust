@@ -147,8 +147,8 @@
 use clone::Clone;
 use cmp::{PartialEq, Eq};
 use default::Default;
-use marker::{Copy, Send, Sync, Sized};
-use ops::{Deref, DerefMut, Drop, FnOnce};
+use marker::{Copy, Send, Sync, Sized, Unsize};
+use ops::{Deref, DerefMut, Drop, FnOnce, CoerceUnsized};
 use option::Option;
 use option::Option::{None, Some};
 
@@ -216,10 +216,6 @@ impl<T:Copy> Cell<T> {
 
     /// Returns a reference to the underlying `UnsafeCell`.
     ///
-    /// # Safety
-    ///
-    /// This function is `unsafe` because `UnsafeCell`'s field is public.
-    ///
     /// # Examples
     ///
     /// ```
@@ -229,11 +225,11 @@ impl<T:Copy> Cell<T> {
     ///
     /// let c = Cell::new(5);
     ///
-    /// let uc = unsafe { c.as_unsafe_cell() };
+    /// let uc = c.as_unsafe_cell();
     /// ```
     #[inline]
     #[unstable(feature = "as_unsafe_cell", issue = "27708")]
-    pub unsafe fn as_unsafe_cell(&self) -> &UnsafeCell<T> {
+    pub fn as_unsafe_cell(&self) -> &UnsafeCell<T> {
         &self.value
     }
 }
@@ -638,6 +634,9 @@ impl<'b, T: ?Sized> Ref<'b, T> {
     }
 }
 
+#[unstable(feature = "coerce_unsized", issue = "27732")]
+impl<'b, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<Ref<'b, U>> for Ref<'b, T> {}
+
 impl<'b, T: ?Sized> RefMut<'b, T> {
     /// Make a new `RefMut` for a component of the borrowed data, e.g. an enum
     /// variant.
@@ -769,6 +768,9 @@ impl<'b, T: ?Sized> DerefMut for RefMut<'b, T> {
         self._value
     }
 }
+
+#[unstable(feature = "coerce_unsized", issue = "27732")]
+impl<'b, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<RefMut<'b, U>> for RefMut<'b, T> {}
 
 /// The core primitive for interior mutability in Rust.
 ///

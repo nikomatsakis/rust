@@ -8,16 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(rustc_attrs)]
-#![allow(unused_imports)]
+// compile-flags: -Z parse-only
 
-pub type Type = i32;
-
-mod one { use super::Type; }
-pub use self::one::*;
-
-mod two { use super::Type; }
-pub use self::two::*;
-
-#[rustc_error]
-fn main() {} //~ ERROR compilation successful
+fn main() {
+    let a = 0;
+    let _b = 0;
+    let _ = 0;
+    let mut b = 0;
+    let mut _b = 0;
+    let mut _ = 0; //~ ERROR expected identifier, found `_`
+    //~^ NOTE `_` is a wildcard pattern, not an identifier
+}

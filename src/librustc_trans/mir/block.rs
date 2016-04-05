@@ -166,7 +166,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                             ty: callee.ty
                         }, f.abi, &f.sig)
                     }
-                    _ => unreachable!("{} is not callable", callee.ty)
+                    _ => bug!("{} is not callable", callee.ty)
                 };
 
                 // Handle intrinsics old trans wants Expr's for, ourselves.
@@ -295,38 +295,13 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                         return;
                     }
                     Fn(f) => f,
-                    Virtual(_) => unreachable!("Virtual fn ptr not extracted")
+                    Virtual(_) => bug!("Virtual fn ptr not extracted")
                 };
 
                 // Many different ways to call a function handled here
                 if let Some(cleanup) = cleanup.map(|bb| self.bcx(bb)) {
-                    // We translate the copy into a temporary block. The temporary block is
-                    // necessary because the current block has already been terminated (by
-                    // `invoke`) and we cannot really translate into the target block
-                    // because:
-                    //  * The target block may have more than a single precedesor;
-                    //  * Some LLVM insns cannot have a preceeding store insn (phi,
-                    //    cleanuppad), and adding/prepending the store now may render
-                    //    those other instructions invalid.
-                    //
-                    // NB: This approach still may break some LLVM code. For example if the
-                    // target block starts with a `phi` (which may only match on immediate
-                    // precedesors), it cannot know about this temporary block thus
-                    // resulting in an invalid code:
-                    //
-                    // this:
-                    //     …
-                    //     %0 = …
-                    //     %1 = invoke to label %temp …
-                    // temp:
-                    //     store ty %1, ty* %dest
-                    //     br label %actualtargetblock
-                    // actualtargetblock:            ; preds: %temp, …
-                    //     phi … [%this, …], [%0, …] ; ERROR: phi requires to match only on
-                    //                               ; immediate precedesors
-
-                    let ret_bcx = if destination.is_some() {
-                        self.fcx.new_block("", None)
+                    let ret_bcx = if let Some((_, target)) = *destination {
+                        self.blocks[target.index()]
                     } else {
                         self.unreachable_block()
                     };
@@ -343,15 +318,16 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                         self.set_operand_dropped(bcx, op);
                     });
 
-                    if let Some((_, target)) = *destination {
+                    if destination.is_some() {
                         let ret_bcx = ret_bcx.build();
-                        if let Some(ret_dest) = ret_dest {
-                            fn_ty.ret.store(&ret_bcx, invokeret, ret_dest.llval);
-                        }
-                        for op in args {
-                            self.set_operand_dropped(&ret_bcx, op);
-                        }
-                        ret_bcx.br(self.llblock(target));
+                        ret_bcx.at_start(|ret_bcx| {
+                            if let Some(ret_dest) = ret_dest {
+                                fn_ty.ret.store(&ret_bcx, invokeret, ret_dest.llval);
+                            }
+                            for op in args {
+                                self.set_operand_dropped(&ret_bcx, op);
+                            }
+                        });
                     }
                 } else {
                     let llret = bcx.call(fn_ptr, &llargs, cleanup_bundle.as_ref());
@@ -417,7 +393,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
             }
             Immediate(llval) => (llval, false),
             Ref(llval) => (llval, true),
-            FatPtr(_, _) => unreachable!("fat pointers handled above")
+            FatPtr(_, _) => bug!("fat pointers handled above")
         };
 
         if by_ref && !arg.is_indirect() {
@@ -470,9 +446,9 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         let lv_ty = lv.ty.to_ty(bcx.tcx());
         let result_types = match lv_ty.sty {
             ty::TyTuple(ref tys) => tys,
-            _ => bcx.tcx().sess.span_bug(
+            _ => span_bug!(
                 self.mir.span,
-                &format!("bad final argument to \"rust-call\" fn {:?}", lv_ty))
+                "bad final argument to \"rust-call\" fn {:?}", lv_ty)
         };
 
         let base_repr = adt::represent_type(bcx.ccx(), lv_ty);

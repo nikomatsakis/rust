@@ -41,7 +41,6 @@ use super::probe::Mode;
 
 fn is_fn_ty<'a, 'tcx>(ty: &Ty<'tcx>, fcx: &FnCtxt<'a, 'tcx>, span: Span) -> bool {
     let cx = fcx.tcx();
-    println!("{:?}", ty);
     match ty.sty {
         // Not all of these (e.g. unsafe fns) implement FnOnce
         // so we look for these beforehand
@@ -91,7 +90,7 @@ pub fn report_error<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         MethodError::NoMatch(NoMatchData { static_candidates: static_sources,
                                            unsatisfied_predicates,
                                            out_of_scope_traits,
-                                           mode }) => {
+                                           mode, .. }) => {
             let cx = fcx.tcx();
 
             let mut err = fcx.type_error_struct(
@@ -207,6 +206,11 @@ pub fn report_error<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                 msg
             };
             fcx.sess().span_err(span, &msg);
+        }
+
+        MethodError::PrivateMatch(def) => {
+            let msg = format!("{} `{}` is private", def.kind_name(), item_name);
+            fcx.tcx().sess.span_err(span, &msg);
         }
     }
 

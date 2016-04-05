@@ -32,6 +32,7 @@ extern crate arena;
 #[no_link]
 extern crate rustc_bitflags;
 extern crate rustc_front;
+#[macro_use]
 extern crate rustc;
 
 use self::PatternBindingMode::*;
@@ -827,8 +828,8 @@ pub struct ModuleS<'a> {
     // is the NodeId of the local `extern crate` item (otherwise, `extern_crate_id` is None).
     extern_crate_id: Option<NodeId>,
 
-    resolutions: RefCell<HashMap<(Name, Namespace), NameResolution<'a>>>,
-    unresolved_imports: RefCell<Vec<&'a ImportDirective>>,
+    resolutions: RefCell<HashMap<(Name, Namespace), &'a RefCell<NameResolution<'a>>>>,
+    unresolved_imports: RefCell<Vec<&'a ImportDirective<'a>>>,
 
     // The module children of this node, including normal modules and anonymous modules.
     // Anonymous children are pseudo-modules that are implicitly created around items
@@ -848,14 +849,8 @@ pub struct ModuleS<'a> {
 
     prelude: RefCell<Option<Module<'a>>>,
 
-    glob_importers: RefCell<Vec<(Module<'a>, &'a ImportDirective)>>,
-    resolved_globs: RefCell<(Vec<Module<'a>> /* public */, Vec<Module<'a>> /* private */)>,
-
-    // The number of public glob imports in this module.
-    public_glob_count: Cell<usize>,
-
-    // The number of private glob imports in this module.
-    private_glob_count: Cell<usize>,
+    glob_importers: RefCell<Vec<(Module<'a>, &'a ImportDirective<'a>)>>,
+    globs: RefCell<Vec<&'a ImportDirective<'a>>>,
 
     // Whether this module is populated. If not populated, any attempt to
     // access the children must be preceded with a
@@ -883,22 +878,15 @@ impl<'a> ModuleS<'a> {
             module_children: RefCell::new(NodeMap()),
             prelude: RefCell::new(None),
             glob_importers: RefCell::new(Vec::new()),
-            resolved_globs: RefCell::new((Vec::new(), Vec::new())),
-            public_glob_count: Cell::new(0),
-            private_glob_count: Cell::new(0),
+            globs: RefCell::new((Vec::new())),
             populated: Cell::new(!external),
             arenas: arenas
         }
     }
 
-    fn add_import_directive(&self, import_directive: ImportDirective) {
-        let import_directive = self.arenas.alloc_import_directive(import_directive);
-        self.unresolved_imports.borrow_mut().push(import_directive);
-    }
-
     fn for_each_child<F: FnMut(Name, Namespace, &'a NameBinding<'a>)>(&self, mut f: F) {
         for (&(name, ns), name_resolution) in self.resolutions.borrow().iter() {
-            name_resolution.binding.map(|binding| f(name, ns, binding));
+            name_resolution.borrow().binding.map(|binding| f(name, ns, binding));
         }
     }
 
@@ -927,11 +915,6 @@ impl<'a> ModuleS<'a> {
             ParentLink::ModuleParentLink(parent, _) => self.is_ancestor_of(parent),
             _ => false,
         }
-    }
-
-    fn inc_glob_count(&self, is_public: bool) {
-        let glob_count = if is_public { &self.public_glob_count } else { &self.private_glob_count };
-        glob_count.set(glob_count.get() + 1);
     }
 }
 
@@ -1134,7 +1117,8 @@ pub struct Resolver<'a, 'tcx: 'a> {
 struct ResolverArenas<'a> {
     modules: arena::TypedArena<ModuleS<'a>>,
     name_bindings: arena::TypedArena<NameBinding<'a>>,
-    import_directives: arena::TypedArena<ImportDirective>,
+    import_directives: arena::TypedArena<ImportDirective<'a>>,
+    name_resolutions: arena::TypedArena<RefCell<NameResolution<'a>>>,
 }
 
 impl<'a> ResolverArenas<'a> {
@@ -1144,8 +1128,12 @@ impl<'a> ResolverArenas<'a> {
     fn alloc_name_binding(&'a self, name_binding: NameBinding<'a>) -> &'a NameBinding<'a> {
         self.name_bindings.alloc(name_binding)
     }
-    fn alloc_import_directive(&'a self, import_directive: ImportDirective) -> &'a ImportDirective {
+    fn alloc_import_directive(&'a self, import_directive: ImportDirective<'a>)
+                              -> &'a ImportDirective {
         self.import_directives.alloc(import_directive)
+    }
+    fn alloc_name_resolution(&'a self) -> &'a RefCell<NameResolution<'a>> {
+        self.name_resolutions.alloc(Default::default())
     }
 }
 
@@ -1215,6 +1203,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
             modules: arena::TypedArena::new(),
             name_bindings: arena::TypedArena::new(),
             import_directives: arena::TypedArena::new(),
+            name_resolutions: arena::TypedArena::new(),
         }
     }
 
@@ -2375,11 +2364,11 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                         // The below shouldn't happen because all
                         // qualified paths should be in PatKind::QPath.
                         TypecheckRequired =>
-                            self.session.span_bug(path.span,
-                                                  "resolve_possibly_assoc_item claimed that a path \
-                                                   in PatKind::Path or PatKind::TupleStruct \
-                                                   requires typecheck to resolve, but qualified \
-                                                   paths should be PatKind::QPath"),
+                            span_bug!(path.span,
+                                      "resolve_possibly_assoc_item claimed that a path \
+                                       in PatKind::Path or PatKind::TupleStruct \
+                                       requires typecheck to resolve, but qualified \
+                                       paths should be PatKind::QPath"),
                         ResolveAttempt(resolution) => resolution,
                     };
                     if let Some(path_res) = resolution {
@@ -2668,7 +2657,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         let mut def = local_def.def;
         match def {
             Def::Upvar(..) => {
-                self.session.span_bug(span, &format!("unexpected {:?} in bindings", def))
+                span_bug!(span, "unexpected {:?} in bindings", def)
             }
             Def::Local(_, node_id) => {
                 for rib in ribs {
@@ -3189,7 +3178,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                                         })
                     }
                     Some(_) => {
-                        self.session.span_bug(expr.span, "label wasn't mapped to a label def!")
+                        span_bug!(expr.span, "label wasn't mapped to a label def!")
                     }
                 }
             }
@@ -3346,7 +3335,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                             paths.push(segm);
                             paths
                         }
-                        _ => unreachable!(),
+                        _ => bug!(),
                     };
 
                     if !in_module_is_extern || name_binding.is_public() {
@@ -3368,10 +3357,10 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         debug!("(recording def) recording {:?} for {}", resolution, node_id);
         if let Some(prev_res) = self.def_map.borrow_mut().insert(node_id, resolution) {
             let span = self.ast_map.opt_span(node_id).unwrap_or(codemap::DUMMY_SP);
-            self.session.span_bug(span,
-                                  &format!("path resolved multiple times ({:?} before, {:?} now)",
-                                           prev_res,
-                                           resolution));
+            span_bug!(span,
+                      "path resolved multiple times ({:?} before, {:?} now)",
+                      prev_res,
+                      resolution);
         }
     }
 

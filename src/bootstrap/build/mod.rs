@@ -88,6 +88,7 @@ pub struct Build {
 
 pub enum Mode {
     Libstd,
+    Libtest,
     Librustc,
     Tool,
 }
@@ -141,9 +142,13 @@ impl Build {
             return clean::clean(self);
         }
 
+        self.verbose("finding compilers");
         cc::find(self);
+        self.verbose("running sanity check");
         sanity::check(self);
+        self.verbose("collecting channel variables");
         channel::collect(self);
+        self.verbose("updating submodules");
         self.update_submodules();
 
         for target in step::all(self) {
@@ -158,11 +163,17 @@ impl Build {
                 Libstd { compiler } => {
                     compile::std(self, target.target, &compiler);
                 }
+                Libtest { compiler } => {
+                    compile::test(self, target.target, &compiler);
+                }
                 Librustc { compiler } => {
                     compile::rustc(self, target.target, &compiler);
                 }
                 LibstdLink { compiler, host } => {
                     compile::std_link(self, target.target, &compiler, host);
+                }
+                LibtestLink { compiler, host } => {
+                    compile::test_link(self, target.target, &compiler, host);
                 }
                 LibrustcLink { compiler, host } => {
                     compile::rustc_link(self, target.target, &compiler, host);
@@ -202,6 +213,9 @@ impl Build {
                 }
                 DocStd { stage } => {
                     doc::std(self, stage, target.target, &doc_out);
+                }
+                DocTest { stage } => {
+                    doc::test(self, stage, target.target, &doc_out);
                 }
                 DocRustc { stage } => {
                     doc::rustc(self, stage, target.target, &doc_out);
@@ -312,7 +326,13 @@ impl Build {
         if !target.contains("msvc") {
             cargo.env(format!("CC_{}", target), self.cc(target))
                  .env(format!("AR_{}", target), self.ar(target))
-                 .env(format!("CFLAGS_{}", target), self.cflags(target));
+                 .env(format!("CFLAGS_{}", target), self.cflags(target).join(" "));
+        }
+
+        // If we're building for OSX, inform the compiler and the linker that
+        // we want to build a compiler runnable on 10.7
+        if target.contains("apple-darwin") {
+            cargo.env("MACOSX_DEPLOYMENT_TARGET", "10.7");
         }
 
         // Environment variables *required* needed throughout the build
@@ -360,6 +380,7 @@ impl Build {
         let host = compiler.host;
         let paths = vec![
             self.cargo_out(compiler, Mode::Libstd, host).join("deps"),
+            self.cargo_out(compiler, Mode::Libtest, host).join("deps"),
             self.cargo_out(compiler, Mode::Librustc, host).join("deps"),
         ];
         add_lib_path(paths, &mut cmd);
@@ -414,7 +435,8 @@ impl Build {
     fn stage_out(&self, compiler: &Compiler, mode: Mode) -> PathBuf {
         let suffix = match mode {
             Mode::Libstd => "-std",
-            _ => "-rustc",
+            Mode::Libtest => "-test",
+            Mode::Tool | Mode::Librustc => "-rustc",
         };
         self.out.join(compiler.host)
                 .join(format!("stage{}{}", compiler.stage, suffix))
@@ -481,11 +503,20 @@ impl Build {
         self.cc[target].0.path()
     }
 
-    fn cflags(&self, target: &str) -> String {
-        self.cc[target].0.args().iter()
-            .map(|s| s.to_string_lossy())
-            .collect::<Vec<_>>()
-            .join(" ")
+    fn cflags(&self, target: &str) -> Vec<String> {
+        let mut base = self.cc[target].0.args().iter()
+                           .map(|s| s.to_string_lossy().into_owned())
+                           .collect::<Vec<_>>();
+
+        // If we're compiling on OSX then we add a few unconditional flags
+        // indicating that we want libc++ (more filled out than libstdc++) and
+        // we want to compile for 10.7. This way we can ensure that
+        // LLVM/jemalloc/etc are all properly compiled.
+        if target.contains("apple-darwin") {
+            base.push("-stdlib=libc++".into());
+            base.push("-mmacosx-version-min=10.7".into());
+        }
+        return base
     }
 
     fn ar(&self, target: &str) -> &Path {

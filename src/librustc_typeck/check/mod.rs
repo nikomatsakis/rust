@@ -463,8 +463,7 @@ fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
             regionck::regionck_fn(&fcx, fn_id, fn_span, decl, body);
             writeback::resolve_type_vars_in_fn(&fcx, decl, body);
         }
-        _ => ccx.tcx.sess.impossible_case(body.span,
-                                 "check_bare_fn: function type expected")
+        _ => span_bug!(body.span, "check_bare_fn: function type expected")
     }
 }
 
@@ -946,7 +945,7 @@ fn check_impl_items_against_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                 hir::ImplItemKind::Const(..) => {
                     let impl_const = match ty_impl_item {
                         ty::ConstTraitItem(ref cti) => cti,
-                        _ => tcx.sess.span_bug(impl_item.span, "non-const impl-item for const")
+                        _ => span_bug!(impl_item.span, "non-const impl-item for const")
                     };
 
                     // Find associated const definition.
@@ -969,7 +968,7 @@ fn check_impl_items_against_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
 
                     let impl_method = match ty_impl_item {
                         ty::MethodTraitItem(ref mti) => mti,
-                        _ => tcx.sess.span_bug(impl_item.span, "non-method impl-item for method")
+                        _ => span_bug!(impl_item.span, "non-method impl-item for method")
                     };
 
                     if let &ty::MethodTraitItem(ref trait_method) = ty_trait_item {
@@ -990,7 +989,7 @@ fn check_impl_items_against_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                 hir::ImplItemKind::Type(_) => {
                     let impl_type = match ty_impl_item {
                         ty::TypeTraitItem(ref tti) => tti,
-                        _ => tcx.sess.span_bug(impl_item.span, "non-type impl-item for type")
+                        _ => span_bug!(impl_item.span, "non-type impl-item for type")
                     };
 
                     if let &ty::TypeTraitItem(ref at) = ty_trait_item {
@@ -1567,8 +1566,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         match self.inh.tables.borrow().node_types.get(&ex.id) {
             Some(&t) => t,
             None => {
-                self.tcx().sess.bug(&format!("no type for expr in fcx {}",
-                                            self.tag()));
+                bug!("no type for expr in fcx {}", self.tag());
             }
         }
     }
@@ -1593,10 +1591,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             Some(&t) => t,
             None if self.err_count_since_creation() != 0 => self.tcx().types.err,
             None => {
-                self.tcx().sess.bug(
-                    &format!("no type for node {}: {} in fcx {}",
-                            id, self.tcx().map.node_to_string(id),
-                            self.tag()));
+                bug!("no type for node {}: {} in fcx {}",
+                     id, self.tcx().map.node_to_string(id),
+                     self.tag());
             }
         }
     }
@@ -2386,8 +2383,7 @@ fn check_method_argument_types<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                 fty.sig.0.output
             }
             _ => {
-                fcx.tcx().sess.span_bug(callee_expr.span,
-                                        "method without bare fn type");
+                span_bug!(callee_expr.span, "method without bare fn type");
             }
         }
     }
@@ -2939,9 +2935,8 @@ fn check_expr_with_expectation_and_lvalue_pref<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                             base: &'tcx hir::Expr,
                             field: &Spanned<ast::Name>) {
         check_expr_with_lvalue_pref(fcx, base, lvalue_pref);
-        let expr_t = structurally_resolved_type(fcx, expr.span,
-                                                fcx.expr_ty(base));
-        // FIXME(eddyb) #12808 Integrate privacy into this auto-deref loop.
+        let expr_t = structurally_resolved_type(fcx, expr.span, fcx.expr_ty(base));
+        let mut private_candidate = None;
         let (_, autoderefs, field_ty) = autoderef(fcx,
                                                   expr.span,
                                                   expr_t,
@@ -2949,15 +2944,17 @@ fn check_expr_with_expectation_and_lvalue_pref<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                                                   UnresolvedTypeAction::Error,
                                                   lvalue_pref,
                                                   |base_t, _| {
-                match base_t.sty {
-                    ty::TyStruct(base_def, substs) => {
-                        debug!("struct named {:?}",  base_t);
-                        base_def.struct_variant()
-                                .find_field_named(field.node)
-                                .map(|f| fcx.field_ty(expr.span, f, substs))
+                if let ty::TyStruct(base_def, substs) = base_t.sty {
+                    debug!("struct named {:?}",  base_t);
+                    if let Some(field) = base_def.struct_variant().find_field_named(field.node) {
+                        let field_ty = fcx.field_ty(expr.span, field, substs);
+                        if field.vis == hir::Public || fcx.private_item_is_visible(base_def.did) {
+                            return Some(field_ty);
+                        }
+                        private_candidate = Some((base_def.did, field_ty));
                     }
-                    _ => None
                 }
+                None
             });
         match field_ty {
             Some(field_ty) => {
@@ -2968,12 +2965,14 @@ fn check_expr_with_expectation_and_lvalue_pref<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
             None => {}
         }
 
-        if field.node == special_idents::invalid.name {
+        if let Some((did, field_ty)) = private_candidate {
+            let struct_path = fcx.tcx().item_path_str(did);
+            let msg = format!("field `{}` of struct `{}` is private", field.node, struct_path);
+            fcx.tcx().sess.span_err(expr.span, &msg);
+            fcx.write_ty(expr.id, field_ty);
+        } else if field.node == special_idents::invalid.name {
             fcx.write_error(expr.id);
-            return;
-        }
-
-        if method::exists(fcx, field.span, field.node, expr_t, expr.id) {
+        } else if method::exists(fcx, field.span, field.node, expr_t, expr.id) {
             fcx.type_error_struct(field.span,
                                   |actual| {
                                        format!("attempted to take value of method `{}` on type \
@@ -2984,6 +2983,7 @@ fn check_expr_with_expectation_and_lvalue_pref<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                                "maybe a `()` to call it is missing? \
                                If not, try an anonymous function")
                 .emit();
+            fcx.write_error(expr.id);
         } else {
             let mut err = fcx.type_error_struct(
                 expr.span,
@@ -2999,9 +2999,8 @@ fn check_expr_with_expectation_and_lvalue_pref<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                 suggest_field_names(&mut err, def.struct_variant(), field, vec![]);
             }
             err.emit();
+            fcx.write_error(expr.id);
         }
-
-        fcx.write_error(expr.id);
     }
 
     // displays hints about the closest matches in field names
@@ -3036,10 +3035,9 @@ fn check_expr_with_expectation_and_lvalue_pref<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                                 base: &'tcx hir::Expr,
                                 idx: codemap::Spanned<usize>) {
         check_expr_with_lvalue_pref(fcx, base, lvalue_pref);
-        let expr_t = structurally_resolved_type(fcx, expr.span,
-                                                fcx.expr_ty(base));
+        let expr_t = structurally_resolved_type(fcx, expr.span, fcx.expr_ty(base));
+        let mut private_candidate = None;
         let mut tuple_like = false;
-        // FIXME(eddyb) #12808 Integrate privacy into this auto-deref loop.
         let (_, autoderefs, field_ty) = autoderef(fcx,
                                                   expr.span,
                                                   expr_t,
@@ -3047,25 +3045,27 @@ fn check_expr_with_expectation_and_lvalue_pref<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                                                   UnresolvedTypeAction::Error,
                                                   lvalue_pref,
                                                   |base_t, _| {
-                match base_t.sty {
-                    ty::TyStruct(base_def, substs) => {
-                        tuple_like = base_def.struct_variant().is_tuple_struct();
-                        if tuple_like {
-                            debug!("tuple struct named {:?}",  base_t);
-                            base_def.struct_variant()
-                                    .fields
-                                    .get(idx.node)
-                                    .map(|f| fcx.field_ty(expr.span, f, substs))
-                        } else {
-                            None
-                        }
-                    }
+                let (base_def, substs) = match base_t.sty {
+                    ty::TyStruct(base_def, substs) => (base_def, substs),
                     ty::TyTuple(ref v) => {
                         tuple_like = true;
-                        if idx.node < v.len() { Some(v[idx.node]) } else { None }
+                        return if idx.node < v.len() { Some(v[idx.node]) } else { None }
                     }
-                    _ => None
+                    _ => return None,
+                };
+
+                tuple_like = base_def.struct_variant().is_tuple_struct();
+                if !tuple_like { return None }
+
+                debug!("tuple struct named {:?}",  base_t);
+                if let Some(field) = base_def.struct_variant().fields.get(idx.node) {
+                    let field_ty = fcx.field_ty(expr.span, field, substs);
+                    if field.vis == hir::Public || fcx.private_item_is_visible(base_def.did) {
+                        return Some(field_ty);
+                    }
+                    private_candidate = Some((base_def.did, field_ty));
                 }
+                None
             });
         match field_ty {
             Some(field_ty) => {
@@ -3075,6 +3075,15 @@ fn check_expr_with_expectation_and_lvalue_pref<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
             }
             None => {}
         }
+
+        if let Some((did, field_ty)) = private_candidate {
+            let struct_path = fcx.tcx().item_path_str(did);
+            let msg = format!("field `{}` of struct `{}` is private", idx.node, struct_path);
+            fcx.tcx().sess.span_err(expr.span, &msg);
+            fcx.write_ty(expr.id, field_ty);
+            return;
+        }
+
         fcx.type_error_message(
             expr.span,
             |actual| {
@@ -3126,7 +3135,7 @@ fn check_expr_with_expectation_and_lvalue_pref<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         let tcx = fcx.ccx.tcx;
         let substs = match adt_ty.sty {
             ty::TyStruct(_, substs) | ty::TyEnum(_, substs) => substs,
-            _ => tcx.sess.span_bug(span, "non-ADT passed to check_expr_struct_fields")
+            _ => span_bug!(span, "non-ADT passed to check_expr_struct_fields")
         };
 
         let mut remaining_fields = FnvHashMap();
@@ -3387,8 +3396,7 @@ fn check_expr_with_expectation_and_lvalue_pref<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                     depth: path.segments.len()
                 }
             } else {
-              tcx.sess.span_bug(expr.span,
-                                &format!("unbound path {:?}", expr))
+              span_bug!(expr.span, "unbound path {:?}", expr)
           };
 
           if let Some((opt_ty, segments, def)) =
@@ -3745,23 +3753,30 @@ pub fn resolve_ty_and_def_ufcs<'a, 'b, 'tcx>(fcx: &FnCtxt<'b, 'tcx>,
                                                      &ty_segments[base_ty_end..]);
         let item_segment = path.segments.last().unwrap();
         let item_name = item_segment.identifier.name;
-        match method::resolve_ufcs(fcx, span, item_name, ty, node_id) {
-            Ok(def) => {
-                // Write back the new resolution.
-                fcx.ccx.tcx.def_map.borrow_mut()
-                       .insert(node_id, def::PathResolution {
-                   base_def: def,
-                   depth: 0
-                });
-                Some((Some(ty), slice::ref_slice(item_segment), def))
-            }
+        let def = match method::resolve_ufcs(fcx, span, item_name, ty, node_id) {
+            Ok(def) => Some(def),
             Err(error) => {
+                let def = match error {
+                    method::MethodError::PrivateMatch(def) => Some(def),
+                    _ => None,
+                };
                 if item_name != special_idents::invalid.name {
                     method::report_error(fcx, span, ty, item_name, None, error);
                 }
-                fcx.write_error(node_id);
-                None
+                def
             }
+        };
+
+        if let Some(def) = def {
+            // Write back the new resolution.
+            fcx.ccx.tcx.def_map.borrow_mut().insert(node_id, def::PathResolution {
+                base_def: def,
+                depth: 0,
+            });
+            Some((Some(ty), slice::ref_slice(item_segment), def))
+        } else {
+            fcx.write_error(node_id);
+            None
         }
     }
 }
@@ -4204,7 +4219,7 @@ fn type_scheme_and_predicates_for_def<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         Def::Label(..) |
         Def::SelfTy(..) |
         Def::Err => {
-            fcx.ccx.tcx.sess.span_bug(sp, &format!("expected value, found {:?}", defn));
+            span_bug!(sp, "expected value, found {:?}", defn);
         }
     }
 }
@@ -4465,11 +4480,10 @@ pub fn instantiate_path<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
 
         let impl_ty = fcx.instantiate_type_scheme(span, &substs, &impl_scheme.ty);
         if fcx.mk_subty(false, TypeOrigin::Misc(span), self_ty, impl_ty).is_err() {
-            fcx.tcx().sess.span_bug(span,
-            &format!(
+            span_bug!(span,
                 "instantiate_path: (UFCS) {:?} was a subtype of {:?} but now is not?",
                 self_ty,
-                impl_ty));
+                impl_ty);
         }
     }
 

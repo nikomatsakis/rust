@@ -43,6 +43,9 @@ pub enum MethodError<'tcx> {
 
     // Using a `Fn`/`FnMut`/etc method on a raw closure type before we have inferred its kind.
     ClosureAmbiguity(/* DefId of fn trait */ DefId),
+
+    // Found an applicable method, but it is not visible.
+    PrivateMatch(Def),
 }
 
 // Contains a list of static methods that may apply, a list of unsatisfied trait predicates which
@@ -90,6 +93,7 @@ pub fn exists<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         Err(NoMatch(..)) => false,
         Err(Ambiguity(..)) => true,
         Err(ClosureAmbiguity(..)) => true,
+        Err(PrivateMatch(..)) => true,
     }
 }
 
@@ -298,21 +302,19 @@ pub fn lookup_in_trait_adjusted<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                         }
 
                         _ => {
-                            fcx.tcx().sess.span_bug(
+                            span_bug!(
                                 span,
-                                &format!(
-                                    "trait method is &self but first arg is: {}",
-                                    transformed_self_ty));
+                                "trait method is &self but first arg is: {}",
+                                transformed_self_ty);
                         }
                     }
                 }
 
                 _ => {
-                    fcx.tcx().sess.span_bug(
+                    span_bug!(
                         span,
-                        &format!(
-                            "unexpected explicit self type in operator method: {:?}",
-                            method_ty.explicit_self));
+                        "unexpected explicit self type in operator method: {:?}",
+                        method_ty.explicit_self);
                 }
             }
         }
