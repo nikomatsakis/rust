@@ -158,6 +158,12 @@ pub const COMMAND_LINE_SP: Span = Span { lo: BytePos(0),
                                          expn_id: COMMAND_LINE_EXPN };
 
 impl Span {
+    /// Returns a new span representing just the end-point of this span
+    pub fn end_point(self) -> Span {
+        let lo = cmp::max(self.hi.0 - 1, self.lo.0);
+        Span { lo: BytePos(lo), hi: self.hi, expn_id: self.expn_id}
+    }
+
     /// Returns `self` if `self` is not the dummy span, and `other` otherwise.
     pub fn substitute_dummy(self, other: Span) -> Span {
         if self.source_equal(&DUMMY_SP) { other } else { self }

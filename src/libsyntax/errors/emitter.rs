@@ -191,10 +191,6 @@ impl EmitterWriter {
                 self.highlight_lines(msp, lvl)?;
                 self.print_macro_backtrace(bounds)?;
             }
-            EndSpan(_) => {
-                self.end_highlight_lines(msp, lvl)?;
-                self.print_macro_backtrace(bounds)?;
-            }
             Suggestion(ref suggestion) => {
                 self.highlight_suggestion(suggestion)?;
                 self.print_macro_backtrace(bounds)?;
