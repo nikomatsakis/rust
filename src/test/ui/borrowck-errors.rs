@@ -60,4 +60,39 @@ fn six_closure() {
     };
 }
 
+fn closure_borrow_unique() {
+    let mut vec = vec!["hi"];
+    let vec = &mut vec;
+    let data = &vec[3];
+    let append = |e| {
+        vec.push(e)
+    };
+}
+
+fn closure_unique_borrow() {
+    let mut vec = vec!["hi"];
+    let vec = &mut vec;
+    let append = |e| {
+        vec.push(e)
+    };
+    let data = &vec[3];
+}
+
+fn closure_unique_unique() {
+    let mut vec = vec!["hi"];
+    let vec = &mut vec;
+    let append = |e| {
+        vec.push(e)
+    };
+    let append = |e| {
+        vec.push(e)
+    };
+}
+
+fn mut_mut() {
+    let mut vec = vec!["hi"];
+    let vec1 = &mut vec;
+    let vec2 = &mut vec;
+}
+
 fn main() { }

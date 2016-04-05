@@ -506,14 +506,14 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                                       at the same time",
                                      nl)
                         .span_label(
-                            new_loan.span,
+                            old_loan.span,
                             format!("first closure is constructed here"))
                         .span_label(
-                            old_loan.span,
+                            new_loan.span,
                             format!("second closure is constructed here"))
                         .span_label(
                             previous_end_span,
-                            format!("borrow from closure ends here"))
+                            format!("borrow from first closure ends here"))
                 }
 
                 (ty::UniqueImmBorrow, _) => {
