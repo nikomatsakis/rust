@@ -364,7 +364,7 @@ fn print_diagnostic(dst: &mut Destination,
 
 
     match lvl {
-        Level::Error => {
+        Level::Error | Level::Warning => {
             if !topic.is_empty() {
                 dst.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
                 write!(dst, "{}: ", topic)?;
