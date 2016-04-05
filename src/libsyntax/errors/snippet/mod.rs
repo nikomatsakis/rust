@@ -63,6 +63,7 @@ pub struct StyledString {
 pub enum Style {
     FileNameLine,
     Quotation,
+    Underline,
     Label,
     NoStyle,
 }
@@ -74,7 +75,7 @@ pub enum RenderedLineKind {
         file: Rc<FileMap>,
         line_index: usize,
     },
-    Highlights,
+    Annotations,
     Elision,
 }
 use self::RenderedLineKind::*;
@@ -301,7 +302,7 @@ impl SnippetData {
         //      previous borrow of `vec` occurs here
         //
         // For this reason, we group the lines into "highlight lines"
-        // and "text lines", where the highlight lines have the `~`.
+        // and "annotations lines", where the highlight lines have the `~`.
 
         let mut highlight_line = Self::whitespace(&source_string);
 
@@ -325,7 +326,7 @@ impl SnippetData {
         // If there are no annotations that need text, we're done.
         if labeled_annotations.is_empty() {
             return vec![RenderedLine::from((source_string, Quotation, source_kind)),
-                        RenderedLine::from((highlight_line, Label, Highlights))];
+                        RenderedLine::from((highlight_line, Underline, Annotations))];
         }
 
         // Now add the text labels. We try, when possible, to stick the rightmost
@@ -364,23 +365,41 @@ impl SnippetData {
         // use the "hang below" version, so we can at least make it
         // clear where the span *starts*.
         let mut labeled_annotations = &labeled_annotations[..];
+        let mut highlight_label = String::new();
         match labeled_annotations.split_last().unwrap() {
             (last, previous) => {
                 if previous.iter()
                            .chain(&unlabeled_annotations)
-                           .all(|a| !overlaps(a, last)) {
-                    Self::write_label(&mut highlight_line,
-                                      last.end_col + 1,
-                                      last.label.as_ref().unwrap());
+                           .all(|a| !overlaps(a, last))
+                {
+                    // there shouldn't be any squiggles after last.end_col,
+                    // but there might be some whitespace; cut it off
+                    if highlight_line.len() > last.end_col {
+                        highlight_line.truncate(last.end_col);
+                    }
+
+                    // append the label afterwards; we keep it in a separate
+                    // string
+                    highlight_label = format!(" {}", last.label.as_ref().unwrap());
                     labeled_annotations = previous;
                 }
             }
         }
 
+        // The ~ line begins with the ~'s, which are Underline, and
+        // ends with a (possibly empty) label.
+        let highlight_render_line =
+            RenderedLine::from(
+                (highlight_line, Underline,
+                 highlight_label, Label,
+                 Annotations));
+
         // If that's the last annotation, we're done
         if labeled_annotations.is_empty() {
-            return vec![RenderedLine::from((source_string, Quotation, source_kind)),
-                        RenderedLine::from((highlight_line, Label, Highlights))];
+            return vec![
+                RenderedLine::from((source_string, Quotation, source_kind)),
+                highlight_render_line,
+            ];
         }
 
         // Otherwise, total lines will be 1 + number of remaining.
@@ -412,10 +431,10 @@ impl SnippetData {
         // Convert the Vec<char> into String
         let extra_strings =
             extra_lines.into_iter()
-                       .map(|v| RenderedLine::from((v, Label, Highlights)));
+                       .map(|v| RenderedLine::from((v, Label, Annotations)));
 
         iter::once(RenderedLine::from((source_string, Quotation, source_kind)))
-            .chain(Some(RenderedLine::from((highlight_line, Label, Highlights))))
+            .chain(Some(highlight_render_line))
             .chain(extra_strings)
             .collect()
     }
@@ -492,11 +511,29 @@ impl SnippetData {
     }
 }
 
-impl From<(String, Style, RenderedLineKind)> for RenderedLine {
-    fn from((text, style, kind): (String, Style, RenderedLineKind)) -> Self {
+pub trait StringSource {
+    fn make_string(self) -> String;
+}
+
+impl StringSource for String {
+    fn make_string(self) -> String {
+        self
+    }
+}
+
+impl StringSource for Vec<char> {
+    fn make_string(self) -> String {
+        self.into_iter().collect()
+    }
+}
+
+impl<S> From<(S, Style, RenderedLineKind)> for RenderedLine
+    where S: StringSource
+{
+    fn from((text, style, kind): (S, Style, RenderedLineKind)) -> Self {
         RenderedLine {
             text: vec![StyledString {
-                text: text,
+                text: text.make_string(),
                 style: style,
             }],
             kind: kind,
@@ -504,13 +541,23 @@ impl From<(String, Style, RenderedLineKind)> for RenderedLine {
     }
 }
 
-impl From<(Vec<char>, Style, RenderedLineKind)> for RenderedLine {
-    fn from((text, style, kind): (Vec<char>, Style, RenderedLineKind)) -> Self {
+impl<S1,S2> From<(S1, Style, S2, Style, RenderedLineKind)> for RenderedLine
+    where S1: StringSource, S2: StringSource
+{
+    fn from(tuple: (S1, Style, S2, Style, RenderedLineKind))
+            -> Self {
+        let (text1, style1, text2, style2, kind) = tuple;
         RenderedLine {
-            text: vec![StyledString {
-                text: text.into_iter().collect(),
-                style: style,
-            }],
+            text: vec![
+                StyledString {
+                    text: text1.make_string(),
+                    style: style1,
+                },
+                StyledString {
+                    text: text2.make_string(),
+                    style: style2,
+                }
+            ],
             kind: kind,
         }
     }
@@ -527,12 +574,14 @@ impl RenderedLine {
 impl RenderedLineKind {
     fn prefix(&self) -> StyledString {
         match *self {
-            SourceText { ref file, line_index } =>
+            SourceText { file: _, line_index } =>
+                // TODO -- include file name only if we have spans from
+                // multiple files intermingled
                 StyledString {
-                    text: format!("{}:{}", file.name, line_index + 1),
+                    text: format!("{}", line_index + 1),
                     style: FileNameLine,
                 },
-            Elision | Highlights =>
+            Elision | Annotations =>
                 StyledString {
                     text: String::new(),
                     style: NoStyle,

@@ -329,9 +329,8 @@ fn print_diagnostic(dst: &mut Destination,
 
     dst.start_attr(term::Attr::Bold)?;
     write!(dst, "{}: ", lvl.to_string())?;
-    dst.reset_attrs()?;
-
     write!(dst, "{}", msg)?;
+    dst.reset_attrs()?;
 
     if let Some(code) = code {
         let style = term::Attr::ForegroundColor(term::color::BRIGHT_MAGENTA);
@@ -378,7 +377,7 @@ impl Destination {
     }
 
     fn apply_style(&mut self,
-                   _lvl: Level,
+                   lvl: Level,
                    _kind: &RenderedLineKind,
                    style: Style)
                    -> io::Result<()> {
@@ -388,9 +387,14 @@ impl Destination {
                 self.start_attr(term::Attr::ForegroundColor(term::color::BRIGHT_BLUE))?;
             }
             Style::Quotation => {
+                self.start_attr(term::Attr::ForegroundColor(term::color::BRIGHT_WHITE))?;
+            }
+            Style::Underline => {
+                self.start_attr(term::Attr::Bold)?;
+                self.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
             }
             Style::Label => {
-                self.start_attr(term::Attr::ForegroundColor(term::color::BRIGHT_GREEN))?;
+                self.start_attr(term::Attr::ForegroundColor(term::color::WHITE))?;
             }
             Style::NoStyle => {
             }
