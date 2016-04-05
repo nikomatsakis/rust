@@ -479,6 +479,10 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
             // 2. Where did old loan occur.
             // 3. Where does old loan expire.
 
+            let previous_end_span =
+                self.tcx().map.span(old_loan.kill_scope.node_id(&self.tcx().region_maps))
+                              .end_point();
+
             let mut err = match (new_loan.kind, old_loan.kind) {
                 (ty::MutBorrow, ty::MutBorrow) => {
                     struct_span_err!(self.bccx, new_loan.span, E0499,
@@ -486,11 +490,30 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                                       more than once at a time",
                                      nl, new_loan_msg)
                         .span_label(
+                            old_loan.span,
+                            format!("first mutable borrow occurs here{}", old_loan_msg))
+                        .span_label(
                             new_loan.span,
-                            format!("mutable borrow occurs here{}", new_loan_msg))
+                            format!("second mutable borrow occurs here{}", new_loan_msg))
+                        .span_label(
+                            previous_end_span,
+                            format!("first borrow ends here"))
+                }
+
+                (ty::UniqueImmBorrow, ty::UniqueImmBorrow) => {
+                    struct_span_err!(self.bccx, new_loan.span, E0500,
+                                     "two closures require unique access to `{}` \
+                                      at the same time",
+                                     nl)
+                        .span_label(
+                            new_loan.span,
+                            format!("first closure is constructed here"))
                         .span_label(
                             old_loan.span,
-                            format!("other mutable borrow occurs here{}", old_loan_msg))
+                            format!("second closure is constructed here"))
+                        .span_label(
+                            previous_end_span,
+                            format!("borrow from closure ends here"))
                 }
 
                 (ty::UniqueImmBorrow, _) => {
@@ -501,6 +524,12 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                         .span_label(
                             new_loan.span,
                             format!("closure construction occurs here{}", new_loan_msg))
+                        .span_label(
+                            old_loan.span,
+                            format!("borrow occurs here{}", old_loan_msg))
+                        .span_label(
+                            previous_end_span,
+                            format!("borrow ends here"))
                 }
 
                 (_, ty::UniqueImmBorrow) => {
@@ -509,8 +538,14 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                                       previous closure requires unique access",
                                      nl, new_loan_msg, new_loan.kind.to_user_str())
                         .span_label(
+                            new_loan.span,
+                            format!("borrow occurs here{}", new_loan_msg))
+                        .span_label(
                             old_loan.span,
                             format!("closure construction occurs here{}", old_loan_msg))
+                        .span_label(
+                            previous_end_span,
+                            format!("borrow from closure ends here"))
                 }
 
                 (_, _) => {
@@ -533,6 +568,10 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                             format!("{} borrow occurs here{}",
                                     old_loan.kind.to_user_str(),
                                     old_loan_msg))
+                        .span_label(
+                            previous_end_span,
+                            format!("{} borrow ends here",
+                                    old_loan.kind.to_user_str()))
                 }
             };
 
@@ -554,13 +593,6 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                 }
                 _ => { }
             }
-
-            let old_loan_span =
-                self.tcx().map.span(
-                    old_loan.kill_scope.node_id(&self.tcx().region_maps));
-            err = err.span_label(
-                old_loan_span.end_point(),
-                format!("previous borrow ends here"));
 
             err.emit();
             return false;
