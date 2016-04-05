@@ -361,16 +361,28 @@ fn print_diagnostic(dst: &mut Destination,
                     msg: &str,
                     code: Option<&str>)
                     -> io::Result<()> {
-    if !topic.is_empty() {
-        dst.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
-        write!(dst, "{}: ", topic)?;
-        dst.reset_attrs()?;
-    }
 
-    dst.start_attr(term::Attr::Bold)?;
-    write!(dst, "{}: ", lvl.to_string())?;
-    write!(dst, "{}", msg)?;
-    dst.reset_attrs()?;
+
+    match lvl {
+        Level::Error => {
+            if !topic.is_empty() {
+                dst.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
+                write!(dst, "{}: ", topic)?;
+                dst.reset_attrs()?;
+            }
+
+            dst.start_attr(term::Attr::Bold)?;
+            write!(dst, "{}: ", lvl.to_string())?;
+            write!(dst, "{}", msg)?;
+            dst.reset_attrs()?;
+        },
+        _ => {
+            dst.start_attr(term::Attr::Bold)?;
+            write!(dst, "{}: ", lvl.to_string())?;
+            dst.reset_attrs()?;
+            write!(dst, "{}", msg)?;            
+        }
+    }
 
     if let Some(code) = code {
         let style = term::Attr::ForegroundColor(term::color::BRIGHT_MAGENTA);
@@ -427,15 +439,13 @@ impl Destination {
                 self.start_attr(term::Attr::ForegroundColor(term::color::BRIGHT_BLUE))?;
             }
             Style::Quotation => {
-                self.start_attr(term::Attr::ForegroundColor(term::color::BRIGHT_WHITE))?;
             }
             Style::Underline => {
                 self.start_attr(term::Attr::Bold)?;
                 self.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
             }
             Style::Label => {
-                self.start_attr(term::Attr::Bold)?;
-                self.start_attr(term::Attr::ForegroundColor(term::color::WHITE))?;
+                self.start_attr(term::Attr::ForegroundColor(term::color::BRIGHT_BLUE))?;
             }
             Style::NoStyle => {
             }

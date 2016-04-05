@@ -719,7 +719,7 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
                 format!("value moved{} here in previous iteration of loop",
                         move_note))
         } else {
-            err.span_label(use_span, format!("value {} here", verb_participle))
+            err.span_label(use_span, format!("value {} here after move", verb_participle))
                .span_label(move_span, format!("value moved{} here", move_note))
         };
 
