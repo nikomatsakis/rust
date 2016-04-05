@@ -238,7 +238,7 @@ impl EmitterWriter {
         if let Some(code) = code {
             if let Some(_) = self.registry.as_ref()
                                           .and_then(|registry| registry.find_description(code)) {
-                print_diagnostic(&mut self.dst, &ss[..], Help,
+                print_diagnostic(&mut self.dst, "", Help,
                                  &format!("run `rustc --explain {}` to see a \
                                            detailed explanation", code), None)?;
             }
@@ -434,6 +434,7 @@ impl Destination {
                 self.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
             }
             Style::Label => {
+                self.start_attr(term::Attr::Bold)?;
                 self.start_attr(term::Attr::ForegroundColor(term::color::WHITE))?;
             }
             Style::NoStyle => {
