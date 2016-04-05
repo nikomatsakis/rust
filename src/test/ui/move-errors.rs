@@ -19,4 +19,35 @@ fn one_simple() {
     }
 }
 
+fn pat_binding_in_loop() {
+    let v = vec!["hi"];
+    loop {
+        match v {
+            w => { }
+        }
+    }
+}
+
+fn already_moved() {
+    let v = vec!["hi"];
+    mem::drop(v);
+    mem::drop(v);
+}
+
+fn pat_binding_twice() {
+    let v = vec!["hi"];
+    match v {
+        w => { }
+    }
+    match v {
+        w => { }
+    }
+}
+
+fn closure_twice() {
+    let v = vec!["hi"];
+    let c1 = || mem::drop(v);
+    let c2 = || mem::drop(v);
+}
+
 fn main() { }
