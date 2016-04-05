@@ -8,11 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// OIBIT-based version of #29859, supertrait version. Test that using
-// a simple OIBIT `..` impl alone still doesn't allow arbitrary bounds
-// to be synthesized.
-
-#![feature(optin_builtin_traits)]
 #![allow(warnings)]
 
 fn one_simple() {
@@ -93,6 +88,12 @@ fn mut_mut() {
     let mut vec = vec!["hi"];
     let vec1 = &mut vec;
     let vec2 = &mut vec;
+}
+
+fn ref_mut_ref_mut() {
+    let mut vec = vec!["hi"];
+    let ref mut vec1 = vec;
+    let ref mut vec2 = vec;
 }
 
 fn main() { }
