@@ -1201,10 +1201,11 @@ pub fn lower_expr(lctx: &LoweringContext, e: &Expr) -> P<hir::Expr> {
                                arms.iter().map(|x| lower_arm(lctx, x)).collect(),
                                hir::MatchSource::Normal)
             }
-            ExprKind::Closure(capture_clause, ref decl, ref body) => {
+            ExprKind::Closure(capture_clause, ref decl, ref body, fn_decl_span) => {
                 hir::ExprClosure(lower_capture_clause(lctx, capture_clause),
                                  lower_fn_decl(lctx, decl),
-                                 lower_block(lctx, body))
+                                 lower_block(lctx, body),
+                                 fn_decl_span)
             }
             ExprKind::Block(ref blk) => hir::ExprBlock(lower_block(lctx, blk)),
             ExprKind::Assign(ref el, ref er) => {

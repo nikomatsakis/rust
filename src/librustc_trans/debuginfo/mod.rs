@@ -281,7 +281,7 @@ pub fn create_function_debug_context<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
         }
         hir_map::NodeExpr(ref expr) => {
             match expr.node {
-                hir::ExprClosure(_, ref fn_decl, ref top_level_block) => {
+                hir::ExprClosure(_, ref fn_decl, ref top_level_block, _) => {
                     let name = format!("fn{}", token::gensym("fn"));
                     let name = token::intern(&name[..]);
                     (name, fn_decl,
