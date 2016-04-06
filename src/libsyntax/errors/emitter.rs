@@ -445,6 +445,7 @@ impl Destination {
                 self.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
             }
             Style::Label => {
+                self.start_attr(term::Attr::Bold)?;
                 self.start_attr(term::Attr::ForegroundColor(term::color::BRIGHT_BLUE))?;
             }
             Style::NoStyle => {
