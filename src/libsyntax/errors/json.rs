@@ -130,20 +130,6 @@ impl<'a> Diagnostic<'a> {
         }
     }
 
-    fn from_render_span(span: &RenderSpan,
-                        msg: &'a str,
-                        level: Level,
-                        je: &JsonEmitter)
-                        -> Diagnostic<'a> {
-        Diagnostic {
-            message: msg,
-            code: None,
-            level: level.to_str(),
-            spans: DiagnosticSpan::from_render_span(span, je),
-            children: vec![],
-        }
-    }
-
     fn from_diagnostic_builder<'c>(db: &'c DiagnosticBuilder,
                                    je: &JsonEmitter)
                                    -> Diagnostic<'c> {

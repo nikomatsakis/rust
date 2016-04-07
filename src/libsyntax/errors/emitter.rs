@@ -65,7 +65,7 @@ impl Emitter for BasicEmitter {
             lvl: Level) {
         assert!(msp.is_none(), "BasicEmitter can't handle spans");
 
-        if let Err(e) = print_header(&mut self.dst, "", lvl, msg, code) {
+        if let Err(e) = print_diagnostic(&mut self.dst, "", lvl, msg, code) {
             panic!("failed to print diagnostics: {:?}", e);
         }
     }
@@ -103,23 +103,20 @@ impl Emitter for EmitterWriter {
             msg: &str,
             code: Option<&str>,
             lvl: Level) {
-        self.maybe_emit_newline();
-        self.emit_multispan(msp, msg, code, lvl);
+        self.emit_multispan(msp, msg, code, lvl, true);
     }
 
     fn emit_struct(&mut self, db: &DiagnosticBuilder) {
-        self.maybe_emit_newline();
-        self.emit_multispan(db.span.as_ref(), &db.message, db.code.as_ref().map(|s| &**s), db.level);
+        self.emit_multispan(db.span.as_ref(), &db.message, db.code.as_ref().map(|s| &**s), db.level, true);
         for child in &db.children {
             match child.render_span {
                 Some(ref sp) =>
                     self.emit_renderspan(sp, &child.message, child.level),
                 None =>
-                    self.emit_multispan(child.span.as_ref(), &child.message, None, child.level),
+                    self.emit_multispan(child.span.as_ref(), &child.message, None, child.level, false),
             }
         }
     }
-
 }
 
 /// Do not use this for messages that end in `\n` – use `println_maybe_styled` instead. See
@@ -156,7 +153,7 @@ impl EmitterWriter {
         EmitterWriter { dst: Raw(dst), registry: registry, cm: code_map, first: true }
     }
 
-    fn maybe_emit_newline(&mut self) {
+    fn emit_header(&mut self, msp: Option<&MultiSpan>) {
         if self.first {
             self.first = false;
         } else {
@@ -167,15 +164,34 @@ impl EmitterWriter {
                 }
             }
         }
+
+        match msp {
+            Some(msp) => {
+                let location = self.cm.span_to_string(msp.primary_span());
+                match write!(self.dst, "-- {} --\n", location) {
+                    Ok(_) => { }
+                    Err(e) => {
+                        panic!("failed to print diagnostics: {:?}", e)
+                    }
+                }
+            }
+            None => {}
+        }
     }
 
-    fn emit_multispan(&mut self, span: Option<&MultiSpan>, msg: &str, code: Option<&str>, lvl: Level) {
+    fn emit_multispan(&mut self, span: Option<&MultiSpan>, msg: &str, code: Option<&str>, lvl: Level,
+        is_header: bool) {
+
+        if is_header {
+            self.emit_header(span);
+        }
+
         let error = match span.map(|s|(s.primary_span(), s)) {
             Some((COMMAND_LINE_SP, msp)) => {
-                self.emit_(&FileLine(msp.clone()), msg, code, lvl)
+                self.emit_(&FileLine(msp.clone()), msg, code, lvl, is_header)
             },
-            Some((DUMMY_SP, _)) | None => print_header(&mut self.dst, "", lvl, msg, code),
-            Some((_, msp)) => self.emit_(&FullSpan(msp.clone()), msg, code, lvl),
+            Some((DUMMY_SP, _)) | None => print_diagnostic(&mut self.dst, "", lvl, msg, code),
+            Some((_, msp)) => self.emit_(&FullSpan(msp.clone()), msg, code, lvl, is_header),
         };
 
         if let Err(e) = error {
@@ -184,7 +200,7 @@ impl EmitterWriter {
     }
 
     fn emit_renderspan(&mut self, sp: &RenderSpan, msg: &str, lvl: Level) {
-        if let Err(e) = self.emit_(sp, msg, None, lvl) {
+        if let Err(e) = self.emit_(sp, msg, None, lvl, false) {
             panic!("failed to print diagnostics: {:?}", e);
         }
     }
@@ -193,15 +209,17 @@ impl EmitterWriter {
              rsp: &RenderSpan,
              msg: &str,
              code: Option<&str>,
-             lvl: Level)
+             lvl: Level, 
+             is_header: bool)
              -> io::Result<()> {
         let msp = rsp.span();
         let bounds = msp.primary_span();
 
         let ss = 
-            if bounds == COMMAND_LINE_SP {
-                "<command line option>".to_string()
-            } else {
+            if is_header {
+                String::new()
+            }
+            else {
                 self.cm.span_to_string(bounds)
             };
 
@@ -210,9 +228,9 @@ impl EmitterWriter {
                           .and_then(|registry| registry.find_description(code)).is_some() => 
             {
                 let code_with_explain = String::from("--explain ") + code;
-                print_header(&mut self.dst, &ss, lvl, msg, Some(&code_with_explain))?
+                print_diagnostic(&mut self.dst, &ss, lvl, msg, Some(&code_with_explain))?
             }
-            _ => print_header(&mut self.dst, &ss, lvl, msg, code)?
+            _ => print_diagnostic(&mut self.dst, &ss, lvl, msg, code)?
         }
 
         match *rsp {
@@ -322,7 +340,7 @@ impl EmitterWriter {
                 }
 
                 let snippet = self.cm.span_to_string(span);
-                print_diagnostic(&mut self.dst, &snippet, Note, &diag_string)?;
+                print_diagnostic(&mut self.dst, &snippet, Note, &diag_string, None)?;
             }
             last_span = span;
         }
@@ -341,14 +359,19 @@ fn line_num_max_digits(line: &codemap::LineInfo) -> usize {
     digits
 }
 
-fn print_header(dst: &mut Destination,
-                location: &str, 
-                lvl: Level, 
-                msg: &str, 
-                code: Option<&str>)
-                -> io::Result<()> {
 
-    write!(dst, "-- {} --\n", location)?;
+fn print_diagnostic(dst: &mut Destination,
+                    topic: &str,
+                    lvl: Level,
+                    msg: &str, 
+                    code: Option<&str>)
+                    -> io::Result<()> {
+                        
+    if !topic.is_empty() {
+        dst.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
+        write!(dst, "{}: ", topic)?;
+        dst.reset_attrs()?;
+    }
     dst.start_attr(term::Attr::Bold)?;
     dst.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
     write!(dst, "{}", lvl.to_string())?;
@@ -361,27 +384,6 @@ fn print_header(dst: &mut Destination,
         print_maybe_styled!(dst, style, " [{}]", code.clone())?;
     }
     dst.reset_attrs()?;
-    write!(dst, "\n")?;
-    Ok(())
-}
-
-fn print_diagnostic(dst: &mut Destination,
-                    topic: &str,
-                    lvl: Level,
-                    msg: &str)
-                    -> io::Result<()> {
-                        
-    if !topic.is_empty() {
-        dst.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
-        write!(dst, "{}: ", topic)?;
-        dst.reset_attrs()?;
-    }
-
-    dst.start_attr(term::Attr::Bold)?;
-    write!(dst, "{}: ", lvl.to_string())?;
-    dst.reset_attrs()?;
-    write!(dst, "{}", msg)?;
-
     write!(dst, "\n")?;
     Ok(())
 }
