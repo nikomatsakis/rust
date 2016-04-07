@@ -632,11 +632,6 @@ impl Handler {
         self.emit.borrow_mut().emit(msp, msg, Some(code), lvl);
         if !self.continue_after_error.get() { self.abort_if_errors(); }
     }
-    pub fn custom_emit(&self, rsp: RenderSpan, msg: &str, lvl: Level) {
-        if lvl == Warning && !self.can_emit_warnings { return }
-        self.emit.borrow_mut().custom_emit(&rsp, msg, lvl);
-        if !self.continue_after_error.get() { self.abort_if_errors(); }
-    }
 }
 
 

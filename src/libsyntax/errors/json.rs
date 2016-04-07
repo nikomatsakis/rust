@@ -59,13 +59,6 @@ impl Emitter for JsonEmitter {
         }
     }
 
-    fn custom_emit(&mut self, sp: &RenderSpan, msg: &str, level: Level) {
-        let data = Diagnostic::from_render_span(sp, msg, level, self);
-        if let Err(e) = writeln!(&mut self.dst, "{}", as_json(&data)) {
-            panic!("failed to print diagnostics: {:?}", e);
-        }
-    }
-
     fn emit_struct(&mut self, db: &DiagnosticBuilder) {
         let data = Diagnostic::from_diagnostic_builder(db, self);
         if let Err(e) = writeln!(&mut self.dst, "{}", as_json(&data)) {

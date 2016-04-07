@@ -26,7 +26,6 @@ use term;
 
 pub trait Emitter {
     fn emit(&mut self, span: Option<&MultiSpan>, msg: &str, code: Option<&str>, lvl: Level);
-    fn custom_emit(&mut self, sp: &RenderSpan, msg: &str, lvl: Level);
 
     /// Emit a structured diagnostic.
     fn emit_struct(&mut self, db: &DiagnosticBuilder);
@@ -71,17 +70,11 @@ impl Emitter for BasicEmitter {
 
     }
 
-    fn custom_emit(&mut self, _: &RenderSpan, _: &str, _: Level) {
-        panic!("BasicEmitter can't handle custom_emit");
-    }
-
     fn emit_struct(&mut self, db: &DiagnosticBuilder) {
         self.emit(db.span.as_ref(), &db.message, db.code.as_ref().map(|s| &**s), db.level);
         for child in &db.children {
-            match child.render_span {
-                Some(ref sp) => self.custom_emit(sp, &child.message, child.level),
-                None => self.emit(child.span.as_ref(), &child.message, None, child.level),
-            }
+            assert!(child.render_span.is_none(), "BasicEmitter can't handle spans");
+            self.emit(child.span.as_ref(), &child.message, None, child.level);
         }
     }
 }
@@ -112,14 +105,6 @@ impl Emitter for EmitterWriter {
             lvl: Level) {
         self.maybe_emit_newline();
         self.emit_multispan(msp, msg, code, lvl);
-    }
-
-    fn custom_emit(&mut self,
-                   rsp: &RenderSpan,
-                   msg: &str,
-                   lvl: Level) {
-        self.maybe_emit_newline();
-        self.emit_renderspan(rsp, msg, lvl);
     }
 
     fn emit_struct(&mut self, db: &DiagnosticBuilder) {

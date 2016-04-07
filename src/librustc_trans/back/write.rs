@@ -112,10 +112,6 @@ impl Emitter for SharedEmitter {
         });
     }
 
-    fn custom_emit(&mut self, _sp: &errors::RenderSpan, _msg: &str, _lvl: Level) {
-        bug!("SharedEmitter doesn't support custom_emit");
-    }
-
     fn emit_struct(&mut self, _db: &errors::DiagnosticBuilder) {
         bug!("SharedEmitter doesn't support emit_struct");
     }
