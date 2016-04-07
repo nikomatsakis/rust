@@ -107,13 +107,17 @@ impl Emitter for EmitterWriter {
     }
 
     fn emit_struct(&mut self, db: &DiagnosticBuilder) {
-        self.emit_multispan(db.span.as_ref(), &db.message, db.code.as_ref().map(|s| &**s), db.level, true);
+        self.emit_multispan(db.span.as_ref(), &db.message,
+            db.code.as_ref().map(|s| &**s), db.level, true);
+
         for child in &db.children {
             match child.render_span {
                 Some(ref sp) =>
-                    self.emit_renderspan(sp, &child.message, child.level),
+                    self.emit_renderspan(sp, &child.message,
+                        child.level),
                 None =>
-                    self.emit_multispan(child.span.as_ref(), &child.message, None, child.level, false),
+                    self.emit_multispan(child.span.as_ref(),
+                        &child.message, None, child.level, false),
             }
         }
     }
@@ -142,7 +146,8 @@ impl EmitterWriter {
             let dst = Destination::from_stderr();
             EmitterWriter { dst: dst, registry: registry, cm: code_map, first: true }
         } else {
-            EmitterWriter { dst: Raw(Box::new(io::stderr())), registry: registry, cm: code_map, first: true }
+            EmitterWriter { dst: Raw(Box::new(io::stderr())),
+                registry: registry, cm: code_map, first: true }
         }
     }
 
@@ -179,8 +184,8 @@ impl EmitterWriter {
         }
     }
 
-    fn emit_multispan(&mut self, span: Option<&MultiSpan>, msg: &str, code: Option<&str>, lvl: Level,
-        is_header: bool) {
+    fn emit_multispan(&mut self, span: Option<&MultiSpan>, msg: &str,
+        code: Option<&str>, lvl: Level, is_header: bool) {
 
         if is_header {
             self.emit_header(span);
@@ -209,13 +214,13 @@ impl EmitterWriter {
              rsp: &RenderSpan,
              msg: &str,
              code: Option<&str>,
-             lvl: Level, 
+             lvl: Level,
              is_header: bool)
              -> io::Result<()> {
         let msp = rsp.span();
         let bounds = msp.primary_span();
 
-        let ss = 
+        let ss =
             if is_header {
                 String::new()
             }
@@ -225,7 +230,7 @@ impl EmitterWriter {
 
         match code {
             Some(code) if self.registry.as_ref()
-                          .and_then(|registry| registry.find_description(code)).is_some() => 
+                          .and_then(|registry| registry.find_description(code)).is_some() =>
             {
                 let code_with_explain = String::from("--explain ") + code;
                 print_diagnostic(&mut self.dst, &ss, lvl, msg, Some(&code_with_explain))?
@@ -363,10 +368,10 @@ fn line_num_max_digits(line: &codemap::LineInfo) -> usize {
 fn print_diagnostic(dst: &mut Destination,
                     topic: &str,
                     lvl: Level,
-                    msg: &str, 
+                    msg: &str,
                     code: Option<&str>)
                     -> io::Result<()> {
-                        
+
     if !topic.is_empty() {
         dst.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
         write!(dst, "{}: ", topic)?;

@@ -260,7 +260,8 @@ impl SnippetData {
             line.text.insert(0, prefix);
             match line.kind {
                 RenderedLineKind::Elision => {}
-                _ => line.text.insert(1, StyledString {text: String::from("|> "), style: FileNameLine})
+                _ => line.text.insert(1, StyledString {text: String::from("|> "),
+                    style: FileNameLine})
             }
         }
     }
@@ -582,7 +583,7 @@ impl RenderedLineKind {
                     text: format!("{}", line_index + 1),
                     style: FileNameLine,
                 },
-            Elision => 
+            Elision =>
                 StyledString {
                     text: String::from("..."),
                     style: FileNameLine,

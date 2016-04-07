@@ -919,7 +919,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
             ids.iter().map(|id| self.arg(span, *id, self.ty_infer(span))).collect(),
             self.ty_infer(span));
 
-        // TODO -- We are using `span` as the span of the `|...|`
+        // FIXME -- We are using `span` as the span of the `|...|`
         // part of the lambda, but it probably (maybe?) corresponds to
         // the entire lambda body. Probably we should extend the API
         // here, but that's not entirely clear.
