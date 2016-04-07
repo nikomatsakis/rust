@@ -1,3 +1,15 @@
+// Copyright 2012-2015 The Rust Project Developers. See the COPYRIGHT
+// file at the top-level directory of this distribution and at
+// http://rust-lang.org/COPYRIGHT.
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
+// Code for testing annotated snippets.
+
 use codemap::{BytePos, CodeMap, NO_EXPANSION, Span};
 use std::rc::Rc;
 use super::{RenderedLine, SnippetData};
@@ -562,7 +574,8 @@ fn foo() {
     let span_vec1 = cm.span_substr(file_text, "vec", 8);
 
     let mut snippet = SnippetData::new(cm);
-    snippet.push(span_vec0, Some(format!("`vec` moved here because it has type `collections::vec::Vec<i32>`, which is moved by default")));
+    snippet.push(span_vec0, Some(format!("`vec` moved here because it \
+        has type `collections::vec::Vec<i32>`, which is moved by default")));
     snippet.push(span_vec1, Some(format!("use of moved value: `vec`")));
 
     let lines = snippet.render_lines();
@@ -592,7 +605,8 @@ fn foo() {
                 style: NoStyle
             },
             StyledString {
-                text: "                   ~~~ `vec` moved here because it has type `collections::vec::Vec<i32>`, which is moved by default",
+                text: "                   ~~~ `vec` moved here because it \
+                has type `collections::vec::Vec<i32>`, which is moved by default",
                 style: Label
             }
         ],

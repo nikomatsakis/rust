@@ -64,10 +64,10 @@ impl Emitter for BasicEmitter {
             code: Option<&str>,
             lvl: Level) {
         assert!(msp.is_none(), "BasicEmitter can't handle spans");
-        if let Err(e) = print_diagnostic(&mut self.dst, "", lvl, msg, code) {
+
+        if let Err(e) = print_header(&mut self.dst, "", lvl, msg, code) {
             panic!("failed to print diagnostics: {:?}", e);
         }
-
     }
 
     fn emit_struct(&mut self, db: &DiagnosticBuilder) {
@@ -174,7 +174,7 @@ impl EmitterWriter {
             Some((COMMAND_LINE_SP, msp)) => {
                 self.emit_(&FileLine(msp.clone()), msg, code, lvl)
             },
-            Some((DUMMY_SP, _)) | None => print_diagnostic(&mut self.dst, "", lvl, msg, code),
+            Some((DUMMY_SP, _)) | None => print_header(&mut self.dst, "", lvl, msg, code),
             Some((_, msp)) => self.emit_(&FullSpan(msp.clone()), msg, code, lvl),
         };
 
@@ -198,13 +198,22 @@ impl EmitterWriter {
         let msp = rsp.span();
         let bounds = msp.primary_span();
 
-        let ss = if bounds == COMMAND_LINE_SP {
-            "<command line option>".to_string()
-        } else {
-            self.cm.span_to_string(bounds)
-        };
+        let ss = 
+            if bounds == COMMAND_LINE_SP {
+                "<command line option>".to_string()
+            } else {
+                self.cm.span_to_string(bounds)
+            };
 
-        print_diagnostic(&mut self.dst, &ss[..], lvl, msg, code)?;
+        match code {
+            Some(code) if self.registry.as_ref()
+                          .and_then(|registry| registry.find_description(code)).is_some() => 
+            {
+                let code_with_explain = String::from("--explain ") + code;
+                print_header(&mut self.dst, &ss, lvl, msg, Some(&code_with_explain))?
+            }
+            _ => print_header(&mut self.dst, &ss, lvl, msg, code)?
+        }
 
         match *rsp {
             FullSpan(_) => {
@@ -220,14 +229,6 @@ impl EmitterWriter {
             }
         }
 
-        if let Some(code) = code {
-            if let Some(_) = self.registry.as_ref()
-                                          .and_then(|registry| registry.find_description(code)) {
-                print_diagnostic(&mut self.dst, "", Help,
-                                 &format!("run `rustc --explain {}` to see a \
-                                           detailed explanation", code), None)?;
-            }
-        }
         Ok(())
     }
 
@@ -321,7 +322,7 @@ impl EmitterWriter {
                 }
 
                 let snippet = self.cm.span_to_string(span);
-                print_diagnostic(&mut self.dst, &snippet, Note, &diag_string, None)?;
+                print_diagnostic(&mut self.dst, &snippet, Note, &diag_string)?;
             }
             last_span = span;
         }
@@ -340,39 +341,47 @@ fn line_num_max_digits(line: &codemap::LineInfo) -> usize {
     digits
 }
 
-fn print_diagnostic(dst: &mut Destination,
-                    topic: &str,
-                    lvl: Level,
-                    msg: &str,
-                    code: Option<&str>)
-                    -> io::Result<()> {
+fn print_header(dst: &mut Destination,
+                location: &str, 
+                lvl: Level, 
+                msg: &str, 
+                code: Option<&str>)
+                -> io::Result<()> {
 
-
-    match lvl {
-        Level::Error | Level::Warning => {
-            if !topic.is_empty() {
-                dst.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
-                write!(dst, "{}: ", topic)?;
-                dst.reset_attrs()?;
-            }
-
-            dst.start_attr(term::Attr::Bold)?;
-            write!(dst, "{}: ", lvl.to_string())?;
-            write!(dst, "{}", msg)?;
-            dst.reset_attrs()?;
-        },
-        _ => {
-            dst.start_attr(term::Attr::Bold)?;
-            write!(dst, "{}: ", lvl.to_string())?;
-            dst.reset_attrs()?;
-            write!(dst, "{}", msg)?;            
-        }
-    }
-
+    write!(dst, "-- {} --\n", location)?;
+    dst.start_attr(term::Attr::Bold)?;
+    dst.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
+    write!(dst, "{}", lvl.to_string())?;
+    dst.reset_attrs()?;
+    write!(dst, ": ")?;
+    dst.start_attr(term::Attr::Bold)?;
+    write!(dst, "{}", msg)?;
     if let Some(code) = code {
         let style = term::Attr::ForegroundColor(term::color::BRIGHT_MAGENTA);
         print_maybe_styled!(dst, style, " [{}]", code.clone())?;
     }
+    dst.reset_attrs()?;
+    write!(dst, "\n")?;
+    Ok(())
+}
+
+fn print_diagnostic(dst: &mut Destination,
+                    topic: &str,
+                    lvl: Level,
+                    msg: &str)
+                    -> io::Result<()> {
+                        
+    if !topic.is_empty() {
+        dst.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
+        write!(dst, "{}: ", topic)?;
+        dst.reset_attrs()?;
+    }
+
+    dst.start_attr(term::Attr::Bold)?;
+    write!(dst, "{}: ", lvl.to_string())?;
+    dst.reset_attrs()?;
+    write!(dst, "{}", msg)?;
+
     write!(dst, "\n")?;
     Ok(())
 }
