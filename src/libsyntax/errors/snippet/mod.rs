@@ -10,8 +10,6 @@
 
 // Code for annotating snippets.
 
-#![allow(dead_code)] // TODO
-
 use codemap::{CharPos, CodeMap, FileMap, Span};
 use std::iter;
 use std::rc::Rc;
@@ -212,7 +210,8 @@ impl SnippetData {
 
                     if prev_ends_at_eol && is_single_unlabeled_annotated_line {
                         if !elide_unlabeled_region {
-                            output.push(RenderedLine::from((String::from("..."), NoStyle, Elision)));
+                            output.push(RenderedLine::from((String::new(),
+                                NoStyle, Elision)));
                             elide_unlabeled_region = true;
                             prev_ends_at_eol = true;
                         }
@@ -227,7 +226,7 @@ impl SnippetData {
             }
             else {
                 if group.len() > 1 {
-                    output.push(RenderedLine::from((String::from("..."), NoStyle, Elision)));
+                    output.push(RenderedLine::from((String::new(), NoStyle, Elision)));
                 }
                 else {
                     let mut v: Vec<RenderedLine> =
@@ -259,6 +258,10 @@ impl SnippetData {
             let extra_spaces = (prefix.text.len() .. padding_len).map(|_| ' ');
             prefix.text.extend(extra_spaces);
             line.text.insert(0, prefix);
+            match line.kind {
+                RenderedLineKind::Elision => {}
+                _ => line.text.insert(1, StyledString {text: String::from("|> "), style: FileNameLine})
+            }
         }
     }
 
@@ -575,16 +578,19 @@ impl RenderedLineKind {
     fn prefix(&self) -> StyledString {
         match *self {
             SourceText { file: _, line_index } =>
-                // TODO -- include file name only if we have spans from
-                // multiple files intermingled
                 StyledString {
                     text: format!("{}", line_index + 1),
                     style: FileNameLine,
                 },
-            Elision | Annotations =>
+            Elision => 
                 StyledString {
-                    text: String::new(),
-                    style: NoStyle,
+                    text: String::from("..."),
+                    style: FileNameLine,
+                },
+            Annotations =>
+                StyledString {
+                    text: String::from(""),
+                    style: FileNameLine,
                 },
         }
     }

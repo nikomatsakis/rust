@@ -501,7 +501,7 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                 }
 
                 (ty::UniqueImmBorrow, ty::UniqueImmBorrow) => {
-                    struct_span_err!(self.bccx, new_loan.span, E0500,
+                    struct_span_err!(self.bccx, new_loan.span, E0524,
                                      "two closures require unique access to `{}` \
                                       at the same time",
                                      nl)

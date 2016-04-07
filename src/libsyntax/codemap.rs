@@ -922,6 +922,10 @@ impl CodeMap {
     }
 
     pub fn span_to_string(&self, sp: Span) -> String {
+        if sp == COMMAND_LINE_SP {
+            return "<command line option>".to_string();
+        }
+
         if self.files.borrow().is_empty() && sp.source_equal(&DUMMY_SP) {
             return "no-location".to_string();
         }
