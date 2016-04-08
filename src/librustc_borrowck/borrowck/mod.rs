@@ -722,11 +722,10 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
                .span_label(move_span, format!("value moved{} here", move_note))
         };
 
-        err.fileline_note(move_span,
-                          &format!("move occurs because `{}` has type `{}`, \
-                                    which does not implement the `Copy` trait",
-                                   self.loan_path_to_string(moved_lp),
-                                   moved_lp.ty));
+        err.note(&format!("move occurs because `{}` has type `{}`, \
+                           which does not implement the `Copy` trait",
+                          self.loan_path_to_string(moved_lp),
+                          moved_lp.ty));
 
         // Note: we used to suggest adding a `ref binding` or calling
         // `clone` but those suggestions have been removed because
