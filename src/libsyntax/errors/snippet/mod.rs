@@ -114,9 +114,13 @@ impl SnippetData {
     }
 
     pub fn render_lines(&self) -> Vec<RenderedLine> {
-        self.files.values()
-                  .flat_map(|f| f.render_lines())
-                  .collect()
+        let mut rendered_lines: Vec<_> =
+            self.files.values()
+                      .flat_map(|f| f.render_file_lines())
+                      .collect();
+        prepend_prefixes(&mut rendered_lines);
+        trim_lines(&mut rendered_lines);
+        rendered_lines
     }
 }
 
@@ -268,14 +272,7 @@ impl FileInfo {
         return line_index - first_line_index;
     }
 
-    pub fn render_lines(&self) -> Vec<RenderedLine> {
-        let mut rendered_lines = self.render_all_lines();
-        self.prepend_prefixes(&mut rendered_lines);
-        self.trim_lines(&mut rendered_lines);
-        rendered_lines
-    }
-
-    pub fn render_all_lines(&self) -> Vec<RenderedLine> {
+    fn render_file_lines(&self) -> Vec<RenderedLine> {
         // Group our lines by those with annotations and those without
         let mut lines_iter = self.lines.iter().peekable();
 
@@ -390,46 +387,6 @@ impl FileInfo {
         }
 
         output
-    }
-
-    pub fn prepend_prefixes(&self, rendered_lines: &mut [RenderedLine]) {
-        let prefixes: Vec<_> =
-            rendered_lines.iter()
-                          .map(|rl| rl.kind.prefix())
-                          .collect();
-
-        // find the max amount of spacing we need; add 1 to
-        // p.text.len() to leave space between the prefix and the
-        // source text
-        let padding_len =
-            prefixes.iter()
-                    .map(|p| if p.text.len() == 0 { 0 } else { p.text.len() + 1 })
-                    .max()
-                    .unwrap_or(0);
-
-        for (mut prefix, line) in prefixes.into_iter().zip(rendered_lines) {
-            let extra_spaces = (prefix.text.len() .. padding_len).map(|_| ' ');
-            prefix.text.extend(extra_spaces);
-            line.text.insert(0, prefix);
-            match line.kind {
-                RenderedLineKind::Elision => {}
-                _ => line.text.insert(1, StyledString {text: String::from("|> "),
-                    style: FileNameLine})
-            }
-        }
-    }
-
-    fn trim_lines(&self, rendered_lines: &mut [RenderedLine]) {
-        for line in rendered_lines {
-            while !line.text.is_empty() {
-                line.trim_last();
-                if line.text.last().unwrap().text.is_empty() {
-                    line.text.pop();
-                } else {
-                    break;
-                }
-            }
-        }
     }
 
     fn render_line(&self, line: &Line) -> Vec<RenderedLine> {
@@ -618,6 +575,46 @@ impl FileInfo {
                _ => ' ',
            })
            .collect()
+    }
+}
+
+fn prepend_prefixes(rendered_lines: &mut [RenderedLine]) {
+    let prefixes: Vec<_> =
+        rendered_lines.iter()
+                      .map(|rl| rl.kind.prefix())
+                      .collect();
+
+    // find the max amount of spacing we need; add 1 to
+    // p.text.len() to leave space between the prefix and the
+    // source text
+    let padding_len =
+        prefixes.iter()
+                .map(|p| if p.text.len() == 0 { 0 } else { p.text.len() + 1 })
+                .max()
+                .unwrap_or(0);
+
+    for (mut prefix, line) in prefixes.into_iter().zip(rendered_lines) {
+        let extra_spaces = (prefix.text.len() .. padding_len).map(|_| ' ');
+        prefix.text.extend(extra_spaces);
+        line.text.insert(0, prefix);
+        match line.kind {
+            RenderedLineKind::Elision => {}
+            _ => line.text.insert(1, StyledString {text: String::from("|> "),
+                                                   style: FileNameLine})
+        }
+    }
+}
+
+fn trim_lines(rendered_lines: &mut [RenderedLine]) {
+    for line in rendered_lines {
+        while !line.text.is_empty() {
+            line.trim_last();
+            if line.text.last().unwrap().text.is_empty() {
+                line.text.pop();
+            } else {
+                break;
+            }
+        }
     }
 }
 
