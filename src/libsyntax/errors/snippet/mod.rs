@@ -10,7 +10,8 @@
 
 // Code for annotating snippets.
 
-use codemap::{CharPos, CodeMap, FileMap, Span};
+use codemap::{CharPos, CodeMap, FileName, FileMap, LineInfo, Span};
+use std::collections::BTreeMap;
 use std::iter;
 use std::rc::Rc;
 use std::mem;
@@ -21,11 +22,15 @@ mod test;
 
 pub struct SnippetData {
     codemap: Rc<CodeMap>,
+    files: BTreeMap<FileName, FileInfo>,
+}
+
+pub struct FileInfo {
+    file: Rc<FileMap>,
     lines: Vec<Line>,
 }
 
 struct Line {
-    file: Rc<FileMap>,
     line_index: usize,
     annotations: Vec<Annotation>,
 }
@@ -82,7 +87,7 @@ impl SnippetData {
     pub fn new(codemap: Rc<CodeMap>) -> Self {
         SnippetData {
             codemap: codemap,
-            lines: vec![],
+            files: BTreeMap::new(),
         }
     }
 
@@ -95,24 +100,172 @@ impl SnippetData {
             }
         };
 
-        assert!(file_lines.lines.len() > 0);
+        self.file(&file_lines.file).push_lines(&file_lines.lines, label);
+    }
+
+    fn file(&mut self, file_map: &Rc<FileMap>) -> &mut FileInfo {
+        self.files.entry(file_map.name.clone())
+                  .or_insert_with(|| {
+                      FileInfo {
+                          file: file_map.clone(),
+                          lines: vec![]
+                      }
+                  })
+    }
+
+    pub fn render_lines(&self) -> Vec<RenderedLine> {
+        self.files.values()
+                  .flat_map(|f| f.render_lines())
+                  .collect()
+    }
+}
+
+pub trait StringSource {
+    fn make_string(self) -> String;
+}
+
+impl StringSource for String {
+    fn make_string(self) -> String {
+        self
+    }
+}
+
+impl StringSource for Vec<char> {
+    fn make_string(self) -> String {
+        self.into_iter().collect()
+    }
+}
+
+impl<S> From<(S, Style, RenderedLineKind)> for RenderedLine
+    where S: StringSource
+{
+    fn from((text, style, kind): (S, Style, RenderedLineKind)) -> Self {
+        RenderedLine {
+            text: vec![StyledString {
+                text: text.make_string(),
+                style: style,
+            }],
+            kind: kind,
+        }
+    }
+}
+
+impl<S1,S2> From<(S1, Style, S2, Style, RenderedLineKind)> for RenderedLine
+    where S1: StringSource, S2: StringSource
+{
+    fn from(tuple: (S1, Style, S2, Style, RenderedLineKind))
+            -> Self {
+        let (text1, style1, text2, style2, kind) = tuple;
+        RenderedLine {
+            text: vec![
+                StyledString {
+                    text: text1.make_string(),
+                    style: style1,
+                },
+                StyledString {
+                    text: text2.make_string(),
+                    style: style2,
+                }
+            ],
+            kind: kind,
+        }
+    }
+}
+
+impl RenderedLine {
+    fn trim_last(&mut self) {
+        let last_text = &mut self.text.last_mut().unwrap().text;
+        let len = last_text.trim_right().len();
+        last_text.truncate(len);
+    }
+}
+
+impl RenderedLineKind {
+    fn prefix(&self) -> StyledString {
+        match *self {
+            SourceText { file: _, line_index } =>
+                StyledString {
+                    text: format!("{}", line_index + 1),
+                    style: FileNameLine,
+                },
+            Elision =>
+                StyledString {
+                    text: String::from("..."),
+                    style: FileNameLine,
+                },
+            Annotations =>
+                StyledString {
+                    text: String::from(""),
+                    style: FileNameLine,
+                },
+        }
+    }
+}
+
+impl FileInfo {
+    fn push_lines(&mut self, lines: &[LineInfo], label: Option<String>) {
+        assert!(lines.len() > 0);
 
         // If a span covers multiple lines, just put the label on the
         // first one. This is a sort of arbitrary choice and not
         // obviously correct.
-        let (line0, remaining_lines) = file_lines.lines.split_first().unwrap();
-        let index = self.ensure_source_line(&file_lines.file, line0.line_index);
+        let (line0, remaining_lines) = lines.split_first().unwrap();
+        let index = self.ensure_source_line(line0.line_index);
         self.lines[index].push_annotation(line0.start_col,
                                           line0.end_col,
                                           label);
         for line in remaining_lines {
             if line.end_col > line.start_col {
-                let index = self.ensure_source_line(&file_lines.file, line.line_index);
+                let index = self.ensure_source_line(line.line_index);
                 self.lines[index].push_annotation(line.start_col,
                                                   line.end_col,
                                                   None);
             }
         }
+    }
+
+    /// Ensure that we have a `Line` struct corresponding to
+    /// `line_index` in the file. If we already have some other lines,
+    /// then this will add the intervening lines to ensure that we
+    /// have a complete snippet. (Note that when we finally display,
+    /// some of those lines may be elided.)
+    fn ensure_source_line(&mut self, line_index: usize) -> usize {
+        if self.lines.is_empty() {
+            self.lines.push(Line::new(line_index));
+            return 0;
+        }
+
+        // Find the range of lines we have thus far.
+        let first_line_index = self.lines.first().unwrap().line_index;
+        let last_line_index = self.lines.last().unwrap().line_index;
+        assert!(first_line_index <= last_line_index);
+
+        // If the new line is lower than all the lines we have thus
+        // far, then insert the new line and any intervening lines at
+        // the front. In a silly attempt at micro-optimization, we
+        // don't just call `insert` repeatedly, but instead make a new
+        // (empty) vector, pushing the new lines onto it, and then
+        // appending the old vector.
+        if line_index < first_line_index {
+            let lines = mem::replace(&mut self.lines, vec![]);
+            self.lines.extend(
+                (line_index .. first_line_index)
+                    .map(|line| Line::new(line))
+                    .chain(lines));
+            return 0;
+        }
+
+        // If the new line comes after the ones we have so far, insert
+        // lines for it.
+        if line_index > last_line_index {
+            self.lines.extend(
+                (last_line_index+1 .. line_index+1)
+                    .map(|line| Line::new(line)));
+            return self.lines.len() - 1;
+        }
+
+        // Otherwise it should already exist.
+        return line_index - first_line_index;
     }
 
     pub fn render_lines(&self) -> Vec<RenderedLine> {
@@ -183,7 +336,7 @@ impl SnippetData {
 
                 for group_line in group.iter() {
                     let source_string =
-                        group_line.file.get_line(group_line.line_index).unwrap().to_string();
+                        self.file.get_line(group_line.line_index).unwrap().to_string();
 
                     for annotation in &group_line.annotations {
                         if annotation.end_col == source_string.len() {
@@ -280,9 +433,9 @@ impl SnippetData {
     }
 
     fn render_line(&self, line: &Line) -> Vec<RenderedLine> {
-        let source_string = line.file.get_line(line.line_index).unwrap().to_string();
+        let source_string = self.file.get_line(line.line_index).unwrap().to_string();
         let source_kind = SourceText {
-            file: line.file.clone(),
+            file: self.file.clone(),
             line_index: line.line_index,
         };
         if line.annotations.is_empty() {
@@ -466,141 +619,11 @@ impl SnippetData {
            })
            .collect()
     }
-
-    /// Ensure that we have a `Line` struct corresponding to
-    /// `line_index` in the file. If we already have some other lines,
-    /// then this will add the intervening lines to ensure that we
-    /// have a complete snippet. (Note that when we finally display,
-    /// some of those lines may be elided.)
-    fn ensure_source_line(&mut self, file: &Rc<FileMap>, line_index: usize) -> usize {
-        if self.lines.is_empty() {
-            self.lines.push(Line::new(file, line_index));
-            return 0;
-        }
-
-        // This must come from the same file as any existing lines.
-        assert_eq!(file.name, self.lines.first().unwrap().file.name);
-
-        // Find the range of lines we have thus far.
-        let first_line_index = self.lines.first().unwrap().line_index;
-        let last_line_index = self.lines.last().unwrap().line_index;
-        assert!(first_line_index <= last_line_index);
-
-        // If the new line is lower than all the lines we have thus
-        // far, then insert the new line and any intervening lines at
-        // the front. In a silly attempt at micro-optimization, we
-        // don't just call `insert` repeatedly, but instead make a new
-        // (empty) vector, pushing the new lines onto it, and then
-        // appending the old vector.
-        if line_index < first_line_index {
-            let lines = mem::replace(&mut self.lines, vec![]);
-            self.lines.extend(
-                (line_index .. first_line_index)
-                    .map(|line| Line::new(&file, line))
-                    .chain(lines));
-            return 0;
-        }
-
-        // If the new line comes after the ones we have so far, insert
-        // lines for it.
-        if line_index > last_line_index {
-            self.lines.extend(
-                (last_line_index+1 .. line_index+1)
-                    .map(|line| Line::new(&file, line)));
-            return self.lines.len() - 1;
-        }
-
-        // Otherwise it should already exist.
-        return line_index - first_line_index;
-    }
-}
-
-pub trait StringSource {
-    fn make_string(self) -> String;
-}
-
-impl StringSource for String {
-    fn make_string(self) -> String {
-        self
-    }
-}
-
-impl StringSource for Vec<char> {
-    fn make_string(self) -> String {
-        self.into_iter().collect()
-    }
-}
-
-impl<S> From<(S, Style, RenderedLineKind)> for RenderedLine
-    where S: StringSource
-{
-    fn from((text, style, kind): (S, Style, RenderedLineKind)) -> Self {
-        RenderedLine {
-            text: vec![StyledString {
-                text: text.make_string(),
-                style: style,
-            }],
-            kind: kind,
-        }
-    }
-}
-
-impl<S1,S2> From<(S1, Style, S2, Style, RenderedLineKind)> for RenderedLine
-    where S1: StringSource, S2: StringSource
-{
-    fn from(tuple: (S1, Style, S2, Style, RenderedLineKind))
-            -> Self {
-        let (text1, style1, text2, style2, kind) = tuple;
-        RenderedLine {
-            text: vec![
-                StyledString {
-                    text: text1.make_string(),
-                    style: style1,
-                },
-                StyledString {
-                    text: text2.make_string(),
-                    style: style2,
-                }
-            ],
-            kind: kind,
-        }
-    }
-}
-
-impl RenderedLine {
-    fn trim_last(&mut self) {
-        let last_text = &mut self.text.last_mut().unwrap().text;
-        let len = last_text.trim_right().len();
-        last_text.truncate(len);
-    }
-}
-
-impl RenderedLineKind {
-    fn prefix(&self) -> StyledString {
-        match *self {
-            SourceText { file: _, line_index } =>
-                StyledString {
-                    text: format!("{}", line_index + 1),
-                    style: FileNameLine,
-                },
-            Elision =>
-                StyledString {
-                    text: String::from("..."),
-                    style: FileNameLine,
-                },
-            Annotations =>
-                StyledString {
-                    text: String::from(""),
-                    style: FileNameLine,
-                },
-        }
-    }
 }
 
 impl Line {
-    fn new(file: &Rc<FileMap>, line_index: usize) -> Line {
+    fn new(line_index: usize) -> Line {
         Line {
-            file: file.clone(),
             line_index: line_index,
             annotations: vec![]
         }

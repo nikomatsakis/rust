@@ -584,11 +584,11 @@ mod test {
         let str = from_utf8(vec).unwrap();
         println!("r#\"\n{}\"#", str);
         assert_eq!(str, r#"
-dummy.txt:8          line8
-             ~~~~~~~~~~~~~
-             ...
-dummy.txt:11         e-lä-vän
-             ~~~~~~~~~~~~~~~~
+8   |>         line8
+    |> ~~~~~~~~~~~~~
+...
+11  |>         e-lä-vän
+    |> ~~~~~~~~~~~~~~~~
 "#.trim_left());
     }
 
@@ -627,8 +627,10 @@ dummy.txt:11         e-lä-vän
         let sp4 =       "                          ~~~~ ";
         let sp34 =      "                       ~~~~~~~ ";
 
-        let expect_start = "dummy.txt:1 _____aaaaaa____bbbbbb__cccccdd_\n\
-                         \x20                ~~~~~~    ~~~~~~  ~~~~~~~\n";
+        let expect_start = r#"
+1 |> _____aaaaaa____bbbbbb__cccccdd_
+  |>      ~~~~~~    ~~~~~~  ~~~~~~~
+"#.trim_left();
 
         let span = |sp, expected| {
             let sp = span_from_selection(inp, sp);
@@ -649,6 +651,7 @@ dummy.txt:11         e-lä-vän
             highlight();
             let vec = data.lock().unwrap().clone();
             let actual = from_utf8(&vec[..]).unwrap();
+            println!("actual=\n{}", actual);
             assert_eq!(actual, expected);
         };
 
@@ -696,27 +699,27 @@ dummy.txt:11         e-lä-vän
         let sp5 = span(10, 10, (4, 6));
 
         let expect0 = r#"
-dummy.txt:5  ccccc
-             ~~~~~
-             ...
-dummy.txt:8  _____
-dummy.txt:9  ddd__eee_
-             ~~~  ~~~
-dummy.txt:10 elided
-dummy.txt:11 __f_gg
-               ~ ~~
+5   |> ccccc
+    |> ~~~~~
+...
+8   |> _____
+9   |> ddd__eee_
+    |> ~~~  ~~~
+10  |> elided
+11  |> __f_gg
+    |>   ~ ~~
 "#.trim_left();
 
         let expect = r#"
-dummy.txt:1  aaaaa
-             ~~~~~
-             ...
-dummy.txt:8  _____
-dummy.txt:9  ddd__eee_
-             ~~~  ~~~
-dummy.txt:10 elided
-dummy.txt:11 __f_gg
-               ~ ~~
+1   |> aaaaa
+    |> ~~~~~
+...
+8   |> _____
+9   |> ddd__eee_
+    |> ~~~  ~~~
+10  |> elided
+11  |> __f_gg
+    |>   ~ ~~
 "#.trim_left();
 
         macro_rules! test {

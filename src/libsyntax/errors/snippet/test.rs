@@ -94,77 +94,17 @@ fn foo() {
 
     let lines = snippet.render_lines();
     println!("{:#?}", lines);
-    assert_eq!(format!("\n{:#?}", lines), r#"
-[
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "foo.rs:3 ",
-                style: FileNameLine
-            },
-            StyledString {
-                text: "    vec.push(vec.pop().unwrap());",
-                style: Quotation
-            }
-        ],
-        kind: SourceText {
-            file: FileMap(foo.rs),
-            line_index: 2
-        }
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "         ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "    ~~~      ~~~                ~ previous borrow ends here",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "         ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "    |        |",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "         ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "    |        error occurs here",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "         ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "    previous borrow of `vec` occurs here",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    }
-]"#);
+
+    let text: String = make_string(&lines);
+
+    println!("text=\n{}", text);
+    assert_eq!(&text[..], r#"
+3 |>     vec.push(vec.pop().unwrap());
+  |>     ~~~      ~~~                ~ previous borrow ends here
+  |>     |        |
+  |>     |        error occurs here
+  |>     previous borrow of `vec` occurs here
+"#.trim_left());
 }
 
 #[test]
@@ -195,135 +135,19 @@ fn foo() {
 
     let lines = snippet.render_lines();
     println!("{:#?}", lines);
-    assert_eq!(format!("\n{:#?}", lines), r#"
-[
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "foo.rs:3  ",
-                style: FileNameLine
-            },
-            StyledString {
-                text: "    let name = find_id(&data, 22).unwrap();",
-                style: Quotation
-            }
-        ],
-        kind: SourceText {
-            file: FileMap(foo.rs),
-            line_index: 2
-        }
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "          ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "                        ~~~~ immutable borrow begins here",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "          ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "...",
-                style: NoStyle
-            }
-        ],
-        kind: Elision
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "foo.rs:6  ",
-                style: FileNameLine
-            },
-            StyledString {
-                text: "    data.push(Data { name: format!(\"Hera\"), id: 66 });",
-                style: Quotation
-            }
-        ],
-        kind: SourceText {
-            file: FileMap(foo.rs),
-            line_index: 5
-        }
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "          ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "    ~~~~ mutable borrow occurs here",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "          ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "...",
-                style: NoStyle
-            }
-        ],
-        kind: Elision
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "foo.rs:11 ",
-                style: FileNameLine
-            },
-            StyledString {
-                text: "}",
-                style: Quotation
-            }
-        ],
-        kind: SourceText {
-            file: FileMap(foo.rs),
-            line_index: 10
-        }
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "          ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "~ immutable borrow ends here",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    }
-]"#);
 
     let text: String = make_string(&lines);
 
     println!("text=\n{}", text);
     assert_eq!(&text[..], r#"
-foo.rs:3      let name = find_id(&data, 22).unwrap();
-                                  ~~~~ immutable borrow begins here
-          ...
-foo.rs:6      data.push(Data { name: format!("Hera"), id: 66 });
-              ~~~~ mutable borrow occurs here
-          ...
-foo.rs:11 }
-          ~ immutable borrow ends here
+3   |>     let name = find_id(&data, 22).unwrap();
+    |>                         ~~~~ immutable borrow begins here
+...
+6   |>     data.push(Data { name: format!("Hera"), id: 66 });
+    |>     ~~~~ mutable borrow occurs here
+...
+11  |> }
+    |> ~ immutable borrow ends here
 "#.trim_left());
 }
 
@@ -350,101 +174,16 @@ fn foo() {
 
     let lines = snippet.render_lines();
     println!("{:#?}", lines);
-    assert_eq!(format!("\n{:#?}", lines), r#"
-[
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "foo.rs:3 ",
-                style: FileNameLine
-            },
-            StyledString {
-                text: "    vec.push(vec.pop().unwrap());",
-                style: Quotation
-            }
-        ],
-        kind: SourceText {
-            file: FileMap(foo.rs),
-            line_index: 2
-        }
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "         ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "    ~~~~~~~~           ~~~~~~ D",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "         ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "    ||",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "         ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "    |C",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "         ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "    A",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "         ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "    B",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    }
-]"#);
-
     let text: String = make_string(&lines);
 
     println!("text=r#\"\n{}\".trim_left()", text);
     assert_eq!(&text[..], r#"
-foo.rs:3     vec.push(vec.pop().unwrap());
-             ~~~~~~~~           ~~~~~~ D
-             ||
-             |C
-             A
-             B
+3 |>     vec.push(vec.pop().unwrap());
+  |>     ~~~~~~~~           ~~~~~~ D
+  |>     ||
+  |>     |C
+  |>     A
+  |>     B
 "#.trim_left());
 }
 
@@ -470,87 +209,15 @@ fn foo() {
 
     let lines = snippet.render_lines();
     println!("{:#?}", lines);
-    assert_eq!(format!("\n{:#?}", lines), r#"
-[
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "foo.rs:3 ",
-                style: FileNameLine
-            },
-            StyledString {
-                text: "    vec.push(vec.pop().unwrap());",
-                style: Quotation
-            }
-        ],
-        kind: SourceText {
-            file: FileMap(foo.rs),
-            line_index: 2
-        }
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "         ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "    ~~~      ~~~                ~ previous borrow ends here",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "         ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "    |        |",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "         ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "    |        error occurs here",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "         ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "    previous borrow of `vec` occurs here",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    }
-]"#);
-
     let text: String = make_string(&lines);
 
     println!("text=r#\"\n{}\".trim_left()", text);
     assert_eq!(&text[..], r#"
-foo.rs:3     vec.push(vec.pop().unwrap());
-             ~~~      ~~~                ~ previous borrow ends here
-             |        |
-             |        error occurs here
-             previous borrow of `vec` occurs here
+3 |>     vec.push(vec.pop().unwrap());
+  |>     ~~~      ~~~                ~ previous borrow ends here
+  |>     |        |
+  |>     |        error occurs here
+  |>     previous borrow of `vec` occurs here
 "#.trim_left());
 }
 
@@ -580,81 +247,15 @@ fn foo() {
 
     let lines = snippet.render_lines();
     println!("{:#?}", lines);
-    assert_eq!(format!("\n{:#?}", lines), r#"
-[
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "foo.rs:4 ",
-                style: FileNameLine
-            },
-            StyledString {
-                text: "    let mut vec2 = vec;",
-                style: Quotation
-            }
-        ],
-        kind: SourceText {
-            file: FileMap(foo.rs),
-            line_index: 3
-        }
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "         ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "                   ~~~ `vec` moved here because it \
-                has type `collections::vec::Vec<i32>`, which is moved by default",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "         ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "...",
-                style: NoStyle
-            }
-        ],
-        kind: Elision
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "foo.rs:9 ",
-                style: FileNameLine
-            },
-            StyledString {
-                text: "    vec.push(7);",
-                style: Quotation
-            }
-        ],
-        kind: SourceText {
-            file: FileMap(foo.rs),
-            line_index: 8
-        }
-    },
-    RenderedLine {
-        text: [
-            StyledString {
-                text: "         ",
-                style: NoStyle
-            },
-            StyledString {
-                text: "    ~~~ use of moved value: `vec`",
-                style: Label
-            }
-        ],
-        kind: Highlights
-    }
-]"#);
+    let text: String = make_string(&lines);
+    println!("text=r#\"\n{}\".trim_left()", text);
+    assert_eq!(&text[..], r#"
+4   |>     let mut vec2 = vec;
+    |>                    ~~~ `vec` moved here because it has type `collections::vec::Vec<i32>`, which is moved by default
+...
+9   |>     vec.push(7);
+    |>     ~~~ use of moved value: `vec`
+"#.trim_left());
 }
 
 #[test]
@@ -682,12 +283,12 @@ fn foo() {
 
     let lines = snippet.render_lines();
     let text: String = make_string(&lines);
-    println!("{}", text);
+    println!("text=r#\"\n{}\n\"#.trim_left()", text);
     assert_eq!(text, r#"
-foo.rs:3     let mut vec = vec![0, 1, 2];
-                     ~~~   ~~~
-foo.rs:4     let mut vec2 = vec;
-                     ~~~    ~~~
+3 |>     let mut vec = vec![0, 1, 2];
+  |>             ~~~   ~~~
+4 |>     let mut vec2 = vec;
+  |>             ~~~    ~~~
 "#.trim_left());
 }
 
@@ -714,9 +315,9 @@ impl SomeTrait for () {
     let text: String = make_string(&lines);
     println!("r#\"\n{}\"", text);
     assert_eq!(text, r#"
-foo.rs:3     fn foo(x: u32) {
-             ~~~~~~~~~~~~~~~~
-         ...
+3   |>     fn foo(x: u32) {
+    |>     ~~~~~~~~~~~~~~~~
+...
 "#.trim_left());
 }
 
@@ -743,11 +344,11 @@ fn span_overlap_label() {
     let text: String = make_string(&lines);
     println!("r#\"\n{}\"", text);
     assert_eq!(text, r#"
-foo.rs:2     fn foo(x: u32) {
-             ~~~~~~~~~~~~~~
-             |      |
-             |      x_span
-             fn_span
+2 |>     fn foo(x: u32) {
+  |>     ~~~~~~~~~~~~~~
+  |>     |      |
+  |>     |      x_span
+  |>     fn_span
 "#.trim_left());
 }
 
@@ -776,11 +377,11 @@ fn span_overlap_label2() {
     let text: String = make_string(&lines);
     println!("r#\"\n{}\"", text);
     assert_eq!(text, r#"
-foo.rs:2     fn foo(x: u32) {
-             ~~~~~~~~~~~~~~
-             |      |
-             |      x_span
-             fn_span
+2 |>     fn foo(x: u32) {
+  |>     ~~~~~~~~~~~~~~
+  |>     |      |
+  |>     |      x_span
+  |>     fn_span
 "#.trim_left());
 }
 
@@ -820,13 +421,13 @@ fn span_overlap_label3() {
     let text: String = make_string(&lines);
     println!("r#\"\n{}\"", text);
     assert_eq!(text, r#"
-foo.rs:3        let closure = || {
-                              ~~~~ foo
-foo.rs:4            inner
-         ~~~~~~~~~~~~~~~~
-                    |
-                    bar
-foo.rs:5        };
-         ~~~~~~~~
+3 |>        let closure = || {
+  |>                      ~~~~ foo
+4 |>            inner
+  |> ~~~~~~~~~~~~~~~~
+  |>            |
+  |>            bar
+5 |>        };
+  |> ~~~~~~~~
 "#.trim_left());
 }
