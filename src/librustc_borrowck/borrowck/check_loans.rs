@@ -491,13 +491,13 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                                      nl, new_loan_msg)
                         .span_label(
                             old_loan.span,
-                            format!("first mutable borrow occurs here{}", old_loan_msg))
+                            &format!("first mutable borrow occurs here{}", old_loan_msg))
                         .span_label(
                             new_loan.span,
-                            format!("second mutable borrow occurs here{}", new_loan_msg))
+                            &format!("second mutable borrow occurs here{}", new_loan_msg))
                         .span_label(
                             previous_end_span,
-                            format!("first borrow ends here"))
+                            &format!("first borrow ends here"))
                 }
 
                 (ty::UniqueImmBorrow, ty::UniqueImmBorrow) => {
@@ -507,13 +507,13 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                                      nl)
                         .span_label(
                             old_loan.span,
-                            format!("first closure is constructed here"))
+                            &format!("first closure is constructed here"))
                         .span_label(
                             new_loan.span,
-                            format!("second closure is constructed here"))
+                            &format!("second closure is constructed here"))
                         .span_label(
                             previous_end_span,
-                            format!("borrow from first closure ends here"))
+                            &format!("borrow from first closure ends here"))
                 }
 
                 (ty::UniqueImmBorrow, _) => {
@@ -523,13 +523,13 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                                      nl, ol_pronoun, old_loan_msg)
                         .span_label(
                             new_loan.span,
-                            format!("closure construction occurs here{}", new_loan_msg))
+                            &format!("closure construction occurs here{}", new_loan_msg))
                         .span_label(
                             old_loan.span,
-                            format!("borrow occurs here{}", old_loan_msg))
+                            &format!("borrow occurs here{}", old_loan_msg))
                         .span_label(
                             previous_end_span,
-                            format!("borrow ends here"))
+                            &format!("borrow ends here"))
                 }
 
                 (_, ty::UniqueImmBorrow) => {
@@ -539,13 +539,13 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                                      nl, new_loan_msg, new_loan.kind.to_user_str())
                         .span_label(
                             new_loan.span,
-                            format!("borrow occurs here{}", new_loan_msg))
+                            &format!("borrow occurs here{}", new_loan_msg))
                         .span_label(
                             old_loan.span,
-                            format!("closure construction occurs here{}", old_loan_msg))
+                            &format!("closure construction occurs here{}", old_loan_msg))
                         .span_label(
                             previous_end_span,
-                            format!("borrow from closure ends here"))
+                            &format!("borrow from closure ends here"))
                 }
 
                 (_, _) => {
@@ -560,18 +560,18 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                                      old_loan_msg)
                         .span_label(
                             new_loan.span,
-                            format!("{} borrow occurs here{}",
-                                    new_loan.kind.to_user_str(),
-                                    new_loan_msg))
+                            &format!("{} borrow occurs here{}",
+                                     new_loan.kind.to_user_str(),
+                                     new_loan_msg))
                         .span_label(
                             old_loan.span,
-                            format!("{} borrow occurs here{}",
-                                    old_loan.kind.to_user_str(),
-                                    old_loan_msg))
+                            &format!("{} borrow occurs here{}",
+                                     old_loan.kind.to_user_str(),
+                                     old_loan_msg))
                         .span_label(
                             previous_end_span,
-                            format!("{} borrow ends here",
-                                    old_loan.kind.to_user_str()))
+                            &format!("{} borrow ends here",
+                                     old_loan.kind.to_user_str()))
                 }
             };
 
@@ -579,7 +579,7 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                 euv::ClosureCapture(span) => {
                     err = err.span_label(
                         span,
-                        format!("borrow occurs due to use of `{}` in closure", nl));
+                        &format!("borrow occurs due to use of `{}` in closure", nl));
                 }
                 _ => { }
             }
@@ -588,8 +588,8 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                 euv::ClosureCapture(span) => {
                     err = err.span_label(
                         span,
-                        format!("previous borrow occurs due to use of `{}` in closure",
-                                ol));
+                        &format!("previous borrow occurs due to use of `{}` in closure",
+                                 ol));
                 }
                 _ => { }
             }
