@@ -158,45 +158,35 @@ impl EmitterWriter {
         EmitterWriter { dst: Raw(dst), registry: registry, cm: code_map, first: true }
     }
 
-    fn emit_header(&mut self, msp: Option<&MultiSpan>) {
-        if self.first {
-            self.first = false;
-        } else {
-            match write!(self.dst, "\n") {
-                Ok(_) => { }
-                Err(e) => {
-                    panic!("failed to print diagnostics: {:?}", e)
-                }
-            }
-        }
-
-        match msp {
-            Some(msp) => {
-                let location = self.cm.span_to_string(msp.primary_span());
-                match write!(self.dst, "-- {} --\n", location) {
+    fn emit_multispan(&mut self,
+                      span: Option<&MultiSpan>,
+                      msg: &str,
+                      code: Option<&str>,
+                      lvl: Level,
+                      is_header: bool) {
+        if is_header {
+            if self.first {
+                self.first = false;
+            } else {
+                match write!(self.dst, "\n") {
                     Ok(_) => { }
                     Err(e) => {
                         panic!("failed to print diagnostics: {:?}", e)
                     }
                 }
             }
-            None => {}
-        }
-    }
-
-    fn emit_multispan(&mut self, span: Option<&MultiSpan>, msg: &str,
-        code: Option<&str>, lvl: Level, is_header: bool) {
-
-        if is_header {
-            self.emit_header(span);
         }
 
-        let error = match span.map(|s|(s.primary_span(), s)) {
+        let error = match span.map(|s| (s.primary_span(), s)) {
             Some((COMMAND_LINE_SP, msp)) => {
                 self.emit_(&FileLine(msp.clone()), msg, code, lvl, is_header)
-            },
-            Some((DUMMY_SP, _)) | None => print_diagnostic(&mut self.dst, "", lvl, msg, code),
-            Some((_, msp)) => self.emit_(&FullSpan(msp.clone()), msg, code, lvl, is_header),
+            }
+            Some((DUMMY_SP, _)) | None => {
+                print_diagnostic(&mut self.dst, "", lvl, msg, code)
+            }
+            Some((_, msp)) => {
+                self.emit_(&FullSpan(msp.clone()), msg, code, lvl, is_header)
+            }
         };
 
         if let Err(e) = error {
@@ -220,13 +210,11 @@ impl EmitterWriter {
         let msp = rsp.span();
         let bounds = msp.primary_span();
 
-        let ss =
-            if is_header {
-                String::new()
-            }
-            else {
-                self.cm.span_to_string(bounds)
-            };
+        let ss = if is_header {
+            String::new()
+        } else {
+            self.cm.span_to_string(bounds)
+        };
 
         match code {
             Some(code) if self.registry.as_ref()
@@ -236,6 +224,12 @@ impl EmitterWriter {
                 print_diagnostic(&mut self.dst, &ss, lvl, msg, Some(&code_with_explain))?
             }
             _ => print_diagnostic(&mut self.dst, &ss, lvl, msg, code)?
+        }
+
+        if is_header {
+            let span_str = self.cm.span_to_string(bounds);
+            let lvl_len = lvl.to_string().len() + 1;
+            writeln!(self.dst, "{0:>1$} {2}", "-->", lvl_len, span_str)?;
         }
 
         match *rsp {
