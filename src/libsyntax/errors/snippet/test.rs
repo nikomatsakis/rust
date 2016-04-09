@@ -10,7 +10,7 @@
 
 // Code for testing annotated snippets.
 
-use codemap::{BytePos, CodeMap, NO_EXPANSION, Span};
+use codemap::{BytePos, CodeMap, FileMap, NO_EXPANSION, Span};
 use std::rc::Rc;
 use super::{RenderedLine, SnippetData};
 
@@ -18,6 +18,7 @@ use super::{RenderedLine, SnippetData};
 /// `substring` in `source_text`.
 trait CodeMapExtension {
     fn span_substr(&self,
+                   file: &Rc<FileMap>,
                    source_text: &str,
                    substring: &str,
                    n: usize)
@@ -26,11 +27,14 @@ trait CodeMapExtension {
 
 impl CodeMapExtension for CodeMap {
     fn span_substr(&self,
+                   file: &Rc<FileMap>,
                    source_text: &str,
                    substring: &str,
                    n: usize)
                    -> Span
     {
+        println!("span_substr(file={:?}/{:?}, substring={:?}, n={})",
+                 file.name, file.start_pos, substring, n);
         let mut i = 0;
         let mut hi = 0;
         loop {
@@ -42,8 +46,8 @@ impl CodeMapExtension for CodeMap {
             hi = lo + substring.len();
             if i == n {
                 let span = Span {
-                    lo: BytePos(lo as u32),
-                    hi: BytePos(hi as u32),
+                    lo: BytePos(lo as u32 + file.start_pos.0),
+                    hi: BytePos(hi as u32 + file.start_pos.0),
                     expn_id: NO_EXPANSION,
                 };
                 assert_eq!(&self.span_to_snippet(span).unwrap()[..],
@@ -82,10 +86,10 @@ fn foo() {
 "#;
 
     let cm = Rc::new(CodeMap::new());
-    cm.new_filemap_and_lines("foo.rs", file_text);
-    let span_vec0 = cm.span_substr(file_text, "vec", 0);
-    let span_vec1 = cm.span_substr(file_text, "vec", 1);
-    let span_semi = cm.span_substr(file_text, ";", 0);
+    let foo = cm.new_filemap_and_lines("foo.rs", file_text);
+    let span_vec0 = cm.span_substr(&foo, file_text, "vec", 0);
+    let span_vec1 = cm.span_substr(&foo, file_text, "vec", 1);
+    let span_semi = cm.span_substr(&foo, file_text, ";", 0);
 
     let mut snippet = SnippetData::new(cm);
     snippet.push(span_vec0, Some(format!("previous borrow of `vec` occurs here")));
@@ -109,6 +113,62 @@ fn foo() {
 }
 
 #[test]
+fn two_files() {
+    let file_text_foo = r#"
+fn foo() {
+    vec.push(vec.pop().unwrap());
+}
+"#;
+
+    let file_text_bar = r#"
+fn bar() {
+    // this file is different
+    vec.push(vec.pop().unwrap());
+}
+"#;
+
+    let cm = Rc::new(CodeMap::new());
+    let foo_map = cm.new_filemap_and_lines("foo.rs", file_text_foo);
+    let span_foo_vec0 = cm.span_substr(&foo_map, file_text_foo, "vec", 0);
+    let span_foo_vec1 = cm.span_substr(&foo_map, file_text_foo, "vec", 1);
+    let span_foo_semi = cm.span_substr(&foo_map, file_text_foo, ";", 0);
+
+    let bar_map = cm.new_filemap_and_lines("bar.rs", file_text_bar);
+    let span_bar_vec0 = cm.span_substr(&bar_map, file_text_bar, "vec", 0);
+    let span_bar_vec1 = cm.span_substr(&bar_map, file_text_bar, "vec", 1);
+    let span_bar_semi = cm.span_substr(&bar_map, file_text_bar, ";", 0);
+
+    let mut snippet = SnippetData::new(cm);
+    snippet.push(span_foo_vec0, Some(format!("a")));
+    snippet.push(span_foo_vec1, Some(format!("b")));
+    snippet.push(span_foo_semi, Some(format!("c")));
+    snippet.push(span_bar_vec0, Some(format!("d")));
+    snippet.push(span_bar_vec1, Some(format!("e")));
+    snippet.push(span_bar_semi, Some(format!("f")));
+
+    let lines = snippet.render_lines();
+    println!("{:#?}", lines);
+
+    let text: String = make_string(&lines);
+
+    println!("text=\n{}", text);
+    assert_eq!(&text[..], r#"
+---> bar.rs
+4 |>     vec.push(vec.pop().unwrap());
+  |>     ~~~      ~~~                ~ f
+  |>     |        |
+  |>     |        e
+  |>     d
+---> foo.rs
+3 |>     vec.push(vec.pop().unwrap());
+  |>     ~~~      ~~~                ~ c
+  |>     |        |
+  |>     |        b
+  |>     a
+"#.trim_left());
+}
+
+#[test]
 fn multi_line() {
     let file_text = r#"
 fn foo() {
@@ -124,10 +184,10 @@ fn foo() {
 "#;
 
     let cm = Rc::new(CodeMap::new());
-    cm.new_filemap_and_lines("foo.rs", file_text);
-    let span_data0 = cm.span_substr(file_text, "data", 0);
-    let span_data1 = cm.span_substr(file_text, "data", 1);
-    let span_rbrace = cm.span_substr(file_text, "}", 3);
+    let foo = cm.new_filemap_and_lines("foo.rs", file_text);
+    let span_data0 = cm.span_substr(&foo, file_text, "data", 0);
+    let span_data1 = cm.span_substr(&foo, file_text, "data", 1);
+    let span_rbrace = cm.span_substr(&foo, file_text, "}", 3);
 
     let mut snippet = SnippetData::new(cm);
     snippet.push(span_data0, Some(format!("immutable borrow begins here")));
@@ -162,11 +222,11 @@ fn foo() {
 "#;
 
     let cm = Rc::new(CodeMap::new());
-    cm.new_filemap_and_lines("foo.rs", file_text);
-    let span0 = cm.span_substr(file_text, "vec.push", 0);
-    let span1 = cm.span_substr(file_text, "vec", 0);
-    let span2 = cm.span_substr(file_text, "ec.push", 0);
-    let span3 = cm.span_substr(file_text, "unwrap", 0);
+    let foo = cm.new_filemap_and_lines("foo.rs", file_text);
+    let span0 = cm.span_substr(&foo, file_text, "vec.push", 0);
+    let span1 = cm.span_substr(&foo, file_text, "vec", 0);
+    let span2 = cm.span_substr(&foo, file_text, "ec.push", 0);
+    let span3 = cm.span_substr(&foo, file_text, "unwrap", 0);
 
     let mut snippet = SnippetData::new(cm);
     snippet.push(span0, Some(format!("A")));
@@ -199,10 +259,10 @@ fn foo() {
 "#;
 
     let cm = Rc::new(CodeMap::new());
-    cm.new_filemap_and_lines("foo.rs", file_text);
-    let span_vec0 = cm.span_substr(file_text, "vec", 0);
-    let span_vec1 = cm.span_substr(file_text, "vec", 1);
-    let span_semi = cm.span_substr(file_text, ";", 0);
+    let foo = cm.new_filemap_and_lines("foo.rs", file_text);
+    let span_vec0 = cm.span_substr(&foo, file_text, "vec", 0);
+    let span_vec1 = cm.span_substr(&foo, file_text, "vec", 1);
+    let span_semi = cm.span_substr(&foo, file_text, ";", 0);
 
     // intentionally don't push the snippets left to right
     let mut snippet = SnippetData::new(cm);
@@ -240,9 +300,9 @@ fn foo() {
 "#;
 
     let cm = Rc::new(CodeMap::new());
-    cm.new_filemap_and_lines("foo.rs", file_text);
-    let span_vec0 = cm.span_substr(file_text, "vec", 3);
-    let span_vec1 = cm.span_substr(file_text, "vec", 8);
+    let foo = cm.new_filemap_and_lines("foo.rs", file_text);
+    let span_vec0 = cm.span_substr(&foo, file_text, "vec", 3);
+    let span_vec1 = cm.span_substr(&foo, file_text, "vec", 8);
 
     let mut snippet = SnippetData::new(cm);
     snippet.push(span_vec0, Some(format!("`vec` moved here because it \
@@ -278,11 +338,11 @@ fn foo() {
 "#;
 
     let cm = Rc::new(CodeMap::new());
-    cm.new_filemap_and_lines("foo.rs", file_text);
+    let foo = cm.new_filemap_and_lines("foo.rs", file_text);
 
     let mut snippet = SnippetData::new(cm.clone());
     for i in 0..4 {
-        let span_veci = cm.span_substr(file_text, "vec", i);
+        let span_veci = cm.span_substr(&foo, file_text, "vec", i);
         snippet.push(span_veci, None);
     }
 
@@ -311,11 +371,11 @@ impl SomeTrait for () {
 "#;
 
     let cm = Rc::new(CodeMap::new());
-    cm.new_filemap_and_lines("foo.rs", file_text);
+    let foo = cm.new_filemap_and_lines("foo.rs", file_text);
 
     let mut snippet = SnippetData::new(cm.clone());
-    let fn_span = cm.span_substr(file_text, "fn", 0);
-    let rbrace_span = cm.span_substr(file_text, "}", 0);
+    let fn_span = cm.span_substr(&foo, file_text, "fn", 0);
+    let rbrace_span = cm.span_substr(&foo, file_text, "}", 0);
     snippet.push(splice(fn_span, rbrace_span), None);
     let lines = snippet.render_lines();
     let text: String = make_string(&lines);
@@ -340,11 +400,11 @@ fn span_overlap_label() {
 "#;
 
     let cm = Rc::new(CodeMap::new());
-    cm.new_filemap_and_lines("foo.rs", file_text);
+    let foo = cm.new_filemap_and_lines("foo.rs", file_text);
 
     let mut snippet = SnippetData::new(cm.clone());
-    let fn_span = cm.span_substr(file_text, "fn foo(x: u32)", 0);
-    let x_span = cm.span_substr(file_text, "x", 0);
+    let fn_span = cm.span_substr(&foo, file_text, "fn foo(x: u32)", 0);
+    let x_span = cm.span_substr(&foo, file_text, "x", 0);
     snippet.push(fn_span, Some(format!("fn_span")));
     snippet.push(x_span, Some(format!("x_span")));
     let lines = snippet.render_lines();
@@ -374,11 +434,11 @@ fn span_overlap_label2() {
 "#;
 
     let cm = Rc::new(CodeMap::new());
-    cm.new_filemap_and_lines("foo.rs", file_text);
+    let foo = cm.new_filemap_and_lines("foo.rs", file_text);
 
     let mut snippet = SnippetData::new(cm.clone());
-    let fn_span = cm.span_substr(file_text, "fn foo(x", 0);
-    let x_span = cm.span_substr(file_text, "x: u32)", 0);
+    let fn_span = cm.span_substr(&foo, file_text, "fn foo(x", 0);
+    let x_span = cm.span_substr(&foo, file_text, "x: u32)", 0);
     snippet.push(fn_span, Some(format!("fn_span")));
     snippet.push(x_span, Some(format!("x_span")));
     let lines = snippet.render_lines();
@@ -411,17 +471,17 @@ fn span_overlap_label3() {
 "#;
 
     let cm = Rc::new(CodeMap::new());
-    cm.new_filemap_and_lines("foo.rs", file_text);
+    let foo = cm.new_filemap_and_lines("foo.rs", file_text);
 
     let mut snippet = SnippetData::new(cm.clone());
 
     let closure_span = {
-        let closure_start_span = cm.span_substr(file_text, "||", 0);
-        let closure_end_span = cm.span_substr(file_text, "}", 0);
+        let closure_start_span = cm.span_substr(&foo, file_text, "||", 0);
+        let closure_end_span = cm.span_substr(&foo, file_text, "}", 0);
         splice(closure_start_span, closure_end_span)
     };
 
-    let inner_span = cm.span_substr(file_text, "inner", 0);
+    let inner_span = cm.span_substr(&foo, file_text, "inner", 0);
 
     snippet.push(closure_span, Some(format!("foo")));
     snippet.push(inner_span, Some(format!("bar")));

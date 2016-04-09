@@ -407,6 +407,7 @@ impl FileInfo {
 
     fn render_line(&self, line: &Line) -> Vec<RenderedLine> {
         let source_string = self.file.get_line(line.line_index).unwrap().to_string();
+        println!("{}:{} is {:?}", self.file.name, line.line_index, source_string);
         let source_kind = SourceText {
             file: self.file.clone(),
             line_index: line.line_index,
