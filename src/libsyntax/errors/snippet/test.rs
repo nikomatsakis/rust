@@ -122,7 +122,20 @@ fn foo() {
 
     let file_text_bar = r#"
 fn bar() {
-    // this file is different
+    // these blank links here
+    // serve to ensure that the line numbers
+    // from bar.rs
+    // require more digits
+
+
+
+
+
+
+
+
+
+
     vec.push(vec.pop().unwrap());
 }
 "#;
@@ -152,19 +165,21 @@ fn bar() {
     let text: String = make_string(&lines);
 
     println!("text=\n{}", text);
+
+    // Note that the `|>` remain aligned across both files:
     assert_eq!(&text[..], r#"
----> bar.rs
-4 |>     vec.push(vec.pop().unwrap());
-  |>     ~~~      ~~~                ~ f
-  |>     |        |
-  |>     |        e
-  |>     d
----> foo.rs
-3 |>     vec.push(vec.pop().unwrap());
-  |>     ~~~      ~~~                ~ c
-  |>     |        |
-  |>     |        b
-  |>     a
+----> bar.rs
+17 |>     vec.push(vec.pop().unwrap());
+   |>     ~~~      ~~~                ~ f
+   |>     |        |
+   |>     |        e
+   |>     d
+----> foo.rs
+3  |>     vec.push(vec.pop().unwrap());
+   |>     ~~~      ~~~                ~ c
+   |>     |        |
+   |>     |        b
+   |>     a
 "#.trim_left());
 }
 
