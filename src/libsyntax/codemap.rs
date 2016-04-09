@@ -794,7 +794,7 @@ impl CodeMap {
     /// Creates a new filemap and sets its line information.
     pub fn new_filemap_and_lines(&self, filename: &str, src: &str) -> Rc<FileMap> {
         let fm = self.new_filemap(filename.to_string(), src.to_owned());
-        let mut byte_pos: u32 = 0;
+        let mut byte_pos: u32 = fm.start_pos.0;
         for line in src.lines() {
             // register the start of this line
             fm.next_line(BytePos(byte_pos));
