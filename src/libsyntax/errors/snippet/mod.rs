@@ -26,6 +26,10 @@ pub struct SnippetData {
 
 pub struct FileInfo {
     file: Rc<FileMap>,
+    // the first FileInfo will be the "primary file". It will have a
+    // primary span. It gets not just a filename printed, but a line
+    // number and column too.
+    primary_span: Option<Span>,
     lines: Vec<Line>,
 }
 
@@ -86,11 +90,32 @@ pub enum RenderedLineKind {
 use self::RenderedLineKind::*;
 
 impl SnippetData {
-    pub fn new(codemap: Rc<CodeMap>) -> Self {
-        SnippetData {
-            codemap: codemap,
-            files: vec![],
+    pub fn new(codemap: Rc<CodeMap>,
+               primary_span: Option<Span>) // (*)
+               -> Self {
+        // (*) The primary span indicates the file that must appear
+        // first, and which will have a line number etc in its
+        // name. Outside of tests, this is always `Some`, but for many
+        // tests it's not relevant to test this portion of the logic,
+        // and it's tedious to pick a primary span (read: tedious to
+        // port older tests that predate the existence of a primary
+        // span).
+
+        let mut data = SnippetData {
+            codemap: codemap.clone(),
+            files: vec![]
+        };
+        if let Some(primary_span) = 
+primary_span {
+            let lo = codemap.lookup_char_pos(primary_span.lo);
+            data.files.push(
+                FileInfo {
+                    file: lo.file,
+                    primary_span: Some(primary_span),
+                    lines: vec![],
+                });
         }
+        data
     }
 
     pub fn push(&mut self, span: Span, label: Option<String>) {
@@ -102,7 +127,8 @@ impl SnippetData {
             }
         };
 
-        self.file(&file_lines.file).push_lines(&file_lines.lines, label);
+        self.file(&file_lines.file)
+            .push_lines(&file_lines.lines, label);
     }
 
     fn file(&mut self, file_map: &Rc<FileMap>) -> &mut FileInfo {
@@ -114,7 +140,8 @@ impl SnippetData {
         self.files.push(
             FileInfo {
                 file: file_map.clone(),
-                lines: vec![]
+                lines: vec![],
+                primary_span: None,
             });
         self.files.last_mut().unwrap()
     }
@@ -122,8 +149,7 @@ impl SnippetData {
     pub fn render_lines(&self) -> Vec<RenderedLine> {
         let mut rendered_lines: Vec<_> =
             self.files.iter()
-                      .enumerate()
-                      .flat_map(|(index, f)| f.render_file_lines(index == 0))
+                      .flat_map(|f| f.render_file_lines(&self.codemap))
                       .collect();
         prepend_prefixes(&mut rendered_lines);
         trim_lines(&mut rendered_lines);
@@ -216,7 +242,9 @@ impl RenderedLineKind {
 }
 
 impl FileInfo {
-    fn push_lines(&mut self, lines: &[LineInfo], label: Option<String>) {
+    fn push_lines(&mut self,
+                  lines: &[LineInfo],
+                  label: Option<String>) {
         assert!(lines.len() > 0);
 
         // If a span covers multiple lines, just put the label on the
@@ -281,7 +309,7 @@ impl FileInfo {
         return line_index - first_line_index;
     }
 
-    fn render_file_lines(&self, primary_file: bool) -> Vec<RenderedLine> {
+    fn render_file_lines(&self, codemap: &Rc<CodeMap>) -> Vec<RenderedLine> {
         // Group our lines by those with annotations and those without
         let mut lines_iter = self.lines.iter().peekable();
 
@@ -336,13 +364,26 @@ impl FileInfo {
         let mut output = vec![];
 
         // First insert the name of the file.
-        output.push(RenderedLine {
-            text: vec![StyledString {
-                text: self.file.name.clone(),
-                style: FileNameStyle,
-            }],
-            kind: if primary_file {PrimaryFileName} else {OtherFileName},
-        });
+        match self.primary_span {
+            Some(span) => {
+                output.push(RenderedLine {
+                    text: vec![StyledString {
+                        text: codemap.span_to_string(span),
+                        style: FileNameStyle,
+                    }],
+                    kind: PrimaryFileName,
+                });
+            }
+            None => {
+                output.push(RenderedLine {
+                    text: vec![StyledString {
+                        text: self.file.name.clone(),
+                        style: FileNameStyle,
+                    }],
+                    kind: OtherFileName,
+                });
+            }
+        }
 
         for &(is_annotated, ref group) in line_groups.iter() {
             if is_annotated {
@@ -675,11 +716,14 @@ impl Line {
         }
     }
 
-    fn push_annotation(&mut self, start: CharPos, end: CharPos, label: Option<String>) {
+    fn push_annotation(&mut self,
+                       start: CharPos,
+                       end: CharPos,
+                       label: Option<String>) {
         self.annotations.push(Annotation {
             start_col: start.0,
             end_col: end.0,
-            label: label
+            label: label,
         });
     }
 }

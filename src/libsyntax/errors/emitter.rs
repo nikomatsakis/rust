@@ -272,7 +272,8 @@ impl EmitterWriter {
                        lvl: Level)
                        -> io::Result<()>
     {
-        let mut snippet_data = SnippetData::new(self.cm.clone());
+        let mut snippet_data = SnippetData::new(self.cm.clone(),
+                                                Some(msp.primary_span()));
         for span_str in msp.span_strings() {
             snippet_data.push(span_str.span, span_str.label);
         }
@@ -571,7 +572,7 @@ mod test {
         let str = from_utf8(vec).unwrap();
         println!("r#\"\n{}\"#", str);
         assert_eq!(str, &r#"
-   --> dummy.txt
+   --> dummy.txt:8:1: 12:1
 8   |>         line8
     |> ~~~~~~~~~~~~~
 ...
@@ -616,7 +617,7 @@ mod test {
         let sp34 =      "                       ~~~~~~~ ";
 
         let expect_start = &r#"
- --> dummy.txt
+ --> dummy.txt:1:6: 1:31
 1 |> _____aaaaaa____bbbbbb__cccccdd_
   |>      ~~~~~~    ~~~~~~  ~~~~~~~
 "#[1..];
@@ -688,7 +689,7 @@ mod test {
         let sp5 = span(10, 10, (4, 6));
 
         let expect0 = &r#"
-   --> dummy.txt
+   --> dummy.txt:5:1: 11:7
 5   |> ccccc
     |> ~~~~~
 ...
@@ -701,7 +702,7 @@ mod test {
 "#[1..];
 
         let expect = &r#"
-   --> dummy.txt
+   --> dummy.txt:1:1: 11:7
 1   |> aaaaa
     |> ~~~~~
 ...

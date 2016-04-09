@@ -91,7 +91,7 @@ fn foo() {
     let span_vec1 = cm.span_substr(&foo, file_text, "vec", 1);
     let span_semi = cm.span_substr(&foo, file_text, ";", 0);
 
-    let mut snippet = SnippetData::new(cm);
+    let mut snippet = SnippetData::new(cm, None);
     snippet.push(span_vec0, Some(format!("previous borrow of `vec` occurs here")));
     snippet.push(span_vec1, Some(format!("error occurs here")));
     snippet.push(span_semi, Some(format!("previous borrow ends here")));
@@ -103,7 +103,7 @@ fn foo() {
 
     println!("text=\n{}", text);
     assert_eq!(&text[..], &r#"
- --> foo.rs
+>>>> foo.rs
 3 |>     vec.push(vec.pop().unwrap());
   |>     ~~~      ~~~                ~ previous borrow ends here
   |>     |        |
@@ -155,7 +155,7 @@ fn bar() {
     let span_bar_vec1 = cm.span_substr(&bar_map, file_text_bar, "vec", 1);
     let span_bar_semi = cm.span_substr(&bar_map, file_text_bar, ";", 0);
 
-    let mut snippet = SnippetData::new(cm);
+    let mut snippet = SnippetData::new(cm, Some(span_foo_vec1));
     snippet.push(span_foo_vec0, Some(format!("a")));
     snippet.push(span_foo_vec1, Some(format!("b")));
     snippet.push(span_foo_semi, Some(format!("c")));
@@ -172,7 +172,7 @@ fn bar() {
 
     // Note that the `|>` remain aligned across both files:
     assert_eq!(&text[..], &r#"
-   --> foo.rs
+   --> foo.rs:3:14: 3:17
 3   |>     vec.push(vec.pop().unwrap());
     |>     ~~~      ~~~                ~ c
     |>     |        |
@@ -210,7 +210,7 @@ fn foo() {
     let span_data1 = cm.span_substr(&foo, file_text, "data", 1);
     let span_rbrace = cm.span_substr(&foo, file_text, "}", 3);
 
-    let mut snippet = SnippetData::new(cm);
+    let mut snippet = SnippetData::new(cm, None);
     snippet.push(span_data0, Some(format!("immutable borrow begins here")));
     snippet.push(span_data1, Some(format!("mutable borrow occurs here")));
     snippet.push(span_rbrace, Some(format!("immutable borrow ends here")));
@@ -222,7 +222,7 @@ fn foo() {
 
     println!("text=\n{}", text);
     assert_eq!(&text[..], &r#"
-   --> foo.rs
+>>>>>> foo.rs
 3   |>     let name = find_id(&data, 22).unwrap();
     |>                         ~~~~ immutable borrow begins here
 ...
@@ -249,7 +249,7 @@ fn foo() {
     let span2 = cm.span_substr(&foo, file_text, "ec.push", 0);
     let span3 = cm.span_substr(&foo, file_text, "unwrap", 0);
 
-    let mut snippet = SnippetData::new(cm);
+    let mut snippet = SnippetData::new(cm, None);
     snippet.push(span0, Some(format!("A")));
     snippet.push(span1, Some(format!("B")));
     snippet.push(span2, Some(format!("C")));
@@ -261,7 +261,7 @@ fn foo() {
 
     println!("text=r#\"\n{}\".trim_left()", text);
     assert_eq!(&text[..], &r#"
- --> foo.rs
+>>>> foo.rs
 3 |>     vec.push(vec.pop().unwrap());
   |>     ~~~~~~~~           ~~~~~~ D
   |>     ||
@@ -286,7 +286,7 @@ fn foo() {
     let span_semi = cm.span_substr(&foo, file_text, ";", 0);
 
     // intentionally don't push the snippets left to right
-    let mut snippet = SnippetData::new(cm);
+    let mut snippet = SnippetData::new(cm, None);
     snippet.push(span_vec1, Some(format!("error occurs here")));
     snippet.push(span_vec0, Some(format!("previous borrow of `vec` occurs here")));
     snippet.push(span_semi, Some(format!("previous borrow ends here")));
@@ -297,7 +297,7 @@ fn foo() {
 
     println!("text=r#\"\n{}\".trim_left()", text);
     assert_eq!(&text[..], &r#"
- --> foo.rs
+>>>> foo.rs
 3 |>     vec.push(vec.pop().unwrap());
   |>     ~~~      ~~~                ~ previous borrow ends here
   |>     |        |
@@ -325,7 +325,7 @@ fn foo() {
     let span_vec0 = cm.span_substr(&foo, file_text, "vec", 3);
     let span_vec1 = cm.span_substr(&foo, file_text, "vec", 8);
 
-    let mut snippet = SnippetData::new(cm);
+    let mut snippet = SnippetData::new(cm, None);
     snippet.push(span_vec0, Some(format!("`vec` moved here because it \
         has type `collections::vec::Vec<i32>`, which is moved by default")));
     snippet.push(span_vec1, Some(format!("use of moved value: `vec`")));
@@ -335,7 +335,7 @@ fn foo() {
     let text: String = make_string(&lines);
     println!("text=r#\"\n{}\".trim_left()", text);
     assert_eq!(&text[..], &r#"
-   --> foo.rs
+>>>>>> foo.rs
 4   |>     let mut vec2 = vec;
     |>                    ~~~ `vec` moved here because it has type `collections::vec::Vec<i32>`, which is moved by default
 ...
@@ -361,7 +361,7 @@ fn foo() {
     let cm = Rc::new(CodeMap::new());
     let foo = cm.new_filemap_and_lines("foo.rs", file_text);
 
-    let mut snippet = SnippetData::new(cm.clone());
+    let mut snippet = SnippetData::new(cm.clone(), None);
     for i in 0..4 {
         let span_veci = cm.span_substr(&foo, file_text, "vec", i);
         snippet.push(span_veci, None);
@@ -371,7 +371,7 @@ fn foo() {
     let text: String = make_string(&lines);
     println!("text=&r#\"\n{}\n\"#[1..]", text);
     assert_eq!(text, &r#"
- --> foo.rs
+>>>> foo.rs
 3 |>     let mut vec = vec![0, 1, 2];
   |>             ~~~   ~~~
 4 |>     let mut vec2 = vec;
@@ -394,7 +394,7 @@ impl SomeTrait for () {
     let cm = Rc::new(CodeMap::new());
     let foo = cm.new_filemap_and_lines("foo.rs", file_text);
 
-    let mut snippet = SnippetData::new(cm.clone());
+    let mut snippet = SnippetData::new(cm.clone(), None);
     let fn_span = cm.span_substr(&foo, file_text, "fn", 0);
     let rbrace_span = cm.span_substr(&foo, file_text, "}", 0);
     snippet.push(splice(fn_span, rbrace_span), None);
@@ -402,7 +402,7 @@ impl SomeTrait for () {
     let text: String = make_string(&lines);
     println!("r#\"\n{}\"", text);
     assert_eq!(text, &r#"
-   --> foo.rs
+>>>>>> foo.rs
 3   |>     fn foo(x: u32) {
     |>     ~~~~~~~~~~~~~~~~
 ...
@@ -423,7 +423,7 @@ fn span_overlap_label() {
     let cm = Rc::new(CodeMap::new());
     let foo = cm.new_filemap_and_lines("foo.rs", file_text);
 
-    let mut snippet = SnippetData::new(cm.clone());
+    let mut snippet = SnippetData::new(cm.clone(), None);
     let fn_span = cm.span_substr(&foo, file_text, "fn foo(x: u32)", 0);
     let x_span = cm.span_substr(&foo, file_text, "x", 0);
     snippet.push(fn_span, Some(format!("fn_span")));
@@ -432,7 +432,7 @@ fn span_overlap_label() {
     let text: String = make_string(&lines);
     println!("r#\"\n{}\"", text);
     assert_eq!(text, &r#"
- --> foo.rs
+>>>> foo.rs
 2 |>     fn foo(x: u32) {
   |>     ~~~~~~~~~~~~~~
   |>     |      |
@@ -457,7 +457,7 @@ fn span_overlap_label2() {
     let cm = Rc::new(CodeMap::new());
     let foo = cm.new_filemap_and_lines("foo.rs", file_text);
 
-    let mut snippet = SnippetData::new(cm.clone());
+    let mut snippet = SnippetData::new(cm.clone(), None);
     let fn_span = cm.span_substr(&foo, file_text, "fn foo(x", 0);
     let x_span = cm.span_substr(&foo, file_text, "x: u32)", 0);
     snippet.push(fn_span, Some(format!("fn_span")));
@@ -466,7 +466,7 @@ fn span_overlap_label2() {
     let text: String = make_string(&lines);
     println!("r#\"\n{}\"", text);
     assert_eq!(text, &r#"
- --> foo.rs
+>>>> foo.rs
 2 |>     fn foo(x: u32) {
   |>     ~~~~~~~~~~~~~~
   |>     |      |
@@ -494,7 +494,7 @@ fn span_overlap_label3() {
     let cm = Rc::new(CodeMap::new());
     let foo = cm.new_filemap_and_lines("foo.rs", file_text);
 
-    let mut snippet = SnippetData::new(cm.clone());
+    let mut snippet = SnippetData::new(cm.clone(), None);
 
     let closure_span = {
         let closure_start_span = cm.span_substr(&foo, file_text, "||", 0);
@@ -511,7 +511,7 @@ fn span_overlap_label3() {
     let text: String = make_string(&lines);
     println!("r#\"\n{}\"", text);
     assert_eq!(text, &r#"
- --> foo.rs
+>>>> foo.rs
 3 |>        let closure = || {
   |>                      ~~~~ foo
 4 |>            inner
