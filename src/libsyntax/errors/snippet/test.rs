@@ -172,7 +172,13 @@ fn bar() {
 
     // Note that the `|>` remain aligned across both files:
     assert_eq!(&text[..], &r#"
-   --> bar.rs
+   --> foo.rs
+3   |>     vec.push(vec.pop().unwrap());
+    |>     ~~~      ~~~                ~ c
+    |>     |        |
+    |>     |        b
+    |>     a
+>>>>>> bar.rs
 17  |>     vec.push();
     |>     ~~~       ~ f
     |>     |
@@ -180,12 +186,6 @@ fn bar() {
 ...
 21  |>     vec.pop().unwrap());
     |>     ~~~ e
->>>>>> foo.rs
-3   |>     vec.push(vec.pop().unwrap());
-    |>     ~~~      ~~~                ~ c
-    |>     |        |
-    |>     |        b
-    |>     a
 "#[1..]);
 }
 

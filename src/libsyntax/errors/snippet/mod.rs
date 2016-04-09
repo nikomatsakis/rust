@@ -10,8 +10,7 @@
 
 // Code for annotating snippets.
 
-use codemap::{CharPos, CodeMap, FileName, FileMap, LineInfo, Span};
-use std::collections::BTreeMap;
+use codemap::{CharPos, CodeMap, FileMap, LineInfo, Span};
 use std::iter;
 use std::rc::Rc;
 use std::mem;
@@ -22,7 +21,7 @@ mod test;
 
 pub struct SnippetData {
     codemap: Rc<CodeMap>,
-    files: BTreeMap<FileName, FileInfo>,
+    files: Vec<FileInfo>,
 }
 
 pub struct FileInfo {
@@ -90,7 +89,7 @@ impl SnippetData {
     pub fn new(codemap: Rc<CodeMap>) -> Self {
         SnippetData {
             codemap: codemap,
-            files: BTreeMap::new(),
+            files: vec![],
         }
     }
 
@@ -107,18 +106,22 @@ impl SnippetData {
     }
 
     fn file(&mut self, file_map: &Rc<FileMap>) -> &mut FileInfo {
-        self.files.entry(file_map.name.clone())
-                  .or_insert_with(|| {
-                      FileInfo {
-                          file: file_map.clone(),
-                          lines: vec![]
-                      }
-                  })
+        let index = self.files.iter().position(|f| f.file.name == file_map.name);
+        if let Some(index) = index {
+            return &mut self.files[index];
+        }
+
+        self.files.push(
+            FileInfo {
+                file: file_map.clone(),
+                lines: vec![]
+            });
+        self.files.last_mut().unwrap()
     }
 
     pub fn render_lines(&self) -> Vec<RenderedLine> {
         let mut rendered_lines: Vec<_> =
-            self.files.values()
+            self.files.iter()
                       .enumerate()
                       .flat_map(|(index, f)| f.render_file_lines(index == 0))
                       .collect();
