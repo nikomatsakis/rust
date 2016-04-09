@@ -179,13 +179,13 @@ impl EmitterWriter {
 
         let error = match span.map(|s| (s.primary_span(), s)) {
             Some((COMMAND_LINE_SP, msp)) => {
-                self.emit_(&FileLine(msp.clone()), msg, code, lvl, is_header)
+                self.emit_(&FileLine(msp.clone()), msg, code, lvl)
             }
             Some((DUMMY_SP, _)) | None => {
                 print_diagnostic(&mut self.dst, "", lvl, msg, code)
             }
             Some((_, msp)) => {
-                self.emit_(&FullSpan(msp.clone()), msg, code, lvl, is_header)
+                self.emit_(&FullSpan(msp.clone()), msg, code, lvl)
             }
         };
 
@@ -195,7 +195,7 @@ impl EmitterWriter {
     }
 
     fn emit_renderspan(&mut self, sp: &RenderSpan, msg: &str, lvl: Level) {
-        if let Err(e) = self.emit_(sp, msg, None, lvl, false) {
+        if let Err(e) = self.emit_(sp, msg, None, lvl) {
             panic!("failed to print diagnostics: {:?}", e);
         }
     }
@@ -204,32 +204,19 @@ impl EmitterWriter {
              rsp: &RenderSpan,
              msg: &str,
              code: Option<&str>,
-             lvl: Level,
-             is_header: bool)
+             lvl: Level)
              -> io::Result<()> {
         let msp = rsp.span();
         let bounds = msp.primary_span();
-
-        let ss = if is_header {
-            String::new()
-        } else {
-            self.cm.span_to_string(bounds)
-        };
 
         match code {
             Some(code) if self.registry.as_ref()
                           .and_then(|registry| registry.find_description(code)).is_some() =>
             {
                 let code_with_explain = String::from("--explain ") + code;
-                print_diagnostic(&mut self.dst, &ss, lvl, msg, Some(&code_with_explain))?
+                print_diagnostic(&mut self.dst, "", lvl, msg, Some(&code_with_explain))?
             }
-            _ => print_diagnostic(&mut self.dst, &ss, lvl, msg, code)?
-        }
-
-        if is_header {
-            let span_str = self.cm.span_to_string(bounds);
-            let lvl_len = lvl.to_string().len() + 1;
-            writeln!(self.dst, "{0:>1$} {2}", "-->", lvl_len, span_str)?;
+            _ => print_diagnostic(&mut self.dst, "", lvl, msg, code)?
         }
 
         match *rsp {
@@ -365,7 +352,6 @@ fn print_diagnostic(dst: &mut Destination,
                     msg: &str,
                     code: Option<&str>)
                     -> io::Result<()> {
-
     if !topic.is_empty() {
         dst.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
         write!(dst, "{}: ", topic)?;
@@ -584,14 +570,14 @@ mod test {
         let vec: &[u8] = &vec;
         let str = from_utf8(vec).unwrap();
         println!("r#\"\n{}\"#", str);
-        assert_eq!(str, r#"
------> dummy.txt
+        assert_eq!(str, &r#"
+   --> dummy.txt
 8   |>         line8
     |> ~~~~~~~~~~~~~
 ...
 11  |>         e-lä-vän
     |> ~~~~~~~~~~~~~~~~
-"#.trim_left());
+"#[1..]);
     }
 
     #[test]
@@ -629,11 +615,11 @@ mod test {
         let sp4 =       "                          ~~~~ ";
         let sp34 =      "                       ~~~~~~~ ";
 
-        let expect_start = r#"
----> dummy.txt
+        let expect_start = &r#"
+ --> dummy.txt
 1 |> _____aaaaaa____bbbbbb__cccccdd_
   |>      ~~~~~~    ~~~~~~  ~~~~~~~
-"#.trim_left();
+"#[1..];
 
         let span = |sp, expected| {
             let sp = span_from_selection(inp, sp);
@@ -701,8 +687,8 @@ mod test {
         let sp4 = span(10, 10, (2, 3));
         let sp5 = span(10, 10, (4, 6));
 
-        let expect0 = r#"
------> dummy.txt
+        let expect0 = &r#"
+   --> dummy.txt
 5   |> ccccc
     |> ~~~~~
 ...
@@ -712,10 +698,10 @@ mod test {
 10  |> elided
 11  |> __f_gg
     |>   ~ ~~
-"#.trim_left();
+"#[1..];
 
-        let expect = r#"
------> dummy.txt
+        let expect = &r#"
+   --> dummy.txt
 1   |> aaaaa
     |> ~~~~~
 ...
@@ -725,7 +711,7 @@ mod test {
 10  |> elided
 11  |> __f_gg
     |>   ~ ~~
-"#.trim_left();
+"#[1..];
 
         macro_rules! test {
             ($expected: expr, $highlight: expr) => ({

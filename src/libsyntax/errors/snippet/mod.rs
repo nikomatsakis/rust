@@ -75,7 +75,8 @@ use self::Style::*;
 
 #[derive(Debug)]
 pub enum RenderedLineKind {
-    FileNameLine,
+    PrimaryFileName,
+    OtherFileName,
     SourceText {
         file: Rc<FileMap>,
         line_index: usize,
@@ -118,7 +119,8 @@ impl SnippetData {
     pub fn render_lines(&self) -> Vec<RenderedLine> {
         let mut rendered_lines: Vec<_> =
             self.files.values()
-                      .flat_map(|f| f.render_file_lines())
+                      .enumerate()
+                      .flat_map(|(index, f)| f.render_file_lines(index == 0))
                       .collect();
         prepend_prefixes(&mut rendered_lines);
         trim_lines(&mut rendered_lines);
@@ -199,7 +201,8 @@ impl RenderedLineKind {
                     text: String::from("..."),
                     style: LineNumber,
                 },
-            FileNameLine |
+            PrimaryFileName |
+            OtherFileName |
             Annotations =>
                 StyledString {
                     text: String::from(""),
@@ -275,7 +278,7 @@ impl FileInfo {
         return line_index - first_line_index;
     }
 
-    fn render_file_lines(&self) -> Vec<RenderedLine> {
+    fn render_file_lines(&self, primary_file: bool) -> Vec<RenderedLine> {
         // Group our lines by those with annotations and those without
         let mut lines_iter = self.lines.iter().peekable();
 
@@ -335,7 +338,7 @@ impl FileInfo {
                 text: self.file.name.clone(),
                 style: FileNameStyle,
             }],
-            kind: FileNameLine,
+            kind: if primary_file {PrimaryFileName} else {OtherFileName},
         });
 
         for &(is_annotated, ref group) in line_groups.iter() {
@@ -407,7 +410,6 @@ impl FileInfo {
 
     fn render_line(&self, line: &Line) -> Vec<RenderedLine> {
         let source_string = self.file.get_line(line.line_index).unwrap().to_string();
-        println!("{}:{} is {:?}", self.file.name, line.line_index, source_string);
         let source_kind = SourceText {
             file: self.file.clone(),
             line_index: line.line_index,
@@ -617,11 +619,25 @@ fn prepend_prefixes(rendered_lines: &mut [RenderedLine]) {
             RenderedLineKind::Elision => {
                 line.text.insert(0, prefix);
             }
-            RenderedLineKind::FileNameLine => {
-                // ----> filename
+            RenderedLineKind::PrimaryFileName => {
+                //   --> filename
                 // 22 |>
-                let dashes = (0..padding_len + 1).map(|_| '-')
+                //   ^
+                //   padding_len
+                let dashes = (0..padding_len - 1).map(|_| ' ')
+                                                 .chain(Some('-'))
+                                                 .chain(Some('-'))
                                                  .chain(Some('>'))
+                                                 .chain(Some(' '));
+                line.text.insert(0, StyledString {text: dashes.collect(),
+                                                  style: LineNumber})
+            }
+            RenderedLineKind::OtherFileName => {
+                // >>>>> filename
+                // 22 |>
+                //   ^
+                //   padding_len
+                let dashes = (0..padding_len + 2).map(|_| '>')
                                                  .chain(Some(' '));
                 line.text.insert(0, StyledString {text: dashes.collect(),
                                                   style: LineNumber})

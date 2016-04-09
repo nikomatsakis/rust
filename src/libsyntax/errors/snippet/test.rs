@@ -102,14 +102,14 @@ fn foo() {
     let text: String = make_string(&lines);
 
     println!("text=\n{}", text);
-    assert_eq!(&text[..], r#"
----> foo.rs
+    assert_eq!(&text[..], &r#"
+ --> foo.rs
 3 |>     vec.push(vec.pop().unwrap());
   |>     ~~~      ~~~                ~ previous borrow ends here
   |>     |        |
   |>     |        error occurs here
   |>     previous borrow of `vec` occurs here
-"#.trim_left());
+"#[1..]);
 }
 
 #[test]
@@ -136,7 +136,11 @@ fn bar() {
 
 
 
-    vec.push(vec.pop().unwrap());
+    vec.push();
+
+    // this line will get elided
+
+    vec.pop().unwrap());
 }
 "#;
 
@@ -167,20 +171,22 @@ fn bar() {
     println!("text=\n{}", text);
 
     // Note that the `|>` remain aligned across both files:
-    assert_eq!(&text[..], r#"
-----> bar.rs
-17 |>     vec.push(vec.pop().unwrap());
-   |>     ~~~      ~~~                ~ f
-   |>     |        |
-   |>     |        e
-   |>     d
-----> foo.rs
-3  |>     vec.push(vec.pop().unwrap());
-   |>     ~~~      ~~~                ~ c
-   |>     |        |
-   |>     |        b
-   |>     a
-"#.trim_left());
+    assert_eq!(&text[..], &r#"
+   --> bar.rs
+17  |>     vec.push();
+    |>     ~~~       ~ f
+    |>     |
+    |>     d
+...
+21  |>     vec.pop().unwrap());
+    |>     ~~~ e
+>>>>>> foo.rs
+3   |>     vec.push(vec.pop().unwrap());
+    |>     ~~~      ~~~                ~ c
+    |>     |        |
+    |>     |        b
+    |>     a
+"#[1..]);
 }
 
 #[test]
@@ -215,8 +221,8 @@ fn foo() {
     let text: String = make_string(&lines);
 
     println!("text=\n{}", text);
-    assert_eq!(&text[..], r#"
------> foo.rs
+    assert_eq!(&text[..], &r#"
+   --> foo.rs
 3   |>     let name = find_id(&data, 22).unwrap();
     |>                         ~~~~ immutable borrow begins here
 ...
@@ -225,7 +231,7 @@ fn foo() {
 ...
 11  |> }
     |> ~ immutable borrow ends here
-"#.trim_left());
+"#[1..]);
 }
 
 #[test]
@@ -254,15 +260,15 @@ fn foo() {
     let text: String = make_string(&lines);
 
     println!("text=r#\"\n{}\".trim_left()", text);
-    assert_eq!(&text[..], r#"
----> foo.rs
+    assert_eq!(&text[..], &r#"
+ --> foo.rs
 3 |>     vec.push(vec.pop().unwrap());
   |>     ~~~~~~~~           ~~~~~~ D
   |>     ||
   |>     |C
   |>     A
   |>     B
-"#.trim_left());
+"#[1..]);
 }
 
 #[test]
@@ -290,14 +296,14 @@ fn foo() {
     let text: String = make_string(&lines);
 
     println!("text=r#\"\n{}\".trim_left()", text);
-    assert_eq!(&text[..], r#"
----> foo.rs
+    assert_eq!(&text[..], &r#"
+ --> foo.rs
 3 |>     vec.push(vec.pop().unwrap());
   |>     ~~~      ~~~                ~ previous borrow ends here
   |>     |        |
   |>     |        error occurs here
   |>     previous borrow of `vec` occurs here
-"#.trim_left());
+"#[1..]);
 }
 
 #[test]
@@ -328,14 +334,14 @@ fn foo() {
     println!("{:#?}", lines);
     let text: String = make_string(&lines);
     println!("text=r#\"\n{}\".trim_left()", text);
-    assert_eq!(&text[..], r#"
------> foo.rs
+    assert_eq!(&text[..], &r#"
+   --> foo.rs
 4   |>     let mut vec2 = vec;
     |>                    ~~~ `vec` moved here because it has type `collections::vec::Vec<i32>`, which is moved by default
 ...
 9   |>     vec.push(7);
     |>     ~~~ use of moved value: `vec`
-"#.trim_left());
+"#[1..]);
 }
 
 #[test]
@@ -363,14 +369,14 @@ fn foo() {
 
     let lines = snippet.render_lines();
     let text: String = make_string(&lines);
-    println!("text=r#\"\n{}\n\"#.trim_left()", text);
-    assert_eq!(text, r#"
----> foo.rs
+    println!("text=&r#\"\n{}\n\"#[1..]", text);
+    assert_eq!(text, &r#"
+ --> foo.rs
 3 |>     let mut vec = vec![0, 1, 2];
   |>             ~~~   ~~~
 4 |>     let mut vec2 = vec;
   |>             ~~~    ~~~
-"#.trim_left());
+"#[1..]);
 }
 
 #[test]
@@ -395,12 +401,12 @@ impl SomeTrait for () {
     let lines = snippet.render_lines();
     let text: String = make_string(&lines);
     println!("r#\"\n{}\"", text);
-    assert_eq!(text, r#"
------> foo.rs
+    assert_eq!(text, &r#"
+   --> foo.rs
 3   |>     fn foo(x: u32) {
     |>     ~~~~~~~~~~~~~~~~
 ...
-"#.trim_left());
+"#[1..]);
 }
 
 #[test]
@@ -425,14 +431,14 @@ fn span_overlap_label() {
     let lines = snippet.render_lines();
     let text: String = make_string(&lines);
     println!("r#\"\n{}\"", text);
-    assert_eq!(text, r#"
----> foo.rs
+    assert_eq!(text, &r#"
+ --> foo.rs
 2 |>     fn foo(x: u32) {
   |>     ~~~~~~~~~~~~~~
   |>     |      |
   |>     |      x_span
   |>     fn_span
-"#.trim_left());
+"#[1..]);
 }
 
 #[test]
@@ -459,14 +465,14 @@ fn span_overlap_label2() {
     let lines = snippet.render_lines();
     let text: String = make_string(&lines);
     println!("r#\"\n{}\"", text);
-    assert_eq!(text, r#"
----> foo.rs
+    assert_eq!(text, &r#"
+ --> foo.rs
 2 |>     fn foo(x: u32) {
   |>     ~~~~~~~~~~~~~~
   |>     |      |
   |>     |      x_span
   |>     fn_span
-"#.trim_left());
+"#[1..]);
 }
 
 #[test]
@@ -504,8 +510,8 @@ fn span_overlap_label3() {
     let lines = snippet.render_lines();
     let text: String = make_string(&lines);
     println!("r#\"\n{}\"", text);
-    assert_eq!(text, r#"
----> foo.rs
+    assert_eq!(text, &r#"
+ --> foo.rs
 3 |>        let closure = || {
   |>                      ~~~~ foo
 4 |>            inner
@@ -514,5 +520,5 @@ fn span_overlap_label3() {
   |>            bar
 5 |>        };
   |> ~~~~~~~~
-"#.trim_left());
+"#[1..]);
 }
