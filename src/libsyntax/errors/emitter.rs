@@ -429,7 +429,8 @@ impl Destination {
                    style: Style)
                    -> io::Result<()> {
         match style {
-            Style::FileNameLine => {
+            Style::FileNameStyle |
+            Style::LineNumber => {
                 self.start_attr(term::Attr::Bold)?;
                 self.start_attr(term::Attr::ForegroundColor(term::color::BRIGHT_BLUE))?;
             }
@@ -584,6 +585,7 @@ mod test {
         let str = from_utf8(vec).unwrap();
         println!("r#\"\n{}\"#", str);
         assert_eq!(str, r#"
+-----> dummy.txt
 8   |>         line8
     |> ~~~~~~~~~~~~~
 ...
@@ -628,6 +630,7 @@ mod test {
         let sp34 =      "                       ~~~~~~~ ";
 
         let expect_start = r#"
+---> dummy.txt
 1 |> _____aaaaaa____bbbbbb__cccccdd_
   |>      ~~~~~~    ~~~~~~  ~~~~~~~
 "#.trim_left();
@@ -699,6 +702,7 @@ mod test {
         let sp5 = span(10, 10, (4, 6));
 
         let expect0 = r#"
+-----> dummy.txt
 5   |> ccccc
     |> ~~~~~
 ...
@@ -711,6 +715,7 @@ mod test {
 "#.trim_left();
 
         let expect = r#"
+-----> dummy.txt
 1   |> aaaaa
     |> ~~~~~
 ...

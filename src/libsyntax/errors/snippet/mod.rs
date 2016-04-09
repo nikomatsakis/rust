@@ -64,7 +64,8 @@ pub struct StyledString {
 
 #[derive(Copy, Clone, Debug)]
 pub enum Style {
-    FileNameLine,
+    FileNameStyle,
+    LineNumber,
     Quotation,
     Underline,
     Label,
@@ -74,6 +75,7 @@ use self::Style::*;
 
 #[derive(Debug)]
 pub enum RenderedLineKind {
+    FileNameLine,
     SourceText {
         file: Rc<FileMap>,
         line_index: usize,
@@ -190,17 +192,18 @@ impl RenderedLineKind {
             SourceText { file: _, line_index } =>
                 StyledString {
                     text: format!("{}", line_index + 1),
-                    style: FileNameLine,
+                    style: LineNumber,
                 },
             Elision =>
                 StyledString {
                     text: String::from("..."),
-                    style: FileNameLine,
+                    style: LineNumber,
                 },
+            FileNameLine |
             Annotations =>
                 StyledString {
                     text: String::from(""),
-                    style: FileNameLine,
+                    style: LineNumber,
                 },
         }
     }
@@ -325,6 +328,16 @@ impl FileInfo {
         }
 
         let mut output = vec![];
+
+        // First insert the name of the file.
+        output.push(RenderedLine {
+            text: vec![StyledString {
+                text: self.file.name.clone(),
+                style: FileNameStyle,
+            }],
+            kind: FileNameLine,
+        });
+
         for &(is_annotated, ref group) in line_groups.iter() {
             if is_annotated {
                 let mut annotation_ends_at_eol = false;
@@ -385,6 +398,9 @@ impl FileInfo {
                 }
             }
         }
+
+        // Shouldn't have a file with no lines at all
+        assert!(output.len() > 1);
 
         output
     }
@@ -596,11 +612,24 @@ fn prepend_prefixes(rendered_lines: &mut [RenderedLine]) {
     for (mut prefix, line) in prefixes.into_iter().zip(rendered_lines) {
         let extra_spaces = (prefix.text.len() .. padding_len).map(|_| ' ');
         prefix.text.extend(extra_spaces);
-        line.text.insert(0, prefix);
         match line.kind {
-            RenderedLineKind::Elision => {}
-            _ => line.text.insert(1, StyledString {text: String::from("|> "),
-                                                   style: FileNameLine})
+            RenderedLineKind::Elision => {
+                line.text.insert(0, prefix);
+            }
+            RenderedLineKind::FileNameLine => {
+                // ----> filename
+                // 22 |>
+                let dashes = (0..padding_len + 1).map(|_| '-')
+                                                 .chain(Some('>'))
+                                                 .chain(Some(' '));
+                line.text.insert(0, StyledString {text: dashes.collect(),
+                                                  style: LineNumber})
+            }
+            _ => {
+                line.text.insert(0, prefix);
+                line.text.insert(1, StyledString {text: String::from("|> "),
+                                                  style: LineNumber})
+            }
         }
     }
 }
