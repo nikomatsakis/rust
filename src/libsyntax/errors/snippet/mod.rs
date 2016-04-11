@@ -68,6 +68,7 @@ pub struct StyledString {
 #[derive(Copy, Clone, Debug)]
 pub enum Style {
     FileNameStyle,
+    LineAndColumn,
     LineNumber,
     Quotation,
     Underline,
@@ -366,10 +367,14 @@ impl FileInfo {
         // First insert the name of the file.
         match self.primary_span {
             Some(span) => {
+                let lo = codemap.lookup_char_pos(span.lo);
                 output.push(RenderedLine {
                     text: vec![StyledString {
-                        text: codemap.span_to_string(span),
+                        text: lo.file.name.clone(),
                         style: FileNameStyle,
+                    }, StyledString {
+                        text: format!(" ({}:{})", lo.line, lo.col.0 + 1),
+                        style: LineAndColumn,
                     }],
                     kind: PrimaryFileName,
                 });

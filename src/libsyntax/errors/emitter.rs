@@ -416,7 +416,10 @@ impl Destination {
                    style: Style)
                    -> io::Result<()> {
         match style {
-            Style::FileNameStyle |
+            Style::FileNameStyle => {
+            }
+            Style::LineAndColumn => {
+            }
             Style::LineNumber => {
                 self.start_attr(term::Attr::Bold)?;
                 self.start_attr(term::Attr::ForegroundColor(term::color::BRIGHT_BLUE))?;
