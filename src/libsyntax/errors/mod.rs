@@ -179,7 +179,7 @@ impl error::Error for ExplicitBug {
 /// Used for emitting structured error messages and other diagnostic information.
 #[must_use]
 pub struct DiagnosticBuilder<'a> {
-    emitter: &'a RefCell<Box<Emitter>>,
+    handler: &'a Handler,
     level: Level,
     message: String,
     code: Option<String>,
@@ -202,7 +202,12 @@ impl<'a> DiagnosticBuilder<'a> {
             return;
         }
 
-        self.emitter.borrow_mut().emit_struct(&self);
+        self.handler.emit.borrow_mut().emit_struct(&self);
+
+        if self.handler.treat_err_as_bug && self.level == Level::Error {
+            panic!("-Z treat-err-as-bug");
+        }
+
         self.cancel();
 
         // if self.is_fatal() {
@@ -315,11 +320,11 @@ impl<'a> DiagnosticBuilder<'a> {
 
     /// Convenience function for internal use, clients should use one of the
     /// struct_* methods on Handler.
-    fn new(emitter: &'a RefCell<Box<Emitter>>,
+    fn new(handler: &'a Handler,
            level: Level,
            message: &str) -> DiagnosticBuilder<'a> {
         DiagnosticBuilder {
-            emitter: emitter,
+            handler: handler,
             level: level,
             message: message.to_owned(),
             code: None,
@@ -356,7 +361,7 @@ impl<'a> fmt::Debug for DiagnosticBuilder<'a> {
 impl<'a> Drop for DiagnosticBuilder<'a> {
     fn drop(&mut self) {
         if !self.cancelled() {
-            self.emitter.borrow_mut().emit(None, "Error constructed but not emitted", None, Bug);
+            self.handler.emit.borrow_mut().emit(None, "Error constructed but not emitted", None, Bug);
             panic!();
         }
     }
@@ -403,14 +408,14 @@ impl Handler {
     }
 
     pub fn struct_dummy<'a>(&'a self) -> DiagnosticBuilder<'a> {
-        DiagnosticBuilder::new(&self.emit, Level::Cancelled, "")
+        DiagnosticBuilder::new(self, Level::Cancelled, "")
     }
 
     pub fn struct_span_warn<'a, S: Into<MultiSpan>>(&'a self,
                                                     sp: S,
                                                     msg: &str)
                                                     -> DiagnosticBuilder<'a> {
-        let mut result = DiagnosticBuilder::new(&self.emit, Level::Warning, msg);
+        let mut result = DiagnosticBuilder::new(self, Level::Warning, msg);
         result.span(sp);
         if !self.can_emit_warnings {
             result.cancel();
@@ -422,7 +427,7 @@ impl Handler {
                                                               msg: &str,
                                                               code: &str)
                                                               -> DiagnosticBuilder<'a> {
-        let mut result = DiagnosticBuilder::new(&self.emit, Level::Warning, msg);
+        let mut result = DiagnosticBuilder::new(self, Level::Warning, msg);
         result.span(sp);
         result.code(code.to_owned());
         if !self.can_emit_warnings {
@@ -431,7 +436,7 @@ impl Handler {
         result
     }
     pub fn struct_warn<'a>(&'a self, msg: &str) -> DiagnosticBuilder<'a> {
-        let mut result = DiagnosticBuilder::new(&self.emit, Level::Warning, msg);
+        let mut result = DiagnosticBuilder::new(self, Level::Warning, msg);
         if !self.can_emit_warnings {
             result.cancel();
         }
@@ -442,7 +447,7 @@ impl Handler {
                                                    msg: &str)
                                                    -> DiagnosticBuilder<'a> {
         self.bump_err_count();
-        let mut result = DiagnosticBuilder::new(&self.emit, Level::Error, msg);
+        let mut result = DiagnosticBuilder::new(self, Level::Error, msg);
         result.span(sp);
         result
     }
@@ -452,21 +457,21 @@ impl Handler {
                                                              code: &str)
                                                              -> DiagnosticBuilder<'a> {
         self.bump_err_count();
-        let mut result = DiagnosticBuilder::new(&self.emit, Level::Error, msg);
+        let mut result = DiagnosticBuilder::new(self, Level::Error, msg);
         result.span(sp);
         result.code(code.to_owned());
         result
     }
     pub fn struct_err<'a>(&'a self, msg: &str) -> DiagnosticBuilder<'a> {
         self.bump_err_count();
-        DiagnosticBuilder::new(&self.emit, Level::Error, msg)
+        DiagnosticBuilder::new(self, Level::Error, msg)
     }
     pub fn struct_span_fatal<'a, S: Into<MultiSpan>>(&'a self,
                                                      sp: S,
                                                      msg: &str)
                                                      -> DiagnosticBuilder<'a> {
         self.bump_err_count();
-        let mut result = DiagnosticBuilder::new(&self.emit, Level::Fatal, msg);
+        let mut result = DiagnosticBuilder::new(self, Level::Fatal, msg);
         result.span(sp);
         result
     }
@@ -476,14 +481,14 @@ impl Handler {
                                                                code: &str)
                                                                -> DiagnosticBuilder<'a> {
         self.bump_err_count();
-        let mut result = DiagnosticBuilder::new(&self.emit, Level::Fatal, msg);
+        let mut result = DiagnosticBuilder::new(self, Level::Fatal, msg);
         result.span(sp);
         result.code(code.to_owned());
         result
     }
     pub fn struct_fatal<'a>(&'a self, msg: &str) -> DiagnosticBuilder<'a> {
         self.bump_err_count();
-        DiagnosticBuilder::new(&self.emit, Level::Fatal, msg)
+        DiagnosticBuilder::new(self, Level::Fatal, msg)
     }
 
     pub fn cancel(&mut self, err: &mut DiagnosticBuilder) {
