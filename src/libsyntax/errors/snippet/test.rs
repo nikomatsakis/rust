@@ -105,7 +105,7 @@ fn foo() {
     assert_eq!(&text[..], &r#"
 >>>> foo.rs
 3 |>     vec.push(vec.pop().unwrap());
-  |>     ~~~      ~~~                ~ previous borrow ends here
+  |>     ---      ---                - previous borrow ends here
   |>     |        |
   |>     |        error occurs here
   |>     previous borrow of `vec` occurs here
@@ -172,20 +172,20 @@ fn bar() {
 
     // Note that the `|>` remain aligned across both files:
     assert_eq!(&text[..], &r#"
-   --> foo.rs:3:14: 3:17
+   --> foo.rs (3:14)
 3   |>     vec.push(vec.pop().unwrap());
-    |>     ~~~      ~~~                ~ c
+    |>     ---      ^^^                - c
     |>     |        |
     |>     |        b
     |>     a
 >>>>>> bar.rs
 17  |>     vec.push();
-    |>     ~~~       ~ f
+    |>     ---       - f
     |>     |
     |>     d
 ...
 21  |>     vec.pop().unwrap());
-    |>     ~~~ e
+    |>     --- e
 "#[1..]);
 }
 
@@ -224,13 +224,13 @@ fn foo() {
     assert_eq!(&text[..], &r#"
 >>>>>> foo.rs
 3   |>     let name = find_id(&data, 22).unwrap();
-    |>                         ~~~~ immutable borrow begins here
+    |>                         ---- immutable borrow begins here
 ...
 6   |>     data.push(Data { name: format!("Hera"), id: 66 });
-    |>     ~~~~ mutable borrow occurs here
+    |>     ---- mutable borrow occurs here
 ...
 11  |> }
-    |> ~ immutable borrow ends here
+    |> - immutable borrow ends here
 "#[1..]);
 }
 
@@ -263,7 +263,7 @@ fn foo() {
     assert_eq!(&text[..], &r#"
 >>>> foo.rs
 3 |>     vec.push(vec.pop().unwrap());
-  |>     ~~~~~~~~           ~~~~~~ D
+  |>     --------           ------ D
   |>     ||
   |>     |C
   |>     A
@@ -299,7 +299,7 @@ fn foo() {
     assert_eq!(&text[..], &r#"
 >>>> foo.rs
 3 |>     vec.push(vec.pop().unwrap());
-  |>     ~~~      ~~~                ~ previous borrow ends here
+  |>     ---      ---                - previous borrow ends here
   |>     |        |
   |>     |        error occurs here
   |>     previous borrow of `vec` occurs here
@@ -337,10 +337,10 @@ fn foo() {
     assert_eq!(&text[..], &r#"
 >>>>>> foo.rs
 4   |>     let mut vec2 = vec;
-    |>                    ~~~ `vec` moved here because it has type `collections::vec::Vec<i32>`, which is moved by default
+    |>                    --- `vec` moved here because it has type `collections::vec::Vec<i32>`, which is moved by default
 ...
 9   |>     vec.push(7);
-    |>     ~~~ use of moved value: `vec`
+    |>     --- use of moved value: `vec`
 "#[1..]);
 }
 
@@ -373,9 +373,9 @@ fn foo() {
     assert_eq!(text, &r#"
 >>>> foo.rs
 3 |>     let mut vec = vec![0, 1, 2];
-  |>             ~~~   ~~~
+  |>             ---   ---
 4 |>     let mut vec2 = vec;
-  |>             ~~~    ~~~
+  |>             ---    ---
 "#[1..]);
 }
 
@@ -404,7 +404,7 @@ impl SomeTrait for () {
     assert_eq!(text, &r#"
 >>>>>> foo.rs
 3   |>     fn foo(x: u32) {
-    |>     ~~~~~~~~~~~~~~~~
+    |>     ----------------
 ...
 "#[1..]);
 }
@@ -434,7 +434,7 @@ fn span_overlap_label() {
     assert_eq!(text, &r#"
 >>>> foo.rs
 2 |>     fn foo(x: u32) {
-  |>     ~~~~~~~~~~~~~~
+  |>     --------------
   |>     |      |
   |>     |      x_span
   |>     fn_span
@@ -468,7 +468,7 @@ fn span_overlap_label2() {
     assert_eq!(text, &r#"
 >>>> foo.rs
 2 |>     fn foo(x: u32) {
-  |>     ~~~~~~~~~~~~~~
+  |>     --------------
   |>     |      |
   |>     |      x_span
   |>     fn_span
@@ -513,12 +513,12 @@ fn span_overlap_label3() {
     assert_eq!(text, &r#"
 >>>> foo.rs
 3 |>        let closure = || {
-  |>                      ~~~~ foo
+  |>                      ---- foo
 4 |>            inner
-  |> ~~~~~~~~~~~~~~~~
+  |> ----------------
   |>            |
   |>            bar
 5 |>        };
-  |> ~~~~~~~~
+  |> --------
 "#[1..]);
 }

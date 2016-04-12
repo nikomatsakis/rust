@@ -11,7 +11,6 @@
 // Code for annotating snippets.
 
 use codemap::{CharPos, CodeMap, FileMap, LineInfo, Span};
-use std::iter;
 use std::rc::Rc;
 use std::mem;
 use std::ops::Range;
@@ -49,6 +48,9 @@ struct Annotation {
     /// End column within the line.
     end_col: usize,
 
+    /// Is this annotation derived from primary span
+    is_primary: bool,
+
     /// Optional label to display adjacent to the annotation.
     label: Option<String>,
 }
@@ -65,19 +67,27 @@ pub struct StyledString {
     pub style: Style,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug)]
+pub struct StyledBuffer {
+    text: Vec<Vec<char>>,
+    styles: Vec<Vec<Style>>
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Style {
     FileNameStyle,
     LineAndColumn,
     LineNumber,
     Quotation,
-    Underline,
-    Label,
+    UnderlinePrimary,
+    UnderlineSecondary,
+    LabelPrimary,
+    LabelSecondary,
     NoStyle,
 }
 use self::Style::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RenderedLineKind {
     PrimaryFileName,
     OtherFileName,
@@ -106,8 +116,7 @@ impl SnippetData {
             codemap: codemap.clone(),
             files: vec![]
         };
-        if let Some(primary_span) = 
-primary_span {
+        if let Some(primary_span) = primary_span {
             let lo = codemap.lookup_char_pos(primary_span.lo);
             data.files.push(
                 FileInfo {
@@ -129,7 +138,7 @@ primary_span {
         };
 
         self.file(&file_lines.file)
-            .push_lines(&file_lines.lines, label);
+            .push_lines(&file_lines.lines, span, label);
     }
 
     fn file(&mut self, file_map: &Rc<FileMap>) -> &mut FileInfo {
@@ -242,11 +251,93 @@ impl RenderedLineKind {
     }
 }
 
+impl StyledBuffer {
+    fn new() -> StyledBuffer {
+        StyledBuffer { text: Vec::new(), styles: Vec::new() }
+    }
+
+    fn render(&self, source_kind: RenderedLineKind) -> Vec<RenderedLine> {
+        let mut output : Vec<RenderedLine> = Vec::new();
+        let mut styled_vec : Vec<StyledString> = Vec::new();
+
+
+        for (row, row_style) in self.text.iter().zip(self.styles.iter()) {
+            let mut current_style = NoStyle;
+            let mut current_text = String::new();
+
+            for (c, s) in row.iter().zip(row_style.iter()) {
+                if *s != current_style {
+                    if !current_text.is_empty() {
+                        styled_vec.push(StyledString { text: current_text, style: current_style });
+                    }
+                    current_style = *s;
+                    current_text = String::new();
+                }
+                current_text.push(*c);
+            }
+            if !current_text.is_empty() {
+                styled_vec.push(StyledString { text: current_text, style: current_style });
+            }
+
+            if output.is_empty() {
+                //We know our first output line is source and the rest are highlights and labels
+                output.push(RenderedLine { text: styled_vec, kind: source_kind.clone() });
+            } else {
+                output.push(RenderedLine { text: styled_vec, kind: Annotations });
+            }
+            styled_vec = Vec::new();
+        }
+
+        output
+    }
+
+    fn putc(&mut self, line: usize, col: usize, chr: char, style: Style) {
+        while line >= self.text.len() {
+            self.text.push(Vec::new());
+            self.styles.push(Vec::new());
+        }
+
+        if col < self.text[line].len() {
+            self.text[line][col] = chr;
+            self.styles[line][col] = style;
+        }
+        else {
+            while self.text[line].len() < col {
+                self.text[line].push(' ');
+                self.styles[line].push(NoStyle);
+            }
+            self.text[line].push(chr);
+            self.styles[line].push(style);
+        }
+    }
+
+    fn puts(&mut self, line: usize, col: usize, string: &str, style: Style) {
+        let mut n = col;
+        for c in string.chars() {
+            self.putc(line, n, c, style);
+            n += 1;
+        }
+    }
+
+    fn append(&mut self, line: usize, string: &str, style: Style) {
+        if line >= self.text.len() {
+            self.puts(line, 0, string, style);
+        }
+        else {
+            let col = self.text[line].len();
+            self.puts(line, col, string, style);
+        }
+    }
+}
+
 impl FileInfo {
     fn push_lines(&mut self,
                   lines: &[LineInfo],
+                  span: Span,
                   label: Option<String>) {
         assert!(lines.len() > 0);
+
+        let is_primary = Some(span) == self.primary_span;
 
         // If a span covers multiple lines, just put the label on the
         // first one. This is a sort of arbitrary choice and not
@@ -255,12 +346,14 @@ impl FileInfo {
         let index = self.ensure_source_line(line0.line_index);
         self.lines[index].push_annotation(line0.start_col,
                                           line0.end_col,
+                                          is_primary,
                                           label);
         for line in remaining_lines {
             if line.end_col > line.start_col {
                 let index = self.ensure_source_line(line.line_index);
                 self.lines[index].push_annotation(line.start_col,
                                                   line.end_col,
+                                                  is_primary,
                                                   None);
             }
         }
@@ -463,14 +556,20 @@ impl FileInfo {
             file: self.file.clone(),
             line_index: line.line_index,
         };
+
+        let mut styled_buffer = StyledBuffer::new();
+
+        // First create the source line we will highlight.
+        styled_buffer.append(0, &source_string, Quotation);
+
         if line.annotations.is_empty() {
-            return vec![RenderedLine::from((source_string, Quotation, source_kind))];
+            return styled_buffer.render(source_kind);
         }
 
         // We want to display like this:
         //
         //      vec.push(vec.pop().unwrap());
-        //      ~~~      ~~~               ~ previous borrow ends here
+        //      ---      ^^^               _ previous borrow ends here
         //      |        |
         //      |        error occurs here
         //      previous borrow of `vec` occurs here
@@ -478,7 +577,7 @@ impl FileInfo {
         // But there are some weird edge cases to be aware of:
         //
         //      vec.push(vec.pop().unwrap());
-        //      ~~~~~~~~                    ~ previous borrow ends here
+        //      --------                    - previous borrow ends here
         //      ||
         //      |this makes no sense
         //      previous borrow of `vec` occurs here
@@ -486,16 +585,21 @@ impl FileInfo {
         // For this reason, we group the lines into "highlight lines"
         // and "annotations lines", where the highlight lines have the `~`.
 
-        let mut highlight_line = Self::whitespace(&source_string);
+        //let mut highlight_line = Self::whitespace(&source_string);
 
         // Sort the annotations by (start, end col)
         let mut annotations = line.annotations.clone();
         annotations.sort();
 
-        // First create the highlight line.
+        // Next, create the highlight line.
         for annotation in &annotations {
             for p in annotation.start_col .. annotation.end_col {
-                highlight_line[p] = '~';
+                if annotation.is_primary {
+                    styled_buffer.putc(1, p, '^', UnderlinePrimary);
+                }
+                else {
+                    styled_buffer.putc(1, p, '-', UnderlineSecondary);
+                }
             }
         }
 
@@ -507,15 +611,14 @@ impl FileInfo {
 
         // If there are no annotations that need text, we're done.
         if labeled_annotations.is_empty() {
-            return vec![RenderedLine::from((source_string, Quotation, source_kind)),
-                        RenderedLine::from((highlight_line, Underline, Annotations))];
+            return styled_buffer.render(source_kind);
         }
 
         // Now add the text labels. We try, when possible, to stick the rightmost
         // annotation at the end of the highlight line:
         //
         //      vec.push(vec.pop().unwrap());
-        //      ~~~      ~~~               ~ previous borrow ends here
+        //      ---      ---               - previous borrow ends here
         //
         // But sometimes that's not possible because one of the other
         // annotations overlaps it. For example, from the test
@@ -523,21 +626,21 @@ impl FileInfo {
         // (written on distinct lines for clarity):
         //
         //      fn foo(x: u32) {
-        //      ~~~~~~~~~~~~~~
-        //             ~
+        //      --------------
+        //             -
         //
         // In this case, we can't stick the rightmost-most label on
         // the highlight line, or we would get:
         //
         //      fn foo(x: u32) {
-        //      ~~~~~~~~ x_span
+        //      -------- x_span
         //      |
         //      fn_span
         //
         // which is totally weird. Instead we want:
         //
         //      fn foo(x: u32) {
-        //      ~~~~~~~~~~~~~~
+        //      --------------
         //      |      |
         //      |      x_span
         //      fn_span
@@ -547,102 +650,57 @@ impl FileInfo {
         // use the "hang below" version, so we can at least make it
         // clear where the span *starts*.
         let mut labeled_annotations = &labeled_annotations[..];
-        let mut highlight_label = String::new();
         match labeled_annotations.split_last().unwrap() {
             (last, previous) => {
                 if previous.iter()
                            .chain(&unlabeled_annotations)
                            .all(|a| !overlaps(a, last))
                 {
-                    // there shouldn't be any squiggles after last.end_col,
-                    // but there might be some whitespace; cut it off
-                    if highlight_line.len() > last.end_col {
-                        highlight_line.truncate(last.end_col);
-                    }
-
                     // append the label afterwards; we keep it in a separate
                     // string
-                    highlight_label = format!(" {}", last.label.as_ref().unwrap());
+                    let highlight_label: String = format!(" {}", last.label.as_ref().unwrap());
+                    if last.is_primary {
+                        styled_buffer.append(1, &highlight_label, LabelPrimary);
+                    } else {
+                        styled_buffer.append(1, &highlight_label, LabelSecondary);
+                    }
                     labeled_annotations = previous;
                 }
             }
         }
 
-        // The ~ line begins with the ~'s, which are Underline, and
-        // ends with a (possibly empty) label.
-        let highlight_render_line =
-            RenderedLine::from(
-                (highlight_line, Underline,
-                 highlight_label, Label,
-                 Annotations));
-
         // If that's the last annotation, we're done
         if labeled_annotations.is_empty() {
-            return vec![
-                RenderedLine::from((source_string, Quotation, source_kind)),
-                highlight_render_line,
-            ];
+            return styled_buffer.render(source_kind);
         }
-
-        // Otherwise, total lines will be 1 + number of remaining.
-        let total_lines = 1 + labeled_annotations.len();
-
-        // Make one string per line.
-        let mut extra_lines: Vec<_> =
-            (0..total_lines).map(|_| Self::whitespace(&source_string)).collect();
 
         for (index, annotation) in labeled_annotations.iter().enumerate() {
             // Leave:
             // - 1 extra line
             // - One line for each thing that comes after
             let comes_after = labeled_annotations.len() - index - 1;
-            let blank_lines = 1 + comes_after;
+            let blank_lines = 3 + comes_after;
 
             // For each blank line, draw a `|` at our column. The
             // text ought to be long enough for this.
-            for index in 0..blank_lines {
-                extra_lines[index][annotation.start_col] = '|';
+            for index in 2..blank_lines {
+                if annotation.is_primary {
+                    styled_buffer.putc(index, annotation.start_col, '|', UnderlinePrimary);
+                } else {
+                    styled_buffer.putc(index, annotation.start_col, '|', UnderlineSecondary);
+                }
             }
 
-            // After we write the `|`, write the label.
-            Self::write_label(&mut extra_lines[blank_lines],
-                              annotation.start_col,
-                              annotation.label.as_ref().unwrap());
+            if annotation.is_primary {
+                styled_buffer.puts(blank_lines, annotation.start_col,
+                    annotation.label.as_ref().unwrap(), LabelPrimary);
+            } else {
+                styled_buffer.puts(blank_lines, annotation.start_col,
+                    annotation.label.as_ref().unwrap(), LabelSecondary);
+            }
         }
 
-        // Convert the Vec<char> into String
-        let extra_strings =
-            extra_lines.into_iter()
-                       .map(|v| RenderedLine::from((v, Label, Annotations)));
-
-        iter::once(RenderedLine::from((source_string, Quotation, source_kind)))
-            .chain(Some(highlight_render_line))
-            .chain(extra_strings)
-            .collect()
-    }
-
-    fn write_label(text: &mut Vec<char>,
-                   position: usize,
-                   label: &str)
-    {
-        if text.len() > position {
-            text.truncate(position);
-        }
-
-        while text.len() < position {
-            text.push(' ');
-        }
-
-        text.extend(label.chars());
-    }
-
-    fn whitespace(str: &str) -> Vec<char> {
-        str.chars()
-           .map(|c| match c {
-               '\t' => '\t',
-               _ => ' ',
-           })
-           .collect()
+        styled_buffer.render(source_kind)
     }
 }
 
@@ -724,10 +782,12 @@ impl Line {
     fn push_annotation(&mut self,
                        start: CharPos,
                        end: CharPos,
+                       is_primary: bool,
                        label: Option<String>) {
         self.annotations.push(Annotation {
             start_col: start.0,
             end_col: end.0,
+            is_primary: is_primary,
             label: label,
         });
     }
