@@ -172,7 +172,7 @@ fn bar() {
 
     // Note that the `|>` remain aligned across both files:
     assert_eq!(&text[..], &r#"
-   --> foo.rs (3:14)
+   --> foo.rs:3:14
 3   |>     vec.push(vec.pop().unwrap());
     |>     ---      ^^^                - c
     |>     |        |

@@ -575,7 +575,7 @@ mod test {
         let str = from_utf8(vec).unwrap();
         println!("r#\"\n{}\"#", str);
         assert_eq!(str, &r#"
-   --> dummy.txt (8:1)
+   --> dummy.txt:8:1
 8   |>         line8
     |> ^^^^^^^^^^^^^
 ...
@@ -620,7 +620,7 @@ mod test {
         let sp34 =      "                       ~~~~~~~ ";
 
         let expect_start = &r#"
- --> dummy.txt (1:6)
+ --> dummy.txt:1:6
 1 |> _____aaaaaa____bbbbbb__cccccdd_
   |>      ------    ------  -------
 "#[1..];
@@ -692,7 +692,7 @@ mod test {
         let sp5 = span(10, 10, (4, 6));
 
         let expect0 = &r#"
-   --> dummy.txt (5:1)
+   --> dummy.txt:5:1
 5   |> ccccc
     |> -----
 ...
@@ -705,7 +705,7 @@ mod test {
 "#[1..];
 
         let expect = &r#"
-   --> dummy.txt (1:1)
+   --> dummy.txt:1:1
 1   |> aaaaa
     |> -----
 ...

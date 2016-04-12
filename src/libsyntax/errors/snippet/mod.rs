@@ -253,27 +253,26 @@ impl RenderedLineKind {
 
 impl StyledBuffer {
     fn new() -> StyledBuffer {
-        StyledBuffer { text: Vec::new(), styles: Vec::new() }
+        StyledBuffer { text: vec![], styles: vec![] }
     }
 
     fn render(&self, source_kind: RenderedLineKind) -> Vec<RenderedLine> {
-        let mut output : Vec<RenderedLine> = Vec::new();
-        let mut styled_vec : Vec<StyledString> = Vec::new();
+        let mut output: Vec<RenderedLine> = vec![];
+        let mut styled_vec: Vec<StyledString> = vec![];
 
-
-        for (row, row_style) in self.text.iter().zip(self.styles.iter()) {
+        for (row, row_style) in self.text.iter().zip(&self.styles) {
             let mut current_style = NoStyle;
             let mut current_text = String::new();
 
-            for (c, s) in row.iter().zip(row_style.iter()) {
-                if *s != current_style {
+            for (&c, &s) in row.iter().zip(row_style) {
+                if s != current_style {
                     if !current_text.is_empty() {
                         styled_vec.push(StyledString { text: current_text, style: current_style });
                     }
-                    current_style = *s;
+                    current_style = s;
                     current_text = String::new();
                 }
-                current_text.push(*c);
+                current_text.push(c);
             }
             if !current_text.is_empty() {
                 styled_vec.push(StyledString { text: current_text, style: current_style });
@@ -285,7 +284,7 @@ impl StyledBuffer {
             } else {
                 output.push(RenderedLine { text: styled_vec, kind: Annotations });
             }
-            styled_vec = Vec::new();
+            styled_vec = vec![];
         }
 
         output
@@ -293,15 +292,14 @@ impl StyledBuffer {
 
     fn putc(&mut self, line: usize, col: usize, chr: char, style: Style) {
         while line >= self.text.len() {
-            self.text.push(Vec::new());
-            self.styles.push(Vec::new());
+            self.text.push(vec![]);
+            self.styles.push(vec![]);
         }
 
         if col < self.text[line].len() {
             self.text[line][col] = chr;
             self.styles[line][col] = style;
-        }
-        else {
+        } else {
             while self.text[line].len() < col {
                 self.text[line].push(' ');
                 self.styles[line].push(NoStyle);
@@ -319,11 +317,16 @@ impl StyledBuffer {
         }
     }
 
+    fn set_style(&mut self, line: usize, col: usize, style: Style) {
+        if self.styles.len() > line && self.styles[line].len() > col {
+            self.styles[line][col] = style;
+        }
+    }
+
     fn append(&mut self, line: usize, string: &str, style: Style) {
         if line >= self.text.len() {
             self.puts(line, 0, string, style);
-        }
-        else {
+        } else {
             let col = self.text[line].len();
             self.puts(line, col, string, style);
         }
@@ -466,7 +469,7 @@ impl FileInfo {
                         text: lo.file.name.clone(),
                         style: FileNameStyle,
                     }, StyledString {
-                        text: format!(" ({}:{})", lo.line, lo.col.0 + 1),
+                        text: format!(":{}:{}", lo.line, lo.col.0 + 1),
                         style: LineAndColumn,
                     }],
                     kind: PrimaryFileName,
@@ -507,12 +510,10 @@ impl FileInfo {
                                     None => annotation.start_col == 0 &&
                                             annotation.end_col == source_string.len()
                                 }
-                            }
-                            else {
+                            } else {
                                 false
                             }
-                        }
-                        else {
+                        } else {
                             false
                         };
 
@@ -531,12 +532,10 @@ impl FileInfo {
 
                     prev_ends_at_eol = annotation_ends_at_eol;
                 }
-            }
-            else {
+            } else {
                 if group.len() > 1 {
                     output.push(RenderedLine::from((String::new(), NoStyle, Elision)));
-                }
-                else {
+                } else {
                     let mut v: Vec<RenderedLine> =
                         group.iter().flat_map(|line| self.render_line(line)).collect();
                     output.append(&mut v);
@@ -596,8 +595,8 @@ impl FileInfo {
             for p in annotation.start_col .. annotation.end_col {
                 if annotation.is_primary {
                     styled_buffer.putc(1, p, '^', UnderlinePrimary);
-                }
-                else {
+                    styled_buffer.set_style(0, p, UnderlinePrimary);
+                } else {
                     styled_buffer.putc(1, p, '-', UnderlineSecondary);
                 }
             }
