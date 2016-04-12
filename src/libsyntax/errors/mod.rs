@@ -296,27 +296,6 @@ impl<'a> DiagnosticBuilder<'a> {
         })));
         self
     }
-    pub fn fileline_warn<S: Into<MultiSpan>>(&mut self,
-                                             sp: S,
-                                             msg: &str)
-                                             -> &mut DiagnosticBuilder<'a> {
-        self.sub(Level::Warning, msg, None, Some(FileLine(sp.into())));
-        self
-    }
-    pub fn fileline_note<S: Into<MultiSpan>>(&mut self,
-                                             sp: S,
-                                             msg: &str)
-                                             -> &mut DiagnosticBuilder<'a> {
-        self.sub(Level::Note, msg, None, Some(FileLine(sp.into())));
-        self
-    }
-    pub fn fileline_help<S: Into<MultiSpan>>(&mut self,
-                                             sp: S,
-                                             msg: &str)
-                                             -> &mut DiagnosticBuilder<'a> {
-        self.sub(Level::Help, msg, None, Some(FileLine(sp.into())));
-        self
-    }
 
     pub fn span<S: Into<MultiSpan>>(&mut self, sp: S) -> &mut Self {
         self.span = Some(sp.into());

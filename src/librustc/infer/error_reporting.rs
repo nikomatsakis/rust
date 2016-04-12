@@ -683,10 +683,9 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
                                                E0309,
                                                "{} may not live long enough",
                                                labeled_user_string);
-                err.fileline_help(origin.span(),
-                                  &format!("consider adding an explicit lifetime bound `{}: {}`...",
-                                           bound_kind,
-                                           sub));
+                err.help(&format!("consider adding an explicit lifetime bound `{}: {}`...",
+                         bound_kind,
+                         sub));
                 err
             }
 
@@ -697,10 +696,9 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
                                                E0310,
                                                "{} may not live long enough",
                                                labeled_user_string);
-                err.fileline_help(origin.span(),
-                                  &format!("consider adding an explicit lifetime \
-                                            bound `{}: 'static`...",
-                                           bound_kind));
+                err.help(&format!("consider adding an explicit lifetime \
+                                   bound `{}: 'static`...",
+                                  bound_kind));
                 err
             }
 
@@ -711,9 +709,8 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
                                                E0311,
                                                "{} may not live long enough",
                                                labeled_user_string);
-                err.fileline_help(origin.span(),
-                                  &format!("consider adding an explicit lifetime bound for `{}`",
-                                           bound_kind));
+                err.help(&format!("consider adding an explicit lifetime bound for `{}`",
+                                  bound_kind));
                 self.tcx.note_and_explain_region(
                     &mut err,
                     &format!("{} must be valid for ", labeled_user_string),
