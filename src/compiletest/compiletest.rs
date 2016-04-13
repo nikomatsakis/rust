@@ -37,6 +37,7 @@ use util::logv;
 
 pub mod procsrv;
 pub mod util;
+mod json;
 pub mod header;
 pub mod runtest;
 pub mod common;

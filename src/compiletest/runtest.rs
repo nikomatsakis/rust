@@ -1014,7 +1014,7 @@ fn check_forbid_output(revision: Option<&str>,
 }
 
 fn check_expected_errors(revision: Option<&str>,
-                         expected_errors: Vec<errors::ExpectedError>,
+                         mut expected_errors: Vec<errors::ExpectedError>,
                          testpaths: &TestPaths,
                          proc_res: &ProcRes) {
     // true if we found the error in question
@@ -1024,11 +1024,9 @@ fn check_expected_errors(revision: Option<&str>,
         fatal_proc_rec(revision, "process did not return an error status", proc_res);
     }
 
-    let prefixes = expected_errors.iter().map(|ee| {
-        let expected = format!("{}:{}:", testpaths.file.display(), ee.line_num);
-        // On windows just translate all '\' path separators to '/'
-        expected.replace(r"\", "/")
-    }).collect::<Vec<String>>();
+    let file_name =
+        format!("{}", testpaths.file.display())
+        .replace(r"\", "/"); // on windows, translate all '\' path separators to '/'
 
     // If the testcase being checked contains at least one expected "help"
     // message, then we'll ensure that all "help" messages are expected.
@@ -1050,63 +1048,42 @@ fn check_expected_errors(revision: Option<&str>,
     //
     // This pattern is ambiguous on windows, because filename may contain
     // a colon, so any path prefix must be detected and removed first.
-    let mut unexpected = 0;
-    let mut not_found = 0;
-    for line in proc_res.stderr.lines() {
-        let mut was_expected = false;
-        let mut prev = 0;
-        for (i, ee) in expected_errors.iter().enumerate() {
-            if !found_flags[i] {
-                debug!("prefix={} ee.kind={:?} ee.msg={} line={}",
-                       prefixes[i],
-                       ee.kind,
-                       ee.msg,
-                       line);
-                // Suggestions have no line number in their output, so take on the line number of
-                // the previous expected error
-                if ee.kind == Some(ErrorKind::Suggestion) {
-                    assert!(expected_errors[prev].kind == Some(ErrorKind::Help),
-                            "SUGGESTIONs must be preceded by a HELP");
-                    if line.contains(&ee.msg) {
-                        found_flags[i] = true;
-                        was_expected = true;
-                        break;
-                    }
-                }
-                if
-                    (prefix_matches(line, &prefixes[i]) || continuation(line)) &&
-                    (ee.kind.is_none() || line.contains(&ee.kind.as_ref().unwrap().to_string())) &&
-                    line.contains(&ee.msg)
-                {
-                    found_flags[i] = true;
-                    was_expected = true;
-                    break;
+    let actual_errors = json::parse_output(&file_name, &proc_res.stderr);
+    let mut unexpected = 0, not_found = 0;
+    for actual_error in &actual_errors {
+        let opt_index = expected_errors.position(|expected_error| {
+            actual_error.line_num == expected_error.line_num &&
+                actual_error.msg.contains(&expected_error.msg)
+        });
+
+        match opt_index {
+            Some(index) => {
+                // found a match, everybody is happy
+                expected_errors.swap_remove(index);
+            }
+
+            None => {
+                // this actual error was not expected
+                if is_unexpected_compiler_message(line, expect_help, expect_note) {
+                    error(revision,
+                          &format!("unexpected message of kind {:?} on line {}: '{}'",
+                                   actual_error.kind,
+                                   actual_error.line_num,
+                                   actual_error.msg));
+                    unexpected += 1;
                 }
             }
-            prev = i;
-        }
-
-        // ignore this msg which gets printed at the end
-        if line.contains("aborting due to") {
-            was_expected = true;
-        }
-
-        if !was_expected && is_unexpected_compiler_message(line, expect_help, expect_note) {
-            error(revision, &format!("unexpected compiler message: '{}'", line));
-            unexpected += 1;
         }
     }
 
-    for (i, &flag) in found_flags.iter().enumerate() {
-        if !flag {
-            let ee = &expected_errors[i];
+    // anything not yet removed is a problem
+    for expected_errors in &expected_errors {
             error(revision, &format!("expected {} on line {} not found: {}",
                                      ee.kind.as_ref()
                                             .map_or("message".into(),
                                                     |k| k.to_string()),
                                      ee.line_num, ee.msg));
             not_found += 1;
-        }
     }
 
     if unexpected > 0 || not_found > 0 {
@@ -1115,23 +1092,6 @@ fn check_expected_errors(revision: Option<&str>,
             &format!("{} unexpected errors found, {} expected errors not found",
                      unexpected, not_found),
             proc_res);
-    }
-
-    fn prefix_matches(line: &str, prefix: &str) -> bool {
-        use std::ascii::AsciiExt;
-        // On windows just translate all '\' path separators to '/'
-        let line = line.replace(r"\", "/");
-        if cfg!(windows) {
-            line.to_ascii_lowercase().starts_with(&prefix.to_ascii_lowercase())
-        } else {
-            line.starts_with(prefix)
-        }
-    }
-
-    // A multi-line error will have followup lines which start with a space
-    // or open paren.
-    fn continuation( line: &str) -> bool {
-        line.starts_with(" ") || line.starts_with("(")
     }
 }
 
