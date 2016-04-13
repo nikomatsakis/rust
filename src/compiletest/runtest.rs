@@ -12,7 +12,8 @@ use common::Config;
 use common::{CompileFail, ParseFail, Pretty, RunFail, RunPass, RunPassValgrind};
 use common::{Codegen, DebugInfoLldb, DebugInfoGdb, Rustdoc, CodegenUnits};
 use common::{Incremental};
-use errors::{self, ErrorKind};
+use errors::{self, ErrorKind, ExpectedError};
+use json;
 use header::TestProps;
 use header;
 use procsrv;
@@ -26,7 +27,7 @@ use std::fs::{self, File};
 use std::io::BufReader;
 use std::io::prelude::*;
 use std::net::TcpStream;
-use std::path::{Path, PathBuf, Component};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, ExitStatus};
 
 pub fn run(config: Config, testpaths: &TestPaths) {
@@ -1017,9 +1018,6 @@ fn check_expected_errors(revision: Option<&str>,
                          mut expected_errors: Vec<errors::ExpectedError>,
                          testpaths: &TestPaths,
                          proc_res: &ProcRes) {
-    // true if we found the error in question
-    let mut found_flags = vec![false; expected_errors.len()];
-
     if proc_res.status.success() {
         fatal_proc_rec(revision, "process did not return an error status", proc_res);
     }
@@ -1049,9 +1047,10 @@ fn check_expected_errors(revision: Option<&str>,
     // This pattern is ambiguous on windows, because filename may contain
     // a colon, so any path prefix must be detected and removed first.
     let actual_errors = json::parse_output(&file_name, &proc_res.stderr);
-    let mut unexpected = 0, not_found = 0;
+    let mut unexpected = 0;
+    let mut not_found = 0;
     for actual_error in &actual_errors {
-        let opt_index = expected_errors.position(|expected_error| {
+        let opt_index = expected_errors.iter().position(|expected_error| {
             actual_error.line_num == expected_error.line_num &&
                 actual_error.msg.contains(&expected_error.msg)
         });
@@ -1063,8 +1062,9 @@ fn check_expected_errors(revision: Option<&str>,
             }
 
             None => {
-                // this actual error was not expected
-                if is_unexpected_compiler_message(line, expect_help, expect_note) {
+                if is_unexpected_compiler_message(actual_error,
+                                                  expect_help,
+                                                  expect_note) {
                     error(revision,
                           &format!("unexpected message of kind {:?} on line {}: '{}'",
                                    actual_error.kind,
@@ -1077,105 +1077,42 @@ fn check_expected_errors(revision: Option<&str>,
     }
 
     // anything not yet removed is a problem
-    for expected_errors in &expected_errors {
+    for expected_error in &expected_errors {
             error(revision, &format!("expected {} on line {} not found: {}",
-                                     ee.kind.as_ref()
-                                            .map_or("message".into(),
-                                                    |k| k.to_string()),
-                                     ee.line_num, ee.msg));
+                                     expected_error.kind.as_ref()
+                                                        .map_or("message".into(),
+                                                                |k| k.to_string()),
+                                     expected_error.line_num,
+                                     expected_error.msg));
             not_found += 1;
     }
 
     if unexpected > 0 || not_found > 0 {
-        fatal_proc_rec(
-            revision,
-            &format!("{} unexpected errors found, {} expected errors not found",
-                     unexpected, not_found),
-            proc_res);
+        error(revision,
+              &format!("{} unexpected errors found, {} expected errors not found",
+                       unexpected, not_found));
+        print!("status: {}\ncommand: {}\n",
+               proc_res.status, proc_res.cmdline);
+        panic!();
     }
 }
 
-fn is_unexpected_compiler_message(line: &str, expect_help: bool, expect_note: bool) -> bool {
-    let mut c = Path::new(line).components();
-    let line = match c.next() {
-        Some(Component::Prefix(_)) => c.as_path().to_str().unwrap(),
-        _ => line,
-    };
-
-    let mut i = 0;
-    return scan_until_char(line, ':', &mut i) &&
-        scan_char(line, ':', &mut i) &&
-        scan_integer(line, &mut i) &&
-        scan_char(line, ':', &mut i) &&
-        scan_integer(line, &mut i) &&
-        scan_char(line, ':', &mut i) &&
-        scan_char(line, ' ', &mut i) &&
-        scan_integer(line, &mut i) &&
-        scan_char(line, ':', &mut i) &&
-        scan_integer(line, &mut i) &&
-        scan_char(line, ' ', &mut i) &&
-        (scan_string(line, "error", &mut i) ||
-         scan_string(line, "warning", &mut i) ||
-         (expect_help && scan_string(line, "help", &mut i)) ||
-         (expect_note && scan_string(line, "note", &mut i))
-        );
-}
-
-fn scan_until_char(haystack: &str, needle: char, idx: &mut usize) -> bool {
-    if *idx >= haystack.len() {
-        return false;
+/// Returns true if we should report an error about `actual_error`,
+/// which did not match any of the expected error. We always require
+/// errors/warnings to be explicitly listed, but only require
+/// helps/notes if there are explicit helps/notes given.
+fn is_unexpected_compiler_message(actual_error: &ExpectedError,
+                                  expect_help: bool,
+                                  expect_note: bool)
+                                  -> bool {
+    match actual_error.kind {
+        Some(ErrorKind::Help) => expect_help,
+        Some(ErrorKind::Note) => expect_note,
+        Some(ErrorKind::Error) => true,
+        Some(ErrorKind::Warning) => true,
+        Some(ErrorKind::Suggestion) => false,
+        None => false
     }
-    let opt = haystack[(*idx)..].find(needle);
-    if opt.is_none() {
-        return false;
-    }
-    *idx = opt.unwrap();
-    return true;
-}
-
-fn scan_char(haystack: &str, needle: char, idx: &mut usize) -> bool {
-    if *idx >= haystack.len() {
-        return false;
-    }
-    let ch = haystack[*idx..].chars().next().unwrap();
-    if ch != needle {
-        return false;
-    }
-    *idx += ch.len_utf8();
-    return true;
-}
-
-fn scan_integer(haystack: &str, idx: &mut usize) -> bool {
-    let mut i = *idx;
-    while i < haystack.len() {
-        let ch = haystack[i..].chars().next().unwrap();
-        if ch < '0' || '9' < ch {
-            break;
-        }
-        i += ch.len_utf8();
-    }
-    if i == *idx {
-        return false;
-    }
-    *idx = i;
-    return true;
-}
-
-fn scan_string(haystack: &str, needle: &str, idx: &mut usize) -> bool {
-    let mut haystack_i = *idx;
-    let mut needle_i = 0;
-    while needle_i < needle.len() {
-        if haystack_i >= haystack.len() {
-            return false;
-        }
-        let ch = haystack[haystack_i..].chars().next().unwrap();
-        haystack_i += ch.len_utf8();
-        if !scan_char(needle, ch, &mut needle_i) {
-            return false;
-        }
-    }
-    *idx = haystack_i;
-    return true;
 }
 
 struct ProcArgs {
@@ -1417,6 +1354,10 @@ fn make_compile_args<F>(config: &Config,
     };
     // FIXME (#9639): This needs to handle non-utf8 paths
     let mut args = vec!(testpaths.file.to_str().unwrap().to_owned(),
+                        String::from("--error-format"),
+                        String::from("json"),
+                        String::from("-Z"),
+                        String::from("unstable-options"),
                         "-L".to_owned(),
                         config.build_base.to_str().unwrap().to_owned(),
                         format!("--target={}", target));
