@@ -961,7 +961,7 @@ fn check_error_patterns(revision: Option<&str>,
                        testpaths.file.display()));
     }
     let mut next_err_idx = 0;
-    let mut next_err_pat = &props.error_patterns[next_err_idx];
+    let mut next_err_pat = props.error_patterns[next_err_idx].trim();
     let mut done = false;
     for line in output_to_check.lines() {
         if line.contains(next_err_pat) {
@@ -972,7 +972,7 @@ fn check_error_patterns(revision: Option<&str>,
                 done = true;
                 break;
             }
-            next_err_pat = &props.error_patterns[next_err_idx];
+            next_err_pat = props.error_patterns[next_err_idx].trim();
         }
     }
     if done { return; }
@@ -1046,6 +1046,7 @@ fn check_expected_errors(revision: Option<&str>,
             .position(|(index, expected_error)| {
                 !found[index] &&
                     actual_error.line_num == expected_error.line_num &&
+                    actual_error.kind == expected_error.kind &&
                     actual_error.msg.contains(&expected_error.msg)
             });
 
@@ -1358,13 +1359,40 @@ fn make_compile_args<F>(config: &Config,
     };
     // FIXME (#9639): This needs to handle non-utf8 paths
     let mut args = vec!(testpaths.file.to_str().unwrap().to_owned(),
-                        String::from("--error-format"),
-                        String::from("json"),
-                        String::from("-Z"),
-                        String::from("unstable-options"),
                         "-L".to_owned(),
                         config.build_base.to_str().unwrap().to_owned(),
                         format!("--target={}", target));
+
+    match config.mode {
+        CompileFail |
+        ParseFail |
+        Incremental => {
+            // If we are extracting and matching errors in the new
+            // fashion, then you want JSON mode. Old-skool error
+            // patterns still match the raw compiler output.
+            if props.error_patterns.is_empty() {
+                args.extend(["--error-format",
+                             "json",
+                             "-Z",
+                             "unstable-options"]
+                            .iter()
+                            .map(|s| s.to_string()));
+            }
+        }
+
+        RunFail |
+        RunPass |
+        RunPassValgrind |
+        Pretty |
+        DebugInfoGdb |
+        DebugInfoLldb |
+        Codegen |
+        Rustdoc |
+        CodegenUnits => {
+            // do not use JSON output
+        }
+    }
+
     args.extend_from_slice(&extras);
     if !props.no_prefer_dynamic {
         args.push("-C".to_owned());
