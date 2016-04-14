@@ -55,7 +55,6 @@ impl Mul for Foo {
 //~| HELP `mul1::Mul`
 //~| HELP `mul2::Mul`
 //~| HELP `std::ops::Mul`
-//~| HELP run `rustc --explain E0405` to see a detailed explanation
 //~| HELP you can import several candidates into scope (`use ...;`):
 }
 
@@ -77,14 +76,12 @@ fn getMul() -> Mul {
 //~| HELP `mul3::Mul`
 //~| HELP `mul4::Mul`
 //~| HELP and 2 other candidates
-//~| HELP run `rustc --explain E0412` to see a detailed explanation
 //~| HELP you can import several candidates into scope (`use ...;`):
 }
 
 // Let's also test what happens if the trait doesn't exist:
 impl ThisTraitReallyDoesntExistInAnyModuleReally for Foo {
 //~^ ERROR trait `ThisTraitReallyDoesntExistInAnyModuleReally` is not in scope
-//~^^ HELP run `rustc --explain E0405` to see a detailed explanation
 //~^^^ HELP no candidates by the name of `ThisTraitReallyDoesntExistInAnyModuleReally` found
 }
 
@@ -92,7 +89,6 @@ impl ThisTraitReallyDoesntExistInAnyModuleReally for Foo {
 impl Div for Foo {
 //~^ ERROR trait `Div` is not in scope
 //~| HELP `use std::ops::Div;`
-//~| HELP run `rustc --explain E0405` to see a detailed explanation
 }
 
 fn main() {
