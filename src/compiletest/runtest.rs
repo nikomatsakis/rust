@@ -1046,7 +1046,8 @@ fn check_expected_errors(revision: Option<&str>,
             .position(|(index, expected_error)| {
                 !found[index] &&
                     actual_error.line_num == expected_error.line_num &&
-                    actual_error.kind == expected_error.kind &&
+                    (expected_error.kind.is_none() ||
+                     actual_error.kind == expected_error.kind) &&
                     actual_error.msg.contains(&expected_error.msg)
             });
 
