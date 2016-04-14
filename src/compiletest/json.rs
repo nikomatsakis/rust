@@ -36,16 +36,21 @@ pub fn parse_output(file_name: &str, output: &str) -> Vec<ExpectedError> {
 }
 
 fn parse_line(file_name: &str, line: &str) -> Vec<ExpectedError> {
-    match json::decode::<Diagnostic>(line) {
-        Ok(diagnostic) => {
-            let mut expected_errors = vec![];
-            push_expected_errors(&mut expected_errors, &diagnostic, file_name);
-            expected_errors
+    if line.chars().next() == Some('{') {
+        match json::decode::<Diagnostic>(line) {
+            Ok(diagnostic) => {
+                let mut expected_errors = vec![];
+                push_expected_errors(&mut expected_errors, &diagnostic, file_name);
+                expected_errors
+            }
+            Err(error) => {
+                println!("failed to decode compiler output as json: `{}`", error);
+                panic!("failed to decode compiler output as json");
+            }
         }
-        Err(error) => {
-            println!("failed to decode compiler output as json: `{}`", error);
-            panic!("failed to decode compiler output as json");
-        }
+    }
+    else {
+        vec![]
     }
 }
 

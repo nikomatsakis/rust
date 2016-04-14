@@ -29,7 +29,8 @@ impl FromStr for ErrorKind {
     type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.to_uppercase();
-        match &s.trim_right_matches(':') as &str {
+        let parts: Vec<&str> = s.split(':').collect();
+        match &parts[0] as &str {
             "HELP" => Ok(ErrorKind::Help),
             "ERROR" => Ok(ErrorKind::Error),
             "NOTE" => Ok(ErrorKind::Note),
