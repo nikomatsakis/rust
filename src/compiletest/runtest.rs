@@ -1061,9 +1061,12 @@ fn check_expected_errors(revision: Option<&str>,
                                                   expect_help,
                                                   expect_note) {
                     error(revision,
-                          &format!("unexpected message of kind {:?} on line {}: '{}'",
-                                   actual_error.kind,
+                          &format!("{}:{}: unexpected {:?}: '{}'",
+                                   file_name,
                                    actual_error.line_num,
+                                   actual_error.kind.as_ref()
+                                                    .map_or(String::from("message"),
+                                                            |k| k.to_string()),
                                    actual_error.msg));
                     unexpected += 1;
                 }
@@ -1074,12 +1077,14 @@ fn check_expected_errors(revision: Option<&str>,
     // anything not yet found is a problem
     for (index, expected_error) in expected_errors.iter().enumerate() {
         if !found[index] {
-            error(revision, &format!("expected {} on line {} not found: {}",
-                                 expected_error.kind.as_ref()
-                                     .map_or("message".into(),
-                                             |k| k.to_string()),
-                                     expected_error.line_num,
-                                     expected_error.msg));
+            error(revision,
+                  &format!("{}:{}: expected {} not found: {}",
+                           file_name,
+                           expected_error.line_num,
+                           expected_error.kind.as_ref()
+                                              .map_or("message".into(),
+                                                      |k| k.to_string()),
+                           expected_error.msg));
             not_found += 1;
         }
     }
