@@ -25,6 +25,7 @@ use hir::def::{Def, DefMap};
 use middle::region;
 use ty::subst;
 use ty;
+use rustc_data_structures::fnv::{FnvHashMap, FnvHashSet};
 use std::fmt;
 use std::mem::replace;
 use syntax::ast;
@@ -50,11 +51,22 @@ pub enum DefRegion {
 
 // Maps the id of each lifetime reference to the lifetime decl
 // that it corresponds to.
-pub type NamedRegionMap = NodeMap<DefRegion>;
+pub struct NamedRegionMap {
+    // maps from every use of a named (not anonymous) lifetime to a
+    // `DefRegion` describing how that region is bound
+    pub defs: NodeMap<DefRegion>,
+
+    // the set of lifetime def ids that are early-bound; see
+    // `visit_early_late` for details.
+    //
+    // NB: This only contains the ids for lifetimes declared in the
+    // FnSpace (i.e., on methods or fns).
+    pub early_bound: NodeMap<ty::WhyEarly>,
+}
 
 struct LifetimeContext<'a> {
     sess: &'a Session,
-    named_region_map: &'a mut NamedRegionMap,
+    map: &'a mut NamedRegionMap,
     scope: Scope<'a>,
     def_map: &'a DefMap,
     // Deep breath. Our representation for poly trait refs contains a single
@@ -81,7 +93,10 @@ struct LifetimeContext<'a> {
 enum ScopeChain<'a> {
     /// EarlyScope(i, ['a, 'b, ...], s) extends s with early-bound
     /// lifetimes, assigning indexes 'a => i, 'b => i+1, ... etc.
-    EarlyScope(subst::ParamSpace, &'a [hir::LifetimeDef], Scope<'a>),
+    /// The `Vec<WhyEarly>` indicates why each of the entries is early.
+    EarlyScope(subst::ParamSpace,
+               &'a [hir::LifetimeDef],
+               Scope<'a>),
     /// LateScope(['a, 'b, ...], s) extends s with late-bound
     /// lifetimes introduced by the declaration binder_id.
     LateScope(&'a [hir::LifetimeDef], Scope<'a>),
@@ -101,18 +116,21 @@ pub fn krate(sess: &Session,
              -> Result<NamedRegionMap, usize> {
     let _task = hir_map.dep_graph.in_task(DepNode::ResolveLifetimes);
     let krate = hir_map.krate();
-    let mut named_region_map = NodeMap();
+    let mut map = NamedRegionMap {
+        defs: NodeMap(),
+        early_bound: NodeMap(),
+    };
     sess.track_errors(|| {
         krate.visit_all_items(&mut LifetimeContext {
             sess: sess,
-            named_region_map: &mut named_region_map,
+            map: &mut map,
             scope: &ROOT_SCOPE,
             def_map: def_map,
             trait_ref_hack: false,
             labels_in_fn: vec![],
         });
     })?;
-    Ok(named_region_map)
+    Ok(map)
 }
 
 impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
@@ -143,7 +161,9 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
                 hir::ItemImpl(_, _, ref generics, _, _, _) => {
                     // These kinds of items have only early bound lifetime parameters.
                     let lifetimes = &generics.lifetimes;
-                    let early_scope = EarlyScope(subst::TypeSpace, lifetimes, &ROOT_SCOPE);
+                    let early_scope = EarlyScope(subst::TypeSpace,
+                                                 lifetimes,
+                                                 &ROOT_SCOPE);
                     this.with(early_scope, |old_scope, this| {
                         this.check_lifetime_defs(old_scope, lifetimes);
                         intravisit::walk_item(this, item);
@@ -164,8 +184,8 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
         // Items always introduce a new root scope
         self.with(RootScope, |_, this| {
             match item.node {
-                hir::ForeignItemFn(_, ref generics) => {
-                    this.visit_early_late(subst::FnSpace, generics, |this| {
+                hir::ForeignItemFn(ref decl, ref generics) => {
+                    this.visit_early_late(subst::FnSpace, None, decl, generics, |this| {
                         intravisit::walk_foreign_item(this, item);
                     })
                 }
@@ -179,21 +199,24 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
         replace(&mut self.labels_in_fn, saved);
     }
 
-    fn visit_fn(&mut self, fk: FnKind<'v>, fd: &'v hir::FnDecl,
+    fn visit_fn(&mut self, fk: FnKind<'v>, decl: &'v hir::FnDecl,
                 b: &'v hir::Block, s: Span, fn_id: ast::NodeId) {
         match fk {
             FnKind::ItemFn(_, generics, _, _, _, _, _) => {
-                self.visit_early_late(subst::FnSpace, generics, |this| {
-                    this.add_scope_and_walk_fn(fk, fd, b, s, fn_id)
+                self.visit_early_late(subst::FnSpace, None, decl, generics, |this| {
+                    this.add_scope_and_walk_fn(fk, decl, b, s, fn_id)
                 })
             }
             FnKind::Method(_, sig, _, _) => {
-                self.visit_early_late(subst::FnSpace, &sig.generics, |this| {
-                    this.add_scope_and_walk_fn(fk, fd, b, s, fn_id)
-                })
+                self.visit_early_late(
+                    subst::FnSpace,
+                    Some(&sig.explicit_self),
+                    decl,
+                    &sig.generics,
+                    |this| this.add_scope_and_walk_fn(fk, decl, b, s, fn_id));
             }
             FnKind::Closure(_) => {
-                self.add_scope_and_walk_fn(fk, fd, b, s, fn_id)
+                self.add_scope_and_walk_fn(fk, decl, b, s, fn_id)
             }
         }
     }
@@ -235,7 +258,7 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
 
         if let hir::MethodTraitItem(ref sig, None) = trait_item.node {
             self.visit_early_late(
-                subst::FnSpace, &sig.generics,
+                subst::FnSpace, Some(&sig.explicit_self), &sig.decl, &sig.generics,
                 |this| intravisit::walk_trait_item(this, trait_item))
         } else {
             intravisit::walk_trait_item(self, trait_item);
@@ -496,10 +519,10 @@ impl<'a> LifetimeContext<'a> {
     fn with<F>(&mut self, wrap_scope: ScopeChain, f: F) where
         F: FnOnce(Scope, &mut LifetimeContext),
     {
-        let LifetimeContext {sess, ref mut named_region_map, ..} = *self;
+        let LifetimeContext {sess, ref mut map, ..} = *self;
         let mut this = LifetimeContext {
             sess: sess,
-            named_region_map: *named_region_map,
+            map: *map,
             scope: &wrap_scope,
             def_map: self.def_map,
             trait_ref_hack: self.trait_ref_hack,
@@ -530,19 +553,25 @@ impl<'a> LifetimeContext<'a> {
     /// ordering is not important there.
     fn visit_early_late<F>(&mut self,
                            early_space: subst::ParamSpace,
+                           explicit_self: Option<&hir::ExplicitSelf>,
+                           decl: &hir::FnDecl,
                            generics: &hir::Generics,
                            walk: F) where
         F: FnOnce(&mut LifetimeContext),
     {
-        let referenced_idents = early_bound_lifetime_names(generics);
+        insert_early_bound_lifetimes(self.map,
+                                     explicit_self,
+                                     decl,
+                                     generics);
 
-        debug!("visit_early_late: referenced_idents={:?}",
-               referenced_idents);
+        let (early, late): (Vec<_>, _) =
+            generics.lifetimes
+                    .iter()
+                    .cloned()
+                    .partition(|l| self.map.early_bound.contains_key(&l.lifetime.id));
 
-        let (early, late): (Vec<_>, _) = generics.lifetimes.iter().cloned().partition(
-            |l| referenced_idents.iter().any(|&i| i == l.lifetime.name));
-
-        self.with(EarlyScope(early_space, &early, self.scope), move |old_scope, this| {
+        let this = self;
+        this.with(EarlyScope(early_space, &early, this.scope), move |old_scope, this| {
             this.with(LateScope(&late, this.scope), move |_, this| {
                 this.check_lifetime_defs(old_scope, &generics.lifetimes);
                 walk(this);
@@ -752,11 +781,12 @@ impl<'a> LifetimeContext<'a> {
                        probably a bug in syntax::fold");
         }
 
-        debug!("lifetime_ref={:?} id={:?} resolved to {:?}",
-                lifetime_to_string(lifetime_ref),
-                lifetime_ref.id,
-                def);
-        self.named_region_map.insert(lifetime_ref.id, def);
+        debug!("lifetime_ref={:?} id={:?} resolved to {:?} span={:?}",
+               lifetime_to_string(lifetime_ref),
+               lifetime_ref.id,
+               def,
+               self.sess.codemap().span_to_string(lifetime_ref.span));
+        self.map.defs.insert(lifetime_ref.id, def);
     }
 }
 
@@ -773,95 +803,144 @@ fn search_lifetimes<'a>(lifetimes: &'a [hir::LifetimeDef],
 
 ///////////////////////////////////////////////////////////////////////////
 
-pub fn early_bound_lifetimes<'a>(generics: &'a hir::Generics) -> Vec<hir::LifetimeDef> {
-    let referenced_idents = early_bound_lifetime_names(generics);
-    if referenced_idents.is_empty() {
-        return Vec::new();
+/// Detects late-bound lifetimes and inserts them into
+/// `map.late_bound`.
+///
+/// A region declared on a fn is **late-bound** if:
+/// - it is constrained by an argument type;
+/// - it does not appear in a where-clause.
+///
+/// "Constrained" basically means that it appears in any type but
+/// not amongst the inputs to a projection.  In other words, `<&'a
+/// T as Trait<''b>>::Foo` does not constrain `'a` or `'b`.
+fn insert_early_bound_lifetimes(map: &mut NamedRegionMap,
+                                explicit_self: Option<&hir::ExplicitSelf>,
+                                decl: &hir::FnDecl,
+                                generics: &hir::Generics) {
+    debug!("insert_early_bound_lifetimes(decl={:?}, generics={:?})", decl, generics);
+
+    let mut constrained_by_input = ConstrainedCollector { regions: FnvHashSet() };
+    if let Some(explicit_self) = explicit_self {
+        constrained_by_input.visit_explicit_self(explicit_self);
+    }
+    for arg in &decl.inputs {
+        constrained_by_input.visit_ty(&arg.ty);
     }
 
-    generics.lifetimes.iter()
-        .filter(|l| referenced_idents.iter().any(|&i| i == l.lifetime.name))
-        .cloned()
-        .collect()
-}
+    let mut appears_in_output = AllCollector { regions: FnvHashMap() };
+    intravisit::walk_fn_ret_ty(&mut appears_in_output, &decl.output);
 
-/// Given a set of generic declarations, returns a list of names containing all early bound
-/// lifetime names for those generics. (In fact, this list may also contain other names.)
-fn early_bound_lifetime_names(generics: &hir::Generics) -> Vec<ast::Name> {
-    // Create two lists, dividing the lifetimes into early/late bound.
-    // Initially, all of them are considered late, but we will move
-    // things from late into early as we go if we find references to
-    // them.
-    let mut early_bound = Vec::new();
-    let mut late_bound = generics.lifetimes.iter()
-                                           .map(|l| l.lifetime.name)
-                                           .collect();
+    debug!("insert_early_bound_lifetimes: constrained_by_input={:?}",
+           constrained_by_input.regions);
 
-    // Any lifetime that appears in a type bound is early.
-    {
-        let mut collector =
-            FreeLifetimeCollector { early_bound: &mut early_bound,
-                                    late_bound: &mut late_bound };
-        for ty_param in generics.ty_params.iter() {
-            walk_list!(&mut collector, visit_ty_param_bound, &ty_param.bounds);
-        }
-        for predicate in &generics.where_clause.predicates {
-            match predicate {
-                &hir::WherePredicate::BoundPredicate(hir::WhereBoundPredicate{ref bounds,
-                                                                              ref bounded_ty,
-                                                                              ..}) => {
-                    collector.visit_ty(&bounded_ty);
-                    walk_list!(&mut collector, visit_ty_param_bound, bounds);
-                }
-                &hir::WherePredicate::RegionPredicate(hir::WhereRegionPredicate{ref lifetime,
-                                                                                ref bounds,
-                                                                                ..}) => {
-                    collector.visit_lifetime(lifetime);
-
-                    for bound in bounds {
-                        collector.visit_lifetime(bound);
-                    }
-                }
-                &hir::WherePredicate::EqPredicate(_) => bug!("unimplemented")
-            }
-        }
+    // Walk the lifetimes that appear in where clauses.
+    //
+    // Subtle point: because we disallow nested bindings, we can just
+    // ignore binders here and scrape up all names we see.
+    let mut appears_in_where_clause = AllCollector { regions: FnvHashMap() };
+    for ty_param in generics.ty_params.iter() {
+        walk_list!(&mut appears_in_where_clause,
+                   visit_ty_param_bound,
+                   &ty_param.bounds);
     }
-
-    // Any lifetime that either has a bound or is referenced by a
-    // bound is early.
+    walk_list!(&mut appears_in_where_clause,
+               visit_where_predicate,
+               &generics.where_clause.predicates);
     for lifetime_def in &generics.lifetimes {
         if !lifetime_def.bounds.is_empty() {
-            shuffle(&mut early_bound, &mut late_bound,
-                    lifetime_def.lifetime.name);
-            for bound in &lifetime_def.bounds {
-                shuffle(&mut early_bound, &mut late_bound,
-                        bound.name);
-            }
-        }
-    }
-    return early_bound;
-
-    struct FreeLifetimeCollector<'a> {
-        early_bound: &'a mut Vec<ast::Name>,
-        late_bound: &'a mut Vec<ast::Name>,
-    }
-
-    impl<'a, 'v> Visitor<'v> for FreeLifetimeCollector<'a> {
-        fn visit_lifetime(&mut self, lifetime_ref: &hir::Lifetime) {
-            shuffle(self.early_bound, self.late_bound,
-                    lifetime_ref.name);
+            // `'a: 'b` means both `'a` and `'b` are referenced
+            appears_in_where_clause.visit_lifetime_def(lifetime_def);
         }
     }
 
-    fn shuffle(early_bound: &mut Vec<ast::Name>,
-               late_bound: &mut Vec<ast::Name>,
-               name: ast::Name) {
-        match late_bound.iter().position(|n| *n == name) {
-            Some(index) => {
-                late_bound.swap_remove(index);
-                early_bound.push(name);
+    debug!("insert_early_bound_lifetimes: appears_in_where_clause={:?}",
+           appears_in_where_clause.regions);
+
+    // Late bound regions are those that:
+    // - appear in the inputs
+    // - do not appear in the where-clauses
+    for lifetime in &generics.lifetimes {
+        let name = lifetime.lifetime.name;
+
+        // appears in the where clauses? early-bound.
+        if let Some(&span) = appears_in_where_clause.regions.get(&name) {
+            debug!("insert_early_bound_lifetimes: \
+                    lifetime {:?} with id {:?} is early-bound because \
+                    it appears in a where-clause",
+                   lifetime.lifetime.name,
+                   lifetime.lifetime.id);
+
+            map.early_bound.insert(lifetime.lifetime.id,
+                                   ty::WhyEarly::AppearsInWhereClause(Some(span)));
+            continue;
+        }
+
+        // does not appear in the inputs, but appears in the return
+        // type? early-bound.
+        if !constrained_by_input.regions.contains(&name) {
+            if let Some(&span) = appears_in_output.regions.get(&name) {
+                debug!("insert_early_bound_lifetimes: \
+                        lifetime {:?} with id {:?} is early-bound because \
+                        it appears only in the return value",
+                       lifetime.lifetime.name,
+                       lifetime.lifetime.id);
+
+                map.early_bound.insert(lifetime.lifetime.id,
+                                       ty::WhyEarly::ReturnValueOnly(Some(span)));
+                continue;
             }
-            None => { }
+        }
+
+        debug!("insert_early_bound_lifetimes: \
+                lifetime {:?} with id {:?} is late-bound",
+               lifetime.lifetime.name,
+               lifetime.lifetime.id);
+    }
+
+    return;
+
+    struct ConstrainedCollector {
+        regions: FnvHashSet<ast::Name>,
+    }
+
+    impl<'v> Visitor<'v> for ConstrainedCollector {
+        fn visit_ty(&mut self, ty: &'v hir::Ty) {
+            match ty.node {
+                hir::TyPath(Some(_), _) => {
+                    // ignore lifetimes appearing in associated type
+                    // projections, as they are not *constrained*
+                    // (defined above)
+                }
+
+                hir::TyPath(None, ref path) => {
+                    // consider only the lifetimes on the final
+                    // segment; I am not sure it's even currently
+                    // valid to have them elsewhere, but even if it
+                    // is, those would be potentially inputs to
+                    // projections
+                    if let Some(last_segment) = path.segments.last() {
+                        self.visit_path_segment(path.span, last_segment);
+                    }
+                }
+
+                _ => {
+                    intravisit::walk_ty(self, ty);
+                }
+            }
+        }
+
+        fn visit_lifetime(&mut self, lifetime_ref: &'v hir::Lifetime) {
+            self.regions.insert(lifetime_ref.name);
+        }
+    }
+
+    struct AllCollector {
+        regions: FnvHashMap<ast::Name, Span>,
+    }
+
+    impl<'v> Visitor<'v> for AllCollector {
+        fn visit_lifetime(&mut self, lifetime_ref: &'v hir::Lifetime) {
+            self.regions.insert(lifetime_ref.name, lifetime_ref.span);
         }
     }
 }

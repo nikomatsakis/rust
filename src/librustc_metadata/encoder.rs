@@ -197,15 +197,6 @@ fn encode_type<'a, 'tcx>(ecx: &EncodeContext<'a, 'tcx>,
     rbml_w.end_tag();
 }
 
-fn encode_region(ecx: &EncodeContext,
-                 rbml_w: &mut Encoder,
-                 r: ty::Region) {
-    rbml_w.start_tag(tag_items_data_region);
-    tyencode::enc_region(rbml_w.writer, &ecx.ty_str_ctxt(), r);
-    rbml_w.mark_stable_position();
-    rbml_w.end_tag();
-}
-
 fn encode_symbol(ecx: &EncodeContext,
                  rbml_w: &mut Encoder,
                  id: NodeId) {
@@ -550,24 +541,8 @@ fn encode_generics<'a, 'tcx>(rbml_w: &mut Encoder,
     // Region parameters
     for param in &generics.regions {
         rbml_w.start_tag(tag_region_param_def);
-
-        rbml_w.start_tag(tag_region_param_def_ident);
-        encode_name(rbml_w, param.name);
-        rbml_w.end_tag();
-
-        rbml_w.wr_tagged_u64(tag_region_param_def_def_id,
-                             def_to_u64(param.def_id));
-
-        rbml_w.wr_tagged_u64(tag_region_param_def_space,
-                             param.space.to_uint() as u64);
-
-        rbml_w.wr_tagged_u64(tag_region_param_def_index,
-                             param.index as u64);
-
-        for &bound_region in &param.bounds {
-            encode_region(ecx, rbml_w, bound_region);
-        }
-
+        tyencode::enc_region_param_def(rbml_w.writer, &ecx.ty_str_ctxt(), param);
+        rbml_w.mark_stable_position();
         rbml_w.end_tag();
     }
 

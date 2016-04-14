@@ -424,6 +424,11 @@ pub fn enc_region_param_def(w: &mut Cursor<Vec<u8>>, cx: &ctxt,
         enc_region(w, cx, r);
     }
     write!(w, ".");
+    match v.why_early {
+        ty::WhyEarly::NotFn => write!(w, "a"),
+        ty::WhyEarly::AppearsInWhereClause(_) => write!(w, "b"),
+        ty::WhyEarly::ReturnValueOnly(_) => write!(w, "c"),
+    };
 }
 
 fn enc_object_lifetime_default<'a, 'tcx>(w: &mut Cursor<Vec<u8>>,

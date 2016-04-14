@@ -618,12 +618,21 @@ impl<'a,'tcx> TyDecoder<'a,'tcx> {
                 }
             }
         }
+        let why_early = match self.next() {
+            'a' => ty::WhyEarly::NotFn,
+            'b' => ty::WhyEarly::AppearsInWhereClause(None),
+            'c' => ty::WhyEarly::ReturnValueOnly(None),
+            c => {
+                bug!("parse_region_param_def: bad bounds ('{}')", c)
+            }
+        };
         ty::RegionParameterDef {
             name: name,
             def_id: def_id,
             space: space,
             index: index,
-            bounds: bounds
+            bounds: bounds,
+            why_early: why_early,
         }
     }
 

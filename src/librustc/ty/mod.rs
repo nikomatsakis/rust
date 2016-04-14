@@ -741,6 +741,24 @@ pub struct RegionParameterDef {
     pub space: subst::ParamSpace,
     pub index: u32,
     pub bounds: Vec<ty::Region>,
+    pub why_early: WhyEarly,
+}
+
+/// Encodes the reason that this region is early-bound.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable, Debug)]
+pub enum WhyEarly {
+    /// All lifetimes on a struct/impl/etc are early-bound.
+    NotFn,
+
+    /// Any lifetime that appears in a where-clause or other bound is
+    /// early-bound. The span is the span of the where-clause or
+    /// bound. If the span is `None`, this is a cross-crate case.
+    AppearsInWhereClause(Option<Span>),
+
+    /// A region that appears in the return value, but does not appear
+    /// in the arguments, will be early-bound. See #32330 for details.
+    /// If the span is `None`, this is a cross-crate case.
+    ReturnValueOnly(Option<Span>),
 }
 
 impl RegionParameterDef {
@@ -1000,7 +1018,7 @@ pub type PolyTypeOutlivesPredicate<'tcx> = PolyOutlivesPredicate<Ty<'tcx>, ty::R
 /// equality between arbitrary types. Processing an instance of Form
 /// #2 eventually yields one of these `ProjectionPredicate`
 /// instances to normalize the LHS.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ProjectionPredicate<'tcx> {
     pub projection_ty: ProjectionTy<'tcx>,
     pub ty: Ty<'tcx>,

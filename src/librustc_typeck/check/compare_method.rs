@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use middle::free_region::FreeRegionMap;
-use rustc::infer::{self, InferOk, TypeOrigin};
+use rustc::infer::{self, InferOk, InferResult, TypeOrigin};
 use rustc::ty::{self, TyCtxt};
 use rustc::traits::{self, ProjectionMode};
 use rustc::ty::subst::{self, Subst, Substs, VecPerParamSpace};
@@ -281,7 +281,7 @@ pub fn compare_impl_method<'tcx>(tcx: &TyCtxt<'tcx>,
     let trait_fty = tcx.mk_fn_ptr(trait_m.fty.clone());
     let trait_fty = trait_fty.subst(tcx, &trait_to_skol_substs);
 
-    let err = infcx.commit_if_ok(|snapshot| {
+    let err: InferResult<()> = infcx.commit_if_ok(|snapshot| {
         let origin = TypeOrigin::MethodCompatCheck(impl_m_span);
 
         let (impl_sig, _) =
@@ -323,13 +323,19 @@ pub fn compare_impl_method<'tcx>(tcx: &TyCtxt<'tcx>,
         debug!("compare_impl_method: trait_fty={:?}",
                trait_fty);
 
-        infer::mk_subty(&infcx, false, origin, impl_fty, trait_fty)?;
-
-        infcx.leak_check(&skol_map, snapshot)
+        let inf_ok = infer::mk_subty(&infcx, false, origin, impl_fty, trait_fty)?;
+        // FIXME(#32730) propagate obligations
+        assert!(inf_ok.obligations.is_empty());
+        infcx.leak_check(impl_m_span, &skol_map, snapshot)?;
+        infcx.pop_skolemized(skol_map, snapshot);
+        Ok(inf_ok.unit())
     });
 
     match err {
-        Ok(()) => { }
+        Ok(inf_ok) => {
+            // FIXME(#32730) propagate obligations
+            assert!(inf_ok.obligations.is_empty());
+        }
         Err(terr) => {
             debug!("checking trait method for compatibility: impl ty {:?}, trait ty {:?}",
                    impl_fty,

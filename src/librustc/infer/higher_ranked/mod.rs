@@ -1,5 +1,5 @@
 // Copyright 2014 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
+// file at5B the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
@@ -11,8 +11,10 @@
 //! Helper routines for higher-ranked things. See the `doc` module at
 //! the end of the file for details.
 
-use super::{CombinedSnapshot, InferCtxt, HigherRankedType, SkolemizationMap};
+use super::{CombinedSnapshot, InferCtxt, LateBoundRegion, HigherRankedType,
+            SkolemizationMap, SubregionOrigin};
 use super::combine::CombineFields;
+use super::region_inference::{TaintDirections};
 
 use ty::{self, TyCtxt, Binder, TypeFoldable};
 use ty::error::TypeError;
@@ -29,10 +31,35 @@ pub trait HigherRankedRelations<'a,'tcx> {
 
     fn higher_ranked_glb<T>(&self, a: &Binder<T>, b: &Binder<T>) -> RelateResult<'tcx, Binder<T>>
         where T: Relate<'a,'tcx>;
+
+    fn higher_ranked_match<T, U>(&self,
+                                 span: Span,
+                                 a: &Binder<(T, U)>,
+                                 b: &T)
+                                 -> RelateResult<'tcx, HrMatchResult<U>>
+        where T: Relate<'a,'tcx>,
+              U: TypeFoldable<'tcx>;
+}
+
+pub struct HrMatchResult<U> {
+    pub value: U,
+
+    /// Normally, when we do a higher-ranked match operation, we
+    /// expect all higher-ranked regions to be constrained as part of
+    /// the match operation. However, in the transition period for
+    /// #32330, it can happen that we sometimes have unconstrained
+    /// regions that get instantiated with fresh variables. In that
+    /// case, we collect the set of unconstrained bound regions here
+    /// and replace them with fresh variables.
+    pub unconstrained_regions: Vec<ty::BoundRegion>,
 }
 
 trait InferCtxtExt {
-    fn tainted_regions(&self, snapshot: &CombinedSnapshot, r: ty::Region) -> Vec<ty::Region>;
+    fn tainted_regions(&self,
+                       snapshot: &CombinedSnapshot,
+                       region: ty::Region,
+                       directions: TaintDirections)
+                       -> FnvHashSet<ty::Region>;
 
     fn region_vars_confined_to_snapshot(&self,
                                         snapshot: &CombinedSnapshot)
@@ -58,11 +85,13 @@ impl<'a,'tcx> HigherRankedRelations<'a,'tcx> for CombineFields<'a,'tcx> {
         // Start a snapshot so we can examine "all bindings that were
         // created as part of this type comparison".
         return self.infcx.commit_if_ok(|snapshot| {
+            let span = self.trace.origin.span();
+
             // First, we instantiate each bound region in the subtype with a fresh
             // region variable.
             let (a_prime, _) =
                 self.infcx.replace_late_bound_regions_with_fresh_var(
-                    self.trace.origin.span(),
+                    span,
                     HigherRankedType,
                     a);
 
@@ -79,7 +108,7 @@ impl<'a,'tcx> HigherRankedRelations<'a,'tcx> for CombineFields<'a,'tcx> {
 
             // Presuming type comparison succeeds, we need to check
             // that the skolemized regions do not "leak".
-            match leak_check(self.infcx, &skol_map, snapshot) {
+            match leak_check(self.infcx, span, &skol_map, snapshot) {
                 Ok(()) => { }
                 Err((skol_br, tainted_region)) => {
                     if self.a_is_expected {
@@ -94,10 +123,142 @@ impl<'a,'tcx> HigherRankedRelations<'a,'tcx> for CombineFields<'a,'tcx> {
                 }
             }
 
+            // We are finished with the skolemized regions now so pop
+            // them off.
+            pop_skolemized(self.infcx, skol_map, snapshot);
+
             debug!("higher_ranked_sub: OK result={:?}",
                    result);
 
             Ok(ty::Binder(result))
+        });
+    }
+
+    /// The value consists of a pair `(t, u)` where `t` is the
+    /// *matcher* and `u` is a *value*. The idea is to find a
+    /// substitution `S` such that `S(t) == b`, and then return
+    /// `S(u)`. In other words, find values for the late-bound regions
+    /// in `a` that can make `t == b` and then replace the LBR in `u`
+    /// with those values.
+    ///
+    /// This routine is (as of this writing) used in trait matching,
+    /// particularly projection.
+    ///
+    /// NB. It should not happen that there are LBR appearing in `U`
+    /// that do not appear in `T`. If that happens, those regions are
+    /// unconstrained, and this routine replaces them with `'static`.
+    fn higher_ranked_match<T, U>(&self,
+                                 span: Span,
+                                 a_pair: &Binder<(T, U)>,
+                                 b_match: &T)
+                                 -> RelateResult<'tcx, HrMatchResult<U>>
+        where T: Relate<'a,'tcx>,
+              U: TypeFoldable<'tcx>
+    {
+        debug!("higher_ranked_match(a={:?}, b={:?})",
+               a_pair, b_match);
+
+        // Start a snapshot so we can examine "all bindings that were
+        // created as part of this type comparison".
+        return self.infcx.commit_if_ok(|snapshot| {
+            // First, we instantiate each bound region in the matcher
+            // with a skolemized region.
+            let ((a_match, a_value), skol_map) =
+                self.infcx.skolemize_late_bound_regions(a_pair, snapshot);
+
+            debug!("higher_ranked_match: a_match={:?}", a_match);
+            debug!("higher_ranked_match: skol_map={:?}", skol_map);
+
+            // Equate types now that bound regions have been replaced.
+            try!(self.equate().relate(&a_match, &b_match));
+
+            // Map each skolemized region to a vector of other regions that it
+            // must be equated with. (Note that this vector may include other
+            // skolemized regions from `skol_map`.)
+            let skol_resolution_map: FnvHashMap<_, _> =
+                skol_map
+                .iter()
+                .map(|(&br, &skol)| {
+                    let tainted_regions =
+                        self.infcx.tainted_regions(snapshot,
+                                                   skol,
+                                                   TaintDirections::incoming()); // [1]
+
+                    // [1] this routine executes after the skolemized
+                    // regions have been *equated* with something
+                    // else, so examining the incoming edges ought to
+                    // be enough to collect all constraints
+
+                    (skol, (br, tainted_regions))
+                })
+                .collect();
+
+            // For each skolemized region, pick a representative -- which can
+            // be any region from the sets above, except for other members of
+            // `skol_map`. There should always be a representative if things
+            // are properly well-formed.
+            let mut unconstrained_regions = vec![];
+            let skol_representatives: FnvHashMap<_, _> =
+                skol_resolution_map
+                .iter()
+                .map(|(&skol, &(br, ref regions))| {
+                    let representative =
+                        regions.iter()
+                               .filter(|r| !skol_resolution_map.contains_key(r))
+                               .cloned()
+                               .next()
+                               .unwrap_or_else(|| { // [1]
+                                   unconstrained_regions.push(br);
+                                   self.infcx.next_region_var(
+                                       LateBoundRegion(span, br, HigherRankedType))
+                               });
+
+                    // [1] There should always be a representative,
+                    // unless the higher-ranked region did not appear
+                    // in the values being matched. We should reject
+                    // as ill-formed cases that can lead to this, but
+                    // right now we sometimes issue warnings (see
+                    // #32330).
+
+                    (skol, representative)
+                })
+                .collect();
+
+            // Equate all the members of each skolemization set with the
+            // representative.
+            for (skol, &(_br, ref regions)) in &skol_resolution_map {
+                let representative = &skol_representatives[skol];
+                debug!("higher_ranked_match: \
+                        skol={:?} representative={:?} regions={:?}",
+                       skol, representative, regions);
+                for region in regions.iter()
+                                     .filter(|&r| !skol_resolution_map.contains_key(r))
+                                     .filter(|&r| r != representative)
+                {
+                    let origin = SubregionOrigin::Subtype(self.trace.clone());
+                    self.infcx.region_vars.make_eqregion(origin,
+                                                         *representative,
+                                                         *region);
+                }
+            }
+
+            // Replace the skolemized regions appearing in value with
+            // their representatives
+            let a_value =
+                fold_regions_in(
+                    self.tcx(),
+                    &a_value,
+                    |r, _| skol_representatives.get(&r).cloned().unwrap_or(r));
+
+            debug!("higher_ranked_match: value={:?}", a_value);
+
+            // We are now done with these skolemized variables.
+            pop_skolemized(self.infcx, skol_map, snapshot);
+
+            Ok(HrMatchResult {
+                value: a_value,
+                unconstrained_regions: unconstrained_regions,
+            })
         });
     }
 
@@ -156,7 +317,7 @@ impl<'a,'tcx> HigherRankedRelations<'a,'tcx> for CombineFields<'a,'tcx> {
                 return r0;
             }
 
-            let tainted = infcx.tainted_regions(snapshot, r0);
+            let tainted = infcx.tainted_regions(snapshot, r0, TaintDirections::both());
 
             // Variables created during LUB computation which are
             // *related* to regions that pre-date the LUB computation
@@ -250,7 +411,7 @@ impl<'a,'tcx> HigherRankedRelations<'a,'tcx> for CombineFields<'a,'tcx> {
                 return r0;
             }
 
-            let tainted = infcx.tainted_regions(snapshot, r0);
+            let tainted = infcx.tainted_regions(snapshot, r0, TaintDirections::both());
 
             let mut a_r = None;
             let mut b_r = None;
@@ -372,8 +533,14 @@ fn fold_regions_in<'tcx, T, F>(tcx: &TyCtxt<'tcx>,
 }
 
 impl<'a,'tcx> InferCtxtExt for InferCtxt<'a,'tcx> {
-    fn tainted_regions(&self, snapshot: &CombinedSnapshot, r: ty::Region) -> Vec<ty::Region> {
-        self.region_vars.tainted(&snapshot.region_vars_snapshot, r)
+    fn tainted_regions(&self,
+                       snapshot: &CombinedSnapshot,
+                       region: ty::Region,
+                       directions: TaintDirections)
+                       -> FnvHashSet<ty::Region> {
+        self.region_vars.tainted(&snapshot.region_vars_snapshot,
+                                 region,
+                                 directions)
     }
 
     fn region_vars_confined_to_snapshot(&self,
@@ -454,22 +621,27 @@ impl<'a,'tcx> InferCtxtExt for InferCtxt<'a,'tcx> {
     }
 }
 
+/// Replace all regions bound by `binder` with skolemized regions and
+/// return a map indicating which bound-region was replaced with what
+/// skolemized region. This is the first step of checking subtyping
+/// when higher-ranked things are involved.
+///
+/// **Important:** you must call this function from within a snapshot.
+/// Moreover, before committing the snapshot, you must eventually call
+/// either `plug_leaks` or `pop_skolemized` to remove the skolemized
+/// regions. If you rollback the snapshot (or are using a probe), then
+/// the pop occurs as part of the rollback, so an explicit call is not
+/// needed (but is also permitted).
+///
+/// See `README.md` for more details.
 pub fn skolemize_late_bound_regions<'a,'tcx,T>(infcx: &InferCtxt<'a,'tcx>,
                                                binder: &ty::Binder<T>,
                                                snapshot: &CombinedSnapshot)
                                                -> (T, SkolemizationMap)
     where T : TypeFoldable<'tcx>
 {
-    /*!
-     * Replace all regions bound by `binder` with skolemized regions and
-     * return a map indicating which bound-region was replaced with what
-     * skolemized region. This is the first step of checking subtyping
-     * when higher-ranked things are involved. See `README.md` for more
-     * details.
-     */
-
     let (result, map) = infcx.tcx.replace_late_bound_regions(binder, |br| {
-        infcx.region_vars.new_skolemized(br, &snapshot.region_vars_snapshot)
+        infcx.region_vars.push_skolemized(br, &snapshot.region_vars_snapshot)
     });
 
     debug!("skolemize_bound_regions(binder={:?}, result={:?}, map={:?})",
@@ -480,31 +652,33 @@ pub fn skolemize_late_bound_regions<'a,'tcx,T>(infcx: &InferCtxt<'a,'tcx>,
     (result, map)
 }
 
+/// Searches the region constriants created since `snapshot` was started
+/// and checks to determine whether any of the skolemized regions created
+/// in `skol_map` would "escape" -- meaning that they are related to
+/// other regions in some way. If so, the higher-ranked subtyping doesn't
+/// hold. See `README.md` for more details.
 pub fn leak_check<'a,'tcx>(infcx: &InferCtxt<'a,'tcx>,
+                           span: Span,
                            skol_map: &SkolemizationMap,
                            snapshot: &CombinedSnapshot)
                            -> Result<(),(ty::BoundRegion,ty::Region)>
 {
-    /*!
-     * Searches the region constriants created since `snapshot` was started
-     * and checks to determine whether any of the skolemized regions created
-     * in `skol_map` would "escape" -- meaning that they are related to
-     * other regions in some way. If so, the higher-ranked subtyping doesn't
-     * hold. See `README.md` for more details.
-     */
-
-    debug!("leak_check: skol_map={:?}",
-           skol_map);
+    debug!("leak_check(skol_map={:?}, snapshot={:?})",
+           skol_map, snapshot.region_vars_snapshot);
 
     let new_vars = infcx.region_vars_confined_to_snapshot(snapshot);
     for (&skol_br, &skol) in skol_map {
-        let tainted = infcx.tainted_regions(snapshot, skol);
-        for &tainted_region in &tainted {
+        // The inputs to a skolemized variable can only
+        // be itself or other new variables.
+        let incoming_taints = infcx.tainted_regions(snapshot,
+                                                    skol,
+                                                    TaintDirections::incoming());
+        for &tainted_region in &incoming_taints {
             // Each skolemized should only be relatable to itself
             // or new variables:
             match tainted_region {
                 ty::ReVar(vid) => {
-                    if new_vars.iter().any(|&x| x == vid) { continue; }
+                    if new_vars.contains(&vid) { continue; }
                 }
                 _ => {
                     if tainted_region == skol { continue; }
@@ -520,6 +694,56 @@ pub fn leak_check<'a,'tcx>(infcx: &InferCtxt<'a,'tcx>,
             return Err((skol_br, tainted_region));
         }
     }
+
+    for (_, &skol) in skol_map {
+        // The outputs from a skolemized variable must all be
+        // equatable with `'static`.
+        let outgoing_taints = infcx.tainted_regions(snapshot,
+                                                    skol,
+                                                    TaintDirections::outgoing());
+        for &tainted_region in &outgoing_taints {
+            match tainted_region {
+                ty::ReVar(vid) if new_vars.contains(&vid) => {
+                    // Some region variable that doesn't escape
+                    // this snapshot:
+                    //
+                    //    [skol] -> [tainted_region]
+                    //
+                    // We can ignore this. We know that if it has
+                    // outgoing edges to any other regions, then those
+                    // regions must be 'static. If it has incoming
+                    // edges from other regions, we could therefore
+                    // infer it to 'static, and those edges would be
+                    // satisfied.
+                    //
+                    // We used to force such `tainted_region` to be
+                    // `'static`, but that leads to problems when
+                    // combined with `plug_leaks`. If you have a case
+                    // where `[skol] -> [tainted_region] -> [skol]`,
+                    // then `plug_leaks` concludes it should replace
+                    // `'static` with a late-bound region, which is
+                    // clearly wrong. (Well, what actually happens is
+                    // you get assertion failures because it WOULD
+                    // have to replace 'static with a late-bound
+                    // region.)
+                }
+                ty::ReSkolemized(..) => {
+                    // the only skolemized region we find in the
+                    // successors of X can be X; if there was another
+                    // region Y, then X would have been in the preds
+                    // of Y, and we would have aborted above
+                    assert_eq!(skol, tainted_region);
+                }
+                _ => {
+                    infcx.region_vars.make_subregion(
+                        SubregionOrigin::SkolemizeSuccessor(span),
+                        ty::ReStatic,
+                        tainted_region);
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -558,8 +782,6 @@ pub fn plug_leaks<'a,'tcx,T>(infcx: &InferCtxt<'a,'tcx>,
                              -> T
     where T : TypeFoldable<'tcx>
 {
-    debug_assert!(leak_check(infcx, &skol_map, snapshot).is_ok());
-
     debug!("plug_leaks(skol_map={:?}, value={:?})",
            skol_map,
            value);
@@ -570,11 +792,11 @@ pub fn plug_leaks<'a,'tcx,T>(infcx: &InferCtxt<'a,'tcx>,
     // these taint sets are mutually disjoint.
     let inv_skol_map: FnvHashMap<ty::Region, ty::BoundRegion> =
         skol_map
-        .into_iter()
-        .flat_map(|(skol_br, skol)| {
-            infcx.tainted_regions(snapshot, skol)
-                .into_iter()
-                .map(move |tainted_region| (tainted_region, skol_br))
+        .iter()
+        .flat_map(|(&skol_br, &skol)| {
+            infcx.tainted_regions(snapshot, skol, TaintDirections::incoming())
+                 .into_iter()
+                 .map(move |tainted_region| (tainted_region, skol_br))
         })
         .collect();
 
@@ -602,13 +824,43 @@ pub fn plug_leaks<'a,'tcx,T>(infcx: &InferCtxt<'a,'tcx>,
                 // binders, so this assert is satisfied.
                 assert!(current_depth > 1);
 
+                // since leak-check passed, this skolemized region
+                // should only have incoming edges from variables
+                // (which ought not to escape the snapshot, but we
+                // don't check that) or itself
+                assert!(match r {
+                    ty::ReVar(_) => true,
+                    ty::ReSkolemized(_, ref br1) => br == br1,
+                    _ => false,
+                },
+                        "leak-check would have us replace {:?} with {:?}",
+                        r, br);
+
                 ty::ReLateBound(ty::DebruijnIndex::new(current_depth - 1), br.clone())
             }
         }
     });
 
-    debug!("plug_leaks: result={:?}",
-           result);
+    pop_skolemized(infcx, skol_map, snapshot);
+
+    debug!("plug_leaks: result={:?}", result);
 
     result
+}
+
+/// Pops the skolemized regions found in `skol_map` from the region
+/// inference context. Whenever you create skolemized regions via
+/// `skolemize_late_bound_regions`, they must be popped before you
+/// commit the enclosing snapshot (if you do not commit, e.g. within a
+/// probe or as a result of an error, then this is not necessary, as
+/// popping happens as part of the rollback).
+///
+/// Note: popping also occurs implicitly as part of `leak_check`.
+pub fn pop_skolemized<'a,'tcx>(infcx: &InferCtxt<'a,'tcx>,
+                               skol_map: SkolemizationMap,
+                               snapshot: &CombinedSnapshot)
+{
+    debug!("pop_skolemized({:?})", skol_map);
+    let skol_regions: FnvHashSet<_> = skol_map.values().cloned().collect();
+    infcx.region_vars.pop_skolemized(&skol_regions, &snapshot.region_vars_snapshot);
 }
