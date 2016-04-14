@@ -18,5 +18,4 @@ macro_rules! foo {
 
 fn main() {
     foo!(0u8);
-    //~^ NOTE in this expansion of foo!
 }

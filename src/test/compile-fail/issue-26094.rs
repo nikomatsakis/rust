@@ -19,5 +19,4 @@ fn some_function() {}
 
 fn main() {
     some_macro!(some_function);
-    //~^ in this expansion of some_macro!
 }

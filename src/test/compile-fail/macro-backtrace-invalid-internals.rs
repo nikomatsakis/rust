@@ -47,13 +47,11 @@ macro_rules! fake_anon_field_expr {
 }
 
 fn main() {
-    fake_method_stmt!(); //~ NOTE in this expansion of
-    fake_field_stmt!(); //~ NOTE in this expansion of
-    fake_anon_field_stmt!(); //~ NOTE in this expansion of
+    fake_method_stmt!();
+    fake_field_stmt!();
+    fake_anon_field_stmt!();
 
-    let _ = fake_method_expr!(); //~ NOTE in this expansion of
+    let _ = fake_method_expr!();
     let _ = fake_field_expr!(); //~ ERROR no field with that name
-                                //~^ NOTE in this expansion of
     let _ = fake_anon_field_expr!(); //~ ERROR type was not a tuple
-                                     //~^ NOTE in this expansion of
 }

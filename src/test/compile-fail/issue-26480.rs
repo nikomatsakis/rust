@@ -37,8 +37,6 @@ macro_rules! cast {
 fn main() {
     let hello = ['H', 'e', 'y'];
     write!(hello);
-    //~^ NOTE in this expansion of write!
 
     cast!(2);
-    //~^ NOTE in this expansion of cast!
 }
