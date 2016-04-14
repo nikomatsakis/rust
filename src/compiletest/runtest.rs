@@ -1015,7 +1015,7 @@ fn check_forbid_output(revision: Option<&str>,
 }
 
 fn check_expected_errors(revision: Option<&str>,
-                         mut expected_errors: Vec<errors::ExpectedError>,
+                         expected_errors: Vec<errors::ExpectedError>,
                          testpaths: &TestPaths,
                          proc_res: &ProcRes) {
     if proc_res.status.success() {
@@ -1030,35 +1030,30 @@ fn check_expected_errors(revision: Option<&str>,
     // message, then we'll ensure that all "help" messages are expected.
     // Otherwise, all "help" messages reported by the compiler will be ignored.
     // This logic also applies to "note" messages.
-    let (expect_help, expect_note) =
-        expected_errors.iter()
-                        .fold((false, false),
-                              |(acc_help, acc_note), ee|
-                                  (acc_help || ee.kind == Some(ErrorKind::Help),
-                                   acc_note || ee.kind == Some(ErrorKind::Note)));
+    let expect_help = expected_errors.iter().any(|ee| ee.kind == Some(ErrorKind::Help));
+    let expect_note = expected_errors.iter().any(|ee| ee.kind == Some(ErrorKind::Note));
 
-    // Scan and extract our error/warning messages,
-    // which look like:
-    //    filename:line1:col1: line2:col2: *error:* msg
-    //    filename:line1:col1: line2:col2: *warning:* msg
-    // where line1:col1: is the starting point, line2:col2:
-    // is the ending point, and * represents ANSI color codes.
-    //
-    // This pattern is ambiguous on windows, because filename may contain
-    // a colon, so any path prefix must be detected and removed first.
+    // Parse the JSON output from the compiler and extract out the messages.
     let actual_errors = json::parse_output(&file_name, &proc_res.stderr);
     let mut unexpected = 0;
     let mut not_found = 0;
+    let mut found = vec![false; expected_errors.len()];
     for actual_error in &actual_errors {
-        let opt_index = expected_errors.iter().position(|expected_error| {
-            actual_error.line_num == expected_error.line_num &&
-                actual_error.msg.contains(&expected_error.msg)
-        });
+        let opt_index =
+            expected_errors
+            .iter()
+            .enumerate()
+            .position(|(index, expected_error)| {
+                !found[index] &&
+                    actual_error.line_num == expected_error.line_num &&
+                    actual_error.msg.contains(&expected_error.msg)
+            });
 
         match opt_index {
             Some(index) => {
                 // found a match, everybody is happy
-                expected_errors.swap_remove(index);
+                assert!(!found[index]);
+                found[index] = true;
             }
 
             None => {
@@ -1076,15 +1071,17 @@ fn check_expected_errors(revision: Option<&str>,
         }
     }
 
-    // anything not yet removed is a problem
-    for expected_error in &expected_errors {
+    // anything not yet found is a problem
+    for (index, expected_error) in expected_errors.iter().enumerate() {
+        if !found[index] {
             error(revision, &format!("expected {} on line {} not found: {}",
-                                     expected_error.kind.as_ref()
-                                                        .map_or("message".into(),
-                                                                |k| k.to_string()),
+                                 expected_error.kind.as_ref()
+                                     .map_or("message".into(),
+                                             |k| k.to_string()),
                                      expected_error.line_num,
                                      expected_error.msg));
             not_found += 1;
+        }
     }
 
     if unexpected > 0 || not_found > 0 {
@@ -1093,6 +1090,8 @@ fn check_expected_errors(revision: Option<&str>,
                        unexpected, not_found));
         print!("status: {}\ncommand: {}\n",
                proc_res.status, proc_res.cmdline);
+        println!("actual errors (from JSON output): {:#?}\n", actual_errors);
+        println!("expected errors (from test file): {:#?}\n", expected_errors);
         panic!();
     }
 }
