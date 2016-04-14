@@ -55,6 +55,13 @@ fn push_expected_errors(expected_errors: &mut Vec<ExpectedError>,
     // We only consider messages pertaining to the current file.
     let matching_spans =
         || diagnostic.spans.iter().filter(|span| span.file_name == file_name);
+    let with_code =
+        |text| match diagnostic.code {
+            Some(ref code) =>
+                format!("{} [{}]", text, code.code.clone()),
+            None =>
+                String::from(text),
+        };
 
     // Convert multi-line messages into multiple expected
     // errors. We expect to replace these with something
@@ -62,12 +69,7 @@ fn push_expected_errors(expected_errors: &mut Vec<ExpectedError>,
     let mut message_lines = diagnostic.message.lines();
     if let Some(first_line) = message_lines.next() {
         for span in matching_spans() {
-            let msg = match diagnostic.code {
-                Some(ref code) =>
-                    format!("{} [{}]", first_line, code.code.clone()),
-                None =>
-                    String::from(first_line),
-            };
+            let msg = with_code(first_line);
             let kind = ErrorKind::from_str(&diagnostic.level).ok();
             expected_errors.push(
                 ExpectedError {
@@ -84,7 +86,7 @@ fn push_expected_errors(expected_errors: &mut Vec<ExpectedError>,
                 ExpectedError {
                     line_num: span.line_start,
                     kind: None,
-                    msg: String::from(next_line),
+                    msg: with_code(next_line),
                 }
             );
         }
