@@ -12,8 +12,7 @@
 
 macro_rules! test { () => { fn foo() -> i32 { 1; } } }
                                            //~^ ERROR not all control paths return a value
-                                           //~^^ HELP consider removing this semicolon
-                                           //~^^^ HELP run `rustc --explain E0269` to see a
+                                           //~| HELP consider removing this semicolon
 
 fn no_return() -> i32 {} //~ ERROR  not all control paths return a value
 
