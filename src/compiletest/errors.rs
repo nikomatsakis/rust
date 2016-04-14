@@ -123,15 +123,30 @@ fn parse_expected(last_nonfollow_error: Option<usize>,
         (false, line[start + tag.len()..].chars().take_while(|c| *c == '^').count())
     };
     let kind_start = start + tag.len() + adjusts + (follow as usize);
-    let kind = line[kind_start..].split_whitespace()
-                                 .next()
-                                 .expect("Encountered unexpected empty comment")
-                                 .parse::<ErrorKind>()
-                                 .ok();
-    let letters = line[kind_start..].chars();
-    let msg = letters.skip_while(|c| c.is_whitespace())
-                     .skip_while(|c| !c.is_whitespace())
-                     .collect::<String>().trim().to_owned();
+    let (kind, msg);
+    match
+        line[kind_start..].split_whitespace()
+                          .next()
+                          .expect("Encountered unexpected empty comment")
+                          .parse::<ErrorKind>()
+    {
+        Ok(k) => {
+            // If we find `//~ ERROR foo` or something like that:
+            kind = Some(k);
+            let letters = line[kind_start..].chars();
+            msg = letters.skip_while(|c| c.is_whitespace())
+                         .skip_while(|c| !c.is_whitespace())
+                         .collect::<String>();
+        }
+        Err(_) => {
+            // Otherwise we found `//~ foo`:
+            kind = None;
+            let letters = line[kind_start..].chars();
+            msg = letters.skip_while(|c| c.is_whitespace())
+                         .collect::<String>();
+        }
+    }
+    let msg = msg.trim().to_owned();
 
     let (which, line_num) = if follow {
         assert!(adjusts == 0, "use either //~| or //~^, not both.");
