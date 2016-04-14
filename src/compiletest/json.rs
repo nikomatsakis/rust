@@ -29,68 +29,18 @@ struct DiagnosticCode {
     explanation: Option<String>,
 }
 
-impl Diagnostic {
-    fn flatten(&self) -> Vec<Diagnostic> {
-        let mut result = vec![
-            Diagnostic {
-                message: self.message.clone(),
-                code: self.code.clone(),
-                level: self.level.clone(),
-                spans: self.spans.clone(),
-                children: vec![]
-            }
-        ];
-
-        result.extend(self.children.iter()
-                                   .flat_map(|x| x.flatten()));
-        result
-    }
-}
-
 pub fn parse_output(file_name: &str, output: &str) -> Vec<ExpectedError> {
     output.lines()
           .flat_map(|line| parse_line(file_name, line))
           .collect()
 }
 
-fn diag_to_expected_errors(diagnostic: Diagnostic, file_name: &str) -> Vec<ExpectedError> {
-    diagnostic
-        .flatten()
-        .iter()
-        .flat_map(|diag| diag
-            .spans
-            .iter()
-            .filter(|span| span.file_name == file_name)
-            .map(move |span| {
-                let msg = match diag.code {
-                    Some(ref code) =>
-                        format!("{} [{}]", diag.message, code.code.clone()),
-                    None =>
-                        diag.message.clone(),
-                };
-                if let Ok(kind) = ErrorKind::from_str(&diag.level) {
-                  ExpectedError {
-                      line_num: span.line_start,
-                      kind: Some(kind),
-                      msg: msg,
-                  }
-                }
-                else {
-                  ExpectedError {
-                      line_num: span.line_start,
-                      kind: None,
-                      msg: msg,
-                  }
-                }
-            })
-        )
-        .collect()
-}
-
 fn parse_line(file_name: &str, line: &str) -> Vec<ExpectedError> {
     match json::decode::<Diagnostic>(line) {
         Ok(diagnostic) => {
-            diag_to_expected_errors(diagnostic, file_name)
+            let mut expected_errors = vec![];
+            push_expected_errors(&mut expected_errors, &diagnostic, file_name);
+            expected_errors
         }
         Err(error) => {
             println!("failed to decode compiler output as json: `{}`", error);
@@ -98,3 +48,51 @@ fn parse_line(file_name: &str, line: &str) -> Vec<ExpectedError> {
         }
     }
 }
+
+fn push_expected_errors(expected_errors: &mut Vec<ExpectedError>,
+                        diagnostic: &Diagnostic,
+                        file_name: &str) {
+    // We only consider messages pertaining to the current file.
+    let matching_spans =
+        || diagnostic.spans.iter().filter(|span| span.file_name == file_name);
+
+    // Convert multi-line messages into multiple expected
+    // errors. We expect to replace these with something
+    // more structured shortly anyhow.
+    let mut message_lines = diagnostic.message.lines();
+    if let Some(first_line) = message_lines.next() {
+        for span in matching_spans() {
+            let msg = match diagnostic.code {
+                Some(ref code) =>
+                    format!("{} [{}]", first_line, code.code.clone()),
+                None =>
+                    String::from(first_line),
+            };
+            let kind = ErrorKind::from_str(&diagnostic.level).ok();
+            expected_errors.push(
+                ExpectedError {
+                    line_num: span.line_start,
+                    kind: kind,
+                    msg: msg,
+                }
+            );
+        }
+    }
+    for next_line in message_lines {
+        for span in matching_spans() {
+            expected_errors.push(
+                ExpectedError {
+                    line_num: span.line_start,
+                    kind: None,
+                    msg: String::from(next_line),
+                }
+            );
+        }
+    }
+
+    // Flatten out the children.
+    for child in &diagnostic.children {
+        push_expected_errors(expected_errors, child, file_name);
+    }
+}
+
