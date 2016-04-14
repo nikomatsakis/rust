@@ -82,7 +82,7 @@ fn getMul() -> Mul {
 // Let's also test what happens if the trait doesn't exist:
 impl ThisTraitReallyDoesntExistInAnyModuleReally for Foo {
 //~^ ERROR trait `ThisTraitReallyDoesntExistInAnyModuleReally` is not in scope
-//~^^^ HELP no candidates by the name of `ThisTraitReallyDoesntExistInAnyModuleReally` found
+//~| HELP no candidates by the name of `ThisTraitReallyDoesntExistInAnyModuleReally` found
 }
 
 // Let's also test what happens if there's just one alternative:

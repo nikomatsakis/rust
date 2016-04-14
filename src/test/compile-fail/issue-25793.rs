@@ -26,7 +26,7 @@ impl HasInfo {
 
     fn get_other(&mut self) -> usize {
         self.get_size(width!(self))
-        //~| NOTE borrow of `*self` occurs here
+        //~^ NOTE borrow of `*self` occurs here
     }
 }
 
