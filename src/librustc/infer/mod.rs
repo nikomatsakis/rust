@@ -335,6 +335,11 @@ pub enum SubregionOrigin<'tcx> {
 
     // Region constraint arriving from destructor safety
     SafeDestructor(Span),
+
+    // When doing a higher-ranked comparison, this region was a
+    // successor from a skolemized region, which means that it must be
+    // `'static` to be sound.
+    SkolemizeSuccessor(Span),
 }
 
 /// Places that type/region parameters can appear.
@@ -531,7 +536,7 @@ impl<T> ExpectedFound<T> {
 }
 
 impl<'tcx, T> InferOk<'tcx, T> {
-    fn unit(self) -> InferOk<'tcx, ()> {
+    pub fn unit(self) -> InferOk<'tcx, ()> {
         InferOk { value: (), obligations: self.obligations }
     }
 }
@@ -1053,7 +1058,9 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 self.skolemize_late_bound_regions(predicate, snapshot);
             let origin = TypeOrigin::EquatePredicate(span);
             let eqty_ok = self.eq_types(false, origin, a, b)?;
-            self.leak_check(false, &skol_map, snapshot).map(|_| eqty_ok.unit())
+            self.leak_check(false, span, &skol_map, snapshot)?;
+            self.pop_skolemized(skol_map, snapshot);
+            Ok(eqty_ok.unit())
         })
     }
 
@@ -1067,7 +1074,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 self.skolemize_late_bound_regions(predicate, snapshot);
             let origin = RelateRegionParamBound(span);
             self.sub_regions(origin, r_b, r_a); // `b : a` ==> `a <= b`
-            self.leak_check(false, &skol_map, snapshot)
+            self.leak_check(false, span, &skol_map, snapshot)?;
+            Ok(self.pop_skolemized(skol_map, snapshot))
         })
     }
 
@@ -1767,6 +1775,7 @@ impl<'tcx> SubregionOrigin<'tcx> {
             AddrOf(a) => a,
             AutoBorrow(a) => a,
             SafeDestructor(a) => a,
+            SkolemizeSuccessor(a) => a,
         }
     }
 }

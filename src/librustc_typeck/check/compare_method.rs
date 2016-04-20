@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use middle::free_region::FreeRegionMap;
-use rustc::infer::{self, InferOk, TypeOrigin};
+use rustc::infer::{self, InferOk, InferResult, TypeOrigin};
 use rustc::ty;
 use rustc::traits::{self, ProjectionMode};
 use rustc::ty::subst::{self, Subst, Substs, VecPerParamSpace};
@@ -284,7 +284,7 @@ pub fn compare_impl_method<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         let trait_fty = tcx.mk_fn_ptr(trait_m.fty);
         let trait_fty = trait_fty.subst(tcx, &trait_to_skol_substs);
 
-        let err = infcx.commit_if_ok(|snapshot| {
+        let err: InferResult<()> = infcx.commit_if_ok(|snapshot| {
             let tcx = infcx.tcx;
             let origin = TypeOrigin::MethodCompatCheck(impl_m_span);
 
@@ -327,13 +327,17 @@ pub fn compare_impl_method<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
             debug!("compare_impl_method: trait_fty={:?}",
                    trait_fty);
 
-            infcx.sub_types(false, origin, impl_fty, trait_fty)?;
-
-            infcx.leak_check(false, &skol_map, snapshot)
+            let inf_ok = infcx.sub_types(false, origin, impl_fty, trait_fty)?;
+            infcx.leak_check(false, impl_m_span, &skol_map, snapshot)?;
+            infcx.pop_skolemized(skol_map, snapshot);
+            Ok(inf_ok.unit())
         });
 
         match err {
-            Ok(()) => { }
+            Ok(inf_ok) => {
+                // FIXME(#32730) propagate obligations
+                assert!(inf_ok.obligations.is_empty());
+            }
             Err(terr) => {
                 debug!("checking trait method for compatibility: impl ty {:?}, trait ty {:?}",
                        impl_fty,
@@ -350,7 +354,7 @@ pub fn compare_impl_method<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         // version.
         match fulfillment_cx.select_all_or_error(&infcx) {
             Err(ref errors) => { infcx.report_fulfillment_errors(errors) }
-            Ok(_) => {}
+            Ok(_) => { }
         }
 
         // Finally, resolve all regions. This catches wily misuses of
