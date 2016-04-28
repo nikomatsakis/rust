@@ -129,10 +129,10 @@ impl CoreEmitter for BasicEmitter {
                     msg: &str,
                     code: Option<&str>,
                     lvl: Level,
-                    _is_header: bool,
+                    is_header: bool,
                     _show_snippet: bool) {
         // we ignore the span as we have no access to a codemap at this point
-        if let Err(e) = print_diagnostic(&mut self.dst, "", lvl, msg, code) {
+        if let Err(e) = print_diagnostic(&mut self.dst, "", lvl, msg, code, is_header) {
             panic!("failed to print diagnostics: {:?}", e);
         }
     }
@@ -254,10 +254,10 @@ impl EmitterWriter {
                         Some(ps) => self.cm.span_to_string(ps),
                         None => "".to_string()
                     };
-                    print_diagnostic(&mut self.dst, &loc, lvl, msg, Some(code))?
+                    print_diagnostic(&mut self.dst, &loc, lvl, msg, Some(code), is_header)?
                 }
                 else {
-                    print_diagnostic(&mut self.dst, "", lvl, msg, Some(&code_with_explain))?
+                    print_diagnostic(&mut self.dst, "", lvl, msg, Some(&code_with_explain), is_header)?
                 }
             }
             _ => {
@@ -267,10 +267,10 @@ impl EmitterWriter {
                         Some(ps) => self.cm.span_to_string(ps),
                         None => "".to_string()
                     };
-                    print_diagnostic(&mut self.dst, &loc, lvl, msg, code)?
+                    print_diagnostic(&mut self.dst, &loc, lvl, msg, code, is_header)?
                 }
                 else {
-                    print_diagnostic(&mut self.dst, "", lvl, msg, code)?
+                    print_diagnostic(&mut self.dst, "", lvl, msg, code, is_header)?
                 }
             }
         }
@@ -291,7 +291,7 @@ impl EmitterWriter {
         // Otherwise, print out the snippet etc as needed.
         match *rsp {
             FullSpan(ref msp) => {
-                self.highlight_lines(msp, lvl)?;
+                self.highlight_lines(msp, lvl, is_header)?;
                 if let Some(primary_span) = msp.primary_span() {
                     self.print_macro_backtrace(primary_span)?;
                 }
@@ -316,7 +316,7 @@ impl EmitterWriter {
                     let msg = "run `rustc --explain ".to_string() + &code.to_string() +
                         "` to see a detailed explanation";
                     print_diagnostic(&mut self.dst, &loc, Level::Help, &msg,
-                        None)?
+                                     None, false)?
                 }
                 _ => ()
             }
@@ -358,11 +358,17 @@ impl EmitterWriter {
 
     fn highlight_lines(&mut self,
                        msp: &MultiSpan,
-                       lvl: Level)
+                       lvl: Level,
+                       is_header: bool)
                        -> io::Result<()>
     {
+        let opt_primary_span = if is_header {
+            msp.primary_span()
+        } else {
+            None
+        };
         let mut snippet_data = SnippetData::new(self.cm.clone(),
-                                                msp.primary_span());
+                                                opt_primary_span);
         if self.old_school {
             let mut output_vec = vec![];
 
@@ -395,7 +401,7 @@ impl EmitterWriter {
         else {
             for span_label in msp.span_labels() {
                 snippet_data.push(span_label.span,
-                                  span_label.is_primary,
+                                  is_header && span_label.is_primary,
                                   span_label.label);
             }
             let rendered_lines = snippet_data.render_lines();
@@ -423,7 +429,7 @@ impl EmitterWriter {
                         self.cm.span_to_filename(def_site_span)));
             }
             let snippet = self.cm.span_to_string(sp);
-            print_diagnostic(&mut self.dst, &snippet, Note, &diag_string, None)?;
+            print_diagnostic(&mut self.dst, &snippet, Note, &diag_string, None, false)?;
         }
         Ok(())
     }
@@ -443,24 +449,24 @@ fn print_diagnostic(dst: &mut Destination,
                     topic: &str,
                     lvl: Level,
                     msg: &str,
-                    code: Option<&str>)
+                    code: Option<&str>,
+                    is_header: bool)
                     -> io::Result<()> {
     if !topic.is_empty() {
         let old_school = check_old_skool();
         if !old_school {
             write!(dst, "{}: ", topic)?;
-        }
-        else {
+        } else {
             write!(dst, "{} ", topic)?;
         }
         dst.reset_attrs()?;
     }
     dst.start_attr(term::Attr::Bold)?;
-    dst.start_attr(term::Attr::ForegroundColor(lvl.color()))?;
+    if is_header { dst.start_attr(term::Attr::ForegroundColor(lvl.color()))?; }
     write!(dst, "{}", lvl.to_string())?;
     dst.reset_attrs()?;
     write!(dst, ": ")?;
-    dst.start_attr(term::Attr::Bold)?;
+    if is_header { dst.start_attr(term::Attr::Bold)?; }
     write!(dst, "{}", msg)?;
 
     if let Some(code) = code {
