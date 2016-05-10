@@ -257,6 +257,7 @@ impl EmitterWriter {
                     print_diagnostic(&mut self.dst, &loc, lvl, msg, Some(code), is_header)?
                 }
                 else {
+                    assert!(!msg.is_empty());
                     print_diagnostic(&mut self.dst, "", lvl, msg, Some(&code_with_explain), is_header)?
                 }
             }
@@ -269,7 +270,7 @@ impl EmitterWriter {
                     };
                     print_diagnostic(&mut self.dst, &loc, lvl, msg, code, is_header)?
                 }
-                else {
+                else if !msg.is_empty() {
                     print_diagnostic(&mut self.dst, "", lvl, msg, code, is_header)?
                 }
             }
@@ -523,6 +524,8 @@ impl Destination {
         match style {
             Style::FileNameStyle |
             Style::LineAndColumn => {
+                self.start_attr(term::Attr::ForegroundColor(term::color::BRIGHT_BLUE))?;
+                self.start_attr(term::Attr::Bold)?;
             }
             Style::LineNumber => {
                 self.start_attr(term::Attr::Bold)?;

@@ -766,14 +766,14 @@ fn prepend_prefixes(rendered_lines: &mut [RenderedLine]) {
                                                   style: Style::LineNumber})
             }
             RenderedLineKind::OtherFileName => {
-                //   ::: filename
+                //   --- filename
                 // 22 |>
                 //   ^
                 //   padding_len
                 let dashes = (0..padding_len - 1).map(|_| ' ')
-                                                 .chain(Some(':'))
-                                                 .chain(Some(':'))
-                                                 .chain(Some(':'))
+                                                 .chain(Some('-'))
+                                                 .chain(Some('-'))
+                                                 .chain(Some('-'))
                                                  .chain(Some(' '));
                 line.text.insert(0, StyledString {text: dashes.collect(),
                                                   style: Style::LineNumber})

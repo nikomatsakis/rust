@@ -3467,7 +3467,7 @@ impl<'a> Resolver<'a> {
         };
 
         if old_binding.span != codemap::DUMMY_SP {
-            err.span_note(old_binding.span, &format!("previous {} of `{}` here", noun, name));
+            err.span_note_anonymous(old_binding.span, &format!("previous {} of `{}` here", noun, name));
         }
         err.emit();
     }

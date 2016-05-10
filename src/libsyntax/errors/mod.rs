@@ -260,8 +260,32 @@ impl<'a> DiagnosticBuilder<'a> {
     pub fn span_note<S: Into<MultiSpan>>(&mut self,
                                          sp: S,
                                          msg: &str)
-                                         -> &mut DiagnosticBuilder<'a> {
+                                         -> &mut DiagnosticBuilder<'a>
+    {
         self.sub(Level::Note, msg, sp.into(), None);
+        self
+    }
+
+    /// Attachs a "anonymous" note that doesn't render with a `note:` header.
+    /// For example:
+    ///
+    /// ```
+    ///  ::: foo.rs:22
+    ///   |> blah blah blah
+    ///   |>      ---- msg
+    /// ```
+    pub fn span_note_anonymous(&mut self,
+                               span: Span,
+                               msg: &str)
+                               -> &mut DiagnosticBuilder<'a>
+    {
+        if check_old_skool() {
+            return self.span_note(span, msg);
+        }
+
+        let mut msp: MultiSpan = span.into();
+        msp.push_span_label(span, msg.to_string());
+        self.sub(Level::Note, "", msp, None);
         self
     }
     pub fn warn(&mut self, msg: &str) -> &mut DiagnosticBuilder<'a> {
