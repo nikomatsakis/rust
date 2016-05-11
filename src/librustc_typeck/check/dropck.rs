@@ -101,9 +101,9 @@ fn ensure_drop_params_and_item_params_correspond<'tcx>(
         let item_span = tcx.map.span(self_type_node_id);
         struct_span_err!(tcx.sess, drop_impl_span, E0366,
                          "Implementations of Drop cannot be specialized")
-            .span_note(item_span,
-                       "Use same sequence of generic type and region \
-                        parameters that is on the struct/enum definition")
+            .span_label(item_span,
+                        &"Use same sequence of generic type and region \
+                          parameters that is on the struct/enum definition")
             .emit();
         return Err(());
     }
@@ -208,9 +208,9 @@ fn ensure_drop_predicates_are_implied_by_item_defn<'tcx>(
             let item_span = tcx.map.span(self_type_node_id);
             struct_span_err!(tcx.sess, drop_impl_span, E0367,
                              "The requirement `{}` is added only by the Drop impl.", predicate)
-                .span_note(item_span,
-                           "The same requirement must be part of \
-                            the struct/enum definition")
+                .span_label(item_span,
+                            &"The same requirement must be part of \
+                              the struct/enum definition")
                 .emit();
         }
     }
@@ -314,13 +314,12 @@ pub fn check_safety_of_destructor_if_necessary<'a, 'tcx>(rcx: &mut Rcx<'a, 'tcx>
                         ty::AdtKind::Struct => format!("struct {}",
                                                        tcx.item_path_str(def_id))
                     };
-                    span_note!(
-                        &mut err,
+                    err = err.span_label(
                         span,
-                        "overflowed on {} field {} type: {}",
-                        variant_name,
-                        field,
-                        detected_on_typ);
+                        &format!("overflowed on {} field {} type: {}",
+                                 variant_name,
+                                 field,
+                                 detected_on_typ));
                 }
             }
             err.emit();

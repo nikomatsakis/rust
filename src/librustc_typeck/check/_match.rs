@@ -789,9 +789,9 @@ pub fn check_struct_pat_fields<'a, 'tcx>(pcx: &pat_ctxt<'a, 'tcx>,
                 let mut err = struct_span_err!(tcx.sess, span, E0025,
                                                "field `{}` bound multiple times in the pattern",
                                                field.name);
-                span_note!(&mut err, *occupied.get(),
-                           "field `{}` previously bound here",
-                           field.name);
+                err = err.span_label(
+                    *occupied.get(),
+                    &format!("field `{}` previously bound here", field.name));
                 err.emit();
                 tcx.types.err
             }

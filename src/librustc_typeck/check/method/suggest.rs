@@ -133,13 +133,14 @@ pub fn report_error<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                     let field_ty = field.ty(cx, substs);
 
                     if is_fn_ty(&field_ty, &fcx, span) {
-                        err.span_note(span,
-                                      &format!("use `({0}.{1})(...)` if you meant to call \
-                                               the function stored in the `{1}` field",
-                                               expr_string, item_name));
+                        err = err.span_label(span,
+                                             &format!("use `({0}.{1})(...)` if you meant to call \
+                                                       the function stored in the `{1}` field",
+                                                      expr_string, item_name));
                     } else {
-                        err.span_note(span, &format!("did you mean to write `{0}.{1}`?",
-                                                     expr_string, item_name));
+                        err = err.span_label(span,
+                                             &format!("did you mean to write `{0}.{1}`?",
+                                                      expr_string, item_name));
                     }
                 }
             }
@@ -169,7 +170,7 @@ pub fn report_error<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                     "found the following associated functions; to be used as \
                      methods, functions must have a `self` parameter");
 
-                report_candidates(fcx, &mut err, span, item_name, static_sources);
+                err = report_candidates(fcx, err, span, item_name, static_sources);
             }
 
             if !unsatisfied_predicates.is_empty() {
@@ -195,7 +196,7 @@ pub fn report_error<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
             let mut err = struct_span_err!(fcx.sess(), span, E0034,
                                            "multiple applicable items in scope");
 
-            report_candidates(fcx, &mut err, span, item_name, sources);
+            err = report_candidates(fcx, err, span, item_name, sources);
             err.emit();
         }
 
@@ -220,11 +221,12 @@ pub fn report_error<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         }
     }
 
-    fn report_candidates(fcx: &FnCtxt,
-                         err: &mut DiagnosticBuilder,
-                         span: Span,
-                         item_name: ast::Name,
-                         mut sources: Vec<CandidateSource>) {
+    fn report_candidates<'a>(fcx: &FnCtxt,
+                             mut err: DiagnosticBuilder<'a>,
+                             span: Span,
+                             item_name: ast::Name,
+                             mut sources: Vec<CandidateSource>)
+                             -> DiagnosticBuilder<'a> {
         sources.sort();
         sources.dedup();
 
@@ -262,7 +264,7 @@ pub fn report_error<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                                            impl_ty);
                     if let Some(note_span) = note_span {
                         // We have a span pointing to the method. Show note with snippet.
-                        err.span_note(note_span, &note_str);
+                        err = err.span_label(note_span, &note_str);
                     } else {
                         err.note(&note_str);
                     }
@@ -270,13 +272,15 @@ pub fn report_error<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                 CandidateSource::TraitSource(trait_did) => {
                     let item = trait_item(fcx.tcx(), trait_did, item_name).unwrap();
                     let item_span = fcx.tcx().map.def_id_span(item.def_id(), span);
-                    span_note!(err, item_span,
-                               "candidate #{} is defined in the trait `{}`",
-                               idx + 1,
-                               fcx.tcx().item_path_str(trait_did));
+                    err = err.span_label(item_span,
+                                         &format!("candidate #{} is defined in the trait `{}`",
+                                                  idx + 1,
+                                                  fcx.tcx().item_path_str(trait_did)));
                 }
             }
         }
+
+        err
     }
 }
 

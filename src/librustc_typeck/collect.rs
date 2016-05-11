@@ -759,9 +759,9 @@ fn convert_item(ccx: &CrateCtxt, it: &hir::Item) {
                         let mut err = struct_span_err!(tcx.sess, impl_item.span, E0201,
                                                        "duplicate definitions with name `{}`:",
                                                        impl_item.name);
-                        span_note!(&mut err, *entry.get(),
-                                   "previous definition of `{}` here",
-                                   impl_item.name);
+                        err = err.span_label(*entry.get(),
+                                             &format!("previous definition of `{}` here",
+                                                      impl_item.name));
                         err.emit();
                     }
                     Vacant(entry) => {
@@ -1002,7 +1002,7 @@ fn convert_struct_variant<'tcx>(tcx: &TyCtxt<'tcx>,
             let mut err = struct_span_err!(tcx.sess, f.span, E0124,
                                            "field `{}` is already declared",
                                            f.name);
-            span_note!(&mut err, prev_span, "previously declared here");
+            err = err.span_label(prev_span, &"previously declared here");
             err.emit();
         } else {
             seen_fields.insert(f.name, f.span);
@@ -1087,7 +1087,7 @@ fn convert_enum_def<'tcx>(tcx: &TyCtxt<'tcx>,
                                                 "constant evaluation error: {}",
                                                 err.description());
                 if !e.span.contains(err.span) {
-                    diag.span_note(e.span, "for enum discriminant here");
+                    diag = diag.span_label(e.span, &"for enum discriminant here");
                 }
                 diag.emit();
                 None

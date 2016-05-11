@@ -874,7 +874,7 @@ fn report_forbidden_specialization(tcx: &TyCtxt,
 
     match tcx.span_of_impl(parent_impl) {
         Ok(span) => {
-            err.span_note(span, "parent implementation is here:");
+            err = err.span_label(span, &"parent implementation is here:");
         }
         Err(cname) => {
             err.note(&format!("parent implementation is in crate `{}`", cname));
@@ -4178,8 +4178,9 @@ pub fn check_enum_variants<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>,
                     let mut err = struct_span_err!(ccx.tcx.sess, v.span, E0081,
                         "discriminant value `{}` already exists", disr_vals[i]);
                     let variant_i_node_id = ccx.tcx.map.as_local_node_id(variants[i].did).unwrap();
-                    span_note!(&mut err, ccx.tcx.map.span(variant_i_node_id),
-                        "conflicting discriminant here");
+                    err = err.span_label(
+                        ccx.tcx.map.span(variant_i_node_id),
+                        &"conflicting discriminant here");
                     err.emit();
                 }
                 None => {}

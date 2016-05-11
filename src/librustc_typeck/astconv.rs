@@ -1251,10 +1251,11 @@ fn one_bound_for_assoc_type<'tcx>(tcx: &TyCtxt<'tcx>,
                                        ty_param_name);
 
         for bound in &bounds {
-            span_note!(&mut err, span,
-                       "associated type `{}` could derive from `{}`",
-                       ty_param_name,
-                       bound);
+            err = err.span_label(
+                span,
+                &format!("associated type `{}` could derive from `{}`",
+                         ty_param_name,
+                         bound));
         }
         err.emit();
     }
@@ -1708,7 +1709,9 @@ pub fn ast_ty_to_ty<'tcx>(this: &AstConv<'tcx>,
                                                    "array length constant evaluation error: {}",
                                                    r.description());
                     if !ast_ty.span.contains(r.span) {
-                        span_note!(&mut err, ast_ty.span, "for array length here")
+                        err = err.span_label(
+                            ast_ty.span,
+                            &"for array length here")
                     }
                     err.emit();
                     this.tcx().types.err

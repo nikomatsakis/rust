@@ -118,9 +118,9 @@ impl<'cx, 'tcx,'v> intravisit::Visitor<'v> for OverlapChecker<'cx, 'tcx> {
                         self.tcx.span_of_impl(impl_def_id).unwrap(), E0521,
                         "redundant default implementations of trait `{}`:",
                         trait_ref);
-                    err.span_note(self.tcx.span_of_impl(self.tcx.map.local_def_id(prev_id))
-                                      .unwrap(),
-                                  "redundant implementation is here:");
+                    err = err.span_label(
+                        self.tcx.span_of_impl(self.tcx.map.local_def_id(prev_id)).unwrap(),
+                        &"redundant implementation is here:");
                     err.emit();
                 }
             }
@@ -160,7 +160,7 @@ impl<'cx, 'tcx,'v> intravisit::Visitor<'v> for OverlapChecker<'cx, 'tcx> {
 
                     match self.tcx.span_of_impl(overlap.with_impl) {
                         Ok(span) => {
-                            err.span_note(span, "conflicting implementation is here:");
+                            err = err.span_label(span, &"conflicting implementation is here:");
                         }
                         Err(cname) => {
                             err.note(&format!("conflicting implementation in crate `{}`",

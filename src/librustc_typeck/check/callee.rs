@@ -239,7 +239,7 @@ fn confirm_builtin_call<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
                 if let Some(pr) = tcx.def_map.borrow().get(&expr.id) {
                     if pr.depth == 0 && pr.base_def != Def::Err {
                         if let Some(span) = tcx.map.span_if_local(pr.def_id()) {
-                            err.span_note(span, "defined here");
+                            err = err.span_label(span, &"defined here");
                         }
                     }
                 }
