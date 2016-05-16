@@ -577,17 +577,33 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             for &tainted_region in &outgoing_taints {
                 match tainted_region {
                     ty::ReVar(vid) if new_vars.contains(&vid) => {
-                        // Some region variable that doesn't escape
+                        // There is a path from a skolemized variable
+                        // to some region variable that doesn't escape
                         // this snapshot:
                         //
                         //    [skol] -> [tainted_region]
                         //
-                        // We can ignore this. We know that if it has
-                        // outgoing edges to any other regions, then those
-                        // regions must be 'static. If it has incoming
-                        // edges from other regions, we could therefore
-                        // infer it to 'static, and those edges would be
-                        // satisfied.
+                        // We can ignore this. The reasoning relies on
+                        // the fact that the preivous loop
+                        // completed. There are two possible cases
+                        // here.
+                        //
+                        // - `tainted_region` eventually reaches a
+                        //   skolemized variable, which *must* be `skol`
+                        //   (because otherwise we would have already
+                        //   returned `Err`). In that case,
+                        //   `tainted_region` could be inferred to `skol`.
+                        //
+                        // - `tainted_region` never reaches a
+                        //   skolemized variable. In that case, we can
+                        //   safely choose `'static` as an upper bound
+                        //   incoming edges. This is a conservative
+                        //   choice -- the LUB might be one of the
+                        //   incoming skolemized variables, which we
+                        //   might know by ambient bounds. We can
+                        //   consider a more clever choice of upper
+                        //   bound later (modulo some theoretical
+                        //   breakage).
                         //
                         // We used to force such `tainted_region` to be
                         // `'static`, but that leads to problems when
