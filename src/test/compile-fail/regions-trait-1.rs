@@ -24,7 +24,8 @@ impl<'a> get_ctxt for has_ctxt<'a> {
     // Here an error occurs because we used `&self` but
     // the definition used `&`:
     fn get_ctxt(&self) -> &'a ctxt {
-        //~^ ERROR E0053
+        //~^ ERROR E0308
+        //~| ERROR E0526
         self.c
     }
 
