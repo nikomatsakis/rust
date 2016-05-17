@@ -426,7 +426,6 @@ impl<'a, 'gcx, 'tcx> Inherited<'a, 'gcx, 'tcx> {
                                              body_id,
                                              value)
     }
-
 }
 
 struct CheckItemTypesVisitor<'a, 'tcx: 'a> { ccx: &'a CrateCtxt<'a, 'tcx> }
@@ -660,14 +659,6 @@ fn check_fn<'a, 'gcx, 'tcx>(inherited: &'a Inherited<'a, 'gcx, 'tcx>,
 
         // Add formal parameters.
         for (arg_ty, input) in arg_tys.iter().zip(&decl.inputs) {
-            // The type of the argument must be well-formed.
-            //
-            // NB -- this is now checked in wfcheck, but that
-            // currently only results in warnings, so we issue an
-            // old-style WF obligation here so that we still get the
-            // errors that we used to get.
-            fcx.register_old_wf_obligation(arg_ty, input.ty.span, traits::MiscObligation);
-
             // Create type variables for each argument.
             pat_util::pat_bindings(
                 &tcx.def_map,
@@ -1830,21 +1821,6 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         // WF obligations never themselves fail, so no real need to give a detailed cause:
         let cause = traits::ObligationCause::new(span, self.body_id, code);
         self.register_predicate(traits::Obligation::new(cause, ty::Predicate::WellFormed(ty)));
-    }
-
-    pub fn register_old_wf_obligation(&self,
-                                      ty: Ty<'tcx>,
-                                      span: Span,
-                                      code: traits::ObligationCauseCode<'tcx>)
-    {
-        // Registers an "old-style" WF obligation that uses the
-        // implicator code.  This is basically a buggy version of
-        // `register_wf_obligation` that is being kept around
-        // temporarily just to help with phasing in the newer rules.
-        //
-        // FIXME(#27579) all uses of this should be migrated to register_wf_obligation eventually
-        let cause = traits::ObligationCause::new(span, self.body_id, code);
-        self.register_region_obligation(ty, ty::ReEmpty, cause);
     }
 
     /// Registers obligations that all types appearing in `substs` are well-formed.

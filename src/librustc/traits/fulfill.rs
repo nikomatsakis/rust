@@ -182,13 +182,6 @@ impl<'a, 'gcx, 'tcx> FulfillmentContext<'tcx> {
         });
     }
 
-    pub fn register_rfc1592_obligation(&mut self,
-                                       _infcx: &InferCtxt<'a, 'gcx, 'tcx>,
-                                       obligation: PredicateObligation<'tcx>)
-    {
-        self.rfc1592_obligations.push(obligation);
-    }
-
     pub fn region_obligations(&self,
                               body_id: ast::NodeId)
                               -> &[RegionObligation<'tcx>]
