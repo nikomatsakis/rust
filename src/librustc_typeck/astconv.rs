@@ -1699,7 +1699,7 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
                         lint::builtin::HR_LIFETIME_IN_ASSOC_TYPE,
                         ast_ty.id,
                         ast_ty.span,
-                        format!("fn type references lifetime `{}`, \
+                        format!("return type references lifetime `{}`, \
                                  which does not appear in the trait input types",
                                 br_name));
                 }
