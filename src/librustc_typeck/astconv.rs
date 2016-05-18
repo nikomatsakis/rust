@@ -206,11 +206,18 @@ pub fn ast_region_to_region(tcx: TyCtxt, lifetime: &hir::Lifetime)
         }
 
         Some(&rl::DefFreeRegion(scope, id)) => {
+            // As in DefLateBoundRegion above, could be missing for some late-bound
+            // regions, but also for early-bound regions.
+            let issue_32330 = tcx.named_region_map
+                                 .late_bound
+                                 .get(&id)
+                                 .cloned()
+                                 .unwrap_or(ty::Issue32330::WontChange);
             ty::ReFree(ty::FreeRegion {
                     scope: scope.to_code_extent(&tcx.region_maps),
                     bound_region: ty::BrNamed(tcx.map.local_def_id(id),
                                               lifetime.name,
-                                              ty::Issue32330::WontChange) // (*)
+                                              issue_32330)
             })
 
                 // (*) -- not late-bound, won't change
