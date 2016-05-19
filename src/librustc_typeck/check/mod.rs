@@ -95,7 +95,7 @@ use rustc::ty::{GenericPredicates, TypeScheme};
 use rustc::ty::{ParamTy, ParameterEnvironment};
 use rustc::ty::{LvaluePreference, NoPreference, PreferMutLvalue};
 use rustc::ty::{self, ToPolyTraitRef, Ty, TyCtxt, Visibility};
-use rustc::ty::{MethodCall, MethodCallee};
+use rustc::ty::{MethodCall, MethodCallee, ToPredicate};
 use rustc::ty::adjustment;
 use rustc::ty::fold::TypeFoldable;
 use rustc::ty::util::{Representability, IntTypeExt};
@@ -1807,8 +1807,10 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                                       region: ty::Region,
                                       cause: traits::ObligationCause<'tcx>)
     {
-        let mut fulfillment_cx = self.fulfillment_cx.borrow_mut();
-        fulfillment_cx.register_region_obligation(ty, region, cause);
+        let predicate = ty::Binder(ty::OutlivesPredicate(ty, region)).to_predicate();
+        let obligation = traits::Obligation::new(cause, predicate);
+        self.fulfillment_cx.borrow_mut()
+                           .register_predicate_obligation(&self.infcx, obligation);
     }
 
     /// Registers an obligation for checking later, during regionck, that the type `ty` must
