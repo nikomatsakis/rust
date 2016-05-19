@@ -11,6 +11,7 @@
 use dep_graph::DepGraph;
 use infer::{InferCtxt, InferOk};
 use ty::{self, Ty, TypeFoldable, ToPolyTraitRef, TyCtxt};
+use rustc_data_structures::obligation_forest as forest;
 use rustc_data_structures::obligation_forest::{ObligationForest, Error};
 use rustc_data_structures::obligation_forest::{ForestObligation, ObligationProcessor};
 use std::marker::PhantomData;
@@ -99,6 +100,12 @@ pub struct PendingPredicateObligation<'tcx> {
     pub stalled_on: Vec<Ty<'tcx>>,
 }
 
+pub struct FulfillmentSnapshot {
+    snapshot: forest::Snapshot,
+    rfc1592_obligations_len: usize,
+    region_obligations_len: usize,
+}
+
 impl<'a, 'gcx, 'tcx> FulfillmentContext<'tcx> {
     /// Creates a new fulfillment context.
     pub fn new() -> FulfillmentContext<'tcx> {
@@ -107,6 +114,34 @@ impl<'a, 'gcx, 'tcx> FulfillmentContext<'tcx> {
             rfc1592_obligations: Vec::new(),
             region_obligations: NodeMap(),
         }
+    }
+
+    pub fn start_snapshot(&mut self) -> FulfillmentSnapshot {
+        FulfillmentSnapshot {
+            snapshot: self.predicates.start_snapshot(),
+            rfc1592_obligations_len: self.rfc1592_obligations.len(),
+            region_obligations_len: self.region_obligations.len(),
+        }
+    }
+
+    pub fn rollback_to(&mut self, snapshot: FulfillmentSnapshot) {
+        self.predicates.rollback_snapshot(snapshot.snapshot);
+
+        // while in a snapshot, we can't use the obligation forest,
+        // which should prevent us from mutating either of these two
+        // vectors:
+        assert_eq!(self.rfc1592_obligations.len(), snapshot.rfc1592_obligations_len);
+        assert_eq!(self.region_obligations.len(), snapshot.region_obligations_len);
+    }
+
+    pub fn commit_from(&mut self, snapshot: FulfillmentSnapshot) {
+        self.predicates.commit_snapshot(snapshot.snapshot);
+
+        // while in a snapshot, we can't use the obligation forest,
+        // which should prevent us from mutating either of these two
+        // vectors:
+        assert_eq!(self.rfc1592_obligations.len(), snapshot.rfc1592_obligations_len);
+        assert_eq!(self.region_obligations.len(), snapshot.region_obligations_len);
     }
 
     /// "Normalize" a projection type `<SomeType as SomeTrait>::X` by
