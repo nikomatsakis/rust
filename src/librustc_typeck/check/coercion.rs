@@ -630,7 +630,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         debug!("coercion::try({:?}: {:?} -> {:?})", expr, source, target);
 
         let mut coerce = Coerce::new(self, TypeOrigin::ExprAssignable(expr.span));
-        self.commit_if_ok(|_| {
+        self.select_commit_if_ok(|_| {
             let (ty, adjustment) =
                 apply(&mut coerce, &|| Some(expr), source, target)?;
             if !adjustment.is_identity() {

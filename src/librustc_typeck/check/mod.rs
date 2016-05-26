@@ -426,6 +426,23 @@ impl<'a, 'gcx, 'tcx> Inherited<'a, 'gcx, 'tcx> {
                                              body_id,
                                              value)
     }
+
+    /// A version of commit_if_ok that allows for registering trait obligations
+    fn select_commit_if_ok<T, E, F>(&self, f: F) -> Result<T, E>
+        where F: FnOnce(&infer::CombinedSnapshot) -> Result<T, E>
+    {
+        let fulfill_snapshot = self.fulfillment_cx.borrow_mut().start_snapshot();
+        match self.commit_if_ok(f) {
+            Ok(o) => {
+                self.fulfillment_cx.borrow_mut().commit_from(fulfill_snapshot);
+                Ok(o)
+            }
+            Err(e) => {
+                self.fulfillment_cx.borrow_mut().rollback_to(fulfill_snapshot);
+                Err(e)
+            }
+        }
+   }
 }
 
 struct CheckItemTypesVisitor<'a, 'tcx: 'a> { ccx: &'a CrateCtxt<'a, 'tcx> }
