@@ -12,14 +12,13 @@ use super::*;
 
 use hir;
 use hir::intravisit;
-use hir::def_id::{DefId, DefIndex};
-
-use middle::cstore::InlinedItem;
-
+use hir::def_id::{CRATE_DEF_INDEX, DefId, DefIndex};
+use rustc_data_structures::fnv::FnvHashSet;
 use std::mem;
 use syntax::ast::*;
 use syntax::visit;
 use syntax::parse::token;
+use ty::TyCtxt;
 
 /// Creates def ids for nodes in the HIR.
 pub struct DefCollector<'ast, DT: DefTracer> {
@@ -30,8 +29,8 @@ pub struct DefCollector<'ast, DT: DefTracer> {
 }
 
 pub trait DefTracer {
-    fn push_parent(&mut self, parent_def: DefIndex) -> Option<DefIndex>;
-    fn pop_parent(&mut self, previous_parent_def: Option<DefIndex>);
+    fn push_parent(&mut self, parent_def: DefIndex) -> DefIndex;
+    fn pop_parent(&mut self, previous_parent_def: DefIndex);
     fn create_def(&mut self, node_id: NodeId, data: DefPathData) -> DefIndex;
 }
 
@@ -41,11 +40,6 @@ impl<'ast, DT: DefTracer> DefCollector<'ast, DT> {
             hir_crate: None,
             tracer: tracer,
         }
-    }
-
-    pub fn walk_item(&mut self, ii: &'ast InlinedItem, krate: &'ast hir::Crate) {
-        self.hir_crate = Some(krate);
-        ii.visit(self);
     }
 
     fn create_def(&mut self, node_id: NodeId, data: DefPathData) -> DefIndex {
@@ -388,44 +382,72 @@ impl<'ast, DT: DefTracer> intravisit::Visitor<'ast> for DefCollector<'ast, DT> {
 
 pub struct DefinitionsTracer<'ast> {
     definitions: &'ast mut Definitions,
-    parent_def: Option<DefIndex>,
+    parent_def: DefIndex,
 }
 
 impl<'ast> DefinitionsTracer<'ast> {
     pub fn root(definitions: &'ast mut Definitions) -> Self {
+        let root = definitions.create_def_with_parent(None, CRATE_NODE_ID, DefPathData::CrateRoot);
+        assert_eq!(root, CRATE_DEF_INDEX);
+
         DefinitionsTracer {
             definitions: definitions,
-            parent_def: None
+            parent_def: root
         }
-    }
-
-    pub fn extend(parent_node: NodeId,
-                  parent_def_path: DefPath,
-                  parent_def_id: DefId,
-                  definitions: &'ast mut Definitions)
-                  -> Self {
-        let mut collector = DefinitionsTracer::root(definitions);
-        assert_eq!(parent_def_path.krate, parent_def_id.krate);
-        let root_path = Box::new(InlinedRootPath {
-            data: parent_def_path.data,
-            def_id: parent_def_id,
-        });
-        let def = collector.create_def(parent_node, DefPathData::InlinedRoot(root_path));
-        collector.parent_def = Some(def);
-        collector
     }
 }
 
 impl<'ast> DefTracer for DefinitionsTracer<'ast> {
-    fn push_parent(&mut self, parent_def: DefIndex) -> Option<DefIndex> {
-        mem::replace(&mut self.parent_def, Some(parent_def))
+    fn push_parent(&mut self, parent_def: DefIndex) -> DefIndex {
+        mem::replace(&mut self.parent_def, parent_def)
     }
 
-    fn pop_parent(&mut self, old_parent_def: Option<DefIndex>) {
+    fn pop_parent(&mut self, old_parent_def: DefIndex) {
         self.parent_def = old_parent_def;
     }
 
     fn create_def(&mut self, node_id: NodeId, data: DefPathData) -> DefIndex {
-        self.definitions.create_def_with_parent(self.parent_def, node_id, data)
+        self.definitions.create_def_with_parent(Some(self.parent_def), node_id, data)
     }
 }
+
+pub struct DefinitionsRetracer<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
+    tcx: TyCtxt<'a, 'gcx, 'tcx>,
+    definitions: &'a mut Definitions,
+    krate: CrateNum,
+    next_index: DefIndex,
+}
+
+impl<'a, 'gcx, 'tcx> DefinitionsRetracer<'a, 'gcx, 'tcx> {
+    pub fn new(tcx: TyCtxt<'a, 'gcx, 'tcx>,
+               definitions: &'a mut Definitions,
+               item_def_id: DefId)
+               -> Self {
+        DefinitionsRetracer {
+            tcx: tcx,
+            definitions: definitions,
+            krate: item_def_id.krate,
+            next_index: item_def_id.index,
+        }
+    }
+}
+
+impl<'a, 'gcx, 'tcx> DefTracer for DefinitionsRetracer<'a, 'gcx, 'tcx> {
+    fn push_parent(&mut self, parent_def: DefIndex) -> DefIndex {
+        self.next_index // we don't need to track the parent really
+    }
+
+    fn pop_parent(&mut self, old_parent_def: DefIndex) {
+    }
+
+    fn create_def(&mut self, node_id: NodeId, data: DefPathData) -> DefIndex {
+        // Kind of hacky. Just use the next sequential index. This
+        // works since we visit the nodes in the same order the
+        // original crate does.
+        let next_index = self.next_index;
+        self.next_index = DefIndex::new(next_index.as_usize() + 1);
+        next_index
+    }
+}
+
+

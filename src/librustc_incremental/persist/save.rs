@@ -101,6 +101,14 @@ pub fn encode_dep_graph<'a, 'tcx>(hcx: &mut HashContext<'a, 'tcx>,
              .filter_map(|dep_node| {
                  hcx.hash(&dep_node)
                     .map(|hash| {
+                        match *dep_node {
+                            DepNode::Hir(def_id) =>
+                                assert!(def_id.is_local(), "non-local hir: {:?}", def_id),
+                            DepNode::MetaData(def_id) =>
+                                assert!(!def_id.is_local(), "local metadata: {:?}", def_id),
+                            _ =>
+                                assert!(false, "wacked hash: {:?}", dep_node),
+                        }
                         let node = builder.map(dep_node);
                         SerializedHash { node: node, hash: hash }
                     })

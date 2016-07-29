@@ -52,6 +52,8 @@ pub fn load_dep_graph_if_exists<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, path: &Pa
         return;
     }
 
+    debug!("load_dep_graph_if_exists: path={}", path.display());
+
     let mut data = vec![];
     match
         File::open(path)
@@ -83,13 +85,8 @@ pub fn decode_dep_graph<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     let directory = try!(DefIdDirectory::decode(&mut decoder));
     let serialized_dep_graph = try!(SerializedDepGraph::decode(&mut decoder));
 
-    debug!("decode_dep_graph: directory = {:#?}", directory);
-    debug!("decode_dep_graph: serialized_dep_graph = {:#?}", serialized_dep_graph);
-
     // Retrace the paths in the directory to find their current location (if any).
     let retraced = directory.retrace(tcx);
-
-    debug!("decode_dep_graph: retraced = {:#?}", retraced);
 
     // Compute the set of Hir nodes whose data has changed.
     let mut dirty_nodes =
@@ -138,6 +135,7 @@ fn initial_dirty_nodes<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     let mut items_removed = false;
     let mut dirty_nodes = FnvHashSet();
     for hash in hashes {
+        debug!("initial_dirty_nodes: serialized-hash={:?}", hash);
         match hash.node.map_def(|&i| retraced.def_id(i)) {
             Some(dep_node) => {
                 let current_hash = hcx.hash(&dep_node).unwrap();

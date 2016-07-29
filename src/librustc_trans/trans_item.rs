@@ -130,6 +130,7 @@ impl<'a, 'tcx> TransItem<'tcx> {
         };
 
         tcx.dep_graph.with_task(DepNode::TransCrateItem(def_id), || {
+            debug!("register_reads(self={:?}) def_id={:?}", self, def_id);
             tcx.dep_graph.read(DepNode::Hir(def_id));
 
             // We are going to be accessing various tables

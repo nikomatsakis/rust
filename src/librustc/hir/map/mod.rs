@@ -11,7 +11,7 @@
 pub use self::Node::*;
 use self::MapEntry::*;
 use self::collector::NodeCollector;
-use self::def_collector::{DefCollector, DefinitionsTracer};
+use self::def_collector::{DefCollector, DefinitionsRetracer};
 pub use self::definitions::{Definitions, DefKey, DefPath, DefPathData,
                             DisambiguatedDefPathData, InlinedRootPath};
 
@@ -34,6 +34,8 @@ use arena::TypedArena;
 use std::cell::RefCell;
 use std::io;
 use std::mem;
+
+use ty::TyCtxt;
 
 pub mod blocks;
 mod collector;
@@ -196,6 +198,16 @@ pub struct Map<'ast> {
     map: RefCell<Vec<MapEntry<'ast>>>,
 
     definitions: RefCell<Definitions>,
+
+    /// Number of extant def-ids at the time of the map's creation.
+    /// When we first create the map, all extant def-ids correspond to
+    /// stuff from the local crate. Later, in trans, we extend the HIR
+    /// with inlined items from other crates: this value can be used
+    /// to cheaply test if a def-id results from an inlined crate or
+    /// not. This affects the dep-graph, since a read from an inlined
+    /// item should be registered as a read of MetaData(X) where X is
+    /// the *original* (non-local) def-id.
+    num_noninlined_indices: usize,
 }
 
 impl<'ast> Map<'ast> {
@@ -262,6 +274,10 @@ impl<'ast> Map<'ast> {
                                }),
             }
         }
+    }
+
+    pub fn is_inlined_def_id(&self, def_id: DefId) -> bool {
+        def_id.is_local() && def_id.index.as_usize() >= self.num_noninlined_indices
     }
 
     pub fn num_local_def_ids(&self) -> usize {
@@ -802,22 +818,26 @@ pub fn map_crate<'ast>(forest: &'ast mut Forest,
               entries, vector_length, (entries as f64 / vector_length as f64) * 100.);
     }
 
+    let num_noninlined_indices = definitions.len();
+
     Map {
         forest: forest,
         dep_graph: forest.dep_graph.clone(),
         map: RefCell::new(map),
         definitions: RefCell::new(definitions),
+        num_noninlined_indices: num_noninlined_indices,
     }
 }
 
 /// Used for items loaded from external crate that are being inlined into this
 /// crate.
-pub fn map_decoded_item<'ast, F: FoldOps>(map: &Map<'ast>,
-                                          parent_def_path: DefPath,
-                                          parent_def_id: DefId,
-                                          ii: InlinedItem,
-                                          fold_ops: F)
-                                          -> &'ast InlinedItem {
+pub fn map_decoded_item<'a, 'gcx, 'tcx, F: FoldOps>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
+                                                    parent_def_path: DefPath,
+                                                    parent_def_id: DefId,
+                                                    item_def_id: DefId,
+                                                    ii: InlinedItem,
+                                                    fold_ops: F)
+                                                    -> &'gcx InlinedItem {
     let mut fld = IdAndSpanUpdater { fold_ops: fold_ops };
     let ii = match ii {
         II::Item(i) => II::Item(i.map(|i| fld.fold_item(i))),
@@ -832,24 +852,18 @@ pub fn map_decoded_item<'ast, F: FoldOps>(map: &Map<'ast>,
         II::Foreign(i) => II::Foreign(i.map(|i| fld.fold_foreign_item(i)))
     };
 
-    let ii = map.forest.inlined_items.alloc(ii);
+    let ii = tcx.map.forest.inlined_items.alloc(ii);
     let ii_parent_id = fld.new_id(DUMMY_NODE_ID);
 
-    let defs = &mut *map.definitions.borrow_mut();
-    let mut def_collector = DefCollector::new(DefinitionsTracer::extend(ii_parent_id,
-                                                                        parent_def_path.clone(),
-                                                                        parent_def_id,
-                                                                        defs));
-    def_collector.walk_item(ii, map.krate());
+    let defs = &mut *tcx.map.definitions.borrow_mut();
+    let mut def_collector = DefCollector::new(DefinitionsRetracer::new(tcx, defs, item_def_id));
+    ii.visit(&mut def_collector);
 
-    let mut collector = NodeCollector::extend(map.krate(),
-                                              ii,
+    let mut collector = NodeCollector::extend(ii,
                                               ii_parent_id,
-                                              parent_def_path,
-                                              parent_def_id,
-                                              mem::replace(&mut *map.map.borrow_mut(), vec![]));
+                                              mem::replace(&mut *tcx.map.map.borrow_mut(), vec![]));
     ii.visit(&mut collector);
-    *map.map.borrow_mut() = collector.map;
+    *tcx.map.map.borrow_mut() = collector.map;
 
     ii
 }

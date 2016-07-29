@@ -326,7 +326,9 @@ fn collect_items_rec<'a, 'tcx: 'a>(scx: &SharedCrateContext<'a, 'tcx>,
         // We've been here already, no need to search again.
         return;
     }
-    debug!("BEGIN collect_items_rec({})", starting_point.to_string(scx.tcx()));
+    debug!("BEGIN collect_items_rec({}) [{:?}]",
+           starting_point.to_string(scx.tcx()),
+           starting_point);
 
     let mut neighbors = Vec::new();
     let recursion_depth_reset;

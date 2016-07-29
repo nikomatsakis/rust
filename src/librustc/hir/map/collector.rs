@@ -22,7 +22,7 @@ use syntax_pos::Span;
 /// A Visitor that walks over the HIR and collects Nodes into a HIR map
 pub struct NodeCollector<'ast> {
     /// The crate
-    pub krate: &'ast Crate,
+    pub krate: Option<&'ast Crate>,
     /// The node map
     pub map: Vec<MapEntry<'ast>>,
     /// The parent of this node
@@ -32,7 +32,7 @@ pub struct NodeCollector<'ast> {
 impl<'ast> NodeCollector<'ast> {
     pub fn root(krate: &'ast Crate) -> NodeCollector<'ast> {
         let mut collector = NodeCollector {
-            krate: krate,
+            krate: Some(krate),
             map: vec![],
             parent_node: CRATE_NODE_ID,
         };
@@ -41,20 +41,16 @@ impl<'ast> NodeCollector<'ast> {
         collector
     }
 
-    pub fn extend(krate: &'ast Crate,
-                  parent: &'ast InlinedItem,
+    pub fn extend(parent: &'ast InlinedItem,
                   parent_node: NodeId,
-                  parent_def_path: DefPath,
-                  parent_def_id: DefId,
                   map: Vec<MapEntry<'ast>>)
                   -> NodeCollector<'ast> {
         let mut collector = NodeCollector {
-            krate: krate,
+            krate: None,
             map: map,
             parent_node: parent_node,
         };
 
-        assert_eq!(parent_def_path.krate, parent_def_id.krate);
         collector.insert_entry(parent_node, RootInlinedParent(parent));
 
         collector
@@ -88,7 +84,10 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
     /// their outer items.
     fn visit_nested_item(&mut self, item: ItemId) {
         debug!("visit_nested_item: {:?}", item);
-        self.visit_item(self.krate.item(item.id))
+        match self.krate {
+            Some(k) => self.visit_item(k.item(item.id)),
+            None => bug!("nested-item in inlined item"),
+        }
     }
 
     fn visit_item(&mut self, i: &'ast Item) {

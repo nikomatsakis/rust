@@ -62,6 +62,10 @@ impl DepGraph {
     }
 
     pub fn read(&self, v: DepNode<DefId>) {
+        assert!(match v {
+            DepNode::Hir(def_id) => def_id.is_local(),
+            _ => true,
+        }, "read from foreign HIR node {:?}", v);
         self.data.enqueue(DepMessage::Read(v));
     }
 

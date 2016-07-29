@@ -120,6 +120,10 @@ fn instantiate_inline(ccx: &CrateContext, fn_id: DefId) -> Option<DefId> {
     };
 
     let inline_def_id = tcx.map.local_def_id(inline_id);
+
+    debug!("instantiate_inline: original-fn-id={:?} inline_id={} inline_def_id={:?}",
+           fn_id, inline_id, inline_def_id);
+
     Some(inline_def_id)
 }
 

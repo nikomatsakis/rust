@@ -139,9 +139,10 @@ pub fn decode_inlined_item<'a, 'tcx>(cdata: &cstore::CrateMetadata,
         to_id_range: to_id_range,
         last_filemap_index: Cell::new(0)
     };
-    let ii = ast_map::map_decoded_item(&dcx.tcx.map,
+    let ii = ast_map::map_decoded_item(tcx,
                                        parent_def_path,
                                        parent_did,
+                                       orig_did,
                                        decode_ast(ast_doc),
                                        dcx);
     let name = match *ii {

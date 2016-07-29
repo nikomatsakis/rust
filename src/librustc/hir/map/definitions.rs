@@ -297,6 +297,7 @@ impl Definitions {
     pub fn register_inlined_def(&mut self,
                                 node_id: ast::NodeId,
                                 def_id: DefId) {
+        debug!("register_inlined_def: node_id={} def_id={:?}", node_id, def_id);
         assert!(!def_id.is_local());
         self.node_map.insert(node_id, def_id);
         self.inlined_map.insert(def_id, node_id);
