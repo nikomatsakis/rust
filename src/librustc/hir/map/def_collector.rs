@@ -12,60 +12,35 @@ use super::*;
 
 use hir;
 use hir::intravisit;
-use hir::def_id::{CRATE_DEF_INDEX, DefId, DefIndex};
+use hir::def_id::{DefId, DefIndex};
 
 use middle::cstore::InlinedItem;
 
+use std::mem;
 use syntax::ast::*;
 use syntax::visit;
 use syntax::parse::token;
 
 /// Creates def ids for nodes in the HIR.
-pub struct DefCollector<'ast> {
+pub struct DefCollector<'ast, DT: DefTracer> {
     // If we are walking HIR (c.f., AST), we need to keep a reference to the
     // crate.
     hir_crate: Option<&'ast hir::Crate>,
-    definitions: &'ast mut Definitions,
-    parent_def: Option<DefIndex>,
+    tracer: DT,
 }
 
-impl<'ast> DefCollector<'ast> {
-    pub fn root(definitions: &'ast mut Definitions) -> DefCollector<'ast> {
-        let mut collector = DefCollector {
+pub trait DefTracer {
+    fn push_parent(&mut self, parent_def: DefIndex) -> Option<DefIndex>;
+    fn pop_parent(&mut self, previous_parent_def: Option<DefIndex>);
+    fn create_def(&mut self, node_id: NodeId, data: DefPathData) -> DefIndex;
+}
+
+impl<'ast, DT: DefTracer> DefCollector<'ast, DT> {
+    pub fn new(tracer: DT) -> Self {
+        DefCollector {
             hir_crate: None,
-            definitions: definitions,
-            parent_def: None,
-        };
-        let root = collector.create_def_with_parent(None, CRATE_NODE_ID, DefPathData::CrateRoot);
-        assert_eq!(root, CRATE_DEF_INDEX);
-        collector.parent_def = Some(root);
-
-        collector.create_def_with_parent(Some(CRATE_DEF_INDEX), DUMMY_NODE_ID, DefPathData::Misc);
-
-        collector
-    }
-
-    pub fn extend(parent_node: NodeId,
-                  parent_def_path: DefPath,
-                  parent_def_id: DefId,
-                  definitions: &'ast mut Definitions)
-                  -> DefCollector<'ast> {
-        let mut collector = DefCollector {
-            hir_crate: None,
-            parent_def: None,
-            definitions: definitions,
-        };
-
-        assert_eq!(parent_def_path.krate, parent_def_id.krate);
-        let root_path = Box::new(InlinedRootPath {
-            data: parent_def_path.data,
-            def_id: parent_def_id,
-        });
-
-        let def = collector.create_def(parent_node, DefPathData::InlinedRoot(root_path));
-        collector.parent_def = Some(def);
-
-        collector
+            tracer: tracer,
+        }
     }
 
     pub fn walk_item(&mut self, ii: &'ast InlinedItem, krate: &'ast hir::Crate) {
@@ -73,29 +48,14 @@ impl<'ast> DefCollector<'ast> {
         ii.visit(self);
     }
 
-    fn parent_def(&self) -> Option<DefIndex> {
-        self.parent_def
-    }
-
     fn create_def(&mut self, node_id: NodeId, data: DefPathData) -> DefIndex {
-        let parent_def = self.parent_def();
-        debug!("create_def(node_id={:?}, data={:?}, parent_def={:?})", node_id, data, parent_def);
-        self.definitions.create_def_with_parent(parent_def, node_id, data)
-    }
-
-    fn create_def_with_parent(&mut self,
-                              parent: Option<DefIndex>,
-                              node_id: NodeId,
-                              data: DefPathData)
-                              -> DefIndex {
-        self.definitions.create_def_with_parent(parent, node_id, data)
+        self.tracer.create_def(node_id, data)
     }
 
     fn with_parent<F: FnOnce(&mut Self)>(&mut self, parent_def: DefIndex, f: F) {
-        let parent = self.parent_def;
-        self.parent_def = Some(parent_def);
+        let old = self.tracer.push_parent(parent_def);
         f(self);
-        self.parent_def = parent;
+        self.tracer.pop_parent(old);
     }
 
     fn visit_ast_const_integer(&mut self, expr: &Expr) {
@@ -124,7 +84,7 @@ impl<'ast> DefCollector<'ast> {
     }
 }
 
-impl<'ast> visit::Visitor for DefCollector<'ast> {
+impl<'ast, DT: DefTracer> visit::Visitor for DefCollector<'ast, DT> {
     fn visit_item(&mut self, i: &Item) {
         debug!("visit_item: {:?}", i);
 
@@ -236,31 +196,25 @@ impl<'ast> visit::Visitor for DefCollector<'ast> {
     }
 
     fn visit_pat(&mut self, pat: &Pat) {
-        let parent_def = self.parent_def;
-
         if let PatKind::Ident(_, id, _) = pat.node {
             let def = self.create_def(pat.id, DefPathData::Binding(id.node.name));
-            self.parent_def = Some(def);
+            self.with_parent(def, |this| visit::walk_pat(this, pat));
+        } else {
+            visit::walk_pat(self, pat);
         }
-
-        visit::walk_pat(self, pat);
-        self.parent_def = parent_def;
     }
 
     fn visit_expr(&mut self, expr: &Expr) {
-        let parent_def = self.parent_def;
-
         if let ExprKind::Repeat(_, ref count) = expr.node {
             self.visit_ast_const_integer(count);
         }
 
         if let ExprKind::Closure(..) = expr.node {
             let def = self.create_def(expr.id, DefPathData::ClosureExpr);
-            self.parent_def = Some(def);
+            self.with_parent(def, |this| visit::walk_expr(this, expr));
+        } else {
+            visit::walk_expr(self, expr);
         }
-
-        visit::walk_expr(self, expr);
-        self.parent_def = parent_def;
     }
 
     fn visit_ty(&mut self, ty: &Ty) {
@@ -280,7 +234,7 @@ impl<'ast> visit::Visitor for DefCollector<'ast> {
 }
 
 // We walk the HIR rather than the AST when reading items from metadata.
-impl<'ast> intravisit::Visitor<'ast> for DefCollector<'ast> {
+impl<'ast, DT: DefTracer> intravisit::Visitor<'ast> for DefCollector<'ast, DT> {
     /// Because we want to track parent items and so forth, enable
     /// deep walking so that we walk nested items in the context of
     /// their outer items.
@@ -395,31 +349,25 @@ impl<'ast> intravisit::Visitor<'ast> for DefCollector<'ast> {
     }
 
     fn visit_pat(&mut self, pat: &'ast hir::Pat) {
-        let parent_def = self.parent_def;
-
         if let hir::PatKind::Binding(_, name, _) = pat.node {
             let def = self.create_def(pat.id, DefPathData::Binding(name.node));
-            self.parent_def = Some(def);
+            self.with_parent(def, |this| intravisit::walk_pat(this, pat));
+        } else {
+            intravisit::walk_pat(self, pat);
         }
-
-        intravisit::walk_pat(self, pat);
-        self.parent_def = parent_def;
     }
 
     fn visit_expr(&mut self, expr: &'ast hir::Expr) {
-        let parent_def = self.parent_def;
-
         if let hir::ExprRepeat(_, ref count) = expr.node {
             self.visit_hir_const_integer(count);
         }
 
         if let hir::ExprClosure(..) = expr.node {
             let def = self.create_def(expr.id, DefPathData::ClosureExpr);
-            self.parent_def = Some(def);
+            self.with_parent(def, |this| intravisit::walk_expr(this, expr));
+        } else {
+            intravisit::walk_expr(self, expr);
         }
-
-        intravisit::walk_expr(self, expr);
-        self.parent_def = parent_def;
     }
 
     fn visit_ty(&mut self, ty: &'ast hir::Ty) {
@@ -435,5 +383,49 @@ impl<'ast> intravisit::Visitor<'ast> for DefCollector<'ast> {
 
     fn visit_macro_def(&mut self, macro_def: &'ast hir::MacroDef) {
         self.create_def(macro_def.id, DefPathData::MacroDef(macro_def.name));
+    }
+}
+
+pub struct DefinitionsTracer<'ast> {
+    definitions: &'ast mut Definitions,
+    parent_def: Option<DefIndex>,
+}
+
+impl<'ast> DefinitionsTracer<'ast> {
+    pub fn root(definitions: &'ast mut Definitions) -> Self {
+        DefinitionsTracer {
+            definitions: definitions,
+            parent_def: None
+        }
+    }
+
+    pub fn extend(parent_node: NodeId,
+                  parent_def_path: DefPath,
+                  parent_def_id: DefId,
+                  definitions: &'ast mut Definitions)
+                  -> Self {
+        let mut collector = DefinitionsTracer::root(definitions);
+        assert_eq!(parent_def_path.krate, parent_def_id.krate);
+        let root_path = Box::new(InlinedRootPath {
+            data: parent_def_path.data,
+            def_id: parent_def_id,
+        });
+        let def = collector.create_def(parent_node, DefPathData::InlinedRoot(root_path));
+        collector.parent_def = Some(def);
+        collector
+    }
+}
+
+impl<'ast> DefTracer for DefinitionsTracer<'ast> {
+    fn push_parent(&mut self, parent_def: DefIndex) -> Option<DefIndex> {
+        mem::replace(&mut self.parent_def, Some(parent_def))
+    }
+
+    fn pop_parent(&mut self, old_parent_def: Option<DefIndex>) {
+        self.parent_def = old_parent_def;
+    }
+
+    fn create_def(&mut self, node_id: NodeId, data: DefPathData) -> DefIndex {
+        self.definitions.create_def_with_parent(self.parent_def, node_id, data)
     }
 }

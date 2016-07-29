@@ -10,18 +10,19 @@
 
 use middle::cstore::LOCAL_CRATE;
 use hir::def_id::{DefId, DefIndex};
-use hir::map::def_collector::DefCollector;
+use hir::map::def_collector::{DefCollector, DefinitionsTracer};
 use rustc_data_structures::fnv::FnvHashMap;
 use syntax::{ast, visit};
 use syntax::parse::token::InternedString;
-use util::nodemap::NodeMap;
+use util::nodemap::{DefIdMap, NodeMap};
 
 /// The definition table containing node definitions
 #[derive(Clone)]
 pub struct Definitions {
     data: Vec<DefData>,
     key_map: FnvHashMap<DefKey, DefIndex>,
-    node_map: NodeMap<DefIndex>,
+    node_map: NodeMap<DefId>,
+    inlined_map: DefIdMap<ast::NodeId>,
 }
 
 /// A unique identifier that we can use to lookup a definition
@@ -187,11 +188,12 @@ impl Definitions {
             data: vec![],
             key_map: FnvHashMap(),
             node_map: NodeMap(),
+            inlined_map: DefIdMap(),
         }
     }
 
     pub fn collect(&mut self, krate: &ast::Crate) {
-        let mut def_collector = DefCollector::root(self);
+        let mut def_collector = DefCollector::new(DefinitionsTracer::root(self));
         visit::walk_crate(&mut def_collector, krate);
     }
 
@@ -217,12 +219,19 @@ impl Definitions {
         DefPath::make(LOCAL_CRATE, index, |p| self.def_key(p))
     }
 
+    /// Fetches the def-index for `node`. This will panic if `node` is
+    /// from an inlined HIR node from another crate; use
+    /// `opt_local_def_id` instead if that is a possibility.
     pub fn opt_def_index(&self, node: ast::NodeId) -> Option<DefIndex> {
-        self.node_map.get(&node).cloned()
+        self.opt_local_def_id(node)
+            .map(|def_id| {
+                assert!(def_id.is_local());
+                def_id.index
+            })
     }
 
     pub fn opt_local_def_id(&self, node: ast::NodeId) -> Option<DefId> {
-        self.opt_def_index(node).map(DefId::local)
+        self.node_map.get(&node).cloned()
     }
 
     pub fn local_def_id(&self, node: ast::NodeId) -> DefId {
@@ -234,7 +243,7 @@ impl Definitions {
             assert!(def_id.index.as_usize() < self.data.len());
             Some(self.data[def_id.index.as_usize()].node_id)
         } else {
-            None
+            self.inlined_map.get(&def_id).cloned()
         }
     }
 
@@ -248,10 +257,9 @@ impl Definitions {
                parent, node_id, data);
 
         assert!(!self.node_map.contains_key(&node_id),
-                "adding a def'n for node-id {:?} and data {:?} but a previous def'n exists: {:?}",
+                "adding a def'n for node-id {:?} and data {:?} but a previous def'n exists",
                 node_id,
-                data,
-                self.data[self.node_map[&node_id].as_usize()]);
+                data);
 
         assert!(parent.is_some() ^ match data {
             DefPathData::CrateRoot | DefPathData::InlinedRoot(_) => true,
@@ -278,12 +286,20 @@ impl Definitions {
         let index = DefIndex::new(self.data.len());
         self.data.push(DefData { key: key.clone(), node_id: node_id });
         debug!("create_def_with_parent: node_map[{:?}] = {:?}", node_id, index);
-        self.node_map.insert(node_id, index);
+        self.node_map.insert(node_id, DefId::local(index));
         debug!("create_def_with_parent: key_map[{:?}] = {:?}", key, index);
         self.key_map.insert(key, index);
 
 
         index
+    }
+
+    pub fn register_inlined_def(&mut self,
+                                node_id: ast::NodeId,
+                                def_id: DefId) {
+        assert!(!def_id.is_local());
+        self.node_map.insert(node_id, def_id);
+        self.inlined_map.insert(def_id, node_id);
     }
 }
 

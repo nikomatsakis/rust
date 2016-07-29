@@ -11,7 +11,7 @@
 pub use self::Node::*;
 use self::MapEntry::*;
 use self::collector::NodeCollector;
-use self::def_collector::DefCollector;
+use self::def_collector::{DefCollector, DefinitionsTracer};
 pub use self::definitions::{Definitions, DefKey, DefPath, DefPathData,
                             DisambiguatedDefPathData, InlinedRootPath};
 
@@ -836,10 +836,10 @@ pub fn map_decoded_item<'ast, F: FoldOps>(map: &Map<'ast>,
     let ii_parent_id = fld.new_id(DUMMY_NODE_ID);
 
     let defs = &mut *map.definitions.borrow_mut();
-    let mut def_collector = DefCollector::extend(ii_parent_id,
-                                                 parent_def_path.clone(),
-                                                 parent_def_id,
-                                                 defs);
+    let mut def_collector = DefCollector::new(DefinitionsTracer::extend(ii_parent_id,
+                                                                        parent_def_path.clone(),
+                                                                        parent_def_id,
+                                                                        defs));
     def_collector.walk_item(ii, map.krate());
 
     let mut collector = NodeCollector::extend(map.krate(),
