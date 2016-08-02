@@ -369,9 +369,10 @@ impl tr for Def {
           Def::Static(did, m) => { Def::Static(did.tr(dcx), m) }
           Def::Const(did) => { Def::Const(did.tr(dcx)) }
           Def::AssociatedConst(did) => Def::AssociatedConst(did.tr(dcx)),
-          Def::Local(_, nid) => {
+          Def::Local(orig_did, nid) => {
               let nid = dcx.tr_id(nid);
               let did = dcx.tcx.map.local_def_id(nid);
+              assert_eq!(orig_did, did);
               Def::Local(did, nid)
           }
           Def::Variant(e_did, v_did) => Def::Variant(e_did.tr(dcx), v_did.tr(dcx)),
@@ -382,10 +383,11 @@ impl tr for Def {
               Def::AssociatedTy(trait_did.tr(dcx), did.tr(dcx)),
           Def::PrimTy(p) => Def::PrimTy(p),
           Def::TyParam(s, index, def_id, n) => Def::TyParam(s, index, def_id.tr(dcx), n),
-          Def::Upvar(_, nid1, index, nid2) => {
+          Def::Upvar(orig_did1, nid1, index, nid2) => {
               let nid1 = dcx.tr_id(nid1);
               let nid2 = dcx.tr_id(nid2);
               let did1 = dcx.tcx.map.local_def_id(nid1);
+              assert_eq!(orig_did1, did1);
               Def::Upvar(did1, nid1, index, nid2)
           }
           Def::Struct(did) => Def::Struct(did.tr(dcx)),

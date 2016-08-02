@@ -423,6 +423,7 @@ impl<'a, 'gcx, 'tcx> DefinitionsRetracer<'a, 'gcx, 'tcx> {
                definitions: &'a mut Definitions,
                item_def_id: DefId)
                -> Self {
+        assert!(!item_def_id.krate);
         DefinitionsRetracer {
             tcx: tcx,
             definitions: definitions,
@@ -446,6 +447,8 @@ impl<'a, 'gcx, 'tcx> DefTracer for DefinitionsRetracer<'a, 'gcx, 'tcx> {
         // original crate does.
         let next_index = self.next_index;
         self.next_index = DefIndex::new(next_index.as_usize() + 1);
+        let next_def_id = DefId { krate: self.krate, index: next_index };
+        self.definitions.register_inlined_def(node_id, next_def_id);
         next_index
     }
 }
