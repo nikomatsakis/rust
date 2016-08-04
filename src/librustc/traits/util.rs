@@ -47,7 +47,11 @@ fn anonymize_predicate<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
             ty::Predicate::ObjectSafe(data),
 
         ty::Predicate::ClosureKind(closure_def_id, kind) =>
-            ty::Predicate::ClosureKind(closure_def_id, kind)
+            ty::Predicate::ClosureKind(closure_def_id, kind),
+
+        ty::Predicate::ClosureTraitRefs(ref a, ref b) =>
+            ty::Predicate::ClosureTraitRefs(tcx.anonymize_late_bound_regions(a),
+                                            tcx.anonymize_late_bound_regions(b)),
     }
 }
 
@@ -173,6 +177,10 @@ impl<'cx, 'gcx, 'tcx> Elaborator<'cx, 'gcx, 'tcx> {
             }
             ty::Predicate::ClosureKind(..) => {
                 // Nothing to elaborate when waiting for a closure's kind to be inferred.
+            }
+            ty::Predicate::ClosureTraitRefs(..) => {
+                // These predicates are only used when solving, they don't
+                // have a user syntax
             }
             ty::Predicate::RegionOutlives(..) |
             ty::Predicate::TypeOutlives(..) => {

@@ -838,6 +838,9 @@ pub enum Predicate<'tcx> {
     /// substitutions `...` and T being a closure type.  Satisfied (or refuted) once we know the
     /// closure's kind.
     ClosureKind(DefId, ClosureKind),
+
+    /// TODO
+    ClosureTraitRefs(ty::PolyTraitRef<'tcx>, ty::PolyTraitRef<'tcx>),
 }
 
 impl<'a, 'gcx, 'tcx> Predicate<'tcx> {
@@ -928,8 +931,11 @@ impl<'a, 'gcx, 'tcx> Predicate<'tcx> {
                 Predicate::WellFormed(data.subst(tcx, substs)),
             Predicate::ObjectSafe(trait_def_id) =>
                 Predicate::ObjectSafe(trait_def_id),
-            Predicate::ClosureKind(closure_def_id, kind) =>
-                Predicate::ClosureKind(closure_def_id, kind),
+            Predicate::ClosureKind(..) |
+            Predicate::ClosureTraitRefs(..) =>
+                // these kinds of predicates only appear internally in
+                // a transient fashion
+                bug!("trait-refs found in `subst_supertrait`"),
         }
     }
 }
@@ -1146,6 +1152,13 @@ impl<'tcx> Predicate<'tcx> {
             ty::Predicate::ClosureKind(_closure_def_id, _kind) => {
                 vec![]
             }
+            ty::Predicate::ClosureTraitRefs(ref a, ref b) => {
+                a.input_types()
+                 .iter()
+                 .chain(b.input_types())
+                 .cloned()
+                 .collect()
+            }
         };
 
         // The only reason to collect into a vector here is that I was
@@ -1168,6 +1181,7 @@ impl<'tcx> Predicate<'tcx> {
             Predicate::WellFormed(..) |
             Predicate::ObjectSafe(..) |
             Predicate::ClosureKind(..) |
+            Predicate::ClosureTraitRefs(..) |
             Predicate::TypeOutlives(..) => {
                 None
             }

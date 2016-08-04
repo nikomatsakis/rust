@@ -478,6 +478,9 @@ impl<'tcx> fmt::Debug for ty::Predicate<'tcx> {
             ty::Predicate::ClosureKind(closure_def_id, kind) => {
                 write!(f, "ClosureKind({:?}, {:?})", closure_def_id, kind)
             }
+            ty::Predicate::ClosureTraitRefs(ref a, ref b) => {
+                write!(f, "ClosureTraitRefs({:?}, {:?})", a, b)
+            }
         }
     }
 }
@@ -1088,6 +1091,8 @@ impl<'tcx> fmt::Display for ty::Predicate<'tcx> {
                     write!(f, "the closure `{}` implements the trait `{}`",
                            tcx.item_path_str(closure_def_id), kind)
                 }),
+            ty::Predicate::ClosureTraitRefs(ref a, ref b) =>
+                write!(f, "can unify `{:?}` and `{:?}`", a, b)
         }
     }
 }

@@ -553,6 +553,13 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                             return;
                         }
 
+                        ty::Predicate::ClosureTraitRefs(a, b) => {
+                            // Errors here result in a OutputTypeParameterMismatch.
+                            span_bug!(span, "closure-trait-ref predicate not satisfied: \
+                                             {:?} vs {:?}",
+                                      a, b)
+                        }
+
                         ty::Predicate::WellFormed(ty) => {
                             // WF predicates cannot themselves make
                             // errors. They can only block due to

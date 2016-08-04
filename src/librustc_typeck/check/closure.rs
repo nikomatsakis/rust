@@ -178,6 +178,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                     // code is looking for a self type of a unresolved
                     // inference variable.
                     ty::Predicate::ClosureKind(..) => None,
+                    ty::Predicate::ClosureTraitRefs(..) => None,
                 };
                 opt_trait_ref
                     .and_then(|tr| self.self_type_matches_expected_vid(tr, expected_vid))

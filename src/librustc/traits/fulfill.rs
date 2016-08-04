@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use dep_graph::DepGraph;
-use infer::{InferCtxt, InferOk};
+use infer::{InferCtxt, InferOk, TypeOrigin};
 use ty::{self, Ty, TypeFoldable, ToPolyTraitRef, TyCtxt};
 use rustc_data_structures::obligation_forest::{ObligationForest, Error};
 use rustc_data_structures::obligation_forest::{ForestObligation, ObligationProcessor};
@@ -25,6 +25,7 @@ use super::CodeSelectionError;
 use super::FulfillmentError;
 use super::FulfillmentErrorCode;
 use super::ObligationCause;
+use super::OutputTypeParameterMismatch;
 use super::PredicateObligation;
 use super::project;
 use super::select::SelectionContext;
@@ -514,6 +515,21 @@ fn process_predicate<'a, 'gcx, 'tcx>(
                     Ok(None)
                 }
             }
+        }
+
+        ty::Predicate::ClosureTraitRefs(obligation_trait_ref,
+                                        expected_trait_ref) => {
+            // TODO explain wtf this is doing here
+            let origin = TypeOrigin::RelateOutputImplTypes(obligation.cause.span);
+            selcx.infcx()
+                 .sub_poly_trait_refs(false,
+                                      origin,
+                                      expected_trait_ref,
+                                      obligation_trait_ref)
+                 .map(|InferOk { obligations, .. }| Some(obligations))
+                 .map_err(|e| CodeSelectionError(OutputTypeParameterMismatch(expected_trait_ref,
+                                                                             obligation_trait_ref,
+                                                                             e)))
         }
 
         ty::Predicate::WellFormed(ty) => {

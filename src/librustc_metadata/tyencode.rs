@@ -507,6 +507,9 @@ pub fn enc_predicate<'a, 'tcx>(w: &mut Cursor<Vec<u8>>,
             };
             write!(w, "c{}|{}|", (cx.ds)(cx.tcx, closure_def_id), kind_char);
         }
+        ty::Predicate::ClosureTraitRefs(..) => {
+            bug!("cannot encode ClosureTraitRefs predicate {:?}", p)
+        }
     }
 }
 

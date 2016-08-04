@@ -585,6 +585,13 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                     }
                 }
             }
+
+            ty::Predicate::ClosureTraitRefs(a, b) => {
+                match self.confirm_poly_trait_refs(obligation.cause.clone(), a, b) {
+                    Ok(_) => EvaluatedToOk,
+                    Err(_) => EvaluatedToErr
+                }
+            }
         }
     }
 
@@ -2407,13 +2414,15 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                trait_ref,
                obligations);
 
-        self.confirm_poly_trait_refs(obligation.cause.clone(),
-                                     obligation.predicate.to_poly_trait_ref(),
-                                     trait_ref)?;
-
         obligations.push(Obligation::new(
                 obligation.cause.clone(),
                 ty::Predicate::ClosureKind(closure_def_id, kind)));
+
+        obligations.push(Obligation::new(
+                obligation.cause.clone(),
+                ty::Predicate::ClosureTraitRefs(
+                    obligation.predicate.to_poly_trait_ref(),
+                    trait_ref)));
 
         Ok(VtableClosureData {
             closure_def_id: closure_def_id,

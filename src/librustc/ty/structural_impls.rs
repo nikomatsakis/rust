@@ -159,6 +159,13 @@ impl<'a, 'tcx> Lift<'tcx> for ty::Predicate<'a> {
             ty::Predicate::ClosureKind(closure_def_id, kind) => {
                 Some(ty::Predicate::ClosureKind(closure_def_id, kind))
             }
+            ty::Predicate::ClosureTraitRefs(ref a, ref b) => {
+                tcx.lift(a).and_then(|a| {
+                    tcx.lift(b).and_then(|b| {
+                        Some(ty::Predicate::ClosureTraitRefs(a, b))
+                    })
+                })
+            }
             ty::Predicate::ObjectSafe(trait_def_id) => {
                 Some(ty::Predicate::ObjectSafe(trait_def_id))
             }
@@ -880,6 +887,9 @@ impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
                 ty::Predicate::WellFormed(data.fold_with(folder)),
             ty::Predicate::ClosureKind(closure_def_id, kind) =>
                 ty::Predicate::ClosureKind(closure_def_id, kind),
+            ty::Predicate::ClosureTraitRefs(ref a, ref b) =>
+                ty::Predicate::ClosureTraitRefs(a.fold_with(folder),
+                                                b.fold_with(folder)),
             ty::Predicate::ObjectSafe(trait_def_id) =>
                 ty::Predicate::ObjectSafe(trait_def_id),
         }
@@ -895,6 +905,8 @@ impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
             ty::Predicate::Projection(ref binder) => binder.visit_with(visitor),
             ty::Predicate::WellFormed(data) => data.visit_with(visitor),
             ty::Predicate::ClosureKind(_closure_def_id, _kind) => false,
+            ty::Predicate::ClosureTraitRefs(ref a, ref b) =>
+                a.visit_with(visitor) && b.visit_with(visitor),
             ty::Predicate::ObjectSafe(_trait_def_id) => false,
         }
     }
