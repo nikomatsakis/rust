@@ -131,6 +131,7 @@ use rustc_const_eval::eval_length;
 mod assoc;
 mod autoderef;
 pub mod dropck;
+pub mod implck;
 pub mod _match;
 pub mod writeback;
 pub mod regionck;
@@ -478,23 +479,9 @@ pub fn check_item_bodies(ccx: &CrateCtxt) -> CompileResult {
     })
 }
 
-pub fn check_drop_impls(ccx: &CrateCtxt) -> CompileResult {
+pub fn check_special_impls(ccx: &CrateCtxt) -> CompileResult {
     ccx.tcx.sess.track_errors(|| {
-        let _task = ccx.tcx.dep_graph.in_task(DepNode::Dropck);
-        let drop_trait = match ccx.tcx.lang_items.drop_trait() {
-            Some(id) => ccx.tcx.lookup_trait_def(id), None => { return }
-        };
-        drop_trait.for_each_impl(ccx.tcx, |drop_impl_did| {
-            let _task = ccx.tcx.dep_graph.in_task(DepNode::DropckImpl(drop_impl_did));
-            if drop_impl_did.is_local() {
-                match dropck::check_drop_impl(ccx, drop_impl_did) {
-                    Ok(()) => {}
-                    Err(()) => {
-                        assert!(ccx.tcx.sess.has_errors());
-                    }
-                }
-            }
-        });
+        implck::check_all_special_trait_impls(ccx);
     })
 }
 

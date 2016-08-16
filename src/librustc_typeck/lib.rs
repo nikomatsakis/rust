@@ -93,6 +93,7 @@ extern crate rustc_platform_intrinsics as intrinsics;
 extern crate rustc_back;
 extern crate rustc_const_math;
 extern crate rustc_const_eval;
+extern crate rustc_data_structures;
 extern crate rustc_errors as errors;
 
 pub use rustc::dep_graph;
@@ -348,7 +349,7 @@ pub fn check_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
     time(time_passes, "item-bodies checking", || check::check_item_bodies(&ccx))?;
 
-    time(time_passes, "drop-impl checking", || check::check_drop_impls(&ccx))?;
+    time(time_passes, "special-impl checking", || check::check_special_impls(&ccx))?;
 
     check_unused::check_crate(tcx);
     check_for_entry_fn(&ccx);
