@@ -48,6 +48,7 @@ use syntax::parse::token::{self, InternedString};
 use syntax_pos::{DUMMY_SP, Span};
 
 use rustc_const_math::ConstInt;
+use rustc_data_structures::accumulate_vec::IntoIter as AccIntoIter;
 
 use hir;
 use hir::intravisit::Visitor;
@@ -1888,7 +1889,7 @@ impl<'tcx> TyS<'tcx> {
     /// Iterator that walks the immediate children of `self`.  Hence
     /// `Foo<Bar<i32>, u32>` yields the sequence `[Bar<i32>, u32]`
     /// (but not `i32`, like `walk`).
-    pub fn walk_shallow(&'tcx self) -> IntoIter<Ty<'tcx>> {
+    pub fn walk_shallow(&'tcx self) -> AccIntoIter<walk::TypeWalkerArray<'tcx>> {
         walk::walk_shallow(self)
     }
 

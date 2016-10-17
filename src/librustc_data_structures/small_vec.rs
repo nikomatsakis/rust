@@ -130,6 +130,18 @@ impl<A: Array> SmallVec<A> {
             self.set_len(len + 1);
         }
     }
+
+    pub fn truncate(&mut self, len: usize) {
+        unsafe {
+            while len < self.len() {
+                // Decrement len before the drop_in_place(), so a panic on Drop
+                // doesn't re-drop the just-failed value.
+                let len = self.len() - 1;
+                self.set_len(len);
+                ::std::ptr::drop_in_place(self.get_unchecked_mut(len));
+            }
+        }
+    }
 }
 
 impl<A: Array> Deref for SmallVec<A> {
