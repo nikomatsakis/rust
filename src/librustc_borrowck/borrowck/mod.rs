@@ -793,6 +793,68 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
         self.tcx.sess.span_err_with_code(s, msg, code);
     }
 
+    pub fn bck_err_to_struct_err(&self, err: &BckError<'tcx>) -> String {
+        match err.code {
+            err_mutbl => {
+                let descr = match err.cmt.note {
+                    mc::NoteClosureEnv(_) | mc::NoteUpvarRef(_) => {
+                        self.cmt_to_string(&err.cmt)
+                    }
+                    _ => match opt_loan_path(&err.cmt) {
+                        None => {
+                            format!("{} {}",
+                                    err.cmt.mutbl.to_user_str(),
+                                    self.cmt_to_string(&err.cmt))
+                        }
+                        Some(lp) => {
+                            format!("{} {} `{}`",
+                                    err.cmt.mutbl.to_user_str(),
+                                    self.cmt_to_string(&err.cmt),
+                                    self.loan_path_to_string(&lp))
+                        }
+                    }
+                };
+
+                match err.cause {
+                    MutabilityViolation => {
+                        format!("cannot write to {}", descr)
+                    }
+                    BorrowViolation(euv::ClosureCapture(_)) => {
+                        format!("closure cannot write to {}", descr)
+                    }
+                    BorrowViolation(euv::OverloadedOperator) |
+                    BorrowViolation(euv::AddrOf) |
+                    BorrowViolation(euv::RefBinding) |
+                    BorrowViolation(euv::AutoRef) |
+                    BorrowViolation(euv::AutoUnsafe) |
+                    BorrowViolation(euv::ForLoop) |
+                    BorrowViolation(euv::MatchDiscriminant) => {
+                        format!("cannot write to {}", descr)
+                    }
+                    BorrowViolation(euv::ClosureInvocation) => {
+                        span_bug!(err.span,
+                            "err_mutbl with a closure invocation");
+                    }
+                }
+            }
+            err_out_of_scope(..) => {
+                let msg = match opt_loan_path(&err.cmt) {
+                    None => "borrowed value".to_string(),
+                    Some(lp) => {
+                        format!("`{}`", self.loan_path_to_string(&lp))
+                    }
+                };
+                format!("{} does not live long enough", msg)
+            }
+            err_borrowed_pointer_too_short(..) => {
+                let descr = self.cmt_to_path_or_string(&err.cmt);
+                format!("lifetime of {} is too short to guarantee \
+                         its contents can be safely reborrowed",
+                        descr)
+            }
+        }
+    }
+
     pub fn bckerr_to_string(&self, err: &BckError<'tcx>) -> String {
         match err.code {
             err_mutbl => {
@@ -817,10 +879,10 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
 
                 match err.cause {
                     MutabilityViolation => {
-                        format!("cannot assign to {}", descr)
+                        format!("cannot write to {}", descr)
                     }
                     BorrowViolation(euv::ClosureCapture(_)) => {
-                        format!("closure cannot assign to {}", descr)
+                        format!("closure cannot write to {}", descr)
                     }
                     BorrowViolation(euv::OverloadedOperator) |
                     BorrowViolation(euv::AddrOf) |
@@ -829,7 +891,7 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
                     BorrowViolation(euv::AutoUnsafe) |
                     BorrowViolation(euv::ForLoop) |
                     BorrowViolation(euv::MatchDiscriminant) => {
-                        format!("cannot borrow {} as mutable", descr)
+                        format!("cannot write to {}", descr)
                     }
                     BorrowViolation(euv::ClosureInvocation) => {
                         span_bug!(err.span,
