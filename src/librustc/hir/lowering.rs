@@ -46,9 +46,12 @@ use hir::map::definitions::DefPathData;
 use hir::def_id::{DefIndex, DefId};
 use hir::def::{Def, PathResolution};
 use session::Session;
+use rustc_data_structures::fnv::FnvHashMap;
 
 use std::collections::BTreeMap;
 use std::iter;
+use std::mem;
+
 use syntax::ast::*;
 use syntax::errors;
 use syntax::ptr::P;
@@ -66,6 +69,7 @@ pub struct LoweringContext<'a> {
     // the form of a DefIndex) so that if we create a new node which introduces
     // a definition, then we can properly create the def id.
     parent_def: Option<DefIndex>,
+    exprs: FnvHashMap<hir::ExprId, hir::Expr>,
     resolver: &'a mut Resolver,
 }
 
@@ -97,12 +101,30 @@ pub fn lower_crate(sess: &Session,
         crate_root: std_inject::injected_crate_name(krate),
         sess: sess,
         parent_def: None,
+        exprs: FnvHashMap(),
         resolver: resolver,
     }.lower_crate(krate)
 }
 
 impl<'a> LoweringContext<'a> {
     fn lower_crate(&mut self, c: &Crate) -> hir::Crate {
+        let (items, impl_items) = self.lower_items(c);
+        let module = self.lower_mod(&c.module);
+        let attrs = self.lower_attrs(&c.attrs);
+        let exported_macros = c.exported_macros.iter().map(|m| self.lower_macro_def(m)).collect();
+
+        hir::Crate {
+            module: module,
+            attrs: attrs,
+            span: c.span,
+            exported_macros: exported_macros,
+            items: items,
+            impl_items: impl_items,
+            exprs: mem::replace(&mut self.exprs, FnvHashMap()),
+        }
+    }
+
+    fn lower_items(&mut self, c: &Crate) -> (BTreeMap<NodeId, hir::Item>, BTreeMap<hir::ImplItemId, hir::ImplItem>) {
         struct ItemLowerer<'lcx, 'interner: 'lcx> {
             items: BTreeMap<NodeId, hir::Item>,
             impl_items: BTreeMap<hir::ImplItemId, hir::ImplItem>,
@@ -122,22 +144,17 @@ impl<'a> LoweringContext<'a> {
             }
         }
 
-        let (items, impl_items) = {
-            let mut item_lowerer = ItemLowerer { items: BTreeMap::new(),
-                                                 impl_items: BTreeMap::new(),
-                                                 lctx: self };
-            visit::walk_crate(&mut item_lowerer, c);
-            (item_lowerer.items, item_lowerer.impl_items)
-        };
+        let mut item_lowerer = ItemLowerer { items: BTreeMap::new(),
+                                             impl_items: BTreeMap::new(),
+                                             lctx: self };
+        visit::walk_crate(&mut item_lowerer, c);
+        (item_lowerer.items, item_lowerer.impl_items)
+    }
 
-        hir::Crate {
-            module: self.lower_mod(&c.module),
-            attrs: self.lower_attrs(&c.attrs),
-            span: c.span,
-            exported_macros: c.exported_macros.iter().map(|m| self.lower_macro_def(m)).collect(),
-            items: items,
-            impl_items: impl_items,
-        }
+    fn record_expr(&mut self, expr: hir::Expr) -> hir::ExprId {
+        let id = hir::ExprId(expr.id);
+        self.exprs.insert(id, expr);
+        id
     }
 
     fn next_id(&self) -> NodeId {
