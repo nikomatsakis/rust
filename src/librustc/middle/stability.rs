@@ -31,7 +31,7 @@ use util::nodemap::{DefIdMap, FxHashSet, FxHashMap};
 
 use hir;
 use hir::{Item, Generics, StructField, Variant, PatKind};
-use hir::intravisit::{self, Visitor};
+use hir::intravisit::{self, Visitor, NestedVisitMode};
 use hir::pat_util::EnumerateAndAdjustIterator;
 
 use std::mem::replace;
@@ -238,8 +238,8 @@ impl<'a, 'tcx> Visitor<'tcx> for Annotator<'a, 'tcx> {
     /// Because stability levels are scoped lexically, we want to walk
     /// nested items in the context of the outer item, so enable
     /// deep-walking.
-    fn nested_visit_map(&mut self) -> Option<&hir::map::Map<'tcx>> {
-        Some(&self.tcx.map)
+    fn nested_visit_map(&mut self) -> Option<(&hir::map::Map<'tcx>, NestedVisitMode)> {
+        Some((&self.tcx.map, NestedVisitMode::All))
     }
 
     fn visit_item(&mut self, i: &'tcx Item) {
@@ -447,8 +447,8 @@ impl<'a, 'tcx> Visitor<'tcx> for Checker<'a, 'tcx> {
     /// Because stability levels are scoped lexically, we want to walk
     /// nested items in the context of the outer item, so enable
     /// deep-walking.
-    fn nested_visit_map(&mut self) -> Option<&hir::map::Map<'tcx>> {
-        Some(&self.tcx.map)
+    fn nested_visit_map(&mut self) -> Option<(&hir::map::Map<'tcx>, NestedVisitMode)> {
+        Some((&self.tcx.map, NestedVisitMode::All))
     }
 
     fn visit_item(&mut self, item: &'tcx hir::Item) {

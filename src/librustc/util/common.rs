@@ -227,7 +227,7 @@ impl<'v, P> Visitor<'v> for BlockQueryVisitor<P> where P: FnMut(&hir::Expr) -> b
 }
 
 // Takes a predicate p, returns true iff p is true for any subexpressions
-// of b -- skipping any inner loops (loop, while, loop_body)
+// of b.
 pub fn block_query<P>(b: &hir::Block, p: P) -> bool where P: FnMut(&hir::Expr) -> bool {
     let mut v = BlockQueryVisitor {
         p: p,

@@ -642,6 +642,10 @@ impl<'ast> Map<'ast> {
         }
     }
 
+    pub fn expr(&self, id: ExprId) -> &'ast Expr {
+        self.expect_expr(id.node_id())
+    }
+
     /// Returns the name associated with the given NodeId's AST.
     pub fn name(&self, id: NodeId) -> Name {
         match self.get(id) {
