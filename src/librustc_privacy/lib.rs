@@ -30,7 +30,7 @@ use rustc::dep_graph::DepNode;
 use rustc::hir::{self, PatKind};
 use rustc::hir::def::{self, Def, CtorKind};
 use rustc::hir::def_id::DefId;
-use rustc::hir::intravisit::{self, Visitor};
+use rustc::hir::intravisit::{self, Visitor, NestedVisitMode};
 use rustc::hir::itemlikevisit::ItemLikeVisitor;
 use rustc::hir::pat_util::EnumerateAndAdjustIterator;
 use rustc::lint;
@@ -119,8 +119,8 @@ impl<'a, 'tcx> EmbargoVisitor<'a, 'tcx> {
 impl<'a, 'tcx> Visitor<'tcx> for EmbargoVisitor<'a, 'tcx> {
     /// We want to visit items in the context of their containing
     /// module and so forth, so supply a crate for doing a deep walk.
-    fn nested_visit_map(&mut self) -> Option<&hir::map::Map<'tcx>> {
-        Some(&self.tcx.map)
+    fn nested_visit_map(&mut self) -> Option<(&hir::map::Map<'tcx>, NestedVisitMode)> {
+        Some((&self.tcx.map, NestedVisitMode::All))
     }
 
     fn visit_item(&mut self, item: &'tcx hir::Item) {
@@ -370,7 +370,7 @@ impl<'b, 'a, 'tcx: 'a> Visitor<'tcx> for ReachEverythingInTheInterfaceVisitor<'b
     }
 
     // Don't recurse into function bodies
-    fn visit_block(&mut self, _: &hir::Block) {}
+    fn visit_body(&mut self, _: hir::ExprId) {}
     // Don't recurse into expressions in array sizes or const initializers
     fn visit_expr(&mut self, _: &hir::Expr) {}
     // Don't recurse into patterns in function arguments
@@ -424,8 +424,8 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
 impl<'a, 'tcx> Visitor<'tcx> for PrivacyVisitor<'a, 'tcx> {
     /// We want to visit items in the context of their containing
     /// module and so forth, so supply a crate for doing a deep walk.
-    fn nested_visit_map(&mut self) -> Option<&hir::map::Map<'tcx>> {
-        Some(&self.tcx.map)
+    fn nested_visit_map(&mut self) -> Option<(&hir::map::Map<'tcx>, NestedVisitMode)> {
+        Some((&self.tcx.map, NestedVisitMode::All))
     }
 
     fn visit_item(&mut self, item: &'tcx hir::Item) {
@@ -627,8 +627,8 @@ impl<'a, 'b, 'tcx, 'v> Visitor<'v> for ObsoleteCheckTypeForPrivatenessVisitor<'a
 impl<'a, 'tcx> Visitor<'tcx> for ObsoleteVisiblePrivateTypesVisitor<'a, 'tcx> {
     /// We want to visit items in the context of their containing
     /// module and so forth, so supply a crate for doing a deep walk.
-    fn nested_visit_map(&mut self) -> Option<&hir::map::Map<'tcx>> {
-        Some(&self.tcx.map)
+    fn nested_visit_map(&mut self) -> Option<(&hir::map::Map<'tcx>, NestedVisitMode)> {
+        Some((&self.tcx.map, NestedVisitMode::All))
     }
 
     fn visit_item(&mut self, item: &'tcx hir::Item) {
@@ -1024,8 +1024,6 @@ impl<'a, 'tcx: 'a, 'v> Visitor<'v> for SearchInterfaceForPrivateItemsVisitor<'a,
         intravisit::walk_trait_ref(self, trait_ref);
     }
 
-    // Don't recurse into function bodies
-    fn visit_block(&mut self, _: &hir::Block) {}
     // Don't recurse into expressions in array sizes or const initializers
     fn visit_expr(&mut self, _: &hir::Expr) {}
     // Don't recurse into patterns in function arguments
