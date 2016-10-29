@@ -13,7 +13,7 @@ use rustc::session::Session;
 
 use rustc::dep_graph::DepNode;
 use rustc::hir::map::Map;
-use rustc::hir::intravisit::{self, Visitor};
+use rustc::hir::intravisit::{self, Visitor, NestedVisitMode};
 use rustc::hir;
 use syntax_pos::Span;
 
@@ -25,8 +25,9 @@ enum Context {
 }
 
 #[derive(Copy, Clone)]
-struct CheckLoopVisitor<'a> {
+struct CheckLoopVisitor<'a, 'ast: 'a> {
     sess: &'a Session,
+    map: &'a Map<'ast>,
     cx: Context,
 }
 
@@ -35,20 +36,25 @@ pub fn check_crate(sess: &Session, map: &Map) {
     let krate = map.krate();
     krate.visit_all_item_likes(&mut CheckLoopVisitor {
         sess: sess,
+        map: map,
         cx: Normal,
     }.as_deep_visitor());
 }
 
-impl<'a, 'v> Visitor<'v> for CheckLoopVisitor<'a> {
-    fn visit_item(&mut self, i: &hir::Item) {
+impl<'a, 'ast> Visitor<'ast> for CheckLoopVisitor<'a, 'ast> {
+    fn nested_visit_map(&mut self) -> Option<(&hir::map::Map<'ast>, NestedVisitMode)> {
+        Some((&self.map, NestedVisitMode::OnlyBodies))
+    }
+
+    fn visit_item(&mut self, i: &'ast hir::Item) {
         self.with_context(Normal, |v| intravisit::walk_item(v, i));
     }
 
-    fn visit_impl_item(&mut self, i: &hir::ImplItem) {
+    fn visit_impl_item(&mut self, i: &'ast hir::ImplItem) {
         self.with_context(Normal, |v| intravisit::walk_impl_item(v, i));
     }
 
-    fn visit_expr(&mut self, e: &hir::Expr) {
+    fn visit_expr(&mut self, e: &'ast hir::Expr) {
         match e.node {
             hir::ExprWhile(ref e, ref b, _) => {
                 self.visit_expr(&e);
@@ -57,8 +63,8 @@ impl<'a, 'v> Visitor<'v> for CheckLoopVisitor<'a> {
             hir::ExprLoop(ref b, _) => {
                 self.with_context(Loop, |v| v.visit_block(&b));
             }
-            hir::ExprClosure(.., ref b, _) => {
-                self.with_context(Closure, |v| v.visit_expr(&b));
+            hir::ExprClosure(.., b, _) => {
+                self.with_context(Closure, |v| v.visit_body(b));
             }
             hir::ExprBreak(_) => self.require_loop("break", e.span),
             hir::ExprAgain(_) => self.require_loop("continue", e.span),
@@ -67,9 +73,9 @@ impl<'a, 'v> Visitor<'v> for CheckLoopVisitor<'a> {
     }
 }
 
-impl<'a> CheckLoopVisitor<'a> {
+impl<'a, 'ast> CheckLoopVisitor<'a, 'ast> {
     fn with_context<F>(&mut self, cx: Context, f: F)
-        where F: FnOnce(&mut CheckLoopVisitor<'a>)
+        where F: FnOnce(&mut CheckLoopVisitor<'a, 'ast>)
     {
         let old_cx = self.cx;
         self.cx = cx;
