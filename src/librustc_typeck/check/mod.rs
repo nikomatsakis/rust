@@ -120,7 +120,7 @@ use syntax::symbol::{Symbol, InternedString, keywords};
 use syntax::util::lev_distance::find_best_match_for_name;
 use syntax_pos::{self, BytePos, Span};
 
-use rustc::hir::intravisit::{self, Visitor};
+use rustc::hir::intravisit::{self, Visitor, NestedVisitMode};
 use rustc::hir::itemlikevisit::ItemLikeVisitor;
 use rustc::hir::{self, PatKind};
 use rustc::hir::print as pprust;
@@ -509,6 +509,10 @@ struct CheckItemTypesVisitor<'a, 'tcx: 'a> { ccx: &'a CrateCtxt<'a, 'tcx> }
 struct CheckItemBodiesVisitor<'a, 'tcx: 'a> { ccx: &'a CrateCtxt<'a, 'tcx> }
 
 impl<'a, 'tcx> Visitor<'tcx> for CheckItemTypesVisitor<'a, 'tcx> {
+    fn nested_visit_map(&mut self) -> Option<(&hir::map::Map<'tcx>, NestedVisitMode)> {
+        Some((&self.ccx.tcx.map, NestedVisitMode::OnlyBodies))
+    }
+
     fn visit_item(&mut self, i: &'tcx hir::Item) {
         check_item_type(self.ccx, i);
         intravisit::walk_item(self, i);
@@ -601,9 +605,11 @@ pub fn check_drop_impls(ccx: &CrateCtxt) -> CompileResult {
 
 fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                            decl: &'tcx hir::FnDecl,
-                           body: &'tcx hir::Expr,
+                           body_id: hir::ExprId,
                            fn_id: ast::NodeId,
                            span: Span) {
+    let body = ccx.tcx.map.expr(body_id);
+
     let raw_fty = ccx.tcx.item_type(ccx.tcx.map.local_def_id(fn_id));
     let fn_ty = match raw_fty.sty {
         ty::TyFnDef(.., f) => f,
@@ -614,13 +620,13 @@ fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
 
     ccx.inherited(fn_id).enter(|inh| {
         // Compute the fty from point of view of inside fn.
-        let fn_scope = inh.tcx.region_maps.call_site_extent(fn_id, body.id);
+        let fn_scope = inh.tcx.region_maps.call_site_extent(fn_id, body_id.node_id());
         let fn_sig =
             fn_ty.sig.subst(inh.tcx, &inh.parameter_environment.free_substs);
         let fn_sig =
             inh.tcx.liberate_late_bound_regions(fn_scope, &fn_sig);
         let fn_sig =
-            inh.normalize_associated_types_in(body.span, body.id, &fn_sig);
+            inh.normalize_associated_types_in(body.span, body_id.node_id(), &fn_sig);
 
         let fcx = check_fn(&inh, fn_ty.unsafety, fn_id, &fn_sig, decl, fn_id, body);
 
@@ -630,7 +636,7 @@ fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         fcx.check_casts();
         fcx.select_all_obligations_or_error(); // Casts can introduce new obligations.
 
-        fcx.regionck_fn(fn_id, decl, body);
+        fcx.regionck_fn(fn_id, decl, body_id);
         fcx.resolve_type_vars_in_fn(decl, body, fn_id);
     });
 }
@@ -721,7 +727,7 @@ impl<'a, 'gcx, 'tcx> Visitor<'gcx> for GatherLocalsVisitor<'a, 'gcx, 'tcx> {
 
     // Don't descend into the bodies of nested closures
     fn visit_fn(&mut self, _: intravisit::FnKind<'gcx>, _: &'gcx hir::FnDecl,
-                _: &'gcx hir::Expr, _: Span, _: ast::NodeId) { }
+                _: hir::ExprId, _: Span, _: ast::NodeId) { }
 }
 
 /// Helper used by check_bare_fn and check_expr_fn. Does the grungy work of checking a function
@@ -882,8 +888,8 @@ pub fn check_item_body<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>, it: &'tcx hir::Item) {
            ccx.tcx.item_path_str(ccx.tcx.map.local_def_id(it.id)));
     let _indenter = indenter();
     match it.node {
-      hir::ItemFn(ref decl, .., ref body) => {
-        check_bare_fn(ccx, &decl, &body, it.id, it.span);
+      hir::ItemFn(ref decl, .., body_id) => {
+        check_bare_fn(ccx, &decl, body_id, it.id, it.span);
       }
       hir::ItemImpl(.., ref impl_item_refs) => {
         debug!("ItemImpl {} with id {}", it.name, it.id);
@@ -894,8 +900,8 @@ pub fn check_item_body<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>, it: &'tcx hir::Item) {
                 hir::ImplItemKind::Const(_, ref expr) => {
                     check_const(ccx, &expr, impl_item.id)
                 }
-                hir::ImplItemKind::Method(ref sig, ref body) => {
-                    check_bare_fn(ccx, &sig.decl, body, impl_item.id, impl_item.span);
+                hir::ImplItemKind::Method(ref sig, body_id) => {
+                    check_bare_fn(ccx, &sig.decl, body_id, impl_item.id, impl_item.span);
                 }
                 hir::ImplItemKind::Type(_) => {
                     // Nothing to do here.
@@ -909,8 +915,8 @@ pub fn check_item_body<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>, it: &'tcx hir::Item) {
                 hir::ConstTraitItem(_, Some(ref expr)) => {
                     check_const(ccx, &expr, trait_item.id)
                 }
-                hir::MethodTraitItem(ref sig, Some(ref body)) => {
-                    check_bare_fn(ccx, &sig.decl, body, trait_item.id, trait_item.span);
+                hir::MethodTraitItem(ref sig, Some(body_id)) => {
+                    check_bare_fn(ccx, &sig.decl, body_id, trait_item.id, trait_item.span);
                 }
                 hir::MethodTraitItem(_, None) |
                 hir::ConstTraitItem(_, None) |
@@ -1073,14 +1079,14 @@ fn check_impl_items_against_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                          err.emit()
                     }
                 }
-                hir::ImplItemKind::Method(_, ref body) => {
+                hir::ImplItemKind::Method(_, body_id) => {
                     let trait_span = tcx.map.span_if_local(ty_trait_item.def_id);
                     if ty_trait_item.kind == ty::AssociatedKind::Method {
                         let err_count = tcx.sess.err_count();
                         compare_impl_method(ccx,
                                             &ty_impl_item,
                                             impl_item.span,
-                                            body.id,
+                                            body_id.node_id(),
                                             &ty_trait_item,
                                             impl_trait_ref,
                                             trait_span,
@@ -1090,7 +1096,7 @@ fn check_impl_items_against_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                             compare_impl_method(ccx,
                                                 &ty_impl_item,
                                                 impl_item.span,
-                                                body.id,
+                                                body_id.node_id(),
                                                 &ty_trait_item,
                                                 impl_trait_ref,
                                                 trait_span,
@@ -3663,8 +3669,8 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
           hir::ExprMatch(ref discrim, ref arms, match_src) => {
             self.check_match(expr, &discrim, arms, expected, match_src)
           }
-          hir::ExprClosure(capture, ref decl, ref body, _) => {
-              self.check_expr_closure(expr, capture, &decl, &body, expected)
+          hir::ExprClosure(capture, ref decl, body_id, _) => {
+              self.check_expr_closure(expr, capture, &decl, body_id, expected)
           }
           hir::ExprBlock(ref b) => {
             self.check_block_with_expected(&b, expected)
