@@ -166,20 +166,21 @@ pub fn poly_project_and_unify_type<'cx, 'gcx, 'tcx>(
             infcx.skolemize_late_bound_regions(&obligation.predicate, snapshot);
 
         let skol_obligation = obligation.with(skol_predicate);
-        let r = match project_and_unify_type(selcx, &skol_obligation) {
-            Ok(result) => {
+        match project_and_unify_type(selcx, &skol_obligation) {
+            Ok(None) => {
+                Ok(None)
+            }
+            Ok(Some(obligations)) => {
                 let span = obligation.cause.span;
-                match infcx.leak_check(false, span, &skol_map, snapshot) {
-                    Ok(()) => Ok(infcx.plug_leaks(skol_map, snapshot, result)),
+                match infcx.leak_check(false, span, &skol_map, snapshot, &obligations) {
+                    Ok(()) => Ok(infcx.plug_leaks(skol_map, snapshot, &result)),
                     Err(e) => Err(MismatchedProjectionTypes { err: e }),
                 }
             }
             Err(e) => {
                 Err(e)
             }
-        };
-
-        r
+        }
     })
 }
 

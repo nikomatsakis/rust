@@ -19,7 +19,7 @@ fn foo<'min,'max>(v: SomeStruct<&'max ()>)
                   -> SomeStruct<&'min ()>
     where 'max : 'min
 {
-    v //~ ERROR mismatched types
+    v //~ ERROR lifetime bound not satisfied
 }
 
 #[rustc_error]

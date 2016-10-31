@@ -18,13 +18,16 @@ use super::{CombinedSnapshot,
             SubregionOrigin,
             SkolemizationMap};
 use super::combine::CombineFields;
-use super::region_inference::{TaintDirections};
+use self::taint::TaintDirections;
 
+use traits::PredicateObligation;
 use ty::{self, TyCtxt, Binder, TypeFoldable};
 use ty::error::TypeError;
 use ty::relate::{Relate, RelateResult, TypeRelation};
 use syntax_pos::Span;
 use util::nodemap::{FxHashMap, FxHashSet};
+
+mod taint;
 
 pub struct HrMatchResult<U> {
     pub value: U,
@@ -76,16 +79,21 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
             debug!("a_prime={:?}", a_prime);
             debug!("b_prime={:?}", b_prime);
 
-            // Compare types now that bound regions have been replaced.
+            // Compare types now that bound regions have been
+            // replaced. We store the length of the `obligations`
+            // vector at the start so that we can track the new
+            // obligations added by sub (if any).
+            let obligations_start = self.obligations.len();
             let result = self.sub(a_is_expected).relate(&a_prime, &b_prime)?;
 
             // Presuming type comparison succeeds, we need to check
             // that the skolemized regions do not "leak".
-            self.infcx.leak_check(!a_is_expected, span, &skol_map, snapshot)?;
+            self.infcx.leak_check(!a_is_expected, span, &skol_map, snapshot,
+                                  &self.obligations[obligations_start..])?;
 
             // We are finished with the skolemized regions now so pop
             // them off.
-            self.infcx.pop_skolemized(skol_map, snapshot);
+            self.infcx.pop_skolemized(skol_map, snapshot, &mut self.obligations, obligations_start);
 
             debug!("higher_ranked_sub: OK result={:?}", result);
 
@@ -130,6 +138,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
             debug!("higher_ranked_match: skol_map={:?}", skol_map);
 
             // Equate types now that bound regions have been replaced.
+            let obligations_start = self.obligations.len();
             self.equate(a_is_expected).relate(&a_match, &b_match)?;
 
             // Map each skolemized region to a vector of other regions that it
@@ -142,6 +151,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
                     let tainted_regions =
                         self.infcx.tainted_regions(snapshot,
                                                    skol,
+                                                   &self.obligations[obligations_start..],
                                                    TaintDirections::incoming()); // [1]
 
                     // [1] this routine executes after the skolemized
@@ -213,7 +223,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
             debug!("higher_ranked_match: value={:?}", a_value);
 
             // We are now done with these skolemized variables.
-            self.infcx.pop_skolemized(skol_map, snapshot);
+            self.infcx.pop_skolemized(skol_map, snapshot, &mut self.obligations, obligations_start);
 
             Ok(HrMatchResult {
                 value: a_value,
@@ -239,6 +249,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
                     span, HigherRankedType, b);
 
             // Collect constraints.
+            let obligations_start = self.obligations.len();
             let result0 =
                 self.lub(a_is_expected).relate(&a_with_fresh, &b_with_fresh)?;
             let result0 =
@@ -252,7 +263,9 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
                 fold_regions_in(
                     self.tcx(),
                     &result0,
-                    |r, debruijn| generalize_region(self.infcx, span, snapshot, debruijn,
+                    |r, debruijn| generalize_region(self.infcx, span, snapshot,
+                                                    &self.obligations[obligations_start..],
+                                                    debruijn,
                                                     &new_vars, &a_map, r));
 
             debug!("lub({:?},{:?}) = {:?}",
@@ -266,6 +279,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
         fn generalize_region<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
                                              span: Span,
                                              snapshot: &CombinedSnapshot,
+                                             obligations: &[PredicateObligation<'tcx>],
                                              debruijn: ty::DebruijnIndex,
                                              new_vars: &[ty::RegionVid],
                                              a_map: &FxHashMap<ty::BoundRegion, &'tcx ty::Region>,
@@ -278,7 +292,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
                 return r0;
             }
 
-            let tainted = infcx.tainted_regions(snapshot, r0, TaintDirections::both());
+            let tainted = infcx.tainted_regions(snapshot, r0, obligations, TaintDirections::both());
 
             // Variables created during LUB computation which are
             // *related* to regions that pre-date the LUB computation
@@ -333,6 +347,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
             let b_vars = var_ids(self, &b_map);
 
             // Collect constraints.
+            let obligations_start = self.obligations.len();
             let result0 =
                 self.glb(a_is_expected).relate(&a_with_fresh, &b_with_fresh)?;
             let result0 =
@@ -346,7 +361,9 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
                 fold_regions_in(
                     self.tcx(),
                     &result0,
-                    |r, debruijn| generalize_region(self.infcx, span, snapshot, debruijn,
+                    |r, debruijn| generalize_region(self.infcx, span, snapshot,
+                                                    &self.obligations[obligations_start..],
+                                                    debruijn,
                                                     &new_vars,
                                                     &a_map, &a_vars, &b_vars,
                                                     r));
@@ -362,6 +379,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
         fn generalize_region<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
                                              span: Span,
                                              snapshot: &CombinedSnapshot,
+                                             obligations: &[PredicateObligation<'tcx>],
                                              debruijn: ty::DebruijnIndex,
                                              new_vars: &[ty::RegionVid],
                                              a_map: &FxHashMap<ty::BoundRegion, &'tcx ty::Region>,
@@ -374,7 +392,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
                 return r0;
             }
 
-            let tainted = infcx.tainted_regions(snapshot, r0, TaintDirections::both());
+            let tainted = infcx.tainted_regions(snapshot, r0, obligations, TaintDirections::both());
 
             let mut a_r = None;
             let mut b_r = None;
@@ -502,9 +520,13 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     fn tainted_regions(&self,
                        snapshot: &CombinedSnapshot,
                        r: &'tcx ty::Region,
+                       obligations: &[PredicateObligation<'tcx>],
                        directions: TaintDirections)
                        -> FxHashSet<&'tcx ty::Region> {
-        self.region_vars.tainted(&snapshot.region_vars_snapshot, r, directions)
+        taint::tainted_regions(self,
+                               r,
+                               obligations,
+                               directions)
     }
 
     fn region_vars_confined_to_snapshot(&self,
@@ -624,7 +646,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                       overly_polymorphic: bool,
                       _span: Span,
                       skol_map: &SkolemizationMap<'tcx>,
-                      snapshot: &CombinedSnapshot)
+                      snapshot: &CombinedSnapshot,
+                      obligations: &[PredicateObligation<'tcx>])
                       -> RelateResult<'tcx, ()>
     {
         debug!("leak_check: skol_map={:?}",
@@ -636,6 +659,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             // be itself or other new variables.
             let incoming_taints = self.tainted_regions(snapshot,
                                                        skol,
+                                                       obligations,
                                                        TaintDirections::both());
             for &tainted_region in &incoming_taints {
                 // Each skolemized should only be relatable to itself
@@ -702,7 +726,10 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     pub fn plug_leaks<T>(&self,
                          skol_map: SkolemizationMap<'tcx>,
                          snapshot: &CombinedSnapshot,
-                         value: T) -> T
+                         obligations: &mut Vec<PredicateObligation<'tcx>>,
+                         obligations_start: usize,
+                         value: &T)
+                         -> T
         where T : TypeFoldable<'tcx>
     {
         debug!("plug_leaks(skol_map={:?}, value={:?})",
@@ -710,7 +737,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                value);
 
         if skol_map.is_empty() {
-            return value;
+            return value.clone();
         }
 
         // Compute a mapping from the "taint set" of each skolemized
@@ -721,7 +748,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             skol_map
             .iter()
             .flat_map(|(&skol_br, &skol)| {
-                self.tainted_regions(snapshot, skol, TaintDirections::both())
+                let obligations = &obligations[obligations_start..];
+                self.tainted_regions(snapshot, skol, obligations, TaintDirections::both())
                     .into_iter()
                     .map(move |tainted_region| (tainted_region, skol_br))
             })
@@ -732,7 +760,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
 
         // Remove any instantiated type variables from `value`; those can hide
         // references to regions from the `fold_regions` code below.
-        let value = self.resolve_type_vars_if_possible(&value);
+        let value = self.resolve_type_vars_if_possible(value);
 
         // Map any skolemization byproducts back to a late-bound
         // region. Put that late-bound region at whatever the outermost
@@ -770,7 +798,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             }
         });
 
-        self.pop_skolemized(skol_map, snapshot);
+        self.pop_skolemized(skol_map, snapshot, obligations, obligations_start);
 
         debug!("plug_leaks: result={:?}", result);
 
@@ -787,10 +815,39 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     /// Note: popping also occurs implicitly as part of `leak_check`.
     pub fn pop_skolemized(&self,
                           skol_map: SkolemizationMap<'tcx>,
-                          snapshot: &CombinedSnapshot)
+                          snapshot: &CombinedSnapshot,
+                          obligations: &mut Vec<PredicateObligation<'tcx>>,
+                          obligations_start: usize)
     {
         debug!("pop_skolemized({:?})", skol_map);
         let skol_regions: FxHashSet<_> = skol_map.values().cloned().collect();
+
+        // remove obligations that reference `skol_regions`
+        let mut i = obligations_start;
+        while i < obligations.len() {
+            let remove = match obligations[i].predicate {
+                ty::Predicate::RegionOutlives(ref data) => {
+                    skol_regions.contains(&data.skip_binder().0) ||
+                        skol_regions.contains(&data.skip_binder().1)
+                }
+                ty::Predicate::Trait(_) |
+                ty::Predicate::Projection(_) |
+                ty::Predicate::Equate(_) |
+                ty::Predicate::TypeOutlives(..) |
+                ty::Predicate::WellFormed(_) |
+                ty::Predicate::ObjectSafe(_) |
+                ty::Predicate::ClosureKind(..) => {
+                    span_bug!(obligations[i].cause.span, "unexpected obligation: {:?}", obligations[i]);
+                }
+            };
+
+            if remove {
+                obligations.swap_remove(i);
+            } else {
+                i += 1;
+            }
+        }
+
         self.region_vars.pop_skolemized(&skol_regions, &snapshot.region_vars_snapshot);
         if !skol_map.is_empty() {
             self.projection_cache.borrow_mut().rollback_skolemized(

@@ -567,6 +567,12 @@ impl<'tcx, T> InferOk<'tcx, T> {
     }
 }
 
+impl<'tcx> From<PredicateObligations<'tcx>> for InferOk<'tcx, ()> {
+    fn from(obligations: PredicateObligations<'tcx>) -> Self {
+        InferOk { value: (), obligations: obligations }
+    }
+}
+
 #[must_use = "once you start a snapshot, you should always consume it"]
 pub struct CombinedSnapshot {
     projection_cache_snapshot: traits::ProjectionCacheSnapshot,
@@ -1123,10 +1129,10 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             let (ty::EquatePredicate(a, b), skol_map) =
                 self.skolemize_late_bound_regions(predicate, snapshot);
             let cause_span = cause.span;
-            let eqty_ok = self.eq_types(false, cause, a, b)?;
-            self.leak_check(false, cause_span, &skol_map, snapshot)?;
-            self.pop_skolemized(skol_map, snapshot);
-            Ok(eqty_ok.unit())
+            let InferOk { value: (), mut obligations } = self.eq_types(false, cause, a, b)?;
+            self.leak_check(false, cause_span, &skol_map, snapshot, &obligations)?;
+            self.pop_skolemized(skol_map, snapshot, &mut obligations, 0);
+            Ok(InferOk::from(obligations))
         })
     }
 
@@ -1136,14 +1142,15 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         -> UnitResult<'tcx>
     {
         self.commit_if_ok(|snapshot| {
-            let (ty::OutlivesPredicate(r_a, r_b), skol_map) =
+            let (predicate, skol_map) =
                 self.skolemize_late_bound_regions(predicate, snapshot);
+            let obligation = Obligation::new(cause, ty::Predicate::RegionOutlives(ty::Binder(predicate)));
+            self.leak_check(false, cause.span, &skol_map, snapshot, &[obligation])?;
+            self.pop_skolemized(skol_map, snapshot);
             let origin =
                 SubregionOrigin::from_obligation_cause(cause,
                                                        || RelateRegionParamBound(cause.span));
             self.sub_regions(origin, r_b, r_a); // `b : a` ==> `a <= b`
-            self.leak_check(false, cause.span, &skol_map, snapshot)?;
-            Ok(self.pop_skolemized(skol_map, snapshot))
         })
     }
 

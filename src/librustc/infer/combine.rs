@@ -57,6 +57,14 @@ pub struct CombineFields<'infcx, 'gcx: 'infcx+'tcx, 'tcx: 'infcx> {
     pub infcx: &'infcx InferCtxt<'infcx, 'gcx, 'tcx>,
     pub trace: TypeTrace<'tcx>,
     pub cause: Option<ty::relate::Cause>,
+
+    // As we process subtyping and so forth, we accumulate obligations
+    // into this vector. The higher-ranked code relies on the
+    // invariant that no operation touches the pre-existing parts of
+    // this vector. In other words, always push new obligations onto
+    // the end. More specifically, when operation X starts, if the
+    // vector has length N, then `obligations[..N]` should not be
+    // accessed (and certainly not mutated) by X or its suboperations.
     pub obligations: PredicateObligations<'tcx>,
 }
 
