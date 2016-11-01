@@ -18,7 +18,6 @@ pub use self::definitions::{Definitions, DefKey, DefPath, DefPathData,
 use dep_graph::{DepGraph, DepNode};
 
 use middle::cstore::InlinedItem;
-use middle::cstore::InlinedItem as II;
 use hir::def_id::{CRATE_DEF_INDEX, DefId, DefIndex};
 
 use syntax::abi::Abi;
@@ -57,7 +56,9 @@ pub enum Node<'ast> {
     NodeStructCtor(&'ast VariantData),
 
     NodeLifetime(&'ast Lifetime),
-    NodeTyParam(&'ast TyParam)
+    NodeTyParam(&'ast TyParam),
+
+    NodeInlinedItem(&'ast InlinedItem),
 }
 
 /// Represents an entry and its parent NodeID.
@@ -111,6 +112,8 @@ impl<'ast> MapEntry<'ast> {
             NodeStructCtor(n) => EntryStructCtor(p, n),
             NodeLifetime(n) => EntryLifetime(p, n),
             NodeTyParam(n) => EntryTyParam(p, n),
+
+            NodeInlinedItem(n) => RootInlinedParent(n),
         }
     }
 
@@ -153,6 +156,7 @@ impl<'ast> MapEntry<'ast> {
             EntryStructCtor(_, n) => NodeStructCtor(n),
             EntryLifetime(_, n) => NodeLifetime(n),
             EntryTyParam(_, n) => NodeTyParam(n),
+            RootInlinedParent(n) => NodeInlinedItem(n),
             _ => return None
         })
     }
@@ -315,12 +319,8 @@ impl<'ast> Map<'ast> {
                     EntryTyParam(p, _) =>
                         id = p,
 
-                    RootInlinedParent(parent) => match *parent {
-                        InlinedItem::Item(def_id, _) |
-                        InlinedItem::TraitItem(def_id, _) |
-                        InlinedItem::ImplItem(def_id, _) =>
-                            return DepNode::MetaData(def_id)
-                    },
+                    RootInlinedParent(parent) =>
+                        return DepNode::MetaData(parent.def_id),
 
                     RootCrate =>
                         bug!("node {} has crate ancestor but is inlined", id0),
@@ -543,8 +543,7 @@ impl<'ast> Map<'ast> {
     pub fn get_parent_did(&self, id: NodeId) -> DefId {
         let parent = self.get_parent(id);
         match self.find_entry(parent) {
-            Some(RootInlinedParent(&II::TraitItem(did, _))) |
-            Some(RootInlinedParent(&II::ImplItem(did, _))) => did,
+            Some(RootInlinedParent(ii)) => ii.def_id, // TODO: is this wrong for items?
             _ => self.local_def_id(parent)
         }
     }
@@ -939,6 +938,8 @@ impl<'a> NodePrinter for pprust::State<'a> {
             // printing.
             NodeLocal(_)       => bug!("cannot print isolated Local"),
             NodeStructCtor(_)  => bug!("cannot print isolated StructCtor"),
+
+            NodeInlinedItem(_) => bug!("cannot print inlined item"),
         }
     }
 }
@@ -1040,6 +1041,9 @@ fn node_id_to_string(map: &Map, id: NodeId, include_id: bool) -> String {
         }
         Some(NodeTyParam(ref ty_param)) => {
             format!("typaram {:?}{}", ty_param, id_str)
+        }
+        Some(NodeInlinedItem(_)) => {
+            format!("inlined item {}", id_str)
         }
         None => {
             format!("unknown node{}", id_str)
