@@ -873,18 +873,26 @@ impl<'tcx> TraitPredicate<'tcx> {
         // `Rc<u32>: SomeTrait`, and `(Vec<u32>, Rc<u32>): SomeTrait`.
         // Note that it's always sound to conflate dep-nodes, it just
         // leads to more recompilation.
-        let def_ids: Vec<_> =
+        //
+        // This code is hot enough that it's worth going to some effort (i.e.
+        // the peek()) to use `TraitSelectSingle` and avoid a heap allocation
+        // when possible.
+        let mut def_ids_base =
             self.input_types()
                 .flat_map(|t| t.walk())
                 .filter_map(|t| match t.sty {
-                    ty::TyAdt(adt_def, _) =>
-                        Some(adt_def.did),
-                    _ =>
-                        None
+                    ty::TyAdt(adt_def, _) => Some(adt_def.did),
+                    _ => None
                 })
-                .chain(iter::once(self.def_id()))
-                .collect();
-        DepNode::TraitSelect(def_ids)
+                .peekable();
+        if let Some(_) = def_ids_base.peek() {
+            let def_ids = def_ids_base
+                          .chain(iter::once(self.def_id()))
+                          .collect();
+            DepNode::TraitSelect(def_ids)
+        } else {
+            DepNode::TraitSelectSingle(self.def_id())
+        }
     }
 
     pub fn input_types<'a>(&'a self) -> impl DoubleEndedIterator<Item=Ty<'tcx>> + 'a {

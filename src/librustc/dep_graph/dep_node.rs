@@ -127,6 +127,11 @@ pub enum DepNode<D: Clone + Debug> {
     TraitItems(D),
     ReprHints(D),
     TraitSelect(Vec<D>),
+
+    // An optional alternative to `TraitSelect` that avoids a heap allocation
+    // in the case where there is a single D. (Note that `TraitSelect` is still
+    // allowed to contain a Vec with a single D.)
+    TraitSelectSingle(D),
 }
 
 impl<D: Clone + Debug> DepNode<D> {
@@ -232,6 +237,7 @@ impl<D: Clone + Debug> DepNode<D> {
                 let type_ds = try_opt!(type_ds.iter().map(|d| op(d)).collect());
                 Some(TraitSelect(type_ds))
             }
+            TraitSelectSingle(ref d) => op(d).map(TraitSelectSingle),
         }
     }
 }
