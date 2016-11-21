@@ -864,34 +864,21 @@ impl<'tcx> TraitPredicate<'tcx> {
 
     /// Creates the dep-node for selecting/evaluating this trait reference.
     fn dep_node(&self) -> DepNode<DefId> {
-        // Ideally, the dep-node would just have all the input types
-        // in it.  But they are limited to including def-ids. So as an
-        // approximation we include the def-ids for all nominal types
-        // found somewhere. This means that we will e.g. conflate the
-        // dep-nodes for `u32: SomeTrait` and `u64: SomeTrait`, but we
-        // would have distinct dep-nodes for `Vec<u32>: SomeTrait`,
-        // `Rc<u32>: SomeTrait`, and `(Vec<u32>, Rc<u32>): SomeTrait`.
-        // Note that it's always sound to conflate dep-nodes, it just
-        // leads to more recompilation.
-        //
-        // This code is hot enough that it's worth going to some effort (i.e.
-        // the peek()) to use `TraitSelectSingle` and avoid a heap allocation
-        // when possible.
-        let mut def_ids_base =
+        // Extact the trait-def and first def-id from inputs.  See the
+        // docs for `DepNode::TraitSelect` for more information.
+        let trait_def_id = self.def_id();
+        let input_def_id =
             self.input_types()
                 .flat_map(|t| t.walk())
                 .filter_map(|t| match t.sty {
                     ty::TyAdt(adt_def, _) => Some(adt_def.did),
                     _ => None
                 })
-                .peekable();
-        if let Some(_) = def_ids_base.peek() {
-            let def_ids = def_ids_base
-                          .chain(iter::once(self.def_id()))
-                          .collect();
-            DepNode::TraitSelect(def_ids)
-        } else {
-            DepNode::TraitSelectSingle(self.def_id())
+                .next()
+                .unwrap_or(trait_def_id);
+        DepNode::TraitSelect {
+            trait_def_id: trait_def_id,
+            input_def_id: input_def_id
         }
     }
 

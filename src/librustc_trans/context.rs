@@ -209,9 +209,8 @@ impl<'gcx> DepTrackingMapConfig for ProjectionCache<'gcx> {
                    _ => None,
                })
                .collect();
-        // This code is not hot so it's not worth detecting if
-        // `TraitSelectSingle` could be used instead of `TraitSelect`.
-        DepNode::TraitSelect(def_ids)
+
+        DepNode::ProjectionCache { def_ids: def_ids }
     }
 }
 
