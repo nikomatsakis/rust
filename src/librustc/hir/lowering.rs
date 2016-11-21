@@ -124,7 +124,10 @@ impl<'a> LoweringContext<'a> {
         }
     }
 
-    fn lower_items(&mut self, c: &Crate) -> (BTreeMap<NodeId, hir::Item>, BTreeMap<hir::ImplItemId, hir::ImplItem>) {
+    fn lower_items(&mut self,
+                   c: &Crate)
+                   -> (BTreeMap<NodeId, hir::Item>,
+                       BTreeMap<hir::ImplItemId, hir::ImplItem>) {
         struct ItemLowerer<'lcx, 'interner: 'lcx> {
             items: BTreeMap<NodeId, hir::Item>,
             impl_items: BTreeMap<hir::ImplItemId, hir::ImplItem>,
