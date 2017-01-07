@@ -141,6 +141,7 @@ impl<'a, 'tcx> euv::Delegate<'tcx> for CheckLoanCtxt<'a, 'tcx> {
                 _ => MovedInUse,
             };
             self.check_if_path_is_moved(borrow_id, borrow_span, moved_value_use_kind, &lp);
+            self.check_for_copy_of_frozen_path(borrow_id, borrow_span, &lp);
         }
 
         self.check_for_conflicting_loans(borrow_id);
