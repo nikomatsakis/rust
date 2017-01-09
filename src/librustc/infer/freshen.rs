@@ -121,19 +121,21 @@ impl<'a, 'gcx, 'tcx> TypeFolder<'gcx, 'tcx> for TypeFreshener<'a, 'gcx, 'tcx> {
             }
 
             ty::TyInfer(ty::IntVar(v)) => {
+                let v_type = self.infcx.int_unification_table.borrow_mut()
+                                                             .probe(v)
+                                                             .map(|v| v.to_type(tcx));
                 self.freshen(
-                    self.infcx.int_unification_table.borrow_mut()
-                                                    .probe(v)
-                                                    .map(|v| v.to_type(tcx)),
+                    v_type,
                     ty::IntVar(v),
                     ty::FreshIntTy)
             }
 
             ty::TyInfer(ty::FloatVar(v)) => {
+                let v_type = self.infcx.float_unification_table.borrow_mut()
+                                                               .probe(v)
+                                                               .map(|v| v.to_type(tcx));
                 self.freshen(
-                    self.infcx.float_unification_table.borrow_mut()
-                                                      .probe(v)
-                                                      .map(|v| v.to_type(tcx)),
+                    v_type,
                     ty::FloatVar(v),
                     ty::FreshFloatTy)
             }

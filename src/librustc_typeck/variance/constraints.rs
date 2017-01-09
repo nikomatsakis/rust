@@ -91,9 +91,10 @@ impl<'a, 'tcx, 'v> ItemLikeVisitor<'v> for ConstraintContext<'a, 'tcx> {
                 // self.add_constraints_from_generics(generics);
 
                 for field in tcx.lookup_adt_def(did).all_fields() {
+                    let covariant = self.covariant;
                     self.add_constraints_from_ty(generics,
                                                  tcx.item_type(field.did),
-                                                 self.covariant);
+                                                 covariant);
                 }
             }
             hir::ItemTrait(..) => {
@@ -102,9 +103,10 @@ impl<'a, 'tcx, 'v> ItemLikeVisitor<'v> for ConstraintContext<'a, 'tcx> {
                     def_id: did,
                     substs: Substs::identity_for_item(tcx, did)
                 };
+                let invariant = self.invariant;
                 self.add_constraints_from_trait_ref(generics,
                                                     trait_ref,
-                                                    self.invariant);
+                                                    invariant);
             }
 
             hir::ItemExternCrate(_) |
@@ -249,11 +251,13 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
     }
 
     fn contravariant(&mut self, variance: VarianceTermPtr<'a>) -> VarianceTermPtr<'a> {
-        self.xform(variance, self.contravariant)
+        let contravariant = self.contravariant;
+        self.xform(variance, contravariant)
     }
 
     fn invariant(&mut self, variance: VarianceTermPtr<'a>) -> VarianceTermPtr<'a> {
-        self.xform(variance, self.invariant)
+        let invariant = self.invariant;
+        self.xform(variance, invariant)
     }
 
     fn constant_term(&self, v: ty::Variance) -> VarianceTermPtr<'a> {
@@ -389,7 +393,8 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                 }
 
                 for projection in data.projection_bounds() {
-                    self.add_constraints_from_ty(generics, projection.0.ty, self.invariant);
+                    let invariant = self.invariant;
+                    self.add_constraints_from_ty(generics, projection.0.ty, invariant);
                 }
             }
 

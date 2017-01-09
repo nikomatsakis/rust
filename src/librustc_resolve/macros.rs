@@ -134,7 +134,8 @@ impl<'a> base::Resolver for Resolver<'a> {
         let invocation = self.invocations[&mark];
         self.collect_def_ids(invocation, expansion);
 
-        self.current_module = invocation.module.get();
+        let current_module = invocation.module.get();
+        self.current_module = current_module;
         self.current_module.unresolved_invocations.borrow_mut().remove(&mark);
         let mut visitor = BuildReducedGraphVisitor {
             resolver: self,
@@ -142,7 +143,7 @@ impl<'a> base::Resolver for Resolver<'a> {
             expansion: mark,
         };
         expansion.visit_with(&mut visitor);
-        self.current_module.unresolved_invocations.borrow_mut().remove(&mark);
+        current_module.unresolved_invocations.borrow_mut().remove(&mark);
         invocation.expansion.set(visitor.legacy_scope);
     }
 

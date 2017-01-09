@@ -130,7 +130,8 @@ impl<'a, 'v, 'tcx> ItemLikeVisitor<'v> for LanguageItemCollector<'a, 'tcx> {
             let item_index = self.item_refs.get(&*value.as_str()).cloned();
 
             if let Some(item_index) = item_index {
-                self.collect_item(item_index, self.ast_map.local_def_id(item.id))
+                let item_def_id = self.ast_map.local_def_id(item.id);
+                self.collect_item(item_index, item_def_id)
             } else {
                 let span = self.ast_map.span(item.id);
                 span_err!(self.session, span, E0522,

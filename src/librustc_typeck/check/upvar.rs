@@ -165,9 +165,10 @@ impl<'a, 'gcx, 'tcx> AdjustBorrowKind<'a, 'gcx, 'tcx> {
         debug!("analyze_closure(id={:?}, body.id={:?})", id, body.id());
 
         {
+            let fcx = self.fcx;
             let mut euv =
                 euv::ExprUseVisitor::with_options(self,
-                                                  self.fcx,
+                                                  fcx,
                                                   mc::MemCategorizationOptions {
                                                       during_closure_kind_inference: true
                                                   });

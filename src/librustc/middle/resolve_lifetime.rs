@@ -233,7 +233,8 @@ impl<'a, 'tcx> Visitor<'tcx> for LifetimeContext<'a, 'tcx> {
     fn visit_ty(&mut self, ty: &'tcx hir::Ty) {
         match ty.node {
             hir::TyBareFn(ref c) => {
-                self.with(LateScope(&c.lifetimes, self.scope), |old_scope, this| {
+                let scope = self.scope;
+                self.with(LateScope(&c.lifetimes, scope), |old_scope, this| {
                     // a bare fn has no bounds, so everything
                     // contained within is scoped within its binder.
                     this.check_lifetime_defs(old_scope, &c.lifetimes);
@@ -245,7 +246,8 @@ impl<'a, 'tcx> Visitor<'tcx> for LifetimeContext<'a, 'tcx> {
                 // a trait ref, which introduces a binding scope.
                 match path.def {
                     Def::Trait(..) => {
-                        self.with(LateScope(&[], self.scope), |_, this| {
+                        let scope = self.scope;
+                        self.with(LateScope(&[], scope), |_, this| {
                             this.visit_path(path, ty.id);
                         });
                     }
@@ -301,7 +303,8 @@ impl<'a, 'tcx> Visitor<'tcx> for LifetimeContext<'a, 'tcx> {
                                                                                .. }) => {
                     if !bound_lifetimes.is_empty() {
                         self.trait_ref_hack = true;
-                        let result = self.with(LateScope(bound_lifetimes, self.scope),
+                        let scope = self.scope;
+                        let result = self.with(LateScope(bound_lifetimes, scope),
                                                |old_scope, this| {
                             this.check_lifetime_defs(old_scope, bound_lifetimes);
                             this.visit_ty(&bounded_ty);
@@ -344,7 +347,8 @@ impl<'a, 'tcx> Visitor<'tcx> for LifetimeContext<'a, 'tcx> {
                 span_err!(self.sess, trait_ref.span, E0316,
                           "nested quantification of lifetimes");
             }
-            self.with(LateScope(&trait_ref.bound_lifetimes, self.scope), |old_scope, this| {
+            let scope = self.scope;
+            self.with(LateScope(&trait_ref.bound_lifetimes, scope), |old_scope, this| {
                 this.check_lifetime_defs(old_scope, &trait_ref.bound_lifetimes);
                 for lifetime in &trait_ref.bound_lifetimes {
                     this.visit_lifetime_def(lifetime);
@@ -522,7 +526,8 @@ impl<'a, 'tcx> LifetimeContext<'a, 'tcx> {
         // `self.labels_in_fn`.
         extract_labels(self, fb);
 
-        self.with(FnScope { fn_id: fn_id, body_id: fb.node_id, s: self.scope },
+        let scope = self.scope;
+        self.with(FnScope { fn_id: fn_id, body_id: fb.node_id, s: scope },
                   |_old_scope, this| this.visit_nested_body(fb))
     }
 
@@ -603,8 +608,10 @@ impl<'a, 'tcx> LifetimeContext<'a, 'tcx> {
             }
         }
 
-        self.with(EarlyScope(&early, start as u32, self.scope), move |old_scope, this| {
-            this.with(LateScope(&late, this.scope), move |_, this| {
+        let scope = self.scope;
+        self.with(EarlyScope(&early, start as u32, scope), move |old_scope, this| {
+            let scope = this.scope;
+            this.with(LateScope(&late, scope), move |_, this| {
                 this.check_lifetime_defs(old_scope, &generics.lifetimes);
                 this.hack(walk); // FIXME(#37666) workaround in place of `walk(this)`
             });

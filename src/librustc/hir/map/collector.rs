@@ -93,25 +93,29 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
     fn visit_nested_item(&mut self, item: ItemId) {
         debug!("visit_nested_item: {:?}", item);
         if !self.ignore_nested_items {
-            self.visit_item(self.krate.item(item.id))
+            let item = self.krate.item(item.id);
+            self.visit_item(item)
         }
     }
 
     fn visit_nested_trait_item(&mut self, item_id: TraitItemId) {
         if !self.ignore_nested_items {
-            self.visit_trait_item(self.krate.trait_item(item_id))
+            let trait_item = self.krate.trait_item(item_id);
+            self.visit_trait_item(trait_item)
         }
     }
 
     fn visit_nested_impl_item(&mut self, item_id: ImplItemId) {
         if !self.ignore_nested_items {
-            self.visit_impl_item(self.krate.impl_item(item_id))
+            let impl_item = self.krate.impl_item(item_id);
+            self.visit_impl_item(impl_item)
         }
     }
 
     fn visit_nested_body(&mut self, id: BodyId) {
         if !self.ignore_nested_items {
-            self.visit_body(self.krate.body(id))
+            let body = self.krate.body(id);
+            self.visit_body(body)
         }
     }
 
