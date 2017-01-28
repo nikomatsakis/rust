@@ -493,7 +493,7 @@ pub struct GlobalCtxt<'tcx> {
 
     /// Set of trait imports actually used in the method resolution.
     /// This is used for warning unused imports.
-    pub used_trait_imports: RefCell<DefIdSet>,
+    pub used_trait_imports: RefCell<DepTrackingMap<maps::UsedTraitImport>>,
 
     /// The set of external nominal types whose implementations have been read.
     /// This is used for lazy resolution of methods.
@@ -782,7 +782,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             inherent_impls: RefCell::new(DepTrackingMap::new(dep_graph.clone())),
             used_unsafe: RefCell::new(NodeSet()),
             used_mut_nodes: RefCell::new(NodeSet()),
-            used_trait_imports: RefCell::new(DefIdSet()),
+            used_trait_imports: RefCell::new(DepTrackingMap::new(dep_graph.clone())),
             populated_external_types: RefCell::new(DefIdSet()),
             populated_external_primitive_impls: RefCell::new(DefIdSet()),
             stability: RefCell::new(stability),

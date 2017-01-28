@@ -29,7 +29,7 @@ impl<'a, 'tcx> UnusedTraitImportVisitor<'a, 'tcx> {
         }
 
         let import_def_id = self.tcx.hir.local_def_id(id);
-        if self.tcx.used_trait_imports.borrow().contains(&import_def_id) {
+        if self.tcx.used_trait_imports.borrow().contains_key(&import_def_id) {
             return;
         }
 
