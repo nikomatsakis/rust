@@ -55,7 +55,6 @@ struct ProbeContext<'a, 'gcx: 'a + 'tcx, 'tcx: 'a> {
     inherent_candidates: Vec<Candidate<'tcx>>,
     extension_candidates: Vec<Candidate<'tcx>>,
     impl_dups: FxHashSet<DefId>,
-    import_id: Option<ast::NodeId>,
 
     /// Collects near misses when the candidate functions are missing a `self` keyword and is only
     /// used for error reporting
@@ -351,7 +350,6 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
             inherent_candidates: Vec::new(),
             extension_candidates: Vec::new(),
             impl_dups: FxHashSet(),
-            import_id: None,
             steps: Rc::new(steps),
             opt_simplified_steps: opt_simplified_steps,
             static_candidates: Vec::new(),
@@ -535,7 +533,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 xform_self_ty: xform_self_ty,
                 item: item,
                 kind: InherentImplCandidate(impl_substs, obligations),
-                import_id: self.import_id,
+                import_id: None,
             });
         }
     }
@@ -564,7 +562,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 xform_self_ty: xform_self_ty,
                 item: item,
                 kind: ObjectCandidate,
-                import_id: this.import_id,
+                import_id: None,
             });
         });
     }
@@ -614,7 +612,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 xform_self_ty: xform_self_ty,
                 item: item,
                 kind: WhereClauseCandidate(poly_trait_ref),
-                import_id: this.import_id,
+                import_id: None,
             });
         });
     }
@@ -649,9 +647,8 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
             for trait_candidate in applicable_traits {
                 let trait_did = trait_candidate.def_id;
                 if duplicates.insert(trait_did) {
-                    self.import_id = trait_candidate.import_id;
-                    let result = self.assemble_extension_candidates_for_trait(trait_did);
-                    self.import_id = None;
+                    let import_id = trait_candidate.import_id;
+                    let result = self.assemble_extension_candidates_for_trait(import_id, trait_did);
                     result?;
                 }
             }
@@ -663,7 +660,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
         let mut duplicates = FxHashSet();
         for trait_info in suggest::all_traits(self.ccx) {
             if duplicates.insert(trait_info.def_id) {
-                self.assemble_extension_candidates_for_trait(trait_info.def_id)?;
+                self.assemble_extension_candidates_for_trait(None, trait_info.def_id)?;
             }
         }
         Ok(())
@@ -687,6 +684,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
     }
 
     fn assemble_extension_candidates_for_trait(&mut self,
+                                               import_id: Option<ast::NodeId>,
                                                trait_def_id: DefId)
                                                -> Result<(), MethodError<'tcx>> {
         debug!("assemble_extension_candidates_for_trait(trait_def_id={:?})",
@@ -700,19 +698,21 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 continue;
             }
 
-            self.assemble_extension_candidates_for_trait_impls(trait_def_id, item.clone());
+            self.assemble_extension_candidates_for_trait_impls(import_id, trait_def_id,
+                                                               item.clone());
 
-            self.assemble_closure_candidates(trait_def_id, item.clone())?;
+            self.assemble_closure_candidates(import_id, trait_def_id, item.clone())?;
 
-            self.assemble_projection_candidates(trait_def_id, item.clone());
+            self.assemble_projection_candidates(import_id, trait_def_id, item.clone());
 
-            self.assemble_where_clause_candidates(trait_def_id, item.clone());
+            self.assemble_where_clause_candidates(import_id, trait_def_id, item.clone());
         }
 
         Ok(())
     }
 
     fn assemble_extension_candidates_for_trait_impls(&mut self,
+                                                     import_id: Option<ast::NodeId>,
                                                      trait_def_id: DefId,
                                                      item: ty::AssociatedItem) {
         let trait_def = self.tcx.lookup_trait_def(trait_def_id);
@@ -756,7 +756,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 xform_self_ty: xform_self_ty,
                 item: item.clone(),
                 kind: ExtensionImplCandidate(impl_def_id, impl_substs, obligations),
-                import_id: self.import_id,
+                import_id: import_id,
             });
         });
     }
@@ -782,6 +782,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
     }
 
     fn assemble_closure_candidates(&mut self,
+                                   import_id: Option<ast::NodeId>,
                                    trait_def_id: DefId,
                                    item: ty::AssociatedItem)
                                    -> Result<(), MethodError<'tcx>> {
@@ -845,7 +846,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 xform_self_ty: xform_self_ty,
                 item: item.clone(),
                 kind: TraitCandidate,
-                import_id: self.import_id,
+                import_id: import_id,
             });
         }
 
@@ -853,6 +854,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
     }
 
     fn assemble_projection_candidates(&mut self,
+                                      import_id: Option<ast::NodeId>,
                                       trait_def_id: DefId,
                                       item: ty::AssociatedItem) {
         debug!("assemble_projection_candidates(\
@@ -900,7 +902,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                         xform_self_ty: xform_self_ty,
                         item: item.clone(),
                         kind: TraitCandidate,
-                        import_id: self.import_id,
+                        import_id: import_id,
                     });
                 }
             }
@@ -908,6 +910,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
     }
 
     fn assemble_where_clause_candidates(&mut self,
+                                        import_id: Option<ast::NodeId>,
                                         trait_def_id: DefId,
                                         item: ty::AssociatedItem) {
         debug!("assemble_where_clause_candidates(trait_def_id={:?})",
@@ -928,7 +931,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 xform_self_ty: xform_self_ty,
                 item: item.clone(),
                 kind: WhereClauseCandidate(poly_bound),
-                import_id: self.import_id,
+                import_id: import_id,
             });
         }
     }

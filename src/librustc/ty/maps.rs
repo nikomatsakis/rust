@@ -19,12 +19,12 @@ use std::rc::Rc;
 use syntax::attr;
 
 macro_rules! dep_map_ty {
-    ($ty_name:ident : $node_name:ident ($key:ty) -> $value:ty) => {
-        pub struct $ty_name<'tcx> {
-            data: PhantomData<&'tcx ()>
+    ($ty_name:ident $([$($lt:tt),*])* : $node_name:ident ($key:ty) -> $value:ty) => {
+        pub struct $ty_name $(<$($lt),*>)* {
+            data: PhantomData<( $($(& $lt ()),*)* )>
         }
 
-        impl<'tcx> DepTrackingMapConfig for $ty_name<'tcx> {
+        impl<'tcx> DepTrackingMapConfig for $ty_name $(<$($lt),*>)* {
             type Key = $key;
             type Value = $value;
             fn to_dep_node(key: &$key) -> DepNode<DefId> { DepNode::$node_name(*key) }
@@ -32,20 +32,21 @@ macro_rules! dep_map_ty {
     }
 }
 
-dep_map_ty! { AssociatedItems: AssociatedItems(DefId) -> ty::AssociatedItem }
-dep_map_ty! { Types: ItemSignature(DefId) -> Ty<'tcx> }
-dep_map_ty! { Generics: ItemSignature(DefId) -> &'tcx ty::Generics<'tcx> }
-dep_map_ty! { Predicates: ItemSignature(DefId) -> ty::GenericPredicates<'tcx> }
-dep_map_ty! { SuperPredicates: ItemSignature(DefId) -> ty::GenericPredicates<'tcx> }
-dep_map_ty! { AssociatedItemDefIds: AssociatedItemDefIds(DefId) -> Rc<Vec<DefId>> }
-dep_map_ty! { ImplTraitRefs: ItemSignature(DefId) -> Option<ty::TraitRef<'tcx>> }
-dep_map_ty! { TraitDefs: ItemSignature(DefId) -> &'tcx ty::TraitDef }
-dep_map_ty! { AdtDefs: ItemSignature(DefId) -> &'tcx ty::AdtDef }
-dep_map_ty! { AdtSizedConstraint: SizedConstraint(DefId) -> Ty<'tcx> }
-dep_map_ty! { ItemVariances: ItemSignature(DefId) -> Rc<Vec<ty::Variance>> }
-dep_map_ty! { InherentImpls: InherentImpls(DefId) -> Vec<DefId> }
-dep_map_ty! { ReprHints: ReprHints(DefId) -> Rc<Vec<attr::ReprAttr>> }
-dep_map_ty! { Mir: Mir(DefId) -> &'tcx RefCell<mir::Mir<'tcx>> }
-dep_map_ty! { ClosureKinds: ItemSignature(DefId) -> ty::ClosureKind }
-dep_map_ty! { ClosureTypes: ItemSignature(DefId) -> ty::ClosureTy<'tcx> }
-dep_map_ty! { TypeckTables: TypeckTables(DefId) -> &'tcx ty::TypeckTables<'tcx> }
+dep_map_ty! { AssociatedItems['tcx]: AssociatedItems(DefId) -> ty::AssociatedItem }
+dep_map_ty! { Types['tcx]: ItemSignature(DefId) -> Ty<'tcx> }
+dep_map_ty! { Generics['tcx]: ItemSignature(DefId) -> &'tcx ty::Generics<'tcx> }
+dep_map_ty! { Predicates['tcx]: ItemSignature(DefId) -> ty::GenericPredicates<'tcx> }
+dep_map_ty! { SuperPredicates['tcx]: ItemSignature(DefId) -> ty::GenericPredicates<'tcx> }
+dep_map_ty! { AssociatedItemDefIds['tcx]: AssociatedItemDefIds(DefId) -> Rc<Vec<DefId>> }
+dep_map_ty! { ImplTraitRefs['tcx]: ItemSignature(DefId) -> Option<ty::TraitRef<'tcx>> }
+dep_map_ty! { TraitDefs['tcx]: ItemSignature(DefId) -> &'tcx ty::TraitDef }
+dep_map_ty! { AdtDefs['tcx]: ItemSignature(DefId) -> &'tcx ty::AdtDef }
+dep_map_ty! { AdtSizedConstraint['tcx]: SizedConstraint(DefId) -> Ty<'tcx> }
+dep_map_ty! { ItemVariances['tcx]: ItemSignature(DefId) -> Rc<Vec<ty::Variance>> }
+dep_map_ty! { InherentImpls['tcx]: InherentImpls(DefId) -> Vec<DefId> }
+dep_map_ty! { ReprHints['tcx]: ReprHints(DefId) -> Rc<Vec<attr::ReprAttr>> }
+dep_map_ty! { Mir['tcx]: Mir(DefId) -> &'tcx RefCell<mir::Mir<'tcx>> }
+dep_map_ty! { ClosureKinds['tcx]: ItemSignature(DefId) -> ty::ClosureKind }
+dep_map_ty! { ClosureTypes['tcx]: ItemSignature(DefId) -> ty::ClosureTy<'tcx> }
+dep_map_ty! { TypeckTables['tcx]: TypeckTables(DefId) -> &'tcx ty::TypeckTables<'tcx> }
+dep_map_ty! { UsedTraitImport: UsedTraitImport(DefId) -> () }
