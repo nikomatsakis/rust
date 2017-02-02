@@ -203,12 +203,15 @@ pub trait MemoizationMap {
     /// If `key` is present in the map, return the valuee,
     /// otherwise invoke `op` and store the value in the map.
     ///
+    /// If `op` returns `None`, we assume it has written to the map in
+    /// some other way.
+    ///
     /// NB: if the receiver is a `DepTrackingMap`, special care is
     /// needed in the `op` to ensure that the correct edges are
     /// added into the dep graph. See the `DepTrackingMap` impl for
     /// more details!
     fn memoize<OP>(&self, key: Self::Key, op: OP) -> Self::Value
-        where OP: FnOnce() -> Self::Value;
+        where OP: FnOnce() -> Option<Self::Value>;
 }
 
 impl<K, V, S> MemoizationMap for RefCell<HashMap<K,V,S>>
@@ -218,15 +221,18 @@ impl<K, V, S> MemoizationMap for RefCell<HashMap<K,V,S>>
     type Value = V;
 
     fn memoize<OP>(&self, key: K, op: OP) -> V
-        where OP: FnOnce() -> V
+        where OP: FnOnce() -> Option<V>
     {
         let result = self.borrow().get(&key).cloned();
         match result {
             Some(result) => result,
             None => {
-                let result = op();
-                self.borrow_mut().insert(key, result.clone());
-                result
+                if let Some(result) = op() {
+                    self.borrow_mut().insert(key, result.clone());
+                    result
+                } else {
+                    self.borrow().get(&key).unwrap().clone()
+                }
             }
         }
     }

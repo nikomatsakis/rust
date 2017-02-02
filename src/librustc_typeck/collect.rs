@@ -1143,8 +1143,7 @@ fn ensure_super_predicates_step(ccx: &CrateCtxt,
         return Vec::new();
     };
 
-    let superpredicates = tcx.super_predicates.borrow().get(&trait_def_id).cloned();
-    let superpredicates = superpredicates.unwrap_or_else(|| {
+    let superpredicates = tcx.super_predicates.memoize(trait_def_id, || {
         let item = match ccx.tcx.hir.get(trait_node_id) {
             hir_map::NodeItem(item) => item,
             _ => bug!("trait_node_id {} is not an item", trait_node_id)
@@ -1195,9 +1194,7 @@ fn ensure_super_predicates_step(ccx: &CrateCtxt,
                tcx.hir.local_def_id(item.id),
                superpredicates);
 
-        tcx.super_predicates.borrow_mut().insert(trait_def_id, superpredicates.clone());
-
-        superpredicates
+        Some(superpredicates)
     });
 
     let def_ids: Vec<_> = superpredicates.predicates
@@ -1234,7 +1231,7 @@ fn trait_def_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>, it: &hir::Item) -> &'t
         }
 
         let def_path_hash = tcx.def_path(def_id).deterministic_hash(tcx);
-        tcx.alloc_trait_def(ty::TraitDef::new(def_id, unsafety, paren_sugar, def_path_hash))
+        Some(tcx.alloc_trait_def(ty::TraitDef::new(def_id, unsafety, paren_sugar, def_path_hash)))
     })
 }
 
@@ -1474,14 +1471,14 @@ fn generics_of_def_id<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
             });
         }
 
-        tcx.alloc_generics(ty::Generics {
+        Some(tcx.alloc_generics(ty::Generics {
             parent: parent_def_id,
             parent_regions: parent_regions,
             parent_types: parent_types,
             regions: regions,
             types: types,
             has_self: has_self || parent_has_self
-        })
+        }))
     })
 }
 
@@ -1572,7 +1569,7 @@ fn type_of_def_id<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
             }
         };
 
-        ty
+        Some(ty)
     })
 }
 

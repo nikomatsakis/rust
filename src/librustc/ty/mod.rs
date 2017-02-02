@@ -1578,65 +1578,53 @@ impl<'a, 'gcx, 'tcx> AdtDef {
     ///       check should catch this case.
     fn calculate_sized_constraint_inner(&self,
                                         tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                                        stack: &mut Vec<DefId>)
+                                        stack: &mut Vec<(DefId, bool)>)
                                         -> Ty<'tcx>
     {
-        if let Some(ty) = tcx.adt_sized_constraint.borrow().get(&self.did) {
-            return ty;
-        }
+        if let Some(index) = stack.iter().position(|pair| pair.0 == self.did) {
+            // flag that we found a cycle
+            stack[index].1 = true;
 
-        // Follow the memoization pattern: push the computation of
-        // DepNode::SizedConstraint as our current task.
-        let _task = tcx.dep_graph.in_task(DepNode::SizedConstraint(self.did));
-
-        if stack.contains(&self.did) {
             debug!("calculate_sized_constraint: {:?} is recursive", self);
+
             // This should be reported as an error by `check_representable`.
             //
             // Consider the type as Sized in the meanwhile to avoid
             // further errors.
-            tcx.adt_sized_constraint.borrow_mut().insert(self.did, tcx.types.err);
             return tcx.types.err;
         }
 
-        stack.push(self.did);
+        tcx.adt_sized_constraint.memoize(self.did, || {
+            stack.push((self.did, false));
 
-        let tys : Vec<_> =
-            self.variants.iter().flat_map(|v| {
-                v.fields.last()
-            }).flat_map(|f| {
-                let ty = tcx.item_type(f.did);
-                self.sized_constraint_for_ty(tcx, stack, ty)
-            }).collect();
+            let tys : Vec<_> =
+                self.variants.iter().flat_map(|v| {
+                    v.fields.last()
+                }).flat_map(|f| {
+                    let ty = tcx.item_type(f.did);
+                    self.sized_constraint_for_ty(tcx, stack, ty)
+                }).collect();
 
-        let self_ = stack.pop().unwrap();
-        assert_eq!(self_, self.did);
+            let (self_, cycle) = stack.pop().unwrap();
+            assert_eq!(self_, self.did);
 
-        let ty = match tys.len() {
-            _ if tys.references_error() => tcx.types.err,
-            0 => tcx.types.bool,
-            1 => tys[0],
-            _ => tcx.intern_tup(&tys[..])
-        };
+            let ty = if cycle || tys.references_error() {
+                tcx.types.err
+            } else {
+                match tys.len() {
+                    0 => tcx.types.bool,
+                    1 => tys[0],
+                    _ => tcx.intern_tup(&tys[..])
+                }
+            };
 
-        let old = tcx.adt_sized_constraint.borrow().get(&self.did).cloned();
-        match old {
-            Some(old_ty) => {
-                debug!("calculate_sized_constraint: {:?} recurred", self);
-                assert_eq!(old_ty, tcx.types.err);
-                old_ty
-            }
-            None => {
-                debug!("calculate_sized_constraint: {:?} => {:?}", self, ty);
-                tcx.adt_sized_constraint.borrow_mut().insert(self.did, ty);
-                ty
-            }
-        }
+            Some(ty)
+        })
     }
 
     fn sized_constraint_for_ty(&self,
                                tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                               stack: &mut Vec<DefId>,
+                               stack: &mut Vec<(DefId, bool)>,
                                ty: Ty<'tcx>)
                                -> Vec<Ty<'tcx>> {
         let result = match ty.sty {
@@ -1861,7 +1849,7 @@ fn lookup_locally_or_in_crate_store<M, F>(descr: &str,
         if def_id.is_local() {
             bug!("No def'n found for {:?} in tcx.{}", def_id, descr);
         }
-        load_external()
+        Some(load_external())
     })
 }
 
@@ -1910,18 +1898,18 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                 // as they are part of the same "inference environment".
                 let outer_def_id = self.closure_base_def_id(def_id);
                 if outer_def_id != def_id {
-                    return self.item_tables(outer_def_id);
+                    return Some(self.item_tables(outer_def_id));
                 }
 
                 bug!("No def'n found for {:?} in tcx.tables", def_id);
             }
 
             // Cross-crate side-tables only exist alongside serialized HIR.
-            self.sess.cstore.maybe_get_item_body(self.global_tcx(), def_id).map(|_| {
+            Some(self.sess.cstore.maybe_get_item_body(self.global_tcx(), def_id).map(|_| {
                 self.tables.borrow()[&def_id]
             }).unwrap_or_else(|| {
                 bug!("tcx.item_tables({:?}): missing from metadata", def_id)
-            })
+            }))
         })
     }
 
@@ -2032,7 +2020,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             };
 
             match kind {
-                Some(kind) => kind,
+                Some(kind) => Some(kind),
                 None => {
                     bug!("custom_coerce_unsized_kind: \
                           {} impl `{}` is missing its kind",
@@ -2045,8 +2033,8 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     pub fn associated_item(self, def_id: DefId) -> AssociatedItem {
         self.associated_items.memoize(def_id, || {
             if !def_id.is_local() {
-                return self.sess.cstore.associated_item(def_id)
-                           .expect("missing AssociatedItem in metadata");
+                return Some(self.sess.cstore.associated_item(def_id)
+                            .expect("missing AssociatedItem in metadata"));
             }
 
             // When the user asks for a given associated item, we
@@ -2087,9 +2075,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                 }
             }
 
-            // memoize wants us to return something, so return
-            // the one we generated for this def-id
-            *self.associated_items.borrow().get(&def_id).unwrap()
+            None
         })
     }
 
@@ -2149,7 +2135,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     pub fn associated_item_def_ids(self, def_id: DefId) -> Rc<Vec<DefId>> {
         self.associated_item_def_ids.memoize(def_id, || {
             if !def_id.is_local() {
-                return Rc::new(self.sess.cstore.associated_item_def_ids(def_id));
+                return Some(Rc::new(self.sess.cstore.associated_item_def_ids(def_id)));
             }
 
             let id = self.hir.as_local_node_id(def_id).unwrap();
@@ -2169,7 +2155,8 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                 }
                 _ => span_bug!(item.span, "associated_item_def_ids: not impl or trait")
             };
-            Rc::new(vec)
+
+            Some(Rc::new(vec))
         })
     }
 
