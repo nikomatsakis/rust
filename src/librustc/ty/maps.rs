@@ -51,3 +51,4 @@ dep_map_ty! { ClosureKinds: ItemSignature(DefId) -> ty::ClosureKind }
 dep_map_ty! { ClosureTypes: ItemSignature(DefId) -> ty::ClosureTy<'tcx> }
 dep_map_ty! { TypeckTables: TypeckTables(DefId) -> &'tcx ty::TypeckTables<'tcx> }
 dep_map_ty! { UsedTraitImports: UsedTraitImports(DefId) -> DefIdSet }
+dep_map_ty! { BorrowCheck: BorrowCheck(DefId) -> () }

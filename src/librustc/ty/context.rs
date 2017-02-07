@@ -439,6 +439,13 @@ pub struct GlobalCtxt<'tcx> {
     /// additional acyclicity requirements).
     pub super_predicates: RefCell<DepTrackingMap<maps::Predicates<'tcx>>>,
 
+    /// We insert an entry into this map when the borrowck completes.
+    /// If an error is reported, we will not save the dep-graph
+    /// output, so for now we just unconditionally insert a `()` and
+    /// then use that as a clue to skip borrowck in subsequent
+    /// iterations.
+    pub borrow_check: RefCell<DepTrackingMap<maps::BorrowCheck<'tcx>>>,
+
     pub hir: hir_map::Map<'tcx>,
 
     /// Maps from the def-id of a function/method or const/static
@@ -772,6 +779,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             predicates: RefCell::new(DepTrackingMap::new(dep_graph.clone())),
             super_predicates: RefCell::new(DepTrackingMap::new(dep_graph.clone())),
             fulfilled_predicates: RefCell::new(fulfilled_predicates),
+            borrow_check: RefCell::new(DepTrackingMap::new(dep_graph.clone())),
             hir: hir,
             mir_map: RefCell::new(DepTrackingMap::new(dep_graph.clone())),
             freevars: RefCell::new(resolutions.freevars),
