@@ -207,6 +207,15 @@ pub fn encode_dep_graph(preds: &Predecessors,
     let edges = edges.into_iter()
                      .map(|(k, v)| SerializedEdgeSet { source: k, targets: v })
                      .collect();
+
+    // Create the borrow-check set.
+    let borrow_check =
+        tcx.borrow_check.borrow()
+                        .keys()
+                        .into_iter()
+                        .map(|def_id| builder.add(def_id))
+                        .collect();
+
     let graph = SerializedDepGraph {
         edges: edges,
         hashes: preds.hashes
@@ -218,6 +227,7 @@ pub fn encode_dep_graph(preds: &Predecessors,
                 }
             })
             .collect(),
+        borrow_check: borrow_check,
     };
 
     if tcx.sess.opts.debugging_opts.incremental_info {

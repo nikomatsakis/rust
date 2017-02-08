@@ -43,6 +43,9 @@ pub struct SerializedDepGraph {
     /// but rather the `DefPathIndex`. This can then be retraced
     /// to find the current def-id.
     pub hashes: Vec<SerializedHash>,
+
+    /// We save all the values for which borrow check succeeded in here.
+    pub borrow_check: Vec<DefPathIndex>,
 }
 
 /// Represents a set of "reduced" dependency edge. We group the

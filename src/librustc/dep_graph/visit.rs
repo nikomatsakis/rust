@@ -46,17 +46,20 @@ pub fn visit_all_item_likes_in_krate_memoized<'a, 'tcx, V, M>(tcx: TyCtxt<'a, 't
     {
         fn visit_item(&mut self, i: &'tcx hir::Item) {
             let def_id = self.tcx.hir.local_def_id(i.id);
-            self.map.memoize(def_id, || self.visitor.visit_item(i));
+            self.tcx.dep_graph.with_ignore(
+                || self.map.memoize(def_id, || self.visitor.visit_item(i)));
         }
 
         fn visit_trait_item(&mut self, i: &'tcx hir::TraitItem) {
             let def_id = self.tcx.hir.local_def_id(i.id);
-            self.map.memoize(def_id, || self.visitor.visit_trait_item(i));
+            self.tcx.dep_graph.with_ignore(
+                || self.map.memoize(def_id, || self.visitor.visit_trait_item(i)));
         }
 
         fn visit_impl_item(&mut self, i: &'tcx hir::ImplItem) {
             let def_id = self.tcx.hir.local_def_id(i.id);
-            self.map.memoize(def_id, || self.visitor.visit_impl_item(i));
+            self.tcx.dep_graph.with_ignore(
+                || self.map.memoize(def_id, || self.visitor.visit_impl_item(i)));
         }
     }
 

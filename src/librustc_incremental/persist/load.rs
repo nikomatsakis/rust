@@ -11,6 +11,7 @@
 //! Code to save/load the dep-graph from files.
 
 use rustc::dep_graph::{DepNode, WorkProductId};
+use rustc::dep_graph::{DepTrackingMap, DepTrackingMapConfig};
 use rustc::hir::def_id::DefId;
 use rustc::hir::svh::Svh;
 use rustc::session::Session;
@@ -18,6 +19,7 @@ use rustc::ty::TyCtxt;
 use rustc_data_structures::fx::{FxHashSet, FxHashMap};
 use rustc_serialize::Decodable as RustcDecodable;
 use rustc_serialize::opaque::Decoder;
+use std::cell::RefCell;
 use std::path::{Path};
 use std::sync::Arc;
 
@@ -220,6 +222,13 @@ pub fn decode_dep_graph<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     // dirty.
     reconcile_work_products(tcx, work_products, &clean_work_products);
 
+    // Add in borrow-check keys that are clean.
+    reconstitute_map(&dirty_raw_nodes,
+                     DepNode::BorrowCheck,
+                     &serialized_dep_graph.borrow_check,
+                     &tcx.borrow_check,
+                     &retraced);
+
     dirty_clean::check_dirty_clean_annotations(tcx, &dirty_raw_nodes, &retraced);
 
     load_prev_metadata_hashes(tcx,
@@ -393,3 +402,21 @@ fn load_prev_metadata_hashes(tcx: TyCtxt,
            serialized_hashes.index_map.len());
 }
 
+fn reconstitute_map<'a, 'tcx, F, M>(dirty_raw_nodes: &DirtyNodes,
+                                    dep_ctor: F,
+                                    keys: &[DefPathIndex],
+                                    map: &RefCell<DepTrackingMap<M>>,
+                                    retraced: &RetracedDefIdDirectory)
+    where F: Fn(DefPathIndex) -> DepNode<DefPathIndex>,
+          M: DepTrackingMapConfig<Key=DefId, Value=()>
+{
+    let mut map = map.borrow_mut();
+    for &key in keys {
+        let dep_node = dep_ctor(key);
+        if !dirty_raw_nodes.contains_key(&dep_node) {
+            if let Some(def_id) = retraced.def_id(key) {
+                map.insert(def_id, ());
+            }
+        }
+    }
+}
