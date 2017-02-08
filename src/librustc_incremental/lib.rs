@@ -42,6 +42,7 @@ const ATTR_DIRTY_METADATA: &'static str = "rustc_metadata_dirty";
 const ATTR_CLEAN_METADATA: &'static str = "rustc_metadata_clean";
 const ATTR_IF_THIS_CHANGED: &'static str = "rustc_if_this_changed";
 const ATTR_THEN_THIS_WOULD_NEED: &'static str = "rustc_then_this_would_need";
+const ATTR_NO_BORROWCK: &'static str = "rustc_no_borrowck";
 
 mod assert_dep_graph;
 mod calculate_svh;

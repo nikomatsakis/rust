@@ -41,7 +41,8 @@ const IGNORED_ATTRIBUTES: &'static [&'static str] = &[
     ::ATTR_DIRTY,
     ::ATTR_CLEAN,
     ::ATTR_DIRTY_METADATA,
-    ::ATTR_CLEAN_METADATA
+    ::ATTR_CLEAN_METADATA,
+    ::ATTR_NO_BORROWCK
 ];
 
 pub struct StrictVersionHashVisitor<'a, 'hash: 'a, 'tcx: 'hash> {

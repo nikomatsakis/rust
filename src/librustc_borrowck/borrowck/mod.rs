@@ -174,6 +174,10 @@ fn borrowck_fn<'a, 'tcx>(this: &mut BorrowckCtxt<'a, 'tcx>,
         });
     }
 
+    if attributes.iter().any(|item| item.check_name("rustc_no_borrowck")) {
+        bug!("rustc_no_borrowck attribute detected but borrowck executed")
+    }
+
     let cfg = cfg::CFG::new(this.tcx, &body.value);
     let AnalysisData { all_loans,
                        loans: loan_dfcx,
