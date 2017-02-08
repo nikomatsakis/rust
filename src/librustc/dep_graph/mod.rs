@@ -26,4 +26,5 @@ pub use self::graph::DepGraph;
 pub use self::graph::WorkProduct;
 pub use self::query::DepGraphQuery;
 pub use self::visit::visit_all_item_likes_in_krate;
+pub use self::visit::visit_all_item_likes_in_krate_memoized;
 pub use self::raii::DepTask;

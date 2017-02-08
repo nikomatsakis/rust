@@ -15,7 +15,7 @@ pub use self::IntVarValue::*;
 pub use self::LvaluePreference::*;
 pub use self::fold::TypeFoldable;
 
-use dep_graph::{self, DepNode};
+use dep_graph::{self, DepNode, DepTrackingMap, DepTrackingMapConfig};
 use hir::{map as hir_map, FreevarMap, TraitMap};
 use middle;
 use hir::def::{Def, CtorKind, ExportMap};
@@ -2636,6 +2636,14 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         where F: FnMut(DefId) -> DepNode<DefId>, V: ItemLikeVisitor<'gcx>
     {
         dep_graph::visit_all_item_likes_in_krate(self.global_tcx(), dep_node_fn, visitor);
+    }
+
+    pub fn visit_all_item_likes_in_krate_memoized<V,M>(self,
+                                                       map: &'a RefCell<DepTrackingMap<M>>,
+                                                       visitor: &mut V)
+        where M: DepTrackingMapConfig<Key=DefId, Value=()>, V: ItemLikeVisitor<'gcx>
+    {
+        dep_graph::visit_all_item_likes_in_krate_memoized(self.global_tcx(), map, visitor);
     }
 
     /// Looks up the span of `impl_did` if the impl is local; otherwise returns `Err`

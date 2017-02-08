@@ -22,7 +22,6 @@ pub use self::mir::elaborate_drops::ElaborateDrops;
 
 use self::InteriorKind::*;
 
-use rustc::dep_graph::DepNode;
 use rustc::hir::map as hir_map;
 use rustc::hir::map::blocks::FnLikeNode;
 use rustc::cfg;
@@ -114,7 +113,7 @@ pub fn check_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>) {
         }
     };
 
-    tcx.visit_all_item_likes_in_krate(DepNode::BorrowCheck, &mut bccx.as_deep_visitor());
+    tcx.visit_all_item_likes_in_krate_memoized(&tcx.borrow_check, &mut bccx.as_deep_visitor());
 
     if tcx.sess.borrowck_stats() {
         println!("--- borrowck stats ---");

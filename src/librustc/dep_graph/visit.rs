@@ -8,12 +8,66 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use dep_graph::{DepTrackingMap, DepTrackingMapConfig};
 use hir;
 use hir::def_id::DefId;
 use hir::itemlikevisit::ItemLikeVisitor;
+use std::cell::RefCell;
 use ty::TyCtxt;
+use util::common::MemoizationMap;
 
 use super::dep_node::DepNode;
+
+/// Visit all the items in the krate in some order. When visiting a
+/// particular item, first check whether `map` contains an entry for
+/// the given def-id. If so, we do nothing. Otherwise, we start the
+/// appopriate task and invoke the value.
+pub fn visit_all_item_likes_in_krate_memoized<'a, 'tcx, V, M>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                                                              map: &'a RefCell<DepTrackingMap<M>>,
+                                                              visitor: &mut V)
+    where M: DepTrackingMapConfig<Key=DefId, Value=()>, V: ItemLikeVisitor<'tcx>
+{
+    struct MemoizedVisitor<'visit, 'tcx, V, M>
+        where 'tcx: 'visit,
+              V: 'visit,
+              M: DepTrackingMapConfig<Key=DefId, Value=()> + 'visit,
+              V: ItemLikeVisitor<'tcx>
+    {
+        tcx: TyCtxt<'visit, 'tcx, 'tcx>,
+        map: &'visit RefCell<DepTrackingMap<M>>,
+        visitor: &'visit mut V
+    }
+
+    impl<'visit, 'tcx, V, M> ItemLikeVisitor<'tcx> for MemoizedVisitor<'visit, 'tcx, V, M>
+        where 'tcx: 'visit,
+              V: 'visit,
+              M: DepTrackingMapConfig<Key=DefId, Value=()> + 'visit,
+              V: ItemLikeVisitor<'tcx>
+    {
+        fn visit_item(&mut self, i: &'tcx hir::Item) {
+            let def_id = self.tcx.hir.local_def_id(i.id);
+            self.map.memoize(def_id, || self.visitor.visit_item(i));
+        }
+
+        fn visit_trait_item(&mut self, i: &'tcx hir::TraitItem) {
+            let def_id = self.tcx.hir.local_def_id(i.id);
+            self.map.memoize(def_id, || self.visitor.visit_trait_item(i));
+        }
+
+        fn visit_impl_item(&mut self, i: &'tcx hir::ImplItem) {
+            let def_id = self.tcx.hir.local_def_id(i.id);
+            self.map.memoize(def_id, || self.visitor.visit_impl_item(i));
+        }
+    }
+
+    let krate = tcx.dep_graph.with_ignore(|| tcx.hir.krate());
+    let mut tracking_visitor = MemoizedVisitor {
+        tcx: tcx,
+        map: map,
+        visitor: visitor
+    };
+    krate.visit_all_item_likes(&mut tracking_visitor)
+}
 
 /// Visit all the items in the krate in some order. When visiting a
 /// particular item, first create a dep-node by calling `dep_node_fn`
