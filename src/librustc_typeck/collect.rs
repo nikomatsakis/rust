@@ -547,6 +547,7 @@ impl<'tcx> GetTypeParameterBounds<'tcx> for ty::GenericPredicates<'tcx> {
                     data.skip_binder().0.is_param(def.index)
                 }
                 ty::Predicate::Equate(..) |
+                ty::Predicate::Subtype(..) |
                 ty::Predicate::RegionOutlives(..) |
                 ty::Predicate::WellFormed(..) |
                 ty::Predicate::ObjectSafe(..) |

@@ -413,6 +413,7 @@ impl<'tcx> fmt::Debug for ty::Predicate<'tcx> {
         match *self {
             ty::Predicate::Trait(ref a) => write!(f, "{:?}", a),
             ty::Predicate::Equate(ref pair) => write!(f, "{:?}", pair),
+            ty::Predicate::Subtype(ref pair) => write!(f, "{:?}", pair),
             ty::Predicate::RegionOutlives(ref pair) => write!(f, "{:?}", pair),
             ty::Predicate::TypeOutlives(ref pair) => write!(f, "{:?}", pair),
             ty::Predicate::Projection(ref pair) => write!(f, "{:?}", pair),
@@ -674,6 +675,12 @@ impl<'tcx> fmt::Display for ty::Binder<ty::EquatePredicate<'tcx>> {
     }
 }
 
+impl<'tcx> fmt::Display for ty::Binder<ty::SubtypePredicate<'tcx>> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        ty::tls::with(|tcx| in_binder(f, tcx, self, tcx.lift(self)))
+    }
+}
+
 impl<'tcx> fmt::Display for ty::Binder<ty::ProjectionPredicate<'tcx>> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         ty::tls::with(|tcx| in_binder(f, tcx, self, tcx.lift(self)))
@@ -920,6 +927,12 @@ impl<'tcx> fmt::Display for ty::EquatePredicate<'tcx> {
     }
 }
 
+impl<'tcx> fmt::Display for ty::SubtypePredicate<'tcx> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} <: {}", self.a, self.b)
+    }
+}
+
 impl<'tcx> fmt::Debug for ty::TraitPredicate<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "TraitPredicate({:?})",
@@ -972,6 +985,7 @@ impl<'tcx> fmt::Display for ty::Predicate<'tcx> {
         match *self {
             ty::Predicate::Trait(ref data) => write!(f, "{}", data),
             ty::Predicate::Equate(ref predicate) => write!(f, "{}", predicate),
+            ty::Predicate::Subtype(ref predicate) => write!(f, "{}", predicate),
             ty::Predicate::RegionOutlives(ref predicate) => write!(f, "{}", predicate),
             ty::Predicate::TypeOutlives(ref predicate) => write!(f, "{}", predicate),
             ty::Predicate::Projection(ref predicate) => write!(f, "{}", predicate),

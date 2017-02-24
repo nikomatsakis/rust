@@ -10,7 +10,7 @@
 
 fn main() {
     let v = &[];
+    //~^ NOTE consider giving `it` a type
     let it = v.iter(); //~ ERROR type annotations needed [E0282]
-                       //~| NOTE cannot infer type for `T`
-                       //~| NOTE consider giving `it` a type
+                       //~| NOTE cannot infer type for `_`
 }

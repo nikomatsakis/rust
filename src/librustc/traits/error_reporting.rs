@@ -34,6 +34,7 @@ use ty::error::ExpectedFound;
 use ty::fast_reject;
 use ty::fold::TypeFolder;
 use ty::subst::Subst;
+use ty::SubtypePredicate;
 use util::nodemap::{FxHashMap, FxHashSet};
 
 use std::fmt;
@@ -110,6 +111,13 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             }
             FulfillmentErrorCode::CodeAmbiguity => {
                 self.maybe_report_ambiguity(&error.obligation);
+            }
+            FulfillmentErrorCode::CodeSubtypeError(ref expected_found, ref err) => {
+                self.report_mismatched_types(&error.obligation.cause,
+                                             expected_found.expected,
+                                             expected_found.found,
+                                             err.clone())
+                    .emit();
             }
         }
     }
@@ -597,6 +605,11 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                                 predicate, err)
                         }
 
+                        ty::Predicate::Subtype(ref predicate) => {
+                            // TODO
+                            panic!("subtype requirement not satisfied {:?}", predicate)
+                        }
+
                         ty::Predicate::RegionOutlives(ref predicate) => {
                             let predicate = self.resolve_type_vars_if_possible(predicate);
                             let err = self.region_outlives_predicate(&obligation.cause,
@@ -823,6 +836,16 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 // with error messages.
                 if !ty.references_error() && !self.tcx.sess.has_errors() {
                     self.need_type_info(obligation, ty);
+                }
+            }
+
+            ty::Predicate::Subtype(ref data) => {
+                if data.references_error() || self.tcx.sess.has_errors() {
+                    // no need to overload user in such cases
+                } else {
+                    let &SubtypePredicate { a_is_expected: _, a, b } = data.skip_binder();
+                    assert!(a.is_ty_var() && b.is_ty_var()); // else other would've been instantiated
+                    self.need_type_info(obligation, a);
                 }
             }
 

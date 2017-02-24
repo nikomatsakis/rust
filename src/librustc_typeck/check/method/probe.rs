@@ -581,6 +581,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                         }
                     }
                     ty::Predicate::Equate(..) |
+                    ty::Predicate::Subtype(..) |
                     ty::Predicate::Projection(..) |
                     ty::Predicate::RegionOutlives(..) |
                     ty::Predicate::WellFormed(..) |
@@ -1153,19 +1154,16 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
 
         self.probe(|_| {
             // First check that the self type can be related.
-            match self.sub_types(false,
-                                 &ObligationCause::dummy(),
-                                 self_ty,
-                                 probe.xform_self_ty) {
-                Ok(InferOk { obligations, value: () }) => {
-                    // FIXME(#32730) propagate obligations
-                    assert!(obligations.is_empty())
-                }
+            let sub_obligations = match self.sub_types(false,
+                                                       &ObligationCause::dummy(),
+                                                       self_ty,
+                                                       probe.xform_self_ty) {
+                Ok(InferOk { obligations, value: () }) => obligations,
                 Err(_) => {
                     debug!("--> cannot relate self-types");
                     return false;
                 }
-            }
+            };
 
             // If so, impls may carry other conditions (e.g., where
             // clauses) that must be considered. Make sure that those
@@ -1204,6 +1202,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
             // Evaluate those obligations to see if they might possibly hold.
             let mut all_true = true;
             for o in obligations.iter()
+                .chain(sub_obligations.iter())
                 .chain(norm_obligations.iter())
                 .chain(ref_obligations.iter()) {
                 if !selcx.evaluate_obligation(o) {
