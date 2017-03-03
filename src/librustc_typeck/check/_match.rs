@@ -414,6 +414,20 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             discrim_ty = self.next_ty_var(TypeVariableOrigin::TypeInference(discrim.span));
             self.check_expr_has_type(discrim, discrim_ty);
         };
+
+        // If the discriminant diverges, the match is pointless (e.g.,
+        // `match (return) { }`).
+        self.warn_if_unreachable(expr.id, expr.span, "expression");
+
+        // If there are no arms, that is a diverging match; a special case.
+        if arms.is_empty() {
+            self.diverges.set(self.diverges.get() | Diverges::Always);
+            return tcx.types.never;
+        }
+
+        // Otherwise, we have to union together the types that the
+        // arms produce and so forth.
+
         let discrim_diverges = self.diverges.get();
         self.diverges.set(Diverges::Maybe);
 
@@ -426,6 +440,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 self.check_pat(&p, discrim_ty);
                 all_pats_diverge &= self.diverges.get();
             }
+
             // As discussed with @eddyb, this is for disabling unreachable_code
             // warnings on patterns (they're now subsumed by unreachable_patterns
             // warnings).
@@ -445,8 +460,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         // of execution reach it, we will panic, so bottom is an appropriate
         // type in that case)
         let expected = expected.adjust_for_branches(self);
-        let mut result_ty = self.next_diverging_ty_var(
-            TypeVariableOrigin::DivergingBlockExpr(expr.span));
+        let mut result_ty = self.next_ty_var(TypeVariableOrigin::MiscVariable(expr.span));
         let mut all_arms_diverge = Diverges::WarnedAlways;
         let coerce_first = match expected {
             // We don't coerce to `()` so that if the match expression is a
