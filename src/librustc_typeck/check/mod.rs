@@ -349,11 +349,12 @@ impl UnsafetyState {
     }
 }
 
-/// Whether a node ever exits normally or not.
-/// Tracked semi-automatically (through type variables
-/// marked as diverging), with some manual adjustments
-/// for control-flow primitives (approximating a CFG).
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// Tracks whether executing a node may exit normally (versus
+/// return/break/panic, which "diverge", leaving dead code in their
+/// wake). Tracked semi-automatically (through type variables marked
+/// as diverging), with some manual adjustments for control-flow
+/// primitives (approximating a CFG).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Diverges {
     /// Potentially unknown, some cases converge,
     /// others require a CFG to determine them.
@@ -443,7 +444,37 @@ pub struct FnCtxt<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
 
     ps: RefCell<UnsafetyState>,
 
-    /// Whether the last checked node can ever exit.
+    /// Whether the last checked node generates a divergence (e.g.,
+    /// `return` will set this to Always). In general, this is
+    /// typically set to *Maybe* on the way **down** the tree, and
+    /// then values are propagated **up** the tree. In a block, we
+    /// combine the results from statements and propagate the
+    /// end-result up.
+    ///
+    /// We use this flag for two purposes:
+    ///
+    /// - To warn about unreachable code: if, after processing a
+    ///   sub-expression but before we have applied the effects of the
+    ///   current node, we see that the flag is set to `Always`, we
+    ///   can issue a warning. This corresponds to something like
+    ///   `foo(return)`; we warn on the `foo()` expression. (We then
+    ///   update the flag to `WarnedAlways` to suppress duplicate
+    ///   reports.) Similarly, if we traverse to a fresh statement (or
+    ///   tail expression) from a `Always` setting, we will isssue a
+    ///   warning. This corresponds to something like `{return;
+    ///   foo();}` or `{return; 22}`, where we would warn on the
+    ///   `foo()` or `22`.
+    ///
+    /// - To permit assignment into a local variable or other lvalue
+    ///   (including the "return slot") of type `!`.  This is allowed
+    ///   if **either** the type of value being assigned is `!`, which
+    ///   means the current code is dead, **or** the expression's
+    ///   divering flag is true, which means that a divering value was
+    ///   wrapped (e.g., `let x: ! = foo(return)`).
+    ///
+    /// To repeat the last point: an expression represents dead-code
+    /// if, after checking it, **either** its type is `!` OR the
+    /// diverges flag is set to something other than `Maybe`.
     diverges: Cell<Diverges>,
 
     /// Whether any child nodes have any type errors.
@@ -1449,6 +1480,8 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
     fn warn_if_unreachable(&self, id: ast::NodeId, span: Span, kind: &str) {
         if self.diverges.get() == Diverges::Always {
             self.diverges.set(Diverges::WarnedAlways);
+
+            debug!("warn_if_unreachable: id={:?} span={:?} kind={}", id, span, kind);
 
             self.tables.borrow_mut().lints.add_lint(
                 lint::builtin::UNREACHABLE_CODE,
@@ -3299,8 +3332,17 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             _ => self.warn_if_unreachable(expr.id, expr.span, "expression")
         }
 
-        // Any expression that produces a value of type `!` must have diverged
-        if ty.is_never() {
+        // Non-lvalues that produce values of type `!` indicate a
+        // diverging expression. An **lvalue** of type `!` (e.g., a
+        // local variable) must either be uninitialized (which will be
+        // an error) or indicates that some divergence occurred before
+        // storing to the lvalue. The divergence flag is intended
+        // specifically to track whether evaluating **this
+        // expression** caused divergence (the `!` type indicates
+        // whether the value could never have been initialized). The
+        // difference is subtle, but important for controlling how
+        // many "unrachable code" warnings we emit.
+        if ty.is_never() && !self.tcx.expr_is_lval(expr) {
             self.diverges.set(self.diverges.get() | Diverges::Always);
         }
 
