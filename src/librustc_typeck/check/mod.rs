@@ -4044,7 +4044,6 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             }
             hir::StmtExpr(ref expr, id) => {
                 // Check with expected type of ()
-                // TODO -- this used to be `check_expr_has_type`, do we care?
                 self.check_expr_coercable_to_type(&expr, self.tcx.mk_nil());
                 (id, expr.span)
             }
