@@ -94,6 +94,7 @@ use rustc::ty::{LvaluePreference, NoPreference, PreferMutLvalue};
 use rustc::ty::{self, Ty, TyCtxt, Visibility};
 use rustc::ty::{MethodCall, MethodCallee};
 use rustc::ty::adjustment;
+use rustc::ty::error::TypeError;
 use rustc::ty::fold::{BottomUpFolder, TypeFoldable};
 use rustc::ty::maps::Providers;
 use rustc::ty::util::{Representability, IntTypeExt};
@@ -2798,11 +2799,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
 
                 res
             } else {
-                self.commit_if_ok(|_| {
-                    let trace = TypeTrace::types(&cause, true, then_ty, else_ty);
-                    self.lub(true, trace, &then_ty, &else_ty)
-                        .map(|ok| self.register_infer_ok_obligations(ok))
-                })
+                self.join_tys(&cause, true, then_ty, else_ty)
             };
 
             // We won't diverge unless both branches do (or the condition does).
@@ -2814,11 +2811,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             cause = self.cause(sp, ObligationCauseCode::IfExpressionWithNoElse);
             expected_ty = unit;
             found_ty = then_ty;
-            result = self.eq_types(true, &cause, unit, then_ty)
-                         .map(|ok| {
-                             self.register_infer_ok_obligations(ok);
-                             unit
-                         });
+            result = self.join_tys(&cause, true, unit, then_ty);
         }
 
         match result {
@@ -4009,7 +4002,8 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             }
             hir::StmtExpr(ref expr, id) => {
                 // Check with expected type of ()
-                self.check_expr_has_type(&expr, self.tcx.mk_nil());
+                // TODO -- this used to be `check_expr_has_type`, do we care?
+                self.check_expr_coercable_to_type(&expr, self.tcx.mk_nil());
                 (id, expr.span)
             }
             hir::StmtSemi(ref expr, id) => {
@@ -4051,7 +4045,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         let mut ty = match blk.expr {
             Some(ref e) => self.check_expr_with_expectation(e, expected),
             None => if self.diverges.get().always() {
-                self.next_diverging_ty_var(TypeVariableOrigin::DivergingBlockExpr(blk.span))
+                self.tcx.types.never
             } else {
                 self.tcx.mk_nil()
             },
@@ -4061,6 +4055,9 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             if let Some(ref e) = blk.expr {
                 // Coerce the tail expression to the right type.
                 self.demand_coerce(e, ty, ety);
+            } else if self.diverges.get().always() {
+                // No tail expression and the body diverges; ignore
+                // the expected type.
             } else {
                 // We're not diverging and there's an expected type, which,
                 // in case it's not `()`, could result in an error higher-up.
@@ -4528,6 +4525,33 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             debug_assert!(enclosing_loops.stack.len() == index + 1);
             enclosing_loops.by_id.remove(&id).expect("missing loop context");
             (enclosing_loops.stack.pop().expect("missing loop context"))
+        }
+    }
+
+    /// Computes the resulting type from a control-flow join where one
+    /// side produced `a` and one side produced `b`. If either of
+    /// these types is `!`, then the result is the other. Otherwise,
+    /// returns the LUB of the two types.
+    pub fn join_tys(&self,
+                    cause: &ObligationCause<'tcx>,
+                    a_is_expected: bool,
+                    a: Ty<'tcx>,
+                    b: Ty<'tcx>)
+                    -> Result<Ty<'tcx>, TypeError<'tcx>>
+    {
+        let a = self.resolve_type_vars_if_possible(&a);
+        let b = self.resolve_type_vars_if_possible(&b);
+        debug!("join_tys(a={:?}, b={:?})", a, b);
+        if a.is_never() {
+            Ok(b)
+        } else if b.is_never() {
+            Ok(a)
+        } else {
+            self.commit_if_ok(|_| {
+                let trace = TypeTrace::types(&cause, a_is_expected, a, b);
+                self.lub(a_is_expected, trace, &a, &b)
+                    .map(|ok| self.register_infer_ok_obligations(ok))
+            })
         }
     }
 }
