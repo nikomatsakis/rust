@@ -4070,7 +4070,12 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
     pub fn check_block_no_value(&self, blk: &'gcx hir::Block)  {
         let unit = self.tcx.mk_nil();
         let ty = self.check_block_with_expected(blk, ExpectHasType(unit));
-        self.demand_suptype(blk.span, unit, ty);
+
+        // if the block produces a `!` value, that can always be
+        // (effectively) coerced to unit.
+        if !ty.is_never() {
+            self.demand_suptype(blk.span, unit, ty);
+        }
     }
 
     fn check_block_with_expected(&self,
@@ -4099,9 +4104,14 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             if let Some(ref e) = blk.expr {
                 // Coerce the tail expression to the right type.
                 self.demand_coerce(e, ty, ety);
+
+                // We already applied the type (and potentially errored),
+                // use the expected type to avoid further errors out.
+                ty = ety;
             } else if self.diverges.get().always() {
                 // No tail expression and the body diverges; ignore
-                // the expected type.
+                // the expected type, and keep `!` as the type of the
+                // block.
             } else {
                 // We're not diverging and there's an expected type, which,
                 // in case it's not `()`, could result in an error higher-up.
@@ -4140,11 +4150,11 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                         err.emit();
                     }
                 }
-            }
 
-            // We already applied the type (and potentially errored),
-            // use the expected type to avoid further errors out.
-            ty = ety;
+                // We already applied the type (and potentially errored),
+                // use the expected type to avoid further errors out.
+                ty = ety;
+            }
         }
 
         if self.has_errors.get() || ty.references_error() {

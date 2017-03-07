@@ -65,6 +65,7 @@ use check::FnCtxt;
 use rustc::hir;
 use rustc::hir::def_id::DefId;
 use rustc::infer::{Coercion, InferOk, TypeTrace};
+use rustc::infer::type_variable::TypeVariableOrigin;
 use rustc::traits::{self, ObligationCause, ObligationCauseCode};
 use rustc::ty::adjustment::{Adjustment, Adjust, AutoBorrow};
 use rustc::ty::{self, LvaluePreference, TypeAndMut,
@@ -162,6 +163,26 @@ impl<'f, 'gcx, 'tcx> Coerce<'f, 'gcx, 'tcx> {
         }
 
         if a.is_never() {
+            // Subtle: If we are coercing from `!` to `?T`, where `?T` is an unbound
+            // type variable, we *typically* want `?T` to fallback to `!` if not
+            // otherwise constrained. An example where this arises:
+            //
+            //     let _: Option<?T> = Some({ return; });
+            //
+            // here, we would coerce from `!` to `?T`. However, we do
+            // NOT want to do this in LUB mode, since we do not want
+            // this match to get the same treatment:
+            //
+            //     let _: Option<?T> = match x {
+            //         Ok(_) => Default::default(),
+            //         Err(e) => return Err(e),
+            //     };
+            let b = self.shallow_resolve(b);
+            if !self.use_lub && b.is_ty_var() {
+                let diverging_ty = self.next_diverging_ty_var(
+                    TypeVariableOrigin::AdjustmentType(self.cause.span));
+                self.unify(&b, &diverging_ty).unwrap();
+            }
             return Ok((b, Adjust::NeverToAny));
         }
 
@@ -699,11 +720,12 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             let adjustment = apply(&mut coerce, &|| Some(expr), source, target)?;
             if !adjustment.is_identity() {
                 debug!("Success, coerced with {:?}", adjustment);
-                match self.tables.borrow().adjustments.get(&expr.id) {
-                    None |
-                    Some(&Adjustment { kind: Adjust::NeverToAny, .. }) => (),
-                    _ => bug!("expr already has an adjustment on it!"),
-                };
+                // TODO this looks dubious, I think we can do without
+                // match self.tables.borrow().adjustments.get(&expr.id) {
+                //     None |
+                //     Some(&Adjustment { kind: Adjust::NeverToAny, .. }) => (),
+                //     _ => bug!("expr already has an adjustment on it!"),
+                // };
                 self.write_adjustment(expr.id, adjustment);
             }
             Ok(adjustment.target)
@@ -726,7 +748,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
 
         let prev_ty = self.resolve_type_vars_with_obligations(prev_ty);
         let new_ty = self.resolve_type_vars_with_obligations(new_ty);
-        debug!("coercion::try_find_lub({:?}, {:?})", prev_ty, new_ty);
+        debug!("coercion::try_find_lubtypes({:?}, {:?})", prev_ty, new_ty);
 
         let trace = TypeTrace::types(cause, true, prev_ty, new_ty);
 
