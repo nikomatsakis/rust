@@ -15,7 +15,7 @@ enum Void { }
 
 fn foo(v: Void) {
     match v { }
-    println!("Dead man walking"); //~ ERROR unreachable
+    let x = 2; //~ ERROR unreachable
 }
 
 fn main() {
