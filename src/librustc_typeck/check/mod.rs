@@ -2653,7 +2653,22 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
     pub fn check_expr_has_type(&self,
                                expr: &'gcx hir::Expr,
                                expected: Ty<'tcx>) -> Ty<'tcx> {
-        let ty = self.check_expr_with_hint(expr, expected);
+        let mut ty = self.check_expr_with_hint(expr, expected);
+
+        // While we don't allow *arbitrary* coercions here, we *do* allow
+        // coercions from ! to `expected`.
+        if ty.is_never() {
+            assert!(!self.tables.borrow().adjustments.contains_key(&expr.id),
+                    "expression with never type wound up being adjusted");
+            let adj_ty = self.next_diverging_ty_var(
+                TypeVariableOrigin::AdjustmentType(expr.span));
+            self.write_adjustment(expr.id, adjustment::Adjustment {
+                kind: adjustment::Adjust::NeverToAny,
+                target: adj_ty
+            });
+            ty = adj_ty;
+        }
+
         self.demand_suptype(expr.span, expected, ty);
         ty
     }
@@ -3358,18 +3373,6 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         debug!("type of {} is...", self.tcx.hir.node_to_string(expr.id));
         debug!("... {:?}, expected is {:?}", ty, expected);
 
-        // Add adjustments to !-expressions
-        if ty.is_never() {
-            if let Some(hir::map::NodeExpr(node_expr)) = self.tcx.hir.find(expr.id) {
-                let adj_ty = self.next_diverging_ty_var(
-                    TypeVariableOrigin::AdjustmentType(node_expr.span));
-                self.write_adjustment(expr.id, adjustment::Adjustment {
-                    kind: adjustment::Adjust::NeverToAny,
-                    target: adj_ty
-                });
-                return adj_ty;
-            }
-        }
         ty
     }
 
@@ -4044,7 +4047,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             }
             hir::StmtExpr(ref expr, id) => {
                 // Check with expected type of ()
-                self.check_expr_coercable_to_type(&expr, self.tcx.mk_nil());
+                self.check_expr_has_type(&expr, self.tcx.mk_nil());
                 (id, expr.span)
             }
             hir::StmtSemi(ref expr, id) => {
