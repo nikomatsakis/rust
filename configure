@@ -1109,3 +1109,6 @@ fi
 
 msg "run \`python ${X_PY} --help\`"
 msg
+
+## HACK to fix crater
+git submodule update --init
