@@ -252,7 +252,7 @@ macro_rules! define_maps {
                     provider(tcx.global_tcx(), key)
                 })?;
 
-                Ok(f(&tcx.maps.$name.borrow_mut().entry(key).or_insert(result)))
+                Ok(f(&tcx.maps.$name.borrow_mut().__entry__(key).or_insert(result)))
             }
 
             pub fn try_get(tcx: TyCtxt<'a, $tcx, 'lcx>, span: Span, key: $K)
@@ -376,8 +376,8 @@ define_maps! { <'tcx>
     pub closure_type: ItemSignature(DefId) -> ty::PolyFnSig<'tcx>,
 
     /// Caches CoerceUnsized kinds for impls on custom types.
-    pub custom_coerce_unsized_kind: ItemSignature(DefId)
-        -> ty::adjustment::CustomCoerceUnsized,
+    pub coerce_unsized_info: ItemSignature(DefId)
+        -> ty::adjustment::CoerceUnsizedInfo,
 
     pub typeck_tables: TypeckTables(DefId) -> &'tcx ty::TypeckTables<'tcx>,
 
