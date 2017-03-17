@@ -3358,8 +3358,17 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             _ => self.warn_if_unreachable(expr.id, expr.span, "expression")
         }
 
-        // Any expression that produces a value of type `!` must have diverged
-        if ty.is_never() {
+        // Non-lvalues that produce values of type `!` indicate a
+        // diverging expression. An **lvalue** of type `!` (e.g., a
+        // local variable) must either be uninitialized (which will be
+        // an error) or indicates that some divergence occurred before
+        // storing to the lvalue. The divergence flag is intended
+        // specifically to track whether evaluating **this
+        // expression** caused divergence (the `!` type indicates
+        // whether the value could never have been initialized). The
+        // difference is subtle, but important for controlling how
+        // many "unrachable code" warnings we emit.
+        if ty.is_never() && !self.tcx.expr_is_lval(expr) {
             self.diverges.set(self.diverges.get() | Diverges::Always);
         }
 
