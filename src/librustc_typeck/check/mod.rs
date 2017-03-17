@@ -2662,7 +2662,22 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
     pub fn check_expr_has_type(&self,
                                expr: &'gcx hir::Expr,
                                expected: Ty<'tcx>) -> Ty<'tcx> {
-        let ty = self.check_expr_with_hint(expr, expected);
+        let mut ty = self.check_expr_with_hint(expr, expected);
+
+        // While we don't allow *arbitrary* coercions here, we *do* allow
+        // coercions from ! to `expected`.
+        if ty.is_never() {
+            assert!(!self.tables.borrow().adjustments.contains_key(&expr.id),
+                    "expression with never type wound up being adjusted");
+            let adj_ty = self.next_diverging_ty_var(
+                TypeVariableOrigin::AdjustmentType(expr.span));
+            self.write_adjustment(expr.id, adjustment::Adjustment {
+                kind: adjustment::Adjust::NeverToAny,
+                target: adj_ty
+            });
+            ty = adj_ty;
+        }
+
         self.demand_suptype(expr.span, expected, ty);
         ty
     }
@@ -3355,18 +3370,6 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         debug!("type of {} is...", self.tcx.hir.node_to_string(expr.id));
         debug!("... {:?}, expected is {:?}", ty, expected);
 
-        // Add adjustments to !-expressions
-        if ty.is_never() {
-            if let Some(hir::map::NodeExpr(node_expr)) = self.tcx.hir.find(expr.id) {
-                let adj_ty = self.next_diverging_ty_var(
-                    TypeVariableOrigin::AdjustmentType(node_expr.span));
-                self.write_adjustment(expr.id, adjustment::Adjustment {
-                    kind: adjustment::Adjust::NeverToAny,
-                    target: adj_ty
-                });
-                return adj_ty;
-            }
-        }
         ty
     }
 
@@ -4055,7 +4058,12 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
     pub fn check_block_no_value(&self, blk: &'gcx hir::Block)  {
         let unit = self.tcx.mk_nil();
         let ty = self.check_block_with_expected(blk, ExpectHasType(unit));
-        self.demand_suptype(blk.span, unit, ty);
+
+        // if the block produces a `!` value, that can always be
+        // (effectively) coerced to unit.
+        if !ty.is_never() {
+            self.demand_suptype(blk.span, unit, ty);
+        }
     }
 
     fn check_block_with_expected(&self,
@@ -4074,7 +4082,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         let mut ty = match blk.expr {
             Some(ref e) => self.check_expr_with_expectation(e, expected),
             None => if self.diverges.get().always() {
-                self.next_diverging_ty_var(TypeVariableOrigin::DivergingBlockExpr(blk.span))
+                self.tcx.types.never
             } else {
                 self.tcx.mk_nil()
             },
@@ -4084,6 +4092,14 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             if let Some(ref e) = blk.expr {
                 // Coerce the tail expression to the right type.
                 self.demand_coerce(e, ty, ety);
+
+                // We already applied the type (and potentially errored),
+                // use the expected type to avoid further errors out.
+                ty = ety;
+            } else if self.diverges.get().always() {
+                // No tail expression and the body diverges; ignore
+                // the expected type, and keep `!` as the type of the
+                // block.
             } else {
                 // We're not diverging and there's an expected type, which,
                 // in case it's not `()`, could result in an error higher-up.
@@ -4122,11 +4138,11 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                         err.emit();
                     }
                 }
-            }
 
-            // We already applied the type (and potentially errored),
-            // use the expected type to avoid further errors out.
-            ty = ety;
+                // We already applied the type (and potentially errored),
+                // use the expected type to avoid further errors out.
+                ty = ety;
+            }
         }
 
         if self.has_errors.get() || ty.references_error() {
