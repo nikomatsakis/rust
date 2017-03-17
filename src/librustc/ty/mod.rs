@@ -2062,7 +2062,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                                                                     impl_trait_ref.is_some(),
                                                                     impl_item_ref);
                         self.maps.associated_item.borrow_mut()
-                            .insert(assoc_item.def_id, assoc_item);
+                            .__insert__(assoc_item.def_id, assoc_item);
                     }
                 }
 
@@ -2071,7 +2071,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                         let assoc_item =
                             self.associated_item_from_trait_item_ref(parent_def_id, trait_item_ref);
                         self.maps.associated_item.borrow_mut()
-                            .insert(assoc_item.def_id, assoc_item);
+                            .__insert__(assoc_item.def_id, assoc_item);
                     }
                 }
 
@@ -2367,7 +2367,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
 
         let inherent_impls = self.sess.cstore.inherent_implementations_for_type(type_id);
 
-        self.maps.inherent_impls.borrow_mut().insert(type_id, inherent_impls);
+        self.maps.inherent_impls.borrow_mut().__insert__(type_id, inherent_impls);
         self.populated_external_types.borrow_mut().insert(type_id);
     }
 

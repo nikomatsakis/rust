@@ -527,7 +527,7 @@ impl<'a, 'tcx> CrateMetadata {
 
         if let ty::VariantDiscr::Explicit(def_id) = data.discr {
             let result = data.evaluated_discr.map_or(Err(()), Ok);
-            tcx.maps.monomorphic_const_eval.borrow_mut().insert(def_id, result);
+            tcx.maps.monomorphic_const_eval.borrow_mut().__insert__(def_id, result);
         }
 
         (ty::VariantDef {
@@ -584,7 +584,7 @@ impl<'a, 'tcx> CrateMetadata {
         let adt = tcx.alloc_adt_def(did, kind, variants, repr);
         if let Some(ctor_index) = ctor_index {
             // Make adt definition available through constructor id as well.
-            tcx.maps.adt_def.borrow_mut().insert(self.local_def_id(ctor_index), adt);
+            tcx.maps.adt_def.borrow_mut().__insert__(self.local_def_id(ctor_index), adt);
         }
 
         adt

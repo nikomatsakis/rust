@@ -227,7 +227,7 @@ impl<'a, 'tcx> InherentCollect<'a, 'tcx> {
             // because we are doing this as a pre-pass before anyone
             // actually reads from `inherent_impls` -- and we know this is
             // true beacuse we hold the refcell lock.
-            self.tcx.maps.inherent_impls.borrow_mut().push(def_id, impl_def_id);
+            self.tcx.maps.inherent_impls.borrow_mut().__push__(def_id, impl_def_id);
         } else {
             struct_span_err!(self.tcx.sess,
                              item.span,

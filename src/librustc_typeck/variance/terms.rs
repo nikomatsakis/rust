@@ -180,7 +180,7 @@ impl<'a, 'tcx> TermsContext<'a, 'tcx> {
             let item_def_id = self.tcx.hir.local_def_id(item_id);
             self.tcx.maps.variances
                 .borrow_mut()
-                .insert(item_def_id, self.empty_variances.clone());
+                .__insert__(item_def_id, self.empty_variances.clone());
         }
     }
 

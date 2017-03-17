@@ -88,7 +88,7 @@ impl<M: DepTrackingMapConfig> DepTrackingMap<M> {
         result
     }
 
-    pub fn insert(&mut self, k: M::Key, v: M::Value) {
+    pub fn __insert__(&mut self, k: M::Key, v: M::Value) {
         self.write(&k);
 
         // If we ever read a `None` value for this key, we do not want
@@ -103,7 +103,7 @@ impl<M: DepTrackingMapConfig> DepTrackingMap<M> {
         assert!(old_value.is_none(), "inserted value twice");
     }
 
-    pub fn entry(&mut self, k: M::Key) -> Entry<M::Key, M::Value> {
+    pub fn __entry__(&mut self, k: M::Key) -> Entry<M::Key, M::Value> {
         self.write(&k);
         self.map.entry(k)
     }
@@ -129,7 +129,7 @@ impl<M: DepTrackingMapConfig> DepTrackingMap<M> {
     /// NOTE: Caution is required when using this method. You should
     /// be sure that nobody is **reading from the vector** while you
     /// are writing to it. Eventually, it'd be nice to remove this.
-    pub fn push<E: Clone>(&mut self, k: M::Key, elem: E)
+    pub fn __push__<E: Clone>(&mut self, k: M::Key, elem: E)
         where M: DepTrackingMapConfig<Value=Vec<E>>
     {
         self.write(&k);
