@@ -177,14 +177,15 @@ impl<'f, 'gcx, 'tcx> Coerce<'f, 'gcx, 'tcx> {
             //
             // here, we would coerce from `!` to `?T`.
             let b = self.shallow_resolve(b);
-            if self.shallow_resolve(b).is_ty_var() {
+            return if self.shallow_resolve(b).is_ty_var() {
                 // micro-optimization: no need for this if `b` is
                 // already resolved in some way.
                 let diverging_ty = self.next_diverging_ty_var(
                     TypeVariableOrigin::AdjustmentType(self.cause.span));
-                self.unify(&b, &diverging_ty).unwrap();
-            }
-            return success(Adjust::NeverToAny, b, vec![]);
+                self.unify_and(&b, &diverging_ty, Adjust::NeverToAny)
+            } else {
+                success(Adjust::NeverToAny, b, vec![])
+            };
         }
 
         // Consider coercing the subtype to a DST
