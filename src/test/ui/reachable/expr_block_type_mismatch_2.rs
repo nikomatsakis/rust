@@ -14,37 +14,14 @@
 #![deny(unreachable_code)]
 #![feature(never_type)]
 
-fn a() {
-    // Here the tail expression is considered unreachable:
-    let x = {
-        return;
-        22
-    };
-}
-
-fn b() {
-    // Here the `x` assignment is considered unreachable, not the block:
-    let x = {
-        return;
-    };
-}
-
-fn c() {
-    // Here the `println!` is unreachable:
-    let x = {
-        return;
-        println!("foo");
-        22
-    };
-}
-
-fn e() {
+fn d() {
     // Here we get:
     // - unreachable code warning on the println!
-    // - no type-error, because the last statement has type `!`,
-    //   and hence the block gets type `()`
+    // - type-error, because the last statement has type `()`,
+    //   and hence the block gets type unit
     let x: u32 = {
         return;
+        println!("I am dead");
     };
 }
 
