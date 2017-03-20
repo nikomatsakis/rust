@@ -143,6 +143,7 @@ mod callee;
 mod compare_method;
 mod intrinsic;
 mod op;
+mod reachable;
 
 /// closures defined within the function.  For example:
 ///
@@ -726,6 +727,7 @@ fn typeck_tables<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         };
 
         fcx.select_all_obligations_and_apply_defaults();
+        fcx.reachable_check(body);
         fcx.closure_analyze(body);
         fcx.select_obligations_where_possible();
         fcx.check_casts();
@@ -1526,10 +1528,11 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
 
             debug!("warn_if_unreachable: id={:?} span={:?} kind={}", id, span, kind);
 
-            self.tables.borrow_mut().lints.add_lint(
-                lint::builtin::UNREACHABLE_CODE,
-                id, span,
-                format!("unreachable {}", kind));
+            // TODO
+            // self.tables.borrow_mut().lints.add_lint(
+            //     lint::builtin::UNREACHABLE_CODE,
+            //     id, span,
+            //     format!("unreachable {}", kind));
         }
     }
 

@@ -1,4 +1,4 @@
-// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2016 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,14 +8,21 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test that an assignment of type ! makes the rest of the block dead code.
-
 #![feature(never_type)]
-#![deny(unused, unreachable_code)]
+#![allow(unused_variables)]
+#![deny(unreachable_code)]
 
-fn main() {
-    let x: ! = panic!("aah"); //~ ERROR unused
-    //~^ ERROR unreachable code
-    drop(x);
+use std::ops;
+
+struct Foo;
+
+impl ops::Add<!> for Foo {
+    type Output = !;
+    fn add(self, rhs: !) -> ! {
+        unimplemented!()
+    }
 }
 
+fn main() {
+    let x = Foo + return;
+}

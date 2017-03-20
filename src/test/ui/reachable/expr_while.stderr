@@ -1,0 +1,26 @@
+error: unreachable expression
+  --> $DIR/expr_while.rs:18:5
+   |
+18 |       while {return} {
+   |  _____^ starting here...
+19 | |         println!("Hello, world!");
+20 | |     }
+   | |_____^ ...ending here
+   |
+note: lint level defined here
+  --> $DIR/expr_while.rs:14:9
+   |
+14 | #![deny(unreachable_code)]
+   |         ^^^^^^^^^^^^^^^^
+
+error: unreachable expression
+  --> $DIR/expr_while.rs:32:5
+   |
+32 |       while {return} {
+   |  _____^ starting here...
+33 | |         println!("I am dead.");
+34 | |     }
+   | |_____^ ...ending here
+
+error: aborting due to 2 previous errors
+

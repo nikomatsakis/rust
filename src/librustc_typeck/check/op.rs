@@ -79,7 +79,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             BinOpCategory::Shortcircuit => {
                 // && and || are a simple case.
                 let lhs_diverges = self.diverges.get();
-                self.demand_suptype(lhs_expr.span, tcx.mk_bool(), lhs_ty);
+                self.demand_coerce(lhs_expr, lhs_ty, tcx.mk_bool());
                 self.check_expr_coercable_to_type(rhs_expr, tcx.mk_bool());
 
                 // Depending on the LHS' value, the RHS can never execute.

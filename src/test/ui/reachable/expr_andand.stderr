@@ -1,0 +1,14 @@
+error: unreachable expression
+  --> $DIR/expr_andand.rs:22:25
+   |
+22 |     let x = (return) && false;
+   |                         ^^^^^
+   |
+note: lint level defined here
+  --> $DIR/expr_andand.rs:13:9
+   |
+13 | #![deny(unreachable_code)]
+   |         ^^^^^^^^^^^^^^^^
+
+error: aborting due to previous error
+

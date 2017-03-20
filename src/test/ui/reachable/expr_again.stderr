@@ -1,0 +1,22 @@
+error: unreachable code
+  --> $DIR/expr_again.rs:16:9
+   |
+16 |     let x = loop {
+   |         ^
+   |
+note: lint level defined here
+  --> $DIR/expr_again.rs:13:9
+   |
+13 | #![deny(unreachable_code)]
+   |         ^^^^^^^^^^^^^^^^
+
+error: unreachable statement
+  --> $DIR/expr_again.rs:18:9
+   |
+18 |         println!("hi");
+   |         ^^^^^^^^^^^^^^^
+   |
+   = note: this error originates in a macro outside of the current crate
+
+error: aborting due to 2 previous errors
+
