@@ -30,7 +30,7 @@ pub struct TypeVariableTable<'tcx> {
 }
 
 /// Reasons to create a type inference variable
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum TypeVariableOrigin {
     MiscVariable(Span),
     NormalizeProjectionType(Span),
@@ -44,6 +44,7 @@ pub enum TypeVariableOrigin {
     DivergingBlockExpr(Span),
     DivergingFn(Span),
     LatticeVariable(Span),
+    Generalized(ty::TyVid),
 }
 
 struct TypeVariableData<'tcx> {
@@ -134,9 +135,11 @@ impl<'tcx> TypeVariableTable<'tcx> {
     ///
     /// Precondition: neither `a` nor `b` are known.
     pub fn relate_vars(&mut self, a: ty::TyVid, dir: RelationDir, b: ty::TyVid) {
+        debug!("relate_vars({:?}, {:?}, {:?})", a, dir, b);
         let a = self.root_var(a);
         let b = self.root_var(b);
         if a != b {
+            debug!("relate_vars: root-a={:?} {:?} root-b={:?}", a, dir, b);
             if dir == EqTo {
                 // a and b must be equal which we mark in the unification table
                 let root = self.eq_relations.union(a, b);
@@ -221,6 +224,10 @@ impl<'tcx> TypeVariableTable<'tcx> {
     pub fn probe(&mut self, vid: ty::TyVid) -> Option<Ty<'tcx>> {
         let vid = self.root_var(vid);
         self.probe_root(vid)
+    }
+
+    pub fn origin(&self, vid: ty::TyVid) -> TypeVariableOrigin {
+        self.values.get(vid.index as usize).origin.clone()
     }
 
     /// Retrieves the type of `vid` given that it is currently a root in the unification table

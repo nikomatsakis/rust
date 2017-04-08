@@ -1795,6 +1795,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
     pub fn register_predicates(&self,
                                obligations: Vec<traits::PredicateObligation<'tcx>>)
     {
+        debug!("register_predicates({:?})", obligations);
         for obligation in obligations {
             self.register_predicate(obligation);
         }

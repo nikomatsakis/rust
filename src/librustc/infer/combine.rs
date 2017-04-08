@@ -39,7 +39,7 @@ use super::lub::Lub;
 use super::sub::Sub;
 use super::InferCtxt;
 use super::{MiscVariable, TypeTrace};
-use super::type_variable::{RelationDir, BiTo, EqTo, SubtypeOf, SupertypeOf};
+use super::type_variable::{RelationDir, BiTo, EqTo, SubtypeOf, SupertypeOf, TypeVariableOrigin};
 
 use ty::{IntType, UintType};
 use ty::{self, Ty, TyCtxt};
@@ -322,7 +322,17 @@ impl<'cx, 'gcx, 'tcx> ty::fold::TypeFolder<'gcx, 'tcx> for Generalizer<'cx, 'gcx
                             drop(variables);
                             self.fold_ty(u)
                         }
-                        None => t,
+                        None => {
+                            if self.make_region_vars {
+                                let origin = variables.origin(vid);
+                                let new_var_id = variables.new_var(false, origin, None);
+                                let u = self.tcx().mk_var(new_var_id);
+                                debug!("XXX original-vid={:?} new={:?}", vid, u);
+                                u
+                            } else {
+                                t
+                            }
+                        }
                     }
                 }
             }

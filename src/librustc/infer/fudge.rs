@@ -65,6 +65,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         F: FnOnce() -> Result<T, E>,
         T: TypeFoldable<'tcx>,
     {
+        debug!("fudge_regions_if_ok(origin={:?})", origin);
+
         let (region_vars, value) = self.probe(|snapshot| {
             let vars_at_start = self.type_variables.borrow().num_vars();
 
