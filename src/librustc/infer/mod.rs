@@ -31,7 +31,7 @@ use ty::{self, Ty, TyCtxt};
 use ty::error::{ExpectedFound, TypeError, UnconstrainedNumeric};
 use ty::fold::{TypeFoldable, TypeFolder, TypeVisitor};
 use ty::relate::{Relate, RelateResult, TypeRelation};
-use traits::{self, ObligationCause, PredicateObligations, Reveal};
+use traits::{self, Obligation, ObligationCause, PredicateObligations, Reveal};
 use rustc_data_structures::unify::{self, UnificationTable};
 use std::cell::{Cell, RefCell, Ref, RefMut};
 use std::fmt;
@@ -1142,15 +1142,10 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         -> UnitResult<'tcx>
     {
         self.commit_if_ok(|snapshot| {
-            let (predicate, skol_map) =
-                self.skolemize_late_bound_regions(predicate, snapshot);
+            let (predicate, skol_map) = self.skolemize_late_bound_regions(predicate, snapshot);
             let obligation = Obligation::new(cause, ty::Predicate::RegionOutlives(ty::Binder(predicate)));
             self.leak_check(false, cause.span, &skol_map, snapshot, &[obligation])?;
             self.pop_skolemized(skol_map, snapshot);
-            let origin =
-                SubregionOrigin::from_obligation_cause(cause,
-                                                       || RelateRegionParamBound(cause.span));
-            self.sub_regions(origin, r_b, r_a); // `b : a` ==> `a <= b`
         })
     }
 
