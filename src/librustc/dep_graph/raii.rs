@@ -12,31 +12,6 @@ use hir::def_id::DefId;
 use super::DepNode;
 use super::thread::{DepGraphThreadData, DepMessage};
 
-pub struct DepTask<'graph> {
-    data: &'graph DepGraphThreadData,
-    key: Option<DepNode<DefId>>,
-}
-
-impl<'graph> DepTask<'graph> {
-    pub fn new(data: &'graph DepGraphThreadData, key: DepNode<DefId>)
-               -> Option<DepTask<'graph>> {
-        if data.is_enqueue_enabled() {
-            data.enqueue(DepMessage::PushTask(key.clone()));
-            Some(DepTask { data: data, key: Some(key) })
-        } else {
-            None
-        }
-    }
-}
-
-impl<'graph> Drop for DepTask<'graph> {
-    fn drop(&mut self) {
-        if self.data.is_enqueue_enabled() {
-            self.data.enqueue(DepMessage::PopTask(self.key.take().unwrap()));
-        }
-    }
-}
-
 pub struct IgnoreTask<'graph> {
     data: &'graph DepGraphThreadData
 }

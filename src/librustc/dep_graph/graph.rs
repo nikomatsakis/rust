@@ -26,10 +26,14 @@ pub struct DepGraph {
     data: Rc<DepGraphData>
 }
 
+pub struct DepNodeIndex {
+    index: usize
+}
+
 struct DepGraphData {
-    /// We send messages to the thread to let it build up the dep-graph
-    /// from the current run.
-    thread: DepGraphThreadData,
+    enabled: bool,
+
+    nodes: RefCell<DepGraphNodes>,
 
     /// When we load, there may be `.o` files, cached mir, or other such
     /// things available to us. If we find that they are not dirty, we
@@ -39,6 +43,40 @@ struct DepGraphData {
 
     /// Work-products that we generate in this run.
     work_products: RefCell<FxHashMap<Arc<WorkProductId>, WorkProduct>>,
+}
+
+struct DepGraphNodes {
+    node_data: Vec<DepNodeData>,
+
+    /// Hash-set used to canonicalize these vectors.
+    predecessors: FxHashSet<Rc<Vec<DepNodeIndex>>>,
+
+    task_stack: Vec<TaskStackEntry>,
+
+    /// Anonymous nodes are named by their predecessors.  This map
+    /// goes from a (canonically sorted) set of predecessors to an
+    /// anonymous node index, so we can re-use indices that occur
+    /// regularly.
+    anon_node_map: FxHashMap<Rc<Vec<DepNode<DefId>>>, DepNodeIndex>,
+
+    /// Quickly look up the named node.
+    named_node_map: FxHashMap<DepNode<DefId>>, DepNodeIndex>,
+}
+
+struct DepNodeData {
+    opt_name: Option<DepNode<DefId>>,
+    predecessors: Rc<Vec<DepNodeIndex>>,
+}
+
+/// For each active task, we push one of these entries, which
+/// accumulates a list of dep-nodes that were accessed. The set is
+/// used to quickly check if a given pred has been accessed already;
+/// the vec stores the list of preds in the order in which they were
+/// accessed (it's important to preserve that ordering to prevent us
+/// from doing extra work and so forth).
+struct TaskStackEntry {
+    predecessors: Vec<DepNodeIndex>,
+    predecessor_set: FxHashSet<DepNodeIndex>,
 }
 
 impl DepGraph {
@@ -62,19 +100,20 @@ impl DepGraph {
         self.data.thread.query()
     }
 
-    pub fn in_ignore<'graph>(&'graph self) -> Option<raii::IgnoreTask<'graph>> {
-        raii::IgnoreTask::new(&self.data.thread)
-    }
-
-    pub fn in_task<'graph>(&'graph self, key: DepNode<DefId>) -> Option<raii::DepTask<'graph>> {
-        raii::DepTask::new(&self.data.thread, key)
-    }
-
+    /// Executes `op`, ignoring any dependencies. Used to "hack" the
+    /// system -- use with care! Once red-green system is in place,
+    /// probably not much needed anymore.
     pub fn with_ignore<OP,R>(&self, op: OP) -> R
         where OP: FnOnce() -> R
     {
-        let _task = self.in_ignore();
-        op()
+        if !self.enabled {
+            op()
+        } else {
+            self.nodes.borrow_mut().push_task();
+            let result = op();
+            let _ = self.nodes.borrow_mut().pop_task(None);
+            result
+        }
     }
 
     /// Starts a new dep-graph task. Dep-graph tasks are specified
@@ -107,19 +146,46 @@ impl DepGraph {
     pub fn with_task<C, A, R>(&self, key: DepNode<DefId>, cx: C, arg: A, task: fn(C, A) -> R) -> R
         where C: DepGraphSafe, A: DepGraphSafe
     {
-        let _task = self.in_task(key);
-        task(cx, arg)
+        self.with_task_internal(Some(key), cx, arg, task)
     }
 
-    pub fn read(&self, v: DepNode<DefId>) {
-        if self.data.thread.is_enqueue_enabled() {
-            self.data.thread.enqueue(DepMessage::Read(v));
+    /// Like `with_task`, but it creates an **anonymous task**. The
+    /// only way to name this task later is through its
+    /// `DepNodeIndex`.
+    pub fn with_anon_task<C, A, R>(&self,
+                                   cx: C,
+                                   arg: A,
+                                   task: fn(C, A) -> R)
+                                   -> (R, DepNodeIndex)
+        where C: DepGraphSafe, A: DepGraphSafe
+    {
+        self.with_task_internal(None, cx, arg, task)
+    }
+
+    fn with_task_internal<C, A, R>(&self,
+                                   key: Option<DepNode<DefId>>,
+                                   cx: C,
+                                   arg: A,
+                                   task: fn(C, A) -> R)
+                                   -> (R, DepNodeIndex)
+        where C: DepGraphSafe, A: DepGraphSafe
+    {
+        if !self.enabled {
+            return (task(cx, arg), DepNodeIndex::dummy())
+        } else {
+            self.nodes.borrow_mut().push_task();
+            let result = task(cx, arg);
+            let node_index = self.nodes.borrow_mut().pop_task(key);
+            (result, node_index)
         }
     }
 
-    pub fn write(&self, v: DepNode<DefId>) {
-        if self.data.thread.is_enqueue_enabled() {
-            self.data.thread.enqueue(DepMessage::Write(v));
+    /// Indicates that the current task read the data at `v`.
+    pub fn read(&self, v: DepNodeIndex) {
+        if self.enabled {
+            self.nodes.borrow_mut().read(v);
+        } else {
+            debug_assert!(v.is_dummy());
         }
     }
 
@@ -159,6 +225,61 @@ impl DepGraph {
     /// used during saving of the dep-graph.
     pub fn previous_work_products(&self) -> Ref<FxHashMap<Arc<WorkProductId>, WorkProduct>> {
         self.data.previous_work_products.borrow()
+    }
+}
+
+impl DepGraphNodes {
+    fn push_task(&mut self) {
+        self.task_stack.push(TaskStackEntry {
+            predecessors: vec![],
+            predecessor_set: FxHashSet(),
+        });
+    }
+
+    /// Finishes the current task and creates a node to represent it.
+    /// The node will be anonymous if `opt_name` is `None`, and named
+    /// otherwise.
+    fn pop_task(&mut self, opt_name: Option<DepNode<DefId>>) -> DepNodeIndex {
+        let entry = self.task_stack.pop().unwrap();
+
+        // Canonicalize the vector of predecessors.
+        let predecessors = if let Some(s) = self.predecessors.get(&entry.predecessors) {
+            s.clone()
+        } else {
+            let vec = Rc::new(entry.predecessors);
+            self.predecessors.insert(vec);
+            vec.clone()
+        };
+
+        // Check if a suitable anonymous node already exists.
+        //
+        // Micro-optimization: this could be improved by taking
+        // advantage of the fact that vectors of predecessors are
+        // interned above.
+        if opt_name.is_none() {
+            if let Some(&index) = self.anon_node_map.get(&predecessors) {
+                return index;
+            }
+        }
+
+        // Otherwise, we have to make a new node. If this is a named node,
+        // it should not already exist.
+        let index = DepNodeIndex { index: self.node_data.len() };
+        if let Some(n) = opt_name {
+            let prev = self.named_node_map.insert(n, index);
+            assert!(prev.is_none(), "created named node {:?} twice", n);
+        }
+        self.node_data.push(DepNodeData { opt_name, predecessors });
+
+        index
+    }
+
+    fn read(&mut self, v: DepNodeIndex) {
+        if let Some(top) = self.task_stack.last_mut() {
+            if top.predecessor_set.insert(v) {
+                top.predecessors.push(v);
+            }
+        }
     }
 }
 
