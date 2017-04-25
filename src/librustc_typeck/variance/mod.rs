@@ -30,6 +30,9 @@ mod constraints;
 /// Code to solve constraints and write out the results.
 mod solve;
 
+/// Code to write unit tests of variance.
+pub mod test;
+
 /// Code for transforming variances.
 mod xform;
 
@@ -92,3 +95,4 @@ fn item_variances<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, item_def_id: DefId)
         }
     }
 }
+
