@@ -161,7 +161,7 @@ pub struct InferCtxt<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     // For region variables.
     region_vars: RegionVarBindings<'a, 'gcx, 'tcx>,
 
-    pub parameter_environment: ty::ParameterEnvironment<'gcx>,
+    pub trait_env: ty::TraitEnvironment<'gcx>,
 
     /// Caches the results of trait selection. This cache is used
     /// for things that have to do with the parameters in scope.
@@ -406,41 +406,41 @@ pub trait InferEnv<'a, 'tcx> {
     fn to_parts(self, tcx: TyCtxt<'a, 'tcx, 'tcx>)
                 -> (Option<&'a ty::TypeckTables<'tcx>>,
                     Option<ty::TypeckTables<'tcx>>,
-                    Option<ty::ParameterEnvironment<'tcx>>);
+                    Option<ty::TraitEnvironment<'tcx>>);
 }
 
 impl<'a, 'tcx> InferEnv<'a, 'tcx> for () {
     fn to_parts(self, _: TyCtxt<'a, 'tcx, 'tcx>)
                 -> (Option<&'a ty::TypeckTables<'tcx>>,
                     Option<ty::TypeckTables<'tcx>>,
-                    Option<ty::ParameterEnvironment<'tcx>>) {
+                    Option<ty::TraitEnvironment<'tcx>>) {
         (None, None, None)
     }
 }
 
-impl<'a, 'tcx> InferEnv<'a, 'tcx> for ty::ParameterEnvironment<'tcx> {
+impl<'a, 'tcx> InferEnv<'a, 'tcx> for ty::TraitEnvironment<'tcx> {
     fn to_parts(self, _: TyCtxt<'a, 'tcx, 'tcx>)
                 -> (Option<&'a ty::TypeckTables<'tcx>>,
                     Option<ty::TypeckTables<'tcx>>,
-                    Option<ty::ParameterEnvironment<'tcx>>) {
+                    Option<ty::TraitEnvironment<'tcx>>) {
         (None, None, Some(self))
     }
 }
 
-impl<'a, 'tcx> InferEnv<'a, 'tcx> for (&'a ty::TypeckTables<'tcx>, ty::ParameterEnvironment<'tcx>) {
+impl<'a, 'tcx> InferEnv<'a, 'tcx> for (&'a ty::TypeckTables<'tcx>, ty::TraitEnvironment<'tcx>) {
     fn to_parts(self, _: TyCtxt<'a, 'tcx, 'tcx>)
                 -> (Option<&'a ty::TypeckTables<'tcx>>,
                     Option<ty::TypeckTables<'tcx>>,
-                    Option<ty::ParameterEnvironment<'tcx>>) {
+                    Option<ty::TraitEnvironment<'tcx>>) {
         (Some(self.0), None, Some(self.1))
     }
 }
 
-impl<'a, 'tcx> InferEnv<'a, 'tcx> for (ty::TypeckTables<'tcx>, ty::ParameterEnvironment<'tcx>) {
+impl<'a, 'tcx> InferEnv<'a, 'tcx> for (ty::TypeckTables<'tcx>, ty::TraitEnvironment<'tcx>) {
     fn to_parts(self, _: TyCtxt<'a, 'tcx, 'tcx>)
                 -> (Option<&'a ty::TypeckTables<'tcx>>,
                     Option<ty::TypeckTables<'tcx>>,
-                    Option<ty::ParameterEnvironment<'tcx>>) {
+                    Option<ty::TraitEnvironment<'tcx>>) {
         (None, Some(self.0), Some(self.1))
     }
 }
@@ -449,11 +449,9 @@ impl<'a, 'tcx> InferEnv<'a, 'tcx> for hir::BodyId {
     fn to_parts(self, tcx: TyCtxt<'a, 'tcx, 'tcx>)
                 -> (Option<&'a ty::TypeckTables<'tcx>>,
                     Option<ty::TypeckTables<'tcx>>,
-                    Option<ty::ParameterEnvironment<'tcx>>) {
-        let item_id = tcx.hir.body_owner(self);
-        (Some(tcx.typeck_tables_of(tcx.hir.local_def_id(item_id))),
-         None,
-         Some(ty::ParameterEnvironment::for_item(tcx, item_id)))
+                    Option<ty::TraitEnvironment<'tcx>>) {
+        let item_def_id = tcx.hir.body_owner_def_id(self);
+        (Some(tcx.typeck_tables_of(item_def_id)), None, Some(tcx.trait_env(item_def_id)))
     }
 }
 
@@ -465,7 +463,7 @@ pub struct InferCtxtBuilder<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     arena: DroplessArena,
     fresh_tables: Option<RefCell<ty::TypeckTables<'tcx>>>,
     tables: Option<&'a ty::TypeckTables<'gcx>>,
-    param_env: Option<ty::ParameterEnvironment<'gcx>>,
+    trait_env: Option<ty::TraitEnvironment<'gcx>>,
     projection_mode: Reveal,
 }
 
@@ -474,13 +472,13 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'gcx> {
                                              env: E,
                                              projection_mode: Reveal)
                                              -> InferCtxtBuilder<'a, 'gcx, 'tcx> {
-        let (tables, fresh_tables, param_env) = env.to_parts(self);
+        let (tables, fresh_tables, trait_env) = env.to_parts(self);
         InferCtxtBuilder {
             global_tcx: self,
             arena: DroplessArena::new(),
             fresh_tables: fresh_tables.map(RefCell::new),
             tables: tables,
-            param_env: param_env,
+            trait_env: trait_env,
             projection_mode: projection_mode,
         }
     }
@@ -490,7 +488,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'gcx> {
     /// If any inference functionality is used, ICEs will occur.
     pub fn borrowck_fake_infer_ctxt(self, body: hir::BodyId)
                                     -> InferCtxt<'a, 'gcx, 'gcx> {
-        let (tables, _, param_env) = body.to_parts(self);
+        let (tables, _, trait_env) = body.to_parts(self);
         InferCtxt {
             tcx: self,
             tables: InferTables::Interned(tables.unwrap()),
@@ -498,7 +496,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'gcx> {
             int_unification_table: RefCell::new(UnificationTable::new()),
             float_unification_table: RefCell::new(UnificationTable::new()),
             region_vars: RegionVarBindings::new(self),
-            parameter_environment: param_env.unwrap(),
+            trait_env: trait_env.unwrap(),
             selection_cache: traits::SelectionCache::new(),
             evaluation_cache: traits::EvaluationCache::new(),
             projection_cache: RefCell::new(traits::ProjectionCache::new()),
@@ -520,15 +518,13 @@ impl<'a, 'gcx, 'tcx> InferCtxtBuilder<'a, 'gcx, 'tcx> {
             ref arena,
             ref fresh_tables,
             tables,
-            ref mut param_env,
+            ref mut trait_env,
             projection_mode,
         } = *self;
         let tables = tables.map(InferTables::Interned).unwrap_or_else(|| {
             fresh_tables.as_ref().map_or(InferTables::Missing, InferTables::InProgress)
         });
-        let param_env = param_env.take().unwrap_or_else(|| {
-            global_tcx.empty_parameter_environment()
-        });
+        let trait_env = trait_env.take().unwrap_or_else(|| ty::TraitEnvironment::empty());
         global_tcx.enter_local(arena, |tcx| f(InferCtxt {
             tcx: tcx,
             tables: tables,
@@ -537,7 +533,7 @@ impl<'a, 'gcx, 'tcx> InferCtxtBuilder<'a, 'gcx, 'tcx> {
             int_unification_table: RefCell::new(UnificationTable::new()),
             float_unification_table: RefCell::new(UnificationTable::new()),
             region_vars: RegionVarBindings::new(tcx),
-            parameter_environment: param_env,
+            trait_env: trait_env,
             selection_cache: traits::SelectionCache::new(),
             evaluation_cache: traits::EvaluationCache::new(),
             reported_trait_errors: RefCell::new(FxHashSet()),
@@ -650,7 +646,7 @@ impl<'a, 'tcx> TyCtxt<'a, 'tcx, 'tcx> {
     }
 
     pub fn normalize_associated_type_in_env<T>(
-        self, value: &T, env: &'a ty::ParameterEnvironment<'tcx>
+        self, value: &T, env: &'a ty::TraitEnvironment<'tcx>
     ) -> T
         where T: TransNormalize<'tcx>
     {
@@ -1634,7 +1630,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 _ => false
             };
             if !local_closures {
-                return ty.moves_by_default(self.tcx.global_tcx(), self.param_env(), span);
+                return ty.moves_by_default(self.tcx.global_tcx(), self.trait_env(), span);
             }
         }
 
@@ -1674,8 +1670,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         self.tables.borrow().upvar_capture_map.get(&upvar_id).cloned()
     }
 
-    pub fn param_env(&self) -> &ty::ParameterEnvironment<'gcx> {
-        &self.parameter_environment
+    pub fn trait_env(&self) -> &ty::TraitEnvironment<'gcx> {
+        &self.trait_env
     }
 
     pub fn closure_kind(&self,

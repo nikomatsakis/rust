@@ -744,7 +744,7 @@ fn assemble_candidates_from_param_env<'cx, 'gcx, 'tcx>(
     candidate_set: &mut ProjectionTyCandidateSet<'tcx>)
 {
     debug!("assemble_candidates_from_param_env(..)");
-    let env_predicates = selcx.param_env().caller_bounds.iter().cloned();
+    let env_predicates = selcx.caller_bounds().iter().cloned();
     assemble_candidates_from_predicates(selcx,
                                         obligation,
                                         obligation_trait_ref,

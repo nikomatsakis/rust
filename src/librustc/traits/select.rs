@@ -315,8 +315,8 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         self.infcx.tcx
     }
 
-    pub fn param_env(&self) -> &'cx ty::ParameterEnvironment<'gcx> {
-        self.infcx.param_env()
+    pub fn caller_bounds(&self) -> &'tcx [ty::Predicate<'tcx>] {
+        self.infcx.trait_env.caller_bounds
     }
 
     pub fn closure_typer(&self) -> &'cx InferCtxt<'cx, 'gcx, 'tcx> {
@@ -1003,7 +1003,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         // annoying and weird bugs like #22019 and #18290. This simple
         // rule seems to be pretty clearly safe and also still retains
         // a very high hit rate (~95% when compiling rustc).
-        if !self.param_env().caller_bounds.is_empty() {
+        if !self.caller_bounds().is_empty() {
             return false;
         }
 
@@ -1296,9 +1296,9 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                stack.obligation);
 
         let all_bounds =
-            self.param_env().caller_bounds
-                            .iter()
-                            .filter_map(|o| o.to_opt_poly_trait_ref());
+            self.caller_bounds()
+                .iter()
+                .filter_map(|o| o.to_opt_poly_trait_ref());
 
         // micro-optimization: filter out predicates relating to different
         // traits.

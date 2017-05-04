@@ -444,23 +444,30 @@ impl<'hir> Map<'hir> {
 
     /// Given a body owner's id, returns the `BodyId` associated with it.
     pub fn body_owned_by(&self, id: NodeId) -> BodyId {
-        if let Some(entry) = self.find_entry(id) {
+        if let Some(b) = self.opt_body_owned_by(id) {
+            b
+        } else {
+            span_bug!(self.span(id), "id `{}` has no associated body", id)
+        }
+    }
+
+    /// Given a body owner's id, returns the `BodyId` associated with it (if any).
+    pub fn opt_body_owned_by(&self, id: NodeId) -> Option<BodyId> {
+        self.find_entry(id).and_then(|entry| {
             if let Some(body_id) = entry.associated_body() {
                 // For item-like things and closures, the associated
                 // body has its own distinct id, and that is returned
                 // by `associated_body`.
-                body_id
+                Some(body_id)
             } else {
                 // For some expressions, the expression is its own body.
                 if let EntryExpr(_, expr) = entry {
-                    BodyId { node_id: expr.id }
+                    Some(BodyId { node_id: expr.id })
                 } else {
-                    span_bug!(self.span(id), "id `{}` has no associated body: {:?}", id, entry);
+                    None
                 }
             }
-        } else {
-            bug!("no entry for id `{}`", id)
-        }
+        })
     }
 
     pub fn ty_param_owner(&self, id: NodeId) -> NodeId {

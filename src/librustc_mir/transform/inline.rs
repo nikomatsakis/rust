@@ -219,7 +219,8 @@ impl<'a, 'tcx> Inliner<'a, 'tcx> {
 
         // FIXME: Give a bonus to functions with only a single caller
 
-        let param_env = ty::ParameterEnvironment::for_item(tcx, self.source.item_id());
+        let source_def_id = tcx.hir.local_def_id(self.source.item_id());
+        let trait_env = tcx.trait_env(source_def_id);
 
         let mut first_block = true;
         let mut cost = 0;
@@ -252,7 +253,7 @@ impl<'a, 'tcx> Inliner<'a, 'tcx> {
                     // a regular goto.
                     let ty = location.ty(&callee_mir, tcx).subst(tcx, callsite.substs);
                     let ty = ty.to_ty(tcx);
-                    if ty.needs_drop(tcx, &param_env) {
+                    if ty.needs_drop(tcx, &trait_env) {
                         cost += CALL_PENALTY;
                         if let Some(unwind) = unwind {
                             work_list.push(unwind);
@@ -302,7 +303,7 @@ impl<'a, 'tcx> Inliner<'a, 'tcx> {
             let ty = v.ty.subst(tcx, callsite.substs);
             // Cost of the var is the size in machine-words, if we know
             // it.
-            if let Some(size) = type_size_of(tcx, param_env.clone(), ty) {
+            if let Some(size) = type_size_of(tcx, trait_env.clone(), ty) {
                 cost += (size / ptr_size) as usize;
             } else {
                 cost += UNKNOWN_SIZE_COST;
@@ -544,9 +545,9 @@ impl<'a, 'tcx> Inliner<'a, 'tcx> {
     }
 }
 
-fn type_size_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, param_env: ty::ParameterEnvironment<'tcx>,
+fn type_size_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, trait_env: ty::TraitEnvironment<'tcx>,
                           ty: Ty<'tcx>) -> Option<u64> {
-    tcx.infer_ctxt(param_env, traits::Reveal::All).enter(|infcx| {
+    tcx.infer_ctxt(trait_env, traits::Reveal::All).enter(|infcx| {
         ty.layout(&infcx).ok().map(|layout| {
             layout.size(&tcx.data_layout).bytes()
         })

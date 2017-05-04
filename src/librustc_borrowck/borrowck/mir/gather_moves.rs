@@ -9,7 +9,7 @@
 // except according to those terms.
 
 
-use rustc::ty::{self, TyCtxt, ParameterEnvironment};
+use rustc::ty::{self, TyCtxt, TraitEnvironment};
 use rustc::mir::*;
 use rustc::util::nodemap::FxHashMap;
 use rustc_data_structures::indexed_vec::{IndexVec};
@@ -191,7 +191,7 @@ pub struct MovePathLookup<'tcx> {
 struct MoveDataBuilder<'a, 'tcx: 'a> {
     mir: &'a Mir<'tcx>,
     tcx: TyCtxt<'a, 'tcx, 'tcx>,
-    param_env: &'a ParameterEnvironment<'tcx>,
+    trait_env: &'a TraitEnvironment<'tcx>,
     data: MoveData<'tcx>,
 }
 
@@ -203,7 +203,7 @@ pub enum MovePathError {
 impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
     fn new(mir: &'a Mir<'tcx>,
            tcx: TyCtxt<'a, 'tcx, 'tcx>,
-           param_env: &'a ParameterEnvironment<'tcx>)
+           trait_env: &'a TraitEnvironment<'tcx>)
            -> Self {
         let mut move_paths = IndexVec::new();
         let mut path_map = IndexVec::new();
@@ -211,7 +211,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
         MoveDataBuilder {
             mir: mir,
             tcx: tcx,
-            param_env: param_env,
+            trait_env: trait_env,
             data: MoveData {
                 moves: IndexVec::new(),
                 loc_map: LocationMap::new(mir),
@@ -370,17 +370,17 @@ impl<'tcx> MovePathLookup<'tcx> {
 impl<'a, 'tcx> MoveData<'tcx> {
     pub fn gather_moves(mir: &Mir<'tcx>,
                         tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                        param_env: &ParameterEnvironment<'tcx>)
+                        trait_env: &TraitEnvironment<'tcx>)
                         -> Self {
-        gather_moves(mir, tcx, param_env)
+        gather_moves(mir, tcx, trait_env)
     }
 }
 
 fn gather_moves<'a, 'tcx>(mir: &Mir<'tcx>,
                           tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                          param_env: &ParameterEnvironment<'tcx>)
+                          trait_env: &TraitEnvironment<'tcx>)
                           -> MoveData<'tcx> {
-    let mut builder = MoveDataBuilder::new(mir, tcx, param_env);
+    let mut builder = MoveDataBuilder::new(mir, tcx, trait_env);
 
     for (bb, block) in mir.basic_blocks().iter_enumerated() {
         for (i, stmt) in block.statements.iter().enumerate() {
@@ -501,7 +501,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
         debug!("gather_move({:?}, {:?})", loc, lval);
 
         let lv_ty = lval.ty(self.mir, self.tcx).to_ty(self.tcx);
-        if !lv_ty.moves_by_default(self.tcx, self.param_env, DUMMY_SP) {
+        if !lv_ty.moves_by_default(self.tcx, self.trait_env, DUMMY_SP) {
             debug!("gather_move({:?}, {:?}) - {:?} is Copy. skipping", loc, lval, lv_ty);
             return
         }

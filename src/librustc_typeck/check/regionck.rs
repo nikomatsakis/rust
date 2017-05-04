@@ -138,7 +138,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         let subject = self.tcx.hir.local_def_id(item_id);
         let mut rcx = RegionCtxt::new(self, RepeatingScope(item_id), item_id, Subject(subject));
         rcx.free_region_map.relate_free_regions_from_predicates(
-            &self.parameter_environment.caller_bounds);
+            &self.trait_env.caller_bounds);
         rcx.relate_free_regions(wf_tys, item_id, span);
         rcx.visit_region_obligations(item_id);
         rcx.resolve_regions_and_report_errors();
@@ -158,7 +158,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         }
 
         rcx.free_region_map.relate_free_regions_from_predicates(
-            &self.parameter_environment.caller_bounds);
+            &self.trait_env.caller_bounds);
 
         rcx.resolve_regions_and_report_errors();
 
@@ -1613,7 +1613,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
     }
 
     fn param_bound(&self, param_ty: ty::ParamTy) -> VerifyBound<'tcx> {
-        let param_env = &self.parameter_environment;
+        let param_env = &self.param_env;
 
         debug!("param_bound(param_ty={:?})",
                param_ty);
@@ -1683,11 +1683,11 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
     fn declared_generic_bounds_from_env(&self, generic: GenericKind<'tcx>)
                                         -> Vec<ty::Region<'tcx>>
     {
-        let param_env = &self.parameter_environment;
+        let trait_env = &self.trait_env;
 
         // To start, collect bounds from user:
         let mut param_bounds = self.tcx.required_region_bounds(generic.to_ty(self.tcx),
-                                                               param_env.caller_bounds.to_vec());
+                                                               trait_env.caller_bounds.to_vec());
 
         // Next, collect regions we scraped from the well-formedness
         // constraints in the fn signature. To do that, we walk the list

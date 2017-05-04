@@ -179,15 +179,14 @@ pub fn specializes<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     }
 
     // create a parameter environment corresponding to a (skolemized) instantiation of impl1
-    let penv = tcx.construct_parameter_environment(DUMMY_SP,
-                                                   impl1_def_id,
-                                                   None);
+    let param_env = tcx.construct_parameter_environment(impl1_def_id, None);
     let impl1_trait_ref = tcx.impl_trait_ref(impl1_def_id)
                              .unwrap()
-                             .subst(tcx, &penv.free_substs);
+                             .subst(tcx, &param_env.free_substs);
 
     // Create a infcx, taking the predicates of impl1 as assumptions:
-    let result = tcx.infer_ctxt(penv, Reveal::UserFacing).enter(|infcx| {
+    let trait_env = tcx.trait_env(impl1_def_id); // TODO
+    let result = tcx.infer_ctxt(trait_env, Reveal::UserFacing).enter(|infcx| {
         // Normalize the trait reference. The WF rules ought to ensure
         // that this always succeeds.
         let impl1_trait_ref =
@@ -253,7 +252,7 @@ fn fulfill_implication<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
                        source_trait_ref,
                        target_trait_ref,
                        errors,
-                       infcx.parameter_environment.caller_bounds);
+                       infcx.trait_env.caller_bounds);
                 Err(())
             }
 

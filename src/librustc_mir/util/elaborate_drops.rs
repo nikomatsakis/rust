@@ -56,7 +56,7 @@ pub trait DropElaborator<'a, 'tcx: 'a> : fmt::Debug {
     fn patch(&mut self) -> &mut MirPatch<'tcx>;
     fn mir(&self) -> &'a Mir<'tcx>;
     fn tcx(&self) -> ty::TyCtxt<'a, 'tcx, 'tcx>;
-    fn param_env(&self) -> &'a ty::ParameterEnvironment<'tcx>;
+    fn trait_env(&self) -> &'a ty::TraitEnvironment<'tcx>;
 
     fn drop_style(&self, path: Self::Path, mode: DropFlagMode) -> DropStyle;
     fn get_drop_flag(&mut self, path: Self::Path) -> Option<Operand<'tcx>>;
@@ -182,7 +182,7 @@ impl<'l, 'b, 'tcx, D> DropCtxt<'l, 'b, 'tcx, D>
             let field_ty =
                 self.tcx().normalize_associated_type_in_env(
                     &f.ty(self.tcx(), substs),
-                    self.elaborator.param_env()
+                    self.elaborator.trait_env()
                 );
             (base_lv.clone().field(field, field_ty), subpath)
         }).collect()
@@ -277,7 +277,7 @@ impl<'l, 'b, 'tcx, D> DropCtxt<'l, 'b, 'tcx, D>
 
         let mut fields = fields;
         fields.retain(|&(ref lvalue, _)| {
-            self.lvalue_ty(lvalue).needs_drop(self.tcx(), self.elaborator.param_env())
+            self.lvalue_ty(lvalue).needs_drop(self.tcx(), self.elaborator.trait_env())
         });
 
         debug!("drop_ladder - fields needing drop: {:?}", fields);

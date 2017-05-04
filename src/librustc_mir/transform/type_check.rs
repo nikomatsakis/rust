@@ -665,7 +665,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
 
         let span = local_decl.source_info.span;
         let ty = local_decl.ty;
-        if !ty.is_sized(self.tcx().global_tcx(), self.infcx.param_env(), span) {
+        if !ty.is_sized(self.tcx().global_tcx(), self.infcx.trait_env(), span) {
             // in current MIR construction, all non-control-flow rvalue
             // expressions evaluate through `as_temp` or `into` a return
             // slot or local, so to find all unsized rvalues it is enough
@@ -751,8 +751,8 @@ impl MirPass for TypeckMir {
             // broken MIR, so try not to report duplicate errors.
             return;
         }
-        let param_env = ty::ParameterEnvironment::for_item(tcx, item_id);
-        tcx.infer_ctxt(param_env, Reveal::UserFacing).enter(|infcx| {
+        let trait_env = tcx.trait_env(def_id);
+        tcx.infer_ctxt(trait_env, Reveal::UserFacing).enter(|infcx| {
             let mut checker = TypeChecker::new(&infcx, item_id);
             {
                 let mut verifier = TypeVerifier::new(&mut checker, mir);

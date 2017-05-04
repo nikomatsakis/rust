@@ -177,6 +177,8 @@ pub struct Inherited<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     // variables to get the concrete type, which can be used to
     // deanonymize TyAnon, after typeck is done with all functions.
     anon_types: RefCell<NodeMap<Ty<'tcx>>>,
+
+    param_env: ParameterEnvironment<'tcx>,
 }
 
 impl<'a, 'gcx, 'tcx> Deref for Inherited<'a, 'gcx, 'tcx> {
@@ -523,17 +525,19 @@ impl<'a, 'gcx, 'tcx> Deref for FnCtxt<'a, 'gcx, 'tcx> {
 /// Necessary because we can't write the following bound:
 /// F: for<'b, 'tcx> where 'gcx: 'tcx FnOnce(Inherited<'b, 'gcx, 'tcx>).
 pub struct InheritedBuilder<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
-    infcx: infer::InferCtxtBuilder<'a, 'gcx, 'tcx>
+    infcx: infer::InferCtxtBuilder<'a, 'gcx, 'tcx>,
+    param_env: ty::ParameterEnvironment<'tcx>,
 }
 
 impl<'a, 'gcx, 'tcx> Inherited<'a, 'gcx, 'tcx> {
     pub fn build(tcx: TyCtxt<'a, 'gcx, 'gcx>, id: ast::NodeId)
                  -> InheritedBuilder<'a, 'gcx, 'tcx> {
         let tables = ty::TypeckTables::empty();
-        let param_env = ParameterEnvironment::for_item(tcx, id);
-        InheritedBuilder {
-            infcx: tcx.infer_ctxt((tables, param_env), Reveal::UserFacing)
-        }
+        let def_id = tcx.hir.local_def_id(id);
+        let trait_env = tcx.trait_env(def_id);
+        let param_env = ty::ParameterEnvironment::for_item(tcx, id);
+        let infcx = tcx.infer_ctxt((tables, trait_env), Reveal::UserFacing);
+        InheritedBuilder { infcx, param_env }
     }
 }
 
@@ -541,14 +545,16 @@ impl<'a, 'gcx, 'tcx> InheritedBuilder<'a, 'gcx, 'tcx> {
     fn enter<F, R>(&'tcx mut self, f: F) -> R
         where F: for<'b> FnOnce(Inherited<'b, 'gcx, 'tcx>) -> R
     {
-        self.infcx.enter(|infcx| f(Inherited::new(infcx)))
+        let param_env = self.param_env;
+        self.infcx.enter(|infcx| f(Inherited::new(infcx, param_env)))
     }
 }
 
 impl<'a, 'gcx, 'tcx> Inherited<'a, 'gcx, 'tcx> {
-    fn new(infcx: InferCtxt<'a, 'gcx, 'tcx>) -> Self {
+    fn new(infcx: InferCtxt<'a, 'gcx, 'tcx>, param_env: ParameterEnvironment<'tcx>) -> Self {
         Inherited {
             infcx: infcx,
+            param_env: param_env,
             fulfillment_cx: RefCell::new(traits::FulfillmentContext::new()),
             locals: RefCell::new(NodeMap()),
             deferred_call_resolutions: RefCell::new(DefIdMap()),
@@ -781,7 +787,7 @@ fn typeck_tables_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             // Compute the fty from point of view of inside fn.
             let fn_scope = inh.tcx.call_site_extent(id, body_id.node_id);
             let fn_sig =
-                fn_sig.subst(inh.tcx, &inh.parameter_environment.free_substs);
+                fn_sig.subst(inh.tcx, &inh.param_env.free_substs);
             let fn_sig =
                 inh.tcx.liberate_late_bound_regions(Some(fn_scope), &fn_sig);
             let fn_sig =
@@ -1515,7 +1521,7 @@ impl<'a, 'gcx, 'tcx> AstConv<'gcx, 'tcx> for FnCtxt<'a, 'gcx, 'tcx> {
     fn tcx<'b>(&'b self) -> TyCtxt<'b, 'gcx, 'tcx> { self.tcx }
 
     fn get_free_substs(&self) -> Option<&Substs<'tcx>> {
-        Some(&self.parameter_environment.free_substs)
+        Some(&self.param_env.free_substs)
     }
 
     fn get_type_parameter_bounds(&self, _: Span, def_id: DefId)
@@ -1529,7 +1535,7 @@ impl<'a, 'gcx, 'tcx> AstConv<'gcx, 'tcx> for FnCtxt<'a, 'gcx, 'tcx> {
         let index = generics.type_param_to_index[&def_id.index];
         ty::GenericPredicates {
             parent: None,
-            predicates: self.parameter_environment.caller_bounds.iter().filter(|predicate| {
+            predicates: self.trait_env.caller_bounds.iter().filter(|predicate| {
                 match **predicate {
                     ty::Predicate::Trait(ref data) => {
                         data.0.self_ty().is_param(index)

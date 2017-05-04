@@ -65,7 +65,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         // types of upvars. These will be unified during the upvar
         // inference phase (`upvar.rs`).
         let closure_type = self.tcx.mk_closure(expr_def_id,
-            self.parameter_environment.free_substs.extend_to(self.tcx, expr_def_id,
+            self.param_env.free_substs.extend_to(self.tcx, expr_def_id,
                 |_, _| span_bug!(expr.span, "closure has region param"),
                 |_, _| self.infcx.next_ty_var(TypeVariableOrigin::TransformedUpvar(expr.span))
             )

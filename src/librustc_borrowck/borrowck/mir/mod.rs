@@ -51,7 +51,7 @@ fn has_rustc_mir_with(attrs: &[ast::Attribute], name: &str) -> Option<MetaItem> 
 
 pub struct MoveDataParamEnv<'tcx> {
     move_data: MoveData<'tcx>,
-    param_env: ty::ParameterEnvironment<'tcx>,
+    trait_env: ty::TraitEnvironment<'tcx>,
 }
 
 pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
@@ -65,9 +65,9 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
     // steals it, but it forces the `borrowck` query.
     let mir = &tcx.mir_validated(def_id).borrow();
 
-    let param_env = ty::ParameterEnvironment::for_item(tcx, id);
-    let move_data = MoveData::gather_moves(mir, tcx, &param_env);
-    let mdpe = MoveDataParamEnv { move_data: move_data, param_env: param_env };
+    let trait_env = tcx.trait_env(def_id);
+    let move_data = MoveData::gather_moves(mir, tcx, &trait_env);
+    let mdpe = MoveDataParamEnv { move_data: move_data, trait_env: trait_env };
     let dead_unwinds = IdxSetBuf::new_empty(mir.basic_blocks().len());
     let flow_inits =
         do_dataflow(tcx, mir, id, attributes, &dead_unwinds,
@@ -325,7 +325,7 @@ fn on_all_drop_children_bits<'a, 'tcx, F>(
         let ty = lvalue.ty(mir, tcx).to_ty(tcx);
         debug!("on_all_drop_children_bits({:?}, {:?} : {:?})", path, lvalue, ty);
 
-        if ty.needs_drop(tcx, &ctxt.param_env) {
+        if ty.needs_drop(tcx, &ctxt.trait_env) {
             each_child(child);
         } else {
             debug!("on_all_drop_children_bits - skipping")
@@ -359,7 +359,7 @@ fn drop_flag_effects_for_location<'a, 'tcx, F>(
     where F: FnMut(MovePathIndex, DropFlagState)
 {
     let move_data = &ctxt.move_data;
-    let param_env = &ctxt.param_env;
+    let trait_env = &ctxt.trait_env;
     debug!("drop_flag_effects_for_location({:?})", loc);
 
     // first, move out of the RHS
@@ -370,7 +370,7 @@ fn drop_flag_effects_for_location<'a, 'tcx, F>(
         // don't move out of non-Copy things
         let lvalue = &move_data.move_paths[path].lvalue;
         let ty = lvalue.ty(mir, tcx).to_ty(tcx);
-        if !ty.moves_by_default(tcx, param_env, DUMMY_SP) {
+        if !ty.moves_by_default(tcx, trait_env, DUMMY_SP) {
             continue;
         }
 

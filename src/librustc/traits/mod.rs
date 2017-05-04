@@ -20,10 +20,12 @@ use hir::def_id::DefId;
 use middle::region::RegionMaps;
 use middle::free_region::FreeRegionMap;
 use ty::subst::Substs;
-use ty::{self, Ty, TyCtxt, TypeFoldable, ToPredicate};
+use ty::{self, TraitEnvironment, Ty, TyCtxt, TypeFoldable, ToPredicate};
 use ty::error::{ExpectedFound, TypeError};
 use infer::{InferCtxt};
 
+use rustc_data_structures::fx::FxHashMap;
+use std::cell::RefCell;
 use std::rc::Rc;
 use syntax::ast;
 use syntax_pos::{Span, DUMMY_SP};
@@ -435,11 +437,11 @@ pub fn type_known_to_meet_bound<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx
 
 // FIXME: this is gonna need to be removed ...
 /// Normalizes the parameter environment, reporting errors if they occur.
-pub fn normalize_param_env_or_error<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+pub fn normalize_trait_env_or_error<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                               region_context: DefId,
-                                              unnormalized_env: ty::ParameterEnvironment<'tcx>,
+                                              unnormalized_env: ty::TraitEnvironment<'tcx>,
                                               cause: ObligationCause<'tcx>)
-                                              -> ty::ParameterEnvironment<'tcx>
+                                              -> ty::TraitEnvironment<'tcx>
 {
     // I'm not wild about reporting errors here; I'd prefer to
     // have the errors get reported at a defined place (e.g.,
@@ -458,7 +460,7 @@ pub fn normalize_param_env_or_error<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
     let span = cause.span;
 
-    debug!("normalize_param_env_or_error(unnormalized_env={:?})",
+    debug!("normalize_trait_env_or_error(unnormalized_env={:?})",
            unnormalized_env);
 
     let predicates: Vec<_> =
@@ -474,10 +476,13 @@ pub fn normalize_param_env_or_error<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     // constructed, but I am not currently doing so out of laziness.
     // -nmatsakis
 
-    debug!("normalize_param_env_or_error: elaborated-predicates={:?}",
+    debug!("normalize_trait_env_or_error: elaborated-predicates={:?}",
            predicates);
 
-    let elaborated_env = unnormalized_env.with_caller_bounds(tcx.intern_predicates(&predicates));
+    let elaborated_env = TraitEnvironment {
+        caller_bounds: tcx.intern_predicates(&predicates),
+        ..unnormalized_env
+    };
 
     tcx.infer_ctxt(elaborated_env, Reveal::UserFacing).enter(|infcx| {
         let predicates = match fully_normalize(
@@ -494,11 +499,11 @@ pub fn normalize_param_env_or_error<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             Err(errors) => {
                 infcx.report_fulfillment_errors(&errors);
                 // An unnormalized env is better than nothing.
-                return infcx.parameter_environment;
+                return infcx.trait_env;
             }
         };
 
-        debug!("normalize_param_env_or_error: normalized predicates={:?}",
+        debug!("normalize_trait_env_or_error: normalized predicates={:?}",
             predicates);
 
         let region_maps = RegionMaps::new();
@@ -516,19 +521,22 @@ pub fn normalize_param_env_or_error<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                 // all things considered.
                 tcx.sess.span_err(span, &fixup_err.to_string());
                 // An unnormalized env is better than nothing.
-                return infcx.parameter_environment;
+                return infcx.trait_env;
             }
         };
 
         let predicates = match tcx.lift_to_global(&predicates) {
             Some(predicates) => predicates,
-            None => return infcx.parameter_environment
+            None => return infcx.trait_env
         };
 
-        debug!("normalize_param_env_or_error: resolved predicates={:?}",
+        debug!("normalize_trait_env_or_error: resolved predicates={:?}",
             predicates);
 
-        infcx.parameter_environment.with_caller_bounds(tcx.intern_predicates(&predicates))
+        TraitEnvironment {
+            caller_bounds: tcx.intern_predicates(&predicates),
+            ..infcx.trait_env
+        }
     })
 }
 
@@ -780,5 +788,62 @@ impl<'tcx> FulfillmentError<'tcx> {
 impl<'tcx> TraitObligation<'tcx> {
     fn self_ty(&self) -> ty::Binder<Ty<'tcx>> {
         ty::Binder(self.predicate.skip_binder().self_ty())
+    }
+}
+
+fn trait_env<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
+                             def_id: DefId)
+                             -> TraitEnvironment<'gcx>
+{
+    // Compute the bounds on Self and the type parameters.
+    let tcx = tcx.global_tcx();
+    let opt_id = tcx.hir.as_local_node_id(def_id);
+    let param_env = match opt_id {
+        Some(id) => ty::ParameterEnvironment::for_item(tcx, id),
+        None => {
+            // we never deal with the internal bodies from foreign
+            // crates, just impls in coherence basically
+            tcx.construct_parameter_environment(def_id, None)
+        }
+    };
+    let generic_predicates = tcx.predicates_of(def_id);
+    let ty::InstantiatedPredicates { predicates } = {
+        let bounds = generic_predicates.instantiate(tcx, &param_env.free_substs);
+        tcx.liberate_late_bound_regions(param_env.free_id_outlive, &ty::Binder(bounds))
+    };
+    let unnormalized_env = ty::TraitEnvironment {
+        caller_bounds: tcx.intern_predicates(&predicates),
+        is_copy_cache: RefCell::new(FxHashMap()),
+        is_sized_cache: RefCell::new(FxHashMap()),
+        is_freeze_cache: RefCell::new(FxHashMap()),
+    };
+
+    // Finally, we have to normalize the bounds in the environment, in
+    // case they contain any associated type projections. This process
+    // can yield errors if the put in illegal associated types, like
+    // `<i32 as Foo>::Bar` where `i32` does not implement `Foo`. We
+    // report these errors right here; this doesn't actually feel
+    // right to me, because constructing the environment feels like a
+    // kind of a "idempotent" action, but I'm not sure where would be
+    // a better place. In practice, we construct environments for
+    // every fn once during type checking, and we'll abort if there
+    // are any errors at that point, so after type checking you can be
+    // sure that this will succeed without errors anyway.
+
+    let body_id = opt_id.and_then(|id| tcx.hir.opt_body_owned_by(id))
+                        .map(|body_id| body_id.node_id)
+                        .unwrap_or(ast::DUMMY_NODE_ID);
+    let span = opt_id.map(|id| tcx.hir.span(id)).unwrap_or(DUMMY_SP);
+    let cause = ObligationCause::misc(span, body_id);
+    normalize_trait_env_or_error(tcx, def_id, unnormalized_env, cause)
+}
+
+impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'tcx, 'tcx> {
+    pub fn trait_env(self, def_id: DefId) -> TraitEnvironment<'tcx> {
+        // TODO This should eventually be a query, but it can't be so
+        // long as TraitEnvironment has internal mutability; but I
+        // made the method have same arguments etc that I eventually
+        // expect to have.
+        trait_env(self, def_id)
     }
 }

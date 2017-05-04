@@ -160,8 +160,8 @@ impl<'a, 'gcx> CheckTypeWellFormedVisitor<'a, 'gcx> {
                              sig_if_method: Option<&hir::MethodSig>) {
         let code = self.code.clone();
         self.for_id(item_id, span).with_fcx(|fcx, this| {
-            let free_substs = &fcx.parameter_environment.free_substs;
-            let free_id_outlive = fcx.parameter_environment.free_id_outlive;
+            let free_substs = &fcx.param_env.free_substs;
+            let free_id_outlive = fcx.param_env.free_id_outlive;
 
             let item = fcx.tcx.associated_item(fcx.tcx.hir.local_def_id(item_id));
 
@@ -242,7 +242,7 @@ impl<'a, 'gcx> CheckTypeWellFormedVisitor<'a, 'gcx> {
                 }
             }
 
-            let free_substs = &fcx.parameter_environment.free_substs;
+            let free_substs = &fcx.param_env.free_substs;
             let def_id = fcx.tcx.hir.local_def_id(item.id);
             let predicates = fcx.instantiate_bounds(item.span, def_id, free_substs);
             this.check_where_clauses(fcx, item.span, &predicates);
@@ -320,7 +320,7 @@ impl<'a, 'gcx> CheckTypeWellFormedVisitor<'a, 'gcx> {
         }
 
         self.for_item(item).with_fcx(|fcx, this| {
-            let free_substs = &fcx.parameter_environment.free_substs;
+            let free_substs = &fcx.param_env.free_substs;
             let predicates = fcx.instantiate_bounds(item.span, trait_def_id, free_substs);
             this.check_where_clauses(fcx, item.span, &predicates);
             vec![]
@@ -332,7 +332,7 @@ impl<'a, 'gcx> CheckTypeWellFormedVisitor<'a, 'gcx> {
                      body_id: hir::BodyId)
     {
         self.for_item(item).with_fcx(|fcx, this| {
-            let free_substs = &fcx.parameter_environment.free_substs;
+            let free_substs = &fcx.param_env.free_substs;
             let def_id = fcx.tcx.hir.local_def_id(item.id);
             let ty = fcx.tcx.type_of(def_id);
             let item_ty = fcx.instantiate_type_scheme(item.span, free_substs, &ty);
@@ -356,8 +356,7 @@ impl<'a, 'gcx> CheckTypeWellFormedVisitor<'a, 'gcx> {
         self.for_item(item).with_fcx(|fcx, this| {
             let ty = fcx.tcx.type_of(fcx.tcx.hir.local_def_id(item.id));
             let item_ty = fcx.instantiate_type_scheme(item.span,
-                                                      &fcx.parameter_environment
-                                                          .free_substs,
+                                                      &fcx.param_env.free_substs,
                                                       &ty);
 
             fcx.register_wf_obligation(item_ty, item.span, this.code.clone());
@@ -374,7 +373,7 @@ impl<'a, 'gcx> CheckTypeWellFormedVisitor<'a, 'gcx> {
         debug!("check_impl: {:?}", item);
 
         self.for_item(item).with_fcx(|fcx, this| {
-            let free_substs = &fcx.parameter_environment.free_substs;
+            let free_substs = &fcx.param_env.free_substs;
             let item_def_id = fcx.tcx.hir.local_def_id(item.id);
 
             match *ast_trait_ref {
@@ -432,7 +431,7 @@ impl<'a, 'gcx> CheckTypeWellFormedVisitor<'a, 'gcx> {
                                       free_id_outlive: Option<CodeExtent<'tcx>>,
                                       implied_bounds: &mut Vec<Ty<'tcx>>)
     {
-        let free_substs = &fcx.parameter_environment.free_substs;
+        let free_substs = &fcx.param_env.free_substs;
         let sig = fcx.instantiate_type_scheme(span, free_substs, &sig);
         let sig = fcx.tcx.liberate_late_bound_regions(free_id_outlive, &sig);
 
@@ -467,7 +466,7 @@ impl<'a, 'gcx> CheckTypeWellFormedVisitor<'a, 'gcx> {
 
         let span = method_sig.decl.inputs[0].span;
 
-        let free_substs = &fcx.parameter_environment.free_substs;
+        let free_substs = &fcx.param_env.free_substs;
         let method_ty = fcx.tcx.type_of(method.def_id);
         let fty = fcx.instantiate_type_scheme(span, free_substs, &method_ty);
         let sig = fcx.tcx.liberate_late_bound_regions(free_id_outlive, &fty.fn_sig());
@@ -633,8 +632,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             .map(|field| {
                 let field_ty = self.tcx.type_of(self.tcx.hir.local_def_id(field.id));
                 let field_ty = self.instantiate_type_scheme(field.span,
-                                                            &self.parameter_environment
-                                                                 .free_substs,
+                                                            &self.param_env.free_substs,
                                                             &field_ty);
                 AdtField { ty: field_ty, span: field.span }
             })
@@ -649,7 +647,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
     }
 
     fn impl_implied_bounds(&self, impl_def_id: DefId, span: Span) -> Vec<Ty<'tcx>> {
-        let free_substs = &self.parameter_environment.free_substs;
+        let free_substs = &self.param_env.free_substs;
         match self.tcx.impl_trait_ref(impl_def_id) {
             Some(ref trait_ref) => {
                 // Trait impl: take implied bounds from all types that

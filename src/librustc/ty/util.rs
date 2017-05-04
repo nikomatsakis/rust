@@ -16,7 +16,7 @@ use infer::InferCtxt;
 use ich::{StableHashingContext, NodeIdHashingMode};
 use traits::{self, Reveal};
 use ty::{self, Ty, TyCtxt, TypeAndMut, TypeFlags, TypeFoldable};
-use ty::ParameterEnvironment;
+use ty::TraitEnvironment;
 use ty::fold::TypeVisitor;
 use ty::layout::{Layout, LayoutError};
 use ty::subst::{Subst, Kind};
@@ -152,7 +152,23 @@ pub enum Representability {
     SelfRecursive,
 }
 
-impl<'tcx> ParameterEnvironment<'tcx> {
+impl<'tcx> TraitEnvironment<'tcx> {
+    /// Construct a trait environment suitable for contexts where
+    /// there are no where clauses in scope.
+    pub fn empty() -> Self {
+        Self::new(ty::Slice::empty())
+    }
+
+    /// Construct a trait environment with the given set of predicates.
+    pub fn new(caller_bounds: &'tcx [ty::Predicate<'tcx>]) -> Self {
+        ty::TraitEnvironment {
+            caller_bounds,
+            is_copy_cache: RefCell::new(FxHashMap()),
+            is_sized_cache: RefCell::new(FxHashMap()),
+            is_freeze_cache: RefCell::new(FxHashMap()),
+        }
+    }
+
     pub fn can_type_implement_copy<'a>(&self, tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                        self_type: Ty<'tcx>, span: Span)
                                        -> Result<(), CopyImplementationError> {
@@ -713,7 +729,7 @@ impl<'a, 'gcx, 'tcx, W> TypeVisitor<'tcx> for TypeIdHasher<'a, 'gcx, 'tcx, W>
 
 impl<'a, 'tcx> ty::TyS<'tcx> {
     fn impls_bound(&'tcx self, tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                   param_env: &ParameterEnvironment<'tcx>,
+                   trait_env: &TraitEnvironment<'tcx>,
                    def_id: DefId,
                    cache: &RefCell<FxHashMap<Ty<'tcx>, bool>>,
                    span: Span) -> bool
@@ -724,7 +740,7 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
             }
         }
         let result =
-            tcx.infer_ctxt(param_env.clone(), Reveal::UserFacing)
+            tcx.infer_ctxt(trait_env.clone(), Reveal::UserFacing)
             .enter(|infcx| {
                 traits::type_known_to_meet_bound(&infcx, self, def_id, span)
             });
@@ -736,7 +752,7 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
 
     // FIXME (@jroesch): I made this public to use it, not sure if should be private
     pub fn moves_by_default(&'tcx self, tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                            param_env: &ParameterEnvironment<'tcx>,
+                            trait_env: &TraitEnvironment<'tcx>,
                             span: Span) -> bool {
         if self.flags.get().intersects(TypeFlags::MOVENESS_CACHED) {
             return self.flags.get().intersects(TypeFlags::MOVES_BY_DEFAULT);
@@ -759,9 +775,9 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
             TyClosure(..) | TyAdt(..) | TyAnon(..) |
             TyProjection(..) | TyParam(..) | TyInfer(..) | TyError => None
         }.unwrap_or_else(|| {
-            !self.impls_bound(tcx, param_env,
+            !self.impls_bound(tcx, trait_env,
                               tcx.require_lang_item(lang_items::CopyTraitLangItem),
-                              &param_env.is_copy_cache, span) });
+                              &trait_env.is_copy_cache, span) });
 
         if !self.has_param_types() && !self.has_self_ty() {
             self.flags.set(self.flags.get() | if result {
@@ -776,18 +792,18 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
 
     #[inline]
     pub fn is_sized(&'tcx self, tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                    param_env: &ParameterEnvironment<'tcx>,
+                    trait_env: &TraitEnvironment<'tcx>,
                     span: Span) -> bool
     {
         if self.flags.get().intersects(TypeFlags::SIZEDNESS_CACHED) {
             return self.flags.get().intersects(TypeFlags::IS_SIZED);
         }
 
-        self.is_sized_uncached(tcx, param_env, span)
+        self.is_sized_uncached(tcx, trait_env, span)
     }
 
     fn is_sized_uncached(&'tcx self, tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                         param_env: &ParameterEnvironment<'tcx>,
+                         trait_env: &TraitEnvironment<'tcx>,
                          span: Span) -> bool {
         assert!(!self.needs_infer());
 
@@ -802,8 +818,8 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
             TyAdt(..) | TyProjection(..) | TyParam(..) |
             TyInfer(..) | TyAnon(..) | TyError => None
         }.unwrap_or_else(|| {
-            self.impls_bound(tcx, param_env, tcx.require_lang_item(lang_items::SizedTraitLangItem),
-                              &param_env.is_sized_cache, span) });
+            self.impls_bound(tcx, trait_env, tcx.require_lang_item(lang_items::SizedTraitLangItem),
+                              &trait_env.is_sized_cache, span) });
 
         if !self.has_param_types() && !self.has_self_ty() {
             self.flags.set(self.flags.get() | if result {
@@ -820,18 +836,18 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
     /// nested within the type (ignoring `PhantomData` or pointers).
     #[inline]
     pub fn is_freeze(&'tcx self, tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                     param_env: &ParameterEnvironment<'tcx>,
+                     trait_env: &TraitEnvironment<'tcx>,
                      span: Span) -> bool
     {
         if self.flags.get().intersects(TypeFlags::FREEZENESS_CACHED) {
             return self.flags.get().intersects(TypeFlags::IS_FREEZE);
         }
 
-        self.is_freeze_uncached(tcx, param_env, span)
+        self.is_freeze_uncached(tcx, trait_env, span)
     }
 
     fn is_freeze_uncached(&'tcx self, tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                          param_env: &ParameterEnvironment<'tcx>,
+                          trait_env: &TraitEnvironment<'tcx>,
                           span: Span) -> bool {
         assert!(!self.needs_infer());
 
@@ -846,8 +862,8 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
             TyDynamic(..) | TyProjection(..) | TyParam(..) |
             TyInfer(..) | TyAnon(..) | TyError => None
         }.unwrap_or_else(|| {
-            self.impls_bound(tcx, param_env, tcx.require_lang_item(lang_items::FreezeTraitLangItem),
-                              &param_env.is_freeze_cache, span) });
+            self.impls_bound(tcx, trait_env, tcx.require_lang_item(lang_items::FreezeTraitLangItem),
+                              &trait_env.is_freeze_cache, span) });
 
         if !self.has_param_types() && !self.has_self_ty() {
             self.flags.set(self.flags.get() | if result {
@@ -868,17 +884,17 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
     /// then `needs_drop` will definitely return `true` for `ty`.)
     #[inline]
     pub fn needs_drop(&'tcx self, tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                    param_env: &ty::ParameterEnvironment<'tcx>) -> bool {
+                    trait_env: &ty::TraitEnvironment<'tcx>) -> bool {
         if self.flags.get().intersects(TypeFlags::NEEDS_DROP_CACHED) {
             return self.flags.get().intersects(TypeFlags::NEEDS_DROP);
         }
 
-        self.needs_drop_uncached(tcx, param_env, &mut FxHashSet())
+        self.needs_drop_uncached(tcx, trait_env, &mut FxHashSet())
     }
 
     fn needs_drop_inner(&'tcx self,
                         tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                        param_env: &ty::ParameterEnvironment<'tcx>,
+                        trait_env: &ty::TraitEnvironment<'tcx>,
                         stack: &mut FxHashSet<Ty<'tcx>>)
                         -> bool {
         if self.flags.get().intersects(TypeFlags::NEEDS_DROP_CACHED) {
@@ -893,7 +909,7 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
             return false;
         }
 
-        let needs_drop = self.needs_drop_uncached(tcx, param_env, stack);
+        let needs_drop = self.needs_drop_uncached(tcx, trait_env, stack);
 
         // "Pop" the cycle detection "stack".
         stack.remove(self);
@@ -903,7 +919,7 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
 
     fn needs_drop_uncached(&'tcx self,
                            tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                           param_env: &ty::ParameterEnvironment<'tcx>,
+                           trait_env: &ty::TraitEnvironment<'tcx>,
                            stack: &mut FxHashSet<Ty<'tcx>>)
                            -> bool {
         assert!(!self.needs_infer());
@@ -919,7 +935,7 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
             // normalized version of the type, and therefore will definitely
             // know whether the type implements Copy (and thus needs no
             // cleanup/drop/zeroing) ...
-            _ if !self.moves_by_default(tcx, param_env, DUMMY_SP) => false,
+            _ if !self.moves_by_default(tcx, trait_env, DUMMY_SP) => false,
 
             // ... (issue #22536 continued) but as an optimization, still use
             // prior logic of asking for the structural "may drop".
@@ -934,22 +950,22 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
             ty::TyAdt(def, _) if def.has_dtor(tcx) => true,
 
             // Can refer to a type which may drop.
-            // FIXME(eddyb) check this against a ParameterEnvironment.
+            // FIXME(eddyb) check this against a TraitEnvironment.
             ty::TyDynamic(..) | ty::TyProjection(..) | ty::TyParam(_) |
             ty::TyAnon(..) | ty::TyInfer(_) | ty::TyError => true,
 
             // Structural recursion.
             ty::TyArray(ty, _) | ty::TySlice(ty) => {
-                ty.needs_drop_inner(tcx, param_env, stack)
+                ty.needs_drop_inner(tcx, trait_env, stack)
             }
 
             ty::TyClosure(def_id, ref substs) => {
                 substs.upvar_tys(def_id, tcx)
-                    .any(|ty| ty.needs_drop_inner(tcx, param_env, stack))
+                    .any(|ty| ty.needs_drop_inner(tcx, trait_env, stack))
             }
 
             ty::TyTuple(ref tys, _) => {
-                tys.iter().any(|ty| ty.needs_drop_inner(tcx, param_env, stack))
+                tys.iter().any(|ty| ty.needs_drop_inner(tcx, trait_env, stack))
             }
 
             // unions don't have destructors regardless of the child types
@@ -958,7 +974,7 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
             ty::TyAdt(def, substs) => {
                 def.variants.iter().any(|v| {
                     v.fields.iter().any(|f| {
-                        f.ty(tcx, substs).needs_drop_inner(tcx, param_env, stack)
+                        f.ty(tcx, substs).needs_drop_inner(tcx, trait_env, stack)
                     })
                 })
             }

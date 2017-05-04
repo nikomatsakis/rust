@@ -78,11 +78,11 @@ impl<'a, 'tcx> Qualif {
     /// Remove flags which are impossible for the given type.
     fn restrict(&mut self, ty: Ty<'tcx>,
                 tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                param_env: &ty::ParameterEnvironment<'tcx>) {
-        if ty.is_freeze(tcx, param_env, DUMMY_SP) {
+                trait_env: &ty::TraitEnvironment<'tcx>) {
+        if ty.is_freeze(tcx, trait_env, DUMMY_SP) {
             *self = *self - Qualif::MUTABLE_INTERIOR;
         }
-        if !ty.needs_drop(tcx, param_env) {
+        if !ty.needs_drop(tcx, trait_env) {
             *self = *self - Qualif::NEEDS_DROP;
         }
     }
@@ -128,7 +128,7 @@ struct Qualifier<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     mir: &'a Mir<'tcx>,
     rpo: ReversePostorder<'a, 'tcx>,
     tcx: TyCtxt<'a, 'gcx, 'tcx>,
-    param_env: ty::ParameterEnvironment<'tcx>,
+    trait_env: ty::TraitEnvironment<'tcx>,
     temp_qualif: IndexVec<Local, Option<Qualif>>,
     return_qualif: Option<Qualif>,
     qualif: Qualif,
@@ -139,7 +139,7 @@ struct Qualifier<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
 
 impl<'a, 'tcx> Qualifier<'a, 'tcx, 'tcx> {
     fn new(tcx: TyCtxt<'a, 'tcx, 'tcx>,
-           param_env: ty::ParameterEnvironment<'tcx>,
+           trait_env: ty::TraitEnvironment<'tcx>,
            def_id: DefId,
            mir: &'a Mir<'tcx>,
            mode: Mode)
@@ -154,7 +154,7 @@ impl<'a, 'tcx> Qualifier<'a, 'tcx, 'tcx> {
             mir: mir,
             rpo: rpo,
             tcx: tcx,
-            param_env: param_env,
+            trait_env: trait_env,
             temp_qualif: IndexVec::from_elem(None, &mir.local_decls),
             return_qualif: None,
             qualif: Qualif::empty(),
@@ -193,7 +193,7 @@ impl<'a, 'tcx> Qualifier<'a, 'tcx, 'tcx> {
     /// Add the given type's qualification to self.qualif.
     fn add_type(&mut self, ty: Ty<'tcx>) {
         self.add(Qualif::MUTABLE_INTERIOR | Qualif::NEEDS_DROP);
-        self.qualif.restrict(ty, self.tcx, &self.param_env);
+        self.qualif.restrict(ty, self.tcx, &self.trait_env);
     }
 
     /// Within the provided closure, self.qualif will start
@@ -544,7 +544,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Qualifier<'a, 'tcx, 'tcx> {
                                            static, use a constant instead");
                             }
                             let ty = lvalue.ty(this.mir, this.tcx).to_ty(this.tcx);
-                            this.qualif.restrict(ty, this.tcx, &this.param_env);
+                            this.qualif.restrict(ty, this.tcx, &this.trait_env);
                         }
 
                         ProjectionElem::ConstantIndex {..} |
@@ -937,10 +937,8 @@ fn mir_const_qualif<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         return Qualif::NOT_CONST.bits();
     }
 
-    let node_id = tcx.hir.as_local_node_id(def_id).unwrap();
-    let param_env = ty::ParameterEnvironment::for_item(tcx, node_id);
-
-    let mut qualifier = Qualifier::new(tcx, param_env, def_id, mir, Mode::Const);
+    let trait_env = tcx.trait_env(def_id);
+    let mut qualifier = Qualifier::new(tcx, trait_env, def_id, mir, Mode::Const);
     qualifier.qualify_const().bits()
 }
 
@@ -966,13 +964,13 @@ impl MirPass for QualifyAndPromoteConstants {
             MirSource::Const(_) |
             MirSource::Promoted(..) => return
         };
-        let param_env = ty::ParameterEnvironment::for_item(tcx, id);
+        let trait_env = tcx.trait_env(def_id);
 
         if mode == Mode::Fn || mode == Mode::ConstFn {
             // This is ugly because Qualifier holds onto mir,
             // which can't be mutated until its scope ends.
             let (temps, candidates) = {
-                let mut qualifier = Qualifier::new(tcx, param_env,
+                let mut qualifier = Qualifier::new(tcx, trait_env,
                                                    def_id, mir, mode);
                 if mode == Mode::ConstFn {
                     // Enforce a constant-like CFG for `const fn`.
@@ -989,7 +987,7 @@ impl MirPass for QualifyAndPromoteConstants {
             // Do the actual promotion, now that we know what's viable.
             promote_consts::promote_candidates(mir, tcx, temps, candidates);
         } else {
-            let mut qualifier = Qualifier::new(tcx, param_env, def_id, mir, mode);
+            let mut qualifier = Qualifier::new(tcx, trait_env, def_id, mir, mode);
             qualifier.qualify_const();
         }
 

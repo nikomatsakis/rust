@@ -44,13 +44,14 @@ impl MirPass for ElaborateDrops {
             _ => return
         }
         let id = src.item_id();
-        let param_env = ty::ParameterEnvironment::for_item(tcx, id);
-        let move_data = MoveData::gather_moves(mir, tcx, &param_env);
+        let def_id = tcx.hir.local_def_id(id);
+        let trait_env = tcx.trait_env(def_id);
+        let move_data = MoveData::gather_moves(mir, tcx, &trait_env);
         let elaborate_patch = {
             let mir = &*mir;
             let env = MoveDataParamEnv {
                 move_data: move_data,
-                param_env: param_env
+                trait_env: trait_env
             };
             let dead_unwinds = find_dead_unwinds(tcx, mir, id, &env);
             let flow_inits =
@@ -196,8 +197,8 @@ impl<'a, 'b, 'tcx> DropElaborator<'a, 'tcx> for Elaborator<'a, 'b, 'tcx> {
         self.ctxt.tcx
     }
 
-    fn param_env(&self) -> &'a ty::ParameterEnvironment<'tcx> {
-        self.ctxt.param_env()
+    fn trait_env(&self) -> &'a ty::TraitEnvironment<'tcx> {
+        self.ctxt.trait_env()
     }
 
     fn drop_style(&self, path: Self::Path, mode: DropFlagMode) -> DropStyle {
@@ -289,8 +290,9 @@ struct ElaborateDropsCtxt<'a, 'tcx: 'a> {
 
 impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
     fn move_data(&self) -> &'b MoveData<'tcx> { &self.env.move_data }
-    fn param_env(&self) -> &'b ty::ParameterEnvironment<'tcx> {
-        &self.env.param_env
+
+    fn trait_env(&self) -> &'b ty::TraitEnvironment<'tcx> {
+        &self.env.trait_env
     }
 
     fn initialization_data_at(&self, loc: Location) -> InitializationData {

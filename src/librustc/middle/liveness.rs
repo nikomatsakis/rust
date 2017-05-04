@@ -1445,9 +1445,11 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
                 &fn_ret);
 
         if !fn_ret.is_never() && self.live_on_entry(entry_ln, self.s.no_ret_var).is_some() {
+            let item_def_id = self.ir.tcx.hir.local_def_id(id);
             let param_env = ParameterEnvironment::for_item(self.ir.tcx, id);
             let t_ret_subst = fn_ret.subst(self.ir.tcx, &param_env.free_substs);
-            let is_nil = self.ir.tcx.infer_ctxt(param_env, Reveal::All).enter(|infcx| {
+            let trait_env = self.ir.tcx.trait_env(item_def_id);
+            let is_nil = self.ir.tcx.infer_ctxt(trait_env, Reveal::All).enter(|infcx| {
                 let cause = traits::ObligationCause::dummy();
                 traits::fully_normalize(&infcx, cause, &t_ret_subst).unwrap().is_nil()
             });

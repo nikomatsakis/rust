@@ -80,13 +80,14 @@ fn ensure_drop_params_and_item_params_correspond<'a, 'tcx>(
 
     // check that the impl type can be made to match the trait type.
 
-    let impl_param_env = ty::ParameterEnvironment::for_item(tcx, self_type_node_id);
-    tcx.infer_ctxt(impl_param_env, Reveal::UserFacing).enter(|ref infcx| {
+    let param_env = ty::ParameterEnvironment::for_item(tcx, self_type_node_id);
+    let trait_env = tcx.trait_env(self_type_did);
+    tcx.infer_ctxt(trait_env, Reveal::UserFacing).enter(|ref infcx| {
         let tcx = infcx.tcx;
         let mut fulfillment_cx = traits::FulfillmentContext::new();
 
         let named_type = tcx.type_of(self_type_did);
-        let named_type = named_type.subst(tcx, &infcx.parameter_environment.free_substs);
+        let named_type = named_type.subst(tcx, &param_env.free_substs);
 
         let drop_impl_span = tcx.def_span(drop_impl_did);
         let fresh_impl_substs =

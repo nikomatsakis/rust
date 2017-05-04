@@ -218,19 +218,19 @@ fn compare_predicate_entailment<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     // The key step here is to update the caller_bounds's predicates to be
     // the new hybrid bounds we computed.
     let normalize_cause = traits::ObligationCause::misc(impl_m_span, impl_m_node_id);
-    let trait_param_env = impl_param_env.with_caller_bounds(
-        tcx.intern_predicates(&hybrid_preds.predicates));
-    let trait_param_env = traits::normalize_param_env_or_error(tcx,
+    let trait_trait_env =
+        ty::TraitEnvironment::new(tcx.intern_predicates(&hybrid_preds.predicates));
+    let trait_trait_env = traits::normalize_trait_env_or_error(tcx,
                                                                impl_m.def_id,
-                                                               trait_param_env,
+                                                               trait_trait_env,
                                                                normalize_cause.clone());
 
-    tcx.infer_ctxt(trait_param_env, Reveal::UserFacing).enter(|infcx| {
-        let inh = Inherited::new(infcx);
+    tcx.infer_ctxt(trait_trait_env, Reveal::UserFacing).enter(|infcx| {
+        let inh = Inherited::new(infcx, impl_param_env);
         let infcx = &inh.infcx;
 
         debug!("compare_impl_method: caller_bounds={:?}",
-               infcx.parameter_environment.caller_bounds);
+               infcx.trait_env.caller_bounds);
 
         let mut selcx = traits::SelectionContext::new(&infcx);
 
@@ -283,7 +283,7 @@ fn compare_predicate_entailment<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         debug!("compare_impl_method: impl_fty={:?}", impl_fty);
 
         let trait_sig = tcx.liberate_late_bound_regions(
-            infcx.parameter_environment.free_id_outlive,
+            inh.param_env.free_id_outlive,
             &m_sig(trait_m));
         let trait_sig =
             trait_sig.subst(tcx, trait_to_skol_substs);
@@ -353,8 +353,7 @@ fn compare_predicate_entailment<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             // pass around temporarily.
             let region_maps = RegionMaps::new();
             let mut free_regions = FreeRegionMap::new();
-            free_regions.relate_free_regions_from_predicates(
-                &infcx.parameter_environment.caller_bounds);
+            free_regions.relate_free_regions_from_predicates(&infcx.trait_env.caller_bounds);
             infcx.resolve_regions_and_report_errors(impl_m.def_id, &region_maps, &free_regions);
         } else {
             let fcx = FnCtxt::new(&inh, impl_m_node_id);
@@ -726,7 +725,12 @@ pub fn compare_const_impl<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     debug!("compare_const_impl(impl_trait_ref={:?})", impl_trait_ref);
 
     tcx.infer_ctxt((), Reveal::UserFacing).enter(|infcx| {
-        let inh = Inherited::new(infcx);
+        // Create a parameter environment that represents the implementation's
+        // method.
+        let impl_c_node_id = tcx.hir.as_local_node_id(impl_c.def_id).unwrap();
+        let impl_param_env = ty::ParameterEnvironment::for_item(tcx, impl_c_node_id);
+
+        let inh = Inherited::new(infcx, impl_param_env);
         let infcx = &inh.infcx;
 
         // The below is for the most part highly similar to the procedure
@@ -735,11 +739,6 @@ pub fn compare_const_impl<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         // predicates. In fact some of this should probably be put into
         // shared functions because of DRY violations...
         let trait_to_impl_substs = impl_trait_ref.substs;
-
-        // Create a parameter environment that represents the implementation's
-        // method.
-        let impl_c_node_id = tcx.hir.as_local_node_id(impl_c.def_id).unwrap();
-        let impl_param_env = ty::ParameterEnvironment::for_item(tcx, impl_c_node_id);
 
         // Create mapping from impl to skolemized.
         let impl_to_skol_substs = &impl_param_env.free_substs;

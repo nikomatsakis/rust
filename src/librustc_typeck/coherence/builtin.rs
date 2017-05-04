@@ -114,7 +114,8 @@ fn visit_implementation_of_copy<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     debug!("visit_implementation_of_copy: self_type={:?} (free)",
            self_type);
 
-    match param_env.can_type_implement_copy(tcx, self_type, span) {
+    let trait_env = tcx.trait_env(impl_did);
+    match trait_env.can_type_implement_copy(tcx, self_type, span) {
         Ok(()) => {}
         Err(CopyImplementationError::InfrigingField(field)) => {
             let item = tcx.hir.expect_item(impl_node_id);
@@ -213,7 +214,8 @@ pub fn coerce_unsized_info<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
            source,
            target);
 
-    tcx.infer_ctxt(param_env, Reveal::UserFacing).enter(|infcx| {
+    let trait_env = tcx.trait_env(impl_did);
+    tcx.infer_ctxt(trait_env, Reveal::UserFacing).enter(|infcx| {
         let cause = ObligationCause::misc(span, impl_node_id);
         let check_mutbl = |mt_a: ty::TypeAndMut<'tcx>,
                            mt_b: ty::TypeAndMut<'tcx>,
@@ -345,8 +347,7 @@ pub fn coerce_unsized_info<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         // Finally, resolve all regions.
         let region_maps = RegionMaps::new();
         let mut free_regions = FreeRegionMap::new();
-        free_regions.relate_free_regions_from_predicates(&infcx.parameter_environment
-            .caller_bounds);
+        free_regions.relate_free_regions_from_predicates(&infcx.trait_env.caller_bounds);
         infcx.resolve_regions_and_report_errors(impl_did, &region_maps, &free_regions);
 
         CoerceUnsizedInfo {

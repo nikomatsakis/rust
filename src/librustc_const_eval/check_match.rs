@@ -53,7 +53,7 @@ impl<'a, 'tcx> Visitor<'tcx> for OuterVisitor<'a, 'tcx> {
             tcx: self.tcx,
             tables: self.tcx.body_tables(b),
             region_maps: &region_maps,
-            param_env: &ty::ParameterEnvironment::for_item(self.tcx, id)
+            trait_env: &self.tcx.trait_env(region_context),
         }.visit_body(self.tcx.hir.body(b));
     }
 }
@@ -70,7 +70,7 @@ fn create_e0004<'a>(sess: &'a Session, sp: Span, error_message: String) -> Diagn
 struct MatchVisitor<'a, 'tcx: 'a> {
     tcx: TyCtxt<'a, 'tcx, 'tcx>,
     tables: &'a ty::TypeckTables<'tcx>,
-    param_env: &'a ty::ParameterEnvironment<'tcx>,
+    trait_env: &'a ty::TraitEnvironment<'tcx>,
     region_maps: &'a RegionMaps<'tcx>,
 }
 
@@ -505,7 +505,7 @@ fn check_legality_of_move_bindings(cx: &MatchVisitor,
         pat.walk(|p| {
             if let PatKind::Binding(hir::BindByValue(..), _, _, ref sub) = p.node {
                 let pat_ty = cx.tables.node_id_to_type(p.id);
-                if pat_ty.moves_by_default(cx.tcx, cx.param_env, pat.span) {
+                if pat_ty.moves_by_default(cx.tcx, cx.trait_env, pat.span) {
                     check_move(p, sub.as_ref().map(|p| &**p));
                 }
             }
@@ -519,7 +519,7 @@ fn check_legality_of_move_bindings(cx: &MatchVisitor,
 ///
 /// FIXME: this should be done by borrowck.
 fn check_for_mutation_in_guard(cx: &MatchVisitor, guard: &hir::Expr) {
-    cx.tcx.infer_ctxt((cx.tables, cx.param_env.clone()), Reveal::UserFacing).enter(|infcx| {
+    cx.tcx.infer_ctxt((cx.tables, cx.trait_env.clone()), Reveal::UserFacing).enter(|infcx| {
         let mut checker = MutationChecker {
             cx: cx,
         };

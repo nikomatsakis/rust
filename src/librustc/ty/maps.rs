@@ -745,6 +745,11 @@ define_maps! { <'tcx>
 
     [] has_typeck_tables: TypeckTables(DefId) -> bool,
 
+    // TODO
+    // /// Find the (fully normalized) trait enviroment containing all where-clauses
+    // /// declared on the given item. Can only be used on local items.
+    // [] trait_env: ItemSignature(DefId) -> ty::TraitEnvironment<'tcx>,
+
     [] coherent_trait: coherent_trait_dep_node((CrateNum, DefId)) -> (),
 
     [] borrowck: BorrowCheck(DefId) -> (),
