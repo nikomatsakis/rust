@@ -101,7 +101,7 @@ pub enum DepNode<D: Clone + Debug> {
     UsedTraitImports(D),
     ConstEval(D),
     SymbolName(D),
-    MovesByDefault(D),
+    IsCopy(D),
     IsSized(D),
     IsFreeze(D),
 
@@ -216,7 +216,7 @@ impl<D: Clone + Debug> DepNode<D> {
             // they are always absolute.
             WorkProduct(ref id) => Some(WorkProduct(id.clone())),
 
-            MovesByDefault(ref d) => op(d).map(MovesByDefault),
+            IsCopy(ref d) => op(d).map(IsCopy),
             IsSized(ref d) => op(d).map(IsSized),
             IsFreeze(ref d) => op(d).map(IsFreeze),
             Hir(ref d) => op(d).map(Hir),

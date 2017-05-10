@@ -725,7 +725,11 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
                             trait_env: TraitEnvironment<'tcx>,
                             span: Span)
                             -> bool {
-        tcx.at(span).moves_by_default(trait_env.and(self))
+        if self.has_param_types() || self.has_self_ty() {
+            !tcx.at(span).is_copy_raw(trait_env.and(self))
+        } else {
+            !tcx.is_copy_raw(TraitEnvironment::empty().and(self))
+        }
     }
 
     pub fn is_sized(&'tcx self,
@@ -733,7 +737,11 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
                     trait_env: TraitEnvironment<'tcx>,
                     span: Span)-> bool
     {
-        tcx.at(span).is_sized(trait_env.and(self))
+        if self.has_param_types() || self.has_self_ty() {
+            tcx.at(span).is_sized_raw(trait_env.and(self))
+        } else {
+            tcx.is_sized_raw(TraitEnvironment::empty().and(self))
+        }
     }
 
     pub fn is_freeze(&'tcx self,
@@ -741,7 +749,11 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
                      trait_env: TraitEnvironment<'tcx>,
                      span: Span)-> bool
     {
-        tcx.at(span).is_freeze(trait_env.and(self))
+        if self.has_param_types() || self.has_self_ty() {
+            tcx.at(span).is_freeze_raw(trait_env.and(self))
+        } else {
+            tcx.is_freeze_raw(TraitEnvironment::empty().and(self))
+        }
     }
 
     /// If `ty.needs_drop(...)` returns `true`, then `ty` is definitely
@@ -1032,19 +1044,19 @@ impl<'a, 'tcx> ty::TyS<'tcx> {
     }
 }
 
-fn moves_by_default<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                              query: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>)
-                              -> bool
+fn is_copy_raw<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                         query: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>)
+                         -> bool
 {
     let (trait_env, ty) = query.into_parts();
     let trait_def_id = tcx.require_lang_item(lang_items::CopyTraitLangItem);
-    !tcx.infer_ctxt(trait_env, Reveal::UserFacing)
-        .enter(|infcx| traits::type_known_to_meet_bound(&infcx, ty, trait_def_id, DUMMY_SP))
+    tcx.infer_ctxt(trait_env, Reveal::UserFacing)
+       .enter(|infcx| traits::type_known_to_meet_bound(&infcx, ty, trait_def_id, DUMMY_SP))
 }
 
-fn is_sized<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                      query: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>)
-                      -> bool
+fn is_sized_raw<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                          query: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>)
+                          -> bool
 {
     let (trait_env, ty) = query.into_parts();
     let trait_def_id = tcx.require_lang_item(lang_items::SizedTraitLangItem);
@@ -1052,9 +1064,9 @@ fn is_sized<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
        .enter(|infcx| traits::type_known_to_meet_bound(&infcx, ty, trait_def_id, DUMMY_SP))
 }
 
-fn is_freeze<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                       query: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>)
-                       -> bool
+fn is_freeze_raw<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                           query: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>)
+                           -> bool
 {
     let (trait_env, ty) = query.into_parts();
     let trait_def_id = tcx.require_lang_item(lang_items::FreezeTraitLangItem);
@@ -1064,9 +1076,9 @@ fn is_freeze<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
 pub fn provide(providers: &mut ty::maps::Providers) {
     *providers = ty::maps::Providers {
-        moves_by_default,
-        is_sized,
-        is_freeze,
+        is_copy_raw,
+        is_sized_raw,
+        is_freeze_raw,
         ..*providers
     };
 }

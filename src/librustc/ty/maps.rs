@@ -241,19 +241,19 @@ impl<M: DepTrackingMapConfig<Key=DefId>> QueryDescription for M {
     }
 }
 
-impl<'tcx> QueryDescription for queries::moves_by_default<'tcx> {
+impl<'tcx> QueryDescription for queries::is_copy_raw<'tcx> {
     fn describe(_tcx: TyCtxt, env: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> String {
         format!("computing whether `{}` is `Copy`", env.value)
     }
 }
 
-impl<'tcx> QueryDescription for queries::is_sized<'tcx> {
+impl<'tcx> QueryDescription for queries::is_sized_raw<'tcx> {
     fn describe(_tcx: TyCtxt, env: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> String {
         format!("computing whether `{}` is `Sized`", env.value)
     }
 }
 
-impl<'tcx> QueryDescription for queries::is_freeze<'tcx> {
+impl<'tcx> QueryDescription for queries::is_freeze_raw<'tcx> {
     fn describe(_tcx: TyCtxt, env: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> String {
         format!("computing whether `{}` is freeze", env.value)
     }
@@ -818,9 +818,12 @@ define_maps! { <'tcx>
     [] item_body_nested_bodies: metadata_dep_node(DefId) -> Rc<BTreeMap<hir::BodyId, hir::Body>>,
     [] const_is_rvalue_promotable_to_static: metadata_dep_node(DefId) -> bool,
     [] is_mir_available: metadata_dep_node(DefId) -> bool,
-    [] moves_by_default: moves_by_default_dep_node(ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> bool,
-    [] is_sized: is_sized_dep_node(ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> bool,
-    [] is_freeze: is_freeze_dep_node(ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> bool,
+
+    // Trait selection queries. These are best used by invoking `ty.moves_by_default()`,
+    // `ty.is_copy()`, etc, since that will prune the environment where possible.
+    [] is_copy_raw: is_copy_dep_node(ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> bool,
+    [] is_sized_raw: is_sized_dep_node(ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> bool,
+    [] is_freeze_raw: is_freeze_dep_node(ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> bool,
 }
 
 fn coherent_trait_dep_node((_, def_id): (CrateNum, DefId)) -> DepNode<DefId> {
@@ -861,9 +864,9 @@ fn mir_keys(_: CrateNum) -> DepNode<DefId> {
     DepNode::MirKeys
 }
 
-fn moves_by_default_dep_node<'tcx>(_: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> DepNode<DefId> {
+fn is_copy_dep_node<'tcx>(_: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> DepNode<DefId> {
     let krate_def_id = DefId::local(CRATE_DEF_INDEX);
-    DepNode::MovesByDefault(krate_def_id)
+    DepNode::IsCopy(krate_def_id)
 }
 
 fn is_sized_dep_node<'tcx>(_: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> DepNode<DefId> {
