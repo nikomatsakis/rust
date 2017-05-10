@@ -46,7 +46,7 @@ impl MirPass for ElaborateDrops {
         let id = src.item_id();
         let def_id = tcx.hir.local_def_id(id);
         let trait_env = tcx.trait_env(def_id);
-        let move_data = MoveData::gather_moves(mir, tcx, &trait_env);
+        let move_data = MoveData::gather_moves(mir, tcx, trait_env);
         let elaborate_patch = {
             let mir = &*mir;
             let env = MoveDataParamEnv {
@@ -197,7 +197,7 @@ impl<'a, 'b, 'tcx> DropElaborator<'a, 'tcx> for Elaborator<'a, 'b, 'tcx> {
         self.ctxt.tcx
     }
 
-    fn trait_env(&self) -> &'a ty::TraitEnvironment<'tcx> {
+    fn trait_env(&self) -> ty::TraitEnvironment<'tcx> {
         self.ctxt.trait_env()
     }
 
@@ -291,8 +291,8 @@ struct ElaborateDropsCtxt<'a, 'tcx: 'a> {
 impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
     fn move_data(&self) -> &'b MoveData<'tcx> { &self.env.move_data }
 
-    fn trait_env(&self) -> &'b ty::TraitEnvironment<'tcx> {
-        &self.env.trait_env
+    fn trait_env(&self) -> ty::TraitEnvironment<'tcx> {
+        self.env.trait_env
     }
 
     fn initialization_data_at(&self, loc: Location) -> InitializationData {

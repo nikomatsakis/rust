@@ -24,8 +24,6 @@ use ty::{self, TraitEnvironment, Ty, TyCtxt, TypeFoldable, ToPredicate};
 use ty::error::{ExpectedFound, TypeError};
 use infer::{InferCtxt};
 
-use rustc_data_structures::fx::FxHashMap;
-use std::cell::RefCell;
 use std::rc::Rc;
 use syntax::ast;
 use syntax_pos::{Span, DUMMY_SP};
@@ -813,9 +811,6 @@ fn trait_env<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
     };
     let unnormalized_env = ty::TraitEnvironment {
         caller_bounds: tcx.intern_predicates(&predicates),
-        is_copy_cache: RefCell::new(FxHashMap()),
-        is_sized_cache: RefCell::new(FxHashMap()),
-        is_freeze_cache: RefCell::new(FxHashMap()),
     };
 
     // Finally, we have to normalize the bounds in the environment, in

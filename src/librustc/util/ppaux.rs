@@ -504,12 +504,6 @@ impl<'tcx> fmt::Debug for ty::ClosureUpvar<'tcx> {
     }
 }
 
-impl<'tcx> fmt::Debug for ty::TraitEnvironment<'tcx> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "TraitEnvironment(caller_bounds={:?})", self.caller_bounds)
-    }
-}
-
 impl<'tcx> fmt::Display for ty::RegionKind<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if verbose() {

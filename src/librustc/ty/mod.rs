@@ -35,7 +35,7 @@ use util::common::ErrorReported;
 use util::nodemap::{NodeSet, DefIdMap, FxHashMap, FxHashSet};
 
 use serialize::{self, Encodable, Encoder};
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::cmp;
 use std::fmt;
@@ -426,8 +426,6 @@ bitflags! {
         // Caches for type_is_sized, type_moves_by_default
         const SIZEDNESS_CACHED  = 1 << 16,
         const IS_SIZED          = 1 << 17,
-        const MOVENESS_CACHED   = 1 << 18,
-        const MOVES_BY_DEFAULT  = 1 << 19,
         const FREEZENESS_CACHED = 1 << 20,
         const IS_FREEZE         = 1 << 21,
         const NEEDS_DROP_CACHED = 1 << 22,
@@ -1181,24 +1179,6 @@ pub struct ParameterEnvironment<'tcx> {
     pub free_id_outlive: Option<CodeExtent<'tcx>>,
 }
 
-/// TODO write me, move to traits?
-#[derive(Clone)]
-pub struct TraitEnvironment<'tcx> {
-    /// Obligations that the caller must satisfy. This is basically
-    /// the set of bounds on the in-scope type parameters, translated
-    /// into Obligations, and elaborated and normalized.
-    pub caller_bounds: &'tcx [ty::Predicate<'tcx>],
-
-    /// A cache for `moves_by_default`.
-    pub is_copy_cache: RefCell<FxHashMap<Ty<'tcx>, bool>>,
-
-    /// A cache for `type_is_sized`
-    pub is_sized_cache: RefCell<FxHashMap<Ty<'tcx>, bool>>,
-
-    /// A cache for `type_is_freeze`
-    pub is_freeze_cache: RefCell<FxHashMap<Ty<'tcx>, bool>>,
-}
-
 impl<'a, 'tcx> ParameterEnvironment<'tcx> {
     /// Construct a parameter environment given an item, impl item, or trait item
     pub fn for_item(tcx: TyCtxt<'a, 'tcx, 'tcx>, id: NodeId)
@@ -1300,6 +1280,36 @@ impl<'a, 'tcx> ParameterEnvironment<'tcx> {
                      tcx.hir.node_to_string(id), it)
             }
         }
+    }
+}
+
+/// TODO write me, move to traits?
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TraitEnvironment<'tcx> {
+    /// Obligations that the caller must satisfy. This is basically
+    /// the set of bounds on the in-scope type parameters, translated
+    /// into Obligations, and elaborated and normalized.
+    pub caller_bounds: &'tcx Slice<ty::Predicate<'tcx>>,
+}
+
+impl<'tcx> TraitEnvironment<'tcx> {
+    pub fn and<T>(self, value: T) -> TraitEnvironmentAnd<'tcx, T> {
+        TraitEnvironmentAnd {
+            trait_env: self,
+            value: value,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TraitEnvironmentAnd<'tcx, T> {
+    pub trait_env: TraitEnvironment<'tcx>,
+    pub value: T,
+}
+
+impl<'tcx, T> TraitEnvironmentAnd<'tcx, T> {
+    pub fn into_parts(self) -> (TraitEnvironment<'tcx>, T) {
+        (self.trait_env, self.value)
     }
 }
 
@@ -2625,6 +2635,7 @@ fn def_span<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId) -> Span {
 }
 
 pub fn provide(providers: &mut ty::maps::Providers) {
+    util::provide(providers);
     *providers = ty::maps::Providers {
         associated_item,
         associated_item_def_ids,

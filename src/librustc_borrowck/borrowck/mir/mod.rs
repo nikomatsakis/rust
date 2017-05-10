@@ -66,7 +66,7 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
     let mir = &tcx.mir_validated(def_id).borrow();
 
     let trait_env = tcx.trait_env(def_id);
-    let move_data = MoveData::gather_moves(mir, tcx, &trait_env);
+    let move_data = MoveData::gather_moves(mir, tcx, trait_env);
     let mdpe = MoveDataParamEnv { move_data: move_data, trait_env: trait_env };
     let dead_unwinds = IdxSetBuf::new_empty(mir.basic_blocks().len());
     let flow_inits =
@@ -325,7 +325,7 @@ fn on_all_drop_children_bits<'a, 'tcx, F>(
         let ty = lvalue.ty(mir, tcx).to_ty(tcx);
         debug!("on_all_drop_children_bits({:?}, {:?} : {:?})", path, lvalue, ty);
 
-        if ty.needs_drop(tcx, &ctxt.trait_env) {
+        if ty.needs_drop(tcx, ctxt.trait_env) {
             each_child(child);
         } else {
             debug!("on_all_drop_children_bits - skipping")
@@ -359,7 +359,7 @@ fn drop_flag_effects_for_location<'a, 'tcx, F>(
     where F: FnMut(MovePathIndex, DropFlagState)
 {
     let move_data = &ctxt.move_data;
-    let trait_env = &ctxt.trait_env;
+    let trait_env = ctxt.trait_env;
     debug!("drop_flag_effects_for_location({:?})", loc);
 
     // first, move out of the RHS

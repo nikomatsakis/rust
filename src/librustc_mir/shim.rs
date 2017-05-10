@@ -192,7 +192,7 @@ fn build_drop_shim<'a, 'tcx>(tcx: ty::TyCtxt<'a, 'tcx, 'tcx>,
 
     if let Some(..) = ty {
         let patch = {
-            let trait_env = &tcx.trait_env(def_id);
+            let trait_env = tcx.trait_env(def_id);
             let mut elaborator = DropShimElaborator {
                 mir: &mir,
                 patch: MirPatch::new(&mir),
@@ -223,7 +223,7 @@ pub struct DropShimElaborator<'a, 'tcx: 'a> {
     mir: &'a Mir<'tcx>,
     patch: MirPatch<'tcx>,
     tcx: ty::TyCtxt<'a, 'tcx, 'tcx>,
-    trait_env: &'a ty::TraitEnvironment<'tcx>,
+    trait_env: ty::TraitEnvironment<'tcx>,
 }
 
 impl<'a, 'tcx> fmt::Debug for DropShimElaborator<'a, 'tcx> {
@@ -238,7 +238,7 @@ impl<'a, 'tcx> DropElaborator<'a, 'tcx> for DropShimElaborator<'a, 'tcx> {
     fn patch(&mut self) -> &mut MirPatch<'tcx> { &mut self.patch }
     fn mir(&self) -> &'a Mir<'tcx> { self.mir }
     fn tcx(&self) -> ty::TyCtxt<'a, 'tcx, 'tcx> { self.tcx }
-    fn trait_env(&self) -> &'a ty::TraitEnvironment<'tcx> { self.trait_env }
+    fn trait_env(&self) -> ty::TraitEnvironment<'tcx> { self.trait_env }
 
     fn drop_style(&self, _path: Self::Path, mode: DropFlagMode) -> DropStyle {
         if let DropFlagMode::Shallow = mode {

@@ -527,7 +527,7 @@ impl<'a, 'tcx> LateLintPass<'a, 'tcx> for MissingCopyImplementations {
         if def.has_dtor(cx.tcx) {
             return;
         }
-        let trait_env = &ty::TraitEnvironment::empty();
+        let trait_env = ty::TraitEnvironment::empty();
         if !ty.moves_by_default(cx.tcx, trait_env, item.span) {
             return;
         }
@@ -1182,7 +1182,7 @@ impl<'a, 'tcx> LateLintPass<'a, 'tcx> for UnionsWithDropFields {
     fn check_item(&mut self, ctx: &LateContext, item: &hir::Item) {
         if let hir::ItemUnion(ref vdata, _) = item.node {
             let item_def_id = ctx.tcx.hir.local_def_id(item.id);
-            let trait_env = &ctx.tcx.trait_env(item_def_id);
+            let trait_env = ctx.tcx.trait_env(item_def_id);
             for field in vdata.fields() {
                 let field_ty = ctx.tcx.type_of(ctx.tcx.hir.local_def_id(field.id));
                 if field_ty.needs_drop(ctx.tcx, trait_env) {

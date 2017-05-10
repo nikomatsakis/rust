@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use dep_graph::{DepGraph, DepNode, DepTrackingMap, DepTrackingMapConfig};
-use hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
+use hir::def_id::{CrateNum, CRATE_DEF_INDEX, DefId, LOCAL_CRATE};
 use hir::def::Def;
 use hir;
 use middle::const_val;
@@ -124,6 +124,15 @@ impl Key for (MirSuite, MirPassIndex, DefId) {
     }
 }
 
+impl<'tcx, T: Clone + Hash + Eq + Debug> Key for ty::TraitEnvironmentAnd<'tcx, T> {
+    fn map_crate(&self) -> CrateNum {
+        LOCAL_CRATE
+    }
+    fn default_span(&self, _: TyCtxt) -> Span {
+        DUMMY_SP
+    }
+}
+
 trait Value<'tcx>: Sized {
     fn from_cycle_error<'a>(tcx: TyCtxt<'a, 'tcx, 'tcx>) -> Self;
 }
@@ -229,6 +238,24 @@ trait QueryDescription: DepTrackingMapConfig {
 impl<M: DepTrackingMapConfig<Key=DefId>> QueryDescription for M {
     default fn describe(tcx: TyCtxt, def_id: DefId) -> String {
         format!("processing `{}`", tcx.item_path_str(def_id))
+    }
+}
+
+impl<'tcx> QueryDescription for queries::moves_by_default<'tcx> {
+    fn describe(_tcx: TyCtxt, env: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> String {
+        format!("computing whether `{}` is `Copy`", env.value)
+    }
+}
+
+impl<'tcx> QueryDescription for queries::is_sized<'tcx> {
+    fn describe(_tcx: TyCtxt, env: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> String {
+        format!("computing whether `{}` is `Sized`", env.value)
+    }
+}
+
+impl<'tcx> QueryDescription for queries::is_freeze<'tcx> {
+    fn describe(_tcx: TyCtxt, env: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> String {
+        format!("computing whether `{}` is freeze", env.value)
     }
 }
 
@@ -791,6 +818,9 @@ define_maps! { <'tcx>
     [] item_body_nested_bodies: metadata_dep_node(DefId) -> Rc<BTreeMap<hir::BodyId, hir::Body>>,
     [] const_is_rvalue_promotable_to_static: metadata_dep_node(DefId) -> bool,
     [] is_mir_available: metadata_dep_node(DefId) -> bool,
+    [] moves_by_default: moves_by_default_dep_node(ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> bool,
+    [] is_sized: is_sized_dep_node(ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> bool,
+    [] is_freeze: is_freeze_dep_node(ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> bool,
 }
 
 fn coherent_trait_dep_node((_, def_id): (CrateNum, DefId)) -> DepNode<DefId> {
@@ -830,3 +860,20 @@ fn const_eval_dep_node((def_id, _): (DefId, &Substs)) -> DepNode<DefId> {
 fn mir_keys(_: CrateNum) -> DepNode<DefId> {
     DepNode::MirKeys
 }
+
+fn moves_by_default_dep_node<'tcx>(_: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> DepNode<DefId> {
+    let krate_def_id = DefId::local(CRATE_DEF_INDEX);
+    DepNode::MovesByDefault(krate_def_id)
+}
+
+fn is_sized_dep_node<'tcx>(_: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> DepNode<DefId> {
+    let krate_def_id = DefId::local(CRATE_DEF_INDEX);
+    DepNode::IsSized(krate_def_id)
+}
+
+fn is_freeze_dep_node<'tcx>(_: ty::TraitEnvironmentAnd<'tcx, Ty<'tcx>>) -> DepNode<DefId> {
+    let krate_def_id = DefId::local(CRATE_DEF_INDEX);
+    DepNode::IsSized(krate_def_id)
+}
+
+

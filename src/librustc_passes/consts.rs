@@ -85,11 +85,11 @@ impl<'a, 'gcx> CheckCrateVisitor<'a, 'gcx> {
 
     // Adds the worst effect out of all the values of one type.
     fn add_type(&mut self, ty: Ty<'gcx>) {
-        if !ty.is_freeze(self.tcx, &self.trait_env, DUMMY_SP) {
+        if !ty.is_freeze(self.tcx, self.trait_env, DUMMY_SP) {
             self.promotable = false;
         }
 
-        if ty.needs_drop(self.tcx, &self.trait_env) {
+        if ty.needs_drop(self.tcx, self.trait_env) {
             self.promotable = false;
         }
     }

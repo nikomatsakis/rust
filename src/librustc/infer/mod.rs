@@ -646,7 +646,7 @@ impl<'a, 'tcx> TyCtxt<'a, 'tcx, 'tcx> {
     }
 
     pub fn normalize_associated_type_in_env<T>(
-        self, value: &T, env: &'a ty::TraitEnvironment<'tcx>
+        self, value: &T, env: ty::TraitEnvironment<'tcx>
     ) -> T
         where T: TransNormalize<'tcx>
     {
@@ -658,7 +658,7 @@ impl<'a, 'tcx> TyCtxt<'a, 'tcx, 'tcx> {
             return value;
         }
 
-        self.infer_ctxt(env.clone(), Reveal::All).enter(|infcx| {
+        self.infer_ctxt(env, Reveal::All).enter(|infcx| {
             value.trans_normalize(&infcx)
        })
     }
@@ -1670,8 +1670,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         self.tables.borrow().upvar_capture_map.get(&upvar_id).cloned()
     }
 
-    pub fn trait_env(&self) -> &ty::TraitEnvironment<'gcx> {
-        &self.trait_env
+    pub fn trait_env(&self) -> ty::TraitEnvironment<'gcx> {
+        self.trait_env
     }
 
     pub fn closure_kind(&self,
