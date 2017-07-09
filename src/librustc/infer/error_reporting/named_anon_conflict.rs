@@ -214,34 +214,38 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                                     fndecl
                                         .inputs
                                         .iter()
-                                        .filter_map(|arg| { match arg.node {
-                                                       hir::TyRptr(ref lifetime, _) => {
-                                            match self.tcx
-                                                      .named_region_map
-                                                      .defs
-                                                      .get(&lifetime.id) {
-                                                Some(&rl::Region::LateBoundAnon(debuijn_index, _))
-=> {
+                                        .filter_map(|arg| match arg.node {
+                                                        hir::TyRptr(ref lifetime, _) => {
+                                                            match self.tcx
+                                                                      .named_region_map
+                                                                      .defs
+                                                                      .get(&lifetime.id) {
+                                                                Some(&rl::Region::LateBoundAnon
+(debuijn_index, anon_index))
+=> {debug!("lateboundanon");
                         match *br{
                               ty::BrAnon(index) => {
-                                 if index == debuijn_index.depth{
+                                 if debuijn_index.depth ==1 && anon_index == index{
+                                    debug!("index.depth == debruijnindex {:?}",**arg);
                                      Some(&**arg)}
-                                 else{None}}
+                                 else{
+                                 debug!("index not matching {:?} {:?} and {:?}",**arg, index,
+ debuijn_index.depth);
+                                 None}}
                               _=> None,
                              }
 
-},
-                                                Some(&rl::Region::Static)|
+}
+                                                                Some(&rl::Region::Static)|
 Some(&rl::Region::EarlyBound(_, _))|
 Some(&rl::Region::LateBound(_, _))|
 Some(&rl::Region::Free(_, _))|
-None => { None },
+None => { None }
 
-                                            }
-
-                                        }
-                                                        _ => {None},
-                                                    }})
+                                                            }
+                                                        }
+                                                        _ => None,
+                                                    })
                                         .next()
                                 }
 
@@ -271,13 +275,22 @@ None => { None },
                             self.is_anonymous_region(sub).is_some() {
             let br1 = self.is_anonymous_region(sup).unwrap();
             let br2 = self.is_anonymous_region(sub).unwrap();
+            debug!("loop 1 {} {}",
+                   self.is_anonymous_region(sup).is_some(),
+                   self.is_anonymous_region(sub).is_some());
             if self.visit_fn_decl(sup, &br1).is_some() && self.visit_fn_decl(sub, &br2).is_some() {
+                debug!("loop 1 {:?} and {:?}",
+                       self.visit_fn_decl(sup, &br1).unwrap(),
+                       self.visit_fn_decl(sub, &br2).unwrap());
                 (self.visit_fn_decl(sup, &br1).unwrap(), self.visit_fn_decl(sub, &br2).unwrap())
             } else {
+
+                debug!("false - 1");
                 return false;
             }
 
         } else {
+            debug!("false - 2");
             return false; // inapplicable
         };
 
