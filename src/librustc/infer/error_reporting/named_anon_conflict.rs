@@ -199,6 +199,13 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     }
 
     pub fn visit_fn_decl(&self, region: Region<'tcx>, br: &ty::BoundRegion) -> Option<&hir::Ty> {
+        // Find the index of the anonymous region that was part of the
+        // error. We will then search the function parameters for a bound
+        // region at the right depth with the same index.
+        let br_index = match *br {
+            ty::BrAnon(index) => index,
+            _ => return None,
+        };
 
         if self.is_suitable_anonymous_region(region).is_some() {
             let def_id = self.is_suitable_anonymous_region(region).unwrap();
@@ -210,45 +217,33 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                         hir_map::NodeItem(it) => {
                             match it.node {
                                 hir::ItemFn(ref fndecl, _, _, _, _, _) => {
-                                    debug!("{:?}", fndecl);
-                                    fndecl
-                                        .inputs
-                                        .iter()
-                                        .filter_map(|arg| match arg.node {
-                                                        hir::TyRptr(ref lifetime, _) => {
-                                                            match self.tcx
-                                                                      .named_region_map
-                                                                      .defs
-                                                                      .get(&lifetime.id) {
-                                                                Some(&rl::Region::LateBoundAnon
-(debuijn_index, anon_index))
-=> {debug!("lateboundanon");
-                        match *br{
-                              ty::BrAnon(index) => {
-                                 if debuijn_index.depth ==1 && anon_index == index{
-                                    debug!("index.depth == debruijnindex {:?}",**arg);
-                                     Some(&**arg)}
-                                 else{
-                                 debug!("index not matching {:?} {:?} and {:?}",**arg, index,
- debuijn_index.depth);
-                                 None}}
-                              _=> None,
-                             }
+                                    fndecl.inputs.iter().filter_map(|arg| match arg.node {
 
-}
-                                                                Some(&rl::Region::Static)|
-Some(&rl::Region::EarlyBound(_, _))|
-Some(&rl::Region::LateBound(_, _))|
-Some(&rl::Region::Free(_, _))|
-None => { None }
+                  hir::TyRptr(ref lifetime, _) => {
+                    
+                    match self.tcx.named_region_map.defs.get(&lifetime.id) {
+                      Some(&rl::Region::LateBoundAnon(debuijn_index, anon_index)) => {
 
-                                                            }
-                                                        }
-                                                        _ => None,
-                                                    })
-                                        .next()
+if debuijn_index.depth ==1 && anon_index == br_index {
+             let mut found_anon_region = false;
+             if let anon_type = self.tcx.fold_regions(&**arg, &mut false, |r, _| 
+                if r == region { found_anon_region = true; r } else { r })
+                if found_anon_region{Some(&anon_type)}else{None}
+} 
+                      
+                              }                     
+                      Some(&rl::Region::Static)|
+                      Some(&rl::Region::EarlyBound(_, _))|
+                      Some(&rl::Region::LateBound(_, _))|
+                      Some(&rl::Region::Free(_, _))|
+                      None => { None }
+                    }
+                  }
+                  
+                  _ => None,
+                })
+                .next()
                                 }
-
                                 _ => None,
                             }
                         }
@@ -257,12 +252,10 @@ None => { None }
                 }
                 _ => None,
             }
-
         } else {
             None
         }
     }
-
     pub fn try_report_anon_anon_conflict(&self, error: &RegionResolutionError<'tcx>) -> bool {
 
         let (span, sub, sup) = match *error {
@@ -293,10 +286,6 @@ None => { None }
             debug!("false - 2");
             return false; // inapplicable
         };
-
-
-
-
 
         struct_span_err!(self.tcx.sess, span, E0621, "lifetime mismatch")
             .span_label(ty1.span,
