@@ -17,6 +17,23 @@ use infer::region_inference::RegionResolutionError;
 use hir::map as hir_map;
 use hir::def_id::DefId;
 use middle::resolve_lifetime as rl;
+use hir::intravisit::{self, Visitor, NestedVisitorMap};
+
+struct FindNestedTypeVisitor<'a, 'gcx: 'a + 'tcx, 'tcx: 'a> {
+    infcx: &'a InferCtxt<'a, 'gcx, 'tcx>,
+    hir_map: &'a hir::map::Map<'gcx>,
+}
+
+impl<'a, 'gcx, 'tcx> Visitor<'gcx> for FindNestedTypeVisitor<'a, 'gcx, 'tcx> {
+   fn nested_visit_map<'this>(&'this mut self) -> NestedVisitorMap<'this, 'gcx> {
+        NestedVisitorMap::OnlyBodies(&self.hir_map)
+      }
+
+    fn visit_ty(&mut self, ty: &'gcx hir::Ty) {
+        intravisit::walk_ty(self, ty);
+    }
+
+}
 
 impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     // This method walks the Type of the function body arguments using
@@ -217,6 +234,11 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                         hir_map::NodeItem(it) => {
                             match it.node {
                                 hir::ItemFn(ref fndecl, _, _, _, _, _) => {
+                                   let mut nested_visitor = FindNestedTypeVisitor {
+            infcx: &self,
+            hir_map: &self.tcx.hir,
+
+        };
                                     fndecl.inputs.iter().filter_map(|arg| match arg.node {
 
                   hir::TyRptr(ref lifetime, _) => {
@@ -225,11 +247,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                       Some(&rl::Region::LateBoundAnon(debuijn_index, anon_index)) => {
 
 if debuijn_index.depth ==1 && anon_index == br_index {
-             let mut found_anon_region = false;
-             if let anon_type = self.tcx.fold_regions(&**arg, &mut false, |r, _| 
-                if r == region { found_anon_region = true; r } else { r })
-                if found_anon_region{Some(&anon_type)}else{None}
-} 
+            Some(&**arg)
+} else{None}
                       
                               }                     
                       Some(&rl::Region::Static)|
