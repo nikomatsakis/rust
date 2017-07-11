@@ -2004,7 +2004,6 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                     },
                 }
             },
-            Some(hir_map::NodeImplArg(_)) => Symbol::intern("impl arg").as_str(),
             r => bug!("Variable id {} maps to {:?}, not local", id, r),
         }
     }
@@ -2025,7 +2024,6 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             hir::ExprUnary(hir::UnDeref, _) |
             hir::ExprField(..) |
             hir::ExprTupField(..) |
-            hir::ExprImplArg(_) |
             hir::ExprIndex(..) => {
                 true
             }
