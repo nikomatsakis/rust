@@ -20,7 +20,7 @@ use middle::resolve_lifetime as rl;
 use hir::intravisit::{self, Visitor, NestedVisitorMap};
 
 struct FindNestedTypeVisitor<'a, 'gcx: 'a + 'tcx, 'tcx: 'a> {
-    infcx: &'a InferCtxt<'a, 'gcx, 'tcx>,
+    //infcx: &'a InferCtxt<'a, 'gcx, 'tcx>,
     hir_map: &'a hir::map::Map<'gcx>,
 }
 
@@ -28,10 +28,14 @@ impl<'a, 'gcx, 'tcx> Visitor<'gcx> for FindNestedTypeVisitor<'a, 'gcx, 'tcx> {
    fn nested_visit_map<'this>(&'this mut self) -> NestedVisitorMap<'this, 'gcx> {
         NestedVisitorMap::OnlyBodies(&self.hir_map)
       }
-
+    /*
     fn visit_ty(&mut self, ty: &'gcx hir::Ty) {
-        intravisit::walk_ty(self, ty);
-    }
+        // Find the index of the anonymous region that was part of the
+        // error. We will then search the function parameters for a bound
+        // region at the right depth with the same index.
+       
+    intravisit::walk_ty(self, ty);
+    }*/
 
 }
 
@@ -216,14 +220,6 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     }
 
     pub fn visit_fn_decl(&self, region: Region<'tcx>, br: &ty::BoundRegion) -> Option<&hir::Ty> {
-        // Find the index of the anonymous region that was part of the
-        // error. We will then search the function parameters for a bound
-        // region at the right depth with the same index.
-        let br_index = match *br {
-            ty::BrAnon(index) => index,
-            _ => return None,
-        };
-
         if self.is_suitable_anonymous_region(region).is_some() {
             let def_id = self.is_suitable_anonymous_region(region).unwrap();
             let node_id = self.tcx.hir.as_local_node_id(def_id).unwrap();
@@ -233,34 +229,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                     match self.tcx.hir.get(node_id) {
                         hir_map::NodeItem(it) => {
                             match it.node {
-                                hir::ItemFn(ref fndecl, _, _, _, _, _) => {
-                                   let mut nested_visitor = FindNestedTypeVisitor {
-            infcx: &self,
-            hir_map: &self.tcx.hir,
-
-        };
-                                    fndecl.inputs.iter().filter_map(|arg| match arg.node {
-
-                  hir::TyRptr(ref lifetime, _) => {
-                    
-                    match self.tcx.named_region_map.defs.get(&lifetime.id) {
-                      Some(&rl::Region::LateBoundAnon(debuijn_index, anon_index)) => {
-
-if debuijn_index.depth ==1 && anon_index == br_index {
-            Some(&**arg)
-} else{None}
-                      
-                              }                     
-                      Some(&rl::Region::Static)|
-                      Some(&rl::Region::EarlyBound(_, _))|
-                      Some(&rl::Region::LateBound(_, _))|
-                      Some(&rl::Region::Free(_, _))|
-                      None => { None }
-                    }
-                  }
-                  
-                  _ => None,
-                })
+                                hir::ItemFn(ref fndecl, _, _, _, _, _) => {                              
+                                    fndecl.inputs.iter().filter_map(|arg| if self.find_anon_type(&**arg,br).is_some(){return self.find_anon_type(&**arg,br);}else{None})
                 .next()
                                 }
                                 _ => None,
@@ -275,6 +245,48 @@ if debuijn_index.depth ==1 && anon_index == br_index {
             None
         }
     }
+
+    fn find_anon_type(&self, arg: &'gcx hir::Ty, br: &ty::BoundRegion)->Option<&hir::Ty>{
+        let mut nested_visitor = FindNestedTypeVisitor {
+            //infcx: &self,
+            hir_map: &self.tcx.hir,
+
+        };
+
+        let br_index = match *br {
+            ty::BrAnon(index) => index,
+            _ => return None,
+        };
+
+        match arg.node {
+
+                  hir::TyRptr(ref lifetime, _) => {
+                    
+                    match self.tcx.named_region_map.defs.get(&lifetime.id) {
+                      Some(&rl::Region::LateBoundAnon(debuijn_index, anon_index)) => {
+
+if debuijn_index.depth ==1 && anon_index == br_index {
+        return Some(arg)
+} 
+                      
+                              }                     
+                      Some(&rl::Region::Static)|
+                      Some(&rl::Region::EarlyBound(_, _))|
+                      Some(&rl::Region::LateBound(_, _))|
+                      Some(&rl::Region::Free(_, _))|
+                      None => { return None; }
+
+                    }
+                  }
+                  
+                  _ => return None,
+    
+                }  
+         intravisit::walk_ty(&mut nested_visitor,arg);
+         None
+
+   }
+
     pub fn try_report_anon_anon_conflict(&self, error: &RegionResolutionError<'tcx>) -> bool {
 
         let (span, sub, sup) = match *error {
