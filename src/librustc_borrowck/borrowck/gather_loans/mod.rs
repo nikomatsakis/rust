@@ -205,8 +205,17 @@ fn check_aliasability<'a, 'tcx>(bccx: &BorrowckCtxt<'a, 'tcx>,
 
 fn check_yields<'a, 'tcx>(bccx: &BorrowckCtxt<'a, 'tcx>,
                           borrow_span: Span,
-                          loan_region: ty::Region<'tcx>) {
-    if let &ty::RegionKind::ReScope(extent) = loan_region {
+                          loan_region: ty::Region<'tcx>,
+                          body_extent: region::CodeExtent) {
+    if let &ty::RegionKind::ReScope(mut extent) = loan_region {
+        // We are only looking for yield inside this body.
+        // Use the region of the body if the loan extent is greater.
+        // extent_has_yield doesn't look at nested bodies and could return false
+        // if the extent is outside the generator body.
+        if bccx.region_maps.is_subscope_of(body_extent, extent) {
+            extent = body_extent;
+        }
+
         if extent_has_yield(bccx.tcx, extent) {
              span_err!(bccx.tcx.sess,
                 borrow_span,
@@ -329,7 +338,7 @@ impl<'a, 'tcx> GatherLoanCtxt<'a, 'tcx> {
 
         // Check that the region has no yields if this is in a generator
         if self.generator {
-            check_yields(self.bccx, borrow_span, loan_region);
+            check_yields(self.bccx, borrow_span, loan_region, self.item_ub);
         }
 
         // Check that the lifetime of the borrow does not exceed
