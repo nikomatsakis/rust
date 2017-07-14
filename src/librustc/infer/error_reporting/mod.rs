@@ -76,7 +76,7 @@ mod note;
 
 mod need_type_info;
 mod named_anon_conflict;
-
+mod anon_anon_conflict;
 
 impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     pub fn note_and_explain_region(self,
