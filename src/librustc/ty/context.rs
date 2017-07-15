@@ -1151,6 +1151,7 @@ impl<'a, 'tcx> Lift<'tcx> for ty::ParamEnv<'a> {
         self.caller_bounds.lift_to_tcx(tcx).and_then(|caller_bounds| {
             Some(ty::ParamEnv {
                 reveal: self.reveal,
+                universe: self.universe,
                 caller_bounds,
             })
         })
