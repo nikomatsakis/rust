@@ -91,7 +91,7 @@ use rustc_back::slice::ref_slice;
 use rustc::infer::{self, InferCtxt, InferOk, RegionVariableOrigin};
 use rustc::infer::type_variable::{TypeVariableOrigin};
 use rustc::middle::region;
-use rustc::ty::subst::{Kind, Subst, Substs};
+use rustc::ty::subst::{Subst, Substs};
 use rustc::traits::{self, FulfillmentContext, ObligationCause, ObligationCauseCode};
 use rustc::ty::{ParamTy, LvaluePreference, NoPreference, PreferMutLvalue};
 use rustc::ty::{self, Ty, TyCtxt, Visibility};
@@ -1635,9 +1635,8 @@ impl<'a, 'gcx, 'tcx> AstConv<'gcx, 'tcx> for FnCtxt<'a, 'gcx, 'tcx> {
 
     fn ty_infer_for_def(&self,
                         ty_param_def: &ty::TypeParameterDef,
-                        substs: &[Kind<'tcx>],
                         span: Span) -> Ty<'tcx> {
-        self.type_var_for_def(span, ty_param_def, substs)
+        self.type_var_for_def(span, ty_param_def)
     }
 
     fn projected_ty_from_poly_trait_ref(&self,
@@ -4666,7 +4665,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 // Handle Self first, so we can adjust the index to match the AST.
                 if has_self && i == 0 {
                     return opt_self_ty.unwrap_or_else(|| {
-                        self.type_var_for_def(span, def, substs)
+                        self.type_var_for_def(span, def)
                     });
                 }
                 i -= has_self as usize;
@@ -4699,7 +4698,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 // This can also be reached in some error cases:
                 // We prefer to use inference variables instead of
                 // TyError to let type inference recover somewhat.
-                self.type_var_for_def(span, def, substs)
+                self.type_var_for_def(span, def)
             }
         });
 
