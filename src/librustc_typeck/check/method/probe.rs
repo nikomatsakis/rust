@@ -766,11 +766,11 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
             let substs = Substs::for_item(self.tcx,
                                           trait_def_id,
                                           |def, _| self.region_var_for_def(self.span, def),
-                                          |def, substs| {
+                                          |def, _substs| {
                 if def.index == 0 {
                     step.self_ty
                 } else {
-                    self.type_var_for_def(self.span, def, substs)
+                    self.type_var_for_def(self.span, def)
                 }
             });
 
@@ -896,11 +896,11 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
             let substs = Substs::for_item(self.tcx,
                                           trait_def_id,
                                           |def, _| self.region_var_for_def(self.span, def),
-                                          |def, substs| {
+                                          |def, _substs| {
                 if def.index == 0 {
                     step.self_ty
                 } else {
-                    self.type_var_for_def(self.span, def, substs)
+                    self.type_var_for_def(self.span, def)
                 }
             });
 
@@ -938,11 +938,11 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
             let substs = Substs::for_item(self.tcx,
                                           trait_def_id,
                                           |def, _| self.region_var_for_def(self.span, def),
-                                          |def, substs| {
+                                          |def, _substs| {
                 if def.index == 0 {
                     step.self_ty
                 } else {
-                    self.type_var_for_def(self.span, def, substs)
+                    self.type_var_for_def(self.span, def)
                 }
             });
 
@@ -1430,12 +1430,12 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                     // `impl_self_ty()` for an explanation.
                     self.tcx.types.re_erased
                 }
-            }, |def, cur_substs| {
+            }, |def, _cur_substs| {
                 let i = def.index as usize;
                 if i < substs.len() {
                     substs.type_at(i)
                 } else {
-                    self.type_var_for_def(self.span, def, cur_substs)
+                    self.type_var_for_def(self.span, def)
                 }
             });
             xform_self_ty.subst(self.tcx, substs)
