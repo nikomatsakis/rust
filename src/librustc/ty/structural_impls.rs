@@ -497,12 +497,23 @@ impl<'tcx> TypeFoldable<'tcx> for ty::ParamEnv<'tcx> {
         ty::ParamEnv {
             reveal: self.reveal,
             caller_bounds: self.caller_bounds.fold_with(folder),
+            universe: self.universe.fold_with(folder),
         }
     }
 
     fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        let &ty::ParamEnv { reveal: _, ref caller_bounds } = self;
-        caller_bounds.super_visit_with(visitor)
+        let &ty::ParamEnv { reveal: _, ref universe, ref caller_bounds } = self;
+        universe.super_visit_with(visitor) || caller_bounds.super_visit_with(visitor)
+    }
+}
+
+impl<'tcx> TypeFoldable<'tcx> for ty::UniverseIndex {
+    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, _folder: &mut F) -> Self {
+        *self
+    }
+
+    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, _visitor: &mut V) -> bool {
+        false
     }
 }
 
