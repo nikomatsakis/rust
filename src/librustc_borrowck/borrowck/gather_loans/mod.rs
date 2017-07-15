@@ -21,7 +21,6 @@ use borrowck::move_data::MoveData;
 use rustc::middle::expr_use_visitor as euv;
 use rustc::middle::mem_categorization as mc;
 use rustc::middle::mem_categorization::Categorization;
-use rustc::middle::region::extent_has_yield;
 use rustc::middle::region;
 use rustc::ty::{self, TyCtxt};
 
@@ -41,18 +40,16 @@ pub fn gather_loans_in_fn<'a, 'tcx>(bccx: &BorrowckCtxt<'a, 'tcx>,
                                     -> (Vec<Loan<'tcx>>, move_data::MoveData<'tcx>) {
     let def_id = bccx.tcx.hir.body_owner_def_id(body_id);
     let param_env = bccx.tcx.param_env(def_id);
-    let body = bccx.tcx.hir.body(body_id);
     let mut glcx = GatherLoanCtxt {
         bccx: bccx,
         all_loans: Vec::new(),
         item_ub: region::CodeExtent::Misc(body_id.node_id),
         move_data: MoveData::new(),
         move_error_collector: move_error::MoveErrorCollector::new(),
-        generator: body.is_generator,
     };
 
     euv::ExprUseVisitor::new(&mut glcx, bccx.tcx, param_env, &bccx.region_maps, bccx.tables)
-        .consume_body(body);
+        .consume_body(bccx.body);
 
     glcx.report_potential_errors();
     let GatherLoanCtxt { all_loans, move_data, .. } = glcx;
@@ -67,7 +64,6 @@ struct GatherLoanCtxt<'a, 'tcx: 'a> {
     /// `item_ub` is used as an upper-bound on the lifetime whenever we
     /// ask for the scope of an expression categorized as an upvar.
     item_ub: region::CodeExtent,
-    generator: bool,
 }
 
 impl<'a, 'tcx> euv::Delegate<'tcx> for GatherLoanCtxt<'a, 'tcx> {
@@ -203,28 +199,6 @@ fn check_aliasability<'a, 'tcx>(bccx: &BorrowckCtxt<'a, 'tcx>,
     }
 }
 
-fn check_yields<'a, 'tcx>(bccx: &BorrowckCtxt<'a, 'tcx>,
-                          borrow_span: Span,
-                          loan_region: ty::Region<'tcx>,
-                          body_extent: region::CodeExtent) {
-    if let &ty::RegionKind::ReScope(mut extent) = loan_region {
-        // We are only looking for yield inside this body.
-        // Use the region of the body if the loan extent is greater.
-        // extent_has_yield doesn't look at nested bodies and could return false
-        // if the extent is outside the generator body.
-        if bccx.region_maps.is_subscope_of(body_extent, extent) {
-            extent = body_extent;
-        }
-
-        if extent_has_yield(bccx.tcx, extent) {
-             span_err!(bccx.tcx.sess,
-                borrow_span,
-                E0624,
-                "cannot borrow this value across the suspend point of a generator");
-        }
-    }
-}
-
 /// Implements the M-* rules in README.md.
 fn check_mutability<'a, 'tcx>(bccx: &BorrowckCtxt<'a, 'tcx>,
                               borrow_span: Span,
@@ -334,11 +308,6 @@ impl<'a, 'tcx> GatherLoanCtxt<'a, 'tcx> {
         // it is always safe
         if *loan_region == ty::ReEmpty {
             return;
-        }
-
-        // Check that the region has no yields if this is in a generator
-        if self.generator {
-            check_yields(self.bccx, borrow_span, loan_region, self.item_ub);
         }
 
         // Check that the lifetime of the borrow does not exceed

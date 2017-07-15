@@ -17,8 +17,8 @@ fn foo(_a: (), _b: &bool) {}
 fn bar() {
 	|| {
 		let b = true;
-		foo(yield, &b);
-	}; //~ ERROR `b` does not live long enough
+		foo(yield, &b); //~ ERROR
+	};
 }
 
 fn main() { }
