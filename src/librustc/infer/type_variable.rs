@@ -351,3 +351,10 @@ impl<'tcx> sv::SnapshotVecDelegate for Delegate<'tcx> {
         values[vid.index as usize].value = Unknown;
     }
 }
+
+impl ut::UnifyKey for ty::TyVid {
+    type Value = ();
+    fn index(&self) -> u32 { self.index }
+    fn from_index(i: u32) -> ty::TyVid { ty::TyVid { index: i } }
+    fn tag() -> &'static str { "TyVid" }
+}

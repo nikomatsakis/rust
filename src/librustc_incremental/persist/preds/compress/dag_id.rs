@@ -37,7 +37,7 @@ impl UnifyKey for DagId {
         DagId { index: u }
     }
 
-    fn tag(_: Option<Self>) -> &'static str {
+    fn tag() -> &'static str {
         "DagId"
     }
 }
