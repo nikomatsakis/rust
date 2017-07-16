@@ -142,10 +142,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         if let (Some(sup_arg),Some(sub_arg)) = 
 (self.find_arg_with_anonymous_region(sup,sup),
 self.find_arg_with_anonymous_region(sub,sub)){
-        let (anon_arg1, anon_arg2) = match (sup_arg, sub_arg) {
-             ((arg1,_,_,_), (arg2,_,_,_)) => (arg1, arg2),
-              _ => return false,
-        };
+        let ((anon_arg1,_,_,_), (anon_arg2,_,_,_)) = (sup_arg, sub_arg);
 
         let span_label_var1 = if let Some(simple_name) = anon_arg1.pat.simple_name() {
             format!("from `{}`", simple_name)
@@ -165,7 +162,7 @@ self.find_arg_with_anonymous_region(sub,sub)){
             .span_label(ty2.span, format!(""))
             .span_label(span, format!("data {} flows {} here",span_label_var1,span_label_var2))
             .emit();
-  }
+  }else{return false;}
       
    return true;   
    }
