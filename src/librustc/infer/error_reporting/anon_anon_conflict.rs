@@ -228,10 +228,8 @@ fn find_arg_with_anonymous_region_for_anon_anon
                               let ty = tables.borrow().node_id_to_type(arg.id);  
                               match ty.walk().flat_map(|t| t.regions()).next().unwrap(){
                                  &ty::ReFree(ref region) => {
-                                     match region.bound_region{
-                                        ty::BrAnon(_) => { return Some(arg) },
-                                        _ => { None },
-                                     }
+debug!("free_region.bound_region={:?} region={:?} ",free_region.bound_region,region);
+                                     if free_region.bound_region == region.bound_region{return Some(arg);}else{None}
                                  }, 
                                  _ => { None },
                              }
