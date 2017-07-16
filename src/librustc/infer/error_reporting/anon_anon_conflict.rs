@@ -139,15 +139,21 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             return false; // inapplicable
         };
 
-        if self.find_arg_with_anonymous_region_for_anon_anon(sup).is_some() && self.find_arg_with_anonymous_region_for_anon_anon(sub).is_some(){
-            let (arg1,arg2)= (self.find_arg_with_anonymous_region_for_anon_anon(sup).unwrap(),self.find_arg_with_anonymous_region_for_anon_anon(sub).unwrap());
-        let span_label_var1 = if let Some(simple_name) = arg1.pat.simple_name() {
+        if let (Some(sup_arg),Some(sub_arg)) = 
+(self.find_arg_with_anonymous_region(sup,sup),
+self.find_arg_with_anonymous_region(sub,sub)){
+        let (anon_arg1, anon_arg2) = match (sup_arg, sub_arg) {
+             ((arg1,_,_,_), (arg2,_,_,_)) => (arg1, arg2),
+              _ => return false,
+        };
+
+        let span_label_var1 = if let Some(simple_name) = anon_arg1.pat.simple_name() {
             format!("from `{}`", simple_name)
         } else {
             format!("data flows here")
         };
 
-        let span_label_var2 = if let Some(simple_name) = arg2.pat.simple_name() {
+        let span_label_var2 = if let Some(simple_name) = anon_arg2.pat.simple_name() {
             format!("into `{}`", simple_name)
         } else {
             format!("")
@@ -159,12 +165,11 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             .span_label(ty2.span, format!(""))
             .span_label(span, format!("data {} flows {} here",span_label_var1,span_label_var2))
             .emit();
+  }
       
-      }
-       else{
-          return false;}
-   return true;
+   return true;   
    }
+   
 
     pub fn is_anonymous_region(&self, region: Region<'tcx>) -> Option<ty::BoundRegion> {
 
@@ -208,42 +213,4 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             _ => None,
         }
     }
-
-fn find_arg_with_anonymous_region_for_anon_anon
-        (&self,
-         anon_region: Region<'tcx>)
-         -> Option<(&hir::Arg)> {
-
-        match *anon_region {
-            ty::ReFree(ref free_region) => {
-
-                let id = free_region.scope;
-                let node_id = self.tcx.hir.as_local_node_id(id).unwrap();
-                let body_id = self.tcx.hir.maybe_body_owned_by(node_id).unwrap();
-                let body = self.tcx.hir.body(body_id);
-                if let Some(tables) = self.in_progress_tables {
-                    body.arguments
-                        .iter()
-                        .filter_map(|arg| { 
-                              let ty = tables.borrow().node_id_to_type(arg.id);  
-                              match ty.walk().flat_map(|t| t.regions()).next().unwrap(){
-                                 &ty::ReFree(ref region) => {
-debug!("free_region.bound_region={:?} region={:?} ",free_region.bound_region,region);
-                                     if free_region.bound_region == region.bound_region{return Some(arg);}else{None}
-                                 }, 
-                                 _ => { None },
-                             }
-                            
-                        })
-                        .next()
-                } else {
-                    None
-                }
-            }
-            _ => None,
-
-        }
-    }
-  
-
 }
