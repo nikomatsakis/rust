@@ -610,14 +610,14 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         use ty::error::UnconstrainedNumeric::{UnconstrainedInt, UnconstrainedFloat};
         match ty.sty {
             ty::TyInfer(ty::IntVar(vid)) => {
-                if self.int_unification_table.borrow_mut().has_value(vid) {
+                if self.int_unification_table.borrow_mut().probe_value(vid).is_some() {
                     Neither
                 } else {
                     UnconstrainedInt
                 }
             },
             ty::TyInfer(ty::FloatVar(vid)) => {
-                if self.float_unification_table.borrow_mut().has_value(vid) {
+                if self.float_unification_table.borrow_mut().probe_value(vid).is_some() {
                     Neither
                 } else {
                     UnconstrainedFloat
@@ -630,27 +630,32 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     pub fn unsolved_variables(&self) -> Vec<ty::Ty<'tcx>> {
         let mut variables = Vec::new();
 
-        let unbound_ty_vars = self.type_variables
-                                  .borrow_mut()
-                                  .unsolved_variables()
-                                  .into_iter()
-                                  .map(|t| self.tcx.mk_var(t));
+        {
+            let mut type_variables = self.type_variables.borrow_mut();
+            variables.extend(
+                type_variables
+                    .unsolved_variables()
+                    .into_iter()
+                    .map(|t| self.tcx.mk_var(t)));
+        }
 
-        let unbound_int_vars = self.int_unification_table
-                                   .borrow_mut()
-                                   .unsolved_variables()
-                                   .into_iter()
-                                   .map(|v| self.tcx.mk_int_var(v));
+        {
+            let mut int_unification_table = self.int_unification_table.borrow_mut();
+            variables.extend(
+                (0..int_unification_table.len())
+                    .map(|i| ty::IntVid { index: i as u32 })
+                    .filter(|&vid| int_unification_table.probe_value(vid).is_none())
+                    .map(|v| self.tcx.mk_int_var(v)));
+        }
 
-        let unbound_float_vars = self.float_unification_table
-                                     .borrow_mut()
-                                     .unsolved_variables()
-                                     .into_iter()
-                                     .map(|v| self.tcx.mk_float_var(v));
-
-        variables.extend(unbound_ty_vars);
-        variables.extend(unbound_int_vars);
-        variables.extend(unbound_float_vars);
+        {
+            let mut float_unification_table = self.float_unification_table.borrow_mut();
+            variables.extend(
+                (0..float_unification_table.len())
+                    .map(|i| ty::FloatVid { index: i as u32 })
+                    .filter(|&vid| float_unification_table.probe_value(vid).is_none())
+                    .map(|v| self.tcx.mk_float_var(v)));
+        }
 
         return variables;
     }
@@ -1092,7 +1097,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             ty::TyInfer(ty::IntVar(v)) => {
                 self.int_unification_table
                     .borrow_mut()
-                    .probe(v)
+                    .probe_value(v)
                     .map(|v| v.to_type(self.tcx))
                     .unwrap_or(typ)
             }
@@ -1100,7 +1105,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             ty::TyInfer(ty::FloatVar(v)) => {
                 self.float_unification_table
                     .borrow_mut()
-                    .probe(v)
+                    .probe_value(v)
                     .map(|v| v.to_type(self.tcx))
                     .unwrap_or(typ)
             }

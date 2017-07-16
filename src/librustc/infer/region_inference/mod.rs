@@ -808,7 +808,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
     }
 
     pub fn opportunistic_resolve_var(&self, rid: RegionVid) -> ty::Region<'tcx> {
-        let vid = self.unification_table.borrow_mut().find_value(rid).min_vid;
+        let vid = self.unification_table.borrow_mut().probe_value(rid).min_vid;
         self.tcx.mk_region(ty::ReVar(vid))
     }
 
