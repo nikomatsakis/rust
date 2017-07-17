@@ -10,7 +10,6 @@
 
 //! Error Reporting for Anonymous Region Lifetime Errors
 //! where one region is named and the other is anonymous.
-use hir;
 use infer::InferCtxt;
 use ty::{self, Region};
 use infer::region_inference::RegionResolutionError::*;

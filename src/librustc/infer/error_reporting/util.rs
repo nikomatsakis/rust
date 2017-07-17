@@ -10,6 +10,7 @@
 
 //! Helper functions corresponding to lifetime errors due to
 //! anonymous regions.
+use hir;
 use infer::InferCtxt;
 use ty::{self, Region};
 
