@@ -72,7 +72,8 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             self.tcx.closure_base_def_id(expr_def_id));
         let substs = base_substs.extend_to(self.tcx, expr_def_id,
                 |_, _| span_bug!(expr.span, "closure has region param"),
-                |_, _| self.infcx.next_ty_var(TypeVariableOrigin::TransformedUpvar(expr.span))
+                |_, _| self.infcx.next_ty_var(ty::UniverseIndex::ROOT,
+                                              TypeVariableOrigin::TransformedUpvar(expr.span))
         );
 
         let fn_sig = self.liberate_late_bound_regions(expr_def_id, &sig);
