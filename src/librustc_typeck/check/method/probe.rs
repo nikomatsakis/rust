@@ -693,7 +693,9 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
             Def::Method(def_id) => {
                 let fty = self.tcx.fn_sig(def_id);
                 self.probe(|_| {
-                    let substs = self.fresh_substs_for_item(self.span, method.def_id);
+                    let substs = self.fresh_substs_for_item(ty::UniverseIndex::ROOT,
+                                                            self.span,
+                                                            method.def_id);
                     let output = fty.output().subst(self.tcx, substs);
                     let (output, _) = self.replace_late_bound_regions_with_fresh_var(
                         self.span, infer::FnCall, &output);
@@ -770,7 +772,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 if def.index == 0 {
                     step.self_ty
                 } else {
-                    self.type_var_for_def(self.span, def)
+                    self.type_var_for_def(ty::UniverseIndex::ROOT, self.span, def)
                 }
             });
 
@@ -900,7 +902,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 if def.index == 0 {
                     step.self_ty
                 } else {
-                    self.type_var_for_def(self.span, def)
+                    self.type_var_for_def(ty::UniverseIndex::ROOT, self.span, def)
                 }
             });
 
@@ -942,7 +944,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 if def.index == 0 {
                     step.self_ty
                 } else {
-                    self.type_var_for_def(self.span, def)
+                    self.type_var_for_def(ty::UniverseIndex::ROOT, self.span, def)
                 }
             });
 
@@ -1435,7 +1437,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 if i < substs.len() {
                     substs.type_at(i)
                 } else {
-                    self.type_var_for_def(self.span, def)
+                    self.type_var_for_def(ty::UniverseIndex::ROOT, self.span, def)
                 }
             });
             xform_self_ty.subst(self.tcx, substs)
@@ -1450,8 +1452,9 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                                       impl_def_id,
                                       |_, _| self.tcx.types.re_erased,
                                       |_, _| self.next_ty_var(
-                                        TypeVariableOrigin::SubstitutionPlaceholder(
-                                            self.tcx.def_span(impl_def_id))));
+                                          ty::UniverseIndex::ROOT,
+                                          TypeVariableOrigin::SubstitutionPlaceholder(
+                                              self.tcx.def_span(impl_def_id))));
 
         (impl_ty, substs)
     }
