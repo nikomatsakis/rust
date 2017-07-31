@@ -179,9 +179,14 @@ pub enum ProcessedErrorOrigin<'tcx> {
 
 pub type CombineMap<'tcx> = FxHashMap<TwoRegions<'tcx>, RegionVid>;
 
+#[derive(Clone, Debug)]
+struct RegionVariableInfo {
+    origin: RegionVariableOrigin
+}
+
 pub struct RegionVarBindings<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     tcx: TyCtxt<'a, 'gcx, 'tcx>,
-    var_origins: RefCell<Vec<RegionVariableOrigin>>,
+    var_infos: RefCell<Vec<RegionVariableInfo>>,
 
     /// Constraints of the form `A <= B` introduced by the region
     /// checker.  Here at least one of `A` and `B` must be a region
@@ -355,7 +360,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
     pub fn new(tcx: TyCtxt<'a, 'gcx, 'tcx>) -> RegionVarBindings<'a, 'gcx, 'tcx> {
         RegionVarBindings {
             tcx,
-            var_origins: RefCell::new(Vec::new()),
+            var_infos: RefCell::new(Vec::new()),
             values: RefCell::new(None),
             constraints: RefCell::new(FxHashMap()),
             verifys: RefCell::new(Vec::new()),
@@ -426,9 +431,9 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
                 // nothing to do here
             }
             AddVar(vid) => {
-                let mut var_origins = self.var_origins.borrow_mut();
-                var_origins.pop().unwrap();
-                assert_eq!(var_origins.len(), vid.index as usize);
+                let mut var_infos = self.var_infos.borrow_mut();
+                var_infos.pop().unwrap();
+                assert_eq!(var_infos.len(), vid.index as usize);
             }
             AddConstraint(ref constraint) => {
                 self.constraints.borrow_mut().remove(constraint);
@@ -450,7 +455,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
     }
 
     pub fn num_vars(&self) -> u32 {
-        let len = self.var_origins.borrow().len();
+        let len = self.var_infos.borrow().len();
         // enforce no overflow
         assert!(len as u32 as usize == len);
         len as u32
@@ -458,7 +463,9 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
 
     pub fn new_region_var(&self, origin: RegionVariableOrigin) -> RegionVid {
         let vid = RegionVid { index: self.num_vars() };
-        self.var_origins.borrow_mut().push(origin.clone());
+        self.var_infos.borrow_mut().push(RegionVariableInfo {
+            origin: origin.clone()
+        });
 
         let u_vid = self.unification_table.borrow_mut().new_key(
             unify_key::RegionVidKey { min_vid: vid }
@@ -474,7 +481,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
     }
 
     pub fn var_origin(&self, vid: RegionVid) -> RegionVariableOrigin {
-        self.var_origins.borrow()[vid.index as usize].clone()
+        self.var_infos.borrow()[vid.index as usize].origin.clone()
     }
 
     /// Creates a new skolemized region. Skolemized regions are fresh
@@ -795,7 +802,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
     pub fn resolve_var(&self, rid: RegionVid) -> ty::Region<'tcx> {
         match *self.values.borrow() {
             None => {
-                span_bug!((*self.var_origins.borrow())[rid.index as usize].span(),
+                span_bug!((*self.var_infos.borrow())[rid.index as usize].origin.span(),
                           "attempt to resolve region variable before values have \
                            been computed!")
             }
@@ -919,7 +926,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             }
 
             (&ReVar(v_id), _) | (_, &ReVar(v_id)) => {
-                span_bug!((*self.var_origins.borrow())[v_id.index as usize].span(),
+                span_bug!((*self.var_infos.borrow())[v_id.index as usize].origin.span(),
                           "lub_concrete_regions invoked with non-concrete \
                            regions: {:?}, {:?}",
                           a,
@@ -1365,14 +1372,14 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
         for lower_bound in &lower_bounds {
             for upper_bound in &upper_bounds {
                 if !region_rels.is_subregion_of(lower_bound.region, upper_bound.region) {
-                    let origin = (*self.var_origins.borrow())[node_idx.index as usize].clone();
+                    let info = (*self.var_infos.borrow())[node_idx.index as usize].clone();
                     debug!("region inference error at {:?} for {:?}: SubSupConflict sub: {:?} \
                             sup: {:?}",
-                           origin,
+                           info.origin,
                            node_idx,
                            lower_bound.region,
                            upper_bound.region);
-                    errors.push(SubSupConflict(origin,
+                    errors.push(SubSupConflict(info.origin,
                                                lower_bound.origin.clone(),
                                                lower_bound.region,
                                                upper_bound.origin.clone(),
@@ -1382,7 +1389,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             }
         }
 
-        span_bug!((*self.var_origins.borrow())[node_idx.index as usize].span(),
+        span_bug!((*self.var_infos.borrow())[node_idx.index as usize].origin.span(),
                   "collect_error_for_expanding_node() could not find \
                    error for var {:?}, lower_bounds={:?}, \
                    upper_bounds={:?}",
