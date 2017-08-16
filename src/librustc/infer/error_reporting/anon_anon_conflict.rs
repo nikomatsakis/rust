@@ -39,6 +39,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     // }
     // It will later be extended to trait objects.
     pub fn try_report_anon_anon_conflict(&self, error: &RegionResolutionError<'tcx>) -> bool {
+        debug!("try_report_anon_anon_conflict");
         let (span, sub, sup) = match *error {
             ConcreteFailure(ref origin, sub, sup) => (origin.span(), sub, sup),
             _ => return false, // inapplicable
@@ -46,11 +47,11 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
 
         // Determine whether the sub and sup consist of both anonymous (elided) regions.
         let (ty1, ty2, scope_def_id_1, scope_def_id_2, bregion1, bregion2) = if
-            self.is_suitable_anonymous_region(sup, true).is_some() &&
-            self.is_suitable_anonymous_region(sub, true).is_some() {
+            self.is_suitable_region(sup, true).is_some() &&
+            self.is_suitable_region(sub, true).is_some() {
             if let (Some(anon_reg1), Some(anon_reg2)) =
-                (self.is_suitable_anonymous_region(sup, true),
-                 self.is_suitable_anonymous_region(sub, true)) {
+                (self.is_suitable_region(sup, true),
+                 self.is_suitable_region(sub, true)) {
                 let ((def_id1, br1), (def_id2, br2)) = (anon_reg1, anon_reg2);
                 let found_arg1 = self.find_anon_type(sup, &br1);
                 let found_arg2 = self.find_anon_type(sub, &br2);
@@ -133,6 +134,7 @@ pub struct FindNestedTypeVisitor<'a, 'gcx: 'a + 'tcx, 'tcx: 'a> {
     // The type where the anonymous lifetime appears
     // for e.g. Vec<`&u8`> and <`&u8`>
     pub found_type: Option<&'gcx hir::Ty>,
+    //pub depth: u32,
 }
 
 impl<'a, 'gcx, 'tcx> Visitor<'gcx> for FindNestedTypeVisitor<'a, 'gcx, 'tcx> {
@@ -144,24 +146,52 @@ impl<'a, 'gcx, 'tcx> Visitor<'gcx> for FindNestedTypeVisitor<'a, 'gcx, 'tcx> {
         // Find the index of the anonymous region that was part of the
         // error. We will then search the function parameters for a bound
         // region at the right depth with the same index.
-        let br_index = match self.bound_region {
-            ty::BrAnon(index) => index,
-            _ => return,
-        };
-
         match arg.node {
             hir::TyRptr(ref lifetime, _) => {
                 match self.infcx.tcx.named_region_map.defs.get(&lifetime.id) {
                     // the lifetime of the TyRptr
-                    Some(&rl::Region::LateBoundAnon(debuijn_index, anon_index)) => {
-                        if debuijn_index.depth == 1 && anon_index == br_index {
+                    Some(&rl::Region::LateBoundAnon(debruijn_index, anon_index)) => {
+                        let br_index = match self.bound_region {
+                            ty::BrAnon(index) => index,
+                            _ => return,
+                        };
+                        debug!("LateBoundAnon depth = {:?} anon_index = {:?} br_index={:?}",debruijn_index.depth
+                        ,anon_index,br_index);
+                        if debruijn_index.depth == 1 && anon_index == br_index {
                             self.found_type = Some(arg);
                             return; // we can stop visiting now
                         }
                     }
+                    Some(&rl::Region::EarlyBound(_, id)) => {
+                        let def_id = match self.bound_region {
+                            ty::BrNamed(def_id, _) => def_id,//def_id of hir::Lifetime
+                            _ => return,
+                        };
+                        debug!("EarlyBound self.infcx.tcx.hir.local_def_id(id) ={:?}
+                        def_id={:?}",
+                        self.infcx.tcx.hir.local_def_id(id), def_id);
+                        if self.infcx.tcx.hir.local_def_id(id) == def_id {
+                            self.found_type = Some(arg);
+                            return; // we can stop visiting now
+                        }
+
+                    }
+
+                    Some(&rl::Region::LateBound(debruijn_index, id)) => {
+                       let def_id = match self.bound_region {
+                            ty::BrNamed(def_id, _) => def_id,//def_id of hir::Lifetime
+                            _ => return,
+                        }; 
+                        debug!("LateBound depth = {:?} self.infcx.tcx.hir.local_def_id(id) ={:?}
+                        def_id={:?}",debruijn_index.depth
+                        ,self.infcx.tcx.hir.local_def_id(id), def_id);
+                        if debruijn_index.depth == 1 &&  self.infcx.tcx.hir.local_def_id(id) == def_id{
+                           self.found_type = Some(arg);
+                            return; // we can stop visiting now
+                        }
+                    }
+
                     Some(&rl::Region::Static) |
-                    Some(&rl::Region::EarlyBound(_, _)) |
-                    Some(&rl::Region::LateBound(_, _)) |
                     Some(&rl::Region::Free(_, _)) |
                     None => {
                         debug!("no arg found");

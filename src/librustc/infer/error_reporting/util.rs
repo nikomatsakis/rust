@@ -59,6 +59,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                                     });
                                 if found_anon_region {
                                     let is_first = index == 0;
+                                    debug!("arg={:?}",arg);
                                     Some((arg, new_arg_ty, free_region.bound_region, is_first))
                                 } else {
                                     None
@@ -79,14 +80,13 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         }
     }
 
-    // This method returns whether the given Region is Anonymous
+    // This method returns whether the given Region is Anonymous or Named
     // and returns the DefId and the BoundRegion corresponding to the given region
-    pub fn is_suitable_anonymous_region(&self,
+    pub fn is_suitable_region(&self,
                                         region: Region<'tcx>,
                                         is_anon_anon: bool)
                                         -> Option<(DefId, ty::BoundRegion)> {
         if let ty::ReFree(ref free_region) = *region {
-            if let ty::BrAnon(..) = free_region.bound_region {
                 let anonymous_region_binding_scope = free_region.scope;
                 let node_id = self.tcx
                     .hir
@@ -119,7 +119,6 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                     // we target only top-level functions
                 }
                 return Some((anonymous_region_binding_scope, free_region.bound_region));
-            }
         }
         None
     }
@@ -176,7 +175,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     /// The function returns the nested type corresponding to the anonymous region
     /// for e.g. `&u8` and Vec<`&u8`.
     pub fn find_anon_type(&self, region: Region<'tcx>, br: &ty::BoundRegion) -> Option<(&hir::Ty)> {
-        if let Some(anon_reg) = self.is_suitable_anonymous_region(region, true) {
+        if let Some(anon_reg) = self.is_suitable_region(region, true) {
             let (def_id, _) = anon_reg;
             if let Some(node_id) = self.tcx.hir.as_local_node_id(def_id) {
                 let ret_ty = self.tcx.type_of(def_id);

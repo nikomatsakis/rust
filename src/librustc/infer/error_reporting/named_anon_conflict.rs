@@ -13,12 +13,14 @@
 use infer::InferCtxt;
 use infer::region_inference::RegionResolutionError::*;
 use infer::region_inference::RegionResolutionError;
+use ty::{self};
 
 impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     // This method generates the error message for the case when
     // the function arguments consist of a named region and an anonymous
     // region and corresponds to `ConcreteFailure(..)`
     pub fn try_report_named_anon_conflict(&self, error: &RegionResolutionError<'tcx>) -> bool {
+        debug!("try_report_named_anon_conflict");
         let (span, sub, sup) = match *error {
             ConcreteFailure(ref origin, sub, sup) => (origin.span(), sub, sup),
             _ => return false, // inapplicable
@@ -31,20 +33,27 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         // version new_ty of its type where the anonymous region is replaced
         // with the named one.
         let (named, (arg, new_ty, br, is_first), (scope_def_id, _), anon) = if
-            sub.is_named_region() && self.is_suitable_anonymous_region(sup, false).is_some() {
+            sub.is_named_region() && self.is_suitable_region(sup, false).is_some() {
+            debug!("1.1");
             (sub,
              self.find_arg_with_anonymous_region(sup, sub).unwrap(),
-             self.is_suitable_anonymous_region(sup, false).unwrap(),
+             self.is_suitable_region(sup, false).unwrap(),
              sup)
         } else if
-            sup.is_named_region() && self.is_suitable_anonymous_region(sub, false).is_some() {
+            sup.is_named_region() && self.is_suitable_region(sub, false).is_some() {
+            debug!("1.2");
             (sup,
              self.find_arg_with_anonymous_region(sub, sup).unwrap(),
-             self.is_suitable_anonymous_region(sub, false).unwrap(),
+             self.is_suitable_region(sub, false).unwrap(),
              sub)
         } else {
+            debug!("1.3");
             return false; // inapplicable
         };
+
+        match br 
+        { ty::BrAnon(_) => {},
+         _ => { /* not an anonymous region */ return false; } }
 
         if self.is_return_type_anon(scope_def_id, br) || self.is_self_anon(is_first, scope_def_id) {
             return false;
