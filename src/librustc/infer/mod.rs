@@ -971,18 +971,21 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             .new_key(None)
     }
 
-    pub fn next_region_var(&self, origin: RegionVariableOrigin)
+    pub fn next_region_var(&self,
+                           universe: ty::UniverseIndex,
+                           origin: RegionVariableOrigin)
                            -> ty::Region<'tcx> {
-        self.tcx.mk_region(ty::ReVar(self.region_vars.new_region_var(origin)))
+        self.tcx.mk_region(ty::ReVar(self.region_vars.new_region_var(universe, origin)))
     }
 
     /// Create a region inference variable for the given
     /// region parameter definition.
     pub fn region_var_for_def(&self,
+                              universe: ty::UniverseIndex,
                               span: Span,
                               def: &ty::RegionParameterDef)
                               -> ty::Region<'tcx> {
-        self.next_region_var(EarlyBoundRegion(span, def.name))
+        self.next_region_var(universe, EarlyBoundRegion(span, def.name))
     }
 
     /// Create a type inference variable for the given
@@ -1015,7 +1018,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                                  def_id: DefId)
                                  -> &'tcx Substs<'tcx> {
         Substs::for_item(self.tcx, def_id, |def, _| {
-            self.region_var_for_def(span, def)
+            self.region_var_for_def(universe, span, def)
         }, |def, _| {
             self.type_var_for_def(universe, span, def)
         })
@@ -1218,6 +1221,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     pub fn replace_late_bound_regions_with_fresh_var<T>(
         &self,
         span: Span,
+        universe: ty::UniverseIndex,
         lbrct: LateBoundRegionConversionTime,
         value: &ty::Binder<T>)
         -> (T, FxHashMap<ty::BoundRegion, ty::Region<'tcx>>)
@@ -1225,7 +1229,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     {
         self.tcx.replace_late_bound_regions(
             value,
-            |br| self.next_region_var(LateBoundRegion(span, br, lbrct)))
+            |br| self.next_region_var(universe, LateBoundRegion(span, br, lbrct)))
     }
 
     /// Given a higher-ranked projection predicate like:

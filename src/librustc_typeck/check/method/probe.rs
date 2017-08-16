@@ -682,7 +682,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                                                             method.def_id);
                     let fty = fty.subst(self.tcx, substs);
                     let (fty, _) = self.replace_late_bound_regions_with_fresh_var(
-                        self.span, infer::FnCall, &fty);
+                        self.span, self.param_env.universe, infer::FnCall, &fty);
 
                     if let Some(self_ty) = self_ty {
                         if let Err(_) = self.at(&ObligationCause::dummy(), self.param_env)

@@ -156,7 +156,11 @@ impl<'a, 'gcx, 'tcx> TypeFolder<'gcx, 'tcx> for RegionFudger<'a, 'gcx, 'tcx> {
     fn fold_region(&mut self, r: ty::Region<'tcx>) -> ty::Region<'tcx> {
         match *r {
             ty::ReVar(v) if self.region_vars.contains(&v) => {
-                self.infcx.next_region_var(self.origin.clone())
+                // TODO -- I am not entirely sur how fudging and
+                // universes should work, but using root is a
+                // conservative choice here, and I suspect it doesn't
+                // much matter.
+                self.infcx.next_region_var(ty::UniverseIndex::ROOT, self.origin.clone())
             }
             _ => {
                 r

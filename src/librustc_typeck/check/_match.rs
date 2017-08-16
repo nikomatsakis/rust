@@ -130,7 +130,8 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                         //    ref x | ref const x | ref mut x
                         // then `x` is assigned a value of type `&M T` where M is the mutability
                         // and T is the expected type.
-                        let region_var = self.next_region_var(infer::PatternRegion(pat.span));
+                        let region_var = self.next_region_var(self.param_env.universe,
+                                                              infer::PatternRegion(pat.span));
                         let mt = ty::TypeAndMut { ty: expected, mutbl: mutbl };
                         let region_ty = tcx.mk_ref(region_var, mt);
 
@@ -231,7 +232,8 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                                 ty::UniverseIndex::ROOT,
                                 TypeVariableOrigin::TypeInference(inner.span));
                             let mt = ty::TypeAndMut { ty: inner_ty, mutbl: mutbl };
-                            let region = self.next_region_var(infer::PatternRegion(pat.span));
+                            let region = self.next_region_var(self.param_env.universe,
+                                                              infer::PatternRegion(pat.span));
                             let rptr_ty = tcx.mk_ref(region, mt);
                             debug!("check_pat_arg: demanding {:?} = {:?}", expected, rptr_ty);
                             let err = self.demand_eqtype_diag(pat.span, expected, rptr_ty);

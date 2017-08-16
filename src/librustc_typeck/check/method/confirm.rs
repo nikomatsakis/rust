@@ -149,7 +149,7 @@ impl<'a, 'gcx, 'tcx> ConfirmContext<'a, 'gcx, 'tcx> {
         let mut target = autoderef.unambiguous_final_ty();
 
         if let Some(mutbl) = pick.autoref {
-            let region = self.next_region_var(infer::Autoref(self.span));
+            let region = self.next_region_var(self.param_env.universe, infer::Autoref(self.span));
             target = self.tcx.mk_ref(region, ty::TypeAndMut {
                 mutbl,
                 ty: target
@@ -303,7 +303,7 @@ impl<'a, 'gcx, 'tcx> ConfirmContext<'a, 'gcx, 'tcx> {
                     = provided.lifetimes.get(i - parent_substs.len()) {
                 AstConv::ast_region_to_region(self.fcx, lifetime, Some(def))
             } else {
-                self.region_var_for_def(self.span, def)
+                self.region_var_for_def(self.param_env.universe, self.span, def)
             }
         }, |def, _cur_substs| {
             let i = def.index as usize;
@@ -594,7 +594,10 @@ impl<'a, 'gcx, 'tcx> ConfirmContext<'a, 'gcx, 'tcx> {
         where T: TypeFoldable<'tcx>
     {
         self.fcx
-            .replace_late_bound_regions_with_fresh_var(self.span, infer::FnCall, value)
+            .replace_late_bound_regions_with_fresh_var(self.span,
+                                                       self.param_env.universe,
+                                                       infer::FnCall,
+                                                       value)
             .0
     }
 }

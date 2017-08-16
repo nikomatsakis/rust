@@ -241,7 +241,9 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         // Construct a trait-reference `self_ty : Trait<input_tys>`
         let substs = Substs::for_item(self.tcx,
                                       trait_def_id,
-                                      |def, _| self.region_var_for_def(span, def),
+                                      |def, _| self.region_var_for_def(self.param_env.universe,
+                                                                       span,
+                                                                       def),
                                       |def, _substs| {
             if def.index == 0 {
                 self_ty
@@ -289,6 +291,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         // may reference those regions.
         let fn_sig = tcx.fn_sig(def_id);
         let fn_sig = self.replace_late_bound_regions_with_fresh_var(span,
+                                                                    self.param_env.universe,
                                                                     infer::FnCall,
                                                                     &fn_sig).0;
         let fn_sig = fn_sig.subst(self.tcx, substs);

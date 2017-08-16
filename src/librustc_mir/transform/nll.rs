@@ -10,7 +10,7 @@
 
 use rustc::ty::TypeFoldable;
 use rustc::ty::subst::{Kind, Substs};
-use rustc::ty::{Ty, TyCtxt, ClosureSubsts, RegionVid, RegionKind};
+use rustc::ty::{self, Ty, TyCtxt, ClosureSubsts, RegionVid, RegionKind};
 use rustc::mir::{Mir, Location, Rvalue, BasicBlock, Statement, StatementKind};
 use rustc::mir::visit::{MutVisitor, Lookup};
 use rustc::mir::transform::{MirPass, MirSource};
@@ -38,7 +38,8 @@ impl<'a, 'gcx, 'tcx> NLLVisitor<'a, 'gcx, 'tcx> {
 
     fn renumber_regions<T>(&self, value: &T) -> T where T: TypeFoldable<'tcx> {
         self.infcx.tcx.fold_regions(value, &mut false, |_region, _depth| {
-            self.infcx.next_region_var(infer::MiscVariable(DUMMY_SP))
+            self.infcx.next_region_var(ty::UniverseIndex::ROOT,
+                                       infer::MiscVariable(DUMMY_SP))
         })
     }
 

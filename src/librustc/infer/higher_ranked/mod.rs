@@ -50,18 +50,23 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
         return self.infcx.commit_if_ok(|snapshot| {
             let span = self.trace.cause.span;
 
-            // First, we instantiate each bound region in the subtype with a fresh
-            // region variable.
-            let (a_prime, _) =
-                self.infcx.replace_late_bound_regions_with_fresh_var(
-                    span,
-                    HigherRankedType,
-                    a);
-
-            // Second, we instantiate each bound region in the supertype with a
+            // First, we instantiate each bound region in the supertype with a
             // fresh concrete region.
             let (b_prime, skol_map) =
                 self.infcx.skolemize_late_bound_regions(b, snapshot);
+
+            // TODO -- by the end of this patch series, skolemize-late-bound-regions
+            // should be producing new environments with an increased universe.
+            let param_env = self.param_env;
+
+            // Second, we instantiate each bound region in the subtype with a fresh
+            // region variable. These are declared in the innermost universe.
+            let (a_prime, _) =
+                self.infcx.replace_late_bound_regions_with_fresh_var(
+                    span,
+                    param_env.universe,
+                    HigherRankedType,
+                    a);
 
             debug!("a_prime={:?}", a_prime);
             debug!("b_prime={:?}", b_prime);
@@ -207,10 +212,10 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
             let span = self.trace.cause.span;
             let (a_with_fresh, a_map) =
                 self.infcx.replace_late_bound_regions_with_fresh_var(
-                    span, HigherRankedType, a);
+                    span, self.param_env.universe, HigherRankedType, a);
             let (b_with_fresh, _) =
                 self.infcx.replace_late_bound_regions_with_fresh_var(
-                    span, HigherRankedType, b);
+                    span, self.param_env.universe, HigherRankedType, b);
 
             // Collect constraints.
             let result0 =
@@ -299,10 +304,10 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
             // Instantiate each bound region with a fresh region variable.
             let (a_with_fresh, a_map) =
                 self.infcx.replace_late_bound_regions_with_fresh_var(
-                    self.trace.cause.span, HigherRankedType, a);
+                    self.trace.cause.span, self.param_env.universe, HigherRankedType, a);
             let (b_with_fresh, b_map) =
                 self.infcx.replace_late_bound_regions_with_fresh_var(
-                    self.trace.cause.span, HigherRankedType, b);
+                    self.trace.cause.span, self.param_env.universe, HigherRankedType, b);
             let a_vars = var_ids(self, &a_map);
             let b_vars = var_ids(self, &b_map);
 
