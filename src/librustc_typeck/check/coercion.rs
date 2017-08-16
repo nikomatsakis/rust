@@ -135,6 +135,7 @@ impl<'f, 'gcx, 'tcx> Coerce<'f, 'gcx, 'tcx> {
     }
 
     fn unify(&self, a: Ty<'tcx>, b: Ty<'tcx>) -> InferResult<'tcx, Ty<'tcx>> {
+        debug!("Coerce.unify({:?}, {:?})", a, b);
         self.commit_if_ok(|_| {
             if self.use_lub {
                 self.at(&self.cause, self.fcx.param_env)
@@ -355,7 +356,7 @@ impl<'f, 'gcx, 'tcx> Coerce<'f, 'gcx, 'tcx> {
                 if r_borrow_var.is_none() {
                     // create var lazilly, at most once
                     let coercion = Coercion(span);
-                    let r = self.next_region_var(coercion);
+                    let r = self.next_region_var(self.param_env.universe, coercion);
                     r_borrow_var = Some(r); // [4] above
                 }
                 r_borrow_var.unwrap()
@@ -459,7 +460,7 @@ impl<'f, 'gcx, 'tcx> Coerce<'f, 'gcx, 'tcx> {
                 coerce_mutbls(mt_a.mutbl, mt_b.mutbl)?;
 
                 let coercion = Coercion(self.cause.span);
-                let r_borrow = self.next_region_var(coercion);
+                let r_borrow = self.next_region_var(self.param_env.universe, coercion);
                 Some((Adjustment {
                     kind: Adjust::Deref(None),
                     target: mt_a.ty

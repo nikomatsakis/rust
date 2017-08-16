@@ -698,7 +698,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                                                             method.def_id);
                     let output = fty.output().subst(self.tcx, substs);
                     let (output, _) = self.replace_late_bound_regions_with_fresh_var(
-                        self.span, infer::FnCall, &output);
+                        self.span, self.param_env.universe, infer::FnCall, &output);
                     self.can_sub(self.param_env, output, expected).is_ok()
                 })
             }
@@ -767,7 +767,9 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
 
             let substs = Substs::for_item(self.tcx,
                                           trait_def_id,
-                                          |def, _| self.region_var_for_def(self.span, def),
+                                          |def, _| self.region_var_for_def(ty::UniverseIndex::ROOT,
+                                                                           self.span,
+                                                                           def),
                                           |def, _substs| {
                 if def.index == 0 {
                     step.self_ty
@@ -897,7 +899,9 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
             // fresh types here to use during substitution and subtyping.
             let substs = Substs::for_item(self.tcx,
                                           trait_def_id,
-                                          |def, _| self.region_var_for_def(self.span, def),
+                                          |def, _| self.region_var_for_def(self.param_env.universe,
+                                                                           self.span,
+                                                                           def),
                                           |def, _substs| {
                 if def.index == 0 {
                     step.self_ty
@@ -939,7 +943,9 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
             // fresh types here to use during substitution and subtyping.
             let substs = Substs::for_item(self.tcx,
                                           trait_def_id,
-                                          |def, _| self.region_var_for_def(self.span, def),
+                                          |def, _| self.region_var_for_def(ty::UniverseIndex::ROOT,
+                                                                           self.span,
+                                                                           def),
                                           |def, _substs| {
                 if def.index == 0 {
                     step.self_ty

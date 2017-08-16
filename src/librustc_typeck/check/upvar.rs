@@ -139,7 +139,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                     }
                     hir::CaptureByRef => {
                         let origin = UpvarRegion(upvar_id, span);
-                        let freevar_region = self.next_region_var(origin);
+                        let freevar_region = self.next_region_var(self.param_env.universe, origin);
                         let upvar_borrow = ty::UpvarBorrow { kind: ty::ImmBorrow,
                                                              region: freevar_region };
                         ty::UpvarCapture::ByRef(upvar_borrow)

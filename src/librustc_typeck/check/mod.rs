@@ -1672,7 +1672,7 @@ impl<'a, 'gcx, 'tcx> AstConv<'gcx, 'tcx> for FnCtxt<'a, 'gcx, 'tcx> {
             Some(def) => infer::EarlyBoundRegion(span, def.name),
             None => infer::MiscVariable(span)
         };
-        Some(self.next_region_var(v))
+        Some(self.next_region_var(self.param_env.universe, v))
     }
 
     fn ty_infer(&self, span: Span) -> Ty<'tcx> {
@@ -1695,6 +1695,7 @@ impl<'a, 'gcx, 'tcx> AstConv<'gcx, 'tcx> for FnCtxt<'a, 'gcx, 'tcx> {
         let (trait_ref, _) =
             self.replace_late_bound_regions_with_fresh_var(
                 span,
+                self.param_env.universe,
                 infer::LateBoundRegionConversionTime::AssocTypeProjection(item_def_id),
                 &poly_trait_ref);
 
@@ -3644,7 +3645,8 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 // Finally, borrowck is charged with guaranteeing that the
                 // value whose address was taken can actually be made to live
                 // as long as it needs to live.
-                let region = self.next_region_var(infer::AddrOfRegion(expr.span));
+                let region = self.next_region_var(self.param_env.universe,
+                                                  infer::AddrOfRegion(expr.span));
                 tcx.mk_ref(region, tm)
             }
           }

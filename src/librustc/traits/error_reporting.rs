@@ -196,6 +196,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 let mut selcx = SelectionContext::new(self);
                 let (data, _) = self.replace_late_bound_regions_with_fresh_var(
                     obligation.cause.span,
+                    obligation.param_env.universe,
                     infer::LateBoundRegionConversionTime::HigherRankedType,
                     data);
                 let normalized = super::normalize_projection_type(
