@@ -30,7 +30,8 @@ pub fn renumber_mir<'a, 'gcx, 'tcx>(
     // declared on the function signature.
     let free_region_inference_vars = (0..free_regions.indices.len())
         .map(|_| {
-            infcx.next_region_var(rustc_infer::MiscVariable(DUMMY_SP))
+            infcx.next_region_var(ty::UniverseIndex::ROOT,
+                                  rustc_infer::MiscVariable(DUMMY_SP))
         })
         .collect();
 
@@ -68,7 +69,8 @@ impl<'a, 'gcx, 'tcx> NLLVisitor<'a, 'gcx, 'tcx> {
             .fold_regions(value, &mut false, |_region, _depth| {
                 self.num_region_variables += 1;
                 self.infcx
-                    .next_region_var(rustc_infer::MiscVariable(DUMMY_SP))
+                    .next_region_var(ty::UniverseIndex::ROOT,
+                                     rustc_infer::MiscVariable(DUMMY_SP))
             })
     }
 

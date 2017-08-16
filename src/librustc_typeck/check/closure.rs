@@ -492,6 +492,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 // Instantiate (this part of..) S to S', i.e., with fresh variables.
                 let (supplied_ty, _) = self.infcx.replace_late_bound_regions_with_fresh_var(
                     hir_ty.span,
+                    ty::UniverseIndex::ROOT,
                     LateBoundRegionConversionTime::FnCall,
                     &ty::Binder(supplied_ty),
                 ); // recreated from (*) above
@@ -508,6 +509,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
 
             let (supplied_output_ty, _) = self.infcx.replace_late_bound_regions_with_fresh_var(
                 decl.output.span(),
+                ty::UniverseIndex::ROOT,
                 LateBoundRegionConversionTime::FnCall,
                 &supplied_sig.output(),
             );

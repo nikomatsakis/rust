@@ -264,12 +264,20 @@ impl<'infcx, 'gcx, 'tcx> CombineFields<'infcx, 'gcx, 'tcx> {
             RelationDir::SupertypeOf => ty::Contravariant,
         };
 
+        let universe = match self.infcx.type_variables.borrow_mut().probe(for_vid) {
+            TypeVariableValue::Unknown { universe } => universe,
+            TypeVariableValue::Known { .. } => {
+                bug!("generalizing `{:?}` for vid `{:?}` which is bound", ty, for_vid)
+            }
+        };
+
         let mut generalize = Generalizer {
             infcx: self.infcx,
             span: self.trace.cause.span,
             for_vid_sub_root: self.infcx.type_variables.borrow_mut().sub_root_var(for_vid),
             ambient_variance,
             needs_wf: false,
+            universe,
         };
 
         let ty = generalize.relate(&ty, &ty)?;
@@ -284,6 +292,7 @@ struct Generalizer<'cx, 'gcx: 'cx+'tcx, 'tcx: 'cx> {
     for_vid_sub_root: ty::TyVid,
     ambient_variance: ty::Variance,
     needs_wf: bool, // see the field `needs_wf` in `Generalization`
+    universe: ty::UniverseIndex,
 }
 
 /// Result from a generalization operation. This includes
@@ -465,7 +474,7 @@ impl<'cx, 'gcx, 'tcx> TypeRelation<'cx, 'gcx, 'tcx> for Generalizer<'cx, 'gcx, '
 
         // FIXME: This is non-ideal because we don't give a
         // very descriptive origin for this region variable.
-        Ok(self.infcx.next_region_var(MiscVariable(self.span)))
+        Ok(self.infcx.next_region_var(self.universe, MiscVariable(self.span)))
     }
 }
 

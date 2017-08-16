@@ -230,9 +230,11 @@ fn compare_predicate_entailment<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         let mut selcx = traits::SelectionContext::new(&infcx);
 
         let impl_m_own_bounds = impl_m_predicates.instantiate_own(tcx, impl_to_skol_substs);
-        let (impl_m_own_bounds, _) = infcx.replace_late_bound_regions_with_fresh_var(impl_m_span,
-                                                       infer::HigherRankedType,
-                                                       &ty::Binder(impl_m_own_bounds.predicates));
+        let (impl_m_own_bounds, _) = infcx.replace_late_bound_regions_with_fresh_var(
+            impl_m_span,
+            param_env.universe,
+            infer::HigherRankedType,
+            &ty::Binder(impl_m_own_bounds.predicates));
         for predicate in impl_m_own_bounds {
             let traits::Normalized { value: predicate, obligations } =
                 traits::normalize(&mut selcx, param_env, normalize_cause.clone(), &predicate);
@@ -258,9 +260,11 @@ fn compare_predicate_entailment<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         let tcx = infcx.tcx;
 
         let (impl_sig, _) =
-            infcx.replace_late_bound_regions_with_fresh_var(impl_m_span,
-                                                            infer::HigherRankedType,
-                                                            &tcx.fn_sig(impl_m.def_id));
+            infcx.replace_late_bound_regions_with_fresh_var(
+                impl_m_span,
+                param_env.universe,
+                infer::HigherRankedType,
+                &tcx.fn_sig(impl_m.def_id));
         let impl_sig =
             inh.normalize_associated_types_in(impl_m_span,
                                               impl_m_node_id,
