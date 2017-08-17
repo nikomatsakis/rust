@@ -1158,11 +1158,41 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             _ => {}
         }
 
+        let b_universe = self.var_infos.borrow()[b_vid.index as usize].universe;
+
         match *b_data {
             Value(cur_region) => {
-                let lub = self.lub_concrete_regions(region_rels, a_region, cur_region);
+                let mut lub = self.lub_concrete_regions(region_rels, a_region, cur_region);
                 if lub == cur_region {
                     return false;
+                }
+
+                // Find the universe of the new value (`lub`) and
+                // check whether this value is something that we can
+                // legally name in this variable. If not, promote the
+                // variable to `'static`, which is surely greater than
+                // or equal to `lub`. This is obviously a kind of sub-optimal
+                // choice -- in the future, when we incorporate a knowledge
+                // of the parameter environment, we might be able to find a
+                // tighter bound than `'static`.
+                //
+                // To make this more concrete, imagine a bound like:
+                //
+                //     for<'a> '0: 'a
+                //
+                // Here we have that `'0` must outlive `'a` -- no
+                // matter what `'a` is. When solving such a
+                // constraint, we would initially assign `'0` to be
+                // `'empty`. We would then compute the LUB of `'empty`
+                // and `'a` (which is something like `ReSkolemized(1)`),
+                // resulting in `'a`.
+                //
+                // At this point, `lub_universe` would be `1` and
+                // `b_universe` would be `0`, and hence we would wind
+                // up promoting `lub` to `'static`.
+                let lub_universe = self.universe(lub);
+                if !lub_universe.is_visible_in(b_universe) {
+                    lub = self.tcx.types.re_static;
                 }
 
                 debug!("Expanding value of {:?} from {:?} to {:?}",
