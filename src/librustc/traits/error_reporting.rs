@@ -647,7 +647,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                     ty::Predicate::RegionOutlives(ref predicate) => {
                         let predicate = self.resolve_type_vars_if_possible(predicate);
                         let err = self.region_outlives_predicate(&obligation.cause,
-                                                                    &predicate).err().unwrap();
+                                                                 obligation.param_env,
+                                                                 &predicate).err().unwrap();
                         struct_span_err!(self.tcx.sess, span, E0279,
                             "the requirement `{}` is not satisfied (`{}`)",
                             predicate, err)

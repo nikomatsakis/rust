@@ -1375,12 +1375,14 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     {
         let poly_trait_predicate =
             self.infcx().resolve_type_vars_if_possible(&obligation.predicate);
-        let (skol_trait_predicate, skol_map) =
-            self.infcx().skolemize_late_bound_regions(&poly_trait_predicate, snapshot);
+        let (skol_trait_predicate, param_env, skol_map) =
+            self.infcx().skolemize_late_bound_regions(obligation.param_env, &poly_trait_predicate);
         debug!("match_projection_obligation_against_definition_bounds: \
                 skol_trait_predicate={:?} skol_map={:?}",
                skol_trait_predicate,
                skol_map);
+
+        let obligation = obligation.clone().with_env(param_env);
 
         let (def_id, substs) = match skol_trait_predicate.trait_ref.self_ty().sty {
             ty::TyProjection(ref data) =>
@@ -1409,7 +1411,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             .filter_to_traits()
             .find(
                 |bound| self.probe(
-                    |this, _| this.match_projection(obligation,
+                    |this, _| this.match_projection(&obligation,
                                                     bound.clone(),
                                                     skol_trait_predicate.trait_ref.clone(),
                                                     &skol_map,
@@ -1422,13 +1424,13 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             None => false,
             Some(bound) => {
                 // Repeat the successful match, if any, this time outside of a probe.
-                let result = self.match_projection(obligation,
+                let result = self.match_projection(&obligation,
                                                    bound,
                                                    skol_trait_predicate.trait_ref.clone(),
                                                    &skol_map,
                                                    snapshot);
 
-                self.infcx.pop_skolemized(skol_map, snapshot);
+                self.infcx.pop_skolemized(param_env, skol_map, snapshot);
 
                 assert!(result);
                 true
@@ -2188,8 +2190,8 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             let ty: ty::Binder<Ty<'tcx>> = ty::Binder(ty); // <----------/
 
             self.in_snapshot(|this, snapshot| {
-                let (skol_ty, skol_map) =
-                    this.infcx().skolemize_late_bound_regions(&ty, snapshot);
+                let (skol_ty, param_env, skol_map) =
+                    this.infcx().skolemize_late_bound_regions(param_env, &ty);
                 let Normalized { value: normalized_ty, mut obligations } =
                     project::normalize_with_depth(this,
                                                   param_env,
@@ -2204,7 +2206,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                                                        normalized_ty,
                                                        &[]);
                 obligations.push(skol_obligation);
-                this.infcx().plug_leaks(skol_map, snapshot, obligations)
+                this.infcx().plug_leaks(param_env, skol_map, snapshot, obligations)
             })
         }).collect()
     }
@@ -2406,12 +2408,12 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
         let trait_obligations = self.in_snapshot(|this, snapshot| {
             let poly_trait_ref = obligation.predicate.to_poly_trait_ref();
-            let (trait_ref, skol_map) =
-                this.infcx().skolemize_late_bound_regions(&poly_trait_ref, snapshot);
+            let (trait_ref, param_env, skol_map) =
+                this.infcx().skolemize_late_bound_regions(obligation.param_env, &poly_trait_ref);
             let cause = obligation.derived_cause(ImplDerivedObligation);
             this.impl_or_trait_obligations(cause,
                                            obligation.recursion_depth + 1,
-                                           obligation.param_env,
+                                           param_env,
                                            trait_def_id,
                                            &trait_ref.substs,
                                            skol_map,
@@ -2440,7 +2442,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         // First, create the substitutions by matching the impl again,
         // this time not in a probe.
         self.in_snapshot(|this, snapshot| {
-            let (substs, skol_map) =
+            let (substs, param_env, skol_map) =
                 this.rematch_impl(impl_def_id, obligation,
                                   snapshot);
             debug!("confirm_impl_candidate substs={:?}", substs);
@@ -2449,7 +2451,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                              substs,
                              cause,
                              obligation.recursion_depth + 1,
-                             obligation.param_env,
+                             param_env,
                              skol_map,
                              snapshot)
         })
@@ -2926,10 +2928,11 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                     obligation: &TraitObligation<'tcx>,
                     snapshot: &infer::CombinedSnapshot<'cx, 'tcx>)
                     -> (Normalized<'tcx, &'tcx Substs<'tcx>>,
+                        ty::ParamEnv<'tcx>,
                         infer::SkolemizationMap<'tcx>)
     {
         match self.match_impl(impl_def_id, obligation, snapshot) {
-            Ok((substs, skol_map)) => (substs, skol_map),
+            Ok(tuple) => tuple,
             Err(()) => {
                 bug!("Impl {:?} was matchable against {:?} but now is not",
                      impl_def_id,
@@ -2943,6 +2946,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                   obligation: &TraitObligation<'tcx>,
                   snapshot: &infer::CombinedSnapshot<'cx, 'tcx>)
                   -> Result<(Normalized<'tcx, &'tcx Substs<'tcx>>,
+                             ty::ParamEnv<'tcx>,
                              infer::SkolemizationMap<'tcx>), ()>
     {
         let impl_trait_ref = self.tcx().impl_trait_ref(impl_def_id).unwrap();
@@ -2954,12 +2958,11 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             return Err(());
         }
 
-        let (skol_obligation, skol_map) = self.infcx().skolemize_late_bound_regions(
-            &obligation.predicate,
-            snapshot);
+        let (skol_obligation, param_env, skol_map) =
+             self.infcx().skolemize_late_bound_regions(obligation.param_env, &obligation.predicate);
         let skol_obligation_trait_ref = skol_obligation.trait_ref;
 
-        let impl_substs = self.infcx.fresh_substs_for_item(obligation.param_env.universe,
+        let impl_substs = self.infcx.fresh_substs_for_item(param_env.universe,
                                                            obligation.cause.span,
                                                            impl_def_id);
 
@@ -2968,7 +2971,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
         let impl_trait_ref =
             project::normalize_with_depth(self,
-                                          obligation.param_env,
+                                          param_env,
                                           obligation.cause.clone(),
                                           obligation.recursion_depth + 1,
                                           &impl_trait_ref);
@@ -2981,7 +2984,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                skol_obligation_trait_ref);
 
         let InferOk { obligations, .. } =
-            self.infcx.at(&obligation.cause, obligation.param_env)
+            self.infcx.at(&obligation.cause, param_env)
                       .eq(skol_obligation_trait_ref, impl_trait_ref.value)
                       .map_err(|e| {
                           debug!("match_impl: failed eq_trait_refs due to `{}`", e);
@@ -3001,7 +3004,9 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         Ok((Normalized {
             value: impl_substs,
             obligations: impl_trait_ref.obligations
-        }, skol_map))
+        },
+            param_env,
+            skol_map))
     }
 
     fn fast_reject_trait_refs(&mut self,
@@ -3208,7 +3213,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                     predicate: predicate.value
                 }))
         }).collect();
-        self.infcx().plug_leaks(skol_map, snapshot, predicates)
+        self.infcx().plug_leaks(param_env, skol_map, snapshot, predicates)
     }
 }
 

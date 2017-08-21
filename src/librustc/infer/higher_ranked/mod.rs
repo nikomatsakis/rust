@@ -56,8 +56,8 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
 
             // First, we instantiate each bound region in the supertype with a
             // fresh concrete region.
-            let (b_prime, skol_map) =
-                self.infcx.skolemize_late_bound_regions(b, snapshot);
+            let (b_prime, param_env, skol_map) =
+                self.infcx.skolemize_late_bound_regions(param_env, b);
 
             // Second, we instantiate each bound region in the subtype with a fresh
             // region variable. These are declared in the innermost universe.
@@ -80,7 +80,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
 
             // We are finished with the skolemized regions now so pop
             // them off.
-            self.infcx.pop_skolemized(skol_map, snapshot);
+            self.infcx.pop_skolemized(param_env, skol_map, snapshot);
 
             debug!("higher_ranked_sub: OK result={:?}", result);
 
@@ -118,8 +118,8 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
         return self.infcx.commit_if_ok(|snapshot| {
             // First, we instantiate each bound region in the matcher
             // with a skolemized region.
-            let ((a_match, a_value), skol_map) =
-                self.infcx.skolemize_late_bound_regions(a_pair, snapshot);
+            let ((a_match, a_value), param_env, skol_map) =
+                self.infcx.skolemize_late_bound_regions(param_env, a_pair);
 
             debug!("higher_ranked_match: a_match={:?}", a_match);
             debug!("higher_ranked_match: skol_map={:?}", skol_map);
@@ -196,7 +196,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
             debug!("higher_ranked_match: value={:?}", a_value);
 
             // We are now done with these skolemized variables.
-            self.infcx.pop_skolemized(skol_map, snapshot);
+            self.infcx.pop_skolemized(param_env, skol_map, snapshot);
 
             Ok(HrMatchResult { value: a_value })
         });
@@ -586,13 +586,15 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     ///
     /// See `README.md` for more details.
     pub fn skolemize_late_bound_regions<T>(&self,
-                                           binder: &ty::Binder<T>,
-                                           snapshot: &CombinedSnapshot<'a, 'tcx>)
-                                           -> (T, SkolemizationMap<'tcx>)
+                                           mut param_env: ty::ParamEnv<'tcx>,
+                                           binder: &ty::Binder<T>)
+                                           -> (T, ty::ParamEnv<'tcx>, SkolemizationMap<'tcx>)
         where T : TypeFoldable<'tcx>
     {
         let (result, map) = self.tcx.replace_late_bound_regions(binder, |br| {
-            self.region_vars.push_skolemized(br, &snapshot.region_vars_snapshot)
+            let (p, value) = self.tcx.mk_skolemized_region(param_env, br);
+            param_env = p;
+            value
         });
 
         debug!("skolemize_bound_regions(binder={:?}, result={:?}, map={:?})",
@@ -600,7 +602,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                result,
                map);
 
-        (result, map)
+        (result, param_env, map)
     }
 
     /// Searches the region constraints created since `snapshot` was started
@@ -686,6 +688,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     /// to the depth of the predicate, in this case 1, so that the final
     /// predicate is `for<'a> &'a int : Clone`.
     pub fn plug_leaks<T>(&self,
+                         param_env: ty::ParamEnv<'tcx>,
                          skol_map: SkolemizationMap<'tcx>,
                          snapshot: &CombinedSnapshot<'a, 'tcx>,
                          value: T) -> T
@@ -756,7 +759,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             }
         });
 
-        self.pop_skolemized(skol_map, snapshot);
+        self.pop_skolemized(param_env, skol_map, snapshot);
 
         debug!("plug_leaks: result={:?}", result);
 
@@ -772,11 +775,12 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     ///
     /// Note: popping also occurs implicitly as part of `leak_check`.
     pub fn pop_skolemized(&self,
+                          param_env: ty::ParamEnv<'tcx>,
                           skol_map: SkolemizationMap<'tcx>,
                           snapshot: &CombinedSnapshot<'a, 'tcx>) {
         debug!("pop_skolemized({:?})", skol_map);
         let skol_regions: FxHashSet<_> = skol_map.values().cloned().collect();
-        self.region_vars.pop_skolemized(&skol_regions, &snapshot.region_vars_snapshot);
+        self.region_vars.pop_skolemized(param_env, &skol_regions, &snapshot.region_vars_snapshot);
         if !skol_map.is_empty() {
             self.projection_cache.borrow_mut().rollback_skolemized(
                 &snapshot.projection_cache_snapshot);

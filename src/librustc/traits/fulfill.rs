@@ -427,7 +427,9 @@ fn process_predicate<'a, 'gcx, 'tcx>(
         }
 
         ty::Predicate::RegionOutlives(ref binder) => {
-            match selcx.infcx().region_outlives_predicate(&obligation.cause, binder) {
+            match selcx.infcx().region_outlives_predicate(&obligation.cause,
+                                                          obligation.param_env,
+                                                          binder) {
                 Ok(()) => Ok(Some(Vec::new())),
                 Err(_) => Err(CodeSelectionError(Unimplemented)),
             }
