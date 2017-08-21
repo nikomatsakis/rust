@@ -30,7 +30,11 @@ pub struct HrMatchResult<U> {
 }
 
 impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
-    pub fn higher_ranked_sub<T>(&mut self, a: &Binder<T>, b: &Binder<T>, a_is_expected: bool)
+    pub fn higher_ranked_sub<T>(&mut self,
+                                param_env: ty::ParamEnv<'tcx>,
+                                a: &Binder<T>,
+                                b: &Binder<T>,
+                                a_is_expected: bool)
                                 -> RelateResult<'tcx, Binder<T>>
         where T: Relate<'tcx>
     {
@@ -55,10 +59,6 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
             let (b_prime, skol_map) =
                 self.infcx.skolemize_late_bound_regions(b, snapshot);
 
-            // TODO -- by the end of this patch series, skolemize-late-bound-regions
-            // should be producing new environments with an increased universe.
-            let param_env = self.param_env;
-
             // Second, we instantiate each bound region in the subtype with a fresh
             // region variable. These are declared in the innermost universe.
             let (a_prime, _) =
@@ -72,7 +72,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
             debug!("b_prime={:?}", b_prime);
 
             // Compare types now that bound regions have been replaced.
-            let result = self.sub(a_is_expected).relate(&a_prime, &b_prime)?;
+            let result = self.sub(param_env, a_is_expected).relate(&a_prime, &b_prime)?;
 
             // Presuming type comparison succeeds, we need to check
             // that the skolemized regions do not "leak".
@@ -102,6 +102,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
     /// that do not appear in `T`. If that happens, those regions are
     /// unconstrained, and this routine replaces them with `'static`.
     pub fn higher_ranked_match<T, U>(&mut self,
+                                     param_env: ty::ParamEnv<'tcx>,
                                      a_pair: &Binder<(T, U)>,
                                      b_match: &T,
                                      a_is_expected: bool)
@@ -124,7 +125,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
             debug!("higher_ranked_match: skol_map={:?}", skol_map);
 
             // Equate types now that bound regions have been replaced.
-            self.equate(a_is_expected).relate(&a_match, &b_match)?;
+            self.equate(param_env, a_is_expected).relate(&a_match, &b_match)?;
 
             // Map each skolemized region to a vector of other regions that it
             // must be equated with. (Note that this vector may include other
@@ -201,7 +202,11 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
         });
     }
 
-    pub fn higher_ranked_lub<T>(&mut self, a: &Binder<T>, b: &Binder<T>, a_is_expected: bool)
+    pub fn higher_ranked_lub<T>(&mut self,
+                                param_env: ty::ParamEnv<'tcx>,
+                                a: &Binder<T>,
+                                b: &Binder<T>,
+                                a_is_expected: bool)
                                 -> RelateResult<'tcx, Binder<T>>
         where T: Relate<'tcx>
     {
@@ -212,14 +217,14 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
             let span = self.trace.cause.span;
             let (a_with_fresh, a_map) =
                 self.infcx.replace_late_bound_regions_with_fresh_var(
-                    span, self.param_env.universe, HigherRankedType, a);
+                    span, param_env.universe, HigherRankedType, a);
             let (b_with_fresh, _) =
                 self.infcx.replace_late_bound_regions_with_fresh_var(
-                    span, self.param_env.universe, HigherRankedType, b);
+                    span, param_env.universe, HigherRankedType, b);
 
             // Collect constraints.
             let result0 =
-                self.lub(a_is_expected).relate(&a_with_fresh, &b_with_fresh)?;
+                self.lub(param_env, a_is_expected).relate(&a_with_fresh, &b_with_fresh)?;
             let result0 =
                 self.infcx.resolve_type_vars_if_possible(&result0);
             debug!("lub result0 = {:?}", result0);
@@ -291,7 +296,11 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
         }
     }
 
-    pub fn higher_ranked_glb<T>(&mut self, a: &Binder<T>, b: &Binder<T>, a_is_expected: bool)
+    pub fn higher_ranked_glb<T>(&mut self,
+                                param_env: ty::ParamEnv<'tcx>,
+                                a: &Binder<T>,
+                                b: &Binder<T>,
+                                a_is_expected: bool)
                                 -> RelateResult<'tcx, Binder<T>>
         where T: Relate<'tcx>
     {
@@ -304,16 +313,16 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
             // Instantiate each bound region with a fresh region variable.
             let (a_with_fresh, a_map) =
                 self.infcx.replace_late_bound_regions_with_fresh_var(
-                    self.trace.cause.span, self.param_env.universe, HigherRankedType, a);
+                    self.trace.cause.span, param_env.universe, HigherRankedType, a);
             let (b_with_fresh, b_map) =
                 self.infcx.replace_late_bound_regions_with_fresh_var(
-                    self.trace.cause.span, self.param_env.universe, HigherRankedType, b);
+                    self.trace.cause.span, param_env.universe, HigherRankedType, b);
             let a_vars = var_ids(self, &a_map);
             let b_vars = var_ids(self, &b_map);
 
             // Collect constraints.
             let result0 =
-                self.glb(a_is_expected).relate(&a_with_fresh, &b_with_fresh)?;
+                self.glb(param_env, a_is_expected).relate(&a_with_fresh, &b_with_fresh)?;
             let result0 =
                 self.infcx.resolve_type_vars_if_possible(&result0);
             debug!("glb result0 = {:?}", result0);

@@ -660,13 +660,12 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         return variables;
     }
 
-    fn combine_fields(&'a self, trace: TypeTrace<'tcx>, param_env: ty::ParamEnv<'tcx>)
+    fn combine_fields(&'a self, trace: TypeTrace<'tcx>)
                       -> CombineFields<'a, 'gcx, 'tcx> {
         CombineFields {
             infcx: self,
             trace,
             cause: None,
-            param_env,
             obligations: PredicateObligations::new(),
         }
     }
@@ -1248,8 +1247,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             values: TraitRefs(ExpectedFound::new(true, match_pair.skip_binder().0, match_b))
         };
 
-        let mut combine = self.combine_fields(trace, param_env);
-        let result = combine.higher_ranked_match(&match_pair, &match_b, true)?;
+        let mut combine = self.combine_fields(trace);
+        let result = combine.higher_ranked_match(param_env, &match_pair, &match_b, true)?;
         Ok(InferOk { value: result, obligations: combine.obligations })
     }
 
