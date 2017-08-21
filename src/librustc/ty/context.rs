@@ -1141,6 +1141,20 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     pub fn crates(self) -> Rc<Vec<CrateNum>> {
         self.all_crate_nums(LOCAL_CRATE)
     }
+
+    /// Creates a new skolemized region in the given parameter
+    /// environment. Returns a new parameter environment and the
+    /// resulting skolemized region. The new environment has an
+    /// increased universe index in which the new region is visible.
+    pub fn mk_skolemized_region(self,
+                                param_env: ty::ParamEnv<'tcx>,
+                                br: ty::BoundRegion)
+                                -> (ty::ParamEnv<'tcx>, ty::Region<'tcx>) {
+        let universe = param_env.universe.subuniverse();
+        let region = self.mk_region(ty::ReSkolemized(universe, br));
+        let param_env = ty::ParamEnv { universe, ..param_env };
+        (param_env, region)
+    }
 }
 
 impl<'gcx: 'tcx, 'tcx> GlobalCtxt<'gcx> {

@@ -223,7 +223,6 @@ pub struct RegionVarBindings<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
 
     lubs: RefCell<CombineMap<'tcx>>,
     glbs: RefCell<CombineMap<'tcx>>,
-    skolemization_count: Cell<ty::UniverseIndex>,
     bound_count: Cell<u32>,
 
     /// The undo log records actions that might later be undone.
@@ -247,7 +246,6 @@ pub struct RegionVarBindings<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
 pub struct RegionSnapshot {
     length: usize,
     region_snapshot: unify::Snapshot<ty::RegionVid>,
-    skolemization_count: ty::UniverseIndex,
 }
 
 /// When working with skolemized regions, we often wish to find all of
@@ -369,7 +367,6 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             givens: RefCell::new(FxHashSet()),
             lubs: RefCell::new(FxHashMap()),
             glbs: RefCell::new(FxHashMap()),
-            skolemization_count: Cell::new(ty::UniverseIndex::ROOT),
             bound_count: Cell::new(0),
             undo_log: RefCell::new(Vec::new()),
             unification_table: RefCell::new(UnificationTable::new()),
@@ -387,7 +384,6 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
         RegionSnapshot {
             length,
             region_snapshot: self.unification_table.borrow_mut().snapshot(),
-            skolemization_count: self.skolemization_count.get(),
         }
     }
 
@@ -395,10 +391,6 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
         debug!("RegionVarBindings: commit({})", snapshot.length);
         assert!(self.undo_log.borrow().len() > snapshot.length);
         assert!((*self.undo_log.borrow())[snapshot.length] == OpenSnapshot);
-        assert!(self.skolemization_count.get() == snapshot.skolemization_count,
-                "failed to pop skolemized regions: {:?} now vs {:?} at start",
-                self.skolemization_count.get(),
-                snapshot.skolemization_count);
 
         let mut undo_log = self.undo_log.borrow_mut();
         if snapshot.length == 0 {
@@ -419,7 +411,6 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
         }
         let c = undo_log.pop().unwrap();
         assert!(c == OpenSnapshot);
-        self.skolemization_count.set(snapshot.skolemization_count);
         self.unification_table.borrow_mut()
             .rollback_to(snapshot.region_snapshot);
     }
@@ -494,61 +485,29 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
         self.var_infos.borrow()[vid.index as usize].origin.clone()
     }
 
-    /// Creates a new skolemized region. Skolemized regions are fresh
-    /// regions used when performing higher-ranked computations. They
-    /// must be used in a very particular way and are never supposed
-    /// to "escape" out into error messages or the code at large.
-    ///
-    /// The idea is to always create a snapshot. Skolemized regions
-    /// can be created in the context of this snapshot, but before the
-    /// snapshot is committed or rolled back, they must be popped
-    /// (using `pop_skolemized_regions`), so that their numbers can be
-    /// recycled. Normally you don't have to think about this: you use
-    /// the APIs in `higher_ranked/mod.rs`, such as
-    /// `skolemize_late_bound_regions` and `plug_leaks`, which will
-    /// guide you on this path (ensure that the `SkolemizationMap` is
-    /// consumed and you are good).  There are also somewhat extensive
-    /// comments in `higher_ranked/README.md`.
-    ///
-    /// The `snapshot` argument to this function is not really used;
-    /// it's just there to make it explicit which snapshot bounds the
-    /// skolemized region that results. It should always be the top-most snapshot.
-    pub fn push_skolemized(&self, br: ty::BoundRegion, snapshot: &RegionSnapshot)
-                           -> Region<'tcx> {
-        assert!(self.in_snapshot());
-        assert!(self.undo_log.borrow()[snapshot.length] == OpenSnapshot);
-
-        let universe = self.skolemization_count.get().subuniverse();
-        self.skolemization_count.set(universe);
-        self.tcx.mk_region(ReSkolemized(universe, br))
-    }
-
     /// Removes all the edges to/from the skolemized regions that are
     /// in `skols`. This is used after a higher-ranked operation
     /// completes to remove all trace of the skolemized regions
     /// created in that time.
     pub fn pop_skolemized(&self,
+                          param_env: ty::ParamEnv<'tcx>,
                           skols: &FxHashSet<ty::Region<'tcx>>,
                           snapshot: &RegionSnapshot) {
-        debug!("pop_skolemized_regions(skols={:?})", skols);
+        debug!("pop_skolemized_regions(param_env.universe={:?}, skols={:?})",
+               param_env.universe,
+               skols);
 
         assert!(self.in_snapshot());
         assert!(self.undo_log.borrow()[snapshot.length] == OpenSnapshot);
-        assert!(self.skolemization_count.get().as_usize() >= skols.len(),
+        assert!(param_env.universe.as_usize() >= skols.len(),
                 "popping more skolemized variables than actually exist, \
-                 sc now = {}, skols.len = {}",
-                self.skolemization_count.get().as_usize(),
+                 universe now = {:?}, skols.len = {}",
+                param_env.universe,
                 skols.len());
 
-        let last_to_pop = self.skolemization_count.get().subuniverse();
+        let last_to_pop = param_env.universe.subuniverse();
         let first_to_pop = ty::UniverseIndex::from(last_to_pop.as_u32() - (skols.len() as u32));
 
-        assert!(first_to_pop >= snapshot.skolemization_count,
-                "popping more regions than snapshot contains, \
-                 sc now = {:?}, sc then = {:?}, skols.len = {}",
-                self.skolemization_count.get(),
-                snapshot.skolemization_count,
-                skols.len());
         debug_assert! {
             skols.iter()
                  .all(|&k| match *k {
@@ -559,8 +518,8 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
                          false
                  }),
             "invalid skolemization keys or keys out of range ({:?}..{:?}): {:?}",
-            snapshot.skolemization_count,
-            self.skolemization_count.get(),
+            first_to_pop,
+            last_to_pop,
             skols
         }
 
@@ -579,7 +538,6 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             self.rollback_undo_entry(undo_entry);
         }
 
-        self.skolemization_count.set(snapshot.skolemization_count);
         return;
 
         fn kill_constraint<'tcx>(skols: &FxHashSet<ty::Region<'tcx>>,
@@ -1594,8 +1552,7 @@ impl<'tcx> fmt::Debug for RegionAndOrigin<'tcx> {
 
 impl fmt::Debug for RegionSnapshot {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "RegionSnapshot(length={},skolemization={:?})",
-               self.length, self.skolemization_count)
+        write!(f, "RegionSnapshot(length={})", self.length)
     }
 }
 

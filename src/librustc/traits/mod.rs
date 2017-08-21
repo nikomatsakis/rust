@@ -743,6 +743,10 @@ impl<'tcx,O> Obligation<'tcx,O> {
                      recursion_depth: self.recursion_depth,
                      predicate: value }
     }
+
+    pub fn with_env(self, param_env: ty::ParamEnv<'tcx>) -> Obligation<'tcx, O> {
+        Obligation { param_env, ..self }
+    }
 }
 
 impl<'tcx> ObligationCause<'tcx> {
