@@ -40,7 +40,6 @@ use util::nodemap::FxHashMap;
 use arena::DroplessArena;
 
 use self::combine::CombineFields;
-use self::higher_ranked::HrMatchResult;
 use self::region_inference::{RegionVarBindings, RegionSnapshot};
 use self::type_variable::TypeVariableOrigin;
 use self::unify_key::ToType;
@@ -1230,39 +1229,6 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         self.tcx.replace_late_bound_regions(
             value,
             |br| self.next_region_var(universe, LateBoundRegion(span, br, lbrct)))
-    }
-
-    /// Given a higher-ranked projection predicate like:
-    ///
-    ///     for<'a> <T as Fn<&'a u32>>::Output = &'a u32
-    ///
-    /// and a target trait-ref like:
-    ///
-    ///     <T as Fn<&'x u32>>
-    ///
-    /// find a substitution `S` for the higher-ranked regions (here,
-    /// `['a => 'x]`) such that the predicate matches the trait-ref,
-    /// and then return the value (here, `&'a u32`) but with the
-    /// substitution applied (hence, `&'x u32`).
-    ///
-    /// See `higher_ranked_match` in `higher_ranked/mod.rs` for more
-    /// details.
-    pub fn match_poly_projection_predicate(&self,
-                                           cause: ObligationCause<'tcx>,
-                                           param_env: ty::ParamEnv<'tcx>,
-                                           match_a: ty::PolyProjectionPredicate<'tcx>,
-                                           match_b: ty::TraitRef<'tcx>)
-                                           -> InferResult<'tcx, HrMatchResult<Ty<'tcx>>>
-    {
-        let match_pair = match_a.map_bound(|p| (p.projection_ty.trait_ref(self.tcx), p.ty));
-        let trace = TypeTrace {
-            cause,
-            values: TraitRefs(ExpectedFound::new(true, match_pair.skip_binder().0, match_b))
-        };
-
-        let mut combine = self.combine_fields(trace);
-        let result = combine.higher_ranked_match(param_env, &match_pair, &match_b, true)?;
-        Ok(InferOk { value: result, obligations: combine.obligations })
     }
 
     /// See `verify_generic_bound` method in `region_inference`
