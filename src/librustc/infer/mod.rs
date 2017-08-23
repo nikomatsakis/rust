@@ -873,13 +873,10 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                               predicate: &ty::PolyEquatePredicate<'tcx>)
         -> InferResult<'tcx, ()>
     {
-        self.commit_if_ok(|snapshot| {
-            let (ty::EquatePredicate(a, b), param_env, skol_map) =
+        self.commit_if_ok(|_snapshot| {
+            let (ty::EquatePredicate(a, b), param_env, _skol_map) =
                 self.skolemize_late_bound_regions(param_env, predicate);
-            let cause_span = cause.span;
             let eqty_ok = self.at(cause, param_env).eq(b, a)?;
-            self.leak_check(false, cause_span, &skol_map, snapshot)?;
-            self.pop_skolemized(param_env, skol_map, snapshot);
             Ok(eqty_ok.unit())
         })
     }
@@ -910,14 +907,11 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             return None;
         }
 
-        Some(self.commit_if_ok(|snapshot| {
-            let (ty::SubtypePredicate { a_is_expected, a, b}, param_env, skol_map) =
+        Some(self.commit_if_ok(|_snapshot| {
+            let (ty::SubtypePredicate { a_is_expected, a, b}, param_env, _skol_map) =
                 self.skolemize_late_bound_regions(param_env, predicate);
 
-            let cause_span = cause.span;
             let ok = self.at(cause, param_env).sub_exp(a_is_expected, a, b)?;
-            self.leak_check(false, cause_span, &skol_map, snapshot)?;
-            self.pop_skolemized(param_env, skol_map, snapshot);
             Ok(ok.unit())
         }))
     }
@@ -928,16 +922,13 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                                      predicate: &ty::PolyRegionOutlivesPredicate<'tcx>)
                                      -> UnitResult<'tcx>
     {
-        self.commit_if_ok(|snapshot| {
-            let (ty::OutlivesPredicate(r_a, r_b), param_env, skol_map) =
-                self.skolemize_late_bound_regions(param_env, predicate);
-            let origin =
-                SubregionOrigin::from_obligation_cause(cause,
-                                                       || RelateRegionParamBound(cause.span));
-            self.sub_regions(origin, r_b, r_a); // `b : a` ==> `a <= b`
-            self.leak_check(false, cause.span, &skol_map, snapshot)?;
-            Ok(self.pop_skolemized(param_env, skol_map, snapshot))
-        })
+        let (ty::OutlivesPredicate(r_a, r_b), _param_env, _skol_map) =
+            self.skolemize_late_bound_regions(param_env, predicate);
+        let origin =
+            SubregionOrigin::from_obligation_cause(cause,
+                                                   || RelateRegionParamBound(cause.span));
+        self.sub_regions(origin, r_b, r_a); // `b : a` ==> `a <= b`
+        Ok(())
     }
 
     pub fn next_ty_var_id(&self,

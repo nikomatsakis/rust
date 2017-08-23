@@ -18,7 +18,7 @@ trait Contravariant {
 impl Contravariant for for<'a,'b> fn(&'a u8, &'b u8) -> &'a u8 {
 }
 
-impl Contravariant for for<'a> fn(&'a u8, &'a u8) -> &'a u8 {
+impl Contravariant for for<'a> fn(&'a u8, &'a u8) -> &'a u8 { //~ ERROR conflicting implementations
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -30,7 +30,7 @@ trait Covariant {
 impl Covariant for for<'a,'b> fn(&'a u8, &'b u8) -> &'a u8 {
 }
 
-impl Covariant for for<'a> fn(&'a u8, &'a u8) -> &'a u8 {
+impl Covariant for for<'a> fn(&'a u8, &'a u8) -> &'a u8 { //~ ERROR conflicting implementations
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -42,7 +42,7 @@ trait Invariant {
 impl Invariant for for<'a,'b> fn(&'a u8, &'b u8) -> &'a u8 {
 }
 
-impl Invariant for for<'a> fn(&'a u8, &'a u8) -> &'a u8 {
+impl Invariant for for<'a> fn(&'a u8, &'a u8) -> &'a u8 { //~ ERROR conflicting implementations
 }
 
 fn main() { }
