@@ -87,23 +87,33 @@ fn tuple_four<T>()
     // not ok for tuple, two lifetimes, and lifetime matching is invariant
 }
 
-pub fn main() {
+fn a() {
     foo::<IntStruct>();
     foo::<UintStruct>(); //~ ERROR type mismatch
+}
 
+fn b() {
     bar::<IntStruct>(); //~ ERROR type mismatch
     bar::<UintStruct>();
+}
 
+fn c() {
     tuple_one::<Tuple>();
-    //~^ ERROR E0277
-    //~| ERROR type mismatch
+    //~^ ERROR type mismatch
+}
 
+fn d() {
     tuple_two::<Tuple>();
-    //~^ ERROR E0277
-    //~| ERROR type mismatch
+    //~^ ERROR type mismatch
+}
 
+fn e() {
     tuple_three::<Tuple>();
+}
 
+fn g() {
     tuple_four::<Tuple>();
     //~^ ERROR E0277
 }
+
+fn main() { }
