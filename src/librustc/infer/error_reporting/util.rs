@@ -175,6 +175,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     /// The function returns the nested type corresponding to the anonymous region
     /// for e.g. `&u8` and Vec<`&u8`.
     pub fn find_anon_type(&self, region: Region<'tcx>, br: &ty::BoundRegion) -> Option<(&hir::Ty)> {
+        debug!("find_anon_type(region={:?}, br={:?})", region, br);
         if let Some(anon_reg) = self.is_suitable_region(region, true) {
             let (def_id, _) = anon_reg;
             if let Some(node_id) = self.tcx.hir.as_local_node_id(def_id) {
@@ -214,7 +215,11 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                         }
                     }
                 }
+            } else {
+                debug!("find_anon_type: non-local node-id def_id={:?}", def_id);
             }
+        } else {
+            debug!("find_anon_type: region={:?} not suitable", region);
         }
         None
     }
@@ -225,6 +230,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                                arg: &'gcx hir::Ty,
                                br: &ty::BoundRegion)
                                -> Option<(&'gcx hir::Ty)> {
+        debug!("find_visitor_found_type(arg={:?}, br={:?})", arg, br);
         let mut nested_visitor = FindNestedTypeVisitor {
             infcx: &self,
             hir_map: &self.tcx.hir,

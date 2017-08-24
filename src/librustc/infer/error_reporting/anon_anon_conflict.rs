@@ -45,6 +45,9 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             _ => return false, // inapplicable
         };
 
+        debug!("try_report_anon_anon_conflict: sub={:?}", sub);
+        debug!("try_report_anon_anon_conflict: sup={:?}", sup);
+
         // Determine whether the sub and sup consist of both anonymous (elided) regions.
         let (ty1, ty2, scope_def_id_1, scope_def_id_2, bregion1, bregion2) = if
             self.is_suitable_region(sup, true).is_some() &&
@@ -60,6 +63,10 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                         (anonarg_1, anonarg_2, def_id1, def_id2, br1, br2)
                     }
                     _ => {
+                        debug!("try_report_anon_anon_conflict: found_arg1={:?} sup={:?} br1={:?}",
+                               found_arg1, sup, br1);
+                        debug!("try_report_anon_anon_conflict: found_arg2={:?} sub={:?} br2={:?}",
+                               found_arg2, sub, br2);
                         return false;
                     }
                 }
@@ -68,6 +75,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 return false;
             }
         } else {
+            debug!("try_report_anon_anon_conflict: is_suitable(sub) = {:?}", self.is_suitable_region(sub, true));
+            debug!("try_report_anon_anon_conflict: is_suitable(sup) = {:?}", self.is_suitable_region(sup, true));
             return false; //inapplicable
         };
 
@@ -143,12 +152,17 @@ impl<'a, 'gcx, 'tcx> Visitor<'gcx> for FindNestedTypeVisitor<'a, 'gcx, 'tcx> {
     }
 
     fn visit_ty(&mut self, arg: &'gcx hir::Ty) {
+        debug!("FindNestedTypeVisitor::visit_ty(arg={:?})", arg);
+
         // Find the index of the anonymous region that was part of the
         // error. We will then search the function parameters for a bound
         // region at the right depth with the same index.
         match arg.node {
             hir::TyRptr(ref lifetime, _) => {
-                match self.infcx.tcx.named_region_map.defs.get(&lifetime.id) {
+                let lifetime_resolution = self.infcx.tcx.named_region_map.defs.get(&lifetime.id);
+                debug!("FindNestedTypeVisitor::visit_ty: lifetime_resolution={:?}",
+                       lifetime_resolution);
+                match lifetime_resolution {
                     // the lifetime of the TyRptr
                     Some(&rl::Region::LateBoundAnon(debruijn_index, anon_index)) => {
                         let br_index = match self.bound_region {
