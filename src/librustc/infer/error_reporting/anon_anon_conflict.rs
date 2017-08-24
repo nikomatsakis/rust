@@ -165,43 +165,49 @@ impl<'a, 'gcx, 'tcx> Visitor<'gcx> for FindNestedTypeVisitor<'a, 'gcx, 'tcx> {
                 match lifetime_resolution {
                     // the lifetime of the TyRptr
                     Some(&rl::Region::LateBoundAnon(debruijn_index, anon_index)) => {
-                        let br_index = match self.bound_region {
-                            ty::BrAnon(index) => index,
-                            _ => return,
-                        };
-                        debug!("LateBoundAnon depth = {:?} anon_index = {:?} br_index={:?}",debruijn_index.depth
-                        ,anon_index,br_index);
-                        if debruijn_index.depth == 1 && anon_index == br_index {
-                            self.found_type = Some(arg);
-                            return; // we can stop visiting now
+                        match self.bound_region {
+                            ty::BrAnon(br_index) => {
+                                debug!("LateBoundAnon depth = {:?} anon_index = {:?} br_index={:?}",
+                                       debruijn_index.depth,
+                                       anon_index,
+                                       br_index);
+                                if debruijn_index.depth == 1 && anon_index == br_index {
+                                    self.found_type = Some(arg);
+                                    return; // we can stop visiting now
+                                }
+                            }
+                            _ => { }
                         }
                     }
                     Some(&rl::Region::EarlyBound(_, id)) => {
-                        let def_id = match self.bound_region {
-                            ty::BrNamed(def_id, _) => def_id,//def_id of hir::Lifetime
-                            _ => return,
-                        };
-                        debug!("EarlyBound self.infcx.tcx.hir.local_def_id(id) ={:?}
-                        def_id={:?}",
-                        self.infcx.tcx.hir.local_def_id(id), def_id);
-                        if self.infcx.tcx.hir.local_def_id(id) == def_id {
-                            self.found_type = Some(arg);
-                            return; // we can stop visiting now
+                        match self.bound_region {
+                            ty::BrNamed(def_id, _) => {
+                                debug!("EarlyBound self.infcx.tcx.hir.local_def_id(id)={:?} \
+                                        def_id={:?}",
+                                       self.infcx.tcx.hir.local_def_id(id), def_id);
+                                if self.infcx.tcx.hir.local_def_id(id) == def_id {
+                                    self.found_type = Some(arg);
+                                    return; // we can stop visiting now
+                                }
+                            }
+                            _ => { }
                         }
-
                     }
 
                     Some(&rl::Region::LateBound(debruijn_index, id)) => {
-                       let def_id = match self.bound_region {
-                            ty::BrNamed(def_id, _) => def_id,//def_id of hir::Lifetime
-                            _ => return,
-                        }; 
-                        debug!("LateBound depth = {:?} self.infcx.tcx.hir.local_def_id(id) ={:?}
-                        def_id={:?}",debruijn_index.depth
-                        ,self.infcx.tcx.hir.local_def_id(id), def_id);
-                        if debruijn_index.depth == 1 &&  self.infcx.tcx.hir.local_def_id(id) == def_id{
-                           self.found_type = Some(arg);
-                            return; // we can stop visiting now
+                        match self.bound_region {
+                            ty::BrNamed(def_id, _) => {
+                                debug!("FindNestedTypeVisitor::visit_ty: LateBound depth = {:?}",
+                                       debruijn_index.depth);
+                                debug!("self.infcx.tcx.hir.local_def_id(id)={:?}",
+                                       self.infcx.tcx.hir.local_def_id(id));
+                                debug!("def_id={:?}", def_id);
+                                if debruijn_index.depth == 1 && self.infcx.tcx.hir.local_def_id(id) == def_id{
+                                    self.found_type = Some(arg);
+                                    return; // we can stop visiting now
+                                }
+                            }
+                            _ => { }
                         }
                     }
 
