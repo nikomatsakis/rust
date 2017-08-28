@@ -564,13 +564,14 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
 
     pub fn make_eqregion(&self,
                          origin: SubregionOrigin<'tcx>,
+                         param_env: ty::ParamEnv<'tcx>,
                          sub: Region<'tcx>,
                          sup: Region<'tcx>) {
         if sub != sup {
             // Eventually, it would be nice to add direct support for
             // equating regions.
-            self.make_subregion(origin.clone(), sub, sup);
-            self.make_subregion(origin, sup, sub);
+            self.make_subregion(origin.clone(), param_env, sub, sup);
+            self.make_subregion(origin, param_env, sup, sub);
 
             if let (ty::ReVar(sub), ty::ReVar(sup)) = (*sub, *sup) {
                 self.unification_table.borrow_mut().union(sub, sup);
@@ -580,6 +581,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
 
     pub fn make_subregion(&self,
                           origin: SubregionOrigin<'tcx>,
+                          _param_env: ty::ParamEnv<'tcx>,
                           sub: Region<'tcx>,
                           sup: Region<'tcx>) {
         // cannot add constraints once regions are resolved
@@ -632,6 +634,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
 
     pub fn lub_regions(&self,
                        origin: SubregionOrigin<'tcx>,
+                       param_env: ty::ParamEnv<'tcx>,
                        a: Region<'tcx>,
                        b: Region<'tcx>)
                        -> Region<'tcx> {
@@ -650,7 +653,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
 
             _ => {
                 self.combine_vars(Lub, a, b, origin.clone(), |this, old_r, new_r| {
-                    this.make_subregion(origin.clone(), old_r, new_r)
+                    this.make_subregion(origin.clone(), param_env, old_r, new_r)
                 })
             }
         }
@@ -658,6 +661,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
 
     pub fn glb_regions(&self,
                        origin: SubregionOrigin<'tcx>,
+                       param_env: ty::ParamEnv<'tcx>,
                        a: Region<'tcx>,
                        b: Region<'tcx>)
                        -> Region<'tcx> {
@@ -676,7 +680,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
 
             _ => {
                 self.combine_vars(Glb, a, b, origin.clone(), |this, old_r, new_r| {
-                    this.make_subregion(origin.clone(), new_r, old_r)
+                    this.make_subregion(origin.clone(), param_env, new_r, old_r)
                 })
             }
         }

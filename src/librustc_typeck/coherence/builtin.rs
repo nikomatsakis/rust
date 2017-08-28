@@ -224,7 +224,7 @@ pub fn coerce_unsized_info<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         };
         let (source, target, trait_def_id, kind) = match (&source.sty, &target.sty) {
             (&ty::TyRef(r_a, mt_a), &ty::TyRef(r_b, mt_b)) => {
-                infcx.sub_regions(infer::RelateObjectBound(span), r_b, r_a);
+                infcx.sub_regions(infer::RelateObjectBound(span), param_env, r_b, r_a);
                 check_mutbl(mt_a, mt_b, &|ty| tcx.mk_imm_ref(r_b, ty))
             }
 
