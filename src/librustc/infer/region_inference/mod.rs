@@ -11,8 +11,7 @@
 //! See README.md
 
 pub use self::Constraint::*;
-pub use self::UndoLogEntry::*;
-pub use self::CombineMapType::*;
+use self::UndoLogEntry::*;
 pub use self::RegionResolutionError::*;
 pub use self::VarValue::*;
 
@@ -101,13 +100,13 @@ pub enum VerifyBound<'tcx> {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub struct TwoRegions<'tcx> {
+struct TwoRegions<'tcx> {
     a: Region<'tcx>,
     b: Region<'tcx>,
 }
 
 #[derive(Copy, Clone, PartialEq)]
-pub enum UndoLogEntry<'tcx> {
+enum UndoLogEntry<'tcx> {
     /// Pushed when we start a snapshot.
     OpenSnapshot,
 
@@ -130,18 +129,10 @@ pub enum UndoLogEntry<'tcx> {
 
     /// We added a GLB/LUB "combination variable"
     AddCombination(CombineMapType, TwoRegions<'tcx>),
-
-    /// During skolemization, we sometimes purge entries from the undo
-    /// log in a kind of minisnapshot (unlike other snapshots, this
-    /// purging actually takes place *on success*). In that case, we
-    /// replace the corresponding entry with `Noop` so as to avoid the
-    /// need to do a bunch of swapping. (We can't use `swap_remove` as
-    /// the order of the vector is important.)
-    Purged,
 }
 
 #[derive(Copy, Clone, PartialEq)]
-pub enum CombineMapType {
+enum CombineMapType {
     Lub,
     Glb,
 }
@@ -177,7 +168,7 @@ pub enum ProcessedErrorOrigin<'tcx> {
     VariableFailure(RegionVariableOrigin),
 }
 
-pub type CombineMap<'tcx> = FxHashMap<TwoRegions<'tcx>, RegionVid>;
+type CombineMap<'tcx> = FxHashMap<TwoRegions<'tcx>, RegionVid>;
 
 #[derive(Clone, Debug)]
 struct RegionVariableInfo {
@@ -320,7 +311,6 @@ impl<'a, 'gcx, 'tcx> TaintSet<'tcx> {
                             self.add_edge(verifys[i].region, b);
                         });
                     }
-                    &Purged |
                     &AddCombination(..) |
                     &AddVar(..) |
                     &OpenSnapshot |
@@ -414,12 +404,12 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             .rollback_to(snapshot.region_snapshot);
     }
 
-    pub fn rollback_undo_entry(&self, undo_entry: UndoLogEntry<'tcx>) {
+    fn rollback_undo_entry(&self, undo_entry: UndoLogEntry<'tcx>) {
         match undo_entry {
             OpenSnapshot => {
                 panic!("Failure to observe stack discipline");
             }
-            Purged | CommitedSnapshot => {
+            CommitedSnapshot => {
                 // nothing to do here
             }
             AddVar(vid) => {
@@ -437,10 +427,10 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             AddGiven(sub, sup) => {
                 self.givens.borrow_mut().remove(&(sub, sup));
             }
-            AddCombination(Glb, ref regions) => {
+            AddCombination(CombineMapType::Glb, ref regions) => {
                 self.glbs.borrow_mut().remove(regions);
             }
-            AddCombination(Lub, ref regions) => {
+            AddCombination(CombineMapType::Lub, ref regions) => {
                 self.lubs.borrow_mut().remove(regions);
             }
         }
@@ -652,7 +642,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             }
 
             _ => {
-                self.combine_vars(Lub, a, b, origin.clone(), |this, old_r, new_r| {
+                self.combine_vars(CombineMapType::Lub, a, b, origin.clone(), |this, old_r, new_r| {
                     this.make_subregion(origin.clone(), param_env, old_r, new_r)
                 })
             }
@@ -679,7 +669,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             }
 
             _ => {
-                self.combine_vars(Glb, a, b, origin.clone(), |this, old_r, new_r| {
+                self.combine_vars(CombineMapType::Glb, a, b, origin.clone(), |this, old_r, new_r| {
                     this.make_subregion(origin.clone(), param_env, new_r, old_r)
                 })
             }
@@ -708,18 +698,18 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
 
     fn combine_map(&self, t: CombineMapType) -> &RefCell<CombineMap<'tcx>> {
         match t {
-            Glb => &self.glbs,
-            Lub => &self.lubs,
+            CombineMapType::Glb => &self.glbs,
+            CombineMapType::Lub => &self.lubs,
         }
     }
 
-    pub fn combine_vars<F>(&self,
-                           t: CombineMapType,
-                           a: Region<'tcx>,
-                           b: Region<'tcx>,
-                           origin: SubregionOrigin<'tcx>,
-                           mut relate: F)
-                           -> Region<'tcx>
+    fn combine_vars<F>(&self,
+                       t: CombineMapType,
+                       a: Region<'tcx>,
+                       b: Region<'tcx>,
+                       origin: SubregionOrigin<'tcx>,
+                       mut relate: F)
+                       -> Region<'tcx>
         where F: FnMut(&RegionVarBindings<'a, 'gcx, 'tcx>, Region<'tcx>, Region<'tcx>)
     {
         let vars = TwoRegions { a: a, b: b };
