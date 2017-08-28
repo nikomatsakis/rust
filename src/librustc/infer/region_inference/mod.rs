@@ -571,15 +571,16 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
 
     pub fn make_subregion(&self,
                           origin: SubregionOrigin<'tcx>,
-                          _param_env: ty::ParamEnv<'tcx>,
+                          param_env: ty::ParamEnv<'tcx>,
                           sub: Region<'tcx>,
                           sup: Region<'tcx>) {
         // cannot add constraints once regions are resolved
         assert!(self.values_are_none());
 
-        debug!("RegionVarBindings: make_subregion({:?}, {:?}) due to {:?}",
+        debug!("RegionVarBindings: make_subregion({:?}, {:?}) in {:?} due to {:?}",
                sub,
                sup,
+               param_env,
                origin);
 
         match (sub, sup) {
@@ -622,6 +623,8 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
         });
     }
 
+    /// Returns a new region that is the union of `a` and `b`,
+    /// or at least the closest we can approximate.
     pub fn lub_regions(&self,
                        origin: SubregionOrigin<'tcx>,
                        param_env: ty::ParamEnv<'tcx>,
@@ -642,13 +645,13 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             }
 
             _ => {
-                self.combine_vars(CombineMapType::Lub, a, b, origin.clone(), |this, old_r, new_r| {
-                    this.make_subregion(origin.clone(), param_env, old_r, new_r)
-                })
+                self.combine_vars(CombineMapType::Lub, param_env, a, b, origin.clone())
             }
         }
     }
 
+    /// Returns a new region that is the intersection of `a` and `b`,
+    /// or at least the closest we can approximate.
     pub fn glb_regions(&self,
                        origin: SubregionOrigin<'tcx>,
                        param_env: ty::ParamEnv<'tcx>,
@@ -669,9 +672,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             }
 
             _ => {
-                self.combine_vars(CombineMapType::Glb, a, b, origin.clone(), |this, old_r, new_r| {
-                    this.make_subregion(origin.clone(), param_env, new_r, old_r)
-                })
+                self.combine_vars(CombineMapType::Glb, param_env, a, b, origin.clone())
             }
         }
     }
@@ -703,14 +704,13 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
         }
     }
 
-    fn combine_vars<F>(&self,
-                       t: CombineMapType,
-                       a: Region<'tcx>,
-                       b: Region<'tcx>,
-                       origin: SubregionOrigin<'tcx>,
-                       mut relate: F)
-                       -> Region<'tcx>
-        where F: FnMut(&RegionVarBindings<'a, 'gcx, 'tcx>, Region<'tcx>, Region<'tcx>)
+    fn combine_vars(&self,
+                    t: CombineMapType,
+                    param_env: ty::ParamEnv<'tcx>,
+                    a: Region<'tcx>,
+                    b: Region<'tcx>,
+                    origin: SubregionOrigin<'tcx>)
+                    -> Region<'tcx>
     {
         let vars = TwoRegions { a: a, b: b };
         if let Some(&c) = self.combine_map(t).borrow().get(&vars) {
@@ -724,8 +724,24 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
         if self.in_snapshot() {
             self.undo_log.borrow_mut().push(AddCombination(t, vars));
         }
-        relate(self, a, self.tcx.mk_region(ReVar(c)));
-        relate(self, b, self.tcx.mk_region(ReVar(c)));
+        let re_c = self.tcx.mk_region(ReVar(c));
+        match t {
+            CombineMapType::Glb => {
+                // c is the *intersection* of a and b, and hence
+                // smaller than both of them, so add constraint that c
+                // <= a and c <= b.
+                self.make_subregion(origin.clone(), param_env, re_c, a);
+                self.make_subregion(origin.clone(), param_env, re_c, b);
+            }
+
+            CombineMapType::Lub => {
+                // c is the *union* of a and b, and hence
+                // larger than both of them, so add constraint that a
+                // <= c and b <= c.
+                self.make_subregion(origin.clone(), param_env, a, re_c);
+                self.make_subregion(origin.clone(), param_env, b, re_c);
+            }
+        }
         debug!("combine_vars() c={:?}", c);
         self.tcx.mk_region(ReVar(c))
     }
