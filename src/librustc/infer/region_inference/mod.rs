@@ -31,7 +31,6 @@ use ty::{ReLateBound, ReScope, ReVar, ReSkolemized, BrFresh};
 use std::cell::{Cell, RefCell};
 use std::cmp;
 use std::fmt;
-use std::mem;
 use std::u32;
 
 mod graphviz;
@@ -483,90 +482,6 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
 
     pub fn var_origin(&self, vid: RegionVid) -> RegionVariableOrigin {
         self.var_infos.borrow()[vid.index as usize].origin.clone()
-    }
-
-    /// Removes all the edges to/from the skolemized regions that are
-    /// in `skols`. This is used after a higher-ranked operation
-    /// completes to remove all trace of the skolemized regions
-    /// created in that time.
-    pub fn pop_skolemized(&self,
-                          param_env: ty::ParamEnv<'tcx>,
-                          skols: &FxHashSet<ty::Region<'tcx>>,
-                          snapshot: &RegionSnapshot) {
-        debug!("pop_skolemized_regions(param_env.universe={:?}, skols={:?})",
-               param_env.universe,
-               skols);
-
-        assert!(self.in_snapshot());
-        assert!(self.undo_log.borrow()[snapshot.length] == OpenSnapshot);
-        assert!(param_env.universe.as_usize() >= skols.len(),
-                "popping more skolemized variables than actually exist, \
-                 universe now = {:?}, skols.len = {}",
-                param_env.universe,
-                skols.len());
-
-        let last_to_pop = param_env.universe.subuniverse();
-        let first_to_pop = ty::UniverseIndex::from(last_to_pop.as_u32() - (skols.len() as u32));
-
-        debug_assert! {
-            skols.iter()
-                 .all(|&k| match *k {
-                     ty::ReSkolemized(universe, _) =>
-                         universe >= first_to_pop &&
-                         universe < last_to_pop,
-                     _ =>
-                         false
-                 }),
-            "invalid skolemization keys or keys out of range ({:?}..{:?}): {:?}",
-            first_to_pop,
-            last_to_pop,
-            skols
-        }
-
-        let mut undo_log = self.undo_log.borrow_mut();
-
-        let constraints_to_kill: Vec<usize> =
-            undo_log.iter()
-                    .enumerate()
-                    .rev()
-                    .filter(|&(_, undo_entry)| kill_constraint(skols, undo_entry))
-                    .map(|(index, _)| index)
-                    .collect();
-
-        for index in constraints_to_kill {
-            let undo_entry = mem::replace(&mut undo_log[index], Purged);
-            self.rollback_undo_entry(undo_entry);
-        }
-
-        return;
-
-        fn kill_constraint<'tcx>(skols: &FxHashSet<ty::Region<'tcx>>,
-                                 undo_entry: &UndoLogEntry<'tcx>)
-                                 -> bool {
-            match undo_entry {
-                &AddConstraint(ConstrainVarSubVar(..)) =>
-                    false,
-                &AddConstraint(ConstrainRegSubVar(a, _)) =>
-                    skols.contains(&a),
-                &AddConstraint(ConstrainVarSubReg(_, b)) =>
-                    skols.contains(&b),
-                &AddConstraint(ConstrainRegSubReg(a, b)) =>
-                    skols.contains(&a) || skols.contains(&b),
-                &AddGiven(..) =>
-                    false,
-                &AddVerify(_) =>
-                    false,
-                &AddCombination(_, ref two_regions) =>
-                    skols.contains(&two_regions.a) ||
-                    skols.contains(&two_regions.b),
-                &AddVar(..) |
-                &OpenSnapshot |
-                &Purged |
-                &CommitedSnapshot =>
-                    false,
-            }
-        }
-
     }
 
     pub fn new_bound(&self, debruijn: ty::DebruijnIndex) -> Region<'tcx> {
