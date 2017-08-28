@@ -371,7 +371,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
                    r_o, r_o.cause);
             let sup_type = self.resolve_type(r_o.sup_type);
             let origin = self.code_to_origin(&r_o.cause, sup_type);
-            self.type_must_outlive(origin, sup_type, r_o.sub_region);
+            self.type_must_outlive(origin, self.fcx.param_env, sup_type, r_o.sub_region);
         }
 
         // Processing the region obligations should not cause the list to grow further:
@@ -672,7 +672,9 @@ impl<'a, 'gcx, 'tcx> Visitor<'gcx> for RegionCtxt<'a, 'gcx, 'tcx> {
         let expr_region = self.tcx.mk_region(ty::ReScope(
             region::Scope::Node(expr.hir_id.local_id)));
         self.type_must_outlive(infer::ExprTypeIsNotInScope(expr_ty, expr.span),
-                               expr_ty, expr_region);
+                               self.fcx.param_env,
+                               expr_ty,
+                               expr_region);
 
         let is_method_call = self.tables.borrow().is_method_call(expr);
 
@@ -763,7 +765,9 @@ impl<'a, 'gcx, 'tcx> Visitor<'gcx> for RegionCtxt<'a, 'gcx, 'tcx> {
                 let rhs_ty = self.resolve_expr_type_adjusted(&rhs);
                 for &ty in &[lhs_ty, rhs_ty] {
                     self.type_must_outlive(infer::Operand(expr.span),
-                                           ty, expr_region);
+                                           self.fcx.param_env,
+                                           ty,
+                                           expr_region);
                 }
                 intravisit::walk_expr(self, expr);
             }
@@ -818,7 +822,10 @@ impl<'a, 'gcx, 'tcx> Visitor<'gcx> for RegionCtxt<'a, 'gcx, 'tcx> {
                 // FIXME(https://github.com/rust-lang/rfcs/issues/811)
                 // nested method calls requires that this rule change
                 let ty0 = self.resolve_node_type(expr.hir_id);
-                self.type_must_outlive(infer::AddrOf(expr.span), ty0, expr_region);
+                self.type_must_outlive(infer::AddrOf(expr.span),
+                                       self.fcx.param_env,
+                                       ty0,
+                                       expr_region);
                 intravisit::walk_expr(self, expr);
             }
 
@@ -892,7 +899,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
             /*From:*/ (&ty::TyRef(from_r, ref from_mt),
             /*To:  */  &ty::TyRef(to_r, ref to_mt)) => {
                 // Target cannot outlive source, naturally.
-                self.sub_regions(infer::Reborrow(cast_expr.span), to_r, from_r);
+                self.sub_regions(infer::Reborrow(cast_expr.span), self.fcx.param_env, to_r, from_r);
                 self.walk_cast(cast_expr, from_mt.ty, to_mt.ty);
             }
 
@@ -900,7 +907,10 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
             /*To:  */  &ty::TyDynamic(.., r)) => {
                 // When T is existentially quantified as a trait
                 // `Foo+'to`, it must outlive the region bound `'to`.
-                self.type_must_outlive(infer::RelateObjectBound(cast_expr.span), from_ty, r);
+                self.type_must_outlive(infer::RelateObjectBound(cast_expr.span),
+                                       self.fcx.param_env,
+                                       from_ty,
+                                       r);
             }
 
             /*From:*/ (&ty::TyAdt(from_def, _),
@@ -1030,9 +1040,13 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
 
                 // Specialized version of constrain_call.
                 self.type_must_outlive(infer::CallRcvr(expr.span),
-                                       input, expr_region);
+                                       self.fcx.param_env,
+                                       input,
+                                       expr_region);
                 self.type_must_outlive(infer::CallReturn(expr.span),
-                                       output, expr_region);
+                                       self.fcx.param_env,
+                                       output,
+                                       expr_region);
             }
 
             if let adjustment::Adjust::Borrow(ref autoref) = adjustment.kind {
@@ -1063,7 +1077,9 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
                                            minimum_lifetime: ty::Region<'tcx>,
                                            maximum_lifetime: ty::Region<'tcx>) {
         self.sub_regions(infer::DerefPointer(deref_span),
-                         minimum_lifetime, maximum_lifetime)
+                         self.fcx.param_env,
+                         minimum_lifetime,
+                         maximum_lifetime)
     }
 
     fn check_safety_of_rvalue_destructor_if_necessary(&mut self,
@@ -1104,7 +1120,9 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
             match mt.ty.sty {
                 ty::TySlice(_) | ty::TyStr => {
                     self.sub_regions(infer::IndexSlice(index_expr.span),
-                                     self.tcx.mk_region(r_index_expr), r_ptr);
+                                     self.fcx.param_env,
+                                     self.tcx.mk_region(r_index_expr),
+                                     r_ptr);
                 }
                 _ => {}
             }
@@ -1134,7 +1152,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
                 ty={}, ty0={}, id={:?}, minimum_lifetime={:?})",
                 ty,  ty0,
                 hir_id, minimum_lifetime);
-        self.type_must_outlive(origin, ty, minimum_lifetime);
+        self.type_must_outlive(origin, self.fcx.param_env, ty, minimum_lifetime);
     }
 
     /// Computes the guarantor for an expression `&base` and then ensures that the lifetime of the
@@ -1273,7 +1291,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
         let mut borrow_kind = borrow_kind;
 
         let origin = infer::DataBorrowed(borrow_cmt.ty, span);
-        self.type_must_outlive(origin, borrow_cmt.ty, borrow_region);
+        self.type_must_outlive(origin, self.fcx.param_env, borrow_cmt.ty, borrow_region);
 
         loop {
             debug!("link_region(borrow_region={:?}, borrow_kind={:?}, borrow_cmt={:?})",
@@ -1402,7 +1420,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
         debug!("link_reborrowed_region: {:?} <= {:?}",
                borrow_region,
                ref_region);
-        self.sub_regions(cause, borrow_region, ref_region);
+        self.sub_regions(cause, self.fcx.param_env, borrow_region, ref_region);
 
         // If we end up needing to recurse and establish a region link
         // with `ref_cmt`, calculate what borrow kind we will end up
@@ -1484,12 +1502,12 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
         let origin = infer::ParameterInScope(origin, expr_span);
 
         for region in substs.regions() {
-            self.sub_regions(origin.clone(), expr_region, region);
+            self.sub_regions(origin.clone(), self.fcx.param_env, expr_region, region);
         }
 
         for ty in substs.types() {
             let ty = self.resolve_type(ty);
-            self.type_must_outlive(origin.clone(), ty, expr_region);
+            self.type_must_outlive(origin.clone(), self.fcx.param_env, ty, expr_region);
         }
     }
 
@@ -1498,6 +1516,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
     /// `region`.
     pub fn type_must_outlive(&self,
                              origin: infer::SubregionOrigin<'tcx>,
+                             param_env: ty::ParamEnv<'tcx>,
                              ty: Ty<'tcx>,
                              region: ty::Region<'tcx>)
     {
@@ -1511,11 +1530,12 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
         assert!(!ty.has_escaping_regions());
 
         let components = self.tcx.outlives_components(ty);
-        self.components_must_outlive(origin, components, region);
+        self.components_must_outlive(origin, param_env, components, region);
     }
 
     fn components_must_outlive(&self,
                                origin: infer::SubregionOrigin<'tcx>,
+                               param_env: ty::ParamEnv<'tcx>,
                                components: Vec<Component<'tcx>>,
                                region: ty::Region<'tcx>)
     {
@@ -1523,16 +1543,16 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
             let origin = origin.clone();
             match component {
                 Component::Region(region1) => {
-                    self.sub_regions(origin, region, region1);
+                    self.sub_regions(origin, param_env, region, region1);
                 }
                 Component::Param(param_ty) => {
-                    self.param_ty_must_outlive(origin, region, param_ty);
+                    self.param_ty_must_outlive(origin, param_env, region, param_ty);
                 }
                 Component::Projection(projection_ty) => {
-                    self.projection_must_outlive(origin, region, projection_ty);
+                    self.projection_must_outlive(origin, param_env, region, projection_ty);
                 }
                 Component::EscapingProjection(subcomponents) => {
-                    self.components_must_outlive(origin, subcomponents, region);
+                    self.components_must_outlive(origin, param_env, subcomponents, region);
                 }
                 Component::UnresolvedInferenceVariable(v) => {
                     // ignore this, we presume it will yield an error
@@ -1548,6 +1568,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
 
     fn param_ty_must_outlive(&self,
                              origin: infer::SubregionOrigin<'tcx>,
+                             _param_env: ty::ParamEnv<'tcx>,
                              region: ty::Region<'tcx>,
                              param_ty: ty::ParamTy) {
         debug!("param_ty_must_outlive(region={:?}, param_ty={:?}, origin={:?})",
@@ -1560,6 +1581,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
 
     fn projection_must_outlive(&self,
                                origin: infer::SubregionOrigin<'tcx>,
+                               param_env: ty::ParamEnv<'tcx>,
                                region: ty::Region<'tcx>,
                                projection_ty: ty::ProjectionTy<'tcx>)
     {
@@ -1614,11 +1636,11 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
             debug!("projection_must_outlive: no declared bounds");
 
             for component_ty in projection_ty.substs.types() {
-                self.type_must_outlive(origin.clone(), component_ty, region);
+                self.type_must_outlive(origin.clone(), param_env, component_ty, region);
             }
 
             for r in projection_ty.substs.regions() {
-                self.sub_regions(origin.clone(), region, r);
+                self.sub_regions(origin.clone(), param_env, region, r);
             }
 
             return;
@@ -1637,7 +1659,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
             debug!("projection_must_outlive: unique declared bound = {:?}", unique_bound);
             if projection_ty.substs.regions().any(|r| env_bounds.contains(&r)) {
                 debug!("projection_must_outlive: unique declared bound appears in trait ref");
-                self.sub_regions(origin.clone(), region, unique_bound);
+                self.sub_regions(origin.clone(), param_env, region, unique_bound);
                 return;
             }
         }
