@@ -307,7 +307,7 @@ pub fn check_safety_of_destructor_if_necessary<'a, 'gcx, 'tcx>(
                 // A projection that we couldn't resolve - it
                 // might have a destructor.
                 ty::TyProjection(..) | ty::TyAnon(..) => {
-                    rcx.type_must_outlive(origin(), ty, parent_scope);
+                    rcx.type_must_outlive(origin(), rcx.fcx.param_env, ty, parent_scope);
                 }
 
                 _ => {
@@ -320,9 +320,9 @@ pub fn check_safety_of_destructor_if_necessary<'a, 'gcx, 'tcx>(
 
         for outlive in outlives {
             if let Some(r) = outlive.as_region() {
-                rcx.sub_regions(origin(), parent_scope, r);
+                rcx.sub_regions(origin(), rcx.fcx.param_env, parent_scope, r);
             } else if let Some(ty) = outlive.as_type() {
-                rcx.type_must_outlive(origin(), ty, parent_scope);
+                rcx.type_must_outlive(origin(), rcx.fcx.param_env, ty, parent_scope);
             }
         }
     }

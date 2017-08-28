@@ -861,10 +861,11 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
 
     pub fn sub_regions(&self,
                        origin: SubregionOrigin<'tcx>,
+                       param_env: ty::ParamEnv<'tcx>,
                        a: ty::Region<'tcx>,
                        b: ty::Region<'tcx>) {
         debug!("sub_regions({:?} <: {:?})", a, b);
-        self.region_vars.make_subregion(origin, a, b);
+        self.region_vars.make_subregion(origin, param_env, a, b);
     }
 
     pub fn equality_predicate(&self,
@@ -927,7 +928,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         let origin =
             SubregionOrigin::from_obligation_cause(cause,
                                                    || RelateRegionParamBound(cause.span));
-        self.sub_regions(origin, r_b, r_a); // `b : a` ==> `a <= b`
+        self.sub_regions(origin, param_env, r_b, r_a); // `b : a` ==> `a <= b`
         Ok(())
     }
 
