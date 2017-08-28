@@ -1321,6 +1321,27 @@ impl<'tcx> ParamEnv<'tcx> {
             }
         }
     }
+
+    pub fn normalize_region(self, region: ty::Region<'tcx>) -> NormalizedRegion {
+        NormalizedRegion {
+            region: *region
+        }
+    }
+}
+
+/// Normally, the meaning of a region is defined *relative* to some
+/// environment -- this is particular true with late-bound regions,
+/// where region depth requires a parameter environment to
+/// interpret. (See late-bound regions for more details.)
+///
+/// But there are times when it is convenient to be able to reference
+/// a region independently and know what universe it is in. For such
+/// cases, the region can be converted to a "normalized region". The
+/// primary effect of this is to convert *from* deBruijn indexing in
+/// LBR to storing the universe directly.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct NormalizedRegion {
+    region: RegionKind
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]

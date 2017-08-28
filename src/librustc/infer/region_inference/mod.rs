@@ -100,9 +100,9 @@ pub enum VerifyBound<'tcx> {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
-struct TwoRegions<'tcx> {
-    a: Region<'tcx>,
-    b: Region<'tcx>,
+struct NormalizedRegions {
+    a: ty::NormalizedRegion,
+    b: ty::NormalizedRegion,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -128,7 +128,7 @@ enum UndoLogEntry<'tcx> {
     AddGiven(Region<'tcx>, ty::RegionVid),
 
     /// We added a GLB/LUB "combination variable"
-    AddCombination(CombineMapType, TwoRegions<'tcx>),
+    AddCombination(CombineMapType, NormalizedRegions),
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -168,7 +168,7 @@ pub enum ProcessedErrorOrigin<'tcx> {
     VariableFailure(RegionVariableOrigin),
 }
 
-type CombineMap<'tcx> = FxHashMap<TwoRegions<'tcx>, RegionVid>;
+type CombineMap = FxHashMap<NormalizedRegions, RegionVid>;
 
 #[derive(Clone, Debug)]
 struct RegionVariableInfo {
@@ -211,8 +211,8 @@ pub struct RegionVarBindings<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     /// a bit of a hack but seems to work.
     givens: RefCell<FxHashSet<(Region<'tcx>, ty::RegionVid)>>,
 
-    lubs: RefCell<CombineMap<'tcx>>,
-    glbs: RefCell<CombineMap<'tcx>>,
+    lubs: RefCell<CombineMap>,
+    glbs: RefCell<CombineMap>,
     bound_count: Cell<u32>,
 
     /// The undo log records actions that might later be undone.
@@ -697,7 +697,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
         self.tcx.mk_region(ty::ReVar(vid))
     }
 
-    fn combine_map(&self, t: CombineMapType) -> &RefCell<CombineMap<'tcx>> {
+    fn combine_map(&self, t: CombineMapType) -> &RefCell<CombineMap> {
         match t {
             CombineMapType::Glb => &self.glbs,
             CombineMapType::Lub => &self.lubs,
@@ -712,7 +712,10 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
                     origin: SubregionOrigin<'tcx>)
                     -> Region<'tcx>
     {
-        let vars = TwoRegions { a: a, b: b };
+        let vars = NormalizedRegions {
+            a: param_env.normalize_region(a),
+            b: param_env.normalize_region(b)
+        };
         if let Some(&c) = self.combine_map(t).borrow().get(&vars) {
             return self.tcx.mk_region(ReVar(c));
         }
