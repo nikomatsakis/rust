@@ -39,20 +39,20 @@ pub mod taint;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Constraint<'tcx> {
     /// One region variable is subregion of another
-    ConstrainVarSubVar(RegionVid, RegionVid),
+    ConstrainVarSubVar(ty::ParamEnv<'tcx>, RegionVid, RegionVid),
 
     /// Concrete region is subregion of region variable
-    ConstrainRegSubVar(Region<'tcx>, RegionVid),
+    ConstrainRegSubVar(ty::ParamEnv<'tcx>, Region<'tcx>, RegionVid),
 
     /// Region variable is subregion of concrete region. This does not
     /// directly affect inference, but instead is checked after
     /// inference is complete.
-    ConstrainVarSubReg(RegionVid, Region<'tcx>),
+    ConstrainVarSubReg(ty::ParamEnv<'tcx>, RegionVid, Region<'tcx>),
 
     /// A constraint where neither side is a variable. This does not
     /// directly affect inference, but instead is checked after
     /// inference is complete.
-    ConstrainRegSubReg(Region<'tcx>, Region<'tcx>),
+    ConstrainRegSubReg(ty::ParamEnv<'tcx>, Region<'tcx>, Region<'tcx>),
 }
 
 /// VerifyGenericBound(T, _, R, RS): The parameter type `T` (or
@@ -489,16 +489,16 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
                 // all regions are subregions of static, so we can ignore this
             }
             (&ReVar(sub_id), &ReVar(sup_id)) => {
-                self.add_constraint(ConstrainVarSubVar(sub_id, sup_id), origin);
+                self.add_constraint(ConstrainVarSubVar(param_env, sub_id, sup_id), origin);
             }
             (_, &ReVar(sup_id)) => {
-                self.add_constraint(ConstrainRegSubVar(sub, sup_id), origin);
+                self.add_constraint(ConstrainRegSubVar(param_env, sub, sup_id), origin);
             }
             (&ReVar(sub_id), _) => {
-                self.add_constraint(ConstrainVarSubReg(sub_id, sup), origin);
+                self.add_constraint(ConstrainVarSubReg(param_env, sub_id, sup), origin);
             }
             _ => {
-                self.add_constraint(ConstrainRegSubReg(sub, sup), origin);
+                self.add_constraint(ConstrainRegSubReg(param_env, sub, sup), origin);
             }
         }
     }
@@ -865,11 +865,11 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             debug!("expansion: constraint={:?} origin={:?}",
                    constraint, origin);
             match *constraint {
-                ConstrainRegSubVar(a_region, b_vid) => {
+                ConstrainRegSubVar(_, a_region, b_vid) => {
                     let b_data = &mut var_values[b_vid.index as usize];
                     self.expand_node(region_rels, a_region, b_vid, b_data)
                 }
-                ConstrainVarSubVar(a_vid, b_vid) => {
+                ConstrainVarSubVar(_, a_vid, b_vid) => {
                     match var_values[a_vid.index as usize] {
                         ErrorValue => false,
                         Value(a_region) => {
@@ -980,7 +980,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
                     // Expansion will ensure that these constraints hold. Ignore.
                 }
 
-                ConstrainRegSubReg(sub, sup) => {
+                ConstrainRegSubReg(_, sub, sup) => {
                     if region_rels.is_subregion_of(sub, sup) {
                         continue;
                     }
@@ -994,7 +994,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
                     errors.push(ConcreteFailure((*origin).clone(), sub, sup));
                 }
 
-                ConstrainVarSubReg(a_vid, b_region) => {
+                ConstrainVarSubReg(_, a_vid, b_region) => {
                     let a_data = &mut var_data[a_vid.index as usize];
                     debug!("contraction: {:?} == {:?}, {:?}",
                            a_vid,
@@ -1131,15 +1131,15 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
 
         for (constraint, _) in constraints.iter() {
             match *constraint {
-                ConstrainVarSubVar(a_id, b_id) => {
+                ConstrainVarSubVar(_, a_id, b_id) => {
                     graph.add_edge(NodeIndex(a_id.index as usize),
                                    NodeIndex(b_id.index as usize),
                                    *constraint);
                 }
-                ConstrainRegSubVar(_, b_id) => {
+                ConstrainRegSubVar(_, _, b_id) => {
                     graph.add_edge(dummy_source, NodeIndex(b_id.index as usize), *constraint);
                 }
-                ConstrainVarSubReg(a_id, _) => {
+                ConstrainVarSubReg(_, a_id, _) => {
                     graph.add_edge(NodeIndex(a_id.index as usize), dummy_sink, *constraint);
                 }
                 ConstrainRegSubReg(..) => {
@@ -1269,7 +1269,7 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             let source_node_index = NodeIndex(source_vid.index as usize);
             for (_, edge) in graph.adjacent_edges(source_node_index, dir) {
                 match edge.data {
-                    ConstrainVarSubVar(from_vid, to_vid) => {
+                    ConstrainVarSubVar(_, from_vid, to_vid) => {
                         let opp_vid = if from_vid == source_vid {
                             to_vid
                         } else {
@@ -1280,8 +1280,8 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
                         }
                     }
 
-                    ConstrainRegSubVar(region, _) |
-                    ConstrainVarSubReg(_, region) => {
+                    ConstrainRegSubVar(_, region, _) |
+                    ConstrainVarSubReg(_, _, region) => {
                         state.result.push(RegionAndOrigin {
                             region,
                             origin: this.constraints.borrow().get(&edge.data).unwrap().clone(),

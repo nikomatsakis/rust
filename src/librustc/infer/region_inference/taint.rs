@@ -75,17 +75,17 @@ impl<'a, 'gcx, 'tcx> TaintSet<'tcx> {
 
             for undo_entry in undo_log {
                 match undo_entry {
-                    &AddConstraint(ConstrainVarSubVar(a, b)) => {
+                    &AddConstraint(ConstrainVarSubVar(_, a, b)) => {
                         self.add_edge(tcx.mk_region(ReVar(a)),
                                       tcx.mk_region(ReVar(b)));
                     }
-                    &AddConstraint(ConstrainRegSubVar(a, b)) => {
+                    &AddConstraint(ConstrainRegSubVar(_, a, b)) => {
                         self.add_edge(a, tcx.mk_region(ReVar(b)));
                     }
-                    &AddConstraint(ConstrainVarSubReg(a, b)) => {
+                    &AddConstraint(ConstrainVarSubReg(_, a, b)) => {
                         self.add_edge(tcx.mk_region(ReVar(a)), b);
                     }
-                    &AddConstraint(ConstrainRegSubReg(a, b)) => {
+                    &AddConstraint(ConstrainRegSubReg(_, a, b)) => {
                         self.add_edge(a, b);
                     }
                     &AddGiven(a, b) => {
