@@ -16,7 +16,7 @@ use super::{CombinedSnapshot,
             HigherRankedType,
             SkolemizationMap};
 use super::combine::CombineFields;
-use super::region_inference::{TaintDirections};
+use super::region_inference::taint::TaintDirections;
 
 use ty::{self, TyCtxt, Binder, TypeFoldable};
 use ty::relate::{Relate, RelateResult, TypeRelation};
