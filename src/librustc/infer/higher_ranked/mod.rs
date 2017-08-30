@@ -16,10 +16,11 @@ use super::{CombinedSnapshot,
             HigherRankedType,
             SkolemizationMap};
 use super::combine::CombineFields;
-use super::region_inference::taint::TaintDirections;
+use super::region_inference::taint::TaintIterator;
 
 use ty::{self, TyCtxt, Binder, TypeFoldable};
 use ty::relate::{Relate, RelateResult, TypeRelation};
+use std::usize;
 use syntax_pos::Span;
 use util::nodemap::{FxHashMap, FxHashSet};
 
@@ -108,7 +109,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
                 fold_regions_in(
                     self.tcx(),
                     &result0,
-                    |r, debruijn| generalize_region(self.infcx, span, snapshot, debruijn,
+                    |r, debruijn| generalize_region(self.infcx, span, snapshot, param_env, debruijn,
                                                     &new_vars, &a_map, r));
 
             debug!("lub({:?},{:?}) = {:?}",
@@ -122,6 +123,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
         fn generalize_region<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
                                              span: Span,
                                              snapshot: &CombinedSnapshot<'a, 'tcx>,
+                                             param_env: ty::ParamEnv<'tcx>,
                                              debruijn: ty::DebruijnIndex,
                                              new_vars: &[ty::RegionVid],
                                              a_map: &FxHashMap<ty::BoundRegion, ty::Region<'tcx>>,
@@ -134,31 +136,37 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
                 return r0;
             }
 
-            let tainted = infcx.tainted_regions(snapshot, r0, TaintDirections::both());
+            let mut best_index = usize::MAX;
 
-            // Variables created during LUB computation which are
-            // *related* to regions that pre-date the LUB computation
-            // stay as they are.
-            if !tainted.iter().all(|&r| is_var_in_set(new_vars, r)) {
-                debug!("generalize_region(r0={:?}): \
-                        non-new-variables found in {:?}",
-                       r0, tainted);
-                assert!(!r0.is_late_bound());
-                return r0;
+            for r in infcx.tainted_regions(snapshot, param_env, r0) {
+                // Variables created during LUB computation which are
+                // *related* to regions that pre-date the LUB computation
+                // stay as they are.
+                if !is_var_in_set(new_vars, r) {
+                    debug!("generalize_region(r0={:?}): \
+                            non-new-variable `{:?}` found in taint regions",
+                           r0, r);
+                    assert!(!r0.is_late_bound());
+                    return r0;
+                }
+
+                // Otherwise, the variable must be associated with at
+                // least one of the variables representing bound regions
+                // in both A and B.  Replace the variable with the "first"
+                // bound region from A that we find it to be associated
+                // with.
+                for (index, (_, &a_r)) in a_map.iter().enumerate() {
+                    if r == a_r && index < best_index {
+                        best_index = index;
+                    }
+                }
             }
 
-            // Otherwise, the variable must be associated with at
-            // least one of the variables representing bound regions
-            // in both A and B.  Replace the variable with the "first"
-            // bound region from A that we find it to be associated
-            // with.
-            for (a_br, a_r) in a_map {
-                if tainted.iter().any(|x| x == a_r) {
-                    debug!("generalize_region(r0={:?}): \
-                            replacing with {:?}, tainted={:?}",
-                           r0, *a_br, tainted);
-                    return infcx.tcx.mk_region(ty::ReLateBound(debruijn, *a_br));
-                }
+            for (a_br, a_r) in a_map.iter().skip(best_index) {
+                debug!("generalize_region(r0={:?}): \
+                        replacing with {:?}, tainted={:?}",
+                       r0, *a_br, a_r);
+                return infcx.tcx.mk_region(ty::ReLateBound(debruijn, *a_br));
             }
 
             span_bug!(
@@ -206,8 +214,8 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
                 fold_regions_in(
                     self.tcx(),
                     &result0,
-                    |r, debruijn| generalize_region(self.infcx, span, snapshot, debruijn,
-                                                    &new_vars,
+                    |r, debruijn| generalize_region(self.infcx, span, snapshot, param_env,
+                                                    debruijn, &new_vars,
                                                     &a_map, &a_vars, &b_vars,
                                                     r));
 
@@ -222,6 +230,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
         fn generalize_region<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
                                              span: Span,
                                              snapshot: &CombinedSnapshot<'a, 'tcx>,
+                                             param_env: ty::ParamEnv<'tcx>,
                                              debruijn: ty::DebruijnIndex,
                                              new_vars: &[ty::RegionVid],
                                              a_map: &FxHashMap<ty::BoundRegion, ty::Region<'tcx>>,
@@ -234,25 +243,24 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
                 return r0;
             }
 
-            let tainted = infcx.tainted_regions(snapshot, r0, TaintDirections::both());
-
             let mut a_r = None;
             let mut b_r = None;
             let mut only_new_vars = true;
-            for r in &tainted {
-                if is_var_in_set(a_vars, *r) {
+
+            for r in infcx.tainted_regions(snapshot, param_env, r0) {
+                if is_var_in_set(a_vars, r) {
                     if a_r.is_some() {
                         return fresh_bound_variable(infcx, debruijn);
                     } else {
-                        a_r = Some(*r);
+                        a_r = Some(r);
                     }
-                } else if is_var_in_set(b_vars, *r) {
+                } else if is_var_in_set(b_vars, r) {
                     if b_r.is_some() {
                         return fresh_bound_variable(infcx, debruijn);
                     } else {
-                        b_r = Some(*r);
+                        b_r = Some(r);
                     }
-                } else if !is_var_in_set(new_vars, *r) {
+                } else if !is_var_in_set(new_vars, r) {
                     only_new_vars = false;
                 }
             }
@@ -359,12 +367,12 @@ fn fold_regions_in<'a, 'gcx, 'tcx, T, F>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
 }
 
 impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
-    fn tainted_regions(&self,
-                       snapshot: &CombinedSnapshot<'a, 'tcx>,
-                       r: ty::Region<'tcx>,
-                       directions: TaintDirections)
-                       -> FxHashSet<ty::Region<'tcx>> {
-        self.region_vars.tainted(&snapshot.region_vars_snapshot, r, directions)
+    fn tainted_regions<'this>(&'this self,
+                              snapshot: &CombinedSnapshot<'a, 'tcx>,
+                              param_env: ty::ParamEnv<'tcx>,
+                              r: ty::Region<'tcx>)
+                              -> TaintIterator<'this, 'gcx, 'tcx> {
+        self.region_vars.tainted(&snapshot.region_vars_snapshot, param_env, r)
     }
 
     fn region_vars_confined_to_snapshot(&self,
