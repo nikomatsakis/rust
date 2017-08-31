@@ -99,12 +99,14 @@ fn b() {
 
 fn c() {
     tuple_one::<Tuple>();
-    //~^ ERROR type mismatch
+    //~^ ERROR mismatched types
+    //~| ERROR mismatched types
 }
 
 fn d() {
     tuple_two::<Tuple>();
-    //~^ ERROR type mismatch
+    //~^ ERROR mismatched types
+    //~| ERROR mismatched types
 }
 
 fn e() {
@@ -113,7 +115,7 @@ fn e() {
 
 fn g() {
     tuple_four::<Tuple>();
-    //~^ ERROR E0277
+    //~^ ERROR mismatched types
 }
 
 fn main() { }
