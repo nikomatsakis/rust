@@ -80,6 +80,7 @@ mod named_anon_conflict;
 #[macro_use]
 mod util;
 mod anon_anon_conflict;
+mod skol_conflict;
 
 impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     pub fn note_and_explain_region(self,
@@ -274,7 +275,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             debug!("report_region_errors: error = {:?}", error);
 
             if !self.try_report_named_anon_conflict(&error) &&
-               !self.try_report_anon_anon_conflict(&error) {
+               !self.try_report_anon_anon_conflict(&error) &&
+               !self.try_report_skol_conflict(&error) {
 
                match error.clone() {
                   // These errors could indicate all manner of different
