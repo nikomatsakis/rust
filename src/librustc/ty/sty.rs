@@ -984,6 +984,13 @@ impl RegionKind {
         }
     }
 
+    pub fn is_skolemized(&self) -> bool {
+        match *self {
+            ty::ReSkolemized(..) => true,
+            _ => false,
+        }
+    }
+
     pub fn needs_infer(&self) -> bool {
         match *self {
             ty::ReVar(..) | ty::ReSkolemized(..) => true,
