@@ -290,6 +290,7 @@ impl<'infcx, 'gcx, 'tcx> CombineFields<'infcx, 'gcx, 'tcx> {
             ambient_variance,
             needs_wf: false,
             universe,
+            binders_traversed: 0,
         };
 
         let ty = generalize.relate(&ty, &ty)?;
@@ -305,6 +306,7 @@ struct Generalizer<'cx, 'gcx: 'cx+'tcx, 'tcx: 'cx> {
     ambient_variance: ty::Variance,
     needs_wf: bool, // see the field `needs_wf` in `Generalization`
     universe: ty::UniverseIndex,
+    binders_traversed: u32,
 }
 
 /// Result from a generalization operation. This includes
@@ -358,7 +360,10 @@ impl<'cx, 'gcx, 'tcx> TypeRelation<'cx, 'gcx, 'tcx> for Generalizer<'cx, 'gcx, '
                   -> RelateResult<'tcx, ty::Binder<T>>
         where T: Relate<'tcx>
     {
-        Ok(ty::Binder(self.relate(a.skip_binder(), b.skip_binder())?))
+        self.binders_traversed += 1;
+        let result = self.relate(a.skip_binder(), b.skip_binder());
+        self.binders_traversed -= 1;
+        Ok(ty::Binder(result?))
     }
 
     fn relate_item_substs(&mut self,
@@ -458,16 +463,35 @@ impl<'cx, 'gcx, 'tcx> TypeRelation<'cx, 'gcx, 'tcx> for Generalizer<'cx, 'gcx, '
         assert_eq!(r, r2); // we are abusing TypeRelation here; both LHS and RHS ought to be ==
 
         match *r {
-            // Never make variables for regions bound within the type itself,
-            // nor for erased regions.
-            ty::ReLateBound(..) |
+            // Never make variables for erased regions.
             ty::ReErased => {
                 return Ok(r);
             }
 
-            // Always make a fresh region variable for skolemized regions;
-            // the higher-ranked decision procedures rely on this.
-            ty::ReSkolemized(..) => { }
+            // Never make variables for regions bound within the type
+            // itself.
+            //
+            // Note that a `ReLateBound` may refer to an "ambient"
+            // variable or it may be bound within the type itself; to
+            // tell the difference, we keep track of how many binders
+            // we have crossed through while traversing the type. If
+            // the depth is less than that number, this is bound
+            // within the type.  Example:
+            //
+            //     Vec<for<'a> fn(&'a u32), &'b u32>
+            //
+            // Suppose that both `'a` and `'b` are late-bound regions
+            // in the universe in which we are in (and `'b` has a
+            // depth of 1). In that case, when we encounter `'a`, its
+            // depth will be 1, and we will have crossed 1 binder (the
+            // `for<'a>`), so we will consider it bound. But when we
+            // encounter `'b`, we will have crossed zero binders (it
+            // is not within a binder), and hence, while its depth is
+            // also 1, the `binders_traversed` field is 0, so we
+            // consinder it free.
+            ty::ReLateBound(debruijn_index, _) if debruijn_index.depth <= self.binders_traversed => {
+                return Ok(r);
+            }
 
             // For anything else, we make a region variable, unless we
             // are *equating*, in which case it's just wasteful.
@@ -475,6 +499,7 @@ impl<'cx, 'gcx, 'tcx> TypeRelation<'cx, 'gcx, 'tcx> for Generalizer<'cx, 'gcx, '
             ty::ReStatic |
             ty::ReScope(..) |
             ty::ReVar(..) |
+            ty::ReLateBound(..) |
             ty::ReEarlyBound(..) |
             ty::ReFree(..) => {
                 match self.ambient_variance {

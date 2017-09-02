@@ -31,7 +31,7 @@
 //! inferencer knows "so far".
 
 use ty::{self, Ty, TyCtxt, TypeFoldable};
-use ty::fold::TypeFolder;
+use ty::fold::BinderTrackingFolder;
 use util::nodemap::FxHashMap;
 use std::collections::hash_map::Entry;
 
@@ -42,6 +42,7 @@ pub struct TypeFreshener<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     infcx: &'a InferCtxt<'a, 'gcx, 'tcx>,
     freshen_count: u32,
     freshen_map: FxHashMap<ty::InferTy, Ty<'tcx>>,
+    binders_traversed: u32,
 }
 
 impl<'a, 'gcx, 'tcx> TypeFreshener<'a, 'gcx, 'tcx> {
@@ -51,6 +52,7 @@ impl<'a, 'gcx, 'tcx> TypeFreshener<'a, 'gcx, 'tcx> {
             infcx,
             freshen_count: 0,
             freshen_map: FxHashMap(),
+            binders_traversed: 0,
         }
     }
 
@@ -78,24 +80,39 @@ impl<'a, 'gcx, 'tcx> TypeFreshener<'a, 'gcx, 'tcx> {
     }
 }
 
-impl<'a, 'gcx, 'tcx> TypeFolder<'gcx, 'tcx> for TypeFreshener<'a, 'gcx, 'tcx> {
+impl<'a, 'gcx, 'tcx> BinderTrackingFolder<'gcx, 'tcx> for TypeFreshener<'a, 'gcx, 'tcx> {
     fn tcx<'b>(&'b self) -> TyCtxt<'b, 'gcx, 'tcx> {
         self.infcx.tcx
     }
 
+    fn enter_binder(&mut self) {
+        self.binders_traversed += 1;
+    }
+
+    fn exit_binder(&mut self) {
+        self.binders_traversed -= 1;
+    }
+
     fn fold_region(&mut self, r: ty::Region<'tcx>) -> ty::Region<'tcx> {
         match *r {
-            ty::ReLateBound(..) => {
-                // leave bound regions alone
+            ty::ReLateBound(debruijn_index, _)
+                if debruijn_index.depth <= self.binders_traversed =>
+            {
+                // Late-bound indices that are bound within the type
+                // we are traversing should be left as they are.
+                //
+                // FIXME: Is this .. still true?
                 r
             }
 
+            // Otherwise, replace all things that appear free with
+            // 'erased.
+            ty::ReLateBound(..) |
             ty::ReStatic |
             ty::ReEarlyBound(..) |
             ty::ReFree(_) |
             ty::ReScope(_) |
             ty::ReVar(_) |
-            ty::ReSkolemized(..) |
             ty::ReEmpty |
             ty::ReErased => {
                 // replace all free regions with 'erased

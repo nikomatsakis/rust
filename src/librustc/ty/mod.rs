@@ -1259,6 +1259,44 @@ impl UniverseIndex {
     pub fn as_usize(&self) -> usize {
         self.0 as usize
     }
+
+    /// Computes the universe to which a late-bound region with the
+    /// given debruijn index belongs, assuming `self` is the ambient
+    /// universe. In particular, universes are pushed onto a "stack"
+    /// that is represented by their index: so if `self`, the most
+    /// recently pushed, has value `N`, then below it on the stack is
+    /// the universe with value `N-1` and so on. The debruijn index
+    /// counts backwards from the top of the stack: so if it is 1,
+    /// then we want the universe `self`; if 2, we want the universe
+    /// below `self` on the stack (i.e., with depth N-1), etc.
+    pub fn universe_from_debruijn_index(self: ty::UniverseIndex,
+                                        debruijn_index: ty::DebruijnIndex)
+                                        -> ty::UniverseIndex {
+        debug!("universe_from_debruijn_index(ambient_universe={:?}, debruijn_index={:?})",
+               self, debruijn_index);
+
+        let ambient_depth = self.as_u32();
+
+        // If we are universe U2, say, then we would interpret
+        // a debruijn index of 1 as being a region bound in
+        // U2, and a debruijn index of 2 as being a region
+        // bound in U1. If we see a debruijn index **greater**
+        // than 2, then something must have gone wrong along the way.
+        assert!(debruijn_index.depth <= ambient_depth,
+                "cannot compute universe of late-bound region with depth {} \
+                 in universe {:?}",
+                debruijn_index.depth, self);
+
+        // Because we start debruijn indices at 1, we want to count back N-1
+        // universes from the ambient universe.
+        let count_back = debruijn_index.depth - 1;
+
+        let result = ty::UniverseIndex::from(ambient_depth - count_back);
+
+        debug!("universe_from_debruijn_index: result = {:?}", result);
+
+        result
+    }
 }
 
 /// When type checking, we use the `ParamEnv` to track
@@ -1319,23 +1357,48 @@ impl<'tcx> ParamEnv<'tcx> {
         }
     }
 
+    /// Assuming `self` is the ambient universe, converts `region`
+    /// into a **normalized region**, which can be compared directly
+    /// (i.e., using `==`) against regions from other universes,
+    /// but is not itself a valid `Region<'tcx>`.
+    ///
+    /// This operation is specifically targeted at **late-bound
+    /// regions**. As described in the `ReLateBound` variant, each
+    /// such region is tagged with a debruijn index, can sometimes
+    /// represent free regions in a subuniverse. In that case, the
+    /// debruijn index must be compared against the ambient
+    /// environment to determine the universe in which the region is
+    /// bound (using, e.g.,
+    /// `UniverseIndex::universe_of_bound_region`).
+    ///
+    /// But there are times when it is convenient to be able to reference
+    /// a region independently and know what universe it is in. For such
+    /// cases, the region can be converted to a "normalized region". The
+    /// primary effect of this is to convert *from* deBruijn indexing in
+    /// LBR to storing the universe directly.
     pub fn normalize_region(self, region: ty::Region<'tcx>) -> NormalizedRegion {
-        NormalizedRegion {
-            region: *region
+        match *region {
+            ty::ReLateBound(debruijn_index, br) => {
+                let universe = self.universe.universe_from_debruijn_index(debruijn_index);
+                let fake_debruijn_index = ty::DebruijnIndex { depth: universe.as_u32() };
+                NormalizedRegion {
+                    region: ty::ReLateBound(fake_debruijn_index, br)
+                }
+            }
+
+            _ => {
+                NormalizedRegion {
+                    region: *region
+                }
+            }
         }
     }
 }
 
-/// Normally, the meaning of a region is defined *relative* to some
-/// environment -- this is particular true with late-bound regions,
-/// where region depth requires a parameter environment to
-/// interpret. (See late-bound regions for more details.)
+/// A region where the depth for late-bound regions has been converted
+/// from a true debruijn index into the "absolute" universe.
 ///
-/// But there are times when it is convenient to be able to reference
-/// a region independently and know what universe it is in. For such
-/// cases, the region can be converted to a "normalized region". The
-/// primary effect of this is to convert *from* deBruijn indexing in
-/// LBR to storing the universe directly.
+/// See `ParamEnv::normalize_region()` for more information.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct NormalizedRegion {
     region: RegionKind

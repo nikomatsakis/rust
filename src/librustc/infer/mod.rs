@@ -136,10 +136,6 @@ pub struct InferCtxt<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     in_snapshot: Cell<bool>,
 }
 
-/// A map returned by `skolemize_late_bound_regions()` indicating the skolemized
-/// region that each late-bound region was replaced with.
-pub type SkolemizationMap<'tcx> = FxHashMap<ty::BoundRegion, ty::Region<'tcx>>;
-
 /// See `error_reporting` module for more details
 #[derive(Clone, Debug)]
 pub enum ValuePairs<'tcx> {
@@ -875,10 +871,10 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         -> InferResult<'tcx, ()>
     {
         self.commit_if_ok(|_snapshot| {
-            let (ty::EquatePredicate(a, b), param_env, _skol_map) =
-                self.skolemize_late_bound_regions(param_env, predicate);
-            let eqty_ok = self.at(cause, param_env).eq(b, a)?;
-            Ok(eqty_ok.unit())
+            predicate.in_subuniverse(param_env, |param_env, &ty::EquatePredicate(a, b)| {
+                let eqty_ok = self.at(cause, param_env).eq(b, a)?;
+                Ok(eqty_ok.unit())
+            })
         })
     }
 
@@ -909,11 +905,11 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         }
 
         Some(self.commit_if_ok(|_snapshot| {
-            let (ty::SubtypePredicate { a_is_expected, a, b}, param_env, _skol_map) =
-                self.skolemize_late_bound_regions(param_env, predicate);
-
-            let ok = self.at(cause, param_env).sub_exp(a_is_expected, a, b)?;
-            Ok(ok.unit())
+            predicate.in_subuniverse(param_env, |param_env, skol_predicate| {
+                let &ty::SubtypePredicate { a_is_expected, a, b } = skol_predicate;
+                let ok = self.at(cause, param_env).sub_exp(a_is_expected, a, b)?;
+                Ok(ok.unit())
+            })
         }))
     }
 
@@ -923,13 +919,13 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                                      predicate: &ty::PolyRegionOutlivesPredicate<'tcx>)
                                      -> UnitResult<'tcx>
     {
-        let (ty::OutlivesPredicate(r_a, r_b), _param_env, _skol_map) =
-            self.skolemize_late_bound_regions(param_env, predicate);
-        let origin =
-            SubregionOrigin::from_obligation_cause(cause,
-                                                   || RelateRegionParamBound(cause.span));
-        self.sub_regions(origin, param_env, r_b, r_a); // `b : a` ==> `a <= b`
-        Ok(())
+        predicate.in_subuniverse(param_env, |param_env, &ty::OutlivesPredicate(r_a, r_b)| {
+            let origin =
+                SubregionOrigin::from_obligation_cause(cause,
+                                                       || RelateRegionParamBound(cause.span));
+            self.sub_regions(origin, param_env, r_b, r_a); // `b : a` ==> `a <= b`
+            Ok(())
+        })
     }
 
     pub fn next_ty_var_id(&self,

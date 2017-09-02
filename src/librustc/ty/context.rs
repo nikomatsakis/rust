@@ -1111,20 +1111,6 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         let cname = self.crate_name(LOCAL_CRATE).as_str();
         self.sess.consider_optimizing(&cname, msg)
     }
-
-    /// Creates a new skolemized region in the given parameter
-    /// environment. Returns a new parameter environment and the
-    /// resulting skolemized region. The new environment has an
-    /// increased universe index in which the new region is visible.
-    pub fn mk_skolemized_region(self,
-                                param_env: ty::ParamEnv<'tcx>,
-                                br: ty::BoundRegion)
-                                -> (ty::ParamEnv<'tcx>, ty::Region<'tcx>) {
-        let universe = param_env.universe.subuniverse();
-        let region = self.mk_region(ty::ReSkolemized(universe, br));
-        let param_env = ty::ParamEnv { universe, ..param_env };
-        (param_env, region)
-    }
 }
 
 impl<'gcx: 'tcx, 'tcx> GlobalCtxt<'gcx> {
@@ -1584,7 +1570,7 @@ pub fn keep_local<'tcx, T: ty::TypeFoldable<'tcx>>(x: &T) -> bool {
 direct_interners!('tcx,
     region: mk_region(|r| {
         match r {
-            &ty::ReVar(_) | &ty::ReSkolemized(..) => true,
+            &ty::ReVar(_) => true,
             _ => false
         }
     }) -> RegionKind

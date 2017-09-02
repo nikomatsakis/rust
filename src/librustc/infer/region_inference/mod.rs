@@ -25,7 +25,7 @@ use middle::free_region::RegionRelations;
 use ty::{self, Ty, TyCtxt};
 use ty::{Region, RegionVid};
 use ty::{ReEmpty, ReStatic, ReFree, ReEarlyBound, ReErased};
-use ty::{ReLateBound, ReScope, ReVar, ReSkolemized, BrFresh};
+use ty::{ReLateBound, ReScope, ReVar, BrFresh};
 
 use std::cell::{Cell, RefCell};
 use std::cmp;
@@ -613,8 +613,8 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
         if let Some(&c) = self.combine_map(t).borrow().get(&vars) {
             return self.tcx.mk_region(ReVar(c));
         }
-        let a_universe = self.universe(a);
-        let b_universe = self.universe(b);
+        let a_universe = self.universe(param_env.universe, a);
+        let b_universe = self.universe(param_env.universe, b);
         let c_universe = cmp::max(a_universe, b_universe);
         let c = self.new_region_var(c_universe, MiscVariable(origin.span()));
         self.combine_map(t).borrow_mut().insert(vars, c);
@@ -643,7 +643,10 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
         self.tcx.mk_region(ReVar(c))
     }
 
-    fn universe(&self, region: Region<'tcx>) -> ty::UniverseIndex {
+    fn universe(&self,
+                ambient_universe: ty::UniverseIndex,
+                region: Region<'tcx>)
+                -> ty::UniverseIndex {
         match *region {
             ty::ReScope(..) |
             ty::ReStatic |
@@ -653,14 +656,12 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             ty::ReEarlyBound(..) =>
                 ty::UniverseIndex::ROOT,
 
-            ty::ReSkolemized(u, _) =>
-                u,
-
             ty::ReVar(vid) =>
                 self.var_infos.borrow()[vid.index as usize].universe,
 
-            ty::ReLateBound(..) =>
-                bug!("universe(): encountered bound region {:?}", region),
+            ty::ReLateBound(debruijn_index, _) => {
+                ambient_universe.universe_from_debruijn_index(debruijn_index)
+            }
         }
     }
 
@@ -691,14 +692,15 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
         errors
     }
 
+    /// Computes the LUB of two "concrete" regions (i.e., not inference variables).
+    /// Assumes that `a` and `b` are expressed in the same universe.
     fn lub_concrete_regions(&self,
                             region_rels: &RegionRelations<'a, 'gcx, 'tcx>,
+                            _param_env: ty::ParamEnv<'tcx>,
                             a: Region<'tcx>,
                             b: Region<'tcx>)
                             -> Region<'tcx> {
         match (a, b) {
-            (&ReLateBound(..), _) |
-            (_, &ReLateBound(..)) |
             (&ReErased, _) |
             (_, &ReErased) => {
                 bug!("cannot relate region: LUB({:?}, {:?})", a, b);
@@ -768,10 +770,11 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
                 region_rels.lub_free_regions(a, b)
             }
 
-            // For these types, we cannot define any additional
-            // relationship:
-            (&ReSkolemized(..), _) |
-            (_, &ReSkolemized(..)) => {
+            // For free regions, we cannot currently define any additional
+            // relationship, though eventually we should be able
+            // to extract more information from `param_env`:
+            (&ReLateBound(..), _) |
+            (_, &ReLateBound(..)) => {
                 if a == b {
                     a
                 } else {
@@ -786,7 +789,18 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
 
 #[derive(Copy, Clone, Debug)]
 pub enum VarValue<'tcx> {
+    /// The current value of the variable. This is initially the empty
+    /// region, but during inference will grow and grow to bigger
+    /// values. This region is always stored relative to the universe
+    /// in which the variable was defined.
     Value(Region<'tcx>),
+
+    /// This is stored when region inference found that the variable
+    /// cannot have a consistent value. For example, it may have had
+    /// two contradictory constraints; when we encounter a constraint
+    /// that cannot be resolved, we replace the variable's value with
+    /// `ErrorValue` (which later will be signaled to the user, if it
+    /// is not deemed a duplicate of some other error).
     ErrorValue,
 }
 
@@ -865,16 +879,26 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             debug!("expansion: constraint={:?} origin={:?}",
                    constraint, origin);
             match *constraint {
-                ConstrainRegSubVar(_, a_region, b_vid) => {
+                ConstrainRegSubVar(param_env, a_region, b_vid) => {
                     let b_data = &mut var_values[b_vid.index as usize];
-                    self.expand_node(region_rels, a_region, b_vid, b_data)
+                    self.expand_node(region_rels, param_env, a_region, b_vid, b_data)
                 }
-                ConstrainVarSubVar(_, a_vid, b_vid) => {
+                ConstrainVarSubVar(param_env, a_vid, b_vid) => {
                     match var_values[a_vid.index as usize] {
                         ErrorValue => false,
                         Value(a_region) => {
+                            let a_universe = self.var_universe(a_vid);
+
+                            // Any names that appear in `a` should be nameable in `param_env`...
+                            assert!(a_universe.is_visible_in(param_env.universe));
+                            let a_region =
+                                self.translate_region_from_universe(a_universe,
+                                                                    a_region,
+                                                                    param_env.universe)
+                                .unwrap(); // ... so we can always translate successfully
+
                             let b_node = &mut var_values[b_vid.index as usize];
-                            self.expand_node(region_rels, a_region, b_vid, b_node)
+                            self.expand_node(region_rels, param_env, a_region, b_vid, b_node)
                         }
                     }
                 }
@@ -888,13 +912,35 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
         })
     }
 
+    /// Given a constraint of this form:
+    ///
+    ///     'a <= 'b in E
+    ///
+    /// where:
+    ///
+    /// - `E` is the parameter environent `param_env`,
+    ///
+    /// - `'a` is some (non-inference-variable) lifetime (`a_region`),
+    ///   expressed in the environment E,
+    ///
+    /// - and `'b` is the id of some region variable (whose current value is stored `b_data`),
+    ///
+    /// this function will attempt to compute a new value for `'b`
+    /// that satisfies this constraint. It does so by computing the
+    /// LUB of the current value for `'b` and `'a` and then updating
+    /// `b_data` to this new value.
+    ///
+    /// Returns true if the value of `'b` changed, and false
+    /// otherwise.
     fn expand_node(&self,
                    region_rels: &RegionRelations<'a, 'gcx, 'tcx>,
+                   param_env: ty::ParamEnv<'tcx>,
                    a_region: Region<'tcx>,
                    b_vid: RegionVid,
                    b_data: &mut VarValue<'tcx>)
                    -> bool {
-        debug!("expand_node({:?}, {:?} == {:?})",
+        debug!("expand_node(param_env.universe={:?}, a_region={:?}, b_vid={:?}, b_data={:?})",
+               param_env.universe,
                a_region,
                b_vid,
                b_data);
@@ -904,55 +950,46 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             ty::ReEarlyBound(_) |
             ty::ReFree(_) => {
                 if self.givens.borrow().contains(&(a_region, b_vid)) {
-                    debug!("given");
+                    debug!("expand_node: implied by given");
                     return false;
                 }
             }
             _ => {}
         }
 
-        let b_universe = self.var_infos.borrow()[b_vid.index as usize].universe;
+        let b_universe = self.var_universe(b_vid);
+        debug!("expand_node: b_universe={:?}", b_universe);
 
         match *b_data {
             Value(cur_region) => {
-                let mut lub = self.lub_concrete_regions(region_rels, a_region, cur_region);
+                // Bring the `a` region (the smaller one) into the
+                // universe of `b`.  It is currently in
+                // `param_env.universe`. This can sometimes fail
+                // (e.g., if the `a` region is not nameable in the `b`
+                // universe).  In that case, overapproximate with
+                // `'static`. Later, when we add more relations into
+                // `param_env`, we might do better.
+                let a_in_b_universe =
+                    self.translate_region_from_universe(param_env.universe,
+                                                        a_region,
+                                                        b_universe)
+                        .unwrap_or(self.tcx.types.re_static);
+
+                debug!("expand_node: a_in_b_universe={:?}",
+                       a_in_b_universe);
+
+                let lub = self.lub_concrete_regions(region_rels,
+                                                        param_env,
+                                                        a_in_b_universe,
+                                                        cur_region);
+                debug!("expand_node: lub={:?}", lub);
+
                 if lub == cur_region {
+                    debug!("expand_node: no change");
                     return false;
                 }
 
-                // Find the universe of the new value (`lub`) and
-                // check whether this value is something that we can
-                // legally name in this variable. If not, promote the
-                // variable to `'static`, which is surely greater than
-                // or equal to `lub`. This is obviously a kind of sub-optimal
-                // choice -- in the future, when we incorporate a knowledge
-                // of the parameter environment, we might be able to find a
-                // tighter bound than `'static`.
-                //
-                // To make this more concrete, imagine a bound like:
-                //
-                //     for<'a> '0: 'a
-                //
-                // Here we have that `'0` must outlive `'a` -- no
-                // matter what `'a` is. When solving such a
-                // constraint, we would initially assign `'0` to be
-                // `'empty`. We would then compute the LUB of `'empty`
-                // and `'a` (which is something like `ReSkolemized(1)`),
-                // resulting in `'a`.
-                //
-                // At this point, `lub_universe` would be `1` and
-                // `b_universe` would be `0`, and hence we would wind
-                // up promoting `lub` to `'static`.
-                let lub_universe = self.universe(lub);
-                if !lub_universe.is_visible_in(b_universe) {
-                    lub = self.tcx.types.re_static;
-                }
-
-                debug!("Expanding value of {:?} from {:?} to {:?}",
-                       b_vid,
-                       cur_region,
-                       lub);
-
+                debug!("expand_node: updated");
                 *b_data = Value(lub);
                 return true;
             }
@@ -960,6 +997,36 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
             ErrorValue => {
                 return false;
             }
+        }
+    }
+
+    /// Given a region `region` defined in this universe, translates
+    /// it to a region defined in the *other* universe `target_universe`. For anything
+    /// other than a late-bound region, this is a no-op. For
+    /// late-bound regions, this may involve adjusting the debruijn
+    /// index.
+    ///
+    /// Returns `None` in the case where this operation is not possible
+    /// because the target universe cannot see the given region.
+    pub fn translate_region_from_universe(&self,
+                                          source_universe: ty::UniverseIndex,
+                                          region: ty::Region<'tcx>,
+                                          target_universe: ty::UniverseIndex)
+                                          -> Option<Region<'tcx>>
+    {
+        if source_universe == target_universe {
+            Some(region)
+        } else if let ty::ReLateBound(debruijn_index, br) = *region {
+            let region_universe = source_universe.universe_from_debruijn_index(debruijn_index);
+            if !region_universe.is_visible_in(target_universe) {
+                None
+            } else {
+                let difference = target_universe.as_u32() - region_universe.as_u32();
+                let new_debruijn_index = ty::DebruijnIndex { depth: difference + 1 };
+                Some(self.tcx.mk_region(ty::ReLateBound(new_debruijn_index, br)))
+            }
+        } else {
+            Some(region)
         }
     }
 

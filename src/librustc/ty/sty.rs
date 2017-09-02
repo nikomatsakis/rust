@@ -574,6 +574,21 @@ impl<T> Binder<T> {
     {
         ty::Binder(f(self.0))
     }
+
+    /// Creates a new parameter environment in a subuniverse, and
+    /// gives access to the "inner content". Note that no translation
+    /// or substitution takes place here (or needs to); it's just
+    /// that, in this new parameter environment, things with a
+    /// debruijn index of 1 (which would have referenced this binder)
+    /// will reference the newly created environment.  See
+    /// `RegionKind::ReLateBound` for more details.
+    pub fn in_subuniverse<'tcx, F, R>(&self, param_env: ty::ParamEnv<'tcx>, op: F) -> R
+        where F: FnOnce(ty::ParamEnv<'tcx>, &T) -> R
+    {
+        let new_universe = param_env.universe.subuniverse();
+        let new_param_env = ty::ParamEnv { universe: new_universe, ..param_env };
+        op(new_param_env, self.skip_binder())
+    }
 }
 
 impl fmt::Debug for TypeFlags {
@@ -836,8 +851,68 @@ pub enum RegionKind {
     // parameters are substituted.
     ReEarlyBound(EarlyBoundRegion),
 
-    // Region bound in a function scope, which will be substituted when the
-    // function is called.
+    /// A region bound in an scope or possible as part of a
+    /// higher-ranked type or where-clause. The binder where the
+    /// region is bound is tracked using the `DebruijnIndex` (see the
+    /// docs on `DebruijnIndex` for background information on how they
+    /// work; they are fiendishly clever but not exactly obvious).
+    ///
+    /// Late bound regions actually play two distinct roles: depending
+    /// on the ambient universe, they may represent a **bound**
+    /// region, or they may represent a **free** region that we must
+    /// treat conservatively (a skolemized region). To see what I
+    /// mean, imagine we are trying to determine this subtyping
+    /// relationship:
+    ///
+    ///     for<'a> fn(x: &'a u8) <: for<'b> fn(x: &'b u8)
+    ///     //   ^          |             ^          |
+    ///     //   |          |             |          |
+    ///     //   +-depth:1--+             +-depth:1--+
+    ///
+    /// This should be true, since both types are equivalent except
+    /// for the name of the bound region. In both cases, the depth of
+    /// `'a` and `'b` will be 1, indicating that they are bound in the
+    /// innermost binder within which they appear (in this case, the
+    /// `for<>` declarations).
+    ///
+    /// When we start out, we are "outside" the `for<>` binders -- but
+    /// immediately, to compute the subtype, we must traverse *inside*
+    /// the binders. Actually what we do is to replace the regions in
+    /// the subtype with fresh region variables, but to leave the
+    /// regions in the *supertype* alone, so that we have something
+    /// like this:
+    ///
+    ///     fn(x: &'0 u8) <: fn(x: &'b u8)
+    ///
+    /// Here, the role of `'b` changes -- it is no longer a bound
+    /// region that we might later substitute. Instead, we are
+    /// considering it as a free region -- a kind of abstract
+    /// representative for "any possible region" (aka a "skolemized"
+    /// region).
+    ///
+    /// When we make this transition, the actual region in the
+    /// compiler doesn't change -- `'b` is still a `ReLateBound`
+    /// instance with a debruijn index of 1.  However, our parameter
+    /// environment does change -- we change the universe from the
+    /// root universe, to a subuniverse with depth 1 (and in fact we
+    /// create the variable `'0` in that universe). Now when we
+    /// encounter the `'b`, we can use its debruijn index (1) to
+    /// figure out the universe (in this case, that means the most
+    /// recently entered universe, so the subuniverse with depth
+    /// 1). Then we can add a region outlives relationship:
+    ///
+    ///     'b: '0 (in universe 1)
+    ///
+    /// In the case of comparing types, each time we encounter a
+    /// binder, we will adjust our parameter environment, and hence
+    /// treat the late bounds as free regions. In some other cases, we
+    /// are only interested in regions that are bound *outside* the
+    /// type we are traversing at the moment (i.e., from the point
+    /// where we started).  In those cases, we can just track the
+    /// number of binders `N` we have passed through while walking the
+    /// type: when we see a late-bound region, we can compare its
+    /// depth `D`.  If `D <= N`, then we know that the region was
+    /// bound within the type; otherwise, it is a free region.
     ReLateBound(DebruijnIndex, BoundRegion),
 
     /// When checking a function body, the types of all arguments and so forth
@@ -855,10 +930,6 @@ pub enum RegionKind {
 
     /// A region variable.  Should not exist after typeck.
     ReVar(RegionVid),
-
-    /// A skolemized region - basically the higher-ranked version of ReFree.
-    /// Should not exist after typeck.
-    ReSkolemized(ty::UniverseIndex, BoundRegion),
 
     /// Empty lifetime is for data that is never accessed.
     /// Bottom in the region lattice. We treat ReEmpty somewhat
@@ -984,16 +1055,9 @@ impl RegionKind {
         }
     }
 
-    pub fn is_skolemized(&self) -> bool {
-        match *self {
-            ty::ReSkolemized(..) => true,
-            _ => false,
-        }
-    }
-
     pub fn needs_infer(&self) -> bool {
         match *self {
-            ty::ReVar(..) | ty::ReSkolemized(..) => true,
+            ty::ReVar(..) => true,
             _ => false
         }
     }
@@ -1021,11 +1085,6 @@ impl RegionKind {
         match *self {
             ty::ReVar(..) => {
                 flags = flags | TypeFlags::HAS_RE_INFER;
-                flags = flags | TypeFlags::KEEP_IN_LOCAL_TCX;
-            }
-            ty::ReSkolemized(..) => {
-                flags = flags | TypeFlags::HAS_RE_INFER;
-                flags = flags | TypeFlags::HAS_RE_SKOL;
                 flags = flags | TypeFlags::KEEP_IN_LOCAL_TCX;
             }
             ty::ReLateBound(..) => { }

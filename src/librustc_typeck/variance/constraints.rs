@@ -450,14 +450,14 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
             ty::ReStatic => {}
 
             ty::ReLateBound(..) => {
-                // Late-bound regions do not get substituted the same
-                // way early-bound regions do, so we skip them here.
+                // We never have to compute variance on late-bound
+                // regions, as they do not appear in type
+                // definitions. Skip them here.
             }
 
             ty::ReFree(..) |
             ty::ReScope(..) |
             ty::ReVar(..) |
-            ty::ReSkolemized(..) |
             ty::ReEmpty |
             ty::ReErased => {
                 // We don't expect to see anything but 'static or bound

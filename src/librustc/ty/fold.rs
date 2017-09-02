@@ -156,6 +156,51 @@ pub trait TypeVisitor<'tcx> : Sized {
 }
 
 ///////////////////////////////////////////////////////////////////////////
+// A convenient variation on `TypeFolder` where you track how many
+// binders you have entered
+
+pub trait BinderTrackingFolder<'gcx: 'tcx, 'tcx>: TypeFolder<'gcx, 'tcx> {
+    fn tcx<'a>(&'a self) -> TyCtxt<'a, 'gcx, 'tcx>;
+
+    fn enter_binder(&mut self);
+
+    fn exit_binder(&mut self);
+
+    fn fold_ty(&mut self, t: Ty<'tcx>) -> Ty<'tcx> {
+        t.super_fold_with(self)
+    }
+
+    fn fold_region(&mut self, r: ty::Region<'tcx>) -> ty::Region<'tcx> {
+        r.super_fold_with(self)
+    }
+}
+
+impl<'gcx: 'tcx, 'tcx, F> TypeFolder<'gcx, 'tcx> for F
+    where F: BinderTrackingFolder<'gcx, 'tcx>
+{
+    fn tcx<'a>(&'a self) -> TyCtxt<'a, 'gcx, 'tcx> {
+        BinderTrackingFolder::tcx(self)
+    }
+
+    fn fold_binder<T>(&mut self, t: &Binder<T>) -> Binder<T>
+        where T : TypeFoldable<'tcx>
+    {
+        BinderTrackingFolder::enter_binder(self);
+        let result = t.super_fold_with(self);
+        BinderTrackingFolder::exit_binder(self);
+        result
+    }
+
+    fn fold_ty(&mut self, t: Ty<'tcx>) -> Ty<'tcx> {
+        BinderTrackingFolder::fold_ty(self, t)
+    }
+
+    fn fold_region(&mut self, r: ty::Region<'tcx>) -> ty::Region<'tcx> {
+        BinderTrackingFolder::fold_region(self, r)
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////
 // Some sample folders
 
 pub struct BottomUpFolder<'a, 'gcx: 'a+'tcx, 'tcx: 'a, F>

@@ -1370,72 +1370,71 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         obligation: &TraitObligation<'tcx>)
         -> bool
     {
-        let poly_trait_predicate =
-            self.infcx().resolve_type_vars_if_possible(&obligation.predicate);
-        let (skol_trait_predicate, param_env, _skol_map) =
-            self.infcx().skolemize_late_bound_regions(obligation.param_env, &poly_trait_predicate);
-        debug!("match_projection_obligation_against_definition_bounds: \
-                skol_trait_predicate={:?}",
-               skol_trait_predicate);
+        let poly_trait_predicate = self.infcx().resolve_type_vars_if_possible(&obligation.predicate);
+        poly_trait_predicate.in_subuniverse(obligation.param_env, |param_env, skol_trait_predicate| {
+            debug!("match_projection_obligation_against_definition_bounds: \
+                    skol_trait_predicate={:?}",
+                   skol_trait_predicate);
 
-        let obligation = obligation.clone().with_env(param_env);
+            let (def_id, substs) = match skol_trait_predicate.trait_ref.self_ty().sty {
+                ty::TyProjection(ref data) =>
+                    (data.trait_ref(self.tcx()).def_id, data.substs),
+                ty::TyAnon(def_id, substs) => (def_id, substs),
+                _ => {
+                    span_bug!(
+                        obligation.cause.span,
+                        "match_projection_obligation_against_definition_bounds() called \
+                         but self-ty not a projection: {:?}",
+                        skol_trait_predicate.trait_ref.self_ty());
+                }
+            };
+            debug!("match_projection_obligation_against_definition_bounds: \
+                    def_id={:?}, substs={:?}",
+                   def_id, substs);
 
-        let (def_id, substs) = match skol_trait_predicate.trait_ref.self_ty().sty {
-            ty::TyProjection(ref data) =>
-                (data.trait_ref(self.tcx()).def_id, data.substs),
-            ty::TyAnon(def_id, substs) => (def_id, substs),
-            _ => {
-                span_bug!(
-                    obligation.cause.span,
-                    "match_projection_obligation_against_definition_bounds() called \
-                     but self-ty not a projection: {:?}",
-                    skol_trait_predicate.trait_ref.self_ty());
+            let predicates_of = self.tcx().predicates_of(def_id);
+            let bounds = predicates_of.instantiate(self.tcx(), substs);
+            debug!("match_projection_obligation_against_definition_bounds: \
+                    bounds={:?}",
+                   bounds);
+
+            let matching_bound =
+                util::elaborate_predicates(self.tcx(), bounds.predicates)
+                .filter_to_traits()
+                .find(
+                    |bound| self.probe(
+                        |this, _| this.match_projection(&obligation.cause,
+                                                        param_env,
+                                                        bound.clone(),
+                                                        skol_trait_predicate.trait_ref.clone())));
+
+            debug!("match_projection_obligation_against_definition_bounds: \
+                    matching_bound={:?}",
+                   matching_bound);
+            match matching_bound {
+                None => false,
+                Some(bound) => {
+                    // Repeat the successful match, if any, this time outside of a probe.
+                    let result = self.match_projection(&obligation.cause,
+                                                       param_env,
+                                                       bound,
+                                                       skol_trait_predicate.trait_ref.clone());
+                    assert!(result);
+                    true
+                }
             }
-        };
-        debug!("match_projection_obligation_against_definition_bounds: \
-                def_id={:?}, substs={:?}",
-               def_id, substs);
-
-        let predicates_of = self.tcx().predicates_of(def_id);
-        let bounds = predicates_of.instantiate(self.tcx(), substs);
-        debug!("match_projection_obligation_against_definition_bounds: \
-                bounds={:?}",
-               bounds);
-
-        let matching_bound =
-            util::elaborate_predicates(self.tcx(), bounds.predicates)
-            .filter_to_traits()
-            .find(
-                |bound| self.probe(
-                    |this, _| this.match_projection(&obligation,
-                                                    bound.clone(),
-                                                    skol_trait_predicate.trait_ref.clone())));
-
-        debug!("match_projection_obligation_against_definition_bounds: \
-                matching_bound={:?}",
-               matching_bound);
-        match matching_bound {
-            None => false,
-            Some(bound) => {
-                // Repeat the successful match, if any, this time outside of a probe.
-                let result = self.match_projection(&obligation,
-                                                   bound,
-                                                   skol_trait_predicate.trait_ref.clone());
-                assert!(result);
-                true
-            }
-        }
+        })
     }
 
     fn match_projection(&mut self,
-                        obligation: &TraitObligation<'tcx>,
+                        cause: &ObligationCause<'tcx>,
+                        param_env: ty::ParamEnv<'tcx>,
                         trait_bound: ty::PolyTraitRef<'tcx>,
                         skol_trait_ref: ty::TraitRef<'tcx>)
                         -> bool
     {
         assert!(!skol_trait_ref.has_escaping_regions());
-        match self.infcx.at(&obligation.cause, obligation.param_env)
-                        .sup(ty::Binder(skol_trait_ref), trait_bound) {
+        match self.infcx.at(cause, param_env).sup(ty::Binder(skol_trait_ref), trait_bound) {
             Ok(InferOk { obligations, .. }) => {
                 self.inferred_obligations.extend(obligations);
                 true
@@ -2171,17 +2170,15 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         types.skip_binder().into_iter().flat_map(|ty| { // binder moved -\
             let ty: ty::Binder<Ty<'tcx>> = ty::Binder(ty); // <----------/
 
-            self.in_snapshot(|this, _snapshot| {
-                let (skol_ty, param_env, _skol_map) =
-                    this.infcx().skolemize_late_bound_regions(param_env, &ty);
+            ty.in_subuniverse(param_env, |param_env, skol_ty| {
                 let Normalized { value: normalized_ty, mut obligations } =
-                    project::normalize_with_depth(this,
+                    project::normalize_with_depth(self,
                                                   param_env,
                                                   cause.clone(),
                                                   recursion_depth,
-                                                  &skol_ty);
+                                                  skol_ty);
                 let skol_obligation =
-                    this.tcx().predicate_for_trait_def(param_env,
+                    self.tcx().predicate_for_trait_def(param_env,
                                                        cause.clone(),
                                                        trait_def_id,
                                                        recursion_depth,
@@ -2387,17 +2384,16 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             trait_def_id,
             nested);
 
-        let trait_obligations = self.in_snapshot(|this, _snapshot| {
-            let poly_trait_ref = obligation.predicate.to_poly_trait_ref();
-            let (trait_ref, param_env, _skol_map) =
-                this.infcx().skolemize_late_bound_regions(obligation.param_env, &poly_trait_ref);
-            let cause = obligation.derived_cause(ImplDerivedObligation);
-            this.impl_or_trait_obligations(cause,
-                                           obligation.recursion_depth + 1,
-                                           param_env,
-                                           trait_def_id,
-                                           &trait_ref.substs)
-        });
+        let poly_trait_ref = obligation.predicate.to_poly_trait_ref();
+        let trait_obligations =
+            poly_trait_ref.in_subuniverse(obligation.param_env, |param_env, trait_ref| {
+                let cause = obligation.derived_cause(ImplDerivedObligation);
+                self.impl_or_trait_obligations(cause,
+                                               obligation.recursion_depth + 1,
+                                               param_env,
+                                               trait_def_id,
+                                               &trait_ref.substs)
+            });
 
         obligations.extend(trait_obligations);
 
@@ -2925,43 +2921,42 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             return Err(());
         }
 
-        let (skol_obligation, param_env, _skol_map) =
-             self.infcx().skolemize_late_bound_regions(obligation.param_env, &obligation.predicate);
-        let skol_obligation_trait_ref = skol_obligation.trait_ref;
+        obligation.predicate.in_subuniverse(obligation.param_env, |param_env, skol_obligation| {
+            let skol_obligation_trait_ref = skol_obligation.trait_ref;
 
-        let impl_substs = self.infcx.fresh_substs_for_item(param_env.universe,
-                                                           obligation.cause.span,
-                                                           impl_def_id);
+            let impl_substs = self.infcx.fresh_substs_for_item(param_env.universe,
+                                                               obligation.cause.span,
+                                                               impl_def_id);
 
-        let impl_trait_ref = impl_trait_ref.subst(self.tcx(),
-                                                  impl_substs);
+            let impl_trait_ref = impl_trait_ref.subst(self.tcx(), impl_substs);
 
-        let impl_trait_ref =
-            project::normalize_with_depth(self,
-                                          param_env,
-                                          obligation.cause.clone(),
-                                          obligation.recursion_depth + 1,
-                                          &impl_trait_ref);
+            let impl_trait_ref =
+                project::normalize_with_depth(self,
+                                              param_env,
+                                              obligation.cause.clone(),
+                                              obligation.recursion_depth + 1,
+                                              &impl_trait_ref);
 
-        debug!("match_impl(impl_def_id={:?}, obligation={:?}, \
-               impl_trait_ref={:?}, skol_obligation_trait_ref={:?})",
-               impl_def_id,
-               obligation,
-               impl_trait_ref,
-               skol_obligation_trait_ref);
+            debug!("match_impl(impl_def_id={:?}, obligation={:?}, \
+                    impl_trait_ref={:?}, skol_obligation_trait_ref={:?})",
+                   impl_def_id,
+                   obligation,
+                   impl_trait_ref,
+                   skol_obligation_trait_ref);
 
-        let InferOk { obligations, .. } =
-            self.infcx.at(&obligation.cause, param_env)
-                      .eq(skol_obligation_trait_ref, impl_trait_ref.value)
-                      .map_err(|e| {
-                          debug!("match_impl: failed eq_trait_refs due to `{}`", e);
-                          ()
-                      })?;
-        self.inferred_obligations.extend(obligations);
+            let InferOk { obligations, .. } =
+                self.infcx.at(&obligation.cause, param_env)
+                          .eq(skol_obligation_trait_ref, impl_trait_ref.value)
+                          .map_err(|e| {
+                              debug!("match_impl: failed eq_trait_refs due to `{}`", e);
+                              ()
+                          })?;
+            self.inferred_obligations.extend(obligations);
 
-        debug!("match_impl: success impl_substs={:?}", impl_substs);
-        Ok((Normalized { value: impl_substs, obligations: impl_trait_ref.obligations },
-            param_env))
+            debug!("match_impl: success impl_substs={:?}", impl_substs);
+            Ok((Normalized { value: impl_substs, obligations: impl_trait_ref.obligations },
+                param_env))
+        })
     }
 
     fn fast_reject_trait_refs(&mut self,

@@ -487,10 +487,6 @@ impl fmt::Debug for ty::RegionKind {
                 write!(f, "{:?}", vid)
             }
 
-            ty::ReSkolemized(id, ref bound_region) => {
-                write!(f, "ReSkolemized({:?}, {:?})", id, bound_region)
-            }
-
             ty::ReEmpty => write!(f, "ReEmpty"),
 
             ty::ReErased => write!(f, "ReErased")
@@ -521,8 +517,7 @@ impl fmt::Display for ty::RegionKind {
                 write!(f, "{}", data.name)
             }
             ty::ReLateBound(_, br) |
-            ty::ReFree(ty::FreeRegion { bound_region: br, .. }) |
-            ty::ReSkolemized(_, br) => {
+            ty::ReFree(ty::FreeRegion { bound_region: br, .. }) => {
                 write!(f, "{}", br)
             }
             ty::ReScope(code_extent) if identify_regions() => {

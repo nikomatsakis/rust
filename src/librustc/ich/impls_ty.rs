@@ -72,8 +72,7 @@ for ty::RegionKind {
                 free_region.hash_stable(hcx, hasher);
             }
             ty::ReLateBound(..) |
-            ty::ReVar(..) |
-            ty::ReSkolemized(..) => {
+            ty::ReVar(..) => {
                 bug!("TypeIdHasher: unexpected region {:?}", *self)
             }
         }

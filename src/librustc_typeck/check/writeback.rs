@@ -290,8 +290,7 @@ impl<'cx, 'gcx, 'tcx> WritebackCx<'cx, 'gcx, 'tcx> {
 
                     ty::ReFree(_) |
                     ty::ReLateBound(..) |
-                    ty::ReScope(_) |
-                    ty::ReSkolemized(..) => {
+                    ty::ReScope(_) => {
                         let span = node_id.to_span(&self.fcx.tcx);
                         span_err!(self.tcx().sess, span, E0564,
                                   "only named lifetimes are allowed in `impl Trait`, \

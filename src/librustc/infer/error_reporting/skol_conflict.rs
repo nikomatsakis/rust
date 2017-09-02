@@ -20,13 +20,13 @@ use infer::region_inference::RegionResolutionError;
 impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     pub fn try_report_skol_conflict(&self, error: &RegionResolutionError<'tcx>) -> bool {
         let (origin, sub, sup) = match *error {
-            ConcreteFailure(ref origin, sub, sup) if sub.is_skolemized() =>
+            ConcreteFailure(ref origin, sub, sup) if sub.is_late_bound() =>
                 (origin, sub, sup),
-            ConcreteFailure(ref origin, sub, sup) if sup.is_skolemized() =>
+            ConcreteFailure(ref origin, sub, sup) if sup.is_late_bound() =>
                 (origin, sub, sup),
-            SubSupConflict(_, ref sub_origin, sub, _, sup) if sub.is_skolemized() =>
+            SubSupConflict(_, ref sub_origin, sub, _, sup) if sub.is_late_bound() =>
                 (sub_origin, sub, sup),
-            SubSupConflict(_, _, sub, ref sup_origin, sup) if sup.is_skolemized() =>
+            SubSupConflict(_, _, sub, ref sup_origin, sup) if sup.is_late_bound() =>
                 (sup_origin, sub, sup),
             _ =>
                 return false, // inapplicable
@@ -39,9 +39,9 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 // should change how this error is reported altogether. But it
                 // will do for now.
                 let terr = match (sub, sup) {
-                    (&ty::ReSkolemized(_, br_sub), r) =>
+                    (&ty::ReLateBound(_, br_sub), r) =>
                         TypeError::RegionsInsufficientlyPolymorphic(br_sub, r),
-                    (r, &ty::ReSkolemized(_, br_sup)) =>
+                    (r, &ty::ReLateBound(_, br_sup)) =>
                         TypeError::RegionsInsufficientlyPolymorphic(br_sup, r),
                     _ => span_bug!(origin.span(), "at least one side must be skolemized")
                 };

@@ -239,12 +239,11 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
 
             ty::ReEmpty => ("the empty lifetime".to_owned(), None),
 
-            // FIXME(#13998) ReSkolemized should probably print like
+            // FIXME(#13998) ReLateBound should probably print like
             // ReFree rather than dumping Debug output on the user.
             //
-            // We shouldn't really be having unification failures with ReVar
-            // and ReLateBound though.
-            ty::ReSkolemized(..) |
+            // We shouldn't really be having unification failures with ReErased
+            // though.
             ty::ReVar(_) |
             ty::ReLateBound(..) |
             ty::ReErased => {

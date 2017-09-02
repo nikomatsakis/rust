@@ -133,13 +133,9 @@ pub fn poly_project_and_unify_type<'cx, 'gcx, 'tcx>(
     debug!("poly_project_and_unify_type(obligation={:?})",
            obligation);
 
-    let infcx = selcx.infcx();
-    infcx.commit_if_ok(|_snapshot| {
-        let (skol_predicate, param_env, _skol_map) =
-            infcx.skolemize_late_bound_regions(obligation.param_env, &obligation.predicate);
-
-        let skol_obligation = obligation.with(skol_predicate).with_env(param_env);
-        project_and_unify_type(selcx, &skol_obligation)
+    obligation.predicate.in_subuniverse(obligation.param_env, |skol_param_env, &skol_predicate| {
+        let skol_obligation = &obligation.with(skol_predicate).with_env(skol_param_env);
+        project_and_unify_type(selcx, skol_obligation)
     })
 }
 

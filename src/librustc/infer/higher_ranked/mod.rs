@@ -11,10 +11,7 @@
 //! Helper routines for higher-ranked things. See the `doc` module at
 //! the end of the file for details.
 
-use super::{CombinedSnapshot,
-            InferCtxt,
-            HigherRankedType,
-            SkolemizationMap};
+use super::{CombinedSnapshot, InferCtxt, HigherRankedType};
 use super::combine::CombineFields;
 use super::region_inference::taint::TaintIterator;
 
@@ -44,16 +41,11 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
         // please see the large comment at the end of the file in the (inlined) module
         // `doc`.
 
-        // Start a snapshot so we can examine "all bindings that were
-        // created as part of this type comparison".
-        return self.infcx.commit_if_ok(|_snapshot| {
-            let span = self.trace.cause.span;
+        let span = self.trace.cause.span;
 
-            // First, we instantiate each bound region in the supertype with a
-            // fresh concrete region.
-            let (b_prime, param_env, _skol_map) =
-                self.infcx.skolemize_late_bound_regions(param_env, b);
-
+        // First, we instantiate each bound region in the supertype with a
+        // fresh concrete region.
+        b.in_subuniverse(param_env, |param_env, b_prime| {
             // Second, we instantiate each bound region in the subtype with a fresh
             // region variable. These are declared in the innermost universe.
             let (a_prime, _) =
@@ -72,7 +64,7 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
             debug!("higher_ranked_sub: OK result={:?}", result);
 
             Ok(ty::Binder(result))
-        });
+        })
     }
 
     pub fn higher_ranked_lub<T>(&mut self,
@@ -450,31 +442,5 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                escaping_types);
 
         region_vars
-    }
-
-    /// Replace all regions bound by `binder` with skolemized regions and
-    /// return a map indicating which bound-region was replaced with what
-    /// skolemized region. This is the first step of checking subtyping
-    /// when higher-ranked things are involved.
-    ///
-    /// See `README.md` for more details.
-    pub fn skolemize_late_bound_regions<T>(&self,
-                                           mut param_env: ty::ParamEnv<'tcx>,
-                                           binder: &ty::Binder<T>)
-                                           -> (T, ty::ParamEnv<'tcx>, SkolemizationMap<'tcx>)
-        where T : TypeFoldable<'tcx>
-    {
-        let (result, map) = self.tcx.replace_late_bound_regions(binder, |br| {
-            let (p, value) = self.tcx.mk_skolemized_region(param_env, br);
-            param_env = p;
-            value
-        });
-
-        debug!("skolemize_bound_regions(binder={:?}, result={:?}, map={:?})",
-               binder,
-               result,
-               map);
-
-        (result, param_env, map)
     }
 }
