@@ -111,6 +111,36 @@ impl<'a, 'gcx, 'tcx> At<'a, 'gcx, 'tcx> {
         self.sub_exp(false, actual, expected)
     }
 
+    /// See if we can instantiate `expected` in such a way that
+    /// `actual` would be an instance of it. Commonly used in trait
+    /// matching, where you might have a rule like:
+    ///
+    ///     expected = for<'a> T: Foo<'a>
+    ///
+    /// and we want to see if it can full `actual == T: Foo<'static>`.
+    ///
+    /// This routine would then instantiate `'a` with a fresh
+    /// inference variable and equate the result with `actual`.
+    pub fn instantiable_as<T>(self,
+                              expected: ty::Binder<T>,
+                              actual: T)
+                              -> InferResult<'tcx, ()>
+        where T: ToTrace<'tcx>
+    {
+        debug!("instantiable_as(expected={:?}, actual={:?})", expected, actual);
+
+        let (expected_prime, _) =
+            self.infcx.replace_late_bound_regions_with_fresh_var(
+                self.cause.span,
+                self.param_env.universe,
+                HigherRankedType,
+                &expected);
+
+        debug!("instantiable_as: expected_prime={:?}", expected_prime);
+
+        self.eq(expected_prime, actual)
+    }
+
     /// Make `expected <: actual`
     pub fn sub<T>(self,
                   expected: T,
