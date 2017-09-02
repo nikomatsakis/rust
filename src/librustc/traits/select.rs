@@ -48,7 +48,6 @@ use std::cell::RefCell;
 use std::cmp;
 use std::fmt;
 use std::marker::PhantomData;
-use std::mem;
 use std::rc::Rc;
 use syntax::abi::Abi;
 use hir;
@@ -1626,14 +1625,10 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             obligation.predicate.def_id(),
             obligation.predicate.0.trait_ref.self_ty(),
             |impl_def_id| {
-                self.probe(|this, _snapshot| { /* [1] */
+                self.probe(|this, _snapshot| {
                     match this.match_impl(impl_def_id, obligation) {
-                        Ok(skol_map) => {
+                        Ok(_) => {
                             candidates.vec.push(ImplCandidate(impl_def_id));
-
-                            // NB: we can safely drop the skol map
-                            // since we are in a probe [1]
-                            mem::drop(skol_map);
                         }
                         Err(_) => { }
                     }
@@ -1707,7 +1702,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         // self-type from one of the other inputs. Without this check,
         // these cases wind up being considered ambiguous due to a
         // (spurious) ambiguity introduced here.
-        let predicate_trait_ref = obligation.predicate.to_poly_trait_ref();
+        let predicate_trait_ref = obligation.predicate;
         if !self.tcx().is_object_safe(predicate_trait_ref.def_id()) {
             return;
         }
@@ -2426,7 +2421,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         // First, create the substitutions by matching the impl again,
         // this time not in a probe.
         self.in_snapshot(|this, _snapshot| {
-            let (substs, param_env, _skol_map) =
+            let (substs, param_env) =
                 this.rematch_impl(impl_def_id, obligation);
             debug!("confirm_impl_candidate substs={:?}", substs);
             let cause = obligation.derived_cause(ImplDerivedObligation);
@@ -2903,8 +2898,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                     impl_def_id: DefId,
                     obligation: &TraitObligation<'tcx>)
                     -> (Normalized<'tcx, &'tcx Substs<'tcx>>,
-                        ty::ParamEnv<'tcx>,
-                        infer::SkolemizationMap<'tcx>)
+                        ty::ParamEnv<'tcx>)
     {
         match self.match_impl(impl_def_id, obligation) {
             Ok(tuple) => tuple,
@@ -2920,8 +2914,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                   impl_def_id: DefId,
                   obligation: &TraitObligation<'tcx>)
                   -> Result<(Normalized<'tcx, &'tcx Substs<'tcx>>,
-                             ty::ParamEnv<'tcx>,
-                             infer::SkolemizationMap<'tcx>), ()>
+                             ty::ParamEnv<'tcx>), ()>
     {
         let impl_trait_ref = self.tcx().impl_trait_ref(impl_def_id).unwrap();
 
@@ -2932,7 +2925,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             return Err(());
         }
 
-        let (skol_obligation, param_env, skol_map) =
+        let (skol_obligation, param_env, _skol_map) =
              self.infcx().skolemize_late_bound_regions(obligation.param_env, &obligation.predicate);
         let skol_obligation_trait_ref = skol_obligation.trait_ref;
 
@@ -2967,12 +2960,8 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         self.inferred_obligations.extend(obligations);
 
         debug!("match_impl: success impl_substs={:?}", impl_substs);
-        Ok((Normalized {
-            value: impl_substs,
-            obligations: impl_trait_ref.obligations
-        },
-            param_env,
-            skol_map))
+        Ok((Normalized { value: impl_substs, obligations: impl_trait_ref.obligations },
+            param_env))
     }
 
     fn fast_reject_trait_refs(&mut self,
