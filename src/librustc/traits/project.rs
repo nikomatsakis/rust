@@ -920,10 +920,8 @@ fn assemble_candidates_from_predicates<'cx, 'gcx, 'tcx, I>(
                 let is_match = same_def_id && infcx.probe(|_| {
                     let data_poly_trait_ref =
                         data.to_poly_trait_ref(infcx.tcx);
-                    let obligation_poly_trait_ref =
-                        obligation_trait_ref.to_poly_trait_ref();
                     infcx.at(&obligation.cause, obligation.param_env)
-                         .sup(obligation_poly_trait_ref, data_poly_trait_ref)
+                         .instantiable_as(data_poly_trait_ref, *obligation_trait_ref)
                          .map(|InferOk { obligations: _, value: () }| {
                              // FIXME(#32730) -- do we need to take obligations
                              // into account in any way? At the moment, no.
@@ -1190,10 +1188,9 @@ fn confirm_object_candidate<'cx, 'gcx, 'tcx>(
         // select those with a relevant trait-ref
         let mut env_predicates = env_predicates.filter(|data| {
             let data_poly_trait_ref = data.to_poly_trait_ref(selcx.tcx());
-            let obligation_poly_trait_ref = obligation_trait_ref.to_poly_trait_ref();
             selcx.infcx().probe(|_| {
                 selcx.infcx().at(&obligation.cause, obligation.param_env)
-                             .sup(obligation_poly_trait_ref, data_poly_trait_ref)
+                             .instantiable_as(data_poly_trait_ref, *obligation_trait_ref)
                              .is_ok()
             })
         });
