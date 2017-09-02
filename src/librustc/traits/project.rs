@@ -737,7 +737,7 @@ fn project_type<'cx, 'gcx, 'tcx>(
         selcx.infcx().report_overflow_error(&obligation, true);
     }
 
-    let obligation_trait_ref = &obligation.predicate.trait_ref(selcx.tcx());
+    let obligation_trait_ref = obligation.predicate.trait_ref(selcx.tcx());
 
     debug!("project: obligation_trait_ref={:?}", obligation_trait_ref);
 
@@ -752,17 +752,17 @@ fn project_type<'cx, 'gcx, 'tcx>(
 
     assemble_candidates_from_param_env(selcx,
                                        obligation,
-                                       &obligation_trait_ref,
+                                       obligation_trait_ref,
                                        &mut candidates);
 
     assemble_candidates_from_trait_def(selcx,
                                        obligation,
-                                       &obligation_trait_ref,
+                                       obligation_trait_ref,
                                        &mut candidates);
 
     if let Err(e) = assemble_candidates_from_impls(selcx,
                                                    obligation,
-                                                   &obligation_trait_ref,
+                                                   obligation_trait_ref,
                                                    &mut candidates) {
         return Err(ProjectionTyError::TraitSelectionError(e));
     }
@@ -823,7 +823,7 @@ fn project_type<'cx, 'gcx, 'tcx>(
             Ok(ProjectedTy::Progress(
                 confirm_candidate(selcx,
                                   obligation,
-                                  &obligation_trait_ref,
+                                  obligation_trait_ref,
                                   candidate)))
         }
         None => Ok(ProjectedTy::NoProgress(
@@ -839,7 +839,7 @@ fn project_type<'cx, 'gcx, 'tcx>(
 fn assemble_candidates_from_param_env<'cx, 'gcx, 'tcx>(
     selcx: &mut SelectionContext<'cx, 'gcx, 'tcx>,
     obligation: &ProjectionTyObligation<'tcx>,
-    obligation_trait_ref: &ty::TraitRef<'tcx>,
+    obligation_trait_ref: ty::TraitRef<'tcx>,
     candidate_set: &mut ProjectionTyCandidateSet<'tcx>)
 {
     debug!("assemble_candidates_from_param_env(..)");
@@ -864,7 +864,7 @@ fn assemble_candidates_from_param_env<'cx, 'gcx, 'tcx>(
 fn assemble_candidates_from_trait_def<'cx, 'gcx, 'tcx>(
     selcx: &mut SelectionContext<'cx, 'gcx, 'tcx>,
     obligation: &ProjectionTyObligation<'tcx>,
-    obligation_trait_ref: &ty::TraitRef<'tcx>,
+    obligation_trait_ref: ty::TraitRef<'tcx>,
     candidate_set: &mut ProjectionTyCandidateSet<'tcx>)
 {
     debug!("assemble_candidates_from_trait_def(..)");
@@ -900,7 +900,7 @@ fn assemble_candidates_from_trait_def<'cx, 'gcx, 'tcx>(
 fn assemble_candidates_from_predicates<'cx, 'gcx, 'tcx, I>(
     selcx: &mut SelectionContext<'cx, 'gcx, 'tcx>,
     obligation: &ProjectionTyObligation<'tcx>,
-    obligation_trait_ref: &ty::TraitRef<'tcx>,
+    obligation_trait_ref: ty::TraitRef<'tcx>,
     candidate_set: &mut ProjectionTyCandidateSet<'tcx>,
     ctor: fn(ty::PolyProjectionPredicate<'tcx>) -> ProjectionTyCandidate<'tcx>,
     env_predicates: I)
@@ -921,7 +921,7 @@ fn assemble_candidates_from_predicates<'cx, 'gcx, 'tcx, I>(
                     let data_poly_trait_ref =
                         data.to_poly_trait_ref(infcx.tcx);
                     infcx.at(&obligation.cause, obligation.param_env)
-                         .instantiable_as(data_poly_trait_ref, *obligation_trait_ref)
+                         .instantiable_as(data_poly_trait_ref, obligation_trait_ref)
                          .map(|InferOk { obligations: _, value: () }| {
                              // FIXME(#32730) -- do we need to take obligations
                              // into account in any way? At the moment, no.
@@ -945,7 +945,7 @@ fn assemble_candidates_from_predicates<'cx, 'gcx, 'tcx, I>(
 fn assemble_candidates_from_impls<'cx, 'gcx, 'tcx>(
     selcx: &mut SelectionContext<'cx, 'gcx, 'tcx>,
     obligation: &ProjectionTyObligation<'tcx>,
-    obligation_trait_ref: &ty::TraitRef<'tcx>,
+    obligation_trait_ref: ty::TraitRef<'tcx>,
     candidate_set: &mut ProjectionTyCandidateSet<'tcx>)
     -> Result<(), SelectionError<'tcx>>
 {
@@ -1088,7 +1088,7 @@ fn assemble_candidates_from_impls<'cx, 'gcx, 'tcx>(
 fn confirm_candidate<'cx, 'gcx, 'tcx>(
     selcx: &mut SelectionContext<'cx, 'gcx, 'tcx>,
     obligation: &ProjectionTyObligation<'tcx>,
-    obligation_trait_ref: &ty::TraitRef<'tcx>,
+    obligation_trait_ref: ty::TraitRef<'tcx>,
     candidate: ProjectionTyCandidate<'tcx>)
     -> Progress<'tcx>
 {
@@ -1111,7 +1111,7 @@ fn confirm_candidate<'cx, 'gcx, 'tcx>(
 fn confirm_select_candidate<'cx, 'gcx, 'tcx>(
     selcx: &mut SelectionContext<'cx, 'gcx, 'tcx>,
     obligation: &ProjectionTyObligation<'tcx>,
-    obligation_trait_ref: &ty::TraitRef<'tcx>)
+    obligation_trait_ref: ty::TraitRef<'tcx>)
     -> Progress<'tcx>
 {
     let poly_trait_ref = obligation_trait_ref.to_poly_trait_ref();
@@ -1151,7 +1151,7 @@ fn confirm_select_candidate<'cx, 'gcx, 'tcx>(
 fn confirm_object_candidate<'cx, 'gcx, 'tcx>(
     selcx: &mut SelectionContext<'cx, 'gcx, 'tcx>,
     obligation:  &ProjectionTyObligation<'tcx>,
-    obligation_trait_ref: &ty::TraitRef<'tcx>)
+    obligation_trait_ref: ty::TraitRef<'tcx>)
     -> Progress<'tcx>
 {
     let self_ty = obligation_trait_ref.self_ty();
@@ -1190,7 +1190,7 @@ fn confirm_object_candidate<'cx, 'gcx, 'tcx>(
             let data_poly_trait_ref = data.to_poly_trait_ref(selcx.tcx());
             selcx.infcx().probe(|_| {
                 selcx.infcx().at(&obligation.cause, obligation.param_env)
-                             .instantiable_as(data_poly_trait_ref, *obligation_trait_ref)
+                             .instantiable_as(data_poly_trait_ref, obligation_trait_ref)
                              .is_ok()
             })
         });
