@@ -64,6 +64,7 @@ pub use self::sty::{FnSig, GenSig, PolyFnSig, PolyGenSig};
 pub use self::sty::{InferTy, ParamTy, ProjectionTy, ExistentialPredicate};
 pub use self::sty::{ClosureSubsts, GeneratorInterior, TypeAndMut};
 pub use self::sty::{TraitRef, TypeVariants, PolyTraitRef};
+pub use self::sty::{TraitRefDisplayNotSelf, TraitRefDisplayAllWithColon};
 pub use self::sty::{ExistentialTraitRef, PolyExistentialTraitRef};
 pub use self::sty::{ExistentialProjection, PolyExistentialProjection};
 pub use self::sty::{BoundRegion, EarlyBoundRegion, FreeRegion, Region};
@@ -822,7 +823,7 @@ pub enum Predicate<'tcx> {
     /// Corresponds to `where Foo : Bar<A,B,C>`. `Foo` here would be
     /// the `Self` type of the trait reference and `A`, `B`, and `C`
     /// would be the type parameters.
-    Trait(PolyTraitPredicate<'tcx>),
+    Trait(PolyTraitRef<'tcx>),
 
     /// where `T1 == T2`.
     Equate(PolyEquatePredicate<'tcx>),
@@ -946,33 +947,6 @@ impl<'a, 'gcx, 'tcx> Predicate<'tcx> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
-pub struct TraitPredicate<'tcx> {
-    pub trait_ref: TraitRef<'tcx>
-}
-pub type PolyTraitPredicate<'tcx> = ty::Binder<TraitPredicate<'tcx>>;
-
-impl<'tcx> TraitPredicate<'tcx> {
-    pub fn def_id(&self) -> DefId {
-        self.trait_ref.def_id
-    }
-
-    pub fn input_types<'a>(&'a self) -> impl DoubleEndedIterator<Item=Ty<'tcx>> + 'a {
-        self.trait_ref.input_types()
-    }
-
-    pub fn self_ty(&self) -> Ty<'tcx> {
-        self.trait_ref.self_ty()
-    }
-}
-
-impl<'tcx> PolyTraitPredicate<'tcx> {
-    pub fn def_id(&self) -> DefId {
-        // ok to skip binder since trait def-id does not care about regions
-        self.0.def_id()
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct EquatePredicate<'tcx>(pub Ty<'tcx>, pub Ty<'tcx>); // `0 == 1`
 pub type PolyEquatePredicate<'tcx> = ty::Binder<EquatePredicate<'tcx>>;
@@ -1034,32 +1008,19 @@ impl<'tcx> ToPolyTraitRef<'tcx> for TraitRef<'tcx> {
     }
 }
 
-impl<'tcx> ToPolyTraitRef<'tcx> for PolyTraitPredicate<'tcx> {
-    fn to_poly_trait_ref(&self) -> PolyTraitRef<'tcx> {
-        self.map_bound_ref(|trait_pred| trait_pred.trait_ref)
-    }
-}
-
 pub trait ToPredicate<'tcx> {
     fn to_predicate(&self) -> Predicate<'tcx>;
 }
 
 impl<'tcx> ToPredicate<'tcx> for TraitRef<'tcx> {
     fn to_predicate(&self) -> Predicate<'tcx> {
-        // we're about to add a binder, so let's check that we don't
-        // accidentally capture anything, or else that might be some
-        // weird debruijn accounting.
-        assert!(!self.has_escaping_regions());
-
-        ty::Predicate::Trait(ty::Binder(ty::TraitPredicate {
-            trait_ref: self.clone()
-        }))
+        ty::Predicate::Trait(self.to_poly_trait_ref())
     }
 }
 
 impl<'tcx> ToPredicate<'tcx> for PolyTraitRef<'tcx> {
     fn to_predicate(&self) -> Predicate<'tcx> {
-        ty::Predicate::Trait(self.to_poly_trait_predicate())
+        ty::Predicate::Trait(*self)
     }
 }
 
@@ -1132,8 +1093,8 @@ impl<'tcx> Predicate<'tcx> {
 
     pub fn to_opt_poly_trait_ref(&self) -> Option<PolyTraitRef<'tcx>> {
         match *self {
-            Predicate::Trait(ref t) => {
-                Some(t.to_poly_trait_ref())
+            Predicate::Trait(t) => {
+                Some(t)
             }
             Predicate::Projection(..) |
             Predicate::Equate(..) |

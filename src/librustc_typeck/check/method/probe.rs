@@ -18,7 +18,7 @@ use hir::def_id::DefId;
 use hir::def::Def;
 use rustc::ty::subst::{Subst, Substs};
 use rustc::traits::{self, ObligationCause};
-use rustc::ty::{self, Ty, ToPolyTraitRef, TraitRef, TypeFoldable};
+use rustc::ty::{self, Ty, TraitRef, TypeFoldable};
 use rustc::infer::type_variable::TypeVariableOrigin;
 use rustc::util::nodemap::FxHashSet;
 use rustc::infer::{self, InferOk};
@@ -601,10 +601,10 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
             .iter()
             .filter_map(|predicate| {
                 match *predicate {
-                    ty::Predicate::Trait(ref trait_predicate) => {
-                        match trait_predicate.0.trait_ref.self_ty().sty {
+                    ty::Predicate::Trait(trait_predicate) => {
+                        match trait_predicate.skip_binder().self_ty().sty {
                             ty::TyParam(ref p) if *p == param_ty => {
-                                Some(trait_predicate.to_poly_trait_ref())
+                                Some(trait_predicate)
                             }
                             _ => None,
                         }
@@ -1314,7 +1314,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 if !selcx.evaluate_obligation(o) {
                     all_true = false;
                     if let &ty::Predicate::Trait(ref pred) = &o.predicate {
-                        possibly_unsatisfied_predicates.push(pred.0.trait_ref);
+                        possibly_unsatisfied_predicates.push(*pred.skip_binder());
                     }
                 }
             }

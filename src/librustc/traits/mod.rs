@@ -84,7 +84,7 @@ pub struct Obligation<'tcx, T> {
 }
 
 pub type PredicateObligation<'tcx> = Obligation<'tcx, ty::Predicate<'tcx>>;
-pub type TraitObligation<'tcx> = Obligation<'tcx, ty::PolyTraitPredicate<'tcx>>;
+pub type TraitObligation<'tcx> = Obligation<'tcx, ty::PolyTraitRef<'tcx>>;
 
 /// Why did we incur this obligation? Used for error reporting.
 #[derive(Clone, Debug, PartialEq, Eq)]

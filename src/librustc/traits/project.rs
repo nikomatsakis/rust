@@ -857,7 +857,7 @@ fn assemble_candidates_from_impls<'cx, 'gcx, 'tcx>(
     // If we are resolving `<T as TraitRef<...>>::Item == Type`,
     // start out by selecting the predicate `T as TraitRef<...>`:
     let poly_trait_ref = obligation_trait_ref.to_poly_trait_ref();
-    let trait_obligation = obligation.with(poly_trait_ref.to_poly_trait_predicate());
+    let trait_obligation = obligation.with(poly_trait_ref);
     selcx.infcx().probe(|_| {
         let vtable = match selcx.select(&trait_obligation) {
             Ok(Some(vtable)) => vtable,
@@ -1020,7 +1020,7 @@ fn confirm_select_candidate<'cx, 'gcx, 'tcx>(
     -> Progress<'tcx>
 {
     let poly_trait_ref = obligation_trait_ref.to_poly_trait_ref();
-    let trait_obligation = obligation.with(poly_trait_ref.to_poly_trait_predicate());
+    let trait_obligation = obligation.with(poly_trait_ref);
     let vtable = match selcx.select(&trait_obligation) {
         Ok(Some(vtable)) => vtable,
         _ => {

@@ -179,7 +179,6 @@ impl_stable_hash_for!(enum ty::Visibility {
 });
 
 impl_stable_hash_for!(struct ty::TraitRef<'tcx> { def_id, substs });
-impl_stable_hash_for!(struct ty::TraitPredicate<'tcx> { trait_ref });
 impl_stable_hash_for!(tuple_struct ty::EquatePredicate<'tcx> { t1, t2 });
 impl_stable_hash_for!(struct ty::SubtypePredicate<'tcx> { a_is_expected, a, b });
 

@@ -491,7 +491,7 @@ fn resolve_trait_associated_const<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         let mut selcx = traits::SelectionContext::new(&infcx);
         let obligation = traits::Obligation::new(traits::ObligationCause::dummy(),
                                                  param_env,
-                                                 trait_ref.to_poly_trait_predicate());
+                                                 trait_ref);
         let selection = match selcx.select(&obligation) {
             Ok(Some(vtable)) => vtable,
             // Still ambiguous, so give up and let the caller decide whether this

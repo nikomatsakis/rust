@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use infer::{InferCtxt, InferOk};
-use ty::{self, Ty, TypeFoldable, ToPolyTraitRef, ToPredicate};
+use ty::{self, Ty, TypeFoldable, ToPredicate};
 use ty::error::ExpectedFound;
 use rustc_data_structures::obligation_forest::{ObligationForest, Error};
 use rustc_data_structures::obligation_forest::{ForestObligation, ObligationProcessor};
@@ -357,10 +357,10 @@ fn process_predicate<'a, 'gcx, 'tcx>(
     }
 
     match obligation.predicate {
-        ty::Predicate::Trait(ref data) => {
-            let trait_obligation = obligation.with(data.clone());
+        ty::Predicate::Trait(trait_ref) => {
+            let trait_obligation = obligation.with(trait_ref.clone());
 
-            if data.is_global() {
+            if trait_ref.is_global() {
                 // no type variables present, can use evaluation for better caching.
                 // FIXME: consider caching errors too.
                 if
@@ -369,7 +369,7 @@ fn process_predicate<'a, 'gcx, 'tcx>(
                     !trait_obligation.predicate.skip_binder().self_ty().is_defaulted_unit() &&
                     selcx.evaluate_obligation_conservatively(&obligation) {
                     debug!("selecting trait `{:?}` at depth {} evaluated to holds",
-                           data, obligation.recursion_depth);
+                           trait_ref, obligation.recursion_depth);
                     return Ok(Some(vec![]))
                 }
             }
@@ -377,12 +377,12 @@ fn process_predicate<'a, 'gcx, 'tcx>(
             match selcx.select(&trait_obligation) {
                 Ok(Some(vtable)) => {
                     debug!("selecting trait `{:?}` at depth {} yielded Ok(Some)",
-                           data, obligation.recursion_depth);
+                           trait_ref, obligation.recursion_depth);
                     Ok(Some(vtable.nested_obligations()))
                 }
                 Ok(None) => {
                     debug!("selecting trait `{:?}` at depth {} yielded Ok(None)",
-                           data, obligation.recursion_depth);
+                           trait_ref, obligation.recursion_depth);
 
                     // This is a bit subtle: for the most part, the
                     // only reason we can fail to make progress on
@@ -397,8 +397,7 @@ fn process_predicate<'a, 'gcx, 'tcx>(
                     // the same time.
                     //
                     // FIXME(#32286) logic seems false if no upvars
-                    pending_obligation.stalled_on =
-                        trait_ref_type_vars(selcx, data.to_poly_trait_ref());
+                    pending_obligation.stalled_on = trait_ref_type_vars(selcx, trait_ref);
 
                     debug!("process_predicate: pending obligation {:?} now stalled on {:?}",
                            selcx.infcx().resolve_type_vars_if_possible(obligation),
@@ -408,7 +407,7 @@ fn process_predicate<'a, 'gcx, 'tcx>(
                 }
                 Err(selection_err) => {
                     info!("selecting trait `{:?}` at depth {} yielded Err",
-                          data, obligation.recursion_depth);
+                          trait_ref, obligation.recursion_depth);
 
                     Err(CodeSelectionError(selection_err))
                 }
