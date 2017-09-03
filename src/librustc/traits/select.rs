@@ -17,7 +17,7 @@ use super::coherence;
 use super::DerivedObligationCause;
 use super::project;
 use super::project::{normalize_with_depth, Normalized, ProjectionCacheKey};
-use super::{PredicateObligation, TraitObligation, ObligationCause};
+use super::{PredicateObligation, PolyTraitObligation, ObligationCause};
 use super::{ObligationCauseCode, BuiltinDerivedObligation, ImplDerivedObligation};
 use super::{SelectionError, Unimplemented, OutputTypeParameterMismatch};
 use super::{ObjectCastObligation, Obligation};
@@ -132,7 +132,7 @@ impl IntercrateAmbiguityCause {
 
 // A stack that walks back up the stack frame.
 struct TraitObligationStack<'prev, 'tcx: 'prev> {
-    obligation: &'prev TraitObligation<'tcx>,
+    obligation: &'prev PolyTraitObligation<'tcx>,
 
     /// Trait ref from `obligation` but skolemized with the
     /// selection-context's freshener. Used to check for recursion.
@@ -505,7 +505,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
     /// Attempts to satisfy the obligation. If successful, this will affect the surrounding
     /// type environment by performing unification.
-    pub fn select(&mut self, obligation: &TraitObligation<'tcx>)
+    pub fn select(&mut self, obligation: &PolyTraitObligation<'tcx>)
                   -> SelectionResult<'tcx, Selection<'tcx>> {
         debug!("select({:?})", obligation);
         assert!(!obligation.predicate.has_escaping_regions());
@@ -735,7 +735,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
     fn evaluate_trait_predicate_recursively<'o>(&mut self,
                                                 previous_stack: TraitObligationStackList<'o, 'tcx>,
-                                                mut obligation: TraitObligation<'tcx>)
+                                                mut obligation: PolyTraitObligation<'tcx>)
                                                 -> EvaluationResult
     {
         debug!("evaluate_trait_predicate_recursively({:?})",
@@ -1361,7 +1361,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 
     fn assemble_candidates_from_projected_tys(&mut self,
-                                              obligation: &TraitObligation<'tcx>,
+                                              obligation: &PolyTraitObligation<'tcx>,
                                               candidates: &mut SelectionCandidateSet<'tcx>)
     {
         debug!("assemble_candidates_for_projected_tys({:?})", obligation);
@@ -1390,7 +1390,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
     fn match_projection_obligation_against_definition_bounds(
         &mut self,
-        obligation: &TraitObligation<'tcx>)
+        obligation: &PolyTraitObligation<'tcx>)
         -> bool
     {
         let poly_trait_predicate =
@@ -1451,7 +1451,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 
     fn match_projection(&mut self,
-                        obligation: &TraitObligation<'tcx>,
+                        obligation: &PolyTraitObligation<'tcx>,
                         trait_bound: ty::PolyTraitRef<'tcx>,
                         skol_trait_ref: ty::TraitRef<'tcx>)
                         -> bool
@@ -1517,7 +1517,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 
     fn assemble_generator_candidates(&mut self,
-                                   obligation: &TraitObligation<'tcx>,
+                                   obligation: &PolyTraitObligation<'tcx>,
                                    candidates: &mut SelectionCandidateSet<'tcx>)
                                    -> Result<(),SelectionError<'tcx>>
     {
@@ -1554,7 +1554,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     /// parameters and hence do not affect whether this trait is a match or not. They will be
     /// unified during the confirmation step.
     fn assemble_closure_candidates(&mut self,
-                                   obligation: &TraitObligation<'tcx>,
+                                   obligation: &PolyTraitObligation<'tcx>,
                                    candidates: &mut SelectionCandidateSet<'tcx>)
                                    -> Result<(),SelectionError<'tcx>>
     {
@@ -1595,7 +1595,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
     /// Implement one of the `Fn()` family for a fn pointer.
     fn assemble_fn_pointer_candidates(&mut self,
-                                      obligation: &TraitObligation<'tcx>,
+                                      obligation: &PolyTraitObligation<'tcx>,
                                       candidates: &mut SelectionCandidateSet<'tcx>)
                                       -> Result<(),SelectionError<'tcx>>
     {
@@ -1632,7 +1632,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
     /// Search for impls that might apply to `obligation`.
     fn assemble_candidates_from_impls(&mut self,
-                                      obligation: &TraitObligation<'tcx>,
+                                      obligation: &PolyTraitObligation<'tcx>,
                                       candidates: &mut SelectionCandidateSet<'tcx>)
                                       -> Result<(), SelectionError<'tcx>>
     {
@@ -1657,7 +1657,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 
     fn assemble_candidates_from_default_impls(&mut self,
-                                              obligation: &TraitObligation<'tcx>,
+                                              obligation: &PolyTraitObligation<'tcx>,
                                               candidates: &mut SelectionCandidateSet<'tcx>)
                                               -> Result<(), SelectionError<'tcx>>
     {
@@ -1706,7 +1706,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
     /// Search for impls that might apply to `obligation`.
     fn assemble_candidates_from_object_ty(&mut self,
-                                          obligation: &TraitObligation<'tcx>,
+                                          obligation: &PolyTraitObligation<'tcx>,
                                           candidates: &mut SelectionCandidateSet<'tcx>)
     {
         debug!("assemble_candidates_from_object_ty(self_ty={:?})",
@@ -1782,7 +1782,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
     /// Search for unsizing that might apply to `obligation`.
     fn assemble_candidates_for_unsizing(&mut self,
-                                        obligation: &TraitObligation<'tcx>,
+                                        obligation: &PolyTraitObligation<'tcx>,
                                         candidates: &mut SelectionCandidateSet<'tcx>) {
         // We currently never consider higher-ranked obligations e.g.
         // `for<'a> &'a T: Unsize<Trait+'a>` to be implemented. This is not
@@ -1972,7 +1972,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         }
     }
 
-    fn sized_conditions(&mut self, obligation: &TraitObligation<'tcx>)
+    fn sized_conditions(&mut self, obligation: &PolyTraitObligation<'tcx>)
                      -> BuiltinImplConditions<'tcx>
     {
         use self::BuiltinImplConditions::{Ambiguous, None, Never, Where};
@@ -2018,7 +2018,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         }
     }
 
-    fn copy_conditions(&mut self, obligation: &TraitObligation<'tcx>)
+    fn copy_conditions(&mut self, obligation: &PolyTraitObligation<'tcx>)
                      -> BuiltinImplConditions<'tcx>
     {
         // NOTE: binder moved to (*)
@@ -2218,7 +2218,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     // type error.  See `README.md` for more details.
 
     fn confirm_candidate(&mut self,
-                         obligation: &TraitObligation<'tcx>,
+                         obligation: &PolyTraitObligation<'tcx>,
                          candidate: SelectionCandidate<'tcx>)
                          -> Result<Selection<'tcx>,SelectionError<'tcx>>
     {
@@ -2289,7 +2289,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 
     fn confirm_projection_candidate(&mut self,
-                                    obligation: &TraitObligation<'tcx>)
+                                    obligation: &PolyTraitObligation<'tcx>)
     {
         self.in_snapshot(|this, _snapshot| {
             let result =
@@ -2299,7 +2299,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 
     fn confirm_param_candidate(&mut self,
-                               obligation: &TraitObligation<'tcx>,
+                               obligation: &PolyTraitObligation<'tcx>,
                                param: ty::PolyTraitRef<'tcx>)
                                -> Vec<PredicateObligation<'tcx>>
     {
@@ -2322,7 +2322,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 
     fn confirm_builtin_candidate(&mut self,
-                                 obligation: &TraitObligation<'tcx>,
+                                 obligation: &PolyTraitObligation<'tcx>,
                                  has_nested: bool)
                                  -> VtableBuiltinData<PredicateObligation<'tcx>>
     {
@@ -2372,7 +2372,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     /// 1. For each constituent type `Y` in `X`, `Y : Foo` holds
     /// 2. For each where-clause `C` declared on `Foo`, `[Self => X] C` holds.
     fn confirm_default_impl_candidate(&mut self,
-                                      obligation: &TraitObligation<'tcx>,
+                                      obligation: &PolyTraitObligation<'tcx>,
                                       trait_def_id: DefId)
                                       -> VtableDefaultImplData<PredicateObligation<'tcx>>
     {
@@ -2388,7 +2388,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
     /// See `confirm_default_impl_candidate`
     fn vtable_default_impl(&mut self,
-                           obligation: &TraitObligation<'tcx>,
+                           obligation: &PolyTraitObligation<'tcx>,
                            trait_def_id: DefId,
                            nested: ty::Binder<Vec<Ty<'tcx>>>)
                            -> VtableDefaultImplData<PredicateObligation<'tcx>>
@@ -2426,7 +2426,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 
     fn confirm_impl_candidate(&mut self,
-                              obligation: &TraitObligation<'tcx>,
+                              obligation: &PolyTraitObligation<'tcx>,
                               impl_def_id: DefId)
                               -> VtableImplData<'tcx, PredicateObligation<'tcx>>
     {
@@ -2486,7 +2486,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 
     fn confirm_object_candidate(&mut self,
-                                obligation: &TraitObligation<'tcx>)
+                                obligation: &PolyTraitObligation<'tcx>)
                                 -> VtableObjectData<'tcx, PredicateObligation<'tcx>>
     {
         debug!("confirm_object_candidate({:?})",
@@ -2548,7 +2548,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         }
     }
 
-    fn confirm_fn_pointer_candidate(&mut self, obligation: &TraitObligation<'tcx>)
+    fn confirm_fn_pointer_candidate(&mut self, obligation: &PolyTraitObligation<'tcx>)
         -> Result<VtableFnPointerData<'tcx, PredicateObligation<'tcx>>, SelectionError<'tcx>>
     {
         debug!("confirm_fn_pointer_candidate({:?})",
@@ -2579,7 +2579,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 
     fn confirm_generator_candidate(&mut self,
-                                   obligation: &TraitObligation<'tcx>)
+                                   obligation: &PolyTraitObligation<'tcx>)
                                    -> Result<VtableGeneratorData<'tcx, PredicateObligation<'tcx>>,
                                            SelectionError<'tcx>>
     {
@@ -2626,7 +2626,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 
     fn confirm_closure_candidate(&mut self,
-                                 obligation: &TraitObligation<'tcx>)
+                                 obligation: &PolyTraitObligation<'tcx>)
                                  -> Result<VtableClosureData<'tcx, PredicateObligation<'tcx>>,
                                            SelectionError<'tcx>>
     {
@@ -2720,7 +2720,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 
     fn confirm_builtin_unsize_candidate(&mut self,
-                                        obligation: &TraitObligation<'tcx>,)
+                                        obligation: &PolyTraitObligation<'tcx>,)
         -> Result<VtableBuiltinData<PredicateObligation<'tcx>>, SelectionError<'tcx>>
     {
         let tcx = self.tcx();
@@ -2939,7 +2939,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
     fn rematch_impl(&mut self,
                     impl_def_id: DefId,
-                    obligation: &TraitObligation<'tcx>)
+                    obligation: &PolyTraitObligation<'tcx>)
                     -> (Normalized<'tcx, &'tcx Substs<'tcx>>,
                         ty::ParamEnv<'tcx>)
     {
@@ -2955,7 +2955,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
     fn match_impl(&mut self,
                   impl_def_id: DefId,
-                  obligation: &TraitObligation<'tcx>)
+                  obligation: &PolyTraitObligation<'tcx>)
                   -> Result<(Normalized<'tcx, &'tcx Substs<'tcx>>,
                              ty::ParamEnv<'tcx>), ()>
     {
@@ -3007,7 +3007,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 
     fn fast_reject_trait_refs(&mut self,
-                              obligation: &TraitObligation,
+                              obligation: &PolyTraitObligation,
                               impl_trait_ref: &ty::TraitRef)
                               -> bool
     {
@@ -3035,7 +3035,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     /// because where-clauses are stored in the parameter environment
     /// unnormalized.
     fn match_where_clause_trait_ref(&mut self,
-                                    obligation: &TraitObligation<'tcx>,
+                                    obligation: &PolyTraitObligation<'tcx>,
                                     where_clause_trait_ref: ty::PolyTraitRef<'tcx>)
                                     -> Result<Vec<PredicateObligation<'tcx>>,()>
     {
@@ -3046,7 +3046,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     /// Returns `Ok` if `poly_trait_ref` being true implies that the
     /// obligation is satisfied.
     fn match_poly_trait_ref(&mut self,
-                            obligation: &TraitObligation<'tcx>,
+                            obligation: &PolyTraitObligation<'tcx>,
                             poly_trait_ref: ty::PolyTraitRef<'tcx>)
                             -> Result<(),()>
     {
@@ -3074,7 +3074,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
     fn push_stack<'o,'s:'o>(&mut self,
                             previous_stack: TraitObligationStackList<'s, 'tcx>,
-                            obligation: &'o TraitObligation<'tcx>)
+                            obligation: &'o PolyTraitObligation<'tcx>)
                             -> TraitObligationStack<'o, 'tcx>
     {
         let fresh_trait_ref = obligation.predicate.fold_with(&mut self.freshener);
@@ -3086,7 +3086,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 
     fn closure_trait_ref_unnormalized(&mut self,
-                                      obligation: &TraitObligation<'tcx>,
+                                      obligation: &PolyTraitObligation<'tcx>,
                                       closure_def_id: DefId,
                                       substs: ty::ClosureSubsts<'tcx>)
                                       -> ty::PolyTraitRef<'tcx>
@@ -3108,7 +3108,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 
     fn generator_trait_ref_unnormalized(&mut self,
-                                      obligation: &TraitObligation<'tcx>,
+                                      obligation: &PolyTraitObligation<'tcx>,
                                       closure_def_id: DefId,
                                       substs: ty::ClosureSubsts<'tcx>)
                                       -> ty::PolyTraitRef<'tcx>
@@ -3173,7 +3173,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 }
 
-impl<'tcx> TraitObligation<'tcx> {
+impl<'tcx> PolyTraitObligation<'tcx> {
     #[allow(unused_comparisons)]
     pub fn derived_cause(&self,
                         variant: fn(DerivedObligationCause<'tcx>) -> ObligationCauseCode<'tcx>)
