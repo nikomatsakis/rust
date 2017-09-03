@@ -84,7 +84,7 @@ pub struct Obligation<'tcx, T> {
 }
 
 pub type PredicateObligation<'tcx> = Obligation<'tcx, ty::Predicate<'tcx>>;
-pub type TraitObligation<'tcx> = Obligation<'tcx, ty::PolyTraitRef<'tcx>>;
+pub type PolyTraitObligation<'tcx> = Obligation<'tcx, ty::PolyTraitRef<'tcx>>;
 
 /// Why did we incur this obligation? Used for error reporting.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -217,7 +217,6 @@ pub struct DerivedObligationCause<'tcx> {
 
 pub type Obligations<'tcx, O> = Vec<Obligation<'tcx, O>>;
 pub type PredicateObligations<'tcx> = Vec<PredicateObligation<'tcx>>;
-pub type TraitObligations<'tcx> = Vec<TraitObligation<'tcx>>;
 
 pub type Selection<'tcx> = Vtable<'tcx, PredicateObligation<'tcx>>;
 
@@ -839,7 +838,7 @@ impl<'tcx> FulfillmentError<'tcx> {
     }
 }
 
-impl<'tcx> TraitObligation<'tcx> {
+impl<'tcx> PolyTraitObligation<'tcx> {
     fn self_ty(&self) -> ty::Binder<Ty<'tcx>> {
         ty::Binder(self.predicate.skip_binder().self_ty())
     }
