@@ -521,7 +521,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                     &data.parent_trait_ref);
                 match self.get_parent_trait_ref(&data.parent_code) {
                     Some(t) => Some(t),
-                    None => Some(format!("{}", parent_trait_ref.0.self_ty())),
+                    None => Some(format!("{}", parent_trait_ref.self_ty())),
                 }
             }
             _ => None,
@@ -731,7 +731,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                         _ => 1,
                     };
                 let (expected_tys, expected_ty_count) =
-                    match expected_trait_ref.skip_binder().substs.type_at(1).sty {
+                    match expected_trait_ref.substs.type_at(1).sty {
                         ty::TyTuple(ref tys, _) =>
                             (tys.iter().map(|t| &t.sty).collect(), tys.len()),
                         ref sty => (vec![sty], 1),
@@ -930,11 +930,11 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                            span: Span,
                            found_span: Option<Span>,
                            expected_ref: ty::PolyTraitRef<'tcx>,
-                           found: ty::PolyTraitRef<'tcx>)
+                           found: ty::TraitRef<'tcx>)
         -> DiagnosticBuilder<'tcx>
     {
         fn build_fn_sig_string<'a, 'gcx, 'tcx>(tcx: ty::TyCtxt<'a, 'gcx, 'tcx>,
-                                               trait_ref: &ty::TraitRef<'tcx>) -> String {
+                                               trait_ref: ty::TraitRef<'tcx>) -> String {
             let inputs = trait_ref.substs.type_at(1);
             let sig = if let ty::TyTuple(inputs, _) = inputs.sty {
                 tcx.mk_fn_sig(
@@ -963,14 +963,14 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
 
         let found_str = format!(
             "expected signature of `{}`",
-            build_fn_sig_string(self.tcx, found.skip_binder())
+            build_fn_sig_string(self.tcx, found)
         );
         err.span_label(span, found_str);
 
         let found_span = found_span.unwrap_or(span);
         let expected_str = format!(
             "found signature of `{}`",
-            build_fn_sig_string(self.tcx, expected_ref.skip_binder())
+            build_fn_sig_string(self.tcx, *expected_ref.skip_binder())
         );
         err.span_label(found_span, expected_str);
 
@@ -1283,7 +1283,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             ObligationCauseCode::BuiltinDerivedObligation(ref data) => {
                 let parent_trait_ref = self.resolve_type_vars_if_possible(&data.parent_trait_ref);
                 err.note(&format!("required because it appears within the type `{}`",
-                                  parent_trait_ref.0.self_ty()));
+                                  parent_trait_ref.self_ty()));
                 let parent_predicate = parent_trait_ref.to_predicate();
                 self.note_obligation_cause_code(err,
                                                 &parent_predicate,
@@ -1294,7 +1294,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 err.note(
                     &format!("required because of the requirements on the impl of `{}` for `{}`",
                              parent_trait_ref.print_without_self(),
-                             parent_trait_ref.0.self_ty()));
+                             parent_trait_ref.self_ty()));
                 let parent_predicate = parent_trait_ref.to_predicate();
                 self.note_obligation_cause_code(err,
                                                 &parent_predicate,

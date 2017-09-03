@@ -47,7 +47,7 @@ pub fn trans_fulfill_obligation<'a, 'tcx>(ty: TyCtxt<'a, 'tcx, 'tcx>,
         let obligation_cause = ObligationCause::dummy();
         let obligation = Obligation::new(obligation_cause, param_env, trait_ref);
 
-        let selection = match selcx.select(&obligation) {
+        let selection = match selcx.select_poly(&obligation) {
             Ok(Some(selection)) => selection,
             Ok(None) => {
                 // Ambiguity can happen when monomorphizing during trans
