@@ -400,7 +400,7 @@ impl<'b, 'a, 'tcx> ReachEverythingInTheInterfaceVisitor<'b, 'a, 'tcx> {
             predicate.visit_with(self);
             match predicate {
                 &ty::Predicate::Trait(poly_predicate) => {
-                    self.check_trait_ref(poly_predicate.skip_binder().trait_ref);
+                    self.check_trait_ref(*poly_predicate.skip_binder());
                 },
                 &ty::Predicate::Projection(poly_predicate) => {
                     let tcx = self.ev.tcx;
@@ -854,7 +854,7 @@ impl<'a, 'tcx> TypeVisitor<'tcx> for TypePrivacyVisitor<'a, 'tcx> {
             ty::TyProjection(ref proj) => {
                 let trait_ref = proj.trait_ref(self.tcx);
                 if !self.item_is_accessible(trait_ref.def_id) {
-                    let msg = format!("trait `{}` is private", trait_ref);
+                    let msg = format!("trait `{}` is private", trait_ref.print_without_self());
                     self.tcx.sess.span_err(self.span, &msg);
                     return true;
                 }
@@ -866,7 +866,7 @@ impl<'a, 'tcx> TypeVisitor<'tcx> for TypePrivacyVisitor<'a, 'tcx> {
                 for predicate in &self.tcx.predicates_of(def_id).predicates {
                     let trait_ref = match *predicate {
                         ty::Predicate::Trait(ref poly_trait_predicate) => {
-                            Some(poly_trait_predicate.skip_binder().trait_ref)
+                            Some(*poly_trait_predicate.skip_binder())
                         }
                         ty::Predicate::Projection(ref poly_projection_predicate) => {
                             if poly_projection_predicate.skip_binder().ty.visit_with(self) {
@@ -880,7 +880,7 @@ impl<'a, 'tcx> TypeVisitor<'tcx> for TypePrivacyVisitor<'a, 'tcx> {
                     };
                     if let Some(trait_ref) = trait_ref {
                         if !self.item_is_accessible(trait_ref.def_id) {
-                            let msg = format!("trait `{}` is private", trait_ref);
+                            let msg = format!("trait `{}` is private", trait_ref.print_without_self());
                             self.tcx.sess.span_err(self.span, &msg);
                             return true;
                         }
@@ -1279,7 +1279,7 @@ impl<'a, 'tcx: 'a> SearchInterfaceForPrivateItemsVisitor<'a, 'tcx> {
             predicate.visit_with(self);
             match predicate {
                 &ty::Predicate::Trait(poly_predicate) => {
-                    self.check_trait_ref(poly_predicate.skip_binder().trait_ref);
+                    self.check_trait_ref(*poly_predicate.skip_binder());
                 },
                 &ty::Predicate::Projection(poly_predicate) => {
                     let tcx = self.tcx;
@@ -1323,7 +1323,7 @@ impl<'a, 'tcx: 'a> SearchInterfaceForPrivateItemsVisitor<'a, 'tcx> {
             if !vis.is_at_least(self.required_visibility, self.tcx) {
                 if self.has_pub_restricted || self.has_old_errors {
                     struct_span_err!(self.tcx.sess, self.span, E0445,
-                                     "private trait `{}` in public interface", trait_ref)
+                                     "private trait `{}` in public interface", trait_ref.print_without_self())
                         .span_label(self.span, format!(
                                     "private trait can't be public"))
                         .emit();
@@ -1332,7 +1332,7 @@ impl<'a, 'tcx: 'a> SearchInterfaceForPrivateItemsVisitor<'a, 'tcx> {
                                        node_id,
                                        self.span,
                                        &format!("private trait `{}` in public \
-                                                 interface (error E0445)", trait_ref));
+                                                 interface (error E0445)", trait_ref.print_without_self()));
                 }
             }
         }

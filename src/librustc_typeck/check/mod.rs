@@ -1331,7 +1331,7 @@ fn check_impl_items_against_trait<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                   "item `{}` is an associated const, \
                                   which doesn't match its trait `{}`",
                                   ty_impl_item.name,
-                                  impl_trait_ref);
+                                  impl_trait_ref.print_without_self());
                          err.span_label(impl_item.span, "does not match trait");
                          // We can only get the spans from local trait definition
                          // Same for E0324 and E0325
@@ -1367,7 +1367,7 @@ fn check_impl_items_against_trait<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                   "item `{}` is an associated method, \
                                   which doesn't match its trait `{}`",
                                   ty_impl_item.name,
-                                  impl_trait_ref);
+                                  impl_trait_ref.print_without_self());
                          err.span_label(impl_item.span, "does not match trait");
                          if let Some(trait_span) = tcx.hir.span_if_local(ty_trait_item.def_id) {
                             err.span_label(trait_span, "item in trait");
@@ -1385,7 +1385,7 @@ fn check_impl_items_against_trait<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                   "item `{}` is an associated type, \
                                   which doesn't match its trait `{}`",
                                   ty_impl_item.name,
-                                  impl_trait_ref);
+                                  impl_trait_ref.print_without_self());
                          err.span_label(impl_item.span, "does not match trait");
                          if let Some(trait_span) = tcx.hir.span_if_local(ty_trait_item.def_id) {
                             err.span_label(trait_span, "item in trait");

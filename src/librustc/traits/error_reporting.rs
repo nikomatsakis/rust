@@ -36,7 +36,7 @@ use middle::const_val;
 use rustc::lint::builtin::EXTRA_REQUIREMENT_IN_IMPL;
 use std::fmt;
 use syntax::ast;
-use ty::{self, AdtKind, ToPredicate, ToPolyTraitRef, Ty, TyCtxt, TypeFoldable};
+use ty::{self, AdtKind, ToPredicate, Ty, TyCtxt, TypeFoldable};
 use ty::error::ExpectedFound;
 use ty::fast_reject;
 use ty::fold::TypeFolder;
@@ -126,7 +126,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         }
 
         let (cond, error) = match (cond, error) {
-            (&ty::Predicate::Trait(..), &ty::Predicate::Trait(ref error))
+            (&ty::Predicate::Trait(..), &ty::Predicate::Trait(error))
                 => (cond, error),
             _ => {
                 // FIXME: make this work in other cases too.
@@ -136,8 +136,6 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
 
         for implication in super::elaborate_predicates(self.tcx, vec![cond.clone()]) {
             if let ty::Predicate::Trait(implication) = implication {
-                let error = error.to_poly_trait_ref();
-                let implication = implication.to_poly_trait_ref();
                 // FIXME: I'm just not taking associated types at all here.
                 // Eventually I'll need to implement param-env-aware
                 // `Γ₁ ⊦ φ₁ => Γ₂ ⊦ φ₂` logic.
@@ -552,14 +550,12 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                     return;
                 }
                 match obligation.predicate {
-                    ty::Predicate::Trait(ref trait_predicate) => {
-                        let trait_predicate =
-                            self.resolve_type_vars_if_possible(trait_predicate);
+                    ty::Predicate::Trait(ref trait_ref) => {
+                        let trait_ref = self.resolve_type_vars_if_possible(trait_ref);
 
-                        if self.tcx.sess.has_errors() && trait_predicate.references_error() {
+                        if self.tcx.sess.has_errors() && trait_ref.references_error() {
                             return;
                         }
-                        let trait_ref = trait_predicate.to_poly_trait_ref();
                         let (post_message, pre_message) =
                             self.get_parent_trait_ref(&obligation.cause.code)
                                 .map(|t| (format!(" in `{}`", t), format!("within `{}`, ", t)))
@@ -585,13 +581,13 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                             err.span_label(span, s.as_str());
                             err.help(&format!("{}the trait `{}` is not implemented for `{}`",
                                               pre_message,
-                                              trait_ref,
+                                              trait_ref.print_without_self(),
                                               trait_ref.self_ty()));
                         } else {
                             err.span_label(span,
                                            &*format!("{}the trait `{}` is not implemented for `{}`",
                                                      pre_message,
-                                                     trait_ref,
+                                                     trait_ref.print_without_self(),
                                                      trait_ref.self_ty()));
                         }
 
@@ -606,7 +602,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                             //     "the type `T` can't be frobnicated"
                             // which is somewhat confusing.
                             err.help(&format!("consider adding a `where {}` bound",
-                                                trait_ref.to_predicate()));
+                                              trait_ref.to_predicate()));
                         } else if !have_alt_message {
                             // Can't show anything else useful, try to find similar impls.
                             let impl_candidates = self.find_similar_impl_candidates(trait_ref);
@@ -1047,8 +1043,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         }
 
         match predicate {
-            ty::Predicate::Trait(ref data) => {
-                let trait_ref = data.to_poly_trait_ref();
+            ty::Predicate::Trait(trait_ref) => {
                 let self_ty = trait_ref.self_ty();
                 if predicate.references_error() {
                     return;
@@ -1298,7 +1293,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 let parent_trait_ref = self.resolve_type_vars_if_possible(&data.parent_trait_ref);
                 err.note(
                     &format!("required because of the requirements on the impl of `{}` for `{}`",
-                             parent_trait_ref,
+                             parent_trait_ref.print_without_self(),
                              parent_trait_ref.0.self_ty()));
                 let parent_predicate = parent_trait_ref.to_predicate();
                 self.note_obligation_cause_code(err,

@@ -501,7 +501,7 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
             .filter(|r| self.trait_defines_associated_type_named(r.def_id(), binding.item_name));
 
         let candidate = self.one_bound_for_assoc_type(candidates,
-                                                      &trait_ref.to_string(),
+                                                      &trait_ref.print_without_self().to_string(),
                                                       binding.item_name,
                                                       binding.span)?;
 
@@ -747,12 +747,12 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
                 if let Some(span) = bound_span {
                     err.span_label(span, format!("ambiguous `{}` from `{}`",
                                                   assoc_name,
-                                                  bound));
+                                                  bound.print_without_self()));
                 } else {
                     span_note!(&mut err, span,
                                "associated type `{}` could derive from `{}`",
                                ty_param_name,
-                               bound);
+                               bound.print_without_self());
                 }
             }
             err.emit();

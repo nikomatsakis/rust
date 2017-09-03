@@ -17,7 +17,7 @@ use rustc::hir::def_id::DefId;
 use rustc::infer::{InferOk, InferResult};
 use rustc::infer::LateBoundRegionConversionTime;
 use rustc::infer::type_variable::TypeVariableOrigin;
-use rustc::ty::{self, ToPolyTraitRef, Ty};
+use rustc::ty::{self, Ty};
 use rustc::ty::subst::Substs;
 use rustc::ty::TypeFoldable;
 use std::cmp;
@@ -220,7 +220,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             .filter_map(|obligation| {
                 let opt_trait_ref = match obligation.predicate {
                     ty::Predicate::Projection(ref data) => Some(data.to_poly_trait_ref(self.tcx)),
-                    ty::Predicate::Trait(ref data) => Some(data.to_poly_trait_ref()),
+                    ty::Predicate::Trait(data) => Some(data),
                     ty::Predicate::Equate(..) => None,
                     ty::Predicate::Subtype(..) => None,
                     ty::Predicate::RegionOutlives(..) => None,

@@ -49,7 +49,7 @@ impl<'cx, 'tcx, 'v> UnsafetyChecker<'cx, 'tcx> {
                                   item.span,
                                   E0199,
                                   "implementing the trait `{}` is not unsafe",
-                                  trait_ref);
+                                  trait_ref.print_without_self());
                     }
 
                     (Unsafety::Unsafe, _, Unsafety::Normal, hir::ImplPolarity::Positive) => {
@@ -57,7 +57,7 @@ impl<'cx, 'tcx, 'v> UnsafetyChecker<'cx, 'tcx> {
                                   item.span,
                                   E0200,
                                   "the trait `{}` requires an `unsafe impl` declaration",
-                                  trait_ref);
+                                  trait_ref.print_without_self());
                     }
 
                     (Unsafety::Normal, Some(g), Unsafety::Normal, hir::ImplPolarity::Positive) =>

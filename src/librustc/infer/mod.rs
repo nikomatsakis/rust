@@ -397,6 +397,15 @@ impl<T> ExpectedFound<T> {
             ExpectedFound {expected: b, found: a}
         }
     }
+
+    pub fn map<OP, R>(self, mut op: OP) -> ExpectedFound<R>
+        where OP: FnMut(T) -> R
+    {
+        ExpectedFound {
+            expected: op(self.expected),
+            found: op(self.found),
+        }
+    }
 }
 
 impl<'tcx, T> InferOk<'tcx, T> {
@@ -1078,7 +1087,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     }
 
     pub fn trait_ref_to_string(&self, t: &ty::TraitRef<'tcx>) -> String {
-        self.resolve_type_vars_if_possible(t).to_string()
+        self.resolve_type_vars_if_possible(t).print_without_self().to_string()
     }
 
     pub fn shallow_resolve(&self, typ: Ty<'tcx>) -> Ty<'tcx> {

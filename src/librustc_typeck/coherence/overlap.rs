@@ -88,7 +88,7 @@ impl<'cx, 'tcx, 'v> ItemLikeVisitor<'v> for OverlapChecker<'cx, 'tcx> {
                                                    E0521,
                                                    "redundant auto implementations of trait \
                                                     `{}`:",
-                                                   trait_ref);
+                                                   trait_ref.print_without_self());
                     err.span_note(self.tcx
                                       .span_of_impl(self.tcx.hir.local_def_id(prev_id))
                                       .unwrap(),

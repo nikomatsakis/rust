@@ -251,7 +251,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             // the module more clearly.
             self.push_item_path(buffer, parent_def_id);
             if let Some(trait_ref) = impl_trait_ref {
-                buffer.push(&format!("<impl {} for {}>", trait_ref, self_ty));
+                buffer.push(&format!("<impl {} for {}>", trait_ref.print_without_self(), self_ty));
             } else {
                 buffer.push(&format!("<impl {}>", self_ty));
             }
@@ -265,7 +265,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             // Trait impls.
             buffer.push(&format!("<{} as {}>",
                                  self_ty,
-                                 trait_ref));
+                                 trait_ref.print_without_self()));
             return;
         }
 

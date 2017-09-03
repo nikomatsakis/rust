@@ -908,9 +908,10 @@ impl fmt::Debug for ty::FloatVarValue {
 define_print_multi! {
     [
     ('tcx) ty::Binder<&'tcx ty::Slice<ty::ExistentialPredicate<'tcx>>>,
-    ('tcx) ty::Binder<ty::TraitRef<'tcx>>,
+        // ('tcx) ty::Binder<ty::TraitRef<'tcx>> is intentionally omited
+    ('tcx) ty::Binder<ty::TraitRefPrintWithColon<'tcx>>,
+    ('tcx) ty::Binder<ty::TraitRefPrintWithoutSelf<'tcx>>,
     ('tcx) ty::Binder<ty::FnSig<'tcx>>,
-    ('tcx) ty::Binder<ty::TraitPredicate<'tcx>>,
     ('tcx) ty::Binder<ty::EquatePredicate<'tcx>>,
     ('tcx) ty::Binder<ty::SubtypePredicate<'tcx>>,
     ('tcx) ty::Binder<ty::ProjectionPredicate<'tcx>>,
@@ -926,19 +927,44 @@ define_print_multi! {
 
 define_print! {
     ('tcx) ty::TraitRef<'tcx>, (self, f, cx) {
-        display {
-            cx.parameterized(f, self.substs, self.def_id, &[])
-        }
+        // NB -- no `display` impl. Instead, use `trait_ref.print_without_self()`
+        // or `trait_ref.print_with_colon()`.
+        //
+        // display { .. }
+
         debug {
             // when printing out the debug representation, we don't need
             // to enumerate the `for<...>` etc because the debruijn index
             // tells you everything you need to know.
+            print!(f, cx, write("<"), print(self.print_with_colon()), write(">"))
+        }
+    }
+}
+
+define_print! {
+    ('tcx) ty::TraitRefPrintWithoutSelf<'tcx>, (self, f, cx) {
+        display {
+            cx.parameterized(f, self.trait_ref.substs, self.trait_ref.def_id, &[])
+        }
+        debug {
+            cx.parameterized(f, self.trait_ref.substs, self.trait_ref.def_id, &[])
+        }
+    }
+}
+
+define_print! {
+    ('tcx) ty::TraitRefPrintWithColon<'tcx>, (self, f, cx) {
+        display {
             print!(f, cx,
-                   write("<"),
-                   print(self.self_ty()),
-                   write(" as "))?;
-            cx.parameterized(f, self.substs, self.def_id, &[])?;
-            write!(f, ">")
+                   print(self.trait_ref.self_ty()),
+                   write(": "),
+                   print(self.trait_ref.print_without_self()))
+        }
+        debug {
+            print!(f, cx,
+                   print(self.trait_ref.self_ty()),
+                   write(": "),
+                   print(self.trait_ref.print_without_self()))
         }
     }
 }
@@ -1043,7 +1069,7 @@ define_print! {
 
                                 print!(f, cx,
                                        write("{}", if first { " " } else { "+" }),
-                                       print(trait_ref))?;
+                                       print(trait_ref.print_without_self()))?;
                                 first = false;
                             }
                         }
@@ -1195,18 +1221,6 @@ define_print! {
 }
 
 define_print! {
-    ('tcx) ty::TraitPredicate<'tcx>, (self, f, cx) {
-        debug {
-            write!(f, "TraitPredicate({:?})",
-                   self.trait_ref)
-        }
-        display {
-            print!(f, cx, print(self.trait_ref.self_ty()), write(": "), print(self.trait_ref))
-        }
-    }
-}
-
-define_print! {
     ('tcx) ty::ProjectionPredicate<'tcx>, (self, f, cx) {
         debug {
             print!(f, cx,
@@ -1252,7 +1266,7 @@ define_print! {
     ('tcx) ty::Predicate<'tcx>, (self, f, cx) {
         display {
             match *self {
-                ty::Predicate::Trait(ref data) => data.print(f, cx),
+                ty::Predicate::Trait(ref data) => data.print_with_colon().print(f, cx),
                 ty::Predicate::Equate(ref predicate) => predicate.print(f, cx),
                 ty::Predicate::Subtype(ref predicate) => predicate.print(f, cx),
                 ty::Predicate::RegionOutlives(ref predicate) => predicate.print(f, cx),
@@ -1277,7 +1291,7 @@ define_print! {
         }
         debug {
             match *self {
-                ty::Predicate::Trait(ref a) => a.print(f, cx),
+                ty::Predicate::Trait(ref a) => a.print_with_colon().print(f, cx),
                 ty::Predicate::Equate(ref pair) => pair.print(f, cx),
                 ty::Predicate::Subtype(ref pair) => pair.print(f, cx),
                 ty::Predicate::RegionOutlives(ref pair) => pair.print(f, cx),
