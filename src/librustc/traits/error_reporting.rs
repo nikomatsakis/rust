@@ -518,7 +518,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                     &data.parent_trait_ref);
                 match self.get_parent_trait_ref(&data.parent_code) {
                     Some(t) => Some(t),
-                    None => Some(format!("{}", parent_trait_ref.0.self_ty())),
+                    None => Some(format!("{}", parent_trait_ref.self_ty())),
                 }
             }
             _ => None,
@@ -772,7 +772,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                                       found_span: Option<Span>,
                                       expected_ty: Ty<'tcx>,
                                       expected_ref: ty::PolyTraitRef<'tcx>,
-                                      found_ref: ty::PolyTraitRef<'tcx>,
+                                      found_ref: ty::TraitRef<'tcx>,
                                       type_error: &TypeError<'tcx>)
         -> DiagnosticBuilder<'tcx>
     {
@@ -1127,7 +1127,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             ObligationCauseCode::BuiltinDerivedObligation(ref data) => {
                 let parent_trait_ref = self.resolve_type_vars_if_possible(&data.parent_trait_ref);
                 err.note(&format!("required because it appears within the type `{}`",
-                                  parent_trait_ref.0.self_ty()));
+                                  parent_trait_ref.self_ty()));
                 let parent_predicate = parent_trait_ref.to_predicate();
                 self.note_obligation_cause_code(err,
                                                 &parent_predicate,
@@ -1138,7 +1138,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 err.note(
                     &format!("required because of the requirements on the impl of `{}` for `{}`",
                              parent_trait_ref,
-                             parent_trait_ref.0.self_ty()));
+                             parent_trait_ref.self_ty()));
                 let parent_predicate = parent_trait_ref.to_predicate();
                 self.note_obligation_cause_code(err,
                                                 &parent_predicate,

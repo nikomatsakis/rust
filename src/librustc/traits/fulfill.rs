@@ -374,7 +374,7 @@ fn process_predicate<'a, 'gcx, 'tcx>(
                 }
             }
 
-            match selcx.select(&trait_obligation) {
+            match selcx.select_poly(&trait_obligation) {
                 Ok(Some(vtable)) => {
                     debug!("selecting trait `{:?}` at depth {} yielded Ok(Some)",
                            trait_ref, obligation.recursion_depth);

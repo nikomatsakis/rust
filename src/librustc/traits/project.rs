@@ -951,8 +951,7 @@ fn assemble_candidates_from_impls<'cx, 'gcx, 'tcx>(
 {
     // If we are resolving `<T as TraitRef<...>>::Item == Type`,
     // start out by selecting the predicate `T as TraitRef<...>`:
-    let poly_trait_ref = obligation_trait_ref.to_poly_trait_ref();
-    let trait_obligation = obligation.with(poly_trait_ref);
+    let trait_obligation = obligation.with(obligation_trait_ref);
     selcx.infcx().probe(|_| {
         let vtable = match selcx.select(&trait_obligation) {
             Ok(Some(vtable)) => vtable,
@@ -1032,8 +1031,8 @@ fn assemble_candidates_from_impls<'cx, 'gcx, 'tcx>(
                 let new_candidate = if !is_default {
                     Some(ProjectionTyCandidate::Select)
                 } else if obligation.param_env.reveal == Reveal::All {
-                    assert!(!poly_trait_ref.needs_infer());
-                    if !poly_trait_ref.needs_subst() {
+                    assert!(!obligation_trait_ref.needs_infer());
+                    if !obligation_trait_ref.needs_subst() {
                         Some(ProjectionTyCandidate::Select)
                     } else {
                         None
@@ -1114,8 +1113,7 @@ fn confirm_select_candidate<'cx, 'gcx, 'tcx>(
     obligation_trait_ref: ty::TraitRef<'tcx>)
     -> Progress<'tcx>
 {
-    let poly_trait_ref = obligation_trait_ref.to_poly_trait_ref();
-    let trait_obligation = obligation.with(poly_trait_ref);
+    let trait_obligation = obligation.with(obligation_trait_ref);
     let vtable = match selcx.select(&trait_obligation) {
         Ok(Some(vtable)) => vtable,
         _ => {

@@ -546,7 +546,7 @@ impl<'f, 'gcx, 'tcx> Coerce<'f, 'gcx, 'tcx> {
                     continue;
                 }
             };
-            match selcx.select(&obligation.with(trait_ref)) {
+            match selcx.select_poly(&obligation.with(trait_ref)) {
                 // Uncertain or unimplemented.
                 Ok(None) |
                 Err(traits::Unimplemented) => {

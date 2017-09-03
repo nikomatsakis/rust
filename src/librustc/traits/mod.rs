@@ -86,6 +86,7 @@ pub struct Obligation<'tcx, T> {
 
 pub type PredicateObligation<'tcx> = Obligation<'tcx, ty::Predicate<'tcx>>;
 pub type PolyTraitObligation<'tcx> = Obligation<'tcx, ty::PolyTraitRef<'tcx>>;
+pub type TraitObligation<'tcx> = Obligation<'tcx, ty::TraitRef<'tcx>>;
 
 /// Why did we incur this obligation? Used for error reporting.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -210,7 +211,7 @@ pub struct DerivedObligationCause<'tcx> {
     /// current obligation. Note that only trait obligations lead to
     /// derived obligations, so we just store the trait reference here
     /// directly.
-    parent_trait_ref: ty::PolyTraitRef<'tcx>,
+    parent_trait_ref: ty::TraitRef<'tcx>,
 
     /// The parent trait had this cause
     parent_code: Rc<ObligationCauseCode<'tcx>>
@@ -225,7 +226,7 @@ pub type Selection<'tcx> = Vtable<'tcx, PredicateObligation<'tcx>>;
 pub enum SelectionError<'tcx> {
     Unimplemented,
     OutputTypeParameterMismatch(ty::PolyTraitRef<'tcx>,
-                                ty::PolyTraitRef<'tcx>,
+                                ty::TraitRef<'tcx>,
                                 ty::error::TypeError<'tcx>),
     TraitNotObjectSafe(DefId),
 }
@@ -839,9 +840,13 @@ impl<'tcx> FulfillmentError<'tcx> {
     }
 }
 
-impl<'tcx> PolyTraitObligation<'tcx> {
-    fn self_ty(&self) -> ty::Binder<Ty<'tcx>> {
-        ty::Binder(self.predicate.skip_binder().self_ty())
+impl<'tcx> TraitObligation<'tcx> {
+    fn def_id(&self) -> DefId {
+        self.predicate.def_id
+    }
+
+    fn self_ty(&self) -> Ty<'tcx> {
+        self.predicate.self_ty()
     }
 }
 

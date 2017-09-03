@@ -18,7 +18,7 @@ use hir::def_id::DefId;
 use hir::def::Def;
 use rustc::ty::subst::{Subst, Substs};
 use rustc::traits::{self, ObligationCause};
-use rustc::ty::{self, Ty, ToPredicate, ToPolyTraitRef, TraitRef, TypeFoldable};
+use rustc::ty::{self, Ty, ToPredicate, TraitRef, TypeFoldable};
 use rustc::infer::type_variable::TypeVariableOrigin;
 use rustc::util::nodemap::FxHashSet;
 use rustc::infer::{self, InferOk};
@@ -942,8 +942,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                               -> traits::SelectionResult<'tcx, traits::Selection<'tcx>>
     {
         let cause = traits::ObligationCause::misc(self.span, self.body_id);
-        let predicate = trait_ref.to_poly_trait_ref();
-        let obligation = traits::Obligation::new(cause, self.param_env, predicate);
+        let obligation = traits::Obligation::new(cause, self.param_env, trait_ref);
         traits::SelectionContext::new(self).select(&obligation)
     }
 

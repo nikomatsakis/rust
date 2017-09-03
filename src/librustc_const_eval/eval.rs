@@ -483,7 +483,7 @@ fn resolve_trait_associated_const<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     let (def_id, substs) = key.value;
     let trait_item = tcx.associated_item(def_id);
     let trait_id = trait_item.container.id();
-    let trait_ref = ty::Binder(ty::TraitRef::new(trait_id, substs));
+    let trait_ref = ty::TraitRef::new(trait_id, substs);
     debug!("resolve_trait_associated_const: trait_ref={:?}",
            trait_ref);
 
