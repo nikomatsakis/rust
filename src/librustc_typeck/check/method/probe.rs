@@ -18,7 +18,7 @@ use hir::def_id::DefId;
 use hir::def::Def;
 use rustc::ty::subst::{Subst, Substs};
 use rustc::traits::{self, ObligationCause};
-use rustc::ty::{self, Ty, ToPolyTraitRef, ToPredicate, TraitRef, TypeFoldable};
+use rustc::ty::{self, Ty, ToPredicate, ToPolyTraitRef, TraitRef, TypeFoldable};
 use rustc::infer::type_variable::TypeVariableOrigin;
 use rustc::util::nodemap::FxHashSet;
 use rustc::infer::{self, InferOk};
@@ -575,10 +575,10 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
             .iter()
             .filter_map(|predicate| {
                 match *predicate {
-                    ty::Predicate::Trait(ref trait_predicate) => {
-                        match trait_predicate.0.trait_ref.self_ty().sty {
+                    ty::Predicate::Trait(trait_predicate) => {
+                        match trait_predicate.skip_binder().self_ty().sty {
                             ty::TyParam(ref p) if *p == param_ty => {
-                                Some(trait_predicate.to_poly_trait_ref())
+                                Some(trait_predicate)
                             }
                             _ => None,
                         }
@@ -942,8 +942,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                               -> traits::SelectionResult<'tcx, traits::Selection<'tcx>>
     {
         let cause = traits::ObligationCause::misc(self.span, self.body_id);
-        let predicate =
-            trait_ref.to_poly_trait_ref().to_poly_trait_predicate();
+        let predicate = trait_ref.to_poly_trait_ref();
         let obligation = traits::Obligation::new(cause, self.param_env, predicate);
         traits::SelectionContext::new(self).select(&obligation)
     }
@@ -1059,7 +1058,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 if !selcx.evaluate_obligation(&o) {
                     result = ProbeResult::NoMatch;
                     if let &ty::Predicate::Trait(ref pred) = &o.predicate {
-                        possibly_unsatisfied_predicates.push(pred.0.trait_ref);
+                        possibly_unsatisfied_predicates.push(*pred.skip_binder());
                     }
                 }
             }

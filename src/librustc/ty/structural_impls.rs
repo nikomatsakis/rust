@@ -91,22 +91,26 @@ impl<'a, 'tcx> Lift<'tcx> for ty::TraitRef<'a> {
     }
 }
 
+impl<'a, 'tcx> Lift<'tcx> for ty::TraitRefDisplayNotSelf<'a> {
+    type Lifted = ty::TraitRefDisplayNotSelf<'tcx>;
+    fn lift_to_tcx<'b, 'gcx>(&self, tcx: TyCtxt<'b, 'gcx, 'tcx>) -> Option<Self::Lifted> {
+        tcx.lift(&self.trait_ref).map(|trait_ref| ty::TraitRefDisplayNotSelf { trait_ref })
+    }
+}
+
+impl<'a, 'tcx> Lift<'tcx> for ty::TraitRefDisplayAllWithColon<'a> {
+    type Lifted = ty::TraitRefDisplayAllWithColon<'tcx>;
+    fn lift_to_tcx<'b, 'gcx>(&self, tcx: TyCtxt<'b, 'gcx, 'tcx>) -> Option<Self::Lifted> {
+        tcx.lift(&self.trait_ref).map(|trait_ref| ty::TraitRefDisplayAllWithColon { trait_ref })
+    }
+}
+
 impl<'a, 'tcx> Lift<'tcx> for ty::ExistentialTraitRef<'a> {
     type Lifted = ty::ExistentialTraitRef<'tcx>;
     fn lift_to_tcx<'b, 'gcx>(&self, tcx: TyCtxt<'b, 'gcx, 'tcx>) -> Option<Self::Lifted> {
         tcx.lift(&self.substs).map(|substs| ty::ExistentialTraitRef {
             def_id: self.def_id,
             substs,
-        })
-    }
-}
-
-impl<'a, 'tcx> Lift<'tcx> for ty::TraitPredicate<'a> {
-    type Lifted = ty::TraitPredicate<'tcx>;
-    fn lift_to_tcx<'b, 'gcx>(&self, tcx: TyCtxt<'b, 'gcx, 'tcx>)
-                             -> Option<ty::TraitPredicate<'tcx>> {
-        tcx.lift(&self.trait_ref).map(|trait_ref| ty::TraitPredicate {
-            trait_ref,
         })
     }
 }
@@ -663,6 +667,30 @@ impl<'tcx> TypeFoldable<'tcx> for ty::TraitRef<'tcx> {
     }
 }
 
+impl<'tcx> TypeFoldable<'tcx> for ty::TraitRefDisplayNotSelf<'tcx> {
+    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
+        ty::TraitRefDisplayNotSelf {
+            trait_ref: self.trait_ref.fold_with(folder),
+        }
+    }
+
+    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
+        self.trait_ref.visit_with(visitor)
+    }
+}
+
+impl<'tcx> TypeFoldable<'tcx> for ty::TraitRefDisplayAllWithColon<'tcx> {
+    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
+        ty::TraitRefDisplayAllWithColon {
+            trait_ref: self.trait_ref.fold_with(folder),
+        }
+    }
+
+    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
+        self.trait_ref.visit_with(visitor)
+    }
+}
+
 impl<'tcx> TypeFoldable<'tcx> for ty::ExistentialTraitRef<'tcx> {
     fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
         ty::ExistentialTraitRef {
@@ -950,18 +978,6 @@ impl<'tcx> TypeFoldable<'tcx> for ty::SubtypePredicate<'tcx> {
 
     fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
         self.a.visit_with(visitor) || self.b.visit_with(visitor)
-    }
-}
-
-impl<'tcx> TypeFoldable<'tcx> for ty::TraitPredicate<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        ty::TraitPredicate {
-            trait_ref: self.trait_ref.fold_with(folder)
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        self.trait_ref.visit_with(visitor)
     }
 }
 

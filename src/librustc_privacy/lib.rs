@@ -398,7 +398,7 @@ impl<'b, 'a, 'tcx> ReachEverythingInTheInterfaceVisitor<'b, 'a, 'tcx> {
             predicate.visit_with(self);
             match predicate {
                 &ty::Predicate::Trait(poly_predicate) => {
-                    self.check_trait_ref(poly_predicate.skip_binder().trait_ref);
+                    self.check_trait_ref(*poly_predicate.skip_binder());
                 },
                 &ty::Predicate::Projection(poly_predicate) => {
                     let tcx = self.ev.tcx;
@@ -686,7 +686,7 @@ impl<'a, 'tcx> TypePrivacyVisitor<'a, 'tcx> {
             predicate.visit_with(self);
             match predicate {
                 &ty::Predicate::Trait(poly_predicate) => {
-                    self.check_trait_ref(poly_predicate.skip_binder().trait_ref);
+                    self.check_trait_ref(*poly_predicate.skip_binder());
                 },
                 &ty::Predicate::Projection(poly_predicate) => {
                     let tcx = self.tcx;
@@ -933,7 +933,7 @@ impl<'a, 'tcx> TypeVisitor<'tcx> for TypePrivacyVisitor<'a, 'tcx> {
                 for predicate in &self.tcx.predicates_of(def_id).predicates {
                     let trait_ref = match *predicate {
                         ty::Predicate::Trait(ref poly_trait_predicate) => {
-                            Some(poly_trait_predicate.skip_binder().trait_ref)
+                            Some(*poly_trait_predicate.skip_binder())
                         }
                         ty::Predicate::Projection(ref poly_projection_predicate) => {
                             if poly_projection_predicate.skip_binder().ty.visit_with(self) {
@@ -1346,7 +1346,7 @@ impl<'a, 'tcx: 'a> SearchInterfaceForPrivateItemsVisitor<'a, 'tcx> {
             predicate.visit_with(self);
             match predicate {
                 &ty::Predicate::Trait(poly_predicate) => {
-                    self.check_trait_ref(poly_predicate.skip_binder().trait_ref);
+                    self.check_trait_ref(*poly_predicate.skip_binder());
                 },
                 &ty::Predicate::Projection(poly_predicate) => {
                     let tcx = self.tcx;

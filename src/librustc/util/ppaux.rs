@@ -677,7 +677,13 @@ impl<'tcx> fmt::Display for ty::Binder<ty::TraitRef<'tcx>> {
     }
 }
 
-impl<'tcx> fmt::Display for ty::Binder<ty::TraitPredicate<'tcx>> {
+impl<'tcx> fmt::Display for ty::Binder<ty::TraitRefDisplayNotSelf<'tcx>> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        ty::tls::with(|tcx| in_binder(f, tcx, self, tcx.lift(self)))
+    }
+}
+
+impl<'tcx> fmt::Display for ty::Binder<ty::TraitRefDisplayAllWithColon<'tcx>> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         ty::tls::with(|tcx| in_binder(f, tcx, self, tcx.lift(self)))
     }
@@ -716,7 +722,22 @@ impl<'tcx> fmt::Display for ty::Binder<ty::OutlivesPredicate<ty::Region<'tcx>,
 
 impl<'tcx> fmt::Display for ty::TraitRef<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        parameterized(f, self.substs, self.def_id, &[])
+        write!(f, "{}", self.display_not_self())
+    }
+}
+
+impl<'tcx> fmt::Display for ty::TraitRefDisplayNotSelf<'tcx> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        parameterized(f, self.trait_ref.substs, self.trait_ref.def_id, &[])
+    }
+}
+
+impl<'tcx> fmt::Display for ty::TraitRefDisplayAllWithColon<'tcx> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f,
+               "{}: {}",
+               self.trait_ref.self_ty(),
+               self.trait_ref.display_not_self())
     }
 }
 
@@ -969,19 +990,6 @@ impl<'tcx> fmt::Display for ty::SubtypePredicate<'tcx> {
     }
 }
 
-impl<'tcx> fmt::Debug for ty::TraitPredicate<'tcx> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "TraitPredicate({:?})",
-               self.trait_ref)
-    }
-}
-
-impl<'tcx> fmt::Display for ty::TraitPredicate<'tcx> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: {}", self.trait_ref.self_ty(), self.trait_ref)
-    }
-}
-
 impl<'tcx> fmt::Debug for ty::ProjectionPredicate<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "ProjectionPredicate({:?}, {:?})",
@@ -1025,7 +1033,8 @@ impl fmt::Display for ty::ClosureKind {
 impl<'tcx> fmt::Display for ty::Predicate<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            ty::Predicate::Trait(ref data) => write!(f, "{}", data),
+            ty::Predicate::Trait(ref data) =>
+                write!(f, "{}", data.map_bound_ref(|t| t.display_all_with_colon())),
             ty::Predicate::Equate(ref predicate) => write!(f, "{}", predicate),
             ty::Predicate::Subtype(ref predicate) => write!(f, "{}", predicate),
             ty::Predicate::RegionOutlives(ref predicate) => write!(f, "{}", predicate),

@@ -10,7 +10,7 @@
 
 use hir::def_id::DefId;
 use ty::subst::{Subst, Substs};
-use ty::{self, Ty, TyCtxt, ToPredicate, ToPolyTraitRef};
+use ty::{self, Ty, TyCtxt, ToPredicate};
 use ty::outlives::Component;
 use util::nodemap::FxHashSet;
 use hir::{self};
@@ -137,7 +137,7 @@ impl<'cx, 'gcx, 'tcx> Elaborator<'cx, 'gcx, 'tcx> {
                 let mut predicates: Vec<_> =
                     predicates.predicates
                               .iter()
-                              .map(|p| p.subst_supertrait(tcx, &data.to_poly_trait_ref()))
+                              .map(|p| p.subst_supertrait(tcx, data))
                               .collect();
 
                 debug!("super_predicates: data={:?} predicates={:?}",
@@ -341,7 +341,7 @@ impl<'tcx,I:Iterator<Item=ty::Predicate<'tcx>>> Iterator for FilterToTraits<I> {
                     return None;
                 }
                 Some(ty::Predicate::Trait(data)) => {
-                    return Some(data.to_poly_trait_ref());
+                    return Some(data);
                 }
                 Some(_) => {
                 }

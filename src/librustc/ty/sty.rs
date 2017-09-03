@@ -426,6 +426,12 @@ impl<'tcx> Binder<&'tcx Slice<ExistentialPredicate<'tcx>>> {
 /// Note that a `TraitRef` introduces a level of region binding, to
 /// account for higher-ranked trait bounds like `T : for<'a> Foo<&'a
 /// U>` or higher-ranked object types.
+///
+/// A note on `Display`: there are multiple ways to display a
+/// `TraitRef`; the default does not print the self type. Probably the
+/// default should be removed, but for now, you can explicitly choose
+/// a display style by invoking the methods like
+/// `display_all_with_colon()` and `display_not_self()`.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
 pub struct TraitRef<'tcx> {
     pub def_id: DefId,
@@ -448,32 +454,54 @@ impl<'tcx> TraitRef<'tcx> {
         // associated types.
         self.substs.types()
     }
+
+    /// Returns a wrapper that implements `Display` and displays like
+    /// `P0: Trait<..>`.
+    pub fn display_all_with_colon(self) -> TraitRefDisplayAllWithColon<'tcx> {
+        TraitRefDisplayAllWithColon { trait_ref: self }
+    }
+
+    /// Returns a wrapper that implements `Display` and displays like
+    /// `Trait<..>`.
+    pub fn display_not_self(self) -> TraitRefDisplayNotSelf<'tcx> {
+        TraitRefDisplayNotSelf { trait_ref: self }
+    }
+}
+
+/// Wrapper around TraitRef used only for its `Display` impl.
+/// This version displays like `P0: Trait<P1...Pn>`.
+#[derive(Copy, Clone, Debug)]
+pub struct TraitRefDisplayAllWithColon<'tcx> {
+    pub trait_ref: TraitRef<'tcx>
+}
+
+/// Wrapper around TraitRef used only for its `Display` impl.
+/// This version displays like `Trait<P1...Pn>`.
+#[derive(Copy, Clone, Debug)]
+pub struct TraitRefDisplayNotSelf<'tcx> {
+    pub trait_ref: TraitRef<'tcx>
 }
 
 pub type PolyTraitRef<'tcx> = Binder<TraitRef<'tcx>>;
 
 impl<'tcx> PolyTraitRef<'tcx> {
     pub fn self_ty(&self) -> Ty<'tcx> {
-        self.0.self_ty()
+        // FIXME(#20664) every use of this fn is probably a bug, it should yield Binder<>
+        self.skip_binder().self_ty()
     }
 
     pub fn def_id(&self) -> DefId {
-        self.0.def_id
+        self.skip_binder().def_id
     }
 
     pub fn substs(&self) -> &'tcx Substs<'tcx> {
         // FIXME(#20664) every use of this fn is probably a bug, it should yield Binder<>
-        self.0.substs
+        self.skip_binder().substs
     }
 
     pub fn input_types<'a>(&'a self) -> impl DoubleEndedIterator<Item=Ty<'tcx>> + 'a {
         // FIXME(#20664) every use of this fn is probably a bug, it should yield Binder<>
-        self.0.input_types()
-    }
-
-    pub fn to_poly_trait_predicate(&self) -> ty::PolyTraitPredicate<'tcx> {
-        // Note that we preserve binding levels
-        Binder(ty::TraitPredicate { trait_ref: self.0.clone() })
+        self.skip_binder().input_types()
     }
 }
 
@@ -520,12 +548,12 @@ pub type PolyExistentialTraitRef<'tcx> = Binder<ExistentialTraitRef<'tcx>>;
 
 impl<'tcx> PolyExistentialTraitRef<'tcx> {
     pub fn def_id(&self) -> DefId {
-        self.0.def_id
+        self.skip_binder().def_id
     }
 
     pub fn input_types<'a>(&'a self) -> impl DoubleEndedIterator<Item=Ty<'tcx>> + 'a {
         // FIXME(#20664) every use of this fn is probably a bug, it should yield Binder<>
-        self.0.input_types()
+        self.skip_binder().input_types()
     }
 }
 

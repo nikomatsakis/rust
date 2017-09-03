@@ -938,15 +938,6 @@ impl<'a> Clean<WherePredicate> for ty::Predicate<'a> {
     }
 }
 
-impl<'a> Clean<WherePredicate> for ty::TraitPredicate<'a> {
-    fn clean(&self, cx: &DocContext) -> WherePredicate {
-        WherePredicate::BoundPredicate {
-            ty: self.trait_ref.self_ty().clean(cx),
-            bounds: vec![self.trait_ref.clean(cx)]
-        }
-    }
-}
-
 impl<'tcx> Clean<WherePredicate> for ty::EquatePredicate<'tcx> {
     fn clean(&self, cx: &DocContext) -> WherePredicate {
         let ty::EquatePredicate(ref lhs, ref rhs) = *self;

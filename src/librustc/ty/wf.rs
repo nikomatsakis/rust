@@ -74,7 +74,7 @@ pub fn predicate_obligations<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
     // (*) ok to skip binders, because wf code is prepared for it
     match *predicate {
         ty::Predicate::Trait(ref t) => {
-            wf.compute_trait_ref(&t.skip_binder().trait_ref, Elaborate::None); // (*)
+            wf.compute_trait_ref(&t.skip_binder(), Elaborate::None); // (*)
         }
         ty::Predicate::Equate(ref t) => {
             wf.compute(t.skip_binder().0);

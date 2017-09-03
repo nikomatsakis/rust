@@ -1003,7 +1003,7 @@ impl<'a, 'tcx> LateLintPass<'a, 'tcx> for UnconditionalRecursion {
                     let obligation =
                         traits::Obligation::new(traits::ObligationCause::misc(span, expr_id),
                                                 cx.param_env,
-                                                trait_ref.to_poly_trait_predicate());
+                                                trait_ref);
 
                     tcx.infer_ctxt().enter(|infcx| {
                         let mut selcx = traits::SelectionContext::new(&infcx);

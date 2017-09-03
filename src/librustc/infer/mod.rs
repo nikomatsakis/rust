@@ -1077,7 +1077,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     }
 
     pub fn trait_ref_to_string(&self, t: &ty::TraitRef<'tcx>) -> String {
-        self.resolve_type_vars_if_possible(t).to_string()
+        self.resolve_type_vars_if_possible(t).display_not_self().to_string()
     }
 
     pub fn shallow_resolve(&self, typ: Ty<'tcx>) -> Ty<'tcx> {
