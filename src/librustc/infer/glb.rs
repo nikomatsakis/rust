@@ -98,4 +98,8 @@ impl<'combine, 'infcx, 'gcx, 'tcx> LatticeDir<'infcx, 'gcx, 'tcx>
         sub.relate(&v, &b)?;
         Ok(())
     }
+
+    fn normalize_projection(&mut self, t: Ty<'tcx>) -> Ty<'tcx> {
+        self.fields.normalize_projection(self.param_env, t)
+    }
 }

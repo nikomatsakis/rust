@@ -16,7 +16,7 @@ use self::EvaluationResult::*;
 use super::coherence;
 use super::DerivedObligationCause;
 use super::project;
-use super::project::{normalize_with_depth, Normalized, ProjectionCacheKey};
+use super::project::ProjectionCacheKey;
 use super::{PredicateObligation, PolyTraitObligation, ObligationCause};
 use super::{ObligationCauseCode, BuiltinDerivedObligation, ImplDerivedObligation};
 use super::{SelectionError, Unimplemented, OutputTypeParameterMismatch};
@@ -1347,7 +1347,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         // before we go into the whole skolemization thing, just
         // quickly check if the self-type is a projection at all.
         match obligation.predicate.skip_binder().self_ty().sty {
-            ty::TyProjection(_) | ty::TyAnon(..) => {}
+            ty::TyProjection(_) | ty::TyNormalizedProjection(_) | ty::TyAnon(..) => {}
             ty::TyInfer(ty::TyVar(_)) => {
                 span_bug!(obligation.cause.span,
                     "Self=_ should have been handled by assemble_candidates");
@@ -1380,7 +1380,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         let obligation = obligation.clone().with_env(param_env);
 
         let (def_id, substs) = match skol_trait_predicate.self_ty().sty {
-            ty::TyProjection(ref data) =>
+            ty::TyProjection(ref data) | ty::TyNormalizedProjection(ref data) =>
                 (data.trait_ref(self.tcx()).def_id, data.substs),
             ty::TyAnon(def_id, substs) => (def_id, substs),
             _ => {
@@ -1660,7 +1660,8 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                     // `assemble_candidates_from_object_ty`.
                 }
                 ty::TyParam(..) |
-                ty::TyProjection(..) => {
+                ty::TyProjection(..) |
+                ty::TyNormalizedProjection(..) => {
                     // In these cases, we don't know what the actual
                     // type is.  Therefore, we cannot break it down
                     // into its constituent types. So we don't
@@ -1993,12 +1994,16 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 ))
             }
 
-            ty::TyProjection(_) | ty::TyParam(_) | ty::TyAnon(..) => None,
+            ty::TyProjection(_) |
+            ty::TyNormalizedProjection(_) |
+            ty::TyParam(_) |
+            ty::TyAnon(..) => None,
+
             ty::TyInfer(ty::TyVar(_)) => Ambiguous,
 
-            ty::TyInfer(ty::FreshTy(_))
-            | ty::TyInfer(ty::FreshIntTy(_))
-            | ty::TyInfer(ty::FreshFloatTy(_)) => {
+            ty::TyInfer(ty::FreshTy(_)) |
+            ty::TyInfer(ty::FreshIntTy(_)) |
+            ty::TyInfer(ty::FreshFloatTy(_)) => {
                 bug!("asked to assemble builtin bounds of unexpected type: {:?}",
                      self_ty);
             }
@@ -2039,7 +2044,11 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 Where(ty::Binder(tys.to_vec()))
             }
 
-            ty::TyAdt(..) | ty::TyProjection(..) | ty::TyParam(..) | ty::TyAnon(..) => {
+            ty::TyNormalizedProjection(..) |
+            ty::TyAdt(..) |
+            ty::TyProjection(..) |
+            ty::TyParam(..) |
+            ty::TyAnon(..) => {
                 // Fallback to whatever user-defined impls exist in this case.
                 None
             }
@@ -2090,6 +2099,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
             ty::TyDynamic(..) |
             ty::TyParam(..) |
+            ty::TyNormalizedProjection(..) |
             ty::TyProjection(..) |
             ty::TyInfer(ty::TyVar(_)) |
             ty::TyInfer(ty::FreshTy(_)) |
@@ -2158,42 +2168,17 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                                     types: ty::Binder<Vec<Ty<'tcx>>>)
                                     -> Vec<PredicateObligation<'tcx>>
     {
-        // Because the types were potentially derived from
-        // higher-ranked obligations they may reference late-bound
-        // regions. For example, `for<'a> Foo<&'a int> : Copy` would
-        // yield a type like `for<'a> &'a int`. In general, we
-        // maintain the invariant that we never manipulate bound
-        // regions, so we have to process these bound regions somehow.
-        //
-        // The strategy is to:
-        //
-        // 1. Instantiate those regions to skolemized regions (e.g.,
-        //    `for<'a> &'a int` becomes `&0 int`.
-        // 2. Produce something like `&'0 int : Copy`
-        // 3. Re-bind the regions back to `for<'a> &'a int : Copy`
+        types.skip_binder().into_iter().map(|ty| { // binder moved -\
+            let ty: ty::Binder<Ty<'tcx>> = ty::Binder(ty); // <-----/
 
-        types.skip_binder().into_iter().flat_map(|ty| { // binder moved -\
-            let ty: ty::Binder<Ty<'tcx>> = ty::Binder(ty); // <----------/
-
-            self.in_snapshot(|this, _snapshot| {
-                let (skol_ty, param_env, _skol_map) =
-                    this.infcx().skolemize_late_bound_regions(param_env, &ty);
-                let Normalized { value: normalized_ty, mut obligations } =
-                    project::normalize_with_depth(this,
-                                                  param_env,
-                                                  cause.clone(),
-                                                  recursion_depth,
-                                                  &skol_ty);
-                let skol_obligation =
-                    this.tcx().predicate_for_trait_def(param_env,
-                                                       cause.clone(),
-                                                       trait_def_id,
-                                                       recursion_depth,
-                                                       normalized_ty,
-                                                       &[]);
-                obligations.push(skol_obligation);
-                obligations
-            })
+            let (skol_ty, param_env, _skol_map) =
+                self.infcx().skolemize_late_bound_regions(param_env, &ty);
+            self.tcx().predicate_for_trait_def(param_env,
+                                               cause.clone(),
+                                               trait_def_id,
+                                               recursion_depth,
+                                               skol_ty,
+                                               &[])
         }).collect()
     }
 
@@ -2439,7 +2424,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
     fn vtable_impl(&mut self,
                    impl_def_id: DefId,
-                   mut substs: Normalized<'tcx, &'tcx Substs<'tcx>>,
+                   substs: &'tcx Substs<'tcx>,
                    cause: ObligationCause<'tcx>,
                    recursion_depth: usize,
                    param_env: ty::ParamEnv<'tcx>)
@@ -2450,26 +2435,19 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                substs,
                recursion_depth);
 
-        let mut impl_obligations =
+        let impl_obligations =
             self.impl_or_trait_obligations(cause,
                                            recursion_depth,
                                            param_env,
                                            impl_def_id,
-                                           &substs.value);
+                                           substs);
 
         debug!("vtable_impl: impl_def_id={:?} impl_obligations={:?}",
                impl_def_id,
                impl_obligations);
 
-        // Because of RFC447, the impl-trait-ref and obligations
-        // are sufficient to determine the impl substs, without
-        // relying on projections in the impl-trait-ref.
-        //
-        // e.g. `impl<U: Tr, V: Iterator<Item=U>> Foo<<U as Tr>::T> for V`
-        impl_obligations.append(&mut substs.obligations);
-
         VtableImplData { impl_def_id,
-                         substs: substs.value,
+                         substs: substs,
                          nested: impl_obligations }
     }
 
@@ -2552,18 +2530,11 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                                                          util::TupleArgumentsFlag::Yes)
             .map_bound(|(trait_ref, _)| trait_ref);
 
-        let Normalized { value: trait_ref, obligations } =
-            project::normalize_with_depth(self,
-                                          obligation.param_env,
-                                          obligation.cause.clone(),
-                                          obligation.recursion_depth + 1,
-                                          &trait_ref);
-
         self.confirm_poly_trait_refs(obligation.cause.clone(),
                                      obligation.param_env,
                                      obligation.predicate,
                                      trait_ref)?;
-        Ok(VtableFnPointerData { fn_ty: self_ty, nested: obligations })
+        Ok(VtableFnPointerData { fn_ty: self_ty, nested: vec![] })
     }
 
     fn confirm_generator_candidate(&mut self,
@@ -2578,15 +2549,11 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                closure_def_id,
                substs);
 
-        let Normalized {
-            value: trait_ref,
-            obligations
-        } = self.generator_trait_ref(obligation, closure_def_id, substs);
+        let trait_ref = self.generator_trait_ref(obligation, closure_def_id, substs);
 
-        debug!("confirm_generator_candidate(closure_def_id={:?}, trait_ref={:?}, obligations={:?})",
+        debug!("confirm_generator_candidate(closure_def_id={:?}, trait_ref={:?})",
                closure_def_id,
-               trait_ref,
-               obligations);
+               trait_ref);
 
         self.confirm_poly_trait_refs(obligation.cause.clone(),
                                      obligation.param_env,
@@ -2596,7 +2563,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         Ok(VtableGeneratorData {
             closure_def_id: closure_def_id,
             substs: substs.clone(),
-            nested: obligations
+            nested: vec![],
         })
     }
 
@@ -2613,30 +2580,28 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                closure_def_id,
                substs);
 
-        let Normalized {
-            value: trait_ref,
-            mut obligations
-        } = self.closure_trait_ref(obligation, closure_def_id, substs);
+        let trait_ref = self.closure_trait_ref(obligation, closure_def_id, substs);
 
-        debug!("confirm_closure_candidate(closure_def_id={:?}, trait_ref={:?}, obligations={:?})",
+        debug!("confirm_closure_candidate(closure_def_id={:?}, trait_ref={:?})",
                closure_def_id,
-               trait_ref,
-               obligations);
+               trait_ref);
 
         self.confirm_poly_trait_refs(obligation.cause.clone(),
                                      obligation.param_env,
                                      obligation.predicate,
                                      trait_ref)?;
 
-        obligations.push(Obligation::new(
-            obligation.cause.clone(),
-            obligation.param_env,
-            ty::Predicate::ClosureKind(closure_def_id, kind)));
+        let obligations = vec![
+            Obligation::new(
+                obligation.cause.clone(),
+                obligation.param_env,
+                ty::Predicate::ClosureKind(closure_def_id, kind))
+        ];
 
         Ok(VtableClosureData {
             closure_def_id,
             substs: substs.clone(),
-            nested: obligations
+            nested: obligations,
         })
     }
 
@@ -2901,8 +2866,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     fn rematch_impl(&mut self,
                     impl_def_id: DefId,
                     obligation: &PolyTraitObligation<'tcx>)
-                    -> (Normalized<'tcx, &'tcx Substs<'tcx>>,
-                        ty::ParamEnv<'tcx>)
+                    -> (&'tcx Substs<'tcx>, ty::ParamEnv<'tcx>)
     {
         match self.match_impl(impl_def_id, obligation) {
             Ok(tuple) => tuple,
@@ -2917,8 +2881,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     fn match_impl(&mut self,
                   impl_def_id: DefId,
                   obligation: &PolyTraitObligation<'tcx>)
-                  -> Result<(Normalized<'tcx, &'tcx Substs<'tcx>>,
-                             ty::ParamEnv<'tcx>), ()>
+                  -> Result<(&'tcx Substs<'tcx>, ty::ParamEnv<'tcx>), ()>
     {
         let impl_trait_ref = self.tcx().impl_trait_ref(impl_def_id).unwrap();
 
@@ -2936,15 +2899,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                                                            obligation.cause.span,
                                                            impl_def_id);
 
-        let impl_trait_ref = impl_trait_ref.subst(self.tcx(),
-                                                  impl_substs);
-
-        let impl_trait_ref =
-            project::normalize_with_depth(self,
-                                          param_env,
-                                          obligation.cause.clone(),
-                                          obligation.recursion_depth + 1,
-                                          &impl_trait_ref);
+        let impl_trait_ref = impl_trait_ref.subst(self.tcx(), impl_substs);
 
         debug!("match_impl(impl_def_id={:?}, obligation={:?}, \
                impl_trait_ref={:?}, skol_obligation_trait_ref={:?})",
@@ -2955,7 +2910,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
         let InferOk { obligations, .. } =
             self.infcx.at(&obligation.cause, param_env)
-                      .eq(skol_obligation_trait_ref, impl_trait_ref.value)
+                      .eq(skol_obligation_trait_ref, impl_trait_ref)
                       .map_err(|e| {
                           debug!("match_impl: failed eq_trait_refs due to `{}`", e);
                           ()
@@ -2963,8 +2918,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         self.inferred_obligations.extend(obligations);
 
         debug!("match_impl: success impl_substs={:?}", impl_substs);
-        Ok((Normalized { value: impl_substs, obligations: impl_trait_ref.obligations },
-            param_env))
+        Ok((impl_substs, param_env))
     }
 
     fn fast_reject_trait_refs(&mut self,
@@ -3046,11 +3000,11 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         }
     }
 
-    fn closure_trait_ref_unnormalized(&mut self,
-                                      obligation: &PolyTraitObligation<'tcx>,
-                                      closure_def_id: DefId,
-                                      substs: ty::ClosureSubsts<'tcx>)
-                                      -> ty::PolyTraitRef<'tcx>
+    fn closure_trait_ref(&mut self,
+                         obligation: &PolyTraitObligation<'tcx>,
+                         closure_def_id: DefId,
+                         substs: ty::ClosureSubsts<'tcx>)
+                         -> ty::PolyTraitRef<'tcx>
     {
         let closure_type = self.infcx.fn_sig(closure_def_id)
             .subst(self.tcx(), substs.substs);
@@ -3068,29 +3022,11 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         ty::Binder(trait_ref)
     }
 
-    fn closure_trait_ref(&mut self,
+    fn generator_trait_ref(&mut self,
                          obligation: &PolyTraitObligation<'tcx>,
                          closure_def_id: DefId,
                          substs: ty::ClosureSubsts<'tcx>)
-                         -> Normalized<'tcx, ty::PolyTraitRef<'tcx>>
-    {
-        let trait_ref = self.closure_trait_ref_unnormalized(
-            obligation, closure_def_id, substs);
-
-        // A closure signature can contain associated types which
-        // must be normalized.
-        normalize_with_depth(self,
-                             obligation.param_env,
-                             obligation.cause.clone(),
-                             obligation.recursion_depth+1,
-                             &trait_ref)
-    }
-
-    fn generator_trait_ref_unnormalized(&mut self,
-                                      obligation: &PolyTraitObligation<'tcx>,
-                                      closure_def_id: DefId,
-                                      substs: ty::ClosureSubsts<'tcx>)
-                                      -> ty::PolyTraitRef<'tcx>
+                         -> ty::PolyTraitRef<'tcx>
     {
         let gen_sig = self.infcx.generator_sig(closure_def_id).unwrap()
             .subst(self.tcx(), substs.substs);
@@ -3107,28 +3043,10 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         ty::Binder(trait_ref)
     }
 
-    fn generator_trait_ref(&mut self,
-                         obligation: &PolyTraitObligation<'tcx>,
-                         closure_def_id: DefId,
-                         substs: ty::ClosureSubsts<'tcx>)
-                         -> Normalized<'tcx, ty::PolyTraitRef<'tcx>>
-    {
-        let trait_ref = self.generator_trait_ref_unnormalized(
-            obligation, closure_def_id, substs);
-
-        // A generator signature can contain associated types which
-        // must be normalized.
-        normalize_with_depth(self,
-                             obligation.param_env,
-                             obligation.cause.clone(),
-                             obligation.recursion_depth+1,
-                             &trait_ref)
-    }
-
     /// Returns the obligations that are implied by instantiating an
-    /// impl or trait. The obligations are substituted and fully
-    /// normalized. This is used when confirming an impl or default
-    /// impl.
+    /// impl or trait. The obligations are substituted (but not fully
+    /// normalized, natch). This is used when confirming an impl or
+    /// default impl.
     fn impl_or_trait_obligations(&mut self,
                                  cause: ObligationCause<'tcx>,
                                  recursion_depth: usize,
@@ -3156,16 +3074,13 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         // that order.
         let predicates = tcx.predicates_of(def_id);
         assert_eq!(predicates.parent, None);
-        predicates.predicates.iter().flat_map(|predicate| {
-            let predicate = normalize_with_depth(self, param_env, cause.clone(), recursion_depth,
-                                                 &predicate.subst(tcx, substs));
-            predicate.obligations.into_iter().chain(
-                Some(Obligation {
-                    cause: cause.clone(),
-                    recursion_depth,
-                    param_env,
-                    predicate: predicate.value
-                }))
+        predicates.predicates.iter().map(|predicate| {
+            Obligation {
+                cause: cause.clone(),
+                recursion_depth,
+                param_env,
+                predicate: predicate.subst(tcx, substs),
+            }
         }).collect()
     }
 }

@@ -24,7 +24,7 @@ use rustc_data_structures::fx::FxHashMap;
 use hir::def_id::DefId;
 use infer::{InferCtxt, InferOk};
 use ty::subst::{Subst, Substs};
-use traits::{self, Reveal, ObligationCause};
+use traits::{Reveal, ObligationCause};
 use ty::{self, TyCtxt, TypeFoldable};
 use syntax_pos::DUMMY_SP;
 use std::rc::Rc;
@@ -189,20 +189,6 @@ pub fn specializes<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
     // Create a infcx, taking the predicates of impl1 as assumptions:
     let result = tcx.infer_ctxt().enter(|infcx| {
-        // Normalize the trait reference. The WF rules ought to ensure
-        // that this always succeeds.
-        let impl1_trait_ref =
-            match traits::fully_normalize(&infcx,
-                                          ObligationCause::dummy(),
-                                          penv,
-                                          &impl1_trait_ref) {
-                Ok(impl1_trait_ref) => impl1_trait_ref,
-                Err(err) => {
-                    bug!("failed to fully normalize {:?}: {:?}", impl1_trait_ref, err);
-                }
-            };
-
-        // Attempt to prove that impl2 applies, given all of the above.
         fulfill_implication(&infcx, penv, impl1_trait_ref, impl2_def_id).is_ok()
     });
 
@@ -220,6 +206,10 @@ fn fulfill_implication<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
                                        source_trait_ref: ty::TraitRef<'tcx>,
                                        target_impl: DefId)
                                        -> Result<&'tcx Substs<'tcx>, ()> {
+    debug!("fulfill_implication(source_trait_ref={:?}, target_impl={:?})",
+           source_trait_ref,
+           target_impl);
+
     let selcx = &mut SelectionContext::new(&infcx);
     let target_substs = infcx.fresh_substs_for_item(param_env.universe, DUMMY_SP, target_impl);
     let (target_trait_ref, mut obligations) = impl_trait_ref_and_oblig(selcx,
@@ -228,9 +218,11 @@ fn fulfill_implication<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
                                                                        target_substs);
 
     // do the impls unify? If not, no specialization.
+    debug!("fulfill_implication: unifying with target_trait_ref = {:?}", target_trait_ref);
     match infcx.at(&ObligationCause::dummy(), param_env)
                .eq(source_trait_ref, target_trait_ref) {
         Ok(InferOk { obligations: o, .. }) => {
+            debug!("fulfill_implication: succeeded, with add'l obligations = {:?}", o);
             obligations.extend(o);
         }
         Err(_) => {
@@ -247,6 +239,7 @@ fn fulfill_implication<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
     infcx.save_and_restore_in_snapshot_flag(|infcx| {
         let mut fulfill_cx = FulfillmentContext::new();
         for oblig in obligations.into_iter() {
+            debug!("fulfill_implication: obligation = {:?}", oblig);
             fulfill_cx.register_predicate_obligation(&infcx, oblig);
         }
         match fulfill_cx.select_all_or_error(infcx) {
@@ -258,6 +251,7 @@ fn fulfill_implication<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
                        target_trait_ref,
                        errors,
                        param_env.caller_bounds);
+
                 Err(())
             }
 

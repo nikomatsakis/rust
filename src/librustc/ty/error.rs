@@ -214,6 +214,7 @@ impl<'a, 'gcx, 'lcx, 'tcx> ty::TyS<'tcx> {
             ty::TyInfer(ty::FreshTy(_)) => "skolemized type".to_string(),
             ty::TyInfer(ty::FreshIntTy(_)) => "skolemized integral type".to_string(),
             ty::TyInfer(ty::FreshFloatTy(_)) => "skolemized floating-point type".to_string(),
+            ty::TyNormalizedProjection(_) => "associated type".to_string(),
             ty::TyProjection(_) => "associated type".to_string(),
             ty::TyParam(ref p) => {
                 if p.is_self() {

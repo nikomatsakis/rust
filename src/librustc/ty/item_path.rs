@@ -353,6 +353,7 @@ pub fn characteristic_def_id_of_type(ty: Ty) -> Option<DefId> {
         ty::TyUint(_) |
         ty::TyStr |
         ty::TyFnPtr(_) |
+        ty::TyNormalizedProjection(_) |
         ty::TyProjection(_) |
         ty::TyParam(_) |
         ty::TyAnon(..) |

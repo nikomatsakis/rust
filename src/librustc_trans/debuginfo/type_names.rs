@@ -171,6 +171,7 @@ pub fn push_debuginfo_type_name<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
         ty::TyError |
         ty::TyInfer(_) |
         ty::TyProjection(..) |
+        ty::TyNormalizedProjection(..) |
         ty::TyAnon(..) |
         ty::TyParam(_) => {
             bug!("debuginfo: Trying to create type name for \

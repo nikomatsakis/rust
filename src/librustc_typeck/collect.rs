@@ -241,12 +241,6 @@ impl<'a, 'tcx> AstConv<'tcx, 'tcx> for ItemCtxt<'a, 'tcx> {
         }
     }
 
-    fn normalize_ty(&self, _span: Span, ty: Ty<'tcx>) -> Ty<'tcx> {
-        // types in item signatures are not normalized, to avoid undue
-        // dependencies.
-        ty
-    }
-
     fn set_tainted_by_errors(&self) {
         // no obvious place to track this, just let it go
     }

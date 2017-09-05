@@ -514,6 +514,7 @@ impl<'a, 'tcx> DefPathBasedNames<'a, 'tcx> {
             ty::TyError |
             ty::TyInfer(_) |
             ty::TyProjection(..) |
+            ty::TyNormalizedProjection(..) |
             ty::TyParam(_) |
             ty::TyAnon(..) => {
                 bug!("DefPathBasedNames: Trying to create type name for \

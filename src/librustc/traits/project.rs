@@ -732,7 +732,7 @@ fn project_type<'cx, 'gcx, 'tcx>(
                                   candidate)))
         }
         None => Ok(ProjectedTy::NoProgress(
-                    selcx.tcx().mk_projection(
+                    selcx.tcx().mk_normalized_projection(
                         obligation.predicate.item_def_id,
                         obligation.predicate.substs)))
     }
@@ -777,6 +777,7 @@ fn assemble_candidates_from_trait_def<'cx, 'gcx, 'tcx>(
     let tcx = selcx.tcx();
     // Check whether the self-type is itself a projection.
     let (def_id, substs) = match obligation_trait_ref.self_ty().sty {
+        ty::TyNormalizedProjection(ref data) |
         ty::TyProjection(ref data) => {
             (data.trait_ref(tcx).def_id, data.substs)
         }

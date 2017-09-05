@@ -334,6 +334,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                     false // no contained types to walk
                 }
 
+                ty::TyNormalizedProjection(ref data) |
                 ty::TyProjection(ref data) => {
                     // This is a projected type `<Foo as SomeTrait>::X`.
 

@@ -596,8 +596,11 @@ impl<'l, 'tcx: 'l> SaveContext<'l, 'tcx> {
                         hir::QPath::Resolved(_, ref path) => path.def,
                         hir::QPath::TypeRelative(..) => {
                             let ty = hir_ty_to_ty(self.tcx, ty);
-                            if let ty::TyProjection(proj) = ty.sty {
-                                return HirDef::AssociatedTy(proj.item_def_id);
+                            match ty.sty {
+                                ty::TyProjection(proj) | ty::TyNormalizedProjection(proj) => {
+                                    return HirDef::AssociatedTy(proj.item_def_id);
+                                }
+                                _ => { }
                             }
                             HirDef::Err
                         }

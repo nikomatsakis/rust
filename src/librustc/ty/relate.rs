@@ -342,10 +342,12 @@ pub fn super_relate_tys<'a, 'gcx, 'tcx, R>(relation: &mut R,
     debug!("super_tys: a_sty={:?} b_sty={:?}", a_sty, b_sty);
     match (a_sty, b_sty) {
         (&ty::TyInfer(_), _) |
-        (_, &ty::TyInfer(_)) =>
+        (_, &ty::TyInfer(_)) |
+        (&ty::TyProjection(_), &ty::TyNormalizedProjection(_)) |
+        (&ty::TyNormalizedProjection(_), &ty::TyProjection(_)) =>
         {
             // The caller should handle these cases!
-            bug!("var types encountered in super_relate_tys")
+            bug!("bad types encountered in super_relate_tys: ({:?}, {:?})", a_sty, b_sty)
         }
 
         (&ty::TyError, _) | (_, &ty::TyError) =>
@@ -471,6 +473,12 @@ pub fn super_relate_tys<'a, 'gcx, 'tcx, R>(relation: &mut R,
         {
             let projection_ty = relation.relate(a_data, b_data)?;
             Ok(tcx.mk_projection(projection_ty.item_def_id, projection_ty.substs))
+        }
+
+        (&ty::TyNormalizedProjection(ref a_data), &ty::TyNormalizedProjection(ref b_data)) =>
+        {
+            let projection_ty = relation.relate(a_data, b_data)?;
+            Ok(tcx.mk_normalized_projection(projection_ty.item_def_id, projection_ty.substs))
         }
 
         (&ty::TyAnon(a_def_id, a_substs), &ty::TyAnon(b_def_id, b_substs))

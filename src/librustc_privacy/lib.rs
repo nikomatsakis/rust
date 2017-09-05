@@ -86,6 +86,7 @@ impl<'a, 'tcx> EmbargoVisitor<'a, 'tcx> {
             ty::TyAdt(adt, _) => adt.did,
             ty::TyDynamic(ref obj, ..) if obj.principal().is_some() =>
                 obj.principal().unwrap().def_id(),
+            ty::TyNormalizedProjection(ref proj) |
             ty::TyProjection(ref proj) => proj.trait_ref(self.tcx).def_id,
             _ => return Some(AccessLevel::Public)
         };
@@ -443,6 +444,7 @@ impl<'b, 'a, 'tcx> TypeVisitor<'tcx> for ReachEverythingInTheInterfaceVisitor<'b
         let ty_def_id = match ty.sty {
             ty::TyAdt(adt, _) => Some(adt.did),
             ty::TyDynamic(ref obj, ..) => obj.principal().map(|p| p.def_id()),
+            ty::TyNormalizedProjection(ref proj) |
             ty::TyProjection(ref proj) => Some(proj.item_def_id),
             ty::TyFnDef(def_id, ..) |
             ty::TyClosure(def_id, ..) |
@@ -921,6 +923,7 @@ impl<'a, 'tcx> TypeVisitor<'tcx> for TypePrivacyVisitor<'a, 'tcx> {
                     return true;
                 }
             }
+            ty::TyNormalizedProjection(ref proj) |
             ty::TyProjection(ref proj) => {
                 let tcx = self.tcx;
                 if self.check_trait_ref(proj.trait_ref(tcx)) {
@@ -1409,6 +1412,7 @@ impl<'a, 'tcx: 'a> TypeVisitor<'tcx> for SearchInterfaceForPrivateItemsVisitor<'
         let ty_def_id = match ty.sty {
             ty::TyAdt(adt, _) => Some(adt.did),
             ty::TyDynamic(ref obj, ..) => obj.principal().map(|p| p.def_id()),
+            ty::TyNormalizedProjection(ref proj) |
             ty::TyProjection(ref proj) => {
                 if self.required_visibility == ty::Visibility::Invisible {
                     // Conservatively approximate the whole type alias as public without

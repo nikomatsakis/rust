@@ -34,7 +34,7 @@
 
 use super::equate::Equate;
 use super::glb::Glb;
-use super::{InferCtxt, MiscVariable, TypeTrace};
+use super::{InferCtxt, MiscVariable, TypeTrace, TypeVariableOrigin};
 use super::lub::Lub;
 use super::sub::Sub;
 use super::type_variable::TypeVariableValue;
@@ -43,6 +43,7 @@ use hir::def_id::DefId;
 use ty::{IntType, UintType};
 use ty::{self, Ty, TyCtxt};
 use ty::error::TypeError;
+use ty::fold::TypeFoldable;
 use ty::relate::{self, Relate, RelateResult, TypeRelation};
 use ty::subst::Substs;
 use traits::{Obligation, PredicateObligations};
@@ -66,6 +67,7 @@ pub enum RelationDir {
 impl<'infcx, 'gcx, 'tcx> InferCtxt<'infcx, 'gcx, 'tcx> {
     pub fn super_combine_tys<R>(&self,
                                 relation: &mut R,
+                                span: Span,
                                 a: Ty<'tcx>,
                                 b: Ty<'tcx>)
                                 -> RelateResult<'tcx, Ty<'tcx>>
@@ -74,6 +76,12 @@ impl<'infcx, 'gcx, 'tcx> InferCtxt<'infcx, 'gcx, 'tcx> {
         let a_is_expected = relation.a_is_expected();
 
         match (&a.sty, &b.sty) {
+            (&ty::TyProjection(_), _) | (_, &ty::TyProjection(_)) => {
+                span_bug!(span,
+                          "super_combine_tys: encountered non-normalized projection ({:?}, {:?})",
+                          a, b);
+            }
+
             // Relate integral variables to other types
             (&ty::TyInfer(ty::IntVar(a_id)), &ty::TyInfer(ty::IntVar(b_id))) => {
                 self.int_unification_table
@@ -115,7 +123,6 @@ impl<'infcx, 'gcx, 'tcx> InferCtxt<'infcx, 'gcx, 'tcx> {
             (_, &ty::TyInfer(_)) => {
                 Err(TypeError::Sorts(ty::relate::expected_found(relation, &a, &b)))
             }
-
 
             _ => {
                 ty::relate::super_relate_tys(relation, a, b)
@@ -184,6 +191,38 @@ impl<'infcx, 'gcx, 'tcx> CombineFields<'infcx, 'gcx, 'tcx> {
                    a_is_expected: bool)
                    -> Glb<'a, 'infcx, 'gcx, 'tcx> {
         Glb::new(self, param_env, a_is_expected)
+    }
+
+    pub fn normalize_projection(&mut self,
+                                param_env: ty::ParamEnv<'tcx>,
+                                ty: Ty<'tcx>)
+                                -> Ty<'tcx>
+    {
+        match ty.sty {
+            ty::TyProjection(proj) => {
+                // FIXME -- check cache first?
+                let var = self.infcx.next_ty_var(param_env.universe,
+                                                 TypeVariableOrigin::MiscVariable(
+                                                     self.trace.cause.span));
+                self.normalize_to(param_env, proj, var);
+                var
+            }
+
+            _ => ty
+        }
+    }
+
+    pub fn normalize_to(&mut self,
+                        param_env: ty::ParamEnv<'tcx>,
+                        projection_ty: ty::ProjectionTy<'tcx>,
+                        ty: Ty<'tcx>)
+    {
+        let proj_predicate = ty::ProjectionPredicate { projection_ty, ty };
+        assert!(!proj_predicate.has_escaping_regions());
+        self.obligations.push(
+            Obligation::new(self.trace.cause.clone(),
+                            param_env,
+                            ty::Predicate::Projection(ty::Binder(proj_predicate))));
     }
 
     /// Here dir is either EqTo, SubtypeOf, or SupertypeOf. The

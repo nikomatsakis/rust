@@ -80,8 +80,17 @@ impl<'combine, 'infcx, 'gcx, 'tcx> TypeRelation<'infcx, 'gcx, 'tcx>
         if a == b { return Ok(a); }
 
         let infcx = self.fields.infcx;
+
+        // First, normalize any bound type variables. This would
+        // replace `?X` with `Foo`, but would not touch `Vec<?Y>`, as
+        // the `?Y` does not appear at the top-level:
         let a = infcx.type_variables.borrow_mut().replace_if_possible(a);
         let b = infcx.type_variables.borrow_mut().replace_if_possible(b);
+
+        // Next, normalize any (as yet unnormalized) projections:
+        let a = self.fields.normalize_projection(self.param_env, a);
+        let b = self.fields.normalize_projection(self.param_env, b);
+
         match (&a.sty, &b.sty) {
             (&ty::TyInfer(TyVar(a_vid)), &ty::TyInfer(TyVar(b_vid))) => {
                 // Shouldn't have any LBR here, so we can safely put
@@ -132,7 +141,8 @@ impl<'combine, 'infcx, 'gcx, 'tcx> TypeRelation<'infcx, 'gcx, 'tcx>
             }
 
             _ => {
-                self.fields.infcx.super_combine_tys(self, a, b)?;
+                let span = self.fields.trace.cause.span;
+                self.fields.infcx.super_combine_tys(self, span, a, b)?;
                 Ok(a)
             }
         }

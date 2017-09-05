@@ -975,6 +975,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
             debug!("assemble_projection_candidates: step={:?}", step);
 
             let (def_id, substs) = match step.self_ty.sty {
+                ty::TyNormalizedProjection(ref data) |
                 ty::TyProjection(ref data) => {
                     let trait_ref = data.trait_ref(self.tcx);
                     (trait_ref.def_id, trait_ref.substs)

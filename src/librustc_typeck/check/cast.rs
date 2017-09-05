@@ -92,6 +92,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 }
             }
             // We should really try to normalize here.
+            ty::TyNormalizedProjection(ref pi) |
             ty::TyProjection(ref pi) => Some(UnsizeKind::OfProjection(pi)),
             ty::TyParam(ref p) => Some(UnsizeKind::OfParam(p)),
             _ => None,

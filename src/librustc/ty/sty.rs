@@ -153,6 +153,10 @@ pub enum TypeVariants<'tcx> {
     /// `<T as Trait<..>>::N`.
     TyProjection(ProjectionTy<'tcx>),
 
+    /// The projection of an associated type, after normalization. For example,
+    /// `<T as Trait<..>>::N`.
+    TyNormalizedProjection(ProjectionTy<'tcx>),
+
     /// Anonymized (`impl Trait`) type found in a return type.
     /// The DefId comes from the `impl Trait` ast::Ty node, and the
     /// substitutions are for the generics of the function in question.
@@ -1477,6 +1481,7 @@ impl<'a, 'gcx, 'tcx> TyS<'tcx> {
             TyClosure(_, ref substs) | TyGenerator(_, ref substs, _) => {
                 substs.substs.regions().collect()
             }
+            TyNormalizedProjection(ref data) |
             TyProjection(ref data) => {
                 data.substs.regions().collect()
             }

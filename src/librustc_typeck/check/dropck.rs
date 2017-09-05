@@ -306,8 +306,12 @@ pub fn check_safety_of_destructor_if_necessary<'a, 'gcx, 'tcx>(
 
                 // A projection that we couldn't resolve - it
                 // might have a destructor.
-                ty::TyProjection(..) | ty::TyAnon(..) => {
+                ty::TyNormalizedProjection(..) | ty::TyAnon(..) => {
                     rcx.type_must_outlive(origin(), rcx.fcx.param_env, ty, parent_scope);
+                }
+
+                ty::TyProjection(..) => {
+                    span_bug!(span, "normalized `{:?}` but got a non-normalized projection", ty)
                 }
 
                 _ => {

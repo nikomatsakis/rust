@@ -62,7 +62,9 @@ struct ParameterCollector {
 impl<'tcx> TypeVisitor<'tcx> for ParameterCollector {
     fn visit_ty(&mut self, t: Ty<'tcx>) -> bool {
         match t.sty {
-            ty::TyProjection(..) | ty::TyAnon(..) if !self.include_nonconstraining => {
+            ty::TyNormalizedProjection(..) |
+            ty::TyProjection(..) |
+            ty::TyAnon(..) if !self.include_nonconstraining => {
                 // projections are not injective
                 return false;
             }

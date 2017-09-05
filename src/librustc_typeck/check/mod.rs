@@ -1702,14 +1702,6 @@ impl<'a, 'gcx, 'tcx> AstConv<'gcx, 'tcx> for FnCtxt<'a, 'gcx, 'tcx> {
         self.tcx().mk_projection(item_def_id, trait_ref.substs)
     }
 
-    fn normalize_ty(&self, span: Span, ty: Ty<'tcx>) -> Ty<'tcx> {
-        if ty.has_escaping_regions() {
-            ty // FIXME: normalization and escaping regions
-        } else {
-            self.normalize_associated_types_in(span, &ty)
-        }
-    }
-
     fn set_tainted_by_errors(&self) {
         self.infcx.set_tainted_by_errors()
     }
@@ -4729,10 +4721,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             } else if !infer_types && def.has_default {
                 // No type parameter provided, but a default exists.
                 let default = self.tcx.type_of(def.def_id);
-                self.normalize_ty(
-                    span,
-                    default.subst_spanned(self.tcx, substs, Some(span))
-                )
+                default.subst_spanned(self.tcx, substs, Some(span))
             } else {
                 // No type parameters were provided, we can infer all.
                 // This can also be reached in some error cases:

@@ -601,7 +601,10 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             }),
 
             // Types that can't be resolved. Pass them forward.
-            ty::TyProjection(..) | ty::TyAnon(..) | ty::TyParam(..) => {
+            ty::TyNormalizedProjection(..) |
+            ty::TyProjection(..) |
+            ty::TyAnon(..) |
+            ty::TyParam(..) => {
                 Ok(ty::DtorckConstraint {
                     outlives: vec![],
                     dtorck_types: vec![ty],
@@ -728,7 +731,7 @@ impl<'a, 'gcx, 'tcx, W> TypeVisitor<'tcx> for TypeIdHasher<'a, 'gcx, 'tcx, W>
                 self.hash(p.idx);
                 self.hash(p.name.as_str());
             }
-            TyProjection(ref data) => {
+            TyNormalizedProjection(ref data) => {
                 self.def_id(data.item_def_id);
             }
             TyNever |
@@ -737,6 +740,7 @@ impl<'a, 'gcx, 'tcx, W> TypeVisitor<'tcx> for TypeIdHasher<'a, 'gcx, 'tcx, W>
             TyStr |
             TySlice(_) => {}
 
+            TyProjection(_) |
             TyError |
             TyInfer(_) => bug!("TypeIdHasher: unexpected type {}", ty)
         }
@@ -1121,7 +1125,7 @@ fn needs_drop_raw<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
         // Can refer to a type which may drop.
         // FIXME(eddyb) check this against a ParamEnv.
-        ty::TyDynamic(..) | ty::TyProjection(..) | ty::TyParam(_) |
+        ty::TyNormalizedProjection(..) | ty::TyDynamic(..) | ty::TyProjection(..) | ty::TyParam(_) |
         ty::TyAnon(..) | ty::TyInfer(_) | ty::TyError => true,
 
         // Structural recursion.

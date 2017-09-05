@@ -139,7 +139,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             // trait-ref. Therefore, if we see any higher-ranke regions,
             // we simply fallback to the most restrictive rule, which
             // requires that `Pi: 'a` for all `i`.
-            ty::TyProjection(ref data) => {
+            ty::TyNormalizedProjection(ref data) => {
                 if !data.has_escaping_regions() {
                     // best case: no escaping regions, so push the
                     // projection and skip the subtree (thus generating no
@@ -155,6 +155,10 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                     let subcomponents = self.capture_components(ty);
                     out.push(Component::EscapingProjection(subcomponents));
                 }
+            }
+
+            ty::TyProjection(_) => {
+                bug!("normalization did not happen, found: {:?}", ty)
             }
 
             // We assume that inference variables are fully resolved.

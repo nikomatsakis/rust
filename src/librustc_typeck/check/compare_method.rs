@@ -211,14 +211,10 @@ fn compare_predicate_entailment<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     // Construct trait parameter environment and then shift it into the skolemized viewpoint.
     // The key step here is to update the caller_bounds's predicates to be
     // the new hybrid bounds we computed.
-    let normalize_cause = traits::ObligationCause::misc(impl_m_span, impl_m_node_id);
     let param_env = ty::ParamEnv::new(tcx.intern_predicates(&hybrid_preds.predicates),
                                       Reveal::UserFacing,
                                       ty::UniverseIndex::ROOT);
-    let param_env = traits::normalize_param_env_or_error(tcx,
-                                                         impl_m.def_id,
-                                                         param_env,
-                                                         normalize_cause.clone());
+    let param_env = traits::elaborate_param_env(tcx, param_env);
 
     tcx.infer_ctxt().enter(|infcx| {
         let inh = Inherited::new(infcx, impl_m.def_id);
@@ -227,8 +223,6 @@ fn compare_predicate_entailment<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         debug!("compare_impl_method: caller_bounds={:?}",
                param_env.caller_bounds);
 
-        let mut selcx = traits::SelectionContext::new(&infcx);
-
         let impl_m_own_bounds = impl_m_predicates.instantiate_own(tcx, impl_to_skol_substs);
         let (impl_m_own_bounds, _) = infcx.replace_late_bound_regions_with_fresh_var(
             impl_m_span,
@@ -236,10 +230,6 @@ fn compare_predicate_entailment<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             infer::HigherRankedType,
             &ty::Binder(impl_m_own_bounds.predicates));
         for predicate in impl_m_own_bounds {
-            let traits::Normalized { value: predicate, obligations } =
-                traits::normalize(&mut selcx, param_env, normalize_cause.clone(), &predicate);
-
-            inh.register_predicates(obligations);
             inh.register_predicate(traits::Obligation::new(cause.clone(), param_env, predicate));
         }
 

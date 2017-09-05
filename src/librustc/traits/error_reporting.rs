@@ -241,7 +241,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 ty::TyDynamic(..) => Some(8),
                 ty::TyClosure(..) => Some(9),
                 ty::TyTuple(..) => Some(10),
-                ty::TyProjection(..) => Some(11),
+                ty::TyNormalizedProjection(..) => Some(11),
                 ty::TyParam(..) => Some(12),
                 ty::TyAnon(..) => Some(13),
                 ty::TyNever => Some(14),
@@ -251,7 +251,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                     AdtKind::Enum => Some(17),
                 },
                 ty::TyGenerator(..) => Some(18),
-                ty::TyInfer(..) | ty::TyError => None
+                ty::TyProjection(..) | ty::TyInfer(..) | ty::TyError => None
             }
         }
 

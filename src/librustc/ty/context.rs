@@ -1426,7 +1426,8 @@ impl<'a, 'tcx> TyCtxt<'a, 'tcx, 'tcx> {
         sty_debug_print!(
             self,
             TyAdt, TyArray, TySlice, TyRawPtr, TyRef, TyFnDef, TyFnPtr, TyGenerator,
-            TyDynamic, TyClosure, TyTuple, TyParam, TyInfer, TyProjection, TyAnon);
+            TyDynamic, TyClosure, TyTuple, TyParam, TyInfer, TyNormalizedProjection,
+            TyProjection, TyAnon);
 
         println!("Substs interner: #{}", self.interners.substs.borrow().len());
         println!("Region interner: #{}", self.interners.region.borrow().len());
@@ -1754,15 +1755,27 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         self.mk_ty(TyDynamic(obj, reg))
     }
 
-    pub fn mk_projection(self,
-                         item_def_id: DefId,
-                         substs: &'tcx Substs<'tcx>)
-        -> Ty<'tcx> {
-            self.mk_ty(TyProjection(ProjectionTy {
-                item_def_id,
-                substs,
-            }))
-        }
+    pub fn mk_projection(
+        self,
+        item_def_id: DefId,
+        substs: &'tcx Substs<'tcx>
+    ) -> Ty<'tcx> {
+        self.mk_ty(TyProjection(ProjectionTy {
+            item_def_id,
+            substs,
+        }))
+    }
+
+    pub fn mk_normalized_projection(
+        self,
+        item_def_id: DefId,
+        substs: &'tcx Substs<'tcx>
+    ) -> Ty<'tcx> {
+        self.mk_ty(TyNormalizedProjection(ProjectionTy {
+            item_def_id,
+            substs,
+        }))
+    }
 
     pub fn mk_closure(self,
                       closure_id: DefId,

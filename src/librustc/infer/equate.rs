@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use super::combine::{CombineFields, RelationDir};
-use super::{Subtype};
+use super::{Subtype, TypeVariableOrigin};
 
 use hir::def_id::DefId;
 
@@ -78,6 +78,27 @@ impl<'combine, 'infcx, 'gcx, 'tcx> TypeRelation<'infcx, 'gcx, 'tcx>
         let a = infcx.type_variables.borrow_mut().replace_if_possible(a);
         let b = infcx.type_variables.borrow_mut().replace_if_possible(b);
         match (&a.sty, &b.sty) {
+            (&ty::TyProjection(proj_a), &ty::TyProjection(proj_b)) => {
+                // Equating two projections: create a variable X and
+                // equate both of them with X.
+                let v = infcx.next_ty_var(self.param_env.universe,
+                                          TypeVariableOrigin::MiscVariable(
+                                              self.fields.trace.cause.span));
+                self.fields.normalize_to(self.param_env, proj_a, v);
+                self.fields.normalize_to(self.param_env, proj_b, v);
+                Ok(v)
+            }
+
+            (&ty::TyProjection(proj), _) => {
+                self.fields.normalize_to(self.param_env, proj, b);
+                Ok(b)
+            }
+
+            (_, &ty::TyProjection(proj)) => {
+                self.fields.normalize_to(self.param_env, proj, a);
+                Ok(a)
+            }
+
             (&ty::TyInfer(TyVar(a_id)), &ty::TyInfer(TyVar(b_id))) => {
                 infcx.type_variables.borrow_mut().equate(a_id, b_id);
                 Ok(a)
@@ -102,7 +123,8 @@ impl<'combine, 'infcx, 'gcx, 'tcx> TypeRelation<'infcx, 'gcx, 'tcx>
             }
 
             _ => {
-                self.fields.infcx.super_combine_tys(self, a, b)?;
+                let span = self.fields.trace.cause.span;
+                self.fields.infcx.super_combine_tys(self, span, a, b)?;
                 Ok(a)
             }
         }

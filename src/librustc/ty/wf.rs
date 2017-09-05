@@ -13,7 +13,6 @@ use infer::InferCtxt;
 use ty::subst::Substs;
 use traits;
 use ty::{self, ToPredicate, Ty, TyCtxt, TypeFoldable};
-use std::iter::once;
 use syntax::ast;
 use syntax_pos::Span;
 use middle::lang_items;
@@ -38,7 +37,7 @@ pub fn obligations<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
                                 out: vec![] };
     if wf.compute(ty) {
         debug!("wf::obligations({:?}, body_id={:?}) = {:?}", ty, body_id, wf.out);
-        let result = wf.normalize();
+        let result = wf.into_obligations();
         debug!("wf::obligations({:?}, body_id={:?}) ~~> {:?}", ty, body_id, result);
         Some(result)
     } else {
@@ -59,7 +58,7 @@ pub fn trait_obligations<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
 {
     let mut wf = WfPredicates { infcx, param_env, body_id, span, out: vec![] };
     wf.compute_trait_ref(trait_ref, Elaborate::All);
-    wf.normalize()
+    wf.into_obligations()
 }
 
 pub fn predicate_obligations<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
@@ -103,7 +102,7 @@ pub fn predicate_obligations<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
         }
     }
 
-    wf.normalize()
+    wf.into_obligations()
 }
 
 struct WfPredicates<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
@@ -148,18 +147,8 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
         traits::ObligationCause::new(self.span, self.body_id, code)
     }
 
-    fn normalize(&mut self) -> Vec<traits::PredicateObligation<'tcx>> {
-        let cause = self.cause(traits::MiscObligation);
-        let infcx = &mut self.infcx;
-        let param_env = self.param_env;
-        self.out.iter()
-                .inspect(|pred| assert!(!pred.has_escaping_regions()))
-                .flat_map(|pred| {
-                    let mut selcx = traits::SelectionContext::new(infcx);
-                    let pred = traits::normalize(&mut selcx, param_env, cause.clone(), pred);
-                    once(pred.value).chain(pred.obligations)
-                })
-                .collect()
+    fn into_obligations(self) -> Vec<traits::PredicateObligation<'tcx>> {
+        self.out
     }
 
     /// Pushes the obligations required for `trait_ref` to be WF into
@@ -256,7 +245,8 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
                     // simple cases that are WF if their type args are WF
                 }
 
-                ty::TyProjection(data) => {
+                ty::TyProjection(data) |
+                ty::TyNormalizedProjection(data) => {
                     subtys.skip_current_subtree(); // subtree handled by compute_projection
                     self.compute_projection(data);
                 }

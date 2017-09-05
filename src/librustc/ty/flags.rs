@@ -123,6 +123,11 @@ impl FlagComputation {
                 self.add_projection_ty(data);
             }
 
+            &ty::TyNormalizedProjection(ref data) => {
+                self.add_flags(TypeFlags::HAS_PROJECTION); // TODO -- should this be here?
+                self.add_projection_ty(data);
+            }
+
             &ty::TyAnon(_, substs) => {
                 self.add_flags(TypeFlags::HAS_PROJECTION);
                 self.add_substs(substs);

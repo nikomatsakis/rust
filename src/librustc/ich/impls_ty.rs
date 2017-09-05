@@ -562,6 +562,7 @@ for ty::TypeVariants<'gcx>
                 inner_tys.hash_stable(hcx, hasher);
                 from_diverging_type_var.hash_stable(hcx, hasher);
             }
+            TyNormalizedProjection(ref projection_ty) |
             TyProjection(ref projection_ty) => {
                 projection_ty.hash_stable(hcx, hasher);
             }

@@ -191,6 +191,7 @@ pub fn in_memory_type_of<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>, t: Ty<'tcx>) -> 
 
       ty::TyInfer(..) |
       ty::TyProjection(..) |
+      ty::TyNormalizedProjection(..) |
       ty::TyParam(..) |
       ty::TyAnon(..) |
       ty::TyError => bug!("type_of with {:?}", t),

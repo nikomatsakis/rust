@@ -1823,8 +1823,11 @@ impl Clean<Type> for hir::Ty {
             TyPath(hir::QPath::TypeRelative(ref qself, ref segment)) => {
                 let mut def = Def::Err;
                 let ty = hir_ty_to_ty(cx.tcx, self);
-                if let ty::TyProjection(proj) = ty.sty {
-                    def = Def::Trait(proj.trait_ref(cx.tcx).def_id);
+                match ty.sty {
+                    ty::TyNormalizedProjection(proj) | ty::TyProjection(proj) => {
+                        def = Def::Trait(proj.trait_ref(cx.tcx).def_id);
+                    }
+                    _ => { }
                 }
                 let trait_path = hir::Path {
                     span: self.span,
@@ -1961,6 +1964,8 @@ impl<'tcx> Clean<Type> for ty::Ty<'tcx> {
             ty::TyTuple(ref t, _) => Tuple(t.clean(cx)),
 
             ty::TyProjection(ref data) => data.clean(cx),
+
+            ty::TyNormalizedProjection(ref data) => data.clean(cx),
 
             ty::TyParam(ref p) => Generic(p.name.to_string()),
 

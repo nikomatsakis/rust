@@ -49,6 +49,8 @@ pub trait LatticeDir<'f, 'gcx: 'f+'tcx, 'tcx: 'f> : TypeRelation<'f, 'gcx, 'tcx>
     // relates `v` to `a` first, which may help us to avoid unnecessary
     // type variable obligations. See caller for details.
     fn relate_bound(&mut self, v: Ty<'tcx>, a: Ty<'tcx>, b: Ty<'tcx>) -> RelateResult<'tcx, ()>;
+
+    fn normalize_projection(&mut self, ty: Ty<'tcx>) -> Ty<'tcx>;
 }
 
 pub fn super_lattice_tys<'a, 'gcx, 'tcx, L>(this: &mut L,
@@ -69,6 +71,20 @@ pub fn super_lattice_tys<'a, 'gcx, 'tcx, L>(this: &mut L,
     let infcx = this.infcx();
     let a = infcx.type_variables.borrow_mut().replace_if_possible(a);
     let b = infcx.type_variables.borrow_mut().replace_if_possible(b);
+
+    // TODO Normalizing projections to type variables is not ideal; if
+    // they happen to normalize to something higher-ranked, we may
+    // fail to compute a LUB where we would otherwise succeed. This is
+    // something of an orthogonal bug. The ideal here is probably to
+    // be able to do one of the following:
+    //
+    // - Simplify our LUB for higher-ranked things to equality =)
+    // - Otherwise be able to delay LUB on two type variables without
+    //   doing so via two subtyping relations (i.e., create a `LUB(X, Y) = Z`
+    //   obligation).
+    let a = this.normalize_projection(a);
+    let b = this.normalize_projection(b);
+
     match (&a.sty, &b.sty) {
         // If one side is known to be a variable and one is not,
         // create a variable (`v`) to represent the LUB. Make sure to
@@ -104,7 +120,8 @@ pub fn super_lattice_tys<'a, 'gcx, 'tcx, L>(this: &mut L,
         }
 
         _ => {
-            infcx.super_combine_tys(this, a, b)
+            let span = this.cause().span;
+            infcx.super_combine_tys(this, span, a, b)
         }
     }
 }

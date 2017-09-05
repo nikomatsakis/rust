@@ -1675,6 +1675,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
             ty::TyParam(p) => {
                 self.param_bound(p)
             }
+            ty::TyNormalizedProjection(data) |
             ty::TyProjection(data) => {
                 let declared_bounds = self.projection_declared_bounds(span, data);
                 self.projection_bound(span, declared_bounds, data)
@@ -1723,7 +1724,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
                declared_bounds, projection_ty);
 
         // see the extensive comment in projection_must_outlive
-        let ty = self.tcx.mk_projection(projection_ty.item_def_id, projection_ty.substs);
+        let ty = self.tcx.mk_normalized_projection(projection_ty.item_def_id, projection_ty.substs);
         let recursive_bound = self.recursive_type_bound(span, ty);
 
         VerifyBound::AnyRegion(declared_bounds).or(recursive_bound)
@@ -1789,7 +1790,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
     {
         debug!("projection_bounds(projection_ty={:?})",
                projection_ty);
-        let ty = self.tcx.mk_projection(projection_ty.item_def_id, projection_ty.substs);
+        let ty = self.tcx.mk_normalized_projection(projection_ty.item_def_id, projection_ty.substs);
 
         // Say we have a projection `<T as SomeTrait<'a>>::SomeType`. We are interested
         // in looking for a trait definition like:

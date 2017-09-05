@@ -67,9 +67,6 @@ pub trait AstConv<'gcx, 'tcx> {
                                         poly_trait_ref: ty::PolyTraitRef<'tcx>)
                                         -> Ty<'tcx>;
 
-    /// Normalize an associated type coming from the user.
-    fn normalize_ty(&self, span: Span, ty: Ty<'tcx>) -> Ty<'tcx>;
-
     /// Invoked when we encounter an error from some prior pass
     /// (e.g. resolve) that is translated into a ty-error. This is
     /// used to help suppress derived errors typeck might otherwise
@@ -259,11 +256,7 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
                     tcx.types.err
                 } else {
                     // This is a default type parameter.
-                    self.normalize_ty(
-                        span,
-                        tcx.at(span).type_of(def.def_id)
-                            .subst_spanned(tcx, substs, Some(span))
-                    )
+                    tcx.at(span).type_of(def.def_id).subst_spanned(tcx, substs, Some(span))
                 }
             } else {
                 // We've already errored above about the mismatch.
@@ -509,10 +502,7 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
         -> Ty<'tcx>
     {
         let substs = self.ast_path_substs_for_ty(span, did, item_segment);
-        self.normalize_ty(
-            span,
-            self.tcx().at(span).type_of(did).subst(self.tcx(), substs)
-        )
+        self.tcx().at(span).type_of(did).subst(self.tcx(), substs)
     }
 
     /// Transform a PolyTraitRef into a PolyExistentialTraitRef by
@@ -816,7 +806,6 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
                                                   .expect("missing associated type");
 
         let ty = self.projected_ty_from_poly_trait_ref(span, item.def_id, bound);
-        let ty = self.normalize_ty(span, ty);
 
         let def = Def::AssociatedTy(item.def_id);
         let def_scope = tcx.adjust(assoc_name, item.container.id(), ref_id).1;
@@ -862,7 +851,7 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
 
         debug!("qpath_to_ty: trait_ref={:?}", trait_ref);
 
-        self.normalize_ty(span, tcx.mk_projection(item_def_id, trait_ref.substs))
+        tcx.mk_projection(item_def_id, trait_ref.substs)
     }
 
     pub fn prohibit_type_params(&self, segments: &[hir::PathSegment]) {

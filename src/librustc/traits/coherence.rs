@@ -243,7 +243,7 @@ fn uncovered_tys<'tcx>(tcx: TyCtxt, ty: Ty<'tcx>, infer_is_local: InferIsLocal)
 fn is_type_parameter(ty: Ty) -> bool {
     match ty.sty {
         // FIXME(#20590) straighten story about projection types
-        ty::TyProjection(..) | ty::TyParam(..) => true,
+        ty::TyNormalizedProjection(..) | ty::TyProjection(..) | ty::TyParam(..) => true,
         _ => false,
     }
 }
@@ -283,6 +283,7 @@ fn ty_is_local_constructor(ty: Ty, infer_is_local: InferIsLocal)-> bool {
         ty::TyNever |
         ty::TyTuple(..) |
         ty::TyParam(..) |
+        ty::TyNormalizedProjection(..) |
         ty::TyProjection(..) => {
             false
         }

@@ -342,6 +342,7 @@ impl<'a, 'gcx> CheckTypeWellFormedVisitor<'a, 'gcx> {
             let mut implied_bounds = vec![];
             this.check_fn_or_method(fcx, item.span, sig, &predicates,
                                     def_id, &mut implied_bounds);
+            debug!("check_item: implied_bounds={:?}", implied_bounds);
             implied_bounds
         })
     }
@@ -429,8 +430,11 @@ impl<'a, 'gcx> CheckTypeWellFormedVisitor<'a, 'gcx> {
                                       def_id: DefId,
                                       implied_bounds: &mut Vec<Ty<'tcx>>)
     {
+        debug!("check_fn_or_method: sig={:?}", sig);
         let sig = fcx.normalize_associated_types_in(span, &sig);
+        debug!("check_fn_or_method: (normalized) sig={:?}", sig);
         let sig = fcx.liberate_late_bound_regions(def_id, &sig);
+        debug!("check_fn_or_method: (liberated) sig={:?}", sig);
 
         for input_ty in sig.inputs() {
             fcx.register_wf_obligation(&input_ty, span, self.code.clone());

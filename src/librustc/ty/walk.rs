@@ -89,6 +89,7 @@ fn push_subtypes<'tcx>(stack: &mut TypeWalkerStack<'tcx>, parent_ty: Ty<'tcx>) {
         ty::TyRawPtr(ref mt) | ty::TyRef(_, ref mt) => {
             stack.push(mt.ty);
         }
+        ty::TyNormalizedProjection(ref data) |
         ty::TyProjection(ref data) => {
             stack.extend(data.substs.types().rev());
         }

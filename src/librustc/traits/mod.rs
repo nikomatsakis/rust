@@ -17,8 +17,6 @@ pub use self::ObligationCauseCode::*;
 
 use hir;
 use hir::def_id::DefId;
-use middle::region::RegionMaps;
-use middle::free_region::FreeRegionMap;
 use ty::subst::Substs;
 use ty::{self, AdtKind, Ty, TyCtxt, TypeFoldable, ToPredicate};
 use ty::error::{ExpectedFound, TypeError};
@@ -471,36 +469,16 @@ pub fn type_known_to_meet_bound<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx
     }
 }
 
-// FIXME: this is gonna need to be removed ...
-/// Normalizes the parameter environment, reporting errors if they occur.
-pub fn normalize_param_env_or_error<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                                              region_context: DefId,
-                                              unnormalized_env: ty::ParamEnv<'tcx>,
-                                              cause: ObligationCause<'tcx>)
-                                              -> ty::ParamEnv<'tcx>
+/// Elaborates the parameter environment.
+pub fn elaborate_param_env<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                                     unelaborated_env: ty::ParamEnv<'tcx>)
+                                     -> ty::ParamEnv<'tcx>
 {
-    // I'm not wild about reporting errors here; I'd prefer to
-    // have the errors get reported at a defined place (e.g.,
-    // during typeck). Instead I have all parameter
-    // environments, in effect, going through this function
-    // and hence potentially reporting errors. This ensurse of
-    // course that we never forget to normalize (the
-    // alternative seemed like it would involve a lot of
-    // manual invocations of this fn -- and then we'd have to
-    // deal with the errors at each of those sites).
-    //
-    // In any case, in practice, typeck constructs all the
-    // parameter environments once for every fn as it goes,
-    // and errors will get reported then; so after typeck we
-    // can be sure that no errors should occur.
-
-    let span = cause.span;
-
-    debug!("normalize_param_env_or_error(unnormalized_env={:?})",
-           unnormalized_env);
+    debug!("elaborate_param_env(unelaborated_env={:?})",
+           unelaborated_env);
 
     let predicates: Vec<_> =
-        util::elaborate_predicates(tcx, unnormalized_env.caller_bounds.to_vec())
+        util::elaborate_predicates(tcx, unelaborated_env.caller_bounds.to_vec())
         .filter(|p| !p.is_global()) // (*)
         .collect();
 
@@ -512,68 +490,12 @@ pub fn normalize_param_env_or_error<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     // constructed, but I am not currently doing so out of laziness.
     // -nmatsakis
 
-    debug!("normalize_param_env_or_error: elaborated-predicates={:?}",
+    debug!("elaborate_param_env: elaborated-predicates={:?}",
            predicates);
 
-    let elaborated_env = ty::ParamEnv::new(tcx.intern_predicates(&predicates),
-                                           unnormalized_env.reveal,
-                                           unnormalized_env.universe);
-
-    tcx.infer_ctxt().enter(|infcx| {
-        let predicates = match fully_normalize(
-            &infcx,
-            cause,
-            elaborated_env,
-            // You would really want to pass infcx.param_env.caller_bounds here,
-            // but that is an interned slice, and fully_normalize takes &T and returns T, so
-            // without further refactoring, a slice can't be used. Luckily, we still have the
-            // predicate vector from which we created the ParamEnv in infcx, so we
-            // can pass that instead. It's roundabout and a bit brittle, but this code path
-            // ought to be refactored anyway, and until then it saves us from having to copy.
-            &predicates,
-        ) {
-            Ok(predicates) => predicates,
-            Err(errors) => {
-                infcx.report_fulfillment_errors(&errors, None);
-                // An unnormalized env is better than nothing.
-                return elaborated_env;
-            }
-        };
-
-        debug!("normalize_param_env_or_error: normalized predicates={:?}",
-            predicates);
-
-        let region_maps = RegionMaps::new();
-        let free_regions = FreeRegionMap::new();
-        infcx.resolve_regions_and_report_errors(region_context, &region_maps, &free_regions);
-        let predicates = match infcx.fully_resolve(&predicates) {
-            Ok(predicates) => predicates,
-            Err(fixup_err) => {
-                // If we encounter a fixup error, it means that some type
-                // variable wound up unconstrained. I actually don't know
-                // if this can happen, and I certainly don't expect it to
-                // happen often, but if it did happen it probably
-                // represents a legitimate failure due to some kind of
-                // unconstrained variable, and it seems better not to ICE,
-                // all things considered.
-                tcx.sess.span_err(span, &fixup_err.to_string());
-                // An unnormalized env is better than nothing.
-                return elaborated_env;
-            }
-        };
-
-        let predicates = match tcx.lift_to_global(&predicates) {
-            Some(predicates) => predicates,
-            None => return elaborated_env,
-        };
-
-        debug!("normalize_param_env_or_error: resolved predicates={:?}",
-               predicates);
-
-        ty::ParamEnv::new(tcx.intern_predicates(&predicates),
-                          unnormalized_env.reveal,
-                          unnormalized_env.universe)
-    })
+    ty::ParamEnv::new(tcx.intern_predicates(&predicates),
+                      unelaborated_env.reveal,
+                      unelaborated_env.universe)
 }
 
 pub fn fully_normalize<'a, 'gcx, 'tcx, T>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,

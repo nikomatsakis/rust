@@ -361,6 +361,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                 // types, where we use TyError as the Self type
             }
 
+            ty::TyNormalizedProjection(_) | // normalization has not happened yet
             ty::TyInfer(..) => {
                 bug!("unexpected type encountered in \
                       variance inference: {}",

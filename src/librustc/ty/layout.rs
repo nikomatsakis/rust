@@ -853,6 +853,12 @@ impl<'a, 'tcx> Struct {
                 return Struct::non_zero_field_in_type(tcx, param_env, normalized);
             }
 
+            (_, &ty::TyNormalizedProjection(_)) => {
+                // Given that this runs post-monomorphization, all
+                // projections should normalize to real types.
+                bug!("non_zero_field_in_type: encountered normalized projection ty={:?}", ty)
+            }
+
             // Anything else is not a non-zero type.
             _ => Ok(None)
         }
@@ -1527,17 +1533,20 @@ impl<'a, 'tcx> Layout {
             }
 
             // Types with no meaningful known layout.
-            ty::TyProjection(_) | ty::TyAnon(..) => {
+            ty::TyProjection(_) |
+            ty::TyAnon(..) => {
                 let normalized = tcx.normalize_associated_type_in_env(&ty, param_env);
                 if ty == normalized {
                     return Err(LayoutError::Unknown(ty));
                 }
                 return normalized.layout(tcx, param_env);
             }
+            ty::TyNormalizedProjection(_) |
             ty::TyParam(_) => {
                 return Err(LayoutError::Unknown(ty));
             }
-            ty::TyInfer(_) | ty::TyError => {
+            ty::TyInfer(_) |
+            ty::TyError => {
                 bug!("Layout::compute: unexpected type `{}`", ty)
             }
         };
@@ -1982,7 +1991,9 @@ impl<'a, 'tcx> SizeSkeleton<'tcx> {
             let non_zero = !ty.is_unsafe_ptr();
             let tail = tcx.struct_tail(pointee);
             match tail.sty {
-                ty::TyParam(_) | ty::TyProjection(_) => {
+                ty::TyProjection(_) |
+                ty::TyParam(_) |
+                ty::TyNormalizedProjection(_) => {
                     assert!(tail.has_param_types() || tail.has_self_ty());
                     Ok(SizeSkeleton::Pointer {
                         non_zero,
@@ -1991,7 +2002,7 @@ impl<'a, 'tcx> SizeSkeleton<'tcx> {
                 }
                 _ => {
                     bug!("SizeSkeleton::compute({}): layout errored ({}), yet \
-                            tail `{}` is not a type parameter or a projection",
+                            tail `{}` is not a type parameter or a normalized projection",
                             ty, err, tail)
                 }
             }
@@ -2271,8 +2282,12 @@ impl<'a, 'tcx> TyLayout<'tcx> {
                 def.variants[self.variant_index.unwrap_or(0)].fields[i].ty(tcx, substs)
             }
 
-            ty::TyProjection(_) | ty::TyAnon(..) | ty::TyParam(_) |
-            ty::TyInfer(_) | ty::TyError => {
+            ty::TyNormalizedProjection(_) |
+            ty::TyProjection(_) |
+            ty::TyAnon(..) |
+            ty::TyParam(_) |
+            ty::TyInfer(_) |
+            ty::TyError => {
                 bug!("TyLayout::field_type: unexpected type `{}`", self.ty)
             }
         }

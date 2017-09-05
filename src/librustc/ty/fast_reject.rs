@@ -83,7 +83,9 @@ pub fn simplify_type<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
         ty::TyFnPtr(ref f) => {
             Some(FunctionSimplifiedType(f.skip_binder().inputs().len()))
         }
-        ty::TyProjection(_) | ty::TyParam(_) => {
+        ty::TyProjection(_) |
+        ty::TyNormalizedProjection(_) |
+        ty::TyParam(_) => {
             if can_simplify_params {
                 // In normalized types, projections don't unify with
                 // anything. when lazy normalization happens, this
