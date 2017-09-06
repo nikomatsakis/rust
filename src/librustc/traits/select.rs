@@ -1432,14 +1432,16 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                         skol_trait_ref: ty::TraitRef<'tcx>)
                         -> bool
     {
-        assert!(!skol_trait_ref.has_escaping_regions());
-        match self.infcx.at(&obligation.cause, obligation.param_env)
-                        .sup(ty::Binder(skol_trait_ref), trait_bound) {
-            Ok(InferOk { obligations, .. }) => {
-                self.inferred_obligations.extend(obligations);
-                true
-            }
-            Err(_) => false,
+        trait_bound.def_id() == skol_trait_ref.def_id && {
+            assert!(!skol_trait_ref.has_escaping_regions());
+            match self.infcx.at(&obligation.cause, obligation.param_env)
+                            .sup(ty::Binder(skol_trait_ref), trait_bound) {
+                                Ok(InferOk { obligations, .. }) => {
+                                    self.inferred_obligations.extend(obligations);
+                                    true
+                                }
+                                Err(_) => false,
+                            }
         }
     }
 
@@ -1878,30 +1880,33 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
         match other.candidate {
             ObjectCandidate |
-            ParamCandidate(_) | ProjectionCandidate => match victim.candidate {
-                DefaultImplCandidate(..) => {
-                    bug!(
-                        "default implementations shouldn't be recorded \
-                         when there are other valid candidates");
+            ParamCandidate(_) |
+            ProjectionCandidate if other.evaluation == EvaluatedToOk => {
+                match victim.candidate {
+                    DefaultImplCandidate(..) => {
+                        bug!(
+                            "default implementations shouldn't be recorded \
+                             when there are other valid candidates");
+                    }
+                    ImplCandidate(..) |
+                    ClosureCandidate(..) |
+                    GeneratorCandidate(..) |
+                    FnPointerCandidate |
+                    BuiltinObjectCandidate |
+                    BuiltinUnsizeCandidate |
+                    BuiltinCandidate { .. } => {
+                        // We have a where-clause so don't go around looking
+                        // for impls.
+                        true
+                    }
+                    ObjectCandidate |
+                    ProjectionCandidate => {
+                        // Arbitrarily give param candidates priority
+                        // over projection and object candidates.
+                        true
+                    },
+                    ParamCandidate(..) => false,
                 }
-                ImplCandidate(..) |
-                ClosureCandidate(..) |
-                GeneratorCandidate(..) |
-                FnPointerCandidate |
-                BuiltinObjectCandidate |
-                BuiltinUnsizeCandidate |
-                BuiltinCandidate { .. } => {
-                    // We have a where-clause so don't go around looking
-                    // for impls.
-                    true
-                }
-                ObjectCandidate |
-                ProjectionCandidate => {
-                    // Arbitrarily give param candidates priority
-                    // over projection and object candidates.
-                    true
-                },
-                ParamCandidate(..) => false,
             },
             ImplCandidate(other_def) => {
                 // See if we can toss out `victim` based on specialization.
