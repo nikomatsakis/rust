@@ -144,7 +144,7 @@ struct TraitObligationStack<'prev, 'tcx: 'prev> {
 
 #[derive(Clone)]
 pub struct SelectionCache<'tcx> {
-    hashmap: RefCell<FxHashMap<ty::TraitRef<'tcx>,
+    hashmap: RefCell<FxHashMap<CacheKey<'tcx>,
                                WithDepNode<SelectionResult<'tcx, SelectionCandidate>>>>,
 }
 
@@ -404,8 +404,10 @@ impl EvaluationResult {
 
 #[derive(Clone)]
 pub struct EvaluationCache<'tcx> {
-    hashmap: RefCell<FxHashMap<ty::TraitRef<'tcx>, WithDepNode<EvaluationResult>>>
+    hashmap: RefCell<FxHashMap<CacheKey<'tcx>, WithDepNode<EvaluationResult>>>
 }
+
+type CacheKey<'tcx> = (ty::TraitRef<'tcx>, ty::ParamEnv<'tcx>);
 
 impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     pub fn new(infcx: &'cx InferCtxt<'cx, 'gcx, 'tcx>) -> SelectionContext<'cx, 'gcx, 'tcx> {
@@ -516,7 +518,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     /// type environment by performing unification.
     pub fn select(&mut self, obligation: &TraitObligation<'tcx>)
                   -> SelectionResult<'tcx, Selection<'tcx>> {
-        debug!("select({:?})", obligation);
+        debug!("select({:?}, param_env={:?})", obligation, obligation.param_env);
 
         let tcx = self.tcx();
 
@@ -954,13 +956,13 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         let tcx = self.tcx();
         if self.can_use_global_caches(param_env) {
             let cache = tcx.evaluation_cache.hashmap.borrow();
-            if let Some(cached) = cache.get(&trait_ref) {
+            if let Some(cached) = cache.get(&(trait_ref, param_env)) {
                 return Some(cached.get(tcx));
             }
         }
         self.infcx.evaluation_cache.hashmap
                                    .borrow()
-                                   .get(&trait_ref)
+                                   .get(&(trait_ref, param_env))
                                    .map(|v| v.get(tcx))
     }
 
@@ -978,15 +980,16 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
         if self.can_use_global_caches(param_env) {
             let mut cache = self.tcx().evaluation_cache.hashmap.borrow_mut();
-            if let Some(trait_ref) = self.tcx().lift_to_global(&trait_ref) {
-                cache.insert(trait_ref, WithDepNode::new(dep_node, result));
+            if let Some(key) = self.tcx().lift_to_global(&(trait_ref, param_env)) {
+                cache.insert(key, WithDepNode::new(dep_node, result));
                 return;
             }
         }
 
         self.infcx.evaluation_cache.hashmap
                                    .borrow_mut()
-                                   .insert(trait_ref, WithDepNode::new(dep_node, result));
+                                   .insert((trait_ref, param_env),
+                                           WithDepNode::new(dep_node, result));
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -1256,13 +1259,13 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         let tcx = self.tcx();
         if self.can_use_global_caches(param_env) {
             let cache = tcx.selection_cache.hashmap.borrow();
-            if let Some(cached) = cache.get(&cache_fresh_trait_pred) {
+            if let Some(cached) = cache.get(&(cache_fresh_trait_pred, param_env)) {
                 return Some(cached.get(tcx));
             }
         }
         self.infcx.selection_cache.hashmap
                                   .borrow()
-                                  .get(&cache_fresh_trait_pred)
+                                  .get(&(cache_fresh_trait_pred, param_env))
                                   .map(|v| v.get(tcx))
     }
 
@@ -1275,17 +1278,22 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         let tcx = self.tcx();
         if self.can_use_global_caches(param_env) {
             let mut cache = tcx.selection_cache.hashmap.borrow_mut();
-            if let Some(cache_fresh_trait_pred) = tcx.lift_to_global(&cache_fresh_trait_pred) {
+            if let Some(key) = tcx.lift_to_global(&(cache_fresh_trait_pred, param_env)) {
                 if let Some(candidate) = tcx.lift_to_global(&candidate) {
-                    cache.insert(cache_fresh_trait_pred, WithDepNode::new(dep_node, candidate));
+                    debug!("insert_candidate_cache: inserting into global cache {:?} => {:?}",
+                           cache_fresh_trait_pred, candidate);
+                    cache.insert(key, WithDepNode::new(dep_node, candidate));
                     return;
                 }
             }
         }
 
+        debug!("insert_candidate_cache: inserting into local cache {:?} => {:?}",
+               cache_fresh_trait_pred, candidate);
+
         self.infcx.selection_cache.hashmap
                                   .borrow_mut()
-                                  .insert(cache_fresh_trait_pred,
+                                  .insert((cache_fresh_trait_pred, param_env),
                                           WithDepNode::new(dep_node, candidate));
     }
 
