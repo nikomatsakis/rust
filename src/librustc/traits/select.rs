@@ -42,26 +42,15 @@ use middle::lang_items;
 
 use rustc_data_structures::bitvec::BitVector;
 use rustc_data_structures::fx::FxHashSet;
-use rustc_data_structures::snapshot_vec::{SnapshotVecDelegate, SnapshotVec};
 use std::iter;
 use std::cell::RefCell;
 use std::cmp;
 use std::fmt;
-use std::marker::PhantomData;
 use std::rc::Rc;
 use syntax::abi::Abi;
 use hir;
 use lint;
 use util::nodemap::FxHashMap;
-
-struct InferredObligationsSnapshotVecDelegate<'tcx> {
-    phantom: PhantomData<&'tcx i32>,
-}
-impl<'tcx> SnapshotVecDelegate for InferredObligationsSnapshotVecDelegate<'tcx> {
-    type Value = PredicateObligation<'tcx>;
-    type Undo = ();
-    fn reverse(_: &mut Vec<Self::Value>, _: Self::Undo) {}
-}
 
 pub struct SelectionContext<'cx, 'gcx: 'cx+'tcx, 'tcx: 'cx> {
     infcx: &'cx InferCtxt<'cx, 'gcx, 'tcx>,
@@ -88,8 +77,6 @@ pub struct SelectionContext<'cx, 'gcx: 'cx+'tcx, 'tcx: 'cx> {
     /// there is no type that the user could *actually name* that
     /// would satisfy it. This avoids crippling inference, basically.
     intercrate: bool,
-
-    inferred_obligations: SnapshotVec<InferredObligationsSnapshotVecDelegate<'tcx>>,
 
     intercrate_ambiguity_causes: Vec<IntercrateAmbiguityCause>,
 }
@@ -415,7 +402,6 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             infcx,
             freshener: infcx.freshener(),
             intercrate: false,
-            inferred_obligations: SnapshotVec::new(),
             intercrate_ambiguity_causes: Vec::new(),
         }
     }
@@ -425,7 +411,6 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             infcx,
             freshener: infcx.freshener(),
             intercrate: true,
-            inferred_obligations: SnapshotVec::new(),
             intercrate_ambiguity_causes: Vec::new(),
         }
     }
@@ -451,8 +436,6 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     fn in_snapshot<R, F>(&mut self, f: F) -> R
         where F: FnOnce(&mut Self, &infer::CombinedSnapshot<'cx, 'tcx>) -> R
     {
-        // The irrefutable nature of the operation means we don't need to snapshot the
-        // inferred_obligations vector.
         self.infcx.in_snapshot(|snapshot| f(self, snapshot))
     }
 
@@ -461,10 +444,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     fn probe<R, F>(&mut self, f: F) -> R
         where F: FnOnce(&mut Self, &infer::CombinedSnapshot<'cx, 'tcx>) -> R
     {
-        let inferred_obligations_snapshot = self.inferred_obligations.start_snapshot();
-        let result = self.infcx.probe(|snapshot| f(self, snapshot));
-        self.inferred_obligations.rollback_to(inferred_obligations_snapshot);
-        result
+        self.infcx.probe(|snapshot| f(self, snapshot))
     }
 
     /// Wraps a commit_if_ok s.t. obligations collected during it are not returned in selection if
@@ -472,17 +452,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     fn commit_if_ok<T, E, F>(&mut self, f: F) -> Result<T, E> where
         F: FnOnce(&mut Self, &infer::CombinedSnapshot) -> Result<T, E>
     {
-        let inferred_obligations_snapshot = self.inferred_obligations.start_snapshot();
-        match self.infcx.commit_if_ok(|snapshot| f(self, snapshot)) {
-            Ok(ok) => {
-                self.inferred_obligations.commit(inferred_obligations_snapshot);
-                Ok(ok)
-            },
-            Err(err) => {
-                self.inferred_obligations.rollback_to(inferred_obligations_snapshot);
-                Err(err)
-            }
-        }
+        self.infcx.commit_if_ok(|snapshot| f(self, snapshot))
     }
 
 
@@ -525,12 +495,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         let stack = self.push_stack(TraitObligationStackList::empty(), obligation);
         let ret = match self.candidate_from_obligation(&stack)? {
             None => None,
-            Some(candidate) => {
-                let mut candidate = self.confirm_candidate(&stack, obligation, candidate)?;
-                let inferred_obligations = (*self.inferred_obligations).into_iter().cloned();
-                candidate.nested_obligations_mut().extend(inferred_obligations);
-                Some(candidate)
-            },
+            Some(candidate) => Some(self.confirm_candidate(&stack, obligation, candidate)?),
         };
 
         // Test whether this is a `()` which was produced by defaulting a
@@ -623,7 +588,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                                                 stack: TraitObligationStackList<'o, 'tcx>,
                                                 predicates: I)
                                                 -> EvaluationResult
-        where I : Iterator<Item=&'a PredicateObligation<'tcx>>, 'tcx:'a
+        where I : IntoIterator<Item=&'a PredicateObligation<'tcx>>, 'tcx:'a
     {
         let mut result = EvaluatedToOk;
         for obligation in predicates {
@@ -660,7 +625,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 // does this code ever run?
                 match self.infcx.equality_predicate(&obligation.cause, obligation.param_env, p) {
                     Ok(InferOk { obligations, .. }) => {
-                        self.inferred_obligations.extend(obligations);
+                        self.evaluate_predicates_recursively(previous_stack, &obligations);
                         EvaluatedToOk
                     },
                     Err(_) => EvaluatedToErr
@@ -671,7 +636,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 // does this code ever run?
                 match self.infcx.subtype_predicate(&obligation.cause, obligation.param_env, p) {
                     Some(Ok(InferOk { obligations, .. })) => {
-                        self.inferred_obligations.extend(obligations);
+                        self.evaluate_predicates_recursively(previous_stack, &obligations);
                         EvaluatedToOk
                     },
                     Some(Err(_)) => EvaluatedToErr,
@@ -685,7 +650,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                                           obligation.cause.body_id,
                                           ty, obligation.cause.span) {
                     Some(obligations) =>
-                        self.evaluate_predicates_recursively(previous_stack, obligations.iter()),
+                        self.evaluate_predicates_recursively(previous_stack, &obligations),
                     None =>
                         EvaluatedToAmbig,
                 }
@@ -2442,6 +2407,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         };
 
         let mut upcast_trait_ref = None;
+        let mut nested = vec![];
         let vtable_base;
 
         {
@@ -2460,7 +2426,11 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                         self.commit_if_ok(
                             |this, _| this.match_poly_trait_ref(obligation, t))
                     {
-                        Ok(_) => { upcast_trait_ref = Some(t); false }
+                        Ok(obligations) => {
+                            upcast_trait_ref = Some(t);
+                            nested.extend(obligations);
+                            false
+                        }
                         Err(_) => { true }
                     }
                 });
@@ -2478,7 +2448,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         VtableObjectData {
             upcast_trait_ref: upcast_trait_ref.unwrap(),
             vtable_base,
-            nested: vec![]
+            nested,
         }
     }
 
@@ -2497,17 +2467,19 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                                                          util::TupleArgumentsFlag::Yes)
             .map_bound(|(trait_ref, _)| trait_ref);
 
-        let Normalized { value: trait_ref, obligations } =
+        let Normalized { value: trait_ref, mut obligations } =
             project::normalize_with_depth(self,
                                           obligation.param_env,
                                           obligation.cause.clone(),
                                           obligation.recursion_depth + 1,
                                           &trait_ref);
 
-        self.confirm_against_poly_trait_ref(obligation.cause.clone(),
-                                            obligation.param_env,
-                                            obligation.predicate,
-                                            trait_ref)?;
+        obligations.extend(
+            self.confirm_against_poly_trait_ref(obligation.cause.clone(),
+                                                obligation.param_env,
+                                                obligation.predicate,
+                                                trait_ref)?);
+
         Ok(VtableFnPointerData { fn_ty: self_ty, nested: obligations })
     }
 
@@ -2531,7 +2503,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             self.generator_trait_ref_unnormalized(obligation, closure_def_id, substs);
         let Normalized {
             value: trait_ref,
-            obligations
+            mut obligations
         } = normalize_with_depth(self,
                                  obligation.param_env,
                                  obligation.cause.clone(),
@@ -2543,10 +2515,11 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                trait_ref,
                obligations);
 
-        self.confirm_against_poly_trait_ref(obligation.cause.clone(),
-                                            obligation.param_env,
-                                            obligation.predicate,
-                                            trait_ref)?;
+        obligations.extend(
+            self.confirm_against_poly_trait_ref(obligation.cause.clone(),
+                                                obligation.param_env,
+                                                obligation.predicate,
+                                                trait_ref)?);
 
         Ok(VtableGeneratorData {
             closure_def_id: closure_def_id,
@@ -2589,10 +2562,11 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                trait_ref,
                obligations);
 
-        self.confirm_against_poly_trait_ref(obligation.cause.clone(),
-                                            obligation.param_env,
-                                            obligation.predicate,
-                                            trait_ref)?;
+        obligations.extend(
+            self.confirm_against_poly_trait_ref(obligation.cause.clone(),
+                                                obligation.param_env,
+                                                obligation.predicate,
+                                                trait_ref)?);
 
         obligations.push(Obligation::new(
             obligation.cause.clone(),
@@ -2636,13 +2610,14 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                                       obligation_param_env: ty::ParamEnv<'tcx>,
                                       obligation_trait_ref: ty::TraitRef<'tcx>,
                                       expected_trait_ref: ty::PolyTraitRef<'tcx>)
-                                      -> Result<(), SelectionError<'tcx>>
+                                      -> Result<Vec<PredicateObligation<'tcx>>,
+                                                SelectionError<'tcx>>
     {
         let obligation_trait_ref = obligation_trait_ref.clone();
         self.infcx
             .at(&obligation_cause, obligation_param_env)
             .instantiable_as(expected_trait_ref, obligation_trait_ref)
-            .map(|InferOk { obligations, .. }| self.inferred_obligations.extend(obligations))
+            .map(|InferOk { obligations, value: () }| obligations)
             .map_err(|e| OutputTypeParameterMismatch(expected_trait_ref, obligation_trait_ref, e))
     }
 
@@ -2676,7 +2651,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                     self.infcx.at(&obligation.cause, obligation.param_env)
                               .eq(target, new_trait)
                               .map_err(|_| Unimplemented)?;
-                self.inferred_obligations.extend(obligations);
+                nested.extend(obligations);
 
                 // Register one obligation for 'a: 'b.
                 let cause = ObligationCause::new(obligation.cause.span,
@@ -2738,7 +2713,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                     self.infcx.at(&obligation.cause, obligation.param_env)
                               .eq(b, a)
                               .map_err(|_| Unimplemented)?;
-                self.inferred_obligations.extend(obligations);
+                nested.extend(obligations);
             }
 
             // Struct<T> -> Struct<U>.
@@ -2802,7 +2777,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                     self.infcx.at(&obligation.cause, obligation.param_env)
                               .eq(target, new_struct)
                               .map_err(|_| Unimplemented)?;
-                self.inferred_obligations.extend(obligations);
+                nested.extend(obligations);
 
                 // Construct the nested Field<T>: Unsize<Field<U>> predicate.
                 nested.push(tcx.predicate_for_trait_def(
@@ -2833,7 +2808,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                     self.infcx.at(&obligation.cause, obligation.param_env)
                               .eq(target, new_tuple)
                               .map_err(|_| Unimplemented)?;
-                self.inferred_obligations.extend(obligations);
+                nested.extend(obligations);
 
                 // Construct the nested T: Unsize<U> predicate.
                 nested.push(tcx.predicate_for_trait_def(
@@ -2896,7 +2871,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
         let impl_trait_ref = impl_trait_ref.subst(self.tcx(), impl_substs);
 
-        let impl_trait_ref =
+        let Normalized { value: impl_trait_ref, obligations: mut nested_obligations } =
             project::normalize_with_depth(self,
                                           obligation.param_env,
                                           obligation.cause.clone(),
@@ -2910,15 +2885,15 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
         let InferOk { obligations, .. } =
             self.infcx.at(&obligation.cause, obligation.param_env)
-                      .eq(obligation.predicate, impl_trait_ref.value)
+                      .eq(obligation.predicate, impl_trait_ref)
                       .map_err(|e| {
                           debug!("match_impl: failed eq_trait_refs due to `{}`", e);
                           ()
                       })?;
-        self.inferred_obligations.extend(obligations);
+        nested_obligations.extend(obligations);
 
         debug!("match_impl: success impl_substs={:?}", impl_substs);
-        Ok(Normalized { value: impl_substs, obligations: impl_trait_ref.obligations })
+        Ok(Normalized { value: impl_substs, obligations: nested_obligations })
     }
 
     fn fast_reject_trait_refs(&mut self,
@@ -2954,8 +2929,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                                     where_clause_trait_ref: ty::PolyTraitRef<'tcx>)
                                     -> Result<Vec<PredicateObligation<'tcx>>,()>
     {
-        self.match_poly_trait_ref(obligation, where_clause_trait_ref)?;
-        Ok(Vec::new())
+        self.match_poly_trait_ref(obligation, where_clause_trait_ref)
     }
 
     /// Returns `Ok` if `poly_trait_ref` being true implies that the
@@ -2963,7 +2937,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     fn match_poly_trait_ref(&mut self,
                             obligation: &TraitObligation<'tcx>,
                             poly_trait_ref: ty::PolyTraitRef<'tcx>)
-                            -> Result<(),()>
+                            -> Result<Vec<PredicateObligation<'tcx>>,()>
     {
         debug!("match_poly_trait_ref: obligation={:?} poly_trait_ref={:?}",
                obligation,
@@ -2971,7 +2945,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
         self.infcx.at(&obligation.cause, obligation.param_env)
                   .instantiable_as(poly_trait_ref, obligation.predicate)
-                  .map(|InferOk { obligations, .. }| self.inferred_obligations.extend(obligations))
+                  .map(|InferOk { obligations, value: () }| obligations)
                   .map_err(|_| ())
     }
 
