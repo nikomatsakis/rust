@@ -912,7 +912,6 @@ define_print_multi! {
     ('tcx) ty::Binder<ty::TraitRefPrintWithColon<'tcx>>,
     ('tcx) ty::Binder<ty::TraitRefPrintWithoutSelf<'tcx>>,
     ('tcx) ty::Binder<ty::FnSig<'tcx>>,
-    ('tcx) ty::Binder<ty::EquatePredicate<'tcx>>,
     ('tcx) ty::Binder<ty::SubtypePredicate<'tcx>>,
     ('tcx) ty::Binder<ty::ProjectionPredicate<'tcx>>,
     ('tcx) ty::Binder<ty::OutlivesPredicate<Ty<'tcx>, ty::Region<'tcx>>>,
@@ -1205,14 +1204,6 @@ define_print! {
 }
 
 define_print! {
-    ('tcx) ty::EquatePredicate<'tcx>, (self, f, cx) {
-        display {
-            print!(f, cx, print(self.0), write(" == "), print(self.1))
-        }
-    }
-}
-
-define_print! {
     ('tcx) ty::SubtypePredicate<'tcx>, (self, f, cx) {
         display {
             print!(f, cx, print(self.a), write(" <: "), print(self.b))
@@ -1267,7 +1258,6 @@ define_print! {
         display {
             match *self {
                 ty::Predicate::Trait(ref data) => data.print_with_colon().print(f, cx),
-                ty::Predicate::Equate(ref predicate) => predicate.print(f, cx),
                 ty::Predicate::Subtype(ref predicate) => predicate.print(f, cx),
                 ty::Predicate::RegionOutlives(ref predicate) => predicate.print(f, cx),
                 ty::Predicate::TypeOutlives(ref predicate) => predicate.print(f, cx),
@@ -1292,7 +1282,6 @@ define_print! {
         debug {
             match *self {
                 ty::Predicate::Trait(ref a) => a.print_with_colon().print(f, cx),
-                ty::Predicate::Equate(ref pair) => pair.print(f, cx),
                 ty::Predicate::Subtype(ref pair) => pair.print(f, cx),
                 ty::Predicate::RegionOutlives(ref pair) => pair.print(f, cx),
                 ty::Predicate::TypeOutlives(ref pair) => pair.print(f, cx),

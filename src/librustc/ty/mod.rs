@@ -868,9 +868,6 @@ pub enum Predicate<'tcx> {
     /// would be the type parameters.
     Trait(PolyTraitRef<'tcx>),
 
-    /// where `T1 == T2`.
-    Equate(PolyEquatePredicate<'tcx>),
-
     /// where 'a : 'b
     RegionOutlives(PolyRegionOutlivesPredicate<'tcx>),
 
@@ -973,8 +970,6 @@ impl<'a, 'gcx, 'tcx> Predicate<'tcx> {
         match *self {
             Predicate::Trait(ty::Binder(ref data)) =>
                 Predicate::Trait(ty::Binder(data.subst(tcx, substs))),
-            Predicate::Equate(ty::Binder(ref data)) =>
-                Predicate::Equate(ty::Binder(data.subst(tcx, substs))),
             Predicate::Subtype(ty::Binder(ref data)) =>
                 Predicate::Subtype(ty::Binder(data.subst(tcx, substs))),
             Predicate::RegionOutlives(ty::Binder(ref data)) =>
@@ -1076,12 +1071,6 @@ impl<'tcx> ToPredicate<'tcx> for PolyTraitRef<'tcx> {
     }
 }
 
-impl<'tcx> ToPredicate<'tcx> for PolyEquatePredicate<'tcx> {
-    fn to_predicate(&self) -> Predicate<'tcx> {
-        Predicate::Equate(self.clone())
-    }
-}
-
 impl<'tcx> ToPredicate<'tcx> for PolyRegionOutlivesPredicate<'tcx> {
     fn to_predicate(&self) -> Predicate<'tcx> {
         Predicate::RegionOutlives(self.clone())
@@ -1108,9 +1097,6 @@ impl<'tcx> Predicate<'tcx> {
         let vec: Vec<_> = match *self {
             ty::Predicate::Trait(ref data) => {
                 data.skip_binder().input_types().collect()
-            }
-            ty::Predicate::Equate(ty::Binder(ref data)) => {
-                vec![data.0, data.1]
             }
             ty::Predicate::Subtype(ty::Binder(SubtypePredicate { a, b, a_is_expected: _ })) => {
                 vec![a, b]
@@ -1152,7 +1138,6 @@ impl<'tcx> Predicate<'tcx> {
                 Some(t)
             }
             Predicate::Projection(..) |
-            Predicate::Equate(..) |
             Predicate::Subtype(..) |
             Predicate::RegionOutlives(..) |
             Predicate::WellFormed(..) |

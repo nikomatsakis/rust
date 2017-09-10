@@ -507,7 +507,6 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
                         assert!(!obligation.has_escaping_regions());
                         match obligation.predicate {
                             ty::Predicate::Trait(..) |
-                            ty::Predicate::Equate(..) |
                             ty::Predicate::Subtype(..) |
                             ty::Predicate::Projection(..) |
                             ty::Predicate::ClosureKind(..) |

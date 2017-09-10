@@ -214,9 +214,6 @@ impl<'gcx> HashStable<StableHashingContext<'gcx>> for ty::Predicate<'gcx> {
             ty::Predicate::Trait(ref pred) => {
                 pred.hash_stable(hcx, hasher);
             }
-            ty::Predicate::Equate(ref pred) => {
-                pred.hash_stable(hcx, hasher);
-            }
             ty::Predicate::Subtype(ref pred) => {
                 pred.hash_stable(hcx, hasher);
             }

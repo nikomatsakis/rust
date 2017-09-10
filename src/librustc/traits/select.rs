@@ -621,17 +621,6 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 self.evaluate_trait_predicate_recursively(previous_stack, obligation)
             }
 
-            ty::Predicate::Equate(ref p) => {
-                // does this code ever run?
-                match self.infcx.equality_predicate(&obligation.cause, obligation.param_env, p) {
-                    Ok(InferOk { obligations, .. }) => {
-                        self.evaluate_predicates_recursively(previous_stack, &obligations);
-                        EvaluatedToOk
-                    },
-                    Err(_) => EvaluatedToErr
-                }
-            }
-
             ty::Predicate::Subtype(ref p) => {
                 // does this code ever run?
                 match self.infcx.subtype_predicate(&obligation.cause, obligation.param_env, p) {
