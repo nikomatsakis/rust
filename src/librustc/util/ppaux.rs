@@ -416,7 +416,6 @@ impl<'tcx> fmt::Debug for ty::Predicate<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             ty::Predicate::Trait(ref a) => write!(f, "{:?}", a),
-            ty::Predicate::Equate(ref pair) => write!(f, "{:?}", pair),
             ty::Predicate::Subtype(ref pair) => write!(f, "{:?}", pair),
             ty::Predicate::RegionOutlives(ref pair) => write!(f, "{:?}", pair),
             ty::Predicate::TypeOutlives(ref pair) => write!(f, "{:?}", pair),
@@ -1035,7 +1034,6 @@ impl<'tcx> fmt::Display for ty::Predicate<'tcx> {
         match *self {
             ty::Predicate::Trait(ref data) =>
                 write!(f, "{}", data.map_bound_ref(|t| t.display_all_with_colon())),
-            ty::Predicate::Equate(ref predicate) => write!(f, "{}", predicate),
             ty::Predicate::Subtype(ref predicate) => write!(f, "{}", predicate),
             ty::Predicate::RegionOutlives(ref predicate) => write!(f, "{}", predicate),
             ty::Predicate::TypeOutlives(ref predicate) => write!(f, "{}", predicate),

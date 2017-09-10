@@ -142,7 +142,6 @@ impl<'tcx> FreeRegionMap<'tcx> {
             match *predicate {
                 ty::Predicate::Projection(..) |
                 ty::Predicate::Trait(..) |
-                ty::Predicate::Equate(..) |
                 ty::Predicate::Subtype(..) |
                 ty::Predicate::WellFormed(..) |
                 ty::Predicate::ObjectSafe(..) |

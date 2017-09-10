@@ -168,8 +168,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                     ty::Predicate::TypeOutlives(..) |
                     ty::Predicate::RegionOutlives(..) |
                     ty::Predicate::ClosureKind(..) |
-                    ty::Predicate::Subtype(..) |
-                    ty::Predicate::Equate(..) => {
+                    ty::Predicate::Subtype(..) => {
                         false
                     }
                 }
@@ -197,7 +196,6 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                     }
                     ty::Predicate::Projection(..) |
                     ty::Predicate::Trait(..) |
-                    ty::Predicate::Equate(..) |
                     ty::Predicate::Subtype(..) |
                     ty::Predicate::RegionOutlives(..) |
                     ty::Predicate::WellFormed(..) |
