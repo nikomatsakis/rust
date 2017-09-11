@@ -813,6 +813,10 @@ impl<'tcx> fmt::Display for ty::TypeVariants<'tcx> {
             }
             TyProjection(ref data) => write!(f, "{}", data),
             TyAnon(def_id, substs) => {
+                if verbose() {
+                    return write!(f, "TyAnon({:?}, {:?})", def_id, substs);
+                }
+
                 ty::tls::with(|tcx| {
                     // Grab the "TraitA + TraitB" from `impl TraitA + TraitB`,
                     // by looking up the projections associated with the def_id.
