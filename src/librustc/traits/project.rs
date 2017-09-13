@@ -31,7 +31,7 @@ use rustc_data_structures::snapshot_map::{Snapshot, SnapshotMap};
 use syntax::ast;
 use syntax::symbol::Symbol;
 use ty::subst::Subst;
-use ty::{self, ToPredicate, ToPolyTraitRef, Ty, TyCtxt};
+use ty::{self, ToPredicate, Ty, TyCtxt};
 use ty::fold::{TypeFoldable, TypeFolder};
 use util::common::FN_OUTPUT_NAME;
 
@@ -637,7 +637,7 @@ fn push_paranoid_cache_value_obligation<'a, 'gcx, 'tcx>(infcx: &'a InferCtxt<'a,
                                                         depth: usize,
                                                         result: &mut NormalizedTy<'tcx>)
 {
-    let trait_ref = projection_ty.trait_ref(infcx.tcx).to_poly_trait_ref();
+    let trait_ref = projection_ty.trait_ref(infcx.tcx);
     let trait_obligation = Obligation { cause,
                                         recursion_depth: depth,
                                         param_env,
@@ -671,7 +671,7 @@ fn normalize_to_error<'a, 'gcx, 'tcx>(selcx: &mut SelectionContext<'a, 'gcx, 'tc
                                       depth: usize)
                                       -> NormalizedTy<'tcx>
 {
-    let trait_ref = projection_ty.trait_ref(selcx.tcx()).to_poly_trait_ref();
+    let trait_ref = projection_ty.trait_ref(selcx.tcx());
     let tcx = selcx.infcx().tcx;
     let trait_obligation = Obligation { cause,
                                         recursion_depth: depth,
@@ -918,8 +918,7 @@ fn assemble_candidates_from_predicates<'cx, 'gcx, 'tcx, I>(
                     data.0.projection_ty.item_def_id == obligation.predicate.item_def_id;
 
                 let is_match = same_def_id && infcx.probe(|_| {
-                    let data_poly_trait_ref =
-                        data.to_poly_trait_ref(infcx.tcx);
+                    let data_poly_trait_ref = data.to_poly_trait_ref(infcx.tcx);
                     infcx.at(&obligation.cause, obligation.param_env)
                          .instantiable_as(data_poly_trait_ref, obligation_trait_ref)
                          .map(|InferOk { obligations: _, value: () }| {
