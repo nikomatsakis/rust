@@ -33,7 +33,8 @@ use traits;
 use ty::{self, ToPredicate, Ty, TypeAndMut};
 use ty::{TyS, TypeVariants, Slice};
 use ty::{AdtKind, AdtDef, ClosureSubsts, GeneratorInterior, Region};
-use ty::{PolyFnSig, InferTy, ParamTy, ProjectionTy, ExistentialPredicate, Predicate};
+use ty::{PolyFnSig, InferTy, ParamTy, ProjectionTy, ExistentialPredicate};
+use ty::{Predicate, PredicateInterned};
 use ty::RegionKind;
 use ty::{TyVar, TyVid, IntVar, IntVid, FloatVar, FloatVid};
 use ty::TypeVariants::*;
@@ -106,6 +107,7 @@ pub struct CtxtInterners<'tcx> {
     type_list: RefCell<FxHashSet<Interned<'tcx, Slice<Ty<'tcx>>>>>,
     substs: RefCell<FxHashSet<Interned<'tcx, Substs<'tcx>>>>,
     region: RefCell<FxHashSet<Interned<'tcx, RegionKind>>>,
+    predicate_interned: RefCell<FxHashSet<Interned<'tcx, PredicateInterned<'tcx>>>>,
     existential_predicates: RefCell<FxHashSet<Interned<'tcx, Slice<ExistentialPredicate<'tcx>>>>>,
     predicates: RefCell<FxHashSet<Interned<'tcx, Slice<Predicate<'tcx>>>>>,
 }
@@ -118,6 +120,7 @@ impl<'gcx: 'tcx, 'tcx> CtxtInterners<'tcx> {
             type_list: RefCell::new(FxHashSet()),
             substs: RefCell::new(FxHashSet()),
             region: RefCell::new(FxHashSet()),
+            predicate_interned: RefCell::new(FxHashSet()),
             existential_predicates: RefCell::new(FxHashSet()),
             predicates: RefCell::new(FxHashSet()),
         }
@@ -1250,6 +1253,21 @@ impl<'a, 'tcx> Lift<'tcx> for Region<'a> {
     }
 }
 
+impl<'a, 'tcx> Lift<'tcx> for Predicate<'a> {
+    type Lifted = Predicate<'tcx>;
+    fn lift_to_tcx<'b, 'gcx>(&self, tcx: TyCtxt<'b, 'gcx, 'tcx>) -> Option<Predicate<'tcx>> {
+        if tcx.interners.arena.in_arena(*self as *const _) {
+            return Some(unsafe { mem::transmute(*self) });
+        }
+        // Also try in the global tcx if we're not that.
+        if !tcx.is_global() {
+            self.lift_to_tcx(tcx.global_tcx())
+        } else {
+            None
+        }
+    }
+}
+
 impl<'a, 'tcx> Lift<'tcx> for &'a Slice<Ty<'a>> {
     type Lifted = &'tcx Slice<Ty<'tcx>>;
     fn lift_to_tcx<'b, 'gcx>(&self, tcx: TyCtxt<'b, 'gcx, 'tcx>)
@@ -1523,6 +1541,12 @@ impl<'tcx> Borrow<RegionKind> for Interned<'tcx, RegionKind> {
     }
 }
 
+impl<'tcx> Borrow<PredicateInterned<'tcx>> for Interned<'tcx, PredicateInterned<'tcx>> {
+    fn borrow<'a>(&'a self) -> &'a PredicateInterned<'tcx> {
+        &self.0
+    }
+}
+
 impl<'tcx: 'lcx, 'lcx> Borrow<[ExistentialPredicate<'lcx>]>
     for Interned<'tcx, Slice<ExistentialPredicate<'tcx>>> {
     fn borrow<'a>(&'a self) -> &'a [ExistentialPredicate<'lcx>] {
@@ -1619,6 +1643,12 @@ direct_interners!('tcx,
         }
     }) -> RegionKind
 );
+
+direct_interners!(
+    'tcx,
+    predicate_interned: mk_predicate_interned(|&ty::PredicateInterned { ref kind }| {
+        keep_local(kind)
+    }) -> PredicateInterned<'tcx>);
 
 macro_rules! slice_interners {
     ($($field:ident: $method:ident($ty:ident)),+) => (
@@ -1935,7 +1965,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     }
 
     pub fn mk_predicate(self, kind: ty::PredicateKind<'tcx>) -> ty::Predicate<'tcx> {
-        ty::Predicate { kind }
+        self.mk_predicate_interned(ty::PredicateInterned { kind })
     }
 
     pub fn predicate_obligation<O>(self,

@@ -57,7 +57,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         let mut error_map : FxHashMap<_, _> =
             self.reported_trait_errors.borrow().iter().map(|(&span, predicates)| {
                 (span, predicates.iter().map(|predicate| ErrorDescriptor {
-                    predicate: predicate.clone(),
+                    predicate: predicate,
                     index: None
                 }).collect())
             }).collect();
@@ -65,13 +65,13 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         for (index, error) in errors.iter().enumerate() {
             error_map.entry(error.obligation.cause.span).or_insert(Vec::new()).push(
                 ErrorDescriptor {
-                    predicate: error.obligation.predicate.clone(),
+                    predicate: error.obligation.predicate,
                     index: Some(index)
                 });
 
             self.reported_trait_errors.borrow_mut()
                 .entry(error.obligation.cause.span).or_insert(Vec::new())
-                .push(error.obligation.predicate.clone());
+                .push(error.obligation.predicate);
         }
 
         // We do this in 2 passes because we want to display errors in order, tho

@@ -463,6 +463,7 @@ impl<'tcx> PartialEq for TyS<'tcx> {
         (self as *const TyS<'tcx>) == (other as *const TyS<'tcx>)
     }
 }
+
 impl<'tcx> Eq for TyS<'tcx> {}
 
 impl<'tcx> Hash for TyS<'tcx> {
@@ -817,12 +818,20 @@ impl<'a, 'gcx, 'tcx> GenericPredicates<'tcx> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
-pub struct Predicate<'tcx> {
-    pub kind: PredicateKind<'tcx>
+/// Reference to an interned predicate. Typically the only thing you
+/// do with this is `match predicate.kind { ... }`. To construct one
+/// of these, use the `to_predicate(tcx)` method of the `ToPredicate`
+/// trait on some suitable type (see also
+/// `tcx.predicate_obligation(...)`).
+pub type Predicate<'tcx> = &'tcx PredicateInterned<'tcx>;
+
+/// Wraps an interned predicate kind. Not normally used explicitly.
+#[derive(Clone, Copy, Hash, PartialEq, Eq, RustcEncodable, RustcDecodable)]
+pub struct PredicateInterned<'tcx> {
+    pub kind: PredicateKind<'tcx>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
 pub enum PredicateKind<'tcx> {
     /// Corresponds to `where Foo : Bar<A,B,C>`. `Foo` here would be
     /// the `Self` type of the trait reference and `A`, `B`, and `C`
@@ -854,7 +863,7 @@ pub enum PredicateKind<'tcx> {
     Subtype(PolySubtypePredicate<'tcx>),
 }
 
-impl<'a, 'gcx, 'tcx> Predicate<'tcx> {
+impl<'a, 'gcx, 'tcx> PredicateInterned<'tcx> {
     /// Performs a substitution suitable for going from a
     /// poly-trait-ref to supertraits that must hold if that
     /// poly-trait-ref holds. This is slightly different from a normal
@@ -1055,7 +1064,7 @@ impl<'tcx> ToPredicate<'tcx> for PolyProjectionPredicate<'tcx> {
     }
 }
 
-impl<'tcx> Predicate<'tcx> {
+impl<'tcx> PredicateInterned<'tcx> {
     /// Iterates over the types in this predicate. Note that in all
     /// cases this is skipping over a binder, so late-bound regions
     /// with depth 0 are bound by the predicate.

@@ -169,7 +169,7 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
 
         if let Elaborate::All = elaborate {
             let predicates = obligations.iter()
-                                        .map(|obligation| obligation.predicate.clone())
+                                        .map(|obligation| obligation.predicate)
                                         .collect();
             let implied_obligations = traits::elaborate_predicates(tcx, predicates);
             let implied_obligations = implied_obligations.map(|pred| {

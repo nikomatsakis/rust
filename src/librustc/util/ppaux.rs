@@ -412,7 +412,7 @@ impl<'tcx> fmt::Debug for ty::adjustment::Adjustment<'tcx> {
     }
 }
 
-impl<'tcx> fmt::Debug for ty::Predicate<'tcx> {
+impl<'tcx> fmt::Debug for ty::PredicateInterned<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.kind {
             ty::PredicateKind::Trait(ref a) => write!(f, "{:?}", a),
@@ -1033,7 +1033,7 @@ impl fmt::Display for ty::ClosureKind {
     }
 }
 
-impl<'tcx> fmt::Display for ty::Predicate<'tcx> {
+impl<'tcx> fmt::Display for ty::PredicateInterned<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.kind {
             ty::PredicateKind::Trait(ref data) =>

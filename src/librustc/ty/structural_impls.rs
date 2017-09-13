@@ -181,38 +181,6 @@ impl<'a, 'tcx> Lift<'tcx> for ty::ExistentialProjection<'a> {
     }
 }
 
-impl<'a, 'tcx> Lift<'tcx> for ty::Predicate<'a> {
-    type Lifted = ty::Predicate<'tcx>;
-    fn lift_to_tcx<'b, 'gcx>(&self, tcx: TyCtxt<'b, 'gcx, 'tcx>) -> Option<Self::Lifted> {
-        match self.kind {
-            ty::PredicateKind::Trait(ref binder) => {
-                tcx.lift(binder).map(ty::PredicateKind::Trait)
-            }
-            ty::PredicateKind::Subtype(ref binder) => {
-                tcx.lift(binder).map(ty::PredicateKind::Subtype)
-            }
-            ty::PredicateKind::RegionOutlives(ref binder) => {
-                tcx.lift(binder).map(ty::PredicateKind::RegionOutlives)
-            }
-            ty::PredicateKind::TypeOutlives(ref binder) => {
-                tcx.lift(binder).map(ty::PredicateKind::TypeOutlives)
-            }
-            ty::PredicateKind::Projection(ref binder) => {
-                tcx.lift(binder).map(ty::PredicateKind::Projection)
-            }
-            ty::PredicateKind::WellFormed(ty) => {
-                tcx.lift(&ty).map(ty::PredicateKind::WellFormed)
-            }
-            ty::PredicateKind::ClosureKind(closure_def_id, kind) => {
-                Some(ty::PredicateKind::ClosureKind(closure_def_id, kind))
-            }
-            ty::PredicateKind::ObjectSafe(trait_def_id) => {
-                Some(ty::PredicateKind::ObjectSafe(trait_def_id))
-            }
-        }.map(|k| k.to_predicate(tcx))
-    }
-}
-
 impl<'tcx, T: Lift<'tcx>> Lift<'tcx> for ty::Binder<T> {
     type Lifted = ty::Binder<T::Lifted>;
     fn lift_to_tcx<'a, 'gcx>(&self, tcx: TyCtxt<'a, 'gcx, 'tcx>) -> Option<Self::Lifted> {
@@ -863,9 +831,9 @@ impl<'tcx> TypeFoldable<'tcx> for &'tcx ty::Slice<ty::Predicate<'tcx>> {
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
+impl<'tcx> TypeFoldable<'tcx> for ty::PredicateKind<'tcx> {
     fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        match self.kind {
+        match *self {
             ty::PredicateKind::Trait(ref a) =>
                 ty::PredicateKind::Trait(a.fold_with(folder)),
             ty::PredicateKind::Subtype(ref binder) =>
@@ -882,11 +850,11 @@ impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
                 ty::PredicateKind::ClosureKind(closure_def_id, kind),
             ty::PredicateKind::ObjectSafe(trait_def_id) =>
                 ty::PredicateKind::ObjectSafe(trait_def_id),
-        }.to_predicate(folder.tcx())
+        }
     }
 
     fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        match self.kind {
+        match *self {
             ty::PredicateKind::Trait(ref a) => a.visit_with(visitor),
             ty::PredicateKind::Subtype(ref binder) => binder.visit_with(visitor),
             ty::PredicateKind::RegionOutlives(ref binder) => binder.visit_with(visitor),
@@ -896,6 +864,18 @@ impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
             ty::PredicateKind::ClosureKind(_closure_def_id, _kind) => false,
             ty::PredicateKind::ObjectSafe(_trait_def_id) => false,
         }
+    }
+}
+
+impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
+    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
+        let &&ty::PredicateInterned { ref kind } = self;
+        kind.fold_with(folder).to_predicate(folder.tcx())
+    }
+
+    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
+        let &&ty::PredicateInterned { ref kind } = self;
+        kind.visit_with(visitor)
     }
 }
 

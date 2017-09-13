@@ -333,7 +333,7 @@ impl<'tcx,I:Iterator<Item=ty::Predicate<'tcx>>> Iterator for FilterToTraits<I> {
                 None => {
                     return None;
                 }
-                Some(ty::Predicate { kind: ty::PredicateKind::Trait(data) }) => {
+                Some(&ty::PredicateInterned { kind: ty::PredicateKind::Trait(data) }) => {
                     return Some(data);
                 }
                 Some(_) => {
