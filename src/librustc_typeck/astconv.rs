@@ -1406,7 +1406,7 @@ impl<'a, 'gcx, 'tcx> Bounds<'tcx> {
                     def_id: sized,
                     substs: tcx.mk_substs_trait(param_ty, &[])
                 };
-                vec.push(trait_ref.to_predicate());
+                vec.push(trait_ref.to_predicate(tcx));
             }
         }
 
@@ -1414,15 +1414,15 @@ impl<'a, 'gcx, 'tcx> Bounds<'tcx> {
             // account for the binder being introduced below; no need to shift `param_ty`
             // because, at present at least, it can only refer to early-bound regions
             let region_bound = tcx.mk_region(ty::fold::shift_region(*region_bound, 1));
-            vec.push(ty::Binder(ty::OutlivesPredicate(param_ty, region_bound)).to_predicate());
+            vec.push(ty::Binder(ty::OutlivesPredicate(param_ty, region_bound)).to_predicate(tcx));
         }
 
         for bound_trait_ref in &self.trait_bounds {
-            vec.push(bound_trait_ref.to_predicate());
+            vec.push(bound_trait_ref.to_predicate(tcx));
         }
 
         for projection in &self.projection_bounds {
-            vec.push(projection.to_predicate());
+            vec.push(projection.to_predicate(tcx));
         }
 
         vec

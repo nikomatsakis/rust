@@ -61,7 +61,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                             Obligation::misc(span,
                                              self.body_id,
                                              self.param_env,
-                                             poly_trait_ref.to_predicate());
+                                             poly_trait_ref.to_predicate(tcx));
                         SelectionContext::new(self).evaluate_obligation(&obligation)
                     })
                 })

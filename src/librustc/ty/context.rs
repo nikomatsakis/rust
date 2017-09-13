@@ -30,7 +30,7 @@ use mir::transform::Passes;
 use ty::subst::{Kind, Substs};
 use ty::ReprOptions;
 use traits;
-use ty::{self, Ty, TypeAndMut};
+use ty::{self, ToPredicate, Ty, TypeAndMut};
 use ty::{TyS, TypeVariants, Slice};
 use ty::{AdtKind, AdtDef, ClosureSubsts, GeneratorInterior, Region};
 use ty::{PolyFnSig, InferTy, ParamTy, ProjectionTy, ExistentialPredicate, Predicate};
@@ -1932,6 +1932,21 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                     -> &'tcx Substs<'tcx>
     {
         self.mk_substs(iter::once(s).chain(t.into_iter().cloned()).map(Kind::from))
+    }
+
+    pub fn mk_predicate(self, kind: ty::PredicateKind<'tcx>) -> ty::Predicate<'tcx> {
+        ty::Predicate { kind }
+    }
+
+    pub fn predicate_obligation<O>(self,
+                                   cause: traits::ObligationCause<'tcx>,
+                                   param_env: ty::ParamEnv<'tcx>,
+                                   predicate: O)
+                                   -> traits::PredicateObligation<'tcx>
+        where O: ToPredicate<'tcx>
+    {
+        let predicate = predicate.to_predicate(self);
+        traits::Obligation::new(cause, param_env, predicate)
     }
 
     pub fn lint_node<S: Into<MultiSpan>>(self,

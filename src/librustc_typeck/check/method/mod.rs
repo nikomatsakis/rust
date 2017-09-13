@@ -262,7 +262,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             traits::Obligation::misc(span,
                                      self.body_id,
                                      self.param_env,
-                                     poly_trait_ref.to_predicate());
+                                     poly_trait_ref.to_predicate(self.tcx));
 
         // Now we want to know if this can be matched
         let mut selcx = traits::SelectionContext::new(self);
@@ -329,9 +329,9 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         debug!("lookup_in_trait_adjusted: matched method method_ty={:?} obligation={:?}",
                method_ty,
                obligation);
-        obligations.push(traits::Obligation::new(cause,
-                                                 self.param_env,
-                                                 ty::Predicate::WellFormed(method_ty)));
+        obligations.push(tcx.predicate_obligation(cause,
+                                                  self.param_env,
+                                                  ty::PredicateKind::WellFormed(method_ty)));
 
         let callee = MethodCallee {
             def_id,

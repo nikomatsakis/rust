@@ -531,8 +531,8 @@ impl<'f, 'gcx, 'tcx> Coerce<'f, 'gcx, 'tcx> {
         let traits = [coerce_unsized_did, unsize_did];
         while let Some(obligation) = queue.pop_front() {
             debug!("coerce_unsized resolve step: {:?}", obligation);
-            let trait_ref = match obligation.predicate {
-                ty::Predicate::Trait(ref tr) if traits.contains(&tr.def_id()) => {
+            let trait_ref = match obligation.predicate.kind {
+                ty::PredicateKind::Trait(ref tr) if traits.contains(&tr.def_id()) => {
                     if unsize_did == tr.def_id() {
                         if let ty::TyTuple(..) = tr.0.input_types().nth(1).unwrap().sty {
                             debug!("coerce_unsized: found unsized tuple coercion");

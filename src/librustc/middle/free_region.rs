@@ -139,17 +139,17 @@ impl<'tcx> FreeRegionMap<'tcx> {
                                                predicates: &[ty::Predicate<'tcx>]) {
         debug!("relate_free_regions_from_predicates(predicates={:?})", predicates);
         for predicate in predicates {
-            match *predicate {
-                ty::Predicate::Projection(..) |
-                ty::Predicate::Trait(..) |
-                ty::Predicate::Subtype(..) |
-                ty::Predicate::WellFormed(..) |
-                ty::Predicate::ObjectSafe(..) |
-                ty::Predicate::ClosureKind(..) |
-                ty::Predicate::TypeOutlives(..) => {
+            match predicate.kind {
+                ty::PredicateKind::Projection(..) |
+                ty::PredicateKind::Trait(..) |
+                ty::PredicateKind::Subtype(..) |
+                ty::PredicateKind::WellFormed(..) |
+                ty::PredicateKind::ObjectSafe(..) |
+                ty::PredicateKind::ClosureKind(..) |
+                ty::PredicateKind::TypeOutlives(..) => {
                     // No region bounds here
                 }
-                ty::Predicate::RegionOutlives(ty::Binder(ty::OutlivesPredicate(r_a, r_b))) => {
+                ty::PredicateKind::RegionOutlives(ty::Binder(ty::OutlivesPredicate(r_a, r_b))) => {
                     self.relate_regions(r_b, r_a);
                 }
             }

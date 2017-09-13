@@ -314,7 +314,7 @@ fn type_param_predicates<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                         result.predicates.push(ty::TraitRef {
                             def_id: item_def_id,
                             substs: Substs::identity_for_item(tcx, item_def_id)
-                        }.to_predicate());
+                        }.to_predicate(tcx));
                     }
                     generics
                 }
@@ -1441,7 +1441,7 @@ fn predicates_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
         // Add in a predicate that `Self:Trait` (where `Trait` is the
         // current trait).  This is needed for builtin bounds.
-        predicates.push(trait_ref.to_poly_trait_ref().to_predicate());
+        predicates.push(trait_ref.to_poly_trait_ref().to_predicate(tcx));
     }
 
     // Collect the region predicates that were declared inline as
@@ -1459,7 +1459,7 @@ fn predicates_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         for bound in &param.bounds {
             let bound_region = AstConv::ast_region_to_region(&icx, bound, None);
             let outlives = ty::Binder(ty::OutlivesPredicate(region, bound_region));
-            predicates.push(outlives.to_predicate());
+            predicates.push(outlives.to_predicate(tcx));
         }
     }
 
@@ -1495,10 +1495,10 @@ fn predicates_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                                                     ty,
                                                                     &mut projections);
 
-                            predicates.push(trait_ref.to_predicate());
+                            predicates.push(trait_ref.to_predicate(tcx));
 
                             for projection in &projections {
-                                predicates.push(projection.to_predicate());
+                                predicates.push(projection.to_predicate(tcx));
                             }
                         }
 
@@ -1507,7 +1507,7 @@ fn predicates_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                                                        lifetime,
                                                                        None);
                             let pred = ty::Binder(ty::OutlivesPredicate(ty, region));
-                            predicates.push(ty::Predicate::TypeOutlives(pred))
+                            predicates.push(ty::PredicateKind::TypeOutlives(pred).to_predicate(tcx))
                         }
                     }
                 }
@@ -1518,7 +1518,7 @@ fn predicates_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                 for bound in &region_pred.bounds {
                     let r2 = AstConv::ast_region_to_region(&icx, bound, None);
                     let pred = ty::Binder(ty::OutlivesPredicate(r1, r2));
-                    predicates.push(ty::Predicate::RegionOutlives(pred))
+                    predicates.push(ty::PredicateKind::RegionOutlives(pred).to_predicate(tcx))
                 }
             }
 
@@ -1638,6 +1638,7 @@ fn predicates_from_bound<'tcx>(astconv: &AstConv<'tcx, 'tcx>,
                                bound: &hir::TyParamBound)
                                -> Vec<ty::Predicate<'tcx>>
 {
+    let tcx = astconv.tcx();
     match *bound {
         hir::TraitTyParamBound(ref tr, hir::TraitBoundModifier::None) => {
             let mut projections = Vec::new();
@@ -1645,14 +1646,14 @@ fn predicates_from_bound<'tcx>(astconv: &AstConv<'tcx, 'tcx>,
                                                           param_ty,
                                                           &mut projections);
             projections.into_iter()
-                       .map(|p| p.to_predicate())
-                       .chain(Some(pred.to_predicate()))
+                       .map(|p| p.to_predicate(tcx))
+                       .chain(Some(pred.to_predicate(tcx)))
                        .collect()
         }
         hir::RegionTyParamBound(ref lifetime) => {
             let region = astconv.ast_region_to_region(lifetime, None);
             let pred = ty::Binder(ty::OutlivesPredicate(param_ty, region));
-            vec![ty::Predicate::TypeOutlives(pred)]
+            vec![ty::PredicateKind::TypeOutlives(pred).to_predicate(tcx)]
         }
         hir::TraitTyParamBound(_, hir::TraitBoundModifier::Maybe) => {
             Vec::new()

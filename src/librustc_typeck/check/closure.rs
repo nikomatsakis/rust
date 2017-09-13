@@ -136,7 +136,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 let sig = object_type.projection_bounds()
                     .filter_map(|pb| {
                         let pb = pb.with_self_ty(self.tcx, self.tcx.types.err);
-                        self.deduce_sig_from_projection(&pb)
+                        self.deduce_sig_from_projection(pb)
                     })
                     .next();
                 let kind = object_type.principal()
@@ -163,10 +163,10 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 debug!("deduce_expectations_from_obligations: obligation.predicate={:?}",
                        obligation.predicate);
 
-                match obligation.predicate {
+                match obligation.predicate.kind {
                     // Given a Projection predicate, we can potentially infer
                     // the complete signature.
-                    ty::Predicate::Projection(ref proj_predicate) => {
+                    ty::PredicateKind::Projection(proj_predicate) => {
                         let trait_ref = proj_predicate.to_poly_trait_ref(self.tcx);
                         self.self_type_matches_expected_vid(trait_ref, expected_vid)
                             .and_then(|_| self.deduce_sig_from_projection(proj_predicate))
@@ -184,14 +184,14 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             .iter()
             .map(|obligation| &obligation.obligation)
             .filter_map(|obligation| {
-                let opt_trait_ref = match obligation.predicate {
-                    ty::Predicate::Projection(ref data) => Some(data.to_poly_trait_ref(self.tcx)),
-                    ty::Predicate::Trait(data) => Some(data),
-                    ty::Predicate::Subtype(..) => None,
-                    ty::Predicate::RegionOutlives(..) => None,
-                    ty::Predicate::TypeOutlives(..) => None,
-                    ty::Predicate::WellFormed(..) => None,
-                    ty::Predicate::ObjectSafe(..) => None,
+                let opt_trait_ref = match obligation.predicate.kind {
+                    ty::PredicateKind::Projection(ref data) => Some(data.to_poly_trait_ref(self.tcx)),
+                    ty::PredicateKind::Trait(data) => Some(data),
+                    ty::PredicateKind::Subtype(..) => None,
+                    ty::PredicateKind::RegionOutlives(..) => None,
+                    ty::PredicateKind::TypeOutlives(..) => None,
+                    ty::PredicateKind::WellFormed(..) => None,
+                    ty::PredicateKind::ObjectSafe(..) => None,
 
                     // NB: This predicate is created by breaking down a
                     // `ClosureType: FnFoo()` predicate, where
@@ -201,7 +201,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                     // this closure yet; this is exactly why the other
                     // code is looking for a self type of a unresolved
                     // inference variable.
-                    ty::Predicate::ClosureKind(..) => None,
+                    ty::PredicateKind::ClosureKind(..) => None,
                 };
                 opt_trait_ref.and_then(|tr| self.self_type_matches_expected_vid(tr, expected_vid))
                     .and_then(|tr| self.tcx.lang_items().fn_trait_kind(tr.def_id()))
@@ -215,7 +215,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
     /// Given a projection like "<F as Fn(X)>::Result == Y", we can deduce
     /// everything we need to know about a closure.
     fn deduce_sig_from_projection(&self,
-                                  projection: &ty::PolyProjectionPredicate<'tcx>)
+                                  projection: ty::PolyProjectionPredicate<'tcx>)
                                   -> Option<ty::FnSig<'tcx>> {
         let tcx = self.tcx;
 

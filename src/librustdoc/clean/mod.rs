@@ -922,17 +922,15 @@ impl Clean<WherePredicate> for hir::WherePredicate {
 
 impl<'a> Clean<WherePredicate> for ty::Predicate<'a> {
     fn clean(&self, cx: &DocContext) -> WherePredicate {
-        use rustc::ty::Predicate;
-
-        match *self {
-            Predicate::Trait(ref pred) => pred.clean(cx),
-            Predicate::Subtype(ref pred) => pred.clean(cx),
-            Predicate::RegionOutlives(ref pred) => pred.clean(cx),
-            Predicate::TypeOutlives(ref pred) => pred.clean(cx),
-            Predicate::Projection(ref pred) => pred.clean(cx),
-            Predicate::WellFormed(_) => panic!("not user writable"),
-            Predicate::ObjectSafe(_) => panic!("not user writable"),
-            Predicate::ClosureKind(..) => panic!("not user writable"),
+        match self.kind {
+            ty::PredicateKind::Trait(ref pred) => pred.clean(cx),
+            ty::PredicateKind::Subtype(ref pred) => pred.clean(cx),
+            ty::PredicateKind::RegionOutlives(ref pred) => pred.clean(cx),
+            ty::PredicateKind::TypeOutlives(ref pred) => pred.clean(cx),
+            ty::PredicateKind::Projection(ref pred) => pred.clean(cx),
+            ty::PredicateKind::WellFormed(_) => panic!("not user writable"),
+            ty::PredicateKind::ObjectSafe(_) => panic!("not user writable"),
+            ty::PredicateKind::ClosureKind(..) => panic!("not user writable"),
         }
     }
 }

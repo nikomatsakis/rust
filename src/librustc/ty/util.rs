@@ -381,17 +381,17 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
 
         traits::elaborate_predicates(self, predicates)
             .filter_map(|predicate| {
-                match predicate {
-                    ty::Predicate::Projection(..) |
-                    ty::Predicate::Trait(..) |
-                    ty::Predicate::Subtype(..) |
-                    ty::Predicate::WellFormed(..) |
-                    ty::Predicate::ObjectSafe(..) |
-                    ty::Predicate::ClosureKind(..) |
-                    ty::Predicate::RegionOutlives(..) => {
+                match predicate.kind {
+                    ty::PredicateKind::Projection(..) |
+                    ty::PredicateKind::Trait(..) |
+                    ty::PredicateKind::Subtype(..) |
+                    ty::PredicateKind::WellFormed(..) |
+                    ty::PredicateKind::ObjectSafe(..) |
+                    ty::PredicateKind::ClosureKind(..) |
+                    ty::PredicateKind::RegionOutlives(..) => {
                         None
                     }
-                    ty::Predicate::TypeOutlives(ty::Binder(ty::OutlivesPredicate(t, r))) => {
+                    ty::PredicateKind::TypeOutlives(ty::Binder(ty::OutlivesPredicate(t, r))) => {
                         // Search for a bound of the form `erased_self_ty
                         // : 'a`, but be wary of something like `for<'a>
                         // erased_self_ty : 'a` (we interpret a

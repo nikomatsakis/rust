@@ -35,7 +35,7 @@ use hir::def_id::DefId;
 use infer;
 use infer::{InferCtxt, InferOk, TypeFreshener};
 use ty::subst::{Kind, Subst, Substs};
-use ty::{self, ToPolyTraitRef, ToPredicate, Ty, TyCtxt, TypeFoldable};
+use ty::{self, ToPredicate, Ty, TyCtxt, TypeFoldable};
 use ty::fast_reject;
 use ty::relate::TypeRelation;
 use middle::lang_items;
@@ -614,14 +614,14 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         debug!("evaluate_predicate_recursively({:?})",
                obligation);
 
-        match obligation.predicate {
-            ty::Predicate::Trait(ref t) => {
+        match obligation.predicate.kind {
+            ty::PredicateKind::Trait(ref t) => {
                 assert!(!t.has_escaping_regions());
                 let obligation = obligation.with(t.clone());
                 self.evaluate_trait_predicate_recursively(previous_stack, obligation)
             }
 
-            ty::Predicate::Subtype(ref p) => {
+            ty::PredicateKind::Subtype(ref p) => {
                 // does this code ever run?
                 match self.infcx.subtype_predicate(&obligation.cause, obligation.param_env, p) {
                     Some(Ok(InferOk { obligations, .. })) => {
@@ -633,7 +633,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 }
             }
 
-            ty::Predicate::WellFormed(ty) => {
+            ty::PredicateKind::WellFormed(ty) => {
                 match ty::wf::obligations(self.infcx,
                                           obligation.param_env,
                                           obligation.cause.body_id,
@@ -645,13 +645,13 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 }
             }
 
-            ty::Predicate::TypeOutlives(..) | ty::Predicate::RegionOutlives(..) => {
+            ty::PredicateKind::TypeOutlives(..) | ty::PredicateKind::RegionOutlives(..) => {
                 // we do not consider region relationships when
                 // evaluating trait matches
                 EvaluatedToOk
             }
 
-            ty::Predicate::ObjectSafe(trait_def_id) => {
+            ty::PredicateKind::ObjectSafe(trait_def_id) => {
                 if self.tcx().is_object_safe(trait_def_id) {
                     EvaluatedToOk
                 } else {
@@ -659,7 +659,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 }
             }
 
-            ty::Predicate::Projection(ref data) => {
+            ty::PredicateKind::Projection(ref data) => {
                 let project_obligation = obligation.with(data.clone());
                 match project::poly_project_and_unify_type(self, &project_obligation) {
                     Ok(Some(subobligations)) => {
@@ -681,7 +681,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 }
             }
 
-            ty::Predicate::ClosureKind(closure_def_id, kind) => {
+            ty::PredicateKind::ClosureKind(closure_def_id, kind) => {
                 match self.infcx.closure_kind(closure_def_id) {
                     Some(closure_kind) => {
                         if closure_kind.extends(kind) {
@@ -743,6 +743,8 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                           stack: &TraitObligationStack<'o, 'tcx>)
                           -> EvaluationResult
     {
+        let tcx = self.tcx();
+
         // In intercrate mode, whenever any of the types are unbound,
         // there can always be an impl. Even if there are no impls in
         // this crate, perhaps the type would be unified with
@@ -828,9 +830,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             debug!("evaluate_stack({:?}) --> recursive",
                    stack.fresh_trait_ref);
             let cycle = stack.iter().skip(1).take(rec_index+1);
-            let cycle = cycle.map(|stack| {
-                ty::Predicate::Trait(stack.obligation.predicate.to_poly_trait_ref())
-            });
+            let cycle = cycle.map(|stack| stack.obligation.predicate.to_predicate(tcx));
             if self.coinductive_match(cycle) {
                 debug!("evaluate_stack({:?}) --> recursive, coinductive",
                        stack.fresh_trait_ref);
@@ -864,8 +864,8 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     }
 
     fn coinductive_predicate(&self, predicate: ty::Predicate<'tcx>) -> bool {
-        let result = match predicate {
-            ty::Predicate::Trait(ref data) => {
+        let result = match predicate.kind {
+            ty::PredicateKind::Trait(ref data) => {
                 self.tcx().trait_has_default_impl(data.def_id())
             }
             _ => {
@@ -2557,10 +2557,10 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                                                 obligation.predicate,
                                                 trait_ref)?);
 
-        obligations.push(Obligation::new(
+        obligations.push(self.tcx().predicate_obligation(
             obligation.cause.clone(),
             obligation.param_env,
-            ty::Predicate::ClosureKind(closure_def_id, kind)));
+            ty::PredicateKind::ClosureKind(closure_def_id, kind)));
 
         Ok(VtableClosureData {
             closure_def_id,
@@ -2650,7 +2650,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 nested.push(Obligation::with_depth(cause,
                                                    obligation.recursion_depth + 1,
                                                    obligation.param_env,
-                                                   ty::Binder(outlives).to_predicate()));
+                                                   ty::Binder(outlives).to_predicate(tcx)));
             }
 
             // T -> Trait.
@@ -2688,12 +2688,12 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                     def_id: tcx.require_lang_item(lang_items::SizedTraitLangItem),
                     substs: tcx.mk_substs_trait(source, &[]),
                 };
-                push(tr.to_predicate());
+                push(tr.to_predicate(tcx));
 
                 // If the type is `Foo+'a`, ensures that the type
                 // being cast to `Foo+'a` outlives `'a`:
                 let outlives = ty::OutlivesPredicate(source, r);
-                push(ty::Binder(outlives).to_predicate());
+                push(ty::Binder(outlives).to_predicate(tcx));
             }
 
             // [T; n] -> [T].

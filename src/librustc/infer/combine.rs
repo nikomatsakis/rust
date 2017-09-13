@@ -45,7 +45,7 @@ use ty::{self, Ty, TyCtxt};
 use ty::error::TypeError;
 use ty::relate::{self, Relate, RelateResult, TypeRelation};
 use ty::subst::Substs;
-use traits::{Obligation, PredicateObligations};
+use traits::{PredicateObligations};
 
 use syntax::ast;
 use syntax_pos::Span;
@@ -204,6 +204,7 @@ impl<'infcx, 'gcx, 'tcx> CombineFields<'infcx, 'gcx, 'tcx> {
                        -> RelateResult<'tcx, ()>
     {
         use self::RelationDir::*;
+        let tcx = self.tcx();
 
         // Get the actual variable that b_vid has been inferred to
         debug_assert!(self.infcx.type_variables.borrow_mut().probe(b_vid).is_unknown());
@@ -227,9 +228,9 @@ impl<'infcx, 'gcx, 'tcx> CombineFields<'infcx, 'gcx, 'tcx> {
         self.infcx.type_variables.borrow_mut().instantiate(b_vid, b_ty);
 
         if needs_wf {
-            self.obligations.push(Obligation::new(self.trace.cause.clone(),
-                                                  param_env,
-                                                  ty::Predicate::WellFormed(b_ty)));
+            self.obligations.push(tcx.predicate_obligation(self.trace.cause.clone(),
+                                                           param_env,
+                                                           ty::PredicateKind::WellFormed(b_ty)));
         }
 
         // Finally, relate `b_ty` to `a_ty`, as described in previous comment.

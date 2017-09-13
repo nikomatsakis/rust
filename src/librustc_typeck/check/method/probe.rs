@@ -18,7 +18,7 @@ use hir::def_id::DefId;
 use hir::def::Def;
 use rustc::ty::subst::{Subst, Substs};
 use rustc::traits::{self, ObligationCause};
-use rustc::ty::{self, Ty, ToPredicate, TraitRef, TypeFoldable};
+use rustc::ty::{self, Ty, TraitRef, TypeFoldable};
 use rustc::infer::type_variable::TypeVariableOrigin;
 use rustc::util::nodemap::FxHashSet;
 use rustc::infer::{self, InferOk};
@@ -574,8 +574,8 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
             .caller_bounds
             .iter()
             .filter_map(|predicate| {
-                match *predicate {
-                    ty::Predicate::Trait(trait_predicate) => {
+                match predicate.kind {
+                    ty::PredicateKind::Trait(trait_predicate) => {
                         match trait_predicate.skip_binder().self_ty().sty {
                             ty::TyParam(ref p) if *p == param_ty => {
                                 Some(trait_predicate)
@@ -583,13 +583,13 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                             _ => None,
                         }
                     }
-                    ty::Predicate::Subtype(..) |
-                    ty::Predicate::Projection(..) |
-                    ty::Predicate::RegionOutlives(..) |
-                    ty::Predicate::WellFormed(..) |
-                    ty::Predicate::ObjectSafe(..) |
-                    ty::Predicate::ClosureKind(..) |
-                    ty::Predicate::TypeOutlives(..) => None,
+                    ty::PredicateKind::Subtype(..) |
+                    ty::PredicateKind::Projection(..) |
+                    ty::PredicateKind::RegionOutlives(..) |
+                    ty::PredicateKind::WellFormed(..) |
+                    ty::PredicateKind::ObjectSafe(..) |
+                    ty::PredicateKind::ClosureKind(..) |
+                    ty::PredicateKind::TypeOutlives(..) => None,
                 }
             })
             .collect();
@@ -1022,9 +1022,8 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 }
 
                 TraitCandidate(trait_ref) => {
-                    let predicate = trait_ref.to_predicate();
                     let obligation =
-                        traits::Obligation::new(cause.clone(), self.param_env, predicate);
+                        self.tcx.predicate_obligation(cause.clone(), self.param_env, trait_ref);
                     if !selcx.evaluate_obligation(&obligation) {
                         if self.probe(|_| self.select_trait_candidate(trait_ref).is_err()) {
                             // This candidate's primary obligation doesn't even
@@ -1055,7 +1054,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 let o = self.resolve_type_vars_if_possible(&o);
                 if !selcx.evaluate_obligation(&o) {
                     result = ProbeResult::NoMatch;
-                    if let &ty::Predicate::Trait(ref pred) = &o.predicate {
+                    if let ty::PredicateKind::Trait(ref pred) = o.predicate.kind {
                         possibly_unsatisfied_predicates.push(*pred.skip_binder());
                     }
                 }

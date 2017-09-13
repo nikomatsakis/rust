@@ -343,15 +343,16 @@ impl<'a, 'gcx, 'tcx> Binder<ExistentialPredicate<'tcx>> {
         -> ty::Predicate<'tcx> {
         use ty::ToPredicate;
         match *self.skip_binder() {
-            ExistentialPredicate::Trait(tr) => Binder(tr).with_self_ty(tcx, self_ty).to_predicate(),
+            ExistentialPredicate::Trait(tr) =>
+                Binder(tr).with_self_ty(tcx, self_ty).to_predicate(tcx),
             ExistentialPredicate::Projection(p) =>
-                ty::Predicate::Projection(Binder(p.with_self_ty(tcx, self_ty))),
+                Binder(p.with_self_ty(tcx, self_ty)).to_predicate(tcx),
             ExistentialPredicate::AutoTrait(did) => {
                 let trait_ref = Binder(ty::TraitRef {
                     def_id: did,
                     substs: tcx.mk_substs_trait(self_ty, &[]),
                 });
-                trait_ref.to_predicate()
+                trait_ref.to_predicate(tcx)
             }
         }
     }

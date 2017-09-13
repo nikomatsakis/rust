@@ -427,7 +427,7 @@ pub fn type_known_to_meet_bound<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx
         param_env,
         cause: ObligationCause::misc(span, ast::DUMMY_NODE_ID),
         recursion_depth: 0,
-        predicate: trait_ref.to_predicate(),
+        predicate: trait_ref.to_predicate(infcx.tcx),
     };
 
     let result = SelectionContext::new(infcx)

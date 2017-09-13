@@ -396,11 +396,11 @@ impl<'b, 'a, 'tcx> ReachEverythingInTheInterfaceVisitor<'b, 'a, 'tcx> {
         let predicates = self.ev.tcx.predicates_of(self.item_def_id);
         for predicate in &predicates.predicates {
             predicate.visit_with(self);
-            match predicate {
-                &ty::Predicate::Trait(poly_predicate) => {
+            match predicate.kind {
+                ty::PredicateKind::Trait(poly_predicate) => {
                     self.check_trait_ref(*poly_predicate.skip_binder());
                 },
-                &ty::Predicate::Projection(poly_predicate) => {
+                ty::PredicateKind::Projection(poly_predicate) => {
                     let tcx = self.ev.tcx;
                     self.check_trait_ref(
                         poly_predicate.skip_binder().projection_ty.trait_ref(tcx)
@@ -684,11 +684,11 @@ impl<'a, 'tcx> TypePrivacyVisitor<'a, 'tcx> {
         let predicates = self.tcx.predicates_of(self.current_item);
         for predicate in &predicates.predicates {
             predicate.visit_with(self);
-            match predicate {
-                &ty::Predicate::Trait(poly_predicate) => {
+            match predicate.kind {
+                ty::PredicateKind::Trait(poly_predicate) => {
                     self.check_trait_ref(*poly_predicate.skip_binder());
                 },
-                &ty::Predicate::Projection(poly_predicate) => {
+                ty::PredicateKind::Projection(poly_predicate) => {
                     let tcx = self.tcx;
                     self.check_trait_ref(
                         poly_predicate.skip_binder().projection_ty.trait_ref(tcx)
@@ -931,18 +931,18 @@ impl<'a, 'tcx> TypeVisitor<'tcx> for TypePrivacyVisitor<'a, 'tcx> {
             }
             ty::TyAnon(def_id, ..) => {
                 for predicate in &self.tcx.predicates_of(def_id).predicates {
-                    let trait_ref = match *predicate {
-                        ty::Predicate::Trait(ref poly_trait_predicate) => {
+                    let trait_ref = match predicate.kind {
+                        ty::PredicateKind::Trait(ref poly_trait_predicate) => {
                             Some(*poly_trait_predicate.skip_binder())
                         }
-                        ty::Predicate::Projection(ref poly_projection_predicate) => {
+                        ty::PredicateKind::Projection(ref poly_projection_predicate) => {
                             if poly_projection_predicate.skip_binder().ty.visit_with(self) {
                                 return true;
                             }
                             Some(poly_projection_predicate.skip_binder()
                                                           .projection_ty.trait_ref(self.tcx))
                         }
-                        ty::Predicate::TypeOutlives(..) => None,
+                        ty::PredicateKind::TypeOutlives(..) => None,
                         _ => bug!("unexpected predicate: {:?}", predicate),
                     };
                     if let Some(trait_ref) = trait_ref {
@@ -1344,11 +1344,11 @@ impl<'a, 'tcx: 'a> SearchInterfaceForPrivateItemsVisitor<'a, 'tcx> {
         let predicates = self.tcx.predicates_of(self.item_def_id);
         for predicate in &predicates.predicates {
             predicate.visit_with(self);
-            match predicate {
-                &ty::Predicate::Trait(poly_predicate) => {
+            match predicate.kind {
+                ty::PredicateKind::Trait(poly_predicate) => {
                     self.check_trait_ref(*poly_predicate.skip_binder());
                 },
-                &ty::Predicate::Projection(poly_predicate) => {
+                ty::PredicateKind::Projection(poly_predicate) => {
                     let tcx = self.tcx;
                     self.check_trait_ref(
                         poly_predicate.skip_binder().projection_ty.trait_ref(tcx)

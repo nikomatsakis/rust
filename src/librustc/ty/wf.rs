@@ -72,28 +72,28 @@ pub fn predicate_obligations<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
     let mut wf = WfPredicates { infcx, param_env, body_id, span, out: vec![] };
 
     // (*) ok to skip binders, because wf code is prepared for it
-    match *predicate {
-        ty::Predicate::Trait(ref t) => {
+    match predicate.kind {
+        ty::PredicateKind::Trait(ref t) => {
             wf.compute_trait_ref(&t.skip_binder(), Elaborate::None); // (*)
         }
-        ty::Predicate::RegionOutlives(..) => {
+        ty::PredicateKind::RegionOutlives(..) => {
         }
-        ty::Predicate::TypeOutlives(ref t) => {
+        ty::PredicateKind::TypeOutlives(ref t) => {
             wf.compute(t.skip_binder().0);
         }
-        ty::Predicate::Projection(ref t) => {
+        ty::PredicateKind::Projection(ref t) => {
             let t = t.skip_binder(); // (*)
             wf.compute_projection(t.projection_ty);
             wf.compute(t.ty);
         }
-        ty::Predicate::WellFormed(t) => {
+        ty::PredicateKind::WellFormed(t) => {
             wf.compute(t);
         }
-        ty::Predicate::ObjectSafe(_) => {
+        ty::PredicateKind::ObjectSafe(_) => {
         }
-        ty::Predicate::ClosureKind(..) => {
+        ty::PredicateKind::ClosureKind(..) => {
         }
-        ty::Predicate::Subtype(ref data) => {
+        ty::PredicateKind::Subtype(ref data) => {
             wf.compute(data.skip_binder().a); // (*)
             wf.compute(data.skip_binder().b); // (*)
         }
@@ -161,6 +161,7 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
     /// Pushes the obligations required for `trait_ref` to be WF into
     /// `self.out`.
     fn compute_trait_ref(&mut self, trait_ref: &ty::TraitRef<'tcx>, elaborate: Elaborate) {
+        let tcx = self.infcx.tcx;
         let obligations = self.nominal_obligations(trait_ref.def_id, trait_ref.substs);
 
         let cause = self.cause(traits::MiscObligation);
@@ -170,7 +171,7 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
             let predicates = obligations.iter()
                                         .map(|obligation| obligation.predicate.clone())
                                         .collect();
-            let implied_obligations = traits::elaborate_predicates(self.infcx.tcx, predicates);
+            let implied_obligations = traits::elaborate_predicates(tcx, predicates);
             let implied_obligations = implied_obligations.map(|pred| {
                 traits::Obligation::new(cause.clone(), param_env, pred)
             });
@@ -182,9 +183,9 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
         self.out.extend(
             trait_ref.substs.types()
                             .filter(|ty| !ty.has_escaping_regions())
-                            .map(|ty| traits::Obligation::new(cause.clone(),
-                                                              param_env,
-                                                              ty::Predicate::WellFormed(ty))));
+                            .map(|ty| tcx.predicate_obligation(cause.clone(),
+                                                               param_env,
+                                                               ty::PredicateKind::WellFormed(ty))));
     }
 
     /// Pushes the obligations required for `trait_ref::Item` to be WF
@@ -197,7 +198,7 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
         self.compute_trait_ref(&trait_ref, Elaborate::None);
 
         if !data.has_escaping_regions() {
-            let predicate = trait_ref.to_predicate();
+            let predicate = trait_ref.to_predicate(self.infcx.tcx);
             let cause = self.cause(traits::ProjectionWf(data));
             self.out.push(traits::Obligation::new(cause, self.param_env, predicate));
         }
@@ -210,7 +211,7 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
                 def_id: self.infcx.tcx.require_lang_item(lang_items::SizedTraitLangItem),
                 substs: self.infcx.tcx.mk_substs_trait(subty, &[]),
             };
-            self.out.push(traits::Obligation::new(cause, self.param_env, trait_ref.to_predicate()));
+            self.out.push(self.infcx.tcx.predicate_obligation(cause, self.param_env, trait_ref));
         }
     }
 
@@ -221,6 +222,7 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
     fn compute(&mut self, ty0: Ty<'tcx>) -> bool {
         let mut subtys = ty0.walk();
         let param_env = self.param_env;
+        let tcx = self.infcx.tcx;
         while let Some(ty) = subtys.next() {
             match ty.sty {
                 ty::TyBool |
@@ -268,10 +270,10 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
                     if !r.has_escaping_regions() && !mt.ty.has_escaping_regions() {
                         let cause = self.cause(traits::ReferenceOutlivesReferent(ty));
                         self.out.push(
-                            traits::Obligation::new(
+                            tcx.predicate_obligation(
                                 cause,
                                 param_env,
-                                ty::Predicate::TypeOutlives(
+                                ty::PredicateKind::TypeOutlives(
                                     ty::Binder(
                                         ty::OutlivesPredicate(mt.ty, r)))));
                     }
@@ -313,10 +315,10 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
                     let component_traits =
                         data.auto_traits().chain(data.principal().map(|p| p.def_id()));
                     self.out.extend(
-                        component_traits.map(|did| traits::Obligation::new(
+                        component_traits.map(|did| tcx.predicate_obligation(
                             cause.clone(),
                             param_env,
-                            ty::Predicate::ObjectSafe(did)
+                            ty::PredicateKind::ObjectSafe(did)
                         ))
                     );
                 }
@@ -343,9 +345,10 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
 
                         let cause = self.cause(traits::MiscObligation);
                         self.out.push( // ...not the type we started from, so we made progress.
-                            traits::Obligation::new(cause,
-                                                    self.param_env,
-                                                    ty::Predicate::WellFormed(ty)));
+                            tcx.predicate_obligation(
+                                cause,
+                                self.param_env,
+                                ty::PredicateKind::WellFormed(ty)));
                     } else {
                         // Yes, resolved, proceed with the
                         // result. Should never return false because
@@ -378,7 +381,8 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
                   .collect()
     }
 
-    fn from_object_ty(&mut self, ty: Ty<'tcx>,
+    fn from_object_ty(&mut self,
+                      ty: Ty<'tcx>,
                       data: ty::Binder<&'tcx ty::Slice<ty::ExistentialPredicate<'tcx>>>,
                       region: ty::Region<'tcx>) {
         // Imagine a type like this:
@@ -414,17 +418,15 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
         // am looking forward to the future here.
 
         if !data.has_escaping_regions() {
-            let implicit_bounds =
-                object_region_bounds(self.infcx.tcx, data);
+            let tcx = self.infcx.tcx;
+            let implicit_bounds = object_region_bounds(tcx, data);
 
             let explicit_bound = region;
 
             for implicit_bound in implicit_bounds {
                 let cause = self.cause(traits::ObjectTypeBound(ty, explicit_bound));
                 let outlives = ty::Binder(ty::OutlivesPredicate(explicit_bound, implicit_bound));
-                self.out.push(traits::Obligation::new(cause,
-                                                      self.param_env,
-                                                      outlives.to_predicate()));
+                self.out.push(tcx.predicate_obligation(cause, self.param_env, outlives));
             }
         }
     }

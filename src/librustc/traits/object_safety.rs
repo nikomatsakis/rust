@@ -157,18 +157,18 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             .into_iter()
             .map(|predicate| predicate.subst_supertrait(self, &trait_ref))
             .any(|predicate| {
-                match predicate {
-                    ty::Predicate::Trait(ref data) => {
+                match predicate.kind {
+                    ty::PredicateKind::Trait(ref data) => {
                         // In the case of a trait predicate, we can skip the "self" type.
                         data.skip_binder().input_types().skip(1).any(|t| t.has_self_ty())
                     }
-                    ty::Predicate::Projection(..) |
-                    ty::Predicate::WellFormed(..) |
-                    ty::Predicate::ObjectSafe(..) |
-                    ty::Predicate::TypeOutlives(..) |
-                    ty::Predicate::RegionOutlives(..) |
-                    ty::Predicate::ClosureKind(..) |
-                    ty::Predicate::Subtype(..) => {
+                    ty::PredicateKind::Projection(..) |
+                    ty::PredicateKind::WellFormed(..) |
+                    ty::PredicateKind::ObjectSafe(..) |
+                    ty::PredicateKind::TypeOutlives(..) |
+                    ty::PredicateKind::RegionOutlives(..) |
+                    ty::PredicateKind::ClosureKind(..) |
+                    ty::PredicateKind::Subtype(..) => {
                         false
                     }
                 }
@@ -190,18 +190,18 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         let predicates = predicates.instantiate_identity(self).predicates;
         elaborate_predicates(self, predicates)
             .any(|predicate| {
-                match predicate {
-                    ty::Predicate::Trait(ref trait_pred) if trait_pred.def_id() == sized_def_id => {
+                match predicate.kind {
+                    ty::PredicateKind::Trait(ref trait_pred) if trait_pred.def_id() == sized_def_id => {
                         trait_pred.0.self_ty().is_self()
                     }
-                    ty::Predicate::Projection(..) |
-                    ty::Predicate::Trait(..) |
-                    ty::Predicate::Subtype(..) |
-                    ty::Predicate::RegionOutlives(..) |
-                    ty::Predicate::WellFormed(..) |
-                    ty::Predicate::ObjectSafe(..) |
-                    ty::Predicate::ClosureKind(..) |
-                    ty::Predicate::TypeOutlives(..) => {
+                    ty::PredicateKind::Projection(..) |
+                    ty::PredicateKind::Trait(..) |
+                    ty::PredicateKind::Subtype(..) |
+                    ty::PredicateKind::RegionOutlives(..) |
+                    ty::PredicateKind::WellFormed(..) |
+                    ty::PredicateKind::ObjectSafe(..) |
+                    ty::PredicateKind::ClosureKind(..) |
+                    ty::PredicateKind::TypeOutlives(..) => {
                         false
                     }
                 }

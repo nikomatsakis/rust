@@ -505,20 +505,20 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
                     .into_iter()
                     .flat_map(|obligation| {
                         assert!(!obligation.has_escaping_regions());
-                        match obligation.predicate {
-                            ty::Predicate::Trait(..) |
-                            ty::Predicate::Subtype(..) |
-                            ty::Predicate::Projection(..) |
-                            ty::Predicate::ClosureKind(..) |
-                            ty::Predicate::ObjectSafe(..) =>
+                        match obligation.predicate.kind {
+                            ty::PredicateKind::Trait(..) |
+                            ty::PredicateKind::Subtype(..) |
+                            ty::PredicateKind::Projection(..) |
+                            ty::PredicateKind::ClosureKind(..) |
+                            ty::PredicateKind::ObjectSafe(..) =>
                                 vec![],
 
-                            ty::Predicate::WellFormed(subty) => {
+                            ty::PredicateKind::WellFormed(subty) => {
                                 wf_types.push(subty);
                                 vec![]
                             }
 
-                            ty::Predicate::RegionOutlives(ref data) =>
+                            ty::PredicateKind::RegionOutlives(ref data) =>
                                 match self.tcx.no_late_bound_regions(data) {
                                     None =>
                                         vec![],
@@ -526,7 +526,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
                                         vec![ImpliedBound::RegionSubRegion(r_b, r_a)],
                                 },
 
-                            ty::Predicate::TypeOutlives(ref data) =>
+                            ty::PredicateKind::TypeOutlives(ref data) =>
                                 match self.tcx.no_late_bound_regions(data) {
                                     None => vec![],
                                     Some(ty::OutlivesPredicate(ty_a, r_b)) => {
@@ -1808,8 +1808,8 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
         traits::elaborate_predicates(self.tcx, predicates)
             .filter_map(|predicate| {
                 // we're only interesting in `T : 'a` style predicates:
-                let outlives = match predicate {
-                    ty::Predicate::TypeOutlives(data) => data,
+                let outlives = match predicate.kind {
+                    ty::PredicateKind::TypeOutlives(data) => data,
                     _ => { return None; }
                 };
 

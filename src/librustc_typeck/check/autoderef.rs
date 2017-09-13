@@ -16,7 +16,7 @@ use super::method::MethodCallee;
 use rustc::infer::InferOk;
 use rustc::traits;
 use rustc::ty::{self, Ty, TraitRef};
-use rustc::ty::{ToPredicate, TypeFoldable};
+use rustc::ty::{TypeFoldable};
 use rustc::ty::{LvaluePreference, NoPreference};
 use rustc::ty::adjustment::{Adjustment, Adjust, OverloadedDeref};
 
@@ -118,9 +118,7 @@ impl<'a, 'gcx, 'tcx> Autoderef<'a, 'gcx, 'tcx> {
         let cause = traits::ObligationCause::misc(self.span, self.fcx.body_id);
 
         let mut selcx = traits::SelectionContext::new(self.fcx);
-        let obligation = traits::Obligation::new(cause.clone(),
-                                                 self.fcx.param_env,
-                                                 trait_ref.to_predicate());
+        let obligation = tcx.predicate_obligation(cause.clone(), self.fcx.param_env, trait_ref);
         if !selcx.evaluate_obligation(&obligation) {
             debug!("overloaded_deref_ty: cannot match obligation");
             return None;

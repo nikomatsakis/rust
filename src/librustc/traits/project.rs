@@ -365,7 +365,7 @@ pub fn normalize_projection_type<'a, 'b, 'gcx, 'tcx>(
                 ty: ty_var
             });
             let obligation = Obligation::with_depth(
-                cause, depth + 1, param_env, projection.to_predicate());
+                cause, depth + 1, param_env, projection.to_predicate(tcx));
             Normalized {
                 value: ty_var,
                 obligations: vec![obligation]
@@ -582,7 +582,7 @@ fn prune_cache_value_obligations<'a, 'gcx, 'tcx>(infcx: &'a InferCtxt<'a, 'gcx, 
     let mut obligations: Vec<_> =
         result.obligations
               .iter()
-              .filter(|obligation| match obligation.predicate {
+              .filter(|obligation| match obligation.predicate.kind {
                   // We found a `T: Foo<X = U>` predicate, let's check
                   // if `U` references any unresolved type
                   // variables. In principle, we only care if this
@@ -592,7 +592,7 @@ fn prune_cache_value_obligations<'a, 'gcx, 'tcx>(infcx: &'a InferCtxt<'a, 'gcx, 
                   // indirect obligations (e.g., we project to `?0`,
                   // but we have `T: Foo<X = ?1>` and `?1: Bar<X =
                   // ?0>`).
-                  ty::Predicate::Projection(ref data) =>
+                  ty::PredicateKind::Projection(ref data) =>
                       !infcx.any_unresolved_type_vars(&data.ty()),
 
                   // We are only interested in `T: Foo<X = U>` predicates, whre
@@ -641,7 +641,7 @@ fn push_paranoid_cache_value_obligation<'a, 'gcx, 'tcx>(infcx: &'a InferCtxt<'a,
     let trait_obligation = Obligation { cause,
                                         recursion_depth: depth,
                                         param_env,
-                                        predicate: trait_ref.to_predicate() };
+                                        predicate: trait_ref.to_predicate(infcx.tcx) };
     result.obligations.push(trait_obligation);
 }
 
@@ -672,11 +672,11 @@ fn normalize_to_error<'a, 'gcx, 'tcx>(selcx: &mut SelectionContext<'a, 'gcx, 'tc
                                       -> NormalizedTy<'tcx>
 {
     let trait_ref = projection_ty.trait_ref(selcx.tcx()).to_poly_trait_ref();
+    let tcx = selcx.infcx().tcx;
     let trait_obligation = Obligation { cause,
                                         recursion_depth: depth,
                                         param_env,
-                                        predicate: trait_ref.to_predicate() };
-    let tcx = selcx.infcx().tcx;
+                                        predicate: trait_ref.to_predicate(tcx) };
     let def_id = projection_ty.item_def_id;
     let new_value = selcx.infcx().next_ty_var(
         param_env.universe,
@@ -912,8 +912,8 @@ fn assemble_candidates_from_predicates<'cx, 'gcx, 'tcx, I>(
     for predicate in env_predicates {
         debug!("assemble_candidates_from_predicates: predicate={:?}",
                predicate);
-        match predicate {
-            ty::Predicate::Projection(ref data) => {
+        match predicate.kind {
+            ty::PredicateKind::Projection(ref data) => {
                 let same_def_id =
                     data.0.projection_ty.item_def_id == obligation.predicate.item_def_id;
 
@@ -1152,6 +1152,7 @@ fn confirm_object_candidate<'cx, 'gcx, 'tcx>(
     obligation_trait_ref: ty::TraitRef<'tcx>)
     -> Progress<'tcx>
 {
+    let tcx = selcx.tcx();
     let self_ty = obligation_trait_ref.self_ty();
     let object_ty = selcx.infcx().shallow_resolve(self_ty);
     debug!("confirm_object_candidate(object_ty={:?})",
@@ -1166,15 +1167,15 @@ fn confirm_object_candidate<'cx, 'gcx, 'tcx>(
         }
     };
     let env_predicates = data.projection_bounds().map(|p| {
-        p.with_self_ty(selcx.tcx(), object_ty).to_predicate()
+        p.with_self_ty(tcx, object_ty).to_predicate(tcx)
     }).collect();
     let env_predicate = {
-        let env_predicates = elaborate_predicates(selcx.tcx(), env_predicates);
+        let env_predicates = elaborate_predicates(tcx, env_predicates);
 
         // select only those projections that are actually projecting an
         // item with the correct name
-        let env_predicates = env_predicates.filter_map(|p| match p {
-            ty::Predicate::Projection(data) =>
+        let env_predicates = env_predicates.filter_map(|p| match p.kind {
+            ty::PredicateKind::Projection(data) =>
                 if data.0.projection_ty.item_def_id == obligation.predicate.item_def_id {
                     Some(data)
                 } else {
@@ -1185,7 +1186,7 @@ fn confirm_object_candidate<'cx, 'gcx, 'tcx>(
 
         // select those with a relevant trait-ref
         let mut env_predicates = env_predicates.filter(|data| {
-            let data_poly_trait_ref = data.to_poly_trait_ref(selcx.tcx());
+            let data_poly_trait_ref = data.to_poly_trait_ref(tcx);
             selcx.infcx().probe(|_| {
                 selcx.infcx().at(&obligation.cause, obligation.param_env)
                              .instantiable_as(data_poly_trait_ref, obligation_trait_ref)
@@ -1202,7 +1203,7 @@ fn confirm_object_candidate<'cx, 'gcx, 'tcx>(
                 debug!("confirm_object_candidate: no env-predicate \
                         found in object type `{:?}`; ill-formed",
                        object_ty);
-                return Progress::error(selcx.tcx());
+                return Progress::error(tcx);
             }
         }
     };

@@ -153,7 +153,7 @@ impl<'a, 'gcx, 'tcx> FulfillmentContext<'tcx> {
             cause,
             recursion_depth: 0,
             param_env,
-            predicate: trait_ref.to_predicate()
+            predicate: trait_ref.to_predicate(infcx.tcx)
         });
     }
 
@@ -356,8 +356,8 @@ fn process_predicate<'a, 'gcx, 'tcx>(
         obligation.predicate = selcx.infcx().resolve_type_vars_if_possible(&obligation.predicate);
     }
 
-    match obligation.predicate {
-        ty::Predicate::Trait(trait_ref) => {
+    match obligation.predicate.kind {
+        ty::PredicateKind::Trait(trait_ref) => {
             let trait_obligation = obligation.with(trait_ref.clone());
 
             if trait_ref.is_global() {
@@ -414,7 +414,7 @@ fn process_predicate<'a, 'gcx, 'tcx>(
             }
         }
 
-        ty::Predicate::RegionOutlives(ref binder) => {
+        ty::PredicateKind::RegionOutlives(ref binder) => {
             match selcx.infcx().region_outlives_predicate(&obligation.cause,
                                                           obligation.param_env,
                                                           binder) {
@@ -423,7 +423,7 @@ fn process_predicate<'a, 'gcx, 'tcx>(
             }
         }
 
-        ty::Predicate::TypeOutlives(ref binder) => {
+        ty::PredicateKind::TypeOutlives(ref binder) => {
             // Check if there are higher-ranked regions.
             match selcx.tcx().no_late_bound_regions(binder) {
                 // If there are, inspect the underlying type further.
@@ -459,7 +459,7 @@ fn process_predicate<'a, 'gcx, 'tcx>(
             }
         }
 
-        ty::Predicate::Projection(ref data) => {
+        ty::PredicateKind::Projection(ref data) => {
             let project_obligation = obligation.with(data.clone());
             match project::poly_project_and_unify_type(selcx, &project_obligation) {
                 Ok(None) => {
@@ -473,7 +473,7 @@ fn process_predicate<'a, 'gcx, 'tcx>(
             }
         }
 
-        ty::Predicate::ObjectSafe(trait_def_id) => {
+        ty::PredicateKind::ObjectSafe(trait_def_id) => {
             if !selcx.tcx().is_object_safe(trait_def_id) {
                 Err(CodeSelectionError(Unimplemented))
             } else {
@@ -481,7 +481,7 @@ fn process_predicate<'a, 'gcx, 'tcx>(
             }
         }
 
-        ty::Predicate::ClosureKind(closure_def_id, kind) => {
+        ty::PredicateKind::ClosureKind(closure_def_id, kind) => {
             match selcx.infcx().closure_kind(closure_def_id) {
                 Some(closure_kind) => {
                     if closure_kind.extends(kind) {
@@ -496,7 +496,7 @@ fn process_predicate<'a, 'gcx, 'tcx>(
             }
         }
 
-        ty::Predicate::WellFormed(ty) => {
+        ty::PredicateKind::WellFormed(ty) => {
             match ty::wf::obligations(selcx.infcx(),
                                       obligation.param_env,
                                       obligation.cause.body_id,
@@ -509,7 +509,7 @@ fn process_predicate<'a, 'gcx, 'tcx>(
             }
         }
 
-        ty::Predicate::Subtype(ref subtype) => {
+        ty::PredicateKind::Subtype(ref subtype) => {
             match selcx.infcx().subtype_predicate(&obligation.cause,
                                                   obligation.param_env,
                                                   subtype) {

@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use ty::{self, Lift, Ty, TyCtxt};
+use ty::{self, Lift, ToPredicate, Ty, TyCtxt};
 use ty::fold::{TypeFoldable, TypeFolder, TypeVisitor};
 use rustc_data_structures::accumulate_vec::AccumulateVec;
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
@@ -184,32 +184,32 @@ impl<'a, 'tcx> Lift<'tcx> for ty::ExistentialProjection<'a> {
 impl<'a, 'tcx> Lift<'tcx> for ty::Predicate<'a> {
     type Lifted = ty::Predicate<'tcx>;
     fn lift_to_tcx<'b, 'gcx>(&self, tcx: TyCtxt<'b, 'gcx, 'tcx>) -> Option<Self::Lifted> {
-        match *self {
-            ty::Predicate::Trait(ref binder) => {
-                tcx.lift(binder).map(ty::Predicate::Trait)
+        match self.kind {
+            ty::PredicateKind::Trait(ref binder) => {
+                tcx.lift(binder).map(ty::PredicateKind::Trait)
             }
-            ty::Predicate::Subtype(ref binder) => {
-                tcx.lift(binder).map(ty::Predicate::Subtype)
+            ty::PredicateKind::Subtype(ref binder) => {
+                tcx.lift(binder).map(ty::PredicateKind::Subtype)
             }
-            ty::Predicate::RegionOutlives(ref binder) => {
-                tcx.lift(binder).map(ty::Predicate::RegionOutlives)
+            ty::PredicateKind::RegionOutlives(ref binder) => {
+                tcx.lift(binder).map(ty::PredicateKind::RegionOutlives)
             }
-            ty::Predicate::TypeOutlives(ref binder) => {
-                tcx.lift(binder).map(ty::Predicate::TypeOutlives)
+            ty::PredicateKind::TypeOutlives(ref binder) => {
+                tcx.lift(binder).map(ty::PredicateKind::TypeOutlives)
             }
-            ty::Predicate::Projection(ref binder) => {
-                tcx.lift(binder).map(ty::Predicate::Projection)
+            ty::PredicateKind::Projection(ref binder) => {
+                tcx.lift(binder).map(ty::PredicateKind::Projection)
             }
-            ty::Predicate::WellFormed(ty) => {
-                tcx.lift(&ty).map(ty::Predicate::WellFormed)
+            ty::PredicateKind::WellFormed(ty) => {
+                tcx.lift(&ty).map(ty::PredicateKind::WellFormed)
             }
-            ty::Predicate::ClosureKind(closure_def_id, kind) => {
-                Some(ty::Predicate::ClosureKind(closure_def_id, kind))
+            ty::PredicateKind::ClosureKind(closure_def_id, kind) => {
+                Some(ty::PredicateKind::ClosureKind(closure_def_id, kind))
             }
-            ty::Predicate::ObjectSafe(trait_def_id) => {
-                Some(ty::Predicate::ObjectSafe(trait_def_id))
+            ty::PredicateKind::ObjectSafe(trait_def_id) => {
+                Some(ty::PredicateKind::ObjectSafe(trait_def_id))
             }
-        }
+        }.map(|k| k.to_predicate(tcx))
     }
 }
 
@@ -865,36 +865,36 @@ impl<'tcx> TypeFoldable<'tcx> for &'tcx ty::Slice<ty::Predicate<'tcx>> {
 
 impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
     fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        match *self {
-            ty::Predicate::Trait(ref a) =>
-                ty::Predicate::Trait(a.fold_with(folder)),
-            ty::Predicate::Subtype(ref binder) =>
-                ty::Predicate::Subtype(binder.fold_with(folder)),
-            ty::Predicate::RegionOutlives(ref binder) =>
-                ty::Predicate::RegionOutlives(binder.fold_with(folder)),
-            ty::Predicate::TypeOutlives(ref binder) =>
-                ty::Predicate::TypeOutlives(binder.fold_with(folder)),
-            ty::Predicate::Projection(ref binder) =>
-                ty::Predicate::Projection(binder.fold_with(folder)),
-            ty::Predicate::WellFormed(data) =>
-                ty::Predicate::WellFormed(data.fold_with(folder)),
-            ty::Predicate::ClosureKind(closure_def_id, kind) =>
-                ty::Predicate::ClosureKind(closure_def_id, kind),
-            ty::Predicate::ObjectSafe(trait_def_id) =>
-                ty::Predicate::ObjectSafe(trait_def_id),
-        }
+        match self.kind {
+            ty::PredicateKind::Trait(ref a) =>
+                ty::PredicateKind::Trait(a.fold_with(folder)),
+            ty::PredicateKind::Subtype(ref binder) =>
+                ty::PredicateKind::Subtype(binder.fold_with(folder)),
+            ty::PredicateKind::RegionOutlives(ref binder) =>
+                ty::PredicateKind::RegionOutlives(binder.fold_with(folder)),
+            ty::PredicateKind::TypeOutlives(ref binder) =>
+                ty::PredicateKind::TypeOutlives(binder.fold_with(folder)),
+            ty::PredicateKind::Projection(ref binder) =>
+                ty::PredicateKind::Projection(binder.fold_with(folder)),
+            ty::PredicateKind::WellFormed(data) =>
+                ty::PredicateKind::WellFormed(data.fold_with(folder)),
+            ty::PredicateKind::ClosureKind(closure_def_id, kind) =>
+                ty::PredicateKind::ClosureKind(closure_def_id, kind),
+            ty::PredicateKind::ObjectSafe(trait_def_id) =>
+                ty::PredicateKind::ObjectSafe(trait_def_id),
+        }.to_predicate(folder.tcx())
     }
 
     fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        match *self {
-            ty::Predicate::Trait(ref a) => a.visit_with(visitor),
-            ty::Predicate::Subtype(ref binder) => binder.visit_with(visitor),
-            ty::Predicate::RegionOutlives(ref binder) => binder.visit_with(visitor),
-            ty::Predicate::TypeOutlives(ref binder) => binder.visit_with(visitor),
-            ty::Predicate::Projection(ref binder) => binder.visit_with(visitor),
-            ty::Predicate::WellFormed(data) => data.visit_with(visitor),
-            ty::Predicate::ClosureKind(_closure_def_id, _kind) => false,
-            ty::Predicate::ObjectSafe(_trait_def_id) => false,
+        match self.kind {
+            ty::PredicateKind::Trait(ref a) => a.visit_with(visitor),
+            ty::PredicateKind::Subtype(ref binder) => binder.visit_with(visitor),
+            ty::PredicateKind::RegionOutlives(ref binder) => binder.visit_with(visitor),
+            ty::PredicateKind::TypeOutlives(ref binder) => binder.visit_with(visitor),
+            ty::PredicateKind::Projection(ref binder) => binder.visit_with(visitor),
+            ty::PredicateKind::WellFormed(data) => data.visit_with(visitor),
+            ty::PredicateKind::ClosureKind(_closure_def_id, _kind) => false,
+            ty::PredicateKind::ObjectSafe(_trait_def_id) => false,
         }
     }
 }

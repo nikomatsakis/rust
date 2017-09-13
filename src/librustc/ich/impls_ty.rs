@@ -206,29 +206,29 @@ impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for ty::Pr
                                           hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
                                           hasher: &mut StableHasher<W>) {
         mem::discriminant(self).hash_stable(hcx, hasher);
-        match *self {
-            ty::Predicate::Trait(ref pred) => {
+        match self.kind {
+            ty::PredicateKind::Trait(ref pred) => {
                 pred.hash_stable(hcx, hasher);
             }
-            ty::Predicate::Subtype(ref pred) => {
+            ty::PredicateKind::Subtype(ref pred) => {
                 pred.hash_stable(hcx, hasher);
             }
-            ty::Predicate::RegionOutlives(ref pred) => {
+            ty::PredicateKind::RegionOutlives(ref pred) => {
                 pred.hash_stable(hcx, hasher);
             }
-            ty::Predicate::TypeOutlives(ref pred) => {
+            ty::PredicateKind::TypeOutlives(ref pred) => {
                 pred.hash_stable(hcx, hasher);
             }
-            ty::Predicate::Projection(ref pred) => {
+            ty::PredicateKind::Projection(ref pred) => {
                 pred.hash_stable(hcx, hasher);
             }
-            ty::Predicate::WellFormed(ty) => {
+            ty::PredicateKind::WellFormed(ty) => {
                 ty.hash_stable(hcx, hasher);
             }
-            ty::Predicate::ObjectSafe(def_id) => {
+            ty::PredicateKind::ObjectSafe(def_id) => {
                 def_id.hash_stable(hcx, hasher);
             }
-            ty::Predicate::ClosureKind(def_id, closure_kind) => {
+            ty::PredicateKind::ClosureKind(def_id, closure_kind) => {
                 def_id.hash_stable(hcx, hasher);
                 closure_kind.hash_stable(hcx, hasher);
             }

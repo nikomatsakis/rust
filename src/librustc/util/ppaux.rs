@@ -414,17 +414,17 @@ impl<'tcx> fmt::Debug for ty::adjustment::Adjustment<'tcx> {
 
 impl<'tcx> fmt::Debug for ty::Predicate<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            ty::Predicate::Trait(ref a) => write!(f, "{:?}", a),
-            ty::Predicate::Subtype(ref pair) => write!(f, "{:?}", pair),
-            ty::Predicate::RegionOutlives(ref pair) => write!(f, "{:?}", pair),
-            ty::Predicate::TypeOutlives(ref pair) => write!(f, "{:?}", pair),
-            ty::Predicate::Projection(ref pair) => write!(f, "{:?}", pair),
-            ty::Predicate::WellFormed(ty) => write!(f, "WF({:?})", ty),
-            ty::Predicate::ObjectSafe(trait_def_id) => {
+        match self.kind {
+            ty::PredicateKind::Trait(ref a) => write!(f, "{:?}", a),
+            ty::PredicateKind::Subtype(ref pair) => write!(f, "{:?}", pair),
+            ty::PredicateKind::RegionOutlives(ref pair) => write!(f, "{:?}", pair),
+            ty::PredicateKind::TypeOutlives(ref pair) => write!(f, "{:?}", pair),
+            ty::PredicateKind::Projection(ref pair) => write!(f, "{:?}", pair),
+            ty::PredicateKind::WellFormed(ty) => write!(f, "WF({:?})", ty),
+            ty::PredicateKind::ObjectSafe(trait_def_id) => {
                 write!(f, "ObjectSafe({:?})", trait_def_id)
             }
-            ty::Predicate::ClosureKind(closure_def_id, kind) => {
+            ty::PredicateKind::ClosureKind(closure_def_id, kind) => {
                 write!(f, "ClosureKind({:?}, {:?})", closure_def_id, kind)
             }
         }
@@ -1035,19 +1035,19 @@ impl fmt::Display for ty::ClosureKind {
 
 impl<'tcx> fmt::Display for ty::Predicate<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            ty::Predicate::Trait(ref data) =>
+        match self.kind {
+            ty::PredicateKind::Trait(ref data) =>
                 write!(f, "{}", data.map_bound_ref(|t| t.display_all_with_colon())),
-            ty::Predicate::Subtype(ref predicate) => write!(f, "{}", predicate),
-            ty::Predicate::RegionOutlives(ref predicate) => write!(f, "{}", predicate),
-            ty::Predicate::TypeOutlives(ref predicate) => write!(f, "{}", predicate),
-            ty::Predicate::Projection(ref predicate) => write!(f, "{}", predicate),
-            ty::Predicate::WellFormed(ty) => write!(f, "{} well-formed", ty),
-            ty::Predicate::ObjectSafe(trait_def_id) =>
+            ty::PredicateKind::Subtype(ref predicate) => write!(f, "{}", predicate),
+            ty::PredicateKind::RegionOutlives(ref predicate) => write!(f, "{}", predicate),
+            ty::PredicateKind::TypeOutlives(ref predicate) => write!(f, "{}", predicate),
+            ty::PredicateKind::Projection(ref predicate) => write!(f, "{}", predicate),
+            ty::PredicateKind::WellFormed(ty) => write!(f, "{} well-formed", ty),
+            ty::PredicateKind::ObjectSafe(trait_def_id) =>
                 ty::tls::with(|tcx| {
                     write!(f, "the trait `{}` is object-safe", tcx.item_path_str(trait_def_id))
                 }),
-            ty::Predicate::ClosureKind(closure_def_id, kind) =>
+            ty::PredicateKind::ClosureKind(closure_def_id, kind) =>
                 ty::tls::with(|tcx| {
                     write!(f, "the closure `{}` implements the trait `{}`",
                            tcx.item_path_str(closure_def_id), kind)

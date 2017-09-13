@@ -11,7 +11,6 @@
 use super::SubregionOrigin;
 use super::combine::{CombineFields, RelationDir};
 
-use traits::Obligation;
 use ty::{self, Ty, TyCtxt};
 use ty::TyVar;
 use ty::fold::TypeFoldable;
@@ -80,6 +79,7 @@ impl<'combine, 'infcx, 'gcx, 'tcx> TypeRelation<'infcx, 'gcx, 'tcx>
         if a == b { return Ok(a); }
 
         let infcx = self.fields.infcx;
+        let tcx = infcx.tcx;
         let a = infcx.type_variables.borrow_mut().replace_if_possible(a);
         let b = infcx.type_variables.borrow_mut().replace_if_possible(b);
         match (&a.sty, &b.sty) {
@@ -97,10 +97,10 @@ impl<'combine, 'infcx, 'gcx, 'tcx> TypeRelation<'infcx, 'gcx, 'tcx>
                 // is important to the occurs check later on.
                 infcx.type_variables.borrow_mut().sub(a_vid, b_vid);
                 self.fields.obligations.push(
-                    Obligation::new(
+                    tcx.predicate_obligation(
                         self.fields.trace.cause.clone(),
                         self.param_env,
-                        ty::Predicate::Subtype(
+                        ty::PredicateKind::Subtype(
                             ty::Binder(ty::SubtypePredicate {
                                 a_is_expected: self.a_is_expected,
                                 a,

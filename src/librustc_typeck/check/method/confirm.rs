@@ -547,8 +547,8 @@ impl<'a, 'gcx, 'tcx> ConfirmContext<'a, 'gcx, 'tcx> {
 
         traits::elaborate_predicates(self.tcx, predicates.predicates.clone())
             .filter_map(|predicate| {
-                match predicate {
-                    ty::Predicate::Trait(trait_pred) if trait_pred.def_id() == sized_def_id =>
+                match predicate.kind {
+                    ty::PredicateKind::Trait(trait_pred) if trait_pred.def_id() == sized_def_id =>
                         Some(trait_pred),
                     _ => None,
                 }

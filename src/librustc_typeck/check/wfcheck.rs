@@ -271,8 +271,8 @@ impl<'a, 'gcx> CheckTypeWellFormedVisitor<'a, 'gcx> {
         // traits.
         let has_predicates =
             predicates.predicates.iter().any(|predicate| {
-                match predicate {
-                    &ty::Predicate::Trait(ref poly_trait_ref) => {
+                match predicate.kind {
+                    ty::PredicateKind::Trait(poly_trait_ref) => {
                         let self_ty = poly_trait_ref.0.self_ty();
                         !(self_ty.is_self() && poly_trait_ref.def_id() == trait_def_id)
                     },

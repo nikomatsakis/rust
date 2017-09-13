@@ -123,8 +123,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             return true
         }
 
-        let (cond, error) = match (cond, error) {
-            (&ty::Predicate::Trait(..), &ty::Predicate::Trait(error))
+        let (cond, error) = match (&cond.kind, &error.kind) {
+            (&ty::PredicateKind::Trait(..), &ty::PredicateKind::Trait(error))
                 => (cond, error),
             _ => {
                 // FIXME: make this work in other cases too.
@@ -133,7 +133,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         };
 
         for implication in super::elaborate_predicates(self.tcx, vec![cond.clone()]) {
-            if let ty::Predicate::Trait(implication) = implication {
+            if let ty::PredicateKind::Trait(implication) = implication.kind {
                 // FIXME: I'm just not taking associated types at all here.
                 // Eventually I'll need to implement param-env-aware
                 // `Γ₁ ⊦ φ₁ => Γ₂ ⊦ φ₂` logic.
@@ -191,7 +191,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             //
             // this can fail if the problem was higher-ranked, in which
             // cause I have no idea for a good error message.
-            if let ty::Predicate::Projection(ref data) = predicate {
+            if let ty::PredicateKind::Projection(ref data) = predicate.kind {
                 let mut selcx = SelectionContext::new(self);
                 let (data, _) = self.replace_late_bound_regions_with_fresh_var(
                     obligation.cause.span,
@@ -546,8 +546,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                         .emit();
                     return;
                 }
-                match obligation.predicate {
-                    ty::Predicate::Trait(ref trait_ref) => {
+                match obligation.predicate.kind {
+                    ty::PredicateKind::Trait(ref trait_ref) => {
                         let trait_ref = self.resolve_type_vars_if_possible(trait_ref);
 
                         if self.tcx.sess.has_errors() && trait_ref.references_error() {
@@ -569,7 +569,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                             "{}",
                             message.unwrap_or_else(|| {
                                 format!("the trait bound `{}` is not satisfied{}",
-                                         trait_ref.to_predicate(), post_message)
+                                         trait_ref.to_predicate(self.tcx), post_message)
                             }));
 
                         if let Some(ref s) = label {
@@ -599,7 +599,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                             //     "the type `T` can't be frobnicated"
                             // which is somewhat confusing.
                             err.help(&format!("consider adding a `where {}` bound",
-                                              trait_ref.to_predicate()));
+                                              trait_ref.to_predicate(self.tcx)));
                         } else if !have_alt_message {
                             // Can't show anything else useful, try to find similar impls.
                             let impl_candidates = self.find_similar_impl_candidates(trait_ref);
@@ -609,14 +609,14 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                         err
                     }
 
-                    ty::Predicate::Subtype(ref predicate) => {
+                    ty::PredicateKind::Subtype(ref predicate) => {
                         // Errors for Subtype predicates show up as
                         // `FulfillmentErrorCode::CodeSubtypeError`,
                         // not selection error.
                         span_bug!(span, "subtype requirement gave wrong error: `{:?}`", predicate)
                     }
 
-                    ty::Predicate::RegionOutlives(ref predicate) => {
+                    ty::PredicateKind::RegionOutlives(ref predicate) => {
                         let predicate = self.resolve_type_vars_if_possible(predicate);
                         let err = self.region_outlives_predicate(&obligation.cause,
                                                                  obligation.param_env,
@@ -626,7 +626,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                             predicate, err)
                     }
 
-                    ty::Predicate::Projection(..) | ty::Predicate::TypeOutlives(..) => {
+                    ty::PredicateKind::Projection(..) | ty::PredicateKind::TypeOutlives(..) => {
                         let predicate =
                             self.resolve_type_vars_if_possible(&obligation.predicate);
                         struct_span_err!(self.tcx.sess, span, E0280,
@@ -634,14 +634,14 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                             predicate)
                     }
 
-                    ty::Predicate::ObjectSafe(trait_def_id) => {
+                    ty::PredicateKind::ObjectSafe(trait_def_id) => {
                         let violations = self.tcx.object_safety_violations(trait_def_id);
                         self.tcx.report_object_safety_error(span,
                                                             trait_def_id,
                                                             violations)
                     }
 
-                    ty::Predicate::ClosureKind(closure_def_id, kind) => {
+                    ty::PredicateKind::ClosureKind(closure_def_id, kind) => {
                         let found_kind = self.closure_kind(closure_def_id).unwrap();
                         let closure_span = self.tcx.hir.span_if_local(closure_def_id).unwrap();
                         let node_id = self.tcx.hir.as_local_node_id(closure_def_id).unwrap();
@@ -680,7 +680,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                         return;
                     }
 
-                    ty::Predicate::WellFormed(ty) => {
+                    ty::PredicateKind::WellFormed(ty) => {
                         // WF predicates cannot themselves make
                         // errors. They can only block due to
                         // ambiguity; otherwise, they always
@@ -876,8 +876,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             return;
         }
 
-        match predicate {
-            ty::Predicate::Trait(trait_ref) => {
+        match predicate.kind {
+            ty::PredicateKind::Trait(trait_ref) => {
                 let self_ty = trait_ref.self_ty();
                 if predicate.references_error() {
                     return;
@@ -924,7 +924,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 }
             }
 
-            ty::Predicate::WellFormed(ty) => {
+            ty::PredicateKind::WellFormed(ty) => {
                 // Same hacky approach as above to avoid deluging user
                 // with error messages.
                 if !ty.references_error() && !self.tcx.sess.has_errors() {
@@ -932,7 +932,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 }
             }
 
-            ty::Predicate::Subtype(ref data) => {
+            ty::PredicateKind::Subtype(ref data) => {
                 if data.references_error() || self.tcx.sess.has_errors() {
                     // no need to overload user in such cases
                 } else {
@@ -1007,11 +1007,9 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 &cleaned_pred
             ).value;
 
-            let obligation = Obligation::new(
-                ObligationCause::dummy(),
-                param_env,
-                cleaned_pred.to_predicate()
-            );
+            let obligation = self.tcx.predicate_obligation(ObligationCause::dummy(),
+                                                           param_env,
+                                                           cleaned_pred);
 
             selcx.evaluate_obligation(&obligation)
         })
@@ -1118,7 +1116,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 let parent_trait_ref = self.resolve_type_vars_if_possible(&data.parent_trait_ref);
                 err.note(&format!("required because it appears within the type `{}`",
                                   parent_trait_ref.self_ty()));
-                let parent_predicate = parent_trait_ref.to_predicate();
+                let parent_predicate = parent_trait_ref.to_predicate(self.tcx);
                 self.note_obligation_cause_code(err,
                                                 &parent_predicate,
                                                 &data.parent_code);
@@ -1129,7 +1127,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                     &format!("required because of the requirements on the impl of `{}` for `{}`",
                              parent_trait_ref,
                              parent_trait_ref.self_ty()));
-                let parent_predicate = parent_trait_ref.to_predicate();
+                let parent_predicate = parent_trait_ref.to_predicate(self.tcx);
                 self.note_obligation_cause_code(err,
                                                 &parent_predicate,
                                                 &data.parent_code);

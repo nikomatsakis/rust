@@ -21,7 +21,7 @@ use rustc::hir::def::{self, Def, CtorKind};
 use rustc::hir::def_id::{CrateNum, DefId, DefIndex, CRATE_DEF_INDEX, LOCAL_CRATE};
 use rustc::middle::lang_items;
 use rustc::session::Session;
-use rustc::ty::{self, Ty, TyCtxt};
+use rustc::ty::{self, ToPredicate, Ty, TyCtxt};
 use rustc::ty::subst::Substs;
 
 use rustc::mir::Mir;
@@ -327,18 +327,16 @@ impl<'a, 'tcx> SpecializedDecoder<ty::GenericPredicates<'tcx>> for DecodeContext
         Ok(ty::GenericPredicates {
             parent: Decodable::decode(self)?,
             predicates: (0..self.read_usize()?).map(|_| {
-                    // Handle shorthands first, if we have an usize > 0x80.
-                    if self.opaque.data[self.opaque.position()] & 0x80 != 0 {
-                        let pos = self.read_usize()?;
-                        assert!(pos >= SHORTHAND_OFFSET);
-                        let pos = pos - SHORTHAND_OFFSET;
-
-                        self.with_position(pos, ty::Predicate::decode)
-                    } else {
-                        ty::Predicate::decode(self)
-                    }
-                })
-                .collect::<Result<Vec<_>, _>>()?,
+                // Handle shorthands first, if we have an usize > 0x80.
+                Ok(if self.opaque.data[self.opaque.position()] & 0x80 != 0 {
+                    let pos = self.read_usize()?;
+                    assert!(pos >= SHORTHAND_OFFSET);
+                    let pos = pos - SHORTHAND_OFFSET;
+                    self.with_position(pos, ty::PredicateKind::decode)?
+                } else {
+                    ty::PredicateKind::decode(self)?
+                }.to_predicate(self.tcx()))
+            }).collect::<Result<Vec<ty::Predicate<'tcx>>, Self::Error>>()?,
         })
     }
 }

@@ -1615,8 +1615,8 @@ impl<'a, 'gcx, 'tcx> AstConv<'gcx, 'tcx> for FnCtxt<'a, 'gcx, 'tcx> {
         ty::GenericPredicates {
             parent: None,
             predicates: self.param_env.caller_bounds.iter().filter(|predicate| {
-                match **predicate {
-                    ty::Predicate::Trait(ref data) => {
+                match predicate.kind {
+                    ty::PredicateKind::Trait(ref data) => {
                         data.0.self_ty().is_param(index)
                     }
                     _ => false
@@ -2032,9 +2032,10 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
     {
         // WF obligations never themselves fail, so no real need to give a detailed cause:
         let cause = traits::ObligationCause::new(span, self.body_id, code);
-        self.register_predicate(traits::Obligation::new(cause,
-                                                        self.param_env,
-                                                        ty::Predicate::WellFormed(ty)));
+        self.register_predicate(self.tcx().predicate_obligation(
+            cause,
+            self.param_env,
+            ty::PredicateKind::WellFormed(ty)));
     }
 
     /// Registers obligations that all types appearing in `substs` are well-formed.
