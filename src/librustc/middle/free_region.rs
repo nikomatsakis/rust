@@ -138,20 +138,31 @@ impl<'tcx> FreeRegionMap<'tcx> {
     pub fn relate_free_regions_from_predicates(&mut self,
                                                predicates: &[ty::Predicate<'tcx>]) {
         debug!("relate_free_regions_from_predicates(predicates={:?})", predicates);
-        for predicate in predicates {
-            match predicate.kind {
-                ty::PredicateKind::Projection(..) |
-                ty::PredicateKind::Trait(..) |
-                ty::PredicateKind::Subtype(..) |
-                ty::PredicateKind::WellFormed(..) |
-                ty::PredicateKind::ObjectSafe(..) |
-                ty::PredicateKind::ClosureKind(..) |
-                ty::PredicateKind::TypeOutlives(..) => {
-                    // No region bounds here
+        for &predicate in predicates {
+            let mut predicate = predicate;
+            loop {
+                match predicate.kind {
+                    ty::PredicateKind::Projection(..) |
+                    ty::PredicateKind::Trait(..) |
+                    ty::PredicateKind::Subtype(..) |
+                    ty::PredicateKind::WellFormed(..) |
+                    ty::PredicateKind::ObjectSafe(..) |
+                    ty::PredicateKind::ClosureKind(..) |
+                    ty::PredicateKind::TypeOutlives(..) => {
+                        // No region bounds here
+                    }
+                    ty::PredicateKind::RegionOutlives(ty::OutlivesPredicate(r_a, r_b)) => {
+                        self.relate_regions(r_b, r_a);
+                    }
+                    ty::PredicateKind::Poly(p) => {
+                        // We can skip through binders because we are
+                        // only looking for free regions, which are by
+                        // definition not bound within.
+                        predicate = *p.skip_binder();
+                        continue;
+                    }
                 }
-                ty::PredicateKind::RegionOutlives(ty::Binder(ty::OutlivesPredicate(r_a, r_b))) => {
-                    self.relate_regions(r_b, r_a);
-                }
+                break;
             }
         }
     }

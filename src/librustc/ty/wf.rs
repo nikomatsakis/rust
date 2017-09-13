@@ -58,7 +58,7 @@ pub fn trait_obligations<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
                                          -> Vec<traits::PredicateObligation<'tcx>>
 {
     let mut wf = WfPredicates { infcx, param_env, body_id, span, out: vec![] };
-    wf.compute_trait_ref(trait_ref, Elaborate::All);
+    wf.compute_trait_ref(*trait_ref, Elaborate::All);
     wf.normalize()
 }
 
@@ -70,35 +70,7 @@ pub fn predicate_obligations<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
                                              -> Vec<traits::PredicateObligation<'tcx>>
 {
     let mut wf = WfPredicates { infcx, param_env, body_id, span, out: vec![] };
-
-    // (*) ok to skip binders, because wf code is prepared for it
-    match predicate.kind {
-        ty::PredicateKind::Trait(ref t) => {
-            wf.compute_trait_ref(&t.skip_binder(), Elaborate::None); // (*)
-        }
-        ty::PredicateKind::RegionOutlives(..) => {
-        }
-        ty::PredicateKind::TypeOutlives(ref t) => {
-            wf.compute(t.skip_binder().0);
-        }
-        ty::PredicateKind::Projection(ref t) => {
-            let t = t.skip_binder(); // (*)
-            wf.compute_projection(t.projection_ty);
-            wf.compute(t.ty);
-        }
-        ty::PredicateKind::WellFormed(t) => {
-            wf.compute(t);
-        }
-        ty::PredicateKind::ObjectSafe(_) => {
-        }
-        ty::PredicateKind::ClosureKind(..) => {
-        }
-        ty::PredicateKind::Subtype(ref data) => {
-            wf.compute(data.skip_binder().a); // (*)
-            wf.compute(data.skip_binder().b); // (*)
-        }
-    }
-
+    wf.compute_predicate(predicate);
     wf.normalize()
 }
 
@@ -158,9 +130,41 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
                 .collect()
     }
 
+    fn compute_predicate(&mut self, predicate: ty::Predicate<'tcx>) {
+        match predicate.kind {
+            ty::PredicateKind::Poly(ref bound) => {
+                // (*) ok to skip binders, because wf code is prepared for it
+                self.compute_predicate(*bound.skip_binder());
+            }
+            ty::PredicateKind::Trait(t) => {
+                self.compute_trait_ref(t, Elaborate::None);
+            }
+            ty::PredicateKind::RegionOutlives(..) => {
+            }
+            ty::PredicateKind::TypeOutlives(ref t) => {
+                self.compute(t.0);
+            }
+            ty::PredicateKind::Projection(ref t) => {
+                self.compute_projection(t.projection_ty);
+                self.compute(t.ty);
+            }
+            ty::PredicateKind::WellFormed(t) => {
+                self.compute(t);
+            }
+            ty::PredicateKind::ObjectSafe(_) => {
+            }
+            ty::PredicateKind::ClosureKind(..) => {
+            }
+            ty::PredicateKind::Subtype(ref data) => {
+                self.compute(data.a);
+                self.compute(data.b);
+            }
+        }
+    }
+
     /// Pushes the obligations required for `trait_ref` to be WF into
     /// `self.out`.
-    fn compute_trait_ref(&mut self, trait_ref: &ty::TraitRef<'tcx>, elaborate: Elaborate) {
+    fn compute_trait_ref(&mut self, trait_ref: ty::TraitRef<'tcx>, elaborate: Elaborate) {
         let tcx = self.infcx.tcx;
         let obligations = self.nominal_obligations(trait_ref.def_id, trait_ref.substs);
 
@@ -195,7 +199,7 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
         // WF and (b) the trait-ref holds.  (It may also be
         // normalizable and be WF that way.)
         let trait_ref = data.trait_ref(self.infcx.tcx);
-        self.compute_trait_ref(&trait_ref, Elaborate::None);
+        self.compute_trait_ref(trait_ref, Elaborate::None);
 
         if !data.has_escaping_regions() {
             let predicate = trait_ref.to_predicate(self.infcx.tcx);
@@ -273,9 +277,7 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
                             tcx.predicate_obligation(
                                 cause,
                                 param_env,
-                                ty::PredicateKind::TypeOutlives(
-                                    ty::Binder(
-                                        ty::OutlivesPredicate(mt.ty, r)))));
+                                ty::OutlivesPredicate(mt.ty, r)));
                     }
                 }
 

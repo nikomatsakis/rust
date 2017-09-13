@@ -391,7 +391,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                     ty::PredicateKind::RegionOutlives(..) => {
                         None
                     }
-                    ty::PredicateKind::TypeOutlives(ty::Binder(ty::OutlivesPredicate(t, r))) => {
+                    ty::PredicateKind::TypeOutlives(ty::OutlivesPredicate(t, r)) => {
                         // Search for a bound of the form `erased_self_ty
                         // : 'a`, but be wary of something like `for<'a>
                         // erased_self_ty : 'a` (we interpret a

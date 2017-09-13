@@ -228,7 +228,7 @@ impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for ty::Pr
             ty::PredicateKind::ObjectSafe(def_id) => {
                 def_id.hash_stable(hcx, hasher);
             }
-            ty::PredicateKind::ClosureKind(def_id, closure_kind) => {
+            ty::PredicateKind::ClosureKind((def_id, closure_kind)) => {
                 def_id.hash_stable(hcx, hasher);
                 closure_kind.hash_stable(hcx, hasher);
             }

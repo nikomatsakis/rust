@@ -160,7 +160,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                 match predicate.kind {
                     ty::PredicateKind::Trait(ref data) => {
                         // In the case of a trait predicate, we can skip the "self" type.
-                        data.skip_binder().input_types().skip(1).any(|t| t.has_self_ty())
+                        data.input_types().skip(1).any(|t| t.has_self_ty())
                     }
                     ty::PredicateKind::Projection(..) |
                     ty::PredicateKind::WellFormed(..) |
@@ -191,8 +191,8 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         elaborate_predicates(self, predicates)
             .any(|predicate| {
                 match predicate.kind {
-                    ty::PredicateKind::Trait(ref trait_pred) if trait_pred.def_id() == sized_def_id => {
-                        trait_pred.0.self_ty().is_self()
+                    ty::PredicateKind::Trait(ref trait_pred) if trait_pred.def_id == sized_def_id => {
+                        trait_pred.self_ty().is_self()
                     }
                     ty::PredicateKind::Projection(..) |
                     ty::PredicateKind::Trait(..) |

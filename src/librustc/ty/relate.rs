@@ -15,7 +15,7 @@
 
 use hir::def_id::DefId;
 use ty::subst::{Kind, Substs};
-use ty::{self, Ty, TyCtxt, TypeFoldable};
+use ty::{self, ToPredicate, Ty, TyCtxt, TypeFoldable};
 use ty::error::{ExpectedFound, TypeError};
 use std::rc::Rc;
 use std::iter;
@@ -101,6 +101,40 @@ pub trait Relate<'tcx>: TypeFoldable<'tcx> {
 
 ///////////////////////////////////////////////////////////////////////////
 // Relate impls
+
+/// Generate an impl for things where it's always an error, no matter
+/// the variance, if they are unequal (according to `Eq`).
+macro_rules! equality_relate {
+    ($t:ty, $err:expr) => {
+        impl<'tcx> Relate<'tcx> for $t {
+            fn relate<'a, 'gcx, R>(relation: &mut R, a: &Self, b: &Self) -> RelateResult<'tcx, Self>
+                where R: TypeRelation<'a, 'gcx, 'tcx>, 'gcx: 'a+'tcx, 'tcx: 'a
+            {
+                if a == b {
+                    Ok(*a)
+                } else {
+                    Err($err)
+                }
+            }
+        }
+    }
+}
+
+equality_relate!(DefId, TypeError::Mismatch);
+equality_relate!(ast::Mutability, TypeError::Mutability);
+equality_relate!(ty::ClosureKind, TypeError::Mismatch);
+
+impl<'tcx, A, B> Relate<'tcx> for (A, B)
+    where A: Relate<'tcx>, B: Relate<'tcx>,
+{
+    fn relate<'a, 'gcx, R>(relation: &mut R, a: &Self, b: &Self) -> RelateResult<'tcx, Self>
+        where R: TypeRelation<'a, 'gcx, 'tcx>, 'gcx: 'a+'tcx, 'tcx: 'a
+    {
+        let x = relation.relate(&a.0, &b.0)?;
+        let y = relation.relate(&a.1, &b.1)?;
+        Ok((x, y))
+    }
+}
 
 impl<'tcx> Relate<'tcx> for ty::TypeAndMut<'tcx> {
     fn relate<'a, 'gcx, R>(relation: &mut R,
@@ -218,11 +252,54 @@ impl<'tcx> Relate<'tcx> for abi::Abi {
     }
 }
 
+impl<'tcx> Relate<'tcx> for ty::Predicate<'tcx> {
+    fn relate<'a, 'gcx, R>(relation: &mut R, a: &Self, b: &Self) -> RelateResult<'tcx, Self>
+        where R: TypeRelation<'a, 'gcx, 'tcx>, 'gcx: 'a+'tcx, 'tcx: 'a
+    {
+        debug!("ty::Predicate::relate(a={:?}, b={:?})", a, b);
+
+        macro_rules! relate {
+            ($relation:expr, $a:expr, $b:expr, [$($variant:path,)*]) => {
+                match ($a.kind, $b.kind) {
+                    (ty::PredicateKind::Poly(_), _) | (_, ty::PredicateKind::Poly(_)) =>
+                        bug!("cannot relate predicates with binders: a={:?} b={:?}", a, b),
+
+                    $(
+                        ($variant(ref a), $variant(ref b)) =>
+                            Ok($variant(relation.relate(a, b)?)),
+
+                        ($variant(_), _) | (_, $variant(_)) =>
+                            Err(TypeError::Mismatch),
+                    )*
+                }
+            }
+        }
+
+        Ok(relate!(relation, a, b, [
+            ty::PredicateKind::Trait,
+            ty::PredicateKind::RegionOutlives,
+            ty::PredicateKind::TypeOutlives,
+            ty::PredicateKind::Projection,
+            ty::PredicateKind::WellFormed,
+            ty::PredicateKind::ClosureKind,
+            // ty::PredicateKind::Subtype,
+        ])?.to_predicate(relation.tcx()))
+    }
+}
+
+impl<'tcx> Relate<'tcx> for ty::ProjectionPredicate<'tcx> {
+    fn relate<'a, 'gcx, R>(relation: &mut R, a: &Self, b: &Self) -> RelateResult<'tcx, Self>
+        where R: TypeRelation<'a, 'gcx, 'tcx>, 'gcx: 'a+'tcx, 'tcx: 'a
+    {
+        let tup_a = (a.projection_ty, a.ty);
+        let tup_b = (b.projection_ty, b.ty);
+        let (projection_ty, ty) = relation.relate(&tup_a, &tup_b)?;
+        Ok(ty::ProjectionPredicate { projection_ty, ty })
+    }
+}
+
 impl<'tcx> Relate<'tcx> for ty::ProjectionTy<'tcx> {
-    fn relate<'a, 'gcx, R>(relation: &mut R,
-                           a: &ty::ProjectionTy<'tcx>,
-                           b: &ty::ProjectionTy<'tcx>)
-                           -> RelateResult<'tcx, ty::ProjectionTy<'tcx>>
+    fn relate<'a, 'gcx, R>(relation: &mut R, a: &Self, b: &Self) -> RelateResult<'tcx, Self>
         where R: TypeRelation<'a, 'gcx, 'tcx>, 'gcx: 'a+'tcx, 'tcx: 'a
     {
         if a.item_def_id != b.item_def_id {
@@ -235,6 +312,18 @@ impl<'tcx> Relate<'tcx> for ty::ProjectionTy<'tcx> {
                 substs: &substs,
             })
         }
+    }
+}
+
+impl<'tcx, A, B> Relate<'tcx> for ty::OutlivesPredicate<A, B>
+    where A: Relate<'tcx>, B: Relate<'tcx>,
+{
+    fn relate<'a, 'gcx, R>(relation: &mut R, a: &Self, b: &Self) -> RelateResult<'tcx, Self>
+        where R: TypeRelation<'a, 'gcx, 'tcx>, 'gcx: 'a+'tcx, 'tcx: 'a
+    {
+        let x = relation.relate(&a.0, &b.0)?;
+        let y = relation.relate(&a.1, &b.1)?;
+        Ok(ty::OutlivesPredicate(x, y))
     }
 }
 

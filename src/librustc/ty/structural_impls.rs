@@ -357,11 +357,18 @@ impl<'a, 'tcx> Lift<'tcx> for ty::error::TypeError<'a> {
 // can easily refactor the folding into the TypeFolder trait as
 // needed.
 
+fn assert_static<T: 'static>() { }
+
+/// Used for random types that don't contain types and regions, where
+/// you fold just by copying it.
 macro_rules! CopyImpls {
-    ($($ty:ty),+) => {
+    ($($ty:ty,)+) => {
         $(
             impl<'tcx> TypeFoldable<'tcx> for $ty {
                 fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, _: &mut F) -> $ty {
+                    // you don't want to accidentally overlook region-allocated data
+                    assert_static::<$ty>();
+
                     *self
                 }
 
@@ -373,7 +380,16 @@ macro_rules! CopyImpls {
     }
 }
 
-CopyImpls! { (), hir::Unsafety, abi::Abi, hir::def_id::DefId, ::mir::Local }
+CopyImpls! {
+    (),
+    hir::Unsafety,
+    abi::Abi,
+    hir::def_id::DefId,
+    ::mir::Local,
+    hir::Mutability,
+    ty::ClosureKind,
+}
+
 
 impl<'tcx, T:TypeFoldable<'tcx>, U:TypeFoldable<'tcx>> TypeFoldable<'tcx> for (T, U) {
     fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> (T, U) {
@@ -846,8 +862,8 @@ impl<'tcx> TypeFoldable<'tcx> for ty::PredicateKind<'tcx> {
                 ty::PredicateKind::Projection(binder.fold_with(folder)),
             ty::PredicateKind::WellFormed(data) =>
                 ty::PredicateKind::WellFormed(data.fold_with(folder)),
-            ty::PredicateKind::ClosureKind(closure_def_id, kind) =>
-                ty::PredicateKind::ClosureKind(closure_def_id, kind),
+            ty::PredicateKind::ClosureKind((closure_def_id, kind)) =>
+                ty::PredicateKind::ClosureKind((closure_def_id, kind)),
             ty::PredicateKind::ObjectSafe(trait_def_id) =>
                 ty::PredicateKind::ObjectSafe(trait_def_id),
         }
@@ -861,7 +877,7 @@ impl<'tcx> TypeFoldable<'tcx> for ty::PredicateKind<'tcx> {
             ty::PredicateKind::TypeOutlives(ref binder) => binder.visit_with(visitor),
             ty::PredicateKind::Projection(ref binder) => binder.visit_with(visitor),
             ty::PredicateKind::WellFormed(data) => data.visit_with(visitor),
-            ty::PredicateKind::ClosureKind(_closure_def_id, _kind) => false,
+            ty::PredicateKind::ClosureKind((_closure_def_id, _kind)) => false,
             ty::PredicateKind::ObjectSafe(_trait_def_id) => false,
         }
     }

@@ -37,6 +37,7 @@
 
 use super::*;
 
+use ty::ToPredicate;
 use ty::relate::{Relate, TypeRelation};
 
 pub struct At<'a, 'gcx: 'tcx, 'tcx: 'a> {
@@ -62,11 +63,12 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
 }
 
 pub trait ToTrace<'tcx>: Relate<'tcx> + Copy {
-    fn to_trace(cause: &ObligationCause<'tcx>,
-                a_is_expected: bool,
-                a: Self,
-                b: Self)
-                -> TypeTrace<'tcx>;
+    fn to_trace<'a, 'gcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
+                          cause: &ObligationCause<'tcx>,
+                          a_is_expected: bool,
+                          a: Self,
+                          b: Self)
+                          -> TypeTrace<'tcx>;
 }
 
 impl<'a, 'gcx, 'tcx> At<'a, 'gcx, 'tcx> {
@@ -121,24 +123,35 @@ impl<'a, 'gcx, 'tcx> At<'a, 'gcx, 'tcx> {
     ///
     /// This routine would then instantiate `'a` with a fresh
     /// inference variable and equate the result with `actual`.
-    pub fn instantiable_as<T>(self,
-                              expected: ty::Binder<T>,
-                              actual: T)
-                              -> InferResult<'tcx, ()>
-        where T: ToTrace<'tcx>
+    pub fn instantiable_as<P,Q>(self,
+                                mut expected: P,
+                                actual: Q)
+                                -> InferResult<'tcx, ()>
+        where P: ToPredicate<'tcx>, Q: ToPredicate<'tcx>,
+    {
+        let expected = expected.to_predicate(self.infcx.tcx);
+        let actual = actual.to_predicate(self.infcx.tcx);
+        self.predicates_instantiable_as(expected, actual)
+    }
+
+    pub fn predicates_instantiable_as(self,
+                                      expected: ty::Predicate<'tcx>,
+                                      actual: ty::Predicate<'tcx>)
+                                      -> InferResult<'tcx, ()>
     {
         debug!("instantiable_as(expected={:?}, actual={:?})", expected, actual);
 
-        let (expected_prime, _) =
-            self.infcx.replace_late_bound_regions_with_fresh_var(
+        if expected.kind.fast_reject(&actual.kind) {
+            return Err(TypeError::Mismatch);
+        }
+
+        let expected =
+            self.infcx.instantiate_predicate_with_fresh_var(
                 self.cause.span,
                 self.param_env.universe,
-                HigherRankedType,
-                &expected);
+                expected);
 
-        debug!("instantiable_as: expected_prime={:?}", expected_prime);
-
-        self.eq(expected_prime, actual)
+        self.eq(expected, actual)
     }
 
     /// Make `expected <: actual`
@@ -221,7 +234,7 @@ impl<'a, 'gcx, 'tcx> At<'a, 'gcx, 'tcx> {
                         -> Trace<'a, 'gcx, 'tcx>
         where T: ToTrace<'tcx>
     {
-        let trace = ToTrace::to_trace(self.cause, a_is_expected, a, b);
+        let trace = ToTrace::to_trace(self.infcx.tcx, self.cause, a_is_expected, a, b);
         Trace { at: self, trace: trace, a_is_expected }
     }
 }
@@ -298,43 +311,53 @@ impl<'a, 'gcx, 'tcx> Trace<'a, 'gcx, 'tcx> {
 }
 
 impl<'tcx> ToTrace<'tcx> for Ty<'tcx> {
-    fn to_trace(cause: &ObligationCause<'tcx>,
-                a_is_expected: bool,
-                a: Self,
-                b: Self)
-                -> TypeTrace<'tcx>
+    fn to_trace<'a, 'gcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
+                          cause: &ObligationCause<'tcx>,
+                          a_is_expected: bool,
+                          a: Self,
+                          b: Self)
+                          -> TypeTrace<'tcx>
     {
         TypeTrace {
             cause: cause.clone(),
-            values: Types(ExpectedFound::new(a_is_expected, a, b))
+            values: ValuePairs::Types(ExpectedFound::new(a_is_expected, a, b))
         }
     }
 }
 
-impl<'tcx> ToTrace<'tcx> for ty::TraitRef<'tcx> {
-    fn to_trace(cause: &ObligationCause<'tcx>,
-                a_is_expected: bool,
-                a: Self,
-                b: Self)
-                -> TypeTrace<'tcx>
+impl<'tcx> ToTrace<'tcx> for ty::ProjectionTy<'tcx> {
+    fn to_trace<'a, 'gcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
+                          cause: &ObligationCause<'tcx>,
+                          a_is_expected: bool,
+                          a: Self,
+                          b: Self)
+                          -> TypeTrace<'tcx>
     {
-        TypeTrace {
-            cause: cause.clone(),
-            values: TraitRefs(ExpectedFound::new(a_is_expected, a, b))
-        }
+        // FIXME argh can we get rid of ToTrace anyway?!
+        Ty::to_trace(tcx,
+                     cause,
+                     a_is_expected,
+                     tcx.mk_projection(a.item_def_id, a.substs),
+                     tcx.mk_projection(b.item_def_id, b.substs))
     }
 }
 
-impl<'tcx> ToTrace<'tcx> for ty::PolyTraitRef<'tcx> {
-    fn to_trace(cause: &ObligationCause<'tcx>,
-                a_is_expected: bool,
-                a: Self,
-                b: Self)
-                -> TypeTrace<'tcx>
+impl<'tcx, P> ToTrace<'tcx> for P
+    where P: Copy + Relate<'tcx> + ToPredicate<'tcx>
+{
+    fn to_trace<'a, 'gcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
+                          cause: &ObligationCause<'tcx>,
+                          a_is_expected: bool,
+                          a: Self,
+                          b: Self)
+                          -> TypeTrace<'tcx>
     {
+        let a = a.to_predicate(tcx);
+        let b = b.to_predicate(tcx);
+
         TypeTrace {
             cause: cause.clone(),
-            values: PolyTraitRefs(ExpectedFound::new(a_is_expected, a, b))
+            values: ValuePairs::Predicates(ExpectedFound::new(a_is_expected, a, b))
         }
     }
 }

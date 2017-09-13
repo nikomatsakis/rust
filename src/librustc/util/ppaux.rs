@@ -424,7 +424,7 @@ impl<'tcx> fmt::Debug for ty::PredicateInterned<'tcx> {
             ty::PredicateKind::ObjectSafe(trait_def_id) => {
                 write!(f, "ObjectSafe({:?})", trait_def_id)
             }
-            ty::PredicateKind::ClosureKind(closure_def_id, kind) => {
+            ty::PredicateKind::ClosureKind((closure_def_id, kind)) => {
                 write!(f, "ClosureKind({:?}, {:?})", closure_def_id, kind)
             }
         }
@@ -1036,8 +1036,9 @@ impl fmt::Display for ty::ClosureKind {
 impl<'tcx> fmt::Display for ty::PredicateInterned<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.kind {
-            ty::PredicateKind::Trait(ref data) =>
-                write!(f, "{}", data.map_bound_ref(|t| t.display_all_with_colon())),
+            ty::PredicateKind::Poly(ref bound) =>
+                bound.map_bound_ref(|&t| t.display_all_with_colon()),
+            ty::PredicateKind::Trait(ref data) => write!(f, "{}", data),
             ty::PredicateKind::Subtype(ref predicate) => write!(f, "{}", predicate),
             ty::PredicateKind::RegionOutlives(ref predicate) => write!(f, "{}", predicate),
             ty::PredicateKind::TypeOutlives(ref predicate) => write!(f, "{}", predicate),
@@ -1047,7 +1048,7 @@ impl<'tcx> fmt::Display for ty::PredicateInterned<'tcx> {
                 ty::tls::with(|tcx| {
                     write!(f, "the trait `{}` is object-safe", tcx.item_path_str(trait_def_id))
                 }),
-            ty::PredicateKind::ClosureKind(closure_def_id, kind) =>
+            ty::PredicateKind::ClosureKind((closure_def_id, kind)) =>
                 ty::tls::with(|tcx| {
                     write!(f, "the closure `{}` implements the trait `{}`",
                            tcx.item_path_str(closure_def_id), kind)

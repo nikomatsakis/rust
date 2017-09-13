@@ -577,9 +577,7 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 match predicate.kind {
                     ty::PredicateKind::Trait(trait_predicate) => {
                         match trait_predicate.skip_binder().self_ty().sty {
-                            ty::TyParam(ref p) if *p == param_ty => {
-                                Some(trait_predicate)
-                            }
+                            ty::TyParam(ref p) if *p == param_ty => Some(trait_predicate),
                             _ => None,
                         }
                     }

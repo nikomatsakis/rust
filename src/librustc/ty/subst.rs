@@ -335,12 +335,14 @@ impl<'tcx> serialize::UseSpecializedDecodable for &'tcx Substs<'tcx> {}
 // there is more information available (for better errors).
 
 pub trait Subst<'tcx> : Sized {
-    fn subst<'a, 'gcx>(&self, tcx: TyCtxt<'a, 'gcx, 'tcx>,
-                      substs: &[Kind<'tcx>]) -> Self {
+    fn subst<'a, 'gcx>(&self,
+                       tcx: TyCtxt<'a, 'gcx, 'tcx>,
+                       substs: &[Kind<'tcx>]) -> Self {
         self.subst_spanned(tcx, substs, None)
     }
 
-    fn subst_spanned<'a, 'gcx>(&self, tcx: TyCtxt<'a, 'gcx, 'tcx>,
+    fn subst_spanned<'a, 'gcx>(&self,
+                               tcx: TyCtxt<'a, 'gcx, 'tcx>,
                                substs: &[Kind<'tcx>],
                                span: Option<Span>)
                                -> Self;

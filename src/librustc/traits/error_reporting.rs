@@ -188,16 +188,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             let mut values = None;
 
             // try to find the mismatched types to report the error with.
-            //
-            // this can fail if the problem was higher-ranked, in which
-            // cause I have no idea for a good error message.
-            if let ty::PredicateKind::Projection(ref data) = predicate.kind {
+            if let ty::PredicateKind::Projection(data) = predicate.kind {
                 let mut selcx = SelectionContext::new(self);
-                let (data, _) = self.replace_late_bound_regions_with_fresh_var(
-                    obligation.cause.span,
-                    obligation.param_env.universe,
-                    infer::LateBoundRegionConversionTime::HigherRankedType,
-                    data);
                 let normalized = super::normalize_projection_type(
                     &mut selcx,
                     obligation.param_env,
@@ -267,13 +259,12 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     }
 
     fn impl_similar_to(&self,
-                       trait_ref: ty::PolyTraitRef<'tcx>,
+                       trait_ref: ty::TraitRef<'tcx>,
                        obligation: &PredicateObligation<'tcx>)
                        -> Option<DefId>
     {
         let tcx = self.tcx;
         let param_env = obligation.param_env;
-        let trait_ref = tcx.erase_late_bound_regions(&trait_ref);
         let trait_self_ty = trait_ref.self_ty();
 
         let mut self_match_impls = vec![];
@@ -320,13 +311,12 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
 
     fn on_unimplemented_note(
         &self,
-        trait_ref: ty::PolyTraitRef<'tcx>,
+        trait_ref: ty::TraitRef<'tcx>,
         obligation: &PredicateObligation<'tcx>) ->
         OnUnimplementedNote
     {
         let def_id = self.impl_similar_to(trait_ref, obligation)
-            .unwrap_or(trait_ref.def_id());
-        let trait_ref = *trait_ref.skip_binder();
+                         .unwrap_or(trait_ref.def_id);
 
         let desugaring;
         let method;
@@ -371,16 +361,16 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     }
 
     fn find_similar_impl_candidates(&self,
-                                    trait_ref: ty::PolyTraitRef<'tcx>)
+                                    trait_ref: ty::TraitRef<'tcx>)
                                     -> Vec<ty::TraitRef<'tcx>>
     {
         let simp = fast_reject::simplify_type(self.tcx,
-                                              trait_ref.skip_binder().self_ty(),
+                                              trait_ref.self_ty(),
                                               true);
         let mut impl_candidates = Vec::new();
 
         match simp {
-            Some(simp) => self.tcx.for_each_impl(trait_ref.def_id(), |def_id| {
+            Some(simp) => self.tcx.for_each_impl(trait_ref.def_id, |def_id| {
                 let imp = self.tcx.impl_trait_ref(def_id).unwrap();
                 let imp_simp = fast_reject::simplify_type(self.tcx,
                                                           imp.self_ty(),
@@ -392,7 +382,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 }
                 impl_candidates.push(imp);
             }),
-            None => self.tcx.for_each_impl(trait_ref.def_id(), |def_id| {
+            None => self.tcx.for_each_impl(trait_ref.def_id, |def_id| {
                 impl_candidates.push(
                     self.tcx.impl_trait_ref(def_id).unwrap());
             })
@@ -620,7 +610,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                         let predicate = self.resolve_type_vars_if_possible(predicate);
                         let err = self.region_outlives_predicate(&obligation.cause,
                                                                  obligation.param_env,
-                                                                 &predicate).err().unwrap();
+                                                                 predicate).err().unwrap();
                         struct_span_err!(self.tcx.sess, span, E0279,
                             "the requirement `{}` is not satisfied (`{}`)",
                             predicate, err)
@@ -641,7 +631,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                                                             violations)
                     }
 
-                    ty::PredicateKind::ClosureKind(closure_def_id, kind) => {
+                    ty::PredicateKind::ClosureKind((closure_def_id, kind)) => {
                         let found_kind = self.closure_kind(closure_def_id).unwrap();
                         let closure_span = self.tcx.hir.span_if_local(closure_def_id).unwrap();
                         let node_id = self.tcx.hir.as_local_node_id(closure_def_id).unwrap();
@@ -909,7 +899,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 if !self.tcx.sess.has_errors() {
                     if
                         self.tcx.lang_items().sized_trait()
-                        .map_or(false, |sized_id| sized_id == trait_ref.def_id())
+                        .map_or(false, |sized_id| sized_id == trait_ref.def_id)
                     {
                         self.need_type_info(body_id, span, self_ty);
                     } else {
@@ -932,11 +922,11 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 }
             }
 
-            ty::PredicateKind::Subtype(ref data) => {
+            ty::PredicateKind::Subtype(data) => {
                 if data.references_error() || self.tcx.sess.has_errors() {
                     // no need to overload user in such cases
                 } else {
-                    let &SubtypePredicate { a_is_expected: _, a, b } = data.skip_binder();
+                    let SubtypePredicate { a_is_expected: _, a, b } = data;
                     // both must be type variables, or the other would've been instantiated
                     assert!(a.is_ty_var() && b.is_ty_var());
                     self.need_type_info(body_id,
@@ -963,7 +953,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     /// to the type parameters.
     fn predicate_can_apply(&self,
                            param_env: ty::ParamEnv<'tcx>,
-                           pred: ty::PolyTraitRef<'tcx>)
+                           pred: ty::TraitRef<'tcx>)
                            -> bool {
         struct ParamToVarFolder<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
             infcx: &'a InferCtxt<'a, 'gcx, 'tcx>,

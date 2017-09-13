@@ -21,18 +21,21 @@ use super::{Obligation, ObligationCause, PredicateObligation, SelectionContext, 
 fn anonymize_predicate<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
                                        pred: &ty::Predicate<'tcx>)
                                        -> ty::Predicate<'tcx> {
-    tcx.mk_predicate(match pred.kind {
-        ty::PredicateKind::Trait(ref data) =>
-            ty::PredicateKind::Trait(tcx.anonymize_late_bound_regions(data)),
+    match pred.kind {
+        ty::PredicateKind::Poly(ref data) =>
+            ty::PredicateKind::Poly(tcx.anonymize_late_bound_regions(data)),
 
-        ty::PredicateKind::RegionOutlives(ref data) =>
-            ty::PredicateKind::RegionOutlives(tcx.anonymize_late_bound_regions(data)),
+        ty::PredicateKind::Trait(data) =>
+            ty::PredicateKind::Trait(data),
 
-        ty::PredicateKind::TypeOutlives(ref data) =>
-            ty::PredicateKind::TypeOutlives(tcx.anonymize_late_bound_regions(data)),
+        ty::PredicateKind::RegionOutlives(data) =>
+            ty::PredicateKind::RegionOutlives(data),
 
-        ty::PredicateKind::Projection(ref data) =>
-            ty::PredicateKind::Projection(tcx.anonymize_late_bound_regions(data)),
+        ty::PredicateKind::TypeOutlives(data) =>
+            ty::PredicateKind::TypeOutlives(data),
+
+        ty::PredicateKind::Projection(data) =>
+            ty::PredicateKind::Projection(data),
 
         ty::PredicateKind::WellFormed(data) =>
             ty::PredicateKind::WellFormed(data),
@@ -40,12 +43,12 @@ fn anonymize_predicate<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
         ty::PredicateKind::ObjectSafe(data) =>
             ty::PredicateKind::ObjectSafe(data),
 
-        ty::PredicateKind::ClosureKind(closure_def_id, kind) =>
-            ty::PredicateKind::ClosureKind(closure_def_id, kind),
+        ty::PredicateKind::ClosureKind((closure_def_id, kind)) =>
+            ty::PredicateKind::ClosureKind((closure_def_id, kind)),
 
-        ty::PredicateKind::Subtype(ref data) =>
-            ty::PredicateKind::Subtype(tcx.anonymize_late_bound_regions(data)),
-    })
+        ty::PredicateKind::Subtype(data) =>
+            ty::PredicateKind::Subtype(data),
+    }.to_predicate(tcx)
 }
 
 
@@ -120,21 +123,26 @@ pub fn elaborate_predicates<'cx, 'gcx, 'tcx>(
 }
 
 impl<'cx, 'gcx, 'tcx> Elaborator<'cx, 'gcx, 'tcx> {
-    pub fn filter_to_traits(self) -> FilterToTraits<Self> {
+    pub fn filter_to_traits(self) -> FilterToTraits<'cx, 'gcx, 'tcx> {
         FilterToTraits::new(self)
     }
 
     fn push(&mut self, predicate: &ty::Predicate<'tcx>) {
         let tcx = self.visited.tcx;
         match predicate.kind {
+            ty::PredicateKind::Poly(ref binder) => {
+                // TODO have to restore `subst_supertrait` functionality *here*, I fear
+                panic!("TODO")
+            }
+
             ty::PredicateKind::Trait(ref data) => {
                 // Predicates declared on the trait.
-                let predicates = tcx.super_predicates_of(data.def_id());
+                let predicates = tcx.super_predicates_of(data.def_id);
 
                 let mut predicates: Vec<_> =
                     predicates.predicates
                               .iter()
-                              .map(|p| p.subst_supertrait(tcx, data))
+                              .map(|p| p.subst(tcx, data.substs))
                               .collect();
 
                 debug!("super_predicates: data={:?} predicates={:?}",
@@ -172,7 +180,7 @@ impl<'cx, 'gcx, 'tcx> Elaborator<'cx, 'gcx, 'tcx> {
                 // Nothing to elaborate from `'a: 'b`.
             }
 
-            ty::PredicateKind::TypeOutlives(ref data) => {
+            ty::PredicateKind::TypeOutlives(ty::OutlivesPredicate(ty_max, r_min)) => {
                 // We know that `T: 'a` for some type `T`. We can
                 // often elaborate this. For example, if we know that
                 // `[U]: 'a`, that implies that `U: 'a`. Similarly, if
@@ -183,12 +191,10 @@ impl<'cx, 'gcx, 'tcx> Elaborator<'cx, 'gcx, 'tcx> {
                 // example `for<'c> Foo<'a,'c>: 'b` can be elaborated to
                 // `'a: 'b`.
 
-                // Ignore `for<'a> T: 'a` -- we might in the future
-                // consider this as evidence that `T: 'static`, but
-                // I'm a bit wary of such constructions and so for now
-                // I want to be conservative. --nmatsakis
-                let ty_max = data.skip_binder().0;
-                let r_min = data.skip_binder().1;
+                // TODO -- Ignore `for<'a> T: 'a` -- we might in the
+                // future consider this as evidence that `T: 'static`,
+                // but I'm a bit wary of such constructions and so for
+                // now I want to be conservative. --nmatsakis
                 if r_min.is_late_bound() {
                     return;
                 }
@@ -201,14 +207,12 @@ impl<'cx, 'gcx, 'tcx> Elaborator<'cx, 'gcx, 'tcx> {
                            Component::Region(r) => if r.is_late_bound() {
                                None
                            } else {
-                               Some(ty::PredicateKind::RegionOutlives(
-                                   ty::Binder(ty::OutlivesPredicate(r, r_min))))
+                               Some(ty::OutlivesPredicate(r, r_min).to_predicate(tcx))
                            },
 
                            Component::Param(p) => {
                                let ty = tcx.mk_param(p.idx, p.name);
-                               Some(ty::PredicateKind::TypeOutlives(
-                                   ty::Binder(ty::OutlivesPredicate(ty, r_min))))
+                               Some(ty::OutlivesPredicate(ty, r_min).to_predicate(tcx))
                            },
 
                            Component::UnresolvedInferenceVariable(_) => {
@@ -223,7 +227,6 @@ impl<'cx, 'gcx, 'tcx> Elaborator<'cx, 'gcx, 'tcx> {
                                None
                            },
                        })
-                       .map(|pk| tcx.mk_predicate(pk))
                        .filter(|p| visited.insert(p)));
             }
         }
@@ -251,7 +254,7 @@ impl<'cx, 'gcx, 'tcx> Iterator for Elaborator<'cx, 'gcx, 'tcx> {
 // Supertrait iterator
 ///////////////////////////////////////////////////////////////////////////
 
-pub type Supertraits<'cx, 'gcx, 'tcx> = FilterToTraits<Elaborator<'cx, 'gcx, 'tcx>>;
+pub type Supertraits<'cx, 'gcx, 'tcx> = FilterToTraits<'cx, 'gcx, 'tcx>;
 
 pub fn supertraits<'cx, 'gcx, 'tcx>(tcx: TyCtxt<'cx, 'gcx, 'tcx>,
                                     trait_ref: ty::PolyTraitRef<'tcx>)
@@ -314,30 +317,43 @@ impl<'cx, 'gcx, 'tcx> Iterator for SupertraitDefIds<'cx, 'gcx, 'tcx> {
 
 /// A filter around an iterator of predicates that makes it yield up
 /// just trait references.
-pub struct FilterToTraits<I> {
-    base_iterator: I
+pub struct FilterToTraits<'cx, 'gcx: 'tcx, 'tcx: 'cx> {
+    base_iterator: Elaborator<'cx, 'gcx, 'tcx>,
 }
 
-impl<I> FilterToTraits<I> {
-    fn new(base: I) -> FilterToTraits<I> {
+impl<'cx, 'gcx, 'tcx> FilterToTraits<'cx, 'gcx, 'tcx> {
+    fn new(base: Elaborator<'cx, 'gcx, 'tcx>) -> FilterToTraits<'cx, 'gcx, 'tcx> {
         FilterToTraits { base_iterator: base }
     }
 }
 
-impl<'tcx,I:Iterator<Item=ty::Predicate<'tcx>>> Iterator for FilterToTraits<I> {
+impl<'cx, 'gcx, 'tcx> Iterator for FilterToTraits<'cx, 'gcx, 'tcx> {
     type Item = ty::PolyTraitRef<'tcx>;
 
     fn next(&mut self) -> Option<ty::PolyTraitRef<'tcx>> {
         loop {
-            match self.base_iterator.next() {
-                None => {
-                    return None;
+            if let Some(predicate) = self.base_iterator.next() {
+                let opt_trait_ref = predicate.map_binder(|pred| match pred.kind {
+                    ty::PredicateKind::Poly(..) =>
+                        bug!("map_binder handles poly"),
+
+                    ty::PredicateKind::Trait(trait_ref) =>
+                        Some(trait_ref),
+
+                    ty::PredicateKind::RegionOutlives(..) |
+                    ty::PredicateKind::TypeOutlives(..) |
+                    ty::PredicateKind::Projection(..) |
+                    ty::PredicateKind::WellFormed(..) |
+                    ty::PredicateKind::ObjectSafe(..) |
+                    ty::PredicateKind::ClosureKind(..) |
+                    ty::PredicateKind::Subtype(..) =>
+                        None,
+                });
+                if let Some(trait_ref) = opt_trait_ref {
+                    return Some(trait_ref)
                 }
-                Some(&ty::PredicateInterned { kind: ty::PredicateKind::Trait(data) }) => {
-                    return Some(data);
-                }
-                Some(_) => {
-                }
+            } else {
+                return None
             }
         }
     }

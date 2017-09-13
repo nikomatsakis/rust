@@ -42,7 +42,6 @@ use std::iter::FromIterator;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::slice;
-use std::vec::IntoIter;
 use std::mem;
 use syntax::ast::{self, DUMMY_NODE_ID, Name, Ident, NodeId};
 use syntax::attr;
@@ -833,20 +832,23 @@ pub struct PredicateInterned<'tcx> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
 pub enum PredicateKind<'tcx> {
+    /// Corresponds to a higher-ranked predicate like `for<..> P`.
+    Poly(Binder<Predicate<'tcx>>),
+
     /// Corresponds to `where Foo : Bar<A,B,C>`. `Foo` here would be
     /// the `Self` type of the trait reference and `A`, `B`, and `C`
     /// would be the type parameters.
-    Trait(PolyTraitRef<'tcx>),
+    Trait(TraitRef<'tcx>),
 
     /// where 'a : 'b
-    RegionOutlives(PolyRegionOutlivesPredicate<'tcx>),
+    RegionOutlives(RegionOutlivesPredicate<'tcx>),
 
     /// where T : 'a
-    TypeOutlives(PolyTypeOutlivesPredicate<'tcx>),
+    TypeOutlives(TypeOutlivesPredicate<'tcx>),
 
     /// where <T as TraitRef>::Name == X, approximately.
     /// See `ProjectionPredicate` struct for details.
-    Projection(PolyProjectionPredicate<'tcx>),
+    Projection(ProjectionPredicate<'tcx>),
 
     /// no syntax: T WF
     WellFormed(Ty<'tcx>),
@@ -857,114 +859,53 @@ pub enum PredicateKind<'tcx> {
     /// No direct syntax. May be thought of as `where T : FnFoo<...>`
     /// for some substitutions `...` and T being a closure type.
     /// Satisfied (or refuted) once we know the closure's kind.
-    ClosureKind(DefId, ClosureKind),
+    ClosureKind((DefId, ClosureKind)),
 
     /// `T1 <: T2`
-    Subtype(PolySubtypePredicate<'tcx>),
+    Subtype(SubtypePredicate<'tcx>),
 }
 
-impl<'a, 'gcx, 'tcx> PredicateInterned<'tcx> {
-    /// Performs a substitution suitable for going from a
-    /// poly-trait-ref to supertraits that must hold if that
-    /// poly-trait-ref holds. This is slightly different from a normal
-    /// substitution in terms of what happens with bound regions.  See
-    /// lengthy comment below for details.
-    pub fn subst_supertrait(&self, tcx: TyCtxt<'a, 'gcx, 'tcx>,
-                            trait_ref: &ty::PolyTraitRef<'tcx>)
-                            -> ty::Predicate<'tcx>
-    {
-        // The interaction between HRTB and supertraits is not entirely
-        // obvious. Let me walk you (and myself) through an example.
-        //
-        // Let's start with an easy case. Consider two traits:
-        //
-        //     trait Foo<'a> : Bar<'a,'a> { }
-        //     trait Bar<'b,'c> { }
-        //
-        // Now, if we have a trait reference `for<'x> T : Foo<'x>`, then
-        // we can deduce that `for<'x> T : Bar<'x,'x>`. Basically, if we
-        // knew that `Foo<'x>` (for any 'x) then we also know that
-        // `Bar<'x,'x>` (for any 'x). This more-or-less falls out from
-        // normal substitution.
-        //
-        // In terms of why this is sound, the idea is that whenever there
-        // is an impl of `T:Foo<'a>`, it must show that `T:Bar<'a,'a>`
-        // holds.  So if there is an impl of `T:Foo<'a>` that applies to
-        // all `'a`, then we must know that `T:Bar<'a,'a>` holds for all
-        // `'a`.
-        //
-        // Another example to be careful of is this:
-        //
-        //     trait Foo1<'a> : for<'b> Bar1<'a,'b> { }
-        //     trait Bar1<'b,'c> { }
-        //
-        // Here, if we have `for<'x> T : Foo1<'x>`, then what do we know?
-        // The answer is that we know `for<'x,'b> T : Bar1<'x,'b>`. The
-        // reason is similar to the previous example: any impl of
-        // `T:Foo1<'x>` must show that `for<'b> T : Bar1<'x, 'b>`.  So
-        // basically we would want to collapse the bound lifetimes from
-        // the input (`trait_ref`) and the supertraits.
-        //
-        // To achieve this in practice is fairly straightforward. Let's
-        // consider the more complicated scenario:
-        //
-        // - We start out with `for<'x> T : Foo1<'x>`. In this case, `'x`
-        //   has a De Bruijn index of 1. We want to produce `for<'x,'b> T : Bar1<'x,'b>`,
-        //   where both `'x` and `'b` would have a DB index of 1.
-        //   The substitution from the input trait-ref is therefore going to be
-        //   `'a => 'x` (where `'x` has a DB index of 1).
-        // - The super-trait-ref is `for<'b> Bar1<'a,'b>`, where `'a` is an
-        //   early-bound parameter and `'b' is a late-bound parameter with a
-        //   DB index of 1.
-        // - If we replace `'a` with `'x` from the input, it too will have
-        //   a DB index of 1, and thus we'll have `for<'x,'b> Bar1<'x,'b>`
-        //   just as we wanted.
-        //
-        // There is only one catch. If we just apply the substitution `'a
-        // => 'x` to `for<'b> Bar1<'a,'b>`, the substitution code will
-        // adjust the DB index because we substituting into a binder (it
-        // tries to be so smart...) resulting in `for<'x> for<'b>
-        // Bar1<'x,'b>` (we have no syntax for this, so use your
-        // imagination). Basically the 'x will have DB index of 2 and 'b
-        // will have DB index of 1. Not quite what we want. So we apply
-        // the substitution to the *contents* of the trait reference,
-        // rather than the trait reference itself (put another way, the
-        // substitution code expects equal binding levels in the values
-        // from the substitution and the value being substituted into, and
-        // this trick achieves that).
+impl<'tcx> PredicateKind<'tcx> {
+    /// Skips through any `Poly` predicates and returns the innermost
+    /// predicate kind. This must be used with caution since the
+    /// debruijn indices will be unreliable, but it's often useful for
+    /// "short-circuting" checks.
+    pub fn skip_binders(&self) -> &PredicateKind<'tcx> {
+        let mut p = self;
+        loop {
+            match *self {
+                ty::PredicateKind::Poly(ref b) => p = &b.skip_binder().kind,
+                _ => return p,
+            }
+        }
+    }
 
-        let substs = &trait_ref.0.substs;
-        tcx.mk_predicate(match self.kind {
-            PredicateKind::Trait(ty::Binder(ref data)) =>
-                PredicateKind::Trait(ty::Binder(data.subst(tcx, substs))),
-            PredicateKind::Subtype(ty::Binder(ref data)) =>
-                PredicateKind::Subtype(ty::Binder(data.subst(tcx, substs))),
-            PredicateKind::RegionOutlives(ty::Binder(ref data)) =>
-                PredicateKind::RegionOutlives(ty::Binder(data.subst(tcx, substs))),
-            PredicateKind::TypeOutlives(ty::Binder(ref data)) =>
-                PredicateKind::TypeOutlives(ty::Binder(data.subst(tcx, substs))),
-            PredicateKind::Projection(ty::Binder(ref data)) =>
-                PredicateKind::Projection(ty::Binder(data.subst(tcx, substs))),
-            PredicateKind::WellFormed(data) =>
-                PredicateKind::WellFormed(data.subst(tcx, substs)),
-            PredicateKind::ObjectSafe(trait_def_id) =>
-                PredicateKind::ObjectSafe(trait_def_id),
-            PredicateKind::ClosureKind(closure_def_id, kind) =>
-                PredicateKind::ClosureKind(closure_def_id, kind),
-        })
+    /// Does various short-circuit checks and returns true if `self`
+    /// and `other` are obviously NOT unifiable.
+    pub fn fast_reject<O>(&self, other: &O) -> bool
+        where O: ToPredicateKind<'tcx>
+    {
+        let other = other.to_predicate_kind();
+        let a = self.skip_binders();
+        let b = other.skip_binders();
+        match (a, b) {
+            (&ty::PredicateKind::Projection(ref a), &ty::PredicateKind::Projection(ref b)) =>
+                a.projection_ty.item_def_id != b.projection_ty.item_def_id,
+            (&ty::PredicateKind::Trait(ref a), &ty::PredicateKind::Trait(ref b)) =>
+                a.def_id != b.def_id,
+            _ =>
+                mem::discriminant(a) != mem::discriminant(b),
+        }
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct EquatePredicate<'tcx>(pub Ty<'tcx>, pub Ty<'tcx>); // `0 == 1`
-pub type PolyEquatePredicate<'tcx> = ty::Binder<EquatePredicate<'tcx>>;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct OutlivesPredicate<A,B>(pub A, pub B); // `A : B`
-pub type PolyOutlivesPredicate<A,B> = ty::Binder<OutlivesPredicate<A,B>>;
-pub type PolyRegionOutlivesPredicate<'tcx> = PolyOutlivesPredicate<ty::Region<'tcx>,
-                                                                   ty::Region<'tcx>>;
-pub type PolyTypeOutlivesPredicate<'tcx> = PolyOutlivesPredicate<Ty<'tcx>, ty::Region<'tcx>>;
+pub type RegionOutlivesPredicate<'tcx> = OutlivesPredicate<ty::Region<'tcx>, ty::Region<'tcx>>;
+pub type TypeOutlivesPredicate<'tcx> = OutlivesPredicate<Ty<'tcx>, ty::Region<'tcx>>;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct SubtypePredicate<'tcx> {
@@ -972,7 +913,6 @@ pub struct SubtypePredicate<'tcx> {
     pub a: Ty<'tcx>,
     pub b: Ty<'tcx>
 }
-pub type PolySubtypePredicate<'tcx> = ty::Binder<SubtypePredicate<'tcx>>;
 
 /// This kind of predicate has no *direct* correspondent in the
 /// syntax, but it roughly corresponds to the syntactic forms:
@@ -990,6 +930,12 @@ pub type PolySubtypePredicate<'tcx> = ty::Binder<SubtypePredicate<'tcx>>;
 pub struct ProjectionPredicate<'tcx> {
     pub projection_ty: ProjectionTy<'tcx>,
     pub ty: Ty<'tcx>,
+}
+
+impl<'tcx> ProjectionPredicate<'tcx> {
+    pub fn to_trait_ref(&self, tcx: TyCtxt) -> TraitRef<'tcx> {
+        self.projection_ty.trait_ref(tcx)
+    }
 }
 
 pub type PolyProjectionPredicate<'tcx> = Binder<ProjectionPredicate<'tcx>>;
@@ -1021,103 +967,109 @@ impl<'tcx> ToPolyTraitRef<'tcx> for TraitRef<'tcx> {
 }
 
 pub trait ToPredicate<'tcx>: Sized {
-    fn to_predicate<'a, 'gcx>(self, tcx: TyCtxt<'a, 'gcx, 'tcx>) -> Predicate<'tcx> {
-        tcx.mk_predicate(self.to_predicate_kind())
-    }
+    fn to_predicate<'a, 'gcx>(self, tcx: TyCtxt<'a, 'gcx, 'tcx>) -> Predicate<'tcx>;
+}
 
+impl<'tcx> ToPredicate<'tcx> for Predicate<'tcx> {
+    fn to_predicate<'a, 'gcx>(self, _: TyCtxt<'a, 'gcx, 'tcx>) -> Predicate<'tcx> {
+        self
+    }
+}
+
+pub trait ToPredicateKind<'tcx>: Sized {
     fn to_predicate_kind(self) -> PredicateKind<'tcx>;
 }
 
-impl<'tcx> ToPredicate<'tcx> for PredicateKind<'tcx> {
+impl<'tcx, T: ToPredicateKind<'tcx>> ToPredicate<'tcx> for T {
+    fn to_predicate<'a, 'gcx>(self, tcx: TyCtxt<'a, 'gcx, 'tcx>) -> Predicate<'tcx> {
+        tcx.mk_predicate(self.to_predicate_kind())
+    }
+}
+
+impl<'tcx, T: ToPredicateKind<'tcx>> ToPredicate<'tcx> for Binder<T> {
+    fn to_predicate<'a, 'gcx>(self, tcx: TyCtxt<'a, 'gcx, 'tcx>) -> Predicate<'tcx> {
+        let bound_kind = self.skip_binder().to_predicate_kind(); // binder moves...
+        let bound_predicate = ty::Binder(tcx.mk_predicate(bound_kind)); // ...to here
+        tcx.mk_predicate(ty::PredicateKind::Poly(bound_predicate))
+    }
+}
+
+impl<'tcx> ToPredicateKind<'tcx> for PredicateKind<'tcx> {
     fn to_predicate_kind(self) -> PredicateKind<'tcx> {
         self
     }
 }
 
-impl<'tcx> ToPredicate<'tcx> for TraitRef<'tcx> {
-    fn to_predicate_kind(self) -> PredicateKind<'tcx> {
-        ty::PredicateKind::Trait(self.to_poly_trait_ref())
-    }
-}
-
-impl<'tcx> ToPredicate<'tcx> for PolyTraitRef<'tcx> {
+impl<'tcx> ToPredicateKind<'tcx> for TraitRef<'tcx> {
     fn to_predicate_kind(self) -> PredicateKind<'tcx> {
         ty::PredicateKind::Trait(self)
     }
 }
 
-impl<'tcx> ToPredicate<'tcx> for PolyRegionOutlivesPredicate<'tcx> {
+impl<'tcx> ToPredicateKind<'tcx> for RegionOutlivesPredicate<'tcx> {
     fn to_predicate_kind(self) -> PredicateKind<'tcx> {
         PredicateKind::RegionOutlives(self)
     }
 }
 
-impl<'tcx> ToPredicate<'tcx> for PolyTypeOutlivesPredicate<'tcx> {
+impl<'tcx> ToPredicateKind<'tcx> for TypeOutlivesPredicate<'tcx> {
     fn to_predicate_kind(self) -> PredicateKind<'tcx> {
         PredicateKind::TypeOutlives(self)
     }
 }
 
-impl<'tcx> ToPredicate<'tcx> for PolyProjectionPredicate<'tcx> {
+impl<'tcx> ToPredicateKind<'tcx> for ProjectionPredicate<'tcx> {
     fn to_predicate_kind(self) -> PredicateKind<'tcx> {
         PredicateKind::Projection(self)
     }
 }
 
 impl<'tcx> PredicateInterned<'tcx> {
-    /// Iterates over the types in this predicate. Note that in all
-    /// cases this is skipping over a binder, so late-bound regions
-    /// with depth 0 are bound by the predicate.
-    pub fn walk_tys(&self) -> IntoIter<Ty<'tcx>> {
-        let vec: Vec<_> = match self.kind {
-            ty::PredicateKind::Trait(ref data) => {
-                data.skip_binder().input_types().collect()
-            }
-            ty::PredicateKind::Subtype(ty::Binder(SubtypePredicate { a, b, a_is_expected: _ })) => {
-                vec![a, b]
-            }
-            ty::PredicateKind::TypeOutlives(ty::Binder(ref data)) => {
-                vec![data.0]
-            }
-            ty::PredicateKind::RegionOutlives(..) => {
-                vec![]
-            }
-            ty::PredicateKind::Projection(ref data) => {
-                data.0.projection_ty.substs.types().chain(Some(data.0.ty)).collect()
-            }
-            ty::PredicateKind::WellFormed(data) => {
-                vec![data]
-            }
-            ty::PredicateKind::ObjectSafe(_trait_def_id) => {
-                vec![]
-            }
-            ty::PredicateKind::ClosureKind(_closure_def_id, _kind) => {
-                vec![]
-            }
-        };
-
-        // The only reason to collect into a vector here is that I was
-        // too lazy to make the full (somewhat complicated) iterator
-        // type that would be needed here. But I wanted this fn to
-        // return an iterator conceptually, rather than a `Vec`, so as
-        // to be closer to `Ty::walk`.
-        vec.into_iter()
+    pub fn to_opt_poly_trait_ref(&'tcx self) -> Option<PolyTraitRef<'tcx>> {
+        self.map_binder(|predicate| match predicate.kind {
+            ty::PredicateKind::Trait(trait_ref) => Some(trait_ref),
+            _ => None,
+        })
     }
 
-    pub fn to_opt_poly_trait_ref(&self) -> Option<PolyTraitRef<'tcx>> {
-        match self.kind {
-            PredicateKind::Trait(t) => {
-                Some(t)
-            }
-            PredicateKind::Projection(..) |
-            PredicateKind::Subtype(..) |
-            PredicateKind::RegionOutlives(..) |
-            PredicateKind::WellFormed(..) |
-            PredicateKind::ObjectSafe(..) |
-            PredicateKind::ClosureKind(..) |
-            PredicateKind::TypeOutlives(..) => {
-                None
-            }
+    /// Applies a map to the "core" predicate (ignoring enclosing binders).
+    /// This map is expected to produce a value of type R that is at
+    /// the same "binding level" as the input.
+    ///
+    /// FIXME. This is a rather troublesome method and its consumers
+    /// should eventually be factored away. Certainly do not introduce
+    /// new callers! -nmatsakis
+    pub fn map_binder<OP, R>(&'tcx self, op: OP) -> Option<Binder<R>>
+        where OP: FnOnce(Predicate<'tcx>) -> Option<R>,
+              R: TypeFoldable<'tcx>,
+    {
+        if let PredicateKind::Poly(ref binder) = self.kind {
+            binder.skip_binder()
+                  .map_inner(op)
+                  .map(|v| ty::Binder(v))
+        } else {
+            self.map_inner(op)
+                .map(|v| {
+                    assert!(!v.has_escaping_regions());
+                    ty::Binder(v)
+                })
+        }
+    }
+
+    /// Helper for `map_binder`: `self` is a predicate that does not
+    /// include a `for<>` binder. This is either because we tested and
+    /// saw that it did not, or because we (currently, at least) do
+    /// not support nested `for` binders. Therefore, this function
+    /// errors out if a `for<>` binder is bound in the predicate (that
+    /// would be a nested predicate).
+    fn map_inner<OP, R>(&'tcx self, op: OP) -> Option<R>
+        where OP: FnOnce(Predicate<'tcx>) -> Option<R>,
+              R: TypeFoldable<'tcx>,
+    {
+        if let ty::PredicateKind::Poly(_) = self.kind {
+            bug!("nested poly predicates are not yet supported")
+        } else {
+            op(self)
         }
     }
 }

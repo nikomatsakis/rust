@@ -312,10 +312,9 @@ impl<'a, 'b, 'gcx, 'tcx> ObligationProcessor for FulfillProcessor<'a, 'b, 'gcx, 
 
 /// Return the set of type variables contained in a trait ref
 fn trait_ref_type_vars<'a, 'gcx, 'tcx>(selcx: &mut SelectionContext<'a, 'gcx, 'tcx>,
-                                       t: ty::PolyTraitRef<'tcx>) -> Vec<Ty<'tcx>>
+                                       t: ty::TraitRef<'tcx>) -> Vec<Ty<'tcx>>
 {
-    t.skip_binder() // ok b/c this check doesn't care about regions
-     .input_types()
+    t.input_types()
      .map(|t| selcx.infcx().resolve_type_vars_if_possible(&t))
      .filter(|t| t.has_infer_types())
      .flat_map(|t| t.walk())
@@ -366,7 +365,7 @@ fn process_predicate<'a, 'gcx, 'tcx>(
                 if
                     // make defaulted unit go through the slow path for better warnings,
                     // please remove this when the warnings are removed.
-                    !trait_obligation.predicate.skip_binder().self_ty().is_defaulted_unit() &&
+                    !trait_obligation.predicate.self_ty().is_defaulted_unit() &&
                     selcx.evaluate_obligation_conservatively(&obligation) {
                     debug!("selecting trait `{:?}` at depth {} evaluated to holds",
                            trait_ref, obligation.recursion_depth);
@@ -374,7 +373,7 @@ fn process_predicate<'a, 'gcx, 'tcx>(
                 }
             }
 
-            match selcx.select_poly(&trait_obligation) {
+            match selcx.select(&trait_obligation) {
                 Ok(Some(vtable)) => {
                     debug!("selecting trait `{:?}` at depth {} yielded Ok(Some)",
                            trait_ref, obligation.recursion_depth);
@@ -414,7 +413,7 @@ fn process_predicate<'a, 'gcx, 'tcx>(
             }
         }
 
-        ty::PredicateKind::RegionOutlives(ref binder) => {
+        ty::PredicateKind::RegionOutlives(binder) => {
             match selcx.infcx().region_outlives_predicate(&obligation.cause,
                                                           obligation.param_env,
                                                           binder) {
@@ -423,49 +422,20 @@ fn process_predicate<'a, 'gcx, 'tcx>(
             }
         }
 
-        ty::PredicateKind::TypeOutlives(ref binder) => {
-            // Check if there are higher-ranked regions.
-            match selcx.tcx().no_late_bound_regions(binder) {
-                // If there are, inspect the underlying type further.
-                None => {
-                    // Convert from `Binder<OutlivesPredicate<Ty, Region>>` to `Binder<Ty>`.
-                    let binder = binder.map_bound_ref(|pred| pred.0);
-
-                    // Check if the type has any bound regions.
-                    match selcx.tcx().no_late_bound_regions(&binder) {
-                        // If so, this obligation is an error (for now). Eventually we should be
-                        // able to support additional cases here, like `for<'a> &'a str: 'a`.
-                        None => {
-                            Err(CodeSelectionError(Unimplemented))
-                        }
-                        // Otherwise, we have something of the form
-                        // `for<'a> T: 'a where 'a not in T`, which we can treat as `T: 'static`.
-                        Some(t_a) => {
-                            let r_static = selcx.tcx().types.re_static;
-                            register_region_obligation(t_a, r_static,
-                                                       obligation.cause.clone(),
-                                                       region_obligations);
-                            Ok(Some(vec![]))
-                        }
-                    }
-                }
-                // If there aren't, register the obligation.
-                Some(ty::OutlivesPredicate(t_a, r_b)) => {
-                    register_region_obligation(t_a, r_b,
-                                               obligation.cause.clone(),
-                                               region_obligations);
-                    Ok(Some(vec![]))
-                }
-            }
+        ty::PredicateKind::TypeOutlives(ty::OutlivesPredicate(t_a, r_b)) => {
+            register_region_obligation(t_a, r_b,
+                                       obligation.cause.clone(),
+                                       region_obligations);
+            Ok(Some(vec![]))
         }
 
-        ty::PredicateKind::Projection(ref data) => {
-            let project_obligation = obligation.with(data.clone());
-            match project::poly_project_and_unify_type(selcx, &project_obligation) {
+        ty::PredicateKind::Projection(data) => {
+            let project_obligation = obligation.with(data);
+            match project::project_and_unify_type(selcx, &project_obligation) {
                 Ok(None) => {
                     let tcx = selcx.tcx();
-                    pending_obligation.stalled_on =
-                        trait_ref_type_vars(selcx, data.to_poly_trait_ref(tcx));
+                    pending_obligation.stalled_on = trait_ref_type_vars(selcx,
+                                                                        data.to_trait_ref(tcx));
                     Ok(None)
                 }
                 Ok(v) => Ok(v),
@@ -481,7 +451,7 @@ fn process_predicate<'a, 'gcx, 'tcx>(
             }
         }
 
-        ty::PredicateKind::ClosureKind(closure_def_id, kind) => {
+        ty::PredicateKind::ClosureKind((closure_def_id, kind)) => {
             match selcx.infcx().closure_kind(closure_def_id) {
                 Some(closure_kind) => {
                     if closure_kind.extends(kind) {
@@ -509,23 +479,22 @@ fn process_predicate<'a, 'gcx, 'tcx>(
             }
         }
 
-        ty::PredicateKind::Subtype(ref subtype) => {
+        ty::PredicateKind::Subtype(subtype) => {
             match selcx.infcx().subtype_predicate(&obligation.cause,
                                                   obligation.param_env,
                                                   subtype) {
                 None => {
                     // none means that both are unresolved
-                    pending_obligation.stalled_on = vec![subtype.skip_binder().a,
-                                                         subtype.skip_binder().b];
+                    pending_obligation.stalled_on = vec![subtype.a, subtype.b];
                     Ok(None)
                 }
                 Some(Ok(ok)) => {
                     Ok(Some(ok.obligations))
                 }
                 Some(Err(err)) => {
-                    let expected_found = ExpectedFound::new(subtype.skip_binder().a_is_expected,
-                                                            subtype.skip_binder().a,
-                                                            subtype.skip_binder().b);
+                    let expected_found = ExpectedFound::new(subtype.a_is_expected,
+                                                            subtype.a,
+                                                            subtype.b);
                     Err(FulfillmentErrorCode::CodeSubtypeError(expected_found, err))
                 }
             }
