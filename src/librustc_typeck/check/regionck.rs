@@ -505,35 +505,36 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
                     .into_iter()
                     .flat_map(|obligation| {
                         assert!(!obligation.has_escaping_regions());
-                        match obligation.predicate {
-                            ty::Predicate::Trait(..) |
-                            ty::Predicate::Subtype(..) |
-                            ty::Predicate::Projection(..) |
-                            ty::Predicate::ClosureKind(..) |
-                            ty::Predicate::ObjectSafe(..) =>
+                        match obligation.predicate.skip_binders() {
+                            ty::PredicateAtom::Trait(..) |
+                            ty::PredicateAtom::Subtype(..) |
+                            ty::PredicateAtom::Projection(..) |
+                            ty::PredicateAtom::ClosureKind(..) |
+                            ty::PredicateAtom::ObjectSafe(..) =>
                                 vec![],
 
-                            ty::Predicate::WellFormed(subty) => {
+                            ty::PredicateAtom::WellFormed(subty) => {
+                                assert!(!subty.has_escaping_regions());
                                 wf_types.push(subty);
                                 vec![]
                             }
 
-                            ty::Predicate::RegionOutlives(ref data) =>
-                                match self.tcx.no_late_bound_regions(data) {
-                                    None =>
-                                        vec![],
-                                    Some(ty::OutlivesPredicate(r_a, r_b)) =>
-                                        vec![ImpliedBound::RegionSubRegion(r_b, r_a)],
+                            ty::PredicateAtom::RegionOutlives(data) =>
+                                if data.has_escaping_regions() {
+                                    vec![]
+                                } else {
+                                    let ty::OutlivesPredicate(r_a, r_b) = data;
+                                    vec![ImpliedBound::RegionSubRegion(r_b, r_a)]
                                 },
 
-                            ty::Predicate::TypeOutlives(ref data) =>
-                                match self.tcx.no_late_bound_regions(data) {
-                                    None => vec![],
-                                    Some(ty::OutlivesPredicate(ty_a, r_b)) => {
-                                        let ty_a = self.resolve_type_vars_if_possible(&ty_a);
-                                        let components = self.tcx.outlives_components(ty_a);
-                                        self.implied_bounds_from_components(r_b, components)
-                                    }
+                            ty::PredicateAtom::TypeOutlives(data) =>
+                                if data.has_escaping_regions() {
+                                    vec![]
+                                } else {
+                                    let ty::OutlivesPredicate(ty_a, r_b) = data;
+                                    let ty_a = self.resolve_type_vars_if_possible(&ty_a);
+                                    let components = self.tcx.outlives_components(ty_a);
+                                    self.implied_bounds_from_components(r_b, components)
                                 },
                         }}));
         }
@@ -1808,9 +1809,9 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
         traits::elaborate_predicates(self.tcx, predicates)
             .filter_map(|predicate| {
                 // we're only interesting in `T : 'a` style predicates:
-                let outlives = match predicate {
-                    ty::Predicate::TypeOutlives(data) => data,
-                    _ => { return None; }
+                let outlives = match predicate.poly_type_outlives() {
+                    Some(data) => data,
+                    None => return None,
                 };
 
                 debug!("projection_bounds: outlives={:?} (1)",

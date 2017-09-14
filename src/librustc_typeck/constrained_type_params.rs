@@ -169,11 +169,9 @@ pub fn setup_constraining_predicates<'tcx>(tcx: ty::TyCtxt,
         changed = false;
 
         for j in i..predicates.len() {
-            if let ty::Predicate::Projection(ref poly_projection) = predicates[j] {
-                // Note that we can skip binder here because the impl
-                // trait ref never contains any late-bound regions.
-                let projection = poly_projection.skip_binder();
-
+            // Note that we can skip binder here because the impl
+            // trait ref never contains any late-bound regions.
+            if let ty::PredicateAtom::Projection(projection) = predicates[j].skip_binders() {
                 // Special case: watch out for some kind of sneaky attempt
                 // to project out an associated type defined by this very
                 // trait.

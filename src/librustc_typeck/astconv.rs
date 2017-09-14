@@ -674,7 +674,7 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
         let tcx = self.tcx();
 
         let bounds: Vec<_> = self.get_type_parameter_bounds(span, ty_param_def_id)
-            .predicates.into_iter().filter_map(|p| p.to_opt_poly_trait_ref()).collect();
+            .predicates.into_iter().filter_map(|p| p.poly_trait()).collect();
 
         // Check that there is exactly one way to find an associated type with the
         // correct name.

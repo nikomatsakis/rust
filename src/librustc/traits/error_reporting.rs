@@ -19,7 +19,7 @@ use super::{
     OnUnimplementedNote,
     OutputTypeParameterMismatch,
     TraitNotObjectSafe,
-    PredicateObligation,
+    PredicateAtomObligation,
     Reveal,
     SelectionContext,
     SelectionError,
@@ -50,14 +50,14 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                                      body_id: Option<hir::BodyId>) {
         #[derive(Debug)]
         struct ErrorDescriptor<'tcx> {
-            predicate: ty::Predicate<'tcx>,
+            predicate: ty::PredicateAtom<'tcx>,
             index: Option<usize>, // None if this is an old error
         }
 
         let mut error_map : FxHashMap<_, _> =
             self.reported_trait_errors.borrow().iter().map(|(&span, predicates)| {
-                (span, predicates.iter().map(|predicate| ErrorDescriptor {
-                    predicate: predicate.clone(),
+                (span, predicates.iter().map(|&predicate| ErrorDescriptor {
+                    predicate: predicate,
                     index: None
                 }).collect())
             }).collect();
@@ -115,8 +115,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     // returns if `cond` not occurring implies that `error` does not occur - i.e. that
     // `error` occurring implies that `cond` occurs.
     fn error_implies(&self,
-                     cond: &ty::Predicate<'tcx>,
-                     error: &ty::Predicate<'tcx>)
+                     cond: &ty::PredicateAtom<'tcx>,
+                     error: &ty::PredicateAtom<'tcx>)
                      -> bool
     {
         if cond == error {
@@ -124,7 +124,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         }
 
         let (cond, error) = match (cond, error) {
-            (&ty::Predicate::Trait(..), &ty::Predicate::Trait(error))
+            (&ty::PredicateAtom::Trait(..), &ty::PredicateAtom::Trait(error))
                 => (cond, error),
             _ => {
                 // FIXME: make this work in other cases too.
@@ -132,14 +132,15 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             }
         };
 
-        for implication in super::elaborate_predicates(self.tcx, vec![cond.clone()]) {
-            if let ty::Predicate::Trait(implication) = implication {
+        for implication in super::elaborate_predicates(self.tcx, vec![cond.to_predicate()]) {
+            if let Some(implication) = implication.poly_trait() {
                 // FIXME: I'm just not taking associated types at all here.
                 // Eventually I'll need to implement param-env-aware
                 // `Γ₁ ⊦ φ₁ => Γ₂ ⊦ φ₂` logic.
+                let cause = ObligationCause::dummy();
                 let param_env = ty::ParamEnv::empty(Reveal::UserFacing);
-                if let Ok(_) = self.can_sub(param_env, error, implication) {
-                    debug!("error_implies: {:?} -> {:?} -> {:?}", cond, error, implication);
+                if self.at(&cause, param_env).can_instantiate_as(implication, error) {
+                    debug!("error_implies: {:?} => {:?} => {:?}", cond, implication, error);
                     return true
                 }
             }
@@ -148,7 +149,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         false
     }
 
-    fn report_fulfillment_error(&self, error: &FulfillmentError<'tcx>,
+    fn report_fulfillment_error(&self,
+                                error: &FulfillmentError<'tcx>,
                                 body_id: Option<hir::BodyId>) {
         debug!("report_fulfillment_errors({:?})", error);
         match error.code {
@@ -172,7 +174,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     }
 
     fn report_projection_error(&self,
-                               obligation: &PredicateObligation<'tcx>,
+                               obligation: &PredicateAtomObligation<'tcx>,
                                error: &MismatchedProjectionTypes<'tcx>)
     {
         let predicate =
@@ -191,13 +193,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             //
             // this can fail if the problem was higher-ranked, in which
             // cause I have no idea for a good error message.
-            if let ty::Predicate::Projection(ref data) = predicate {
+            if let ty::PredicateAtom::Projection(data) = predicate {
                 let mut selcx = SelectionContext::new(self);
-                let (data, _) = self.replace_late_bound_regions_with_fresh_var(
-                    obligation.cause.span,
-                    obligation.param_env.universe,
-                    infer::LateBoundRegionConversionTime::HigherRankedType,
-                    data);
                 let normalized = super::normalize_projection_type(
                     &mut selcx,
                     obligation.param_env,
@@ -267,13 +264,12 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     }
 
     fn impl_similar_to(&self,
-                       trait_ref: ty::PolyTraitRef<'tcx>,
-                       obligation: &PredicateObligation<'tcx>)
+                       trait_ref: ty::TraitRef<'tcx>,
+                       obligation: &PredicateAtomObligation<'tcx>)
                        -> Option<DefId>
     {
         let tcx = self.tcx;
         let param_env = obligation.param_env;
-        let trait_ref = tcx.erase_late_bound_regions(&trait_ref);
         let trait_self_ty = trait_ref.self_ty();
 
         let mut self_match_impls = vec![];
@@ -320,13 +316,11 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
 
     fn on_unimplemented_note(
         &self,
-        trait_ref: ty::PolyTraitRef<'tcx>,
-        obligation: &PredicateObligation<'tcx>) ->
+        trait_ref: ty::TraitRef<'tcx>,
+        obligation: &PredicateAtomObligation<'tcx>) ->
         OnUnimplementedNote
     {
-        let def_id = self.impl_similar_to(trait_ref, obligation)
-            .unwrap_or(trait_ref.def_id());
-        let trait_ref = *trait_ref.skip_binder();
+        let def_id = self.impl_similar_to(trait_ref, obligation).unwrap_or(trait_ref.def_id);
 
         let desugaring;
         let method;
@@ -371,16 +365,16 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     }
 
     fn find_similar_impl_candidates(&self,
-                                    trait_ref: ty::PolyTraitRef<'tcx>)
+                                    trait_ref: ty::TraitRef<'tcx>)
                                     -> Vec<ty::TraitRef<'tcx>>
     {
         let simp = fast_reject::simplify_type(self.tcx,
-                                              trait_ref.skip_binder().self_ty(),
+                                              trait_ref.self_ty(),
                                               true);
         let mut impl_candidates = Vec::new();
 
         match simp {
-            Some(simp) => self.tcx.for_each_impl(trait_ref.def_id(), |def_id| {
+            Some(simp) => self.tcx.for_each_impl(trait_ref.def_id, |def_id| {
                 let imp = self.tcx.impl_trait_ref(def_id).unwrap();
                 let imp_simp = fast_reject::simplify_type(self.tcx,
                                                           imp.self_ty(),
@@ -392,7 +386,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 }
                 impl_candidates.push(imp);
             }),
-            None => self.tcx.for_each_impl(trait_ref.def_id(), |def_id| {
+            None => self.tcx.for_each_impl(trait_ref.def_id, |def_id| {
                 impl_candidates.push(
                     self.tcx.impl_trait_ref(def_id).unwrap());
             })
@@ -458,7 +452,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     /// that we can give a more helpful error message (and, in particular,
     /// we do not suggest increasing the overflow limit, which is not
     /// going to help).
-    pub fn report_overflow_error_cycle(&self, cycle: &[PredicateObligation<'tcx>]) -> ! {
+    pub fn report_overflow_error_cycle(&self, cycle: &[PredicateAtomObligation<'tcx>]) -> ! {
         let cycle = self.resolve_type_vars_if_possible(&cycle.to_owned());
         assert!(cycle.len() > 0);
 
@@ -526,7 +520,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     }
 
     pub fn report_selection_error(&self,
-                                  obligation: &PredicateObligation<'tcx>,
+                                  obligation: &PredicateAtomObligation<'tcx>,
                                   error: &SelectionError<'tcx>)
     {
         let span = obligation.cause.span;
@@ -547,7 +541,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                     return;
                 }
                 match obligation.predicate {
-                    ty::Predicate::Trait(ref trait_ref) => {
+                    ty::PredicateAtom::Trait(ref trait_ref) => {
                         let trait_ref = self.resolve_type_vars_if_possible(trait_ref);
 
                         if self.tcx.sess.has_errors() && trait_ref.references_error() {
@@ -609,24 +603,24 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                         err
                     }
 
-                    ty::Predicate::Subtype(ref predicate) => {
+                    ty::PredicateAtom::Subtype(ref predicate) => {
                         // Errors for Subtype predicates show up as
                         // `FulfillmentErrorCode::CodeSubtypeError`,
                         // not selection error.
                         span_bug!(span, "subtype requirement gave wrong error: `{:?}`", predicate)
                     }
 
-                    ty::Predicate::RegionOutlives(ref predicate) => {
+                    ty::PredicateAtom::RegionOutlives(ref predicate) => {
                         let predicate = self.resolve_type_vars_if_possible(predicate);
                         let err = self.region_outlives_predicate(&obligation.cause,
                                                                  obligation.param_env,
-                                                                 &predicate).err().unwrap();
+                                                                 predicate).err().unwrap();
                         struct_span_err!(self.tcx.sess, span, E0279,
                             "the requirement `{}` is not satisfied (`{}`)",
                             predicate, err)
                     }
 
-                    ty::Predicate::Projection(..) | ty::Predicate::TypeOutlives(..) => {
+                    ty::PredicateAtom::Projection(..) | ty::PredicateAtom::TypeOutlives(..) => {
                         let predicate =
                             self.resolve_type_vars_if_possible(&obligation.predicate);
                         struct_span_err!(self.tcx.sess, span, E0280,
@@ -634,14 +628,14 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                             predicate)
                     }
 
-                    ty::Predicate::ObjectSafe(trait_def_id) => {
+                    ty::PredicateAtom::ObjectSafe(trait_def_id) => {
                         let violations = self.tcx.object_safety_violations(trait_def_id);
                         self.tcx.report_object_safety_error(span,
                                                             trait_def_id,
                                                             violations)
                     }
 
-                    ty::Predicate::ClosureKind(closure_def_id, kind) => {
+                    ty::PredicateAtom::ClosureKind(closure_def_id, kind) => {
                         let found_kind = self.closure_kind(closure_def_id).unwrap();
                         let closure_span = self.tcx.hir.span_if_local(closure_def_id).unwrap();
                         let node_id = self.tcx.hir.as_local_node_id(closure_def_id).unwrap();
@@ -680,7 +674,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                         return;
                     }
 
-                    ty::Predicate::WellFormed(ty) => {
+                    ty::PredicateAtom::WellFormed(ty) => {
                         // WF predicates cannot themselves make
                         // errors. They can only block due to
                         // ambiguity; otherwise, they always
@@ -856,7 +850,8 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
 }
 
 impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
-    fn maybe_report_ambiguity(&self, obligation: &PredicateObligation<'tcx>,
+    fn maybe_report_ambiguity(&self,
+                              obligation: &PredicateAtomObligation<'tcx>,
                               body_id: Option<hir::BodyId>) {
         // Unable to successfully determine, probably means
         // insufficient type information, but could mean
@@ -877,7 +872,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         }
 
         match predicate {
-            ty::Predicate::Trait(trait_ref) => {
+            ty::PredicateAtom::Trait(trait_ref) => {
                 let self_ty = trait_ref.self_ty();
                 if predicate.references_error() {
                     return;
@@ -909,7 +904,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 if !self.tcx.sess.has_errors() {
                     if
                         self.tcx.lang_items().sized_trait()
-                        .map_or(false, |sized_id| sized_id == trait_ref.def_id())
+                        .map_or(false, |sized_id| sized_id == trait_ref.def_id)
                     {
                         self.need_type_info(body_id, span, self_ty);
                     } else {
@@ -924,7 +919,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 }
             }
 
-            ty::Predicate::WellFormed(ty) => {
+            ty::PredicateAtom::WellFormed(ty) => {
                 // Same hacky approach as above to avoid deluging user
                 // with error messages.
                 if !ty.references_error() && !self.tcx.sess.has_errors() {
@@ -932,11 +927,11 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 }
             }
 
-            ty::Predicate::Subtype(ref data) => {
+            ty::PredicateAtom::Subtype(ref data) => {
                 if data.references_error() || self.tcx.sess.has_errors() {
                     // no need to overload user in such cases
                 } else {
-                    let &SubtypePredicate { a_is_expected: _, a, b } = data.skip_binder();
+                    let &SubtypePredicate { a_is_expected: _, a, b } = data;
                     // both must be type variables, or the other would've been instantiated
                     assert!(a.is_ty_var() && b.is_ty_var());
                     self.need_type_info(body_id,
@@ -963,7 +958,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     /// to the type parameters.
     fn predicate_can_apply(&self,
                            param_env: ty::ParamEnv<'tcx>,
-                           pred: ty::PolyTraitRef<'tcx>)
+                           pred: ty::TraitRef<'tcx>)
                            -> bool {
         struct ParamToVarFolder<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
             infcx: &'a InferCtxt<'a, 'gcx, 'tcx>,

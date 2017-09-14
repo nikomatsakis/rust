@@ -396,15 +396,13 @@ impl<'b, 'a, 'tcx> ReachEverythingInTheInterfaceVisitor<'b, 'a, 'tcx> {
         let predicates = self.ev.tcx.predicates_of(self.item_def_id);
         for predicate in &predicates.predicates {
             predicate.visit_with(self);
-            match predicate {
-                &ty::Predicate::Trait(poly_predicate) => {
-                    self.check_trait_ref(*poly_predicate.skip_binder());
+            match predicate.skip_binders() {
+                ty::PredicateAtom::Trait(trait_ref) => {
+                    self.check_trait_ref(trait_ref);
                 },
-                &ty::Predicate::Projection(poly_predicate) => {
+                ty::PredicateAtom::Projection(proj) => {
                     let tcx = self.ev.tcx;
-                    self.check_trait_ref(
-                        poly_predicate.skip_binder().projection_ty.trait_ref(tcx)
-                    );
+                    self.check_trait_ref(proj.projection_ty.trait_ref(tcx));
                 },
                 _ => (),
             };
@@ -684,15 +682,13 @@ impl<'a, 'tcx> TypePrivacyVisitor<'a, 'tcx> {
         let predicates = self.tcx.predicates_of(self.current_item);
         for predicate in &predicates.predicates {
             predicate.visit_with(self);
-            match predicate {
-                &ty::Predicate::Trait(poly_predicate) => {
-                    self.check_trait_ref(*poly_predicate.skip_binder());
+            match predicate.skip_binders() {
+                ty::PredicateAtom::Trait(trait_ref) => {
+                    self.check_trait_ref(trait_ref);
                 },
-                &ty::Predicate::Projection(poly_predicate) => {
+                ty::PredicateAtom::Projection(poly_predicate) => {
                     let tcx = self.tcx;
-                    self.check_trait_ref(
-                        poly_predicate.skip_binder().projection_ty.trait_ref(tcx)
-                    );
+                    self.check_trait_ref(poly_predicate.projection_ty.trait_ref(tcx));
                 },
                 _ => (),
             };
@@ -931,18 +927,17 @@ impl<'a, 'tcx> TypeVisitor<'tcx> for TypePrivacyVisitor<'a, 'tcx> {
             }
             ty::TyAnon(def_id, ..) => {
                 for predicate in &self.tcx.predicates_of(def_id).predicates {
-                    let trait_ref = match *predicate {
-                        ty::Predicate::Trait(ref poly_trait_predicate) => {
-                            Some(*poly_trait_predicate.skip_binder())
+                    let trait_ref = match predicate.skip_binders() {
+                        ty::PredicateAtom::Trait(trait_ref) => {
+                            Some(trait_ref)
                         }
-                        ty::Predicate::Projection(ref poly_projection_predicate) => {
-                            if poly_projection_predicate.skip_binder().ty.visit_with(self) {
+                        ty::PredicateAtom::Projection(projection_predicate) => {
+                            if projection_predicate.ty.visit_with(self) {
                                 return true;
                             }
-                            Some(poly_projection_predicate.skip_binder()
-                                                          .projection_ty.trait_ref(self.tcx))
+                            Some(projection_predicate.projection_ty.trait_ref(self.tcx))
                         }
-                        ty::Predicate::TypeOutlives(..) => None,
+                        ty::PredicateAtom::TypeOutlives(..) => None,
                         _ => bug!("unexpected predicate: {:?}", predicate),
                     };
                     if let Some(trait_ref) = trait_ref {
@@ -1344,15 +1339,11 @@ impl<'a, 'tcx: 'a> SearchInterfaceForPrivateItemsVisitor<'a, 'tcx> {
         let predicates = self.tcx.predicates_of(self.item_def_id);
         for predicate in &predicates.predicates {
             predicate.visit_with(self);
-            match predicate {
-                &ty::Predicate::Trait(poly_predicate) => {
-                    self.check_trait_ref(*poly_predicate.skip_binder());
-                },
-                &ty::Predicate::Projection(poly_predicate) => {
+            match predicate.skip_binders() {
+                ty::PredicateAtom::Trait(trait_ref) => self.check_trait_ref(trait_ref),
+                ty::PredicateAtom::Projection(predicate) => {
                     let tcx = self.tcx;
-                    self.check_trait_ref(
-                        poly_predicate.skip_binder().projection_ty.trait_ref(tcx)
-                    );
+                    self.check_trait_ref(predicate.projection_ty.trait_ref(tcx));
                 },
                 _ => (),
             };

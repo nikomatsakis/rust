@@ -13,7 +13,6 @@
 pub use self::LateBoundRegionConversionTime::*;
 pub use self::RegionVariableOrigin::*;
 pub use self::SubregionOrigin::*;
-pub use self::ValuePairs::*;
 pub use ty::IntVarValue;
 pub use self::freshen::TypeFreshener;
 pub use self::region_inference::{GenericKind, VerifyBound};
@@ -109,7 +108,7 @@ pub struct InferCtxt<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
 
     // the set of predicates on which errors have been reported, to
     // avoid reporting the same error twice.
-    pub reported_trait_errors: RefCell<FxHashMap<Span, Vec<ty::Predicate<'tcx>>>>,
+    pub reported_trait_errors: RefCell<FxHashMap<Span, Vec<ty::PredicateAtom<'tcx>>>>,
 
     // When an error occurs, we want to avoid reporting "derived"
     // errors that are due to this original failure. Normally, we
@@ -144,6 +143,7 @@ pub type SkolemizationMap<'tcx> = FxHashMap<ty::BoundRegion, ty::Region<'tcx>>;
 #[derive(Clone, Debug)]
 pub enum ValuePairs<'tcx> {
     Types(ExpectedFound<Ty<'tcx>>),
+    ProjectionTypes(ExpectedFound<ty::ProjectionTy<'tcx>>),
     TraitRefs(ExpectedFound<ty::TraitRef<'tcx>>),
     PolyTraitRefs(ExpectedFound<ty::PolyTraitRef<'tcx>>),
 }
@@ -868,24 +868,10 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         self.region_vars.make_subregion(origin, param_env, a, b);
     }
 
-    pub fn equality_predicate(&self,
-                              cause: &ObligationCause<'tcx>,
-                              param_env: ty::ParamEnv<'tcx>,
-                              predicate: &ty::PolyEquatePredicate<'tcx>)
-        -> InferResult<'tcx, ()>
-    {
-        self.commit_if_ok(|_snapshot| {
-            let (ty::EquatePredicate(a, b), param_env, _skol_map) =
-                self.skolemize_late_bound_regions(param_env, predicate);
-            let eqty_ok = self.at(cause, param_env).eq(b, a)?;
-            Ok(eqty_ok.unit())
-        })
-    }
-
     pub fn subtype_predicate(&self,
                              cause: &ObligationCause<'tcx>,
                              param_env: ty::ParamEnv<'tcx>,
-                             predicate: &ty::PolySubtypePredicate<'tcx>)
+                             predicate: ty::SubtypePredicate<'tcx>)
         -> Option<InferResult<'tcx, ()>>
     {
         // Subtle: it's ok to skip the binder here and resolve because
@@ -898,8 +884,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         // micro-optimization. Naturally I could not
         // resist. -nmatsakis
         let two_unbound_type_vars = {
-            let a = self.shallow_resolve(predicate.skip_binder().a);
-            let b = self.shallow_resolve(predicate.skip_binder().b);
+            let a = self.shallow_resolve(predicate.a);
+            let b = self.shallow_resolve(predicate.b);
             a.is_ty_var() && b.is_ty_var()
         };
 
@@ -909,9 +895,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         }
 
         Some(self.commit_if_ok(|_snapshot| {
-            let (ty::SubtypePredicate { a_is_expected, a, b}, param_env, _skol_map) =
-                self.skolemize_late_bound_regions(param_env, predicate);
-
+            let ty::SubtypePredicate { a_is_expected, a, b} = predicate;
             let ok = self.at(cause, param_env).sub_exp(a_is_expected, a, b)?;
             Ok(ok.unit())
         }))
@@ -920,11 +904,10 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     pub fn region_outlives_predicate(&self,
                                      cause: &traits::ObligationCause<'tcx>,
                                      param_env: ty::ParamEnv<'tcx>,
-                                     predicate: &ty::PolyRegionOutlivesPredicate<'tcx>)
+                                     predicate: ty::RegionOutlivesPredicate<'tcx>)
                                      -> UnitResult<'tcx>
     {
-        let (ty::OutlivesPredicate(r_a, r_b), _param_env, _skol_map) =
-            self.skolemize_late_bound_regions(param_env, predicate);
+        let ty::OutlivesPredicate(r_a, r_b) = predicate;
         let origin =
             SubregionOrigin::from_obligation_cause(cause,
                                                    || RelateRegionParamBound(cause.span));
@@ -1328,14 +1311,14 @@ impl<'a, 'gcx, 'tcx> TypeTrace<'tcx> {
                  -> TypeTrace<'tcx> {
         TypeTrace {
             cause: cause.clone(),
-            values: Types(ExpectedFound::new(a_is_expected, a, b))
+            values: ValuePairs::Types(ExpectedFound::new(a_is_expected, a, b))
         }
     }
 
     pub fn dummy(tcx: TyCtxt<'a, 'gcx, 'tcx>) -> TypeTrace<'tcx> {
         TypeTrace {
             cause: ObligationCause::dummy(),
-            values: Types(ExpectedFound {
+            values: ValuePairs::Types(ExpectedFound {
                 expected: tcx.types.err,
                 found: tcx.types.err,
             })
@@ -1425,21 +1408,21 @@ impl RegionVariableOrigin {
 impl<'tcx> TypeFoldable<'tcx> for ValuePairs<'tcx> {
     fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
         match *self {
-            ValuePairs::Types(ref ef) => {
-                ValuePairs::Types(ef.fold_with(folder))
-            }
-            ValuePairs::TraitRefs(ref ef) => {
-                ValuePairs::TraitRefs(ef.fold_with(folder))
-            }
-            ValuePairs::PolyTraitRefs(ref ef) => {
-                ValuePairs::PolyTraitRefs(ef.fold_with(folder))
-            }
+            ValuePairs::Types(ref ef) =>
+                ValuePairs::Types(ef.fold_with(folder)),
+            ValuePairs::ProjectionTypes(ref ef) =>
+                ValuePairs::ProjectionTypes(ef.fold_with(folder)),
+            ValuePairs::TraitRefs(ref ef) =>
+                ValuePairs::TraitRefs(ef.fold_with(folder)),
+            ValuePairs::PolyTraitRefs(ref ef) =>
+                ValuePairs::PolyTraitRefs(ef.fold_with(folder)),
         }
     }
 
     fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
         match *self {
             ValuePairs::Types(ref ef) => ef.visit_with(visitor),
+            ValuePairs::ProjectionTypes(ref ef) => ef.visit_with(visitor),
             ValuePairs::TraitRefs(ref ef) => ef.visit_with(visitor),
             ValuePairs::PolyTraitRefs(ref ef) => ef.visit_with(visitor),
         }

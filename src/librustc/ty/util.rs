@@ -372,7 +372,8 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     pub fn required_region_bounds(self,
                                   erased_self_ty: Ty<'tcx>,
                                   predicates: Vec<ty::Predicate<'tcx>>)
-                                  -> Vec<ty::Region<'tcx>>    {
+                                  -> Vec<ty::Region<'tcx>>
+    {
         debug!("required_region_bounds(erased_self_ty={:?}, predicates={:?})",
                erased_self_ty,
                predicates);
@@ -381,17 +382,18 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
 
         traits::elaborate_predicates(self, predicates)
             .filter_map(|predicate| {
-                match predicate {
-                    ty::Predicate::Projection(..) |
-                    ty::Predicate::Trait(..) |
-                    ty::Predicate::Subtype(..) |
-                    ty::Predicate::WellFormed(..) |
-                    ty::Predicate::ObjectSafe(..) |
-                    ty::Predicate::ClosureKind(..) |
-                    ty::Predicate::RegionOutlives(..) => {
+                // We ignore late-bound regions below, so we can skip binder:
+                match predicate.skip_binders() {
+                    ty::PredicateAtom::Projection(..) |
+                    ty::PredicateAtom::Trait(..) |
+                    ty::PredicateAtom::Subtype(..) |
+                    ty::PredicateAtom::WellFormed(..) |
+                    ty::PredicateAtom::ObjectSafe(..) |
+                    ty::PredicateAtom::ClosureKind(..) |
+                    ty::PredicateAtom::RegionOutlives(..) => {
                         None
                     }
-                    ty::Predicate::TypeOutlives(ty::Binder(ty::OutlivesPredicate(t, r))) => {
+                    ty::PredicateAtom::TypeOutlives(ty::OutlivesPredicate(t, r)) => {
                         // Search for a bound of the form `erased_self_ty
                         // : 'a`, but be wary of something like `for<'a>
                         // erased_self_ty : 'a` (we interpret a

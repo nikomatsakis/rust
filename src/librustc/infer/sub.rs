@@ -11,7 +11,7 @@
 use super::SubregionOrigin;
 use super::combine::{CombineFields, RelationDir};
 
-use traits::Obligation;
+use traits::PredicateObligation;
 use ty::{self, Ty, TyCtxt};
 use ty::TyVar;
 use ty::fold::TypeFoldable;
@@ -97,15 +97,14 @@ impl<'combine, 'infcx, 'gcx, 'tcx> TypeRelation<'infcx, 'gcx, 'tcx>
                 // is important to the occurs check later on.
                 infcx.type_variables.borrow_mut().sub(a_vid, b_vid);
                 self.fields.obligations.push(
-                    Obligation::new(
+                    PredicateObligation::from(
                         self.fields.trace.cause.clone(),
                         self.param_env,
-                        ty::Predicate::Subtype(
-                            ty::Binder(ty::SubtypePredicate {
-                                a_is_expected: self.a_is_expected,
-                                a,
-                                b,
-                            }))));
+                        ty::SubtypePredicate {
+                            a_is_expected: self.a_is_expected,
+                            a,
+                            b,
+                        }));
 
                 Ok(a)
             }

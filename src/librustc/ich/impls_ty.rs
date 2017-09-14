@@ -200,35 +200,51 @@ for ty::OutlivesPredicate<A, B>
 impl_stable_hash_for!(struct ty::ProjectionPredicate<'tcx> { projection_ty, ty });
 impl_stable_hash_for!(struct ty::ProjectionTy<'tcx> { substs, item_def_id });
 
-
 impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for ty::Predicate<'gcx> {
     fn hash_stable<W: StableHasherResult>(&self,
                                           hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
                                           hasher: &mut StableHasher<W>) {
         mem::discriminant(self).hash_stable(hcx, hasher);
         match *self {
-            ty::Predicate::Trait(ref pred) => {
+            ty::Predicate::Poly(ref a) => {
+                a.hash_stable(hcx, hasher);
+            }
+
+            ty::Predicate::Atom(ref a) => {
+                a.hash_stable(hcx, hasher);
+            }
+        }
+    }
+}
+
+impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for ty::PredicateAtom<'gcx> {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        mem::discriminant(self).hash_stable(hcx, hasher);
+        match *self {
+            ty::PredicateAtom::Trait(ref pred) => {
                 pred.hash_stable(hcx, hasher);
             }
-            ty::Predicate::Subtype(ref pred) => {
+            ty::PredicateAtom::Subtype(ref pred) => {
                 pred.hash_stable(hcx, hasher);
             }
-            ty::Predicate::RegionOutlives(ref pred) => {
+            ty::PredicateAtom::RegionOutlives(ref pred) => {
                 pred.hash_stable(hcx, hasher);
             }
-            ty::Predicate::TypeOutlives(ref pred) => {
+            ty::PredicateAtom::TypeOutlives(ref pred) => {
                 pred.hash_stable(hcx, hasher);
             }
-            ty::Predicate::Projection(ref pred) => {
+            ty::PredicateAtom::Projection(ref pred) => {
                 pred.hash_stable(hcx, hasher);
             }
-            ty::Predicate::WellFormed(ty) => {
+            ty::PredicateAtom::WellFormed(ty) => {
                 ty.hash_stable(hcx, hasher);
             }
-            ty::Predicate::ObjectSafe(def_id) => {
+            ty::PredicateAtom::ObjectSafe(def_id) => {
                 def_id.hash_stable(hcx, hasher);
             }
-            ty::Predicate::ClosureKind(def_id, closure_kind) => {
+            ty::PredicateAtom::ClosureKind(def_id, closure_kind) => {
                 def_id.hash_stable(hcx, hasher);
                 closure_kind.hash_stable(hcx, hasher);
             }

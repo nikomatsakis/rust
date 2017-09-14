@@ -25,14 +25,15 @@ use super::VtableImplData;
 use super::util;
 
 use hir::def_id::DefId;
-use infer::{InferCtxt, InferOk, LateBoundRegionConversionTime};
+use infer::{InferCtxt, InferOk, InferResult, LateBoundRegionConversionTime};
 use infer::type_variable::TypeVariableOrigin;
 use rustc_data_structures::snapshot_map::{Snapshot, SnapshotMap};
 use syntax::ast;
 use syntax::symbol::Symbol;
-use ty::subst::Subst;
 use ty::{self, ToPredicate, Ty, TyCtxt};
+use ty::error::TypeError;
 use ty::fold::{TypeFoldable, TypeFolder};
+use ty::subst::Subst;
 use util::common::FN_OUTPUT_NAME;
 
 /// Depending on the stage of compilation, we want projection to be
@@ -77,9 +78,6 @@ pub enum Reveal {
     All,
 }
 
-pub type PolyProjectionObligation<'tcx> =
-    Obligation<'tcx, ty::PolyProjectionPredicate<'tcx>>;
-
 pub type ProjectionObligation<'tcx> =
     Obligation<'tcx, ty::ProjectionPredicate<'tcx>>;
 
@@ -120,35 +118,10 @@ struct ProjectionTyCandidateSet<'tcx> {
 
 /// Evaluates constraints of the form:
 ///
-///     for<...> <T as Trait>::U == V
-///
-/// If successful, this may result in additional obligations. Also returns
-/// the projection cache key used to track these additional obligations.
-pub fn poly_project_and_unify_type<'cx, 'gcx, 'tcx>(
-    selcx: &mut SelectionContext<'cx, 'gcx, 'tcx>,
-    obligation: &PolyProjectionObligation<'tcx>)
-    -> Result<Option<Vec<PredicateObligation<'tcx>>>,
-              MismatchedProjectionTypes<'tcx>>
-{
-    debug!("poly_project_and_unify_type(obligation={:?})",
-           obligation);
-
-    let infcx = selcx.infcx();
-    infcx.commit_if_ok(|_snapshot| {
-        let (skol_predicate, param_env, _skol_map) =
-            infcx.skolemize_late_bound_regions(obligation.param_env, &obligation.predicate);
-
-        let skol_obligation = obligation.with(skol_predicate).with_env(param_env);
-        project_and_unify_type(selcx, &skol_obligation)
-    })
-}
-
-/// Evaluates constraints of the form:
-///
 ///     <T as Trait>::U == V
 ///
 /// If successful, this may result in additional obligations.
-fn project_and_unify_type<'cx, 'gcx, 'tcx>(
+pub fn project_and_unify_type<'cx, 'gcx, 'tcx>(
     selcx: &mut SelectionContext<'cx, 'gcx, 'tcx>,
     obligation: &ProjectionObligation<'tcx>)
     -> Result<Option<Vec<PredicateObligation<'tcx>>>,
@@ -582,7 +555,7 @@ fn prune_cache_value_obligations<'a, 'gcx, 'tcx>(infcx: &'a InferCtxt<'a, 'gcx, 
     let mut obligations: Vec<_> =
         result.obligations
               .iter()
-              .filter(|obligation| match obligation.predicate {
+              .filter(|obligation| match obligation.predicate.skip_binders() {
                   // We found a `T: Foo<X = U>` predicate, let's check
                   // if `U` references any unresolved type
                   // variables. In principle, we only care if this
@@ -592,8 +565,8 @@ fn prune_cache_value_obligations<'a, 'gcx, 'tcx>(infcx: &'a InferCtxt<'a, 'gcx, 
                   // indirect obligations (e.g., we project to `?0`,
                   // but we have `T: Foo<X = ?1>` and `?1: Bar<X =
                   // ?0>`).
-                  ty::Predicate::Projection(ref data) =>
-                      !infcx.any_unresolved_type_vars(&data.ty()),
+                  ty::PredicateAtom::Projection(ref data) =>
+                      !infcx.any_unresolved_type_vars(&data.ty),
 
                   // We are only interested in `T: Foo<X = U>` predicates, whre
                   // `U` references one of `unresolved_type_vars`. =)
@@ -752,7 +725,6 @@ fn project_type<'cx, 'gcx, 'tcx>(
 
     assemble_candidates_from_param_env(selcx,
                                        obligation,
-                                       obligation_trait_ref,
                                        &mut candidates);
 
     assemble_candidates_from_trait_def(selcx,
@@ -839,13 +811,11 @@ fn project_type<'cx, 'gcx, 'tcx>(
 fn assemble_candidates_from_param_env<'cx, 'gcx, 'tcx>(
     selcx: &mut SelectionContext<'cx, 'gcx, 'tcx>,
     obligation: &ProjectionTyObligation<'tcx>,
-    obligation_trait_ref: ty::TraitRef<'tcx>,
     candidate_set: &mut ProjectionTyCandidateSet<'tcx>)
 {
     debug!("assemble_candidates_from_param_env(..)");
     assemble_candidates_from_predicates(selcx,
                                         obligation,
-                                        obligation_trait_ref,
                                         candidate_set,
                                         ProjectionTyCandidate::ParamEnv,
                                         obligation.param_env.caller_bounds.iter().cloned());
@@ -891,7 +861,6 @@ fn assemble_candidates_from_trait_def<'cx, 'gcx, 'tcx>(
     let bounds = elaborate_predicates(tcx, bounds.predicates);
     assemble_candidates_from_predicates(selcx,
                                         obligation,
-                                        obligation_trait_ref,
                                         candidate_set,
                                         ProjectionTyCandidate::TraitDef,
                                         bounds)
@@ -900,7 +869,6 @@ fn assemble_candidates_from_trait_def<'cx, 'gcx, 'tcx>(
 fn assemble_candidates_from_predicates<'cx, 'gcx, 'tcx, I>(
     selcx: &mut SelectionContext<'cx, 'gcx, 'tcx>,
     obligation: &ProjectionTyObligation<'tcx>,
-    obligation_trait_ref: ty::TraitRef<'tcx>,
     candidate_set: &mut ProjectionTyCandidateSet<'tcx>,
     ctor: fn(ty::PolyProjectionPredicate<'tcx>) -> ProjectionTyCandidate<'tcx>,
     env_predicates: I)
@@ -909,37 +877,77 @@ fn assemble_candidates_from_predicates<'cx, 'gcx, 'tcx, I>(
     debug!("assemble_candidates_from_predicates(obligation={:?})",
            obligation);
     let infcx = selcx.infcx();
-    for predicate in env_predicates {
-        debug!("assemble_candidates_from_predicates: predicate={:?}",
-               predicate);
-        match predicate {
-            ty::Predicate::Projection(ref data) => {
-                let same_def_id =
-                    data.0.projection_ty.item_def_id == obligation.predicate.item_def_id;
 
-                let is_match = same_def_id && infcx.probe(|_| {
-                    let data_poly_trait_ref =
-                        data.to_poly_trait_ref(infcx.tcx);
-                    infcx.at(&obligation.cause, obligation.param_env)
-                         .instantiable_as(data_poly_trait_ref, obligation_trait_ref)
-                         .map(|InferOk { obligations: _, value: () }| {
-                             // FIXME(#32730) -- do we need to take obligations
-                             // into account in any way? At the moment, no.
-                         })
-                         .is_ok()
-                });
-
-                debug!("assemble_candidates_from_predicates: candidate={:?} \
-                                                             is_match={} same_def_id={}",
-                       data, is_match, same_def_id);
-
-                if is_match {
-                    candidate_set.vec.push(ctor(data.clone()));
-                }
+    let env_predicates = env_predicates.into_iter()
+                                       .filter_map(|p| filter_env_predicate(obligation, p))
+                                       .filter(|&p| can_unify_env_predicate(infcx, obligation, p));
+    for env_predicate in env_predicates {
+        infcx.probe(|_| {
+            if unify_env_predicate(infcx, obligation, env_predicate).is_ok() {
+                debug!("assemble_candidates_from_predicates: env_predicate={:?} matched",
+                       env_predicate);
+                candidate_set.vec.push(ctor(env_predicate));
             }
-            _ => { }
+        });
+    }
+}
+
+/// Quickly tests whether a given predicate from the environment MAY
+/// satisfy `obligation`. If so, returns `Some(_)` with a
+/// poly-projection.
+fn filter_env_predicate<'tcx>(
+    obligation: &ProjectionTyObligation<'tcx>,
+    env_predicate: ty::Predicate<'tcx>)
+    -> Option<ty::PolyProjectionPredicate<'tcx>>
+{
+    if let Some(env_projection) = env_predicate.poly_projection() {
+        if obligation.predicate.item_def_id == env_projection.item_def_id() {
+            return Some(env_projection);
         }
     }
+    None
+}
+
+/// Tests whether we can unify `env_predicate` to satisfy `obligation`.
+fn can_unify_env_predicate<'cx, 'gcx, 'tcx>(
+    infcx: &InferCtxt<'cx, 'gcx, 'tcx>,
+    obligation: &ProjectionTyObligation<'tcx>,
+    env_projection: ty::PolyProjectionPredicate<'tcx>)
+    -> bool
+{
+    infcx.probe(|_| unify_env_predicate(infcx, obligation, env_projection).is_ok())
+}
+
+/// Uses `env_predicate` to satisfy `obligation`, if possible.
+fn unify_env_predicate<'cx, 'gcx, 'tcx>(
+    infcx: &InferCtxt<'cx, 'gcx, 'tcx>,
+    obligation: &ProjectionTyObligation<'tcx>,
+    env_projection: ty::PolyProjectionPredicate<'tcx>)
+    -> InferResult<'tcx, Ty<'tcx>>
+{
+    // Quick sanity check.
+    if obligation.predicate.item_def_id != env_projection.item_def_id() {
+        return Err(TypeError::Mismatch);
+    }
+
+    // The `env_projection` may be wrapped in binders. Instantiate
+    // those binders with variables and then extract the results.
+    let (ty::ProjectionPredicate { projection_ty: env_projection_ty, ty: env_ty }, _) =
+        infcx.replace_late_bound_regions_with_fresh_var(
+            obligation.cause.span,
+            obligation.param_env.universe,
+            LateBoundRegionConversionTime::HigherRankedType,
+            &env_projection);
+
+    // In the environment we have `<T0 as Foo>::Bar == U`.  We are
+    // normalizing `<T1 as Foo>::Bar`. So unify `<T0 as Foo>::Bar` and
+    // `<T1 as Foo>::Bar` (really, it's just the input types that
+    // matter; the trait/associated item have already been checked by
+    // `fast_reject_env_predicate`). Once that is done, we can return
+    // `U` as our result.
+    let InferOk { value: _, obligations } = infcx.at(&obligation.cause, obligation.param_env)
+                                                 .eq(env_projection_ty, obligation.predicate)?;
+    Ok(InferOk { value: env_ty, obligations })
 }
 
 fn assemble_candidates_from_impls<'cx, 'gcx, 'tcx>(
@@ -1152,6 +1160,7 @@ fn confirm_object_candidate<'cx, 'gcx, 'tcx>(
     obligation_trait_ref: ty::TraitRef<'tcx>)
     -> Progress<'tcx>
 {
+    let infcx = selcx.infcx();
     let self_ty = obligation_trait_ref.self_ty();
     let object_ty = selcx.infcx().shallow_resolve(self_ty);
     debug!("confirm_object_candidate(object_ty={:?})",
@@ -1165,49 +1174,26 @@ fn confirm_object_candidate<'cx, 'gcx, 'tcx>(
                 object_ty)
         }
     };
-    let env_predicates = data.projection_bounds().map(|p| {
-        p.with_self_ty(selcx.tcx(), object_ty).to_predicate()
-    }).collect();
-    let env_predicate = {
-        let env_predicates = elaborate_predicates(selcx.tcx(), env_predicates);
 
-        // select only those projections that are actually projecting an
-        // item with the correct name
-        let env_predicates = env_predicates.filter_map(|p| match p {
-            ty::Predicate::Projection(data) =>
-                if data.0.projection_ty.item_def_id == obligation.predicate.item_def_id {
-                    Some(data)
-                } else {
-                    None
-                },
-            _ => None
-        });
+    let unelaborated_env_predicates: Vec<_> =
+        data.projection_bounds()
+            .map(|p| p.with_self_ty(selcx.tcx(), object_ty).to_predicate())
+            .collect();
 
-        // select those with a relevant trait-ref
-        let mut env_predicates = env_predicates.filter(|data| {
-            let data_poly_trait_ref = data.to_poly_trait_ref(selcx.tcx());
-            selcx.infcx().probe(|_| {
-                selcx.infcx().at(&obligation.cause, obligation.param_env)
-                             .instantiable_as(data_poly_trait_ref, obligation_trait_ref)
-                             .is_ok()
-            })
-        });
+    // select on those predicates that can be unified
+    let mut env_predicates =
+        elaborate_predicates(selcx.tcx(), unelaborated_env_predicates)
+            .filter_map(|p| filter_env_predicate(obligation, p))
+            .filter(|&p| can_unify_env_predicate(infcx, obligation, p));
 
-        // select the first matching one; there really ought to be one or
-        // else the object type is not WF, since an object type should
-        // include all of its projections explicitly
-        match env_predicates.next() {
-            Some(env_predicate) => env_predicate,
-            None => {
-                debug!("confirm_object_candidate: no env-predicate \
-                        found in object type `{:?}`; ill-formed",
-                       object_ty);
-                return Progress::error(selcx.tcx());
-            }
-        }
-    };
-
-    confirm_param_env_candidate(selcx, obligation, env_predicate)
+    // take the first one:
+    if let Some(env_predicate) = env_predicates.next() {
+        confirm_param_env_candidate(selcx, obligation, env_predicate)
+    } else {
+        debug!("confirm_object_candidate: no env-predicate found in object type `{:?}`; ill-formed",
+               object_ty);
+        return Progress::error(selcx.tcx());
+    }
 }
 
 fn confirm_generator_candidate<'cx, 'gcx, 'tcx>(
@@ -1355,38 +1341,24 @@ fn confirm_callable_candidate<'cx, 'gcx, 'tcx>(
 fn confirm_param_env_candidate<'cx, 'gcx, 'tcx>(
     selcx: &mut SelectionContext<'cx, 'gcx, 'tcx>,
     obligation: &ProjectionTyObligation<'tcx>,
-    poly_cache_entry: ty::PolyProjectionPredicate<'tcx>)
+    env_projection: ty::PolyProjectionPredicate<'tcx>)
     -> Progress<'tcx>
 {
-    let infcx = selcx.infcx();
-    let cause = &obligation.cause;
-    let param_env = obligation.param_env;
-
-    let (cache_entry, _skol_map) =
-        infcx.replace_late_bound_regions_with_fresh_var(
-            cause.span,
-            param_env.universe,
-            LateBoundRegionConversionTime::HigherRankedType,
-            &poly_cache_entry);
-
-    let cache_trait_ref = cache_entry.projection_ty.trait_ref(infcx.tcx);
-    let obligation_trait_ref = obligation.predicate.trait_ref(infcx.tcx);
-    match infcx.at(cause, param_env).eq(cache_trait_ref, obligation_trait_ref) {
-        Ok(InferOk { value: _, obligations }) => {
+    match unify_env_predicate(selcx.infcx(), obligation, env_projection) {
+        Ok(InferOk { value, obligations }) =>
             Progress {
-                ty: cache_entry.ty,
+                ty: value,
                 obligations,
-            }
-        }
-        Err(e) => {
+            },
+
+        Err(e) =>
             span_bug!(
                 obligation.cause.span,
                 "Failed to unify obligation `{:?}` \
                  with poly_projection `{:?}`: {:?}",
                 obligation,
-                poly_cache_entry,
-                e);
-        }
+                env_projection,
+                e),
     }
 }
 
@@ -1513,21 +1485,24 @@ pub struct ProjectionCacheKey<'tcx> {
 }
 
 impl<'cx, 'gcx, 'tcx> ProjectionCacheKey<'tcx> {
-    pub fn from_poly_projection_predicate(selcx: &mut SelectionContext<'cx, 'gcx, 'tcx>,
-                                          predicate: &ty::PolyProjectionPredicate<'tcx>)
-                                          -> Option<Self>
+    pub fn from_projection_predicate(selcx: &mut SelectionContext<'cx, 'gcx, 'tcx>,
+                                     predicate: &ty::ProjectionPredicate<'tcx>)
+                                     -> Option<Self>
     {
         let infcx = selcx.infcx();
         // We don't do cross-snapshot caching of obligations with escaping regions,
         // so there's no cache key to use
-        infcx.tcx.no_late_bound_regions(&predicate)
-            .map(|predicate| ProjectionCacheKey {
+        if !predicate.has_escaping_regions() {
+            Some(ProjectionCacheKey {
                 // We don't attempt to match up with a specific type-variable state
                 // from a specific call to `opt_normalize_projection_type` - if
                 // there's no precise match, the original cache entry is "stranded"
                 // anyway.
                 ty: infcx.resolve_type_vars_if_possible(&predicate.projection_ty)
             })
+        } else {
+            None
+        }
     }
 }
 

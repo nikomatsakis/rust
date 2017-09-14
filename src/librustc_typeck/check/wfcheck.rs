@@ -271,12 +271,11 @@ impl<'a, 'gcx> CheckTypeWellFormedVisitor<'a, 'gcx> {
         // traits.
         let has_predicates =
             predicates.predicates.iter().any(|predicate| {
-                match predicate {
-                    &ty::Predicate::Trait(ref poly_trait_ref) => {
-                        let self_ty = poly_trait_ref.0.self_ty();
-                        !(self_ty.is_self() && poly_trait_ref.def_id() == trait_def_id)
-                    },
-                    _ => true,
+                if let Some(poly_trait_ref) = predicate.poly_trait() {
+                    let self_ty = poly_trait_ref.skip_binder().self_ty();
+                    !(self_ty.is_self() && poly_trait_ref.def_id() == trait_def_id)
+                } else {
+                    true
                 }
             });
 
@@ -381,7 +380,7 @@ impl<'a, 'gcx> CheckTypeWellFormedVisitor<'a, 'gcx> {
                         ty::wf::trait_obligations(fcx,
                                                   fcx.param_env,
                                                   fcx.body_id,
-                                                  &trait_ref,
+                                                  trait_ref,
                                                   ast_trait_ref.path.span);
                     for obligation in obligations {
                         fcx.register_predicate(obligation);

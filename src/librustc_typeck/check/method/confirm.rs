@@ -546,15 +546,10 @@ impl<'a, 'gcx, 'tcx> ConfirmContext<'a, 'gcx, 'tcx> {
         };
 
         traits::elaborate_predicates(self.tcx, predicates.predicates.clone())
-            .filter_map(|predicate| {
-                match predicate {
-                    ty::Predicate::Trait(trait_pred) if trait_pred.def_id() == sized_def_id =>
-                        Some(trait_pred),
-                    _ => None,
-                }
-            })
+            .filter_map(|p| p.poly_trait())
+            .filter(|p| p.def_id() == sized_def_id)
             .any(|trait_pred| {
-                match trait_pred.0.self_ty().sty {
+                match trait_pred.skip_binder().self_ty().sty {
                     ty::TyDynamic(..) => true,
                     _ => false,
                 }

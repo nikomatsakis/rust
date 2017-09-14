@@ -163,15 +163,14 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 debug!("deduce_expectations_from_obligations: obligation.predicate={:?}",
                        obligation.predicate);
 
-                match obligation.predicate {
+                if let ty::PredicateAtom::Projection(proj) = obligation.predicate {
                     // Given a Projection predicate, we can potentially infer
                     // the complete signature.
-                    ty::Predicate::Projection(ref proj_predicate) => {
-                        let trait_ref = proj_predicate.to_poly_trait_ref(self.tcx);
-                        self.self_type_matches_expected_vid(trait_ref, expected_vid)
-                            .and_then(|_| self.deduce_sig_from_projection(proj_predicate))
-                    }
-                    _ => None,
+                    let trait_ref = proj.to_trait_ref(self.tcx);
+                    self.self_type_matches_expected_vid(trait_ref, expected_vid)
+                        .and_then(|_| self.deduce_sig_from_projection(proj))
+                } else {
+                    None
                 }
             })
             .next();
@@ -185,13 +184,13 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             .map(|obligation| &obligation.obligation)
             .filter_map(|obligation| {
                 let opt_trait_ref = match obligation.predicate {
-                    ty::Predicate::Projection(ref data) => Some(data.to_poly_trait_ref(self.tcx)),
-                    ty::Predicate::Trait(data) => Some(data),
-                    ty::Predicate::Subtype(..) => None,
-                    ty::Predicate::RegionOutlives(..) => None,
-                    ty::Predicate::TypeOutlives(..) => None,
-                    ty::Predicate::WellFormed(..) => None,
-                    ty::Predicate::ObjectSafe(..) => None,
+                    ty::PredicateAtom::Projection(proj) => Some(proj.to_trait_ref(self.tcx)),
+                    ty::PredicateAtom::Trait(trait_ref) => Some(trait_ref),
+                    ty::PredicateAtom::Subtype(..) => None,
+                    ty::PredicateAtom::RegionOutlives(..) => None,
+                    ty::PredicateAtom::TypeOutlives(..) => None,
+                    ty::PredicateAtom::WellFormed(..) => None,
+                    ty::PredicateAtom::ObjectSafe(..) => None,
 
                     // NB: This predicate is created by breaking down a
                     // `ClosureType: FnFoo()` predicate, where
@@ -201,10 +200,11 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                     // this closure yet; this is exactly why the other
                     // code is looking for a self type of a unresolved
                     // inference variable.
-                    ty::Predicate::ClosureKind(..) => None,
+                    ty::PredicateAtom::ClosureKind(..) => None,
                 };
-                opt_trait_ref.and_then(|tr| self.self_type_matches_expected_vid(tr, expected_vid))
-                    .and_then(|tr| self.tcx.lang_items().fn_trait_kind(tr.def_id()))
+                opt_trait_ref
+                    .and_then(|tr| self.self_type_matches_expected_vid(tr, expected_vid))
+                    .and_then(|tr| self.tcx.lang_items().fn_trait_kind(tr.def_id))
             })
             .fold(None,
                   |best, cur| Some(best.map_or(cur, |best| cmp::min(best, cur))));
@@ -212,8 +212,8 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         (expected_sig, expected_kind)
     }
 
-    /// Given a projection like "<F as Fn(X)>::Result == Y", we can deduce
-    /// everything we need to know about a closure.
+    /// Given a projection like "<F as Fn(X)>::Result == Y", we can
+    /// deduce everything we need to know about a closure.
     fn deduce_sig_from_projection(&self,
                                   projection: &ty::PolyProjectionPredicate<'tcx>)
                                   -> Option<ty::FnSig<'tcx>> {
@@ -256,9 +256,9 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
     }
 
     fn self_type_matches_expected_vid(&self,
-                                      trait_ref: ty::PolyTraitRef<'tcx>,
+                                      trait_ref: ty::TraitRef<'tcx>,
                                       expected_vid: ty::TyVid)
-                                      -> Option<ty::PolyTraitRef<'tcx>> {
+                                      -> Option<ty::TraitRef<'tcx>> {
         let self_ty = self.shallow_resolve(trait_ref.self_ty());
         debug!("self_type_matches_expected_vid(trait_ref={:?}, self_ty={:?})",
                trait_ref,

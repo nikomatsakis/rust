@@ -139,17 +139,21 @@ impl<'tcx> FreeRegionMap<'tcx> {
                                                predicates: &[ty::Predicate<'tcx>]) {
         debug!("relate_free_regions_from_predicates(predicates={:?})", predicates);
         for predicate in predicates {
-            match *predicate {
-                ty::Predicate::Projection(..) |
-                ty::Predicate::Trait(..) |
-                ty::Predicate::Subtype(..) |
-                ty::Predicate::WellFormed(..) |
-                ty::Predicate::ObjectSafe(..) |
-                ty::Predicate::ClosureKind(..) |
-                ty::Predicate::TypeOutlives(..) => {
+            // Ok to skip binders because we are only looking for free
+            // regions, which are not late bound.
+            let predicate_atom = predicate.skip_binders();
+
+            match predicate_atom {
+                ty::PredicateAtom::Projection(..) |
+                ty::PredicateAtom::Trait(..) |
+                ty::PredicateAtom::Subtype(..) |
+                ty::PredicateAtom::WellFormed(..) |
+                ty::PredicateAtom::ObjectSafe(..) |
+                ty::PredicateAtom::ClosureKind(..) |
+                ty::PredicateAtom::TypeOutlives(..) => {
                     // No region bounds here
                 }
-                ty::Predicate::RegionOutlives(ty::Binder(ty::OutlivesPredicate(r_a, r_b))) => {
+                ty::PredicateAtom::RegionOutlives(ty::OutlivesPredicate(r_a, r_b)) => {
                     self.relate_regions(r_b, r_a);
                 }
             }

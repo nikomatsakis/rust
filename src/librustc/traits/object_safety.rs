@@ -155,22 +155,21 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         predicates
             .predicates
             .into_iter()
-            .map(|predicate| predicate.subst_supertrait(self, &trait_ref))
+            .map(|predicate| predicate.subst_supertrait(self, trait_ref))
             .any(|predicate| {
-                match predicate {
-                    ty::Predicate::Trait(ref data) => {
+                // We can safely skip binders because `Self` type would not be bound by them.
+                match predicate.skip_binders() {
+                    ty::PredicateAtom::Trait(ref data) =>
                         // In the case of a trait predicate, we can skip the "self" type.
-                        data.skip_binder().input_types().skip(1).any(|t| t.has_self_ty())
-                    }
-                    ty::Predicate::Projection(..) |
-                    ty::Predicate::WellFormed(..) |
-                    ty::Predicate::ObjectSafe(..) |
-                    ty::Predicate::TypeOutlives(..) |
-                    ty::Predicate::RegionOutlives(..) |
-                    ty::Predicate::ClosureKind(..) |
-                    ty::Predicate::Subtype(..) => {
-                        false
-                    }
+                        data.input_types().skip(1).any(|t| t.has_self_ty()),
+                    ty::PredicateAtom::Projection(..) |
+                    ty::PredicateAtom::WellFormed(..) |
+                    ty::PredicateAtom::ObjectSafe(..) |
+                    ty::PredicateAtom::TypeOutlives(..) |
+                    ty::PredicateAtom::RegionOutlives(..) |
+                    ty::PredicateAtom::ClosureKind(..) |
+                    ty::PredicateAtom::Subtype(..) =>
+                        false,
                 }
             })
     }
@@ -182,7 +181,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     fn generics_require_sized_self(self, def_id: DefId) -> bool {
         let sized_def_id = match self.lang_items().sized_trait() {
             Some(def_id) => def_id,
-            None => { return false; /* No Sized trait, can't require it! */ }
+            None => return false, // No Sized trait, can't require it!
         };
 
         // Search for a predicate like `Self : Sized` amongst the trait bounds.
@@ -190,20 +189,18 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         let predicates = predicates.instantiate_identity(self).predicates;
         elaborate_predicates(self, predicates)
             .any(|predicate| {
-                match predicate {
-                    ty::Predicate::Trait(ref trait_pred) if trait_pred.def_id() == sized_def_id => {
-                        trait_pred.0.self_ty().is_self()
-                    }
-                    ty::Predicate::Projection(..) |
-                    ty::Predicate::Trait(..) |
-                    ty::Predicate::Subtype(..) |
-                    ty::Predicate::RegionOutlives(..) |
-                    ty::Predicate::WellFormed(..) |
-                    ty::Predicate::ObjectSafe(..) |
-                    ty::Predicate::ClosureKind(..) |
-                    ty::Predicate::TypeOutlives(..) => {
-                        false
-                    }
+                // We can safely skip binders because `Self` type would not be bound by them.
+                match predicate.skip_binders() {
+                    ty::PredicateAtom::Trait(trait_ref) =>
+                        trait_ref.def_id == sized_def_id && trait_ref.self_ty().is_self(),
+                    ty::PredicateAtom::Projection(..) |
+                    ty::PredicateAtom::Subtype(..) |
+                    ty::PredicateAtom::RegionOutlives(..) |
+                    ty::PredicateAtom::WellFormed(..) |
+                    ty::PredicateAtom::ObjectSafe(..) |
+                    ty::PredicateAtom::ClosureKind(..) |
+                    ty::PredicateAtom::TypeOutlives(..) =>
+                        false,
                 }
             })
     }

@@ -45,7 +45,7 @@ use ty::{self, Ty, TyCtxt};
 use ty::error::TypeError;
 use ty::relate::{self, Relate, RelateResult, TypeRelation};
 use ty::subst::Substs;
-use traits::{Obligation, PredicateObligations};
+use traits::{PredicateObligation, PredicateObligations};
 
 use syntax::ast;
 use syntax_pos::Span;
@@ -227,9 +227,10 @@ impl<'infcx, 'gcx, 'tcx> CombineFields<'infcx, 'gcx, 'tcx> {
         self.infcx.type_variables.borrow_mut().instantiate(b_vid, b_ty);
 
         if needs_wf {
-            self.obligations.push(Obligation::new(self.trace.cause.clone(),
-                                                  param_env,
-                                                  ty::Predicate::WellFormed(b_ty)));
+            self.obligations.push(
+                PredicateObligation::from(self.trace.cause.clone(),
+                                          param_env,
+                                          ty::PredicateAtom::WellFormed(b_ty)));
         }
 
         // Finally, relate `b_ty` to `a_ty`, as described in previous comment.

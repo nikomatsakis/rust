@@ -17,7 +17,8 @@ use super::coherence;
 use super::DerivedObligationCause;
 use super::project;
 use super::project::{normalize_with_depth, Normalized, ProjectionCacheKey};
-use super::{PredicateObligation, PolyTraitObligation, TraitObligation, ObligationCause};
+use super::{PredicateObligation, PredicateAtomObligation, PolyTraitObligation};
+use super::{TraitObligation, ObligationCause};
 use super::{ObligationCauseCode, BuiltinDerivedObligation, ImplDerivedObligation};
 use super::{SelectionError, Unimplemented, OutputTypeParameterMismatch};
 use super::{ObjectCastObligation, Obligation};
@@ -35,7 +36,7 @@ use hir::def_id::DefId;
 use infer;
 use infer::{InferCtxt, InferOk, TypeFreshener};
 use ty::subst::{Kind, Subst, Substs};
-use ty::{self, ToPredicate, Ty, TyCtxt, TypeFoldable};
+use ty::{self, ToPredicate, ToPredicateAtom, Ty, TyCtxt, TypeFoldable};
 use ty::fast_reject;
 use ty::relate::TypeRelation;
 use middle::lang_items;
@@ -569,14 +570,14 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     /// and returns `false` if not certain. However, this is not entirely
     /// accurate if inference variables are involved.
     pub fn evaluate_obligation_conservatively(&mut self,
-                                              obligation: &PredicateObligation<'tcx>)
+                                              obligation: &PredicateAtomObligation<'tcx>)
                                               -> bool
     {
         debug!("evaluate_obligation_conservatively({:?})",
                obligation);
 
         self.probe(|this, _| {
-            this.evaluate_predicate_recursively(TraitObligationStackList::empty(), obligation)
+            this.evaluate_predicate_atom_recursively(TraitObligationStackList::empty(), obligation)
                 == EvaluatedToOk
         })
     }
@@ -609,19 +610,28 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     fn evaluate_predicate_recursively<'o>(&mut self,
                                           previous_stack: TraitObligationStackList<'o, 'tcx>,
                                           obligation: &PredicateObligation<'tcx>)
-                                           -> EvaluationResult
+                                          -> EvaluationResult
+    {
+        let obligation = self.infcx().skolemize_predicate_obligation(obligation);
+        self.evaluate_predicate_atom_recursively(previous_stack, &obligation)
+    }
+
+    fn evaluate_predicate_atom_recursively<'o>(&mut self,
+                                               previous_stack: TraitObligationStackList<'o, 'tcx>,
+                                               obligation: &PredicateAtomObligation<'tcx>)
+                                               -> EvaluationResult
     {
         debug!("evaluate_predicate_recursively({:?})",
                obligation);
 
         match obligation.predicate {
-            ty::Predicate::Trait(ref t) => {
+            ty::PredicateAtom::Trait(t) => {
                 assert!(!t.has_escaping_regions());
                 let obligation = obligation.with(t.clone());
                 self.evaluate_trait_predicate_recursively(previous_stack, obligation)
             }
 
-            ty::Predicate::Subtype(ref p) => {
+            ty::PredicateAtom::Subtype(p) => {
                 // does this code ever run?
                 match self.infcx.subtype_predicate(&obligation.cause, obligation.param_env, p) {
                     Some(Ok(InferOk { obligations, .. })) => {
@@ -633,11 +643,12 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 }
             }
 
-            ty::Predicate::WellFormed(ty) => {
+            ty::PredicateAtom::WellFormed(ty) => {
                 match ty::wf::obligations(self.infcx,
                                           obligation.param_env,
                                           obligation.cause.body_id,
-                                          ty, obligation.cause.span) {
+                                          ty,
+                                          obligation.cause.span) {
                     Some(obligations) =>
                         self.evaluate_predicates_recursively(previous_stack, &obligations),
                     None =>
@@ -645,13 +656,13 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 }
             }
 
-            ty::Predicate::TypeOutlives(..) | ty::Predicate::RegionOutlives(..) => {
+            ty::PredicateAtom::TypeOutlives(..) | ty::PredicateAtom::RegionOutlives(..) => {
                 // we do not consider region relationships when
                 // evaluating trait matches
                 EvaluatedToOk
             }
 
-            ty::Predicate::ObjectSafe(trait_def_id) => {
+            ty::PredicateAtom::ObjectSafe(trait_def_id) => {
                 if self.tcx().is_object_safe(trait_def_id) {
                     EvaluatedToOk
                 } else {
@@ -659,14 +670,14 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 }
             }
 
-            ty::Predicate::Projection(ref data) => {
-                let project_obligation = obligation.with(data.clone());
-                match project::poly_project_and_unify_type(self, &project_obligation) {
+            ty::PredicateAtom::Projection(data) => {
+                let project_obligation = obligation.with(data);
+                match project::project_and_unify_type(self, &project_obligation) {
                     Ok(Some(subobligations)) => {
                         let result = self.evaluate_predicates_recursively(previous_stack,
                                                                           subobligations.iter());
                         if let Some(key) =
-                            ProjectionCacheKey::from_poly_projection_predicate(self, data)
+                            ProjectionCacheKey::from_projection_predicate(self, &data)
                         {
                             self.infcx.projection_cache.borrow_mut().complete(key);
                         }
@@ -681,7 +692,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 }
             }
 
-            ty::Predicate::ClosureKind(closure_def_id, kind) => {
+            ty::PredicateAtom::ClosureKind(closure_def_id, kind) => {
                 match self.infcx.closure_kind(closure_def_id) {
                     Some(closure_kind) => {
                         if closure_kind.extends(kind) {
@@ -700,25 +711,19 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
     fn evaluate_trait_predicate_recursively<'o>(&mut self,
                                                 previous_stack: TraitObligationStackList<'o, 'tcx>,
-                                                mut poly_obligation: PolyTraitObligation<'tcx>)
+                                                mut obligation: TraitObligation<'tcx>)
                                                 -> EvaluationResult
     {
         debug!("evaluate_trait_predicate_recursively({:?})",
-               poly_obligation);
+               obligation);
 
-        if !self.intercrate && poly_obligation.is_global() {
+        if !self.intercrate && obligation.is_global() {
             // If a param env is consistent, global obligations do not depend on its particular
             // value in order to work, so we can clear out the param env and get better
             // caching. (If the current param env is inconsistent, we don't care what happens).
-            debug!("evaluate_trait_predicate_recursively({:?}) - in global", poly_obligation);
-            poly_obligation.param_env = ty::ParamEnv::empty(poly_obligation.param_env.reveal);
+            debug!("evaluate_trait_predicate_recursively({:?}) - in global", obligation);
+            obligation.param_env = ty::ParamEnv::empty(obligation.param_env.reveal);
         }
-
-        let (trait_ref, param_env, _skol_map) =
-            self.infcx().skolemize_late_bound_regions(poly_obligation.param_env,
-                                                      &poly_obligation.predicate);
-
-        let obligation = poly_obligation.with(trait_ref).with_env(param_env);
 
         let stack = self.push_stack(previous_stack, &obligation);
         let fresh_trait_ref = stack.fresh_trait_ref;
@@ -828,7 +833,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             debug!("evaluate_stack({:?}) --> recursive",
                    stack.fresh_trait_ref);
             let cycle = stack.iter().skip(1).take(rec_index+1);
-            let cycle = cycle.map(|stack| stack.obligation.predicate.to_predicate());
+            let cycle = cycle.map(|stack| stack.obligation.predicate.to_predicate_atom());
             if self.coinductive_match(cycle) {
                 debug!("evaluate_stack({:?}) --> recursive, coinductive",
                        stack.fresh_trait_ref);
@@ -855,16 +860,16 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     /// - all the predicates at positions `X..` between `X` an the top are
     ///   also defaulted traits.
     pub fn coinductive_match<I>(&mut self, cycle: I) -> bool
-        where I: Iterator<Item=ty::Predicate<'tcx>>
+        where I: Iterator<Item=ty::PredicateAtom<'tcx>>
     {
         let mut cycle = cycle;
         cycle.all(|predicate| self.coinductive_predicate(predicate))
     }
 
-    fn coinductive_predicate(&self, predicate: ty::Predicate<'tcx>) -> bool {
+    fn coinductive_predicate(&self, predicate: ty::PredicateAtom<'tcx>) -> bool {
         let result = match predicate {
-            ty::Predicate::Trait(ref data) => {
-                self.tcx().trait_has_default_impl(data.def_id())
+            ty::PredicateAtom::Trait(ref data) => {
+                self.tcx().trait_has_default_impl(data.def_id)
             }
             _ => {
                 false
@@ -2555,10 +2560,11 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                                                 obligation.predicate,
                                                 trait_ref)?);
 
-        obligations.push(Obligation::new(
+        obligations.push(Obligation::with_depth(
             obligation.cause.clone(),
+            obligation.recursion_depth,
             obligation.param_env,
-            ty::Predicate::ClosureKind(closure_def_id, kind)));
+            ty::PredicateAtom::ClosureKind(closure_def_id, kind).to_predicate()));
 
         Ok(VtableClosureData {
             closure_def_id,
@@ -3074,7 +3080,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         };
 
         // Filter down to trait-ref bounds:
-        let bounds = bounds.filter_map(move |o| o.to_opt_poly_trait_ref());
+        let bounds = bounds.filter_map(move |o| o.poly_trait());
 
         // Micro-optimization: filter out predicates relating to different
         // traits.

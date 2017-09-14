@@ -10,7 +10,7 @@
 
 use hir::def_id::DefId;
 use ty::subst::{Subst, Substs};
-use ty::{self, Ty, TyCtxt, ToPredicate};
+use ty::{self, ToPredicate, ToPredicateAtom, Ty, TyCtxt};
 use ty::outlives::Component;
 use util::nodemap::FxHashSet;
 use hir::{self};
@@ -22,32 +22,13 @@ fn anonymize_predicate<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
                                        pred: &ty::Predicate<'tcx>)
                                        -> ty::Predicate<'tcx> {
     match *pred {
-        ty::Predicate::Trait(ref data) =>
-            ty::Predicate::Trait(tcx.anonymize_late_bound_regions(data)),
+        ty::Predicate::Poly(ref binder) =>
+            ty::Predicate::Poly(tcx.anonymize_late_bound_regions(binder)),
 
-        ty::Predicate::RegionOutlives(ref data) =>
-            ty::Predicate::RegionOutlives(tcx.anonymize_late_bound_regions(data)),
-
-        ty::Predicate::TypeOutlives(ref data) =>
-            ty::Predicate::TypeOutlives(tcx.anonymize_late_bound_regions(data)),
-
-        ty::Predicate::Projection(ref data) =>
-            ty::Predicate::Projection(tcx.anonymize_late_bound_regions(data)),
-
-        ty::Predicate::WellFormed(data) =>
-            ty::Predicate::WellFormed(data),
-
-        ty::Predicate::ObjectSafe(data) =>
-            ty::Predicate::ObjectSafe(data),
-
-        ty::Predicate::ClosureKind(closure_def_id, kind) =>
-            ty::Predicate::ClosureKind(closure_def_id, kind),
-
-        ty::Predicate::Subtype(ref data) =>
-            ty::Predicate::Subtype(tcx.anonymize_late_bound_regions(data)),
+        ty::Predicate::Atom(atom) =>
+            ty::Predicate::Atom(atom),
     }
 }
-
 
 struct PredicateSet<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     tcx: TyCtxt<'a, 'gcx, 'tcx>,
@@ -126,105 +107,90 @@ impl<'cx, 'gcx, 'tcx> Elaborator<'cx, 'gcx, 'tcx> {
 
     fn push(&mut self, predicate: &ty::Predicate<'tcx>) {
         let tcx = self.visited.tcx;
-        match *predicate {
-            ty::Predicate::Trait(ref data) => {
-                // Predicates declared on the trait.
-                let predicates = tcx.super_predicates_of(data.def_id());
 
-                let mut predicates: Vec<_> =
-                    predicates.predicates
-                              .iter()
-                              .map(|p| p.subst_supertrait(tcx, data))
-                              .collect();
+        // We don't elaborate all kinds of predicates. Also, the
+        // treatment of binders can be a touch tricky here (in
+        // particular, we can't just skolemize and recurse). So don't
+        // do a general match on the kind of predicate, instead try to
+        // convert to more narrow poly-things.
 
-                debug!("super_predicates: data={:?} predicates={:?}",
-                       data, predicates);
+        // Elaborate `T: Foo` to include where-clauses declared on trait `Foo`.
+        if let Some(data) = predicate.poly_trait() {
+            let predicates = tcx.super_predicates_of(data.def_id());
 
-                // Only keep those bounds that we haven't already
-                // seen.  This is necessary to prevent infinite
-                // recursion in some cases.  One common case is when
-                // people define `trait Sized: Sized { }` rather than `trait
-                // Sized { }`.
-                predicates.retain(|r| self.visited.insert(r));
+            let mut predicates: Vec<_> =
+                predicates.predicates
+                          .iter()
+                          .map(|p| p.subst_supertrait(tcx, data))
+                          .collect();
 
-                self.stack.extend(predicates);
+            debug!("super_predicates: data={:?} predicates={:?}",
+                   data, predicates);
+
+            // Only keep those bounds that we haven't already
+            // seen.  This is necessary to prevent infinite
+            // recursion in some cases.  One common case is when
+            // people define `trait Sized: Sized { }` rather than `trait
+            // Sized { }`.
+            predicates.retain(|r| self.visited.insert(r));
+
+            self.stack.extend(predicates);
+        }
+
+        // Elaborate `T: 'a` to include other outlives relationships.
+        //
+        // e.g., `&'a i32: 'b` implies that `'a: 'b`.
+        if let Some(data) = predicate.poly_type_outlives() {
+            // We know that `T: 'a` for some type `T`. We can
+            // often elaborate this. For example, if we know that
+            // `[U]: 'a`, that implies that `U: 'a`. Similarly, if
+            // we know `&'a U: 'b`, then we know that `'a: 'b` and
+            // `U: 'b`.
+            //
+            // We can basically ignore bound regions here. So for
+            // example `for<'c> Foo<'a,'c>: 'b` can be elaborated to
+            // `'a: 'b`.
+
+            // Ignore `for<'a> T: 'a` -- we might in the future
+            // consider this as evidence that `T: 'static`, but
+            // I'm a bit wary of such constructions and so for now
+            // I want to be conservative. --nmatsakis
+            let ty_max = data.skip_binder().0;
+            let r_min = data.skip_binder().1;
+            if r_min.is_late_bound() {
+                return;
             }
-            ty::Predicate::WellFormed(..) => {
-                // Currently, we do not elaborate WF predicates,
-                // although we easily could.
-            }
-            ty::Predicate::ObjectSafe(..) => {
-                // Currently, we do not elaborate object-safe
-                // predicates.
-            }
-            ty::Predicate::Subtype(..) => {
-                // Currently, we do not "elaborate" predicates like `X
-                // <: Y`, though conceivably we might.
-            }
-            ty::Predicate::Projection(..) => {
-                // Nothing to elaborate in a projection predicate.
-            }
-            ty::Predicate::ClosureKind(..) => {
-                // Nothing to elaborate when waiting for a closure's kind to be inferred.
-            }
 
-            ty::Predicate::RegionOutlives(..) => {
-                // Nothing to elaborate from `'a: 'b`.
-            }
+            let visited = &mut self.visited;
+            self.stack.extend(
+                tcx.outlives_components(ty_max)
+                   .into_iter()
+                   .filter_map(|component| match component {
+                       Component::Region(r) => if r.is_late_bound() {
+                           None
+                       } else {
+                           Some(ty::OutlivesPredicate(r, r_min).to_predicate_atom())
+                       },
 
-            ty::Predicate::TypeOutlives(ref data) => {
-                // We know that `T: 'a` for some type `T`. We can
-                // often elaborate this. For example, if we know that
-                // `[U]: 'a`, that implies that `U: 'a`. Similarly, if
-                // we know `&'a U: 'b`, then we know that `'a: 'b` and
-                // `U: 'b`.
-                //
-                // We can basically ignore bound regions here. So for
-                // example `for<'c> Foo<'a,'c>: 'b` can be elaborated to
-                // `'a: 'b`.
+                       Component::Param(p) => {
+                           let ty = tcx.mk_param(p.idx, p.name);
+                           Some(ty::OutlivesPredicate(ty, r_min).to_predicate_atom())
+                       },
 
-                // Ignore `for<'a> T: 'a` -- we might in the future
-                // consider this as evidence that `T: 'static`, but
-                // I'm a bit wary of such constructions and so for now
-                // I want to be conservative. --nmatsakis
-                let ty_max = data.skip_binder().0;
-                let r_min = data.skip_binder().1;
-                if r_min.is_late_bound() {
-                    return;
-                }
+                       Component::UnresolvedInferenceVariable(_) => {
+                           None
+                       },
 
-                let visited = &mut self.visited;
-                self.stack.extend(
-                    tcx.outlives_components(ty_max)
-                       .into_iter()
-                       .filter_map(|component| match component {
-                           Component::Region(r) => if r.is_late_bound() {
-                               None
-                           } else {
-                               Some(ty::Predicate::RegionOutlives(
-                                   ty::Binder(ty::OutlivesPredicate(r, r_min))))
-                           },
-
-                           Component::Param(p) => {
-                               let ty = tcx.mk_param(p.idx, p.name);
-                               Some(ty::Predicate::TypeOutlives(
-                                   ty::Binder(ty::OutlivesPredicate(ty, r_min))))
-                           },
-
-                           Component::UnresolvedInferenceVariable(_) => {
-                               None
-                           },
-
-                           Component::Projection(_) |
-                           Component::EscapingProjection(_) => {
-                               // We can probably do more here. This
-                               // corresponds to a case like `<T as
-                               // Foo<'a>>::U: 'b`.
-                               None
-                           },
-                       })
-                       .filter(|p| visited.insert(p)));
-            }
+                       Component::Projection(_) |
+                       Component::EscapingProjection(_) => {
+                           // We can probably do more here. This
+                           // corresponds to a case like `<T as
+                           // Foo<'a>>::U: 'b`.
+                           None
+                       },
+                   })
+                   .map(|atom| atom.to_predicate())
+                   .filter(|p| visited.insert(p)));
         }
     }
 }
@@ -300,7 +266,7 @@ impl<'cx, 'gcx, 'tcx> Iterator for SupertraitDefIds<'cx, 'gcx, 'tcx> {
         self.stack.extend(
             predicates.predicates
                       .iter()
-                      .filter_map(|p| p.to_opt_poly_trait_ref())
+                      .filter_map(|p| p.poly_trait())
                       .map(|t| t.def_id())
                       .filter(|&super_def_id| visited.insert(super_def_id)));
         Some(def_id)
@@ -329,13 +295,11 @@ impl<'tcx,I:Iterator<Item=ty::Predicate<'tcx>>> Iterator for FilterToTraits<I> {
     fn next(&mut self) -> Option<ty::PolyTraitRef<'tcx>> {
         loop {
             match self.base_iterator.next() {
-                None => {
-                    return None;
-                }
-                Some(ty::Predicate::Trait(data)) => {
-                    return Some(data);
-                }
-                Some(_) => {
+                None => return None,
+                Some(predicate) => {
+                    if let Some(trait_ref) = predicate.poly_trait() {
+                        return Some(trait_ref);
+                    }
                 }
             }
         }

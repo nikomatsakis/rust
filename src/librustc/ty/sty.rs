@@ -14,7 +14,7 @@ use hir::def_id::DefId;
 
 use middle::region;
 use ty::subst::{Substs, Subst};
-use ty::{self, AdtDef, TypeFlags, Ty, TyCtxt, TypeFoldable};
+use ty::{self, AdtDef, TypeFlags, ToPredicate, Ty, TyCtxt, TypeFoldable};
 use ty::{Slice, TyS};
 use ty::subst::Kind;
 
@@ -341,18 +341,16 @@ impl<'a, 'gcx, 'tcx> ExistentialPredicate<'tcx> {
 impl<'a, 'gcx, 'tcx> Binder<ExistentialPredicate<'tcx>> {
     pub fn with_self_ty(&self, tcx: TyCtxt<'a, 'gcx, 'tcx>, self_ty: Ty<'tcx>)
         -> ty::Predicate<'tcx> {
-        use ty::ToPredicate;
         match *self.skip_binder() {
-            ExistentialPredicate::Trait(tr) => Binder(tr).with_self_ty(tcx, self_ty).to_predicate(),
+            ExistentialPredicate::Trait(tr) =>
+                Binder(tr).with_self_ty(tcx, self_ty).to_predicate(),
             ExistentialPredicate::Projection(p) =>
-                ty::Predicate::Projection(Binder(p.with_self_ty(tcx, self_ty))),
-            ExistentialPredicate::AutoTrait(did) => {
-                let trait_ref = Binder(ty::TraitRef {
+                Binder(p.with_self_ty(tcx, self_ty)).to_predicate(),
+            ExistentialPredicate::AutoTrait(did) =>
+                Binder(ty::TraitRef {
                     def_id: did,
                     substs: tcx.mk_substs_trait(self_ty, &[]),
-                });
-                trait_ref.to_predicate()
-            }
+                }).to_predicate(),
         }
     }
 }

@@ -92,7 +92,8 @@ use rustc::infer::{self, InferCtxt, InferOk, RegionVariableOrigin};
 use rustc::infer::type_variable::{TypeVariableOrigin};
 use rustc::middle::region;
 use rustc::ty::subst::{Subst, Substs};
-use rustc::traits::{self, FulfillmentContext, ObligationCause, ObligationCauseCode};
+use rustc::traits::{self, FulfillmentContext, PredicateObligation,
+                    ObligationCause, ObligationCauseCode};
 use rustc::ty::{ParamTy, LvaluePreference, NoPreference, PreferMutLvalue};
 use rustc::ty::{self, Ty, TyCtxt, Visibility};
 use rustc::ty::adjustment::{Adjust, Adjustment, AutoBorrow};
@@ -1615,11 +1616,9 @@ impl<'a, 'gcx, 'tcx> AstConv<'gcx, 'tcx> for FnCtxt<'a, 'gcx, 'tcx> {
         ty::GenericPredicates {
             parent: None,
             predicates: self.param_env.caller_bounds.iter().filter(|predicate| {
-                match **predicate {
-                    ty::Predicate::Trait(ref data) => {
-                        data.0.self_ty().is_param(index)
-                    }
-                    _ => false
+                match predicate.skip_binders() {
+                    ty::PredicateAtom::Trait(ref data) => data.self_ty().is_param(index),
+                    _ => false,
                 }
             }).cloned().collect()
         }
@@ -2032,9 +2031,9 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
     {
         // WF obligations never themselves fail, so no real need to give a detailed cause:
         let cause = traits::ObligationCause::new(span, self.body_id, code);
-        self.register_predicate(traits::Obligation::new(cause,
-                                                        self.param_env,
-                                                        ty::Predicate::WellFormed(ty)));
+        self.register_predicate(PredicateObligation::from(cause,
+                                                          self.param_env,
+                                                          ty::PredicateAtom::WellFormed(ty)));
     }
 
     /// Registers obligations that all types appearing in `substs` are well-formed.

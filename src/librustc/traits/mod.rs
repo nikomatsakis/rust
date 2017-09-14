@@ -20,7 +20,7 @@ use hir::def_id::DefId;
 use middle::region;
 use middle::free_region::FreeRegionMap;
 use ty::subst::Substs;
-use ty::{self, AdtKind, Ty, TyCtxt, TypeFoldable, ToPredicate};
+use ty::{self, AdtKind, Ty, TyCtxt, TypeFoldable, ToPredicate, ToPredicateAtom};
 use ty::error::{ExpectedFound, TypeError};
 use infer::{InferCtxt};
 
@@ -85,6 +85,7 @@ pub struct Obligation<'tcx, T> {
 }
 
 pub type PredicateObligation<'tcx> = Obligation<'tcx, ty::Predicate<'tcx>>;
+pub type PredicateAtomObligation<'tcx> = Obligation<'tcx, ty::PredicateAtom<'tcx>>;
 pub type PolyTraitObligation<'tcx> = Obligation<'tcx, ty::PolyTraitRef<'tcx>>;
 pub type TraitObligation<'tcx> = Obligation<'tcx, ty::TraitRef<'tcx>>;
 
@@ -232,7 +233,7 @@ pub enum SelectionError<'tcx> {
 }
 
 pub struct FulfillmentError<'tcx> {
-    pub obligation: PredicateObligation<'tcx>,
+    pub obligation: PredicateAtomObligation<'tcx>,
     pub code: FulfillmentErrorCode<'tcx>
 }
 
@@ -427,11 +428,10 @@ pub fn type_known_to_meet_bound<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx
         param_env,
         cause: ObligationCause::misc(span, ast::DUMMY_NODE_ID),
         recursion_depth: 0,
-        predicate: trait_ref.to_predicate(),
+        predicate: trait_ref.to_predicate_atom(),
     };
 
-    let result = SelectionContext::new(infcx)
-        .evaluate_obligation_conservatively(&obligation);
+    let result = SelectionContext::new(infcx).evaluate_obligation_conservatively(&obligation);
     debug!("type_known_to_meet_ty={:?} bound={} => {:?}",
            ty, infcx.tcx.item_path_str(def_id), result);
 
@@ -711,6 +711,18 @@ pub fn get_vtable_methods<'a, 'tcx>(
     })
 }
 
+impl<'tcx> PredicateObligation<'tcx> {
+    pub fn from<O>(cause: ObligationCause<'tcx>,
+                   param_env: ty::ParamEnv<'tcx>,
+                   predicate: O)
+                   -> Self
+        where O: ToPredicate<'tcx>
+    {
+        let predicate = predicate.to_predicate();
+        Obligation { cause, param_env, recursion_depth: 0, predicate }
+    }
+}
+
 impl<'tcx,O> Obligation<'tcx,O> {
     pub fn new(cause: ObligationCause<'tcx>,
                param_env: ty::ParamEnv<'tcx>,
@@ -819,7 +831,7 @@ impl<'tcx, N> Vtable<'tcx, N> {
 }
 
 impl<'tcx> FulfillmentError<'tcx> {
-    fn new(obligation: PredicateObligation<'tcx>,
+    fn new(obligation: PredicateAtomObligation<'tcx>,
            code: FulfillmentErrorCode<'tcx>)
            -> FulfillmentError<'tcx>
     {

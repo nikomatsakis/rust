@@ -185,29 +185,41 @@ impl<'a, 'tcx> Lift<'tcx> for ty::Predicate<'a> {
     type Lifted = ty::Predicate<'tcx>;
     fn lift_to_tcx<'b, 'gcx>(&self, tcx: TyCtxt<'b, 'gcx, 'tcx>) -> Option<Self::Lifted> {
         match *self {
-            ty::Predicate::Trait(ref binder) => {
-                tcx.lift(binder).map(ty::Predicate::Trait)
+            ty::Predicate::Poly(ref binder) =>
+                tcx.lift(binder).map(ty::Predicate::Poly),
+            ty::Predicate::Atom(ref atom) =>
+                tcx.lift(atom).map(ty::Predicate::Atom),
+        }
+    }
+}
+
+impl<'a, 'tcx> Lift<'tcx> for ty::PredicateAtom<'a> {
+    type Lifted = ty::PredicateAtom<'tcx>;
+    fn lift_to_tcx<'b, 'gcx>(&self, tcx: TyCtxt<'b, 'gcx, 'tcx>) -> Option<Self::Lifted> {
+        match *self {
+            ty::PredicateAtom::Trait(ref binder) => {
+                tcx.lift(binder).map(ty::PredicateAtom::Trait)
             }
-            ty::Predicate::Subtype(ref binder) => {
-                tcx.lift(binder).map(ty::Predicate::Subtype)
+            ty::PredicateAtom::Subtype(ref binder) => {
+                tcx.lift(binder).map(ty::PredicateAtom::Subtype)
             }
-            ty::Predicate::RegionOutlives(ref binder) => {
-                tcx.lift(binder).map(ty::Predicate::RegionOutlives)
+            ty::PredicateAtom::RegionOutlives(ref binder) => {
+                tcx.lift(binder).map(ty::PredicateAtom::RegionOutlives)
             }
-            ty::Predicate::TypeOutlives(ref binder) => {
-                tcx.lift(binder).map(ty::Predicate::TypeOutlives)
+            ty::PredicateAtom::TypeOutlives(ref binder) => {
+                tcx.lift(binder).map(ty::PredicateAtom::TypeOutlives)
             }
-            ty::Predicate::Projection(ref binder) => {
-                tcx.lift(binder).map(ty::Predicate::Projection)
+            ty::PredicateAtom::Projection(ref binder) => {
+                tcx.lift(binder).map(ty::PredicateAtom::Projection)
             }
-            ty::Predicate::WellFormed(ty) => {
-                tcx.lift(&ty).map(ty::Predicate::WellFormed)
+            ty::PredicateAtom::WellFormed(ty) => {
+                tcx.lift(&ty).map(ty::PredicateAtom::WellFormed)
             }
-            ty::Predicate::ClosureKind(closure_def_id, kind) => {
-                Some(ty::Predicate::ClosureKind(closure_def_id, kind))
+            ty::PredicateAtom::ClosureKind(closure_def_id, kind) => {
+                Some(ty::PredicateAtom::ClosureKind(closure_def_id, kind))
             }
-            ty::Predicate::ObjectSafe(trait_def_id) => {
-                Some(ty::Predicate::ObjectSafe(trait_def_id))
+            ty::PredicateAtom::ObjectSafe(trait_def_id) => {
+                Some(ty::PredicateAtom::ObjectSafe(trait_def_id))
             }
         }
     }
@@ -866,35 +878,51 @@ impl<'tcx> TypeFoldable<'tcx> for &'tcx ty::Slice<ty::Predicate<'tcx>> {
 impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
     fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
         match *self {
-            ty::Predicate::Trait(ref a) =>
-                ty::Predicate::Trait(a.fold_with(folder)),
-            ty::Predicate::Subtype(ref binder) =>
-                ty::Predicate::Subtype(binder.fold_with(folder)),
-            ty::Predicate::RegionOutlives(ref binder) =>
-                ty::Predicate::RegionOutlives(binder.fold_with(folder)),
-            ty::Predicate::TypeOutlives(ref binder) =>
-                ty::Predicate::TypeOutlives(binder.fold_with(folder)),
-            ty::Predicate::Projection(ref binder) =>
-                ty::Predicate::Projection(binder.fold_with(folder)),
-            ty::Predicate::WellFormed(data) =>
-                ty::Predicate::WellFormed(data.fold_with(folder)),
-            ty::Predicate::ClosureKind(closure_def_id, kind) =>
-                ty::Predicate::ClosureKind(closure_def_id, kind),
-            ty::Predicate::ObjectSafe(trait_def_id) =>
-                ty::Predicate::ObjectSafe(trait_def_id),
+            ty::Predicate::Poly(ref a) => ty::Predicate::Poly(a.fold_with(folder)),
+            ty::Predicate::Atom(ref a) => ty::Predicate::Atom(a.fold_with(folder)),
         }
     }
 
     fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
         match *self {
-            ty::Predicate::Trait(ref a) => a.visit_with(visitor),
-            ty::Predicate::Subtype(ref binder) => binder.visit_with(visitor),
-            ty::Predicate::RegionOutlives(ref binder) => binder.visit_with(visitor),
-            ty::Predicate::TypeOutlives(ref binder) => binder.visit_with(visitor),
-            ty::Predicate::Projection(ref binder) => binder.visit_with(visitor),
-            ty::Predicate::WellFormed(data) => data.visit_with(visitor),
-            ty::Predicate::ClosureKind(_closure_def_id, _kind) => false,
-            ty::Predicate::ObjectSafe(_trait_def_id) => false,
+            ty::Predicate::Poly(ref a) => a.visit_with(visitor),
+            ty::Predicate::Atom(ref a) => a.visit_with(visitor),
+        }
+    }
+}
+
+impl<'tcx> TypeFoldable<'tcx> for ty::PredicateAtom<'tcx> {
+    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
+        match *self {
+            ty::PredicateAtom::Trait(ref a) =>
+                ty::PredicateAtom::Trait(a.fold_with(folder)),
+            ty::PredicateAtom::Subtype(ref binder) =>
+                ty::PredicateAtom::Subtype(binder.fold_with(folder)),
+            ty::PredicateAtom::RegionOutlives(ref binder) =>
+                ty::PredicateAtom::RegionOutlives(binder.fold_with(folder)),
+            ty::PredicateAtom::TypeOutlives(ref binder) =>
+                ty::PredicateAtom::TypeOutlives(binder.fold_with(folder)),
+            ty::PredicateAtom::Projection(ref binder) =>
+                ty::PredicateAtom::Projection(binder.fold_with(folder)),
+            ty::PredicateAtom::WellFormed(data) =>
+                ty::PredicateAtom::WellFormed(data.fold_with(folder)),
+            ty::PredicateAtom::ClosureKind(closure_def_id, kind) =>
+                ty::PredicateAtom::ClosureKind(closure_def_id, kind),
+            ty::PredicateAtom::ObjectSafe(trait_def_id) =>
+                ty::PredicateAtom::ObjectSafe(trait_def_id),
+        }
+    }
+
+    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
+        match *self {
+            ty::PredicateAtom::Trait(ref a) => a.visit_with(visitor),
+            ty::PredicateAtom::Subtype(ref binder) => binder.visit_with(visitor),
+            ty::PredicateAtom::RegionOutlives(ref binder) => binder.visit_with(visitor),
+            ty::PredicateAtom::TypeOutlives(ref binder) => binder.visit_with(visitor),
+            ty::PredicateAtom::Projection(ref binder) => binder.visit_with(visitor),
+            ty::PredicateAtom::WellFormed(data) => data.visit_with(visitor),
+            ty::PredicateAtom::ClosureKind(_closure_def_id, _kind) => false,
+            ty::PredicateAtom::ObjectSafe(_trait_def_id) => false,
         }
     }
 }

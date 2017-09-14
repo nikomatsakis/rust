@@ -55,8 +55,7 @@
 //! ported to this system, and which relies on string concatenation at the
 //! time of error detection.
 
-use infer;
-use super::{InferCtxt, TypeTrace, SubregionOrigin, RegionVariableOrigin, ValuePairs};
+use infer::{self, InferCtxt, TypeTrace, SubregionOrigin, RegionVariableOrigin, ValuePairs};
 use super::region_inference::{RegionResolutionError, ConcreteFailure, SubSupConflict,
                               GenericBoundFailure, GenericKind};
 
@@ -738,9 +737,10 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         -> Option<(DiagnosticStyledString, DiagnosticStyledString)>
     {
         match *values {
-            infer::Types(ref exp_found) => self.expected_found_str_ty(exp_found),
-            infer::TraitRefs(ref exp_found) => self.expected_found_str(exp_found),
-            infer::PolyTraitRefs(ref exp_found) => self.expected_found_str(exp_found),
+            ValuePairs::Types(ref exp_found) => self.expected_found_str_ty(exp_found),
+            ValuePairs::ProjectionTypes(ref exp_found) => self.expected_found_str(exp_found),
+            ValuePairs::TraitRefs(ref exp_found) => self.expected_found_str(exp_found),
+            ValuePairs::PolyTraitRefs(ref exp_found) => self.expected_found_str(exp_found),
         }
     }
 

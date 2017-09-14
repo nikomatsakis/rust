@@ -14,7 +14,7 @@ use check::FnCtxt;
 use hir::def::Def;
 use hir::def_id::DefId;
 use rustc::ty::subst::Substs;
-use rustc::traits;
+use rustc::traits::{self, PredicateObligation};
 use rustc::ty::{self, ToPredicate, TraitRef, TypeFoldable};
 use rustc::ty::subst::Subst;
 use rustc::infer::{self, InferOk};
@@ -328,9 +328,11 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         debug!("lookup_in_trait_adjusted: matched method method_ty={:?} obligation={:?}",
                method_ty,
                obligation);
-        obligations.push(traits::Obligation::new(cause,
-                                                 self.param_env,
-                                                 ty::Predicate::WellFormed(method_ty)));
+        obligations.push(
+            PredicateObligation::from(
+                cause,
+                self.param_env,
+                ty::PredicateAtom::WellFormed(method_ty)));
 
         let callee = MethodCallee {
             def_id,

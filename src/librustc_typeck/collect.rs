@@ -731,7 +731,7 @@ fn super_predicates_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
     // Now require that immediate supertraits are converted,
     // which will, in turn, reach indirect supertraits.
-    for bound in superbounds.iter().filter_map(|p| p.to_opt_poly_trait_ref()) {
+    for bound in superbounds.iter().filter_map(|p| p.poly_trait()) {
         tcx.at(item.span).super_predicates_of(bound.def_id());
     }
 
@@ -1507,7 +1507,7 @@ fn predicates_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                                                        lifetime,
                                                                        None);
                             let pred = ty::Binder(ty::OutlivesPredicate(ty, region));
-                            predicates.push(ty::Predicate::TypeOutlives(pred))
+                            predicates.push(pred.to_predicate())
                         }
                     }
                 }
@@ -1518,7 +1518,7 @@ fn predicates_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                 for bound in &region_pred.bounds {
                     let r2 = AstConv::ast_region_to_region(&icx, bound, None);
                     let pred = ty::Binder(ty::OutlivesPredicate(r1, r2));
-                    predicates.push(ty::Predicate::RegionOutlives(pred))
+                    predicates.push(pred.to_predicate());
                 }
             }
 
@@ -1652,7 +1652,7 @@ fn predicates_from_bound<'tcx>(astconv: &AstConv<'tcx, 'tcx>,
         hir::RegionTyParamBound(ref lifetime) => {
             let region = astconv.ast_region_to_region(lifetime, None);
             let pred = ty::Binder(ty::OutlivesPredicate(param_ty, region));
-            vec![ty::Predicate::TypeOutlives(pred)]
+            vec![pred.to_predicate()]
         }
         hir::TraitTyParamBound(_, hir::TraitBoundModifier::Maybe) => {
             Vec::new()

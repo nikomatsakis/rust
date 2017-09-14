@@ -42,7 +42,6 @@ use std::iter::FromIterator;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::slice;
-use std::vec::IntoIter;
 use std::mem;
 use syntax::ast::{self, DUMMY_NODE_ID, Name, Ident, NodeId};
 use syntax::attr;
@@ -803,36 +802,30 @@ impl<'a, 'gcx, 'tcx> GenericPredicates<'tcx> {
         }
         instantiated.predicates.extend(&self.predicates)
     }
-
-    pub fn instantiate_supertrait(&self, tcx: TyCtxt<'a, 'gcx, 'tcx>,
-                                  poly_trait_ref: &ty::PolyTraitRef<'tcx>)
-                                  -> InstantiatedPredicates<'tcx>
-    {
-        assert_eq!(self.parent, None);
-        InstantiatedPredicates {
-            predicates: self.predicates.iter().map(|pred| {
-                pred.subst_supertrait(tcx, poly_trait_ref)
-            }).collect()
-        }
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
 pub enum Predicate<'tcx> {
+    Poly(Binder<PredicateAtom<'tcx>>),
+    Atom(PredicateAtom<'tcx>),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
+pub enum PredicateAtom<'tcx> {
     /// Corresponds to `where Foo : Bar<A,B,C>`. `Foo` here would be
     /// the `Self` type of the trait reference and `A`, `B`, and `C`
     /// would be the type parameters.
-    Trait(PolyTraitRef<'tcx>),
+    Trait(TraitRef<'tcx>),
 
     /// where 'a : 'b
-    RegionOutlives(PolyRegionOutlivesPredicate<'tcx>),
+    RegionOutlives(RegionOutlivesPredicate<'tcx>),
 
     /// where T : 'a
-    TypeOutlives(PolyTypeOutlivesPredicate<'tcx>),
+    TypeOutlives(TypeOutlivesPredicate<'tcx>),
 
     /// where <T as TraitRef>::Name == X, approximately.
     /// See `ProjectionPredicate` struct for details.
-    Projection(PolyProjectionPredicate<'tcx>),
+    Projection(ProjectionPredicate<'tcx>),
 
     /// no syntax: T WF
     WellFormed(Ty<'tcx>),
@@ -846,17 +839,29 @@ pub enum Predicate<'tcx> {
     ClosureKind(DefId, ClosureKind),
 
     /// `T1 <: T2`
-    Subtype(PolySubtypePredicate<'tcx>),
+    Subtype(SubtypePredicate<'tcx>),
 }
 
 impl<'a, 'gcx, 'tcx> Predicate<'tcx> {
+    /// If there are any binders in this predicate, skip through them
+    /// and expose the underlying atom. Use with caution, as the depth
+    /// of late-bound-regions in this atom cannot be interpreted --
+    /// you don't know if there was a binder or not!
+    pub fn skip_binders(self) -> PredicateAtom<'tcx> {
+        match self {
+            Predicate::Poly(binder) => *binder.skip_binder(),
+            Predicate::Atom(atom) => atom,
+        }
+    }
+
     /// Performs a substitution suitable for going from a
     /// poly-trait-ref to supertraits that must hold if that
     /// poly-trait-ref holds. This is slightly different from a normal
     /// substitution in terms of what happens with bound regions.  See
     /// lengthy comment below for details.
-    pub fn subst_supertrait(&self, tcx: TyCtxt<'a, 'gcx, 'tcx>,
-                            trait_ref: &ty::PolyTraitRef<'tcx>)
+    pub fn subst_supertrait(&self,
+                            tcx: TyCtxt<'a, 'gcx, 'tcx>,
+                            trait_ref: ty::PolyTraitRef<'tcx>)
                             -> ty::Predicate<'tcx>
     {
         // The interaction between HRTB and supertraits is not entirely
@@ -921,22 +926,119 @@ impl<'a, 'gcx, 'tcx> Predicate<'tcx> {
 
         let substs = &trait_ref.0.substs;
         match *self {
-            Predicate::Trait(ty::Binder(ref data)) =>
-                Predicate::Trait(ty::Binder(data.subst(tcx, substs))),
-            Predicate::Subtype(ty::Binder(ref data)) =>
-                Predicate::Subtype(ty::Binder(data.subst(tcx, substs))),
-            Predicate::RegionOutlives(ty::Binder(ref data)) =>
-                Predicate::RegionOutlives(ty::Binder(data.subst(tcx, substs))),
-            Predicate::TypeOutlives(ty::Binder(ref data)) =>
-                Predicate::TypeOutlives(ty::Binder(data.subst(tcx, substs))),
-            Predicate::Projection(ty::Binder(ref data)) =>
-                Predicate::Projection(ty::Binder(data.subst(tcx, substs))),
-            Predicate::WellFormed(data) =>
-                Predicate::WellFormed(data.subst(tcx, substs)),
-            Predicate::ObjectSafe(trait_def_id) =>
-                Predicate::ObjectSafe(trait_def_id),
-            Predicate::ClosureKind(closure_def_id, kind) =>
-                Predicate::ClosureKind(closure_def_id, kind),
+            Predicate::Poly(binder) =>
+                ty::Binder(binder.skip_binder().subst(tcx, substs)).to_predicate(),
+
+            Predicate::Atom(atom) =>
+                ty::Binder(atom.subst(tcx, substs)).to_predicate(),
+        }
+    }
+
+    /// Helper for selecting subsets of predicates. The `op` here is
+    /// some function that transforms a PredicateAtom into an R,
+    /// **maintaining the binding level of any late-bound regions**.
+    pub fn poly_map<OP, R>(self, mut op: OP) -> Option<Binder<R>>
+        where OP: FnMut(PredicateAtom<'tcx>) -> Option<R>,
+              R: TypeFoldable<'tcx>,
+    {
+        assert!(!self.has_escaping_regions());
+        match self {
+            Predicate::Poly(binder) => {
+                match op(*binder.skip_binder()) { // binder moves from here...
+                    Some(v) => {
+                        assert!(!v.has_regions_escaping_depth(1));
+                        Some(ty::Binder(v)) // ...to here
+                    }
+
+                    None => None,
+                }
+            }
+            Predicate::Atom(atom) => {
+                match op(atom) { // no binder here...
+                    Some(v) => {
+                        assert!(!v.has_escaping_regions()); // ...so no escaping regions here
+                        Some(ty::Binder(v))
+                    }
+
+                    None => None,
+                }
+            }
+        }
+    }
+
+    /// If the underlying atom is a `PredicateAtom::Trait`, returns
+    /// `Some(trait_ref)`. Else None.
+    pub fn poly_trait(self) -> Option<PolyTraitRef<'tcx>> {
+        self.poly_map(|atom| atom.trait_())
+    }
+
+    /// If the underlying atom is a `PredicateAtom::Trait`, returns
+    /// `Some(trait_ref)`. Else None.
+    pub fn poly_type_outlives(self) -> Option<PolyTypeOutlivesPredicate<'tcx>> {
+        self.poly_map(|atom| atom.type_outlives())
+    }
+
+    /// If the underlying atom is a `PredicateAtom::Projection`, returns
+    /// `Some(trait_ref)`. Else None.
+    pub fn poly_projection(self) -> Option<PolyProjectionPredicate<'tcx>> {
+        self.poly_map(|atom| atom.projection())
+    }
+
+    /// Does various short-circuit checks and returns true if `self`
+    /// and `other` are obviously NOT unifiable.
+    pub fn fast_reject<O>(&self, other: O) -> bool
+        where O: ToPredicate<'tcx>
+    {
+        let other = other.to_predicate();
+        return self.skip_binders().fast_reject(other.skip_binders());
+    }
+}
+
+impl<'cx, 'gcx, 'tcx> PredicateAtom<'tcx> {
+    /// Does various short-circuit checks and returns true if `self`
+    /// and `other` are obviously NOT unifiable.
+    pub fn fast_reject<O>(self, other: O) -> bool
+        where O: ToPredicateAtom<'tcx>
+    {
+        let other = other.to_predicate_atom();
+        return fast_reject_mono(self, other);
+
+        fn fast_reject_mono<'tcx>(a: PredicateAtom<'tcx>, b: PredicateAtom<'tcx>) -> bool {
+            match (a, b) {
+                (ty::PredicateAtom::Projection(ref a), ty::PredicateAtom::Projection(ref b)) =>
+                    a.projection_ty.item_def_id != b.projection_ty.item_def_id,
+                (ty::PredicateAtom::Trait(ref a), ty::PredicateAtom::Trait(ref b)) =>
+                    a.def_id != b.def_id,
+                _ =>
+                    mem::discriminant(&a) != mem::discriminant(&b),
+            }
+        }
+    }
+
+    /// If this is a `PredicateAtom::Trait`, returns `Some(_)`. Else None.
+    pub fn trait_(self) -> Option<TraitRef<'tcx>> {
+        if let PredicateAtom::Trait(t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    /// If this is a `PredicateAtom::Projection`, returns `Some(_)`. Else None.
+    pub fn projection(self) -> Option<ProjectionPredicate<'tcx>> {
+        if let PredicateAtom::Projection(t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    /// If this is a `PredicateAtom::TypeOutlives`, returns `Some(_)`. Else None.
+    pub fn type_outlives(self) -> Option<TypeOutlivesPredicate<'tcx>> {
+        if let PredicateAtom::TypeOutlives(t) = self {
+            Some(t)
+        } else {
+            None
         }
     }
 }
@@ -947,10 +1049,10 @@ pub type PolyEquatePredicate<'tcx> = ty::Binder<EquatePredicate<'tcx>>;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct OutlivesPredicate<A,B>(pub A, pub B); // `A : B`
-pub type PolyOutlivesPredicate<A,B> = ty::Binder<OutlivesPredicate<A,B>>;
-pub type PolyRegionOutlivesPredicate<'tcx> = PolyOutlivesPredicate<ty::Region<'tcx>,
-                                                                   ty::Region<'tcx>>;
-pub type PolyTypeOutlivesPredicate<'tcx> = PolyOutlivesPredicate<Ty<'tcx>, ty::Region<'tcx>>;
+pub type RegionOutlivesPredicate<'tcx> = OutlivesPredicate<ty::Region<'tcx>, ty::Region<'tcx>>;
+pub type PolyRegionOutlivesPredicate<'tcx> = Binder<RegionOutlivesPredicate<'tcx>>;
+pub type TypeOutlivesPredicate<'tcx> = OutlivesPredicate<Ty<'tcx>, ty::Region<'tcx>>;
+pub type PolyTypeOutlivesPredicate<'tcx> = Binder<OutlivesPredicate<Ty<'tcx>, ty::Region<'tcx>>>;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct SubtypePredicate<'tcx> {
@@ -981,6 +1083,14 @@ pub struct ProjectionPredicate<'tcx> {
 pub type PolyProjectionPredicate<'tcx> = Binder<ProjectionPredicate<'tcx>>;
 
 impl<'tcx> PolyProjectionPredicate<'tcx> {
+    /// Returns the def-id of the item being projected by this
+    /// projection predicate. So if `self` were `<T as Iterator>::Item
+    /// = U`, then this method would return the def-id for
+    /// `Iterator::Item`.
+    pub fn item_def_id(&self) -> DefId {
+        self.skip_binder().projection_ty.item_def_id
+    }
+
     pub fn to_poly_trait_ref(&self, tcx: TyCtxt) -> PolyTraitRef<'tcx> {
         // Note: unlike with TraitRef::to_poly_trait_ref(),
         // self.0.trait_ref is permitted to have escaping regions.
@@ -995,7 +1105,16 @@ impl<'tcx> PolyProjectionPredicate<'tcx> {
     }
 }
 
-pub trait ToPredicate<'tcx> {
+impl<'tcx> ProjectionPredicate<'tcx> {
+    /// Given a projection predicate like `<T0 as Trait<T1...Tn>>::Foo
+    /// = U`, returns the trait ref `T0 as Trait<T1...Tn>` from the
+    /// projection.
+    pub fn to_trait_ref(&self, tcx: TyCtxt) -> TraitRef<'tcx> {
+        self.projection_ty.trait_ref(tcx)
+    }
+}
+
+pub trait ToPredicate<'tcx>: Sized {
     fn to_predicate(self) -> Predicate<'tcx>;
 }
 
@@ -1005,92 +1124,70 @@ impl<'tcx> ToPredicate<'tcx> for Predicate<'tcx> {
     }
 }
 
-impl<'tcx> ToPredicate<'tcx> for TraitRef<'tcx> {
+impl<'tcx, T> ToPredicate<'tcx> for T
+    where T: ToPredicateAtom<'tcx>
+{
     fn to_predicate(self) -> Predicate<'tcx> {
-        assert!(!self.has_escaping_regions());
-        ty::Predicate::Trait(ty::Binder(self))
+        Predicate::Atom(self.to_predicate_atom())
     }
 }
 
-impl<'tcx> ToPredicate<'tcx> for PolyTraitRef<'tcx> {
+impl<'tcx, T> ToPredicate<'tcx> for Binder<T>
+    where T: ToPredicateAtom<'tcx>
+{
     fn to_predicate(self) -> Predicate<'tcx> {
-        ty::Predicate::Trait(self)
+        let bound_atom = self.map_bound(|t| t.to_predicate_atom_with_max_depth(1));
+        Predicate::Poly(bound_atom)
     }
 }
 
-impl<'tcx> ToPredicate<'tcx> for PolyRegionOutlivesPredicate<'tcx> {
-    fn to_predicate(self) -> Predicate<'tcx> {
-        Predicate::RegionOutlives(self)
+pub trait ToPredicateAtom<'tcx>: Sized + TypeFoldable<'tcx> {
+    fn to_predicate_atom(self) -> PredicateAtom<'tcx> {
+        self.to_predicate_atom_with_max_depth(0)
+    }
+
+    fn to_predicate_atom_with_max_depth(self, max_depth: u32) -> PredicateAtom<'tcx>;
+}
+
+impl<'tcx> ToPredicateAtom<'tcx> for PredicateAtom<'tcx> {
+    fn to_predicate_atom_with_max_depth(self, max_depth: u32) -> PredicateAtom<'tcx> {
+        assert!(!self.has_regions_escaping_depth(max_depth));
+        self
     }
 }
 
-impl<'tcx> ToPredicate<'tcx> for PolyTypeOutlivesPredicate<'tcx> {
-    fn to_predicate(self) -> Predicate<'tcx> {
-        Predicate::TypeOutlives(self)
+impl<'tcx> ToPredicateAtom<'tcx> for TraitRef<'tcx> {
+    fn to_predicate_atom_with_max_depth(self, max_depth: u32) -> PredicateAtom<'tcx> {
+        assert!(!self.has_regions_escaping_depth(max_depth));
+        PredicateAtom::Trait(self)
     }
 }
 
-impl<'tcx> ToPredicate<'tcx> for PolyProjectionPredicate<'tcx> {
-    fn to_predicate(self) -> Predicate<'tcx> {
-        Predicate::Projection(self)
+impl<'tcx> ToPredicateAtom<'tcx> for RegionOutlivesPredicate<'tcx> {
+    fn to_predicate_atom_with_max_depth(self, max_depth: u32) -> PredicateAtom<'tcx> {
+        assert!(!self.has_regions_escaping_depth(max_depth));
+        PredicateAtom::RegionOutlives(self)
     }
 }
 
-impl<'tcx> Predicate<'tcx> {
-    /// Iterates over the types in this predicate. Note that in all
-    /// cases this is skipping over a binder, so late-bound regions
-    /// with depth 0 are bound by the predicate.
-    pub fn walk_tys(&self) -> IntoIter<Ty<'tcx>> {
-        let vec: Vec<_> = match *self {
-            ty::Predicate::Trait(ref data) => {
-                data.skip_binder().input_types().collect()
-            }
-            ty::Predicate::Subtype(ty::Binder(SubtypePredicate { a, b, a_is_expected: _ })) => {
-                vec![a, b]
-            }
-            ty::Predicate::TypeOutlives(ty::Binder(ref data)) => {
-                vec![data.0]
-            }
-            ty::Predicate::RegionOutlives(..) => {
-                vec![]
-            }
-            ty::Predicate::Projection(ref data) => {
-                data.0.projection_ty.substs.types().chain(Some(data.0.ty)).collect()
-            }
-            ty::Predicate::WellFormed(data) => {
-                vec![data]
-            }
-            ty::Predicate::ObjectSafe(_trait_def_id) => {
-                vec![]
-            }
-            ty::Predicate::ClosureKind(_closure_def_id, _kind) => {
-                vec![]
-            }
-        };
-
-        // The only reason to collect into a vector here is that I was
-        // too lazy to make the full (somewhat complicated) iterator
-        // type that would be needed here. But I wanted this fn to
-        // return an iterator conceptually, rather than a `Vec`, so as
-        // to be closer to `Ty::walk`.
-        vec.into_iter()
+impl<'tcx> ToPredicateAtom<'tcx> for TypeOutlivesPredicate<'tcx> {
+    fn to_predicate_atom_with_max_depth(self, max_depth: u32) -> PredicateAtom<'tcx> {
+        assert!(!self.has_regions_escaping_depth(max_depth));
+        PredicateAtom::TypeOutlives(self)
     }
+}
 
-    pub fn to_opt_poly_trait_ref(&self) -> Option<PolyTraitRef<'tcx>> {
-        match *self {
-            Predicate::Trait(t) => {
-                Some(t)
-            }
-            Predicate::Projection(..) |
-            Predicate::Subtype(..) |
-            Predicate::RegionOutlives(..) |
-            Predicate::WellFormed(..) |
-            Predicate::ObjectSafe(..) |
-            Predicate::ClosureKind(..) |
-            Predicate::TypeOutlives(..) => {
-                None
-            }
-        }
+impl<'tcx> ToPredicateAtom<'tcx> for ProjectionPredicate<'tcx> {
+    fn to_predicate_atom_with_max_depth(self, max_depth: u32) -> PredicateAtom<'tcx> {
+        assert!(!self.has_regions_escaping_depth(max_depth));
+        PredicateAtom::Projection(self)
+    }
+}
+
+impl<'tcx> ToPredicateAtom<'tcx> for SubtypePredicate<'tcx> {
+    fn to_predicate_atom_with_max_depth(self, max_depth: u32) -> PredicateAtom<'tcx> {
+        assert!(!self.has_regions_escaping_depth(max_depth));
+        PredicateAtom::Subtype(self)
     }
 }
 
