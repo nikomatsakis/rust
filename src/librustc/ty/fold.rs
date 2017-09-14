@@ -519,15 +519,20 @@ pub fn shift_region_ref<'a, 'gcx, 'tcx>(
 
 pub fn shift_regions<'a, 'gcx, 'tcx, T>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
                                         amount: u32,
-                                        value: &T) -> T
+                                        value: &T)
+                                        -> T
     where T: TypeFoldable<'tcx>
 {
     debug!("shift_regions(value={:?}, amount={})",
            value, amount);
 
-    value.fold_with(&mut RegionFolder::new(tcx, &mut false, &mut |region, _current_depth| {
-        shift_region_ref(tcx, region, amount)
-    }))
+    if !value.has_escaping_regions() {
+        value.clone()
+    } else {
+        value.fold_with(&mut RegionFolder::new(tcx, &mut false, &mut |region, _current_depth| {
+            shift_region_ref(tcx, region, amount)
+        }))
+    }
 }
 
 /// An "escaping region" is a bound region whose binder is not part of `t`.

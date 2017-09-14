@@ -143,7 +143,8 @@ fn ty_bounds(bounds: Vec<clean::TyParamBound>) -> Vec<clean::TyParamBound> {
     bounds
 }
 
-fn trait_is_same_or_supertrait(cx: &DocContext, child: DefId,
+fn trait_is_same_or_supertrait(cx: &DocContext,
+                               child: DefId,
                                trait_: DefId) -> bool {
     if child == trait_ {
         return true

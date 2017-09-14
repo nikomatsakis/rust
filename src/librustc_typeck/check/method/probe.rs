@@ -588,24 +588,11 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
         let bounds: Vec<_> = self.param_env
             .caller_bounds
             .iter()
-            .filter_map(|predicate| {
-                match *predicate {
-                    ty::Predicate::Trait(trait_predicate) => {
-                        match trait_predicate.skip_binder().self_ty().sty {
-                            ty::TyParam(ref p) if *p == param_ty => {
-                                Some(trait_predicate)
-                            }
-                            _ => None,
-                        }
-                    }
-                    ty::Predicate::Subtype(..) |
-                    ty::Predicate::Projection(..) |
-                    ty::Predicate::RegionOutlives(..) |
-                    ty::Predicate::WellFormed(..) |
-                    ty::Predicate::ObjectSafe(..) |
-                    ty::Predicate::ClosureKind(..) |
-                    ty::Predicate::TypeOutlives(..) |
-                    ty::Predicate::ConstEvaluatable(..) => None,
+            .filter_map(|predicate| predicate.poly_trait(self.tcx))
+            .filter(|poly_trait_ref| {
+                match poly_trait_ref.skip_binder().self_ty().sty {
+                    ty::TyParam(p) => p == param_ty,
+                    _ => false,
                 }
             })
             .collect();
@@ -1070,8 +1057,8 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                 let o = self.resolve_type_vars_if_possible(&o);
                 if !selcx.evaluate_obligation(&o) {
                     result = ProbeResult::NoMatch;
-                    if let &ty::Predicate::Trait(ref pred) = &o.predicate {
-                        possibly_unsatisfied_predicates.push(*pred.skip_binder());
+                    if let ty::PredicateAtom::Trait(pred) = o.predicate.skip_binders() {
+                        possibly_unsatisfied_predicates.push(pred);
                     }
                 }
             }

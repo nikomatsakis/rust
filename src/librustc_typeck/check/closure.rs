@@ -99,9 +99,10 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             expr_def_id,
             |_, _| span_bug!(expr.span, "closure has region param"),
             |_, _| {
-                self.infcx
-                    .next_ty_var(ty::UniverseIndex::ROOT,
-                                 TypeVariableOrigin::TransformedUpvar(expr.span))
+                self.infcx.next_ty_var(
+                    ty::UniverseIndex::ROOT,
+                    TypeVariableOrigin::TransformedUpvar(expr.span),
+                )
             },
         );
         let closure_type = self.tcx.mk_closure(expr_def_id, substs);
@@ -165,7 +166,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                     .projection_bounds()
                     .filter_map(|pb| {
                         let pb = pb.with_self_ty(self.tcx, self.tcx.types.err);
-                        self.deduce_sig_from_projection(&pb)
+                        self.deduce_sig_from_projection(pb)
                     })
                     .next();
                 let kind = object_type
@@ -186,20 +187,23 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         let fulfillment_cx = self.fulfillment_cx.borrow();
         // Here `expected_ty` is known to be a type inference variable.
 
-        let expected_sig = fulfillment_cx.pending_closure_predicates()
+        let expected_sig = fulfillment_cx
+            .pending_closure_predicates()
             .iter()
             .filter_map(|predicate| {
-                debug!("deduce_expectations_from_obligations: predicate={:?}", predicate);
+                debug!(
+                    "deduce_expectations_from_obligations: predicate={:?}",
+                    predicate
+                );
 
-                match *predicate {
+                if let Some(poly_proj) = predicate.poly_projection(self.tcx) {
                     // Given a Projection predicate, we can potentially infer
                     // the complete signature.
-                    ty::Predicate::Projection(ref proj_predicate) => {
-                        let trait_ref = proj_predicate.to_poly_trait_ref(self.tcx);
-                        self.self_type_matches_expected_vid(trait_ref, expected_vid)
-                            .and_then(|_| self.deduce_sig_from_projection(proj_predicate))
-                    }
-                    _ => None,
+                    let poly_trait_ref = poly_proj.to_poly_trait_ref(self.tcx);
+                    self.self_type_matches_expected_vid(poly_trait_ref, expected_vid)
+                        .and_then(|_| self.deduce_sig_from_projection(poly_proj))
+                } else {
+                    None
                 }
             })
             .next();
@@ -208,29 +212,17 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         // infer the kind. This can occur if there is a trait-reference
         // like `F : Fn<A>`. Note that due to subtyping we could encounter
         // many viable options, so pick the most restrictive.
-        let expected_kind = fulfillment_cx.pending_closure_predicates()
+        let expected_kind = fulfillment_cx
+            .pending_closure_predicates()
             .iter()
             .filter_map(|predicate| {
-                let opt_trait_ref = match *predicate {
-                    ty::Predicate::Projection(ref data) => Some(data.to_poly_trait_ref(self.tcx)),
-                    ty::Predicate::Trait(data) => Some(data),
-                    ty::Predicate::Subtype(..) => None,
-                    ty::Predicate::RegionOutlives(..) => None,
-                    ty::Predicate::TypeOutlives(..) => None,
-                    ty::Predicate::WellFormed(..) => None,
-                    ty::Predicate::ObjectSafe(..) => None,
-                    ty::Predicate::ConstEvaluatable(..) => None,
-
-                    // NB: This predicate is created by breaking down a
-                    // `ClosureType: FnFoo()` predicate, where
-                    // `ClosureType` represents some `TyClosure`. It can't
-                    // possibly be referring to the current closure,
-                    // because we haven't produced the `TyClosure` for
-                    // this closure yet; this is exactly why the other
-                    // code is looking for a self type of a unresolved
-                    // inference variable.
-                    ty::Predicate::ClosureKind(..) => None,
-                };
+                // Look for *either* a projection predicate like `<T
+                // as Fn<()>>::Output = U` *or* a plain trait
+                // predicate like `T: Fn<()>` here:
+                let opt_trait_ref = predicate
+                    .poly_projection(self.tcx)
+                    .map(|proj| proj.to_poly_trait_ref(self.tcx))
+                    .or_else(|| predicate.poly_trait(self.tcx));
                 opt_trait_ref
                     .and_then(|tr| self.self_type_matches_expected_vid(tr, expected_vid))
                     .and_then(|tr| self.tcx.lang_items().fn_trait_kind(tr.def_id()))
@@ -242,11 +234,11 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         (expected_sig, expected_kind)
     }
 
-    /// Given a projection like "<F as Fn(X)>::Result == Y", we can deduce
-    /// everything we need to know about a closure.
+    /// Given a projection like "<F as Fn(X)>::Result == Y", we can
+    /// deduce everything we need to know about a closure.
     fn deduce_sig_from_projection(
         &self,
-        projection: &ty::PolyProjectionPredicate<'tcx>,
+        projection: ty::PolyProjectionPredicate<'tcx>,
     ) -> Option<ty::FnSig<'tcx>> {
         let tcx = self.tcx;
 
@@ -296,14 +288,19 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         trait_ref: ty::PolyTraitRef<'tcx>,
         expected_vid: ty::TyVid,
     ) -> Option<ty::PolyTraitRef<'tcx>> {
-        let self_ty = self.shallow_resolve(trait_ref.self_ty());
-        debug!(
-            "self_type_matches_expected_vid(trait_ref={:?}, self_ty={:?})",
-            trait_ref,
-            self_ty
-        );
+        debug!("self_type_matches_expected_vid(trait_ref={:?})", trait_ref);
+
+        // OK to skip binder, we are looking for an unresolved type variable,
+        // which cannot be bound by this binder (since it is free).
+        let self_ty = trait_ref.skip_binder().self_ty();
+        if !self_ty.is_ty_var() {
+            return None;
+        }
+
+        let self_ty = self.shallow_resolve(self_ty);
+        debug!("self_type_matches_expected_vid: self_ty={:?}", self_ty);
         match self_ty.sty {
-            ty::TyInfer(ty::TyVar(v)) if expected_vid == v => Some(trait_ref),
+            ty::TyInfer(ty::TyVar(vid)) if vid == expected_vid => Some(trait_ref),
             _ => None,
         }
     }

@@ -18,6 +18,7 @@ use super::{CombinedSnapshot,
 use super::combine::CombineFields;
 use super::region_inference::taint::TaintIterator;
 
+use traits;
 use ty::{self, TyCtxt, Binder, TypeFoldable};
 use ty::relate::{Relate, RelateResult, TypeRelation};
 use std::usize;
@@ -476,5 +477,24 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                map);
 
         (result, param_env, map)
+    }
+
+    /// Given a predicate obligation, which may include binders,
+    /// convert into the underlying predicate atom obligation, which
+    /// may be in another universe (if binders were present).
+    pub fn skolemize_predicate_obligation(&self, obligation: &traits::PredicateObligation<'tcx>)
+                                          -> traits::PredicateAtomObligation<'tcx>
+    {
+        match obligation.predicate {
+            ty::Predicate::Poly(ref binder) => {
+                let (atom, param_env, _skol_map) =
+                    self.skolemize_late_bound_regions(obligation.param_env, binder);
+                obligation.with(atom).with_env(param_env)
+            }
+
+            ty::Predicate::Atom(atom) => {
+                obligation.with(atom)
+            }
+        }
     }
 }

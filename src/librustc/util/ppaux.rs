@@ -98,6 +98,10 @@ macro_rules! define_print {
         gen_print_impl! { $generic $target, $vars yes $disp yes $dbg }
     };
     ( $generic:tt $target:ty,
+      $vars:tt { debug-and-display $dbg:block } ) => {
+        gen_print_impl! { $generic $target, $vars yes $dbg yes $dbg }
+    };
+    ( $generic:tt $target:ty,
       $vars:tt { debug $dbg:block } ) => {
         gen_print_impl! { $generic $target, $vars no {
             bug!(concat!("display not implemented for ", stringify!($target)));
@@ -911,6 +915,7 @@ define_print_multi! {
         // ('tcx) ty::Binder<ty::TraitRef<'tcx>> is intentionally omited
     ('tcx) ty::Binder<ty::TraitRefPrintWithColon<'tcx>>,
     ('tcx) ty::Binder<ty::TraitRefPrintWithoutSelf<'tcx>>,
+    ('tcx) ty::Binder<ty::PredicateAtom<'tcx>>,
     ('tcx) ty::Binder<ty::FnSig<'tcx>>,
     ('tcx) ty::Binder<ty::SubtypePredicate<'tcx>>,
     ('tcx) ty::Binder<ty::ProjectionPredicate<'tcx>>,
@@ -1059,7 +1064,7 @@ define_print! {
                         let mut is_sized = false;
                         write!(f, "impl")?;
                         for predicate in bounds.predicates {
-                            if let Some(trait_ref) = predicate.to_opt_poly_trait_ref() {
+                            if let Some(trait_ref) = predicate.poly_trait(tcx) {
                                 // Don't print +Sized, but rather +?Sized if absent.
                                 if Some(trait_ref.def_id()) == tcx.lang_items().sized_trait() {
                                     is_sized = true;
@@ -1255,24 +1260,35 @@ define_print! {
 
 define_print! {
     ('tcx) ty::Predicate<'tcx>, (self, f, cx) {
+        debug-and-display {
+            match *self {
+                ty::Predicate::Poly(ref data) => data.print(f, cx),
+                ty::Predicate::Atom(ref data) => data.print(f, cx),
+            }
+        }
+    }
+}
+
+define_print! {
+    ('tcx) ty::PredicateAtom<'tcx>, (self, f, cx) {
         display {
             match *self {
-                ty::Predicate::Trait(ref data) => data.print_with_colon().print(f, cx),
-                ty::Predicate::Subtype(ref predicate) => predicate.print(f, cx),
-                ty::Predicate::RegionOutlives(ref predicate) => predicate.print(f, cx),
-                ty::Predicate::TypeOutlives(ref predicate) => predicate.print(f, cx),
-                ty::Predicate::Projection(ref predicate) => predicate.print(f, cx),
-                ty::Predicate::WellFormed(ty) => print!(f, cx, print(ty), write(" well-formed")),
-                ty::Predicate::ObjectSafe(trait_def_id) =>
+                ty::PredicateAtom::Trait(ref data) => data.print_with_colon().print(f, cx),
+                ty::PredicateAtom::Subtype(ref predicate) => predicate.print(f, cx),
+                ty::PredicateAtom::RegionOutlives(ref predicate) => predicate.print(f, cx),
+                ty::PredicateAtom::TypeOutlives(ref predicate) => predicate.print(f, cx),
+                ty::PredicateAtom::Projection(ref predicate) => predicate.print(f, cx),
+                ty::PredicateAtom::WellFormed(ty) => print!(f, cx, print(ty), write(" well-formed")),
+                ty::PredicateAtom::ObjectSafe(trait_def_id) =>
                     ty::tls::with(|tcx| {
                         write!(f, "the trait `{}` is object-safe", tcx.item_path_str(trait_def_id))
                     }),
-                ty::Predicate::ClosureKind(closure_def_id, kind) =>
+                ty::PredicateAtom::ClosureKind(closure_def_id, kind) =>
                     ty::tls::with(|tcx| {
                         write!(f, "the closure `{}` implements the trait `{}`",
                                tcx.item_path_str(closure_def_id), kind)
                     }),
-                ty::Predicate::ConstEvaluatable(def_id, substs) => {
+                ty::PredicateAtom::ConstEvaluatable(def_id, substs) => {
                     write!(f, "the constant `")?;
                     cx.parameterized(f, substs, def_id, &[])?;
                     write!(f, "` can be evaluated")
@@ -1281,19 +1297,19 @@ define_print! {
         }
         debug {
             match *self {
-                ty::Predicate::Trait(ref a) => a.print_with_colon().print(f, cx),
-                ty::Predicate::Subtype(ref pair) => pair.print(f, cx),
-                ty::Predicate::RegionOutlives(ref pair) => pair.print(f, cx),
-                ty::Predicate::TypeOutlives(ref pair) => pair.print(f, cx),
-                ty::Predicate::Projection(ref pair) => pair.print(f, cx),
-                ty::Predicate::WellFormed(ty) => ty.print(f, cx),
-                ty::Predicate::ObjectSafe(trait_def_id) => {
+                ty::PredicateAtom::Trait(ref a) => a.print_with_colon().print(f, cx),
+                ty::PredicateAtom::Subtype(ref pair) => pair.print(f, cx),
+                ty::PredicateAtom::RegionOutlives(ref pair) => pair.print(f, cx),
+                ty::PredicateAtom::TypeOutlives(ref pair) => pair.print(f, cx),
+                ty::PredicateAtom::Projection(ref pair) => pair.print(f, cx),
+                ty::PredicateAtom::WellFormed(ty) => ty.print(f, cx),
+                ty::PredicateAtom::ObjectSafe(trait_def_id) => {
                     write!(f, "ObjectSafe({:?})", trait_def_id)
                 }
-                ty::Predicate::ClosureKind(closure_def_id, kind) => {
+                ty::PredicateAtom::ClosureKind(closure_def_id, kind) => {
                     write!(f, "ClosureKind({:?}, {:?})", closure_def_id, kind)
                 }
-                ty::Predicate::ConstEvaluatable(def_id, substs) => {
+                ty::PredicateAtom::ConstEvaluatable(def_id, substs) => {
                     write!(f, "ConstEvaluatable({:?}, {:?})", def_id, substs)
                 }
             }

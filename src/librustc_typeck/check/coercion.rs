@@ -535,32 +535,40 @@ impl<'f, 'gcx, 'tcx> Coerce<'f, 'gcx, 'tcx> {
         let traits = [coerce_unsized_did, unsize_did];
         while let Some(obligation) = queue.pop_front() {
             debug!("coerce_unsized resolve step: {:?}", obligation);
-            let trait_ref = match obligation.predicate {
-                ty::Predicate::Trait(ref tr) if traits.contains(&tr.def_id()) => {
+
+            // Continue only for predicates like `T: Unsize` where
+            // `Unsize` is one of the various unsize traits. Push
+            // everything else into `coercion.obligations`.
+            match obligation.predicate.poly_trait(self.tcx) {
+                Some(tr) if traits.contains(&tr.def_id()) => {
                     if unsize_did == tr.def_id() {
                         if let ty::TyTuple(..) = tr.0.input_types().nth(1).unwrap().sty {
                             debug!("coerce_unsized: found unsized tuple coercion");
                             has_unsized_tuple_coercion = true;
                         }
                     }
-                    tr.clone()
                 }
                 _ => {
                     coercion.obligations.push(obligation);
                     continue;
                 }
-            };
-            match selcx.select_poly(&obligation.with(trait_ref)) {
+            }
+
+            // Skolemize away the higher-ranked stuff and run `select`.
+            //
+            // (*) We know it's a trait obligation because of the match we just did.
+            let atom_obligation = self.skolemize_predicate_obligation(&obligation);
+            let trait_ref = atom_obligation.predicate.trait_().unwrap(); // see (*) above
+            match selcx.select(&atom_obligation.with(trait_ref)) {
                 // Uncertain or unimplemented.
-                Ok(None) |
-                Err(traits::Unimplemented) => {
+                Ok(None) | Err(traits::Unimplemented) => {
                     debug!("coerce_unsized: early return - can't prove obligation");
                     return Err(TypeError::Mismatch);
                 }
 
                 // Object safety violations or miscellaneous.
                 Err(err) => {
-                    self.report_selection_error(&obligation, &err);
+                    self.report_selection_error(&atom_obligation, &err);
                     // Treat this like an obligation and follow through
                     // with the unsizing - the lack of a coercion should
                     // be silent, as it causes a type mismatch later.

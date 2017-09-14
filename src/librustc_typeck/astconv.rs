@@ -342,7 +342,7 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
         let trait_ref = &ast_trait_ref.trait_ref;
         let trait_def_id = self.trait_def_id(trait_ref);
 
-        debug!("ast_path_to_poly_trait_ref({:?}, def_id={:?})", trait_ref, trait_def_id);
+        debug!("instantiate_poly_trait_ref({:?}, def_id={:?})", trait_ref, trait_def_id);
 
         self.prohibit_type_params(trait_ref.path.segments.split_last().unwrap().1);
 
@@ -360,8 +360,9 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
             predicate.ok() // ok to ignore Err() because ErrorReported (see above)
         }));
 
-        debug!("ast_path_to_poly_trait_ref({:?}, projections={:?}) -> {:?}",
-               trait_ref, poly_projections, poly_trait_ref);
+        debug!("instantiate_poly_trait_ref: trait_ref={:?}", trait_ref);
+        debug!("instantiate_poly_trait_ref: poly_projections={:?}", poly_projections);
+        debug!("instantiate_poly_trait_ref: poly_trait_ref={:?}", poly_trait_ref);
         poly_trait_ref
     }
 
@@ -546,6 +547,9 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
     {
         let tcx = self.tcx();
 
+        debug!("conv_object_ty_poly_trait_ref(trait_bounds={:?}, lifetime={:?})",
+               trait_bounds, lifetime);
+
         if trait_bounds.is_empty() {
             span_err!(tcx.sess, span, E0224,
                       "at least one non-builtin trait is required for an object type");
@@ -688,7 +692,7 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
         let tcx = self.tcx();
 
         let bounds: Vec<_> = self.get_type_parameter_bounds(span, ty_param_def_id)
-            .predicates.into_iter().filter_map(|p| p.to_opt_poly_trait_ref()).collect();
+            .predicates.into_iter().filter_map(|p| p.poly_trait(tcx)).collect();
 
         // Check that there is exactly one way to find an associated type with the
         // correct name.

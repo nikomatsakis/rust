@@ -393,7 +393,7 @@ fn to_pretty_impl_header(tcx: TyCtxt, impl_def_id: DefId) -> Option<String> {
     let predicates = tcx.predicates_of(impl_def_id).predicates;
     let mut pretty_predicates = Vec::with_capacity(predicates.len());
     for p in predicates {
-        if let Some(poly_trait_ref) = p.to_opt_poly_trait_ref() {
+        if let Some(poly_trait_ref) = p.poly_trait(tcx) {
             if Some(poly_trait_ref.def_id()) == sized_trait {
                 types_without_default_bounds.remove(poly_trait_ref.self_ty());
                 continue;
