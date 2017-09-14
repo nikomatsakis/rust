@@ -1007,36 +1007,42 @@ impl<'tcx> ToPolyTraitRef<'tcx> for TraitRef<'tcx> {
 }
 
 pub trait ToPredicate<'tcx> {
-    fn to_predicate(&self) -> Predicate<'tcx>;
+    fn to_predicate(self) -> Predicate<'tcx>;
+}
+
+impl<'tcx> ToPredicate<'tcx> for Predicate<'tcx> {
+    fn to_predicate(self) -> Predicate<'tcx> {
+        self
+    }
 }
 
 impl<'tcx> ToPredicate<'tcx> for TraitRef<'tcx> {
-    fn to_predicate(&self) -> Predicate<'tcx> {
+    fn to_predicate(self) -> Predicate<'tcx> {
         ty::Predicate::Trait(self.to_poly_trait_ref())
     }
 }
 
 impl<'tcx> ToPredicate<'tcx> for PolyTraitRef<'tcx> {
-    fn to_predicate(&self) -> Predicate<'tcx> {
-        ty::Predicate::Trait(*self)
+    fn to_predicate(self) -> Predicate<'tcx> {
+        ty::Predicate::Trait(self)
     }
 }
 
 impl<'tcx> ToPredicate<'tcx> for PolyRegionOutlivesPredicate<'tcx> {
-    fn to_predicate(&self) -> Predicate<'tcx> {
-        Predicate::RegionOutlives(self.clone())
+    fn to_predicate(self) -> Predicate<'tcx> {
+        Predicate::RegionOutlives(self)
     }
 }
 
 impl<'tcx> ToPredicate<'tcx> for PolyTypeOutlivesPredicate<'tcx> {
-    fn to_predicate(&self) -> Predicate<'tcx> {
-        Predicate::TypeOutlives(self.clone())
+    fn to_predicate(self) -> Predicate<'tcx> {
+        Predicate::TypeOutlives(self)
     }
 }
 
 impl<'tcx> ToPredicate<'tcx> for PolyProjectionPredicate<'tcx> {
-    fn to_predicate(&self) -> Predicate<'tcx> {
-        Predicate::Projection(self.clone())
+    fn to_predicate(self) -> Predicate<'tcx> {
+        Predicate::Projection(self)
     }
 }
 

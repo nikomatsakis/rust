@@ -199,7 +199,7 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
         if !data.has_escaping_regions() {
             let predicate = trait_ref.to_predicate();
             let cause = self.cause(traits::ProjectionWf(data));
-            self.out.push(traits::Obligation::new(cause, self.param_env, predicate));
+            self.out.push(traits::Obligation::predicate(cause, self.param_env, predicate));
         }
     }
 
