@@ -303,6 +303,24 @@ impl<'a, 'tcx> PatternContext<'a, 'tcx> {
     }
 
     pub fn lower_pattern(&mut self, pat: &hir::Pat) -> Pattern<'tcx> {
+        let unadjusted_pat = self.lower_pattern_unadjusted(pat);
+        self.tables
+            .pat_adjustments()
+            .get(pat.hir_id)
+            .unwrap_or(&vec![])
+            .iter()
+            .fold(unadjusted_pat, |pat, ref_ty| {
+                    debug!("{:?}: wrapping pattern with type {:?}", pat, ref_ty);
+                    Pattern {
+                        span: pat.span,
+                        ty: ref_ty,
+                        kind: Box::new(PatternKind::Deref { subpattern: pat }),
+                    }
+                },
+            )
+    }
+
+    pub fn lower_pattern_unadjusted(&mut self, pat: &hir::Pat) -> Pattern<'tcx> {
         let mut ty = self.tables.node_id_to_type(pat.hir_id);
 
         let kind = match pat.node {

@@ -326,8 +326,23 @@ pub struct TypeckTables<'tcx> {
 
     adjustments: ItemLocalMap<Vec<ty::adjustment::Adjustment<'tcx>>>,
 
-    // Stores the actual binding mode for all instances of hir::BindingAnnotation.
+    /// Stores the actual binding mode for all instances of hir::BindingAnnotation.
     pat_binding_modes: ItemLocalMap<BindingMode>,
+
+    /// Stores the types which were implicitly dereferenced in pattern binding modes
+    /// for later usage in HAIR lowering. For example,
+    ///
+    /// ```
+    /// match &&Some(5i32) {
+    ///     Some(n) => {},
+    ///     _ => {},
+    /// }
+    /// ```
+    /// leads to a `vec![&&i32, &i32]`. Empty vectors are not stored.
+    ///
+    /// See:
+    /// https://github.com/rust-lang/rfcs/blob/master/text/2005-match-ergonomics.md#definitions
+    pat_adjustments: ItemLocalMap<Vec<Ty<'tcx>>>,
 
     /// Borrows
     pub upvar_capture_map: ty::UpvarCaptureMap<'tcx>,
@@ -383,6 +398,7 @@ impl<'tcx> TypeckTables<'tcx> {
             node_substs: ItemLocalMap(),
             adjustments: ItemLocalMap(),
             pat_binding_modes: ItemLocalMap(),
+            pat_adjustments: ItemLocalMap(),
             upvar_capture_map: FxHashMap(),
             generator_sigs: ItemLocalMap(),
             generator_interiors: ItemLocalMap(),
@@ -563,6 +579,21 @@ impl<'tcx> TypeckTables<'tcx> {
         }
     }
 
+    pub fn pat_adjustments(&self) -> LocalTableInContext<Vec<Ty<'tcx>>> {
+        LocalTableInContext {
+            local_id_root: self.local_id_root,
+            data: &self.pat_adjustments,
+        }
+    }
+
+    pub fn pat_adjustments_mut(&mut self)
+                           -> LocalTableInContextMut<Vec<Ty<'tcx>>> {
+        LocalTableInContextMut {
+            local_id_root: self.local_id_root,
+            data: &mut self.pat_adjustments,
+        }
+    }
+
     pub fn upvar_capture(&self, upvar_id: ty::UpvarId) -> ty::UpvarCapture<'tcx> {
         self.upvar_capture_map[&upvar_id]
     }
@@ -688,6 +719,7 @@ impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for Typeck
             ref node_substs,
             ref adjustments,
             ref pat_binding_modes,
+            ref pat_adjustments,
             ref upvar_capture_map,
             ref closure_tys,
             ref closure_kinds,
@@ -709,6 +741,7 @@ impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for Typeck
             ich::hash_stable_itemlocalmap(hcx, hasher, node_substs);
             ich::hash_stable_itemlocalmap(hcx, hasher, adjustments);
             ich::hash_stable_itemlocalmap(hcx, hasher, pat_binding_modes);
+            ich::hash_stable_itemlocalmap(hcx, hasher, pat_adjustments);
             ich::hash_stable_hashmap(hcx, hasher, upvar_capture_map, |hcx, up_var_id| {
                 let ty::UpvarId {
                     var_id,

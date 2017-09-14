@@ -13,7 +13,7 @@ const X: &'static str = "12345";
 
 fn test(s: String) -> bool {
     match &*s {
-        X => true,
+        X => true, // FIXME(tschottdorf): must not treat X as a non-ref pattern
         _ => false
     }
 }
