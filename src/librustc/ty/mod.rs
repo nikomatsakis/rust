@@ -1044,17 +1044,6 @@ impl<'tcx> PolyProjectionPredicate<'tcx> {
     }
 }
 
-pub trait ToPolyTraitRef<'tcx> {
-    fn to_poly_trait_ref(&self) -> PolyTraitRef<'tcx>;
-}
-
-impl<'tcx> ToPolyTraitRef<'tcx> for TraitRef<'tcx> {
-    fn to_poly_trait_ref(&self) -> PolyTraitRef<'tcx> {
-        assert!(!self.has_escaping_regions());
-        ty::Binder(self.clone())
-    }
-}
-
 pub trait ToPredicate<'tcx> {
     fn to_predicate(self) -> Predicate<'tcx>;
 }
@@ -1067,7 +1056,8 @@ impl<'tcx> ToPredicate<'tcx> for Predicate<'tcx> {
 
 impl<'tcx> ToPredicate<'tcx> for TraitRef<'tcx> {
     fn to_predicate(self) -> Predicate<'tcx> {
-        ty::Predicate::Trait(self.to_poly_trait_ref())
+        assert!(!self.has_escaping_regions());
+        ty::Predicate::Trait(ty::Binder(self))
     }
 }
 

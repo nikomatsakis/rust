@@ -16,7 +16,7 @@ use hir::def_id::DefId;
 use namespace::Namespace;
 use rustc::ty::subst::Substs;
 use rustc::traits;
-use rustc::ty::{self, Ty, ToPredicate, ToPolyTraitRef, TraitRef, TypeFoldable};
+use rustc::ty::{self, Ty, ToPredicate, TraitRef, TypeFoldable};
 use rustc::ty::subst::Subst;
 use rustc::infer::{self, InferOk};
 
@@ -264,12 +264,11 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         let trait_ref = ty::TraitRef::new(trait_def_id, substs);
 
         // Construct an obligation
-        let poly_trait_ref = trait_ref.to_poly_trait_ref();
         let obligation =
             traits::Obligation::misc(span,
                                      self.body_id,
                                      self.param_env,
-                                     poly_trait_ref.to_predicate());
+                                     trait_ref.to_predicate());
 
         // Now we want to know if this can be matched
         let mut selcx = traits::SelectionContext::new(self);
