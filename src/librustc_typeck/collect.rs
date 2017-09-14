@@ -62,7 +62,7 @@ use middle::resolve_lifetime as rl;
 use rustc::traits::Reveal;
 use rustc::ty::subst::Substs;
 use rustc::ty::{ToPredicate, ReprOptions};
-use rustc::ty::{self, AdtKind, ToPolyTraitRef, Ty, TyCtxt};
+use rustc::ty::{self, AdtKind, Ty, TyCtxt};
 use rustc::ty::maps::Providers;
 use rustc::ty::util::IntTypeExt;
 use util::nodemap::FxHashMap;
@@ -1441,7 +1441,7 @@ fn predicates_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
         // Add in a predicate that `Self:Trait` (where `Trait` is the
         // current trait).  This is needed for builtin bounds.
-        predicates.push(trait_ref.to_poly_trait_ref().to_predicate());
+        predicates.push(trait_ref.to_predicate());
     }
 
     // Collect the region predicates that were declared inline as

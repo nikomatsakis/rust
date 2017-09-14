@@ -13,7 +13,7 @@
 
 use check::FnCtxt;
 use rustc::hir::map as hir_map;
-use rustc::ty::{self, Ty, TyCtxt, ToPolyTraitRef, ToPredicate, TypeFoldable};
+use rustc::ty::{self, Ty, TyCtxt, ToPredicate, TypeFoldable};
 use hir::def::Def;
 use hir::def_id::{CRATE_DEF_INDEX, DefId};
 use middle::lang_items::FnOnceTraitLangItem;
@@ -56,12 +56,11 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                             &[self.next_ty_var(ty::UniverseIndex::ROOT,
                                                TypeVariableOrigin::MiscVariable(span))]);
                         let trait_ref = ty::TraitRef::new(fn_once, fn_once_substs);
-                        let poly_trait_ref = trait_ref.to_poly_trait_ref();
                         let obligation =
                             Obligation::misc(span,
                                              self.body_id,
                                              self.param_env,
-                                             poly_trait_ref.to_predicate());
+                                             trait_ref.to_predicate());
                         SelectionContext::new(self).evaluate_obligation(&obligation)
                     })
                 })

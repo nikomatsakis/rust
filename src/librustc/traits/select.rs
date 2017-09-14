@@ -35,7 +35,7 @@ use hir::def_id::DefId;
 use infer;
 use infer::{InferCtxt, InferOk, TypeFreshener};
 use ty::subst::{Kind, Subst, Substs};
-use ty::{self, ToPolyTraitRef, ToPredicate, Ty, TyCtxt, TypeFoldable};
+use ty::{self, ToPredicate, Ty, TyCtxt, TypeFoldable};
 use ty::fast_reject;
 use ty::relate::TypeRelation;
 use middle::lang_items;
@@ -828,9 +828,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             debug!("evaluate_stack({:?}) --> recursive",
                    stack.fresh_trait_ref);
             let cycle = stack.iter().skip(1).take(rec_index+1);
-            let cycle = cycle.map(|stack| {
-                ty::Predicate::Trait(stack.obligation.predicate.to_poly_trait_ref())
-            });
+            let cycle = cycle.map(|stack| stack.obligation.predicate.to_predicate());
             if self.coinductive_match(cycle) {
                 debug!("evaluate_stack({:?}) --> recursive, coinductive",
                        stack.fresh_trait_ref);
