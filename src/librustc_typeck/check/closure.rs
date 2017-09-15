@@ -186,17 +186,12 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         let fulfillment_cx = self.fulfillment_cx.borrow();
         // Here `expected_ty` is known to be a type inference variable.
 
-        let expected_sig = fulfillment_cx
-            .pending_obligations()
+        let expected_sig = fulfillment_cx.pending_closure_predicates()
             .iter()
-            .map(|obligation| &obligation.obligation)
-            .filter_map(|obligation| {
-                debug!(
-                    "deduce_expectations_from_obligations: obligation.predicate={:?}",
-                    obligation.predicate
-                );
+            .filter_map(|predicate| {
+                debug!("deduce_expectations_from_obligations: predicate={:?}", predicate);
 
-                match obligation.predicate {
+                match *predicate {
                     // Given a Projection predicate, we can potentially infer
                     // the complete signature.
                     ty::Predicate::Projection(ref proj_predicate) => {
@@ -213,12 +208,10 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         // infer the kind. This can occur if there is a trait-reference
         // like `F : Fn<A>`. Note that due to subtyping we could encounter
         // many viable options, so pick the most restrictive.
-        let expected_kind = fulfillment_cx
-            .pending_obligations()
+        let expected_kind = fulfillment_cx.pending_closure_predicates()
             .iter()
-            .map(|obligation| &obligation.obligation)
-            .filter_map(|obligation| {
-                let opt_trait_ref = match obligation.predicate {
+            .filter_map(|predicate| {
+                let opt_trait_ref = match *predicate {
                     ty::Predicate::Projection(ref data) => Some(data.to_poly_trait_ref(self.tcx)),
                     ty::Predicate::Trait(data) => Some(data),
                     ty::Predicate::Subtype(..) => None,

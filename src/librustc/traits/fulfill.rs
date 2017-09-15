@@ -49,6 +49,42 @@ pub struct FulfillmentContext<'tcx> {
     // fulfillment context.
     predicates: ObligationForest<PendingPredicateObligation<'tcx>>,
 
+    // A set of predicates that are useful for inferring closure signatures.
+    //
+    // We are looking to help out with a scenario like this:
+    //
+    // ```
+    // foo(|x| use(*x))
+    //
+    // fn foo<T>(t: T) where T: FnMut(&u32) { .. }
+    // ```
+    //
+    // In this case, in the expression `foo(|x| use(*x))`, the type
+    // variable `T` is first instantiated with an inference variable
+    // `?T` (as part of the subexpression `foo`) and the obligation
+    // that `?T: FnMut(&u32)` is registered; actually, a few
+    // obligations get registered, but the most helpful thing is a
+    // projection predicate `for<'a> <?T as FnMut<(&'a u32,)>>::Output
+    // = ()`. We then typecheck the arguments. The closure expression
+    // `|x|` gets that its expected type is `?T`, but that does not
+    // tell it anything about its expected signature.  To solve this,
+    // it needs to trawl through the list of pending prediates. That's
+    // where this vector comes in.
+    //
+    // This vector stores a copy of predicate that gets registered where the
+    // following conditions are met:
+    //
+    // 0. The predicate is in universe 0.
+    // 1. The self-type is an uninstantiated type variable.
+    // 2. It is a projection or trait-ref of a closure trait.
+    //
+    // We periodically prune out cases where the self-type got
+    // instantiated, as they are no longer of potential use.
+    //
+    // Closures can read the current state via the
+    // `pending_closure_predicates()` accessor.
+    pending_closure_predicates: Vec<ty::Predicate<'tcx>>,
+
     // A set of constraints that regionck must validate. Each
     // constraint has the form `T:'a`, meaning "some type `T` must
     // outlive the lifetime 'a". These constraints derive from
@@ -95,6 +131,7 @@ impl<'a, 'gcx, 'tcx> FulfillmentContext<'tcx> {
         FulfillmentContext {
             predicates: ObligationForest::new(),
             region_obligations: NodeMap(),
+            pending_closure_predicates: vec![],
         }
     }
 
@@ -173,6 +210,8 @@ impl<'a, 'gcx, 'tcx> FulfillmentContext<'tcx> {
         // debug output much nicer to read and so on.
         let obligation = infcx.resolve_type_vars_if_possible(&obligation);
 
+        self.record_closure_predicate_if_relevant(infcx, &obligation);
+
         debug!("register_predicate_obligation(obligation={:?})", obligation);
 
         assert!(!infcx.is_in_snapshot());
@@ -181,6 +220,46 @@ impl<'a, 'gcx, 'tcx> FulfillmentContext<'tcx> {
             obligation,
             stalled_on: vec![]
         });
+    }
+
+    fn record_closure_predicate_if_relevant(&mut self,
+                                            infcx: &InferCtxt<'a, 'gcx, 'tcx>,
+                                            obligation: &PredicateObligation<'tcx>) {
+        if obligation.param_env.universe != ty::UniverseIndex::ROOT {
+            return;
+        }
+
+        if Self::is_closure_predicate(infcx, &obligation.predicate) {
+            self.prune_pending_closure_predicates(infcx);
+            self.pending_closure_predicates.push(obligation.predicate);
+        }
+    }
+
+    fn is_closure_predicate(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
+                            predicate: &ty::Predicate<'tcx>)
+                            -> bool
+    {
+        let opt_trait_ref = match *predicate {
+            ty::Predicate::Trait(trait_ref) => trait_ref,
+            ty::Predicate::Projection(proj) => proj.to_poly_trait_ref(infcx.tcx),
+            _ => return false,
+        };
+
+        // OK to skip binder. We are looking for a (free) type
+        // variable.
+        let self_ty = opt_trait_ref.skip_binder().self_ty();
+        if !self_ty.is_ty_var() {
+            return false;
+        }
+
+        // Now that we know `self_ty` is a type variable, check that
+        // it is still unresolved.
+        let self_ty = infcx.shallow_resolve(self_ty);
+        self_ty.is_ty_var()
+    }
+
+    pub fn prune_pending_closure_predicates(&mut self, infcx: &InferCtxt<'a, 'gcx, 'tcx>) {
+        self.pending_closure_predicates.retain(|p| Self::is_closure_predicate(infcx, p))
     }
 
     pub fn register_predicate_obligations(&mut self,
@@ -229,8 +308,15 @@ impl<'a, 'gcx, 'tcx> FulfillmentContext<'tcx> {
         self.select(&mut selcx)
     }
 
-    pub fn pending_obligations(&self) -> Vec<PendingPredicateObligation<'tcx>> {
-        self.predicates.pending_obligations()
+    /// Returns the list of closure obligations that we have seen
+    /// which are yet pending (meaning that their self type has not
+    /// yet been seen to be resolved to a specific closure type, and
+    /// hence they may still be of use).
+    ///
+    /// See the comment on the field `pending_closure_predicates` for
+    /// more information.
+    pub fn pending_closure_predicates(&self) -> &[ty::Predicate<'tcx>] {
+        &self.pending_closure_predicates
     }
 
     /// Attempts to select obligations using `selcx`. If `only_new_obligations` is true, then it
