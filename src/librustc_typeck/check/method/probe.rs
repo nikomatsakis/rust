@@ -940,11 +940,11 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
     }
 
     fn select_trait_candidate(&self, trait_ref: ty::TraitRef<'tcx>)
-                              -> traits::SelectionResult<'tcx, traits::Selection<'tcx>>
+                              -> Result<Option<traits::Selection<'tcx>>,
+                                        Vec<traits::FulfillmentError<'tcx>>>
     {
         let cause = traits::ObligationCause::misc(self.span, self.body_id);
-        let obligation = traits::Obligation::new(cause, self.param_env, trait_ref);
-        traits::SelectionContext::new(self).select(&obligation)
+        self.select_trait_ref(cause, self.param_env, trait_ref)
     }
 
     fn candidate_source(&self, candidate: &Candidate<'tcx>, self_ty: Ty<'tcx>)

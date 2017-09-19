@@ -513,8 +513,6 @@ impl<'f, 'gcx, 'tcx> Coerce<'f, 'gcx, 'tcx> {
             }
         })?;
 
-        let mut selcx = traits::SelectionContext::new(self);
-
         // Use a FIFO queue for this custom fulfillment procedure.
         let mut queue = VecDeque::new();
 
@@ -559,23 +557,17 @@ impl<'f, 'gcx, 'tcx> Coerce<'f, 'gcx, 'tcx> {
             // (*) We know it's a trait obligation because of the match we just did.
             let atom_obligation = self.skolemize_predicate_obligation(&obligation);
             let trait_ref = atom_obligation.predicate.trait_().unwrap(); // see (*) above
-            match selcx.select(&atom_obligation.with(trait_ref)) {
+            match self.select_trait_ref(atom_obligation.cause,
+                                        atom_obligation.param_env,
+                                        trait_ref) {
                 // Uncertain or unimplemented.
-                Ok(None) | Err(traits::Unimplemented) => {
+                Ok(None) | Err(_) => {
                     debug!("coerce_unsized: early return - can't prove obligation");
                     return Err(TypeError::Mismatch);
                 }
 
-                // Object safety violations or miscellaneous.
-                Err(err) => {
-                    self.report_selection_error(&atom_obligation, &err);
-                    // Treat this like an obligation and follow through
-                    // with the unsizing - the lack of a coercion should
-                    // be silent, as it causes a type mismatch later.
-                }
-
                 Ok(Some(vtable)) => {
-                    for obligation in vtable.nested_obligations() {
+                    for obligation in vtable.into_nested_obligations() {
                         queue.push_back(obligation);
                     }
                 }

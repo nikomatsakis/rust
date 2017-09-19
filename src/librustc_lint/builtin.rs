@@ -1025,16 +1025,11 @@ impl<'a, 'tcx> LateLintPass<'a, 'tcx> for UnconditionalRecursion {
                 // Attempt to select a concrete impl before checking.
                 ty::TraitContainer(trait_def_id) => {
                     let trait_ref = ty::TraitRef::from_method(tcx, trait_def_id, callee_substs);
-                    let trait_ref = trait_ref;
                     let span = tcx.hir.span(expr_id);
-                    let obligation =
-                        traits::Obligation::new(traits::ObligationCause::misc(span, expr_id),
-                                                cx.param_env,
-                                                trait_ref);
 
                     tcx.infer_ctxt().enter(|infcx| {
-                        let mut selcx = traits::SelectionContext::new(&infcx);
-                        match selcx.select(&obligation) {
+                        let cause = traits::ObligationCause::misc(span, expr_id);
+                        match infcx.select_trait_ref(cause, cx.param_env, trait_ref) {
                             // The method comes from a `T: Trait` bound.
                             // If `T` is `Self`, then this call is inside
                             // a default method definition.

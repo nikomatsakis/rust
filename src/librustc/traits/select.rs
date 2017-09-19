@@ -17,7 +17,7 @@ use super::coherence;
 use super::DerivedObligationCause;
 use super::project;
 use super::project::{normalize_with_depth, Normalized, ProjectionCacheKey};
-use super::{PredicateObligation, PredicateAtomObligation, PolyTraitObligation};
+use super::{PredicateObligation, PredicateAtomObligation};
 use super::{TraitObligation, ObligationCause};
 use super::{ObligationCauseCode, BuiltinDerivedObligation, ImplDerivedObligation};
 use super::{SelectionError, Unimplemented, OutputTypeParameterMismatch};
@@ -474,21 +474,9 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
     /// Attempts to satisfy the obligation. If successful, this will affect the surrounding
     /// type environment by performing unification.
-    pub fn select_poly(&mut self, obligation: &PolyTraitObligation<'tcx>)
-                       -> SelectionResult<'tcx, Selection<'tcx>> {
-        debug!("select_poly({:?})", obligation);
-        assert!(!obligation.predicate.has_escaping_regions());
-        let (trait_ref, param_env, _skol_map) =
-            self.infcx().skolemize_late_bound_regions(obligation.param_env, &obligation.predicate);
-
-        let obligation = obligation.with(trait_ref).with_env(param_env);
-        self.select(&obligation)
-    }
-
-    /// Attempts to satisfy the obligation. If successful, this will affect the surrounding
-    /// type environment by performing unification.
-    pub fn select(&mut self, obligation: &TraitObligation<'tcx>)
-                  -> SelectionResult<'tcx, Selection<'tcx>> {
+    pub(in traits) fn select(&mut self, obligation: &TraitObligation<'tcx>)
+                             -> SelectionResult<'tcx, Selection<'tcx>>
+    {
         debug!("select({:?}, param_env={:?})", obligation, obligation.param_env);
 
         let tcx = self.tcx();
@@ -910,7 +898,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 Ok(selection) => {
                     this.evaluate_predicates_recursively(
                         stack.list(),
-                        selection.nested_obligations().iter())
+                        selection.nested_obligations())
                 }
                 Err(..) => EvaluatedToErr
             }

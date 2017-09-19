@@ -234,14 +234,11 @@ impl<O: ForestObligation> ObligationForest<O> {
     }
 
     /// Returns the set of obligations that are in a pending state.
-    pub fn pending_obligations(&self) -> Vec<O>
-        where O: Clone
-    {
+    pub fn pending_obligations<'a>(&'a self) -> impl Iterator<Item = &'a O> + 'a {
         self.nodes
             .iter()
             .filter(|n| n.state.get() == NodeState::Pending)
-            .map(|n| n.obligation.clone())
-            .collect()
+            .map(|n| &n.obligation)
     }
 
     /// Perform a pass through the obligation list. This must

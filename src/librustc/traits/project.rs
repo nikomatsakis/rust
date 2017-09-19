@@ -122,7 +122,7 @@ struct ProjectionTyCandidateSet<'tcx> {
 ///     <T as Trait>::U == V
 ///
 /// If successful, this may result in additional obligations.
-pub fn project_and_unify_type<'cx, 'gcx, 'tcx>(
+pub(in traits) fn project_and_unify_type<'cx, 'gcx, 'tcx>(
     selcx: &mut SelectionContext<'cx, 'gcx, 'tcx>,
     obligation: &ProjectionObligation<'tcx>)
     -> Result<Option<Vec<PredicateObligation<'tcx>>>,

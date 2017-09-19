@@ -16,8 +16,10 @@
 use dep_graph::{DepKind, DepTrackingMapConfig};
 use infer::TransNormalize;
 use std::marker::PhantomData;
+use syntax::ast::DUMMY_NODE_ID;
 use syntax_pos::DUMMY_SP;
-use traits::{FulfillmentContext, Obligation, ObligationCause, SelectionContext, Vtable};
+use traits::{ObligationCause, FulfillmentContext, Vtable};
+
 use ty::{self, Ty, TyCtxt};
 use ty::subst::{Subst, Substs};
 use ty::fold::{TypeFoldable, TypeFolder};
@@ -42,12 +44,8 @@ pub fn trans_fulfill_obligation<'a, 'tcx>(ty: TyCtxt<'a, 'tcx, 'tcx>,
     // Do the initial selection for the obligation. This yields the
     // shallow result we are looking for -- that is, what specific impl.
     ty.infer_ctxt().enter(|infcx| {
-        let mut selcx = SelectionContext::new(&infcx);
-
-        let obligation_cause = ObligationCause::dummy();
-        let obligation = Obligation::new(obligation_cause, param_env, trait_ref);
-
-        let selection = match selcx.select_poly(&obligation) {
+        let cause = ObligationCause::misc(DUMMY_SP, DUMMY_NODE_ID);
+        let selection = match infcx.select_poly_trait_ref(cause, param_env, trait_ref) {
             Ok(Some(selection)) => selection,
             Ok(None) => {
                 // Ambiguity can happen when monomorphizing during trans

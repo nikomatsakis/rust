@@ -715,6 +715,65 @@ fn vtable_methods<'a, 'tcx>(
     )
 }
 
+impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
+    /// A kind of specialized routine that takes a given trait-ref and
+    /// tries to "select" a vtable that implements it. Can return in
+    /// one of three possible states:
+    ///
+    /// - Success: returns the vtable that we selected for this
+    ///   trait-ref. This vtable contains pending predicates that were not
+    ///   yet proven to hold. If this operation is not inside of a
+    ///   snapshot, or is inside a snapshot that is committed, those
+    ///   pending predicates should be registered in some enclosing
+    ///   fufillment cx. (If we *are* in a snapshot, and that snapshot
+    ///   is rolled-back, then the predicates can be discarded.)
+    ///
+    /// - Ambiguity: if `None` is returned, then the trait-ref could not
+    ///   be selected. Try again some other time.
+    ///
+    /// - Error: selecting the trait-ref led to an error. If this
+    ///   operation is inside of a snapshot, and that snapshot is
+    ///   rolled back, then these errors can be discarded. Otherwise,
+    ///   they should be reported to the user.
+    ///
+    /// NB. In the success/error case, unless this method is invoked
+    /// in a snapshot that is rolled back, you *must* process the
+    /// return value appropriately or it could lead to incorrect
+    /// compilations or ICEs. In particular, it could mess with the
+    /// projection cache, which assumes that subobligations will be
+    /// fully processed and errors will be reported.
+    pub fn select_trait_ref(&self,
+                            cause: ObligationCause<'tcx>,
+                            param_env: ty::ParamEnv<'tcx>,
+                            trait_ref: ty::TraitRef<'tcx>)
+                            -> Result<Option<Selection<'tcx>>, Vec<FulfillmentError<'tcx>>>
+    {
+        debug!("trait_ref(trait_ref={:?}, param_env={:?})", trait_ref, param_env);
+
+        let obligation = Obligation::new(cause, param_env, trait_ref);
+
+        let mut selcx = SelectionContext::new(self);
+        selcx.select(&obligation).map_err(|e| {
+            vec![FulfillmentError {
+                obligation: obligation.with(trait_ref.to_predicate_atom()),
+                code: FulfillmentErrorCode::CodeSelectionError(e),
+            }]
+        })
+    }
+
+    pub fn select_poly_trait_ref(&self,
+                                 cause: ObligationCause<'tcx>,
+                                 param_env: ty::ParamEnv<'tcx>,
+                                 poly_trait_ref: ty::PolyTraitRef<'tcx>)
+                                 -> Result<Option<Selection<'tcx>>, Vec<FulfillmentError<'tcx>>>
+    {
+        let (trait_ref, param_env, _skol_map) =
+            self.skolemize_late_bound_regions(param_env, &poly_trait_ref);
+
+        self.select_trait_ref(cause, param_env, trait_ref)
+    }
+}
+
 impl<'tcx> PredicateObligation<'tcx> {
     pub fn from<O>(cause: ObligationCause<'tcx>,
                    param_env: ty::ParamEnv<'tcx>,
@@ -783,7 +842,7 @@ impl<'tcx> ObligationCause<'tcx> {
 }
 
 impl<'tcx, N> Vtable<'tcx, N> {
-    pub fn nested_obligations(self) -> Vec<N> {
+    pub fn into_nested_obligations(self) -> Vec<N> {
         match self {
             VtableImpl(i) => i.nested,
             VtableParam(n) => n,
@@ -793,6 +852,19 @@ impl<'tcx, N> Vtable<'tcx, N> {
             VtableGenerator(c) => c.nested,
             VtableObject(d) => d.nested,
             VtableFnPointer(d) => d.nested,
+        }
+    }
+
+    pub fn nested_obligations(&self) -> &[N] {
+        match *self {
+            VtableImpl(ref i) => &i.nested,
+            VtableParam(ref n) => &n,
+            VtableBuiltin(ref i) => &i.nested,
+            VtableDefaultImpl(ref d) => &d.nested,
+            VtableClosure(ref c) => &c.nested,
+            VtableGenerator(ref c) => &c.nested,
+            VtableObject(ref d) => &d.nested,
+            VtableFnPointer(ref d) => &d.nested,
         }
     }
 

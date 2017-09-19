@@ -490,7 +490,7 @@ fn process_predicate<'a, 'gcx, 'tcx>(
                 Ok(Some(vtable)) => {
                     debug!("selecting trait `{:?}` at depth {} yielded Ok(Some)",
                            trait_ref, obligation.recursion_depth);
-                    Ok(Some(vtable.nested_obligations()))
+                    Ok(Some(vtable.into_nested_obligations()))
                 }
                 Ok(None) => {
                     debug!("selecting trait `{:?}` at depth {} yielded Ok(None)",
