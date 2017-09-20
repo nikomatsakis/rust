@@ -504,8 +504,10 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     //    is `Vec<Foo>:Iterable<Bar>`, but the impl specifies
     //    `impl<T> Iterable<T> for Vec<T>`, than an error would result.
 
-    /// Attempts to satisfy the obligation. If successful, this will affect the surrounding
-    /// type environment by performing unification.
+    /// Attempts to satisfy the obligation. If successful, this will
+    /// affect the surrounding type environment by performing
+    /// unification. Otherwise, if the result is ambiguity or error,
+    /// the inference state is not modified.
     pub fn select(&mut self, obligation: &TraitObligation<'tcx>)
                   -> SelectionResult<'tcx, Selection<'tcx>> {
         debug!("select({:?})", obligation);
@@ -2260,7 +2262,8 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     //
     // Confirmation unifies the output type parameters of the trait
     // with the values found in the obligation, possibly yielding a
-    // type error.  See `README.md` for more details.
+    // type error. In the event of an error, the inference state is not
+    // modified. See `README.md` for more details.
 
     fn confirm_candidate(&mut self,
                          obligation: &TraitObligation<'tcx>,

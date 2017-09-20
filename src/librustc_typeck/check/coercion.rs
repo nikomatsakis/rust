@@ -550,18 +550,9 @@ impl<'f, 'gcx, 'tcx> Coerce<'f, 'gcx, 'tcx> {
             };
             match selcx.select(&obligation.with(trait_ref)) {
                 // Uncertain or unimplemented.
-                Ok(None) |
-                Err(traits::Unimplemented) => {
+                Ok(None) | Err(_) => {
                     debug!("coerce_unsized: early return - can't prove obligation");
                     return Err(TypeError::Mismatch);
-                }
-
-                // Object safety violations or miscellaneous.
-                Err(err) => {
-                    self.report_selection_error(&obligation, &err);
-                    // Treat this like an obligation and follow through
-                    // with the unsizing - the lack of a coercion should
-                    // be silent, as it causes a type mismatch later.
                 }
 
                 Ok(Some(vtable)) => {
@@ -1043,7 +1034,8 @@ impl<'gcx, 'tcx, 'exprs, E> CoerceMany<'gcx, 'tcx, 'exprs, E>
                           Some(expression),
                           expression_ty,
                           expression_diverges,
-                          None, false)
+                          None,
+                          false)
     }
 
     /// Indicates that one of the inputs is a "forced unit". This

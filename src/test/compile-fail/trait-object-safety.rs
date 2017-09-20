@@ -23,5 +23,5 @@ impl Tr for St {
 
 fn main() {
     let _: &Tr = &St; //~ ERROR E0038
-    //~^ ERROR E0038
+    //~^ ERROR E0308
 }

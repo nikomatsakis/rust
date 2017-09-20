@@ -33,7 +33,7 @@ fn b() {
     let y = &x;
     let z = &x as &Foo;
     //~^ ERROR E0038
-    //~| ERROR E0038
+    //~| ERROR E0605
 }
 
 fn main() { }
