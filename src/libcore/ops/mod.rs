@@ -163,6 +163,7 @@ mod generator;
 mod index;
 mod place;
 mod range;
+mod termination;
 mod try;
 mod unsize;
 
@@ -205,3 +206,6 @@ pub use self::place::{Place, Placer, InPlace, Boxed, BoxPlace};
 
 #[unstable(feature = "coerce_unsized", issue = "27732")]
 pub use self::unsize::CoerceUnsized;
+
+#[unstable(feature = "termination_trait", issue = "0")]
+pub use self::termination::Termination;

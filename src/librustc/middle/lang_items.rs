@@ -310,6 +310,8 @@ language_item_table! {
     NonZeroItem,                     "non_zero",                non_zero;
 
     DebugTraitLangItem,              "debug_trait",             debug_trait;
+
+    TerminationItem,                 "termination",             termination;
 }
 
 impl<'a, 'tcx, 'gcx> TyCtxt<'a, 'tcx, 'gcx> {
