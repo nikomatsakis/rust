@@ -1096,6 +1096,13 @@ fn check_fn<'a, 'gcx, 'tcx>(inherited: &'a Inherited<'a, 'gcx, 'tcx>,
     }
     fcx.demand_suptype(span, ret_ty, actual_return_ty);
 
+    if let Some((id, sp)) = *fcx.tcx.sess.entry_fn.borrow() {
+        match tcx.sess.entry_type.get() {
+            Some(config::EntryMain) => {},
+            _ => {},
+        }
+    }
+
     (fcx, gen_ty)
 }
 
