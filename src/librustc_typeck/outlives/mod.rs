@@ -36,10 +36,11 @@ fn inferred_outlives_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId)
 }
 
 fn inferred_outlives_crate <'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId)
-                                      -> Vec<ty::Predicate<'tcx>> {
-    match explicit_predicates_of(tcx, def_id) {
-        ty::GenericPredicates::TypeOutlives | ty::GenericPredicates::RegionOutlives =>
-            //todo RFC definition
-        _ => Vec::new()
-    }
+                                      -> Rc<CratePredicatesMap> {
+    Rc::new(Vec::new())
+//    match explicit_predicates_of(tcx, def_id) {
+//        //todo RFC definition
+//        ty::GenericPredicates::TypeOutlives | ty::GenericPredicates::RegionOutlives =>
+//        _ => Vec::new()
+//    }
 }
