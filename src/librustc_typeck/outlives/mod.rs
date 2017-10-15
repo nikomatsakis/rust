@@ -23,7 +23,23 @@ pub fn provide(providers: &mut Providers) {
 }
 
 //todo
-fn inferred_outlives_of<'a, 'tcx>(_tcx: TyCtxt<'a, 'tcx, 'tcx>, _def_id: DefId)
+fn inferred_outlives_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId)
                                   -> Vec<ty::Predicate<'tcx>> {
-    Vec::new()
+
+    if let ty::TyAdt(def, _) = tcx.type_of(def_id).sty {
+        //todo call crate wide outlives and infer outlives
+        //        let all_outlives = tcx.inferred_outlives_crate();
+        Vec::new()
+    } else {
+        Vec::new()
+    }
+}
+
+fn inferred_outlives_crate <'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId)
+                                      -> Vec<ty::Predicate<'tcx>> {
+    match explicit_predicates_of(tcx, def_id) {
+        ty::GenericPredicates::TypeOutlives | ty::GenericPredicates::RegionOutlives =>
+            //todo RFC definition
+        _ => Vec::new()
+    }
 }
