@@ -854,7 +854,7 @@ fn generics_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         NodeExpr(&hir::Expr { node: hir::ExprClosure(..), .. }) => {
             Some(tcx.closure_base_def_id(def_id))
         }
-        NodeTy(&hir::Ty { node: hir::TyImplTrait(..), .. }) => {
+        NodeTy(&hir::Ty { node: hir::TyImplTrait(_, _), .. }) => {
             let mut parent_id = node_id;
             loop {
                 match tcx.hir.get(parent_id) {
@@ -922,6 +922,10 @@ fn generics_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                 ForeignItemFn(_, _, ref generics) => generics,
                 ForeignItemType => &no_generics,
             }
+        }
+
+        NodeTy(&hir::Ty { node: hir::TyImplTrait(ref exist_ty, _), .. }) => {
+            &exist_ty.generics
         }
 
         _ => &no_generics
@@ -1373,12 +1377,14 @@ fn explicit_predicates_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             }
         }
 
-        NodeTy(&Ty { node: TyImplTrait(ref bounds), span, .. }) => {
+        NodeTy(&Ty { node: TyImplTrait(ref exist_ty, _), span, .. }) => {
             let substs = Substs::identity_for_item(tcx, def_id);
             let anon_ty = tcx.mk_anon(def_id, substs);
 
             // Collect the bounds, i.e. the `A+B+'c` in `impl A+B+'c`.
-            let bounds = compute_bounds(&icx, anon_ty, bounds,
+            let bounds = compute_bounds(&icx,
+                                        anon_ty,
+                                        &exist_ty.bounds,
                                         SizedByDefault::Yes,
                                         span);
             return ty::GenericPredicates {

@@ -21,7 +21,7 @@ use middle::resolve_lifetime as rl;
 use namespace::Namespace;
 use rustc::ty::subst::{Kind, Subst, Substs};
 use rustc::traits;
-use rustc::ty::{self, Ty, TyCtxt, ToPredicate, TypeFoldable};
+use rustc::ty::{self, RegionKind, Ty, TyCtxt, ToPredicate, TypeFoldable};
 use rustc::ty::wf::object_region_bounds;
 use rustc_back::slice;
 use require_c_abi_if_variadic;
@@ -1033,7 +1033,7 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
             hir::TyTraitObject(ref bounds, ref lifetime) => {
                 self.conv_object_ty_poly_trait_ref(ast_ty.span, bounds, lifetime)
             }
-            hir::TyImplTrait(_) => {
+            hir::TyImplTrait(_, ref lifetimes) => {
                 // Figure out if we can allow an `impl Trait` here, by walking up
                 // to a `fn` or inherent `impl` method, going only through `Ty`
                 // or `TraitRef` nodes (as nothing else should be in types) and
@@ -1073,7 +1073,7 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
                 // Create the anonymized type.
                 if allow {
                     let def_id = tcx.hir.local_def_id(ast_ty.id);
-                    tcx.mk_anon(def_id, Substs::identity_for_item(tcx, def_id))
+                    self.impl_trait_ty_to_ty(def_id, lifetimes)
                 } else {
                     span_err!(tcx.sess, ast_ty.span, E0562,
                               "`impl Trait` not allowed outside of function \
@@ -1131,6 +1131,38 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
 
         self.record_ty(ast_ty.hir_id, result_ty, ast_ty.span);
         result_ty
+    }
+
+    pub fn impl_trait_ty_to_ty(&self, def_id: DefId, lifetimes: &[hir::Lifetime]) -> Ty<'tcx> {
+        let tcx = self.tcx();
+        let generics = tcx.generics_of(def_id);
+
+        // Fill in the substs of the parent generics
+        let mut substs = Vec::with_capacity(generics.count());
+        if let Some(parent_id) = generics.parent {
+            let parent_generics = tcx.generics_of(parent_id);
+            Substs::fill_item(
+                &mut substs, tcx, parent_generics,
+                &mut |def, _| tcx.mk_region(
+                    ty::ReEarlyBound(def.to_early_bound_region_data())),
+                &mut |def, _| tcx.mk_param_from_def(def)
+            );
+
+            // Replace all lifetimes with 'static
+            for subst in &mut substs {
+                if let Some(_) = subst.as_region() {
+                    *subst = Kind::from(&RegionKind::ReStatic);
+                }
+            }
+        }
+        assert_eq!(substs.len(), generics.parent_count());
+
+        // Fill in our own generics with the resolved lifetimes
+        assert_eq!(lifetimes.len(), generics.own_count());
+        substs.extend(lifetimes.iter().map(|lt|
+            Kind::from(self.ast_region_to_region(lt, None))));
+
+        tcx.mk_anon(def_id, tcx.intern_substs(&substs))
     }
 
     pub fn ty_of_arg(&self,

@@ -1425,6 +1425,12 @@ pub struct BareFnTy {
 }
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
+pub struct ExistTy {
+    pub generics: Generics,
+    pub bounds: TyParamBounds,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 /// The different kinds of types recognized by the compiler
 pub enum Ty_ {
     /// A variable length slice (`[T]`)
@@ -1450,8 +1456,7 @@ pub enum Ty_ {
     /// where `Bound` is a trait or a lifetime.
     TyTraitObject(HirVec<PolyTraitRef>, Lifetime),
     /// An `impl Bound1 + Bound2 + Bound3` type
-    /// where `Bound` is a trait or a lifetime.
-    TyImplTrait(TyParamBounds),
+    TyImplTrait(ExistTy, HirVec<Lifetime>),
     /// Unused for now
     TyTypeof(BodyId),
     /// TyInfer means the type should be inferred instead of it having been
