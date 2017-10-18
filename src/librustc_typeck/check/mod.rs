@@ -115,6 +115,7 @@ use std::collections::hash_map::Entry;
 use std::cmp;
 use std::fmt::Display;
 use std::mem::replace;
+use std::iter;
 use std::ops::{self, Deref};
 use syntax::abi::Abi;
 use syntax::ast;
@@ -1103,7 +1104,7 @@ fn check_fn<'a, 'gcx, 'tcx>(inherited: &'a Inherited<'a, 'gcx, 'tcx>,
                 Some(config::EntryMain) => {
                     let term_id = fcx.tcx.require_lang_item(TerminationTraitLangItem);
 
-                    let substs = Substs::identity_for_item(fcx.tcx, term_id);
+                    let substs = fcx.tcx.mk_substs(iter::once(Kind::from(ret_ty)));
                     let trait_ref = ty::TraitRef::new(term_id, substs);
                     let cause = traits::ObligationCause::new(span, fn_id,
                                                              ObligationCauseCode::MainFunctionType);
