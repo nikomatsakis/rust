@@ -92,17 +92,18 @@ use namespace::Namespace;
 use rustc::infer::{self, InferCtxt, InferOk, RegionVariableOrigin};
 use rustc::infer::type_variable::{TypeVariableOrigin};
 use rustc::middle::region;
+use rustc::middle::lang_items::TerminationTraitLangItem;
 use rustc::ty::subst::{Kind, Subst, Substs};
 use rustc::traits::{self, FulfillmentContext, ObligationCause, ObligationCauseCode};
 use rustc::ty::{ParamTy, LvaluePreference, NoPreference, PreferMutLvalue};
-use rustc::ty::{self, Ty, TyCtxt, Visibility};
+use rustc::ty::{self, Ty, TyCtxt, Visibility, ToPredicate};
 use rustc::ty::adjustment::{Adjust, Adjustment, AutoBorrow};
 use rustc::ty::fold::{BottomUpFolder, TypeFoldable};
 use rustc::ty::maps::Providers;
 use rustc::ty::util::{Representability, IntTypeExt};
 use errors::{DiagnosticBuilder, DiagnosticId};
 use require_c_abi_if_variadic;
-use session::{CompileIncomplete, Session};
+use session::{CompileIncomplete, config, Session};
 use TypeAndSubsts;
 use lint;
 use util::common::{ErrorReported, indenter};
@@ -1096,10 +1097,21 @@ fn check_fn<'a, 'gcx, 'tcx>(inherited: &'a Inherited<'a, 'gcx, 'tcx>,
     }
     fcx.demand_suptype(span, ret_ty, actual_return_ty);
 
-    if let Some((id, sp)) = *fcx.tcx.sess.entry_fn.borrow() {
-        match tcx.sess.entry_type.get() {
-            Some(config::EntryMain) => {},
-            _ => {},
+    if let Some((id, _)) = *fcx.tcx.sess.entry_fn.borrow() {
+        if id == fn_id {
+            match fcx.sess().entry_type.get() {
+                Some(config::EntryMain) => {
+                    let term_id = fcx.tcx.require_lang_item(TerminationTraitLangItem);
+
+                    let substs = Substs::identity_for_item(fcx.tcx, term_id);
+                    let trait_ref = ty::TraitRef::new(term_id, substs);
+                    let cause = traits::ObligationCause::new(span, fn_id,
+                                                             ObligationCauseCode::MainFunctionType);
+                    inherited.register_predicate(
+                        traits::Obligation::new(cause, param_env, trait_ref.to_predicate()));
+                },
+                _ => {},
+            }
         }
     }
 

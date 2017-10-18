@@ -22,7 +22,6 @@ impl<T: Termination, E: Display> Termination for Result<T, E> {
         match self {
             Ok(val) => val.report(),
             Err(ref _err) => {
-                //println!("{}", err);
                 EXIT_FAILURE
             }
         }

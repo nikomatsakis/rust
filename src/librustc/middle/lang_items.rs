@@ -311,7 +311,7 @@ language_item_table! {
 
     DebugTraitLangItem,              "debug_trait",             debug_trait;
 
-    TerminationItem,                 "termination",             termination;
+    TerminationTraitLangItem,        "termination",             termination;
 }
 
 impl<'a, 'tcx, 'gcx> TyCtxt<'a, 'tcx, 'gcx> {
