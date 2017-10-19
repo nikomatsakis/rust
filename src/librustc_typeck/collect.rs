@@ -1334,6 +1334,8 @@ fn explicit_predicates_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     use rustc::hir::map::*;
     use rustc::hir::*;
 
+    debug!("explicit_predicates_of(def_id={:?})", def_id);
+
     let node_id = tcx.hir.as_local_node_id(def_id).unwrap();
     let node = tcx.hir.get(node_id);
 
@@ -1381,15 +1383,24 @@ fn explicit_predicates_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             let substs = Substs::identity_for_item(tcx, def_id);
             let anon_ty = tcx.mk_anon(def_id, substs);
 
+            debug!("explicit_predicates_of: anon_ty={:?}", anon_ty);
+
             // Collect the bounds, i.e. the `A+B+'c` in `impl A+B+'c`.
             let bounds = compute_bounds(&icx,
                                         anon_ty,
                                         &exist_ty.bounds,
                                         SizedByDefault::Yes,
                                         span);
+
+            debug!("explicit_predicates_of: bounds={:?}", bounds);
+
+            let predicates = bounds.predicates(tcx, anon_ty);
+
+            debug!("explicit_predicates_of: predicates={:?}", predicates);
+
             return ty::GenericPredicates {
                 parent: None,
-                predicates: bounds.predicates(tcx, anon_ty)
+                predicates: predicates
             };
         }
 

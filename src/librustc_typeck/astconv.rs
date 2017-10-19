@@ -1134,10 +1134,12 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
     }
 
     pub fn impl_trait_ty_to_ty(&self, def_id: DefId, lifetimes: &[hir::Lifetime]) -> Ty<'tcx> {
+        debug!("impl_trait_ty_to_ty(def_id={:?}, lifetimes={:?})", def_id, lifetimes);
         let tcx = self.tcx();
         let generics = tcx.generics_of(def_id);
 
         // Fill in the substs of the parent generics
+        debug!("impl_trait_ty_to_ty: generics={:?}", generics);
         let mut substs = Vec::with_capacity(generics.count());
         if let Some(parent_id) = generics.parent {
             let parent_generics = tcx.generics_of(parent_id);
@@ -1154,6 +1156,7 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
                     *subst = Kind::from(&RegionKind::ReStatic);
                 }
             }
+            debug!("impl_trait_ty_to_ty: substs from parent = {:?}", substs);
         }
         assert_eq!(substs.len(), generics.parent_count());
 
@@ -1161,6 +1164,8 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
         assert_eq!(lifetimes.len(), generics.own_count());
         substs.extend(lifetimes.iter().map(|lt|
             Kind::from(self.ast_region_to_region(lt, None))));
+
+        debug!("impl_trait_ty_to_ty: final substs = {:?}", substs);
 
         tcx.mk_anon(def_id, tcx.intern_substs(&substs))
     }

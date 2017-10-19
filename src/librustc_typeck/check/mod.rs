@@ -1936,8 +1936,11 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
     /// Replace all anonymized types with fresh inference variables
     /// and record them for writeback.
     fn instantiate_anon_types<T: TypeFoldable<'tcx>>(&self, value: &T) -> T {
+        debug!("instantiate_anon_types(value={:?})", value);
         value.fold_with(&mut BottomUpFolder { tcx: self.tcx, fldop: |ty| {
             if let ty::TyAnon(def_id, substs) = ty.sty {
+                debug!("instantiate_anon_types: TyAnon(def_id={:?}, substs={:?})", def_id, substs);
+
                 // Use the same type variable if the exact same TyAnon appears more
                 // than once in the return type (e.g. if it's passed to a type alias).
                 let id = self.tcx.hir.as_local_node_id(def_id).unwrap();
@@ -1947,8 +1950,10 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 let span = self.tcx.def_span(def_id);
                 let ty_var = self.next_ty_var(TypeVariableOrigin::TypeInference(span));
                 self.anon_types.borrow_mut().insert(id, ty_var);
+                debug!("instantiate_anon_types: ty_var={:?}", ty_var);
 
                 let predicates_of = self.tcx.predicates_of(def_id);
+                debug!("instantiate_anon_types: predicates_of={:?}", predicates_of);
                 let bounds = predicates_of.instantiate(self.tcx, substs);
 
                 for predicate in bounds.predicates {
@@ -1958,8 +1963,11 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                     let predicate = self.instantiate_anon_types(&predicate);
 
                     // Require that the predicate holds for the concrete type.
-                    let cause = traits::ObligationCause::new(span, self.body_id,
+                    let cause = traits::ObligationCause::new(span,
+                                                             self.body_id,
                                                              traits::SizedReturnType);
+
+                    debug!("instantiate_anon_types: predicate={:?}", predicate);
                     self.register_predicate(traits::Obligation::new(cause,
                                                                     self.param_env,
                                                                     predicate));

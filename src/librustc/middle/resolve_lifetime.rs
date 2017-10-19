@@ -52,6 +52,7 @@ impl Region {
         let i = *index;
         *index += 1;
         let def_id = hir_map.local_def_id(def.lifetime.id);
+        debug!("Region::early: index={} def_id={:?}", i, def_id);
         (def.lifetime.name, Region::EarlyBound(i, def_id))
     }
 
@@ -379,6 +380,7 @@ impl<'a, 'tcx> Visitor<'tcx> for LifetimeContext<'a, 'tcx> {
     }
 
     fn visit_ty(&mut self, ty: &'tcx hir::Ty) {
+        debug!("visit_ty: ty={:?}", ty);
         match ty.node {
             hir::TyBareFn(ref c) => {
                 let next_early_index = self.next_early_index();
@@ -421,6 +423,7 @@ impl<'a, 'tcx> Visitor<'tcx> for LifetimeContext<'a, 'tcx> {
 
                 let hir::ExistTy { ref generics, ref bounds } = *exist_ty;
                 let mut index = self.next_early_index();
+                debug!("visit_ty: index = {}", index);
                 let lifetimes = generics.lifetimes.iter()
                     .map(|lt_def| Region::early(self.hir_map, &mut index, lt_def))
                     .collect();
@@ -927,6 +930,8 @@ impl<'a, 'tcx> LifetimeContext<'a, 'tcx> {
     }
 
     fn resolve_lifetime_ref(&mut self, lifetime_ref: &hir::Lifetime) {
+        debug!("resolve_lifetime_ref(lifetime_ref={:?})", lifetime_ref);
+
         // Walk up the scope chain, tracking the number of fn scopes
         // that we pass through, until we find a lifetime with the
         // given name or we run out of scopes.
@@ -1605,7 +1610,7 @@ impl<'a, 'tcx> LifetimeContext<'a, 'tcx> {
                        probably a bug in syntax::fold");
         }
 
-        debug!("{} resolved to {:?} span={:?}",
+        debug!("insert_lifetime: {} resolved to {:?} span={:?}",
                self.hir_map.node_to_string(lifetime_ref.id),
                def,
                self.sess.codemap().span_to_string(lifetime_ref.span));
