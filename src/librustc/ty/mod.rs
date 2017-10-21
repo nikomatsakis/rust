@@ -947,15 +947,15 @@ pub enum Predicate<'tcx> {
 /// HIR of every item in the local crate. Instead, use
 /// `tcx.inferred_outlives_of()` to get the outlives for a *particular*
 /// item.
-pub struct CratePredicatesMap {
+pub struct CratePredicatesMap<'tcx> {
 
     /// For each struct with outlive bounds, maps to a vector of the
     /// predicate of its outlive bounds. If an item has no outlives
     /// bounds, it will have no entry.
-    pub predicates: FxHashMap<DefId, Rc<Vec<ty::Predicate>>>,
+    pub predicates: FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>,
 
     /// An empty vector, useful for cloning.
-    pub empty_predicate: Rc<Vec<ty::Predicate>>,
+    pub empty_predicate: Rc<Vec<ty::Predicate<'tcx>>>,
 }
 
 impl<'tcx> AsRef<Predicate<'tcx>> for Predicate<'tcx> {
