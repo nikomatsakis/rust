@@ -788,12 +788,18 @@ impl<'a> LoweringContext<'a> {
                 let old_len = self.currently_bound_lifetimes.len();
 
                 // Record the introduction of 'a in `for<'a> ...`
-                self.currently_bound_lifetimes
-                    .extend(polytr.bound_lifetimes.iter().filter_map(|lt_def|
-                        if let hir::LifetimeName::Name(name) = lt_def.lifetime.name {
-                            Some(name)
-                        } else { None }
-                    ));
+                for lt_def in &polytr.bound_lifetimes {
+                    // Introduce lifetimes one at a time so that we can handle
+                    // cases like `fn foo<'d>() -> impl for<'a, 'b: 'a, 'c: 'b + 'd> ...`
+                    if let hir::LifetimeName::Name(name) = lt_def.lifetime.name {
+                        self.currently_bound_lifetimes.push(name);
+                    }
+
+                    // Visit the lifetime bounds
+                    for lt_bound in &lt_def.bounds {
+                        self.visit_lifetime(&lt_bound);
+                    }
+                }
 
                 hir::intravisit::walk_trait_ref(self, &polytr.trait_ref);
 

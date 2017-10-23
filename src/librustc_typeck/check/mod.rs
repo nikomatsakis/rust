@@ -212,7 +212,7 @@ pub struct Inherited<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     // associated fresh inference variable. Writeback resolves these
     // variables to get the concrete type, which can be used to
     // deanonymize TyAnon, after typeck is done with all functions.
-    anon_types: RefCell<NodeMap<Ty<'tcx>>>,
+    anon_types: RefCell<DefIdMap<(&'tcx Substs<'tcx>, Ty<'tcx>)>>,
 
     /// Each type parameter has an implicit region bound that
     /// indicates it must outlive at least the function body (the user
@@ -621,7 +621,7 @@ impl<'a, 'gcx, 'tcx> Inherited<'a, 'gcx, 'tcx> {
             deferred_call_resolutions: RefCell::new(DefIdMap()),
             deferred_cast_checks: RefCell::new(Vec::new()),
             deferred_generator_interiors: RefCell::new(Vec::new()),
-            anon_types: RefCell::new(NodeMap()),
+            anon_types: RefCell::new(DefIdMap()),
             implicit_region_bound,
             body_id,
         }
@@ -1943,13 +1943,12 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
 
                 // Use the same type variable if the exact same TyAnon appears more
                 // than once in the return type (e.g. if it's passed to a type alias).
-                let id = self.tcx.hir.as_local_node_id(def_id).unwrap();
-                if let Some(ty_var) = self.anon_types.borrow().get(&id) {
+                if let Some(&(_substs, ty_var)) = self.anon_types.borrow().get(&def_id) {
                     return ty_var;
                 }
                 let span = self.tcx.def_span(def_id);
                 let ty_var = self.next_ty_var(TypeVariableOrigin::TypeInference(span));
-                self.anon_types.borrow_mut().insert(id, ty_var);
+                self.anon_types.borrow_mut().insert(def_id, (substs, ty_var));
                 debug!("instantiate_anon_types: ty_var={:?}", ty_var);
 
                 let predicates_of = self.tcx.predicates_of(def_id);

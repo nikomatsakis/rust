@@ -12,28 +12,27 @@
 
 use std::fmt::Debug;
 
-fn foo<'a>(x: &'a i32) -> impl Debug + 'a {
-    x
+fn any_lifetime<'a>() -> &'a u32 { &5 }
+
+fn static_lifetime() -> &'static u32 { &5 }
+
+fn any_lifetime_as_static_impl_trait() -> impl Debug {
+    any_lifetime()
 }
 
-fn foo_not_static() -> impl Debug + 'static {
-    let mut x = 5;
-    x += 5;
-    foo(&x)
-    //~^ ERROR `x` does not live long enough
+fn lifetimes_as_static_impl_trait() -> impl Debug {
+        static_lifetime()
 }
 
-trait Any {}
-impl<T> Any for T {}
+trait Foo<'a> {}
+impl<'a> Foo<'a> for u32 {}
 
-// Check that type parameters are captured and not considered 'static
-fn whatever<T>(x: T) -> impl Any + 'static {
-    x
-    //~^ ERROR the parameter type `T` may not live long enough
-}
+fn foo<'b>() -> impl for<'a> Foo<'a> { 5 }
 
-fn move_lifetime_into_fn<'a, 'b>(x: &'a u32, y: &'b u32) -> impl Fn(&'a u32) {
-    move |_| println!("{}", y)
-}
+fn closure_hrtb() -> impl for<'a> Fn(&'a u32) { |_| () }
+
+fn mixed_lifetimes<'a>() -> impl for<'b: 'a> Fn(&'b u32) { |_| () }
+
+fn mixed_as_static() -> impl Fn(&'static u32) { mixed_lifetimes() }
 
 fn main() {}
