@@ -286,9 +286,9 @@ impl<'cx, 'gcx, 'tcx> WritebackCx<'cx, 'gcx, 'tcx> {
 
     fn visit_anon_types(&mut self) {
         let gcx = self.tcx().global_tcx();
-        for (&def_id, &(substs, concrete_ty)) in self.fcx.anon_types.borrow().iter() {
+        for (&def_id, anon_defn) in self.fcx.anon_types.borrow().iter() {
             let node_id = gcx.hir.as_local_node_id(def_id).unwrap();
-            let inside_ty = self.resolve(&concrete_ty, &node_id);
+            let inside_ty = self.resolve(&anon_defn.concrete_ty, &node_id);
 
             // Use substs to build up a reverse map from regions
             // to their identity mappings.
@@ -298,9 +298,11 @@ impl<'cx, 'gcx, 'tcx> WritebackCx<'cx, 'gcx, 'tcx> {
             // resulting in the parameters shifting.
             let id_substs = Substs::identity_for_item(gcx, def_id);
             let map: FxHashMap<Kind, Kind> =
-                substs.iter().enumerate()
-                    .map(|(index, subst)| (*subst, id_substs[index]))
-                    .collect();
+                anon_defn.substs
+                         .iter()
+                         .enumerate()
+                         .map(|(index, subst)| (*subst, id_substs[index]))
+                         .collect();
 
             // Convert the type from the function into a type valid outside
             // the function, by replacing invalid regions with 'static,

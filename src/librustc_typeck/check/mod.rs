@@ -212,7 +212,7 @@ pub struct Inherited<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     // associated fresh inference variable. Writeback resolves these
     // variables to get the concrete type, which can be used to
     // deanonymize TyAnon, after typeck is done with all functions.
-    anon_types: RefCell<DefIdMap<(&'tcx Substs<'tcx>, Ty<'tcx>)>>,
+    anon_types: RefCell<DefIdMap<AnonTypeDecl<'tcx>>>,
 
     /// Each type parameter has an implicit region bound that
     /// indicates it must outlive at least the function body (the user
@@ -223,6 +223,38 @@ pub struct Inherited<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     implicit_region_bound: Option<ty::Region<'tcx>>,
 
     body_id: Option<hir::BodyId>,
+}
+
+/// Information about the anonymous, abstract types whose values we
+/// are inferring in this function (these are the `impl Trait` that
+/// appear in the return type).
+struct AnonTypeDecl<'tcx> {
+    /// The substitutions that we apply to the abstract that that this
+    /// `impl Trait` desugars to. e.g., if:
+    ///
+    ///     fn foo<'a, 'b, T>() -> impl Trait<'a>
+    ///
+    /// winds up desugared to:
+    ///
+    ///     abstract type Foo<'x, T>: Trait<'x>
+    ///     fn foo<'a, 'b, T>() -> Foo<'a, T>
+    ///
+    /// then `substs` would be `['a, T]`.
+    substs: &'tcx Substs<'tcx>,
+
+    /// The type variable that represents the value of the abstract type
+    /// that we require. In other words, after we compile this function,
+    /// we will be created a constraint like:
+    ///
+    ///     Foo<'a, T> = ?C
+    ///
+    /// where `?C` is the value of this type variable. =) It may
+    /// naturally refer to the type and lifetime parameters in scope
+    /// in this function, though ultimately it should only reference
+    /// those that are arguments to `Foo` in the constraint above. (In
+    /// other words, `?C` should not include `'b`, even though it's a
+    /// lifetime parameter on `foo`.)
+    concrete_ty: Ty<'tcx>,
 }
 
 impl<'a, 'gcx, 'tcx> Deref for Inherited<'a, 'gcx, 'tcx> {
@@ -888,7 +920,10 @@ fn typeck_tables_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                                   param_env,
                                                   &fn_sig);
 
-            check_fn(&inh, param_env, fn_sig, decl, id, body, false).0
+            let fcx = check_fn(&inh, param_env, fn_sig, decl, id, body, false).0;
+            // Ensure anon_types have been instantiated prior to entering regionck
+            fcx.instantiate_anon_types(&fn_sig.output());
+            fcx
         } else {
             let fcx = FnCtxt::new(&inh, param_env, body.value.id);
             let expected_type = tcx.type_of(def_id);
@@ -1943,12 +1978,15 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
 
                 // Use the same type variable if the exact same TyAnon appears more
                 // than once in the return type (e.g. if it's passed to a type alias).
-                if let Some(&(_substs, ty_var)) = self.anon_types.borrow().get(&def_id) {
-                    return ty_var;
+                if let Some(anon_defn) = self.anon_types.borrow().get(&def_id) {
+                    return anon_defn.concrete_ty;
                 }
                 let span = self.tcx.def_span(def_id);
                 let ty_var = self.next_ty_var(TypeVariableOrigin::TypeInference(span));
-                self.anon_types.borrow_mut().insert(def_id, (substs, ty_var));
+                self.anon_types.borrow_mut().insert(def_id, AnonTypeDecl {
+                    substs: substs,
+                    concrete_ty: ty_var
+                });
                 debug!("instantiate_anon_types: ty_var={:?}", ty_var);
 
                 let predicates_of = self.tcx.predicates_of(def_id);

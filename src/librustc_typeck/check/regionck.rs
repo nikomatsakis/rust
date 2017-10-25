@@ -338,10 +338,13 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
         debug!("visit_fn_body body.id {:?} call_site_scope: {:?}",
                body.id(), call_site_scope);
         let call_site_region = self.tcx.mk_region(ty::ReScope(call_site_scope));
+
         let body_hir_id = self.tcx.hir.node_to_hir_id(body_id.node_id);
         self.type_of_node_must_outlive(infer::CallReturn(span),
                                        body_hir_id,
                                        call_site_region);
+
+        self.constrain_anon_types();
 
         self.region_bound_pairs.truncate(old_region_bounds_pairs_len);
 
@@ -385,6 +388,140 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
                       -> SubregionOrigin<'tcx> {
         SubregionOrigin::from_obligation_cause(cause,
                                                || infer::RelateParamBound(cause.span, sup_type))
+    }
+
+    /// Go through each of the existential `impl Trait` types that
+    /// appear in the function signature. For example, if the current
+    /// function is as follows:
+    ///
+    ///     fn foo<'a, 'b>(..) -> (impl Bar<'a>, impl Bar<'b>)
+    ///
+    /// we would iterate through the `impl Bar<'a>` and the
+    /// `impl Bar<'b>` here. Remember that each of them has
+    /// their own "abstract type" definition created for them. As
+    /// we iterate, we have a `def_id` that corresponds to this
+    /// definition, and a set of substitutions `substs` that are
+    /// being supplied to this abstract typed definition in the
+    /// signature:
+    ///
+    ///     abstract type Foo1<'x>: Bar<'x>;
+    ///     abstract type Foo2<'x>: Bar<'x>;
+    ///     fn foo<'a, 'b>(..) -> (Foo1<'a>, Foo2<'b>) { .. }
+    ///                            ^^^^ ^^ substs
+    ///                            def_id
+    ///
+    /// In addition, for each of the types we will have a type
+    /// variable `concrete_ty` containing the concrete type that
+    /// this function uses for `Foo1` and `Foo2`. That is,
+    /// conceptually, there is a constraint like:
+    ///
+    ///     for<'a> (Foo1<'a> = C)
+    ///
+    /// where `C` is `concrete_ty`. For this equation to be satisfiable,
+    /// the type `C` can only refer to two regions: `'static` and `'a`.
+    ///
+    /// The problem is that this type `C` may contain arbitrary
+    /// region variables. In fact, it is fairly likely that it
+    /// does!  Consider this possible definition of `foo`:
+    ///
+    ///     fn foo<'a, 'b>(x: &'a i32, y: &'b i32) -> (impl Bar<'a>, impl Bar<'b>) {
+    ///         (&*x, &*y)
+    ///     }
+    ///
+    /// Here, the values for the concrete types of the two impl
+    /// traits will include inference variables:
+    ///
+    ///     &'0 i32
+    ///     &'1 i32
+    ///
+    /// Ordinarily, the subtyping rules would ensure that these are
+    /// sufficiently large.  But since `impl Bar<'a>` isn't a specific
+    /// type per se, we don't get such constraints by default.  This
+    /// is where this function comes into play. It adds extra
+    /// constraints to ensure that all the regions which appear in the
+    /// inferred type are regions that could validly appear.
+    ///
+    /// This is actually a bit of a tricky constraint in general. We
+    /// want to say that each variable (e.g., `'0``) can only take on
+    /// values that were supplied as arguments to the abstract type
+    /// (e.g., `'a` for `Foo1<'a>`) or `'static`, which is always in
+    /// scope. We don't have a constraint quite of this kind in the current
+    /// region checker.
+    ///
+    /// What we *do* have is the `<=` relation. So what we do is to
+    /// find the LUB of all the arguments that appear in the substs:
+    /// in this case, that would be `LUB('a) = 'a`, and then we apply
+    /// that as a least bound to the variables (e.g., `'a <= '0`).
+    ///
+    /// In some cases this is pretty suboptimal. Consider this example:
+    ///
+    ///    fn baz<'a, 'b>() -> impl Trait<'a, 'b> { ... }
+    ///
+    /// Here, the regions `'a` and `'b` appear in the substitutions,
+    /// so we would generate `LUB('a, 'b)` as a kind of "minimal upper
+    /// bound", but that turns out be `'static` -- which is clearly
+    /// too strict!
+    fn constrain_anon_types(&mut self) {
+        debug!("constrain_anon_types()");
+
+        for (&def_id, anon_defn) in self.fcx.anon_types.borrow().iter() {
+            let concrete_ty = self.resolve_type(anon_defn.concrete_ty);
+
+            debug!("constrain_anon_types: def_id={:?}", def_id);
+            debug!("constrain_anon_types: substs={:?}", anon_defn.substs);
+            debug!("constrain_anon_types: concrete_ty={:?}", concrete_ty);
+
+            let abstract_type_generics = self.tcx.generics_of(def_id);
+
+            // Go through all the regions used as arguments to the
+            // abstract type. These are the parameters to the abstract
+            // type; so in our example above, `substs` would contain
+            // `['a]` for the first impl trait and `'b` for the
+            // second.
+            let mut bound_region = None;
+            for region_def in &abstract_type_generics.regions {
+                // Find the index of this region in the list of substitutions.
+                let index = region_def.index as usize;
+
+                // Get the value supplied for this region from the substs.
+                let subst_arg = anon_defn.substs[index].as_region().unwrap();
+
+                // Compute the least upper bound of it with the other regions.
+                debug!("constrain_anon_types: bound_region={:?}", bound_region);
+                debug!("constrain_anon_types: subst_arg={:?}", subst_arg);
+                if let Some(r) = bound_region {
+                    let lub = self.free_region_map.lub_free_regions(self.tcx,
+                                                                    r,
+                                                                    subst_arg);
+                    bound_region = Some(lub);
+
+                    if let ty::ReStatic = *lub {
+                        // If LUB results in `'static`, we might as well
+                        // stop iterating here.
+                        //
+                        // FIXME: We might consider issuing an error
+                        // here. `'static` is too strict to be useful,
+                        // most likely, and the resulting errors may
+                        // well be rather confusing.
+                        break;
+                    }
+                } else {
+                    bound_region = Some(subst_arg);
+                }
+            }
+            debug!("constrain_anon_types: bound_region={:?}", bound_region);
+
+            // If we don't find any arguments in the interface, then
+            // the only valid region that can appear in the resulting
+            // type is `'static`.
+            let bound_region = bound_region.unwrap_or(self.tcx.types.re_static);
+
+            // Require that all regions outlive `bound_region`
+            let span = self.tcx.def_span(def_id);
+            self.tcx.for_each_free_region(&concrete_ty, |region| {
+                self.sub_regions(infer::CallReturn(span), bound_region, region);
+            });
+        }
     }
 
     /// This method populates the region map's `free_region_map`. It walks over the transformed
