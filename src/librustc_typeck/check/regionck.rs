@@ -473,12 +473,14 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
 
             let abstract_type_generics = self.tcx.generics_of(def_id);
 
+            let span = self.tcx.def_span(def_id);
+
             // Go through all the regions used as arguments to the
             // abstract type. These are the parameters to the abstract
             // type; so in our example above, `substs` would contain
             // `['a]` for the first impl trait and `'b` for the
             // second.
-            let mut bound_region = None;
+            let mut least_region = None;
             for region_def in &abstract_type_generics.regions {
                 // Find the index of this region in the list of substitutions.
                 let index = region_def.index as usize;
@@ -487,39 +489,48 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
                 let subst_arg = anon_defn.substs[index].as_region().unwrap();
 
                 // Compute the least upper bound of it with the other regions.
-                debug!("constrain_anon_types: bound_region={:?}", bound_region);
+                debug!("constrain_anon_types: least_region={:?}", least_region);
                 debug!("constrain_anon_types: subst_arg={:?}", subst_arg);
-                if let Some(r) = bound_region {
-                    let lub = self.free_region_map.lub_free_regions(self.tcx,
-                                                                    r,
-                                                                    subst_arg);
-                    bound_region = Some(lub);
+                match least_region {
+                    None => least_region = Some(subst_arg),
+                    Some(lr) => {
+                        if self.free_region_map.sub_free_regions(lr, subst_arg) {
+                            // keep the current least region
+                        } else if self.free_region_map.sub_free_regions(subst_arg, lr) {
+                            // switch to `subst_arg`
+                            least_region = Some(subst_arg);
+                        } else {
+                            // There are two regions (`lr` and
+                            // `subst_arg`) which are not relatable. We can't
+                            // find a best choice.
 
-                    if let ty::ReStatic = *lub {
-                        // If LUB results in `'static`, we might as well
-                        // stop iterating here.
-                        //
-                        // FIXME: We might consider issuing an error
-                        // here. `'static` is too strict to be useful,
-                        // most likely, and the resulting errors may
-                        // well be rather confusing.
-                        break;
+                            // FIXME We don't need to issue an error
+                            // if there is a lifetime bound in the
+                            // `impl Trait` already (e.g., `impl Foo +
+                            // 'a`). `required_region_bounds` could be
+                            // applied during the instantiation phase
+                            // to find this, I suspect.
+                            self.tcx
+                                .sess
+                                .struct_span_err(span, "ambiguous lifetime bound in `impl Trait`")
+                                .span_label(span,
+                                            format!("neither `{}` nor `{}` outlives the other",
+                                                    lr, subst_arg))
+                                .emit();
+
+                            least_region = Some(self.tcx.mk_region(ty::ReEmpty));
+                            break;
+                        }
                     }
-                } else {
-                    bound_region = Some(subst_arg);
                 }
             }
-            debug!("constrain_anon_types: bound_region={:?}", bound_region);
 
-            // If we don't find any arguments in the interface, then
-            // the only valid region that can appear in the resulting
-            // type is `'static`.
-            let bound_region = bound_region.unwrap_or(self.tcx.types.re_static);
+            let least_region = least_region.unwrap_or(self.tcx.types.re_static);
+            debug!("constrain_anon_types: least_region={:?}", least_region);
 
-            // Require that all regions outlive `bound_region`
-            let span = self.tcx.def_span(def_id);
+            // Require that all regions outlive `least_region`
             self.tcx.for_each_free_region(&concrete_ty, |region| {
-                self.sub_regions(infer::CallReturn(span), bound_region, region);
+                self.sub_regions(infer::CallReturn(span), least_region, region);
             });
         }
     }
