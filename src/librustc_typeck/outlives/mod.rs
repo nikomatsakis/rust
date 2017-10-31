@@ -13,6 +13,7 @@ use rustc::ty::{self, CratePredicatesMap, TyCtxt};
 use rustc::ty::maps::Providers;
 use std::rc::Rc;
 use util::nodemap::FxHashMap;
+use hir::map as hir_map;
 
 /// Code to write unit test for outlives.
 pub mod test;
@@ -27,13 +28,12 @@ pub fn provide(providers: &mut Providers) {
 //todo
 fn inferred_outlives_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId)
                                   -> Vec<ty::Predicate<'tcx>> {
+    // Assert that this is a local node-id
+    let node_id = tcx.hir.as_local_node_id(def_id).unwrap();
 
-    if let ty::TyAdt(_def, _) = tcx.type_of(def_id).sty {
-        //todo call crate wide outlives and infer outlives
-        //        let all_outlives = tcx.inferred_outlives_crate();
-        Vec::new()
-    } else {
-        Vec::new()
+    match tcx.hir.get(node_id) {
+        hir_map::NodeItem(_item) => Vec::new(),
+        _ => Vec::new(),
     }
 }
 
@@ -48,7 +48,7 @@ fn inferred_outlives_crate <'a, 'tcx>(_tcx: TyCtxt<'a, 'tcx, 'tcx>, _def_id: Def
             predicates,
             empty_predicate,
         }
-        )
+    )
 //    match explicit_predicates_of(tcx, def_id) {
 //        //todo RFC definition
 //        ty::GenericPredicates::TypeOutlives | ty::GenericPredicates::RegionOutlives =>
