@@ -12,27 +12,20 @@
 
 use std::fmt::Debug;
 
-fn foo<'a>(x: &'a i32) -> impl Debug + 'a {
-    x
-}
-
-fn foo_not_static() -> impl Debug + 'static {
-    let mut x = 5;
-    x += 5;
-    foo(&x)
-    //~^ ERROR `x` does not live long enough
-}
-
 trait Any {}
 impl<T> Any for T {}
 
 // Check that type parameters are captured and not considered 'static
 fn whatever<T>(x: T) -> impl Any + 'static {
-    x
     //~^ ERROR the parameter type `T` may not live long enough
+    x
 }
 
 fn move_lifetime_into_fn<'a, 'b>(x: &'a u32, y: &'b u32) -> impl Fn(&'a u32) {
+    //~^ ERROR lifetime mismatch
+    //~^^ ERROR only named lifetimes are allowed in `impl Trait`, but `'b` was found
+    //~^^^ ERROR only named lifetimes are allowed in `impl Trait`, but `'b` was found
+    // TODO^ remove the above duplicate errors
     move |_| println!("{}", y)
 }
 

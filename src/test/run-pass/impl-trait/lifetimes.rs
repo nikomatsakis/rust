@@ -9,6 +9,7 @@
 // except according to those terms.
 
 #![feature(conservative_impl_trait)]
+#![allow(warnings)]
 
 use std::fmt::Debug;
 
@@ -34,5 +35,19 @@ fn closure_hrtb() -> impl for<'a> Fn(&'a u32) { |_| () }
 fn mixed_lifetimes<'a>() -> impl for<'b: 'a> Fn(&'b u32) { |_| () }
 
 fn mixed_as_static() -> impl Fn(&'static u32) { mixed_lifetimes() }
+
+trait MultiRegion<'a, 'b> {}
+struct MultiRegionStruct<'a, 'b>(&'a u32, &'b u32);
+impl<'a, 'b> MultiRegion<'a, 'b> for MultiRegionStruct<'a, 'b> {}
+
+fn finds_least_region<'a: 'b, 'b>(x: &'a u32, y: &'b u32) -> impl MultiRegion<'a, 'b>
+{
+    MultiRegionStruct(x, y)
+}
+
+fn explicit_bound<'a: 'b, 'b>(x: &'a u32, y: &'b u32) -> impl MultiRegion<'a, 'b> + 'b
+{
+    MultiRegionStruct(x, y)
+}
 
 fn main() {}

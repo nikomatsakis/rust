@@ -13,28 +13,20 @@
 // Helper creating a fake borrow, captured by the impl Trait.
 fn borrow<'a, T>(_: &'a mut T) -> impl Copy { () }
 
-fn stack() -> impl Copy {
-    //~^ ERROR only named lifetimes are allowed in `impl Trait`
-    let x = 0;
-    &x
-}
-
 fn late_bound(x: &i32) -> impl Copy {
-    //~^ ERROR only named lifetimes are allowed in `impl Trait`
     x
+    //~^ cannot infer an appropriate lifetime
 }
 
-// FIXME(#34511) Should work but doesn't at the moment,
-// region-checking needs an overhault to support this.
 fn early_bound<'a>(x: &'a i32) -> impl Copy {
-    //~^ ERROR only named lifetimes are allowed in `impl Trait`
     x
+    //~^ cannot infer an appropriate lifetime
 }
 
 fn ambiguous<'a, 'b>(x: &'a [u32], y: &'b [u32]) -> impl Iterator<Item=u32> {
-    //~^ ERROR only named lifetimes are allowed in `impl Trait`
     if x.len() < y.len() {
         x.iter().cloned()
+        //~^ cannot infer an appropriate lifetime
     } else {
         y.iter().cloned()
     }
