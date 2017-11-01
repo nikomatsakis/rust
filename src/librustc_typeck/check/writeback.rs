@@ -320,9 +320,11 @@ impl<'cx, 'gcx, 'tcx> WritebackCx<'cx, 'gcx, 'tcx> {
                             map.get(&Kind::from(r)).and_then(|k| k.as_region()) { r1 } else
                         {
                             let span = node_id.to_span(&self.fcx.tcx);
-                            span_err!(self.tcx().sess, span, E0564,
-                                      "only named lifetimes are allowed in `impl Trait`, \
-                                       but `{}` was found in the type `{}`", r, inside_ty);
+                            self.tcx().sess.delay_span_bug(
+                                span,
+                                &format!("only named lifetimes are allowed in `impl Trait`, \
+                                          but `{}` was found in the type `{}`",
+                                         r, inside_ty));
                             gcx.types.re_static
                         },
                 }
