@@ -78,4 +78,12 @@ fn unnamed_lifetimes_arent_contained_in_impl_trait_and_will_unify<'a, 'b>
 
 fn can_add_region_bound_to_static_type<'a, 'b>(_: &'a u32) -> impl Debug + 'a { 5 }
 
+struct MyVec(Vec<Vec<u8>>);
+
+impl<'unnecessary_lifetime> MyVec {
+    fn iter_doesnt_capture_unnecessary_lifetime<'s>(&'s self) -> impl Iterator<Item = &'s u8> {
+        self.0.iter().flat_map(|inner_vec| inner_vec.iter())
+    }
+}
+
 fn main() {}
