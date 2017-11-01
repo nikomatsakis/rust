@@ -12,18 +12,12 @@
 
 use std::fmt::Debug;
 
-trait Any {}
-impl<T> Any for T {}
+trait MultiRegionTrait<'a, 'b> {}
+impl<'a, 'b> MultiRegionTrait<'a, 'b> for (&'a u32, &'b u32) {}
 
-// Check that type parameters are captured and not considered 'static
-fn whatever<T>(x: T) -> impl Any + 'static {
-    //~^ ERROR the parameter type `T` may not live long enough
-    x
-}
-
-fn move_lifetime_into_fn<'a, 'b>(x: &'a u32, y: &'b u32) -> impl Fn(&'a u32) {
-    //~^ ERROR lifetime mismatch
-    move |_| println!("{}", y)
+fn no_least_region<'a, 'b>(x: &'a u32, y: &'b u32) -> impl MultiRegionTrait<'a, 'b> {
+//~^ ERROR ambiguous lifetime bound
+    (x, y)
 }
 
 fn main() {}

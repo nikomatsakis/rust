@@ -25,29 +25,57 @@ fn lifetimes_as_static_impl_trait() -> impl Debug {
         static_lifetime()
 }
 
-trait Foo<'a> {}
-impl<'a> Foo<'a> for u32 {}
+trait SingleRegionTrait<'a> {}
+impl<'a> SingleRegionTrait<'a> for u32 {}
 
-fn foo<'b>() -> impl for<'a> Foo<'a> { 5 }
-
+fn simple_type_hrtb<'b>() -> impl for<'a> SingleRegionTrait<'a> { 5 }
 fn closure_hrtb() -> impl for<'a> Fn(&'a u32) { |_| () }
 
 fn mixed_lifetimes<'a>() -> impl for<'b: 'a> Fn(&'b u32) { |_| () }
-
 fn mixed_as_static() -> impl Fn(&'static u32) { mixed_lifetimes() }
 
-trait MultiRegion<'a, 'b> {}
+trait MultiRegionTrait<'a, 'b>: Debug {}
+
+#[derive(Debug)]
 struct MultiRegionStruct<'a, 'b>(&'a u32, &'b u32);
-impl<'a, 'b> MultiRegion<'a, 'b> for MultiRegionStruct<'a, 'b> {}
+impl<'a, 'b> MultiRegionTrait<'a, 'b> for MultiRegionStruct<'a, 'b> {}
 
-fn finds_least_region<'a: 'b, 'b>(x: &'a u32, y: &'b u32) -> impl MultiRegion<'a, 'b>
+#[derive(Debug)]
+struct NoRegionStruct;
+impl<'a, 'b> MultiRegionTrait<'a, 'b> for NoRegionStruct {}
+
+fn finds_least_region<'a: 'b, 'b>(x: &'a u32, y: &'b u32) -> impl MultiRegionTrait<'a, 'b> {
+    MultiRegionStruct(x, y)
+}
+
+fn finds_explicit_bound<'a: 'b, 'b>
+    (x: &'a u32, y: &'b u32) -> impl MultiRegionTrait<'a, 'b> + 'b
 {
     MultiRegionStruct(x, y)
 }
 
-fn explicit_bound<'a: 'b, 'b>(x: &'a u32, y: &'b u32) -> impl MultiRegion<'a, 'b> + 'b
+fn finds_explicit_bound_even_without_least_region<'a, 'b>
+    (x: &'a u32, y: &'b u32) -> impl MultiRegionTrait<'a, 'b> + 'b
 {
-    MultiRegionStruct(x, y)
+    NoRegionStruct
 }
+
+/* FIXME: `impl Trait<'a> + 'b` should live as long as 'b, even if 'b outlives 'a
+fn outlives_bounds_even_with_contained_regions<'a, 'b>
+    (x: &'a u32, y: &'b u32) -> impl Debug + 'b
+{
+    finds_explicit_bound_even_without_least_region(x, y)
+}
+*/
+
+fn unnamed_lifetimes_arent_contained_in_impl_trait_and_will_unify<'a, 'b>
+    (x: &'a u32, y: &'b u32) -> impl Debug
+{
+    fn deref<'lt>(x: &'lt u32) -> impl Debug { *x }
+
+    if true { deref(x) } else { deref(y) }
+}
+
+fn can_add_region_bound_to_static_type<'a, 'b>(_: &'a u32) -> impl Debug + 'a { 5 }
 
 fn main() {}
