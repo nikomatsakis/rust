@@ -153,13 +153,13 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         let node_id = body.value.id;
         let mut rcx = RegionCtxt::new(self, RepeatingScope(node_id), node_id, Subject(subject));
 
+        rcx.free_region_map.relate_free_regions_from_predicates(
+            &self.param_env.caller_bounds);
+
         if self.err_count_since_creation() == 0 {
             // regionck assumes typeck succeeded
             rcx.visit_fn_body(fn_id, body, self.tcx.hir.span(fn_id));
         }
-
-        rcx.free_region_map.relate_free_regions_from_predicates(
-            &self.param_env.caller_bounds);
 
         rcx.resolve_regions_and_report_errors();
 
@@ -475,6 +475,15 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
 
             let span = self.tcx.def_span(def_id);
 
+            // If there are required region bounds, we can just skip
+            // ahead.  There will already be a registered region
+            // obligation related `concrete_ty` to those regions.
+            if anon_defn.required_region_bounds.len() != 0 {
+                continue;
+            }
+
+            // There were no `required_region_bounds`,
+            // so we have to search for a `least_region`.
             // Go through all the regions used as arguments to the
             // abstract type. These are the parameters to the abstract
             // type; so in our example above, `substs` would contain
@@ -503,13 +512,6 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
                             // There are two regions (`lr` and
                             // `subst_arg`) which are not relatable. We can't
                             // find a best choice.
-
-                            // FIXME We don't need to issue an error
-                            // if there is a lifetime bound in the
-                            // `impl Trait` already (e.g., `impl Foo +
-                            // 'a`). `required_region_bounds` could be
-                            // applied during the instantiation phase
-                            // to find this, I suspect.
                             self.tcx
                                 .sess
                                 .struct_span_err(span, "ambiguous lifetime bound in `impl Trait`")

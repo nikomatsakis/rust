@@ -255,6 +255,10 @@ struct AnonTypeDecl<'tcx> {
     /// other words, `?C` should not include `'b`, even though it's a
     /// lifetime parameter on `foo`.)
     concrete_ty: Ty<'tcx>,
+
+    /// A list of all required region bounds on the impl Trait type,
+    /// e.g. `'a` and `'b` in `fn foo<'a, 'b, 'c>() -> impl Trait<'c> + 'a + 'b`.
+    required_region_bounds: Vec<ty::Region<'tcx>>,
 }
 
 impl<'a, 'gcx, 'tcx> Deref for Inherited<'a, 'gcx, 'tcx> {
@@ -1983,15 +1987,22 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 }
                 let span = self.tcx.def_span(def_id);
                 let ty_var = self.next_ty_var(TypeVariableOrigin::TypeInference(span));
-                self.anon_types.borrow_mut().insert(def_id, AnonTypeDecl {
-                    substs: substs,
-                    concrete_ty: ty_var
-                });
-                debug!("instantiate_anon_types: ty_var={:?}", ty_var);
 
                 let predicates_of = self.tcx.predicates_of(def_id);
                 debug!("instantiate_anon_types: predicates_of={:?}", predicates_of);
                 let bounds = predicates_of.instantiate(self.tcx, substs);
+
+                let required_region_bounds =
+                    self.tcx.required_region_bounds(ty, bounds.predicates.clone());
+                debug!("instantiate_anon_types: required_region_bounds={:?}",
+                       required_region_bounds);
+
+                self.anon_types.borrow_mut().insert(def_id, AnonTypeDecl {
+                    substs,
+                    concrete_ty: ty_var,
+                    required_region_bounds,
+                });
+                debug!("instantiate_anon_types: ty_var={:?}", ty_var);
 
                 for predicate in bounds.predicates {
                     // Change the predicate to refer to the type variable,
