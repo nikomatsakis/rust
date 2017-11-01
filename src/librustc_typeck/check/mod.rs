@@ -228,6 +228,7 @@ pub struct Inherited<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
 /// Information about the anonymous, abstract types whose values we
 /// are inferring in this function (these are the `impl Trait` that
 /// appear in the return type).
+#[derive(Debug)]
 struct AnonTypeDecl<'tcx> {
     /// The substitutions that we apply to the abstract that that this
     /// `impl Trait` desugars to. e.g., if:
@@ -1989,8 +1990,8 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 let ty_var = self.next_ty_var(TypeVariableOrigin::TypeInference(span));
 
                 let predicates_of = self.tcx.predicates_of(def_id);
-                debug!("instantiate_anon_types: predicates_of={:?}", predicates_of);
                 let bounds = predicates_of.instantiate(self.tcx, substs);
+                debug!("instantiate_anon_types: bounds={:?}", bounds);
 
                 let required_region_bounds =
                     self.tcx.required_region_bounds(ty, bounds.predicates.clone());

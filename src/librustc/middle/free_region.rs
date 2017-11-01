@@ -161,6 +161,7 @@ impl<'tcx> FreeRegionMap<'tcx> {
     /// Record that `'sup:'sub`. Or, put another way, `'sub <= 'sup`.
     /// (with the exception that `'static: 'x` is not notable)
     pub fn relate_regions(&mut self, sub: Region<'tcx>, sup: Region<'tcx>) {
+        debug!("relate_regions(sub={:?}, sup={:?})", sub, sup);
         if (is_free(sub) || *sub == ty::ReStatic) && is_free(sup) {
             self.relation.add(sub, sup)
         }
@@ -172,9 +173,12 @@ impl<'tcx> FreeRegionMap<'tcx> {
                                       r_a: Region<'tcx>,
                                       r_b: Region<'tcx>)
                                       -> bool {
+        debug!("sub_free_regions(r_a={:?}, r_b={:?})", r_a, r_b);
         assert!(is_free(r_a));
         assert!(is_free(r_b));
-        self.relation.contains(&r_a, &r_b)
+        let result = r_a == r_b || self.relation.contains(&r_a, &r_b);
+        debug!("sub_free_regions: result={}", result);
+        result
     }
 
     /// Compute the least-upper-bound of two free regions. In some
@@ -186,6 +190,7 @@ impl<'tcx> FreeRegionMap<'tcx> {
                                       r_a: Region<'tcx>,
                                       r_b: Region<'tcx>)
                                       -> Region<'tcx> {
+        debug!("lub_free_regions(r_a={:?}, r_b={:?})", r_a, r_b);
         assert!(is_free(r_a));
         assert!(is_free(r_b));
         let result = if r_a == r_b { r_a } else {

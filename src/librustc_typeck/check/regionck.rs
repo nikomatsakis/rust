@@ -135,7 +135,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                          item_id: ast::NodeId,
                          span: Span,
                          wf_tys: &[Ty<'tcx>]) {
-        debug!("regionck_item(item.id={:?}, wf_tys={:?}", item_id, wf_tys);
+        debug!("regionck_item(item.id={:?}, wf_tys={:?})", item_id, wf_tys);
         let subject = self.tcx.hir.local_def_id(item_id);
         let mut rcx = RegionCtxt::new(self, RepeatingScope(item_id), item_id, Subject(subject));
         rcx.free_region_map.relate_free_regions_from_predicates(
@@ -468,7 +468,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
             let concrete_ty = self.resolve_type(anon_defn.concrete_ty);
 
             debug!("constrain_anon_types: def_id={:?}", def_id);
-            debug!("constrain_anon_types: substs={:?}", anon_defn.substs);
+            debug!("constrain_anon_types: anon_defn={:#?}", anon_defn);
             debug!("constrain_anon_types: concrete_ty={:?}", concrete_ty);
 
             let abstract_type_generics = self.tcx.generics_of(def_id);
