@@ -14,6 +14,8 @@ use rustc::ty::maps::Providers;
 use std::rc::Rc;
 use util::nodemap::FxHashMap;
 use hir::map as hir_map;
+use rustc::hir;
+use ty::Predicate::{TypeOutlives, RegionOutlives};
 
 /// Code to write unit test for outlives.
 pub mod test;
@@ -32,26 +34,34 @@ fn inferred_outlives_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId)
     let node_id = tcx.hir.as_local_node_id(def_id).unwrap();
 
     match tcx.hir.get(node_id) {
-        hir_map::NodeItem(_item) => Vec::new(),
+        hir_map::NodeItem(item) => match item.node {
+            hir::ItemStruct(..) => Vec::new(),
+            hir::ItemEnum(..) => Vec::new(),
+            _ => Vec::new(),
+        },
         _ => Vec::new(),
     }
 }
 
 #[allow(dead_code)]
-fn inferred_outlives_crate <'a, 'tcx>(_tcx: TyCtxt<'a, 'tcx, 'tcx>, _def_id: DefId)
+fn inferred_outlives_crate <'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId)
                                       -> Rc<CratePredicatesMap<'tcx>> {
     let predicates = FxHashMap();
     let empty_predicate = Rc::new(Vec::new());
 
-    Rc::new(
-        ty::CratePredicatesMap{
+    let empty = Rc::new(
+        ty::CratePredicatesMap {
             predicates,
             empty_predicate,
         }
-    )
-//    match explicit_predicates_of(tcx, def_id) {
-//        //todo RFC definition
-//        ty::GenericPredicates::TypeOutlives | ty::GenericPredicates::RegionOutlives =>
-//        _ => Vec::new()
-//    }
+    );
+
+
+    match tcx.explicit_predicates_of(def_id) {
+//    match ty::Predicate::explicit_predicates_of(tcx, def_id) {
+        //todo RFC definition
+        ty::Predicate::TypeOutlives(..) | ty::Predicate::RegionOutlives(..) => empty,
+        _ => empty
+    };
+    empty
 }
