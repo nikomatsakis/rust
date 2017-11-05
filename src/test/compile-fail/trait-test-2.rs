@@ -19,6 +19,6 @@ fn main() {
     10.blah::<i32, i32>(); //~ ERROR expected at most 1 type parameter, found 2 type parameters
     (box 10 as Box<bar>).dup();
     //~^ ERROR E0038
-    //~| ERROR E0038
+    //~| ERROR E0605
     //~| ERROR E0277
 }

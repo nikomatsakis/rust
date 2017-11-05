@@ -27,7 +27,6 @@ fn want_foo_for_some_tcx<'x,F>(f: &'x F)
     want_foo_for_some_tcx(f);
     want_foo_for_any_tcx(f);
     //~^ ERROR mismatched types
-    //~| ERROR mismatched types
 }
 
 fn want_foo_for_any_tcx<F>(f: &F)
@@ -46,7 +45,6 @@ fn want_bar_for_some_ccx<'x,B>(b: &B)
     want_bar_for_some_ccx(b);
     want_bar_for_any_ccx(b);
     //~^ ERROR mismatched types
-    //~| ERROR mismatched types
 }
 
 fn want_bar_for_any_ccx<B>(b: &B)

@@ -12,10 +12,8 @@ trait Array: Sized {}
 
 fn f<T: Array>(x: &T) {
     let _ = x
-    //~^ ERROR `Array` cannot be made into an object
-    //~| NOTE the trait cannot require that `Self : Sized`
-    //~| NOTE requirements on the impl of `std::ops::CoerceUnsized<&Array>`
-    //~| NOTE the trait `Array` cannot be made into an object
+    //~^ ERROR non-primitive cast
+    //~| NOTE an `as` expression can only be used to convert between primitive types. Consider using the `From` trait
     as
     &Array;
     //~^ ERROR `Array` cannot be made into an object

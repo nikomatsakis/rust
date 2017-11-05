@@ -23,4 +23,5 @@ pub fn main() {
     let arr: &[_] = &[1, 2, 3];
     let range = *arr..;
     //~^ ERROR `[{integer}]: std::marker::Sized` is not satisfied
+    //~| ERROR the trait bound `[{integer}]: std::marker::Sized` is not satisfied in `std::ops::RangeFrom<[{integer}]>`
 }

@@ -22,5 +22,5 @@ impl Foo for () {
 
 fn main() {
     let _f: Box<Foo> = //~ ERROR `Foo` cannot be made into an object
-        Box::new(()); //~ ERROR `Foo` cannot be made into an object
+        Box::new(()); //~ ERROR mismatched types
 }
