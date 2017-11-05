@@ -15,7 +15,6 @@ use std::rc::Rc;
 use util::nodemap::FxHashMap;
 use hir::map as hir_map;
 use rustc::hir;
-use ty::Predicate::{TypeOutlives, RegionOutlives};
 
 /// Code to write unit test for outlives.
 pub mod test;
@@ -56,12 +55,23 @@ fn inferred_outlives_crate <'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId
         }
     );
 
+    let predicates = tcx.explicit_predicates_of(def_id);
+    let filtered: Vec<_> = predicates
+        .predicates.iter()
+        .filter(|pred|
+            match *pred {
+                &ty::Predicate::TypeOutlives(..) | &ty::Predicate::RegionOutlives(..) => true,
+                _ => false,
+            }
+        )
+        .collect::<Vec<_>>();
 
-    match tcx.explicit_predicates_of(def_id) {
-//    match ty::Predicate::explicit_predicates_of(tcx, def_id) {
-        //todo RFC definition
-        ty::Predicate::TypeOutlives(..) | ty::Predicate::RegionOutlives(..) => empty,
-        _ => empty
-    };
-    empty
+    if filtered.is_empty() {
+        empty
+    } else {
+        //todo calculate outlive
+        empty
+    }
+
+    //empty
 }
