@@ -803,10 +803,10 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 self.expected_found_str(exp_found)
             }
             ValuePairs::TraitRefs(ref exp_found) => {
-                self.expected_found_str(&exp_found.map(|t| t.print_with_colon()))
+                self.expected_found_str(&exp_found.map(|t| t.print_without_self()))
             }
             ValuePairs::PolyTraitRefs(ref exp_found) => {
-                self.expected_found_str(&exp_found.map(|t| t.print_with_colon()))
+                self.expected_found_str(&exp_found.map(|t| t.print_without_self()))
             }
         }
     }
