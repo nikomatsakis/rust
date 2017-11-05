@@ -785,7 +785,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                     let trait_ref = stack.obligation.predicate;
                     let self_ty = trait_ref.self_ty();
                     let cause = IntercrateAmbiguityCause::DownstreamCrate {
-                        trait_desc: trait_ref.print_with_colon().to_string(),
+                        trait_desc: trait_ref.print_without_self().to_string(),
                         self_desc: if self_ty.has_concrete_skeleton() {
                             Some(self_ty.to_string())
                         } else {

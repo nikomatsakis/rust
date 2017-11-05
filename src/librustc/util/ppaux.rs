@@ -913,7 +913,7 @@ define_print_multi! {
     [
     ('tcx) ty::Binder<&'tcx ty::Slice<ty::ExistentialPredicate<'tcx>>>,
         // ('tcx) ty::Binder<ty::TraitRef<'tcx>> is intentionally omited
-    ('tcx) ty::Binder<ty::TraitRefPrintWithColon<'tcx>>,
+    ('tcx) ty::Binder<ty::TraitRefPrintWithSelf<'tcx>>,
     ('tcx) ty::Binder<ty::TraitRefPrintWithoutSelf<'tcx>>,
     ('tcx) ty::Binder<ty::PredicateAtom<'tcx>>,
     ('tcx) ty::Binder<ty::FnSig<'tcx>>,
@@ -947,27 +947,18 @@ define_print! {
 
 define_print! {
     ('tcx) ty::TraitRefPrintWithoutSelf<'tcx>, (self, f, cx) {
-        display {
-            cx.parameterized(f, self.trait_ref.substs, self.trait_ref.def_id, &[])
-        }
-        debug {
+        debug-and-display {
             cx.parameterized(f, self.trait_ref.substs, self.trait_ref.def_id, &[])
         }
     }
 }
 
 define_print! {
-    ('tcx) ty::TraitRefPrintWithColon<'tcx>, (self, f, cx) {
-        display {
+    ('tcx) ty::TraitRefPrintWithSelf<'tcx>, (self, f, cx) {
+        debug-and-display {
             print!(f, cx,
                    print(self.trait_ref.self_ty()),
-                   write(": "),
-                   print(self.trait_ref.print_without_self()))
-        }
-        debug {
-            print!(f, cx,
-                   print(self.trait_ref.self_ty()),
-                   write(": "),
+                   write("{}", self.separator),
                    print(self.trait_ref.print_without_self()))
         }
     }
@@ -1241,7 +1232,10 @@ define_print! {
             let (trait_ref, item_name) = ty::tls::with(|tcx|
                 (self.trait_ref(tcx), tcx.associated_item(self.item_def_id).name)
             );
-            print!(f, cx, print_debug(trait_ref), write("::{}", item_name))
+            print!(f, cx,
+                   write("<"),
+                   print(trait_ref.print_with_as()),
+                   write(">::{}", item_name))
         }
     }
 }

@@ -106,10 +106,13 @@ impl<'a, 'tcx> Lift<'tcx> for ty::TraitRefPrintWithoutSelf<'a> {
     }
 }
 
-impl<'a, 'tcx> Lift<'tcx> for ty::TraitRefPrintWithColon<'a> {
-    type Lifted = ty::TraitRefPrintWithColon<'tcx>;
+impl<'a, 'tcx> Lift<'tcx> for ty::TraitRefPrintWithSelf<'a> {
+    type Lifted = ty::TraitRefPrintWithSelf<'tcx>;
     fn lift_to_tcx<'b, 'gcx>(&self, tcx: TyCtxt<'b, 'gcx, 'tcx>) -> Option<Self::Lifted> {
-        tcx.lift(&self.trait_ref).map(|trait_ref| ty::TraitRefPrintWithColon { trait_ref })
+        tcx.lift(&self.trait_ref).map(|trait_ref| ty::TraitRefPrintWithSelf {
+            trait_ref,
+            separator: self.separator,
+        })
     }
 }
 
@@ -793,10 +796,11 @@ impl<'tcx> TypeFoldable<'tcx> for ty::TraitRefPrintWithoutSelf<'tcx> {
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ty::TraitRefPrintWithColon<'tcx> {
+impl<'tcx> TypeFoldable<'tcx> for ty::TraitRefPrintWithSelf<'tcx> {
     fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        ty::TraitRefPrintWithColon {
+        ty::TraitRefPrintWithSelf {
             trait_ref: self.trait_ref.fold_with(folder),
+            separator: self.separator,
         }
     }
 

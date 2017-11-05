@@ -456,8 +456,14 @@ impl<'tcx> TraitRef<'tcx> {
 
     /// Returns a wrapper that implements `Display` and displays like
     /// `P0: Trait<..>`.
-    pub fn print_with_colon(self) -> TraitRefPrintWithColon<'tcx> {
-        TraitRefPrintWithColon { trait_ref: self }
+    pub fn print_with_colon(self) -> TraitRefPrintWithSelf<'tcx> {
+        TraitRefPrintWithSelf { trait_ref: self, separator: ": " }
+    }
+
+    /// Returns a wrapper that implements `Display` and displays like
+    /// `P0: Trait<..>`.
+    pub fn print_with_as(self) -> TraitRefPrintWithSelf<'tcx> {
+        TraitRefPrintWithSelf { trait_ref: self, separator: " as " }
     }
 
     /// Returns a wrapper that implements `Display` and displays like
@@ -470,8 +476,9 @@ impl<'tcx> TraitRef<'tcx> {
 /// Wrapper around TraitRef used only for its `Display` impl.
 /// This version displays like `P0: Trait<P1...Pn>`.
 #[derive(Copy, Clone)]
-pub struct TraitRefPrintWithColon<'tcx> {
-    pub trait_ref: TraitRef<'tcx>
+pub struct TraitRefPrintWithSelf<'tcx> {
+    pub trait_ref: TraitRef<'tcx>,
+    pub separator: &'static str,
 }
 
 /// Wrapper around TraitRef used only for its `Display` impl.
@@ -503,8 +510,12 @@ impl<'tcx> PolyTraitRef<'tcx> {
         self.skip_binder().input_types()
     }
 
-    pub fn print_with_colon(self) -> Binder<TraitRefPrintWithColon<'tcx>> {
+    pub fn print_with_colon(self) -> Binder<TraitRefPrintWithSelf<'tcx>> {
         self.map_bound(|t| t.print_with_colon())
+    }
+
+    pub fn print_with_as(self) -> Binder<TraitRefPrintWithSelf<'tcx>> {
+        self.map_bound(|t| t.print_with_as())
     }
 
     pub fn print_without_self(self) -> Binder<TraitRefPrintWithoutSelf<'tcx>> {
