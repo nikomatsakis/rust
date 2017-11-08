@@ -317,6 +317,7 @@
 #![feature(str_char)]
 #![feature(str_internals)]
 #![feature(str_utf16)]
+#![feature(termination_trait)]
 #![feature(test, rustc_private)]
 #![feature(thread_local)]
 #![feature(toowned_clone_into)]

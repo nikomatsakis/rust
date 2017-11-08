@@ -25,21 +25,25 @@
 
 // Reexport some of our utilities which are expected by other crates.
 pub use panicking::{begin_panic, begin_panic_fmt, update_panic_count};
+use core;
 
 #[cfg(not(test))]
 #[lang = "start"]
-fn lang_start(main: fn(), argc: isize, argv: *const *const u8) -> isize {
+fn lang_start<T: core::ops::Termination + 'static>
+    (main: fn() -> T, argc: isize, argv: *const *const u8) -> !
+{
     use panic;
     use sys;
     use sys_common;
     use sys_common::thread_info;
     use thread::Thread;
+    use process;
     #[cfg(not(feature = "backtrace"))]
     use mem;
 
     sys::init();
 
-    let failed = unsafe {
+    process::exit(unsafe {
         let main_guard = sys::thread::guard::init();
         sys::stack_overflow::init();
 
@@ -55,18 +59,13 @@ fn lang_start(main: fn(), argc: isize, argv: *const *const u8) -> isize {
 
         // Let's run some code!
         #[cfg(feature = "backtrace")]
-        let res = panic::catch_unwind(|| {
-            ::sys_common::backtrace::__rust_begin_short_backtrace(main)
+        let exit_code = panic::catch_unwind(|| {
+            ::sys_common::backtrace::__rust_begin_short_backtrace(move || main().report())
         });
         #[cfg(not(feature = "backtrace"))]
-        let res = panic::catch_unwind(mem::transmute::<_, fn()>(main));
-        sys_common::cleanup();
-        res.is_err()
-    };
+        let exit_code = panic::catch_unwind(mem::transmute::<_, fn()>(main).report());
 
-    if failed {
-        101
-    } else {
-        0
-    }
+        sys_common::cleanup();
+        exit_code.unwrap_or(101)
+    });
 }
