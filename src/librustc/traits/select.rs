@@ -2292,7 +2292,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     fn confirm_auto_impl_candidate(&mut self,
                                    obligation: &TraitObligation<'tcx>,
                                    trait_def_id: DefId)
-                                   -> VtableDefaultImplData<PredicateObligation<'tcx>>
+                                   -> VtableAutoImplData<PredicateObligation<'tcx>>
     {
         debug!("confirm_auto_impl_candidate({:?}, {:?})",
                obligation,
