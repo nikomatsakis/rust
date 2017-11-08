@@ -13,7 +13,7 @@ trait Array: Sized {}
 fn f<T: Array>(x: &T) {
     let _ = x
     //~^ ERROR non-primitive cast
-    //~| NOTE an `as` expression can only be used to convert between primitive types. Consider using the `From` trait
+    //~| NOTE an `as` expression can only be used to convert between primitive types.
     as
     &Array;
     //~^ ERROR `Array` cannot be made into an object
