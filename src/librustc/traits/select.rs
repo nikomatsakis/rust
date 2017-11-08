@@ -2308,7 +2308,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                         obligation: &TraitObligation<'tcx>,
                         trait_def_id: DefId,
                         nested: Vec<Ty<'tcx>>)
-                        -> VtableDefaultImplData<PredicateObligation<'tcx>>
+                        -> VtableAutoImplData<PredicateObligation<'tcx>>
     {
         debug!("vtable_auto_impl: nested={:?}", nested);
 
