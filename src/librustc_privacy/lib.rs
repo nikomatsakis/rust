@@ -877,7 +877,8 @@ impl<'a, 'tcx> TypeVisitor<'tcx> for TypePrivacyVisitor<'a, 'tcx> {
                     };
                     if let Some(trait_ref) = trait_ref {
                         if !self.item_is_accessible(trait_ref.def_id) {
-                            let msg = format!("trait `{}` is private", trait_ref.print_without_self());
+                            let msg = format!("trait `{}` is private",
+                                              trait_ref.print_without_self());
                             self.tcx.sess.span_err(self.span, &msg);
                             return true;
                         }
@@ -1316,7 +1317,8 @@ impl<'a, 'tcx: 'a> SearchInterfaceForPrivateItemsVisitor<'a, 'tcx> {
             if !vis.is_at_least(self.required_visibility, self.tcx) {
                 if self.has_pub_restricted || self.has_old_errors {
                     struct_span_err!(self.tcx.sess, self.span, E0445,
-                                     "private trait `{}` in public interface", trait_ref.print_without_self())
+                                     "private trait `{}` in public interface",
+                                     trait_ref.print_without_self())
                         .span_label(self.span, format!(
                                     "private trait can't be public"))
                         .emit();
@@ -1325,7 +1327,8 @@ impl<'a, 'tcx: 'a> SearchInterfaceForPrivateItemsVisitor<'a, 'tcx> {
                                        node_id,
                                        self.span,
                                        &format!("private trait `{}` in public \
-                                                 interface (error E0445)", trait_ref.print_without_self()));
+                                                 interface (error E0445)",
+                                                trait_ref.print_without_self()));
                 }
             }
         }
