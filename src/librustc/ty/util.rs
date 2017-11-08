@@ -774,6 +774,7 @@ impl<'a, 'gcx, 'tcx, W> TypeVisitor<'tcx> for TypeIdHasher<'a, 'gcx, 'tcx, W>
             ty::ReFree(..) |
             ty::ReScope(..) |
             ty::ReVar(..) |
+            ty::ReCanonical(..) |
             ty::ReSkolemized(..) => {
                 bug!("TypeIdHasher: unexpected region {:?}", r)
             }

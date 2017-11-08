@@ -12,6 +12,7 @@
 //! from rustc::ty in no particular order.
 
 use ich::{StableHashingContext, NodeIdHashingMode};
+use rustc_data_structures::indexed_vec::Idx;
 use rustc_data_structures::stable_hasher::{HashStable, ToStableHashKey,
                                            StableHasher, StableHasherResult};
 use std::hash as std_hash;
@@ -74,6 +75,9 @@ for ty::RegionKind {
             }
             ty::ReFree(ref free_region) => {
                 free_region.hash_stable(hcx, hasher);
+            }
+            ty::ReCanonical(cvar) => {
+                cvar.index().hash_stable(hcx, hasher);
             }
             ty::ReLateBound(..) |
             ty::ReVar(..) |

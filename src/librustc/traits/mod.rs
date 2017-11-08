@@ -54,6 +54,7 @@ mod fulfill;
 mod project;
 mod object_safety;
 mod on_unimplemented;
+mod recursive_solver;
 mod select;
 mod specialize;
 mod structural_impls;

@@ -199,6 +199,10 @@ impl<'a, 'gcx, 'tcx> TypeFolder<'gcx, 'tcx> for TypeFreshener<'a, 'gcx, 'tcx> {
                 // replace all free regions with 'erased
                 self.tcx().types.re_erased
             }
+
+            ty::ReCanonical(..) => {
+                bug!("encountered canonical region during type-freshening")
+            }
         }
     }
 
@@ -248,6 +252,9 @@ impl<'a, 'gcx, 'tcx> TypeFolder<'gcx, 'tcx> for TypeFreshener<'a, 'gcx, 'tcx> {
                 }
                 t
             }
+
+            ty::TyInfer(ty::CanonicalTy(..)) =>
+                bug!("encountered canonical ty during freshening"),
 
             ty::TyClosure(def_id, substs) => {
                 self.freshen_closure_like(

@@ -24,7 +24,7 @@ use rustc_data_structures::unify as ut;
 use middle::free_region::RegionRelations;
 use ty::{self, Ty, TyCtxt};
 use ty::{Region, RegionVid};
-use ty::{ReEmpty, ReStatic, ReFree, ReEarlyBound, ReErased};
+use ty::{ReCanonical, ReEmpty, ReStatic, ReFree, ReEarlyBound, ReErased};
 use ty::{ReLateBound, ReScope, ReVar, ReSkolemized, BrFresh};
 
 use std::cell::{Cell, RefCell};
@@ -697,6 +697,8 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
                             b: Region<'tcx>)
                             -> Region<'tcx> {
         match (a, b) {
+            (&ReCanonical(..), _) |
+            (_, &ReCanonical(..)) |
             (&ReLateBound(..), _) |
             (_, &ReLateBound(..)) |
             (&ReErased, _) |

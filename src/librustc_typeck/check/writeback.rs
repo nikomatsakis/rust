@@ -309,6 +309,7 @@ impl<'cx, 'gcx, 'tcx> WritebackCx<'cx, 'gcx, 'tcx> {
                         gcx.types.re_static
                     }
 
+                    ty::ReCanonical(_) |
                     ty::ReVar(_) |
                     ty::ReErased => {
                         let span = node_id.to_span(&self.fcx.tcx);

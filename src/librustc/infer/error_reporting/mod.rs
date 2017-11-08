@@ -246,6 +246,8 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             ty::ReErased => {
                 (format!("lifetime {:?}", region), None)
             }
+
+            ty::ReCanonical(..) => bug!("encountered canonical region during inference"),
         };
         let message = format!("{}{}{}", prefix, description, suffix);
         if let Some(span) = span {

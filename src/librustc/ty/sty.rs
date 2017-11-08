@@ -14,6 +14,7 @@ use hir::def_id::DefId;
 
 use middle::const_val::ConstVal;
 use middle::region;
+use rustc_data_structures::indexed_vec::Idx;
 use ty::subst::{Substs, Subst};
 use ty::{self, AdtDef, TypeFlags, ToPredicate, Ty, TyCtxt, TypeFoldable};
 use ty::{Slice, TyS};
@@ -912,6 +913,9 @@ pub enum RegionKind {
 
     /// Erased region, used by trait selection, in MIR and during trans.
     ReErased,
+
+    /// Canonicalized region, used only when preparing a trait query.
+    ReCanonical(CanonicalVar),
 }
 
 impl<'tcx> serialize::UseSpecializedDecodable for Region<'tcx> {}
@@ -955,7 +959,12 @@ pub enum InferTy {
     FreshTy(u32),
     FreshIntTy(u32),
     FreshFloatTy(u32),
+
+    /// Canonicalized type variable, used only when preparing a trait query.
+    CanonicalTy(CanonicalVar),
 }
+
+newtype_index!(CanonicalVar);
 
 /// A `ProjectionPredicate` for an `ExistentialTraitRef`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]

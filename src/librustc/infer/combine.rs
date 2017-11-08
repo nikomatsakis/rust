@@ -483,6 +483,8 @@ impl<'cx, 'gcx, 'tcx> TypeRelation<'cx, 'gcx, 'tcx> for Generalizer<'cx, 'gcx, '
                     ty::Bivariant | ty::Covariant | ty::Contravariant => (),
                 }
             }
+
+            ty::ReCanonical(..) => bug!("encountered canonical region during inference"),
         }
 
         // FIXME: This is non-ideal because we don't give a
