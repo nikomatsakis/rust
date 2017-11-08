@@ -860,7 +860,7 @@ impl<'tcx, N> Vtable<'tcx, N> {
             VtableImpl(ref i) => &i.nested,
             VtableParam(ref n) => &n,
             VtableBuiltin(ref i) => &i.nested,
-            VtableDefaultImpl(ref d) => &d.nested,
+            VtableAutoImpl(ref d) => &d.nested,
             VtableClosure(ref c) => &c.nested,
             VtableGenerator(ref c) => &c.nested,
             VtableObject(ref d) => &d.nested,
