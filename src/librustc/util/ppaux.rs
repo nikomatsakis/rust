@@ -1272,7 +1272,9 @@ define_print! {
                 ty::PredicateAtom::RegionOutlives(ref predicate) => predicate.print(f, cx),
                 ty::PredicateAtom::TypeOutlives(ref predicate) => predicate.print(f, cx),
                 ty::PredicateAtom::Projection(ref predicate) => predicate.print(f, cx),
-                ty::PredicateAtom::WellFormed(ty) => print!(f, cx, print(ty), write(" well-formed")),
+                ty::PredicateAtom::WellFormed(ty) => {
+                    print!(f, cx, print(ty), write(" well-formed"))
+                }
                 ty::PredicateAtom::ObjectSafe(trait_def_id) =>
                     ty::tls::with(|tcx| {
                         write!(f, "the trait `{}` is object-safe", tcx.item_path_str(trait_def_id))
