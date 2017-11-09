@@ -661,6 +661,9 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
 
             ty::ReLateBound(..) =>
                 bug!("universe(): encountered bound region {:?}", region),
+
+            ty::ReCanonical(..) =>
+                bug!("universe(): encountered canonical region {:?}", region),
         }
     }
 

@@ -44,6 +44,7 @@ use self::type_variable::TypeVariableOrigin;
 use self::unify_key::ToType;
 
 pub mod at;
+pub mod canonical;
 mod combine;
 mod equate;
 pub mod error_reporting;

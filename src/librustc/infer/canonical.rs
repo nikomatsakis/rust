@@ -12,13 +12,14 @@ use infer::InferCtxt;
 use hir::def_id::DefId;
 use ty::{self, CanonicalVar, Ty, TyCtxt};
 use ty::fold::{TypeFoldable, TypeFolder};
+
 use rustc_data_structures::indexed_vec::IndexVec;
 use rustc_data_structures::fx::FxHashMap;
 
 /// A "canonicalized" type `V` is one where all free inference
 /// variables have been rewriten to "canonical vars". These are
 /// numbered starting from 0 in order of first appearance.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Canonical<V> {
     pub variables: IndexVec<CanonicalVar, CanonicalVarInfo>,
     pub value: V,
@@ -161,6 +162,10 @@ impl<'cx, 'gcx, 'tcx> TypeFolder<'gcx, 'tcx> for Canonicalizer<'cx, 'gcx, 'tcx> 
                 let cvar = self.canonical_var(info, CanonicalVarValue::Region(r));
                 self.tcx().mk_region(ty::ReCanonical(cvar))
             }
+
+            ty::ReCanonical(_) => {
+                bug!("canonical region encountered during canonicalization")
+            }
         }
     }
 
@@ -171,10 +176,8 @@ impl<'cx, 'gcx, 'tcx> TypeFolder<'gcx, 'tcx> for Canonicalizer<'cx, 'gcx, 'tcx> 
             return t;
         }
 
-        let tcx = self.infcx.tcx;
-
         match t.sty {
-            ty::TyInfer(ty::TyVar(v)) => {
+            ty::TyInfer(ty::TyVar(_)) => {
                 self.canonicalize_ty_var(
                     CanonicalTyVarKind::General,
                     ty::UniverseIndex::ROOT, // TODO
@@ -182,7 +185,7 @@ impl<'cx, 'gcx, 'tcx> TypeFolder<'gcx, 'tcx> for Canonicalizer<'cx, 'gcx, 'tcx> 
                 )
             }
 
-            ty::TyInfer(ty::IntVar(v)) => {
+            ty::TyInfer(ty::IntVar(_)) => {
                 self.canonicalize_ty_var(
                     CanonicalTyVarKind::Int,
                     ty::UniverseIndex::ROOT, // TODO
@@ -190,7 +193,7 @@ impl<'cx, 'gcx, 'tcx> TypeFolder<'gcx, 'tcx> for Canonicalizer<'cx, 'gcx, 'tcx> 
                 )
             }
 
-            ty::TyInfer(ty::FloatVar(v)) => {
+            ty::TyInfer(ty::FloatVar(_)) => {
                 self.canonicalize_ty_var(
                     CanonicalTyVarKind::Float,
                     ty::UniverseIndex::ROOT, // TODO

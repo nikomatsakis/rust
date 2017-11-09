@@ -8,6 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! New recursive solver modeled on Chalk's recursive solver.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct NoSolution;
 
-mod canonical;
+pub type Fallible<T> = Result<T, NoSolution>;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Overflow;
+
+pub type CanOverflow<T> = Result<T, Overflow>;
