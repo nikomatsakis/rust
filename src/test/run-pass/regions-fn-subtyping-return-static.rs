@@ -47,8 +47,9 @@ fn baz(x: &S) -> &S {
 fn supply_F() {
     want_F(foo);
 
-    // FIXME(#33684) -- this should be a subtype, but current alg. rejects it incorrectly
-    want_F(bar); //~ ERROR E0308
+    // Note -- older algorithm rejected this case, but it is a valid
+    // subtyping.  See #33684.
+    want_F(bar);
 
     want_F(baz);
 }
