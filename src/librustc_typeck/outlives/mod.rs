@@ -45,33 +45,24 @@ fn inferred_outlives_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId)
 #[allow(dead_code)]
 fn inferred_outlives_crate <'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId)
                                       -> Rc<CratePredicatesMap<'tcx>> {
+
+
     let predicates = FxHashMap();
     let empty_predicate = Rc::new(Vec::new());
 
-    let empty = Rc::new(
+    let visitor = infer::OutlivesCrateVisitor {
+        tcx,
+        predicates,
+        empty_predicate,
+    }
+    //iterate over all the crates
+    tcx.hir.krate().visit_all_item_likes(&mut visitor);
+
+    Rc::new(
         ty::CratePredicatesMap {
             predicates,
             empty_predicate,
         }
     );
 
-    let predicates = tcx.explicit_predicates_of(def_id);
-    let filtered: Vec<_> = predicates
-        .predicates.iter()
-        .filter(|pred|
-            match *pred {
-                &ty::Predicate::TypeOutlives(..) | &ty::Predicate::RegionOutlives(..) => true,
-                _ => false,
-            }
-        )
-        .collect::<Vec<_>>();
-
-    if filtered.is_empty() {
-        empty
-    } else {
-        //todo calculate outlive
-        empty
-    }
-
-    //empty
 }
