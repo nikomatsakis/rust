@@ -271,7 +271,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
 
                 if !unsatisfied_predicates.is_empty() {
                     let bound_list = unsatisfied_predicates.iter()
-                        .map(|p| p.print_with_colon().to_string())
+                        .map(|p| format!("`{} : {}`", p.self_ty(), p.print_without_self()))
                         .collect::<Vec<_>>()
                         .join("\n");
                     err.note(&format!("the method `{}` exists but the following trait bounds \
