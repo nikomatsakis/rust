@@ -90,7 +90,8 @@ use middle::region;
 use rustc::hir::def_id::DefId;
 use rustc::ty::subst::Substs;
 use rustc::ty::{self, Ty};
-use rustc::infer::{self, OutlivesEnvironment};
+use rustc::infer;
+use rustc::infer::outlives::env::OutlivesEnvironment;
 use rustc::ty::adjustment;
 
 use std::mem;

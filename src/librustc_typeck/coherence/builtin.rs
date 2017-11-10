@@ -11,7 +11,6 @@
 //! Check properties that are required by built-in traits and set
 //! up data structures required by type-checking/translation.
 
-use rustc::middle::free_region::FreeRegionMap;
 use rustc::middle::region;
 use rustc::middle::lang_items::UnsizeTraitLangItem;
 
@@ -21,6 +20,7 @@ use rustc::ty::TypeFoldable;
 use rustc::ty::adjustment::CoerceUnsizedInfo;
 use rustc::ty::util::CopyImplementationError;
 use rustc::infer;
+use rustc::infer::outlives::env::OutlivesEnvironment;
 
 use rustc::hir::def_id::DefId;
 use rustc::hir::map as hir_map;
@@ -391,9 +391,12 @@ pub fn coerce_unsized_info<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
         // Finally, resolve all regions.
         let region_scope_tree = region::ScopeTree::default();
-        let mut free_regions = FreeRegionMap::new();
-        free_regions.relate_free_regions_from_predicates(&param_env.caller_bounds);
-        infcx.resolve_regions_and_report_errors(impl_did, &region_scope_tree, &free_regions);
+        let outlives_env = OutlivesEnvironment::new(param_env);
+        infcx.resolve_regions_and_report_errors(
+            impl_did,
+            &region_scope_tree,
+            outlives_env.free_region_map()
+        );
 
         CoerceUnsizedInfo {
             custom_kind: kind

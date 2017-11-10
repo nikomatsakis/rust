@@ -57,14 +57,12 @@ pub mod lattice;
 mod lub;
 pub mod region_constraints;
 mod lexical_region_resolve;
-mod outlives;
+pub mod outlives;
 pub mod resolve;
 mod freshen;
 mod sub;
 pub mod type_variable;
 pub mod unify_key;
-
-pub use self::outlives::env::OutlivesEnvironment;
 
 #[must_use]
 pub struct InferOk<'tcx, T> {
