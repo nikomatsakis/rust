@@ -319,10 +319,29 @@ impl<'cx, 'gcx, 'tcx> WritebackCx<'cx, 'gcx, 'tcx> {
                     _ => if let Some(r1) =
                             map.get(&Kind::from(r)).and_then(|k| k.as_region()) { r1 } else
                         {
-                            // No mapping was found. This means that it is either a
-                            // disallowed lifetime, which will be caught by regionck,
-                            // or it is a region in a non-upvar closure generic, which
-                            // is explicitly allowed.
+                            // No mapping was found. This means that
+                            // it is either a disallowed lifetime,
+                            // which will be caught by regionck, or it
+                            // is a region in a non-upvar closure
+                            // generic, which is explicitly
+                            // allowed. If that surprises you, read
+                            // on.
+                            //
+                            // The case of closure is a somewhat
+                            // subtle (read: hacky) consideration. The
+                            // problem is that our closure types
+                            // currently include all the lifetime
+                            // parameters declared on the enclosing
+                            // function, even if they are unused by
+                            // the closure itself. We can't readily
+                            // filter them out, so here we replace
+                            // those values with `'static`. This can't
+                            // really make a difference to the rest of
+                            // the compiler; those regions are ignored
+                            // for the outlives relation, and hence
+                            // don't affect trait selection or auto
+                            // traits, and they are erased during
+                            // trans.
                             gcx.types.re_static
                         },
                 }
