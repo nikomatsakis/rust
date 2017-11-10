@@ -13,7 +13,6 @@ use rustc::infer::InferCtxt;
 use rustc::infer::RegionVariableOrigin;
 use rustc::infer::NLLRegionVariableOrigin;
 use rustc::infer::region_constraints::VarOrigins;
-use rustc::infer::outlives::free_region_map::FreeRegionMap;
 use rustc::mir::{Location, Mir};
 use rustc::ty::{self, RegionVid};
 use rustc_data_structures::indexed_vec::IndexVec;
@@ -42,7 +41,7 @@ pub struct RegionInferenceContext<'tcx> {
     /// The constraints we have accumulated and used during solving.
     constraints: Vec<Constraint>,
 
-    free_region_map: &'tcx FreeRegionMap<'tcx>,
+    free_regions: FreeRegions<'tcx>,
 }
 
 struct RegionDefinition<'tcx> {
@@ -117,7 +116,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     /// `num_region_variables` valid inference variables; the first N
     /// of those will be constant regions representing the free
     /// regions defined in `free_regions`.
-    pub fn new(var_origins: VarOrigins, free_regions: &FreeRegions<'tcx>, mir: &Mir<'tcx>) -> Self {
+    pub fn new(var_origins: VarOrigins, free_regions: FreeRegions<'tcx>, mir: &Mir<'tcx>) -> Self {
         let num_region_variables = var_origins.len();
 
         // Create a RegionDefinition for each inference variable.
@@ -131,10 +130,10 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             liveness_constraints: IndexVec::from_elem_n(Region::default(), num_region_variables),
             inferred_values: None,
             constraints: Vec::new(),
-            free_region_map: free_regions.free_region_map,
+            free_regions: free_regions,
         };
 
-        result.init_free_regions(free_regions, mir);
+        result.init_free_regions(mir);
 
         result
     }
@@ -158,14 +157,9 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     /// and (b) any free regions that it outlives, which in this case
     /// is just itself. R1 (`'b`) in contrast also outlives `'a` and
     /// hence contains R0 and R1.
-    fn init_free_regions(&mut self, free_regions: &FreeRegions<'tcx>, mir: &Mir<'tcx>) {
-        let FreeRegions {
-            indices,
-            free_region_map: _,
-        } = free_regions;
-
+    fn init_free_regions(&mut self, mir: &Mir<'tcx>) {
         // For each free region X:
-        for (free_region, &variable) in indices {
+        for (free_region, &variable) in &self.free_regions.indices {
             // These should be free-region variables.
             assert!(match self.definitions[variable].origin {
                 RegionVariableOrigin::NLL(NLLRegionVariableOrigin::FreeRegion) => true,
@@ -202,6 +196,14 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     /// Returns an iterator over all the region indices.
     pub fn regions(&self) -> impl Iterator<Item = RegionVid> {
         self.definitions.indices()
+    }
+
+    /// Given a free region in scope on the MIR, returns the
+    /// corresponding index.
+    ///
+    /// (Panics if `r` is not a registered free region.)
+    pub fn free_region_index(&self, r: ty::Region<'tcx>) -> RegionVid {
+        self.free_regions.indices[&r]
     }
 
     /// Returns true if the region `r` contains the point `p`.
@@ -300,7 +302,8 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             let outlived_fr_name = outlived_fr_definition.name.unwrap();
 
             // Check that `o <= fr`. If not, report an error.
-            if !self.free_region_map
+            if !self.free_regions
+                .free_region_map
                 .sub_free_regions(outlived_fr_name, fr_name)
             {
                 // worst error msg ever

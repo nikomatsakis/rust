@@ -15,7 +15,6 @@ use rustc::ty;
 use transform::type_check::MirTypeckRegionConstraints;
 use transform::type_check::OutlivesSet;
 
-use super::free_regions::FreeRegions;
 use super::region_infer::RegionInferenceContext;
 
 /// When the MIR type-checker executes, it validates all the types in
@@ -25,20 +24,17 @@ use super::region_infer::RegionInferenceContext;
 /// them into the NLL `RegionInferenceContext`.
 pub(super) fn generate<'tcx>(
     regioncx: &mut RegionInferenceContext<'tcx>,
-    free_regions: &FreeRegions<'tcx>,
     mir: &Mir<'tcx>,
     constraints: &MirTypeckRegionConstraints<'tcx>,
 ) {
     SubtypeConstraintGenerator {
         regioncx,
-        free_regions,
         mir,
     }.generate(constraints);
 }
 
 struct SubtypeConstraintGenerator<'cx, 'tcx: 'cx> {
     regioncx: &'cx mut RegionInferenceContext<'tcx>,
-    free_regions: &'cx FreeRegions<'tcx>,
     mir: &'cx Mir<'tcx>,
 }
 
@@ -106,7 +102,7 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
         if let ty::ReVar(vid) = r {
             *vid
         } else {
-            self.free_regions.indices[&r]
+            self.regioncx.free_region_index(r)
         }
     }
 }

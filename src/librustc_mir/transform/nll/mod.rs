@@ -41,10 +41,10 @@ pub fn compute_regions<'a, 'gcx, 'tcx>(
     mir: &mut Mir<'tcx>,
 ) -> RegionInferenceContext<'tcx> {
     // Compute named region information.
-    let free_regions = &FreeRegions::new(infcx.tcx, def_id);
+    let free_regions = FreeRegions::new(infcx.tcx, def_id);
 
     // Replace all regions with fresh inference variables.
-    renumber::renumber_mir(infcx, free_regions, mir);
+    renumber::renumber_mir(infcx, &free_regions, mir);
 
     // Run the MIR type-checker.
     let mir_node_id = infcx.tcx.hir.as_local_node_id(def_id).unwrap();
@@ -54,7 +54,7 @@ pub fn compute_regions<'a, 'gcx, 'tcx>(
     // data that was contained in `infcx`.
     let var_origins = infcx.take_region_var_origins();
     let mut regioncx = RegionInferenceContext::new(var_origins, free_regions, mir);
-    subtype_constraint_generation::generate(&mut regioncx, free_regions, mir, constraint_sets);
+    subtype_constraint_generation::generate(&mut regioncx, mir, constraint_sets);
 
     // Compute what is live where.
     let liveness = &LivenessResults {
