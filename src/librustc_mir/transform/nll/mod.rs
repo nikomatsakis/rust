@@ -24,6 +24,7 @@ use self::mir_util::PassWhere;
 mod constraint_generation;
 mod subtype_constraint_generation;
 mod free_regions;
+use self::free_regions::FreeRegions;
 
 pub(crate) mod region_infer;
 use self::region_infer::RegionInferenceContext;
@@ -40,7 +41,7 @@ pub fn compute_regions<'a, 'gcx, 'tcx>(
     mir: &mut Mir<'tcx>,
 ) -> RegionInferenceContext<'tcx> {
     // Compute named region information.
-    let free_regions = &free_regions::free_regions(infcx, def_id);
+    let free_regions = &FreeRegions::new(infcx.tcx, def_id);
 
     // Replace all regions with fresh inference variables.
     renumber::renumber_mir(infcx, free_regions, mir);
