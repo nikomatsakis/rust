@@ -44,37 +44,40 @@ pub struct FreeRegions<'tcx> {
 
 pub fn free_regions<'a, 'gcx, 'tcx>(
     infcx: &InferCtxt<'a, 'gcx, 'tcx>,
-    item_def_id: DefId,
+    mir_def_id: DefId,
 ) -> FreeRegions<'tcx> {
-    debug!("free_regions(item_def_id={:?})", item_def_id);
+    debug!("free_regions(mir_def_id={:?})", mir_def_id);
 
+    let tcx = infcx.tcx;
     let mut indices = FxHashMap();
 
     // `'static` is always free.
-    insert_free_region(&mut indices, infcx.tcx.types.re_static);
+    insert_free_region(&mut indices, tcx.types.re_static);
 
-    // Extract the early regions.
-    let item_substs = Substs::identity_for_item(infcx.tcx, item_def_id);
-    for item_subst in item_substs {
-        if let Some(region) = item_subst.as_region() {
+    // Walk up the def-ids of all enclosing closures, up to (and
+    // including) the enclosing fn item. If this is a fn item, then
+    // this just visits it.
+    let tables = tcx.typeck_tables_of(mir_def_id);
+    for def_id in tcx.closure_base_def_ids(mir_def_id) {
+        // Extract the early regions.
+        let substs = Substs::identity_for_item(infcx.tcx, def_id);
+        for region in substs.iter().filter_map(|k| k.as_region()) {
             insert_free_region(&mut indices, region);
         }
-    }
 
-    // Extract the late-bound regions. Use the liberated fn sigs,
-    // where the late-bound regions will have been converted into free
-    // regions, and add them to the map.
-    let item_id = infcx.tcx.hir.as_local_node_id(item_def_id).unwrap();
-    let fn_hir_id = infcx.tcx.hir.node_to_hir_id(item_id);
-    let tables = infcx.tcx.typeck_tables_of(item_def_id);
-    let fn_sig = tables.liberated_fn_sigs()[fn_hir_id].clone();
-    infcx
-        .tcx
-        .for_each_free_region(&fn_sig.inputs_and_output, |region| {
+        // Extract the late-bound regions. Use the liberated fn sigs,
+        // where the late-bound regions will have been converted into free
+        // regions, and add them to the map.
+        let fn_hir_id =
+            tcx.hir.node_to_hir_id(
+                tcx.hir.as_local_node_id(def_id).unwrap());
+        let fn_sig = tables.liberated_fn_sigs()[fn_hir_id];
+        tcx.for_each_free_region(&fn_sig.inputs_and_output, |region| {
             if let ty::ReFree(_) = *region {
                 insert_free_region(&mut indices, region);
             }
         });
+    }
 
     debug!("free_regions: indices={:#?}", indices);
 
@@ -88,3 +91,4 @@ fn insert_free_region<'tcx>(
     let next = RegionVid::new(free_regions.len());
     free_regions.entry(region).or_insert(next);
 }
+

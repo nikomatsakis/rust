@@ -625,14 +625,62 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         self.def_key(def_id).disambiguated_data.data == DefPathData::ClosureExpr
     }
 
+    /// Given the `DefId` of a fn or closure, returns the `DefId` of
+    /// the innermost fn item that the closure is contained within.
+    /// This is a significant def-id because, when we do
+    /// type-checking, we type-check this fn item and all of its
+    /// (transitive) closures together.  Therefore, when we fetch the
+    /// `typeck_tables_of` the closure, for example, we really wind up
+    /// fetching the `typeck_tables_of` the enclosing fn item.
     pub fn closure_base_def_id(self, def_id: DefId) -> DefId {
-        let mut def_id = def_id;
-        while self.is_closure(def_id) {
-            def_id = self.parent_def_id(def_id).unwrap_or_else(|| {
-                bug!("closure {:?} has no parent", def_id);
-            });
+        self.closure_base_def_ids(def_id).last().unwrap()
+    }
+
+    /// Given the `DefId` of a closure, returns an iterator that
+    /// yields (first) `def_id`, and then the `def_id` of its
+    /// enclosing context. If that context is again its closure, then
+    /// the iterator repeats until a fn item is reached. If given a
+    /// non-closure, the iterator just returns `def_id`.
+    ///
+    /// Example:
+    ///
+    /// ```
+    /// fn foo() {
+    ///     let x = || {
+    ///         let y = || 22;
+    ///         ...
+    ///     };
+    /// }
+    /// ```
+    ///
+    /// If invoked with the def-id of the closure assigned to `y`,
+    /// would yield the def-ids of `y`, `x`, and `foo`, in that order.
+    pub fn closure_base_def_ids(self, def_id: DefId) -> impl Iterator<Item = DefId> + 'a {
+        return ClosureParents { tcx: self, def_id: Some(def_id) };
+
+        struct ClosureParents<'cx, 'gcx: 'tcx, 'tcx: 'cx> {
+            tcx: TyCtxt<'cx, 'gcx, 'tcx>,
+            def_id: Option<DefId>
         }
-        def_id
+
+        impl<'cx, 'gcx, 'tcx> Iterator for ClosureParents<'cx, 'gcx, 'tcx> {
+            type Item = DefId;
+
+            fn next(&mut self) -> Option<DefId> {
+                if let Some(def_id) = self.def_id {
+                    if self.tcx.is_closure(def_id) {
+                        self.def_id = Some(self.tcx.parent_def_id(def_id).unwrap_or_else(|| {
+                            bug!("closure {:?} has no parent", def_id);
+                        }));
+                    } else {
+                        self.def_id = None;
+                    }
+                    Some(def_id)
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     /// Given the def-id of some item that has no type parameters, make
