@@ -91,9 +91,10 @@ use middle::region;
 use rustc::hir::def_id::DefId;
 use rustc::ty::subst::Substs;
 use rustc::traits;
-use rustc::ty::{self, Ty, TypeFoldable};
+use rustc::ty::{self, Binder, Region, Ty, TyCtxt, TypeFoldable};
 use rustc::infer::{self, GenericKind, SubregionOrigin, VerifyBound};
 use rustc::ty::adjustment;
+use rustc::ty::fold::TypeVisitor;
 use rustc::ty::outlives::Component;
 use rustc::ty::wf;
 
@@ -530,10 +531,57 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
             let least_region = least_region.unwrap_or(self.tcx.types.re_static);
             debug!("constrain_anon_types: least_region={:?}", least_region);
 
+            struct RegionExceptClosureNonUpvarVisitor<'a, 'gcx: 'a + 'tcx, 'tcx: 'a, F> {
+                tcx: TyCtxt<'a, 'gcx, 'tcx>,
+                current_depth: u32,
+                f: F,
+            }
+
+            impl<'a, 'gcx, 'tcx, F> TypeVisitor<'tcx> for
+                RegionExceptClosureNonUpvarVisitor<'a, 'gcx, 'tcx, F>
+                where F: FnMut(ty::Region<'tcx>)
+            {
+                fn visit_binder<T: TypeFoldable<'tcx>>(&mut self, t: &Binder<T>) -> bool {
+                    self.current_depth += 1;
+                    t.skip_binder().visit_with(self);
+                    self.current_depth -= 1;
+
+                    false // keep visiting
+                }
+
+                // Skip the non-upvar generics in closures-- we don't want to place bounds on those
+                // because the closure can outlive them.
+                fn visit_ty(&mut self, t: Ty<'tcx>) -> bool {
+                    if let ty::TypeVariants::TyClosure(def_id, ref closure_substs) = t.sty {
+                        // Only iterate over the upvar tys, skipping others
+                        for subst in closure_substs.upvar_tys(def_id, self.tcx) {
+                            subst.visit_with(self);
+                        }
+                        false // keep visiting
+                    } else {
+                        t.super_visit_with(self)
+                    }
+                }
+
+                fn visit_region(&mut self, r: Region<'tcx>) -> bool {
+                    match *r {
+                        ty::ReLateBound(debruijn, _) if debruijn.depth < self.current_depth => {
+                            // ignore bound regions
+                        }
+                        _ => (self.f)(r),
+                    }
+
+                    false // keep visiting
+                }
+            }
+
             // Require that all regions outlive `least_region`
-            self.tcx.for_each_free_region(&concrete_ty, |region| {
-                self.sub_regions(infer::CallReturn(span), least_region, region);
-            });
+            let mut visitor = RegionExceptClosureNonUpvarVisitor {
+                tcx: self.tcx,
+                current_depth: 0,
+                f: |region| self.sub_regions(infer::CallReturn(span), least_region, region),
+            };
+            concrete_ty.visit_with(&mut visitor);
         }
     }
 

@@ -18,7 +18,7 @@ use rustc::hir::def_id::{DefId, DefIndex};
 use rustc::hir::intravisit::{self, Visitor, NestedVisitorMap};
 use rustc::infer::{InferCtxt};
 use rustc::ty::{self, Ty, TyCtxt};
-use rustc::ty::fold::{TypeFolder,TypeFoldable};
+use rustc::ty::fold::{TypeFolder, TypeFoldable};
 use rustc::ty::subst::{Kind, Substs};
 use rustc::util::nodemap::{DefIdSet, FxHashMap};
 use syntax::ast;
@@ -297,7 +297,7 @@ impl<'cx, 'gcx, 'tcx> WritebackCx<'cx, 'gcx, 'tcx> {
             // and remapping only those used in the `impl Trait` return type,
             // resulting in the parameters shifting.
             let id_substs = Substs::identity_for_item(gcx, def_id);
-            let map: FxHashMap<Kind, Kind> =
+            let map: FxHashMap<Kind<'tcx>, Kind<'gcx>> =
                 anon_defn.substs
                          .iter()
                          .enumerate()
@@ -319,12 +319,10 @@ impl<'cx, 'gcx, 'tcx> WritebackCx<'cx, 'gcx, 'tcx> {
                     _ => if let Some(r1) =
                             map.get(&Kind::from(r)).and_then(|k| k.as_region()) { r1 } else
                         {
-                            let span = node_id.to_span(&self.fcx.tcx);
-                            self.tcx().sess.delay_span_bug(
-                                span,
-                                &format!("only named lifetimes are allowed in `impl Trait`, \
-                                          but `{}` was found in the type `{}`",
-                                         r, inside_ty));
+                            // No mapping was found. This means that it is either a
+                            // disallowed lifetime, which will be caught by regionck,
+                            // or it is a region in a non-upvar closure generic, which
+                            // is explicitly allowed.
                             gcx.types.re_static
                         },
                 }
