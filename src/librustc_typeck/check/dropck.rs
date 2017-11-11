@@ -12,11 +12,11 @@ use check::regionck::RegionCtxt;
 
 use hir::def_id::DefId;
 use rustc::infer::{self, InferOk};
-use rustc::infer::outlives::free_region_map::FreeRegionMap;
+use rustc::infer::outlives::env::OutlivesEnvironment;
 use rustc::middle::region;
 use rustc::ty::subst::{Subst, Substs};
 use rustc::ty::{self, Ty, TyCtxt};
-use rustc::traits::{self, ObligationCause};
+use rustc::traits::{self, Reveal, ObligationCause};
 use util::common::ErrorReported;
 use util::nodemap::FxHashSet;
 
@@ -115,8 +115,9 @@ fn ensure_drop_params_and_item_params_correspond<'a, 'tcx>(
         }
 
         let region_scope_tree = region::ScopeTree::default();
-        let free_regions = FreeRegionMap::new();
-        infcx.resolve_regions_and_report_errors(drop_impl_did, &region_scope_tree, &free_regions);
+        // TODO. Using an empty param-environment here surely causes unnecessary region errors.
+        let outlives_env = OutlivesEnvironment::new(ty::ParamEnv::empty(Reveal::UserFacing));
+        infcx.resolve_regions_and_report_errors(drop_impl_did, &region_scope_tree, &outlives_env);
         Ok(())
     })
 }

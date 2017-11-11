@@ -395,7 +395,7 @@ pub fn coerce_unsized_info<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         infcx.resolve_regions_and_report_errors(
             impl_did,
             &region_scope_tree,
-            outlives_env.free_region_map()
+            &outlives_env,
         );
 
         CoerceUnsizedInfo {

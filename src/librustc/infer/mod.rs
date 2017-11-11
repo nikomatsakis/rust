@@ -43,7 +43,7 @@ use self::higher_ranked::HrMatchResult;
 use self::region_constraints::{RegionConstraintCollector, RegionSnapshot};
 use self::region_constraints::{GenericKind, VerifyBound, RegionConstraintData, VarOrigins};
 use self::lexical_region_resolve::LexicalRegionResolutions;
-use self::outlives::free_region_map::FreeRegionMap;
+use self::outlives::env::OutlivesEnvironment;
 use self::type_variable::TypeVariableOrigin;
 use self::unify_key::ToType;
 
@@ -1155,7 +1155,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     pub fn resolve_regions_and_report_errors(&self,
                                              region_context: DefId,
                                              region_map: &region::ScopeTree,
-                                             free_regions: &FreeRegionMap<'tcx>) {
+                                             outlives_env: &OutlivesEnvironment<'tcx>) {
         assert!(self.is_tainted_by_errors() || self.region_obligations.borrow().is_empty(),
                 "region_obligations not empty: {:#?}",
                 self.region_obligations.borrow());
@@ -1163,7 +1163,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         let region_rels = &RegionRelations::new(self.tcx,
                                                 region_context,
                                                 region_map,
-                                                free_regions);
+                                                outlives_env.free_region_map());
         let (var_origins, data) = self.region_constraints.borrow_mut()
                                                          .take()
                                                          .expect("regions already resolved")

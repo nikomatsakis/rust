@@ -362,7 +362,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
     fn resolve_regions_and_report_errors(&self) {
         self.fcx.resolve_regions_and_report_errors(self.subject_def_id,
                                                    &self.region_scope_tree,
-                                                   self.outlives_environment.free_region_map());
+                                                   &self.outlives_environment);
     }
 
     fn constrain_bindings_in_pat(&mut self, pat: &hir::Pat) {
