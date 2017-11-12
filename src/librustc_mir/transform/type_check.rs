@@ -11,6 +11,7 @@
 //! This pass type-checks the MIR to ensure it is not broken.
 #![allow(unreachable_code)]
 
+use rustc::hir::map::DefPathData;
 use rustc::infer::{InferCtxt, InferOk, InferResult, LateBoundRegionConversionTime, UnitResult};
 use rustc::infer::region_constraints::RegionConstraintData;
 use rustc::traits::{self, FulfillmentContext};
@@ -41,8 +42,9 @@ pub fn type_check<'a, 'gcx, 'tcx>(
     body_id: ast::NodeId,
     param_env: ty::ParamEnv<'gcx>,
     mir: &Mir<'tcx>,
+    mir_source: MirSource,
 ) -> MirTypeckRegionConstraints<'tcx> {
-    let mut checker = TypeChecker::new(infcx, body_id, param_env);
+    let mut checker = TypeChecker::new(infcx, body_id, param_env, mir_source);
     let errors_reported = {
         let mut verifier = TypeVerifier::new(&mut checker, mir);
         verifier.visit_mir(mir);
@@ -408,6 +410,11 @@ pub struct TypeChecker<'a, 'gcx: 'a + 'tcx, 'tcx: 'a> {
     body_id: ast::NodeId,
     reported_errors: FxHashSet<(Ty<'tcx>, Span)>,
     constraints: MirTypeckRegionConstraints<'tcx>,
+
+    // FIXME(#45940) - True if this is a MIR shim or ADT constructor
+    // (e.g., for a tuple struct.) In that case, the internal types of
+    // operands and things require normalization.
+    is_adt_constructor: bool,
 }
 
 /// A collection of region constraints that must be satisfied for the
@@ -459,7 +466,15 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
         infcx: &'a InferCtxt<'a, 'gcx, 'tcx>,
         body_id: ast::NodeId,
         param_env: ty::ParamEnv<'gcx>,
+        mir_source: MirSource,
     ) -> Self {
+        let mir_def_id = infcx.tcx.hir.local_def_id(mir_source.item_id());
+        let def_key = infcx.tcx.def_key(mir_def_id);
+        let is_adt_constructor = match def_key.disambiguated_data.data {
+            DefPathData::StructCtor => true,
+            _ => false,
+        };
+
         TypeChecker {
             infcx,
             last_span: DUMMY_SP,
@@ -467,6 +482,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
             param_env,
             reported_errors: FxHashSet(),
             constraints: MirTypeckRegionConstraints::default(),
+            is_adt_constructor,
         }
     }
 
@@ -1083,7 +1099,12 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                             };
                             let op_ty = match op {
                                 Operand::Consume(lv) => {
-                                    self.normalize(&lv.ty(mir, tcx), location).to_ty(tcx)
+                                    let lv_ty = lv.ty(mir, tcx).to_ty(tcx);
+                                    if self.is_adt_constructor {
+                                        self.normalize(&lv_ty, location)
+                                    } else {
+                                        lv_ty
+                                    }
                                 }
                                 Operand::Constant(c) => c.ty,
                             };
@@ -1175,7 +1196,7 @@ impl MirPass for TypeckMir {
         }
         let param_env = tcx.param_env(def_id);
         tcx.infer_ctxt().enter(|infcx| {
-            let _region_constraint_sets = type_check(&infcx, item_id, param_env, mir);
+            let _region_constraint_sets = type_check(&infcx, item_id, param_env, mir, src);
 
             // For verification purposes, we just ignore the resulting
             // region constraint sets. Not our problem. =)

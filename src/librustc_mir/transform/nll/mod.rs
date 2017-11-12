@@ -46,7 +46,7 @@ pub fn compute_regions<'a, 'gcx, 'tcx>(
 
     // Run the MIR type-checker.
     let body_id = source.item_id();
-    let constraint_sets = &type_check::type_check(infcx, body_id, param_env, mir);
+    let constraint_sets = &type_check::type_check(infcx, body_id, param_env, mir, source);
 
     // Create the region inference context, taking ownership of the region inference
     // data that was contained in `infcx`.
