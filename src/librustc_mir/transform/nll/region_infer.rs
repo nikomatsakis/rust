@@ -118,7 +118,11 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     /// `num_region_variables` valid inference variables; the first N
     /// of those will be constant regions representing the free
     /// regions defined in `free_regions`.
-    pub fn new(var_origins: VarOrigins, free_regions: FreeRegions<'tcx>, mir: &Mir<'tcx>) -> Self {
+    pub fn new(
+        var_origins: VarOrigins,
+        free_regions: FreeRegions<'tcx>,
+        mir: &Mir<'tcx>,
+    ) -> Self {
         let num_region_variables = var_origins.len();
 
         // Create a RegionDefinition for each inference variable.

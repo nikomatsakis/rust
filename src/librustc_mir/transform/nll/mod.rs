@@ -82,7 +82,7 @@ pub fn compute_regions<'a, 'gcx, 'tcx>(
     regioncx.solve(infcx, &mir);
 
     // Dump MIR results into a file, if that is enabled. This let us
-    // write unit-tests.
+    // write unit-tests, as well as helping with debugging.
     dump_mir_results(infcx, liveness, MirSource::item(def_id), &mir, &regioncx);
 
     regioncx

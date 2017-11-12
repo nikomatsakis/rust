@@ -26,9 +26,9 @@ use rustc::hir::def_id::DefId;
 use rustc::infer::InferCtxt;
 use rustc::infer::region_constraints::GenericKind;
 use rustc::infer::outlives::bounds::{self, OutlivesBound};
-use rustc::ty::{self, RegionVid};
+use rustc::ty::{self, RegionVid, TyCtxt};
 use rustc::ty::subst::Substs;
-use rustc::util::nodemap::FxHashMap;
+use rustc::util::nodemap::{FxHashMap, FxHashSet};
 use rustc_data_structures::indexed_vec::Idx;
 use rustc_data_structures::transitive_relation::TransitiveRelation;
 
@@ -51,6 +51,22 @@ pub struct FreeRegions<'tcx> {
     /// declared, and not our corresponding inference variables, and
     /// hence we sometimes get back results in terms of those regions.
     pub indices: FxHashMap<ty::Region<'tcx>, RegionVid>,
+
+    /// Those indices that are bound locally on the current function.
+    /// For example, if we are type-checking the function `foo`, then
+    /// it `'a` and `'b` would be in this set, but not `'static`.
+    /// Within the closure in the body, `'a` and `'b`' would not be
+    /// local, but `'x` would be.
+    ///
+    /// ```
+    /// fn foo<'a, 'b>(a: &'a u32, b: &'b u32, c: &'static u32) {
+    ///   let closure = for<'x> |x: &'x u32| { .. };
+    ///                 ^^^^^^^ pretend this were legal syntax
+    ///                         for declaring a late-bound region in
+    ///                         a closure signature
+    /// }
+    /// ```
+    pub local_indices: FxHashSet<RegionVid>,
 
     /// Each RBP `('a, GK)` indicates that `GK: 'a` can be assumed to
     /// be true. These encode relationships like `T: 'a` that are
@@ -75,7 +91,8 @@ impl<'tcx> FreeRegions<'tcx> {
         FreeRegions {
             indices: FxHashMap::default(),
             outlives_relation: TransitiveRelation::new(),
-            region_bound_pairs: vec![]
+            local_indices: FxHashSet::default(),
+            region_bound_pairs: vec![],
         }.init(infcx, mir_def_id, param_env)
     }
 
@@ -90,11 +107,10 @@ impl<'tcx> FreeRegions<'tcx> {
         let mir_node_id = tcx.hir.as_local_node_id(mir_def_id).unwrap();
 
         // `'static` is always free.
-        let fr_static = self.insert_free_region(tcx.types.re_static);
+        let fr_static = self.insert_free_region(tcx, mir_def_id, tcx.types.re_static);
 
         // Load and process the where-clauses in scope.
-        self.add_outlives_bounds(
-            bounds::explicit_outlives_bounds(param_env));
+        self.add_outlives_bounds(tcx, mir_def_id, bounds::explicit_outlives_bounds(param_env));
 
         // Walk up the def-ids of all enclosing closures, up to (and
         // including) the enclosing fn item. If this is a fn item, then
@@ -103,7 +119,7 @@ impl<'tcx> FreeRegions<'tcx> {
             // Extract the early regions.
             let substs = Substs::identity_for_item(tcx, def_id);
             for region in substs.iter().filter_map(|k| k.as_region()) {
-                self.insert_free_region(region);
+                self.insert_free_region(tcx, mir_def_id, region);
             }
 
             // Extract the late-bound regions. Use the liberated fn sigs,
@@ -113,14 +129,17 @@ impl<'tcx> FreeRegions<'tcx> {
                 .node_to_hir_id(tcx.hir.as_local_node_id(def_id).unwrap());
             let fn_sig = tables.liberated_fn_sigs()[fn_hir_id];
             tcx.for_each_free_region(&fn_sig.inputs_and_output, |region| {
-                self.insert_free_region(region);
+                self.insert_free_region(tcx, mir_def_id, region);
             });
 
             // Add in the implied bounds we get from this signature.
             let span = tcx.def_span(mir_def_id);
             for ty in fn_sig.inputs_and_output {
                 self.add_outlives_bounds(
-                    infcx.implied_outlives_bounds(param_env, mir_node_id, ty, span));
+                    tcx,
+                    mir_def_id,
+                    infcx.implied_outlives_bounds(param_env, mir_node_id, ty, span),
+                );
             }
         }
 
@@ -136,43 +155,65 @@ impl<'tcx> FreeRegions<'tcx> {
 
     /// Inserts `region` into the map, assigning it the next
     /// `RegionVid` if it is not already present.
-    fn insert_free_region(&mut self, region: ty::Region<'tcx>) -> RegionVid {
-        assert!(match region {
-            ty::ReStatic => true,
-            ty::ReEarlyBound(..) => true,
-            ty::ReFree(..) => true,
-            ty::ReScope(..) => true,
-            ty::ReEmpty => true,
-
-            ty::ReLateBound(..) => false,
-            ty::ReSkolemized(..) => false,
-            ty::ReVar(..) => false,
-            ty::ReErased => false,
-        }, "unexpected region {:?}", region);
-
+    fn insert_free_region(
+        &mut self,
+        tcx: TyCtxt<'_, '_, 'tcx>,
+        mir_def_id: DefId,
+        region: ty::Region<'tcx>,
+    ) -> RegionVid {
         let next = RegionVid::new(self.indices.len());
-        *self.indices.entry(region).or_insert(next)
+        let local_indices = &mut self.local_indices;
+        *self.indices.entry(region).or_insert_with(|| {
+            let is_local = match region {
+                ty::ReStatic | ty::ReEmpty | ty::ReScope(..) => {
+                    // For 'static and the empty region, these are not
+                    // bound on any function but rather always in
+                    // scope. For `ReScope`, that would only appear free
+                    // within a closure, and it always would refer to some
+                    // scope from the containing function.
+                    false
+                }
+
+                ty::ReEarlyBound(..) | ty::ReFree(..) => {
+                    region.free_region_binding_scope(tcx) == mir_def_id
+                }
+
+                ty::ReLateBound(..) | ty::ReSkolemized(..) | ty::ReVar(..) | ty::ReErased => {
+                    bug!("unexpected region {:?}", region)
+                }
+            };
+
+            if is_local {
+                local_indices.insert(next);
+            }
+
+            next
+        })
     }
 
-    fn add_outlives_bounds<I>(&mut self, outlives_bounds: I)
-    where
+    fn add_outlives_bounds<I>(
+        &mut self,
+        tcx: TyCtxt<'_, '_, 'tcx>,
+        mir_def_id: DefId,
+        outlives_bounds: I,
+    ) where
         I: IntoIterator<Item = OutlivesBound<'tcx>>,
     {
         for outlives_bound in outlives_bounds {
             match outlives_bound {
                 OutlivesBound::RegionSubRegion(r1, r2) => {
                     // The bound says that `r1 <= r2`; we store `r2: r1`.
-                    self.relate_free_regions(r2, r1);
+                    self.relate_free_regions(tcx, mir_def_id, r2, r1);
                 }
 
                 OutlivesBound::RegionSubParam(r_a, param_b) => {
-                    self.insert_free_region(r_a);
+                    self.insert_free_region(tcx, mir_def_id, r_a);
                     self.region_bound_pairs
                         .push((r_a, GenericKind::Param(param_b)));
                 }
 
                 OutlivesBound::RegionSubProjection(r_a, projection_b) => {
-                    self.insert_free_region(r_a);
+                    self.insert_free_region(tcx, mir_def_id, r_a);
                     self.region_bound_pairs
                         .push((r_a, GenericKind::Projection(projection_b)));
                 }
@@ -181,9 +222,15 @@ impl<'tcx> FreeRegions<'tcx> {
     }
 
     /// Records in the `outlives_relation` that `fr_a: fr_b`.
-    fn relate_free_regions(&mut self, fr_a: ty::Region<'tcx>, fr_b: ty::Region<'tcx>) {
-        let fr_a = self.insert_free_region(fr_a);
-        let fr_b = self.insert_free_region(fr_b);
+    fn relate_free_regions(
+        &mut self,
+        tcx: TyCtxt<'_, '_, 'tcx>,
+        mir_def_id: DefId,
+        fr_a: ty::Region<'tcx>,
+        fr_b: ty::Region<'tcx>,
+    ) {
+        let fr_a = self.insert_free_region(tcx, mir_def_id, fr_a);
+        let fr_b = self.insert_free_region(tcx, mir_def_id, fr_b);
         self.outlives_relation.add(fr_a, fr_b);
     }
 }
