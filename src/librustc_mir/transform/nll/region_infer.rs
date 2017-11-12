@@ -46,6 +46,16 @@ pub struct RegionInferenceContext<'tcx> {
     free_regions: FreeRegions<'tcx>,
 }
 
+/// Indicates an outlives constraint between two free-regions declared
+/// on the closure.
+pub struct PropagatedOutlivesRequirement<'tcx> {
+    // This region ...
+    pub free_region: ty::Region<'tcx>,
+
+    // .. must outlive this one.
+    pub outlived_free_region: ty::Region<'tcx>,
+}
+
 struct RegionDefinition<'tcx> {
     /// Why we created this variable. Mostly these will be
     /// `RegionVariableOrigin::NLL`, but some variables get created
@@ -118,11 +128,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     /// `num_region_variables` valid inference variables; the first N
     /// of those will be constant regions representing the free
     /// regions defined in `free_regions`.
-    pub fn new(
-        var_origins: VarOrigins,
-        free_regions: FreeRegions<'tcx>,
-        mir: &Mir<'tcx>,
-    ) -> Self {
+    pub fn new(var_origins: VarOrigins, free_regions: FreeRegions<'tcx>, mir: &Mir<'tcx>) -> Self {
         let num_region_variables = var_origins.len();
 
         // Create a RegionDefinition for each inference variable.
@@ -256,7 +262,11 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     }
 
     /// Perform region inference.
-    pub(super) fn solve(&mut self, infcx: &InferCtxt<'_, '_, 'tcx>, mir: &Mir<'tcx>) {
+    pub(super) fn solve(
+        &mut self,
+        infcx: &InferCtxt<'_, '_, 'tcx>,
+        mir: &Mir<'tcx>,
+    ) -> Vec<PropagatedOutlivesRequirement<'tcx>> {
         assert!(self.inferred_values.is_none(), "values already inferred");
 
         // Find the minimal regions that can solve the constraints. This is infallible.
@@ -280,9 +290,17 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             .iter_enumerated()
             .take_while(|(_, fr_definition)| fr_definition.name.is_some());
 
+        let mut propagated_outlives_requirements = vec![];
         for (fr, fr_definition) in free_region_definitions {
-            self.check_free_region(infcx, fr, fr_definition);
+            self.check_free_region(
+                infcx,
+                fr,
+                fr_definition,
+                &mut propagated_outlives_requirements,
+            );
         }
+
+        propagated_outlives_requirements
     }
 
     fn check_free_region(
@@ -290,6 +308,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         infcx: &InferCtxt<'_, '_, 'tcx>,
         fr: RegionVid,
         fr_definition: &RegionDefinition<'tcx>,
+        propagated_outlives_requirements: &mut Vec<PropagatedOutlivesRequirement<'tcx>>,
     ) {
         let inferred_values = self.inferred_values.as_ref().unwrap();
         let fr_value = &inferred_values[fr];
@@ -297,30 +316,47 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         // Find every region `o` such that `fr: o`
         // (because `fr` includes `end(o)`).
         for &outlived_fr in &fr_value.free_regions {
-            // `fr` includes `end(fr)`, that's not especially
-            // interesting.
-            if fr == outlived_fr {
+            // If it is known that `fr: o`, carry on.
+            if self.free_regions
+                .outlives_relation
+                .contains(&fr, &outlived_fr)
+            {
                 continue;
             }
 
             let outlived_fr_definition = &self.definitions[outlived_fr];
 
-            // Check that `fr: outlived_fr`. If not, report an error.
-            if !self.free_regions
-                .outlives_relation
-                .contains(&fr, &outlived_fr)
-            {
-                // worst error msg ever
-                let blame_span = self.blame_span(fr, outlived_fr);
-                infcx.tcx.sess.span_err(
-                    blame_span,
-                    &format!(
-                        "free region `{}` does not outlive `{}`",
-                        fr_definition.name.unwrap(),
-                        outlived_fr_definition.name.unwrap()
-                    ),
-                );
+            // Otherwise, our course of action depends on whether
+            // either of these free regions are locally bound on the
+            // current function.
+            let fr_is_local = self.free_regions.local_indices.contains(&fr);
+            let outlived_fr_is_local = self.free_regions.local_indices.contains(&outlived_fr);
+
+            // If neither of the regions is locally bound, then we can
+            // propagate this constraint to our caller. This will only
+            // happen within a closure. You can think of this as
+            // where-clauses attached to the closure struct. We will
+            // enforce these in the closure's creator.
+            if !fr_is_local && !outlived_fr_is_local {
+                propagated_outlives_requirements.push(PropagatedOutlivesRequirement {
+                    free_region: fr_definition.name.unwrap(),
+                    outlived_free_region: outlived_fr_definition.name.unwrap(),
+                });
+                continue;
             }
+
+            // Otherwise, one of the regions is locally bound in the
+            // closure signature, in which the
+            assert!(fr_is_local || outlived_fr_is_local);
+            let blame_span = self.blame_span(fr, outlived_fr);
+            infcx.tcx.sess.span_err(
+                blame_span,
+                &format!(
+                    "free region `{}` does not outlive `{}`",
+                    fr_definition.name.unwrap(),
+                    outlived_fr_definition.name.unwrap()
+                ),
+            );
         }
     }
 

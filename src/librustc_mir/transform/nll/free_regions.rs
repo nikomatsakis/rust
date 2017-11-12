@@ -145,9 +145,11 @@ impl<'tcx> FreeRegions<'tcx> {
 
         debug!("free_regions: indices={:#?}", self.indices);
 
-        // Finally, static outlives every other free region.
-        for fr in self.indices.values() {
-            self.outlives_relation.add(fr_static, *fr);
+        // Finally, outlives is reflexive, and static outlives every
+        // other free region.
+        for &fr in self.indices.values() {
+            self.outlives_relation.add(fr, fr);
+            self.outlives_relation.add(fr_static, fr);
         }
 
         self
