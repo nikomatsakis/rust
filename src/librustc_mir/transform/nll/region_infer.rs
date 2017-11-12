@@ -41,6 +41,8 @@ pub struct RegionInferenceContext<'tcx> {
     /// The constraints we have accumulated and used during solving.
     constraints: Vec<Constraint>,
 
+    /// Information about the free regions in scope on this function
+    /// and their (known) relations to one another.
     free_regions: FreeRegions<'tcx>,
 }
 
@@ -286,7 +288,6 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         fr_definition: &RegionDefinition<'tcx>,
     ) {
         let inferred_values = self.inferred_values.as_ref().unwrap();
-        let fr_name = fr_definition.name.unwrap();
         let fr_value = &inferred_values[fr];
 
         // Find every region `o` such that `fr: o`
@@ -299,12 +300,11 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             }
 
             let outlived_fr_definition = &self.definitions[outlived_fr];
-            let outlived_fr_name = outlived_fr_definition.name.unwrap();
 
-            // Check that `o <= fr`. If not, report an error.
+            // Check that `fr: outlived_fr`. If not, report an error.
             if !self.free_regions
-                .free_region_map
-                .sub_free_regions(outlived_fr_name, fr_name)
+                .outlives_relation
+                .contains(&fr, &outlived_fr)
             {
                 // worst error msg ever
                 let blame_span = self.blame_span(fr, outlived_fr);
@@ -312,8 +312,8 @@ impl<'tcx> RegionInferenceContext<'tcx> {
                     blame_span,
                     &format!(
                         "free region `{}` does not outlive `{}`",
-                        fr_name,
-                        outlived_fr_name
+                        fr_definition.name.unwrap(),
+                        outlived_fr_definition.name.unwrap()
                     ),
                 );
             }
