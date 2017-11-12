@@ -27,7 +27,7 @@ mod free_regions;
 use self::free_regions::FreeRegions;
 
 pub(crate) mod region_infer;
-use self::region_infer::RegionInferenceContext;
+use self::region_infer::{PropagatedOutlivesRequirement, RegionInferenceContext};
 
 mod renumber;
 
@@ -79,11 +79,18 @@ pub fn compute_regions<'a, 'gcx, 'tcx>(
     constraint_generation::generate_constraints(infcx, &mut regioncx, &mir, param_env, liveness);
 
     // Solve the region constraints.
-    regioncx.solve(infcx, &mir);
+    let propagated_outlives_requirements = regioncx.solve(infcx, &mir);
 
     // Dump MIR results into a file, if that is enabled. This let us
     // write unit-tests, as well as helping with debugging.
-    dump_mir_results(infcx, liveness, MirSource::item(def_id), &mir, &regioncx);
+    dump_mir_results(
+        infcx,
+        liveness,
+        MirSource::item(def_id),
+        &mir,
+        &regioncx,
+        &propagated_outlives_requirements,
+    );
 
     regioncx
 }
@@ -99,6 +106,7 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
     source: MirSource,
     mir: &Mir<'tcx>,
     regioncx: &RegionInferenceContext,
+    propagated_outlives_requirements: &[PropagatedOutlivesRequirement<'tcx>],
 ) {
     if !mir_util::dump_enabled(infcx.tcx, "nll", source) {
         return;
@@ -133,9 +141,20 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
     mir_util::dump_mir(infcx.tcx, None, "nll", &0, source, mir, |pass_where, out| {
         match pass_where {
             // Before the CFG, dump out the values for each region variable.
-            PassWhere::BeforeCFG => for region in regioncx.regions() {
-                writeln!(out, "| {:?}: {:?}", region, regioncx.region_value(region))?;
-            },
+            PassWhere::BeforeCFG => {
+                for region in regioncx.regions() {
+                    writeln!(out, "| {:?}: {:?}", region, regioncx.region_value(region))?;
+                }
+
+                for req in propagated_outlives_requirements {
+                    writeln!(
+                        out,
+                        "| where {:?}: {:?}",
+                        req.free_region,
+                        req.outlived_free_region,
+                    )?;
+                }
+            }
 
             // Before each basic block, dump out the values
             // that are live on entry to the basic block.
