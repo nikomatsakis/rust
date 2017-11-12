@@ -829,7 +829,7 @@ pub fn build_adt_ctor<'a, 'gcx, 'tcx>(infcx: &infer::InferCtxt<'a, 'gcx, 'tcx>,
 {
     let tcx = infcx.tcx;
     let def_id = tcx.hir.local_def_id(ctor_id);
-    let sig = tcx.no_late_bound_regions(&tcx.fn_sig(def_id))
+    let sig = tcx.fn_sig(def_id).no_late_bound_regions()
         .expect("LBR in ADT constructor signature");
     let sig = tcx.erase_regions(&sig);
 

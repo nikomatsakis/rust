@@ -281,7 +281,7 @@ impl<'a, 'gcx, 'tcx> TypeFolder<'gcx, 'tcx> for TypeFreshener<'a, 'gcx, 'tcx> {
                         let gen_sig = this.infcx.generator_sig(def_id).unwrap();
                         // FIXME: want to revise this strategy when generator
                         // signatures can actually contain LBRs.
-                        let sig = this.tcx().no_late_bound_regions(&gen_sig)
+                        let sig = gen_sig.no_late_bound_regions()
                             .unwrap_or_else(|| {
                                 bug!("late-bound regions in signature of {:?}",
                                      def_id)
