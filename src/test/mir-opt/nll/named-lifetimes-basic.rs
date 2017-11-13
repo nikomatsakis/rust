@@ -30,5 +30,9 @@ fn main() {
 // | '_#1r: {bb0[0], bb0[1], '_#1r}
 // | '_#2r: {bb0[0], bb0[1], '_#2r}
 // | '_#3r: {bb0[0], bb0[1], '_#3r}
-// fn use_x(_1: &'_#1r mut i32, _2: &'_#2r u32, _3: &'_#1r u32, _4: &'_#3r u32) -> bool {
+// | '_#0r is ReStatic
+// | '_#1r is ReEarlyBound(1, 'b)
+// | '_#2r is ReEarlyBound(0, 'a)
+// | '_#3r is ReFree(DefId { krate: CrateNum(0), index: DefIndex(0:3) => named_lifetimes_basic[317d]::use_x[0] }, BrNamed(CrateNum(0):DefIndex(1:11), 'c(91)))
+// fn use_x(_1: &'_#2r mut i32, _2: &'_#1r u32, _3: &'_#2r u32, _4: &'_#3r u32) -> bool {
 // END rustc.use_x.nll.0.mir

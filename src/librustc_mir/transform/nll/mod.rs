@@ -146,6 +146,12 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
                     writeln!(out, "| {:?}: {:?}", region, regioncx.region_value(region))?;
                 }
 
+                for region in regioncx.regions() {
+                    if let Some(n) = regioncx.free_region_name(region) {
+                        writeln!(out, "| {:?} is {:?}", region, n)?;
+                    }
+                }
+
                 for req in propagated_outlives_requirements {
                     writeln!(
                         out,

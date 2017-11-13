@@ -116,11 +116,14 @@ impl<'tcx> FreeRegions<'tcx> {
         // including) the enclosing fn item. If this is a fn item, then
         // this just visits it.
         for def_id in tcx.closure_base_def_ids(mir_def_id) {
+            debug!("free_regions: examining def_id={:?}", def_id);
+
             // Extract the early regions.
             let substs = Substs::identity_for_item(tcx, def_id);
-            for region in substs.iter().filter_map(|k| k.as_region()) {
+            for region in substs.regions() {
                 self.insert_free_region(tcx, mir_def_id, region);
             }
+            debug!("free_regions: substs={:?}", substs);
 
             // Extract the late-bound regions. Use the liberated fn sigs,
             // where the late-bound regions will have been converted into free
@@ -128,6 +131,7 @@ impl<'tcx> FreeRegions<'tcx> {
             let fn_hir_id = tcx.hir
                 .node_to_hir_id(tcx.hir.as_local_node_id(def_id).unwrap());
             let fn_sig = tables.liberated_fn_sigs()[fn_hir_id];
+            debug!("free_regions: fn_sig={:?}", fn_sig);
             tcx.for_each_free_region(&fn_sig.inputs_and_output, |region| {
                 self.insert_free_region(tcx, mir_def_id, region);
             });
@@ -189,6 +193,7 @@ impl<'tcx> FreeRegions<'tcx> {
                 local_indices.insert(next);
             }
 
+            debug!("free_regions: insert_free_region region {:?} => {:?} is_local={}", region, next, is_local);
             next
         })
     }

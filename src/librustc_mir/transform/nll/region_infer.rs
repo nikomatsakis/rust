@@ -215,7 +215,17 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     ///
     /// (Panics if `r` is not a registered free region.)
     pub fn free_region_index(&self, r: ty::Region<'tcx>) -> RegionVid {
-        self.free_regions.indices[&r]
+        *self.free_regions
+            .indices
+            .get(&r)
+            .unwrap_or_else(|| bug!("no free region index for {:?}", r))
+    }
+
+    /// Given a region vid, returns the corresponding free region name,
+    /// or `None` if this is not a free region but rather an internal inference
+    /// variable.
+    pub fn free_region_name(&self, r: ty::RegionVid) -> Option<ty::Region<'tcx>> {
+        self.definitions[r].name
     }
 
     /// Returns true if the region `r` contains the point `p`.
