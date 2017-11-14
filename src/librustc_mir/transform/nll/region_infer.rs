@@ -339,8 +339,8 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             // Otherwise, our course of action depends on whether
             // either of these free regions are locally bound on the
             // current function.
-            let fr_is_local = self.free_regions.local_indices.contains(&fr);
-            let outlived_fr_is_local = self.free_regions.local_indices.contains(&outlived_fr);
+            let fr_is_local = self.free_regions.is_local_free_region(fr);
+            let outlived_fr_is_local = self.free_regions.is_local_free_region(outlived_fr);
 
             // If neither of the regions is locally bound, then we can
             // propagate this constraint to our caller. This will only

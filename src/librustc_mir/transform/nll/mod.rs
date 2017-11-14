@@ -41,7 +41,7 @@ pub fn compute_regions<'a, 'gcx, 'tcx>(
     mir: &mut Mir<'tcx>,
 ) -> RegionInferenceContext<'tcx> {
     // Compute named region information.
-    let free_regions = FreeRegions::new(infcx, def_id, param_env);
+    let free_regions = FreeRegions::new(infcx, def_id, param_env, mir);
 
     // Replace all regions with fresh inference variables.
     renumber::renumber_mir(infcx, &free_regions, mir);
