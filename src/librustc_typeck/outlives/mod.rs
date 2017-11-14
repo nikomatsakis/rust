@@ -7,8 +7,10 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
+#![allow(unused)]
+#[allow(dead_code)]
 
-use rustc::hir::def_id::DefId;
+use rustc::hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
 use rustc::ty::{self, CratePredicatesMap, TyCtxt};
 use rustc::ty::maps::Providers;
 use std::rc::Rc;
@@ -18,6 +20,7 @@ use rustc::hir;
 
 /// Code to write unit test for outlives.
 pub mod test;
+mod implicit;
 
 pub fn provide(providers: &mut Providers) {
     *providers = Providers {
@@ -42,27 +45,53 @@ fn inferred_outlives_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId)
     }
 }
 
-#[allow(dead_code)]
-fn inferred_outlives_crate <'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId)
+fn inferred_outlives_crate <'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, crate_num: CrateNum)
                                       -> Rc<CratePredicatesMap<'tcx>> {
 
 
-    let predicates = FxHashMap();
-    let empty_predicate = Rc::new(Vec::new());
 
-    let visitor = infer::OutlivesCrateVisitor {
-        tcx,
-        predicates,
-        empty_predicate,
-    }
-    //iterate over all the crates
-    tcx.hir.krate().visit_all_item_likes(&mut visitor);
 
-    Rc::new(
-        ty::CratePredicatesMap {
-            predicates,
-            empty_predicate,
-        }
-    );
+    // Compute a map from each struct/enum/union S to the **explicit**
+    // outlives predicates (`T: 'a`, `'a: 'b`) that the user wrote.
+    // Typically there won't be many of these, except in older code where
+    // they were mandatory. Nonetheless, we have to ensure that every such
+    // predicate is satisfied, so they form a kind of base set of requirements
+    // for the type.
+    //let mut explicit_outlives_predicates = map();
+    //for def_id in all_types() {
+    //    let explicit_predicates = tcx.explicit_predicates(def_id);
+    //    let filtered_predicates = explicit_predicates.iter().filter_map(is_outlives_predicate).collect();
+    //    explicit_outlives_predicates.insert(
+    //        def_id,
+    //        filtered_predicates);
+    //}
+
+    // Create the sets of inferred predicates for each type. These sets
+    // are initially empty but will grow during the inference step.
+    let empty = implicit::empty(tcx);
+    //let mut inferred_outlives_predicates = map();
+    //for def_id in all_types() {
+    //    inferred_outlives_predicates.insert(def_id, empty_set());
+    //}
+    Rc::new(empty)
+
+    // Now comes the inference part. We iterate over each type and figure out,
+    // for each of its fields, what outlives predicates are needed to make that field's
+    // type well-formed. Those get added to the `inferred_outlives_predicates` set
+    // for that type.
+    //let mut changed = true;
+    //while changed {
+    //    changed = false;
+    //    for def_id in all_types() {
+    //        for field_ty in the HIR type definition {
+    //            let required_predicates = required_predicates_for_type_to_be_wf(field_ty);
+    //            inferred_outlives_predicates.extend(required_predicates);
+    //            if new predicates were added { changed = true; }
+    //        }
+    //    }
+    //}
+
+    //inferred_outlives_predicates
+
 
 }
