@@ -24,7 +24,8 @@ use rustc::hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
 // are initially empty but will grow during the inference step.
 
 //let mut inferred_outlives_predicates = map();
-pub fn empty<'a, 'tcx: 'a>(tcx: TyCtxt<'a, 'tcx, 'tcx>, crate_num: CrateNum) -> CratePredicatesMap<'a> {
+pub fn empty<'a, 'tcx: 'a>(tcx: TyCtxt<'a, 'tcx, 'tcx>, crate_num: CrateNum)
+        -> CratePredicatesMap<'a> {
     assert_eq!(crate_num, LOCAL_CRATE);
     let predicates = FxHashMap();
     let empty_predicate = Rc::new(Vec::new());

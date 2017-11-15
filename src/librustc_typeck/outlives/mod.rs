@@ -60,7 +60,10 @@ fn inferred_outlives_crate <'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, crate_num: Cr
     //let mut explicit_outlives_predicates = map();
     //for def_id in all_types() {
     //    let explicit_predicates = tcx.explicit_predicates(def_id);
-    //    let filtered_predicates = explicit_predicates.iter().filter_map(is_outlives_predicate).collect();
+    //    let filtered_predicates = explicit_predicates
+    //    .iter()
+    //    .filter_map(is_outlives_predicate)
+    //    .collect();
     //    explicit_outlives_predicates.insert(
     //        def_id,
     //        filtered_predicates);

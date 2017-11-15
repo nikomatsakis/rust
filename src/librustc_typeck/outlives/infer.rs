@@ -62,7 +62,8 @@
 //                //infer the fields first so that we can then use those rules for the parent
 //                for field in struct_def {
 //                    match field {
-//                        hir::Struct(ref field_def, _) => self.add_outlives_for_item(field.id, child_predicates)
+//                        hir::Struct(ref field_def, _) =>
+//                        self.add_outlives_for_item(field.id, child_predicates)
 //                    }
 //                }
 //
