@@ -42,7 +42,6 @@ pub mod instcombine;
 pub mod copy_prop;
 pub mod generator;
 pub mod inline;
-pub mod nll;
 pub mod lower_128bit;
 
 pub(crate) fn provide(providers: &mut Providers) {
