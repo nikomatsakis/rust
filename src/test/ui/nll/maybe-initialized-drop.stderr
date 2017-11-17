@@ -1,0 +1,18 @@
+error[E0506]: cannot assign to `x` because it is borrowed (Ast)
+  --> $DIR/maybe-initialized-drop.rs:26:5
+   |
+25 |     let wrap = Wrap { p: &mut x };
+   |                               - borrow of `x` occurs here
+26 |     x = 1; //~ ERROR because of dtor
+   |     ^^^^^ assignment to borrowed `x` occurs here
+
+error[E0506]: cannot assign to `x` because it is borrowed (Mir)
+  --> $DIR/maybe-initialized-drop.rs:26:5
+   |
+25 |     let wrap = Wrap { p: &mut x };
+   |                          ------ borrow of `x` occurs here
+26 |     x = 1; //~ ERROR because of dtor
+   |     ^^^^^ assignment to borrowed `x` occurs here
+
+error: aborting due to 2 previous errors
+
