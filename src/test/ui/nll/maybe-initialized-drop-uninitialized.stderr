@@ -1,0 +1,11 @@
+error[E0506]: cannot assign to `x` because it is borrowed (Ast)
+  --> $DIR/maybe-initialized-drop-uninitialized.rs:27:5
+   |
+25 |     let wrap = Wrap { p: &mut x };
+   |                               - borrow of `x` occurs here
+26 |     std::mem::drop(wrap);
+27 |     x = 1; // OK, drop is inert
+   |     ^^^^^ assignment to borrowed `x` occurs here
+
+error: aborting due to previous error
+
