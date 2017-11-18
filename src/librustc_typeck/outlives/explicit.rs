@@ -20,23 +20,21 @@ use rustc::hir;
 use rustc::hir::itemlikevisit::ItemLikeVisitor;
 use rustc::hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
 
-pub fn explicit<'a, 'tcx: 'a>(tcx: TyCtxt<'a, 'tcx, 'tcx>, crate_num: CrateNum)
-        -> FxHashMap<DefId,Predicate > {
+pub fn explicit_map<'a, 'tcx: 'a>(tcx: TyCtxt<'a, 'tcx, 'tcx>, crate_num: CrateNum)
+        -> FxHashMap<DefId, Predicate> {
     assert_eq!(crate_num, LOCAL_CRATE);
 
     //let mut explicit_outlives_predicates = map();
     let explicit_predicates = FxHashMap();
 
-    let visitor = ExplicitVisitor {
+    let mut visitor = ExplicitVisitor {
         tcx,
         explicit_predicates
     };
     //iterate over all the crates
     tcx.hir.krate().visit_all_item_likes(&mut visitor);
 
-    ty::CratePredicatesMap {
-        explicit_predicates,
-    }
+    explicit_predicates
 }
 
 
@@ -65,7 +63,7 @@ impl<'a, 'tcx, 'v> ItemLikeVisitor<'v> for ExplicitVisitor {
             .filter(is_outlives_predicate)
             .collect();
 
-        self.explicit_predicates.insert(def_id, Vec::mew());
+        self.explicit_predicates.insert(def_id, Rc::new(Vec::new()));
     }
 
     fn visit_trait_item(&mut self, trait_item: &hir::TraitItem) {
