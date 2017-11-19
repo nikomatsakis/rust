@@ -21,7 +21,7 @@ use rustc::hir;
 /// Code to write unit test for outlives.
 pub mod test;
 mod implicit;
-mod explicit;
+//mod explicit;
 
 pub fn provide(providers: &mut Providers) {
     *providers = Providers {
@@ -46,7 +46,7 @@ fn inferred_outlives_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId)
     }
 }
 
-fn inferred_outlives_crate <'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, crate_num: CrateNum)
+fn inferred_outlives_crate <'tcx>(tcx: TyCtxt<'tcx, 'tcx, 'tcx>, crate_num: CrateNum)
                                       -> Rc<CratePredicatesMap<'tcx>> {
 
 
@@ -59,7 +59,7 @@ fn inferred_outlives_crate <'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, crate_num: Cr
     // predicate is satisfied, so they form a kind of base set of requirements
     // for the type.
 
-    let mut explicit_outlives_predicates = explicit::explicit_map(tcx, crate_num);
+//    let mut explicit_outlives_predicates = explicit::explicit_map(tcx, crate_num);
     //let mut explicit_outlives_predicates = map();
     //for def_id in all_types() {
     //    let explicit_predicates = tcx.explicit_predicates(def_id);

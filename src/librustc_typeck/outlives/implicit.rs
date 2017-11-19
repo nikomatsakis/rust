@@ -18,26 +18,29 @@ use util::nodemap::FxHashMap;
 use hir::map as hir_map;
 use rustc::hir;
 use rustc::hir::itemlikevisit::ItemLikeVisitor;
-use rustc::hir::def_id::{CrateNum, DefId, LOCAL_CRATE, LocalDefId};
+use rustc::hir::def_id::{self, CrateNum, DefId, LOCAL_CRATE};
 
 // Create the sets of inferred predicates for each type. These sets
 // are initially empty but will grow during the inference step.
 
 //let mut inferred_outlives_predicates = map();
-pub fn empty<'a, 'tcx: 'a>(tcx: TyCtxt<'a, 'tcx, 'tcx>, crate_num: CrateNum)
-        -> CratePredicatesMap<'a> {
+pub fn empty<'tcx>(tcx: TyCtxt<'tcx, 'tcx, 'tcx>, crate_num: CrateNum)
+        -> CratePredicatesMap<'tcx> {
 
     assert_eq!(crate_num, LOCAL_CRATE);
-    let predicates: FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>> = FxHashMap();
+    let mut predicates: FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>> = FxHashMap();
     let empty_predicate = Rc::new(Vec::new());
 
-    let mut visitor = EmptyImplicitVisitor {
-        predicates,
-        crate_num,
-    };
 
-    //iterate over all the crates
-    tcx.hir.krate().visit_all_item_likes(&mut visitor);
+    {
+        let mut visitor = EmptyImplicitVisitor {
+            predicates: &mut predicates,
+            crate_num: crate_num,
+        };
+
+        //iterate over all the crates
+        tcx.hir.krate().visit_all_item_likes(&mut visitor);
+    }
 
     ty::CratePredicatesMap {
         predicates,
@@ -46,15 +49,15 @@ pub fn empty<'a, 'tcx: 'a>(tcx: TyCtxt<'a, 'tcx, 'tcx>, crate_num: CrateNum)
 
 }
 
-pub struct EmptyImplicitVisitor {
-    predicates: FxHashMap<DefId, Vec<String>>,
+pub struct EmptyImplicitVisitor<'a, 'p: 'a> {
+    predicates: &'a mut FxHashMap<DefId, Rc<Vec<ty::Predicate<'p>>>>,
     crate_num: CrateNum,
 }
 
-impl<'v> ItemLikeVisitor<'v> for EmptyImplicitVisitor {
+impl<'a, 'p, 'v> ItemLikeVisitor<'v> for EmptyImplicitVisitor<'a, 'p> {
     fn visit_item(&mut self, item: &hir::Item) {
-        let def_id = LocalDefId(item.hir_id.owner).to_def_id();
-        //let def_id = DefId{ krate: self.crate_num, index: item.hir_id.owner, }
+        //let def_id = def_id::LocalDefId(item.hir_id.owner).to_def_id();
+        let def_id = DefId{ krate: self.crate_num, index: item.hir_id.owner, };
         self.predicates.insert(def_id, Rc::new(Vec::new()));
     }
 
