@@ -42,7 +42,7 @@ pub fn explicit_map<'tcx>(tcx: TyCtxt<'tcx, 'tcx, 'tcx>, crate_num: CrateNum)
 pub struct ExplicitVisitor<'tcx> {
     tcx: TyCtxt<'tcx, 'tcx, 'tcx>,
     explicit_predicates: FxHashMap<DefId, Vec<String>>,
-    CrateNum,
+    crate_num: CrateNum,
 }
 
 impl<'tcx, 'v> ItemLikeVisitor<'v> for ExplicitVisitor<'tcx> {
