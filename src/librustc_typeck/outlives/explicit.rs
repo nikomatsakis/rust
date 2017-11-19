@@ -18,10 +18,10 @@ use util::nodemap::FxHashMap;
 use hir::map as hir_map;
 use rustc::hir;
 use rustc::hir::itemlikevisit::ItemLikeVisitor;
-use rustc::hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
+use rustc::hir::def_id::{CrateNum, DefId, LOCAL_CRATE, LocalDefId};
 
-pub fn explicit_map<'a, 'tcx: 'a>(tcx: TyCtxt<'a, 'tcx, 'tcx>, crate_num: CrateNum)
-        -> FxHashMap<DefId, Predicate> {
+pub fn explicit_map<'tcx>(tcx: TyCtxt<'tcx, 'tcx, 'tcx>, crate_num: CrateNum)
+        -> FxHashMap<DefId, ty::Predicate<'tcx>> {
     assert_eq!(crate_num, LOCAL_CRATE);
 
     //let mut explicit_outlives_predicates = map();
@@ -29,7 +29,8 @@ pub fn explicit_map<'a, 'tcx: 'a>(tcx: TyCtxt<'a, 'tcx, 'tcx>, crate_num: CrateN
 
     let mut visitor = ExplicitVisitor {
         tcx,
-        explicit_predicates
+        explicit_predicates,
+        crate_num,
     };
     //iterate over all the crates
     tcx.hir.krate().visit_all_item_likes(&mut visitor);
@@ -38,12 +39,13 @@ pub fn explicit_map<'a, 'tcx: 'a>(tcx: TyCtxt<'a, 'tcx, 'tcx>, crate_num: CrateN
 }
 
 
-pub struct ExplicitVisitor {
-    tcx: TyCtxt<'a, 'tcx, 'tcx>,
+pub struct ExplicitVisitor<'tcx> {
+    tcx: TyCtxt<'tcx, 'tcx, 'tcx>,
     explicit_predicates: FxHashMap<DefId, Vec<String>>,
+    CrateNum,
 }
 
-impl<'a, 'tcx, 'v> ItemLikeVisitor<'v> for ExplicitVisitor {
+impl<'tcx, 'v> ItemLikeVisitor<'v> for ExplicitVisitor<'tcx> {
     fn visit_item(&mut self, item: &hir::Item) {
 
         // Compute a map from each struct/enum/union S to the **explicit**
@@ -54,7 +56,8 @@ impl<'a, 'tcx, 'v> ItemLikeVisitor<'v> for ExplicitVisitor {
         // for the type.
         //for def_id in all_types() {
         //    let explicit_predicates = tcx.explicit_predicates(def_id);
-        let def_id = DefId.local(item.hir_id.owner);
+        let def_id = LocalDefId(item.hir_id.owner).to_def_id();
+        //let def_id = DefId{ krate: self.crate_num, index: item.hir_id.owner, }
         let local_explicit_predicate = self.tcx.explicit_predicates_of(def_id);
 
         //    let filtered_predicates = explicit_predicates.iter()
@@ -73,7 +76,7 @@ impl<'a, 'tcx, 'v> ItemLikeVisitor<'v> for ExplicitVisitor {
     }
 }
 
-fn is_outlives_predicate(pred: Predicate) -> Boolean {
+fn is_outlives_predicate(pred: ty::Predicate<'tcx>) -> bool {
     match *pred {
         &ty::Predicate::TypeOutlives(..) | &ty::Predicate::RegionOutlives(..) => true,
         _ => false,

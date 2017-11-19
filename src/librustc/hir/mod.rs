@@ -26,6 +26,14 @@ pub use self::TyParamBound::*;
 pub use self::UnOp::*;
 pub use self::UnsafeSource::*;
 pub use self::Visibility::{Public, Inherited};
+//HERE
+//use syntax::ast::{ Name,
+//use syntax::ast::{ NodeId
+    //pub struct HirId {
+    //    pub owner: DefIndex,
+    //    pub local_id: ItemLocalId,
+//use syntax_pos::{Span, DUMMY_SP};
+
 
 use hir::def::Def;
 use hir::def_id::{DefId, DefIndex, LocalDefId, CRATE_DEF_INDEX};

@@ -18,7 +18,7 @@ use util::nodemap::FxHashMap;
 use hir::map as hir_map;
 use rustc::hir;
 use rustc::hir::itemlikevisit::ItemLikeVisitor;
-use rustc::hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
+use rustc::hir::def_id::{CrateNum, DefId, LOCAL_CRATE, LocalDefId};
 
 // Create the sets of inferred predicates for each type. These sets
 // are initially empty but will grow during the inference step.
@@ -32,7 +32,8 @@ pub fn empty<'a, 'tcx: 'a>(tcx: TyCtxt<'a, 'tcx, 'tcx>, crate_num: CrateNum)
     let empty_predicate = Rc::new(Vec::new());
 
     let mut visitor = EmptyImplicitVisitor {
-        predicates
+        predicates,
+        crate_num,
     };
 
     //iterate over all the crates
@@ -47,11 +48,13 @@ pub fn empty<'a, 'tcx: 'a>(tcx: TyCtxt<'a, 'tcx, 'tcx>, crate_num: CrateNum)
 
 pub struct EmptyImplicitVisitor {
     predicates: FxHashMap<DefId, Vec<String>>,
+    crate_num: CrateNum,
 }
 
-impl<'a, 'tcx, 'v> ItemLikeVisitor<'v> for EmptyImplicitVisitor {
+impl<'v> ItemLikeVisitor<'v> for EmptyImplicitVisitor {
     fn visit_item(&mut self, item: &hir::Item) {
-        let def_id = DefId.local(item.hir_id.owner);
+        let def_id = LocalDefId(item.hir_id.owner).to_def_id();
+        //let def_id = DefId{ krate: self.crate_num, index: item.hir_id.owner, }
         self.predicates.insert(def_id, Rc::new(Vec::new()));
     }
 

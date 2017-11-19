@@ -59,7 +59,7 @@ fn inferred_outlives_crate <'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, crate_num: Cr
     // predicate is satisfied, so they form a kind of base set of requirements
     // for the type.
 
-    let mut explicit_outlives_predicates = explicit.explicit_map(tcx, crate_num);
+    let mut explicit_outlives_predicates = explicit::explicit_map(tcx, crate_num);
     //let mut explicit_outlives_predicates = map();
     //for def_id in all_types() {
     //    let explicit_predicates = tcx.explicit_predicates(def_id);
