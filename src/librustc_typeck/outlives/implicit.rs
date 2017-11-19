@@ -28,9 +28,8 @@ pub fn empty<'tcx>(tcx: TyCtxt<'tcx, 'tcx, 'tcx>, crate_num: CrateNum)
         -> CratePredicatesMap<'tcx> {
 
     assert_eq!(crate_num, LOCAL_CRATE);
-    let mut predicates: FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>> = FxHashMap();
     let empty_predicate = Rc::new(Vec::new());
-
+    let mut predicates = FxHashMap();
 
     {
         let mut visitor = EmptyImplicitVisitor {
@@ -46,7 +45,6 @@ pub fn empty<'tcx>(tcx: TyCtxt<'tcx, 'tcx, 'tcx>, crate_num: CrateNum)
         predicates,
         empty_predicate,
     }
-
 }
 
 pub struct EmptyImplicitVisitor<'a, 'p: 'a> {
