@@ -581,10 +581,8 @@ fn maybe_create_entry_wrapper(ccx: &CrateContext) {
 
         let (start_fn, args) = if use_start_lang_item {
             let start_def_id = ccx.tcx().require_lang_item(StartFnLangItem);
-            let start_instance = monomorphize::resolve(ccx.tcx(), start_def_id, ccx.tcx().mk_substs(
+            let start_fn = callee::resolve_and_get_fn(ccx, start_def_id, ccx.tcx().mk_substs(
                 iter::once(Kind::from(*rust_main_ret_ty.skip_binder()))));
-
-            let start_fn = callee::get_fn(ccx, start_instance);
             (start_fn, vec![bld.pointercast(rust_main, Type::i8p(ccx).ptr_to()),
                             arg_argc, arg_argv])
         } else {
