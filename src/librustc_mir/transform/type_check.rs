@@ -1110,6 +1110,15 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                 self.prove_trait_ref(trait_ref, location);
             }
 
+            Rvalue::NullaryOp(_, ty) => {
+                let trait_ref = ty::TraitRef {
+                    def_id: tcx.lang_items().sized_trait().unwrap(),
+                    substs: tcx.mk_substs_trait(ty, &[]),
+                };
+
+                self.prove_trait_ref(trait_ref, location);
+            }
+
             // FIXME: These other cases have to be implemented in future PRs
             Rvalue::Use(..) |
             Rvalue::Ref(..) |
@@ -1118,8 +1127,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
             Rvalue::BinaryOp(..) |
             Rvalue::CheckedBinaryOp(..) |
             Rvalue::UnaryOp(..) |
-            Rvalue::Discriminant(..) |
-            Rvalue::NullaryOp(..) => {}
+            Rvalue::Discriminant(..) => {}
         }
     }
 
