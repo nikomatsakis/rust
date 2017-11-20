@@ -553,7 +553,7 @@ fn maybe_create_entry_wrapper(ccx: &CrateContext) {
                        rust_main: ValueRef,
                        rust_main_def_id: DefId,
                        use_start_lang_item: bool) {
-        let llfty = Type::func(&[Type::c_int(ccx), Type::i8p(ccx).ptr_to()], &ccx.isize_ty());
+        let llfty = Type::func(&[Type::c_int(ccx), Type::i8p(ccx).ptr_to()], &Type::void(ccx));
         let rust_main_ret_ty = ccx.tcx().fn_sig(rust_main_def_id).output();
 
         if declare::get_defined_value(ccx, "main").is_some() {
@@ -592,10 +592,8 @@ fn maybe_create_entry_wrapper(ccx: &CrateContext) {
             (rust_main, vec![arg_argc, arg_argv])
         };
 
-        let result = bld.call(start_fn, &args, None);
-
-        // Return rust start function's result from native main()
-        bld.ret(bld.intcast(result, Type::c_int(ccx), true));
+        bld.call(start_fn, &args, None);
+        bld.ret_void();
     }
 }
 
