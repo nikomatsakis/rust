@@ -194,12 +194,13 @@ use rustc::hir::itemlikevisit::ItemLikeVisitor;
 use rustc::hir::map as hir_map;
 use rustc::hir::def_id::DefId;
 use rustc::middle::const_val::ConstVal;
-use rustc::middle::lang_items::{ExchangeMallocFnLangItem};
+use rustc::middle::lang_items::{ExchangeMallocFnLangItem,StartFnLangItem};
 use rustc::middle::trans::TransItem;
 use rustc::traits;
-use rustc::ty::subst::Substs;
+use rustc::ty::subst::{Substs, Kind};
 use rustc::ty::{self, TypeFoldable, Ty, TyCtxt};
 use rustc::ty::adjustment::CustomCoerceUnsized;
+use rustc::session::config;
 use rustc::mir::{self, Location};
 use rustc::mir::visit::Visitor as MirVisitor;
 
@@ -212,6 +213,8 @@ use trans_item::{TransItemExt, DefPathBasedNames, InstantiationMode};
 use rustc_data_structures::bitvec::BitVector;
 
 use syntax::attr;
+
+use std::iter;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub enum TransItemCollectionMode {
@@ -939,13 +942,29 @@ impl<'b, 'a, 'v> ItemLikeVisitor<'v> for RootCollector<'b, 'a, 'v> {
             hir::ItemFn(..) => {
                 let tcx = self.tcx;
                 let def_id = tcx.hir.local_def_id(item.id);
+                let start_def_id = tcx.lang_items().require(StartFnLangItem);
 
                 if self.is_root(def_id) {
                     debug!("RootCollector: ItemFn({})",
                            def_id_to_string(tcx, def_id));
 
                     let instance = Instance::mono(tcx, def_id);
-                    self.output.push(TransItem::Fn(instance));
+                    self.output.push(create_fn_trans_item(instance));
+                } else if start_def_id == Ok(def_id) {
+                    let main_ret_ty = match self.tcx.sess.entry_type.get() {
+                        Some(config::EntryMain) => {
+                            tcx.fn_sig(self.entry_fn.unwrap()).output()
+                        },
+                        _ => {
+                            return;
+                        }
+                    };
+
+                    let instance = Instance::resolve(
+                        self.tcx, ty::ParamEnv::empty(traits::Reveal::All), def_id,
+                        self.tcx.mk_substs(iter::once(Kind::from(*main_ret_ty.skip_binder())))).unwrap();
+
+                    self.output.push(create_fn_trans_item(instance));
                 }
             }
         }
