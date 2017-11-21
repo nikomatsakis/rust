@@ -1152,7 +1152,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                     substs: tcx.mk_substs_trait(op_ty, &[]),
                 };
 
-                self.prove(trait_ref, location);
+                self.prove_trait_ref(trait_ref, location);
             }
 
             // FIXME: These other cases have to be implemented in future PRs
@@ -1168,27 +1168,16 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
         }
     }
 
-    fn prove(&mut self, trait_ref: ty::TraitRef<'tcx>, location: Location) {
+    fn prove_trait_ref(&mut self, trait_ref: ty::TraitRef<'tcx>, location: Location) {
+        self.prove_predicates(&[ty::Predicate::Trait(trait_ref.to_poly_trait_ref().to_poly_trait_predicate())], location);
+    }
+
+    fn prove_predicates(&mut self, predicates: &[ty::Predicate<'tcx>], location: Location) {
         self.fully_perform_op(location.at_self(), |this| {
-            let mut selcx = traits::SelectionContext::new(this.infcx);
             let cause = this.misc(this.last_span);
-            let obligation = traits::Obligation::new(
-                cause,
-                this.param_env,
-                trait_ref.to_poly_trait_ref().to_poly_trait_predicate(),
-            );
-
-            match selcx.select(&obligation) {
-                Ok(Some(vtable)) => {
-                    Ok(InferOk { value: (), obligations: vtable.nested_obligations() })
-                }
-
-                _ => {
-                    span_mirbug!(this, trait_ref, "BUG");
-                    Ok(InferOk { value: (), obligations: vec![] })
-                }
-            }
-        }).unwrap();
+            let obligations = predicates.iter().map(|&p| traits::Obligation::new(cause.clone(), this.param_env, p)).collect();
+            Ok(InferOk { value: (), obligations })
+        }).unwrap()
     }
 
     fn typeck_mir(&mut self, mir: &Mir<'tcx>) {
