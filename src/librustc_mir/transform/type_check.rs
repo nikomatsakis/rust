@@ -170,15 +170,17 @@ impl<'a, 'b, 'gcx, 'tcx> TypeVerifier<'a, 'b, 'gcx, 'tcx> {
     fn sanitize_lvalue(&mut self, lvalue: &Lvalue<'tcx>, location: Location) -> LvalueTy<'tcx> {
         debug!("sanitize_lvalue: {:?}", lvalue);
         match *lvalue {
-            Lvalue::Local(index) => LvalueTy::Ty {
-                ty: self.mir.local_decls[index].ty,
-            },
+            Lvalue::Local(index) => LvalueTy::Ty { ty: self.mir.local_decls[index].ty },
             Lvalue::Static(box Static { def_id, ty: sty }) => {
                 let sty = self.sanitize_type(lvalue, sty);
                 let ty = self.tcx().type_of(def_id);
                 let ty = self.cx.normalize(&ty, location);
-                if let Err(terr) = self.cx
-                    .eq_types(self.last_span, ty, sty, location.at_self())
+                if let Err(terr) = self.cx.eq_types(
+                    self.last_span,
+                    ty,
+                    sty,
+                    location.at_self(),
+                )
                 {
                     span_mirbug!(
                         self,
@@ -196,9 +198,7 @@ impl<'a, 'b, 'gcx, 'tcx> TypeVerifier<'a, 'b, 'gcx, 'tcx> {
                 if let LvalueTy::Ty { ty } = base_ty {
                     if ty.references_error() {
                         assert!(self.errors_reported);
-                        return LvalueTy::Ty {
-                            ty: self.tcx().types.err,
-                        };
+                        return LvalueTy::Ty { ty: self.tcx().types.err };
                     }
                 }
                 self.sanitize_projection(base_ty, &proj.elem, lvalue, location)
@@ -229,9 +229,7 @@ impl<'a, 'b, 'gcx, 'tcx> TypeVerifier<'a, 'b, 'gcx, 'tcx> {
             ProjectionElem::Index(i) => {
                 let index_ty = Lvalue::Local(i).ty(self.mir, tcx).to_ty(tcx);
                 if index_ty != tcx.types.usize {
-                    LvalueTy::Ty {
-                        ty: span_mirbug_and_err!(self, i, "index by non-usize {:?}", i),
-                    }
+                    LvalueTy::Ty { ty: span_mirbug_and_err!(self, i, "index by non-usize {:?}", i) }
                 } else {
                     LvalueTy::Ty {
                         ty: base_ty.builtin_index().unwrap_or_else(|| {
@@ -268,36 +266,38 @@ impl<'a, 'b, 'gcx, 'tcx> TypeVerifier<'a, 'b, 'gcx, 'tcx> {
                     _ => span_mirbug_and_err!(self, lvalue, "slice of non-array {:?}", base_ty),
                 },
             },
-            ProjectionElem::Downcast(adt_def1, index) => match base_ty.sty {
-                ty::TyAdt(adt_def, substs) if adt_def.is_enum() && adt_def == adt_def1 => {
-                    if index >= adt_def.variants.len() {
-                        LvalueTy::Ty {
-                            ty: span_mirbug_and_err!(
-                                self,
-                                lvalue,
-                                "cast to variant #{:?} but enum only has {:?}",
-                                index,
-                                adt_def.variants.len()
-                            ),
-                        }
-                    } else {
-                        LvalueTy::Downcast {
-                            adt_def,
-                            substs,
-                            variant_index: index,
+            ProjectionElem::Downcast(adt_def1, index) => {
+                match base_ty.sty {
+                    ty::TyAdt(adt_def, substs) if adt_def.is_enum() && adt_def == adt_def1 => {
+                        if index >= adt_def.variants.len() {
+                            LvalueTy::Ty {
+                                ty: span_mirbug_and_err!(
+                                    self,
+                                    lvalue,
+                                    "cast to variant #{:?} but enum only has {:?}",
+                                    index,
+                                    adt_def.variants.len()
+                                ),
+                            }
+                        } else {
+                            LvalueTy::Downcast {
+                                adt_def,
+                                substs,
+                                variant_index: index,
+                            }
                         }
                     }
+                    _ => LvalueTy::Ty {
+                        ty: span_mirbug_and_err!(
+                            self,
+                            lvalue,
+                            "can't downcast {:?} as {:?}",
+                            base_ty,
+                            adt_def1
+                        ),
+                    },
                 }
-                _ => LvalueTy::Ty {
-                    ty: span_mirbug_and_err!(
-                        self,
-                        lvalue,
-                        "can't downcast {:?} as {:?}",
-                        base_ty,
-                        adt_def1
-                    ),
-                },
-            },
+            }
             ProjectionElem::Field(field, fty) => {
                 let fty = self.sanitize_type(lvalue, fty);
                 match self.field_ty(lvalue, base, field, location) {
@@ -313,13 +313,15 @@ impl<'a, 'b, 'gcx, 'tcx> TypeVerifier<'a, 'b, 'gcx, 'tcx> {
                             );
                         }
                     }
-                    Err(FieldAccessError::OutOfRange { field_count }) => span_mirbug!(
-                        self,
-                        lvalue,
-                        "accessed field #{} but variant only has {}",
-                        field.index(),
-                        field_count
-                    ),
+                    Err(FieldAccessError::OutOfRange { field_count }) => {
+                        span_mirbug!(
+                            self,
+                            lvalue,
+                            "accessed field #{} but variant only has {}",
+                            field.index(),
+                            field_count
+                        )
+                    }
                 }
                 LvalueTy::Ty { ty: fty }
             }
@@ -346,48 +348,48 @@ impl<'a, 'b, 'gcx, 'tcx> TypeVerifier<'a, 'b, 'gcx, 'tcx> {
                 substs,
                 variant_index,
             } => (&adt_def.variants[variant_index], substs),
-            LvalueTy::Ty { ty } => match ty.sty {
-                ty::TyAdt(adt_def, substs) if adt_def.is_univariant() => {
-                    (&adt_def.variants[0], substs)
-                }
-                ty::TyClosure(def_id, substs) => {
-                    return match substs.upvar_tys(def_id, tcx).nth(field.index()) {
-                        Some(ty) => Ok(ty),
-                        None => Err(FieldAccessError::OutOfRange {
-                            field_count: substs.upvar_tys(def_id, tcx).count(),
-                        }),
+            LvalueTy::Ty { ty } => {
+                match ty.sty {
+                    ty::TyAdt(adt_def, substs) if adt_def.is_univariant() => {
+                        (&adt_def.variants[0], substs)
                     }
-                }
-                ty::TyGenerator(def_id, substs, _) => {
-                    // Try upvars first. `field_tys` requires final optimized MIR.
-                    if let Some(ty) = substs.upvar_tys(def_id, tcx).nth(field.index()) {
-                        return Ok(ty);
+                    ty::TyClosure(def_id, substs) => {
+                        return match substs.upvar_tys(def_id, tcx).nth(field.index()) {
+                            Some(ty) => Ok(ty),
+                            None => Err(FieldAccessError::OutOfRange {
+                                field_count: substs.upvar_tys(def_id, tcx).count(),
+                            }),
+                        }
                     }
+                    ty::TyGenerator(def_id, substs, _) => {
+                        // Try upvars first. `field_tys` requires final optimized MIR.
+                        if let Some(ty) = substs.upvar_tys(def_id, tcx).nth(field.index()) {
+                            return Ok(ty);
+                        }
 
-                    return match substs.field_tys(def_id, tcx).nth(field.index()) {
-                        Some(ty) => Ok(ty),
-                        None => Err(FieldAccessError::OutOfRange {
-                            field_count: substs.field_tys(def_id, tcx).count() + 1,
-                        }),
-                    };
-                }
-                ty::TyTuple(tys, _) => {
-                    return match tys.get(field.index()) {
-                        Some(&ty) => Ok(ty),
-                        None => Err(FieldAccessError::OutOfRange {
-                            field_count: tys.len(),
-                        }),
+                        return match substs.field_tys(def_id, tcx).nth(field.index()) {
+                            Some(ty) => Ok(ty),
+                            None => Err(FieldAccessError::OutOfRange {
+                                field_count: substs.field_tys(def_id, tcx).count() + 1,
+                            }),
+                        };
+                    }
+                    ty::TyTuple(tys, _) => {
+                        return match tys.get(field.index()) {
+                            Some(&ty) => Ok(ty),
+                            None => Err(FieldAccessError::OutOfRange { field_count: tys.len() }),
+                        }
+                    }
+                    _ => {
+                        return Ok(span_mirbug_and_err!(
+                            self,
+                            parent,
+                            "can't project out of {:?}",
+                            base_ty
+                        ))
                     }
                 }
-                _ => {
-                    return Ok(span_mirbug_and_err!(
-                        self,
-                        parent,
-                        "can't project out of {:?}",
-                        base_ty
-                    ))
-                }
-            },
+            }
         };
 
         if let Some(field) = variant.fields.get(field.index()) {
@@ -505,14 +507,19 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
             span_mirbug!(self, "", "errors selecting obligation: {:?}", e);
         }
 
-        self.infcx
-            .process_registered_region_obligations(&[], None, self.param_env, self.body_id);
+        self.infcx.process_registered_region_obligations(
+            &[],
+            None,
+            self.param_env,
+            self.body_id,
+        );
 
         let data = self.infcx.take_and_reset_region_constraints();
         if !data.is_empty() {
-            self.constraints
-                .outlives_sets
-                .push(OutlivesSet { locations, data });
+            self.constraints.outlives_sets.push(OutlivesSet {
+                locations,
+                data,
+            });
         }
 
         Ok(value)
@@ -556,8 +563,11 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
             StatementKind::Assign(ref lv, ref rv) => {
                 let lv_ty = lv.ty(mir, tcx).to_ty(tcx);
                 let rv_ty = rv.ty(mir, tcx);
-                if let Err(terr) =
-                    self.sub_types(rv_ty, lv_ty, location.at_successor_within_block())
+                if let Err(terr) = self.sub_types(
+                    rv_ty,
+                    lv_ty,
+                    location.at_successor_within_block(),
+                )
                 {
                     span_mirbug!(
                         self,
@@ -719,9 +729,10 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                 // output) types in the signature must be live, since
                 // all the inputs that fed into it were live.
                 for &late_bound_region in map.values() {
-                    self.constraints
-                        .liveness_set
-                        .push((late_bound_region, term_location));
+                    self.constraints.liveness_set.push((
+                        late_bound_region,
+                        term_location,
+                    ));
                 }
 
                 if self.is_box_free(func) {
@@ -730,9 +741,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                     self.check_call_inputs(mir, term, &sig, args, term_location);
                 }
             }
-            TerminatorKind::Assert {
-                ref cond, ref msg, ..
-            } => {
+            TerminatorKind::Assert { ref cond, ref msg, .. } => {
                 let cond_ty = cond.ty(mir, tcx);
                 if cond_ty != tcx.types.bool {
                     span_mirbug!(self, term, "bad Assert ({:?}, not bool", cond_ty);
@@ -909,18 +918,26 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
             TerminatorKind::Goto { target } => {
                 self.assert_iscleanup(mir, block_data, target, is_cleanup)
             }
-            TerminatorKind::SwitchInt { ref targets, .. } => for target in targets {
-                self.assert_iscleanup(mir, block_data, *target, is_cleanup);
-            },
-            TerminatorKind::Resume => if !is_cleanup {
-                span_mirbug!(self, block_data, "resume on non-cleanup block!")
-            },
-            TerminatorKind::Return => if is_cleanup {
-                span_mirbug!(self, block_data, "return on cleanup block")
-            },
-            TerminatorKind::GeneratorDrop { .. } => if is_cleanup {
-                span_mirbug!(self, block_data, "generator_drop in cleanup block")
-            },
+            TerminatorKind::SwitchInt { ref targets, .. } => {
+                for target in targets {
+                    self.assert_iscleanup(mir, block_data, *target, is_cleanup);
+                }
+            }
+            TerminatorKind::Resume => {
+                if !is_cleanup {
+                    span_mirbug!(self, block_data, "resume on non-cleanup block!")
+                }
+            }
+            TerminatorKind::Return => {
+                if is_cleanup {
+                    span_mirbug!(self, block_data, "return on cleanup block")
+                }
+            }
+            TerminatorKind::GeneratorDrop { .. } => {
+                if is_cleanup {
+                    span_mirbug!(self, block_data, "generator_drop in cleanup block")
+                }
+            }
             TerminatorKind::Yield { resume, drop, .. } => {
                 if is_cleanup {
                     span_mirbug!(self, block_data, "yield in cleanup block")
@@ -1071,9 +1088,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                     }
                 }
             }
-            AggregateKind::Array(ty) => {
-                Ok(ty)
-            }
+            AggregateKind::Array(ty) => Ok(ty),
             AggregateKind::Tuple => {
                 unreachable!("This should have been covered in check_rvalues");
             }
@@ -1118,8 +1133,8 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                                 field_ty,
                                 location.at_successor_within_block(),
                             )
-                                {
-                                    span_mirbug!(
+                            {
+                                span_mirbug!(
                                     self,
                                     rv,
                                     "{:?} is not a subtype of {:?}: {:?}",
@@ -1127,7 +1142,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                                     field_ty,
                                     terr
                                 );
-                                }
+                            }
                         }
                     }
                 }
@@ -1177,14 +1192,27 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
     }
 
     fn prove_trait_ref(&mut self, trait_ref: ty::TraitRef<'tcx>, location: Location) {
-        self.prove_predicates(&[ty::Predicate::Trait(trait_ref.to_poly_trait_ref().to_poly_trait_predicate())], location);
+        self.prove_predicates(
+            &[
+                ty::Predicate::Trait(trait_ref.to_poly_trait_ref().to_poly_trait_predicate()),
+            ],
+            location,
+        );
     }
 
     fn prove_predicates(&mut self, predicates: &[ty::Predicate<'tcx>], location: Location) {
         self.fully_perform_op(location.at_self(), |this| {
             let cause = this.misc(this.last_span);
-            let obligations = predicates.iter().map(|&p| traits::Obligation::new(cause.clone(), this.param_env, p)).collect();
-            Ok(InferOk { value: (), obligations })
+            let obligations = predicates
+                .iter()
+                .map(|&p| {
+                    traits::Obligation::new(cause.clone(), this.param_env, p)
+                })
+                .collect();
+            Ok(InferOk {
+                value: (),
+                obligations,
+            })
         }).unwrap()
     }
 
