@@ -17,7 +17,7 @@ use rustc::infer::region_constraints::RegionConstraintData;
 use rustc::traits::{self, FulfillmentContext};
 use rustc::ty::error::TypeError;
 use rustc::ty::fold::TypeFoldable;
-use rustc::ty::{self, Ty, TyCtxt, TypeVariants, ToPolyTraitRef};
+use rustc::ty::{self, ToPolyTraitRef, Ty, TyCtxt, TypeVariants};
 use rustc::middle::const_val::ConstVal;
 use rustc::mir::*;
 use rustc::mir::tcx::LvalueTy;
@@ -169,7 +169,11 @@ impl<'a, 'b, 'gcx, 'tcx> TypeVerifier<'a, 'b, 'gcx, 'tcx> {
     /// Checks that the constant's `ty` field matches up with what
     /// would be expected from its literal.
     fn sanitize_constant(&mut self, constant: &Constant<'tcx>, location: Location) {
-        debug!("sanitize_constant(constant={:?}, location={:?})", constant, location);
+        debug!(
+            "sanitize_constant(constant={:?}, location={:?})",
+            constant,
+            location
+        );
 
         let expected_ty = match constant.literal {
             Literal::Value { value } => value.ty,
@@ -191,7 +195,9 @@ impl<'a, 'b, 'gcx, 'tcx> TypeVerifier<'a, 'b, 'gcx, 'tcx> {
 
         debug!("sanitize_constant: expected_ty={:?}", expected_ty);
 
-        if let Err(terr) = self.cx.eq_types(expected_ty, constant.ty, location.at_self()) {
+        if let Err(terr) = self.cx
+            .eq_types(expected_ty, constant.ty, location.at_self())
+        {
             span_mirbug!(
                 self,
                 constant,
@@ -380,46 +386,50 @@ impl<'a, 'b, 'gcx, 'tcx> TypeVerifier<'a, 'b, 'gcx, 'tcx> {
                 substs,
                 variant_index,
             } => (&adt_def.variants[variant_index], substs),
-            LvalueTy::Ty { ty } => match ty.sty {
-                ty::TyAdt(adt_def, substs) if !adt_def.is_enum() => (&adt_def.variants[0], substs),
-                ty::TyClosure(def_id, substs) => {
-                    return match substs.upvar_tys(def_id, tcx).nth(field.index()) {
-                        Some(ty) => Ok(ty),
-                        None => Err(FieldAccessError::OutOfRange {
-                            field_count: substs.upvar_tys(def_id, tcx).count(),
-                        }),
+            LvalueTy::Ty { ty } => {
+                match ty.sty {
+                    ty::TyAdt(adt_def, substs) if !adt_def.is_enum() => {
+                        (&adt_def.variants[0], substs)
                     }
-                }
-                ty::TyGenerator(def_id, substs, _) => {
-                    // Try upvars first. `field_tys` requires final optimized MIR.
-                    if let Some(ty) = substs.upvar_tys(def_id, tcx).nth(field.index()) {
-                        return Ok(ty);
+                    ty::TyClosure(def_id, substs) => {
+                        return match substs.upvar_tys(def_id, tcx).nth(field.index()) {
+                            Some(ty) => Ok(ty),
+                            None => Err(FieldAccessError::OutOfRange {
+                                field_count: substs.upvar_tys(def_id, tcx).count(),
+                            }),
+                        }
                     }
+                    ty::TyGenerator(def_id, substs, _) => {
+                        // Try upvars first. `field_tys` requires final optimized MIR.
+                        if let Some(ty) = substs.upvar_tys(def_id, tcx).nth(field.index()) {
+                            return Ok(ty);
+                        }
 
-                    return match substs.field_tys(def_id, tcx).nth(field.index()) {
-                        Some(ty) => Ok(ty),
-                        None => Err(FieldAccessError::OutOfRange {
-                            field_count: substs.field_tys(def_id, tcx).count() + 1,
-                        }),
-                    };
-                }
-                ty::TyTuple(tys, _) => {
-                    return match tys.get(field.index()) {
-                        Some(&ty) => Ok(ty),
-                        None => Err(FieldAccessError::OutOfRange {
-                            field_count: tys.len(),
-                        }),
+                        return match substs.field_tys(def_id, tcx).nth(field.index()) {
+                            Some(ty) => Ok(ty),
+                            None => Err(FieldAccessError::OutOfRange {
+                                field_count: substs.field_tys(def_id, tcx).count() + 1,
+                            }),
+                        };
+                    }
+                    ty::TyTuple(tys, _) => {
+                        return match tys.get(field.index()) {
+                            Some(&ty) => Ok(ty),
+                            None => Err(FieldAccessError::OutOfRange {
+                                field_count: tys.len(),
+                            }),
+                        }
+                    }
+                    _ => {
+                        return Ok(span_mirbug_and_err!(
+                            self,
+                            parent,
+                            "can't project out of {:?}",
+                            base_ty
+                        ))
                     }
                 }
-                _ => {
-                    return Ok(span_mirbug_and_err!(
-                        self,
-                        parent,
-                        "can't project out of {:?}",
-                        base_ty
-                    ))
-                }
-            },
+            }
         };
 
         if let Some(field) = variant.fields.get(field.index()) {
@@ -1209,14 +1219,27 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
     }
 
     fn prove_trait_ref(&mut self, trait_ref: ty::TraitRef<'tcx>, location: Location) {
-        self.prove_predicates(&[ty::Predicate::Trait(trait_ref.to_poly_trait_ref().to_poly_trait_predicate())], location);
+        self.prove_predicates(
+            &[
+                ty::Predicate::Trait(trait_ref.to_poly_trait_ref().to_poly_trait_predicate()),
+            ],
+            location,
+        );
     }
 
     fn prove_predicates(&mut self, predicates: &[ty::Predicate<'tcx>], location: Location) {
         self.fully_perform_op(location.at_self(), |this| {
             let cause = this.misc(this.last_span);
-            let obligations = predicates.iter().map(|&p| traits::Obligation::new(cause.clone(), this.param_env, p)).collect();
-            Ok(InferOk { value: (), obligations })
+            let obligations = predicates
+                .iter()
+                .map(|&p| {
+                    traits::Obligation::new(cause.clone(), this.param_env, p)
+                })
+                .collect();
+            Ok(InferOk {
+                value: (),
+                obligations,
+            })
         }).unwrap()
     }
 
