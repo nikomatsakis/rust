@@ -11,6 +11,7 @@
 #[allow(dead_code)]
 
 use rustc::hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
+use rustc::hir::Ty_::*;
 use rustc::ty::{self, CratePredicatesMap, TyCtxt};
 use rustc::ty::maps::Providers;
 use std::rc::Rc;
@@ -26,6 +27,7 @@ mod explicit;
 pub fn provide(providers: &mut Providers) {
     *providers = Providers {
         inferred_outlives_of,
+        inferred_outlives_crate,
         ..*providers
     };
 }
@@ -40,8 +42,11 @@ fn inferred_outlives_of<'a, 'tcx>(
 
     match tcx.hir.get(node_id) {
         hir_map::NodeItem(item) => match item.node {
-            hir::ItemStruct(..) => Vec::new(),
-            hir::ItemEnum(..) => Vec::new(),
+            hir::ItemStruct(..) |
+            hir::ItemEnum(..) => {
+                tcx.inferred_outlives_crate(LOCAL_CRATE);
+                Vec::new()
+            }
             _ => Vec::new(),
         },
         _ => Vec::new(),
@@ -49,7 +54,7 @@ fn inferred_outlives_of<'a, 'tcx>(
 }
 
 fn inferred_outlives_crate<'tcx>(
-    tcx: TyCtxt<'tcx, 'tcx, 'tcx>,
+    tcx: TyCtxt<'_, 'tcx, 'tcx>,
     crate_num: CrateNum,
 ) -> Rc<CratePredicatesMap<'tcx>> {
     // Compute a map from each struct/enum/union S to the **explicit**
@@ -89,13 +94,38 @@ fn inferred_outlives_crate<'tcx>(
     //while changed {
     //    changed = false;
     //    for def_id in all_types() {
-    //        for field_ty in the HIR type definition {
-    //            let required_predicates = required_predicates_for_type_to_be_wf(field_ty);
-    //            inferred_outlives_predicates.extend(required_predicates);
-    //            if new predicates were added { changed = true; }
+    //        let adt_def = tcx.adt_def(def_id);
+    //        let mut required_predicates = set();
+    //        for variant in adt_def OB{
+    //            for field in variant {
+    //                // from ty/outlives.rs
+    //                //   Foo<'b, 'c>  ==> ['b, 'c]
+    //                //   Vec<T>: 'a
+    //                //   outlives_components(Vec<T>) = [T]
+    //                let outlives = tcx.outlives_components(field_ty);
+    //                required_predicates.extend(required_predicates_for_type_to_be_wf(field_ty));
+    //            }
     //        }
+    //        inferred_outlives_predicates.extend(required_predicates);
+    //        if new predicates were added { changed = true; }
     //    }
     //}
 
     //inferred_outlives_predicates
 }
+
+/*
+
+// inferred_outlives_predicate = ['b: 'a] // after round 2
+struct Foo<'a, 'b> {
+    bar: Bar<'a, 'b> // []
+    // round 2: ['b: 'a] in `required_predicates`
+}
+
+// inferred_outlives_predicate = ['b: 'a] // updated after round 1
+struct Bar<'a, 'b> {
+    field &'a &'b u32 // ['b: 'a] // added to `required_predicates`
+} // required_predicates = ['b: 'a]
+
+*/
+

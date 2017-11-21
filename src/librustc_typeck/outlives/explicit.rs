@@ -70,6 +70,15 @@ impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for ExplicitVisitor<'cx, 'tcx> {
             })
             .collect();
 
+        // try to fetch the adt-def
+        match item.node {
+            hir::ItemStruct(..) |
+            hir::ItemEnum(..) => {
+                self.tcx.adt_def(def_id);
+            }
+            _ => { }
+        }
+
         self.explicit_predicates
             .insert(def_id, Rc::new(filtered_predicates));
     }
