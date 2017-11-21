@@ -31,8 +31,10 @@ pub fn provide(providers: &mut Providers) {
 }
 
 //todo
-fn inferred_outlives_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId)
-                                  -> Vec<ty::Predicate<'tcx>> {
+fn inferred_outlives_of<'a, 'tcx>(
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
+    def_id: DefId,
+) -> Vec<ty::Predicate<'tcx>> {
     // Assert that this is a local node-id
     let node_id = tcx.hir.as_local_node_id(def_id).unwrap();
 
@@ -46,12 +48,10 @@ fn inferred_outlives_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId)
     }
 }
 
-fn inferred_outlives_crate <'tcx>(tcx: TyCtxt<'tcx, 'tcx, 'tcx>, crate_num: CrateNum)
-                                      -> Rc<CratePredicatesMap<'tcx>> {
-
-
-
-
+fn inferred_outlives_crate<'tcx>(
+    tcx: TyCtxt<'tcx, 'tcx, 'tcx>,
+    crate_num: CrateNum,
+) -> Rc<CratePredicatesMap<'tcx>> {
     // Compute a map from each struct/enum/union S to the **explicit**
     // outlives predicates (`T: 'a`, `'a: 'b`) that the user wrote.
     // Typically there won't be many of these, except in older code where
@@ -98,6 +98,4 @@ fn inferred_outlives_crate <'tcx>(tcx: TyCtxt<'tcx, 'tcx, 'tcx>, crate_num: Crat
     //}
 
     //inferred_outlives_predicates
-
-
 }

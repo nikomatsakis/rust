@@ -18,11 +18,12 @@ use util::nodemap::FxHashMap;
 use hir::map as hir_map;
 use rustc::hir;
 use rustc::hir::itemlikevisit::ItemLikeVisitor;
-use rustc::hir::def_id::{CrateNum, DefId, LOCAL_CRATE, LocalDefId};
+use rustc::hir::def_id::{CrateNum, DefId, LocalDefId, LOCAL_CRATE};
 
-pub fn explicit_map<'tcx>(tcx: TyCtxt<'tcx, 'tcx, 'tcx>, crate_num: CrateNum)
-        -> CratePredicatesMap<'tcx> {
-
+pub fn explicit_map<'tcx>(
+    tcx: TyCtxt<'_, 'tcx, 'tcx>,
+    crate_num: CrateNum,
+) -> CratePredicatesMap<'tcx> {
     assert_eq!(crate_num, LOCAL_CRATE);
     let empty_predicate = Rc::new(Vec::new());
     let mut predicates: FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>> = FxHashMap();
@@ -45,35 +46,35 @@ pub fn explicit_map<'tcx>(tcx: TyCtxt<'tcx, 'tcx, 'tcx>, crate_num: CrateNum)
 }
 
 
-pub struct ExplicitVisitor<'tcx, 'a: 'tcx, 'p: 'a> {
-    tcx: TyCtxt<'tcx, 'tcx, 'tcx>,
-    explicit_predicates: &'a FxHashMap<DefId, Rc<Vec<ty::Predicate<'p>>>>,
+pub struct ExplicitVisitor<'cx, 'tcx: 'cx> {
+    tcx: TyCtxt<'cx, 'tcx, 'tcx>,
+    explicit_predicates: &'cx mut FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>,
     crate_num: CrateNum,
 }
 
-impl<'tcx, 'a, 'p, 'v> ItemLikeVisitor<'v> for ExplicitVisitor<'tcx, 'a, 'p> {
-    fn visit_item(&mut self, item: &hir::Item) {
-
+impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for ExplicitVisitor<'cx, 'tcx> {
+    fn visit_item(&mut self, item: &'tcx hir::Item) {
         //let def_id = LocalDefId::new(item.hir_id.owner).to_def_id();
-        let def_id = DefId{ krate: self.crate_num, index: item.hir_id.owner, };
+        let def_id = DefId {
+            krate: self.crate_num,
+            index: item.hir_id.owner,
+        };
         let local_explicit_predicate = self.tcx.explicit_predicates_of(def_id);
 
         let filtered_predicates = local_explicit_predicate
-            .predicates.into_iter()
+            .predicates
+            .into_iter()
             .filter(|pred| match pred {
-                    ty::Predicate::TypeOutlives(..) |
-                    ty::Predicate::RegionOutlives(..) => true,
-                    _ => false,
-                }
-            ).collect();
+                ty::Predicate::TypeOutlives(..) | ty::Predicate::RegionOutlives(..) => true,
+                _ => false,
+            })
+            .collect();
 
-        self.explicit_predicates.insert(def_id, Rc::new(filtered_predicates));
+        self.explicit_predicates
+            .insert(def_id, Rc::new(filtered_predicates));
     }
 
-    fn visit_trait_item(&mut self, trait_item: &hir::TraitItem) {
-    }
+    fn visit_trait_item(&mut self, trait_item: &'tcx hir::TraitItem) {}
 
-    fn visit_impl_item(&mut self, impl_item: &hir::ImplItem) {
-    }
+    fn visit_impl_item(&mut self, impl_item: &'tcx hir::ImplItem) {}
 }
-

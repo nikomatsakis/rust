@@ -84,6 +84,7 @@ This API is completely unstable and subject to change.
 #![feature(refcell_replace_swap)]
 #![feature(rustc_diagnostic_macros)]
 #![feature(slice_patterns)]
+#![feature(underscore_lifetimes)]
 
 #[macro_use] extern crate log;
 #[macro_use] extern crate syntax;
