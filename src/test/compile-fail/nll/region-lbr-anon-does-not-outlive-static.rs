@@ -15,8 +15,11 @@
 
 // compile-flags:-Znll
 
-fn foo<'a, 'b>(x: &'a u32, y: &'b u32) -> &'b u32 {
+fn foo(x: &u32) -> &'static u32 {
     &*x
+        //~^ WARN not reporting region error due to -Znll
+        //~| ERROR `*x` does not live long enough
+        //~| ERROR free region `` does not outlive `'static`
 }
 
 fn main() { }

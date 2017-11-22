@@ -1,0 +1,47 @@
+note: External requirements
+  --> $DIR/escape-argument.rs:34:38
+   |
+34 |         let mut closure = expect_sig(|p, y| *p = y);
+   |                                      ^^^^^^^^^^^^^
+   |
+   = note: defining type: [closure@$DIR/escape-argument.rs:34:38: 34:51<i16, for<'r, 's> extern "rust-call" fn((&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(8648))) mut &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(8649))) i32, &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(8649))) i32))>]
+   = note: number of external vids: 1
+
+error[E0597]: `y` does not live long enough (Ast)
+  --> $DIR/escape-argument.rs:36:5
+   |
+35 |         closure(&mut p, &y);
+   |                          - borrow occurs here
+36 |     }
+   |     ^ `y` dropped here while still borrowed
+...
+39 | }
+   | - borrowed value needs to live until here
+
+note: No external requirements
+  --> $DIR/escape-argument.rs:28:1
+   |
+28 | / fn test() {
+29 | |     let x = 44;
+30 | |     let mut p = &x;
+31 | |
+...  |
+38 | |     deref(p);
+39 | | }
+   | |_^
+   |
+   = note: defining type: fn() {test}
+
+error[E0597]: borrowed value does not live long enough (Mir)
+  --> $DIR/escape-argument.rs:36:6
+   |
+33 |         let y = 22;
+   |             - temporary value created here
+...
+36 |     }
+   |      ^ temporary value dropped here while still borrowed
+   |
+   = note: consider using a `let` binding to increase its lifetime
+
+error: aborting due to 2 previous errors
+

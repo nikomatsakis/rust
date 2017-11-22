@@ -1,0 +1,52 @@
+warning: not reporting region error due to -Znll
+  --> $DIR/propagate-approximated-to-static.rs:42:9
+   |
+42 |         demand_y(x, y, x.get())
+   |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+note: External requirements
+  --> $DIR/propagate-approximated-to-static.rs:40:47
+   |
+40 |       establish_relationships(&cell_a, &cell_b, |_outlives, x, y| {
+   |  _______________________________________________^
+41 | |         // Only works if 'x: 'y:
+42 | |         demand_y(x, y, x.get())
+43 | |     });
+   | |_____^
+   |
+   = note: defining type: [closure@$DIR/propagate-approximated-to-static.rs:40:47: 43:6<i16, for<'r, 's, 't0, 't1, 't2> extern "rust-call" fn((&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(7710))) std::cell::Cell<&'_#1r &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(7711))) u32>, &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't0(7712))) std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(7711))) u32>, &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't1(9536))) std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't2(9537))) u32>))>]
+   = note: number of external vids: 2
+   = note: where '_#1r: '_#0r
+
+error[E0597]: borrowed value does not live long enough (Ast)
+  --> $DIR/propagate-approximated-to-static.rs:42:24
+   |
+42 |         demand_y(x, y, x.get())
+   |                        ^^^^^^^ does not live long enough
+   |
+   = note: borrowed value must be valid for the static lifetime...
+note: ...but borrowed value is only valid for the anonymous lifetime #3 defined on the body at 40:47
+  --> $DIR/propagate-approximated-to-static.rs:40:47
+   |
+40 |       establish_relationships(&cell_a, &cell_b, |_outlives, x, y| {
+   |  _______________________________________________^
+41 | |         // Only works if 'x: 'y:
+42 | |         demand_y(x, y, x.get())
+43 | |     });
+   | |_____^
+
+note: No external requirements
+  --> $DIR/propagate-approximated-to-static.rs:39:1
+   |
+39 | / fn supply<'a, 'b>(cell_a: Cell<&'a u32>, cell_b: Cell<&'b u32>) {
+40 | |     establish_relationships(&cell_a, &cell_b, |_outlives, x, y| {
+41 | |         // Only works if 'x: 'y:
+42 | |         demand_y(x, y, x.get())
+43 | |     });
+44 | | }
+   | |_^
+   |
+   = note: defining type: for<'a, 'b> fn(std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(1:16), 'a(90))) u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(1:17), 'b(92))) u32>) {supply}
+
+error: aborting due to previous error
+

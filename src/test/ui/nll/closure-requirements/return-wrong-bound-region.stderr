@@ -1,0 +1,50 @@
+warning: not reporting region error due to -Znll
+  --> $DIR/return-wrong-bound-region.rs:21:23
+   |
+21 |     expect_sig(|a, b| b); // ought to return `a`
+   |                       ^
+
+error: free region `'_#3r` does not outlive free region `'_#2r`
+  --> $DIR/return-wrong-bound-region.rs:21:23
+   |
+21 |     expect_sig(|a, b| b); // ought to return `a`
+   |                       ^
+
+note: External requirements
+  --> $DIR/return-wrong-bound-region.rs:21:16
+   |
+21 |     expect_sig(|a, b| b); // ought to return `a`
+   |                ^^^^^^^^
+   |
+   = note: defining type: [closure@$DIR/return-wrong-bound-region.rs:21:16: 21:24<i16, for<'r, 's> extern "rust-call" fn((&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(7676))) i32, &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(8644))) i32)) -> &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(7676))) i32>]
+   = note: number of external vids: 1
+
+error[E0597]: `*b` does not live long enough (Ast)
+  --> $DIR/return-wrong-bound-region.rs:21:23
+   |
+21 |     expect_sig(|a, b| b); // ought to return `a`
+   |                       ^ does not live long enough
+   |
+note: borrowed value must be valid for the anonymous lifetime #2 defined on the body at 21:16...
+  --> $DIR/return-wrong-bound-region.rs:21:16
+   |
+21 |     expect_sig(|a, b| b); // ought to return `a`
+   |                ^^^^^^^^
+note: ...but borrowed value is only valid for the anonymous lifetime #3 defined on the body at 21:16
+  --> $DIR/return-wrong-bound-region.rs:21:16
+   |
+21 |     expect_sig(|a, b| b); // ought to return `a`
+   |                ^^^^^^^^
+
+note: No external requirements
+  --> $DIR/return-wrong-bound-region.rs:20:1
+   |
+20 | / fn test() {
+21 | |     expect_sig(|a, b| b); // ought to return `a`
+22 | | }
+   | |_^
+   |
+   = note: defining type: fn() {test}
+
+error: aborting due to 2 previous errors
+

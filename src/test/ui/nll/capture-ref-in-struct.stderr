@@ -1,0 +1,25 @@
+error[E0597]: `y` does not live long enough (Ast)
+  --> $DIR/capture-ref-in-struct.rs:33:5
+   |
+29 |             y: &y,
+   |                 - borrow occurs here
+...
+33 |     }
+   |     ^ `y` dropped here while still borrowed
+...
+36 | }
+   | - borrowed value needs to live until here
+
+error[E0597]: borrowed value does not live long enough (Mir)
+  --> $DIR/capture-ref-in-struct.rs:33:6
+   |
+25 |         let y = 22;
+   |             - temporary value created here
+...
+33 |     }
+   |      ^ temporary value dropped here while still borrowed
+   |
+   = note: consider using a `let` binding to increase its lifetime
+
+error: aborting due to 2 previous errors
+
