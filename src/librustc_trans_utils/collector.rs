@@ -325,13 +325,15 @@ pub fn collect_crate_translation_items<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 fn collect_roots<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                            mode: TransItemCollectionMode)
                            -> Vec<TransItem<'tcx>> {
-    debug!("Collecting roots");
+    debug!("collect_roots()");
     let mut roots = Vec::new();
 
     {
         let entry_fn = tcx.sess.entry_fn.borrow().map(|(node_id, _)| {
             tcx.hir.local_def_id(node_id)
         });
+
+        debug!("collect_roots: entry_fn = {:?}", entry_fn);
 
         let mut visitor = RootCollector {
             tcx,
@@ -940,32 +942,8 @@ impl<'b, 'a, 'v> ItemLikeVisitor<'v> for RootCollector<'b, 'a, 'v> {
                 // actually used somewhere. Just declaring them is insufficient.
             }
             hir::ItemFn(..) => {
-                let tcx = self.tcx;
-                let def_id = tcx.hir.local_def_id(item.id);
-                let start_def_id = tcx.lang_items().require(StartFnLangItem);
-
-                if self.is_root(def_id) {
-                    debug!("RootCollector: ItemFn({})",
-                           def_id_to_string(tcx, def_id));
-
-                    let instance = Instance::mono(tcx, def_id);
-                    self.output.push(create_fn_trans_item(instance));
-                } else if start_def_id == Ok(def_id) {
-                    let main_ret_ty = match self.tcx.sess.entry_type.get() {
-                        Some(config::EntryMain) => {
-                            tcx.fn_sig(self.entry_fn.unwrap()).output()
-                        },
-                        _ => {
-                            return;
-                        }
-                    };
-
-                    let instance = Instance::resolve(
-                        self.tcx, ty::ParamEnv::empty(traits::Reveal::All), def_id,
-                        self.tcx.mk_substs(iter::once(Kind::from(*main_ret_ty.skip_binder())))).unwrap();
-
-                    self.output.push(create_fn_trans_item(instance));
-                }
+                let def_id = self.tcx.hir.local_def_id(item.id);
+                self.push_if_root(def_id);
             }
         }
     }
@@ -978,16 +956,8 @@ impl<'b, 'a, 'v> ItemLikeVisitor<'v> for RootCollector<'b, 'a, 'v> {
     fn visit_impl_item(&mut self, ii: &'v hir::ImplItem) {
         match ii.node {
             hir::ImplItemKind::Method(hir::MethodSig { .. }, _) => {
-                let tcx = self.tcx;
-                let def_id = tcx.hir.local_def_id(ii.id);
-
-                if self.is_root(def_id) {
-                    debug!("RootCollector: MethodImplItem({})",
-                           def_id_to_string(tcx, def_id));
-
-                    let instance = Instance::mono(tcx, def_id);
-                    self.output.push(TransItem::Fn(instance));
-                }
+                let def_id = self.tcx.hir.local_def_id(ii.id);
+                self.push_if_root(def_id);
             }
             _ => { /* Nothing to do here */ }
         }
@@ -1007,6 +977,56 @@ impl<'b, 'a, 'v> RootCollector<'b, 'a, 'v> {
                                     "rustc_std_internal_symbol")
             }
         }
+    }
+
+    /// If `def_id` represents a root, then push it onto the list of
+    /// outputs. (Note that all roots must be monomorphic.)
+    fn push_if_root(&mut self, def_id: DefId) {
+        if self.is_root(def_id) {
+            debug!("RootCollector::push_if_root: found root def_id={:?}", def_id);
+
+            let instance = Instance::mono(self.tcx, def_id);
+            self.output.push(create_fn_trans_item(instance));
+
+            self.push_extra_entry_roots(def_id);
+        }
+    }
+
+    /// As a special case, when/if we encounter the
+    /// `main()` function, we also have to generate a
+    /// monomorphized copy of the start lang item based on
+    /// the return type of `main`. This is not needed when
+    /// the user writes their own `start` manually.
+    fn push_extra_entry_roots(&mut self, def_id: DefId) {
+        if self.entry_fn != Some(def_id) {
+            return;
+        }
+
+        if self.tcx.sess.entry_type.get() != Some(config::EntryMain) {
+            return;
+        }
+
+        let start_def_id = match self.tcx.lang_items().require(StartFnLangItem) {
+            Ok(s) => s,
+            Err(err) => self.tcx.sess.fatal(&err),
+        };
+        let main_ret_ty = self.tcx.fn_sig(def_id).output();
+
+        // Given that `main()` has no arguments,
+        // then its return type cannot have
+        // late-bound regions, since late-bound
+        // regions must appear in the argument
+        // listing.
+        let main_ret_ty = self.tcx.no_late_bound_regions(&main_ret_ty).unwrap();
+
+        let start_instance = Instance::resolve(
+            self.tcx,
+            ty::ParamEnv::empty(traits::Reveal::All),
+            start_def_id,
+            self.tcx.mk_substs(iter::once(Kind::from(main_ret_ty)))
+        ).unwrap();
+
+        self.output.push(create_fn_trans_item(start_instance));
     }
 }
 
