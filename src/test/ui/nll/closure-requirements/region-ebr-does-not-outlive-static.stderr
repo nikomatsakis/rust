@@ -1,0 +1,33 @@
+warning: not reporting region error due to -Znll
+  --> $DIR/region-ebr-does-not-outlive-static.rs:21:5
+   |
+21 |     &*x
+   |     ^^^
+
+error[E0597]: `*x` does not live long enough
+  --> $DIR/region-ebr-does-not-outlive-static.rs:21:6
+   |
+21 |     &*x
+   |      ^^ does not live long enough
+   |
+   = note: borrowed value must be valid for the static lifetime...
+note: ...but borrowed value is only valid for the lifetime 'a as defined on the function body at 18:1
+  --> $DIR/region-ebr-does-not-outlive-static.rs:18:1
+   |
+18 | / fn foo<'a>(x: &'a u32) -> &'static u32
+19 | |     where 'static: 'a
+20 | | {
+21 | |     &*x
+...  |
+24 | |         //~| ERROR free region `'a` does not outlive `'static`
+25 | | }
+   | |_^
+
+error: free region `'a` does not outlive free region `'static`
+  --> $DIR/region-ebr-does-not-outlive-static.rs:21:5
+   |
+21 |     &*x
+   |     ^^^
+
+error: aborting due to 2 previous errors
+
