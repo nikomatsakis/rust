@@ -1227,6 +1227,12 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
     ) {
         let tcx = self.tcx();
 
+        debug!(
+            "prove_aggregate_predicates(aggregate_kind={:?}, location={:?})",
+            aggregate_kind,
+            location
+        );
+
         let instantiated_predicates = match aggregate_kind {
             AggregateKind::Adt(def, _, substs, _) => {
                 tcx.predicates_of(def.did).instantiate(tcx, substs)
@@ -1237,13 +1243,11 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                 tcx.predicates_of(*def_id).instantiate(tcx, substs.substs)
             }
 
-            AggregateKind::Array(_) |
-            AggregateKind::Tuple => {
-                ty::InstantiatedPredicates::empty()
-            }
+            AggregateKind::Array(_) | AggregateKind::Tuple => ty::InstantiatedPredicates::empty(),
         };
 
         let predicates = self.normalize(&instantiated_predicates.predicates, location);
+        debug!("prove_aggregate_predicates: predicates={:?}", predicates);
         self.prove_predicates(&predicates, location);
     }
 
@@ -1257,6 +1261,11 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
     }
 
     fn prove_predicates(&mut self, predicates: &[ty::Predicate<'tcx>], location: Location) {
+        debug!(
+            "prove_predicates(predicates={:?}, location={:?})",
+            predicates,
+            location
+        );
         self.fully_perform_op(location.at_self(), |this| {
             let cause = this.misc(this.last_span);
             let obligations = predicates
