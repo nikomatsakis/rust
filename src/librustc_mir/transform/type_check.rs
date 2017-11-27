@@ -59,7 +59,7 @@ pub fn type_check<'a, 'gcx, 'tcx>(
 }
 
 fn mirbug(tcx: TyCtxt, span: Span, msg: &str) {
-    tcx.sess.diagnostic().span_bug(span, msg);
+    tcx.sess.diagnostic().delay_span_bug(span, msg);
 }
 
 macro_rules! span_mirbug {
