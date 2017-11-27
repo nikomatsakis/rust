@@ -176,7 +176,19 @@ impl<'a, 'b, 'gcx, 'tcx> TypeVerifier<'a, 'b, 'gcx, 'tcx> {
         );
 
         let expected_ty = match constant.literal {
-            Literal::Value { value } => value.ty,
+            Literal::Value { value } => {
+                if let ConstVal::Function(def_id, substs) = value.val {
+                    let tcx = self.tcx();
+                    let type_checker = &mut self.cx;
+
+                    let instantiated_predicates = tcx.predicates_of(def_id).instantiate(tcx, substs);
+                    let predicates = type_checker.normalize(&instantiated_predicates.predicates, location);
+                    type_checker.prove_predicates(&predicates, location);
+                }
+
+                value.ty
+            }
+
             Literal::Promoted { .. } => {
                 // FIXME -- promoted MIR return types reference
                 // various "free regions" (e.g., scopes and things)
