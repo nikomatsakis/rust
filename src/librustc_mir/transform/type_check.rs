@@ -1140,15 +1140,17 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                 self.check_aggregate_rvalue(mir, rvalue, ak, ops, location)
             }
 
-            Rvalue::Repeat(operand, _) => {
-                let operand_ty = operand.ty(mir, tcx);
+            Rvalue::Repeat(operand, const_usize) => {
+                if const_usize.as_u64() > 1 {
+                    let operand_ty = operand.ty(mir, tcx);
 
-                let trait_ref = ty::TraitRef {
-                    def_id: tcx.lang_items().copy_trait().unwrap(),
-                    substs: tcx.mk_substs_trait(operand_ty, &[]),
-                };
+                    let trait_ref = ty::TraitRef {
+                        def_id: tcx.lang_items().copy_trait().unwrap(),
+                        substs: tcx.mk_substs_trait(operand_ty, &[]),
+                    };
 
-                self.prove_trait_ref(trait_ref, location);
+                    self.prove_trait_ref(trait_ref, location);
+                }
             }
 
             Rvalue::NullaryOp(_, ty) => {
