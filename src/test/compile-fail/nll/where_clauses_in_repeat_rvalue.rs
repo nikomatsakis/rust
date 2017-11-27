@@ -7,8 +7,8 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
-//revisions: ast mir
-//[mir] compile-flags: -Z borrowck-mir -Z nll
+
+// compile-flags: -Z borrowck-mir -Z nll
 
 #![allow(warnings)]
 
@@ -22,14 +22,13 @@ fn main() {
 
     {
         let p = &x;
-        //[ast]~^ ERROR `x` does not live long enough [E0597]
-        //[mir]~^^ ERROR `x` does not live long enough (Ast) [E0597]
+        //~^ ERROR `x` does not live long enough (Ast) [E0597]
         let w = Foo { t: p };
 
         let v = [w; 22];
     }
 
     x += 1;
-    //[mir]~^ ERROR cannot assign to `x` because it is borrowed (Mir) [E0506]
+    //~^ ERROR cannot assign to `x` because it is borrowed (Mir) [E0506]
 }
-//[mir]~^ ERROR cannot assign to `x` because it is borrowed (Mir) [E0506]
+//~^ ERROR borrowed value does not live long enough (Mir) [E0597]

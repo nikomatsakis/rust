@@ -7,22 +7,22 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
-//revisions: ast mir
-//[mir] compile-flags: -Z borrowck-mir -Z nll
+
+// compile-flags: -Z borrowck-mir -Z nll
 
 #![allow(dead_code)]
 
+use std::cell::Cell;
+
 struct Foo<'a: 'b, 'b> {
-    x: &'a u32,
-    y: &'b u32,
+    x: Cell<&'a u32>,
+    y: Cell<&'b u32>,
 }
 
-fn bar<'a, 'b>(x: &'a u32, y: &'b u32) -> (&'a u32, &'b u32) {
-    let foo = Foo { x, y };
-    (foo.x, foo.y)
-    //[ast]~^ ERROR lifetime mismatch [E0623]
-    //[mir]~^^ ERROR `*x` does not live long enough (Ast) [E0597]
-    //[mir]~^^^ WARNING not reporting region error due to -Znll
+fn bar<'a, 'b>(x: Cell<&'a u32>, y: Cell<&'b u32>) {
+    Foo { x, y };
+    //~^ ERROR free region `'_#1r` does not outlive free region `'_#2r`
+    //~| WARNING not reporting region error due to -Znll
 }
 
 fn main() { }
