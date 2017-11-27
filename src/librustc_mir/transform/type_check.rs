@@ -17,7 +17,7 @@ use rustc::infer::region_constraints::RegionConstraintData;
 use rustc::traits::{self, FulfillmentContext};
 use rustc::ty::error::TypeError;
 use rustc::ty::fold::TypeFoldable;
-use rustc::ty::{self, Ty, TyCtxt, TypeVariants};
+use rustc::ty::{self, Ty, TyCtxt, TypeVariants, ToPolyTraitRef};
 use rustc::middle::const_val::ConstVal;
 use rustc::mir::*;
 use rustc::mir::tcx::LvalueTy;
@@ -523,6 +523,9 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
         if let Err(e) = fulfill_cx.select_all_or_error(self.infcx) {
             span_mirbug!(self, "", "errors selecting obligation: {:?}", e);
         }
+
+        self.infcx
+            .process_registered_region_obligations(&[], None, self.param_env, self.body_id);
 
         let data = self.infcx.take_and_reset_region_constraints();
         if !data.is_empty() {
@@ -1089,13 +1092,26 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
     }
 
     fn check_rvalue(&mut self, mir: &Mir<'tcx>, rvalue: &Rvalue<'tcx>, location: Location) {
+        let tcx = self.tcx();
+
         match rvalue {
             Rvalue::Aggregate(ak, ops) => {
                 self.check_aggregate_rvalue(mir, rvalue, ak, ops, location)
             }
+
+            Rvalue::Repeat(operand, _) => {
+                let operand_ty = operand.ty(mir, tcx);
+
+                let trait_ref = ty::TraitRef {
+                    def_id: tcx.lang_items().copy_trait().unwrap(),
+                    substs: tcx.mk_substs_trait(operand_ty, &[]),
+                };
+
+                self.prove(trait_ref, location);
+            }
+
             // FIXME: These other cases have to be implemented in future PRs
             Rvalue::Use(..) |
-            Rvalue::Repeat(..) |
             Rvalue::Ref(..) |
             Rvalue::Len(..) |
             Rvalue::Cast(..) |
@@ -1184,6 +1200,29 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
         }
     }
 
+    fn prove(&mut self, trait_ref: ty::TraitRef<'tcx>, location: Location) {
+        self.fully_perform_op(location.at_self(), |this| {
+            let mut selcx = traits::SelectionContext::new(this.infcx);
+            let cause = this.misc(this.last_span);
+            let obligation = traits::Obligation::new(
+                cause,
+                this.param_env,
+                trait_ref.to_poly_trait_ref().to_poly_trait_predicate(),
+            );
+
+            match selcx.select(&obligation) {
+                Ok(Some(vtable)) => {
+                    Ok(InferOk { value: (), obligations: vtable.nested_obligations() })
+                }
+
+                _ => {
+                    span_mirbug!(this, trait_ref, "BUG");
+                    Ok(InferOk { value: (), obligations: vec![] })
+                }
+            }
+        }).unwrap();
+    }
+
     fn typeck_mir(&mut self, mir: &Mir<'tcx>) {
         self.last_span = mir.span;
         debug!("run_on_mir: {:?}", mir.span);
@@ -1216,7 +1255,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
     {
         self.fully_perform_op(location.at_self(), |this| {
             let mut selcx = traits::SelectionContext::new(this.infcx);
-            let cause = traits::ObligationCause::misc(this.last_span, ast::CRATE_NODE_ID);
+            let cause = this.misc(this.last_span);
             let traits::Normalized { value, obligations } =
                 traits::normalize(&mut selcx, this.param_env, cause, value);
             Ok(InferOk { value, obligations })
