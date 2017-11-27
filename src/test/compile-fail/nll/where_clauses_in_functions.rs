@@ -7,6 +7,7 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
+
 // compile-flags: -Z borrowck-mir -Z nll
 
 #![allow(dead_code)]
@@ -20,9 +21,9 @@ fn foo<'a, 'b>(x: &'a u32, y: &'b u32) -> (&'a u32, &'b u32)
 fn bar<'a, 'b>(x: &'a u32, y: &'b u32) -> (&'a u32, &'b u32)
 {
     foo(x, y)
-    //[ast]~^ ERROR lifetime mismatch [E0623]
-    //[mir]~^^ ERROR `*x` does not live long enough (Ast) [E0597]
-    //[mir]~^^^ WARNING not reporting region error due to -Znll
+    //~^ ERROR free region `'_#1r` does not outlive free region `'_#2r`
+    //~| WARNING not reporting region error due to -Znll
+    //~| ERROR `*x` does not live long enough (Ast) [E0597]
 }
 
 fn main() { }
