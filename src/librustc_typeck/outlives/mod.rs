@@ -21,8 +21,9 @@ use rustc::hir;
 
 /// Code to write unit test for outlives.
 pub mod test;
-mod implicit;
 mod explicit;
+mod implicit_empty;
+mod implicit_infer;
 
 pub fn provide(providers: &mut Providers) {
     *providers = Providers {
@@ -79,37 +80,14 @@ fn inferred_outlives_crate<'tcx>(
 
     // Create the sets of inferred predicates for each type. These sets
     // are initially empty but will grow during the inference step.
-    let empty = implicit::empty(tcx, crate_num);
+    let empty = implicit_empty::empty(tcx, crate_num);
     //let mut inferred_outlives_predicates = map();
     //for def_id in all_types() {
     //    inferred_outlives_predicates.insert(def_id, empty_set());
     //}
-    Rc::new(empty)
 
-    // Now comes the inference part. We iterate over each type and figure out,
-    // for each of its fields, what outlives predicates are needed to make that field's
-    // type well-formed. Those get added to the `inferred_outlives_predicates` set
-    // for that type.
-    //let mut changed = true;
-    //while changed {
-    //    changed = false;
-    //    for def_id in all_types() {
-    //        let adt_def = tcx.adt_def(def_id);
-    //        let mut required_predicates = set();
-    //        for variant in adt_def OB{
-    //            for field in variant {
-    //                // from ty/outlives.rs
-    //                //   Foo<'b, 'c>  ==> ['b, 'c]
-    //                //   Vec<T>: 'a
-    //                //   outlives_components(Vec<T>) = [T]
-    //                let outlives = tcx.outlives_components(field_ty);
-    //                required_predicates.extend(required_predicates_for_type_to_be_wf(field_ty));
-    //            }
-    //        }
-    //        inferred_outlives_predicates.extend(required_predicates);
-    //        if new predicates were added { changed = true; }
-    //    }
-    //}
+    let infer = Rc::new(implicit_infer::infer(tcx, crate_num));
+    Rc::new(empty)
 
     //inferred_outlives_predicates
 }
