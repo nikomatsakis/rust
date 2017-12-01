@@ -73,7 +73,6 @@ use rustc::ty::{self, LvaluePreference, TypeAndMut,
 use rustc::ty::fold::TypeFoldable;
 use rustc::ty::error::TypeError;
 use rustc::ty::relate::RelateResult;
-use rustc::ty::subst::Subst;
 use errors::DiagnosticBuilder;
 use syntax::feature_gate;
 use syntax::ptr::P;
@@ -668,7 +667,7 @@ impl<'f, 'gcx, 'tcx> Coerce<'f, 'gcx, 'tcx> {
                 //     `extern "rust-call" fn((arg0,arg1,...)) -> _`
                 // to
                 //     `fn(arg0,arg1,...) -> _`
-                let sig = self.fn_sig(def_id_a).subst(self.tcx, substs_a.substs);
+                let sig = self.closure_sig(def_id_a, substs_a);
                 let pointer_ty = self.tcx.coerce_closure_fn_ty(sig);
                 debug!("coerce_closure_to_fn(a={:?}, b={:?}, pty={:?})",
                        a, b, pointer_ty);
