@@ -22,7 +22,10 @@ note: External requirements
 59 | |         },
    | |_________^
    |
-   = note: defining type: [closure@$DIR/propagate-approximated-fail-no-postdom.rs:53:9: 59:10<i16, for<'r, 's> extern "rust-call" fn((std::cell::Cell<&'_#1r &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(9541))) u32>, std::cell::Cell<&'_#2r &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(9541))) u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(9542))) &'_#3r u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(9541))) u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(9542))) u32>))>]
+   = note: defining type: DefId(0/1:20 ~ propagate_approximated_fail_no_postdom[317d]::supply[0]::{{closure}}[0]) with closure substs [
+               i16,
+               for<'r, 's> extern "rust-call" fn((std::cell::Cell<&'_#1r &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(9523))) u32>, std::cell::Cell<&'_#2r &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(9523))) u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(9524))) &'_#3r u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(9523))) u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(9524))) u32>))
+           ]
    = note: number of external vids: 4
 
 note: No external requirements
@@ -37,7 +40,7 @@ note: No external requirements
 61 | | }
    | |_^
    |
-   = note: defining type: for<'a, 'b, 'c> fn(std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(1:17), 'a(90))) u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(1:18), 'b(92))) u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(1:19), 'c(94))) u32>) {supply}
+   = note: defining type: DefId(0/0:6 ~ propagate_approximated_fail_no_postdom[317d]::supply[0]) with substs []
 
 error: aborting due to previous error
 

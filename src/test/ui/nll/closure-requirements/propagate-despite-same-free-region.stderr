@@ -14,7 +14,10 @@ note: External requirements
 55 | |         },
    | |_________^
    |
-   = note: defining type: [closure@$DIR/propagate-despite-same-free-region.rs:51:9: 55:10<i16, for<'r, 's> extern "rust-call" fn((std::cell::Cell<&'_#1r &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(9536))) u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(9537))) &'_#2r u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(9536))) u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(9537))) u32>))>]
+   = note: defining type: DefId(0/1:16 ~ propagate_despite_same_free_region[317d]::supply[0]::{{closure}}[0]) with closure substs [
+               i16,
+               for<'r, 's> extern "rust-call" fn((std::cell::Cell<&'_#1r &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(9518))) u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(9519))) &'_#2r u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(9518))) u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(9519))) u32>))
+           ]
    = note: number of external vids: 3
    = note: where '_#1r: '_#2r
 
@@ -30,5 +33,5 @@ note: No external requirements
 57 | | }
    | |_^
    |
-   = note: defining type: for<'a> fn(std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(1:15), 'a(90))) u32>) {supply}
+   = note: defining type: DefId(0/0:6 ~ propagate_despite_same_free_region[317d]::supply[0]) with substs []
 

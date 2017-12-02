@@ -16,7 +16,10 @@ note: External requirements
 58 | |     });
    | |_____^
    |
-   = note: defining type: [closure@$DIR/propagate-approximated-ref.rs:53:47: 58:6<i16, for<'r, 's, 't0, 't1, 't2, 't3> extern "rust-call" fn((&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(7715))) std::cell::Cell<&'_#1r &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(7716))) u32>, &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't0(7717))) std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't1(7718))) &'_#2r u32>, &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't2(9542))) std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(7716))) u32>, &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't3(9543))) std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't1(7718))) u32>))>]
+   = note: defining type: DefId(0/1:18 ~ propagate_approximated_ref[317d]::supply[0]::{{closure}}[0]) with closure substs [
+               i16,
+               for<'r, 's, 't0, 't1, 't2, 't3> extern "rust-call" fn((&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(7696))) std::cell::Cell<&'_#1r &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(7697))) u32>, &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't0(7698))) std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't1(7699))) &'_#2r u32>, &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't2(9524))) std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(7697))) u32>, &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't3(9525))) std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't1(7699))) u32>))
+           ]
    = note: number of external vids: 3
    = note: where '_#1r: '_#2r
 
@@ -38,7 +41,7 @@ note: No external requirements
 59 | | }
    | |_^
    |
-   = note: defining type: for<'a, 'b> fn(std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(1:16), 'a(90))) u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(1:17), 'b(92))) u32>) {supply}
+   = note: defining type: DefId(0/0:6 ~ propagate_approximated_ref[317d]::supply[0]) with substs []
 
 error: aborting due to previous error
 

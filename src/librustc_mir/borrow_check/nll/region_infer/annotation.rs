@@ -15,12 +15,34 @@
 //! handle the part about dumping the inference context internal
 //! state.
 
+use rustc::ty;
 use rustc_errors::DiagnosticBuilder;
 use super::RegionInferenceContext;
 
 impl<'gcx, 'tcx> RegionInferenceContext<'tcx> {
     /// Write out our state into the `.mir` files.
     pub(crate) fn annotate(&self, err: &mut DiagnosticBuilder<'_>) {
-        err.note(&format!("defining type: {:?}", self.universal_regions.defining_ty));
+        match self.universal_regions.defining_ty.sty {
+            ty::TyClosure(def_id, substs) => {
+                err.note(&format!(
+                    "defining type: {:?} with closure substs {:#?}",
+                    def_id,
+                    &substs.substs[..]
+                ));
+            }
+            ty::TyFnDef(def_id, substs) => {
+                err.note(&format!(
+                    "defining type: {:?} with substs {:#?}",
+                    def_id,
+                    &substs[..]
+                ));
+            }
+            _ => {
+                err.note(&format!(
+                    "defining type: {:?}",
+                    self.universal_regions.defining_ty
+                ));
+            }
+        }
     }
 }

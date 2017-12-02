@@ -22,7 +22,10 @@ note: External requirements
 44 | |     });
    | |_____^
    |
-   = note: defining type: [closure@$DIR/propagate-approximated-to-empty.rs:39:47: 44:6<i16, for<'r, 's, 't0, 't1, 't2> extern "rust-call" fn((&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(7714))) std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(7715))) &'_#1r u32>, &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't0(7716))) std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't1(9540))) u32>, &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't2(9541))) std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(7715))) u32>))>]
+   = note: defining type: DefId(0/1:18 ~ propagate_approximated_to_empty[317d]::supply[0]::{{closure}}[0]) with closure substs [
+               i16,
+               for<'r, 's, 't0, 't1, 't2> extern "rust-call" fn((&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 'r(7695))) std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(7696))) &'_#1r u32>, &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't0(7697))) std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't1(9522))) u32>, &ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 't2(9523))) std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(0:0), 's(7696))) u32>))
+           ]
    = note: number of external vids: 2
 
 note: No external requirements
@@ -37,7 +40,7 @@ note: No external requirements
 45 | | }
    | |_^
    |
-   = note: defining type: for<'a, 'b> fn(std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(1:16), 'a(90))) u32>, std::cell::Cell<&ReLateBound(DebruijnIndex { depth: 1 }, BrNamed(crate0:DefIndex(1:17), 'b(92))) u32>) {supply}
+   = note: defining type: DefId(0/0:6 ~ propagate_approximated_to_empty[317d]::supply[0]) with substs []
 
 error: aborting due to previous error
 
