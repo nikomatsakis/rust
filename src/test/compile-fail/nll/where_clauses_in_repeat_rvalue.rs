@@ -28,7 +28,6 @@ fn main() {
 
     {
         let p = &x;
-        //~^ ERROR borrowed value does not live long enough [E0597]
         let w = Foo { t: p };
 
         let v = [w; 22];
