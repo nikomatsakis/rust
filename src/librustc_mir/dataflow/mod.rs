@@ -34,6 +34,7 @@ pub(crate) use self::drop_flag_effects::*;
 use self::move_paths::MoveData;
 
 mod drop_flag_effects;
+pub(crate) mod flow_in_progress;
 mod graphviz;
 mod impls;
 pub mod move_paths;
