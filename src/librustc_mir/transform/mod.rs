@@ -21,6 +21,7 @@ use std::borrow::Cow;
 use std::rc::Rc;
 use syntax::ast;
 use syntax_pos::Span;
+use type_check;
 
 pub mod add_validation;
 pub mod add_moves_for_packed_drops;
@@ -30,7 +31,6 @@ pub mod simplify_branches;
 pub mod simplify;
 pub mod erase_regions;
 pub mod no_landing_pads;
-pub mod type_check;
 pub mod rustc_peek;
 pub mod elaborate_drops;
 pub mod add_call_guards;

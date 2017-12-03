@@ -59,6 +59,7 @@ mod hair;
 mod shim;
 pub mod transform;
 pub mod util;
+mod type_check;
 
 use rustc::ty::maps::Providers;
 

@@ -16,7 +16,7 @@ use rustc::util::nodemap::FxHashMap;
 use std::collections::BTreeSet;
 use std::io;
 use transform::MirSource;
-use transform::type_check;
+use type_check;
 use util::liveness::{self, LivenessMode, LivenessResult, LocalSet};
 use borrow_check::FlowInProgress;
 use dataflow::MaybeInitializedLvals;
