@@ -158,8 +158,8 @@ impl<'a, 'p, 'cx, 'v, 'tcx> ItemLikeVisitor<'v> for ImplicitVisitor<'a, 'p, 'cx,
                     //                //   Foo<'b, 'c>  ==> ['b, 'c]
                     //                //   Vec<T>: 'a
                     //                //   outlives_components(Vec<T>) = [T]
-                    // let outlives = tcx.outlives_components(field_ty);
-                    // required_predicates.extend(required_predicates_for_type_to_be_wf(field_ty));
+                    let outlives = self.tcx.outlives_components(field);
+                    required_predicates.extend(required_predicates_for_type_to_be_wf(field_ty));
                     //            }
                     //        }
                     //        inferred_outlives_predicates.extend(required_predicates);
