@@ -1236,4 +1236,22 @@ impl Cause {
             }
         }
     }
+
+    pub(crate) fn root_cause(&self) -> &Cause {
+        match self {
+            Cause::LiveVar(..) |
+            Cause::DropVar(..) |
+            Cause::LiveOther(..) |
+            Cause::UniversalRegion(..) => {
+                self
+            }
+
+            Cause::Outlives {
+                original_cause,
+                ..
+            } => {
+                original_cause.root_cause()
+            }
+        }
+    }
 }
