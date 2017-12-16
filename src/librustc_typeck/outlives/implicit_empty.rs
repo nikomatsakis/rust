@@ -24,9 +24,9 @@ use rustc::hir::def_id::{self, CrateNum, DefId, LOCAL_CRATE};
 // are initially empty but will grow during the inference step.
 
 //let mut inferred_outlives_predicates = map();
-pub fn empty<'tcx>(tcx: TyCtxt<'_, 'tcx, 'tcx>, crate_num: CrateNum) -> CratePredicatesMap<'tcx> {
+pub fn empty<'tcx>(tcx: TyCtxt<'_, 'tcx, 'tcx>, crate_num: CrateNum)
+    -> FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>> {
     assert_eq!(crate_num, LOCAL_CRATE);
-    let empty_predicate = Rc::new(Vec::new());
     let mut predicates = FxHashMap();
 
     {
@@ -39,10 +39,7 @@ pub fn empty<'tcx>(tcx: TyCtxt<'_, 'tcx, 'tcx>, crate_num: CrateNum) -> CratePre
         tcx.hir.krate().visit_all_item_likes(&mut visitor);
     }
 
-    ty::CratePredicatesMap {
-        predicates,
-        empty_predicate,
-    }
+    predicates
 }
 
 pub struct EmptyImplicitVisitor<'a, 'p: 'a> {

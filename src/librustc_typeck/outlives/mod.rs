@@ -65,45 +65,20 @@ fn inferred_outlives_crate<'tcx>(
     // predicate is satisfied, so they form a kind of base set of requirements
     // for the type.
 
-    let mut explicit_outlives_predicates = explicit::explicit_map(tcx, crate_num);
-    //let mut explicit_outlives_predicates = map();
-    //for def_id in all_types() {
-    //    let explicit_predicates = tcx.explicit_predicates(def_id);
-    //    let filtered_predicates = explicit_predicates
-    //    .iter()
-    //    .filter_map(is_outlives_predicate)
-    //    .collect();
-    //    explicit_outlives_predicates.insert(
-    //        def_id,
-    //        filtered_predicates);
-    //}
+    // filtered TypeOutlives and RegionOutlives (maybe also ProjectionPredicate??)
+    let explicit_outlives_map = explicit::explicit_map(tcx, crate_num);
 
-    // Create the sets of inferred predicates for each type. These sets
-    // are initially empty but will grow during the inference step.
-    let empty = implicit_empty::empty(tcx, crate_num);
-    //let mut inferred_outlives_predicates = map();
-    //for def_id in all_types() {
-    //    inferred_outlives_predicates.insert(def_id, empty_set());
-    //}
+    // empty inferred predicates. Should be the same entries as the explicit_map???
+    let mut inferred_outlives_map = implicit_empty::empty(tcx, crate_num);
 
-    let infer = Rc::new(implicit_infer::infer(tcx, crate_num));
-    Rc::new(empty)
-
-    //inferred_outlives_predicates
+    {
+        // Add the inferred predicates to the previous empty map
+        implicit_infer::infer(tcx, crate_num, &inferred_outlives_map);
+    }
+    
+    Rc::new(ty::CratePredicatesMap {
+        predicates: inferred_outlives_map,
+        empty_predicate: Rc::new(Vec::new()),
+    })
 }
-
-/*
-
-// inferred_outlives_predicate = ['b: 'a] // after round 2
-struct Foo<'a, 'b> {
-    bar: Bar<'a, 'b> // []
-    // round 2: ['b: 'a] in `required_predicates`
-}
-
-// inferred_outlives_predicate = ['b: 'a] // updated after round 1
-struct Bar<'a, 'b> {
-    field &'a &'b u32 // ['b: 'a] // added to `required_predicates`
-} // required_predicates = ['b: 'a]
-
-*/
 

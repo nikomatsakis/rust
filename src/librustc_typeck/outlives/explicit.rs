@@ -23,9 +23,8 @@ use rustc::hir::def_id::{CrateNum, DefId, LocalDefId, LOCAL_CRATE};
 pub fn explicit_map<'tcx>(
     tcx: TyCtxt<'_, 'tcx, 'tcx>,
     crate_num: CrateNum,
-) -> CratePredicatesMap<'tcx> {
+) -> FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>> {
     assert_eq!(crate_num, LOCAL_CRATE);
-    let empty_predicate = Rc::new(Vec::new());
     let mut predicates: FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>> = FxHashMap();
 
     {
@@ -39,10 +38,7 @@ pub fn explicit_map<'tcx>(
         tcx.hir.krate().visit_all_item_likes(&mut visitor);
     }
 
-    ty::CratePredicatesMap {
-        predicates,
-        empty_predicate,
-    }
+    predicates
 }
 
 
