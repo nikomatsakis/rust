@@ -26,61 +26,88 @@ use syntax_pos::{Span, DUMMY_SP};
 use rustc::hir::def::{Def, CtorKind};
 use syntax::{abi, ast};
 
-pub fn infer<'tcx>(
+pub fn infer_for_fields<'tcx>(
     tcx: TyCtxt<'_, 'tcx, 'tcx>,
     crate_num: CrateNum,
     inferred_outlives_map: &FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>
 ) {
     assert_eq!(crate_num, LOCAL_CRATE);
-////    let mut predicates = FxHashMap();
-//
-//    // Now comes the inference part. We iterate over each type and figure out,
-//    // for each of its fields, what outlives predicates are needed to make that field's
-//    // type well-formed. Those get added to the `inferred_outlives_predicates` set
-//    // for that type.
-//
-//    /*
-//        // inferred_outlives_predicate = ['b: 'a] // after round 2
-//        struct Foo<'a, 'b> {
-//            bar: Bar<'a, 'b> // []
-//            // round 2: ['b: 'a] in `required_predicates`
-//        }
-//
-//        // inferred_outlives_predicate = ['b: 'a] // updated after round 1
-//        struct Bar<'a, 'b> {
-//            field &'a &'b u32 // ['b: 'a] // added to `required_predicates`
-//        } // required_predicates = ['b: 'a]
-//    */
-//
-//    let mut changed = true;
-//    let mut eval_crate_num = crate_num;
-//    {
-//        while changed {
-//            let mut local_changed = false;
-//            {
-//                let mut visitor = ImplicitVisitor {
-//                    tcx: tcx,
-//                    predicates: &mut predicates,
-//                    crate_num: &mut eval_crate_num,
-//                    changed: &mut local_changed,
-//                };
-//
-//                // iterate over all crates
-//                tcx.hir.krate().visit_all_item_likes(&mut visitor);
-//            }
-//            changed = local_changed;
-//        }
-//    }
+//    let mut predicates = FxHashMap();
+
+    // Now comes the inference part. We iterate over each type and figure out,
+    // for each of its fields, what outlives predicates are needed to make that field's
+    // type well-formed. Those get added to the `inferred_outlives_predicates` set
+    // for that type.
+
+    /*
+        // inferred_outlives_predicate = ['b: 'a] // after round 2
+        struct Foo<'a, 'b> {
+            bar: Bar<'a, 'b> // []
+            // round 2: ['b: 'a] in `required_predicates`
+        }
+
+        // inferred_outlives_predicate = ['b: 'a] // updated after round 1
+        struct Bar<'a, 'b> {
+            field &'a &'b u32 // ['b: 'a] // added to `required_predicates`
+        } // required_predicates = ['b: 'a]
+
+        ------------
+
+        // Now comes the inference part. We iterate over each type and figure out,
+        // for each of its fields, what outlives predicates are needed to make that field's
+        // type well-formed. Those get added to the `inferred_outlives_predicates` set
+        // for that type.
+        //let mut changed = true;
+        //while changed {
+        //    changed = false;
+        //    for def_id in all_types() {
+        //        let adt_def = tcx.adt_def(def_id);
+        //        let mut required_predicates = set();
+        //        for variant in adt_def OB{
+        //            for field in variant {
+        //                // from ty/outlives.rs
+        //                //   Foo<'b, 'c>  ==> ['b, 'c]
+        //                //   Vec<T>: 'a
+        //                //   outlives_components(Vec<T>) = [T]
+        //                let outlives = tcx.outlives_components(field_ty);
+        //      required_predicates.extend(required_predicates_for_type_to_be_wf(field_ty));
+        //            }
+        //        }
+        //        inferred_outlives_predicates.extend(required_predicates);
+        //        if new predicates were added { changed = true; }
+        //    }
+        //}
+    */
+
+    // let mut changed = true;
+    // let mut eval_crate_num = crate_num;
+    // {
+    //     while changed {
+    //         let mut local_changed = false;
+    //         {
+    //             let mut visitor = ImplicitVisitor {
+    //                 tcx: tcx,
+    //                 predicates: &mut predicates,
+    //                 crate_num: &mut eval_crate_num,
+    //                 changed: &mut local_changed,
+    //             };
+
+    //             // iterate over all crates
+    //             tcx.hir.krate().visit_all_item_likes(&mut visitor);
+    //         }
+    //         changed = local_changed;
+    //     }
+    // }
 
 }
-//
-//pub struct ImplicitVisitor<'a, 'p: 'a, 'cx, 'tcx: 'cx> {
-//    tcx: TyCtxt<'cx, 'tcx, 'tcx>,
-//    predicates: &'a mut FxHashMap<DefId, Rc<Vec<ty::Predicate<'p>>>>,
-//    crate_num: &'a mut CrateNum,
-//    changed: &'a mut bool,
-//}
-//
+
+// pub struct ImplicitVisitor<'a, 'p: 'a, 'cx, 'tcx: 'cx> {
+//     tcx: TyCtxt<'cx, 'tcx, 'tcx>,
+//     predicates: &'a mut FxHashMap<DefId, Rc<Vec<ty::Predicate<'p>>>>,
+//     crate_num: &'a mut CrateNum,
+//     changed: &'a mut bool,
+// }
+
 //impl<'a, 'p, 'cx, 'v, 'tcx> ItemLikeVisitor<'v> for ImplicitVisitor<'a, 'p, 'cx, 'tcx> {
 //    fn visit_item(&mut self, item: &hir::Item) {
 //

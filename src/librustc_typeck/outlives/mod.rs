@@ -65,17 +65,20 @@ fn inferred_outlives_crate<'tcx>(
     // predicate is satisfied, so they form a kind of base set of requirements
     // for the type.
 
-    // filtered TypeOutlives and RegionOutlives (maybe also ProjectionPredicate??)
-    let explicit_outlives_map = explicit::explicit_map(tcx, crate_num);
+    // outlives that the user has annotated.
+    // TypeOutlives and RegionOutlives (maybe also ProjectionPredicate??)
+    let explicitly_annotated_outlives_map = explicit::explicit_map(tcx, crate_num);
 
-    // empty inferred predicates. Should be the same entries as the explicit_map???
+    // empty inferred predicates.
     let mut inferred_outlives_map = implicit_empty::empty(tcx, crate_num);
 
     {
         // Add the inferred predicates to the previous empty map
-        implicit_infer::infer(tcx, crate_num, &inferred_outlives_map);
+        implicit_infer::infer_for_fields(tcx, crate_num, &inferred_outlives_map);
     }
-    
+
+    inferred_outlives_map.extend(explicitly_annotated_outlives_map);
+
     Rc::new(ty::CratePredicatesMap {
         predicates: inferred_outlives_map,
         empty_predicate: Rc::new(Vec::new()),
