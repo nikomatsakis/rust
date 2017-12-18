@@ -74,7 +74,7 @@ fn inferred_outlives_crate<'tcx>(
 
     {
         // Add the inferred predicates to the previous empty map
-        implicit_infer::infer_for_fields(tcx, crate_num, &inferred_outlives_map);
+        implicit_infer::infer_for_fields(tcx, crate_num, &mut inferred_outlives_map);
     }
 
     inferred_outlives_map.extend(explicitly_annotated_outlives_map);

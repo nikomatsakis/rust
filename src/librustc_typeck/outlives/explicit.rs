@@ -61,7 +61,8 @@ impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for ExplicitVisitor<'cx, 'tcx> {
             .predicates
             .into_iter()
             .filter(|pred| match pred {
-                ty::Predicate::TypeOutlives(..) | ty::Predicate::RegionOutlives(..) => true,
+                ty::Predicate::TypeOutlives(..)
+                | ty::Predicate::RegionOutlives(..) => true,
                 _ => false,
             })
             .collect();
