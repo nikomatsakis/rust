@@ -1601,16 +1601,27 @@ impl<'a, 'gcx, 'tcx> AstConv<'gcx, 'tcx> for FnCtxt<'a, 'gcx, 'tcx> {
     fn projected_ty_from_poly_trait_ref(&self,
                                         span: Span,
                                         item_def_id: DefId,
-                                        poly_trait_ref: ty::PolyTraitRef<'tcx>)
-                                        -> Ty<'tcx>
-    {
+                                        poly_trait_ref: ty::PolyTraitRef<'tcx>,
+                                        // item_substs: &[Kind<'tcx>],
+    ) -> Ty<'tcx> {
         let (trait_ref, _) =
             self.replace_late_bound_regions_with_fresh_var(
                 span,
                 infer::LateBoundRegionConversionTime::AssocTypeProjection(item_def_id),
                 &poly_trait_ref);
+        // ^^^ this code probably wants to stay the same
+        //
+        // `for<'a> T: Foo<'a>`
+        //
+        // `T::Bar` (where `Bar` is an assoc type defined in `Foo`)
+        //
+        // `<T as Foo<'?0>>::Bar`
 
-        self.tcx().mk_projection(item_def_id, trait_ref.substs)
+        // some pseudocode fn that concatenates; maybe `Substs::extend_to` is roughly
+        // what we want here
+        let combined_substs = combine(trait_ref.substs, item_substs);
+
+        self.tcx().mk_projection(item_def_id, combined_substs)
     }
 
     fn normalize_ty(&self, span: Span, ty: Ty<'tcx>) -> Ty<'tcx> {

@@ -10,6 +10,77 @@
 
 //! Code for projecting associated types out of trait references.
 
+// Code that does "normalization" or "projection" of associated types:
+//
+// `<vec::IntoIter<u32> as Iterator>::Item` --> normalizes to `u32`
+//
+// High-level algorithm we do today:
+//
+// ```
+// // Impl I
+// impl<T> Iterator for vec::IntoIter<T> {
+//     type Item = T;
+// }
+// ```
+//
+// Projection like the one above. So we find the impl I that
+// applies to our projection and we also have a substs for **the
+// impl**: `[u32]` (which implicitly means `T=u32`).
+//
+// Search through for the definition of `Item` -- we're going to get `T`.
+// Apply the substitutions, giving us `u32`.
+//
+// In the case of GAT `<Vec<u32> as Iterable>::Iter<'x>` = P
+//
+// ```
+// // impl J
+// impl<T> Iterable for Vec<T> {
+//     type Iter<'a> = Iter<'a, T>
+// }
+// ```
+//
+// - Impl J with substs `u32`
+// - Lookup `Iter` and we'll get `<'a> Iter<'a, T>`
+// - Hybrid substition:
+//   - First, the generics of the impl (`[u32]`)
+//   - Then the generic values for the item (taken from the projection P)
+//     (`['x]`)
+//     - skip the prefix that came from the trait, leaving only those from the item
+//   - combined: `[u32, 'x]`
+//   - `Substs::rebase_onto` is kind of roughly doing this
+// - Substitute, giving us `Iter<'x, u32>`
+
+// Test we should have:
+//
+// ```
+// trait Foo {
+//   type Iter<'a>;
+// }
+//
+// impl Foo for () {
+//   type Iter<'a, 'b>;
+//             ^^ names don't have to be the same, just same number
+// } // <-- should error =)
+//
+// impl Foo for u32 {
+//   type Iter1<'a> = ..; // ERROR
+// }
+// ```
+//
+// ```
+// trait Foo {
+//   type Iter<'a, 'b>;
+// }
+//
+// impl Foo for () {
+//   type Iter<'b, 'a>;
+// }
+// ```
+//
+// Currently there exists code called `compare_impl_method` that does this
+// same check but for methods. That is a bit hairy but we can do better.
+
+
 use super::elaborate_predicates;
 use super::specialization_graph;
 use super::translate_substs;

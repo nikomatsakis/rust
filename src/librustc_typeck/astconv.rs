@@ -69,6 +69,8 @@ pub trait AstConv<'gcx, 'tcx> {
                                         item_def_id: DefId,
                                         poly_trait_ref: ty::PolyTraitRef<'tcx>)
                                         -> Ty<'tcx>;
+    // ^ going to need *all* the substitutions for `item_def_id`, right now it
+    // assumes that the substs in `poly_trait_ref` are sufficient
 
     /// Normalize an associated type coming from the user.
     fn normalize_ty(&self, span: Span, ty: Ty<'tcx>) -> Ty<'tcx>;
@@ -199,6 +201,9 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
         self_ty: Option<Ty<'tcx>>)
         -> (&'tcx Substs<'tcx>, Vec<ConvertedBinding<'tcx>>)
     {
+        // existing code that sort of does what we want -- converts
+        // HIR type parameters given by user into their semantic form
+
         let tcx = self.tcx();
 
         debug!("create_substs_for_ast_path(def_id={:?}, self_ty={:?}, \
@@ -240,6 +245,7 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
             false
         };
 
+        // constructs the substitution by invoking these two callbacks
         let substs = Substs::for_item(tcx, def_id, |def, _| {
             let i = def.index as usize - self_ty.is_some() as usize;
             if let Some(lifetime) = parameters.lifetimes.get(i) {
@@ -847,7 +853,48 @@ impl<'o, 'gcx: 'tcx, 'tcx> AstConv<'gcx, 'tcx>+'o {
         })
         .expect("missing associated type");
 
+        // Right around here:
+        // - check that the segment has the right number of lifetime/type parameters
+        //   for this associated item
+        // - `g = tcx.generics_of(item.def_id)` -- gives us a `ty::Generics`,
+        //   check that `g.regions.len()` and `g.types.len()` is what we expected
+        // - construct a `Substs` `s` that has the substitutions for the impl and then those
+        //   of the assoc. item
+
+        // In other words. Suppose we have `<T as Iterable>::Iter<'a>`
+        //
+        // - in `bound`, we have `T: Iterable`
+        // - in `item`, we have the definition of `Iter` and in particular its generics
+        // - in `item_segment`, we have the `Iter<'a>` that the user wrote (the HIR)
+        //
+        // - convert the types/regions found in `item_segment` into
+        //   the internal `Ty<'tcx>` and `Region<'tcx>
+        //
+        // The compiler:
+        //
+        // - Started out with the AST (parser produces)
+        // - Lowered to HIR (roughly the same as the AST but some minor differences smoothed out)
+        // - Convert to "semantic" types `Ty<'tcx>`, `Region<'tcx>`
+        //     - `fn foo(x: u32, y: u32)`
+        //     - `TraitRef` -- `T: Iterator`
+        //     - `ProjectionTy`
+        // - probably using `create_substs_for_ast_path`
+        //     - with `&item_segment.parameters`
+        //     - returns `(S, B)` where B is bindings
+        //       - `<T as Iterable>::Item<Item = Foo>`
+        //                                ^^^^^^^^^^ is a binding
+        //     - if the list of bindings is non-empty, that's an error
+
+        // `T: Iterator` -- `bound`
+        // `Item` -- `item.def_id`
+        // ==>
+        // `<T as Iterator>::Item::<...>`
+
         let ty = self.projected_ty_from_poly_trait_ref(span, item.def_id, bound);
+        //            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this fn is going to need more arguments
+        //            right now takes the `def-id` of the assoc type (`item.def_id`) and the
+        //            trait reference, but it will need the add'l substs returned by `create_substs_for_ast_path`
+
         let ty = self.normalize_ty(span, ty);
 
         let def = Def::AssociatedTy(item.def_id);

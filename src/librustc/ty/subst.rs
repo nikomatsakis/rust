@@ -30,10 +30,13 @@ use std::mem;
 /// with the lowest 2 bits being reserved for a tag to
 /// indicate the type (`Ty` or `Region`) it points to.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub struct Kind<'tcx> {
+pub struct Kind<'tcx> { // either a Region or a Type
     ptr: NonZero<usize>,
     marker: PhantomData<(Ty<'tcx>, ty::Region<'tcx>)>
 }
+
+// morally:
+// enum Kind { Ty(Ty), Region(Region) }
 
 const TAG_MASK: usize = 0b11;
 const TYPE_TAG: usize = 0b00;
@@ -80,6 +83,7 @@ impl<'tcx> Kind<'tcx> {
         }
     }
 
+    // check if it's a type
     #[inline]
     pub fn as_type(self) -> Option<Ty<'tcx>> {
         unsafe {
@@ -87,6 +91,9 @@ impl<'tcx> Kind<'tcx> {
         }
     }
 
+    // check if it's a region
+    // `if let Some(r) = kind.as_region() { .. }`
+    // but you shouldn't have to call this
     #[inline]
     pub fn as_region(self) -> Option<ty::Region<'tcx>> {
         unsafe {
@@ -175,7 +182,7 @@ impl<'tcx> Decodable for Kind<'tcx> {
 }
 
 /// A substitution mapping type/region parameters to new values.
-pub type Substs<'tcx> = Slice<Kind<'tcx>>;
+pub type Substs<'tcx> = Slice<Kind<'tcx>>; // interned `[Kind<'tcx>]`
 
 impl<'a, 'gcx, 'tcx> Substs<'tcx> {
     /// Creates a Substs that maps each generic parameter to itself.

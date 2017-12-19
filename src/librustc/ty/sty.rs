@@ -538,8 +538,22 @@ impl<'tcx> Binder<&'tcx Slice<ExistentialPredicate<'tcx>>> {
 /// U>` or higher-ranked object types.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
 pub struct TraitRef<'tcx> {
-    pub def_id: DefId,
-    pub substs: &'tcx Substs<'tcx>,
+    // represents `T: Iterator` or something like that
+
+    // everything you need to find which impl you will use
+    //
+    // impl Iterable for Vec<u32> {
+    //                   ^^^^^^^^ this information
+    //     type Iterator<'a> = ...;
+    //                  ---- but not this
+    //     type Foo<'a> = ...;
+    //             ---- or this
+    // }
+    //
+    // trait ref: `Vec<u32>: Iterable`
+
+    pub def_id: DefId, // <-- this is the def-id of the `Iterator` trait
+    pub substs: &'tcx Substs<'tcx>, // <-- this is basically the vector `[T]`
 }
 
 impl<'tcx> TraitRef<'tcx> {
@@ -745,16 +759,21 @@ impl<T> Binder<T> {
 
 /// Represents the projection of an associated type. In explicit UFCS
 /// form this would be written `<T as Trait<..>>::N`.
+//                              ^^^^^^^^^^^^^^^^^^^
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct ProjectionTy<'tcx> {
+    // `<T as Iterable>::Item<'a>` <--
+    //   ^^^^^^^^^^^^^   ^^^^^^^^
+    //   trait-ref has   what the projection-ty adds (logically)
+
     /// The parameters of the associated item.
-    pub substs: &'tcx Substs<'tcx>,
+    pub substs: &'tcx Substs<'tcx>, // `[T, 'a]`
 
     /// The DefId of the TraitItem for the associated type N.
     ///
     /// Note that this is not the DefId of the TraitRef containing this
     /// associated type, which is in tcx.associated_item(item_def_id).container.
-    pub item_def_id: DefId,
+    pub item_def_id: DefId, // `Iterable::Item`
 }
 
 impl<'a, 'tcx> ProjectionTy<'tcx> {
@@ -768,20 +787,35 @@ impl<'a, 'tcx> ProjectionTy<'tcx> {
             tcx.hygienic_eq(item_name, item.name, trait_ref.def_id)
         }).unwrap().def_id;
 
+        // Caller's of this code are suspicious and probably buggy.
+        // At minimum, we should assert that the associated type
+        // doesn't have any generics of its own.
+
         ProjectionTy {
             substs: trait_ref.substs,
             item_def_id,
         }
     }
 
+    // possible strategy:
+    // - make another copy of `trait_ref`
+    //   - `extract_trait_ref`, which does the same thing as today
+    // - make `trait_ref` assert that the associated item has no generic parameters
+    //   - assert that the substs for trait-ref and projection are equal
+
     /// Extracts the underlying trait reference from this projection.
     /// For example, if this is a projection of `<T as Iterator>::Item`,
     /// then this function would return a `T: Iterator` trait reference.
     pub fn trait_ref(&self, tcx: TyCtxt) -> ty::TraitRef<'tcx> {
+        // this method extracts the subset of a `ProjectionTy` that is the trait-ref
+
+        // finds the def-id of the trait:
         let def_id = tcx.associated_item(self.item_def_id).container.id();
+
+        // this will have to change before you are done.
         ty::TraitRef {
             def_id,
-            substs: self.substs,
+            substs: self.substs, // <-- self.substs[..N] where N is the number of arguments the trait takes
         }
     }
 
