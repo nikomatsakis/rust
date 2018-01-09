@@ -47,42 +47,68 @@ pub fn infer_for_fields<'tcx>(
     let mut changed = true;
     while changed {
         changed = false;
+        let mut visitor = InferVisitor {
+            tcx: tcx,
+            inferred_outlives_map: &mut inferred_outlives_map,
+            crate_num: crate_num,
+            changed: changed,
+        };
 
-        //FIXME: cant borrow immutably while mutating later. Use ItemLikeVisitor
-        for def_id in inferred_outlives_map.keys() {
-            let node_id = tcx.hir.as_local_node_id(*def_id).expect("expected local def-id");
-            let item = match tcx.hir.get(node_id) {
-                hir::map::NodeItem(item) => item,
-                _ => bug!()
-            };
-
-            let mut local_required_predicates = FxHashMap();
-            match item.node {
-                hir::ItemUnion(ref def, _) => {
-                    //TODO
-                }
-                hir::ItemEnum(ref def, _) => {
-                    //TODO
-                }
-                hir::ItemStruct(ref def, _) => {
-                    for field in def.fields().iter() {
-                        local_required_predicates
-                            .extend(required_predicates_to_be_wf(field));
-                    }
-                }
-                _ => {}
-            };
-
-            if local_required_predicates.len() > 0 {
-                changed = true;
-                inferred_outlives_map.extend(local_required_predicates);
-            }
-        }
+        //iterate over all the crates
+        tcx.hir.krate().visit_all_item_likes(&mut visitor);
     }
 }
 
+pub struct InferVisitor<'cx, 'tcx: 'cx> {
+    tcx: TyCtxt<'cx, 'tcx, 'tcx>,
+    inferred_outlives_map: &'cx mut FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>,
+    crate_num: CrateNum,
+    changed: bool,
+}
 
-//TODO: This is custom calculation that to figure out what predicates need to be added
+impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for InferVisitor<'cx, 'tcx> {
+    fn visit_item(&mut self, item: &'tcx hir::Item) {
+
+        let def_id = DefId {
+            krate: self.crate_num,
+            index: item.hir_id.owner,
+        };
+
+        let node_id = self.tcx.hir.as_local_node_id(def_id).expect("expected local def-id");
+        let item = match self.tcx.hir.get(node_id) {
+            hir::map::NodeItem(item) => item,
+            _ => bug!()
+        };
+
+        let mut local_required_predicates = FxHashMap();
+        match item.node {
+            hir::ItemUnion(ref def, _) => {
+                //FIXME
+            }
+            hir::ItemEnum(ref def, _) => {
+                //FIXME
+            }
+            hir::ItemStruct(ref def, _) => {
+                for field in def.fields().iter() {
+                    local_required_predicates
+                        .extend(required_predicates_to_be_wf(field));
+                }
+            }
+            _ => {}
+        };
+
+        if local_required_predicates.len() > 0 {
+            self.changed = true;
+            self.inferred_outlives_map.extend(local_required_predicates);
+        }
+    }
+
+    fn visit_trait_item(&mut self, trait_item: &'tcx hir::TraitItem) {}
+
+    fn visit_impl_item(&mut self, impl_item: &'tcx hir::ImplItem) {}
+}
+
+//FIXME This is custom calculation that to figure out what predicates need to be added
 fn required_predicates_to_be_wf<'tcx>(field: &hir::StructField)
                                       -> FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>> {
     // from ty/outlives.rs
@@ -91,3 +117,4 @@ fn required_predicates_to_be_wf<'tcx>(field: &hir::StructField)
     //   outlives_components(Vec<T>) = [T]
     FxHashMap()
 }
+

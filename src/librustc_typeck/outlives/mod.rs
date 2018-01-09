@@ -33,7 +33,7 @@ pub fn provide(providers: &mut Providers) {
     };
 }
 
-//todo
+//FIXME
 fn inferred_outlives_of<'a, 'tcx>(
     tcx: TyCtxt<'a, 'tcx, 'tcx>,
     def_id: DefId,
