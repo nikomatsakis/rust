@@ -67,7 +67,7 @@ pub struct InferVisitor<'cx, 'tcx: 'cx> {
 }
 
 impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for InferVisitor<'cx, 'tcx> {
-    fn visit_item(&mut self, item: &'tcx hir::Item) {
+    fn visit_item(&mut self, item: &hir::Item) {
 
         let def_id = DefId {
             krate: self.crate_num,
