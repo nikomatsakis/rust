@@ -68,7 +68,6 @@ pub struct InferVisitor<'cx, 'tcx: 'cx> {
 
 impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for InferVisitor<'cx, 'tcx> {
     fn visit_item(&mut self, item: &hir::Item) {
-
         let def_id = DefId {
             krate: self.crate_num,
             index: item.hir_id.owner,
@@ -91,7 +90,7 @@ impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for InferVisitor<'cx, 'tcx> {
             hir::ItemStruct(ref def, _) => {
                 for field in def.fields().iter() {
                     local_required_predicates
-                        .extend(required_predicates_to_be_wf(field));
+                        .extend(required_predicates_to_be_wf(self.tcx, field, def_id));
                 }
             }
             _ => {}
@@ -109,8 +108,15 @@ impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for InferVisitor<'cx, 'tcx> {
 }
 
 //FIXME This is custom calculation that to figure out what predicates need to be added
-fn required_predicates_to_be_wf<'tcx>(field: &hir::StructField)
-                                      -> FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>> {
+fn required_predicates_to_be_wf<'tcx>(
+    tcx: TyCtxt<'_, 'tcx, 'tcx>,
+    field: &hir::StructField,
+    def_id: DefId,
+) -> FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>> {
+
+    let ty = tcx.type_of(def_id);
+    tcx.outlives_components(ty);
+
     // from ty/outlives.rs
     //   Foo<'b, 'c>  ==> ['b, 'c]
     //   Vec<T>: 'a

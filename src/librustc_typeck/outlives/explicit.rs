@@ -50,11 +50,12 @@ pub struct ExplicitVisitor<'cx, 'tcx: 'cx> {
 
 impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for ExplicitVisitor<'cx, 'tcx> {
     fn visit_item(&mut self, item: &'tcx hir::Item) {
-        //let def_id = LocalDefId::new(item.hir_id.owner).to_def_id();
         let def_id = DefId {
             krate: self.crate_num,
             index: item.hir_id.owner,
         };
+//        let def_id = self.crate_num.as_def_id();
+
         let local_explicit_predicate = self.tcx.explicit_predicates_of(def_id);
 
         let filtered_predicates = local_explicit_predicate

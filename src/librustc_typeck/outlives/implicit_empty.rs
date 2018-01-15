@@ -35,6 +35,7 @@ pub fn empty<'tcx>(tcx: TyCtxt<'_, 'tcx, 'tcx>, crate_num: CrateNum)
             crate_num: crate_num,
         };
 
+
         //iterate over all the crates
         tcx.hir.krate().visit_all_item_likes(&mut visitor);
     }
