@@ -5,8 +5,8 @@ error[E0277]: the trait bound `Bar: Foo<usize>` is not satisfied
    |        ^^^ the trait `Foo<usize>` is not implemented for `Bar`
    |
    = help: the following implementations were found:
-             <Bar as Foo<i32>>
-             <Bar as Foo<u8>>
+             <Bar: Foo<i32>>
+             <Bar: Foo<u8>>
 
 error: aborting due to previous error
 

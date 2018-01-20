@@ -5,11 +5,11 @@ error[E0277]: the trait bound `i8: Foo<i32>` is not satisfied
    |     ^^^^^^^^^^^^^^^ the trait `Foo<i32>` is not implemented for `i8`
    |
    = help: the following implementations were found:
-             <i8 as Foo<u8>>
-             <i8 as Foo<u16>>
-             <i8 as Foo<u32>>
-             <i8 as Foo<u64>>
-             <i8 as Foo<bool>>
+             <i8: Foo<u8>>
+             <i8: Foo<u16>>
+             <i8: Foo<u32>>
+             <i8: Foo<u64>>
+             <i8: Foo<bool>>
    = note: required by `Foo::bar`
 
 error[E0277]: the trait bound `u8: Foo<i32>` is not satisfied
@@ -19,10 +19,10 @@ error[E0277]: the trait bound `u8: Foo<i32>` is not satisfied
    |     ^^^^^^^^^^^^^^^ the trait `Foo<i32>` is not implemented for `u8`
    |
    = help: the following implementations were found:
-             <u8 as Foo<u16>>
-             <u8 as Foo<u32>>
-             <u8 as Foo<u64>>
-             <u8 as Foo<bool>>
+             <u8: Foo<u16>>
+             <u8: Foo<u32>>
+             <u8: Foo<u64>>
+             <u8: Foo<bool>>
    = note: required by `Foo::bar`
 
 error[E0277]: the trait bound `bool: Foo<i32>` is not satisfied
@@ -32,10 +32,10 @@ error[E0277]: the trait bound `bool: Foo<i32>` is not satisfied
    |     ^^^^^^^^^^^^^^^ the trait `Foo<i32>` is not implemented for `bool`
    |
    = help: the following implementations were found:
-             <bool as Foo<u8>>
-             <bool as Foo<u16>>
-             <bool as Foo<u32>>
-             <bool as Foo<u64>>
+             <bool: Foo<u8>>
+             <bool: Foo<u16>>
+             <bool: Foo<u32>>
+             <bool: Foo<u64>>
            and 2 others
    = note: required by `Foo::bar`
 
