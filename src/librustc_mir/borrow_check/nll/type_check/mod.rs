@@ -1556,6 +1556,11 @@ pub struct TypeckMir;
 
 impl MirPass for TypeckMir {
     fn run_pass<'a, 'tcx>(&self, tcx: TyCtxt<'a, 'tcx, 'tcx>, src: MirSource, mir: &mut Mir<'tcx>) {
+        // NLL will run a more stringent version of the MIR type-checker anyhow
+        if tcx.sess.nll() {
+            return;
+        }
+
         let def_id = src.def_id;
         let id = tcx.hir.as_local_node_id(def_id).unwrap();
         debug!("run_pass: {:?}", def_id);
