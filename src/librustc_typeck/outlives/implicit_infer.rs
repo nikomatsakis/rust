@@ -88,7 +88,7 @@ impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for InferVisitor<'cx, 'tcx> {
                 //FIXME
             }
             hir::ItemStruct(ref def, _) => {
-                for field in def.fields().iter() {
+                for field in def.all_fields() {
                     local_required_predicates
                         .extend(required_predicates_to_be_wf(self.tcx, field, def_id));
                 }
