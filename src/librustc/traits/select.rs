@@ -91,48 +91,6 @@ pub struct SelectionContext<'cx, 'gcx: 'cx+'tcx, 'tcx: 'cx> {
     intercrate: Option<IntercrateMode>,
 
     inferred_obligations: SnapshotVec<InferredObligationsSnapshotVecDelegate<'tcx>>,
-
-    intercrate_ambiguity_causes: Vec<IntercrateAmbiguityCause>,
-}
-
-#[derive(Clone)]
-pub enum IntercrateAmbiguityCause {
-    DownstreamCrate {
-        trait_desc: String,
-        self_desc: Option<String>,
-    },
-    UpstreamCrateUpdate {
-        trait_desc: String,
-        self_desc: Option<String>,
-    },
-}
-
-impl IntercrateAmbiguityCause {
-    /// Emits notes when the overlap is caused by complex intercrate ambiguities.
-    /// See #23980 for details.
-    pub fn add_intercrate_ambiguity_hint<'a, 'tcx>(&self,
-                                                   err: &mut ::errors::DiagnosticBuilder) {
-        err.note(&self.intercrate_ambiguity_hint());
-    }
-
-    pub fn intercrate_ambiguity_hint(&self) -> String {
-        match self {
-            &IntercrateAmbiguityCause::DownstreamCrate { ref trait_desc, ref self_desc } => {
-                let self_desc = if let &Some(ref ty) = self_desc {
-                    format!(" for type `{}`", ty)
-                } else { "".to_string() };
-                format!("downstream crates may implement trait `{}`{}", trait_desc, self_desc)
-            }
-            &IntercrateAmbiguityCause::UpstreamCrateUpdate { ref trait_desc, ref self_desc } => {
-                let self_desc = if let &Some(ref ty) = self_desc {
-                    format!(" for type `{}`", ty)
-                } else { "".to_string() };
-                format!("upstream crates may add new impl of trait `{}`{} \
-                         in future versions",
-                        trait_desc, self_desc)
-            }
-        }
-    }
 }
 
 // A stack that walks back up the stack frame.
@@ -280,6 +238,7 @@ impl<'a, 'tcx> ty::Lift<'tcx> for SelectionCandidate<'a> {
     }
 }
 
+#[derive(Debug)]
 struct SelectionCandidateSet<'tcx> {
     // a list of candidates that definitely apply to the current
     // obligation (meaning: types unify).
@@ -423,7 +382,6 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             freshener: infcx.freshener(),
             intercrate: None,
             inferred_obligations: SnapshotVec::new(),
-            intercrate_ambiguity_causes: Vec::new(),
         }
     }
 
@@ -435,7 +393,6 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             freshener: infcx.freshener(),
             intercrate: Some(mode),
             inferred_obligations: SnapshotVec::new(),
-            intercrate_ambiguity_causes: Vec::new(),
         }
     }
 
@@ -449,10 +406,6 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
     pub fn closure_typer(&self) -> &'cx InferCtxt<'cx, 'gcx, 'tcx> {
         self.infcx
-    }
-
-    pub fn intercrate_ambiguity_causes(&self) -> &[IntercrateAmbiguityCause] {
-        &self.intercrate_ambiguity_causes
     }
 
     /// Wraps the inference context's in_snapshot s.t. snapshot handling is only from the selection
@@ -827,22 +780,6 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         {
             debug!("evaluate_stack({:?}) --> unbound argument, intercrate -->  ambiguous",
                    stack.fresh_trait_ref);
-            // Heuristics: show the diagnostics when there are no candidates in crate.
-            if let Ok(candidate_set) = self.assemble_candidates(stack) {
-                if !candidate_set.ambiguous && candidate_set.vec.is_empty() {
-                    let trait_ref = stack.obligation.predicate.skip_binder().trait_ref;
-                    let self_ty = trait_ref.self_ty();
-                    let cause = IntercrateAmbiguityCause::DownstreamCrate {
-                        trait_desc: trait_ref.to_string(),
-                        self_desc: if self_ty.has_concrete_skeleton() {
-                            Some(self_ty.to_string())
-                        } else {
-                            None
-                        },
-                    };
-                    self.intercrate_ambiguity_causes.push(cause);
-                }
-            }
             return EvaluatedToAmbig;
         }
         if unbound_input_types &&
@@ -1090,28 +1027,8 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
         match self.is_knowable(stack) {
             None => {}
-            Some(conflict) => {
+            Some(_conflict) => {
                 debug!("coherence stage: not knowable");
-                // Heuristics: show the diagnostics when there are no candidates in crate.
-                let candidate_set = self.assemble_candidates(stack)?;
-                if !candidate_set.ambiguous && candidate_set.vec.iter().all(|c| {
-                    !self.evaluate_candidate(stack, &c).may_apply()
-                }) {
-                    let trait_ref = stack.obligation.predicate.skip_binder().trait_ref;
-                    let self_ty = trait_ref.self_ty();
-                    let trait_desc = trait_ref.to_string();
-                    let self_desc = if self_ty.has_concrete_skeleton() {
-                        Some(self_ty.to_string())
-                    } else {
-                        None
-                    };
-                    let cause = if let Conflict::Upstream = conflict {
-                        IntercrateAmbiguityCause::UpstreamCrateUpdate { trait_desc, self_desc }
-                    } else {
-                        IntercrateAmbiguityCause::DownstreamCrate { trait_desc, self_desc }
-                    };
-                    self.intercrate_ambiguity_causes.push(cause);
-                }
                 return Ok(None);
             }
         }

@@ -29,10 +29,13 @@ struct InherentOverlapChecker<'a, 'tcx: 'a> {
 }
 
 impl<'a, 'tcx> InherentOverlapChecker<'a, 'tcx> {
-    fn check_for_common_items_in_impls(&self, impl1: DefId, impl2: DefId,
-                                       overlap: traits::OverlapResult,
-                                       used_to_be_allowed: bool) {
-
+    fn check_for_common_items_in_impls(
+        &self,
+        impl1: DefId,
+        impl2: DefId,
+        _overlap: traits::OverlapResult,
+        used_to_be_allowed: bool
+    ) {
         let name_and_namespace = |def_id| {
             let item = self.tcx.associated_item(def_id);
             (item.name, Namespace::from(item.kind))
@@ -66,10 +69,6 @@ impl<'a, 'tcx> InherentOverlapChecker<'a, 'tcx> {
                                    format!("duplicate definitions for `{}`", name));
                     err.span_label(self.tcx.span_of_impl(item2).unwrap(),
                                    format!("other definition for `{}`", name));
-
-                    for cause in &overlap.intercrate_ambiguity_causes {
-                        cause.add_intercrate_ambiguity_hint(&mut err);
-                    }
 
                     err.emit();
                 }

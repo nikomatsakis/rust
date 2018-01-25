@@ -128,7 +128,6 @@ impl<'a, 'gcx, 'tcx> Children {
                     } else {
                         None
                     },
-                    intercrate_ambiguity_causes: overlap.intercrate_ambiguity_causes,
                 }
             };
 

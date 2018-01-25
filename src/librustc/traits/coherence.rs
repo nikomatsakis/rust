@@ -14,7 +14,6 @@ use hir::def_id::{DefId, LOCAL_CRATE};
 use syntax_pos::DUMMY_SP;
 use traits::{self, Normalized, SelectionContext, Obligation, ObligationCause, Reveal};
 use traits::IntercrateMode;
-use traits::select::IntercrateAmbiguityCause;
 use ty::{self, Ty, TyCtxt};
 use ty::fold::TypeFoldable;
 use ty::subst::Subst;
@@ -37,7 +36,6 @@ pub enum Conflict {
 
 pub struct OverlapResult<'tcx> {
     pub impl_header: ty::ImplHeader<'tcx>,
-    pub intercrate_ambiguity_causes: Vec<IntercrateAmbiguityCause>,
 }
 
 /// If there are types that satisfy both impls, returns a suitably-freshened
@@ -137,7 +135,6 @@ fn overlap<'cx, 'gcx, 'tcx>(selcx: &mut SelectionContext<'cx, 'gcx, 'tcx>,
 
     Some(OverlapResult {
         impl_header: selcx.infcx().resolve_type_vars_if_possible(&a_impl_header),
-        intercrate_ambiguity_causes: selcx.intercrate_ambiguity_causes().to_vec(),
     })
 }
 
