@@ -78,16 +78,13 @@ impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for InferVisitor<'cx, 'tcx> {
 
         let mut local_required_predicates = FxHashMap();
         match item.node {
-            hir::ItemUnion(ref def, _) => {
-                //FIXME
-            }
-            hir::ItemEnum(ref def, _) => {
-                //FIXME
-            }
-            hir::ItemStruct(ref def, _) => {
-                for field in def.all_fields() {
-                    local_required_predicates
-                        .extend(required_predicates_to_be_wf(self.tcx, field, def_id));
+            hir::ItemUnion(..) |
+            hir::ItemEnum(..) |
+            hir::ItemStruct(..) => {
+                let adt_def = self.tcx.adt_def(def_id);
+                for field_def in adt_def.all_fields() {
+                    let required_predicates = required_predicates_to_be_wf(self.tcx, field_def);
+                    local_required_predicates.extend(required_predicates);
                 }
             }
             _ => {}
@@ -107,12 +104,11 @@ impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for InferVisitor<'cx, 'tcx> {
 //FIXME This is custom calculation that to figure out what predicates need to be added
 fn required_predicates_to_be_wf<'tcx>(
     tcx: TyCtxt<'_, 'tcx, 'tcx>,
-    field: &hir::StructField,
-    def_id: DefId,
+    field_def: &ty::FieldDef,
 ) -> FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>> {
-
-    let ty = tcx.type_of(def_id);
-    tcx.outlives_components(ty);
+    // Get the type of the field with identity substs applied.  For
+    // now, let's just see if that causes horrible cycles.
+    let _ty = tcx.type_of(field_def.did);
 
     // from ty/outlives.rs
     //   Foo<'b, 'c>  ==> ['b, 'c]
@@ -120,4 +116,3 @@ fn required_predicates_to_be_wf<'tcx>(
     //   outlives_components(Vec<T>) = [T]
     FxHashMap()
 }
-
