@@ -70,11 +70,11 @@ fn inferred_outlives_crate<'tcx>(
     let explicitly_annotated_outlives_map = explicit::explicit_map(tcx, crate_num);
 
     // empty inferred predicates.
-    let mut inferred_outlives_map = implicit_empty::empty(tcx, crate_num);
+    let mut inferred_outlives_map = implicit_empty::empty(tcx);
 
     {
         // Add the inferred predicates to the previous empty map
-        implicit_infer::infer_for_fields(tcx, crate_num, &mut inferred_outlives_map);
+        implicit_infer::infer_for_fields(tcx, &mut inferred_outlives_map);
     }
 
     inferred_outlives_map.extend(explicitly_annotated_outlives_map);

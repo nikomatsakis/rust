@@ -21,15 +21,14 @@ use rustc::hir;
 use rustc::hir::itemlikevisit::ItemLikeVisitor;
 use rustc::hir::def_id::{self, CrateNum, DefId, LOCAL_CRATE};
 use std::collections::HashSet;
-use rustc::ty::{ToPredicate, ReprOptions};
+use rustc::ty::{ReprOptions, ToPredicate};
 use syntax_pos::{Span, DUMMY_SP};
-use rustc::hir::def::{Def, CtorKind};
+use rustc::hir::def::{CtorKind, Def};
 use syntax::{abi, ast};
 
 pub fn infer_for_fields<'tcx>(
     tcx: TyCtxt<'_, 'tcx, 'tcx>,
-    crate_num: CrateNum,
-    mut inferred_outlives_map: &mut FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>
+    mut inferred_outlives_map: &mut FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>,
 ) {
     /*
         // inferred_outlives_predicate = ['b: 'a] // after round 2
@@ -50,7 +49,6 @@ pub fn infer_for_fields<'tcx>(
         let mut visitor = InferVisitor {
             tcx: tcx,
             inferred_outlives_map: &mut inferred_outlives_map,
-            crate_num: crate_num,
             changed: changed,
         };
 
@@ -62,21 +60,20 @@ pub fn infer_for_fields<'tcx>(
 pub struct InferVisitor<'cx, 'tcx: 'cx> {
     tcx: TyCtxt<'cx, 'tcx, 'tcx>,
     inferred_outlives_map: &'cx mut FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>,
-    crate_num: CrateNum,
     changed: bool,
 }
 
 impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for InferVisitor<'cx, 'tcx> {
     fn visit_item(&mut self, item: &hir::Item) {
-        let def_id = DefId {
-            krate: self.crate_num,
-            index: item.hir_id.owner,
-        };
+        let def_id = self.tcx.hir.local_def_id(item.id);
 
-        let node_id = self.tcx.hir.as_local_node_id(def_id).expect("expected local def-id");
+        let node_id = self.tcx
+            .hir
+            .as_local_node_id(def_id)
+            .expect("expected local def-id");
         let item = match self.tcx.hir.get(node_id) {
             hir::map::NodeItem(item) => item,
-            _ => bug!()
+            _ => bug!(),
         };
 
         let mut local_required_predicates = FxHashMap();
