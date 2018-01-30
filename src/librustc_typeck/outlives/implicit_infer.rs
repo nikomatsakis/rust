@@ -110,6 +110,61 @@ fn required_predicates_to_be_wf<'tcx>(
     // now, let's just see if that causes horrible cycles.
     let _ty = tcx.type_of(field_def.did);
 
+    // At this point:
+    //
+    // - What we want to do *conceptually* is to compute the WF (well-formedness)
+    //   requirements of `_ty` and -- in particular -- any outlives requirements
+    //   that `_ty` requires.
+    //   - So for example if `_ty` is `&'a T`, then this would include `T: 'a`.
+    // - There is some code for computing these WF requirements in `ty/wf.rs` but
+    //   we can't really use it as is, and it's not clear we want to use it at all
+    //   - The problem is that it is meant to run **after** this inference has been
+    //     done. So, e.g., when it encounters a type like `Foo<'a, T>`, it
+    //     invokes the `nominal_obligations` method, which invokes the `predicates_of`
+    //     query, which would then invoke this inference, causing a cycle.
+    //   - I think though we can make parameterizable in terms of what
+    //     it does when encountering a nominal type. If we do this, we
+    //     would also want to skip normalization (which normally
+    //     occurs at the top-level anyway, e.g. in the wrapper
+    //     `ty::wf::obligations` -- we would be adding a new such
+    //     wrapper anyway).
+    //   - Alternatively, we may be better off making a local copy of that logic that
+    //     is specialized to our needs. This inference doesn't even have to be
+    //     100% complete: anything we fail to cover will 'just' result in the user
+    //     having to add manual annotation, not anything like unsoundness.
+    //   - If we go that way, we would basically just walk the type `_ty` recursively:
+    //     - We could even use `walk` though it might be better to make a manual
+    //       match.
+    //     - We want to compute the set of `T: 'a` pairs that are required for `_ty`
+    //       to be well-formed:
+    //       - For each type `&'a T`, we require `T: 'a`
+    //       - For each struct/enum/union type `Foo<'a, T>`, we can
+    //         load the current set of inferred and explicit predicates from
+    //         `inferred_outlives_map` and see if those include `T:
+    //         'a`
+    //       - For `TyDynamic` types, we can do the same, but using the `expredicates_of`
+    //         query (those are not inferred).
+    //       - That's...it?
+    //   - Either way, we will extract from the WF reuqirements a set
+    //     of `T: 'a` requirements that must hold.
+    //       - We only care when `'a` here maps to an early-bound
+    //         region (`ReEarlyBound`), then it corresponds to one of
+    //         our lifetime parameters (it could also be something
+    //         like `'static`, or a higher-ranked region, which we can
+    //         safely ignore for now).
+    //       - When we get to a `&'a T`, we will use the `ty/outlives`
+    //         code to compute the outlives obligations from `T:
+    //         'a`. This gives back a set of things that must outlive `'a`
+    //         (`ty::outlives::Component<'tcx>`).
+    //       - We want to iterate over those components:
+    //         - For each early-bound region component or type parameter, we can
+    //           add the approriate outlives requirement to our result.
+    //         - For each projection or escaping projection, we can iterate over
+    //           the `substs` and
+    //           recursively apply outlives to break that down into components.
+    //
+    // Done.
+
     // from ty/outlives.rs
     //   Foo<'b, 'c>  ==> ['b, 'c]
     //   Vec<T>: 'a
