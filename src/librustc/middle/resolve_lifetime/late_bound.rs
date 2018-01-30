@@ -31,8 +31,7 @@ pub(super) fn insert_late_bound_lifetimes(
 ) {
     debug!(
         "insert_late_bound_lifetimes(decl={:?}, generics={:?})",
-        decl,
-        generics
+        decl, generics
     );
 
     let mut constrained_by_input = ConstrainedCollector {
@@ -111,8 +110,7 @@ pub(super) fn insert_late_bound_lifetimes(
         debug!(
             "insert_late_bound_lifetimes: \
              lifetime {:?} with id {:?} is late-bound",
-            lifetime.lifetime.name,
-            lifetime.lifetime.id
+            lifetime.lifetime.name, lifetime.lifetime.id
         );
 
         let inserted = map.late_bound.insert(lifetime.lifetime.id);
@@ -136,11 +134,11 @@ impl<'v> Visitor<'v> for ConstrainedCollector {
     fn visit_ty(&mut self, ty: &'v hir::Ty) {
         match ty.node {
             hir::TyPath(hir::QPath::Resolved(Some(_), _))
-                | hir::TyPath(hir::QPath::TypeRelative(..)) => {
-                    // ignore lifetimes appearing in associated type
-                    // projections, as they are not *constrained*
-                    // (defined above)
-                }
+            | hir::TyPath(hir::QPath::TypeRelative(..)) => {
+                // ignore lifetimes appearing in associated type
+                // projections, as they are not *constrained*
+                // (defined above)
+            }
 
             hir::TyPath(hir::QPath::Resolved(None, ref path)) => {
                 // consider only the lifetimes on the final
