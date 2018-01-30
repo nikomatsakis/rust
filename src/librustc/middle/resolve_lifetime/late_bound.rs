@@ -122,60 +122,58 @@ pub(super) fn insert_late_bound_lifetimes(
             lifetime.lifetime.id
         );
     }
+}
 
-    return;
+struct ConstrainedCollector {
+    regions: FxHashSet<hir::LifetimeName>,
+}
 
-    struct ConstrainedCollector {
-        regions: FxHashSet<hir::LifetimeName>,
+impl<'v> Visitor<'v> for ConstrainedCollector {
+    fn nested_visit_map<'this>(&'this mut self) -> NestedVisitorMap<'this, 'v> {
+        NestedVisitorMap::None
     }
 
-    impl<'v> Visitor<'v> for ConstrainedCollector {
-        fn nested_visit_map<'this>(&'this mut self) -> NestedVisitorMap<'this, 'v> {
-            NestedVisitorMap::None
-        }
-
-        fn visit_ty(&mut self, ty: &'v hir::Ty) {
-            match ty.node {
-                hir::TyPath(hir::QPath::Resolved(Some(_), _))
+    fn visit_ty(&mut self, ty: &'v hir::Ty) {
+        match ty.node {
+            hir::TyPath(hir::QPath::Resolved(Some(_), _))
                 | hir::TyPath(hir::QPath::TypeRelative(..)) => {
                     // ignore lifetimes appearing in associated type
                     // projections, as they are not *constrained*
                     // (defined above)
                 }
 
-                hir::TyPath(hir::QPath::Resolved(None, ref path)) => {
-                    // consider only the lifetimes on the final
-                    // segment; I am not sure it's even currently
-                    // valid to have them elsewhere, but even if it
-                    // is, those would be potentially inputs to
-                    // projections
-                    if let Some(last_segment) = path.segments.last() {
-                        self.visit_path_segment(path.span, last_segment);
-                    }
-                }
-
-                _ => {
-                    intravisit::walk_ty(self, ty);
+            hir::TyPath(hir::QPath::Resolved(None, ref path)) => {
+                // consider only the lifetimes on the final
+                // segment; I am not sure it's even currently
+                // valid to have them elsewhere, but even if it
+                // is, those would be potentially inputs to
+                // projections
+                if let Some(last_segment) = path.segments.last() {
+                    self.visit_path_segment(path.span, last_segment);
                 }
             }
-        }
 
-        fn visit_lifetime(&mut self, lifetime_ref: &'v hir::Lifetime) {
-            self.regions.insert(lifetime_ref.name);
+            _ => {
+                intravisit::walk_ty(self, ty);
+            }
         }
     }
 
-    struct AllCollector {
-        regions: FxHashSet<hir::LifetimeName>,
+    fn visit_lifetime(&mut self, lifetime_ref: &'v hir::Lifetime) {
+        self.regions.insert(lifetime_ref.name);
+    }
+}
+
+struct AllCollector {
+    regions: FxHashSet<hir::LifetimeName>,
+}
+
+impl<'v> Visitor<'v> for AllCollector {
+    fn nested_visit_map<'this>(&'this mut self) -> NestedVisitorMap<'this, 'v> {
+        NestedVisitorMap::None
     }
 
-    impl<'v> Visitor<'v> for AllCollector {
-        fn nested_visit_map<'this>(&'this mut self) -> NestedVisitorMap<'this, 'v> {
-            NestedVisitorMap::None
-        }
-
-        fn visit_lifetime(&mut self, lifetime_ref: &'v hir::Lifetime) {
-            self.regions.insert(lifetime_ref.name);
-        }
+    fn visit_lifetime(&mut self, lifetime_ref: &'v hir::Lifetime) {
+        self.regions.insert(lifetime_ref.name);
     }
 }
