@@ -909,7 +909,7 @@ pub fn default_provide(providers: &mut ty::maps::Providers) {
     borrowck::provide(providers);
     mir::provide(providers);
     reachable::provide(providers);
-    resolve_lifetime::provide(providers);
+    resolve_lifetime::provide::provide(providers);
     rustc_privacy::provide(providers);
     typeck::provide(providers);
     ty::provide(providers);
