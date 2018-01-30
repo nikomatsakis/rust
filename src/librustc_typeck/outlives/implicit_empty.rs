@@ -24,15 +24,14 @@ use rustc::hir::def_id::{self, CrateNum, DefId, LOCAL_CRATE};
 // are initially empty but will grow during the inference step.
 
 //let mut inferred_outlives_predicates = map();
-pub fn empty<'tcx>(tcx: TyCtxt<'_, 'tcx, 'tcx>, crate_num: CrateNum)
+pub fn empty<'tcx>(tcx: TyCtxt<'_, 'tcx, 'tcx>)
     -> FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>> {
-    assert_eq!(crate_num, LOCAL_CRATE);
     let mut predicates = FxHashMap();
 
     {
         let mut visitor = EmptyImplicitVisitor {
+            tcx,
             predicates: &mut predicates,
-            crate_num: crate_num,
         };
 
 
@@ -43,18 +42,15 @@ pub fn empty<'tcx>(tcx: TyCtxt<'_, 'tcx, 'tcx>, crate_num: CrateNum)
     predicates
 }
 
-pub struct EmptyImplicitVisitor<'a, 'p: 'a> {
-    predicates: &'a mut FxHashMap<DefId, Rc<Vec<ty::Predicate<'p>>>>,
-    crate_num: CrateNum,
+pub struct EmptyImplicitVisitor<'cx, 'tcx: 'cx> {
+    tcx: TyCtxt<'cx, 'tcx, 'tcx>,
+    predicates: &'cx mut FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>,
 }
 
 impl<'a, 'p, 'v> ItemLikeVisitor<'v> for EmptyImplicitVisitor<'a, 'p> {
     fn visit_item(&mut self, item: &hir::Item) {
         //let def_id = def_id::LocalDefId(item.hir_id.owner).to_def_id();
-        let def_id = DefId {
-            krate: self.crate_num,
-            index: item.hir_id.owner,
-        };
+        let def_id = self.tcx.hir.local_def_id(item.id);
         self.predicates.insert(def_id, Rc::new(Vec::new()));
     }
 
