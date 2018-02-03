@@ -106,9 +106,35 @@ fn required_predicates_to_be_wf<'tcx>(
     tcx: TyCtxt<'_, 'tcx, 'tcx>,
     field_def: &ty::FieldDef,
 ) -> FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>> {
+
+    let mut predicates = FxHashMap();
     // Get the type of the field with identity substs applied.  For
     // now, let's just see if that causes horrible cycles.
-    let _ty = tcx.type_of(field_def.did);
+    let ty = tcx.type_of(field_def.did);
+    match ty.sty {
+        // For each type `&'a T`, we require `T: 'a`
+        ty::TyRef(r, mt) => {
+            let outlives_pred = ty::Binder(ty::OutlivesPredicate(mt.ty, r))
+                .to_predicate();
+            predicates.insert(
+                field_def.did,
+                Rc::new(vec![outlives_pred]),
+            );
+        }
+
+        // For each struct/enum/union type `Foo<'a, T>`, we can
+        // load the current set of inferred and explicit predicates from
+        // `inferred_outlives_map` and see if those include `T:
+        // 'a`
+        ty::TyAdt(def, substs) => {}
+
+        // For `TyDynamic` types, we can do the same, but using the `expredicates_of`
+        // query (those are not inferred).
+        ty::TyDynamic(data, r) => {}
+
+        _ => {}
+
+    }
 
     // At this point:
     //
@@ -116,6 +142,7 @@ fn required_predicates_to_be_wf<'tcx>(
     //   requirements of `_ty` and -- in particular -- any outlives requirements
     //   that `_ty` requires.
     //   - So for example if `_ty` is `&'a T`, then this would include `T: 'a`.
+    //
     // - There is some code for computing these WF requirements in `ty/wf.rs` but
     //   we can't really use it as is, and it's not clear we want to use it at all
     //   - The problem is that it is meant to run **after** this inference has been
@@ -128,7 +155,8 @@ fn required_predicates_to_be_wf<'tcx>(
     //     occurs at the top-level anyway, e.g. in the wrapper
     //     `ty::wf::obligations` -- we would be adding a new such
     //     wrapper anyway).
-    //   - Alternatively, we may be better off making a local copy of that logic that
+    //
+    // - Alternatively, we may be better off making a local copy of that logic that
     //     is specialized to our needs. This inference doesn't even have to be
     //     100% complete: anything we fail to cover will 'just' result in the user
     //     having to add manual annotation, not anything like unsoundness.
@@ -145,6 +173,7 @@ fn required_predicates_to_be_wf<'tcx>(
     //       - For `TyDynamic` types, we can do the same, but using the `expredicates_of`
     //         query (those are not inferred).
     //       - That's...it?
+    //
     //   - Either way, we will extract from the WF reuqirements a set
     //     of `T: 'a` requirements that must hold.
     //       - We only care when `'a` here maps to an early-bound
@@ -169,5 +198,6 @@ fn required_predicates_to_be_wf<'tcx>(
     //   Foo<'b, 'c>  ==> ['b, 'c]
     //   Vec<T>: 'a
     //   outlives_components(Vec<T>) = [T]
-    FxHashMap()
+
+    predicates
 }
