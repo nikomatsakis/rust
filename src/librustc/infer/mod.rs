@@ -26,7 +26,7 @@ use ty::subst::{Kind, Subst, Substs};
 use ty::{TyVid, IntVid, FloatVid};
 use ty::{self, Ty, TyCtxt};
 use ty::error::{ExpectedFound, TypeError, UnconstrainedNumeric};
-use ty::fold::{TypeFoldable, TypeFolder, TypeVisitor};
+use ty::fold::TypeFoldable;
 use ty::relate::RelateResult;
 use traits::{self, ObligationCause, PredicateObligations, Reveal};
 use rustc_data_structures::unify::{self, UnificationTable};
@@ -191,6 +191,7 @@ pub type SkolemizationMap<'tcx> = BTreeMap<ty::BoundRegion, ty::Region<'tcx>>;
 #[derive(Clone, Debug)]
 pub enum ValuePairs<'tcx> {
     Types(ExpectedFound<Ty<'tcx>>),
+    Regions(ExpectedFound<ty::Region<'tcx>>),
     TraitRefs(ExpectedFound<ty::TraitRef<'tcx>>),
     PolyTraitRefs(ExpectedFound<ty::PolyTraitRef<'tcx>>),
 }
@@ -1667,40 +1668,18 @@ impl RegionVariableOrigin {
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ValuePairs<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        match *self {
-            ValuePairs::Types(ref ef) => {
-                ValuePairs::Types(ef.fold_with(folder))
-            }
-            ValuePairs::TraitRefs(ref ef) => {
-                ValuePairs::TraitRefs(ef.fold_with(folder))
-            }
-            ValuePairs::PolyTraitRefs(ref ef) => {
-                ValuePairs::PolyTraitRefs(ef.fold_with(folder))
-            }
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        match *self {
-            ValuePairs::Types(ref ef) => ef.visit_with(visitor),
-            ValuePairs::TraitRefs(ref ef) => ef.visit_with(visitor),
-            ValuePairs::PolyTraitRefs(ref ef) => ef.visit_with(visitor),
-        }
+EnumTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for ValuePairs<'tcx> {
+        (ValuePairs::Types)(a),
+        (ValuePairs::Regions)(a),
+        (ValuePairs::TraitRefs)(a),
+        (ValuePairs::PolyTraitRefs)(a),
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for TypeTrace<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        TypeTrace {
-            cause: self.cause.fold_with(folder),
-            values: self.values.fold_with(folder)
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        self.cause.visit_with(visitor) || self.values.visit_with(visitor)
+BraceStructTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for TypeTrace<'tcx> {
+        cause, values
     }
 }
 
