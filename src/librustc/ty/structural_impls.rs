@@ -28,150 +28,32 @@ use std::rc::Rc;
 // For things that don't carry any arena-allocated data (and are
 // copy...), just add them to this list.
 
-macro_rules! CopyImpls {
-    ($($ty:ty,)+) => {
-        $(
-            impl<'tcx> Lift<'tcx> for $ty {
-                type Lifted = Self;
-                fn lift_to_tcx<'a, 'gcx>(&self, _: TyCtxt<'a, 'gcx, 'tcx>) -> Option<Self> {
-                    Some(*self)
-                }
-            }
-
-            impl<'tcx> TypeFoldable<'tcx> for $ty {
-                fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, _: &mut F) -> $ty {
-                    *self
-                }
-
-                fn super_visit_with<F: TypeVisitor<'tcx>>(&self, _: &mut F) -> bool {
-                    false
-                }
-            }
-        )+
-    }
-}
-
-CopyImpls! {
+CopyTypeFoldableImpls! {
     (),
+    bool,
+    usize,
+    u64,
+    ::syntax::ast::FloatTy,
+    ::syntax::ast::NodeId,
+    ::syntax_pos::symbol::Symbol,
+    ::hir::def::Def,
+    ::hir::def_id::DefId,
+    ::hir::MatchSource,
+    ::hir::Mutability,
     ::hir::Unsafety,
     ::syntax::abi::Abi,
-    ::hir::def_id::DefId,
     ::mir::Local,
     ::traits::Reveal,
+    ::ty::adjustment::AutoBorrowMutability,
+    ::ty::AdtKind,
+    // Including `BoundRegion` is a *bit* dubious, but direct
+    // references to bound region appear in `ty::Error`, and aren't
+    // really meant to be folded. In general, we can only fold a fully
+    // general `Region`.
+    ::ty::BoundRegion,
+    ::ty::ClosureKind,
+    ::ty::IntVarValue,
     ::syntax_pos::Span,
-}
-
-///////////////////////////////////////////////////////////////////////////
-// Macros
-//
-// When possible, use one of these (relatively) convenient macros to write
-// the impls for you.
-
-#[macro_export]
-macro_rules! BraceStructLiftImpl {
-    (impl<$($p:tt),*> Lift<$tcx:tt> for $s:path {
-        type Lifted = $lifted:ty;
-        $($field:ident),* $(,)*
-    } $(where $($wc:tt)*)*) => {
-        impl<$($p),*> $crate::ty::Lift<$tcx> for $s
-            $(where $($wc)*)*
-        {
-            type Lifted = $lifted;
-
-            fn lift_to_tcx<'b, 'gcx>(&self, tcx: TyCtxt<'b, 'gcx, 'tcx>) -> Option<$lifted> {
-                $(let $field = tcx.lift(&self.$field)?;)*
-                Some(Self::Lifted { $($field),* })
-            }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! EnumLiftImpl {
-    (impl<$($p:tt),*> Lift<$tcx:tt> for $s:path {
-        type Lifted = $lifted:ty;
-        $(
-            ($variant:path) ( $( $variant_arg:ident),* )
-        ),*
-        $(,)*
-    } $(where $($wc:tt)*)*) => {
-        impl<$($p),*> $crate::ty::Lift<$tcx> for $s
-            $(where $($wc)*)*
-        {
-            type Lifted = $lifted;
-
-            fn lift_to_tcx<'b, 'gcx>(&self, tcx: TyCtxt<'b, 'gcx, 'tcx>) -> Option<$lifted> {
-                match self {
-                    $($variant ( $($variant_arg),* ) => {
-                        Some($variant ( $(tcx.lift($variant_arg)?),* ))
-                    })*
-                }
-            }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! BraceStructTypeFoldableImpl {
-    (impl<$($p:tt),*> TypeFoldable<$tcx:tt> for $s:path {
-        $($field:ident),* $(,)*
-    } $(where $($wc:tt)*)*) => {
-        impl<$($p),*> $crate::ty::fold::TypeFoldable<$tcx> for $s
-            $(where $($wc)*)*
-        {
-            fn super_fold_with<'gcx: $tcx, V: $crate::ty::fold::TypeFolder<'gcx, $tcx>>(
-                &self,
-                folder: &mut V,
-            ) -> Self {
-                let $s { $($field,)* } = self;
-                $s { $($field: $field.fold_with(folder),)* }
-            }
-
-            fn super_visit_with<V: $crate::ty::fold::TypeVisitor<$tcx>>(
-                &self,
-                visitor: &mut V,
-            ) -> bool {
-                let $s { $($field,)* } = self;
-                false $(|| $field.visit_with(visitor))*
-            }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! EnumTypeFoldableImpl {
-    (impl<$($p:tt),*> TypeFoldable<$tcx:tt> for $s:path {
-        $(
-            ($variant:path) ( $( $variant_arg:ident),* )
-        ),*
-        $(,)*
-    } $(where $($wc:tt)*)*) => {
-        impl<$($p),*> $crate::ty::fold::TypeFoldable<$tcx> for $s
-            $(where $($wc)*)*
-        {
-            fn super_fold_with<'gcx: $tcx, V: $crate::ty::fold::TypeFolder<'gcx, $tcx>>(
-                &self,
-                folder: &mut V,
-            ) -> Self {
-                match self {
-                    $($variant ( $($variant_arg),* ) => {
-                        $variant ( $($variant_arg.fold_with(folder)),* )
-                    })*
-                }
-            }
-
-            fn super_visit_with<V: $crate::ty::fold::TypeVisitor<$tcx>>(
-                &self,
-                visitor: &mut V,
-            ) -> bool {
-                match self {
-                    $($variant ( $($variant_arg),* ) => {
-                        false $(|| $variant_arg.visit_with(visitor))*
-                    })*
-                }
-            }
-        }
-    };
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -674,14 +556,11 @@ impl<'tcx, T:TypeFoldable<'tcx>, U:TypeFoldable<'tcx>> TypeFoldable<'tcx> for (T
     }
 }
 
-impl<'tcx, T: TypeFoldable<'tcx>> TypeFoldable<'tcx> for Option<T> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        self.as_ref().map(|t| t.fold_with(folder))
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        self.iter().any(|t| t.visit_with(visitor))
-    }
+EnumTypeFoldableImpl! {
+    impl<'tcx, T> TypeFoldable<'tcx> for Option<T> {
+        (Some)(a),
+        (None),
+    } where T: TypeFoldable<'tcx>
 }
 
 impl<'tcx, T: TypeFoldable<'tcx>> TypeFoldable<'tcx> for Rc<T> {
@@ -748,22 +627,11 @@ impl<'tcx> TypeFoldable<'tcx> for &'tcx ty::Slice<ty::ExistentialPredicate<'tcx>
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ty::ExistentialPredicate<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self  {
-        use ty::ExistentialPredicate::*;
-        match *self {
-            Trait(ref tr) => Trait(tr.fold_with(folder)),
-            Projection(ref p) => Projection(p.fold_with(folder)),
-            AutoTrait(did) => AutoTrait(did),
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        match *self {
-            ty::ExistentialPredicate::Trait(ref tr) => tr.visit_with(visitor),
-            ty::ExistentialPredicate::Projection(ref p) => p.visit_with(visitor),
-            ty::ExistentialPredicate::AutoTrait(_) => false,
-        }
+EnumTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for ty::ExistentialPredicate<'tcx> {
+        (ty::ExistentialPredicate::Trait)(a),
+        (ty::ExistentialPredicate::Projection)(a),
+        (ty::ExistentialPredicate::AutoTrait)(a),
     }
 }
 
@@ -848,13 +716,9 @@ impl<'tcx> TypeFoldable<'tcx> for Ty<'tcx> {
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ty::TypeAndMut<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        ty::TypeAndMut { ty: self.ty.fold_with(folder), mutbl: self.mutbl }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        self.ty.visit_with(visitor)
+BraceStructTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for ty::TypeAndMut<'tcx> {
+        ty, mutbl
     }
 }
 
@@ -864,20 +728,9 @@ BraceStructTypeFoldableImpl! {
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ty::FnSig<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        let inputs_and_output = self.inputs_and_output.fold_with(folder);
-        ty::FnSig {
-            inputs_and_output: folder.tcx().intern_type_list(&inputs_and_output),
-            variadic: self.variadic,
-            unsafety: self.unsafety,
-            abi: self.abi,
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        self.inputs().iter().any(|i| i.visit_with(visitor)) ||
-        self.output().visit_with(visitor)
+BraceStructTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for ty::FnSig<'tcx> {
+        inputs_and_output, variadic, unsafety, abi
     }
 }
 
@@ -916,28 +769,15 @@ impl<'tcx> TypeFoldable<'tcx> for ty::Region<'tcx> {
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ty::ClosureSubsts<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        ty::ClosureSubsts {
-            substs: self.substs.fold_with(folder),
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        self.substs.visit_with(visitor)
+BraceStructTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for ty::ClosureSubsts<'tcx> {
+        substs,
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ty::GeneratorInterior<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        ty::GeneratorInterior {
-           witness: self.witness.fold_with(folder),
-           movable: self.movable,
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        self.witness.visit_with(visitor)
+BraceStructTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for ty::GeneratorInterior<'tcx> {
+        witness, movable,
     }
 }
 
@@ -948,73 +788,31 @@ BraceStructTypeFoldableImpl! {
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ty::adjustment::Adjust<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        match *self {
-            ty::adjustment::Adjust::NeverToAny |
-            ty::adjustment::Adjust::ReifyFnPointer |
-            ty::adjustment::Adjust::UnsafeFnPointer |
-            ty::adjustment::Adjust::ClosureFnPointer |
-            ty::adjustment::Adjust::MutToConstPointer |
-            ty::adjustment::Adjust::Unsize => self.clone(),
-            ty::adjustment::Adjust::Deref(ref overloaded) => {
-                ty::adjustment::Adjust::Deref(overloaded.fold_with(folder))
-            }
-            ty::adjustment::Adjust::Borrow(ref autoref) => {
-                ty::adjustment::Adjust::Borrow(autoref.fold_with(folder))
-            }
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        match *self {
-            ty::adjustment::Adjust::NeverToAny |
-            ty::adjustment::Adjust::ReifyFnPointer |
-            ty::adjustment::Adjust::UnsafeFnPointer |
-            ty::adjustment::Adjust::ClosureFnPointer |
-            ty::adjustment::Adjust::MutToConstPointer |
-            ty::adjustment::Adjust::Unsize => false,
-            ty::adjustment::Adjust::Deref(ref overloaded) => {
-                overloaded.visit_with(visitor)
-            }
-            ty::adjustment::Adjust::Borrow(ref autoref) => {
-                autoref.visit_with(visitor)
-            }
-        }
+EnumTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for ty::adjustment::Adjust<'tcx> {
+        (ty::adjustment::Adjust::NeverToAny),
+        (ty::adjustment::Adjust::ReifyFnPointer),
+        (ty::adjustment::Adjust::UnsafeFnPointer),
+        (ty::adjustment::Adjust::ClosureFnPointer),
+        (ty::adjustment::Adjust::MutToConstPointer),
+        (ty::adjustment::Adjust::Unsize),
+        (ty::adjustment::Adjust::Deref)(a),
+        (ty::adjustment::Adjust::Borrow)(a),
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ty::adjustment::OverloadedDeref<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        ty::adjustment::OverloadedDeref {
-            region: self.region.fold_with(folder),
-            mutbl: self.mutbl,
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        self.region.visit_with(visitor)
+BraceStructTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for ty::adjustment::OverloadedDeref<'tcx> {
+        region, mutbl,
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ty::adjustment::AutoBorrow<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        match *self {
-            ty::adjustment::AutoBorrow::Ref(ref r, m) => {
-                ty::adjustment::AutoBorrow::Ref(r.fold_with(folder), m)
-            }
-            ty::adjustment::AutoBorrow::RawPtr(m) => ty::adjustment::AutoBorrow::RawPtr(m)
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        match *self {
-            ty::adjustment::AutoBorrow::Ref(r, _m) => r.visit_with(visitor),
-            ty::adjustment::AutoBorrow::RawPtr(_m) => false,
-        }
+EnumTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for ty::adjustment::AutoBorrow<'tcx> {
+        (ty::adjustment::AutoBorrow::Ref)(a, b),
+        (ty::adjustment::AutoBorrow::RawPtr)(m),
     }
 }
-
 
 BraceStructTypeFoldableImpl! {
     impl<'tcx> TypeFoldable<'tcx> for ty::GenericPredicates<'tcx> {
@@ -1033,46 +831,18 @@ impl<'tcx> TypeFoldable<'tcx> for &'tcx ty::Slice<ty::Predicate<'tcx>> {
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        match *self {
-            ty::Predicate::Trait(ref a) =>
-                ty::Predicate::Trait(a.fold_with(folder)),
-            ty::Predicate::Equate(ref binder) =>
-                ty::Predicate::Equate(binder.fold_with(folder)),
-            ty::Predicate::Subtype(ref binder) =>
-                ty::Predicate::Subtype(binder.fold_with(folder)),
-            ty::Predicate::RegionOutlives(ref binder) =>
-                ty::Predicate::RegionOutlives(binder.fold_with(folder)),
-            ty::Predicate::TypeOutlives(ref binder) =>
-                ty::Predicate::TypeOutlives(binder.fold_with(folder)),
-            ty::Predicate::Projection(ref binder) =>
-                ty::Predicate::Projection(binder.fold_with(folder)),
-            ty::Predicate::WellFormed(data) =>
-                ty::Predicate::WellFormed(data.fold_with(folder)),
-            ty::Predicate::ClosureKind(closure_def_id, closure_substs, kind) =>
-                ty::Predicate::ClosureKind(closure_def_id, closure_substs.fold_with(folder), kind),
-            ty::Predicate::ObjectSafe(trait_def_id) =>
-                ty::Predicate::ObjectSafe(trait_def_id),
-            ty::Predicate::ConstEvaluatable(def_id, substs) =>
-                ty::Predicate::ConstEvaluatable(def_id, substs.fold_with(folder)),
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        match *self {
-            ty::Predicate::Trait(ref a) => a.visit_with(visitor),
-            ty::Predicate::Equate(ref binder) => binder.visit_with(visitor),
-            ty::Predicate::Subtype(ref binder) => binder.visit_with(visitor),
-            ty::Predicate::RegionOutlives(ref binder) => binder.visit_with(visitor),
-            ty::Predicate::TypeOutlives(ref binder) => binder.visit_with(visitor),
-            ty::Predicate::Projection(ref binder) => binder.visit_with(visitor),
-            ty::Predicate::WellFormed(data) => data.visit_with(visitor),
-            ty::Predicate::ClosureKind(_closure_def_id, closure_substs, _kind) =>
-                closure_substs.visit_with(visitor),
-            ty::Predicate::ObjectSafe(_trait_def_id) => false,
-            ty::Predicate::ConstEvaluatable(_def_id, substs) => substs.visit_with(visitor),
-        }
+EnumTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
+        (ty::Predicate::Trait)(a),
+        (ty::Predicate::Equate)(a),
+        (ty::Predicate::Subtype)(a),
+        (ty::Predicate::RegionOutlives)(a),
+        (ty::Predicate::TypeOutlives)(a),
+        (ty::Predicate::Projection)(a),
+        (ty::Predicate::WellFormed)(a),
+        (ty::Predicate::ClosureKind)(a, b, c),
+        (ty::Predicate::ObjectSafe)(a),
+        (ty::Predicate::ConstEvaluatable)(a, b),
     }
 }
 
@@ -1100,94 +870,51 @@ BraceStructTypeFoldableImpl! {
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ty::EquatePredicate<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        ty::EquatePredicate(self.0.fold_with(folder), self.1.fold_with(folder))
-    }
+BraceStructTypeFoldableImpl! {
+    impl<'tcx, T> TypeFoldable<'tcx> for ty::ParamEnvAnd<'tcx, T> {
+        param_env, value
+    } where T: TypeFoldable<'tcx>
+}
 
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        self.0.visit_with(visitor) || self.1.visit_with(visitor)
+TupleStructTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for ty::EquatePredicate<'tcx> {
+        a, b
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ty::SubtypePredicate<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        ty::SubtypePredicate {
-            a_is_expected: self.a_is_expected,
-            a: self.a.fold_with(folder),
-            b: self.b.fold_with(folder)
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        self.a.visit_with(visitor) || self.b.visit_with(visitor)
+BraceStructTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for ty::SubtypePredicate<'tcx> {
+        a_is_expected, a, b
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ty::TraitPredicate<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        ty::TraitPredicate {
-            trait_ref: self.trait_ref.fold_with(folder)
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        self.trait_ref.visit_with(visitor)
+BraceStructTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for ty::TraitPredicate<'tcx> {
+        trait_ref
     }
 }
 
-impl<'tcx,T,U> TypeFoldable<'tcx> for ty::OutlivesPredicate<T,U>
-    where T : TypeFoldable<'tcx>,
-          U : TypeFoldable<'tcx>,
-{
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        ty::OutlivesPredicate(self.0.fold_with(folder),
-                              self.1.fold_with(folder))
-    }
+TupleStructTypeFoldableImpl! {
+    impl<'tcx,T,U> TypeFoldable<'tcx> for ty::OutlivesPredicate<T,U> {
+        a, b
+    } where T : TypeFoldable<'tcx>, U : TypeFoldable<'tcx>,
+}
 
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        self.0.visit_with(visitor) || self.1.visit_with(visitor)
+BraceStructTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for ty::ClosureUpvar<'tcx> {
+        def, span, ty
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ty::ClosureUpvar<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        ty::ClosureUpvar {
-            def: self.def,
-            span: self.span,
-            ty: self.ty.fold_with(folder),
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        self.ty.visit_with(visitor)
-    }
+BraceStructTypeFoldableImpl! {
+    impl<'tcx, T> TypeFoldable<'tcx> for ty::error::ExpectedFound<T> {
+        expected, found
+    } where T: TypeFoldable<'tcx>
 }
 
-impl<'tcx, T: TypeFoldable<'tcx>> TypeFoldable<'tcx> for ty::error::ExpectedFound<T> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        ty::error::ExpectedFound {
-            expected: self.expected.fold_with(folder),
-            found: self.found.fold_with(folder),
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        self.expected.visit_with(visitor) || self.found.visit_with(visitor)
-    }
-}
-
-impl<'tcx> TypeFoldable<'tcx> for type_variable::Default<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        type_variable::Default {
-            ty: self.ty.fold_with(folder),
-            origin_span: self.origin_span,
-            def_id: self.def_id
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        self.ty.visit_with(visitor)
+BraceStructTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for type_variable::Default<'tcx> {
+        ty, origin_span, def_id
     }
 }
 
@@ -1201,71 +928,29 @@ impl<'tcx, T: TypeFoldable<'tcx>, I: Idx> TypeFoldable<'tcx> for IndexVec<I, T> 
     }
 }
 
-impl<'tcx> TypeFoldable<'tcx> for ty::error::TypeError<'tcx> {
-    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        use ty::error::TypeError::*;
-
-        match *self {
-            Mismatch => Mismatch,
-            UnsafetyMismatch(x) => UnsafetyMismatch(x.fold_with(folder)),
-            AbiMismatch(x) => AbiMismatch(x.fold_with(folder)),
-            Mutability => Mutability,
-            TupleSize(x) => TupleSize(x),
-            FixedArraySize(x) => FixedArraySize(x),
-            ArgCount => ArgCount,
-            RegionsDoesNotOutlive(a, b) => {
-                RegionsDoesNotOutlive(a.fold_with(folder), b.fold_with(folder))
-            },
-            RegionsInsufficientlyPolymorphic(a, b) => {
-                RegionsInsufficientlyPolymorphic(a, b.fold_with(folder))
-            },
-            RegionsOverlyPolymorphic(a, b) => {
-                RegionsOverlyPolymorphic(a, b.fold_with(folder))
-            },
-            IntMismatch(x) => IntMismatch(x),
-            FloatMismatch(x) => FloatMismatch(x),
-            Traits(x) => Traits(x),
-            VariadicMismatch(x) => VariadicMismatch(x),
-            CyclicTy(t) => CyclicTy(t.fold_with(folder)),
-            ProjectionMismatched(x) => ProjectionMismatched(x),
-            ProjectionBoundsLength(x) => ProjectionBoundsLength(x),
-            Sorts(x) => Sorts(x.fold_with(folder)),
-            TyParamDefaultMismatch(ref x) => TyParamDefaultMismatch(x.fold_with(folder)),
-            ExistentialMismatch(x) => ExistentialMismatch(x.fold_with(folder)),
-            OldStyleLUB(ref x) => OldStyleLUB(x.fold_with(folder)),
-        }
-    }
-
-    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
-        use ty::error::TypeError::*;
-
-        match *self {
-            UnsafetyMismatch(x) => x.visit_with(visitor),
-            AbiMismatch(x) => x.visit_with(visitor),
-            RegionsDoesNotOutlive(a, b) => {
-                a.visit_with(visitor) || b.visit_with(visitor)
-            },
-            RegionsInsufficientlyPolymorphic(_, b) |
-            RegionsOverlyPolymorphic(_, b) => {
-                b.visit_with(visitor)
-            },
-            Sorts(x) => x.visit_with(visitor),
-            OldStyleLUB(ref x) => x.visit_with(visitor),
-            TyParamDefaultMismatch(ref x) => x.visit_with(visitor),
-            ExistentialMismatch(x) => x.visit_with(visitor),
-            CyclicTy(t) => t.visit_with(visitor),
-            Mismatch |
-            Mutability |
-            TupleSize(_) |
-            FixedArraySize(_) |
-            ArgCount |
-            IntMismatch(_) |
-            FloatMismatch(_) |
-            Traits(_) |
-            VariadicMismatch(_) |
-            ProjectionMismatched(_) |
-            ProjectionBoundsLength(_) => false,
-        }
+EnumTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for ty::error::TypeError<'tcx> {
+        (ty::error::TypeError::Mismatch),
+        (ty::error::TypeError::UnsafetyMismatch)(x),
+        (ty::error::TypeError::AbiMismatch)(x),
+        (ty::error::TypeError::Mutability),
+        (ty::error::TypeError::TupleSize)(x),
+        (ty::error::TypeError::FixedArraySize)(x),
+        (ty::error::TypeError::ArgCount),
+        (ty::error::TypeError::RegionsDoesNotOutlive)(a, b),
+        (ty::error::TypeError::RegionsInsufficientlyPolymorphic)(a, b),
+        (ty::error::TypeError::RegionsOverlyPolymorphic)(a, b),
+        (ty::error::TypeError::IntMismatch)(x),
+        (ty::error::TypeError::FloatMismatch)(x),
+        (ty::error::TypeError::Traits)(x),
+        (ty::error::TypeError::VariadicMismatch)(x),
+        (ty::error::TypeError::CyclicTy)(t),
+        (ty::error::TypeError::ProjectionMismatched)(x),
+        (ty::error::TypeError::ProjectionBoundsLength)(x),
+        (ty::error::TypeError::Sorts)(x),
+        (ty::error::TypeError::TyParamDefaultMismatch)(x),
+        (ty::error::TypeError::ExistentialMismatch)(x),
+        (ty::error::TypeError::OldStyleLUB)(x),
     }
 }
 
