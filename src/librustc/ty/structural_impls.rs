@@ -535,6 +535,13 @@ impl<'a, 'tcx> Lift<'tcx> for ty::layout::LayoutError<'a> {
     }
 }
 
+BraceStructLiftImpl! {
+    impl<'a, 'tcx> Lift<'tcx> for ::infer::canonical::CanonicalVarValues<'a> {
+        type Lifted = ::infer::canonical::CanonicalVarValues<'tcx>;
+        var_values,
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////
 // TypeFoldable implementations.
 //
@@ -545,6 +552,12 @@ impl<'a, 'tcx> Lift<'tcx> for ty::layout::LayoutError<'a> {
 // override the behavior, but there are a lot of random types and one
 // can easily refactor the folding into the TypeFolder trait as
 // needed.
+
+BraceStructTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for ::infer::canonical::CanonicalVarValues<'tcx> {
+        var_values,
+    }
+}
 
 impl<'tcx, T:TypeFoldable<'tcx>, U:TypeFoldable<'tcx>> TypeFoldable<'tcx> for (T, U) {
     fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> (T, U) {

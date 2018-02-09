@@ -324,7 +324,7 @@ macro_rules! newtype_index {
     );
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct IndexVec<I: Idx, T> {
     pub raw: Vec<T>,
     _marker: PhantomData<fn(&I)>
