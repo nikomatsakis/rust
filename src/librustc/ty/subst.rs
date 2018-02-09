@@ -11,7 +11,7 @@
 // Type substitutions.
 
 use hir::def_id::DefId;
-use ty::{self, Slice, Region, Ty, TyCtxt};
+use ty::{self, Lift, Slice, Region, Ty, TyCtxt};
 use ty::fold::{TypeFoldable, TypeFolder, TypeVisitor};
 
 use serialize::{self, Encodable, Encoder, Decodable, Decoder};
@@ -116,6 +116,20 @@ impl<'tcx> fmt::Display for Kind<'tcx> {
         } else {
             // FIXME(RFC 2000): extend this if/else chain when we support const generic.
             unimplemented!();
+        }
+    }
+}
+
+impl<'a, 'tcx> Lift<'tcx> for Kind<'a> {
+    type Lifted = Kind<'tcx>;
+
+    fn lift_to_tcx<'cx, 'gcx>(&self, tcx: TyCtxt<'cx, 'gcx, 'tcx>) -> Option<Self::Lifted> {
+        if let Some(ty) = self.as_type() {
+            ty.lift_to_tcx(tcx).map(Kind::from)
+        } else if let Some(r) = self.as_region() {
+            r.lift_to_tcx(tcx).map(Kind::from)
+        } else {
+            bug!()
         }
     }
 }

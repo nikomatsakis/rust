@@ -142,13 +142,7 @@ pub fn relate_substs<'a, 'gcx, 'tcx, R>(relation: &mut R,
 
     let params = a_subst.iter().zip(b_subst).enumerate().map(|(i, (a, b))| {
         let variance = variances.map_or(ty::Invariant, |v| v[i]);
-        if let (Some(a_ty), Some(b_ty)) = (a.as_type(), b.as_type()) {
-            Ok(Kind::from(relation.relate_with_variance(variance, &a_ty, &b_ty)?))
-        } else if let (Some(a_r), Some(b_r)) = (a.as_region(), b.as_region()) {
-            Ok(Kind::from(relation.relate_with_variance(variance, &a_r, &b_r)?))
-        } else {
-            bug!()
-        }
+        relation.relate_with_variance(variance, a, b)
     });
 
     Ok(tcx.mk_substs(params)?)
@@ -676,6 +670,25 @@ impl<'tcx, T: Relate<'tcx>> Relate<'tcx> for Box<T> {
         let a: &T = a;
         let b: &T = b;
         Ok(Box::new(relation.relate(a, b)?))
+    }
+}
+
+impl<'tcx> Relate<'tcx> for Kind<'tcx> {
+    fn relate<'a, 'gcx, R>(
+        relation: &mut R,
+        a: &Kind<'tcx>,
+        b: &Kind<'tcx>
+    ) -> RelateResult<'tcx, Kind<'tcx>>
+    where
+        R: TypeRelation<'a, 'gcx, 'tcx>, 'gcx: 'a+'tcx, 'tcx: 'a,
+    {
+        if let (Some(a_ty), Some(b_ty)) = (a.as_type(), b.as_type()) {
+            Ok(Kind::from(relation.relate(&a_ty, &b_ty)?))
+        } else if let (Some(a_r), Some(b_r)) = (a.as_region(), b.as_region()) {
+            Ok(Kind::from(relation.relate(&a_r, &b_r)?))
+        } else {
+            bug!()
+        }
     }
 }
 
