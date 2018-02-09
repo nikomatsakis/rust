@@ -10,7 +10,8 @@
 
 use dep_graph::SerializedDepNodeIndex;
 use hir::def_id::{CrateNum, DefId, DefIndex};
-use ty::{self, Ty, TyCtxt};
+use infer::canonical::Canonical;
+use ty::{self, ParamEnvAnd, Ty, TyCtxt};
 use ty::maps::queries;
 use ty::subst::Substs;
 
@@ -47,6 +48,18 @@ impl<'tcx, M: QueryConfig<Key=DefId>> QueryDescription<'tcx> for M {
             let name = unsafe { ::std::intrinsics::type_name::<M>() };
             format!("processing `{}` applied to `{:?}`", name, def_id)
         }
+    }
+}
+
+impl<'tcx> QueryDescription<'tcx> for queries::normalize_projection_ty<'tcx> {
+    fn describe(_tcx: TyCtxt, goal: &'tcx Canonical<ParamEnvAnd<'tcx, ty::ProjectionTy<'tcx>>>) -> String {
+        format!("normalizing `{:?}`", goal)
+    }
+}
+
+impl<'tcx> QueryDescription<'tcx> for queries::normalize_ty_after_erasing_regions<'tcx> {
+    fn describe(_tcx: TyCtxt, goal: ParamEnvAnd<'tcx, Ty<'tcx>>) -> String {
+        format!("normalizing `{:?}`", goal)
     }
 }
 

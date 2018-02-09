@@ -24,7 +24,7 @@ use ty::{Region, RegionVid};
 use ty::ReStatic;
 use ty::{BrFresh, ReLateBound, ReSkolemized, ReVar};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::mem;
 use std::u32;
@@ -82,7 +82,7 @@ pub type VarOrigins = IndexVec<RegionVid, RegionVariableOrigin>;
 /// Describes constraints between the region variables and other
 /// regions, as well as other conditions that must be verified, or
 /// assumptions that can be made.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct RegionConstraintData<'tcx> {
     /// Constraints of the form `A <= B`, where either `A` or `B` can
     /// be a region variable (or neither, as it happens).
@@ -114,7 +114,7 @@ pub struct RegionConstraintData<'tcx> {
     /// we record the fact that `'a <= 'b` is implied by the fn
     /// signature, and then ignore the constraint when solving
     /// equations. This is a bit of a hack but seems to work.
-    pub givens: FxHashSet<(Region<'tcx>, ty::RegionVid)>,
+    pub givens: BTreeSet<(Region<'tcx>, ty::RegionVid)>,
 }
 
 /// A constraint that influences the inference process.
@@ -142,7 +142,7 @@ pub enum Constraint<'tcx> {
 /// outlive `RS`. Therefore verify that `R <= RS[i]` for some
 /// `i`. Inference variables may be involved (but this verification
 /// step doesn't influence inference).
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Verify<'tcx> {
     pub kind: GenericKind<'tcx>,
     pub origin: SubregionOrigin<'tcx>,
@@ -159,7 +159,7 @@ pub enum GenericKind<'tcx> {
 /// When we introduce a verification step, we wish to test that a
 /// particular region (let's call it `'min`) meets some bound.
 /// The bound is described the by the following grammar:
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum VerifyBound<'tcx> {
     /// B = exists {R} --> some 'r in {R} must outlive 'min
     ///

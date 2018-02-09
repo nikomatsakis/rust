@@ -35,6 +35,7 @@ use ty::subst::{Kind, Substs};
 use ty::ReprOptions;
 use ty::Instance;
 use traits;
+use traits::query::normalize::CanonicalProjectionGoal;
 use ty::{self, Ty, TypeAndMut};
 use ty::{TyS, TypeVariants, Slice};
 use ty::{AdtKind, AdtDef, ClosureSubsts, GeneratorInterior, Region, Const};
@@ -104,6 +105,8 @@ pub struct GlobalArenas<'tcx> {
     tables: TypedArena<ty::TypeckTables<'tcx>>,
     /// miri allocations
     const_allocs: TypedArena<interpret::Allocation>,
+
+    canonical_projection_goal_arena: TypedArena<CanonicalProjectionGoal<'tcx>>,
 }
 
 impl<'tcx> GlobalArenas<'tcx> {
@@ -117,6 +120,7 @@ impl<'tcx> GlobalArenas<'tcx> {
             mir: TypedArena::new(),
             tables: TypedArena::new(),
             const_allocs: TypedArena::new(),
+            canonical_projection_goal_arena: TypedArena::new(),
         }
     }
 }
@@ -886,6 +890,12 @@ pub struct GlobalCtxt<'tcx> {
     pub tx_to_llvm_workers: mpsc::Sender<Box<Any + Send>>,
 
     output_filenames: Arc<OutputFilenames>,
+
+    /// HashSet used to canonicalize interned canonical projection
+    /// goals. Each new unique instance is allocated in an arena for
+    /// use as a query key.
+    canonical_projection_goal_set: RefCell<FxHashSet<Interned<'tcx, CanonicalProjectionGoal<'tcx>>>>,
+
 }
 
 /// Everything needed to efficiently work with interned allocations
@@ -1202,6 +1212,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             dep_graph: dep_graph.clone(),
             on_disk_query_result_cache,
             types: common_types,
+            canonical_projection_goal_set: RefCell::new(FxHashSet()),
             trait_map,
             export_map: resolutions.export_map.into_iter().map(|(k, v)| {
                 (k, Rc::new(v))
@@ -1686,7 +1697,7 @@ impl<'a, 'tcx> TyCtxt<'a, 'tcx, 'tcx> {
 
 
 /// An entry in an interner.
-struct Interned<'tcx, T: 'tcx+?Sized>(&'tcx T);
+pub struct Interned<'tcx, T: 'tcx+?Sized>(&'tcx T); // FIXME pub is just for annoying privacy rules
 
 // NB: An Interned<Ty> compares and hashes as a sty.
 impl<'tcx> PartialEq for Interned<'tcx, TyS<'tcx>> {
@@ -1739,6 +1750,26 @@ impl<'tcx: 'lcx, 'lcx> Borrow<[Kind<'lcx>]> for Interned<'tcx, Substs<'tcx>> {
 impl<'tcx> Borrow<RegionKind> for Interned<'tcx, RegionKind> {
     fn borrow<'a>(&'a self) -> &'a RegionKind {
         &self.0
+    }
+}
+
+impl<'tcx> Borrow<CanonicalProjectionGoal<'tcx>> for Interned<'tcx, CanonicalProjectionGoal<'tcx>> {
+    fn borrow<'a>(&'a self) -> &'a CanonicalProjectionGoal<'tcx> {
+        &self.0
+    }
+}
+
+impl<'tcx> PartialEq for Interned<'tcx, CanonicalProjectionGoal<'tcx>> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<'tcx> Eq for Interned<'tcx, CanonicalProjectionGoal<'tcx>> { }
+
+impl<'tcx> Hash for Interned<'tcx, CanonicalProjectionGoal<'tcx>> {
+    fn hash<H: Hasher>(&self, s: &mut H) {
+        self.0.hash(s)
     }
 }
 
@@ -1813,7 +1844,7 @@ macro_rules! intern_method {
 }
 
 macro_rules! direct_interners {
-    ($lt_tcx:tt, $($name:ident: $method:ident($needs_infer:expr) -> $ty:ty),+) => {
+    ($lt_tcx:tt, $($name:ident: $method:ident($needs_infer:expr) -> $ty:ty,)+) => {
         $(impl<$lt_tcx> PartialEq for Interned<$lt_tcx, $ty> {
             fn eq(&self, other: &Self) -> bool {
                 self.0 == other.0
@@ -1843,7 +1874,7 @@ direct_interners!('tcx,
             _ => false
         }
     }) -> RegionKind,
-    const_: mk_const(|c: &Const| keep_local(&c.ty) || keep_local(&c.val)) -> Const<'tcx>
+    const_: mk_const(|c: &Const| keep_local(&c.ty) || keep_local(&c.val)) -> Const<'tcx>,
 );
 
 macro_rules! slice_interners {
@@ -2404,4 +2435,55 @@ pub fn provide(providers: &mut ty::maps::Providers) {
     providers.fully_normalize_monormophic_ty = |tcx, ty| {
         tcx.fully_normalize_associated_types_in(&ty)
     };
+}
+
+/// A trait implemented by types that can be canonicalized.
+pub trait CanonicalIntern<'gcx>
+where
+    Self: Sized + Hash + Eq,
+    Self: 'gcx,
+{
+    /// The arena in which new instances of this type should be mapped.
+    fn arena(gcx: TyCtxt<'_, 'gcx, '_>) -> &'gcx TypedArena<Self>;
+
+    /// The set which we will use to detect duplicates.
+    fn set<'cx>(gcx: TyCtxt<'cx, 'gcx, '_>) -> &'cx RefCell<FxHashSet<Interned<'gcx, Self>>>;
+
+    /// If `self` has already been interned, return that value.
+    /// Otherwise, move into the global arena and return resulting
+    /// reference.
+    fn intern_into(self, gcx: TyCtxt<'_, 'gcx, '_>) -> &'gcx Self;
+}
+
+impl<'gcx> CanonicalIntern<'gcx> for CanonicalProjectionGoal<'gcx> {
+    fn arena(gcx: TyCtxt<'_, 'gcx, '_>) -> &'gcx TypedArena<Self> {
+        &gcx.global_arenas.canonical_projection_goal_arena
+    }
+
+    fn set<'cx>(gcx: TyCtxt<'cx, 'gcx, '_>) -> &'cx RefCell<FxHashSet<Interned<'gcx, Self>>> {
+        &gcx.canonical_projection_goal_set
+    }
+
+    fn intern_into(self, gcx: TyCtxt<'_, 'gcx, '_>) -> &'gcx Self {
+        intern_into_impl(self, gcx)
+    }
+}
+
+/// Annoyingly, we can't put this in the trait definition because of
+/// the dependencies on the private `Interned` type. This situation
+/// should only be temporary.
+fn intern_into_impl<'gcx, T>(value: T, gcx: TyCtxt<'_, 'gcx, '_>) -> &'gcx T
+where T: CanonicalIntern<'gcx>,
+    Interned<'gcx, T>: Eq,
+    Interned<'gcx, T>: Hash,
+    Interned<'gcx, T>: Borrow<T>,
+{
+    let set = T::set(gcx);
+    if let Some(i) = set.borrow().get(&value) {
+        return i.0;
+    }
+
+    let p = T::arena(gcx).alloc(value);
+    set.borrow_mut().insert(Interned(p));
+    p
 }

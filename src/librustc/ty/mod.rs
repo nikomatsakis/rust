@@ -79,7 +79,7 @@ pub use self::sty::TypeVariants::*;
 pub use self::binding::BindingMode;
 pub use self::binding::BindingMode::*;
 
-pub use self::context::{TyCtxt, GlobalArenas, AllArenas, tls, keep_local};
+pub use self::context::{TyCtxt, GlobalArenas, CanonicalIntern, AllArenas, tls, keep_local};
 pub use self::context::{Lift, TypeckTables};
 
 pub use self::instance::{Instance, InstanceDef};
@@ -1372,8 +1372,7 @@ impl<'tcx> ParamEnv<'tcx> {
     /// function. This preserves existing behavior in any
     /// case. --nmatsakis
     pub fn and<T: TypeFoldable<'tcx>>(self, value: T) -> ParamEnvAnd<'tcx, T> {
-        assert!(!value.needs_infer());
-        if value.has_param_types() || value.has_self_ty() {
+        if value.needs_infer() || value.has_param_types() || value.has_self_ty() {
             ParamEnvAnd {
                 param_env: self,
                 value,

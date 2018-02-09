@@ -8,7 +8,7 @@ use rustc::mir;
 use rustc::traits::Reveal;
 use rustc::ty::layout::{self, Size, Align, HasDataLayout, LayoutOf, TyLayout};
 use rustc::ty::subst::{Subst, Substs, Kind};
-use rustc::ty::{self, Ty, TyCtxt};
+use rustc::ty::{self, ParamEnv, Ty, TyCtxt};
 use rustc_data_structures::indexed_vec::Idx;
 use syntax::codemap::{self, DUMMY_SP};
 use syntax::ast::Mutability;

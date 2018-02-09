@@ -69,6 +69,7 @@
 #![feature(unboxed_closures)]
 #![feature(underscore_lifetimes)]
 #![feature(universal_impl_trait)]
+#![cfg_attr(stage0, feature(use_nested_groups))]
 #![feature(trace_macros)]
 #![feature(catch_expr)]
 #![feature(test)]

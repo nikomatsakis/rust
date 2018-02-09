@@ -11,7 +11,8 @@
 //! Defines the set of legal keys that can be used in queries.
 
 use hir::def_id::{CrateNum, DefId, LOCAL_CRATE, DefIndex};
-use ty::{self, Ty, TyCtxt};
+use infer::canonical::Canonical;
+use ty::{self, ParamEnvAnd, Ty, TyCtxt};
 use ty::subst::Substs;
 use ty::fast_reject::SimplifiedType;
 
@@ -155,6 +156,16 @@ impl Key for InternedString {
     fn map_crate(&self) -> CrateNum {
         LOCAL_CRATE
     }
+    fn default_span(&self, _tcx: TyCtxt) -> Span {
+        DUMMY_SP
+    }
+}
+
+impl<'tcx> Key for &'tcx Canonical<ParamEnvAnd<'tcx, ty::ProjectionTy<'tcx>>> {
+    fn map_crate(&self) -> CrateNum {
+        LOCAL_CRATE
+    }
+
     fn default_span(&self, _tcx: TyCtxt) -> Span {
         DUMMY_SP
     }

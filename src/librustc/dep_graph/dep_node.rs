@@ -60,18 +60,17 @@
 //! user of the `DepNode` API of having to know how to compute the expected
 //! fingerprint for a given set of node parameters.
 
+use ich::{Fingerprint, StableHashingContext};
+use infer::canonical::Canonical;
 use hir::def_id::{CrateNum, DefId, DefIndex, CRATE_DEF_INDEX};
 use hir::map::DefPathHash;
 use hir::{HirId, ItemLocalId};
-
-use ich::Fingerprint;
-use ty::{TyCtxt, Instance, InstanceDef, ParamEnv, ParamEnvAnd, PolyTraitRef, Ty};
-use ty::subst::Substs;
 use rustc_data_structures::stable_hasher::{StableHasher, HashStable};
-use ich::StableHashingContext;
 use std::fmt;
 use std::hash::Hash;
 use syntax_pos::symbol::InternedString;
+use ty::{self, TyCtxt, Instance, InstanceDef, ParamEnv, ParamEnvAnd, PolyTraitRef, Ty};
+use ty::subst::Substs;
 
 // erase!() just makes tokens go away. It's used to specify which macro argument
 // is repeated (i.e. which sub-expression of the macro we are in) but don't need
@@ -630,6 +629,8 @@ define_dep_nodes!( <'tcx>
     [] CompileCodegenUnit(InternedString),
     [input] OutputFilenames,
     [anon] NormalizeTy,
+    [] NormalizeProjectionTy { ty: &'tcx Canonical<ParamEnvAnd<'tcx, ty::ProjectionTy<'tcx>>> },
+
     // We use this for most things when incr. comp. is turned off.
     [] Null,
 

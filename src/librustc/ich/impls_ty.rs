@@ -1093,3 +1093,10 @@ impl_stable_hash_for!(
 impl_stable_hash_for!(struct infer::canonical::QueryRegionConstraints<'tcx> {
     region_outlives, ty_outlives
 });
+
+impl_stable_hash_for!(struct traits::query::normalize::NormalizationResult<'tcx> {
+    normalized_ty,
+    ambiguity
+});
+
+impl_stable_hash_for!(struct traits::query::NoSolution { });
