@@ -5,7 +5,6 @@ use rustc::hir::def_id::DefId;
 use rustc::hir::map::definitions::DefPathData;
 use rustc::middle::const_val::ConstVal;
 use rustc::mir;
-use rustc::traits::Reveal;
 use rustc::ty::layout::{self, Size, Align, HasDataLayout, LayoutOf, TyLayout};
 use rustc::ty::subst::{Subst, Substs, Kind};
 use rustc::ty::{self, ParamEnv, Ty, TyCtxt};
@@ -1660,5 +1659,5 @@ pub fn resolve_drop_in_place<'a, 'tcx>(
 ) -> ty::Instance<'tcx> {
     let def_id = tcx.require_lang_item(::rustc::middle::lang_items::DropInPlaceFnLangItem);
     let substs = tcx.intern_substs(&[Kind::from(ty)]);
-    ty::Instance::resolve(tcx, ty::ParamEnv::empty(Reveal::All), def_id, substs).unwrap()
+    ty::Instance::resolve(tcx, ty::ParamEnv::reveal_all(), def_id, substs).unwrap()
 }

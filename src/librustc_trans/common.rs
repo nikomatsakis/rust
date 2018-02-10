@@ -25,7 +25,6 @@ use declare;
 use type_::Type;
 use type_of::LayoutLlvmExt;
 use value::Value;
-use rustc::traits;
 use rustc::ty::{self, Ty, TyCtxt};
 use rustc::ty::layout::{HasDataLayout, LayoutOf};
 use rustc::ty::subst::Kind;
@@ -41,15 +40,15 @@ use syntax_pos::{Span, DUMMY_SP};
 pub use context::CodegenCx;
 
 pub fn type_needs_drop<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, ty: Ty<'tcx>) -> bool {
-    ty.needs_drop(tcx, ty::ParamEnv::empty(traits::Reveal::All))
+    ty.needs_drop(tcx, ty::ParamEnv::reveal_all())
 }
 
 pub fn type_is_sized<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, ty: Ty<'tcx>) -> bool {
-    ty.is_sized(tcx, ty::ParamEnv::empty(traits::Reveal::All), DUMMY_SP)
+    ty.is_sized(tcx, ty::ParamEnv::reveal_all(), DUMMY_SP)
 }
 
 pub fn type_is_freeze<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, ty: Ty<'tcx>) -> bool {
-    ty.is_freeze(tcx, ty::ParamEnv::empty(traits::Reveal::All), DUMMY_SP)
+    ty.is_freeze(tcx, ty::ParamEnv::reveal_all(), DUMMY_SP)
 }
 
 /*

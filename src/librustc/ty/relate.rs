@@ -15,7 +15,6 @@
 
 use hir::def_id::DefId;
 use middle::const_val::ConstVal;
-use traits::Reveal;
 use ty::subst::{Kind, Substs};
 use ty::{self, Ty, TyCtxt, TypeFoldable};
 use ty::fold::{TypeVisitor, TypeFolder};
@@ -477,7 +476,7 @@ pub fn super_relate_tys<'a, 'gcx, 'tcx, R>(relation: &mut R,
                     ConstVal::Integral(x) => Ok(x.to_u64().unwrap()),
                     ConstVal::Unevaluated(def_id, substs) => {
                         // FIXME(eddyb) get the right param_env.
-                        let param_env = ty::ParamEnv::empty(Reveal::UserFacing);
+                        let param_env = ty::ParamEnv::empty();
                         match tcx.lift_to_global(&substs) {
                             Some(substs) => {
                                 match tcx.const_eval(param_env.and((def_id, substs))) {

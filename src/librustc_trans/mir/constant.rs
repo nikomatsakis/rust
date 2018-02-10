@@ -14,7 +14,6 @@ use rustc_const_math::ConstInt::*;
 use rustc_const_math::{ConstInt, ConstMathErr, MAX_F32_PLUS_HALF_ULP};
 use rustc::hir::def_id::DefId;
 use rustc::infer::TransNormalize;
-use rustc::traits;
 use rustc::mir;
 use rustc::mir::tcx::PlaceTy;
 use rustc::ty::{self, Ty, TyCtxt, TypeFoldable};
@@ -298,7 +297,7 @@ impl<'a, 'tcx> MirConstContext<'a, 'tcx> {
                  args: IndexVec<mir::Local, Result<Const<'tcx>, ConstEvalErr<'tcx>>>)
                  -> Result<Const<'tcx>, ConstEvalErr<'tcx>> {
         let instance = ty::Instance::resolve(cx.tcx,
-                                             ty::ParamEnv::empty(traits::Reveal::All),
+                                             ty::ParamEnv::reveal_all(),
                                              def_id,
                                              substs).unwrap();
         let mir = cx.tcx.instance_mir(instance.def);

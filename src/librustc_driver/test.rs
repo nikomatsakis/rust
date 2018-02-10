@@ -153,7 +153,7 @@ fn test_env<F>(source_string: &str,
                              |tcx| {
         tcx.infer_ctxt().enter(|infcx| {
             let mut region_scope_tree = region::ScopeTree::default();
-            let param_env = ty::ParamEnv::empty(Reveal::UserFacing);
+            let param_env = ty::ParamEnv::empty());
             body(Env {
                 infcx: &infcx,
                 region_scope_tree: &mut region_scope_tree,

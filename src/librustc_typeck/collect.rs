@@ -30,7 +30,6 @@ use constrained_type_params as ctp;
 use middle::lang_items::SizedTraitLangItem;
 use middle::const_val::ConstVal;
 use middle::resolve_lifetime as rl;
-use rustc::traits::Reveal;
 use rustc::ty::subst::Substs;
 use rustc::ty::{ToPredicate, ReprOptions};
 use rustc::ty::{self, AdtKind, ToPolyTraitRef, Ty, TyCtxt};
@@ -507,7 +506,7 @@ fn convert_variant_ctor<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 fn convert_enum_variant_types<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                         def_id: DefId,
                                         variants: &[hir::Variant]) {
-    let param_env = ty::ParamEnv::empty(Reveal::UserFacing);
+    let param_env = ty::ParamEnv::empty();
     let def = tcx.adt_def(def_id);
     let repr_type = def.repr.discr_type();
     let initial = repr_type.initial_discriminant(tcx);

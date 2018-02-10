@@ -4019,7 +4019,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
           }
           hir::ExprRepeat(ref element, count) => {
             let count_def_id = tcx.hir.body_owner_def_id(count);
-            let param_env = ty::ParamEnv::empty(traits::Reveal::UserFacing);
+            let param_env = ty::ParamEnv::empty();
             let substs = Substs::identity_for_item(tcx.global_tcx(), count_def_id);
             let count = tcx.const_eval(param_env.and((count_def_id, substs)));
 

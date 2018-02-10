@@ -1379,7 +1379,7 @@ impl<'tcx> ParamEnv<'tcx> {
             }
         } else {
             ParamEnvAnd {
-                param_env: ParamEnv::empty(self.reveal),
+                param_env: self.without_caller_bounds(),
                 value,
             }
         }
@@ -1785,7 +1785,7 @@ impl<'a, 'gcx, 'tcx> AdtDef {
     #[inline]
     pub fn discriminants(&'a self, tcx: TyCtxt<'a, 'gcx, 'tcx>)
                          -> impl Iterator<Item=ConstInt> + 'a {
-        let param_env = ParamEnv::empty(traits::Reveal::UserFacing);
+        let param_env = ParamEnv::empty();
         let repr_type = self.repr.discr_type();
         let initial = repr_type.initial_discriminant(tcx.global_tcx());
         let mut prev_discr = None::<ConstInt>;
@@ -1821,7 +1821,7 @@ impl<'a, 'gcx, 'tcx> AdtDef {
                                     tcx: TyCtxt<'a, 'gcx, 'tcx>,
                                     variant_index: usize)
                                     -> ConstInt {
-        let param_env = ParamEnv::empty(traits::Reveal::UserFacing);
+        let param_env = ParamEnv::empty();
         let repr_type = self.repr.discr_type();
         let mut explicit_value = repr_type.initial_discriminant(tcx.global_tcx());
         let mut explicit_index = variant_index;

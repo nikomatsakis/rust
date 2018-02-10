@@ -195,7 +195,6 @@ use rustc::hir::map as hir_map;
 use rustc::hir::def_id::DefId;
 use rustc::middle::const_val::ConstVal;
 use rustc::middle::lang_items::{ExchangeMallocFnLangItem, StartFnLangItem};
-use rustc::traits;
 use rustc::ty::subst::{Substs, Kind};
 use rustc::ty::{self, TypeFoldable, Ty, TyCtxt};
 use rustc::ty::adjustment::CustomCoerceUnsized;
@@ -575,7 +574,7 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirNeighborCollector<'a, 'tcx> {
             let substs = self.tcx.trans_apply_param_substs(self.param_substs,
                                                            &substs);
             let instance = ty::Instance::resolve(self.tcx,
-                                                 ty::ParamEnv::empty(traits::Reveal::All),
+                                                 ty::ParamEnv::reveal_all(),
                                                  def_id,
                                                  substs).unwrap();
             collect_neighbours(self.tcx, instance, true, self.output);
@@ -600,7 +599,7 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirNeighborCollector<'a, 'tcx> {
                     (true, &ty::TyFnDef(def_id, substs)) if self.tcx.is_const_fn(def_id) => {
                         let instance =
                             ty::Instance::resolve(self.tcx,
-                                                  ty::ParamEnv::empty(traits::Reveal::All),
+                                                  ty::ParamEnv::reveal_all(),
                                                   def_id,
                                                   substs).unwrap();
                         Some(instance)
@@ -676,7 +675,7 @@ fn visit_fn_use<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 {
     if let ty::TyFnDef(def_id, substs) = ty.sty {
         let instance = ty::Instance::resolve(tcx,
-                                             ty::ParamEnv::empty(traits::Reveal::All),
+                                             ty::ParamEnv::reveal_all(),
                                              def_id,
                                              substs).unwrap();
         visit_instance_use(tcx, instance, is_direct_call, output);
@@ -798,7 +797,7 @@ fn find_vtable_types_for_unsizing<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     let ptr_vtable = |inner_source: Ty<'tcx>, inner_target: Ty<'tcx>| {
         let type_has_metadata = |ty: Ty<'tcx>| -> bool {
             use syntax_pos::DUMMY_SP;
-            if ty.is_sized(tcx, ty::ParamEnv::empty(traits::Reveal::All), DUMMY_SP) {
+            if ty.is_sized(tcx, ty::ParamEnv::reveal_all(), DUMMY_SP) {
                 return false;
             }
             let tail = tcx.struct_tail(ty);
@@ -881,7 +880,7 @@ fn create_mono_items_for_vtable_methods<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             let methods = methods.iter().cloned().filter_map(|method| method)
                 .map(|(def_id, substs)| ty::Instance::resolve(
                         tcx,
-                        ty::ParamEnv::empty(traits::Reveal::All),
+                        ty::ParamEnv::reveal_all(),
                         def_id,
                         substs).unwrap())
                 .filter(|&instance| should_monomorphize_locally(tcx, &instance))
@@ -1035,7 +1034,7 @@ impl<'b, 'a, 'v> RootCollector<'b, 'a, 'v> {
 
         let start_instance = Instance::resolve(
             self.tcx,
-            ty::ParamEnv::empty(traits::Reveal::All),
+            ty::ParamEnv::reveal_all(),
             start_def_id,
             self.tcx.mk_substs(iter::once(Kind::from(main_ret_ty)))
         ).unwrap();
@@ -1084,7 +1083,7 @@ fn create_mono_items_for_default_impls<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                     }
 
                     let instance = ty::Instance::resolve(tcx,
-                                                         ty::ParamEnv::empty(traits::Reveal::All),
+                                                         ty::ParamEnv::reveal_all(),
                                                          method.def_id,
                                                          callee_substs).unwrap();
 

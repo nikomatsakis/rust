@@ -500,7 +500,7 @@ fn compare_self_type<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             ty::TraitContainer(_) => tcx.mk_self_type()
         };
         let self_arg_ty = *tcx.fn_sig(method.def_id).input(0).skip_binder();
-        let param_env = ty::ParamEnv::empty(Reveal::All);
+        let param_env = ty::ParamEnv::reveal_all();
 
         tcx.infer_ctxt().enter(|infcx| {
             let can_eq_self = |ty| infcx.can_eq(param_env, untransformed_self_ty, ty).is_ok();
@@ -754,7 +754,7 @@ pub fn compare_const_impl<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     debug!("compare_const_impl(impl_trait_ref={:?})", impl_trait_ref);
 
     tcx.infer_ctxt().enter(|infcx| {
-        let param_env = ty::ParamEnv::empty(Reveal::UserFacing);
+        let param_env = ty::ParamEnv::empty();
         let inh = Inherited::new(infcx, impl_c.def_id);
         let infcx = &inh.infcx;
 

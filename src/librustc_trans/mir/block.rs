@@ -13,7 +13,6 @@ use rustc::middle::lang_items;
 use rustc::middle::const_val::{ConstEvalErr, ConstInt, ErrKind};
 use rustc::ty::{self, TypeFoldable};
 use rustc::ty::layout::{self, LayoutOf};
-use rustc::traits;
 use rustc::mir;
 use abi::{Abi, FnType, ArgType, PassMode};
 use base;
@@ -441,7 +440,7 @@ impl<'a, 'tcx> FunctionCx<'a, 'tcx> {
                 let (instance, mut llfn) = match callee.layout.ty.sty {
                     ty::TyFnDef(def_id, substs) => {
                         (Some(ty::Instance::resolve(bx.cx.tcx,
-                                                    ty::ParamEnv::empty(traits::Reveal::All),
+                                                    ty::ParamEnv::reveal_all(),
                                                     def_id,
                                                     substs).unwrap()),
                          None)

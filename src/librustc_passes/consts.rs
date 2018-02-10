@@ -40,7 +40,6 @@ use rustc::middle::mem_categorization::Categorization;
 use rustc::ty::{self, Ty, TyCtxt};
 use rustc::ty::maps::{queries, Providers};
 use rustc::ty::subst::Substs;
-use rustc::traits::Reveal;
 use rustc::util::common::ErrorReported;
 use rustc::util::nodemap::{ItemLocalSet, NodeSet};
 use rustc::lint::builtin::CONST_ERR;
@@ -97,7 +96,7 @@ fn rvalue_promotable_map<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         in_static: false,
         promotable: false,
         mut_rvalue_borrows: NodeSet(),
-        param_env: ty::ParamEnv::empty(Reveal::UserFacing),
+        param_env: ty::ParamEnv::empty(),
         identity_substs: Substs::empty(),
         result: ItemLocalSet(),
     };
