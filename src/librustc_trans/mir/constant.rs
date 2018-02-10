@@ -13,7 +13,6 @@ use rustc::middle::const_val::{ConstEvalErr, ConstVal, ErrKind};
 use rustc_const_math::ConstInt::*;
 use rustc_const_math::{ConstInt, ConstMathErr, MAX_F32_PLUS_HALF_ULP};
 use rustc::hir::def_id::DefId;
-use rustc::infer::TransNormalize;
 use rustc::mir;
 use rustc::mir::tcx::PlaceTy;
 use rustc::ty::{self, Ty, TyCtxt, TypeFoldable};
@@ -305,7 +304,7 @@ impl<'a, 'tcx> MirConstContext<'a, 'tcx> {
     }
 
     fn monomorphize<T>(&self, value: &T) -> T
-        where T: TransNormalize<'tcx>
+        where T: TypeFoldable<'tcx>
     {
         self.cx.tcx.trans_apply_param_substs(self.substs, value)
     }
@@ -732,7 +731,10 @@ impl<'a, 'tcx> MirConstContext<'a, 'tcx> {
                                     .unwrap().def_id;
                                 // Now create its substs [Closure, Tuple]
                                 let input = substs.closure_sig(def_id, tcx).input(0);
-                                let input = tcx.erase_late_bound_regions_and_normalize(&input);
+                                let input = tcx.normalize_erasing_late_bound_regions(
+                                    ty::ParamEnv::reveal_all(),
+                                    &input,
+                                );
                                 let substs = tcx.mk_substs([operand.ty, input]
                                     .iter().cloned().map(Kind::from));
                                 callee::resolve_and_get_fn(self.cx, call_once, substs)

@@ -266,7 +266,7 @@ fn eval_const_expr_partial<'a, 'tcx>(cx: &ConstContext<'a, 'tcx>,
           match cx.tables.qpath_def(qpath, e.hir_id) {
               Def::Const(def_id) |
               Def::AssociatedConst(def_id) => {
-                    let substs = tcx.normalize_associated_type_in_env(&substs, cx.param_env);
+                    let substs = tcx.normalize_erasing_regions(cx.param_env, substs);
                     match tcx.at(e.span).const_eval(cx.param_env.and((def_id, substs))) {
                         Ok(val) => val,
                         Err(ConstEvalErr { kind: TypeckError, .. }) => {

@@ -2432,9 +2432,6 @@ pub fn provide(providers: &mut ty::maps::Providers) {
         assert_eq!(cnum, LOCAL_CRATE);
         tcx.sess.features.borrow().clone_closures
     };
-    providers.fully_normalize_monormophic_ty = |tcx, ty| {
-        tcx.fully_normalize_associated_types_in(&ty)
-    };
 }
 
 /// A trait implemented by types that can be canonicalized.

@@ -600,12 +600,6 @@ impl<'tcx> QueryDescription<'tcx> for queries::has_copy_closures<'tcx> {
     }
 }
 
-impl<'tcx> QueryDescription<'tcx> for queries::fully_normalize_monormophic_ty<'tcx> {
-    fn describe(_tcx: TyCtxt, _: Ty) -> String {
-        format!("normalizing types")
-    }
-}
-
 impl<'tcx> QueryDescription<'tcx> for queries::typeck_tables_of<'tcx> {
     #[inline]
     fn cache_on_disk(def_id: Self::Key) -> bool {

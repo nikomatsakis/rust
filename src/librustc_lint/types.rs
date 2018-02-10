@@ -11,9 +11,9 @@
 #![allow(non_snake_case)]
 
 use rustc::hir::def_id::DefId;
-use rustc::ty::subst::Substs;
-use rustc::ty::{self, AdtKind, Ty, TyCtxt};
+use rustc::ty::{self, AdtKind, ParamEnv, Ty, TyCtxt};
 use rustc::ty::layout::{self, LayoutOf};
+use rustc::ty::subst::Substs;
 use middle::const_val::ConstVal;
 use rustc_const_eval::ConstContext;
 use util::nodemap::FxHashSet;
@@ -431,8 +431,9 @@ impl<'a, 'tcx> ImproperCTypesVisitor<'a, 'tcx> {
                         // make sure the fields are actually safe.
                         let mut all_phantom = true;
                         for field in &def.non_enum_variant().fields {
-                            let field_ty = cx.fully_normalize_associated_types_in(
-                                &field.ty(cx, substs)
+                            let field_ty = cx.normalize_erasing_regions(
+                                ParamEnv::reveal_all(),
+                                field.ty(cx, substs),
                             );
                             // repr(transparent) types are allowed to have arbitrary ZSTs, not just
                             // PhantomData -- skip checking all ZST fields
@@ -476,8 +477,9 @@ impl<'a, 'tcx> ImproperCTypesVisitor<'a, 'tcx> {
 
                         let mut all_phantom = true;
                         for field in &def.non_enum_variant().fields {
-                            let field_ty = cx.fully_normalize_associated_types_in(
-                                &field.ty(cx, substs)
+                            let field_ty = cx.normalize_erasing_regions(
+                                ParamEnv::reveal_all(),
+                                field.ty(cx, substs),
                             );
                             let r = self.check_type_for_ffi(cache, field_ty);
                             match r {
@@ -531,8 +533,9 @@ impl<'a, 'tcx> ImproperCTypesVisitor<'a, 'tcx> {
                         // Check the contained variants.
                         for variant in &def.variants {
                             for field in &variant.fields {
-                                let arg = cx.fully_normalize_associated_types_in(
-                                    &field.ty(cx, substs)
+                                let arg = cx.normalize_erasing_regions(
+                                    ParamEnv::reveal_all(),
+                                    field.ty(cx, substs),
                                 );
                                 let r = self.check_type_for_ffi(cache, arg);
                                 match r {
@@ -649,7 +652,7 @@ impl<'a, 'tcx> ImproperCTypesVisitor<'a, 'tcx> {
     fn check_type_for_ffi_and_report_errors(&mut self, sp: Span, ty: Ty<'tcx>) {
         // it is only OK to use this function because extern fns cannot have
         // any generic types right now:
-        let ty = self.cx.tcx.fully_normalize_associated_types_in(&ty);
+        let ty = self.cx.tcx.normalize_erasing_regions(ParamEnv::reveal_all(), ty);
 
         match self.check_type_for_ffi(&mut FxHashSet(), ty) {
             FfiResult::FfiSafe => {}
