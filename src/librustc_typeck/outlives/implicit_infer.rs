@@ -141,20 +141,7 @@ fn required_predicates_to_be_wf<'tcx>(
             let gen_types: &Vec<ty::TypeParameterDef> = &generics.types;
             let gen_region: &Vec<ty::RegionParameterDef> = &generics.regions;
 
-            // Create OutlivesPredicates for each type/lifetime.
-            // We will use this to test if the same OutlivesPredicate
-            // also exists in the infered_outlives_map
-            // let mut outlive_predicate_pairs = Vec::new();
-            // for typ in gen_types {
-            //     for reg in gen_region {
-            //         outlive_predicate_pairs.push(
-            //             ty::OutlivesPredicate(typ, reg)
-            //         );
-            //     };
-            // };
-
-
-            // iterate over all predicates in the infered_outlives_map.
+            // Iterate over all predicates in the infered_outlives_map.
             // See if there are any OutlivesPredicate kind. If there
             // exists a type and region that is also in this field
             // then that should be returned.
@@ -189,23 +176,6 @@ fn required_predicates_to_be_wf<'tcx>(
                     };
                 }
             };
-
-            // // For each type generic check if it exists in the
-            // // previously calculated predicates
-            // let ty_exists_in_calculated_map = gen_types.into_iter()
-            //     .filter( |typ| infered_outlives_map.contains_key(&typ.def_id));
-
-            // // Check if the predicates for type_generic intersects
-            // // with the outlive_pred_pairs. If so then we should return
-            // // the same OutlivesPredicate for this field
-            // for ty in ty_exists_in_calculated_map {
-            //     let to_add: &Vec<_> = infered_outlives_map
-            //         .get(&ty.def_id)
-            //         .expect("we know the key exists")
-            //         .as_ref();
-            //     to_add.intersects(outlive_predicate_pairs);
-            //     // predicates.chain(to_add);
-            // }
 
         }
 
