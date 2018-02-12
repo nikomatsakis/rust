@@ -109,7 +109,6 @@ impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for InferVisitor<'cx, 'tcx> {
     fn visit_impl_item(&mut self, impl_item: &'tcx hir::ImplItem) {}
 }
 
-//FIXME This is custom calculation that to figure out what predicates need to be added
 fn required_predicates_to_be_wf<'tcx>(
     tcx: TyCtxt<'_, 'tcx, 'tcx>,
     field_def: &ty::FieldDef,
@@ -138,8 +137,12 @@ fn required_predicates_to_be_wf<'tcx>(
 
             // Get type generics of def and lifetime(region) generics of def
             let generics: &ty::Generics = tcx.generics_of(def.did);
-            let gen_types: &Vec<ty::TypeParameterDef> = &generics.types;
-            let gen_region: &Vec<ty::RegionParameterDef> = &generics.regions;
+            // let gen_types: &Vec<ty::TypeParameterDef> = &generics.types;
+            // let gen_region: &Vec<ty::RegionParameterDef> = &generics.regions;
+            let gen_types: &HashSet<DefId> = &generics.types
+                .iter().map(|t| t.def_id).collect();
+            let gen_region: &HashSet<DefId> = &generics.regions
+                .iter().map(|t| t.def_id).collect();
 
             // Iterate over all predicates in the infered_outlives_map.
             // See if there are any OutlivesPredicate kind. If there
@@ -158,18 +161,18 @@ fn required_predicates_to_be_wf<'tcx>(
                         // ty::Predicate::WellFormed(subty) => |
                         // ty::Predicate::RegionOutlives(ref data) => 5,
 
-                        ty::Predicate::TypeOutlives(ref data) => match data {
-                            // ty::OutlivesPredicate(a, b) => {
-                                // if gen_types.contains(typ) && gen_region.contains(reg) {
-                                //     let outlives_pred =
-                                //        ty::Binder(ty::OutlivesPredicate(typ, reg))
-                                //        .to_predicate();
-                                //     predicates.insert(outlives_pred);
-                                // }
+                        ty::Predicate::TypeOutlives(ty::Binder(
+                            ty::OutlivesPredicate(&typ, reg)
+                        )) => {
 
-                            // },
+                            // FIXME get the DefId from the Ty<'tcx> field
+                            // if gen_types.contains(typ.def_id()) && gen_region.contains(reg) {
+                            // //         // let outlives_pred =
+                            // //         //    ty::Binder(ty::OutlivesPredicate(typ, reg))
+                            // //         //    .to_predicate();
+                            // //         // predicates.insert(outlives_pred);
+                            // }
 
-                            _ => (),
                         },
 
                         _ => (),
