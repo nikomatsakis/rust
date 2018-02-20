@@ -112,12 +112,10 @@ impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for InferVisitor<'cx, 'tcx> {
 fn required_predicates_to_be_wf<'tcx>(
     tcx: TyCtxt<'_, 'tcx, 'tcx>,
     field_def: &ty::FieldDef,
-    infered_outlives_map: &FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>,
+    inferred_outlives_map: &FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>,
 ) -> HashSet<ty::Predicate<'tcx>> {
 
     let mut predicates = HashSet::new();
-    // Get the type of the field with identity substs applied.  For
-    // now, let's just see if that causes horrible cycles.
     let field_ty = tcx.type_of(field_def.did);
     match field_ty.sty {
         // For each type `&'a T`, we require `T: 'a`
@@ -144,11 +142,11 @@ fn required_predicates_to_be_wf<'tcx>(
             let gen_region: &HashSet<DefId> = &generics.regions
                 .iter().map(|t| t.def_id).collect();
 
-            // Iterate over all predicates in the infered_outlives_map.
+            // Iterate over all predicates in the inferred_outlives_map.
             // See if there are any OutlivesPredicate kind. If there
             // exists a type and region that is also in this field
             // then that should be returned.
-            for (_, p_list) in infered_outlives_map.iter() {
+            for (_, p_list) in inferred_outlives_map.iter() {
                 for p in p_list.as_ref() {
                     match p {
                         // ty::Predicate::Trait(..) |
