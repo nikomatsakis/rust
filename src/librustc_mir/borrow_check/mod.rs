@@ -317,7 +317,7 @@ impl<'cx, 'gcx, 'tcx> DataflowResultsConsumer<'cx, 'tcx> for MirBorrowckCtxt<'cx
     }
 
     fn visit_block_entry(&mut self, bb: BasicBlock, flow_state: &Self::FlowState) {
-        debug!("MirBorrowckCtxt::process_block({:?}): {}", bb, flow_state);
+        debug!("MirBorrowckCtxt::visit_block_entry({:?}): {}", bb, flow_state);
     }
 
     fn visit_statement_entry(
@@ -327,7 +327,7 @@ impl<'cx, 'gcx, 'tcx> DataflowResultsConsumer<'cx, 'tcx> for MirBorrowckCtxt<'cx
         flow_state: &Self::FlowState,
     ) {
         debug!(
-            "MirBorrowckCtxt::process_statement({:?}, {:?}): {}",
+            "MirBorrowckCtxt::visit_statement_entry({:?}, {:?}): {}",
             location,
             stmt,
             flow_state
@@ -1125,6 +1125,11 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                 match borrow.kind {
                     BorrowKind::Shared => return,
                     BorrowKind::Unique | BorrowKind::Mut => {}
+                }
+
+                // If this is already activated, no need to do further checks.
+                if flow_state.borrows.contains(&gen) {
+                    return;
                 }
 
                 self.access_place(
