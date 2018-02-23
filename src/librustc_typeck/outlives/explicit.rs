@@ -20,7 +20,7 @@ use rustc::hir;
 use rustc::hir::itemlikevisit::ItemLikeVisitor;
 use rustc::hir::def_id::{CrateNum, DefId, LocalDefId, LOCAL_CRATE};
 
-pub fn explicit_map<'tcx>(
+pub fn explicit_predicates<'tcx>(
     tcx: TyCtxt<'_, 'tcx, 'tcx>,
     crate_num: CrateNum,
 ) -> FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>> {
@@ -54,7 +54,6 @@ impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for ExplicitVisitor<'cx, 'tcx> {
             krate: self.crate_num,
             index: item.hir_id.owner,
         };
-//        let def_id = self.crate_num.as_def_id();
 
         let local_explicit_predicate = self.tcx.explicit_predicates_of(def_id);
 

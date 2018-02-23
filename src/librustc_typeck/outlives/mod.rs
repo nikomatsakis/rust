@@ -67,14 +67,14 @@ fn inferred_outlives_crate<'tcx>(
 
     // outlives that the user has annotated.
     // TypeOutlives and RegionOutlives (maybe also ProjectionPredicate??)
-    let explicitly_annotated_outlives_map = explicit::explicit_map(tcx, crate_num);
+    let explicitly_annotated_outlives_map = explicit::explicit_predicates(tcx, crate_num);
 
     // empty inferred predicates.
-    let mut global_inferred_outlives = implicit_empty::empty(tcx);
+    let mut global_inferred_outlives = implicit_empty::empty_predicate_map(tcx);
 
     {
         // Add the inferred predicates to the previous empty map
-        implicit_infer::infer_for_fields(tcx, &mut global_inferred_outlives);
+        implicit_infer::infer_predicates(tcx, &mut global_inferred_outlives);
     }
 
     global_inferred_outlives.extend(explicitly_annotated_outlives_map);

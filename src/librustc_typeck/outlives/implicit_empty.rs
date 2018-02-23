@@ -24,7 +24,7 @@ use rustc::hir::def_id::{self, CrateNum, DefId, LOCAL_CRATE};
 // are initially empty but will grow during the inference step.
 
 //let mut inferred_outlives_predicates = map();
-pub fn empty<'tcx>(tcx: TyCtxt<'_, 'tcx, 'tcx>)
+pub fn empty_predicate_map<'tcx>(tcx: TyCtxt<'_, 'tcx, 'tcx>)
     -> FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>> {
     let mut predicates = FxHashMap();
 
