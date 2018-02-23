@@ -28,7 +28,7 @@ use syntax::{abi, ast};
 
 pub fn infer_for_fields<'tcx>(
     tcx: TyCtxt<'_, 'tcx, 'tcx>,
-    mut inferred_outlives_map: &mut FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>,
+    mut global_inferred_outlives: &mut FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>,
 ) {
     /*
         // inferred_outlives_predicate = ['b: 'a] // after round 2
@@ -43,64 +43,80 @@ pub fn infer_for_fields<'tcx>(
         } // required_predicates = ['b: 'a]
     */
 
-    let mut changed = true;
-    while changed {
-        changed = false;
+    let mut predicates_added = true;
+    // If new predicates were added then we need to re-calculate
+    // all crates since there could be new implied predicates.
+    while predicates_added {
+        predicates_added = false;
         let mut visitor = InferVisitor {
             tcx: tcx,
-            inferred_outlives_map: &mut inferred_outlives_map,
-            changed: changed,
+            global_inferred_outlives: &mut global_inferred_outlives,
+            predicates_added: predicates_added,
         };
 
-        //iterate over all the crates
+        // Visit all the crates and infer predicates
         tcx.hir.krate().visit_all_item_likes(&mut visitor);
     }
 }
 
 pub struct InferVisitor<'cx, 'tcx: 'cx> {
     tcx: TyCtxt<'cx, 'tcx, 'tcx>,
-    inferred_outlives_map: &'cx mut FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>,
-    changed: bool,
+    global_inferred_outlives: &'cx mut FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>,
+    predicates_added: bool,
 }
 
 impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for InferVisitor<'cx, 'tcx> {
     fn visit_item(&mut self, item: &hir::Item) {
-        let def_id = self.tcx.hir.local_def_id(item.id);
+        let item_did = self.tcx.hir.local_def_id(item.id);
 
         let node_id = self.tcx
             .hir
-            .as_local_node_id(def_id)
+            .as_local_node_id(item_did)
             .expect("expected local def-id");
         let item = match self.tcx.hir.get(node_id) {
             hir::map::NodeItem(item) => item,
             _ => bug!(),
         };
 
-        let mut local_required_predicates = FxHashMap();
+        let mut local_predicate_map = FxHashMap();
         match item.node {
             hir::ItemUnion(..) |
             hir::ItemEnum(..) |
             hir::ItemStruct(..) => {
-                let adt_def = self.tcx.adt_def(def_id);
+
+                let adt_def = self.tcx.adt_def(item_did);
+
+                // Iterate over all fields in item_did
                 for field_def in adt_def.all_fields() {
-                    let required_predicates: Vec<_> = required_predicates_to_be_wf(
+
+                    // Calculating the predicate requirements necessary
+                    // for item_did.
+                    //
+                    // For field of type &'a T (reference) or TyAdt
+                    // (struct/enum/union) there will be outlive
+                    // requirements for adt_def.
+                    let field_ty = self.tcx.type_of(field_def.did);
+                    let requirements_for_item_did = required_predicates_to_be_wf(
                         self.tcx,
-                        field_def,
-                        &local_required_predicates,
+                        field_ty,
+                        self.global_inferred_outlives,
                      ).into_iter().collect();
-                    local_required_predicates.insert(
-                        field_def.did,
-                        Rc::new(required_predicates),
+
+                    // Add the requirements_for_item_did to the local map
+                    local_predicate_map.insert(
+                        item_did,
+                        Rc::new(requirements_for_item_did),
                     );
                 }
-            }
-            _ => {}
+            },
+
+            _ => {},
         };
 
-        if local_required_predicates.len() > 0 {
-            self.changed = true;
-            self.inferred_outlives_map
-                .extend(local_required_predicates);
+        if local_predicate_map.len() > 0 {
+            self.predicates_added = true;
+            self.global_inferred_outlives
+                .extend(local_predicate_map);
         }
     }
 
@@ -111,80 +127,53 @@ impl<'cx, 'tcx> ItemLikeVisitor<'tcx> for InferVisitor<'cx, 'tcx> {
 
 fn required_predicates_to_be_wf<'tcx>(
     tcx: TyCtxt<'_, 'tcx, 'tcx>,
-    field_def: &ty::FieldDef,
-    inferred_outlives_map: &FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>,
+    field_ty: Ty<'tcx>,
+    global_inferred_outlives: &FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>,
 ) -> HashSet<ty::Predicate<'tcx>> {
 
-    let mut predicates = HashSet::new();
-    let field_ty = tcx.type_of(field_def.did);
+    let mut required_predicates = HashSet::new();
     match field_ty.sty {
-        // For each type `&'a T`, we require `T: 'a`
-        //
-        // If you have A = &'a T, then mt.ty here represents T and
-        // ty represents A (and r represents 'a). So we want T: 'a.
-        ty::TyRef(r, mt) => {
-            let outlives_pred = ty::Binder(ty::OutlivesPredicate(mt.ty, r))
-                .to_predicate();
-            predicates.insert(outlives_pred);
-        }
 
-        // For each struct/enum/union type `Foo<'a, T>`, we can
+        // The field is of type &'a T which means that we will have
+        // a prediate requirement of T: 'a (T outlives 'a).
+        //
+        // We also want to calculate potential predicates for the T
+        ty::TyRef(reg, mt) => {
+            let outlives_pred = ty::Binder(ty::OutlivesPredicate(mt.ty, reg))
+                .to_predicate();
+            required_predicates.insert(outlives_pred);
+
+            let predcates_for_mt: HashSet<ty::Predicate<'tcx>> =
+                required_predicates_to_be_wf(
+                    tcx,
+                    mt.ty,
+                    global_inferred_outlives,
+                ).into_iter().collect();
+            required_predicates.extend(predcates_for_mt);
+        },
+
+        // For each TyAdt (struct/enum/union) type `Foo<'a, T>`, we can
         // load the current set of inferred and explicit predicates from
-        // `inferred_outlives_map` and see if those include `T: 'a`
+        // `global_inferred_outlives` and filter the ones that are TypeOutlives
         ty::TyAdt(def, substs) => {
 
-            // Get type generics of def and lifetime(region) generics of def
-            let generics: &ty::Generics = tcx.generics_of(def.did);
-            // let gen_types: &Vec<ty::TypeParameterDef> = &generics.types;
-            // let gen_region: &Vec<ty::RegionParameterDef> = &generics.regions;
-            let gen_types: &HashSet<DefId> = &generics.types
-                .iter().map(|t| t.def_id).collect();
-            let gen_region: &HashSet<DefId> = &generics.regions
-                .iter().map(|t| t.def_id).collect();
+            let predicates_for_foo = global_inferred_outlives
+                .get(&def.did)
+                .map(|v| &v[..])
+                .unwrap_or(&[]);
 
-            // Iterate over all predicates in the inferred_outlives_map.
-            // See if there are any OutlivesPredicate kind. If there
-            // exists a type and region that is also in this field
-            // then that should be returned.
-            for (_, p_list) in inferred_outlives_map.iter() {
-                for p in p_list.as_ref() {
-                    match p {
-                        // ty::Predicate::Trait(..) |
-                        // ty::Predicate::Equate(..) |
-                        // ty::Predicate::Subtype(..) |
-                        // ty::Predicate::Projection(..) |
-                        // ty::Predicate::ClosureKind(..) |
-                        // ty::Predicate::ObjectSafe(..) |
-                        // ty::Predicate::ConstEvaluatable(..) |
-                        // ty::Predicate::WellFormed(subty) => |
-                        // ty::Predicate::RegionOutlives(ref data) => 5,
+            //FIXME: Filter the requirements that are TypeOutlives
+            // let predicates_for_foo = predicates_for_foo
+            //     .filter_map(|p| p.to_opt_type_outlives());
 
-                        ty::Predicate::TypeOutlives(ty::Binder(
-                            ty::OutlivesPredicate(&typ, reg)
-                        )) => {
-
-                            // FIXME get the DefId from the Ty<'tcx> field
-                            // if gen_types.contains(typ.def_id()) && gen_region.contains(reg) {
-                            // //         // let outlives_pred =
-                            // //         //    ty::Binder(ty::OutlivesPredicate(typ, reg))
-                            // //         //    .to_predicate();
-                            // //         // predicates.insert(outlives_pred);
-                            // }
-
-                        },
-
-                        _ => (),
-                    };
-                }
-            };
-
-        }
+            required_predicates.extend(predicates_for_foo);
+        },
 
         // For `TyDynamic` types, we can do the same, but using the `expredicates_of`
         // query (those are not inferred).
-        ty::TyDynamic(data, r) => { }
+        ty::TyDynamic(data, r) => { },
 
-        _ => {}
+        _ => {},
 
     }
 
@@ -251,5 +240,5 @@ fn required_predicates_to_be_wf<'tcx>(
     //   Vec<T>: 'a
     //   outlives_components(Vec<T>) = [T]
 
-    predicates
+    required_predicates
 }
