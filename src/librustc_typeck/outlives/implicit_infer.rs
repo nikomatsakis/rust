@@ -162,9 +162,12 @@ fn required_predicates_to_be_wf<'tcx>(
                 .map(|v| &v[..])
                 .unwrap_or(&[]);
 
-            //FIXME: Filter the requirements that are TypeOutlives
-            // let predicates_for_foo = predicates_for_foo
-            //     .filter_map(|p| p.to_opt_type_outlives());
+            let predicates_for_foo = predicates_for_foo
+                .iter()
+                .filter(|pred| match pred {
+                    ty::Predicate::TypeOutlives(..) => true,
+                    _ => false,
+                });
 
             required_predicates.extend(predicates_for_foo);
         },
