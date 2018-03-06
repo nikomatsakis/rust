@@ -35,18 +35,6 @@ pub fn infer_predicates<'tcx>(
     tcx: TyCtxt<'_, 'tcx, 'tcx>,
     mut global_inferred_outlives: &mut FxHashMap<DefId, Rc<Vec<ty::Predicate<'tcx>>>>,
 ) {
-    /*
-        // inferred_outlives_predicate = ['b: 'a] // after round 2
-        struct Foo<'a, 'b> {
-            bar: Bar<'a, 'b> // []
-            // round 2: ['b: 'a] in `required_predicates`
-        }
-
-        // inferred_outlives_predicate = ['b: 'a] // updated after round 1
-        struct Bar<'a, 'b> {
-            field &'a &'b u32 // ['b: 'a] // added to `required_predicates`
-        } // required_predicates = ['b: 'a]
-    */
 
     let mut predicates_added = true;
     // If new predicates were added then we need to re-calculate
@@ -174,24 +162,25 @@ fn required_predicates_to_be_wf<'tcx>(
         // `global_inferred_outlives` and filter the ones that are TypeOutlives
         ty::TyAdt(def, substs) => {
 
-            let predicates_for_foo = global_inferred_outlives
+            let predicates_for_ty = global_inferred_outlives
                 .get(&def.did)
                 .map(|v| &v[..])
                 .unwrap_or(&[]);
 
-            let predicates_for_foo = predicates_for_foo
+            let predicates_for_ty = predicates_for_ty
                 .iter()
                 .filter(|pred| match pred {
                     ty::Predicate::TypeOutlives(..) => true,
                     _ => false,
                 });
 
-            required_predicates.extend(predicates_for_foo);
+            required_predicates.extend(predicates_for_ty);
         },
 
         // For `TyDynamic` types, we can do the same, but using the `expredicates_of`
         // query (those are not inferred).
-        ty::TyDynamic(data, r) => { },
+        ty::TyDynamic(data, r) => {
+        },
 
         _ => {},
 
@@ -255,10 +244,6 @@ fn required_predicates_to_be_wf<'tcx>(
     //
     // Done.
 
-    // from ty/outlives.rs
-    //   Foo<'b, 'c>  ==> ['b, 'c]
-    //   Vec<T>: 'a
-    //   outlives_components(Vec<T>) = [T]
 
     required_predicates
 }

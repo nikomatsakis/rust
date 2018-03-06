@@ -10,14 +10,15 @@
 #![allow(unused)]
 #[allow(dead_code)]
 
-use rustc::hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
-use rustc::hir::Ty_::*;
+use hir::map as hir_map;
+use rustc::dep_graph::DepKind;
 use rustc::ty::{self, CratePredicatesMap, TyCtxt};
 use rustc::ty::maps::Providers;
+use rustc::hir;
+use rustc::hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
+use rustc::hir::Ty_::*;
 use std::rc::Rc;
 use util::nodemap::FxHashMap;
-use hir::map as hir_map;
-use rustc::hir;
 
 /// Code to write unit test for outlives.
 pub mod test;
@@ -33,24 +34,32 @@ pub fn provide(providers: &mut Providers) {
     };
 }
 
-//FIXME
 fn inferred_outlives_of<'a, 'tcx>(
     tcx: TyCtxt<'a, 'tcx, 'tcx>,
-    def_id: DefId,
-) -> Vec<ty::Predicate<'tcx>> {
-    // Assert that this is a local node-id
-    let node_id = tcx.hir.as_local_node_id(def_id).unwrap();
+    item_def_id: DefId,
+) -> Rc<Vec<ty::Predicate<'tcx>>> {
+    let id = tcx.hir.as_local_node_id(item_def_id).expect("expected local def-id");
 
-    match tcx.hir.get(node_id) {
+    match tcx.hir.get(id) {
         hir_map::NodeItem(item) => match item.node {
             hir::ItemStruct(..) |
-            hir::ItemEnum(..) => {
-                tcx.inferred_outlives_crate(LOCAL_CRATE);
-                Vec::new()
-            }
-            _ => Vec::new(),
+            hir::ItemEnum(..) |
+            hir::ItemUnion(..) => {
+                let crate_map = tcx.inferred_outlives_crate(LOCAL_CRATE);
+                let dep_node = item_def_id
+                    .to_dep_node(tcx, DepKind::InferredOutlivesOf);
+                tcx.dep_graph.read(dep_node);
+
+                crate_map.predicates
+                    .get(&item_def_id)
+                    .unwrap_or(&crate_map.empty_predicate)
+                    .clone()
+            },
+
+            _ => Rc::new(Vec::new()),
         },
-        _ => Vec::new(),
+
+        _ => Rc::new(Vec::new()),
     }
 }
 

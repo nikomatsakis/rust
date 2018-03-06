@@ -122,7 +122,7 @@ define_maps! { <'tcx>
     [] fn variances_of: ItemVariances(DefId) -> Rc<Vec<ty::Variance>>,
 
     /// Maps from def-id of a type to its (inferred) outlives.
-    [] fn inferred_outlives_of: InferredOutlivesOf(DefId) -> Vec<ty::Predicate<'tcx>>,
+    [] fn inferred_outlives_of: InferredOutlivesOf(DefId) -> Rc<Vec<ty::Predicate<'tcx>>>,
 
     /// Maps from def-id of a type to its (inferred) outlives.
     [] fn inferred_outlives_crate: InferredOutlivesCrate(CrateNum)
