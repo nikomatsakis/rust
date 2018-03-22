@@ -1290,6 +1290,8 @@ options! {DebuggingOptions, DebuggingSetter, basic_debugging_options,
           "format compiler diagnostics in a way that's better suitable for UI testing"),
     embed_bitcode: bool = (false, parse_bool, [TRACKED],
           "embed LLVM bitcode in object files"),
+    chalk: bool = (false, parse_bool, [TRACKED],
+          "enable the experimental Chalk-based trait solving engine"),
 }
 
 pub fn default_lib_output() -> CrateType {
