@@ -117,7 +117,7 @@ pub enum CanonicalTyVarKind {
 #[derive(Clone, Debug)]
 pub struct QueryResult<'tcx, R> {
     pub var_values: CanonicalVarValues<'tcx>,
-    pub region_constraints: QueryRegionConstraints<'tcx>,
+    pub region_constraints: Vec<QueryRegionConstraint<'tcx>>,
     pub certainty: Certainty,
     pub value: R,
 }
@@ -177,12 +177,7 @@ impl<'tcx, R> Canonical<'tcx, QueryResult<'tcx, R>> {
     }
 }
 
-/// Subset of `RegionConstraintData` produced by trait query.
-#[derive(Clone, Debug, Default)]
-pub struct QueryRegionConstraints<'tcx> {
-    pub region_outlives: Vec<(Region<'tcx>, Region<'tcx>)>,
-    pub ty_outlives: Vec<(Ty<'tcx>, Region<'tcx>)>,
-}
+pub type QueryRegionConstraint<'tcx> = ty::Binder<ty::OutlivesPredicate<Kind<'tcx>, Region<'tcx>>>;
 
 /// Trait implemented by values that can be canonicalized. It mainly
 /// serves to identify the interning table we will use.
@@ -380,35 +375,29 @@ impl<'cx, 'gcx, 'tcx> InferCtxt<'cx, 'gcx, 'tcx> {
         &'a self,
         cause: &'a ObligationCause<'tcx>,
         param_env: ty::ParamEnv<'tcx>,
-        unsubstituted_region_constraints: &'a QueryRegionConstraints<'tcx>,
+        unsubstituted_region_constraints: &'a [QueryRegionConstraint<'tcx>],
         result_subst: &'a CanonicalVarValues<'tcx>,
     ) -> impl Iterator<Item = PredicateObligation<'tcx>> + 'a {
-        let QueryRegionConstraints {
-            region_outlives,
-            ty_outlives,
-        } = unsubstituted_region_constraints;
-
-        let region_obligations = region_outlives.iter().map(move |(r1, r2)| {
-            let r1 = substitute_value(self.tcx, result_subst, r1);
+        unsubstituted_region_constraints.iter().map(move |constraint| {
+            let ty::OutlivesPredicate(k1, r2) = constraint.skip_binder(); // restored below
+            let k1 = substitute_value(self.tcx, result_subst, k1);
             let r2 = substitute_value(self.tcx, result_subst, r2);
-            Obligation::new(
-                cause.clone(),
-                param_env,
-                ty::Predicate::RegionOutlives(ty::Binder(ty::OutlivesPredicate(r1, r2))),
-            )
-        });
+            match k1.unpack() {
+                UnpackedKind::Lifetime(r1) =>
+                    Obligation::new(
+                        cause.clone(),
+                        param_env,
+                        ty::Predicate::RegionOutlives(ty::Binder(ty::OutlivesPredicate(r1, r2))),
+                    ),
 
-        let ty_obligations = ty_outlives.iter().map(move |(t1, r2)| {
-            let t1 = substitute_value(self.tcx, result_subst, t1);
-            let r2 = substitute_value(self.tcx, result_subst, r2);
-            Obligation::new(
-                cause.clone(),
-                param_env,
-                ty::Predicate::TypeOutlives(ty::Binder(ty::OutlivesPredicate(t1, r2))),
-            )
-        });
-
-        region_obligations.chain(ty_obligations)
+                UnpackedKind::Type(t1) =>
+                    Obligation::new(
+                        cause.clone(),
+                        param_env,
+                        ty::Predicate::TypeOutlives(ty::Binder(ty::OutlivesPredicate(t1, r2))),
+                    ),
+            }
+        })
     }
 
     /// Given two sets of values for the same set of canonical variables, unify them.
@@ -898,19 +887,6 @@ BraceStructLiftImpl! {
 BraceStructTypeFoldableImpl! {
     impl<'tcx> TypeFoldable<'tcx> for CanonicalVarValues<'tcx> {
         var_values,
-    }
-}
-
-BraceStructTypeFoldableImpl! {
-    impl<'tcx> TypeFoldable<'tcx> for QueryRegionConstraints<'tcx> {
-        region_outlives, ty_outlives
-    }
-}
-
-BraceStructLiftImpl! {
-    impl<'a, 'tcx> Lift<'tcx> for QueryRegionConstraints<'a> {
-        type Lifted = QueryRegionConstraints<'tcx>;
-        region_outlives, ty_outlives
     }
 }
 
