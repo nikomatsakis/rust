@@ -13,10 +13,14 @@
 
 #![deny(warnings)]
 
+#![feature(crate_in_paths)]
 #![feature(crate_visibility_modifier)]
+#![feature(in_band_lifetimes)]
 #![feature(match_default_bindings)]
 #![feature(underscore_lifetimes)]
+#![feature(universal_impl_trait)]
 
+extern crate chalk_engine;
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -25,6 +29,7 @@ extern crate rustc_data_structures;
 extern crate syntax;
 extern crate syntax_pos;
 
+mod chalk_context;
 mod dropck_outlives;
 mod normalize_projection_ty;
 mod normalize_erasing_regions;

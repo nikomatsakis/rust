@@ -16,7 +16,7 @@ use rustc::traits::{QuantifierKind, Goal, DomainGoal, Clause, ProgramClause, Whe
 use syntax::ast;
 use rustc_data_structures::sync::Lrc;
 
-trait Lower<T> {
+crate trait Lower<T> {
     /// Lower a rustc construction (e.g. `ty::TraitPredicate`) to a chalk-like type.
     fn lower(&self) -> T;
 }
