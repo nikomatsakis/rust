@@ -489,6 +489,7 @@ impl<'tcx> fmt::Display for traits::Goal<'tcx> {
                 // FIXME: appropriate binder names
                 write!(fmt, "{}<> {{ {} }}", qkind, goal.skip_binder())
             }
+            CannotProve => write!(fmt, "CannotProve"),
         }
     }
 }
@@ -498,25 +499,32 @@ impl<'tcx> fmt::Display for traits::Clause<'tcx> {
         use traits::Clause::*;
 
         match self {
-            Implies(hypotheses, goal) => {
-                write!(fmt, "{}", goal)?;
-                if !hypotheses.is_empty() {
-                    write!(fmt, " :- ")?;
-                    for (index, condition) in hypotheses.iter().enumerate() {
-                        if index > 0 {
-                            write!(fmt, ", ")?;
-                        }
-                        write!(fmt, "{}", condition)?;
-                    }
-                }
-                write!(fmt, ".")
-            }
+            Implies(program_clause) => write!(fmt, "{}.", program_clause),
             DomainGoal(domain_goal) => write!(fmt, "{}.", domain_goal),
             ForAll(clause) => {
                 // FIXME: appropriate binder names
                 write!(fmt, "forall<> {{ {} }}", clause.skip_binder())
             }
         }
+    }
+}
+
+impl<'tcx> fmt::Display for traits::ProgramClause<'tcx> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let traits::ProgramClause { hypotheses, goal } = self;
+
+        write!(fmt, "{}", goal)?;
+        if !hypotheses.is_empty() {
+            write!(fmt, " :- ")?;
+            for (index, condition) in hypotheses.iter().enumerate() {
+                if index > 0 {
+                    write!(fmt, ", ")?;
+                }
+                write!(fmt, "{}", condition)?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -550,13 +558,21 @@ EnumTypeFoldableImpl! {
         (traits::Goal::Not)(goal),
         (traits::Goal::DomainGoal)(domain_goal),
         (traits::Goal::Quantified)(qkind, goal),
+        (traits::Goal::CannotProve),
     }
 }
 
 EnumTypeFoldableImpl! {
     impl<'tcx> TypeFoldable<'tcx> for traits::Clause<'tcx> {
-        (traits::Clause::Implies)(hypotheses, goal),
+        (traits::Clause::Implies)(program_clause),
         (traits::Clause::DomainGoal)(domain_goal),
         (traits::Clause::ForAll)(clause),
+    }
+}
+
+BraceStructTypeFoldableImpl! {
+    impl<'tcx> TypeFoldable<'tcx> for traits::ProgramClause<'tcx> {
+        goal,
+        hypotheses,
     }
 }

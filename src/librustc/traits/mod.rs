@@ -283,7 +283,8 @@ pub enum Goal<'tcx> {
     And(Box<Goal<'tcx>>, Box<Goal<'tcx>>),
     Not(Box<Goal<'tcx>>),
     DomainGoal(DomainGoal<'tcx>),
-    Quantified(QuantifierKind, Box<ty::Binder<Goal<'tcx>>>)
+    Quantified(QuantifierKind, Box<ty::Binder<Goal<'tcx>>>),
+    CannotProve,
 }
 
 impl<'tcx> From<DomainGoal<'tcx>> for Goal<'tcx> {
@@ -303,9 +304,24 @@ impl<'tcx> From<DomainGoal<'tcx>> for Clause<'tcx> {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Clause<'tcx> {
     // FIXME: again, use interned refs instead of `Box`
-    Implies(Vec<Goal<'tcx>>, DomainGoal<'tcx>),
+    Implies(ProgramClause<'tcx>),
     DomainGoal(DomainGoal<'tcx>),
     ForAll(Box<ty::Binder<Clause<'tcx>>>),
+}
+
+/// A "program clause" has the form `D :- G1, ..., Gn`. It is saying
+/// that the domain goal `D` is true if `G1...Gn` are provable. This
+/// is equivalent to the implication `G1..Gn => D`; we usually write
+/// it with the reverse implication operator `:-` to emphasize the way
+/// that programs are actually solved (via backchaining, which starts
+/// with the goal to solve and proceeds from there).
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct ProgramClause<'tcx> {
+    /// This goal will be considered true...
+    pub goal: DomainGoal<'tcx>,
+
+    /// ...if we can prove these hypotheses:
+    pub hypotheses: Vec<Goal<'tcx>>,
 }
 
 pub type Selection<'tcx> = Vtable<'tcx, PredicateObligation<'tcx>>;

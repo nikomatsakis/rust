@@ -1384,6 +1384,7 @@ impl<'a, 'tcx> HashStable<StableHashingContext<'a>> for traits::Goal<'tcx> {
                 quantifier.hash_stable(hcx, hasher);
                 goal.hash_stable(hcx, hasher);
             },
+            CannotProve => { },
         }
     }
 }
@@ -1396,15 +1397,16 @@ impl<'a, 'tcx> HashStable<StableHashingContext<'a>> for traits::Clause<'tcx> {
 
         mem::discriminant(self).hash_stable(hcx, hasher);
         match self {
-            Implies(hypotheses, goal) => {
-                hypotheses.hash_stable(hcx, hasher);
-                goal.hash_stable(hcx, hasher);
-            }
+            Implies(program_clause) => program_clause.hash_stable(hcx, hasher),
             DomainGoal(domain_goal) => domain_goal.hash_stable(hcx, hasher),
             ForAll(clause) => clause.hash_stable(hcx, hasher),
         }
     }
 }
+
+impl_stable_hash_for!(struct traits::ProgramClause<'tcx> {
+    hypotheses, goal
+});
 
 impl_stable_hash_for!(enum traits::QuantifierKind {
     Universal,

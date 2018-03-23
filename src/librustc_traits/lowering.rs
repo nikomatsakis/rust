@@ -12,7 +12,7 @@ use rustc::hir::{self, ImplPolarity};
 use rustc::hir::def_id::DefId;
 use rustc::hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc::ty::{self, TyCtxt};
-use rustc::traits::{QuantifierKind, Goal, DomainGoal, Clause, WhereClauseAtom};
+use rustc::traits::{QuantifierKind, Goal, DomainGoal, Clause, ProgramClause, WhereClauseAtom};
 use syntax::ast;
 use rustc_data_structures::sync::Lrc;
 
@@ -124,9 +124,9 @@ fn program_clauses_for_impl<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId
 
     let trait_ref = tcx.impl_trait_ref(def_id).unwrap();
     let trait_ref = ty::TraitPredicate { trait_ref }.lower();
-    let where_clauses = tcx.predicates_of(def_id).predicates.lower();
+    let hypotheses = tcx.predicates_of(def_id).predicates.lower();
 
-    let clause = Clause::Implies(where_clauses, trait_ref);
+    let clause = Clause::Implies(ProgramClause { hypotheses, goal: trait_ref });
     Lrc::new(vec![clause])
 }
 
