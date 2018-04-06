@@ -45,7 +45,7 @@ use util::borrowck_errors::{BorrowckErrors, Origin};
 
 use std::iter;
 
-use self::borrow_set::BorrowData;
+use self::borrow_set::{BorrowSet, BorrowData};
 use self::flows::Flows;
 use self::prefixes::PrefixSet;
 use self::MutateMode::{JustWrite, WriteAndRead};
@@ -191,6 +191,8 @@ fn do_mir_borrowck<'a, 'gcx, 'tcx>(
         |bd, i| DebugFormatted::new(&bd.move_data().inits[i]),
     ));
 
+    let borrow_set = BorrowSet::build(tcx, mir);
+
     // If we are in non-lexical mode, compute the non-lexical lifetimes.
     let (opt_regioncx, opt_closure_req) = if let Some(free_regions) = free_regions {
         let (regioncx, opt_closure_req) = nll::compute_regions(
@@ -215,7 +217,7 @@ fn do_mir_borrowck<'a, 'gcx, 'tcx>(
         id,
         &attributes,
         &dead_unwinds,
-        Borrows::new(tcx, mir, opt_regioncx.clone(), def_id, body_id),
+        Borrows::new(tcx, mir, opt_regioncx.clone(), def_id, body_id, borrow_set),
         |rs, i| {
             DebugFormatted::new(&(i.kind(), rs.location(i.borrow_index())))
         }
