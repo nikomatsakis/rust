@@ -8,11 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use borrow_check::{Context, MirBorrowckCtxt};
 use borrow_check::borrow_set::BorrowData;
 use borrow_check::nll::region_infer::{Cause, RegionInferenceContext};
-use rustc::mir::{Local, Location, Mir};
+use borrow_check::{Context, MirBorrowckCtxt};
 use rustc::mir::visit::{MirVisitable, PlaceContext, Visitor};
+use rustc::mir::{Local, Location, Mir};
 use rustc_data_structures::fx::FxHashSet;
 use rustc_errors::DiagnosticBuilder;
 use util::liveness::{self, DefUse, LivenessMode};
@@ -29,70 +29,66 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         borrow: &BorrowData<'tcx>,
         err: &mut DiagnosticBuilder<'_>,
     ) {
-        if let Some(regioncx) = &self.nonlexical_regioncx {
-            let mir = self.mir;
+        let regioncx = &&self.nonlexical_regioncx;
+        let mir = self.mir;
 
-            if self.nonlexical_cause_info.is_none() {
-                self.nonlexical_cause_info = Some(regioncx.compute_causal_info(mir));
-            }
+        if self.nonlexical_cause_info.is_none() {
+            self.nonlexical_cause_info = Some(regioncx.compute_causal_info(mir));
+        }
 
-            let cause_info = self.nonlexical_cause_info.as_ref().unwrap();
-            if let Some(cause) = cause_info.why_region_contains_point(borrow.region, context.loc) {
-                match *cause.root_cause() {
-                    Cause::LiveVar(local, location) => {
-                        match find_regular_use(mir, regioncx, borrow, location, local) {
-                            Some(p) => {
-                                err.span_label(
-                                    mir.source_info(p).span,
-                                    format!("borrow later used here"),
-                                );
-                            }
-
-                            None => {
-                                span_bug!(
-                                    mir.source_info(context.loc).span,
-                                    "Cause should end in a LiveVar"
-                                );
-                            }
+        let cause_info = self.nonlexical_cause_info.as_ref().unwrap();
+        if let Some(cause) = cause_info.why_region_contains_point(borrow.region, context.loc) {
+            match *cause.root_cause() {
+                Cause::LiveVar(local, location) => {
+                    match find_regular_use(mir, regioncx, borrow, location, local) {
+                        Some(p) => {
+                            err.span_label(
+                                mir.source_info(p).span,
+                                format!("borrow later used here"),
+                            );
                         }
-                    }
 
-                    Cause::DropVar(local, location) => {
-                        match find_drop_use(mir, regioncx, borrow, location, local) {
-                            Some(p) => {
-                                let local_name = mir.local_decls[local].name.unwrap();
-
-                                err.span_label(
-                                    mir.source_info(p).span,
-                                    format!(
-                                        "borrow later used here, when `{}` is dropped",
-                                        local_name
-                                    ),
-                                );
-                            }
-
-                            None => {
-                                span_bug!(
-                                    mir.source_info(context.loc).span,
-                                    "Cause should end in a DropVar"
-                                );
-                            }
-                        }
-                    }
-
-                    Cause::UniversalRegion(region_vid) => {
-                        if let Some(region) = regioncx.to_error_region(region_vid) {
-                            self.tcx.note_and_explain_free_region(
-                                err,
-                                "borrowed value must be valid for ",
-                                region,
-                                "...",
+                        None => {
+                            span_bug!(
+                                mir.source_info(context.loc).span,
+                                "Cause should end in a LiveVar"
                             );
                         }
                     }
-
-                    _ => {}
                 }
+
+                Cause::DropVar(local, location) => {
+                    match find_drop_use(mir, regioncx, borrow, location, local) {
+                        Some(p) => {
+                            let local_name = mir.local_decls[local].name.unwrap();
+
+                            err.span_label(
+                                mir.source_info(p).span,
+                                format!("borrow later used here, when `{}` is dropped", local_name),
+                            );
+                        }
+
+                        None => {
+                            span_bug!(
+                                mir.source_info(context.loc).span,
+                                "Cause should end in a DropVar"
+                            );
+                        }
+                    }
+                }
+
+                Cause::UniversalRegion(region_vid) => {
+                    if let Some(region) = regioncx.to_error_region(region_vid) {
+                        self.tcx.note_and_explain_free_region(
+                            err,
+                            "borrowed value must be valid for ",
+                            region,
+                            "...",
+                        );
+                    }
+                }
+
+                _ => {}
             }
         }
     }
