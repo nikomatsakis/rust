@@ -1434,7 +1434,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
             };
             let operand_ty = operand.ty(mir, tcx);
             if let Err(terr) =
-                self.sub_types(operand_ty, field_ty, location.at_successor_within_block())
+                self.sub_types(operand_ty, field_ty, location.at_self())
             {
                 span_mirbug!(
                     self,
