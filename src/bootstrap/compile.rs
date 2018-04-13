@@ -1179,7 +1179,7 @@ pub fn stream_cargo(
         // since we pass message-format=json to cargo, we need to tell the rustc
         // wrapper to give us colored output if necessary. This is because we
         // only want Cargo's JSON output, not rustcs.
-        cargo.env("RUSTC_COLOR", "1");
+        // TODO cargo.env("RUSTC_COLOR", "1");
     }
 
     builder.verbose(&format!("running: {:?}", cargo));
