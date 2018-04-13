@@ -10,7 +10,7 @@
 
 use rustc::hir;
 use rustc::mir::{BasicBlock, BasicBlockData, Location, Place, Mir, Rvalue};
-use rustc::mir::visit::Visitor;
+use rustc::mir::visit::{PlaceContext, Visitor};
 use rustc::mir::Place::Projection;
 use rustc::mir::{Local, PlaceProjection, ProjectionElem};
 use rustc::mir::visit::TyContext;
@@ -93,18 +93,36 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
     fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>, location: Location) {
         debug!("visit_rvalue(rvalue={:?}, location={:?})", rvalue, location);
 
-        // Look for an rvalue like:
-        //
-        //     & L
-        //
-        // where L is the path that is borrowed. In that case, we have
-        // to add the reborrow constraints (which don't fall out
-        // naturally from the type-checker).
-        if let Rvalue::Ref(region, _bk, ref borrowed_lv) = *rvalue {
-            self.add_reborrow_constraint(location, region, borrowed_lv);
-        }
+        match rvalue {
+            Rvalue::Ref(region, borrow_kind, borrowed_place) => {
+                // Look for an rvalue like:
+                //
+                //     & L
+                //
+                // where L is the path that is borrowed. In that case, we have
+                // to add the reborrow constraints (which don't fall out
+                // naturally from the type-checker).
+                self.add_reborrow_constraint(location, region, borrowed_place);
 
-        self.super_rvalue(rvalue, location);
+                // Subtle: we do not invoke `visit_region` on
+                // `region`. This is because it would introduce a
+                // *liveness* constraint on `region`, but that would
+                // actually be incorrect -- unlike every other case,
+                // `&'x foo` is effectively a *def* of `region`.  That
+                // is, executing `&'x foo` does not potentially read
+                // the data that references of type `&'x T` may carry
+                // on entry.
+
+                self.visit_place(borrowed_place, PlaceContext::Borrow {
+                    region: *region,
+                    kind: *borrow_kind,
+                }, location);
+            }
+
+            _ => {
+                self.super_rvalue(rvalue, location);
+            }
+        }
     }
 
     fn visit_user_assert_ty(&mut self, _c_ty: &CanonicalTy<'tcx>,
