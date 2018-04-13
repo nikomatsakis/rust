@@ -83,8 +83,13 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
                 // reverse direction, because `regioncx` talks about
                 // "outlives" (`>=`) whereas the region constraints
                 // talk about `<=`.
-                self.regioncx
-                    .add_outlives(span, b_vid, a_vid, locations.at_location);
+                self.regioncx.add_outlives(
+                    span,
+                    locations.from_location,
+                    b_vid,
+                    a_vid,
+                    locations.at_location,
+                );
             }
 
             for verify in verifys {

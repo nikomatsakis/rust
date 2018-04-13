@@ -13,7 +13,6 @@
 use borrow_check::nll::region_infer::{RegionCausalInfo, RegionInferenceContext};
 use rustc::hir;
 use rustc::hir::def_id::DefId;
-use rustc::hir::map::definitions::DefPathData;
 use rustc::infer::InferCtxt;
 use rustc::ty::{self, ParamEnv, TyCtxt};
 use rustc::ty::maps::Providers;
@@ -37,7 +36,6 @@ use dataflow::MoveDataParamEnv;
 use dataflow::{DataflowResultsConsumer};
 use dataflow::{MaybeInitializedPlaces, MaybeUninitializedPlaces};
 use dataflow::{EverInitializedPlaces, MovingOutStatements};
-use dataflow::Borrows;
 use dataflow::indexes::BorrowIndex;
 use dataflow::move_paths::{IllegalMoveOriginKind, MoveError};
 use dataflow::move_paths::{HasMoveData, LookupResult, MoveData, MovePathIndex};
@@ -142,10 +140,6 @@ fn do_mir_borrowck<'a, 'gcx, 'tcx>(
         move_data: move_data,
         param_env: param_env,
     };
-    let body_id = match tcx.def_key(def_id).disambiguated_data.data {
-        DefPathData::StructCtor | DefPathData::EnumVariant(_) => None,
-        _ => Some(tcx.hir.body_owned_by(id)),
-    };
 
     let dead_unwinds = IdxSetBuf::new_empty(mir.basic_blocks().len());
     let mut flow_inits = FlowAtLocation::new(do_dataflow(
@@ -201,16 +195,6 @@ fn do_mir_borrowck<'a, 'gcx, 'tcx>(
     let regioncx = Rc::new(regioncx);
     let flow_inits = flow_inits; // remove mut
 
-    let flow_borrows = FlowAtLocation::new(do_dataflow(
-        tcx,
-        mir,
-        id,
-        &attributes,
-        &dead_unwinds,
-        Borrows::new(tcx, mir, regioncx.clone(), def_id, body_id, &borrow_set),
-        |rs, i| DebugFormatted::new(&rs.location(i)),
-    ));
-
     let movable_generator = match tcx.hir.get(id) {
         hir::map::Node::NodeExpr(&hir::Expr {
             node: hir::ExprClosure(.., Some(hir::GeneratorMovability::Static)),
@@ -242,7 +226,6 @@ fn do_mir_borrowck<'a, 'gcx, 'tcx>(
     };
 
     let mut state = Flows::new(
-        flow_borrows,
         flow_inits,
         flow_uninits,
         flow_move_outs,
@@ -327,7 +310,7 @@ impl<'cx, 'gcx, 'tcx> DataflowResultsConsumer<'cx, 'tcx> for MirBorrowckCtxt<'cx
         );
         let span = stmt.source_info.span;
 
-        self.check_activations(location, span, flow_state);
+        self.check_activations(location, span);
 
         match stmt.kind {
             StatementKind::Assign(ref lhs, ref rhs) => {
@@ -373,7 +356,6 @@ impl<'cx, 'gcx, 'tcx> DataflowResultsConsumer<'cx, 'tcx> for MirBorrowckCtxt<'cx
                             (output, span),
                             (Deep, Read(ReadKind::Copy)),
                             LocalMutationIsAllowed::No,
-                            flow_state,
                         );
                         self.check_if_path_or_subpath_is_moved(
                             context,
@@ -412,7 +394,6 @@ impl<'cx, 'gcx, 'tcx> DataflowResultsConsumer<'cx, 'tcx> for MirBorrowckCtxt<'cx
                     (&Place::Local(local), span),
                     (Shallow(None), Write(WriteKind::StorageDeadOrDrop)),
                     LocalMutationIsAllowed::Yes,
-                    flow_state,
                 );
             }
         }
@@ -431,7 +412,7 @@ impl<'cx, 'gcx, 'tcx> DataflowResultsConsumer<'cx, 'tcx> for MirBorrowckCtxt<'cx
         );
         let span = term.source_info.span;
 
-        self.check_activations(location, span, flow_state);
+        self.check_activations(location, span);
 
         match term.kind {
             TerminatorKind::SwitchInt {
@@ -537,13 +518,13 @@ impl<'cx, 'gcx, 'tcx> DataflowResultsConsumer<'cx, 'tcx> for MirBorrowckCtxt<'cx
 
                 if self.movable_generator {
                     // Look for any active borrows to locals
+                    let next_location = location.successor_within_block();
+                    let nonlexical_regioncx = self.nonlexical_regioncx.clone();
                     let borrow_set = self.borrow_set.clone();
-                    flow_state.with_outgoing_borrows(|borrows| {
-                        for i in borrows {
-                            let borrow = &borrow_set[i];
-                            self.check_for_local_borrow(borrow, span);
-                        }
-                    });
+                    for &i in nonlexical_regioncx.borrows_in_scope_at(next_location) {
+                        let borrow = &borrow_set[i];
+                        self.check_for_local_borrow(borrow, span);
+                    }
                 }
             }
 
@@ -552,14 +533,14 @@ impl<'cx, 'gcx, 'tcx> DataflowResultsConsumer<'cx, 'tcx> for MirBorrowckCtxt<'cx
                 // Often, the storage will already have been killed by an explicit
                 // StorageDead, but we don't always emit those (notably on unwind paths),
                 // so this "extra check" serves as a kind of backup.
+                let next_location = location.successor_within_block();
+                let nonlexical_regioncx = self.nonlexical_regioncx.clone();
                 let borrow_set = self.borrow_set.clone();
-                flow_state.with_outgoing_borrows(|borrows| {
-                    for i in borrows {
-                        let borrow = &borrow_set[i];
-                        let context = ContextKind::StorageDead.new(loc);
-                        self.check_for_invalidation_at_exit(context, borrow, span);
-                    }
-                });
+                for &i in nonlexical_regioncx.borrows_in_scope_at(next_location) {
+                    let borrow = &borrow_set[i];
+                    let context = ContextKind::StorageDead.new(loc);
+                    self.check_for_invalidation_at_exit(context, borrow, span);
+                }
             }
             TerminatorKind::Goto { target: _ }
             | TerminatorKind::Abort
@@ -758,7 +739,6 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                         (drop_place, span),
                         (Deep, Write(WriteKind::StorageDeadOrDrop)),
                         LocalMutationIsAllowed::Yes,
-                        flow_state,
                     );
                 }
             }
@@ -777,7 +757,6 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         place_span: (&Place<'tcx>, Span),
         kind: (ShallowOrDeep, ReadOrWrite),
         is_local_mutation_allowed: LocalMutationIsAllowed,
-        flow_state: &Flows<'cx, 'gcx, 'tcx>,
     ) -> AccessErrorsReported {
         let (sd, rw) = kind;
 
@@ -811,7 +790,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         let mutability_error =
             self.check_access_permissions(place_span, rw, is_local_mutation_allowed);
         let conflict_error =
-            self.check_access_for_conflict(context, place_span, sd, rw, flow_state);
+            self.check_access_for_conflict(context, place_span, sd, rw);
 
         if conflict_error || mutability_error {
             debug!(
@@ -834,7 +813,6 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         place_span: (&Place<'tcx>, Span),
         sd: ShallowOrDeep,
         rw: ReadOrWrite,
-        flow_state: &Flows<'cx, 'gcx, 'tcx>,
     ) -> bool {
         debug!(
             "check_access_for_conflict(context={:?}, place_span={:?}, sd={:?}, rw={:?})",
@@ -848,7 +826,6 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         self.each_borrow_involving_path(
             context,
             (sd, place_span.0),
-            flow_state,
             |this, borrow_index, borrow| match (rw, borrow.kind) {
                 // Obviously an activation is compatible with its own
                 // reservation (or even prior activating uses of same
@@ -988,7 +965,6 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
             //
             // There's probably a better way to do this.
             LocalMutationIsAllowed::ExceptUpvars,
-            flow_state,
         );
 
         if !errors_reported.mutability_error {
@@ -1023,7 +999,6 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     (place, span),
                     access_kind,
                     LocalMutationIsAllowed::No,
-                    flow_state,
                 );
 
                 self.check_if_path_or_subpath_is_moved(
@@ -1052,7 +1027,6 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     (place, span),
                     (Shallow(Some(af)), Read(ReadKind::Copy)),
                     LocalMutationIsAllowed::No,
-                    flow_state,
                 );
                 self.check_if_path_or_subpath_is_moved(
                     context,
@@ -1097,7 +1071,6 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     (place, span),
                     (Deep, Read(ReadKind::Copy)),
                     LocalMutationIsAllowed::No,
-                    flow_state,
                 );
 
                 // Finally, check if path was already moved.
@@ -1115,7 +1088,6 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     (place, span),
                     (Deep, Write(WriteKind::Move)),
                     LocalMutationIsAllowed::Yes,
-                    flow_state,
                 );
 
                 // Finally, check if path was already moved.
@@ -1234,7 +1206,6 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         &mut self,
         location: Location,
         span: Span,
-        flow_state: &Flows<'cx, 'gcx, 'tcx>,
     ) {
         if !self.tcx.two_phase_borrows() {
             return;
@@ -1261,7 +1232,6 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     Activation(WriteKind::MutableBorrow(borrow.kind), borrow_index),
                 ),
                 LocalMutationIsAllowed::No,
-                flow_state,
             );
             // We do not need to call `check_if_path_or_subpath_is_moved`
             // again, as we already called it when we made the
@@ -2147,9 +2117,8 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
     /// passed to the callback.
     fn each_borrow_involving_path<F>(
         &mut self,
-        _context: Context,
+        context: Context,
         access_place: (ShallowOrDeep, &Place<'tcx>),
-        flow_state: &Flows<'cx, 'gcx, 'tcx>,
         mut op: F,
     ) where
         F: FnMut(&mut Self, BorrowIndex, &BorrowData<'tcx>) -> Control,
@@ -2161,8 +2130,9 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
 
         // check for loan restricting path P being used. Accounts for
         // borrows of P, P.a.b, etc.
+        let nonlexical_regioncx = self.nonlexical_regioncx.clone();
         let borrow_set = self.borrow_set.clone();
-        for i in flow_state.borrows_in_scope() {
+        for &i in nonlexical_regioncx.borrows_in_scope_at(context.loc) {
             let borrowed = &borrow_set[i];
 
             if self.places_conflict(&borrowed.borrowed_place, place, access) {

@@ -8,15 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::universal_regions::UniversalRegions;
+use borrow_check::borrow_set::BorrowSet;
+use borrow_check::nll::region_infer::borrows_in_scope::LiveBorrowResults;
+use borrow_check::nll::universal_regions::UniversalRegions;
+use dataflow::move_paths::indexes::BorrowIndex;
 use rustc::hir::def_id::DefId;
+use rustc::infer::error_reporting::nice_region_error::NiceRegionError;
+use rustc::infer::region_constraints::{GenericKind, VarOrigins};
 use rustc::infer::InferCtxt;
 use rustc::infer::NLLRegionVariableOrigin;
 use rustc::infer::RegionObligation;
 use rustc::infer::RegionVariableOrigin;
 use rustc::infer::SubregionOrigin;
-use rustc::infer::error_reporting::nice_region_error::NiceRegionError;
-use rustc::infer::region_constraints::{GenericKind, VarOrigins};
 use rustc::mir::{ClosureOutlivesRequirement, ClosureOutlivesSubject, ClosureRegionRequirements,
                  Local, Location, Mir};
 use rustc::traits::ObligationCause;
@@ -24,12 +27,15 @@ use rustc::ty::{self, RegionVid, Ty, TypeFoldable};
 use rustc::util::common::{self, ErrorReported};
 use rustc_data_structures::bitvec::BitVector;
 use rustc_data_structures::indexed_vec::{Idx, IndexVec};
+use rustc_data_structures::fx::FxHashMap;
+use std::borrow::Cow;
 use std::fmt;
 use std::rc::Rc;
 use syntax::ast;
 use syntax_pos::Span;
 
 mod annotation;
+pub(super) mod borrows_in_scope;
 mod dfs;
 use self::dfs::{CopyFromSourceToTarget, TestTargetOutlivesSource};
 mod dump_mir;
@@ -55,8 +61,14 @@ pub struct RegionInferenceContext<'tcx> {
     /// the entire CFG and `end(R)`.
     liveness_constraints: RegionValues,
 
+    /// The results from borrow inference; `None` until `solve` is
+    /// invoked.
+    live_borrow_results: Option<LiveBorrowResults>,
+
     /// The final inferred values of the inference variables; `None`
     /// until `solve` is invoked.
+    ///
+    /// FIXME remove
     inferred_values: Option<RegionValues>,
 
     /// For each variable, stores the index of the first constraint
@@ -145,8 +157,11 @@ pub struct Constraint {
     /// Region that must be outlived.
     sub: RegionVid,
 
-    /// At this location.
-    point: Location,
+    /// Takes effect at this location.
+    effect_point: Location,
+
+    /// Induced by this point.
+    source_point: Location,
 
     /// Later on, we thread the constraints onto a linked list
     /// grouped by their `sub` field. So if you had:
@@ -275,6 +290,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             definitions,
             elements: elements.clone(),
             liveness_constraints: RegionValues::new(elements, num_region_variables),
+            live_borrow_results: None,
             inferred_values: None,
             dependency_map: None,
             constraints: IndexVec::new(),
@@ -364,6 +380,23 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         inferred_values.contains(r.to_region_vid(), p)
     }
 
+    pub(super) fn restricts_at(
+        &self,
+        location: Location,
+    ) -> Cow<'_, FxHashMap<BorrowIndex, Vec<RegionVid>>> {
+        self.live_borrow_results
+            .as_ref()
+            .unwrap()
+            .restricts_at(location)
+    }
+
+    pub fn borrows_in_scope_at(&self, location: Location) -> &[BorrowIndex] {
+        self.live_borrow_results
+            .as_ref()
+            .unwrap()
+            .borrows_in_scope_at(location)
+    }
+
     /// Returns access to the value of `r` for debugging purposes.
     pub(super) fn region_value_str(&self, r: RegionVid) -> String {
         let inferred_values = self.inferred_values
@@ -390,23 +423,44 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         }
     }
 
+    /// Returns the regions live at a particular point. Used by fact dumping only.
+    pub(super) fn live_regions_at_point(&self, point: Location) -> Vec<RegionVid> {
+        self.definitions
+            .indices()
+            .filter(|v| self.liveness_constraints.contains(*v, point))
+            .collect()
+    }
+
     /// Indicates that the region variable `sup` must outlive `sub` is live at the point `point`.
     pub(super) fn add_outlives(
         &mut self,
         span: Span,
+        source_point: Location,
         sup: RegionVid,
         sub: RegionVid,
-        point: Location,
+        effect_point: Location,
     ) {
-        debug!("add_outlives({:?}: {:?} @ {:?}", sup, sub, point);
+        debug!(
+            "add_outlives({:?} / {:?}: {:?} / {:?}",
+            source_point, sup, sub, effect_point
+        );
         assert!(self.inferred_values.is_none(), "values already inferred");
         self.constraints.push(Constraint {
             span,
             sup,
             sub,
-            point,
+            effect_point,
+            source_point,
             next: None,
         });
+    }
+
+    pub(super) fn outlives_constraints_iter(
+        &self,
+    ) -> impl Iterator<Item = (Location, RegionVid, RegionVid, Location)> + '_ {
+        self.constraints
+            .iter()
+            .map(|c| (c.source_point, c.sup, c.sub, c.effect_point))
     }
 
     /// Add a "type test" that must be satisfied.
@@ -420,24 +474,43 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     pub(super) fn solve<'gcx>(
         &mut self,
         infcx: &InferCtxt<'_, 'gcx, 'tcx>,
+        borrow_set: &BorrowSet<'tcx>,
         mir: &Mir<'tcx>,
         mir_def_id: DefId,
     ) -> Option<ClosureRegionRequirements<'gcx>> {
         common::time(
             infcx.tcx.sess,
             &format!("solve_nll_region_constraints({:?})", mir_def_id),
-            || self.solve_inner(infcx, mir, mir_def_id),
+            || self.solve_inner(infcx, borrow_set, mir, mir_def_id),
         )
     }
 
     fn solve_inner<'gcx>(
         &mut self,
         infcx: &InferCtxt<'_, 'gcx, 'tcx>,
+        borrow_set: &BorrowSet<'tcx>,
         mir: &Mir<'tcx>,
         mir_def_id: DefId,
     ) -> Option<ClosureRegionRequirements<'gcx>> {
         assert!(self.inferred_values.is_none(), "values already inferred");
 
+        self.live_borrow_results = Some(LiveBorrowResults::compute(
+            self,
+            &borrow_set,
+            &mir,
+            mir_def_id,
+            if infcx.tcx.sess.opts.debugging_opts.nll_facts {
+                let def_path = infcx.tcx.hir.def_path(mir_def_id);
+                Some(format!(
+                    "nll-facts/{}",
+                    def_path.to_filename_friendly_no_crate()
+                ))
+            } else {
+                None
+            },
+        ));
+
+        // FIXME *also* do this other crap for now
         let dfs_storage = &mut self.new_dfs_storage();
 
         self.propagate_constraints(mir, dfs_storage);
@@ -536,7 +609,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
                     source_region: constraint.sub,
                     target_region: constraint.sup,
                     inferred_values: &mut inferred_values,
-                    constraint_point: constraint.point,
+                    constraint_point: constraint.effect_point,
                     constraint_span: constraint.span,
                 },
             );
@@ -1188,8 +1261,8 @@ impl fmt::Debug for Constraint {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(
             formatter,
-            "({:?}: {:?} @ {:?}) due to {:?}",
-            self.sup, self.sub, self.point, self.span
+            "({:?}, {:?}: {:?}, {:?}) due to {:?}",
+            self.source_point, self.sup, self.sub, self.effect_point, self.span
         )
     }
 }

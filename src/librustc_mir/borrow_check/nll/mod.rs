@@ -9,9 +9,15 @@
 // except according to those terms.
 
 use borrow_check::borrow_set::BorrowSet;
+use borrow_check::nll::region_infer::RegionInferenceContext;
+use borrow_check::nll::region_infer::borrows_in_scope::AllFacts;
+use borrow_check::nll::universal_regions::UniversalRegions;
+use dataflow::move_paths::MoveData;
+use dataflow::FlowAtLocation;
+use dataflow::MaybeInitializedPlaces;
 use rustc::hir::def_id::DefId;
-use rustc::mir::{ClosureRegionRequirements, ClosureOutlivesSubject, Mir};
 use rustc::infer::InferCtxt;
+use rustc::mir::{ClosureOutlivesSubject, ClosureRegionRequirements, Location, Mir};
 use rustc::ty::{self, RegionKind, RegionVid};
 use rustc::util::nodemap::FxHashMap;
 use std::collections::BTreeSet;
@@ -19,13 +25,10 @@ use std::fmt::Debug;
 use std::io;
 use transform::MirSource;
 use util::liveness::{LivenessResults, LocalSet};
-use dataflow::FlowAtLocation;
-use dataflow::MaybeInitializedPlaces;
-use dataflow::move_paths::MoveData;
 
+use self::mir_util::PassWhere;
 use util as mir_util;
 use util::pretty::{self, ALIGN};
-use self::mir_util::PassWhere;
 
 mod constraint_generation;
 pub mod explain_borrow;
@@ -34,10 +37,6 @@ mod renumber;
 mod subtype_constraint_generation;
 pub(crate) mod type_check;
 mod universal_regions;
-
-use self::region_infer::RegionInferenceContext;
-use self::universal_regions::UniversalRegions;
-
 
 /// Rewrites the regions in the MIR to use NLL variables, also
 /// scraping out the set of universal regions (e.g., region parameters)
@@ -74,7 +73,7 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
     param_env: ty::ParamEnv<'gcx>,
     flow_inits: &mut FlowAtLocation<MaybeInitializedPlaces<'cx, 'gcx, 'tcx>>,
     move_data: &MoveData<'tcx>,
-    _borrow_set: &BorrowSet<'tcx>,
+    borrow_set: &BorrowSet<'tcx>,
 ) -> (
     RegionInferenceContext<'tcx>,
     Option<ClosureRegionRequirements<'gcx>>,
@@ -98,20 +97,20 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
     let mut regioncx = RegionInferenceContext::new(var_origins, universal_regions, mir);
     subtype_constraint_generation::generate(&mut regioncx, mir, constraint_sets);
 
-
     // Generate non-subtyping constraints.
     constraint_generation::generate_constraints(infcx, &mut regioncx, &mir);
 
     // Solve the region constraints.
-    let closure_region_requirements = regioncx.solve(infcx, &mir, def_id);
+    let closure_region_requirements = regioncx.solve(infcx, borrow_set, &mir, def_id);
 
     // Dump MIR results into a file, if that is enabled. This let us
     // write unit-tests, as well as helping with debugging.
     dump_mir_results(
         infcx,
         liveness,
-        MirSource::item(def_id),
+        borrow_set,
         &mir,
+        def_id,
         &regioncx,
         &closure_region_requirements,
     );
@@ -126,11 +125,13 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
 fn dump_mir_results<'a, 'gcx, 'tcx>(
     infcx: &InferCtxt<'a, 'gcx, 'tcx>,
     liveness: &LivenessResults,
-    source: MirSource,
+    borrow_set: &BorrowSet<'tcx>,
     mir: &Mir<'tcx>,
-    regioncx: &RegionInferenceContext,
+    mir_def_id: DefId,
+    regioncx: &RegionInferenceContext<'tcx>,
     closure_region_requirements: &Option<ClosureRegionRequirements>,
 ) {
+    let source = MirSource::item(mir_def_id);
     if !mir_util::dump_enabled(infcx.tcx, "nll", source) {
         return;
     }
@@ -161,47 +162,132 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
         })
         .collect();
 
-    mir_util::dump_mir(infcx.tcx, None, "nll", &0, source, mir, |pass_where, out| {
-        match pass_where {
-            // Before the CFG, dump out the values for each region variable.
-            PassWhere::BeforeCFG => {
-                regioncx.dump_mir(out)?;
+    let all_facts = AllFacts::produce(regioncx, borrow_set, mir, mir_def_id);
 
-                if let Some(closure_region_requirements) = closure_region_requirements {
-                    writeln!(out, "|")?;
-                    writeln!(out, "| Free Region Constraints")?;
-                    for_each_region_constraint(closure_region_requirements, &mut |msg| {
-                        writeln!(out, "| {}", msg)
-                    })?;
+    let mut live_regions_by_point: FxHashMap<Location, Vec<RegionVid>> = FxHashMap();
+    for (region, location) in &all_facts.region_live_on_entry {
+        live_regions_by_point
+            .entry(*location)
+            .or_insert(Vec::new())
+            .push(*region);
+    }
+
+    let mut outlives_by_point: FxHashMap<Location, Vec<(RegionVid, RegionVid, Location)>> =
+        FxHashMap();
+    for (p, a, b, q) in &all_facts.outlives {
+        outlives_by_point
+            .entry(*p)
+            .or_insert(Vec::new())
+            .push((*a, *b, *q));
+    }
+
+    mir_util::dump_mir(
+        infcx.tcx,
+        None,
+        "nll",
+        &0,
+        source,
+        mir,
+        |pass_where, out| {
+            match pass_where {
+                // Before the CFG, dump out the values for each region variable.
+                PassWhere::BeforeCFG => {
+                    regioncx.dump_mir(out)?;
+
+                    if let Some(closure_region_requirements) = closure_region_requirements {
+                        writeln!(out, "|")?;
+                        writeln!(out, "| Free Region Constraints")?;
+                        for_each_region_constraint(closure_region_requirements, &mut |msg| {
+                            writeln!(out, "| {}", msg)
+                        })?;
+                    }
                 }
-            }
 
-            // Before each basic block, dump out the values
-            // that are live on entry to the basic block.
-            PassWhere::BeforeBlock(bb) => {
-                let s = live_variable_set(&liveness.regular.ins[bb], &liveness.drop.ins[bb]);
-                writeln!(out, "    | Live variables on entry to {:?}: {}", bb, s)?;
-            }
+                // Before each basic block, dump out the values
+                // that are live on entry to the basic block.
+                PassWhere::BeforeBlock(bb) => {
+                    let s = live_variable_set(&liveness.regular.ins[bb], &liveness.drop.ins[bb]);
+                    writeln!(out, "    | Live variables on entry to {:?}: {}", bb, s)?;
+                }
 
-            PassWhere::BeforeLocation(location) => {
-                let s = live_variable_set(
-                    &regular_liveness_per_location[&location],
-                    &drop_liveness_per_location[&location],
-                );
-                writeln!(
-                    out,
-                    "{:ALIGN$} | Live variables on entry to {:?}: {}",
-                    "",
-                    location,
-                    s,
-                    ALIGN = ALIGN
-                )?;
-            }
+                PassWhere::BeforeLocation(location) => {
+                    let s = live_variable_set(
+                        &regular_liveness_per_location[&location],
+                        &drop_liveness_per_location[&location],
+                    );
+                    writeln!(
+                        out,
+                        "{:ALIGN$} | Live variables on entry to {:?}: {}",
+                        "",
+                        location,
+                        s,
+                        ALIGN = ALIGN
+                    )?;
 
-            PassWhere::AfterLocation(_) | PassWhere::AfterCFG => {}
-        }
-        Ok(())
-    });
+                    writeln!(
+                        out,
+                        "{:ALIGN$} | Borrows in scope on entry to {:?}: {:?}",
+                        "",
+                        location,
+                        regioncx.borrows_in_scope_at(location),
+                        ALIGN = ALIGN,
+                    )?;
+
+                    for (borrow, region_vids) in regioncx.restricts_at(location).iter() {
+                        let borrow_location = borrow_set[*borrow].reserve_location;
+                        writeln!(
+                            out,
+                            "{:ALIGN$} | Borrow {:?} from {:?} in scope due to regions {:?}",
+                            "",
+                            borrow,
+                            borrow_location,
+                            region_vids,
+                            ALIGN = ALIGN
+                        )?;
+                    }
+
+                    if let Some(live_regions) = live_regions_by_point.get(&location) {
+                        writeln!(
+                            out,
+                            "{:ALIGN$} | Live regions on entry: {:?}",
+                            "",
+                            live_regions,
+                            ALIGN = ALIGN,
+                        )?;
+                    }
+
+                    if let Some(outlives) = outlives_by_point.get(&location) {
+                        for (a, b, q) in outlives {
+                            writeln!(
+                                out,
+                                "{:ALIGN$} | Outlives: ({:?}, {:?}: {:?}, {:?})",
+                                "",
+                                location,
+                                a,
+                                b,
+                                q,
+                                ALIGN = ALIGN,
+                            )?;
+                        }
+                    }
+
+                    let activations = borrow_set.activations_at_location(location);
+                    if !activations.is_empty() {
+                        writeln!(
+                            out,
+                            "{:ALIGN$} | Activates: {:?}",
+                            "",
+                            activations,
+                            ALIGN = ALIGN,
+                        )?;
+                    }
+                }
+
+                PassWhere::AfterLocation(_) | PassWhere::AfterCFG => {}
+            }
+            Ok(())
+        },
+    );
 
     // Also dump the inference graph constraints as a graphviz file.
     let _: io::Result<()> = do catch {
@@ -271,8 +357,7 @@ fn for_each_region_constraint(
         };
         with_msg(&format!(
             "where {:?}: {:?}",
-            subject,
-            req.outlived_free_region,
+            subject, req.outlived_free_region,
         ))?;
     }
     Ok(())

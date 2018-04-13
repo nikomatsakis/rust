@@ -178,6 +178,7 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
                             let span = self.mir.source_info(location).span;
                             self.regioncx.add_outlives(
                                 span,
+                                location,
                                 ref_region.to_region_vid(),
                                 borrow_region.to_region_vid(),
                                 location.successor_within_block(),
