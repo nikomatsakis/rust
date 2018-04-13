@@ -54,6 +54,12 @@ extern crate log_settings;
 extern crate rustc_apfloat;
 extern crate byteorder;
 
+#[macro_use]
+extern crate abomonation_derive;
+extern crate abomonation;
+extern crate differential_dataflow;
+extern crate timely;
+
 mod diagnostics;
 
 mod borrow_check;
