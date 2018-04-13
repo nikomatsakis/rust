@@ -8,14 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::rc::Rc;
+use borrow_check::nll::region_infer::ConstraintIndex;
 use rustc_data_structures::bitvec::SparseBitMatrix;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::indexed_vec::Idx;
 use rustc_data_structures::indexed_vec::IndexVec;
 use rustc::mir::{BasicBlock, Location, Mir};
 use rustc::ty::RegionVid;
-use syntax::codemap::Span;
+use std::sync::Arc;
 
 use super::{Cause, CauseExt, TrackCauses};
 
@@ -185,7 +185,7 @@ impl ToElementIndex for RegionElementIndex {
 /// variable. The columns consist of either universal regions or
 /// points in the CFG.
 pub(super) struct RegionValues {
-    elements: Rc<RegionValueElements>,
+    elements: Arc<RegionValueElements>,
     matrix: SparseBitMatrix<RegionVid, RegionElementIndex>,
 
     /// If cause tracking is enabled, maps from a pair (r, e)
@@ -195,13 +195,13 @@ pub(super) struct RegionValues {
     causes: Option<CauseMap>,
 }
 
-type CauseMap = FxHashMap<(RegionVid, RegionElementIndex), Rc<Cause>>;
+type CauseMap = FxHashMap<(RegionVid, RegionElementIndex), Arc<Cause>>;
 
 impl RegionValues {
     /// Creates a new set of "region values" that tracks causal information.
     /// Each of the regions in num_region_variables will be initialized with an
     /// empty set of points and no causal information.
-    pub(super) fn new(elements: &Rc<RegionValueElements>, num_region_variables: usize) -> Self {
+    pub(super) fn new(elements: &Arc<RegionValueElements>, num_region_variables: usize) -> Self {
         assert!(
             elements.num_universal_regions <= num_region_variables,
             "universal regions are a subset of the region variables"
@@ -254,7 +254,7 @@ impl RegionValues {
             debug!("add(r={:?}, i={:?})", r, self.elements.to_element(i));
 
             if let Some(causes) = &mut self.causes {
-                let cause = Rc::new(make_cause(causes));
+                let cause = Arc::new(make_cause(causes));
                 causes.insert((r, i), cause);
             }
 
@@ -264,7 +264,7 @@ impl RegionValues {
                 let cause = make_cause(causes);
                 let old_cause = causes.get_mut(&(r, i)).unwrap();
                 if cause < **old_cause {
-                    *old_cause = Rc::new(cause);
+                    *old_cause = Arc::new(cause);
                     return true;
                 }
             }
@@ -283,12 +283,11 @@ impl RegionValues {
         from_region: RegionVid,
         to_region: RegionVid,
         elem: T,
-        constraint_location: Location,
-        constraint_span: Span,
+        constraint_index: ConstraintIndex,
     ) -> bool {
         let elem = self.elements.index(elem);
         self.add_internal(to_region, elem, |causes| {
-            causes[&(from_region, elem)].outlives(constraint_location, constraint_span)
+            causes[&(from_region, elem)].outlives(constraint_index)
         })
     }
 
@@ -298,8 +297,7 @@ impl RegionValues {
         &mut self,
         from_region: RegionVid,
         to_region: RegionVid,
-        constraint_location: Location,
-        constraint_span: Span,
+        constraint_index: ConstraintIndex,
     ) -> bool {
         // We could optimize this by improving `SparseBitMatrix::merge` so
         // it does not always merge an entire row. That would
@@ -315,8 +313,7 @@ impl RegionValues {
                     from_region,
                     to_region,
                     elem,
-                    constraint_location,
-                    constraint_span,
+                    constraint_index,
                 );
             }
         }
@@ -434,7 +431,7 @@ impl RegionValues {
     ///
     /// Returns None if cause tracking is disabled or `elem` is not
     /// actually found in `r`.
-    pub(super) fn cause<T: ToElementIndex>(&self, r: RegionVid, elem: T) -> Option<Rc<Cause>> {
+    pub(super) fn cause<T: ToElementIndex>(&self, r: RegionVid, elem: T) -> Option<Arc<Cause>> {
         let index = self.elements.index(elem);
         if let Some(causes) = &self.causes {
             causes.get(&(r, index)).cloned()

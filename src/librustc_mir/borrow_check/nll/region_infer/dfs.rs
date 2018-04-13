@@ -12,10 +12,9 @@
 //! its associated helper traits.
 
 use borrow_check::nll::universal_regions::UniversalRegions;
-use borrow_check::nll::region_infer::RegionInferenceContext;
+use borrow_check::nll::region_infer::{ConstraintIndex, RegionInferenceContext};
 use borrow_check::nll::region_infer::values::{RegionElementIndex, RegionValueElements,
                                               RegionValues};
-use syntax::codemap::Span;
 use rustc::mir::{Location, Mir};
 use rustc::ty::RegionVid;
 use rustc_data_structures::bitvec::BitVector;
@@ -150,8 +149,8 @@ pub(super) struct CopyFromSourceToTarget<'v> {
     pub source_region: RegionVid,
     pub target_region: RegionVid,
     pub inferred_values: &'v mut RegionValues,
-    pub constraint_point: Location,
-    pub constraint_span: Span,
+    pub start_point: Location,
+    pub constraint_index: ConstraintIndex,
 }
 
 impl<'v> DfsOp for CopyFromSourceToTarget<'v> {
@@ -159,7 +158,7 @@ impl<'v> DfsOp for CopyFromSourceToTarget<'v> {
     type Early = !;
 
     fn start_point(&self) -> Location {
-        self.constraint_point
+        self.start_point
     }
 
     fn source_region_contains(&mut self, point_index: RegionElementIndex) -> bool {
@@ -172,8 +171,7 @@ impl<'v> DfsOp for CopyFromSourceToTarget<'v> {
             self.source_region,
             self.target_region,
             point_index,
-            self.constraint_point,
-            self.constraint_span,
+            self.constraint_index,
         ))
     }
 
@@ -181,8 +179,7 @@ impl<'v> DfsOp for CopyFromSourceToTarget<'v> {
         Ok(self.inferred_values.add_universal_regions_outlived_by(
             self.source_region,
             self.target_region,
-            self.constraint_point,
-            self.constraint_span,
+            self.constraint_index,
         ))
     }
 }

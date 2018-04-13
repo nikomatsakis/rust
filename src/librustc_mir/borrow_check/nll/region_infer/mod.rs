@@ -10,13 +10,13 @@
 
 use super::universal_regions::UniversalRegions;
 use rustc::hir::def_id::DefId;
+use rustc::infer::error_reporting::nice_region_error::NiceRegionError;
+use rustc::infer::region_constraints::{GenericKind, VarOrigins};
 use rustc::infer::InferCtxt;
 use rustc::infer::NLLRegionVariableOrigin;
 use rustc::infer::RegionObligation;
 use rustc::infer::RegionVariableOrigin;
 use rustc::infer::SubregionOrigin;
-use rustc::infer::error_reporting::nice_region_error::NiceRegionError;
-use rustc::infer::region_constraints::{GenericKind, VarOrigins};
 use rustc::mir::{ClosureOutlivesRequirement, ClosureOutlivesSubject, ClosureRegionRequirements,
                  Local, Location, Mir};
 use rustc::traits::ObligationCause;
@@ -25,11 +25,12 @@ use rustc::util::common::{self, ErrorReported};
 use rustc_data_structures::bitvec::BitVector;
 use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 use std::fmt;
-use std::rc::Rc;
+use std::sync::Arc;
 use syntax::ast;
 use syntax_pos::Span;
 
 mod annotation;
+mod borrows_in_scope;
 mod dfs;
 use self::dfs::{CopyFromSourceToTarget, TestTargetOutlivesSource};
 mod dump_mir;
@@ -47,7 +48,7 @@ pub struct RegionInferenceContext<'tcx> {
     definitions: IndexVec<RegionVid, RegionDefinition<'tcx>>,
 
     /// Maps from points/universal-regions to a `RegionElementIndex`.
-    elements: Rc<RegionValueElements>,
+    elements: Arc<RegionValueElements>,
 
     /// The liveness constraints added to each region. For most
     /// regions, these start out empty and steadily grow, though for
@@ -102,6 +103,8 @@ struct RegionDefinition<'tcx> {
 /// reorder willy nilly.
 #[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq)]
 pub(crate) enum Cause {
+    Unknown,
+
     /// point inserted because Local was live at the given Location
     LiveVar(Local, Location),
 
@@ -119,13 +122,10 @@ pub(crate) enum Cause {
     /// outlives obligation `R: R1 @ P` and `R1` contained `E`.
     Outlives {
         /// the reason that R1 had E
-        original_cause: Rc<Cause>,
+        original_cause: Arc<Cause>,
 
-        /// the point P from the relation
-        constraint_location: Location,
-
-        /// The span indicating why we added the outlives constraint.
-        constraint_span: Span,
+        /// the outlives constraint index
+        constraint_index: ConstraintIndex,
     },
 }
 
@@ -263,7 +263,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         let num_region_variables = var_origins.len();
         let num_universal_regions = universal_regions.len();
 
-        let elements = &Rc::new(RegionValueElements::new(mir, num_universal_regions));
+        let elements = &Arc::new(RegionValueElements::new(mir, num_universal_regions));
 
         // Create a RegionDefinition for each inference variable.
         let definitions = var_origins
@@ -438,9 +438,22 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     ) -> Option<ClosureRegionRequirements<'gcx>> {
         assert!(self.inferred_values.is_none(), "values already inferred");
 
-        let dfs_storage = &mut self.new_dfs_storage();
-
-        self.propagate_constraints(mir, dfs_storage);
+        self.dependency_map = Some(self.build_dependency_map());
+        let values = borrows_in_scope::compute_region_values(
+            self,
+            mir,
+            mir_def_id,
+            if infcx.tcx.sess.opts.debugging_opts.nll_facts {
+                let def_path = infcx.tcx.hir.def_path(mir_def_id);
+                Some(format!(
+                    "nll-facts/{}",
+                    def_path.to_filename_friendly_no_crate()
+                ))
+            } else {
+                None
+            },
+        );
+        self.inferred_values = Some(values);
 
         // If this is a closure, we can propagate unsatisfied
         // `outlives_requirements` to our creator, so create a vector
@@ -453,6 +466,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             None
         };
 
+        let dfs_storage = &mut self.new_dfs_storage();
         self.check_type_tests(
             infcx,
             mir,
@@ -484,16 +498,6 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         RegionCausalInfo { inferred_values }
     }
 
-    /// Propagate the region constraints: this will grow the values
-    /// for each region variable until all the constraints are
-    /// satisfied. Note that some values may grow **too** large to be
-    /// feasible, but we check this later.
-    fn propagate_constraints(&mut self, mir: &Mir<'tcx>, dfs_storage: &mut dfs::DfsStorage) {
-        self.dependency_map = Some(self.build_dependency_map());
-        let inferred_values = self.compute_region_values(mir, dfs_storage, TrackCauses(false));
-        self.inferred_values = Some(inferred_values);
-    }
-
     #[inline(never)] // ensure dfs is identifiable in profiles
     fn compute_region_values(
         &self,
@@ -521,10 +525,10 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         let mut clean_bit_vec = BitVector::new(dirty_list.len());
 
         debug!("propagate_constraints: --------------------");
-        while let Some(constraint_idx) = dirty_list.pop() {
-            clean_bit_vec.insert(constraint_idx.index());
+        while let Some(constraint_index) = dirty_list.pop() {
+            clean_bit_vec.insert(constraint_index.index());
 
-            let constraint = &self.constraints[constraint_idx];
+            let constraint = &self.constraints[constraint_index];
             debug!("propagate_constraints: constraint={:?}", constraint);
 
             // Grow the value as needed to accommodate the
@@ -536,8 +540,8 @@ impl<'tcx> RegionInferenceContext<'tcx> {
                     source_region: constraint.sub,
                     target_region: constraint.sup,
                     inferred_values: &mut inferred_values,
-                    constraint_point: constraint.point,
-                    constraint_span: constraint.span,
+                    start_point: constraint.point,
+                    constraint_index,
                 },
             );
 
@@ -1163,7 +1167,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
 
 impl RegionCausalInfo {
     /// Returns the *reason* that the region `r` contains the given point.
-    pub(super) fn why_region_contains_point<R>(&self, r: R, p: Location) -> Option<Rc<Cause>>
+    pub(super) fn why_region_contains_point<R>(&self, r: R, p: Location) -> Option<Arc<Cause>>
     where
         R: ToRegionVid,
     {
@@ -1316,16 +1320,15 @@ impl<'gcx, 'tcx> ClosureRegionRequirementsExt<'gcx, 'tcx> for ClosureRegionRequi
 }
 
 trait CauseExt {
-    fn outlives(&self, constraint_location: Location, constraint_span: Span) -> Cause;
+    fn outlives(&self, constraint_index: ConstraintIndex) -> Cause;
 }
 
-impl CauseExt for Rc<Cause> {
+impl CauseExt for Arc<Cause> {
     /// Creates a derived cause due to an outlives constraint.
-    fn outlives(&self, constraint_location: Location, constraint_span: Span) -> Cause {
+    fn outlives(&self, constraint_index: ConstraintIndex) -> Cause {
         Cause::Outlives {
             original_cause: self.clone(),
-            constraint_location,
-            constraint_span,
+            constraint_index,
         }
     }
 }
@@ -1333,7 +1336,8 @@ impl CauseExt for Rc<Cause> {
 impl Cause {
     pub(crate) fn root_cause(&self) -> &Cause {
         match self {
-            Cause::LiveVar(..)
+            Cause::Unknown
+            | Cause::LiveVar(..)
             | Cause::DropVar(..)
             | Cause::LiveOther(..)
             | Cause::UniversalRegion(..) => self,
