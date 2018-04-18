@@ -92,6 +92,7 @@ pub mod binding;
 pub mod cast;
 #[macro_use]
 pub mod codec;
+pub mod context_fold;
 pub mod error;
 mod erase_regions;
 pub mod fast_reject;

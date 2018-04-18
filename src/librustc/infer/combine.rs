@@ -39,12 +39,11 @@ use super::lub::Lub;
 use super::sub::Sub;
 use super::type_variable::TypeVariableValue;
 
-use hir::def_id::DefId;
 use ty::{IntType, UintType};
 use ty::{self, Ty, TyCtxt};
 use ty::error::TypeError;
-use ty::relate::{self, Relate, RelateResult, TypeRelation};
-use ty::subst::Substs;
+use ty::context_fold::{ContextualFoldResult, ContextualTypeFolder, TypeContext};
+use ty::relate::{RelateResult, TypeRelation};
 use traits::{Obligation, PredicateObligations};
 
 use syntax::ast;
@@ -268,12 +267,13 @@ impl<'infcx, 'gcx, 'tcx> CombineFields<'infcx, 'gcx, 'tcx> {
             infcx: self.infcx,
             span: self.trace.cause.span,
             for_vid_sub_root: self.infcx.type_variables.borrow_mut().sub_root_var(for_vid),
-            ambient_variance,
             needs_wf: false,
             root_ty: ty,
         };
 
-        let ty = generalize.relate(&ty, &ty)?;
+        let context = TypeContext { ambient_variance, num_binders: 0 };
+
+        let ty = generalize.fold(context, &ty)?;
         let needs_wf = generalize.needs_wf;
         Ok(Generalization { ty, needs_wf })
     }
@@ -289,9 +289,6 @@ struct Generalizer<'cx, 'gcx: 'cx+'tcx, 'tcx: 'cx> {
     /// instantiated; if we find this within the type we are folding,
     /// that means we would have created a cyclic type.
     for_vid_sub_root: ty::TyVid,
-
-    /// Track the variance as we descend into the type.
-    ambient_variance: ty::Variance,
 
     /// See the field `needs_wf` in `Generalization`.
     needs_wf: bool,
@@ -334,60 +331,12 @@ struct Generalization<'tcx> {
     needs_wf: bool,
 }
 
-impl<'cx, 'gcx, 'tcx> TypeRelation<'cx, 'gcx, 'tcx> for Generalizer<'cx, 'gcx, 'tcx> {
+impl<'cx, 'gcx, 'tcx> ContextualTypeFolder<'cx, 'gcx, 'tcx> for Generalizer<'cx, 'gcx, 'tcx> {
     fn tcx(&self) -> TyCtxt<'cx, 'gcx, 'tcx> {
         self.infcx.tcx
     }
 
-    fn tag(&self) -> &'static str {
-        "Generalizer"
-    }
-
-    fn a_is_expected(&self) -> bool {
-        true
-    }
-
-    fn binders<T>(&mut self, a: &ty::Binder<T>, b: &ty::Binder<T>)
-                  -> RelateResult<'tcx, ty::Binder<T>>
-        where T: Relate<'tcx>
-    {
-        Ok(ty::Binder(self.relate(a.skip_binder(), b.skip_binder())?))
-    }
-
-    fn relate_item_substs(&mut self,
-                          item_def_id: DefId,
-                          a_subst: &'tcx Substs<'tcx>,
-                          b_subst: &'tcx Substs<'tcx>)
-                          -> RelateResult<'tcx, &'tcx Substs<'tcx>>
-    {
-        if self.ambient_variance == ty::Variance::Invariant {
-            // Avoid fetching the variance if we are in an invariant
-            // context; no need, and it can induce dependency cycles
-            // (e.g. #41849).
-            relate::relate_substs(self, None, a_subst, b_subst)
-        } else {
-            let opt_variances = self.tcx().variances_of(item_def_id);
-            relate::relate_substs(self, Some(&opt_variances), a_subst, b_subst)
-        }
-    }
-
-    fn relate_with_variance<T: Relate<'tcx>>(&mut self,
-                                             variance: ty::Variance,
-                                             a: &T,
-                                             b: &T)
-                                             -> RelateResult<'tcx, T>
-    {
-        let old_ambient_variance = self.ambient_variance;
-        self.ambient_variance = self.ambient_variance.xform(variance);
-
-        let result = self.relate(a, b);
-        self.ambient_variance = old_ambient_variance;
-        result
-    }
-
-    fn tys(&mut self, t: Ty<'tcx>, t2: Ty<'tcx>) -> RelateResult<'tcx, Ty<'tcx>> {
-        assert_eq!(t, t2); // we are abusing TypeRelation here; both LHS and RHS ought to be ==
-
+    fn fold_ty(&mut self, context: TypeContext, t: Ty<'tcx>) -> RelateResult<'tcx, Ty<'tcx>> {
         // Check to see whether the type we are genealizing references
         // any other type variable related to `vid` via
         // subtyping. This is basically our "occurs check", preventing
@@ -405,10 +354,10 @@ impl<'cx, 'gcx, 'tcx> TypeRelation<'cx, 'gcx, 'tcx> for Generalizer<'cx, 'gcx, '
                     match variables.probe(vid) {
                         TypeVariableValue::Known { value: u } => {
                             drop(variables);
-                            self.relate(&u, &u)
+                            self.fold(context, &u)
                         }
                         TypeVariableValue::Unknown { .. } => {
-                            match self.ambient_variance {
+                            match context.ambient_variance {
                                 // Invariant: no need to make a fresh type variable.
                                 ty::Invariant => return Ok(t),
 
@@ -441,16 +390,17 @@ impl<'cx, 'gcx, 'tcx> TypeRelation<'cx, 'gcx, 'tcx> for Generalizer<'cx, 'gcx, '
                 Ok(t)
             }
             _ => {
-                relate::super_relate_tys(self, t, t)
+                self.super_fold_ty(context, t)
             }
         }
     }
 
-    fn regions(&mut self, r: ty::Region<'tcx>, r2: ty::Region<'tcx>)
-               -> RelateResult<'tcx, ty::Region<'tcx>> {
-        assert_eq!(r, r2); // we are abusing TypeRelation here; both LHS and RHS ought to be ==
-
-        match *r {
+    fn fold_region(
+        &mut self,
+        context: TypeContext,
+        r: ty::Region<'tcx>,
+    ) -> ContextualFoldResult<'tcx, ty::Region<'tcx>> {
+        match r {
             // Never make variables for regions bound within the type itself,
             // nor for erased regions.
             ty::ReLateBound(..) |
@@ -470,7 +420,7 @@ impl<'cx, 'gcx, 'tcx> TypeRelation<'cx, 'gcx, 'tcx> for Generalizer<'cx, 'gcx, '
             ty::ReVar(..) |
             ty::ReEarlyBound(..) |
             ty::ReFree(..) => {
-                match self.ambient_variance {
+                match context.ambient_variance {
                     ty::Invariant => return Ok(r),
                     ty::Bivariant | ty::Covariant | ty::Contravariant => (),
                 }
