@@ -8,7 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::universal_regions::UniversalRegions;
+use borrow_check::nll::AllFacts;
+use borrow_check::nll::universal_regions::UniversalRegions;
 use rustc::hir::def_id::DefId;
 use rustc::infer::InferCtxt;
 use rustc::infer::NLLRegionVariableOrigin;
@@ -58,6 +59,8 @@ pub struct RegionInferenceContext<'tcx> {
     /// The final inferred values of the inference variables; `None`
     /// until `solve` is invoked.
     inferred_values: Option<RegionValues>,
+
+    all_facts: AllFacts,
 
     /// For each variable, stores the index of the first constraint
     /// where that variable appears on the RHS. This is the start of a
@@ -279,6 +282,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             dependency_map: None,
             constraints: IndexVec::new(),
             type_tests: Vec::new(),
+            all_facts: AllFacts::default(),
             universal_regions,
         };
 
@@ -407,6 +411,10 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             point,
             next: None,
         });
+    }
+
+    pub(super) fn all_facts_mut(&mut self) -> &mut AllFacts {
+        &mut self.all_facts
     }
 
     /// Add a "type test" that must be satisfied.

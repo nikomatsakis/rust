@@ -10,13 +10,14 @@
 
 use dataflow::{FlowAtLocation, FlowsAtLocation};
 use borrow_check::nll::region_infer::Cause;
+use borrow_check::nll::type_check::AtLocation;
 use dataflow::MaybeInitializedPlaces;
 use dataflow::move_paths::{HasMoveData, MoveData};
 use rustc::mir::{BasicBlock, Location, Mir};
 use rustc::mir::Local;
 use rustc::ty::{Ty, TyCtxt, TypeFoldable};
 use rustc::infer::InferOk;
-use borrow_check::nll::type_check::AtLocation;
+use rustc_data_structures::fx::FxHashSet;
 use util::liveness::LivenessResults;
 
 use super::TypeChecker;
@@ -74,6 +75,8 @@ impl<'gen, 'typeck, 'flow, 'gcx, 'tcx> TypeLivenessGenerator<'gen, 'typeck, 'flo
     fn add_liveness_constraints(&mut self, bb: BasicBlock) {
         debug!("add_liveness_constraints(bb={:?})", bb);
 
+        let mut use_live_pairs = FxHashSet();
+
         self.liveness
             .regular
             .simulate_block(self.mir, bb, |location, live_locals| {
@@ -81,8 +84,11 @@ impl<'gen, 'typeck, 'flow, 'gcx, 'tcx> TypeLivenessGenerator<'gen, 'typeck, 'flo
                     let live_local_ty = self.mir.local_decls[live_local].ty;
                     let cause = Cause::LiveVar(live_local, location);
                     self.push_type_live_constraint(live_local_ty, location, cause);
+                    use_live_pairs.insert((live_local, location));
                 }
             });
+
+        self.cx.constraints.use_live_variables.extend(&use_live_pairs);
 
         let mut all_live_locals: Vec<(Location, Vec<Local>)> = vec![];
         self.liveness
@@ -122,6 +128,9 @@ impl<'gen, 'typeck, 'flow, 'gcx, 'tcx> TypeLivenessGenerator<'gen, 'typeck, 'flo
 
                     let live_local_ty = self.mir.local_decls[live_local].ty;
                     self.add_drop_live_constraint(live_local, live_local_ty, location);
+                    if !use_live_pairs.contains(&(live_local, location)) {
+                        self.cx.constraints.drop_live_variables.push((live_local, location));
+                    }
                 }
             }
 

@@ -599,6 +599,12 @@ pub(crate) struct MirTypeckRegionConstraints<'tcx> {
     /// hence it must report on their liveness constraints.
     pub liveness_set: Vec<(ty::Region<'tcx>, Location, Cause)>,
 
+    pub use_live_variables: Vec<(Local, Location)>,
+
+    pub drop_live_variables: Vec<(Local, Location)>,
+
+    pub drop_region: Vec<(Local, ty::Region<'tcx>)>,
+
     /// During the course of type-checking, we will accumulate region
     /// constraints due to performing subtyping operations or solving
     /// traits. These are accumulated into this vector for later use.

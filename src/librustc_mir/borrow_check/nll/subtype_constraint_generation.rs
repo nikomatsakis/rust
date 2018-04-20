@@ -43,6 +43,9 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
         let MirTypeckRegionConstraints {
             liveness_set,
             outlives_sets,
+            use_live_variables,
+            drop_live_variables,
+            drop_region,
         } = constraints;
 
         debug!(
@@ -50,6 +53,14 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
             liveness_set.len(),
             outlives_sets.len()
         );
+
+        // TODO refactor to generate the facts directly from type checker
+        self.regioncx.all_facts_mut().use_live.extend(use_live_variables);
+        self.regioncx.all_facts_mut().drop_live.extend(drop_live_variables);
+        let drop_region: Vec<_> = drop_region.iter().map(|&(local, region)| {
+            (local, self.to_region_vid(region))
+        }).collect();
+        self.regioncx.all_facts_mut().drop_region.extend(drop_region);
 
         for (region, location, cause) in liveness_set {
             debug!("generate: {:#?} is live at {:#?}", region, location);
@@ -85,6 +96,10 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
                 // talk about `<=`.
                 self.regioncx
                     .add_outlives(span, b_vid, a_vid, locations.at_location);
+
+                self.regioncx.all_facts_mut().outlives.push(
+                    (a_vid, b_vid, locations.at_location)
+                );
             }
 
             for verify in verifys {

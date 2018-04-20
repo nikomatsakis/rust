@@ -8,26 +8,33 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use borrow_check::borrow_set::BorrowSet;
+use borrow_check::nll::BorrowRegionVid;
 use rustc::hir;
-use rustc::mir::{BasicBlock, BasicBlockData, Location, Place, Mir, Rvalue};
+use rustc::infer::InferCtxt;
+use rustc::mir::visit::TyContext;
 use rustc::mir::visit::{PlaceContext, Visitor};
 use rustc::mir::Place::Projection;
-use rustc::mir::{Local, PlaceProjection, ProjectionElem};
-use rustc::mir::visit::TyContext;
-use rustc::infer::InferCtxt;
-use rustc::ty::{self, CanonicalTy, ClosureSubsts};
-use rustc::ty::subst::Substs;
+use rustc::mir::{BasicBlock, BasicBlockData, Location, Mir, Place, Rvalue};
+use rustc::mir::{Local, LocalDecl, PlaceProjection, ProjectionElem, Statement, Terminator};
+use rustc::ty::context_fold::{ContextualFoldResult, ContextualTypeFolder, TypeContext};
 use rustc::ty::fold::TypeFoldable;
+use rustc::ty::relate::Relate;
+use rustc::ty::subst::Substs;
+use rustc::ty::{self, CanonicalTy, ClosureSubsts, RegionVid, Ty, TyCtxt};
+use std::collections::BTreeSet;
 
+use super::region_infer::{Cause, RegionInferenceContext};
 use super::ToRegionVid;
-use super::region_infer::{RegionInferenceContext, Cause};
 
 pub(super) fn generate_constraints<'cx, 'gcx, 'tcx>(
     infcx: &InferCtxt<'cx, 'gcx, 'tcx>,
     regioncx: &mut RegionInferenceContext<'tcx>,
     mir: &Mir<'tcx>,
+    borrow_set: &BorrowSet<'tcx>,
 ) {
     let mut cg = ConstraintGeneration {
+        borrow_set,
         infcx,
         regioncx,
         mir,
@@ -43,6 +50,7 @@ struct ConstraintGeneration<'cg, 'cx: 'cg, 'gcx: 'tcx, 'tcx: 'cx> {
     infcx: &'cg InferCtxt<'cx, 'gcx, 'tcx>,
     regioncx: &'cg mut RegionInferenceContext<'tcx>,
     mir: &'cg Mir<'tcx>,
+    borrow_set: &'cg BorrowSet<'tcx>,
 }
 
 impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx, 'tcx> {
@@ -68,12 +76,14 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
     /// call. Make them live at the location where they appear.
     fn visit_ty(&mut self, ty: &ty::Ty<'tcx>, ty_context: TyContext) {
         match ty_context {
-            TyContext::ReturnTy(source_info) |
-            TyContext::YieldTy(source_info) |
-            TyContext::LocalDecl { source_info, .. } => {
-                span_bug!(source_info.span,
-                          "should not be visiting outside of the CFG: {:?}",
-                          ty_context);
+            TyContext::ReturnTy(source_info)
+            | TyContext::YieldTy(source_info)
+            | TyContext::LocalDecl { source_info, .. } => {
+                span_bug!(
+                    source_info.span,
+                    "should not be visiting outside of the CFG: {:?}",
+                    ty_context
+                );
             }
             TyContext::Location(location) => {
                 self.add_regular_live_constraint(*ty, location, Cause::LiveOther(location));
@@ -83,6 +93,23 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         self.super_ty(ty);
     }
 
+    fn visit_local_decl(&mut self, local: Local, local_decl: &LocalDecl<'tcx>) {
+        let (covariant_regions, contravariant_regions) =
+            RegionEnumerator::new(self.infcx.tcx).enumerate_regions(&local_decl.ty);
+
+        self.regioncx
+            .all_facts_mut()
+            .covariant_region
+            .extend(covariant_regions.into_iter().map(|r| (local, r)));
+
+        self.regioncx
+            .all_facts_mut()
+            .contravariant_region
+            .extend(contravariant_regions.into_iter().map(|r| (local, r)));
+
+        self.super_local_decl(local, local_decl);
+    }
+
     /// We sometimes have `closure_substs` within an rvalue, or within a
     /// call. Make them live at the location where they appear.
     fn visit_closure_substs(&mut self, substs: &ClosureSubsts<'tcx>, location: Location) {
@@ -90,11 +117,74 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         self.super_closure_substs(substs);
     }
 
+    fn visit_statement(
+        &mut self,
+        block: BasicBlock,
+        statement: &Statement<'tcx>,
+        location: Location,
+    ) {
+        self.regioncx
+            .all_facts_mut()
+            .cfg_edge
+            .push((location, location.successor_within_block()));
+
+        self.super_statement(block, statement, location);
+    }
+
+    fn visit_assign(
+        &mut self,
+        block: BasicBlock,
+        place: &Place<'tcx>,
+        rvalue: &Rvalue<'tcx>,
+        location: Location,
+    ) {
+        // When we see `X = ...`, then kill borrows of
+        // `(*X).foo` and so forth.
+        if let Place::Local(temp) = place {
+            if let Some(borrow_indices) = self.borrow_set.local_map.get(temp) {
+                for &borrow_index in borrow_indices {
+                    let borrow_data = &self.borrow_set[borrow_index];
+                    let borrow_region = BorrowRegionVid {
+                        region_vid: borrow_data.region.to_region_vid(),
+                    };
+                    self.regioncx
+                        .all_facts_mut()
+                        .killed
+                        .push((borrow_region, location));
+                }
+            }
+        }
+
+        self.super_assign(block, place, rvalue, location);
+    }
+
+    fn visit_terminator(
+        &mut self,
+        block: BasicBlock,
+        terminator: &Terminator<'tcx>,
+        location: Location,
+    ) {
+        for successor_block in terminator.successors().iter() {
+            self.regioncx
+                .all_facts_mut()
+                .cfg_edge
+                .push((location, successor_block.start_location()));
+        }
+
+        self.super_terminator(block, terminator, location);
+    }
+
     fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>, location: Location) {
         debug!("visit_rvalue(rvalue={:?}, location={:?})", rvalue, location);
 
         match rvalue {
             Rvalue::Ref(region, borrow_kind, borrowed_place) => {
+                let region_vid = self.regioncx.to_region_vid(region);
+                self.regioncx
+                    .all_facts_mut()
+                    .borrow_region
+                    .push((region_vid, BorrowRegionVid { region_vid }, location));
+
                 // Look for an rvalue like:
                 //
                 //     & L
@@ -113,10 +203,14 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
                 // the data that references of type `&'x T` may carry
                 // on entry.
 
-                self.visit_place(borrowed_place, PlaceContext::Borrow {
-                    region: *region,
-                    kind: *borrow_kind,
-                }, location);
+                self.visit_place(
+                    borrowed_place,
+                    PlaceContext::Borrow {
+                        region: *region,
+                        kind: *borrow_kind,
+                    },
+                    location,
+                );
             }
 
             _ => {
@@ -125,8 +219,13 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         }
     }
 
-    fn visit_user_assert_ty(&mut self, _c_ty: &CanonicalTy<'tcx>,
-                            _local: &Local, _location: Location) { }
+    fn visit_user_assert_ty(
+        &mut self,
+        _c_ty: &CanonicalTy<'tcx>,
+        _local: &Local,
+        _location: Location,
+    ) {
+    }
 }
 
 impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
@@ -140,8 +239,7 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
     {
         debug!(
             "add_regular_live_constraint(live_ty={:?}, location={:?})",
-            live_ty,
-            location
+            live_ty, location
         );
 
         self.infcx
@@ -162,8 +260,10 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
     ) {
         let mut borrowed_place = borrowed_place;
 
-        debug!("add_reborrow_constraint({:?}, {:?}, {:?})",
-               location, borrow_region, borrowed_place);
+        debug!(
+            "add_reborrow_constraint({:?}, {:?}, {:?})",
+            location, borrow_region, borrowed_place
+        );
         while let Projection(box PlaceProjection { base, elem }) = borrowed_place {
             debug!("add_reborrow_constraint - iteration {:?}", borrowed_place);
 
@@ -188,7 +288,7 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
                                     // Immutable reference. We don't need the base
                                     // to be valid for the entire lifetime of
                                     // the borrow.
-                                    break
+                                    break;
                                 }
                                 hir::Mutability::MutMutable => {
                                     // Mutable reference. We *do* need the base
@@ -217,19 +317,19 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
                         }
                         ty::TyRawPtr(..) => {
                             // deref of raw pointer, guaranteed to be valid
-                            break
+                            break;
                         }
                         ty::TyAdt(def, _) if def.is_box() => {
                             // deref of `Box`, need the base to be valid - propagate
                         }
-                        _ => bug!("unexpected deref ty {:?} in {:?}", base_ty, borrowed_place)
+                        _ => bug!("unexpected deref ty {:?} in {:?}", base_ty, borrowed_place),
                     }
                 }
-                ProjectionElem::Field(..) |
-                ProjectionElem::Downcast(..) |
-                ProjectionElem::Index(..) |
-                ProjectionElem::ConstantIndex { .. } |
-                ProjectionElem::Subslice { .. } => {
+                ProjectionElem::Field(..)
+                | ProjectionElem::Downcast(..)
+                | ProjectionElem::Index(..)
+                | ProjectionElem::ConstantIndex { .. }
+                | ProjectionElem::Subslice { .. } => {
                     // other field access
                 }
             }
@@ -238,5 +338,65 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
             // for the borrow's lifetime.
             borrowed_place = base;
         }
+    }
+}
+
+struct RegionEnumerator<'a, 'gcx: 'tcx, 'tcx: 'a> {
+    tcx: TyCtxt<'a, 'gcx, 'tcx>,
+    covariant_regions: BTreeSet<RegionVid>,
+    contravariant_regions: BTreeSet<RegionVid>,
+}
+
+impl<'a, 'gcx, 'tcx> RegionEnumerator<'a, 'gcx, 'tcx> {
+    fn new(tcx: TyCtxt<'a, 'gcx, 'tcx>) -> Self {
+        RegionEnumerator {
+            tcx,
+            covariant_regions: BTreeSet::new(),
+            contravariant_regions: BTreeSet::new(),
+        }
+    }
+
+    fn enumerate_regions(
+        mut self,
+        value: &impl Relate<'tcx>,
+    ) -> (BTreeSet<RegionVid>, BTreeSet<RegionVid>) {
+        self.fold(TypeContext::new(), value).unwrap();
+        (self.covariant_regions, self.contravariant_regions)
+    }
+}
+
+impl<'a, 'gcx, 'tcx> ContextualTypeFolder<'a, 'gcx, 'tcx> for RegionEnumerator<'a, 'gcx, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'gcx, 'tcx> {
+        self.tcx
+    }
+
+    fn fold_ty(
+        &mut self,
+        context: TypeContext,
+        a: Ty<'tcx>,
+    ) -> ContextualFoldResult<'tcx, Ty<'tcx>> {
+        self.super_fold_ty(context, a)
+    }
+
+    fn fold_region(
+        &mut self,
+        context: TypeContext,
+        a: ty::Region<'tcx>,
+    ) -> ContextualFoldResult<'tcx, ty::Region<'tcx>> {
+        let region_vid = a.to_region_vid();
+        match context.ambient_variance {
+            ty::Variance::Covariant => {
+                self.covariant_regions.insert(region_vid);
+            }
+            ty::Variance::Contravariant => {
+                self.contravariant_regions.insert(region_vid);
+            }
+            ty::Variance::Invariant => {
+                self.covariant_regions.insert(region_vid);
+                self.contravariant_regions.insert(region_vid);
+            }
+            ty::Variance::Bivariant => {}
+        }
+        Ok(a)
     }
 }

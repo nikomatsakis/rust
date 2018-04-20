@@ -10,7 +10,7 @@
 
 use borrow_check::borrow_set::BorrowSet;
 use rustc::hir::def_id::DefId;
-use rustc::mir::{ClosureRegionRequirements, ClosureOutlivesSubject, Mir};
+use rustc::mir::{ClosureRegionRequirements, ClosureOutlivesSubject, Local, Location, Mir};
 use rustc::infer::InferCtxt;
 use rustc::ty::{self, RegionKind, RegionVid};
 use rustc::util::nodemap::FxHashMap;
@@ -38,6 +38,47 @@ mod universal_regions;
 use self::region_infer::RegionInferenceContext;
 use self::universal_regions::UniversalRegions;
 
+#[derive(Abomonation, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct BorrowRegionVid {
+    pub(crate) region_vid: RegionVid,
+}
+
+/// The "facts" which are the basis of the NLL borrow analysis.
+#[derive(Default)]
+crate struct AllFacts {
+    // For each `&'a T` rvalue at point P, include ('a, B, P).
+    //
+    // XXX Universal regions?
+    crate borrow_region: Vec<(RegionVid, BorrowRegionVid, Location)>,
+
+    // `cfg_edge(P,Q)` for each edge P -> Q in the control flow
+    crate cfg_edge: Vec<(Location, Location)>,
+
+    // `killed(B,P)` when some prefix of the path borrowed at B is assigned at point P
+    crate killed: Vec<(BorrowRegionVid, Location)>,
+
+    // `outlives(R1, R2, P)` when we require `R1: R2 @ P`
+    crate outlives: Vec<(RegionVid, RegionVid, Location)>,
+
+    // `use_live(X, P)` when the variable X is "use-live" on entry to P
+    //
+    // This could (should?) eventually be propagated by the timely dataflow code.
+    crate use_live: Vec<(Local, Location)>,
+
+    // `drop_live(X, P)` when the variable X is "drop-live" on entry to P
+    //
+    // This could (should?) eventually be propagated by the timely dataflow code.
+    crate drop_live: Vec<(Local, Location)>,
+
+    // `covariant_region(X, R)` when the type of X includes X in a contravariant position
+    crate covariant_region: Vec<(Local, RegionVid)>,
+
+    // `contravariant_region(X, R)` when the type of X includes X in a contravariant position
+    crate contravariant_region: Vec<(Local, RegionVid)>,
+
+    // `drop_region(X, R)` when the region R must be live when X is dropped
+    crate drop_region: Vec<(Local, RegionVid)>,
+}
 
 /// Rewrites the regions in the MIR to use NLL variables, also
 /// scraping out the set of universal regions (e.g., region parameters)
@@ -74,7 +115,7 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
     param_env: ty::ParamEnv<'gcx>,
     flow_inits: &mut FlowAtLocation<MaybeInitializedPlaces<'cx, 'gcx, 'tcx>>,
     move_data: &MoveData<'tcx>,
-    _borrow_set: &BorrowSet<'tcx>,
+    borrow_set: &BorrowSet<'tcx>,
 ) -> (
     RegionInferenceContext<'tcx>,
     Option<ClosureRegionRequirements<'gcx>>,
@@ -96,11 +137,10 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
     // data that was contained in `infcx`.
     let var_origins = infcx.take_region_var_origins();
     let mut regioncx = RegionInferenceContext::new(var_origins, universal_regions, mir);
+
+    // Generate various constraints.
     subtype_constraint_generation::generate(&mut regioncx, mir, constraint_sets);
-
-
-    // Generate non-subtyping constraints.
-    constraint_generation::generate_constraints(infcx, &mut regioncx, &mir);
+    constraint_generation::generate_constraints(infcx, &mut regioncx, &mir, borrow_set);
 
     // Solve the region constraints.
     let closure_region_requirements = regioncx.solve(infcx, &mir, def_id);
