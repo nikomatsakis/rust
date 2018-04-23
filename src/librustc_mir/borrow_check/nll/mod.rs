@@ -29,6 +29,7 @@ use self::mir_util::PassWhere;
 
 mod constraint_generation;
 pub mod explain_borrow;
+mod facts;
 pub(crate) mod region_infer;
 mod renumber;
 mod subtype_constraint_generation;
@@ -38,7 +39,7 @@ mod universal_regions;
 use self::region_infer::RegionInferenceContext;
 use self::universal_regions::UniversalRegions;
 
-#[derive(Abomonation, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Abomonation, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct BorrowRegionVid {
     pub(crate) region_vid: RegionVid,
 }
@@ -150,8 +151,9 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
     dump_mir_results(
         infcx,
         liveness,
-        MirSource::item(def_id),
+        borrow_set,
         &mir,
+        def_id,
         &regioncx,
         &closure_region_requirements,
     );
@@ -166,11 +168,13 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
 fn dump_mir_results<'a, 'gcx, 'tcx>(
     infcx: &InferCtxt<'a, 'gcx, 'tcx>,
     liveness: &LivenessResults,
-    source: MirSource,
+    borrow_set: &BorrowSet<'tcx>,
     mir: &Mir<'tcx>,
+    mir_def_id: DefId,
     regioncx: &RegionInferenceContext,
     closure_region_requirements: &Option<ClosureRegionRequirements>,
 ) {
+    let source = MirSource::item(mir_def_id);
     if !mir_util::dump_enabled(infcx.tcx, "nll", source) {
         return;
     }
@@ -236,6 +240,65 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
                     s,
                     ALIGN = ALIGN
                 )?;
+
+                let live_borrow_results = regioncx.live_borrow_results().unwrap();
+
+                writeln!(
+                    out,
+                    "{:ALIGN$} | Borrows in scope on entry to {:?}: {:?}",
+                    "",
+                    location,
+                    live_borrow_results.borrows_in_scope_at(location),
+                    ALIGN = ALIGN,
+                )?;
+
+                for (borrow, region_vids) in live_borrow_results.restricts_at(location).iter() {
+                    let borrow_location = borrow_set[*borrow].reserve_location;
+                    writeln!(
+                        out,
+                        "{:ALIGN$} | Borrow {:?} from {:?} in scope due to regions {:?}",
+                        "",
+                        borrow,
+                        borrow_location,
+                        region_vids,
+                        ALIGN = ALIGN
+                    )?;
+                }
+
+                let live_regions = live_borrow_results.regions_live_at(location);
+                if !live_regions.is_empty() {
+                    writeln!(
+                        out,
+                        "{:ALIGN$} | Live regions on entry: {:?}",
+                        "",
+                        live_regions,
+                        ALIGN = ALIGN,
+                    )?;
+                }
+
+                let activations = borrow_set.activations_at_location(location);
+                if !activations.is_empty() {
+                    writeln!(
+                        out,
+                        "{:ALIGN$} | Activates: {:?}",
+                        "",
+                        activations,
+                        ALIGN = ALIGN,
+                    )?;
+                }
+
+                for (r1, p1, r2) in live_borrow_results.superset(location) {
+                    writeln!(
+                        out,
+                        "{:ALIGN$} | ({:?} @ {:?}) <= ({:?} @ {:?})",
+                        "",
+                        r1,
+                        p1,
+                        r2,
+                        location,
+                        ALIGN = ALIGN,
+                    )?;
+                }
             }
 
             PassWhere::AfterLocation(_) | PassWhere::AfterCFG => {}

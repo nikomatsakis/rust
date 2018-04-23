@@ -183,9 +183,6 @@ impl<'a, 'gcx, 'tcx> BitDenotation for Borrows<'a, 'gcx, 'tcx> {
                         return
                     }
 
-                    assert!(self.borrow_set.region_map.get(region).unwrap_or_else(|| {
-                        panic!("could not find BorrowIndexs for region {:?}", region);
-                    }).contains(&index));
                     sets.gen(&index);
 
                     // Issue #46746: Two-phase borrows handles

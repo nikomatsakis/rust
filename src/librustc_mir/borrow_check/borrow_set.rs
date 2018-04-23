@@ -8,6 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use borrow_check::nll::{BorrowRegionVid, ToRegionVid};
 use borrow_check::place_ext::PlaceExt;
 use dataflow::indexes::BorrowIndex;
 use rustc::mir::traversal;
@@ -39,7 +40,7 @@ crate struct BorrowSet<'tcx> {
 
     /// Every borrow has a region; this maps each such regions back to
     /// its borrow-indexes.
-    crate region_map: FxHashMap<Region<'tcx>, FxHashSet<BorrowIndex>>,
+    crate region_map: FxHashMap<BorrowRegionVid, BorrowIndex>,
 
     /// Map from local to all the borrows on that local
     crate local_map: FxHashMap<mir::Local, FxHashSet<BorrowIndex>>,
@@ -53,6 +54,15 @@ impl<'tcx> Index<BorrowIndex> for BorrowSet<'tcx> {
     }
 }
 
+impl<'tcx> Index<BorrowRegionVid> for BorrowSet<'tcx> {
+    type Output = BorrowData<'tcx>;
+
+    fn index(&self, v: BorrowRegionVid) -> &BorrowData<'tcx> {
+        let index = self.region_map[&v];
+        &self[index]
+    }
+}
+
 #[derive(Debug)]
 crate struct BorrowData<'tcx> {
     /// Location where the borrow reservation starts.
@@ -63,6 +73,8 @@ crate struct BorrowData<'tcx> {
     crate activation_location: Option<Location>,
     /// What kind of borrow this is
     crate kind: mir::BorrowKind,
+    /// The unique region vid that identifies this borrow
+    crate borrow_region_vid: BorrowRegionVid,
     /// The region for which this borrow is live
     crate region: Region<'tcx>,
     /// Place from which we are borrowing
@@ -141,7 +153,7 @@ struct GatherBorrows<'a, 'gcx: 'tcx, 'tcx: 'a> {
     idx_vec: IndexVec<BorrowIndex, BorrowData<'tcx>>,
     location_map: FxHashMap<Location, BorrowIndex>,
     activation_map: FxHashMap<Location, Vec<BorrowIndex>>,
-    region_map: FxHashMap<Region<'tcx>, FxHashSet<BorrowIndex>>,
+    region_map: FxHashMap<BorrowRegionVid, BorrowIndex>,
     local_map: FxHashMap<mir::Local, FxHashSet<BorrowIndex>>,
 
     /// When we encounter a 2-phase borrow statement, it will always
@@ -168,22 +180,25 @@ impl<'a, 'gcx, 'tcx> Visitor<'tcx> for GatherBorrows<'a, 'gcx, 'tcx> {
                 return;
             }
 
-            let borrow = BorrowData {
+            let borrow_region_vid = BorrowRegionVid { region_vid: region.to_region_vid() };
+            let borrow_index = self.idx_vec.push(BorrowData {
                 kind,
                 region,
+                borrow_region_vid,
                 reserve_location: location,
                 activation_location: None,
                 borrowed_place: borrowed_place.clone(),
                 assigned_place: assigned_place.clone(),
-            };
-            let idx = self.idx_vec.push(borrow);
-            self.location_map.insert(location, idx);
+            });
+            self.location_map.insert(location, borrow_index);
 
-            self.insert_as_pending_if_two_phase(location, &assigned_place, region, kind, idx);
+            self.insert_as_pending_if_two_phase(location, &assigned_place, region, kind, borrow_index);
 
-            insert(&mut self.region_map, &region, idx);
+            let old_value = self.region_map.insert(borrow_region_vid, borrow_index);
+            assert!(old_value.is_none());
+
             if let Some(local) = borrowed_place.root_local() {
-                insert(&mut self.local_map, &local, idx);
+                insert(&mut self.local_map, &local, borrow_index);
             }
         }
 

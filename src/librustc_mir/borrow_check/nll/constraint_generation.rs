@@ -40,6 +40,10 @@ pub(super) fn generate_constraints<'cx, 'gcx, 'tcx>(
         mir,
     };
 
+    for (local, local_decl) in mir.local_decls.iter_enumerated() {
+        cg.visit_local_decl(local, local_decl);
+    }
+
     for (bb, data) in mir.basic_blocks().iter_enumerated() {
         cg.visit_basic_block_data(bb, data);
     }
@@ -97,17 +101,25 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         let (covariant_regions, contravariant_regions) =
             RegionEnumerator::new(self.infcx.tcx).enumerate_regions(&local_decl.ty);
 
+        // Subtle: Note that "covariant" for the rest of our type
+        // system is the opposite of "covariant" in the new borrow
+        // check. In particular, in the new borrow check, `&'a T` is
+        // *covariant* with respect to `'a` -- therefore, we swap the
+        // facts here.
+
         self.regioncx
             .all_facts_mut()
             .covariant_region
-            .extend(covariant_regions.into_iter().map(|r| (local, r)));
+            .extend(contravariant_regions.into_iter().map(|r| (local, r)));
 
         self.regioncx
             .all_facts_mut()
             .contravariant_region
-            .extend(contravariant_regions.into_iter().map(|r| (local, r)));
+            .extend(covariant_regions.into_iter().map(|r| (local, r)));
 
-        self.super_local_decl(local, local_decl);
+        // Note: we do NOT invoke `super_local_decl` on purpose. We
+        // don't want to visit the types and so forth outside of the
+        // context of the control-flow graph.
     }
 
     /// We sometimes have `closure_substs` within an rvalue, or within a
@@ -180,10 +192,11 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         match rvalue {
             Rvalue::Ref(region, borrow_kind, borrowed_place) => {
                 let region_vid = self.regioncx.to_region_vid(region);
-                self.regioncx
-                    .all_facts_mut()
-                    .borrow_region
-                    .push((region_vid, BorrowRegionVid { region_vid }, location));
+                self.regioncx.all_facts_mut().borrow_region.push((
+                    region_vid,
+                    BorrowRegionVid { region_vid },
+                    location.successor_within_block(),
+                ));
 
                 // Look for an rvalue like:
                 //

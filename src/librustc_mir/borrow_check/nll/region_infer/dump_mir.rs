@@ -13,8 +13,8 @@
 //! state of region inference. This code handles emitting the region
 //! context internal state.
 
-use std::io::{self, Write};
 use super::{Constraint, RegionInferenceContext};
+use std::io::{self, Write};
 
 // Room for "'_#NNNNr" before things get misaligned.
 // Easy enough to fix if this ever doesn't seem like
@@ -28,7 +28,9 @@ impl<'tcx> RegionInferenceContext<'tcx> {
 
         for region in self.regions() {
             if self.definitions[region].is_universal {
-                let classification = self.universal_regions.region_classification(region).unwrap();
+                let classification = self.universal_regions
+                    .region_classification(region)
+                    .unwrap();
                 let outlived_by = self.universal_regions.regions_outlived_by(region);
                 writeln!(
                     out,
@@ -88,14 +90,10 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             } = constraint;
             with_msg(&format!(
                 "{:?}: {:?} @ {:?} due to {:?}",
-                sup,
-                sub,
-                point,
-                span
+                sup, sub, point, span
             ))?;
         }
 
         Ok(())
     }
 }
-

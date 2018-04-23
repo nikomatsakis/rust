@@ -26,11 +26,15 @@ use rustc::util::common::{self, ErrorReported};
 use rustc_data_structures::bitvec::BitVector;
 use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 use std::fmt;
+use std::mem;
+use std::path::PathBuf;
 use std::rc::Rc;
 use syntax::ast;
 use syntax_pos::Span;
 
 mod annotation;
+mod borrows_in_scope;
+use self::borrows_in_scope::LiveBorrowResults;
 mod dfs;
 use self::dfs::{CopyFromSourceToTarget, TestTargetOutlivesSource};
 mod dump_mir;
@@ -61,6 +65,8 @@ pub struct RegionInferenceContext<'tcx> {
     inferred_values: Option<RegionValues>,
 
     all_facts: AllFacts,
+
+    live_borrow_results: Option<LiveBorrowResults>,
 
     /// For each variable, stores the index of the first constraint
     /// where that variable appears on the RHS. This is the start of a
@@ -277,6 +283,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         let mut result = Self {
             definitions,
             elements: elements.clone(),
+            live_borrow_results: None,
             liveness_constraints: RegionValues::new(elements, num_region_variables),
             inferred_values: None,
             dependency_map: None,
@@ -417,6 +424,10 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         &mut self.all_facts
     }
 
+    pub(super) fn live_borrow_results(&self) -> Option<&LiveBorrowResults> {
+        self.live_borrow_results.as_ref()
+    }
+
     /// Add a "type test" that must be satisfied.
     pub(super) fn add_type_test(&mut self, type_test: TypeTest<'tcx>) {
         self.type_tests.push(type_test);
@@ -431,6 +442,12 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         mir: &Mir<'tcx>,
         mir_def_id: DefId,
     ) -> Option<ClosureRegionRequirements<'gcx>> {
+        common::time(
+            infcx.tcx.sess,
+            &format!("solve_nll_region_constraints_timely({:?})", mir_def_id),
+            || self.solve_timely(infcx, mir_def_id),
+        );
+
         common::time(
             infcx.tcx.sess,
             &format!("solve_nll_region_constraints({:?})", mir_def_id),
@@ -482,6 +499,25 @@ impl<'tcx> RegionInferenceContext<'tcx> {
                 outlives_requirements,
             })
         }
+    }
+
+    fn solve_timely<'gcx>(
+        &mut self,
+        infcx: &InferCtxt<'_, 'gcx, 'tcx>,
+        mir_def_id: DefId,
+    ) {
+        // TODO this setup is crappy
+        let all_facts = mem::replace(&mut self.all_facts, AllFacts::default());
+
+        let dump_facts_dir = if infcx.tcx.sess.opts.debugging_opts.nll_facts {
+            let def_path = infcx.tcx.hir.def_path(mir_def_id);
+            Some(PathBuf::from("nll-facts").join(def_path.to_filename_friendly_no_crate()))
+        } else {
+            None
+        };
+
+        let results = LiveBorrowResults::compute(all_facts, dump_facts_dir);
+        self.live_borrow_results = Some(results);
     }
 
     /// Re-execute the region inference, this time tracking causal information.
