@@ -58,8 +58,8 @@ crate struct AllFacts {
     // `killed(B,P)` when some prefix of the path borrowed at B is assigned at point P
     crate killed: Vec<(BorrowRegionVid, Location)>,
 
-    // `outlives(R1, R2, P)` when we require `R1: R2 @ P`
-    crate outlives: Vec<(RegionVid, RegionVid, Location)>,
+    // `outlives(R1, P, R2, Q)` when we require `R1@P: R2@Q`
+    crate outlives: Vec<(RegionVid, Location, RegionVid, Location)>,
 
     // `use_live(X, P)` when the variable X is "use-live" on entry to P
     //

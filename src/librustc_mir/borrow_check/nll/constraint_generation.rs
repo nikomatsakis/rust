@@ -195,7 +195,7 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
                 self.regioncx.all_facts_mut().borrow_region.push((
                     region_vid,
                     BorrowRegionVid { region_vid },
-                    location.successor_within_block(),
+                    location,
                 ));
 
                 // Look for an rvalue like:
@@ -292,6 +292,7 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
                             self.regioncx.add_outlives(
                                 span,
                                 ref_region.to_region_vid(),
+                                location,
                                 borrow_region.to_region_vid(),
                                 location.successor_within_block(),
                             );

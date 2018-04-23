@@ -8,14 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use rustc::mir::Mir;
 use rustc::infer::region_constraints::Constraint;
 use rustc::infer::region_constraints::RegionConstraintData;
 use rustc::infer::region_constraints::{Verify, VerifyBound};
+use rustc::mir::Mir;
 use rustc::ty;
 use syntax::codemap::Span;
 
-use super::region_infer::{TypeTest, RegionInferenceContext, RegionTest};
+use super::region_infer::{RegionInferenceContext, RegionTest, TypeTest};
 use super::type_check::Locations;
 use super::type_check::MirTypeckRegionConstraints;
 use super::type_check::OutlivesSet;
@@ -55,12 +55,22 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
         );
 
         // TODO refactor to generate the facts directly from type checker
-        self.regioncx.all_facts_mut().use_live.extend(use_live_variables);
-        self.regioncx.all_facts_mut().drop_live.extend(drop_live_variables);
-        let drop_region: Vec<_> = drop_region.iter().map(|&(local, region)| {
-            (local, self.to_region_vid(region))
-        }).collect();
-        self.regioncx.all_facts_mut().drop_region.extend(drop_region);
+        self.regioncx
+            .all_facts_mut()
+            .use_live
+            .extend(use_live_variables);
+        self.regioncx
+            .all_facts_mut()
+            .drop_live
+            .extend(drop_live_variables);
+        let drop_region: Vec<_> = drop_region
+            .iter()
+            .map(|&(local, region)| (local, self.to_region_vid(region)))
+            .collect();
+        self.regioncx
+            .all_facts_mut()
+            .drop_region
+            .extend(drop_region);
 
         for (region, location, cause) in liveness_set {
             debug!("generate: {:#?} is live at {:#?}", region, location);
@@ -94,11 +104,12 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
                 // reverse direction, because `regioncx` talks about
                 // "outlives" (`>=`) whereas the region constraints
                 // talk about `<=`.
-                self.regioncx
-                    .add_outlives(span, b_vid, a_vid, locations.at_location);
-
-                self.regioncx.all_facts_mut().outlives.push(
-                    (a_vid, b_vid, locations.at_location)
+                self.regioncx.add_outlives(
+                    span,
+                    b_vid,
+                    locations.from_location,
+                    a_vid,
+                    locations.at_location,
                 );
             }
 

@@ -60,8 +60,8 @@ outlives(R1, R2, P). // on entry to P, R1: R2 must hold (R1 <= R2)
 ## subset
 
 ```
-subset((R1, P), (R2, P)) :-
-  outlives(R2, R1, P).
+subset((R1, P), (R2, Q)) :-
+  outlives(R1, P, R2, Q).
 
 subset((R, P), (R, Q)) :-
   useLive(X, Q),
@@ -174,8 +174,8 @@ pub(super) fn timely_dataflow(all_facts: AllFacts) -> LiveBorrowResults {
 
                 // .decl subset( (r1:region, p1:point), (r2:region, p2:point) )
                 let subset = {
-                    // subset((R1, P), (R2, P)) :- outlives(R1, R2, P).
-                    let subset1 = outlives.map(|(r1, r2, p)| ((r2, p), (r1, p)));
+                    // subset((R1, P), (R2, Q)) :- outlives(R1, P, R2, Q).
+                    let subset1 = outlives.map(|(r1, p, r2, q)| ((r1, p), (r2, q)));
 
                     // subset(R, P, R, Q) :- useLive(X, Q), cfgEdge(P, Q), covariantRegion(X, R).
                     let subset2 = use_live
@@ -231,7 +231,8 @@ pub(super) fn timely_dataflow(all_facts: AllFacts) -> LiveBorrowResults {
                                 let mut result = result.lock().unwrap();
                                 for (((r1, p1), (r2, p2)), _timestamp, multiplicity) in facts {
                                     assert_eq!(*multiplicity, 1);
-                                    result.superset
+                                    result
+                                        .superset
                                         .entry(*p2)
                                         .or_insert(vec![])
                                         .push((*r1, *p1, *r2));
@@ -278,60 +279,79 @@ pub(super) fn timely_dataflow(all_facts: AllFacts) -> LiveBorrowResults {
                     })
                 });
 
-                // .decl regionLiveAt( r:region, p:point )
-                let region_live_at = {
-                    // regionLiveAt(R, P) :- useLive(X, P), covariantRegion(X, R).
-                    let region_live_at1 = use_live.join(&covariant_region).map(|(_x, p, r)| (r, p));
+                //// .decl regionLiveAt( r:region, p:point )
+                //let region_live_at = {
+                //    // regionLiveAt(R, P) :- useLive(X, P), covariantRegion(X, R).
+                //    let region_live_at1 = use_live.join(&covariant_region).map(|(_x, p, r)| (r, p));
+                //
+                //    // regionLiveAt(R, P) :- useLive(X, P), contravariantRegion(X, R).
+                //    let region_live_at2 =
+                //        use_live.join(&contravariant_region).map(|(_x, p, r)| (r, p));
+                //
+                //    // regionLiveAt(R, P) :- dropLive(X, P), dropRegion(X, R).
+                //    let region_live_at3 = drop_live.join(&drop_region).map(|(_x, p, r)| (r, p));
+                //
+                //    region_live_at1
+                //        .concat(&region_live_at2)
+                //        .concat(&region_live_at3)
+                //        .distinct()
+                //        .inspect_batch({
+                //            let result = result.clone();
+                //            move |_timestamp, facts| {
+                //                let mut result = result.lock().unwrap();
+                //                for ((region, location), _timestamp, multiplicity) in facts {
+                //                    assert_eq!(*multiplicity, 1);
+                //                    result
+                //                        .region_live_at
+                //                        .entry(*location)
+                //                        .or_insert(vec![])
+                //                        .push(*region);
+                //                }
+                //            }
+                //        })
+                //};
 
-                    // regionLiveAt(R, P) :- useLive(X, P), contravariantRegion(X, R).
-                    let region_live_at2 =
-                        use_live.join(&contravariant_region).map(|(_x, p, r)| (r, p));
-
-                    // regionLiveAt(R, P) :- dropLive(X, P), dropRegion(X, R).
-                    let region_live_at3 = drop_live.join(&drop_region).map(|(_x, p, r)| (r, p));
-
-                    region_live_at1
-                        .concat(&region_live_at2)
-                        .concat(&region_live_at3)
-                        .distinct()
-                        .inspect_batch({
-                            let result = result.clone();
-                            move |_timestamp, facts| {
-                                let mut result = result.lock().unwrap();
-                                for ((region, location), _timestamp, multiplicity) in facts {
-                                    assert_eq!(*multiplicity, 1);
-                                    result
-                                        .region_live_at
-                                        .entry(*location)
-                                        .or_insert(vec![])
-                                        .push(*region);
-                                }
-                            }
-                        })
-                };
+                // borrowPoint(B, P) :-
+                //   borrowRegion(R, B, P).
+                let borrow_point = borrow_region.map(|(_r, b, p)| (b, p));
 
                 // borrowLiveAt(B, P) :-
-                //   restricts(R, B, P)
-                //   regionLiveAt(R, P)
-                let _borrow_live_at = {
+                //   borrowPoint(B, P).
+                // borrowLiveAt(B, Q) :-
+                //   borrowLiveAt(B, P),
+                //   cfgEdge(P, Q),
+                //   restricts(R, B, Q).
+                let borrow_live_at = borrow_point.iterate(|borrow_live_at| {
+                    let borrow_point = borrow_point.enter(&borrow_live_at.scope());
+                    let cfg_edge = cfg_edge.enter(&borrow_live_at.scope());
+                    let restricts = restricts.enter(&borrow_live_at.scope());
+
+                    let borrow_live_at1 = borrow_point.clone();
+
+                    let borrow_live_at2 = borrow_live_at
+                        .map(|(b, p)| (p, b))
+                        .join(&cfg_edge)
+                        .map(|(_p, b, q)| ((b, q), ()))
+                        .semijoin(&restricts.map(|(_r, b, q)| (b, q)))
+                        .map(|((b, q), ())| (b, q));
+
+                    borrow_live_at1.concat(&borrow_live_at2).distinct()
+                });
+
+                borrow_live_at.inspect_batch({
                     let result = result.clone();
-                    restricts
-                        .map(|(r, b, p)| ((r, p), b))
-                        .semijoin(&region_live_at)
-                        .map(|((_r, p), b)| (b, p))
-                        .distinct()
-                        .inspect_batch(move |_timestamp, facts| {
-                            let mut result = result.lock().unwrap();
-                            for ((borrow, location), _timestamp, multiplicity) in facts {
-                                assert_eq!(*multiplicity, 1);
-                                result
-                                    .borrow_live_at
-                                    .entry(*location)
-                                    .or_insert(Vec::new())
-                                    .push(*borrow);
-                            }
-                        })
-                };
+                    move |_timestamp, facts| {
+                        let mut result = result.lock().unwrap();
+                        for ((borrow, location), _timestamp, multiplicity) in facts {
+                            assert_eq!(*multiplicity, 1);
+                            result
+                                .borrow_live_at
+                                .entry(*location)
+                                .or_insert(Vec::new())
+                                .push(*borrow);
+                        }
+                    }
+                });
             });
         }
     }).unwrap();
