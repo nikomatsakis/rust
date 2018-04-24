@@ -8,8 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use borrow_check::location::LocationIndex;
 use borrow_check::borrow_set::BorrowRegionVid;
+use borrow_check::location::{LocationIndex, LocationTable};
 use rustc::mir::Local;
 use rustc::ty::RegionVid;
 use std::error::Error;
@@ -64,93 +64,139 @@ crate struct AllFacts {
 }
 
 impl AllFacts {
-    crate fn write_to_dir(&self, dir: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
+    crate fn write_to_dir(
+        &self,
+        dir: impl AsRef<Path>,
+        location_table: &LocationTable,
+    ) -> Result<(), Box<dyn Error>> {
         let dir: &Path = dir.as_ref();
         fs::create_dir_all(dir)?;
-        write_facts_to_path(&self.borrow_region, dir.join("borrowRegion.facts"))?;
-        write_facts_to_path(&self.cfg_edge, dir.join("cfgEdge.facts"))?;
-        write_facts_to_path(&self.killed, dir.join("killed.facts"))?;
-        write_facts_to_path(&self.outlives, dir.join("outlives.facts"))?;
-        write_facts_to_path(&self.use_live, dir.join("useLive.facts"))?;
-        write_facts_to_path(&self.drop_live, dir.join("dropLive.facts"))?;
-        write_facts_to_path(
+        let wr = FactWriter { location_table, dir };
+        wr.write_facts_to_path(&self.borrow_region, "borrowRegion.facts")?;
+        wr.write_facts_to_path(&self.cfg_edge, "cfgEdge.facts")?;
+        wr.write_facts_to_path(&self.killed, "killed.facts")?;
+        wr.write_facts_to_path(&self.outlives, "outlives.facts")?;
+        wr.write_facts_to_path(&self.use_live, "useLive.facts")?;
+        wr.write_facts_to_path(&self.drop_live, "dropLive.facts")?;
+        wr.write_facts_to_path(
             &self.covariant_var_region,
-            dir.join("covariantVarRegion.facts"),
+            "covariantVarRegion.facts",
         )?;
-        write_facts_to_path(
+        wr.write_facts_to_path(
             &self.contravariant_var_region,
-            dir.join("contravariantVarRegion.facts"),
+            "contravariantVarRegion.facts",
         )?;
-        write_facts_to_path(
+        wr.write_facts_to_path(
             &self.covariant_assign_region,
-            dir.join("covariantAssignRegion.facts"),
+            "covariantAssignRegion.facts",
         )?;
-        write_facts_to_path(
+        wr.write_facts_to_path(
             &self.contravariant_assign_region,
-            dir.join("contravariantAssignRegion.facts"),
+            "contravariantAssignRegion.facts",
         )?;
-        write_facts_to_path(&self.drop_region, dir.join("dropRegion.facts"))?;
+        wr.write_facts_to_path(&self.drop_region, "dropRegion.facts")?;
         Ok(())
     }
 }
 
-fn write_facts_to_path<T>(rows: &Vec<T>, file: impl AsRef<Path>) -> Result<(), Box<dyn Error>>
-where
-    T: FactRow,
-{
-    let file: &Path = file.as_ref();
-    let mut file = File::create(file)?;
-    for row in rows {
-        row.write(&mut file)?;
+struct FactWriter<'w> {
+    location_table: &'w LocationTable,
+    dir: &'w Path,
+}
+
+impl<'w> FactWriter<'w> {
+    fn write_facts_to_path<T>(
+        &self,
+        rows: &Vec<T>,
+        file_name: &str,
+    ) -> Result<(), Box<dyn Error>>
+    where
+        T: FactRow,
+    {
+        let file = &self.dir.join(file_name);
+        let mut file = File::create(file)?;
+        for row in rows {
+            row.write(&mut file, self.location_table)?;
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 trait FactRow {
-    fn write(&self, out: &mut File) -> Result<(), Box<dyn Error>>;
+    fn write(
+        &self,
+        out: &mut File,
+        location_table: &LocationTable,
+    ) -> Result<(), Box<dyn Error>>;
 }
 
 impl<A, B> FactRow for (A, B)
 where
-    A: Debug,
-    B: Debug,
+    A: FactToString,
+    B: FactToString,
 {
-    fn write(&self, out: &mut File) -> Result<(), Box<dyn Error>> {
-        write_row(out, &[&self.0, &self.1])
+    fn write(
+        &self,
+        out: &mut File,
+        location_table: &LocationTable,
+    ) -> Result<(), Box<dyn Error>> {
+        write_row(out, location_table, &[&self.0, &self.1])
     }
 }
 
 impl<A, B, C> FactRow for (A, B, C)
 where
-    A: Debug,
-    B: Debug,
-    C: Debug,
+    A: FactToString,
+    B: FactToString,
+    C: FactToString,
 {
-    fn write(&self, out: &mut File) -> Result<(), Box<dyn Error>> {
-        write_row(out, &[&self.0, &self.1, &self.2])
+    fn write(
+        &self,
+        out: &mut File,
+        location_table: &LocationTable,
+    ) -> Result<(), Box<dyn Error>> {
+        write_row(out, location_table, &[&self.0, &self.1, &self.2])
     }
 }
 
 impl<A, B, C, D> FactRow for (A, B, C, D)
 where
-    A: Debug,
-    B: Debug,
-    C: Debug,
-    D: Debug,
+    A: FactToString,
+    B: FactToString,
+    C: FactToString,
+    D: FactToString,
 {
-    fn write(&self, out: &mut File) -> Result<(), Box<dyn Error>> {
-        write_row(out, &[&self.0, &self.1, &self.2, &self.3])
+    fn write(
+        &self,
+        out: &mut File,
+        location_table: &LocationTable,
+    ) -> Result<(), Box<dyn Error>> {
+        write_row(out, location_table, &[&self.0, &self.1, &self.2, &self.3])
     }
 }
 
-fn write_row(out: &mut dyn Write, columns: &[&Debug]) -> Result<(), Box<dyn Error>> {
+fn write_row(
+    out: &mut dyn Write,
+    location_table: &LocationTable,
+    columns: &[&dyn FactToString],
+) -> Result<(), Box<dyn Error>> {
     for (index, c) in columns.iter().enumerate() {
         let tail = if index == columns.len() - 1 {
             "\n"
         } else {
             "\t"
         };
-        write!(out, "\"{:?}\"{}", c, tail)?;
+        write!(out, "{:?}{}", c.to_string(location_table), tail)?;
     }
     Ok(())
+}
+
+trait FactToString {
+    fn to_string(&self, location_table: &LocationTable) -> String;
+}
+
+impl<T: Debug> FactToString for T {
+    fn to_string(&self, _location_table: &LocationTable) -> String {
+        format!("{:?}", self)
+    }
 }

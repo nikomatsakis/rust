@@ -8,8 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use borrow_check::location::LocationTable;
 use borrow_check::borrow_set::{BorrowRegionVid, BorrowSet};
+use borrow_check::location::LocationTable;
 use borrow_check::nll::facts::AllFacts;
 use rustc::hir;
 use rustc::infer::InferCtxt;
@@ -105,9 +105,9 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
     }
 
     fn visit_local_decl(&mut self, local: Local, local_decl: &LocalDecl<'tcx>) {
-        RegionEnumerator::new(self.infcx.tcx).enumerate_into_facts(
+        RegionEnumerator::new(self.infcx.tcx, self.regioncx).enumerate_into_facts(
             local,
-            &local_decl.ty,
+            local_decl.ty,
             &mut self.all_facts.covariant_var_region,
             &mut self.all_facts.contravariant_var_region,
         );
@@ -164,9 +164,9 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
 
         // We also need to store the regions that appear in the type being assigned.
         let place_ty = place.ty(self.mir, self.infcx.tcx).to_ty(self.infcx.tcx);
-        RegionEnumerator::new(self.infcx.tcx).enumerate_into_facts(
+        RegionEnumerator::new(self.infcx.tcx, self.regioncx).enumerate_into_facts(
             location_index,
-            &place_ty,
+            place_ty,
             &mut self.all_facts.covariant_assign_region,
             &mut self.all_facts.contravariant_assign_region,
         );
@@ -367,14 +367,16 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
 
 struct RegionEnumerator<'a, 'gcx: 'tcx, 'tcx: 'a> {
     tcx: TyCtxt<'a, 'gcx, 'tcx>,
+    regioncx: &'a RegionInferenceContext<'tcx>,
     covariant_regions: BTreeSet<RegionVid>,
     contravariant_regions: BTreeSet<RegionVid>,
 }
 
 impl<'a, 'gcx, 'tcx> RegionEnumerator<'a, 'gcx, 'tcx> {
-    fn new(tcx: TyCtxt<'a, 'gcx, 'tcx>) -> Self {
+    fn new(tcx: TyCtxt<'a, 'gcx, 'tcx>, regioncx: &'a RegionInferenceContext<'tcx>) -> Self {
         RegionEnumerator {
             tcx,
+            regioncx,
             covariant_regions: BTreeSet::new(),
             contravariant_regions: BTreeSet::new(),
         }
@@ -391,11 +393,11 @@ impl<'a, 'gcx, 'tcx> RegionEnumerator<'a, 'gcx, 'tcx> {
     fn enumerate_into_facts<A: Copy>(
         self,
         atom: A,
-        value: &impl Relate<'tcx>,
+        value: Ty<'tcx>,
         covariant_facts: &mut Vec<(A, RegionVid)>,
         contravariant_facts: &mut Vec<(A, RegionVid)>,
     ) {
-        let (covariant_regions, contravariant_regions) = self.enumerate_regions(value);
+        let (covariant_regions, contravariant_regions) = self.enumerate_regions(&value);
 
         // Subtle: Note that "covariant" for the rest of our type
         // system is the opposite of "covariant" in the new borrow
@@ -426,19 +428,21 @@ impl<'a, 'gcx, 'tcx> ContextualTypeFolder<'a, 'gcx, 'tcx> for RegionEnumerator<'
         context: TypeContext,
         a: ty::Region<'tcx>,
     ) -> ContextualFoldResult<'tcx, ty::Region<'tcx>> {
-        let region_vid = a.to_region_vid();
-        match context.ambient_variance {
-            ty::Variance::Covariant => {
-                self.covariant_regions.insert(region_vid);
+        if !a.is_late_bound() {
+            let region_vid = self.regioncx.to_region_vid(a);
+            match context.ambient_variance {
+                ty::Variance::Covariant => {
+                    self.covariant_regions.insert(region_vid);
+                }
+                ty::Variance::Contravariant => {
+                    self.contravariant_regions.insert(region_vid);
+                }
+                ty::Variance::Invariant => {
+                    self.covariant_regions.insert(region_vid);
+                    self.contravariant_regions.insert(region_vid);
+                }
+                ty::Variance::Bivariant => {}
             }
-            ty::Variance::Contravariant => {
-                self.contravariant_regions.insert(region_vid);
-            }
-            ty::Variance::Invariant => {
-                self.covariant_regions.insert(region_vid);
-                self.contravariant_regions.insert(region_vid);
-            }
-            ty::Variance::Bivariant => {}
         }
         Ok(a)
     }

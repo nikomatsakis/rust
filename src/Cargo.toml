@@ -73,6 +73,3 @@ cargo = { path = "tools/cargo" }
 # for crates.io
 rustfmt-nightly = { path = "tools/rustfmt" }
 clippy_lints = { path = "tools/clippy/clippy_lints" }
-timely_communication = { path = "timely/timely-dataflow/communication" }
-timely = { path = "timely/timely-dataflow" }
-differential-dataflow = { path = "timely/differential-dataflow" }

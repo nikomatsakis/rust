@@ -26,12 +26,6 @@ crate struct BorrowSet<'tcx> {
     /// in the MIR.
     crate borrows: IndexVec<BorrowIndex, BorrowData<'tcx>>,
 
-    /// Each borrow is also uniquely identified in the MIR by the
-    /// `Location` of the assignment statement in which it appears on
-    /// the right hand side; we map each such location to the
-    /// corresponding `BorrowIndex`.
-    crate location_map: FxHashMap<Location, BorrowIndex>,
-
     /// Locations which activate borrows.
     /// NOTE: A given location may activate more than one borrow in the future
     /// when more general two-phase borrow support is introduced, but for now we
@@ -119,7 +113,6 @@ impl<'tcx> BorrowSet<'tcx> {
             tcx,
             mir,
             idx_vec: IndexVec::new(),
-            location_map: FxHashMap(),
             activation_map: FxHashMap(),
             region_map: FxHashMap(),
             local_map: FxHashMap(),
@@ -145,7 +138,6 @@ impl<'tcx> BorrowSet<'tcx> {
 
         BorrowSet {
             borrows: visitor.idx_vec,
-            location_map: visitor.location_map,
             activation_map: visitor.activation_map,
             region_map: visitor.region_map,
             local_map: visitor.local_map,
@@ -164,7 +156,6 @@ struct GatherBorrows<'a, 'gcx: 'tcx, 'tcx: 'a> {
     tcx: TyCtxt<'a, 'gcx, 'tcx>,
     mir: &'a Mir<'tcx>,
     idx_vec: IndexVec<BorrowIndex, BorrowData<'tcx>>,
-    location_map: FxHashMap<Location, BorrowIndex>,
     activation_map: FxHashMap<Location, Vec<BorrowIndex>>,
     region_map: FxHashMap<BorrowRegionVid, BorrowIndex>,
     local_map: FxHashMap<mir::Local, FxHashSet<BorrowIndex>>,
@@ -203,7 +194,6 @@ impl<'a, 'gcx, 'tcx> Visitor<'tcx> for GatherBorrows<'a, 'gcx, 'tcx> {
                 borrowed_place: borrowed_place.clone(),
                 assigned_place: assigned_place.clone(),
             });
-            self.location_map.insert(location, borrow_index);
 
             self.insert_as_pending_if_two_phase(location, &assigned_place, region, kind, borrow_index);
 
@@ -273,21 +263,6 @@ impl<'a, 'gcx, 'tcx> Visitor<'tcx> for GatherBorrows<'a, 'gcx, 'tcx> {
                 None => {}
             }
         }
-    }
-
-    fn visit_rvalue(&mut self, rvalue: &mir::Rvalue<'tcx>, location: mir::Location) {
-        if let mir::Rvalue::Ref(region, kind, ref place) = *rvalue {
-            // double-check that we already registered a BorrowData for this
-
-            let borrow_index = self.location_map[&location];
-            let borrow_data = &self.idx_vec[borrow_index];
-            assert_eq!(borrow_data.reserve_location, location);
-            assert_eq!(borrow_data.kind, kind);
-            assert_eq!(borrow_data.region, region);
-            assert_eq!(borrow_data.borrowed_place, *place);
-        }
-
-        return self.super_rvalue(rvalue, location);
     }
 
     fn visit_statement(

@@ -28,7 +28,7 @@ use self::mir_util::PassWhere;
 use util as mir_util;
 use util::pretty::{self, ALIGN};
 
-mod borrows_in_scope;
+crate mod borrows_in_scope;
 mod constraint_generation;
 pub mod explain_borrow;
 mod facts;
@@ -82,6 +82,7 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
     borrow_set: &BorrowSet<'tcx>,
 ) -> (
     RegionInferenceContext<'tcx>,
+    LiveBorrowResults,
     Option<ClosureRegionRequirements<'gcx>>,
 ) {
     // Run the MIR type-checker.
@@ -122,7 +123,8 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
 
     // Solve the region constraints.
     let closure_region_requirements = regioncx.solve(infcx, &mir, def_id);
-    let live_borrow_results = LiveBorrowResults::compute(infcx.tcx, def_id, all_facts);
+    let live_borrow_results =
+        LiveBorrowResults::compute(infcx.tcx, def_id, location_table, all_facts);
 
     // Dump MIR results into a file, if that is enabled. This let us
     // write unit-tests, as well as helping with debugging.
@@ -142,7 +144,7 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
     // information
     dump_annotation(infcx, &mir, def_id, &regioncx, &closure_region_requirements);
 
-    (regioncx, closure_region_requirements)
+    (regioncx, live_borrow_results, closure_region_requirements)
 }
 
 fn dump_mir_results<'a, 'gcx, 'tcx>(
