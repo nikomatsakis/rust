@@ -9,8 +9,9 @@
 // except according to those terms.
 
 use borrow_check::nll::{AllFacts, BorrowRegionVid};
+use rustc::hir::def_id::DefId;
 use rustc::mir::Location;
-use rustc::ty::RegionVid;
+use rustc::ty::{RegionVid, TyCtxt};
 use rustc_data_structures::fx::FxHashMap;
 use std::borrow::Cow;
 use std::path::PathBuf;
@@ -31,11 +32,14 @@ crate struct LiveBorrowResults {
 
 impl LiveBorrowResults {
     crate fn compute<'tcx>(
+        tcx: TyCtxt<'_, '_, '_>,
+        mir_def_id: DefId,
         all_facts: AllFacts,
-        dump_facts_dir: Option<PathBuf>,
     ) -> Self {
-        if let Some(dir) = dump_facts_dir {
-            all_facts.write_to_dir(dir).unwrap();
+        if tcx.sess.opts.debugging_opts.nll_facts {
+            let def_path = tcx.hir.def_path(mir_def_id);
+            let dir_path = PathBuf::from("nll-facts").join(def_path.to_filename_friendly_no_crate());
+            all_facts.write_to_dir(dir_path).unwrap();
         }
 
         timely::timely_dataflow(all_facts)

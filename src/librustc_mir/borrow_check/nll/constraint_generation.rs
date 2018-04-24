@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use borrow_check::borrow_set::BorrowSet;
-use borrow_check::nll::BorrowRegionVid;
+use borrow_check::nll::{AllFacts, BorrowRegionVid};
 use rustc::hir;
 use rustc::infer::InferCtxt;
 use rustc::mir::visit::TyContext;
@@ -30,6 +30,7 @@ use super::ToRegionVid;
 pub(super) fn generate_constraints<'cx, 'gcx, 'tcx>(
     infcx: &InferCtxt<'cx, 'gcx, 'tcx>,
     regioncx: &mut RegionInferenceContext<'tcx>,
+    all_facts: &mut AllFacts,
     mir: &Mir<'tcx>,
     borrow_set: &BorrowSet<'tcx>,
 ) {
@@ -37,6 +38,7 @@ pub(super) fn generate_constraints<'cx, 'gcx, 'tcx>(
         borrow_set,
         infcx,
         regioncx,
+        all_facts,
         mir,
     };
 
@@ -52,6 +54,7 @@ pub(super) fn generate_constraints<'cx, 'gcx, 'tcx>(
 /// 'cg = the duration of the constraint generation process itself.
 struct ConstraintGeneration<'cg, 'cx: 'cg, 'gcx: 'tcx, 'tcx: 'cx> {
     infcx: &'cg InferCtxt<'cx, 'gcx, 'tcx>,
+    all_facts: &'cg mut AllFacts,
     regioncx: &'cg mut RegionInferenceContext<'tcx>,
     mir: &'cg Mir<'tcx>,
     borrow_set: &'cg BorrowSet<'tcx>,
@@ -107,13 +110,11 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         // *covariant* with respect to `'a` -- therefore, we swap the
         // facts here.
 
-        self.regioncx
-            .all_facts_mut()
+        self.all_facts
             .covariant_region
             .extend(contravariant_regions.into_iter().map(|r| (local, r)));
 
-        self.regioncx
-            .all_facts_mut()
+        self.all_facts
             .contravariant_region
             .extend(covariant_regions.into_iter().map(|r| (local, r)));
 
@@ -135,8 +136,7 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         statement: &Statement<'tcx>,
         location: Location,
     ) {
-        self.regioncx
-            .all_facts_mut()
+        self.all_facts
             .cfg_edge
             .push((location, location.successor_within_block()));
 
@@ -159,8 +159,7 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
                     let borrow_region = BorrowRegionVid {
                         region_vid: borrow_data.region.to_region_vid(),
                     };
-                    self.regioncx
-                        .all_facts_mut()
+                    self.all_facts
                         .killed
                         .push((borrow_region, location));
                 }
@@ -177,8 +176,7 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         location: Location,
     ) {
         for successor_block in terminator.successors().iter() {
-            self.regioncx
-                .all_facts_mut()
+            self.all_facts
                 .cfg_edge
                 .push((location, successor_block.start_location()));
         }
@@ -192,7 +190,7 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         match rvalue {
             Rvalue::Ref(region, borrow_kind, borrowed_place) => {
                 let region_vid = self.regioncx.to_region_vid(region);
-                self.regioncx.all_facts_mut().borrow_region.push((
+                self.all_facts.borrow_region.push((
                     region_vid,
                     BorrowRegionVid { region_vid },
                     location,
@@ -295,6 +293,12 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
                                 borrow_region.to_region_vid(),
                                 location.successor_within_block(),
                             );
+
+                            self.all_facts.outlives.push((
+                                ref_region.to_region_vid(),
+                                borrow_region.to_region_vid(),
+                                location.successor_within_block(),
+                            ));
 
                             match mutbl {
                                 hir::Mutability::MutImmutable => {

@@ -8,6 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use borrow_check::nll::AllFacts;
 use rustc::infer::region_constraints::Constraint;
 use rustc::infer::region_constraints::RegionConstraintData;
 use rustc::infer::region_constraints::{Verify, VerifyBound};
@@ -27,14 +28,16 @@ use super::type_check::OutlivesSet;
 /// them into the NLL `RegionInferenceContext`.
 pub(super) fn generate<'tcx>(
     regioncx: &mut RegionInferenceContext<'tcx>,
+    all_facts: &mut AllFacts,
     mir: &Mir<'tcx>,
     constraints: &MirTypeckRegionConstraints<'tcx>,
 ) {
-    SubtypeConstraintGenerator { regioncx, mir }.generate(constraints);
+    SubtypeConstraintGenerator { regioncx, all_facts, mir }.generate(constraints);
 }
 
 struct SubtypeConstraintGenerator<'cx, 'tcx: 'cx> {
     regioncx: &'cx mut RegionInferenceContext<'tcx>,
+    all_facts: &'cx mut AllFacts,
     mir: &'cx Mir<'tcx>,
 }
 
@@ -55,20 +58,17 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
         );
 
         // TODO refactor to generate the facts directly from type checker
-        self.regioncx
-            .all_facts_mut()
+        self.all_facts
             .use_live
             .extend(use_live_variables);
-        self.regioncx
-            .all_facts_mut()
+        self.all_facts
             .drop_live
             .extend(drop_live_variables);
         let drop_region: Vec<_> = drop_region
             .iter()
             .map(|&(local, region)| (local, self.to_region_vid(region)))
             .collect();
-        self.regioncx
-            .all_facts_mut()
+        self.all_facts
             .drop_region
             .extend(drop_region);
 
@@ -110,6 +110,8 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
                     a_vid,
                     locations.at_location,
                 );
+
+                self.all_facts.outlives.push((b_vid, a_vid, locations.at_location));
             }
 
             for verify in verifys {

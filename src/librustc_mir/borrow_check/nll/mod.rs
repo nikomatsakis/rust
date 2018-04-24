@@ -27,6 +27,7 @@ use util as mir_util;
 use util::pretty::{self, ALIGN};
 use self::mir_util::PassWhere;
 
+mod borrows_in_scope;
 mod constraint_generation;
 pub mod explain_borrow;
 mod facts;
@@ -36,6 +37,7 @@ mod subtype_constraint_generation;
 pub(crate) mod type_check;
 mod universal_regions;
 
+use self::borrows_in_scope::LiveBorrowResults;
 use self::region_infer::RegionInferenceContext;
 use self::universal_regions::UniversalRegions;
 
@@ -137,14 +139,16 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
     // Create the region inference context, taking ownership of the region inference
     // data that was contained in `infcx`.
     let var_origins = infcx.take_region_var_origins();
+    let mut all_facts = AllFacts::default();
     let mut regioncx = RegionInferenceContext::new(var_origins, universal_regions, mir);
 
     // Generate various constraints.
-    subtype_constraint_generation::generate(&mut regioncx, mir, constraint_sets);
-    constraint_generation::generate_constraints(infcx, &mut regioncx, &mir, borrow_set);
+    subtype_constraint_generation::generate(&mut regioncx, &mut all_facts, mir, constraint_sets);
+    constraint_generation::generate_constraints(infcx, &mut regioncx, &mut all_facts, &mir, borrow_set);
 
     // Solve the region constraints.
     let closure_region_requirements = regioncx.solve(infcx, &mir, def_id);
+    let live_borrow_results = LiveBorrowResults::compute(infcx.tcx, def_id, all_facts);
 
     // Dump MIR results into a file, if that is enabled. This let us
     // write unit-tests, as well as helping with debugging.
@@ -155,6 +159,7 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
         &mir,
         def_id,
         &regioncx,
+        &live_borrow_results,
         &closure_region_requirements,
     );
 
@@ -172,6 +177,7 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
     mir: &Mir<'tcx>,
     mir_def_id: DefId,
     regioncx: &RegionInferenceContext,
+    live_borrow_results: &LiveBorrowResults,
     closure_region_requirements: &Option<ClosureRegionRequirements>,
 ) {
     let source = MirSource::item(mir_def_id);
@@ -240,8 +246,6 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
                     s,
                     ALIGN = ALIGN
                 )?;
-
-                let live_borrow_results = regioncx.live_borrow_results().unwrap();
 
                 writeln!(
                     out,
