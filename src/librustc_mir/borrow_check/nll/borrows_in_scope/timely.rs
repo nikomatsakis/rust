@@ -11,7 +11,7 @@
 //! Timely dataflow runs on its own thread.
 
 use borrow_check::nll::borrows_in_scope::LiveBorrowResults;
-use borrow_check::nll::AllFacts;
+use borrow_check::nll::facts::AllFacts;
 use differential_dataflow::collection::Collection;
 use differential_dataflow::operators::*;
 use rustc_data_structures::fx::FxHashMap;

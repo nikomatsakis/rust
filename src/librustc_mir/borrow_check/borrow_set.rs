@@ -8,13 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use borrow_check::nll::{BorrowRegionVid, ToRegionVid};
+use borrow_check::nll::ToRegionVid;
 use borrow_check::place_ext::PlaceExt;
 use dataflow::indexes::BorrowIndex;
 use rustc::mir::traversal;
 use rustc::mir::visit::{PlaceContext, Visitor};
 use rustc::mir::{self, Location, Mir, Place};
-use rustc::ty::{Region, TyCtxt};
+use rustc::ty::{Region, RegionVid, TyCtxt};
 use rustc::util::nodemap::{FxHashMap, FxHashSet};
 use rustc_data_structures::indexed_vec::IndexVec;
 use std::fmt;
@@ -44,6 +44,19 @@ crate struct BorrowSet<'tcx> {
 
     /// Map from local to all the borrows on that local
     crate local_map: FxHashMap<mir::Local, FxHashSet<BorrowIndex>>,
+}
+
+/// For each `foo = &'x bar` rvalue in the MIR, there is a region
+/// associated with the borrow (`'x`, here). Moreover, after NLL has
+/// rewritten the regions, this `'x` is always a region variable and
+/// always unique (i.e., appears nowhere else in the MIR). In the
+/// datalog, we use that unique region to describe the borrow, similar
+/// to the `BorrowIndex` -- the reason we use the region and not the
+/// `BorrowIndex` is so that we can also use it to represent named
+/// lifetimes.
+#[derive(Abomonation, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct BorrowRegionVid {
+    pub(crate) region_vid: RegionVid,
 }
 
 impl<'tcx> Index<BorrowIndex> for BorrowSet<'tcx> {

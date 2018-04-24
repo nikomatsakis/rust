@@ -8,7 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use borrow_check::nll::{AllFacts, BorrowRegionVid};
+use borrow_check::borrow_set::BorrowRegionVid;
+use borrow_check::nll::facts::AllFacts;
 use borrow_check::nll::location::RichLocationIndex;
 use rustc::hir::def_id::DefId;
 use rustc::ty::{RegionVid, TyCtxt};

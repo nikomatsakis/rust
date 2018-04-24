@@ -8,12 +8,52 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use borrow_check::nll::AllFacts;
+use borrow_check::borrow_set::BorrowRegionVid;
+use borrow_check::nll::location::RichLocationIndex;
+use rustc::mir::Local;
+use rustc::ty::RegionVid;
 use std::error::Error;
 use std::fmt::Debug;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
+
+/// The "facts" which are the basis of the NLL borrow analysis.
+#[derive(Default)]
+crate struct AllFacts {
+    // For each `&'a T` rvalue at point P, include ('a, B, P).
+    //
+    // XXX Universal regions?
+    crate borrow_region: Vec<(RegionVid, BorrowRegionVid, RichLocationIndex)>,
+
+    // `cfg_edge(P,Q)` for each edge P -> Q in the control flow
+    crate cfg_edge: Vec<(RichLocationIndex, RichLocationIndex)>,
+
+    // `killed(B,P)` when some prefix of the path borrowed at B is assigned at point P
+    crate killed: Vec<(BorrowRegionVid, RichLocationIndex)>,
+
+    // `outlives(R1, R2, P)` when we require `R1@P: R2@P`
+    crate outlives: Vec<(RegionVid, RegionVid, RichLocationIndex)>,
+
+    // `use_live(X, P)` when the variable X is "use-live" on entry to P
+    //
+    // This could (should?) eventually be propagated by the timely dataflow code.
+    crate use_live: Vec<(Local, RichLocationIndex)>,
+
+    // `drop_live(X, P)` when the variable X is "drop-live" on entry to P
+    //
+    // This could (should?) eventually be propagated by the timely dataflow code.
+    crate drop_live: Vec<(Local, RichLocationIndex)>,
+
+    // `covariant_region(X, R)` when the type of X includes X in a contravariant position
+    crate covariant_region: Vec<(Local, RegionVid)>,
+
+    // `contravariant_region(X, R)` when the type of X includes X in a contravariant position
+    crate contravariant_region: Vec<(Local, RegionVid)>,
+
+    // `drop_region(X, R)` when the region R must be live when X is dropped
+    crate drop_region: Vec<(Local, RegionVid)>,
+}
 
 impl AllFacts {
     crate fn write_to_dir(&self, dir: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {

@@ -8,9 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use borrow_check::borrow_set::BorrowSet;
+use borrow_check::borrow_set::{BorrowSet, BorrowRegionVid};
+use borrow_check::nll::facts::AllFacts;
 use borrow_check::nll::location::RichLocationTable;
-use borrow_check::nll::{AllFacts, BorrowRegionVid};
 use rustc::hir;
 use rustc::infer::InferCtxt;
 use rustc::mir::visit::TyContext;

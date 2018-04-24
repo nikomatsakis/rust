@@ -14,7 +14,7 @@ use dataflow::FlowAtLocation;
 use dataflow::MaybeInitializedPlaces;
 use rustc::hir::def_id::DefId;
 use rustc::infer::InferCtxt;
-use rustc::mir::{ClosureOutlivesSubject, ClosureRegionRequirements, Local, Mir};
+use rustc::mir::{ClosureOutlivesSubject, ClosureRegionRequirements, Mir};
 use rustc::ty::{self, RegionKind, RegionVid};
 use rustc::util::nodemap::FxHashMap;
 use std::collections::BTreeSet;
@@ -32,58 +32,17 @@ mod constraint_generation;
 pub mod explain_borrow;
 mod facts;
 mod location;
-pub(crate) mod region_infer;
+crate mod region_infer;
 mod renumber;
 mod subtype_constraint_generation;
-pub(crate) mod type_check;
+crate mod type_check;
 mod universal_regions;
 
 use self::borrows_in_scope::LiveBorrowResults;
-use self::location::{RichLocationIndex, RichLocationTable};
+use self::facts::AllFacts;
+use self::location::RichLocationTable;
 use self::region_infer::RegionInferenceContext;
 use self::universal_regions::UniversalRegions;
-
-#[derive(Abomonation, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct BorrowRegionVid {
-    pub(crate) region_vid: RegionVid,
-}
-
-/// The "facts" which are the basis of the NLL borrow analysis.
-#[derive(Default)]
-crate struct AllFacts {
-    // For each `&'a T` rvalue at point P, include ('a, B, P).
-    //
-    // XXX Universal regions?
-    crate borrow_region: Vec<(RegionVid, BorrowRegionVid, RichLocationIndex)>,
-
-    // `cfg_edge(P,Q)` for each edge P -> Q in the control flow
-    crate cfg_edge: Vec<(RichLocationIndex, RichLocationIndex)>,
-
-    // `killed(B,P)` when some prefix of the path borrowed at B is assigned at point P
-    crate killed: Vec<(BorrowRegionVid, RichLocationIndex)>,
-
-    // `outlives(R1, R2, P)` when we require `R1@P: R2@P`
-    crate outlives: Vec<(RegionVid, RegionVid, RichLocationIndex)>,
-
-    // `use_live(X, P)` when the variable X is "use-live" on entry to P
-    //
-    // This could (should?) eventually be propagated by the timely dataflow code.
-    crate use_live: Vec<(Local, RichLocationIndex)>,
-
-    // `drop_live(X, P)` when the variable X is "drop-live" on entry to P
-    //
-    // This could (should?) eventually be propagated by the timely dataflow code.
-    crate drop_live: Vec<(Local, RichLocationIndex)>,
-
-    // `covariant_region(X, R)` when the type of X includes X in a contravariant position
-    crate covariant_region: Vec<(Local, RegionVid)>,
-
-    // `contravariant_region(X, R)` when the type of X includes X in a contravariant position
-    crate contravariant_region: Vec<(Local, RegionVid)>,
-
-    // `drop_region(X, R)` when the region R must be live when X is dropped
-    crate drop_region: Vec<(Local, RegionVid)>,
-}
 
 /// Rewrites the regions in the MIR to use NLL variables, also
 /// scraping out the set of universal regions (e.g., region parameters)
