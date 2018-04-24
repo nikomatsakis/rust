@@ -292,7 +292,6 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
                             self.regioncx.add_outlives(
                                 span,
                                 ref_region.to_region_vid(),
-                                location,
                                 borrow_region.to_region_vid(),
                                 location.successor_within_block(),
                             );

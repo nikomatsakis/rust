@@ -60,8 +60,8 @@ outlives(R1, R2, P). // on entry to P, R1: R2 must hold (R1 <= R2)
 ## subset
 
 ```
-subset((R1, P), (R2, Q)) :-
-  outlives(R1, P, R2, Q).
+subset((R1, P), (R2, P)) :-
+  outlives(R1, R2, P).
 
 subset((R, P), (R, Q)) :-
   useLive(X, Q),
@@ -174,8 +174,8 @@ pub(super) fn timely_dataflow(all_facts: AllFacts) -> LiveBorrowResults {
 
                 // .decl subset( (r1:region, p1:point), (r2:region, p2:point) )
                 let subset = {
-                    // subset((R1, P), (R2, Q)) :- outlives(R1, P, R2, Q).
-                    let subset1 = outlives.map(|(r1, p, r2, q)| ((r1, p), (r2, q)));
+                    // subset((R1, P), (R2, P)) :- outlives(R1, R2, P).
+                    let subset1 = outlives.map(|(r1, r2, p)| ((r1, p), (r2, p)));
 
                     // subset(R, P, R, Q) :- useLive(X, Q), cfgEdge(P, Q), covariantRegion(X, R).
                     let subset2 = use_live

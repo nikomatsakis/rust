@@ -107,7 +107,6 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
                 self.regioncx.add_outlives(
                     span,
                     b_vid,
-                    locations.from_location,
                     a_vid,
                     locations.at_location,
                 );

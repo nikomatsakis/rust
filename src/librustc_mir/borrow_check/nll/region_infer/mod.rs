@@ -406,21 +406,20 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         &mut self,
         span: Span,
         sup: RegionVid,
-        sup_point: Location,
         sub: RegionVid,
-        sub_point: Location,
+        point: Location,
     ) {
-        debug!("add_outlives({:?}@{:?}: {:?}@{:?}", sup, sup_point, sub, sub_point);
+        debug!("add_outlives({:?}: {:?} @ {:?}", sup, sub, point);
         assert!(self.inferred_values.is_none(), "values already inferred");
         self.constraints.push(Constraint {
             span,
             sup,
             sub,
-            point: sub_point,
+            point,
             next: None,
         });
 
-        self.all_facts.outlives.push((sup, sup_point, sub, sub_point));
+        self.all_facts.outlives.push((sup, sub, point));
     }
 
     pub(super) fn all_facts_mut(&mut self) -> &mut AllFacts {
