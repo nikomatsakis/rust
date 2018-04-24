@@ -9,6 +9,7 @@
 // except according to those terms.
 
 use borrow_check::borrow_set::BorrowSet;
+use borrow_check::nll::location::RichLocationTable;
 use borrow_check::nll::{AllFacts, BorrowRegionVid};
 use rustc::hir;
 use rustc::infer::InferCtxt;
@@ -31,6 +32,7 @@ pub(super) fn generate_constraints<'cx, 'gcx, 'tcx>(
     infcx: &InferCtxt<'cx, 'gcx, 'tcx>,
     regioncx: &mut RegionInferenceContext<'tcx>,
     all_facts: &mut AllFacts,
+    rich_locations: &RichLocationTable,
     mir: &Mir<'tcx>,
     borrow_set: &BorrowSet<'tcx>,
 ) {
@@ -38,6 +40,7 @@ pub(super) fn generate_constraints<'cx, 'gcx, 'tcx>(
         borrow_set,
         infcx,
         regioncx,
+        rich_locations,
         all_facts,
         mir,
     };
@@ -55,6 +58,7 @@ pub(super) fn generate_constraints<'cx, 'gcx, 'tcx>(
 struct ConstraintGeneration<'cg, 'cx: 'cg, 'gcx: 'tcx, 'tcx: 'cx> {
     infcx: &'cg InferCtxt<'cx, 'gcx, 'tcx>,
     all_facts: &'cg mut AllFacts,
+    rich_locations: &'cg RichLocationTable,
     regioncx: &'cg mut RegionInferenceContext<'tcx>,
     mir: &'cg Mir<'tcx>,
     borrow_set: &'cg BorrowSet<'tcx>,
@@ -136,9 +140,11 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         statement: &Statement<'tcx>,
         location: Location,
     ) {
-        self.all_facts
-            .cfg_edge
-            .push((location, location.successor_within_block()));
+        self.all_facts.cfg_edge.push((
+            self.rich_locations.start_index(location),
+            self.rich_locations
+                .start_index(location.successor_within_block()),
+        ));
 
         self.super_statement(block, statement, location);
     }
@@ -161,7 +167,7 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
                     };
                     self.all_facts
                         .killed
-                        .push((borrow_region, location));
+                        .push((borrow_region, self.rich_locations.start_index(location)));
                 }
             }
         }
@@ -176,9 +182,11 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         location: Location,
     ) {
         for successor_block in terminator.successors().iter() {
-            self.all_facts
-                .cfg_edge
-                .push((location, successor_block.start_location()));
+            self.all_facts.cfg_edge.push((
+                self.rich_locations.start_index(location),
+                self.rich_locations
+                    .start_index(successor_block.start_location()),
+            ));
         }
 
         self.super_terminator(block, terminator, location);
@@ -193,7 +201,7 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
                 self.all_facts.borrow_region.push((
                     region_vid,
                     BorrowRegionVid { region_vid },
-                    location,
+                    self.rich_locations.start_index(location),
                 ));
 
                 // Look for an rvalue like:
@@ -297,7 +305,8 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
                             self.all_facts.outlives.push((
                                 ref_region.to_region_vid(),
                                 borrow_region.to_region_vid(),
-                                location.successor_within_block(),
+                                self.rich_locations
+                                    .start_index(location.successor_within_block()),
                             ));
 
                             match mutbl {

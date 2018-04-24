@@ -9,9 +9,12 @@
 // except according to those terms.
 
 use borrow_check::borrow_set::BorrowSet;
+use dataflow::move_paths::MoveData;
+use dataflow::FlowAtLocation;
+use dataflow::MaybeInitializedPlaces;
 use rustc::hir::def_id::DefId;
-use rustc::mir::{ClosureRegionRequirements, ClosureOutlivesSubject, Local, Location, Mir};
 use rustc::infer::InferCtxt;
+use rustc::mir::{ClosureOutlivesSubject, ClosureRegionRequirements, Local, Mir};
 use rustc::ty::{self, RegionKind, RegionVid};
 use rustc::util::nodemap::FxHashMap;
 use std::collections::BTreeSet;
@@ -19,18 +22,16 @@ use std::fmt::Debug;
 use std::io;
 use transform::MirSource;
 use util::liveness::{LivenessResults, LocalSet};
-use dataflow::FlowAtLocation;
-use dataflow::MaybeInitializedPlaces;
-use dataflow::move_paths::MoveData;
 
+use self::mir_util::PassWhere;
 use util as mir_util;
 use util::pretty::{self, ALIGN};
-use self::mir_util::PassWhere;
 
 mod borrows_in_scope;
 mod constraint_generation;
 pub mod explain_borrow;
 mod facts;
+mod location;
 pub(crate) mod region_infer;
 mod renumber;
 mod subtype_constraint_generation;
@@ -38,6 +39,7 @@ pub(crate) mod type_check;
 mod universal_regions;
 
 use self::borrows_in_scope::LiveBorrowResults;
+use self::location::{RichLocationIndex, RichLocationTable};
 use self::region_infer::RegionInferenceContext;
 use self::universal_regions::UniversalRegions;
 
@@ -52,26 +54,26 @@ crate struct AllFacts {
     // For each `&'a T` rvalue at point P, include ('a, B, P).
     //
     // XXX Universal regions?
-    crate borrow_region: Vec<(RegionVid, BorrowRegionVid, Location)>,
+    crate borrow_region: Vec<(RegionVid, BorrowRegionVid, RichLocationIndex)>,
 
     // `cfg_edge(P,Q)` for each edge P -> Q in the control flow
-    crate cfg_edge: Vec<(Location, Location)>,
+    crate cfg_edge: Vec<(RichLocationIndex, RichLocationIndex)>,
 
     // `killed(B,P)` when some prefix of the path borrowed at B is assigned at point P
-    crate killed: Vec<(BorrowRegionVid, Location)>,
+    crate killed: Vec<(BorrowRegionVid, RichLocationIndex)>,
 
     // `outlives(R1, R2, P)` when we require `R1@P: R2@P`
-    crate outlives: Vec<(RegionVid, RegionVid, Location)>,
+    crate outlives: Vec<(RegionVid, RegionVid, RichLocationIndex)>,
 
     // `use_live(X, P)` when the variable X is "use-live" on entry to P
     //
     // This could (should?) eventually be propagated by the timely dataflow code.
-    crate use_live: Vec<(Local, Location)>,
+    crate use_live: Vec<(Local, RichLocationIndex)>,
 
     // `drop_live(X, P)` when the variable X is "drop-live" on entry to P
     //
     // This could (should?) eventually be propagated by the timely dataflow code.
-    crate drop_live: Vec<(Local, Location)>,
+    crate drop_live: Vec<(Local, RichLocationIndex)>,
 
     // `covariant_region(X, R)` when the type of X includes X in a contravariant position
     crate covariant_region: Vec<(Local, RegionVid)>,
@@ -139,12 +141,26 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
     // Create the region inference context, taking ownership of the region inference
     // data that was contained in `infcx`.
     let var_origins = infcx.take_region_var_origins();
+    let rich_locations = &RichLocationTable::new(mir);
     let mut all_facts = AllFacts::default();
     let mut regioncx = RegionInferenceContext::new(var_origins, universal_regions, mir);
 
     // Generate various constraints.
-    subtype_constraint_generation::generate(&mut regioncx, &mut all_facts, mir, constraint_sets);
-    constraint_generation::generate_constraints(infcx, &mut regioncx, &mut all_facts, &mir, borrow_set);
+    subtype_constraint_generation::generate(
+        &mut regioncx,
+        &mut all_facts,
+        rich_locations,
+        mir,
+        constraint_sets,
+    );
+    constraint_generation::generate_constraints(
+        infcx,
+        &mut regioncx,
+        &mut all_facts,
+        rich_locations,
+        &mir,
+        borrow_set,
+    );
 
     // Solve the region constraints.
     let closure_region_requirements = regioncx.solve(infcx, &mir, def_id);
@@ -156,6 +172,7 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
         infcx,
         liveness,
         borrow_set,
+        rich_locations,
         &mir,
         def_id,
         &regioncx,
@@ -174,6 +191,7 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
     infcx: &InferCtxt<'a, 'gcx, 'tcx>,
     liveness: &LivenessResults,
     borrow_set: &BorrowSet<'tcx>,
+    rich_locations: &RichLocationTable,
     mir: &Mir<'tcx>,
     mir_def_id: DefId,
     regioncx: &RegionInferenceContext,
@@ -211,104 +229,114 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
         })
         .collect();
 
-    mir_util::dump_mir(infcx.tcx, None, "nll", &0, source, mir, |pass_where, out| {
-        match pass_where {
-            // Before the CFG, dump out the values for each region variable.
-            PassWhere::BeforeCFG => {
-                regioncx.dump_mir(out)?;
+    mir_util::dump_mir(
+        infcx.tcx,
+        None,
+        "nll",
+        &0,
+        source,
+        mir,
+        |pass_where, out| {
+            match pass_where {
+                // Before the CFG, dump out the values for each region variable.
+                PassWhere::BeforeCFG => {
+                    regioncx.dump_mir(out)?;
 
-                if let Some(closure_region_requirements) = closure_region_requirements {
-                    writeln!(out, "|")?;
-                    writeln!(out, "| Free Region Constraints")?;
-                    for_each_region_constraint(closure_region_requirements, &mut |msg| {
-                        writeln!(out, "| {}", msg)
-                    })?;
+                    if let Some(closure_region_requirements) = closure_region_requirements {
+                        writeln!(out, "|")?;
+                        writeln!(out, "| Free Region Constraints")?;
+                        for_each_region_constraint(closure_region_requirements, &mut |msg| {
+                            writeln!(out, "| {}", msg)
+                        })?;
+                    }
                 }
-            }
 
-            // Before each basic block, dump out the values
-            // that are live on entry to the basic block.
-            PassWhere::BeforeBlock(bb) => {
-                let s = live_variable_set(&liveness.regular.ins[bb], &liveness.drop.ins[bb]);
-                writeln!(out, "    | Live variables on entry to {:?}: {}", bb, s)?;
-            }
+                // Before each basic block, dump out the values
+                // that are live on entry to the basic block.
+                PassWhere::BeforeBlock(bb) => {
+                    let s = live_variable_set(&liveness.regular.ins[bb], &liveness.drop.ins[bb]);
+                    writeln!(out, "    | Live variables on entry to {:?}: {}", bb, s)?;
+                }
 
-            PassWhere::BeforeLocation(location) => {
-                let s = live_variable_set(
-                    &regular_liveness_per_location[&location],
-                    &drop_liveness_per_location[&location],
-                );
-                writeln!(
-                    out,
-                    "{:ALIGN$} | Live variables on entry to {:?}: {}",
-                    "",
-                    location,
-                    s,
-                    ALIGN = ALIGN
-                )?;
-
-                writeln!(
-                    out,
-                    "{:ALIGN$} | Borrows in scope on entry to {:?}: {:?}",
-                    "",
-                    location,
-                    live_borrow_results.borrows_in_scope_at(location),
-                    ALIGN = ALIGN,
-                )?;
-
-                for (borrow, region_vids) in live_borrow_results.restricts_at(location).iter() {
-                    let borrow_location = borrow_set[*borrow].reserve_location;
+                PassWhere::BeforeLocation(location) => {
+                    let s = live_variable_set(
+                        &regular_liveness_per_location[&location],
+                        &drop_liveness_per_location[&location],
+                    );
                     writeln!(
                         out,
-                        "{:ALIGN$} | Borrow {:?} from {:?} in scope due to regions {:?}",
+                        "{:ALIGN$} | Live variables on entry to {:?}: {}",
                         "",
-                        borrow,
-                        borrow_location,
-                        region_vids,
+                        location,
+                        s,
                         ALIGN = ALIGN
                     )?;
-                }
 
-                let live_regions = live_borrow_results.regions_live_at(location);
-                if !live_regions.is_empty() {
+                    let rli = rich_locations.start_index(location);
+
                     writeln!(
                         out,
-                        "{:ALIGN$} | Live regions on entry: {:?}",
+                        "{:ALIGN$} | Borrows in scope on entry to {:?}: {:?}",
                         "",
-                        live_regions,
-                        ALIGN = ALIGN,
-                    )?;
-                }
-
-                let activations = borrow_set.activations_at_location(location);
-                if !activations.is_empty() {
-                    writeln!(
-                        out,
-                        "{:ALIGN$} | Activates: {:?}",
-                        "",
-                        activations,
-                        ALIGN = ALIGN,
-                    )?;
-                }
-
-                for (r1, p1, r2) in live_borrow_results.superset(location) {
-                    writeln!(
-                        out,
-                        "{:ALIGN$} | ({:?} @ {:?}) <= ({:?} @ {:?})",
-                        "",
-                        r1,
-                        p1,
-                        r2,
                         location,
+                        live_borrow_results.borrows_in_scope_at(rli),
                         ALIGN = ALIGN,
                     )?;
-                }
-            }
 
-            PassWhere::AfterLocation(_) | PassWhere::AfterCFG => {}
-        }
-        Ok(())
-    });
+                    for (borrow, region_vids) in live_borrow_results.restricts_at(rli).iter() {
+                        let borrow_location = borrow_set[*borrow].reserve_location;
+                        writeln!(
+                            out,
+                            "{:ALIGN$} | Borrow {:?} from {:?} in scope due to regions {:?}",
+                            "",
+                            borrow,
+                            borrow_location,
+                            region_vids,
+                            ALIGN = ALIGN
+                        )?;
+                    }
+
+                    let live_regions = live_borrow_results.regions_live_at(rli);
+                    if !live_regions.is_empty() {
+                        writeln!(
+                            out,
+                            "{:ALIGN$} | Live regions on entry: {:?}",
+                            "",
+                            live_regions,
+                            ALIGN = ALIGN,
+                        )?;
+                    }
+
+                    let activations = borrow_set.activations_at_location(location);
+                    if !activations.is_empty() {
+                        writeln!(
+                            out,
+                            "{:ALIGN$} | Activates: {:?}",
+                            "",
+                            activations,
+                            ALIGN = ALIGN,
+                        )?;
+                    }
+
+                    for (r1, p1, r2) in live_borrow_results.superset(rli) {
+                        writeln!(
+                            out,
+                            "{:ALIGN$} | ({:?} @ {:?}) <= ({:?} @ {:?})",
+                            "",
+                            r1,
+                            rich_locations.to_rich_location(*p1),
+                            r2,
+                            rich_locations.to_rich_location(rli),
+                            ALIGN = ALIGN,
+                        )?;
+                    }
+                }
+
+                PassWhere::AfterLocation(_) | PassWhere::AfterCFG => {}
+            }
+            Ok(())
+        },
+    );
 
     // Also dump the inference graph constraints as a graphviz file.
     let _: io::Result<()> = do_catch! {{
@@ -378,8 +406,7 @@ fn for_each_region_constraint(
         };
         with_msg(&format!(
             "where {:?}: {:?}",
-            subject,
-            req.outlived_free_region,
+            subject, req.outlived_free_region,
         ))?;
     }
     Ok(())

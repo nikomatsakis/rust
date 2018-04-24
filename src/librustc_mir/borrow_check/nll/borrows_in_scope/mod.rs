@@ -9,8 +9,8 @@
 // except according to those terms.
 
 use borrow_check::nll::{AllFacts, BorrowRegionVid};
+use borrow_check::nll::location::RichLocationIndex;
 use rustc::hir::def_id::DefId;
-use rustc::mir::Location;
 use rustc::ty::{RegionVid, TyCtxt};
 use rustc_data_structures::fx::FxHashMap;
 use std::borrow::Cow;
@@ -20,14 +20,14 @@ mod timely;
 
 #[derive(Clone, Debug, Default)]
 crate struct LiveBorrowResults {
-    borrow_live_at: FxHashMap<Location, Vec<BorrowRegionVid>>,
+    borrow_live_at: FxHashMap<RichLocationIndex, Vec<BorrowRegionVid>>,
 
     // these are just for debugging
-    restricts: FxHashMap<Location, FxHashMap<BorrowRegionVid, Vec<RegionVid>>>,
-    region_live_at: FxHashMap<Location, Vec<RegionVid>>,
+    restricts: FxHashMap<RichLocationIndex, FxHashMap<BorrowRegionVid, Vec<RegionVid>>>,
+    region_live_at: FxHashMap<RichLocationIndex, Vec<RegionVid>>,
 
     // Each (R1 @ P1) <= (R2 @ P2) relation, indexed by P2.
-    superset: FxHashMap<Location, Vec<(RegionVid, Location, RegionVid)>>,
+    superset: FxHashMap<RichLocationIndex, Vec<(RegionVid, RichLocationIndex, RegionVid)>>,
 }
 
 impl LiveBorrowResults {
@@ -51,7 +51,7 @@ impl LiveBorrowResults {
 
     crate fn borrows_in_scope_at(
         &self,
-        location: Location,
+        location: RichLocationIndex,
     ) -> &[BorrowRegionVid] {
         match self.borrow_live_at.get(&location) {
             Some(p) => p,
@@ -61,7 +61,7 @@ impl LiveBorrowResults {
 
     crate fn restricts_at(
         &self,
-        location: Location,
+        location: RichLocationIndex,
     ) -> Cow<'_, FxHashMap<BorrowRegionVid, Vec<RegionVid>>> {
         match self.restricts.get(&location) {
             Some(map) => Cow::Borrowed(map),
@@ -71,7 +71,7 @@ impl LiveBorrowResults {
 
     crate fn regions_live_at(
         &self,
-        location: Location,
+        location: RichLocationIndex,
     ) -> &[RegionVid] {
         match self.region_live_at.get(&location) {
             Some(v) => v,
@@ -81,8 +81,8 @@ impl LiveBorrowResults {
 
     crate fn superset(
         &self,
-        location: Location,
-    ) -> &[(RegionVid, Location, RegionVid)] {
+        location: RichLocationIndex,
+    ) -> &[(RegionVid, RichLocationIndex, RegionVid)] {
         match self.superset.get(&location) {
             Some(v) => v,
             None => &[],

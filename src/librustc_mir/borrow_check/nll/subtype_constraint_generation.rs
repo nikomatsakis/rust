@@ -8,7 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use borrow_check::nll::AllFacts;
+use borrow_check::nll::{AllFacts, ToRegionVid};
+use borrow_check::nll::location::RichLocationTable;
 use rustc::infer::region_constraints::Constraint;
 use rustc::infer::region_constraints::RegionConstraintData;
 use rustc::infer::region_constraints::{Verify, VerifyBound};
@@ -29,15 +30,22 @@ use super::type_check::OutlivesSet;
 pub(super) fn generate<'tcx>(
     regioncx: &mut RegionInferenceContext<'tcx>,
     all_facts: &mut AllFacts,
+    rich_locations: &RichLocationTable,
     mir: &Mir<'tcx>,
     constraints: &MirTypeckRegionConstraints<'tcx>,
 ) {
-    SubtypeConstraintGenerator { regioncx, all_facts, mir }.generate(constraints);
+    SubtypeConstraintGenerator {
+        regioncx,
+        all_facts,
+        rich_locations,
+        mir,
+    }.generate(constraints);
 }
 
 struct SubtypeConstraintGenerator<'cx, 'tcx: 'cx> {
     regioncx: &'cx mut RegionInferenceContext<'tcx>,
     all_facts: &'cx mut AllFacts,
+    rich_locations: &'cx RichLocationTable,
     mir: &'cx Mir<'tcx>,
 }
 
@@ -58,19 +66,22 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
         );
 
         // TODO refactor to generate the facts directly from type checker
-        self.all_facts
-            .use_live
-            .extend(use_live_variables);
-        self.all_facts
-            .drop_live
-            .extend(drop_live_variables);
-        let drop_region: Vec<_> = drop_region
-            .iter()
-            .map(|&(local, region)| (local, self.to_region_vid(region)))
-            .collect();
-        self.all_facts
-            .drop_region
-            .extend(drop_region);
+        let rich_locations = self.rich_locations;
+        self.all_facts.use_live.extend(
+            use_live_variables
+                .into_iter()
+                .map(|&(x, p)| (x, rich_locations.start_index(p))),
+        );
+        self.all_facts.drop_live.extend(
+            drop_live_variables
+                .into_iter()
+                .map(|&(x, p)| (x, rich_locations.start_index(p))),
+        );
+        self.all_facts.drop_region.extend(
+            drop_region
+                .iter()
+                .map(|&(local, region)| (local, region.to_region_vid())),
+        );
 
         for (region, location, cause) in liveness_set {
             debug!("generate: {:#?} is live at {:#?}", region, location);
@@ -104,14 +115,14 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
                 // reverse direction, because `regioncx` talks about
                 // "outlives" (`>=`) whereas the region constraints
                 // talk about `<=`.
-                self.regioncx.add_outlives(
-                    span,
+                self.regioncx
+                    .add_outlives(span, b_vid, a_vid, locations.at_location);
+
+                self.all_facts.outlives.push((
                     b_vid,
                     a_vid,
-                    locations.at_location,
-                );
-
-                self.all_facts.outlives.push((b_vid, a_vid, locations.at_location));
+                    rich_locations.start_index(locations.at_location),
+                ));
             }
 
             for verify in verifys {
@@ -176,14 +187,6 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
     }
 
     fn to_region_vid(&self, r: ty::Region<'tcx>) -> ty::RegionVid {
-        // Every region that we see in the constraints came from the
-        // MIR or from the parameter environment. If the former, it
-        // will be a region variable.  If the latter, it will be in
-        // the set of universal regions *somewhere*.
-        if let ty::ReVar(vid) = r {
-            *vid
-        } else {
-            self.regioncx.to_region_vid(r)
-        }
+        self.regioncx.to_region_vid(r)
     }
 }
