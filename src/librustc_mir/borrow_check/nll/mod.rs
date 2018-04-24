@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use borrow_check::borrow_set::BorrowSet;
-use borrow_check::location::RichLocationTable;
+use borrow_check::location::LocationTable;
 use dataflow::move_paths::MoveData;
 use dataflow::FlowAtLocation;
 use dataflow::MaybeInitializedPlaces;
@@ -75,6 +75,7 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
     def_id: DefId,
     universal_regions: UniversalRegions<'tcx>,
     mir: &Mir<'tcx>,
+    location_table: &LocationTable,
     param_env: ty::ParamEnv<'gcx>,
     flow_inits: &mut FlowAtLocation<MaybeInitializedPlaces<'cx, 'gcx, 'tcx>>,
     move_data: &MoveData<'tcx>,
@@ -99,7 +100,6 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
     // Create the region inference context, taking ownership of the region inference
     // data that was contained in `infcx`.
     let var_origins = infcx.take_region_var_origins();
-    let rich_locations = &RichLocationTable::new(mir);
     let mut all_facts = AllFacts::default();
     let mut regioncx = RegionInferenceContext::new(var_origins, universal_regions, mir);
 
@@ -107,7 +107,7 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
     subtype_constraint_generation::generate(
         &mut regioncx,
         &mut all_facts,
-        rich_locations,
+        location_table,
         mir,
         constraint_sets,
     );
@@ -115,7 +115,7 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
         infcx,
         &mut regioncx,
         &mut all_facts,
-        rich_locations,
+        location_table,
         &mir,
         borrow_set,
     );
@@ -130,7 +130,7 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
         infcx,
         liveness,
         borrow_set,
-        rich_locations,
+        location_table,
         &mir,
         def_id,
         &regioncx,
@@ -149,7 +149,7 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
     infcx: &InferCtxt<'a, 'gcx, 'tcx>,
     liveness: &LivenessResults,
     borrow_set: &BorrowSet<'tcx>,
-    rich_locations: &RichLocationTable,
+    location_table: &LocationTable,
     mir: &Mir<'tcx>,
     mir_def_id: DefId,
     regioncx: &RegionInferenceContext,
@@ -230,7 +230,7 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
                         ALIGN = ALIGN
                     )?;
 
-                    let rli = rich_locations.start_index(location);
+                    let rli = location_table.start_index(location);
 
                     writeln!(
                         out,
@@ -282,9 +282,9 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
                             "{:ALIGN$} | ({:?} @ {:?}) <= ({:?} @ {:?})",
                             "",
                             r1,
-                            rich_locations.to_rich_location(*p1),
+                            location_table.to_location(*p1),
                             r2,
-                            rich_locations.to_rich_location(rli),
+                            location_table.to_location(rli),
                             ALIGN = ALIGN,
                         )?;
                     }

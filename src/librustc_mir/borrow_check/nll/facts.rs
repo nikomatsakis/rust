@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use borrow_check::location::RichLocationIndex;
+use borrow_check::location::LocationIndex;
 use borrow_check::borrow_set::BorrowRegionVid;
 use rustc::mir::Local;
 use rustc::ty::RegionVid;
@@ -24,26 +24,26 @@ crate struct AllFacts {
     // For each `&'a T` rvalue at point P, include ('a, B, P).
     //
     // XXX Universal regions?
-    crate borrow_region: Vec<(RegionVid, BorrowRegionVid, RichLocationIndex)>,
+    crate borrow_region: Vec<(RegionVid, BorrowRegionVid, LocationIndex)>,
 
     // `cfg_edge(P,Q)` for each edge P -> Q in the control flow
-    crate cfg_edge: Vec<(RichLocationIndex, RichLocationIndex)>,
+    crate cfg_edge: Vec<(LocationIndex, LocationIndex)>,
 
     // `killed(B,P)` when some prefix of the path borrowed at B is assigned at point P
-    crate killed: Vec<(BorrowRegionVid, RichLocationIndex)>,
+    crate killed: Vec<(BorrowRegionVid, LocationIndex)>,
 
     // `outlives(R1, R2, P)` when we require `R1@P: R2@P`
-    crate outlives: Vec<(RegionVid, RegionVid, RichLocationIndex)>,
+    crate outlives: Vec<(RegionVid, RegionVid, LocationIndex)>,
 
     // `use_live(X, P)` when the variable X is "use-live" on entry to P
     //
     // This could (should?) eventually be propagated by the timely dataflow code.
-    crate use_live: Vec<(Local, RichLocationIndex)>,
+    crate use_live: Vec<(Local, LocationIndex)>,
 
     // `drop_live(X, P)` when the variable X is "drop-live" on entry to P
     //
     // This could (should?) eventually be propagated by the timely dataflow code.
-    crate drop_live: Vec<(Local, RichLocationIndex)>,
+    crate drop_live: Vec<(Local, LocationIndex)>,
 
     // `covariant_var_region(X, R)` when the type of X includes X in a contravariant position
     crate covariant_var_region: Vec<(Local, RegionVid)>,
@@ -53,11 +53,11 @@ crate struct AllFacts {
 
     // `covariant_assign_region(P, R)` when P is an assignment and the type being assigned
     // contains region R in a covariant position.
-    crate covariant_assign_region: Vec<(RichLocationIndex, RegionVid)>,
+    crate covariant_assign_region: Vec<(LocationIndex, RegionVid)>,
 
     // `contravariant_assign_region(P, R)` when P is an assignment and the type being assigned
     // contains region R in a contravariant position.
-    crate contravariant_assign_region: Vec<(RichLocationIndex, RegionVid)>,
+    crate contravariant_assign_region: Vec<(LocationIndex, RegionVid)>,
 
     // `drop_region(X, R)` when the region R must be live when X is dropped
     crate drop_region: Vec<(Local, RegionVid)>,

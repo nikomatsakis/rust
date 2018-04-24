@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use borrow_check::location::RichLocationTable;
+use borrow_check::location::LocationTable;
 use borrow_check::nll::ToRegionVid;
 use borrow_check::nll::facts::AllFacts;
 use rustc::infer::region_constraints::Constraint;
@@ -31,14 +31,14 @@ use super::type_check::OutlivesSet;
 pub(super) fn generate<'tcx>(
     regioncx: &mut RegionInferenceContext<'tcx>,
     all_facts: &mut AllFacts,
-    rich_locations: &RichLocationTable,
+    location_table: &LocationTable,
     mir: &Mir<'tcx>,
     constraints: &MirTypeckRegionConstraints<'tcx>,
 ) {
     SubtypeConstraintGenerator {
         regioncx,
         all_facts,
-        rich_locations,
+        location_table,
         mir,
     }.generate(constraints);
 }
@@ -46,7 +46,7 @@ pub(super) fn generate<'tcx>(
 struct SubtypeConstraintGenerator<'cx, 'tcx: 'cx> {
     regioncx: &'cx mut RegionInferenceContext<'tcx>,
     all_facts: &'cx mut AllFacts,
-    rich_locations: &'cx RichLocationTable,
+    location_table: &'cx LocationTable,
     mir: &'cx Mir<'tcx>,
 }
 
@@ -67,16 +67,16 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
         );
 
         // TODO refactor to generate the facts directly from type checker
-        let rich_locations = self.rich_locations;
+        let location_table = self.location_table;
         self.all_facts.use_live.extend(
             use_live_variables
                 .into_iter()
-                .map(|&(x, p)| (x, rich_locations.start_index(p))),
+                .map(|&(x, p)| (x, location_table.start_index(p))),
         );
         self.all_facts.drop_live.extend(
             drop_live_variables
                 .into_iter()
-                .map(|&(x, p)| (x, rich_locations.start_index(p))),
+                .map(|&(x, p)| (x, location_table.start_index(p))),
         );
         self.all_facts.drop_region.extend(
             drop_region
@@ -126,7 +126,7 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
                 self.all_facts.outlives.push((
                     b_vid,
                     a_vid,
-                    rich_locations.start_index(locations.from_location),
+                    location_table.start_index(locations.from_location),
                 ));
             }
 

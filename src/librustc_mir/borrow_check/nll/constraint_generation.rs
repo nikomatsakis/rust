@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use borrow_check::location::RichLocationTable;
+use borrow_check::location::LocationTable;
 use borrow_check::borrow_set::{BorrowRegionVid, BorrowSet};
 use borrow_check::nll::facts::AllFacts;
 use rustc::hir;
@@ -32,7 +32,7 @@ pub(super) fn generate_constraints<'cx, 'gcx, 'tcx>(
     infcx: &InferCtxt<'cx, 'gcx, 'tcx>,
     regioncx: &mut RegionInferenceContext<'tcx>,
     all_facts: &mut AllFacts,
-    rich_locations: &RichLocationTable,
+    location_table: &LocationTable,
     mir: &Mir<'tcx>,
     borrow_set: &BorrowSet<'tcx>,
 ) {
@@ -40,7 +40,7 @@ pub(super) fn generate_constraints<'cx, 'gcx, 'tcx>(
         borrow_set,
         infcx,
         regioncx,
-        rich_locations,
+        location_table,
         all_facts,
         mir,
     };
@@ -58,7 +58,7 @@ pub(super) fn generate_constraints<'cx, 'gcx, 'tcx>(
 struct ConstraintGeneration<'cg, 'cx: 'cg, 'gcx: 'tcx, 'tcx: 'cx> {
     infcx: &'cg InferCtxt<'cx, 'gcx, 'tcx>,
     all_facts: &'cg mut AllFacts,
-    rich_locations: &'cg RichLocationTable,
+    location_table: &'cg LocationTable,
     regioncx: &'cg mut RegionInferenceContext<'tcx>,
     mir: &'cg Mir<'tcx>,
     borrow_set: &'cg BorrowSet<'tcx>,
@@ -131,8 +131,8 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         location: Location,
     ) {
         self.all_facts.cfg_edge.push((
-            self.rich_locations.start_index(location),
-            self.rich_locations
+            self.location_table.start_index(location),
+            self.location_table
                 .start_index(location.successor_within_block()),
         ));
 
@@ -146,7 +146,7 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         rvalue: &Rvalue<'tcx>,
         location: Location,
     ) {
-        let location_index = self.rich_locations.start_index(location);
+        let location_index = self.location_table.start_index(location);
 
         // When we see `X = ...`, then kill borrows of
         // `(*X).foo` and so forth.
@@ -182,8 +182,8 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
     ) {
         for successor_block in terminator.successors().iter() {
             self.all_facts.cfg_edge.push((
-                self.rich_locations.start_index(location),
-                self.rich_locations
+                self.location_table.start_index(location),
+                self.location_table
                     .start_index(successor_block.start_location()),
             ));
         }
@@ -200,7 +200,7 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
                 self.all_facts.borrow_region.push((
                     region_vid,
                     BorrowRegionVid { region_vid },
-                    self.rich_locations.start_index(location),
+                    self.location_table.start_index(location),
                 ));
 
                 // Look for an rvalue like:
@@ -304,7 +304,7 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
                             self.all_facts.outlives.push((
                                 ref_region.to_region_vid(),
                                 borrow_region.to_region_vid(),
-                                self.rich_locations.start_index(location),
+                                self.location_table.start_index(location),
                             ));
 
                             match mutbl {

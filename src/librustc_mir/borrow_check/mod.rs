@@ -47,6 +47,7 @@ use util::collect_writes::FindAssignments;
 use std::iter;
 
 use self::borrow_set::{BorrowSet, BorrowData};
+use self::location::LocationTable;
 use self::flows::Flows;
 use self::prefixes::PrefixSet;
 use self::MutateMode::{JustWrite, WriteAndRead};
@@ -189,12 +190,15 @@ fn do_mir_borrowck<'a, 'gcx, 'tcx>(
 
     let borrow_set = Rc::new(BorrowSet::build(tcx, mir));
 
+    let location_table = &LocationTable::new(mir);
+
     // If we are in non-lexical mode, compute the non-lexical lifetimes.
     let (regioncx, opt_closure_req) = nll::compute_regions(
         infcx,
         def_id,
         free_regions,
         mir,
+        location_table,
         param_env,
         &mut flow_inits,
         &mdpe.move_data,

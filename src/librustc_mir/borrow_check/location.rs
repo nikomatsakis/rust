@@ -22,18 +22,13 @@ use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 /// granularity through outlives relations; however, the rich location
 /// table serves another purpose: it compresses locations from
 /// multiple words into a single u32.
-crate struct RichLocationTable {
+crate struct LocationTable {
     statements_before_block: IndexVec<BasicBlock, usize>,
 }
 
-#[derive(Copy, Clone, Debug)]
-crate enum RichLocation {
-    Start(Location),
-}
+newtype_index!(LocationIndex { DEBUG_FORMAT = "LocationIndex({})" });
 
-newtype_index!(RichLocationIndex { DEBUG_FORMAT = "RichLocationIndex({})" });
-
-impl RichLocationTable {
+impl LocationTable {
     crate fn new(mir: &Mir<'_>) -> Self {
         let mut num_points = 0;
         let statements_before_block = mir.basic_blocks()
@@ -46,26 +41,26 @@ impl RichLocationTable {
             .collect();
 
         debug!(
-            "RichLocationTable(statements_before_block={:#?})",
+            "LocationTable(statements_before_block={:#?})",
             statements_before_block
         );
-        debug!("RichLocationTable: num_points={:#?}", num_points);
+        debug!("LocationTable: num_points={:#?}", num_points);
 
         Self {
             statements_before_block,
         }
     }
 
-    crate fn start_index(&self, location: Location) -> RichLocationIndex {
+    crate fn start_index(&self, location: Location) -> LocationIndex {
         let Location {
             block,
             statement_index,
         } = location;
         let start_index = self.statements_before_block[block];
-        RichLocationIndex::new(start_index + statement_index)
+        LocationIndex::new(start_index + statement_index)
     }
 
-    crate fn to_rich_location(&self, index: RichLocationIndex) -> RichLocation {
+    crate fn to_location(&self, index: LocationIndex) -> Location {
         let point_index = index.index();
 
         // Find the basic block. We have a vector with the
@@ -90,9 +85,9 @@ impl RichLocationTable {
             .last()
             .unwrap();
 
-        RichLocation::Start(Location {
+        Location {
             block,
             statement_index: point_index - first_index,
-        })
+        }
     }
 }
