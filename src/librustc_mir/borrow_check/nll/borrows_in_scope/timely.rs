@@ -329,18 +329,22 @@ pub(super) fn timely_dataflow(all_facts: AllFacts) -> LiveBorrowResults {
                 //   borrowRegion(R, B, P).
                 let borrow_point = borrow_region.map(|(_r, b, p)| (b, p));
 
-                // borrowLiveAt(B, P) :-
-                //   borrowPoint(B, P).
+                // borrowLiveAt(B, Q) :-
+                //   borrowPoint(B, P),
+                //   cfgEdge(P, Q).
                 // borrowLiveAt(B, Q) :-
                 //   borrowLiveAt(B, P),
                 //   cfgEdge(P, Q),
                 //   restricts(R, B, Q).
-                let borrow_live_at = borrow_point.iterate(|borrow_live_at| {
-                    let borrow_point = borrow_point.enter(&borrow_live_at.scope());
+                let base_borrow_live_at = borrow_point.map(|(b, p)| (p, b))
+                    .join(&cfg_edge)
+                    .map(|(_p, b, q)| (b, q));
+                let borrow_live_at = base_borrow_live_at.iterate(|borrow_live_at| {
+                    let base_borrow_live_at = base_borrow_live_at.enter(&borrow_live_at.scope());
                     let cfg_edge = cfg_edge.enter(&borrow_live_at.scope());
                     let restricts = restricts.enter(&borrow_live_at.scope());
 
-                    let borrow_live_at1 = borrow_point.clone();
+                    let borrow_live_at1 = base_borrow_live_at.clone();
 
                     let borrow_live_at2 = borrow_live_at
                         .map(|(b, p)| (p, b))
