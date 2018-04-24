@@ -8,8 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use borrow_check::location::RichLocationIndex;
 use borrow_check::borrow_set::BorrowRegionVid;
-use borrow_check::nll::location::RichLocationIndex;
 use rustc::mir::Local;
 use rustc::ty::RegionVid;
 use std::error::Error;

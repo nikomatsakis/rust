@@ -9,6 +9,7 @@
 // except according to those terms.
 
 use borrow_check::borrow_set::BorrowSet;
+use borrow_check::location::RichLocationTable;
 use dataflow::move_paths::MoveData;
 use dataflow::FlowAtLocation;
 use dataflow::MaybeInitializedPlaces;
@@ -31,7 +32,6 @@ mod borrows_in_scope;
 mod constraint_generation;
 pub mod explain_borrow;
 mod facts;
-mod location;
 crate mod region_infer;
 mod renumber;
 mod subtype_constraint_generation;
@@ -40,7 +40,6 @@ mod universal_regions;
 
 use self::borrows_in_scope::LiveBorrowResults;
 use self::facts::AllFacts;
-use self::location::RichLocationTable;
 use self::region_infer::RegionInferenceContext;
 use self::universal_regions::UniversalRegions;
 
