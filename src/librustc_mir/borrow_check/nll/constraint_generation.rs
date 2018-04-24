@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use borrow_check::borrow_set::{BorrowSet, BorrowRegionVid};
+use borrow_check::borrow_set::{BorrowRegionVid, BorrowSet};
 use borrow_check::nll::facts::AllFacts;
 use borrow_check::nll::location::RichLocationTable;
 use rustc::hir;
@@ -105,22 +105,12 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
     }
 
     fn visit_local_decl(&mut self, local: Local, local_decl: &LocalDecl<'tcx>) {
-        let (covariant_regions, contravariant_regions) =
-            RegionEnumerator::new(self.infcx.tcx).enumerate_regions(&local_decl.ty);
-
-        // Subtle: Note that "covariant" for the rest of our type
-        // system is the opposite of "covariant" in the new borrow
-        // check. In particular, in the new borrow check, `&'a T` is
-        // *covariant* with respect to `'a` -- therefore, we swap the
-        // facts here.
-
-        self.all_facts
-            .covariant_region
-            .extend(contravariant_regions.into_iter().map(|r| (local, r)));
-
-        self.all_facts
-            .contravariant_region
-            .extend(covariant_regions.into_iter().map(|r| (local, r)));
+        RegionEnumerator::new(self.infcx.tcx).enumerate_into_facts(
+            local,
+            &local_decl.ty,
+            &mut self.all_facts.covariant_var_region,
+            &mut self.all_facts.contravariant_var_region,
+        );
 
         // Note: we do NOT invoke `super_local_decl` on purpose. We
         // don't want to visit the types and so forth outside of the
@@ -156,6 +146,8 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         rvalue: &Rvalue<'tcx>,
         location: Location,
     ) {
+        let location_index = self.rich_locations.start_index(location);
+
         // When we see `X = ...`, then kill borrows of
         // `(*X).foo` and so forth.
         if let Place::Local(temp) = place {
@@ -165,12 +157,19 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
                     let borrow_region = BorrowRegionVid {
                         region_vid: borrow_data.region.to_region_vid(),
                     };
-                    self.all_facts
-                        .killed
-                        .push((borrow_region, self.rich_locations.start_index(location)));
+                    self.all_facts.killed.push((borrow_region, location_index));
                 }
             }
         }
+
+        // We also need to store the regions that appear in the type being assigned.
+        let place_ty = place.ty(self.mir, self.infcx.tcx).to_ty(self.infcx.tcx);
+        RegionEnumerator::new(self.infcx.tcx).enumerate_into_facts(
+            location_index,
+            &place_ty,
+            &mut self.all_facts.covariant_assign_region,
+            &mut self.all_facts.contravariant_assign_region,
+        );
 
         self.super_assign(block, place, rvalue, location);
     }
@@ -305,8 +304,7 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
                             self.all_facts.outlives.push((
                                 ref_region.to_region_vid(),
                                 borrow_region.to_region_vid(),
-                                self.rich_locations
-                                    .start_index(location.successor_within_block()),
+                                self.rich_locations.start_index(location),
                             ));
 
                             match mutbl {
@@ -388,6 +386,25 @@ impl<'a, 'gcx, 'tcx> RegionEnumerator<'a, 'gcx, 'tcx> {
     ) -> (BTreeSet<RegionVid>, BTreeSet<RegionVid>) {
         self.fold(TypeContext::new(), value).unwrap();
         (self.covariant_regions, self.contravariant_regions)
+    }
+
+    fn enumerate_into_facts<A: Copy>(
+        self,
+        atom: A,
+        value: &impl Relate<'tcx>,
+        covariant_facts: &mut Vec<(A, RegionVid)>,
+        contravariant_facts: &mut Vec<(A, RegionVid)>,
+    ) {
+        let (covariant_regions, contravariant_regions) = self.enumerate_regions(value);
+
+        // Subtle: Note that "covariant" for the rest of our type
+        // system is the opposite of "covariant" in the new borrow
+        // check. In particular, in the new borrow check, `&'a T` is
+        // *covariant* with respect to `'a` -- therefore, we swap the
+        // facts here.
+
+        covariant_facts.extend(contravariant_regions.into_iter().map(|r| (atom, r)));
+        contravariant_facts.extend(covariant_regions.into_iter().map(|r| (atom, r)));
     }
 }
 

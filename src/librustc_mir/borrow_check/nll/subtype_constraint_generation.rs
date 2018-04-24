@@ -119,10 +119,14 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
                 self.regioncx
                     .add_outlives(span, b_vid, a_vid, locations.at_location);
 
+                // Subtle: in the new analysis, we *always* assign
+                // outlives to the location of the statement that
+                // incurred them. This differs for assignments `X =
+                // Y`, which in the old analysis "took effect" later.
                 self.all_facts.outlives.push((
                     b_vid,
                     a_vid,
-                    rich_locations.start_index(locations.at_location),
+                    rich_locations.start_index(locations.from_location),
                 ));
             }
 

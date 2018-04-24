@@ -66,24 +66,24 @@ subset((R1, P), (R2, P)) :-
 subset((R, P), (R, Q)) :-
   useLive(X, Q),
   cfgEdge(P, Q),
-  covariantRegion(X, R).
+  covariantVarRegion(X, R).
 
 subset((R, Q), (R, P)) :-
   useLive(X, Q),
   cfgEdge(P, Q),
-  contravariantRegion(X, R).
+  contravariantVarRegion(X, R).
 
 subset((R, P), (R, Q)) :-
   cfgEdge(P, Q),
   dropLive(X, Q),
   dropRegion(X, R),
-  covariantRegion(X, R).
+  covariantVarRegion(X, R).
 
 subset((R, Q), (R, P)) :-
   cfgEdge(P, Q),
   dropLive(X, Q),
   dropRegion(X, R),
-  contravariantRegion(X, R).
+  contravariantVarRegion(X, R).
 ```
 
 ## Rules
@@ -103,11 +103,11 @@ restricts(R1, B, P1) :-
 ```
 regionLiveAt(R, P) :-
   useLive(X, P),
-  covariantRegion(X, R).
+  covariantVarRegion(X, R).
 
 regionLiveAt(R, P) :-
   useLive(X, P),
-  contravariantRegion(X, R).
+  contravariantVarRegion(X, R).
 
 regionLiveAt(R, P) :-
   dropLive(X, P),
@@ -164,8 +164,10 @@ pub(super) fn timely_dataflow(all_facts: AllFacts) -> LiveBorrowResults {
                         outlives,
                         use_live,
                         drop_live,
-                        covariant_region,
-                        contravariant_region,
+                        covariant_var_region,
+                        contravariant_var_region,
+                        covariant_assign_region,
+                        contravariant_assign_region,
                         drop_region,
                     ) = ..my_facts;
                 }
@@ -177,53 +179,65 @@ pub(super) fn timely_dataflow(all_facts: AllFacts) -> LiveBorrowResults {
                     // subset((R1, P), (R2, P)) :- outlives(R1, R2, P).
                     let subset1 = outlives.map(|(r1, r2, p)| ((r1, p), (r2, p)));
 
-                    // subset(R, P, R, Q) :- useLive(X, Q), cfgEdge(P, Q), covariantRegion(X, R).
+                    // subset(R, P, R, Q) :- useLive(X, Q), cfgEdge(P, Q), covariantVarRegion(X, R).
                     let subset2 = use_live
                         .map(|(x, q)| (q, x))
                         .join(&predecessors)
                         .map(|(q, x, p)| (x, (p, q)))
-                        .join(&covariant_region)
+                        .join(&covariant_var_region)
                         .map(|(_x, (p, q), r)| ((r, p), (r, q)));
 
-                    // subset(R, Q, R, P) :- useLive(X, Q), cfgEdge(P, Q), contravariantRegion(X, R).
+                    // subset(R, Q, R, P) :- useLive(X, Q), cfgEdge(P, Q), contravariantVarRegion(X, R).
                     let subset3 = use_live
                         .map(|(x, q)| (q, x))
                         .join(&predecessors)
                         .map(|(q, x, p)| (x, (p, q)))
-                        .join(&contravariant_region)
+                        .join(&contravariant_var_region)
                         .map(|(_x, (p, q), r)| ((r, q), (r, p)));
 
                     // subset(R, P, R, Q) :- dropLive(X, Q),
                     //                       cfgEdge(P, Q),
                     //                       dropRegion(X, R),
-                    //                       covariantRegion(X, R).
+                    //                       covariantVarRegion(X, R).
                     let subset4 = drop_live
                         .map(|(x, q)| (q, x))
                         .join(&predecessors)
                         .map(|(q, x, p)| (x, (p, q)))
                         .join(&drop_region)
                         .map(|(x, (p, q), r)| ((x, r), (p, q)))
-                        .semijoin(&covariant_region)
+                        .semijoin(&covariant_var_region)
                         .map(|((_x, r), (p, q))| ((r, p), (r, q)));
 
                     // subset(R, Q, R, P) :- dropLive(X, Q),
                     //                       cfgEdge(P, Q),
                     //                       dropRegion(X, R),
-                    //                       contravariantRegion(X, R).
+                    //                       contravariantVarRegion(X, R).
                     let subset5 = drop_live
                         .map(|(x, q)| (q, x))
                         .join(&predecessors)
                         .map(|(q, x, p)| (x, (p, q)))
                         .join(&drop_region)
                         .map(|(x, (p, q), r)| ((x, r), (p, q)))
-                        .semijoin(&contravariant_region)
+                        .semijoin(&contravariant_var_region)
                         .map(|((_x, r), (p, q))| ((r, q), (r, p)));
+
+                    // subset(R, P, R, Q) :- covariantAssignRegion(P, R), cfgEdge(P, Q).
+                    let subset6 = covariant_assign_region
+                        .join(&cfg_edge)
+                        .map(|(p, r, q)| ((r, p), (r, q)));
+
+                    // subset(R, Q, R, P) :- contravariantAssignRegion(P, R), cfgEdge(P, Q)
+                    let subset7 = contravariant_assign_region
+                        .join(&cfg_edge)
+                        .map(|(p, r, q)| ((r, q), (r, p)));
 
                     subset1
                         .concat(&subset2)
                         .concat(&subset3)
                         .concat(&subset4)
                         .concat(&subset5)
+                        .concat(&subset6)
+                        .concat(&subset7)
                         .distinct()
                         .inspect_batch({
                             let result = result.clone();

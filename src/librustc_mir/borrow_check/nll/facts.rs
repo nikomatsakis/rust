@@ -45,11 +45,19 @@ crate struct AllFacts {
     // This could (should?) eventually be propagated by the timely dataflow code.
     crate drop_live: Vec<(Local, RichLocationIndex)>,
 
-    // `covariant_region(X, R)` when the type of X includes X in a contravariant position
-    crate covariant_region: Vec<(Local, RegionVid)>,
+    // `covariant_var_region(X, R)` when the type of X includes X in a contravariant position
+    crate covariant_var_region: Vec<(Local, RegionVid)>,
 
-    // `contravariant_region(X, R)` when the type of X includes X in a contravariant position
-    crate contravariant_region: Vec<(Local, RegionVid)>,
+    // `contravariant_var_region(X, R)` when the type of X includes X in a contravariant position
+    crate contravariant_var_region: Vec<(Local, RegionVid)>,
+
+    // `covariant_assign_region(P, R)` when P is an assignment and the type being assigned
+    // contains region R in a covariant position.
+    crate covariant_assign_region: Vec<(RichLocationIndex, RegionVid)>,
+
+    // `contravariant_assign_region(P, R)` when P is an assignment and the type being assigned
+    // contains region R in a contravariant position.
+    crate contravariant_assign_region: Vec<(RichLocationIndex, RegionVid)>,
 
     // `drop_region(X, R)` when the region R must be live when X is dropped
     crate drop_region: Vec<(Local, RegionVid)>,
@@ -65,8 +73,22 @@ impl AllFacts {
         write_facts_to_path(&self.outlives, dir.join("outlives.facts"))?;
         write_facts_to_path(&self.use_live, dir.join("useLive.facts"))?;
         write_facts_to_path(&self.drop_live, dir.join("dropLive.facts"))?;
-        write_facts_to_path(&self.covariant_region, dir.join("covariantRegion.facts"))?;
-        write_facts_to_path(&self.contravariant_region, dir.join("contravariantRegion.facts"))?;
+        write_facts_to_path(
+            &self.covariant_var_region,
+            dir.join("covariantVarRegion.facts"),
+        )?;
+        write_facts_to_path(
+            &self.contravariant_var_region,
+            dir.join("contravariantVarRegion.facts"),
+        )?;
+        write_facts_to_path(
+            &self.covariant_assign_region,
+            dir.join("covariantAssignRegion.facts"),
+        )?;
+        write_facts_to_path(
+            &self.contravariant_assign_region,
+            dir.join("contravariantAssignRegion.facts"),
+        )?;
         write_facts_to_path(&self.drop_region, dir.join("dropRegion.facts"))?;
         Ok(())
     }
