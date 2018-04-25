@@ -30,23 +30,23 @@ Datalog rules:
 use(X, P).  // variable is used during P (but before successor(P))
 drop(X, P). // variable is dropped at P
 definition(X, P).  // variable is reassigned during P
-cfgEdge(P1, P2).
+cfg_edge(P1, P2).
 
-useLive(X, P) :-
+use_live(X, P) :-
   use(X, P).
 
-useLive(X, P) :-
-  useLive(X, Q),
-  cfgEdge(P, Q),
+use_live(X, P) :-
+  use_live(X, Q),
+  cfg_edge(P, Q),
   !definition(X, P).
 
-dropLive(X, P) :-
+drop_live(X, P) :-
   drop(X, P).
 
-dropLive(X, P) :-
-  dropLive(X, Q),
-  cfgEdge(P, Q),
-  !useLive(X, P),
+drop_live(X, P) :-
+  drop_live(X, Q),
+  cfg_edge(P, Q),
+  !use_live(X, P),
   !definition(X, P).
 
 covariantUseRegion(X, R). // input: R appears in a covariant position within type X (like T = &R U)
@@ -64,33 +64,33 @@ subset((R1, P), (R2, P)) :-
   outlives(R1, R2, P).
 
 subset((R, P), (R, Q)) :-
-  useLive(X, Q),
-  cfgEdge(P, Q),
-  covariantVarRegion(X, R).
+  use_live(X, Q),
+  cfg_edge(P, Q),
+  covariant_var_region(X, R).
 
 subset((R, Q), (R, P)) :-
-  useLive(X, Q),
-  cfgEdge(P, Q),
-  contravariantVarRegion(X, R).
+  use_live(X, Q),
+  cfg_edge(P, Q),
+  contravariant_var_region(X, R).
 
 subset((R, P), (R, Q)) :-
-  cfgEdge(P, Q),
-  dropLive(X, Q),
-  dropRegion(X, R),
-  covariantVarRegion(X, R).
+  cfg_edge(P, Q),
+  drop_live(X, Q),
+  drop_region(X, R),
+  covariant_var_region(X, R).
 
 subset((R, Q), (R, P)) :-
-  cfgEdge(P, Q),
-  dropLive(X, Q),
-  dropRegion(X, R),
-  contravariantVarRegion(X, R).
+  cfg_edge(P, Q),
+  drop_live(X, Q),
+  drop_region(X, R),
+  contravariant_var_region(X, R).
 ```
 
 ## Rules
 
 ```
 restricts(R, B, P) :-
-  borrowRegion(R, B, P).
+  borrow_region(R, B, P).
 
 restricts(R1, B, P1) :-
   restricts(R2, B, P2),
@@ -101,25 +101,25 @@ restricts(R1, B, P1) :-
 ## Region Live At
 
 ```
-regionLiveAt(R, P) :-
-  useLive(X, P),
-  covariantVarRegion(X, R).
+region_live_at(R, P) :-
+  use_live(X, P),
+  covariant_var_region(X, R).
 
-regionLiveAt(R, P) :-
-  useLive(X, P),
-  contravariantVarRegion(X, R).
+region_live_at(R, P) :-
+  use_live(X, P),
+  contravariant_var_region(X, R).
 
-regionLiveAt(R, P) :-
-  dropLive(X, P),
-  dropRegion(X, R).
+region_live_at(R, P) :-
+  drop_live(X, P),
+  drop_region(X, R).
 ```
 
 ## Borrow Live At
 
 ```
-borrowLiveAt(B, P) :-
+borrow_live_at(B, P) :-
   restricts(R, B, P),
-  regionLiveAt(R, P).
+  region_live_at(R, P).
 ```
 
 */
@@ -172,140 +172,137 @@ pub(super) fn timely_dataflow(all_facts: AllFacts) -> LiveBorrowResults {
                     ) = ..my_facts;
                 }
 
-                let predecessors = cfg_edge.map(|(p, q)| (q, p));
-
-                // .decl subset( (r1:region, p1:point), (r2:region, p2:point) )
-                let subset = {
-                    // subset((R1, P), (R2, P)) :- outlives(R1, R2, P).
-                    let subset1 = outlives.map(|(r1, r2, p)| ((r1, p), (r2, p)));
-
-                    // subset(R, P, R, Q) :- useLive(X, Q), cfgEdge(P, Q), covariantVarRegion(X, R).
-                    let subset2 = use_live
-                        .map(|(x, q)| (q, x))
-                        .join(&predecessors)
-                        .map(|(q, x, p)| (x, (p, q)))
+                let carry_forward_to = {
+                    // carry_forward_to(R, Q) :- use_live(X, Q), covariant_var_region(X, R).
+                    let carry_forward_to1 = use_live
                         .join(&covariant_var_region)
-                        .map(|(_x, (p, q), r)| ((r, p), (r, q)));
+                        .map(|(_x, q, r)| (r, q));
 
-                    // subset(R, Q, R, P) :- useLive(X, Q), cfgEdge(P, Q), contravariantVarRegion(X, R).
-                    let subset3 = use_live
-                        .map(|(x, q)| (q, x))
-                        .join(&predecessors)
-                        .map(|(q, x, p)| (x, (p, q)))
-                        .join(&contravariant_var_region)
-                        .map(|(_x, (p, q), r)| ((r, q), (r, p)));
-
-                    // subset(R, P, R, Q) :- dropLive(X, Q),
-                    //                       cfgEdge(P, Q),
-                    //                       dropRegion(X, R),
-                    //                       covariantVarRegion(X, R).
-                    let subset4 = drop_live
-                        .map(|(x, q)| (q, x))
-                        .join(&predecessors)
-                        .map(|(q, x, p)| (x, (p, q)))
+                    // carry_forward_to(R, Q) :- drop_live(X, Q), drop_region(X, R), covariant_var_region(X, R).
+                    let carry_forward_to2 = drop_live
                         .join(&drop_region)
-                        .map(|(x, (p, q), r)| ((x, r), (p, q)))
+                        .map(|(x, q, r)| ((x, r), q))
                         .semijoin(&covariant_var_region)
-                        .map(|((_x, r), (p, q))| ((r, p), (r, q)));
+                        .map(|((_x, r), q)| (r, q));
 
-                    // subset(R, Q, R, P) :- dropLive(X, Q),
-                    //                       cfgEdge(P, Q),
-                    //                       dropRegion(X, R),
-                    //                       contravariantVarRegion(X, R).
-                    let subset5 = drop_live
-                        .map(|(x, q)| (q, x))
-                        .join(&predecessors)
-                        .map(|(q, x, p)| (x, (p, q)))
-                        .join(&drop_region)
-                        .map(|(x, (p, q), r)| ((x, r), (p, q)))
-                        .semijoin(&contravariant_var_region)
-                        .map(|((_x, r), (p, q))| ((r, q), (r, p)));
-
-                    // subset(R, P, R, Q) :- covariantAssignRegion(P, R), cfgEdge(P, Q).
-                    let subset6 = covariant_assign_region
+                    // carry_forward_to(R, Q) :- covariant_assign_region(P, R), cfg_edge(P, Q).
+                    let carry_forward_to3 = covariant_assign_region
                         .join(&cfg_edge)
-                        .map(|(p, r, q)| ((r, p), (r, q)));
+                        .map(|(_p, r, q)| (r, q));
 
-                    // subset(R, Q, R, P) :- contravariantAssignRegion(P, R), cfgEdge(P, Q)
-                    let subset7 = contravariant_assign_region
-                        .join(&cfg_edge)
-                        .map(|(p, r, q)| ((r, q), (r, p)));
-
-                    subset1
-                        .concat(&subset2)
-                        .concat(&subset3)
-                        .concat(&subset4)
-                        .concat(&subset5)
-                        .concat(&subset6)
-                        .concat(&subset7)
+                    carry_forward_to1
+                        .concat(&carry_forward_to2)
+                        .concat(&carry_forward_to3)
                         .distinct()
-                        .inspect_batch({
-                            let result = result.clone();
-                            move |_timestamp, facts| {
-                                let mut result = result.lock().unwrap();
-                                for (((r1, p1), (r2, p2)), _timestamp, multiplicity) in facts {
-                                    assert_eq!(*multiplicity, 1);
-                                    result
-                                        .superset
-                                        .entry(*p2)
-                                        .or_insert(vec![])
-                                        .push((*r1, *p1, *r2));
-                                }
-                            }
-                        })
+                };
+
+                let carry_backward_from = {
+                    // carry_backward_from(R, Q) :- use_live(X, Q), contravariant_var_region(X, R).
+                    let carry_backward_from1 = use_live
+                        .join(&contravariant_var_region)
+                        .map(|(_x, q, r)| (r, q));
+
+                    // carry_backward_from(Q, R) :-
+                    //   drop_live(X, Q),
+                    //   drop_region(X, R),
+                    //   contravariant_var_region(X, R).
+                    let carry_backward_from2 = drop_live
+                        .join(&drop_region)
+                        .map(|(x, q, r)| ((x, r), q))
+                        .semijoin(&contravariant_var_region)
+                        .map(|((_x, r), q)| (r, q));
+
+                    // carry_backward_from(R, Q) :- contravariant_assign_region(Q, R).
+                    let carry_backward_from3 = contravariant_assign_region.map(|(q, r)| (r, q));
+
+                    carry_backward_from1
+                        .concat(&carry_backward_from2)
+                        .concat(&carry_backward_from3)
+                        .distinct()
                 };
 
                 // .decl restricts( r:region, b:borrow, p:point )
                 let restricts = borrow_region.iterate(|restricts| {
                     let borrow_region = borrow_region.enter(&restricts.scope());
                     let killed = killed.enter(&restricts.scope());
-                    let subset = subset.enter(&restricts.scope());
+                    let cfg_edge = cfg_edge.enter(&restricts.scope());
+                    let carry_forward_to = carry_forward_to.enter(&restricts.scope());
+                    let carry_backward_from = carry_backward_from.enter(&restricts.scope());
+                    let outlives = outlives.enter(&restricts.scope());
 
-                    // restricts(R, B, P) :- borrowRegion(R, B, P).
+                    // restricts(R, B, P) :- borrow_region(R, B, P).
                     let restricts1 = borrow_region.clone();
 
-                    // restricts(R1, B, P1) :-
-                    //   restricts(R2, B, P2)
-                    //   !killed(B, P2)
-                    //   subset((R2, P2), (R1, P1)).
+                    // restricts(R1, B, P) :-
+                    //   restricts(R2, B, P),
+                    //   outlives(R2, R1, P).
                     let restricts2 = restricts
-                        .map(|(r2, b, p2)| ((b, p2), r2))
-                        .antijoin(&killed)
-                        .map(|((b, p2), r2)| ((r2, p2), b))
-                        .join(&subset)
-                        .map(|((_r2, _p2), b, (r1, p1))| (r1, b, p1));
+                        .map(|(r2, b, p)| ((r2, p), b))
+                        .join(&outlives.map(|(r2, r1, p)| ((r2, p), r1)))
+                        .map(|((_r2, p), b, r1)| (r1, b, p));
 
-                    restricts1.concat(&restricts2).distinct().inspect_batch({
-                        let result = result.clone();
-                        move |_timestamp, facts| {
-                            let mut result = result.lock().unwrap();
-                            for ((region, borrow, location), _timestamp, multiplicity) in facts {
-                                assert_eq!(*multiplicity, 1);
-                                result
-                                    .restricts
-                                    .entry(*location)
-                                    .or_insert(BTreeMap::default())
-                                    .entry(*region)
-                                    .or_insert(vec![])
-                                    .push(*borrow);
+                    // restricts(R, B, Q) :-
+                    //   restricts(R, B, P)
+                    //   !killed(B, P),
+                    //   cfg_edge(P, Q),
+                    //   carry_forward_to(R, Q).
+                    let restricts3 = restricts
+                        .map(|(r, b, p)| ((b, p), r))
+                        .antijoin(&killed)
+                        .map(|((b, p), r)| (p, (b, r)))
+                        .join(&cfg_edge)
+                        .map(|(p, (b, r), q)| ((r, q), (p, b)))
+                        .semijoin(&carry_forward_to)
+                        .map(|((r, q), (_p, b))| (r, b, q));
+
+                    // restricts(R, B, P) :-
+                    //   restricts(R, B, Q),
+                    //   carry_backward_from(R, Q),
+                    //   cfg_edge(P, Q).
+                    let restricts4 = restricts
+                        .map(|(r, b, q)| ((r, q), b))
+                        .semijoin(&carry_backward_from)
+                        .map(|((r, q), b)| (q, (r, b)))
+                        .join(&cfg_edge)
+                        .map(|(_q, (r, b), p)| (r, b, p));
+
+                    restricts1
+                        .concat(&restricts2)
+                        .concat(&restricts3)
+                        .concat(&restricts4)
+                        .distinct()
+                        .inspect_batch({
+                            let result = result.clone();
+                            move |_timestamp, facts| {
+                                let mut result = result.lock().unwrap();
+                                for ((region, borrow, location), _timestamp, multiplicity) in facts
+                                {
+                                    assert_eq!(*multiplicity, 1);
+                                    result
+                                        .restricts
+                                        .entry(*location)
+                                        .or_insert(BTreeMap::default())
+                                        .entry(*region)
+                                        .or_insert(vec![])
+                                        .push(*borrow);
+                                }
                             }
-                        }
-                    })
+                        })
                 });
 
-                // .decl regionLiveAt( p:point, r:region )
+                // .decl region_live_at( p:point, r:region )
                 let region_live_at = {
-                    // regionLiveAt(P, R) :- useLive(X, P), covariantVarRegion(X, R).
+                    // region_live_at(P, R) :- use_live(X, P), covariant_var_region(X, R).
                     let region_live_at1 = use_live
                         .join(&covariant_var_region)
                         .map(|(_x, p, r)| (p, r));
 
-                    // regionLiveAt(P, R) :- useLive(X, P), contravariantVarRegion(X, R).
+                    // region_live_at(P, R) :- use_live(X, P), contravariant_var_region(X, R).
                     let region_live_at2 = use_live
                         .join(&contravariant_var_region)
                         .map(|(_x, p, r)| (p, r));
 
-                    // regionLiveAt(P, R) :- dropLive(X, P), dropRegion(X, R).
+                    // region_live_at(P, R) :- drop_live(X, P), drop_region(X, R).
                     let region_live_at3 = drop_live.join(&drop_region).map(|(_x, p, r)| (p, r));
 
                     region_live_at1
@@ -328,17 +325,17 @@ pub(super) fn timely_dataflow(all_facts: AllFacts) -> LiveBorrowResults {
                         })
                 };
 
-                // borrowPoint(B, P) :-
-                //   borrowRegion(R, B, P).
+                // borrow_point(B, P) :-
+                //   borrow_region(R, B, P).
                 let borrow_point = borrow_region.map(|(_r, b, p)| (b, p));
 
-                // borrowLiveAt(B, Q) :-
-                //   borrowPoint(B, P),
-                //   cfgEdge(P, Q).
-                // borrowLiveAt(B, Q) :-
-                //   borrowLiveAt(B, P),
-                //   cfgEdge(P, Q),
-                //   regionLiveAt(Q, R),
+                // borrow_live_at(B, Q) :-
+                //   borrow_point(B, P),
+                //   cfg_edge(P, Q).
+                // borrow_live_at(B, Q) :-
+                //   borrow_live_at(B, P),
+                //   cfg_edge(P, Q),
+                //   region_live_at(Q, R),
                 //   restricts(R, B, Q).
                 let base_borrow_live_at = borrow_point
                     .map(|(b, p)| (p, b))

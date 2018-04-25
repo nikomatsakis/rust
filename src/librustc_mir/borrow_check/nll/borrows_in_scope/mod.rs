@@ -27,9 +27,6 @@ crate struct LiveBorrowResults {
     // these are just for debugging
     restricts: FxHashMap<LocationIndex, BTreeMap<RegionVid, Vec<BorrowRegionVid>>>,
     region_live_at: FxHashMap<LocationIndex, Vec<RegionVid>>,
-
-    // Each (R1 @ P1) <= (R2 @ P2) relation, indexed by P2.
-    superset: FxHashMap<LocationIndex, Vec<(RegionVid, LocationIndex, RegionVid)>>,
 }
 
 impl LiveBorrowResults {
@@ -77,16 +74,6 @@ impl LiveBorrowResults {
         location: LocationIndex,
     ) -> &[RegionVid] {
         match self.region_live_at.get(&location) {
-            Some(v) => v,
-            None => &[],
-        }
-    }
-
-    crate fn superset(
-        &self,
-        location: LocationIndex,
-    ) -> &[(RegionVid, LocationIndex, RegionVid)] {
-        match self.superset.get(&location) {
             Some(v) => v,
             None => &[],
         }

@@ -276,19 +276,6 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
                             ALIGN = ALIGN,
                         )?;
                     }
-
-                    for (r1, p1, r2) in live_borrow_results.superset(rli) {
-                        writeln!(
-                            out,
-                            "{:ALIGN$} | ({:?} @ {:?}) <= ({:?} @ {:?})",
-                            "",
-                            r1,
-                            location_table.to_location(*p1),
-                            r2,
-                            location_table.to_location(rli),
-                            ALIGN = ALIGN,
-                        )?;
-                    }
                 }
 
                 PassWhere::AfterLocation(_) | PassWhere::AfterCFG => {}
