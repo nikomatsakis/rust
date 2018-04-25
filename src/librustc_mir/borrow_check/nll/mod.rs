@@ -243,15 +243,14 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
                         ALIGN = ALIGN,
                     )?;
 
-                    for (borrow, region_vids) in live_borrow_results.restricts_at(rli).iter() {
-                        let borrow_location = borrow_set[*borrow].reserve_location;
+                    for (region_vid, borrows) in live_borrow_results.restricts_at(rli).iter() {
                         writeln!(
                             out,
-                            "{:ALIGN$} | Borrow {:?} from {:?} in scope due to regions {:?}",
+                            "{:ALIGN$} | Region {:?} @ {:?} contains {:?}",
                             "",
-                            borrow,
-                            borrow_location,
-                            region_vids,
+                            region_vid,
+                            location,
+                            borrows,
                             ALIGN = ALIGN
                         )?;
                     }

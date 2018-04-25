@@ -15,6 +15,7 @@ use rustc::hir::def_id::DefId;
 use rustc::ty::{RegionVid, TyCtxt};
 use rustc_data_structures::fx::FxHashMap;
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 mod timely;
@@ -24,7 +25,7 @@ crate struct LiveBorrowResults {
     borrow_live_at: FxHashMap<LocationIndex, Vec<BorrowRegionVid>>,
 
     // these are just for debugging
-    restricts: FxHashMap<LocationIndex, FxHashMap<BorrowRegionVid, Vec<RegionVid>>>,
+    restricts: FxHashMap<LocationIndex, BTreeMap<RegionVid, Vec<BorrowRegionVid>>>,
     region_live_at: FxHashMap<LocationIndex, Vec<RegionVid>>,
 
     // Each (R1 @ P1) <= (R2 @ P2) relation, indexed by P2.
@@ -64,10 +65,10 @@ impl LiveBorrowResults {
     crate fn restricts_at(
         &self,
         location: LocationIndex,
-    ) -> Cow<'_, FxHashMap<BorrowRegionVid, Vec<RegionVid>>> {
+    ) -> Cow<'_, BTreeMap<RegionVid, Vec<BorrowRegionVid>>> {
         match self.restricts.get(&location) {
             Some(map) => Cow::Borrowed(map),
-            None => Cow::Owned(FxHashMap())
+            None => Cow::Owned(BTreeMap::default())
         }
     }
 
