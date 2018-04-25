@@ -196,7 +196,13 @@ trait FactToString {
 }
 
 impl<T: Debug> FactToString for T {
-    fn to_string(&self, _location_table: &LocationTable) -> String {
+    default fn to_string(&self, _location_table: &LocationTable) -> String {
         format!("{:?}", self)
+    }
+}
+
+impl FactToString for LocationIndex {
+    fn to_string(&self, location_table: &LocationTable) -> String {
+        format!("{:?}", location_table.to_location(*self))
     }
 }
