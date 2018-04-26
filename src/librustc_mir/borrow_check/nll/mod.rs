@@ -257,6 +257,17 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
                         )?;
                     }
 
+                    for (r1, r2s) in live_borrow_results.subsets_at(rli).iter() {
+                        writeln!(
+                            out,
+                            "{:ALIGN$} | Region {:?} <= {:?}",
+                            "",
+                            r1,
+                            r2s,
+                            ALIGN = ALIGN
+                        )?;
+                    }
+
                     let live_regions = live_borrow_results.regions_live_at(rli);
                     if !live_regions.is_empty() {
                         writeln!(

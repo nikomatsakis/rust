@@ -14,7 +14,7 @@ use borrow_check::nll::borrows_in_scope::LiveBorrowResults;
 use borrow_check::nll::facts::AllFacts;
 use differential_dataflow::collection::Collection;
 use differential_dataflow::operators::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -321,6 +321,23 @@ pub(super) fn timely_dataflow(all_facts: AllFacts) -> LiveBorrowResults {
                     }
                 });
 
+                subset.inspect_batch({
+                    let result = result.clone();
+                    move |_timestamp, facts| {
+                        let mut result = result.lock().unwrap();
+                        for ((r1, r2, location), _timestamp, multiplicity) in facts {
+                            assert_eq!(*multiplicity, 1);
+                            result
+                                .subset
+                                .entry(*location)
+                                .or_insert(BTreeMap::new())
+                                .entry(*r1)
+                                .or_insert(BTreeSet::new())
+                                .insert(*r2);
+                        }
+                    }
+                });
+
                 requires.inspect_batch({
                     let result = result.clone();
                     move |_timestamp, facts| {
@@ -332,8 +349,8 @@ pub(super) fn timely_dataflow(all_facts: AllFacts) -> LiveBorrowResults {
                                 .entry(*location)
                                 .or_insert(BTreeMap::new())
                                 .entry(*region)
-                                .or_insert(Vec::new())
-                                .push(*borrow);
+                                .or_insert(BTreeSet::new())
+                                .insert(*borrow);
                         }
                     }
                 });

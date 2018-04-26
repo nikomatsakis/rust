@@ -21,9 +21,8 @@ use std::path::Path;
 /// The "facts" which are the basis of the NLL borrow analysis.
 #[derive(Default)]
 crate struct AllFacts {
-    // For each `&'a T` rvalue at point P, include ('a, B, P).
-    //
-    // XXX Universal regions?
+    // `borrow_region(R, B, P)` -- the region R may refer to data from borrow B
+    // starting at the point P (this is usually the point *after* a borrow rvalue)
     crate borrow_region: Vec<(RegionVid, BorrowRegionVid, LocationIndex)>,
 
     // universal_region(R) -- this is a "free region" within fn body
@@ -116,43 +115,28 @@ impl<'w> FactWriter<'w> {
     }
 }
 
-trait FactRow: Debug {
+trait FactRow {
     fn write(
         &self,
         out: &mut File,
         location_table: &LocationTable,
     ) -> Result<(), Box<dyn Error>>;
-
-    fn to_string(&self, location_table: &LocationTable) -> String;
 }
 
-impl<A> FactRow for A
-where
-    A: Debug,
-{
-    default fn write(
+impl FactRow for RegionVid {
+    fn write(
         &self,
         out: &mut File,
         location_table: &LocationTable,
     ) -> Result<(), Box<dyn Error>> {
         write_row(out, location_table, &[self])
     }
-
-    default fn to_string(&self, _location_table: &LocationTable) -> String {
-        format!("{:?}", self)
-    }
-}
-
-impl FactRow for LocationIndex {
-    fn to_string(&self, location_table: &LocationTable) -> String {
-        format!("{:?}", location_table.to_location(*self))
-    }
 }
 
 impl<A, B> FactRow for (A, B)
 where
-    A: FactRow,
-    B: FactRow,
+    A: FactCell,
+    B: FactCell,
 {
     fn write(
         &self,
@@ -165,9 +149,9 @@ where
 
 impl<A, B, C> FactRow for (A, B, C)
 where
-    A: FactRow,
-    B: FactRow,
-    C: FactRow,
+    A: FactCell,
+    B: FactCell,
+    C: FactCell,
 {
     fn write(
         &self,
@@ -180,10 +164,10 @@ where
 
 impl<A, B, C, D> FactRow for (A, B, C, D)
 where
-    A: FactRow,
-    B: FactRow,
-    C: FactRow,
-    D: FactRow,
+    A: FactCell,
+    B: FactCell,
+    C: FactCell,
+    D: FactCell,
 {
     fn write(
         &self,
@@ -197,7 +181,7 @@ where
 fn write_row(
     out: &mut dyn Write,
     location_table: &LocationTable,
-    columns: &[&dyn FactRow],
+    columns: &[&dyn FactCell],
 ) -> Result<(), Box<dyn Error>> {
     for (index, c) in columns.iter().enumerate() {
         let tail = if index == columns.len() - 1 {
@@ -208,4 +192,20 @@ fn write_row(
         write!(out, "{:?}{}", c.to_string(location_table), tail)?;
     }
     Ok(())
+}
+
+trait FactCell {
+    fn to_string(&self, location_table: &LocationTable) -> String;
+}
+
+impl<A: Debug> FactCell for A {
+    default fn to_string(&self, _location_table: &LocationTable) -> String {
+        format!("{:?}", self)
+    }
+}
+
+impl FactCell for LocationIndex {
+    fn to_string(&self, location_table: &LocationTable) -> String {
+        format!("{:?}", location_table.to_location(*self))
+    }
 }

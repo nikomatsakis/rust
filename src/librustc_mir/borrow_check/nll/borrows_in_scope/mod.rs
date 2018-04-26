@@ -16,6 +16,7 @@ use rustc::ty::{RegionVid, TyCtxt};
 use rustc_data_structures::fx::FxHashMap;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 mod timely;
@@ -25,8 +26,9 @@ crate struct LiveBorrowResults {
     borrow_live_at: FxHashMap<LocationIndex, Vec<BorrowRegionVid>>,
 
     // these are just for debugging
-    restricts: FxHashMap<LocationIndex, BTreeMap<RegionVid, Vec<BorrowRegionVid>>>,
+    restricts: FxHashMap<LocationIndex, BTreeMap<RegionVid, BTreeSet<BorrowRegionVid>>>,
     region_live_at: FxHashMap<LocationIndex, Vec<RegionVid>>,
+    subset: FxHashMap<LocationIndex, BTreeMap<RegionVid, BTreeSet<RegionVid>>>,
 }
 
 impl LiveBorrowResults {
@@ -62,7 +64,7 @@ impl LiveBorrowResults {
     crate fn restricts_at(
         &self,
         location: LocationIndex,
-    ) -> Cow<'_, BTreeMap<RegionVid, Vec<BorrowRegionVid>>> {
+    ) -> Cow<'_, BTreeMap<RegionVid, BTreeSet<BorrowRegionVid>>> {
         match self.restricts.get(&location) {
             Some(map) => Cow::Borrowed(map),
             None => Cow::Owned(BTreeMap::default())
@@ -76,6 +78,16 @@ impl LiveBorrowResults {
         match self.region_live_at.get(&location) {
             Some(v) => v,
             None => &[],
+        }
+    }
+
+    crate fn subsets_at(
+        &self,
+        location: LocationIndex,
+    ) -> Cow<'_, BTreeMap<RegionVid, BTreeSet<RegionVid>>> {
+        match self.subset.get(&location) {
+            Some(v) => Cow::Borrowed(v),
+            None => Cow::Owned(BTreeMap::default()),
         }
     }
 }

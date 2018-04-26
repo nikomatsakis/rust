@@ -185,7 +185,7 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
                 self.all_facts.borrow_region.push((
                     region_vid,
                     BorrowRegionVid { region_vid },
-                    self.location_table.start_index(location),
+                    self.location_table.start_index(location.successor_within_block()),
                 ));
 
                 // Look for an rvalue like:
