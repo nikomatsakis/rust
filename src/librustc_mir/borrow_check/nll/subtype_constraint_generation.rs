@@ -9,8 +9,8 @@
 // except according to those terms.
 
 use borrow_check::location::LocationTable;
-use borrow_check::nll::ToRegionVid;
 use borrow_check::nll::facts::AllFacts;
+use borrow_check::nll::ToRegionVid;
 use rustc::infer::region_constraints::Constraint;
 use rustc::infer::region_constraints::RegionConstraintData;
 use rustc::infer::region_constraints::{Verify, VerifyBound};
@@ -71,12 +71,22 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
         self.all_facts.use_live.extend(
             use_live_variables
                 .into_iter()
-                .map(|&(x, p)| (x, location_table.start_index(p))),
+                .map(|&(x, p)| (x, location_table.start_index(p)))
+                .chain(
+                    use_live_variables
+                        .into_iter()
+                        .map(|&(x, p)| (x, location_table.mid_index(p))),
+                ),
         );
         self.all_facts.drop_live.extend(
             drop_live_variables
                 .into_iter()
-                .map(|&(x, p)| (x, location_table.start_index(p))),
+                .map(|&(x, p)| (x, location_table.start_index(p)))
+                .chain(
+                    drop_live_variables
+                        .into_iter()
+                        .map(|&(x, p)| (x, location_table.mid_index(p))),
+                ),
         );
         self.all_facts.drop_region.extend(
             drop_region
@@ -119,10 +129,13 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
                 self.regioncx
                     .add_outlives(span, b_vid, a_vid, locations.at_location);
 
+                // In the new analysis, all outlives relations etc
+                // "take effect" at the mid point of the statement
+                // that requires them, so ignore the `at_location`.
                 self.all_facts.outlives.push((
                     b_vid,
                     a_vid,
-                    location_table.start_index(locations.at_location),
+                    location_table.mid_index(locations.from_location),
                 ));
             }
 

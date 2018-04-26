@@ -28,6 +28,12 @@ crate struct LocationTable {
 
 newtype_index!(LocationIndex { DEBUG_FORMAT = "LocationIndex({})" });
 
+#[derive(Copy, Clone, Debug)]
+crate enum RichLocation {
+    Start(Location),
+    Mid(Location),
+}
+
 impl LocationTable {
     crate fn new(mir: &Mir<'_>) -> Self {
         let mut num_points = 0;
@@ -35,7 +41,7 @@ impl LocationTable {
             .iter()
             .map(|block_data| {
                 let v = num_points;
-                num_points += block_data.statements.len() + 1;
+                num_points += (block_data.statements.len() + 1) * 2;
                 v
             })
             .collect();
@@ -57,10 +63,19 @@ impl LocationTable {
             statement_index,
         } = location;
         let start_index = self.statements_before_block[block];
-        LocationIndex::new(start_index + statement_index)
+        LocationIndex::new(start_index + statement_index * 2)
     }
 
-    crate fn to_location(&self, index: LocationIndex) -> Location {
+    crate fn mid_index(&self, location: Location) -> LocationIndex {
+        let Location {
+            block,
+            statement_index,
+        } = location;
+        let start_index = self.statements_before_block[block];
+        LocationIndex::new(start_index + statement_index * 2 + 1)
+    }
+
+    crate fn to_location(&self, index: LocationIndex) -> RichLocation {
         let point_index = index.index();
 
         // Find the basic block. We have a vector with the
@@ -85,9 +100,18 @@ impl LocationTable {
             .last()
             .unwrap();
 
-        Location {
-            block,
-            statement_index: point_index - first_index,
+        let statement_index = (point_index - first_index) / 2;
+        if index.is_start() {
+            RichLocation::Start(Location { block, statement_index })
+        } else {
+            RichLocation::Mid(Location { block, statement_index })
         }
+    }
+}
+
+impl LocationIndex {
+    fn is_start(&self) -> bool {
+        // even indices are start points; odd indices are mid points
+        (self.index() % 2) == 0
     }
 }

@@ -126,6 +126,11 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
     ) {
         self.all_facts.cfg_edge.push((
             self.location_table.start_index(location),
+            self.location_table.mid_index(location),
+        ));
+
+        self.all_facts.cfg_edge.push((
+            self.location_table.mid_index(location),
             self.location_table
                 .start_index(location.successor_within_block()),
         ));
@@ -140,8 +145,6 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         rvalue: &Rvalue<'tcx>,
         location: Location,
     ) {
-        let location_index = self.location_table.start_index(location);
-
         // When we see `X = ...`, then kill borrows of
         // `(*X).foo` and so forth.
         if let Place::Local(temp) = place {
@@ -151,6 +154,7 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
                     let borrow_region = BorrowRegionVid {
                         region_vid: borrow_data.region.to_region_vid(),
                     };
+                    let location_index = self.location_table.mid_index(location);
                     self.all_facts.killed.push((borrow_region, location_index));
                 }
             }
@@ -165,9 +169,14 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         terminator: &Terminator<'tcx>,
         location: Location,
     ) {
+        self.all_facts.cfg_edge.push((
+            self.location_table.start_index(location),
+            self.location_table.mid_index(location),
+        ));
+
         for successor_block in terminator.successors().iter() {
             self.all_facts.cfg_edge.push((
-                self.location_table.start_index(location),
+                self.location_table.mid_index(location),
                 self.location_table
                     .start_index(successor_block.start_location()),
             ));
@@ -185,7 +194,7 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
                 self.all_facts.borrow_region.push((
                     region_vid,
                     BorrowRegionVid { region_vid },
-                    self.location_table.start_index(location.successor_within_block()),
+                    self.location_table.mid_index(location),
                 ));
 
                 // Look for an rvalue like:
@@ -289,7 +298,7 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
                             self.all_facts.outlives.push((
                                 ref_region.to_region_vid(),
                                 borrow_region.to_region_vid(),
-                                self.location_table.start_index(location.successor_within_block()),
+                                self.location_table.mid_index(location),
                             ));
 
                             match mutbl {
