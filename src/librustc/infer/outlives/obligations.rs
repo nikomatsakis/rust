@@ -72,7 +72,8 @@
 use hir::def_id::DefId;
 use infer::{self, GenericKind, InferCtxt, RegionObligation, SubregionOrigin, VerifyBound};
 use traits;
-use ty::{self, Ty, TyCtxt, TypeFoldable};
+use ty::{self, Ty, TyCtxt};
+use ty::fold::TypeFoldable;
 use ty::subst::{Subst, Substs};
 use ty::outlives::Component;
 use syntax::ast;
@@ -93,6 +94,9 @@ impl<'cx, 'gcx, 'tcx> InferCtxt<'cx, 'gcx, 'tcx> {
             body_id,
             obligation
         );
+
+        assert!(!obligation.sub_region.has_escaping_regions());
+        assert!(!obligation.sup_type.has_escaping_regions());
 
         self.region_obligations
             .borrow_mut()
