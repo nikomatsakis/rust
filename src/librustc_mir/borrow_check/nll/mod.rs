@@ -98,10 +98,12 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
         move_data,
     );
 
+    let mut all_facts = AllFacts::default();
+    all_facts.universal_region.extend(universal_regions.universal_regions());
+
     // Create the region inference context, taking ownership of the region inference
     // data that was contained in `infcx`.
     let var_origins = infcx.take_region_var_origins();
-    let mut all_facts = AllFacts::default();
     let mut regioncx = RegionInferenceContext::new(var_origins, universal_regions, mir);
 
     // Generate various constraints.

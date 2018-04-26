@@ -159,206 +159,183 @@ pub(super) fn timely_dataflow(all_facts: AllFacts) -> LiveBorrowResults {
                 let_collections! {
                     let (
                         borrow_region,
+                        universal_region,
                         cfg_edge,
                         killed,
                         outlives,
                         use_live,
                         drop_live,
-                        covariant_var_region,
-                        contravariant_var_region,
-                        covariant_assign_region,
-                        contravariant_assign_region,
+                        use_region,
                         drop_region,
                     ) = ..my_facts;
                 }
 
-                let carry_forward_to = {
-                    // carry_forward_to(R, Q) :- use_live(X, Q), covariant_var_region(X, R).
-                    let carry_forward_to1 = use_live
-                        .join(&covariant_var_region)
-                        .map(|(_x, q, r)| (r, q));
+                // .decl region_live_at( r:region, p:point )
+                let region_live_at = {
+                    // region_live_at(R, P) :- use_live(X, P), use_region(X, R).
+                    let region_live_at1 = use_live.join(&use_region).map(|(_x, p, r)| (r, p));
 
-                    // carry_forward_to(R, Q) :- drop_live(X, Q), drop_region(X, R), covariant_var_region(X, R).
-                    let carry_forward_to2 = drop_live
-                        .join(&drop_region)
-                        .map(|(x, q, r)| ((x, r), q))
-                        .semijoin(&covariant_var_region)
-                        .map(|((_x, r), q)| (r, q));
+                    // region_live_at(R, P) :- drop_live(X, P), drop_region(X, R).
+                    let region_live_at2 = drop_live.join(&drop_region).map(|(_x, p, r)| (r, p));
 
-                    // carry_forward_to(R, Q) :- covariant_assign_region(P, R), cfg_edge(P, Q).
-                    let carry_forward_to3 = covariant_assign_region
-                        .join(&cfg_edge)
-                        .map(|(_p, r, q)| (r, q));
-
-                    carry_forward_to1
-                        .concat(&carry_forward_to2)
-                        .concat(&carry_forward_to3)
-                        .distinct()
+                    region_live_at1.concat(&region_live_at2).distinct()
                 };
 
-                let carry_backward_from = {
-                    // carry_backward_from(R, Q) :- use_live(X, Q), contravariant_var_region(X, R).
-                    let carry_backward_from1 = use_live
-                        .join(&contravariant_var_region)
-                        .map(|(_x, q, r)| (r, q));
+                // .decl subset(Ra, Rb, P) -- at the point P, R1 <= R2 holds
+                let subset = outlives.iterate(|subset| {
+                    let outlives = outlives.enter(&subset.scope());
+                    let cfg_edge = cfg_edge.enter(&subset.scope());
+                    let region_live_at = region_live_at.enter(&subset.scope());
+                    let universal_region = universal_region.enter(&subset.scope());
 
-                    // carry_backward_from(Q, R) :-
-                    //   drop_live(X, Q),
-                    //   drop_region(X, R),
-                    //   contravariant_var_region(X, R).
-                    let carry_backward_from2 = drop_live
-                        .join(&drop_region)
-                        .map(|(x, q, r)| ((x, r), q))
-                        .semijoin(&contravariant_var_region)
-                        .map(|((_x, r), q)| (r, q));
+                    // subset(R1, R2, P) :- outlives(R1, R2, P).
+                    let subset1 = outlives.clone();
 
-                    // carry_backward_from(R, Q) :- contravariant_assign_region(Q, R).
-                    let carry_backward_from3 = contravariant_assign_region.map(|(q, r)| (r, q));
+                    // subset(R1, R3, P) :-
+                    //   subset(R1, R2, P),
+                    //   subset(R2, R3, P).
+                    let subset2 = subset
+                        .map(|(r1, r2, q)| ((r2, q), r1))
+                        .join(&subset.map(|(r2, r3, p)| ((r2, p), r3)))
+                        .map(|((_r2, p), r1, r3)| (r1, r3, p));
 
-                    carry_backward_from1
-                        .concat(&carry_backward_from2)
-                        .concat(&carry_backward_from3)
-                        .distinct()
-                };
-
-                // .decl restricts( r:region, b:borrow, p:point )
-                let restricts = borrow_region.iterate(|restricts| {
-                    let borrow_region = borrow_region.enter(&restricts.scope());
-                    let killed = killed.enter(&restricts.scope());
-                    let cfg_edge = cfg_edge.enter(&restricts.scope());
-                    let carry_forward_to = carry_forward_to.enter(&restricts.scope());
-                    let carry_backward_from = carry_backward_from.enter(&restricts.scope());
-                    let outlives = outlives.enter(&restricts.scope());
-
-                    // restricts(R, B, P) :- borrow_region(R, B, P).
-                    let restricts1 = borrow_region.clone();
-
-                    // restricts(R1, B, P) :-
-                    //   restricts(R2, B, P),
-                    //   outlives(R2, R1, P).
-                    let restricts2 = restricts
-                        .map(|(r2, b, p)| ((r2, p), b))
-                        .join(&outlives.map(|(r2, r1, p)| ((r2, p), r1)))
-                        .map(|((_r2, p), b, r1)| (r1, b, p));
-
-                    // restricts(R, B, Q) :-
-                    //   restricts(R, B, P)
-                    //   !killed(B, P),
+                    // subset(R1, R2, Q) :-
+                    //   subset(R1, R2, P),
                     //   cfg_edge(P, Q),
-                    //   carry_forward_to(R, Q).
-                    let restricts3 = restricts
-                        .map(|(r, b, p)| ((b, p), r))
-                        .antijoin(&killed)
-                        .map(|((b, p), r)| (p, (b, r)))
-                        .join(&cfg_edge)
-                        .map(|(p, (b, r), q)| ((r, q), (p, b)))
-                        .semijoin(&carry_forward_to)
-                        .map(|((r, q), (_p, b))| (r, b, q));
+                    //   (region_live_at(R1, Q); universal_region(R1)),
+                    //   (region_live_at(R2, Q); universal_region(R2)).
+                    let subset3base = subset.map(|(r1, r2, p)| (p, (r1, r2))).join(&cfg_edge);
+                    let subset3a = subset3base
+                        .map(|(_p, (r1, r2), q)| ((r1, q), r2))
+                        .semijoin(&region_live_at)
+                        .map(|((r1, q), r2)| ((r2, q), r1))
+                        .semijoin(&region_live_at)
+                        .map(|((r2, q), r1)| (r1, r2, q));
+                    let subset3b = subset3base
+                        .map(|(_p, (r1, r2), q)| (r1, (q, r2)))
+                        .semijoin(&universal_region)
+                        .map(|(r1, (q, r2))| (r2, (q, r1)))
+                        .semijoin(&universal_region)
+                        .map(|(r2, (q, r1))| (r1, r2, q));
+                    let subset3c = subset3base
+                        .map(|(_p, (r1, r2), q)| ((r1, q), r2))
+                        .semijoin(&region_live_at)
+                        .map(|((r1, q), r2)| (r2, (q, r1)))
+                        .semijoin(&universal_region)
+                        .map(|(r2, (q, r1))| (r1, r2, q));
+                    let subset3d = subset3base
+                        .map(|(_p, (r1, r2), q)| (r1, (q, r2)))
+                        .semijoin(&universal_region)
+                        .map(|(r1, (q, r2))| ((r2, q), r1))
+                        .semijoin(&region_live_at)
+                        .map(|((r2, q), r1)| (r1, r2, q));
 
-                    // restricts(R, B, P) :-
-                    //   restricts(R, B, Q),
-                    //   carry_backward_from(R, Q),
-                    //   cfg_edge(P, Q).
-                    let restricts4 = restricts
-                        .map(|(r, b, q)| ((r, q), b))
-                        .semijoin(&carry_backward_from)
-                        .map(|((r, q), b)| (q, (r, b)))
-                        .join(&cfg_edge)
-                        .map(|(_q, (r, b), p)| (r, b, p));
-
-                    restricts1
-                        .concat(&restricts2)
-                        .concat(&restricts3)
-                        .concat(&restricts4)
+                    subset1
+                        .concat(&subset2)
+                        .concat(&subset3a)
+                        .concat(&subset3b)
+                        .concat(&subset3c)
+                        .concat(&subset3d)
                         .distinct()
-                        .inspect_batch({
-                            let result = result.clone();
-                            move |_timestamp, facts| {
-                                let mut result = result.lock().unwrap();
-                                for ((region, borrow, location), _timestamp, multiplicity) in facts
-                                {
-                                    assert_eq!(*multiplicity, 1);
-                                    result
-                                        .restricts
-                                        .entry(*location)
-                                        .or_insert(BTreeMap::default())
-                                        .entry(*region)
-                                        .or_insert(vec![])
-                                        .push(*borrow);
-                                }
-                            }
-                        })
                 });
 
-                // .decl region_live_at( p:point, r:region )
-                let region_live_at = {
-                    // region_live_at(P, R) :- use_live(X, P), covariant_var_region(X, R).
-                    let region_live_at1 = use_live
-                        .join(&covariant_var_region)
-                        .map(|(_x, p, r)| (p, r));
+                // .decl requires(R, B, P) -- at the point, things with region R
+                // may depend on data from borrow B
+                let requires = borrow_region.iterate(|requires| {
+                    let borrow_region = borrow_region.enter(&requires.scope());
+                    let subset = subset.enter(&requires.scope());
+                    let killed = killed.enter(&requires.scope());
+                    let region_live_at = region_live_at.enter(&requires.scope());
+                    let cfg_edge = cfg_edge.enter(&requires.scope());
+                    let universal_region = universal_region.enter(&requires.scope());
 
-                    // region_live_at(P, R) :- use_live(X, P), contravariant_var_region(X, R).
-                    let region_live_at2 = use_live
-                        .join(&contravariant_var_region)
-                        .map(|(_x, p, r)| (p, r));
+                    // requires(R, B, P) :- borrow_region(R, B, P).
+                    let requires1 = borrow_region.clone();
 
-                    // region_live_at(P, R) :- drop_live(X, P), drop_region(X, R).
-                    let region_live_at3 = drop_live.join(&drop_region).map(|(_x, p, r)| (p, r));
+                    // requires(R2, B, P) :-
+                    //   requires(R1, B, P),
+                    //   subset(R1, R2, P).
+                    let requires2 = requires
+                        .map(|(r1, b, p)| ((r1, p), b))
+                        .join(&subset.map(|(r1, r2, p)| ((r1, p), r2)))
+                        .map(|((_r1, p), b, r2)| (r2, b, p));
 
-                    region_live_at1
-                        .concat(&region_live_at2)
-                        .concat(&region_live_at3)
+                    // requires(R, B, Q) :-
+                    //   requires(R, B, P),
+                    //   !killed(B, P),
+                    //   cfg_edge(P, Q),
+                    //   (region_live_at(R, Q); universal_region(R)).
+                    let requires_propagate_base = requires
+                        .map(|(r, b, p)| ((b, p), r))
+                        .antijoin(&killed)
+                        .map(|((b, p), r)| (p, (r, b)))
+                        .join(&cfg_edge);
+                    let requires3 = requires_propagate_base
+                        .map(|(_p, (r, b), q)| ((r, q), b))
+                        .semijoin(&region_live_at)
+                        .map(|((r, q), b)| (r, b, q));
+                    let requires4 = requires_propagate_base
+                        .map(|(_p, (r, b), q)| (r, (q, b)))
+                        .semijoin(&universal_region)
+                        .map(|(r, (q, b))| (r, b, q));
+
+                    requires1
+                        .concat(&requires2)
+                        .concat(&requires3)
+                        .concat(&requires4)
                         .distinct()
-                        .inspect_batch({
-                            let result = result.clone();
-                            move |_timestamp, facts| {
-                                let mut result = result.lock().unwrap();
-                                for ((location, region), _timestamp, multiplicity) in facts {
-                                    assert_eq!(*multiplicity, 1);
-                                    result
-                                        .region_live_at
-                                        .entry(*location)
-                                        .or_insert(vec![])
-                                        .push(*region);
-                                }
-                            }
-                        })
-                };
+                });
 
-                // borrow_point(B, P) :-
-                //   borrow_region(R, B, P).
-                let borrow_point = borrow_region.map(|(_r, b, p)| (b, p));
+                // .decl borrow_live_at(B, P) -- true if the restrictions of the borrow B
+                // need to be enforced at the point P
+                let borrow_live_at = {
+                    // borrow_live_at(B, P) :- requires(R, B, P), region_live_at(R, P)
+                    let borrow_live_at1 =
+                        requires
+                        .map(|(r, b, p)| ((r, p), b))
+                        .semijoin(&region_live_at)
+                        .map(|((_r, p), b)| (b, p));
 
-                // borrow_live_at(B, Q) :-
-                //   borrow_point(B, P),
-                //   cfg_edge(P, Q).
-                // borrow_live_at(B, Q) :-
-                //   borrow_live_at(B, P),
-                //   cfg_edge(P, Q),
-                //   region_live_at(Q, R),
-                //   restricts(R, B, Q).
-                let base_borrow_live_at = borrow_point
-                    .map(|(b, p)| (p, b))
-                    .join(&cfg_edge)
-                    .map(|(_p, b, q)| (b, q));
-                let borrow_live_at = base_borrow_live_at.iterate(|borrow_live_at| {
-                    let base_borrow_live_at = base_borrow_live_at.enter(&borrow_live_at.scope());
-                    let cfg_edge = cfg_edge.enter(&borrow_live_at.scope());
-                    let restricts = restricts.enter(&borrow_live_at.scope());
-                    let region_live_at = region_live_at.enter(&borrow_live_at.scope());
-
-                    let borrow_live_at1 = base_borrow_live_at.clone();
-
-                    let borrow_live_at2 = borrow_live_at
-                        .map(|(b, p)| (p, b))
-                        .join(&cfg_edge)
-                        .map(|(_p, b, q)| (q, b))
-                        .join(&region_live_at)
-                        .map(|(q, b, r)| ((r, b, q), ()))
-                        .semijoin(&restricts)
-                        .map(|((_r, b, q), ())| (b, q));
+                    // borrow_live_at(B, P) :- requires(R, B, P), universal_region(R).
+                    let borrow_live_at2 =
+                        requires
+                        .map(|(r, b, p)| (r, (p, b)))
+                        .semijoin(&universal_region)
+                        .map(|(_r, (p, b))| (b, p));
 
                     borrow_live_at1.concat(&borrow_live_at2).distinct()
+                };
+
+                region_live_at.inspect_batch({
+                    let result = result.clone();
+                    move |_timestamp, facts| {
+                        let mut result = result.lock().unwrap();
+                        for ((region, location), _timestamp, multiplicity) in facts {
+                            assert_eq!(*multiplicity, 1);
+                            result
+                                .region_live_at
+                                .entry(*location)
+                                .or_insert(vec![])
+                                .push(*region);
+                        }
+                    }
+                });
+
+                requires.inspect_batch({
+                    let result = result.clone();
+                    move |_timestamp, facts| {
+                        let mut result = result.lock().unwrap();
+                        for ((region, borrow, location), _timestamp, multiplicity) in facts {
+                            assert_eq!(*multiplicity, 1);
+                            result
+                                .restricts
+                                .entry(*location)
+                                .or_insert(BTreeMap::new())
+                                .entry(*region)
+                                .or_insert(Vec::new())
+                                .push(*borrow);
+                        }
+                    }
                 });
 
                 borrow_live_at.inspect_batch({

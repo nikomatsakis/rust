@@ -18,12 +18,9 @@ use rustc::mir::visit::{PlaceContext, Visitor};
 use rustc::mir::Place::Projection;
 use rustc::mir::{BasicBlock, BasicBlockData, Location, Mir, Place, Rvalue};
 use rustc::mir::{Local, LocalDecl, PlaceProjection, ProjectionElem, Statement, Terminator};
-use rustc::ty::context_fold::{ContextualFoldResult, ContextualTypeFolder, TypeContext};
 use rustc::ty::fold::TypeFoldable;
-use rustc::ty::relate::Relate;
 use rustc::ty::subst::Substs;
-use rustc::ty::{self, CanonicalTy, ClosureSubsts, RegionVid, Ty, TyCtxt};
-use std::collections::BTreeSet;
+use rustc::ty::{self, CanonicalTy, ClosureSubsts};
 
 use super::region_infer::{Cause, RegionInferenceContext};
 use super::ToRegionVid;
@@ -105,12 +102,9 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
     }
 
     fn visit_local_decl(&mut self, local: Local, local_decl: &LocalDecl<'tcx>) {
-        RegionEnumerator::new(self.infcx.tcx, self.regioncx).enumerate_into_facts(
-            local,
-            local_decl.ty,
-            &mut self.all_facts.covariant_var_region,
-            &mut self.all_facts.contravariant_var_region,
-        );
+        self.infcx.tcx.for_each_free_region(&local_decl.ty, |r| {
+            self.all_facts.use_region.push((local, r.to_region_vid()));
+        });
 
         // Note: we do NOT invoke `super_local_decl` on purpose. We
         // don't want to visit the types and so forth outside of the
@@ -161,15 +155,6 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
                 }
             }
         }
-
-        // We also need to store the regions that appear in the type being assigned.
-        let place_ty = place.ty(self.mir, self.infcx.tcx).to_ty(self.infcx.tcx);
-        RegionEnumerator::new(self.infcx.tcx, self.regioncx).enumerate_into_facts(
-            location_index,
-            place_ty,
-            &mut self.all_facts.covariant_assign_region,
-            &mut self.all_facts.contravariant_assign_region,
-        );
 
         self.super_assign(block, place, rvalue, location);
     }
@@ -304,7 +289,7 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
                             self.all_facts.outlives.push((
                                 ref_region.to_region_vid(),
                                 borrow_region.to_region_vid(),
-                                self.location_table.start_index(location),
+                                self.location_table.start_index(location.successor_within_block()),
                             ));
 
                             match mutbl {
@@ -362,88 +347,5 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
             // for the borrow's lifetime.
             borrowed_place = base;
         }
-    }
-}
-
-struct RegionEnumerator<'a, 'gcx: 'tcx, 'tcx: 'a> {
-    tcx: TyCtxt<'a, 'gcx, 'tcx>,
-    regioncx: &'a RegionInferenceContext<'tcx>,
-    covariant_regions: BTreeSet<RegionVid>,
-    contravariant_regions: BTreeSet<RegionVid>,
-}
-
-impl<'a, 'gcx, 'tcx> RegionEnumerator<'a, 'gcx, 'tcx> {
-    fn new(tcx: TyCtxt<'a, 'gcx, 'tcx>, regioncx: &'a RegionInferenceContext<'tcx>) -> Self {
-        RegionEnumerator {
-            tcx,
-            regioncx,
-            covariant_regions: BTreeSet::new(),
-            contravariant_regions: BTreeSet::new(),
-        }
-    }
-
-    fn enumerate_regions(
-        mut self,
-        value: &impl Relate<'tcx>,
-    ) -> (BTreeSet<RegionVid>, BTreeSet<RegionVid>) {
-        self.fold(TypeContext::new(), value).unwrap();
-        (self.covariant_regions, self.contravariant_regions)
-    }
-
-    fn enumerate_into_facts<A: Copy>(
-        self,
-        atom: A,
-        value: Ty<'tcx>,
-        covariant_facts: &mut Vec<(A, RegionVid)>,
-        contravariant_facts: &mut Vec<(A, RegionVid)>,
-    ) {
-        let (covariant_regions, contravariant_regions) = self.enumerate_regions(&value);
-
-        // Subtle: Note that "covariant" for the rest of our type
-        // system is the opposite of "covariant" in the new borrow
-        // check. In particular, in the new borrow check, `&'a T` is
-        // *covariant* with respect to `'a` -- therefore, we swap the
-        // facts here.
-
-        covariant_facts.extend(contravariant_regions.into_iter().map(|r| (atom, r)));
-        contravariant_facts.extend(covariant_regions.into_iter().map(|r| (atom, r)));
-    }
-}
-
-impl<'a, 'gcx, 'tcx> ContextualTypeFolder<'a, 'gcx, 'tcx> for RegionEnumerator<'a, 'gcx, 'tcx> {
-    fn tcx(&self) -> TyCtxt<'a, 'gcx, 'tcx> {
-        self.tcx
-    }
-
-    fn fold_ty(
-        &mut self,
-        context: TypeContext,
-        a: Ty<'tcx>,
-    ) -> ContextualFoldResult<'tcx, Ty<'tcx>> {
-        self.super_fold_ty(context, a)
-    }
-
-    fn fold_region(
-        &mut self,
-        context: TypeContext,
-        a: ty::Region<'tcx>,
-    ) -> ContextualFoldResult<'tcx, ty::Region<'tcx>> {
-        if !a.is_late_bound() {
-            let region_vid = self.regioncx.to_region_vid(a);
-            match context.ambient_variance {
-                ty::Variance::Covariant => {
-                    self.covariant_regions.insert(region_vid);
-                }
-                ty::Variance::Contravariant => {
-                    self.contravariant_regions.insert(region_vid);
-                }
-                ty::Variance::Invariant => {
-                    self.covariant_regions.insert(region_vid);
-                    self.contravariant_regions.insert(region_vid);
-                }
-                ty::Variance::Bivariant => {}
-            }
-        }
-        Ok(a)
     }
 }
