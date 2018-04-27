@@ -234,51 +234,6 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
                         ALIGN = ALIGN
                     )?;
 
-                    let rli = location_table.start_index(location);
-
-                    writeln!(
-                        out,
-                        "{:ALIGN$} | Borrows in scope on entry to {:?}: {:?}",
-                        "",
-                        location,
-                        live_borrow_results.borrows_in_scope_at(rli),
-                        ALIGN = ALIGN,
-                    )?;
-
-                    for (region_vid, borrows) in live_borrow_results.restricts_at(rli).iter() {
-                        writeln!(
-                            out,
-                            "{:ALIGN$} | Region {:?} @ {:?} contains {:?}",
-                            "",
-                            region_vid,
-                            location,
-                            borrows,
-                            ALIGN = ALIGN
-                        )?;
-                    }
-
-                    for (r1, r2s) in live_borrow_results.subsets_at(rli).iter() {
-                        writeln!(
-                            out,
-                            "{:ALIGN$} | Region {:?} <= {:?}",
-                            "",
-                            r1,
-                            r2s,
-                            ALIGN = ALIGN
-                        )?;
-                    }
-
-                    let live_regions = live_borrow_results.regions_live_at(rli);
-                    if !live_regions.is_empty() {
-                        writeln!(
-                            out,
-                            "{:ALIGN$} | Live regions on entry: {:?}",
-                            "",
-                            live_regions,
-                            ALIGN = ALIGN,
-                        )?;
-                    }
-
                     let activations = borrow_set.activations_at_location(location);
                     if !activations.is_empty() {
                         writeln!(
@@ -288,6 +243,56 @@ fn dump_mir_results<'a, 'gcx, 'tcx>(
                             activations,
                             ALIGN = ALIGN,
                         )?;
+                    }
+
+                    for &rli in &[
+                        location_table.start_index(location),
+                        location_table.mid_index(location),
+                    ] {
+                        writeln!(
+                            out,
+                            "{:ALIGN$} | At {:?}, borrows in scope: {:?}",
+                            "",
+                            location_table.to_location(rli),
+                            live_borrow_results.borrows_in_scope_at(rli),
+                            ALIGN = ALIGN,
+                        )?;
+
+                        for (region_vid, borrows) in live_borrow_results.restricts_at(rli).iter() {
+                            writeln!(
+                                out,
+                                "{:ALIGN$} | At {:?}, region {:?} contains {:?}",
+                                "",
+                                location_table.to_location(rli),
+                                region_vid,
+                                borrows,
+                                ALIGN = ALIGN
+                            )?;
+                        }
+
+                        for (r1, r2s) in live_borrow_results.subsets_at(rli).iter() {
+                            writeln!(
+                                out,
+                                "{:ALIGN$} | At {:?}, region {:?} <= {:?}",
+                                "",
+                                location_table.to_location(rli),
+                                r1,
+                                r2s,
+                                ALIGN = ALIGN
+                            )?;
+                        }
+
+                        let live_regions = live_borrow_results.regions_live_at(rli);
+                        if !live_regions.is_empty() {
+                            writeln!(
+                                out,
+                                "{:ALIGN$} | At {:?}, live regions: {:?}",
+                                "",
+                                location_table.to_location(rli),
+                                live_regions,
+                                ALIGN = ALIGN,
+                            )?;
+                        }
                     }
                 }
 

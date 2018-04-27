@@ -16,7 +16,7 @@ use rustc::infer::InferCtxt;
 use rustc::mir::visit::TyContext;
 use rustc::mir::visit::{PlaceContext, Visitor};
 use rustc::mir::Place::Projection;
-use rustc::mir::{BasicBlock, BasicBlockData, Location, Mir, Place, Rvalue};
+use rustc::mir::{BasicBlock, BasicBlockData, Location, Mir, Place, RETURN_PLACE, Rvalue};
 use rustc::mir::{Local, LocalDecl, PlaceProjection, ProjectionElem, Statement, Terminator};
 use rustc::ty::fold::TypeFoldable;
 use rustc::ty::subst::Substs;
@@ -41,6 +41,25 @@ pub(super) fn generate_constraints<'cx, 'gcx, 'tcx>(
         all_facts,
         mir,
     };
+
+    // Hack: make `_0` live. I think ideally we'd just give it the
+    // user declared type, really, along with the other
+    // parameters. The problem is that right now when you have `_0 =
+    // ...`, it winds up making `_0` be considered dead until then,
+    // which means that we don't connect the universal regions in the
+    // type of `_0` to anything. This would be correct if `_0` were an
+    // ordinary variable, but it's not.
+    //
+    // Alternatively: if we had some way to make a "pan-location" for
+    // the outlives relation (which wouldn't be too hard to do, I
+    // don't think) then we could relate the types with *that*
+    // "pan-location". This may be needed to support user-defined
+    // types as well.
+    cg.all_facts.use_live.extend(
+        location_table
+            .all_points()
+            .map(|location| (RETURN_PLACE, location)),
+    );
 
     for (local, local_decl) in mir.local_decls.iter_enumerated() {
         cg.visit_local_decl(local, local_decl);
