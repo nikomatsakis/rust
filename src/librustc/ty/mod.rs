@@ -1162,7 +1162,11 @@ impl<'tcx> ToPredicate<'tcx> for TraitRef<'tcx> {
         // we're about to add a binder, so let's check that we don't
         // accidentally capture anything, or else that might be some
         // weird debruijn accounting.
-        assert!(!self.has_escaping_regions());
+        assert!(
+            !self.has_escaping_regions(),
+            "has escaping regions: {:?}",
+            self,
+        );
 
         ty::Predicate::Trait(ty::Binder(ty::TraitPredicate {
             trait_ref: self.clone()

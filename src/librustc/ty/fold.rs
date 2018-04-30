@@ -589,7 +589,7 @@ impl<'tcx> TypeVisitor<'tcx> for HasEscapingRegionsVisitor {
     }
 
     fn visit_ty(&mut self, t: Ty<'tcx>) -> bool {
-        t.region_depth > self.depth
+        t.region_depth >= self.depth
     }
 
     fn visit_region(&mut self, r: ty::Region<'tcx>) -> bool {

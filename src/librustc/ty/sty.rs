@@ -933,12 +933,60 @@ impl<'a, 'gcx, 'tcx> ParamTy {
 /// is the outer fn.
 ///
 /// [dbi]: http://en.wikipedia.org/wiki/De_Bruijn_index
-#[derive(Clone, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable, Debug, Copy, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable, Debug, PartialOrd, Ord)]
 pub struct DebruijnIndex {
-    /// We maintain the invariant that this is never 0. So 1 indicates
-    /// the innermost binder. To ensure this, create with `DebruijnIndex::new`.
-    pub depth: u32,
+    index: u32,
 }
+
+impl DebruijnIndex {
+    pub const INNERMOST: DebruijnIndex = DebruijnIndex::new(0);
+
+    /// Returns a DebruijnIndex with the given index.
+    pub fn new(index: u32) -> Self {
+        DebruijnIndex { index }
+    }
+
+    /// Returns the index of the enclosing binder that binds this
+    /// region/type. Returns 0 to represent the innermost binder.
+    pub fn index(self) -> usize {
+        self.index
+    }
+
+    /// Returns the resulting index when this value is moved into
+    /// `amount` number of new binders. So e.g. if you had
+    ///
+    ///    for<'a> fn(&'a x)
+    ///
+    /// and you wanted to change to
+    ///
+    ///    for<'a> fn(for<'b> fn(&'a x))
+    ///
+    /// you would need to shift the index for `'a` into 1 new binder.
+    pub fn shifted_in(self, amount: u32) -> DebruijnIndex {
+        DebruijnIndex { index: self.index + amount }
+    }
+
+    /// Update this index in place by shifting it "in" through
+    /// `amount` number of binders.
+    pub fn shift_in(&mut self, amount: u32) {
+        *self = self.shifted(amount);
+    }
+
+    /// Returns the resulting index when this value is moved out from
+    /// `amount` number of new binders.
+    pub fn shifted_out(self, amount: u32) -> DebruijnIndex {
+        DebruijnIndex { index: self.index - amount }
+    }
+
+    /// Update in place by shifting out from `amount` binders.
+    pub fn shift_out(&self, amount: u32) {
+        *self = self.shifted(amount);
+    }
+}
+
+impl_stable_hash_for!(struct ty::DebruijnIndex {
+    index
+});
 
 pub type Region<'tcx> = &'tcx RegionKind;
 
@@ -1154,16 +1202,6 @@ impl<'a, 'tcx, 'gcx> PolyExistentialProjection<'tcx> {
     }
 }
 
-impl DebruijnIndex {
-    pub fn new(depth: u32) -> DebruijnIndex {
-        DebruijnIndex { depth: depth }
-    }
-
-    pub fn shifted(&self, amount: u32) -> DebruijnIndex {
-        DebruijnIndex { depth: self.depth + amount }
-    }
-}
-
 /// Region utilities
 impl RegionKind {
     pub fn is_late_bound(&self) -> bool {
@@ -1180,19 +1218,21 @@ impl RegionKind {
         }
     }
 
-    pub fn escapes_depth(&self, depth: u32) -> bool {
+    /// `binder` identifies a particular binder that is in scope;
+    /// returns true if we are bound either by that binder or by some
+    /// binder even further out.
+    pub fn bound_by_or_escapes(&self, binder: DebruijnIndex) -> bool {
         match *self {
-            ty::ReLateBound(debruijn, _) => debruijn.depth > depth,
+            ty::ReLateBound(debruijn, _) => debruijn >= binder,
             _ => false,
         }
     }
 
-    /// Returns the depth of `self` from the (0-based) binding level `depth`
-    pub fn from_depth(&self, depth: u32) -> RegionKind {
+    /// Shift this region out of `amount` binding levels. This only
+    /// affects late-bound reons.
+    pub fn shift_out(&self, amount: u32) -> RegionKind {
         match *self {
-            ty::ReLateBound(debruijn, r) => ty::ReLateBound(DebruijnIndex {
-                depth: debruijn.depth - depth
-            }, r),
+            ty::ReLateBound(debruijn, r) => ty::ReLateBound(debruijn.shift_out(amount), r),
             r => r
         }
     }

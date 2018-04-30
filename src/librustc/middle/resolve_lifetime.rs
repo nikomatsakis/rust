@@ -121,13 +121,13 @@ impl Region {
         }
     }
 
-    fn shifted(self, amount: u32) -> Region {
+    fn shifted_in(self, amount: u32) -> Region {
         match self {
             Region::LateBound(depth, id, origin) => {
-                Region::LateBound(depth.shifted(amount), id, origin)
+                Region::LateBound(depth.shifted_in(amount), id, origin)
             }
             Region::LateBoundAnon(depth, index) => {
-                Region::LateBoundAnon(depth.shifted(amount), index)
+                Region::LateBoundAnon(depth.shifted_in(amount), index)
             }
             _ => self,
         }
