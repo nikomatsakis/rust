@@ -24,9 +24,6 @@ crate struct AllFacts {
     // starting at the point P (this is usually the point *after* a borrow rvalue)
     crate borrow_region: Vec<(RegionVid, BorrowIndex, LocationIndex)>,
 
-    // universal_region(R) -- this is a "free region" within fn body
-    crate universal_region: Vec<RegionVid>,
-
     // `cfg_edge(P,Q)` for each edge P -> Q in the control flow
     crate cfg_edge: Vec<(LocationIndex, LocationIndex)>,
 
@@ -64,7 +61,6 @@ impl AllFacts {
         write_facts_to_path! {
             wr.write_facts_to_path(self.[
                 borrow_region,
-                universal_region,
                 cfg_edge,
                 killed,
                 outlives,
