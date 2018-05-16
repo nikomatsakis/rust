@@ -12,7 +12,8 @@ use borrow_check::nll::region_infer::{Cause, RegionInferenceContext};
 use borrow_check::{Context, MirBorrowckCtxt};
 use borrow_check::borrow_set::BorrowData;
 use rustc::mir::visit::{MirVisitable, PlaceContext, Visitor};
-use rustc::mir::{Local, Location, Mir};
+use rustc::mir::{BasicBlock, Local, Location, Mir, Terminator, TerminatorKind};
+use rustc::mir::RETURN_PLACE;
 use rustc_data_structures::fx::FxHashSet;
 use rustc_errors::DiagnosticBuilder;
 use util::liveness::{self, DefUse, LivenessMode};
@@ -231,5 +232,19 @@ impl<'tcx> Visitor<'tcx> for DefUseVisitor {
                 None => (),
             }
         }
+    }
+
+    fn visit_terminator(
+        &mut self,
+        block: BasicBlock,
+        terminator: &Terminator<'tcx>,
+        location: Location,
+    ) {
+        if let TerminatorKind::Return = terminator.kind {
+            if self.local == RETURN_PLACE {
+                self.used = true;
+            }
+        }
+        self.super_terminator(block, terminator, location);
     }
 }
