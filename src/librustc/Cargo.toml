@@ -26,6 +26,8 @@ syntax = { path = "../libsyntax" }
 syntax_pos = { path = "../libsyntax_pos" }
 backtrace = "0.3.3"
 byteorder = { version = "1.1", features = ["i128"]}
+abomonation = "0.5.0"
+abomonation_derive = "0.3.0"
 
 # Note that these dependencies are a lie, they're just here to get linkage to
 # work.

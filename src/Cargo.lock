@@ -1,4 +1,19 @@
 [[package]]
+name = "abomonation"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "abomonation_derive"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "quote 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)",
+ "syn 0.11.11 (registry+https://github.com/rust-lang/crates.io-index)",
+ "synstructure 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -190,6 +205,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "byteorder"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "byteorder"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
@@ -233,7 +253,7 @@ dependencies = [
  "serde_json 1.0.15 (registry+https://github.com/rust-lang/crates.io-index)",
  "shell-escape 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "tar 0.4.15 (registry+https://github.com/rust-lang/crates.io-index)",
- "tempfile 3.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tempfile 3.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "termcolor 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "toml 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "url 1.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -417,7 +437,7 @@ dependencies = [
  "serde 1.0.40 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.40 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.15 (registry+https://github.com/rust-lang/crates.io-index)",
- "tempfile 3.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tempfile 3.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -573,6 +593,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "difference"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "differential-dataflow"
+version = "0.5.0"
+source = "git+https://github.com/frankmcsherry/differential-dataflow.git#25c1a795ea9411518b6a2b15a2d9cc69d7064e81"
+dependencies = [
+ "abomonation 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "abomonation_derive 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "timely 0.5.0 (git+https://github.com/frankmcsherry/timely-dataflow)",
+ "timely_communication 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "timely_sort 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
+]
 
 [[package]]
 name = "dlmalloc"
@@ -1169,7 +1202,7 @@ dependencies = [
  "serde_derive 1.0.40 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.15 (registry+https://github.com/rust-lang/crates.io-index)",
  "shlex 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "tempfile 3.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tempfile 3.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "toml 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "toml-query 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -1720,6 +1753,8 @@ dependencies = [
 name = "rustc"
 version = "0.0.0"
 dependencies = [
+ "abomonation 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "abomonation_derive 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "arena 0.0.0",
  "backtrace 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitflags 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1901,6 +1936,8 @@ dependencies = [
 name = "rustc_data_structures"
 version = "0.0.0"
 dependencies = [
+ "abomonation 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "abomonation_derive 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "cfg-if 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "ena 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2026,9 +2063,13 @@ dependencies = [
 name = "rustc_mir"
 version = "0.0.0"
 dependencies = [
+ "abomonation 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "abomonation_derive 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "arena 0.0.0",
  "bitflags 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "byteorder 1.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "crossbeam 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "differential-dataflow 0.5.0 (git+https://github.com/frankmcsherry/differential-dataflow.git)",
  "graphviz 0.0.0",
  "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log_settings 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2040,6 +2081,7 @@ dependencies = [
  "serialize 0.0.0",
  "syntax 0.0.0",
  "syntax_pos 0.0.0",
+ "timely 0.5.0 (git+https://github.com/frankmcsherry/timely-dataflow)",
 ]
 
 [[package]]
@@ -2654,7 +2696,7 @@ dependencies = [
 
 [[package]]
 name = "tempfile"
-version = "3.0.1"
+version = "3.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "libc 0.2.40 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2757,6 +2799,35 @@ dependencies = [
  "redox_syscall 0.1.37 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
+
+[[package]]
+name = "timely"
+version = "0.5.0"
+source = "git+https://github.com/frankmcsherry/timely-dataflow#56c778f5746e184591e8efee44f60d3169982519"
+dependencies = [
+ "abomonation 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "abomonation_derive 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "byteorder 1.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "time 0.1.39 (registry+https://github.com/rust-lang/crates.io-index)",
+ "timely_communication 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "timely_communication"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "abomonation 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "abomonation_derive 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "byteorder 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "getopts 0.2.17 (registry+https://github.com/rust-lang/crates.io-index)",
+ "time 0.1.39 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "timely_sort"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "toml"
@@ -2997,6 +3068,8 @@ version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [metadata]
+"checksum abomonation 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)" = "fb19df531d6a4acddb132d699a4487425c6ca3378d5d64cf556a5d1455d104a6"
+"checksum abomonation_derive 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "e0bb1889db0b87cd8ef839c56b5283e28c8db68cac904b400a6170c9af1e673c"
 "checksum aho-corasick 0.6.4 (registry+https://github.com/rust-lang/crates.io-index)" = "d6531d44de723825aa81398a6415283229725a00fa30713812ab9323faa82fc4"
 "checksum ammonia 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "fd4c682378117e4186a492b2252b9537990e1617f44aed9788b9a1149de45477"
 "checksum ansi_term 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)" = "ee49baf6cb617b853aa8d93bf420db2383fab46d314482ca2803b40d5fde979b"
@@ -3011,6 +3084,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum bitflags 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)" = "b3c30d3802dfb7281680d6285f2ccdaa8c2d8fee41f93805dba5c4cf50dc23cf"
 "checksum bufstream 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)" = "f2f382711e76b9de6c744cc00d0497baba02fb00a787f088c879f01d09468e32"
 "checksum bytecount 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "af27422163679dea46a1a7239dffff64d3dcdc3ba5fe9c49c789fbfe0eb949de"
+"checksum byteorder 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)" = "96c8b41881888cc08af32d47ac4edd52bc7fa27fef774be47a92443756451304"
 "checksum byteorder 1.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "73b5bdfe7ee3ad0b99c9801d58807a9dbc9e09196365b0203853b99889ab3c87"
 "checksum cargo_metadata 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)" = "1f56ec3e469bca7c276f2eea015aa05c5e381356febdbb0683c2580189604537"
 "checksum cargo_metadata 0.5.4 (registry+https://github.com/rust-lang/crates.io-index)" = "6ebd6272a2ca4fd39dbabbd6611eb03df45c2259b3b80b39a9ff8fbdcf42a4b3"
@@ -3037,6 +3111,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum diff 0.1.11 (registry+https://github.com/rust-lang/crates.io-index)" = "3c2b69f912779fbb121ceb775d74d51e915af17aaebc38d28a592843a2dd0a3a"
 "checksum difference 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "b3304d19798a8e067e48d8e69b2c37f0b5e9b4e462504ad9e27e9f3fce02bba8"
 "checksum difference 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "524cbf6897b527295dff137cec09ecf3a05f4fddffd7dfcd1585403449e74198"
+"checksum differential-dataflow 0.5.0 (git+https://github.com/frankmcsherry/differential-dataflow.git)" = "<none>"
 "checksum dtoa 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)" = "09c3753c3db574d215cba4ea76018483895d7bff25a31b49ba45db21c48e50ab"
 "checksum either 1.5.0 (registry+https://github.com/rust-lang/crates.io-index)" = "3be565ca5c557d7f59e7cfcf1844f9e3033650c929c6566f511e8005f205c1d0"
 "checksum elasticlunr-rs 2.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "4511b63d69dd5d31e8e29aed2c132c413f87acea8035d0584801feaab9dd1f0f"
@@ -3197,7 +3272,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum syntex_syntax 0.52.0 (registry+https://github.com/rust-lang/crates.io-index)" = "76a302e717e348aa372ff577791c3832395650073b8d8432f8b3cb170b34afde"
 "checksum tar 0.4.15 (registry+https://github.com/rust-lang/crates.io-index)" = "6af6b94659f9a571bf769a5b71f54079393585ee0bfdd71b691be22d7d6b1d18"
 "checksum tempdir 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)" = "15f2b5fb00ccdf689e0149d1b1b3c03fead81c2b37735d812fa8bddbbf41b6d8"
-"checksum tempfile 3.0.1 (registry+https://github.com/rust-lang/crates.io-index)" = "8cddbd26c5686ece823b507f304c8f188daef548b4cb753512d929ce478a093c"
+"checksum tempfile 3.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "47776f63b85777d984a50ce49d6b9e58826b6a3766a449fc95bc66cd5663c15b"
 "checksum tendril 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "9de21546595a0873061940d994bbbc5c35f024ae4fd61ec5c5b159115684f508"
 "checksum term 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)" = "fa63644f74ce96fbeb9b794f66aff2a52d601cbd5e80f4b97123e3899f4570f1"
 "checksum term 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "5e6b677dd1e8214ea1ef4297f85dbcbed8e8cdddb561040cc998ca2551c37561"
@@ -3206,6 +3281,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum textwrap 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)" = "c0b59b6b4b44d867f1370ef1bd91bfb262bf07bf0ae65c202ea2fbc16153b693"
 "checksum thread_local 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)" = "279ef31c19ededf577bfd12dfae728040a21f635b06a24cd670ff510edd38963"
 "checksum time 0.1.39 (registry+https://github.com/rust-lang/crates.io-index)" = "a15375f1df02096fb3317256ce2cee6a1f42fc84ea5ad5fc8c421cfe40c73098"
+"checksum timely 0.5.0 (git+https://github.com/frankmcsherry/timely-dataflow)" = "<none>"
+"checksum timely_communication 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)" = "400f700a4427dc4ecc565b2a37a22cef3e17fae32284dd3dc03299ab200ad75d"
+"checksum timely_sort 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)" = "f6e4b497ab85f6e09ea309d696342d198e444e93a4a55500bf3b0c3c53bdd4b3"
 "checksum toml 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "736b60249cb25337bc196faa43ee12c705e426f3d55c214d73a4e7be06f92cb4"
 "checksum toml 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)" = "a0263c6c02c4db6c8f7681f9fd35e90de799ebd4cfdeab77a38f4ff6b3d8c0d9"
 "checksum toml-query 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)" = "6854664bfc6df0360c695480836ee90e2d0c965f06db291d10be9344792d43e8"

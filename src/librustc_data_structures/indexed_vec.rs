@@ -72,7 +72,7 @@ macro_rules! newtype_index {
      @type         [$type:ident]
      @max          [$max:expr]
      @debug_format [$debug_format:tt]) => (
-        #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, $($derives),*)]
+        #[derive(Abomonation, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, $($derives),*)]
         pub struct $type($($pub)* u32);
 
         impl Idx for $type {

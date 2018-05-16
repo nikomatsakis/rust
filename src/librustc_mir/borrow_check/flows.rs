@@ -14,19 +14,15 @@
 //! but is not as ugly as it is right now.
 
 use rustc::mir::{BasicBlock, Location};
-use rustc_data_structures::indexed_set::Iter;
 
 use dataflow::{MaybeInitializedPlaces, MaybeUninitializedPlaces};
 use dataflow::{EverInitializedPlaces, MovingOutStatements};
-use dataflow::{Borrows};
 use dataflow::{FlowAtLocation, FlowsAtLocation};
 use dataflow::move_paths::HasMoveData;
-use dataflow::move_paths::indexes::BorrowIndex;
 use std::fmt;
 
 // (forced to be `pub` due to its use as an associated type below.)
 crate struct Flows<'b, 'gcx: 'tcx, 'tcx: 'b> {
-    borrows: FlowAtLocation<Borrows<'b, 'gcx, 'tcx>>,
     pub inits: FlowAtLocation<MaybeInitializedPlaces<'b, 'gcx, 'tcx>>,
     pub uninits: FlowAtLocation<MaybeUninitializedPlaces<'b, 'gcx, 'tcx>>,
     pub move_outs: FlowAtLocation<MovingOutStatements<'b, 'gcx, 'tcx>>,
@@ -35,33 +31,22 @@ crate struct Flows<'b, 'gcx: 'tcx, 'tcx: 'b> {
 
 impl<'b, 'gcx, 'tcx> Flows<'b, 'gcx, 'tcx> {
     crate fn new(
-        borrows: FlowAtLocation<Borrows<'b, 'gcx, 'tcx>>,
         inits: FlowAtLocation<MaybeInitializedPlaces<'b, 'gcx, 'tcx>>,
         uninits: FlowAtLocation<MaybeUninitializedPlaces<'b, 'gcx, 'tcx>>,
         move_outs: FlowAtLocation<MovingOutStatements<'b, 'gcx, 'tcx>>,
         ever_inits: FlowAtLocation<EverInitializedPlaces<'b, 'gcx, 'tcx>>,
     ) -> Self {
         Flows {
-            borrows,
             inits,
             uninits,
             move_outs,
             ever_inits,
         }
     }
-
-    crate fn borrows_in_scope(&self) -> impl Iterator<Item = BorrowIndex> + '_ {
-        self.borrows.iter_incoming()
-    }
-
-    crate fn with_outgoing_borrows(&self, op: impl FnOnce(Iter<BorrowIndex>)) {
-        self.borrows.with_iter_outgoing(op)
-    }
 }
 
 macro_rules! each_flow {
     ($this:ident, $meth:ident($arg:ident)) => {
-        FlowAtLocation::$meth(&mut $this.borrows, $arg);
         FlowAtLocation::$meth(&mut $this.inits, $arg);
         FlowAtLocation::$meth(&mut $this.uninits, $arg);
         FlowAtLocation::$meth(&mut $this.move_outs, $arg);
@@ -90,30 +75,6 @@ impl<'b, 'gcx, 'tcx> FlowsAtLocation for Flows<'b, 'gcx, 'tcx> {
 impl<'b, 'gcx, 'tcx> fmt::Display for Flows<'b, 'gcx, 'tcx> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         let mut s = String::new();
-
-        s.push_str("borrows in effect: [");
-        let mut saw_one = false;
-        self.borrows.each_state_bit(|borrow| {
-            if saw_one {
-                s.push_str(", ");
-            };
-            saw_one = true;
-            let borrow_data = &self.borrows.operator().borrows()[borrow];
-            s.push_str(&format!("{}", borrow_data));
-        });
-        s.push_str("] ");
-
-        s.push_str("borrows generated: [");
-        let mut saw_one = false;
-        self.borrows.each_gen_bit(|borrow| {
-            if saw_one {
-                s.push_str(", ");
-            };
-            saw_one = true;
-            let borrow_data = &self.borrows.operator().borrows()[borrow];
-            s.push_str(&format!("{}", borrow_data));
-        });
-        s.push_str("] ");
 
         s.push_str("inits: [");
         let mut saw_one = false;

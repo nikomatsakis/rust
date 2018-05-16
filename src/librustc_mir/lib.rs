@@ -65,6 +65,12 @@ macro_rules! do_catch {
   ($t:expr) => { do catch { $t } }
 }
 
+#[macro_use]
+extern crate abomonation_derive;
+extern crate abomonation;
+extern crate differential_dataflow;
+extern crate timely;
+
 mod diagnostics;
 
 mod borrow_check;

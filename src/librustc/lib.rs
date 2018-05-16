@@ -73,6 +73,9 @@
 
 #![recursion_limit="512"]
 
+#[macro_use]
+extern crate abomonation_derive;
+extern crate abomonation;
 extern crate arena;
 #[macro_use] extern crate bitflags;
 extern crate core;

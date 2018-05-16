@@ -1966,7 +1966,7 @@ impl<'a, 'b>  GraphSuccessors<'b> for Mir<'a> {
     type Iter = iter::Cloned<Successors<'b>>;
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[derive(Abomonation, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Location {
     /// the location is within this block
     pub block: BasicBlock,

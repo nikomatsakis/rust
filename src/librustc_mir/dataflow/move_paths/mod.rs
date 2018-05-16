@@ -34,8 +34,13 @@ pub(crate) mod indexes {
 
     macro_rules! new_index {
         ($Index:ident, $debug_name:expr) => {
-            #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+            #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
             pub struct $Index(NonZeroUsize);
+
+            impl ::abomonation::Abomonation for $Index {
+                // There are no internal pointers to patch, so the default
+                // method implementations suffice.
+            }
 
             impl Idx for $Index {
                 fn new(idx: usize) -> Self {
