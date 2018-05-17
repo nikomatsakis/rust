@@ -247,11 +247,21 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                                   self_ty: Ty<'tcx>,
                                   opt_input_types: Option<&[Ty<'tcx>]>)
                                   -> Option<InferOk<'tcx, MethodCallee<'tcx>>> {
-        debug!("lookup_in_trait_adjusted(self_ty={:?}, \
-                m_name={}, trait_def_id={:?})",
+        debug!("lookup_in_trait_adjusted(\
+                self_ty={:?}, \
+                m_name={}, \
+                trait_def_id={:?}, \
+                opt_input_types={:?})",
                self_ty,
                m_name,
-               trait_def_id);
+               trait_def_id,
+               opt_input_types);
+
+        if let Some(input_types) = opt_input_types {
+            for t in input_types {
+                debug!("opt_input_type = {:?}", self.resolve_type_vars_if_possible(t));
+            }
+        }
 
         // Construct a trait-reference `self_ty : Trait<input_tys>`
         let substs = Substs::for_item(self.tcx, trait_def_id, |param, _| {

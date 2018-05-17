@@ -2379,9 +2379,8 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             // If some lookup succeeds, write callee into table and extract index/element
             // type from the method signature.
             // If some lookup succeeded, install method in table
-            let input_ty = self.next_ty_var(TypeVariableOrigin::AutoDeref(base_expr.span));
             let method = self.try_overloaded_place_op(
-                expr.span, self_ty, &[input_ty], needs, PlaceOp::Index);
+                expr.span, self_ty, &[index_ty], needs, PlaceOp::Index);
 
             let result = method.map(|ok| {
                 debug!("try_index_step: success, using overloaded indexing");
@@ -2416,7 +2415,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 self.apply_adjustments(base_expr, adjustments);
 
                 self.write_method_call(expr.hir_id, method);
-                (input_ty, self.make_overloaded_place_return_type(method).ty)
+                (index_ty, self.make_overloaded_place_return_type(method).ty)
             });
             if result.is_some() {
                 return result;
@@ -4088,6 +4087,13 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                           element_ty
                       }
                       None => {
+                          // There are two cases to consider:
+                          //
+                          // - It may be that `foo[bar]` would work, but `bar` has the
+                          //   wrong type.
+                          // - Or it may be that `foo` doesn't support
+                          //   the `Index` operator at all!
+
                           let mut err = type_error_struct!(tcx.sess, expr.span, base_t, E0608,
                                                            "cannot index into a value of type `{}`",
                                                            base_t);
