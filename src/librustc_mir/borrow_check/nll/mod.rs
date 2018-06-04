@@ -126,7 +126,6 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
         &mut regioncx,
         &mut all_facts,
         location_table,
-        mir,
         constraint_sets,
     );
     constraint_generation::generate_constraints(

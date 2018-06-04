@@ -11,6 +11,7 @@
 use borrow_check::borrow_set::BorrowSet;
 use borrow_check::location::LocationTable;
 use borrow_check::nll::facts::AllFacts;
+use borrow_check::nll::type_check::AtLocation;
 use rustc::hir;
 use rustc::infer::InferCtxt;
 use rustc::mir::visit::TyContext;
@@ -271,9 +272,8 @@ impl<'cx, 'cg, 'gcx, 'tcx> ConstraintGeneration<'cx, 'cg, 'gcx, 'tcx> {
                     debug!("add_reborrow_constraint - base_ty = {:?}", base_ty);
                     match base_ty.sty {
                         ty::TyRef(ref_region, _, mutbl) => {
-                            let span = self.mir.source_info(location).span;
                             self.regioncx.add_outlives(
-                                span,
+                                location.boring(),
                                 ref_region.to_region_vid(),
                                 borrow_region.to_region_vid(),
                             );

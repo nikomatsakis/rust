@@ -13,10 +13,8 @@ use borrow_check::nll::facts::AllFacts;
 use rustc::infer::region_constraints::Constraint;
 use rustc::infer::region_constraints::RegionConstraintData;
 use rustc::infer::region_constraints::{Verify, VerifyBound};
-use rustc::mir::{Location, Mir};
 use rustc::ty;
 use std::iter;
-use syntax::codemap::Span;
 
 use super::region_infer::{RegionInferenceContext, RegionTest, TypeTest};
 use super::type_check::Locations;
@@ -32,20 +30,17 @@ pub(super) fn generate<'tcx>(
     regioncx: &mut RegionInferenceContext<'tcx>,
     all_facts: &mut Option<AllFacts>,
     location_table: &LocationTable,
-    mir: &Mir<'tcx>,
     constraints: &MirTypeckRegionConstraints<'tcx>,
 ) {
     SubtypeConstraintGenerator {
         regioncx,
         location_table,
-        mir,
     }.generate(constraints, all_facts);
 }
 
 struct SubtypeConstraintGenerator<'cx, 'tcx: 'cx> {
     regioncx: &'cx mut RegionInferenceContext<'tcx>,
     location_table: &'cx LocationTable,
-    mir: &'cx Mir<'tcx>,
 }
 
 impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
@@ -90,10 +85,6 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
                 givens,
             } = data;
 
-            let span = self.mir
-                .source_info(locations.from_location().unwrap_or(Location::START))
-                .span;
-
             for constraint in constraints.keys() {
                 debug!("generate: constraint: {:?}", constraint);
                 let (a_vid, b_vid) = match constraint {
@@ -110,7 +101,7 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
                 // reverse direction, because `regioncx` talks about
                 // "outlives" (`>=`) whereas the region constraints
                 // talk about `<=`.
-                self.regioncx.add_outlives(span, b_vid, a_vid);
+                self.regioncx.add_outlives(*locations, b_vid, a_vid);
 
                 // In the new analysis, all outlives relations etc
                 // "take effect" at the mid point of the statement
@@ -131,7 +122,7 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
             }
 
             for verify in verifys {
-                let type_test = self.verify_to_type_test(verify, span, locations);
+                let type_test = self.verify_to_type_test(verify, *locations);
                 self.regioncx.add_type_test(type_test);
             }
 
@@ -145,22 +136,18 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
     fn verify_to_type_test(
         &self,
         verify: &Verify<'tcx>,
-        span: Span,
-        locations: &Locations,
+        locations: Locations,
     ) -> TypeTest<'tcx> {
         let generic_kind = verify.kind;
 
         let lower_bound = self.to_region_vid(verify.region);
-
-        let point = locations.from_location().unwrap_or(Location::START);
 
         let test = self.verify_bound_to_region_test(&verify.bound);
 
         TypeTest {
             generic_kind,
             lower_bound,
-            point,
-            span,
+            locations,
             test,
         }
     }
