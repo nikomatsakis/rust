@@ -190,7 +190,7 @@ impl<'gen, 'typeck, 'flow, 'gcx, 'tcx> TypeLivenessGenerator<'gen, 'typeck, 'flo
         // For this reason, we avoid calling TypeChecker.normalize, instead doing all normalization
         // ourselves in one large 'fully_perform_op' callback.
         let kind_constraints = self.cx
-            .fully_perform_op(location.at_self(), |cx| {
+            .fully_perform_op(location.boring(), |cx| {
                 let span = cx.last_span;
 
                 let mut final_obligations = Vec::new();
