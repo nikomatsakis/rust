@@ -94,8 +94,6 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
                 .source_info(locations.from_location().unwrap_or(Location::START))
                 .span;
 
-            let at_location = locations.at_location().unwrap_or(Location::START);
-
             for constraint in constraints.keys() {
                 debug!("generate: constraint: {:?}", constraint);
                 let (a_vid, b_vid) = match constraint {
@@ -112,11 +110,11 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
                 // reverse direction, because `regioncx` talks about
                 // "outlives" (`>=`) whereas the region constraints
                 // talk about `<=`.
-                self.regioncx.add_outlives(span, b_vid, a_vid, at_location);
+                self.regioncx.add_outlives(span, b_vid, a_vid);
 
                 // In the new analysis, all outlives relations etc
                 // "take effect" at the mid point of the statement
-                // that requires them, so ignore the `at_location`.
+                // that requires them.
                 if let Some(all_facts) = all_facts {
                     if let Some(from_location) = locations.from_location() {
                         all_facts.outlives.push((
@@ -154,7 +152,7 @@ impl<'cx, 'tcx> SubtypeConstraintGenerator<'cx, 'tcx> {
 
         let lower_bound = self.to_region_vid(verify.region);
 
-        let point = locations.at_location().unwrap_or(Location::START);
+        let point = locations.from_location().unwrap_or(Location::START);
 
         let test = self.verify_bound_to_region_test(&verify.bound);
 
