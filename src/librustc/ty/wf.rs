@@ -39,9 +39,36 @@ pub fn obligations<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
                                 out: vec![] };
     if wf.compute(ty) {
         debug!("wf::obligations({:?}, body_id={:?}) = {:?}", ty, body_id, wf.out);
-        let result = wf.normalize();
+        let result = wf.into_normalized();
         debug!("wf::obligations({:?}, body_id={:?}) ~~> {:?}", ty, body_id, result);
         Some(result)
+    } else {
+        None // no progress made, return None
+    }
+}
+
+/// Returns the obligations needed to make `ty` well-formed, but does
+/// not normalize them. This means that e.g. if you have a type like
+/// `Foo<X>` where `struct Foo<T> where <Vec<T> as
+/// IntoIterator>::Item: 'a`, you will get back an obligation like
+/// `<Vec<X> as IntoIterator>::Item: 'a` -- normalization might
+/// convert that to `X: 'a`. We use these unnormalized obligations to
+/// compute implied bounds.
+pub fn unnormalized_obligations<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
+                                                param_env: ty::ParamEnv<'tcx>,
+                                                body_id: ast::NodeId,
+                                                ty: Ty<'tcx>,
+                                                span: Span)
+                                                -> Option<Vec<traits::PredicateObligation<'tcx>>>
+{
+    let mut wf = WfPredicates { infcx,
+                                param_env,
+                                body_id,
+                                span,
+                                out: vec![] };
+    if wf.compute(ty) {
+        debug!("wf::unnormalized_obligations({:?}, body_id={:?}) = {:?}", ty, body_id, wf.out);
+        Some(wf.into_unnormalized())
     } else {
         None // no progress made, return None
     }
@@ -60,7 +87,7 @@ pub fn trait_obligations<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
 {
     let mut wf = WfPredicates { infcx, param_env, body_id, span, out: vec![] };
     wf.compute_trait_ref(trait_ref, Elaborate::All);
-    wf.normalize()
+    wf.into_normalized()
 }
 
 pub fn predicate_obligations<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
@@ -108,7 +135,7 @@ pub fn predicate_obligations<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
         }
     }
 
-    wf.normalize()
+    wf.into_normalized()
 }
 
 struct WfPredicates<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
@@ -153,7 +180,7 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
         traits::ObligationCause::new(self.span, self.body_id, code)
     }
 
-    fn normalize(&mut self) -> Vec<traits::PredicateObligation<'tcx>> {
+    fn into_normalized(mut self) -> Vec<traits::PredicateObligation<'tcx>> {
         let cause = self.cause(traits::MiscObligation);
         let infcx = &mut self.infcx;
         let param_env = self.param_env;
@@ -165,6 +192,11 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
                     once(pred.value).chain(pred.obligations)
                 })
                 .collect()
+    }
+
+    fn into_unnormalized(self) -> Vec<traits::PredicateObligation<'tcx>> {
+        assert!(self.out.iter().all(|pred| !pred.has_escaping_regions()));
+        self.out
     }
 
     /// Pushes the obligations required for `trait_ref` to be WF into

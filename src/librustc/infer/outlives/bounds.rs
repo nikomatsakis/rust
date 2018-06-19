@@ -11,7 +11,6 @@
 use infer::InferCtxt;
 use syntax::ast;
 use syntax::codemap::Span;
-use traits::{FulfillmentContext, TraitEngine};
 use ty::{self, Ty, TypeFoldable};
 use ty::outlives::Component;
 use ty::wf;
@@ -70,8 +69,6 @@ impl<'cx, 'gcx, 'tcx> InferCtxt<'cx, 'gcx, 'tcx> {
 
         let mut implied_bounds = vec![];
 
-        let mut fulfill_cx = FulfillmentContext::new();
-
         while let Some(ty) = wf_types.pop() {
             // Compute the obligations for `ty` to be well-formed. If `ty` is
             // an unresolved inference variable, just substituted an empty set
@@ -80,36 +77,8 @@ impl<'cx, 'gcx, 'tcx> InferCtxt<'cx, 'gcx, 'tcx> {
             // than the ultimate set. (Note: normally there won't be
             // unresolved inference variables here anyway, but there might be
             // during typeck under some circumstances.)
-            let obligations = wf::obligations(self, param_env, body_id, ty, span).unwrap_or(vec![]);
-
-            // NB: All of these predicates *ought* to be easily proven
-            // true. In fact, their correctness is (mostly) implied by
-            // other parts of the program. However, in #42552, we had
-            // an annoying scenario where:
-            //
-            // - Some `T::Foo` gets normalized, resulting in a
-            //   variable `_1` and a `T: Trait<Foo=_1>` constraint
-            //   (not sure why it couldn't immediately get
-            //   solved). This result of `_1` got cached.
-            // - These obligations were dropped on the floor here,
-            //   rather than being registered.
-            // - Then later we would get a request to normalize
-            //   `T::Foo` which would result in `_1` being used from
-            //   the cache, but hence without the `T: Trait<Foo=_1>`
-            //   constraint. As a result, `_1` never gets resolved,
-            //   and we get an ICE (in dropck).
-            //
-            // Therefore, we register any predicates involving
-            // inference variables. We restrict ourselves to those
-            // involving inference variables both for efficiency and
-            // to avoids duplicate errors that otherwise show up.
-            fulfill_cx.register_predicate_obligations(
-                self,
-                obligations
-                    .iter()
-                    .filter(|o| o.predicate.has_infer_types())
-                    .cloned(),
-            );
+            let obligations = wf::unnormalized_obligations(self, param_env, body_id, ty, span)
+                .unwrap_or(vec![]);
 
             // From the full set of obligations, just filter down to the
             // region relationships.
@@ -145,13 +114,6 @@ impl<'cx, 'gcx, 'tcx> InferCtxt<'cx, 'gcx, 'tcx> {
                     },
                 }
             }));
-        }
-
-        // Ensure that those obligations that we had to solve
-        // get solved *here*.
-        match fulfill_cx.select_all_or_error(self) {
-            Ok(()) => (),
-            Err(errors) => self.report_fulfillment_errors(&errors, None, false),
         }
 
         implied_bounds

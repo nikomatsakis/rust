@@ -786,6 +786,10 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
             );
         }
 
+        // FIXME this assert fails, will fix later
+        // let old_rro = self.infcx.take_registered_region_obligations();
+        // assert!(old_rro.is_empty(), "registered region obligations remain: {:?}", old_rro);
+
         let mut fulfill_cx = TraitEngine::new(self.infcx.tcx);
         let dummy_body_id = ObligationCause::dummy().body_id;
         let InferOk { value, obligations } = self.infcx.commit_if_ok(|_| op(self))?;
