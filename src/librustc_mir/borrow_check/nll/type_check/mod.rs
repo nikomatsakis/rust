@@ -768,12 +768,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
         }
     }
 
-    fn sub_types(
-        &mut self,
-        sub: Ty<'tcx>,
-        sup: Ty<'tcx>,
-        locations: Locations,
-    ) -> Fallible<()> {
+    fn sub_types(&mut self, sub: Ty<'tcx>, sup: Ty<'tcx>, locations: Locations) -> Fallible<()> {
         let param_env = self.param_env;
         self.fully_perform_op(
             locations,
@@ -993,10 +988,9 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                 // output) types in the signature must be live, since
                 // all the inputs that fed into it were live.
                 for &late_bound_region in map.values() {
-                    self.constraints.liveness_set.push((
-                        late_bound_region,
-                        term_location,
-                    ));
+                    self.constraints
+                        .liveness_set
+                        .push((late_bound_region, term_location));
                 }
 
                 self.check_call_inputs(mir, term, &sig, args, term_location);
@@ -1516,10 +1510,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                         *substs,
                     );
 
-                    self.push_region_constraints(
-                        location.at_self(),
-                        &closure_constraints,
-                    );
+                    self.push_region_constraints(location.at_self(), &closure_constraints);
                 }
 
                 tcx.predicates_of(*def_id).instantiate(tcx, substs.substs)

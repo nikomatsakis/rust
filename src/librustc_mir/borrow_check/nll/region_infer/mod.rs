@@ -305,17 +305,11 @@ impl<'tcx> RegionInferenceContext<'tcx> {
 
             // Add all nodes in the CFG to liveness constraints
             for point_index in self.elements.all_point_indices() {
-                self.liveness_constraints.add_element(
-                    variable,
-                    point_index,
-                );
+                self.liveness_constraints.add_element(variable, point_index);
             }
 
             // Add `end(X)` into the set for X.
-            self.liveness_constraints.add_element(
-                variable,
-                variable,
-            );
+            self.liveness_constraints.add_element(variable, variable);
         }
     }
 
