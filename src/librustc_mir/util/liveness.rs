@@ -180,8 +180,18 @@ impl LivenessResult {
             block,
             statement_index,
         };
-        let terminator_defs_uses = self.defs_uses(mir, terminator_location, &data.terminator);
-        terminator_defs_uses.apply(&mut bits);
+        let locals = mir.local_decls.len();
+        let mut visitor = DefsUsesVisitor {
+            mode: self.mode,
+            defs_uses: DefsUses {
+                defs: LocalSet::new_empty(locals),
+                uses: LocalSet::new_empty(locals),
+            },
+        };
+        // Visit the various parts of the basic block in reverse. If we go
+        // forward, the logic in `add_def` and `add_use` would be wrong.
+        data.terminator.apply(terminator_location, &mut visitor);
+        visitor.defs_uses.apply(&mut bits);
         callback(terminator_location, &bits);
 
         // Compute liveness before each statement (in rev order) and invoke callback.
@@ -191,32 +201,13 @@ impl LivenessResult {
                 block,
                 statement_index,
             };
-            let statement_defs_uses = self.defs_uses(mir, statement_location, statement);
-            statement_defs_uses.apply(&mut bits);
+            visitor.defs_uses.clear();
+            statement.apply(statement_location, &mut visitor);
+            visitor.defs_uses.apply(&mut bits);
             callback(statement_location, &bits);
         }
 
         assert_eq!(bits, self.ins[block]);
-    }
-
-    fn defs_uses<'tcx, V>(&self, mir: &Mir<'tcx>, location: Location, thing: &V) -> DefsUses
-    where
-        V: MirVisitable<'tcx>,
-    {
-        let locals = mir.local_decls.len();
-        let mut visitor = DefsUsesVisitor {
-            mode: self.mode,
-            defs_uses: DefsUses {
-                defs: LocalSet::new_empty(locals),
-                uses: LocalSet::new_empty(locals),
-            },
-        };
-
-        // Visit the various parts of the basic block in reverse. If we go
-        // forward, the logic in `add_def` and `add_use` would be wrong.
-        thing.apply(location, &mut visitor);
-
-        visitor.defs_uses
     }
 }
 
@@ -307,6 +298,11 @@ struct DefsUses {
 }
 
 impl DefsUses {
+    fn clear(&mut self) {
+        self.uses.clear();
+        self.defs.clear();
+    }
+
     fn apply(&self, bits: &mut LocalSet) -> bool {
         bits.subtract(&self.defs) | bits.union(&self.uses)
     }
