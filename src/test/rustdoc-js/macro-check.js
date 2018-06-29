@@ -8,17 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![warn(const_err)]
+// ignore-order
 
-const X: u32 = 5;
-const Y: u32 = 6;
-const FOO: u32 = [X - Y, Y - X][(X < Y) as usize];
-//~^ WARN this constant cannot be used
+const QUERY = 'panic';
 
-fn main() {
-    println!("{}", FOO);
-    //~^ WARN this expression will panic at runtime
-    //~| WARN referenced constant
-    //~| ERROR erroneous constant used
-    //~| E0080
-}
+const EXPECTED = {
+    'others': [
+        { 'path': 'std', 'name': 'panic', ty: 14 }, // 15 is for macros
+        { 'path': 'std', 'name': 'panic', ty: 0 }, // 0 is for modules
+    ],
+};
