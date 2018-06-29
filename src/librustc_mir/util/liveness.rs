@@ -36,7 +36,7 @@
 use rustc::mir::*;
 use rustc::mir::visit::{PlaceContext, Visitor};
 use rustc_data_structures::indexed_vec::{Idx, IndexVec};
-use rustc_data_structures::indexed_set::{IdxSet, IdxSetBuf};
+use rustc_data_structures::indexed_set::IdxSetBuf;
 use rustc_data_structures::work_queue::WorkQueue;
 use util::pretty::{dump_enabled, write_basic_block, write_mir_intro};
 use rustc::ty::item_path;
@@ -137,7 +137,7 @@ pub fn liveness_of_locals<'tcx>(mir: &Mir<'tcx>, mode: LivenessMode) -> Liveness
 
     while let Some(bb) = dirty_queue.pop() {
         // bits = use ∪ (bits - def)
-        IdxSet::clone_from(&mut bits, &outs[bb]);
+        bits.overwrite(&outs[bb]);
         def_use[bb].apply(&mut bits);
 
         // add `bits` to the out set for each predecessor; if those
