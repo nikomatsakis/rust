@@ -47,7 +47,7 @@ pub struct RegionInferenceContext<'tcx> {
     definitions: IndexVec<RegionVid, RegionDefinition<'tcx>>,
 
     /// Maps from points/universal-regions to a `RegionElementIndex`.
-    elements: Rc<RegionValueElements>,
+    elements: RegionValueElements,
 
     /// The liveness constraints added to each region. For most
     /// regions, these start out empty and steadily grow, though for
@@ -201,7 +201,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         outlives_constraints: ConstraintSet,
         type_tests: Vec<TypeTest<'tcx>>,
         liveness_constraints: RegionValues<RegionVid>,
-        elements: &Rc<RegionValueElements>,
+        elements: RegionValueElements,
     ) -> Self {
         let universal_regions = Rc::new(universal_regions);
 
@@ -215,7 +215,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         let constraint_graph = Rc::new(constraints.graph(definitions.len()));
         let constraint_sccs = Rc::new(constraints.compute_sccs(&constraint_graph));
 
-        let mut scc_values = RegionValues::new(elements);
+        let mut scc_values = RegionValues::new(&elements);
 
         for (region, location_set) in liveness_constraints.iter_enumerated() {
             let scc = constraint_sccs.scc(region);
@@ -224,7 +224,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
 
         let mut result = Self {
             definitions,
-            elements: elements.clone(),
+            elements,
             liveness_constraints,
             constraints,
             constraint_graph,
@@ -264,14 +264,12 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         for (external_name, variable) in self.universal_regions.named_universal_regions() {
             debug!(
                 "init_universal_regions: region {:?} has external name {:?}",
-                variable,
-                external_name
+                variable, external_name
             );
             self.definitions[variable].external_name = Some(external_name);
         }
 
         // For each universally quantified region X:
-        let elements = self.elements.clone();
         let universal_regions = self.universal_regions.clone();
         for variable in universal_regions.universal_regions() {
             // These should be free-region variables.
@@ -281,7 +279,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             });
 
             // Add all nodes in the CFG to liveness constraints
-            for point_index in elements.all_point_indices() {
+            for point_index in self.elements.all_point_indices() {
                 self.add_live_element(variable, point_index);
             }
 
@@ -308,31 +306,30 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     /// Panics if called before `solve()` executes,
     crate fn region_contains(&self, r: impl ToRegionVid, p: impl ToElementIndex) -> bool {
         let scc = self.constraint_sccs.scc(r.to_region_vid());
-        self.scc_values.contains(scc, p)
+        self.scc_values.contains(&self.elements, scc, p)
     }
 
     /// Returns access to the value of `r` for debugging purposes.
     crate fn region_value_str(&self, r: RegionVid) -> String {
         let scc = self.constraint_sccs.scc(r.to_region_vid());
-        self.scc_values.region_value_str(scc)
+        self.scc_values.region_value_str(&self.elements, scc)
     }
 
     /// Indicates that the region variable `v` is live at the point `point`.
     ///
     /// Returns `true` if this constraint is new and `false` is the
     /// constraint was already present.
-    pub(super) fn add_live_element(
-        &mut self,
-        v: RegionVid,
-        elem: impl ToElementIndex,
-    ) -> bool {
+    pub(super) fn add_live_element(&mut self, v: RegionVid, elem: impl ToElementIndex) -> bool {
         debug!("add_live_element({:?}, {:?})", v, elem);
 
         // Add to the liveness values for `v`...
-        if self.liveness_constraints.add_element(v, elem) {
+        if self
+            .liveness_constraints
+            .add_element(&self.elements, v, elem)
+        {
             // ...but also add to the SCC in which `v` appears.
             let scc = self.constraint_sccs.scc(v);
-            self.scc_values.add_element(scc, elem);
+            self.scc_values.add_element(&self.elements, scc, elem);
 
             true
         } else {
@@ -450,7 +447,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         debug!(
             "propagate_constraint_sccs: scc_a = {:?} has value {:?}",
             scc_a,
-            self.scc_values.region_value_str(scc_a),
+            self.scc_values.region_value_str(&self.elements, scc_a),
         );
     }
 
@@ -528,7 +525,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         } else {
             let r_scc = self.constraint_sccs.scc(r);
             let upper_bound = self.universal_upper_bound(r);
-            if self.scc_values.contains(r_scc, upper_bound) {
+            if self.scc_values.contains(&self.elements, r_scc, upper_bound) {
                 self.to_error_region(upper_bound)
             } else {
                 None
@@ -563,8 +560,11 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         // region, which ensures it can be encoded in a `ClosureOutlivesRequirement`.
         let lower_bound_plus = self.non_local_universal_upper_bound(*lower_bound);
         assert!(self.universal_regions.is_universal_region(lower_bound_plus));
-        assert!(!self.universal_regions
-            .is_local_free_region(lower_bound_plus));
+        assert!(
+            !self
+                .universal_regions
+                .is_local_free_region(lower_bound_plus)
+        );
 
         propagated_outlives_requirements.push(ClosureOutlivesRequirement {
             subject,
@@ -712,7 +712,10 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         // universal regions within `region`.
         let mut lub = self.universal_regions.fr_fn_body;
         let r_scc = self.constraint_sccs.scc(r);
-        for ur in self.scc_values.universal_regions_outlived_by(r_scc) {
+        for ur in self
+            .scc_values
+            .universal_regions_outlived_by(&self.elements, r_scc)
+        {
             lub = self.universal_regions.postdom_upper_bound(lub, ur);
         }
 
@@ -775,11 +778,12 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         // now). Therefore, the sup-region outlives the sub-region if,
         // for each universal region R1 in the sub-region, there
         // exists some region R2 in the sup-region that outlives R1.
-        let universal_outlives = self.scc_values
-            .universal_regions_outlived_by(sub_region_scc)
+        let universal_outlives = self
+            .scc_values
+            .universal_regions_outlived_by(&self.elements, sub_region_scc)
             .all(|r1| {
                 self.scc_values
-                    .universal_regions_outlived_by(sup_region_scc)
+                    .universal_regions_outlived_by(&self.elements, sup_region_scc)
                     .any(|r2| self.universal_regions.outlives(r2, r1))
             });
 
@@ -796,7 +800,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         }
 
         self.scc_values
-            .contains_points(sup_region_scc, sub_region_scc)
+            .contains_points(&self.elements, sup_region_scc, sub_region_scc)
     }
 
     /// Once regions have been propagated, this method is used to see
@@ -867,7 +871,10 @@ impl<'tcx> RegionInferenceContext<'tcx> {
 
         // Find every region `o` such that `fr: o`
         // (because `fr` includes `end(o)`).
-        for shorter_fr in self.scc_values.universal_regions_outlived_by(longer_fr_scc) {
+        for shorter_fr in self
+            .scc_values
+            .universal_regions_outlived_by(&self.elements, longer_fr_scc)
+        {
             // If it is known that `fr: o`, carry on.
             if self.universal_regions.outlives(longer_fr, shorter_fr) {
                 continue;

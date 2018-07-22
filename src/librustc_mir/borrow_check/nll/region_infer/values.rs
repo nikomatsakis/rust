@@ -14,7 +14,6 @@ use rustc_data_structures::bitvec::{BitVector, SparseBitMatrix};
 use rustc_data_structures::indexed_vec::Idx;
 use rustc_data_structures::indexed_vec::IndexVec;
 use std::fmt::Debug;
-use std::rc::Rc;
 
 /// Maps between the various kinds of elements of a region value to
 /// the internal indices that w use.
@@ -66,8 +65,9 @@ impl RegionValueElements {
     }
 
     /// Iterates over the `RegionElementIndex` for all points in the CFG.
-    crate fn all_point_indices<'a>(&'a self) -> impl Iterator<Item = RegionElementIndex> + 'a {
-        (0..self.num_points).map(move |i| RegionElementIndex::new(i + self.num_universal_regions))
+    crate fn all_point_indices(&self) -> impl Iterator<Item = RegionElementIndex> {
+        let num_universal_regions = self.num_universal_regions;
+        (0..self.num_points).map(move |i| RegionElementIndex::new(i + num_universal_regions))
     }
 
     /// Converts a particular `RegionElementIndex` to the `RegionElement` it represents.
@@ -180,7 +180,6 @@ impl ToElementIndex for RegionElementIndex {
 /// points in the CFG.
 #[derive(Clone)]
 crate struct RegionValues<N: Idx> {
-    elements: Rc<RegionValueElements>,
     matrix: SparseBitMatrix<N, RegionElementIndex>,
 }
 
@@ -188,9 +187,8 @@ impl<N: Idx> RegionValues<N> {
     /// Creates a new set of "region values" that tracks causal information.
     /// Each of the regions in num_region_variables will be initialized with an
     /// empty set of points and no causal information.
-    crate fn new(elements: &Rc<RegionValueElements>) -> Self {
+    crate fn new(elements: &RegionValueElements) -> Self {
         Self {
-            elements: elements.clone(),
             matrix: SparseBitMatrix::new(elements.num_elements()),
         }
     }
@@ -199,10 +197,11 @@ impl<N: Idx> RegionValues<N> {
     /// the element is newly added (i.e., was not already present).
     crate fn add_element(
         &mut self,
+        elements: &RegionValueElements,
         r: N,
         elem: impl ToElementIndex,
     ) -> bool {
-        let i = self.elements.index(elem);
+        let i = elements.index(elem);
         debug!("add(r={:?}, elem={:?})", r, elem);
         self.matrix.add(r, i)
     }
@@ -214,14 +213,19 @@ impl<N: Idx> RegionValues<N> {
     }
 
     /// True if the region `r` contains the given element.
-    crate fn contains(&self, r: N, elem: impl ToElementIndex) -> bool {
-        let i = self.elements.index(elem);
+    crate fn contains(
+        &self,
+        elements: &RegionValueElements,
+        r: N,
+        elem: impl ToElementIndex,
+    ) -> bool {
+        let i = elements.index(elem);
         self.matrix.contains(r, i)
     }
 
     /// Iterates through each row and the accompanying bit set.
     pub fn iter_enumerated<'a>(
-        &'a self
+        &'a self,
     ) -> impl Iterator<Item = (N, &'a BitVector<RegionElementIndex>)> + 'a {
         self.matrix.iter_enumerated()
     }
@@ -233,12 +237,17 @@ impl<N: Idx> RegionValues<N> {
 
     /// True if `sup_region` contains all the CFG points that
     /// `sub_region` contains. Ignores universal regions.
-    crate fn contains_points(&self, sup_region: N, sub_region: N) -> bool {
+    crate fn contains_points(
+        &self,
+        elements: &RegionValueElements,
+        sup_region: N,
+        sub_region: N,
+    ) -> bool {
         // This could be done faster by comparing the bitsets. But I
         // am lazy.
         self.element_indices_contained_in(sub_region)
-            .skip_while(|&i| self.elements.to_universal_region(i).is_some())
-            .all(|e| self.contains(sup_region, e))
+            .skip_while(|&i| elements.to_universal_region(i).is_some())
+            .all(|e| self.contains(elements, sup_region, e))
     }
 
     /// Iterate over the value of the region `r`, yielding up element
@@ -254,10 +263,11 @@ impl<N: Idx> RegionValues<N> {
     /// Returns just the universal regions that are contained in a given region's value.
     crate fn universal_regions_outlived_by<'a>(
         &'a self,
+        elements: &'a RegionValueElements,
         r: N,
     ) -> impl Iterator<Item = RegionVid> + 'a {
         self.element_indices_contained_in(r)
-            .map(move |i| self.elements.to_universal_region(i))
+            .map(move |i| elements.to_universal_region(i))
             .take_while(move |v| v.is_some()) // universal regions are a prefix
             .map(move |v| v.unwrap())
     }
@@ -265,14 +275,15 @@ impl<N: Idx> RegionValues<N> {
     /// Returns all the elements contained in a given region's value.
     crate fn elements_contained_in<'a>(
         &'a self,
+        elements: &'a RegionValueElements,
         r: N,
     ) -> impl Iterator<Item = RegionElement> + 'a {
         self.element_indices_contained_in(r)
-            .map(move |r| self.elements.to_element(r))
+            .map(move |r| elements.to_element(r))
     }
 
     /// Returns a "pretty" string value of the region. Meant for debugging.
-    crate fn region_value_str(&self, r: N) -> String {
+    crate fn region_value_str(&self, elements: &RegionValueElements, r: N) -> String {
         let mut result = String::new();
         result.push_str("{");
 
@@ -288,7 +299,7 @@ impl<N: Idx> RegionValues<N> {
             sep = ", ";
         };
 
-        for element in self.elements_contained_in(r) {
+        for element in self.elements_contained_in(elements, r) {
             match element {
                 RegionElement::Location(l) => {
                     if let Some((location1, location2)) = open_location {

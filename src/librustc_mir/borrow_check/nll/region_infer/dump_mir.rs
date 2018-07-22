@@ -13,8 +13,8 @@
 //! state of region inference. This code handles emitting the region
 //! context internal state.
 
-use std::io::{self, Write};
 use super::{OutlivesConstraint, RegionInferenceContext};
+use std::io::{self, Write};
 
 // Room for "'_#NNNNr" before things get misaligned.
 // Easy enough to fix if this ever doesn't seem like
@@ -28,7 +28,8 @@ impl<'tcx> RegionInferenceContext<'tcx> {
 
         for region in self.regions() {
             if self.definitions[region].origin.is_universal() {
-                let classification = self.universal_regions
+                let classification = self
+                    .universal_regions
                     .region_classification(region)
                     .unwrap();
                 let outlived_by = self.universal_regions.regions_outlived_by(region);
@@ -72,7 +73,9 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         with_msg: &mut dyn FnMut(&str) -> io::Result<()>,
     ) -> io::Result<()> {
         for region in self.definitions.indices() {
-            let value = self.liveness_constraints.region_value_str(region);
+            let value = self
+                .liveness_constraints
+                .region_value_str(&self.elements, region);
             if value != "{}" {
                 with_msg(&format!("{:?} live at {}", region, value))?;
             }
@@ -86,15 +89,9 @@ impl<'tcx> RegionInferenceContext<'tcx> {
                 sub,
                 locations,
             } = constraint;
-            with_msg(&format!(
-                "{:?}: {:?} due to {:?}",
-                sup,
-                sub,
-                locations,
-            ))?;
+            with_msg(&format!("{:?}: {:?} due to {:?}", sup, sub, locations,))?;
         }
 
         Ok(())
     }
 }
-

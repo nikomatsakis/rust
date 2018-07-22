@@ -15,8 +15,8 @@ use borrow_check::borrow_set::BorrowSet;
 use borrow_check::location::LocationTable;
 use borrow_check::nll::constraints::{ConstraintSet, OutlivesConstraint};
 use borrow_check::nll::facts::AllFacts;
+use borrow_check::nll::region_infer::values::{RegionValueElements, RegionValues};
 use borrow_check::nll::region_infer::{ClosureRegionRequirementsExt, TypeTest};
-use borrow_check::nll::region_infer::values::{RegionValues, RegionValueElements};
 use borrow_check::nll::universal_regions::UniversalRegions;
 use borrow_check::nll::ToRegionVid;
 use borrow_check::nll::LocalWithRegion;
@@ -35,9 +35,8 @@ use rustc::mir::*;
 use rustc::traits::query::type_op;
 use rustc::traits::query::{Fallible, NoSolution};
 use rustc::ty::fold::TypeFoldable;
-use rustc::ty::{self, ToPolyTraitRef, Ty, TyCtxt, TypeVariants, RegionVid};
+use rustc::ty::{self, RegionVid, ToPolyTraitRef, Ty, TyCtxt, TypeVariants};
 use std::fmt;
-use std::rc::Rc;
 use syntax_pos::{Span, DUMMY_SP};
 use transform::{MirPass, MirSource};
 use util::liveness::LivenessResults;
@@ -114,7 +113,7 @@ pub(crate) fn type_check<'gcx, 'tcx>(
     all_facts: &mut Option<AllFacts>,
     flow_inits: &mut FlowAtLocation<MaybeInitializedPlaces<'_, 'gcx, 'tcx>>,
     move_data: &MoveData<'tcx>,
-    elements: &Rc<RegionValueElements>,
+    elements: &RegionValueElements,
 ) -> MirTypeckRegionConstraints<'tcx> {
     let implicit_region_bound = infcx.tcx.mk_region(ty::ReVar(universal_regions.fr_fn_body));
     let mut constraints = MirTypeckRegionConstraints {
@@ -125,6 +124,7 @@ pub(crate) fn type_check<'gcx, 'tcx>(
 
     {
         let mut borrowck_context = BorrowCheckContext {
+            elements,
             universal_regions,
             location_table,
             borrow_set,
@@ -160,8 +160,8 @@ fn type_check_internal<'a, 'gcx, 'tcx, F>(
     implicit_region_bound: Option<ty::Region<'tcx>>,
     borrowck_context: Option<&'a mut BorrowCheckContext<'a, 'tcx>>,
     mut extra: F,
-)
-    where F: FnMut(&mut TypeChecker<'a, 'gcx, 'tcx>)
+) where
+    F: FnMut(&mut TypeChecker<'a, 'gcx, 'tcx>),
 {
     let mut checker = TypeChecker::new(
         infcx,
@@ -624,6 +624,7 @@ struct TypeChecker<'a, 'gcx: 'a + 'tcx, 'tcx: 'a> {
 }
 
 struct BorrowCheckContext<'a, 'tcx: 'a> {
+    elements: &'a RegionValueElements,
     universal_regions: &'a UniversalRegions<'tcx>,
     location_table: &'a LocationTable,
     all_facts: &'a mut Option<AllFacts>,
@@ -1009,11 +1010,13 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                 // all the inputs that fed into it were live.
                 for &late_bound_region in map.values() {
                     if let Some(ref mut borrowck_context) = self.borrowck_context {
-                        let region_vid = borrowck_context.universal_regions.to_region_vid(
-                            late_bound_region);
-                        borrowck_context.constraints
+                        let region_vid = borrowck_context
+                            .universal_regions
+                            .to_region_vid(late_bound_region);
+                        borrowck_context
+                            .constraints
                             .liveness_constraints
-                            .add_element(region_vid, term_location);
+                            .add_element(&borrowck_context.elements, region_vid, term_location);
                     }
                 }
 
@@ -1551,13 +1554,11 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                     debug!("add_reborrow_constraint - base_ty = {:?}", base_ty);
                     match base_ty.sty {
                         ty::TyRef(ref_region, _, mutbl) => {
-                            constraints
-                                .outlives_constraints
-                                .push(OutlivesConstraint {
-                                    sup: ref_region.to_region_vid(),
-                                    sub: borrow_region.to_region_vid(),
-                                    locations: location.boring(),
-                                });
+                            constraints.outlives_constraints.push(OutlivesConstraint {
+                                sup: ref_region.to_region_vid(),
+                                sub: borrow_region.to_region_vid(),
+                                locations: location.boring(),
+                            });
 
                             if let Some(all_facts) = all_facts {
                                 all_facts.outlives.push((

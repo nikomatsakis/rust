@@ -133,7 +133,10 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     ) -> (ConstraintCategory, Span) {
         let constraint = self.constraints[index];
         let span = constraint.locations.span(mir);
-        let location = constraint.locations.from_location().unwrap_or(Location::START);
+        let location = constraint
+            .locations
+            .from_location()
+            .unwrap_or(Location::START);
 
         if !self.constraint_is_interesting(index) {
             return (ConstraintCategory::Boring, span);
@@ -207,7 +210,8 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         debug!("report_error: shortest_path={:?}", path);
 
         // Classify each of the constraints along the path.
-        let mut categorized_path: Vec<(ConstraintCategory, Span)> = path.iter()
+        let mut categorized_path: Vec<(ConstraintCategory, Span)> = path
+            .iter()
             .map(|&index| self.classify_constraint(index, mir))
             .collect();
         debug!("report_error: categorized_path={:?}", categorized_path);
@@ -226,14 +230,8 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         // Figure out how we can refer
         let counter = &mut 1;
         let fr_name = self.give_region_a_name(infcx.tcx, mir, mir_def_id, fr, counter, diag);
-        let outlived_fr_name = self.give_region_a_name(
-            infcx.tcx,
-            mir,
-            mir_def_id,
-            outlived_fr,
-            counter,
-            diag,
-        );
+        let outlived_fr_name =
+            self.give_region_a_name(infcx.tcx, mir, mir_def_id, outlived_fr, counter, diag);
 
         diag.span_label(
             *span,
@@ -275,7 +273,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         let relevant_constraint = self.constraints
             .iter_enumerated()
             .filter_map(|(i, constraint)| {
-                if !self.liveness_constraints.contains(constraint.sub, elem) {
+                if !self.liveness_constraints.contains(&self.elements, constraint.sub, elem) {
                     None
                 } else {
                     influenced_fr1[constraint.sup]

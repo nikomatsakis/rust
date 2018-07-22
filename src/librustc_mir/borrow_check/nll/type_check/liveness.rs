@@ -172,10 +172,16 @@ impl<'gen, 'typeck, 'flow, 'gcx, 'tcx> TypeLivenessGenerator<'gen, 'typeck, 'flo
             value, location
         );
 
-        cx.tcx().for_each_free_region(&value, |live_region| {
-            if let Some(ref mut borrowck_context) = cx.borrowck_context {
-                let region_vid = borrowck_context.universal_regions.to_region_vid(live_region);
-                borrowck_context.constraints.liveness_constraints.add_element(region_vid, location);
+        let tcx = cx.tcx();
+        if let Some(borrowck_context) = &mut cx.borrowck_context {
+            tcx.for_each_free_region(&value, |live_region| {
+                let region_vid = borrowck_context
+                    .universal_regions
+                    .to_region_vid(live_region);
+                borrowck_context
+                    .constraints
+                    .liveness_constraints
+                    .add_element(&borrowck_context.elements, region_vid, location);
 
                 if let Some(all_facts) = borrowck_context.all_facts {
                     let start_index = borrowck_context.location_table.start_index(location);
@@ -184,8 +190,8 @@ impl<'gen, 'typeck, 'flow, 'gcx, 'tcx> TypeLivenessGenerator<'gen, 'typeck, 'flo
                     let mid_index = borrowck_context.location_table.mid_index(location);
                     all_facts.region_live_at.push((region_vid, mid_index));
                 }
-            }
-        });
+            });
+        }
     }
 
     /// Some variable with type `live_ty` is "drop live" at `location`

@@ -102,7 +102,7 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
         None
     };
 
-    let elements = &Rc::new(RegionValueElements::new(mir, universal_regions.len()));
+    let elements = RegionValueElements::new(mir, universal_regions.len());
 
     // Run the MIR type-checker.
     let liveness_map = NllLivenessMap::compute(&mir);
@@ -119,7 +119,7 @@ pub(in borrow_check) fn compute_regions<'cx, 'gcx, 'tcx>(
         &mut all_facts,
         flow_inits,
         move_data,
-        elements,
+        &elements,
     );
 
     if let Some(all_facts) = &mut all_facts {
