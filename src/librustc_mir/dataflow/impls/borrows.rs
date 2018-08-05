@@ -12,13 +12,11 @@ use borrow_check::borrow_set::{BorrowSet, BorrowData};
 use borrow_check::place_ext::PlaceExt;
 
 use rustc;
-use rustc::hir;
 use rustc::hir::def_id::DefId;
 use rustc::middle::region;
 use rustc::mir::{self, Location, Place, Mir};
 use rustc::ty::TyCtxt;
 use rustc::ty::{RegionKind, RegionVid};
-use rustc::ty::RegionKind::ReScope;
 
 use rustc_data_structures::bitslice::{BitwiseOperator, Word};
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
@@ -44,7 +42,6 @@ pub struct Borrows<'a, 'gcx: 'tcx, 'tcx: 'a> {
     tcx: TyCtxt<'a, 'gcx, 'tcx>,
     mir: &'a Mir<'tcx>,
     scope_tree: Lrc<region::ScopeTree>,
-    root_scope: Option<region::Scope>,
 
     borrow_set: Rc<BorrowSet<'tcx>>,
     borrows_out_of_scope_at_location: FxHashMap<Location, Vec<BorrowIndex>>,
@@ -114,13 +111,9 @@ impl<'a, 'gcx, 'tcx> Borrows<'a, 'gcx, 'tcx> {
         mir: &'a Mir<'tcx>,
         nonlexical_regioncx: Rc<RegionInferenceContext<'tcx>>,
         def_id: DefId,
-        body_id: Option<hir::BodyId>,
         borrow_set: &Rc<BorrowSet<'tcx>>
     ) -> Self {
         let scope_tree = tcx.region_scope_tree(def_id);
-        let root_scope = body_id.map(|body_id| {
-            region::Scope::CallSite(tcx.hir.body(body_id).value.hir_id.local_id)
-        });
 
         let mut borrows_out_of_scope_at_location = FxHashMap();
         for (borrow_index, borrow_data) in borrow_set.borrows.iter_enumerated() {
@@ -138,7 +131,6 @@ impl<'a, 'gcx, 'tcx> Borrows<'a, 'gcx, 'tcx> {
             borrow_set: borrow_set.clone(),
             borrows_out_of_scope_at_location,
             scope_tree,
-            root_scope,
             _nonlexical_regioncx: nonlexical_regioncx,
         }
     }
@@ -255,20 +247,6 @@ impl<'a, 'gcx, 'tcx> BitDenotation for Borrows<'a, 'gcx, 'tcx> {
                         panic!("could not find BorrowIndexs for region {:?}", region);
                     }).contains(&index));
                     sets.gen(&index);
-
-                    // Issue #46746: Two-phase borrows handles
-                    // stmts of form `Tmp = &mut Borrow` ...
-                    match lhs {
-                        Place::Promoted(_) |
-                        Place::Local(..) | Place::Static(..) => {} // okay
-                        Place::Projection(..) => {
-                            // ... can assign into projections,
-                            // e.g. `box (&mut _)`. Current
-                            // conservative solution: force
-                            // immediate activation here.
-                            sets.gen(&index);
-                        }
-                    }
                 }
             }
 
@@ -309,51 +287,7 @@ impl<'a, 'gcx, 'tcx> BitDenotation for Borrows<'a, 'gcx, 'tcx> {
         self.kill_loans_out_of_scope_at_location(sets, location);
     }
 
-    fn terminator_effect(&self, sets: &mut BlockSets<BorrowIndex>, location: Location) {
-        debug!("Borrows::terminator_effect sets: {:?} location: {:?}", sets, location);
-
-        let block = &self.mir.basic_blocks().get(location.block).unwrap_or_else(|| {
-            panic!("could not find block at location {:?}", location);
-        });
-
-        let term = block.terminator();
-        match term.kind {
-            mir::TerminatorKind::Resume |
-            mir::TerminatorKind::Return |
-            mir::TerminatorKind::GeneratorDrop => {
-                // When we return from the function, then all `ReScope`-style regions
-                // are guaranteed to have ended.
-                // Normally, there would be `EndRegion` statements that come before,
-                // and hence most of these loans will already be dead -- but, in some cases
-                // like unwind paths, we do not always emit `EndRegion` statements, so we
-                // add some kills here as a "backup" and to avoid spurious error messages.
-                for (borrow_index, borrow_data) in self.borrow_set.borrows.iter_enumerated() {
-                    if let ReScope(scope) = borrow_data.region {
-                        // Check that the scope is not actually a scope from a function that is
-                        // a parent of our closure. Note that the CallSite scope itself is
-                        // *outside* of the closure, for some weird reason.
-                        if let Some(root_scope) = self.root_scope {
-                            if *scope != root_scope &&
-                                self.scope_tree.is_subscope_of(*scope, root_scope)
-                            {
-                                sets.kill(&borrow_index);
-                            }
-                        }
-                    }
-                }
-            }
-            mir::TerminatorKind::Abort |
-            mir::TerminatorKind::SwitchInt {..} |
-            mir::TerminatorKind::Drop {..} |
-            mir::TerminatorKind::DropAndReplace {..} |
-            mir::TerminatorKind::Call {..} |
-            mir::TerminatorKind::Assert {..} |
-            mir::TerminatorKind::Yield {..} |
-            mir::TerminatorKind::Goto {..} |
-            mir::TerminatorKind::FalseEdges {..} |
-            mir::TerminatorKind::FalseUnwind {..} |
-            mir::TerminatorKind::Unreachable => {}
-        }
+    fn terminator_effect(&self, _sets: &mut BlockSets<BorrowIndex>, _location: Location) {
     }
 
     fn propagate_call_return(&self,
