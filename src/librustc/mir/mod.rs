@@ -209,6 +209,14 @@ impl<'tcx> Mir<'tcx> {
     }
 
     #[inline]
+    pub fn terminator_loc(&self, block: BasicBlock) -> Location {
+        Location {
+            block,
+            statement_index: self[block].statements.len(),
+        }
+    }
+
+    #[inline]
     pub fn local_kind(&self, local: Local) -> LocalKind {
         let index = local.0 as usize;
         if index == 0 {
