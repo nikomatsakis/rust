@@ -1473,8 +1473,9 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
             Place::Projection(ref proj) => {
                 match proj.elem {
                     ProjectionElem::Deref => {
+                        let neo_place = self.infcx.tcx.as_new_place(place);
                         let upvar_field_projection =
-                            place.is_upvar_field_projection(self.mir, &self.infcx.tcx);
+                            neo_place.is_upvar_field_projection(self.mir, &self.infcx.tcx);
                         if let Some(field) = upvar_field_projection {
                             let var_index = field.index();
                             let name = self.mir.upvar_decls[var_index].debug_name.to_string();
@@ -1534,9 +1535,9 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     }
                     ProjectionElem::Field(field, _ty) => {
                         autoderef = true;
-
+                        let neo_place = self.infcx.tcx.as_new_place(place);
                         let upvar_field_projection =
-                            place.is_upvar_field_projection(self.mir, &self.infcx.tcx);
+                            neo_place.is_upvar_field_projection(self.mir, &self.infcx.tcx);
                         if let Some(field) = upvar_field_projection {
                             let var_index = field.index();
                             let name = self.mir.upvar_decls[var_index].debug_name.to_string();

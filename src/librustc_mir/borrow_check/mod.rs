@@ -1238,7 +1238,8 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                                 }
                                 Operand::Move(ref place @ Place::Projection(_))
                                 | Operand::Copy(ref place @ Place::Projection(_)) => {
-                                    if let Some(field) = place.is_upvar_field_projection(
+                                    let neo_place = self.infcx.tcx.as_new_place(place);
+                                    if let Some(field) = neo_place.is_upvar_field_projection(
                                             self.mir, &self.infcx.tcx) {
                                         self.used_mut_upvars.push(field);
                                     }
@@ -1968,7 +1969,9 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                 place: place @ Place::Projection(_),
                 is_local_mutation_allowed: _,
             } => {
-                if let Some(field) = place.is_upvar_field_projection(self.mir, &self.infcx.tcx) {
+                let place = self.infcx.tcx.as_new_place(&place);
+                if let Some(field) =
+                    place.is_upvar_field_projection(self.mir, &self.infcx.tcx) {
                     self.used_mut_upvars.push(field);
                 }
             }
@@ -2041,7 +2044,8 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                                     // Mutably borrowed data is mutable, but only if we have a
                                     // unique path to the `&mut`
                                     hir::MutMutable => {
-                                        let mode = match place.is_upvar_field_projection(
+                                        let neo_place = self.infcx.tcx.as_new_place(place);
+                                        let mode = match neo_place.is_upvar_field_projection(
                                             self.mir, &self.infcx.tcx)
                                         {
                                             Some(field)
@@ -2087,7 +2091,8 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     | ProjectionElem::ConstantIndex { .. }
                     | ProjectionElem::Subslice { .. }
                     | ProjectionElem::Downcast(..) => {
-                        let upvar_field_projection = place.is_upvar_field_projection(
+                        let neo_place = self.infcx.tcx.as_new_place(place);
+                        let upvar_field_projection = neo_place.is_upvar_field_projection(
                             self.mir, &self.infcx.tcx);
                         if let Some(field) = upvar_field_projection {
                             let decl = &self.mir.upvar_decls[field.index()];
