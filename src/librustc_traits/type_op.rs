@@ -135,7 +135,7 @@ impl AscribeUserTypeCx<'me, 'gcx, 'tcx> {
 
         struct HitTyVar;
         let mut curr_projected_ty: Result<PlaceTy, HitTyVar>;
-        curr_projected_ty = Ok(PlaceTy::from_ty(ty));
+        curr_projected_ty = Ok(PlaceTy::from(ty));
         for proj in projs {
             let projected_ty = if let Ok(projected_ty) = curr_projected_ty {
                 projected_ty
