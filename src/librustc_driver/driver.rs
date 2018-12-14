@@ -314,6 +314,8 @@ pub fn compile_input(
                     tcx.print_debug_stats();
                 }
 
+                mir::transform::polymorphize::polymorphize_analysis(tcx, ());
+
                 let ongoing_codegen = phase_4_codegen(&*codegen_backend, tcx, rx);
 
                 if log_enabled!(::log::Level::Info) {

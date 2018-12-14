@@ -37,6 +37,7 @@ pub mod generator;
 pub mod inline;
 pub mod lower_128bit;
 pub mod uniform_array_move_out;
+pub mod polymorphize;
 
 pub(crate) fn provide(providers: &mut Providers) {
     self::qualify_consts::provide(providers);
