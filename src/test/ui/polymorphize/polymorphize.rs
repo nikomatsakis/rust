@@ -14,8 +14,7 @@ fn no_dependency_because_pointer<T>(t: &T) -> &T {
 }
 
 fn depend_size_alignment<T: Copy>(t: &T) -> T {
-    //~^ ERROR no polymorphic dependencies found
-    // FIXME -- this should depend on the size/alignment of `T`
+    //~^ ERROR some polymorphic dependencies found
     *t
 }
 

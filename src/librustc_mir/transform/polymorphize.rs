@@ -19,7 +19,7 @@ use rustc::mir::BasicBlock;
 use rustc::mir::Location;
 use rustc::mir::TerminatorKind;
 use rustc::mir::{Mir, Operand, ProjectionElem};
-use rustc::mir::{Place, PlaceElem};
+use rustc::mir::{Place, PlaceElem, PlaceProjection};
 use rustc::mir::{Rvalue, Statement, StatementKind};
 use rustc::ty::fold::TypeFoldable;
 use rustc::ty::fold::TypeVisitor;
@@ -276,8 +276,26 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
 
     fn visit_operand(&mut self, operand: &Operand<'gcx>, location: Location) {
         match operand {
-            Operand::Copy(..) => (),
-            Operand::Move(..) => (),
+            Operand::Copy(place) | Operand::Move(place) => {
+                debug!("visit_operand: place={:?}", place);
+                if let Place::Projection(box PlaceProjection {
+                    base,
+                    elem: ProjectionElem::Deref,
+                }) = place {
+                    let ty = base.ty(self.mir, self.tcx).to_ty(self.tcx);
+                    debug!("visit_operand: ty={:?}", ty);
+                    if let ty::TyKind::Ref(_, ref_ty, _) = ty.sty {
+                        if let ty::TyKind::Param(_) = ref_ty.sty {
+                            debug!("visit_operand: recording dependency");
+                            self.record_dependency(
+                                self.mir.source_info(location).span,
+                                ref_ty,
+                                DependencyKind::SizeAlignment,
+                            );
+                        }
+                    }
+                }
+            },
             Operand::Constant(..) => (),
         }
         self.super_operand(operand, location);

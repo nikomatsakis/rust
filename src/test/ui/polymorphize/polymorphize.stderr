@@ -15,18 +15,18 @@ LL | |     t
 LL | | }
    | |_^
 
-error: no polymorphic dependencies found
+error: some polymorphic dependencies found
   --> $DIR/polymorphize.rs:16:1
    |
 LL | / fn depend_size_alignment<T: Copy>(t: &T) -> T {
-LL | |     //~^ ERROR no polymorphic dependencies found
-LL | |     // FIXME -- this should depend on the size/alignment of `T`
+LL | |     //~^ ERROR some polymorphic dependencies found
 LL | |     *t
+   | |     -- depends on type `T/#0` for `SizeAlignment`
 LL | | }
    | |_^
 
 error: no polymorphic dependencies found
-  --> $DIR/polymorphize.rs:22:1
+  --> $DIR/polymorphize.rs:21:1
    |
 LL | / fn depend_size_alignment_indirect<T: Copy>(t: &T) -> T {
 LL | |     //~^ ERROR no polymorphic dependencies found
@@ -37,7 +37,7 @@ LL | | }
    | |_^
 
 error: no polymorphic dependencies found
-  --> $DIR/polymorphize.rs:28:1
+  --> $DIR/polymorphize.rs:27:1
    |
 LL | / fn no_dependency_indirect<T: Copy>(t: &T) -> u32 {
 LL | |     //~^ ERROR no polymorphic dependencies found
@@ -47,7 +47,7 @@ LL | | }
    | |_^
 
 error: some polymorphic dependencies found
-  --> $DIR/polymorphize.rs:33:1
+  --> $DIR/polymorphize.rs:32:1
    |
 LL | / fn depend_trait_dispatch<T: Clone>(t: &T) -> T {
 LL | |     //~^ ERROR some polymorphic dependencies found
@@ -57,7 +57,7 @@ LL | | }
    | |_^
 
 error: no polymorphic dependencies found
-  --> $DIR/polymorphize.rs:38:1
+  --> $DIR/polymorphize.rs:37:1
    |
 LL | / fn depend_trait_dispatch_indirect<T: Clone>(t: &T) -> T {
 LL | |     //~^ ERROR no polymorphic dependencies found
@@ -68,7 +68,7 @@ LL | | }
    | |_^
 
 error: no polymorphic dependencies found
-  --> $DIR/polymorphize.rs:44:1
+  --> $DIR/polymorphize.rs:43:1
    |
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found
