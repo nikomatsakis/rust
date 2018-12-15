@@ -19,8 +19,7 @@ fn depend_size_alignment<T: Copy>(t: &T) -> T {
 }
 
 fn depend_size_alignment_indirect<T: Copy>(t: &T) -> T {
-    //~^ ERROR no polymorphic dependencies found
-    // FIXME -- this should depend on the size/alignment of `T`
+    //~^ ERROR some polymorphic dependencies found
     depend_size_alignment(t)
 }
 
@@ -35,8 +34,7 @@ fn depend_trait_dispatch<T: Clone>(t: &T) -> T {
 }
 
 fn depend_trait_dispatch_indirect<T: Clone>(t: &T) -> T {
-    //~^ ERROR no polymorphic dependencies found
-    // FIXME -- this should depend on trait methods around `T`
+    //~^ ERROR some polymorphic dependencies found
     depend_trait_dispatch(t)
 }
 

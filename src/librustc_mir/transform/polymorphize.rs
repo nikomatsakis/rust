@@ -27,6 +27,8 @@ use rustc::ty::subst::Substs;
 use rustc::ty::Instance;
 use rustc::ty::InstanceDef;
 use rustc::ty::{self, Ty, TyCtxt};
+use std::collections::BTreeMap;
+use smallvec::SmallVec;
 use syntax_pos::Span;
 
 pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
@@ -34,12 +36,32 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
         return;
     }
 
-    let visitors: Vec<_> = tcx
+    let mut visitors: BTreeMap<_, _> = tcx
         .body_owners()
-        .map(|mir_def_id| DependencyVisitor::new(tcx, mir_def_id))
+        .map(|mir_def_id| (mir_def_id, DependencyVisitor::new(tcx, mir_def_id)))
         .collect();
 
-    for visitor in &visitors {
+    for mir_def_id in tcx.body_owners() {
+        let visitor = &visitors[&mir_def_id];
+        let mut dependencies: SmallVec<[Dependency; 256]> = SmallVec::new();
+        debug!("polymorphize_analysis: (interfunction propagation) mir_def_id={:?}", mir_def_id);
+        for call_edge in &visitor.call_edges {
+            debug!("polymorphize_analysis: call_edge.callee={:?}", call_edge.callee);
+            let callee_visitor = &visitors[&call_edge.callee];
+            if callee_visitor.dependencies.is_empty() {
+                debug!("polymorphize_analysis: no dependencies");
+                continue;
+            }
+
+            dependencies.extend_from_slice(&callee_visitor.dependencies);
+        }
+
+        visitors.entry(mir_def_id).and_modify(|visitor| {
+            visitor.dependencies.extend_from_slice(&dependencies);
+        });
+    }
+
+    for (_, visitor) in &visitors {
         let message = if visitor.dependencies.is_empty() {
             "no polymorphic dependencies found"
         } else {
@@ -139,16 +161,16 @@ impl DependencyVisitor<'me, 'gcx> {
 
         impl<'me, 'gcx> TypeVisitor<'gcx> for DependencyRecorder<'me> {
             fn visit_ty(&mut self, ty: Ty<'gcx>) -> bool {
-                match ty.sty {
-                    ty::Param(param_ty) => {
+                // Need to walk the type to find out if there is a type parameter anywhere
+                // in the type.
+                for ty in ty.walk() {
+                    if let ty::TyKind::Param(param_ty) = ty.sty {
                         self.dependencies.push(Dependency {
                             span: self.span,
                             param_ty,
                             kind: self.kind,
                         });
                     }
-
-                    _ => {}
                 }
 
                 false
@@ -172,19 +194,23 @@ impl DependencyVisitor<'me, 'gcx> {
         });
     }
 
-    fn visit_call(&mut self, span: Span, def_id: DefId, substs: &'gcx Substs<'gcx>) {
+    fn visit_call(
+        &mut self,
+        span: Span,
+        def_id: DefId,
+        substs: &'gcx Substs<'gcx>,
+        args: &[Operand<'gcx>],
+    ) {
+        let has_param_type_argument = args
+            .iter()
+            .any(|arg| arg.ty(self.mir, self.tcx).has_param_types());
         match Instance::resolve(self.tcx, self.param_env, def_id, substs) {
-            None => {
-                self.record_dependency(span, substs, DependencyKind::TraitMethod);
-            }
-
+            None => self.record_dependency(span, substs, DependencyKind::TraitMethod),
             Some(instance) => match instance.def {
-                InstanceDef::Item(def_id) => {
-                    self.record_call(span, def_id, substs);
-                }
-                _ => {
-                    self.record_dependency(span, substs, DependencyKind::TraitMethod);
-                }
+                InstanceDef::Item(def_id) if has_param_type_argument =>
+                    self.record_call(span, def_id, substs),
+                InstanceDef::Item(..) => {},
+                _ => self.record_dependency(span, substs, DependencyKind::TraitMethod),
             },
         }
     }
@@ -241,9 +267,15 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
             TerminatorKind::DropAndReplace { .. } => {}
             TerminatorKind::Call {
                 func,
+                args,
                 ..
             } => match func.ty(self.mir, self.tcx).sty {
-                ty::FnDef(def_id, substs) => self.visit_call(self.mir.source_info(location).span, def_id, substs),
+                ty::FnDef(def_id, substs) => self.visit_call(
+                    self.mir.source_info(location).span,
+                    def_id,
+                    substs,
+                    args,
+                ),
                 ty::FnPtr(..) => (), // not interesting
                 _ => unimplemented!(),
             },
@@ -283,16 +315,17 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
                     elem: ProjectionElem::Deref,
                 }) = place {
                     let ty = base.ty(self.mir, self.tcx).to_ty(self.tcx);
-                    debug!("visit_operand: ty={:?}", ty);
-                    if let ty::TyKind::Ref(_, ref_ty, _) = ty.sty {
-                        if let ty::TyKind::Param(_) = ref_ty.sty {
-                            debug!("visit_operand: recording dependency");
-                            self.record_dependency(
-                                self.mir.source_info(location).span,
-                                ref_ty,
-                                DependencyKind::SizeAlignment,
-                            );
-                        }
+                    debug!(
+                        "visit_operand: ty={:?} ty.has_param_types()={:?}",
+                        ty, ty.has_param_types()
+                    );
+                    if ty.has_param_types() {
+                        debug!("visit_operand: recording dependency");
+                        self.record_dependency(
+                            self.mir.source_info(location).span,
+                            ty,
+                            DependencyKind::SizeAlignment,
+                        );
                     }
                 }
             },
