@@ -15,8 +15,20 @@ LL | |     t
 LL | | }
    | |_^
 
-error: some polymorphic dependencies found
+error: no polymorphic dependencies found
   --> $DIR/polymorphize.rs:16:1
+   |
+LL | / fn dependency_because_unsized_pointer<T: ?Sized>(t: &T) -> &T {
+LL | |     //~^ ERROR no polymorphic dependencies found
+LL | |     //
+LL | |     // FIXME-- we do depend on `T`, because size of `&T` depends on knowning whether
+LL | |     // `T` is sized or not
+LL | |     t
+LL | | }
+   | |_^
+
+error: some polymorphic dependencies found
+  --> $DIR/polymorphize.rs:24:1
    |
 LL | / fn depend_size_alignment<T: Copy>(t: &T) -> T {
 LL | |     //~^ ERROR some polymorphic dependencies found
@@ -26,7 +38,7 @@ LL | | }
    | |_^
 
 error: some polymorphic dependencies found
-  --> $DIR/polymorphize.rs:21:1
+  --> $DIR/polymorphize.rs:29:1
    |
 LL |       *t
    |       -- depends on type `T/#0` for `SizeAlignment`
@@ -34,12 +46,12 @@ LL |       *t
 LL | / fn depend_size_alignment_indirect<T: Copy>(t: &T) -> T {
 LL | |     //~^ ERROR some polymorphic dependencies found
 LL | |     depend_size_alignment(t)
-   | |     ------------------------ invokes `DefId(0/0:5 ~ polymorphize[317d]::depend_size_alignment[0])` with substitutions `[T]`
+   | |     ------------------------ invokes `DefId(0/0:6 ~ polymorphize[317d]::depend_size_alignment[0])` with substitutions `[T]`
 LL | | }
    | |_^
 
 error: no polymorphic dependencies found
-  --> $DIR/polymorphize.rs:26:1
+  --> $DIR/polymorphize.rs:34:1
    |
 LL | / fn no_dependency_indirect<T: Copy>(t: &T) -> u32 {
 LL | |     //~^ ERROR no polymorphic dependencies found
@@ -48,7 +60,7 @@ LL | | }
    | |_^
 
 error: some polymorphic dependencies found
-  --> $DIR/polymorphize.rs:31:1
+  --> $DIR/polymorphize.rs:39:1
    |
 LL | / fn depend_trait_dispatch<T: Clone>(t: &T) -> T {
 LL | |     //~^ ERROR some polymorphic dependencies found
@@ -58,7 +70,7 @@ LL | | }
    | |_^
 
 error: some polymorphic dependencies found
-  --> $DIR/polymorphize.rs:36:1
+  --> $DIR/polymorphize.rs:44:1
    |
 LL |       t.clone()
    |       --------- depends on type `T/#0` for `TraitMethod`
@@ -66,17 +78,17 @@ LL |       t.clone()
 LL | / fn depend_trait_dispatch_indirect<T: Clone>(t: &T) -> T {
 LL | |     //~^ ERROR some polymorphic dependencies found
 LL | |     depend_trait_dispatch(t)
-   | |     ------------------------ invokes `DefId(0/0:8 ~ polymorphize[317d]::depend_trait_dispatch[0])` with substitutions `[T]`
+   | |     ------------------------ invokes `DefId(0/0:9 ~ polymorphize[317d]::depend_trait_dispatch[0])` with substitutions `[T]`
 LL | | }
    | |_^
 
 error: no polymorphic dependencies found
-  --> $DIR/polymorphize.rs:41:1
+  --> $DIR/polymorphize.rs:49:1
    |
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found
 LL | | }
    | |_^
 
-error: aborting due to 8 previous errors
+error: aborting due to 9 previous errors
 
