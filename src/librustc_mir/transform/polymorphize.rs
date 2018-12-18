@@ -23,13 +23,12 @@ use rustc::mir::{Place, PlaceElem};
 use rustc::mir::{Rvalue, Statement, StatementKind};
 use rustc::ty::fold::TypeFoldable;
 use rustc::ty::fold::TypeVisitor;
-use rustc::ty::subst::Substs;
+use rustc::ty::subst::{Substs, UnpackedKind};
 use rustc::ty::Instance;
 use rustc::ty::InstanceDef;
 use rustc::ty::layout::SizeSkeleton;
 use rustc::ty::{self, Ty, TyCtxt};
 use std::collections::BTreeMap;
-use smallvec::SmallVec;
 use syntax_pos::Span;
 
 pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
@@ -43,22 +42,31 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
         .collect();
 
     for mir_def_id in tcx.body_owners() {
-        let visitor = &visitors[&mir_def_id];
-        let mut dependencies: SmallVec<[Dependency; 256]> = SmallVec::new();
         debug!("polymorphize_analysis: (interfunction propagation) mir_def_id={:?}", mir_def_id);
-        for call_edge in &visitor.call_edges {
-            debug!("polymorphize_analysis: call_edge.callee={:?}", call_edge.callee);
-            let callee_visitor = &visitors[&call_edge.callee];
-            if callee_visitor.dependencies.is_empty() {
-                debug!("polymorphize_analysis: no dependencies");
-                continue;
-            }
 
-            dependencies.extend_from_slice(&callee_visitor.dependencies);
+        // Need to create a fresh copy of the visitor for this Mir so that we can add to it and
+        // avoid borrow checking errors - not great.
+        let mut fresh = visitors[&mir_def_id].clone();
+
+        for call_edge in &visitors[&mir_def_id].call_edges {
+            debug!("polymorphize_analysis: call_edge.callee={:?}", call_edge.callee);
+            for dependency in &visitors[&call_edge.callee].dependencies {
+                debug!("polymorphize_analysis: dependency={:?}", dependency);
+                let unpacked_kind = call_edge.substs
+                    .type_for_def(
+                        tcx
+                        .generics_of(call_edge.callee)
+                        .type_param(&dependency.param_ty, tcx)
+                    ).unpack();
+                debug!("polymorphize_analysis: unpacked_kind={:?}", unpacked_kind);
+                if let UnpackedKind::Type(ty) = unpacked_kind {
+                    fresh.visit_ty(ty, dependency.span, dependency.kind);
+                }
+            }
         }
 
         visitors.entry(mir_def_id).and_modify(|visitor| {
-            visitor.dependencies.extend_from_slice(&dependencies);
+            *visitor = fresh;
         });
     }
 
@@ -97,6 +105,7 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
     }
 }
 
+#[derive(Clone)]
 struct DependencyVisitor<'me, 'gcx> {
     mir: &'me Mir<'gcx>,
     param_env: ty::ParamEnv<'gcx>,
@@ -123,7 +132,7 @@ pub enum DependencyKind {
     TraitMethod,
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 struct CallEdge<'gcx> {
     span: Span,
     callee: DefId,
@@ -201,19 +210,30 @@ impl DependencyVisitor<'me, 'gcx> {
         span: Span,
         def_id: DefId,
         substs: &'gcx Substs<'gcx>,
-        args: &[Operand<'gcx>],
     ) {
-        let has_param_type_argument = args
-            .iter()
-            .any(|arg| arg.ty(self.mir, self.tcx).has_param_types());
         match Instance::resolve(self.tcx, self.param_env, def_id, substs) {
             None => self.record_dependency(span, substs, DependencyKind::TraitMethod),
             Some(instance) => match instance.def {
-                InstanceDef::Item(def_id) if has_param_type_argument =>
-                    self.record_call(span, def_id, substs),
-                InstanceDef::Item(..) => {},
+                InstanceDef::Item(def_id) => self.record_call(span, def_id, substs),
                 _ => self.record_dependency(span, substs, DependencyKind::TraitMethod),
             },
+        }
+    }
+
+    fn visit_ty(&mut self, ty: Ty<'gcx>, span: Span, kind: DependencyKind) {
+        debug!("visit_ty: ty={:?} ty.has_param_types()={:?}", ty, ty.has_param_types());
+        if !ty.has_param_types() {
+            return;
+        }
+
+        match SizeSkeleton::compute(ty, self.tcx, self.param_env) {
+            Ok(SizeSkeleton::Known(_)) => {
+                debug!("visit_ty: known size, skipping");
+            },
+            _ =>  {
+                debug!("visit_ty: recording dependency");
+                self.record_dependency(span, ty, kind);
+            }
         }
     }
 }
@@ -270,14 +290,12 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
             TerminatorKind::DropAndReplace { .. } => {}
             TerminatorKind::Call {
                 func,
-                args,
                 ..
             } => match func.ty(self.mir, self.tcx).sty {
                 ty::FnDef(def_id, substs) => self.visit_call(
                     self.mir.source_info(location).span,
                     def_id,
                     substs,
-                    args,
                 ),
                 ty::FnPtr(..) => (), // not interesting
                 _ => unimplemented!(),
@@ -315,28 +333,12 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
         match operand {
             Operand::Copy(place) | Operand::Move(place) => {
                 let ty = place.ty(self.mir, self.tcx).to_ty(self.tcx);
-                debug!(
-                    "visit_operand: place={:?} ty={:?} ty.has_param_types()={:?}",
-                    place, ty, ty.has_param_types(),
+                debug!("visit_operand: place={:?}", place);
+                self.visit_ty(
+                    ty,
+                    self.mir.source_info(location).span,
+                    DependencyKind::SizeAlignment
                 );
-
-                if !ty.has_param_types() {
-                    return;
-                }
-
-                match SizeSkeleton::compute(ty, self.tcx, self.param_env) {
-                    Ok(SizeSkeleton::Known(_)) => {
-                        debug!("visit_operand: known size, skipping");
-                    },
-                    _ =>  {
-                        debug!("visit_operand: recording dependency");
-                        self.record_dependency(
-                            self.mir.source_info(location).span,
-                            ty,
-                            DependencyKind::SizeAlignment,
-                        );
-                    }
-                }
             },
             Operand::Constant(..) => (),
         }

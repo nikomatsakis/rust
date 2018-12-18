@@ -54,6 +54,7 @@ error: no polymorphic dependencies found
 LL | / fn no_dependency_indirect<T: Copy>(t: &T) -> u32 {
 LL | |     //~^ ERROR no polymorphic dependencies found
 LL | |     depend_size_alignment(&22)
+   | |     -------------------------- invokes `DefId(0/0:6 ~ polymorphize[317d]::depend_size_alignment[0])` with substitutions `[u32]`
 LL | | }
    | |_^
 
