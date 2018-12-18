@@ -33,16 +33,6 @@ fn no_dependency_indirect<T: Copy>(t: &T) -> u32 {
     depend_size_alignment(&22)
 }
 
-fn depend_trait_dispatch<T: Clone>(t: &T) -> T {
-    //~^ ERROR some polymorphic dependencies found
-    t.clone()
-}
-
-fn depend_trait_dispatch_indirect<T: Clone>(t: &T) -> T {
-    //~^ ERROR some polymorphic dependencies found
-    depend_trait_dispatch(t)
-}
-
 fn main() {
     //~^ ERROR no polymorphic dependencies found
 }
