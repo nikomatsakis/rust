@@ -7,41 +7,42 @@ LL | |     t
 LL | | }
    | |_^
 
-error: no polymorphic dependencies found
+error: some polymorphic dependencies found
   --> $DIR/polymorphize_sized.rs:16:1
    |
 LL | / fn dependency_because_unsized_pointer<T: ?Sized>(t: &T) -> &T {
-LL | |     //~^ ERROR no polymorphic dependencies found
-LL | |     //
-LL | |     // FIXME-- we do depend on `T`, because size of `&T` depends on knowning whether
-LL | |     // `T` is sized or not
+LL | |     //~^ ERROR some polymorphic dependencies found
 LL | |     t
+   | |     - depends on type `T/#0` for `SizeAlignment`
 LL | | }
    | |_^
 
-error: no polymorphic dependencies found
-  --> $DIR/polymorphize_sized.rs:24:1
+error: some polymorphic dependencies found
+  --> $DIR/polymorphize_sized.rs:21:1
    |
 LL | / fn dependency_because_embed_ref_unsized<T: ?Sized>(t: &T) -> EmbedRef<'_, T> {
-LL | |     //~^ ERROR no polymorphic dependencies found
-LL | |     //
-LL | |     // FIXME-- we do depend on `T`, because size of `&T` depends on knowning whether
-LL | |     // `T` is sized or not
+LL | |     //~^ ERROR some polymorphic dependencies found
 LL | |     EmbedRef { t }
+   | |     --------------
+   | |     |          |
+   | |     |          depends on type `T/#0` for `SizeAlignment`
+   | |     depends on type `T/#0` for `SizeAlignment`
 LL | | }
    | |_^
 
 error: no polymorphic dependencies found
-  --> $DIR/polymorphize_sized.rs:32:1
+  --> $DIR/polymorphize_sized.rs:26:1
    |
 LL | / fn dependency_because_embed_ref_sized<T>(t: &T) -> EmbedRef<'_, T> {
 LL | |     //~^ ERROR no polymorphic dependencies found
+LL | |     //
+LL | |     // Here, the size of `EmbedRef` is known up front.
 LL | |     EmbedRef { t }
 LL | | }
    | |_^
 
 error: no polymorphic dependencies found
-  --> $DIR/polymorphize_sized.rs:37:1
+  --> $DIR/polymorphize_sized.rs:33:1
    |
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found

@@ -15,20 +15,18 @@ LL | |     t
 LL | | }
    | |_^
 
-error: no polymorphic dependencies found
+error: some polymorphic dependencies found
   --> $DIR/polymorphize.rs:16:1
    |
 LL | / fn dependency_because_unsized_pointer<T: ?Sized>(t: &T) -> &T {
-LL | |     //~^ ERROR no polymorphic dependencies found
-LL | |     //
-LL | |     // FIXME-- we do depend on `T`, because size of `&T` depends on knowning whether
-LL | |     // `T` is sized or not
+LL | |     //~^ ERROR some polymorphic dependencies found
 LL | |     t
+   | |     - depends on type `T/#0` for `SizeAlignment`
 LL | | }
    | |_^
 
 error: some polymorphic dependencies found
-  --> $DIR/polymorphize.rs:24:1
+  --> $DIR/polymorphize.rs:21:1
    |
 LL | / fn depend_size_alignment<T: Copy>(t: &T) -> T {
 LL | |     //~^ ERROR some polymorphic dependencies found
@@ -38,7 +36,7 @@ LL | | }
    | |_^
 
 error: some polymorphic dependencies found
-  --> $DIR/polymorphize.rs:29:1
+  --> $DIR/polymorphize.rs:26:1
    |
 LL |       *t
    |       -- depends on type `T/#0` for `SizeAlignment`
@@ -51,7 +49,7 @@ LL | | }
    | |_^
 
 error: no polymorphic dependencies found
-  --> $DIR/polymorphize.rs:34:1
+  --> $DIR/polymorphize.rs:31:1
    |
 LL | / fn no_dependency_indirect<T: Copy>(t: &T) -> u32 {
 LL | |     //~^ ERROR no polymorphic dependencies found
@@ -60,7 +58,7 @@ LL | | }
    | |_^
 
 error: some polymorphic dependencies found
-  --> $DIR/polymorphize.rs:39:1
+  --> $DIR/polymorphize.rs:36:1
    |
 LL | / fn depend_trait_dispatch<T: Clone>(t: &T) -> T {
 LL | |     //~^ ERROR some polymorphic dependencies found
@@ -70,7 +68,7 @@ LL | | }
    | |_^
 
 error: some polymorphic dependencies found
-  --> $DIR/polymorphize.rs:44:1
+  --> $DIR/polymorphize.rs:41:1
    |
 LL |       t.clone()
    |       --------- depends on type `T/#0` for `TraitMethod`
@@ -83,7 +81,7 @@ LL | | }
    | |_^
 
 error: no polymorphic dependencies found
-  --> $DIR/polymorphize.rs:49:1
+  --> $DIR/polymorphize.rs:46:1
    |
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found

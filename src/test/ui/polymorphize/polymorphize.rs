@@ -14,10 +14,7 @@ fn no_dependency_because_pointer<T>(t: &T) -> &T {
 }
 
 fn dependency_because_unsized_pointer<T: ?Sized>(t: &T) -> &T {
-    //~^ ERROR no polymorphic dependencies found
-    //
-    // FIXME-- we do depend on `T`, because size of `&T` depends on knowning whether
-    // `T` is sized or not
+    //~^ ERROR some polymorphic dependencies found
     t
 }
 

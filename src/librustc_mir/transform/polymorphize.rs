@@ -19,13 +19,14 @@ use rustc::mir::BasicBlock;
 use rustc::mir::Location;
 use rustc::mir::TerminatorKind;
 use rustc::mir::{Mir, Operand, ProjectionElem};
-use rustc::mir::{Place, PlaceElem, PlaceProjection};
+use rustc::mir::{Place, PlaceElem};
 use rustc::mir::{Rvalue, Statement, StatementKind};
 use rustc::ty::fold::TypeFoldable;
 use rustc::ty::fold::TypeVisitor;
 use rustc::ty::subst::Substs;
 use rustc::ty::Instance;
 use rustc::ty::InstanceDef;
+use rustc::ty::layout::SizeSkeleton;
 use rustc::ty::{self, Ty, TyCtxt};
 use std::collections::BTreeMap;
 use smallvec::SmallVec;
@@ -131,6 +132,7 @@ struct CallEdge<'gcx> {
 
 impl DependencyVisitor<'me, 'gcx> {
     fn new(tcx: TyCtxt<'me, 'gcx, 'gcx>, mir_def_id: DefId) -> Self {
+        debug!("new: mir_def_id={:?}", mir_def_id);
         let mir = tcx.optimized_mir(mir_def_id);
         let param_env = tcx.param_env(mir_def_id);
         let mut visitor = Self {
@@ -235,6 +237,7 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
         statement: &Statement<'gcx>,
         location: Location,
     ) {
+        debug!("visit_statement: statement={:?} location={:?}", statement, location);
         match statement.kind {
             StatementKind::Assign(..) => (),
             StatementKind::FakeRead(..) => (),
@@ -290,6 +293,7 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
     }
 
     fn visit_rvalue(&mut self, rvalue: &Rvalue<'gcx>, location: Location) {
+        debug!("visit_rvalue: rvalue={:?} location={:?}", rvalue, location);
         match rvalue {
             Rvalue::Use(..) => (),
             Rvalue::Repeat(..) => (),
@@ -307,19 +311,24 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
     }
 
     fn visit_operand(&mut self, operand: &Operand<'gcx>, location: Location) {
+        debug!("visit_operand: operand={:?} location={:?}", operand, location);
         match operand {
             Operand::Copy(place) | Operand::Move(place) => {
-                debug!("visit_operand: place={:?}", place);
-                if let Place::Projection(box PlaceProjection {
-                    base,
-                    elem: ProjectionElem::Deref,
-                }) = place {
-                    let ty = base.ty(self.mir, self.tcx).to_ty(self.tcx);
-                    debug!(
-                        "visit_operand: ty={:?} ty.has_param_types()={:?}",
-                        ty, ty.has_param_types()
-                    );
-                    if ty.has_param_types() {
+                let ty = place.ty(self.mir, self.tcx).to_ty(self.tcx);
+                debug!(
+                    "visit_operand: place={:?} ty={:?} ty.has_param_types()={:?}",
+                    place, ty, ty.has_param_types(),
+                );
+
+                if !ty.has_param_types() {
+                    return;
+                }
+
+                match SizeSkeleton::compute(ty, self.tcx, self.param_env) {
+                    Ok(SizeSkeleton::Known(_)) => {
+                        debug!("visit_operand: known size, skipping");
+                    },
+                    _ =>  {
                         debug!("visit_operand: recording dependency");
                         self.record_dependency(
                             self.mir.source_info(location).span,
