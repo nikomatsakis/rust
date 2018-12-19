@@ -15,13 +15,7 @@ fn depend_trait_dispatch_indirect<T: Clone>(t: &T) -> T {
 }
 
 fn depend_trait_dispatch_ref_indirect<T: Clone>(t: &T) -> &T {
-    //~^ ERROR no polymorphic dependencies found
-    //
-    // FIXME this should be a dependency, but right now we see that we
-    // are invoking `depend_trait_dispatch` with a type parameter of
-    // `&T`, and that has a fixed size (which isn't really relevant)
-    // so we skip it.
-
+    //~^ ERROR some polymorphic dependencies found
     depend_trait_dispatch::<&T>(&t)
 }
 

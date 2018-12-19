@@ -13,7 +13,7 @@ error: some polymorphic dependencies found
 LL | / fn dependency_because_unsized_pointer<T: ?Sized>(t: &T) -> &T {
 LL | |     //~^ ERROR some polymorphic dependencies found
 LL | |     t
-   | |     - depends on type `T/#0` for `SizeAlignment`
+   | |     - depends on `SizeAlignment(&T)`
 LL | | }
    | |_^
 
@@ -23,10 +23,7 @@ error: some polymorphic dependencies found
 LL | / fn dependency_because_embed_ref_unsized<T: ?Sized>(t: &T) -> EmbedRef<'_, T> {
 LL | |     //~^ ERROR some polymorphic dependencies found
 LL | |     EmbedRef { t }
-   | |     --------------
-   | |     |          |
-   | |     |          depends on type `T/#0` for `SizeAlignment`
-   | |     depends on type `T/#0` for `SizeAlignment`
+   | |                - depends on `SizeAlignment(&T)`
 LL | | }
    | |_^
 
@@ -41,16 +38,13 @@ LL | |     EmbedRef { t }
 LL | | }
    | |_^
 
-error: some polymorphic dependencies found
+error: no polymorphic dependencies found
   --> $DIR/polymorphize_sized.rs:33:1
    |
-LL |       t
-   |       - depends on type `T/#0` for `SizeAlignment`
-...
 LL | / fn dependency_because_unsized_pointer_indirect<T>(t: &T) {
 LL | |     //~^ ERROR no polymorphic dependencies found
-LL | |     dependency_because_unsized_pointer(t);
-   | |     ------------------------------------- invokes `DefId(0/0:5 ~ polymorphize_sized[317d]::dependency_because_unsized_pointer[0])` with substitutions `[T]`
+LL | |     dependency_because_unsized_pointer::<T>(t);
+   | |     ------------------------------------------ invokes `DefId(0/0:5 ~ polymorphize_sized[317d]::dependency_because_unsized_pointer[0])` with substitutions `[T]`
 LL | | }
    | |_^
 

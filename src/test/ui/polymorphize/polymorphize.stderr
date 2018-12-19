@@ -21,7 +21,7 @@ error: some polymorphic dependencies found
 LL | / fn dependency_because_unsized_pointer<T: ?Sized>(t: &T) -> &T {
 LL | |     //~^ ERROR some polymorphic dependencies found
 LL | |     t
-   | |     - depends on type `T/#0` for `SizeAlignment`
+   | |     - depends on `SizeAlignment(&T)`
 LL | | }
    | |_^
 
@@ -31,7 +31,7 @@ error: some polymorphic dependencies found
 LL | / fn depend_size_alignment<T: Copy>(t: &T) -> T {
 LL | |     //~^ ERROR some polymorphic dependencies found
 LL | |     *t
-   | |     -- depends on type `T/#0` for `SizeAlignment`
+   | |     -- depends on `SizeAlignment(T)`
 LL | | }
    | |_^
 
@@ -39,7 +39,7 @@ error: some polymorphic dependencies found
   --> $DIR/polymorphize.rs:26:1
    |
 LL |       *t
-   |       -- depends on type `T/#0` for `SizeAlignment`
+   |       -- depends on `SizeAlignment(T)`
 ...
 LL | / fn depend_size_alignment_indirect<T: Copy>(t: &T) -> T {
 LL | |     //~^ ERROR some polymorphic dependencies found

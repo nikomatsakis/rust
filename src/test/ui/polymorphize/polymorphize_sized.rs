@@ -31,12 +31,7 @@ fn dependency_because_embed_ref_sized<T>(t: &T) -> EmbedRef<'_, T> {
 }
 
 fn dependency_because_unsized_pointer_indirect<T>(t: &T) {
-    //~^ ERROR some polymorphic dependencies found
-    //
-    // FIXME -- Here, we know that `T: Sized`, and really that is all
-    // that is needed to resolve the sizes for types in
-    // `dependency_because_unsized_pointer`, but because we are
-    // imprecise, we don't figure that out.
+    //~^ ERROR no polymorphic dependencies found
     dependency_because_unsized_pointer::<T>(t);
 }
 
