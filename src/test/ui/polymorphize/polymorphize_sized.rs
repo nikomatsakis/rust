@@ -30,8 +30,12 @@ fn dependency_because_embed_ref_sized<T>(t: &T) -> EmbedRef<'_, T> {
     EmbedRef { t }
 }
 
-fn dependency_because_unsized_pointer_indirect<T>(t: &T) {
+fn no_dependency_because_unsized_pointer_indirect<T>(t: &T) {
     //~^ ERROR no polymorphic dependencies found
+
+    // Although `dependency_because_unsized_pointer` has a dependency
+    // (as T is not known to be sized), *this* function knows that `T`
+    // is sized, and that's good enough.
     dependency_because_unsized_pointer::<T>(t);
 }
 
