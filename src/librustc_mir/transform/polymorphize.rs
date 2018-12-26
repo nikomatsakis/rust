@@ -15,7 +15,7 @@
 use rustc::hir::def_id::DefId;
 use rustc::mir::visit as mir_visit;
 use rustc::mir::visit::Visitor;
-use rustc::mir::BasicBlock;
+use rustc::mir::{BasicBlock, Field};
 use rustc::mir::Location;
 use rustc::mir::TerminatorKind;
 use rustc::mir::{Mir, Operand, ProjectionElem};
@@ -139,6 +139,10 @@ pub enum DependencyKind<'gcx> {
     /// this can occur when e.g. a value of this type.
     SizeAlignment(Ty<'gcx>),
 
+    /// We depend on the offset of a field in order to access it, this
+    /// depends on the size of an earlier field that is a type parameter.
+    OffsetOf(Ty<'gcx>, Field),
+
     /// An unresolved instance
     TraitMethod(DefId, &'gcx Substs<'gcx>),
 
@@ -156,6 +160,7 @@ BraceStructTypeFoldableImpl! {
 EnumTypeFoldableImpl! {
     impl<'tcx> TypeFoldable<'tcx> for DependencyKind<'tcx> {
         (DependencyKind::SizeAlignment)(a),
+        (DependencyKind::OffsetOf)(a, b),
         (DependencyKind::TraitMethod)(a, b),
         (DependencyKind::OtherMethod)(a),
     }
@@ -230,14 +235,14 @@ impl DependencyVisitor<'me, 'gcx> {
 
     fn record_dependency(&mut self, span: Span, kind: DependencyKind<'gcx>) -> bool {
         match kind {
-            DependencyKind::SizeAlignment(ty) => {
+            DependencyKind::OffsetOf(ty, _) | DependencyKind::SizeAlignment(ty) => {
                 match SizeSkeleton::compute(ty, self.tcx, self.param_env) {
                     Ok(SizeSkeleton::Known(_)) => {
-                        debug!("visit_ty: known size, skipping");
+                        debug!("record_dependency: known size, skipping");
                         false
                     }
                     _ => {
-                        debug!("visit_ty: recording dependency");
+                        debug!("record_dependency: recording dependency");
                         self.push_dependency_if_new(span, kind)
                     }
                 }
@@ -393,16 +398,18 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
             Place::Static(..) => (),
             Place::Promoted(..) => (),
             Place::Projection(proj) => match proj.elem {
-                ProjectionElem::Field(..) => {
+                ProjectionElem::Field(field, _) => {
                     let ty = proj.base.ty(self.mir, self.tcx).to_ty(self.tcx);
                     match self.tcx.layout_of(self.param_env.and(ty)) {
                         Ok(..) => (),
                         Err(LayoutError::SizeOverflow(..)) => (),
-                        Err(LayoutError::Unknown(ty)) => {
-                            self.record_dependency(
-                                self.mir.source_info(location).span,
-                                DependencyKind::SizeAlignment(ty),
-                            );
+                        Err(LayoutError::Unknown(unknown_ty)) => {
+                            if let ty::TyKind::Param(_) = unknown_ty.sty {
+                                self.record_dependency(
+                                    self.mir.source_info(location).span,
+                                    DependencyKind::OffsetOf(ty, field),
+                                );
+                            }
                         },
                     }
                 },

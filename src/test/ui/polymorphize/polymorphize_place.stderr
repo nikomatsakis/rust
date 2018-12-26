@@ -4,7 +4,7 @@ error: some polymorphic dependencies found
 LL | / fn dependency_because_offset_depends_on_T<T>(parameter: &OffsetDependent<T>) -> u32 {
 LL | |     //~^ ERROR some polymorphic dependencies found
 LL | |     parameter.count
-   | |     --------------- depends on `SizeAlignment(T)`
+   | |     --------------- depends on `OffsetOf(OffsetDependent<T>, field[1])`
 LL | | }
    | |_^
 
@@ -14,7 +14,7 @@ error: some polymorphic dependencies found
 LL | / fn dependency_because_offset_depends_on_T_sized<T: ?Sized>(parameter: &OffsetDependent<&T>) -> u32 {
 LL | |     //~^ ERROR some polymorphic dependencies found
 LL | |     parameter.count
-   | |     --------------- depends on `SizeAlignment(T)`
+   | |     --------------- depends on `OffsetOf(OffsetDependent<&T>, field[1])`
 LL | | }
    | |_^
 
