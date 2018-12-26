@@ -22,7 +22,7 @@ use rustc::mir::{Mir, Operand, ProjectionElem};
 use rustc::mir::{Place, PlaceElem};
 use rustc::mir::{Rvalue, Statement, StatementKind};
 use rustc::ty::fold::TypeFoldable;
-use rustc::ty::layout::SizeSkeleton;
+use rustc::ty::layout::{LayoutError, SizeSkeleton};
 use rustc::ty::subst::Subst;
 use rustc::ty::subst::Substs;
 use rustc::ty::Instance;
@@ -67,7 +67,8 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
                         .map(|dependency| dependency.subst(tcx, call_edge.substs))
                         .collect();
                 } else {
-                    // FIXME: cross-crate dependencies. For now, assume that they depend on...something.
+                    // FIXME: cross-crate dependencies. For now, assume that they depend
+                    // on.. something.
                     substituted_dependencies = vec![Dependency {
                         span: call_edge.span,
                         kind: DependencyKind::OtherMethod(call_edge.substs),
@@ -391,7 +392,22 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
             Place::Local(..) => (),
             Place::Static(..) => (),
             Place::Promoted(..) => (),
-            Place::Projection(..) => (),
+            Place::Projection(proj) => match proj.elem {
+                ProjectionElem::Field(..) => {
+                    let ty = proj.base.ty(self.mir, self.tcx).to_ty(self.tcx);
+                    match self.tcx.layout_of(self.param_env.and(ty)) {
+                        Ok(..) => (),
+                        Err(LayoutError::SizeOverflow(..)) => (),
+                        Err(LayoutError::Unknown(ty)) => {
+                            self.record_dependency(
+                                self.mir.source_info(location).span,
+                                DependencyKind::SizeAlignment(ty),
+                            );
+                        },
+                    }
+                },
+                _ => {},
+            },
         }
         self.super_place(place, context, location);
     }

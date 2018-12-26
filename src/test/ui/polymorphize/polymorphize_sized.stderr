@@ -23,7 +23,10 @@ error: some polymorphic dependencies found
 LL | / fn dependency_because_embed_ref_unsized<T: ?Sized>(t: &T) -> EmbedRef<'_, T> {
 LL | |     //~^ ERROR some polymorphic dependencies found
 LL | |     EmbedRef { t }
-   | |                - depends on `SizeAlignment(&T)`
+   | |     --------------
+   | |     |          |
+   | |     |          depends on `SizeAlignment(&T)`
+   | |     depends on `SizeAlignment(T)`
 LL | | }
    | |_^
 

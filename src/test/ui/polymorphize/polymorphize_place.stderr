@@ -1,27 +1,25 @@
-error: no polymorphic dependencies found
+error: some polymorphic dependencies found
   --> $DIR/polymorphize_place.rs:12:1
    |
 LL | / fn dependency_because_offset_depends_on_T<T>(parameter: &OffsetDependent<T>) -> u32 {
-LL | |     //~^ ERROR no polymorphic dependencies found
-LL | |     //
-LL | |     // FIXME -- the offset of the `count` field depends on size/alignment of `T`
+LL | |     //~^ ERROR some polymorphic dependencies found
 LL | |     parameter.count
+   | |     --------------- depends on `SizeAlignment(T)`
 LL | | }
    | |_^
 
-error: no polymorphic dependencies found
-  --> $DIR/polymorphize_place.rs:19:1
+error: some polymorphic dependencies found
+  --> $DIR/polymorphize_place.rs:17:1
    |
 LL | / fn dependency_because_offset_depends_on_T_sized<T: ?Sized>(parameter: &OffsetDependent<&T>) -> u32 {
-LL | |     //~^ ERROR no polymorphic dependencies found
-LL | |     //
-LL | |     // FIXME -- the offset of the `count` field depends on whether `T` is sized
+LL | |     //~^ ERROR some polymorphic dependencies found
 LL | |     parameter.count
+   | |     --------------- depends on `SizeAlignment(T)`
 LL | | }
    | |_^
 
 error: no polymorphic dependencies found
-  --> $DIR/polymorphize_place.rs:26:1
+  --> $DIR/polymorphize_place.rs:22:1
    |
 LL | / fn no_dependency_because_offset<T>(parameter: &OffsetDependent<&T>) -> u32 {
 LL | |     //~^ ERROR no polymorphic dependencies found
@@ -32,7 +30,7 @@ LL | | }
    | |_^
 
 error: no polymorphic dependencies found
-  --> $DIR/polymorphize_place.rs:33:1
+  --> $DIR/polymorphize_place.rs:29:1
    |
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found

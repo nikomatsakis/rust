@@ -10,16 +10,12 @@ struct OffsetDependent<T> {
 }
 
 fn dependency_because_offset_depends_on_T<T>(parameter: &OffsetDependent<T>) -> u32 {
-    //~^ ERROR no polymorphic dependencies found
-    //
-    // FIXME -- the offset of the `count` field depends on size/alignment of `T`
+    //~^ ERROR some polymorphic dependencies found
     parameter.count
 }
 
 fn dependency_because_offset_depends_on_T_sized<T: ?Sized>(parameter: &OffsetDependent<&T>) -> u32 {
-    //~^ ERROR no polymorphic dependencies found
-    //
-    // FIXME -- the offset of the `count` field depends on whether `T` is sized
+    //~^ ERROR some polymorphic dependencies found
     parameter.count
 }
 
