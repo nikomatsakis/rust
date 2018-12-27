@@ -15,9 +15,9 @@
 use rustc::hir::def_id::DefId;
 use rustc::mir::visit as mir_visit;
 use rustc::mir::visit::Visitor;
-use rustc::mir::{BasicBlock, Field};
 use rustc::mir::Location;
 use rustc::mir::TerminatorKind;
+use rustc::mir::{BasicBlock, Field};
 use rustc::mir::{Mir, Operand, ProjectionElem};
 use rustc::mir::{Place, PlaceElem};
 use rustc::mir::{Rvalue, Statement, StatementKind};
@@ -88,33 +88,35 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
         }
     }
 
-    for (_, visitor) in &visitors {
-        let message = if visitor.dependencies.is_empty() {
-            "no polymorphic dependencies found"
-        } else {
-            "some polymorphic dependencies found"
-        };
+    if tcx.sess.opts.debugging_opts.polymorphize_dump {
+        for (_, visitor) in &visitors {
+            let message = if visitor.dependencies.is_empty() {
+                "no polymorphic dependencies found"
+            } else {
+                "some polymorphic dependencies found"
+            };
 
-        let mut err = tcx.sess.struct_span_err(visitor.mir.span, message);
+            let mut err = tcx.sess.struct_span_err(visitor.mir.span, message);
 
-        for dependency in &visitor.dependencies {
-            err.span_label(
-                dependency.span,
-                format!("depends on `{:?}`", dependency.kind),
-            );
+            for dependency in &visitor.dependencies {
+                err.span_label(
+                    dependency.span,
+                    format!("depends on `{:?}`", dependency.kind),
+                );
+            }
+
+            for call_edge in &visitor.call_edges {
+                err.span_label(
+                    call_edge.span,
+                    format!(
+                        "invokes `{:?}` with substitutions `{:?}`",
+                        call_edge.callee, call_edge.substs
+                    ),
+                );
+            }
+
+            err.emit();
         }
-
-        for call_edge in &visitor.call_edges {
-            err.span_label(
-                call_edge.span,
-                format!(
-                    "invokes `{:?}` with substitutions `{:?}`",
-                    call_edge.callee, call_edge.substs
-                ),
-            );
-        }
-
-        err.emit();
     }
 }
 
@@ -410,10 +412,10 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
                                     DependencyKind::OffsetOf(ty, field),
                                 );
                             }
-                        },
+                        }
                     }
-                },
-                _ => {},
+                }
+                _ => {}
             },
         }
         self.super_place(place, context, location);
