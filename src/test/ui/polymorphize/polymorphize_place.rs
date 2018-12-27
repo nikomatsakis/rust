@@ -1,6 +1,7 @@
 // Simple test for the polymorphize analysis code.
 //
-// compile-flags: -Zpolymorphize -Zpolymorphize-dump 
+// compile-flags: -Zpolymorphize -Zpolymorphize-dump
+// compile-pass
 
 #![allow(warnings)]
 
@@ -28,4 +29,13 @@ fn no_dependency_because_offset<T>(parameter: &OffsetDependent<&T>) -> u32 {
 
 fn main() {
     //~^ ERROR no polymorphic dependencies found
+    no_dependency_because_offset::<u32>(&OffsetDependent { t: &22, count: 2 });
+    no_dependency_because_offset::<u16>(&OffsetDependent { t: &22, count: 2 });
+
+    dependency_because_offset_depends_on_T_sized::<u32>(&OffsetDependent { t: &22, count: 2 });
+    dependency_because_offset_depends_on_T_sized::<u16>(&OffsetDependent { t: &22, count: 2 });
+    dependency_because_offset_depends_on_T_sized::<str>(&OffsetDependent { t: "foo", count: 2 });
+
+    dependency_because_offset_depends_on_T::<u32>(&OffsetDependent { t: 22, count: 2 });
+    dependency_because_offset_depends_on_T::<u16>(&OffsetDependent { t: 22, count: 2 });
 }

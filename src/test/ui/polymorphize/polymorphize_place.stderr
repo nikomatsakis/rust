@@ -1,5 +1,5 @@
-error: some polymorphic dependencies found
-  --> $DIR/polymorphize_place.rs:12:1
+warning: some polymorphic dependencies found
+  --> $DIR/polymorphize_place.rs:13:1
    |
 LL | / fn dependency_because_offset_depends_on_T<T>(parameter: &OffsetDependent<T>) -> u32 {
 LL | |     //~^ ERROR some polymorphic dependencies found
@@ -8,8 +8,8 @@ LL | |     parameter.count
 LL | | }
    | |_^
 
-error: some polymorphic dependencies found
-  --> $DIR/polymorphize_place.rs:17:1
+warning: some polymorphic dependencies found
+  --> $DIR/polymorphize_place.rs:18:1
    |
 LL | / fn dependency_because_offset_depends_on_T_sized<T: ?Sized>(parameter: &OffsetDependent<&T>) -> u32 {
 LL | |     //~^ ERROR some polymorphic dependencies found
@@ -18,8 +18,8 @@ LL | |     parameter.count
 LL | | }
    | |_^
 
-error: no polymorphic dependencies found
-  --> $DIR/polymorphize_place.rs:22:1
+warning: no polymorphic dependencies found
+  --> $DIR/polymorphize_place.rs:23:1
    |
 LL | / fn no_dependency_because_offset<T>(parameter: &OffsetDependent<&T>) -> u32 {
 LL | |     //~^ ERROR no polymorphic dependencies found
@@ -29,13 +29,35 @@ LL | |     parameter.count
 LL | | }
    | |_^
 
-error: no polymorphic dependencies found
-  --> $DIR/polymorphize_place.rs:29:1
+warning: no polymorphic dependencies found
+  --> $DIR/polymorphize_place.rs:30:1
    |
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found
+LL | |     no_dependency_because_offset::<u32>(&OffsetDependent { t: &22, count: 2 });
+   | |     -------------------------------------------------------------------------- invokes `DefId(0/0:6 ~ polymorphize_place[317d]::no_dependency_because_offset[0])` with substitutions `[u32]`
+LL | |     no_dependency_because_offset::<u16>(&OffsetDependent { t: &22, count: 2 });
+   | |     -------------------------------------------------------------------------- invokes `DefId(0/0:6 ~ polymorphize_place[317d]::no_dependency_because_offset[0])` with substitutions `[u16]`
+LL | |
+LL | |     dependency_because_offset_depends_on_T_sized::<u32>(&OffsetDependent { t: &22, count: 2 });
+   | |     ------------------------------------------------------------------------------------------ invokes `DefId(0/0:5 ~ polymorphize_place[317d]::dependency_because_offset_depends_on_T_sized[0])` with substitutions `[u32]`
+LL | |     dependency_because_offset_depends_on_T_sized::<u16>(&OffsetDependent { t: &22, count: 2 });
+   | |     ------------------------------------------------------------------------------------------ invokes `DefId(0/0:5 ~ polymorphize_place[317d]::dependency_because_offset_depends_on_T_sized[0])` with substitutions `[u16]`
+LL | |     dependency_because_offset_depends_on_T_sized::<str>(&OffsetDependent { t: "foo", count: 2 });
+   | |     -------------------------------------------------------------------------------------------- invokes `DefId(0/0:5 ~ polymorphize_place[317d]::dependency_because_offset_depends_on_T_sized[0])` with substitutions `[str]`
+LL | |
+LL | |     dependency_because_offset_depends_on_T::<u32>(&OffsetDependent { t: 22, count: 2 });
+   | |     ----------------------------------------------------------------------------------- invokes `DefId(0/0:4 ~ polymorphize_place[317d]::dependency_because_offset_depends_on_T[0])` with substitutions `[u32]`
+LL | |     dependency_because_offset_depends_on_T::<u16>(&OffsetDependent { t: 22, count: 2 });
+   | |     ----------------------------------------------------------------------------------- invokes `DefId(0/0:4 ~ polymorphize_place[317d]::dependency_because_offset_depends_on_T[0])` with substitutions `[u16]`
 LL | | }
    | |_^
 
-error: aborting due to 4 previous errors
+note: Monomorphized items: 16
+
+note: Monomorphized size : 81
+
+note: New total items    : 15 ( 94%)
+
+note: New estimated size : 80 ( 99%)
 

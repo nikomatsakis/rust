@@ -1,13 +1,13 @@
-error: no polymorphic dependencies found
-  --> $DIR/polymorphize.rs:7:1
+warning: no polymorphic dependencies found
+  --> $DIR/polymorphize.rs:8:1
    |
 LL | / fn no_use<T>() {
 LL | |     //~^ ERROR no polymorphic dependencies found
 LL | | }
    | |_^
 
-error: no polymorphic dependencies found
-  --> $DIR/polymorphize.rs:11:1
+warning: no polymorphic dependencies found
+  --> $DIR/polymorphize.rs:12:1
    |
 LL | / fn no_dependency_because_pointer<T>(t: &T) -> &T {
 LL | |     //~^ ERROR no polymorphic dependencies found
@@ -15,8 +15,8 @@ LL | |     t
 LL | | }
    | |_^
 
-error: some polymorphic dependencies found
-  --> $DIR/polymorphize.rs:16:1
+warning: some polymorphic dependencies found
+  --> $DIR/polymorphize.rs:17:1
    |
 LL | / fn dependency_because_unsized_pointer<T: ?Sized>(t: &T) -> &T {
 LL | |     //~^ ERROR some polymorphic dependencies found
@@ -25,8 +25,8 @@ LL | |     t
 LL | | }
    | |_^
 
-error: some polymorphic dependencies found
-  --> $DIR/polymorphize.rs:21:1
+warning: some polymorphic dependencies found
+  --> $DIR/polymorphize.rs:22:1
    |
 LL | / fn depend_size_alignment<T: Copy>(t: &T) -> T {
 LL | |     //~^ ERROR some polymorphic dependencies found
@@ -35,8 +35,8 @@ LL | |     *t
 LL | | }
    | |_^
 
-error: some polymorphic dependencies found
-  --> $DIR/polymorphize.rs:26:1
+warning: some polymorphic dependencies found
+  --> $DIR/polymorphize.rs:27:1
    |
 LL |       *t
    |       -- depends on `SizeAlignment(T)`
@@ -48,8 +48,8 @@ LL | |     depend_size_alignment(t)
 LL | | }
    | |_^
 
-error: no polymorphic dependencies found
-  --> $DIR/polymorphize.rs:31:1
+warning: no polymorphic dependencies found
+  --> $DIR/polymorphize.rs:32:1
    |
 LL | / fn no_dependency_indirect<T: Copy>(t: &T) -> u32 {
 LL | |     //~^ ERROR no polymorphic dependencies found
@@ -58,13 +58,19 @@ LL | |     depend_size_alignment(&22)
 LL | | }
    | |_^
 
-error: no polymorphic dependencies found
-  --> $DIR/polymorphize.rs:36:1
+warning: no polymorphic dependencies found
+  --> $DIR/polymorphize.rs:37:1
    |
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found
 LL | | }
    | |_^
 
-error: aborting due to 7 previous errors
+note: Monomorphized items: 9
+
+note: Monomorphized size : 32
+
+note: New total items    : 9 (100%)
+
+note: New estimated size : 32 (100%)
 

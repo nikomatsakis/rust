@@ -1,5 +1,5 @@
-error: some polymorphic dependencies found
-  --> $DIR/polymorphize_trait_dispatch.rs:7:1
+warning: some polymorphic dependencies found
+  --> $DIR/polymorphize_trait_dispatch.rs:8:1
    |
 LL | / fn depend_trait_dispatch<T: Clone>(t: &T) -> T {
 LL | |     //~^ ERROR some polymorphic dependencies found
@@ -8,8 +8,8 @@ LL | |     t.clone()
 LL | | }
    | |_^
 
-error: some polymorphic dependencies found
-  --> $DIR/polymorphize_trait_dispatch.rs:12:1
+warning: some polymorphic dependencies found
+  --> $DIR/polymorphize_trait_dispatch.rs:13:1
    |
 LL |       t.clone()
    |       --------- depends on `TraitMethod(DefId(2/0:1278 ~ core[c653]::clone[0]::Clone[0]::clone[0]), [T])`
@@ -21,8 +21,8 @@ LL | |     depend_trait_dispatch(t)
 LL | | }
    | |_^
 
-error: some polymorphic dependencies found
-  --> $DIR/polymorphize_trait_dispatch.rs:17:1
+warning: some polymorphic dependencies found
+  --> $DIR/polymorphize_trait_dispatch.rs:18:1
    |
 LL |       t.clone()
    |       ---------
@@ -37,13 +37,19 @@ LL | |     depend_trait_dispatch::<&T>(&t)
 LL | | }
    | |_^
 
-error: no polymorphic dependencies found
-  --> $DIR/polymorphize_trait_dispatch.rs:22:1
+warning: no polymorphic dependencies found
+  --> $DIR/polymorphize_trait_dispatch.rs:23:1
    |
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found
 LL | | }
    | |_^
 
-error: aborting due to 4 previous errors
+note: Monomorphized items: 9
+
+note: Monomorphized size : 32
+
+note: New total items    : 9 (100%)
+
+note: New estimated size : 32 (100%)
 

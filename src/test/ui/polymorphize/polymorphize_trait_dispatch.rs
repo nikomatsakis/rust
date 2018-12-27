@@ -1,6 +1,7 @@
 // Tests focused on trait dispatch.
 //
 // compile-flags: -Zpolymorphize -Zpolymorphize-dump
+// compile-pass
 
 #![allow(warnings)]
 

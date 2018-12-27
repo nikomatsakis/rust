@@ -1,5 +1,5 @@
-error: no polymorphic dependencies found
-  --> $DIR/polymorphize_drop.rs:12:1
+warning: no polymorphic dependencies found
+  --> $DIR/polymorphize_drop.rs:13:1
    |
 LL | / fn dependency_because_drop_T<T>(data: T) {
 LL | |     //~^ ERROR no polymorphic dependencies found
@@ -10,8 +10,8 @@ LL | |     // FIXME-- we don't presently see the dependency
 LL | | }
    | |_^
 
-error: no polymorphic dependencies found
-  --> $DIR/polymorphize_drop.rs:20:1
+warning: no polymorphic dependencies found
+  --> $DIR/polymorphize_drop.rs:21:1
    |
 LL | / fn dependency_because_drop_box_T<T>(data: Box<T>) {
 LL | |     //~^ ERROR no polymorphic dependencies found
@@ -22,13 +22,19 @@ LL | |     // FIXME-- we don't presently see the dependency
 LL | | }
    | |_^
 
-error: no polymorphic dependencies found
-  --> $DIR/polymorphize_drop.rs:30:1
+warning: no polymorphic dependencies found
+  --> $DIR/polymorphize_drop.rs:31:1
    |
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found
 LL | | }
    | |_^
 
-error: aborting due to 3 previous errors
+note: Monomorphized items: 9
+
+note: Monomorphized size : 32
+
+note: New total items    : 9 (100%)
+
+note: New estimated size : 32 (100%)
 

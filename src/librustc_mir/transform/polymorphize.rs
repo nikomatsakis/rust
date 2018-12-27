@@ -13,6 +13,8 @@
 // completely accurate (some things might be counted twice, others missed).
 
 use rustc::hir::def_id::DefId;
+use rustc::hir::def_id::LOCAL_CRATE;
+use rustc::mir::mono::MonoItem;
 use rustc::mir::visit as mir_visit;
 use rustc::mir::visit::Visitor;
 use rustc::mir::Location;
@@ -28,6 +30,7 @@ use rustc::ty::subst::Substs;
 use rustc::ty::Instance;
 use rustc::ty::InstanceDef;
 use rustc::ty::{self, Ty, TyCtxt};
+use rustc_data_structures::fx::FxHashSet;
 use std::collections::BTreeMap;
 use syntax_pos::Span;
 
@@ -96,7 +99,7 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
                 "some polymorphic dependencies found"
             };
 
-            let mut err = tcx.sess.struct_span_err(visitor.mir.span, message);
+            let mut err = tcx.sess.struct_span_warn(visitor.mir.span, message);
 
             for dependency in &visitor.dependencies {
                 err.span_label(
@@ -118,6 +121,85 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
             err.emit();
         }
     }
+
+    analyze_space_savings(tcx, &visitors);
+}
+
+/// Analyze how much space we could save relative to a full monomorphization.
+fn analyze_space_savings(
+    tcx: TyCtxt<'_, 'gcx, 'gcx>,
+    visitors: &BTreeMap<DefId, DependencyVisitor<'_, 'gcx>>,
+) {
+    // Find the full set of monomorphized items -- we don't care which
+    // codegen units they are part of.
+    let mono_items: Vec<MonoItem<'_>> = {
+        let (_def_id_set, codegen_units) = tcx.collect_and_partition_mono_items(LOCAL_CRATE);
+        codegen_units
+            .iter()
+            .flat_map(|cgu| cgu.items().keys())
+            .cloned()
+            .collect()
+    };
+
+    // Compute total size estimate for monomorphized things
+    let mono_size_estimate: u64 = mono_items
+        .iter()
+        .map(|mi| mi.size_estimate(&tcx) as u64)
+        .sum();
+
+    // Compute the duplicate items
+    let mut duplicate_set = FxHashSet::default();
+    let duplicate_mono_items: Vec<MonoItem<'_>> = mono_items
+        .iter()
+        .filter(|mono_item| match mono_item {
+            MonoItem::Static(_) | MonoItem::GlobalAsm(_) => false,
+            MonoItem::Fn(Instance { def, substs }) => {
+                // If we didn't analyze the def-id, then it is not a duplicate.
+                let visitor = match visitors.get(&def.def_id()) {
+                    Some(v) => v,
+                    None => return false,
+                };
+
+                // Find the set of dependencies (if any) for this
+                // item. Substitute in the specific substs.
+                let mut dependencies: Vec<_> = visitor
+                    .dependencies
+                    .iter()
+                    .map(|d| d.kind.subst(tcx, substs))
+                    .collect();
+                dependencies.sort();
+                dependencies.dedup();
+
+                // Look for duplicates
+                !duplicate_set.insert((def.def_id(), dependencies))
+            }
+        })
+        .cloned()
+        .collect();
+
+    // Estimate size of the duplicate items
+    let duplicate_size_estimate: u64 = duplicate_mono_items
+        .iter()
+        .map(|mi| mi.size_estimate(&tcx) as u64)
+        .sum();
+
+    // Estimate size of all remaining items
+    let new_items = mono_items.len() - duplicate_mono_items.len();
+    let new_size_estimate = mono_size_estimate - duplicate_size_estimate;
+
+    // Print information out
+    tcx.sess.note_without_error(&format!("Monomorphized items: {}", mono_items.len()));
+    tcx.sess.note_without_error(&format!("Monomorphized size : {}", mono_size_estimate));
+    tcx.sess.note_without_error(&format!(
+        "New total items    : {} ({:3.0}%)",
+        new_items,
+        100.0 * (new_items as f64) / (mono_items.len() as f64)
+    ));
+    tcx.sess.note_without_error(&format!(
+        "New estimated size : {} ({:3.0}%)",
+        new_size_estimate,
+        100.0 * (new_size_estimate as f64) / (mono_size_estimate as f64),
+    ));
 }
 
 #[derive(Clone)]
@@ -135,7 +217,7 @@ pub struct Dependency<'gcx> {
     kind: DependencyKind<'gcx>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum DependencyKind<'gcx> {
     /// We depend on knowing the size and/or alignment of the type;
     /// this can occur when e.g. a value of this type.
@@ -179,7 +261,8 @@ struct CallEdge<'gcx> {
 
 impl DependencyVisitor<'me, 'gcx> {
     fn new(tcx: TyCtxt<'me, 'gcx, 'gcx>, mir_def_id: DefId) -> Self {
-        debug!("new: mir_def_id={:?}", mir_def_id);
+        debug!("DependencyVisitor::new(mir_def_id={:?})", mir_def_id);
+
         let mir = tcx.optimized_mir(mir_def_id);
         let param_env = tcx.param_env(mir_def_id);
         let mut visitor = Self {
@@ -192,6 +275,8 @@ impl DependencyVisitor<'me, 'gcx> {
 
         // compute the initial set of dependencies and call-edges
         visitor.visit_mir(mir);
+
+        debug!("DependencyVisitor::new: finished visiting mir_def_id={:?}", mir_def_id);
 
         visitor
     }
@@ -279,18 +364,6 @@ impl DependencyVisitor<'me, 'gcx> {
 }
 
 impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
-    fn visit_mir(&mut self, mir: &Mir<'gcx>) {
-        // since the `super_mir` method does not traverse the MIR of
-        // promoted rvalues, (but we still want to gather statistics
-        // on the structures represented there) we manually traverse
-        // the promoted rvalues here.
-        for promoted_mir in &mir.promoted {
-            self.visit_mir(promoted_mir);
-        }
-
-        self.super_mir(mir);
-    }
-
     fn visit_statement(
         &mut self,
         block: BasicBlock,

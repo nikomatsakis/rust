@@ -1,6 +1,7 @@
 // Simple test for the polymorphize analysis code.
 //
 // compile-flags: -Zpolymorphize -Zpolymorphize-dump
+// compile-pass
 
 #![allow(warnings)]
 
@@ -41,4 +42,13 @@ fn no_dependency_because_unsized_pointer_indirect<T>(t: &T) {
 
 fn main() {
     //~^ ERROR no polymorphic dependencies found
+
+    no_dependency_because_pointer::<u32>(&22);
+    no_dependency_because_pointer::<u16>(&22);
+
+    dependency_because_unsized_pointer::<u32>(&22);
+    dependency_because_unsized_pointer::<u16>(&22);
+
+    no_dependency_because_unsized_pointer_indirect::<u32>(&22);
+    no_dependency_because_unsized_pointer_indirect::<u16>(&22);
 }
