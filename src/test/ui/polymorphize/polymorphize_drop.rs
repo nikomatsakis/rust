@@ -24,13 +24,11 @@ fn no_dependency_because_drop_ref_T<T>(data: &T) {
 
 fn no_dependency_because_indirect_drop_ref_T<T>(data: &T) {
     //~^ ERROR no polymorphic dependencies found
-
     dependency_because_drop_T::<&T>(data);
 }
 
 fn no_dependency_because_indirect_drop_ref_u32() {
     //~^ ERROR no polymorphic dependencies found
-
     dependency_because_drop_T::<&u32>(&22);
 }
 

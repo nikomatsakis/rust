@@ -341,8 +341,14 @@ impl DependencyVisitor<'me, 'gcx> {
                 }
             }
 
-            DependencyKind::Drop(_) => {
-                self.push_dependency_if_new(span, kind)
+            DependencyKind::Drop(ty) => {
+                if ty.needs_drop(self.tcx, self.param_env) {
+                    debug!("record_dependency: {:?} needs dropped", ty);
+                    self.push_dependency_if_new(span, kind)
+                } else {
+                    debug!("record_dependency: {:?} does not need dropped", ty);
+                    false
+                }
             }
 
             DependencyKind::TraitMethod(def_id, substs) => {
@@ -415,18 +421,10 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
             TerminatorKind::Drop { location: place, .. } |
             TerminatorKind::DropAndReplace { location: place, .. } => {
                 let ty = place.ty(self.mir, self.tcx).to_ty(self.tcx);
-                let has_type_parameter = ty.walk()
-                    .any(|ty| if let ty::TyKind::Param(_) = ty.sty { true } else { false });
-                debug!(
-                    "visit_terminator_kind: location={:?} ty={:?} has_type_parameter={:?}",
-                    location, ty, has_type_parameter,
+                self.record_dependency(
+                    self.mir.source_info(location).span,
+                    DependencyKind::Drop(ty),
                 );
-                if has_type_parameter {
-                    self.record_dependency(
-                        self.mir.source_info(location).span,
-                        DependencyKind::Drop(ty),
-                    );
-                }
             },
             TerminatorKind::Call { func, .. } => match func.ty(self.mir, self.tcx).sty {
                 ty::FnDef(def_id, substs) => {
