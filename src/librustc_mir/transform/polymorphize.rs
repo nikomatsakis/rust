@@ -227,6 +227,11 @@ pub enum DependencyKind<'gcx> {
     /// depends on the size of an earlier field that is a type parameter.
     OffsetOf(Ty<'gcx>, Field),
 
+    /// Drop of a value that uses a type parameter, therefore need to know
+    /// the exact type as it may have a `Drop` impl.
+    /// ie. fn(x: T) or fn(x: Box<T>)
+    Drop(Ty<'gcx>),
+
     /// An unresolved instance
     TraitMethod(DefId, &'gcx Substs<'gcx>),
 
@@ -245,6 +250,7 @@ EnumTypeFoldableImpl! {
     impl<'tcx> TypeFoldable<'tcx> for DependencyKind<'tcx> {
         (DependencyKind::SizeAlignment)(a),
         (DependencyKind::OffsetOf)(a, b),
+        (DependencyKind::Drop)(a),
         (DependencyKind::TraitMethod)(a, b),
         (DependencyKind::OtherMethod)(a),
     }
@@ -335,6 +341,10 @@ impl DependencyVisitor<'me, 'gcx> {
                 }
             }
 
+            DependencyKind::Drop(_) => {
+                self.push_dependency_if_new(span, kind)
+            }
+
             DependencyKind::TraitMethod(def_id, substs) => {
                 self.record_call_dependency(span, def_id, substs)
             }
@@ -402,8 +412,22 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
             TerminatorKind::Abort => (),
             TerminatorKind::Return => (),
             TerminatorKind::Unreachable => (),
-            TerminatorKind::Drop { .. } => {}
-            TerminatorKind::DropAndReplace { .. } => {}
+            TerminatorKind::Drop { location: place, .. } |
+            TerminatorKind::DropAndReplace { location: place, .. } => {
+                let ty = place.ty(self.mir, self.tcx).to_ty(self.tcx);
+                let has_type_parameter = ty.walk()
+                    .any(|ty| if let ty::TyKind::Param(_) = ty.sty { true } else { false });
+                debug!(
+                    "visit_terminator_kind: location={:?} ty={:?} has_type_parameter={:?}",
+                    location, ty, has_type_parameter,
+                );
+                if has_type_parameter {
+                    self.record_dependency(
+                        self.mir.source_info(location).span,
+                        DependencyKind::Drop(ty),
+                    );
+                }
+            },
             TerminatorKind::Call { func, .. } => match func.ty(self.mir, self.tcx).sty {
                 ty::FnDef(def_id, substs) => {
                     self.record_call_dependency(

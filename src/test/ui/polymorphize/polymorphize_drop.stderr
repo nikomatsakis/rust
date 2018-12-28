@@ -1,29 +1,27 @@
-warning: no polymorphic dependencies found
+warning: some polymorphic dependencies found
   --> $DIR/polymorphize_drop.rs:13:1
    |
 LL | / fn dependency_because_drop_T<T>(data: T) {
-LL | |     //~^ ERROR no polymorphic dependencies found
-LL | |     //
-LL | |     // We have to drop `data`, and to know what to run, we have to know what `T` is.
-LL | |     //
-LL | |     // FIXME-- we don't presently see the dependency
+LL | |     //~^ ERROR some polymorphic dependencies found
 LL | | }
-   | |_^
+   | | ^
+   | | |
+   | |_depends on `Drop(T)`
+   | 
+
+warning: some polymorphic dependencies found
+  --> $DIR/polymorphize_drop.rs:17:1
+   |
+LL | / fn dependency_because_drop_box_T<T>(data: Box<T>) {
+LL | |     //~^ ERROR some polymorphic dependencies found
+LL | | }
+   | | ^
+   | | |
+   | |_depends on `Drop(std::boxed::Box<T>)`
+   | 
 
 warning: no polymorphic dependencies found
   --> $DIR/polymorphize_drop.rs:21:1
-   |
-LL | / fn dependency_because_drop_box_T<T>(data: Box<T>) {
-LL | |     //~^ ERROR no polymorphic dependencies found
-LL | |     //
-LL | |     // We have to drop `data`, and to know what to run, we have to
-...  |
-LL | |     // FIXME-- we don't presently see the dependency
-LL | | }
-   | |_^
-
-warning: no polymorphic dependencies found
-  --> $DIR/polymorphize_drop.rs:31:1
    |
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found
