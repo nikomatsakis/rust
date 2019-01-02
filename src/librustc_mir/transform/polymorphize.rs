@@ -58,8 +58,13 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
             let call_edges = visitors[&mir_def_id].call_edges.clone();
             for call_edge in &call_edges {
                 debug!(
-                    "polymorphize_analysis: call_edge.callee={:?}",
-                    call_edge.callee
+                    "polymorphize_analysis: call_edge.callee={:?} caller is {:?}",
+                    call_edge.callee,
+                    mir_def_id,
+                );
+                debug!(
+                    "polymorphize_analysis: call_edge.substs={:#?}",
+                    call_edge.substs
                 );
 
                 let substituted_dependencies: Vec<_>;
@@ -79,6 +84,8 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
                 }
 
                 for dependency in substituted_dependencies {
+                    debug!("polymorphize_analysis: substituted dependency = {:?}", dependency);
+
                     if visitors
                         .get_mut(&mir_def_id)
                         .unwrap()
