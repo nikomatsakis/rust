@@ -401,7 +401,6 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
             StatementKind::Assign(..) => (),
             StatementKind::FakeRead(..) => (),
             StatementKind::Retag { .. } => (),
-            StatementKind::EscapeToRaw { .. } => (),
             StatementKind::SetDiscriminant { .. } => (),
             StatementKind::StorageLive(..) => (),
             StatementKind::StorageDead(..) => (),
