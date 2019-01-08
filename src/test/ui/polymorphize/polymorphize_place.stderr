@@ -34,6 +34,8 @@ warning: no polymorphic dependencies found
    |
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found
+LL | |
+LL | |     // Invoke each function so that they are considered by the collector.
 LL | |     no_dependency_because_offset::<u32>(&OffsetDependent { t: &22, count: 2 });
    | |     -------------------------------------------------------------------------- invokes `DefId(0/0:6 ~ polymorphize_place[317d]::no_dependency_because_offset[0])` with substitutions `[u32]`
 LL | |     no_dependency_because_offset::<u16>(&OffsetDependent { t: &22, count: 2 });

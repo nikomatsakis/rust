@@ -60,6 +60,7 @@ warning: no polymorphic dependencies found
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found
 LL | |
+LL | |     // Invoke each function so that they are considered by the collector.
 LL | |     no_dependency_because_pointer::<u32>(&22);
    | |     ----------------------------------------- invokes `DefId(0/0:4 ~ polymorphize_sized[317d]::no_dependency_because_pointer[0])` with substitutions `[u32]`
 LL | |     no_dependency_because_pointer::<u16>(&22);
@@ -70,6 +71,16 @@ LL | |     dependency_because_unsized_pointer::<u32>(&22);
 LL | |     dependency_because_unsized_pointer::<u16>(&22);
    | |     ---------------------------------------------- invokes `DefId(0/0:5 ~ polymorphize_sized[317d]::dependency_because_unsized_pointer[0])` with substitutions `[u16]`
 LL | |
+LL | |     dependency_because_embed_ref_unsized::<u32>(&22);
+   | |     ------------------------------------------------ invokes `DefId(0/0:6 ~ polymorphize_sized[317d]::dependency_because_embed_ref_unsized[0])` with substitutions `[u32]`
+LL | |     dependency_because_embed_ref_unsized::<u16>(&22);
+   | |     ------------------------------------------------ invokes `DefId(0/0:6 ~ polymorphize_sized[317d]::dependency_because_embed_ref_unsized[0])` with substitutions `[u16]`
+LL | |
+LL | |     dependency_because_embed_ref_sized::<u32>(&22);
+   | |     ---------------------------------------------- invokes `DefId(0/0:7 ~ polymorphize_sized[317d]::dependency_because_embed_ref_sized[0])` with substitutions `[u32]`
+LL | |     dependency_because_embed_ref_sized::<u16>(&22);
+   | |     ---------------------------------------------- invokes `DefId(0/0:7 ~ polymorphize_sized[317d]::dependency_because_embed_ref_sized[0])` with substitutions `[u16]`
+LL | |
 LL | |     no_dependency_because_unsized_pointer_indirect::<u32>(&22);
    | |     ---------------------------------------------------------- invokes `DefId(0/0:8 ~ polymorphize_sized[317d]::no_dependency_because_unsized_pointer_indirect[0])` with substitutions `[u32]`
 LL | |     no_dependency_because_unsized_pointer_indirect::<u16>(&22);
@@ -77,11 +88,11 @@ LL | |     no_dependency_because_unsized_pointer_indirect::<u16>(&22);
 LL | | }
    | |_^
 
-note: Monomorphized items: 15
+note: Monomorphized items: 19
 
-note: Monomorphized size : 78
+note: Monomorphized size : 118
 
-note: New total items    : 13 ( 87%)
+note: New total items    : 16 ( 84%)
 
-note: New estimated size : 74 ( 95%)
+note: New estimated size : 110 ( 93%)
 

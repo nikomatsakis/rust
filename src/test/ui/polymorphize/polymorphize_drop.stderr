@@ -48,19 +48,55 @@ LL | |     dependency_because_drop_T::<&u32>(&22);
 LL | | }
    | |_^
 
-warning: no polymorphic dependencies found
+warning: some polymorphic dependencies found
   --> $DIR/polymorphize_drop.rs:35:1
    |
+LL |   }
+   |   -
+   |   |
+   |   depends on `Drop(std::boxed::Box<u32>)`
+   |   depends on `Drop(std::boxed::Box<u16>)`
+...
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found
+LL | |
+LL | |     // Invoke each function so that they are considered by the collector.
+LL | |     dependency_because_drop_T::<u32>(3);
+   | |     ----------------------------------- invokes `DefId(0/0:4 ~ polymorphize_drop[317d]::dependency_because_drop_T[0])` with substitutions `[u32]`
+LL | |     dependency_because_drop_T::<u16>(3);
+   | |     ----------------------------------- invokes `DefId(0/0:4 ~ polymorphize_drop[317d]::dependency_because_drop_T[0])` with substitutions `[u16]`
+LL | |
+LL | |     dependency_because_drop_box_T::<u32>(Box::new(3));
+   | |     -------------------------------------------------
+   | |     |                                    |
+   | |     |                                    invokes `DefId(5/0:97 ~ alloc[e111]::boxed[0]::{{impl}}[0]::new[0])` with substitutions `[u32]`
+   | |     invokes `DefId(0/0:5 ~ polymorphize_drop[317d]::dependency_because_drop_box_T[0])` with substitutions `[u32]`
+LL | |     dependency_because_drop_box_T::<u16>(Box::new(3));
+   | |     -------------------------------------------------
+   | |     |                                    |
+   | |     |                                    invokes `DefId(5/0:97 ~ alloc[e111]::boxed[0]::{{impl}}[0]::new[0])` with substitutions `[u16]`
+   | |     invokes `DefId(0/0:5 ~ polymorphize_drop[317d]::dependency_because_drop_box_T[0])` with substitutions `[u16]`
+LL | |
+LL | |     no_dependency_because_drop_ref_T::<u32>(&3);
+   | |     ------------------------------------------- invokes `DefId(0/0:6 ~ polymorphize_drop[317d]::no_dependency_because_drop_ref_T[0])` with substitutions `[u32]`
+LL | |     no_dependency_because_drop_ref_T::<u16>(&3);
+   | |     ------------------------------------------- invokes `DefId(0/0:6 ~ polymorphize_drop[317d]::no_dependency_because_drop_ref_T[0])` with substitutions `[u16]`
+LL | |
+LL | |     no_dependency_because_indirect_drop_ref_T::<u32>(&3);
+   | |     ---------------------------------------------------- invokes `DefId(0/0:7 ~ polymorphize_drop[317d]::no_dependency_because_indirect_drop_ref_T[0])` with substitutions `[u32]`
+LL | |     no_dependency_because_indirect_drop_ref_T::<u16>(&3);
+   | |     ---------------------------------------------------- invokes `DefId(0/0:7 ~ polymorphize_drop[317d]::no_dependency_because_indirect_drop_ref_T[0])` with substitutions `[u16]`
+LL | |
+LL | |     no_dependency_because_indirect_drop_ref_u32();
+   | |     --------------------------------------------- invokes `DefId(0/0:8 ~ polymorphize_drop[317d]::no_dependency_because_indirect_drop_ref_u32[0])` with substitutions `[]`
 LL | | }
    | |_^
 
-note: Monomorphized items: 9
+note: Monomorphized items: 38
 
-note: Monomorphized size : 32
+note: Monomorphized size : 264
 
-note: New total items    : 9 (100%)
+note: New total items    : 36 ( 95%)
 
-note: New estimated size : 32 (100%)
+note: New estimated size : 261 ( 99%)
 

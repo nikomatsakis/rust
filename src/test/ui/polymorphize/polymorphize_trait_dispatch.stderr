@@ -21,14 +21,11 @@ LL | |     depend_trait_dispatch(t)
 LL | | }
    | |_^
 
-warning: some polymorphic dependencies found
+warning: no polymorphic dependencies found
   --> $DIR/polymorphize_trait_dispatch.rs:18:1
    |
 LL |       t.clone()
-   |       ---------
-   |       |
-   |       depends on `OtherMethod([ReErased, T])`
-   |       invokes `DefId(2/0:1292 ~ core[8468]::clone[0]::impls[0]::{{impl}}[3]::clone[0])` with substitutions `[ReErased, T]`
+   |       --------- invokes `DefId(2/0:1292 ~ core[8468]::clone[0]::impls[0]::{{impl}}[3]::clone[0])` with substitutions `[ReErased, T]`
 ...
 LL | / fn depend_trait_dispatch_ref_indirect<T: Clone>(t: &T) -> &T {
 LL | |     //~^ ERROR some polymorphic dependencies found
@@ -40,16 +37,38 @@ LL | | }
 warning: no polymorphic dependencies found
   --> $DIR/polymorphize_trait_dispatch.rs:23:1
    |
+LL |       t.clone()
+   |       ---------
+   |       |
+   |       invokes `DefId(2/0:17671 ~ core[8468]::clone[0]::impls[0]::{{impl}}[7]::clone[0])` with substitutions `[]`
+   |       invokes `DefId(2/0:17669 ~ core[8468]::clone[0]::impls[0]::{{impl}}[6]::clone[0])` with substitutions `[]`
+...
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found
+LL | |
+LL | |     // Invoke each function so that they are considered by the collector.
+LL | |     depend_trait_dispatch::<u32>(&3);
+   | |     -------------------------------- invokes `DefId(0/0:3 ~ polymorphize_trait_dispatch[317d]::depend_trait_dispatch[0])` with substitutions `[u32]`
+LL | |     depend_trait_dispatch::<u16>(&3);
+   | |     -------------------------------- invokes `DefId(0/0:3 ~ polymorphize_trait_dispatch[317d]::depend_trait_dispatch[0])` with substitutions `[u16]`
+LL | |
+LL | |     depend_trait_dispatch_indirect::<u32>(&3);
+   | |     ----------------------------------------- invokes `DefId(0/0:4 ~ polymorphize_trait_dispatch[317d]::depend_trait_dispatch_indirect[0])` with substitutions `[u32]`
+LL | |     depend_trait_dispatch_indirect::<u16>(&3);
+   | |     ----------------------------------------- invokes `DefId(0/0:4 ~ polymorphize_trait_dispatch[317d]::depend_trait_dispatch_indirect[0])` with substitutions `[u16]`
+LL | |
+LL | |     depend_trait_dispatch_ref_indirect::<u32>(&3);
+   | |     --------------------------------------------- invokes `DefId(0/0:5 ~ polymorphize_trait_dispatch[317d]::depend_trait_dispatch_ref_indirect[0])` with substitutions `[u32]`
+LL | |     depend_trait_dispatch_ref_indirect::<u16>(&3);
+   | |     --------------------------------------------- invokes `DefId(0/0:5 ~ polymorphize_trait_dispatch[317d]::depend_trait_dispatch_ref_indirect[0])` with substitutions `[u16]`
 LL | | }
    | |_^
 
-note: Monomorphized items: 9
+note: Monomorphized items: 21
 
-note: Monomorphized size : 32
+note: Monomorphized size : 108
 
-note: New total items    : 9 (100%)
+note: New total items    : 20 ( 95%)
 
-note: New estimated size : 32 (100%)
+note: New estimated size : 99 ( 92%)
 

@@ -29,6 +29,8 @@ fn no_dependency_because_offset<T>(parameter: &OffsetDependent<&T>) -> u32 {
 
 fn main() {
     //~^ ERROR no polymorphic dependencies found
+
+    // Invoke each function so that they are considered by the collector.
     no_dependency_because_offset::<u32>(&OffsetDependent { t: &22, count: 2 });
     no_dependency_because_offset::<u16>(&OffsetDependent { t: &22, count: 2 });
 

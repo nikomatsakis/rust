@@ -63,14 +63,45 @@ warning: no polymorphic dependencies found
    |
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found
+LL | |
+LL | |     // Invoke each function so that they are considered by the collector.
+LL | |     no_use::<u32>();
+   | |     --------------- invokes `DefId(0/0:3 ~ polymorphize[317d]::no_use[0])` with substitutions `[u32]`
+LL | |     no_use::<u16>();
+   | |     --------------- invokes `DefId(0/0:3 ~ polymorphize[317d]::no_use[0])` with substitutions `[u16]`
+LL | |
+LL | |     no_dependency_because_pointer::<u32>(&2);
+   | |     ---------------------------------------- invokes `DefId(0/0:4 ~ polymorphize[317d]::no_dependency_because_pointer[0])` with substitutions `[u32]`
+LL | |     no_dependency_because_pointer::<u16>(&2);
+   | |     ---------------------------------------- invokes `DefId(0/0:4 ~ polymorphize[317d]::no_dependency_because_pointer[0])` with substitutions `[u16]`
+LL | |
+LL | |     dependency_because_unsized_pointer::<u32>(&2);
+   | |     --------------------------------------------- invokes `DefId(0/0:5 ~ polymorphize[317d]::dependency_because_unsized_pointer[0])` with substitutions `[u32]`
+LL | |     dependency_because_unsized_pointer::<u16>(&2);
+   | |     --------------------------------------------- invokes `DefId(0/0:5 ~ polymorphize[317d]::dependency_because_unsized_pointer[0])` with substitutions `[u16]`
+LL | |
+LL | |     depend_size_alignment::<u32>(&2);
+   | |     -------------------------------- invokes `DefId(0/0:6 ~ polymorphize[317d]::depend_size_alignment[0])` with substitutions `[u32]`
+LL | |     depend_size_alignment::<u16>(&2);
+   | |     -------------------------------- invokes `DefId(0/0:6 ~ polymorphize[317d]::depend_size_alignment[0])` with substitutions `[u16]`
+LL | |
+LL | |     depend_size_alignment_indirect::<u32>(&2);
+   | |     ----------------------------------------- invokes `DefId(0/0:7 ~ polymorphize[317d]::depend_size_alignment_indirect[0])` with substitutions `[u32]`
+LL | |     depend_size_alignment_indirect::<u16>(&2);
+   | |     ----------------------------------------- invokes `DefId(0/0:7 ~ polymorphize[317d]::depend_size_alignment_indirect[0])` with substitutions `[u16]`
+LL | |
+LL | |     no_dependency_indirect::<u32>(&2);
+   | |     --------------------------------- invokes `DefId(0/0:8 ~ polymorphize[317d]::no_dependency_indirect[0])` with substitutions `[u32]`
+LL | |     no_dependency_indirect::<u16>(&2);
+   | |     --------------------------------- invokes `DefId(0/0:8 ~ polymorphize[317d]::no_dependency_indirect[0])` with substitutions `[u16]`
 LL | | }
    | |_^
 
-note: Monomorphized items: 9
+note: Monomorphized items: 21
 
-note: Monomorphized size : 32
+note: Monomorphized size : 116
 
-note: New total items    : 9 (100%)
+note: New total items    : 18 ( 86%)
 
-note: New estimated size : 32 (100%)
+note: New estimated size : 109 ( 94%)
 

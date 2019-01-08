@@ -36,4 +36,23 @@ fn no_dependency_indirect<T: Copy>(t: &T) -> u32 {
 
 fn main() {
     //~^ ERROR no polymorphic dependencies found
+
+    // Invoke each function so that they are considered by the collector.
+    no_use::<u32>();
+    no_use::<u16>();
+
+    no_dependency_because_pointer::<u32>(&2);
+    no_dependency_because_pointer::<u16>(&2);
+
+    dependency_because_unsized_pointer::<u32>(&2);
+    dependency_because_unsized_pointer::<u16>(&2);
+
+    depend_size_alignment::<u32>(&2);
+    depend_size_alignment::<u16>(&2);
+
+    depend_size_alignment_indirect::<u32>(&2);
+    depend_size_alignment_indirect::<u16>(&2);
+
+    no_dependency_indirect::<u32>(&2);
+    no_dependency_indirect::<u16>(&2);
 }

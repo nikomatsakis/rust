@@ -22,4 +22,14 @@ fn depend_trait_dispatch_ref_indirect<T: Clone>(t: &T) -> &T {
 
 fn main() {
     //~^ ERROR no polymorphic dependencies found
+
+    // Invoke each function so that they are considered by the collector.
+    depend_trait_dispatch::<u32>(&3);
+    depend_trait_dispatch::<u16>(&3);
+
+    depend_trait_dispatch_indirect::<u32>(&3);
+    depend_trait_dispatch_indirect::<u16>(&3);
+
+    depend_trait_dispatch_ref_indirect::<u32>(&3);
+    depend_trait_dispatch_ref_indirect::<u16>(&3);
 }

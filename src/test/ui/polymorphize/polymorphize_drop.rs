@@ -34,4 +34,19 @@ fn no_dependency_because_indirect_drop_ref_u32() {
 
 fn main() {
     //~^ ERROR no polymorphic dependencies found
+
+    // Invoke each function so that they are considered by the collector.
+    dependency_because_drop_T::<u32>(3);
+    dependency_because_drop_T::<u16>(3);
+
+    dependency_because_drop_box_T::<u32>(Box::new(3));
+    dependency_because_drop_box_T::<u16>(Box::new(3));
+
+    no_dependency_because_drop_ref_T::<u32>(&3);
+    no_dependency_because_drop_ref_T::<u16>(&3);
+
+    no_dependency_because_indirect_drop_ref_T::<u32>(&3);
+    no_dependency_because_indirect_drop_ref_T::<u16>(&3);
+
+    no_dependency_because_indirect_drop_ref_u32();
 }

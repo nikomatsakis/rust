@@ -43,11 +43,18 @@ fn no_dependency_because_unsized_pointer_indirect<T>(t: &T) {
 fn main() {
     //~^ ERROR no polymorphic dependencies found
 
+    // Invoke each function so that they are considered by the collector.
     no_dependency_because_pointer::<u32>(&22);
     no_dependency_because_pointer::<u16>(&22);
 
     dependency_because_unsized_pointer::<u32>(&22);
     dependency_because_unsized_pointer::<u16>(&22);
+
+    dependency_because_embed_ref_unsized::<u32>(&22);
+    dependency_because_embed_ref_unsized::<u16>(&22);
+
+    dependency_because_embed_ref_sized::<u32>(&22);
+    dependency_because_embed_ref_sized::<u16>(&22);
 
     no_dependency_because_unsized_pointer_indirect::<u32>(&22);
     no_dependency_because_unsized_pointer_indirect::<u16>(&22);

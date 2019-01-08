@@ -39,9 +39,32 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
         return;
     }
 
-    let mut visitors: BTreeMap<_, _> = tcx
-        .body_owners()
-        .map(|mir_def_id| (mir_def_id, DependencyVisitor::new(tcx, mir_def_id)))
+    let def_ids: Vec<DefId> = {
+        let (_def_id_set, codegen_units) = tcx.collect_and_partition_mono_items(LOCAL_CRATE);
+        codegen_units
+            .iter()
+            .flat_map(|cgu| cgu.items().keys())
+            .filter_map(|mono_item| {
+                if let MonoItem::Fn(instance) = mono_item {
+                    Some(instance)
+                } else {
+                    None
+                }
+            })
+            .filter_map(|instance| {
+                let is_inline = instance.def.is_inline(tcx);
+                match instance.def {
+                    InstanceDef::Item(did) if !is_inline => Some(did),
+                    _ => None,
+                }
+            })
+            .collect()
+    };
+    debug!("polymorphize_analysis: def_ids={:?}", def_ids);
+
+    let mut visitors: BTreeMap<_, _> = def_ids
+        .iter()
+        .map(|mir_def_id| (*mir_def_id, DependencyVisitor::new(tcx, *mir_def_id)))
         .collect();
 
     // FIXME: Most inefficient fixed-point iteration possible
@@ -49,7 +72,7 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
     while changed {
         changed = false;
 
-        for mir_def_id in tcx.body_owners() {
+        for mir_def_id in def_ids.iter() {
             debug!(
                 "polymorphize_analysis: (interfunction propagation) mir_def_id={:?}",
                 mir_def_id
@@ -68,10 +91,8 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
                 );
 
                 let substituted_dependencies: Vec<_>;
-                if call_edge.callee.is_local() {
-                    substituted_dependencies = visitors[&call_edge.callee]
-                        .dependencies
-                        .iter()
+                if let Some(visitor) = visitors.get(&call_edge.callee) {
+                    substituted_dependencies = visitor.dependencies.iter()
                         .map(|dependency| dependency.subst(tcx, call_edge.substs))
                         .collect();
                 } else {
@@ -99,7 +120,7 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
     }
 
     if tcx.sess.opts.debugging_opts.polymorphize_dump {
-        for (_, visitor) in &visitors {
+        for visitor in visitors.iter().filter(|(did, _)| did.is_local()).map(|(_, v)| v) {
             let message = if visitor.dependencies.is_empty() {
                 "no polymorphic dependencies found"
             } else {
@@ -147,6 +168,7 @@ fn analyze_space_savings(
             .cloned()
             .collect()
     };
+    debug!("analyze_space_savings: mono_items={:?}", mono_items);
 
     // Compute total size estimate for monomorphized things
     let mono_size_estimate: u64 = mono_items
