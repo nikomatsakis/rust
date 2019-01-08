@@ -29,8 +29,27 @@ LL | |     parameter.count
 LL | | }
    | |_^
 
-warning: no polymorphic dependencies found
+warning: some polymorphic dependencies found
   --> $DIR/polymorphize_place.rs:30:1
+   |
+LL | / fn dependency_because_index_depends_on_T<T>(parameters: &[T]) -> &T {
+LL | |     //~^ ERROR some polymorphic dependencies found
+LL | |     &parameters[0]
+   | |     -------------- depends on `IndexInto([T], _3)`
+LL | | }
+   | |_^
+
+warning: no polymorphic dependencies found
+  --> $DIR/polymorphize_place.rs:35:1
+   |
+LL | / fn no_dependency_because_index_depends_on_sized_pointer<'a, T>(parameters: &'a [&'a T]) -> &'a T {
+LL | |     //~^ ERROR no polymorphic dependencies found
+LL | |     &parameters[0]
+LL | | }
+   | |_^
+
+warning: no polymorphic dependencies found
+  --> $DIR/polymorphize_place.rs:40:1
    |
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found
@@ -52,14 +71,24 @@ LL | |     dependency_because_offset_depends_on_T::<u32>(&OffsetDependent { t: 2
    | |     ----------------------------------------------------------------------------------- invokes `DefId(0/0:4 ~ polymorphize_place[317d]::dependency_because_offset_depends_on_T[0])` with substitutions `[u32]`
 LL | |     dependency_because_offset_depends_on_T::<u16>(&OffsetDependent { t: 22, count: 2 });
    | |     ----------------------------------------------------------------------------------- invokes `DefId(0/0:4 ~ polymorphize_place[317d]::dependency_because_offset_depends_on_T[0])` with substitutions `[u16]`
+LL | |
+LL | |     dependency_because_index_depends_on_T::<u32>(&[2, 3, 4]);
+   | |     -------------------------------------------------------- invokes `DefId(0/0:7 ~ polymorphize_place[317d]::dependency_because_index_depends_on_T[0])` with substitutions `[u32]`
+LL | |     dependency_because_index_depends_on_T::<u16>(&[2, 3, 4]);
+   | |     -------------------------------------------------------- invokes `DefId(0/0:7 ~ polymorphize_place[317d]::dependency_because_index_depends_on_T[0])` with substitutions `[u16]`
+LL | |
+LL | |     no_dependency_because_index_depends_on_sized_pointer::<u32>(&[&2, &3, &4]);
+   | |     -------------------------------------------------------------------------- invokes `DefId(0/0:8 ~ polymorphize_place[317d]::no_dependency_because_index_depends_on_sized_pointer[0])` with substitutions `[u32]`
+LL | |     no_dependency_because_index_depends_on_sized_pointer::<u16>(&[&2, &3, &4]);
+   | |     -------------------------------------------------------------------------- invokes `DefId(0/0:8 ~ polymorphize_place[317d]::no_dependency_because_index_depends_on_sized_pointer[0])` with substitutions `[u16]`
 LL | | }
    | |_^
 
-note: Monomorphized items: 16
+note: Monomorphized items: 20
 
-note: Monomorphized size : 81
+note: Monomorphized size : 149
 
-note: New total items    : 15 ( 94%)
+note: New total items    : 18 ( 90%)
 
-note: New estimated size : 80 ( 99%)
+note: New estimated size : 140 ( 94%)
 

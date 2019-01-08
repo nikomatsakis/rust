@@ -27,6 +27,16 @@ fn no_dependency_because_offset<T>(parameter: &OffsetDependent<&T>) -> u32 {
     parameter.count
 }
 
+fn dependency_because_index_depends_on_T<T>(parameters: &[T]) -> &T {
+    //~^ ERROR some polymorphic dependencies found
+    &parameters[0]
+}
+
+fn no_dependency_because_index_depends_on_sized_pointer<'a, T>(parameters: &'a [&'a T]) -> &'a T {
+    //~^ ERROR no polymorphic dependencies found
+    &parameters[0]
+}
+
 fn main() {
     //~^ ERROR no polymorphic dependencies found
 
@@ -40,4 +50,10 @@ fn main() {
 
     dependency_because_offset_depends_on_T::<u32>(&OffsetDependent { t: 22, count: 2 });
     dependency_because_offset_depends_on_T::<u16>(&OffsetDependent { t: 22, count: 2 });
+
+    dependency_because_index_depends_on_T::<u32>(&[2, 3, 4]);
+    dependency_because_index_depends_on_T::<u16>(&[2, 3, 4]);
+
+    no_dependency_because_index_depends_on_sized_pointer::<u32>(&[&2, &3, &4]);
+    no_dependency_because_index_depends_on_sized_pointer::<u16>(&[&2, &3, &4]);
 }
