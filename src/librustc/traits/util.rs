@@ -73,12 +73,11 @@ impl<'a, 'gcx, 'tcx> PredicateSet<'a, 'gcx, 'tcx> {
 
 /// "Elaboration" is the process of identifying all the predicates that
 /// are implied by a source predicate. Currently this basically means
-/// walking the "supertraits" and other similar assumptions. For
-/// example, if we know that `T : Ord`, the elaborator would deduce
-/// that `T : PartialOrd` holds as well. Similarly, if we have `trait
-/// Foo : 'static`, and we know that `T : Foo`, then we know that `T :
-/// 'static`.
-pub struct Elaborator<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
+/// walking the "supertraits" and other similar assumptions. For example,
+/// if we know that `T: Ord`, the elaborator would deduce that `T : PartialOrd`
+/// holds as well. Similarly, if we have `trait Foo: 'static`, and we know that
+/// `T: Foo`, then we know that `T: 'static`.
+pub struct Elaborator<'a, 'gcx: 'a + 'tcx, 'tcx: 'a> {
     stack: Vec<ty::Predicate<'tcx>>,
     visited: PredicateSet<'a, 'gcx, 'tcx>,
 }
@@ -96,8 +95,7 @@ pub fn elaborate_trait_refs<'cx, 'gcx, 'tcx>(
     trait_refs: impl Iterator<Item = ty::PolyTraitRef<'tcx>>)
     -> Elaborator<'cx, 'gcx, 'tcx>
 {
-    let predicates = trait_refs.map(|trait_ref| trait_ref.to_predicate())
-                               .collect();
+    let predicates = trait_refs.map(|trait_ref| trait_ref.to_predicate()).collect();
     elaborate_predicates(tcx, predicates)
 }
 
@@ -120,24 +118,22 @@ impl<'cx, 'gcx, 'tcx> Elaborator<'cx, 'gcx, 'tcx> {
         let tcx = self.visited.tcx;
         match *predicate {
             ty::Predicate::Trait(ref data) => {
-                // Predicates declared on the trait.
+                // Get predicates declared on the trait.
                 let predicates = tcx.super_predicates_of(data.def_id());
 
-                let mut predicates: Vec<_> =
-                    predicates.predicates
-                              .iter()
-                              .map(|(p, _)| p.subst_supertrait(tcx, &data.to_poly_trait_ref()))
-                              .collect();
+                let mut predicates: Vec<_> = predicates.predicates
+                    .iter()
+                    .map(|(pred, _)| pred.subst_supertrait(tcx, &data.to_poly_trait_ref()))
+                    .collect();
 
                 debug!("super_predicates: data={:?} predicates={:?}",
                        data, predicates);
 
-                // Only keep those bounds that we haven't already
-                // seen.  This is necessary to prevent infinite
-                // recursion in some cases.  One common case is when
-                // people define `trait Sized: Sized { }` rather than `trait
-                // Sized { }`.
-                predicates.retain(|r| self.visited.insert(r));
+                // Only keep those bounds that we haven't already seen.
+                // This is necessary to prevent infinite recursion in some
+                // cases. One common case is when people define
+                // `trait Sized: Sized { }` rather than `trait Sized { }`.
+                predicates.retain(|p| self.visited.insert(p));
 
                 self.stack.extend(predicates);
             }
@@ -163,11 +159,9 @@ impl<'cx, 'gcx, 'tcx> Elaborator<'cx, 'gcx, 'tcx> {
                 // Currently, we do not elaborate const-evaluatable
                 // predicates.
             }
-
             ty::Predicate::RegionOutlives(..) => {
                 // Nothing to elaborate from `'a: 'b`.
             }
-
             ty::Predicate::TypeOutlives(ref data) => {
                 // We know that `T: 'a` for some type `T`. We can
                 // often elaborate this. For example, if we know that
@@ -194,34 +188,35 @@ impl<'cx, 'gcx, 'tcx> Elaborator<'cx, 'gcx, 'tcx> {
                 tcx.push_outlives_components(ty_max, &mut components);
                 self.stack.extend(
                     components
-                       .into_iter()
-                       .filter_map(|component| match component {
-                           Component::Region(r) => if r.is_late_bound() {
-                               None
-                           } else {
-                               Some(ty::Predicate::RegionOutlives(
-                                   ty::Binder::dummy(ty::OutlivesPredicate(r, r_min))))
-                           },
+                        .into_iter()
+                        .filter_map(|component| match component {
+                            Component::Region(r) => if r.is_late_bound() {
+                                None
+                            } else {
+                                Some(ty::Predicate::RegionOutlives(
+                                    ty::Binder::dummy(ty::OutlivesPredicate(r, r_min))))
+                            },
 
-                           Component::Param(p) => {
-                               let ty = tcx.mk_ty_param(p.idx, p.name);
-                               Some(ty::Predicate::TypeOutlives(
-                                   ty::Binder::dummy(ty::OutlivesPredicate(ty, r_min))))
-                           },
+                            Component::Param(p) => {
+                                let ty = tcx.mk_ty_param(p.idx, p.name);
+                                Some(ty::Predicate::TypeOutlives(
+                                    ty::Binder::dummy(ty::OutlivesPredicate(ty, r_min))))
+                            },
 
-                           Component::UnresolvedInferenceVariable(_) => {
-                               None
-                           },
+                            Component::UnresolvedInferenceVariable(_) => {
+                                None
+                            },
 
-                           Component::Projection(_) |
-                           Component::EscapingProjection(_) => {
-                               // We can probably do more here. This
-                               // corresponds to a case like `<T as
-                               // Foo<'a>>::U: 'b`.
-                               None
-                           },
-                       })
-                       .filter(|p| visited.insert(p)));
+                            Component::Projection(_) |
+                            Component::EscapingProjection(_) => {
+                                // We can probably do more here. This
+                                // corresponds to a case like `<T as
+                                // Foo<'a>>::U: 'b`.
+                                None
+                            },
+                        })
+                        .filter(|p| visited.insert(p))
+                );
             }
         }
     }

@@ -308,8 +308,8 @@ pub fn register_builtins(store: &mut lint::LintStore, sess: Option<&Session>) {
             id: LintId::of(UNSTABLE_NAME_COLLISIONS),
             reference: "issue #48919 <https://github.com/rust-lang/rust/issues/48919>",
             edition: None,
-            // Note: this item represents future incompatibility of all unstable functions in the
-            //       standard library, and thus should never be removed or changed to an error.
+            // N.B., this item represents future incompatibility of all unstable functions in the
+            // standard library, and thus should never be removed or changed to an error.
         },
         FutureIncompatibleInfo {
             id: LintId::of(ABSOLUTE_PATHS_NOT_STARTING_WITH_CRATE),
@@ -336,7 +336,7 @@ pub fn register_builtins(store: &mut lint::LintStore, sess: Option<&Session>) {
             reference: "issue #52234 <https://github.com/rust-lang/rust/issues/52234>",
             edition: None,
         },
-        ]);
+    ]);
 
     // Register renamed and removed lints.
     store.register_renamed("single_use_lifetime", "single_use_lifetimes");

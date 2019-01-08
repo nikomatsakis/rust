@@ -677,10 +677,10 @@ impl<'o, 'gcx: 'tcx, 'tcx> dyn AstConv<'gcx, 'tcx> + 'o {
     }
 
     /// Instantiates the path for the given trait reference, assuming that it's
-    /// bound to a valid trait type. Returns the def_id for the defining trait.
+    /// bound to a valid trait type. Returns the `DefId` for the defining trait.
     /// The type _cannot_ be a type other than a trait type.
     ///
-    /// If the `projections` argument is `None`, then assoc type bindings like `Foo<T=X>`
+    /// If the `projections` argument is `None`, then assoc type bindings like `Foo<T = X>`
     /// are disallowed. Otherwise, they are pushed onto the vector given.
     pub fn instantiate_mono_trait_ref(&self,
         trait_ref: &hir::TraitRef,
@@ -787,7 +787,7 @@ impl<'o, 'gcx: 'tcx, 'tcx> dyn AstConv<'gcx, 'tcx> + 'o {
         if !self.tcx().features().unboxed_closures &&
             trait_segment.with_generic_args(|generic_args| generic_args.parenthesized)
             != trait_def.paren_sugar {
-            // For now, require that parenthetical notation be used only with `Fn()` etc.
+            // For now, require that parenthetical notation only be used with `Fn()`, etc.
             let msg = if trait_def.paren_sugar {
                 "the precise format of `Fn`-family traits' type parameters is subject to change. \
                  Use parenthetical notation (Fn(Foo, Bar) -> Baz) instead"
@@ -947,7 +947,8 @@ impl<'o, 'gcx: 'tcx, 'tcx> dyn AstConv<'gcx, 'tcx> + 'o {
     /// Transform a `PolyTraitRef` into a `PolyExistentialTraitRef` by
     /// removing the dummy `Self` type (`TRAIT_OBJECT_DUMMY_SELF`).
     fn trait_ref_to_existential(&self, trait_ref: ty::TraitRef<'tcx>)
-                                -> ty::ExistentialTraitRef<'tcx> {
+                                -> ty::ExistentialTraitRef<'tcx>
+    {
         assert_eq!(trait_ref.self_ty().sty, TRAIT_OBJECT_DUMMY_SELF);
         ty::ExistentialTraitRef::erase_self_ty(self.tcx(), trait_ref)
     }
@@ -1073,11 +1074,11 @@ impl<'o, 'gcx: 'tcx, 'tcx> dyn AstConv<'gcx, 'tcx> + 'o {
             let mut potential_assoc_types_spans = vec![];
             if let Some(potential_assoc_types) = potential_assoc_types {
                 if potential_assoc_types.len() == associated_types.len() {
-                    // Only suggest when the amount of missing associated types is equals to the
+                    // Only suggest when the number of missing associated types equals the number of
                     // extra type arguments present, as that gives us a relatively high confidence
                     // that the user forgot to give the associtated type's name. The canonical
                     // example would be trying to use `Iterator<isize>` instead of
-                    // `Iterator<Item=isize>`.
+                    // `Iterator<Item = isize>`.
                     suggest = true;
                     potential_assoc_types_spans = potential_assoc_types;
                 }
@@ -2011,7 +2012,7 @@ impl<'a, 'gcx, 'tcx> Bounds<'tcx> {
     pub fn predicates(&self, tcx: TyCtxt<'a, 'gcx, 'tcx>, param_ty: Ty<'tcx>)
                       -> Vec<(ty::Predicate<'tcx>, Span)>
     {
-        // If it could be sized, and is, add the sized predicate.
+        // If it could be sized, and is, add the `Sized` predicate.
         let sized_predicate = self.implicitly_sized.and_then(|span| {
             tcx.lang_items().sized_trait().map(|sized| {
                 let trait_ref = ty::TraitRef {

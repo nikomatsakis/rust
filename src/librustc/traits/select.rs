@@ -28,6 +28,7 @@ use super::{
 };
 
 use dep_graph::{DepKind, DepNodeIndex};
+use hir;
 use hir::def_id::DefId;
 use infer::{InferCtxt, InferOk, TypeFreshener};
 use middle::lang_items;
@@ -36,8 +37,6 @@ use ty::fast_reject;
 use ty::relate::TypeRelation;
 use ty::subst::{Subst, Substs};
 use ty::{self, ToPolyTraitRef, ToPredicate, Ty, TyCtxt, TypeFoldable};
-
-use hir;
 use rustc_data_structures::bit_set::GrowableBitSet;
 use rustc_data_structures::sync::Lock;
 use rustc_target::spec::abi::Abi;
@@ -3684,19 +3683,19 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         let mut predicates: Vec<_> = predicates
             .predicates
             .iter()
-            .flat_map(|(predicate, _)| {
-                let predicate = normalize_with_depth(
+            .flat_map(|(pred, _)| {
+                let pred = normalize_with_depth(
                     self,
                     param_env,
                     cause.clone(),
                     recursion_depth,
-                    &predicate.subst(tcx, substs),
+                    &pred.subst(tcx, substs),
                 );
-                predicate.obligations.into_iter().chain(Some(Obligation {
+                pred.obligations.into_iter().chain(Some(Obligation {
                     cause: cause.clone(),
                     recursion_depth,
                     param_env,
-                    predicate: predicate.value,
+                    predicate: pred.value,
                 }))
             })
             .collect();

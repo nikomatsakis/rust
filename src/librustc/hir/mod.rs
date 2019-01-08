@@ -289,7 +289,7 @@ impl Lifetime {
     }
 }
 
-/// A "Path" is essentially Rust's notion of a name; for instance:
+/// A `Path` is essentially Rust's notion of a name; for instance:
 /// `std::cmp::PartialEq`. It's represented as a sequence of identifiers,
 /// along with a bunch of supporting information.
 #[derive(Clone, RustcEncodable, RustcDecodable)]
@@ -607,7 +607,7 @@ pub enum SyntheticTyParamKind {
     ImplTrait
 }
 
-/// A `where` clause in a definition
+/// A `where` clause in a definition.
 #[derive(Clone, RustcEncodable, RustcDecodable, Debug)]
 pub struct WhereClause {
     pub id: NodeId,
@@ -626,7 +626,7 @@ impl WhereClause {
     }
 }
 
-/// A single predicate in a `where` clause
+/// A single predicate in a `where` clause.
 #[derive(Clone, RustcEncodable, RustcDecodable, Debug)]
 pub enum WherePredicate {
     /// A type binding (e.g., `for<'c> Foo: Send + Clone + 'c`).
@@ -2040,12 +2040,12 @@ pub enum UseKind {
     ListStem,
 }
 
-/// TraitRef's appear in impls.
+/// `TraitRef` are references to traits in impls.
 ///
-/// resolve maps each TraitRef's ref_id to its defining trait; that's all
-/// that the ref_id is for. Note that ref_id's value is not the NodeId of the
-/// trait being referred to but just a unique NodeId that serves as a key
-/// within the DefMap.
+/// `resolve` maps each `TraitRef`'s `ref_id` to its defining trait; that's all
+/// that the `ref_id` is for. Note that `ref_id`'s value is not the `NodeId` of the
+/// trait being referred to but just a unique `NodeId` that serves as a key
+/// within the `DefMap`.
 #[derive(Clone, RustcEncodable, RustcDecodable, Debug)]
 pub struct TraitRef {
     pub path: Path,
@@ -2055,10 +2055,10 @@ pub struct TraitRef {
 
 #[derive(Clone, RustcEncodable, RustcDecodable, Debug)]
 pub struct PolyTraitRef {
-    /// The `'a` in `<'a> Foo<&'a T>`
+    /// The `'a` in `<'a> Foo<&'a T>`.
     pub bound_generic_params: HirVec<GenericParam>,
 
-    /// The `Foo<&'a T>` in `<'a> Foo<&'a T>`
+    /// The `Foo<&'a T>` in `<'a> Foo<&'a T>`.
     pub trait_ref: TraitRef,
 
     pub span: Span,
@@ -2484,7 +2484,7 @@ impl CodegenFnAttrs {
         }
     }
 
-    /// True if `#[inline]` or `#[inline(always)]` is present.
+    /// Returns whether `#[inline]` or `#[inline(always)]` is present.
     pub fn requests_inline(&self) -> bool {
         match self.inline {
             InlineAttr::Hint | InlineAttr::Always => true,
@@ -2492,17 +2492,17 @@ impl CodegenFnAttrs {
         }
     }
 
-    /// True if it looks like this symbol needs to be exported, for example:
+    /// Returns whether it looks like this symbol needs to be exported, for example:
     ///
-    /// * `#[no_mangle]` is present
-    /// * `#[export_name(...)]` is present
-    /// * `#[linkage]` is present
+    /// * `#[no_mangle]` is present.
+    /// * `#[export_name(...)]` is present.
+    /// * `#[linkage]` is present.
     pub fn contains_extern_indicator(&self) -> bool {
         self.flags.contains(CodegenFnAttrFlags::NO_MANGLE) ||
             self.export_name.is_some() ||
             match self.linkage {
-                // these are private, make sure we don't try to consider
-                // them external
+                // These are private, so make sure we don't try to consider
+                // them external.
                 None |
                 Some(Linkage::Internal) |
                 Some(Linkage::Private) => false,

@@ -21,7 +21,8 @@ pub type RelateResult<'tcx, T> = Result<T, TypeError<'tcx>>;
 
 #[derive(Clone, Debug)]
 pub enum Cause {
-    ExistentialRegionBound, // relating an existential region bound
+    /// Relating to an existential region bound.
+    ExistentialRegionBound,
 }
 
 pub trait TypeRelation<'a, 'gcx: 'a+'tcx, 'tcx: 'a> : Sized {

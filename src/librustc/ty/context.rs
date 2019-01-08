@@ -1,4 +1,4 @@
-//! type context book-keeping
+//! Type context book-keeping.
 
 use dep_graph::DepGraph;
 use dep_graph::{DepNode, DepConstructor};
@@ -16,8 +16,7 @@ use lint::{self, Lint};
 use ich::{StableHashingContext, NodeIdHashingMode};
 use infer::canonical::{Canonical, CanonicalVarInfo, CanonicalVarInfos};
 use infer::outlives::free_region_map::FreeRegionMap;
-use middle::cstore::CrateStoreDyn;
-use middle::cstore::EncodedMetadata;
+use middle::cstore::{CrateStoreDyn, EncodedMetadata};
 use middle::lang_items;
 use middle::resolve_lifetime::{self, ObjectLifetimeDefault};
 use middle::stability;
@@ -1346,7 +1345,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
 
     pub fn def_path_debug_str(self, def_id: DefId) -> String {
         // We are explicitly not going through queries here in order to get
-        // crate name and disambiguator since this code is called from debug!()
+        // crate name and disambiguator since this code is called from `debug!()`
         // statements within the query system and we'd run into endless
         // recursion otherwise.
         let (crate_name, crate_disambiguator) = if def_id.is_local() {
@@ -1370,7 +1369,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     }
 
     // Note that this is *untracked* and should only be used within the query
-    // system if the result is otherwise tracked through queries
+    // system if the result is otherwise tracked through queries.
     pub fn crate_data_as_rc_any(self, cnum: CrateNum) -> Lrc<dyn Any> {
         self.cstore.crate_data_as_rc_any(cnum)
     }

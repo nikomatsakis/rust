@@ -430,8 +430,8 @@ impl LintPass for HardwiredLints {
             PROC_MACRO_DERIVE_RESOLUTION_FALLBACK,
             MACRO_USE_EXTERN_CRATE,
             MACRO_EXPANDED_MACRO_EXPORTS_ACCESSED_BY_ABSOLUTE_PATHS,
-            parser::QUESTION_MARK_MACRO_SEP,
             DEPRECATED_IN_FUTURE,
+            parser::QUESTION_MARK_MACRO_SEP,
         )
     }
 }

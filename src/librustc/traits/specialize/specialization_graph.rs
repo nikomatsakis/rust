@@ -29,11 +29,10 @@ use util::nodemap::{DefIdMap, FxHashMap};
 ///   has at most one parent.
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct Graph {
-    // All impls have a parent; the "root" impls have as their parent the `def_id`
-    // of the trait.
+    // All impls have a parent; the "root" impls have as their parent the trait's def-ID.
     parent: DefIdMap<DefId>,
 
-    // The "root" impls are found by looking up the trait's def_id.
+    // The "root" impls are found by looking up the trait's def-ID.
     children: DefIdMap<Children>,
 }
 
@@ -67,7 +66,7 @@ pub enum FutureCompatOverlapErrorKind {
 #[derive(Debug)]
 pub struct FutureCompatOverlapError {
     pub error: OverlapError,
-    pub kind: FutureCompatOverlapErrorKind
+    pub kind: FutureCompatOverlapErrorKind,
 }
 
 /// The result of attempting to insert an impl into a group of children.
@@ -235,7 +234,7 @@ impl<'a, 'gcx, 'tcx> Children {
                     );
                 }
 
-                // no overlap (error bailed already via ?)
+                // No overlap (error bailed already via `?`).
             }
         }
 

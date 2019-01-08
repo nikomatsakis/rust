@@ -1,4 +1,4 @@
-//! For each definition, we track the following data.  A definition
+//! For each definition, we track the following data. A definition
 //! here is defined somewhat circularly as "something with a def-id",
 //! but it generally corresponds to things like structs, enums, etc.
 //! There are also some rather random cases (like const initializer
@@ -114,7 +114,7 @@ impl Encodable for DefPathTable {
         self.index_to_key[DefIndexAddressSpace::Low.index()].encode(s)?;
         self.index_to_key[DefIndexAddressSpace::High.index()].encode(s)?;
 
-        // DefPath hashes
+        // `DefPath` hashes
         self.def_path_hashes[DefIndexAddressSpace::Low.index()].encode(s)?;
         self.def_path_hashes[DefIndexAddressSpace::High.index()].encode(s)?;
 
@@ -260,9 +260,9 @@ impl DefPath {
         DefPath { data: data, krate: krate }
     }
 
-    /// Returns a string representation of the DefPath without
+    /// Returns a string representation of the `DefPath` without
     /// the crate-prefix. This method is useful if you don't have
-    /// a TyCtxt available.
+    /// a `TyCtxt` available.
     pub fn to_string_no_crate(&self) -> String {
         let mut s = String::with_capacity(self.data.len() * 16);
 
@@ -271,13 +271,13 @@ impl DefPath {
                    "::{}[{}]",
                    component.data.as_interned_str(),
                    component.disambiguator)
-                .unwrap();
+                   .unwrap();
         }
 
         s
     }
 
-    /// Return filename friendly string of the DefPah with the
+    /// Returns filename-friendly string of the `DefPath` with the
     /// crate-prefix.
     pub fn to_string_friendly<F>(&self, crate_imported_name: F) -> String
         where F: FnOnce(CrateNum) -> Symbol
@@ -295,16 +295,16 @@ impl DefPath {
                        "{}[{}]",
                        component.data.as_interned_str(),
                        component.disambiguator)
-                    .unwrap();
+                       .unwrap();
             }
         }
 
         s
     }
 
-    /// Return filename friendly string of the DefPah without
+    /// Returns filename-friendly string of the `DefPath` without
     /// the crate-prefix. This method is useful if you don't have
-    /// a TyCtxt available.
+    /// a `TyCtxt` available.
     pub fn to_filename_friendly_no_crate(&self) -> String {
         let mut s = String::with_capacity(self.data.len() * 16);
 
@@ -319,7 +319,7 @@ impl DefPath {
                        "{}[{}]",
                        component.data.as_interned_str(),
                        component.disambiguator)
-                    .unwrap();
+                       .unwrap();
             }
         }
         s
@@ -655,7 +655,7 @@ impl DefPathData {
             GlobalMetaData(name) => {
                 return name
             }
-            // note that this does not show up in user printouts
+            // Note that this does not show up in user print-outs.
             CrateRoot => "{{root}}",
             Impl => "{{impl}}",
             Misc => "{{?}}",

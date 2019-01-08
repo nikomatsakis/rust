@@ -21,11 +21,10 @@ use middle::lang_items::SizedTraitLangItem;
 use middle::resolve_lifetime as rl;
 use middle::weak_lang_items;
 use rustc::mir::mono::Linkage;
+use rustc::ty::{self, AdtKind, Binder, Predicate, ToPolyTraitRef, Ty, TyCtxt};
 use rustc::ty::query::Providers;
 use rustc::ty::subst::Substs;
-use rustc::ty::util::Discr;
-use rustc::ty::util::IntTypeExt;
-use rustc::ty::{self, AdtKind, ToPolyTraitRef, Ty, TyCtxt};
+use rustc::ty::util::{Discr, IntTypeExt};
 use rustc::ty::{ReprOptions, ToPredicate};
 use rustc::util::captures::Captures;
 use rustc::util::nodemap::FxHashMap;
@@ -327,7 +326,7 @@ impl<'a, 'tcx> ItemCtxt<'a, 'tcx> {
         param_id: ast::NodeId,
         ty: Ty<'tcx>,
         only_self_bounds: OnlySelfBounds,
-    ) -> Vec<(ty::Predicate<'tcx>, Span)> {
+    ) -> Vec<(Predicate<'tcx>, Span)> {
         let from_ty_params = ast_generics
             .params
             .iter()
@@ -673,7 +672,7 @@ fn adt_def<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId) -> &'tcx ty::Ad
 }
 
 /// Ensures that the super-predicates of the trait with def-id
-/// trait_def_id are converted and stored. This also ensures that
+/// `trait_def_id` are converted and stored. This also ensures that
 /// the transitive super-predicates are converted;
 fn super_predicates_of<'a, 'tcx>(
     tcx: TyCtxt<'a, 'tcx, 'tcx>,
@@ -695,14 +694,14 @@ fn super_predicates_of<'a, 'tcx>(
 
     let icx = ItemCtxt::new(tcx, trait_def_id);
 
-    // Convert the bounds that follow the colon, e.g., `Bar + Zed` in `trait Foo : Bar + Zed`.
+    // Convert the bounds that follow the colon, e.g., `Bar + Zed` in `trait Foo: Bar + Zed`.
     let self_param_ty = tcx.mk_self_type();
     let superbounds1 = compute_bounds(&icx, self_param_ty, bounds, SizedByDefault::No, item.span);
 
     let superbounds1 = superbounds1.predicates(tcx, self_param_ty);
 
     // Convert any explicit superbounds in the where clause,
-    // e.g., `trait Foo where Self : Bar`.
+    // e.g., `trait Foo where Self: Bar`.
     // In the case of trait aliases, however, we include all bounds in the where clause,
     // so e.g., `trait Foo = where u32: PartialEq<Self>` would include `u32: PartialEq<Self>`
     // as one of its "superpredicates".
@@ -717,7 +716,7 @@ fn super_predicates_of<'a, 'tcx>(
     // which will, in turn, reach indirect supertraits.
     for &(pred, span) in &superbounds {
         debug!("superbound: {:?}", pred);
-        if let ty::Predicate::Trait(bound) = pred {
+        if let Predicate::Trait(bound) = pred {
             tcx.at(span).super_predicates_of(bound.def_id());
         }
     }
@@ -1460,7 +1459,7 @@ fn fn_sig<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId) -> ty::PolyFnSig
             let inputs = fields
                 .iter()
                 .map(|f| tcx.type_of(tcx.hir().local_def_id(f.id)));
-            ty::Binder::bind(tcx.mk_fn_sig(
+            Binder::bind(tcx.mk_fn_sig(
                 inputs,
                 ty,
                 false,
@@ -1663,8 +1662,8 @@ fn explicit_predicates_of<'a, 'tcx>(
     /// Preserving the order of insertion is important here so as not to break
     /// compile-fail UI tests.
     struct UniquePredicates<'tcx> {
-        predicates: Vec<(ty::Predicate<'tcx>, Span)>,
-        uniques: FxHashSet<(ty::Predicate<'tcx>, Span)>,
+        predicates: Vec<(Predicate<'tcx>, Span)>,
+        uniques: FxHashSet<(Predicate<'tcx>, Span)>,
     }
 
     impl<'tcx> UniquePredicates<'tcx> {
@@ -1675,13 +1674,13 @@ fn explicit_predicates_of<'a, 'tcx>(
             }
         }
 
-        fn push(&mut self, value: (ty::Predicate<'tcx>, Span)) {
+        fn push(&mut self, value: (Predicate<'tcx>, Span)) {
             if self.uniques.insert(value) {
                 self.predicates.push(value);
             }
         }
 
-        fn extend<I: IntoIterator<Item = (ty::Predicate<'tcx>, Span)>>(&mut self, iter: I) {
+        fn extend<I: IntoIterator<Item = (Predicate<'tcx>, Span)>>(&mut self, iter: I) {
             for value in iter {
                 self.push(value);
             }
@@ -1829,7 +1828,7 @@ fn explicit_predicates_of<'a, 'tcx>(
                 param.bounds.iter().for_each(|bound| match bound {
                     hir::GenericBound::Outlives(lt) => {
                         let bound = AstConv::ast_region_to_region(&icx, &lt, None);
-                        let outlives = ty::Binder::bind(ty::OutlivesPredicate(region, bound));
+                        let outlives = Binder::bind(ty::OutlivesPredicate(region, bound));
                         predicates.push((outlives.to_predicate(), lt.span));
                     }
                     _ => bug!(),
@@ -1853,7 +1852,7 @@ fn explicit_predicates_of<'a, 'tcx>(
         }
     }
 
-    // Add in the bounds that appear in the where-clause
+    // Add in the bounds that appear in the where-clause.
     let where_clause = &ast_generics.where_clause;
     for predicate in &where_clause.predicates {
         match predicate {
@@ -1861,7 +1860,7 @@ fn explicit_predicates_of<'a, 'tcx>(
                 let ty = icx.to_ty(&bound_pred.bounded_ty);
 
                 // Keep the type around in a dummy predicate, in case of no bounds.
-                // That way, `where Ty:` is not a complete noop (see #53696) and `Ty`
+                // That way, `where Ty:` is not a complete no-op (see #53696) and `Ty`
                 // is still checked for WF.
                 if bound_pred.bounds.is_empty() {
                     if let ty::Param(_) = ty.sty {
@@ -1875,7 +1874,7 @@ fn explicit_predicates_of<'a, 'tcx>(
                         let span = bound_pred.bounded_ty.span;
                         let predicate = ty::OutlivesPredicate(ty, tcx.mk_region(ty::ReEmpty));
                         predicates.push(
-                            (ty::Predicate::TypeOutlives(ty::Binder::dummy(predicate)), span)
+                            (Predicate::TypeOutlives(Binder::dummy(predicate)), span)
                         );
                     }
                 }
@@ -1900,8 +1899,8 @@ fn explicit_predicates_of<'a, 'tcx>(
 
                         &hir::GenericBound::Outlives(ref lifetime) => {
                             let region = AstConv::ast_region_to_region(&icx, lifetime, None);
-                            let pred = ty::Binder::bind(ty::OutlivesPredicate(ty, region));
-                            predicates.push((ty::Predicate::TypeOutlives(pred), lifetime.span))
+                            let pred = Binder::bind(ty::OutlivesPredicate(ty, region));
+                            predicates.push((Predicate::TypeOutlives(pred), lifetime.span))
                         }
                     }
                 }
@@ -1916,9 +1915,9 @@ fn explicit_predicates_of<'a, 'tcx>(
                         }
                         _ => bug!(),
                     };
-                    let pred = ty::Binder::bind(ty::OutlivesPredicate(r1, r2));
+                    let pred = Binder::bind(ty::OutlivesPredicate(r1, r2));
 
-                    (ty::Predicate::RegionOutlives(pred), span)
+                    (Predicate::RegionOutlives(pred), span)
                 }))
             }
 
@@ -1955,7 +1954,7 @@ fn explicit_predicates_of<'a, 'tcx>(
     let mut predicates = predicates.predicates;
 
     // Subtle: before we store the predicates into the tcx, we
-    // sort them so that predicates like `T: Foo<Item=U>` come
+    // sort them so that predicates like `T: Foo<Item = U>` come
     // before uses of `U`.  This avoids false ambiguity errors
     // in trait checking. See `setup_constraining_predicates`
     // for details.
@@ -2053,7 +2052,7 @@ fn predicates_from_bound<'tcx>(
     astconv: &dyn AstConv<'tcx, 'tcx>,
     param_ty: Ty<'tcx>,
     bound: &hir::GenericBound,
-) -> Vec<(ty::Predicate<'tcx>, Span)> {
+) -> Vec<(Predicate<'tcx>, Span)> {
     match *bound {
         hir::GenericBound::Trait(ref tr, hir::TraitBoundModifier::None) => {
             let mut projections = Vec::new();
@@ -2066,8 +2065,8 @@ fn predicates_from_bound<'tcx>(
         }
         hir::GenericBound::Outlives(ref lifetime) => {
             let region = astconv.ast_region_to_region(lifetime, None);
-            let pred = ty::Binder::bind(ty::OutlivesPredicate(param_ty, region));
-            vec![(ty::Predicate::TypeOutlives(pred), lifetime.span)]
+            let pred = Binder::bind(ty::OutlivesPredicate(param_ty, region));
+            vec![(Predicate::TypeOutlives(pred), lifetime.span)]
         }
         hir::GenericBound::Trait(_, hir::TraitBoundModifier::Maybe) => vec![],
     }

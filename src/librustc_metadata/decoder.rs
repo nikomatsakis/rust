@@ -1,4 +1,4 @@
-// Decoding metadata from a single crate's metadata
+//! Decodes metadata for a single crate.
 
 use cstore::{self, CrateMetadata, MetadataBlob, NativeLibrary, ForeignModule};
 use schema::*;
@@ -302,13 +302,13 @@ impl<'a, 'tcx> SpecializedDecoder<Span> for DecodeContext<'a, 'tcx> {
         let sess = if let Some(sess) = self.sess {
             sess
         } else {
-            bug!("Cannot decode Span without Session.")
+            bug!("cannot decode Span without Session")
         };
 
         let imported_source_files = self.cdata().imported_source_files(&sess.source_map());
         let source_file = {
             // Optimize for the case that most spans within a translated item
-            // originate from the same source_file.
+            // originate from the same `source_file`.
             let last_source_file = &imported_source_files[self.last_source_file_index];
 
             if lo >= last_source_file.original_start_pos &&
@@ -544,7 +544,7 @@ impl<'a, 'tcx> CrateMetadata {
             EntryKind::Variant(data) |
             EntryKind::Struct(data, _) |
             EntryKind::Union(data, _) => data.decode(self),
-            _ => bug!(),
+            _ => bug!("def-index does not refer to ADT"),
         };
 
         let def_id = self.local_def_id(data.struct_ctor.unwrap_or(index));
@@ -656,7 +656,7 @@ impl<'a, 'tcx> CrateMetadata {
     fn get_impl_data(&self, id: DefIndex) -> ImplData<'tcx> {
         match self.entry(id).kind {
             EntryKind::Impl(data) => data.decode(self),
-            _ => bug!(),
+            _ => bug!("def-index does not refer to impl"),
         }
     }
 
@@ -833,7 +833,7 @@ impl<'a, 'tcx> CrateMetadata {
         match self.entry(id).kind {
             EntryKind::AssociatedConst(_, data, _) |
             EntryKind::Const(data, _) => data.ast_promotable,
-            _ => bug!(),
+            _ => bug!("def-index does not refer to const"),
         }
     }
 
@@ -859,7 +859,7 @@ impl<'a, 'tcx> CrateMetadata {
             EntryKind::AssociatedConst(AssociatedContainer::ImplFinal, qualif, _) => {
                 qualif.mir
             }
-            _ => bug!(),
+            _ => bug!("def-index does not refer to const"),
         }
     }
 
@@ -1092,7 +1092,7 @@ impl<'a, 'tcx> CrateMetadata {
         match self.entry(id).kind {
             EntryKind::Const(_, data) |
             EntryKind::AssociatedConst(_, _, data) => data.decode(self).0,
-            _ => bug!(),
+            _ => bug!("def-index does not refer to const"),
         }
     }
 
@@ -1100,7 +1100,7 @@ impl<'a, 'tcx> CrateMetadata {
         let entry = self.entry(id);
         match entry.kind {
             EntryKind::MacroDef(macro_def) => macro_def.decode(self),
-            _ => bug!(),
+            _ => bug!("def-index does not refer to macro def"),
         }
     }
 
@@ -1133,7 +1133,7 @@ impl<'a, 'tcx> CrateMetadata {
             EntryKind::Variant(data) |
             EntryKind::Struct(data, _) => data.decode(self).ctor_sig.unwrap(),
             EntryKind::Closure(data) => data.decode(self).sig,
-            _ => bug!(),
+            _ => bug!("def-index does not refer to function"),
         };
         sig.decode((self, tcx))
     }

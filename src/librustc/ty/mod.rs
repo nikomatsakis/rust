@@ -1206,7 +1206,7 @@ impl<'tcx> TraitPredicate<'tcx> {
         self.trait_ref.def_id
     }
 
-    pub fn input_types<'a>(&'a self) -> impl DoubleEndedIterator<Item=Ty<'tcx>> + 'a {
+    pub fn input_types<'a>(&'a self) -> impl DoubleEndedIterator<Item = Ty<'tcx>> + 'a {
         self.trait_ref.input_types()
     }
 
@@ -1223,8 +1223,8 @@ impl<'tcx> PolyTraitPredicate<'tcx> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, RustcEncodable, RustcDecodable)]
-pub struct OutlivesPredicate<A,B>(pub A, pub B); // `A: B`
-pub type PolyOutlivesPredicate<A,B> = ty::Binder<OutlivesPredicate<A,B>>;
+pub struct OutlivesPredicate<A, B>(pub A, pub B); // `A: B`
+pub type PolyOutlivesPredicate<A, B> = ty::Binder<OutlivesPredicate<A, B>>;
 pub type RegionOutlivesPredicate<'tcx> = OutlivesPredicate<ty::Region<'tcx>,
                                                            ty::Region<'tcx>>;
 pub type TypeOutlivesPredicate<'tcx> = OutlivesPredicate<Ty<'tcx>,
@@ -1243,7 +1243,7 @@ pub type PolySubtypePredicate<'tcx> = ty::Binder<SubtypePredicate<'tcx>>;
 /// This kind of predicate has no *direct* correspondent in the
 /// syntax, but it roughly corresponds to the syntactic forms:
 ///
-/// 1. `T: TraitRef<..., Item=Type>`
+/// 1. `T: TraitRef<..., Item = Type>`
 /// 2. `<T as TraitRef<...>>::Item == Type` (NYI)
 ///
 /// In particular, form #1 is "desugared" to the combination of a
@@ -1273,11 +1273,11 @@ impl<'tcx> PolyProjectionPredicate<'tcx> {
         // This is because here `self` has a `Binder` and so does our
         // return value, so we are preserving the number of binding
         // levels.
-        self.map_bound(|predicate| predicate.projection_ty.trait_ref(tcx))
+        self.map_bound(|pred| pred.projection_ty.trait_ref(tcx))
     }
 
     pub fn ty(&self) -> Binder<Ty<'tcx>> {
-        self.map_bound(|predicate| predicate.ty)
+        self.map_bound(|pred| pred.ty)
     }
 
     /// The `DefId` of the `TraitItem` for the associated type.
@@ -1342,7 +1342,7 @@ impl<'tcx> ToPredicate<'tcx> for PolyProjectionPredicate<'tcx> {
     }
 }
 
-// A custom iterator used by Predicate::walk_tys.
+// A custom iterator used by `Predicate::walk_tys`.
 enum WalkTysIter<'tcx, I, J, K>
     where I: Iterator<Item = Ty<'tcx>>,
           J: Iterator<Item = Ty<'tcx>>,
@@ -2311,7 +2311,7 @@ impl<'a, 'gcx, 'tcx> AdtDef {
     pub fn discriminants(
         &'a self,
         tcx: TyCtxt<'a, 'gcx, 'tcx>,
-    ) -> impl Iterator<Item=(VariantIdx, Discr<'tcx>)> + Captures<'gcx> + 'a {
+    ) -> impl Iterator<Item = (VariantIdx, Discr<'tcx>)> + Captures<'gcx> + 'a {
         let repr_type = self.repr.discr_type();
         let initial = repr_type.initial_discriminant(tcx.global_tcx());
         let mut prev_discr = None::<Discr<'tcx>>;
@@ -2496,9 +2496,9 @@ impl<'a, 'gcx, 'tcx> FieldDef {
 /// `tcx.closure_env_ty()`.
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub enum ClosureKind {
-    // Warning: Ordering is significant here! The ordering is chosen
-    // because the trait Fn is a subtrait of FnMut and so in turn, and
-    // hence we order it so that Fn < FnMut < FnOnce.
+    // Warning: ordering is significant here! The ordering is chosen
+    // because the trait `Fn` is a subtrait of `FnMut` and so in turn, and
+    // hence we order it so that `Fn < FnMut < FnOnce`.
     Fn,
     FnMut,
     FnOnce,
@@ -2911,7 +2911,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             self.original_crate_name(id.krate).as_interned_str()
         } else {
             let def_key = self.def_key(id);
-            // The name of a StructCtor is that of its struct parent.
+            // The name of a `StructCtor` is that of its parent struct.
             if let hir_map::DefPathData::StructCtor = def_key.disambiguated_data.data {
                 self.item_name(DefId {
                     krate: id.krate,
