@@ -78,12 +78,12 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
                 mir_def_id
             );
 
+            let param_env = visitors[&mir_def_id].param_env;
             let call_edges = visitors[&mir_def_id].call_edges.clone();
             for call_edge in &call_edges {
                 debug!(
                     "polymorphize_analysis: call_edge.callee={:?} caller is {:?}",
-                    call_edge.callee,
-                    mir_def_id,
+                    call_edge.callee, mir_def_id,
                 );
                 debug!(
                     "polymorphize_analysis: call_edge.substs={:#?}",
@@ -92,8 +92,16 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
 
                 let substituted_dependencies: Vec<_>;
                 if let Some(visitor) = visitors.get(&call_edge.callee) {
-                    substituted_dependencies = visitor.dependencies.iter()
-                        .map(|dependency| dependency.subst(tcx, call_edge.substs))
+                    substituted_dependencies = visitor
+                        .dependencies
+                        .iter()
+                        .map(|dependency| {
+                            tcx.subst_and_normalize_erasing_regions(
+                                call_edge.substs,
+                                param_env,
+                                dependency,
+                            )
+                        })
                         .collect();
                 } else {
                     // FIXME: cross-crate dependencies. For now, assume that they depend
@@ -105,7 +113,10 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
                 }
 
                 for dependency in substituted_dependencies {
-                    debug!("polymorphize_analysis: substituted dependency = {:?}", dependency);
+                    debug!(
+                        "polymorphize_analysis: substituted dependency = {:?}",
+                        dependency
+                    );
 
                     if visitors
                         .get_mut(&mir_def_id)
@@ -120,7 +131,11 @@ pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
     }
 
     if tcx.sess.opts.debugging_opts.polymorphize_dump {
-        for visitor in visitors.iter().filter(|(did, _)| did.is_local()).map(|(_, v)| v) {
+        for visitor in visitors
+            .iter()
+            .filter(|(did, _)| did.is_local())
+            .map(|(_, v)| v)
+        {
             let message = if visitor.dependencies.is_empty() {
                 "no polymorphic dependencies found"
             } else {
@@ -217,8 +232,10 @@ fn analyze_space_savings(
     let new_size_estimate = mono_size_estimate - duplicate_size_estimate;
 
     // Print information out
-    tcx.sess.note_without_error(&format!("Monomorphized items: {}", mono_items.len()));
-    tcx.sess.note_without_error(&format!("Monomorphized size : {}", mono_size_estimate));
+    tcx.sess
+        .note_without_error(&format!("Monomorphized items: {}", mono_items.len()));
+    tcx.sess
+        .note_without_error(&format!("Monomorphized size : {}", mono_size_estimate));
     tcx.sess.note_without_error(&format!(
         "New total items    : {} ({:3.0}%)",
         new_items,
@@ -315,7 +332,10 @@ impl DependencyVisitor<'me, 'gcx> {
         // compute the initial set of dependencies and call-edges
         visitor.visit_mir(mir);
 
-        debug!("DependencyVisitor::new: finished visiting mir_def_id={:?}", mir_def_id);
+        debug!(
+            "DependencyVisitor::new: finished visiting mir_def_id={:?}",
+            mir_def_id
+        );
 
         visitor
     }
@@ -361,9 +381,9 @@ impl DependencyVisitor<'me, 'gcx> {
 
     fn record_dependency(&mut self, span: Span, kind: DependencyKind<'gcx>) -> bool {
         match kind {
-            DependencyKind::IndexInto(ty, _) |
-            DependencyKind::OffsetOf(ty, _) |
-            DependencyKind::SizeAlignment(ty) => {
+            DependencyKind::IndexInto(ty, _)
+            | DependencyKind::OffsetOf(ty, _)
+            | DependencyKind::SizeAlignment(ty) => {
                 match SizeSkeleton::compute(ty, self.tcx, self.param_env) {
                     Ok(SizeSkeleton::Known(_)) => {
                         debug!("record_dependency: known size, skipping");
@@ -452,14 +472,18 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
             TerminatorKind::Abort => (),
             TerminatorKind::Return => (),
             TerminatorKind::Unreachable => (),
-            TerminatorKind::Drop { location: place, .. } |
-            TerminatorKind::DropAndReplace { location: place, .. } => {
+            TerminatorKind::Drop {
+                location: place, ..
+            }
+            | TerminatorKind::DropAndReplace {
+                location: place, ..
+            } => {
                 let ty = place.ty(self.mir, self.tcx).to_ty(self.tcx);
                 self.record_dependency(
                     self.mir.source_info(location).span,
                     DependencyKind::Drop(ty),
                 );
-            },
+            }
             TerminatorKind::Call { func, .. } => match func.ty(self.mir, self.tcx).sty {
                 ty::FnDef(def_id, substs) => {
                     self.record_call_dependency(
@@ -539,10 +563,10 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
                                     DependencyKind::IndexInto(ty, local),
                                 );
                             }
-                        },
+                        }
                         _ => (),
                     }
-                },
+                }
                 ProjectionElem::Field(field, _) => {
                     let ty = proj.base.ty(self.mir, self.tcx).to_ty(self.tcx);
                     match self.tcx.layout_of(self.param_env.and(ty)) {
@@ -553,10 +577,10 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
                                     DependencyKind::OffsetOf(ty, field),
                                 );
                             }
-                        },
+                        }
                         _ => (),
                     }
-                },
+                }
                 _ => {}
             },
         }
