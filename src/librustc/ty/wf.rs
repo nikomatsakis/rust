@@ -346,9 +346,7 @@ impl<'a, 'gcx, 'tcx> WfPredicates<'a, 'gcx, 'tcx> {
                     // anyway, except via auto trait matching (which
                     // only inspects the upvar types).
                     subtys.skip_current_subtree(); // subtree handled by compute_projection
-                    for upvar_ty in substs.upvar_tys(def_id, self.infcx.tcx) {
-                        self.compute(upvar_ty);
-                    }
+                    self.compute(substs.upvar_tuple_ty(def_id, self.infcx.tcx));
                 }
 
                 ty::FnPtr(_) => {

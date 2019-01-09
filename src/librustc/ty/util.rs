@@ -1045,7 +1045,7 @@ fn needs_drop_raw<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         // Structural recursion.
         ty::Array(ty, _) | ty::Slice(ty) => needs_drop(ty),
 
-        ty::Closure(def_id, ref substs) => substs.upvar_tys(def_id, tcx).any(needs_drop),
+        ty::Closure(def_id, ref substs) => needs_drop(substs.upvar_tuple_ty(def_id, tcx)),
 
         // Pessimistically assume that all generators will require destructors
         // as we don't know if a destructor is a noop or not until after the MIR
