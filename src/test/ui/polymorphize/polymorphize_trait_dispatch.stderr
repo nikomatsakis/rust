@@ -4,7 +4,7 @@ warning: some polymorphic dependencies found
 LL | / fn depend_trait_dispatch<T: Clone>(t: &T) -> T {
 LL | |     //~^ ERROR some polymorphic dependencies found
 LL | |     t.clone()
-   | |     --------- depends on `TraitMethod(DefId(2/0:1278 ~ core[8468]::clone[0]::Clone[0]::clone[0]), [T])`
+   | |     --------- depends on `TraitMethod(DefId(2/0:1278 ~ core[1e4c]::clone[0]::Clone[0]::clone[0]), [T])`
 LL | | }
    | |_^
 
@@ -12,7 +12,7 @@ warning: some polymorphic dependencies found
   --> $DIR/polymorphize_trait_dispatch.rs:13:1
    |
 LL |       t.clone()
-   |       --------- depends on `TraitMethod(DefId(2/0:1278 ~ core[8468]::clone[0]::Clone[0]::clone[0]), [T])`
+   |       --------- depends on `TraitMethod(DefId(2/0:1278 ~ core[1e4c]::clone[0]::Clone[0]::clone[0]), [T])`
 ...
 LL | / fn depend_trait_dispatch_indirect<T: Clone>(t: &T) -> T {
 LL | |     //~^ ERROR some polymorphic dependencies found
@@ -25,7 +25,7 @@ warning: no polymorphic dependencies found
   --> $DIR/polymorphize_trait_dispatch.rs:18:1
    |
 LL |       t.clone()
-   |       --------- invokes `DefId(2/0:1292 ~ core[8468]::clone[0]::impls[0]::{{impl}}[3]::clone[0])` with substitutions `[ReErased, T]`
+   |       --------- invokes `DefId(2/0:1292 ~ core[1e4c]::clone[0]::impls[0]::{{impl}}[3]::clone[0])` with substitutions `[ReErased, T]`
 ...
 LL | / fn depend_trait_dispatch_ref_indirect<T: Clone>(t: &T) -> &T {
 LL | |     //~^ ERROR some polymorphic dependencies found
@@ -40,8 +40,8 @@ warning: no polymorphic dependencies found
 LL |       t.clone()
    |       ---------
    |       |
-   |       invokes `DefId(2/0:17671 ~ core[8468]::clone[0]::impls[0]::{{impl}}[7]::clone[0])` with substitutions `[]`
-   |       invokes `DefId(2/0:17669 ~ core[8468]::clone[0]::impls[0]::{{impl}}[6]::clone[0])` with substitutions `[]`
+   |       invokes `DefId(2/0:17671 ~ core[1e4c]::clone[0]::impls[0]::{{impl}}[7]::clone[0])` with substitutions `[]`
+   |       invokes `DefId(2/0:17669 ~ core[1e4c]::clone[0]::impls[0]::{{impl}}[6]::clone[0])` with substitutions `[]`
 ...
 LL | / fn main() {
 LL | |     //~^ ERROR no polymorphic dependencies found
