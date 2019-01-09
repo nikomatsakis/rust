@@ -358,6 +358,9 @@ impl<'tcx> ClosureSubsts<'tcx> {
     /// Iterate over the types of the closure's upvars. This is
     /// invalid to call during type inference because the number of
     /// upvars must already have been inferred.
+    ///
+    /// FIXME(blitzerr): can we change to `tcx: TyCtxt<'_, 'tcx,
+    /// 'tcx>` to prevent this from being called during inference
     #[inline]
     pub fn upvar_tys(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) ->
         impl Iterator<Item=Ty<'tcx>> + 'tcx
@@ -421,6 +424,9 @@ impl<'tcx> GeneratorSubsts<'tcx> {
     fn split(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) -> SplitGeneratorSubsts<'tcx> {
         let generics = tcx.generics_of(def_id);
         let parent_len = generics.parent_count;
+
+        // FIXME(blitzerr): introduce `upvar_tuple_ty` just like with closures
+
         SplitGeneratorSubsts {
             yield_ty: self.substs.type_at(parent_len),
             return_ty: self.substs.type_at(parent_len + 1),
@@ -438,6 +444,8 @@ impl<'tcx> GeneratorSubsts<'tcx> {
         self.split(def_id, tcx).witness
     }
 
+    /// FIXME(blitzerr): can we change to `tcx: TyCtxt<'_, 'tcx,
+    /// 'tcx>` to prevent this from being called during inference
     #[inline]
     pub fn upvar_tys(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) ->
         impl Iterator<Item=Ty<'tcx>> + 'tcx

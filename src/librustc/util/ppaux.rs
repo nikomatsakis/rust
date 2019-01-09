@@ -1355,6 +1355,17 @@ define_print! {
                 Str => write!(f, "str"),
                 Generator(did, substs, movability) => ty::tls::with(|tcx| {
                     let substs = tcx.lift(&substs).unwrap();
+
+                    // FIXME(blitzerr): rewrite this to call
+                    // `upvar_tuple_ty` and check the result -- if it
+                    // is an inference variable, we can't print upvar
+                    // information (yet). Else we can extract the
+                    // types from the `TyTuple`.
+                    //
+                    // (Maybe add a helper `opt_upvar_tys` that
+                    // returns `Option<[Ty]>` rather than directly
+                    // inspecting `upvar_tuple_ty`.)
+
                     let upvar_tys = substs.upvar_tys(did, tcx);
                     let witness = substs.witness(did, tcx);
                     if movability == hir::GeneratorMovability::Movable {
@@ -1397,6 +1408,17 @@ define_print! {
                 }
                 Closure(did, substs) => ty::tls::with(|tcx| {
                     let substs = tcx.lift(&substs).unwrap();
+
+                    // FIXME(blitzerr): rewrite this to call
+                    // `upvar_tuple_ty` and check the result -- if it
+                    // is an inference variable, we can't print upvar
+                    // information (yet). Else we can extract the
+                    // types from the `TyTuple`.
+                    //
+                    // (Maybe add a helper `opt_upvar_tys` that
+                    // returns `Option<[Ty]>` rather than directly
+                    // inspecting `upvar_tuple_ty`.)
+
                     let upvar_tys = substs.upvar_tys(did, tcx);
                     write!(f, "[closure")?;
 
