@@ -35,7 +35,7 @@ use std::collections::BTreeMap;
 use syntax_pos::Span;
 
 pub fn polymorphize_analysis<'me, 'gcx>(tcx: TyCtxt<'me, 'gcx, 'gcx>, (): ()) {
-    if !tcx.sess.opts.debugging_opts.polymorphize {
+    if tcx.sess.opts.debugging_opts.polymorphize.is_none() {
         return;
     }
 
@@ -336,6 +336,17 @@ EnumTypeFoldableImpl! {
     }
 }
 
+impl DependencyKind<'_> {
+    /// Is this a `DependencyKind::OffsetOf`?
+    fn is_offset_of(&self) -> bool {
+        if let DependencyKind::OffsetOf(..) = *self {
+            true
+        } else {
+            false
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 struct CallEdge<'gcx> {
     span: Span,
@@ -414,9 +425,14 @@ impl DependencyVisitor<'me, 'gcx> {
             DependencyKind::IndexInto(ty, _)
             | DependencyKind::OffsetOf(ty, _)
             | DependencyKind::SizeAlignment(ty) => {
+                let level = self.tcx.sess.opts.debugging_opts.polymorphize.unwrap();
                 match SizeSkeleton::compute(ty, self.tcx, self.param_env) {
                     Ok(SizeSkeleton::Known(_)) => {
                         debug!("record_dependency: known size, skipping");
+                        false
+                    }
+                    _ if level > 0 && !kind.is_offset_of() =>  {
+                        debug!("record_dependency: unknown size, skipping as level above zero");
                         false
                     }
                     _ => {

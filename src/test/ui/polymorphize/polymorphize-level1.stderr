@@ -1,0 +1,101 @@
+warning: some polymorphic dependencies found
+  --> $DIR/polymorphize-level1.rs:11:1
+   |
+LL | / fn offset_of_dependency<T>(parameter: &OffsetDependent<T>) -> u32 {
+LL | |     //~^ ERROR some polymorphic dependencies found
+LL | |     parameter.count
+   | |     --------------- depends on `OffsetOf(OffsetDependent<T>, field[1])`
+LL | | }
+   | |_^
+
+warning: some polymorphic dependencies found
+  --> $DIR/polymorphize-level1.rs:16:1
+   |
+LL | / fn drop_dependency<T>(data: T) {
+LL | |     //~^ ERROR some polymorphic dependencies found
+LL | | }
+   | | ^
+   | | |
+   | |_depends on `Drop(T)`
+   | 
+
+warning: no polymorphic dependencies found
+  --> $DIR/polymorphize-level1.rs:20:1
+   |
+LL | / fn size_alignment_dependency<T: ?Sized>(t: &T) -> &T {
+LL | |     //~^ ERROR no polymorphic dependencies found
+LL | |     t
+LL | | }
+   | |_^
+
+warning: some polymorphic dependencies found
+  --> $DIR/polymorphize-level1.rs:25:1
+   |
+LL | / fn trait_method_dependency<T: Clone>(t: &T) -> T {
+LL | |     //~^ ERROR some polymorphic dependencies found
+LL | |     t.clone()
+   | |     --------- depends on `TraitMethod(DefId(2/0:1278 ~ core[8468]::clone[0]::Clone[0]::clone[0]), [T])`
+LL | | }
+   | |_^
+
+warning: no polymorphic dependencies found
+  --> $DIR/polymorphize-level1.rs:30:1
+   |
+LL | / fn index_into_dependency<T>(parameters: &[T]) -> &T {
+LL | |     //~^ ERROR no polymorphic dependencies found
+LL | |     &parameters[0]
+LL | | }
+   | |_^
+
+warning: no polymorphic dependencies found
+  --> $DIR/polymorphize-level1.rs:35:1
+   |
+LL |       t.clone()
+   |       ---------
+   |       |
+   |       invokes `DefId(2/0:17671 ~ core[8468]::clone[0]::impls[0]::{{impl}}[7]::clone[0])` with substitutions `[]`
+   |       invokes `DefId(2/0:17669 ~ core[8468]::clone[0]::impls[0]::{{impl}}[6]::clone[0])` with substitutions `[]`
+...
+LL | / fn main() {
+LL | |     //~^ ERROR no polymorphic dependencies found
+LL | |
+LL | |     // Invoke each function so that they are considered by the collector.
+LL | |     index_into_dependency::<u32>(&[2, 3, 4]);
+   | |     ---------------------------------------- invokes `DefId(0/0:8 ~ polymorphize_level1[317d]::index_into_dependency[0])` with substitutions `[u32]`
+LL | |     index_into_dependency::<u16>(&[2, 3, 4]);
+   | |     ---------------------------------------- invokes `DefId(0/0:8 ~ polymorphize_level1[317d]::index_into_dependency[0])` with substitutions `[u16]`
+LL | |
+LL | |     trait_method_dependency::<u32>(&3);
+   | |     ---------------------------------- invokes `DefId(0/0:7 ~ polymorphize_level1[317d]::trait_method_dependency[0])` with substitutions `[u32]`
+LL | |     trait_method_dependency::<u16>(&3);
+   | |     ---------------------------------- invokes `DefId(0/0:7 ~ polymorphize_level1[317d]::trait_method_dependency[0])` with substitutions `[u16]`
+LL | |
+LL | |     size_alignment_dependency::<u32>(&2);
+   | |     ------------------------------------ invokes `DefId(0/0:6 ~ polymorphize_level1[317d]::size_alignment_dependency[0])` with substitutions `[u32]`
+LL | |     size_alignment_dependency::<u16>(&2);
+   | |     ------------------------------------ invokes `DefId(0/0:6 ~ polymorphize_level1[317d]::size_alignment_dependency[0])` with substitutions `[u16]`
+LL | |
+LL | |     drop_dependency::<u32>(3);
+   | |     ------------------------- invokes `DefId(0/0:5 ~ polymorphize_level1[317d]::drop_dependency[0])` with substitutions `[u32]`
+LL | |     drop_dependency::<u16>(3);
+   | |     ------------------------- invokes `DefId(0/0:5 ~ polymorphize_level1[317d]::drop_dependency[0])` with substitutions `[u16]`
+LL | |
+LL | |     offset_of_dependency::<u32>(&OffsetDependent { t: 22, count: 2 });
+   | |     ----------------------------------------------------------------- invokes `DefId(0/0:4 ~ polymorphize_level1[317d]::offset_of_dependency[0])` with substitutions `[u32]`
+LL | |     offset_of_dependency::<u16>(&OffsetDependent { t: 22, count: 2 });
+   | |     ----------------------------------------------------------------- invokes `DefId(0/0:4 ~ polymorphize_level1[317d]::offset_of_dependency[0])` with substitutions `[u16]`
+LL | | }
+   | |_^
+
+note: Detected duplicate of DefId(0/0:6 ~ polymorphize_level1[317d]::size_alignment_dependency[0]) with dependencies []
+
+note: Detected duplicate of DefId(0/0:8 ~ polymorphize_level1[317d]::index_into_dependency[0]) with dependencies []
+
+note: Monomorphized items: 21
+
+note: Monomorphized size : 114
+
+note: New total items    : 19 ( 90%)
+
+note: New estimated size : 105 ( 92%)
+
