@@ -69,12 +69,12 @@ LL | |
 LL | |     dependency_because_drop_box_T::<u32>(Box::new(3));
    | |     -------------------------------------------------
    | |     |                                    |
-   | |     |                                    invokes `DefId(5/0:97 ~ alloc[b619]::boxed[0]::{{impl}}[0]::new[0])` with substitutions `[u32]`
+   | |     |                                    invokes `DefId(5/0:97 ~ alloc[e111]::boxed[0]::{{impl}}[0]::new[0])` with substitutions `[u32]`
    | |     invokes `DefId(0/0:5 ~ polymorphize_drop[317d]::dependency_because_drop_box_T[0])` with substitutions `[u32]`
 LL | |     dependency_because_drop_box_T::<u16>(Box::new(3));
    | |     -------------------------------------------------
    | |     |                                    |
-   | |     |                                    invokes `DefId(5/0:97 ~ alloc[b619]::boxed[0]::{{impl}}[0]::new[0])` with substitutions `[u16]`
+   | |     |                                    invokes `DefId(5/0:97 ~ alloc[e111]::boxed[0]::{{impl}}[0]::new[0])` with substitutions `[u16]`
    | |     invokes `DefId(0/0:5 ~ polymorphize_drop[317d]::dependency_because_drop_box_T[0])` with substitutions `[u16]`
 LL | |
 LL | |     no_dependency_because_drop_ref_T::<u32>(&3);
