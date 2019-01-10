@@ -33,7 +33,7 @@ LL | | }
 warning: no polymorphic dependencies found
   --> $DIR/polymorphize_sized.rs:27:1
    |
-LL | / fn dependency_because_embed_ref_sized<T>(t: &T) -> EmbedRef<'_, T> {
+LL | / fn no_dependency_because_embed_ref_sized<T>(t: &T) -> EmbedRef<'_, T> {
 LL | |     //~^ ERROR no polymorphic dependencies found
 LL | |     //
 LL | |     // Here, the size of `EmbedRef` is known up front.
@@ -76,10 +76,10 @@ LL | |     dependency_because_embed_ref_unsized::<u32>(&22);
 LL | |     dependency_because_embed_ref_unsized::<u16>(&22);
    | |     ------------------------------------------------ invokes `DefId(0/0:6 ~ polymorphize_sized[317d]::dependency_because_embed_ref_unsized[0])` with substitutions `[u16]`
 LL | |
-LL | |     dependency_because_embed_ref_sized::<u32>(&22);
-   | |     ---------------------------------------------- invokes `DefId(0/0:7 ~ polymorphize_sized[317d]::dependency_because_embed_ref_sized[0])` with substitutions `[u32]`
-LL | |     dependency_because_embed_ref_sized::<u16>(&22);
-   | |     ---------------------------------------------- invokes `DefId(0/0:7 ~ polymorphize_sized[317d]::dependency_because_embed_ref_sized[0])` with substitutions `[u16]`
+LL | |     no_dependency_because_embed_ref_sized::<u32>(&22);
+   | |     ------------------------------------------------- invokes `DefId(0/0:7 ~ polymorphize_sized[317d]::no_dependency_because_embed_ref_sized[0])` with substitutions `[u32]`
+LL | |     no_dependency_because_embed_ref_sized::<u16>(&22);
+   | |     ------------------------------------------------- invokes `DefId(0/0:7 ~ polymorphize_sized[317d]::no_dependency_because_embed_ref_sized[0])` with substitutions `[u16]`
 LL | |
 LL | |     no_dependency_because_unsized_pointer_indirect::<u32>(&22);
    | |     ---------------------------------------------------------- invokes `DefId(0/0:8 ~ polymorphize_sized[317d]::no_dependency_because_unsized_pointer_indirect[0])` with substitutions `[u32]`
@@ -87,6 +87,12 @@ LL | |     no_dependency_because_unsized_pointer_indirect::<u16>(&22);
    | |     ---------------------------------------------------------- invokes `DefId(0/0:8 ~ polymorphize_sized[317d]::no_dependency_because_unsized_pointer_indirect[0])` with substitutions `[u16]`
 LL | | }
    | |_^
+
+note: Detected duplicate of DefId(0/0:4 ~ polymorphize_sized[317d]::no_dependency_because_pointer[0]) with dependencies []
+
+note: Detected duplicate of DefId(0/0:7 ~ polymorphize_sized[317d]::no_dependency_because_embed_ref_sized[0]) with dependencies []
+
+note: Detected duplicate of DefId(0/0:8 ~ polymorphize_sized[317d]::no_dependency_because_unsized_pointer_indirect[0]) with dependencies []
 
 note: Monomorphized items: 19
 

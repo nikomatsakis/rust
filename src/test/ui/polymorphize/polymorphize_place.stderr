@@ -84,6 +84,10 @@ LL | |     no_dependency_because_index_depends_on_sized_pointer::<u16>(&[&2, &3,
 LL | | }
    | |_^
 
+note: Detected duplicate of DefId(0/0:6 ~ polymorphize_place[317d]::no_dependency_because_offset[0]) with dependencies []
+
+note: Detected duplicate of DefId(0/0:8 ~ polymorphize_place[317d]::no_dependency_because_index_depends_on_sized_pointer[0]) with dependencies []
+
 note: Monomorphized items: 20
 
 note: Monomorphized size : 149

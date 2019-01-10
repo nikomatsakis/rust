@@ -92,6 +92,10 @@ LL | |     no_dependency_because_indirect_drop_ref_u32();
 LL | | }
    | |_^
 
+note: Detected duplicate of DefId(0/0:6 ~ polymorphize_drop[317d]::no_dependency_because_drop_ref_T[0]) with dependencies []
+
+note: Detected duplicate of DefId(0/0:7 ~ polymorphize_drop[317d]::no_dependency_because_indirect_drop_ref_T[0]) with dependencies []
+
 note: Monomorphized items: 38
 
 note: Monomorphized size : 264

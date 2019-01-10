@@ -1,6 +1,6 @@
 // Simple test for the polymorphize analysis code.
 //
-// compile-flags: -Zpolymorphize -Zpolymorphize-dump
+// compile-flags: -Zpolymorphize -Zpolymorphize-dump -Zpolymorphize-duplicates
 // compile-pass
 
 #![allow(warnings)]

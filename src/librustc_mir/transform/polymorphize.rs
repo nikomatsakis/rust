@@ -175,7 +175,7 @@ fn analyze_space_savings(
 ) {
     // Find the full set of monomorphized items -- we don't care which
     // codegen units they are part of.
-    let mono_items: Vec<MonoItem<'_>> = {
+    let mono_items: FxHashSet<MonoItem<'_>> = {
         let (_def_id_set, codegen_units) = tcx.collect_and_partition_mono_items(LOCAL_CRATE);
         codegen_units
             .iter()
@@ -193,16 +193,21 @@ fn analyze_space_savings(
 
     // Compute the duplicate items
     let mut duplicate_set = FxHashSet::default();
-    let duplicate_mono_items: Vec<MonoItem<'_>> = mono_items
+    let duplicate_mono_items: FxHashSet<MonoItem<'_>> = mono_items
         .iter()
         .filter(|mono_item| match mono_item {
             MonoItem::Static(_) | MonoItem::GlobalAsm(_) => false,
             MonoItem::Fn(Instance { def, substs }) => {
                 // If we didn't analyze the def-id, then it is not a duplicate.
+                debug!("analyze_space_savings: def={:?} substs={:?}", def, substs);
                 let visitor = match visitors.get(&def.def_id()) {
                     Some(v) => v,
                     None => return false,
                 };
+                debug!(
+                    "analyze_space_savings: visitor.dependencies={:?}",
+                    visitor.dependencies,
+                );
 
                 // Find the set of dependencies (if any) for this
                 // item. Substitute in the specific substs.
@@ -215,11 +220,36 @@ fn analyze_space_savings(
                 dependencies.dedup();
 
                 // Look for duplicates
-                !duplicate_set.insert((def.def_id(), dependencies))
+                !duplicate_set.insert((def.def_id(), dependencies.clone()))
             }
         })
         .cloned()
         .collect();
+
+    if tcx.sess.opts.debugging_opts.polymorphize_duplicates {
+        let mut intersection: Vec<_> = mono_items.intersection(&duplicate_mono_items).collect();
+        intersection.sort_by_key(|item| match item {
+            MonoItem::Static(did) => *did,
+            MonoItem::GlobalAsm(nid) => tcx.hir().local_def_id(*nid),
+            MonoItem::Fn(Instance { def, .. }) => def.def_id(),
+        });
+        for mono_item in intersection {
+            if let MonoItem::Fn(Instance { def, substs }) = mono_item {
+                let mut dependencies: Vec<_> = visitors[&def.def_id()]
+                    .dependencies
+                    .iter()
+                    .map(|d| d.kind.subst(tcx, substs))
+                    .collect();
+                dependencies.sort();
+                dependencies.dedup();
+
+                tcx.sess.note_without_error(&format!(
+                    "Detected duplicate of {:?} with dependencies {:?}",
+                    def.def_id(), dependencies,
+                ));
+            }
+        }
+    }
 
     // Estimate size of the duplicate items
     let duplicate_size_estimate: u64 = duplicate_mono_items

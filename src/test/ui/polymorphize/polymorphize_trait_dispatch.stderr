@@ -64,6 +64,8 @@ LL | |     depend_trait_dispatch_ref_indirect::<u16>(&3);
 LL | | }
    | |_^
 
+note: Detected duplicate of DefId(0/0:5 ~ polymorphize_trait_dispatch[317d]::depend_trait_dispatch_ref_indirect[0]) with dependencies []
+
 note: Monomorphized items: 21
 
 note: Monomorphized size : 108

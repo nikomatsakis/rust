@@ -97,6 +97,12 @@ LL | |     no_dependency_indirect::<u16>(&2);
 LL | | }
    | |_^
 
+note: Detected duplicate of DefId(0/0:3 ~ polymorphize[317d]::no_use[0]) with dependencies []
+
+note: Detected duplicate of DefId(0/0:4 ~ polymorphize[317d]::no_dependency_because_pointer[0]) with dependencies []
+
+note: Detected duplicate of DefId(0/0:8 ~ polymorphize[317d]::no_dependency_indirect[0]) with dependencies []
+
 note: Monomorphized items: 21
 
 note: Monomorphized size : 116

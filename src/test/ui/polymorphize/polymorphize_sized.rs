@@ -1,6 +1,6 @@
 // Simple test for the polymorphize analysis code.
 //
-// compile-flags: -Zpolymorphize -Zpolymorphize-dump
+// compile-flags: -Zpolymorphize -Zpolymorphize-dump -Zpolymorphize-duplicates
 // compile-pass
 
 #![allow(warnings)]
@@ -24,7 +24,7 @@ fn dependency_because_embed_ref_unsized<T: ?Sized>(t: &T) -> EmbedRef<'_, T> {
     EmbedRef { t }
 }
 
-fn dependency_because_embed_ref_sized<T>(t: &T) -> EmbedRef<'_, T> {
+fn no_dependency_because_embed_ref_sized<T>(t: &T) -> EmbedRef<'_, T> {
     //~^ ERROR no polymorphic dependencies found
     //
     // Here, the size of `EmbedRef` is known up front.
@@ -53,8 +53,8 @@ fn main() {
     dependency_because_embed_ref_unsized::<u32>(&22);
     dependency_because_embed_ref_unsized::<u16>(&22);
 
-    dependency_because_embed_ref_sized::<u32>(&22);
-    dependency_because_embed_ref_sized::<u16>(&22);
+    no_dependency_because_embed_ref_sized::<u32>(&22);
+    no_dependency_because_embed_ref_sized::<u16>(&22);
 
     no_dependency_because_unsized_pointer_indirect::<u32>(&22);
     no_dependency_because_unsized_pointer_indirect::<u16>(&22);
