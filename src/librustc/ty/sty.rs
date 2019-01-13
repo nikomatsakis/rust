@@ -376,6 +376,19 @@ impl<'tcx> ClosureSubsts<'tcx> {
         self.split(def_id, tcx).upvar_tuple_ty
     }
 
+    /// This is safe to be called even when the upvar type parameters are not
+    /// bound and is exactly called for that same reason.
+    pub fn opt_tuple_tys(
+        self,
+        def_id: DefId,
+        tcx: TyCtxt<'_, '_, 'tcx>,
+    ) -> Option<impl Iterator<Item=Ty<'tcx>> + 'tcx> {
+        match self.upvar_tuple_ty_or_infer_var(def_id, tcx).sty {
+            ty::Tuple(tys) => Some(tys.iter().cloned()),
+            ref _t => None,
+        }
+    }
+
     /// Returns the closure kind for this closure; may return a type
     /// variable during inference. To get the closure kind during
     /// inference, use `infcx.closure_kind(def_id, substs)`.
@@ -464,6 +477,19 @@ impl<'tcx> GeneratorSubsts<'tcx> {
         match self.upvar_tuple_ty_or_infer_var(def_id, tcx).sty {
             ty::Tuple(tys) => tys.iter().cloned(),
             ref t => bug!("Upvar_tuple_ty is not a tuple {:?}", t),
+        }
+    }
+
+    /// This is safe to be called even when the upvar type parameters are not
+    /// bound and is exactly called for that same reason.
+    pub fn opt_tuple_tys(
+        self,
+        def_id: DefId,
+        tcx: TyCtxt<'_, '_, 'tcx>,
+    ) -> Option<impl Iterator<Item=Ty<'tcx>> + 'tcx> {
+        match self.upvar_tuple_ty_or_infer_var(def_id, tcx).sty {
+            ty::Tuple(tys) => Some(tys.iter().cloned()),
+            ref _t => None,
         }
     }
 

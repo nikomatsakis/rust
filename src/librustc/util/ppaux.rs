@@ -1355,83 +1355,97 @@ define_print! {
                 Str => write!(f, "str"),
                 Generator(did, substs, movability) => ty::tls::with(|tcx| {
                     let substs = tcx.lift(&substs).unwrap();
-                    let upvar_tys = substs.upvar_tys(did, tcx);
-                    let witness = substs.witness(did, tcx);
-                    if movability == hir::GeneratorMovability::Movable {
-                        write!(f, "[generator")?;
-                    } else {
-                        write!(f, "[static generator")?;
-                    }
+                    if let Some(upvar_tys) = substs.opt_tuple_tys(did, tcx) {
+                        let witness = substs.witness(did, tcx);
+                        if movability == hir::GeneratorMovability::Movable {
+                            write!(f, "[generator")?;
+                        } else {
+                            write!(f, "[static generator")?;
+                        }
 
-                    if let Some(node_id) = tcx.hir().as_local_node_id(did) {
-                        write!(f, "@{:?}", tcx.hir().span(node_id))?;
-                        let mut sep = " ";
-                        tcx.with_freevars(node_id, |freevars| {
-                            for (freevar, upvar_ty) in freevars.iter().zip(upvar_tys) {
+                        if let Some(node_id) = tcx.hir().as_local_node_id(did) {
+                            write!(f, "@{:?}", tcx.hir().span(node_id))?;
+                            let mut sep = " ";
+                            tcx.with_freevars(node_id, |freevars| {
+                                for (freevar, upvar_ty) in freevars.iter().zip(upvar_tys) {
+                                    print!(f, cx,
+                                           write("{}{}:",
+                                                 sep,
+                                                 tcx.hir().name(freevar.var_id())),
+                                           print(upvar_ty))?;
+                                    sep = ", ";
+                                }
+                                Ok(())
+                            })?
+                        } else {
+                            // cross-crate closure types should only be
+                            // visible in codegen bug reports, I imagine.
+                            write!(f, "@{:?}", did)?;
+                            let mut sep = " ";
+                            for (index, upvar_ty) in upvar_tys.enumerate() {
                                 print!(f, cx,
-                                       write("{}{}:",
-                                             sep,
-                                             tcx.hir().name(freevar.var_id())),
+                                       write("{}{}:", sep, index),
                                        print(upvar_ty))?;
                                 sep = ", ";
                             }
-                            Ok(())
-                        })?
-                    } else {
-                        // cross-crate closure types should only be
-                        // visible in codegen bug reports, I imagine.
-                        write!(f, "@{:?}", did)?;
-                        let mut sep = " ";
-                        for (index, upvar_ty) in upvar_tys.enumerate() {
-                            print!(f, cx,
-                                   write("{}{}:", sep, index),
-                                   print(upvar_ty))?;
-                            sep = ", ";
                         }
-                    }
 
-                    print!(f, cx, write(" "), print(witness), write("]"))
+                        print!(f, cx, write(" "), print(witness), write("]"))
+                    } else {
+                        // If we are here that mens that the type of upvars
+                        // captured by this generator is not known and hence
+                        // during pretty printing this sort of error will be
+                        // shown.
+                        write!(f, "Upvar type not bound yet.")
+                    }
                 }),
                 GeneratorWitness(types) => {
                     ty::tls::with(|tcx| cx.in_binder(f, tcx, &types, tcx.lift(&types)))
                 }
                 Closure(did, substs) => ty::tls::with(|tcx| {
                     let substs = tcx.lift(&substs).unwrap();
-                    let upvar_tys = substs.upvar_tys(did, tcx);
-                    write!(f, "[closure")?;
+                    if let Some(upvar_tys) = substs.opt_tuple_tys(did, tcx) {
+                        write!(f, "[closure")?;
 
-                    if let Some(node_id) = tcx.hir().as_local_node_id(did) {
-                        if tcx.sess.opts.debugging_opts.span_free_formats {
-                            write!(f, "@{:?}", node_id)?;
+                        if let Some(node_id) = tcx.hir().as_local_node_id(did) {
+                            if tcx.sess.opts.debugging_opts.span_free_formats {
+                                write!(f, "@{:?}", node_id)?;
+                            } else {
+                                write!(f, "@{:?}", tcx.hir().span(node_id))?;
+                            }
+                            let mut sep = " ";
+                            tcx.with_freevars(node_id, |freevars| {
+                                for (freevar, upvar_ty) in freevars.iter().zip(upvar_tys) {
+                                    print!(f, cx,
+                                           write("{}{}:",
+                                                 sep,
+                                                 tcx.hir().name(freevar.var_id())),
+                                           print(upvar_ty))?;
+                                    sep = ", ";
+                                }
+                                Ok(())
+                            })?
                         } else {
-                            write!(f, "@{:?}", tcx.hir().span(node_id))?;
-                        }
-                        let mut sep = " ";
-                        tcx.with_freevars(node_id, |freevars| {
-                            for (freevar, upvar_ty) in freevars.iter().zip(upvar_tys) {
+                            // cross-crate closure types should only be
+                            // visible in codegen bug reports, I imagine.
+                            write!(f, "@{:?}", did)?;
+                            let mut sep = " ";
+                            for (index, upvar_ty) in upvar_tys.enumerate() {
                                 print!(f, cx,
-                                       write("{}{}:",
-                                             sep,
-                                             tcx.hir().name(freevar.var_id())),
+                                       write("{}{}:", sep, index),
                                        print(upvar_ty))?;
                                 sep = ", ";
                             }
-                            Ok(())
-                        })?
-                    } else {
-                        // cross-crate closure types should only be
-                        // visible in codegen bug reports, I imagine.
-                        write!(f, "@{:?}", did)?;
-                        let mut sep = " ";
-                        for (index, upvar_ty) in upvar_tys.enumerate() {
-                            print!(f, cx,
-                                   write("{}{}:", sep, index),
-                                   print(upvar_ty))?;
-                            sep = ", ";
                         }
-                    }
 
-                    write!(f, "]")
+                        write!(f, "]")
+                    } else {
+                        // If we are here that mens that the type of upvars
+                        // captured by this generator is not known and hence
+                        // during pretty printing this sort of error will be
+                        // shown.
+                        write!(f, "Upvar type not bound yet.")
+                    }
                 }),
                 Array(ty, sz) => {
                     print!(f, cx, write("["), print(ty), write("; "))?;
