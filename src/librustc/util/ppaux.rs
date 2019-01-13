@@ -1354,6 +1354,7 @@ define_print! {
                 }
                 Str => write!(f, "str"),
                 Generator(did, substs, movability) => ty::tls::with(|tcx| {
+                    let substs = tcx.lift(&substs).unwrap();
                     let upvar_tys = substs.upvar_tys(did, tcx);
                     let witness = substs.witness(did, tcx);
                     if movability == hir::GeneratorMovability::Movable {
@@ -1395,6 +1396,7 @@ define_print! {
                     ty::tls::with(|tcx| cx.in_binder(f, tcx, &types, tcx.lift(&types)))
                 }
                 Closure(did, substs) => ty::tls::with(|tcx| {
+                    let substs = tcx.lift(&substs).unwrap();
                     let upvar_tys = substs.upvar_tys(did, tcx);
                     write!(f, "[closure")?;
 

@@ -2437,7 +2437,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 let is_clone_trait = Some(trait_id) == self.tcx().lang_items().clone_trait();
                 if is_copy_trait || is_clone_trait {
                     Where(ty::Binder::bind(
-                        substs.upvar_tys(def_id, self.tcx()).collect(),
+                            vec![substs.upvar_tuple_ty_or_infer_var(def_id, self.tcx())]
                     ))
                 } else {
                     None
@@ -2524,7 +2524,9 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 tys.to_vec()
             }
 
-            ty::Closure(def_id, ref substs) => substs.upvar_tys(def_id, self.tcx()).collect(),
+            ty::Closure(def_id, ref substs) => {
+                vec![substs.upvar_tuple_ty_or_infer_var(def_id, self.tcx())]
+            },
 
             ty::Generator(def_id, ref substs, _) => {
                 let witness = substs.witness(def_id, self.tcx());
