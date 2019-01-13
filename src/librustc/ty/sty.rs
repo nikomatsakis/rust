@@ -8,7 +8,7 @@ use mir::interpret::ConstValue;
 use middle::region;
 use polonius_engine::Atom;
 use rustc_data_structures::indexed_vec::Idx;
-use ty::subst::{Substs, Subst, Kind, UnpackedKind};
+use ty::subst::{Substs, Subst, UnpackedKind};
 use ty::{self, AdtDef, TypeFlags, Ty, TyCtxt, TypeFoldable};
 use ty::{List, TyS, ParamEnvAnd, ParamEnv};
 use util::captures::Captures;
@@ -422,18 +422,26 @@ struct SplitGeneratorSubsts<'tcx> {
     yield_ty: Ty<'tcx>,
     return_ty: Ty<'tcx>,
     witness: Ty<'tcx>,
-    upvar_kinds: &'tcx [Kind<'tcx>],
+    upvar_tuple_ty: Ty<'tcx>,
 }
 
 impl<'tcx> GeneratorSubsts<'tcx> {
     fn split(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) -> SplitGeneratorSubsts<'tcx> {
         let generics = tcx.generics_of(def_id);
         let parent_len = generics.parent_count;
+        let upvar_substs = &self.substs[parent_len + 3..];
+        let upvar_tys = upvar_substs.iter().map(|t| {
+            if let UnpackedKind::Type(ty) = t.unpack() {
+                ty
+            } else {
+                bug!("Upvar type expecetd.")
+            }
+        });
         SplitGeneratorSubsts {
             yield_ty: self.substs.type_at(parent_len),
             return_ty: self.substs.type_at(parent_len + 1),
             witness: self.substs.type_at(parent_len + 2),
-            upvar_kinds: &self.substs[parent_len + 3..],
+            upvar_tuple_ty: tcx.mk_tup(upvar_tys),
         }
     }
 
@@ -446,18 +454,21 @@ impl<'tcx> GeneratorSubsts<'tcx> {
         self.split(def_id, tcx).witness
     }
 
+    /// It gives you a tuple containing the type parameters of all the upvars
+    /// captured by the closure. This should not be called at the time of the
+    /// type inference as the arity of the tuple will not be known at the time.
     #[inline]
     pub fn upvar_tys(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) ->
         impl Iterator<Item=Ty<'tcx>> + 'tcx
     {
-        let SplitGeneratorSubsts { upvar_kinds, .. } = self.split(def_id, tcx);
-        upvar_kinds.iter().map(|t| {
-            if let UnpackedKind::Type(ty) = t.unpack() {
-                ty
-            } else {
-                bug!("upvar should be type")
-            }
-        })
+        match self.upvar_tuple_ty_or_infer_var(def_id, tcx).sty {
+            ty::Tuple(tys) => tys.iter().cloned(),
+            ref t => bug!("Upvar_tuple_ty is not a tuple {:?}", t),
+        }
+    }
+
+    pub fn upvar_tuple_ty_or_infer_var(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) -> Ty<'tcx> {
+        self.split(def_id, tcx).upvar_tuple_ty
     }
 
     /// Returns the type representing the yield type of the generator.

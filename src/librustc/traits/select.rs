@@ -2529,11 +2529,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             },
 
             ty::Generator(def_id, ref substs, _) => {
-                let witness = substs.witness(def_id, self.tcx());
-                substs
-                    .upvar_tys(def_id, self.tcx())
-                    .chain(iter::once(witness))
-                    .collect()
+                vec![substs.upvar_tuple_ty_or_infer_var(def_id, self.tcx())]
             }
 
             ty::GeneratorWitness(types) => {

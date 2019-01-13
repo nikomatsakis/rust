@@ -66,10 +66,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             }
 
             ty::Generator(def_id, ref substs, _) => {
-                // Same as the closure case
-                for upvar_ty in substs.upvar_tys(def_id, *self) {
-                    self.compute_components(upvar_ty, out);
-                }
+                self.compute_components(substs.upvar_tuple_ty_or_infer_var(def_id, *self), out)
 
                 // We ignore regions in the generator interior as we don't
                 // want these to affect region inference
