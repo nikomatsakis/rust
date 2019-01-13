@@ -1354,7 +1354,8 @@ define_print! {
                 }
                 Str => write!(f, "str"),
                 Generator(did, substs, movability) => ty::tls::with(|tcx| {
-                    let upvar_tys = substs.upvar_tys(did, tcx);
+                    let substs = tcx.lift(&substs).unwrap();
+                    let upvar_tys = substs.opt_tuple_tys(did, tcx).unwrap_or(&[]);
                     let witness = substs.witness(did, tcx);
                     if movability == hir::GeneratorMovability::Movable {
                         write!(f, "[generator")?;
@@ -1366,12 +1367,19 @@ define_print! {
                         write!(f, "@{:?}", tcx.hir().span(node_id))?;
                         let mut sep = " ";
                         tcx.with_freevars(node_id, |freevars| {
-                            for (freevar, upvar_ty) in freevars.iter().zip(upvar_tys) {
-                                print!(f, cx,
-                                       write("{}{}:",
-                                             sep,
-                                             tcx.hir().name(freevar.var_id())),
-                                       print(upvar_ty))?;
+                            for (index, freevar) in freevars.iter().enumerate() {
+                                if let Some(upvar_ty) = upvar_tys.get(index) {
+                                    print!(f, cx,
+                                           write("{}{}:",
+                                                 sep,
+                                                 tcx.hir().name(freevar.var_id())),
+                                           print(upvar_ty))?;
+                                } else {
+                                    print!(f, cx,
+                                           write("{}{}:_",
+                                                 sep,
+                                                 tcx.hir().name(freevar.var_id())))?;
+                                }
                                 sep = ", ";
                             }
                             Ok(())
@@ -1381,7 +1389,7 @@ define_print! {
                         // visible in codegen bug reports, I imagine.
                         write!(f, "@{:?}", did)?;
                         let mut sep = " ";
-                        for (index, upvar_ty) in upvar_tys.enumerate() {
+                        for (index, upvar_ty) in upvar_tys.iter().enumerate() {
                             print!(f, cx,
                                    write("{}{}:", sep, index),
                                    print(upvar_ty))?;
@@ -1395,7 +1403,11 @@ define_print! {
                     ty::tls::with(|tcx| cx.in_binder(f, tcx, &types, tcx.lift(&types)))
                 }
                 Closure(did, substs) => ty::tls::with(|tcx| {
-                    let upvar_tys = substs.upvar_tys(did, tcx);
+                    let substs = tcx.lift(&substs).unwrap();
+                    let upvar_tys = substs.opt_tuple_tys(did, tcx).unwrap_or(&[]);
+                    // Even if the upvars types are not bound yet, calling
+                    // the opt-tuple_tys will return an empty list and so
+                    // this branch will execute and not the else.
                     write!(f, "[closure")?;
 
                     if let Some(node_id) = tcx.hir().as_local_node_id(did) {
@@ -1406,12 +1418,19 @@ define_print! {
                         }
                         let mut sep = " ";
                         tcx.with_freevars(node_id, |freevars| {
-                            for (freevar, upvar_ty) in freevars.iter().zip(upvar_tys) {
-                                print!(f, cx,
-                                       write("{}{}:",
-                                             sep,
-                                             tcx.hir().name(freevar.var_id())),
-                                       print(upvar_ty))?;
+                            for (index, freevar) in freevars.iter().enumerate() {
+                                if let Some(upvar_ty) = upvar_tys.get(index) {
+                                    print!(f, cx,
+                                           write("{}{}:",
+                                                 sep,
+                                                 tcx.hir().name(freevar.var_id())),
+                                           print(upvar_ty))?;
+                                } else {
+                                    print!(f, cx,
+                                           write("{}{}:_",
+                                                 sep,
+                                                 tcx.hir().name(freevar.var_id())))?;
+                                }
                                 sep = ", ";
                             }
                             Ok(())
@@ -1421,9 +1440,9 @@ define_print! {
                         // visible in codegen bug reports, I imagine.
                         write!(f, "@{:?}", did)?;
                         let mut sep = " ";
-                        for (index, upvar_ty) in upvar_tys.enumerate() {
+                        for (index, upvar_ty) in upvar_tys.iter().enumerate() {
                             print!(f, cx,
-                                   write("{}{}:", sep, index),
+                                   write("{} oho {}:", sep, index),
                                    print(upvar_ty))?;
                             sep = ", ";
                         }

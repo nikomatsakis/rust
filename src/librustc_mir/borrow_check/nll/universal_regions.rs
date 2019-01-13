@@ -12,7 +12,6 @@
 //! The code in this file doesn't *do anything* with those results; it
 //! just returns them for other code to use.
 
-use either::Either;
 use rustc::hir::def_id::DefId;
 use rustc::hir::{self, BodyOwnerKind, HirId};
 use rustc::infer::{InferCtxt, NLLRegionVariableOrigin};
@@ -107,15 +106,11 @@ impl<'tcx> DefiningTy<'tcx> {
     /// not a closure or generator, there are no upvars, and hence it
     /// will be an empty list. The order of types in this list will
     /// match up with the `upvar_decls` field of `Mir`.
-    pub fn upvar_tys(self, tcx: TyCtxt<'_, '_, 'tcx>) -> impl Iterator<Item = Ty<'tcx>> + 'tcx {
+    pub fn upvar_tys(self, tcx: TyCtxt<'_, '_, 'tcx>) -> &'tcx[Ty<'tcx>] {
         match self {
-            DefiningTy::Closure(def_id, substs) => Either::Left(substs.upvar_tys(def_id, tcx)),
-            DefiningTy::Generator(def_id, substs, _) => {
-                Either::Right(Either::Left(substs.upvar_tys(def_id, tcx)))
-            }
-            DefiningTy::FnDef(..) | DefiningTy::Const(..) => {
-                Either::Right(Either::Right(iter::empty()))
-            }
+            DefiningTy::Closure(def_id, substs) => substs.upvar_tys(def_id, tcx),
+            DefiningTy::Generator(def_id, substs, _) => substs.upvar_tys(def_id, tcx),
+            DefiningTy::FnDef(..) | DefiningTy::Const(..) => &[],
         }
     }
 

@@ -161,6 +161,16 @@ pub type Substs<'tcx> = List<Kind<'tcx>>;
 
 impl<'a, 'gcx, 'tcx> Substs<'tcx> {
     /// Creates a `Substs` that maps each generic parameter to itself.
+    ///
+    /// # Example
+    ///
+    /// Given a struct `S` declared like so:
+    ///
+    /// ```
+    /// struct S<A, B, C> {..}
+    /// ```
+    ///
+    /// this would return a set of substitutions `[A, B, C]`.
     pub fn identity_for_item(tcx: TyCtxt<'a, 'gcx, 'tcx>, def_id: DefId)
                              -> &'tcx Substs<'tcx> {
         Substs::for_item(tcx, def_id, |param, _| {

@@ -1054,6 +1054,10 @@ fn generics_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId) -> &'tcx ty
             &["<closure_kind>", "<closure_signature>"][..]
         };
 
+        // For closures: Add the CK, CS type parameters discussed in
+        // `ClosureSubsts` comment.
+        //
+        // For generators: add the yield/return/witness types.
         params.extend(
             dummy_args
                 .iter()
@@ -1071,20 +1075,17 @@ fn generics_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId) -> &'tcx ty
                 }),
         );
 
-        tcx.with_freevars(node_id, |fv| {
-            params.extend(fv.iter().zip((dummy_args.len() as u32)..).map(|(_, i)| {
-                ty::GenericParamDef {
-                    index: type_start + i,
-                    name: Symbol::intern("<upvar>").as_interned_str(),
-                    def_id,
-                    pure_wrt_drop: false,
-                    kind: ty::GenericParamDefKind::Type {
-                        has_default: false,
-                        object_lifetime_default: rl::Set1::Empty,
-                        synthetic: None,
-                    },
-                }
-            }));
+        // For closures/generators: Add the (U0...Uk) tuple.
+        params.push(ty::GenericParamDef {
+            index: type_start + dummy_args.len() as u32,
+            name: Symbol::intern("<upvars>").as_interned_str(),
+            def_id,
+            pure_wrt_drop: false,
+            kind: ty::GenericParamDefKind::Type {
+                has_default: false,
+                object_lifetime_default: rl::Set1::Empty,
+                synthetic: None,
+            },
         });
     }
 

@@ -62,16 +62,11 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         // projection).
         match ty.sty {
             ty::Closure(def_id, ref substs) => {
-                for upvar_ty in substs.upvar_tys(def_id, *self) {
-                    self.compute_components(upvar_ty, out);
-                }
+                self.compute_components(substs.upvar_tuple_ty(def_id, *self), out)
             }
 
             ty::Generator(def_id, ref substs, _) => {
-                // Same as the closure case
-                for upvar_ty in substs.upvar_tys(def_id, *self) {
-                    self.compute_components(upvar_ty, out);
-                }
+                self.compute_components(substs.upvar_tuple_ty(def_id, *self), out)
 
                 // We ignore regions in the generator interior as we don't
                 // want these to affect region inference

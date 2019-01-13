@@ -612,7 +612,7 @@ pub fn type_metadata(
 
         }
         ty::Closure(def_id, substs) => {
-            let upvar_tys : Vec<_> = substs.upvar_tys(def_id, cx.tcx).collect();
+            let upvar_tys : Vec<_> = substs.upvar_tys(def_id, cx.tcx).iter().cloned().collect();
             prepare_tuple_metadata(cx,
                                    t,
                                    &upvar_tys,

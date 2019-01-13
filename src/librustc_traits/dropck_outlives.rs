@@ -194,10 +194,13 @@ fn dtorck_constraint_for_ty<'a, 'gcx, 'tcx>(
             .map(|ty| dtorck_constraint_for_ty(tcx, span, for_ty, depth + 1, ty))
             .collect(),
 
-        ty::Closure(def_id, substs) => substs
-            .upvar_tys(def_id, tcx)
-            .map(|ty| dtorck_constraint_for_ty(tcx, span, for_ty, depth + 1, ty))
-            .collect(),
+        ty::Closure(def_id, substs) =>
+            dtorck_constraint_for_ty(
+                tcx,
+                span,
+                for_ty,
+                depth+1,
+                substs.upvar_tuple_ty(def_id, tcx)),
 
         ty::Generator(def_id, substs, _movability) => {
             // rust-lang/rust#49918: types can be constructed, stored
@@ -224,7 +227,12 @@ fn dtorck_constraint_for_ty<'a, 'gcx, 'tcx>(
             // *do* incorporate the upvars here.
 
             let constraint = DtorckConstraint {
-                outlives: substs.upvar_tys(def_id, tcx).map(|t| t.into()).collect(),
+                outlives: substs
+                    .upvar_tys(def_id, tcx)
+                    .iter()
+                    .cloned()
+                    .map(|t| t.into())
+                    .collect(),
                 dtorck_types: vec![],
                 overflows: vec![],
             };

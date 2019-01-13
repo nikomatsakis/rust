@@ -221,12 +221,9 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             "analyze_closure: id={:?} substs={:?} final_upvar_tys={:?}",
             closure_node_id, substs, final_upvar_tys
         );
-        for (upvar_ty, final_upvar_ty) in substs
-            .upvar_tys(closure_def_id, self.tcx)
-            .zip(final_upvar_tys)
-        {
-            self.demand_suptype(span, upvar_ty, final_upvar_ty);
-        }
+        let final_upvar_tuple_ty = self.tcx.mk_tup(final_upvar_tys.iter());
+        let subst_upvar_tuple_ty = substs.upvar_tuple_ty(closure_def_id, self.tcx);
+        self.demand_suptype(span, subst_upvar_tuple_ty, final_upvar_tuple_ty);
 
         // If we are also inferred the closure kind here,
         // process any deferred resolutions.
@@ -264,8 +261,15 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                         var_node_id, freevar_ty, capture
                     );
 
+                    // Given some variable `x: T` in the parent's scope...
                     match capture {
+                        // If the variable `x` is captured "by move",
+                        // then the corresponding type is just `T`.
                         ty::UpvarCapture::ByValue => freevar_ty,
+
+                        // Otherwise it is captured by reference, so
+                        // the desugared upvar in the closure has type
+                        // `&T` or `&mut T`.
                         ty::UpvarCapture::ByRef(borrow) => tcx.mk_ref(
                             borrow.region,
                             ty::TypeAndMut {

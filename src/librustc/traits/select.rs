@@ -312,7 +312,7 @@ struct EvaluatedCandidate<'tcx> {
 /// When does the builtin impl for `T: Trait` apply?
 enum BuiltinImplConditions<'tcx> {
     /// The impl is conditional on T1,T2,.. : Trait
-    Where(ty::Binder<Vec<Ty<'tcx>>>),
+    Where(ty::Binder<(Vec<Ty<'tcx>>, bool)>),
     /// There is no built-in impl. There may be some other
     /// candidate (a where-clause or user-defined impl).
     None,
@@ -2307,7 +2307,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             BuiltinImplConditions::Where(nested) => {
                 debug!("builtin_bound: nested={:?}", nested);
                 candidates.vec.push(BuiltinCandidate {
-                    has_nested: nested.skip_binder().len() > 0,
+                    has_nested: nested.skip_binder().0.len() > 0,
                 });
             }
             BuiltinImplConditions::None => {}
@@ -2349,21 +2349,23 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             | ty::Never
             | ty::Error => {
                 // safe for everything
-                Where(ty::Binder::dummy(Vec::new()))
+                Where(ty::Binder::dummy( (Vec::new(), false) ))
             }
 
             ty::Str | ty::Slice(_) | ty::Dynamic(..) | ty::Foreign(..) => None,
 
-            ty::Tuple(tys) => Where(ty::Binder::bind(tys.last().into_iter().cloned().collect())),
+            ty::Tuple(tys) => Where(ty::Binder::bind(
+                    (tys.last().into_iter().cloned().collect(), false)
+                    )),
 
             ty::Adt(def, substs) => {
                 let sized_crit = def.sized_constraint(self.tcx());
                 // (*) binder moved here
                 Where(ty::Binder::bind(
-                    sized_crit
+                    (sized_crit
                         .iter()
                         .map(|ty| ty.subst(self.tcx(), substs))
-                        .collect(),
+                        .collect(), false),
                 ))
             }
 
@@ -2399,7 +2401,8 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             | ty::Infer(ty::FloatVar(_))
             | ty::FnDef(..)
             | ty::FnPtr(_)
-            | ty::Error => Where(ty::Binder::dummy(Vec::new())),
+            | ty::Error => Where(ty::Binder::dummy(
+                        (Vec::new(), false) )),
 
             ty::Uint(_)
             | ty::Int(_)
@@ -2423,21 +2426,24 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
             ty::Array(element_ty, _) => {
                 // (*) binder moved here
-                Where(ty::Binder::bind(vec![element_ty]))
+                Where(ty::Binder::bind(
+                        (vec![element_ty], false) ))
             }
 
             ty::Tuple(tys) => {
                 // (*) binder moved here
-                Where(ty::Binder::bind(tys.to_vec()))
+                Where(ty::Binder::bind(
+                        (tys.to_vec(), false) ))
             }
 
             ty::Closure(def_id, substs) => {
                 let trait_id = obligation.predicate.def_id();
-                let is_copy_trait = Some(trait_id) == self.tcx().lang_items().copy_trait();
-                let is_clone_trait = Some(trait_id) == self.tcx().lang_items().clone_trait();
+                let lang_items = self.tcx().lang_items();
+                let is_copy_trait = Some(trait_id) == lang_items.copy_trait();
+                let is_clone_trait = Some(trait_id) == lang_items.clone_trait();
                 if is_copy_trait || is_clone_trait {
                     Where(ty::Binder::bind(
-                        substs.upvar_tys(def_id, self.tcx()).collect(),
+                            (vec![substs.upvar_tuple_ty(def_id, self.tcx())], true)
                     ))
                 } else {
                     None
@@ -2481,7 +2487,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     /// Bar<i32> where struct Bar<T> { x: T, y: u32 } -> [i32, u32]
     /// Zed<i32> where enum Zed { A(T), B(u32) } -> [i32, u32]
     /// ```
-    fn constituent_types_for_ty(&self, t: Ty<'tcx>) -> Vec<Ty<'tcx>> {
+    fn constituent_types_for_ty(&self, t: Ty<'tcx>) -> (Vec<Ty<'tcx>>, bool) {
         match t.sty {
             ty::Uint(_)
             | ty::Int(_)
@@ -2494,7 +2500,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             | ty::Infer(ty::IntVar(_))
             | ty::Infer(ty::FloatVar(_))
             | ty::Never
-            | ty::Char => Vec::new(),
+            | ty::Char => (Vec::new(), false),
 
             ty::UnnormalizedProjection(..)
             | ty::Placeholder(..)
@@ -2514,43 +2520,48 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             }
 
             ty::RawPtr(ty::TypeAndMut { ty: element_ty, .. }) | ty::Ref(_, element_ty, _) => {
-                vec![element_ty]
+                (vec![element_ty], false)
             }
 
-            ty::Array(element_ty, _) | ty::Slice(element_ty) => vec![element_ty],
+            ty::Array(element_ty, _) | ty::Slice(element_ty) => {
+                (vec![element_ty], false)
+            }
 
             ty::Tuple(ref tys) => {
                 // (T1, ..., Tn) -- meets any bound that all of T1...Tn meet
-                tys.to_vec()
+                (tys.to_vec(), false)
             }
 
-            ty::Closure(def_id, ref substs) => substs.upvar_tys(def_id, self.tcx()).collect(),
+            ty::Closure(def_id, ref substs) => {
+                (vec![substs.upvar_tuple_ty(def_id, self.tcx())], true)
+            },
 
             ty::Generator(def_id, ref substs, _) => {
                 let witness = substs.witness(def_id, self.tcx());
-                substs
-                    .upvar_tys(def_id, self.tcx())
-                    .chain(iter::once(witness))
-                    .collect()
+                (vec![witness, substs.upvar_tuple_ty(def_id, self.tcx())], true)
             }
 
             ty::GeneratorWitness(types) => {
                 // This is sound because no regions in the witness can refer to
                 // the binder outside the witness. So we'll effectivly reuse
                 // the implicit binder around the witness.
-                types.skip_binder().to_vec()
+                (types.skip_binder().to_vec(), false)
             }
 
             // for `PhantomData<T>`, we pass `T`
-            ty::Adt(def, substs) if def.is_phantom_data() => substs.types().collect(),
+            ty::Adt(def, substs) if def.is_phantom_data() => {
+                (substs.types().collect(), false)
+            }
 
-            ty::Adt(def, substs) => def.all_fields().map(|f| f.ty(self.tcx(), substs)).collect(),
+            ty::Adt(def, substs) => {
+                (def.all_fields().map(|f| f.ty(self.tcx(), substs)).collect(), false)
+            }
 
             ty::Opaque(def_id, substs) => {
                 // We can resolve the `impl Trait` to its concrete type,
                 // which enforces a DAG between the functions requiring
                 // the auto trait bounds in question.
-                vec![self.tcx().type_of(def_id).subst(self.tcx(), substs)]
+                (vec![self.tcx().type_of(def_id).subst(self.tcx(), substs)], false)
             }
         }
     }
@@ -2740,7 +2751,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         let lang_items = self.tcx().lang_items();
         let obligations = if has_nested {
             let trait_def = obligation.predicate.def_id();
-            let conditions = if Some(trait_def) == lang_items.sized_trait() {
+            let conditions_pair = if Some(trait_def) == lang_items.sized_trait() {
                 self.sized_conditions(obligation)
             } else if Some(trait_def) == lang_items.copy_trait() {
                 self.copy_clone_conditions(obligation)
@@ -2749,21 +2760,28 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             } else {
                 bug!("unexpected builtin trait {:?}", trait_def)
             };
-            let nested = match conditions {
-                BuiltinImplConditions::Where(nested) => nested,
+            let (nested_bound_types, is_closure_tuple) = match conditions_pair {
+                BuiltinImplConditions::Where(nested) => {
+                    nested.skip_binder().clone()
+                },
                 _ => bug!(
                     "obligation {:?} had matched a builtin impl but now doesn't",
                     obligation
                 ),
             };
 
-            let cause = obligation.derived_cause(BuiltinDerivedObligation);
+            let cause = if is_closure_tuple {
+                obligation.derived_cause(BuiltinDerivedObligation)
+            } else {
+                obligation.cause.clone()
+            };
+
             self.collect_predicates_for_types(
                 obligation.param_env,
                 cause,
                 obligation.recursion_depth + 1,
                 trait_def,
-                nested,
+                ty::Binder::bind(nested_bound_types),
             )
         } else {
             vec![]
@@ -2791,11 +2809,14 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             obligation, trait_def_id
         );
 
+        let mut is_upvar_tuple_ty = false;
         let types = obligation.predicate.map_bound(|inner| {
             let self_ty = self.infcx.shallow_resolve(inner.self_ty());
-            self.constituent_types_for_ty(self_ty)
+            let ret = self.constituent_types_for_ty(self_ty);
+            is_upvar_tuple_ty = ret.1;
+            ret.0
         });
-        self.vtable_auto_impl(obligation, trait_def_id, types)
+        self.vtable_auto_impl(obligation, trait_def_id, types, is_upvar_tuple_ty)
     }
 
     /// See `confirm_auto_impl_candidate`.
@@ -2804,10 +2825,15 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         obligation: &TraitObligation<'tcx>,
         trait_def_id: DefId,
         nested: ty::Binder<Vec<Ty<'tcx>>>,
+        is_upvar_tuple_ty: bool
     ) -> VtableAutoImplData<PredicateObligation<'tcx>> {
         debug!("vtable_auto_impl: nested={:?}", nested);
 
-        let cause = obligation.derived_cause(BuiltinDerivedObligation);
+        let cause = if is_upvar_tuple_ty {
+            obligation.derived_cause(BuiltinDerivedObligation)
+        } else {
+            obligation.cause.clone()
+        };
         let mut obligations = self.collect_predicates_for_types(
             obligation.param_env,
             cause,

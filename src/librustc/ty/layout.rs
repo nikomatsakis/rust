@@ -614,7 +614,7 @@ impl<'a, 'tcx> LayoutCx<'tcx, TyCtxt<'a, 'tcx, 'tcx>> {
 
             ty::Closure(def_id, ref substs) => {
                 let tys = substs.upvar_tys(def_id, tcx);
-                univariant(&tys.map(|ty| self.layout_of(ty)).collect::<Result<Vec<_>, _>>()?,
+                univariant(&tys.iter().map(|ty| self.layout_of(ty)).collect::<Result<Vec<_>, _>>()?,
                     &ReprOptions::default(),
                     StructKind::AlwaysSized)?
             }
@@ -1711,7 +1711,7 @@ impl<'a, 'tcx, C> TyLayoutMethods<'tcx, C> for Ty<'tcx>
 
             // Tuples, generators and closures.
             ty::Closure(def_id, ref substs) => {
-                substs.upvar_tys(def_id, tcx).nth(i).unwrap()
+                substs.upvar_tys(def_id, tcx).iter().nth(i).unwrap()
             }
 
             ty::Generator(def_id, ref substs, _) => {

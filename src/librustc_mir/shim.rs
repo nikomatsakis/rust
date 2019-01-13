@@ -324,7 +324,7 @@ fn build_clone_shim<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         ty::Closure(def_id, substs) => {
             builder.tuple_like_shim(
                 dest, src,
-                substs.upvar_tys(def_id, tcx)
+                substs.upvar_tys(def_id, tcx).iter().cloned()
             )
         }
         ty::Tuple(tys) => builder.tuple_like_shim(dest, src, tys.iter().cloned()),
