@@ -430,15 +430,18 @@ impl DependencyVisitor<'me, 'gcx> {
                     Ok(SizeSkeleton::Known(_)) => {
                         debug!("record_dependency: known size, skipping");
                         false
-                    }
-                    _ if level > 0 && !kind.is_offset_of() =>  {
+                    },
+                    Err(LayoutError::Unknown(unknown_ty)) if {
+                        debug!("record_dependency: unknown_ty={:?}", unknown_ty);
+                        level > 0 && !kind.is_offset_of() && unknown_ty.is_any_param()
+                    } => {
                         debug!("record_dependency: unknown size, skipping as level above zero");
                         false
-                    }
+                    },
                     _ => {
                         debug!("record_dependency: recording dependency");
                         self.push_dependency_if_new(span, kind)
-                    }
+                    },
                 }
             }
 
@@ -603,7 +606,7 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
                     let ty = proj.base.ty(self.mir, self.tcx).to_ty(self.tcx);
                     match self.tcx.layout_of(self.param_env.and(ty)) {
                         Err(LayoutError::Unknown(unknown_ty)) => {
-                            if let ty::TyKind::Param(_) = unknown_ty.sty {
+                            if unknown_ty.is_any_param() {
                                 self.record_dependency(
                                     self.mir.source_info(location).span,
                                     DependencyKind::IndexInto(ty, local),
@@ -617,7 +620,7 @@ impl mir_visit::Visitor<'gcx> for DependencyVisitor<'_, 'gcx> {
                     let ty = proj.base.ty(self.mir, self.tcx).to_ty(self.tcx);
                     match self.tcx.layout_of(self.param_env.and(ty)) {
                         Err(LayoutError::Unknown(unknown_ty)) => {
-                            if let ty::TyKind::Param(_) = unknown_ty.sty {
+                            if unknown_ty.is_any_param() {
                                 self.record_dependency(
                                     self.mir.source_info(location).span,
                                     DependencyKind::OffsetOf(ty, field),

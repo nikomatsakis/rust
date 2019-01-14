@@ -17,7 +17,7 @@ fn drop_dependency<T>(data: T) {
     //~^ ERROR some polymorphic dependencies found
 }
 
-fn size_alignment_dependency<T: ?Sized>(t: &T) -> &T {
+fn size_alignment_dependency<T>(t: &T) -> &T {
     //~^ ERROR no polymorphic dependencies found
     t
 }

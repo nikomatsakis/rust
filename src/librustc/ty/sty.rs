@@ -1624,6 +1624,13 @@ impl<'a, 'gcx, 'tcx> TyS<'tcx> {
         }
     }
 
+    pub fn is_any_param(&self) -> bool {
+        match self.sty {
+            ty::Param(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn is_self(&self) -> bool {
         match self.sty {
             Param(ref p) => p.is_self(),

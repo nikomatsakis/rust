@@ -22,7 +22,7 @@ LL | | }
 warning: no polymorphic dependencies found
   --> $DIR/polymorphize-level1.rs:20:1
    |
-LL | / fn size_alignment_dependency<T: ?Sized>(t: &T) -> &T {
+LL | / fn size_alignment_dependency<T>(t: &T) -> &T {
 LL | |     //~^ ERROR no polymorphic dependencies found
 LL | |     t
 LL | | }
