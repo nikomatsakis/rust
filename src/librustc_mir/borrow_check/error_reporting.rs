@@ -9,7 +9,7 @@ use rustc::mir::{
     self, AggregateKind, BindingForm, BorrowKind, ClearCrossCrate, Constant,
     ConstraintCategory, Field, Local, LocalDecl, LocalKind, Location, Operand,
     Place, PlaceProjection, ProjectionElem, Rvalue, Statement, StatementKind,
-    TerminatorKind, VarBindingForm,
+    TerminatorKind, VarBindingForm, NeoPlace, NeoPlaceTree, PlaceBase,
 };
 use rustc::ty::{self, DefIdTree};
 use rustc::util::ppaux::RegionHighlightMode;
@@ -1445,8 +1445,9 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         place: &Place<'tcx>,
         including_downcast: IncludingDowncast,
     ) -> Option<String> {
+        let neo_place = self.infcx.tcx.as_new_place(place);
         let mut buf = String::new();
-        match self.append_place_to_string(place, &mut buf, false, &including_downcast) {
+        match self.append_place_to_string(&neo_place, &mut buf, false, &including_downcast) {
             Ok(()) => Some(buf),
             Err(()) => None,
         }
@@ -1455,27 +1456,25 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
     /// Appends end-user visible description of `place` to `buf`.
     fn append_place_to_string(
         &self,
-        place: &Place<'tcx>,
+        place: &NeoPlace<'tcx>,
         buf: &mut String,
         mut autoderef: bool,
         including_downcast: &IncludingDowncast,
     ) -> Result<(), ()> {
-        match *place {
-            Place::Promoted(_) => {
+        match place.clone().into_tree() {
+            NeoPlaceTree::Base(PlaceBase::Promoted(_)) => {
                 buf.push_str("promoted");
             }
-            Place::Local(local) => {
+            NeoPlaceTree::Base(PlaceBase::Local(local)) => {
                 self.append_local_to_string(local, buf)?;
             }
-            Place::Static(ref static_) => {
+            NeoPlaceTree::Base(PlaceBase::Static(ref static_)) => {
                 buf.push_str(&self.infcx.tcx.item_name(static_.def_id).to_string());
             }
-            Place::Projection(ref proj) => {
+            NeoPlaceTree::Projected(proj) => {
                 match proj.elem {
                     ProjectionElem::Deref => {
-                        let neo_place = self.infcx.tcx.as_new_place(place);
-                        let upvar_field_projection =
-                            neo_place.is_upvar_field_projection(self.mir, &self.infcx.tcx);
+                        let upvar_field_projection = place.is_upvar_field_projection(self.mir, &self.infcx.tcx);
                         if let Some(field) = upvar_field_projection {
                             let var_index = field.index();
                             let name = self.mir.upvar_decls[var_index].debug_name.to_string();
@@ -1492,7 +1491,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                                     autoderef,
                                     &including_downcast,
                                 )?;
-                            } else if let Place::Local(local) = proj.base {
+                            } else if let Some(local) = proj.base.as_local() {
                                 if let Some(ClearCrossCrate::Set(BindingForm::RefForGuard)) =
                                     self.mir.local_decls[local].is_user_variable
                                 {
@@ -1535,9 +1534,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     }
                     ProjectionElem::Field(field, _ty) => {
                         autoderef = true;
-                        let neo_place = self.infcx.tcx.as_new_place(place);
-                        let upvar_field_projection =
-                            neo_place.is_upvar_field_projection(self.mir, &self.infcx.tcx);
+                        let upvar_field_projection = place.is_upvar_field_projection(self.mir, &self.infcx.tcx);
                         if let Some(field) = upvar_field_projection {
                             let var_index = field.index();
                             let name = self.mir.upvar_decls[var_index].debug_name.to_string();
@@ -1602,8 +1599,8 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
     }
 
     /// End-user visible description of the `field`nth field of `base`
-    fn describe_field(&self, base: &Place, field: Field) -> String {
-        match *base {
+    fn describe_field(&self, base: &NeoPlace<'tcx>, field: Field) -> String {
+        match base.clone().into_tree() {
             Place::Local(local) => {
                 let local = &self.mir.local_decls[local];
                 self.describe_field_from_ty(&local.ty, field)
