@@ -219,7 +219,7 @@ pub fn trivial_dropck_outlives<'tcx>(tcx: TyCtxt<'_, '_, 'tcx>, ty: Ty<'tcx>) ->
         // check if *any* of those are trivial.
         ty::Tuple(ref tys) => tys.iter().all(|t| trivial_dropck_outlives(tcx, t)),
         ty::Closure(def_id, ref substs) => {
-            trivial_dropck_outlives(tcx, substs.upvar_tuple_ty_or_infer_var(def_id, tcx))
+            trivial_dropck_outlives(tcx, substs.upvar_tuple_ty(def_id, tcx))
         }
         ty::Adt(def, _) => {
             if Some(def.did) == tcx.lang_items().manually_drop() {

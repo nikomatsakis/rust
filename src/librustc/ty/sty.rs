@@ -315,16 +315,16 @@ pub struct ClosureSubsts<'tcx> {
 /// Struct returned by `split()`. Note that these are subslices of the
 /// parent slice and not canonical substs themselves.
 struct SplitClosureSubsts<'tcx> {
-    // Tells you whether the closure implements Fn or FnMut or FnOnce also known
-    // as the kind of the closure in the rustc lingo.
+    /// Tells you whether the closure implements Fn or FnMut or FnOnce also known
+    /// as the kind of the closure in the rustc lingo.
     closure_kind_ty: Ty<'tcx>,
 
-    // Gives the type of the closure signature as a function. So the inputs and
-    // the outputs to the closure.
+    /// Gives the type of the closure signature as a function. So the inputs and
+    /// the outputs to the closure.
     closure_sig_ty: Ty<'tcx>,
 
-    // This represents all the upvars to the closure packed in a tuple. Its type
-    // is tuple with the arity of the number of upvars referred by the closure.
+    /// This represents all the upvars to the closure packed in a tuple. Its type
+    /// is tuple with the arity of the number of upvars referred by the closure.
     upvar_tuple_ty: Ty<'tcx>,
 }
 
@@ -362,7 +362,7 @@ impl<'tcx> ClosureSubsts<'tcx> {
     pub fn upvar_tys(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) ->
         impl Iterator<Item=Ty<'tcx>> + 'tcx
     {
-        match self.upvar_tuple_ty_or_infer_var(def_id, tcx).sty {
+        match self.upvar_tuple_ty(def_id, tcx).sty {
             ty::Tuple(tys) => tys.iter().cloned(),
             ref t => bug!("upvar_tuple_ty is not a valid tuple: {:?}", t),
         }
@@ -372,7 +372,7 @@ impl<'tcx> ClosureSubsts<'tcx> {
     /// inference, may return an unresolved inference variable, in which case
     /// the type of parameters representing types of the upvars is not known
     /// yet.
-    pub fn upvar_tuple_ty_or_infer_var(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) -> Ty<'tcx> {
+    pub fn upvar_tuple_ty(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) -> Ty<'tcx> {
         self.split(def_id, tcx).upvar_tuple_ty
     }
 
@@ -383,9 +383,10 @@ impl<'tcx> ClosureSubsts<'tcx> {
         def_id: DefId,
         tcx: TyCtxt<'_, '_, 'tcx>,
     ) -> Option<impl Iterator<Item=Ty<'tcx>> + 'tcx> {
-        match self.upvar_tuple_ty_or_infer_var(def_id, tcx).sty {
+        match self.upvar_tuple_ty(def_id, tcx).sty {
             ty::Tuple(tys) => Some(tys.iter().cloned()),
-            ref _t => None,
+            ty::Infer(_) => Some(ty::List::empty().iter().cloned()),
+            _ => bug!("unexpected type")
         }
     }
 
@@ -474,7 +475,7 @@ impl<'tcx> GeneratorSubsts<'tcx> {
     pub fn upvar_tys(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) ->
         impl Iterator<Item=Ty<'tcx>> + 'tcx
     {
-        match self.upvar_tuple_ty_or_infer_var(def_id, tcx).sty {
+        match self.upvar_tuple_ty(def_id, tcx).sty {
             ty::Tuple(tys) => tys.iter().cloned(),
             ref t => bug!("Upvar_tuple_ty is not a tuple {:?}", t),
         }
@@ -487,13 +488,14 @@ impl<'tcx> GeneratorSubsts<'tcx> {
         def_id: DefId,
         tcx: TyCtxt<'_, '_, 'tcx>,
     ) -> Option<impl Iterator<Item=Ty<'tcx>> + 'tcx> {
-        match self.upvar_tuple_ty_or_infer_var(def_id, tcx).sty {
+        match self.upvar_tuple_ty(def_id, tcx).sty {
             ty::Tuple(tys) => Some(tys.iter().cloned()),
-            ref _t => None,
+            ty::Infer(_) => Some(ty::List::empty().iter().cloned()),
+            _ => bug!("unexpected type")
         }
     }
 
-    pub fn upvar_tuple_ty_or_infer_var(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) -> Ty<'tcx> {
+    pub fn upvar_tuple_ty(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) -> Ty<'tcx> {
         self.split(def_id, tcx).upvar_tuple_ty
     }
 

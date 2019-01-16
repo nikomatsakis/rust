@@ -1395,8 +1395,9 @@ define_print! {
                         // If we are here that mens that the type of upvars
                         // captured by this generator is not known and hence
                         // during pretty printing this sort of error will be
-                        // shown.
-                        write!(f, "Upvar type not bound yet.")
+                        // shown. It cannot come here as the calling function
+                        // will already panic.
+                        bug!("Upvar type error.")
                     }
                 }),
                 GeneratorWitness(types) => {
@@ -1405,6 +1406,9 @@ define_print! {
                 Closure(did, substs) => ty::tls::with(|tcx| {
                     let substs = tcx.lift(&substs).unwrap();
                     if let Some(upvar_tys) = substs.opt_tuple_tys(did, tcx) {
+                        // Even if the upvars types are not bound yet, calling
+                        // the opt-tuple_tys will return an empty list and so
+                        // this branch will execute and not the else.
                         write!(f, "[closure")?;
 
                         if let Some(node_id) = tcx.hir().as_local_node_id(did) {
@@ -1443,8 +1447,10 @@ define_print! {
                         // If we are here that mens that the type of upvars
                         // captured by this generator is not known and hence
                         // during pretty printing this sort of error will be
-                        // shown.
-                        write!(f, "Upvar type not bound yet.")
+                        // shown. It cannot reach here as if the upvar tuple
+                        // is neither a tuple nor an inference variable, it will
+                        // panic.
+                        bug!("Upvar type not bound yet.")
                     }
                 }),
                 Array(ty, sz) => {

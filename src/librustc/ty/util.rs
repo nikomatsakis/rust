@@ -1046,7 +1046,7 @@ fn needs_drop_raw<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         ty::Array(ty, _) | ty::Slice(ty) => needs_drop(ty),
 
         ty::Closure(def_id, ref substs) =>
-            needs_drop(substs.upvar_tuple_ty_or_infer_var(def_id, tcx)),
+            needs_drop(substs.upvar_tuple_ty(def_id, tcx)),
 
         // Pessimistically assume that all generators will require destructors
         // as we don't know if a destructor is a noop or not until after the MIR

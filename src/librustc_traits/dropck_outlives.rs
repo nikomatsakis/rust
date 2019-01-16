@@ -200,7 +200,7 @@ fn dtorck_constraint_for_ty<'a, 'gcx, 'tcx>(
                 span,
                 for_ty,
                 depth+1,
-                substs.upvar_tuple_ty_or_infer_var(def_id, tcx)),
+                substs.upvar_tuple_ty(def_id, tcx)),
 
         ty::Generator(def_id, substs, _movability) => {
             // rust-lang/rust#49918: types can be constructed, stored
