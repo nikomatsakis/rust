@@ -382,10 +382,10 @@ impl<'tcx> ClosureSubsts<'tcx> {
         self,
         def_id: DefId,
         tcx: TyCtxt<'_, '_, 'tcx>,
-    ) -> Option<impl Iterator<Item=Ty<'tcx>> + 'tcx> {
+    ) -> Option<&'tcx[Ty<'tcx>]> {
         match self.upvar_tuple_ty(def_id, tcx).sty {
-            ty::Tuple(tys) => Some(tys.iter().cloned()),
-            ty::Infer(_) => Some(ty::List::empty().iter().cloned()),
+            ty::Tuple(tys) => Some(tys),
+            ty::Infer(_) => None,
             _ => bug!("unexpected type")
         }
     }
@@ -487,10 +487,10 @@ impl<'tcx> GeneratorSubsts<'tcx> {
         self,
         def_id: DefId,
         tcx: TyCtxt<'_, '_, 'tcx>,
-    ) -> Option<impl Iterator<Item=Ty<'tcx>> + 'tcx> {
+    ) -> Option<&'tcx[Ty<'tcx>]> {
         match self.upvar_tuple_ty(def_id, tcx).sty {
-            ty::Tuple(tys) => Some(tys.iter().cloned()),
-            ty::Infer(_) => Some(ty::List::empty().iter().cloned()),
+            ty::Tuple(tys) => Some(tys),
+            ty::Infer(_) => None,
             _ => bug!("unexpected type")
         }
     }
