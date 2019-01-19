@@ -223,6 +223,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         );
         for (upvar_ty, final_upvar_ty) in substs
             .upvar_tys(closure_def_id, self.tcx)
+            .iter()
             .zip(final_upvar_tys)
         {
             self.demand_suptype(span, upvar_ty, final_upvar_ty);

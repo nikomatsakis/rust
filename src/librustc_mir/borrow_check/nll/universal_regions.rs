@@ -109,9 +109,11 @@ impl<'tcx> DefiningTy<'tcx> {
     /// match up with the `upvar_decls` field of `Mir`.
     pub fn upvar_tys(self, tcx: TyCtxt<'_, '_, 'tcx>) -> impl Iterator<Item = Ty<'tcx>> + 'tcx {
         match self {
-            DefiningTy::Closure(def_id, substs) => Either::Left(substs.upvar_tys(def_id, tcx)),
+            DefiningTy::Closure(def_id, substs) => {
+                Either::Left(substs.upvar_tys(def_id, tcx).iter().cloned())
+            }
             DefiningTy::Generator(def_id, substs, _) => {
-                Either::Right(Either::Left(substs.upvar_tys(def_id, tcx)))
+                Either::Right(Either::Left(substs.upvar_tys(def_id, tcx).iter().cloned()))
             }
             DefiningTy::FnDef(..) | DefiningTy::Const(..) => {
                 Either::Right(Either::Right(iter::empty()))

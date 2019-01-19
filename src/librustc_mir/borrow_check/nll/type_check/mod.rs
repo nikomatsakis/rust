@@ -674,10 +674,10 @@ impl<'a, 'b, 'gcx, 'tcx> TypeVerifier<'a, 'b, 'gcx, 'tcx> {
                 ty::Adt(adt_def, substs) if !adt_def.is_enum() =>
                     (&adt_def.variants[VariantIdx::new(0)], substs),
                 ty::Closure(def_id, substs) => {
-                    return match substs.upvar_tys(def_id, tcx).nth(field.index()) {
+                    return match substs.upvar_tys(def_id, tcx).iter().nth(field.index()) {
                         Some(ty) => Ok(ty),
                         None => Err(FieldAccessError::OutOfRange {
-                            field_count: substs.upvar_tys(def_id, tcx).count(),
+                            field_count: substs.upvar_tys(def_id, tcx).iter().count(),
                         }),
                     }
                 }
@@ -1819,10 +1819,10 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                 }
             }
             AggregateKind::Closure(def_id, substs) => {
-                match substs.upvar_tys(def_id, tcx).nth(field_index) {
+                match substs.upvar_tys(def_id, tcx).iter().nth(field_index) {
                     Some(ty) => Ok(ty),
                     None => Err(FieldAccessError::OutOfRange {
-                        field_count: substs.upvar_tys(def_id, tcx).count(),
+                        field_count: substs.upvar_tys(def_id, tcx).iter().count(),
                     }),
                 }
             }

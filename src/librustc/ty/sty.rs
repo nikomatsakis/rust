@@ -1,6 +1,5 @@
 //! This module contains `TyKind` and its major components.
 
-use either::Either;
 use hir;
 use hir::def_id::DefId;
 use infer::canonical::Canonical;
@@ -360,10 +359,10 @@ impl<'tcx> ClosureSubsts<'tcx> {
     /// hence a panic will occur.
     #[inline]
     pub fn upvar_tys(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) ->
-        impl Iterator<Item=Ty<'tcx>> + 'tcx
+        &'tcx[Ty<'tcx>]
     {
         match self.upvar_tuple_ty(def_id, tcx).sty {
-            ty::Tuple(tys) => tys.iter().cloned(),
+            ty::Tuple(tys) => tys,
             ref t => bug!("upvar_tuple_ty is not a valid tuple: {:?}", t),
         }
     }
@@ -473,10 +472,10 @@ impl<'tcx> GeneratorSubsts<'tcx> {
     /// type inference as the arity of the tuple will not be known at the time.
     #[inline]
     pub fn upvar_tys(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) ->
-        impl Iterator<Item=Ty<'tcx>> + 'tcx
+        &'tcx[Ty<'tcx>]
     {
         match self.upvar_tuple_ty(def_id, tcx).sty {
-            ty::Tuple(tys) => tys.iter().cloned(),
+            ty::Tuple(tys) => tys,
             ref t => bug!("Upvar_tuple_ty is not a tuple {:?}", t),
         }
     }
@@ -548,7 +547,7 @@ impl<'a, 'gcx, 'tcx> GeneratorSubsts<'tcx> {
     pub fn pre_transforms_tys(self, def_id: DefId, tcx: TyCtxt<'a, 'gcx, 'tcx>) ->
         impl Iterator<Item=Ty<'tcx>> + 'a
     {
-        self.upvar_tys(def_id, tcx).chain(iter::once(tcx.types.u32))
+        self.upvar_tys(def_id, tcx).iter().cloned().chain(iter::once(tcx.types.u32))
     }
 
     /// This is the types of all the fields stored in a generator.
@@ -569,11 +568,13 @@ pub enum UpvarSubsts<'tcx> {
 impl<'tcx> UpvarSubsts<'tcx> {
     #[inline]
     pub fn upvar_tys(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) ->
-        impl Iterator<Item=Ty<'tcx>> + 'tcx
+        &'tcx[Ty<'tcx>]
     {
         match self {
-            UpvarSubsts::Closure(subts) => Either::Left(subts.upvar_tys(def_id, tcx)),
-            UpvarSubsts::Generator(substs) => Either::Right(substs.upvar_tys(def_id, tcx)),
+            UpvarSubsts::Closure(subts) => subts.upvar_tys(def_id, tcx),
+            //Either::Left(subts.upvar_tys(def_id, tcx)),
+            UpvarSubsts::Generator(substs) => substs.upvar_tys(def_id, tcx),
+                //Either::Right(substs.upvar_tys(def_id, tcx)),
         }
     }
 }

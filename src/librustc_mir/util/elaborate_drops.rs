@@ -780,7 +780,7 @@ impl<'l, 'b, 'tcx, D> DropCtxt<'l, 'b, 'tcx, D>
         let ty = self.place_ty(self.place);
         match ty.sty {
             ty::Closure(def_id, substs) => {
-                let tys : Vec<_> = substs.upvar_tys(def_id, self.tcx()).collect();
+                let tys : Vec<_> = substs.upvar_tys(def_id, self.tcx()).iter().cloned().collect();
                 self.open_drop_for_tuple(&tys)
             }
             // Note that `elaborate_drops` only drops the upvars of a generator,
@@ -790,7 +790,7 @@ impl<'l, 'b, 'tcx, D> DropCtxt<'l, 'b, 'tcx, D>
             // It effetively only contains upvars until the generator transformation runs.
             // See librustc_mir/transform/generator.rs for more details.
             ty::Generator(def_id, substs, _) => {
-                let tys : Vec<_> = substs.upvar_tys(def_id, self.tcx()).collect();
+                let tys : Vec<_> = substs.upvar_tys(def_id, self.tcx()).iter().cloned().collect();
                 self.open_drop_for_tuple(&tys)
             }
             ty::Tuple(tys) => {

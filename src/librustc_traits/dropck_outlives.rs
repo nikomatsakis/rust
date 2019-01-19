@@ -227,7 +227,12 @@ fn dtorck_constraint_for_ty<'a, 'gcx, 'tcx>(
             // *do* incorporate the upvars here.
 
             let constraint = DtorckConstraint {
-                outlives: substs.upvar_tys(def_id, tcx).map(|t| t.into()).collect(),
+                outlives: substs
+                    .upvar_tys(def_id, tcx)
+                    .iter()
+                    .cloned()
+                    .map(|t| t.into())
+                    .collect(),
                 dtorck_types: vec![],
                 overflows: vec![],
             };
