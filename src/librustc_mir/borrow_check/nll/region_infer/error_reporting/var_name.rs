@@ -39,6 +39,8 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             .universal_regions
             .defining_ty
             .upvar_tys(tcx)
+            .iter()
+            .cloned()
             .position(|upvar_ty| {
                 debug!("get_upvar_index_for_region: upvar_ty={:?}", upvar_ty);
                 tcx.any_free_region_meets(&upvar_ty, |r| {
@@ -52,6 +54,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             .universal_regions
             .defining_ty
             .upvar_tys(tcx)
+            .iter()
             .nth(upvar_index);
 
         debug!(
