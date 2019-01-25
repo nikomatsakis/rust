@@ -208,7 +208,7 @@ static_assert!(MEM_SIZE_OF_TY_KIND: ::std::mem::size_of::<TyKind<'_>>() == 24);
 
 /// A closure can be modeled as a struct that looks like:
 ///
-///     struct Closure<'l0...'li, T0...Tj, CK, CS, U0...Uk> {
+///     struct Closure<'l0...'li, T0...Tj, CK, CS, (U0...Uk)> {
 ///         upvar0: U0,
 ///         ...
 ///         upvark: Uk
@@ -225,9 +225,17 @@ static_assert!(MEM_SIZE_OF_TY_KIND: ::std::mem::size_of::<TyKind<'_>>() == 24);
 ///   type. For example, `fn(u32, u32) -> u32` would mean that the closure
 ///   implements `CK<(u32, u32), Output = u32>`, where `CK` is the trait
 ///   specified above.
-/// - U0...Uk are type parameters representing the types of its upvars
-///   (borrowed, if appropriate; that is, if Ui represents a by-ref upvar,
-///    and the up-var has the type `Foo`, then `Ui = &Foo`).
+/// - (U0...Uk) represents a type parameter which will always be a
+///   tuple of k different types (post type inference). Each type Ui
+///   represents the type of a upvar (borrowed, if appropriate; that
+///   is, if Ui represents a by-ref upvar, and the up-var has the type
+///   `Foo`, then `Ui = &Foo`).
+///   - Note that the struct above is not legal Rust syntax, because
+///     the upvar fields get their type from elements of the
+///     `(U0..Uk)` tuple. We can do this because this struct is not
+///     *truly* represented as an ordinary struct in the compiler.
+///     - FIXME: We might want to refactor to a single field `upvars:
+///       (U0..Uk)` of tuple type, just to be nice.
 ///
 /// So, for example, given this function:
 ///
