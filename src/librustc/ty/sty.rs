@@ -7,7 +7,7 @@ use mir::interpret::ConstValue;
 use middle::region;
 use polonius_engine::Atom;
 use rustc_data_structures::indexed_vec::Idx;
-use ty::subst::{Substs, Subst, UnpackedKind};
+use ty::subst::{Substs, Subst};
 use ty::{self, AdtDef, TypeFlags, Ty, TyCtxt, TypeFoldable};
 use ty::{List, TyS, ParamEnvAnd, ParamEnv};
 use util::captures::Captures;
@@ -343,21 +343,10 @@ impl<'tcx> ClosureSubsts<'tcx> {
         let generics = tcx.generics_of(def_id);
         let parent_len = generics.parent_count;
 
-        // create a tuple of the type parameters representing the types of the
-        // upvars. In the light of the opening comments above,taking the
-        // U0 ..  Uk and creating one (U0, .., Uk)
-        let upvar_subts = &self.substs[parent_len + 2..];
-        let upvar_tys_iter = upvar_subts.iter().map(|t| {
-            if let UnpackedKind::Type(ty) = t.unpack() {
-                ty
-            } else {
-                bug!("Expected upvar type here.")
-            }
-        });
         SplitClosureSubsts {
             closure_kind_ty: self.substs.type_at(parent_len),
             closure_sig_ty: self.substs.type_at(parent_len + 1),
-            upvar_tuple_ty: tcx.mk_tup(upvar_tys_iter),
+            upvar_tuple_ty: self.substs.type_at(parent_len + 2),
         }
     }
 
@@ -450,19 +439,11 @@ impl<'tcx> GeneratorSubsts<'tcx> {
     fn split(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) -> SplitGeneratorSubsts<'tcx> {
         let generics = tcx.generics_of(def_id);
         let parent_len = generics.parent_count;
-        let upvar_substs = &self.substs[parent_len + 3..];
-        let upvar_tys = upvar_substs.iter().map(|t| {
-            if let UnpackedKind::Type(ty) = t.unpack() {
-                ty
-            } else {
-                bug!("Upvar type expecetd.")
-            }
-        });
         SplitGeneratorSubsts {
             yield_ty: self.substs.type_at(parent_len),
             return_ty: self.substs.type_at(parent_len + 1),
             witness: self.substs.type_at(parent_len + 2),
-            upvar_tuple_ty: tcx.mk_tup(upvar_tys),
+            upvar_tuple_ty: self.substs.type_at(parent_len + 3),
         }
     }
 
@@ -575,14 +556,18 @@ pub enum UpvarSubsts<'tcx> {
 
 impl<'tcx> UpvarSubsts<'tcx> {
     #[inline]
-    pub fn upvar_tys(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) ->
-        &'tcx[Ty<'tcx>]
-    {
+    pub fn upvar_tuple_ty(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) -> Ty<'tcx> {
+        match self {
+            UpvarSubsts::Closure(subts) => subts.upvar_tuple_ty(def_id, tcx),
+            UpvarSubsts::Generator(substs) => substs.upvar_tuple_ty(def_id, tcx),
+        }
+    }
+
+    #[inline]
+    pub fn upvar_tys(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) -> &'tcx [Ty<'tcx>] {
         match self {
             UpvarSubsts::Closure(subts) => subts.upvar_tys(def_id, tcx),
-            //Either::Left(subts.upvar_tys(def_id, tcx)),
             UpvarSubsts::Generator(substs) => substs.upvar_tys(def_id, tcx),
-                //Either::Right(substs.upvar_tys(def_id, tcx)),
         }
     }
 }

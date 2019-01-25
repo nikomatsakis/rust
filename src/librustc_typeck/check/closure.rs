@@ -96,7 +96,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         // inference phase (`upvar.rs`).
         let base_substs =
             Substs::identity_for_item(self.tcx, self.tcx.closure_base_def_id(expr_def_id));
-        let substs = base_substs.extend_to(self.tcx,expr_def_id, |param, _| {
+        let substs = base_substs.extend_to(self.tcx, expr_def_id, |param, _| {
             match param.kind {
                 GenericParamDefKind::Lifetime => {
                     span_bug!(expr.span, "closure has region param")
