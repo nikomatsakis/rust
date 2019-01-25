@@ -1077,7 +1077,7 @@ fn generics_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId) -> &'tcx ty
 
         // For closures/generators: Add the (U0...Uk) tuple.
         params.push(ty::GenericParamDef {
-            index: type_start + i as u32,
+            index: type_start + dummy_args.len() as u32,
             name: Symbol::intern("<upvars>").as_interned_str(),
             def_id,
             pure_wrt_drop: false,
