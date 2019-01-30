@@ -555,6 +555,16 @@ pub enum UpvarSubsts<'tcx> {
 }
 
 impl<'tcx> UpvarSubsts<'tcx> {
+    // (FIXME) Ideally we would like for the lifetimes for TyCtxt to change from <'_, '_, 'tcx> to
+    // <'_, 'tcx, 'tcx> to cause a compile time failure if this was called from the inference
+    // context. Currently, it will lead to a runtime panic which is not that bad but in the
+    // interest of compile time failure being better than runtime failures, we should.  In words of
+    // @niko in particular, pre_transforms_ty is used in the NLL type-check (which does have an
+    // inference context) however, we could also just rewrite that function -- and perhaps move it
+    // into the NLL type_check/mod.rs file, the only place it is invoked -- to match against the
+    // tuple and extract the contents. the point being that we know that, when we are in the NLL
+    // type-check, these types should be fully inferred (we do have an active inference context
+    // then, but we are inferring different things)
     #[inline]
     pub fn upvar_tuple_ty(self, def_id: DefId, tcx: TyCtxt<'_, '_, 'tcx>) -> Ty<'tcx> {
         match self {
