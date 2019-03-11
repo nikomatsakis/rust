@@ -312,7 +312,7 @@ struct EvaluatedCandidate<'tcx> {
 /// When does the builtin impl for `T: Trait` apply?
 enum BuiltinImplConditions<'tcx> {
     /// The impl is conditional on T1,T2,.. : Trait
-    Where(ty::Binder<Vec<Ty<'tcx>>>),
+    Where(ty::Binder<(Vec<Ty<'tcx>>, bool)>),
     /// There is no built-in impl. There may be some other
     /// candidate (a where-clause or user-defined impl).
     None,
@@ -2307,7 +2307,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             BuiltinImplConditions::Where(nested) => {
                 debug!("builtin_bound: nested={:?}", nested);
                 candidates.vec.push(BuiltinCandidate {
-                    has_nested: nested.skip_binder().len() > 0,
+                    has_nested: nested.skip_binder().0.len() > 0,
                 });
             }
             BuiltinImplConditions::None => {}
@@ -2349,21 +2349,23 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             | ty::Never
             | ty::Error => {
                 // safe for everything
-                Where(ty::Binder::dummy(Vec::new()))
+                Where(ty::Binder::dummy( (Vec::new(), false) ))
             }
 
             ty::Str | ty::Slice(_) | ty::Dynamic(..) | ty::Foreign(..) => None,
 
-            ty::Tuple(tys) => Where(ty::Binder::bind(tys.last().into_iter().cloned().collect())),
+            ty::Tuple(tys) => Where(ty::Binder::bind(
+                    (tys.last().into_iter().cloned().collect(), false)
+                    )),
 
             ty::Adt(def, substs) => {
                 let sized_crit = def.sized_constraint(self.tcx());
                 // (*) binder moved here
                 Where(ty::Binder::bind(
-                    sized_crit
+                    (sized_crit
                         .iter()
                         .map(|ty| ty.subst(self.tcx(), substs))
-                        .collect(),
+                        .collect(), false),
                 ))
             }
 
@@ -2399,7 +2401,8 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             | ty::Infer(ty::FloatVar(_))
             | ty::FnDef(..)
             | ty::FnPtr(_)
-            | ty::Error => Where(ty::Binder::dummy(Vec::new())),
+            | ty::Error => Where(ty::Binder::dummy(
+                        (Vec::new(), false) )),
 
             ty::Uint(_)
             | ty::Int(_)
@@ -2423,21 +2426,24 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
 
             ty::Array(element_ty, _) => {
                 // (*) binder moved here
-                Where(ty::Binder::bind(vec![element_ty]))
+                Where(ty::Binder::bind(
+                        (vec![element_ty], false) ))
             }
 
             ty::Tuple(tys) => {
                 // (*) binder moved here
-                Where(ty::Binder::bind(tys.to_vec()))
+                Where(ty::Binder::bind(
+                        (tys.to_vec(), false) ))
             }
 
             ty::Closure(def_id, substs) => {
                 let trait_id = obligation.predicate.def_id();
-                let is_copy_trait = Some(trait_id) == self.tcx().lang_items().copy_trait();
-                let is_clone_trait = Some(trait_id) == self.tcx().lang_items().clone_trait();
+                let lang_items = self.tcx().lang_items();
+                let is_copy_trait = Some(trait_id) == lang_items.copy_trait();
+                let is_clone_trait = Some(trait_id) == lang_items.clone_trait();
                 if is_copy_trait || is_clone_trait {
                     Where(ty::Binder::bind(
-                            vec![substs.upvar_tuple_ty(def_id, self.tcx())]
+                            (vec![substs.upvar_tuple_ty(def_id, self.tcx())], true)
                     ))
                 } else {
                     None
@@ -2738,7 +2744,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         let lang_items = self.tcx().lang_items();
         let obligations = if has_nested {
             let trait_def = obligation.predicate.def_id();
-            let conditions = if Some(trait_def) == lang_items.sized_trait() {
+            let conditions_pair = if Some(trait_def) == lang_items.sized_trait() {
                 self.sized_conditions(obligation)
             } else if Some(trait_def) == lang_items.copy_trait() {
                 self.copy_clone_conditions(obligation)
@@ -2747,21 +2753,28 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             } else {
                 bug!("unexpected builtin trait {:?}", trait_def)
             };
-            let nested = match conditions {
-                BuiltinImplConditions::Where(nested) => nested,
+            let (nested_bound_types, is_closure_tuple) = match conditions_pair {
+                BuiltinImplConditions::Where(nested) => {
+                    nested.skip_binder().clone()
+                },
                 _ => bug!(
                     "obligation {:?} had matched a builtin impl but now doesn't",
                     obligation
                 ),
             };
 
-            let cause = obligation.derived_cause(BuiltinDerivedObligation);
+            let cause = if is_closure_tuple {
+                obligation.derived_cause(BuiltinDerivedObligation)
+            } else {
+                obligation.cause.clone()
+            };
+
             self.collect_predicates_for_types(
                 obligation.param_env,
                 cause,
                 obligation.recursion_depth + 1,
                 trait_def,
-                nested,
+                ty::Binder::bind(nested_bound_types),
             )
         } else {
             vec![]
