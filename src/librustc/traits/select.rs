@@ -2487,7 +2487,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     /// Bar<i32> where struct Bar<T> { x: T, y: u32 } -> [i32, u32]
     /// Zed<i32> where enum Zed { A(T), B(u32) } -> [i32, u32]
     /// ```
-    fn constituent_types_for_ty(&self, t: Ty<'tcx>) -> Vec<Ty<'tcx>> {
+    fn constituent_types_for_ty(&self, t: Ty<'tcx>) -> (Vec<Ty<'tcx>>, bool) {
         match t.sty {
             ty::Uint(_)
             | ty::Int(_)
@@ -2500,7 +2500,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             | ty::Infer(ty::IntVar(_))
             | ty::Infer(ty::FloatVar(_))
             | ty::Never
-            | ty::Char => Vec::new(),
+            | ty::Char => (Vec::new(), false),
 
             ty::UnnormalizedProjection(..)
             | ty::Placeholder(..)
@@ -2520,41 +2520,47 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             }
 
             ty::RawPtr(ty::TypeAndMut { ty: element_ty, .. }) | ty::Ref(_, element_ty, _) => {
-                vec![element_ty]
+                (vec![element_ty], false)
             }
 
-            ty::Array(element_ty, _) | ty::Slice(element_ty) => vec![element_ty],
+            ty::Array(element_ty, _) | ty::Slice(element_ty) => {
+                (vec![element_ty], false)
+            }
 
             ty::Tuple(ref tys) => {
                 // (T1, ..., Tn) -- meets any bound that all of T1...Tn meet
-                tys.to_vec()
+                (tys.to_vec(), false)
             }
 
             ty::Closure(def_id, ref substs) => {
-                vec![substs.upvar_tuple_ty(def_id, self.tcx())]
+                (vec![substs.upvar_tuple_ty(def_id, self.tcx())], true)
             },
 
             ty::Generator(def_id, ref substs, _) => {
-                vec![substs.upvar_tuple_ty(def_id, self.tcx())]
+                (vec![substs.upvar_tuple_ty(def_id, self.tcx())], true)
             }
 
             ty::GeneratorWitness(types) => {
                 // This is sound because no regions in the witness can refer to
                 // the binder outside the witness. So we'll effectivly reuse
                 // the implicit binder around the witness.
-                types.skip_binder().to_vec()
+                (types.skip_binder().to_vec(), false)
             }
 
             // for `PhantomData<T>`, we pass `T`
-            ty::Adt(def, substs) if def.is_phantom_data() => substs.types().collect(),
+            ty::Adt(def, substs) if def.is_phantom_data() => {
+                (substs.types().collect(), false)
+            }
 
-            ty::Adt(def, substs) => def.all_fields().map(|f| f.ty(self.tcx(), substs)).collect(),
+            ty::Adt(def, substs) => {
+                (def.all_fields().map(|f| f.ty(self.tcx(), substs)).collect(), false)
+            }
 
             ty::Opaque(def_id, substs) => {
                 // We can resolve the `impl Trait` to its concrete type,
                 // which enforces a DAG between the functions requiring
                 // the auto trait bounds in question.
-                vec![self.tcx().type_of(def_id).subst(self.tcx(), substs)]
+                (vec![self.tcx().type_of(def_id).subst(self.tcx(), substs)], false)
             }
         }
     }
@@ -2802,11 +2808,14 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             obligation, trait_def_id
         );
 
+        let mut is_upvar_tuple_ty = false;
         let types = obligation.predicate.map_bound(|inner| {
             let self_ty = self.infcx.shallow_resolve(inner.self_ty());
-            self.constituent_types_for_ty(self_ty)
+            let ret = self.constituent_types_for_ty(self_ty);
+            is_upvar_tuple_ty = ret.1;
+            ret.0
         });
-        self.vtable_auto_impl(obligation, trait_def_id, types)
+        self.vtable_auto_impl(obligation, trait_def_id, types, is_upvar_tuple_ty)
     }
 
     /// See `confirm_auto_impl_candidate`.
@@ -2815,10 +2824,15 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         obligation: &TraitObligation<'tcx>,
         trait_def_id: DefId,
         nested: ty::Binder<Vec<Ty<'tcx>>>,
+        is_upvar_tuple_ty: bool
     ) -> VtableAutoImplData<PredicateObligation<'tcx>> {
         debug!("vtable_auto_impl: nested={:?}", nested);
 
-        let cause = obligation.derived_cause(BuiltinDerivedObligation);
+        let cause = if is_upvar_tuple_ty {
+            obligation.derived_cause(BuiltinDerivedObligation)
+        } else {
+            obligation.cause.clone()
+        };
         let mut obligations = self.collect_predicates_for_types(
             obligation.param_env,
             cause,
