@@ -1367,12 +1367,19 @@ define_print! {
                         write!(f, "@{:?}", tcx.hir().span(node_id))?;
                         let mut sep = " ";
                         tcx.with_freevars(node_id, |freevars| {
-                            for (freevar, upvar_ty) in freevars.iter().zip(upvar_tys) {
-                                print!(f, cx,
-                                       write("{}{}:",
-                                             sep,
-                                             tcx.hir().name(freevar.var_id())),
-                                       print(upvar_ty))?;
+                            for (index, freevar) in freevars.iter().enumerate() {
+                                if let Some(upvar_ty) = upvar_tys.get(index) {
+                                    print!(f, cx,
+                                           write("{}{}:",
+                                                 sep,
+                                                 tcx.hir().name(freevar.var_id())),
+                                           print(upvar_ty))?;
+                                } else {
+                                    print!(f, cx,
+                                           write("{}{}:_",
+                                                 sep,
+                                                 tcx.hir().name(freevar.var_id())))?;
+                                }
                                 sep = ", ";
                             }
                             Ok(())
@@ -1411,12 +1418,19 @@ define_print! {
                         }
                         let mut sep = " ";
                         tcx.with_freevars(node_id, |freevars| {
-                            for (freevar, upvar_ty) in freevars.iter().zip(upvar_tys) {
-                                print!(f, cx,
-                                       write("{}{}:",
-                                             sep,
-                                             tcx.hir().name(freevar.var_id())),
-                                       print(upvar_ty))?;
+                            for (index, freevar) in freevars.iter().enumerate() {
+                                if let Some(upvar_ty) = upvar_tys.get(index) {
+                                    print!(f, cx,
+                                           write("{}{}:",
+                                                 sep,
+                                                 tcx.hir().name(freevar.var_id())),
+                                           print(upvar_ty))?;
+                                } else {
+                                    print!(f, cx,
+                                           write("{}{}:_",
+                                                 sep,
+                                                 tcx.hir().name(freevar.var_id())))?;
+                                }
                                 sep = ", ";
                             }
                             Ok(())
@@ -1428,7 +1442,7 @@ define_print! {
                         let mut sep = " ";
                         for (index, upvar_ty) in upvar_tys.iter().enumerate() {
                             print!(f, cx,
-                                   write("{}{}:", sep, index),
+                                   write("{} oho {}:", sep, index),
                                    print(upvar_ty))?;
                             sep = ", ";
                         }
