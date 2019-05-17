@@ -2770,7 +2770,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 ),
             };
 
-            let cause = if is_closure_tuple {
+            let cause = if !is_closure_tuple {
                 obligation.derived_cause(BuiltinDerivedObligation)
             } else {
                 obligation.cause.clone()
@@ -2829,7 +2829,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     ) -> VtableAutoImplData<PredicateObligation<'tcx>> {
         debug!("vtable_auto_impl: nested={:?}", nested);
 
-        let cause = if is_upvar_tuple_ty {
+        let cause = if !is_upvar_tuple_ty {
             obligation.derived_cause(BuiltinDerivedObligation)
         } else {
             obligation.cause.clone()
