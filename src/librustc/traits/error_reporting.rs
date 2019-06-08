@@ -1559,6 +1559,16 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                                                     obligated_types);
                 }
             }
+            ObligationCauseCode::HiddenDerivedObligation(ref data) => {
+                let parent_trait_ref = self.resolve_type_vars_if_possible(&data.parent_trait_ref);
+                // let ty = parent_trait_ref.skip_binder().self_ty();
+                // obligated_types.push(ty);
+                let parent_predicate = parent_trait_ref.to_predicate();
+                self.note_obligation_cause_code(err,
+                                                &parent_predicate,
+                                                &data.parent_code,
+                                                obligated_types);
+            }
             ObligationCauseCode::ImplDerivedObligation(ref data) => {
                 let parent_trait_ref = self.resolve_type_vars_if_possible(&data.parent_trait_ref);
                 err.note(

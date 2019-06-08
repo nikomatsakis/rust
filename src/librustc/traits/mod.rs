@@ -206,6 +206,8 @@ pub enum ObligationCauseCode<'tcx> {
 
     BuiltinDerivedObligation(DerivedObligationCause<'tcx>),
 
+    HiddenDerivedObligation(DerivedObligationCause<'tcx>),
+
     ImplDerivedObligation(DerivedObligationCause<'tcx>),
 
     /// error derived when matching traits/impls; see ObligationCause for more details

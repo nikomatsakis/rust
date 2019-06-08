@@ -500,6 +500,9 @@ impl<'a, 'tcx> Lift<'tcx> for traits::ObligationCauseCode<'a> {
             super::BuiltinDerivedObligation(ref cause) => {
                 tcx.lift(cause).map(super::BuiltinDerivedObligation)
             }
+            super::HiddenDerivedObligation(ref cause) => {
+                tcx.lift(cause).map(super::HiddenDerivedObligation)
+            }
             super::ImplDerivedObligation(ref cause) => {
                 tcx.lift(cause).map(super::ImplDerivedObligation)
             }

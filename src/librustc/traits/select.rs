@@ -13,7 +13,7 @@ use super::DerivedObligationCause;
 use super::Selection;
 use super::SelectionResult;
 use super::TraitNotObjectSafe;
-use super::{BuiltinDerivedObligation, ImplDerivedObligation, ObligationCauseCode};
+use super::{BuiltinDerivedObligation, HiddenDerivedObligation, ImplDerivedObligation, ObligationCauseCode};
 use super::{IntercrateMode, TraitQueryMode};
 use super::{ObjectCastObligation, Obligation};
 use super::{ObligationCause, PredicateObligation, TraitObligation};
@@ -2770,10 +2770,10 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                 ),
             };
 
-            let cause = if !is_closure_tuple {
-                obligation.derived_cause(BuiltinDerivedObligation)
+            let cause = if is_closure_tuple {
+                obligation.derived_cause(HiddenDerivedObligation)
             } else {
-                obligation.cause.clone()
+                obligation.derived_cause(BuiltinDerivedObligation)
             };
 
             self.collect_predicates_for_types(
