@@ -2829,10 +2829,10 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     ) -> VtableAutoImplData<PredicateObligation<'tcx>> {
         debug!("vtable_auto_impl: nested={:?}", nested);
 
-        let cause = if !is_upvar_tuple_ty {
-            obligation.derived_cause(BuiltinDerivedObligation)
+        let cause = if is_upvar_tuple_ty {
+            obligation.derived_cause(HiddenDerivedObligation)
         } else {
-            obligation.cause.clone()
+            obligation.derived_cause(BuiltinDerivedObligation)
         };
         let mut obligations = self.collect_predicates_for_types(
             obligation.param_env,
