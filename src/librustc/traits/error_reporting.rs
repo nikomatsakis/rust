@@ -1452,7 +1452,6 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             ObligationCauseCode::MethodReceiver |
             ObligationCauseCode::ReturnNoExpression |
             ObligationCauseCode::MiscObligation => {
-                err.note("ExprAssignable + MatchExpr etc.");
             }
             ObligationCauseCode::SliceOrArrayElem => {
                 err.note("slice and array elements must have `Sized` type");
@@ -1548,7 +1547,6 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             }
             ObligationCauseCode::BuiltinDerivedObligation(ref data) => {
                 if let ObligationCauseCode::HiddenDerivedObligation(ref idata) = *data.parent_code {
-                    err.note("Test Note: Found hidden type. So skipping ..");
                     let parent_trait_ref = self.resolve_type_vars_if_possible(&idata.parent_trait_ref);
                     let parent_predicate = parent_trait_ref.to_predicate();
                     return self.note_obligation_cause_code(err,
@@ -1571,7 +1569,6 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 }
             }
             ObligationCauseCode::HiddenDerivedObligation(ref data) => {
-                err.note("Test Note: ObligationCauseCode::HiddenDerivedObligation ..");
                 let parent_trait_ref = self.resolve_type_vars_if_possible(&data.parent_trait_ref);
                 let parent_predicate = parent_trait_ref.to_predicate();
                 self.note_obligation_cause_code(err,
