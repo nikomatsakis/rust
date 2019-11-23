@@ -91,6 +91,8 @@ impl<T: AsRef<ty::Predicate<'tcx>>> Extend<T> for PredicateSet<'tcx> {
 pub struct Elaborator<'tcx> {
     stack: Vec<PredicateObligation<'tcx>>,
     visited: PredicateSet<'tcx>,
+    /// `true` to allow the same predicate to appear more than once within the sequence.
+    allow_repetitions: bool,
 }
 
 pub fn elaborate_trait_ref<'tcx>(
@@ -106,6 +108,17 @@ pub fn elaborate_trait_refs<'tcx>(
 ) -> Elaborator<'tcx> {
     let predicates = trait_refs.map(|trait_ref| trait_ref.without_const().to_predicate()).collect();
     elaborate_predicates(tcx, predicates)
+}
+
+pub fn elaborate_trait_ref_with_repetitions<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    trait_ref: ty::PolyTraitRef<'tcx>,
+) -> Elaborator<'tcx> {
+    Elaborator {
+        stack: vec![predicate_obligation(trait_ref.without_const().to_predicate(), None)],
+        visited: PredicateSet::new(tcx),
+        allow_repetitions: true,
+    }
 }
 
 pub fn elaborate_predicates<'tcx>(
@@ -125,7 +138,11 @@ pub fn elaborate_obligations<'tcx>(
 ) -> Elaborator<'tcx> {
     let mut visited = PredicateSet::new(tcx);
     obligations.retain(|obligation| visited.insert(&obligation.predicate));
-    Elaborator { stack: obligations, visited }
+    Elaborator {
+        stack: obligations,
+        visited,
+        allow_repetitions: false,
+    }
 }
 
 fn predicate_obligation<'tcx>(
@@ -136,7 +153,12 @@ fn predicate_obligation<'tcx>(
     if let Some(span) = span {
         cause.span = span;
     }
-    Obligation { cause, param_env: ty::ParamEnv::empty(), recursion_depth: 0, predicate }
+    Obligation {
+        cause,
+        param_env: ty::ParamEnv::empty(),
+        recursion_depth: 0,
+        predicate,
+    }
 }
 
 impl Elaborator<'tcx> {
@@ -146,6 +168,7 @@ impl Elaborator<'tcx> {
 
     fn elaborate(&mut self, obligation: &PredicateObligation<'tcx>) {
         let tcx = self.visited.tcx;
+        let allow_repetitions = self.allow_repetitions;
         match obligation.predicate {
             ty::Predicate::Trait(ref data, _) => {
                 // Get predicates declared on the trait.
@@ -165,7 +188,7 @@ impl Elaborator<'tcx> {
                 // `trait Sized: Sized { }` rather than `trait Sized { }`.
                 let visited = &mut self.visited;
                 let obligations =
-                    obligations.filter(|obligation| visited.insert(&obligation.predicate));
+                    obligations.filter(|obligation| allow_repetitions || visited.insert(&obligation.predicate));
 
                 self.stack.extend(obligations);
             }
@@ -248,7 +271,7 @@ impl Elaborator<'tcx> {
                                 None
                             }
                         })
-                        .filter(|p| visited.insert(p))
+                        .filter(|p| allow_repetitions || visited.insert(p))
                         .map(|p| predicate_obligation(p, None)),
                 );
             }
@@ -285,6 +308,13 @@ pub fn supertraits<'tcx>(
     trait_ref: ty::PolyTraitRef<'tcx>,
 ) -> Supertraits<'tcx> {
     elaborate_trait_ref(tcx, trait_ref).filter_to_traits()
+}
+
+pub fn supertraits_with_repetitions<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    trait_ref: ty::PolyTraitRef<'tcx>,
+) -> Supertraits<'tcx> {
+    elaborate_trait_ref_with_repetitions(tcx, trait_ref).filter_to_traits()
 }
 
 pub fn transitive_bounds<'tcx>(
