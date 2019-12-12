@@ -10,7 +10,7 @@ use crate::util::patch::MirPatch;
 pub struct RemoveNoopLandingPads;
 
 pub fn remove_noop_landing_pads<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
-    if tcx.sess.no_landing_pads() {
+    if !tcx.sess.panic_unwinds() {
         return
     }
     debug!("remove_noop_landing_pads({:?})", body);

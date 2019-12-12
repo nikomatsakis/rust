@@ -242,7 +242,7 @@ pub fn from_fn_attrs(
     //
     // You can also find more info on why Windows is whitelisted here in:
     //      https://bugzilla.mozilla.org/show_bug.cgi?id=1302078
-    if !cx.sess().no_landing_pads() ||
+    if !cx.sess().force_no_landing_pads() ||
        cx.sess().target.target.options.requires_uwtable {
         attributes::emit_uwtable(llfn, true);
     }

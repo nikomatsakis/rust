@@ -516,7 +516,7 @@ fn should_abort_on_panic(tcx: TyCtxt<'_>, fn_def_id: DefId, _abi: Abi) -> bool {
     if tcx.sess.panic_strategy() != PanicStrategy::Unwind { return false; }
 
     // We cannot add landing pads, so don't add one.
-    if tcx.sess.no_landing_pads() { return false; }
+    if tcx.sess.force_no_landing_pads() { return false; }
 
     // This is a special case: some functions have a C abi but are meant to
     // unwind anyway. Don't stop them.

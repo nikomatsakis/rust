@@ -315,7 +315,8 @@ fn fat_lto(cgcx: &CodegenContext<LlvmCodegenBackend>,
             save_temp_bitcode(&cgcx, &module, "lto.after-restriction");
         }
 
-        if cgcx.no_landing_pads {
+        if cgcx.panic_unwinds {
+            // FIXME(ndm) -- should that be `force_no_landing_pads`?
             unsafe {
                 llvm::LLVMRustMarkAllFunctionsNounwind(llmod);
             }
@@ -718,7 +719,8 @@ pub unsafe fn optimize_thin_module(
 
         // Like with "fat" LTO, get some better optimizations if landing pads
         // are disabled by removing all landing pads.
-        if cgcx.no_landing_pads {
+        if cgcx.panic_unwinds {
+            // FIXME(ndm) -- should that be `force_no_landing_pads`?
             let _timer = cgcx.prof.generic_activity("LLVM_thin_lto_remove_landing_pads");
             llvm::LLVMRustMarkAllFunctionsNounwind(llmod);
             save_temp_bitcode(&cgcx, &module, "thin-lto-after-nounwind");

@@ -808,7 +808,7 @@ fn try_intrinsic(
     local_ptr: &'ll Value,
     dest: &'ll Value,
 ) {
-    if bx.sess().no_landing_pads() {
+    if !bx.sess().panic_unwinds() {
         bx.call(func, &[data], None);
         let ptr_align = bx.tcx().data_layout.pointer_align.abi;
         bx.store(bx.const_null(bx.type_i8p()), dest, ptr_align);

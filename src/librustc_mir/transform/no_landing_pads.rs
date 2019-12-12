@@ -17,7 +17,7 @@ impl MirPass<'tcx> for NoLandingPads {
 }
 
 pub fn no_landing_pads<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
-    if tcx.sess.no_landing_pads() {
+    if !tcx.sess.panic_unwinds() {
         // By default, if we see a call to an unknown callee with
         // non-Rust ABI, we will not remove the landing
         // entirely. Instead, we branch to a block that aborts.
@@ -33,7 +33,7 @@ pub fn no_landing_pads<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
         // can create branches to it and -- if any branches were built
         // -- we can unwind.
         let mut abort_block = Some(body.basic_blocks().next_index());
-        if tcx.sess.opts.debugging_opts.no_landing_pads {
+        if tcx.sess.force_no_landing_pads() {
             debug!("no_landing_pads: -Zno-landing-pads");
             abort_block = None;
         }
