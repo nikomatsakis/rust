@@ -265,7 +265,9 @@ pub fn from_fn_attrs(
             llvm::AttributePlace::ReturnValue, llfn);
     }
 
-    unwind(llfn, if cx.tcx.sess.panic_strategy() != PanicStrategy::Unwind {
+    unwind(llfn, if false && cx.tcx.sess.panic_strategy() != PanicStrategy::Unwind {
+        // FIXME we should look for something like `#[unwind(never)]`
+        //
         // In panic=abort mode we assume nothing can unwind anywhere, so
         // optimize based on this!
         false
@@ -299,7 +301,7 @@ pub fn from_fn_attrs(
             // is currently under discussion; see rust-lang/rust#58794.
             //
             // In either case, we mark item as explicitly nounwind.
-            false
+            true
         }
     });
 
