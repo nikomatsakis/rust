@@ -775,7 +775,11 @@ where
     T: Ord,
 {
     fn cmp(&self, other: &List<T>) -> Ordering {
-        if self == other { Ordering::Equal } else { <[T] as Ord>::cmp(&**self, &**other) }
+        if self == other {
+            Ordering::Equal
+        } else {
+            <[T] as Ord>::cmp(&**self, &**other)
+        }
     }
 }
 
@@ -1758,6 +1762,11 @@ pub type PlaceholderRegion = Placeholder<BoundRegion>;
 pub type PlaceholderType = Placeholder<BoundVar>;
 
 pub type PlaceholderConst = Placeholder<BoundVar>;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable, PartialOrd, Ord)]
+pub struct EmptyRegion {
+    pub universe: ty::UniverseIndex,
+}
 
 /// When type checking, we use the `ParamEnv` to track
 /// details about the set of where-clauses that are in scope at this

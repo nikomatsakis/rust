@@ -814,7 +814,9 @@ impl TypeFolder<'tcx> for ReverseMapper<'tcx> {
             ty::ReErased => return r,
 
             // The regions that we expect from borrow checking.
-            ty::ReEarlyBound(_) | ty::ReFree(_) | ty::ReEmpty(ty::UniverseIndex::ROOT) => {}
+            ty::ReEarlyBound(_)
+            | ty::ReFree(_)
+            | ty::ReEmpty(ty::EmptyRegion { universe: ty::UniverseIndex::ROOT }) => {}
 
             ty::ReEmpty(_) | ty::RePlaceholder(_) | ty::ReVar(_) | ty::ReScope(_) => {
                 // All of the regions in the type should either have been

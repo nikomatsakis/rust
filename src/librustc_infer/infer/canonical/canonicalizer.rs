@@ -170,7 +170,7 @@ impl CanonicalizeRegionMode for CanonicalizeQueryResponse {
             ty::ReFree(_)
             | ty::ReErased
             | ty::ReStatic
-            | ty::ReEmpty(ty::UniverseIndex::ROOT)
+            | ty::ReEmpty(ty::EmptyRegion { universe: ty::UniverseIndex::ROOT })
             | ty::ReEarlyBound(..) => r,
 
             ty::RePlaceholder(placeholder) => canonicalizer.canonical_var_for_region(
@@ -470,7 +470,11 @@ impl<'cx, 'tcx> TypeFolder<'tcx> for Canonicalizer<'cx, 'tcx> {
         }
 
         let flags = FlagComputation::for_const(ct);
-        if flags.intersects(self.needs_canonical_flags) { ct.super_fold_with(self) } else { ct }
+        if flags.intersects(self.needs_canonical_flags) {
+            ct.super_fold_with(self)
+        } else {
+            ct
+        }
     }
 }
 

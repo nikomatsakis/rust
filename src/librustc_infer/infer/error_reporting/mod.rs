@@ -136,7 +136,9 @@ pub(super) fn note_and_explain_region(
             msg_span_from_free_region(tcx, region)
         }
 
-        ty::ReEmpty(ty::UniverseIndex::ROOT) => ("the empty lifetime".to_owned(), None),
+        ty::ReEmpty(ty::EmptyRegion { universe: ty::UniverseIndex::ROOT }) => {
+            ("the empty lifetime".to_owned(), None)
+        }
 
         // uh oh, hope no user ever sees THIS
         ty::ReEmpty(ui) => (format!("the empty lifetime in universe {:?}", ui), None),
@@ -177,8 +179,10 @@ fn msg_span_from_free_region(
             msg_span_from_early_bound_and_free_regions(tcx, region)
         }
         ty::ReStatic => ("the static lifetime".to_owned(), None),
-        ty::ReEmpty(ty::UniverseIndex::ROOT) => ("an empty lifetime".to_owned(), None),
-        ty::ReEmpty(ui) => (format!("an empty lifetime in universe {:?}", ui), None),
+        ty::ReEmpty(ty::EmptyRegion { universe }) => match universe {
+            ty::UniverseIndex::ROOT => ("an empty lifetime".to_owned(), None),
+            _ => (format!("an empty lifetime in universe {:?}", universe), None),
+        },
         _ => bug!("{:?}", region),
     }
 }
@@ -457,7 +461,9 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                         // placeholder. In practice, we expect more
                         // tailored errors that don't really use this
                         // value.
-                        let sub_r = self.tcx.mk_region(ty::ReEmpty(var_universe));
+                        let sub_r = self
+                            .tcx
+                            .mk_region(ty::ReEmpty(ty::EmptyRegion { universe: var_universe }));
 
                         self.report_placeholder_failure(
                             region_scope_tree,
@@ -803,7 +809,11 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
             .regions()
             .map(|lifetime| {
                 let s = lifetime.to_string();
-                if s.is_empty() { "'_".to_string() } else { s }
+                if s.is_empty() {
+                    "'_".to_string()
+                } else {
+                    s
+                }
             })
             .collect::<Vec<_>>()
             .join(", ");
@@ -1128,7 +1138,11 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
 
                     fn lifetime_display(lifetime: Region<'_>) -> String {
                         let s = lifetime.to_string();
-                        if s.is_empty() { "'_".to_string() } else { s }
+                        if s.is_empty() {
+                            "'_".to_string()
+                        } else {
+                            s
+                        }
                     }
                     // At one point we'd like to elide all lifetimes here, they are irrelevant for
                     // all diagnostics that use this output

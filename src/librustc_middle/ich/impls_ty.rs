@@ -60,6 +60,13 @@ impl<'a, 'tcx> HashStable<StableHashingContext<'a>> for ty::subst::GenericArg<'t
     }
 }
 
+impl<'a> HashStable<StableHashingContext<'a>> for ty::EmptyRegion {
+    fn hash_stable(&self, hcx: &mut StableHashingContext<'a>, hasher: &mut StableHasher) {
+        let ty::EmptyRegion { universe } = self;
+        universe.hash_stable(hcx, hasher)
+    }
+}
+
 impl<'a> HashStable<StableHashingContext<'a>> for ty::RegionKind {
     fn hash_stable(&self, hcx: &mut StableHashingContext<'a>, hasher: &mut StableHasher) {
         mem::discriminant(self).hash_stable(hcx, hasher);

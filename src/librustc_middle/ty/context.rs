@@ -846,7 +846,9 @@ impl<'tcx> CommonLifetimes<'tcx> {
         let mk = |r| interners.region.intern(r, |r| Interned(interners.arena.alloc(r))).0;
 
         CommonLifetimes {
-            re_root_empty: mk(RegionKind::ReEmpty(ty::UniverseIndex::ROOT)),
+            re_root_empty: mk(RegionKind::ReEmpty(ty::EmptyRegion {
+                universe: ty::UniverseIndex::ROOT,
+            })),
             re_static: mk(RegionKind::ReStatic),
             re_erased: mk(RegionKind::ReErased),
         }
@@ -1235,7 +1237,11 @@ impl<'tcx> TyCtxt<'tcx> {
     }
 
     pub fn def_key(self, id: DefId) -> rustc_hir::definitions::DefKey {
-        if let Some(id) = id.as_local() { self.hir().def_key(id) } else { self.cstore.def_key(id) }
+        if let Some(id) = id.as_local() {
+            self.hir().def_key(id)
+        } else {
+            self.cstore.def_key(id)
+        }
     }
 
     /// Converts a `DefId` into its fully expanded `DefPath` (every
@@ -1254,7 +1260,11 @@ impl<'tcx> TyCtxt<'tcx> {
     /// Returns whether or not the crate with CrateNum 'cnum'
     /// is marked as a private dependency
     pub fn is_private_dep(self, cnum: CrateNum) -> bool {
-        if cnum == LOCAL_CRATE { false } else { self.cstore.crate_is_private_dep_untracked(cnum) }
+        if cnum == LOCAL_CRATE {
+            false
+        } else {
+            self.cstore.crate_is_private_dep_untracked(cnum)
+        }
     }
 
     #[inline]
@@ -2284,7 +2294,11 @@ impl<'tcx> TyCtxt<'tcx> {
 
     #[inline]
     pub fn mk_diverging_default(self) -> Ty<'tcx> {
-        if self.features().never_type_fallback { self.types.never } else { self.types.unit }
+        if self.features().never_type_fallback {
+            self.types.never
+        } else {
+            self.types.unit
+        }
     }
 
     #[inline]
@@ -2457,31 +2471,59 @@ impl<'tcx> TyCtxt<'tcx> {
     }
 
     pub fn intern_type_list(self, ts: &[Ty<'tcx>]) -> &'tcx List<Ty<'tcx>> {
-        if ts.is_empty() { List::empty() } else { self._intern_type_list(ts) }
+        if ts.is_empty() {
+            List::empty()
+        } else {
+            self._intern_type_list(ts)
+        }
     }
 
     pub fn intern_substs(self, ts: &[GenericArg<'tcx>]) -> &'tcx List<GenericArg<'tcx>> {
-        if ts.is_empty() { List::empty() } else { self._intern_substs(ts) }
+        if ts.is_empty() {
+            List::empty()
+        } else {
+            self._intern_substs(ts)
+        }
     }
 
     pub fn intern_projs(self, ps: &[ProjectionKind]) -> &'tcx List<ProjectionKind> {
-        if ps.is_empty() { List::empty() } else { self._intern_projs(ps) }
+        if ps.is_empty() {
+            List::empty()
+        } else {
+            self._intern_projs(ps)
+        }
     }
 
     pub fn intern_place_elems(self, ts: &[PlaceElem<'tcx>]) -> &'tcx List<PlaceElem<'tcx>> {
-        if ts.is_empty() { List::empty() } else { self._intern_place_elems(ts) }
+        if ts.is_empty() {
+            List::empty()
+        } else {
+            self._intern_place_elems(ts)
+        }
     }
 
     pub fn intern_canonical_var_infos(self, ts: &[CanonicalVarInfo]) -> CanonicalVarInfos<'tcx> {
-        if ts.is_empty() { List::empty() } else { self._intern_canonical_var_infos(ts) }
+        if ts.is_empty() {
+            List::empty()
+        } else {
+            self._intern_canonical_var_infos(ts)
+        }
     }
 
     pub fn intern_clauses(self, ts: &[Clause<'tcx>]) -> Clauses<'tcx> {
-        if ts.is_empty() { List::empty() } else { self._intern_clauses(ts) }
+        if ts.is_empty() {
+            List::empty()
+        } else {
+            self._intern_clauses(ts)
+        }
     }
 
     pub fn intern_goals(self, ts: &[Goal<'tcx>]) -> Goals<'tcx> {
-        if ts.is_empty() { List::empty() } else { self._intern_goals(ts) }
+        if ts.is_empty() {
+            List::empty()
+        } else {
+            self._intern_goals(ts)
+        }
     }
 
     pub fn mk_fn_sig<I>(

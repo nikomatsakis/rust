@@ -1348,7 +1348,7 @@ pub enum RegionKind {
     /// Therefore, the `'empty` in a universe `U` is less than all
     /// regions visible from `U`, but not less than regions not visible
     /// from `U`.
-    ReEmpty(ty::UniverseIndex),
+    ReEmpty(ty::EmptyRegion),
 
     /// Erased region, used by trait selection, in MIR and during codegen.
     ReErased,
@@ -1776,7 +1776,11 @@ impl<'tcx> TyS<'tcx> {
 
     #[inline]
     pub fn is_phantom_data(&self) -> bool {
-        if let Adt(def, _) = self.kind { def.is_phantom_data() } else { false }
+        if let Adt(def, _) = self.kind {
+            def.is_phantom_data()
+        } else {
+            false
+        }
     }
 
     #[inline]
@@ -2500,7 +2504,11 @@ static_assert_size!(ConstKind<'_>, 40);
 impl<'tcx> ConstKind<'tcx> {
     #[inline]
     pub fn try_to_scalar(&self) -> Option<Scalar> {
-        if let ConstKind::Value(val) = self { val.try_to_scalar() } else { None }
+        if let ConstKind::Value(val) = self {
+            val.try_to_scalar()
+        } else {
+            None
+        }
     }
 
     #[inline]

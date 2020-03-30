@@ -173,7 +173,8 @@ impl<'cx, 'tcx> LexicalResolver<'cx, 'tcx> {
             values: IndexVec::from_fn_n(
                 |vid| {
                     let vid_universe = self.var_infos[vid].universe;
-                    let re_empty = tcx.mk_region(ty::ReEmpty(vid_universe));
+                    let re_empty =
+                        tcx.mk_region(ty::ReEmpty(ty::EmptyRegion { universe: vid_universe }));
                     VarValue::Value(re_empty)
                 },
                 self.num_vars(),
@@ -423,7 +424,7 @@ impl<'cx, 'tcx> LexicalResolver<'cx, 'tcx> {
                 // check below for a common case, here purely as an
                 // optimization.
                 let b_universe = self.var_infos[b_vid].universe;
-                if let ReEmpty(a_universe) = a_region {
+                if let ReEmpty(ty::EmptyRegion { universe: a_universe }) = a_region {
                     if *a_universe == b_universe {
                         return false;
                     }
@@ -530,12 +531,12 @@ impl<'cx, 'tcx> LexicalResolver<'cx, 'tcx> {
                 self.tcx().mk_region(ReEmpty(ui))
             }
 
-            (&ReEmpty(empty_ui), &RePlaceholder(placeholder))
-            | (&RePlaceholder(placeholder), &ReEmpty(empty_ui)) => {
+            (&ReEmpty(empty), &RePlaceholder(placeholder))
+            | (&RePlaceholder(placeholder), &ReEmpty(empty)) => {
                 // If this empty region is from a universe that can
                 // name the placeholder, then the placeholder is
                 // larger; otherwise, the only ancestor is `'static`.
-                if empty_ui.can_name(placeholder.universe) {
+                if empty.universe.can_name(placeholder.universe) {
                     self.tcx().mk_region(RePlaceholder(placeholder))
                 } else {
                     self.tcx().lifetimes.re_static

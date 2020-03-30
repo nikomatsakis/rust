@@ -1002,7 +1002,11 @@ pub trait PrettyPrinter<'tcx>:
                 if data == max {
                     p!(write("std::{}::MAX", ui_str))
                 } else {
-                    if print_ty { p!(write("{}{}", data, ui_str)) } else { p!(write("{}", data)) }
+                    if print_ty {
+                        p!(write("{}{}", data, ui_str))
+                    } else {
+                        p!(write("{}", data))
+                    }
                 };
             }
             (Scalar::Raw { data, .. }, ty::Int(i)) => {
@@ -1674,12 +1678,12 @@ impl<F: fmt::Write> FmtPrinter<'_, '_, F> {
                 p!(write("'static"));
                 return Ok(self);
             }
-            ty::ReEmpty(ty::UniverseIndex::ROOT) => {
+            ty::ReEmpty(ty::EmptyRegion { universe: ty::UniverseIndex::ROOT }) => {
                 p!(write("'<empty>"));
                 return Ok(self);
             }
-            ty::ReEmpty(ui) => {
-                p!(write("'<empty:{:?}>", ui));
+            ty::ReEmpty(empty_region) => {
+                p!(write("'<empty:{:?}>", empty_region));
                 return Ok(self);
             }
         }
