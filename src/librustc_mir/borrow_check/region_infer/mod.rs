@@ -1537,6 +1537,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
                 RegionElement::Location(_) => true,
                 RegionElement::RootUniversalRegion(_) => true,
                 RegionElement::PlaceholderRegion(placeholder1) => placeholder != *placeholder1,
+                RegionElement::EmptyRegion(empty) => placeholder.universe.can_name(empty.universe),
             })
         } {
             Some(v) => v,
@@ -1821,6 +1822,10 @@ impl<'tcx> RegionInferenceContext<'tcx> {
                 })
                 .next()
                 .unwrap(),
+            RegionElement::EmptyRegion(_) => panic!(
+                "region_from_element({:?}, {:?}) -- unexpected empty element",
+                longer_fr, element
+            ),
         }
     }
 

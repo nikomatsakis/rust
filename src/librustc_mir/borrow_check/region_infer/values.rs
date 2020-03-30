@@ -112,6 +112,11 @@ rustc_index::newtype_index! {
     pub struct PlaceholderIndex { DEBUG_FORMAT = "PlaceholderIndex({})" }
 }
 
+rustc_index::newtype_index! {
+    /// A single integer representing a `ty::Placeholder`.
+    pub struct EmptyIndex { DEBUG_FORMAT = "EmptyIndex({})" }
+}
+
 /// An individual element in a region value -- the value of a
 /// particular region variable consists of a set of these elements.
 #[derive(Debug, Clone)]
@@ -126,6 +131,9 @@ crate enum RegionElement {
     /// A placeholder (e.g., instantiated from a `for<'a> fn(&'a u32)`
     /// type).
     PlaceholderRegion(ty::PlaceholderRegion),
+
+    /// A "empty" region, tied to the given universe index
+    EmptyRegion(ty::EmptyRegion),
 }
 
 /// When we initially compute liveness, we use a bit matrix storing
@@ -195,12 +203,20 @@ impl<N: Idx> LivenessValues<N> {
 crate struct PlaceholderIndices {
     to_index: FxHashMap<ty::PlaceholderRegion, PlaceholderIndex>,
     from_index: IndexVec<PlaceholderIndex, ty::PlaceholderRegion>,
+
+    to_empty_index: FxHashMap<ty::EmptyRegion, EmptyIndex>,
+    from_empty_index: IndexVec<EmptyIndex, ty::EmptyRegion>,
 }
 
 impl PlaceholderIndices {
     crate fn insert(&mut self, placeholder: ty::PlaceholderRegion) -> PlaceholderIndex {
-        let PlaceholderIndices { to_index, from_index } = self;
+        let PlaceholderIndices { to_index, from_index, .. } = self;
         *to_index.entry(placeholder).or_insert_with(|| from_index.push(placeholder))
+    }
+
+    crate fn insert_empty(&mut self, universe: ty::EmptyRegion) -> EmptyIndex {
+        let PlaceholderIndices { to_empty_index, from_empty_index, .. } = self;
+        *to_empty_index.entry(universe).or_insert_with(|| from_empty_index.push(universe))
     }
 
     crate fn lookup_index(&self, placeholder: ty::PlaceholderRegion) -> PlaceholderIndex {
@@ -211,8 +227,20 @@ impl PlaceholderIndices {
         self.from_index[placeholder]
     }
 
-    crate fn len(&self) -> usize {
+    crate fn lookup_empty_index(&self, universe: ty::EmptyRegion) -> EmptyIndex {
+        self.to_empty_index[&universe]
+    }
+
+    crate fn lookup_empty(&self, index: EmptyIndex) -> ty::EmptyRegion {
+        self.from_empty_index[index]
+    }
+
+    crate fn placeholder_len(&self) -> usize {
         self.from_index.len()
+    }
+
+    crate fn empty_len(&self) -> usize {
+        self.from_empty_index.len()
     }
 }
 
@@ -244,6 +272,9 @@ crate struct RegionValues<N: Idx> {
     /// Placeholders represent bound regions -- so something like `'a`
     /// in for<'a> fn(&'a u32)`.
     placeholders: SparseBitMatrix<N, PlaceholderIndex>,
+
+    /// "Empty" element in a given universe
+    empties: SparseBitMatrix<N, EmptyIndex>,
 }
 
 impl<N: Idx> RegionValues<N> {
@@ -255,13 +286,15 @@ impl<N: Idx> RegionValues<N> {
         num_universal_regions: usize,
         placeholder_indices: &Rc<PlaceholderIndices>,
     ) -> Self {
-        let num_placeholders = placeholder_indices.len();
+        let num_placeholders = placeholder_indices.placeholder_len();
+        let num_empties = placeholder_indices.empty_len();
         Self {
             elements: elements.clone(),
             points: SparseBitMatrix::new(elements.num_points),
             placeholder_indices: placeholder_indices.clone(),
             free_regions: SparseBitMatrix::new(num_universal_regions),
             placeholders: SparseBitMatrix::new(num_placeholders),
+            empties: SparseBitMatrix::new(num_empties),
         }
     }
 
@@ -345,6 +378,17 @@ impl<N: Idx> RegionValues<N> {
     }
 
     /// Returns all the elements contained in a given region's value.
+    crate fn empties_contained_in<'a>(
+        &'a self,
+        r: N,
+    ) -> impl Iterator<Item = ty::EmptyRegion> + 'a {
+        self.empties
+            .row(r)
+            .into_iter()
+            .flat_map(|set| set.iter())
+            .map(move |p| self.placeholder_indices.lookup_empty(p))
+    }
+    /// Returns all the elements contained in a given region's value.
     crate fn elements_contained_in<'a>(&'a self, r: N) -> impl Iterator<Item = RegionElement> + 'a {
         let points_iter = self.locations_outlived_by(r).map(RegionElement::Location);
 
@@ -354,7 +398,12 @@ impl<N: Idx> RegionValues<N> {
         let placeholder_universes_iter =
             self.placeholders_contained_in(r).map(RegionElement::PlaceholderRegion);
 
-        points_iter.chain(free_regions_iter).chain(placeholder_universes_iter)
+        let empty_universes_iter = self.empties_contained_in(r).map(RegionElement::EmptyRegion);
+
+        points_iter
+            .chain(free_regions_iter)
+            .chain(placeholder_universes_iter)
+            .chain(empty_universes_iter)
     }
 
     /// Returns a "pretty" string value of the region. Meant for debugging.
@@ -400,6 +449,18 @@ impl ToElementIndex for ty::PlaceholderRegion {
     fn contained_in_row<N: Idx>(self, values: &RegionValues<N>, row: N) -> bool {
         let index = values.placeholder_indices.lookup_index(self);
         values.placeholders.contains(row, index)
+    }
+}
+
+impl ToElementIndex for ty::EmptyRegion {
+    fn add_to_row<N: Idx>(self, values: &mut RegionValues<N>, row: N) -> bool {
+        let index = values.placeholder_indices.lookup_empty_index(self);
+        values.empties.insert(row, index)
+    }
+
+    fn contained_in_row<N: Idx>(self, values: &RegionValues<N>, row: N) -> bool {
+        let index = values.placeholder_indices.lookup_empty_index(self);
+        values.empties.contains(row, index)
     }
 }
 
@@ -470,6 +531,11 @@ fn region_value_str(elements: impl IntoIterator<Item = RegionElement>) -> String
 
                 push_sep(&mut result);
                 result.push_str(&format!("{:?}", placeholder));
+            }
+
+            RegionElement::EmptyRegion(universe) => {
+                push_sep(&mut result);
+                result.push_str(&format!("'empty({:?})", universe));
             }
         }
     }
