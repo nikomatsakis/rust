@@ -138,11 +138,7 @@ pub fn elaborate_obligations<'tcx>(
 ) -> Elaborator<'tcx> {
     let mut visited = PredicateSet::new(tcx);
     obligations.retain(|obligation| visited.insert(&obligation.predicate));
-    Elaborator {
-        stack: obligations,
-        visited,
-        allow_repetitions: false,
-    }
+    Elaborator { stack: obligations, visited, allow_repetitions: false }
 }
 
 fn predicate_obligation<'tcx>(
@@ -153,12 +149,7 @@ fn predicate_obligation<'tcx>(
     if let Some(span) = span {
         cause.span = span;
     }
-    Obligation {
-        cause,
-        param_env: ty::ParamEnv::empty(),
-        recursion_depth: 0,
-        predicate,
-    }
+    Obligation { cause, param_env: ty::ParamEnv::empty(), recursion_depth: 0, predicate }
 }
 
 impl Elaborator<'tcx> {
@@ -187,8 +178,9 @@ impl Elaborator<'tcx> {
                 // cases. One common case is when people define
                 // `trait Sized: Sized { }` rather than `trait Sized { }`.
                 let visited = &mut self.visited;
-                let obligations =
-                    obligations.filter(|obligation| allow_repetitions || visited.insert(&obligation.predicate));
+                let obligations = obligations.filter(|obligation| {
+                    allow_repetitions || visited.insert(&obligation.predicate)
+                });
 
                 self.stack.extend(obligations);
             }
