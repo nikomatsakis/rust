@@ -2050,17 +2050,17 @@ define_print_and_forward_display! {
             ty::PredicateKind::WellFormed(ty) => p!(print(ty), write(" well-formed")),
             ty::PredicateKind::ObjectSafe(trait_def_id) => {
                 p!(write("the trait `"),
-                   print_def_path(trait_def_id, &[]),
+                   print_def_path(*trait_def_id, &[]),
                    write("` is object-safe"))
             }
             ty::PredicateKind::ClosureKind(closure_def_id, _closure_substs, kind) => {
                 p!(write("the closure `"),
-                   print_value_path(closure_def_id, &[]),
+                   print_value_path(*closure_def_id, &[]),
                    write("` implements the trait `{}`", kind))
             }
             ty::PredicateKind::ConstEvaluatable(def_id, substs) => {
                 p!(write("the constant `"),
-                   print_value_path(def_id, substs),
+                   print_value_path(*def_id, substs),
                    write("` can be evaluated"))
             }
         }

@@ -463,39 +463,6 @@ impl<'a, 'tcx> Lift<'tcx> for ty::ExistentialProjection<'a> {
     }
 }
 
-impl<'a, 'tcx> Lift<'tcx> for ty::Predicate<'a> {
-    type Lifted = ty::Predicate<'tcx>;
-    fn lift_to_tcx(&self, tcx: TyCtxt<'tcx>) -> Option<Self::Lifted> {
-        match *self {
-            ty::PredicateKind::Trait(ref binder, constness) => {
-                tcx.lift(binder).map(|binder| ty::PredicateKind::Trait(binder, constness))
-            }
-            ty::PredicateKind::Subtype(ref binder) => tcx.lift(binder).map(ty::Predicate::Subtype),
-            ty::PredicateKind::RegionOutlives(ref binder) => {
-                tcx.lift(binder).map(ty::PredicateKind::RegionOutlives)
-            }
-            ty::PredicateKind::TypeOutlives(ref binder) => {
-                tcx.lift(binder).map(ty::PredicateKind::TypeOutlives)
-            }
-            ty::PredicateKind::Projection(ref binder) => {
-                tcx.lift(binder).map(ty::PredicateKind::Projection)
-            }
-            ty::PredicateKind::WellFormed(ty) => tcx.lift(&ty).map(ty::Predicate::WellFormed),
-            ty::PredicateKind::ClosureKind(closure_def_id, closure_substs, kind) => {
-                tcx.lift(&closure_substs).map(|closure_substs| {
-                    ty::PredicateKind::ClosureKind(closure_def_id, closure_substs, kind)
-                })
-            }
-            ty::PredicateKind::ObjectSafe(trait_def_id) => {
-                Some(ty::PredicateKind::ObjectSafe(trait_def_id))
-            }
-            ty::PredicateKind::ConstEvaluatable(def_id, substs) => {
-                tcx.lift(&substs).map(|substs| ty::PredicateKind::ConstEvaluatable(def_id, substs))
-            }
-        }
-    }
-}
-
 impl<'tcx, T: Lift<'tcx>> Lift<'tcx> for ty::Binder<T> {
     type Lifted = ty::Binder<T::Lifted>;
     fn lift_to_tcx(&self, tcx: TyCtxt<'tcx>) -> Option<Self::Lifted> {
@@ -818,6 +785,17 @@ impl<'tcx> TypeFoldable<'tcx> for &'tcx ty::List<ProjectionKind> {
 
     fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
         self.iter().any(|t| t.visit_with(visitor))
+    }
+}
+
+impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
+    fn super_fold_with<F: TypeFolder<'tcx>>(&self, folder: &mut F) -> Self {
+        let predicate_kind = ty::PredicateKind::fold_with(self, folder);
+        folder.tcx().mk_predicate(predicate_kind)
+    }
+
+    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
+        ty::PredicateKind::visit_with(self, visitor)
     }
 }
 

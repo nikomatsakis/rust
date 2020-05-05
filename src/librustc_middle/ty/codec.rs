@@ -196,7 +196,7 @@ where
         (0..decoder.read_usize()?)
             .map(|_| {
                 // Handle shorthands first, if we have an usize > 0x80.
-                let predicate = if decoder.positioned_at_shorthand() {
+                let predicate_kind = if decoder.positioned_at_shorthand() {
                     let pos = decoder.read_usize()?;
                     assert!(pos >= SHORTHAND_OFFSET);
                     let shorthand = pos - SHORTHAND_OFFSET;
@@ -205,6 +205,7 @@ where
                 } else {
                     ty::PredicateKind::decode(decoder)
                 }?;
+                let predicate = tcx.mk_predicate(predicate_kind);
                 Ok((predicate, Decodable::decode(decoder)?))
             })
             .collect::<Result<Vec<_>, _>>()?,

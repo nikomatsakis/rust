@@ -29,7 +29,7 @@ use crate::ty::{self, DefIdTree, Ty, TypeAndMut};
 use crate::ty::{AdtDef, AdtKind, Const, Region};
 use crate::ty::{BindingMode, BoundVar};
 use crate::ty::{ConstVid, FloatVar, FloatVid, IntVar, IntVid, TyVar, TyVid};
-use crate::ty::{ExistentialPredicate, InferTy, ParamTy, PolyFnSig, Predicate, ProjectionTy};
+use crate::ty::{ExistentialPredicate, InferTy, ParamTy, PolyFnSig, Predicate, PredicateKind, ProjectionTy};
 use crate::ty::{InferConst, ParamConst};
 use crate::ty::{List, TyKind, TyS};
 use rustc_ast::ast;
@@ -89,6 +89,7 @@ pub struct CtxtInterners<'tcx> {
     canonical_var_infos: InternedSet<'tcx, List<CanonicalVarInfo>>,
     region: InternedSet<'tcx, RegionKind>,
     existential_predicates: InternedSet<'tcx, List<ExistentialPredicate<'tcx>>>,
+    predicate: InternedSet<'tcx, PredicateKind<'tcx>>,
     predicates: InternedSet<'tcx, List<Predicate<'tcx>>>,
     projs: InternedSet<'tcx, List<ProjectionKind>>,
     place_elems: InternedSet<'tcx, List<PlaceElem<'tcx>>>,
@@ -105,6 +106,7 @@ impl<'tcx> CtxtInterners<'tcx> {
             region: Default::default(),
             existential_predicates: Default::default(),
             canonical_var_infos: Default::default(),
+            predicate: Default::default(),
             predicates: Default::default(),
             projs: Default::default(),
             place_elems: Default::default(),
@@ -1566,6 +1568,7 @@ macro_rules! nop_list_lift {
 nop_lift! {type_; Ty<'a> => Ty<'tcx>}
 nop_lift! {region; Region<'a> => Region<'tcx>}
 nop_lift! {const_; &'a Const<'a> => &'tcx Const<'tcx>}
+nop_lift! {type_; Predicate<'a> => Predicate<'tcx>}
 
 nop_list_lift! {type_list; Ty<'a> => Ty<'tcx>}
 nop_list_lift! {existential_predicates; ExistentialPredicate<'a> => ExistentialPredicate<'tcx>}
@@ -1977,6 +1980,12 @@ impl<'tcx> Borrow<RegionKind> for Interned<'tcx, RegionKind> {
     }
 }
 
+impl<'tcx> Borrow<PredicateKind<'tcx>> for Interned<'tcx, PredicateKind<'tcx>> {
+    fn borrow(&self) -> &PredicateKind<'tcx> {
+        &self.0
+    }
+}
+
 impl<'tcx> Borrow<[ExistentialPredicate<'tcx>]>
     for Interned<'tcx, List<ExistentialPredicate<'tcx>>>
 {
@@ -1998,7 +2007,7 @@ impl<'tcx> Borrow<Const<'tcx>> for Interned<'tcx, Const<'tcx>> {
 }
 
 macro_rules! direct_interners {
-    ($($name:ident: $method:ident($ty:ty)),+) => {
+    ($($name:ident: $method:ident($ty:ty),)+) => {
         $(impl<'tcx> PartialEq for Interned<'tcx, $ty> {
             fn eq(&self, other: &Self) -> bool {
                 self.0 == other.0
@@ -2023,10 +2032,14 @@ macro_rules! direct_interners {
     }
 }
 
-direct_interners!(region: mk_region(RegionKind), const_: mk_const(Const<'tcx>));
+direct_interners! {
+    region: mk_region(RegionKind),
+    const_: mk_const(Const<'tcx>),
+    predicate: mk_predicate(PredicateKind<'tcx>),
+}
 
 macro_rules! slice_interners {
-    ($($field:ident: $method:ident($ty:ty)),+) => (
+    ($($field:ident: $method:ident($ty:ty),)+) => (
         $(impl<'tcx> TyCtxt<'tcx> {
             pub fn $method(self, v: &[$ty]) -> &'tcx List<$ty> {
                 self.interners.$field.intern_ref(v, || {
@@ -2037,15 +2050,15 @@ macro_rules! slice_interners {
     );
 }
 
-slice_interners!(
+slice_interners! {
     type_list: _intern_type_list(Ty<'tcx>),
     substs: _intern_substs(GenericArg<'tcx>),
     canonical_var_infos: _intern_canonical_var_infos(CanonicalVarInfo),
     existential_predicates: _intern_existential_predicates(ExistentialPredicate<'tcx>),
     predicates: _intern_predicates(Predicate<'tcx>),
     projs: _intern_projs(ProjectionKind),
-    place_elems: _intern_place_elems(PlaceElem<'tcx>)
-);
+    place_elems: _intern_place_elems(PlaceElem<'tcx>),
+}
 
 impl<'tcx> TyCtxt<'tcx> {
     /// Given a `fn` type, returns an equivalent `unsafe fn` type;
