@@ -254,7 +254,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                     return;
                 }
                 match obligation.predicate {
-                    ty::Predicate::Trait(ref trait_predicate, _) => {
+                    ty::PredicateKind::Trait(ref trait_predicate, _) => {
                         let trait_predicate = self.resolve_vars_if_possible(trait_predicate);
 
                         if self.tcx.sess.has_errors() && trait_predicate.references_error() {
@@ -451,7 +451,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                                 trait_pred
                             });
                             let unit_obligation = Obligation {
-                                predicate: ty::Predicate::Trait(
+                                predicate: ty::PredicateKind::Trait(
                                     predicate,
                                     hir::Constness::NotConst,
                                 ),
@@ -472,14 +472,14 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         err
                     }
 
-                    ty::Predicate::Subtype(ref predicate) => {
+                    ty::PredicateKind::Subtype(ref predicate) => {
                         // Errors for Subtype predicates show up as
                         // `FulfillmentErrorCode::CodeSubtypeError`,
                         // not selection error.
                         span_bug!(span, "subtype requirement gave wrong error: `{:?}`", predicate)
                     }
 
-                    ty::Predicate::RegionOutlives(ref predicate) => {
+                    ty::PredicateKind::RegionOutlives(ref predicate) => {
                         let predicate = self.resolve_vars_if_possible(predicate);
                         let err = self
                             .region_outlives_predicate(&obligation.cause, &predicate)
@@ -495,7 +495,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         )
                     }
 
-                    ty::Predicate::Projection(..) | ty::Predicate::TypeOutlives(..) => {
+                    ty::PredicateKind::Projection(..) | ty::PredicateKind::TypeOutlives(..) => {
                         let predicate = self.resolve_vars_if_possible(&obligation.predicate);
                         struct_span_err!(
                             self.tcx.sess,
@@ -506,12 +506,12 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         )
                     }
 
-                    ty::Predicate::ObjectSafe(trait_def_id) => {
+                    ty::PredicateKind::ObjectSafe(trait_def_id) => {
                         let violations = self.tcx.object_safety_violations(trait_def_id);
                         report_object_safety_error(self.tcx, span, trait_def_id, violations)
                     }
 
-                    ty::Predicate::ClosureKind(closure_def_id, closure_substs, kind) => {
+                    ty::PredicateKind::ClosureKind(closure_def_id, closure_substs, kind) => {
                         let found_kind = self.closure_kind(closure_substs).unwrap();
                         let closure_span =
                             self.tcx.sess.source_map().guess_head_span(
@@ -570,7 +570,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         return;
                     }
 
-                    ty::Predicate::WellFormed(ty) => {
+                    ty::PredicateKind::WellFormed(ty) => {
                         // WF predicates cannot themselves make
                         // errors. They can only block due to
                         // ambiguity; otherwise, they always
@@ -579,7 +579,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         span_bug!(span, "WF predicate not satisfied for {:?}", ty);
                     }
 
-                    ty::Predicate::ConstEvaluatable(..) => {
+                    ty::PredicateKind::ConstEvaluatable(..) => {
                         // Errors for `ConstEvaluatable` predicates show up as
                         // `SelectionError::ConstEvalFailure`,
                         // not `Unimplemented`.
@@ -1010,7 +1010,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
         }
 
         let (cond, error) = match (cond, error) {
-            (&ty::Predicate::Trait(..), &ty::Predicate::Trait(ref error, _)) => (cond, error),
+            (&ty::PredicateKind::Trait(..), &ty::PredicateKind::Trait(ref error, _)) => (cond, error),
             _ => {
                 // FIXME: make this work in other cases too.
                 return false;
@@ -1018,7 +1018,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
         };
 
         for obligation in super::elaborate_predicates(self.tcx, std::iter::once(*cond)) {
-            if let ty::Predicate::Trait(implication, _) = obligation.predicate {
+            if let ty::PredicateKind::Trait(implication, _) = obligation.predicate {
                 let error = error.to_poly_trait_ref();
                 let implication = implication.to_poly_trait_ref();
                 // FIXME: I'm just not taking associated types at all here.
@@ -1089,7 +1089,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             //
             // this can fail if the problem was higher-ranked, in which
             // cause I have no idea for a good error message.
-            if let ty::Predicate::Projection(ref data) = predicate {
+            if let ty::PredicateKind::Projection(ref data) = predicate {
                 let mut selcx = SelectionContext::new(self);
                 let (data, _) = self.replace_bound_vars_with_fresh_vars(
                     obligation.cause.span,
@@ -1371,7 +1371,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
         }
 
         let mut err = match predicate {
-            ty::Predicate::Trait(ref data, _) => {
+            ty::PredicateKind::Trait(ref data, _) => {
                 let trait_ref = data.to_poly_trait_ref();
                 let self_ty = trait_ref.self_ty();
                 debug!("self_ty {:?} {:?} trait_ref {:?}", self_ty, self_ty.kind, trait_ref);
@@ -1470,7 +1470,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
                 err
             }
 
-            ty::Predicate::WellFormed(ty) => {
+            ty::PredicateKind::WellFormed(ty) => {
                 // Same hacky approach as above to avoid deluging user
                 // with error messages.
                 if ty.references_error() || self.tcx.sess.has_errors() {
@@ -1479,7 +1479,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
                 self.need_type_info_err(body_id, span, ty, ErrorCode::E0282)
             }
 
-            ty::Predicate::Subtype(ref data) => {
+            ty::PredicateKind::Subtype(ref data) => {
                 if data.references_error() || self.tcx.sess.has_errors() {
                     // no need to overload user in such cases
                     return;
@@ -1489,7 +1489,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
                 assert!(a.is_ty_var() && b.is_ty_var());
                 self.need_type_info_err(body_id, span, a, ErrorCode::E0282)
             }
-            ty::Predicate::Projection(ref data) => {
+            ty::PredicateKind::Projection(ref data) => {
                 let trait_ref = data.to_poly_trait_ref(self.tcx);
                 let self_ty = trait_ref.self_ty();
                 if predicate.references_error() {
@@ -1599,7 +1599,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
         obligation: &PredicateObligation<'tcx>,
     ) {
         if let (
-            ty::Predicate::Trait(pred, _),
+            ty::PredicateKind::Trait(pred, _),
             ObligationCauseCode::BindingObligation(item_def_id, span),
         ) = (&obligation.predicate, &obligation.cause.code)
         {

@@ -371,7 +371,11 @@ impl<'tcx> Clean<Option<Vec<GenericBound>>> for InternalSubsts<'tcx> {
                 hir::TraitBoundModifier::None,
             )
         }));
-        if !v.is_empty() { Some(v) } else { None }
+        if !v.is_empty() {
+            Some(v)
+        } else {
+            None
+        }
     }
 }
 
@@ -481,19 +485,17 @@ impl Clean<WherePredicate> for hir::WherePredicate<'_> {
 
 impl<'a> Clean<Option<WherePredicate>> for ty::Predicate<'a> {
     fn clean(&self, cx: &DocContext<'_>) -> Option<WherePredicate> {
-        use rustc_middle::ty::Predicate;
-
         match *self {
-            Predicate::Trait(ref pred, _) => Some(pred.clean(cx)),
-            Predicate::Subtype(ref pred) => Some(pred.clean(cx)),
-            Predicate::RegionOutlives(ref pred) => pred.clean(cx),
-            Predicate::TypeOutlives(ref pred) => pred.clean(cx),
-            Predicate::Projection(ref pred) => Some(pred.clean(cx)),
+            ty::PredicateKind::Trait(ref pred, _) => Some(pred.clean(cx)),
+            ty::PredicateKind::Subtype(ref pred) => Some(pred.clean(cx)),
+            ty::PredicateKind::RegionOutlives(ref pred) => pred.clean(cx),
+            ty::PredicateKind::TypeOutlives(ref pred) => pred.clean(cx),
+            ty::PredicateKind::Projection(ref pred) => Some(pred.clean(cx)),
 
-            Predicate::WellFormed(..)
-            | Predicate::ObjectSafe(..)
-            | Predicate::ClosureKind(..)
-            | Predicate::ConstEvaluatable(..) => panic!("not user writable"),
+            ty::PredicateKind::WellFormed(..)
+            | ty::PredicateKind::ObjectSafe(..)
+            | ty::PredicateKind::ClosureKind(..)
+            | ty::PredicateKind::ConstEvaluatable(..) => panic!("not user writable"),
         }
     }
 }
@@ -764,7 +766,7 @@ impl<'a, 'tcx> Clean<Generics> for (&'a ty::Generics, ty::GenericPredicates<'tcx
                         if let ty::Param(param) = outlives.skip_binder().0.kind {
                             return Some(param.index);
                         }
-                    } else if let ty::Predicate::Projection(p) = p {
+                    } else if let ty::PredicateKind::Projection(p) = p {
                         if let ty::Param(param) = p.skip_binder().projection_ty.self_ty().kind {
                             projection = Some(p);
                             return Some(param.index);
@@ -1662,7 +1664,7 @@ impl<'tcx> Clean<Type> for Ty<'tcx> {
                     .filter_map(|predicate| {
                         let trait_ref = if let Some(tr) = predicate.to_opt_poly_trait_ref() {
                             tr
-                        } else if let ty::Predicate::TypeOutlives(pred) = *predicate {
+                        } else if let ty::PredicateKind::TypeOutlives(pred) = *predicate {
                             // these should turn up at the end
                             if let Some(r) = pred.skip_binder().1.clean(cx) {
                                 regions.push(GenericBound::Outlives(r));
@@ -1683,7 +1685,7 @@ impl<'tcx> Clean<Type> for Ty<'tcx> {
                             .predicates
                             .iter()
                             .filter_map(|pred| {
-                                if let ty::Predicate::Projection(proj) = *pred {
+                                if let ty::PredicateKind::Projection(proj) = *pred {
                                     let proj = proj.skip_binder();
                                     if proj.projection_ty.trait_ref(cx.tcx)
                                         == *trait_ref.skip_binder()
@@ -1790,7 +1792,11 @@ impl Clean<Visibility> for hir::Visibility<'_> {
 
 impl Clean<Visibility> for ty::Visibility {
     fn clean(&self, _: &DocContext<'_>) -> Visibility {
-        if *self == ty::Visibility::Public { Public } else { Inherited }
+        if *self == ty::Visibility::Public {
+            Public
+        } else {
+            Inherited
+        }
     }
 }
 
