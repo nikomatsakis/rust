@@ -10,9 +10,9 @@ pub fn anonymize_predicate<'tcx>(
     tcx: TyCtxt<'tcx>,
     pred: &ty::Predicate<'tcx>,
 ) -> ty::Predicate<'tcx> {
-    match *pred {
+    tcx.mk_predicate(match *pred {
         ty::PredicateKind::Trait(ref data, constness) => {
-            ty::PredicateKind::Trait(tcx.anonymize_late_bound_regions(data), constness)
+            ty::PredicateKind::Trait(tcx.anonymize_late_bound_regions(data), *constness)
         }
 
         ty::PredicateKind::RegionOutlives(ref data) => {
@@ -27,12 +27,12 @@ pub fn anonymize_predicate<'tcx>(
             ty::PredicateKind::Projection(tcx.anonymize_late_bound_regions(data))
         }
 
-        ty::PredicateKind::WellFormed(data) => ty::Predicate::WellFormed(data),
+        ty::PredicateKind::WellFormed(data) => ty::PredicateKind::WellFormed(data),
 
-        ty::PredicateKind::ObjectSafe(data) => ty::Predicate::ObjectSafe(data),
+        ty::PredicateKind::ObjectSafe(data) => ty::PredicateKind::ObjectSafe(*data),
 
         ty::PredicateKind::ClosureKind(closure_def_id, closure_substs, kind) => {
-            ty::PredicateKind::ClosureKind(closure_def_id, closure_substs, kind)
+            ty::PredicateKind::ClosureKind(*closure_def_id, closure_substs, *kind)
         }
 
         ty::PredicateKind::Subtype(ref data) => {
@@ -40,9 +40,9 @@ pub fn anonymize_predicate<'tcx>(
         }
 
         ty::PredicateKind::ConstEvaluatable(def_id, substs) => {
-            ty::PredicateKind::ConstEvaluatable(def_id, substs)
+            ty::PredicateKind::ConstEvaluatable(*def_id, substs)
         }
-    }
+    })
 }
 
 struct PredicateSet<'tcx> {
@@ -97,14 +97,14 @@ pub fn elaborate_trait_ref<'tcx>(
     tcx: TyCtxt<'tcx>,
     trait_ref: ty::PolyTraitRef<'tcx>,
 ) -> Elaborator<'tcx> {
-    elaborate_predicates(tcx, std::iter::once(trait_ref.without_const().to_predicate()))
+    elaborate_predicates(tcx, std::iter::once(trait_ref.without_const().to_predicate(tcx)))
 }
 
 pub fn elaborate_trait_refs<'tcx>(
     tcx: TyCtxt<'tcx>,
     trait_refs: impl Iterator<Item = ty::PolyTraitRef<'tcx>>,
 ) -> Elaborator<'tcx> {
-    let predicates = trait_refs.map(|trait_ref| trait_ref.without_const().to_predicate());
+    let predicates = trait_refs.map(|trait_ref| trait_ref.without_const().to_predicate(tcx));
     elaborate_predicates(tcx, predicates)
 }
 
@@ -245,6 +245,7 @@ impl Elaborator<'tcx> {
                                 None
                             }
                         })
+                        .map(|p| tcx.mk_predicate(p))
                         .filter(|p| visited.insert(p))
                         .map(|p| predicate_obligation(p, None)),
                 );

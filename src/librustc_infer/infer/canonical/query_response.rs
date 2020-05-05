@@ -531,7 +531,7 @@ impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
             Obligation::new(
                 cause.clone(),
                 param_env,
-                match k1.unpack() {
+                self.tcx.mk_predicate(match k1.unpack() {
                     GenericArgKind::Lifetime(r1) => ty::PredicateKind::RegionOutlives(
                         ty::Binder::bind(ty::OutlivesPredicate(r1, r2)),
                     ),
@@ -543,7 +543,7 @@ impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
                         // ecounter this branch.
                         span_bug!(cause.span, "unexpected const outlives {:?}", constraint);
                     }
-                },
+                }),
             )
         })
     }
@@ -664,9 +664,9 @@ impl<'tcx> TypeRelatingDelegate<'tcx> for QueryTypeRelatingDelegate<'_, 'tcx> {
         self.obligations.push(Obligation {
             cause: self.cause.clone(),
             param_env: self.param_env,
-            predicate: ty::PredicateKind::RegionOutlives(ty::Binder::dummy(ty::OutlivesPredicate(
+            predicate: self.infcx.tcx.mk_predicate(ty::PredicateKind::RegionOutlives(ty::Binder::dummy(ty::OutlivesPredicate(
                 sup, sub,
-            ))),
+            )))),
             recursion_depth: 0,
         });
     }

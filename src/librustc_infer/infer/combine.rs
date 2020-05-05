@@ -292,7 +292,7 @@ impl<'infcx, 'tcx> CombineFields<'infcx, 'tcx> {
             self.obligations.push(Obligation::new(
                 self.trace.cause.clone(),
                 self.param_env,
-                ty::PredicateKind::WellFormed(b_ty),
+                self.infcx.tcx.mk_predicate(ty::PredicateKind::WellFormed(b_ty)),
             ));
         }
 
