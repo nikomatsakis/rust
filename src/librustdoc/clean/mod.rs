@@ -764,7 +764,7 @@ impl<'a, 'tcx> Clean<Generics> for (&'a ty::Generics, ty::GenericPredicates<'tcx
                         if let ty::Param(param) = outlives.skip_binder().0.kind {
                             return Some(param.index);
                         }
-                    } else if let ty::Predicate::Projection(p) = p {
+                    } else if let ty::PredicateKind::Projection(p) = p {
                         if let ty::Param(param) = p.skip_binder().projection_ty.self_ty().kind {
                             projection = Some(p);
                             return Some(param.index);
@@ -1662,7 +1662,7 @@ impl<'tcx> Clean<Type> for Ty<'tcx> {
                     .filter_map(|predicate| {
                         let trait_ref = if let Some(tr) = predicate.to_opt_poly_trait_ref() {
                             tr
-                        } else if let ty::Predicate::TypeOutlives(pred) = *predicate {
+                        } else if let ty::PredicateKind::TypeOutlives(pred) = *predicate {
                             // these should turn up at the end
                             if let Some(r) = pred.skip_binder().1.clean(cx) {
                                 regions.push(GenericBound::Outlives(r));
@@ -1683,7 +1683,7 @@ impl<'tcx> Clean<Type> for Ty<'tcx> {
                             .predicates
                             .iter()
                             .filter_map(|pred| {
-                                if let ty::Predicate::Projection(proj) = *pred {
+                                if let ty::PredicateKind::Projection(proj) = *pred {
                                     let proj = proj.skip_binder();
                                     if proj.projection_ty.trait_ref(cx.tcx)
                                         == *trait_ref.skip_binder()
