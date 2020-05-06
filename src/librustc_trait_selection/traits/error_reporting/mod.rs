@@ -307,7 +307,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                             "{}",
                             message.unwrap_or_else(|| format!(
                                 "the trait bound `{}` is not satisfied{}",
-                                trait_ref.without_const().to_predicate(),
+                                trait_ref.without_const().to_predicate(self.tcx),
                                 post_message,
                             ))
                         );
@@ -454,7 +454,8 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                                 predicate: ty::PredicateKind::Trait(
                                     predicate,
                                     hir::Constness::NotConst,
-                                ),
+                                )
+                                .to_predicate(self.tcx),
                                 ..obligation.clone()
                             };
                             if self.predicate_may_hold(&unit_obligation) {
@@ -495,7 +496,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         )
                     }
 
-                    ty::PredicateKind::Projection(..) | ty::Predicate::TypeOutlives(..) => {
+                    ty::PredicateKind::Projection(..) | ty::PredicateKind::TypeOutlives(..) => {
                         let predicate = self.resolve_vars_if_possible(&obligation.predicate);
                         struct_span_err!(
                             self.tcx.sess,
@@ -507,11 +508,13 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                     }
 
                     ty::PredicateKind::ObjectSafe(trait_def_id) => {
+                        let trait_def_id = *trait_def_id;
                         let violations = self.tcx.object_safety_violations(trait_def_id);
                         report_object_safety_error(self.tcx, span, trait_def_id, violations)
                     }
 
                     ty::PredicateKind::ClosureKind(closure_def_id, closure_substs, kind) => {
+                        let closure_def_id = *closure_def_id;
                         let found_kind = self.closure_kind(closure_substs).unwrap();
                         let closure_span =
                             self.tcx.sess.source_map().guess_head_span(
@@ -1010,7 +1013,9 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
         }
 
         let (cond, error) = match (cond, error) {
-            (&ty::PredicateKind::Trait(..), &ty::Predicate::Trait(ref error, _)) => (cond, error),
+            (&ty::PredicateKind::Trait(..), &ty::PredicateKind::Trait(ref error, _)) => {
+                (cond, error)
+            }
             _ => {
                 // FIXME: make this work in other cases too.
                 return false;
@@ -1343,7 +1348,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
     ) -> PredicateObligation<'tcx> {
         let new_trait_ref =
             ty::TraitRef { def_id, substs: self.tcx.mk_substs_trait(output_ty, &[]) };
-        Obligation::new(cause, param_env, new_trait_ref.without_const().to_predicate())
+        Obligation::new(cause, param_env, new_trait_ref.without_const().to_predicate(self.tcx))
     }
 
     fn maybe_report_ambiguity(
@@ -1568,7 +1573,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             let obligation = Obligation::new(
                 ObligationCause::dummy(),
                 param_env,
-                cleaned_pred.without_const().to_predicate(),
+                cleaned_pred.without_const().to_predicate(self.tcx),
             );
 
             self.predicate_may_hold(&obligation)

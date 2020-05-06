@@ -446,13 +446,13 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                 None => Ok(EvaluatedToAmbig),
             },
 
-            ty::PredicateKind::TypeOutlives(..) | ty::Predicate::RegionOutlives(..) => {
+            ty::PredicateKind::TypeOutlives(..) | ty::PredicateKind::RegionOutlives(..) => {
                 // We do not consider region relationships when evaluating trait matches.
                 Ok(EvaluatedToOkModuloRegions)
             }
 
             ty::PredicateKind::ObjectSafe(trait_def_id) => {
-                if self.tcx().is_object_safe(trait_def_id) {
+                if self.tcx().is_object_safe(*trait_def_id) {
                     Ok(EvaluatedToOk)
                 } else {
                     Ok(EvaluatedToErr)
@@ -483,7 +483,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             ty::PredicateKind::ClosureKind(_, closure_substs, kind) => {
                 match self.infcx.closure_kind(closure_substs) {
                     Some(closure_kind) => {
-                        if closure_kind.extends(kind) {
+                        if closure_kind.extends(*kind) {
                             Ok(EvaluatedToOk)
                         } else {
                             Ok(EvaluatedToErr)
@@ -496,7 +496,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             ty::PredicateKind::ConstEvaluatable(def_id, substs) => {
                 match self.tcx().const_eval_resolve(
                     obligation.param_env,
-                    def_id,
+                    *def_id,
                     substs,
                     None,
                     None,
@@ -632,9 +632,11 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             // have erased regions) but rather the fully explicit
             // trait refs. This is important because it's only a cycle
             // if the regions match exactly.
+            let tcx = self.tcx();
             let cycle = stack.iter().skip(1).take_while(|s| s.depth >= cycle_depth);
             let cycle = cycle.map(|stack| {
                 ty::PredicateKind::Trait(stack.obligation.predicate, hir::Constness::NotConst)
+                    .to_predicate(tcx)
             });
             if self.coinductive_match(cycle) {
                 debug!("evaluate_stack({:?}) --> recursive, coinductive", stack.fresh_trait_ref);
@@ -2866,7 +2868,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         obligations.push(Obligation::new(
             obligation.cause.clone(),
             obligation.param_env,
-            ty::PredicateKind::ClosureKind(closure_def_id, substs, kind),
+            ty::PredicateKind::ClosureKind(closure_def_id, substs, kind).to_predicate(self.tcx()),
         ));
 
         Ok(VtableClosureData { closure_def_id, substs, nested: obligations })
@@ -2975,7 +2977,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                     cause,
                     obligation.recursion_depth + 1,
                     obligation.param_env,
-                    ty::Binder::bind(outlives).to_predicate(),
+                    ty::Binder::bind(outlives).to_predicate(tcx),
                 ));
             }
 
@@ -3018,12 +3020,12 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                     tcx.require_lang_item(lang_items::SizedTraitLangItem, None),
                     tcx.mk_substs_trait(source, &[]),
                 );
-                nested.push(predicate_to_obligation(tr.without_const().to_predicate()));
+                nested.push(predicate_to_obligation(tr.without_const().to_predicate(tcx)));
 
                 // If the type is `Foo + 'a`, ensure that the type
                 // being cast to `Foo + 'a` outlives `'a`:
                 let outlives = ty::OutlivesPredicate(source, r);
-                nested.push(predicate_to_obligation(ty::Binder::dummy(outlives).to_predicate()));
+                nested.push(predicate_to_obligation(ty::Binder::dummy(outlives).to_predicate(tcx)));
             }
 
             // `[T; n]` -> `[T]`
@@ -3092,7 +3094,11 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                 // Check that the source struct with the target's
                 // unsizing parameters is equal to the target.
                 let substs = tcx.mk_substs(substs_a.iter().enumerate().map(|(i, &k)| {
-                    if unsizing_params.contains(i as u32) { substs_b[i] } else { k }
+                    if unsizing_params.contains(i as u32) {
+                        substs_b[i]
+                    } else {
+                        k
+                    }
                 }));
                 let new_struct = tcx.mk_adt(def, substs);
                 let InferOk { obligations, .. } = self
@@ -3765,7 +3771,11 @@ impl<'o, 'tcx> TraitObligationStackList<'o, 'tcx> {
     }
 
     fn depth(&self) -> usize {
-        if let Some(head) = self.head { head.depth } else { 0 }
+        if let Some(head) = self.head {
+            head.depth
+        } else {
+            0
+        }
     }
 }
 

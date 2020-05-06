@@ -294,7 +294,11 @@ impl<'a, 'b, 'tcx> AssocTypeNormalizer<'a, 'b, 'tcx> {
     fn fold<T: TypeFoldable<'tcx>>(&mut self, value: &T) -> T {
         let value = self.selcx.infcx().resolve_vars_if_possible(value);
 
-        if !value.has_projections() { value } else { value.fold_with(self) }
+        if !value.has_projections() {
+            value
+        } else {
+            value.fold_with(self)
+        }
     }
 }
 
@@ -427,7 +431,7 @@ pub fn normalize_projection_type<'a, 'b, 'tcx>(
         });
         let projection = ty::Binder::dummy(ty::ProjectionPredicate { projection_ty, ty: ty_var });
         let obligation =
-            Obligation::with_depth(cause, depth + 1, param_env, projection.to_predicate());
+            Obligation::with_depth(cause, depth + 1, param_env, projection.to_predicate(tcx));
         obligations.push(obligation);
         ty_var
     })
@@ -666,7 +670,9 @@ fn prune_cache_value_obligations<'a, 'tcx>(
             // indirect obligations (e.g., we project to `?0`,
             // but we have `T: Foo<X = ?1>` and `?1: Bar<X =
             // ?0>`).
-            ty::PredicateKind::Projection(ref data) => infcx.unresolved_type_vars(&data.ty()).is_some(),
+            ty::PredicateKind::Projection(ref data) => {
+                infcx.unresolved_type_vars(&data.ty()).is_some()
+            }
 
             // We are only interested in `T: Foo<X = U>` predicates, whre
             // `U` references one of `unresolved_type_vars`. =)
@@ -715,7 +721,7 @@ fn get_paranoid_cache_value_obligation<'a, 'tcx>(
         cause,
         recursion_depth: depth,
         param_env,
-        predicate: trait_ref.without_const().to_predicate(),
+        predicate: trait_ref.without_const().to_predicate(infcx.tcx),
     }
 }
 
@@ -750,7 +756,7 @@ fn normalize_to_error<'a, 'tcx>(
         cause,
         recursion_depth: depth,
         param_env,
-        predicate: trait_ref.without_const().to_predicate(),
+        predicate: trait_ref.without_const().to_predicate(selcx.tcx()),
     };
     let tcx = selcx.infcx().tcx;
     let def_id = projection_ty.item_def_id;
@@ -947,7 +953,7 @@ fn assemble_candidates_from_predicates<'cx, 'tcx>(
             );
 
             if is_match {
-                candidate_set.push_candidate(ctor(data));
+                candidate_set.push_candidate(ctor(*data));
             }
         }
     }
@@ -1151,8 +1157,9 @@ fn confirm_object_candidate<'cx, 'tcx>(
             object_ty
         ),
     };
-    let env_predicates =
-        data.projection_bounds().map(|p| p.with_self_ty(selcx.tcx(), object_ty).to_predicate());
+    let env_predicates = data
+        .projection_bounds()
+        .map(|p| p.with_self_ty(selcx.tcx(), object_ty).to_predicate(selcx.tcx()));
     let env_predicate = {
         let env_predicates = elaborate_predicates(selcx.tcx(), env_predicates);
 
@@ -1198,7 +1205,7 @@ fn confirm_object_candidate<'cx, 'tcx>(
         }
     };
 
-    confirm_param_env_candidate(selcx, obligation, env_predicate)
+    confirm_param_env_candidate(selcx, obligation, *env_predicate)
 }
 
 fn confirm_generator_candidate<'cx, 'tcx>(

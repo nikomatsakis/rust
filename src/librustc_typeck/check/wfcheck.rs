@@ -997,7 +997,8 @@ fn check_opaque_types<'fcx, 'tcx>(
     substituted_predicates
 }
 
-const HELP_FOR_SELF_TYPE: &str = "consider changing to `self`, `&self`, `&mut self`, `self: Box<Self>`, \
+const HELP_FOR_SELF_TYPE: &str =
+    "consider changing to `self`, `&self`, `&mut self`, `self: Box<Self>`, \
      `self: Rc<Self>`, `self: Arc<Self>`, or `self: Pin<P>` (where P is one \
      of the previous types except `Self`)";
 
@@ -1175,7 +1176,7 @@ fn receiver_is_implemented(
     };
 
     let obligation =
-        traits::Obligation::new(cause, fcx.param_env, trait_ref.without_const().to_predicate());
+        traits::Obligation::new(cause, fcx.param_env, trait_ref.without_const().to_predicate(tcx));
 
     if fcx.predicate_must_hold_modulo_regions(&obligation) {
         true

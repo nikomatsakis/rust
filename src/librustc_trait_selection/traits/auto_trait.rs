@@ -341,7 +341,8 @@ impl AutoTraitFinder<'tcx> {
                         already_visited.remove(&pred);
                         self.add_user_pred(
                             &mut user_computed_preds,
-                            ty::PredicateKind::Trait(pred, hir::Constness::NotConst),
+                            ty::PredicateKind::Trait(pred, hir::Constness::NotConst)
+                                .to_predicate(tcx),
                         );
                         predicates.push_back(pred);
                     } else {
@@ -411,8 +412,10 @@ impl AutoTraitFinder<'tcx> {
     ) {
         let mut should_add_new = true;
         user_computed_preds.retain(|&old_pred| {
-            if let (&ty::PredicateKind::Trait(new_trait, _), ty::Predicate::Trait(old_trait, _)) =
-                (&new_pred, old_pred)
+            if let (
+                &ty::PredicateKind::Trait(new_trait, _),
+                ty::PredicateKind::Trait(old_trait, _),
+            ) = (&new_pred, old_pred)
             {
                 if new_trait.def_id() == old_trait.def_id() {
                     let new_substs = new_trait.skip_binder().trait_ref.substs;
@@ -630,17 +633,17 @@ impl AutoTraitFinder<'tcx> {
             //
             // We check this by calling is_of_param on the relevant types
             // from the various possible predicates
-            match &predicate {
-                &ty::PredicateKind::Trait(p, _) => {
+            match predicate {
+                ty::PredicateKind::Trait(p, _) => {
                     if self.is_param_no_infer(p.skip_binder().trait_ref.substs)
                         && !only_projections
                         && is_new_pred
                     {
                         self.add_user_pred(computed_preds, predicate);
                     }
-                    predicates.push_back(p);
+                    predicates.push_back(*p);
                 }
-                &ty::PredicateKind::Projection(p) => {
+                ty::PredicateKind::Projection(p) => {
                     debug!(
                         "evaluate_nested_obligations: examining projection predicate {:?}",
                         predicate
@@ -671,7 +674,7 @@ impl AutoTraitFinder<'tcx> {
                         //
                         // For these reasons, we ignore these weird predicates,
                         // ensuring that we're able to properly synthesize an auto trait impl
-                        if self.is_self_referential_projection(p) {
+                        if self.is_self_referential_projection(*p) {
                             debug!(
                                 "evaluate_nested_obligations: encountered a projection
                                  predicate equating a type with itself! Skipping"
@@ -723,7 +726,7 @@ impl AutoTraitFinder<'tcx> {
                     // and turn them into an explicit negative impl for our type.
                     debug!("Projecting and unifying projection predicate {:?}", predicate);
 
-                    match poly_project_and_unify_type(select, &obligation.with(p)) {
+                    match poly_project_and_unify_type(select, &obligation.with(*p)) {
                         Err(e) => {
                             debug!(
                                 "evaluate_nested_obligations: Unable to unify predicate \

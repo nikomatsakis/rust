@@ -3,7 +3,7 @@ use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::*;
 use rustc_middle::ty::subst::GenericArgKind;
-use rustc_middle::ty::{self, adjustment::PointerCast, Predicate, Ty, TyCtxt};
+use rustc_middle::ty::{self, adjustment::PointerCast, PredicateKind, Ty, TyCtxt};
 use rustc_span::symbol::{sym, Symbol};
 use rustc_span::Span;
 use std::borrow::Cow;
@@ -24,19 +24,21 @@ pub fn is_min_const_fn(tcx: TyCtxt<'tcx>, def_id: DefId, body: &'a Body<'tcx>) -
         let predicates = tcx.predicates_of(current);
         for (predicate, _) in predicates.predicates {
             match predicate {
-                Predicate::RegionOutlives(_)
-                | Predicate::TypeOutlives(_)
-                | Predicate::WellFormed(_)
-                | Predicate::Projection(_)
-                | Predicate::ConstEvaluatable(..) => continue,
-                Predicate::ObjectSafe(_) => {
+                PredicateKind::RegionOutlives(_)
+                | PredicateKind::TypeOutlives(_)
+                | PredicateKind::WellFormed(_)
+                | PredicateKind::Projection(_)
+                | PredicateKind::ConstEvaluatable(..) => continue,
+                PredicateKind::ObjectSafe(_) => {
                     bug!("object safe predicate on function: {:#?}", predicate)
                 }
-                Predicate::ClosureKind(..) => {
+                PredicateKind::ClosureKind(..) => {
                     bug!("closure kind predicate on function: {:#?}", predicate)
                 }
-                Predicate::Subtype(_) => bug!("subtype predicate on function: {:#?}", predicate),
-                Predicate::Trait(pred, constness) => {
+                PredicateKind::Subtype(_) => {
+                    bug!("subtype predicate on function: {:#?}", predicate)
+                }
+                PredicateKind::Trait(pred, constness) => {
                     if Some(pred.def_id()) == tcx.lang_items().sized_trait() {
                         continue;
                     }

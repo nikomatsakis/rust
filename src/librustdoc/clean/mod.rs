@@ -371,7 +371,11 @@ impl<'tcx> Clean<Option<Vec<GenericBound>>> for InternalSubsts<'tcx> {
                 hir::TraitBoundModifier::None,
             )
         }));
-        if !v.is_empty() { Some(v) } else { None }
+        if !v.is_empty() {
+            Some(v)
+        } else {
+            None
+        }
     }
 }
 
@@ -484,16 +488,16 @@ impl<'a> Clean<Option<WherePredicate>> for ty::Predicate<'a> {
         use rustc_middle::ty::Predicate;
 
         match *self {
-            Predicate::Trait(ref pred, _) => Some(pred.clean(cx)),
-            Predicate::Subtype(ref pred) => Some(pred.clean(cx)),
-            Predicate::RegionOutlives(ref pred) => pred.clean(cx),
-            Predicate::TypeOutlives(ref pred) => pred.clean(cx),
-            Predicate::Projection(ref pred) => Some(pred.clean(cx)),
+            PredicateKind::Trait(ref pred, _) => Some(pred.clean(cx)),
+            PredicateKind::Subtype(ref pred) => Some(pred.clean(cx)),
+            PredicateKind::RegionOutlives(ref pred) => pred.clean(cx),
+            PredicateKind::TypeOutlives(ref pred) => pred.clean(cx),
+            PredicateKind::Projection(ref pred) => Some(pred.clean(cx)),
 
-            Predicate::WellFormed(..)
-            | Predicate::ObjectSafe(..)
-            | Predicate::ClosureKind(..)
-            | Predicate::ConstEvaluatable(..) => panic!("not user writable"),
+            PredicateKind::WellFormed(..)
+            | PredicateKind::ObjectSafe(..)
+            | PredicateKind::ClosureKind(..)
+            | PredicateKind::ConstEvaluatable(..) => panic!("not user writable"),
         }
     }
 }
@@ -1790,7 +1794,11 @@ impl Clean<Visibility> for hir::Visibility<'_> {
 
 impl Clean<Visibility> for ty::Visibility {
     fn clean(&self, _: &DocContext<'_>) -> Visibility {
-        if *self == ty::Visibility::Public { Public } else { Inherited }
+        if *self == ty::Visibility::Public {
+            Public
+        } else {
+            Inherited
+        }
     }
 }
 

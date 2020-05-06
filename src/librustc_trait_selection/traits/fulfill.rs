@@ -81,7 +81,7 @@ pub struct PendingPredicateObligation<'tcx> {
 
 // `PendingPredicateObligation` is used a lot. Make sure it doesn't unintentionally get bigger.
 #[cfg(target_arch = "x86_64")]
-static_assert_size!(PendingPredicateObligation<'_>, 136);
+static_assert_size!(PendingPredicateObligation<'_>, 112);
 
 impl<'a, 'tcx> FulfillmentContext<'tcx> {
     /// Creates a new fulfillment context.
@@ -148,7 +148,11 @@ impl<'a, 'tcx> FulfillmentContext<'tcx> {
             errors.len()
         );
 
-        if errors.is_empty() { Ok(()) } else { Err(errors) }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 }
 
@@ -219,7 +223,11 @@ impl<'tcx> TraitEngine<'tcx> for FulfillmentContext<'tcx> {
             .into_iter()
             .map(to_fulfillment_error)
             .collect();
-        if errors.is_empty() { Ok(()) } else { Err(errors) }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 
     fn select_where_possible(
@@ -434,7 +442,7 @@ impl<'a, 'b, 'tcx> ObligationProcessor for FulfillProcessor<'a, 'b, 'tcx> {
             }
 
             ty::PredicateKind::ObjectSafe(trait_def_id) => {
-                if !self.selcx.tcx().is_object_safe(trait_def_id) {
+                if !self.selcx.tcx().is_object_safe(*trait_def_id) {
                     ProcessResult::Error(CodeSelectionError(Unimplemented))
                 } else {
                     ProcessResult::Changed(vec![])
@@ -444,7 +452,7 @@ impl<'a, 'b, 'tcx> ObligationProcessor for FulfillProcessor<'a, 'b, 'tcx> {
             ty::PredicateKind::ClosureKind(_, closure_substs, kind) => {
                 match self.selcx.infcx().closure_kind(closure_substs) {
                     Some(closure_kind) => {
-                        if closure_kind.extends(kind) {
+                        if closure_kind.extends(*kind) {
                             ProcessResult::Changed(vec![])
                         } else {
                             ProcessResult::Error(CodeSelectionError(Unimplemented))
@@ -503,7 +511,7 @@ impl<'a, 'b, 'tcx> ObligationProcessor for FulfillProcessor<'a, 'b, 'tcx> {
             ty::PredicateKind::ConstEvaluatable(def_id, substs) => {
                 match self.selcx.infcx().const_eval_resolve(
                     obligation.param_env,
-                    def_id,
+                    *def_id,
                     substs,
                     None,
                     Some(obligation.cause.span),

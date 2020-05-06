@@ -529,7 +529,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     ty::PredicateKind::TypeOutlives(ty::Binder::dummy(ty::OutlivesPredicate(
                         supplied_ty,
                         closure_body_region,
-                    ))),
+                    )))
+                    .to_predicate(self.tcx),
                 ));
             }
 

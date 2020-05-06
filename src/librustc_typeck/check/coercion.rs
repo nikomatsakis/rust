@@ -563,7 +563,9 @@ impl<'f, 'tcx> Coerce<'f, 'tcx> {
             let obligation = queue.remove(0);
             debug!("coerce_unsized resolve step: {:?}", obligation);
             let trait_pred = match obligation.predicate {
-                ty::PredicateKind::Trait(trait_pred, _) if traits.contains(&trait_pred.def_id()) => {
+                ty::PredicateKind::Trait(trait_pred, _)
+                    if traits.contains(&trait_pred.def_id()) =>
+                {
                     if unsize_did == trait_pred.def_id() {
                         let unsize_ty = trait_pred.skip_binder().trait_ref.substs[1].expect_ty();
                         if let ty::Tuple(..) = unsize_ty.kind {
@@ -578,11 +580,11 @@ impl<'f, 'tcx> Coerce<'f, 'tcx> {
                     continue;
                 }
             };
-            match selcx.select(&obligation.with(trait_pred)) {
+            match selcx.select(&obligation.with(*trait_pred)) {
                 // Uncertain or unimplemented.
                 Ok(None) => {
                     if trait_pred.def_id() == unsize_did {
-                        let trait_pred = self.resolve_vars_if_possible(&trait_pred);
+                        let trait_pred = self.resolve_vars_if_possible(trait_pred);
                         let self_ty = trait_pred.skip_binder().self_ty();
                         let unsize_ty = trait_pred.skip_binder().trait_ref.substs[1].expect_ty();
                         debug!("coerce_unsized: ambiguous unsize case for {:?}", trait_pred);

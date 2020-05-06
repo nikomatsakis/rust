@@ -1435,6 +1435,12 @@ pub trait ToPredicate<'tcx> {
     fn to_predicate(&self, tcx: TyCtxt<'tcx>) -> Predicate<'tcx>;
 }
 
+impl<'tcx> ToPredicate<'tcx> for PredicateKind<'tcx> {
+    fn to_predicate(&self, tcx: TyCtxt<'tcx>) -> Predicate<'tcx> {
+        tcx.mk_predicate(*self)
+    }
+}
+
 impl<'tcx> ToPredicate<'tcx> for ConstnessAnd<TraitRef<'tcx>> {
     fn to_predicate(&self, tcx: TyCtxt<'tcx>) -> Predicate<'tcx> {
         tcx.mk_predicate(ty::PredicateKind::Trait(
@@ -1760,7 +1766,7 @@ pub struct ConstnessAnd<T> {
     pub value: T,
 }
 
-// FIXME(ecstaticmorse): Audit all occurrences of `without_const().to_predicate()` to ensure that
+// FIXME(ecstaticmorse): Audit all occurrences of `without_const().to_predicate(tcx)` to ensure that
 // the constness of trait bounds is being propagated correctly.
 pub trait WithConstness: Sized {
     #[inline]
