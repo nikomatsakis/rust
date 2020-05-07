@@ -2975,7 +2975,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                     cause,
                     obligation.recursion_depth + 1,
                     obligation.param_env,
-                    ty::Binder::bind(outlives).to_predicate(),
+                    ty::Binder::bind(outlives).to_predicate(tcx),
                 ));
             }
 
@@ -3018,12 +3018,12 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                     tcx.require_lang_item(lang_items::SizedTraitLangItem, None),
                     tcx.mk_substs_trait(source, &[]),
                 );
-                nested.push(predicate_to_obligation(tr.without_const().to_predicate()));
+                nested.push(predicate_to_obligation(tr.without_const().to_predicate(tcx)));
 
                 // If the type is `Foo + 'a`, ensure that the type
                 // being cast to `Foo + 'a` outlives `'a`:
                 let outlives = ty::OutlivesPredicate(source, r);
-                nested.push(predicate_to_obligation(ty::Binder::dummy(outlives).to_predicate()));
+                nested.push(predicate_to_obligation(ty::Binder::dummy(outlives).to_predicate(tcx)));
             }
 
             // `[T; n]` -> `[T]`
@@ -3092,7 +3092,11 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                 // Check that the source struct with the target's
                 // unsizing parameters is equal to the target.
                 let substs = tcx.mk_substs(substs_a.iter().enumerate().map(|(i, &k)| {
-                    if unsizing_params.contains(i as u32) { substs_b[i] } else { k }
+                    if unsizing_params.contains(i as u32) {
+                        substs_b[i]
+                    } else {
+                        k
+                    }
                 }));
                 let new_struct = tcx.mk_adt(def, substs);
                 let InferOk { obligations, .. } = self
@@ -3765,7 +3769,11 @@ impl<'o, 'tcx> TraitObligationStackList<'o, 'tcx> {
     }
 
     fn depth(&self) -> usize {
-        if let Some(head) = self.head { head.depth } else { 0 }
+        if let Some(head) = self.head {
+            head.depth
+        } else {
+            0
+        }
     }
 }
 

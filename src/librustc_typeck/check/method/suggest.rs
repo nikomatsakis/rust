@@ -59,7 +59,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             span,
                             self.body_id,
                             self.param_env,
-                            poly_trait_ref.without_const().to_predicate(),
+                            poly_trait_ref.without_const().to_predicate(tcx),
                         );
                         self.predicate_may_hold(&obligation)
                     })
@@ -1400,7 +1400,11 @@ fn print_disambiguation_help(
         format!(
             "({}{})",
             if rcvr_ty.is_region_ptr() {
-                if rcvr_ty.is_mutable_ptr() { "&mut " } else { "&" }
+                if rcvr_ty.is_mutable_ptr() {
+                    "&mut "
+                } else {
+                    "&"
+                }
             } else {
                 ""
             },

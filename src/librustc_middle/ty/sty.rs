@@ -617,7 +617,7 @@ impl<'tcx> Binder<ExistentialPredicate<'tcx>> {
         use crate::ty::ToPredicate;
         match *self.skip_binder() {
             ExistentialPredicate::Trait(tr) => {
-                Binder(tr).with_self_ty(tcx, self_ty).without_const().to_predicate()
+                Binder(tr).with_self_ty(tcx, self_ty).without_const().to_predicate(tcx)
             }
             ExistentialPredicate::Projection(p) => {
                 ty::PredicateKind::Projection(Binder(p.with_self_ty(tcx, self_ty)))
@@ -625,7 +625,7 @@ impl<'tcx> Binder<ExistentialPredicate<'tcx>> {
             ExistentialPredicate::AutoTrait(did) => {
                 let trait_ref =
                     Binder(ty::TraitRef { def_id: did, substs: tcx.mk_substs_trait(self_ty, &[]) });
-                trait_ref.without_const().to_predicate()
+                trait_ref.without_const().to_predicate(tcx)
             }
         }
     }
@@ -1759,7 +1759,11 @@ impl<'tcx> TyS<'tcx> {
 
     #[inline]
     pub fn is_phantom_data(&self) -> bool {
-        if let Adt(def, _) = self.kind { def.is_phantom_data() } else { false }
+        if let Adt(def, _) = self.kind {
+            def.is_phantom_data()
+        } else {
+            false
+        }
     }
 
     #[inline]
@@ -2451,12 +2455,20 @@ static_assert_size!(ConstKind<'_>, 40);
 impl<'tcx> ConstKind<'tcx> {
     #[inline]
     pub fn try_to_scalar(&self) -> Option<Scalar> {
-        if let ConstKind::Value(val) = self { val.try_to_scalar() } else { None }
+        if let ConstKind::Value(val) = self {
+            val.try_to_scalar()
+        } else {
+            None
+        }
     }
 
     #[inline]
     pub fn try_to_bits(&self, size: Size) -> Option<u128> {
-        if let ConstKind::Value(val) = self { val.try_to_bits(size) } else { None }
+        if let ConstKind::Value(val) = self {
+            val.try_to_bits(size)
+        } else {
+            None
+        }
     }
 }
 

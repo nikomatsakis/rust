@@ -65,7 +65,7 @@ pub trait AstConv<'tcx> {
 
     /// Returns the lifetime to use when a lifetime is omitted (and not elided).
     fn re_infer(&self, param: Option<&ty::GenericParamDef>, span: Span)
-    -> Option<ty::Region<'tcx>>;
+        -> Option<ty::Region<'tcx>>;
 
     /// Returns the type to use when a type is omitted.
     fn ty_infer(&self, param: Option<&ty::GenericParamDef>, span: Span) -> Ty<'tcx>;
@@ -1318,7 +1318,11 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
         bounds.trait_bounds.sort_by_key(|(t, _, _)| t.def_id());
 
         bounds.implicitly_sized = if let SizedByDefault::Yes = sized_by_default {
-            if !self.is_unsized(ast_bounds, span) { Some(span) } else { None }
+            if !self.is_unsized(ast_bounds, span) {
+                Some(span)
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -2652,7 +2656,11 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                     path_segs.iter().map(|PathSeg(_, index)| index).collect();
                 self.prohibit_generics(path.segments.iter().enumerate().filter_map(
                     |(index, seg)| {
-                        if !generic_segs.contains(&index) { Some(seg) } else { None }
+                        if !generic_segs.contains(&index) {
+                            Some(seg)
+                        } else {
+                            None
+                        }
                     },
                 ));
 
@@ -3047,7 +3055,7 @@ impl<'tcx> Bounds<'tcx> {
                     def_id: sized,
                     substs: tcx.mk_substs_trait(param_ty, &[]),
                 });
-                (trait_ref.without_const().to_predicate(), span)
+                (trait_ref.without_const().to_predicate(tcx), span)
             })
         });
 
@@ -3062,16 +3070,16 @@ impl<'tcx> Bounds<'tcx> {
                         // or it's a generic associated type that deliberately has escaping bound vars.
                         let region_bound = ty::fold::shift_region(tcx, region_bound, 1);
                         let outlives = ty::OutlivesPredicate(param_ty, region_bound);
-                        (ty::Binder::bind(outlives).to_predicate(), span)
+                        (ty::Binder::bind(outlives).to_predicate(tcx), span)
                     })
                     .chain(self.trait_bounds.iter().map(|&(bound_trait_ref, span, constness)| {
-                        let predicate = bound_trait_ref.with_constness(constness).to_predicate();
+                        let predicate = bound_trait_ref.with_constness(constness).to_predicate(tcx);
                         (predicate, span)
                     }))
                     .chain(
                         self.projection_bounds
                             .iter()
-                            .map(|&(projection, span)| (projection.to_predicate(), span)),
+                            .map(|&(projection, span)| (projection.to_predicate(tcx), span)),
                     ),
             )
             .collect()

@@ -307,7 +307,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                             "{}",
                             message.unwrap_or_else(|| format!(
                                 "the trait bound `{}` is not satisfied{}",
-                                trait_ref.without_const().to_predicate(),
+                                trait_ref.without_const().to_predicate(tcx),
                                 post_message,
                             ))
                         );
@@ -984,13 +984,13 @@ trait InferCtxtPrivExt<'tcx> {
 
     fn note_obligation_cause(
         &self,
-        err: &mut DiagnosticBuilder<'_>,
+        err: &mut DiagnosticBuilder<'tcx>,
         obligation: &PredicateObligation<'tcx>,
     );
 
     fn suggest_unsized_bound_if_applicable(
         &self,
-        err: &mut DiagnosticBuilder<'_>,
+        err: &mut DiagnosticBuilder<'tcx>,
         obligation: &PredicateObligation<'tcx>,
     );
 
@@ -1010,7 +1010,9 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
         }
 
         let (cond, error) = match (cond, error) {
-            (&ty::PredicateKind::Trait(..), &ty::PredicateKind::Trait(ref error, _)) => (cond, error),
+            (&ty::PredicateKind::Trait(..), &ty::PredicateKind::Trait(ref error, _)) => {
+                (cond, error)
+            }
             _ => {
                 // FIXME: make this work in other cases too.
                 return false;
@@ -1343,7 +1345,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
     ) -> PredicateObligation<'tcx> {
         let new_trait_ref =
             ty::TraitRef { def_id, substs: self.tcx.mk_substs_trait(output_ty, &[]) };
-        Obligation::new(cause, param_env, new_trait_ref.without_const().to_predicate())
+        Obligation::new(cause, param_env, new_trait_ref.without_const().to_predicate(self.tcx))
     }
 
     fn maybe_report_ambiguity(
@@ -1568,7 +1570,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             let obligation = Obligation::new(
                 ObligationCause::dummy(),
                 param_env,
-                cleaned_pred.without_const().to_predicate(),
+                cleaned_pred.without_const().to_predicate(selcx.tcx()),
             );
 
             self.predicate_may_hold(&obligation)
@@ -1577,7 +1579,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
 
     fn note_obligation_cause(
         &self,
-        err: &mut DiagnosticBuilder<'_>,
+        err: &mut DiagnosticBuilder<'tcx>,
         obligation: &PredicateObligation<'tcx>,
     ) {
         // First, attempt to add note to this error with an async-await-specific
@@ -1595,7 +1597,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
 
     fn suggest_unsized_bound_if_applicable(
         &self,
-        err: &mut DiagnosticBuilder<'_>,
+        err: &mut DiagnosticBuilder<'tcx>,
         obligation: &PredicateObligation<'tcx>,
     ) {
         if let (
