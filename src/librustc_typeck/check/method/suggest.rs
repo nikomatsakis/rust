@@ -627,7 +627,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             _ => {}
                         }
                     };
-                    let mut format_pred = |pred| {
+                    let mut format_pred = |pred: ty::Predicate<'tcx>| {
                         match pred {
                             ty::PredicateKind::Projection(pred) => {
                                 // `<Foo as Iterator>::Item = String`.

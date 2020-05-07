@@ -425,7 +425,7 @@ fn check_type_defn<'tcx, F>(
                 fcx.register_predicate(traits::Obligation::new(
                     cause,
                     fcx.param_env,
-                    ty::PredicateKind::ConstEvaluatable(discr_def_id.to_def_id(), discr_substs),
+                    ty::PredicateKind::ConstEvaluatable(discr_def_id.to_def_id(), discr_substs).to_predicate(fcx.tcx),
                 ));
             }
         }
@@ -545,7 +545,7 @@ fn check_associated_type_defaults(fcx: &FnCtxt<'_, '_>, trait_def_id: DefId) {
     let mut norm = DefaultNormalizer { tcx, map };
     let predicates = fcx.tcx.predicates_of(trait_def_id);
     for &(orig_pred, span) in predicates.predicates.iter() {
-        let pred = orig_pred.fold_with(&mut norm);
+        let pred = ty::Predicate::fold_with(&orig_pred, &mut norm);
         if pred != orig_pred {
             // Mentions one of the defaulted assoc. types
             debug!("default suitability check: proving predicate: {} -> {}", orig_pred, pred);
@@ -772,7 +772,7 @@ fn check_where_clauses<'tcx, 'fcx>(
             }
             let mut param_count = CountParams::default();
             let has_region = pred.visit_with(&mut param_count);
-            let substituted_pred = pred.subst(fcx.tcx, substs);
+            let substituted_pred: ty::Predicate<'_> = pred.subst(fcx.tcx, substs);
             // Don't check non-defaulted params, dependent defaults (including lifetimes)
             // or preds with multiple params.
             if substituted_pred.has_param_types_or_consts()
@@ -1175,8 +1175,11 @@ fn receiver_is_implemented(
         substs: fcx.tcx.mk_substs_trait(receiver_ty, &[]),
     };
 
-    let obligation =
-        traits::Obligation::new(cause, fcx.param_env, trait_ref.without_const().to_predicate(tcx));
+    let obligation = traits::Obligation::new(
+        cause,
+        fcx.param_env,
+        trait_ref.without_const().to_predicate(fcx.tcx),
+    );
 
     if fcx.predicate_must_hold_modulo_regions(&obligation) {
         true

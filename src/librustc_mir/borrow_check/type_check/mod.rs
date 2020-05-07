@@ -1016,7 +1016,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                     }
 
                     self.prove_predicate(
-                        ty::PredicateKind::WellFormed(inferred_ty).to_predicate(infcx.tcx),
+                        ty::PredicateKind::WellFormed(inferred_ty).to_predicate(self.tcx()),
                         Locations::All(span),
                         ConstraintCategory::TypeAnnotation,
                     );
@@ -2684,7 +2684,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                     trait_ref.to_poly_trait_ref().to_poly_trait_predicate(),
                     hir::Constness::NotConst,
                 )
-                .to_predicate(self.tcx),
+                .to_predicate(self.tcx()),
             ),
             locations,
             category,

@@ -9,7 +9,7 @@ use rustc_middle::middle::region;
 use rustc_middle::ty::error::TypeError;
 use rustc_middle::ty::relate::{Relate, RelateResult, TypeRelation};
 use rustc_middle::ty::subst::{Subst, SubstsRef};
-use rustc_middle::ty::{self, Predicate, Ty, TyCtxt};
+use rustc_middle::ty::{self, Predicate, PredicateKind, Ty, TyCtxt};
 use rustc_span::Span;
 use rustc_trait_selection::traits::error_reporting::InferCtxtExt;
 use rustc_trait_selection::traits::query::dropck_outlives::AtExt;

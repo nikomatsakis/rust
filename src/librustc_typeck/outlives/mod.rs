@@ -82,22 +82,26 @@ fn inferred_outlives_crate(tcx: TyCtxt<'_>, crate_num: CrateNum) -> CratePredica
         .iter()
         .map(|(&def_id, set)| {
             let predicates = &*tcx.arena.alloc_from_iter(set.iter().filter_map(
-                |(ty::OutlivesPredicate(kind1, region2), &span)| match kind1.unpack() {
-                    GenericArgKind::Type(ty1) => Some((
-                        ty::PredicateKind::TypeOutlives(ty::Binder::bind(ty::OutlivesPredicate(
-                            ty1, region2,
-                        ))),
-                        span,
-                    )),
-                    GenericArgKind::Lifetime(region1) => Some((
-                        ty::PredicateKind::RegionOutlives(ty::Binder::bind(ty::OutlivesPredicate(
-                            region1, region2,
-                        ))),
-                        span,
-                    )),
-                    GenericArgKind::Const(_) => {
-                        // Generic consts don't impose any constraints.
-                        None
+                |(ty::OutlivesPredicate(kind1, region2), &span)| {
+                    match kind1.unpack() {
+                        GenericArgKind::Type(ty1) => Some((
+                            ty::PredicateKind::TypeOutlives(ty::Binder::bind(
+                                ty::OutlivesPredicate(ty1, region2),
+                            ))
+                            .to_predicate(tcx),
+                            span,
+                        )),
+                        GenericArgKind::Lifetime(region1) => Some((
+                            ty::PredicateKind::RegionOutlives(ty::Binder::bind(
+                                ty::OutlivesPredicate(region1, region2),
+                            ))
+                            .to_predicate(tcx),
+                            span,
+                        )),
+                        GenericArgKind::Const(_) => {
+                            // Generic consts don't impose any constraints.
+                            None
+                        }
                     }
                 },
             ));

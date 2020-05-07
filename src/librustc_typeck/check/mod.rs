@@ -3384,7 +3384,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             self.register_predicate(traits::Obligation::new(
                 cause,
                 self.param_env,
-                ty::PredicateKind::ConstEvaluatable(def_id, substs),
+                ty::PredicateKind::ConstEvaluatable(def_id, substs).to_predicate(self.tcx),
             ));
         }
 
@@ -3433,7 +3433,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         self.register_predicate(traits::Obligation::new(
             cause,
             self.param_env,
-            ty::PredicateKind::WellFormed(ty),
+            ty::PredicateKind::WellFormed(ty).to_predicate(self.tcx),
         ));
     }
 
@@ -5335,7 +5335,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             item_def_id,
                         },
                         ty: expected,
-                    }));
+                    })).to_predicate(self.tcx());
                 let obligation = traits::Obligation::new(self.misc(sp), self.param_env, predicate);
                 debug!("suggest_missing_await: trying obligation {:?}", obligation);
                 if self.infcx.predicate_may_hold(&obligation) {
