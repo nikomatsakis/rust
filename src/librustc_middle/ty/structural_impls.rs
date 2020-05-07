@@ -219,6 +219,12 @@ impl fmt::Debug for ty::ProjectionPredicate<'tcx> {
     }
 }
 
+impl fmt::Debug for ty::Predicate<'tcx> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self.kind(), f)
+    }
+}
+
 impl fmt::Debug for ty::PredicateKind<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {

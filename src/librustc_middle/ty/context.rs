@@ -132,6 +132,13 @@ impl<'tcx> CtxtInterners<'tcx> {
             })
             .0
     }
+
+    fn intern_predicate(&self, kind: TyKind<'tcx>) -> Ty<'tcx> {
+        let kind: &'tcx PredicateKind<'tcx> = self.interners.predicates.intern_ref(&kind, || {
+            Interned(self.interners.arena.alloc(kind))
+        }).0;
+        Predicate { kind }
+    }
 }
 
 pub struct CommonTypes<'tcx> {
@@ -2006,6 +2013,20 @@ impl<'tcx> Borrow<Const<'tcx>> for Interned<'tcx, Const<'tcx>> {
     }
 }
 
+impl<'tcx> PartialEq for Interned<'tcx, PredicateKind<'tcx>> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<'tcx> Eq for Interned<'tcx, PredicateKind<'tcx>> {}
+
+impl<'tcx> Hash for Interned<'tcx, PredicateKind<'tcx>> {
+    fn hash<H: Hasher>(&self, s: &mut H) {
+        self.0.hash(s)
+    }
+}
+
 macro_rules! direct_interners {
     ($($name:ident: $method:ident($ty:ty),)+) => {
         $(impl<'tcx> PartialEq for Interned<'tcx, $ty> {
@@ -2035,7 +2056,6 @@ macro_rules! direct_interners {
 direct_interners! {
     region: mk_region(RegionKind),
     const_: mk_const(Const<'tcx>),
-    predicate: mk_predicate(PredicateKind<'tcx>),
 }
 
 macro_rules! slice_interners {
@@ -2093,6 +2113,10 @@ impl<'tcx> TyCtxt<'tcx> {
     #[inline]
     pub fn mk_ty(&self, st: TyKind<'tcx>) -> Ty<'tcx> {
         self.interners.intern_ty(st)
+    }
+
+    pub fn mk_predicate(&self, kind: PredicateKind<'tcx>) -> Predicate<'tcx> {
+        self.interners.intern_predicate(kind)
     }
 
     pub fn mk_mach_int(self, tm: ast::IntTy) -> Ty<'tcx> {

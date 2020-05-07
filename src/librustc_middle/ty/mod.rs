@@ -1159,7 +1159,17 @@ impl<'tcx> GenericPredicates<'tcx> {
     }
 }
 
-pub type Predicate<'tcx> = &'tcx PredicateKind<'tcx>;
+#[derive(Clone, Copy, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
+#[derive(HashStable)]
+pub struct Predicate<'tcx> {
+    kind: &'tcx PredicateKind<'tcx>
+}
+
+impl Predicate<'tcx> {
+    pub fn kind(&self) -> &PredicateKind<'tcx> {
+        self.kind
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
 #[derive(HashStable, TypeFoldable)]
@@ -1221,7 +1231,7 @@ impl<'tcx> AsRef<Predicate<'tcx>> for Predicate<'tcx> {
     }
 }
 
-impl<'tcx> PredicateKind<'tcx> {
+impl<'tcx> Predicate<'tcx> {
     /// Performs a substitution suitable for going from a
     /// poly-trait-ref to supertraits that must hold if that
     /// poly-trait-ref holds. This is slightly different from a normal
@@ -1495,9 +1505,9 @@ impl<'tcx> ToPredicate<'tcx> for PolyProjectionPredicate<'tcx> {
     }
 }
 
-impl<'tcx> PredicateKind<'tcx> {
+impl<'tcx> Predicate<'tcx> {
     pub fn to_opt_poly_trait_ref(&self) -> Option<PolyTraitRef<'tcx>> {
-        match *self {
+        match self.kind() {
             PredicateKind::Trait(ref t, _) => Some(t.to_poly_trait_ref()),
             PredicateKind::Projection(..)
             | PredicateKind::Subtype(..)
@@ -1511,7 +1521,7 @@ impl<'tcx> PredicateKind<'tcx> {
     }
 
     pub fn to_opt_type_outlives(&self) -> Option<PolyTypeOutlivesPredicate<'tcx>> {
-        match *self {
+        match self.kind() {
             PredicateKind::TypeOutlives(data) => Some(data),
             PredicateKind::Trait(..)
             | PredicateKind::Projection(..)
