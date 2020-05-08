@@ -1162,12 +1162,12 @@ impl<'tcx> GenericPredicates<'tcx> {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable, Lift)]
 #[derive(HashStable, TypeFoldable)]
 pub struct Predicate<'tcx> {
-    kind: PredicateKind<'tcx>,
+    kind: &'tcx PredicateKind<'tcx>,
 }
 
 impl Predicate<'tcx> {
     pub fn kind(&self) -> PredicateKind<'tcx> {
-        self.kind
+        *self.kind
     }
 }
 
