@@ -25,7 +25,7 @@ use rustc_middle::arena::ArenaAllocatable;
 use rustc_middle::ty::fold::TypeFoldable;
 use rustc_middle::ty::relate::TypeRelation;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind};
-use rustc_middle::ty::{self, BoundVar, Ty, TyCtxt};
+use rustc_middle::ty::{self, BoundVar, ToPredicate, Ty, TyCtxt};
 use std::fmt::Debug;
 
 impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
@@ -303,7 +303,11 @@ impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
                 // only compare the inner values to one another, so they are still at
                 // consistent binding levels.
                 let &ty::OutlivesPredicate(k1, r2) = r_c.skip_binder();
-                if k1 != r2.into() { Some(r_c) } else { None }
+                if k1 != r2.into() {
+                    Some(r_c)
+                } else {
+                    None
+                }
             }),
         );
 
@@ -534,10 +538,12 @@ impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
                 match k1.unpack() {
                     GenericArgKind::Lifetime(r1) => ty::PredicateKind::RegionOutlives(
                         ty::Binder::bind(ty::OutlivesPredicate(r1, r2)),
-                    ),
-                    GenericArgKind::Type(t1) => {
-                        ty::PredicateKind::TypeOutlives(ty::Binder::bind(ty::OutlivesPredicate(t1, r2)))
-                    }
+                    )
+                    .to_predicate(self.tcx),
+                    GenericArgKind::Type(t1) => ty::PredicateKind::TypeOutlives(ty::Binder::bind(
+                        ty::OutlivesPredicate(t1, r2),
+                    ))
+                    .to_predicate(self.tcx),
                     GenericArgKind::Const(..) => {
                         // Consts cannot outlive one another, so we don't expect to
                         // ecounter this branch.
@@ -666,7 +672,8 @@ impl<'tcx> TypeRelatingDelegate<'tcx> for QueryTypeRelatingDelegate<'_, 'tcx> {
             param_env: self.param_env,
             predicate: ty::PredicateKind::RegionOutlives(ty::Binder::dummy(ty::OutlivesPredicate(
                 sup, sub,
-            ))),
+            )))
+            .to_predicate(self.infcx.tcx),
             recursion_depth: 0,
         });
     }

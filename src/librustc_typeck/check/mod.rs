@@ -2228,7 +2228,7 @@ fn bounds_from_generic_predicates(
     let mut projections = vec![];
     for (predicate, _) in predicates.predicates {
         debug!("predicate {:?}", predicate);
-        match predicate {
+        match predicate.kind() {
             ty::PredicateKind::Trait(trait_predicate, _) => {
                 let entry = types.entry(trait_predicate.skip_binder().self_ty()).or_default();
                 let def_id = trait_predicate.skip_binder().def_id();
@@ -2774,7 +2774,7 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
         ty::GenericPredicates {
             parent: None,
             predicates: tcx.arena.alloc_from_iter(self.param_env.caller_bounds.iter().filter_map(
-                |&predicate| match predicate {
+                |&predicate| match predicate.kind() {
                     ty::PredicateKind::Trait(ref data, _)
                         if data.skip_binder().self_ty().is_param(index) =>
                     {
@@ -3384,7 +3384,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             self.register_predicate(traits::Obligation::new(
                 cause,
                 self.param_env,
-                ty::PredicateKind::ConstEvaluatable(def_id, substs),
+                ty::PredicateKind::ConstEvaluatable(def_id, substs).to_predicate(self.tcx),
             ));
         }
 
@@ -3433,7 +3433,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         self.register_predicate(traits::Obligation::new(
             cause,
             self.param_env,
-            ty::PredicateKind::WellFormed(ty),
+            ty::PredicateKind::WellFormed(ty).to_predicate(self.tcx),
         ));
     }
 
@@ -3862,7 +3862,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             .borrow()
             .pending_obligations()
             .into_iter()
-            .filter_map(move |obligation| match obligation.predicate {
+            .filter_map(move |obligation| match obligation.predicate.kind() {
                 ty::PredicateKind::Projection(ref data) => {
                     Some((data.to_poly_trait_ref(self.tcx), obligation))
                 }
@@ -4212,7 +4212,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 continue;
             }
 
-            if let ty::PredicateKind::Trait(predicate, _) = error.obligation.predicate {
+            if let ty::PredicateKind::Trait(predicate, _) = error.obligation.predicate.kind() {
                 // Collect the argument position for all arguments that could have caused this
                 // `FulfillmentError`.
                 let mut referenced_in = final_arg_types
@@ -4259,7 +4259,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             if let hir::ExprKind::Path(qpath) = &path.kind {
                 if let hir::QPath::Resolved(_, path) = &qpath {
                     for error in errors {
-                        if let ty::PredicateKind::Trait(predicate, _) = error.obligation.predicate {
+                        if let ty::PredicateKind::Trait(predicate, _) =
+                            error.obligation.predicate.kind()
+                        {
                             // If any of the type arguments in this path segment caused the
                             // `FullfillmentError`, point at its span (#61860).
                             for arg in path
@@ -5335,7 +5337,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             item_def_id,
                         },
                         ty: expected,
-                    }));
+                    }))
+                    .to_predicate(self.tcx);
                 let obligation = traits::Obligation::new(self.misc(sp), self.param_env, predicate);
                 debug!("suggest_missing_await: trying obligation {:?}", obligation);
                 if self.infcx.predicate_may_hold(&obligation) {

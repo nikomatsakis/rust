@@ -9,7 +9,7 @@ use rustc_errors::{Applicability, DiagnosticBuilder};
 use rustc_hir as hir;
 use rustc_hir::{is_range_literal, Node};
 use rustc_middle::ty::adjustment::AllowTwoPhase;
-use rustc_middle::ty::{self, AssocItem, Ty, TypeAndMut};
+use rustc_middle::ty::{self, AssocItem, ToPredicate, Ty, TypeAndMut};
 use rustc_span::symbol::sym;
 use rustc_span::Span;
 
@@ -361,7 +361,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     {
         let s = s.as_ref();
         let old = old.as_ref();
-        if s.starts_with(old) { Some(new.as_ref().to_owned() + &s[old.len()..]) } else { None }
+        if s.starts_with(old) {
+            Some(new.as_ref().to_owned() + &s[old.len()..])
+        } else {
+            None
+        }
     }
 
     /// This function is used to determine potential "simple" improvements or users' errors and
@@ -653,7 +657,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         },
                         // `U`
                         ty: expected,
-                    }));
+                    }))
+                    .to_predicate(self.tcx);
                 let obligation = traits::Obligation::new(self.misc(sp), self.param_env, predicate);
                 let impls_deref = self.infcx.predicate_may_hold(&obligation);
 

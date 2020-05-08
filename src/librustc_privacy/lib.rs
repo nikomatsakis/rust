@@ -91,7 +91,7 @@ where
     fn visit_predicates(&mut self, predicates: ty::GenericPredicates<'tcx>) -> bool {
         let ty::GenericPredicates { parent: _, predicates } = predicates;
         for (predicate, _span) in predicates {
-            match predicate {
+            match predicate.kind() {
                 ty::PredicateKind::Trait(poly_predicate, _) => {
                     let ty::TraitPredicate { trait_ref } = *poly_predicate.skip_binder();
                     if self.visit_trait(trait_ref) {
@@ -354,11 +354,19 @@ fn item_tables<'a, 'tcx>(
     empty_tables: &'a ty::TypeckTables<'tcx>,
 ) -> &'a ty::TypeckTables<'tcx> {
     let def_id = tcx.hir().local_def_id(hir_id);
-    if tcx.has_typeck_tables(def_id) { tcx.typeck_tables_of(def_id) } else { empty_tables }
+    if tcx.has_typeck_tables(def_id) {
+        tcx.typeck_tables_of(def_id)
+    } else {
+        empty_tables
+    }
 }
 
 fn min(vis1: ty::Visibility, vis2: ty::Visibility, tcx: TyCtxt<'_>) -> ty::Visibility {
-    if vis1.is_at_least(vis2, tcx) { vis2 } else { vis1 }
+    if vis1.is_at_least(vis2, tcx) {
+        vis2
+    } else {
+        vis1
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

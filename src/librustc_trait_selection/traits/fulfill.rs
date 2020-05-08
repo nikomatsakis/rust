@@ -148,7 +148,11 @@ impl<'a, 'tcx> FulfillmentContext<'tcx> {
             errors.len()
         );
 
-        if errors.is_empty() { Ok(()) } else { Err(errors) }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 }
 
@@ -219,7 +223,11 @@ impl<'tcx> TraitEngine<'tcx> for FulfillmentContext<'tcx> {
             .into_iter()
             .map(to_fulfillment_error)
             .collect();
-        if errors.is_empty() { Ok(()) } else { Err(errors) }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 
     fn select_where_possible(
@@ -312,7 +320,7 @@ impl<'a, 'b, 'tcx> ObligationProcessor for FulfillProcessor<'a, 'b, 'tcx> {
 
         debug!("process_obligation: obligation = {:?} cause = {:?}", obligation, obligation.cause);
 
-        match obligation.predicate {
+        match obligation.predicate.kind() {
             ty::PredicateKind::Trait(ref data, _) => {
                 let trait_obligation = obligation.with(*data);
 

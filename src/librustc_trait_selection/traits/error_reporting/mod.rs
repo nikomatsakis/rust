@@ -253,7 +253,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                     .emit();
                     return;
                 }
-                match obligation.predicate {
+                match obligation.predicate.kind() {
                     ty::PredicateKind::Trait(ref trait_predicate, _) => {
                         let trait_predicate = self.resolve_vars_if_possible(trait_predicate);
 
@@ -454,7 +454,8 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                                 predicate: ty::PredicateKind::Trait(
                                     predicate,
                                     hir::Constness::NotConst,
-                                ),
+                                )
+                                .to_predicate(self.tcx),
                                 ..obligation.clone()
                             };
                             if self.predicate_may_hold(&unit_obligation) {
@@ -1009,10 +1010,8 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             return true;
         }
 
-        let (cond, error) = match (cond, error) {
-            (&ty::PredicateKind::Trait(..), &ty::PredicateKind::Trait(ref error, _)) => {
-                (cond, error)
-            }
+        let (cond, error) = match (cond.kind(), error.kind()) {
+            (ty::PredicateKind::Trait(..), ty::PredicateKind::Trait(error, _)) => (cond, error),
             _ => {
                 // FIXME: make this work in other cases too.
                 return false;
@@ -1020,7 +1019,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
         };
 
         for obligation in super::elaborate_predicates(self.tcx, std::iter::once(*cond)) {
-            if let ty::PredicateKind::Trait(implication, _) = obligation.predicate {
+            if let ty::PredicateKind::Trait(implication, _) = obligation.predicate.kind() {
                 let error = error.to_poly_trait_ref();
                 let implication = implication.to_poly_trait_ref();
                 // FIXME: I'm just not taking associated types at all here.
@@ -1091,7 +1090,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             //
             // this can fail if the problem was higher-ranked, in which
             // cause I have no idea for a good error message.
-            if let ty::PredicateKind::Projection(ref data) = predicate {
+            if let ty::PredicateKind::Projection(ref data) = predicate.kind() {
                 let mut selcx = SelectionContext::new(self);
                 let (data, _) = self.replace_bound_vars_with_fresh_vars(
                     obligation.cause.span,
@@ -1372,7 +1371,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             return;
         }
 
-        let mut err = match predicate {
+        let mut err = match predicate.kind() {
             ty::PredicateKind::Trait(ref data, _) => {
                 let trait_ref = data.to_poly_trait_ref();
                 let self_ty = trait_ref.self_ty();
@@ -1603,7 +1602,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
         if let (
             ty::PredicateKind::Trait(pred, _),
             ObligationCauseCode::BindingObligation(item_def_id, span),
-        ) = (&obligation.predicate, &obligation.cause.code)
+        ) = (obligation.predicate.kind(), &obligation.cause.code)
         {
             if let (Some(generics), true) = (
                 self.tcx.hir().get_if_local(*item_def_id).as_ref().and_then(|n| n.generics()),

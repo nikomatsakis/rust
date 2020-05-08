@@ -410,7 +410,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             None => self.check_recursion_limit(&obligation, &obligation)?,
         }
 
-        match obligation.predicate {
+        match obligation.predicate.kind() {
             ty::PredicateKind::Trait(ref t, _) => {
                 debug_assert!(!t.has_escaping_bound_vars());
                 let obligation = obligation.with(*t);
@@ -633,8 +633,10 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             // trait refs. This is important because it's only a cycle
             // if the regions match exactly.
             let cycle = stack.iter().skip(1).take_while(|s| s.depth >= cycle_depth);
+            let tcx = self.tcx();
             let cycle = cycle.map(|stack| {
                 ty::PredicateKind::Trait(stack.obligation.predicate, hir::Constness::NotConst)
+                    .to_predicate(tcx)
             });
             if self.coinductive_match(cycle) {
                 debug!("evaluate_stack({:?}) --> recursive, coinductive", stack.fresh_trait_ref);
@@ -749,7 +751,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     }
 
     fn coinductive_predicate(&self, predicate: ty::Predicate<'tcx>) -> bool {
-        let result = match predicate {
+        let result = match predicate.kind() {
             ty::PredicateKind::Trait(ref data, _) => self.tcx().trait_is_auto(data.def_id()),
             _ => false,
         };
@@ -2866,7 +2868,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         obligations.push(Obligation::new(
             obligation.cause.clone(),
             obligation.param_env,
-            ty::PredicateKind::ClosureKind(closure_def_id, substs, kind),
+            ty::PredicateKind::ClosureKind(closure_def_id, substs, kind).to_predicate(self.tcx()),
         ));
 
         Ok(VtableClosureData { closure_def_id, substs, nested: obligations })

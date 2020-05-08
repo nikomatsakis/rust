@@ -982,7 +982,11 @@ pub trait PrettyPrinter<'tcx>:
                 if data == max {
                     p!(write("std::{}::MAX", ui_str))
                 } else {
-                    if print_ty { p!(write("{}{}", data, ui_str)) } else { p!(write("{}", data)) }
+                    if print_ty {
+                        p!(write("{}{}", data, ui_str))
+                    } else {
+                        p!(write("{}", data))
+                    }
                 };
             }
             (Scalar::Raw { data, .. }, ty::Int(i)) => {
@@ -2036,7 +2040,7 @@ define_print_and_forward_display! {
     }
 
     ty::Predicate<'tcx> {
-        match *self {
+        match self.kind() {
             ty::PredicateKind::Trait(ref data, constness) => {
                 if let hir::Constness::Const = constness {
                     p!(write("const "));
