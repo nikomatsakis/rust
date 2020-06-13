@@ -53,7 +53,8 @@ pub struct Obligation<'tcx, T> {
 }
 
 pub type PredicateObligation<'tcx> = Obligation<'tcx, ty::Predicate<'tcx>>;
-pub type TraitObligation<'tcx> = Obligation<'tcx, ty::PolyTraitPredicate<'tcx>>;
+pub type TraitObligation<'tcx> = Obligation<'tcx, ty::TraitPredicate<'tcx>>;
+pub type PolyTraitObligation<'tcx> = Obligation<'tcx, ty::PolyTraitPredicate<'tcx>>;
 
 // `PredicateObligation` is used a lot. Make sure it doesn't unintentionally get bigger.
 #[cfg(target_arch = "x86_64")]
@@ -61,7 +62,6 @@ static_assert_size!(PredicateObligation<'_>, 48);
 
 pub type Obligations<'tcx, O> = Vec<Obligation<'tcx, O>>;
 pub type PredicateObligations<'tcx> = Vec<PredicateObligation<'tcx>>;
-pub type TraitObligations<'tcx> = Vec<TraitObligation<'tcx>>;
 
 pub type Selection<'tcx> = ImplSource<'tcx, PredicateObligation<'tcx>>;
 
@@ -129,7 +129,7 @@ impl<'tcx> FulfillmentError<'tcx> {
     }
 }
 
-impl<'tcx> TraitObligation<'tcx> {
+impl<'tcx> PolyTraitObligation<'tcx> {
     pub fn self_ty(&self) -> ty::Binder<Ty<'tcx>> {
         self.predicate.map_bound(|p| p.self_ty())
     }

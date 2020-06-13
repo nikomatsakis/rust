@@ -6,7 +6,7 @@
 //!
 //! [rustc dev guide]:https://rustc-dev-guide.rust-lang.org/traits/resolution.html#candidate-assembly
 use rustc_hir as hir;
-use rustc_infer::traits::{Obligation, SelectionError, TraitObligation};
+use rustc_infer::traits::{Obligation, PolyTraitObligation, SelectionError};
 use rustc_middle::ty::{self, TypeFoldable};
 use rustc_target::spec::abi::Abi;
 
@@ -145,7 +145,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     fn assemble_candidates_from_projected_tys(
         &mut self,
-        obligation: &TraitObligation<'tcx>,
+        obligation: &PolyTraitObligation<'tcx>,
         candidates: &mut SelectionCandidateSet<'tcx>,
     ) {
         debug!("assemble_candidates_for_projected_tys({:?})", obligation);
@@ -210,7 +210,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     fn assemble_generator_candidates(
         &mut self,
-        obligation: &TraitObligation<'tcx>,
+        obligation: &PolyTraitObligation<'tcx>,
         candidates: &mut SelectionCandidateSet<'tcx>,
     ) -> Result<(), SelectionError<'tcx>> {
         if self.tcx().lang_items().gen_trait() != Some(obligation.predicate.def_id()) {
@@ -248,7 +248,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     /// unified during the confirmation step.
     fn assemble_closure_candidates(
         &mut self,
-        obligation: &TraitObligation<'tcx>,
+        obligation: &PolyTraitObligation<'tcx>,
         candidates: &mut SelectionCandidateSet<'tcx>,
     ) -> Result<(), SelectionError<'tcx>> {
         let kind = match self.tcx().fn_trait_kind_from_lang_item(obligation.predicate.def_id()) {
@@ -290,7 +290,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     /// Implements one of the `Fn()` family for a fn pointer.
     fn assemble_fn_pointer_candidates(
         &mut self,
-        obligation: &TraitObligation<'tcx>,
+        obligation: &PolyTraitObligation<'tcx>,
         candidates: &mut SelectionCandidateSet<'tcx>,
     ) -> Result<(), SelectionError<'tcx>> {
         // We provide impl of all fn traits for fn pointers.
@@ -326,7 +326,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     /// Searches for impls that might apply to `obligation`.
     fn assemble_candidates_from_impls(
         &mut self,
-        obligation: &TraitObligation<'tcx>,
+        obligation: &PolyTraitObligation<'tcx>,
         candidates: &mut SelectionCandidateSet<'tcx>,
     ) -> Result<(), SelectionError<'tcx>> {
         debug!("assemble_candidates_from_impls(obligation={:?})", obligation);
@@ -358,7 +358,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     fn assemble_candidates_from_auto_impls(
         &mut self,
-        obligation: &TraitObligation<'tcx>,
+        obligation: &PolyTraitObligation<'tcx>,
         candidates: &mut SelectionCandidateSet<'tcx>,
     ) -> Result<(), SelectionError<'tcx>> {
         // Okay to skip binder here because the tests we do below do not involve bound regions.
@@ -426,7 +426,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     /// Searches for impls that might apply to `obligation`.
     fn assemble_candidates_from_object_ty(
         &mut self,
-        obligation: &TraitObligation<'tcx>,
+        obligation: &PolyTraitObligation<'tcx>,
         candidates: &mut SelectionCandidateSet<'tcx>,
     ) {
         debug!(
@@ -497,7 +497,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     /// Searches for unsizing that might apply to `obligation`.
     fn assemble_candidates_for_unsizing(
         &mut self,
-        obligation: &TraitObligation<'tcx>,
+        obligation: &PolyTraitObligation<'tcx>,
         candidates: &mut SelectionCandidateSet<'tcx>,
     ) {
         // We currently never consider higher-ranked obligations e.g.
@@ -579,7 +579,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
     fn assemble_candidates_for_trait_alias(
         &mut self,
-        obligation: &TraitObligation<'tcx>,
+        obligation: &PolyTraitObligation<'tcx>,
         candidates: &mut SelectionCandidateSet<'tcx>,
     ) -> Result<(), SelectionError<'tcx>> {
         // Okay to skip binder here because the tests we do below do not involve bound regions.
