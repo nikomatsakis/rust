@@ -389,7 +389,7 @@ impl<'a, 'tcx> WfPredicates<'a, 'tcx> {
                                 self.out.push(traits::Obligation::new(
                                     cause,
                                     self.param_env,
-                                    ty::PredicateKind::WellFormed(resolved_constant.into())
+                                    ty::PredicateKint::WellFormed(resolved_constant.into())
                                         .to_predicate(self.tcx()),
                                 ));
                             }
@@ -475,10 +475,8 @@ impl<'a, 'tcx> WfPredicates<'a, 'tcx> {
                         self.out.push(traits::Obligation::new(
                             cause,
                             param_env,
-                            ty::PredicateKind::TypeOutlives(ty::Binder::dummy(
-                                ty::OutlivesPredicate(rty, r),
-                            ))
-                            .to_predicate(self.tcx()),
+                            ty::PredicateKint::TypeOutlives(ty::OutlivesPredicate(rty, r))
+                                .to_predicate(self.tcx()),
                         ));
                     }
                 }
