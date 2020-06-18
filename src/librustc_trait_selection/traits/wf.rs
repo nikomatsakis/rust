@@ -88,37 +88,37 @@ pub fn predicate_obligations<'a, 'tcx>(
     infcx: &InferCtxt<'a, 'tcx>,
     param_env: ty::ParamEnv<'tcx>,
     body_id: hir::HirId,
-    predicate: &'tcx ty::PredicateKint<'tcx>,
+    predicate: &'_ ty::Predicate<'tcx>,
     span: Span,
 ) -> Vec<traits::PredicateObligation<'tcx>> {
     let mut wf = WfPredicates { infcx, param_env, body_id, span, out: vec![], item: None };
 
-    match predicate {
-        ty::PredicateKint::ForAll(binder) => {
+    match predicate.kind() {
+        ty::PredicateKind::ForAll(binder) => {
             // It's ok to skip the binder here because wf code is prepared for it
-            return predicate_obligations(infcx, param_env, body_id, *binder.skip_binder(), span);
+            return predicate_obligations(infcx, param_env, body_id, binder.skip_binder(), span);
         }
-        ty::PredicateKint::Trait(t, _) => {
+        ty::PredicateKind::Trait(t, _) => {
             wf.compute_trait_ref(&t.trait_ref, Elaborate::None);
         }
-        ty::PredicateKint::RegionOutlives(..) => {}
-        &ty::PredicateKint::TypeOutlives(ty::OutlivesPredicate(ty, _reg)) => {
+        ty::PredicateKind::RegionOutlives(..) => {}
+        &ty::PredicateKind::TypeOutlives(ty::OutlivesPredicate(ty, _reg)) => {
             wf.compute(ty.into());
         }
-        ty::PredicateKint::Projection(t) => {
+        ty::PredicateKind::Projection(t) => {
             wf.compute_projection(t.projection_ty);
             wf.compute(t.ty.into());
         }
-        &ty::PredicateKint::WellFormed(arg) => {
+        &ty::PredicateKind::WellFormed(arg) => {
             wf.compute(arg);
         }
-        ty::PredicateKint::ObjectSafe(_) => {}
-        ty::PredicateKint::ClosureKind(..) => {}
-        &ty::PredicateKint::Subtype(ty::SubtypePredicate { a, b, a_is_expected: _ }) => {
+        ty::PredicateKind::ObjectSafe(_) => {}
+        ty::PredicateKind::ClosureKind(..) => {}
+        &ty::PredicateKind::Subtype(ty::SubtypePredicate { a, b, a_is_expected: _ }) => {
             wf.compute(a.into());
             wf.compute(b.into());
         }
-        &ty::PredicateKint::ConstEvaluatable(def_id, substs) => {
+        &ty::PredicateKind::ConstEvaluatable(def_id, substs) => {
             let obligations = wf.nominal_obligations(def_id, substs);
             wf.out.extend(obligations);
 
@@ -126,7 +126,7 @@ pub fn predicate_obligations<'a, 'tcx>(
                 wf.compute(arg);
             }
         }
-        &ty::PredicateKint::ConstEquate(c1, c2) => {
+        &ty::PredicateKind::ConstEquate(c1, c2) => {
             wf.compute(c1.into());
             wf.compute(c2.into());
         }
@@ -194,15 +194,16 @@ fn extend_cause_with_original_assoc_item_obligation<'tcx>(
             hir::ImplItemKind::Const(ty, _) | hir::ImplItemKind::TyAlias(ty) => ty.span,
             _ => impl_item_ref.span,
         };
-    match pred.kind() {
+
+    // It is fine to skip the binder as we don't care about regions here.
+    match pred.ignore_qualifiers().skip_binder().kind() {
         ty::PredicateKind::Projection(proj) => {
             // The obligation comes not from the current `impl` nor the `trait` being implemented,
             // but rather from a "second order" obligation, where an associated type has a
             // projection coming from another associated type. See
             // `src/test/ui/associated-types/point-at-type-on-obligation-failure.rs` and
             // `traits-assoc-type-in-supertrait-bad.rs`.
-            let kind = &proj.ty().skip_binder().kind;
-            if let ty::Projection(projection_ty) = kind {
+            if let ty::Projection(projection_ty) = proj.ty.kind {
                 let trait_assoc_item = tcx.associated_item(projection_ty.item_def_id);
                 if let Some(impl_item_span) =
                     items.iter().find(|item| item.ident == trait_assoc_item.ident).map(fix_span)
@@ -215,11 +216,9 @@ fn extend_cause_with_original_assoc_item_obligation<'tcx>(
             // An associated item obligation born out of the `trait` failed to be met. An example
             // can be seen in `ui/associated-types/point-at-type-on-obligation-failure-2.rs`.
             debug!("extended_cause_with_original_assoc_item_obligation trait proj {:?}", pred);
-            if let ty::Projection(ty::ProjectionTy { item_def_id, .. }) =
-                &pred.skip_binder().self_ty().kind
-            {
+            if let ty::Projection(ty::ProjectionTy { item_def_id, .. }) = pred.self_ty().kind {
                 if let Some(impl_item_span) = trait_assoc_items
-                    .find(|i| i.def_id == *item_def_id)
+                    .find(|i| i.def_id == item_def_id)
                     .and_then(|trait_assoc_item| {
                         items.iter().find(|i| i.ident == trait_assoc_item.ident).map(fix_span)
                     })
@@ -310,7 +309,7 @@ impl<'a, 'tcx> WfPredicates<'a, 'tcx> {
                     traits::Obligation::new(
                         cause.clone(),
                         param_env,
-                        ty::PredicateKint::WellFormed(arg).to_predicate(tcx),
+                        ty::PredicateKind::WellFormed(arg).to_predicate(tcx),
                     )
                 }),
         );
@@ -367,7 +366,7 @@ impl<'a, 'tcx> WfPredicates<'a, 'tcx> {
                             let obligations = self.nominal_obligations(def_id, substs);
                             self.out.extend(obligations);
 
-                            let predicate = ty::PredicateKint::ConstEvaluatable(def_id, substs)
+                            let predicate = ty::PredicateKind::ConstEvaluatable(def_id, substs)
                                 .to_predicate(self.tcx());
                             let cause = self.cause(traits::MiscObligation);
                             self.out.push(traits::Obligation::new(
@@ -389,7 +388,7 @@ impl<'a, 'tcx> WfPredicates<'a, 'tcx> {
                                 self.out.push(traits::Obligation::new(
                                     cause,
                                     self.param_env,
-                                    ty::PredicateKint::WellFormed(resolved_constant.into())
+                                    ty::PredicateKind::WellFormed(resolved_constant.into())
                                         .to_predicate(self.tcx()),
                                 ));
                             }
@@ -475,7 +474,7 @@ impl<'a, 'tcx> WfPredicates<'a, 'tcx> {
                         self.out.push(traits::Obligation::new(
                             cause,
                             param_env,
-                            ty::PredicateKint::TypeOutlives(ty::OutlivesPredicate(rty, r))
+                            ty::PredicateKind::TypeOutlives(ty::OutlivesPredicate(rty, r))
                                 .to_predicate(self.tcx()),
                         ));
                     }

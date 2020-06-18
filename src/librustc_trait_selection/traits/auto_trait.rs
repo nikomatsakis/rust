@@ -344,8 +344,7 @@ impl AutoTraitFinder<'tcx> {
                         already_visited.remove(&pred);
                         self.add_user_pred(
                             &mut user_computed_preds,
-                            ty::PredicateKind::Trait(pred, hir::Constness::NotConst)
-                                .to_predicate(self.tcx),
+                            pred.without_const().to_predicate(self.tcx),
                         );
                         predicates.push_back(pred);
                     } else {
@@ -418,11 +417,13 @@ impl AutoTraitFinder<'tcx> {
             if let (
                 ty::PredicateKind::Trait(new_trait, _),
                 ty::PredicateKind::Trait(old_trait, _),
-            ) = (new_pred.kind(), old_pred.kind())
-            {
+            ) = (
+                new_pred.ignore_qualifiers().skip_binder().kind(),
+                old_pred.ignore_qualifiers().skip_binder().kind(),
+            ) {
                 if new_trait.def_id() == old_trait.def_id() {
-                    let new_substs = new_trait.skip_binder().trait_ref.substs;
-                    let old_substs = old_trait.skip_binder().trait_ref.substs;
+                    let new_substs = new_trait.trait_ref.substs;
+                    let old_substs = old_trait.trait_ref.substs;
 
                     if !new_substs.types().eq(old_substs.types()) {
                         // We can't compare lifetimes if the types are different,
@@ -618,11 +619,12 @@ impl AutoTraitFinder<'tcx> {
     ) -> bool {
         let dummy_cause = ObligationCause::dummy();
 
-        for (obligation, mut predicate) in nested.map(|o| (o.clone(), o.predicate)) {
-            let is_new_pred = fresh_preds.insert(self.clean_pred(select.infcx(), predicate));
+        for obligation in nested {
+            let is_new_pred =
+                fresh_preds.insert(self.clean_pred(select.infcx(), obligation.predicate));
 
             // Resolve any inference variables that we can, to help selection succeed
-            predicate = select.infcx().resolve_vars_if_possible(&predicate);
+            let predicate = select.infcx().resolve_vars_if_possible(&obligation.predicate);
 
             // We only add a predicate as a user-displayable bound if
             // it involves a generic parameter, and doesn't contain
@@ -636,17 +638,20 @@ impl AutoTraitFinder<'tcx> {
             //
             // We check this by calling is_of_param on the relevant types
             // from the various possible predicates
-            match predicate.kind() {
+
+            // TODO: forall
+            match predicate.ignore_qualifiers().skip_binder().kind() {
                 &ty::PredicateKind::Trait(p, _) => {
-                    if self.is_param_no_infer(p.skip_binder().trait_ref.substs)
+                    if self.is_param_no_infer(p.trait_ref.substs)
                         && !only_projections
                         && is_new_pred
                     {
                         self.add_user_pred(computed_preds, predicate);
                     }
-                    predicates.push_back(p);
+                    predicates.push_back(ty::Binder::bind(p));
                 }
                 &ty::PredicateKind::Projection(p) => {
+                    let p = ty::Binder::bind(p);
                     debug!(
                         "evaluate_nested_obligations: examining projection predicate {:?}",
                         predicate
@@ -772,11 +777,13 @@ impl AutoTraitFinder<'tcx> {
                     }
                 }
                 &ty::PredicateKind::RegionOutlives(binder) => {
+                    let binder = ty::Binder::bind(binder);
                     if select.infcx().region_outlives_predicate(&dummy_cause, binder).is_err() {
                         return false;
                     }
                 }
                 &ty::PredicateKind::TypeOutlives(binder) => {
+                    let binder = ty::Binder::bind(binder);
                     match (
                         binder.no_bound_vars(),
                         binder.map_bound_ref(|pred| pred.0).no_bound_vars(),

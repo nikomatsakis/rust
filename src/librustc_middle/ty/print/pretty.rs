@@ -2061,6 +2061,9 @@ define_print_and_forward_display! {
                    print(c2),
                    write("`"))
             }
+            ty::PredicateKind::ForAll(binder) => {
+                p!(write("forall "), print(binder))
+            }
         }
     }
 

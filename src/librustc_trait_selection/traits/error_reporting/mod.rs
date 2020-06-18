@@ -254,9 +254,15 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                     .emit();
                     return;
                 }
-                match obligation.predicate.kind() {
-                    ty::PredicateKind::Trait(ref trait_predicate, _) => {
-                        let trait_predicate = self.resolve_vars_if_possible(trait_predicate);
+
+                // TODO: forall
+                match obligation.predicate.ignore_qualifiers().skip_binder().kind() {
+                    ty::PredicateKind::ForAll(_) => {
+                        bug!("unexpected predicate: {:?}", obligation.predicate)
+                    }
+                    &ty::PredicateKind::Trait(trait_predicate, _) => {
+                        let trait_predicate = ty::Binder::bind(trait_predicate);
+                        let trait_predicate = self.resolve_vars_if_possible(&trait_predicate);
 
                         if self.tcx.sess.has_errors() && trait_predicate.references_error() {
                             return;
@@ -477,14 +483,8 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                                 );
                                 trait_pred
                             });
-                            let unit_obligation = Obligation {
-                                predicate: ty::PredicateKind::Trait(
-                                    predicate,
-                                    hir::Constness::NotConst,
-                                )
-                                .to_predicate(self.tcx),
-                                ..obligation.clone()
-                            };
+                            let unit_obligation =
+                                obligation.with(predicate.without_const().to_predicate(tcx));
                             if self.predicate_may_hold(&unit_obligation) {
                                 err.note(
                                     "the trait is implemented for `()`. \
@@ -500,15 +500,16 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         err
                     }
 
-                    ty::PredicateKind::Subtype(ref predicate) => {
+                    ty::PredicateKind::Subtype(predicate) => {
                         // Errors for Subtype predicates show up as
                         // `FulfillmentErrorCode::CodeSubtypeError`,
                         // not selection error.
                         span_bug!(span, "subtype requirement gave wrong error: `{:?}`", predicate)
                     }
 
-                    ty::PredicateKind::RegionOutlives(ref predicate) => {
-                        let predicate = self.resolve_vars_if_possible(predicate);
+                    &ty::PredicateKind::RegionOutlives(predicate) => {
+                        let predicate = ty::Binder::bind(predicate);
+                        let predicate = self.resolve_vars_if_possible(&predicate);
                         let err = self
                             .region_outlives_predicate(&obligation.cause, predicate)
                             .err()
@@ -1063,8 +1064,14 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             return true;
         }
 
-        let (cond, error) = match (cond.kind(), error.kind()) {
-            (ty::PredicateKind::Trait(..), ty::PredicateKind::Trait(error, _)) => (cond, error),
+        // FIXME: It should be possible to deal with `ForAll` in a cleaner way.
+        let (cond, error) = match (
+            cond.ignore_qualifiers().skip_binder().kind(),
+            error.ignore_qualifiers().skip_binder().kind(),
+        ) {
+            (ty::PredicateKind::Trait(..), &ty::PredicateKind::Trait(error, _)) => {
+                (cond, ty::Binder::bind(error))
+            }
             _ => {
                 // FIXME: make this work in other cases too.
                 return false;
@@ -1072,9 +1079,11 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
         };
 
         for obligation in super::elaborate_predicates(self.tcx, std::iter::once(cond)) {
-            if let ty::PredicateKind::Trait(implication, _) = obligation.predicate.kind() {
+            if let &ty::PredicateKind::Trait(implication, _) =
+                obligation.predicate.ignore_qualifiers().skip_binder().kind()
+            {
                 let error = error.to_poly_trait_ref();
-                let implication = implication.to_poly_trait_ref();
+                let implication = ty::Binder::bind(implication).to_poly_trait_ref();
                 // FIXME: I'm just not taking associated types at all here.
                 // Eventually I'll need to implement param-env-aware
                 // `Γ₁ ⊦ φ₁ => Γ₂ ⊦ φ₂` logic.
@@ -1152,12 +1161,14 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             //
             // this can fail if the problem was higher-ranked, in which
             // cause I have no idea for a good error message.
-            if let ty::PredicateKind::Projection(ref data) = predicate.kind() {
+            if let &ty::PredicateKind::Projection(data) =
+                predicate.ignore_qualifiers().skip_binder().kind()
+            {
                 let mut selcx = SelectionContext::new(self);
                 let (data, _) = self.replace_bound_vars_with_fresh_vars(
                     obligation.cause.span,
                     infer::LateBoundRegionConversionTime::HigherRankedType,
-                    data,
+                    &ty::Binder::bind(data),
                 );
                 let mut obligations = vec![];
                 let normalized_ty = super::normalize_projection_type(
@@ -1444,9 +1455,10 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             return;
         }
 
-        let mut err = match predicate.kind() {
-            ty::PredicateKind::Trait(ref data, _) => {
-                let trait_ref = data.to_poly_trait_ref();
+        // TODO: forall
+        let mut err = match predicate.ignore_qualifiers().skip_binder().kind() {
+            &ty::PredicateKind::Trait(data, _) => {
+                let trait_ref = ty::Binder::bind(data.trait_ref);
                 let self_ty = trait_ref.skip_binder().self_ty();
                 debug!("self_ty {:?} {:?} trait_ref {:?}", self_ty, self_ty.kind, trait_ref);
 
@@ -1545,6 +1557,8 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             }
 
             ty::PredicateKind::WellFormed(arg) => {
+                // TODO: forall
+
                 // Same hacky approach as above to avoid deluging user
                 // with error messages.
                 if arg.references_error() || self.tcx.sess.has_errors() {
@@ -1569,15 +1583,16 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
                     // no need to overload user in such cases
                     return;
                 }
-                let &SubtypePredicate { a_is_expected: _, a, b } = data.skip_binder();
+                // TODO: forall
+                let &SubtypePredicate { a_is_expected: _, a, b } = data;
                 // both must be type variables, or the other would've been instantiated
                 assert!(a.is_ty_var() && b.is_ty_var());
                 self.need_type_info_err(body_id, span, a, ErrorCode::E0282)
             }
-            ty::PredicateKind::Projection(ref data) => {
-                let trait_ref = data.to_poly_trait_ref(self.tcx);
+            &ty::PredicateKind::Projection(data) => {
+                let trait_ref = ty::Binder::bind(data).to_poly_trait_ref(self.tcx);
                 let self_ty = trait_ref.skip_binder().self_ty();
-                let ty = data.skip_binder().ty;
+                let ty = data.ty;
                 if predicate.references_error() {
                     return;
                 }

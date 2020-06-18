@@ -10,34 +10,34 @@ pub fn anonymize_predicate<'tcx>(
     tcx: TyCtxt<'tcx>,
     pred: ty::Predicate<'tcx>,
 ) -> ty::Predicate<'tcx> {
-    let kind = pred.kint(tcx);
+    let kind = pred.kind();
     let new = match kind {
-        ty::PredicateKint::ForAll(binder) => {
-            ty::PredicateKint::ForAll(tcx.anonymize_late_bound_regions(binder))
+        ty::PredicateKind::ForAll(binder) => {
+            ty::PredicateKind::ForAll(tcx.anonymize_late_bound_regions(binder))
         }
-        &ty::PredicateKint::Trait(data, constness) => ty::PredicateKint::Trait(data, constness),
+        &ty::PredicateKind::Trait(data, constness) => ty::PredicateKind::Trait(data, constness),
 
-        &ty::PredicateKint::RegionOutlives(data) => ty::PredicateKint::RegionOutlives(data),
+        &ty::PredicateKind::RegionOutlives(data) => ty::PredicateKind::RegionOutlives(data),
 
-        &ty::PredicateKint::TypeOutlives(data) => ty::PredicateKint::TypeOutlives(data),
+        &ty::PredicateKind::TypeOutlives(data) => ty::PredicateKind::TypeOutlives(data),
 
-        &ty::PredicateKint::Projection(data) => ty::PredicateKint::Projection(data),
+        &ty::PredicateKind::Projection(data) => ty::PredicateKind::Projection(data),
 
-        &ty::PredicateKint::WellFormed(data) => ty::PredicateKint::WellFormed(data),
+        &ty::PredicateKind::WellFormed(data) => ty::PredicateKind::WellFormed(data),
 
-        &ty::PredicateKint::ObjectSafe(data) => ty::PredicateKint::ObjectSafe(data),
+        &ty::PredicateKind::ObjectSafe(data) => ty::PredicateKind::ObjectSafe(data),
 
-        &ty::PredicateKint::ClosureKind(closure_def_id, closure_substs, kind) => {
-            ty::PredicateKint::ClosureKind(closure_def_id, closure_substs, kind)
-        }
-
-        &ty::PredicateKint::Subtype(data) => ty::PredicateKint::Subtype(data),
-
-        &ty::PredicateKint::ConstEvaluatable(def_id, substs) => {
-            ty::PredicateKint::ConstEvaluatable(def_id, substs)
+        &ty::PredicateKind::ClosureKind(closure_def_id, closure_substs, kind) => {
+            ty::PredicateKind::ClosureKind(closure_def_id, closure_substs, kind)
         }
 
-        &ty::PredicateKint::ConstEquate(c1, c2) => ty::PredicateKint::ConstEquate(c1, c2),
+        &ty::PredicateKind::Subtype(data) => ty::PredicateKind::Subtype(data),
+
+        &ty::PredicateKind::ConstEvaluatable(def_id, substs) => {
+            ty::PredicateKind::ConstEvaluatable(def_id, substs)
+        }
+
+        &ty::PredicateKind::ConstEquate(c1, c2) => ty::PredicateKind::ConstEquate(c1, c2),
     };
 
     if new != *kind { new.to_predicate(tcx) } else { pred }
@@ -151,16 +151,16 @@ impl Elaborator<'tcx> {
 
     fn elaborate(&mut self, obligation: &PredicateObligation<'tcx>) {
         let tcx = self.visited.tcx;
-        let pred = match obligation.predicate.kint(tcx) {
-            // We have to be careful and rebind this whenever
+        let pred = match obligation.predicate.kind() {
+            // We have to be careful and rebind this when
             // dealing with a predicate further down.
-            ty::PredicateKint::ForAll(binder) => binder.skip_binder(),
+            ty::PredicateKind::ForAll(binder) => binder.skip_binder().kind(),
             pred => pred,
         };
 
         match pred {
-            ty::PredicateKint::ForAll(_) => bug!("unexpected predicate: {:?}", pred),
-            ty::PredicateKint::Trait(ref data, _) => {
+            ty::PredicateKind::ForAll(_) => bug!("unexpected predicate: {:?}", pred),
+            ty::PredicateKind::Trait(data, _) => {
                 // Get predicates declared on the trait.
                 let predicates = tcx.super_predicates_of(data.def_id());
 
@@ -181,36 +181,36 @@ impl Elaborator<'tcx> {
 
                 self.stack.extend(obligations);
             }
-            ty::PredicateKint::WellFormed(..) => {
+            ty::PredicateKind::WellFormed(..) => {
                 // Currently, we do not elaborate WF predicates,
                 // although we easily could.
             }
-            ty::PredicateKint::ObjectSafe(..) => {
+            ty::PredicateKind::ObjectSafe(..) => {
                 // Currently, we do not elaborate object-safe
                 // predicates.
             }
-            ty::PredicateKint::Subtype(..) => {
+            ty::PredicateKind::Subtype(..) => {
                 // Currently, we do not "elaborate" predicates like `X <: Y`,
                 // though conceivably we might.
             }
-            ty::PredicateKint::Projection(..) => {
+            ty::PredicateKind::Projection(..) => {
                 // Nothing to elaborate in a projection predicate.
             }
-            ty::PredicateKint::ClosureKind(..) => {
+            ty::PredicateKind::ClosureKind(..) => {
                 // Nothing to elaborate when waiting for a closure's kind to be inferred.
             }
-            ty::PredicateKint::ConstEvaluatable(..) => {
+            ty::PredicateKind::ConstEvaluatable(..) => {
                 // Currently, we do not elaborate const-evaluatable
                 // predicates.
             }
-            ty::PredicateKint::ConstEquate(..) => {
+            ty::PredicateKind::ConstEquate(..) => {
                 // Currently, we do not elaborate const-equate
                 // predicates.
             }
-            ty::PredicateKint::RegionOutlives(..) => {
+            ty::PredicateKind::RegionOutlives(..) => {
                 // Nothing to elaborate from `'a: 'b`.
             }
-            ty::PredicateKint::TypeOutlives(ty::OutlivesPredicate(ty_max, r_min)) => {
+            ty::PredicateKind::TypeOutlives(ty::OutlivesPredicate(ty_max, r_min)) => {
                 // We know that `T: 'a` for some type `T`. We can
                 // often elaborate this. For example, if we know that
                 // `[U]: 'a`, that implies that `U: 'a`. Similarly, if
@@ -240,7 +240,7 @@ impl Elaborator<'tcx> {
                                 if r.is_late_bound() {
                                     None
                                 } else {
-                                    Some(ty::PredicateKint::RegionOutlives(ty::OutlivesPredicate(
+                                    Some(ty::PredicateKind::RegionOutlives(ty::OutlivesPredicate(
                                         r, r_min,
                                     )))
                                 }
@@ -248,7 +248,7 @@ impl Elaborator<'tcx> {
 
                             Component::Param(p) => {
                                 let ty = tcx.mk_ty_param(p.index, p.name);
-                                Some(ty::PredicateKint::TypeOutlives(ty::OutlivesPredicate(
+                                Some(ty::PredicateKind::TypeOutlives(ty::OutlivesPredicate(
                                     ty, r_min,
                                 )))
                             }

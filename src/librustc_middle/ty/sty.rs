@@ -952,6 +952,15 @@ impl<T> Binder<T> {
     }
 }
 
+impl<T> Binder<Option<T>> {
+    pub fn transpose(self) -> Option<Binder<T>> {
+        match self.0 {
+            Some(v) => Some(Binder(v)),
+            None => None,
+        }
+    }
+}
+
 /// Represents the projection of an associated type. In explicit UFCS
 /// form this would be written `<T as Trait<..>>::N`.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, RustcEncodable, RustcDecodable)]

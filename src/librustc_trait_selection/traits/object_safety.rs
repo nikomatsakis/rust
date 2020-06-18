@@ -245,14 +245,11 @@ fn predicates_reference_self(
         .iter()
         .map(|(predicate, sp)| (predicate.subst_supertrait(tcx, &trait_ref), sp))
         .filter_map(|(predicate, &sp)| {
-            match predicate.kind() {
+            // FIXME: forall
+            match predicate.ignore_qualifiers().skip_binder().kind() {
                 ty::PredicateKind::Trait(ref data, _) => {
                     // In the case of a trait predicate, we can skip the "self" type.
-                    if data.skip_binder().trait_ref.substs[1..].iter().any(has_self_ty) {
-                        Some(sp)
-                    } else {
-                        None
-                    }
+                    if data.trait_ref.substs[1..].iter().any(has_self_ty) { Some(sp) } else { None }
                 }
                 ty::PredicateKind::Projection(ref data) => {
                     // And similarly for projections. This should be redundant with
@@ -267,10 +264,7 @@ fn predicates_reference_self(
                     //
                     // This is ALT2 in issue #56288, see that for discussion of the
                     // possible alternatives.
-                    if data.skip_binder().projection_ty.trait_ref(tcx).substs[1..]
-                        .iter()
-                        .any(has_self_ty)
-                    {
+                    if data.projection_ty.trait_ref(tcx).substs[1..].iter().any(has_self_ty) {
                         Some(sp)
                     } else {
                         None
@@ -284,6 +278,7 @@ fn predicates_reference_self(
                 | ty::PredicateKind::Subtype(..)
                 | ty::PredicateKind::ConstEvaluatable(..)
                 | ty::PredicateKind::ConstEquate(..) => None,
+                ty::PredicateKind::ForAll(..) => bug!("unexpected predicate: {:?}", predicate),
             }
         })
         .collect()
@@ -305,10 +300,10 @@ fn generics_require_sized_self(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
     let predicates = tcx.predicates_of(def_id);
     let predicates = predicates.instantiate_identity(tcx).predicates;
     elaborate_predicates(tcx, predicates.into_iter()).any(|obligation| {
-        match obligation.predicate.kind() {
+        // TODO: forall
+        match obligation.predicate.ignore_qualifiers().skip_binder().kind() {
             ty::PredicateKind::Trait(ref trait_pred, _) => {
-                trait_pred.def_id() == sized_def_id
-                    && trait_pred.skip_binder().self_ty().is_param(0)
+                trait_pred.def_id() == sized_def_id && trait_pred.self_ty().is_param(0)
             }
             ty::PredicateKind::Projection(..)
             | ty::PredicateKind::Subtype(..)
@@ -319,6 +314,9 @@ fn generics_require_sized_self(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
             | ty::PredicateKind::TypeOutlives(..)
             | ty::PredicateKind::ConstEvaluatable(..)
             | ty::PredicateKind::ConstEquate(..) => false,
+            ty::PredicateKind::ForAll(_) => {
+                bug!("unexpected predicate: {:?}", obligation.predicate)
+            }
         }
     })
 }
