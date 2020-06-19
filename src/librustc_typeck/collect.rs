@@ -993,7 +993,7 @@ fn super_predicates_of(tcx: TyCtxt<'_>, trait_def_id: DefId) -> ty::GenericPredi
     // which will, in turn, reach indirect supertraits.
     for &(pred, span) in superbounds {
         debug!("superbound: {:?}", pred);
-        if let ty::PredicateKind::Trait(bound, _) = pred.kind() {
+        if let ty::PredicateKind::Trait(bound, _) = pred.ignore_qualifiers().skip_binder().kind() {
             tcx.at(span).super_predicates_of(bound.def_id());
         }
     }

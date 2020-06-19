@@ -663,7 +663,7 @@ fn prune_cache_value_obligations<'a, 'tcx>(
     let mut obligations: Vec<_> = result
         .obligations
         .iter()
-        .filter(|obligation| match obligation.predicate.kind() {
+        .filter(|obligation| match obligation.predicate.ignore_qualifiers().skip_binder().kind() {
             // We found a `T: Foo<X = U>` predicate, let's check
             // if `U` references any unresolved type
             // variables. In principle, we only care if this
@@ -673,8 +673,8 @@ fn prune_cache_value_obligations<'a, 'tcx>(
             // indirect obligations (e.g., we project to `?0`,
             // but we have `T: Foo<X = ?1>` and `?1: Bar<X =
             // ?0>`).
-            ty::PredicateKind::Projection(ref data) => {
-                infcx.unresolved_type_vars(&data.ty).is_some()
+            &ty::PredicateKind::Projection(data) => {
+                infcx.unresolved_type_vars(&ty::Binder::bind(data.ty)).is_some()
             }
 
             // We are only interested in `T: Foo<X = U>` predicates, whre

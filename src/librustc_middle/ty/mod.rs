@@ -1054,7 +1054,12 @@ impl<'tcx> Predicate<'tcx> {
             | ty::PredicateKind::TypeOutlives(..)
             | ty::PredicateKind::ConstEvaluatable(..)
             | ty::PredicateKind::ConstEquate(..)
-            | ty::PredicateKind::RegionOutlives(..) => Binder::dummy(self),
+            | ty::PredicateKind::RegionOutlives(..) => {
+                // We can't use `Binder::dummy` here, as predicates can
+                // contain unbound variables in rare cases, for example when
+                // dealing with opaque types.
+                Binder::bind(self)
+            }
         }
     }
 
@@ -1065,9 +1070,7 @@ impl<'tcx> Predicate<'tcx> {
         qualifier: impl FnOnce(Binder<Predicate<'tcx>>) -> PredicateKind<'tcx>,
     ) -> Predicate<'tcx> {
         if self.has_escaping_bound_vars() {
-            let qualified = qualifier(Binder::bind(self)).to_predicate(tcx);
-            debug_assert!(!qualified.has_escaping_bound_vars(), "qualified: {:?}", qualified);
-            qualified
+            qualifier(Binder::bind(self)).to_predicate(tcx)
         } else {
             self
         }
