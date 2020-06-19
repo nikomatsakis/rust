@@ -30,7 +30,7 @@ impl<'tcx> ExplicitPredicatesMap<'tcx> {
             // process predicates and convert to `RequiredPredicates` entry, see below
             for &(predicate, span) in predicates.predicates {
                 // TODO: forall
-                match predicate.ignore_qualifiers().skip_binder().kind() {
+                match predicate.ignore_qualifiers(tcx).skip_binder().kind() {
                     ty::PredicateKind::ForAll(_) => bug!("unepected predicate: {:?}", predicate),
 
                     ty::PredicateKind::TypeOutlives(predicate) => {

@@ -864,6 +864,19 @@ impl<T> Binder<T> {
         Binder(value)
     }
 
+    /// Wraps `value` in a binder without actually binding any currently
+    /// unbound variables.
+    pub fn wrap_nonbinding(tcx: TyCtxt<'tcx>, value: T) -> Binder<T>
+    where
+        T: TypeFoldable<'tcx>,
+    {
+        if value.has_escaping_bound_vars() {
+            Binder::bind(super::fold::shift_vars(tcx, &value, 1))
+        } else {
+            Binder::dummy(value)
+        }
+    }
+
     /// Skips the binder and returns the "bound" value. This is a
     /// risky thing to do because it's easy to get confused about
     /// De Bruijn indices and the like. It is usually better to

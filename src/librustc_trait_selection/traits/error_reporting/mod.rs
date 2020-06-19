@@ -256,7 +256,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                 }
 
                 // TODO: forall
-                match obligation.predicate.ignore_qualifiers().skip_binder().kind() {
+                match obligation.predicate.ignore_qualifiers(tcx).skip_binder().kind() {
                     ty::PredicateKind::ForAll(_) => {
                         bug!("unexpected predicate: {:?}", obligation.predicate)
                     }
@@ -1066,8 +1066,8 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
 
         // FIXME: It should be possible to deal with `ForAll` in a cleaner way.
         let (cond, error) = match (
-            cond.ignore_qualifiers().skip_binder().kind(),
-            error.ignore_qualifiers().skip_binder().kind(),
+            cond.ignore_qualifiers(self.tcx).skip_binder().kind(),
+            error.ignore_qualifiers(self.tcx).skip_binder().kind(),
         ) {
             (ty::PredicateKind::Trait(..), &ty::PredicateKind::Trait(error, _)) => {
                 (cond, ty::Binder::bind(error))
@@ -1080,7 +1080,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
 
         for obligation in super::elaborate_predicates(self.tcx, std::iter::once(cond)) {
             if let &ty::PredicateKind::Trait(implication, _) =
-                obligation.predicate.ignore_qualifiers().skip_binder().kind()
+                obligation.predicate.ignore_qualifiers(self.tcx).skip_binder().kind()
             {
                 let error = error.to_poly_trait_ref();
                 let implication = ty::Binder::bind(implication).to_poly_trait_ref();
@@ -1162,7 +1162,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             // this can fail if the problem was higher-ranked, in which
             // cause I have no idea for a good error message.
             if let &ty::PredicateKind::Projection(data) =
-                predicate.ignore_qualifiers().skip_binder().kind()
+                predicate.ignore_qualifiers(self.tcx).skip_binder().kind()
             {
                 let mut selcx = SelectionContext::new(self);
                 let (data, _) = self.replace_bound_vars_with_fresh_vars(
@@ -1456,7 +1456,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
         }
 
         // TODO: forall
-        let mut err = match predicate.ignore_qualifiers().skip_binder().kind() {
+        let mut err = match predicate.ignore_qualifiers(self.tcx).skip_binder().kind() {
             &ty::PredicateKind::Trait(data, _) => {
                 let trait_ref = ty::Binder::bind(data.trait_ref);
                 let self_ty = trait_ref.skip_binder().self_ty();
@@ -1713,16 +1713,16 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
         obligation: &PredicateObligation<'tcx>,
     ) {
         let (pred, item_def_id, span) =
-            match (obligation.predicate.kind(), &obligation.cause.code.peel_derives()) {
+            match (obligation.predicate.ignore_qualifiers(self.tcx).skip_binder().kind(), obligation.cause.code.peel_derives()) {
                 (
                     ty::PredicateKind::Trait(pred, _),
-                    ObligationCauseCode::BindingObligation(item_def_id, span),
+                    &ObligationCauseCode::BindingObligation(item_def_id, span),
                 ) => (pred, item_def_id, span),
                 _ => return,
             };
 
         let node = match (
-            self.tcx.hir().get_if_local(*item_def_id),
+            self.tcx.hir().get_if_local(item_def_id),
             Some(pred.def_id()) == self.tcx.lang_items().sized_trait(),
         ) {
             (Some(node), true) => node,
@@ -1733,7 +1733,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             None => return,
         };
         for param in generics.params {
-            if param.span != *span
+            if param.span != span
                 || param.bounds.iter().any(|bound| {
                     bound.trait_ref().and_then(|trait_ref| trait_ref.trait_def_id())
                         == self.tcx.lang_items().sized_trait()

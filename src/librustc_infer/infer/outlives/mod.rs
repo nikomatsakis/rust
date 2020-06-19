@@ -5,16 +5,17 @@ pub mod obligations;
 pub mod verify;
 
 use rustc_middle::traits::query::OutlivesBound;
-use rustc_middle::ty;
+use rustc_middle::ty::{self, TyCtxt};
 
 pub fn explicit_outlives_bounds<'tcx>(
+    tcx: TyCtxt<'tcx>,
     param_env: ty::ParamEnv<'tcx>,
 ) -> impl Iterator<Item = OutlivesBound<'tcx>> + 'tcx {
     debug!("explicit_outlives_bounds()");
     param_env
         .caller_bounds
         .into_iter()
-        .filter_map(|pred| pred.ignore_qualifiers().no_bound_vars())
+        .filter_map(move |pred| pred.ignore_qualifiers(tcx).no_bound_vars())
         .filter_map(|pred| match pred.kind() {
             ty::PredicateKind::Projection(..)
             | ty::PredicateKind::Trait(..)

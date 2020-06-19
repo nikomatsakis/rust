@@ -407,10 +407,10 @@ impl AutoTraitFinder<'tcx> {
     /// under which a type implements an auto trait. A trait predicate involving
     /// a HRTB means that the type needs to work with any choice of lifetime,
     /// not just one specific lifetime (e.g., `'static`).
-    fn add_user_pred<'c>(
+    fn add_user_pred(
         &self,
-        user_computed_preds: &mut FxHashSet<ty::Predicate<'c>>,
-        new_pred: ty::Predicate<'c>,
+        user_computed_preds: &mut FxHashSet<ty::Predicate<'tcx>>,
+        new_pred: ty::Predicate<'tcx>,
     ) {
         let mut should_add_new = true;
         user_computed_preds.retain(|&old_pred| {
@@ -418,8 +418,8 @@ impl AutoTraitFinder<'tcx> {
                 ty::PredicateKind::Trait(new_trait, _),
                 ty::PredicateKind::Trait(old_trait, _),
             ) = (
-                new_pred.ignore_qualifiers().skip_binder().kind(),
-                old_pred.ignore_qualifiers().skip_binder().kind(),
+                new_pred.ignore_qualifiers(self.tcx).skip_binder().kind(),
+                old_pred.ignore_qualifiers(self.tcx).skip_binder().kind(),
             ) {
                 if new_trait.def_id() == old_trait.def_id() {
                     let new_substs = new_trait.trait_ref.substs;
@@ -640,7 +640,7 @@ impl AutoTraitFinder<'tcx> {
             // from the various possible predicates
 
             // TODO: forall
-            match predicate.ignore_qualifiers().skip_binder().kind() {
+            match predicate.ignore_qualifiers(self.tcx).skip_binder().kind() {
                 &ty::PredicateKind::Trait(p, _) => {
                     if self.is_param_no_infer(p.trait_ref.substs)
                         && !only_projections

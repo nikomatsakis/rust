@@ -663,23 +663,25 @@ fn prune_cache_value_obligations<'a, 'tcx>(
     let mut obligations: Vec<_> = result
         .obligations
         .iter()
-        .filter(|obligation| match obligation.predicate.ignore_qualifiers().skip_binder().kind() {
-            // We found a `T: Foo<X = U>` predicate, let's check
-            // if `U` references any unresolved type
-            // variables. In principle, we only care if this
-            // projection can help resolve any of the type
-            // variables found in `result.value` -- but we just
-            // check for any type variables here, for fear of
-            // indirect obligations (e.g., we project to `?0`,
-            // but we have `T: Foo<X = ?1>` and `?1: Bar<X =
-            // ?0>`).
-            &ty::PredicateKind::Projection(data) => {
-                infcx.unresolved_type_vars(&ty::Binder::bind(data.ty)).is_some()
-            }
+        .filter(|obligation| {
+            match obligation.predicate.ignore_qualifiers(infcx.tcx).skip_binder().kind() {
+                // We found a `T: Foo<X = U>` predicate, let's check
+                // if `U` references any unresolved type
+                // variables. In principle, we only care if this
+                // projection can help resolve any of the type
+                // variables found in `result.value` -- but we just
+                // check for any type variables here, for fear of
+                // indirect obligations (e.g., we project to `?0`,
+                // but we have `T: Foo<X = ?1>` and `?1: Bar<X =
+                // ?0>`).
+                &ty::PredicateKind::Projection(data) => {
+                    infcx.unresolved_type_vars(&ty::Binder::bind(data.ty)).is_some()
+                }
 
-            // We are only interested in `T: Foo<X = U>` predicates, whre
-            // `U` references one of `unresolved_type_vars`. =)
-            _ => false,
+                // We are only interested in `T: Foo<X = U>` predicates, whre
+                // `U` references one of `unresolved_type_vars`. =)
+                _ => false,
+            }
         })
         .cloned()
         .collect();
@@ -932,7 +934,7 @@ fn assemble_candidates_from_predicates<'cx, 'tcx>(
         debug!("assemble_candidates_from_predicates: predicate={:?}", predicate);
         // TODO: forall
         if let &ty::PredicateKind::Projection(data) =
-            predicate.ignore_qualifiers().skip_binder().kind()
+            predicate.ignore_qualifiers(infcx.tcx).skip_binder().kind()
         {
             let data = ty::Binder::bind(data);
             let same_def_id = data.projection_def_id() == obligation.predicate.item_def_id;
@@ -1227,7 +1229,7 @@ fn confirm_object_candidate<'cx, 'tcx>(
 
         // TODO: forall
         let env_predicates = env_predicates.filter_map(|o| {
-            match o.predicate.ignore_qualifiers().skip_binder().kind() {
+            match o.predicate.ignore_qualifiers(selcx.tcx()).skip_binder().kind() {
                 &ty::PredicateKind::Projection(data)
                     if data.projection_ty.item_def_id == obligation.predicate.item_def_id =>
                 {

@@ -1707,7 +1707,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                 );
 
                 // TODO: forall
-                match obligation.predicate.ignore_qualifiers().skip_binder().kind() {
+                match obligation.predicate.ignore_qualifiers(tcx).skip_binder().kind() {
                     &ty::PredicateKind::Trait(pred, _) => {
                         let pred = ty::Binder::bind(pred);
                         associated_types.entry(span).or_default().extend(
@@ -2098,7 +2098,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
             || {
                 traits::transitive_bounds(
                     tcx,
-                    predicates.iter().filter_map(|(p, _)| p.to_opt_poly_trait_ref()),
+                    predicates.iter().filter_map(move |(p, _)| p.to_opt_poly_trait_ref(tcx)),
                 )
             },
             || param_name.to_string(),

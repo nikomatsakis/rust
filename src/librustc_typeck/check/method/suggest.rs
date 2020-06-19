@@ -570,12 +570,15 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     };
                     let mut type_params = FxHashMap::default();
                     let mut bound_spans = vec![];
-                    let mut collect_type_param_suggestions =
-                        |self_ty: Ty<'_>, parent_pred: &ty::Predicate<'_>, obligation: &str| {
+
+                    let mut collect_type_param_suggestions = {
+                        // We need to move `tcx` while only borrowing the rest,
+                        // this is kind of ugly.
+                        |self_ty: Ty<'tcx>, parent_pred: &ty::Predicate<'tcx>, obligation: &str| {
                             // We don't care about regions here, so it's fine to skip the binder here.
                             if let (ty::Param(_), ty::PredicateKind::Trait(p, _)) = (
                                 &self_ty.kind,
-                                parent_pred.ignore_qualifiers().skip_binder().kind(),
+                                parent_pred.ignore_qualifiers(tcx).skip_binder().kind(),
                             ) {
                                 if let ty::Adt(def, _) = p.trait_ref.self_ty().kind {
                                     let node = def.did.as_local().map(|def_id| {
@@ -599,7 +602,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                     }
                                 }
                             }
-                        };
+                        }
+                    };
                     let mut bound_span_label = |self_ty: Ty<'_>, obligation: &str, quiet: &str| {
                         let msg = format!(
                             "doesn't satisfy `{}`",
@@ -628,7 +632,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     };
                     let mut format_pred = |pred: ty::Predicate<'tcx>| {
                         // TODO: forall
-                        match pred.ignore_qualifiers().skip_binder().kind() {
+                        match pred.ignore_qualifiers(tcx).skip_binder().kind() {
                             &ty::PredicateKind::Projection(pred) => {
                                 let pred = ty::Binder::bind(pred);
                                 // `<Foo as Iterator>::Item = String`.
@@ -950,7 +954,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // implementing a trait would be legal but is rejected
                 // here).
                 unsatisfied_predicates.iter().all(|(p, _)| {
-                    match p.ignore_qualifiers().skip_binder().kind() {
+                    match p.ignore_qualifiers(self.tcx).skip_binder().kind() {
                         // Hide traits if they are present in predicates as they can be fixed without
                         // having to implement them.
                         ty::PredicateKind::Trait(t, _) => t.def_id() == info.def_id,

@@ -145,8 +145,8 @@ fn predicate_obligation<'tcx>(
 }
 
 impl Elaborator<'tcx> {
-    pub fn filter_to_traits(self) -> FilterToTraits<Self> {
-        FilterToTraits::new(self)
+    pub fn filter_to_traits(self) -> FilterToTraits<'tcx, Self> {
+        FilterToTraits::new(self.visited.tcx, self)
     }
 
     fn elaborate(&mut self, obligation: &PredicateObligation<'tcx>) {
@@ -293,7 +293,7 @@ impl Iterator for Elaborator<'tcx> {
 // Supertrait iterator
 ///////////////////////////////////////////////////////////////////////////
 
-pub type Supertraits<'tcx> = FilterToTraits<Elaborator<'tcx>>;
+pub type Supertraits<'tcx> = FilterToTraits<'tcx, Elaborator<'tcx>>;
 
 pub fn supertraits<'tcx>(
     tcx: TyCtxt<'tcx>,
@@ -315,22 +315,23 @@ pub fn transitive_bounds<'tcx>(
 
 /// A filter around an iterator of predicates that makes it yield up
 /// just trait references.
-pub struct FilterToTraits<I> {
+pub struct FilterToTraits<'tcx, I> {
+    tcx: TyCtxt<'tcx>,
     base_iterator: I,
 }
 
-impl<I> FilterToTraits<I> {
-    fn new(base: I) -> FilterToTraits<I> {
-        FilterToTraits { base_iterator: base }
+impl<'tcx, I> FilterToTraits<'tcx, I> {
+    fn new(tcx: TyCtxt<'tcx>, base: I) -> FilterToTraits<'tcx, I> {
+        FilterToTraits { tcx, base_iterator: base }
     }
 }
 
-impl<'tcx, I: Iterator<Item = PredicateObligation<'tcx>>> Iterator for FilterToTraits<I> {
+impl<'tcx, I: Iterator<Item = PredicateObligation<'tcx>>> Iterator for FilterToTraits<'tcx, I> {
     type Item = ty::PolyTraitRef<'tcx>;
 
     fn next(&mut self) -> Option<ty::PolyTraitRef<'tcx>> {
         while let Some(obligation) = self.base_iterator.next() {
-            if let Some(data) = obligation.predicate.to_opt_poly_trait_ref() {
+            if let Some(data) = obligation.predicate.to_opt_poly_trait_ref(self.tcx) {
                 return Some(data);
             }
         }
