@@ -1066,7 +1066,7 @@ impl<'tcx> Predicate<'tcx> {
     ) -> Predicate<'tcx> {
         if self.has_escaping_bound_vars() {
             let qualified = qualifier(Binder::bind(self)).to_predicate(tcx);
-            debug_assert!(!qualified.has_escaping_bound_vars());
+            debug_assert!(!qualified.has_escaping_bound_vars(), "qualified: {:?}", qualified);
             qualified
         } else {
             self
