@@ -245,7 +245,7 @@ fn predicates_reference_self(
         .iter()
         .map(|(predicate, sp)| (predicate.subst_supertrait(tcx, &trait_ref), sp))
         .filter_map(|(predicate, &sp)| {
-            // FIXME: forall
+            // TODO: forall
             match predicate.ignore_qualifiers().skip_binder().kind() {
                 ty::PredicateKind::Trait(ref data, _) => {
                     // In the case of a trait predicate, we can skip the "self" type.
