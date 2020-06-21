@@ -1246,32 +1246,29 @@ fn compare_projection_bounds<'tcx>(
         debug!("compare_projection_bounds: projection_predicates={:?}", predicates);
 
         for predicate in predicates {
-            let concrete_ty_predicate = match predicate.kind() {
-                ty::PredicateKind::Trait(poly_tr, c) => poly_tr
-                    .map_bound(|tr| {
-                        let trait_substs = translate_predicate_substs(tr.trait_ref.substs);
-                        ty::TraitRef { def_id: tr.def_id(), substs: trait_substs }
+            let concrete_ty_predicate = match predicate.ignore_qualifiers().skip_binder().kind() {
+                &ty::PredicateKind::Trait(tr, c) => {
+                    let trait_substs = translate_predicate_substs(tr.trait_ref.substs);
+                    ty::Binder::bind(ty::TraitRef { def_id: tr.def_id(), substs: trait_substs })
+                        .with_constness(c)
+                        .to_predicate(tcx)
+                }
+                ty::PredicateKind::Projection(projection) => {
+                    let projection_substs =
+                        translate_predicate_substs(projection.projection_ty.substs);
+                    ty::Binder::bind(ty::ProjectionPredicate {
+                        projection_ty: ty::ProjectionTy {
+                            substs: projection_substs,
+                            item_def_id: projection.projection_ty.item_def_id,
+                        },
+                        ty: projection.ty.subst(tcx, rebased_substs),
                     })
-                    .with_constness(*c)
-                    .to_predicate(tcx),
-                ty::PredicateKind::Projection(poly_projection) => poly_projection
-                    .map_bound(|projection| {
-                        let projection_substs =
-                            translate_predicate_substs(projection.projection_ty.substs);
-                        ty::ProjectionPredicate {
-                            projection_ty: ty::ProjectionTy {
-                                substs: projection_substs,
-                                item_def_id: projection.projection_ty.item_def_id,
-                            },
-                            ty: projection.ty.subst(tcx, rebased_substs),
-                        }
-                    })
-                    .to_predicate(tcx),
-                ty::PredicateKind::TypeOutlives(poly_outlives) => poly_outlives
-                    .map_bound(|outlives| {
-                        ty::OutlivesPredicate(impl_ty_value, outlives.1.subst(tcx, rebased_substs))
-                    })
-                    .to_predicate(tcx),
+                    .to_predicate(tcx)
+                }
+                ty::PredicateKind::TypeOutlives(outlives) => ty::Binder::bind(
+                    ty::OutlivesPredicate(impl_ty_value, outlives.1.subst(tcx, rebased_substs)),
+                )
+                .to_predicate(tcx),
                 _ => bug!("unexepected projection predicate kind: `{:?}`", predicate),
             };
 

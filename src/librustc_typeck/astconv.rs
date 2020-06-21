@@ -1706,12 +1706,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                     obligation.predicate
                 );
 
-                match obligation
-                    .predicate
-                    .ignore_qualifiers_with_unbound_vars(tcx)
-                    .skip_binder()
-                    .kind()
-                {
+                match obligation.predicate.ignore_qualifiers().skip_binder().kind() {
                     &ty::PredicateKind::Trait(pred, _) => {
                         let pred = ty::Binder::bind(pred);
                         associated_types.entry(span).or_default().extend(

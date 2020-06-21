@@ -147,10 +147,8 @@ impl<'a, 'tcx> LateLintPass<'a, 'tcx> for UnusedResults {
                     let mut has_emitted = false;
                     for (predicate, _) in cx.tcx.predicates_of(def).predicates {
                         // We only look at the `DefId`, so it is safe to skip the binder here.
-                        if let ty::PredicateKind::Trait(ref poly_trait_predicate, _) = predicate
-                            .ignore_qualifiers_with_unbound_vars(cx.tcx)
-                            .skip_binder()
-                            .kind()
+                        if let ty::PredicateKind::Trait(ref poly_trait_predicate, _) =
+                            predicate.ignore_qualifiers().skip_binder().kind()
                         {
                             let def_id = poly_trait_predicate.trait_ref.def_id;
                             let descr_pre =

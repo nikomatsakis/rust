@@ -575,6 +575,8 @@ pub trait PrettyPrinter<'tcx>:
                     for predicate in bounds.predicates {
                         // Note: We can't use `to_opt_poly_trait_ref` here as `predicate`
                         // may contain unbound variables. We therefore do this manually.
+                        //
+                        // FIXME(lcnr): Find out why exactly this is the case :)
                         if let ty::PredicateKind::Trait(pred, _) = predicate
                             .ignore_qualifiers_with_unbound_vars(self.tcx())
                             .skip_binder()

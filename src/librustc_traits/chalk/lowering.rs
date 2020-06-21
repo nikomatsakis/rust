@@ -104,9 +104,10 @@ impl<'tcx> LowerInto<'tcx, chalk_ir::InEnvironment<chalk_ir::Goal<RustInterner<'
                             .intern(interner),
                         )
                     }
-                    ty::PredicateKind::RegionOutlives(predicate) => {
+                    &ty::PredicateKind::RegionOutlives(predicate) => {
+                        let predicate = ty::Binder::bind(predicate);
                         let (predicate, binders, _named_regions) =
-                            collect_bound_vars(interner, interner.tcx, predicate);
+                            collect_bound_vars(interner, interner.tcx, &predicate);
 
                         Some(
                             chalk_ir::ProgramClauseData::ForAll(chalk_ir::Binders::new(
@@ -190,9 +191,10 @@ impl<'tcx> LowerInto<'tcx, chalk_ir::GoalData<RustInterner<'tcx>>> for ty::Predi
             &ty::PredicateKind::Trait(predicate, _) => {
                 ty::Binder::bind(predicate).lower_into(interner)
             }
-            ty::PredicateKind::RegionOutlives(predicate) => {
+            &ty::PredicateKind::RegionOutlives(predicate) => {
+                let predicate = ty::Binder::bind(predicate);
                 let (predicate, binders, _named_regions) =
-                    collect_bound_vars(interner, interner.tcx, predicate);
+                    collect_bound_vars(interner, interner.tcx, &predicate);
 
                 chalk_ir::GoalData::Quantified(
                     chalk_ir::QuantifierKind::ForAll,
@@ -554,18 +556,19 @@ impl<'tcx> LowerInto<'tcx, Option<chalk_ir::QuantifiedWhereClause<RustInterner<'
         match self.ignore_qualifiers_with_unbound_vars(interner.tcx).skip_binder().kind() {
             ty::PredicateKind::ForAll(_) => bug!("unexpected predicate: {:?}", self),
             &ty::PredicateKind::Trait(predicate, _) => {
-                let predicate = &ty::Binder::bind(predicate);
+                let predicate = ty::Binder::bind(predicate);
                 let (predicate, binders, _named_regions) =
-                    collect_bound_vars(interner, interner.tcx, predicate);
+                    collect_bound_vars(interner, interner.tcx, &predicate);
 
                 Some(chalk_ir::Binders::new(
                     binders,
                     chalk_ir::WhereClause::Implemented(predicate.trait_ref.lower_into(interner)),
                 ))
             }
-            ty::PredicateKind::RegionOutlives(predicate) => {
+            &ty::PredicateKind::RegionOutlives(predicate) => {
+                let predicate = ty::Binder::bind(predicate);
                 let (predicate, binders, _named_regions) =
-                    collect_bound_vars(interner, interner.tcx, predicate);
+                    collect_bound_vars(interner, interner.tcx, &predicate);
 
                 Some(chalk_ir::Binders::new(
                     binders,
