@@ -88,7 +88,11 @@ where
         let ty::GenericPredicates { parent: _, predicates } = predicates;
         for (predicate, _span) in predicates {
             // This visitor does not care about bound regions.
-            match predicate.ignore_qualifiers(self.def_id_visitor.tcx()).skip_binder().kind() {
+            match predicate
+                .ignore_qualifiers_with_unbound_vars(self.def_id_visitor.tcx())
+                .skip_binder()
+                .kind()
+            {
                 &ty::PredicateKind::Trait(ty::TraitPredicate { trait_ref }, _) => {
                     if self.visit_trait(trait_ref) {
                         return true;

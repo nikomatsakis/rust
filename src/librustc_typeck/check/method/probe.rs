@@ -800,7 +800,7 @@ impl<'a, 'tcx> ProbeContext<'a, 'tcx> {
         debug!("assemble_inherent_candidates_from_param(param_ty={:?})", param_ty);
 
         let bounds = self.param_env.caller_bounds.iter().filter_map(|predicate| {
-            match predicate.ignore_qualifiers(tcx).skip_binder().kind() {
+            match predicate.ignore_qualifiers_with_unbound_vars(tcx).skip_binder().kind() {
                 ty::PredicateKind::ForAll(_) => bug!("unexpected predicate: {:?}", predicate),
                 &ty::PredicateKind::Trait(trait_predicate, _) => {
                     match trait_predicate.trait_ref.self_ty().kind {

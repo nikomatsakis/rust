@@ -15,7 +15,7 @@ pub fn explicit_outlives_bounds<'tcx>(
     param_env
         .caller_bounds
         .into_iter()
-        .filter_map(move |pred| pred.ignore_qualifiers(tcx).no_bound_vars())
+        .filter_map(move |pred| pred.ignore_qualifiers_with_unbound_vars(tcx).no_bound_vars())
         .filter_map(|pred| match pred.kind() {
             ty::PredicateKind::Projection(..)
             | ty::PredicateKind::Trait(..)

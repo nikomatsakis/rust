@@ -1214,7 +1214,7 @@ impl<'a, 'tcx> LateLintPass<'a, 'tcx> for TrivialConstraints {
             for &(predicate, span) in predicates.predicates {
                 // We don't actually look inside of the predicate,
                 // so it is safe to skip this binder here.
-                let predicate_kind_name = match predicate.ignore_qualifiers(cx.tcx).skip_binder().kind() {
+                let predicate_kind_name = match predicate.ignore_qualifiers_with_unbound_vars(cx.tcx).skip_binder().kind() {
                     Trait(..) => "Trait",
                     TypeOutlives(..) |
                     RegionOutlives(..) => "Lifetime",
@@ -1505,12 +1505,14 @@ impl ExplicitOutlivesRequirements {
     ) -> Vec<ty::Region<'tcx>> {
         inferred_outlives
             .iter()
-            .filter_map(|(pred, _)| match pred.ignore_qualifiers(tcx).skip_binder().kind() {
-                &ty::PredicateKind::RegionOutlives(ty::OutlivesPredicate(a, b)) => match a {
-                    ty::ReEarlyBound(ebr) if ebr.index == index => Some(b),
+            .filter_map(|(pred, _)| {
+                match pred.ignore_qualifiers_with_unbound_vars(tcx).skip_binder().kind() {
+                    &ty::PredicateKind::RegionOutlives(ty::OutlivesPredicate(a, b)) => match a {
+                        ty::ReEarlyBound(ebr) if ebr.index == index => Some(b),
+                        _ => None,
+                    },
                     _ => None,
-                },
-                _ => None,
+                }
             })
             .collect()
     }
@@ -1522,11 +1524,13 @@ impl ExplicitOutlivesRequirements {
     ) -> Vec<ty::Region<'tcx>> {
         inferred_outlives
             .iter()
-            .filter_map(|(pred, _)| match pred.ignore_qualifiers(tcx).skip_binder().kind() {
-                &ty::PredicateKind::TypeOutlives(ty::OutlivesPredicate(a, b)) => {
-                    a.is_param(index).then_some(b)
+            .filter_map(|(pred, _)| {
+                match pred.ignore_qualifiers_with_unbound_vars(tcx).skip_binder().kind() {
+                    &ty::PredicateKind::TypeOutlives(ty::OutlivesPredicate(a, b)) => {
+                        a.is_param(index).then_some(b)
+                    }
+                    _ => None,
                 }
-                _ => None,
             })
             .collect()
     }

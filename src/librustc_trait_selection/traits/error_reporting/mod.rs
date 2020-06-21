@@ -255,7 +255,12 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                     return;
                 }
 
-                match obligation.predicate.ignore_qualifiers(tcx).skip_binder().kind() {
+                match obligation
+                    .predicate
+                    .ignore_qualifiers_with_unbound_vars(tcx)
+                    .skip_binder()
+                    .kind()
+                {
                     ty::PredicateKind::ForAll(_) => {
                         bug!("unexpected predicate: {:?}", obligation.predicate)
                     }
@@ -1065,8 +1070,8 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
 
         // FIXME: It should be possible to deal with `ForAll` in a cleaner way.
         let (cond, error) = match (
-            cond.ignore_qualifiers(self.tcx).skip_binder().kind(),
-            error.ignore_qualifiers(self.tcx).skip_binder().kind(),
+            cond.ignore_qualifiers_with_unbound_vars(self.tcx).skip_binder().kind(),
+            error.ignore_qualifiers_with_unbound_vars(self.tcx).skip_binder().kind(),
         ) {
             (ty::PredicateKind::Trait(..), &ty::PredicateKind::Trait(error, _)) => {
                 (cond, ty::Binder::bind(error))
@@ -1078,8 +1083,11 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
         };
 
         for obligation in super::elaborate_predicates(self.tcx, std::iter::once(cond)) {
-            if let &ty::PredicateKind::Trait(implication, _) =
-                obligation.predicate.ignore_qualifiers(self.tcx).skip_binder().kind()
+            if let &ty::PredicateKind::Trait(implication, _) = obligation
+                .predicate
+                .ignore_qualifiers_with_unbound_vars(self.tcx)
+                .skip_binder()
+                .kind()
             {
                 let error = error.to_poly_trait_ref();
                 let implication = ty::Binder::bind(implication).to_poly_trait_ref();
@@ -1161,7 +1169,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             // this can fail if the problem was higher-ranked, in which
             // cause I have no idea for a good error message.
             if let &ty::PredicateKind::Projection(data) =
-                predicate.ignore_qualifiers(self.tcx).skip_binder().kind()
+                predicate.ignore_qualifiers_with_unbound_vars(self.tcx).skip_binder().kind()
             {
                 let mut selcx = SelectionContext::new(self);
                 let (data, _) = self.replace_bound_vars_with_fresh_vars(
@@ -1454,7 +1462,11 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             return;
         }
 
-        let mut err = match predicate.ignore_qualifiers(self.tcx).skip_binder().kind() {
+        let mut err = match predicate
+            .ignore_qualifiers_with_unbound_vars(self.tcx)
+            .skip_binder()
+            .kind()
+        {
             &ty::PredicateKind::Trait(data, _) => {
                 let trait_ref = ty::Binder::bind(data.trait_ref);
                 let self_ty = trait_ref.skip_binder().self_ty();
@@ -1708,7 +1720,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
         obligation: &PredicateObligation<'tcx>,
     ) {
         let (pred, item_def_id, span) = match (
-            obligation.predicate.ignore_qualifiers(self.tcx).skip_binder().kind(),
+            obligation.predicate.ignore_qualifiers_with_unbound_vars(self.tcx).skip_binder().kind(),
             obligation.cause.code.peel_derives(),
         ) {
             (

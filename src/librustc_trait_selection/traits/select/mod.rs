@@ -408,7 +408,12 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             None => self.check_recursion_limit(&obligation, &obligation)?,
         }
 
-        match obligation.predicate.ignore_qualifiers(self.tcx()).skip_binder().kind() {
+        match obligation
+            .predicate
+            .ignore_qualifiers_with_unbound_vars(self.tcx())
+            .skip_binder()
+            .kind()
+        {
             ty::PredicateKind::ForAll(_) => {
                 bug!("unexpected predicate: {:?}", obligation.predicate)
             }
@@ -792,10 +797,11 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     }
 
     fn coinductive_predicate(&self, predicate: ty::Predicate<'tcx>) -> bool {
-        let result = match predicate.ignore_qualifiers(self.tcx()).skip_binder().kind() {
-            ty::PredicateKind::Trait(ref data, _) => self.tcx().trait_is_auto(data.def_id()),
-            _ => false,
-        };
+        let result =
+            match predicate.ignore_qualifiers_with_unbound_vars(self.tcx()).skip_binder().kind() {
+                ty::PredicateKind::Trait(ref data, _) => self.tcx().trait_is_auto(data.def_id()),
+                _ => false,
+            };
         debug!("coinductive_predicate({:?}) = {:?}", predicate, result);
         result
     }

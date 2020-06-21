@@ -2388,7 +2388,7 @@ fn bounds_from_generic_predicates<'tcx>(
     let mut projections = vec![];
     for (predicate, _) in predicates.predicates {
         debug!("predicate {:?}", predicate);
-        match predicate.ignore_qualifiers(tcx).skip_binder().kind() {
+        match predicate.ignore_qualifiers_with_unbound_vars(tcx).skip_binder().kind() {
             ty::PredicateKind::Trait(trait_predicate, _) => {
                 let entry = types.entry(trait_predicate.self_ty()).or_default();
                 let def_id = trait_predicate.def_id();
@@ -2928,13 +2928,15 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
         ty::GenericPredicates {
             parent: None,
             predicates: tcx.arena.alloc_from_iter(self.param_env.caller_bounds.iter().filter_map(
-                |predicate| match predicate.ignore_qualifiers(tcx).skip_binder().kind() {
-                    ty::PredicateKind::Trait(ref data, _) if data.self_ty().is_param(index) => {
-                        // HACK(eddyb) should get the original `Span`.
-                        let span = tcx.def_span(def_id);
-                        Some((predicate, span))
+                |predicate| {
+                    match predicate.ignore_qualifiers_with_unbound_vars(tcx).skip_binder().kind() {
+                        ty::PredicateKind::Trait(ref data, _) if data.self_ty().is_param(index) => {
+                            // HACK(eddyb) should get the original `Span`.
+                            let span = tcx.def_span(def_id);
+                            Some((predicate, span))
+                        }
+                        _ => None,
                     }
-                    _ => None,
                 },
             )),
         }
@@ -3863,7 +3865,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             .pending_obligations()
             .into_iter()
             .filter_map(move |obligation| {
-                match obligation.predicate.ignore_qualifiers(self.tcx).skip_binder().kind() {
+                match obligation
+                    .predicate
+                    .ignore_qualifiers_with_unbound_vars(self.tcx)
+                    .skip_binder()
+                    .kind()
+                {
                     ty::PredicateKind::ForAll(_) => {
                         bug!("unexpected predicate: {:?}", obligation.predicate)
                     }
@@ -4218,8 +4225,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 continue;
             }
 
-            if let ty::PredicateKind::Trait(predicate, _) =
-                error.obligation.predicate.ignore_qualifiers(self.tcx).skip_binder().kind()
+            if let ty::PredicateKind::Trait(predicate, _) = error
+                .obligation
+                .predicate
+                .ignore_qualifiers_with_unbound_vars(self.tcx)
+                .skip_binder()
+                .kind()
             {
                 // Collect the argument position for all arguments that could have caused this
                 // `FulfillmentError`.
@@ -4270,7 +4281,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         if let ty::PredicateKind::Trait(predicate, _) = error
                             .obligation
                             .predicate
-                            .ignore_qualifiers(self.tcx)
+                            .ignore_qualifiers_with_unbound_vars(self.tcx)
                             .skip_binder()
                             .kind()
                         {
