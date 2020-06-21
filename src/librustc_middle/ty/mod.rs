@@ -1220,11 +1220,7 @@ impl<'tcx> Predicate<'tcx> {
         let substs = trait_ref.skip_binder().substs;
         let pred = *self.ignore_qualifiers(tcx).skip_binder();
         let new = pred.subst(tcx, substs);
-        if new != pred {
-            new.potentially_qualified(tcx, PredicateKind::ForAll)
-        } else {
-            self
-        }
+        if new != pred { new.potentially_qualified(tcx, PredicateKind::ForAll) } else { self }
     }
 }
 
