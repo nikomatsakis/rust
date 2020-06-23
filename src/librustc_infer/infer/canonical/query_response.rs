@@ -550,7 +550,7 @@ impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
                 to_predicate(constraint)
             } else {
                 ty::PredicateKind::ForAll(constraint.map_bound(to_predicate)).to_predicate(self.tcx)
-            };
+            }; // XXX ndm -- Is there a good reason NOT to always create the `ForAll` here? Perhaps we want a helper that, given a `Binder<Predicate>` checks for escaping variables in the predicate and either constructs a for-all or discards the binder?
 
             Obligation::new(cause.clone(), param_env, predicate)
         })

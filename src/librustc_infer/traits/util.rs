@@ -15,6 +15,7 @@ pub fn anonymize_predicate<'tcx>(
         ty::PredicateKind::ForAll(binder) => {
             let new = ty::PredicateKind::ForAll(tcx.anonymize_late_bound_regions(binder));
             if new != *kind { new.to_predicate(tcx) } else { pred }
+            // XXX ndm let's add `to_predicate_or_return` or something?
         }
         ty::PredicateKind::Trait(_, _)
         | ty::PredicateKind::RegionOutlives(_)
@@ -138,6 +139,15 @@ impl Elaborator<'tcx> {
     fn elaborate(&mut self, obligation: &PredicateObligation<'tcx>) {
         let tcx = self.visited.tcx;
 
+        // XXX ndm it feels like we can get cleaner here, can't we?
+        // XXX certainly the *straightforward* thing would be to have
+        // XXX nested foralls. I.e., if we have `forall<...> X`, then
+        // XXX we can elaborate XXX `X` in a straightforward way, but
+        // XXX we'll get `forall<...> forall<..> X`. How much of a problem is that?
+        // XXX
+        // XXX we could certainly "flatten" predicates too.
+        // XXX
+        // XXX I'm sort of reminded now why I had a `PredicateAtom` in some PRs...
         match obligation.predicate.ignore_qualifiers().skip_binder().kind() {
             ty::PredicateKind::ForAll(_) => {
                 bug!("unexpected predicate: {:?}", obligation.predicate)

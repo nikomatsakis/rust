@@ -1042,6 +1042,9 @@ impl<'tcx> Predicate<'tcx> {
     }
 
     /// Skips `PredicateKind::ForAll`.
+    // XXX ndm -- "quantifiers"
+    // XXX ndm --  this doesn't quite work like I expect. I expected it to return `Option<Predicate<'tcx>>` probably, just "skipping" the binders basically. Interesting.
+    // XXX ndm -- it seems to (almost) always be called with `skip_binders`, so ... I think my intuition was correct.
     pub fn ignore_qualifiers(self) -> Binder<Predicate<'tcx>> {
         match self.kind() {
             &PredicateKind::ForAll(binder) => binder,
@@ -1387,6 +1390,8 @@ impl<'tcx> ToPredicate<'tcx> for ConstnessAnd<PolyTraitRef<'tcx>> {
 
 impl<'tcx> ToPredicate<'tcx> for ConstnessAnd<PolyTraitPredicate<'tcx>> {
     fn to_predicate(&self, tcx: TyCtxt<'tcx>) -> Predicate<'tcx> {
+        // XXX another instance, it seems, of 'maybe not worth it', but if it is, we need
+        // a helper
         if let Some(pred) = self.value.no_bound_vars() {
             ty::PredicateKind::Trait(pred, self.constness)
         } else {
