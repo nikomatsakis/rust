@@ -10,6 +10,7 @@ use crate::astconv::AstConv;
 use crate::check::coercion::DynamicCoerceMany;
 use crate::check::{Diverges, EnclosingBreakables, Inherited, UnsafetyState};
 
+use rustc_data_structures::fx::FxHashSet;
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
 use rustc_infer::infer;
@@ -105,6 +106,10 @@ pub struct FnCtxt<'a, 'tcx> {
     /// the diverges flag is set to something other than `Maybe`.
     pub(super) diverges: Cell<Diverges>,
 
+    /// This keeps track of the dead nodes. We use this to determine
+    /// if there are live nodes with the diverging fallback for linting.
+    pub(super) dead_nodes: RefCell<FxHashSet<hir::HirId>>,
+
     /// Whether any child nodes have any type errors.
     pub(super) has_errors: Cell<bool>,
 
@@ -131,6 +136,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             resume_yield_tys: None,
             ps: RefCell::new(UnsafetyState::function(hir::Unsafety::Normal, hir::CRATE_HIR_ID)),
             diverges: Cell::new(Diverges::Maybe),
+            dead_nodes: RefCell::new(FxHashSet::default()),
             has_errors: Cell::new(false),
             enclosing_breakables: RefCell::new(EnclosingBreakables {
                 stack: Vec::new(),
