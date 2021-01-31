@@ -7,8 +7,279 @@ extern crate rustc_macros;
 
 use rustc_data_structures::stable_hasher::{HashStable, StableHasher};
 use rustc_data_structures::unify::{EqUnifyValue, UnifyKey};
+use smallvec::SmallVec;
 use std::fmt;
+use std::iter::IntoIterator;
 use std::mem::discriminant;
+
+pub trait Interner {
+    type GenericArg;
+    type ListGenericArg;
+
+    type ExistentialPredicate;
+    type ListExistentialPredicate;
+
+    type Predicate;
+    type BinderPredicateKind;
+
+    type Ty;
+    type ListType;
+    type TyKind;
+    type TypeKey;
+
+    type AllocationId;
+    type Allocation;
+    type InternedAllocation;
+
+    type DefId;
+    type Instance;
+
+    type CanonicalVarInfo;
+    type ListCanonicalVarInfo;
+
+    type RegionKind;
+    type Region;
+
+    type Const;
+    type InternedConst;
+
+    type BoundVariableKind;
+    type ListBoundVariableKind;
+
+    type PlaceElem;
+    type ListPlaceElem;
+
+    type DefPathHash;
+    type AdtDef;
+
+    type SymbolName;
+
+    type Mir;
+    type AllocatedMir;
+    type AllocatedMirSlice;
+
+    type Promoted;
+    type AllocatedPromoted;
+    type AllocatedPromotedSlice;
+
+    type TypeCheckResults;
+    type AllocatedTypeCheckResults;
+    type AllocatedTypeCheckResultsSlice;
+
+    type BorrowCheckResult;
+    type AllocatedBorrowCheckResult;
+    type AllocatedBorrowCheckResultSlice;
+
+    type CodeRegion;
+    type AllocatedCodeRegion;
+    type AllocatedCodeRegionSlice;
+
+    type UnsafetyCheckResult;
+    type AllocatedUnsafetyCheckResult;
+    type AllocatedUnsafetyCheckResultSlice;
+
+    type Span;
+    type AllocatedSpan;
+    type AllocatedSpanSlice;
+
+    type UsedTraitsImports;
+    type AllocatedUsedTraitsImports;
+    type AllocatedUsedTraitsImportsSlice;
+
+    type AsmTemplate;
+    type AllocatedAsmTemplate;
+    type AllocatedAsmTemplateSlice;
+
+    type ValTree;
+    type AllocatedValTreeSlice;
+
+    type PredicateSpan;
+    type AllocatedPredicateSpanSlice;
+
+    type NodeId;
+    type AllocatedNodeIdSlice;
+
+    fn alloc_mir(self, value: Self::Mir) -> Self::AllocatedMir;
+    fn alloc_mir_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::Mir>,
+    ) -> Self::AllocatedMirSlice;
+
+    fn alloc_promoted(self, value: Self::Promoted) -> Self::AllocatedPromoted;
+    fn alloc_promoted_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::Promoted>,
+    ) -> Self::AllocatedPromotedSlice;
+
+    fn alloc_type_check_results(
+        self,
+        value: Self::TypeCheckResults,
+    ) -> Self::AllocatedTypeCheckResults;
+    fn alloc_type_check_results_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::TypeCheckResults>,
+    ) -> Self::AllocatedTypeCheckResultsSlice;
+
+    fn alloc_borrowck_result(
+        self,
+        value: Self::BorrowCheckResult,
+    ) -> Self::AllocatedBorrowCheckResult;
+    fn alloc_borrowck_result_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::BorrowCheckResult>,
+    ) -> Self::AllocatedBorrowCheckResultSlice;
+
+    fn alloc_unsafety_check_result(
+        self,
+        value: Self::UnsafetyCheckResult,
+    ) -> Self::AllocatedUnsafetyCheckResult;
+    fn alloc_unsafety_check_result_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::UnsafetyCheckResult>,
+    ) -> Self::AllocatedUnsafetyCheckResultSlice;
+
+    fn alloc_code_region(self, value: Self::CodeRegion) -> Self::AllocatedCodeRegion;
+    fn alloc_code_region_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::CodeRegion>,
+    ) -> Self::AllocatedCodeRegionSlice;
+
+    fn alloc_used_trait_imports(
+        self,
+        value: Self::UsedTraitsImports,
+    ) -> Self::AllocatedUsedTraitsImports;
+    fn alloc_used_trait_imports_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::UsedTraitsImports>,
+    ) -> Self::AllocatedUsedTraitsImportsSlice;
+
+    fn alloc_asm_template(self, value: Self::AsmTemplate) -> Self::AllocatedAsmTemplate;
+    fn alloc_asm_template_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::AsmTemplate>,
+    ) -> Self::AllocatedAsmTemplateSlice;
+
+    fn alloc_valtree_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::ValTree>,
+    ) -> Self::AllocatedValTreeSlice;
+    fn alloc_predicate_span_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::PredicateSpan>,
+    ) -> Self::AllocatedPredicateSpanSlice;
+    fn alloc_node_id_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::NodeId>,
+    ) -> Self::AllocatedNodeIdSlice;
+
+    fn adt_def(self, def_id: Self::DefId) -> Self::AdtDef;
+    fn mk_symbol_name(self, name: &str) -> Self::SymbolName;
+    fn mk_predicate(self, binder: Self::BinderPredicateKind) -> Self::Predicate;
+    fn mk_ty(self, st: Self::TyKind) -> Self::Ty;
+    fn mk_substs<I: InternAs<[Self::GenericArg], Self::ListGenericArg>>(self, iter: I)
+    -> I::Output;
+    fn mk_poly_existential_predicates<
+        I: InternAs<[Self::ExistentialPredicate], Self::ListExistentialPredicate>,
+    >(
+        self,
+        iter: I,
+    ) -> I::Output;
+    fn mk_type_list<I: InternAs<[Self::Ty], Self::ListType>>(self, iter: I) -> I::Output;
+    fn mk_place_elems<I: InternAs<[Self::PlaceElem], Self::ListPlaceElem>>(
+        self,
+        iter: I,
+    ) -> I::Output;
+    fn mk_region(self, kind: Self::RegionKind) -> Self::Region;
+    fn mk_const(self, c: Self::Const) -> Self::InternedConst;
+    fn mk_bound_variable_kinds<
+        I: InternAs<[Self::BoundVariableKind], Self::ListBoundVariableKind>,
+    >(
+        self,
+        iter: I,
+    ) -> I::Output;
+    fn intern_const_alloc(self, alloc: Self::Allocation) -> Self::InternedAllocation;
+    fn intern_canonical_var_infos(
+        self,
+        ts: &[Self::CanonicalVarInfo],
+    ) -> Self::ListCanonicalVarInfo;
+
+    // arena methods
+}
+
+pub trait InternAs<T: ?Sized, R> {
+    type Output;
+    fn intern_with<F>(self, f: F) -> Self::Output
+    where
+        F: FnOnce(&T) -> R;
+}
+
+impl<I, T, R, E> InternAs<[T], R> for I
+where
+    E: InternIteratorElement<T, R>,
+    I: Iterator<Item = E>,
+{
+    type Output = E::Output;
+    fn intern_with<F>(self, f: F) -> Self::Output
+    where
+        F: FnOnce(&[T]) -> R,
+    {
+        E::intern_with(self, f)
+    }
+}
+
+pub trait InternIteratorElement<T, R>: Sized {
+    type Output;
+    fn intern_with<I: Iterator<Item = Self>, F: FnOnce(&[T]) -> R>(iter: I, f: F) -> Self::Output;
+}
+
+impl<T, R> InternIteratorElement<T, R> for T {
+    type Output = R;
+    fn intern_with<I: Iterator<Item = Self>, F: FnOnce(&[T]) -> R>(iter: I, f: F) -> Self::Output {
+        f(&iter.collect::<SmallVec<[_; 8]>>())
+    }
+}
+
+impl<'a, T, R> InternIteratorElement<T, R> for &'a T
+where
+    T: Clone + 'a,
+{
+    type Output = R;
+    fn intern_with<I: Iterator<Item = Self>, F: FnOnce(&[T]) -> R>(iter: I, f: F) -> Self::Output {
+        f(&iter.cloned().collect::<SmallVec<[_; 8]>>())
+    }
+}
+
+impl<T, R, E> InternIteratorElement<T, R> for Result<T, E> {
+    type Output = Result<R, E>;
+    fn intern_with<I: Iterator<Item = Self>, F: FnOnce(&[T]) -> R>(
+        mut iter: I,
+        f: F,
+    ) -> Self::Output {
+        // This code is hot enough that it's worth specializing for the most
+        // common length lists, to avoid the overhead of `SmallVec` creation.
+        // The match arms are in order of frequency. The 1, 2, and 0 cases are
+        // typically hit in ~95% of cases. We assume that if the upper and
+        // lower bounds from `size_hint` agree they are correct.
+        Ok(match iter.size_hint() {
+            (1, Some(1)) => {
+                let t0 = iter.next().unwrap()?;
+                assert!(iter.next().is_none());
+                f(&[t0])
+            }
+            (2, Some(2)) => {
+                let t0 = iter.next().unwrap()?;
+                let t1 = iter.next().unwrap()?;
+                assert!(iter.next().is_none());
+                f(&[t0, t1])
+            }
+            (0, Some(0)) => {
+                assert!(iter.next().is_none());
+                f(&[])
+            }
+            _ => f(&iter.collect::<Result<SmallVec<[_; 8]>, _>>()?),
+        })
+    }
+}
 
 bitflags! {
     /// Flags that we track on types. These flags are propagated upwards

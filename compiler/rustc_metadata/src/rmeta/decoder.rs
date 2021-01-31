@@ -378,20 +378,12 @@ impl<'a, 'tcx> LazyQueryDecodable<'a, 'tcx, Option<DeprecationEntry>>
 
 impl<'a, 'tcx> DecodeContext<'a, 'tcx> {
     #[inline]
-    fn tcx(&self) -> TyCtxt<'tcx> {
-        debug_assert!(self.tcx.is_some(), "missing TyCtxt in DecodeContext");
-        self.tcx.unwrap()
-    }
-
-    #[inline]
     pub fn blob(&self) -> &'a MetadataBlob {
         self.blob
     }
 
-    #[inline]
-    pub fn cdata(&self) -> CrateMetadataRef<'a> {
-        debug_assert!(self.cdata.is_some(), "missing CrateMetadata in DecodeContext");
-        self.cdata.unwrap()
+    fn cdata(&self) -> CrateMetadataRef<'a> {
+        self.cdata.expect("missing CrateMetadata in DecodeContext")
     }
 
     fn map_encoded_cnum_to_current(&self, cnum: CrateNum) -> CrateNum {

@@ -1,5 +1,7 @@
 //! Type context book-keeping.
 
+// ignore-tidy-filelength
+
 use crate::arena::Arena;
 use crate::dep_graph::{DepGraph, DepKind, DepKindStruct};
 use crate::hir::place::Place as HirPlace;
@@ -7,14 +9,21 @@ use crate::infer::canonical::{Canonical, CanonicalVarInfo, CanonicalVarInfos};
 use crate::lint::{struct_lint_level, LintDiagnosticBuilder, LintLevelSource};
 use crate::middle::resolve_lifetime::{self, LifetimeScopeForPath};
 use crate::middle::stability;
+use crate::mir::coverage::CodeRegion;
 use crate::mir::interpret::{self, Allocation, ConstAllocation, ConstValue, Scalar};
+use crate::mir::UnsafetyCheckResult;
 use crate::mir::{
     Body, BorrowCheckResult, Field, Local, Place, PlaceElem, ProjectionKind, Promoted,
 };
 use crate::thir::Thir;
 use crate::traits;
+use crate::ty::ast::NodeId;
+use crate::ty::context::interpret::AllocId;
 use crate::ty::query::{self, TyCtxtAt};
 use crate::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, Subst, SubstsRef, UserSubsts};
+use crate::ty::BoundVariableKind;
+use crate::ty::Instance;
+use crate::ty::SymbolName;
 use crate::ty::TyKind::*;
 use crate::ty::{
     self, AdtDef, AdtDefData, AdtKind, Binder, BindingMode, BoundVar, CanonicalPolyFnSig,
@@ -59,9 +68,9 @@ use rustc_span::symbol::{kw, sym, Ident, Symbol};
 use rustc_span::{Span, DUMMY_SP};
 use rustc_target::abi::{Layout, LayoutS, TargetDataLayout, VariantIdx};
 use rustc_target::spec::abi;
+use rustc_type_ir::{InternAs, InternIteratorElement, Interner};
 
 use rustc_type_ir::TypeFlags;
-use smallvec::SmallVec;
 use std::any::Any;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
@@ -86,6 +95,291 @@ pub trait OnDiskCache<'tcx>: rustc_data_structures::sync::Sync {
     fn drop_serialized_data(&self, tcx: TyCtxt<'tcx>);
 
     fn serialize(&self, tcx: TyCtxt<'tcx>, encoder: &mut FileEncoder) -> FileEncodeResult;
+}
+
+pub struct TyInterner<'tcx> {
+    tcx: TyCtxt<'tcx>,
+}
+
+#[allow(rustc::usage_of_ty_tykind)]
+impl<'tcx> Interner for TyInterner<'tcx> {
+    type GenericArg = GenericArg<'tcx>;
+    type ListGenericArg = &'tcx List<GenericArg<'tcx>>;
+
+    type ExistentialPredicate = ty::Binder<'tcx, ExistentialPredicate<'tcx>>;
+    type ListExistentialPredicate = &'tcx List<Binder<'tcx, ExistentialPredicate<'tcx>>>;
+
+    type Predicate = Predicate<'tcx>;
+    type BinderPredicateKind = Binder<'tcx, PredicateKind<'tcx>>;
+
+    type Ty = Ty<'tcx>;
+    type ListType = &'tcx List<Ty<'tcx>>;
+    type TyKind = TyKind<'tcx>;
+    type TypeKey = ty::CReaderCacheKey;
+
+    type AllocationId = AllocId;
+    type Allocation = Allocation;
+    type InternedAllocation = ConstAllocation<'tcx>;
+
+    type DefId = DefId;
+    type Instance = Instance<'tcx>;
+
+    type CanonicalVarInfo = CanonicalVarInfo<'tcx>;
+    type ListCanonicalVarInfo = CanonicalVarInfos<'tcx>;
+
+    type RegionKind = RegionKind;
+    type Region = Region<'tcx>;
+
+    type Const = ConstS<'tcx>;
+    type InternedConst = Const<'tcx>;
+
+    type BoundVariableKind = BoundVariableKind;
+    type ListBoundVariableKind = &'tcx List<BoundVariableKind>;
+
+    type PlaceElem = PlaceElem<'tcx>;
+    type ListPlaceElem = &'tcx List<PlaceElem<'tcx>>;
+
+    type DefPathHash = DefPathHash;
+    type AdtDef = ty::AdtDef<'tcx>;
+
+    type SymbolName = SymbolName<'tcx>;
+
+    type Mir = Body<'tcx>;
+    type AllocatedMir = &'tcx mut Body<'tcx>;
+    type AllocatedMirSlice = &'tcx mut [Body<'tcx>];
+
+    type Promoted = IndexVec<Promoted, Body<'tcx>>;
+    type AllocatedPromoted = &'tcx mut IndexVec<Promoted, Body<'tcx>>;
+    type AllocatedPromotedSlice = &'tcx mut [IndexVec<Promoted, Body<'tcx>>];
+
+    type TypeCheckResults = TypeckResults<'tcx>;
+    type AllocatedTypeCheckResults = &'tcx mut TypeckResults<'tcx>;
+    type AllocatedTypeCheckResultsSlice = &'tcx mut [TypeckResults<'tcx>];
+
+    type BorrowCheckResult = BorrowCheckResult<'tcx>;
+    type AllocatedBorrowCheckResult = &'tcx mut BorrowCheckResult<'tcx>;
+    type AllocatedBorrowCheckResultSlice = &'tcx mut [BorrowCheckResult<'tcx>];
+
+    type CodeRegion = CodeRegion;
+    type AllocatedCodeRegion = &'tcx mut CodeRegion;
+    type AllocatedCodeRegionSlice = &'tcx mut [CodeRegion];
+
+    type UnsafetyCheckResult = UnsafetyCheckResult;
+    type AllocatedUnsafetyCheckResult = &'tcx mut UnsafetyCheckResult;
+    type AllocatedUnsafetyCheckResultSlice = &'tcx mut [UnsafetyCheckResult];
+
+    type Span = Span;
+    type AllocatedSpan = &'tcx mut Span;
+    type AllocatedSpanSlice = &'tcx mut [Span];
+
+    type UsedTraitsImports = FxHashSet<LocalDefId>;
+    type AllocatedUsedTraitsImports = &'tcx mut FxHashSet<LocalDefId>;
+    type AllocatedUsedTraitsImportsSlice = &'tcx mut [FxHashSet<LocalDefId>];
+
+    type AsmTemplate = ast::InlineAsmTemplatePiece;
+    type AllocatedAsmTemplate = &'tcx mut ast::InlineAsmTemplatePiece;
+    type AllocatedAsmTemplateSlice = &'tcx mut [ast::InlineAsmTemplatePiece];
+
+    type ValTree = ty::ValTree<'tcx>;
+    type AllocatedValTreeSlice = &'tcx mut [ty::ValTree<'tcx>];
+
+    type PredicateSpan = (ty::Predicate<'tcx>, Span);
+    type AllocatedPredicateSpanSlice = &'tcx mut [(ty::Predicate<'tcx>, Span)];
+
+    type NodeId = NodeId;
+    type AllocatedNodeIdSlice = &'tcx mut [NodeId];
+
+    fn alloc_predicate_span_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::PredicateSpan>,
+    ) -> Self::AllocatedPredicateSpanSlice {
+        self.tcx.arena.alloc_from_iter(iter)
+    }
+
+    fn alloc_valtree_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::ValTree>,
+    ) -> Self::AllocatedValTreeSlice {
+        self.tcx.arena.alloc_from_iter(iter)
+    }
+
+    fn alloc_node_id_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::NodeId>,
+    ) -> Self::AllocatedNodeIdSlice {
+        self.tcx.arena.alloc_from_iter(iter)
+    }
+
+    fn alloc_promoted(self, value: Self::Promoted) -> Self::AllocatedPromoted {
+        self.tcx.arena.alloc(value)
+    }
+
+    fn alloc_promoted_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::Promoted>,
+    ) -> Self::AllocatedPromotedSlice {
+        self.tcx.arena.alloc_from_iter(iter)
+    }
+
+    fn alloc_borrowck_result(
+        self,
+        value: Self::BorrowCheckResult,
+    ) -> Self::AllocatedBorrowCheckResult {
+        self.tcx.arena.alloc(value)
+    }
+
+    fn alloc_borrowck_result_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::BorrowCheckResult>,
+    ) -> Self::AllocatedBorrowCheckResultSlice {
+        self.tcx.arena.alloc_from_iter(iter)
+    }
+
+    fn alloc_type_check_results(
+        self,
+        value: Self::TypeCheckResults,
+    ) -> Self::AllocatedTypeCheckResults {
+        self.tcx.arena.alloc(value)
+    }
+
+    fn alloc_type_check_results_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::TypeCheckResults>,
+    ) -> Self::AllocatedTypeCheckResultsSlice {
+        self.tcx.arena.alloc_from_iter(iter)
+    }
+
+    fn alloc_mir(self, value: Self::Mir) -> Self::AllocatedMir {
+        self.tcx.arena.alloc(value)
+    }
+
+    fn alloc_mir_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::Mir>,
+    ) -> Self::AllocatedMirSlice {
+        self.tcx.arena.alloc_from_iter(iter)
+    }
+
+    fn alloc_code_region(self, value: Self::CodeRegion) -> Self::AllocatedCodeRegion {
+        self.tcx.arena.alloc(value)
+    }
+
+    fn alloc_code_region_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::CodeRegion>,
+    ) -> Self::AllocatedCodeRegionSlice {
+        self.tcx.arena.alloc_from_iter(iter)
+    }
+
+    fn alloc_unsafety_check_result(
+        self,
+        value: Self::UnsafetyCheckResult,
+    ) -> Self::AllocatedUnsafetyCheckResult {
+        self.tcx.arena.alloc(value)
+    }
+
+    fn alloc_unsafety_check_result_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::UnsafetyCheckResult>,
+    ) -> Self::AllocatedUnsafetyCheckResultSlice {
+        self.tcx.arena.alloc_from_iter(iter)
+    }
+
+    fn alloc_used_trait_imports(
+        self,
+        value: Self::UsedTraitsImports,
+    ) -> Self::AllocatedUsedTraitsImports {
+        self.tcx.arena.alloc(value)
+    }
+
+    fn alloc_used_trait_imports_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::UsedTraitsImports>,
+    ) -> Self::AllocatedUsedTraitsImportsSlice {
+        self.tcx.arena.alloc_from_iter(iter)
+    }
+
+    fn alloc_asm_template(self, value: Self::AsmTemplate) -> Self::AllocatedAsmTemplate {
+        self.tcx.arena.alloc(value)
+    }
+
+    fn alloc_asm_template_from_iter(
+        self,
+        iter: impl IntoIterator<Item = Self::AsmTemplate>,
+    ) -> Self::AllocatedAsmTemplateSlice {
+        self.tcx.arena.alloc_from_iter(iter)
+    }
+
+    fn mk_symbol_name(self, name: &str) -> Self::SymbolName {
+        SymbolName::new(self.tcx, name)
+    }
+
+    fn adt_def(self, def_id: Self::DefId) -> Self::AdtDef {
+        self.tcx.adt_def(def_id)
+    }
+
+    fn mk_predicate(self, binder: Self::BinderPredicateKind) -> Self::Predicate {
+        self.tcx.mk_predicate(binder)
+    }
+
+    fn mk_ty(self, st: TyKind<'tcx>) -> Ty<'tcx> {
+        self.tcx.mk_ty(st)
+    }
+
+    fn mk_substs<I: InternAs<[Self::GenericArg], Self::ListGenericArg>>(
+        self,
+        iter: I,
+    ) -> I::Output {
+        self.tcx.mk_substs(iter)
+    }
+
+    fn mk_poly_existential_predicates<
+        I: InternAs<[Self::ExistentialPredicate], Self::ListExistentialPredicate>,
+    >(
+        self,
+        iter: I,
+    ) -> I::Output {
+        self.tcx.mk_poly_existential_predicates(iter)
+    }
+
+    fn mk_type_list<I: InternAs<[Self::Ty], Self::ListType>>(self, iter: I) -> I::Output {
+        iter.intern_with(|xs| self.tcx.intern_type_list(xs))
+    }
+
+    fn mk_place_elems<I: InternAs<[Self::PlaceElem], Self::ListPlaceElem>>(
+        self,
+        iter: I,
+    ) -> I::Output {
+        iter.intern_with(|xs| self.tcx.intern_place_elems(xs))
+    }
+
+    fn mk_region(self, kind: Self::RegionKind) -> Self::Region {
+        self.tcx.mk_region(kind)
+    }
+
+    fn mk_const(self, c: Self::Const) -> Self::InternedConst {
+        self.tcx.mk_const(c)
+    }
+
+    fn mk_bound_variable_kinds<
+        I: InternAs<[Self::BoundVariableKind], Self::ListBoundVariableKind>,
+    >(
+        self,
+        iter: I,
+    ) -> I::Output {
+        self.tcx.mk_bound_variable_kinds(iter)
+    }
+
+    fn intern_const_alloc(self, alloc: Self::Allocation) -> Self::InternedAllocation {
+        self.tcx.intern_const_alloc(alloc)
+    }
+
+    fn intern_canonical_var_infos(
+        self,
+        ts: &[Self::CanonicalVarInfo],
+    ) -> Self::ListCanonicalVarInfo {
+        self.tcx.intern_canonical_var_infos(ts)
+    }
 }
 
 /// A type that is not publicly constructable. This prevents people from making [`TyKind::Error`]s
@@ -1089,6 +1383,10 @@ pub struct GlobalCtxt<'tcx> {
 }
 
 impl<'tcx> TyCtxt<'tcx> {
+    pub fn interner(self) -> TyInterner<'tcx> {
+        TyInterner { tcx: self }
+    }
+
     pub fn typeck_opt_const_arg(
         self,
         def: ty::WithOptConstParam<LocalDefId>,
@@ -2823,108 +3121,6 @@ impl<'tcx> TyCtxtAt<'tcx> {
     #[track_caller]
     pub fn ty_error_with_message(self, msg: &str) -> Ty<'tcx> {
         self.tcx.ty_error_with_message(self.span, msg)
-    }
-}
-
-pub trait InternAs<T: ?Sized, R> {
-    type Output;
-    fn intern_with<F>(self, f: F) -> Self::Output
-    where
-        F: FnOnce(&T) -> R;
-}
-
-impl<I, T, R, E> InternAs<[T], R> for I
-where
-    E: InternIteratorElement<T, R>,
-    I: Iterator<Item = E>,
-{
-    type Output = E::Output;
-    fn intern_with<F>(self, f: F) -> Self::Output
-    where
-        F: FnOnce(&[T]) -> R,
-    {
-        E::intern_with(self, f)
-    }
-}
-
-pub trait InternIteratorElement<T, R>: Sized {
-    type Output;
-    fn intern_with<I: Iterator<Item = Self>, F: FnOnce(&[T]) -> R>(iter: I, f: F) -> Self::Output;
-}
-
-impl<T, R> InternIteratorElement<T, R> for T {
-    type Output = R;
-    fn intern_with<I: Iterator<Item = Self>, F: FnOnce(&[T]) -> R>(
-        mut iter: I,
-        f: F,
-    ) -> Self::Output {
-        // This code is hot enough that it's worth specializing for the most
-        // common length lists, to avoid the overhead of `SmallVec` creation.
-        // Lengths 0, 1, and 2 typically account for ~95% of cases. If
-        // `size_hint` is incorrect a panic will occur via an `unwrap` or an
-        // `assert`.
-        match iter.size_hint() {
-            (0, Some(0)) => {
-                assert!(iter.next().is_none());
-                f(&[])
-            }
-            (1, Some(1)) => {
-                let t0 = iter.next().unwrap();
-                assert!(iter.next().is_none());
-                f(&[t0])
-            }
-            (2, Some(2)) => {
-                let t0 = iter.next().unwrap();
-                let t1 = iter.next().unwrap();
-                assert!(iter.next().is_none());
-                f(&[t0, t1])
-            }
-            _ => f(&iter.collect::<SmallVec<[_; 8]>>()),
-        }
-    }
-}
-
-impl<'a, T, R> InternIteratorElement<T, R> for &'a T
-where
-    T: Clone + 'a,
-{
-    type Output = R;
-    fn intern_with<I: Iterator<Item = Self>, F: FnOnce(&[T]) -> R>(iter: I, f: F) -> Self::Output {
-        // This code isn't hot.
-        f(&iter.cloned().collect::<SmallVec<[_; 8]>>())
-    }
-}
-
-impl<T, R, E> InternIteratorElement<T, R> for Result<T, E> {
-    type Output = Result<R, E>;
-    fn intern_with<I: Iterator<Item = Self>, F: FnOnce(&[T]) -> R>(
-        mut iter: I,
-        f: F,
-    ) -> Self::Output {
-        // This code is hot enough that it's worth specializing for the most
-        // common length lists, to avoid the overhead of `SmallVec` creation.
-        // Lengths 0, 1, and 2 typically account for ~95% of cases. If
-        // `size_hint` is incorrect a panic will occur via an `unwrap` or an
-        // `assert`, unless a failure happens first, in which case the result
-        // will be an error anyway.
-        Ok(match iter.size_hint() {
-            (0, Some(0)) => {
-                assert!(iter.next().is_none());
-                f(&[])
-            }
-            (1, Some(1)) => {
-                let t0 = iter.next().unwrap()?;
-                assert!(iter.next().is_none());
-                f(&[t0])
-            }
-            (2, Some(2)) => {
-                let t0 = iter.next().unwrap()?;
-                let t1 = iter.next().unwrap()?;
-                assert!(iter.next().is_none());
-                f(&[t0, t1])
-            }
-            _ => f(&iter.collect::<Result<SmallVec<[_; 8]>, _>>()?),
-        })
     }
 }
 
