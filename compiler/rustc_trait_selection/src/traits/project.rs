@@ -1381,7 +1381,23 @@ fn confirm_callable_candidate<'cx, 'tcx>(
         ty: ret_type,
     });
 
-    confirm_param_env_candidate(selcx, obligation, predicate, false)
+    let Progress { ty, mut obligations } =
+        confirm_param_env_candidate(selcx, obligation, predicate, false);
+    if !ty.references_error() {
+        let sized_trait = tcx.lang_items().sized_trait().unwrap(); // FIXME--unwrap
+        let sized_predicate = ty::Binder::dummy(ty::TraitRef {
+            def_id: sized_trait,
+            substs: tcx.mk_substs_trait(ty, &[]),
+        })
+        .without_const()
+        .to_predicate(tcx);
+        let cause = obligation.cause.clone();
+        let depth = obligation.recursion_depth;
+        let param_env = obligation.param_env;
+        let obligation = Obligation::with_depth(cause, depth + 1, param_env, sized_predicate);
+        obligations.push(obligation);
+    }
+    Progress { ty, obligations }
 }
 
 fn confirm_param_env_candidate<'cx, 'tcx>(
