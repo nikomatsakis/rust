@@ -666,7 +666,6 @@ declare_features! (
 pub const INCOMPLETE_FEATURES: &[Symbol] = &[
     sym::if_let_guard,
     sym::impl_trait_in_bindings,
-    sym::generic_associated_types,
     sym::const_generics,
     sym::let_chains,
     sym::raw_dylib,
