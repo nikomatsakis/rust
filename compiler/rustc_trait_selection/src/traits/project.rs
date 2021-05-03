@@ -321,6 +321,7 @@ impl<'a, 'b, 'tcx> TypeFolder<'tcx> for AssocTypeNormalizer<'a, 'b, 'tcx> {
         self.selcx.tcx()
     }
 
+    #[instrument(level = "debug", skip(self))]
     fn fold_binder<T>(&mut self, t: ty::Binder<'tcx, T>) -> ty::Binder<'tcx, T>
     where
         T: TypeFoldable<'tcx>,
@@ -329,13 +330,23 @@ impl<'a, 'b, 'tcx> TypeFolder<'tcx> for AssocTypeNormalizer<'a, 'b, 'tcx> {
         // TODO
         // let V = new inference variable();
         let bound_vars = t.bound_vars();
-        let (with_placeholders, mapped_regions, mapped_types, mapped_consts) = infcx.replace_bound_vars_with_placeholders_mapped(t);
+        let (with_placeholders, mapped_regions, mapped_types, mapped_consts) =
+            infcx.replace_bound_vars_with_placeholders_mapped(t);
+        debug!(?with_placeholders);
         let folded_with_placeholders = with_placeholders.super_fold_with(self);
+        debug!(?folded_with_placeholders);
 
-        let mut replacer = ty::fold::PlaceholderReplacer { tcx: self.tcx(), mapped_regions, mapped_types, mapped_consts, current_index: ty::INNERMOST };
+        let mut replacer = ty::fold::PlaceholderReplacer {
+            tcx: self.tcx(),
+            mapped_regions,
+            mapped_types,
+            mapped_consts,
+            current_index: ty::INNERMOST,
+        };
         let replaced = folded_with_placeholders.super_fold_with(&mut replacer);
-
-        ty::Binder::bind_with_vars(replaced, bound_vars)
+        let bound = ty::Binder::bind_with_vars(replaced, bound_vars);
+        debug!(?bound);
+        bound
 
         // self.obligations.push(Quantify([!U1_0 -> 'a] folded_with_placehodlers, ?V))
         //
