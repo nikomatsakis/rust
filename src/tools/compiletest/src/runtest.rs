@@ -3891,7 +3891,7 @@ fn read2_abbreviated(mut child: Child) -> io::Result<Output> {
     use crate::read2::read2;
     use std::mem::replace;
 
-    const HEAD_LEN: usize = 160 * 1024;
+    const HEAD_LEN: usize = 16000 * 1024;
     const TAIL_LEN: usize = 256 * 1024;
 
     enum ProcOutput {

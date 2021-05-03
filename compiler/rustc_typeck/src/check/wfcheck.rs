@@ -376,14 +376,13 @@ fn check_param_wf(tcx: TyCtxt<'_>, param: &hir::GenericParam<'_>) {
     }
 }
 
+#[tracing::instrument(level = "debug", skip(tcx, span, sig_if_method))]
 fn check_associated_item(
     tcx: TyCtxt<'_>,
     item_id: hir::HirId,
     span: Span,
     sig_if_method: Option<&hir::FnSig<'_>>,
 ) {
-    debug!("check_associated_item: {:?}", item_id);
-
     let code = ObligationCauseCode::MiscObligation;
     for_id(tcx, item_id, span).with_fcx(|fcx, tcx| {
         let item = fcx.tcx.associated_item(fcx.tcx.hir().local_def_id(item_id));

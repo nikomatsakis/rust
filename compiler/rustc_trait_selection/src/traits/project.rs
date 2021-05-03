@@ -321,6 +321,51 @@ impl<'a, 'b, 'tcx> TypeFolder<'tcx> for AssocTypeNormalizer<'a, 'b, 'tcx> {
         self.selcx.tcx()
     }
 
+    fn fold_binder<T>(&mut self, t: ty::Binder<'tcx, T>) -> ty::Binder<'tcx, T>
+    where
+        T: TypeFoldable<'tcx>,
+    {
+        let infcx = self.selcx.infcx();
+        // TODO
+        // let V = new inference variable();
+        let bound_vars = t.bound_vars();
+        let (with_placeholders, mapped_regions, mapped_types, mapped_consts) = infcx.replace_bound_vars_with_placeholders_mapped(t);
+        let folded_with_placeholders = with_placeholders.super_fold_with(self);
+
+        let mut replacer = ty::fold::PlaceholderReplacer { tcx: self.tcx(), mapped_regions, mapped_types, mapped_consts, current_index: ty::INNERMOST };
+        let replaced = folded_with_placeholders.super_fold_with(&mut replacer);
+
+        ty::Binder::bind_with_vars(replaced, bound_vars)
+
+        // self.obligations.push(Quantify([!U1_0 -> 'a] folded_with_placehodlers, ?V))
+        //
+        // return V
+
+        // Example: We start in the universe U0:
+        //
+        //     for<'a> fn(<T as Foo<'a>>::Bar)
+        //
+        // We will instantiate a new universe U1, replace `'a` with a placeholder `!U1_0` in the universe `U1`,
+        // and recursively normalize to
+        //
+        //     fn(?X)
+        //
+        // along with some obligations O (pushed into the vec).
+        //
+        // ?X is in the universe U1 ("only names things visible to U') and
+        // hence may name `!U1_0`.
+        //
+        // The problem is we cannot return `?X` because we have to return a type in the universe U0.
+        //
+        // XXX problem, ?X may have inference variables. So what we want to do is
+        //
+        //
+
+        //     for<'a> fn(<?X as Foo<'a>>::Bar)
+        //
+        // impl<A, 'a> Foo<'a> for &'a u32 { }
+    }
+
     fn fold_ty(&mut self, ty: Ty<'tcx>) -> Ty<'tcx> {
         if !ty.has_projections() {
             return ty;
@@ -366,6 +411,37 @@ impl<'a, 'b, 'tcx> TypeFolder<'tcx> for AssocTypeNormalizer<'a, 'b, 'tcx> {
             }
 
             ty::Projection(data) if !data.has_escaping_bound_vars() => {
+                // This is kind of hacky -- we need to be able to
+                // handle normalization within binders because
+                // otherwise we wind up a need to normalize when doing
+                // trait matching (since you can have a trait
+                // obligation like `for<'a> T::B: Fn(&'a i32)`), but
+                // we can't normalize with bound regions in scope. So
+                // far now we just ignore binders but only normalize
+                // if all bound regions are gone (and then we still
+                // have to renormalize whenever we instantiate a
+                // binder). It would be better to normalize in a
+                // binding-aware fashion.
+
+                let normalized_ty = normalize_projection_type(
+                    self.selcx,
+                    self.param_env,
+                    data,
+                    self.cause.clone(),
+                    self.depth,
+                    &mut self.obligations,
+                );
+                debug!(
+                    ?self.depth,
+                    ?ty,
+                    ?normalized_ty,
+                    obligations.len = ?self.obligations.len(),
+                    "AssocTypeNormalizer: normalized type"
+                );
+                normalized_ty
+            }
+
+            ty::Projection(data) if !data.trait_ref(self.selcx.tcx()).has_escaping_bound_vars() => {
                 // This is kind of hacky -- we need to be able to
                 // handle normalization within binders because
                 // otherwise we wind up a need to normalize when doing

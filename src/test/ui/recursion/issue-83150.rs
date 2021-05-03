@@ -1,3 +1,4 @@
+// ignore-test
 // build-fail
  //~^ overflow evaluating
 

@@ -1265,3 +1265,73 @@ impl<'tcx> TypeVisitor<'tcx> for LateBoundRegionsCollector {
         ControlFlow::CONTINUE
     }
 }
+
+pub struct PlaceholderReplacer<'tcx> {
+    pub tcx: TyCtxt<'tcx>,
+    pub mapped_regions: BTreeMap<ty::PlaceholderRegion, ty::BoundRegion>,
+    pub mapped_types: BTreeMap<ty::PlaceholderType, ty::BoundTy>,
+    pub mapped_consts: BTreeMap<ty::PlaceholderConst<'tcx>, ty::BoundVar>,
+    pub current_index: ty::DebruijnIndex,
+}
+
+impl TypeFolder<'tcx> for PlaceholderReplacer<'tcx> {
+    fn tcx<'b>(&'b self) -> TyCtxt<'tcx> {
+        self.tcx
+    }
+
+    fn fold_binder<T: TypeFoldable<'tcx>>(
+        &mut self,
+        t: ty::Binder<'tcx, T>,
+    ) -> ty::Binder<'tcx, T> {
+        self.current_index.shift_in(1);
+        let t = t.super_fold_with(self);
+        self.current_index.shift_out(1);
+        t
+    }
+
+    fn fold_region(&mut self, r: ty::Region<'tcx>) -> ty::Region<'tcx> {
+        match *r {
+            ty::RePlaceholder(p) => {
+                let replace_var = self.mapped_regions.get(&p);
+                match replace_var {
+                    Some(replace_var) => {
+                        self.tcx.mk_region(ty::ReLateBound(self.current_index, *replace_var))
+                    }
+                    None => r,
+                }
+            }
+            _ => r,
+        }
+    }
+
+    fn fold_ty(&mut self, ty: Ty<'tcx>) -> Ty<'tcx> {
+        match *ty.kind() {
+            ty::Placeholder(p) => {
+                let replace_var = self.mapped_types.get(&p);
+                match replace_var {
+                    Some(replace_var) => {
+                        self.tcx.mk_ty(ty::Bound(self.current_index, *replace_var))
+                    }
+                    None => ty,
+                }
+            }
+
+            _ => ty.super_fold_with(self),
+        }
+    }
+
+    fn fold_const(&mut self, ct: &'tcx ty::Const<'tcx>) -> &'tcx ty::Const<'tcx> {
+        if let ty::Const { val: ty::ConstKind::Placeholder(p), ty
+         } = *ct {
+            let replace_var = self.mapped_consts.get(&p);
+            match replace_var {
+                Some(replace_var) => {
+                    self.tcx.mk_const(ty::Const { val: ty::ConstKind::Bound(self.current_index, *replace_var), ty })
+                }
+                None => ct,
+            }
+        } else {
+            ct.super_fold_with(self)
+        }
+    }
+}
