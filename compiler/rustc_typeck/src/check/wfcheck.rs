@@ -263,6 +263,7 @@ fn check_object_unsafe_self_trait_by_name(tcx: TyCtxt<'_>, item: &hir::TraitItem
     }
 }
 
+#[tracing::instrument(level = "debug", skip(tcx))]
 pub fn check_impl_item(tcx: TyCtxt<'_>, def_id: LocalDefId) {
     let hir_id = tcx.hir().local_def_id_to_hir_id(def_id);
     let impl_item = tcx.hir().expect_impl_item(hir_id);
@@ -384,8 +385,11 @@ fn check_associated_item(
     sig_if_method: Option<&hir::FnSig<'_>>,
 ) {
     let code = ObligationCauseCode::MiscObligation;
+    debug!("hello1");
     for_id(tcx, item_id, span).with_fcx(|fcx, tcx| {
+        debug!("hello2");
         let item = fcx.tcx.associated_item(fcx.tcx.hir().local_def_id(item_id));
+        debug!(?item);
 
         let (mut implied_bounds, self_ty) = match item.container {
             ty::TraitContainer(_) => (vec![], fcx.tcx.types.self_param),
@@ -394,6 +398,9 @@ fn check_associated_item(
             }
         };
 
+        debug!(?implied_bounds);
+        debug!(?self_ty);
+        debug!("item.kind={:?}", item.kind);
         match item.kind {
             ty::AssocKind::Const => {
                 let ty = fcx.tcx.type_of(item.def_id);
@@ -434,6 +441,7 @@ fn for_item<'tcx>(tcx: TyCtxt<'tcx>, item: &hir::Item<'_>) -> CheckWfFcxBuilder<
     for_id(tcx, item.hir_id(), item.span)
 }
 
+#[tracing::instrument(level = "debug", skip(tcx, span))]
 fn for_id(tcx: TyCtxt<'_>, id: hir::HirId, span: Span) -> CheckWfFcxBuilder<'_> {
     let def_id = tcx.hir().local_def_id(id);
     CheckWfFcxBuilder {
@@ -898,6 +906,7 @@ fn check_where_clauses<'tcx, 'fcx>(
     }
 }
 
+#[tracing::instrument(level = "debug", skip(tcx, fcx, span))]
 fn check_fn_or_method<'fcx, 'tcx>(
     tcx: TyCtxt<'tcx>,
     fcx: &FnCtxt<'fcx, 'tcx>,
@@ -1069,6 +1078,7 @@ const HELP_FOR_SELF_TYPE: &str = "consider changing to `self`, `&self`, `&mut se
      `self: Rc<Self>`, `self: Arc<Self>`, or `self: Pin<P>` (where P is one \
      of the previous types except `Self`)";
 
+#[instrument(level = "debug", skip(fcx))]
 fn check_method_receiver<'fcx, 'tcx>(
     fcx: &FnCtxt<'fcx, 'tcx>,
     fn_sig: &hir::FnSig<'_>,
@@ -1076,8 +1086,6 @@ fn check_method_receiver<'fcx, 'tcx>(
     self_ty: Ty<'tcx>,
 ) {
     // Check that the method has a valid receiver type, given the type `Self`.
-    debug!("check_method_receiver({:?}, self_ty={:?})", method, self_ty);
-
     if !method.fn_has_self_parameter {
         return;
     }
@@ -1085,20 +1093,24 @@ fn check_method_receiver<'fcx, 'tcx>(
     let span = fn_sig.decl.inputs[0].span;
 
     let sig = fcx.tcx.fn_sig(method.def_id);
-    let sig = fcx.normalize_associated_types_in(span, sig);
     let sig = fcx.tcx.liberate_late_bound_regions(method.def_id, sig);
+    let sig = fcx.normalize_associated_types_in(span, sig);
 
-    debug!("check_method_receiver: sig={:?}", sig);
+    debug!(?sig);
 
-    let self_ty = fcx.normalize_associated_types_in(span, self_ty);
     let self_ty =
         fcx.tcx.liberate_late_bound_regions(method.def_id, ty::Binder::bind(self_ty, fcx.tcx));
+    let self_ty = fcx.normalize_associated_types_in(span, self_ty);
+
+    debug!(?self_ty);
 
     let receiver_ty = sig.inputs()[0];
 
-    let receiver_ty = fcx.normalize_associated_types_in(span, receiver_ty);
     let receiver_ty =
         fcx.tcx.liberate_late_bound_regions(method.def_id, ty::Binder::bind(receiver_ty, fcx.tcx));
+    let receiver_ty = fcx.normalize_associated_types_in(span, receiver_ty);
+
+    debug!(?receiver_ty);
 
     if fcx.tcx.features().arbitrary_self_types {
         if !receiver_is_valid(fcx, span, receiver_ty, self_ty, true) {
