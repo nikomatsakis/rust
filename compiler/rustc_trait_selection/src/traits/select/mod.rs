@@ -435,7 +435,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     #[instrument(
         level = "debug",
         skip(self, previous_stack),
-        fields(previous_stack = ?previous_stack.head())
+        fields(previous_stack = ?previous_stack)
     )]
     fn evaluate_predicate_recursively<'o>(
         &mut self,
@@ -715,7 +715,15 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             })
             .map(|stack| stack.depth)
         {
-            debug!("evaluate_stack --> recursive at depth {}", cycle_depth);
+            let cycle = || stack.iter().skip(1).take_while(|s| s.depth >= cycle_depth);
+            debug!(
+                "check_evaluation_cycle: recursive at depth {} from depth {} dfn {}, cycle={:#?}, rest of stack={:#?}",
+                cycle_depth,
+                stack.depth,
+                stack.dfn,
+                cycle().collect::<Vec<_>>(),
+                stack.iter().skip_while(|s| s.depth >= cycle_depth).collect::<Vec<_>>(),
+            );
 
             // If we have a stack like `A B C D E A`, where the top of
             // the stack is the final `A`, then this will iterate over
@@ -730,10 +738,9 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             // have erased regions) but rather the fully explicit
             // trait refs. This is important because it's only a cycle
             // if the regions match exactly.
-            let cycle = stack.iter().skip(1).take_while(|s| s.depth >= cycle_depth);
             let tcx = self.tcx();
             let cycle =
-                cycle.map(|stack| stack.obligation.predicate.without_const().to_predicate(tcx));
+                cycle().map(|stack| stack.obligation.predicate.without_const().to_predicate(tcx));
             if self.coinductive_match(cycle) {
                 debug!("evaluate_stack --> recursive, coinductive");
                 Some(EvaluatedToOk)
