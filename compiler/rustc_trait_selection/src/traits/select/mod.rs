@@ -2405,6 +2405,12 @@ impl<'o, 'tcx> Iterator for TraitObligationStackList<'o, 'tcx> {
     }
 }
 
+impl<'o, 'tcx> fmt::Debug for TraitObligationStackList<'o, 'tcx> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.into_iter()).finish()
+    }
+}
+
 impl<'o, 'tcx> fmt::Debug for TraitObligationStack<'o, 'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "TraitObligationStack({:?})", self.obligation)
