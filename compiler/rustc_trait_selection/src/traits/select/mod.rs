@@ -672,7 +672,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         {
             let cycle = || stack.iter().skip(1).take_while(|s| s.depth >= cycle_depth);
             debug!(
-                "check_evaluation_cycle: recursive at depth {} from depth {} dfn {}, cycle={:#?}, rest of stack={:#?}",
+                "check_evaluation_cycle: recursive at depth {} from depth {} dfn {:?}, cycle={:#?}, rest of stack={:#?}",
                 cycle_depth,
                 stack.depth,
                 stack.dfn,

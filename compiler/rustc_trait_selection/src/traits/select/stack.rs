@@ -4,8 +4,16 @@ use std::{
 };
 
 use rustc_data_structures::fx::FxHashMap;
+use rustc_index::newtype_index;
 use rustc_infer::traits::{EvaluationResult, TraitObligation};
 use rustc_middle::ty;
+
+newtype_index! {
+    pub(super) struct Dfn {
+        ENCODABLE = custom
+        DEBUG_FORMAT = "Dfn({})"
+    }
+}
 // A stack that walks back up the stack frame.
 pub(super) struct TraitObligationStack<'prev, 'tcx> {
     pub(super) obligation: &'prev TraitObligation<'tcx>,
@@ -51,7 +59,7 @@ pub(super) struct TraitObligationStack<'prev, 'tcx> {
 
     /// The depth-first number of this node in the search graph -- a
     /// pre-order index. Basically, a freshly incremented counter.
-    pub(super) dfn: usize,
+    pub(super) dfn: Dfn,
 }
 
 impl<'o, 'tcx> TraitObligationStack<'o, 'tcx> {
@@ -194,7 +202,7 @@ impl<'o, 'tcx> fmt::Debug for TraitObligationStack<'o, 'tcx> {
 /// can commit all the things that remain in the provisional cache.
 pub(super) struct ProvisionalEvaluationCache<'tcx> {
     /// next "depth first number" to issue -- just a counter
-    dfn: Cell<usize>,
+    dfn: Cell<Dfn>,
 
     /// Map from cache key to the provisionally evaluated thing.
     /// The cache entries contain the result but also the DFN in which they
@@ -218,20 +226,20 @@ pub(super) struct ProvisionalEvaluationCache<'tcx> {
 /// number (DFN) and result.
 #[derive(Copy, Clone, Debug)]
 pub(super) struct ProvisionalEvaluation {
-    pub(super) from_dfn: usize,
+    pub(super) from_dfn: Dfn,
     pub(super) reached_depth: usize,
     pub(super) result: EvaluationResult,
 }
 
 impl<'tcx> Default for ProvisionalEvaluationCache<'tcx> {
     fn default() -> Self {
-        Self { dfn: Cell::new(0), map: Default::default() }
+        Self { dfn: Cell::new(Dfn::from(0_u32)), map: Default::default() }
     }
 }
 
 impl<'tcx> ProvisionalEvaluationCache<'tcx> {
     /// Get the next DFN in sequence (basically a counter).
-    pub(super) fn next_dfn(&self) -> usize {
+    pub(super) fn next_dfn(&self) -> Dfn {
         let result = self.dfn.get();
         self.dfn.set(result + 1);
         result
@@ -259,7 +267,7 @@ impl<'tcx> ProvisionalEvaluationCache<'tcx> {
     /// and resulted in `result`.
     pub(super) fn insert_provisional(
         &self,
-        from_dfn: usize,
+        from_dfn: Dfn,
         reached_depth: usize,
         fresh_trait_ref: ty::PolyTraitRef<'tcx>,
         result: EvaluationResult,
@@ -278,7 +286,7 @@ impl<'tcx> ProvisionalEvaluationCache<'tcx> {
     /// since the failing node is presently at the top of the stack,
     /// these provisional entries must either depend on it or some
     /// ancestor of it.
-    pub(super) fn on_failure(&self, dfn: usize) {
+    pub(super) fn on_failure(&self, dfn: Dfn) {
         debug!(?dfn, "on_failure");
         self.map.borrow_mut().retain(|key, eval| {
             if eval.from_dfn >= dfn {
@@ -317,7 +325,7 @@ impl<'tcx> ProvisionalEvaluationCache<'tcx> {
     /// A and B, which have DFNs 0 and 1 respectively).
     pub(super) fn on_completion(
         &self,
-        dfn: usize,
+        dfn: Dfn,
         mut op: impl FnMut(ty::PolyTraitRef<'tcx>, EvaluationResult),
     ) {
         debug!(?dfn, "on_completion");
