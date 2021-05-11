@@ -35,7 +35,7 @@ impl<Key: Eq + Hash, Value: Clone> Cache<Key, Value> {
     }
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WithDepNode<T> {
     dep_node: DepNodeIndex,
     cached_value: T,
@@ -49,5 +49,16 @@ impl<T: Clone> WithDepNode<T> {
     pub fn get<CTX: DepContext>(&self, tcx: CTX) -> T {
         tcx.dep_graph().read_index(self.dep_node);
         self.cached_value.clone()
+    }
+}
+
+impl<Key, Value> std::fmt::Debug for Cache<Key, Value>
+where
+    Key: std::fmt::Debug,
+    Value: std::fmt::Debug,
+{
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let map = self.hashmap.borrow();
+        std::fmt::Debug::fmt(&*map, fmt)
     }
 }
