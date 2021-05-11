@@ -50,7 +50,7 @@ pub(super) struct TraitObligationStack<'prev, 'tcx> {
     /// evaluate each member of a cycle up to N times, where N is the
     /// length of the cycle. This means the performance impact is
     /// bounded and we shouldn't have any terrible worst-cases.
-    pub(super) reached_depth: Cell<usize>,
+    pub(super) reached_dfn: Cell<Dfn>,
 
     pub(super) previous: TraitObligationStackList<'prev, 'tcx>,
 
@@ -77,19 +77,19 @@ impl<'o, 'tcx> TraitObligationStack<'o, 'tcx> {
 
     /// Indicates that attempting to evaluate this stack entry
     /// required accessing something from the stack at depth `reached_depth`.
-    pub(super) fn update_reached_depth(&self, reached_depth: usize) {
+    pub(super) fn update_reached_dfn(&self, reached_dfn: Dfn) {
         assert!(
-            self.depth > reached_depth,
+            self.dfn > reached_dfn,
             "invoked `update_reached_depth` with something under this stack: \
-             self.depth={} reached_depth={}",
-            self.depth,
-            reached_depth,
+             self.dfn={:?} reached_dfn={:?}",
+            self.dfn,
+            reached_dfn,
         );
-        debug!(reached_depth, "update_reached_depth");
+        debug!(?reached_dfn, "update_reached_dfn");
         let mut p = self;
-        while reached_depth < p.depth {
+        while reached_dfn < p.dfn {
             debug!(?p.fresh_trait_ref, "update_reached_depth: marking as cycle participant");
-            p.reached_depth.set(p.reached_depth.get().min(reached_depth));
+            p.reached_dfn.set(p.reached_dfn.get().min(reached_dfn));
             p = p.previous.head.unwrap();
         }
     }
@@ -227,7 +227,7 @@ pub(super) struct ProvisionalEvaluationCache<'tcx> {
 #[derive(Copy, Clone, Debug)]
 pub(super) struct ProvisionalEvaluation {
     pub(super) from_dfn: Dfn,
-    pub(super) reached_depth: usize,
+    pub(super) reached_dfn: Dfn,
     pub(super) result: EvaluationResult,
 }
 
@@ -268,14 +268,14 @@ impl<'tcx> ProvisionalEvaluationCache<'tcx> {
     pub(super) fn insert_provisional(
         &self,
         from_dfn: Dfn,
-        reached_depth: usize,
+        reached_dfn: Dfn,
         fresh_trait_ref: ty::PolyTraitRef<'tcx>,
         result: EvaluationResult,
     ) {
         debug!(?from_dfn, ?fresh_trait_ref, ?result, "insert_provisional");
         self.map
             .borrow_mut()
-            .insert(fresh_trait_ref, ProvisionalEvaluation { from_dfn, reached_depth, result });
+            .insert(fresh_trait_ref, ProvisionalEvaluation { from_dfn, reached_dfn, result });
     }
 
     /// Invoked when the node with dfn `dfn` does not get a successful
@@ -334,6 +334,10 @@ impl<'tcx> ProvisionalEvaluationCache<'tcx> {
             self.map.borrow_mut().drain_filter(|_k, eval| eval.from_dfn >= dfn)
         {
             debug!(?fresh_trait_ref, ?eval, "on_completion");
+
+            // This result cannot have depended on anything that preceded `dfn`
+            // or else `dfn` would not be complete:
+            assert!(eval.reached_dfn >= dfn);
 
             op(fresh_trait_ref, eval.result);
         }

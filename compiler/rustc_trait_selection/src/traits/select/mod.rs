@@ -591,7 +591,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
         if let Some(result) = stack.cache().get_provisional(fresh_trait_ref) {
             debug!(?result, "PROVISIONAL CACHE HIT");
-            stack.update_reached_depth(result.reached_depth);
+            stack.update_reached_dfn(result.reached_dfn);
             return Ok(result.result);
         }
 
@@ -611,8 +611,8 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             stack.cache().on_failure(stack.dfn);
         }
 
-        let reached_depth = stack.reached_depth.get();
-        if reached_depth >= stack.depth {
+        let reached_dfn = stack.reached_dfn.get();
+        if reached_dfn >= stack.dfn {
             debug!(?result, "CACHE MISS");
             self.insert_evaluation_cache(obligation.param_env, fresh_trait_ref, dep_node, result);
 
@@ -628,11 +628,11 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             debug!(?result, "PROVISIONAL");
             debug!(
                 "evaluate_trait_predicate_recursively: caching provisionally because {:?} \
-                 is a cycle participant (at depth {}, reached depth {})",
-                fresh_trait_ref, stack.depth, reached_depth,
+                 is a cycle participant (at depth {}, reached depth {:?})",
+                fresh_trait_ref, stack.depth, reached_dfn,
             );
 
-            stack.cache().insert_provisional(stack.dfn, reached_depth, fresh_trait_ref, result);
+            stack.cache().insert_provisional(stack.dfn, reached_dfn, fresh_trait_ref, result);
         }
 
         Ok(result)
@@ -661,19 +661,20 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         &mut self,
         stack: &TraitObligationStack<'_, 'tcx>,
     ) -> Option<EvaluationResult> {
-        if let Some(cycle_depth) = stack
+        if let Some((cycle_depth, cycle_dfn)) = stack
             .iter()
             .skip(1) // Skip top-most frame.
             .find(|prev| {
                 stack.obligation.param_env == prev.obligation.param_env
                     && stack.fresh_trait_ref == prev.fresh_trait_ref
             })
-            .map(|stack| stack.depth)
+            .map(|stack| (stack.depth, stack.dfn))
         {
             let cycle = || stack.iter().skip(1).take_while(|s| s.depth >= cycle_depth);
             debug!(
-                "check_evaluation_cycle: recursive at depth {} from depth {} dfn {:?}, cycle={:#?}, rest of stack={:#?}",
+                "check_evaluation_cycle: recursive at depth {} {:?} from depth {} dfn {:?}, cycle={:#?}, rest of stack={:#?}",
                 cycle_depth,
+                cycle_dfn,
                 stack.depth,
                 stack.dfn,
                 cycle().collect::<Vec<_>>(),
@@ -686,7 +687,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             // from the cycle head. We mark them as participating in a
             // cycle. This suppresses caching for those nodes. See
             // `in_cycle` field for more details.
-            stack.update_reached_depth(cycle_depth);
+            stack.update_reached_dfn(cycle_dfn);
 
             // Subtle: when checking for a coinductive cycle, we do
             // not compare using the "freshened trait refs" (which
@@ -1953,7 +1954,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         TraitObligationStack {
             obligation,
             fresh_trait_ref,
-            reached_depth: Cell::new(depth),
+            reached_dfn: Cell::new(dfn),
             previous: previous_stack,
             dfn,
             depth,
