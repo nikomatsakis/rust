@@ -906,12 +906,19 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         trait_ref: ty::PolyTraitRef<'tcx>,
     ) -> Option<EvaluationResult> {
         let tcx = self.tcx();
+        let key = param_env.and(trait_ref);
         if self.can_use_global_caches(param_env) {
-            if let Some(res) = tcx.evaluation_cache.get(&param_env.and(trait_ref), tcx) {
+            if let Some(res) = tcx.evaluation_cache.get(&key, tcx) {
+                debug!(?key, ?res, "check_evaluation_cache global");
                 return Some(res);
             }
         }
-        self.infcx.evaluation_cache.get(&param_env.and(trait_ref), tcx)
+        if let Some(res) = self.infcx.evaluation_cache.get(&key, tcx) {
+            debug!(?key, ?res, "check_evaluation_cache");
+            Some(res)
+        } else {
+            None
+        }
     }
 
     fn insert_evaluation_cache(
@@ -927,20 +934,24 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             return;
         }
 
+        let key = param_env.and(trait_ref);
+
         if self.can_use_global_caches(param_env) {
             if !trait_ref.needs_infer() {
-                debug!(?trait_ref, ?result, "insert_evaluation_cache global");
+                debug!(?key, ?result, "insert_evaluation_cache global");
+                debug!("insert_evaluation_cache global cache={:?}", self.tcx().evaluation_cache);
                 // This may overwrite the cache with the same value
                 // FIXME: Due to #50507 this overwrites the different values
                 // This should be changed to use HashMapExt::insert_same
                 // when that is fixed
-                self.tcx().evaluation_cache.insert(param_env.and(trait_ref), dep_node, result);
+                self.tcx().evaluation_cache.insert(key, dep_node, result);
                 return;
             }
         }
 
-        debug!(?trait_ref, ?result, "insert_evaluation_cache");
-        self.infcx.evaluation_cache.insert(param_env.and(trait_ref), dep_node, result);
+        debug!(?key, ?result, "insert_evaluation_cache");
+        debug!("insert_evaluation_cache cache={:?}", self.infcx.evaluation_cache);
+        self.infcx.evaluation_cache.insert(key, dep_node, result);
     }
 
     /// For various reasons, it's possible for a subobligation
