@@ -9,6 +9,7 @@ use rustc_infer::traits::{EvaluationResult, TraitObligation};
 use rustc_middle::ty;
 
 newtype_index! {
+    /// Represents a "depth-first number" used in the traits evaluation cache.
     pub(super) struct Dfn {
         ENCODABLE = custom
         DEBUG_FORMAT = "Dfn({})"
@@ -22,34 +23,41 @@ pub(super) struct TraitObligationStack<'prev, 'tcx> {
     /// selection-context's freshener. Used to check for recursion.
     pub(super) fresh_trait_ref: ty::PolyTraitRef<'tcx>,
 
-    /// Starts out equal to `depth` -- if, during evaluation, we
+    /// Starts out equal to `dfn` -- if, during evaluation, we
     /// encounter a cycle, then we will set this flag to the minimum
-    /// depth of that cycle for all participants in the cycle. These
-    /// participants will then forego caching their results. This is
-    /// not the most efficient solution, but it addresses #60010. The
-    /// problem we are trying to prevent:
+    /// dfn of that cycle for all participants in the cycle. These
+    /// participants will then defer caching their results until we
+    /// know that all of the cycle participants are successful. The
+    /// problem #60010 we are trying to prevent. Given some types
+    /// A, B, and C and two traits, `AutoTrait` and `NonAutoTrait`,
+    /// where you have the following impls:
     ///
-    /// - If you have `A: AutoTrait` requires `B: AutoTrait` and `C: NonAutoTrait`
-    /// - `B: AutoTrait` requires `A: AutoTrait` (coinductive cycle, ok)
-    /// - `C: NonAutoTrait` requires `A: AutoTrait` (non-coinductive cycle, not ok)
+    /// ```rust
+    /// impl AutoTrait for A where B: AutoTrait, C: NonAutoTrait { }
+    /// impl AutoTrait for B where A: AutoTrait { }
+    /// impl NonAutoTrait for C where A: AutoTrait { }
+    /// ```
     ///
-    /// you don't want to cache that `B: AutoTrait` or `A: AutoTrait`
-    /// is `EvaluatedToOk`; this is because they were only considered
-    /// ok on the premise that if `A: AutoTrait` held, but we indeed
-    /// encountered a problem (later on) with `A: AutoTrait. So we
-    /// currently set a flag on the stack node for `B: AutoTrait` (as
-    /// well as the second instance of `A: AutoTrait`) to suppress
-    /// caching.
+    /// Imagine we start by evaluating `A: AutoTrait`...
     ///
-    /// This is a simple, targeted fix. A more-performant fix requires
-    /// deeper changes, but would permit more caching: we could
-    /// basically defer caching until we have fully evaluated the
-    /// tree, and then cache the entire tree at once. In any case, the
-    /// performance impact here shouldn't be so horrible: every time
-    /// this is hit, we do cache at least one trait, so we only
-    /// evaluate each member of a cycle up to N times, where N is the
-    /// length of the cycle. This means the performance impact is
-    /// bounded and we shouldn't have any terrible worst-cases.
+    /// * that holds if `B: AutoTrait`, so we evaluate that...
+    ///     * `B: AutoTrait` holds if `A: Autotrait`, which is a coinductive cycle, which is ok;
+    /// * but then `C: NonAutoTrait` must also hold...
+    ///     * `C: NonAutoTrait` requires `A: AutoTrait`, which is a *non-inductive cycle*, and hence an error.
+    ///
+    /// The danger is that we may have cached the "`B: AutoTrait` is ok" result.
+    /// We should not do that, because that was only true on the premise that
+    /// `A: AutoTrait` also held, but we encountered a problem (later on) with
+    /// `A: AutoTrait.`
+    ///
+    /// To handle this, we assign each node a DFN. `A: AutoTrait` would be DFN 0,
+    /// `B: AutoTrait` would be DFN 1, and `C: NonAutoTrait` would be DFN 2.
+    /// We track the lowest DFN reached by each search, which in this case is always
+    /// DFN 0. We then hold off oncaching results until we reach some (successful)
+    /// node where the lowest DFN reached is equal to its DFN (in this case, that
+    /// would be `A: AutoTrait`). Since that result is actually an error, we will
+    /// clear out the cached values for the internal nodes.
+    /// See [`ProvisionalEvaluationCache`] for more details.
     pub(super) reached_dfn: Cell<Dfn>,
 
     pub(super) previous: TraitObligationStackList<'prev, 'tcx>,
@@ -222,12 +230,18 @@ pub(super) struct ProvisionalEvaluationCache<'tcx> {
     map: RefCell<FxHashMap<ty::PolyTraitRef<'tcx>, ProvisionalEvaluation>>,
 }
 
-/// A cache value for the provisional cache: contains the depth-first
-/// number (DFN) and result.
+/// A cache value for the [`ProvisionalEvaluationCache`].
 #[derive(Copy, Clone, Debug)]
 pub(super) struct ProvisionalEvaluation {
+    /// DFN of the search node that generated this result
     pub(super) from_dfn: Dfn,
+
+    /// Minimum DFN that was reached while computing `result`.
+    /// Any use of `result` is therefore equivalent to reaching
+    /// this DFN. This will always be <= `from_dfn`.
     pub(super) reached_dfn: Dfn,
+
+    /// Result that was computed.
     pub(super) result: EvaluationResult,
 }
 
@@ -273,6 +287,12 @@ impl<'tcx> ProvisionalEvaluationCache<'tcx> {
         result: EvaluationResult,
     ) {
         debug!(?from_dfn, ?fresh_trait_ref, ?result, "insert_provisional");
+        assert!(
+            reached_dfn <= from_dfn,
+            "reached_dfn {:?} not less than from_dfn {:?}",
+            reached_dfn,
+            from_dfn
+        );
         self.map
             .borrow_mut()
             .insert(fresh_trait_ref, ProvisionalEvaluation { from_dfn, reached_dfn, result });
