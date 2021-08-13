@@ -219,8 +219,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
     /// - `free_region_relations` -- something that can be used to relate
     ///   the free regions (`'a`) that appear in the impl trait.
     fn constrain_opaque_types<FRR: FreeRegionRelations<'tcx>>(&self, free_region_relations: &FRR) {
-        let opaque_types = self.inner.borrow().opaque_types.clone();
-        for (opaque_type_key, opaque_defn) in opaque_types {
+        for (opaque_type_key, opaque_defn) in self.opaque_types() {
             self.constrain_opaque_type(
                 opaque_type_key,
                 &opaque_defn,

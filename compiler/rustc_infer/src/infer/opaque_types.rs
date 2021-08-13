@@ -15,6 +15,10 @@ use super::InferCtxt;
 
 pub type OpaqueTypeMap<'tcx> = VecMap<OpaqueTypeKey<'tcx>, OpaqueTypeDecl<'tcx>>;
 
+mod table;
+
+pub use table::{OpaqueTypeStorage, OpaqueTypeTable};
+
 /// Information about the opaque types whose values we
 /// are inferring in this function (these are the `impl Trait` that
 /// appear in the return type).
@@ -93,6 +97,10 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
             Instantiator { infcx: self, value_span, body_id, param_env, obligations: vec![] };
         let value = instantiator.instantiate_opaque_types_in_map(value);
         InferOk { value, obligations: instantiator.obligations }
+    }
+
+    pub fn opaque_types(&self) -> OpaqueTypeMap<'tcx> {
+        self.inner.borrow().opaque_type_storage.opaque_types()
     }
 }
 
@@ -208,7 +216,9 @@ impl<'a, 'tcx> Instantiator<'a, 'tcx> {
 
         // Use the same type variable if the exact same opaque type appears more
         // than once in the return type (e.g., if it's passed to a type alias).
-        if let Some(opaque_defn) = infcx.inner.borrow().opaque_types.get(&opaque_type_key) {
+        if let Some(opaque_defn) =
+            infcx.inner.borrow().opaque_type_storage.get_decl(&opaque_type_key)
+        {
             debug!("re-using cached concrete type {:?}", opaque_defn.concrete_ty.kind());
             return opaque_defn.concrete_ty;
         }
@@ -225,14 +235,10 @@ impl<'a, 'tcx> Instantiator<'a, 'tcx> {
         // Foo, impl Bar)`.
         let definition_span = self.value_span;
 
-        {
-            let mut infcx = self.infcx.inner.borrow_mut();
-            infcx.opaque_types.insert(
-                OpaqueTypeKey { def_id, substs },
-                OpaqueTypeDecl { opaque_type: ty, definition_span, concrete_ty: ty_var, origin },
-            );
-            infcx.opaque_types_vars.insert(ty_var, ty);
-        }
+        self.infcx.inner.borrow_mut().opaque_types().register(
+            OpaqueTypeKey { def_id, substs },
+            OpaqueTypeDecl { opaque_type: ty, definition_span, concrete_ty: ty_var, origin },
+        );
 
         debug!("generated new type inference var {:?}", ty_var.kind());
 
