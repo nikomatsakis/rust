@@ -280,16 +280,16 @@ impl<'a, 'tcx> Instantiator<'a, 'tcx> {
         if let Some(def_id) = def_id.as_local() {
             let opaque_hir_id = tcx.hir().local_def_id_to_hir_id(def_id);
             let parent_def_id = self.infcx.defining_use_anchor;
-            let (in_definition_scope, origin) = match tcx.hir().expect_item(opaque_hir_id).kind {
+            let origin = match tcx.hir().expect_item(opaque_hir_id).kind {
                 // Anonymous `impl Trait`
                 hir::ItemKind::OpaqueTy(hir::OpaqueTy {
                     impl_trait_fn: Some(parent),
                     origin,
                     ..
-                }) => (parent == parent_def_id.to_def_id(), origin),
+                }) => (parent == parent_def_id.to_def_id()).then_some(origin),
                 // Named `type Foo = impl Bar;`
                 hir::ItemKind::OpaqueTy(hir::OpaqueTy { impl_trait_fn: None, origin, .. }) => {
-                    (may_define_opaque_type(tcx, parent_def_id, opaque_hir_id), origin)
+                    may_define_opaque_type(tcx, parent_def_id, opaque_hir_id).then_some(origin)
                 }
                 ref itemkind => {
                     span_bug!(
@@ -300,7 +300,7 @@ impl<'a, 'tcx> Instantiator<'a, 'tcx> {
                     )
                 }
             };
-            if in_definition_scope {
+            if let Some(origin) = origin {
                 let opaque_type_key = OpaqueTypeKey { def_id: def_id.to_def_id(), substs };
                 return self.fold_opaque_ty(ty, opaque_type_key, origin, mk_ty);
             }
