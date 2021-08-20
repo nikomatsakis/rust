@@ -660,7 +660,8 @@ fn check_opaque_meets_bounds<'tcx>(
             infcx.instantiate_opaque_types(hir_id, param_env, opaque_ty, span),
         );
 
-        for (OpaqueTypeKey { def_id, substs }, opaque_defn) in infcx.opaque_types() {
+        let opaque_types = infcx.inner.borrow_mut().opaque_type_storage.take_opaque_types();
+        for (OpaqueTypeKey { def_id, substs }, opaque_defn) in opaque_types {
             match infcx
                 .at(&misc_cause, param_env)
                 .eq(opaque_defn.concrete_ty, tcx.type_of(def_id).subst(tcx, substs))
