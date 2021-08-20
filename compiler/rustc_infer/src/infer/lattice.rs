@@ -22,7 +22,7 @@
 use super::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
 use super::InferCtxt;
 
-use crate::traits::ObligationCause;
+use crate::traits::{ObligationCause, PredicateObligation};
 use rustc_middle::ty::relate::{RelateResult, TypeRelation};
 use rustc_middle::ty::TyVar;
 use rustc_middle::ty::{self, Ty};
@@ -31,6 +31,8 @@ pub trait LatticeDir<'f, 'tcx>: TypeRelation<'tcx> {
     fn infcx(&self) -> &'f InferCtxt<'f, 'tcx>;
 
     fn cause(&self) -> &ObligationCause<'tcx>;
+
+    fn add_obligations(&mut self, obligations: Vec<PredicateObligation<'tcx>>);
 
     // Relates the type `v` to `a` and `b` such that `v` represents
     // the LUB/GLB of `a` and `b` as appropriate.
@@ -56,6 +58,16 @@ where
     }
 
     let infcx = this.infcx();
+
+    let value_span = this.cause().span;
+    let body_id = this.cause().body_id;
+
+    let a = infcx.replace_if_defining(a, b, body_id, this.param_env(), value_span);
+    this.add_obligations(a.obligations);
+    let a = a.value;
+    let b = infcx.replace_if_defining(b, a, body_id, this.param_env(), value_span);
+    this.add_obligations(b.obligations);
+    let b = b.value;
     let a = infcx.inner.borrow_mut().type_variables().replace_if_possible(a);
     let b = infcx.inner.borrow_mut().type_variables().replace_if_possible(b);
     match (a.kind(), b.kind()) {

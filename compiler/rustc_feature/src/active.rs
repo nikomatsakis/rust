@@ -665,6 +665,9 @@ declare_features! (
 
     /// Allows using doc(primitive) without a future-incompat warning
     (active, doc_primitive, "1.56.0", Some(88070), None),
+    
+    /// Allows `impl Trait` to be used everywhere.
+    (active, lazy_impl_trait, "1.56.0", Some(63063), None),
 
     /// Allows non-trivial generic constants which have to have wfness manually propagated to callers
     (incomplete, generic_const_exprs, "1.56.0", Some(76560), None),

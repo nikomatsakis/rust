@@ -3,6 +3,7 @@
 use super::{check_fn, Expectation, FnCtxt, GeneratorTypes};
 
 use crate::astconv::AstConv;
+use crate::rustc_middle::ty::subst::Subst;
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
 use rustc_hir::lang_items::LangItem;
@@ -172,6 +173,29 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         expected_ty: Ty<'tcx>,
     ) -> (Option<ExpectedSig<'tcx>>, Option<ty::ClosureKind>) {
         match *expected_ty.kind() {
+            ty::Opaque(def_id, substs) => {
+                let bounds = self.tcx.explicit_item_bounds(def_id);
+                let sig = bounds.iter().find_map(|(pred, span)| match pred.kind().skip_binder() {
+                    ty::PredicateKind::Projection(proj_predicate) => self
+                        .deduce_sig_from_projection(
+                            Some(*span),
+                            pred.kind().rebind(proj_predicate.subst(self.tcx, substs)),
+                        ),
+                    _ => None,
+                });
+
+                let kind = bounds
+                    .iter()
+                    .filter_map(|(pred, _)| match pred.kind().skip_binder() {
+                        ty::PredicateKind::Trait(tp) => {
+                            self.tcx.fn_trait_kind_from_lang_item(tp.def_id())
+                        }
+                        _ => None,
+                    })
+                    .fold(None, |best, cur| Some(best.map_or(cur, |best| cmp::min(best, cur))));
+                trace!(?sig, ?kind);
+                (sig, kind)
+            }
             ty::Dynamic(ref object_type, ..) => {
                 let sig = object_type.projection_bounds().find_map(|pb| {
                     let pb = pb.with_self_ty(self.tcx, self.tcx.types.trait_object_dummy_self);

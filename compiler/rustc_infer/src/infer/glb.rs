@@ -4,7 +4,7 @@ use super::InferCtxt;
 use super::Subtype;
 
 use crate::infer::combine::ConstEquateRelation;
-use crate::traits::ObligationCause;
+use crate::traits::{ObligationCause, PredicateObligation};
 use rustc_middle::ty::relate::{Relate, RelateResult, TypeRelation};
 use rustc_middle::ty::{self, Ty, TyCtxt};
 
@@ -109,6 +109,10 @@ impl<'combine, 'infcx, 'tcx> LatticeDir<'infcx, 'tcx> for Glb<'combine, 'infcx, 
 
     fn cause(&self) -> &ObligationCause<'tcx> {
         &self.fields.trace.cause
+    }
+
+    fn add_obligations(&mut self, obligations: Vec<PredicateObligation<'tcx>>) {
+        self.fields.obligations.extend(obligations)
     }
 
     fn relate_bound(&mut self, v: Ty<'tcx>, a: Ty<'tcx>, b: Ty<'tcx>) -> RelateResult<'tcx, ()> {

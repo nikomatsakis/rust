@@ -75,6 +75,15 @@ impl TypeRelation<'tcx> for Equate<'combine, 'infcx, 'tcx> {
         trace!(a = ?a.kind(), b = ?b.kind());
 
         let infcx = self.fields.infcx;
+        let value_span = self.fields.trace.cause.span;
+        let body_id = self.fields.trace.cause.body_id;
+
+        let a = infcx.replace_if_defining(a, b, body_id, self.param_env(), value_span);
+        let a = self.fields.add_obligations(a);
+        let b = infcx.replace_if_defining(b, a, body_id, self.param_env(), value_span);
+        let b = self.fields.add_obligations(b);
+        trace!(a = ?a.kind(), b = ?b.kind(), "opaque types instantiated");
+
         let a = infcx.inner.borrow_mut().type_variables().replace_if_possible(a);
         let b = infcx.inner.borrow_mut().type_variables().replace_if_possible(b);
         trace!(a = ?a.kind(), b = ?b.kind(), "replacements");

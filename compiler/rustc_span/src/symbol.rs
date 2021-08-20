@@ -742,6 +742,7 @@ symbols! {
         lang_items,
         large_assignments,
         lateout,
+        lazy_impl_trait,
         lazy_normalization_consts,
         le,
         len,
