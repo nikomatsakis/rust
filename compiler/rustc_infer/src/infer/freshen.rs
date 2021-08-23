@@ -146,13 +146,26 @@ impl<'a, 'tcx> TypeFolder<'tcx> for TypeFreshener<'a, 'tcx> {
     }
 
     fn fold_ty(&mut self, t: Ty<'tcx>) -> Ty<'tcx> {
-        if !t.needs_infer() && !t.has_erasable_regions(self.tcx()) {
+        if !t.has_opaque_types() && !t.needs_infer() && !t.has_erasable_regions(self.tcx()) {
             return t;
         }
 
         let tcx = self.infcx.tcx;
 
         match *t.kind() {
+            ty::Opaque(def_id, substs) if tcx.features().lazy_impl_trait => {
+                let ty = self
+                    .infcx
+                    .inner
+                    .borrow()
+                    .opaque_type_storage
+                    .get_decl(&ty::OpaqueTypeKey { def_id, substs })
+                    .map(|decl| decl.concrete_ty);
+                match ty {
+                    Some(ty) => self.fold_ty(ty),
+                    None => t.super_fold_with(self),
+                }
+            }
             ty::Infer(ty::TyVar(v)) => {
                 let opt_ty = self.infcx.inner.borrow_mut().type_variables().probe(v).known();
                 self.freshen_ty(opt_ty, ty::TyVar(v), ty::FreshTy)

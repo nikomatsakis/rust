@@ -1410,7 +1410,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
     where
         T: TypeFoldable<'tcx>,
     {
-        if !value.needs_infer() {
+        if !value.needs_infer() && !value.has_opaque_types() {
             return value; // Avoid duplicated subst-folding.
         }
         let mut r = resolve::OpportunisticVarResolver::new(self);
@@ -1611,6 +1611,22 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
     // FIXME(eddyb) inline into `ShallowResolver::visit_ty`.
     fn shallow_resolve_ty(&self, typ: Ty<'tcx>) -> Ty<'tcx> {
         match *typ.kind() {
+            ty::Opaque(def_id, substs) if self.tcx.features().lazy_impl_trait => {
+                let concrete_ty = self
+                    .inner
+                    .borrow()
+                    .opaque_type_storage
+                    .get_decl(&ty::OpaqueTypeKey { def_id, substs })
+                    .map(|decl| decl.concrete_ty);
+                if let Some(ty) = concrete_ty {
+                    // Make sure we don't cause an infinite recursion if the opaque type
+                    // resolves to itself (shouldn't happen, but let's make sure).
+                    assert_ne!(ty, typ);
+                    // The concrete type may be an inference type itself
+                    return self.shallow_resolve_ty(ty);
+                }
+                typ
+            }
             ty::Infer(ty::TyVar(v)) => {
                 // Not entirely obvious: if `typ` is a type variable,
                 // it can be resolved to an int/float variable, which
@@ -1660,6 +1676,12 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
     #[inline(always)]
     pub fn ty_or_const_infer_var_changed(&self, infer_var: TyOrConstInferVar<'tcx>) -> bool {
         match infer_var {
+            TyOrConstInferVar::Opaque(def_id, substs) => self
+                .inner
+                .borrow()
+                .opaque_type_storage
+                .get_decl(&ty::OpaqueTypeKey { def_id, substs })
+                .is_some(),
             TyOrConstInferVar::Ty(v) => {
                 use self::type_variable::TypeVariableValue;
 
@@ -1704,6 +1726,8 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
 /// used only for `traits::fulfill`'s list of `stalled_on` inference variables.
 #[derive(Copy, Clone, Debug)]
 pub enum TyOrConstInferVar<'tcx> {
+    /// Equivalent to `ty::Opaque`
+    Opaque(DefId, SubstsRef<'tcx>),
     /// Equivalent to `ty::Infer(ty::TyVar(_))`.
     Ty(TyVid),
     /// Equivalent to `ty::Infer(ty::IntVar(_))`.
@@ -1731,6 +1755,7 @@ impl TyOrConstInferVar<'tcx> {
     /// for types other than `ty::Infer(_)` (or `InferTy::Fresh*`).
     pub fn maybe_from_ty(ty: Ty<'tcx>) -> Option<Self> {
         match *ty.kind() {
+            ty::Opaque(def_id, substs) => Some(TyOrConstInferVar::Opaque(def_id, substs)),
             ty::Infer(ty::TyVar(v)) => Some(TyOrConstInferVar::Ty(v)),
             ty::Infer(ty::IntVar(v)) => Some(TyOrConstInferVar::TyInt(v)),
             ty::Infer(ty::FloatVar(v)) => Some(TyOrConstInferVar::TyFloat(v)),
