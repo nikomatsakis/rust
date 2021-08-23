@@ -233,7 +233,10 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             predicate: self.infcx().resolve_vars_if_possible(obligation.predicate),
         };
 
-        if obligation.predicate.skip_binder().self_ty().is_ty_var() {
+        if obligation.predicate.skip_binder().self_ty().is_ty_var()
+            || self.infcx.is_defining_opaque_type(obligation.predicate.skip_binder().self_ty())
+        {
+            debug!(ty = ?obligation.predicate.skip_binder().self_ty(), "ambiguous inference var or opaque type");
             // Self is a type variable (e.g., `_: AsRef<str>`).
             //
             // This is somewhat problematic, as the current scheme can't really

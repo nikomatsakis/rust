@@ -2,13 +2,14 @@ use crate::infer::InferOk;
 use crate::rustc_middle::ty::subst::Subst;
 use crate::traits::{self, PredicateObligation};
 use hir::def_id::{DefId, LocalDefId};
+use hir::OpaqueTyOrigin;
 use rustc_data_structures::vec_map::VecMap;
 use rustc_hir as hir;
 use rustc_middle::traits::ObligationCause;
 use rustc_middle::ty::fold::BottomUpFolder;
 use rustc_middle::ty::subst::SubstsRef;
 use rustc_middle::ty::{self, OpaqueTypeKey, Ty, TyCtxt, TypeFoldable};
-use rustc_span::Span;
+use rustc_span::{Span, DUMMY_SP};
 
 use crate::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
 
@@ -143,6 +144,45 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         }
     }
 
+    pub fn is_defining_opaque_type(&self, maybe_opaque_ty: Ty<'tcx>) -> bool {
+        if !self.tcx.features().lazy_impl_trait {
+            return false;
+        }
+        if let ty::Opaque(def_id, substs) = *maybe_opaque_ty.kind() {
+            if self
+                .inner
+                .borrow()
+                .opaque_type_storage
+                .get_decl(&OpaqueTypeKey { def_id, substs })
+                .is_some()
+            {
+                unreachable!()
+            }
+            self.opaque_ty_origin(def_id, DUMMY_SP).is_some()
+        } else {
+            false
+        }
+    }
+
+    fn opaque_ty_origin(&self, opaque_def_id: DefId, span: Span) -> Option<OpaqueTyOrigin> {
+        let def_id = opaque_def_id.as_local()?;
+        let opaque_hir_id = self.tcx.hir().local_def_id_to_hir_id(def_id);
+        let parent_def_id = self.defining_use_anchor;
+        match self.tcx.hir().expect_item(opaque_hir_id).kind {
+            // Anonymous `impl Trait`
+            hir::ItemKind::OpaqueTy(hir::OpaqueTy {
+                impl_trait_fn: Some(parent), origin, ..
+            }) => (parent == parent_def_id.to_def_id()).then_some(origin),
+            // Named `type Foo = impl Bar;`
+            hir::ItemKind::OpaqueTy(hir::OpaqueTy { impl_trait_fn: None, origin, .. }) => {
+                may_define_opaque_type(self.tcx, parent_def_id, opaque_hir_id).then_some(origin)
+            }
+            ref itemkind => {
+                span_bug!(span, "weird opaque type: {:?}, {:#?}", opaque_def_id, itemkind)
+            }
+        }
+    }
+
     pub fn replace_if_defining(
         &self,
         maybe_opaque_ty: Ty<'tcx>,
@@ -242,7 +282,6 @@ impl<'a, 'tcx> Instantiator<'a, 'tcx> {
         ty: Ty<'tcx>,
         mk_ty: impl FnOnce(&InferCtxt<'_, 'tcx>, Span) -> Ty<'tcx>,
     ) -> Ty<'tcx> {
-        let tcx = self.infcx.tcx;
         // Check that this is `impl Trait` type is
         // declared by `parent_def_id` -- i.e., one whose
         // value we are inferring.  At present, this is
@@ -277,41 +316,17 @@ impl<'a, 'tcx> Instantiator<'a, 'tcx> {
         //     let x = || foo(); // returns the Opaque assoc with `foo`
         // }
         // ```
-        if let Some(def_id) = def_id.as_local() {
-            let opaque_hir_id = tcx.hir().local_def_id_to_hir_id(def_id);
-            let parent_def_id = self.infcx.defining_use_anchor;
-            let origin = match tcx.hir().expect_item(opaque_hir_id).kind {
-                // Anonymous `impl Trait`
-                hir::ItemKind::OpaqueTy(hir::OpaqueTy {
-                    impl_trait_fn: Some(parent),
-                    origin,
-                    ..
-                }) => (parent == parent_def_id.to_def_id()).then_some(origin),
-                // Named `type Foo = impl Bar;`
-                hir::ItemKind::OpaqueTy(hir::OpaqueTy { impl_trait_fn: None, origin, .. }) => {
-                    may_define_opaque_type(tcx, parent_def_id, opaque_hir_id).then_some(origin)
-                }
-                ref itemkind => {
-                    span_bug!(
-                        self.value_span,
-                        "weird opaque type: {:#?}, {:#?}",
-                        ty.kind(),
-                        itemkind
-                    )
-                }
-            };
-            if let Some(origin) = origin {
-                let opaque_type_key = OpaqueTypeKey { def_id: def_id.to_def_id(), substs };
-                return self.fold_opaque_ty(ty, opaque_type_key, origin, mk_ty);
-            }
+        if let Some(origin) = self.infcx.opaque_ty_origin(def_id, self.value_span) {
+            let opaque_type_key = OpaqueTypeKey { def_id, substs };
+            return self.fold_opaque_ty(ty, opaque_type_key, origin, mk_ty);
+        }
 
-            debug!(
-                "instantiate_opaque_types_in_map: \
+        debug!(
+            "instantiate_opaque_types_in_map: \
                              encountered opaque outside its definition scope \
                              def_id={:?}",
-                def_id,
-            );
-        }
+            def_id,
+        );
         ty
     }
 
