@@ -290,6 +290,8 @@ where
                     kind: TypeVariableOriginKind::MiscVariable,
                     span: DUMMY_SP,
                 });
+                // FIXME(lazy-normalization): This will always ICE, because the recursive
+                // call will end up in the _ arm below.
                 self.relate_projection_ty(projection_ty, var);
                 self.relate_projection_ty(other_projection_ty, var);
                 var
