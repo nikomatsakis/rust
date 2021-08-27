@@ -1271,7 +1271,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
         category: ConstraintCategory,
     ) -> Fallible<()> {
         // Fast path for the common case.
-        if !anon_ty.has_opaque_types() {
+        if !anon_ty.has_opaque_types() || self.tcx().features().lazy_impl_trait {
             if let Err(terr) = self.eq_types(anon_ty, revealed_ty, locations, category) {
                 span_mirbug!(
                     self,
