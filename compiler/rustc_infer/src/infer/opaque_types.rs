@@ -7,6 +7,7 @@ use rustc_data_structures::vec_map::VecMap;
 use rustc_hir as hir;
 use rustc_middle::traits::ObligationCause;
 use rustc_middle::ty::fold::BottomUpFolder;
+use rustc_middle::ty::relate::{RelateResult, TypeRelation};
 use rustc_middle::ty::subst::SubstsRef;
 use rustc_middle::ty::{self, OpaqueTypeKey, Ty, TyCtxt, TypeFoldable};
 use rustc_span::{Span, DUMMY_SP};
@@ -183,18 +184,20 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         }
     }
 
-    pub fn replace_if_defining(
+    pub fn equate_if_opaque(
         &self,
-        maybe_opaque_ty: Ty<'tcx>,
-        other_type: Ty<'tcx>,
+        relation: &mut impl TypeRelation<'tcx>,
+        a: Ty<'tcx>,
+        b: Ty<'tcx>,
         body_id: hir::HirId,
         param_env: ty::ParamEnv<'tcx>,
         definition_span: Span,
-    ) -> InferOk<'tcx, Ty<'tcx>> {
+    ) -> RelateResult<'tcx, InferOk<'tcx, (Ty<'tcx>, Ty<'tcx>)>> {
         if !self.tcx.features().lazy_impl_trait {
-            return InferOk { value: maybe_opaque_ty, obligations: vec![] };
+            return Ok(InferOk { value: (a, b), obligations: vec![] });
         }
-        if let ty::Opaque(def_id, substs) = *maybe_opaque_ty.kind() {
+
+        let resolve_opaque = |def_id, substs, maybe_opaque_ty, other_type| {
             let concrete_ty = self
                 .inner
                 .borrow()
@@ -205,7 +208,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 Some(ty) => {
                     trace!(?ty, ?other_type, "fetching cached opaque type resolution");
                     // FIXME: should we repeat the obligations?
-                    return InferOk { value: ty, obligations: vec![] };
+                    return Ok(InferOk { value: (ty, other_type), obligations: vec![] });
                 }
                 None => {
                     if let Some(obligations) = self.record_use(
@@ -216,12 +219,46 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                         param_env,
                         definition_span,
                     ) {
-                        return InferOk { value: other_type, obligations };
+                        return Ok(InferOk { value: (other_type, other_type), obligations });
                     }
                 }
             }
+            Ok(InferOk { value: (maybe_opaque_ty, other_type), obligations: vec![] })
+        };
+
+        match (a.kind(), b.kind()) {
+            // If both types are opaque, we can't just instantiate one with the other without checking additional things.
+            // We have the following cases:
+            // * both are for the same opaque type, but have different substs.
+            // * two different opaque types, but both are in their defining scope, so their concrete type must be the same
+            // * two different opaque types, but only one of them is in the defining scope, so its concrete type is the other opaque type
+            // * two opaque types outside of their defining scope, this is just like two structs being compared
+            (&ty::Opaque(a_def_id, a_substs), &ty::Opaque(b_def_id, b_substs)) => {
+                if a_def_id == b_def_id {
+                    // Relate the substs, registering any relevant obligations.
+                    let substs = relation.relate(a_substs, b_substs)?;
+
+                    // FIXME(oli-obk): lifetimes in concrete type aren't compared equal, but may have ordering
+                    let concrete = self
+                        .inner
+                        .borrow()
+                        .opaque_type_storage
+                        .get_decl(&OpaqueTypeKey { def_id: a_def_id, substs })
+                        .map(|decl| decl.concrete_ty);
+                    match concrete {
+                        Some(concrete) => {
+                            Ok(InferOk { value: (concrete, concrete), obligations: vec![] })
+                        }
+                        None => Ok(InferOk { value: (a, b), obligations: vec![] }),
+                    }
+                } else {
+                    unimplemented!()
+                }
+            }
+            (&ty::Opaque(def_id, substs), _) => resolve_opaque(def_id, substs, a, b),
+            (_, &ty::Opaque(def_id, substs)) => resolve_opaque(def_id, substs, b, a),
+            _ => Ok(InferOk { value: (a, b), obligations: vec![] }),
         }
-        InferOk { value: maybe_opaque_ty, obligations: vec![] }
     }
 
     pub fn opaque_types(&self) -> OpaqueTypeMap<'tcx> {

@@ -62,12 +62,10 @@ where
     let value_span = this.cause().span;
     let body_id = this.cause().body_id;
 
-    let a = infcx.replace_if_defining(a, b, body_id, this.param_env(), value_span);
-    this.add_obligations(a.obligations);
-    let a = a.value;
-    let b = infcx.replace_if_defining(b, a, body_id, this.param_env(), value_span);
-    this.add_obligations(b.obligations);
-    let b = b.value;
+    let res = infcx.equate_if_opaque(this, a, b, body_id, this.param_env(), value_span)?;
+    this.add_obligations(res.obligations);
+    let (a, b) = res.value;
+
     let a = infcx.inner.borrow_mut().type_variables().replace_if_possible(a);
     let b = infcx.inner.borrow_mut().type_variables().replace_if_possible(b);
     match (a.kind(), b.kind()) {

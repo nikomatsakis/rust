@@ -85,10 +85,8 @@ impl TypeRelation<'tcx> for Sub<'combine, 'infcx, 'tcx> {
         let value_span = self.fields.trace.cause.span;
         let body_id = self.fields.trace.cause.body_id;
 
-        let a = infcx.replace_if_defining(a, b, body_id, self.param_env(), value_span);
-        let a = self.fields.add_obligations(a);
-        let b = infcx.replace_if_defining(b, a, body_id, self.param_env(), value_span);
-        let b = self.fields.add_obligations(b);
+        let res = infcx.equate_if_opaque(self, a, b, body_id, self.param_env(), value_span)?;
+        let (a, b) = self.fields.add_obligations(res);
         let a = infcx.inner.borrow_mut().type_variables().replace_if_possible(a);
         let b = infcx.inner.borrow_mut().type_variables().replace_if_possible(b);
         match (a.kind(), b.kind()) {

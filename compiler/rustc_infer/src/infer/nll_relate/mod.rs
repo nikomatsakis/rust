@@ -539,11 +539,9 @@ where
         let value_span = self.delegate.span();
         let body_id = infcx.tcx.hir().local_def_id_to_hir_id(infcx.defining_use_anchor);
 
-        let a = infcx.replace_if_defining(a, b, body_id, self.param_env(), value_span);
+        let res = infcx.equate_if_opaque(self, a, b, body_id, self.param_env(), value_span)?;
         // TODO: we are ignoring the obligations here, but they may contain lifetime obligations
-        let a = a.value;
-        let b = infcx.replace_if_defining(b, a, body_id, self.param_env(), value_span);
-        let mut b = b.value;
+        let (a, mut b) = res.value;
         trace!(a = ?a.kind(), b = ?b.kind(), "opaque types instantiated");
 
         let a = self.infcx.shallow_resolve(a);
