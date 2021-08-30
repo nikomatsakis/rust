@@ -1283,6 +1283,16 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                     terr
                 );
             }
+            // HACK(oli-obk): we cannot run `self.eq_types` in `self.fully_perform_op`, so
+            // we run an empty `fully_perform_op` here, which also collects all new obligations.
+            self.fully_perform_op(
+                locations,
+                ConstraintCategory::OpaqueType,
+                CustomTypeOp::new(
+                    |_| Ok(InferOk { value: (), obligations: vec![] }),
+                    || "opaque_type_map".to_string(),
+                ),
+            )?;
             return Ok(());
         }
 
