@@ -26,13 +26,17 @@ use crate::infer::type_variable::Diverging;
 use crate::infer::InferCtxt;
 use crate::infer::{ConstVarValue, ConstVariableValue};
 use rustc_data_structures::fx::FxHashMap;
+use rustc_hir::def_id::DefId;
 use rustc_middle::ty::error::TypeError;
 use rustc_middle::ty::fold::{TypeFoldable, TypeVisitor};
 use rustc_middle::ty::relate::{self, Relate, RelateResult, TypeRelation};
+use rustc_middle::ty::subst::SubstsRef;
 use rustc_middle::ty::{self, InferConst, Ty, TyCtxt};
 use rustc_span::Span;
 use std::fmt::Debug;
 use std::ops::ControlFlow;
+
+use super::opaque_types::OpaqueTypeDecl;
 
 #[derive(PartialEq)]
 pub enum NormalizationStrategy {
@@ -88,6 +92,13 @@ pub trait TypeRelatingDelegate<'tcx> {
         sup: ty::Region<'tcx>,
         sub: ty::Region<'tcx>,
         info: ty::VarianceDiagInfo<'tcx>,
+    );
+
+    fn constrain_opaque_type(
+        &mut self,
+        def_id: DefId,
+        substs: SubstsRef<'tcx>,
+        decl: OpaqueTypeDecl<'tcx>,
     );
 
     fn const_equate(&mut self, a: &'tcx ty::Const<'tcx>, b: &'tcx ty::Const<'tcx>);
@@ -539,11 +550,22 @@ where
     fn tys(&mut self, a: Ty<'tcx>, b: Ty<'tcx>) -> RelateResult<'tcx, Ty<'tcx>> {
         let infcx = self.infcx;
         let value_span = self.delegate.span();
-        let body_id = infcx.tcx.hir().local_def_id_to_hir_id(infcx.defining_use_anchor);
 
-        let res = infcx.equate_if_opaque(self, a, b, body_id, self.param_env(), value_span)?;
-        // TODO: we are ignoring the obligations here, but they may contain lifetime obligations
-        let (a, mut b) = res.value;
+        let mut opaques = Vec::new();
+        let (a, mut b) = infcx.equate_if_opaque(
+            self,
+            a,
+            b,
+            value_span,
+            &mut opaques,
+            |def_id, substs, defn, opaques| {
+                opaques.push((def_id, substs, defn));
+                Ok(())
+            },
+        )?;
+        for (def_id, substs, defn) in opaques {
+            self.delegate.constrain_opaque_type(def_id, substs, defn);
+        }
         trace!(a = ?a.kind(), b = ?b.kind(), "opaque types instantiated");
 
         let a = self.infcx.shallow_resolve(a);

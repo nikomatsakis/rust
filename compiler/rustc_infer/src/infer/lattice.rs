@@ -62,9 +62,16 @@ where
     let value_span = this.cause().span;
     let body_id = this.cause().body_id;
 
-    let res = infcx.equate_if_opaque(this, a, b, body_id, this.param_env(), value_span)?;
-    this.add_obligations(res.obligations);
-    let (a, b) = res.value;
+    let mut obligations = Vec::new();
+    let (a, b) = infcx.equate_if_opaque(
+        this,
+        a,
+        b,
+        value_span,
+        &mut obligations,
+        infcx.obligations_from_bounds(body_id, this.param_env()),
+    )?;
+    this.add_obligations(obligations);
 
     let a = infcx.inner.borrow_mut().type_variables().replace_if_possible(a);
     let b = infcx.inner.borrow_mut().type_variables().replace_if_possible(b);

@@ -30,7 +30,7 @@ use super::unify_key::replace_if_possible;
 use super::unify_key::{ConstVarValue, ConstVariableValue};
 use super::unify_key::{ConstVariableOrigin, ConstVariableOriginKind};
 use super::{equate::Equate, type_variable::Diverging};
-use super::{InferCtxt, InferOk, MiscVariable, TypeTrace};
+use super::{InferCtxt, MiscVariable, TypeTrace};
 
 use crate::traits::{Obligation, PredicateObligations};
 
@@ -465,12 +465,6 @@ impl<'infcx, 'tcx> CombineFields<'infcx, 'tcx> {
             self.param_env,
             predicate.to_predicate(self.tcx()),
         ));
-    }
-
-    pub(crate) fn add_obligations<T>(&mut self, value: InferOk<'tcx, T>) -> T {
-        let InferOk { value, obligations } = value;
-        self.obligations.extend(obligations);
-        value
     }
 }
 

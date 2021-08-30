@@ -78,8 +78,16 @@ impl TypeRelation<'tcx> for Equate<'combine, 'infcx, 'tcx> {
         let value_span = self.fields.trace.cause.span;
         let body_id = self.fields.trace.cause.body_id;
 
-        let res = infcx.equate_if_opaque(self, a, b, body_id, self.param_env(), value_span)?;
-        let (a, b) = self.fields.add_obligations(res);
+        let mut obligations = Vec::new();
+        let (a, b) = infcx.equate_if_opaque(
+            self,
+            a,
+            b,
+            value_span,
+            &mut obligations,
+            infcx.obligations_from_bounds(body_id, self.param_env()),
+        )?;
+        self.fields.obligations.extend(obligations);
         trace!(a = ?a.kind(), b = ?b.kind(), "opaque types instantiated");
 
         let a = infcx.inner.borrow_mut().type_variables().replace_if_possible(a);

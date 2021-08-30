@@ -4,11 +4,14 @@ use rustc_middle::mir::ConstraintCategory;
 use rustc_middle::ty::relate::TypeRelation;
 use rustc_middle::ty::{self, Const, Ty};
 use rustc_span::{Span, DUMMY_SP};
+use rustc_trait_selection::opaque_types::{GenerateMemberConstraints, InferCtxtExt};
 use rustc_trait_selection::traits::query::Fallible;
 
 use crate::constraints::OutlivesConstraint;
 use crate::diagnostics::UniverseInfo;
 use crate::type_check::{BorrowCheckContext, Locations};
+
+use super::free_region_relations::UniversalRegionRelations;
 
 /// Adds sufficient constraints to ensure that `a R b` where `R` depends on `v`:
 ///
@@ -28,12 +31,14 @@ pub(super) fn relate_types<'tcx>(
     locations: Locations,
     category: ConstraintCategory,
     borrowck_context: &mut BorrowCheckContext<'_, 'tcx>,
+    universal_region_relations: &UniversalRegionRelations<'tcx>,
 ) -> Fallible<()> {
     TypeRelating::new(
         infcx,
         NllTypeRelatingDelegate::new(
             infcx,
             borrowck_context,
+            universal_region_relations,
             param_env,
             locations,
             category,
@@ -48,6 +53,7 @@ pub(super) fn relate_types<'tcx>(
 struct NllTypeRelatingDelegate<'me, 'bccx, 'tcx> {
     infcx: &'me InferCtxt<'me, 'tcx>,
     borrowck_context: &'me mut BorrowCheckContext<'bccx, 'tcx>,
+    universal_region_relations: &'me UniversalRegionRelations<'tcx>,
 
     param_env: ty::ParamEnv<'tcx>,
 
@@ -66,12 +72,21 @@ impl NllTypeRelatingDelegate<'me, 'bccx, 'tcx> {
     fn new(
         infcx: &'me InferCtxt<'me, 'tcx>,
         borrowck_context: &'me mut BorrowCheckContext<'bccx, 'tcx>,
+        universal_region_relations: &'me UniversalRegionRelations<'tcx>,
         param_env: ty::ParamEnv<'tcx>,
         locations: Locations,
         category: ConstraintCategory,
         universe_info: UniverseInfo<'tcx>,
     ) -> Self {
-        Self { infcx, borrowck_context, param_env, locations, category, universe_info }
+        Self {
+            infcx,
+            borrowck_context,
+            param_env,
+            locations,
+            category,
+            universe_info,
+            universal_region_relations,
+        }
     }
 }
 
@@ -142,5 +157,19 @@ impl TypeRelatingDelegate<'tcx> for NllTypeRelatingDelegate<'_, '_, 'tcx> {
 
     fn forbid_inference_vars() -> bool {
         true
+    }
+
+    fn constrain_opaque_type(
+        &mut self,
+        def_id: rustc_hir::def_id::DefId,
+        substs: ty::subst::SubstsRef<'tcx>,
+        decl: rustc_infer::infer::opaque_types::OpaqueTypeDecl<'tcx>,
+    ) {
+        self.infcx.constrain_opaque_type(
+            ty::OpaqueTypeKey { def_id, substs },
+            &decl,
+            GenerateMemberConstraints::IfNoStaticBound,
+            self.universal_region_relations,
+        );
     }
 }

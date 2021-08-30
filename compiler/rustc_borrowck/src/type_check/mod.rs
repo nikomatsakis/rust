@@ -1170,6 +1170,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
             locations,
             category,
             self.borrowck_context,
+            self.universal_region_relations,
         )
     }
 

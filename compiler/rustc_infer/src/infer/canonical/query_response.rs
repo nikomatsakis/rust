@@ -19,12 +19,13 @@ use crate::traits::query::{Fallible, NoSolution};
 use crate::traits::TraitEngine;
 use crate::traits::{Obligation, ObligationCause, PredicateObligation};
 use rustc_data_structures::captures::Captures;
+use rustc_hir::def_id::DefId;
 use rustc_index::vec::Idx;
 use rustc_index::vec::IndexVec;
 use rustc_middle::arena::ArenaAllocatable;
 use rustc_middle::ty::fold::TypeFoldable;
 use rustc_middle::ty::relate::TypeRelation;
-use rustc_middle::ty::subst::{GenericArg, GenericArgKind};
+use rustc_middle::ty::subst::{GenericArg, GenericArgKind, SubstsRef};
 use rustc_middle::ty::{self, BoundVar, Const, ToPredicate, Ty, TyCtxt};
 use rustc_span::Span;
 use std::fmt::Debug;
@@ -688,5 +689,21 @@ impl<'tcx> TypeRelatingDelegate<'tcx> for QueryTypeRelatingDelegate<'_, 'tcx> {
 
     fn forbid_inference_vars() -> bool {
         true
+    }
+
+    fn constrain_opaque_type(
+        &mut self,
+        def_id: DefId,
+        substs: SubstsRef<'tcx>,
+        decl: crate::infer::opaque_types::OpaqueTypeDecl<'tcx>,
+    ) {
+        let body_id = self.infcx.tcx.hir().local_def_id_to_hir_id(self.infcx.defining_use_anchor);
+        self.infcx.obligations_from_bounds(body_id, self.param_env)(
+            def_id,
+            substs,
+            decl,
+            &mut self.obligations,
+        )
+        .unwrap();
     }
 }
