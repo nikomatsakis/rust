@@ -66,6 +66,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
 
                 let mut subst_regions = vec![self.universal_regions.fr_static];
                 let universal_substs = infcx.tcx.fold_regions(substs, &mut false, |region, _| {
+                    let region = self.normalize_to_scc_representatives(infcx.tcx, region);
                     let vid = self.universal_regions.to_region_vid(region);
                     subst_regions.push(vid);
                     self.definitions[vid].external_name.unwrap_or_else(|| {
