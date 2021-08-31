@@ -259,7 +259,10 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 }
             }
             (&ty::Opaque(def_id, substs), _) => resolve_opaque(def_id, substs, a, b),
-            (_, &ty::Opaque(def_id, substs)) => resolve_opaque(def_id, substs, b, a),
+            (_, &ty::Opaque(def_id, substs)) => {
+                let (b, a) = resolve_opaque(def_id, substs, b, a)?;
+                Ok((a, b))
+            }
             _ => Ok((a, b)),
         }
     }
