@@ -1068,11 +1068,9 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
     }
 
     /// Equate the inferred type and the annotated type for user type annotations
+    #[instrument(skip(self), level = "debug")]
     fn check_user_type_annotations(&mut self) {
-        debug!(
-            "check_user_type_annotations: user_type_annotations={:?}",
-            self.user_type_annotations
-        );
+        debug!(?self.user_type_annotations);
         for user_annotation in self.user_type_annotations {
             let CanonicalUserTypeAnnotation { span, ref user_ty, inferred_ty } = *user_annotation;
             let inferred_ty = self.normalize(inferred_ty, Locations::All(span));
