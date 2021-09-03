@@ -10,6 +10,8 @@ fn def_a() -> A {
 
 pub fn use_a() {
     def_a().map(|x| x);
+    //~^ ERROR cannot infer type
+    //~| ERROR method not found in `impl Iterator`
 }
 
 fn main() {}

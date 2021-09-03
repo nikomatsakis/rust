@@ -1,4 +1,4 @@
-// run-pass
+
 
 #![allow(dead_code)]
 #![allow(unused_assignments)]
@@ -7,11 +7,18 @@
 
 fn main() {
     assert_eq!(foo().to_string(), "foo");
+    //~^ ERROR: cannot infer type
+    //~| ERROR: method not found in `impl std::fmt::Display`
     assert_eq!(bar1().to_string(), "bar1");
+    //~^ ERROR: cannot infer type
+    //~| ERROR: method not found in `impl std::fmt::Display`
     assert_eq!(bar2().to_string(), "bar2");
+    //~^ ERROR: cannot infer type
+    //~| ERROR: method not found in `impl std::fmt::Display`
     let mut x = bar1();
     x = bar2();
     assert_eq!(my_iter(42u8).collect::<Vec<u8>>(), vec![42u8]);
+    //~^ ERROR: method not found in `impl Iterator`
 }
 
 // single definition

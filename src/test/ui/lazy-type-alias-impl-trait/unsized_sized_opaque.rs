@@ -1,5 +1,3 @@
-#![feature(lazy_impl_trait)]
-
 // check-pass
 
 fn main() {}

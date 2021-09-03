@@ -1,7 +1,5 @@
 // check-pass
 
-#![feature(lazy_impl_trait)]
-
 fn main() {}
 
 struct RawTableInner<A> {
