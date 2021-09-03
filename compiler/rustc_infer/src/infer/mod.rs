@@ -26,6 +26,7 @@ use rustc_middle::traits::select;
 use rustc_middle::ty::error::{ExpectedFound, TypeError};
 use rustc_middle::ty::fold::{TypeFoldable, TypeFolder};
 use rustc_middle::ty::relate::RelateResult;
+use rustc_middle::ty::subst::Subst;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
 pub use rustc_middle::ty::IntVarValue;
 use rustc_middle::ty::{self, GenericParamDefKind, InferConst, Ty, TyCtxt};
@@ -290,6 +291,10 @@ pub struct InferCtxt<'a, 'tcx> {
     /// The `DefId` of the item in whose context we are performing inference or typeck.
     /// It is used to check whether an opaque type use is a defining use.
     pub defining_use_anchor: LocalDefId,
+
+    /// Used by WF-checking to not have to figure out hidden types itself, but
+    /// to just invoke type_of to get the already computed hidden type from typeck.
+    reveal_defining_opaque_types: bool,
 
     /// During type-checking/inference of a body, `in_progress_typeck_results`
     /// contains a reference to the typeck results being built up, which are
@@ -559,6 +564,7 @@ pub struct InferCtxtBuilder<'tcx> {
     tcx: TyCtxt<'tcx>,
     fresh_typeck_results: Option<RefCell<ty::TypeckResults<'tcx>>>,
     defining_use_anchor: LocalDefId,
+    reveal_defining_opaque_types: bool,
 }
 
 pub trait TyCtxtInferExt<'tcx> {
@@ -571,6 +577,7 @@ impl TyCtxtInferExt<'tcx> for TyCtxt<'tcx> {
             tcx: self,
             defining_use_anchor: CRATE_DEF_ID,
             fresh_typeck_results: None,
+            reveal_defining_opaque_types: false,
         }
     }
 }
@@ -592,6 +599,13 @@ impl<'tcx> InferCtxtBuilder<'tcx> {
     /// in mir borrowck.
     pub fn with_opaque_type_inference(mut self, defining_use_anchor: LocalDefId) -> Self {
         self.defining_use_anchor = defining_use_anchor;
+        self
+    }
+
+    /// WF-checking doesn't need to recompute opaque types and can instead use
+    /// the type_of query to get them from typeck.
+    pub fn reveal_defining_opaque_types(mut self) -> Self {
+        self.reveal_defining_opaque_types = true;
         self
     }
 
@@ -619,11 +633,17 @@ impl<'tcx> InferCtxtBuilder<'tcx> {
     }
 
     pub fn enter<R>(&mut self, f: impl for<'a> FnOnce(InferCtxt<'a, 'tcx>) -> R) -> R {
-        let InferCtxtBuilder { tcx, defining_use_anchor, ref fresh_typeck_results } = *self;
+        let InferCtxtBuilder {
+            tcx,
+            defining_use_anchor,
+            reveal_defining_opaque_types,
+            ref fresh_typeck_results,
+        } = *self;
         let in_progress_typeck_results = fresh_typeck_results.as_ref();
         f(InferCtxt {
             tcx,
             defining_use_anchor,
+            reveal_defining_opaque_types,
             in_progress_typeck_results,
             inner: RefCell::new(InferCtxtInner::new()),
             lexical_region_resolutions: RefCell::new(None),
@@ -1612,6 +1632,9 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
     fn shallow_resolve_ty(&self, typ: Ty<'tcx>) -> Ty<'tcx> {
         match *typ.kind() {
             ty::Opaque(def_id, substs) if self.tcx.features().lazy_impl_trait => {
+                if self.reveal_defining_opaque_types {
+                    return self.tcx.type_of(def_id).subst(self.tcx, substs);
+                }
                 let concrete_ty = self
                     .inner
                     .borrow()
