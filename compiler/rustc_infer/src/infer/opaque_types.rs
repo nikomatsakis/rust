@@ -96,7 +96,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         value: T,
         value_span: Span,
     ) -> InferOk<'tcx, T> {
-        if self.tcx.features().lazy_impl_trait {
+        if true {
             return InferOk { value, obligations: vec![] };
         }
         let mut obligations = Vec::new();
@@ -149,9 +149,6 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
     // Test this, we likely need to do that to make sure that `SomeStruct<SomeOpaqueType>: SomeTrait`
     // actually counts as a defining use for `SomeOpaqueType`.
     pub fn is_defining_opaque_type(&self, maybe_opaque_ty: Ty<'tcx>) -> bool {
-        if !self.tcx.features().lazy_impl_trait {
-            return false;
-        }
         if let ty::Opaque(def_id, substs) = *maybe_opaque_ty.kind() {
             if self
                 .inner
@@ -168,11 +165,15 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         }
     }
 
+    #[instrument(skip(self), level = "trace")]
     fn opaque_ty_origin(&self, opaque_def_id: DefId, span: Span) -> Option<OpaqueTyOrigin> {
         let def_id = opaque_def_id.as_local()?;
         let opaque_hir_id = self.tcx.hir().local_def_id_to_hir_id(def_id);
         let parent_def_id = self.defining_use_anchor;
-        match self.tcx.hir().expect_item(opaque_hir_id).kind {
+        trace!(?parent_def_id);
+        let kind = &self.tcx.hir().expect_item(opaque_hir_id).kind;
+        trace!(?kind);
+        let origin = match *kind {
             // Anonymous `impl Trait`
             hir::ItemKind::OpaqueTy(hir::OpaqueTy {
                 impl_trait_fn: Some(parent), origin, ..
@@ -184,7 +185,9 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
             ref itemkind => {
                 span_bug!(span, "weird opaque type: {:?}, {:#?}", opaque_def_id, itemkind)
             }
-        }
+        };
+        trace!(?origin);
+        origin
     }
 
     pub fn equate_if_opaque<T>(
@@ -201,10 +204,6 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
             &mut Vec<T>,
         ) -> Result<(), ()>,
     ) -> RelateResult<'tcx, (Ty<'tcx>, Ty<'tcx>)> {
-        if !self.tcx.features().lazy_impl_trait {
-            return Ok((a, b));
-        }
-
         let resolve_opaque = |def_id, substs, maybe_opaque_ty, other_type| {
             let concrete_ty = self
                 .inner

@@ -1631,7 +1631,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
     // FIXME(eddyb) inline into `ShallowResolver::visit_ty`.
     fn shallow_resolve_ty(&self, typ: Ty<'tcx>) -> Ty<'tcx> {
         match *typ.kind() {
-            ty::Opaque(def_id, substs) if self.tcx.features().lazy_impl_trait => {
+            ty::Opaque(def_id, substs) => {
                 if self.reveal_defining_opaque_types {
                     return self.tcx.type_of(def_id).subst(self.tcx, substs);
                 }
