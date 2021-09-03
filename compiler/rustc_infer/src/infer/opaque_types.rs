@@ -145,6 +145,9 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         new == ty
     }
 
+    // FIXME(type_alias_impl_trait): should this be a deep walk of the type to find any opaque types?
+    // Test this, we likely need to do that to make sure that `SomeStruct<SomeOpaqueType>: SomeTrait`
+    // actually counts as a defining use for `SomeOpaqueType`.
     pub fn is_defining_opaque_type(&self, maybe_opaque_ty: Ty<'tcx>) -> bool {
         if !self.tcx.features().lazy_impl_trait {
             return false;

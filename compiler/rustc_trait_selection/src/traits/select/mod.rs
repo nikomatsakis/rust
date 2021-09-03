@@ -1259,7 +1259,9 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         if self.can_use_global_caches(param_env) {
             if let Err(Overflow) = candidate {
                 // Don't cache overflow globally; we only produce this in certain modes.
-            } else if !trait_ref.needs_infer() {
+            } else if !trait_ref.needs_infer()
+                && !self.infcx.is_defining_opaque_type(trait_ref.self_ty())
+            {
                 if !candidate.needs_infer() {
                     debug!("insert into global cache");
                     // This may overwrite the cache with the same value.
