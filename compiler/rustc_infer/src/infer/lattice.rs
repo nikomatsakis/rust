@@ -43,6 +43,7 @@ pub trait LatticeDir<'f, 'tcx>: TypeRelation<'tcx> {
     fn relate_bound(&mut self, v: Ty<'tcx>, a: Ty<'tcx>, b: Ty<'tcx>) -> RelateResult<'tcx, ()>;
 }
 
+#[instrument(skip(this), level = "debug")]
 pub fn super_lattice_tys<'a, 'tcx: 'a, L>(
     this: &mut L,
     a: Ty<'tcx>,
@@ -51,7 +52,7 @@ pub fn super_lattice_tys<'a, 'tcx: 'a, L>(
 where
     L: LatticeDir<'a, 'tcx>,
 {
-    debug!("{}.lattice_tys({:?}, {:?})", this.tag(), a, b);
+    debug!("{}", this.tag());
 
     if a == b {
         return Ok(a);

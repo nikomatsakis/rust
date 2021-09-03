@@ -1238,6 +1238,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         }
     }
 
+    #[instrument(skip(self, param_env, cache_fresh_trait_pred, dep_node), level = "debug")]
     fn insert_candidate_cache(
         &mut self,
         param_env: ty::ParamEnv<'tcx>,
@@ -1248,9 +1249,10 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         let tcx = self.tcx();
         let pred = cache_fresh_trait_pred.skip_binder();
         let trait_ref = pred.trait_ref;
+        debug!(?trait_ref);
 
         if !self.can_cache_candidate(&candidate) {
-            debug!(?trait_ref, ?candidate, "insert_candidate_cache - candidate is not cacheable");
+            debug!("candidate is not cacheable");
             return;
         }
 
@@ -1259,7 +1261,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                 // Don't cache overflow globally; we only produce this in certain modes.
             } else if !trait_ref.needs_infer() {
                 if !candidate.needs_infer() {
-                    debug!(?trait_ref, ?candidate, "insert_candidate_cache global");
+                    debug!("insert into global cache");
                     // This may overwrite the cache with the same value.
                     tcx.selection_cache.insert(
                         param_env.and(trait_ref).with_constness(pred.constness),
@@ -1271,7 +1273,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             }
         }
 
-        debug!(?trait_ref, ?candidate, "insert_candidate_cache local");
+        debug!("insert into local cache");
         self.infcx.selection_cache.insert(
             param_env.and(trait_ref).with_constness(pred.constness),
             dep_node,

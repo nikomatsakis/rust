@@ -74,9 +74,8 @@ impl TypeRelation<'tcx> for Sub<'combine, 'infcx, 'tcx> {
         }
     }
 
+    #[instrument(skip(self), level = "debug")]
     fn tys(&mut self, a: Ty<'tcx>, b: Ty<'tcx>) -> RelateResult<'tcx, Ty<'tcx>> {
-        debug!("{}.tys({:?}, {:?})", self.tag(), a, b);
-
         if a == b {
             return Ok(a);
         }
