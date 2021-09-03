@@ -204,7 +204,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
             &mut Vec<T>,
         ) -> Result<(), ()>,
     ) -> RelateResult<'tcx, (Ty<'tcx>, Ty<'tcx>)> {
-        let resolve_opaque = |def_id, substs, maybe_opaque_ty, other_type| {
+        let mut resolve_opaque = |def_id, substs, maybe_opaque_ty, other_type, handle_bounds| {
             let concrete_ty = self
                 .inner
                 .borrow()
@@ -235,12 +235,8 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
 
         match (a.kind(), b.kind()) {
             // If both types are opaque, we can't just instantiate one with the other without checking additional things.
-            // We have the following cases:
-            // * both are for the same opaque type, but have different substs.
-            // * two different opaque types, but both are in their defining scope, so their concrete type must be the same
-            // * two different opaque types, but only one of them is in the defining scope, so its concrete type is the other opaque type
-            // * two opaque types outside of their defining scope, this is just like two structs being compared
             (&ty::Opaque(a_def_id, a_substs), &ty::Opaque(b_def_id, b_substs)) => {
+                // both are for the same opaque type, but have different substs.
                 if a_def_id == b_def_id {
                     // Relate the substs, registering any relevant obligations.
                     let substs = relation.relate(a_substs, b_substs)?;
@@ -257,12 +253,55 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                         None => Ok((a, b)),
                     }
                 } else {
-                    unimplemented!()
+                    let a_origin = self.opaque_ty_origin(a_def_id, definition_span);
+                    let b_origin = self.opaque_ty_origin(b_def_id, definition_span);
+                    match (a_origin, b_origin) {
+                        // two different opaque types, but both are in their defining scope, so their concrete type must be the same
+                        (Some(a_origin), Some(b_origin)) => {
+                            let mut instantiator = Instantiator {
+                                infcx: self,
+                                value_span: definition_span,
+                                obligations,
+                                handle_bounds,
+                            };
+                            let a = instantiator.fold_opaque_ty(
+                                a,
+                                OpaqueTypeKey { def_id: a_def_id, substs: a_substs },
+                                a_origin,
+                                |infcx, span| {
+                                    infcx.next_ty_var(TypeVariableOrigin {
+                                        kind: TypeVariableOriginKind::TypeInference,
+                                        span,
+                                    })
+                                },
+                            );
+                            let b = instantiator.fold_opaque_ty(
+                                b,
+                                OpaqueTypeKey { def_id: b_def_id, substs: b_substs },
+                                b_origin,
+                                |infcx, span| {
+                                    infcx.next_ty_var(TypeVariableOrigin {
+                                        kind: TypeVariableOriginKind::TypeInference,
+                                        span,
+                                    })
+                                },
+                            );
+                            Ok((a, b))
+                        }
+                        // two different opaque types, but only one of them is in the defining scope, so its concrete type is the other opaque type
+                        (Some(_), None) => resolve_opaque(a_def_id, a_substs, a, b, handle_bounds),
+                        (None, Some(_)) => {
+                            let (b, a) = resolve_opaque(b_def_id, b_substs, b, a, handle_bounds)?;
+                            Ok((a, b))
+                        }
+                        // two opaque types outside of their defining scope
+                        (None, None) => Ok((a, b)),
+                    }
                 }
             }
-            (&ty::Opaque(def_id, substs), _) => resolve_opaque(def_id, substs, a, b),
+            (&ty::Opaque(def_id, substs), _) => resolve_opaque(def_id, substs, a, b, handle_bounds),
             (_, &ty::Opaque(def_id, substs)) => {
-                let (b, a) = resolve_opaque(def_id, substs, b, a)?;
+                let (b, a) = resolve_opaque(def_id, substs, b, a, handle_bounds)?;
                 Ok((a, b))
             }
             _ => Ok((a, b)),
