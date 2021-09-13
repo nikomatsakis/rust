@@ -128,8 +128,9 @@ fn mir_borrowck<'tcx>(
 ) -> &'tcx BorrowCheckResult<'tcx> {
     let (input_body, promoted) = tcx.mir_promoted(def);
     debug!("run query mir_borrowck: {}", tcx.def_path_str(def.did.to_def_id()));
+    let hir_owner = tcx.hir().local_def_id_to_hir_id(def.did).owner;
 
-    let opt_closure_req = tcx.infer_ctxt().with_opaque_type_inference(def.did).enter(|infcx| {
+    let opt_closure_req = tcx.infer_ctxt().with_opaque_type_inference(hir_owner).enter(|infcx| {
         let input_body: &Body<'_> = &input_body.borrow();
         let promoted: &IndexVec<_, _> = &promoted.borrow();
         do_mir_borrowck(&infcx, input_body, promoted, false).0
