@@ -172,7 +172,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         let parent_def_id = self.defining_use_anchor;
         trace!(?parent_def_id);
         let kind = &self.tcx.hir().expect_item(opaque_hir_id).kind;
-        trace!(?kind);
+        trace!("{:#?}", kind);
         let origin = match *kind {
             // Anonymous `impl Trait`
             hir::ItemKind::OpaqueTy(hir::OpaqueTy {
