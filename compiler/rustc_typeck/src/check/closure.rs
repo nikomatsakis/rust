@@ -221,10 +221,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     ) -> (Option<ExpectedSig<'tcx>>, Option<ty::ClosureKind>) {
         let expected_sig =
             self.obligations_for_self_ty(expected_vid).find_map(|(_, obligation)| {
-                debug!(
-                    "deduce_expectations_from_obligations: obligation.predicate={:?}",
-                    obligation.predicate
-                );
+                debug!(?obligation.predicate);
 
                 let bound_predicate = obligation.predicate.kind();
                 if let ty::PredicateKind::Projection(proj_predicate) =
@@ -640,21 +637,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// user specified. The "desugared" return type is an `impl
     /// Future<Output = T>`, so we do this by searching through the
     /// obligations to extract the `T`.
+    #[instrument(skip(self), level = "debug")]
     fn deduce_future_output_from_obligations(&self, expr_def_id: DefId) -> Option<Ty<'tcx>> {
-        debug!("deduce_future_output_from_obligations(expr_def_id={:?})", expr_def_id);
-
         let ret_coercion = self.ret_coercion.as_ref().unwrap_or_else(|| {
             span_bug!(self.tcx.def_span(expr_def_id), "async fn generator outside of a fn")
         });
 
-        // In practice, the return type of the surrounding function is
-        // always a (not yet resolved) inference variable, because it
-        // is the hidden type for an `impl Trait` that we are going to
-        // be inferring.
         let ret_ty = ret_coercion.borrow().expected_ty();
         let ret_ty = self.inh.infcx.shallow_resolve(ret_ty);
-        let ret_vid = match *ret_ty.kind() {
-            ty::Infer(ty::TyVar(ret_vid)) => ret_vid,
+        let (def_id, substs) = match *ret_ty.kind() {
+            ty::Opaque(def_id, substs) => (def_id, substs),
             ty::Error(_) => return None,
             _ => span_bug!(
                 self.tcx.def_span(expr_def_id),
@@ -662,17 +654,19 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             ),
         };
 
+        let item_bounds = self.tcx.explicit_item_bounds(def_id);
+
         // Search for a pending obligation like
         //
         // `<R as Future>::Output = T`
         //
         // where R is the return type we are expecting. This type `T`
         // will be our output.
-        let output_ty = self.obligations_for_self_ty(ret_vid).find_map(|(_, obligation)| {
-            let bound_predicate = obligation.predicate.kind();
+        let output_ty = item_bounds.iter().find_map(|&(predicate, span)| {
+            let bound_predicate = predicate.subst(self.tcx, substs).kind();
             if let ty::PredicateKind::Projection(proj_predicate) = bound_predicate.skip_binder() {
                 self.deduce_future_output_from_projection(
-                    obligation.cause.span,
+                    span,
                     bound_predicate.rebind(proj_predicate),
                 )
             } else {
