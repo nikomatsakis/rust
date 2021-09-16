@@ -124,10 +124,6 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
             &mut Vec<T>,
         ) -> Result<(), ()>,
     ) -> bool {
-        if ty.is_ty_var() {
-            // We will only instantiate against inferred types, not against unrestricted inference vars
-            return false;
-        }
         if let ty::Opaque(did, _) = *ty.kind() {
             // Fall back to letting the caller compare these opaquely.
             if did == def_id {
