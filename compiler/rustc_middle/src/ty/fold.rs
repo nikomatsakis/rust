@@ -1134,7 +1134,7 @@ impl<'tcx> TypeVisitor<'tcx> for HasTypeFlagsVisitor<'tcx> {
     }
 
     #[inline]
-    #[instrument(level = "trace")]
+    #[instrument(skip(self), level = "trace")]
     fn visit_ty(&mut self, t: Ty<'tcx>) -> ControlFlow<Self::BreakTy> {
         let flags = t.flags();
         trace!(t.flags=?t.flags());
@@ -1161,7 +1161,7 @@ impl<'tcx> TypeVisitor<'tcx> for HasTypeFlagsVisitor<'tcx> {
     }
 
     #[inline]
-    #[instrument(level = "trace")]
+    #[instrument(skip(self), level = "trace")]
     fn visit_const(&mut self, c: &'tcx ty::Const<'tcx>) -> ControlFlow<Self::BreakTy> {
         let flags = FlagComputation::for_const(c);
         trace!(r.flags=?flags);

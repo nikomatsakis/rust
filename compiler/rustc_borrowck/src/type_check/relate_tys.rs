@@ -21,7 +21,7 @@ use super::free_region_relations::UniversalRegionRelations;
 ///
 /// N.B., the type `a` is permitted to have unresolved inference
 /// variables, but not the type `b`.
-#[instrument(skip(infcx, param_env, borrowck_context), level = "debug")]
+#[instrument(skip(infcx, param_env, borrowck_context, universal_region_relations), level = "debug")]
 pub(super) fn relate_types<'tcx>(
     infcx: &InferCtxt<'_, 'tcx>,
     param_env: ty::ParamEnv<'tcx>,
