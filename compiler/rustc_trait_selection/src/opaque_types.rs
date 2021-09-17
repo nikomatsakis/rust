@@ -96,11 +96,9 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
     /// `Foo1` or `Foo2`).
     ///
     /// Now, at this point in compilation, what we have done is to
-    /// replace each of the references (`Foo1<'a>`, `Foo2<'b>`) with
-    /// fresh inference variables C1 and C2. We wish to use the values
-    /// of these variables to infer the underlying types of `Foo1` and
-    /// `Foo2`. That is, this gives rise to higher-order (pattern) unification
-    /// constraints like:
+    /// replace each of the references (`Foo1<'a>`, `Foo2<'b>`) with their
+    /// concrete types C1 and C2. This gives rise to higher-order
+    /// (pattern) unification constraints like:
     ///
     /// ```text
     /// for<'a> (Foo1<'a> = C1)
@@ -113,8 +111,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
     /// to `'static` and `'b`. The job of this function is to impose that
     /// constraint.
     ///
-    /// Up to this point, C1 and C2 are basically just random type
-    /// inference variables, and hence they may contain arbitrary
+    /// Up to this point, C1 and C2 may contain arbitrary
     /// regions. In fact, it is fairly likely that they do! Consider
     /// this possible definition of `foo`:
     ///
