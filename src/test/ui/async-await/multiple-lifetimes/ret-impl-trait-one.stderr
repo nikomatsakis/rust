@@ -8,6 +8,15 @@ LL | async fn async_ret_impl_trait1<'a, 'b>(a: &'a u8, b: &'b u8) -> impl Trait<
    |                                           |                     this `async fn` implicitly returns an `impl Future<Output = impl Trait<'a>>`
    |                                           this parameter and the returned future are declared with different lifetimes...
 
-error: aborting due to previous error
+error[E0700]: hidden type for `impl Trait` captures lifetime that does not appear in bounds
+   |
+   = note: hidden type `impl Future` captures lifetime '_#16r
 
-For more information about this error, try `rustc --explain E0623`.
+error[E0700]: hidden type for `impl Trait` captures lifetime that does not appear in bounds
+   |
+   = note: hidden type `impl Future` captures lifetime '_#17r
+
+error: aborting due to 3 previous errors
+
+Some errors have detailed explanations: E0623, E0700.
+For more information about an error, try `rustc --explain E0623`.

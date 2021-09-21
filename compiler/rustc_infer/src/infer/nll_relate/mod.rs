@@ -564,6 +564,7 @@ where
             },
         )?;
         for (def_id, substs, defn) in opaques {
+            let substs = self.infcx.resolve_vars_if_possible(substs);
             self.delegate.constrain_opaque_type(def_id, substs, defn);
         }
         trace!(a = ?a.kind(), b = ?b.kind(), "opaque types instantiated");

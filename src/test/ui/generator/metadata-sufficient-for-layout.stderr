@@ -1,8 +1,9 @@
-error: fatal error triggered by #[rustc_error]
-  --> $DIR/metadata-sufficient-for-layout.rs:25:1
+error[E0282]: type annotations needed
+  --> $DIR/metadata-sufficient-for-layout.rs:18:23
    |
-LL | fn main() {}
-   | ^^^^^^^^^
+LL | static A: Option<F> = None;
+   |                       ^^^^ cannot infer type for type parameter `T` declared on the enum `Option`
 
 error: aborting due to previous error
 
+For more information about this error, try `rustc --explain E0282`.

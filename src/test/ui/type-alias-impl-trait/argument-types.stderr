@@ -1,15 +1,21 @@
-error[E0308]: mismatched types
-  --> $DIR/argument-types.rs:10:9
+error[E0282]: type annotations needed
+  --> $DIR/argument-types.rs:14:9
    |
-LL | type Foo = impl Debug;
-   |            ---------- the expected opaque type
-...
-LL |     x = 22_u32;
-   |         ^^^^^^ expected opaque type, found `u32`
+LL | fn foo2(mut x: Foo) {
+   |         ^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+  --> $DIR/argument-types.rs:18:9
    |
-   = note: expected opaque type `impl Debug`
-                     found type `u32`
+LL | fn foo3(x: Foo) {
+   |         ^ cannot infer type
 
-error: aborting due to previous error
+error[E0282]: type annotations needed
+  --> $DIR/argument-types.rs:27:10
+   |
+LL |     foo3(foo_value());
+   |          ^^^^^^^^^^^ cannot infer type for opaque type `impl Debug`
 
-For more information about this error, try `rustc --explain E0308`.
+error: aborting due to 3 previous errors
+
+For more information about this error, try `rustc --explain E0282`.

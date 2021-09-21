@@ -1,15 +1,25 @@
-error[E0271]: type mismatch resolving `<Bar as Iterator>::Item == Box<(dyn for<'r> Fn(&'r (dyn ToString + 'r)) -> Option<String> + 'static)>`
-  --> $DIR/issue-70877.rs:7:12
+error[E0282]: type annotations needed
+  --> $DIR/issue-70877.rs:16:23
    |
-LL | type FooRet = impl std::fmt::Debug;
-   |               -------------------- the found opaque type
-...
-LL | type Foo = impl Iterator<Item = FooItem>;
-   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected enum `Option`, found opaque type
+LL |         Some(Box::new(quux))
+   |                       ^^^^ cannot infer type for opaque type `impl Debug`
+
+error[E0282]: type annotations needed
+  --> $DIR/issue-70877.rs:25:5
    |
-   = note: expected struct `Box<(dyn for<'r> Fn(&'r (dyn ToString + 'r)) -> Option<String> + 'static)>`
-              found struct `Box<(dyn for<'r> Fn(&'r (dyn ToString + 'r)) -> impl Debug + 'static)>`
+LL |     Bar(1)
+   |     ^^^^^^ cannot infer type
 
-error: aborting due to previous error
+error[E0282]: type annotations needed
+  --> $DIR/issue-70877.rs:30:16
+   |
+LL |     let mut bar = ham();
+   |         ------- consider giving `bar` a type
+LL |     let func = bar.next().unwrap();
+   |                ^^^ cannot infer type
+   |
+   = note: type must be known at this point
 
-For more information about this error, try `rustc --explain E0271`.
+error: aborting due to 3 previous errors
+
+For more information about this error, try `rustc --explain E0282`.

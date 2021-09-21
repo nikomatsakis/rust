@@ -6,8 +6,6 @@ LL | impl<T: std::fmt::Debug> AnotherTrait for T {}
 ...
 LL | impl AnotherTrait for D<OpaqueType> {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ conflicting implementation for `D<impl OpaqueTrait>`
-   |
-   = note: upstream crates may add a new impl of trait `std::fmt::Debug` for type `impl OpaqueTrait` in future versions
 
 error: aborting due to previous error
 

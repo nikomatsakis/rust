@@ -1,4 +1,4 @@
-
+// check-pass
 
 #![allow(dead_code)]
 #![allow(unused_assignments)]

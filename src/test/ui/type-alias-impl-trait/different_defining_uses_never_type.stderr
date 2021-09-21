@@ -1,26 +1,15 @@
-error: concrete type differs from previous defining opaque type use
-  --> $DIR/different_defining_uses_never_type.rs:12:1
+error[E0282]: type annotations needed
+  --> $DIR/different_defining_uses_never_type.rs:12:13
    |
 LL | fn bar() -> Foo {
-   | ^^^^^^^^^^^^^^^ expected `&'static str`, got `()`
-   |
-note: previous use here
-  --> $DIR/different_defining_uses_never_type.rs:8:1
-   |
-LL | fn foo() -> Foo {
-   | ^^^^^^^^^^^^^^^
+   |             ^^^ cannot infer type for opaque type `impl Debug`
 
-error: concrete type differs from previous defining opaque type use
-  --> $DIR/different_defining_uses_never_type.rs:17:1
+error[E0282]: type annotations needed
+  --> $DIR/different_defining_uses_never_type.rs:17:13
    |
 LL | fn boo() -> Foo {
-   | ^^^^^^^^^^^^^^^ expected `&'static str`, got `()`
-   |
-note: previous use here
-  --> $DIR/different_defining_uses_never_type.rs:8:1
-   |
-LL | fn foo() -> Foo {
-   | ^^^^^^^^^^^^^^^
+   |             ^^^ cannot infer type for opaque type `impl Debug`
 
 error: aborting due to 2 previous errors
 
+For more information about this error, try `rustc --explain E0282`.

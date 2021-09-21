@@ -4,6 +4,13 @@ error[E0425]: cannot find value `Foo` in this scope
 LL |         let a = Foo;
    |                 ^^^ not found in this scope
 
-error: aborting due to previous error
+error[E0282]: type annotations needed
+  --> $DIR/layout-error.rs:26:28
+   |
+LL |     static POOL: Task<F> = Task::new();
+   |                            ^^^^^^^^^ cannot infer type for type parameter `F`
 
-For more information about this error, try `rustc --explain E0425`.
+error: aborting due to 2 previous errors
+
+Some errors have detailed explanations: E0282, E0425.
+For more information about an error, try `rustc --explain E0282`.

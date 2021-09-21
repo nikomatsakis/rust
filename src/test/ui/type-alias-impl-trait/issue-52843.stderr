@@ -1,14 +1,18 @@
-error[E0277]: the trait bound `T: Default` is not satisfied
-  --> $DIR/issue-52843.rs:3:15
+error[E0283]: type annotations needed
+  --> $DIR/issue-52843.rs:14:13
    |
-LL | type Foo<T> = impl Default;
-   |               ^^^^^^^^^^^^ the trait `Default` is not implemented for `T`
+LL |     let _ = Foo::<NotDefault>::default();
+   |         -   ^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+   |         |
+   |         consider giving this pattern a type
    |
-help: consider restricting type parameter `T`
+   = note: cannot satisfy `_: Default`
+note: required by `std::default::Default::default`
+  --> $SRC_DIR/core/src/default.rs:LL:COL
    |
-LL | type Foo<T: std::default::Default> = impl Default;
-   |           +++++++++++++++++++++++
+LL |     fn default() -> Self;
+   |     ^^^^^^^^^^^^^^^^^^^^^
 
 error: aborting due to previous error
 
-For more information about this error, try `rustc --explain E0277`.
+For more information about this error, try `rustc --explain E0283`.

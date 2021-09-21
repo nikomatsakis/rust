@@ -1,8 +1,9 @@
-error: fatal error triggered by #[rustc_error]
-  --> $DIR/issue-53096.rs:11:1
+error[E0282]: type annotations needed
+  --> $DIR/issue-53096.rs:8:19
    |
-LL | fn main() {}
-   | ^^^^^^^^^
+LL | const BAZR: Foo = bar();
+   |                   ^^^^^ cannot infer type for opaque type `impl Fn<()>`
 
 error: aborting due to previous error
 
+For more information about this error, try `rustc --explain E0282`.

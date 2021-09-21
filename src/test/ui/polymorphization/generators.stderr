@@ -21,12 +21,6 @@ LL | |     }
    | |_____^
 
 error: item has unused generic parameters
-  --> $DIR/generators.rs:34:8
-   |
-LL | pub fn unused_type<T>() -> impl Generator<(), Yield = u32, Return = u32> + Unpin {
-   |        ^^^^^^^^^^^ - generic parameter `T` is unused
-
-error: item has unused generic parameters
   --> $DIR/generators.rs:62:5
    |
 LL |   pub fn unused_const<const T: u32>() -> impl Generator<(), Yield = u32, Return = u32> + Unpin {
@@ -39,11 +33,5 @@ LL | |         2
 LL | |     }
    | |_____^
 
-error: item has unused generic parameters
-  --> $DIR/generators.rs:60:8
-   |
-LL | pub fn unused_const<const T: u32>() -> impl Generator<(), Yield = u32, Return = u32> + Unpin {
-   |        ^^^^^^^^^^^^       - generic parameter `T` is unused
-
-error: aborting due to 4 previous errors; 1 warning emitted
+error: aborting due to 2 previous errors; 1 warning emitted
 

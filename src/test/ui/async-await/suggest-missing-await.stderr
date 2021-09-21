@@ -37,6 +37,10 @@ help: consider using a semicolon here
    |
 LL |     dummy();
    |            +
+help: you might have meant to return this value
+   |
+LL |     return dummy();
+   |     ++++++        +
 
 error: aborting due to 2 previous errors
 

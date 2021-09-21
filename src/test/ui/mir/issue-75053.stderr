@@ -1,8 +1,17 @@
-error: fatal error triggered by #[rustc_error]
-  --> $DIR/issue-75053.rs:46:1
+error[E0282]: type annotations needed
+  --> $DIR/issue-75053.rs:41:9
    |
-LL | fn main() {
-   | ^^^^^^^^^
+LL |         MyFrom::my_from(self.0).ok().unwrap()
+   |         ^^^^^^^^^^^^^^^ cannot infer type for opaque type `impl F`
 
-error: aborting due to previous error
+error[E0282]: type annotations needed for `Phantom1<impl F>`
+  --> $DIR/issue-75053.rs:48:15
+   |
+LL |     let _pos: Phantom1<DummyT<()>> = Scope::new().my_index();
+   |         ----  ^^^^^^^^^^^^^^^^^^^^ cannot infer type for opaque type `impl F`
+   |         |
+   |         consider giving `_pos` the explicit type `Phantom1<impl F>`, where the type parameter `impl F` is specified
 
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0282`.

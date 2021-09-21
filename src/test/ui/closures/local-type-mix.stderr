@@ -46,6 +46,27 @@ error[E0573]: expected type, found local variable `x`
 LL | async fn async_foo_ret(x: bool) -> x {}
    |                                    ^ not a type
 
-error: aborting due to 8 previous errors
+error[E0308]: mismatched types
+  --> $DIR/local-type-mix.rs:17:38
+   |
+LL | async fn async_foo_ret(x: bool) -> x {}
+   |                                      ^^ expected opaque type, found a different opaque type
+   |
+  ::: $SRC_DIR/core/src/future/mod.rs:LL:COL
+   |
+LL | pub const fn from_generator<T>(gen: T) -> impl Future<Output = T::Return>
+   |                                           ------------------------------- the found opaque type
+   |
+note: while checking the return type of the `async fn`
+  --> $DIR/local-type-mix.rs:17:36
+   |
+LL | async fn async_foo_ret(x: bool) -> x {}
+   |                                    ^ checked the `Output` of this `async fn`, expected opaque type
+   = note: expected opaque type `impl Future` (opaque type at <$DIR/local-type-mix.rs:17:36>)
+              found opaque type `impl Future` (opaque type at <$SRC_DIR/core/src/future/mod.rs:LL:COL>)
+   = note: distinct uses of `impl Trait` result in different opaque types
 
-For more information about this error, try `rustc --explain E0573`.
+error: aborting due to 9 previous errors
+
+Some errors have detailed explanations: E0308, E0573.
+For more information about an error, try `rustc --explain E0308`.

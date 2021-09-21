@@ -1,11 +1,11 @@
 error[E0271]: type mismatch resolving `<impl Bar as Foo>::Item == i32`
-  --> $DIR/impl-trait-return-missing-constraint.rs:25:13
+  --> $DIR/impl-trait-return-missing-constraint.rs:26:5
    |
 LL | fn bar() -> impl Bar {
    |             -------- the found opaque type
 ...
-LL | fn baz() -> impl Bar<Item = i32> {
-   |             ^^^^^^^^^^^^^^^^^^^^ expected `i32`, found associated type
+LL |     bar()
+   |     ^^^^^ expected `i32`, found associated type
    |
    = note:         expected type `i32`
            found associated type `<impl Bar as Foo>::Item`

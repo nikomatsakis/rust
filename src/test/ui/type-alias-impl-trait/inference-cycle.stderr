@@ -1,37 +1,21 @@
-error[E0391]: cycle detected when computing type of `m::Foo::{opaque#0}`
-  --> $DIR/inference-cycle.rs:5:16
-   |
-LL |     type Foo = impl std::fmt::Debug;
-   |                ^^^^^^^^^^^^^^^^^^^^
-   |
-note: ...which requires type-checking `m::bar`...
+error[E0282]: type annotations needed
   --> $DIR/inference-cycle.rs:15:9
    |
 LL |         is_send(foo()); // Today: error
-   |         ^^^^^^^
-   = note: ...which requires evaluating trait selection obligation `impl std::fmt::Debug: std::marker::Send`...
-   = note: ...which again requires computing type of `m::Foo::{opaque#0}`, completing the cycle
-note: cycle used when checking item types in module `m`
-  --> $DIR/inference-cycle.rs:4:1
-   |
-LL | mod m {
-   | ^^^^^
+   |         ^^^^^^^ cannot infer type for type parameter `T` declared on the function `is_send`
 
-error[E0308]: mismatched types
-  --> $DIR/inference-cycle.rs:19:22
+error: concrete type differs from previous defining opaque type use
+  --> $DIR/inference-cycle.rs:18:5
    |
-LL |     type Foo = impl std::fmt::Debug;
-   |                -------------------- the expected opaque type
-...
-LL |         let f: Foo = 22_u32;
-   |                ---   ^^^^^^ expected opaque type, found `u32`
-   |                |
-   |                expected due to this
+LL |     fn baz() {
+   |     ^^^^^^^^ expected `()`, got `u32`
    |
-   = note: expected opaque type `impl Debug`
-                     found type `u32`
+note: previous use here
+  --> $DIR/inference-cycle.rs:10:5
+   |
+LL |     pub fn foo() -> Foo {
+   |     ^^^^^^^^^^^^^^^^^^^
 
 error: aborting due to 2 previous errors
 
-Some errors have detailed explanations: E0308, E0391.
-For more information about an error, try `rustc --explain E0308`.
+For more information about this error, try `rustc --explain E0282`.

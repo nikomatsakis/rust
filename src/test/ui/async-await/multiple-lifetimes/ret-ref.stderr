@@ -1,3 +1,7 @@
+error[E0700]: hidden type for `impl Trait` captures lifetime that does not appear in bounds
+   |
+   = note: hidden type `impl Future` captures lifetime '_#10r
+
 error[E0506]: cannot assign to `a` because it is borrowed
   --> $DIR/ret-ref.rs:16:5
    |
@@ -32,6 +36,7 @@ LL |     b += 1;
 LL |     drop(p);
    |          - borrow later used here
 
-error: aborting due to 3 previous errors
+error: aborting due to 4 previous errors
 
-For more information about this error, try `rustc --explain E0506`.
+Some errors have detailed explanations: E0506, E0700.
+For more information about an error, try `rustc --explain E0506`.

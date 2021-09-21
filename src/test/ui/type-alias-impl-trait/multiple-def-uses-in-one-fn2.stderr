@@ -10,5 +10,19 @@ note: previous use here
 LL | fn f<A: ToString + Clone, B: ToString + Clone>(a: A, b: B) -> (X<A, B>, X<B, A>) {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: aborting due to previous error
+error[E0283]: type annotations needed
+  --> $DIR/multiple-def-uses-in-one-fn2.rs:15:20
+   |
+LL |     println!("{}", <X<_, _> as ToString>::to_string(&f(42_i32, String::new()).1));
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type for opaque type `impl ToString`
+   |
+   = note: cannot satisfy `impl ToString: ToString`
+note: required by `to_string`
+  --> $SRC_DIR/alloc/src/string.rs:LL:COL
+   |
+LL |     fn to_string(&self) -> String;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0283`.

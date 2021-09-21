@@ -1,0 +1,44 @@
+error[E0282]: type annotations needed
+  --> $DIR/type-alias-impl-trait.rs:9:22
+   |
+LL |     assert_eq!(foo().to_string(), "foo");
+   |                      ^^^^^^^^^ cannot infer type
+   |
+   = note: type must be known at this point
+
+error[E0599]: no method named `to_string` found for opaque type `impl std::fmt::Display` in the current scope
+  --> $DIR/type-alias-impl-trait.rs:9:22
+   |
+LL |     assert_eq!(foo().to_string(), "foo");
+   |                      ^^^^^^^^^ method not found in `impl std::fmt::Display`
+   |
+   = note: `foo()` is a function, perhaps you wish to call it
+
+error[E0599]: no method named `to_string` found for opaque type `impl std::fmt::Display` in the current scope
+  --> $DIR/type-alias-impl-trait.rs:12:23
+   |
+LL |     assert_eq!(bar1().to_string(), "bar1");
+   |                       ^^^^^^^^^ method not found in `impl std::fmt::Display`
+   |
+   = note: `bar1()` is a function, perhaps you wish to call it
+
+error[E0599]: no method named `to_string` found for opaque type `impl std::fmt::Display` in the current scope
+  --> $DIR/type-alias-impl-trait.rs:15:23
+   |
+LL |     assert_eq!(bar2().to_string(), "bar2");
+   |                       ^^^^^^^^^ method not found in `impl std::fmt::Display`
+   |
+   = note: `bar2()` is a function, perhaps you wish to call it
+
+error[E0599]: no method named `collect` found for opaque type `impl Iterator` in the current scope
+  --> $DIR/type-alias-impl-trait.rs:20:30
+   |
+LL |     assert_eq!(my_iter(42u8).collect::<Vec<u8>>(), vec![42u8]);
+   |                              ^^^^^^^ method not found in `impl Iterator`
+   |
+   = note: `my_iter(42u8)` is a function, perhaps you wish to call it
+
+error: aborting due to 5 previous errors
+
+Some errors have detailed explanations: E0282, E0599.
+For more information about an error, try `rustc --explain E0282`.

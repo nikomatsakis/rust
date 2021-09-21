@@ -1,8 +1,9 @@
-error: could not find defining uses
-  --> $DIR/type-alias-impl-trait-with-cycle-error2.rs:7:12
+error[E0282]: type annotations needed
+  --> $DIR/type-alias-impl-trait-with-cycle-error2.rs:10:10
    |
-LL | type Foo = impl Bar<Foo, Item = Foo>;
-   |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+LL | fn crash(x: Foo) -> Foo {
+   |          ^ cannot infer type
 
 error: aborting due to previous error
 
+For more information about this error, try `rustc --explain E0282`.

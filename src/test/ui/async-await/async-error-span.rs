@@ -5,7 +5,6 @@
 use std::future::Future;
 
 fn get_future() -> impl Future<Output = ()> {
-//~^ ERROR `()` is not a future
     panic!()
 }
 

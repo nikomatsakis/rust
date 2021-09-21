@@ -39,45 +39,7 @@ LL |     let _: &dyn Future<Output = ()> = &block;
    |
    = note: required for the cast to the object type `dyn Future<Output = ()>`
 
-error[E0308]: mismatched types
-  --> $DIR/async-block-control-flow-static-semantics.rs:12:43
-   |
-LL | fn return_targets_async_block_not_fn() -> u8 {
-   |    ---------------------------------      ^^ expected `u8`, found `()`
-   |    |
-   |    implicitly returns `()` as its body has no tail or `return` expression
-
-error[E0271]: type mismatch resolving `<impl Future as Future>::Output == ()`
-  --> $DIR/async-block-control-flow-static-semantics.rs:17:39
-   |
-LL |     let _: &dyn Future<Output = ()> = &block;
-   |                                       ^^^^^^ expected `()`, found `u8`
-   |
-   = note: required for the cast to the object type `dyn Future<Output = ()>`
-
-error[E0308]: mismatched types
-  --> $DIR/async-block-control-flow-static-semantics.rs:47:44
-   |
-LL | fn rethrow_targets_async_block_not_fn() -> Result<u8, MyErr> {
-   |    ----------------------------------      ^^^^^^^^^^^^^^^^^ expected enum `Result`, found `()`
-   |    |
-   |    implicitly returns `()` as its body has no tail or `return` expression
-   |
-   = note:   expected enum `Result<u8, MyErr>`
-           found unit type `()`
-
-error[E0308]: mismatched types
-  --> $DIR/async-block-control-flow-static-semantics.rs:56:50
-   |
-LL | fn rethrow_targets_async_block_not_async_fn() -> Result<u8, MyErr> {
-   |    ----------------------------------------      ^^^^^^^^^^^^^^^^^ expected enum `Result`, found `()`
-   |    |
-   |    implicitly returns `()` as its body has no tail or `return` expression
-   |
-   = note:   expected enum `Result<u8, MyErr>`
-           found unit type `()`
-
-error: aborting due to 8 previous errors
+error: aborting due to 4 previous errors
 
 Some errors have detailed explanations: E0267, E0271, E0308.
 For more information about an error, try `rustc --explain E0267`.

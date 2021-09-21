@@ -1,14 +1,22 @@
-error[E0277]: the trait bound `T: Clone` is not satisfied
-  --> $DIR/bounds-are-checked-2.rs:6:13
+error[E0283]: type annotations needed
+  --> $DIR/bounds-are-checked-2.rs:14:7
    |
-LL | type X<T> = impl Clone;
-   |             ^^^^^^^^^^ the trait `Clone` is not implemented for `T`
+LL |     o.clone()
+   |     --^^^^^--
+   |     | |
+   |     | cannot infer type for opaque type `impl Clone`
+   |     this method call resolves to `Self`
    |
-help: consider restricting type parameter `T`
-   |
-LL | type X<T: std::clone::Clone> = impl Clone;
-   |         +++++++++++++++++++
+   = note: cannot satisfy `impl Clone: Clone`
+   = note: required because of the requirements on the impl of `Clone` for `Option<impl Clone>`
 
-error: aborting due to previous error
+error[E0282]: type annotations needed
+  --> $DIR/bounds-are-checked-2.rs:18:7
+   |
+LL |     g(None::<X<&mut ()>>);
+   |       ^^^^^^^^^^^^^^^^^^ cannot infer type for opaque type `impl Clone`
 
-For more information about this error, try `rustc --explain E0277`.
+error: aborting due to 2 previous errors
+
+Some errors have detailed explanations: E0282, E0283.
+For more information about an error, try `rustc --explain E0282`.

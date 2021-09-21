@@ -1,15 +1,14 @@
-error[E0700]: hidden type for `impl Trait` captures lifetime that does not appear in bounds
-  --> $DIR/ordinary-bounds-unsuited.rs:18:62
+error[E0623]: lifetime mismatch
+  --> $DIR/ordinary-bounds-unsuited.rs:32:33
    |
 LL | fn upper_bounds<'a, 'b>(a: Ordinary<'a>, b: Ordinary<'b>) -> impl Trait<'a, 'b>
-   |                                                              ^^^^^^^^^^^^^^^^^^
-   |
-note: hidden type `Ordinary<'_>` captures lifetime smaller than the function body
-  --> $DIR/ordinary-bounds-unsuited.rs:18:62
-   |
-LL | fn upper_bounds<'a, 'b>(a: Ordinary<'a>, b: Ordinary<'b>) -> impl Trait<'a, 'b>
-   |                                                              ^^^^^^^^^^^^^^^^^^
+   |                            ------------                      ------------------
+   |                            |
+   |                            this parameter and the return type are declared with different lifetimes...
+...
+LL |     if condition() { a } else { b }
+   |                                 ^ ...but data from `b` is returned here
 
 error: aborting due to previous error
 
-For more information about this error, try `rustc --explain E0700`.
+For more information about this error, try `rustc --explain E0623`.

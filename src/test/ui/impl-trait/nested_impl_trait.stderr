@@ -46,7 +46,25 @@ error[E0562]: `impl Trait` not allowed outside of function and method return typ
 LL | fn allowed_in_ret_type() -> impl Fn() -> impl Into<u32> {
    |                                          ^^^^^^^^^^^^^^
 
-error: aborting due to 6 previous errors
+error[E0720]: cannot resolve opaque type
+  --> $DIR/nested_impl_trait.rs:5:56
+   |
+LL | fn bad_in_ret_position(x: impl Into<u32>) -> impl Into<impl Debug> { x }
+   |                                                        ^^^^^^^^^^ cannot resolve opaque type
 
-Some errors have detailed explanations: E0562, E0666.
+error[E0720]: cannot resolve opaque type
+  --> $DIR/nested_impl_trait.rs:17:44
+   |
+LL |     fn bad(x: impl Into<u32>) -> impl Into<impl Debug> { x }
+   |                                            ^^^^^^^^^^ cannot resolve opaque type
+
+error[E0720]: cannot resolve opaque type
+  --> $DIR/nested_impl_trait.rs:21:50
+   |
+LL | fn allowed_in_assoc_type() -> impl Iterator<Item=impl Fn()> {
+   |                                                  ^^^^^^^^^ cannot resolve opaque type
+
+error: aborting due to 9 previous errors
+
+Some errors have detailed explanations: E0562, E0666, E0720.
 For more information about an error, try `rustc --explain E0562`.

@@ -1,12 +1,39 @@
-error[E0733]: recursion in an `async fn` requires boxing
-  --> $DIR/recursive-async-impl-trait-type.rs:5:40
+error[E0698]: type inside `async fn` body must be known in this context
+  --> $DIR/recursive-async-impl-trait-type.rs:6:5
    |
-LL | async fn recursive_async_function() -> () {
-   |                                        ^^ recursive `async fn`
+LL |     recursive_async_function().await;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
    |
-   = note: a recursive `async fn` must be rewritten to return a boxed `dyn Future`
-   = note: consider using the `async_recursion` crate: https://crates.io/crates/async_recursion
+note: the type is part of the `async fn` body because of this `await`
+  --> $DIR/recursive-async-impl-trait-type.rs:6:5
+   |
+LL |     recursive_async_function().await;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: aborting due to previous error
+error[E0698]: type inside `async fn` body must be known in this context
+  --> $DIR/recursive-async-impl-trait-type.rs:6:5
+   |
+LL |     recursive_async_function().await;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+   |
+note: the type is part of the `async fn` body because of this `await`
+  --> $DIR/recursive-async-impl-trait-type.rs:6:5
+   |
+LL |     recursive_async_function().await;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-For more information about this error, try `rustc --explain E0733`.
+error[E0698]: type inside `async fn` body must be known in this context
+  --> $DIR/recursive-async-impl-trait-type.rs:6:5
+   |
+LL |     recursive_async_function().await;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+   |
+note: the type is part of the `async fn` body because of this `await`
+  --> $DIR/recursive-async-impl-trait-type.rs:6:5
+   |
+LL |     recursive_async_function().await;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: aborting due to 3 previous errors
+
+For more information about this error, try `rustc --explain E0698`.

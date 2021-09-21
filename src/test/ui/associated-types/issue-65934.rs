@@ -1,17 +1,14 @@
 // check-pass
 
-mod defining_scope {
-    trait Trait {
-        type Assoc;
-    }
-
-    impl Trait for () {
-        type Assoc = ();
-    }
-
-    pub fn unit() -> impl Into<<() as Trait>::Assoc> {}
+trait Trait {
+    type Assoc;
 }
-use defining_scope::*;
+
+impl Trait for () {
+    type Assoc = ();
+}
+
+fn unit() -> impl Into<<() as Trait>::Assoc> {}
 
 pub fn ice() {
     Into::into(unit());

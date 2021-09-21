@@ -1,14 +1,11 @@
-error: concrete type differs from previous defining opaque type use
-  --> $DIR/issue-86465.rs:5:1
+error[E0700]: hidden type for `impl Trait` captures lifetime that does not appear in bounds
    |
-LL | fn f<'t, 'u>(a: &'t u32, b: &'u u32) -> (X<'t, 'u>, X<'u, 't>) {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `&'a u32`, got `&'b u32`
-   |
-note: previous use here
-  --> $DIR/issue-86465.rs:5:1
-   |
-LL | fn f<'t, 'u>(a: &'t u32, b: &'u u32) -> (X<'t, 'u>, X<'u, 't>) {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: hidden type `&u32` captures lifetime '_#15r
 
-error: aborting due to previous error
+error[E0700]: hidden type for `impl Trait` captures lifetime that does not appear in bounds
+   |
+   = note: hidden type `&u32` captures lifetime '_#16r
 
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0700`.

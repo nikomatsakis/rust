@@ -1,8 +1,15 @@
-error: fatal error triggered by #[rustc_error]
-  --> $DIR/issue-60407.rs:8:1
+error[E0282]: type annotations needed
+  --> $DIR/issue-60407.rs:5:39
    |
-LL | fn main() {
-   | ^^^^^^^^^
+LL | static mut TEST: Option<Debuggable> = None;
+   |                                       ^^^^ cannot infer type for type parameter `T` declared on the enum `Option`
 
-error: aborting due to previous error
+error[E0282]: type annotations needed
+  --> $DIR/issue-60407.rs:10:21
+   |
+LL |     unsafe { TEST = Some(foo()) }
+   |                     ^^^^ cannot infer type for type parameter `T` declared on the enum `Option`
 
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0282`.

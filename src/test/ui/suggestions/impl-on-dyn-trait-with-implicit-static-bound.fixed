@@ -28,7 +28,7 @@ mod bar {
     }
     trait Irrelevant {}
 
-    impl MyTrait for dyn ObjectTrait + '_ {
+    impl MyTrait for dyn ObjectTrait {
         fn use_self(&self) -> &() { panic!() }
     }
     impl Irrelevant for dyn ObjectTrait {}
@@ -45,7 +45,7 @@ mod baz {
     }
     trait Irrelevant {}
 
-    impl MyTrait for Box<dyn ObjectTrait + '_> {
+    impl MyTrait for Box<dyn ObjectTrait> {
         fn use_self(&self) -> &() { panic!() }
     }
     impl Irrelevant for Box<dyn ObjectTrait> {}

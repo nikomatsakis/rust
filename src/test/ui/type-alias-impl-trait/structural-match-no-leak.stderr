@@ -1,8 +1,65 @@
-error: `impl Send` cannot be used in patterns
+error[E0282]: type annotations needed
+  --> $DIR/structural-match-no-leak.rs:11:24
+   |
+LL | const LEAK_FREE: Bar = leak_free();
+   |                        ^^^^^^^^^^^ cannot infer type for opaque type `impl Send`
+
+error[E0391]: cycle detected when computing type of `Bar::{opaque#0}`
+  --> $DIR/structural-match-no-leak.rs:4:12
+   |
+LL | type Bar = impl Send;
+   |            ^^^^^^^^^
+   |
+note: ...which requires borrow-checking `leak_free_test`...
+  --> $DIR/structural-match-no-leak.rs:13:1
+   |
+LL | fn leak_free_test() {
+   | ^^^^^^^^^^^^^^^^^^^
+note: ...which requires processing `leak_free_test`...
+  --> $DIR/structural-match-no-leak.rs:13:1
+   |
+LL | fn leak_free_test() {
+   | ^^^^^^^^^^^^^^^^^^^
+note: ...which requires processing MIR for `leak_free_test`...
+  --> $DIR/structural-match-no-leak.rs:13:1
+   |
+LL | fn leak_free_test() {
+   | ^^^^^^^^^^^^^^^^^^^
+note: ...which requires unsafety-checking `leak_free_test`...
+  --> $DIR/structural-match-no-leak.rs:13:1
+   |
+LL | fn leak_free_test() {
+   | ^^^^^^^^^^^^^^^^^^^
+note: ...which requires building MIR for `leak_free_test`...
+  --> $DIR/structural-match-no-leak.rs:13:1
+   |
+LL | fn leak_free_test() {
+   | ^^^^^^^^^^^^^^^^^^^
+note: ...which requires building THIR for `leak_free_test`...
+  --> $DIR/structural-match-no-leak.rs:13:1
+   |
+LL | fn leak_free_test() {
+   | ^^^^^^^^^^^^^^^^^^^
+note: ...which requires resolving instance `LEAK_FREE`...
+  --> $DIR/structural-match-no-leak.rs:11:1
+   |
+LL | const LEAK_FREE: Bar = leak_free();
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: ...which requires normalizing `impl std::marker::Send`...
+   = note: ...which again requires computing type of `Bar::{opaque#0}`, completing the cycle
+note: cycle used when checking that `leak_free` is well-formed
+  --> $DIR/structural-match-no-leak.rs:8:1
+   |
+LL | const fn leak_free() -> Bar {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: could not evaluate constant pattern
   --> $DIR/structural-match-no-leak.rs:15:9
    |
 LL |         LEAK_FREE => (),
    |         ^^^^^^^^^
 
-error: aborting due to previous error
+error: aborting due to 3 previous errors
 
+Some errors have detailed explanations: E0282, E0391.
+For more information about an error, try `rustc --explain E0282`.

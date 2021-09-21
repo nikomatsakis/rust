@@ -1,8 +1,20 @@
-error: could not find defining uses
-  --> $DIR/no_inferrable_concrete_type.rs:6:12
+error[E0283]: type annotations needed
+  --> $DIR/no_inferrable_concrete_type.rs:9:8
    |
-LL | type Foo = impl Copy;
-   |            ^^^^^^^^^
+LL | fn bar(x: Foo) -> Foo {
+   |        ^ cannot infer type
+   |
+   = note: cannot satisfy `_: Copy`
 
-error: aborting due to previous error
+error[E0282]: type annotations needed
+  --> $DIR/no_inferrable_concrete_type.rs:14:18
+   |
+LL |     let _: Foo = std::mem::transmute(0u8);
+   |         -        ^^^^^^^^^^^^^^^^^^^ cannot infer type for type parameter `U` declared on the function `transmute`
+   |         |
+   |         consider giving this pattern a type
 
+error: aborting due to 2 previous errors
+
+Some errors have detailed explanations: E0282, E0283.
+For more information about an error, try `rustc --explain E0282`.

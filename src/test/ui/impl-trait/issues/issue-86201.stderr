@@ -1,21 +1,19 @@
-error[E0308]: mismatched types
-  --> $DIR/issue-86201.rs:6:29
+error[E0283]: type annotations needed
+  --> $DIR/issue-86201.rs:6:1
    |
-LL | type FunType = impl Fn<()>;
-   |                ----------- the expected opaque type
-LL |
 LL | static STATIC_FN: FunType = some_fn;
-   |                             ^^^^^^^ expected opaque type, found fn item
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type for opaque type `impl Fn<()>`
    |
-   = note: expected opaque type `impl Fn<()>`
-                  found fn item `fn() {some_fn}`
+   = note: cannot satisfy `impl Fn<()>: Sync`
+   = note: shared static variables must have a type that implements `Sync`
 
-error: could not find defining uses
-  --> $DIR/issue-86201.rs:4:16
+error[E0284]: type annotations needed: cannot satisfy `<impl Fn<()> as FnOnce<()>>::Output == _`
+  --> $DIR/issue-86201.rs:12:12
    |
-LL | type FunType = impl Fn<()>;
-   |                ^^^^^^^^^^^
+LL |     let _: <FunType as FnOnce<()>>::Output = STATIC_FN();
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot satisfy `<impl Fn<()> as FnOnce<()>>::Output == _`
 
 error: aborting due to 2 previous errors
 
-For more information about this error, try `rustc --explain E0308`.
+Some errors have detailed explanations: E0283, E0284.
+For more information about an error, try `rustc --explain E0283`.

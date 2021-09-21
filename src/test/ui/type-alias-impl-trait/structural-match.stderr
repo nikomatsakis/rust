@@ -1,8 +1,65 @@
-error: `impl Send` cannot be used in patterns
+error[E0282]: type annotations needed
+  --> $DIR/structural-match.rs:12:20
+   |
+LL | const VALUE: Foo = value();
+   |                    ^^^^^^^ cannot infer type for opaque type `impl Send`
+
+error[E0391]: cycle detected when computing type of `Foo::{opaque#0}`
+  --> $DIR/structural-match.rs:4:12
+   |
+LL | type Foo = impl Send;
+   |            ^^^^^^^^^
+   |
+note: ...which requires borrow-checking `test`...
+  --> $DIR/structural-match.rs:14:1
+   |
+LL | fn test() {
+   | ^^^^^^^^^
+note: ...which requires processing `test`...
+  --> $DIR/structural-match.rs:14:1
+   |
+LL | fn test() {
+   | ^^^^^^^^^
+note: ...which requires processing MIR for `test`...
+  --> $DIR/structural-match.rs:14:1
+   |
+LL | fn test() {
+   | ^^^^^^^^^
+note: ...which requires unsafety-checking `test`...
+  --> $DIR/structural-match.rs:14:1
+   |
+LL | fn test() {
+   | ^^^^^^^^^
+note: ...which requires building MIR for `test`...
+  --> $DIR/structural-match.rs:14:1
+   |
+LL | fn test() {
+   | ^^^^^^^^^
+note: ...which requires building THIR for `test`...
+  --> $DIR/structural-match.rs:14:1
+   |
+LL | fn test() {
+   | ^^^^^^^^^
+note: ...which requires resolving instance `VALUE`...
+  --> $DIR/structural-match.rs:12:1
+   |
+LL | const VALUE: Foo = value();
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: ...which requires normalizing `impl std::marker::Send`...
+   = note: ...which again requires computing type of `Foo::{opaque#0}`, completing the cycle
+note: cycle used when checking that `value` is well-formed
+  --> $DIR/structural-match.rs:9:1
+   |
+LL | const fn value() -> Foo {
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: could not evaluate constant pattern
   --> $DIR/structural-match.rs:16:9
    |
 LL |         VALUE => (),
    |         ^^^^^
 
-error: aborting due to previous error
+error: aborting due to 3 previous errors
 
+Some errors have detailed explanations: E0282, E0391.
+For more information about an error, try `rustc --explain E0282`.
