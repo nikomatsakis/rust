@@ -35,7 +35,7 @@ use rustc_middle::ty::{
 use rustc_span::{Span, DUMMY_SP};
 use rustc_target::abi::VariantIdx;
 use rustc_trait_selection::infer::InferCtxtExt as _;
-use rustc_trait_selection::opaque_types::{GenerateMemberConstraints, InferCtxtExt};
+use rustc_trait_selection::opaque_types::InferCtxtExt;
 use rustc_trait_selection::traits::error_reporting::InferCtxtExt as _;
 use rustc_trait_selection::traits::query::type_op;
 use rustc_trait_selection::traits::query::type_op::custom::CustomTypeOp;
@@ -1345,8 +1345,6 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
             ),
         )?;
 
-        let universal_region_relations = self.universal_region_relations;
-
         // Finally, if we instantiated the anon types successfully, we
         // have to solve any bounds (e.g., `-> impl Iterator` needs to
         // prove that `T: Iterator` where `T` is the type we
@@ -1357,12 +1355,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                 ConstraintCategory::OpaqueType,
                 CustomTypeOp::new(
                     |infcx| {
-                        infcx.constrain_opaque_type(
-                            opaque_type_key,
-                            &opaque_decl,
-                            GenerateMemberConstraints::IfNoStaticBound,
-                            universal_region_relations,
-                        );
+                        infcx.constrain_opaque_type(opaque_type_key, &opaque_decl);
                         Ok(InferOk { value: (), obligations: vec![] })
                     },
                     || "opaque_type_map".to_string(),
