@@ -6,7 +6,7 @@ use crate::{
 use hir::{def_id::DefId, Body, HirId, HirIdMap};
 use rustc_data_structures::stable_set::FxHashSet;
 use rustc_hir as hir;
-use rustc_middle::hir::map::Map;
+use rustc_middle::hir::{map::Map, place::PlaceBase};
 
 pub(super) fn find_consumed_and_borrowed<'a, 'tcx>(
     fcx: &'a FnCtxt<'a, 'tcx>,
@@ -27,8 +27,12 @@ pub(super) struct ConsumedAndBorrowedPlaces {
     /// Note that this set excludes "partial drops" -- for example, a statement like `drop(x.y)` is
     /// not considered a drop of `x`, although it would be a drop of `x.y`.
     pub(super) consumed: HirIdMap<FxHashSet<TrackedValue>>,
+
     /// A set of hir-ids of values or variables that are borrowed at some point within the body.
     pub(super) borrowed: FxHashSet<TrackedValue>,
+
+    /// A set of hir-ids of values or variables that are borrowed at some point within the body.
+    pub(super) borrowed_temporaries: FxHashSet<HirId>,
 }
 
 /// Works with ExprUseVisitor to find interesting values for the drop range analysis.
@@ -47,6 +51,7 @@ impl<'tcx> ExprUseDelegate<'tcx> {
             places: ConsumedAndBorrowedPlaces {
                 consumed: <_>::default(),
                 borrowed: <_>::default(),
+                borrowed_temporaries: <_>::default(),
             },
         }
     }
@@ -96,9 +101,19 @@ impl<'tcx> expr_use_visitor::Delegate<'tcx> for ExprUseDelegate<'tcx> {
         _diag_expr_id: HirId,
         _bk: rustc_middle::ty::BorrowKind,
     ) {
+        debug!("borrow: place_with_id = {place_with_id:?}");
+
         self.places
             .borrowed
             .insert(TrackedValue::from_place_with_projections_allowed(place_with_id));
+
+        // XXX -- we need to distinguish "consuming a copy" from other borrows
+        //
+        // XXX -- we need to distinguish `&*E` where `E: &T` which is not creating a temporary
+        // even though the place-base E is an rvalue
+        if let PlaceBase::Rvalue = place_with_id.place.base {
+            self.places.borrowed_temporaries.insert(place_with_id.hir_id);
+        }
     }
 
     fn mutate(
