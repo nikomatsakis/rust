@@ -175,12 +175,17 @@ pub enum InstanceKind<'tcx> {
     ///
     /// The `DefId` is for `core::future::async_drop::async_drop_in_place`, the `Ty`
     /// is the type `T`.
+    /// 
+    /// This function returns the `impl Future` (coroutine) that will do the actual drop.
+    /// The actual drop is described by `AsyncDropGlue` below.
     AsyncDropGlueCtorShim(DefId, Ty<'tcx>),
 
     /// `core::future::async_drop::async_drop_in_place::<'_, T>::{closure}`.
     ///
     /// async_drop_in_place poll function implementation (for generated coroutine).
     /// `Ty` here is `async_drop_in_place<T>::{closure}` coroutine type, not just `T`
+    /// 
+    /// This `impl Future` (coroutine) returned from `AsyncDropGlueCtorShim` above.
     AsyncDropGlue(DefId, Ty<'tcx>),
 }
 
@@ -484,10 +489,10 @@ impl<'tcx> fmt::Display for Instance<'tcx> {
     }
 }
 
-// async_drop_in_place<T>::coroutine.poll, when T is a standart coroutine,
+// async_drop_in_place<T>::coroutine.poll, when T is a standard coroutine,
 // should be resolved to this coroutine's future_drop_poll (through FutureDropPollShim proxy).
 // async_drop_in_place<async_drop_in_place<T>::coroutine>::coroutine.poll,
-// when T is a standart coroutine, should be resolved to this coroutine's future_drop_poll.
+// when T is a standard coroutine, should be resolved to this coroutine's future_drop_poll.
 // async_drop_in_place<async_drop_in_place<T>::coroutine>::coroutine.poll,
 // when T is not a coroutine, should be resolved to the innermost
 // async_drop_in_place<T>::coroutine's poll function (through FutureDropPollShim proxy)
