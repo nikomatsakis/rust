@@ -7,7 +7,7 @@ use rustc_middle::mir::{
     BasicBlock, BasicBlockData, Body, Local, LocalDecl, MirSource, Operand, Place, Rvalue,
     SourceInfo, Statement, StatementKind, Terminator, TerminatorKind,
 };
-use rustc_middle::ty::{self, EarlyBinder, Ty, TyCtxt};
+use rustc_middle::ty::{self, EarlyBinder, Ty, TyCtxt, TypeVisitableExt};
 use rustc_mir_dataflow::elaborate_drops;
 
 use super::*;
@@ -26,6 +26,7 @@ pub fn build_async_destructor_ctor_shim_for_coroutine<'tcx>(
     let first_arg = Local::new(1);
 
     debug!("build_async_destructor_ctor_shim_for_coroutine(def_id={:?}, ty={:?})", def_id, ty);
+    assert!(!ty.has_infer_types()); // NDM
 
     assert!(ty.is_coroutine());
     let args = tcx.mk_args(&[ty.into()]);
