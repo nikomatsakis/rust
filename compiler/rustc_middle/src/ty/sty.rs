@@ -141,10 +141,12 @@ impl<'tcx> ty::CoroutineArgs<TyCtxt<'tcx>> {
         let layout = tcx.coroutine_layout(def_id, self.args).unwrap();
         layout.variant_fields.iter().map(move |variant| {
             variant.iter().map(move |field| {
+                let layout_field_ty = layout.field_tys[*field].ty;
                 if tcx.is_templated_coroutine(def_id) {
-                    layout.field_tys[*field].ty
+                    assert_eq!(ty::EarlyBinder::bind(layout_field_ty).instantiate(tcx, self.args), layout_field_ty);
+                    layout_field_ty
                 } else {
-                    ty::EarlyBinder::bind(layout.field_tys[*field].ty).instantiate(tcx, self.args)
+                    ty::EarlyBinder::bind(layout_field_ty).instantiate(tcx, self.args)
                 }
             })
         })
